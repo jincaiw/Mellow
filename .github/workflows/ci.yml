@@ -56,6 +56,9 @@ jobs:
             npm run build
             cd ../..
           done
+      - name: host-api contract tests
+        working-directory: packages/host-api
+        run: npm test
 
   editor-engine:
     name: editor-engine test + build
