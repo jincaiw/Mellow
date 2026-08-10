@@ -1,6 +1,11 @@
 # Mellow V0.0 Runtime Qualification — 记录
 
-对应 `docs/specs/runtime-qualification-plan.md` 与 ADR-0002（Conditional）。
+对应 `docs/specs/runtime-qualification-plan.md`。
+
+## 最终决策
+
+> **ADR-0019（Accepted）**：锁定 Tauri 2 为产品 Runtime；Electron/Chromium 为已预案 Fallback（触发条款见 ADR-0019 §2）。
+> ADR-0002（Conditional）已被取代。真机矩阵数据回填后触发复审。
 
 ## 架构（本轮验证）
 
