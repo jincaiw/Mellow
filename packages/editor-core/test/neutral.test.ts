@@ -63,6 +63,23 @@ describe('中性 1 — 平台耦合扫描（回归保护）', () => {
     expect(violations).toEqual([]);
   });
 
+  test('无 Tauri 标识（__TAURI__ / @tauri-apps / tauri://）', () => {
+    const tauriTokens = ['__TAURI__', '@tauri-apps', 'tauri://', 'tauri-plugin'];
+    for (const token of tauriTokens) {
+      expect(text).not.toContain(token);
+    }
+  });
+
+  test('Mellow 封装层（src/）同样无 Tauri 引用', () => {
+    const wrapper = readFileSync(resolve(__dirname, '../src/index.ts'), 'utf8')
+      + readFileSync(resolve(__dirname, '../src/core.ts'), 'utf8')
+      + readFileSync(resolve(__dirname, '../src/bridge-injection.ts'), 'utf8')
+      + readFileSync(resolve(__dirname, '../src/bundle.ts'), 'utf8');
+    expect(wrapper).not.toContain('__TAURI__');
+    expect(wrapper).not.toContain('@tauri-apps');
+    expect(wrapper).not.toContain('tauri::');
+  });
+
   test('isChrome 仅用于 CSS prefix（引擎无关），且仅存在 utils.ts', () => {
     const uses = sources.filter((f) => readFileSync(f, 'utf8').includes('isChrome'));
     expect(uses.every((f) => f.includes('utils.ts') || f.includes('builder.ts'))).toBe(true);
@@ -98,15 +115,22 @@ describe('中性 2 — 注入脚本在无 WebKit 环境实跑', () => {
     expect(result).toEqual({ ok: true });
   });
 
-  test('__TAURI__ 桥（Tauri 2 withGlobalTauri）被调用', async () => {
-    (window as unknown as Record<string, unknown>).__TAURI__ = {
-      core: { invoke: async (cmd: string) => ({ cmd }) },
-    };
+  test('bridge 契约：宿主可替换实现（换 Tauri 实现不需要改 editor-core）', async () => {
+    // 模拟 desktop Adapter 把 __MELLOW_BRIDGE__ 接到任意运行时（这里模拟 Tauri invoke 形状）
+    const invoked: unknown[] = [];
+    installBridge({
+      invoke: async (message) => {
+        invoked.push(message);
+        // Tauri invoke('bridge_call', { message }) 返回形状由宿主决定
+        return { ok: true, method: 'bridge_call' };
+      },
+    });
     // eslint-disable-next-line no-eval
     (0, eval)(BRIDGE_INJECTION);
     const bridge = (window as unknown as { webkit: { messageHandlers: { bridge: { postMessage(m: unknown): Promise<unknown> } } } }).webkit.messageHandlers.bridge;
     const result = await bridge.postMessage({ moduleName: 'core', methodName: 'notifyWindowDidLoad', parameters: '{}' });
-    expect(result).toEqual({ cmd: 'bridge_call' });
+    expect(invoked).toHaveLength(1);
+    expect(result).toEqual({ ok: true, method: 'bridge_call' });
   });
 });
 

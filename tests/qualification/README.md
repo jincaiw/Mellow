@@ -2,60 +2,78 @@
 
 对应 `docs/specs/runtime-qualification-plan.md` 与 ADR-0002（Conditional）。
 
-## 状态
+## 架构（本轮验证）
 
-| 项 | 状态 |
-|---|---|
-| CoreEditor vendored（上游固定 SHA） | ✅ 见 `packages/editor-core/UPSTREAM.md` |
-| CoreEditor jest 测试 | ✅ 185/185 |
-| React + Tauri 2 最小 shell（apps/desktop） | 骨架 |
-| 桥接（webkit mock → Tauri IPC） | 实现 |
-| 文件打开/保存（dialog + atomic write） | 实现 |
-| **Live Markdown 引擎 Phase 1（@mellow/editor-engine）** | ✅ 29/29 测试 |
-| 中文 IME 真机验证（macOS WKWebView） | ⏳ 待本机 GUI 验证 |
-| Windows WebView2 验证 | ⛔ 未覆盖（需 Windows 真机） |
-| Linux WebKitGTK 验证 | ⛔ 未覆盖（需 Linux 真机） |
-| 10MB 文件 / P95 输入延迟 | ⛔ 未覆盖（需真机基准） |
-| Print/PDF | ⛔ 未覆盖（V0.0 范围外） |
-
-> **Runtime Qualification 尚未覆盖项目**：三平台真机 IME/Caret/Clipboard/Print/10MB Gate 均未执行，
-> 本仓库目前只完成技术准备（结构、桥接、最小可运行壳）。
-
-## 运行方式
-
-```sh
-# 1. 构建 CoreEditor（packages/editor-core/CoreEditor）
-npx -y yarn@4.17.1 install --immutable
-npx -y yarn@4.17.1 test        # jest：CoreEditor 核心逻辑（185）
-npx -y yarn@4.17.1 build       # 产物 dist/index.html
-
-# 1b. 构建 Live Markdown 引擎（packages/editor-engine）
-npm install
-npm test                       # jest：marker reveal（29）
-npm run build                  # 产物 dist/（宿主构建时自动集成）
-
-# 2. 生成 Mellow editor bundle（注入 config + 桥接 + 引擎）
-cd apps/desktop && node scripts/build-editor-bundle.mjs
-
-# 3. 前端
-npm install
-npm run dev        # Vite dev（浏览器中可预览 shell；bridge 走 mock fallback）
-
-# 4. Tauri
-npm run tauri dev  # 桌面壳（macOS WKWebView）
-npm run tauri build
+```
+editor-core（平台无关，零 Tauri 知识）
+  ├── BRIDGE_INJECTION → window.__MELLOW_BRIDGE__ 契约（无桥 no-op）
+  └── buildBundleHtml（config + 桥接注入）
+        ↓（apps/desktop 构建期）
+Tauri Bridge Adapter（desktop 专属）→ __MELLOW_BRIDGE__ 接到 __TAURI__.core
+        ↓
+Rust System Core（src-tauri）：bridge_call / open_document / save_document(atomic)
+        ↓
+Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 ```
 
-## V0.0 验证范围（用户要求）
+**解耦保证**：editor-core 源码 0 处 Tauri 标识（`__TAURI__`/`@tauri-apps`/`tauri://`），
+由 neutral 测试回归保护（见 packages/editor-core/test/neutral.test.ts）。
 
-- [x] 打开 Markdown（dialog → fs read → resetEditor）
-- [x] 编辑（CoreEditor 原生能力）
-- [x] 保存（getEditorText → atomic write）
-- [x] Heading / Bold / List / Table basic / 中文 IME —— CoreEditor 已实现，验证其可运行
-- [ ] 三平台同一 Editor Core 的真机验证（本机仅 macOS）
+## Pass / Fail 表（plan §6/§7）
 
-## 已知边界
+| 项 | 本机（构建级） | Windows 真机 | macOS 真机 | Linux 真机 |
+|---|---|---|---|---|
+| 最小壳构建（Tauri+Rust+React+editor-core） | ✅ | — | — | — |
+| 打开 Markdown（dialog + fs read） | ✅（Rust 命令 + 类型适配） | ⛔ | ⛔ | ⛔ |
+| 编辑（CoreEditor，185 测试） | ✅ | — | — | — |
+| 保存（atomic write） | ✅（Rust 实现） | ⛔ | ⛔ | ⛔ |
+| Heading / Bold marker reveal | ✅（editor-engine 29 测试） | — | — | — |
+| List / Table 基础编辑 | ✅（CoreEditor 原生） | ⛔ | ⛔ | ⛔ |
+| 中文输入（composition guard） | ✅（逻辑层 29 测试） | ⛔ | ⛔ | ⛔ |
+| IME corruption = 0 | ⛔ | ⛔ | ⛔ | ⛔ |
+| Clipboard P0 | ⛔ | ⛔ | ⛔ | ⛔ |
+| PDF/Print | ⛔（V0.0 范围外） | ⛔ | ⛔ | ⛔ |
+| 10MB 可编辑 / P95 | ⛔ | ⛔ | ⛔ | ⛔ |
+| Linux P0 journeys | ⛔ | — | — | ⛔ |
 
-- 本机无完整 Xcode（仅 CommandLineTools），`tauri build` 打包 .app 可能受限，`cargo check/build` 可验证 Rust 侧。
-- iframe 内桥接依赖 `window.parent.__TAURI__`（Tauri 2 `withGlobalTauri: true`）。
-- 浏览器 `npm run dev` 无 Tauri API 时，host 层自动降级为内存 mock（可做 UI/布局开发）。
+**结论**：ADR-0002 保持 **Conditional**。真机门禁（IME/Caret/Clipboard/Print/10MB）未执行前不得转 Accepted。
+
+## Benchmark 模板（plan §5 Performance，真机填写）
+
+| 文件 | 大小 | 打开 ms | 输入 P95 ms | 滚动 | 备注 |
+|---|---|---|---|---|---|
+| fixtures/markdown/mixed-document.md | ~1 KB | | | | |
+| 1 MB 合成文档 | 1 MB | | | | |
+| 5 MB 合成文档 | 5 MB | | | | |
+| 10 MB 合成文档 | 10 MB | | | | |
+| 100k 行 | — | | | | |
+
+## Platform Issue 记录
+
+| 日期 | 平台 | 现象 | 影响 | 状态 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## 自动化检查（本仓库可执行）
+
+```sh
+# 1. 构建 editor-core dist（bundle 构建模块）
+cd packages/editor-core && npm run build
+
+# 2. 生成 editor bundle（含 Tauri Bridge Adapter）
+cd apps/desktop && node scripts/build-editor-bundle.mjs
+
+# 3. 前端 + Rust
+cd apps/desktop && npm run build
+cd src-tauri && cargo check
+
+# 4. 全部测试
+#    CoreEditor 185 / editor-core 15 / editor-engine 29 / host-api 24
+```
+
+## 运行方式（真机 GUI）
+
+```sh
+cd apps/desktop && npm run tauri dev
+# 最小界面：新建 / 打开… / 保存 / 另存为… + 编辑器（Heading/Bold/List/Table/中文输入）
+```
