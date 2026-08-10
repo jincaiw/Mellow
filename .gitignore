@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# 依赖
+node_modules/
+.yarn/install-state.gz
+
+# 构建产物（均可由脚本重新生成）
+dist/
+target/
+apps/desktop/public/editor/
+
+# 日志与临时文件
+*.log
+*.tmp
+*.mellow-tmp
