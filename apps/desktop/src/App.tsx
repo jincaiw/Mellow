@@ -1,11 +1,16 @@
 /**
- * Mellow V0.0 Runtime Qualification Shell —— 最小编辑器壳。
- * 不开发正式 UI：只有 Open / Save / New + 编辑器容器 + 状态栏。
+ * App —— Mellow V0.0 Runtime Qualification Shell（最小编辑器壳）。
+ * 不开发正式 UI：Open / Save / New + 编辑器容器 + 状态栏。
+ *
+ * 依赖注入（host-api 契约）：
+ *   EditorHost（editor-react）→ CoreEditor
+ *   DocumentService（app-core）→ FileService（desktop Adapter 实现）
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EditorHost } from './host/editorHost';
-import { openDocument, saveDocument } from './host/fs';
+import { EditorHost } from '../../../packages/editor-react/src';
+import { DocumentService } from '../../../packages/app-core/src';
+import { createDesktopFileService } from './host/fileServices';
 
 type EditorStatus = 'idle' | 'ready' | 'error';
 
@@ -13,15 +18,18 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<EditorHost | null>(null);
   const filePathRef = useRef<string | null>(null);
+  const documentsRef = useRef<DocumentService | null>(null);
 
   const [status, setStatus] = useState<EditorStatus>('idle');
   const [statusText, setStatusText] = useState('未加载');
   const [dirty, setDirty] = useState(false);
   const [stats, setStats] = useState('');
 
-  // 挂载编辑器
+  // 挂载编辑器 + 文件服务
   useEffect(() => {
     if (!containerRef.current) return;
+    documentsRef.current = new DocumentService(createDesktopFileService());
+
     const host = new EditorHost();
     hostRef.current = host;
     host.mount(containerRef.current);
@@ -65,8 +73,9 @@ export default function App() {
 
   const handleOpen = useCallback(async () => {
     const host = hostRef.current;
-    if (!host) return;
-    const result = await openDocument();
+    const documents = documentsRef.current;
+    if (!host || !documents) return;
+    const result = await documents.open();
     if (result.error) {
       setStatusText(`打开失败: ${result.error}`);
       return;
@@ -81,9 +90,10 @@ export default function App() {
 
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
-    if (!host) return;
+    const documents = documentsRef.current;
+    if (!host || !documents) return;
     const content = host.getText();
-    const result = await saveDocument(filePathRef.current, content);
+    const result = await documents.save(filePathRef.current, content);
     if (result.error) {
       setStatusText(`保存失败: ${result.error}`);
       return;
@@ -95,9 +105,10 @@ export default function App() {
 
   const handleSaveAs = useCallback(async () => {
     const host = hostRef.current;
-    if (!host) return;
+    const documents = documentsRef.current;
+    if (!host || !documents) return;
     const content = host.getText();
-    const result = await saveDocument(null, content);
+    const result = await documents.save(null, content);
     if (result.error) {
       setStatusText(`另存失败: ${result.error}`);
       return;

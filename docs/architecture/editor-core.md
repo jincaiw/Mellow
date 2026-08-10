@@ -1,6 +1,6 @@
 # CoreEditor（TypeScript Editor Core）
 
-> 位置：`packages/core-editor/CoreEditor/`（vendored，只读）。规模：13,625 行 / 201 文件。
+> 位置：`packages/editor-core/CoreEditor/`（vendored，只读）。规模：13,625 行 / 201 文件。
 
 ## 模块地图
 

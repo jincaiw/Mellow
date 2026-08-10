@@ -1,0 +1,14 @@
+{
+  "name": "@mellow/document-model",
+  "version": "0.1.0",
+  "description": "文档模型（ADR-0008）",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

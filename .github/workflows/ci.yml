@@ -6,32 +6,50 @@ on:
   pull_request:
 
 jobs:
-  core-editor:
-    name: CoreEditor test + build
+  editor-core:
+    name: editor-core test + build
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/core-editor/CoreEditor
+        working-directory: packages/editor-core/CoreEditor
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: yarn
-          cache-dependency-path: packages/core-editor/CoreEditor/yarn.lock
+          cache-dependency-path: packages/editor-core/CoreEditor/yarn.lock
       - name: Enable yarn (corepack)
         run: corepack enable
       - name: Install
         run: yarn install --immutable
-      - name: Test
+      - name: Test (185)
         run: yarn test
       - name: Build
         run: yarn build
       - name: Upload dist
         uses: actions/upload-artifact@v4
         with:
-          name: core-editor-dist
-          path: packages/core-editor/CoreEditor/dist
+          name: editor-core-dist
+          path: packages/editor-core/CoreEditor/dist
+
+  mellow-packages:
+    name: Mellow packages typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Typecheck all packages
+        run: |
+          for pkg in host-api editor-react app-core document-model workspace commands i18n themes extension-api shared; do
+            echo "== @mellow/$pkg =="
+            cd packages/$pkg
+            npm install --no-audit --no-fund --ignore-scripts
+            npm run build
+            cd ../..
+          done
 
   editor-engine:
     name: editor-engine test + build
@@ -48,7 +66,7 @@ jobs:
           cache-dependency-path: packages/editor-engine/package-lock.json
       - name: Install
         run: npm ci
-      - name: Test
+      - name: Test (29)
         run: npm test
       - name: Build
         run: npm run build
@@ -56,19 +74,19 @@ jobs:
   desktop-frontend:
     name: Desktop frontend build
     runs-on: ubuntu-latest
-    needs: [core-editor, editor-engine]
+    needs: [editor-core, editor-engine]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Restore CoreEditor dist
+      - name: Restore editor-core dist
         uses: actions/download-artifact@v4
         with:
-          name: core-editor-dist
-          path: packages/core-editor/CoreEditor/dist
-      - name: CoreEditor deps (for bundle build)
-        working-directory: packages/core-editor/CoreEditor
+          name: editor-core-dist
+          path: packages/editor-core/CoreEditor/dist
+      - name: editor-core deps (bundle build)
+        working-directory: packages/editor-core/CoreEditor
         run: |
           corepack enable
           yarn install --immutable

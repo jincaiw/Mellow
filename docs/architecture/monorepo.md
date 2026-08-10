@@ -9,7 +9,7 @@
 ├── apps/
 │   └── desktop/            # Tauri 2 + React（当前：最小壳 + host 层）
 ├── packages/
-│   ├── editor-core/        # ⚠️ 目标：CoreEditor 独立契约化（现状 = core-editor vendored）
+│   ├── editor-core/        # ⚠️ 目标：CoreEditor 独立契约化（现状 = editor-core vendored）
 │   ├── editor-react/       # React 编辑器封装（未建）
 │   ├── desktop-ui/         # 桌面 UI 组件（未建）
 │   ├── document-model/     # 文档模型（ADR-0008，未建）
@@ -36,9 +36,9 @@ app-core     不允许直接调用 Swift / Win32 / DBus。
 
 | 项 | 现状 | 差距 |
 |---|---|---|
-| CoreEditor 独立 | `packages/core-editor/CoreEditor/`（vendored 原样） | T-0003 未完成：未按 Mellow 契约封装（入口/类型导出/平台假设清理） |
-| 包划分 | core-editor + editor-engine + desktop | editor-react/desktop-ui/document-model 等未建 |
-| 代码生成产物隔离 | ts-gyb 生成的 Swift 桥文件落在 vendored 目录（`packages/core-editor/MarkEditKit|MarkEditCore`） | ⚠️ macOS-only 产物不应进入跨平台包，后续迁移时隔离 |
+| CoreEditor 独立 | `packages/editor-core/CoreEditor/`（vendored 原样） | T-0003 未完成：未按 Mellow 契约封装（入口/类型导出/平台假设清理） |
+| 包划分 | editor-core + editor-engine + desktop | editor-react/desktop-ui/document-model 等未建 |
+| 代码生成产物隔离 | ts-gyb 生成的 Swift 桥文件落在 vendored 目录（`packages/editor-core/MarkEditKit|MarkEditCore`） | ⚠️ macOS-only 产物不应进入跨平台包，后续迁移时隔离 |
 | 平台代码 | `src-tauri/`（Rust） | 无 native/macos|windows|linux 适配目录（PRD §113.4） |
 
 ## package 规范（PRD §117.1）

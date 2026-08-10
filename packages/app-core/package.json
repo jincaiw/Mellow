@@ -1,0 +1,14 @@
+{
+  "name": "@mellow/app-core",
+  "version": "0.1.0",
+  "description": "应用核心逻辑（经 host-api 依赖注入）",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

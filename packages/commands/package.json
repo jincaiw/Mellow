@@ -1,0 +1,14 @@
+{
+  "name": "@mellow/commands",
+  "version": "0.1.0",
+  "description": "命令注册与执行",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

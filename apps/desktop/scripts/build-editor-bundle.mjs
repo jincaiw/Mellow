@@ -2,7 +2,7 @@
  * 生成 Mellow editor bundle：apps/desktop/public/editor/index.html
  *
  * 输入：
- *   1. packages/core-editor/CoreEditor/dist/index.html（MarkEdit 上游构建产物）
+ *   1. packages/editor-core/CoreEditor/dist/index.html（MarkEdit 上游构建产物）
  *   2. packages/editor-engine/dist/*.js（Mellow Live Markdown Engine）
  *
  * 处理：
@@ -18,7 +18,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const source = resolve(root, '../../packages/core-editor/CoreEditor/dist/index.html');
+const source = resolve(root, '../../packages/editor-core/CoreEditor/dist/index.html');
 const engineDist = resolve(root, '../../packages/editor-engine/dist');
 const targetDir = resolve(root, 'public/editor');
 const target = resolve(targetDir, 'index.html');

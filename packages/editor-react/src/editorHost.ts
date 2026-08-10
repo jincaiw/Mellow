@@ -2,7 +2,10 @@
  * Editor Host：管理 CoreEditor 生命周期（打开/取文本/编辑状态）。
  *
  * CoreEditor 以独立 iframe（editor bundle）运行，与 React shell 隔离；
- * React 通过 iframe.contentWindow.webModules 直接调用编辑器（同上下文 JS）。
+ * 宿主通过 iframe.contentWindow.webModules 直接调用编辑器（同上下文 JS）。
+ *
+ * 平台约束：本模块零系统能力依赖（不 import host-api / Tauri）。
+ * editor-core 的 OS 耦合（webkit.messageHandlers.bridge）由构建期注入消除。
  */
 
 import type { EditorConfig, CoreWebModule, WebModules } from './types';
@@ -35,8 +38,6 @@ export class EditorHost {
       throw new Error('EditorHost.mount() must be called first');
     }
     await this.readyPromise;
-    // resetEditor 在 window.onload 中被 native 调用；bundle 内会自行完成初始化。
-    // 这里等待 webModules 暴露。
     await this.waitForModules();
   }
 

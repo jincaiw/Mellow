@@ -27,7 +27,7 @@ mellow/
 ├── apps/
 │   └── desktop/      # V0.0 Runtime Qualification Shell（Tauri 2 + React + host 层）
 ├── packages/
-│   └── core-editor/  # vendored MarkEdit CoreEditor（CM6+Lezer，固定上游 commit，只读）
+│   └── editor-core/  # vendored MarkEdit CoreEditor（CM6+Lezer，固定上游 commit，只读）
 └── tests/
     └── qualification/  # V0.0 运行时门禁记录
 ```
@@ -85,7 +85,7 @@ mellow/
 
 ## 代码现状（V0.0 Runtime Qualification 技术准备）
 
-- `packages/core-editor/`：MarkEdit CoreEditor vendored（上游 `81da2a20`），**不修改源码**，jest 185 用例全绿
+- `packages/editor-core/`：MarkEdit CoreEditor vendored（上游 `81da2a20`），**不修改源码**，jest 185 用例全绿
 - `apps/desktop/`：最小 Tauri 2 + React 壳，实现打开/编辑/保存 + Host Adapter 桥接（webkit mock → Tauri IPC）
 - `tests/qualification/`：V0.0 门禁清单；三平台真机 IME/Caret/Clipboard/Print/10MB Gate **尚未覆盖**
 

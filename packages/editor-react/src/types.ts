@@ -1,6 +1,6 @@
 /**
- * 桥接契约：与 CoreEditor 的 window.webModules / window.nativeModules 对齐。
- * 只定义 V0.0 需要的子集，其余模块保持 unknown（不承诺）。
+ * 编辑器桥接契约（与 CoreEditor window.webModules / window.nativeModules 对齐）。
+ * 只定义 V0.x 需要的子集，其余模块保持 unknown（不承诺）。
  */
 
 /** CoreEditor 的 selection range（锚点/焦点，字符偏移） */
@@ -11,7 +11,7 @@ export interface SelectionRange {
 
 export type ReplaceGranularity = 'wholeDocument' | 'selection';
 
-/** window.webModules.core —— Native→Web 方向（React/Rust 调编辑器） */
+/** window.webModules.core —— Native→Web 方向（宿主/UI 调编辑器） */
 export interface CoreWebModule {
   resetEditor(p: {
     text: string;
@@ -24,7 +24,7 @@ export interface CoreWebModule {
   replaceText(p: { text: string; granularity: ReplaceGranularity }): void;
 }
 
-/** window.webModules —— CoreEditor 暴露给宿主的所有模块（V0.0 只用 core） */
+/** window.webModules —— CoreEditor 暴露给宿主的所有模块（V0.x 只用 core） */
 export interface WebModules {
   core: CoreWebModule;
   config?: unknown;
@@ -46,7 +46,7 @@ export interface NativeMessage {
   parameters: string; // JSON 字符串
 }
 
-/** CoreEditor 启动配置（Config 接口子集） */
+/** CoreEditor 启动配置（EditorConfig 接口子集） */
 export interface EditorConfig {
   host: 'mainApp' | 'quicklook';
   text: string;
@@ -66,22 +66,4 @@ export interface EditorConfig {
   indentBehavior: 'never' | 'paragraph' | 'line';
   standardDirectories: Record<string, string>;
   localizable?: Record<string, string>;
-}
-
-/** Rust fs module 返回 */
-export interface OpenDocumentResult {
-  path: string | null;
-  content: string | null;
-  error: string | null;
-}
-
-export interface SaveDocumentResult {
-  path: string | null;
-  error: string | null;
-}
-
-/** 打开/保存文件对话框过滤器 */
-export interface FileFilter {
-  name: string;
-  extensions: string[];
 }

@@ -1,0 +1,14 @@
+{
+  "name": "@mellow/workspace",
+  "version": "0.1.0",
+  "description": "工作区状态（文件夹/文件树）",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

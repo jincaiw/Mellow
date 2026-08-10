@@ -1,0 +1,14 @@
+{
+  "name": "@mellow/i18n",
+  "version": "0.1.0",
+  "description": "国际化（zh-CN/en-US）",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

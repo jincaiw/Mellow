@@ -7,10 +7,10 @@ Mellow 是基于开源项目构建的。以下第三方组件与许可信息供�
 ### MarkEdit — MIT License
 
 - Repository: https://github.com/MarkEdit-app/MarkEdit
-- Vendored: `packages/core-editor/`（CoreEditor 目录，固定 commit `81da2a20`）
-- License: MIT（`packages/core-editor/LICENSE`，Copyright (c) 2023 MarkEdit.app）
+- Vendored: `packages/editor-core/`（CoreEditor 目录，固定 commit `81da2a20`）
+- License: MIT（`packages/editor-core/LICENSE`，Copyright (c) 2023 MarkEdit.app）
 - 用途：Markdown 编辑器核心（CodeMirror 6 + Lezer），Mellow 的基础项目
-- 说明：vendored 目录保持只读，同步方式见 `packages/core-editor/UPSTREAM.md`
+- 说明：vendored 目录保持只读，同步方式见 `packages/editor-core/UPSTREAM.md`
 
 ## 运行时依赖（npm / Cargo）
 
@@ -30,5 +30,5 @@ Mellow 是基于开源项目构建的。以下第三方组件与许可信息供�
 ## 许可说明
 
 - 上游代码（MarkEdit CoreEditor）的改动遵循上游 MIT 条款；Mellow 自身代码默认 MIT（待正式 LICENSE 文件发布时对齐）。
-- 完整许可证文本见各依赖包内 LICENSE 文件（`node_modules/*/LICENSE`）与 `packages/core-editor/LICENSE`。
+- 完整许可证文本见各依赖包内 LICENSE 文件（`node_modules/*/LICENSE`）与 `packages/editor-core/LICENSE`。
 - 如有遗漏或疑问，请在本仓库提交 issue 补充。

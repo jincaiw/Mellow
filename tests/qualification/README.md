@@ -6,7 +6,7 @@
 
 | 项 | 状态 |
 |---|---|
-| CoreEditor vendored（上游固定 SHA） | ✅ 见 `packages/core-editor/UPSTREAM.md` |
+| CoreEditor vendored（上游固定 SHA） | ✅ 见 `packages/editor-core/UPSTREAM.md` |
 | CoreEditor jest 测试 | ✅ 185/185 |
 | React + Tauri 2 最小 shell（apps/desktop） | 骨架 |
 | 桥接（webkit mock → Tauri IPC） | 实现 |
@@ -24,7 +24,7 @@
 ## 运行方式
 
 ```sh
-# 1. 构建 CoreEditor（packages/core-editor/CoreEditor）
+# 1. 构建 CoreEditor（packages/editor-core/CoreEditor）
 npx -y yarn@4.17.1 install --immutable
 npx -y yarn@4.17.1 test        # jest：CoreEditor 核心逻辑（185）
 npx -y yarn@4.17.1 build       # 产物 dist/index.html

@@ -93,8 +93,31 @@ docs/product/   # 宪法：PRD（只应有一个 FINAL 版本）
 docs/specs/     # 法律：领域规范，一个领域一个文件
 docs/adr/       # 判决：ADR-XXXX-描述性slug.md，只追加不修改
 docs/plans/     # 施工图：实施计划
-apps/desktop/   # Tauri 2 + React 桌面壳（src/host = Host Adapter 层）
-packages/core-editor/   # vendored MarkEdit CoreEditor（只读，见 UPSTREAM.md）
-packages/editor-engine/ # Mellow Live Markdown 引擎（注入式扩展）
-tests/qualification/    # V0.0 运行时门禁记录
+docs/architecture/  # 实现架构（overview/editor-core/host-adapter/monorepo/migration）
+
+apps/desktop/   # Tauri 2 + React 桌面壳（Adapter 装配层，平台代码只允许在此）
+
+packages/
+  editor-core/     # vendored MarkEdit CoreEditor（只读，见 UPSTREAM.md）
+  editor-engine/   # Mellow Live Markdown 引擎（注入式扩展）
+  editor-react/    # 编辑器 React 封装（EditorHost + 桥契约）
+  app-core/        # 应用核心逻辑（经 host-api 依赖注入）
+  host-api/        # 系统能力契约（PRD §116，纯类型）
+  document-model/  # 文档模型（ADR-0008）
+  workspace/  commands/  i18n/  themes/  extension-api/  shared/
+
+tests/
+  qualification/  # V0.0 运行时门禁记录
+  fixtures/       # Markdown 测试素材库
+```
+
+## 包依赖规则
+
+```
+editor-core ──┐（零 OS 依赖；webkit 耦合由构建期注入消除）
+              ├── editor-react ──┐
+              ├── editor-engine ─┼── app-core ── host-api（契约）
+              └── 宿主（desktop）─┘        │
+                     ▲                      └── 系统能力实现（仅 desktop）
+                     └── 平台代码只允许在 apps/desktop（Adapter，PRD §113.4）
 ```

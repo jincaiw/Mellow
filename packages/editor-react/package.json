@@ -1,0 +1,14 @@
+{
+  "name": "@mellow/editor-react",
+  "version": "0.1.0",
+  "description": "Mellow 编辑器 React 封装（EditorHost + 桥契约）",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
