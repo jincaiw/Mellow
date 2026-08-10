@@ -23,10 +23,16 @@ jobs:
         run: corepack enable
       - name: Install
         run: yarn install --immutable
-      - name: Test (185)
+      - name: Test (185, vendored CoreEditor)
         run: yarn test
-      - name: Build
+      - name: Build (vendored)
         run: yarn build
+      - name: Mellow wrapper test (14: contract + neutral)
+        working-directory: packages/editor-core
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          npm test
+          npm run build
       - name: Upload dist
         uses: actions/upload-artifact@v4
         with:

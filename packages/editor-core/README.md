@@ -6,13 +6,38 @@
 
 ```
 editor-core/
-├── CoreEditor/          # MarkEdit 上游 CoreEditor（固定 commit 81da2a20）
+├── CoreEditor/          # MarkEdit 上游 CoreEditor（固定 commit 81da2a20，只读）
 │   ├── src/             # modules/styling/api/bridge（13,625 行）
 │   ├── test/            # jest 185 用例（jsdom，可运行）
 │   └── package.json     # yarn 4.17.1（corepack）
-├── upstream-swift/      # ts-gyb 生成的 macOS Swift 桥参考（隔离，不参与跨平台构建）
+├── src/                 # Mellow 平台适配层（public API）
+│   ├── index.ts         # 包入口：EditorCore / buildBundleHtml / 契约
+│   ├── core.ts          # EditorCore：平台无关生命周期与公开 API
+│   ├── contract.ts      # 平台无关契约类型
+│   ├── bundle.ts        # bundle 构建注入（config + 桥接）
+│   └── bridge-injection.ts  # webkit 依赖消除（宿主桥路由）
+├── upstream-swift/      # ts-gyb 生成的 macOS Swift 桥参考（隔离）
 ├── LICENSE              # MIT（MarkEdit.app）
 └── UPSTREAM.md          # 上游同步说明
+```
+
+## Public API（Mellow 封装层）
+
+```ts
+import { EditorCore, buildBundleHtml, installBridge } from '@mellow/editor-core';
+
+// 编辑器生命周期（platform-neutral）
+const core = new EditorCore({ onEvent: (e) => console.log(e.type) });
+core.mount(container);
+await core.ready();
+await core.open(markdownText);
+const text = core.getText();
+
+// 宿主桥注册（Tauri 自动走 __TAURI__；Electron/测试用 installBridge）
+installBridge({ invoke: async (message) => { /* 路由到宿主 */ } });
+
+// bundle 构建（把 CoreEditor 构建产物变成平台无关 bundle）
+const bundle = buildBundleHtml(sourceHtml, { config: { theme: 'github-light' } });
 ```
 
 ## 硬规则

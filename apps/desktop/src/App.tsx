@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EditorHost } from '../../../packages/editor-react/src';
+import { EditorCore } from '../../../packages/editor-core/src';
 import { DocumentService } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 
@@ -16,7 +16,7 @@ type EditorStatus = 'idle' | 'ready' | 'error';
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const hostRef = useRef<EditorHost | null>(null);
+  const hostRef = useRef<EditorCore | null>(null);
   const filePathRef = useRef<string | null>(null);
   const documentsRef = useRef<DocumentService | null>(null);
 
@@ -30,14 +30,14 @@ export default function App() {
     if (!containerRef.current) return;
     documentsRef.current = new DocumentService(createDesktopFileService());
 
-    const host = new EditorHost();
+    const host = new EditorCore();
     hostRef.current = host;
     host.mount(containerRef.current);
 
     host
       .ready()
       .then(async () => {
-        await host.open('# Mellow V0.0\n\nRuntime Qualification Shell', true);
+        await host.open('# Mellow V0.0\n\nRuntime Qualification Shell', undefined, true);
         setStatus('ready');
         setStatusText('编辑器就绪');
         refreshStats(host);
@@ -51,7 +51,7 @@ export default function App() {
     return () => host.destroy();
   }, []);
 
-  const refreshStats = useCallback((host: EditorHost) => {
+  const refreshStats = useCallback((host: EditorCore) => {
     try {
       const text = host.getText();
       const lines = text.length === 0 ? 0 : text.split('\n').length;
@@ -66,7 +66,7 @@ export default function App() {
     if (!host) return;
     filePathRef.current = null;
     setDirty(false);
-    await host.open('', true);
+    await host.open('', undefined, true);
     setStatusText('新建文档（未保存）');
     refreshStats(host);
   }, [refreshStats]);
@@ -83,7 +83,7 @@ export default function App() {
     if (result.path === null) return; // 用户取消
     filePathRef.current = result.path;
     setDirty(false);
-    await host.open(result.content ?? '', true);
+    await host.open(result.content ?? '', undefined, true);
     setStatusText(`已打开 ${result.path}`);
     refreshStats(host);
   }, [refreshStats]);

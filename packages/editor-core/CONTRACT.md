@@ -13,6 +13,13 @@ vendored MarkEdit CoreEditor（TypeScript Editor Core，ADR-0001/0004）。
 | 通过 window.config 读取宿主配置 | 直接访问文件系统 |
 | 通过 bridge 契约通知宿主 | 平台条件编译（`if platform` 逻辑） |
 
+## Public API（平台无关，Mellow 封装层）
+
+- `EditorCore`：mount/ready/open/getText/getState/insertText/replaceText/onEvent/destroy
+- `buildBundleHtml`：CoreEditor 产物 → 平台无关 bundle（config + 桥接注入）
+- `installBridge`：宿主桥注册（__MELLOW_BRIDGE__；Tauri 自动走 __TAURI__）
+- 契约类型：EditorConfig/EditorEvent/BridgeMessage/BridgeAdapter/CoreWebModule/WebModules
+
 ## 依赖（运行时）
 
 `@codemirror/*` + `@lezer/*`（MIT）；`markedit-api`（GitHub，vendor 锁定）。

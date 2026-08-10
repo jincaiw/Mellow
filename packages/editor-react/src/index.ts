@@ -1,22 +1,21 @@
 /**
- * editor-react —— 编辑器 React 封装。
+ * editor-react —— 编辑器 React 绑定层。
  *
- * 提供：
- * - EditorHost：CoreEditor iframe 生命周期管理（无 UI，纯逻辑）
- * - useEditorHost：React hook 薄封装
- * - 桥接契约类型（CoreWebModule/WebModules/EditorConfig）
- * - BRIDGE_INJECTION：构建期注入脚本（消除 CoreEditor 的 webkit 依赖）
- *
- * 依赖：host-api（可选，类型层面无运行时依赖）。
+ * 当前：重新导出 editor-core 的 EditorCore 与契约（React 组件绑定在 Phase 3 UI 时提供）。
+ * 依赖：@mellow/editor-core（platform-neutral 核心）。
  */
 
-export { EditorHost, EDITOR_BUNDLE_URL } from './editorHost';
-export { BRIDGE_INJECTION, isCoreEditorReady } from './bridge';
+export { EditorCore, EDITOR_BUNDLE_URL, installBridge, BRIDGE_INJECTION, buildBundleHtml, DEFAULT_CONFIG } from '../../editor-core/src';
 export type {
+  EditorCoreOptions,
+  EditorConfig,
+  EditorEvent,
+  EditorEventListener,
+  EditorViewState,
   SelectionRange,
   ReplaceGranularity,
+  BridgeMessage,
+  BridgeAdapter,
   CoreWebModule,
   WebModules,
-  NativeMessage,
-  EditorConfig,
-} from './types';
+} from '../../editor-core/src';

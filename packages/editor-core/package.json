@@ -1,0 +1,19 @@
+{
+  "name": "@mellow/editor-core",
+  "version": "0.1.0",
+  "description": "平台无关的编辑器核心（vendored CoreEditor + public API + 平台适配层）",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  }
+}
