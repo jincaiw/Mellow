@@ -2,19 +2,40 @@
 
 本文档约束进入本仓库的 AI agent（以及人类协作者）的工作方式。
 
-## 项目定位
+## 任务开始前的必读流程
 
-Mellow 是基于 MarkEdit 重构的跨平台 Markdown 编辑器。
+所有任务开始前，AI 必须**优先阅读**：
 
-## 最高产品目标
+1. `AGENTS.md`（本文档）
+2. `docs/product/Mellow-PRD-V1.2-FINAL.md`（宪法：产品需求）
 
-1. Typora 级 Live Markdown 使用体验
-2. Windows / macOS / Linux
-3. 默认简体中文，支持完整 i18n
-4. Markdown 源文本为唯一真源
-5. 数据安全、IME、Caret、Undo 优先于新增功能
+然后**只读取当前任务要求的 Spec 和 ADR**，不读无关文档。
 
-任何改动都不得削弱「Typora 体验一致或更优」这一产品承诺。
+## 统一规则（所有任务必须遵守）
+
+1. Mellow 以 MarkEdit 为基础项目。
+2. 保留 MarkEdit CoreEditor，不从零重写编辑器。
+3. Markdown 纯文本是唯一真源。
+4. CodeMirror 6 + Lezer 是编辑器核心。
+5. TypeScript 负责 Editor Core。
+6. Rust 负责 System Core。
+7. React + TypeScript 负责 Desktop UI。
+8. Tauri 2 为首选 Runtime，但必须先通过 Runtime Qualification。
+9. 如果 Tauri 无法达到 Typora 级三平台编辑体验，允许切换 Electron/Chromium。
+10. Windows、macOS、Linux 共用产品语义和核心代码。
+11. 平台差异只能存在于 Adapter / Native Enhancement。
+12. 默认语言简体中文，完整支持 English 和 i18n。
+13. 数据安全、IME、Caret、Undo 优先于新增功能。
+14. Typora 1.14.6 是功能和 UX 验收基线。
+15. 不允许未经要求进行无关重构。
+16. 不允许擅自替换已经 Accepted 的 ADR。
+17. 每完成一个任务必须执行测试并报告结果。
+
+## 架构细则（统一规则的展开，同样不可违反）
+
+- 不允许把 Markdown 转成私有 Rich Text 数据模型（规则 3 的实现约束）。
+- 不允许 UI 直接访问文件系统（文件 IO 归 Rust System Core）。
+- 不允许 Editor Core 直接依赖 Tauri（经 Host Adapter 隔离，保 Electron fallback 可行）。
 
 ## 权威文档
 
@@ -31,19 +52,6 @@ Mellow 是基于 MarkEdit 重构的跨平台 Markdown 编辑器。
 - 功能对标：`docs/specs/typora-parity-checklist.md`
 - 实施顺序：`docs/plans/codex-implementation-plan.md`
 
-## 架构原则（来自 ADR，不可随意推翻）
-
-- 保留 MarkEdit CoreEditor
-- CodeMirror 6 + Lezer
-- TypeScript Editor Core
-- Rust System Core
-- React Desktop UI
-- Tauri 2 首选，但必须通过 Runtime Qualification
-- 不允许把 Markdown 转成私有 Rich Text 数据模型
-- 不允许 UI 直接访问文件系统
-- 不允许 Editor Core 直接依赖 Tauri
-- 平台差异必须下沉到 Adapter
-
 ## 修改规则
 
 修改代码前：
@@ -52,12 +60,12 @@ Mellow 是基于 MarkEdit 重构的跨平台 Markdown 编辑器。
 2. 阅读相关 ADR
 3. 检查已有测试
 4. 只修改当前任务需要的模块
-5. 不进行无关重构
+5. 不进行无关重构（统一规则 15）
 
 完成后必须：
 
-1. 运行测试
-2. 验证 Typora parity
+1. 运行测试（统一规则 17）
+2. 验证 Typora parity（对照 Typora 1.14.6，统一规则 14）
 3. 验证 Undo/Redo
 4. 编辑器改动验证 IME
 5. 文件改动验证 Source Fidelity
@@ -68,7 +76,7 @@ Mellow 是基于 MarkEdit 重构的跨平台 Markdown 编辑器。
 **不要自行修改架构，先报告冲突。**
 
 - 需求冲突：以 PRD V1.2 FINAL 为准；若 spec 与 PRD 冲突，先指出冲突再动手，不得擅自裁决。
-- 决策变更：ADR 是已接受（Accepted）的决策。若要变更，正确做法是**新增 ADR** 并在新 ADR 中说明被取代的旧 ADR；禁止直接改写旧 ADR 的结论。
+- 决策变更：ADR 是已接受（Accepted）的决策。若要变更，正确做法是**新增 ADR** 并在新 ADR 中说明被取代的旧 ADR；禁止直接改写旧 ADR 的结论（统一规则 16）。
 
 ## 工作流约定
 
@@ -85,7 +93,8 @@ docs/product/   # 宪法：PRD（只应有一个 FINAL 版本）
 docs/specs/     # 法律：领域规范，一个领域一个文件
 docs/adr/       # 判决：ADR-XXXX-描述性slug.md，只追加不修改
 docs/plans/     # 施工图：实施计划
-apps/           # 应用代码（待建）
-packages/       # 共享包（待建）
-tests/          # 测试（待建）
+apps/desktop/   # Tauri 2 + React 桌面壳（src/host = Host Adapter 层）
+packages/core-editor/   # vendored MarkEdit CoreEditor（只读，见 UPSTREAM.md）
+packages/editor-engine/ # Mellow Live Markdown 引擎（注入式扩展）
+tests/qualification/    # V0.0 运行时门禁记录
 ```
