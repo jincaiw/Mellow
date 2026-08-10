@@ -1,0 +1,29 @@
+# Fixtures — 测试素材库
+
+供 CoreEditor / editor-engine / parity / 性能测试复用的 Markdown 样本。
+
+## 使用约定
+
+- 每个 fixture 是**合法的 Markdown 文档**（顶部用 HTML 注释标注用途，不影响解析）；
+- 修改 fixture 需同步检查引用它的测试；
+- 新增节点类型（如 Phase 2）时在 `markdown/` 追加对应文件。
+
+## 目录
+
+| 文件 | 覆盖 |
+|---|---|
+| `markdown/heading.md` | ATX H1–H6、setext、空标题 |
+| `markdown/inline-format.md` | Bold/Italic/Strike/InlineCode 及嵌套 |
+| `markdown/list.md` | 无序/有序/嵌套/任务列表 |
+| `markdown/table.md` | 表格（对齐、多行） |
+| `markdown/link-image.md` | 链接、图片（相对路径/中文名） |
+| `markdown/code-fence.md` | 代码块 + 语言标注 |
+| `markdown/quote.md` | 引用、嵌套引用 |
+| `markdown/mixed-document.md` | 综合文档（仿真实写作场景） |
+
+## 用法示例（jest）
+
+```ts
+import { readFileSync } from 'node:fs';
+const doc = readFileSync(new URL('./markdown/heading.md', import.meta.url), 'utf8');
+```

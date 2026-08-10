@@ -88,3 +88,11 @@ mellow/
 - `packages/core-editor/`：MarkEdit CoreEditor vendored（上游 `81da2a20`），**不修改源码**，jest 185 用例全绿
 - `apps/desktop/`：最小 Tauri 2 + React 壳，实现打开/编辑/保存 + Host Adapter 桥接（webkit mock → Tauri IPC）
 - `tests/qualification/`：V0.0 门禁清单；三平台真机 IME/Caret/Clipboard/Print/10MB Gate **尚未覆盖**
+
+## 开发基线
+
+- **架构**：`docs/architecture/`（overview / editor-core / host-adapter / monorepo / migration）
+- **合规**：`THIRD_PARTY_NOTICES.md`（MarkEdit MIT 归属 + 依赖清单）
+- **测试素材**：`tests/fixtures/markdown/`（8 个 fixture）
+- **CI**：`.github/workflows/ci.yml`（CoreEditor test+build / editor-engine test+build / desktop 构建 / Rust check）
+- **引擎**：`packages/editor-engine/`（marker reveal Phase 1，29 用例）

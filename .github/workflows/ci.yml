@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core-editor:
+    name: CoreEditor test + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/core-editor/CoreEditor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: packages/core-editor/CoreEditor/yarn.lock
+      - name: Enable yarn (corepack)
+        run: corepack enable
+      - name: Install
+        run: yarn install --immutable
+      - name: Test
+        run: yarn test
+      - name: Build
+        run: yarn build
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-editor-dist
+          path: packages/core-editor/CoreEditor/dist
+
+  editor-engine:
+    name: editor-engine test + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/editor-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/editor-engine/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  desktop-frontend:
+    name: Desktop frontend build
+    runs-on: ubuntu-latest
+    needs: [core-editor, editor-engine]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Restore CoreEditor dist
+        uses: actions/download-artifact@v4
+        with:
+          name: core-editor-dist
+          path: packages/core-editor/CoreEditor/dist
+      - name: CoreEditor deps (for bundle build)
+        working-directory: packages/core-editor/CoreEditor
+        run: |
+          corepack enable
+          yarn install --immutable
+      - name: editor-engine deps + build
+        working-directory: packages/editor-engine
+        run: |
+          npm ci
+          npm run build
+      - name: Desktop install + build
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+
+  rust-check:
+    name: Rust system core check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Cargo check
+        working-directory: apps/desktop/src-tauri
+        run: cargo check
