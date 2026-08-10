@@ -1,14 +1,18 @@
 {
   "name": "@mellow/host-api",
-  "version": "0.1.0",
-  "description": "Mellow 系统能力契约（PRD §116 DesktopHost）— 纯类型包",
+  "version": "0.2.0",
+  "description": "Mellow 系统能力契约（PRD §116 DesktopHost + notification/opener）— 纯类型包 + Null/Mock",
   "private": true,
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "test": "jest"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.0.0",
     "typescript": "^5.0.0"
   }
 }

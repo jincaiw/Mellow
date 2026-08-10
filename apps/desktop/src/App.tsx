@@ -76,15 +76,16 @@ export default function App() {
     const documents = documentsRef.current;
     if (!host || !documents) return;
     const result = await documents.open();
-    if (result.error) {
-      setStatusText(`打开失败: ${result.error}`);
+    if (!result.ok) {
+      if (result.error.code !== 'canceled') {
+        setStatusText(`打开失败: ${result.error.message}`);
+      }
       return;
     }
-    if (result.path === null) return; // 用户取消
-    filePathRef.current = result.path;
+    filePathRef.current = result.value.path;
     setDirty(false);
-    await host.open(result.content ?? '', undefined, true);
-    setStatusText(`已打开 ${result.path}`);
+    await host.open(result.value.content, undefined, true);
+    setStatusText(`已打开 ${result.value.path}`);
     refreshStats(host);
   }, [refreshStats]);
 
@@ -94,13 +95,15 @@ export default function App() {
     if (!host || !documents) return;
     const content = host.getText();
     const result = await documents.save(filePathRef.current, content);
-    if (result.error) {
-      setStatusText(`保存失败: ${result.error}`);
+    if (!result.ok) {
+      if (result.error.code !== 'canceled') {
+        setStatusText(`保存失败: ${result.error.message}`);
+      }
       return;
     }
-    filePathRef.current = result.path;
+    filePathRef.current = result.value.path;
     setDirty(false);
-    setStatusText(`已保存 ${result.path}`);
+    setStatusText(`已保存 ${result.value.path}`);
   }, []);
 
   const handleSaveAs = useCallback(async () => {
@@ -109,13 +112,15 @@ export default function App() {
     if (!host || !documents) return;
     const content = host.getText();
     const result = await documents.save(null, content);
-    if (result.error) {
-      setStatusText(`另存失败: ${result.error}`);
+    if (!result.ok) {
+      if (result.error.code !== 'canceled') {
+        setStatusText(`另存失败: ${result.error.message}`);
+      }
       return;
     }
-    filePathRef.current = result.path;
+    filePathRef.current = result.value.path;
     setDirty(false);
-    setStatusText(`已另存 ${result.path}`);
+    setStatusText(`已另存 ${result.value.path}`);
   }, []);
 
   return (
