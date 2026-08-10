@@ -7,10 +7,11 @@
 | 项 | 状态 |
 |---|---|
 | CoreEditor vendored（上游固定 SHA） | ✅ 见 `packages/core-editor/UPSTREAM.md` |
-| CoreEditor jest 测试 | 见下方运行方式 |
+| CoreEditor jest 测试 | ✅ 185/185 |
 | React + Tauri 2 最小 shell（apps/desktop） | 骨架 |
 | 桥接（webkit mock → Tauri IPC） | 实现 |
 | 文件打开/保存（dialog + atomic write） | 实现 |
+| **Live Markdown 引擎 Phase 1（@mellow/editor-engine）** | ✅ 29/29 测试 |
 | 中文 IME 真机验证（macOS WKWebView） | ⏳ 待本机 GUI 验证 |
 | Windows WebView2 验证 | ⛔ 未覆盖（需 Windows 真机） |
 | Linux WebKitGTK 验证 | ⛔ 未覆盖（需 Linux 真机） |
@@ -25,10 +26,15 @@
 ```sh
 # 1. 构建 CoreEditor（packages/core-editor/CoreEditor）
 npx -y yarn@4.17.1 install --immutable
-npx -y yarn@4.17.1 test        # jest：CoreEditor 核心逻辑
+npx -y yarn@4.17.1 test        # jest：CoreEditor 核心逻辑（185）
 npx -y yarn@4.17.1 build       # 产物 dist/index.html
 
-# 2. 生成 Mellow editor bundle（注入 config + 桥接 mock）
+# 1b. 构建 Live Markdown 引擎（packages/editor-engine）
+npm install
+npm test                       # jest：marker reveal（29）
+npm run build                  # 产物 dist/（宿主构建时自动集成）
+
+# 2. 生成 Mellow editor bundle（注入 config + 桥接 + 引擎）
 cd apps/desktop && node scripts/build-editor-bundle.mjs
 
 # 3. 前端
