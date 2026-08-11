@@ -18,6 +18,7 @@ import { installCompositionTracking } from './composition';
 
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
+export * from './table';
 export {
   registerNode,
   registerHeadingNode,
