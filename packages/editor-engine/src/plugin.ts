@@ -18,11 +18,10 @@
 
 import type { EditorView, ViewUpdate, DecorationSet, Decoration as DecorationT } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
-import type { SyntaxNodeRef, SyntaxNode } from '@lezer/common';
 
 import { registerBuiltinNodes, contentNodeNames, markerNodeNames, extractMarkers, getNodeSpec } from './nodes';
 import { classifyNodeState, shouldHideMarkers } from './state';
-import type { RevealContext } from './types';
+import type { RevealContext, MarkerRange } from './types';
 import { isComposing } from './composition';
 import { isSourceMode } from './mode';
 
@@ -56,17 +55,6 @@ function resolveCm(): CmRuntime {
 }
 
 /** 找 marker 所属的顶层内容节点（沿父链向上，如 EmphasisMark → Emphasis/StrongEmphasis） */
-function topContentAncestor(node: SyntaxNodeRef, names: ReadonlySet<string>): SyntaxNode | null {
-  let current: SyntaxNode | null = node.node.parent;
-  let top: SyntaxNode | null = null;
-  while (current !== null) {
-    if (names.has(current.name)) {
-      top = current;
-    }
-    current = current.parent;
-  }
-  return top;
-}
 
 /**
  * 构建引擎扩展。
@@ -85,6 +73,7 @@ export function buildMarkerRevealExtension(): Extension {
     const { state } = view;
     const main = state.selection.main;
     const builder = new RangeSetBuilder<DecorationT>();
+    const pending: Array<{ from: number; to: number }> = [];
 
     // Viewport-only（spec §20）；jsdom/无布局环境 visibleRanges 为空 → fallback 全文档
     const ranges = view.visibleRanges.length > 0
@@ -96,50 +85,65 @@ export function buildMarkerRevealExtension(): Extension {
         from,
         to,
         enter: (node) => {
-          if (!markerNames.has(node.name)) {
+          // 按内容节点处理：一次收集其全部 marker 子节点（mixed 判定需要整节点视角）
+          if (!contentNames.has(node.name)) {
             return;
           }
-
-          // invalid / partial parse 防护
           if (node.from < 0 || node.to > state.doc.length || node.from >= node.to) {
-            return;
+            return; // invalid / partial parse
           }
-
-          // 内容祖先 + 节点规格（未注册 → source，安全）
-          const ancestor = topContentAncestor(node, contentNames);
-          if (ancestor === null) {
-            return;
-          }
-          const spec = getNodeSpec(ancestor.name);
+          const spec = getNodeSpec(node.name);
           if (spec === null) {
             return;
           }
 
-          const parent = { from: ancestor.from, text: state.sliceDoc(ancestor.from, ancestor.to) };
-          const markers = extractMarkers(spec, { from: node.from, to: node.to, name: node.name }, parent);
-          if (markers === null || markers.length === 0) {
-            return; // invalid → source（不隐藏）
+          const parent = { from: node.from, text: state.sliceDoc(node.from, node.to) };
+          const markers: MarkerRange[] = [];
+
+          // 遍历直接 marker 子节点（嵌套内容节点各自处理自己的 marker）
+          const cursor = node.node.cursor();
+          if (cursor.firstChild()) {
+            do {
+              if (markerNames.has(cursor.type.name)) {
+                const childInfo = {
+                  from: cursor.from,
+                  to: cursor.to,
+                  name: cursor.type.name,
+                  text: state.sliceDoc(cursor.from, cursor.to),
+                };
+                const extracted = extractMarkers(spec, childInfo, parent) ?? [];
+                markers.push(...extracted);
+              }
+            } while (cursor.nextSibling());
+          }
+          if (markers.length === 0) {
+            return;
           }
 
-          // Reveal policy（spec §5）：状态机判定（可被 NodeSpec.classify 定制）
+          const nodeInfo = { from: node.from, to: node.to, text: parent.text };
           const ctx: RevealContext = {
             caret: main,
             composing: isComposing(),
             forceSource: isSourceMode(), // Source Mode（spec §5.5）
           };
           const visual = spec.classify
-            ? spec.classify(ancestor, markers, ctx)
-            : classifyNodeState(ancestor, markers, ctx);
+            ? spec.classify(nodeInfo, markers, ctx)
+            : classifyNodeState(nodeInfo, markers, ctx);
 
-          // rendered → 隐藏全部 marker
-          if (!shouldHideMarkers(visual)) {
-            return;
-          }
-          for (const m of markers) {
-            builder.add(m.from, m.to, Decoration.mark({ class: MARKER_CLASS }));
-          }
+          // 决定隐藏的 marker 子集（mixed 节点部分隐藏，spec §4/§12）
+          const hidden = spec.hiddenMarkers
+            ? spec.hiddenMarkers(nodeInfo, markers, ctx, visual)
+            : shouldHideMarkers(visual) ? markers : [];
+
+          pending.push(...hidden);
         },
       });
+    }
+
+    // RangeSetBuilder 要求按 from 升序添加（嵌套节点批次可能乱序）
+    pending.sort((a, b) => a.from - b.from);
+    for (const m of pending) {
+      builder.add(m.from, m.to, Decoration.mark({ class: MARKER_CLASS }));
     }
 
     return builder.finish();

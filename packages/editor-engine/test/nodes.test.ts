@@ -43,7 +43,7 @@ describe('节点注册表', () => {
     });
     const spec = getNodeSpec('ListMark');
     expect(spec).not.toBeNull();
-    const markers = extractMarkers(spec!, { from: 10, to: 12, name: 'CustomMarker' }, { from: 10, text: '- item' });
+    const markers = extractMarkers(spec!, { from: 10, to: 12, name: 'CustomMarker', text: '' }, { from: 10, text: '- item' });
     expect(markers).toEqual([{ from: 10, to: 12 }]);
   });
 });
@@ -51,20 +51,20 @@ describe('节点注册表', () => {
 describe('marker 提取', () => {
   test('默认提取：marker 子节点自身范围', () => {
     const spec = getNodeSpec('StrongEmphasis')!;
-    const markers = extractMarkers(spec, { from: 2, to: 4, name: 'EmphasisMark' }, { from: 0, text: '**bold**' });
+    const markers = extractMarkers(spec, { from: 2, to: 4, name: 'EmphasisMark', text: '**' }, { from: 0, text: '**bold**' });
     expect(markers).toEqual([{ from: 2, to: 4 }]);
   });
 
   test('Heading 提取：`#` + 空格（绝对偏移）', () => {
     const spec = getNodeSpec('ATXHeading1')!;
-    const markers = extractMarkers(spec, { from: 0, to: 1, name: 'HeaderMark' }, { from: 0, text: '# Title' });
+    const markers = extractMarkers(spec, { from: 0, to: 1, name: 'HeaderMark', text: '#' }, { from: 0, text: '# Title' });
     expect(markers).toEqual([{ from: 0, to: 2 }]); // '# '
 
-    const markers2 = extractMarkers(spec, { from: 0, to: 1, name: 'HeaderMark' }, { from: 0, text: '#Title' });
+    const markers2 = extractMarkers(spec, { from: 0, to: 1, name: 'HeaderMark', text: '#' }, { from: 0, text: '#Title' });
     expect(markers2).toEqual([{ from: 0, to: 1 }]); // 无空格
 
     // 非 heading 文本 → null（source）
-    const markers3 = extractMarkers(spec, { from: 0, to: 1, name: 'HeaderMark' }, { from: 0, text: 'plain' });
+    const markers3 = extractMarkers(spec, { from: 0, to: 1, name: 'HeaderMark', text: '#' }, { from: 0, text: 'plain' });
     expect(markers3).toBeNull();
   });
 });

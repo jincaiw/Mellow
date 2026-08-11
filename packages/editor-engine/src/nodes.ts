@@ -7,6 +7,7 @@
  */
 
 import type { NodeSpec, MarkerRange } from './types';
+import { intersects } from './types';
 
 /** 内容节点名 → NodeSpec 注册表 */
 const registry = new Map<string, NodeSpec>();
@@ -42,7 +43,7 @@ export function markerNodeNames(): ReadonlySet<string> {
 /** 计算 marker 子节点的隐藏范围（默认：子节点自身范围；heading 定制含空格） */
 export function extractMarkers(
   spec: NodeSpec,
-  node: { from: number; to: number; name: string },
+  node: { from: number; to: number; name: string; text: string },
   parent: { from: number; text: string },
 ): MarkerRange[] | null {
   if (spec.extractMarkers) {
@@ -107,6 +108,97 @@ export function registerSetextNode(): void {
   });
 }
 
+/**
+ * Link（inline/reference）：spec §12 mixed 模型。
+ * - idle：link text 显示，URL + 括号隐藏
+ * - caret in text：text-marker（`[` `]`）显示，URL 隐藏
+ * - caret in URL：URL + 括号显示，text-marker 隐藏
+ * - selection 碰 marker → source（全显示）
+ */
+export function registerLinkNode(): void {
+  registerNode({
+    contentNodeNames: ['Link'],
+    markerNodeNames: ['LinkMark', 'URL', 'LinkLabel'],
+    extractMarkers: (node) => {
+      if (node.name === 'URL') {
+        return [{ from: node.from, to: node.to, kind: 'url' }];
+      }
+      if (node.name === 'LinkLabel') {
+        return [{ from: node.from, to: node.to, kind: 'label' }];
+      }
+      // LinkMark：'[' ']' → text-marker；'(' ')' → url-marker
+      const kind = node.text === '[' || node.text === ']' ? 'text-marker' : 'url-marker';
+      return [{ from: node.from, to: node.to, kind }];
+    },
+    classify: (node, markers, ctx) => {
+      if (ctx.forceSource) {
+        return 'source';
+      }
+      // selection（非 caret）碰 marker → source（spec §5.2）；caret 碰 marker 走 mixed
+      const isCaret = ctx.caret.anchor === ctx.caret.head;
+      if (!isCaret && markers.some((m) => intersects(ctx.caret.anchor, ctx.caret.head, m.from, m.to))) {
+        return 'source';
+      }
+      // caret 在节点内 → mixed（部分显示，spec §12）
+      if (intersects(ctx.caret.anchor, ctx.caret.head, node.from, node.to)) {
+        return 'mixed';
+      }
+      return 'rendered';
+    },
+    hiddenMarkers: (node, markers, ctx, state) => {
+      if (state === 'source') {
+        return [];
+      }
+      const caret = ctx.caret;
+      // URL 区间：'(' 之后到 ')' 之前（inline）；无括号（reference/autolink）→ 无 URL 区
+      const open = node.text.indexOf('(');
+      const close = node.text.lastIndexOf(')');
+      const inUrl = open !== -1 && close > open
+        && caret.head > node.from + open && caret.head < node.from + close;
+      const inText = intersects(caret.anchor, caret.head, node.from, node.to) && !inUrl;
+      return markers.filter((m) => {
+        if (m.kind === 'url' || m.kind === 'url-marker') {
+          return !inUrl; // URL + 括号：caret 在 URL 内才显示
+        }
+        return !inText; // text-marker/label：caret 在 text 内才显示
+      });
+    },
+  });
+}
+
+/**
+ * Autolink（<url>）：idle 隐藏尖括号，URL 常显（它是文本内容）。
+ */
+export function registerAutolinkNode(): void {
+  registerNode({
+    contentNodeNames: ['Autolink'],
+    markerNodeNames: ['LinkMark', 'URL'],
+    extractMarkers: (node) => {
+      if (node.name === 'URL') {
+        return [{ from: node.from, to: node.to, kind: 'url' }];
+      }
+      return [{ from: node.from, to: node.to, kind: 'bracket' }];
+    },
+    classify: (node, _markers, ctx) => {
+      if (ctx.forceSource) {
+        return 'source';
+      }
+      return intersects(ctx.caret.anchor, ctx.caret.head, node.from, node.to) ? 'mixed' : 'rendered';
+    },
+    hiddenMarkers: (node, markers, ctx, state) => {
+      if (state === 'source') {
+        return [];
+      }
+      // caret 在节点内（mixed）→ 全部显示（尖括号可见）；idle → 只隐藏尖括号
+      const inNode = intersects(ctx.caret.anchor, ctx.caret.head, node.from, node.to);
+      if (inNode) {
+        return [];
+      }
+      return markers.filter((m) => m.kind === 'bracket');
+    },
+  });
+}
+
 /** 注册全部内置节点（幂等） */
 let builtinRegistered = false;
 export function registerBuiltinNodes(): void {
@@ -117,6 +209,8 @@ export function registerBuiltinNodes(): void {
   registerHeadingNode();
   registerSetextNode();
   registerInlineNodes();
+  registerLinkNode();
+  registerAutolinkNode();
 }
 
 // ─────────────────────────── 兼容导出（原 markers.ts 语义） ───────────────────────────

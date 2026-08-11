@@ -5,10 +5,12 @@
 /** 节点视觉状态（spec §4） */
 export type NodeVisualState = 'source' | 'rendered' | 'mixed' | 'invalid';
 
-/** 应被视觉隐藏的 marker 范围 */
+/** 应被视觉隐藏的 marker 范围（kind 供 mixed 节点区分类型） */
 export interface MarkerRange {
   from: number;
   to: number;
+  /** marker 类型（默认 'marker'；link 用 'url'/'text-marker'/'url-marker'） */
+  kind?: string;
 }
 
 /** Reveal 判定上下文（spec §5：caret/selection/composition/source-mode/setting） */
@@ -38,12 +40,18 @@ export interface NodeSpec {
    * 返回 null → 按 source 处理（不隐藏，安全 fallback / invalid）。
    * 默认实现返回子节点自身范围；heading 等需定制（含空格）。
    */
-  extractMarkers?(node: { from: number; to: number; name: string }, parent: { from: number; text: string }): MarkerRange[] | null;
+  extractMarkers?(node: { from: number; to: number; name: string; text: string }, parent: { from: number; text: string }): MarkerRange[] | null;
   /**
    * 节点视觉状态分类：默认用通用 reveal policy（caret/selection/forceSource）。
    * 需要 mixed 语义的节点（link/image/table）可定制（spec §12/13/17）。
    */
-  classify?(node: { from: number; to: number }, markers: MarkerRange[], ctx: RevealContext): NodeVisualState;
+  classify?(node: { from: number; to: number; text: string }, markers: MarkerRange[], ctx: RevealContext): NodeVisualState;
+  /**
+   * 返回「应隐藏」的 marker 子集（mixed 部分隐藏，spec §4 mixed）。
+   * 默认：state === 'rendered' → 全部；否则无。
+   * link 定制：按 caret 在 text/url 区域决定隐藏哪些 marker（spec §12）。
+   */
+  hiddenMarkers?(node: { from: number; to: number; text: string }, markers: MarkerRange[], ctx: RevealContext, state: NodeVisualState): MarkerRange[];
 }
 
 /** 区间相交（闭区间，caret 在边界内即 intersects，spec §5.1/5.2） */
