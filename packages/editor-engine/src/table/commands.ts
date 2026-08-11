@@ -152,10 +152,13 @@ export function setColumnAlignment(view: EditorView, model: TableModel, col: num
 
 /** Tidy：完整重新对齐（spec §6：唯一允许 full reformat 的命令）——Phase 1 标记实现点 */
 export function tidyTable(view: EditorView, model: TableModel): void {
-  // 计算每列最大宽度，重排所有行
+  // 计算每列最大宽度（跳过 delimiter 行——对齐标记不参与宽度）
   const widths = Array.from({ length: model.columnCount }, (_, c) => {
     let max = 0;
     for (const row of model.rows) {
+      if (row.isDelimiter) {
+        continue;
+      }
       const cell = row.cells[c];
       if (cell !== undefined) {
         max = Math.max(max, cell.text.length);
