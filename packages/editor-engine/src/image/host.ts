@@ -7,7 +7,16 @@
  * - 无宿主：createNullImageHost
  */
 
-import type { Result } from '../../../host-api/src/types';
+type ImageHostErrorCode = 'not-implemented' | 'io' | 'unknown';
+
+interface ImageHostError {
+  code: ImageHostErrorCode;
+  message: string;
+}
+
+type Result<T> =
+  | { ok: true; value?: T }
+  | { ok: false; error: ImageHostError };
 
 /** 文件来源（spec §2 输入渠道） */
 export type ImageSourceKind = 'file' | 'bitmap' | 'url';

@@ -20,6 +20,10 @@
 | `markdown/code-fence.md` | 代码块 + 语言标注 |
 | `markdown/quote.md` | 引用、嵌套引用 |
 | `markdown/mixed-document.md` | 综合文档（仿真实写作场景） |
+| `clipboard/rich-clipboard.html` | 富文本剪贴板：中文、格式、表格和恶意 HTML |
+| `clipboard/dangerous-rich-clipboard.html` | 安全测试：script、event handler、javascript/data URL 与 Unicode |
+| `clipboard/spreadsheet.tsv` | 电子表格 TSV → GFM Table |
+| `clipboard/spreadsheet-unicode.tsv` | TSV：中文、emoji、pipe 转义 |
 
 ## 用法示例（jest）
 
