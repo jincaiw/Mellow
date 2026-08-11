@@ -27,6 +27,7 @@ export {
   registerAutolinkNode,
   registerListNode,
   registerBlockquoteNode,
+  registerCodeFenceNode,
   registerBuiltinNodes,
   getNodeSpec,
   extractMarkers,

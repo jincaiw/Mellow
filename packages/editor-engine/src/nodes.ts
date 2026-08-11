@@ -252,6 +252,19 @@ export function registerBlockquoteNode(): void {
   });
 }
 
+/**
+ * Code Fence（spec §16）：source-oriented 节点。
+ * - code 内容始终 source（引擎永不隐藏）；
+ * - fenced delimiters（```）保持可见；
+ * - 无 marker —— 显式注册保护，防止未来误隐藏 code 内容。
+ */
+export function registerCodeFenceNode(): void {
+  registerNode({
+    contentNodeNames: ['FencedCode', 'CodeBlock'],
+    markerNodeNames: [],
+  });
+}
+
 /** 注册全部内置节点（幂等） */
 let builtinRegistered = false;
 export function registerBuiltinNodes(): void {
@@ -266,6 +279,7 @@ export function registerBuiltinNodes(): void {
   registerAutolinkNode();
   registerListNode();
   registerBlockquoteNode();
+  registerCodeFenceNode();
 }
 
 // ─────────────────────────── 兼容导出（原 markers.ts 语义） ───────────────────────────
