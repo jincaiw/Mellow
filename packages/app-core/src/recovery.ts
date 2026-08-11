@@ -16,7 +16,8 @@ import type {
 } from '../../host-api/src/index';
 
 export class RecoveryService {
-  private pending: RecoveryPayload | null = null;
+  /** 每文档待写快照（keyed by documentId，多文档互不覆盖） */
+  private pending = new Map<string, RecoveryPayload>();
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -24,9 +25,9 @@ export class RecoveryService {
     private readonly debounceMs = 800,
   ) {}
 
-  /** 编辑变更 → 防抖快照（多次编辑合并为一次写入） */
+  /** 编辑变更 → 防抖快照（同文档多次编辑合并；不同文档各自保留最新） */
   scheduleSnapshot(snapshot: RecoveryPayload): void {
-    this.pending = snapshot;
+    this.pending.set(snapshot.documentId, snapshot);
     if (this.timer !== null) {
       clearTimeout(this.timer);
     }
@@ -36,18 +37,17 @@ export class RecoveryService {
     }, this.debounceMs);
   }
 
-  /** 立即保存待写快照（主动 flush / 窗口关闭前） */
+  /** 立即保存全部待写快照（主动 flush / 窗口关闭前） */
   async flush(): Promise<void> {
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    const snapshot = this.pending;
-    this.pending = null;
-    if (snapshot === null) {
-      return;
+    const snapshots = [...this.pending.values()];
+    this.pending.clear();
+    for (const snapshot of snapshots) {
+      await this.storage.save(snapshot);
     }
-    await this.storage.save(snapshot);
   }
 
   /** 启动发现：列出未恢复快照 */
