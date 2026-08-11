@@ -18,11 +18,13 @@ import { buildTableToolbarExtension } from './table/toolbar';
 import { installCompositionTracking } from './composition';
 import { buildImageExtensions } from './image';
 import { buildSmartPasteExtension } from './smartPaste';
+import { buildClipboardCopyExtension } from './clipboardCopy';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
 export * from './image';
 export * from './smartPaste';
+export * from './clipboardCopy';
 export {
   registerNode,
   registerHeadingNode,
@@ -60,6 +62,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
     buildTableToolbarExtension(),
+    buildClipboardCopyExtension(),
     buildSmartPasteExtension(),
     buildImageExtensions(),
   ];
