@@ -75,6 +75,6 @@ export class RecoveryService {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    this.pending = null;
+    this.pending.clear();
   }
 }
