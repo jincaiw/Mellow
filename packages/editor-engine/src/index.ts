@@ -19,6 +19,7 @@ export { buildMarkerRevealExtension, MARKER_CLASS } from './plugin';
 export {
   registerNode,
   registerHeadingNode,
+  registerSetextNode,
   registerInlineNodes,
   registerBuiltinNodes,
   getNodeSpec,
@@ -30,6 +31,7 @@ export {
   headingMarkerEnd,
 } from './nodes';
 export { classifyNodeState, shouldHideMarkers, shouldShowMarkers } from './state';
+export { setSourceMode, isSourceMode, resetModeState } from './mode';
 export { intersects } from './types';
 export type { NodeVisualState, NodeSpec, MarkerRange, RevealContext } from './types';
 

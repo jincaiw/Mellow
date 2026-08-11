@@ -96,6 +96,17 @@ export function registerInlineNodes(): void {
   });
 }
 
+/**
+ * Setext Heading：`标题\n===` / `标题\n---`。
+ * marker = HeaderMark 子节点（下划线），默认提取（子节点自身范围）。
+ */
+export function registerSetextNode(): void {
+  registerNode({
+    contentNodeNames: ['SetextHeading1', 'SetextHeading2'],
+    markerNodeNames: ['HeaderMark'],
+  });
+}
+
 /** 注册全部内置节点（幂等） */
 let builtinRegistered = false;
 export function registerBuiltinNodes(): void {
@@ -104,6 +115,7 @@ export function registerBuiltinNodes(): void {
   }
   builtinRegistered = true;
   registerHeadingNode();
+  registerSetextNode();
   registerInlineNodes();
 }
 

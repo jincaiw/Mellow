@@ -24,6 +24,7 @@ import { registerBuiltinNodes, contentNodeNames, markerNodeNames, extractMarkers
 import { classifyNodeState, shouldHideMarkers } from './state';
 import type { RevealContext } from './types';
 import { isComposing } from './composition';
+import { isSourceMode } from './mode';
 
 /** 隐藏 marker 的 class（CSS: font-size: 0） */
 export const MARKER_CLASS = 'mellow-md-marker';
@@ -121,7 +122,11 @@ export function buildMarkerRevealExtension(): Extension {
           }
 
           // Reveal policy（spec §5）：状态机判定（可被 NodeSpec.classify 定制）
-          const ctx: RevealContext = { caret: main, composing: isComposing() };
+          const ctx: RevealContext = {
+            caret: main,
+            composing: isComposing(),
+            forceSource: isSourceMode(), // Source Mode（spec §5.5）
+          };
           const visual = spec.classify
             ? spec.classify(ancestor, markers, ctx)
             : classifyNodeState(ancestor, markers, ctx);
