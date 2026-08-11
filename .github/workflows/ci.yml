@@ -62,6 +62,9 @@ jobs:
       - name: document-model unit tests
         working-directory: packages/document-model
         run: npm test
+      - name: app-core unit tests
+        working-directory: packages/app-core
+        run: npm test
 
   editor-engine:
     name: editor-engine test + build

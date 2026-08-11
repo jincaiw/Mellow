@@ -70,6 +70,37 @@ export type Encoding = 'utf-8' | 'utf-8-bom' | 'utf-16le' | 'utf-16be' | 'latin1
 /** 行尾 */
 export type LineEnding = '\n' | '\r\n' | '\r';
 
+/** 恢复快照（AppData，keyed by document id，spec §6；与 Auto Save 分离） */
+export interface RecoveryCursor {
+  anchor: number;
+  head: number;
+}
+
+export interface RecoveryScroll {
+  top: number;
+  left: number;
+}
+
+export interface RecoveryPayload {
+  documentId: string;
+  path: string | null;
+  content: string;
+  revision: number;
+  encoding: Encoding;
+  eol: LineEnding;
+  cursor: RecoveryCursor | null;
+  scroll: RecoveryScroll | null;
+  savedAt: number;
+}
+
+/** 启动发现条目 */
+export interface RecoveryEntry {
+  documentId: string;
+  path: string | null;
+  revision: number;
+  savedAt: number;
+}
+
 /** 系统通知请求 */
 export interface NotificationRequest {
   title: string;

@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod fs;
+pub mod recovery;
 
 use tauri::Manager;
 
@@ -20,6 +21,10 @@ pub fn run() {
             bridge::bridge_call,
             fs::open_document,
             fs::save_document,
+            recovery::recovery_save,
+            recovery::recovery_list,
+            recovery::recovery_get,
+            recovery::recovery_delete,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();

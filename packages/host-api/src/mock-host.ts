@@ -6,7 +6,7 @@
  */
 
 import type { DesktopHost } from './host';
-import type { Result, Size, SearchResult, NotificationRequest, FileFilter } from './types';
+import type { Result, Size, SearchResult, NotificationRequest, FileFilter, RecoveryPayload, RecoveryEntry } from './types';
 import { ok, err } from './types';
 import type {
   OpenFileOptions,
@@ -50,6 +50,8 @@ export interface MockHostState {
   identityKey: string;
   /** keychain */
   secrets: Map<string, string>;
+  /** recovery 快照存储（内存，keyed by documentId） */
+  recovery: Map<string, RecoveryPayload>;
 }
 
 export function createMockHostState(initial?: Partial<MockHostState>): MockHostState {
@@ -76,6 +78,7 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     lastSaveMeta: initial?.lastSaveMeta ?? null,
     nextMtimeMs: initial?.nextMtimeMs ?? 1000,
     identityKey: initial?.identityKey ?? 'mock:1',
+    recovery: new Map(initial?.recovery ?? []),
   };
 }
 
@@ -290,6 +293,29 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
     notification: {
       show: async (request: NotificationRequest): Promise<Result<void>> => {
         state.notifications.push(request);
+        return ok(undefined);
+      },
+    },
+
+    recovery: {
+      save: async (payload: RecoveryPayload): Promise<Result<void>> => {
+        state.recovery.set(payload.documentId, payload);
+        return ok(undefined);
+      },
+      list: async (): Promise<Result<RecoveryEntry[]>> => {
+        const entries: RecoveryEntry[] = [...state.recovery.values()].map((p) => ({
+          documentId: p.documentId,
+          path: p.path,
+          revision: p.revision,
+          savedAt: p.savedAt,
+        }));
+        return ok(entries);
+      },
+      get: async (documentId: string): Promise<Result<RecoveryPayload | null>> => {
+        return ok(state.recovery.get(documentId) ?? null);
+      },
+      delete: async (documentId: string): Promise<Result<void>> => {
+        state.recovery.delete(documentId);
         return ok(undefined);
       },
     },

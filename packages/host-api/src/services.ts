@@ -15,6 +15,8 @@ import type {
   NotificationRequest,
   Encoding,
   LineEnding,
+  RecoveryPayload,
+  RecoveryEntry,
 } from './types';
 
 // ─────────────────────────── fs ───────────────────────────
@@ -184,6 +186,23 @@ export interface ProcessService {
 /** 系统通知服务 */
 export interface NotificationService {
   show(request: NotificationRequest): Promise<Result<void>>;
+}
+
+// ─────────────────────────── recovery（新增） ───────────────────────────
+
+/**
+ * 崩溃恢复存储（spec §6）：AppData only，与 Auto Save 分离。
+ * 快照 keyed by document id；保存成功后 delete（cleanup）。
+ */
+export interface RecoveryStorage {
+  /** 写入/覆盖快照（原子） */
+  save(payload: RecoveryPayload): Promise<Result<void>>;
+  /** 启动发现：列出全部未恢复快照 */
+  list(): Promise<Result<RecoveryEntry[]>>;
+  /** 读取指定文档快照（恢复用） */
+  get(documentId: string): Promise<Result<RecoveryPayload | null>>;
+  /** 删除快照（保存成功 cleanup / 用户忽略） */
+  delete(documentId: string): Promise<Result<void>>;
 }
 
 // ─────────────────────────── opener（新增） ───────────────────────────

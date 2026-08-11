@@ -3,3 +3,4 @@
  */
 
 export { DocumentService, createAppServices } from './document';
+export { RecoveryService } from './recovery';

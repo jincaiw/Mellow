@@ -257,6 +257,55 @@ describe('opener', () => {
   });
 });
 
+describe('recovery', () => {
+  const payload = {
+    documentId: 'doc-1',
+    path: '/a.md',
+    content: '# crash content',
+    revision: 3,
+    encoding: 'utf-8' as const,
+    eol: '\n' as const,
+    cursor: { anchor: 1, head: 2 },
+    scroll: null,
+    savedAt: 1000,
+  };
+
+  test('save → list/get 往返（document-id mapping）', async () => {
+    const state = createMockHostState();
+    const host = createMockHost(state);
+    await host.recovery.save(payload);
+
+    const list = await host.recovery.list();
+    expect(list.ok).toBe(true);
+    if (list.ok) {
+      expect(list.value).toEqual([{ documentId: 'doc-1', path: '/a.md', revision: 3, savedAt: 1000 }]);
+    }
+
+    const got = await host.recovery.get('doc-1');
+    expect(got).toEqual({ ok: true, value: payload });
+  });
+
+  test('cleanup after successful save：delete 后 list 为空', async () => {
+    const host = createMockHost();
+    await host.recovery.save(payload);
+    await host.recovery.delete('doc-1');
+    const list = await host.recovery.list();
+    expect(list.ok && list.value.length === 0).toBe(true);
+    expect(await host.recovery.get('doc-1')).toEqual({ ok: true, value: null });
+  });
+
+  test('multiple documents 独立', async () => {
+    const host = createMockHost();
+    await host.recovery.save(payload);
+    await host.recovery.save({ ...payload, documentId: 'doc-2', content: 'BBB' });
+    const list = await host.recovery.list();
+    expect(list.ok && list.value.length === 2).toBe(true);
+    await host.recovery.delete('doc-1');
+    const listAfter = await host.recovery.list();
+    if (listAfter.ok) expect(listAfter.value.length).toBe(1);
+  });
+});
+
 describe('isOk 辅助', () => {
   test('判别 ok 分支', async () => {
     const r = await HOST.fs.exists('/dev.md');

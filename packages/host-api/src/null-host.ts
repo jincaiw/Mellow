@@ -67,6 +67,12 @@ export function createNullHost(): DesktopHost {
       kill: notImplemented('process.kill'),
     },
     notification: { show: notImplemented('notification.show') },
+    recovery: {
+      save: notImplemented('recovery.save'),
+      list: notImplemented('recovery.list'),
+      get: notImplemented('recovery.get'),
+      delete: notImplemented('recovery.delete'),
+    },
     opener: {
       openPath: notImplemented('opener.openPath'),
       revealInFolder: notImplemented('opener.revealInFolder'),

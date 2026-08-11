@@ -88,3 +88,33 @@ html, body, #root {
   border-top: 1px solid #e0e0e0;
   user-select: none;
 }
+
+.recovery-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: #fff8e1;
+  border-top: 1px solid #e6d9a8;
+  flex-wrap: wrap;
+}
+
+.recovery-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: #fffdf5;
+  border: 1px solid #e6d9a8;
+  border-radius: 4px;
+}
+
+.recovery-item button {
+  padding: 1px 8px;
+  font-size: 11px;
+  border: 1px solid #d0c48f;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
