@@ -26,6 +26,10 @@ export function createNullHost(): DesktopHost {
       exists: notImplemented('fs.exists'),
       rename: notImplemented('fs.rename'),
       delete: notImplemented('fs.delete'),
+      copyFile: notImplemented('fs.copyFile'),
+      mkdir: notImplemented('fs.mkdir'),
+      writeBinary: notImplemented('fs.writeBinary'),
+      readBinary: notImplemented('fs.readBinary'),
     },
     dialog: {
       showOpen: notImplemented('dialog.showOpen'),

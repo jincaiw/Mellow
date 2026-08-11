@@ -100,9 +100,48 @@ export const tauriFileService: FileService = {
   },
   writeText: async (path: string, _content: string) => err({ code: 'not-implemented', message: 'writeText 待实现', path }),
   readDir: async () => err({ code: 'not-implemented', message: 'readDir 待实现' }),
-  exists: async () => err({ code: 'not-implemented', message: 'exists 待实现' }),
+  exists: async (path: string) => {
+    try {
+      const r = await invoke<boolean>('path_exists', { path });
+      return ok(r);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
   rename: async () => err({ code: 'not-implemented', message: 'rename 待实现' }),
   delete: async () => err({ code: 'not-implemented', message: 'delete 待实现' }),
+  copyFile: async (from: string, to: string) => {
+    try {
+      await invoke('copy_file', { from, to });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  mkdir: async (path: string) => {
+    try {
+      await invoke('mkdir', { path });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  writeBinary: async (path: string, data: ArrayBuffer) => {
+    try {
+      await invoke('write_binary', { path, data: Array.from(new Uint8Array(data)) });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  readBinary: async (path: string) => {
+    try {
+      const r = await invoke<number[]>('read_binary', { path });
+      return ok(new Uint8Array(r).buffer as ArrayBuffer);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
 };
 
 /** 浏览器 dev 模式文件服务（host-api 官方 mock） */

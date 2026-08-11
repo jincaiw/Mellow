@@ -173,7 +173,7 @@ export function buildTableToolbarExtension(): Extension {
   // Escape 关闭 toolbar；Source/Live 模式切换也需重算（selectionSet 覆盖）
   const { keymap: cmKeymap } = cmView;
   const escapeKeymap = cmKeymap.of([
-    { key: 'Escape', run: () => { hideTableToolbar(); return true; } },
+    { key: 'Escape', run: (view) => { hideTableToolbar(); view.dispatch({ selection: view.state.selection }); return true; } },
   ]);
   return [plugin, toolbarStyle(cmView.EditorView), escapeKeymap];
 }

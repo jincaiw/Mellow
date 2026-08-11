@@ -114,6 +114,14 @@ export class EditorCore {
     this.iframe?.contentWindow?.focus();
   }
 
+  /** 设置当前文档路径（Image Workflow 相对路径解析，engine 读 window.__MELLOW_DOC_PATH__） */
+  setDocumentPath(path: string | null): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_DOC_PATH__?: string | null }) | null;
+    if (win) {
+      win.__MELLOW_DOC_PATH__ = path;
+    }
+  }
+
   /** 销毁 */
   destroy(): void {
     this.iframe?.remove();

@@ -180,6 +180,24 @@ export default function App() {
     hostRef.current = host;
     host.mount(containerRef.current);
 
+    // Tauri drag-drop：桌面宿主把拖入文件路径注入 iframe（engine image input 消费）
+    let unlistenDragDrop: (() => void) | undefined;
+    if ('__TAURI_INTERNALS__' in window) {
+      import('@tauri-apps/api/webview')
+        .then(({ getCurrentWebview }) => {
+          getCurrentWebview().onDragDropEvent((event) => {
+            if (event.payload.type === 'drop') {
+              const frame = containerRef.current?.querySelector('iframe');
+              const win = frame?.contentWindow as (Window & { __MELLOW_DROP_PATHS__?: string[] }) | null;
+              if (win) {
+                win.__MELLOW_DROP_PATHS__ = event.payload.paths;
+              }
+            }
+          }).then((unlisten) => { unlistenDragDrop = unlisten; });
+        })
+        .catch(() => { /* 浏览器 dev：无 drag-drop 注入 */ });
+    }
+
     host
       .ready()
       .then(async () => {
@@ -214,6 +232,7 @@ export default function App() {
       });
 
     return () => {
+      unlistenDragDrop?.();
       host.destroy();
       recoveryRef.current?.dispose();
       void externalRef.current?.stop();
@@ -224,6 +243,7 @@ export default function App() {
     const host = hostRef.current;
     if (!host) return;
     filePathRef.current = null;
+    host.setDocumentPath(null);
     docIdRef.current = crypto.randomUUID(); // 新文档新 id
     revisionRef.current = 0;
     docMetaRef.current = { encoding: 'utf-8', eol: '\n' }; // 新文档默认 UTF-8/LF
@@ -248,6 +268,7 @@ export default function App() {
       return;
     }
     filePathRef.current = result.value.path;
+    host.setDocumentPath(result.value.path); // Image Workflow：相对路径解析基准
     docIdRef.current = crypto.randomUUID(); // 打开新文档新 id（历史/恢复隔离）
     revisionRef.current = 0;
     docMetaRef.current = { encoding: result.value.encoding, eol: result.value.eol }; // preserve metadata
@@ -281,6 +302,7 @@ export default function App() {
       return;
     }
     filePathRef.current = result.value.path;
+    host.setDocumentPath(result.value.path);
     diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
@@ -305,6 +327,7 @@ export default function App() {
       return;
     }
     filePathRef.current = result.value.path;
+    host.setDocumentPath(result.value.path);
     diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;

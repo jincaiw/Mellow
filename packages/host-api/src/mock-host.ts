@@ -20,6 +20,8 @@ import type {
 export interface MockHostState {
   /** 内存文件系统：path → content */
   files: Map<string, string>;
+  /** 二进制文件：path → data */
+  binaryFiles: Map<string, ArrayBuffer>;
   /** 文件系统目录结构（供 readDir） */
   dirs: Set<string>;
   clipboardText: string;
@@ -59,6 +61,7 @@ export interface MockHostState {
 export function createMockHostState(initial?: Partial<MockHostState>): MockHostState {
   return {
     files: new Map(initial?.files ?? [['/dev.md', '# Mellow dev doc']]),
+    binaryFiles: new Map(initial?.binaryFiles ?? []),
     dirs: new Set(initial?.dirs ?? ['/']),
     clipboardText: initial?.clipboardText ?? '',
     clipboardHTML: initial?.clipboardHTML ?? null,
@@ -154,7 +157,7 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
         return ok(entries);
       },
       exists: async (path: string): Promise<Result<boolean>> => {
-        return ok(state.files.has(normalizePath(path)));
+        return ok(state.files.has(normalizePath(path)) || state.binaryFiles.has(normalizePath(path)));
       },
       rename: async (from: string, to: string): Promise<Result<void>> => {
         const content = state.files.get(normalizePath(from));
@@ -167,7 +170,32 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
       },
       delete: async (path: string): Promise<Result<void>> => {
         state.files.delete(normalizePath(path));
+        state.binaryFiles.delete(normalizePath(path));
         return ok(undefined);
+      },
+      copyFile: async (from: string, to: string): Promise<Result<void>> => {
+        const nFrom = normalizePath(from);
+        const content = state.files.get(nFrom);
+        if (content === undefined) {
+          return err({ code: 'not-found', message: `File not found: ${from}`, path: from });
+        }
+        state.files.set(normalizePath(to), content);
+        return ok(undefined);
+      },
+      mkdir: async (path: string): Promise<Result<void>> => {
+        state.dirs.add(normalizePath(path));
+        return ok(undefined);
+      },
+      writeBinary: async (path: string, data: ArrayBuffer): Promise<Result<void>> => {
+        state.binaryFiles.set(normalizePath(path), data.slice(0));
+        return ok(undefined);
+      },
+      readBinary: async (path: string): Promise<Result<ArrayBuffer>> => {
+        const data = state.binaryFiles.get(normalizePath(path));
+        if (data === undefined) {
+          return err({ code: 'not-found', message: `File not found: ${path}`, path });
+        }
+        return ok(data.slice(0));
       },
     },
 

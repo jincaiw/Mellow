@@ -83,6 +83,14 @@ export interface FileService {
   exists(path: string): Promise<Result<boolean>>;
   rename(from: string, to: string): Promise<Result<void>>;
   delete(path: string): Promise<Result<void>>;
+  /** 复制文件（图片 copy-to-assets，spec image-workflow §3） */
+  copyFile(from: string, to: string): Promise<Result<void>>;
+  /** 递归建目录（asset dir） */
+  mkdir(path: string): Promise<Result<void>>;
+  /** 写二进制（bitmap 落盘） */
+  writeBinary(path: string, data: ArrayBuffer): Promise<Result<void>>;
+  /** 读二进制（图片复制/检测） */
+  readBinary(path: string): Promise<Result<ArrayBuffer>>;
 }
 
 // ─────────────────────────── dialog ───────────────────────────

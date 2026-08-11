@@ -12,6 +12,7 @@ import { EditorSelection } from '@codemirror/state';
 import type { TableModel, TableCell } from './parser';
 import { parseTable, nextCell, prevCell } from './parser';
 import { addRow } from './commands';
+import { isComposing } from '../composition';
 
 /** 运行时获取 CM 模块（iframe 内与 CoreEditor 同一实例） */
 function requireCm<T>(id: string): T {
@@ -56,6 +57,9 @@ function moveToCell(view: EditorView, cell: TableCell): void {
 }
 
 function handleTab(view: EditorView, shift: boolean): boolean {
+  if (isComposing()) {
+    return true; // IME 合成期间不导航（不干扰 composition，spec §8）
+  }
   const sel = view.state.selection.main;
   const ctx = tableContext(view, sel.head);
   if (ctx === null) {
@@ -100,6 +104,9 @@ function refreshModel(view: EditorView, old: TableModel): TableModel | null {
 }
 
 function handleCtrlEnter(view: EditorView): boolean {
+  if (isComposing()) {
+    return true;
+  }
   const sel = view.state.selection.main;
   const ctx = tableContext(view, sel.head);
   if (ctx === null) {

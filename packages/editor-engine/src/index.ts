@@ -16,10 +16,11 @@ import { buildMarkerRevealExtension } from './plugin';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
 import { buildTableToolbarExtension } from './table/toolbar';
 import { installCompositionTracking } from './composition';
-
+import { buildImageExtensions } from './image';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
+export * from './image';
 export {
   registerNode,
   registerHeadingNode,
@@ -57,5 +58,6 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
     buildTableToolbarExtension(),
+    buildImageExtensions(),
   ];
 }

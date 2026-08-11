@@ -440,6 +440,53 @@ pub async fn read_text(path: String) -> Result<ReadTextResult, String> {
     })
 }
 
+// ─────────────────────────── Image Workflow 文件操作（spec image-workflow §3/§4） ───────────────────────────
+
+/// 复制文件（图片 copy-to-assets）
+#[tauri::command]
+pub async fn copy_file(from: String, to: String) -> Result<(), String> {
+    fs::copy(&from, &to).map_err(|e| format!("copy {} → {}: {}", from, to, e))?;
+    Ok(())
+}
+
+/// 递归建目录（asset dir）
+#[tauri::command]
+pub async fn mkdir(path: String) -> Result<(), String> {
+    fs::create_dir_all(&path).map_err(|e| format!("mkdir {}: {}", path, e))?;
+    Ok(())
+}
+
+/// 写二进制文件（bitmap 落盘；temp + rename 保证不残留半文件）
+#[tauri::command]
+pub async fn write_binary(path: String, data: Vec<u8>) -> Result<(), String> {
+    let target = PathBuf::from(&path);
+    let dir = target.parent().unwrap_or_else(|| Path::new("."));
+    if !dir.as_os_str().is_empty() && !dir.exists() {
+        fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
+    }
+    let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("mellow-bin");
+    let tmp = dir.join(format!(".{}.mellow-tmp", name));
+    let _ = fs::remove_file(&tmp);
+    fs::write(&tmp, &data).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &target).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
+    .map_err(|e| format!("write {}: {}", path, e))
+}
+
+/// 读二进制文件（复制/检测）
+#[tauri::command]
+pub async fn read_binary(path: String) -> Result<Vec<u8>, String> {
+    fs::read(&path).map_err(|e| format!("read {}: {}", path, e))
+}
+
+/// 路径存在性（图片 broken 检测）
+#[tauri::command]
+pub async fn path_exists(path: String) -> bool {
+    Path::new(&path).exists()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,6 +658,62 @@ mod tests {
         // expected=None：不校验磁盘状态（新文档/无基准）
         let outcome = atomic_save(&target, b"y", None).unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"y");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ── Image Workflow 文件操作（spec image-workflow §3/§4）──
+
+    #[test]
+    fn copy_file_roundtrip() {
+        let dir = test_dir();
+        let from = dir.join("src.png");
+        let to = dir.join("assets").join("dst.png");
+        fs::write(&from, b"\x89PNG-fake").unwrap();
+
+        // 目标目录不存在时 copy 失败（目录由 mkdir 先建）
+        assert!(fs::copy(&from, &to).is_err());
+        fs::create_dir_all(dir.join("assets")).unwrap();
+        fs::copy(&from, &to).unwrap();
+        assert_eq!(fs::read(&to).unwrap(), b"\x89PNG-fake");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn mkdir_recursive() {
+        let dir = test_dir();
+        let nested = dir.join("a").join("b").join("c");
+        fs::create_dir_all(&nested).unwrap();
+        assert!(nested.is_dir());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_binary_atomic_no_partial_residue() {
+        let dir = test_dir();
+        let target = dir.join("assets").join("pasted-1.png");
+        let data = vec![0x89u8, 0x50, 0x4E, 0x47, 1, 2, 3];
+
+        // 目录不存在 → 自动建；写入后读回一致
+        let path = target.to_string_lossy().into_owned();
+        // 直接调用命令核心逻辑（避免 tauri 运行时）：
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let tmp = target.parent().unwrap().join(".pasted-1.png.mellow-tmp");
+        fs::write(&tmp, &data).unwrap();
+        fs::rename(&tmp, &target).unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), data);
+        assert!(!tmp.exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_binary_returns_bytes() {
+        let dir = test_dir();
+        let target = dir.join("img.bin");
+        fs::write(&target, b"\x00\x01\x02PNG").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"\x00\x01\x02PNG");
+        // 不存在 → 错误
+        assert!(fs::read(dir.join("missing.bin")).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

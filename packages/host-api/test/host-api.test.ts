@@ -105,6 +105,30 @@ describe('fs', () => {
     await host.fs.delete('/dir/b.md');
     expect(await host.fs.exists('/dir/b.md')).toEqual({ ok: true, value: false });
   });
+
+  test('copyFile / mkdir / writeBinary / readBinary（Image Workflow）', async () => {
+    const host = createMockHost({ files: new Map([['/docs/a.png', 'fake']]) });
+    // mkdir + copyFile
+    expect(await host.fs.mkdir('/docs/assets')).toEqual({ ok: true, value: undefined });
+    expect(await host.fs.copyFile('/docs/a.png', '/docs/assets/a.png')).toEqual({ ok: true, value: undefined });
+    expect(await host.fs.exists('/docs/assets/a.png')).toEqual({ ok: true, value: true });
+    // copyFile 源不存在 → not-found
+    const missing = await host.fs.copyFile('/nope.png', '/docs/assets/nope.png');
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.error.code).toBe('not-found');
+    // writeBinary + readBinary roundtrip
+    const data = new Uint8Array([137, 80, 78, 71]).buffer as ArrayBuffer;
+    expect(await host.fs.writeBinary('/docs/assets/pasted.png', data)).toEqual({ ok: true, value: undefined });
+    const read = await host.fs.readBinary('/docs/assets/pasted.png');
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      const bytes = new Uint8Array(read.value);
+      expect(Array.from(bytes)).toEqual([137, 80, 78, 71]);
+    }
+    // readBinary 不存在 → not-found
+    const gone = await host.fs.readBinary('/docs/assets/gone.png');
+    expect(gone.ok).toBe(false);
+  });
 });
 
 describe('dialog', () => {

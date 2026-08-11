@@ -44,6 +44,18 @@ const tauriBridgeAdapter = `<script>
         return window.__TAURI__.core.invoke('bridge_call', { message: message });
       }
     };
+    // 图片资源 URL 解析（本地绝对路径 → asset:// URL；URL/data 原样）
+    try {
+      var convertFileSrc = window.__TAURI__.core.convertFileSrc;
+      window.__MELLOW_ASSET_RESOLVER__ = function (src) {
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(src) || src.indexOf('data:') === 0) return src;
+        try { return typeof convertFileSrc === 'function' ? convertFileSrc(src) : src; } catch (e) { return src; }
+      };
+    } catch (e) {}
+    // 拖拽路径缓冲（desktop 宿主经 webview onDragDropEvent 写入；engine drop 时消费）
+    if (typeof window.__MELLOW_DROP_PATHS__ === 'undefined') {
+      window.__MELLOW_DROP_PATHS__ = [];
+    }
   }
 })();
 </script>`;
@@ -60,6 +72,12 @@ window.MellowEditorEngine = MellowEngine;
 (function () {
   function tryInit() {
     if (window.MarkEdit && typeof window.MarkEdit.addExtension === 'function') {
+      try {
+        // image 扩展（桥接 host：fs 经 __MELLOW_BRIDGE__、资源 URL 经 __MELLOW_ASSET_RESOLVER__）
+        window.MarkEdit.addExtension(MellowEngine.buildImageExtensions(MellowEngine.createBridgeImageHost()));
+      } catch (e) {
+        console.error('[mellow] image extensions install failed', e);
+      }
       try {
         window.MarkEdit.addExtension(MellowEngine.install());
       } catch (e) {
