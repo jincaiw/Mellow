@@ -1,8 +1,11 @@
 pub mod bridge;
 pub mod fs;
 pub mod recovery;
+pub mod watcher;
 
 use tauri::Manager;
+
+use watcher::{DebounceState, WatcherRegistry};
 
 /// Web→Native 消息（与 CoreEditor nativeModule.ts 格式一致）
 #[derive(serde::Deserialize)]
@@ -21,11 +24,16 @@ pub fn run() {
             bridge::bridge_call,
             fs::open_document,
             fs::save_document,
+            fs::read_text,
             recovery::recovery_save,
             recovery::recovery_list,
             recovery::recovery_get,
             recovery::recovery_delete,
+            watcher::watch_document,
+            watcher::unwatch_document,
         ])
+        .manage(WatcherRegistry::default())
+        .manage(DebounceState::default())
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
             let _ = window.set_title("Mellow V0.0 — Runtime Qualification");

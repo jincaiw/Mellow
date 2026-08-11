@@ -52,6 +52,8 @@ export interface MockHostState {
   secrets: Map<string, string>;
   /** recovery 快照存储（内存，keyed by documentId） */
   recovery: Map<string, RecoveryPayload>;
+  /** watcher 回调存储（测试可手动触发） */
+  watchCallbacks: Map<string, (event: import('./services').FileChangeEvent) => void>;
 }
 
 export function createMockHostState(initial?: Partial<MockHostState>): MockHostState {
@@ -79,6 +81,7 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     nextMtimeMs: initial?.nextMtimeMs ?? 1000,
     identityKey: initial?.identityKey ?? 'mock:1',
     recovery: new Map(initial?.recovery ?? []),
+    watchCallbacks: new Map(initial?.watchCallbacks ?? []),
   };
 }
 
@@ -224,9 +227,9 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
     },
 
     watcher: {
-      watch: async (path: string, onChange: () => void): Promise<Result<() => void>> => {
-        // Mock：立即注册，返回取消函数（onChange 由外部测试触发）
-        return ok(() => { void path; void onChange; });
+      watch: async (path: string, onChange: (event: import('./services').FileChangeEvent) => void): Promise<Result<() => void>> => {
+        state.watchCallbacks.set(path, onChange);
+        return ok(() => state.watchCallbacks.delete(path));
       },
     },
 

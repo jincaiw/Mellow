@@ -9,10 +9,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorCore } from '../../../packages/editor-core/src';
-import { DocumentService, RecoveryService } from '../../../packages/app-core/src';
+import { DocumentService, RecoveryService, ExternalChangeService } from '../../../packages/app-core/src';
+import type { ExternalChangeDetail } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
-import type { Encoding, LineEnding, RecoveryEntry } from '../../../packages/host-api/src/index';
+import { createDesktopWatcher } from './host/watcherAdapter';
+import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent } from '../../../packages/host-api/src/index';
 
 type EditorStatus = 'idle' | 'ready' | 'error';
 
@@ -27,6 +29,9 @@ export default function App() {
   const filePathRef = useRef<string | null>(null);
   const documentsRef = useRef<DocumentService | null>(null);
   const recoveryRef = useRef<RecoveryService | null>(null);
+  const externalRef = useRef<ExternalChangeService | null>(null);
+  // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
+  const dirtyRef = useRef(false);
   // Crash Recovery：文档 id + 修订（快照 keyed by document id）
   const docIdRef = useRef<string>(crypto.randomUUID());
   const revisionRef = useRef(0);
@@ -37,10 +42,103 @@ export default function App() {
 
   const [status, setStatus] = useState<EditorStatus>('idle');
   const [statusText, setStatusText] = useState('未加载');
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirtyState] = useState(false);
   const [stats, setStats] = useState('');
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
+  // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
+  const [conflict, setConflict] = useState<ExternalChangeDetail | null>(null);
+
+  const setDirty = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirtyState(value);
+  }, []);
+
+  const refreshStats = useCallback((host: EditorCore) => {
+    try {
+      const text = host.getText();
+      const lines = text.length === 0 ? 0 : text.split('\n').length;
+      setStats(`字符 ${text.length} · 行 ${lines}`);
+    } catch {
+      setStats('');
+    }
+  }, []);
+
+  // ── 外部文件变化检测（spec §5）──
+
+  /** 外部变化（clean）→ 自动重载，保持 caret/scroll（documentChanged=false） */
+  const handleCleanChange = useCallback(async (event: FileChangeEvent) => {
+    const host = hostRef.current;
+    const documents = documentsRef.current;
+    if (!host || !documents || !event.path) return;
+    const r = await documents.readPath(event.path);
+    if (!r.ok) {
+      setStatusText(`自动重载失败: ${r.error.message}`);
+      return;
+    }
+    docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
+    diskStateRef.current = r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined
+      ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
+      : null;
+    // documentChanged=false → CoreEditor resetEditor 保持 scroll + selection
+    await host.open(r.value.content, undefined, false);
+    setDirty(false);
+    setStatusText('外部变更已自动重新加载（保持光标位置）');
+    refreshStats(host);
+  }, [refreshStats, setDirty]);
+
+  /** 冲突：比较（读磁盘版本，显示差异摘要，不修改本地） */
+  const handleConflictCompare = useCallback(async () => {
+    if (!conflict) return;
+    const host = hostRef.current;
+    const documents = documentsRef.current;
+    if (!host || !documents) return;
+    const r = await documents.readPath(conflict.path);
+    const local = host.getText();
+    if (!r.ok) {
+      setStatusText(`读取磁盘版本失败: ${r.error.message}`);
+      return;
+    }
+    const diskLines = r.value.content.split('\n').length;
+    const localLines = local.split('\n').length;
+    setStatusText(`比较：磁盘 ${diskLines} 行 vs 本地 ${localLines} 行（未修改本地）`);
+  }, [conflict]);
+
+  /** 冲突：重新加载磁盘版本（放弃本地修改） */
+  const handleConflictReloadDisk = useCallback(async () => {
+    if (!conflict) return;
+    const host = hostRef.current;
+    const documents = documentsRef.current;
+    if (!host || !documents) return;
+    const r = await documents.readPath(conflict.path);
+    if (!r.ok) {
+      setStatusText(`重新加载失败: ${r.error.message}`);
+      return;
+    }
+    docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
+    diskStateRef.current = r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined
+      ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
+      : null;
+    await host.open(r.value.content, undefined, true); // 放弃本地
+    setDirty(false);
+    setConflict(null);
+    setStatusText('已重新加载磁盘版本（本地修改已放弃）');
+    refreshStats(host);
+  }, [conflict, refreshStats, setDirty]);
+
+  /** 冲突：保留 Mellow 版本（后续保存允许覆盖磁盘） */
+  const handleConflictKeepLocal = useCallback(() => {
+    diskStateRef.current = null; // 保存跳过 validate（用户已知情）
+    setConflict(null);
+    setStatusText('已保留本地版本（保存时将覆盖磁盘）');
+  }, []);
+
+  /** 监听当前文档路径（外部变化检测） */
+  const watchDocument = useCallback(async (path: string | null) => {
+    const external = externalRef.current;
+    if (!external || !path) return;
+    await external.start(path);
+  }, []);
 
   /** 组装当前文档恢复快照并防抖写入（与 Auto Save 分离：只写 AppData） */
   const scheduleRecoverySnapshot = useCallback((host: EditorCore) => {
@@ -60,11 +158,23 @@ export default function App() {
     });
   }, []);
 
-  // 挂载编辑器 + 文件服务 + Recovery
+  // 挂载编辑器 + 文件服务 + Recovery + 外部变化检测
   useEffect(() => {
     if (!containerRef.current) return;
     documentsRef.current = new DocumentService(createDesktopFileService());
     recoveryRef.current = new RecoveryService(createDesktopRecoveryStorage());
+    externalRef.current = new ExternalChangeService(createDesktopWatcher(), {
+      getDiskState: () => {
+        const d = diskStateRef.current;
+        return { mtimeMs: d?.mtimeMs ?? null, identityKey: d?.identityKey ?? null };
+      },
+      isDirty: () => dirtyRef.current,
+      onCleanChange: (e) => { void handleCleanChange(e); },
+      onConflict: (d) => setConflict(d),
+      updateDiskState: (mtimeMs, identityKey) => {
+        diskStateRef.current = { mtimeMs, identityKey };
+      },
+    });
 
     const host = new EditorCore();
     hostRef.current = host;
@@ -106,18 +216,9 @@ export default function App() {
     return () => {
       host.destroy();
       recoveryRef.current?.dispose();
+      void externalRef.current?.stop();
     };
-  }, [scheduleRecoverySnapshot]);
-
-  const refreshStats = useCallback((host: EditorCore) => {
-    try {
-      const text = host.getText();
-      const lines = text.length === 0 ? 0 : text.split('\n').length;
-      setStats(`字符 ${text.length} · 行 ${lines}`);
-    } catch {
-      setStats('');
-    }
-  }, []);
+  }, [handleCleanChange, scheduleRecoverySnapshot]);
 
   const handleNew = useCallback(async () => {
     const host = hostRef.current;
@@ -127,11 +228,13 @@ export default function App() {
     revisionRef.current = 0;
     docMetaRef.current = { encoding: 'utf-8', eol: '\n' }; // 新文档默认 UTF-8/LF
     diskStateRef.current = null; // 新文档无磁盘基准（保存时跳过 validate）
+    setConflict(null);
     setDirty(false);
     await host.open('', undefined, true);
+    await watchDocument(null); // 未保存文档不监听
     setStatusText('新建文档（未保存）');
     refreshStats(host);
-  }, [refreshStats]);
+  }, [refreshStats, watchDocument]);
 
   const handleOpen = useCallback(async () => {
     const host = hostRef.current;
@@ -151,11 +254,13 @@ export default function App() {
     diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
+    setConflict(null);
     setDirty(false);
     await host.open(result.value.content, undefined, true);
+    await watchDocument(result.value.path); // 开始外部变化检测
     setStatusText(`已打开 ${result.value.path}`);
     refreshStats(host);
-  }, [refreshStats]);
+  }, [refreshStats, watchDocument]);
 
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
@@ -182,8 +287,9 @@ export default function App() {
     setDirty(false);
     // 保存成功 → cleanup recovery（spec §4 clear recovery snapshot）
     void recoveryRef.current?.onSaved(docIdRef.current);
+    await watchDocument(result.value.path);
     setStatusText(`已保存 ${result.value.path}`);
-  }, []);
+  }, [watchDocument]);
 
   const handleSaveAs = useCallback(async () => {
     const host = hostRef.current;
@@ -204,8 +310,9 @@ export default function App() {
       : null;
     setDirty(false);
     void recoveryRef.current?.onSaved(docIdRef.current);
+    await watchDocument(result.value.path);
     setStatusText(`已另存 ${result.value.path}`);
-  }, []);
+  }, [watchDocument]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -276,6 +383,14 @@ export default function App() {
         <span className={`status ${status}`}>{statusText}</span>
       </header>
       <main className="editor-container" ref={containerRef} />
+      {conflict !== null && (
+        <div className="recovery-bar conflict-bar">
+          <span>磁盘文件已被外部修改（{conflict.kind}）—— 禁止覆盖：</span>
+          <button onClick={() => void handleConflictCompare()}>比较</button>
+          <button onClick={() => void handleConflictReloadDisk()}>重新加载磁盘版本</button>
+          <button onClick={handleConflictKeepLocal}>保留 Mellow 版本</button>
+        </div>
+      )}
       {recoveryEntries.length > 0 && (
         <div className="recovery-bar">
           <span>发现 {recoveryEntries.length} 个未恢复文档：</span>

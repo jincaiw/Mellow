@@ -413,6 +413,33 @@ pub async fn save_document(
     }
 }
 
+/// 直接按路径读取文本（外部变化 auto reload 用，无对话框）
+#[derive(serde::Serialize)]
+pub struct ReadTextResult {
+    pub path: String,
+    pub content: String,
+    pub encoding: String,
+    pub eol: String,
+    pub mtime_ms: u64,
+    pub identity_key: String,
+}
+
+#[tauri::command]
+pub async fn read_text(path: String) -> Result<ReadTextResult, String> {
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    let (content, encoding) = decode(&bytes);
+    let eol = detect_eol(&content);
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    Ok(ReadTextResult {
+        path,
+        content,
+        encoding: encoding.to_string(),
+        eol: eol.to_string(),
+        mtime_ms: mtime_ms(&meta),
+        identity_key: identity_key(&meta),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

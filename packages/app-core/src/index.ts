@@ -4,3 +4,5 @@
 
 export { DocumentService, createAppServices } from './document';
 export { RecoveryService } from './recovery';
+export { ExternalChangeService } from './externalChange';
+export type { ExternalChangeDetail, ExternalChangeServiceOptions } from './externalChange';

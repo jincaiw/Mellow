@@ -73,8 +73,31 @@ export const tauriFileService: FileService = {
       identityKey: r.identity_key ?? undefined,
     });
   },
-  openPath: async (path: string) => err({ code: 'not-implemented', message: 'openPath 待实现', path }),
-  readText: async (path: string) => err({ code: 'not-implemented', message: 'readText 待实现', path }),
+  openPath: async (path: string) => {
+    try {
+      const r = await invoke<TauriOpenResponse & { error?: string }>('read_text', { path });
+      if (r.error) return err({ code: 'io', message: r.error, path });
+      return ok({
+        path,
+        content: r.content ?? '',
+        encoding: (r.encoding as Encoding) ?? 'utf-8',
+        eol: (r.eol as LineEnding) ?? '\n',
+        diskMtimeMs: r.disk_mtime_ms ?? undefined,
+        identityKey: r.identity_key ?? undefined,
+      });
+    } catch (e) {
+      return err({ code: 'io', message: String(e), path });
+    }
+  },
+  readText: async (path: string) => {
+    try {
+      const r = await invoke<TauriOpenResponse & { error?: string }>('read_text', { path });
+      if (r.error) return err({ code: 'io', message: r.error, path });
+      return ok(r.content ?? '');
+    } catch (e) {
+      return err({ code: 'io', message: String(e), path });
+    }
+  },
   writeText: async (path: string, _content: string) => err({ code: 'not-implemented', message: 'writeText 待实现', path }),
   readDir: async () => err({ code: 'not-implemented', message: 'readDir 待实现' }),
   exists: async () => err({ code: 'not-implemented', message: 'exists 待实现' }),

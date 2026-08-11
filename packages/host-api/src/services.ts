@@ -135,10 +135,20 @@ export interface WindowService {
 
 // ─────────────────────────── watcher ───────────────────────────
 
-/** 文件监听服务（ADR-0009 外部变更检测） */
+/** 外部文件变化事件（含磁盘状态，供 detectExternalChange） */
+export interface FileChangeEvent {
+  path: string;
+  /** 磁盘 mtime（epoch ms；文件已删除时为 0） */
+  mtimeMs: number;
+  /** 文件身份键（删除时为空） */
+  identityKey: string;
+  kind: 'modify' | 'rename' | 'remove' | 'create';
+}
+
+/** 文件监听服务（ADR-0009 外部变更检测，spec §5） */
 export interface WatchService {
   /** 监听路径变化；返回取消订阅函数 */
-  watch(path: string, onChange: () => void): Promise<Result<() => void>>;
+  watch(path: string, onChange: (event: FileChangeEvent) => void): Promise<Result<() => void>>;
 }
 
 // ─────────────────────────── search ───────────────────────────

@@ -30,6 +30,11 @@ export class DocumentService {
   save(path: string | null, content: string, options?: SaveOptions): Promise<Result<WriteFileResult>> {
     return this.fs.save(path, content, options);
   }
+
+  /** 直接按路径读取（外部变化 auto reload / 比较用，无对话框） */
+  readPath(path: string): Promise<Result<OpenFileResult>> {
+    return this.fs.openPath(path);
+  }
 }
 
 /** 宿主服务门面：把 DesktopHost 注入到 app-core 各服务（V0.x 只暴露文档） */

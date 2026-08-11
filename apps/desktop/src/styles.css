@@ -118,3 +118,17 @@ html, body, #root {
   background: #fff;
   cursor: pointer;
 }
+
+.conflict-bar {
+  background: #fdecea;
+  border-top-color: #e6b8b0;
+}
+
+.conflict-bar button {
+  border-color: #d8a098;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: #fff;
+}
