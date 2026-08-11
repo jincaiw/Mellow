@@ -86,7 +86,45 @@ export function joinPaths(...parts: string[]): string {
     if (p === '') continue;
     joined = `${joined}/${p}`;
   }
-  return joined;
+  // 归一化 `.` 段（`/./` → `/`；`./x` → `x`）；`..` 不解析（保持原样拼接）
+  return joined.replace(/\/\.\//g, '/').replace(/^\.\//, '');
+}
+
+/**
+ * 词法归一化路径：解析 `.` / `..` 段（不访问文件系统）。
+ * - 不越过根（drive/UNC/POSIX 根；相对路径不越过开头）
+ * - URL 原样返回
+ */
+export function normalizePath(p: string): string {
+  const n = normalizeSlashes(p);
+  if (isUrl(n) || n === '') {
+    return n;
+  }
+  const segs = splitSegments(n);
+  const out: string[] = [];
+  for (const s of segs) {
+    if (s === '.' || s === '') {
+      continue;
+    }
+    if (s === '..') {
+      if (out.length > 1) {
+        out.pop(); // 不越过根
+      }
+      continue;
+    }
+    out.push(s);
+  }
+  if (out.length === 0) {
+    return n.startsWith('/') ? '/' : '';
+  }
+  const first = out[0];
+  if (/^[a-zA-Z]:$/.test(first) || first.startsWith('//')) {
+    return `${first}/${out.slice(1).join('/')}`;
+  }
+  if (first === '/') {
+    return `/${out.slice(1).join('/')}`;
+  }
+  return out.join('/');
 }
 
 /** 分割路径段（保留 drive/UNC 前缀段） */
@@ -193,7 +231,7 @@ export function resolveImageSrc(src: string, docDir: string | null): string | nu
   if (docDir === null) {
     return null; // 未保存文档 + 相对路径 → 无法解析
   }
-  return joinPaths(docDir, src);
+  return normalizePath(joinPaths(docDir, src));
 }
 
 /** 图片扩展名检测（spec §3 insert 判定） */

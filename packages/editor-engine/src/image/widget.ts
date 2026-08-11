@@ -12,9 +12,38 @@ import type { EditorView, ViewUpdate, DecorationSet } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isSourceMode } from '../mode';
 import type { ImageHost } from './host';
+import { attachEngineView, trackImageWidget, registerEngineImageApi } from './engineApi';
+import { isRemoteSrc } from './scan';
 
 const IMG_WRAPPER_CLASS = 'mellow-md-image';
 const IMG_BROKEN_CLASS = 'mellow-md-image-broken';
+const IMG_ACTIONS_CLASS = 'mellow-md-image-actions';
+
+/** 图片 widget 操作请求（宿主注入 __MELLOW_IMAGE_ACTIONS__ handler 处理；V0.0 最小操作集） */
+export type ImageWidgetAction =
+  | 'reveal'
+  | 'open'
+  | 'rename'
+  | 'move'
+  | 'copy'
+  | 'copyPath'
+  | 'downloadRemote';
+
+export interface ImageWidgetActionRequest {
+  /** 原始 src（未反转义） */
+  src: string;
+  action: ImageWidgetAction;
+}
+
+/** 宿主注入的操作 handler（desktop App 接线到 app-core 编排） */
+export type ImageWidgetActionsHandler = (request: ImageWidgetActionRequest) => void;
+
+const ACTIONS_GLOBAL_KEY = '__MELLOW_IMAGE_ACTIONS__' as const;
+
+function getActionsHandler(): ImageWidgetActionsHandler | null {
+  const win = window as unknown as Record<string, unknown>;
+  return typeof win[ACTIONS_GLOBAL_KEY] === 'function' ? (win[ACTIONS_GLOBAL_KEY] as ImageWidgetActionsHandler) : null;
+}
 
 /** 运行时 CM6 模块（iframe 内与 CoreEditor 同一实例） */
 interface CmRuntime {
@@ -69,12 +98,19 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     private container: HTMLSpanElement | null = null;
     private resolvedUrl: string | null = null;
     private broken = false;
+    private untrack: (() => void) | null = null;
 
     constructor(
       readonly spec: ImageSpec,
     ) {
       super();
+      this.untrack = trackImageWidget({ retry: this.retry.bind(this), dispose: () => this.destroy() });
       void this.resolve();
+    }
+
+    override destroy(): void {
+      this.untrack?.();
+      this.untrack = null;
     }
 
     override eq(other: ImageWidget): boolean {
@@ -118,6 +154,11 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
         this.render();
       });
       this.container.appendChild(img);
+      // 悬停操作条（宿主注入 handler 时显示；spec §6 单图操作入口）
+      const bar = buildActionsBar(this.spec);
+      if (bar !== null) {
+        this.container.appendChild(bar);
+      }
     }
 
     private retry(): void {
@@ -161,6 +202,45 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     return el;
   }
 
+  /** 悬停操作条（spec §6 单图操作；宿主注入 handler 时显示） */
+  function buildActionsBar(spec: ImageSpec): HTMLElement | null {
+    const handler = getActionsHandler();
+    if (handler === null) {
+      return null;
+    }
+    const remote = isRemoteSrc(spec.src);
+    const items: Array<{ action: ImageWidgetAction; label: string; title: string }> = remote
+      ? [
+          { action: 'downloadRemote', label: '下载', title: '下载到本地 asset 目录并更新引用' },
+          { action: 'open', label: '打开', title: '在浏览器中打开' },
+          { action: 'copyPath', label: '复制路径', title: '复制图片 URL' },
+        ]
+      : [
+          { action: 'reveal', label: '定位', title: '在文件管理器中定位' },
+          { action: 'open', label: '打开', title: '用系统默认应用打开' },
+          { action: 'rename', label: '重命名', title: '重命名文件并更新引用' },
+          { action: 'move', label: '移动', title: '移动到其他目录并更新引用' },
+          { action: 'copy', label: '复制', title: '复制到 asset 目录并更新引用' },
+          { action: 'copyPath', label: '复制路径', title: '复制图片绝对路径' },
+        ];
+    const bar = document.createElement('span');
+    bar.className = IMG_ACTIONS_CLASS;
+    for (const item of items) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mellow-md-image-action-btn';
+      btn.textContent = item.label;
+      btn.title = item.title;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handler({ src: spec.src, action: item.action });
+      });
+      bar.appendChild(btn);
+    }
+    return bar;
+  }
+
   const buildDecorations = (view: EditorView): DecorationSet => {
     if (isSourceMode()) {
       return Decoration.none;
@@ -201,6 +281,8 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       decorations: DecorationSet = Decoration.none;
 
       constructor(view: EditorView) {
+        attachEngineView(view); // 宿主 patchChanges 通道（单事务 applyChanges）
+        registerEngineImageApi();
         this.decorations = buildDecorations(view);
       }
 
@@ -221,6 +303,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       verticalAlign: 'middle',
       maxWidth: '100%',
       margin: '0 2px',
+      position: 'relative',
     },
     [`.mellow-md-image-img`]: {
       maxWidth: '100%',
@@ -242,9 +325,39 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     [`.mellow-md-image-broken-name`]: {
       fontFamily: 'inherit',
     },
+    // 悬停操作条（默认隐藏；hover 显示；spec §6 单图操作入口）
+    [`.${IMG_ACTIONS_CLASS}`]: {
+      display: 'none',
+      position: 'absolute',
+      left: '50%',
+      bottom: '4px',
+      transform: 'translateX(-50%)',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '2px 6px',
+      borderRadius: '4px',
+      background: 'rgba(0,0,0,0.75)',
+      whiteSpace: 'nowrap',
+      zIndex: 1,
+    },
+    [`.${IMG_WRAPPER_CLASS}:hover .${IMG_ACTIONS_CLASS}`]: {
+      display: 'inline-flex',
+    },
+    [`.mellow-md-image-action-btn`]: {
+      border: 'none',
+      background: 'transparent',
+      color: '#fff',
+      fontSize: '11px',
+      padding: '1px 5px',
+      borderRadius: '3px',
+      cursor: 'pointer',
+    },
+    [`.mellow-md-image-action-btn:hover`]: {
+      background: 'rgba(255,255,255,0.2)',
+    },
   });
 
   return [plugin, style];
 }
 
-export { IMG_WRAPPER_CLASS, IMG_BROKEN_CLASS };
+export { IMG_WRAPPER_CLASS, IMG_BROKEN_CLASS, IMG_ACTIONS_CLASS };

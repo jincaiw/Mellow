@@ -9,12 +9,31 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorCore } from '../../../packages/editor-core/src';
-import { DocumentService, RecoveryService, ExternalChangeService } from '../../../packages/app-core/src';
+import {
+  DocumentService,
+  RecoveryService,
+  ExternalChangeService,
+  ImageFileOpsService,
+  DocumentRenameService,
+  FileOpHistory,
+  createEditorBridgeFromCore,
+} from '../../../packages/app-core/src';
 import type { ExternalChangeDetail } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
-import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent } from '../../../packages/host-api/src/index';
+import { createDesktopDialogService } from './host/dialogs';
+import { createDesktopOpenerService } from './host/openers';
+import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
+import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
+import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService } from '../../../packages/host-api/src/index';
+
+const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
+const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
+  { value: 'assets', label: './assets' },
+  { value: 'images', label: './images' },
+  { value: 'docname', label: './${文件名}.assets' },
+];
 
 type EditorStatus = 'idle' | 'ready' | 'error';
 
@@ -30,6 +49,12 @@ export default function App() {
   const documentsRef = useRef<DocumentService | null>(null);
   const recoveryRef = useRef<RecoveryService | null>(null);
   const externalRef = useRef<ExternalChangeService | null>(null);
+  // 图片文件操作（spec image-workflow §6/§7 + PRD §58）
+  const fileOpsRef = useRef<ImageFileOpsService | null>(null);
+  const renameRef = useRef<DocumentRenameService | null>(null);
+  const historyRef = useRef<FileOpHistory | null>(null);
+  const dialogRef = useRef<DialogService | null>(null);
+  const openerRef = useRef<OpenerService | null>(null);
   // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
   const dirtyRef = useRef(false);
   // Crash Recovery：文档 id + 修订（快照 keyed by document id）
@@ -48,6 +73,13 @@ export default function App() {
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
   const [conflict, setConflict] = useState<ExternalChangeDetail | null>(null);
+  // asset 目录全局设置（PRD §53 global；localStorage 持久化）
+  const [assetDir, setAssetDirState] = useState<AssetDirConfig>(() => {
+    const saved = localStorage.getItem(GLOBAL_ASSET_DIR_KEY);
+    return (saved as AssetDirConfig | null) ?? 'assets';
+  });
+  // 文件操作 toast（PRD §58：已移动 xxx [撤销]）
+  const [toast, setToast] = useState<{ message: string; onUndo?: () => void } | null>(null);
 
   const setDirty = useCallback((value: boolean) => {
     dirtyRef.current = value;
@@ -63,6 +95,176 @@ export default function App() {
       setStats('');
     }
   }, []);
+
+  // ── 图片文件操作（spec image-workflow §6/§7 + PRD §57/§58）──
+
+  const setAssetDir = useCallback((value: AssetDirConfig) => {
+    localStorage.setItem(GLOBAL_ASSET_DIR_KEY, value);
+    setAssetDirState(value);
+    setStatusText(`asset 目录已设为 ./${value}/`);
+  }, []);
+
+  const showToast = useCallback((message: string, onUndo?: () => void) => {
+    setToast({ message, onUndo });
+  }, []);
+
+  /** 监听当前文档路径（外部变化检测） */
+  const watchDocument = useCallback(async (path: string | null) => {
+    const external = externalRef.current;
+    if (!external || !path) return;
+    await external.start(path);
+  }, []);
+
+  /** 撤销文件操作（PRD §58 toast）；count=1 默认；批量操作一次撤销全部 */
+  const undo = useCallback(async (count = 1) => {
+    const history = historyRef.current;
+    const host = hostRef.current;
+    if (!history || !host) return;
+    const top = history.peek();
+    const r = await history.undo(count);
+    if (r.ok) {
+      setStatusText(`${r.value} —— 已撤销`);
+      // 撤销文档重命名后：同步编辑器路径 + watcher（rename 反向）
+      if (top?.op.kind === 'rename' && top.op.to === filePathRef.current) {
+        filePathRef.current = top.op.from;
+        host.setDocumentPath(top.op.from);
+        host.refreshImages();
+        await watchDocument(top.op.from);
+      }
+    } else {
+      setStatusText(r.error.message);
+    }
+    setToast(null);
+  }, [watchDocument]);
+
+  /** 执行批量操作（moveAll/copyAll/downloadRemote），toast 提供撤销 */
+  const runBatch = useCallback(async (kind: 'moveAll' | 'copyAll' | 'downloadRemote') => {
+    const ops = fileOpsRef.current;
+    const history = historyRef.current;
+    if (!ops || !history) return;
+    const before = history.length;
+    const r = await ops[kind]();
+    if (!r.ok) {
+      setStatusText(r.error.message);
+      return;
+    }
+    const rep = r.value;
+    const n = rep.moved + rep.copied + rep.downloaded;
+    const verb = kind === 'moveAll' ? '已移动' : kind === 'copyAll' ? '已复制' : '已下载'; // 远程本地化
+    const undoCount = history.length - before;
+    setStatusText(`${verb} ${n} 张图片 · 跳过 ${rep.skipped.length} · 失败 ${rep.failed.length}${rep.failed.length > 0 ? `（${rep.failed[0].error}）` : ''}`);
+    if (n > 0) {
+      showToast(`${verb} ${n} 张图片`, undoCount > 0 ? () => void undo(undoCount) : undefined);
+    }
+  }, [undo, showToast]);
+
+  /** widget 悬停操作条分发（spec §6 单图操作入口） */
+  const handleImageAction = useCallback(async (req: ImageWidgetActionRequest) => {
+    const ops = fileOpsRef.current;
+    const opener = openerRef.current;
+    const dialog = dialogRef.current;
+    if (!ops || !opener || !dialog) return;
+    const { src, action } = req;
+
+    if (action === 'copyPath') {
+      try {
+        await navigator.clipboard.writeText(src);
+        setStatusText('已复制图片路径');
+      } catch {
+        setStatusText('复制路径失败');
+      }
+      return;
+    }
+    if (action === 'open') {
+      const abs = ops.resolveSrcPath(src);
+      const r = abs !== null
+        ? await opener.openPath(abs)
+        : await opener.openUrl(src);
+      setStatusText(r.ok ? '已打开' : `打开失败: ${r.error.message}`);
+      return;
+    }
+    if (action === 'reveal') {
+      const abs = ops.resolveSrcPath(src);
+      if (abs === null) {
+        setStatusText('无法解析图片路径');
+        return;
+      }
+      const r = await opener.revealInFolder(abs);
+      setStatusText(r.ok ? '已定位到文件' : `定位失败: ${r.error.message}`);
+      return;
+    }
+    if (action === 'rename') {
+      const abs = ops.resolveSrcPath(src);
+      const current = abs === null ? '' : abs.split('/').pop() ?? '';
+      const name = window.prompt('新文件名（不含路径）', current);
+      if (name === null || name.trim() === '') return;
+      const r = await ops.renameImage(src, name);
+      if (!r.ok) {
+        setStatusText(r.error.message);
+        return;
+      }
+      setStatusText(`已重命名（跳过 ${r.value.skipped.length}）`);
+      return;
+    }
+    if (action === 'move' || action === 'copy') {
+      const dir = await dialog.showDirectory();
+      if (!dir.ok || dir.value === null) return;
+      const r = action === 'move'
+        ? await ops.moveImage(src, dir.value)
+        : await ops.copyImage(src, dir.value);
+      if (!r.ok) {
+        setStatusText(r.error.message);
+        return;
+      }
+      const rep = r.value;
+      setStatusText(`${action === 'move' ? '已移动' : '已复制'}（跳过 ${rep.skipped.length}）`);
+      return;
+    }
+    if (action === 'downloadRemote') {
+      const r = await ops.downloadRemoteImage(src);
+      if (!r.ok) {
+        setStatusText(r.error.message);
+        return;
+      }
+      setStatusText(r.value.downloaded > 0 ? '已下载到 asset 目录并更新引用' : `跳过: ${r.value.skipped[0]?.reason ?? ''}`);
+    }
+  }, []);
+
+  /** 文档重命名（spec §6：${stem}.assets 同步 + 引用 patch 原子化） */
+  const handleRenameDocument = useCallback(async () => {
+    const svc = renameRef.current;
+    if (!svc) return;
+    const path = filePathRef.current;
+    if (path === null) {
+      setStatusText('未保存文档无法重命名（请先保存）');
+      return;
+    }
+    const current = path.split('/').pop() ?? '';
+    const name = window.prompt('新文件名', current);
+    if (name === null || name.trim() === '') return;
+    const r = await svc.renameDocument(name);
+    if (!r.ok) {
+      setStatusText(r.error.message);
+      return;
+    }
+    filePathRef.current = r.value.newPath;
+    setDirty(true);
+    setStatusText(r.value.assetDirRenamed
+      ? `已重命名（资源目录已同步，更新 ${r.value.patchedCount} 处引用）`
+      : '已重命名');
+    showToast(`已重命名 ${current}`, () => void undo());
+  }, [undo, showToast, setDirty]);
+
+  /** asset 目录选择（custom → 输入自定义目录名） */
+  const handleAssetDirChange = useCallback((value: string) => {
+    if (value === 'custom') {
+      const custom = window.prompt('自定义 asset 目录名（相对文档目录；或绝对路径）', 'my-assets');
+      if (custom === null || custom.trim() === '') return;
+      setAssetDir(custom.trim());
+      return;
+    }
+    setAssetDir(value as AssetDirConfig);
+  }, [setAssetDir]);
 
   // ── 外部文件变化检测（spec §5）──
 
@@ -133,13 +335,6 @@ export default function App() {
     setStatusText('已保留本地版本（保存时将覆盖磁盘）');
   }, []);
 
-  /** 监听当前文档路径（外部变化检测） */
-  const watchDocument = useCallback(async (path: string | null) => {
-    const external = externalRef.current;
-    if (!external || !path) return;
-    await external.start(path);
-  }, []);
-
   /** 组装当前文档恢复快照并防抖写入（与 Auto Save 分离：只写 AppData） */
   const scheduleRecoverySnapshot = useCallback((host: EditorCore) => {
     const recovery = recoveryRef.current;
@@ -161,8 +356,11 @@ export default function App() {
   // 挂载编辑器 + 文件服务 + Recovery + 外部变化检测
   useEffect(() => {
     if (!containerRef.current) return;
-    documentsRef.current = new DocumentService(createDesktopFileService());
+    const fsService = createDesktopFileService();
+    documentsRef.current = new DocumentService(fsService);
     recoveryRef.current = new RecoveryService(createDesktopRecoveryStorage());
+    dialogRef.current = createDesktopDialogService();
+    openerRef.current = createDesktopOpenerService();
     externalRef.current = new ExternalChangeService(createDesktopWatcher(), {
       getDiskState: () => {
         const d = diskStateRef.current;
@@ -179,6 +377,35 @@ export default function App() {
     const host = new EditorCore();
     hostRef.current = host;
     host.mount(containerRef.current);
+
+    // 图片文件操作服务（spec §6/§7：fs 编排 + 单事务 patch + undo）
+    const dialog = dialogRef.current;
+    const history = new FileOpHistory(fsService);
+    historyRef.current = history;
+    const editorBridge = createEditorBridgeFromCore(
+      {
+        getText: () => host.getText(),
+        setDocumentPath: (p) => host.setDocumentPath(p),
+        patchChanges: (c) => host.patchChanges(c),
+        refreshImages: () => host.refreshImages(),
+      },
+      () => filePathRef.current,
+    );
+    fileOpsRef.current = new ImageFileOpsService({
+      fs: fsService,
+      editor: editorBridge,
+      history,
+      assetSetting: {
+        getGlobalSetting: () => (localStorage.getItem(GLOBAL_ASSET_DIR_KEY) as AssetDirConfig | null) ?? 'assets',
+      },
+    });
+    renameRef.current = new DocumentRenameService({
+      fs: fsService,
+      editor: editorBridge,
+      history,
+      dialog,
+      onRenamed: async (newPath) => { await watchDocument(newPath); },
+    });
 
     // Tauri drag-drop：桌面宿主把拖入文件路径注入 iframe（engine image input 消费）
     let unlistenDragDrop: (() => void) | undefined;
@@ -205,6 +432,13 @@ export default function App() {
         setStatus('ready');
         setStatusText('编辑器就绪');
         refreshStats(host);
+
+        // 注入图片操作 handler（widget 悬停操作条 → app-core 编排；spec §6）
+        const frame = containerRef.current?.querySelector('iframe');
+        const win = frame?.contentWindow as (Window & { __MELLOW_IMAGE_ACTIONS__?: (req: ImageWidgetActionRequest) => void }) | null;
+        if (win) {
+          win.__MELLOW_IMAGE_ACTIONS__ = (req) => { void handleImageAction(req); };
+        }
 
         // Crash Recovery：编辑事件 → 防抖快照（与 Auto Save 分离）
         host.onEvent((e) => {
@@ -237,7 +471,7 @@ export default function App() {
       recoveryRef.current?.dispose();
       void externalRef.current?.stop();
     };
-  }, [handleCleanChange, scheduleRecoverySnapshot]);
+  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction]);
 
   const handleNew = useCallback(async () => {
     const host = hostRef.current;
@@ -402,6 +636,22 @@ export default function App() {
         <button onClick={handleOpen} disabled={status !== 'ready'}>打开…</button>
         <button onClick={handleSave} disabled={status !== 'ready'}>保存</button>
         <button onClick={handleSaveAs} disabled={status !== 'ready'}>另存为…</button>
+        <button onClick={() => void handleRenameDocument()} disabled={status !== 'ready'}>重命名…</button>
+        <span className="toolbar-sep" />
+        <label className="asset-picker" title="asset 目录（PRD §53）">
+          <select
+            value={ASSET_DIR_OPTIONS.some((o) => o.value === assetDir) ? assetDir : 'custom'}
+            onChange={(e) => handleAssetDirChange(e.target.value)}
+            disabled={status !== 'ready'}
+          >
+            {ASSET_DIR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {!ASSET_DIR_OPTIONS.some((o) => o.value === assetDir) && <option value="custom">{assetDir}</option>}
+            <option value="custom">自定义…</option>
+          </select>
+        </label>
+        <button onClick={() => void runBatch('moveAll')} disabled={status !== 'ready'}>移动全部</button>
+        <button onClick={() => void runBatch('copyAll')} disabled={status !== 'ready'}>复制全部</button>
+        <button onClick={() => void runBatch('downloadRemote')} disabled={status !== 'ready'}>下载远程</button>
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
       </header>
@@ -431,6 +681,13 @@ export default function App() {
         <span>{dirty ? '● 未保存' : '○ 已保存'}</span>
         <span>{stats}</span>
       </footer>
+      {toast !== null && (
+        <div className="toast-bar">
+          <span className="toast-message">{toast.message}</span>
+          {toast.onUndo !== undefined && <button onClick={() => toast.onUndo?.()}>撤销</button>}
+          <button className="toast-close" onClick={() => setToast(null)}>✕</button>
+        </div>
+      )}
     </div>
   );
 }

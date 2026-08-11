@@ -54,6 +54,14 @@ export interface DirEntry {
   isDirectory: boolean;
 }
 
+/** 下载远程资源结果 */
+export interface DownloadResult {
+  /** 实际写入的路径（唯一命名后可能与请求路径不同） */
+  path: string;
+  /** 写入字节数 */
+  bytes: number;
+}
+
 /** 保存选项（preserve metadata：未指定时默认 utf-8 / 不转换 EOL） */
 export interface SaveOptions {
   encoding?: Encoding;
@@ -82,7 +90,14 @@ export interface FileService {
   readDir(path: string): Promise<Result<DirEntry[]>>;
   exists(path: string): Promise<Result<boolean>>;
   rename(from: string, to: string): Promise<Result<void>>;
+  /** 移动文件（跨设备安全：copy→verify→删源；spec image-workflow §6） */
+  move(from: string, to: string): Promise<Result<void>>;
+  /** 删除 → 系统回收站（PRD §57：delete 默认回收站，不永久删除） */
+  trash(path: string): Promise<Result<void>>;
+  /** delete 语义：同 trash（PRD §57：用户删除一律回收站） */
   delete(path: string): Promise<Result<void>>;
+  /** 永久删除（仅用于撤销/清理本应用产生的副本等内部场景，禁止用户删除路径） */
+  remove(path: string): Promise<Result<void>>;
   /** 复制文件（图片 copy-to-assets，spec image-workflow §3） */
   copyFile(from: string, to: string): Promise<Result<void>>;
   /** 递归建目录（asset dir） */
@@ -91,6 +106,8 @@ export interface FileService {
   writeBinary(path: string, data: ArrayBuffer): Promise<Result<void>>;
   /** 读二进制（图片复制/检测） */
   readBinary(path: string): Promise<Result<ArrayBuffer>>;
+  /** 下载远程资源到本地（spec §9：仅用户显式命令；超时/重定向由实现保证） */
+  download(url: string, targetPath: string): Promise<Result<DownloadResult>>;
 }
 
 // ─────────────────────────── dialog ───────────────────────────
@@ -114,6 +131,8 @@ export interface DialogService {
   showMessage(options: MessageDialogOptions): Promise<Result<string>>;
   /** 确认对话框 */
   showConfirm(title: string, message: string): Promise<Result<boolean>>;
+  /** 目录选择器（单图 Move 目标 / 打开文件夹）；取消 → canceled */
+  showDirectory(options?: OpenFileOptions): Promise<Result<string | null>>;
 }
 
 // ─────────────────────────── clipboard ───────────────────────────

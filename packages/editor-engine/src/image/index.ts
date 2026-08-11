@@ -19,6 +19,10 @@ export * from './host';
 export * from './insert';
 export * from './input';
 export * from './widget';
+export * from './scan';
+export * from './assetConfig';
+export * from './ops';
+export * from './engineApi';
 
 /**
  * 安装 Image 工作流扩展（widget 渲染 + paste/drag 输入）。

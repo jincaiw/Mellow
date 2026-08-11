@@ -20,6 +20,7 @@ pub struct BridgeMessage {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             bridge::bridge_call,
             fs::open_document,
@@ -30,6 +31,12 @@ pub fn run() {
             fs::write_binary,
             fs::read_binary,
             fs::path_exists,
+            fs::move_file,
+            fs::pick_folder,
+            fs::trash,
+            fs::remove_file,
+            fs::read_dir,
+            fs::download_remote,
             recovery::recovery_save,
             recovery::recovery_list,
             recovery::recovery_get,

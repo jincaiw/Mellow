@@ -21,6 +21,7 @@ import type {
   SelectionRange,
   ReplaceGranularity,
   BridgeAdapter,
+  TextChange,
 } from './contract';
 
 export const EDITOR_BUNDLE_URL = '/editor/index.html';
@@ -120,6 +121,26 @@ export class EditorCore {
     if (win) {
       win.__MELLOW_DOC_PATH__ = path;
     }
+  }
+
+  /**
+   * 单事务应用文本替换（引擎 Image API 通道；spec image-workflow §6/§11）。
+   * 全部替换一次 dispatch → 一次 Undo 可撤销。
+   * @returns false = 引擎未注册 / 编辑器未就绪
+   */
+  patchChanges(changes: TextChange[]): boolean {
+    if (changes.length === 0) {
+      return false;
+    }
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_ENGINE_API__?: { applyChanges?: (c: TextChange[]) => boolean } }) | null;
+    const apply = win?.__MELLOW_ENGINE_API__?.applyChanges;
+    return typeof apply === 'function' ? apply(changes) : false;
+  }
+
+  /** 强制图片重新解析（文档路径/asset 目录变化后；引擎 Image API） */
+  refreshImages(): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_ENGINE_API__?: { refreshImages?: () => void } }) | null;
+    win?.__MELLOW_ENGINE_API__?.refreshImages?.();
   }
 
   /** 销毁 */

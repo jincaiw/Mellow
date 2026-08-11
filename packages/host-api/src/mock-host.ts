@@ -50,6 +50,13 @@ export interface MockHostState {
   /** mock 磁盘状态（open/save 返回） */
   nextMtimeMs: number;
   identityKey: string;
+  /** 回收站（trash 语义：文件从 files 移入此处；可断言） */
+  trashBin: Map<string, string>;
+  /** 下载记录 + 下载内容（默认写入标记字节；测试可注入） */
+  downloads: Array<{ url: string; targetPath: string }>;
+  nextDownloadData: ArrayBuffer | null;
+  /** 目录选择器预设结果；null 表示用户取消 */
+  nextDirectoryPath: string | null;
   /** keychain */
   secrets: Map<string, string>;
   /** recovery 快照存储（内存，keyed by documentId） */
@@ -83,6 +90,11 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     lastSaveMeta: initial?.lastSaveMeta ?? null,
     nextMtimeMs: initial?.nextMtimeMs ?? 1000,
     identityKey: initial?.identityKey ?? 'mock:1',
+    trashBin: new Map(initial?.trashBin ?? []),
+    downloads: initial?.downloads ?? [],
+    nextDownloadData: initial?.nextDownloadData ?? null,
+    // 注意：null 表示「目录选择取消」，必须保留（不能用 ?? 替换默认值）
+    nextDirectoryPath: initial?.nextDirectoryPath === undefined ? '/dir' : initial.nextDirectoryPath,
     recovery: new Map(initial?.recovery ?? []),
     watchCallbacks: new Map(initial?.watchCallbacks ?? []),
   };
@@ -100,6 +112,72 @@ function detectEol(content: string): '\n' | '\r\n' | '\r' {
 
 function normalizePath(path: string): string {
   return path.startsWith('/') ? path : `/${path}`;
+}
+
+/** rename/move 共用核心（文件/目录前缀移动） */
+async function renameCore(state: MockHostState, from: string, to: string): Promise<Result<void>> {  const nFrom = normalizePath(from);
+  const nTo = normalizePath(to);
+  if (state.files.has(nFrom)) {
+    state.files.set(nTo, state.files.get(nFrom)!);
+    state.files.delete(nFrom);
+    return ok(undefined);
+  }
+  if (state.binaryFiles.has(nFrom)) {
+    state.binaryFiles.set(nTo, state.binaryFiles.get(nFrom)!);
+    state.binaryFiles.delete(nFrom);
+    return ok(undefined);
+  }
+  let moved = 0;
+  for (const key of [...state.files.keys()]) {
+    if (key.startsWith(`${nFrom}/`)) {
+      state.files.set(`${nTo}${key.slice(nFrom.length)}`, state.files.get(key)!);
+      state.files.delete(key);
+      moved += 1;
+    }
+  }
+  for (const key of [...state.binaryFiles.keys()]) {
+    if (key.startsWith(`${nFrom}/`)) {
+      state.binaryFiles.set(`${nTo}${key.slice(nFrom.length)}`, state.binaryFiles.get(key)!);
+      state.binaryFiles.delete(key);
+      moved += 1;
+    }
+  }
+  for (const key of [...state.dirs.keys()]) {
+    if (key.startsWith(`${nFrom}/`)) {
+      state.dirs.delete(key);
+      moved += 1;
+    }
+  }
+  if (moved === 0) {
+    return err({ code: 'not-found', message: `File not found: ${from}`, path: from });
+  }
+  state.dirs.add(nTo);
+  return ok(undefined);
+}
+
+/** trash/delete 共用核心（移入回收站；目录 → 前缀整体） */
+async function trashCore(state: MockHostState, path: string): Promise<Result<void>> {
+  const key = normalizePath(path);
+  const content = state.files.get(key) ?? (() => {
+    const b = state.binaryFiles.get(key);
+    return b === undefined ? undefined : String(b.byteLength);
+  })();
+  if (content === undefined) {
+    const under = [...state.files.keys(), ...state.binaryFiles.keys()].filter((k) => k.startsWith(`${key}/`));
+    if (under.length === 0) {
+      return err({ code: 'not-found', message: `File not found: ${path}`, path });
+    }
+    for (const k of under) {
+      state.files.delete(k);
+      state.binaryFiles.delete(k);
+      state.trashBin.set(k, '');
+    }
+    return ok(undefined);
+  }
+  state.files.delete(key);
+  state.binaryFiles.delete(key);
+  state.trashBin.set(key, content);
+  return ok(undefined);
 }
 
 /** 创建内存 mock 宿主（浏览器 dev / 测试用） */
@@ -141,36 +219,77 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
         return ok({ path, bytesWritten: content.length });
       },
       readDir: async (path: string): Promise<Result<DirEntry[]>> => {
-        const entries: DirEntry[] = [];
+        const entries = new Map<string, DirEntry>();
         const prefix = normalizePath(path);
-        for (const file of state.files.keys()) {
-          if (file.startsWith(prefix) && file !== prefix) {
-            const rest = file.slice(prefix.length).replace(/^\//, '');
-            if (rest.includes('/')) {
-              const dir = rest.split('/')[0];
-              entries.push({ path: `${prefix}/${dir}`, name: dir, isDirectory: true });
-            } else {
-              entries.push({ path: file, name: rest, isDirectory: false });
+        const collect = (key: string, isDirectory: boolean): void => {
+          if (!key.startsWith(prefix) || key === prefix) return;
+          const rest = key.slice(prefix.length).replace(/^\//, '');
+          if (rest === '') return;
+          if (rest.includes('/')) {
+            const dir = rest.split('/')[0];
+            const dirPath = `${prefix}/${dir}`;
+            if (!entries.has(dirPath)) {
+              entries.set(dirPath, { path: dirPath, name: dir, isDirectory: true });
             }
+          } else if (isDirectory) {
+            const dirPath = `${prefix}/${rest}`;
+            if (!entries.has(dirPath)) {
+              entries.set(dirPath, { path: dirPath, name: rest, isDirectory: true });
+            }
+          } else {
+            entries.set(key, { path: key, name: rest, isDirectory: false });
           }
-        }
-        return ok(entries);
+        };
+        for (const key of state.files.keys()) collect(key, false);
+        for (const key of state.binaryFiles.keys()) collect(key, false);
+        for (const key of state.dirs.keys()) collect(key, true);
+        return ok([...entries.values()]);
       },
       exists: async (path: string): Promise<Result<boolean>> => {
-        return ok(state.files.has(normalizePath(path)) || state.binaryFiles.has(normalizePath(path)));
+        const key = normalizePath(path);
+        const exists =
+          state.files.has(key) ||
+          state.binaryFiles.has(key) ||
+          state.dirs.has(key) ||
+          [...state.files.keys(), ...state.binaryFiles.keys()].some((k) => k.startsWith(`${key}/`));
+        return ok(exists);
       },
       rename: async (from: string, to: string): Promise<Result<void>> => {
-        const content = state.files.get(normalizePath(from));
-        if (content === undefined) {
-          return err({ code: 'not-found', message: `File not found: ${from}`, path: from });
-        }
-        state.files.delete(normalizePath(from));
-        state.files.set(normalizePath(to), content);
-        return ok(undefined);
+        return renameCore(state, from, to);
+      },
+      move: async (from: string, to: string): Promise<Result<void>> => {
+        return renameCore(state, from, to);
+      },
+      trash: async (path: string): Promise<Result<void>> => {
+        return trashCore(state, path);
       },
       delete: async (path: string): Promise<Result<void>> => {
-        state.files.delete(normalizePath(path));
-        state.binaryFiles.delete(normalizePath(path));
+        // PRD §57：用户删除一律回收站
+        const r = await trashCore(state, path);
+        return r;
+      },
+      remove: async (path: string): Promise<Result<void>> => {
+        const key = normalizePath(path);
+        if (state.files.has(key) || state.binaryFiles.has(key) || state.dirs.has(key)) {
+          state.files.delete(key);
+          state.binaryFiles.delete(key);
+          state.dirs.delete(key);
+          return ok(undefined);
+        }
+        // 目录 remove：前缀整体删除
+        let removed = 0;
+        for (const k of [...state.files.keys()]) {
+          if (k.startsWith(`${key}/`)) { state.files.delete(k); removed += 1; }
+        }
+        for (const k of [...state.binaryFiles.keys()]) {
+          if (k.startsWith(`${key}/`)) { state.binaryFiles.delete(k); removed += 1; }
+        }
+        for (const k of [...state.dirs.keys()]) {
+          if (k.startsWith(`${key}/`)) { state.dirs.delete(k); removed += 1; }
+        }
+        if (removed === 0) {
+          return err({ code: 'not-found', message: `File not found: ${path}`, path });
+        }
         return ok(undefined);
       },
       copyFile: async (from: string, to: string): Promise<Result<void>> => {
@@ -197,6 +316,12 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
         }
         return ok(data.slice(0));
       },
+      download: async (url: string, targetPath: string): Promise<Result<import('./services').DownloadResult>> => {
+        state.downloads.push({ url, targetPath });
+        const data = state.nextDownloadData ?? new TextEncoder().encode(`downloaded:${url}`).buffer as ArrayBuffer;
+        state.binaryFiles.set(normalizePath(targetPath), data.slice(0));
+        return ok({ path: targetPath, bytes: data.byteLength });
+      },
     },
 
     dialog: {
@@ -217,6 +342,12 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
       },
       showConfirm: async (_title: string, _message: string): Promise<Result<boolean>> => {
         return ok(state.confirmResult);
+      },
+      showDirectory: async (_options?: OpenFileOptions): Promise<Result<string | null>> => {
+        if (state.nextDirectoryPath === null) {
+          return err({ code: 'canceled', message: 'Directory dialog canceled' });
+        }
+        return ok(state.nextDirectoryPath);
       },
     },
 

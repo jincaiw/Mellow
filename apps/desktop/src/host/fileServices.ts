@@ -99,7 +99,14 @@ export const tauriFileService: FileService = {
     }
   },
   writeText: async (path: string, _content: string) => err({ code: 'not-implemented', message: 'writeText 待实现', path }),
-  readDir: async () => err({ code: 'not-implemented', message: 'readDir 待实现' }),
+  readDir: async (path: string) => {
+    try {
+      const r = await invoke<Array<{ path: string; name: string; is_directory: boolean }>>('read_dir', { path });
+      return ok(r.map((e) => ({ path: e.path, name: e.name, isDirectory: e.is_directory })));
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
   exists: async (path: string) => {
     try {
       const r = await invoke<boolean>('path_exists', { path });
@@ -108,8 +115,47 @@ export const tauriFileService: FileService = {
       return err({ code: 'io', message: String(e) });
     }
   },
-  rename: async () => err({ code: 'not-implemented', message: 'rename 待实现' }),
-  delete: async () => err({ code: 'not-implemented', message: 'delete 待实现' }),
+  rename: async (from: string, to: string) => {
+    try {
+      await invoke('move_file', { from, to });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  move: async (from: string, to: string) => {
+    try {
+      await invoke('move_file', { from, to });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  trash: async (path: string) => {
+    try {
+      await invoke('trash', { path });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  delete: async (path: string) => {
+    // PRD §57：delete 默认回收站
+    try {
+      await invoke('trash', { path });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  remove: async (path: string) => {
+    try {
+      await invoke('remove_file', { path });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
   copyFile: async (from: string, to: string) => {
     try {
       await invoke('copy_file', { from, to });
@@ -138,6 +184,14 @@ export const tauriFileService: FileService = {
     try {
       const r = await invoke<number[]>('read_binary', { path });
       return ok(new Uint8Array(r).buffer as ArrayBuffer);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  download: async (url: string, targetPath: string) => {
+    try {
+      await invoke('download_remote', { url, targetPath });
+      return ok({ path: targetPath, bytes: 0 });
     } catch (e) {
       return err({ code: 'io', message: String(e) });
     }

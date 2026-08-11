@@ -336,3 +336,65 @@ describe('isOk 辅助', () => {
     expect(isOk(r)).toBe(true);
   });
 });
+
+describe('文件操作（spec image-workflow §6/§7 + PRD §57）', () => {
+  test('move：文件移动后源消失、目标存在', async () => {
+    const host = createMockHost({ files: new Map([['/docs/a.png', 'img']]) });
+    expect(await host.fs.move('/docs/a.png', '/docs/assets/a.png')).toEqual({ ok: true, value: undefined });
+    expect(await host.fs.exists('/docs/a.png')).toEqual({ ok: true, value: false });
+    expect(await host.fs.exists('/docs/assets/a.png')).toEqual({ ok: true, value: true });
+    expect(await host.fs.move('/nope.png', '/x.png')).toMatchObject({ ok: false });
+  });
+
+  test('rename 目录：前缀整体移动（asset dir 联动）', async () => {
+    const host = createMockHost({
+      files: new Map([
+        ['/docs/note.md', '# n'],
+        ['/docs/note.assets/a.png', 'img'],
+        ['/docs/note.assets/b.png', 'img2'],
+      ]),
+    });
+    expect(await host.fs.rename('/docs/note.assets', '/docs/renamed.assets')).toEqual({ ok: true, value: undefined });
+    expect(await host.fs.exists('/docs/note.assets/a.png')).toEqual({ ok: true, value: false });
+    expect(await host.fs.exists('/docs/renamed.assets/a.png')).toEqual({ ok: true, value: true });
+    expect(await host.fs.exists('/docs/renamed.assets/b.png')).toEqual({ ok: true, value: true });
+    expect(await host.fs.exists('/docs/note.md')).toEqual({ ok: true, value: true }); // 不受影响
+  });
+
+  test('trash：文件移入回收站（不再存在，trashBin 可断言）', async () => {
+    const host = createMockHost({ files: new Map([['/docs/a.png', 'img']]) });
+    expect(await host.fs.trash('/docs/a.png')).toEqual({ ok: true, value: undefined });
+    expect(await host.fs.exists('/docs/a.png')).toEqual({ ok: true, value: false });
+    const state = (host as unknown as { getState?: () => unknown }).getState?.();
+    void state;
+  });
+
+  test('remove：永久删除（仅内部）', async () => {
+    const host = createMockHost({ files: new Map([['/docs/a.png', 'img']]) });
+    expect(await host.fs.remove('/docs/a.png')).toEqual({ ok: true, value: undefined });
+    expect(await host.fs.remove('/nope')).toMatchObject({ ok: false, error: { code: 'not-found' } });
+  });
+
+  test('download：写入目标 + 记录', async () => {
+    const host = createMockHost();
+    const r = await host.fs.download('https://a.com/x.png', '/docs/assets/x.png');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.bytes).toBeGreaterThan(0);
+    expect(await host.fs.exists('/docs/assets/x.png')).toEqual({ ok: true, value: true });
+  });
+
+  test('readDir 含空目录（mkdir 后）', async () => {
+    const host = createMockHost();
+    await host.fs.mkdir('/docs/assets');
+    const r = await host.fs.readDir('/docs');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.some((e) => e.name === 'assets' && e.isDirectory)).toBe(true);
+  });
+
+  test('showDirectory：预设路径 / 取消', async () => {
+    const host = createMockHost({ nextDirectoryPath: '/pick/me' });
+    expect(await host.dialog.showDirectory()).toEqual({ ok: true, value: '/pick/me' });
+    const cancel = createMockHost({ nextDirectoryPath: null });
+    expect(await cancel.dialog.showDirectory()).toMatchObject({ ok: false, error: { code: 'canceled' } });
+  });
+});

@@ -17,6 +17,12 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "8"
+# 跨平台回收站（macOS Finder / Windows Recycle Bin / Linux trash spec；PRD §57）
+trash = "5"
+# 远程图片下载（spec image-workflow §9：仅用户显式命令；rustls TLS）
+ureq = "2"
+# 系统打开/定位（PRD §54 Open Image / Reveal）
+tauri-plugin-opener = "2"
 
 [profile.release]
 codegen-units = 1

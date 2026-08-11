@@ -91,23 +91,38 @@ window.MellowEditorEngine = MellowEngine;
 })();
 </script>`;
 
-/** 复制引擎 dist → public/editor/engine/，补 .js 扩展名 */
+/** 复制引擎 dist → public/editor/engine/（递归，保留子目录；浏览器 ESM 要求显式 .js 扩展名） */
 function copyEngine() {
   const engineTargetDir = resolve(targetDir, 'engine');
   mkdirSync(engineTargetDir, { recursive: true });
 
-  const files = readdirSync(engineDist).filter((f) => f.endsWith('.js'));
-  if (files.length === 0) {
+  const copied = [];
+  const walk = (dir, rel = '') => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const srcPath = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(srcPath, `${rel}${entry.name}/`);
+        continue;
+      }
+      if (!entry.name.endsWith('.js')) {
+        continue;
+      }
+      const relPath = `${rel}${entry.name}`;
+      const targetFile = resolve(engineTargetDir, relPath);
+      mkdirSync(dirname(targetFile), { recursive: true });
+      let content = readFileSync(srcPath, 'utf8');
+      // 浏览器 ESM 要求显式 .js 扩展名（tsc 默认不带）
+      content = content.replace(/(from\s+['"]\.\/[^'"]+)(['"])/g, '$1.js$2');
+      writeFileSync(targetFile, content, 'utf8');
+      copied.push(relPath);
+    }
+  };
+  walk(engineDist);
+
+  if (copied.length === 0) {
     throw new Error('editor-engine dist is empty, run `npm run build` in packages/editor-engine first');
   }
-
-  for (const file of files) {
-    let content = readFileSync(resolve(engineDist, file), 'utf8');
-    // 浏览器 ESM 要求显式 .js 扩展名（tsc 默认不带）
-    content = content.replace(/(from\s+['"]\.\/[^'"]+)(['"])/g, '$1.js$2');
-    writeFileSync(resolve(engineTargetDir, file), content, 'utf8');
-  }
-  console.log(`engine copied: ${files.join(', ')}`);
+  console.log(`engine copied: ${copied.join(', ')}`);
 }
 
 function build() {

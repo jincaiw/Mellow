@@ -11,6 +11,13 @@ export interface SelectionRange {
   head: number;
 }
 
+/** 文本替换（引用 patch 单事务；spec image-workflow §6/§11） */
+export interface TextChange {
+  from: number;
+  to: number;
+  text: string;
+}
+
 export type ReplaceGranularity = 'wholeDocument' | 'selection';
 
 /** CoreEditor 启动配置（EditorConfig 契约子集，完整见 CoreEditor/src/config.ts） */
