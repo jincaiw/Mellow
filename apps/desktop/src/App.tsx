@@ -27,6 +27,8 @@ export default function App() {
   const documentsRef = useRef<DocumentService | null>(null);
   // preserve metadata：打开时记录编码/EOL，保存时原样传回
   const docMetaRef = useRef<DocMeta>({ encoding: 'utf-8', eol: '\n' });
+  // validate disk revision：打开时记录的磁盘状态，保存时校验外部变更（spec §5）
+  const diskStateRef = useRef<{ mtimeMs: number; identityKey: string } | null>(null);
 
   const [status, setStatus] = useState<EditorStatus>('idle');
   const [statusText, setStatusText] = useState('未加载');
@@ -74,6 +76,7 @@ export default function App() {
     if (!host) return;
     filePathRef.current = null;
     docMetaRef.current = { encoding: 'utf-8', eol: '\n' }; // 新文档默认 UTF-8/LF
+    diskStateRef.current = null; // 新文档无磁盘基准（保存时跳过 validate）
     setDirty(false);
     await host.open('', undefined, true);
     setStatusText('新建文档（未保存）');
@@ -93,6 +96,9 @@ export default function App() {
     }
     filePathRef.current = result.value.path;
     docMetaRef.current = { encoding: result.value.encoding, eol: result.value.eol }; // preserve metadata
+    diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
+      ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
+      : null;
     setDirty(false);
     await host.open(result.value.content, undefined, true);
     setStatusText(`已打开 ${result.value.path}`);
@@ -105,7 +111,12 @@ export default function App() {
     if (!host || !documents) return;
     const content = host.getText();
     const meta = docMetaRef.current;
-    const result = await documents.save(filePathRef.current, content, { encoding: meta.encoding, eol: meta.eol });
+    const expected = diskStateRef.current ?? undefined;
+    const result = await documents.save(filePathRef.current, content, {
+      encoding: meta.encoding,
+      eol: meta.eol,
+      expectedDisk: expected,
+    });
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
         setStatusText(`保存失败: ${result.error.message}`);
@@ -113,6 +124,9 @@ export default function App() {
       return;
     }
     filePathRef.current = result.value.path;
+    diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
+      ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
+      : null;
     setDirty(false);
     setStatusText(`已保存 ${result.value.path}`);
   }, []);
@@ -131,6 +145,9 @@ export default function App() {
       return;
     }
     filePathRef.current = result.value.path;
+    diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
+      ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
+      : null;
     setDirty(false);
     setStatusText(`已另存 ${result.value.path}`);
   }, []);

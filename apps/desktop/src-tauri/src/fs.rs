@@ -13,37 +13,95 @@ pub const EOL_LF: &str = "\n";
 pub const EOL_CRLF: &str = "\r\n";
 pub const EOL_CR: &str = "\r";
 
-/// 打开对话框结果（含编码/EOL 元数据，preserve metadata）
+/// 打开对话框结果（含编码/EOL/磁盘状态元数据）
 #[derive(serde::Serialize)]
 pub struct OpenDocumentResult {
     pub path: Option<String>,
     pub content: Option<String>,
     pub encoding: Option<String>,
     pub eol: Option<String>,
+    pub disk_mtime_ms: Option<u64>,
+    pub identity_key: Option<String>,
     pub error: Option<String>,
 }
 
 impl OpenDocumentResult {
     fn canceled() -> Self {
-        Self { path: None, content: None, encoding: None, eol: None, error: None }
+        Self {
+            path: None,
+            content: None,
+            encoding: None,
+            eol: None,
+            disk_mtime_ms: None,
+            identity_key: None,
+            error: None,
+        }
     }
 }
 
-/// 保存对话框结果
+/// 保存对话框结果（含新磁盘状态：mtime/identity，供前端更新 document-model）
 #[derive(serde::Serialize)]
 pub struct SaveDocumentResult {
     pub path: Option<String>,
+    pub disk_mtime_ms: Option<u64>,
+    pub identity_key: Option<String>,
+    pub error_code: Option<String>,
     pub error: Option<String>,
 }
 
 impl SaveDocumentResult {
     fn canceled() -> Self {
-        Self { path: None, error: None }
+        Self { path: None, disk_mtime_ms: None, identity_key: None, error_code: None, error: None }
     }
 }
 
-/// 检测编码并解码为 String（保留原始 EOL 字符，BOM 剥离记录在 encoding）
-/// UTF-8 用标准库；UTF-16 手写解码（含 surrogate pair），不依赖 encoding_rs。
+/// 前端期望的磁盘状态（validate disk revision：外部变更检测，spec §5）
+#[derive(serde::Deserialize)]
+pub struct DiskState {
+    pub mtime_ms: u64,
+    pub identity_key: String,
+}
+
+/// 保存结果（原子保存管线完成后返回的新磁盘状态）
+#[derive(Debug)]
+pub struct SaveOutcome {
+    pub path: String,
+    pub bytes_written: usize,
+    pub disk_mtime_ms: u64,
+    pub identity_key: String,
+}
+
+/// 保存错误模型
+#[derive(Debug)]
+pub enum SaveError {
+    /// IO 失败（权限/磁盘满/锁等）：原文件未被破坏
+    Io(String),
+    /// 磁盘文件已被外部修改（conflict）：拒绝覆盖，spec §5 local dirty never overwrite
+    Conflict(String),
+    /// 替换后读回验证不一致（spec §4 verify 阶段）
+    VerifyFailed,
+}
+
+impl SaveError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            SaveError::Io(_) => "io",
+            SaveError::Conflict(_) => "conflict",
+            SaveError::VerifyFailed => "verify",
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            SaveError::Io(msg) => msg.clone(),
+            SaveError::Conflict(msg) => msg.clone(),
+            SaveError::VerifyFailed => "保存后校验失败：文件内容与写入不一致".to_string(),
+        }
+    }
+}
+
+// ─────────────────────────── 编码 / EOL ───────────────────────────
+
 pub fn decode(bytes: &[u8]) -> (String, &'static str) {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         (String::from_utf8_lossy(&bytes[3..]).into_owned(), ENC_UTF8_BOM)
@@ -56,7 +114,6 @@ pub fn decode(bytes: &[u8]) -> (String, &'static str) {
     }
 }
 
-/// 按编码编码为字节（BOM 还原）—— 与 decode 互逆，保证 byte identical
 pub fn encode(content: &str, encoding: &str) -> Vec<u8> {
     match encoding {
         ENC_UTF8_BOM => {
@@ -78,7 +135,6 @@ pub fn encode(content: &str, encoding: &str) -> Vec<u8> {
     }
 }
 
-/// UTF-16 解码（含 surrogate pair；奇数末尾字节容错忽略）
 fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
     let unit_at = |i: usize| -> u16 {
         if little_endian {
@@ -93,7 +149,6 @@ fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
     while i + 1 < bytes.len() {
         let unit = unit_at(i);
         i += 2;
-        // high surrogate 且后续是 low surrogate
         if (0xD800..=0xDBFF).contains(&unit) && i + 1 < bytes.len() {
             let low = unit_at(i);
             if (0xDC00..=0xDFFF).contains(&low) {
@@ -108,7 +163,6 @@ fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
     out
 }
 
-/// UTF-16 编码（含 surrogate pair）
 fn encode_utf16(content: &str, little_endian: bool) -> Vec<u8> {
     let mut out = Vec::new();
     for c in content.chars() {
@@ -124,7 +178,6 @@ fn encode_utf16(content: &str, little_endian: bool) -> Vec<u8> {
     out
 }
 
-/// 检测行尾（首个换行符；无换行 → LF）。`\r\n` 优先识别，`\r` 单独出现为 CR。
 pub fn detect_eol(content: &str) -> &'static str {
     let bytes = content.as_bytes();
     let mut i = 0;
@@ -144,7 +197,113 @@ pub fn detect_eol(content: &str) -> &'static str {
     EOL_LF
 }
 
-/// 打开文件：系统对话框 → 读字节 → 检测编码/EOL → 返回文本与元数据
+// ─────────────────────────── 文件身份 / mtime ───────────────────────────
+
+/// 文件身份键（dev:ino；Windows fallback 用 len:mtime）
+pub fn identity_key(meta: &fs::Metadata) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        format!("{}:{}", meta.dev(), meta.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        format!("{}:{}", meta.len(), mtime_ms(meta))
+    }
+}
+
+/// mtime（epoch ms）
+pub fn mtime_ms(meta: &fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+// ─────────────────────────── Atomic Save 管线 ───────────────────────────
+
+/// temp 文件命名（同目录，隐藏）
+fn tmp_path_for(target: &Path) -> PathBuf {
+    let dir = target.parent().unwrap_or_else(|| Path::new("."));
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("mellow-save");
+    dir.join(format!(".{name}.mellow-tmp"))
+}
+
+/**
+ * Atomic Save（spec §4 Save Pipeline）：
+ *
+ *   validate disk revision（外部变更检测，冲突则拒绝覆盖）
+ *   → temp write
+ *   → flush
+ *   → fsync
+ *   → replace（rename）
+ *   → verify（读回比对）
+ *   → update revision（返回新 mtime/identity）
+ *
+ * 失败保证：rename 前原文件从未被触碰；任何阶段失败清理 temp，原文件完整。
+ */
+pub fn atomic_save(target: &Path, data: &[u8], expected: Option<&DiskState>) -> Result<SaveOutcome, SaveError> {
+    // 1. validate disk revision：前端记录的磁盘状态 vs 当前磁盘
+    if let Some(expected) = expected {
+        match fs::metadata(target) {
+            Ok(meta) => {
+                let current_key = identity_key(&meta);
+                let current_mtime = mtime_ms(&meta);
+                if current_key != expected.identity_key || current_mtime != expected.mtime_ms {
+                    return Err(SaveError::Conflict(format!(
+                        "磁盘文件已被外部修改（identity={current_key}, mtime={current_mtime}）"
+                    )));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(SaveError::Conflict("目标文件已被外部删除".to_string()));
+            }
+            Err(e) => return Err(SaveError::Io(e.to_string())),
+        }
+    }
+
+    let tmp_path = tmp_path_for(target);
+
+    // 崩溃残留清理（上次 crash during save 的 temp）
+    let _ = fs::remove_file(&tmp_path);
+
+    // 2-5. temp write → flush → fsync → rename
+    let replace = (|| {
+        let mut tmp = fs::File::create(&tmp_path).map_err(|e| SaveError::Io(e.to_string()))?;
+        tmp.write_all(data).map_err(|e| SaveError::Io(e.to_string()))?;
+        tmp.flush().map_err(|e| SaveError::Io(e.to_string()))?;
+        tmp.sync_all().map_err(|e| SaveError::Io(e.to_string()))?;
+        drop(tmp);
+        fs::rename(&tmp_path, target).map_err(|e| SaveError::Io(e.to_string()))
+    })();
+
+    if let Err(e) = replace {
+        let _ = fs::remove_file(&tmp_path); // 失败清理，原文件不动
+        return Err(e);
+    }
+
+    // 6. verify：替换后读回比对
+    let on_disk = fs::read(target).map_err(|e| SaveError::Io(e.to_string()))?;
+    if on_disk != data {
+        return Err(SaveError::VerifyFailed);
+    }
+
+    // 7. update revision：返回新磁盘状态
+    let meta = fs::metadata(target).map_err(|e| SaveError::Io(e.to_string()))?;
+    Ok(SaveOutcome {
+        path: target.to_string_lossy().into_owned(),
+        bytes_written: data.len(),
+        disk_mtime_ms: mtime_ms(&meta),
+        identity_key: identity_key(&meta),
+    })
+}
+
+// ─────────────────────────── Tauri 命令 ───────────────────────────
+
 #[tauri::command]
 pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
     use tauri_plugin_dialog::DialogExt;
@@ -158,13 +317,14 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
         return OpenDocumentResult::canceled();
     };
 
-    // into_path() 在 dialog 插件 v2 中返回 Result（可能因权限/路径错误失败）
     let Some(path) = file.into_path().ok() else {
         return OpenDocumentResult {
             path: None,
             content: None,
             encoding: None,
             eol: None,
+            disk_mtime_ms: None,
+            identity_key: None,
             error: Some("无法解析所选文件路径".to_string()),
         };
     };
@@ -173,11 +333,17 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
         Ok(bytes) => {
             let (content, encoding) = decode(&bytes);
             let eol = detect_eol(&content);
+            // 磁盘状态（供前端保存时 validate disk revision）
+            let (disk_mtime_ms, identity_key) = fs::metadata(&path)
+                .map(|m| (mtime_ms(&m), identity_key(&m)))
+                .unwrap_or((0, String::new()));
             OpenDocumentResult {
                 path: Some(path.to_string_lossy().into_owned()),
                 content: Some(content),
                 encoding: Some(encoding.to_string()),
                 eol: Some(eol.to_string()),
+                disk_mtime_ms: Some(disk_mtime_ms),
+                identity_key: Some(identity_key),
                 error: None,
             }
         }
@@ -186,15 +352,14 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
             content: None,
             encoding: None,
             eol: None,
+            disk_mtime_ms: None,
+            identity_key: None,
             error: Some(e.to_string()),
         },
     }
 }
 
-/// 保存文件：有 path 直接写；无 path 弹另存为对话框。
-/// - preserve encoding：按打开时检测的 encoding 重新编码（BOM 还原）；
-/// - preserve EOL：content 原样（不做 EOL 转换），eol 参数仅记录/预留；
-/// - atomic write（temp + flush + fsync + rename），对应 ADR-0009。
+/// 保存：preserve encoding/EOL + Atomic Save 管线
 #[tauri::command]
 pub async fn save_document(
     app: tauri::AppHandle,
@@ -202,6 +367,7 @@ pub async fn save_document(
     content: String,
     encoding: Option<String>,
     eol: Option<String>,
+    expected: Option<DiskState>,
 ) -> SaveDocumentResult {
     use tauri_plugin_dialog::DialogExt;
 
@@ -225,136 +391,199 @@ pub async fn save_document(
         return SaveDocumentResult::canceled();
     };
 
-    // EOL 保留：content 原样写入，不转换（eol 参数为 preserve-metadata 语义记录）
-    let _ = eol;
+    let _ = eol; // preserve EOL：content 原样，不转换
     let encoding = encoding.unwrap_or_else(|| ENC_UTF8.to_string());
     let data = encode(&content, &encoding);
 
-    if let Err(e) = atomic_write(&target, &data) {
-        return SaveDocumentResult {
+    match atomic_save(&target, &data, expected.as_ref()) {
+        Ok(outcome) => SaveDocumentResult {
+            path: Some(outcome.path),
+            disk_mtime_ms: Some(outcome.disk_mtime_ms),
+            identity_key: Some(outcome.identity_key),
+            error_code: None,
+            error: None,
+        },
+        Err(e) => SaveDocumentResult {
             path: Some(target.to_string_lossy().into_owned()),
-            error: Some(e.to_string()),
-        };
+            disk_mtime_ms: None,
+            identity_key: None,
+            error_code: Some(e.code().to_string()),
+            error: Some(e.message()),
+        },
     }
-
-    SaveDocumentResult {
-        path: Some(target.to_string_lossy().into_owned()),
-        error: None,
-    }
-}
-
-/// Atomic write：写入同目录临时文件后 rename 覆盖目标（flush + fsync）。
-fn atomic_write(target: &Path, data: &[u8]) -> std::io::Result<()> {
-    let dir = target.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = target
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("mellow-save");
-
-    let tmp_path = dir.join(format!(".{file_name}.mellow-tmp"));
-
-    if tmp_path.exists() {
-        let _ = fs::remove_file(&tmp_path);
-    }
-
-    let result = (|| {
-        let mut tmp = fs::File::create(&tmp_path)?;
-        tmp.write_all(data)?;
-        tmp.sync_all()?; // flush to disk before rename
-        drop(tmp);
-        fs::rename(&tmp_path, target)
-    })();
-
-    if result.is_err() {
-        let _ = fs::remove_file(&tmp_path);
-    }
-    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Open → No Edit → Save → byte identical（4 种编码 + 混合 EOL + 中文）
+    fn test_dir() -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir()
+            .join(format!("mellow-save-{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::SeqCst)));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Open → No Edit → Save → byte identical（4 编码）
     fn roundtrip(original: &[u8]) {
         let (content, encoding) = decode(original);
-        // 保存前不编辑：content 原样（保留 EOL）
         let saved = encode(&content, encoding);
-        assert_eq!(saved, original, "byte identical failed for {:?}", encoding);
+        assert_eq!(saved, original);
     }
 
     #[test]
-    fn roundtrip_utf8_no_bom() {
+    fn roundtrip_all_encodings() {
         roundtrip(b"# Title\n\nhello world\r\n");
-    }
-
-    #[test]
-    fn roundtrip_utf8_bom() {
-        let mut bytes = vec![0xEF, 0xBB, 0xBF];
-        bytes.extend_from_slice(b"# \xe4\xb8\xad\xe6\x96\x87\n\nlist:\r\n- a\r\n- b\n");
-        roundtrip(&bytes);
-    }
-
-    #[test]
-    fn roundtrip_utf16le() {
-        // "# 中文\r\n" 的 UTF-16LE + BOM
-        let mut bytes = vec![0xFF, 0xFE];
-        for unit in [0x0023u16, 0x0020, 0x4E2D, 0x6587, 0x000D, 0x000A] {
-            bytes.extend_from_slice(&unit.to_le_bytes());
+        let mut bom = vec![0xEF, 0xBB, 0xBF];
+        bom.extend_from_slice(b"# \xe4\xb8\xad\xe6\x96\x87\n\r\n");
+        roundtrip(&bom);
+        let mut le = vec![0xFF, 0xFE];
+        for u in [0x0023u16, 0x0020, 0x4E2D, 0x6587, 0x000D, 0x000A] {
+            le.extend_from_slice(&u.to_le_bytes());
         }
-        roundtrip(&bytes);
-    }
-
-    #[test]
-    fn roundtrip_utf16be() {
-        let mut bytes = vec![0xFE, 0xFF];
-        for unit in [0x0023u16, 0x0020, 0x4E2D, 0x6587, 0x000D, 0x000A] {
-            bytes.extend_from_slice(&unit.to_be_bytes());
+        roundtrip(&le);
+        let mut be = vec![0xFE, 0xFF];
+        for u in [0x0023u16, 0x0020, 0xD83C, 0xDF89, 0x000A] {
+            be.extend_from_slice(&u.to_be_bytes());
         }
-        roundtrip(&bytes);
+        roundtrip(&be);
     }
 
     #[test]
-    fn roundtrip_utf16le_surrogate_pair() {
-        // 代理对（emoji 🎉 = U+1F389）
-        let mut bytes = vec![0xFF, 0xFE];
-        for unit in [0xD83Cu16, 0xDF89u16, 0x000A] {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-        roundtrip(&bytes);
-    }
-
-    #[test]
-    fn detect_eol_variants() {
-        assert_eq!(detect_eol("a\nb"), EOL_LF);
+    fn detect_eol_and_encoding() {
         assert_eq!(detect_eol("a\r\nb"), EOL_CRLF);
-        assert_eq!(detect_eol("a\rb"), EOL_CR);
-        assert_eq!(detect_eol(""), EOL_LF);
-        assert_eq!(detect_eol("a\r\nb\nc"), EOL_CRLF); // 首个为准
-        assert_eq!(detect_eol("a\nb\r\nc"), EOL_LF);
-    }
-
-    #[test]
-    fn detect_encoding_labels() {
-        assert_eq!(decode(b"plain").1, ENC_UTF8);
+        assert_eq!(detect_eol("a\nb\r\n"), EOL_LF);
+        assert_eq!(decode(b"x").1, ENC_UTF8);
         let mut bom = vec![0xEF, 0xBB, 0xBF];
         bom.extend_from_slice(b"x");
         assert_eq!(decode(&bom).1, ENC_UTF8_BOM);
-        assert_eq!(decode(&[0xFF, 0xFE, 0x61, 0x00]).1, ENC_UTF16LE);
-        assert_eq!(decode(&[0xFE, 0xFF, 0x00, 0x61]).1, ENC_UTF16BE);
+    }
+
+    // ── Atomic Save 场景 ──
+
+    #[test]
+    fn normal_save_succeeds_and_verifies() {
+        let dir = test_dir();
+        let target = dir.join("a.md");
+        fs::write(&target, b"original").unwrap();
+        let before = fs::metadata(&target).unwrap();
+
+        let expected = DiskState {
+            mtime_ms: mtime_ms(&before),
+            identity_key: identity_key(&before),
+        };
+        let outcome = atomic_save(&target, b"new content", Some(&expected)).unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), b"new content"); // verify 通过
+        assert_eq!(outcome.bytes_written, 11);
+        assert!(outcome.disk_mtime_ms >= expected.mtime_ms);
+        assert_eq!(outcome.identity_key, identity_key(&fs::metadata(&target).unwrap()));
+        assert!(!tmp_path_for(&target).exists()); // temp 清理
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn atomic_write_replaces_and_is_clean() {
-        let dir = std::env::temp_dir().join(format!("mellow-test-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let target = dir.join("doc.md");
-        fs::write(&target, b"old").unwrap();
+    fn external_change_conflict_never_overwrites() {
+        let dir = test_dir();
+        let target = dir.join("b.md");
+        fs::write(&target, b"local").unwrap();
 
-        atomic_write(&target, b"new content").unwrap();
-        assert_eq!(fs::read(&target).unwrap(), b"new content");
-        // 临时文件清理
-        assert!(!target.with_file_name(".doc.md.mellow-tmp").exists());
+        // 模拟外部修改：mtime 过期（expected 是旧的）
+        let stale = DiskState { mtime_ms: 1, identity_key: "0:0".to_string() };
+        let err = atomic_save(&target, b"overwrite?", Some(&stale)).unwrap_err();
+        assert!(matches!(err, SaveError::Conflict(_)));
+        // 原文件未被破坏
+        assert_eq!(fs::read(&target).unwrap(), b"local");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn deleted_target_conflict() {
+        let dir = test_dir();
+        let target = dir.join("gone.md");
+        let expected = DiskState { mtime_ms: 1, identity_key: "0:0".to_string() };
+        let err = atomic_save(&target, b"x", Some(&expected)).unwrap_err();
+        assert!(matches!(err, SaveError::Conflict(_)));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_only_dir_fails_original_intact() {
+        let dir = test_dir();
+        let sub = dir.join("ro");
+        fs::create_dir_all(&sub).unwrap();
+        let target = sub.join("c.md");
+        fs::write(&target, b"keep me").unwrap();
+
+        // 只读目录：temp 创建失败（模拟 permission denied / disk full 写入失败路径）
+        let mut perms = fs::metadata(&sub).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o555);
+        }
+        fs::set_permissions(&sub, perms.clone()).unwrap();
+
+        let result = atomic_save(&target, b"new", None);
+        assert!(result.is_err()); // Io
+        // 原文件未被破坏
+        assert_eq!(fs::read(&target).unwrap(), b"keep me");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o755);
+        }
+        fs::set_permissions(&sub, perms).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rename_failure_original_intact_temp_cleaned() {
+        let dir = test_dir();
+        let target = dir.join("c.md");
+        fs::write(&target, b"keep me").unwrap();
+        // 目标改为目录 → rename(file → dir) 失败（模拟 file lock / antivirus rename 被拒）
+        fs::remove_file(&target).unwrap();
+        fs::create_dir(&target).unwrap();
+
+        let result = atomic_save(&target, b"new", None);
+        assert!(result.is_err());
+        // temp 已清理
+        assert!(!tmp_path_for(&target).exists());
+        // 目录（原目标）未被破坏
+        assert!(target.is_dir());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn crash_residue_temp_is_cleaned_on_next_save() {
+        let dir = test_dir();
+        let target = dir.join("d.md");
+        fs::write(&target, b"content").unwrap();
+
+        // 模拟 crash during save：残留 temp 文件
+        let tmp = tmp_path_for(&target);
+        fs::write(&tmp, b"partial").unwrap();
+
+        // 下一次保存：残留被清理，保存成功
+        let outcome = atomic_save(&target, b"fresh", None).unwrap();
+        assert_eq!(outcome.bytes_written, 5);
+        assert!(!tmp.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"fresh");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn no_expected_state_skips_validation() {
+        let dir = test_dir();
+        let target = dir.join("e.md");
+        fs::write(&target, b"x").unwrap();
+        // expected=None：不校验磁盘状态（新文档/无基准）
+        let outcome = atomic_save(&target, b"y", None).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"y");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

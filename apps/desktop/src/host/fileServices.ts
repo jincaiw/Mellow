@@ -20,11 +20,16 @@ interface TauriOpenResponse {
   content: string | null;
   encoding: string | null;
   eol: string | null;
+  disk_mtime_ms: number | null;
+  identity_key: string | null;
   error: string | null;
 }
 
 interface TauriSaveResponse {
   path: string | null;
+  disk_mtime_ms: number | null;
+  identity_key: string | null;
+  error_code: string | null;
   error: string | null;
 }
 
@@ -39,6 +44,8 @@ export const tauriFileService: FileService = {
       content: r.content ?? '',
       encoding: (r.encoding as Encoding) ?? 'utf-8',
       eol: (r.eol as LineEnding) ?? '\n',
+      diskMtimeMs: r.disk_mtime_ms ?? undefined,
+      identityKey: r.identity_key ?? undefined,
     });
   },
   async save(path: string | null, content: string, options?: SaveOptions): Promise<Result<WriteFileResult>> {
@@ -47,10 +54,24 @@ export const tauriFileService: FileService = {
       content,
       encoding: options?.encoding ?? null,
       eol: options?.eol ?? null,
+      expected: options?.expectedDisk
+        ? { mtime_ms: options.expectedDisk.mtimeMs, identity_key: options.expectedDisk.identityKey }
+        : null,
     });
-    if (r.error) return err({ code: 'io', message: r.error });
+    if (r.error) {
+      return err({
+        code: (r.error_code as 'io' | 'conflict') ?? 'io',
+        message: r.error,
+        path: r.path ?? undefined,
+      });
+    }
     if (r.path === null) return err({ code: 'canceled', message: '保存已取消' });
-    return ok({ path: r.path, bytesWritten: content.length });
+    return ok({
+      path: r.path,
+      bytesWritten: content.length,
+      diskMtimeMs: r.disk_mtime_ms ?? undefined,
+      identityKey: r.identity_key ?? undefined,
+    });
   },
   openPath: async (path: string) => err({ code: 'not-implemented', message: 'openPath 待实现', path }),
   readText: async (path: string) => err({ code: 'not-implemented', message: 'readText 待实现', path }),

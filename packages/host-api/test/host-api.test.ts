@@ -31,10 +31,13 @@ describe('Error model', () => {
 });
 
 describe('fs', () => {
-  test('open 预设路径读取文件内容（含 encoding/eol 元数据）', async () => {
+  test('open 预设路径读取文件内容（含 encoding/eol/磁盘状态）', async () => {
     const host = createMockHost({ files: new Map([['/a.md', 'hello']]), nextOpenPath: '/a.md' });
     const r = await host.fs.open();
-    expect(r).toEqual({ ok: true, value: { path: '/a.md', content: 'hello', encoding: 'utf-8', eol: '\n' } });
+    expect(r).toEqual({
+      ok: true,
+      value: { path: '/a.md', content: 'hello', encoding: 'utf-8', eol: '\n', diskMtimeMs: 1000, identityKey: 'mock:1' },
+    });
   });
 
   test('open 检测 CRLF EOL（preserve metadata）', async () => {

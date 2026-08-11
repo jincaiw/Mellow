@@ -10,6 +10,7 @@ export type HostErrorCode =
   | 'io'                 // 读写失败
   | 'invalid-argument'   // 参数非法
   | 'canceled'           // 用户取消（对话框）
+  | 'conflict'           // 磁盘文件被外部修改，拒绝覆盖（spec §5）
   | 'unsupported'        // 平台不支持
   | 'unknown';
 

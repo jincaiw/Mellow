@@ -31,11 +31,19 @@ export interface OpenFileResult {
   encoding: Encoding;
   /** 检测到的行尾（preserve EOL） */
   eol: LineEnding;
+  /** 磁盘 mtime（epoch ms；保存时 validate disk revision 用） */
+  diskMtimeMs?: number;
+  /** 文件身份键（保存时 validate 用） */
+  identityKey?: string;
 }
 
 export interface WriteFileResult {
   path: string;
   bytesWritten: number;
+  /** 保存后的磁盘 mtime（前端更新文档状态） */
+  diskMtimeMs?: number;
+  /** 保存后的文件身份键 */
+  identityKey?: string;
 }
 
 export interface DirEntry {
@@ -49,6 +57,8 @@ export interface SaveOptions {
   encoding?: Encoding;
   eol?: LineEnding;
   filters?: FileFilter[];
+  /** 期望的磁盘状态（validate disk revision；不提供则跳过校验） */
+  expectedDisk?: { mtimeMs: number; identityKey: string };
 }
 
 /**

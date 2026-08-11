@@ -45,6 +45,9 @@ export interface MockHostState {
   exported: Array<{ kind: 'pdf' | 'html' | 'print'; path: string | null; content: string }>;
   /** 最近保存的元数据（encoding/eol preserve 记录） */
   lastSaveMeta: { encoding: string; eol: string } | null;
+  /** mock 磁盘状态（open/save 返回） */
+  nextMtimeMs: number;
+  identityKey: string;
   /** keychain */
   secrets: Map<string, string>;
 }
@@ -71,6 +74,8 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     exported: initial?.exported ?? [],
     secrets: new Map(initial?.secrets ?? []),
     lastSaveMeta: initial?.lastSaveMeta ?? null,
+    nextMtimeMs: initial?.nextMtimeMs ?? 1000,
+    identityKey: initial?.identityKey ?? 'mock:1',
   };
 }
 
@@ -97,7 +102,7 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
     if (content === undefined) {
       return err({ code: 'not-found', message: `File not found: ${path}`, path });
     }
-    return ok({ path, content, encoding: 'utf-8', eol: detectEol(content) });
+    return ok({ path, content, encoding: 'utf-8', eol: detectEol(content), diskMtimeMs: state.nextMtimeMs, identityKey: state.identityKey });
   };
 
   return {
@@ -115,9 +120,8 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
           return err({ code: 'canceled', message: 'Save dialog canceled' });
         }
         state.files.set(normalizePath(target), content);
-        // 记录保存元数据（encoding/eol preserve 语义）
         state.lastSaveMeta = { encoding: options?.encoding ?? 'utf-8', eol: options?.eol ?? '\n' };
-        return ok({ path: target, bytesWritten: content.length });
+        return ok({ path: target, bytesWritten: content.length, diskMtimeMs: Date.now(), identityKey: state.identityKey });
       },
       readText: async (path: string): Promise<Result<string>> => {
         const result = readFile(path);
