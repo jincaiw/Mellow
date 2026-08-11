@@ -20,6 +20,7 @@ import { buildImageExtensions } from './image';
 import { buildSmartPasteExtension } from './smartPaste';
 import { buildClipboardCopyExtension } from './clipboardCopy';
 import { buildMathExtension } from './math';
+import { buildMermaidExtension } from './mermaid';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -27,6 +28,7 @@ export * from './image';
 export * from './smartPaste';
 export * from './clipboardCopy';
 export * from './math';
+export * from './mermaid';
 export {
   registerNode,
   registerHeadingNode,
@@ -67,6 +69,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildClipboardCopyExtension(),
     buildSmartPasteExtension(),
     buildMathExtension(false),
+    buildMermaidExtension(false),
     buildImageExtensions(),
   ];
 }

@@ -26,6 +26,7 @@
 | `clipboard/spreadsheet.tsv` | 电子表格 TSV → GFM Table |
 | `clipboard/spreadsheet-unicode.tsv` | TSV：中文、emoji、pipe 转义 |
 | `math/typora-math-corpus.md` | Typora Math Corpus：inline、block、macro、mhchem、error、copy source |
+| `mermaid/typora-mermaid-corpus.md` | Typora Mermaid Corpus：flowchart、sequence、class、state、ER、pie、mindmap、timeline、kanban、error |
 
 ## 用法示例（jest）
 
