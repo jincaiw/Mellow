@@ -1,24 +1,28 @@
 /**
- * Marker Reveal 引擎 —— CodeMirror ViewPlugin 实现。
+ * Marker Reveal 引擎管线 —— CodeMirror ViewPlugin 实现（通用框架）。
  *
- * 管线（live-markdown-engine-spec §3）：
+ * 管线（spec §3）：
  *   Editor Transaction
  *     → syntaxTree 增量解析（CM 内部完成）
- *     → Render eligibility（caret/selection intersects → source）
+ *     → Render eligibility（节点注册表 + NodeVisualState 状态机，spec §4/§5）
  *     → Decoration patch（仅对 marker 范围加 class）
+ *     → Viewport-only（只遍历 visibleRanges，spec §20）
  *
  * 约束：
  * - 不重建 EditorView（spec §6 / 用户要求）；
  * - Markdown Text 唯一真源：只用 mark decoration + CSS，从不 replace 文本（spec §2）；
  * - Composition Guard：composition 期间只 map decoration 位置，不重算（spec §6）；
- * - 无法识别的节点按 source 处理（不隐藏，安全 fallback）。
+ * - invalid/未注册/无法提取 marker 的节点按 source 处理（不隐藏，安全 fallback）；
+ * - 增量更新：只在 doc/selection/viewport 变化时重算（spec §3 不每次输入重建全文）。
  */
 
 import type { EditorView, ViewUpdate, DecorationSet, Decoration as DecorationT } from '@codemirror/view';
-import type { Extension, EditorState } from '@codemirror/state';
+import type { Extension } from '@codemirror/state';
 import type { SyntaxNodeRef, SyntaxNode } from '@lezer/common';
 
-import { CONTENT_NODE_NAMES, MARKER_NODE_NAMES, headingMarkerEnd } from './markers';
+import { registerBuiltinNodes, contentNodeNames, markerNodeNames, extractMarkers, getNodeSpec } from './nodes';
+import { classifyNodeState, shouldHideMarkers } from './state';
+import type { RevealContext } from './types';
 import { isComposing } from './composition';
 
 /** 隐藏 marker 的 class（CSS: font-size: 0） */
@@ -50,6 +54,19 @@ function resolveCm(): CmRuntime {
   };
 }
 
+/** 找 marker 所属的顶层内容节点（沿父链向上，如 EmphasisMark → Emphasis/StrongEmphasis） */
+function topContentAncestor(node: SyntaxNodeRef, names: ReadonlySet<string>): SyntaxNode | null {
+  let current: SyntaxNode | null = node.node.parent;
+  let top: SyntaxNode | null = null;
+  while (current !== null) {
+    if (names.has(current.name)) {
+      top = current;
+    }
+    current = current.parent;
+  }
+  return top;
+}
+
 /**
  * 构建引擎扩展。
  *
@@ -57,50 +74,18 @@ function resolveCm(): CmRuntime {
  *   MarkEdit.addExtension(engine.buildMarkerRevealExtension())
  */
 export function buildMarkerRevealExtension(): Extension {
+  registerBuiltinNodes(); // 幂等：注册内置节点
   const cm = resolveCm();
   const { EditorView, ViewPlugin, Decoration, RangeSetBuilder, syntaxTree } = cm;
-
-  /**
-   * 计算单个 marker 节点的隐藏范围（相对 doc 偏移）。
-   * - HeaderMark：扩展 `#` 至其后的空白（隐藏 `# `）
-   * - 其余 marker：节点本身范围
-   */
-  const markerRange = (
-    node: SyntaxNodeRef,
-    parent: SyntaxNode | null,
-    state: EditorState,
-  ): { from: number; to: number } | null => {
-    if (node.name === 'HeaderMark') {
-      if (parent === null) {
-        return null;
-      }
-      const parentText = state.sliceDoc(parent.from, parent.to);
-      const end = headingMarkerEnd(parentText);
-      return end === null ? null : { from: parent.from, to: parent.from + end };
-    }
-    return { from: node.from, to: node.to };
-  };
-
-  /** 找 marker 所属的顶层内容节点（沿父链向上，如 EmphasisMark → Emphasis/StrongEmphasis） */
-  const topContentAncestor = (node: SyntaxNodeRef): SyntaxNode | null => {
-    let current: SyntaxNode | null = node.node.parent;
-    let top: SyntaxNode | null = null;
-    while (current !== null) {
-      if (CONTENT_NODE_NAMES.has(current.name)) {
-        top = current;
-      }
-      current = current.parent;
-    }
-    return top;
-  };
+  const contentNames = contentNodeNames();
+  const markerNames = markerNodeNames();
 
   const buildDecorations = (view: EditorView): DecorationSet => {
     const { state } = view;
     const main = state.selection.main;
     const builder = new RangeSetBuilder<DecorationT>();
 
-    // 只遍历视口内的语法树（spec §20：viewport-only）
-    // jsdom/无布局环境 visibleRanges 可能为空，fallback 到整个文档
+    // Viewport-only（spec §20）；jsdom/无布局环境 visibleRanges 为空 → fallback 全文档
     const ranges = view.visibleRanges.length > 0
       ? view.visibleRanges
       : [{ from: 0, to: state.doc.length }];
@@ -110,7 +95,7 @@ export function buildMarkerRevealExtension(): Extension {
         from,
         to,
         enter: (node) => {
-          if (!MARKER_NODE_NAMES.has(node.name)) {
+          if (!markerNames.has(node.name)) {
             return;
           }
 
@@ -119,22 +104,35 @@ export function buildMarkerRevealExtension(): Extension {
             return;
           }
 
-          // Reveal Policy（spec §5.1/5.2）：caret/selection 与内容节点相交 → source（显示）
-          const contentNode = topContentAncestor(node);
-          if (contentNode === null) {
-            return; // 无内容祖先 → source（不隐藏）
+          // 内容祖先 + 节点规格（未注册 → source，安全）
+          const ancestor = topContentAncestor(node, contentNames);
+          if (ancestor === null) {
+            return;
           }
-          if (intersects(main.from, main.to, contentNode.from, contentNode.to)) {
+          const spec = getNodeSpec(ancestor.name);
+          if (spec === null) {
             return;
           }
 
-          const range = markerRange(node, node.node.parent, state);
-          if (range === null) {
-            return;
+          const parent = { from: ancestor.from, text: state.sliceDoc(ancestor.from, ancestor.to) };
+          const markers = extractMarkers(spec, { from: node.from, to: node.to, name: node.name }, parent);
+          if (markers === null || markers.length === 0) {
+            return; // invalid → source（不隐藏）
           }
 
-          // rendered：隐藏 marker
-          builder.add(range.from, range.to, Decoration.mark({ class: MARKER_CLASS }));
+          // Reveal policy（spec §5）：状态机判定（可被 NodeSpec.classify 定制）
+          const ctx: RevealContext = { caret: main, composing: isComposing() };
+          const visual = spec.classify
+            ? spec.classify(ancestor, markers, ctx)
+            : classifyNodeState(ancestor, markers, ctx);
+
+          // rendered → 隐藏全部 marker
+          if (!shouldHideMarkers(visual)) {
+            return;
+          }
+          for (const m of markers) {
+            builder.add(m.from, m.to, Decoration.mark({ class: MARKER_CLASS }));
+          }
         },
       });
     }
@@ -161,7 +159,7 @@ export function buildMarkerRevealExtension(): Extension {
           return;
         }
 
-        // 只在这三类变化时重算（spec §3：不每次输入重建全文 decoration）
+        // 增量更新：只在 doc/selection/viewport 变化时重算（spec §3）
         if (update.docChanged || update.selectionSet || update.viewportChanged) {
           this.decorations = buildDecorations(update.view);
         }
@@ -179,9 +177,4 @@ export function buildMarkerRevealExtension(): Extension {
   });
 
   return [plugin, style];
-}
-
-/** 区间相交判定：caret(pos,pos) 或 selection[a,b] 与 [from,to] 闭区间相交（含边界） */
-export function intersects(aFrom: number, aTo: number, bFrom: number, bTo: number): boolean {
-  return aFrom <= bTo && aTo >= bFrom;
 }

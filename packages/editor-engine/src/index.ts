@@ -1,16 +1,37 @@
 /**
- * Mellow Live Markdown Engine —— 入口。
+ * Mellow Live Markdown Engine —— 通用框架入口。
  *
  * 通过宿主注入（MarkEdit.addExtension），不修改 vendored CoreEditor：
  *   import * as engine from '@mellow/editor-engine';
  *   MarkEdit.addExtension(engine.buildMarkerRevealExtension());
+ *
+ * 框架能力：
+ * - NodeVisualState 状态机（source/rendered/mixed/invalid，spec §4）
+ * - Reveal Policy 纯函数（caret/selection/composition/forceSource，spec §5）
+ * - 节点注册表（NodeSpec：新增节点 = registerNode，不改管线）
+ * - Composition Guard（spec §6）+ 增量 decoration 更新 + Viewport-only（spec §3/§20）
  */
 
 import { buildMarkerRevealExtension } from './plugin';
 import { installCompositionTracking } from './composition';
 
 export { buildMarkerRevealExtension, MARKER_CLASS } from './plugin';
-export { CONTENT_NODE_NAMES, MARKER_NODE_NAMES, headingMarkerEnd } from './markers';
+export {
+  registerNode,
+  registerHeadingNode,
+  registerInlineNodes,
+  registerBuiltinNodes,
+  getNodeSpec,
+  extractMarkers,
+  contentNodeNames,
+  markerNodeNames,
+  CONTENT_NODE_NAMES,
+  MARKER_NODE_NAMES,
+  headingMarkerEnd,
+} from './nodes';
+export { classifyNodeState, shouldHideMarkers, shouldShowMarkers } from './state';
+export { intersects } from './types';
+export type { NodeVisualState, NodeSpec, MarkerRange, RevealContext } from './types';
 
 /**
  * 宿主安装入口：注册 composition 监听并返回引擎扩展。
