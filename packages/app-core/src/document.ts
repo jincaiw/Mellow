@@ -13,6 +13,7 @@ import type {
   Result,
   OpenFileResult,
   WriteFileResult,
+  SaveOptions,
   DesktopHost,
 } from '../../host-api/src/index';
 
@@ -20,14 +21,14 @@ import type {
 export class DocumentService {
   constructor(private readonly fs: FileService) {}
 
-  /** 对话框打开文档 */
+  /** 对话框打开文档（返回含 encoding/eol 元数据） */
   open(): Promise<Result<OpenFileResult>> {
     return this.fs.open();
   }
 
-  /** 保存文档（path 为 null 时弹另存对话框） */
-  save(path: string | null, content: string): Promise<Result<WriteFileResult>> {
-    return this.fs.save(path, content);
+  /** 保存文档（path 为 null 时弹另存对话框；options 携带 encoding/eol preserve） */
+  save(path: string | null, content: string, options?: SaveOptions): Promise<Result<WriteFileResult>> {
+    return this.fs.save(path, content, options);
   }
 }
 

@@ -13,6 +13,8 @@ import type {
   SearchResult,
   FileFilter,
   NotificationRequest,
+  Encoding,
+  LineEnding,
 } from './types';
 
 // ─────────────────────────── fs ───────────────────────────
@@ -25,6 +27,10 @@ export interface OpenFileOptions {
 export interface OpenFileResult {
   path: string;
   content: string;
+  /** 检测到的编码（preserve encoding） */
+  encoding: Encoding;
+  /** 检测到的行尾（preserve EOL） */
+  eol: LineEnding;
 }
 
 export interface WriteFileResult {
@@ -38,6 +44,13 @@ export interface DirEntry {
   isDirectory: boolean;
 }
 
+/** 保存选项（preserve metadata：未指定时默认 utf-8 / 不转换 EOL） */
+export interface SaveOptions {
+  encoding?: Encoding;
+  eol?: LineEnding;
+  filters?: FileFilter[];
+}
+
 /**
  * 文件服务：打开/保存/读写/目录（写采用 atomic，ADR-0009 语义由实现保证）。
  * 取消对话框返回 { ok:false, error:{ code:'canceled' } }。
@@ -47,8 +60,8 @@ export interface FileService {
   open(options?: OpenFileOptions): Promise<Result<OpenFileResult>>;
   /** 直接按路径打开（无需对话框） */
   openPath(path: string): Promise<Result<OpenFileResult>>;
-  /** 保存：path 为 null 时弹另存对话框 */
-  save(path: string | null, content: string, options?: OpenFileOptions): Promise<Result<WriteFileResult>>;
+  /** 保存：path 为 null 时弹另存对话框；options 携带 encoding/eol（preserve metadata） */
+  save(path: string | null, content: string, options?: SaveOptions): Promise<Result<WriteFileResult>>;
   /** 读文本 */
   readText(path: string): Promise<Result<string>>;
   /** 写文本（atomic：临时文件 + rename） */

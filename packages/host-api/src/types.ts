@@ -63,6 +63,12 @@ export interface FileFilter {
   extensions: string[];
 }
 
+/** 文本编码（BOM 由加载管线检测并剥离，模型仅记录） */
+export type Encoding = 'utf-8' | 'utf-8-bom' | 'utf-16le' | 'utf-16be' | 'latin1';
+
+/** 行尾 */
+export type LineEnding = '\n' | '\r\n' | '\r';
+
 /** 系统通知请求 */
 export interface NotificationRequest {
   title: string;

@@ -11,14 +11,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorCore } from '../../../packages/editor-core/src';
 import { DocumentService } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
+import type { Encoding, LineEnding } from '../../../packages/host-api/src/index';
 
 type EditorStatus = 'idle' | 'ready' | 'error';
+
+interface DocMeta {
+  encoding: Encoding;
+  eol: LineEnding;
+}
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<EditorCore | null>(null);
   const filePathRef = useRef<string | null>(null);
   const documentsRef = useRef<DocumentService | null>(null);
+  // preserve metadata：打开时记录编码/EOL，保存时原样传回
+  const docMetaRef = useRef<DocMeta>({ encoding: 'utf-8', eol: '\n' });
 
   const [status, setStatus] = useState<EditorStatus>('idle');
   const [statusText, setStatusText] = useState('未加载');
@@ -65,6 +73,7 @@ export default function App() {
     const host = hostRef.current;
     if (!host) return;
     filePathRef.current = null;
+    docMetaRef.current = { encoding: 'utf-8', eol: '\n' }; // 新文档默认 UTF-8/LF
     setDirty(false);
     await host.open('', undefined, true);
     setStatusText('新建文档（未保存）');
@@ -83,6 +92,7 @@ export default function App() {
       return;
     }
     filePathRef.current = result.value.path;
+    docMetaRef.current = { encoding: result.value.encoding, eol: result.value.eol }; // preserve metadata
     setDirty(false);
     await host.open(result.value.content, undefined, true);
     setStatusText(`已打开 ${result.value.path}`);
@@ -94,7 +104,8 @@ export default function App() {
     const documents = documentsRef.current;
     if (!host || !documents) return;
     const content = host.getText();
-    const result = await documents.save(filePathRef.current, content);
+    const meta = docMetaRef.current;
+    const result = await documents.save(filePathRef.current, content, { encoding: meta.encoding, eol: meta.eol });
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
         setStatusText(`保存失败: ${result.error.message}`);
@@ -111,7 +122,8 @@ export default function App() {
     const documents = documentsRef.current;
     if (!host || !documents) return;
     const content = host.getText();
-    const result = await documents.save(null, content);
+    const meta = docMetaRef.current;
+    const result = await documents.save(null, content, { encoding: meta.encoding, eol: meta.eol });
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
         setStatusText(`另存失败: ${result.error.message}`);

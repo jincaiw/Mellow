@@ -7,7 +7,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { createMockHost } from '../../../../packages/host-api/src/index';
-import type { FileService, Result, OpenFileResult, WriteFileResult } from '../../../../packages/host-api/src/index';
+import type { FileService, Result, OpenFileResult, WriteFileResult, SaveOptions, Encoding, LineEnding } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 
 /** 是否为 Tauri 运行时（浏览器 dev 模式为 false） */
@@ -15,16 +15,39 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+interface TauriOpenResponse {
+  path: string | null;
+  content: string | null;
+  encoding: string | null;
+  eol: string | null;
+  error: string | null;
+}
+
+interface TauriSaveResponse {
+  path: string | null;
+  error: string | null;
+}
+
 /** Tauri 实现（类型适配到新 Result 契约；命令语义不变） */
 export const tauriFileService: FileService = {
   async open(): Promise<Result<OpenFileResult>> {
-    const r = await invoke<{ path: string | null; content: string | null; error: string | null }>('open_document');
+    const r = await invoke<TauriOpenResponse>('open_document');
     if (r.error) return err({ code: 'io', message: r.error });
     if (r.path === null) return err({ code: 'canceled', message: '打开已取消' });
-    return ok({ path: r.path, content: r.content ?? '' });
+    return ok({
+      path: r.path,
+      content: r.content ?? '',
+      encoding: (r.encoding as Encoding) ?? 'utf-8',
+      eol: (r.eol as LineEnding) ?? '\n',
+    });
   },
-  async save(path: string | null, content: string): Promise<Result<WriteFileResult>> {
-    const r = await invoke<{ path: string | null; error: string | null }>('save_document', { path, content });
+  async save(path: string | null, content: string, options?: SaveOptions): Promise<Result<WriteFileResult>> {
+    const r = await invoke<TauriSaveResponse>('save_document', {
+      path,
+      content,
+      encoding: options?.encoding ?? null,
+      eol: options?.eol ?? null,
+    });
     if (r.error) return err({ code: 'io', message: r.error });
     if (r.path === null) return err({ code: 'canceled', message: '保存已取消' });
     return ok({ path: r.path, bytesWritten: content.length });

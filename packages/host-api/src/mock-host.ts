@@ -43,6 +43,8 @@ export interface MockHostState {
   spawned: Array<{ command: string; args: string[]; options?: { cwd?: string } }>;
   killed: number[];
   exported: Array<{ kind: 'pdf' | 'html' | 'print'; path: string | null; content: string }>;
+  /** 最近保存的元数据（encoding/eol preserve 记录） */
+  lastSaveMeta: { encoding: string; eol: string } | null;
   /** keychain */
   secrets: Map<string, string>;
 }
@@ -68,7 +70,18 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     killed: initial?.killed ?? [],
     exported: initial?.exported ?? [],
     secrets: new Map(initial?.secrets ?? []),
+    lastSaveMeta: initial?.lastSaveMeta ?? null,
   };
+}
+
+/** 检测行尾（mock 用，与 Rust detect_eol 语义一致） */
+function detectEol(content: string): '\n' | '\r\n' | '\r' {
+  const crlf = content.indexOf('\r\n');
+  const lf = content.indexOf('\n');
+  const cr = content.indexOf('\r');
+  if (crlf !== -1 && (lf === -1 || crlf < lf)) return '\r\n';
+  if (cr !== -1 && (lf === -1 || cr < lf)) return '\r';
+  return '\n';
 }
 
 function normalizePath(path: string): string {
@@ -84,7 +97,7 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
     if (content === undefined) {
       return err({ code: 'not-found', message: `File not found: ${path}`, path });
     }
-    return ok({ path, content });
+    return ok({ path, content, encoding: 'utf-8', eol: detectEol(content) });
   };
 
   return {
@@ -96,12 +109,14 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
         return readFile(state.nextOpenPath);
       },
       openPath: async (path: string): Promise<Result<OpenFileResult>> => readFile(path),
-      save: async (path: string | null, content: string, _options?: OpenFileOptions): Promise<Result<WriteFileResult>> => {
+      save: async (path: string | null, content: string, options?: { encoding?: string; eol?: string; filters?: unknown }): Promise<Result<WriteFileResult>> => {
         const target = path ?? state.nextSavePath;
         if (target === null) {
           return err({ code: 'canceled', message: 'Save dialog canceled' });
         }
         state.files.set(normalizePath(target), content);
+        // 记录保存元数据（encoding/eol preserve 语义）
+        state.lastSaveMeta = { encoding: options?.encoding ?? 'utf-8', eol: options?.eol ?? '\n' };
         return ok({ path: target, bytesWritten: content.length });
       },
       readText: async (path: string): Promise<Result<string>> => {

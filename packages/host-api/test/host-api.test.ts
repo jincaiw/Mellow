@@ -31,10 +31,28 @@ describe('Error model', () => {
 });
 
 describe('fs', () => {
-  test('open 预设路径读取文件内容', async () => {
+  test('open 预设路径读取文件内容（含 encoding/eol 元数据）', async () => {
     const host = createMockHost({ files: new Map([['/a.md', 'hello']]), nextOpenPath: '/a.md' });
     const r = await host.fs.open();
-    expect(r).toEqual({ ok: true, value: { path: '/a.md', content: 'hello' } });
+    expect(r).toEqual({ ok: true, value: { path: '/a.md', content: 'hello', encoding: 'utf-8', eol: '\n' } });
+  });
+
+  test('open 检测 CRLF EOL（preserve metadata）', async () => {
+    const host = createMockHost({ files: new Map([['/crlf.md', 'a\r\nb\r\n']]), nextOpenPath: '/crlf.md' });
+    const r = await host.fs.open();
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.eol).toBe('\r\n');
+  });
+
+  test('save 携带 encoding/eol（preserve metadata 契约，SaveOptions 接受且不报错）', async () => {
+    const host = createMockHost({ nextSavePath: '/out.md' });
+    const r = await host.fs.save(null, 'content', { encoding: 'utf-8-bom', eol: '\r\n' });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.path).toBe('/out.md');
+      expect(r.value.bytesWritten).toBe(7);
+    }
+    // 契约：save 接受 SaveOptions（encoding/eol）；实际编码由 Adapter 实现保证
   });
 
   test('readText 不存在的文件 → not-found', async () => {
