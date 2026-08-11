@@ -25,6 +25,7 @@
 | `clipboard/copy-source.md` | Clipboard Copy：中文、Unicode、链接、列表、表格、代码块 |
 | `clipboard/spreadsheet.tsv` | 电子表格 TSV → GFM Table |
 | `clipboard/spreadsheet-unicode.tsv` | TSV：中文、emoji、pipe 转义 |
+| `math/typora-math-corpus.md` | Typora Math Corpus：inline、block、macro、mhchem、error、copy source |
 
 ## 用法示例（jest）
 
