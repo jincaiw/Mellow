@@ -15,12 +15,16 @@
 import { buildMarkerRevealExtension } from './plugin';
 import { installCompositionTracking } from './composition';
 
-export { buildMarkerRevealExtension, MARKER_CLASS } from './plugin';
+export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export {
   registerNode,
   registerHeadingNode,
   registerSetextNode,
   registerInlineNodes,
+  registerLinkNode,
+  registerAutolinkNode,
+  registerListNode,
+  registerBlockquoteNode,
   registerBuiltinNodes,
   getNodeSpec,
   extractMarkers,

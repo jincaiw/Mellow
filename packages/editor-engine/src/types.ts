@@ -11,6 +11,8 @@ export interface MarkerRange {
   to: number;
   /** marker 类型（默认 'marker'；link 用 'url'/'text-marker'/'url-marker'） */
   kind?: string;
+  /** 隐藏样式 class（默认 mellow-md-marker 完全隐藏；list 用 mellow-md-marker-dim 弱化） */
+  cls?: string;
 }
 
 /** Reveal 判定上下文（spec §5：caret/selection/composition/source-mode/setting） */
@@ -58,3 +60,9 @@ export interface NodeSpec {
 export function intersects(aFrom: number, aTo: number, bFrom: number, bTo: number): boolean {
   return aFrom <= bTo && aTo >= bFrom;
 }
+
+/** 完全隐藏 class（CSS: font-size: 0） */
+export const MARKER_CLASS = 'mellow-md-marker';
+
+/** 弱化 class（CSS: opacity，list 的 visually normalized，spec §14） */
+export const MARKER_DIM_CLASS = 'mellow-md-marker-dim';

@@ -7,7 +7,7 @@
  */
 
 import type { NodeSpec, MarkerRange } from './types';
-import { intersects } from './types';
+import { intersects, MARKER_DIM_CLASS } from './types';
 
 /** 内容节点名 → NodeSpec 注册表 */
 const registry = new Map<string, NodeSpec>();
@@ -199,6 +199,59 @@ export function registerAutolinkNode(): void {
   });
 }
 
+/**
+ * List Item（无序/有序/嵌套/任务）：spec §14/§15。
+ * marker = ListMark（`- ` / `* ` / `1. `）；idle 弱化（dim），caret 行完整显示。
+ * Task 的 checkbox（[ ]/[x]）由 CoreEditor widget 处理（taskMarkerStyle），不重复。
+ */
+export function registerListNode(): void {
+  registerNode({
+    contentNodeNames: ['ListItem'],
+    markerNodeNames: ['ListMark'],
+    hiddenMarkers: (_node, markers, _ctx, state) => {
+      if (state === 'source') {
+        return [];
+      }
+      // rendered（idle）：弱化 marker（保留布局，无 jump）
+      return markers.map((m) => ({ ...m, cls: MARKER_DIM_CLASS }));
+    },
+  });
+}
+
+/**
+ * Blockquote：spec §14。marker = QuoteMark（`>`）。
+ * - idle：全部隐藏
+ * - caret 行：该行 `>` 显示（行级 mixed），其他行隐藏
+ */
+export function registerBlockquoteNode(): void {
+  registerNode({
+    contentNodeNames: ['Blockquote'],
+    markerNodeNames: ['QuoteMark'],
+    classify: (node, _markers, ctx) => {
+      if (ctx.forceSource) {
+        return 'source';
+      }
+      return intersects(ctx.caret.anchor, ctx.caret.head, node.from, node.to) ? 'mixed' : 'rendered';
+    },
+    hiddenMarkers: (node, markers, ctx, state) => {
+      if (state === 'source') {
+        return [];
+      }
+      const caret = ctx.caret;
+      // caret 所在行 = caret 位于该 marker 到下一个 marker 之间
+      const caretLineMarkers = markers.filter((m, i) => {
+        const nextFrom = markers[i + 1]?.from ?? node.to;
+        return caret.head >= m.from && caret.head < nextFrom;
+      });
+      if (caretLineMarkers.length === 0) {
+        return markers; // idle：全隐藏
+      }
+      // 隐藏除 caret 行外的所有 marker
+      return markers.filter((m) => !caretLineMarkers.includes(m));
+    },
+  });
+}
+
 /** 注册全部内置节点（幂等） */
 let builtinRegistered = false;
 export function registerBuiltinNodes(): void {
@@ -211,6 +264,8 @@ export function registerBuiltinNodes(): void {
   registerInlineNodes();
   registerLinkNode();
   registerAutolinkNode();
+  registerListNode();
+  registerBlockquoteNode();
 }
 
 // ─────────────────────────── 兼容导出（原 markers.ts 语义） ───────────────────────────

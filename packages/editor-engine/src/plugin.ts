@@ -22,11 +22,15 @@ import type { Extension } from '@codemirror/state';
 import { registerBuiltinNodes, contentNodeNames, markerNodeNames, extractMarkers, getNodeSpec } from './nodes';
 import { classifyNodeState, shouldHideMarkers } from './state';
 import type { RevealContext, MarkerRange } from './types';
+import { MARKER_CLASS, MARKER_DIM_CLASS } from './types';
 import { isComposing } from './composition';
 import { isSourceMode } from './mode';
 
 /** 隐藏 marker 的 class（CSS: font-size: 0） */
-export const MARKER_CLASS = 'mellow-md-marker';
+export { MARKER_CLASS } from './types';
+
+/** 弱化 marker 的 class（CSS: opacity 保留布局；list 的 visually normalized，spec §14） */
+export { MARKER_DIM_CLASS } from './types';
 
 /** 运行时 CM6 模块（iframe 内与 CoreEditor 同一实例，保证扩展兼容） */
 interface CmRuntime {
@@ -73,7 +77,7 @@ export function buildMarkerRevealExtension(): Extension {
     const { state } = view;
     const main = state.selection.main;
     const builder = new RangeSetBuilder<DecorationT>();
-    const pending: Array<{ from: number; to: number }> = [];
+    const pending: MarkerRange[] = [];
 
     // Viewport-only（spec §20）；jsdom/无布局环境 visibleRanges 为空 → fallback 全文档
     const ranges = view.visibleRanges.length > 0
@@ -98,23 +102,35 @@ export function buildMarkerRevealExtension(): Extension {
           }
 
           const parent = { from: node.from, text: state.sliceDoc(node.from, node.to) };
-          const markers: MarkerRange[] = [];
+          const rawMarkers: Array<{ from: number; to: number; name: string; text: string }> = [];
 
-          // 遍历直接 marker 子节点（嵌套内容节点各自处理自己的 marker）
-          const cursor = node.node.cursor();
-          if (cursor.firstChild()) {
+          // 递归收集 marker 子节点（跳过嵌套内容节点——它们各自处理自己的 marker）
+          const collectMarkers = (cur: import('@lezer/common').TreeCursor): void => {
+            if (!cur.firstChild()) {
+              return;
+            }
             do {
-              if (markerNames.has(cursor.type.name)) {
-                const childInfo = {
-                  from: cursor.from,
-                  to: cursor.to,
-                  name: cursor.type.name,
-                  text: state.sliceDoc(cursor.from, cursor.to),
-                };
-                const extracted = extractMarkers(spec, childInfo, parent) ?? [];
-                markers.push(...extracted);
+              const name = cur.type.name;
+              if (markerNames.has(name)) {
+                rawMarkers.push({
+                  from: cur.from,
+                  to: cur.to,
+                  name,
+                  text: state.sliceDoc(cur.from, cur.to),
+                });
+              } else if (!contentNames.has(name)) {
+                collectMarkers(cur);
               }
-            } while (cursor.nextSibling());
+            } while (cur.nextSibling());
+            cur.parent();
+          };
+          collectMarkers(node.node.cursor());
+
+          // 通过 NodeSpec.extractMarkers 转换（heading 含空格 / link kind 分类）
+          const markers: MarkerRange[] = [];
+          for (const rm of rawMarkers) {
+            const extracted = extractMarkers(spec, rm, parent) ?? [];
+            markers.push(...extracted);
           }
           if (markers.length === 0) {
             return;
@@ -143,7 +159,7 @@ export function buildMarkerRevealExtension(): Extension {
     // RangeSetBuilder 要求按 from 升序添加（嵌套节点批次可能乱序）
     pending.sort((a, b) => a.from - b.from);
     for (const m of pending) {
-      builder.add(m.from, m.to, Decoration.mark({ class: MARKER_CLASS }));
+      builder.add(m.from, m.to, Decoration.mark({ class: m.cls ?? MARKER_CLASS }));
     }
 
     return builder.finish();
@@ -182,6 +198,10 @@ export function buildMarkerRevealExtension(): Extension {
       fontSize: '0',
       // 视觉隐藏但保留可选中文本语义（copy 时仍包含 marker —— 唯一真源）
       userSelect: 'text',
+    },
+    [`.${MARKER_DIM_CLASS}`]: {
+      // 弱化而非隐藏：保留布局（无 caret jump），marker 视觉淡化（Typora list marker）
+      opacity: '0.35',
     },
   });
 
