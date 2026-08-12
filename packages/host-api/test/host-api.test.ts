@@ -184,6 +184,19 @@ describe('window', () => {
     expect(await host.window.getSize()).toEqual({ ok: true, value: { width: 800, height: 600 } });
     expect(await host.window.getFocused()).toEqual({ ok: true, value: true });
   });
+
+  test('minimize / maximize / toggleMaximize / isMaximized / setFullscreen', async () => {
+    const host = createMockHost();
+    expect(await host.window.isMaximized()).toEqual({ ok: true, value: false });
+    await host.window.maximize();
+    expect(await host.window.isMaximized()).toEqual({ ok: true, value: true });
+    await host.window.toggleMaximize();
+    expect(await host.window.isMaximized()).toEqual({ ok: true, value: false });
+    await host.window.setFullscreen(true);
+    expect(await host.window.isFullscreen()).toEqual({ ok: true, value: true });
+    await host.window.minimize();
+    expect(await host.window.close()).toEqual({ ok: true, value: undefined });
+  });
 });
 
 describe('watcher', () => {

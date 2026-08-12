@@ -31,6 +31,8 @@ export interface MockHostState {
   windowTitle: string;
   windowSize: Size;
   windowFocused: boolean;
+  windowMaximized: boolean;
+  windowFullscreen: boolean;
   /** fs.open 对话框预设路径；null 表示用户取消 */
   nextOpenPath: string | null;
   /** fs.save 对话框预设路径（path 为 null 时使用）；null 表示用户取消 */
@@ -76,6 +78,8 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     windowTitle: initial?.windowTitle ?? 'Mellow',
     windowSize: initial?.windowSize ?? { width: 1200, height: 800 },
     windowFocused: initial?.windowFocused ?? true,
+    windowMaximized: initial?.windowMaximized ?? false,
+    windowFullscreen: initial?.windowFullscreen ?? false,
     nextOpenPath: initial?.nextOpenPath ?? null,
     // 注意：null 表示「另存为对话框取消」，必须保留（不能用 ?? 替换默认值）
     nextSavePath: initial?.nextSavePath === undefined ? '/untitled.md' : initial.nextSavePath,
@@ -381,7 +385,20 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
       getSize: async (): Promise<Result<Size>> => ok(state.windowSize),
       getFocused: async (): Promise<Result<boolean>> => ok(state.windowFocused),
       minimize: async (): Promise<Result<void>> => ok(undefined),
-      maximize: async (): Promise<Result<void>> => ok(undefined),
+      maximize: async (): Promise<Result<void>> => {
+        state.windowMaximized = true;
+        return ok(undefined);
+      },
+      toggleMaximize: async (): Promise<Result<void>> => {
+        state.windowMaximized = !state.windowMaximized;
+        return ok(undefined);
+      },
+      isMaximized: async (): Promise<Result<boolean>> => ok(state.windowMaximized),
+      setFullscreen: async (fullscreen: boolean): Promise<Result<void>> => {
+        state.windowFullscreen = fullscreen;
+        return ok(undefined);
+      },
+      isFullscreen: async (): Promise<Result<boolean>> => ok(state.windowFullscreen),
       close: async (): Promise<Result<void>> => ok(undefined),
     },
 

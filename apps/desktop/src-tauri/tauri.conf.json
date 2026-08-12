@@ -13,11 +13,14 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Mellow V0.0 — Runtime Qualification",
+        "title": "Mellow",
         "width": 1200,
         "height": 800,
-        "minWidth": 640,
-        "minHeight": 480
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": true,
+        "resizable": true,
+        "center": true
       }
     ],
     "security": {
@@ -27,6 +30,15 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [],
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown Document",
+        "description": "Markdown 文档",
+        "mimeType": "text/markdown",
+        "role": "Editor"
+      }
+    ]
   }
 }

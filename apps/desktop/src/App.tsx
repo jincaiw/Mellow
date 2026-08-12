@@ -44,10 +44,11 @@ import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
 import { createDesktopDialogService } from './host/dialogs';
 import { createDesktopOpenerService } from './host/openers';
+import { createDesktopWindowService } from './host/windowService';
 import { createDesktopSearchService } from './host/searchServices';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
-import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService } from '../../../packages/host-api/src/index';
+import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService } from '../../../packages/host-api/src/index';
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
@@ -96,6 +97,7 @@ export default function App() {
   const openerRef = useRef<OpenerService | null>(null);
   const searchRef = useRef<SearchService | null>(null);
   const searchCancelRef = useRef<(() => void) | null>(null);
+  const windowServiceRef = useRef<WindowService | null>(null);
   const commandRegistryRef = useRef<CommandRegistry>(new CommandRegistry());
   const pluginCommandsRef = useRef<Command[]>([]);
   const commandPaletteModelRef = useRef<CommandPaletteModel>(new CommandPaletteModel());
@@ -1105,6 +1107,14 @@ export default function App() {
     setStatusText(relative ? `已复制相对路径 ${text}` : `已复制路径 ${text}`);
   }, [fileTreeRoot, selectedTreePath]);
 
+  /** Explorer integration：在系统文件管理器中定位（PRD §54 Reveal / spec §14 Windows） */
+  const handleTreeReveal = useCallback(async (path: string) => {
+    const opener = openerRef.current;
+    if (!opener) return;
+    const r = await opener.revealInFolder(path);
+    setStatusText(r.ok ? '已在文件管理器中显示' : `定位失败: ${r.error.message}`);
+  }, []);
+
   /** 文件树右键菜单（desktop-ui-design-spec §6：context menu） */
   const openTreeContextMenu = useCallback((event: React.MouseEvent, path?: string) => {
     event.preventDefault();
@@ -1123,12 +1133,13 @@ export default function App() {
         { label: '复制', enabled: path !== undefined, onClick: () => void handleTreeDuplicate() },
         { label: '移动…', enabled: path !== undefined, onClick: () => void handleTreeMove() },
         { label: '移到回收站', enabled: path !== undefined, onClick: () => void handleTreeTrash() },
+        { label: '在文件管理器中显示', enabled: path !== undefined, onClick: () => void handleTreeReveal(path as string) },
         { label: '复制路径', enabled: path !== undefined, onClick: () => void handleTreeCopyPath(false) },
         { label: '复制相对路径', enabled: path !== undefined && fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true) },
         { label: '撤销文件操作', enabled: fileTreeRoot !== null, onClick: () => void handleTreeUndo() },
       ],
     });
-  }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo]);
+  }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo]);
 
   const handleTreeKeyDown = useCallback((event: ReactKeyboardEvent) => {
     const model = fileTreeModelRef.current;
@@ -1286,6 +1297,7 @@ export default function App() {
     recoveryRef.current = new RecoveryService(createDesktopRecoveryStorage());
     dialogRef.current = createDesktopDialogService();
     openerRef.current = createDesktopOpenerService();
+    windowServiceRef.current = createDesktopWindowService();
     searchRef.current = createDesktopSearchService();
     externalRef.current = new ExternalChangeService(createDesktopWatcher(), {
       getDiskState: () => {
@@ -1668,6 +1680,10 @@ export default function App() {
       { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
       { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
       { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt('asset 目录名（assets / images / docname）', assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
+      { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
+      { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },
+      { id: 'window.fullscreen', localizedTitle: { zh: '切换全屏', en: 'Toggle Fullscreen' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isFullscreen().then((r) => { if (r.ok) void windowServiceRef.current?.setFullscreen(!r.value); }); } },
+      { id: 'window.close', localizedTitle: { zh: '关闭窗口', en: 'Close Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.close(); } },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
       { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },

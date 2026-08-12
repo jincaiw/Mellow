@@ -154,7 +154,7 @@ export interface ClipboardService {
 
 // ─────────────────────────── window ───────────────────────────
 
-/** 窗口服务 */
+/** 窗口服务（Window Controls / Snap Layout 基础能力；平台差异只在 Adapter 实现） */
 export interface WindowService {
   setTitle(title: string): Promise<Result<void>>;
   setSize(size: Size): Promise<Result<void>>;
@@ -162,6 +162,10 @@ export interface WindowService {
   getFocused(): Promise<Result<boolean>>;
   minimize(): Promise<Result<void>>;
   maximize(): Promise<Result<void>>;
+  toggleMaximize(): Promise<Result<void>>;
+  isMaximized(): Promise<Result<boolean>>;
+  setFullscreen(fullscreen: boolean): Promise<Result<void>>;
+  isFullscreen(): Promise<Result<boolean>>;
   close(): Promise<Result<void>>;
 }
 
