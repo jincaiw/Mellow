@@ -121,6 +121,12 @@ export class EditorCore {
     win?.webModules?.config?.setTheme?.({ name });
   }
 
+  /** 编辑器 config live apply（CoreEditor webModules.config.<method>；Settings live apply where safe） */
+  setEditorConfig(method: 'setFontSize' | 'setShowLineNumbers' | 'setLineWrapping', params: { fontSize?: number; enabled?: boolean }): void {
+    const win = this.iframe?.contentWindow as (Window & { webModules?: { config?: Record<string, (p: unknown) => void> } }) | null;
+    win?.webModules?.config?.[method]?.(params);
+  }
+
   /** Split Mode 滚动桥：读取当前滚动比例（0..1；bridge 不可用返回 null） */
   getScrollRatio(): number | null {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_SCROLL_BRIDGE__?: { getScrollRatio?: () => number | null } }) | null;

@@ -49,12 +49,14 @@ import { createDesktopSearchService } from './host/searchServices';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService } from '../../../packages/host-api/src/index';
-import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../../../packages/commands/src';
+import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import { BUILTIN_THEMES, DEFAULT_THEME_SETTINGS, resolveActiveTheme, themeById } from '../../../packages/themes/src';
 import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
+import type { SettingDefinition } from '../../../packages/settings/src';
+import SettingsPanel from './SettingsPanel';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
 import SplitPreview from './SplitPreview';
@@ -75,6 +77,7 @@ const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
 const SLASH_ENABLED_KEY = 'mellow.slashCommands.enabled';
 const THEME_SETTINGS_KEY = 'mellow.theme.settings';
 const LOCALE_SETTING_KEY = 'mellow.locale';
+const AI_ENABLED_KEY = 'mellow.ai.enabled';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SPLIT_RATIO_KEY = 'mellow.split.ratio';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
@@ -229,6 +232,8 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiEnabled] = useState(() => { try { return localStorage.getItem(AI_ENABLED_KEY) === '1'; } catch { return false; } });
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(THEME_SETTINGS_KEY) ?? 'null') as ThemeSettings | null;
@@ -287,6 +292,8 @@ export default function App() {
       /* 忽略 */
     }
   }, []);
+
+
 
   const applyThemeById = useCallback((id: string) => {
     const theme = themeById(id);
@@ -1754,6 +1761,51 @@ export default function App() {
     refreshTabsState();
   }, [refreshTabsState, syncActiveTabFromEditor]);
 
+  /** Settings live apply（不要求重启；安全项立即生效） */
+  const applySetting = useCallback((def: SettingDefinition, value: string | number | boolean) => {
+    switch (def.applyCommand) {
+      case 'locale.set.system': {
+        const v = String(value);
+        if (v === 'system' || v === 'zh-CN' || v === 'en-US') setLocaleSettingPersist(v);
+        break;
+      }
+      case 'theme.apply.mellow-light':
+        applyThemeById(String(value));
+        break;
+      case 'settings.editorConfig': {
+        const host = hostRef.current;
+        if (def.id === 'editor.fontSize') host?.setEditorConfig('setFontSize', { fontSize: Number(value) });
+        else if (def.id === 'editor.lineNumbers') host?.setEditorConfig('setShowLineNumbers', { enabled: Boolean(value) });
+        else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
+        break;
+      }
+      case 'view.typewriter.on':
+        void dispatchCommand(value ? 'view.typewriter.on' : 'view.typewriter.off', 'menu');
+        break;
+      case 'view.focus.off': {
+        const v = String(value);
+        void dispatchCommand(v === 'line' ? 'view.focus.line' : v === 'paragraph' ? 'view.focus.paragraph' : 'view.focus.off', 'menu');
+        break;
+      }
+      case 'view.toolbar.on':
+        void dispatchCommand(value ? 'view.toolbar.on' : 'view.toolbar.off', 'menu');
+        break;
+      case 'slash.toggleEnabled':
+        setSlashEnabled(Boolean(value));
+        break;
+      case 'settings.fileTreeOptions':
+        setFileTreeOption(def.id === 'file.showHidden' ? { showHidden: Boolean(value) } : { showNonMarkdown: Boolean(value) });
+        break;
+      case 'settings.sidebarMode':
+        setSidebarMode(String(value) as 'files' | 'outline' | 'search');
+        break;
+      case 'settings.image.assetDir':
+        setAssetDir(String(value));
+        break;
+      default:
+        break;
+    }
+  }, [applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
   useEffect(() => {
     const registry = new CommandRegistry();
     const always = () => true;
@@ -1801,6 +1853,7 @@ export default function App() {
       { id: 'window.close', localizedTitle: { zh: '关闭窗口', en: 'Close Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.close(); } },
       { id: 'file.revealInFinder', localizedTitle: { zh: '在 Finder 中显示', en: 'Reveal in Finder' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => { if (filePathRef.current !== null) void handleTreeReveal(filePathRef.current); } },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
+      { id: 'settings.open', localizedTitle: { zh: '设置…', en: 'Settings…' }, category: 'system', shortcut: { mac: 'Cmd+,', winLinux: 'Ctrl+,' }, context: { scope: 'global' }, enabled: always, execute: () => setSettingsOpen(true) },
       { id: 'theme.system', localizedTitle: { zh: '主题：跟随系统', en: 'Theme: System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
       { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const next = BUILTIN_THEMES[(BUILTIN_THEMES.findIndex((t) => t.id === activeTheme.id) + 1) % BUILTIN_THEMES.length]; applyThemeById(next.id); } },
       { id: 'locale.set.zh-CN', localizedTitle: { zh: '语言：简体中文', en: 'Language: 简体中文' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'zh-CN', execute: () => setLocaleSettingPersist('zh-CN') },
@@ -1850,7 +1903,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1904,9 +1957,12 @@ export default function App() {
     window.addEventListener('mouseup', onUp);
   }, [setSplitRatio]);
 
-  // 窗口 size/position 记忆（desktop-ui-design-spec §3 Window）
+  // 窗口 size/position 记忆（desktop-ui-design-spec §3 Window；settings.advanced.windowBounds 开关）
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
+    let boundsEnabled = true;
+    try { boundsEnabled = localStorage.getItem('mellow.advanced.windowBounds') !== '0'; } catch { /* 默认开启 */ }
+    if (!boundsEnabled) return;
     let disposed = false;
     void import('@tauri-apps/api/window').then(async ({ getCurrentWindow, PhysicalSize, PhysicalPosition }) => {
       const win = getCurrentWindow();
@@ -2405,6 +2461,21 @@ export default function App() {
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
       </footer>
+      {settingsOpen && (
+        <SettingsPanel
+          t={t}
+          onClose={() => setSettingsOpen(false)}
+          applySetting={applySetting}
+          currentLanguage={localeSetting === 'system' ? 'system' : localeSetting}
+          themeSettings={themeSettings}
+          aiEnabled={aiEnabled}
+          shortcuts={commandRegistryRef.current.all().filter((c) => c.shortcut !== undefined).map((c) => ({
+            id: c.id,
+            title: titleFor(c, locale === 'zh-CN' ? 'zh' : 'en'),
+            shortcut: platformMac ? c.shortcut?.mac : c.shortcut?.winLinux,
+          }))}
+        />
+      )}
       {contextMenu !== null && (
         <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />
       )}
