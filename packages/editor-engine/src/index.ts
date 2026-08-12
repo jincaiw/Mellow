@@ -25,6 +25,7 @@ import { buildFootnoteExtension } from './footnote';
 import { buildTocExtension } from './toc';
 import { buildGitHubAlertsExtension } from './githubAlerts';
 import { buildYamlFrontMatterExtension } from './yamlFrontMatter';
+import { buildSafeHtmlExtension } from './safeHtml';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -37,6 +38,13 @@ export * from './footnote';
 export * from './toc';
 export * from './githubAlerts';
 export * from './yamlFrontMatter';
+export {
+  buildSafeHtmlExtension,
+  extractHtmlBlocks,
+  renderSafeHtml,
+  sanitizeHtml as sanitizeSafeHtml,
+} from './safeHtml';
+export type { HtmlBlock } from './safeHtml';
 export {
   registerNode,
   registerHeadingNode,
@@ -82,6 +90,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildTocExtension(false),
     buildGitHubAlertsExtension(false),
     buildYamlFrontMatterExtension(false),
+    buildSafeHtmlExtension(false),
     buildImageExtensions(),
   ];
 }
