@@ -1,4 +1,4 @@
-import { CommandRegistry, CommandPaletteModel, commandPaletteSearch, createCommandContext, normalizeShortcut } from '../src';
+import { CommandRegistry, CommandPaletteModel, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../src';
 
 describe('CommandRegistry', () => {
   test('command contains required fields and every entry dispatches the same execute', async () => {
@@ -76,5 +76,17 @@ describe('CommandRegistry', () => {
     ] as ReturnType<typeof commandPaletteSearch>;
     expect(model.navigate(items, 'down').selectedIndex).toBe(1);
     expect(model.navigate(items, 'enter')).toEqual({ selectedIndex: 1, commandId: 'b' });
+  });
+
+  test('slash command search only returns slash-presented commands and honors disabled ids', () => {
+    const registry = new CommandRegistry();
+    registry.register({ id: 'format.heading', localizedTitle: { zh: '标题', en: 'Heading' }, category: 'format', context: { scope: 'document' }, presentation: { slash: { aliases: ['h1', 'biaoti'] } }, enabled: () => true, execute: jest.fn() });
+    registry.register({ id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', context: { scope: 'document' }, enabled: () => true, execute: jest.fn() });
+    registry.register({ id: 'insert.mermaid', localizedTitle: { zh: 'Mermaid 图表', en: 'Mermaid Diagram' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['diagram'] } }, enabled: () => true, execute: jest.fn() });
+
+    const context = createCommandContext({ source: 'slash' });
+    expect(slashCommandSearch(registry.all(), 'bt', context, 'zh').map((item) => item.command.id)).toEqual(['format.heading']);
+    expect(slashCommandSearch(registry.all(), 'save', context, 'en')).toEqual([]);
+    expect(slashCommandSearch(registry.all(), 'merm', context, 'en', { disabledIds: ['insert.mermaid'] })[0].enabled).toBe(false);
   });
 });

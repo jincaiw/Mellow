@@ -36,6 +36,12 @@ export interface CommandContext {
   payload?: unknown;
 }
 
+export interface CommandPresentation {
+  slash?: {
+    aliases?: string[];
+  };
+}
+
 export interface Command {
   id: string;
   localizedTitle: LocalizedTitle;
@@ -46,6 +52,7 @@ export interface Command {
   enabled: (context: CommandContext) => boolean;
   execute: (context: CommandContext) => Promise<void> | void;
   context: CommandAvailabilityContext;
+  presentation?: CommandPresentation;
 }
 
 export interface RegisterOptions {
@@ -91,7 +98,7 @@ export function titleFor(command: Command, locale: LocaleCode): string {
 }
 
 const PINYIN_INITIALS: Record<string, string> = {
-  全: 'q', 局: 'j', 搜: 's', 索: 's', 保: 'b', 存: 'c', 新: 'x', 建: 'j', 打: 'd', 开: 'k', 命: 'm', 令: 'l', 面: 'm', 板: 'b', 文: 'w', 件: 'j', 夹: 'j', 关: 'g', 闭: 'b', 重: 'c', 名: 'm', 移: 'y', 动: 'd', 复: 'f', 制: 'z', 撤: 'c', 销: 'x', 路: 'l', 径: 'j', 大: 'd', 纲: 'g', 标: 'b', 签: 'q', 页: 'y', 右: 'y', 侧: 'c', 回: 'h', 收: 's', 站: 'z', 快: 'k', 速: 's'
+  全: 'q', 局: 'j', 搜: 's', 索: 's', 保: 'b', 存: 'c', 新: 'x', 建: 'j', 打: 'd', 开: 'k', 命: 'm', 令: 'l', 面: 'm', 板: 'b', 文: 'w', 件: 'j', 夹: 'j', 关: 'g', 闭: 'b', 重: 'c', 名: 'm', 移: 'y', 动: 'd', 复: 'f', 制: 'z', 撤: 'c', 销: 'x', 路: 'l', 径: 'j', 大: 'd', 纲: 'g', 标: 'b', 签: 'q', 页: 'y', 右: 'y', 侧: 'c', 回: 'h', 收: 's', 站: 'z', 快: 'k', 速: 's', 题: 't', 引: 'y', 用: 'y', 列: 'l', 表: 'b', 任: 'r', 务: 'w', 代: 'd', 码: 'm', 数: 's', 学: 'x', 公: 'g', 式: 's', 图: 't', 片: 'p', 目: 'm', 录: 'l', 警: 'j', 告: 'g'
 };
 
 function initials(value: string): string {
@@ -137,6 +144,29 @@ export function commandPaletteSearch(commands: Command[], query: string, context
       const recentRank = recent.get(command.id);
       const score = Math.max(...scores) + (recentRank === undefined ? 0 : 80 - recentRank * 3);
       return [{ command, title, enabled: command.enabled(context), score, recentRank }];
+    })
+    .sort((a, b) => b.score - a.score || Number(b.enabled) - Number(a.enabled) || a.title.localeCompare(b.title));
+}
+
+export interface SlashSearchOptions {
+  disabledIds?: string[];
+  recentIds?: string[];
+}
+
+export function slashCommandSearch(commands: Command[], query: string, context: CommandContext, locale: LocaleCode, options: SlashSearchOptions = {}): CommandPaletteItem[] {
+  const disabled = new Set(options.disabledIds ?? []);
+  const recent = new Map((options.recentIds ?? []).map((id, index) => [id, index]));
+  return commands
+    .filter((command) => command.presentation?.slash !== undefined)
+    .flatMap((command): CommandPaletteItem[] => {
+      const title = titleFor(command, locale);
+      const aliases = command.presentation?.slash?.aliases ?? [];
+      const haystacks = [title, command.localizedTitle.zh, command.localizedTitle.en, command.id, command.category, initials(title), initials(command.localizedTitle.zh), ...aliases].filter(Boolean);
+      const scores = haystacks.map((h) => fuzzyScore(h, query)).filter((v): v is number => v !== null);
+      if (scores.length === 0) return [];
+      const recentRank = recent.get(command.id);
+      const score = Math.max(...scores) + (recentRank === undefined ? 0 : 80 - recentRank * 3);
+      return [{ command, title, enabled: !disabled.has(command.id) && command.enabled(context), score, recentRank }];
     })
     .sort((a, b) => b.score - a.score || Number(b.enabled) - Number(a.enabled) || a.title.localeCompare(b.title));
 }

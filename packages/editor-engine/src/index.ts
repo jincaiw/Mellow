@@ -28,6 +28,7 @@ import { buildYamlFrontMatterExtension } from './yamlFrontMatter';
 import { buildSafeHtmlExtension } from './safeHtml';
 import { buildOutlineBridgeExtension } from './outlineBridge';
 import { buildFocusModeExtension } from './focusMode';
+import { buildSlashCommandsExtension } from './slashCommands';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -42,6 +43,8 @@ export * from './githubAlerts';
 export * from './yamlFrontMatter';
 export { buildOutlineBridgeExtension } from './outlineBridge';
 export { buildFocusModeExtension, getFocusMode, setFocusMode, FOCUS_DIM_CLASS } from './focusMode';
+export { buildSlashCommandsExtension, canTriggerSlashCommand } from './slashCommands';
+export type { SlashOpenRequest, SlashCommandsOptions } from './slashCommands';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -98,6 +101,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildSafeHtmlExtension(false),
     buildOutlineBridgeExtension(),
     buildFocusModeExtension(),
+    buildSlashCommandsExtension(),
     buildImageExtensions(),
   ];
 }

@@ -47,8 +47,9 @@ import { createDesktopSearchService } from './host/searchServices';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService } from '../../../packages/host-api/src/index';
-import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut } from '../../../packages/commands/src';
+import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
+import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
@@ -59,8 +60,8 @@ const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
 const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
 const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
 const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
+const SLASH_ENABLED_KEY = 'mellow.slashCommands.enabled';
 const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
-const SLASH_COMMAND_SHORTCUT = { mac: '/', winLinux: '/' };
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
   { value: 'images', label: './images' },
@@ -180,6 +181,17 @@ export default function App() {
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
   const [focusMode, setFocusModeState] = useState<'off' | 'line' | 'paragraph'>('off');
+  const [slashEnabled, setSlashEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SLASH_ENABLED_KEY) !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const [slashMode, setSlashMode] = useState(false);
+  const slashTriggerRef = useRef<{ from: number; to: number } | null>(null);
+  const slashEnabledRef = useRef(slashEnabled);
+  slashEnabledRef.current = slashEnabled;
   const [commandPaletteRecent, setCommandPaletteRecent] = useState<string[]>(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem(COMMAND_PALETTE_RECENT_KEY) ?? '[]') as unknown;
@@ -255,6 +267,43 @@ export default function App() {
     const next = focusMode === 'off' ? 'line' : focusMode === 'line' ? 'paragraph' : 'off';
     setFocusMode(next);
   }, [focusMode, setFocusMode]);
+
+  const openSlashUi = useCallback(() => {
+    commandPaletteModelRef.current.selectedIndex = 0;
+    setCommandPaletteSelected(0);
+    setCommandPaletteQuery('');
+    setSlashMode(true);
+    setCommandPaletteVisible(true);
+  }, []);
+
+  /** Engine → host：行首 `/` 触发（仅当 Slash Commands 启用时接受） */
+  const handleSlashOpen = useCallback((request: SlashOpenRequest) => {
+    if (!slashEnabledRef.current) return;
+    slashTriggerRef.current = { from: request.from, to: request.to };
+    openSlashUi();
+  }, [openSlashUi]);
+
+  const toggleSlashEnabled = useCallback(() => {
+    setSlashEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem(SLASH_ENABLED_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  /** 统一命令插入入口：slash command execute 都经此替换触发前缀（不留下 `/`，单 Undo） */
+  const replaceSlashTrigger = useCallback((text: string) => {
+    const host = hostRef.current;
+    if (!host) return;
+    const trigger = slashTriggerRef.current;
+    if (trigger !== null) {
+      host.insertText(text, trigger.from, trigger.to);
+      slashTriggerRef.current = null;
+    } else {
+      const head = host.getSelectionHead?.() ?? 0;
+      host.insertText(text, head, head);
+    }
+  }, []);
 
   const persistTabs = useCallback(() => {
     try {
@@ -1409,7 +1458,19 @@ export default function App() {
       { id: 'view.focus.line', localizedTitle: { zh: 'Focus Mode：当前行', en: 'Focus Mode: Current Line' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('line') },
       { id: 'view.focus.paragraph', localizedTitle: { zh: 'Focus Mode：当前段落', en: 'Focus Mode: Current Paragraph' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('paragraph') },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
-      { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', shortcut: SLASH_COMMAND_SHORTCUT, context: { scope: 'document' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteQuery('/'); setCommandPaletteVisible(true); } },
+      { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
+      { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },
+      { id: 'insert.heading', localizedTitle: { zh: '标题', en: 'Heading' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['h1', 'bt'] } }, enabled: always, execute: () => replaceSlashTrigger('# ') },
+      { id: 'insert.list', localizedTitle: { zh: '列表', en: 'List' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['ul', 'lb'] } }, enabled: always, execute: () => replaceSlashTrigger('- ') },
+      { id: 'insert.task', localizedTitle: { zh: '任务', en: 'Task' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['todo', 'rw'] } }, enabled: always, execute: () => replaceSlashTrigger('- [ ] ') },
+      { id: 'insert.quote', localizedTitle: { zh: '引用', en: 'Quote' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['blockquote', 'yy'] } }, enabled: always, execute: () => replaceSlashTrigger('> ') },
+      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
+      { id: 'insert.code', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['fence', 'dm'] } }, enabled: always, execute: () => replaceSlashTrigger('```\n\n```') },
+      { id: 'insert.math', localizedTitle: { zh: '数学公式', en: 'Math' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['formula', 'sx'] } }, enabled: always, execute: () => replaceSlashTrigger('$$\n\n$$') },
+      { id: 'insert.mermaid', localizedTitle: { zh: 'Mermaid 图表', en: 'Mermaid Diagram' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['diagram', 'tt'] } }, enabled: always, execute: () => replaceSlashTrigger('```mermaid\ngraph TD\n  A --> B\n```') },
+      { id: 'insert.alert', localizedTitle: { zh: '提示框', en: 'Alert' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['note', 'jg'] } }, enabled: always, execute: () => replaceSlashTrigger('> [!NOTE]\n> ') },
+      { id: 'insert.image', localizedTitle: { zh: '图片', en: 'Image' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['img', 'tp'] } }, enabled: always, execute: () => replaceSlashTrigger('![]( )') },
+      { id: 'insert.toc', localizedTitle: { zh: '目录', en: 'Table of Contents' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['toc', 'ml'] } }, enabled: always, execute: () => replaceSlashTrigger('\n\n[toc]\n\n') },
       { id: 'fileTree.newFile', localizedTitle: { zh: '新文件', en: 'New File' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFile() },
       { id: 'fileTree.newFolder', localizedTitle: { zh: '新文件夹', en: 'New Folder' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFolder() },
       { id: 'fileTree.rename', localizedTitle: { zh: '重命名', en: 'Rename' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeRename() },
@@ -1431,7 +1492,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, refreshFilesSidebar, selectedTreePath, setFocusMode]);
+  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openSlashUi, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, setFocusMode, toggleSlashEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1446,6 +1507,15 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [dispatchCommand]);
+
+  // Engine iframe → host：Slash 行首触发通知
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'mellow.slash.open') handleSlashOpen(event.data.payload as SlashOpenRequest);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [handleSlashOpen]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -1548,19 +1618,22 @@ export default function App() {
     </button>
   ));
 
-  const paletteSource: CommandSource = commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette';
+  const paletteSource: CommandSource = slashMode || commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette';
   const paletteQuery = commandPaletteQuery.startsWith('/') ? commandPaletteQuery.slice(1) : commandPaletteQuery;
-  const paletteCommands: CommandPaletteItem[] = commandPaletteSearch(
-    commandRegistryRef.current.all(),
-    paletteQuery,
-    commandContext(paletteSource),
-    'zh',
-    commandPaletteRecent,
-  );
+  const paletteCommands: CommandPaletteItem[] = slashMode
+    ? slashCommandSearch(commandRegistryRef.current.all(), paletteQuery, commandContext('slash'), 'zh', { recentIds: commandPaletteRecent })
+    : commandPaletteSearch(
+        commandRegistryRef.current.all(),
+        paletteQuery,
+        commandContext(paletteSource),
+        'zh',
+        commandPaletteRecent,
+      );
 
   const runPaletteCommand = (id: string, source: CommandSource = paletteSource) => {
     setCommandPaletteVisible(false);
     setCommandPaletteQuery('');
+    setSlashMode(false);
     commandPaletteModelRef.current.selectedIndex = 0;
     setCommandPaletteSelected(0);
     void dispatchCommand(id, source);
@@ -1759,16 +1832,16 @@ export default function App() {
         <main className="editor-container" ref={containerRef} />
       </div>
       {commandPaletteVisible && (
-        <div className="quick-open-backdrop" onMouseDown={() => setCommandPaletteVisible(false)}>
+        <div className="quick-open-backdrop" onMouseDown={() => { setCommandPaletteVisible(false); setSlashMode(false); }}>
           <div className="quick-open-panel" onMouseDown={(e) => e.stopPropagation()}>
             <input
               className="quick-open-input"
               autoFocus
               value={commandPaletteQuery}
-              placeholder="Command Palette / Slash / Plugin Commands"
+              placeholder={slashMode ? 'Slash Commands：输入命令（fuzzy）…' : 'Command Palette / Plugin Commands'}
               onChange={(e) => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteQuery(e.target.value); }}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') setCommandPaletteVisible(false);
+                if (e.key === 'Escape') { setCommandPaletteVisible(false); setSlashMode(false); }
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
                   e.preventDefault();
                   const key = e.key === 'ArrowDown' ? 'down' : e.key === 'ArrowUp' ? 'up' : 'enter';
