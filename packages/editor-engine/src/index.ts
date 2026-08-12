@@ -22,6 +22,7 @@ import { buildClipboardCopyExtension } from './clipboardCopy';
 import { buildMathExtension } from './math';
 import { buildMermaidExtension } from './mermaid';
 import { buildFootnoteExtension } from './footnote';
+import { buildTocExtension } from './toc';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -31,6 +32,7 @@ export * from './clipboardCopy';
 export * from './math';
 export * from './mermaid';
 export * from './footnote';
+export * from './toc';
 export {
   registerNode,
   registerHeadingNode,
@@ -73,6 +75,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildMathExtension(false),
     buildMermaidExtension(false),
     buildFootnoteExtension(false),
+    buildTocExtension(false),
     buildImageExtensions(),
   ];
 }
