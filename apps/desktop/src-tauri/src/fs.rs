@@ -607,6 +607,8 @@ pub struct DirEntryJson {
     pub path: String,
     pub name: String,
     pub is_directory: bool,
+    pub modified_ms: Option<u64>,
+    pub created_ms: Option<u64>,
 }
 
 #[tauri::command]
@@ -618,7 +620,14 @@ pub async fn read_dir(path: String) -> Result<Vec<DirEntryJson>, String> {
         let p = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        out.push(DirEntryJson { path: p.to_string_lossy().into_owned(), name, is_directory: is_dir });
+        let meta = entry.metadata().ok();
+        let modified_ms = meta.as_ref().map(mtime_ms);
+        let created_ms = meta
+            .as_ref()
+            .and_then(|m| m.created().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64);
+        out.push(DirEntryJson { path: p.to_string_lossy().into_owned(), name, is_directory: is_dir, modified_ms, created_ms });
     }
     Ok(out)
 }

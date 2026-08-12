@@ -164,6 +164,27 @@ html, body, #root {
   font-size: 13px;
 }
 
+.file-sidebar-switch {
+  display: inline-flex;
+  border: 1px solid #d8d8d8;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.file-sidebar-switch button {
+  border: 0;
+  border-radius: 0;
+  padding: 2px 7px;
+  background: transparent;
+}
+
+.file-sidebar-switch button.active {
+  background: #eceff6;
+  color: #222;
+  font-weight: 600;
+}
+
 .file-tree button,
 .file-tree select,
 .file-tree input {
@@ -206,7 +227,8 @@ html, body, #root {
   border-bottom: 1px solid #ececec;
 }
 
-.file-tree-list {
+.file-tree-list,
+.file-list {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -253,6 +275,57 @@ html, body, #root {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.file-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid #eeeeee;
+  background: transparent;
+  color: #333;
+  text-align: left;
+}
+
+.file-list-item:hover {
+  background: #f4f4f4;
+}
+
+.file-list-item.selected {
+  background: #e9eefb;
+}
+
+.file-list-item.current .file-list-title {
+  font-weight: 700;
+}
+
+.file-list-title {
+  font-size: 13px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-list-meta {
+  font-size: 11px;
+  color: #777;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-list-summary {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #666;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .editor-container {

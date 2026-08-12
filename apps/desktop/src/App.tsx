@@ -21,12 +21,15 @@ import {
   tabShortcutAction,
   FileTreeModel,
   FileTreeService,
+  FileListModel,
+  FileListService,
   DEFAULT_FILE_TREE_OPTIONS,
+  DEFAULT_FILE_LIST_OPTIONS,
   dirname as fileTreeDirname,
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileTreeNode, FileTreeOptions, TabSessionSnapshot } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
@@ -40,6 +43,8 @@ const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
 const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
 const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
+const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
+const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
   { value: 'images', label: './images' },
@@ -71,9 +76,11 @@ export default function App() {
   const suppressEditorEventRef = useRef(false);
   const draggedTabIdRef = useRef<string | null>(null);
   const draggedTreePathRef = useRef<string | null>(null);
-  // File Tree（PRD §14/§59/§60；不创建 .mellow workspace 文件）
+  // File Tree / Articles File List（PRD §14/§15/§59/§60；不创建 .mellow workspace 文件）
   const fileTreeServiceRef = useRef<FileTreeService | null>(null);
   const fileTreeModelRef = useRef<FileTreeModel | null>(null);
+  const fileListServiceRef = useRef<FileListService | null>(null);
+  const fileListModelRef = useRef<FileListModel>(new FileListModel());
   // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
   const dirtyRef = useRef(false);
   // Crash Recovery：文档 id + 修订（快照 keyed by document id）
@@ -91,13 +98,23 @@ export default function App() {
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
+  const [fileSidebarMode, setFileSidebarModeState] = useState<'tree' | 'list'>(() => (localStorage.getItem(FILE_SIDEBAR_MODE_KEY) === 'list' ? 'list' : 'tree'));
   const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
+  const [fileListItems, setFileListItems] = useState<FileListItem[]>([]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
+  const [selectedListPath, setSelectedListPath] = useState<string | null>(null);
   const [fileTreeOptions, setFileTreeOptions] = useState<FileTreeOptions>(() => {
     try {
       return { ...DEFAULT_FILE_TREE_OPTIONS, ...(JSON.parse(localStorage.getItem(FILE_TREE_OPTIONS_KEY) ?? '{}') as Partial<FileTreeOptions>) };
     } catch {
       return DEFAULT_FILE_TREE_OPTIONS;
+    }
+  });
+  const [fileListOptions, setFileListOptions] = useState<FileListOptions>(() => {
+    try {
+      return { ...DEFAULT_FILE_LIST_OPTIONS, ...(JSON.parse(localStorage.getItem(FILE_LIST_OPTIONS_KEY) ?? '{}') as Partial<FileListOptions>) };
+    } catch {
+      return DEFAULT_FILE_LIST_OPTIONS;
     }
   });
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
@@ -382,12 +399,26 @@ export default function App() {
     setFileTreeNodes(r.value);
   }, [fileTreeOptions, fileTreeRoot]);
 
+
   const setFileTreeOption = useCallback((patch: Partial<FileTreeOptions>) => {
     setFileTreeOptions((prev) => {
       const next = { ...prev, ...patch };
       localStorage.setItem(FILE_TREE_OPTIONS_KEY, JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  const setFileListOption = useCallback((patch: Partial<FileListOptions>) => {
+    setFileListOptions((prev) => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem(FILE_LIST_OPTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const setFileSidebarMode = useCallback((mode: 'tree' | 'list') => {
+    setFileSidebarModeState(mode);
+    localStorage.setItem(FILE_SIDEBAR_MODE_KEY, mode);
   }, []);
 
   const chooseFileTreeRoot = useCallback(async () => {
@@ -414,6 +445,26 @@ export default function App() {
     const node = flat.find((n) => n.path === selected);
     return node?.kind === 'folder' ? selected : fileTreeDirname(selected);
   }, [fileTreeRoot, selectedTreePath, treeFlatten]);
+
+  const refreshFileList = useCallback(async () => {
+    const svc = fileListServiceRef.current;
+    if (!svc || fileTreeRoot === null) {
+      setFileListItems([]);
+      return;
+    }
+    const root = fileListOptions.recursive ? fileTreeRoot : (selectedTreeDir() ?? fileTreeRoot);
+    const r = await svc.readList(root, fileListOptions, fileTreeOptions);
+    if (!r.ok) {
+      setStatusText(`文件列表刷新失败: ${r.error.message}`);
+      return;
+    }
+    setFileListItems(r.value);
+  }, [fileListOptions, fileTreeOptions, fileTreeRoot, selectedTreeDir]);
+
+  const refreshFilesSidebar = useCallback(async () => {
+    await refreshFileTree();
+    await refreshFileList();
+  }, [refreshFileList, refreshFileTree]);
 
   const openTreeFile = useCallback(async (path: string) => {
     const documents = documentsRef.current;
@@ -444,7 +495,7 @@ export default function App() {
     model.toggle(path);
     model.select(path);
     setSelectedTreePath(path);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree]);
 
   const handleTreeSelect = useCallback((path: string) => {
@@ -460,7 +511,7 @@ export default function App() {
     if (!name) return;
     const r = await svc.newFile(dir, name);
     setStatusText(r.ok ? `已新建 ${r.value}` : `新建失败: ${r.error.message}`);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreeDir]);
 
   const handleTreeNewFolder = useCallback(async () => {
@@ -471,7 +522,7 @@ export default function App() {
     if (!name) return;
     const r = await svc.newFolder(dir, name);
     setStatusText(r.ok ? `已新建文件夹 ${r.value}` : `新建失败: ${r.error.message}`);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreeDir]);
 
   const handleTreeRename = useCallback(async (name?: string) => {
@@ -482,7 +533,7 @@ export default function App() {
     const r = await svc.rename(selectedTreePath, next);
     setStatusText(r.ok ? `已重命名 ${r.value}` : `重命名失败: ${r.error.message}`);
     if (r.ok) setSelectedTreePath(r.value);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
   const handleTreeDuplicate = useCallback(async () => {
@@ -490,7 +541,7 @@ export default function App() {
     if (!svc || selectedTreePath === null) return;
     const r = await svc.duplicate(selectedTreePath);
     setStatusText(r.ok ? `已复制 ${r.value}` : `复制失败: ${r.error.message}`);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
   const handleTreeMove = useCallback(async () => {
@@ -502,7 +553,7 @@ export default function App() {
     const r = await svc.move(selectedTreePath, target.value);
     setStatusText(r.ok ? `已移动 ${r.value}` : `移动失败: ${r.error.message}`);
     if (r.ok) setSelectedTreePath(r.value);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
   const handleTreeDrop = useCallback(async (targetDir: string) => {
@@ -513,7 +564,7 @@ export default function App() {
     const r = await svc.move(path, targetDir);
     setStatusText(r.ok ? `已移动 ${r.value}` : `移动失败: ${r.error.message}`);
     if (r.ok) setSelectedTreePath(r.value);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree]);
 
   const handleTreeTrash = useCallback(async () => {
@@ -523,7 +574,7 @@ export default function App() {
     const r = await svc.trash(selectedTreePath);
     setStatusText(r.ok ? '已移到回收站' : `删除失败: ${r.error.message}`);
     if (r.ok) setSelectedTreePath(null);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
   const handleTreeUndo = useCallback(async () => {
@@ -531,7 +582,7 @@ export default function App() {
     if (!history) return;
     const r = await history.undo();
     setStatusText(r.ok ? r.value : `撤销失败: ${r.error.message}`);
-    await refreshFileTree();
+    await refreshFilesSidebar();
   }, [refreshFileTree]);
 
   const handleTreeCopyPath = useCallback(async (relative: boolean) => {
@@ -566,12 +617,26 @@ export default function App() {
     }
   }, [handleTreeRename, handleTreeTrash, openTreeFile, refreshFileTree, selectedTreePath, treeFlatten]);
 
+  const handleFileListSelect = useCallback((path: string) => {
+    fileListModelRef.current.selectedPath = path;
+    setSelectedListPath(path);
+  }, []);
+
+  const handleFileListKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    const key = event.key === 'ArrowDown' ? 'down' : event.key === 'ArrowUp' ? 'up' : event.key === 'Enter' ? 'enter' : null;
+    if (key === null) return;
+    event.preventDefault();
+    const r = fileListModelRef.current.navigate(fileListItems, key);
+    setSelectedListPath(r.selected);
+    if (r.open) void openTreeFile(r.open);
+  }, [fileListItems, openTreeFile]);
+
   useEffect(() => {
     if (fileTreeRoot !== null) {
       fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
-      void refreshFileTree();
+      void refreshFilesSidebar();
     }
-  }, [fileTreeOptions, fileTreeRoot, refreshFileTree]);
+  }, [fileListOptions, fileTreeOptions, fileTreeRoot, refreshFilesSidebar]);
 
   // ── 外部文件变化检测（spec §5）──
 
@@ -670,6 +735,7 @@ export default function App() {
     const fsService = createDesktopFileService();
     documentsRef.current = new DocumentService(fsService);
     fileTreeServiceRef.current = new FileTreeService(fsService);
+    fileListServiceRef.current = new FileListService(fsService);
     if (fileTreeRoot !== null) {
       fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
     }
@@ -1095,6 +1161,11 @@ export default function App() {
     setStatusText(`已忽略 ${entry.documentId}`);
   }, []);
 
+  const formatFileTime = (ms?: number) => {
+    if (ms === undefined || ms <= 0) return '';
+    return new Date(ms).toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  };
+
   const renderTreeNodes = (nodes: FileTreeNode[]) => nodes.map((node) => (
     <div key={node.path}>
       <button
@@ -1117,6 +1188,21 @@ export default function App() {
       </button>
       {node.kind === 'folder' && node.expanded && node.children !== undefined && renderTreeNodes(node.children)}
     </div>
+  ));
+
+  const renderFileListItems = (items: FileListItem[]) => items.map((item) => (
+    <button
+      key={item.path}
+      type="button"
+      className={`file-list-item ${selectedListPath === item.path ? 'selected' : ''} ${filePathRef.current === item.path ? 'current' : ''}`}
+      title={item.path}
+      onClick={() => handleFileListSelect(item.path)}
+      onDoubleClick={() => void openTreeFile(item.path)}
+    >
+      <span className="file-list-title">{item.title}</span>
+      <span className="file-list-meta">{item.filename}{formatFileTime(item.modifiedMs) ? ` · ${formatFileTime(item.modifiedMs)}` : ''}</span>
+      {fileListOptions.includeSummary && item.summary && <span className="file-list-summary">{item.summary}</span>}
+    </button>
   ));
 
   return (
@@ -1174,32 +1260,44 @@ export default function App() {
         ))}
       </nav>
       <div className="workspace-shell">
-        <aside className="file-tree" onKeyDown={handleTreeKeyDown} tabIndex={0} aria-label="文件树">
+        <aside className="file-tree" onKeyDown={fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown} tabIndex={0} aria-label={fileSidebarMode === 'tree' ? '文件树' : '文件列表'}>
           <div className="file-tree-header">
             <strong>文件</strong>
+            <div className="file-sidebar-switch" role="tablist" aria-label="文件视图切换">
+              <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>树</button>
+              <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>列表</button>
+            </div>
             <button onClick={() => void chooseFileTreeRoot()} title="打开文件夹">打开…</button>
-            <button onClick={() => void refreshFileTree()} disabled={fileTreeRoot === null}>刷新</button>
+            <button onClick={() => void refreshFilesSidebar()} disabled={fileTreeRoot === null}>刷新</button>
           </div>
-          <div className="file-tree-actions">
-            <button onClick={() => void handleTreeNewFile()} disabled={fileTreeRoot === null}>新文件</button>
-            <button onClick={() => void handleTreeNewFolder()} disabled={fileTreeRoot === null}>新文件夹</button>
-            <button onClick={() => void handleTreeRename()} disabled={selectedTreePath === null}>重命名</button>
-            <button onClick={() => void handleTreeDuplicate()} disabled={selectedTreePath === null}>复制</button>
-            <button onClick={() => void handleTreeMove()} disabled={selectedTreePath === null}>移动</button>
-            <button onClick={() => void handleTreeTrash()} disabled={selectedTreePath === null}>回收站</button>
-            <button onClick={() => void handleTreeUndo()} disabled={fileTreeRoot === null}>撤销</button>
-          </div>
-          <div className="file-tree-actions">
-            <button onClick={() => void handleTreeCopyPath(false)} disabled={selectedTreePath === null}>复制路径</button>
-            <button onClick={() => void handleTreeCopyPath(true)} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
-          </div>
+          {fileSidebarMode === 'tree' && (
+            <>
+              <div className="file-tree-actions">
+                <button onClick={() => void handleTreeNewFile()} disabled={fileTreeRoot === null}>新文件</button>
+                <button onClick={() => void handleTreeNewFolder()} disabled={fileTreeRoot === null}>新文件夹</button>
+                <button onClick={() => void handleTreeRename()} disabled={selectedTreePath === null}>重命名</button>
+                <button onClick={() => void handleTreeDuplicate()} disabled={selectedTreePath === null}>复制</button>
+                <button onClick={() => void handleTreeMove()} disabled={selectedTreePath === null}>移动</button>
+                <button onClick={() => void handleTreeTrash()} disabled={selectedTreePath === null}>回收站</button>
+                <button onClick={() => void handleTreeUndo()} disabled={fileTreeRoot === null}>撤销</button>
+              </div>
+              <div className="file-tree-actions">
+                <button onClick={() => void handleTreeCopyPath(false)} disabled={selectedTreePath === null}>复制路径</button>
+                <button onClick={() => void handleTreeCopyPath(true)} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
+              </div>
+            </>
+          )}
           <div className="file-tree-filters">
             <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />隐藏文件</label>
             <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />非 Markdown</label>
+            {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.recursive} onChange={(e) => setFileListOption({ recursive: e.target.checked })} />递归</label>}
+            {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.includeSummary} onChange={(e) => setFileListOption({ includeSummary: e.target.checked })} />摘要</label>}
             <label>排序
               <select value={fileTreeOptions.sortBy} onChange={(e) => setFileTreeOption({ sortBy: e.target.value as FileTreeOptions['sortBy'] })}>
                 <option value="natural">自然</option>
                 <option value="name">名称</option>
+                <option value="modified">修改时间</option>
+                <option value="created">创建时间</option>
               </select>
             </label>
             <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />升序</label>
@@ -1209,9 +1307,15 @@ export default function App() {
             <input placeholder="exclude glob（逗号分隔）" value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
           </div>
           <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? '未打开文件夹（不会创建 .mellow）'}</div>
-          <div className="file-tree-list">
-            {renderTreeNodes(fileTreeNodes)}
-          </div>
+          {fileSidebarMode === 'tree' ? (
+            <div className="file-tree-list">
+              {renderTreeNodes(fileTreeNodes)}
+            </div>
+          ) : (
+            <div className="file-list" aria-label="Articles 文件列表">
+              {renderFileListItems(fileListItems)}
+            </div>
+          )}
         </aside>
         <main className="editor-container" ref={containerRef} />
       </div>

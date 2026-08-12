@@ -52,6 +52,10 @@ export interface DirEntry {
   path: string;
   name: string;
   isDirectory: boolean;
+  /** 文件修改时间（epoch ms；宿主不支持时省略） */
+  modifiedMs?: number;
+  /** 文件创建时间（epoch ms；宿主不支持时省略） */
+  createdMs?: number;
 }
 
 /** 下载远程资源结果 */

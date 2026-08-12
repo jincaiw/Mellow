@@ -6,7 +6,7 @@
 import type { DirEntry, FileService, Result } from '../../host-api/src';
 import { err, ok } from '../../host-api/src';
 
-export type FileTreeSortBy = 'name' | 'natural';
+export type FileTreeSortBy = 'name' | 'natural' | 'modified' | 'created';
 export type FileTreeNodeKind = 'file' | 'folder';
 export type FileTreeUndoOp =
   | { kind: 'trash'; path: string }
@@ -107,7 +107,15 @@ function naturalCompare(a: string, b: string): number {
 export function sortEntries(entries: DirEntry[], options: FileTreeOptions): DirEntry[] {
   return [...entries].sort((a, b) => {
     if (options.folderFirst && a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-    const cmp = options.sortBy === 'natural' ? naturalCompare(a.name, b.name) : a.name.localeCompare(b.name);
+    let cmp: number;
+    if (options.sortBy === 'modified') {
+      cmp = (a.modifiedMs ?? 0) - (b.modifiedMs ?? 0);
+    } else if (options.sortBy === 'created') {
+      cmp = (a.createdMs ?? 0) - (b.createdMs ?? 0);
+    } else {
+      cmp = options.sortBy === 'natural' ? naturalCompare(a.name, b.name) : a.name.localeCompare(b.name);
+    }
+    if (cmp === 0) cmp = naturalCompare(a.name, b.name);
     return options.sortAsc ? cmp : -cmp;
   });
 }

@@ -114,8 +114,8 @@ export const tauriFileService: FileService = {
   },
   readDir: async (path: string) => {
     try {
-      const r = await invoke<Array<{ path: string; name: string; is_directory: boolean }>>('read_dir', { path });
-      return ok(r.map((e) => ({ path: e.path, name: e.name, isDirectory: e.is_directory })));
+      const r = await invoke<Array<{ path: string; name: string; is_directory: boolean; modified_ms?: number; created_ms?: number }>>('read_dir', { path });
+      return ok(r.map((e) => ({ path: e.path, name: e.name, isDirectory: e.is_directory, modifiedMs: e.modified_ms, createdMs: e.created_ms })));
     } catch (e) {
       return err({ code: 'io', message: String(e) });
     }
