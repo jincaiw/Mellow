@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod fs;
+pub mod menu;
 pub mod recovery;
 pub mod search;
 pub mod watcher;
@@ -52,7 +53,10 @@ pub fn run() {
         .manage(DebounceState::default())
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
-            let _ = window.set_title("Mellow V0.0 — Runtime Qualification");
+            let _ = window.set_title("Mellow");
+            // macOS Menu Bar：菜单只发命令 id，执行统一走前端 CommandRegistry
+            menu::attach_menu_events(app.handle());
+            let _ = menu::install_menu(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
