@@ -179,6 +179,7 @@ export default function App() {
   const [commandPaletteVisible, setCommandPaletteVisible] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
+  const [focusMode, setFocusModeState] = useState<'off' | 'line' | 'paragraph'>('off');
   const [commandPaletteRecent, setCommandPaletteRecent] = useState<string[]>(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem(COMMAND_PALETTE_RECENT_KEY) ?? '[]') as unknown;
@@ -243,6 +244,17 @@ export default function App() {
     else setStatusText(`命令不可用: ${id}`);
     return ok;
   }, [commandContext, rememberCommandRecent]);
+
+  const setFocusMode = useCallback((mode: 'off' | 'line' | 'paragraph') => {
+    hostRef.current?.setFocusMode(mode);
+    setFocusModeState(mode);
+    setStatusText(mode === 'off' ? 'Focus Mode 已关闭' : mode === 'line' ? 'Focus Mode：当前行' : 'Focus Mode：当前段落');
+  }, []);
+
+  const cycleFocusMode = useCallback(() => {
+    const next = focusMode === 'off' ? 'line' : focusMode === 'line' ? 'paragraph' : 'off';
+    setFocusMode(next);
+  }, [focusMode, setFocusMode]);
 
   const persistTabs = useCallback(() => {
     try {
@@ -1392,6 +1404,10 @@ export default function App() {
       { id: 'workspace.refresh', localizedTitle: { zh: '刷新文件', en: 'Refresh Files' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void refreshFilesSidebar() },
       { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', shortcut: { mac: 'Cmd+Shift+O', winLinux: 'Ctrl+P' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
       { id: 'search.global', localizedTitle: { zh: '全局搜索', en: 'Global Search' }, category: 'search', shortcut: { mac: 'Cmd+Shift+F', winLinux: 'Ctrl+Shift+F' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => openGlobalSearch() },
+      { id: 'view.focus.cycle', localizedTitle: { zh: '切换 Focus Mode', en: 'Toggle Focus Mode' }, category: 'view', shortcut: { mac: 'F8', winLinux: 'F8' }, context: { scope: 'document' }, enabled: always, execute: () => cycleFocusMode() },
+      { id: 'view.focus.off', localizedTitle: { zh: 'Focus Mode：关闭', en: 'Focus Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('off') },
+      { id: 'view.focus.line', localizedTitle: { zh: 'Focus Mode：当前行', en: 'Focus Mode: Current Line' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('line') },
+      { id: 'view.focus.paragraph', localizedTitle: { zh: 'Focus Mode：当前段落', en: 'Focus Mode: Current Paragraph' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('paragraph') },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', shortcut: SLASH_COMMAND_SHORTCUT, context: { scope: 'document' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteQuery('/'); setCommandPaletteVisible(true); } },
       { id: 'fileTree.newFile', localizedTitle: { zh: '新文件', en: 'New File' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFile() },
@@ -1415,7 +1431,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [chooseFileTreeRoot, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, refreshFilesSidebar, selectedTreePath]);
+  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, refreshFilesSidebar, selectedTreePath, setFocusMode]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1611,6 +1627,7 @@ export default function App() {
         <button onClick={() => void runBatch('moveAll')} disabled={status !== 'ready'}>移动全部</button>
         <button onClick={() => void runBatch('copyAll')} disabled={status !== 'ready'}>复制全部</button>
         <button onClick={() => void runBatch('downloadRemote')} disabled={status !== 'ready'}>下载远程</button>
+        <button onClick={() => void dispatchCommand('view.focus.cycle', 'menu')} disabled={status !== 'ready'} title="F8：关闭 / 当前行 / 当前段落">Focus: {focusMode === 'off' ? '关' : focusMode === 'line' ? '行' : '段'}</button>
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
       </header>

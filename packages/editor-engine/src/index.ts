@@ -27,6 +27,7 @@ import { buildGitHubAlertsExtension } from './githubAlerts';
 import { buildYamlFrontMatterExtension } from './yamlFrontMatter';
 import { buildSafeHtmlExtension } from './safeHtml';
 import { buildOutlineBridgeExtension } from './outlineBridge';
+import { buildFocusModeExtension } from './focusMode';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -40,6 +41,7 @@ export * from './toc';
 export * from './githubAlerts';
 export * from './yamlFrontMatter';
 export { buildOutlineBridgeExtension } from './outlineBridge';
+export { buildFocusModeExtension, getFocusMode, setFocusMode, FOCUS_DIM_CLASS } from './focusMode';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -95,6 +97,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildYamlFrontMatterExtension(false),
     buildSafeHtmlExtension(false),
     buildOutlineBridgeExtension(),
+    buildFocusModeExtension(),
     buildImageExtensions(),
   ];
 }

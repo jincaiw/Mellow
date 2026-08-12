@@ -129,6 +129,17 @@ export class EditorCore {
     return typeof jump === 'function' ? jump(offset) : false;
   }
 
+  /** Focus Mode：仅切换视觉权重，不改变文档/selection。 */
+  setFocusMode(mode: 'off' | 'line' | 'paragraph'): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_FOCUS_MODE__?: { setMode?: (mode: 'off' | 'line' | 'paragraph') => void } }) | null;
+    win?.__MELLOW_FOCUS_MODE__?.setMode?.(mode);
+  }
+
+  getFocusMode(): 'off' | 'line' | 'paragraph' {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_FOCUS_MODE__?: { getMode?: () => 'off' | 'line' | 'paragraph' } }) | null;
+    return win?.__MELLOW_FOCUS_MODE__?.getMode?.() ?? 'off';
+  }
+
   /** 设置当前文档路径（Image Workflow 相对路径解析，engine 读 window.__MELLOW_DOC_PATH__） */
   setDocumentPath(path: string | null): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_DOC_PATH__?: string | null }) | null;
