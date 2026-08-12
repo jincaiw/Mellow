@@ -1,0 +1,232 @@
+/**
+ * Reader Mode 视图（T-0409 Reader）。
+ *
+ * 极简 Reader，不是独立产品：复用主窗口侧栏（File Tree / Outline / Search），
+ * 仅替换 Document Surface 为只读渲染视图。
+ * - no caret：纯 HTML 渲染，无 contentEditable；
+ * - no markers：渲染器输出语义标签，不含语法字符；
+ * - 内置：文档内搜索（高亮 + 上/下跳转）、Zoom、打印、图片 Lightbox、代码复制、
+ *   math / mermaid 异步渲染（沿用 editor-engine renderer 契约）、Open With（编辑器）。
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createMermaid11Renderer } from '../../../packages/editor-engine/src/mermaid';
+
+export interface ReaderViewProps {
+  /** App 侧已渲染好的语义 HTML（renderReaderHtml 输出，含 heading id） */
+  html: string;
+  title: string;
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
+  onOpenInEditor: () => void;
+  onClose: () => void;
+  onCurrentHeadingChange: (id: string | null) => void;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+let mermaidId = 0;
+
+export default function ReaderView(props: ReaderViewProps) {
+  const { html, title, zoom, onZoomChange, onOpenInEditor, onClose, onCurrentHeadingChange } = props;
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const marksRef = useRef<HTMLElement[]>([]);
+  const [query, setQuery] = useState('');
+  const [matchCount, setMatchCount] = useState(0);
+  const [matchIndex, setMatchIndex] = useState(-1);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const scrollRafRef = useRef(0);
+
+  // ── math / mermaid 异步渲染（无库时保留源码）──
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const win = window as unknown as {
+      MathJax?: { tex2chtmlPromise?: (tex: string, opts?: { display?: boolean }) => Promise<HTMLElement> };
+      mermaid?: unknown;
+      __MELLOW_MERMAID_LOADER__?: unknown;
+    };
+
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mellow-reader-math, .mellow-reader-math-block'))) {
+      const tex = el.dataset.tex ?? '';
+      if (tex === '' || el.dataset.rendered === '1') continue;
+      el.dataset.rendered = '1';
+      if (win.MathJax?.tex2chtmlPromise === undefined) continue;
+      const display = el.classList.contains('mellow-reader-math-block');
+      void win.MathJax.tex2chtmlPromise(tex, { display }).then((node) => {
+        el.replaceChildren(node);
+      }).catch(() => { /* 保留源码 */ });
+    }
+
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mellow-reader-mermaid'))) {
+      const source = el.dataset.source ?? '';
+      if (source === '' || el.dataset.rendered === '1') continue;
+      el.dataset.rendered = '1';
+      const api = win.mermaid ?? win.__MELLOW_MERMAID_LOADER__;
+      if (api === undefined) continue;
+      const renderer = createMermaid11Renderer(() => api as never);
+      mermaidId += 1;
+      void renderer.render({ id: `mellow-reader-${mermaidId}`, source }).then((result) => {
+        el.innerHTML = result.svg;
+      }).catch(() => { /* 保留源码 */ });
+    }
+  }, [html]);
+
+  // ── 搜索高亮 ──
+  const clearMarks = useCallback(() => {
+    for (const mark of marksRef.current) {
+      const parent = mark.parentNode;
+      if (parent === null) continue;
+      parent.replaceChild(document.createTextNode(mark.textContent ?? ''), mark);
+      parent.normalize();
+    }
+    marksRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    clearMarks();
+    setMatchCount(0);
+    setMatchIndex(-1);
+    const q = query.trim();
+    if (q === '') return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const targets: Text[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode()) !== null) {
+      const text = node as Text;
+      if (text.parentElement?.closest('.mellow-reader-code, .mellow-reader-math, .mellow-reader-math-block, .mellow-reader-mermaid, .mellow-reader-toc')) continue;
+      if ((text.textContent ?? '').toLowerCase().includes(q.toLowerCase())) targets.push(text);
+    }
+    const re = new RegExp(escapeRegExp(q), 'ig');
+    for (const target of targets) {
+      const text = target.textContent ?? '';
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(text)) !== null) {
+        if (match.index > last) frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+        const mark = document.createElement('mark');
+        mark.textContent = match[0];
+        marksRef.current.push(mark);
+        frag.appendChild(mark);
+        last = match.index + match[0].length;
+        if (match.index === re.lastIndex) re.lastIndex += 1;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      target.parentNode?.replaceChild(frag, target);
+    }
+    setMatchCount(marksRef.current.length);
+    setMatchIndex(marksRef.current.length > 0 ? 0 : -1);
+  }, [query, html, clearMarks]);
+
+  useEffect(() => {
+    marksRef.current.forEach((mark, index) => {
+      mark.classList.toggle('current', index === matchIndex);
+    });
+  }, [matchIndex]);
+
+  const gotoMatch = useCallback((index: number) => {
+    if (marksRef.current.length === 0) return;
+    const clamped = (index + marksRef.current.length) % marksRef.current.length;
+    setMatchIndex(clamped);
+    marksRef.current[clamped]?.scrollIntoView({ block: 'center' });
+  }, []);
+
+  // ── 滚动 → 当前 heading（侧栏高亮，不反滚侧栏）──
+  const handleScroll = useCallback(() => {
+    if (scrollRafRef.current !== 0) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = 0;
+      const root = contentRef.current;
+      const container = scrollRef.current;
+      if (!root || !container) return;
+      const containerTop = container.getBoundingClientRect().top;
+      let current: string | null = null;
+      for (const heading of Array.from(root.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6'))) {
+        if (heading.getBoundingClientRect().top - containerTop <= 120) current = heading.id;
+        else break;
+      }
+      onCurrentHeadingChange(current);
+    });
+  }, [onCurrentHeadingChange]);
+
+  // ── 键盘：Cmd/Ctrl+F 聚焦搜索；Escape 关 lightbox/清搜索 ──
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (lightbox !== null) setLightbox(null);
+        else if (query !== '') {
+          setQuery('');
+          searchRef.current?.blur();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [lightbox, query]);
+
+  // ── 点击：代码复制 / 图片 lightbox ──
+  const handleContentClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    const copyButton = target.closest<HTMLButtonElement>('.mellow-reader-copy');
+    if (copyButton !== null) {
+      const code = copyButton.closest('.mellow-reader-code')?.querySelector('code')?.textContent ?? '';
+      void navigator.clipboard?.writeText(code).catch(() => { /* no-op */ });
+      const original = copyButton.textContent;
+      copyButton.textContent = '已复制';
+      window.setTimeout(() => { copyButton.textContent = original; }, 1200);
+      return;
+    }
+    if (target.tagName === 'IMG' && target.closest('a') === null) {
+      setLightbox((target as HTMLImageElement).src);
+    }
+  }, []);
+
+  return (
+    <div className="mellow-reader-shell">
+      <div className="mellow-reader-bar">
+        <span className="mellow-reader-title" title={title}>{title}</span>
+        <span className="toolbar-sep" />
+        <input
+          ref={searchRef}
+          className="mellow-reader-search"
+          placeholder="在文档中查找…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <span className="mellow-reader-search-count">{matchCount > 0 ? `${matchIndex + 1}/${matchCount}` : ''}</span>
+        <button type="button" title="上一个匹配" onClick={() => gotoMatch(matchIndex - 1)} disabled={matchCount === 0}>↑</button>
+        <button type="button" title="下一个匹配" onClick={() => gotoMatch(matchIndex + 1)} disabled={matchCount === 0}>↓</button>
+        <span className="spacer" />
+        <button type="button" title="缩小" onClick={() => onZoomChange(Math.max(0.5, zoom - 0.1))}>A−</button>
+        <span className="mellow-reader-zoom">{Math.round(zoom * 100)}%</span>
+        <button type="button" title="放大" onClick={() => onZoomChange(Math.min(2, zoom + 0.1))}>A+</button>
+        <button type="button" title="打印（Ctrl/Cmd+P）" onClick={() => window.print()}>打印</button>
+        <button type="button" title="用编辑器打开" onClick={onOpenInEditor}>用编辑器打开</button>
+        <button type="button" title="关闭 Reader" onClick={onClose}>关闭</button>
+      </div>
+      <div className="mellow-reader-scroll" ref={scrollRef} onScroll={handleScroll}>
+        {/* eslint-disable-next-line react/no-danger */}
+        <article className="mellow-reader" style={{ fontSize: `${zoom * 100}%` }} ref={contentRef} dangerouslySetInnerHTML={{ __html: html }} onClick={handleContentClick} />
+      </div>
+      {lightbox !== null && (
+        <div className="mellow-reader-lightbox" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="lightbox" />
+        </div>
+      )}
+    </div>
+  );
+}

@@ -36,6 +36,7 @@ import {
   dirname as fileTreeDirname,
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
+  renderReaderHtml,
 } from '../../../packages/app-core/src';
 import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
@@ -50,6 +51,8 @@ import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogServic
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
+import ReaderView from './Reader';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
@@ -61,6 +64,7 @@ const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
 const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
 const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
 const SLASH_ENABLED_KEY = 'mellow.slashCommands.enabled';
+const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
@@ -183,6 +187,18 @@ export default function App() {
   const [focusMode, setFocusModeState] = useState<'off' | 'line' | 'paragraph'>('off');
   const [typewriterEnabled, setTypewriterEnabled] = useState(false);
   const [selectionToolbarEnabled, setSelectionToolbarEnabledState] = useState(true);
+  const [readerOpen, setReaderOpen] = useState(false);
+  const [readerTitle, setReaderTitle] = useState('');
+  const [readerHtml, setReaderHtml] = useState('');
+  const [readerOutlineItems, setReaderOutlineItems] = useState<OutlineHeading[]>([]);
+  const [readerZoom, setReaderZoomState] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(READER_ZOOM_KEY));
+      return saved >= 0.5 && saved <= 2 ? saved : 1;
+    } catch {
+      return 1;
+    }
+  });
   const [slashEnabled, setSlashEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SLASH_ENABLED_KEY) !== 'false';
@@ -290,6 +306,50 @@ export default function App() {
     setSelectionToolbarEnabled(!selectionToolbarEnabled);
   }, [selectionToolbarEnabled, setSelectionToolbarEnabled]);
 
+  /** Reader 图片 src → 可显示 URL（相对路径基于当前文档目录，Tauri asset 协议） */
+  const readerResolveImageSrc = useCallback((src: string) => {
+    if (/^(?:https?:|data:|#)/i.test(src)) return src;
+    const docPath = filePathRef.current;
+    const base = docPath === null ? '' : docPath.replace(/[\/][^\/]*$/, '');
+    const abs = base === '' ? src : `${base}/${src}`;
+    if ('__TAURI_INTERNALS__' in window) {
+      try {
+        return convertFileSrc(abs.replace(/^file:\/\//, ''));
+      } catch {
+        return abs;
+      }
+    }
+    return abs;
+  }, []);
+
+  const openReader = useCallback(() => {
+    const host = hostRef.current;
+    const active = tabsRef.current.active;
+    if (!host || active === null) return;
+    const content = host.getText();
+    const result = renderReaderHtml(content, { resolveImageSrc: readerResolveImageSrc });
+    setReaderHtml(result.html);
+    setReaderOutlineItems(result.outline);
+    setReaderTitle(active.title);
+    setReaderOpen(true);
+    setStatusText('Reader 模式（只读）');
+  }, [readerResolveImageSrc]);
+
+  const closeReader = useCallback(() => {
+    setReaderOpen(false);
+    setStatusText('已切回编辑器');
+  }, []);
+
+  const setReaderZoom = useCallback((next: number) => {
+    const clamped = Math.max(0.5, Math.min(2, next));
+    setReaderZoomState(clamped);
+    try {
+      localStorage.setItem(READER_ZOOM_KEY, String(clamped));
+    } catch {
+      /* no-op */
+    }
+  }, []);
+
   const openSlashUi = useCallback(() => {
     commandPaletteModelRef.current.selectedIndex = 0;
     setCommandPaletteSelected(0);
@@ -386,6 +446,7 @@ export default function App() {
   const applyTab = useCallback(async (tab: DocumentTab) => {
     const host = hostRef.current;
     if (!host) return;
+    setReaderOpen(false);
     suppressEditorEventRef.current = true;
     filePathRef.current = tab.path;
     docIdRef.current = tab.documentId;
@@ -640,11 +701,17 @@ export default function App() {
   refreshOutlineRef.current = refreshOutline;
 
   const handleOutlineJump = useCallback((item: OutlineHeading) => {
-    const host = hostRef.current;
     outlineModelRef.current.selectedId = item.id;
     setCurrentOutlineId(item.id);
+    if (readerOpen) {
+      // Reader：滚动正文到标题锚点（不动侧栏滚动位置）
+      const el = document.getElementById(item.id);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const host = hostRef.current;
     host?.jumpToOffset(item.from);
-  }, []);
+  }, [readerOpen]);
 
   const handleOutlineToggle = useCallback((id: string) => {
     outlineModelRef.current.toggle(id);
@@ -1485,6 +1552,12 @@ export default function App() {
       { id: 'view.toolbar.toggle', localizedTitle: { zh: '切换格式工具栏', en: 'Toggle Format Toolbar' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleSelectionToolbar() },
       { id: 'view.toolbar.on', localizedTitle: { zh: '格式工具栏：启用', en: 'Format Toolbar: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(true) },
       { id: 'view.toolbar.off', localizedTitle: { zh: '格式工具栏：禁用', en: 'Format Toolbar: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(false) },
+      { id: 'reader.open', localizedTitle: { zh: '用 Reader 打开', en: 'Open in Reader' }, category: 'view', context: { scope: 'document' }, enabled: () => !readerOpen && tabsRef.current.active !== null, execute: () => openReader() },
+      { id: 'reader.openInEditor', localizedTitle: { zh: '用编辑器打开', en: 'Open in Editor' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => closeReader() },
+      { id: 'reader.zoomIn', localizedTitle: { zh: 'Reader 放大', en: 'Reader Zoom In' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(readerZoom + 0.1) },
+      { id: 'reader.zoomOut', localizedTitle: { zh: 'Reader 缩小', en: 'Reader Zoom Out' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(readerZoom - 0.1) },
+      { id: 'reader.zoomReset', localizedTitle: { zh: 'Reader 重置缩放', en: 'Reader Reset Zoom' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(1) },
+      { id: 'reader.print', localizedTitle: { zh: '打印 Reader', en: 'Print Reader' }, category: 'file', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => window.print() },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
       { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },
@@ -1520,7 +1593,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openSlashUi, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, selectionToolbarEnabled, setFocusMode, setSelectionToolbarEnabled, setTypewriterMode, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled]);
+  }, [chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, selectionToolbarEnabled, setFocusMode, setReaderZoom, setSelectionToolbarEnabled, setTypewriterMode, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1730,6 +1803,7 @@ export default function App() {
         <button onClick={() => void runBatch('downloadRemote')} disabled={status !== 'ready'}>下载远程</button>
         <button onClick={() => void dispatchCommand('view.focus.cycle', 'menu')} disabled={status !== 'ready'} title="F8：关闭 / 当前行 / 当前段落">Focus: {focusMode === 'off' ? '关' : focusMode === 'line' ? '行' : '段'}</button>
         <button onClick={() => void dispatchCommand('view.typewriter.cycle', 'menu')} disabled={status !== 'ready'} title="F9：caret 保持 viewport 中部附近">打字机: {typewriterEnabled ? '开' : '关'}</button>
+        <button onClick={() => void dispatchCommand(readerOpen ? 'reader.openInEditor' : 'reader.open', 'menu')} disabled={status !== 'ready'} title={readerOpen ? '用编辑器打开' : '以只读文档方式阅读'}>Reader: {readerOpen ? '开' : '关'}</button>
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
       </header>
@@ -1834,7 +1908,7 @@ export default function App() {
                 <label><input type="checkbox" checked={outlineAutoNumber} onChange={(e) => setOutlineAutoNumberOption(e.target.checked)} />编号</label>
               </div>
               <div className="outline-list" aria-label="文档大纲">
-                {renderOutlineItems(outlineItems)}
+                {renderOutlineItems(readerOpen ? outlineModelRef.current.visibleItems(filterOutline(readerOutlineItems, outlineFilter), outlineFlat) : outlineItems)}
               </div>
             </>
           ) : (
@@ -1858,7 +1932,20 @@ export default function App() {
             </>
           )}
         </aside>
-        <main className="editor-container" ref={containerRef} />
+        <main className="editor-container">
+          {readerOpen && (
+            <ReaderView
+              html={readerHtml}
+              title={readerTitle}
+              zoom={readerZoom}
+              onZoomChange={setReaderZoom}
+              onOpenInEditor={closeReader}
+              onClose={closeReader}
+              onCurrentHeadingChange={(id) => { outlineActiveRef.current = id; setCurrentOutlineId(id); }}
+            />
+          )}
+          <div ref={containerRef} style={readerOpen ? { display: 'none' } : undefined} />
+        </main>
       </div>
       {commandPaletteVisible && (
         <div className="quick-open-backdrop" onMouseDown={() => { setCommandPaletteVisible(false); setSlashMode(false); }}>
