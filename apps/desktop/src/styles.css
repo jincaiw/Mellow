@@ -16,38 +16,34 @@ html, body, #root {
   background: #f5f5f5;
 }
 
-.toolbar {
+.titlebar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #ffffff;
-  border-bottom: 1px solid #e0e0e0;
+  align-items: stretch;
+  height: 36px;
+  background: #fbfbfb;
+  border-bottom: 1px solid #e2e2e2;
   user-select: none;
 }
 
-.app-name {
-  font-weight: 600;
-  margin-right: 8px;
-  color: #333;
+/* macOS traffic lights 留白（desktop-ui-design-spec §14） */
+.shell.platform-mac .titlebar {
+  padding-left: 76px;
 }
 
-.toolbar button {
-  padding: 4px 14px;
-  font-size: 13px;
-  border: 1px solid #d0d0d0;
+.titlebar-palette {
+  align-self: center;
+  margin-right: 8px;
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid #d8d8d8;
   border-radius: 6px;
-  background: #fafafa;
+  background: #fff;
+  color: #666;
   cursor: pointer;
 }
 
-.toolbar button:hover:not(:disabled) {
+.titlebar-palette:hover {
   background: #f0f0f0;
-}
-
-.toolbar button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .spacer {
@@ -66,11 +62,9 @@ html, body, #root {
 .tabbar {
   display: flex;
   align-items: stretch;
-  min-height: 34px;
-  max-height: 36px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
-  background: #fbfbfb;
-  border-bottom: 1px solid #e2e2e2;
   user-select: none;
 }
 
@@ -137,9 +131,9 @@ html, body, #root {
 }
 
 .file-tree {
-  width: 280px;
-  min-width: 220px;
-  max-width: 360px;
+  width: 260px;
+  min-width: 200px;
+  max-width: 480px;
   border-right: 1px solid #e2e2e2;
   background: #fafafa;
   display: flex;
@@ -584,13 +578,29 @@ html, body, #root {
 
 .statusbar {
   display: flex;
-  justify-content: space-between;
-  padding: 4px 12px;
+  align-items: center;
+  gap: 14px;
+  min-height: 24px;
+  padding: 0 12px;
   font-size: 12px;
   color: #888;
   background: #fafafa;
   border-top: 1px solid #e0e0e0;
   user-select: none;
+}
+
+.statusbar-item {
+  white-space: nowrap;
+}
+
+.statusbar-sep {
+  width: 1px;
+  height: 14px;
+  background: #e0e0e0;
+}
+
+.statusbar .spacer {
+  flex: 1;
 }
 
 .recovery-bar {
@@ -941,7 +951,7 @@ html, body, #root {
 
 /* 打印：只输出 Reader 正文 */
 @media print {
-  .toolbar, .tabbar, .file-tree, .quick-open-backdrop, .mellow-reader-bar, .status-bar, .toast {
+  .titlebar, .tabbar, .file-tree, .quick-open-backdrop, .mellow-reader-bar, .status-bar, .toast {
     display: none !important;
   }
   .shell { height: auto; }
@@ -1016,3 +1026,92 @@ html, body, #root {
 .split-preview-scroll .mellow-reader h5[id],
 .split-preview-scroll .mellow-reader h6[id],
 .split-preview-scroll .mellow-reader [data-offset] { cursor: pointer; }
+
+
+/* ── 正式 Shell（desktop-ui-design-spec）──────────────────── */
+
+/* Welcome（§11：只含三个入口） */
+.welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  background: #fff;
+  z-index: 5;
+}
+.welcome-title {
+  font-size: 40px;
+  font-weight: 300;
+  color: #444;
+  letter-spacing: 2px;
+}
+.welcome-actions {
+  display: flex;
+  gap: 12px;
+}
+.welcome-actions button {
+  padding: 9px 22px;
+  font-size: 14px;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  background: #fafafa;
+  color: #333;
+  cursor: pointer;
+}
+.welcome-actions button:hover {
+  background: #f0f0f0;
+}
+
+/* Context Menu（§6） */
+.context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 172px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+  animation: mellow-fade 120ms ease;
+}
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #333;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.context-menu-item:hover,
+.context-menu-item.selected {
+  background: #e9eefb;
+}
+.context-menu-item.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Sidebar empty states（§17） */
+.sidebar-empty {
+  padding: 28px 16px;
+  font-size: 12px;
+  color: #999;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* Animation（§18：panel fade 120–180ms，无 caret/编辑器动画） */
+@keyframes mellow-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.quick-open-backdrop {
+  animation: mellow-fade 140ms ease;
+}

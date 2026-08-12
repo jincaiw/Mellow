@@ -54,6 +54,8 @@ import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
 import SplitPreview from './SplitPreview';
 import type { SplitPreviewHandle } from './SplitPreview';
+import ContextMenu from './ContextMenu';
+import type { ContextMenuState } from './ContextMenu';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
@@ -68,12 +70,8 @@ const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
 const SLASH_ENABLED_KEY = 'mellow.slashCommands.enabled';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SPLIT_RATIO_KEY = 'mellow.split.ratio';
+const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
 const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
-const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
-  { value: 'assets', label: './assets' },
-  { value: 'images', label: './images' },
-  { value: 'docname', label: './${文件名}.assets' },
-];
 
 type EditorStatus = 'idle' | 'ready' | 'error';
 
@@ -204,6 +202,9 @@ export default function App() {
   });
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitHtml, setSplitHtml] = useState('');
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [cursorPos, setCursorPos] = useState('');
+  const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   const [splitRatio, setSplitRatioState] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(SPLIT_RATIO_KEY));
@@ -497,6 +498,25 @@ export default function App() {
     }
   }, []);
 
+  /** Status Bar 行:列（viewUpdate 时刷新） */
+  const refreshCursorPos = useCallback((host: EditorCore) => {
+    try {
+      const head = host.getSelectionHead();
+      if (head === null) {
+        setCursorPos('');
+        return;
+      }
+      const text = host.getText();
+      const clamped = Math.max(0, Math.min(text.length, head));
+      const before = text.slice(0, clamped);
+      const line = before.split('\n').length;
+      const col = clamped - (before.lastIndexOf('\n') + 1);
+      setCursorPos(`行 ${line} · 列 ${col}`);
+    } catch {
+      setCursorPos('');
+    }
+  }, []);
+
   /** 监听当前文档路径（外部变化检测） */
   const watchDocument = useCallback(async (path: string | null) => {
     const external = externalRef.current;
@@ -527,8 +547,9 @@ export default function App() {
     refreshOutlineRef.current(0);
     await watchDocument(tab.path);
     refreshStats(host);
+    refreshCursorPos(host);
     setStatusText(`已切换到 ${tab.title}${tab.dirty ? '（未保存）' : ''}`);
-  }, [refreshStats, setDirty, watchDocument]);
+  }, [refreshCursorPos, refreshStats, setDirty, watchDocument]);
 
   // ── 图片文件操作（spec image-workflow §6/§7 + PRD §57/§58）──
 
@@ -691,17 +712,6 @@ export default function App() {
       : '已重命名');
     showToast(`已重命名 ${current}`, () => void undo());
   }, [currentTabPatch, refreshTabsState, undo, showToast, setDirty]);
-
-  /** asset 目录选择（custom → 输入自定义目录名） */
-  const handleAssetDirChange = useCallback((value: string) => {
-    if (value === 'custom') {
-      const custom = window.prompt('自定义 asset 目录名（相对文档目录；或绝对路径）', 'my-assets');
-      if (custom === null || custom.trim() === '') return;
-      setAssetDir(custom.trim());
-      return;
-    }
-    setAssetDir(value as AssetDirConfig);
-  }, [setAssetDir]);
 
   // ── File Tree（PRD §14/§59/§60）──
 
@@ -1095,6 +1105,31 @@ export default function App() {
     setStatusText(relative ? `已复制相对路径 ${text}` : `已复制路径 ${text}`);
   }, [fileTreeRoot, selectedTreePath]);
 
+  /** 文件树右键菜单（desktop-ui-design-spec §6：context menu） */
+  const openTreeContextMenu = useCallback((event: React.MouseEvent, path?: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (path !== undefined) {
+      fileTreeModelRef.current?.select(path);
+      setSelectedTreePath(path);
+    }
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: '新文件', enabled: fileTreeRoot !== null, onClick: () => void handleTreeNewFile() },
+        { label: '新文件夹', enabled: fileTreeRoot !== null, onClick: () => void handleTreeNewFolder() },
+        { label: '重命名', enabled: path !== undefined, onClick: () => void handleTreeRename() },
+        { label: '复制', enabled: path !== undefined, onClick: () => void handleTreeDuplicate() },
+        { label: '移动…', enabled: path !== undefined, onClick: () => void handleTreeMove() },
+        { label: '移到回收站', enabled: path !== undefined, onClick: () => void handleTreeTrash() },
+        { label: '复制路径', enabled: path !== undefined, onClick: () => void handleTreeCopyPath(false) },
+        { label: '复制相对路径', enabled: path !== undefined && fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true) },
+        { label: '撤销文件操作', enabled: fileTreeRoot !== null, onClick: () => void handleTreeUndo() },
+      ],
+    });
+  }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo]);
+
   const handleTreeKeyDown = useCallback((event: ReactKeyboardEvent) => {
     const model = fileTreeModelRef.current;
     if (!model) return;
@@ -1358,6 +1393,7 @@ export default function App() {
         host.onEvent((e) => {
           if (e.type === 'viewUpdate') {
             refreshOutline(host.getSelectionHead());
+            refreshCursorPos(host);
             if (e.contentEdited && splitOpenRef.current) refreshSplitHtml();
             if (suppressEditorEventRef.current) return;
             revisionRef.current += 1;
@@ -1394,7 +1430,7 @@ export default function App() {
       recoveryRef.current?.dispose();
       void externalRef.current?.stop();
     };
-  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction, applyTab, currentTabPatch, refreshTabsState, setDirty, refreshOutline, refreshSplitHtml]);
+  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction, applyTab, currentTabPatch, refreshTabsState, setDirty, refreshOutline, refreshCursorPos, refreshSplitHtml]);
 
   const handleNew = useCallback(async () => {
     const host = hostRef.current;
@@ -1628,6 +1664,10 @@ export default function App() {
       { id: 'split.toggle', localizedTitle: { zh: '切换 Split（Source | Preview）', en: 'Toggle Split (Source | Preview)' }, category: 'view', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => toggleSplit() },
       { id: 'split.open', localizedTitle: { zh: 'Split：打开预览', en: 'Split: Open Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => !splitOpen && tabsRef.current.active !== null, execute: () => openSplit() },
       { id: 'split.close', localizedTitle: { zh: 'Split：关闭预览', en: 'Split: Close Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => splitOpen, execute: () => closeSplit() },
+      { id: 'image.moveAll', localizedTitle: { zh: '图片：移动全部到 asset 目录', en: 'Images: Move All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('moveAll') },
+      { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
+      { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
+      { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt('asset 目录名（assets / images / docname）', assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
       { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },
@@ -1663,7 +1703,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, selectionToolbarEnabled, setFocusMode, setReaderZoom, setSelectionToolbarEnabled, setTypewriterMode, splitOpen, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setReaderZoom, setSelectionToolbarEnabled, setTypewriterMode, splitOpen, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1716,6 +1756,60 @@ export default function App() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }, [setSplitRatio]);
+
+  // 窗口 size/position 记忆（desktop-ui-design-spec §3 Window）
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    let disposed = false;
+    void import('@tauri-apps/api/window').then(async ({ getCurrentWindow, PhysicalSize, PhysicalPosition }) => {
+      const win = getCurrentWindow();
+      try {
+        const saved = localStorage.getItem(WINDOW_BOUNDS_KEY);
+        if (saved !== null) {
+          const bounds = JSON.parse(saved) as { width: number; height: number; x: number; y: number };
+          if (Number.isFinite(bounds.width) && Number.isFinite(bounds.height) && bounds.width >= 900 && bounds.height >= 600) {
+            await win.setSize(new PhysicalSize(Math.round(bounds.width), Math.round(bounds.height)));
+            if (Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
+              await win.setPosition(new PhysicalPosition(Math.round(bounds.x), Math.round(bounds.y)));
+            }
+          }
+        }
+      } catch {
+        /* 忽略恢复失败 */
+      }
+      if (disposed) return;
+      let saveTimer = 0;
+      const persist = (): void => {
+        if (saveTimer !== 0) window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => {
+          void win.outerSize().then(async (size) => {
+            try {
+              const pos = await win.outerPosition();
+              localStorage.setItem(WINDOW_BOUNDS_KEY, JSON.stringify({ width: size.width, height: size.height, x: pos.x, y: pos.y }));
+            } catch {
+              /* 忽略 */
+            }
+          });
+        }, 400);
+      };
+      const unlistens: Array<() => void> = [];
+      try {
+        unlistens.push(await win.onResized(persist));
+        unlistens.push(await win.onMoved(persist));
+      } catch {
+        /* 事件订阅失败不影响 */
+      }
+      return () => {
+        disposed = true;
+        unlistens.forEach((un) => un());
+      };
+    }).catch(() => {
+      /* 非 Tauri 环境 */
+    });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -1792,6 +1886,7 @@ export default function App() {
         onDrop={() => { if (node.kind === 'folder') void handleTreeDrop(node.path); }}
         onClick={() => handleTreeSelect(node.path)}
         onDoubleClick={() => { if (node.kind === 'folder') void handleTreeToggle(node.path); else void openTreeFile(node.path); }}
+        onContextMenu={(e) => openTreeContextMenu(e, node.path)}
       >
         <span className="tree-disclosure" onClick={(e) => { e.stopPropagation(); if (node.kind === 'folder') void handleTreeToggle(node.path); }}>
           {node.kind === 'folder' ? (node.expanded ? '▾' : '▸') : ''}
@@ -1874,63 +1969,39 @@ export default function App() {
   ));
 
   return (
-    <div className="shell">
-      <header className="toolbar">
-        <span className="app-name">Mellow V0.0</span>
-        <button onClick={() => void dispatchCommand('file.new', 'menu')} disabled={status !== 'ready'} title="macOS: Cmd+T；Windows/Linux: Ctrl+Alt+T（Ctrl+T 保留给 Table）">新建</button>
-        <button onClick={() => void dispatchCommand('file.open', 'menu')} disabled={status !== 'ready'}>打开…</button>
-        <button onClick={() => void dispatchCommand('file.save', 'menu')} disabled={status !== 'ready'}>保存</button>
-        <button onClick={() => void dispatchCommand('file.saveAs', 'menu')} disabled={status !== 'ready'}>另存为…</button>
-        <button onClick={() => void dispatchCommand('tabs.closeOthers', 'menu')} disabled={status !== 'ready' || tabs.length <= 1}>关闭其他</button>
-        <button onClick={() => void dispatchCommand('tabs.closeRight', 'menu')} disabled={status !== 'ready' || tabs.length <= 1}>关闭右侧</button>
-        <button onClick={() => void dispatchCommand('tabs.reopenClosed', 'menu')} disabled={status !== 'ready'}>重开关闭</button>
-        <button onClick={() => void dispatchCommand('document.rename', 'menu')} disabled={status !== 'ready'}>重命名…</button>
-        <span className="toolbar-sep" />
-        <label className="asset-picker" title="asset 目录（PRD §53）">
-          <select
-            value={ASSET_DIR_OPTIONS.some((o) => o.value === assetDir) ? assetDir : 'custom'}
-            onChange={(e) => handleAssetDirChange(e.target.value)}
-            disabled={status !== 'ready'}
-          >
-            {ASSET_DIR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            {!ASSET_DIR_OPTIONS.some((o) => o.value === assetDir) && <option value="custom">{assetDir}</option>}
-            <option value="custom">自定义…</option>
-          </select>
-        </label>
-        <button onClick={() => void runBatch('moveAll')} disabled={status !== 'ready'}>移动全部</button>
-        <button onClick={() => void runBatch('copyAll')} disabled={status !== 'ready'}>复制全部</button>
-        <button onClick={() => void runBatch('downloadRemote')} disabled={status !== 'ready'}>下载远程</button>
-        <button onClick={() => void dispatchCommand('view.focus.cycle', 'menu')} disabled={status !== 'ready'} title="F8：关闭 / 当前行 / 当前段落">Focus: {focusMode === 'off' ? '关' : focusMode === 'line' ? '行' : '段'}</button>
-        <button onClick={() => void dispatchCommand('view.typewriter.cycle', 'menu')} disabled={status !== 'ready'} title="F9：caret 保持 viewport 中部附近">打字机: {typewriterEnabled ? '开' : '关'}</button>
-        <button onClick={() => void dispatchCommand(readerOpen ? 'reader.openInEditor' : 'reader.open', 'menu')} disabled={status !== 'ready'} title={readerOpen ? '用编辑器打开' : '以只读文档方式阅读'}>Reader: {readerOpen ? '开' : '关'}</button>
-        <button onClick={() => void dispatchCommand(splitOpen ? 'split.close' : 'split.open', 'menu')} disabled={status !== 'ready' || readerOpen} title="Source | Preview：双向滚动同步、点击定位">Split: {splitOpen ? '开' : '关'}</button>
-        <span className="spacer" />
-        <span className={`status ${status}`}>{statusText}</span>
+    <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
+      <header className="titlebar">
+        <nav className="tabbar" aria-label="打开的文档标签页">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`tab ${tab.id === activeTabId ? 'active' : ''} ${tab.dirty ? 'dirty' : ''}`}
+              title={tab.path ?? '(未保存文档)'}
+              draggable
+              onDragStart={() => { draggedTabIdRef.current = tab.id; }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => handleDropTab(tab.id)}
+              onClick={() => void handleSelectTab(tab.id)}
+            >
+              <span className="tab-dirty">{tab.dirty ? '●' : ''}</span>
+              <span className="tab-title">{tab.title}</span>
+              <span
+                className="tab-close"
+                role="button"
+                aria-label={`关闭 ${tab.title}`}
+                onClick={(e) => { e.stopPropagation(); void handleCloseTab(tab.id); }}
+              >×</span>
+            </button>
+          ))}
+        </nav>
+        <button
+          className="titlebar-palette"
+          type="button"
+          onClick={() => void dispatchCommand('commandPalette.open', 'menu')}
+          title="命令面板（Ctrl/Cmd+Shift+P）"
+        >{platformMac ? '⌘P' : 'Ctrl+P'}</button>
       </header>
-      <nav className="tabbar" aria-label="打开的文档标签页">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={`tab ${tab.id === activeTabId ? 'active' : ''} ${tab.dirty ? 'dirty' : ''}`}
-            title={tab.path ?? '(未保存文档)'}
-            draggable
-            onDragStart={() => { draggedTabIdRef.current = tab.id; }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => handleDropTab(tab.id)}
-            onClick={() => void handleSelectTab(tab.id)}
-          >
-            <span className="tab-dirty">{tab.dirty ? '●' : ''}</span>
-            <span className="tab-title">{tab.title}</span>
-            <span
-              className="tab-close"
-              role="button"
-              aria-label={`关闭 ${tab.title}`}
-              onClick={(e) => { e.stopPropagation(); void handleCloseTab(tab.id); }}
-            >×</span>
-          </button>
-        ))}
-      </nav>
       <div className="workspace-shell">
         <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? '大纲' : sidebarMode === 'search' ? '全局搜索' : (fileSidebarMode === 'tree' ? '文件树' : '文件列表')}>
           <div className="file-tree-header">
@@ -1953,23 +2024,6 @@ export default function App() {
                 <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>树</button>
                 <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>列表</button>
               </div>
-              {fileSidebarMode === 'tree' && (
-                <>
-                  <div className="file-tree-actions">
-                    <button onClick={() => void dispatchCommand('fileTree.newFile', 'menu')} disabled={fileTreeRoot === null}>新文件</button>
-                    <button onClick={() => void dispatchCommand('fileTree.newFolder', 'menu')} disabled={fileTreeRoot === null}>新文件夹</button>
-                    <button onClick={() => void dispatchCommand('fileTree.rename', 'menu')} disabled={selectedTreePath === null}>重命名</button>
-                    <button onClick={() => void dispatchCommand('fileTree.duplicate', 'menu')} disabled={selectedTreePath === null}>复制</button>
-                    <button onClick={() => void dispatchCommand('fileTree.move', 'menu')} disabled={selectedTreePath === null}>移动</button>
-                    <button onClick={() => void dispatchCommand('fileTree.trash', 'menu')} disabled={selectedTreePath === null}>回收站</button>
-                    <button onClick={() => void dispatchCommand('fileTree.undo', 'menu')} disabled={fileTreeRoot === null}>撤销</button>
-                  </div>
-                  <div className="file-tree-actions">
-                    <button onClick={() => void dispatchCommand('fileTree.copyPath', 'context-menu')} disabled={selectedTreePath === null}>复制路径</button>
-                    <button onClick={() => void dispatchCommand('fileTree.copyRelativePath', 'context-menu')} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
-                  </div>
-                </>
-              )}
               <div className="file-tree-filters">
                 <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />隐藏文件</label>
                 <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />非 Markdown</label>
@@ -1991,12 +2045,16 @@ export default function App() {
               </div>
               <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? '未打开文件夹（不会创建 .mellow）'}</div>
               {fileSidebarMode === 'tree' ? (
-                <div className="file-tree-list">
-                  {renderTreeNodes(fileTreeNodes)}
+                <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
+                  {fileTreeNodes.length === 0 ? (
+                    <div className="sidebar-empty">{fileTreeRoot === null ? '打开文件夹以浏览文件' : '文件夹为空 · 右键新建'}</div>
+                  ) : renderTreeNodes(fileTreeNodes)}
                 </div>
               ) : (
                 <div className="file-list" aria-label="Articles 文件列表">
-                  {renderFileListItems(fileListItems)}
+                  {fileListItems.length === 0 ? (
+                    <div className="sidebar-empty">打开文件夹以浏览文件</div>
+                  ) : renderFileListItems(fileListItems)}
                 </div>
               )}
             </>
@@ -2008,7 +2066,12 @@ export default function App() {
                 <label><input type="checkbox" checked={outlineAutoNumber} onChange={(e) => setOutlineAutoNumberOption(e.target.checked)} />编号</label>
               </div>
               <div className="outline-list" aria-label="文档大纲">
-                {renderOutlineItems(readerOpen ? outlineModelRef.current.visibleItems(filterOutline(readerOutlineItems, outlineFilter), outlineFlat) : outlineItems)}
+                {(() => {
+                  const items = readerOpen ? outlineModelRef.current.visibleItems(filterOutline(readerOutlineItems, outlineFilter), outlineFlat) : outlineItems;
+                  return items.length === 0
+                    ? <div className="sidebar-empty">当前文档没有标题</div>
+                    : renderOutlineItems(items);
+                })()}
               </div>
             </>
           ) : (
@@ -2027,12 +2090,23 @@ export default function App() {
                 <span className="search-count">{searchRunning ? 'streaming…' : ''} {searchResults.length} matches</span>
               </div>
               <div className="search-results" aria-label="全局搜索结果">
+                {searchQuery === '' && searchResults.length === 0 && <div className="sidebar-empty">输入关键词搜索当前文件夹</div>}
                 {renderSearchGroups(searchGroups)}
               </div>
             </>
           )}
         </aside>
         <main className={`editor-container${splitOpen ? ' split' : ''}`}>
+          {tabs.length === 0 && !readerOpen && !splitOpen && status === 'ready' && (
+            <div className="welcome">
+              <h1 className="welcome-title">Mellow</h1>
+              <div className="welcome-actions">
+                <button onClick={() => void dispatchCommand('file.new', 'menu')}>新建文档</button>
+                <button onClick={() => void dispatchCommand('file.open', 'menu')}>打开文件</button>
+                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')}>打开文件夹</button>
+              </div>
+            </div>
+          )}
           {readerOpen && (
             <ReaderView
               html={readerHtml}
@@ -2156,9 +2230,19 @@ export default function App() {
         </div>
       )}
       <footer className="statusbar">
-        <span>{dirty ? '● 未保存' : '○ 已保存'}</span>
-        <span>{stats}</span>
+        <span className="statusbar-item">{dirty ? '● 未保存' : '○ 已保存'}</span>
+        <span className="statusbar-item">{stats}</span>
+        <span className="statusbar-item">{cursorPos}</span>
+        <span className="statusbar-sep" />
+        <span className="statusbar-item">Markdown</span>
+        <span className="statusbar-item">UTF-8</span>
+        <span className="statusbar-item">LF</span>
+        <span className="spacer" />
+        <span className={`status ${status}`}>{statusText}</span>
       </footer>
+      {contextMenu !== null && (
+        <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />
+      )}
       {toast !== null && (
         <div className="toast-bar">
           <span className="toast-message">{toast.message}</span>
