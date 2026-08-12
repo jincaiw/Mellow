@@ -30,6 +30,7 @@
 | `footnote/typora-footnote-corpus.md` | Footnote Corpus：引用、重复引用、定义、多行定义、代码块跳过 |
 | `toc/toc-corpus.md` | TOC Corpus：`[TOC]`、多级 heading、中文/emoji、代码块/YAML 跳过 |
 | `alerts/github-alerts-corpus.md` | GitHub Alerts Corpus：NOTE/TIP/IMPORTANT/WARNING/CAUTION、普通引用、代码块跳过 |
+| `yaml/front-matter-corpus.md` | YAML Front Matter Corpus：顶部 front matter、列表、布尔/数字、正文分隔 |
 
 ## 用法示例（jest）
 

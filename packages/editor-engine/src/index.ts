@@ -24,6 +24,7 @@ import { buildMermaidExtension } from './mermaid';
 import { buildFootnoteExtension } from './footnote';
 import { buildTocExtension } from './toc';
 import { buildGitHubAlertsExtension } from './githubAlerts';
+import { buildYamlFrontMatterExtension } from './yamlFrontMatter';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -35,6 +36,7 @@ export * from './mermaid';
 export * from './footnote';
 export * from './toc';
 export * from './githubAlerts';
+export * from './yamlFrontMatter';
 export {
   registerNode,
   registerHeadingNode,
@@ -79,6 +81,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildFootnoteExtension(false),
     buildTocExtension(false),
     buildGitHubAlertsExtension(false),
+    buildYamlFrontMatterExtension(false),
     buildImageExtensions(),
   ];
 }
