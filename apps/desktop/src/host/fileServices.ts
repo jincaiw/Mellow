@@ -98,7 +98,20 @@ export const tauriFileService: FileService = {
       return err({ code: 'io', message: String(e), path });
     }
   },
-  writeText: async (path: string, _content: string) => err({ code: 'not-implemented', message: 'writeText 待实现', path }),
+  writeText: async (path: string, content: string) => {
+    try {
+      const r = await invoke<TauriSaveResponse & { error?: string }>('write_text', { path, content });
+      if (r.error) return err({ code: (r.error_code as 'io' | 'conflict' | undefined) ?? 'io', message: r.error, path });
+      return ok({
+        path: r.path ?? path,
+        bytesWritten: content.length,
+        diskMtimeMs: r.disk_mtime_ms ?? undefined,
+        identityKey: r.identity_key ?? undefined,
+      });
+    } catch (e) {
+      return err({ code: 'io', message: String(e), path });
+    }
+  },
   readDir: async (path: string) => {
     try {
       const r = await invoke<Array<{ path: string; name: string; is_directory: boolean }>>('read_dir', { path });

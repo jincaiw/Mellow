@@ -440,6 +440,21 @@ pub async fn read_text(path: String) -> Result<ReadTextResult, String> {
     })
 }
 
+#[tauri::command]
+pub async fn write_text(path: String, content: String) -> Result<SaveDocumentResult, String> {
+    let bytes = encode(&content, ENC_UTF8);
+    match atomic_save(Path::new(&path), &bytes, None) {
+        Ok(outcome) => Ok(SaveDocumentResult {
+            path: Some(outcome.path),
+            disk_mtime_ms: Some(outcome.disk_mtime_ms),
+            identity_key: Some(outcome.identity_key),
+            error_code: None,
+            error: None,
+        }),
+        Err(e) => Err(e.message()),
+    }
+}
+
 // ─────────────────────────── Image Workflow 文件操作（spec image-workflow §3/§4） ───────────────────────────
 
 /// 复制文件（图片 copy-to-assets）

@@ -26,6 +26,7 @@ pub fn run() {
             fs::open_document,
             fs::save_document,
             fs::read_text,
+            fs::write_text,
             fs::copy_file,
             fs::mkdir,
             fs::write_binary,

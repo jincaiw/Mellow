@@ -129,8 +129,135 @@ html, body, #root {
   color: #222;
 }
 
+.workspace-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: #ffffff;
+}
+
+.file-tree {
+  width: 280px;
+  min-width: 220px;
+  max-width: 360px;
+  border-right: 1px solid #e2e2e2;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.file-tree-header,
+.file-tree-actions,
+.file-tree-filters,
+.file-tree-globs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #ececec;
+  flex-wrap: wrap;
+}
+
+.file-tree-header strong {
+  margin-right: auto;
+  font-size: 13px;
+}
+
+.file-tree button,
+.file-tree select,
+.file-tree input {
+  font-size: 11px;
+}
+
+.file-tree button {
+  padding: 2px 6px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.file-tree button:disabled {
+  opacity: 0.5;
+}
+
+.file-tree-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #555;
+}
+
+.file-tree-globs input {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.file-tree-root {
+  padding: 5px 8px;
+  font-size: 11px;
+  color: #777;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid #ececec;
+}
+
+.file-tree-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.tree-row {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: #333;
+  font-size: 12px;
+  text-align: left;
+}
+
+.tree-row:hover {
+  background: #f0f0f0;
+}
+
+.tree-row.selected {
+  background: #e9eefb;
+}
+
+.tree-row.current .tree-name {
+  font-weight: 700;
+}
+
+.tree-disclosure {
+  width: 14px;
+  color: #777;
+}
+
+.tree-icon {
+  width: 18px;
+  opacity: 0.8;
+}
+
+.tree-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .editor-container {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   background: #ffffff;
   position: relative;

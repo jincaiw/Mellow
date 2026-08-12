@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { EditorCore } from '../../../packages/editor-core/src';
 import {
   DocumentService,
@@ -18,9 +19,14 @@ import {
   FileOpHistory,
   TabManager,
   tabShortcutAction,
+  FileTreeModel,
+  FileTreeService,
+  DEFAULT_FILE_TREE_OPTIONS,
+  dirname as fileTreeDirname,
+  relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, TabSessionSnapshot } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileTreeNode, FileTreeOptions, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
@@ -32,6 +38,8 @@ import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogServic
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
+const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
+const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
   { value: 'images', label: './images' },
@@ -62,6 +70,10 @@ export default function App() {
   const tabsRef = useRef<TabManager>(new TabManager());
   const suppressEditorEventRef = useRef(false);
   const draggedTabIdRef = useRef<string | null>(null);
+  const draggedTreePathRef = useRef<string | null>(null);
+  // File Tree（PRD §14/§59/§60；不创建 .mellow workspace 文件）
+  const fileTreeServiceRef = useRef<FileTreeService | null>(null);
+  const fileTreeModelRef = useRef<FileTreeModel | null>(null);
   // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
   const dirtyRef = useRef(false);
   // Crash Recovery：文档 id + 修订（快照 keyed by document id）
@@ -78,6 +90,16 @@ export default function App() {
   const [stats, setStats] = useState('');
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
+  const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
+  const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
+  const [fileTreeOptions, setFileTreeOptions] = useState<FileTreeOptions>(() => {
+    try {
+      return { ...DEFAULT_FILE_TREE_OPTIONS, ...(JSON.parse(localStorage.getItem(FILE_TREE_OPTIONS_KEY) ?? '{}') as Partial<FileTreeOptions>) };
+    } catch {
+      return DEFAULT_FILE_TREE_OPTIONS;
+    }
+  });
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
@@ -343,6 +365,214 @@ export default function App() {
     setAssetDir(value as AssetDirConfig);
   }, [setAssetDir]);
 
+  // ── File Tree（PRD §14/§59/§60）──
+
+  const refreshFileTree = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const model = fileTreeModelRef.current;
+    if (!svc || !model || fileTreeRoot === null) {
+      setFileTreeNodes([]);
+      return;
+    }
+    const r = await svc.readTree(fileTreeRoot, model.expanded, fileTreeOptions);
+    if (!r.ok) {
+      setStatusText(`文件树刷新失败: ${r.error.message}`);
+      return;
+    }
+    setFileTreeNodes(r.value);
+  }, [fileTreeOptions, fileTreeRoot]);
+
+  const setFileTreeOption = useCallback((patch: Partial<FileTreeOptions>) => {
+    setFileTreeOptions((prev) => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem(FILE_TREE_OPTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const chooseFileTreeRoot = useCallback(async () => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const r = await dialog.showDirectory();
+    if (!r.ok || r.value === null) return;
+    localStorage.setItem(FILE_TREE_ROOT_KEY, r.value);
+    setFileTreeRoot(r.value);
+    fileTreeModelRef.current = new FileTreeModel(r.value, fileTreeOptions);
+    setSelectedTreePath(null);
+    setStatusText(`已打开文件夹 ${r.value}`);
+  }, [fileTreeOptions]);
+
+  const treeFlatten = useCallback(() => {
+    const model = fileTreeModelRef.current;
+    return model?.flatten(fileTreeNodes) ?? [];
+  }, [fileTreeNodes]);
+
+  const selectedTreeDir = useCallback(() => {
+    const selected = selectedTreePath;
+    if (selected === null) return fileTreeRoot;
+    const flat = treeFlatten();
+    const node = flat.find((n) => n.path === selected);
+    return node?.kind === 'folder' ? selected : fileTreeDirname(selected);
+  }, [fileTreeRoot, selectedTreePath, treeFlatten]);
+
+  const openTreeFile = useCallback(async (path: string) => {
+    const documents = documentsRef.current;
+    if (!documents) return;
+    syncActiveTabFromEditor();
+    const r = await documents.readPath(path);
+    if (!r.ok) {
+      setStatusText(`打开失败: ${r.error.message}`);
+      return;
+    }
+    const tab = tabsRef.current.open({
+      path: r.value.path,
+      content: r.value.content,
+      dirty: false,
+      documentId: crypto.randomUUID(),
+      revision: 0,
+      encoding: r.value.encoding,
+      eol: r.value.eol,
+      diskState: r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey } : null,
+    });
+    refreshTabsState();
+    await applyTab(tab);
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+
+  const handleTreeToggle = useCallback(async (path: string) => {
+    const model = fileTreeModelRef.current;
+    if (!model) return;
+    model.toggle(path);
+    model.select(path);
+    setSelectedTreePath(path);
+    await refreshFileTree();
+  }, [refreshFileTree]);
+
+  const handleTreeSelect = useCallback((path: string) => {
+    fileTreeModelRef.current?.select(path);
+    setSelectedTreePath(path);
+  }, []);
+
+  const handleTreeNewFile = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const dir = selectedTreeDir();
+    if (!svc || dir === null) return;
+    const name = window.prompt('新文件名', 'untitled.md');
+    if (!name) return;
+    const r = await svc.newFile(dir, name);
+    setStatusText(r.ok ? `已新建 ${r.value}` : `新建失败: ${r.error.message}`);
+    await refreshFileTree();
+  }, [refreshFileTree, selectedTreeDir]);
+
+  const handleTreeNewFolder = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const dir = selectedTreeDir();
+    if (!svc || dir === null) return;
+    const name = window.prompt('新文件夹名', 'New Folder');
+    if (!name) return;
+    const r = await svc.newFolder(dir, name);
+    setStatusText(r.ok ? `已新建文件夹 ${r.value}` : `新建失败: ${r.error.message}`);
+    await refreshFileTree();
+  }, [refreshFileTree, selectedTreeDir]);
+
+  const handleTreeRename = useCallback(async (name?: string) => {
+    const svc = fileTreeServiceRef.current;
+    if (!svc || selectedTreePath === null) return;
+    const next = name ?? window.prompt('重命名', selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
+    if (!next) return;
+    const r = await svc.rename(selectedTreePath, next);
+    setStatusText(r.ok ? `已重命名 ${r.value}` : `重命名失败: ${r.error.message}`);
+    if (r.ok) setSelectedTreePath(r.value);
+    await refreshFileTree();
+  }, [refreshFileTree, selectedTreePath]);
+
+  const handleTreeDuplicate = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    if (!svc || selectedTreePath === null) return;
+    const r = await svc.duplicate(selectedTreePath);
+    setStatusText(r.ok ? `已复制 ${r.value}` : `复制失败: ${r.error.message}`);
+    await refreshFileTree();
+  }, [refreshFileTree, selectedTreePath]);
+
+  const handleTreeMove = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const dialog = dialogRef.current;
+    if (!svc || !dialog || selectedTreePath === null) return;
+    const target = await dialog.showDirectory();
+    if (!target.ok || target.value === null) return;
+    const r = await svc.move(selectedTreePath, target.value);
+    setStatusText(r.ok ? `已移动 ${r.value}` : `移动失败: ${r.error.message}`);
+    if (r.ok) setSelectedTreePath(r.value);
+    await refreshFileTree();
+  }, [refreshFileTree, selectedTreePath]);
+
+  const handleTreeDrop = useCallback(async (targetDir: string) => {
+    const svc = fileTreeServiceRef.current;
+    const path = draggedTreePathRef.current;
+    draggedTreePathRef.current = null;
+    if (!svc || path === null || path === targetDir) return;
+    const r = await svc.move(path, targetDir);
+    setStatusText(r.ok ? `已移动 ${r.value}` : `移动失败: ${r.error.message}`);
+    if (r.ok) setSelectedTreePath(r.value);
+    await refreshFileTree();
+  }, [refreshFileTree]);
+
+  const handleTreeTrash = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    if (!svc || selectedTreePath === null) return;
+    if (!window.confirm(`移到回收站？\n${selectedTreePath}`)) return;
+    const r = await svc.trash(selectedTreePath);
+    setStatusText(r.ok ? '已移到回收站' : `删除失败: ${r.error.message}`);
+    if (r.ok) setSelectedTreePath(null);
+    await refreshFileTree();
+  }, [refreshFileTree, selectedTreePath]);
+
+  const handleTreeUndo = useCallback(async () => {
+    const history = fileTreeServiceRef.current?.undoHistory;
+    if (!history) return;
+    const r = await history.undo();
+    setStatusText(r.ok ? r.value : `撤销失败: ${r.error.message}`);
+    await refreshFileTree();
+  }, [refreshFileTree]);
+
+  const handleTreeCopyPath = useCallback(async (relative: boolean) => {
+    if (selectedTreePath === null) return;
+    const text = relative && fileTreeRoot !== null ? fileTreeRelativePath(fileTreeRoot, selectedTreePath) : selectedTreePath;
+    await navigator.clipboard.writeText(text);
+    setStatusText(relative ? `已复制相对路径 ${text}` : `已复制路径 ${text}`);
+  }, [fileTreeRoot, selectedTreePath]);
+
+  const handleTreeKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    const model = fileTreeModelRef.current;
+    if (!model) return;
+    const map: Record<string, 'up' | 'down' | 'left' | 'right' | 'enter' | undefined> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter' };
+    const key = map[event.key];
+    if (key !== undefined) {
+      event.preventDefault();
+      const r = model.navigate(treeFlatten(), key);
+      setSelectedTreePath(r.selected);
+      void refreshFileTree().then(() => { if (r.open) void openTreeFile(r.open); });
+      return;
+    }
+    if (event.key === 'F2' && selectedTreePath !== null) {
+      event.preventDefault();
+      void (async () => {
+        const name = window.prompt('重命名', selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
+        if (name) await handleTreeRename(name);
+      })();
+    }
+    if (event.key === 'Delete' && selectedTreePath !== null) {
+      event.preventDefault();
+      void handleTreeTrash();
+    }
+  }, [handleTreeRename, handleTreeTrash, openTreeFile, refreshFileTree, selectedTreePath, treeFlatten]);
+
+  useEffect(() => {
+    if (fileTreeRoot !== null) {
+      fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
+      void refreshFileTree();
+    }
+  }, [fileTreeOptions, fileTreeRoot, refreshFileTree]);
+
   // ── 外部文件变化检测（spec §5）──
 
   /** 外部变化（clean）→ 自动重载，保持 caret/scroll（documentChanged=false） */
@@ -439,6 +669,10 @@ export default function App() {
     if (!containerRef.current) return;
     const fsService = createDesktopFileService();
     documentsRef.current = new DocumentService(fsService);
+    fileTreeServiceRef.current = new FileTreeService(fsService);
+    if (fileTreeRoot !== null) {
+      fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
+    }
     recoveryRef.current = new RecoveryService(createDesktopRecoveryStorage());
     dialogRef.current = createDesktopDialogService();
     openerRef.current = createDesktopOpenerService();
@@ -861,6 +1095,30 @@ export default function App() {
     setStatusText(`已忽略 ${entry.documentId}`);
   }, []);
 
+  const renderTreeNodes = (nodes: FileTreeNode[]) => nodes.map((node) => (
+    <div key={node.path}>
+      <button
+        type="button"
+        className={`tree-row ${selectedTreePath === node.path ? 'selected' : ''} ${filePathRef.current === node.path ? 'current' : ''}`}
+        style={{ paddingLeft: 8 + node.depth * 14 }}
+        title={node.path}
+        draggable
+        onDragStart={() => { draggedTreePathRef.current = node.path; }}
+        onDragOver={(e) => { if (node.kind === 'folder') e.preventDefault(); }}
+        onDrop={() => { if (node.kind === 'folder') void handleTreeDrop(node.path); }}
+        onClick={() => handleTreeSelect(node.path)}
+        onDoubleClick={() => { if (node.kind === 'folder') void handleTreeToggle(node.path); else void openTreeFile(node.path); }}
+      >
+        <span className="tree-disclosure" onClick={(e) => { e.stopPropagation(); if (node.kind === 'folder') void handleTreeToggle(node.path); }}>
+          {node.kind === 'folder' ? (node.expanded ? '▾' : '▸') : ''}
+        </span>
+        <span className="tree-icon">{node.kind === 'folder' ? '📁' : '📄'}</span>
+        <span className="tree-name">{node.name}</span>
+      </button>
+      {node.kind === 'folder' && node.expanded && node.children !== undefined && renderTreeNodes(node.children)}
+    </div>
+  ));
+
   return (
     <div className="shell">
       <header className="toolbar">
@@ -915,7 +1173,48 @@ export default function App() {
           </button>
         ))}
       </nav>
-      <main className="editor-container" ref={containerRef} />
+      <div className="workspace-shell">
+        <aside className="file-tree" onKeyDown={handleTreeKeyDown} tabIndex={0} aria-label="文件树">
+          <div className="file-tree-header">
+            <strong>文件</strong>
+            <button onClick={() => void chooseFileTreeRoot()} title="打开文件夹">打开…</button>
+            <button onClick={() => void refreshFileTree()} disabled={fileTreeRoot === null}>刷新</button>
+          </div>
+          <div className="file-tree-actions">
+            <button onClick={() => void handleTreeNewFile()} disabled={fileTreeRoot === null}>新文件</button>
+            <button onClick={() => void handleTreeNewFolder()} disabled={fileTreeRoot === null}>新文件夹</button>
+            <button onClick={() => void handleTreeRename()} disabled={selectedTreePath === null}>重命名</button>
+            <button onClick={() => void handleTreeDuplicate()} disabled={selectedTreePath === null}>复制</button>
+            <button onClick={() => void handleTreeMove()} disabled={selectedTreePath === null}>移动</button>
+            <button onClick={() => void handleTreeTrash()} disabled={selectedTreePath === null}>回收站</button>
+            <button onClick={() => void handleTreeUndo()} disabled={fileTreeRoot === null}>撤销</button>
+          </div>
+          <div className="file-tree-actions">
+            <button onClick={() => void handleTreeCopyPath(false)} disabled={selectedTreePath === null}>复制路径</button>
+            <button onClick={() => void handleTreeCopyPath(true)} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
+          </div>
+          <div className="file-tree-filters">
+            <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />隐藏文件</label>
+            <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />非 Markdown</label>
+            <label>排序
+              <select value={fileTreeOptions.sortBy} onChange={(e) => setFileTreeOption({ sortBy: e.target.value as FileTreeOptions['sortBy'] })}>
+                <option value="natural">自然</option>
+                <option value="name">名称</option>
+              </select>
+            </label>
+            <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />升序</label>
+          </div>
+          <div className="file-tree-globs">
+            <input placeholder="include glob（逗号分隔）" value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+            <input placeholder="exclude glob（逗号分隔）" value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+          </div>
+          <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? '未打开文件夹（不会创建 .mellow）'}</div>
+          <div className="file-tree-list">
+            {renderTreeNodes(fileTreeNodes)}
+          </div>
+        </aside>
+        <main className="editor-container" ref={containerRef} />
+      </div>
       {conflict !== null && (
         <div className="recovery-bar conflict-bar">
           <span>磁盘文件已被外部修改（{conflict.kind}）—— 禁止覆盖：</span>
