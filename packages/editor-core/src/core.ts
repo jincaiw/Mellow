@@ -115,6 +115,20 @@ export class EditorCore {
     this.iframe?.contentWindow?.focus();
   }
 
+  /** 当前主光标 offset（Outline 高亮使用；engine bridge 不可用时返回 null） */
+  getSelectionHead(): number | null {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_OUTLINE_API__?: { getSelectionHead?: () => number | null } }) | null;
+    const head = win?.__MELLOW_OUTLINE_API__?.getSelectionHead?.();
+    return typeof head === 'number' ? head : null;
+  }
+
+  /** 跳转到文档 offset（Outline click jump；失败时返回 false） */
+  jumpToOffset(offset: number): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_OUTLINE_API__?: { jumpToOffset?: (offset: number) => boolean } }) | null;
+    const jump = win?.__MELLOW_OUTLINE_API__?.jumpToOffset;
+    return typeof jump === 'function' ? jump(offset) : false;
+  }
+
   /** 设置当前文档路径（Image Workflow 相对路径解析，engine 读 window.__MELLOW_DOC_PATH__） */
   setDocumentPath(path: string | null): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_DOC_PATH__?: string | null }) | null;

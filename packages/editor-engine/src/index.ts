@@ -26,6 +26,7 @@ import { buildTocExtension } from './toc';
 import { buildGitHubAlertsExtension } from './githubAlerts';
 import { buildYamlFrontMatterExtension } from './yamlFrontMatter';
 import { buildSafeHtmlExtension } from './safeHtml';
+import { buildOutlineBridgeExtension } from './outlineBridge';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -38,6 +39,8 @@ export * from './footnote';
 export * from './toc';
 export * from './githubAlerts';
 export * from './yamlFrontMatter';
+export { buildOutlineBridgeExtension } from './outlineBridge';
+export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
   extractHtmlBlocks,
@@ -91,6 +94,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildGitHubAlertsExtension(false),
     buildYamlFrontMatterExtension(false),
     buildSafeHtmlExtension(false),
+    buildOutlineBridgeExtension(),
     buildImageExtensions(),
   ];
 }

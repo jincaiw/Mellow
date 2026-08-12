@@ -23,13 +23,17 @@ import {
   FileTreeService,
   FileListModel,
   FileListService,
+  OutlineModel,
+  buildOutline,
+  currentHeadingId,
+  filterOutline,
   DEFAULT_FILE_TREE_OPTIONS,
   DEFAULT_FILE_LIST_OPTIONS,
   dirname as fileTreeDirname,
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, TabSessionSnapshot } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
@@ -45,6 +49,7 @@ const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
 const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
 const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
 const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
+const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
   { value: 'images', label: './images' },
@@ -81,6 +86,9 @@ export default function App() {
   const fileTreeModelRef = useRef<FileTreeModel | null>(null);
   const fileListServiceRef = useRef<FileListService | null>(null);
   const fileListModelRef = useRef<FileListModel>(new FileListModel());
+  const outlineModelRef = useRef<OutlineModel>(new OutlineModel());
+  const outlineActiveRef = useRef<string | null>(null);
+  const refreshOutlineRef = useRef<(head?: number | null) => void>(() => {});
   // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
   const dirtyRef = useRef(false);
   // Crash Recovery：文档 id + 修订（快照 keyed by document id）
@@ -98,6 +106,7 @@ export default function App() {
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
+  const [sidebarMode, setSidebarModeState] = useState<'files' | 'outline'>(() => (localStorage.getItem('mellow.sidebar.mode') === 'outline' ? 'outline' : 'files'));
   const [fileSidebarMode, setFileSidebarModeState] = useState<'tree' | 'list'>(() => (localStorage.getItem(FILE_SIDEBAR_MODE_KEY) === 'list' ? 'list' : 'tree'));
   const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
   const [fileListItems, setFileListItems] = useState<FileListItem[]>([]);
@@ -117,6 +126,17 @@ export default function App() {
       return DEFAULT_FILE_LIST_OPTIONS;
     }
   });
+  const [outlineItems, setOutlineItems] = useState<OutlineHeading[]>([]);
+  const [outlineFilter, setOutlineFilter] = useState('');
+  const [outlineFlat, setOutlineFlat] = useState(false);
+  const [outlineAutoNumber, setOutlineAutoNumber] = useState(() => {
+    try {
+      return Boolean((JSON.parse(localStorage.getItem(OUTLINE_OPTIONS_KEY) ?? '{}') as { autoNumber?: boolean }).autoNumber);
+    } catch {
+      return false;
+    }
+  });
+  const [currentOutlineId, setCurrentOutlineId] = useState<string | null>(null);
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
@@ -204,6 +224,7 @@ export default function App() {
     host.setDocumentPath(tab.path);
     await host.open(tab.content, undefined, true);
     suppressEditorEventRef.current = false;
+    refreshOutlineRef.current(0);
     await watchDocument(tab.path);
     refreshStats(host);
     setStatusText(`已切换到 ${tab.title}${tab.dirty ? '（未保存）' : ''}`);
@@ -420,6 +441,42 @@ export default function App() {
     setFileSidebarModeState(mode);
     localStorage.setItem(FILE_SIDEBAR_MODE_KEY, mode);
   }, []);
+
+  const setSidebarMode = useCallback((mode: 'files' | 'outline') => {
+    setSidebarModeState(mode);
+    localStorage.setItem('mellow.sidebar.mode', mode);
+  }, []);
+
+  const setOutlineAutoNumberOption = useCallback((value: boolean) => {
+    setOutlineAutoNumber(value);
+    localStorage.setItem(OUTLINE_OPTIONS_KEY, JSON.stringify({ autoNumber: value }));
+  }, []);
+
+  const refreshOutline = useCallback((head?: number | null) => {
+    const host = hostRef.current;
+    if (!host) return;
+    const tree = filterOutline(buildOutline(host.getText(), { autoNumber: outlineAutoNumber }), outlineFilter);
+    const visible = outlineModelRef.current.visibleItems(tree, outlineFlat);
+    const all = outlineModelRef.current.visibleItems(buildOutline(host.getText(), { autoNumber: outlineAutoNumber }), true);
+    const current = currentHeadingId(all, head ?? host.getSelectionHead() ?? 0);
+    outlineActiveRef.current = current;
+    setOutlineItems(visible);
+    setCurrentOutlineId(current);
+  }, [outlineAutoNumber, outlineFilter, outlineFlat]);
+
+  refreshOutlineRef.current = refreshOutline;
+
+  const handleOutlineJump = useCallback((item: OutlineHeading) => {
+    const host = hostRef.current;
+    outlineModelRef.current.selectedId = item.id;
+    setCurrentOutlineId(item.id);
+    host?.jumpToOffset(item.from);
+  }, []);
+
+  const handleOutlineToggle = useCallback((id: string) => {
+    outlineModelRef.current.toggle(id);
+    refreshOutline(outlineActiveRef.current === id ? undefined : hostRef.current?.getSelectionHead());
+  }, [refreshOutline]);
 
   const chooseFileTreeRoot = useCallback(async () => {
     const dialog = dialogRef.current;
@@ -638,6 +695,10 @@ export default function App() {
     }
   }, [fileListOptions, fileTreeOptions, fileTreeRoot, refreshFilesSidebar]);
 
+  useEffect(() => {
+    refreshOutlineRef.current();
+  }, [outlineAutoNumber, outlineFilter, outlineFlat]);
+
   // ── 外部文件变化检测（spec §5）──
 
   /** 外部变化（clean）→ 自动重载，保持 caret/scroll（documentChanged=false） */
@@ -656,6 +717,7 @@ export default function App() {
       : null;
     // documentChanged=false → CoreEditor resetEditor 保持 scroll + selection
     await host.open(r.value.content, undefined, false);
+    refreshOutline(host.getSelectionHead());
     setDirty(false);
     tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
     refreshTabsState();
@@ -847,6 +909,7 @@ export default function App() {
         // Crash Recovery：编辑事件 → 防抖快照（与 Auto Save 分离）
         host.onEvent((e) => {
           if (e.type === 'viewUpdate') {
+            refreshOutline(host.getSelectionHead());
             if (suppressEditorEventRef.current) return;
             revisionRef.current += 1;
             setDirty(true);
@@ -882,7 +945,7 @@ export default function App() {
       recoveryRef.current?.dispose();
       void externalRef.current?.stop();
     };
-  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction, applyTab, currentTabPatch, refreshTabsState, setDirty]);
+  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction, applyTab, currentTabPatch, refreshTabsState, setDirty, refreshOutline]);
 
   const handleNew = useCallback(async () => {
     const host = hostRef.current;
@@ -1205,6 +1268,26 @@ export default function App() {
     </button>
   ));
 
+  const renderOutlineItems = (items: OutlineHeading[]) => items.map((item) => (
+    <button
+      key={item.id}
+      type="button"
+      className={`outline-row ${currentOutlineId === item.id ? 'current' : ''}`}
+      style={{ paddingLeft: outlineFlat ? 10 : 8 + (item.level - 1) * 14 }}
+      title={item.title}
+      onClick={() => handleOutlineJump(item)}
+    >
+      {!outlineFlat && item.children.length > 0 && (
+        <span className="outline-disclosure" onClick={(e) => { e.stopPropagation(); handleOutlineToggle(item.id); }}>
+          {outlineModelRef.current.collapsed.has(item.id) ? '▸' : '▾'}
+        </span>
+      )}
+      {!outlineFlat && item.children.length === 0 && <span className="outline-disclosure" />}
+      <span className="outline-level">H{item.level}</span>
+      <span className="outline-title">{item.number ? `${item.number} ` : ''}{item.title}</span>
+    </button>
+  ));
+
   return (
     <div className="shell">
       <header className="toolbar">
@@ -1260,61 +1343,84 @@ export default function App() {
         ))}
       </nav>
       <div className="workspace-shell">
-        <aside className="file-tree" onKeyDown={fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown} tabIndex={0} aria-label={fileSidebarMode === 'tree' ? '文件树' : '文件列表'}>
+        <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? '大纲' : (fileSidebarMode === 'tree' ? '文件树' : '文件列表')}>
           <div className="file-tree-header">
-            <strong>文件</strong>
-            <div className="file-sidebar-switch" role="tablist" aria-label="文件视图切换">
-              <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>树</button>
-              <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>列表</button>
+            <strong>{sidebarMode === 'outline' ? '大纲' : '文件'}</strong>
+            <div className="file-sidebar-switch" role="tablist" aria-label="侧栏切换">
+              <button className={sidebarMode === 'files' ? 'active' : ''} onClick={() => setSidebarMode('files')}>文件</button>
+              <button className={sidebarMode === 'outline' ? 'active' : ''} onClick={() => { setSidebarMode('outline'); refreshOutlineRef.current(); }}>大纲</button>
             </div>
-            <button onClick={() => void chooseFileTreeRoot()} title="打开文件夹">打开…</button>
-            <button onClick={() => void refreshFilesSidebar()} disabled={fileTreeRoot === null}>刷新</button>
+            {sidebarMode === 'files' && (
+              <>
+                <button onClick={() => void chooseFileTreeRoot()} title="打开文件夹">打开…</button>
+                <button onClick={() => void refreshFilesSidebar()} disabled={fileTreeRoot === null}>刷新</button>
+              </>
+            )}
           </div>
-          {fileSidebarMode === 'tree' && (
+          {sidebarMode === 'files' ? (
             <>
-              <div className="file-tree-actions">
-                <button onClick={() => void handleTreeNewFile()} disabled={fileTreeRoot === null}>新文件</button>
-                <button onClick={() => void handleTreeNewFolder()} disabled={fileTreeRoot === null}>新文件夹</button>
-                <button onClick={() => void handleTreeRename()} disabled={selectedTreePath === null}>重命名</button>
-                <button onClick={() => void handleTreeDuplicate()} disabled={selectedTreePath === null}>复制</button>
-                <button onClick={() => void handleTreeMove()} disabled={selectedTreePath === null}>移动</button>
-                <button onClick={() => void handleTreeTrash()} disabled={selectedTreePath === null}>回收站</button>
-                <button onClick={() => void handleTreeUndo()} disabled={fileTreeRoot === null}>撤销</button>
+              <div className="file-tree-actions file-mode-tabs">
+                <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>树</button>
+                <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>列表</button>
               </div>
-              <div className="file-tree-actions">
-                <button onClick={() => void handleTreeCopyPath(false)} disabled={selectedTreePath === null}>复制路径</button>
-                <button onClick={() => void handleTreeCopyPath(true)} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
+              {fileSidebarMode === 'tree' && (
+                <>
+                  <div className="file-tree-actions">
+                    <button onClick={() => void handleTreeNewFile()} disabled={fileTreeRoot === null}>新文件</button>
+                    <button onClick={() => void handleTreeNewFolder()} disabled={fileTreeRoot === null}>新文件夹</button>
+                    <button onClick={() => void handleTreeRename()} disabled={selectedTreePath === null}>重命名</button>
+                    <button onClick={() => void handleTreeDuplicate()} disabled={selectedTreePath === null}>复制</button>
+                    <button onClick={() => void handleTreeMove()} disabled={selectedTreePath === null}>移动</button>
+                    <button onClick={() => void handleTreeTrash()} disabled={selectedTreePath === null}>回收站</button>
+                    <button onClick={() => void handleTreeUndo()} disabled={fileTreeRoot === null}>撤销</button>
+                  </div>
+                  <div className="file-tree-actions">
+                    <button onClick={() => void handleTreeCopyPath(false)} disabled={selectedTreePath === null}>复制路径</button>
+                    <button onClick={() => void handleTreeCopyPath(true)} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
+                  </div>
+                </>
+              )}
+              <div className="file-tree-filters">
+                <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />隐藏文件</label>
+                <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />非 Markdown</label>
+                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.recursive} onChange={(e) => setFileListOption({ recursive: e.target.checked })} />递归</label>}
+                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.includeSummary} onChange={(e) => setFileListOption({ includeSummary: e.target.checked })} />摘要</label>}
+                <label>排序
+                  <select value={fileTreeOptions.sortBy} onChange={(e) => setFileTreeOption({ sortBy: e.target.value as FileTreeOptions['sortBy'] })}>
+                    <option value="natural">自然</option>
+                    <option value="name">名称</option>
+                    <option value="modified">修改时间</option>
+                    <option value="created">创建时间</option>
+                  </select>
+                </label>
+                <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />升序</label>
+              </div>
+              <div className="file-tree-globs">
+                <input placeholder="include glob（逗号分隔）" value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+                <input placeholder="exclude glob（逗号分隔）" value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+              </div>
+              <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? '未打开文件夹（不会创建 .mellow）'}</div>
+              {fileSidebarMode === 'tree' ? (
+                <div className="file-tree-list">
+                  {renderTreeNodes(fileTreeNodes)}
+                </div>
+              ) : (
+                <div className="file-list" aria-label="Articles 文件列表">
+                  {renderFileListItems(fileListItems)}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="file-tree-filters">
+                <input className="outline-filter" placeholder="过滤标题" value={outlineFilter} onChange={(e) => setOutlineFilter(e.target.value)} />
+                <label><input type="checkbox" checked={outlineFlat} onChange={(e) => setOutlineFlat(e.target.checked)} />Flat</label>
+                <label><input type="checkbox" checked={outlineAutoNumber} onChange={(e) => setOutlineAutoNumberOption(e.target.checked)} />编号</label>
+              </div>
+              <div className="outline-list" aria-label="文档大纲">
+                {renderOutlineItems(outlineItems)}
               </div>
             </>
-          )}
-          <div className="file-tree-filters">
-            <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />隐藏文件</label>
-            <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />非 Markdown</label>
-            {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.recursive} onChange={(e) => setFileListOption({ recursive: e.target.checked })} />递归</label>}
-            {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.includeSummary} onChange={(e) => setFileListOption({ includeSummary: e.target.checked })} />摘要</label>}
-            <label>排序
-              <select value={fileTreeOptions.sortBy} onChange={(e) => setFileTreeOption({ sortBy: e.target.value as FileTreeOptions['sortBy'] })}>
-                <option value="natural">自然</option>
-                <option value="name">名称</option>
-                <option value="modified">修改时间</option>
-                <option value="created">创建时间</option>
-              </select>
-            </label>
-            <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />升序</label>
-          </div>
-          <div className="file-tree-globs">
-            <input placeholder="include glob（逗号分隔）" value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
-            <input placeholder="exclude glob（逗号分隔）" value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
-          </div>
-          <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? '未打开文件夹（不会创建 .mellow）'}</div>
-          {fileSidebarMode === 'tree' ? (
-            <div className="file-tree-list">
-              {renderTreeNodes(fileTreeNodes)}
-            </div>
-          ) : (
-            <div className="file-list" aria-label="Articles 文件列表">
-              {renderFileListItems(fileListItems)}
-            </div>
           )}
         </aside>
         <main className="editor-container" ref={containerRef} />
