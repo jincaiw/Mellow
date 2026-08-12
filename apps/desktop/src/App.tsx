@@ -181,6 +181,7 @@ export default function App() {
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
   const [focusMode, setFocusModeState] = useState<'off' | 'line' | 'paragraph'>('off');
+  const [typewriterEnabled, setTypewriterEnabled] = useState(false);
   const [slashEnabled, setSlashEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SLASH_ENABLED_KEY) !== 'false';
@@ -267,6 +268,16 @@ export default function App() {
     const next = focusMode === 'off' ? 'line' : focusMode === 'line' ? 'paragraph' : 'off';
     setFocusMode(next);
   }, [focusMode, setFocusMode]);
+
+  const setTypewriterMode = useCallback((on: boolean) => {
+    hostRef.current?.setTypewriterMode(on);
+    setTypewriterEnabled(on);
+    setStatusText(on ? 'Typewriter Mode：已开启（F9）' : 'Typewriter Mode：已关闭');
+  }, []);
+
+  const toggleTypewriter = useCallback(() => {
+    setTypewriterMode(!typewriterEnabled);
+  }, [setTypewriterMode, typewriterEnabled]);
 
   const openSlashUi = useCallback(() => {
     commandPaletteModelRef.current.selectedIndex = 0;
@@ -1457,6 +1468,9 @@ export default function App() {
       { id: 'view.focus.off', localizedTitle: { zh: 'Focus Mode：关闭', en: 'Focus Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('off') },
       { id: 'view.focus.line', localizedTitle: { zh: 'Focus Mode：当前行', en: 'Focus Mode: Current Line' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('line') },
       { id: 'view.focus.paragraph', localizedTitle: { zh: 'Focus Mode：当前段落', en: 'Focus Mode: Current Paragraph' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('paragraph') },
+      { id: 'view.typewriter.cycle', localizedTitle: { zh: '切换 Typewriter Mode', en: 'Toggle Typewriter Mode' }, category: 'view', shortcut: { mac: 'F9', winLinux: 'F9' }, context: { scope: 'document' }, enabled: always, execute: () => toggleTypewriter() },
+      { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
+      { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
       { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },
@@ -1492,7 +1506,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openSlashUi, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, setFocusMode, toggleSlashEnabled]);
+  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openSlashUi, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, setFocusMode, setTypewriterMode, toggleSlashEnabled, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1701,6 +1715,7 @@ export default function App() {
         <button onClick={() => void runBatch('copyAll')} disabled={status !== 'ready'}>复制全部</button>
         <button onClick={() => void runBatch('downloadRemote')} disabled={status !== 'ready'}>下载远程</button>
         <button onClick={() => void dispatchCommand('view.focus.cycle', 'menu')} disabled={status !== 'ready'} title="F8：关闭 / 当前行 / 当前段落">Focus: {focusMode === 'off' ? '关' : focusMode === 'line' ? '行' : '段'}</button>
+        <button onClick={() => void dispatchCommand('view.typewriter.cycle', 'menu')} disabled={status !== 'ready'} title="F9：caret 保持 viewport 中部附近">打字机: {typewriterEnabled ? '开' : '关'}</button>
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
       </header>

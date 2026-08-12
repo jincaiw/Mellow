@@ -129,6 +129,17 @@ export class EditorCore {
     return typeof jump === 'function' ? jump(offset) : false;
   }
 
+  /** Typewriter Mode：caret 保持 viewport 中部附近（F9）。 */
+  setTypewriterMode(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_TYPEWRITER_MODE__?: { setEnabled?: (on: boolean) => void } }) | null;
+    win?.__MELLOW_TYPEWRITER_MODE__?.setEnabled?.(on);
+  }
+
+  getTypewriterMode(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_TYPEWRITER_MODE__?: { getEnabled?: () => boolean } }) | null;
+    return win?.__MELLOW_TYPEWRITER_MODE__?.getEnabled?.() ?? false;
+  }
+
   /** Focus Mode：仅切换视觉权重，不改变文档/selection。 */
   setFocusMode(mode: 'off' | 'line' | 'paragraph'): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_FOCUS_MODE__?: { setMode?: (mode: 'off' | 'line' | 'paragraph') => void } }) | null;

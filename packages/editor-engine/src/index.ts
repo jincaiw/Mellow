@@ -29,6 +29,7 @@ import { buildSafeHtmlExtension } from './safeHtml';
 import { buildOutlineBridgeExtension } from './outlineBridge';
 import { buildFocusModeExtension } from './focusMode';
 import { buildSlashCommandsExtension } from './slashCommands';
+import { buildTypewriterModeExtension } from './typewriterMode';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -45,6 +46,7 @@ export { buildOutlineBridgeExtension } from './outlineBridge';
 export { buildFocusModeExtension, getFocusMode, setFocusMode, FOCUS_DIM_CLASS } from './focusMode';
 export { buildSlashCommandsExtension, canTriggerSlashCommand } from './slashCommands';
 export type { SlashOpenRequest, SlashCommandsOptions } from './slashCommands';
+export { buildTypewriterModeExtension, computeTypewriterScrollTop, getTypewriterMode, setTypewriterMode, TYPEWRITER_CENTER_RATIO } from './typewriterMode';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -102,6 +104,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildOutlineBridgeExtension(),
     buildFocusModeExtension(),
     buildSlashCommandsExtension(),
+    buildTypewriterModeExtension(),
     buildImageExtensions(),
   ];
 }
