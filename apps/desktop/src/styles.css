@@ -553,6 +553,11 @@ html, body, #root {
   background: #e9eefb;
 }
 
+.quick-open-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .quick-open-filename {
   font-size: 13px;
   color: #222;

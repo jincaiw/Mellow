@@ -47,8 +47,8 @@ import { createDesktopSearchService } from './host/searchServices';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService } from '../../../packages/host-api/src/index';
-import { CommandRegistry, createCommandContext, normalizeShortcut, titleFor } from '../../../packages/commands/src';
-import type { Command, CommandSource } from '../../../packages/commands/src';
+import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut } from '../../../packages/commands/src';
+import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
@@ -58,6 +58,7 @@ const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
 const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
 const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
 const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
+const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
 const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
 const SLASH_COMMAND_SHORTCUT = { mac: '/', winLinux: '/' };
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
@@ -91,6 +92,7 @@ export default function App() {
   const searchCancelRef = useRef<(() => void) | null>(null);
   const commandRegistryRef = useRef<CommandRegistry>(new CommandRegistry());
   const pluginCommandsRef = useRef<Command[]>([]);
+  const commandPaletteModelRef = useRef<CommandPaletteModel>(new CommandPaletteModel());
   // Tabs（PRD §11：open/active/dirty/reorder/close/session restore）
   const tabsRef = useRef<TabManager>(new TabManager());
   const suppressEditorEventRef = useRef(false);
@@ -176,6 +178,15 @@ export default function App() {
   const [searchRunning, setSearchRunning] = useState(false);
   const [commandPaletteVisible, setCommandPaletteVisible] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
+  const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
+  const [commandPaletteRecent, setCommandPaletteRecent] = useState<string[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(COMMAND_PALETTE_RECENT_KEY) ?? '[]') as unknown;
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
@@ -218,11 +229,20 @@ export default function App() {
     payload,
   }), [fileTreeRoot, selectedTreePath]);
 
+  const rememberCommandRecent = useCallback((id: string) => {
+    setCommandPaletteRecent((prev) => {
+      const next = [id, ...prev.filter((x) => x !== id)].slice(0, 20);
+      localStorage.setItem(COMMAND_PALETTE_RECENT_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const dispatchCommand = useCallback(async (id: string, source: CommandSource = 'menu', payload?: unknown) => {
     const ok = await commandRegistryRef.current.dispatch(id, commandContext(source, payload));
-    if (!ok) setStatusText(`命令不可用: ${id}`);
+    if (ok) rememberCommandRecent(id);
+    else setStatusText(`命令不可用: ${id}`);
     return ok;
-  }, [commandContext]);
+  }, [commandContext, rememberCommandRecent]);
 
   const persistTabs = useCallback(() => {
     try {
@@ -1372,8 +1392,8 @@ export default function App() {
       { id: 'workspace.refresh', localizedTitle: { zh: '刷新文件', en: 'Refresh Files' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void refreshFilesSidebar() },
       { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', shortcut: { mac: 'Cmd+Shift+O', winLinux: 'Ctrl+P' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
       { id: 'search.global', localizedTitle: { zh: '全局搜索', en: 'Global Search' }, category: 'search', shortcut: { mac: 'Cmd+Shift+F', winLinux: 'Ctrl+Shift+F' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => openGlobalSearch() },
-      { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => setCommandPaletteVisible(true) },
-      { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', shortcut: SLASH_COMMAND_SHORTCUT, context: { scope: 'document' }, enabled: always, execute: () => setCommandPaletteVisible(true) },
+      { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
+      { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', shortcut: SLASH_COMMAND_SHORTCUT, context: { scope: 'document' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteQuery('/'); setCommandPaletteVisible(true); } },
       { id: 'fileTree.newFile', localizedTitle: { zh: '新文件', en: 'New File' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFile() },
       { id: 'fileTree.newFolder', localizedTitle: { zh: '新文件夹', en: 'New Folder' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFolder() },
       { id: 'fileTree.rename', localizedTitle: { zh: '重命名', en: 'Rename' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeRename() },
@@ -1512,15 +1532,21 @@ export default function App() {
     </button>
   ));
 
-  const paletteCommands = commandRegistryRef.current.enabled(commandContext('command-palette')).filter((command) => {
-    const title = titleFor(command, 'zh').toLowerCase();
-    const q = commandPaletteQuery.trim().toLowerCase();
-    return q === '' || command.id.toLowerCase().includes(q) || title.includes(q);
-  });
+  const paletteSource: CommandSource = commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette';
+  const paletteQuery = commandPaletteQuery.startsWith('/') ? commandPaletteQuery.slice(1) : commandPaletteQuery;
+  const paletteCommands: CommandPaletteItem[] = commandPaletteSearch(
+    commandRegistryRef.current.all(),
+    paletteQuery,
+    commandContext(paletteSource),
+    'zh',
+    commandPaletteRecent,
+  );
 
-  const runPaletteCommand = (id: string, source: CommandSource = 'command-palette') => {
+  const runPaletteCommand = (id: string, source: CommandSource = paletteSource) => {
     setCommandPaletteVisible(false);
     setCommandPaletteQuery('');
+    commandPaletteModelRef.current.selectedIndex = 0;
+    setCommandPaletteSelected(0);
     void dispatchCommand(id, source);
   };
 
@@ -1723,17 +1749,30 @@ export default function App() {
               autoFocus
               value={commandPaletteQuery}
               placeholder="Command Palette / Slash / Plugin Commands"
-              onChange={(e) => setCommandPaletteQuery(e.target.value)}
+              onChange={(e) => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteQuery(e.target.value); }}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') setCommandPaletteVisible(false);
-                if (e.key === 'Enter' && paletteCommands[0]) runPaletteCommand(paletteCommands[0].id, commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette');
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+                  e.preventDefault();
+                  const key = e.key === 'ArrowDown' ? 'down' : e.key === 'ArrowUp' ? 'up' : 'enter';
+                  const r = commandPaletteModelRef.current.navigate(paletteCommands, key);
+                  setCommandPaletteSelected(r.selectedIndex);
+                  if (r.commandId) runPaletteCommand(r.commandId);
+                }
               }}
             />
             <div className="quick-open-results">
-              {paletteCommands.map((command) => (
-                <button key={command.id} type="button" className="quick-open-item" onClick={() => runPaletteCommand(command.id)}>
-                  <span className="quick-open-filename">{titleFor(command, 'zh')}</span>
-                  <span className="quick-open-path">{command.id} · {command.category}{command.shortcut ? ` · ${command.shortcut.mac ?? command.shortcut.winLinux ?? ''}` : ''}</span>
+              {paletteCommands.map((item, index) => (
+                <button
+                  key={item.command.id}
+                  type="button"
+                  className={`quick-open-item ${index === commandPaletteSelected ? 'selected' : ''} ${!item.enabled ? 'disabled' : ''}`}
+                  disabled={!item.enabled}
+                  onMouseEnter={() => { commandPaletteModelRef.current.selectedIndex = index; setCommandPaletteSelected(index); }}
+                  onClick={() => runPaletteCommand(item.command.id)}
+                >
+                  <span className="quick-open-filename">{item.title}</span>
+                  <span className="quick-open-path">{item.command.id} · {item.command.category}{item.command.shortcut ? ` · ${item.command.shortcut.mac ?? item.command.shortcut.winLinux ?? ''}` : ''}{item.recentRank !== undefined ? ' · 最近' : ''}</span>
                 </button>
               ))}
             </div>

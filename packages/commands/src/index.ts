@@ -90,6 +90,79 @@ export function titleFor(command: Command, locale: LocaleCode): string {
   return command.localizedTitle[locale] ?? command.localizedTitle.zh ?? command.localizedTitle.en ?? command.id;
 }
 
+const PINYIN_INITIALS: Record<string, string> = {
+  全: 'q', 局: 'j', 搜: 's', 索: 's', 保: 'b', 存: 'c', 新: 'x', 建: 'j', 打: 'd', 开: 'k', 命: 'm', 令: 'l', 面: 'm', 板: 'b', 文: 'w', 件: 'j', 夹: 'j', 关: 'g', 闭: 'b', 重: 'c', 名: 'm', 移: 'y', 动: 'd', 复: 'f', 制: 'z', 撤: 'c', 销: 'x', 路: 'l', 径: 'j', 大: 'd', 纲: 'g', 标: 'b', 签: 'q', 页: 'y', 右: 'y', 侧: 'c', 回: 'h', 收: 's', 站: 'z', 快: 'k', 速: 's'
+};
+
+function initials(value: string): string {
+  return Array.from(value).map((ch) => PINYIN_INITIALS[ch] ?? (/[a-z0-9]/i.test(ch) ? ch[0].toLowerCase() : '')).join('');
+}
+
+function fuzzyScore(candidate: string, query: string): number | null {
+  const q = Array.from(query.trim().toLowerCase());
+  if (q.length === 0) return 1;
+  const c = Array.from(candidate.toLowerCase());
+  let qi = 0;
+  let score = 0;
+  let streak = 0;
+  for (let i = 0; i < c.length && qi < q.length; i += 1) {
+    if (c[i] === q[qi]) {
+      streak += 1;
+      score += 10 + streak * 2;
+      if (i === 0 || ['.', ':', '-', ' ', '/'].includes(c[i - 1])) score += 5;
+      qi += 1;
+    } else {
+      streak = 0;
+    }
+  }
+  return qi === q.length ? score - c.length * 0.04 : null;
+}
+
+export interface CommandPaletteItem {
+  command: Pick<Command, 'id'> & Partial<Command>;
+  title: string;
+  enabled: boolean;
+  score: number;
+  recentRank?: number;
+}
+
+export function commandPaletteSearch(commands: Command[], query: string, context: CommandContext, locale: LocaleCode, recentIds: string[] = []): CommandPaletteItem[] {
+  const recent = new Map(recentIds.map((id, index) => [id, index]));
+  return commands
+    .flatMap((command): CommandPaletteItem[] => {
+      const title = titleFor(command, locale);
+      const haystacks = [title, command.id, command.category, initials(title)].filter(Boolean);
+      const scores = haystacks.map((h) => fuzzyScore(h, query)).filter((v): v is number => v !== null);
+      if (scores.length === 0) return [];
+      const recentRank = recent.get(command.id);
+      const score = Math.max(...scores) + (recentRank === undefined ? 0 : 80 - recentRank * 3);
+      return [{ command, title, enabled: command.enabled(context), score, recentRank }];
+    })
+    .sort((a, b) => b.score - a.score || Number(b.enabled) - Number(a.enabled) || a.title.localeCompare(b.title));
+}
+
+export class CommandPaletteModel {
+  selectedIndex = 0;
+  navigate(items: CommandPaletteItem[], key: 'up' | 'down' | 'enter'): { selectedIndex: number; commandId?: string } {
+    if (items.length === 0) {
+      this.selectedIndex = 0;
+      return { selectedIndex: 0 };
+    }
+    if (key === 'down') this.selectedIndex = Math.min(items.length - 1, this.selectedIndex + 1);
+    if (key === 'up') this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+    if (key === 'enter') {
+      const item = items[this.selectedIndex];
+      if (item?.enabled) return { selectedIndex: this.selectedIndex, commandId: item.command.id };
+      const next = items.findIndex((candidate, index) => index >= this.selectedIndex && candidate.enabled);
+      if (next >= 0) {
+        this.selectedIndex = next;
+        return { selectedIndex: next, commandId: items[next].command.id };
+      }
+    }
+    return { selectedIndex: this.selectedIndex };
+  }
+}
+
 export class CommandRegistry {
   private commands = new Map<string, Command>();
 
