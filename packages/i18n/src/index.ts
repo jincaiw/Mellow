@@ -248,3 +248,4 @@ export function createI18n(catalog: MessageCatalog, locale: Locale = DEFAULT_LOC
     },
   };
 }
+export { MESSAGES } from './messages';

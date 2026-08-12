@@ -1,3 +1,4 @@
+import { MESSAGES } from '../src/messages';
 import {
   completenessReport,
   createI18n,
@@ -108,6 +109,16 @@ describe('i18n — completeness = 100%', () => {
     } as never);
     expect(report.complete).toBe(false);
     expect(report.missing['zh-CN']).toContain('b');
+  });
+
+  test('zh-CN / en-US completeness = 100% (real catalog)', () => {
+    const report = completenessReport(MESSAGES);
+    expect(report.complete).toBe(true);
+    expect(report.missing).toEqual({});
+    const zh = Object.keys(MESSAGES['zh-CN']).length;
+    const en = Object.keys(MESSAGES['en-US']).length;
+    expect(zh).toBe(en);
+    expect(zh).toBeGreaterThan(100);
   });
 
   test('createI18n returns localized text and falls back to en-US', () => {

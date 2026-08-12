@@ -18,12 +18,13 @@ export interface SplitPreviewHandle {
 }
 
 export interface SplitPreviewProps {
+  t: (key: string, params?: Record<string, string | number>) => string;
   html: string;
   onPreviewClick(offset: number): void;
   onScroll(ratio: number): void;
 }
 
-const SplitPreview = forwardRef<SplitPreviewHandle, SplitPreviewProps>(function SplitPreview({ html, onPreviewClick, onScroll }, ref) {
+const SplitPreview = forwardRef<SplitPreviewHandle, SplitPreviewProps>(function SplitPreview({ t, html, onPreviewClick, onScroll }, ref) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
   const rafRef = useRef(0);
@@ -64,8 +65,8 @@ const SplitPreview = forwardRef<SplitPreviewHandle, SplitPreviewProps>(function 
   return (
     <div className="split-preview">
       <div className="split-preview-bar">
-        <span className="split-preview-label">Preview</span>
-        <span className="split-preview-hint">点击内容定位到源码</span>
+        <span className="split-preview-label">{t('split.preview')}</span>
+        <span className="split-preview-hint">{t('split.hint')}</span>
       </div>
       <div className="split-preview-scroll" ref={scrollRef} onScroll={handleScroll}>
         {/* eslint-disable-next-line react/no-danger */}

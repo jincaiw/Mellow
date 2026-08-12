@@ -13,6 +13,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAsyncRenderers } from './useAsyncRenderers';
 
 export interface ReaderViewProps {
+  /** 翻译函数（App 注入 i18n） */
+  t: (key: string, params?: Record<string, string | number>) => string;
   /** App 侧已渲染好的语义 HTML（renderReaderHtml 输出，含 heading id） */
   html: string;
   title: string;
@@ -28,7 +30,7 @@ function escapeRegExp(value: string): string {
 }
 
 export default function ReaderView(props: ReaderViewProps) {
-  const { html, title, zoom, onZoomChange, onOpenInEditor, onClose, onCurrentHeadingChange } = props;
+  const { t, html, title, zoom, onZoomChange, onOpenInEditor, onClose, onCurrentHeadingChange } = props;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -152,7 +154,7 @@ export default function ReaderView(props: ReaderViewProps) {
       const code = copyButton.closest('.mellow-reader-code')?.querySelector('code')?.textContent ?? '';
       void navigator.clipboard?.writeText(code).catch(() => { /* no-op */ });
       const original = copyButton.textContent;
-      copyButton.textContent = '已复制';
+      copyButton.textContent = t('reader.copied');
       window.setTimeout(() => { copyButton.textContent = original; }, 1200);
       return;
     }
@@ -169,20 +171,20 @@ export default function ReaderView(props: ReaderViewProps) {
         <input
           ref={searchRef}
           className="mellow-reader-search"
-          placeholder="在文档中查找…"
+          placeholder={t('reader.search.placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <span className="mellow-reader-search-count">{matchCount > 0 ? `${matchIndex + 1}/${matchCount}` : ''}</span>
-        <button type="button" title="上一个匹配" onClick={() => gotoMatch(matchIndex - 1)} disabled={matchCount === 0}>↑</button>
-        <button type="button" title="下一个匹配" onClick={() => gotoMatch(matchIndex + 1)} disabled={matchCount === 0}>↓</button>
+        <button type="button" title={t('reader.prev')} onClick={() => gotoMatch(matchIndex - 1)} disabled={matchCount === 0}>↑</button>
+        <button type="button" title={t('reader.next')} onClick={() => gotoMatch(matchIndex + 1)} disabled={matchCount === 0}>↓</button>
         <span className="spacer" />
-        <button type="button" title="缩小" onClick={() => onZoomChange(Math.max(0.5, zoom - 0.1))}>A−</button>
+        <button type="button" title={t('reader.zoomOut')} onClick={() => onZoomChange(Math.max(0.5, zoom - 0.1))}>A−</button>
         <span className="mellow-reader-zoom">{Math.round(zoom * 100)}%</span>
-        <button type="button" title="放大" onClick={() => onZoomChange(Math.min(2, zoom + 0.1))}>A+</button>
-        <button type="button" title="打印（Ctrl/Cmd+P）" onClick={() => window.print()}>打印</button>
-        <button type="button" title="用编辑器打开" onClick={onOpenInEditor}>用编辑器打开</button>
-        <button type="button" title="关闭 Reader" onClick={onClose}>关闭</button>
+        <button type="button" title={t('reader.zoomIn')} onClick={() => onZoomChange(Math.min(2, zoom + 0.1))}>A+</button>
+        <button type="button" title={t('reader.print.title')} onClick={() => window.print()}>{t('reader.print')}</button>
+        <button type="button" title={t('reader.openInEditor')} onClick={onOpenInEditor}>{t('reader.openInEditor')}</button>
+        <button type="button" title={t('reader.close.title')} onClick={onClose}>{t('reader.close')}</button>
       </div>
       <div className="mellow-reader-scroll" ref={scrollRef} onScroll={handleScroll}>
         {/* eslint-disable-next-line react/no-danger */}

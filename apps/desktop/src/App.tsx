@@ -7,7 +7,7 @@
  *   DocumentService（app-core）→ FileService（desktop Adapter 实现）
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { EditorCore } from '../../../packages/editor-core/src';
 import {
@@ -53,6 +53,8 @@ import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createComma
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import { BUILTIN_THEMES, DEFAULT_THEME_SETTINGS, resolveActiveTheme, themeById } from '../../../packages/themes/src';
 import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
+import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
+import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
 import SplitPreview from './SplitPreview';
@@ -72,6 +74,7 @@ const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
 const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
 const SLASH_ENABLED_KEY = 'mellow.slashCommands.enabled';
 const THEME_SETTINGS_KEY = 'mellow.theme.settings';
+const LOCALE_SETTING_KEY = 'mellow.locale';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SPLIT_RATIO_KEY = 'mellow.split.ratio';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
@@ -131,7 +134,23 @@ export default function App() {
   const diskStateRef = useRef<{ mtimeMs: number; identityKey: string } | null>(null);
 
   const [status, setStatus] = useState<EditorStatus>('idle');
-  const [statusText, setStatusText] = useState('未加载');
+  const [localeSetting, setLocaleSetting] = useState<LocaleSetting>(() => {
+    try {
+      const saved = localStorage.getItem(LOCALE_SETTING_KEY) as LocaleSetting | null;
+      return saved === 'system' || saved === 'en-US' || saved === 'zh-CN' ? saved : 'zh-CN';
+    } catch {
+      return 'zh-CN';
+    }
+  });
+  const locale: Locale = resolveLocale(localeSetting);
+  const i18n = useMemo(() => createI18n(MESSAGES, locale), [locale]);
+  const t = i18n.t;
+
+  // document lang/dir（未来 RTL：localeDir 由 i18n 提供）
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+  const [statusText, setStatusText] = useState(t('msg.editorNotLoaded'));
   const [dirty, setDirtyState] = useState(false);
   const [stats, setStats] = useState('');
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
@@ -260,6 +279,15 @@ export default function App() {
     }
   }, []);
 
+  const setLocaleSettingPersist = useCallback((next: LocaleSetting) => {
+    setLocaleSetting(next);
+    try {
+      localStorage.setItem(LOCALE_SETTING_KEY, next);
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
+
   const applyThemeById = useCallback((id: string) => {
     const theme = themeById(id);
     if (theme === undefined) return;
@@ -358,13 +386,13 @@ export default function App() {
   const commandContext = useCallback((source: CommandSource, payload?: unknown) => createCommandContext({
     source,
     platform: navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux',
-    locale: 'zh',
+    locale: locale === 'zh-CN' ? 'zh' : 'en',
     documentPath: filePathRef.current,
     workspaceRoot: fileTreeRoot,
     hasSelection: hostRef.current?.getState().hasSelection ?? false,
     targetPath: selectedTreePath,
     payload,
-  }), [fileTreeRoot, selectedTreePath]);
+  }), [fileTreeRoot, locale, selectedTreePath]);
 
   const rememberCommandRecent = useCallback((id: string) => {
     setCommandPaletteRecent((prev) => {
@@ -377,14 +405,14 @@ export default function App() {
   const dispatchCommand = useCallback(async (id: string, source: CommandSource = 'menu', payload?: unknown) => {
     const ok = await commandRegistryRef.current.dispatch(id, commandContext(source, payload));
     if (ok) rememberCommandRecent(id);
-    else setStatusText(`命令不可用: ${id}`);
+    else setStatusText(t('msg.commandUnavailable', { id }));
     return ok;
   }, [commandContext, rememberCommandRecent]);
 
   const setFocusMode = useCallback((mode: 'off' | 'line' | 'paragraph') => {
     hostRef.current?.setFocusMode(mode);
     setFocusModeState(mode);
-    setStatusText(mode === 'off' ? 'Focus Mode 已关闭' : mode === 'line' ? 'Focus Mode：当前行' : 'Focus Mode：当前段落');
+    setStatusText(mode === 'off' ? t('msg.focusOff') : mode === 'line' ? t('msg.focusLine') : t('msg.focusParagraph'));
   }, []);
 
   const cycleFocusMode = useCallback(() => {
@@ -395,7 +423,7 @@ export default function App() {
   const setTypewriterMode = useCallback((on: boolean) => {
     hostRef.current?.setTypewriterMode(on);
     setTypewriterEnabled(on);
-    setStatusText(on ? 'Typewriter Mode：已开启（F9）' : 'Typewriter Mode：已关闭');
+    setStatusText(on ? t('msg.typewriterOn') : t('msg.typewriterOff'));
   }, []);
 
   const toggleTypewriter = useCallback(() => {
@@ -405,7 +433,7 @@ export default function App() {
   const setSelectionToolbarEnabled = useCallback((on: boolean) => {
     hostRef.current?.setSelectionToolbarEnabled(on);
     setSelectionToolbarEnabledState(on);
-    setStatusText(on ? '格式工具栏：已启用' : '格式工具栏：已禁用');
+    setStatusText(on ? t('msg.toolbarOn') : t('msg.toolbarOff'));
   }, []);
 
   const toggleSelectionToolbar = useCallback(() => {
@@ -439,12 +467,12 @@ export default function App() {
     setReaderTitle(active.title);
     setSplitOpen(false);
     setReaderOpen(true);
-    setStatusText('Reader 模式（只读）');
+    setStatusText(t('msg.readerOn'));
   }, [readerResolveImageSrc]);
 
   const closeReader = useCallback(() => {
     setReaderOpen(false);
-    setStatusText('已切回编辑器');
+    setStatusText(t('msg.readerOff'));
   }, []);
 
   const setReaderZoom = useCallback((next: number) => {
@@ -469,12 +497,12 @@ export default function App() {
     setReaderOpen(false);
     refreshSplitHtml();
     setSplitOpen(true);
-    setStatusText('Split 模式：Source | Preview');
+    setStatusText(t('msg.splitOn'));
   }, [refreshSplitHtml]);
 
   const closeSplit = useCallback(() => {
     setSplitOpen(false);
-    setStatusText('已退出 Split 模式');
+    setStatusText(t('msg.splitOff'));
   }, []);
 
   const toggleSplit = useCallback(() => {
@@ -559,7 +587,7 @@ export default function App() {
 
   const currentTabPatch = useCallback((host: EditorCore): Partial<DocumentTab> => ({
     path: filePathRef.current,
-    title: filePathRef.current === null ? '未命名' : filePathRef.current.split(/[\\/]/).pop() ?? filePathRef.current,
+    title: filePathRef.current === null ? t('tab.untitled') : filePathRef.current.split(/[\\/]/).pop() ?? filePathRef.current,
     content: host.getText(),
     dirty: dirtyRef.current,
     documentId: docIdRef.current,
@@ -581,7 +609,7 @@ export default function App() {
     try {
       const text = host.getText();
       const lines = text.length === 0 ? 0 : text.split('\n').length;
-      setStats(`字符 ${text.length} · 行 ${lines}`);
+      setStats(t('status.words', { count: text.length, lines }));
     } catch {
       setStats('');
     }
@@ -600,7 +628,7 @@ export default function App() {
       const before = text.slice(0, clamped);
       const line = before.split('\n').length;
       const col = clamped - (before.lastIndexOf('\n') + 1);
-      setCursorPos(`行 ${line} · 列 ${col}`);
+      setCursorPos(t('status.cursor', { line, col }));
     } catch {
       setCursorPos('');
     }
@@ -637,7 +665,7 @@ export default function App() {
     await watchDocument(tab.path);
     refreshStats(host);
     refreshCursorPos(host);
-    setStatusText(`已切换到 ${tab.title}${tab.dirty ? '（未保存）' : ''}`);
+    setStatusText(t('msg.switchedTab', { title: tab.title, suffix: tab.dirty ? t('msg.unsavedSuffix') : '' }));
   }, [refreshCursorPos, refreshStats, setDirty, watchDocument]);
 
   // ── 图片文件操作（spec image-workflow §6/§7 + PRD §57/§58）──
@@ -645,7 +673,7 @@ export default function App() {
   const setAssetDir = useCallback((value: AssetDirConfig) => {
     localStorage.setItem(GLOBAL_ASSET_DIR_KEY, value);
     setAssetDirState(value);
-    setStatusText(`asset 目录已设为 ./${value}/`);
+    setStatusText(t('msg.assetDirSet', { value }));
   }, []);
 
   const showToast = useCallback((message: string, onUndo?: () => void) => {
@@ -660,7 +688,7 @@ export default function App() {
     const top = history.peek();
     const r = await history.undo(count);
     if (r.ok) {
-      setStatusText(`${r.value} —— 已撤销`);
+      setStatusText(t('msg.undone', { value: r.value }));
       // 撤销文档重命名后：同步编辑器路径 + watcher（rename 反向）
       if (top?.op.kind === 'rename' && top.op.to === filePathRef.current) {
         filePathRef.current = top.op.from;
@@ -687,11 +715,11 @@ export default function App() {
     }
     const rep = r.value;
     const n = rep.moved + rep.copied + rep.downloaded;
-    const verb = kind === 'moveAll' ? '已移动' : kind === 'copyAll' ? '已复制' : '已下载'; // 远程本地化
+    const verb = kind === 'moveAll' ? t('msg.moved') : kind === 'copyAll' ? t('msg.copied') : t('msg.downloaded');
     const undoCount = history.length - before;
-    setStatusText(`${verb} ${n} 张图片 · 跳过 ${rep.skipped.length} · 失败 ${rep.failed.length}${rep.failed.length > 0 ? `（${rep.failed[0].error}）` : ''}`);
+    setStatusText(t('msg.imageMovedAll', { verb, n, skipped: rep.skipped.length, failed: rep.failed.length > 0 ? `${rep.failed.length}（${rep.failed[0].error}）` : '0' }));
     if (n > 0) {
-      showToast(`${verb} ${n} 张图片`, undoCount > 0 ? () => void undo(undoCount) : undefined);
+      showToast(`${verb} ${n}`, undoCount > 0 ? () => void undo(undoCount) : undefined);
     }
   }, [undo, showToast]);
 
@@ -706,9 +734,9 @@ export default function App() {
     if (action === 'copyPath') {
       try {
         await navigator.clipboard.writeText(src);
-        setStatusText('已复制图片路径');
+        setStatusText(t('msg.imagePathCopied'));
       } catch {
-        setStatusText('复制路径失败');
+        setStatusText(t('msg.imagePathCopyFailed'));
       }
       return;
     }
@@ -717,30 +745,30 @@ export default function App() {
       const r = abs !== null
         ? await opener.openPath(abs)
         : await opener.openUrl(src);
-      setStatusText(r.ok ? '已打开' : `打开失败: ${r.error.message}`);
+      setStatusText(r.ok ? t('msg.opened') : t('msg.openFailed', { error: r.error.message }));
       return;
     }
     if (action === 'reveal') {
       const abs = ops.resolveSrcPath(src);
       if (abs === null) {
-        setStatusText('无法解析图片路径');
+        setStatusText(t('msg.imagePathUnresolved'));
         return;
       }
       const r = await opener.revealInFolder(abs);
-      setStatusText(r.ok ? '已定位到文件' : `定位失败: ${r.error.message}`);
+      setStatusText(r.ok ? t('msg.revealed') : t('msg.revealFailed', { error: r.error.message }));
       return;
     }
     if (action === 'rename') {
       const abs = ops.resolveSrcPath(src);
       const current = abs === null ? '' : abs.split('/').pop() ?? '';
-      const name = window.prompt('新文件名（不含路径）', current);
+      const name = window.prompt(t('prompt.newFile'), current);
       if (name === null || name.trim() === '') return;
       const r = await ops.renameImage(src, name);
       if (!r.ok) {
         setStatusText(r.error.message);
         return;
       }
-      setStatusText(`已重命名（跳过 ${r.value.skipped.length}）`);
+      setStatusText(t('msg.renamedSkipped', { n: r.value.skipped.length }));
       return;
     }
     if (action === 'move' || action === 'copy') {
@@ -754,7 +782,7 @@ export default function App() {
         return;
       }
       const rep = r.value;
-      setStatusText(`${action === 'move' ? '已移动' : '已复制'}（跳过 ${rep.skipped.length}）`);
+      setStatusText(`${action === 'move' ? t('msg.moved') : t('msg.copied')}${t('msg.batchSuffix', { n: rep.skipped.length })}`);
       return;
     }
     if (action === 'downloadRemote') {
@@ -763,7 +791,7 @@ export default function App() {
         setStatusText(r.error.message);
         return;
       }
-      setStatusText(r.value.downloaded > 0 ? '已下载到 asset 目录并更新引用' : `跳过: ${r.value.skipped[0]?.reason ?? ''}`);
+      setStatusText(r.value.downloaded > 0 ? t('msg.downloadedAll') : t('msg.skippedReason', { reason: r.value.skipped[0]?.reason ?? '' }));
     }
   }, []);
 
@@ -773,11 +801,11 @@ export default function App() {
     if (!svc) return;
     const path = filePathRef.current;
     if (path === null) {
-      setStatusText('未保存文档无法重命名（请先保存）');
+      setStatusText(t('msg.renameNeedsSave'));
       return;
     }
     const current = path.split('/').pop() ?? '';
-    const name = window.prompt('新文件名', current);
+    const name = window.prompt(t('prompt.newFileShort'), current);
     if (name === null || name.trim() === '') return;
     const r = await svc.renameDocument(name);
     if (!r.ok) {
@@ -797,8 +825,8 @@ export default function App() {
       refreshTabsState();
     }
     setStatusText(r.value.assetDirRenamed
-      ? `已重命名（资源目录已同步，更新 ${r.value.patchedCount} 处引用）`
-      : '已重命名');
+      ? t('msg.renamedAssets', { n: r.value.patchedCount })
+      : t('msg.renamed'));
     showToast(`已重命名 ${current}`, () => void undo());
   }, [currentTabPatch, refreshTabsState, undo, showToast, setDirty]);
 
@@ -813,7 +841,7 @@ export default function App() {
     }
     const r = await svc.readTree(fileTreeRoot, model.expanded, fileTreeOptions);
     if (!r.ok) {
-      setStatusText(`文件树刷新失败: ${r.error.message}`);
+      setStatusText(t('msg.treeRefreshFailed', { error: r.error.message }));
       return;
     }
     setFileTreeNodes(r.value);
@@ -892,7 +920,7 @@ export default function App() {
     setFileTreeRoot(r.value);
     fileTreeModelRef.current = new FileTreeModel(r.value, fileTreeOptions);
     setSelectedTreePath(null);
-    setStatusText(`已打开文件夹 ${r.value}`);
+    setStatusText(t('msg.folderOpened', { value: r.value }));
   }, [fileTreeOptions]);
 
   const treeFlatten = useCallback(() => {
@@ -917,7 +945,7 @@ export default function App() {
     const root = fileListOptions.recursive ? fileTreeRoot : (selectedTreeDir() ?? fileTreeRoot);
     const r = await svc.readList(root, fileListOptions, fileTreeOptions);
     if (!r.ok) {
-      setStatusText(`文件列表刷新失败: ${r.error.message}`);
+      setStatusText(t('msg.listRefreshFailed', { error: r.error.message }));
       return;
     }
     setFileListItems(r.value);
@@ -963,7 +991,7 @@ export default function App() {
 
   const openQuickOpen = useCallback(async () => {
     if (fileTreeRoot === null) {
-      setStatusText('Quick Open 需要先打开文件夹');
+      setStatusText(t('msg.quickOpenNeedsFolder'));
       return;
     }
     quickOpenAbortRef.current?.abort();
@@ -992,7 +1020,7 @@ export default function App() {
         updateQuickOpenResults(collected, quickOpenQueryRef.current);
       },
     });
-    if (!r.ok && !controller.signal.aborted) setStatusText(`Quick Open 扫描失败: ${r.error.message}`);
+    if (!r.ok && !controller.signal.aborted) setStatusText(t('msg.quickOpenScanFailed', { error: r.error.message }));
     if (!controller.signal.aborted) {
       setQuickOpenAll(r.ok ? r.value : collected);
       updateQuickOpenResults(r.ok ? r.value : collected, quickOpenQueryRef.current);
@@ -1042,7 +1070,7 @@ export default function App() {
   const runGlobalSearch = useCallback(async () => {
     const svc = searchRef.current;
     if (!svc || fileTreeRoot === null) {
-      setStatusText('Global Search 需要先打开文件夹');
+      setStatusText(t('msg.searchNeedsFolder'));
       return;
     }
     searchCancelRef.current?.();
@@ -1063,17 +1091,17 @@ export default function App() {
       if (r.ok) {
         setSearchResults(r.value);
         setSearchGroups(groupSearchResults(r.value, fileTreeRoot));
-      } else setStatusText(`搜索失败: ${r.error.message}`);
+      } else setStatusText(t('msg.searchFailed', { error: r.error.message }));
       setSearchRunning(false);
       return;
     }
     if (!started.ok) {
-      setStatusText(`搜索失败: ${started.error.message}`);
+      setStatusText(t('msg.searchFailed', { error: started.error.message }));
       setSearchRunning(false);
       return;
     }
     searchCancelRef.current = started.value.cancel;
-    setStatusText('搜索已启动，结果将流式显示');
+    setStatusText(t('msg.searchStarted'));
     void started.value.done?.then(() => setSearchRunning(false));
   }, [fileTreeRoot, searchCase, searchContext, searchExclude, searchInclude, searchQuery, searchRegex, searchWholeWord]);
 
@@ -1109,10 +1137,10 @@ export default function App() {
     const svc = fileTreeServiceRef.current;
     const dir = selectedTreeDir();
     if (!svc || dir === null) return;
-    const name = window.prompt('新文件名', 'untitled.md');
+    const name = window.prompt(t('prompt.newFileShort'), t('prompt.untitledMd'));
     if (!name) return;
     const r = await svc.newFile(dir, name);
-    setStatusText(r.ok ? `已新建 ${r.value}` : `新建失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.newFile', { value: r.value }) : t('msg.newFileFailed', { error: r.error.message }));
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreeDir]);
 
@@ -1120,20 +1148,20 @@ export default function App() {
     const svc = fileTreeServiceRef.current;
     const dir = selectedTreeDir();
     if (!svc || dir === null) return;
-    const name = window.prompt('新文件夹名', 'New Folder');
+    const name = window.prompt(t('prompt.newFolder'), t('prompt.newFolderDefault'));
     if (!name) return;
     const r = await svc.newFolder(dir, name);
-    setStatusText(r.ok ? `已新建文件夹 ${r.value}` : `新建失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.newFolder', { value: r.value }) : t('msg.newFileFailed', { error: r.error.message }));
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreeDir]);
 
   const handleTreeRename = useCallback(async (name?: string) => {
     const svc = fileTreeServiceRef.current;
     if (!svc || selectedTreePath === null) return;
-    const next = name ?? window.prompt('重命名', selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
+    const next = name ?? window.prompt(t('prompt.rename'), selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
     if (!next) return;
     const r = await svc.rename(selectedTreePath, next);
-    setStatusText(r.ok ? `已重命名 ${r.value}` : `重命名失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.renamed', { value: r.value }) : t('msg.renameFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(r.value);
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
@@ -1142,7 +1170,7 @@ export default function App() {
     const svc = fileTreeServiceRef.current;
     if (!svc || selectedTreePath === null) return;
     const r = await svc.duplicate(selectedTreePath);
-    setStatusText(r.ok ? `已复制 ${r.value}` : `复制失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.duplicated', { value: r.value }) : t('msg.duplicateFailed', { error: r.error.message }));
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
@@ -1153,7 +1181,7 @@ export default function App() {
     const target = await dialog.showDirectory();
     if (!target.ok || target.value === null) return;
     const r = await svc.move(selectedTreePath, target.value);
-    setStatusText(r.ok ? `已移动 ${r.value}` : `移动失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.movedTo', { value: r.value }) : t('msg.moveFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(r.value);
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
@@ -1164,7 +1192,7 @@ export default function App() {
     draggedTreePathRef.current = null;
     if (!svc || path === null || path === targetDir) return;
     const r = await svc.move(path, targetDir);
-    setStatusText(r.ok ? `已移动 ${r.value}` : `移动失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.movedTo', { value: r.value }) : t('msg.moveFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(r.value);
     await refreshFilesSidebar();
   }, [refreshFileTree]);
@@ -1172,9 +1200,9 @@ export default function App() {
   const handleTreeTrash = useCallback(async () => {
     const svc = fileTreeServiceRef.current;
     if (!svc || selectedTreePath === null) return;
-    if (!window.confirm(`移到回收站？\n${selectedTreePath}`)) return;
+    if (!window.confirm(t('dialog.trashConfirm', { path: selectedTreePath }))) return;
     const r = await svc.trash(selectedTreePath);
-    setStatusText(r.ok ? '已移到回收站' : `删除失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.trashed') : t('msg.deleteFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(null);
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
@@ -1183,7 +1211,7 @@ export default function App() {
     const history = fileTreeServiceRef.current?.undoHistory;
     if (!history) return;
     const r = await history.undo();
-    setStatusText(r.ok ? r.value : `撤销失败: ${r.error.message}`);
+    setStatusText(r.ok ? r.value : t('msg.undoFailed', { error: r.error.message }));
     await refreshFilesSidebar();
   }, [refreshFileTree]);
 
@@ -1191,7 +1219,7 @@ export default function App() {
     if (selectedTreePath === null) return;
     const text = relative && fileTreeRoot !== null ? fileTreeRelativePath(fileTreeRoot, selectedTreePath) : selectedTreePath;
     await navigator.clipboard.writeText(text);
-    setStatusText(relative ? `已复制相对路径 ${text}` : `已复制路径 ${text}`);
+    setStatusText(relative ? t('msg.copiedRelativePath', { text }) : t('msg.copiedPath', { text }));
   }, [fileTreeRoot, selectedTreePath]);
 
   /** Explorer integration：在系统文件管理器中定位（PRD §54 Reveal / spec §14 Windows） */
@@ -1199,7 +1227,7 @@ export default function App() {
     const opener = openerRef.current;
     if (!opener) return;
     const r = await opener.revealInFolder(path);
-    setStatusText(r.ok ? '已在文件管理器中显示' : `定位失败: ${r.error.message}`);
+    setStatusText(r.ok ? t('msg.revealedInFolder') : t('msg.revealFailed', { error: r.error.message }));
   }, []);
 
   /** 文件树右键菜单（desktop-ui-design-spec §6：context menu） */
@@ -1214,16 +1242,16 @@ export default function App() {
       x: event.clientX,
       y: event.clientY,
       items: [
-        { label: '新文件', enabled: fileTreeRoot !== null, onClick: () => void handleTreeNewFile() },
-        { label: '新文件夹', enabled: fileTreeRoot !== null, onClick: () => void handleTreeNewFolder() },
-        { label: '重命名', enabled: path !== undefined, onClick: () => void handleTreeRename() },
-        { label: '复制', enabled: path !== undefined, onClick: () => void handleTreeDuplicate() },
-        { label: '移动…', enabled: path !== undefined, onClick: () => void handleTreeMove() },
-        { label: '移到回收站', enabled: path !== undefined, onClick: () => void handleTreeTrash() },
-        { label: '在文件管理器中显示', enabled: path !== undefined, onClick: () => void handleTreeReveal(path as string) },
-        { label: '复制路径', enabled: path !== undefined, onClick: () => void handleTreeCopyPath(false) },
-        { label: '复制相对路径', enabled: path !== undefined && fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true) },
-        { label: '撤销文件操作', enabled: fileTreeRoot !== null, onClick: () => void handleTreeUndo() },
+        { label: t('contextmenu.newFile'), enabled: fileTreeRoot !== null, onClick: () => void handleTreeNewFile() },
+        { label: t('contextmenu.newFolder'), enabled: fileTreeRoot !== null, onClick: () => void handleTreeNewFolder() },
+        { label: t('contextmenu.rename'), enabled: path !== undefined, onClick: () => void handleTreeRename() },
+        { label: t('contextmenu.duplicate'), enabled: path !== undefined, onClick: () => void handleTreeDuplicate() },
+        { label: t('contextmenu.move'), enabled: path !== undefined, onClick: () => void handleTreeMove() },
+        { label: t('contextmenu.trash'), enabled: path !== undefined, onClick: () => void handleTreeTrash() },
+        { label: t('contextmenu.reveal'), enabled: path !== undefined, onClick: () => void handleTreeReveal(path as string) },
+        { label: t('contextmenu.copyPath'), enabled: path !== undefined, onClick: () => void handleTreeCopyPath(false) },
+        { label: t('contextmenu.copyRelativePath'), enabled: path !== undefined && fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true) },
+        { label: t('contextmenu.undo'), enabled: fileTreeRoot !== null, onClick: () => void handleTreeUndo() },
       ],
     });
   }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo]);
@@ -1243,7 +1271,7 @@ export default function App() {
     if (event.key === 'F2' && selectedTreePath !== null) {
       event.preventDefault();
       void (async () => {
-        const name = window.prompt('重命名', selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
+        const name = window.prompt(t('prompt.rename'), selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
         if (name) await handleTreeRename(name);
       })();
     }
@@ -1287,7 +1315,7 @@ export default function App() {
     if (!host || !documents || !event.path) return;
     const r = await documents.readPath(event.path);
     if (!r.ok) {
-      setStatusText(`自动重载失败: ${r.error.message}`);
+      setStatusText(t('msg.autoReloadFailed', { error: r.error.message }));
       return;
     }
     docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
@@ -1300,7 +1328,7 @@ export default function App() {
     setDirty(false);
     tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
     refreshTabsState();
-    setStatusText('外部变更已自动重新加载（保持光标位置）');
+    setStatusText(t('msg.autoReloaded'));
     refreshStats(host);
   }, [currentTabPatch, refreshStats, refreshTabsState, setDirty]);
 
@@ -1313,12 +1341,12 @@ export default function App() {
     const r = await documents.readPath(conflict.path);
     const local = host.getText();
     if (!r.ok) {
-      setStatusText(`读取磁盘版本失败: ${r.error.message}`);
+      setStatusText(t('msg.readDiskFailed', { error: r.error.message }));
       return;
     }
     const diskLines = r.value.content.split('\n').length;
     const localLines = local.split('\n').length;
-    setStatusText(`比较：磁盘 ${diskLines} 行 vs 本地 ${localLines} 行（未修改本地）`);
+    setStatusText(t('msg.compareSummary', { disk: diskLines, local: localLines }));
   }, [conflict]);
 
   /** 冲突：重新加载磁盘版本（放弃本地修改） */
@@ -1329,7 +1357,7 @@ export default function App() {
     if (!host || !documents) return;
     const r = await documents.readPath(conflict.path);
     if (!r.ok) {
-      setStatusText(`重新加载失败: ${r.error.message}`);
+      setStatusText(t('msg.reloadFailed', { error: r.error.message }));
       return;
     }
     docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
@@ -1341,7 +1369,7 @@ export default function App() {
     tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
     refreshTabsState();
     setConflict(null);
-    setStatusText('已重新加载磁盘版本（本地修改已放弃）');
+    setStatusText(t('msg.reloadedDisk'));
     refreshStats(host);
   }, [conflict, currentTabPatch, refreshStats, refreshTabsState, setDirty]);
 
@@ -1349,7 +1377,7 @@ export default function App() {
   const handleConflictKeepLocal = useCallback(() => {
     diskStateRef.current = null; // 保存跳过 validate（用户已知情）
     setConflict(null);
-    setStatusText('已保留本地版本（保存时将覆盖磁盘）');
+    setStatusText(t('msg.keptLocal'));
   }, []);
 
   /** 组装当前文档恢复快照并防抖写入（与 Auto Save 分离：只写 AppData） */
@@ -1467,7 +1495,7 @@ export default function App() {
         if (active === null) {
           active = tabsRef.current.open({
             path: null,
-            title: '未命名',
+            title: t('tab.untitled'),
             content: '# Mellow V0.0\n\nRuntime Qualification Shell',
             dirty: false,
             documentId: docIdRef.current,
@@ -1478,7 +1506,7 @@ export default function App() {
         refreshTabsState();
         await applyTab(active);
         setStatus('ready');
-        setStatusText('编辑器就绪');
+        setStatusText(t('msg.editorReady'));
         refreshStats(host);
 
         // 注入图片操作 handler（widget 悬停操作条 → app-core 编排；spec §6）
@@ -1513,14 +1541,14 @@ export default function App() {
           const list = await recovery.listPending();
           if (list.ok && list.value.length > 0) {
             setRecoveryEntries(list.value);
-            setStatusText(`发现 ${list.value.length} 个未恢复文档`);
+            setStatusText(t('msg.recoveryFound', { n: list.value.length }));
           }
         }
       })
       .catch((err) => {
         console.error('editor init failed', err);
         setStatus('error');
-        setStatusText(`编辑器初始化失败: ${String(err)}`);
+        setStatusText(t('msg.editorInitFailed', { error: String(err) }));
       });
 
     return () => {
@@ -1537,7 +1565,7 @@ export default function App() {
     syncActiveTabFromEditor();
     const tab = tabsRef.current.open({
       path: null,
-      title: '未命名',
+      title: t('tab.untitled'),
       content: '',
       dirty: false,
       documentId: crypto.randomUUID(),
@@ -1547,7 +1575,7 @@ export default function App() {
     });
     refreshTabsState();
     await applyTab(tab);
-    setStatusText('新建标签页（未保存）');
+    setStatusText(t('msg.newTab'));
   }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
 
   const handleOpen = useCallback(async () => {
@@ -1575,7 +1603,7 @@ export default function App() {
     });
     refreshTabsState();
     await applyTab(tab);
-    setStatusText(`已打开 ${result.value.path}`);
+    setStatusText(t('msg.openedPath', { path: result.value.path }));
   }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
 
   const handleSave = useCallback(async () => {
@@ -1652,12 +1680,12 @@ export default function App() {
     const dirtyTabs = closing.filter((tab) => tab.dirty);
     if (dirtyTabs.length === 0) return true;
     const names = dirtyTabs.map((tab) => tab.title).join('、');
-    return window.confirm(`以下标签页有未保存修改，仍要关闭吗？\n${names}`);
+    return window.confirm(t('dialog.closeTabsDirty', { names }));
   }, []);
 
   const ensureOneTab = useCallback(async () => {
     if (tabsRef.current.all.length > 0) return tabsRef.current.active;
-    const tab = tabsRef.current.open({ path: null, title: '未命名', content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: '\n', diskState: null });
+    const tab = tabsRef.current.open({ path: null, title: t('tab.untitled'), content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: '\n', diskState: null });
     refreshTabsState();
     await applyTab(tab);
     return tab;
@@ -1708,7 +1736,7 @@ export default function App() {
     syncActiveTabFromEditor();
     const tab = tabsRef.current.reopenClosed();
     if (tab === null) {
-      setStatusText('没有可重新打开的标签页');
+      setStatusText(t('msg.noReopenTab'));
       return;
     }
     refreshTabsState();
@@ -1766,7 +1794,7 @@ export default function App() {
       { id: 'image.moveAll', localizedTitle: { zh: '图片：移动全部到 asset 目录', en: 'Images: Move All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('moveAll') },
       { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
       { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
-      { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt('asset 目录名（assets / images / docname）', assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
+      { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt(t('prompt.assetDir'), assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
       { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
       { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },
       { id: 'window.fullscreen', localizedTitle: { zh: '切换全屏', en: 'Toggle Fullscreen' }, category: 'system', shortcut: { mac: 'Ctrl+Cmd+F', winLinux: 'F11' }, context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isFullscreen().then((r) => { if (r.ok) void windowServiceRef.current?.setFullscreen(!r.value); }); } },
@@ -1775,6 +1803,9 @@ export default function App() {
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'theme.system', localizedTitle: { zh: '主题：跟随系统', en: 'Theme: System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
       { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const next = BUILTIN_THEMES[(BUILTIN_THEMES.findIndex((t) => t.id === activeTheme.id) + 1) % BUILTIN_THEMES.length]; applyThemeById(next.id); } },
+      { id: 'locale.set.zh-CN', localizedTitle: { zh: '语言：简体中文', en: 'Language: 简体中文' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'zh-CN', execute: () => setLocaleSettingPersist('zh-CN') },
+      { id: 'locale.set.en-US', localizedTitle: { zh: '语言：English', en: 'Language: English' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'en-US', execute: () => setLocaleSettingPersist('en-US') },
+      { id: 'locale.set.system', localizedTitle: { zh: '语言：跟随系统', en: 'Language: Follow System' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'system', execute: () => setLocaleSettingPersist('system') },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
       { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },
       { id: 'insert.heading', localizedTitle: { zh: '标题', en: 'Heading' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['h1', 'bt'] } }, enabled: always, execute: () => replaceSlashTrigger('# ') },
@@ -1819,7 +1850,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1951,7 +1982,7 @@ export default function App() {
     if (!host || !recovery) return;
     const result = await recovery.recover(entry.documentId);
     if (!result.ok || result.value === null) {
-      setStatusText(`恢复失败: ${result.ok ? '快照不存在' : result.error.message}`);
+      setStatusText(t('msg.recoverFailed', { error: result.ok ? t('msg.snapshotMissing') : result.error.message }));
       return;
     }
     const snapshot = result.value;
@@ -1963,7 +1994,7 @@ export default function App() {
     diskStateRef.current = null; // 磁盘状态未知：跳过 validate（恢复场景）
     await host.open(snapshot.content, undefined, true);
     setDirty(true);
-    setStatusText(`已恢复 ${snapshot.path ?? '未保存文档'}（修订 ${snapshot.revision}）`);
+    setStatusText(t('msg.recovered', { path: snapshot.path ?? t('msg.unsavedDoc'), rev: snapshot.revision }));
     // 恢复后清理快照（用户已处理）
     await recovery.onSaved(entry.documentId);
     setRecoveryEntries((prev) => prev.filter((e) => e.documentId !== entry.documentId));
@@ -1976,7 +2007,7 @@ export default function App() {
     if (!host || !recovery) return;
     const result = await recovery.recover(entry.documentId);
     if (!result.ok || result.value === null) {
-      setStatusText(`读取快照失败: ${result.ok ? '快照不存在' : result.error.message}`);
+      setStatusText(t('msg.readSnapshotFailed', { error: result.ok ? t('msg.snapshotMissing') : result.error.message }));
       return;
     }
     // 比较：加载快照到编辑器（磁盘版本保留在原路径，供用户对比），不删除快照
@@ -1988,7 +2019,7 @@ export default function App() {
     diskStateRef.current = null;
     await host.open(snapshot.content, undefined, true);
     setDirty(true);
-    setStatusText(`比较模式：已加载快照（磁盘版本在 ${snapshot.path ?? '(未保存)'}，快照保留待处理）`);
+    setStatusText(t('msg.compareSnapshot', { path: snapshot.path ?? t('msg.unsavedDoc') }));
     refreshStats(host);
   }, [refreshStats]);
 
@@ -2048,12 +2079,12 @@ export default function App() {
   const paletteSource: CommandSource = slashMode || commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette';
   const paletteQuery = commandPaletteQuery.startsWith('/') ? commandPaletteQuery.slice(1) : commandPaletteQuery;
   const paletteCommands: CommandPaletteItem[] = slashMode
-    ? slashCommandSearch(commandRegistryRef.current.all(), paletteQuery, commandContext('slash'), 'zh', { recentIds: commandPaletteRecent })
+    ? slashCommandSearch(commandRegistryRef.current.all(), paletteQuery, commandContext('slash'), locale === 'zh-CN' ? 'zh' : 'en', { recentIds: commandPaletteRecent })
     : commandPaletteSearch(
         commandRegistryRef.current.all(),
         paletteQuery,
         commandContext(paletteSource),
-        'zh',
+        locale === 'zh-CN' ? 'zh' : 'en',
         commandPaletteRecent,
       );
 
@@ -2103,13 +2134,13 @@ export default function App() {
   return (
     <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
       <header className="titlebar">
-        <nav className="tabbar" aria-label="打开的文档标签页">
+        <nav className="tabbar" aria-label={t('tabbar.label')}>
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               className={`tab ${tab.id === activeTabId ? 'active' : ''} ${tab.dirty ? 'dirty' : ''}`}
-              title={tab.path ?? '(未保存文档)'}
+              title={tab.path ?? t('msg.unsavedDoc')}
               draggable
               onDragStart={() => { draggedTabIdRef.current = tab.id; }}
               onDragOver={(e) => e.preventDefault()}
@@ -2121,7 +2152,7 @@ export default function App() {
               <span
                 className="tab-close"
                 role="button"
-                aria-label={`关闭 ${tab.title}`}
+                aria-label={t('tab.close.label', { title: tab.title })}
                 onClick={(e) => { e.stopPropagation(); void handleCloseTab(tab.id); }}
               >×</span>
             </button>
@@ -2131,61 +2162,61 @@ export default function App() {
           className="titlebar-palette"
           type="button"
           onClick={() => void dispatchCommand('commandPalette.open', 'menu')}
-          title="命令面板（Ctrl/Cmd+Shift+P）"
+          title={t('titlebar.palette.title')}
         >{platformMac ? '⌘P' : 'Ctrl+P'}</button>
       </header>
       <div className="workspace-shell">
-        <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? '大纲' : sidebarMode === 'search' ? '全局搜索' : (fileSidebarMode === 'tree' ? '文件树' : '文件列表')}>
+        <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
           <div className="file-tree-header">
-            <strong>{sidebarMode === 'outline' ? '大纲' : sidebarMode === 'search' ? '搜索' : '文件'}</strong>
-            <div className="file-sidebar-switch" role="tablist" aria-label="侧栏切换">
-              <button className={sidebarMode === 'files' ? 'active' : ''} onClick={() => setSidebarMode('files')}>文件</button>
-              <button className={sidebarMode === 'outline' ? 'active' : ''} onClick={() => { setSidebarMode('outline'); refreshOutlineRef.current(); }}>大纲</button>
-              <button className={sidebarMode === 'search' ? 'active' : ''} onClick={() => setSidebarMode('search')}>搜索</button>
+            <strong>{sidebarMode === 'outline' ? t('sidebar.outline') : sidebarMode === 'search' ? t('sidebar.search') : t('sidebar.files')}</strong>
+            <div className="file-sidebar-switch" role="tablist" aria-label={t('sidebar.filesSwitchLabel')}>
+              <button className={sidebarMode === 'files' ? 'active' : ''} onClick={() => setSidebarMode('files')}>{t('sidebar.files')}</button>
+              <button className={sidebarMode === 'outline' ? 'active' : ''} onClick={() => { setSidebarMode('outline'); refreshOutlineRef.current(); }}>{t('sidebar.outline')}</button>
+              <button className={sidebarMode === 'search' ? 'active' : ''} onClick={() => setSidebarMode('search')}>{t('sidebar.search')}</button>
             </div>
             {sidebarMode === 'files' && (
               <>
-                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')} title="打开文件夹">打开…</button>
-                <button onClick={() => void dispatchCommand('workspace.refresh', 'menu')} disabled={fileTreeRoot === null}>刷新</button>
+                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')} title={t('sidebar.openFolderTitle')}>{t('sidebar.openFolder')}</button>
+                <button onClick={() => void dispatchCommand('workspace.refresh', 'menu')} disabled={fileTreeRoot === null}>{t('sidebar.refresh')}</button>
               </>
             )}
           </div>
           {sidebarMode === 'files' ? (
             <>
               <div className="file-tree-actions file-mode-tabs">
-                <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>树</button>
-                <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>列表</button>
+                <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>{t('sidebar.tree')}</button>
+                <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>{t('sidebar.list')}</button>
               </div>
               <div className="file-tree-filters">
-                <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />隐藏文件</label>
-                <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />非 Markdown</label>
-                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.recursive} onChange={(e) => setFileListOption({ recursive: e.target.checked })} />递归</label>}
-                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.includeSummary} onChange={(e) => setFileListOption({ includeSummary: e.target.checked })} />摘要</label>}
-                <label>排序
+                <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />{t('sidebar.showHidden')}</label>
+                <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />{t('sidebar.showNonMarkdown')}</label>
+                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.recursive} onChange={(e) => setFileListOption({ recursive: e.target.checked })} />{t('sidebar.recursive')}</label>}
+                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.includeSummary} onChange={(e) => setFileListOption({ includeSummary: e.target.checked })} />{t('sidebar.summary')}</label>}
+                <label>{t('sidebar.sort')}
                   <select value={fileTreeOptions.sortBy} onChange={(e) => setFileTreeOption({ sortBy: e.target.value as FileTreeOptions['sortBy'] })}>
-                    <option value="natural">自然</option>
-                    <option value="name">名称</option>
-                    <option value="modified">修改时间</option>
-                    <option value="created">创建时间</option>
+                    <option value="natural">{t('sidebar.sortNatural')}</option>
+                    <option value="name">{t('sidebar.sortName')}</option>
+                    <option value="modified">{t('sidebar.sortModified')}</option>
+                    <option value="created">{t('sidebar.sortCreated')}</option>
                   </select>
                 </label>
-                <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />升序</label>
+                <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />{t('sidebar.sortAsc')}</label>
               </div>
               <div className="file-tree-globs">
-                <input placeholder="include glob（逗号分隔）" value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
-                <input placeholder="exclude glob（逗号分隔）" value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+                <input placeholder={t('tree.includeGlob')} value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+                <input placeholder={t('tree.excludeGlob')} value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
               </div>
-              <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? '未打开文件夹（不会创建 .mellow）'}</div>
+              <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? t('tree.rootEmpty')}</div>
               {fileSidebarMode === 'tree' ? (
                 <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
                   {fileTreeNodes.length === 0 ? (
-                    <div className="sidebar-empty">{fileTreeRoot === null ? '打开文件夹以浏览文件' : '文件夹为空 · 右键新建'}</div>
+                    <div className="sidebar-empty">{fileTreeRoot === null ? t('sidebar.emptyFiles') : t('sidebar.emptyFolder')}</div>
                   ) : renderTreeNodes(fileTreeNodes)}
                 </div>
               ) : (
-                <div className="file-list" aria-label="Articles 文件列表">
+                <div className="file-list" aria-label={t('filelist.articles')}>
                   {fileListItems.length === 0 ? (
-                    <div className="sidebar-empty">打开文件夹以浏览文件</div>
+                    <div className="sidebar-empty">{t('sidebar.emptyFiles')}</div>
                   ) : renderFileListItems(fileListItems)}
                 </div>
               )}
@@ -2193,15 +2224,15 @@ export default function App() {
           ) : sidebarMode === 'outline' ? (
             <>
               <div className="file-tree-filters">
-                <input className="outline-filter" placeholder="过滤标题" value={outlineFilter} onChange={(e) => setOutlineFilter(e.target.value)} />
-                <label><input type="checkbox" checked={outlineFlat} onChange={(e) => setOutlineFlat(e.target.checked)} />Flat</label>
-                <label><input type="checkbox" checked={outlineAutoNumber} onChange={(e) => setOutlineAutoNumberOption(e.target.checked)} />编号</label>
+                <input className="outline-filter" placeholder={t('outline.filter')} value={outlineFilter} onChange={(e) => setOutlineFilter(e.target.value)} />
+                <label><input type="checkbox" checked={outlineFlat} onChange={(e) => setOutlineFlat(e.target.checked)} />{t('outline.flat')}</label>
+                <label><input type="checkbox" checked={outlineAutoNumber} onChange={(e) => setOutlineAutoNumberOption(e.target.checked)} />{t('outline.number')}</label>
               </div>
-              <div className="outline-list" aria-label="文档大纲">
+              <div className="outline-list" aria-label={t('outline.listLabel')}>
                 {(() => {
                   const items = readerOpen ? outlineModelRef.current.visibleItems(filterOutline(readerOutlineItems, outlineFilter), outlineFlat) : outlineItems;
                   return items.length === 0
-                    ? <div className="sidebar-empty">当前文档没有标题</div>
+                    ? <div className="sidebar-empty">{t('outline.empty')}</div>
                     : renderOutlineItems(items);
                 })()}
               </div>
@@ -2209,20 +2240,20 @@ export default function App() {
           ) : (
             <>
               <div className="search-panel">
-                <input className="search-input" autoFocus placeholder="Search workspace" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runGlobalSearch(); }} />
+                <input className="search-input" autoFocus placeholder={t('search.placeholder')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runGlobalSearch(); }} />
                 <div className="search-toggles">
-                  <label><input type="checkbox" checked={searchCase} onChange={(e) => setSearchCase(e.target.checked)} />Aa</label>
-                  <label><input type="checkbox" checked={searchWholeWord} onChange={(e) => setSearchWholeWord(e.target.checked)} />Word</label>
-                  <label><input type="checkbox" checked={searchRegex} onChange={(e) => setSearchRegex(e.target.checked)} />.*</label>
-                  <label>Ctx <input type="number" min="0" max="2" value={searchContext} onChange={(e) => setSearchContext(Math.max(0, Math.min(2, Number(e.target.value) || 0)))} /></label>
+                  <label><input type="checkbox" checked={searchCase} onChange={(e) => setSearchCase(e.target.checked)} />{t('search.case')}</label>
+                  <label><input type="checkbox" checked={searchWholeWord} onChange={(e) => setSearchWholeWord(e.target.checked)} />{t('search.word')}</label>
+                  <label><input type="checkbox" checked={searchRegex} onChange={(e) => setSearchRegex(e.target.checked)} />{t('search.regex')}</label>
+                  <label>{t('search.ctx')} <input type="number" min="0" max="2" value={searchContext} onChange={(e) => setSearchContext(Math.max(0, Math.min(2, Number(e.target.value) || 0)))} /></label>
                 </div>
-                <input className="search-input small" placeholder="include glob（逗号）" value={searchInclude} onChange={(e) => setSearchInclude(e.target.value)} />
-                <input className="search-input small" placeholder="exclude glob（默认忽略 .git/node_modules/dist/build/target/vendor）" value={searchExclude} onChange={(e) => setSearchExclude(e.target.value)} />
-                <button onClick={() => void runGlobalSearch()} disabled={!searchQuery || fileTreeRoot === null}>搜索</button>
-                <span className="search-count">{searchRunning ? 'streaming…' : ''} {searchResults.length} matches</span>
+                <input className="search-input small" placeholder={t('search.include')} value={searchInclude} onChange={(e) => setSearchInclude(e.target.value)} />
+                <input className="search-input small" placeholder={t('search.exclude')} value={searchExclude} onChange={(e) => setSearchExclude(e.target.value)} />
+                <button onClick={() => void runGlobalSearch()} disabled={!searchQuery || fileTreeRoot === null}>{t('search.run')}</button>
+                <span className="search-count">{searchRunning ? t('search.streaming') : ''} {t('search.matches', { n: searchResults.length })}</span>
               </div>
-              <div className="search-results" aria-label="全局搜索结果">
-                {searchQuery === '' && searchResults.length === 0 && <div className="sidebar-empty">输入关键词搜索当前文件夹</div>}
+              <div className="search-results" aria-label={t('search.resultsLabel')}>
+                {searchQuery === '' && searchResults.length === 0 && <div className="sidebar-empty">{t('search.empty')}</div>}
                 {renderSearchGroups(searchGroups)}
               </div>
             </>
@@ -2233,14 +2264,15 @@ export default function App() {
             <div className="welcome">
               <h1 className="welcome-title">Mellow</h1>
               <div className="welcome-actions">
-                <button onClick={() => void dispatchCommand('file.new', 'menu')}>新建文档</button>
-                <button onClick={() => void dispatchCommand('file.open', 'menu')}>打开文件</button>
-                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')}>打开文件夹</button>
+                <button onClick={() => void dispatchCommand('file.new', 'menu')}>{t('welcome.new')}</button>
+                <button onClick={() => void dispatchCommand('file.open', 'menu')}>{t('welcome.open')}</button>
+                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')}>{t('welcome.openFolder')}</button>
               </div>
             </div>
           )}
           {readerOpen && (
             <ReaderView
+              t={t}
               html={readerHtml}
               title={readerTitle}
               zoom={readerZoom}
@@ -2256,9 +2288,10 @@ export default function App() {
           />
           {splitOpen && (
             <>
-              <div className="split-divider" onMouseDown={handleSplitDragStart} title="拖动调整比例" />
+              <div className="split-divider" onMouseDown={handleSplitDragStart} title={t('split.divider.title')} />
               <div className="split-preview-wrap" style={{ flexGrow: 1 - splitRatio, minWidth: 0 }}>
                 <SplitPreview
+                  t={t}
                   ref={splitPreviewRef}
                   html={splitHtml}
                   onPreviewClick={handleSplitPreviewClick}
@@ -2276,7 +2309,7 @@ export default function App() {
               className="quick-open-input"
               autoFocus
               value={commandPaletteQuery}
-              placeholder={slashMode ? 'Slash Commands：输入命令（fuzzy）…' : 'Command Palette / Plugin Commands'}
+              placeholder={slashMode ? t('palette.slash.placeholder') : t('palette.command.placeholder')}
               onChange={(e) => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteQuery(e.target.value); }}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') { setCommandPaletteVisible(false); setSlashMode(false); }
@@ -2300,7 +2333,7 @@ export default function App() {
                   onClick={() => runPaletteCommand(item.command.id)}
                 >
                   <span className="quick-open-filename">{item.title}</span>
-                  <span className="quick-open-path">{item.command.id} · {item.command.category}{item.command.shortcut ? ` · ${item.command.shortcut.mac ?? item.command.shortcut.winLinux ?? ''}` : ''}{item.recentRank !== undefined ? ' · 最近' : ''}</span>
+                  <span className="quick-open-path">{item.command.id} · {item.command.category}{item.command.shortcut ? ` · ${item.command.shortcut.mac ?? item.command.shortcut.winLinux ?? ''}` : ''}{item.recentRank !== undefined ? ` · ${t('palette.recent')}` : ''}</span>
                 </button>
               ))}
             </div>
@@ -2314,12 +2347,12 @@ export default function App() {
               className="quick-open-input"
               autoFocus
               value={quickOpenQuery}
-              placeholder="Quick Open：输入文件名或相对路径（支持中文 / Unicode）"
+              placeholder={t('quickopen.placeholder')}
               onChange={(e) => handleQuickOpenQuery(e.target.value)}
               onKeyDown={handleQuickOpenKeyDown}
             />
             <div className="quick-open-meta">
-              <span>{quickOpenScanning ? '正在扫描，结果逐步显示…' : `已扫描 ${quickOpenAll.length} 个文件`}</span>
+              <span>{quickOpenScanning ? t('quickopen.scanning') : t('quickopen.scanned', { n: quickOpenAll.length })}</span>
               <span>{navigator.platform.toLowerCase().includes('mac') ? 'Cmd+Shift+O' : 'Ctrl+P'} · ↑↓ · Enter · Esc</span>
             </div>
             <div className="quick-open-results">
@@ -2335,40 +2368,40 @@ export default function App() {
                   <span className="quick-open-path">{item.relativePath}</span>
                 </button>
               ))}
-              {quickOpenResults.length === 0 && <div className="quick-open-empty">没有匹配结果</div>}
+              {quickOpenResults.length === 0 && <div className="quick-open-empty">{t('quickopen.empty')}</div>}
             </div>
           </div>
         </div>
       )}
       {conflict !== null && (
         <div className="recovery-bar conflict-bar">
-          <span>磁盘文件已被外部修改（{conflict.kind}）—— 禁止覆盖：</span>
-          <button onClick={() => void handleConflictCompare()}>比较</button>
-          <button onClick={() => void handleConflictReloadDisk()}>重新加载磁盘版本</button>
-          <button onClick={handleConflictKeepLocal}>保留 Mellow 版本</button>
+          <span>{t('conflict.title', { kind: conflict.kind })}</span>
+          <button onClick={() => void handleConflictCompare()}>{t('conflict.compare')}</button>
+          <button onClick={() => void handleConflictReloadDisk()}>{t('conflict.reloadDisk')}</button>
+          <button onClick={handleConflictKeepLocal}>{t('conflict.keepLocal')}</button>
         </div>
       )}
       {recoveryEntries.length > 0 && (
         <div className="recovery-bar">
-          <span>发现 {recoveryEntries.length} 个未恢复文档：</span>
+          <span>{t('recovery.title', { n: recoveryEntries.length })}</span>
           {recoveryEntries.map((entry) => (
             <span key={entry.documentId} className="recovery-item">
-              {entry.path ?? '(未保存文档)'} · 修订 {entry.revision}
-              <button onClick={() => void handleRecover(entry)}>恢复</button>
-              <button onClick={() => void handleCompare(entry)}>比较</button>
-              <button onClick={() => void handleIgnore(entry)}>忽略</button>
+              {entry.path ?? t('msg.unsavedDoc')} · {t('recovery.revision', { rev: entry.revision })}
+              <button onClick={() => void handleRecover(entry)}>{t('recovery.recover')}</button>
+              <button onClick={() => void handleCompare(entry)}>{t('conflict.compare')}</button>
+              <button onClick={() => void handleIgnore(entry)}>{t('recovery.ignore')}</button>
             </span>
           ))}
         </div>
       )}
       <footer className="statusbar">
-        <span className="statusbar-item">{dirty ? '● 未保存' : '○ 已保存'}</span>
+        <span className="statusbar-item">{dirty ? t('status.unsaved') : t('status.saved')}</span>
         <span className="statusbar-item">{stats}</span>
         <span className="statusbar-item">{cursorPos}</span>
         <span className="statusbar-sep" />
-        <span className="statusbar-item">Markdown</span>
-        <span className="statusbar-item">UTF-8</span>
-        <span className="statusbar-item">LF</span>
+        <span className="statusbar-item">{t('status.markdown')}</span>
+        <span className="statusbar-item">{t('status.utf8')}</span>
+        <span className="statusbar-item">{t('status.lf')}</span>
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
       </footer>
@@ -2378,7 +2411,7 @@ export default function App() {
       {toast !== null && (
         <div className="toast-bar">
           <span className="toast-message">{toast.message}</span>
-          {toast.onUndo !== undefined && <button onClick={() => toast.onUndo?.()}>撤销</button>}
+          {toast.onUndo !== undefined && <button onClick={() => toast.onUndo?.()}>{t('msg.imagesUndo')}</button>}
           <button className="toast-close" onClick={() => setToast(null)}>✕</button>
         </div>
       )}
