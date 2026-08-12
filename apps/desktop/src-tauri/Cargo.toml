@@ -16,6 +16,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+regex = "1"
 notify = "8"
 # 跨平台回收站（macOS Finder / Windows Recycle Bin / Linux trash spec；PRD §57）
 trash = "5"

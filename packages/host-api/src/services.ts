@@ -11,6 +11,7 @@ import type {
   Result,
   Size,
   SearchResult,
+  SearchRequest,
   FileFilter,
   NotificationRequest,
   Encoding,
@@ -187,6 +188,7 @@ export interface WatchService {
 /** 全局搜索服务 */
 export interface SearchService {
   searchFiles(query: string, directory: string): Promise<Result<SearchResult[]>>;
+  searchFilesStreaming?(request: SearchRequest, onResult: (result: SearchResult) => void): Promise<Result<{ cancel: () => void; done?: Promise<void> }>>;
 }
 
 // ─────────────────────────── export ───────────────────────────

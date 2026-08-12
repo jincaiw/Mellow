@@ -1,6 +1,7 @@
 pub mod bridge;
 pub mod fs;
 pub mod recovery;
+pub mod search;
 pub mod watcher;
 
 use tauri::Manager;
@@ -38,6 +39,8 @@ pub fn run() {
             fs::remove_file,
             fs::read_dir,
             fs::download_remote,
+            search::search_start,
+            search::search_cancel,
             recovery::recovery_save,
             recovery::recovery_list,
             recovery::recovery_get,

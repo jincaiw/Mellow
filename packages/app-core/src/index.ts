@@ -24,3 +24,5 @@ export { OutlineModel, buildOutline, parseHeadings, flattenOutline, filterOutlin
 export type { OutlineHeading, BuildOutlineOptions } from './outline';
 export { QuickOpenModel, fuzzyScore, rankQuickOpen, scanQuickOpen, quickOpenShortcutAction } from './quickOpen';
 export type { QuickOpenAction, QuickOpenEntry, QuickOpenKeyEvent, QuickOpenPlatform, QuickOpenRankedEntry, QuickOpenScanOptions } from './quickOpen';
+export { DEFAULT_SEARCH_EXCLUDES, buildSearchRegex, globalSearchShortcutAction, groupSearchResults, matchSearchLine, normalizeSearchRequest } from './globalSearch';
+export type { SearchGroup, SearchLineOptions } from './globalSearch';

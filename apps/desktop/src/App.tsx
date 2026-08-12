@@ -28,6 +28,9 @@ import {
   currentHeadingId,
   filterOutline,
   QuickOpenModel,
+  globalSearchShortcutAction,
+  groupSearchResults,
+  normalizeSearchRequest,
   quickOpenShortcutAction,
   rankQuickOpen,
   scanQuickOpen,
@@ -37,15 +40,16 @@ import {
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, TabSessionSnapshot } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
 import { createDesktopDialogService } from './host/dialogs';
 import { createDesktopOpenerService } from './host/openers';
+import { createDesktopSearchService } from './host/searchServices';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
-import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService } from '../../../packages/host-api/src/index';
+import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService } from '../../../packages/host-api/src/index';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
@@ -82,6 +86,8 @@ export default function App() {
   const historyRef = useRef<FileOpHistory | null>(null);
   const dialogRef = useRef<DialogService | null>(null);
   const openerRef = useRef<OpenerService | null>(null);
+  const searchRef = useRef<SearchService | null>(null);
+  const searchCancelRef = useRef<(() => void) | null>(null);
   // Tabs（PRD §11：open/active/dirty/reorder/close/session restore）
   const tabsRef = useRef<TabManager>(new TabManager());
   const suppressEditorEventRef = useRef(false);
@@ -115,7 +121,10 @@ export default function App() {
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
-  const [sidebarMode, setSidebarModeState] = useState<'files' | 'outline'>(() => (localStorage.getItem('mellow.sidebar.mode') === 'outline' ? 'outline' : 'files'));
+  const [sidebarMode, setSidebarModeState] = useState<'files' | 'outline' | 'search'>(() => {
+    const saved = localStorage.getItem('mellow.sidebar.mode');
+    return saved === 'outline' || saved === 'search' ? saved : 'files';
+  });
   const [fileSidebarMode, setFileSidebarModeState] = useState<'tree' | 'list'>(() => (localStorage.getItem(FILE_SIDEBAR_MODE_KEY) === 'list' ? 'list' : 'tree'));
   const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
   const [fileListItems, setFileListItems] = useState<FileListItem[]>([]);
@@ -152,6 +161,16 @@ export default function App() {
   const [quickOpenResults, setQuickOpenResults] = useState<QuickOpenEntry[]>([]);
   const [quickOpenSelected, setQuickOpenSelected] = useState(0);
   const [quickOpenScanning, setQuickOpenScanning] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchCase, setSearchCase] = useState(false);
+  const [searchWholeWord, setSearchWholeWord] = useState(false);
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchInclude, setSearchInclude] = useState('');
+  const [searchExclude, setSearchExclude] = useState('');
+  const [searchContext, setSearchContext] = useState(1);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchGroups, setSearchGroups] = useState<SearchGroup[]>([]);
+  const [searchRunning, setSearchRunning] = useState(false);
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
@@ -471,7 +490,7 @@ export default function App() {
     localStorage.setItem(FILE_SIDEBAR_MODE_KEY, mode);
   }, []);
 
-  const setSidebarMode = useCallback((mode: 'files' | 'outline') => {
+  const setSidebarMode = useCallback((mode: 'files' | 'outline' | 'search') => {
     setSidebarModeState(mode);
     localStorage.setItem('mellow.sidebar.mode', mode);
   }, []);
@@ -658,6 +677,62 @@ export default function App() {
     setQuickOpenQuery(value);
     updateQuickOpenResults(quickOpenAll, value);
   }, [quickOpenAll, updateQuickOpenResults]);
+
+  const openGlobalSearch = useCallback(() => {
+    setSidebarMode('search');
+  }, [setSidebarMode]);
+
+  const runGlobalSearch = useCallback(async () => {
+    const svc = searchRef.current;
+    if (!svc || fileTreeRoot === null) {
+      setStatusText('Global Search 需要先打开文件夹');
+      return;
+    }
+    searchCancelRef.current?.();
+    setSearchResults([]);
+    setSearchGroups([]);
+    setSearchRunning(true);
+    const include = searchInclude.split(',').map((s) => s.trim()).filter(Boolean);
+    const exclude = searchExclude.split(',').map((s) => s.trim()).filter(Boolean);
+    const request = normalizeSearchRequest({ root: fileTreeRoot, query: searchQuery, caseSensitive: searchCase, wholeWord: searchWholeWord, regex: searchRegex, include, exclude, context: searchContext });
+    const collected: SearchResult[] = [];
+    const started = await svc.searchFilesStreaming?.(request, (result) => {
+      collected.push(result);
+      setSearchResults([...collected]);
+      setSearchGroups(groupSearchResults(collected, fileTreeRoot));
+    });
+    if (!started) {
+      const r = await svc.searchFiles(searchQuery, fileTreeRoot);
+      if (r.ok) {
+        setSearchResults(r.value);
+        setSearchGroups(groupSearchResults(r.value, fileTreeRoot));
+      } else setStatusText(`搜索失败: ${r.error.message}`);
+      setSearchRunning(false);
+      return;
+    }
+    if (!started.ok) {
+      setStatusText(`搜索失败: ${started.error.message}`);
+      setSearchRunning(false);
+      return;
+    }
+    searchCancelRef.current = started.value.cancel;
+    setStatusText('搜索已启动，结果将流式显示');
+    void started.value.done?.then(() => setSearchRunning(false));
+  }, [fileTreeRoot, searchCase, searchContext, searchExclude, searchInclude, searchQuery, searchRegex, searchWholeWord]);
+
+  const jumpToSearchResult = useCallback(async (result: SearchResult) => {
+    await openTreeFile(result.path);
+    requestAnimationFrame(() => {
+      const host = hostRef.current;
+      if (!host) return;
+      const text = host.getText();
+      let offset = 0;
+      const lines = text.split('\n');
+      for (let i = 0; i < Math.max(0, result.line - 1); i += 1) offset += lines[i].length + 1;
+      offset += Math.max(0, (result.column ?? 1) - 1);
+      host.jumpToOffset(offset);
+    });
+  }, [openTreeFile]);
 
   const handleTreeToggle = useCallback(async (path: string) => {
     const model = fileTreeModelRef.current;
@@ -918,6 +993,7 @@ export default function App() {
     recoveryRef.current = new RecoveryService(createDesktopRecoveryStorage());
     dialogRef.current = createDesktopDialogService();
     openerRef.current = createDesktopOpenerService();
+    searchRef.current = createDesktopSearchService();
     externalRef.current = new ExternalChangeService(createDesktopWatcher(), {
       getDiskState: () => {
         const d = diskStateRef.current;
@@ -1259,6 +1335,12 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const platform = navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux';
+      const global = globalSearchShortcutAction({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
+      if (global === 'global-search') {
+        event.preventDefault();
+        openGlobalSearch();
+        return;
+      }
       const quick = quickOpenShortcutAction({
         platform,
         key: event.key,
@@ -1292,7 +1374,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleCloseTab, handleNew, handleReopenClosed, openQuickOpen]);
+  }, [handleCloseTab, handleNew, handleReopenClosed, openGlobalSearch, openQuickOpen]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -1395,6 +1477,20 @@ export default function App() {
     </button>
   ));
 
+  const renderSearchGroups = (groups: SearchGroup[]) => groups.map((group) => (
+    <div key={group.path} className="search-group">
+      <div className="search-group-title" title={group.path}>{group.relativePath} <span>{group.matches.length}</span></div>
+      {group.matches.map((match) => (
+        <button key={`${match.path}:${match.line}:${match.column}:${match.snippet}`} type="button" className="search-match" onClick={() => void jumpToSearchResult(match)}>
+          <span className="search-location">{match.line}:{match.column ?? 1}</span>
+          {match.before?.map((line, index) => <span key={`b-${index}`} className="search-context">{line}</span>)}
+          <span className="search-snippet">{match.snippet}</span>
+          {match.after?.map((line, index) => <span key={`a-${index}`} className="search-context">{line}</span>)}
+        </button>
+      ))}
+    </div>
+  ));
+
   const renderOutlineItems = (items: OutlineHeading[]) => items.map((item) => (
     <button
       key={item.id}
@@ -1470,12 +1566,13 @@ export default function App() {
         ))}
       </nav>
       <div className="workspace-shell">
-        <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? '大纲' : (fileSidebarMode === 'tree' ? '文件树' : '文件列表')}>
+        <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? '大纲' : sidebarMode === 'search' ? '全局搜索' : (fileSidebarMode === 'tree' ? '文件树' : '文件列表')}>
           <div className="file-tree-header">
-            <strong>{sidebarMode === 'outline' ? '大纲' : '文件'}</strong>
+            <strong>{sidebarMode === 'outline' ? '大纲' : sidebarMode === 'search' ? '搜索' : '文件'}</strong>
             <div className="file-sidebar-switch" role="tablist" aria-label="侧栏切换">
               <button className={sidebarMode === 'files' ? 'active' : ''} onClick={() => setSidebarMode('files')}>文件</button>
               <button className={sidebarMode === 'outline' ? 'active' : ''} onClick={() => { setSidebarMode('outline'); refreshOutlineRef.current(); }}>大纲</button>
+              <button className={sidebarMode === 'search' ? 'active' : ''} onClick={() => setSidebarMode('search')}>搜索</button>
             </div>
             {sidebarMode === 'files' && (
               <>
@@ -1537,7 +1634,7 @@ export default function App() {
                 </div>
               )}
             </>
-          ) : (
+          ) : sidebarMode === 'outline' ? (
             <>
               <div className="file-tree-filters">
                 <input className="outline-filter" placeholder="过滤标题" value={outlineFilter} onChange={(e) => setOutlineFilter(e.target.value)} />
@@ -1546,6 +1643,25 @@ export default function App() {
               </div>
               <div className="outline-list" aria-label="文档大纲">
                 {renderOutlineItems(outlineItems)}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="search-panel">
+                <input className="search-input" autoFocus placeholder="Search workspace" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runGlobalSearch(); }} />
+                <div className="search-toggles">
+                  <label><input type="checkbox" checked={searchCase} onChange={(e) => setSearchCase(e.target.checked)} />Aa</label>
+                  <label><input type="checkbox" checked={searchWholeWord} onChange={(e) => setSearchWholeWord(e.target.checked)} />Word</label>
+                  <label><input type="checkbox" checked={searchRegex} onChange={(e) => setSearchRegex(e.target.checked)} />.*</label>
+                  <label>Ctx <input type="number" min="0" max="2" value={searchContext} onChange={(e) => setSearchContext(Math.max(0, Math.min(2, Number(e.target.value) || 0)))} /></label>
+                </div>
+                <input className="search-input small" placeholder="include glob（逗号）" value={searchInclude} onChange={(e) => setSearchInclude(e.target.value)} />
+                <input className="search-input small" placeholder="exclude glob（默认忽略 .git/node_modules/dist/build/target/vendor）" value={searchExclude} onChange={(e) => setSearchExclude(e.target.value)} />
+                <button onClick={() => void runGlobalSearch()} disabled={!searchQuery || fileTreeRoot === null}>搜索</button>
+                <span className="search-count">{searchRunning ? 'streaming…' : ''} {searchResults.length} matches</span>
+              </div>
+              <div className="search-results" aria-label="全局搜索结果">
+                {renderSearchGroups(searchGroups)}
               </div>
             </>
           )}

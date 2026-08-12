@@ -401,14 +401,33 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
             if (!path.startsWith(normalizePath(directory))) continue;
             const lines = content.split('\n');
             lines.forEach((line, index) => {
-              if (line.toLowerCase().includes(query.toLowerCase())) {
-                results.push({ path, line: index + 1, snippet: line.trim() });
+              const found = line.toLowerCase().indexOf(query.toLowerCase());
+              if (found >= 0) {
+                results.push({ path, line: index + 1, column: found + 1, match: line.slice(found, found + query.length), snippet: line.trim() });
               }
             });
           }
           return ok(results);
         }
         return ok(state.searchResults);
+      },
+      searchFilesStreaming: async (request, onResult): Promise<Result<{ cancel: () => void; done?: Promise<void> }>> => {
+        const results = state.searchResults.length > 0 ? state.searchResults : [];
+        if (results.length > 0) {
+          results.forEach(onResult);
+          return ok({ cancel: () => undefined });
+        }
+        for (const [path, content] of state.files) {
+          if (!path.startsWith(normalizePath(request.root))) continue;
+          const lines = content.split('\n');
+          lines.forEach((line, index) => {
+            const source = request.caseSensitive ? line : line.toLowerCase();
+            const needle = request.caseSensitive ? request.query : request.query.toLowerCase();
+            const found = source.indexOf(needle);
+            if (found >= 0) onResult({ path, line: index + 1, column: found + 1, match: line.slice(found, found + request.query.length), snippet: line.trim() });
+          });
+        }
+        return ok({ cancel: () => undefined });
       },
     },
 

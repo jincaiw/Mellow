@@ -55,7 +55,29 @@ export interface SearchResult {
   path: string;
   line: number;
   column?: number;
+  /** 命中的文本 */
+  match?: string;
   snippet?: string;
+  before?: string[];
+  after?: string[];
+}
+
+export interface SearchRequest {
+  root: string;
+  query: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  regex: boolean;
+  include: string[];
+  exclude: string[];
+  context: number;
+}
+
+export interface SearchProgress {
+  type: 'match' | 'done' | 'error';
+  searchId: string;
+  result?: SearchResult;
+  error?: string;
 }
 
 /** 文件选择过滤器 */

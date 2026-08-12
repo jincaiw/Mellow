@@ -2071,6 +2071,7 @@ name = "mellow-desktop"
 version = "0.0.0"
 dependencies = [
  "notify",
+ "regex",
  "serde",
  "serde_json",
  "tauri",
