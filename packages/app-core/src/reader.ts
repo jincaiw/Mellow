@@ -164,15 +164,16 @@ function preScanHeadings(lines: BlockLine[], markdown: string): ParsedHeading[] 
   return roots;
 }
 
-function renderToc(headings: ParsedHeading[]): string {
+function renderToc(headings: ParsedHeading[], offset?: number): string {
   const walk = (items: ParsedHeading[]): string => {
     if (items.length === 0) return '';
     return `<ul>${items.map((item) => `<li><a href="#${item.id}">${escapeHtml(item.title)}</a>${walk(item.children)}</li>`).join('')}</ul>`;
   };
-  return `<div class="mellow-reader-toc">${walk(headings)}</div>`;
+  const attr = offset === undefined ? '' : ` data-offset="${offset}"`;
+  return `<div class="mellow-reader-toc"${attr}>${walk(headings)}</div>`;
 }
 
-function renderTable(rows: string[], resolveImageSrc: (src: string) => string): string {
+function renderTable(rows: string[], resolveImageSrc: (src: string) => string, offset?: number): string {
   const cells = (row: string): string[] => row.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
   if (rows.length < 2) return '';
   const header = cells(rows[0]);
@@ -182,7 +183,8 @@ function renderTable(rows: string[], resolveImageSrc: (src: string) => string): 
     ? ''
     : `<tbody>${body.map((row) => `<tr>${cells(row).map((c) => `<td>${renderInline(c)}</td>`).join('')}</tr>`).join('')}</tbody>`;
   void resolveImageSrc;
-  return `<table>${headHtml}${bodyHtml}</table>`;
+  const attr = offset === undefined ? '' : ` data-offset="${offset}"`;
+  return `<table${attr}>${headHtml}${bodyHtml}</table>`;
 }
 
 export function renderReaderHtml(markdown: string, options: ReaderRenderOptions = {}): ReaderRenderResult {
@@ -194,9 +196,9 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
   const html: string[] = [];
   let i = 0;
 
-  const pushInlineParagraph = (text: string): void => {
+  const pushInlineParagraph = (text: string, offset: number): void => {
     if (text.trim() === '') return;
-    html.push(`<p>${renderInline(text)}</p>`);
+    html.push(`<p data-offset="${offset}">${renderInline(text)}</p>`);
   };
 
   while (i < lines.length) {
@@ -206,6 +208,7 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
     // 代码块 / mermaid
     const fenceMatch = line.match(FENCE_RE);
     if (fenceMatch !== null) {
+      const blockOffset = lines[i].start;
       const fenceChar = fenceMatch[1][0];
       const lang = (fenceMatch[2] ?? '').trim().toLowerCase();
       const codeLines: string[] = [];
@@ -222,16 +225,17 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
       const code = codeLines.join('\n');
       const escaped = escapeHtml(code);
       if (lang === 'mermaid') {
-        html.push(`<div class="mellow-reader-mermaid" data-source="${escapeHtml(code)}"><pre><code>${escaped}</code></pre></div>`);
+        html.push(`<div class="mellow-reader-mermaid" data-offset="${blockOffset}" data-source="${escapeHtml(code)}"><pre><code>${escaped}</code></pre></div>`);
       } else {
         const langClass = lang === '' ? '' : ` class="language-${escapeHtml(lang)}"`;
-        html.push(`<div class="mellow-reader-code"><div class="mellow-reader-code-head"><span class="mellow-reader-code-lang">${escapeHtml(lang)}</span><button type="button" class="mellow-reader-copy" title="复制">复制</button></div><pre><code${langClass}>${escaped}</code></pre></div>`);
+        html.push(`<div class="mellow-reader-code" data-offset="${blockOffset}"><div class="mellow-reader-code-head"><span class="mellow-reader-code-lang">${escapeHtml(lang)}</span><button type="button" class="mellow-reader-copy" title="复制">复制</button></div><pre><code${langClass}>${escaped}</code></pre></div>`);
       }
       continue;
     }
 
     // math 块
     if (MATH_BLOCK_OPEN_RE.test(line)) {
+      const blockOffset = lines[i].start;
       const texLines: string[] = [];
       i += 1;
       while (i < lines.length && !MATH_BLOCK_OPEN_RE.test(lines[i].text)) {
@@ -240,24 +244,26 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
       }
       if (i < lines.length) i += 1; // 吃掉闭合 $$
       const tex = texLines.join('\n').trim();
-      html.push(`<div class="mellow-reader-math-block" data-tex="${escapeHtml(tex)}">${escapeHtml(tex)}</div>`);
+      html.push(`<div class="mellow-reader-math-block" data-offset="${blockOffset}" data-tex="${escapeHtml(tex)}">${escapeHtml(tex)}</div>`);
       continue;
     }
 
     // 表格
     if (TABLE_ROW_RE.test(line) && i + 1 < lines.length && TABLE_SEP_RE.test(lines[i + 1].text)) {
+      const blockOffset = lines[i].start;
       const rows: string[] = [line, lines[i + 1].text];
       i += 2;
       while (i < lines.length && TABLE_ROW_RE.test(lines[i].text)) {
         rows.push(lines[i].text);
         i += 1;
       }
-      html.push(renderTable(rows, resolveImageSrc));
+      html.push(renderTable(rows, resolveImageSrc, blockOffset));
       continue;
     }
 
     // 引用（含 GitHub Alert）
     if (QUOTE_RE.test(line)) {
+      const blockOffset = lines[i].start;
       const quoteLines: string[] = [];
       while (i < lines.length && QUOTE_RE.test(lines[i].text)) {
         quoteLines.push(lines[i].text.replace(QUOTE_RE, '$1'));
@@ -271,10 +277,10 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
         const bodyHtml = body.length === 0
           ? `<p>${renderInline(alertMatch[2].trim())}</p>`
           : body.map((t) => `<p>${renderInline(t)}</p>`).join('');
-        html.push(`<div class="mellow-reader-alert mellow-reader-alert-${escapeHtml(kind)}"><div class="mellow-reader-alert-title">${escapeHtml(alertMatch[1].toUpperCase())}</div><div class="mellow-reader-alert-body">${bodyHtml}</div></div>`);
+        html.push(`<div class="mellow-reader-alert mellow-reader-alert-${escapeHtml(kind)}" data-offset="${blockOffset}"><div class="mellow-reader-alert-title">${escapeHtml(alertMatch[1].toUpperCase())}</div><div class="mellow-reader-alert-body">${bodyHtml}</div></div>`);
       } else {
         const body = quoteLines.map((t) => renderInline(t)).join('<br>');
-        html.push(`<blockquote>${body}</blockquote>`);
+        html.push(`<blockquote data-offset="${blockOffset}">${body}</blockquote>`);
       }
       continue;
     }
@@ -284,7 +290,7 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
     if (headingMatch !== null) {
       const level = headingMatch[1].length;
       const slug = slugifyHeading(headingMatch[2].replace(/[*_~`]/g, '').trim());
-      html.push(`<h${level} id="${slug}">${renderInline(headingMatch[2])}</h${level}>`);
+      html.push(`<h${level} id="${slug}" data-offset="${lines[i].start}">${renderInline(headingMatch[2])}</h${level}>`);
       i += 1;
       continue;
     }
@@ -292,6 +298,7 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
     // 列表
     const listMatch = line.match(LIST_RE);
     if (listMatch !== null && listMatch[2] !== '*') {
+      const blockOffset = lines[i].start;
       const ordered = /^\d+\.$/.test(listMatch[2]);
       const tag = ordered ? 'ol' : 'ul';
       const items: string[] = [];
@@ -310,20 +317,20 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
         }
         i += 1;
       }
-      html.push(`<${tag}>${items.join('')}</${tag}>`);
+      html.push(`<${tag} data-offset="${blockOffset}">${items.join('')}</${tag}>`);
       continue;
     }
 
     // hr
     if (HR_RE.test(line)) {
-      html.push('<hr>');
+      html.push(`<hr data-offset="${lines[i].start}">`);
       i += 1;
       continue;
     }
 
     // toc
     if (/^\[toc\]\s*$/i.test(trimmed)) {
-      html.push(renderToc(allHeadings));
+      html.push(renderToc(allHeadings, lines[i].start));
       i += 1;
       continue;
     }
@@ -346,6 +353,7 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
       continue;
     }
     const para: string[] = [line];
+    const paraOffset = lines[i].start;
     i += 1;
     while (i < lines.length) {
       const t = lines[i].text;
@@ -353,7 +361,7 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
       para.push(t);
       i += 1;
     }
-    pushInlineParagraph(para.join(' '));
+    pushInlineParagraph(para.join(' '), paraOffset);
   }
 
   return { html: html.join('\n'), outline };

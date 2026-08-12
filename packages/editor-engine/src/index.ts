@@ -31,6 +31,7 @@ import { buildFocusModeExtension } from './focusMode';
 import { buildSlashCommandsExtension } from './slashCommands';
 import { buildTypewriterModeExtension } from './typewriterMode';
 import { buildSelectionToolbarExtension } from './selectionToolbar';
+import { buildScrollBridgeExtension } from './scrollBridge';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -50,6 +51,8 @@ export type { SlashOpenRequest, SlashCommandsOptions } from './slashCommands';
 export { buildTypewriterModeExtension, computeTypewriterScrollTop, getTypewriterMode, setTypewriterMode, TYPEWRITER_CENTER_RATIO } from './typewriterMode';
 export { buildSelectionToolbarExtension, shouldShowToolbar, applyInlineFormat, applyLink, applyBlockPrefix, applyHeading, setSelectionToolbarEnabled, getSelectionToolbarEnabled, SELECTION_TOOLBAR_CLASS } from './selectionToolbar';
 export type { TextRange, ApplyResult, ToolbarVisibility, SelectionToolbarOptions } from './selectionToolbar';
+export { buildScrollBridgeExtension } from './scrollBridge';
+export type { ScrollBridgeApi } from './scrollBridge';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -109,6 +112,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildSlashCommandsExtension(),
     buildTypewriterModeExtension(),
     buildSelectionToolbarExtension(),
+    buildScrollBridgeExtension(),
     buildImageExtensions(),
   ];
 }

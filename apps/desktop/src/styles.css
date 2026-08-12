@@ -952,3 +952,67 @@ html, body, #root {
   .mellow-reader { max-width: 100%; padding: 0; }
   .mellow-reader-copy, .mellow-reader-lightbox { display: none !important; }
 }
+
+/* ── Split Mode（T-0410，PRD §32）────────────────────────── */
+
+.editor-container.split {
+  display: flex;
+  align-items: stretch;
+}
+
+.split-divider {
+  width: 5px;
+  cursor: col-resize;
+  background: #e0e0e0;
+  border-left: 1px solid #eee;
+  border-right: 1px solid #eee;
+  flex-shrink: 0;
+}
+.split-divider:hover { background: #b8d3ff; }
+
+.split-preview-wrap {
+  height: 100%;
+  min-width: 0;
+}
+
+.split-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+}
+
+.split-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #666;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.split-preview-label { font-weight: 600; color: #333; }
+.split-preview-hint { color: #999; }
+
+.split-preview-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.split-preview-scroll .mellow-reader {
+  padding-top: 24px;
+  cursor: text;
+}
+
+.split-preview-scroll .mellow-reader h1[id],
+.split-preview-scroll .mellow-reader h2[id],
+.split-preview-scroll .mellow-reader h3[id],
+.split-preview-scroll .mellow-reader h4[id],
+.split-preview-scroll .mellow-reader h5[id],
+.split-preview-scroll .mellow-reader h6[id],
+.split-preview-scroll .mellow-reader [data-offset] { cursor: pointer; }

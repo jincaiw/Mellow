@@ -4,9 +4,19 @@ import { renderReaderHtml } from '../src/reader';
 describe('Reader renderer — block level, no markers, no caret', () => {
   test('headings render without # markers and carry slug ids', () => {
     const { html } = renderReaderHtml('# Title\n\n## Sub *title*');
-    expect(html).toContain('<h1 id="title">Title</h1>');
-    expect(html).toContain('<h2 id="sub-title">Sub <em>title</em></h2>');
+    expect(html).toContain('<h1 id="title" data-offset="0">Title</h1>');
+    expect(html).toContain('<h2 id="sub-title" data-offset="9">Sub <em>title</em></h2>');
     expect(html).not.toContain('# ');
+  });
+
+  test('block elements carry data-offset anchors for preview-to-source navigation', () => {
+    const { html } = renderReaderHtml('# A\n\npara one\n\n- item\n\n> quote\n\n```js\nconst x = 1;\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |');
+    expect(html).toContain('data-offset="0"'); // heading
+    expect(html).toContain('<p data-offset="5">para one</p>');
+    expect(html).toContain('<ul data-offset="15">');
+    expect(html).toContain('<blockquote data-offset="23">');
+    expect(html).toContain('class="mellow-reader-code" data-offset="32"');
+    expect(html).toContain('<table data-offset="56">');
   });
 
   test('paragraphs with inline formatting produce semantic tags, not markers', () => {
@@ -28,16 +38,16 @@ describe('Reader renderer — block level, no markers, no caret', () => {
 
   test('unordered/ordered/task lists', () => {
     const { html } = renderReaderHtml('- a\n- b\n\n1. one\n2. two\n\n- [x] done\n- [ ] todo');
-    expect(html).toContain('<ul>');
-    expect(html).toContain('<ol>');
+    expect(html).toContain('<ul data-offset=');
+    expect(html).toContain('<ol data-offset=');
     expect(html).toContain('<li class="mellow-reader-task"><input type="checkbox" checked disabled');
     expect(html).toContain('<input type="checkbox" disabled');
   });
 
   test('blockquote and hr', () => {
     const { html } = renderReaderHtml('> quote\n\n---');
-    expect(html).toContain('<blockquote>');
-    expect(html).toContain('<hr>');
+    expect(html).toContain('<blockquote data-offset=');
+    expect(html).toContain('<hr data-offset=');
   });
 
   test('fenced code block keeps language class and copy affordance', () => {
@@ -50,7 +60,7 @@ describe('Reader renderer — block level, no markers, no caret', () => {
 
   test('table renders thead/tbody', () => {
     const { html } = renderReaderHtml('| a | b |\n|---|---|\n| 1 | 2 |');
-    expect(html).toContain('<table>');
+    expect(html).toContain('<table data-offset=');
     expect(html).toContain('<th>a</th>');
     expect(html).toContain('<td>1</td>');
   });

@@ -115,6 +115,25 @@ export class EditorCore {
     this.iframe?.contentWindow?.focus();
   }
 
+  /** Split Mode 滚动桥：读取当前滚动比例（0..1；bridge 不可用返回 null） */
+  getScrollRatio(): number | null {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SCROLL_BRIDGE__?: { getScrollRatio?: () => number | null } }) | null;
+    const ratio = win?.__MELLOW_SCROLL_BRIDGE__?.getScrollRatio?.();
+    return typeof ratio === 'number' ? ratio : null;
+  }
+
+  /** Split Mode 滚动桥：把编辑器滚动到文档比例位置（直接赋值，无动画） */
+  setScrollRatio(ratio: number): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SCROLL_BRIDGE__?: { setScrollRatio?: (ratio: number) => void } }) | null;
+    win?.__MELLOW_SCROLL_BRIDGE__?.setScrollRatio?.(ratio);
+  }
+
+  /** Split Mode 滚动桥：订阅编辑器滚动；返回退订函数 */
+  onScroll(listener: (ratio: number) => void): () => void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SCROLL_BRIDGE__?: { onScroll?: (listener: (ratio: number) => void) => () => void } }) | null;
+    return win?.__MELLOW_SCROLL_BRIDGE__?.onScroll?.(listener) ?? (() => { /* no-op */ });
+  }
+
   /** 当前主光标 offset（Outline 高亮使用；engine bridge 不可用时返回 null） */
   getSelectionHead(): number | null {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_OUTLINE_API__?: { getSelectionHead?: () => number | null } }) | null;
