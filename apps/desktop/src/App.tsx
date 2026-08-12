@@ -51,6 +51,8 @@ import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/p
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService } from '../../../packages/host-api/src/index';
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
+import { BUILTIN_THEMES, DEFAULT_THEME_SETTINGS, resolveActiveTheme, themeById } from '../../../packages/themes/src';
+import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
 import SplitPreview from './SplitPreview';
@@ -69,6 +71,7 @@ const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
 const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
 const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
 const SLASH_ENABLED_KEY = 'mellow.slashCommands.enabled';
+const THEME_SETTINGS_KEY = 'mellow.theme.settings';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SPLIT_RATIO_KEY = 'mellow.split.ratio';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
@@ -207,6 +210,90 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
+  const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(THEME_SETTINGS_KEY) ?? 'null') as ThemeSettings | null;
+      if (saved !== null && typeof saved === 'object' && (saved.mode === 'system' || saved.mode === 'light' || saved.mode === 'dark')) {
+        return { ...DEFAULT_THEME_SETTINGS, ...saved };
+      }
+    } catch {
+      /* 回退默认 */
+    }
+    return DEFAULT_THEME_SETTINGS;
+  });
+  const [systemDark, setSystemDark] = useState(false);
+  const activeTheme: MellowTheme = resolveActiveTheme(themeSettings, systemDark);
+
+  // 系统亮暗跟随（System 模式）
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    setSystemDark(mq.matches);
+    const onChange = (event: MediaQueryListEvent): void => setSystemDark(event.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // 应用主题：CSS 变量 + theme CSS + data 属性 + 编辑器内容区主题
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = activeTheme.id;
+    root.dataset.colorScheme = activeTheme.kind;
+    for (const [key, value] of Object.entries(activeTheme.variables)) {
+      root.style.setProperty(key, value);
+    }
+    let style = document.getElementById('mellow-theme-css') as HTMLStyleElement | null;
+    if (style === null) {
+      style = document.createElement('style');
+      style.id = 'mellow-theme-css';
+      document.head.appendChild(style);
+    }
+    style.textContent = activeTheme.themeCss;
+    hostRef.current?.setTheme(activeTheme.editorTheme);
+  }, [activeTheme]);
+
+  const setThemeSettingsAndPersist = useCallback((next: ThemeSettings) => {
+    setThemeSettings(next);
+    try {
+      localStorage.setItem(THEME_SETTINGS_KEY, JSON.stringify(next));
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
+
+  const applyThemeById = useCallback((id: string) => {
+    const theme = themeById(id);
+    if (theme === undefined) return;
+    setThemeSettingsAndPersist({
+      ...themeSettings,
+      mode: theme.kind,
+      [theme.kind === 'light' ? 'lightThemeId' : 'darkThemeId']: id,
+    });
+  }, [setThemeSettingsAndPersist, themeSettings]);
+
+  // User CSS（appData/user.css，优先级最高）
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    let cancelled = false;
+    void import('@tauri-apps/api/path').then(async ({ appDataDir, join }) => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const dir = await appDataDir();
+      const userCssPath = await join(dir, 'user.css');
+      const content = await invoke<string>('read_text', { path: userCssPath });
+      if (cancelled) return;
+      let style = document.getElementById('mellow-user-css') as HTMLStyleElement | null;
+      if (style === null) {
+        style = document.createElement('style');
+        style.id = 'mellow-user-css';
+        document.head.appendChild(style);
+      }
+      style.textContent = content;
+    }).catch(() => {
+      /* user.css 不存在或不可读：静默 */
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [splitRatio, setSplitRatioState] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(SPLIT_RATIO_KEY));
@@ -1686,6 +1773,8 @@ export default function App() {
       { id: 'window.close', localizedTitle: { zh: '关闭窗口', en: 'Close Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.close(); } },
       { id: 'file.revealInFinder', localizedTitle: { zh: '在 Finder 中显示', en: 'Reveal in Finder' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => { if (filePathRef.current !== null) void handleTreeReveal(filePathRef.current); } },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
+      { id: 'theme.system', localizedTitle: { zh: '主题：跟随系统', en: 'Theme: System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
+      { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const next = BUILTIN_THEMES[(BUILTIN_THEMES.findIndex((t) => t.id === activeTheme.id) + 1) % BUILTIN_THEMES.length]; applyThemeById(next.id); } },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
       { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },
       { id: 'insert.heading', localizedTitle: { zh: '标题', en: 'Heading' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['h1', 'bt'] } }, enabled: always, execute: () => replaceSlashTrigger('# ') },
@@ -1710,6 +1799,16 @@ export default function App() {
       { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
     ];
     commands.forEach((command) => registry.register(command));
+    for (const theme of BUILTIN_THEMES) {
+      registry.register({
+        id: `theme.apply.${theme.id}`,
+        localizedTitle: { zh: `主题：${theme.name}`, en: `Theme: ${theme.name}` },
+        category: 'view',
+        context: { scope: 'global' },
+        enabled: () => activeTheme.id !== theme.id,
+        execute: () => applyThemeById(theme.id),
+      });
+    }
     pluginCommandsRef.current.forEach((command) => registry.register(command, { source: 'plugin' }));
     commandRegistryRef.current = registry;
     (window as unknown as { __MELLOW_COMMANDS__?: { register: (command: Command) => void; dispatch: (id: string, payload?: unknown) => Promise<boolean>; all: () => Command[] } }).__MELLOW_COMMANDS__ = {
@@ -1720,7 +1819,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setReaderZoom, setSelectionToolbarEnabled, setTypewriterMode, splitOpen, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

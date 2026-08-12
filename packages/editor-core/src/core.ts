@@ -115,6 +115,12 @@ export class EditorCore {
     this.iframe?.contentWindow?.focus();
   }
 
+  /** 设置编辑器内容区主题（CoreEditor webModules.config.setTheme） */
+  setTheme(name: string): void {
+    const win = this.iframe?.contentWindow as (Window & { webModules?: { config?: { setTheme?: (p: { name: string }) => void } } }) | null;
+    win?.webModules?.config?.setTheme?.({ name });
+  }
+
   /** Split Mode 滚动桥：读取当前滚动比例（0..1；bridge 不可用返回 null） */
   getScrollRatio(): number | null {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_SCROLL_BRIDGE__?: { getScrollRatio?: () => number | null } }) | null;
