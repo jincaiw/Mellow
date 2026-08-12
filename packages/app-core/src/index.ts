@@ -22,3 +22,5 @@ export { FileListModel, FileListService, DEFAULT_FILE_LIST_OPTIONS, titleFromMar
 export type { FileListOptions, FileListItem } from './fileList';
 export { OutlineModel, buildOutline, parseHeadings, flattenOutline, filterOutline, currentHeadingId } from './outline';
 export type { OutlineHeading, BuildOutlineOptions } from './outline';
+export { QuickOpenModel, fuzzyScore, rankQuickOpen, scanQuickOpen, quickOpenShortcutAction } from './quickOpen';
+export type { QuickOpenAction, QuickOpenEntry, QuickOpenKeyEvent, QuickOpenPlatform, QuickOpenRankedEntry, QuickOpenScanOptions } from './quickOpen';

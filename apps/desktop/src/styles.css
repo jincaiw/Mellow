@@ -385,6 +385,84 @@ html, body, #root {
   position: relative;
 }
 
+.quick-open-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(24, 24, 24, 0.16);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 9vh;
+}
+
+.quick-open-panel {
+  width: min(720px, calc(100vw - 64px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.quick-open-input {
+  border: 0;
+  border-bottom: 1px solid #ededed;
+  padding: 13px 14px;
+  font-size: 15px;
+  outline: none;
+}
+
+.quick-open-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 12px;
+  color: #777;
+  font-size: 11px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.quick-open-results {
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.quick-open-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 7px 12px;
+  text-align: left;
+}
+
+.quick-open-item:hover,
+.quick-open-item.selected {
+  background: #e9eefb;
+}
+
+.quick-open-filename {
+  font-size: 13px;
+  color: #222;
+}
+
+.quick-open-path {
+  font-size: 11px;
+  color: #777;
+}
+
+.quick-open-empty {
+  padding: 18px 12px;
+  color: #777;
+  font-size: 12px;
+}
+
 .mellow-editor-frame {
   position: absolute;
   inset: 0;

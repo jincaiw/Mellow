@@ -27,13 +27,17 @@ import {
   buildOutline,
   currentHeadingId,
   filterOutline,
+  QuickOpenModel,
+  quickOpenShortcutAction,
+  rankQuickOpen,
+  scanQuickOpen,
   DEFAULT_FILE_TREE_OPTIONS,
   DEFAULT_FILE_LIST_OPTIONS,
   dirname as fileTreeDirname,
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, TabSessionSnapshot } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
@@ -50,6 +54,7 @@ const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
 const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
 const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
 const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
+const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
   { value: 'images', label: './images' },
@@ -68,6 +73,7 @@ export default function App() {
   const hostRef = useRef<EditorCore | null>(null);
   const filePathRef = useRef<string | null>(null);
   const documentsRef = useRef<DocumentService | null>(null);
+  const fileServiceRef = useRef<ReturnType<typeof createDesktopFileService> | null>(null);
   const recoveryRef = useRef<RecoveryService | null>(null);
   const externalRef = useRef<ExternalChangeService | null>(null);
   // 图片文件操作（spec image-workflow §6/§7 + PRD §58）
@@ -89,6 +95,9 @@ export default function App() {
   const outlineModelRef = useRef<OutlineModel>(new OutlineModel());
   const outlineActiveRef = useRef<string | null>(null);
   const refreshOutlineRef = useRef<(head?: number | null) => void>(() => {});
+  const quickOpenModelRef = useRef<QuickOpenModel>(new QuickOpenModel());
+  const quickOpenAbortRef = useRef<AbortController | null>(null);
+  const quickOpenQueryRef = useRef('');
   // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
   const dirtyRef = useRef(false);
   // Crash Recovery：文档 id + 修订（快照 keyed by document id）
@@ -137,6 +146,12 @@ export default function App() {
     }
   });
   const [currentOutlineId, setCurrentOutlineId] = useState<string | null>(null);
+  const [quickOpenVisible, setQuickOpenVisible] = useState(false);
+  const [quickOpenQuery, setQuickOpenQuery] = useState('');
+  const [quickOpenAll, setQuickOpenAll] = useState<QuickOpenEntry[]>([]);
+  const [quickOpenResults, setQuickOpenResults] = useState<QuickOpenEntry[]>([]);
+  const [quickOpenSelected, setQuickOpenSelected] = useState(0);
+  const [quickOpenScanning, setQuickOpenScanning] = useState(false);
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
@@ -153,6 +168,20 @@ export default function App() {
     dirtyRef.current = value;
     setDirtyState(value);
   }, []);
+
+  const readQuickOpenRecent = useCallback((): string[] => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(QUICK_OPEN_RECENT_KEY) ?? '[]') as unknown;
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const rememberQuickOpenRecent = useCallback((path: string) => {
+    const next = [path, ...readQuickOpenRecent().filter((p) => p !== path)].slice(0, 50);
+    localStorage.setItem(QUICK_OPEN_RECENT_KEY, JSON.stringify(next));
+  }, [readQuickOpenRecent]);
 
   const persistTabs = useCallback(() => {
     try {
@@ -543,8 +572,92 @@ export default function App() {
       diskState: r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey } : null,
     });
     refreshTabsState();
+    rememberQuickOpenRecent(path);
     await applyTab(tab);
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+  }, [applyTab, refreshTabsState, rememberQuickOpenRecent, syncActiveTabFromEditor]);
+
+  const updateQuickOpenResults = useCallback((entries: QuickOpenEntry[], query: string) => {
+    const unique = [...new Map(entries.map((entry) => [entry.path, entry])).values()];
+    const ranked = rankQuickOpen(unique, query, readQuickOpenRecent()).slice(0, 80);
+    const selected = Math.min(quickOpenModelRef.current.selectedIndex, Math.max(0, ranked.length - 1));
+    quickOpenModelRef.current.selectedIndex = selected;
+    setQuickOpenResults(ranked);
+    setQuickOpenSelected(selected);
+  }, [readQuickOpenRecent]);
+
+  const openQuickOpen = useCallback(async () => {
+    if (fileTreeRoot === null) {
+      setStatusText('Quick Open 需要先打开文件夹');
+      return;
+    }
+    quickOpenAbortRef.current?.abort();
+    const controller = new AbortController();
+    quickOpenAbortRef.current = controller;
+    quickOpenModelRef.current.selectedIndex = 0;
+    setQuickOpenVisible(true);
+    quickOpenQueryRef.current = '';
+    setQuickOpenQuery('');
+    const recentEntries = readQuickOpenRecent()
+      .filter((path) => path.startsWith(`${fileTreeRoot}/`))
+      .map((path) => ({ path, filename: path.split(/[\\/]/).pop() ?? path, relativePath: fileTreeRelativePath(fileTreeRoot, path) }));
+    setQuickOpenAll(recentEntries);
+    setQuickOpenResults(recentEntries);
+    setQuickOpenSelected(0);
+    setQuickOpenScanning(true);
+    const collected: QuickOpenEntry[] = [...recentEntries];
+    const fsService = fileServiceRef.current;
+    if (!fsService) return;
+    const r = await scanQuickOpen(fileTreeRoot, fsService, {
+      batchSize: 30,
+      signal: controller.signal,
+      onBatch: (items) => {
+        collected.push(...items);
+        setQuickOpenAll([...collected]);
+        updateQuickOpenResults(collected, quickOpenQueryRef.current);
+      },
+    });
+    if (!r.ok && !controller.signal.aborted) setStatusText(`Quick Open 扫描失败: ${r.error.message}`);
+    if (!controller.signal.aborted) {
+      setQuickOpenAll(r.ok ? r.value : collected);
+      updateQuickOpenResults(r.ok ? r.value : collected, quickOpenQueryRef.current);
+      setQuickOpenScanning(false);
+    }
+  }, [fileTreeRoot, readQuickOpenRecent, updateQuickOpenResults]);
+
+  const closeQuickOpen = useCallback(() => {
+    quickOpenAbortRef.current?.abort();
+    setQuickOpenVisible(false);
+    setQuickOpenScanning(false);
+  }, []);
+
+  const confirmQuickOpen = useCallback(async (path?: string) => {
+    const itemPath = path ?? quickOpenResults[quickOpenSelected]?.path;
+    if (!itemPath) return;
+    rememberQuickOpenRecent(itemPath);
+    closeQuickOpen();
+    await openTreeFile(itemPath);
+  }, [closeQuickOpen, openTreeFile, quickOpenResults, quickOpenSelected, rememberQuickOpenRecent]);
+
+  const handleQuickOpenKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeQuickOpen();
+      return;
+    }
+    const key = event.key === 'ArrowDown' ? 'down' : event.key === 'ArrowUp' ? 'up' : event.key === 'Enter' ? 'enter' : null;
+    if (key === null) return;
+    event.preventDefault();
+    const r = quickOpenModelRef.current.navigate(quickOpenResults, key);
+    setQuickOpenSelected(r.selectedIndex);
+    if (r.open) void confirmQuickOpen(r.open);
+  }, [closeQuickOpen, confirmQuickOpen, quickOpenResults]);
+
+  const handleQuickOpenQuery = useCallback((value: string) => {
+    quickOpenModelRef.current.selectedIndex = 0;
+    quickOpenQueryRef.current = value;
+    setQuickOpenQuery(value);
+    updateQuickOpenResults(quickOpenAll, value);
+  }, [quickOpenAll, updateQuickOpenResults]);
 
   const handleTreeToggle = useCallback(async (path: string) => {
     const model = fileTreeModelRef.current;
@@ -795,6 +908,7 @@ export default function App() {
   useEffect(() => {
     if (!containerRef.current) return;
     const fsService = createDesktopFileService();
+    fileServiceRef.current = fsService;
     documentsRef.current = new DocumentService(fsService);
     fileTreeServiceRef.current = new FileTreeService(fsService);
     fileListServiceRef.current = new FileListService(fsService);
@@ -1144,8 +1258,21 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const platform = navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux';
+      const quick = quickOpenShortcutAction({
+        platform,
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+      });
+      if (quick === 'quick-open') {
+        event.preventDefault();
+        void openQuickOpen();
+        return;
+      }
       const action = tabShortcutAction({
-        platform: navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux',
+        platform,
         key: event.key,
         ctrlKey: event.ctrlKey,
         metaKey: event.metaKey,
@@ -1165,7 +1292,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleCloseTab, handleNew, handleReopenClosed]);
+  }, [handleCloseTab, handleNew, handleReopenClosed, openQuickOpen]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -1425,6 +1552,39 @@ export default function App() {
         </aside>
         <main className="editor-container" ref={containerRef} />
       </div>
+      {quickOpenVisible && (
+        <div className="quick-open-backdrop" onMouseDown={closeQuickOpen}>
+          <div className="quick-open-panel" onMouseDown={(e) => e.stopPropagation()}>
+            <input
+              className="quick-open-input"
+              autoFocus
+              value={quickOpenQuery}
+              placeholder="Quick Open：输入文件名或相对路径（支持中文 / Unicode）"
+              onChange={(e) => handleQuickOpenQuery(e.target.value)}
+              onKeyDown={handleQuickOpenKeyDown}
+            />
+            <div className="quick-open-meta">
+              <span>{quickOpenScanning ? '正在扫描，结果逐步显示…' : `已扫描 ${quickOpenAll.length} 个文件`}</span>
+              <span>{navigator.platform.toLowerCase().includes('mac') ? 'Cmd+Shift+O' : 'Ctrl+P'} · ↑↓ · Enter · Esc</span>
+            </div>
+            <div className="quick-open-results">
+              {quickOpenResults.map((item, index) => (
+                <button
+                  key={item.path}
+                  type="button"
+                  className={`quick-open-item ${index === quickOpenSelected ? 'selected' : ''}`}
+                  onMouseEnter={() => { quickOpenModelRef.current.selectedIndex = index; setQuickOpenSelected(index); }}
+                  onClick={() => { quickOpenModelRef.current.selectedIndex = index; setQuickOpenSelected(index); void confirmQuickOpen(item.path); }}
+                >
+                  <span className="quick-open-filename">{item.filename}</span>
+                  <span className="quick-open-path">{item.relativePath}</span>
+                </button>
+              ))}
+              {quickOpenResults.length === 0 && <div className="quick-open-empty">没有匹配结果</div>}
+            </div>
+          </div>
+        </div>
+      )}
       {conflict !== null && (
         <div className="recovery-bar conflict-bar">
           <span>磁盘文件已被外部修改（{conflict.kind}）—— 禁止覆盖：</span>
