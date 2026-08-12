@@ -32,7 +32,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Mellow",
     "icon": [],
+    "linux": {
+      "deb": {
+        "section": "editors"
+      }
+    },
     "fileAssociations": [
       {
         "ext": ["md", "markdown"],
