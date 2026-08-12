@@ -182,6 +182,7 @@ export default function App() {
   const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
   const [focusMode, setFocusModeState] = useState<'off' | 'line' | 'paragraph'>('off');
   const [typewriterEnabled, setTypewriterEnabled] = useState(false);
+  const [selectionToolbarEnabled, setSelectionToolbarEnabledState] = useState(true);
   const [slashEnabled, setSlashEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SLASH_ENABLED_KEY) !== 'false';
@@ -278,6 +279,16 @@ export default function App() {
   const toggleTypewriter = useCallback(() => {
     setTypewriterMode(!typewriterEnabled);
   }, [setTypewriterMode, typewriterEnabled]);
+
+  const setSelectionToolbarEnabled = useCallback((on: boolean) => {
+    hostRef.current?.setSelectionToolbarEnabled(on);
+    setSelectionToolbarEnabledState(on);
+    setStatusText(on ? '格式工具栏：已启用' : '格式工具栏：已禁用');
+  }, []);
+
+  const toggleSelectionToolbar = useCallback(() => {
+    setSelectionToolbarEnabled(!selectionToolbarEnabled);
+  }, [selectionToolbarEnabled, setSelectionToolbarEnabled]);
 
   const openSlashUi = useCallback(() => {
     commandPaletteModelRef.current.selectedIndex = 0;
@@ -1471,6 +1482,9 @@ export default function App() {
       { id: 'view.typewriter.cycle', localizedTitle: { zh: '切换 Typewriter Mode', en: 'Toggle Typewriter Mode' }, category: 'view', shortcut: { mac: 'F9', winLinux: 'F9' }, context: { scope: 'document' }, enabled: always, execute: () => toggleTypewriter() },
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
+      { id: 'view.toolbar.toggle', localizedTitle: { zh: '切换格式工具栏', en: 'Toggle Format Toolbar' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleSelectionToolbar() },
+      { id: 'view.toolbar.on', localizedTitle: { zh: '格式工具栏：启用', en: 'Format Toolbar: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(true) },
+      { id: 'view.toolbar.off', localizedTitle: { zh: '格式工具栏：禁用', en: 'Format Toolbar: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(false) },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', context: { scope: 'document' }, enabled: always, execute: () => openSlashUi() },
       { id: 'slash.toggleEnabled', localizedTitle: { zh: 'Slash Commands：启用/禁用', en: 'Slash Commands: Toggle' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => toggleSlashEnabled() },
@@ -1506,7 +1520,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openSlashUi, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, setFocusMode, setTypewriterMode, toggleSlashEnabled, toggleTypewriter, typewriterEnabled]);
+  }, [chooseFileTreeRoot, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, openSlashUi, refreshFilesSidebar, replaceSlashTrigger, selectedTreePath, selectionToolbarEnabled, setFocusMode, setSelectionToolbarEnabled, setTypewriterMode, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

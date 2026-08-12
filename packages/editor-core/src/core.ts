@@ -129,6 +129,17 @@ export class EditorCore {
     return typeof jump === 'function' ? jump(offset) : false;
   }
 
+  /** Floating Selection Toolbar：默认启用，可开关。 */
+  setSelectionToolbarEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_TOOLBAR__?: { setEnabled?: (on: boolean) => void } }) | null;
+    win?.__MELLOW_SELECTION_TOOLBAR__?.setEnabled?.(on);
+  }
+
+  getSelectionToolbarEnabled(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_TOOLBAR__?: { getEnabled?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_TOOLBAR__?.getEnabled?.() ?? true;
+  }
+
   /** Typewriter Mode：caret 保持 viewport 中部附近（F9）。 */
   setTypewriterMode(on: boolean): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_TYPEWRITER_MODE__?: { setEnabled?: (on: boolean) => void } }) | null;
