@@ -18,7 +18,6 @@ import {
   DocumentRenameService,
   FileOpHistory,
   TabManager,
-  tabShortcutAction,
   FileTreeModel,
   FileTreeService,
   FileListModel,
@@ -28,10 +27,8 @@ import {
   currentHeadingId,
   filterOutline,
   QuickOpenModel,
-  globalSearchShortcutAction,
   groupSearchResults,
   normalizeSearchRequest,
-  quickOpenShortcutAction,
   rankQuickOpen,
   scanQuickOpen,
   DEFAULT_FILE_TREE_OPTIONS,
@@ -50,6 +47,8 @@ import { createDesktopSearchService } from './host/searchServices';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService } from '../../../packages/host-api/src/index';
+import { CommandRegistry, createCommandContext, normalizeShortcut, titleFor } from '../../../packages/commands/src';
+import type { Command, CommandSource } from '../../../packages/commands/src';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
@@ -59,6 +58,8 @@ const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
 const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
 const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
 const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
+const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
+const SLASH_COMMAND_SHORTCUT = { mac: '/', winLinux: '/' };
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
   { value: 'images', label: './images' },
@@ -88,6 +89,8 @@ export default function App() {
   const openerRef = useRef<OpenerService | null>(null);
   const searchRef = useRef<SearchService | null>(null);
   const searchCancelRef = useRef<(() => void) | null>(null);
+  const commandRegistryRef = useRef<CommandRegistry>(new CommandRegistry());
+  const pluginCommandsRef = useRef<Command[]>([]);
   // Tabs（PRD §11：open/active/dirty/reorder/close/session restore）
   const tabsRef = useRef<TabManager>(new TabManager());
   const suppressEditorEventRef = useRef(false);
@@ -171,6 +174,8 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchGroups, setSearchGroups] = useState<SearchGroup[]>([]);
   const [searchRunning, setSearchRunning] = useState(false);
+  const [commandPaletteVisible, setCommandPaletteVisible] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
@@ -201,6 +206,23 @@ export default function App() {
     const next = [path, ...readQuickOpenRecent().filter((p) => p !== path)].slice(0, 50);
     localStorage.setItem(QUICK_OPEN_RECENT_KEY, JSON.stringify(next));
   }, [readQuickOpenRecent]);
+
+  const commandContext = useCallback((source: CommandSource, payload?: unknown) => createCommandContext({
+    source,
+    platform: navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux',
+    locale: 'zh',
+    documentPath: filePathRef.current,
+    workspaceRoot: fileTreeRoot,
+    hasSelection: hostRef.current?.getState().hasSelection ?? false,
+    targetPath: selectedTreePath,
+    payload,
+  }), [fileTreeRoot, selectedTreePath]);
+
+  const dispatchCommand = useCallback(async (id: string, source: CommandSource = 'menu', payload?: unknown) => {
+    const ok = await commandRegistryRef.current.dispatch(id, commandContext(source, payload));
+    if (!ok) setStatusText(`命令不可用: ${id}`);
+    return ok;
+  }, [commandContext]);
 
   const persistTabs = useCallback(() => {
     try {
@@ -1333,48 +1355,61 @@ export default function App() {
   }, [refreshTabsState, syncActiveTabFromEditor]);
 
   useEffect(() => {
+    const registry = new CommandRegistry();
+    const always = () => true;
+    const hasWorkspace = () => fileTreeRoot !== null;
+    const commands: Command[] = [
+      { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', shortcut: { mac: 'Cmd+T', winLinux: 'Ctrl+Alt+T' }, context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
+      { id: 'file.open', localizedTitle: { zh: '打开…', en: 'Open…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleOpen() },
+      { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' }, context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
+      { id: 'file.saveAs', localizedTitle: { zh: '另存为…', en: 'Save As…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAs() },
+      { id: 'document.rename', localizedTitle: { zh: '重命名…', en: 'Rename…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleRenameDocument() },
+      { id: 'tabs.close', localizedTitle: { zh: '关闭标签页', en: 'Close Tab' }, category: 'file', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' }, context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => { const active = tabsRef.current.active; if (active) void handleCloseTab(active.id); } },
+      { id: 'tabs.closeOthers', localizedTitle: { zh: '关闭其他', en: 'Close Others' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseOthers() },
+      { id: 'tabs.closeRight', localizedTitle: { zh: '关闭右侧', en: 'Close Right' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseRight() },
+      { id: 'tabs.reopenClosed', localizedTitle: { zh: '重开关闭', en: 'Reopen Closed' }, category: 'file', shortcut: { mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' }, context: { scope: 'global' }, enabled: always, execute: () => void handleReopenClosed() },
+      { id: 'workspace.openFolder', localizedTitle: { zh: '打开文件夹…', en: 'Open Folder…' }, category: 'workspace', context: { scope: 'global' }, enabled: always, execute: () => void chooseFileTreeRoot() },
+      { id: 'workspace.refresh', localizedTitle: { zh: '刷新文件', en: 'Refresh Files' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void refreshFilesSidebar() },
+      { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', shortcut: { mac: 'Cmd+Shift+O', winLinux: 'Ctrl+P' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
+      { id: 'search.global', localizedTitle: { zh: '全局搜索', en: 'Global Search' }, category: 'search', shortcut: { mac: 'Cmd+Shift+F', winLinux: 'Ctrl+Shift+F' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => openGlobalSearch() },
+      { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => setCommandPaletteVisible(true) },
+      { id: 'slash.open', localizedTitle: { zh: 'Slash 命令', en: 'Slash Commands' }, category: 'system', shortcut: SLASH_COMMAND_SHORTCUT, context: { scope: 'document' }, enabled: always, execute: () => setCommandPaletteVisible(true) },
+      { id: 'fileTree.newFile', localizedTitle: { zh: '新文件', en: 'New File' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFile() },
+      { id: 'fileTree.newFolder', localizedTitle: { zh: '新文件夹', en: 'New Folder' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFolder() },
+      { id: 'fileTree.rename', localizedTitle: { zh: '重命名', en: 'Rename' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeRename() },
+      { id: 'fileTree.duplicate', localizedTitle: { zh: '复制', en: 'Duplicate' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeDuplicate() },
+      { id: 'fileTree.move', localizedTitle: { zh: '移动', en: 'Move' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeMove() },
+      { id: 'fileTree.trash', localizedTitle: { zh: '移到回收站', en: 'Move to Trash' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeTrash() },
+      { id: 'fileTree.undo', localizedTitle: { zh: '撤销文件操作', en: 'Undo File Operation' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeUndo() },
+      { id: 'fileTree.copyPath', localizedTitle: { zh: '复制路径', en: 'Copy Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(false) },
+      { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
+    ];
+    commands.forEach((command) => registry.register(command));
+    pluginCommandsRef.current.forEach((command) => registry.register(command, { source: 'plugin' }));
+    commandRegistryRef.current = registry;
+    (window as unknown as { __MELLOW_COMMANDS__?: { register: (command: Command) => void; dispatch: (id: string, payload?: unknown) => Promise<boolean>; all: () => Command[] } }).__MELLOW_COMMANDS__ = {
+      register: (command) => {
+        pluginCommandsRef.current = [...pluginCommandsRef.current.filter((c) => c.id !== command.id), command];
+        commandRegistryRef.current.register(command, { source: 'plugin', replace: true });
+      },
+      dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
+      all: () => commandRegistryRef.current.all(),
+    };
+  }, [chooseFileTreeRoot, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeTrash, handleTreeUndo, openGlobalSearch, openQuickOpen, refreshFilesSidebar, selectedTreePath]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const platform = navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux';
-      const global = globalSearchShortcutAction({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
-      if (global === 'global-search') {
-        event.preventDefault();
-        openGlobalSearch();
-        return;
-      }
-      const quick = quickOpenShortcutAction({
-        platform,
-        key: event.key,
-        ctrlKey: event.ctrlKey,
-        metaKey: event.metaKey,
-        shiftKey: event.shiftKey,
-      });
-      if (quick === 'quick-open') {
-        event.preventDefault();
-        void openQuickOpen();
-        return;
-      }
-      const action = tabShortcutAction({
-        platform,
-        key: event.key,
-        ctrlKey: event.ctrlKey,
-        metaKey: event.metaKey,
-        altKey: event.altKey,
-        shiftKey: event.shiftKey,
-      });
-      if (action === null) return;
+      const parts = [event.ctrlKey ? 'Ctrl' : '', event.metaKey ? 'Cmd' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.key].filter(Boolean).join('+');
+      const command = commandRegistryRef.current.findByShortcut(normalizeShortcut(parts), platform);
+      if (!command) return;
+      // Windows/Linux Ctrl+T 未注册为 New Tab，因此保留给 Table（PRD Shortcut Contract）。
       event.preventDefault();
-      if (action === 'new-tab') {
-        void handleNew();
-      } else if (action === 'close-tab') {
-        const active = tabsRef.current.active;
-        if (active) void handleCloseTab(active.id);
-      } else if (action === 'reopen-closed') {
-        void handleReopenClosed();
-      }
+      void dispatchCommand(command.id, 'shortcut');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleCloseTab, handleNew, handleReopenClosed, openGlobalSearch, openQuickOpen]);
+  }, [dispatchCommand]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -1477,6 +1512,18 @@ export default function App() {
     </button>
   ));
 
+  const paletteCommands = commandRegistryRef.current.enabled(commandContext('command-palette')).filter((command) => {
+    const title = titleFor(command, 'zh').toLowerCase();
+    const q = commandPaletteQuery.trim().toLowerCase();
+    return q === '' || command.id.toLowerCase().includes(q) || title.includes(q);
+  });
+
+  const runPaletteCommand = (id: string, source: CommandSource = 'command-palette') => {
+    setCommandPaletteVisible(false);
+    setCommandPaletteQuery('');
+    void dispatchCommand(id, source);
+  };
+
   const renderSearchGroups = (groups: SearchGroup[]) => groups.map((group) => (
     <div key={group.path} className="search-group">
       <div className="search-group-title" title={group.path}>{group.relativePath} <span>{group.matches.length}</span></div>
@@ -1515,14 +1562,14 @@ export default function App() {
     <div className="shell">
       <header className="toolbar">
         <span className="app-name">Mellow V0.0</span>
-        <button onClick={handleNew} disabled={status !== 'ready'} title="macOS: Cmd+T；Windows/Linux: Ctrl+Alt+T（Ctrl+T 保留给 Table）">新建</button>
-        <button onClick={handleOpen} disabled={status !== 'ready'}>打开…</button>
-        <button onClick={handleSave} disabled={status !== 'ready'}>保存</button>
-        <button onClick={handleSaveAs} disabled={status !== 'ready'}>另存为…</button>
-        <button onClick={() => void handleCloseOthers()} disabled={status !== 'ready' || tabs.length <= 1}>关闭其他</button>
-        <button onClick={() => void handleCloseRight()} disabled={status !== 'ready' || tabs.length <= 1}>关闭右侧</button>
-        <button onClick={() => void handleReopenClosed()} disabled={status !== 'ready'}>重开关闭</button>
-        <button onClick={() => void handleRenameDocument()} disabled={status !== 'ready'}>重命名…</button>
+        <button onClick={() => void dispatchCommand('file.new', 'menu')} disabled={status !== 'ready'} title="macOS: Cmd+T；Windows/Linux: Ctrl+Alt+T（Ctrl+T 保留给 Table）">新建</button>
+        <button onClick={() => void dispatchCommand('file.open', 'menu')} disabled={status !== 'ready'}>打开…</button>
+        <button onClick={() => void dispatchCommand('file.save', 'menu')} disabled={status !== 'ready'}>保存</button>
+        <button onClick={() => void dispatchCommand('file.saveAs', 'menu')} disabled={status !== 'ready'}>另存为…</button>
+        <button onClick={() => void dispatchCommand('tabs.closeOthers', 'menu')} disabled={status !== 'ready' || tabs.length <= 1}>关闭其他</button>
+        <button onClick={() => void dispatchCommand('tabs.closeRight', 'menu')} disabled={status !== 'ready' || tabs.length <= 1}>关闭右侧</button>
+        <button onClick={() => void dispatchCommand('tabs.reopenClosed', 'menu')} disabled={status !== 'ready'}>重开关闭</button>
+        <button onClick={() => void dispatchCommand('document.rename', 'menu')} disabled={status !== 'ready'}>重命名…</button>
         <span className="toolbar-sep" />
         <label className="asset-picker" title="asset 目录（PRD §53）">
           <select
@@ -1576,8 +1623,8 @@ export default function App() {
             </div>
             {sidebarMode === 'files' && (
               <>
-                <button onClick={() => void chooseFileTreeRoot()} title="打开文件夹">打开…</button>
-                <button onClick={() => void refreshFilesSidebar()} disabled={fileTreeRoot === null}>刷新</button>
+                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')} title="打开文件夹">打开…</button>
+                <button onClick={() => void dispatchCommand('workspace.refresh', 'menu')} disabled={fileTreeRoot === null}>刷新</button>
               </>
             )}
           </div>
@@ -1590,17 +1637,17 @@ export default function App() {
               {fileSidebarMode === 'tree' && (
                 <>
                   <div className="file-tree-actions">
-                    <button onClick={() => void handleTreeNewFile()} disabled={fileTreeRoot === null}>新文件</button>
-                    <button onClick={() => void handleTreeNewFolder()} disabled={fileTreeRoot === null}>新文件夹</button>
-                    <button onClick={() => void handleTreeRename()} disabled={selectedTreePath === null}>重命名</button>
-                    <button onClick={() => void handleTreeDuplicate()} disabled={selectedTreePath === null}>复制</button>
-                    <button onClick={() => void handleTreeMove()} disabled={selectedTreePath === null}>移动</button>
-                    <button onClick={() => void handleTreeTrash()} disabled={selectedTreePath === null}>回收站</button>
-                    <button onClick={() => void handleTreeUndo()} disabled={fileTreeRoot === null}>撤销</button>
+                    <button onClick={() => void dispatchCommand('fileTree.newFile', 'menu')} disabled={fileTreeRoot === null}>新文件</button>
+                    <button onClick={() => void dispatchCommand('fileTree.newFolder', 'menu')} disabled={fileTreeRoot === null}>新文件夹</button>
+                    <button onClick={() => void dispatchCommand('fileTree.rename', 'menu')} disabled={selectedTreePath === null}>重命名</button>
+                    <button onClick={() => void dispatchCommand('fileTree.duplicate', 'menu')} disabled={selectedTreePath === null}>复制</button>
+                    <button onClick={() => void dispatchCommand('fileTree.move', 'menu')} disabled={selectedTreePath === null}>移动</button>
+                    <button onClick={() => void dispatchCommand('fileTree.trash', 'menu')} disabled={selectedTreePath === null}>回收站</button>
+                    <button onClick={() => void dispatchCommand('fileTree.undo', 'menu')} disabled={fileTreeRoot === null}>撤销</button>
                   </div>
                   <div className="file-tree-actions">
-                    <button onClick={() => void handleTreeCopyPath(false)} disabled={selectedTreePath === null}>复制路径</button>
-                    <button onClick={() => void handleTreeCopyPath(true)} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
+                    <button onClick={() => void dispatchCommand('fileTree.copyPath', 'context-menu')} disabled={selectedTreePath === null}>复制路径</button>
+                    <button onClick={() => void dispatchCommand('fileTree.copyRelativePath', 'context-menu')} disabled={selectedTreePath === null || fileTreeRoot === null}>复制相对路径</button>
                   </div>
                 </>
               )}
@@ -1668,6 +1715,31 @@ export default function App() {
         </aside>
         <main className="editor-container" ref={containerRef} />
       </div>
+      {commandPaletteVisible && (
+        <div className="quick-open-backdrop" onMouseDown={() => setCommandPaletteVisible(false)}>
+          <div className="quick-open-panel" onMouseDown={(e) => e.stopPropagation()}>
+            <input
+              className="quick-open-input"
+              autoFocus
+              value={commandPaletteQuery}
+              placeholder="Command Palette / Slash / Plugin Commands"
+              onChange={(e) => setCommandPaletteQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setCommandPaletteVisible(false);
+                if (e.key === 'Enter' && paletteCommands[0]) runPaletteCommand(paletteCommands[0].id, commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette');
+              }}
+            />
+            <div className="quick-open-results">
+              {paletteCommands.map((command) => (
+                <button key={command.id} type="button" className="quick-open-item" onClick={() => runPaletteCommand(command.id)}>
+                  <span className="quick-open-filename">{titleFor(command, 'zh')}</span>
+                  <span className="quick-open-path">{command.id} · {command.category}{command.shortcut ? ` · ${command.shortcut.mac ?? command.shortcut.winLinux ?? ''}` : ''}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {quickOpenVisible && (
         <div className="quick-open-backdrop" onMouseDown={closeQuickOpen}>
           <div className="quick-open-panel" onMouseDown={(e) => e.stopPropagation()}>
