@@ -14,3 +14,5 @@ export { ImageFileOpsService } from './imageFileOps';
 export type { ImageFileOpsDeps, AssetSettingProvider } from './imageFileOps';
 export { DocumentRenameService } from './documentRename';
 export type { DocumentRenameDeps, RenameOutcome } from './documentRename';
+export { TabManager, tabShortcutAction } from './tabs';
+export type { DocumentTab, TabSessionSnapshot, OpenDocumentInput, TabDiskState, TabShortcutAction, TabPlatform } from './tabs';

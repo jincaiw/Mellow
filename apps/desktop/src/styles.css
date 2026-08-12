@@ -63,6 +63,72 @@ html, body, #root {
   color: #d33;
 }
 
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  min-height: 34px;
+  max-height: 36px;
+  overflow-x: auto;
+  background: #fbfbfb;
+  border-bottom: 1px solid #e2e2e2;
+  user-select: none;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  max-width: 220px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid #e4e4e4;
+  background: transparent;
+  color: #555;
+  font-size: 12px;
+  cursor: default;
+}
+
+.tab:hover {
+  background: #f2f2f2;
+}
+
+.tab.active {
+  background: #ffffff;
+  color: #222;
+  box-shadow: inset 0 -2px 0 #4a7cff;
+}
+
+.tab-dirty {
+  width: 10px;
+  color: #4a7cff;
+  font-size: 10px;
+}
+
+.tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.tab-close {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #777;
+  font-size: 13px;
+}
+
+.tab-close:hover {
+  background: #ddd;
+  color: #222;
+}
+
 .editor-container {
   flex: 1;
   min-height: 0;

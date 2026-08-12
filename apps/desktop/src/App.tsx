@@ -16,9 +16,11 @@ import {
   ImageFileOpsService,
   DocumentRenameService,
   FileOpHistory,
+  TabManager,
+  tabShortcutAction,
   createEditorBridgeFromCore,
 } from '../../../packages/app-core/src';
-import type { ExternalChangeDetail } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
@@ -29,6 +31,7 @@ import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/p
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService } from '../../../packages/host-api/src/index';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
+const TABS_SESSION_KEY = 'mellow.tabs.session';
 const ASSET_DIR_OPTIONS: Array<{ value: AssetDirConfig; label: string }> = [
   { value: 'assets', label: './assets' },
   { value: 'images', label: './images' },
@@ -55,6 +58,10 @@ export default function App() {
   const historyRef = useRef<FileOpHistory | null>(null);
   const dialogRef = useRef<DialogService | null>(null);
   const openerRef = useRef<OpenerService | null>(null);
+  // Tabs（PRD §11：open/active/dirty/reorder/close/session restore）
+  const tabsRef = useRef<TabManager>(new TabManager());
+  const suppressEditorEventRef = useRef(false);
+  const draggedTabIdRef = useRef<string | null>(null);
   // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
   const dirtyRef = useRef(false);
   // Crash Recovery：文档 id + 修订（快照 keyed by document id）
@@ -69,6 +76,8 @@ export default function App() {
   const [statusText, setStatusText] = useState('未加载');
   const [dirty, setDirtyState] = useState(false);
   const [stats, setStats] = useState('');
+  const [tabs, setTabs] = useState<DocumentTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   // 启动发现的未恢复文档（恢复 / 比较 / 忽略）
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
@@ -86,6 +95,41 @@ export default function App() {
     setDirtyState(value);
   }, []);
 
+  const persistTabs = useCallback(() => {
+    try {
+      localStorage.setItem(TABS_SESSION_KEY, JSON.stringify(tabsRef.current.snapshot()));
+    } catch {
+      // localStorage quota / private mode：session restore 降级，不影响编辑
+    }
+  }, []);
+
+  const refreshTabsState = useCallback(() => {
+    const snapshot = tabsRef.current.snapshot();
+    setTabs(snapshot.tabs);
+    setActiveTabId(snapshot.activeId);
+    persistTabs();
+  }, [persistTabs]);
+
+  const currentTabPatch = useCallback((host: EditorCore): Partial<DocumentTab> => ({
+    path: filePathRef.current,
+    title: filePathRef.current === null ? '未命名' : filePathRef.current.split(/[\\/]/).pop() ?? filePathRef.current,
+    content: host.getText(),
+    dirty: dirtyRef.current,
+    documentId: docIdRef.current,
+    revision: revisionRef.current,
+    encoding: docMetaRef.current.encoding,
+    eol: docMetaRef.current.eol,
+    diskState: diskStateRef.current,
+  }), []);
+
+  const syncActiveTabFromEditor = useCallback(() => {
+    const host = hostRef.current;
+    const active = tabsRef.current.active;
+    if (!host || active === null) return;
+    tabsRef.current.update(active.id, currentTabPatch(host));
+    refreshTabsState();
+  }, [currentTabPatch, refreshTabsState]);
+
   const refreshStats = useCallback((host: EditorCore) => {
     try {
       const text = host.getText();
@@ -95,6 +139,36 @@ export default function App() {
       setStats('');
     }
   }, []);
+
+  /** 监听当前文档路径（外部变化检测） */
+  const watchDocument = useCallback(async (path: string | null) => {
+    const external = externalRef.current;
+    if (!external) return;
+    if (!path) {
+      await external.stop();
+      return;
+    }
+    await external.start(path);
+  }, []);
+
+  const applyTab = useCallback(async (tab: DocumentTab) => {
+    const host = hostRef.current;
+    if (!host) return;
+    suppressEditorEventRef.current = true;
+    filePathRef.current = tab.path;
+    docIdRef.current = tab.documentId;
+    revisionRef.current = tab.revision;
+    docMetaRef.current = { encoding: tab.encoding, eol: tab.eol };
+    diskStateRef.current = tab.diskState;
+    setConflict(null);
+    setDirty(tab.dirty);
+    host.setDocumentPath(tab.path);
+    await host.open(tab.content, undefined, true);
+    suppressEditorEventRef.current = false;
+    await watchDocument(tab.path);
+    refreshStats(host);
+    setStatusText(`已切换到 ${tab.title}${tab.dirty ? '（未保存）' : ''}`);
+  }, [refreshStats, setDirty, watchDocument]);
 
   // ── 图片文件操作（spec image-workflow §6/§7 + PRD §57/§58）──
 
@@ -106,13 +180,6 @@ export default function App() {
 
   const showToast = useCallback((message: string, onUndo?: () => void) => {
     setToast({ message, onUndo });
-  }, []);
-
-  /** 监听当前文档路径（外部变化检测） */
-  const watchDocument = useCallback(async (path: string | null) => {
-    const external = externalRef.current;
-    if (!external || !path) return;
-    await external.start(path);
   }, []);
 
   /** 撤销文件操作（PRD §58 toast）；count=1 默认；批量操作一次撤销全部 */
@@ -249,11 +316,21 @@ export default function App() {
     }
     filePathRef.current = r.value.newPath;
     setDirty(true);
+    const host = hostRef.current;
+    if (host) {
+      tabsRef.current.updateActive({
+        ...currentTabPatch(host),
+        path: r.value.newPath,
+        title: r.value.newPath.split(/[\\/]/).pop() ?? r.value.newPath,
+        dirty: true,
+      });
+      refreshTabsState();
+    }
     setStatusText(r.value.assetDirRenamed
       ? `已重命名（资源目录已同步，更新 ${r.value.patchedCount} 处引用）`
       : '已重命名');
     showToast(`已重命名 ${current}`, () => void undo());
-  }, [undo, showToast, setDirty]);
+  }, [currentTabPatch, refreshTabsState, undo, showToast, setDirty]);
 
   /** asset 目录选择（custom → 输入自定义目录名） */
   const handleAssetDirChange = useCallback((value: string) => {
@@ -285,9 +362,11 @@ export default function App() {
     // documentChanged=false → CoreEditor resetEditor 保持 scroll + selection
     await host.open(r.value.content, undefined, false);
     setDirty(false);
+    tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
+    refreshTabsState();
     setStatusText('外部变更已自动重新加载（保持光标位置）');
     refreshStats(host);
-  }, [refreshStats, setDirty]);
+  }, [currentTabPatch, refreshStats, refreshTabsState, setDirty]);
 
   /** 冲突：比较（读磁盘版本，显示差异摘要，不修改本地） */
   const handleConflictCompare = useCallback(async () => {
@@ -323,10 +402,12 @@ export default function App() {
       : null;
     await host.open(r.value.content, undefined, true); // 放弃本地
     setDirty(false);
+    tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
+    refreshTabsState();
     setConflict(null);
     setStatusText('已重新加载磁盘版本（本地修改已放弃）');
     refreshStats(host);
-  }, [conflict, refreshStats, setDirty]);
+  }, [conflict, currentTabPatch, refreshStats, refreshTabsState, setDirty]);
 
   /** 冲突：保留 Mellow 版本（后续保存允许覆盖磁盘） */
   const handleConflictKeepLocal = useCallback(() => {
@@ -428,7 +509,30 @@ export default function App() {
     host
       .ready()
       .then(async () => {
-        await host.open('# Mellow V0.0\n\nRuntime Qualification Shell', undefined, true);
+        let active = tabsRef.current.active;
+        try {
+          const raw = localStorage.getItem(TABS_SESSION_KEY);
+          if (raw !== null) {
+            const parsed = JSON.parse(raw) as TabSessionSnapshot;
+            tabsRef.current = new TabManager(parsed);
+            active = tabsRef.current.active;
+          }
+        } catch {
+          active = null;
+        }
+        if (active === null) {
+          active = tabsRef.current.open({
+            path: null,
+            title: '未命名',
+            content: '# Mellow V0.0\n\nRuntime Qualification Shell',
+            dirty: false,
+            documentId: docIdRef.current,
+            encoding: 'utf-8',
+            eol: '\n',
+          });
+        }
+        refreshTabsState();
+        await applyTab(active);
         setStatus('ready');
         setStatusText('编辑器就绪');
         refreshStats(host);
@@ -443,8 +547,15 @@ export default function App() {
         // Crash Recovery：编辑事件 → 防抖快照（与 Auto Save 分离）
         host.onEvent((e) => {
           if (e.type === 'viewUpdate') {
+            if (suppressEditorEventRef.current) return;
             revisionRef.current += 1;
             setDirty(true);
+            tabsRef.current.updateActive({
+              ...currentTabPatch(host),
+              dirty: true,
+              revision: revisionRef.current,
+            });
+            refreshTabsState();
             scheduleRecoverySnapshot(host);
           }
         });
@@ -471,29 +582,31 @@ export default function App() {
       recoveryRef.current?.dispose();
       void externalRef.current?.stop();
     };
-  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction]);
+  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction, applyTab, currentTabPatch, refreshTabsState, setDirty]);
 
   const handleNew = useCallback(async () => {
     const host = hostRef.current;
     if (!host) return;
-    filePathRef.current = null;
-    host.setDocumentPath(null);
-    docIdRef.current = crypto.randomUUID(); // 新文档新 id
-    revisionRef.current = 0;
-    docMetaRef.current = { encoding: 'utf-8', eol: '\n' }; // 新文档默认 UTF-8/LF
-    diskStateRef.current = null; // 新文档无磁盘基准（保存时跳过 validate）
-    setConflict(null);
-    setDirty(false);
-    await host.open('', undefined, true);
-    await watchDocument(null); // 未保存文档不监听
-    setStatusText('新建文档（未保存）');
-    refreshStats(host);
-  }, [refreshStats, watchDocument]);
+    syncActiveTabFromEditor();
+    const tab = tabsRef.current.open({
+      path: null,
+      title: '未命名',
+      content: '',
+      dirty: false,
+      documentId: crypto.randomUUID(),
+      encoding: 'utf-8',
+      eol: '\n',
+      diskState: null,
+    });
+    refreshTabsState();
+    await applyTab(tab);
+    setStatusText('新建标签页（未保存）');
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
 
   const handleOpen = useCallback(async () => {
-    const host = hostRef.current;
     const documents = documentsRef.current;
-    if (!host || !documents) return;
+    if (!documents) return;
+    syncActiveTabFromEditor();
     const result = await documents.open();
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
@@ -501,21 +614,22 @@ export default function App() {
       }
       return;
     }
-    filePathRef.current = result.value.path;
-    host.setDocumentPath(result.value.path); // Image Workflow：相对路径解析基准
-    docIdRef.current = crypto.randomUUID(); // 打开新文档新 id（历史/恢复隔离）
-    revisionRef.current = 0;
-    docMetaRef.current = { encoding: result.value.encoding, eol: result.value.eol }; // preserve metadata
-    diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
-      ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
-      : null;
-    setConflict(null);
-    setDirty(false);
-    await host.open(result.value.content, undefined, true);
-    await watchDocument(result.value.path); // 开始外部变化检测
+    const tab = tabsRef.current.open({
+      path: result.value.path,
+      content: result.value.content,
+      dirty: false,
+      documentId: crypto.randomUUID(),
+      revision: 0,
+      encoding: result.value.encoding,
+      eol: result.value.eol,
+      diskState: result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
+        ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
+        : null,
+    });
+    refreshTabsState();
+    await applyTab(tab);
     setStatusText(`已打开 ${result.value.path}`);
-    refreshStats(host);
-  }, [refreshStats, watchDocument]);
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
 
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
@@ -541,11 +655,19 @@ export default function App() {
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
     setDirty(false);
+    tabsRef.current.updateActive({
+      ...currentTabPatch(host),
+      path: result.value.path,
+      title: result.value.path.split(/[\\/]/).pop() ?? result.value.path,
+      dirty: false,
+      diskState: diskStateRef.current,
+    });
+    refreshTabsState();
     // 保存成功 → cleanup recovery（spec §4 clear recovery snapshot）
     void recoveryRef.current?.onSaved(docIdRef.current);
     await watchDocument(result.value.path);
     setStatusText(`已保存 ${result.value.path}`);
-  }, [watchDocument]);
+  }, [currentTabPatch, refreshTabsState, setDirty, watchDocument]);
 
   const handleSaveAs = useCallback(async () => {
     const host = hostRef.current;
@@ -566,10 +688,121 @@ export default function App() {
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
     setDirty(false);
+    tabsRef.current.updateActive({
+      ...currentTabPatch(host),
+      path: result.value.path,
+      title: result.value.path.split(/[\\/]/).pop() ?? result.value.path,
+      dirty: false,
+      diskState: diskStateRef.current,
+    });
+    refreshTabsState();
     void recoveryRef.current?.onSaved(docIdRef.current);
     await watchDocument(result.value.path);
     setStatusText(`已另存 ${result.value.path}`);
-  }, [watchDocument]);
+  }, [currentTabPatch, refreshTabsState, setDirty, watchDocument]);
+
+  const confirmCloseTabs = useCallback((closing: DocumentTab[]): boolean => {
+    const dirtyTabs = closing.filter((tab) => tab.dirty);
+    if (dirtyTabs.length === 0) return true;
+    const names = dirtyTabs.map((tab) => tab.title).join('、');
+    return window.confirm(`以下标签页有未保存修改，仍要关闭吗？\n${names}`);
+  }, []);
+
+  const ensureOneTab = useCallback(async () => {
+    if (tabsRef.current.all.length > 0) return tabsRef.current.active;
+    const tab = tabsRef.current.open({ path: null, title: '未命名', content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: '\n', diskState: null });
+    refreshTabsState();
+    await applyTab(tab);
+    return tab;
+  }, [applyTab, refreshTabsState]);
+
+  const handleSelectTab = useCallback(async (id: string) => {
+    if (id === activeTabId) return;
+    syncActiveTabFromEditor();
+    const tab = tabsRef.current.setActive(id);
+    refreshTabsState();
+    if (tab) await applyTab(tab);
+  }, [activeTabId, applyTab, refreshTabsState, syncActiveTabFromEditor]);
+
+  const handleCloseTab = useCallback(async (id: string) => {
+    syncActiveTabFromEditor();
+    const tab = tabsRef.current.all.find((t) => t.id === id);
+    if (tab === undefined || !confirmCloseTabs([tab])) return;
+    const result = tabsRef.current.close(id);
+    refreshTabsState();
+    const next = result.active ?? await ensureOneTab();
+    if (next) await applyTab(next);
+  }, [applyTab, confirmCloseTabs, ensureOneTab, refreshTabsState, syncActiveTabFromEditor]);
+
+  const handleCloseOthers = useCallback(async () => {
+    const active = tabsRef.current.active;
+    if (active === null) return;
+    syncActiveTabFromEditor();
+    const closing = tabsRef.current.all.filter((tab) => tab.id !== active.id);
+    if (!confirmCloseTabs(closing)) return;
+    tabsRef.current.closeOthers(active.id);
+    refreshTabsState();
+    const next = tabsRef.current.active;
+    if (next) await applyTab(next);
+  }, [applyTab, confirmCloseTabs, refreshTabsState, syncActiveTabFromEditor]);
+
+  const handleCloseRight = useCallback(async () => {
+    const active = tabsRef.current.active;
+    if (active === null) return;
+    syncActiveTabFromEditor();
+    const index = tabsRef.current.activeIndex;
+    const closing = tabsRef.current.all.slice(index + 1);
+    if (!confirmCloseTabs(closing)) return;
+    tabsRef.current.closeRight(active.id);
+    refreshTabsState();
+  }, [confirmCloseTabs, refreshTabsState, syncActiveTabFromEditor]);
+
+  const handleReopenClosed = useCallback(async () => {
+    syncActiveTabFromEditor();
+    const tab = tabsRef.current.reopenClosed();
+    if (tab === null) {
+      setStatusText('没有可重新打开的标签页');
+      return;
+    }
+    refreshTabsState();
+    await applyTab(tab);
+    setStatusText(`已重新打开 ${tab.title}`);
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+
+  const handleDropTab = useCallback((targetId: string) => {
+    const dragged = draggedTabIdRef.current;
+    draggedTabIdRef.current = null;
+    if (dragged === null || dragged === targetId) return;
+    syncActiveTabFromEditor();
+    const targetIndex = tabsRef.current.all.findIndex((tab) => tab.id === targetId);
+    tabsRef.current.reorder(dragged, targetIndex);
+    refreshTabsState();
+  }, [refreshTabsState, syncActiveTabFromEditor]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const action = tabShortcutAction({
+        platform: navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux',
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+      });
+      if (action === null) return;
+      event.preventDefault();
+      if (action === 'new-tab') {
+        void handleNew();
+      } else if (action === 'close-tab') {
+        const active = tabsRef.current.active;
+        if (active) void handleCloseTab(active.id);
+      } else if (action === 'reopen-closed') {
+        void handleReopenClosed();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleCloseTab, handleNew, handleReopenClosed]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -632,10 +865,13 @@ export default function App() {
     <div className="shell">
       <header className="toolbar">
         <span className="app-name">Mellow V0.0</span>
-        <button onClick={handleNew} disabled={status !== 'ready'}>新建</button>
+        <button onClick={handleNew} disabled={status !== 'ready'} title="macOS: Cmd+T；Windows/Linux: Ctrl+Alt+T（Ctrl+T 保留给 Table）">新建</button>
         <button onClick={handleOpen} disabled={status !== 'ready'}>打开…</button>
         <button onClick={handleSave} disabled={status !== 'ready'}>保存</button>
         <button onClick={handleSaveAs} disabled={status !== 'ready'}>另存为…</button>
+        <button onClick={() => void handleCloseOthers()} disabled={status !== 'ready' || tabs.length <= 1}>关闭其他</button>
+        <button onClick={() => void handleCloseRight()} disabled={status !== 'ready' || tabs.length <= 1}>关闭右侧</button>
+        <button onClick={() => void handleReopenClosed()} disabled={status !== 'ready'}>重开关闭</button>
         <button onClick={() => void handleRenameDocument()} disabled={status !== 'ready'}>重命名…</button>
         <span className="toolbar-sep" />
         <label className="asset-picker" title="asset 目录（PRD §53）">
@@ -655,6 +891,30 @@ export default function App() {
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
       </header>
+      <nav className="tabbar" aria-label="打开的文档标签页">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`tab ${tab.id === activeTabId ? 'active' : ''} ${tab.dirty ? 'dirty' : ''}`}
+            title={tab.path ?? '(未保存文档)'}
+            draggable
+            onDragStart={() => { draggedTabIdRef.current = tab.id; }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => handleDropTab(tab.id)}
+            onClick={() => void handleSelectTab(tab.id)}
+          >
+            <span className="tab-dirty">{tab.dirty ? '●' : ''}</span>
+            <span className="tab-title">{tab.title}</span>
+            <span
+              className="tab-close"
+              role="button"
+              aria-label={`关闭 ${tab.title}`}
+              onClick={(e) => { e.stopPropagation(); void handleCloseTab(tab.id); }}
+            >×</span>
+          </button>
+        ))}
+      </nav>
       <main className="editor-container" ref={containerRef} />
       {conflict !== null && (
         <div className="recovery-bar conflict-bar">
