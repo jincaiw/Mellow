@@ -66,32 +66,14 @@ pub fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// macOS Services：在应用菜单注入“服务”子菜单（系统填充已注册服务，如“发送到 XXX”）。
-/// 接收方向（其他 app → Mellow）需要 NSServices 声明 + application delegate 钩子，
-/// Tauri 未暴露，列为 P1（Share / Quick Look 同为 P1）。
+/// macOS Services：系统会自动在 Application 菜单挂载「服务」子菜单。
+/// 注意：不要手动把 `ns_app.servicesMenu()` 再次 setSubmenu + insert ——
+/// 系统已挂载同一 menu 对象，二次挂载触发
+/// `'Menu to be set as submenu is already a submenu of some menu.'`（SIGABRT，实测）。
+/// 保持 no-op：系统默认行为即可（NSServices 声明为 P1，见 spec）。
 #[cfg(target_os = "macos")]
-fn attach_services(app: &tauri::AppHandle) {
-    use objc2::MainThreadMarker;
-    use objc2::MainThreadOnly;
-    use objc2_app_kit::{NSApp, NSMenuItem};
-    use objc2_foundation::NSString;
-    let Some(mtm) = MainThreadMarker::new() else { return };
-    unsafe {
-        let ns_app = NSApp(mtm);
-        let Some(main_menu) = ns_app.mainMenu() else { return };
-        let Some(app_item) = main_menu.itemAtIndex(0) else { return };
-        let Some(app_menu) = app_item.submenu() else { return };
-        let Some(services_menu) = ns_app.servicesMenu() else { return };
-        let services_item = NSMenuItem::initWithTitle_action_keyEquivalent(
-            NSMenuItem::alloc(mtm),
-            &NSString::from_str("服务"),
-            None,
-            &NSString::from_str(""),
-        );
-        services_item.setSubmenu(Some(&services_menu));
-        app_menu.insertItem_atIndex(&services_item, 1);
-    }
-    let _ = app;
+fn attach_services(_app: &tauri::AppHandle) {
+    /* no-op */
 }
 
 /// 非 macOS：空实现（保证跨平台编译）

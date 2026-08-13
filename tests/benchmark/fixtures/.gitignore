@@ -1,0 +1,4 @@
+# fixtures 为生成产物（generate-fixtures.mjs），不提交
+*
+!.gitignore
+!README.md

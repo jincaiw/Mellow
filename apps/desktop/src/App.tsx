@@ -39,7 +39,7 @@ import {
   renderReaderHtml,
 } from '../../../packages/app-core/src';
 import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot } from '../../../packages/app-core/src';
-import { createDesktopFileService } from './host/fileServices';
+import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
 import { createDesktopDialogService } from './host/dialogs';
@@ -47,6 +47,7 @@ import { createDesktopOpenerService } from './host/openers';
 import { createDesktopWindowService } from './host/windowService';
 import { createDesktopSearchService } from './host/searchServices';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
+import { classifyLargeFile } from '../../../packages/editor-engine/src/largeFile';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService } from '../../../packages/host-api/src/index';
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
@@ -63,7 +64,8 @@ import SplitPreview from './SplitPreview';
 import type { SplitPreviewHandle } from './SplitPreview';
 import ContextMenu from './ContextMenu';
 import type { ContextMenuState } from './ContextMenu';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { PRINT_STYLESHEET } from '../../../packages/export/src/printStyle';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
@@ -153,6 +155,14 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+  // Print 打印样式表（PRD §77：与 PDF 共享排版常量；@page/@media print 只在打印时生效）
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.dataset.mellowPrint = 'true';
+    style.textContent = PRINT_STYLESHEET;
+    document.head.appendChild(style);
+    return () => { style.remove(); };
+  }, []);
   const [statusText, setStatusText] = useState(t('msg.editorNotLoaded'));
   const [dirty, setDirtyState] = useState(false);
   const [stats, setStats] = useState('');
@@ -668,6 +678,8 @@ export default function App() {
     host.setDocumentPath(tab.path);
     await host.open(tab.content, undefined, true);
     suppressEditorEventRef.current = false;
+    // Large File Mode（PRD §109）：>5MB 或 >50,000 行 → 引擎自动降级
+    host.setLargeFileMode(classifyLargeFile(new TextEncoder().encode(tab.content).length, tab.content.split('\n').length));
     refreshOutlineRef.current(0);
     await watchDocument(tab.path);
     refreshStats(host);
@@ -1613,6 +1625,35 @@ export default function App() {
     setStatusText(t('msg.openedPath', { path: result.value.path }));
   }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
 
+  /** 外部打开（CLI 参数 / Finder「打开方式」odoc）：按路径直接读入 tab，无对话框 */
+  const openPathInTab = useCallback(async (path: string) => {
+    const documents = documentsRef.current;
+    if (!documents) return;
+    syncActiveTabFromEditor();
+    const result = await documents.readPath(path);
+    if (!result.ok) {
+      if (result.error.code !== 'canceled') {
+        setStatusText(`打开失败: ${result.error.message}`);
+      }
+      return;
+    }
+    const tab = tabsRef.current.open({
+      path: result.value.path,
+      content: result.value.content,
+      dirty: false,
+      documentId: crypto.randomUUID(),
+      revision: 0,
+      encoding: result.value.encoding,
+      eol: result.value.eol,
+      diskState: result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
+        ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
+        : null,
+    });
+    refreshTabsState();
+    await applyTab(tab);
+    setStatusText(t('msg.openedPath', { path: result.value.path }));
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
     const documents = documentsRef.current;
@@ -1806,6 +1847,22 @@ export default function App() {
         break;
     }
   }, [applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
+  // 外部打开（CLI 参数 / Finder「打开方式」odoc）：Rust 侧 emit mellow://open-file
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void import('@tauri-apps/api/event')
+      .then(({ listen }) => listen<string>('mellow://open-file', (e) => { void openPathInTab(e.payload); }))
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .catch(() => { /* 非 Tauri 环境 */ });
+    // 前端就绪前的事件已存入 Rust state：mount 后主动拉取，保证不丢
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke<string | null>('pending_open_path'))
+      .then((p) => { if (p && !cancelled) void openPathInTab(p); })
+      .catch(() => { /* 非 Tauri 环境 */ });
+    return () => { cancelled = true; unlisten?.(); };
+  }, [openPathInTab]);
   useEffect(() => {
     const registry = new CommandRegistry();
     const always = () => true;
@@ -1839,7 +1896,7 @@ export default function App() {
       { id: 'reader.zoomIn', localizedTitle: { zh: 'Reader 放大', en: 'Reader Zoom In' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(readerZoom + 0.1) },
       { id: 'reader.zoomOut', localizedTitle: { zh: 'Reader 缩小', en: 'Reader Zoom Out' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(readerZoom - 0.1) },
       { id: 'reader.zoomReset', localizedTitle: { zh: 'Reader 重置缩放', en: 'Reader Reset Zoom' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(1) },
-      { id: 'reader.print', localizedTitle: { zh: '打印 Reader', en: 'Print Reader' }, category: 'file', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => window.print() },
+      { id: 'reader.print', localizedTitle: { zh: '打印 Reader', en: 'Print Reader' }, category: 'file', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       { id: 'split.toggle', localizedTitle: { zh: '切换 Split（Source | Preview）', en: 'Toggle Split (Source | Preview)' }, category: 'view', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => toggleSplit() },
       { id: 'split.open', localizedTitle: { zh: 'Split：打开预览', en: 'Split: Open Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => !splitOpen && tabsRef.current.active !== null, execute: () => openSplit() },
       { id: 'split.close', localizedTitle: { zh: 'Split：关闭预览', en: 'Split: Close Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => splitOpen, execute: () => closeSplit() },

@@ -1,0 +1,4 @@
+# benchmark 产物（结果 / 报告 / 编译产物）
+bin/
+results/
+reports/
