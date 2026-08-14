@@ -27,3 +27,5 @@ export { QuickOpenModel, fuzzyScore, rankQuickOpen, scanQuickOpen, quickOpenShor
 export type { QuickOpenAction, QuickOpenEntry, QuickOpenKeyEvent, QuickOpenPlatform, QuickOpenRankedEntry, QuickOpenScanOptions } from './quickOpen';
 export { DEFAULT_SEARCH_EXCLUDES, buildSearchRegex, globalSearchShortcutAction, groupSearchResults, matchSearchLine, normalizeSearchRequest } from './globalSearch';
 export type { SearchGroup, SearchLineOptions } from './globalSearch';
+export { ExtensionRegistry, buildExtensionContext, createNullExtensionHost } from './extensions';
+export type { ExtensionHost, ExtensionDocumentHost } from './extensions';

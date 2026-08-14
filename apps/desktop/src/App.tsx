@@ -40,6 +40,9 @@ import {
 } from '../../../packages/app-core/src';
 import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
+import { createDesktopExtensionHost } from './extensions/extensionHost';
+import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
+import { ExtensionRegistry, buildExtensionContext } from '../../../packages/app-core/src';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
 import { createDesktopDialogService } from './host/dialogs';
@@ -52,6 +55,7 @@ import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/p
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService } from '../../../packages/host-api/src/index';
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
+import type { CommandContribution } from '../../../packages/extension-api/src';
 import { BUILTIN_THEMES, DEFAULT_THEME_SETTINGS, resolveActiveTheme, themeById } from '../../../packages/themes/src';
 import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
@@ -96,6 +100,9 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<EditorCore | null>(null);
   const filePathRef = useRef<string | null>(null);
+  const extensionRegistryRef = useRef<ExtensionRegistry | null>(null);
+  const extensionHostRef = useRef<ReturnType<typeof createDesktopExtensionHost> | null>(null);
+  const [extensionVersion, setExtensionVersion] = useState(0);
   const documentsRef = useRef<DocumentService | null>(null);
   const fileServiceRef = useRef<ReturnType<typeof createDesktopFileService> | null>(null);
   const recoveryRef = useRef<RecoveryService | null>(null);
@@ -1450,6 +1457,15 @@ export default function App() {
     hostRef.current = host;
     host.mount(containerRef.current);
 
+    // 扩展运行时（PRD §119-121）：desktop 宿主 + 示例扩展注册
+    const extensionHost = createDesktopExtensionHost(() => hostRef.current);
+    extensionHostRef.current = extensionHost;
+    const registry = new ExtensionRegistry(extensionHost);
+    extensionRegistryRef.current = registry;
+    void registry.register(helloCommandManifest, setupHelloCommand)
+      .then(() => registry.enable(helloCommandManifest.id))
+      .then(() => setExtensionVersion((v) => v + 1));
+
     // 图片文件操作服务（spec §6/§7：fs 编排 + 单事务 patch + undo）
     const dialog = dialogRef.current;
     const history = new FileOpHistory(fsService);
@@ -1867,7 +1883,32 @@ export default function App() {
     const registry = new CommandRegistry();
     const always = () => true;
     const hasWorkspace = () => fileTreeRoot !== null;
+    // 扩展命令：执行时按扩展 manifest 构建受限上下文（运行时权限门卫）
+    const runExtensionCommand = (extensionId: string, command: CommandContribution) => {
+      const reg = extensionRegistryRef.current;
+      const host = extensionHostRef.current;
+      if (reg === null || host === null) return;
+      const manifest = reg.get(extensionId);
+      if (manifest === undefined || !manifest.enabled) return;
+      const ctx = buildExtensionContext(manifest, host, { contributions: {} });
+      void command.run(ctx);
+    };
     const commands: Command[] = [
+      { id: 'extensions.list', localizedTitle: { zh: '扩展列表', en: 'Extensions List' }, category: 'extension', context: { scope: 'global' }, enabled: always, execute: () => {
+        const reg = extensionRegistryRef.current;
+        if (reg === null) return;
+        const list = reg.list().map((e) => `${e.enabled ? '✅' : '⛔'} ${e.name} (${e.id}) v${e.version}${e.setupError !== undefined ? ` [${e.setupError}]` : ''}`).join('；');
+        setStatusText(`扩展: ${list === '' ? '无' : list}`);
+      } },
+      // 已启用扩展的 Command 贡献点（PRD §119 Command 类型接线）
+      ...(extensionRegistryRef.current?.collect('commands') ?? []).flatMap(({ extensionId, value }): Command[] => value.map((c): Command => ({
+        id: c.id,
+        localizedTitle: { zh: c.title.zh ?? c.title.en ?? c.id, en: c.title.en ?? c.title.zh ?? c.id },
+        category: 'extension',
+        context: { scope: 'global' },
+        enabled: always,
+        execute: () => runExtensionCommand(extensionId, c),
+      }))),
       { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', shortcut: { mac: 'Cmd+T', winLinux: 'Ctrl+Alt+T' }, context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
       { id: 'file.open', localizedTitle: { zh: '打开…', en: 'Open…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleOpen() },
       { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' }, context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
@@ -1960,7 +2001,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, extensionVersion, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
