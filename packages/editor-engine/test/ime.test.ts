@@ -8,6 +8,7 @@
 
 import { EditorView } from '@codemirror/view';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { history, undo } from '@codemirror/commands';
 import { install } from '../src/index';
 import { moveCaret, markerElements, sleep } from './utils/editor';
 import { resetCompositionState } from '../src/composition';
@@ -18,6 +19,7 @@ function setUpWithComposition(doc: string): EditorView {
     parent: document.body,
     extensions: [
       markdown({ base: markdownLanguage }),
+      history(), // undo 栈（Composition Guard 测试需要真实 undo 行为）
       install(true), // 安装 composition 监听（document 事件驱动 composing 状态）
     ],
   });
@@ -90,5 +92,24 @@ describe('Composition Guard', () => {
     await sleep();
     // 合成已结束 → 重算 → source
     expect(markerElements(view).length).toBe(0);
+  });
+
+  test('合成结束后 Undo 不破坏文本与 marker（undo corruption guard）', async () => {
+    const view = setUpWithComposition('**bold**');
+    await sleep();
+    // 合成中输入中文（composition 期间 doc 变化）
+    startComposition();
+    view.dispatch({ changes: { from: 0, insert: '中文' } });
+    endComposition();
+    await sleep();
+    expect(view.state.doc.toString()).toBe('中文**bold**');
+    // Undo 合成输入：文本恢复、marker 正常重建（不残留损坏状态）
+    undo(view);
+    await sleep();
+    expect(view.state.doc.toString()).toBe('**bold**');
+    // caret 归位后 marker 正常（非损坏）
+    moveCaret(view, 8);
+    await sleep();
+    expect(markerElements(view).length).toBe(2);
   });
 });
