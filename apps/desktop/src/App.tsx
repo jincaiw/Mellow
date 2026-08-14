@@ -102,7 +102,37 @@ export default function App() {
   const filePathRef = useRef<string | null>(null);
   const extensionRegistryRef = useRef<ExtensionRegistry | null>(null);
   const extensionHostRef = useRef<ReturnType<typeof createDesktopExtensionHost> | null>(null);
-  const [extensionVersion, setExtensionVersion] = useState(0);
+
+
+  /** 扩展命令执行：按扩展 manifest 构建受限上下文（运行时权限门卫） */
+  const runExtensionCommand = useCallback((extensionId: string, command: CommandContribution) => {
+    const reg = extensionRegistryRef.current;
+    const host = extensionHostRef.current;
+    if (reg === null || host === null) return;
+    const manifest = reg.get(extensionId);
+    if (manifest === undefined || !manifest.enabled) return;
+    const ctx = buildExtensionContext(manifest, host, { contributions: {} });
+    void command.run(ctx);
+  }, []);
+
+  /** 把已启用扩展的 Command 贡献点增量注册进 CommandRegistry（不重建 effect，避免 dispatch 链路扰动） */
+  const syncExtensionCommands = useCallback((registry: ExtensionRegistry | null) => {
+    if (registry === null) return;
+    const cmdApi = (window as unknown as { __MELLOW_COMMANDS__?: { register: (command: Command) => void; dispatch: (id: string, payload?: unknown) => Promise<boolean>; all: () => Command[] } }).__MELLOW_COMMANDS__;
+    if (cmdApi === undefined) return;
+    for (const { extensionId, value } of registry.collect('commands')) {
+      for (const c of value) {
+        cmdApi.register({
+          id: c.id,
+          localizedTitle: { zh: c.title.zh ?? c.title.en ?? c.id, en: c.title.en ?? c.title.zh ?? c.id },
+          category: 'extension',
+          context: { scope: 'global' },
+          enabled: () => true,
+          execute: () => runExtensionCommand(extensionId, c),
+        });
+      }
+    }
+  }, [runExtensionCommand]);
   const documentsRef = useRef<DocumentService | null>(null);
   const fileServiceRef = useRef<ReturnType<typeof createDesktopFileService> | null>(null);
   const recoveryRef = useRef<RecoveryService | null>(null);
@@ -1462,9 +1492,11 @@ export default function App() {
     extensionHostRef.current = extensionHost;
     const registry = new ExtensionRegistry(extensionHost);
     extensionRegistryRef.current = registry;
+    // 扩展命令接线：enable 完成后经 __MELLOW_COMMANDS__ 增量注册（CommandRegistry effect 首次构建后再同步）
+    // CommandRegistry effect 在 commit 后同步执行，__MELLOW_COMMANDS__ 在此 .then（微任务）前已就绪。
     void registry.register(helloCommandManifest, setupHelloCommand)
       .then(() => registry.enable(helloCommandManifest.id))
-      .then(() => setExtensionVersion((v) => v + 1));
+      .then(() => syncExtensionCommands(registry));
 
     // 图片文件操作服务（spec §6/§7：fs 编排 + 单事务 patch + undo）
     const dialog = dialogRef.current;
@@ -1883,16 +1915,6 @@ export default function App() {
     const registry = new CommandRegistry();
     const always = () => true;
     const hasWorkspace = () => fileTreeRoot !== null;
-    // 扩展命令：执行时按扩展 manifest 构建受限上下文（运行时权限门卫）
-    const runExtensionCommand = (extensionId: string, command: CommandContribution) => {
-      const reg = extensionRegistryRef.current;
-      const host = extensionHostRef.current;
-      if (reg === null || host === null) return;
-      const manifest = reg.get(extensionId);
-      if (manifest === undefined || !manifest.enabled) return;
-      const ctx = buildExtensionContext(manifest, host, { contributions: {} });
-      void command.run(ctx);
-    };
     const commands: Command[] = [
       { id: 'extensions.list', localizedTitle: { zh: '扩展列表', en: 'Extensions List' }, category: 'extension', context: { scope: 'global' }, enabled: always, execute: () => {
         const reg = extensionRegistryRef.current;
@@ -1900,15 +1922,6 @@ export default function App() {
         const list = reg.list().map((e) => `${e.enabled ? '✅' : '⛔'} ${e.name} (${e.id}) v${e.version}${e.setupError !== undefined ? ` [${e.setupError}]` : ''}`).join('；');
         setStatusText(`扩展: ${list === '' ? '无' : list}`);
       } },
-      // 已启用扩展的 Command 贡献点（PRD §119 Command 类型接线）
-      ...(extensionRegistryRef.current?.collect('commands') ?? []).flatMap(({ extensionId, value }): Command[] => value.map((c): Command => ({
-        id: c.id,
-        localizedTitle: { zh: c.title.zh ?? c.title.en ?? c.id, en: c.title.en ?? c.title.zh ?? c.id },
-        category: 'extension',
-        context: { scope: 'global' },
-        enabled: always,
-        execute: () => runExtensionCommand(extensionId, c),
-      }))),
       { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', shortcut: { mac: 'Cmd+T', winLinux: 'Ctrl+Alt+T' }, context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
       { id: 'file.open', localizedTitle: { zh: '打开…', en: 'Open…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleOpen() },
       { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' }, context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
@@ -2001,7 +2014,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, extensionVersion, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
