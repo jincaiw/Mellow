@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAsyncRenderers } from './useAsyncRenderers';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface ReaderViewProps {
   /** 翻译函数（App 注入 i18n） */
@@ -182,13 +183,13 @@ export default function ReaderView(props: ReaderViewProps) {
         <button type="button" title={t('reader.zoomOut')} onClick={() => onZoomChange(Math.max(0.5, zoom - 0.1))}>A−</button>
         <span className="mellow-reader-zoom">{Math.round(zoom * 100)}%</span>
         <button type="button" title={t('reader.zoomIn')} onClick={() => onZoomChange(Math.min(2, zoom + 0.1))}>A+</button>
-        <button type="button" title={t('reader.print.title')} onClick={() => window.print()}>{t('reader.print')}</button>
+        <button type="button" title={t('reader.print.title')} onClick={() => { void invoke('print_window').catch(() => window.print()); }}>{t('reader.print')}</button>
         <button type="button" title={t('reader.openInEditor')} onClick={onOpenInEditor}>{t('reader.openInEditor')}</button>
         <button type="button" title={t('reader.close.title')} onClick={onClose}>{t('reader.close')}</button>
       </div>
       <div className="mellow-reader-scroll" ref={scrollRef} onScroll={handleScroll}>
         {/* eslint-disable-next-line react/no-danger */}
-        <article className="mellow-reader" style={{ fontSize: `${zoom * 100}%` }} ref={contentRef} dangerouslySetInnerHTML={{ __html: html }} onClick={handleContentClick} />
+        <article className="mellow-reader" style={{ fontSize: `${zoom * 100}%` }} ref={contentRef} role="main" aria-label={title} dangerouslySetInnerHTML={{ __html: html }} onClick={handleContentClick} />
       </div>
       {lightbox !== null && (
         <div className="mellow-reader-lightbox" onClick={() => setLightbox(null)}>

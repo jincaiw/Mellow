@@ -2394,7 +2394,7 @@ export default function App() {
           ) : (
             <>
               <div className="search-panel">
-                <input className="search-input" autoFocus placeholder={t('search.placeholder')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runGlobalSearch(); }} />
+                <input className="search-input" autoFocus placeholder={t('search.placeholder')} aria-label={t('search.placeholder')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runGlobalSearch(); }} />
                 <div className="search-toggles">
                   <label><input type="checkbox" checked={searchCase} onChange={(e) => setSearchCase(e.target.checked)} />{t('search.case')}</label>
                   <label><input type="checkbox" checked={searchWholeWord} onChange={(e) => setSearchWholeWord(e.target.checked)} />{t('search.word')}</label>
@@ -2464,6 +2464,7 @@ export default function App() {
               autoFocus
               value={commandPaletteQuery}
               placeholder={slashMode ? t('palette.slash.placeholder') : t('palette.command.placeholder')}
+              aria-label={slashMode ? t('palette.slash.placeholder') : t('palette.command.placeholder')}
               onChange={(e) => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteQuery(e.target.value); }}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') { setCommandPaletteVisible(false); setSlashMode(false); }
@@ -2476,13 +2477,16 @@ export default function App() {
                 }
               }}
             />
-            <div className="quick-open-results">
+            <div className="quick-open-results" role="listbox" aria-label={slashMode ? t('palette.slash.placeholder') : t('palette.command.placeholder')}>
               {paletteCommands.map((item, index) => (
                 <button
                   key={item.command.id}
                   type="button"
                   className={`quick-open-item ${index === commandPaletteSelected ? 'selected' : ''} ${!item.enabled ? 'disabled' : ''}`}
                   disabled={!item.enabled}
+                  role="option"
+                  aria-selected={index === commandPaletteSelected}
+                  aria-disabled={!item.enabled}
                   onMouseEnter={() => { commandPaletteModelRef.current.selectedIndex = index; setCommandPaletteSelected(index); }}
                   onClick={() => runPaletteCommand(item.command.id)}
                 >
@@ -2502,6 +2506,7 @@ export default function App() {
               autoFocus
               value={quickOpenQuery}
               placeholder={t('quickopen.placeholder')}
+              aria-label={t('quickopen.placeholder')}
               onChange={(e) => handleQuickOpenQuery(e.target.value)}
               onKeyDown={handleQuickOpenKeyDown}
             />
@@ -2509,12 +2514,14 @@ export default function App() {
               <span>{quickOpenScanning ? t('quickopen.scanning') : t('quickopen.scanned', { n: quickOpenAll.length })}</span>
               <span>{navigator.platform.toLowerCase().includes('mac') ? 'Cmd+Shift+O' : 'Ctrl+P'} · ↑↓ · Enter · Esc</span>
             </div>
-            <div className="quick-open-results">
+            <div className="quick-open-results" role="listbox" aria-label={t('quickopen.placeholder')}>
               {quickOpenResults.map((item, index) => (
                 <button
                   key={item.path}
                   type="button"
                   className={`quick-open-item ${index === quickOpenSelected ? 'selected' : ''}`}
+                  role="option"
+                  aria-selected={index === quickOpenSelected}
                   onMouseEnter={() => { quickOpenModelRef.current.selectedIndex = index; setQuickOpenSelected(index); }}
                   onClick={() => { quickOpenModelRef.current.selectedIndex = index; setQuickOpenSelected(index); void confirmQuickOpen(item.path); }}
                 >

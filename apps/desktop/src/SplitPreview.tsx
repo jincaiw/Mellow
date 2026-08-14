@@ -70,7 +70,7 @@ const SplitPreview = forwardRef<SplitPreviewHandle, SplitPreviewProps>(function 
       </div>
       <div className="split-preview-scroll" ref={scrollRef} onScroll={handleScroll}>
         {/* eslint-disable-next-line react/no-danger */}
-        <article className="mellow-reader" ref={contentRef} dangerouslySetInnerHTML={{ __html: html }} onClick={handleClick} />
+        <article className="mellow-reader" ref={contentRef} role="region" aria-label={t('split.preview')} dangerouslySetInnerHTML={{ __html: html }} onClick={handleClick} />
       </div>
     </div>
   );

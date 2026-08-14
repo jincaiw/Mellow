@@ -1274,3 +1274,27 @@ html, body, #root {
   border-radius: 4px;
   padding: 2px 8px;
 }
+
+
+/* ── Accessibility（Phase）────────────────────────────── */
+
+/* Focus ring：键盘导航可见焦点（--mellow-focus-ring 由主题提供，随亮暗切换） */
+:focus-visible {
+  outline: 2px solid var(--mellow-focus-ring, #4c8dff);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+/* 鼠标点击不显示焦点环（仅键盘/辅助输入显示） */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Reduced Motion：系统「减弱动态效果」时禁用动画/过渡（WCAG 2.3.3） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
