@@ -106,11 +106,19 @@ jobs:
         run: |
           corepack enable
           yarn install --immutable
+      - name: Build editor-core wrapper
+        working-directory: packages/editor-core
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          npm run build
       - name: editor-engine deps + build
         working-directory: packages/editor-engine
         run: |
           npm ci
           npm run build
+      - name: Install export deps
+        working-directory: packages/export
+        run: npm ci
       - name: Desktop install + build
         working-directory: apps/desktop
         run: |
