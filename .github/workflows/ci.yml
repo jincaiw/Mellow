@@ -23,10 +23,11 @@ jobs:
         run: corepack enable
       - name: Install
         run: yarn install --immutable
-      - name: Test (185, vendored CoreEditor)
-        run: yarn test
+      # build.test.ts 读取 dist/index.html（上游构建产物），必须先 Build 再 Test
       - name: Build (vendored)
         run: yarn build
+      - name: Test (185, vendored CoreEditor)
+        run: yarn test
       - name: "Mellow wrapper test (14: contract + neutral)"
         working-directory: packages/editor-core
         run: |
