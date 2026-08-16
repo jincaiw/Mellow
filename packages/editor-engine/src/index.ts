@@ -15,6 +15,7 @@
 import { buildMarkerRevealExtension } from './plugin';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
 import { buildTableToolbarExtension } from './table/toolbar';
+import { buildColumnWidthExtension } from './table/columnWidth';
 import { installCompositionTracking } from './composition';
 import { buildImageExtensions } from './image';
 import { buildSmartPasteExtension } from './smartPaste';
@@ -133,6 +134,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
     buildTableToolbarExtension(),
+    buildColumnWidthExtension(),
     buildClipboardCopyExtension(),
     buildSmartPasteExtension(),
     buildMathExtension(false),
