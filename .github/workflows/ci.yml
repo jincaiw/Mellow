@@ -27,7 +27,7 @@ jobs:
         run: yarn test
       - name: Build (vendored)
         run: yarn build
-      - name: Mellow wrapper test (14: contract + neutral)
+      - name: "Mellow wrapper test (14: contract + neutral)"
         working-directory: packages/editor-core
         run: |
           npm install --no-audit --no-fund --ignore-scripts
