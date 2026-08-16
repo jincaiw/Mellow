@@ -132,7 +132,7 @@ describe('Code Fence — 禁用拼写 / smart punctuation（CoreEditor codeBlock
     // CoreEditor 的 codeBlockStyle 对 FencedCode/CodeBlock 设置：
     // spellcheck=false, autocorrect=off, autocomplete=off, autocapitalize=off
     const codeStyle = require('fs').readFileSync(
-      '/Volumes/My-Data/jason.wa/codebase/Mellow/packages/editor-core/CoreEditor/src/styling/nodes/code.ts',
+      require('path').resolve(__dirname, '../../editor-core/CoreEditor/src/styling/nodes/code.ts'),
       'utf8',
     );
     expect(codeStyle).toContain("'spellcheck': 'false'");
