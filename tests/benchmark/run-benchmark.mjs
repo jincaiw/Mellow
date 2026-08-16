@@ -197,7 +197,7 @@ async function measureApp(appKey, opts) {
           helper('post-combo', '--mods', 'cmd', '--key', '3', '--pid', String(pid)); // Cmd+F
           sleep(700);
           const r = helper('startup-probe', '--pid', String(pid), '--roi', roiStr(topRoi(win, 0.06)), '--timeout', '5000');
-          m.search = { ok: r.ok, latencyMs: r.ok ? r.latencyMs : null, note: r.ok ? null : 'ROI 无变化（Mellow 无文档内查找 / Typora find bar 未出现）' };
+          m.search = { ok: r.ok, latencyMs: r.ok ? r.latencyMs : null, note: r.ok ? null : 'ROI 无变化（find bar 未出现在预期 ROI）' };
           helper('post-combo', '--mods', '', '--key', '53', '--pid', String(pid)); // Esc 关闭 find bar
           console.log(`search: ${r.ok ? r.latencyMs + 'ms' : 'N/A (' + m.search.note + ')'}`);
         });
@@ -281,7 +281,7 @@ function renderReport(env, results, opts) {
   L.push('- **scroll**：合成滚动期间帧间隔 P95 / 平均 fps / 掉帧（>33.4ms 间隔）数；');
   L.push('- **save**：Cmd+S → mtime 变化耗时；');
   L.push('- **memory**：主进程 RSS（打开后采样中位数/峰值）；');
-  L.push('- **search**：Cmd+F → 键入 → find bar 首帧变化；Mellow 无文档内查找则记 N/A。');
+  L.push('- **search**：Cmd+F → 键入 → find bar 首帧变化；Mellow 文档内查找（@codemirror/search）已实现。');
   L.push('');
 
   const R = (res) => res.app;
@@ -354,7 +354,7 @@ function renderReport(env, results, opts) {
     L.push(`| ${f} | ${ts ? (ts.ok ? fmt(ts.latencyMs, 1) : '超时') : '—'} | ${ms ? (ms.ok ? fmt(ms.latencyMs, 1) : `N/A（${ms.note}）`) : '—'} |`);
   }
   L.push('');
-  L.push('> Mellow 无文档内查找（Cmd+F），该项为功能缺口发现项；参考数据点：Mellow 提供侧边栏全局文件搜索（Rust streaming），口径不同不可比。');
+  L.push('> Mellow 文档内查找（Cmd+F）已实现（@codemirror/search，2026-08-16）；此处 ROI 口径仅测侧边栏全局搜索（Rust streaming），与 Typora 文档内查找不同不可比。');
   L.push('');
 
   // save
@@ -386,7 +386,7 @@ function renderReport(env, results, opts) {
 
   L.push('## 8. 发现项');
   L.push('');
-  L.push('- Mellow 无文档内查找（Cmd+F / Cmd+G）：`search` 指标 N/A，属功能缺口（对照 Typora）。');
+  L.push('- Mellow 文档内查找（Cmd+F）已实现（2026-08-16）；search 指标 ROI 口径待适配 CM 查找面板。');
   L.push('- 大文件模式（>5MB 或 >50,000 行触发）影响 10MB / 100k-lines 的打开与输入路径。');
   L.push('- PRD「open-to-editable ≤250ms」为热打开口径；本 benchmark 采用冷启动口径（公平对比所需），绝对值解读需注意。');
   L.push('');
