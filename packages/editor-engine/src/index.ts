@@ -35,6 +35,7 @@ import { buildScrollBridgeExtension } from './scrollBridge';
 import { buildCodeFenceAutocompleteExtension } from './codeFence';
 import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
+import { buildWikilinkExtension } from './wikilink';
 import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi } from './largeFile';
@@ -74,6 +75,8 @@ export {
 export { buildCodeFenceAutocompleteExtension, fenceLangSource } from './codeFence';
 export { emojiSource } from './emoji';
 export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
+export { buildWikilinkExtension, scanWikilinks } from './wikilink';
+export type { WikilinkRange } from './wikilink';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -144,6 +147,7 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildLargeFileExtension(),
     buildCodeFenceAutocompleteExtension([emojiSource]),
     buildInlineExtrasExtension(),
+    buildWikilinkExtension(),
     buildDocumentSearchExtension(),
   ];
 }

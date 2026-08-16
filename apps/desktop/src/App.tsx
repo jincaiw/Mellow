@@ -1814,6 +1814,12 @@ export default function App() {
           win.__MELLOW_IMAGE_ACTIONS__ = (req) => { void handleImageAction(req); };
         }
 
+        // 注入 wikilink 打开 handler（[[name]] → 同目录 name.md；App 解析并打开）
+        const wikilinkWin = frame?.contentWindow as (Window & { __MELLOW_WIKILINK_OPEN__?: (name: string) => void }) | null;
+        if (wikilinkWin) {
+          wikilinkWin.__MELLOW_WIKILINK_OPEN__ = (name) => { void openWikilinkRef.current(name); };
+        }
+
         // Crash Recovery：编辑事件 → 防抖快照（与 Auto Save 分离）
         host.onEvent((e) => {
           if (e.type === 'viewUpdate') {
@@ -1932,6 +1938,22 @@ export default function App() {
     await applyTab(tab);
     setStatusText(t('msg.openedPath', { path: result.value.path }));
   }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+
+  /** Wikilink [[name]] → 同目录 name.md（无当前路径时相对 name.md）；不存在则提示 */
+  const openWikilink = useCallback(async (name: string) => {
+    const fsService = fileServiceRef.current;
+    const targetName = /\.(md|markdown|mdown|mkd)$/i.test(name) ? name : `${name}.md`;
+    const current = filePathRef.current;
+    const target = current !== null ? `${fileTreeDirname(current)}/${targetName}` : targetName;
+    if (fsService !== null) {
+      const r = await fsService.exists(target);
+      if (!r.ok) { setStatusText(`打开失败: ${r.error.message}`); return; }
+      if (!r.value) { setStatusText(`未找到: ${targetName}`); return; }
+    }
+    await openPathInTab(target);
+  }, [openPathInTab]);
+  const openWikilinkRef = useRef(openWikilink);
+  openWikilinkRef.current = openWikilink;
 
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
