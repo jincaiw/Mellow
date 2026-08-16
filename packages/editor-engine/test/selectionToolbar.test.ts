@@ -7,13 +7,15 @@ import {
   applyInlineFormat,
   applyLink,
   buildSelectionToolbarExtension,
+  installFormatApi,
   setSelectionToolbarEnabled,
   shouldShowToolbar,
 } from '../src/selectionToolbar';
 import { installCompositionTracking, resetCompositionState } from '../src/composition';
-import { sleep } from './utils/editor';
+import { moveCaret, sleep } from './utils/editor';
 
 function setUp(doc: string): EditorView {
+  installFormatApi();
   const view = new EditorView({
     doc,
     parent: document.body,
@@ -148,5 +150,30 @@ describe('Selection Toolbar — plugin behavior', () => {
     select(view, 0, 3);
     await sleep(30);
     expect(toolbarEl()?.style.display).toBe('none');
+  });
+});
+
+describe('Format menu actions（Typora 对齐）', () => {
+  test('空选区 Cmd+B 插入成对 marker caret 居中', async () => {
+    const view = setUp('hello');
+    await sleep();
+    moveCaret(view, 5);
+    await sleep();
+    (window as unknown as { __MELLOW_FORMAT_API__?: { format: (a: string) => void } }).__MELLOW_FORMAT_API__?.format('bold');
+    await sleep();
+    expect(view.state.doc.toString()).toBe('hello****');
+    expect(view.state.selection.main.head).toBe(7);
+    view.destroy();
+  });
+
+  test('空选区 Cmd+1 当前行变一级标题', async () => {
+    const view = setUp('line one\nline two');
+    await sleep();
+    moveCaret(view, 3); // 第一行
+    await sleep();
+    (window as unknown as { __MELLOW_FORMAT_API__?: { format: (a: string) => void } }).__MELLOW_FORMAT_API__?.format('h1');
+    await sleep();
+    expect(view.state.doc.toString()).toBe('# line one\nline two');
+    view.destroy();
   });
 });

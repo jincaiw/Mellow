@@ -182,7 +182,13 @@ export function applyHeading(doc: string, range: TextRange, level: number): Appl
   };
 }
 
-type ToolbarAction = 'h1' | 'h2' | 'h3' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list';
+type ToolbarAction = 'h1' | 'h2' | 'h3' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'highlight' | 'sup' | 'sub' | 'paragraph';
+
+/** 成对 marker（空选区插入 caret 居中，Typora 行为） */
+const PAIR_MARKERS: Partial<Record<ToolbarAction, string>> = {
+  bold: '**', italic: '*', strike: '~~', code: '`', highlight: '==', sup: '^', sub: '~',
+};
+const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'highlight', 'sup', 'sub', 'paragraph']);
 
 const ACTION_DEFS: Array<{ id: ToolbarAction; label: string; title: string }> = [
   { id: 'h1', label: 'H1', title: '一级标题' },
@@ -209,6 +215,29 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange): Appl
     case 'link': return applyLink(doc, range);
     case 'quote': return applyBlockPrefix(doc, range, '> ');
     case 'list': return applyBlockPrefix(doc, range, '- ');
+    case 'highlight': return applyInlineFormat(doc, range, '==');
+    case 'sup': return applyInlineFormat(doc, range, '^');
+    case 'sub': return applyInlineFormat(doc, range, '~');
+    case 'paragraph': {
+      // 段落：去除标题前缀（Typora「段落」语义）
+      const lines = affectedLines(doc, range);
+      if (lines.length === 0) return { changes: [], selection: range };
+      const deltas: number[] = [];
+      let replacement = '';
+      let pos = lines[0].start;
+      for (const line of lines) {
+        replacement += doc.slice(pos, line.start);
+        const content = doc.slice(line.start, line.end);
+        const m = /^#{1,6}\s/.exec(content);
+        replacement += m !== null ? content.slice(m[0].length) : content;
+        deltas.push(m !== null ? -m[0].length : 0);
+        pos = line.end;
+      }
+      return {
+        changes: [{ from: lines[0].start, to: lines[lines.length - 1].end, insert: replacement }],
+        selection: { from: mapPosition(range.from, lines, deltas), to: mapPosition(range.to, lines, deltas) },
+      };
+    }
   }
 }
 
@@ -222,6 +251,49 @@ export interface SelectionToolbarOptions {
 interface CmRuntime {
   EditorView: typeof import('@codemirror/view').EditorView;
   ViewPlugin: typeof import('@codemirror/view').ViewPlugin;
+}
+
+/** 当前编辑器视图（格式桥 / 菜单命令用） */
+let activeFormatView: import('@codemirror/view').EditorView | null = null;
+
+/** 统一格式应用（空选区 → 成对插入 caret 居中，对齐 Typora Cmd+B） */
+function applyToView(action: ToolbarAction): void {
+  const view = activeFormatView;
+  if (view === null) return;
+  const sel = view.state.selection.main;
+  const doc = view.state.doc.toString();
+  let result: ApplyResult;
+  if (sel.empty) {
+    if (PAIR_MARKERS[action] !== undefined) {
+      // 成对 marker：空选区插入 caret 居中（Typora Cmd+B）
+      const marker = PAIR_MARKERS[action] as string;
+      result = {
+        changes: [{ from: sel.head, to: sel.head, insert: marker + marker }],
+        selection: { from: sel.head + marker.length, to: sel.head + marker.length },
+      };
+    } else {
+      // 块级（heading/quote/list/paragraph）：作用于当前行（Typora Cmd+1 语义）
+      const line = view.state.doc.lineAt(sel.head);
+      result = applyAction(action, doc, { from: line.from, to: line.to });
+    }
+  } else {
+    result = applyAction(action, doc, { from: sel.from, to: sel.to });
+  }
+  if (result.changes.length === 0) return;
+  view.dispatch({
+    changes: result.changes,
+    selection: { anchor: result.selection.from, head: result.selection.to },
+  });
+  view.focus();
+}
+
+/** 宿主 → 引擎格式桥（菜单「格式/段落」调用） */
+export function installFormatApi(): void {
+  (window as unknown as { __MELLOW_FORMAT_API__?: { format: (action: string) => void } }).__MELLOW_FORMAT_API__ = {
+    format: (action: string) => {
+      if (ACTION_IDS.has(action as ToolbarAction)) applyToView(action as ToolbarAction);
+    },
+  };
 }
 
 function resolveCm(): CmRuntime {
@@ -256,6 +328,7 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
     private onResize = (): void => { if (this.visible) this.position(); };
 
     constructor(readonly view: EditorView) {
+      activeFormatView = view;
       this.el = document.createElement('div');
       this.el.className = SELECTION_TOOLBAR_CLASS;
       this.el.setAttribute('role', 'toolbar');
@@ -310,16 +383,7 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
     }
 
     private apply(action: ToolbarAction): void {
-      const sel = this.view.state.selection.main;
-      if (sel.empty) return;
-      const doc = this.view.state.doc.toString();
-      const result = applyAction(action, doc, { from: sel.from, to: sel.to });
-      if (result.changes.length === 0) return;
-      this.view.dispatch({
-        changes: result.changes,
-        selection: { anchor: result.selection.from, head: result.selection.to },
-      });
-      this.view.focus();
+      applyToView(action);
     }
 
     private showEl(): void {

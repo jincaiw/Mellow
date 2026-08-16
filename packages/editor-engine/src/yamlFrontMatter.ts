@@ -10,6 +10,8 @@ interface CmRuntime {
   Decoration: typeof import('@codemirror/view').Decoration;
   WidgetType: typeof import('@codemirror/view').WidgetType;
   RangeSetBuilder: typeof import('@codemirror/state').RangeSetBuilder;
+  StateField: typeof import('@codemirror/state').StateField;
+  StateEffect: typeof import('@codemirror/state').StateEffect;
 }
 
 function resolveCm(): CmRuntime {
@@ -17,7 +19,7 @@ function resolveCm(): CmRuntime {
   if (typeof requireFn !== 'function') throw new Error('[mellow-editor-engine] window.require is not available');
   const view = requireFn('@codemirror/view') as typeof import('@codemirror/view');
   const state = requireFn('@codemirror/state') as typeof import('@codemirror/state');
-  return { EditorView: view.EditorView, ViewPlugin: view.ViewPlugin, Decoration: view.Decoration, WidgetType: view.WidgetType, RangeSetBuilder: state.RangeSetBuilder };
+  return { EditorView: view.EditorView, ViewPlugin: view.ViewPlugin, Decoration: view.Decoration, WidgetType: view.WidgetType, RangeSetBuilder: state.RangeSetBuilder, StateField: state.StateField, StateEffect: state.StateEffect };
 }
 
 export interface YamlFrontMatter {
@@ -98,12 +100,42 @@ export function buildYamlFrontMatterExtension(autoInstallComposition = true, opt
     }
   }
 
+  /** 「展开卡片」折叠按钮（默认灰色源码旁） */
+  class YamlFoldButtonWidget extends WidgetType {
+    constructor(private readonly onOpen: () => void) { super(); }
+    eq(other: WidgetTypeT): boolean { return other instanceof YamlFoldButtonWidget; }
+    toDOM(): HTMLElement {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mellow-yaml-fold-button';
+      btn.textContent = '▸ YAML 元数据卡片';
+      btn.title = '展开为卡片视图';
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onOpen();
+      });
+      return btn;
+    }
+  }
+
   const addHidden = (builder: import('@codemirror/state').RangeSetBuilder<DecorationT>, doc: string, from: number, to: number): void => {
     let pos = from;
     while (pos < to) {
       const nl = doc.indexOf('\n', pos);
       const end = nl === -1 || nl > to ? to : nl;
       if (end > pos) builder.add(pos, end, Decoration.mark({ class: 'mellow-yaml-source-hidden' }));
+      pos = end + 1;
+    }
+  };
+
+  const addDim = (builder: import('@codemirror/state').RangeSetBuilder<DecorationT>, doc: string, from: number, to: number): void => {
+    let pos = from;
+    while (pos < to) {
+      const nl = doc.indexOf('\n', pos);
+      const end = nl === -1 || nl > to ? to : nl;
+      if (end > pos) builder.add(pos, end, Decoration.mark({ class: 'mellow-yaml-source-dim' }));
       pos = end + 1;
     }
   };
@@ -115,10 +147,29 @@ export function buildYamlFrontMatterExtension(autoInstallComposition = true, opt
     const fm = parseYamlFrontMatter(doc);
     if (fm === null) return builder.finish();
     if (inside(fm.from, fm.to, view.state.selection.main.head)) return builder.finish();
-    addHidden(builder, doc, fm.from, fm.to);
-    builder.add(fm.to, fm.to, Decoration.widget({ widget: new YamlWidget(fm), side: 1 }));
+    const cardOpen = view.state.field(cardOpenField, false) ?? false;
+    if (cardOpen) {
+      // 展开卡片：隐藏源码 + 卡片 widget（原行为）
+      addHidden(builder, doc, fm.from, fm.to);
+      builder.add(fm.to, fm.to, Decoration.widget({ widget: new YamlWidget(fm), side: 1 }));
+    } else {
+      // 默认：灰色源码样式（可读）+ 「卡片」折叠按钮
+      addDim(builder, doc, fm.from, fm.to);
+      builder.add(fm.to, fm.to, Decoration.widget({ widget: new YamlFoldButtonWidget(() => view.dispatch({ effects: setCardOpen.of(true) })), side: 1 }));
+    }
     return builder.finish();
   };
+
+  const setCardOpen = cm.StateEffect.define<boolean>();
+  const cardOpenField = cm.StateField.define<boolean>({
+    create: () => false,
+    update: (value, tr) => {
+      for (const e of tr.effects) {
+        if (e.is(setCardOpen)) return e.value;
+      }
+      return value;
+    },
+  });
 
   const plugin = ViewPlugin.fromClass(class YamlFrontMatterPlugin {
     decorations: DecorationSet;
@@ -126,15 +177,20 @@ export function buildYamlFrontMatterExtension(autoInstallComposition = true, opt
     update(update: ViewUpdate): void {
       if (update.docChanged) this.decorations = this.decorations.map(update.changes);
       if (isComposing()) return;
-      if (update.docChanged || update.selectionSet || update.viewportChanged) this.decorations = build(update.view);
+      const cardToggled = update.transactions.some((tr) => tr.effects.some((e) => e.is(setCardOpen)));
+      if (update.docChanged || update.selectionSet || update.viewportChanged || cardToggled) {
+        this.decorations = build(update.view);
+      }
     }
   }, { decorations: (value: { decorations: DecorationSet }) => value.decorations });
 
   const theme = CmEditorView.theme({
     '.mellow-yaml-source-hidden': { fontSize: '0', lineHeight: '0', color: 'transparent' },
+    '.mellow-yaml-source-dim': { opacity: '0.55' },
+    '.mellow-yaml-fold-button': { position: 'absolute', right: '4px', top: '-1.4em', fontSize: '11px', padding: '1px 8px', border: '1px solid rgba(127,127,127,0.35)', borderRadius: '4px', background: 'transparent', color: 'inherit', cursor: 'pointer', zIndex: 1 },
     '.mellow-yaml-front-matter': { display: 'block', padding: '0.5em 0.75em', margin: '0.75em 0', border: '1px solid rgba(127,127,127,0.25)', borderRadius: '6px', background: 'rgba(127,127,127,0.06)' },
     '.mellow-yaml-title': { fontWeight: '700', marginBottom: '0.35em' },
     '.mellow-yaml-error': { color: '#b00020', marginBottom: '0.35em' },
   });
-  return [plugin, theme];
+  return [cardOpenField, plugin, theme];
 }

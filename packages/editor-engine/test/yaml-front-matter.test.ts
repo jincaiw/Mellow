@@ -35,8 +35,15 @@ describe('YAML Front Matter（PRD §47）', () => {
     expect(html).toContain('Line 1: expected key: value');
   });
 
-  test('idle folds front matter into block widget', async () => {
+  test('idle：灰色源码样式 + 折叠按钮（Typora 对齐，点击展开卡片）', async () => {
     const view = setUpEditor(fixture('front-matter-corpus.md'));
+    await sleep();
+    // 默认不隐藏源码：灰色（dim）显示 + 「展开卡片」按钮
+    expect(view.dom.querySelector('.mellow-yaml-source-dim')).not.toBeNull();
+    expect(view.dom.querySelector('.mellow-yaml-fold-button')).not.toBeNull();
+    // 点击折叠按钮 → 卡片出现
+    const btn = view.dom.querySelector<HTMLButtonElement>('.mellow-yaml-fold-button');
+    btn?.click();
     await sleep();
     expect(view.dom.querySelector('.mellow-yaml-front-matter')?.textContent).toContain('title: 中文标题 😀');
   });

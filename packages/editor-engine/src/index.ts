@@ -33,7 +33,10 @@ import { buildTypewriterModeExtension } from './typewriterMode';
 import { buildSelectionToolbarExtension } from './selectionToolbar';
 import { buildScrollBridgeExtension } from './scrollBridge';
 import { buildCodeFenceAutocompleteExtension } from './codeFence';
-import { buildDocumentSearchExtension } from './documentSearch';
+import { emojiSource } from './emoji';
+import { buildInlineExtrasExtension } from './inlineExtras';
+import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
+import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi } from './largeFile';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
@@ -69,6 +72,8 @@ export {
   LARGE_FILE_LINES_THRESHOLD,
 } from './largeFile';
 export { buildCodeFenceAutocompleteExtension, fenceLangSource } from './codeFence';
+export { emojiSource } from './emoji';
+export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -112,6 +117,10 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
   }
   // Large File Mode：宿主（EditorCore）经 iframe window.__MELLOW_LARGE_FILE__ 调用
   installLargeFileApi();
+  // 文档查找/替换：宿主（菜单）经 iframe window.__MELLOW_SEARCH_API__ 调用
+  installSearchApi();
+  // 格式/段落命令：宿主（菜单）经 iframe window.__MELLOW_FORMAT_API__ 调用
+  installFormatApi();
   return [
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
@@ -133,7 +142,8 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildScrollBridgeExtension(),
     buildImageExtensions(),
     buildLargeFileExtension(),
-    buildCodeFenceAutocompleteExtension(),
+    buildCodeFenceAutocompleteExtension([emojiSource]),
+    buildInlineExtrasExtension(),
     buildDocumentSearchExtension(),
   ];
 }

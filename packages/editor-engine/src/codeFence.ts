@@ -94,10 +94,10 @@ export function fenceLangSource(context: CompletionContextLike): CompletionResul
   };
 }
 
-/** 构建扩展：围栏语言自动补全（RC parity B3） */
-export function buildCodeFenceAutocompleteExtension(): Extension {
+/** 构建扩展：围栏语言自动补全（RC parity B3）+ 可选额外源（如 emoji） */
+export function buildCodeFenceAutocompleteExtension(extraSources: unknown[] = []): Extension {
   const { autocompletion } = resolveAutoComplete();
   return autocompletion({
-    override: [fenceLangSource as never],
+    override: [fenceLangSource as never, ...extraSources],
   });
 }

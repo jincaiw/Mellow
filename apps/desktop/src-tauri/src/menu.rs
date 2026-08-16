@@ -57,16 +57,60 @@ pub fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     let list = MenuItem::with_id(app, "insert.list", "列表", true, None::<&str>)?;
     let task = MenuItem::with_id(app, "insert.task", "任务", true, None::<&str>)?;
     let quote = MenuItem::with_id(app, "insert.quote", "引用", true, None::<&str>)?;
-    let table = MenuItem::with_id(app, "insert.table", "表格", true, None::<&str>)?;
+    let table = MenuItem::with_id(app, "insert.table", "表格", true, Some("Cmd+Opt+T"))?;
     let code = MenuItem::with_id(app, "insert.code", "代码块", true, None::<&str>)?;
     let math = MenuItem::with_id(app, "insert.math", "数学公式", true, None::<&str>)?;
     let mermaid = MenuItem::with_id(app, "insert.mermaid", "Mermaid 图表", true, None::<&str>)?;
     let alert = MenuItem::with_id(app, "insert.alert", "提示框", true, None::<&str>)?;
-    let image = MenuItem::with_id(app, "insert.image", "图片", true, None::<&str>)?;
+    let image = MenuItem::with_id(app, "insert.image", "图片", true, Some("Cmd+Ctrl+I"))?;
     let toc = MenuItem::with_id(app, "insert.toc", "目录", true, None::<&str>)?;
     let insert_menu = Submenu::with_items(app, "插入", true, &[&h1, &list, &task, &quote, &table, &code, &math, &mermaid, &alert, &image, &toc])?;
 
-    let menu = Menu::with_items(app, &[&app_menu, &file_menu, &view_menu, &insert_menu])?;
+    // ── 编辑（Typora 对齐：原生 undo/redo/cut/copy/paste + 查找/替换）──
+    let undo = PredefinedMenuItem::undo(app, Some("撤销"))?;
+    let redo = PredefinedMenuItem::redo(app, Some("重做"))?;
+    let cut = PredefinedMenuItem::cut(app, Some("剪切"))?;
+    let copy = PredefinedMenuItem::copy(app, Some("复制"))?;
+    let paste = PredefinedMenuItem::paste(app, Some("粘贴"))?;
+    let select_all = PredefinedMenuItem::select_all(app, Some("全选"))?;
+    let find = MenuItem::with_id(app, "search.find", "查找…", true, Some("Cmd+F"))?;
+    let replace = MenuItem::with_id(app, "search.replace", "替换…", true, Some("Cmd+H"))?;
+    let edit_menu = Submenu::with_items(app, "编辑", true, &[&undo, &redo, &sep, &cut, &copy, &paste, &select_all, &sep, &find, &replace])?;
+
+    // ── 格式（Typora 对齐；引擎 applyInlineFormat，空选区成对插入）──
+    let f_bold = MenuItem::with_id(app, "format.bold", "粗体", true, Some("Cmd+B"))?;
+    let f_italic = MenuItem::with_id(app, "format.italic", "斜体", true, Some("Cmd+I"))?;
+    let f_strike = MenuItem::with_id(app, "format.strike", "删除线", true, None::<&str>)?;
+    let f_code = MenuItem::with_id(app, "format.code", "行内代码", true, None::<&str>)?;
+    let f_highlight = MenuItem::with_id(app, "format.highlight", "高亮", true, None::<&str>)?;
+    let f_sup = MenuItem::with_id(app, "format.sup", "上标", true, None::<&str>)?;
+    let f_sub = MenuItem::with_id(app, "format.sub", "下标", true, None::<&str>)?;
+    let f_link = MenuItem::with_id(app, "format.link", "链接…", true, Some("Cmd+K"))?;
+    let f_quote = MenuItem::with_id(app, "format.quote", "引用", true, None::<&str>)?;
+    let f_list = MenuItem::with_id(app, "format.list", "列表", true, None::<&str>)?;
+    let format_menu = Submenu::with_items(app, "格式", true, &[&f_bold, &f_italic, &f_strike, &f_code, &f_highlight, &f_sup, &f_sub, &sep, &f_link, &f_quote, &f_list])?;
+
+    // ── 段落（标题层级 / 段落）──
+    let p_h1 = MenuItem::with_id(app, "paragraph.h1", "一级标题", true, Some("Cmd+1"))?;
+    let p_h2 = MenuItem::with_id(app, "paragraph.h2", "二级标题", true, Some("Cmd+2"))?;
+    let p_h3 = MenuItem::with_id(app, "paragraph.h3", "三级标题", true, Some("Cmd+3"))?;
+    let p_h4 = MenuItem::with_id(app, "paragraph.h4", "四级标题", true, None::<&str>)?;
+    let p_h5 = MenuItem::with_id(app, "paragraph.h5", "五级标题", true, None::<&str>)?;
+    let p_h6 = MenuItem::with_id(app, "paragraph.h6", "六级标题", true, None::<&str>)?;
+    let p_normal = MenuItem::with_id(app, "paragraph.normal", "段落", true, None::<&str>)?;
+    let paragraph_menu = Submenu::with_items(app, "段落", true, &[&p_h1, &p_h2, &p_h3, &p_h4, &p_h5, &p_h6, &sep, &p_normal])?;
+
+    // ── 主题（实时切换；前端 theme.apply.* 命令）──
+    let theme_light = MenuItem::with_id(app, "theme.apply.mellow-light", "Mellow Light", true, None::<&str>)?;
+    let theme_dark = MenuItem::with_id(app, "theme.apply.mellow-dark", "Mellow Dark", true, None::<&str>)?;
+    let theme_system = MenuItem::with_id(app, "theme.mode.system", "跟随系统", true, None::<&str>)?;
+    let theme_menu = Submenu::with_items(app, "主题", true, &[&theme_light, &theme_dark, &sep, &theme_system])?;
+
+    // ── 帮助 ──
+    let help_shortcuts = MenuItem::with_id(app, "help.shortcuts", "快捷键", true, None::<&str>)?;
+    let help_menu = Submenu::with_items(app, "帮助", true, &[&help_shortcuts])?;
+
+    let menu = Menu::with_items(app, &[&app_menu, &file_menu, &edit_menu, &view_menu, &insert_menu, &format_menu, &paragraph_menu, &theme_menu, &help_menu])?;
     app.set_menu(menu)?;
     attach_services(app);
     Ok(())

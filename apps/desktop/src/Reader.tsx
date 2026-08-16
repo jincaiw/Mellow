@@ -159,15 +159,18 @@ export default function ReaderView(props: ReaderViewProps) {
       window.setTimeout(() => { copyButton.textContent = original; }, 1200);
       return;
     }
-    // Security Review H2：链接点击禁止 webview 导航 → 系统浏览器打开（页内 # 锚点除外）
+    // Security Review H2：链接禁止 webview 导航；Typora 对齐 —— 普通点击不打开，
+    // Cmd/Ctrl+Click 才经系统浏览器打开（页内 # 锚点除外）
     const link = target.closest<HTMLAnchorElement>('a');
     if (link !== null) {
       const href = link.getAttribute('href') ?? '';
       if (!href.startsWith('#')) {
         event.preventDefault();
-        void import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
-          void openUrl(href).catch(() => { /* 非法 URL（相对/未知协议）忽略 */ });
-        });
+        if (event.metaKey || event.ctrlKey) {
+          void import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
+            void openUrl(href).catch(() => { /* 非法 URL（相对/未知协议）忽略 */ });
+          });
+        }
         return;
       }
     }

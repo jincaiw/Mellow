@@ -74,7 +74,7 @@ export function renderSafeHtml(source: string): string {
   return `<div class="mellow-safe-html">${sanitizeHtml(source)}</div>`;
 }
 
-function fencedRanges(doc: string): Array<{ from: number; to: number }> {
+export function fencedRanges(doc: string): Array<{ from: number; to: number }> {
   const ranges: Array<{ from: number; to: number }> = [];
   const lines = doc.split('\n');
   let offset = 0;
