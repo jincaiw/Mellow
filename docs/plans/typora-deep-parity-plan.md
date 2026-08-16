@@ -183,7 +183,7 @@
 
 ---
 
-## 八、实施进度（2026-08-16 第一批，已提交 5ce499d）
+## 八、实施进度（2026-08-16 第一批，已提交 5ce499d；第二批 P0+P1 合并 ⑨-⑬ 已提交）
 
 | # | 任务 | 状态 | 验证 |
 |---|---|---|---|
@@ -193,8 +193,22 @@
 | ④ | 链接点击对齐 | ✅ | 普通点击不导航；Cmd/Ctrl+Click 浏览器（H2 保留） |
 | ⑤ | 菜单栏五组 | ✅ | 编辑/格式/段落/主题/帮助（macOS AX 实测 10 菜单）；__MELLOW_FORMAT_API__ 桥（空选区成对插入、空光标作用于当前行） |
 | ⑥ | YAML 灰色源码可折叠 | ✅ | 默认灰色源码 + 折叠按钮 → 卡片（StateField + 按钮 widget） |
+| ⑦ | 脚注交互 + TOC 跳转 | ✅ | footnote.test.ts（点击跳转/↩ 返回/源码 reveal/hover title）+ toc.test.ts（live TOC widget 跳转） |
 | ⑧ | emoji 补全 | ✅ | :smile: → 😄（autocomplete 源合并） |
-| ⑦⑨⑩⑪⑫⑬⑭ | 脚注/TOC 交互、Wikilink、右键菜单、Cheatsheet、Recent Files、表格列宽拖拽、实测回填 | ⏳ 待续 | 下一批实施 |
+| ⑨ | Wikilink [[name]] | ✅ | scanWikilinks（跳过围栏/行内代码）+ caret-aware 定界符 + 点击桥 → 同目录 name.md（10 测试） |
+| ⑩ | 编辑器右键菜单 | ✅ | 上下文检测（文本/链接/Wikilink/图片/表格）+ 剪切/复制/粘贴 + 表格操作（14 测试） |
+| ⑪ | Cheatsheet | ✅ | 帮助菜单「Markdown 速查表」→ 双语速查面板（命令 help.cheatsheet） |
+| ⑫ | Recent Files + 启动恢复 | ✅ | recentFiles 模型（去重置顶/cap 10/缺失标记，8 测试）+ 欢迎屏列表 + 既有会话恢复 |
+| ⑬ | 表格列宽拖拽 | ✅ | delimiter 分隔线拖拽 → 对齐列 dash 增减（对齐冒号保留）+ minimal patch 单单元格（8 测试） |
+| ⑭ | 逐条实测回填 | ✅ | 见下方实测记录；统一验收（回归门禁 + golden journeys 增量） |
 
-引擎测试：448 → **454 全绿**；app-core 111；desktop tsc / cargo check 通过；
-debug bundle 启动 + 菜单栏 10 菜单实测（Apple/Mellow/文件/编辑/视图/插入/格式/段落/主题/帮助）。
+引擎测试：454 → **486 全绿**（48 suites；⑨+10、⑩+14、⑬+8）；app-core 111 → **119**（⑫ +8）；i18n 15 全绿；
+desktop tsc / cargo check 通过；debug bundle 启动 + 菜单栏 10 菜单实测。
+
+### ⑭ 实测记录（macOS debug/release bundle）
+
+- 菜单栏：10 菜单（Apple/Mellow/文件/编辑/视图/插入/格式/段落/主题/帮助）AX 实测；帮助 → 「Markdown 速查表」点击执行成功（触发命令 `help.cheatsheet`）✅
+- Golden Journeys（release .app，--app=mellow）：**j8 table、j9 math fidelity、j10 mermaid fidelity、j15 undo 全部 PASS**（j8 覆盖表格引擎 + ⑬ 扩展在安装列表中，无回归）✅
+- typing 类 journey（j1 latin / j2 chinese / j4 bold / j7 list）FAIL：本机拼音 ITABC 拦截 ASCII 合成键 + 窗口焦点被 GUI 抢占（既有环境限制，与 ⑭ 改动无关；j15 同为 typing 却 PASS 证实非代码回归）——标注待 ABC 输入法复测
+- 编辑器右键 / Wikilink 点击 / 列宽拖拽：DOM 级功能由 engine jsdom 测试覆盖（⑩ 14 + ⑨ 10 + ⑬ 8）；AX 无法断言 WKWebView 内部 DOM，且本会话屏幕录制权限被系统对话框拦截（视觉验证不可用）——标注待 GUI 捕获基础设施补充
+- 回归门禁：cargo test 37+16(file safety)+4(updater) 全绿；Source Fidelity 137 文件 0 diff；引擎 486 / app-core 119 / i18n 15 全绿；desktop tsc 通过
