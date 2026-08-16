@@ -37,8 +37,11 @@ import {
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
   renderReaderHtml,
+  pushRecentFile,
+  parseRecentFiles,
+  serializeRecentFiles,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopExtensionHost } from './extensions/extensionHost';
 import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
@@ -79,6 +82,7 @@ import { PRINT_STYLESHEET } from '../../../packages/export/src/printStyle';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
+const RECENT_FILES_KEY = 'mellow.recent.files';
 const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
 const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
 const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
@@ -356,6 +360,11 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // Cheatsheet（帮助菜单 / 命令面板 help.cheatsheet）
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+  // Recent Files（Typora 深度对标 ⑫：欢迎屏最近打开 + 缺失标记）
+  const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>(() => {
+    try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
+  });
+  const [recentMissing, setRecentMissing] = useState<Record<string, boolean>>({});
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1873,6 +1882,18 @@ export default function App() {
     };
   }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction, applyTab, currentTabPatch, refreshTabsState, setDirty, refreshOutline, refreshCursorPos, refreshSplitHtml]);
 
+  /** 记录最近打开（去重置顶、cap 10、持久化） */
+  const recordRecentFile = useCallback((path: string) => {
+    setRecentFiles((prev) => {
+      const next = pushRecentFile(prev, path, Date.now());
+      const raw = serializeRecentFiles(next);
+      if (raw !== null) {
+        try { localStorage.setItem(RECENT_FILES_KEY, raw); } catch { /* noop */ }
+      }
+      return next;
+    });
+  }, []);
+
   const handleNew = useCallback(async () => {
     const host = hostRef.current;
     if (!host) return;
@@ -1918,7 +1939,8 @@ export default function App() {
     refreshTabsState();
     await applyTab(tab);
     setStatusText(t('msg.openedPath', { path: result.value.path }));
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+    recordRecentFile(result.value.path);
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile]);
 
   /** 外部打开（CLI 参数 / Finder「打开方式」odoc）：按路径直接读入 tab，无对话框 */
   const openPathInTab = useCallback(async (path: string) => {
@@ -1947,7 +1969,8 @@ export default function App() {
     refreshTabsState();
     await applyTab(tab);
     setStatusText(t('msg.openedPath', { path: result.value.path }));
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+    recordRecentFile(result.value.path);
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile]);
 
   /** Wikilink [[name]] → 同目录 name.md（无当前路径时相对 name.md）；不存在则提示 */
   const openWikilink = useCallback(async (name: string) => {
@@ -2007,6 +2030,22 @@ export default function App() {
   }, [handleImageAction, t]);
   const handleEditorContextMenuRef = useRef(handleEditorContextMenu);
   handleEditorContextMenuRef.current = handleEditorContextMenu;
+
+  // 欢迎屏：异步检测最近文件是否存在（缺失 → 置灰 + 「已删除」标记）
+  useEffect(() => {
+    const fs = fileServiceRef.current;
+    if (fs === null || recentFiles.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const map: Record<string, boolean> = {};
+      for (const entry of recentFiles) {
+        const r = await fs.exists(entry.path);
+        if (!cancelled) map[entry.path] = !r.ok || !r.value;
+      }
+      if (!cancelled) setRecentMissing(map);
+    })();
+    return () => { cancelled = true; };
+  }, [recentFiles]);
 
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
@@ -2807,6 +2846,28 @@ export default function App() {
                 <button onClick={() => void dispatchCommand('file.open', 'menu')}>{t('welcome.open')}</button>
                 <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')}>{t('welcome.openFolder')}</button>
               </div>
+              {recentFiles.length > 0 && (
+                <div className="welcome-recent">
+                  <div className="welcome-recent-title">{t('welcome.recent')}</div>
+                  <div className="welcome-recent-list">
+                    {recentFiles.map((entry) => {
+                      const missing = recentMissing[entry.path] === true;
+                      return (
+                        <button
+                          key={entry.path}
+                          type="button"
+                          className={`welcome-recent-item${missing ? ' missing' : ''}`}
+                          disabled={missing}
+                          onClick={() => void openPathInTab(entry.path)}
+                        >
+                          <span className="welcome-recent-name">{basename(entry.path)}{missing ? ` · ${t('welcome.recentMissing')}` : ''}</span>
+                          <span className="welcome-recent-dir">{fileTreeDirname(entry.path)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {readerOpen && (

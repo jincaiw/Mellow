@@ -1147,6 +1147,53 @@ html, body, #root {
   background: var(--mellow-bg-hover);
 }
 
+/* Recent Files（Typora 深度对标：欢迎屏最近打开 + 缺失标记） */
+.welcome-recent {
+  width: min(460px, calc(100vw - 64px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.welcome-recent-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mellow-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.welcome-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.welcome-recent-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.welcome-recent-item:hover:not(:disabled) {
+  background: var(--mellow-bg-hover);
+}
+.welcome-recent-item.missing {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.welcome-recent-name {
+  font-size: 13px;
+  color: var(--mellow-fg);
+}
+.welcome-recent-dir {
+  font-size: 11px;
+  color: var(--mellow-fg-subtle);
+}
+
 /* Context Menu（§6） */
 .context-menu {
   position: fixed;

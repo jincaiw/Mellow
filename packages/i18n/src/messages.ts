@@ -70,6 +70,8 @@ const zhCN = {
   'welcome.new': '新建文档',
   'welcome.open': '打开文件',
   'welcome.openFolder': '打开文件夹',
+  'welcome.recent': '最近打开',
+  'welcome.recentMissing': '已删除',
 
   // Palette / Quick Open
   'palette.command.placeholder': 'Command Palette / Plugin Commands',
@@ -391,6 +393,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'welcome.new': 'New Document',
   'welcome.open': 'Open File',
   'welcome.openFolder': 'Open Folder',
+  'welcome.recent': 'Recent',
+  'welcome.recentMissing': 'Deleted',
 
   'palette.command.placeholder': 'Command Palette / Plugin Commands',
   'palette.slash.placeholder': 'Slash Commands: type to filter…',
