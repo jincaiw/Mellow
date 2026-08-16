@@ -81,7 +81,7 @@ jobs:
           cache-dependency-path: packages/editor-engine/package-lock.json
       - name: Install
         run: npm ci
-      - name: Test (430: engine + IME Composition Guard / undo corruption)
+      - name: "Test (430: engine + IME Composition Guard / undo corruption)"
         run: npm test
       - name: Build
         run: npm run build

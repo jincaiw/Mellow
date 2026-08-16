@@ -58,6 +58,9 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Install export deps
+        working-directory: packages/export
+        run: npm ci
       - name: Install desktop deps
         working-directory: apps/desktop
         run: npm ci
@@ -132,6 +135,9 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Install export deps
+        working-directory: packages/export
+        run: npm ci
       - name: Install desktop deps
         working-directory: apps/desktop
         run: npm ci
@@ -192,6 +198,9 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Install export deps
+        working-directory: packages/export
+        run: npm ci
       - name: Install desktop deps
         working-directory: apps/desktop
         run: npm ci
