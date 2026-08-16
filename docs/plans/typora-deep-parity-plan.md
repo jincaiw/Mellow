@@ -180,3 +180,21 @@
 实施顺序（合并后）：高亮 → 上标下标 → 查找替换 → 链接点击 → 菜单栏五组 → YAML 折叠 →
 脚注/TOC 交互 → emoji → Wikilink → 右键菜单 → Cheatsheet → Recent Files → 表格列宽 →
 逐条实测回填。每项带测试；全部完成后跑回归门禁 + golden journeys 增量用例统一验收。
+
+---
+
+## 八、实施进度（2026-08-16 第一批，已提交 5ce499d）
+
+| # | 任务 | 状态 | 验证 |
+|---|---|---|---|
+| ① | ==高亮== | ✅ | inlineExtras：扫描器（跳过围栏/行内代码/Setext）+ caret-aware 定界符 + 9 测试 |
+| ② | ^上标^ / ~下标~ | ✅ | 同上（单 ~ 下标与 ~~ 删除线不冲突） |
+| ③ | 查找替换（Ctrl+H） | ✅ | @codemirror/search Mod-h + __MELLOW_SEARCH_API__ 桥（菜单触发） |
+| ④ | 链接点击对齐 | ✅ | 普通点击不导航；Cmd/Ctrl+Click 浏览器（H2 保留） |
+| ⑤ | 菜单栏五组 | ✅ | 编辑/格式/段落/主题/帮助（macOS AX 实测 10 菜单）；__MELLOW_FORMAT_API__ 桥（空选区成对插入、空光标作用于当前行） |
+| ⑥ | YAML 灰色源码可折叠 | ✅ | 默认灰色源码 + 折叠按钮 → 卡片（StateField + 按钮 widget） |
+| ⑧ | emoji 补全 | ✅ | :smile: → 😄（autocomplete 源合并） |
+| ⑦⑨⑩⑪⑫⑬⑭ | 脚注/TOC 交互、Wikilink、右键菜单、Cheatsheet、Recent Files、表格列宽拖拽、实测回填 | ⏳ 待续 | 下一批实施 |
+
+引擎测试：448 → **454 全绿**；app-core 111；desktop tsc / cargo check 通过；
+debug bundle 启动 + 菜单栏 10 菜单实测（Apple/Mellow/文件/编辑/视图/插入/格式/段落/主题/帮助）。
