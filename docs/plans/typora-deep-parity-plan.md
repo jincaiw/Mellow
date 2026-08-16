@@ -1,0 +1,182 @@
+# Mellow ↔ Typora 深度对标评估与优化实施方案
+
+> 版本：草案 v1（待确认）· 日期：2026-08-16
+> 目标：以 Typora 1.14.x 为验收基线，逐项对齐功能、行为、快捷键、桌面 UI 与体验细节，
+> 达到「一致或更优」；借鉴 Paperling 与 markdown-preview 的优点；三平台 + 中英双语（默认中文）。
+
+---
+
+## 一、评估方法与基线
+
+- **基线**：Typora 1.14.6（PRD 基准）/ 1.14.9（本机实测对照）。
+- **证据来源**：
+  1. `docs/specs/typora-parity-checklist.md`（110 项，13 域）——功能对标清单；
+  2. `docs/qualification/typora-parity-review-2026-08-13.md`（约 100 PASS-E/B、35 NOT TESTED、3 FAIL→已修）;
+  3. `docs/qualification/golden-journeys-2026-08-13.md`（20 项实测，18/19 功能缺口→已修）；
+  4. `docs/qualification/ui-review-2026-08-13.md`（U1-U8 收敛清单→U1-U4 已实施）；
+  5. 本机实测（benchmark / IME 矩阵 / 三平台 CI 产物）；
+  6. 参考项目 README 盘点（Paperling 473★、markdown-preview 1959★，2026-08 抓取）。
+- **判定规则**：任何条目必须同时通过「功能、行为、快捷键、视觉反馈、文件结果、三平台」才算
+  对齐；缺口分三类：**功能缺失**（Typora 有 Mellow 无）、**行为差异**（有但不等价）、
+  **未验证**（有实现但缺证据）。
+
+---
+
+## 二、现状资产盘点（已完成、不回退）
+
+| 资产 | 状态 |
+|---|---|
+| Live Markdown 引擎（marker reveal / 表格 / 数学 / Mermaid / 脚注 / YAML / TOC / 图片工作流） | ✅ 已发布 V1.0 |
+| IME Composition Guard（macOS 8/8 无 corruption）+ Undo guard | ✅ |
+| 文件安全（atomic save / 冲突拒绝 / 崩溃恢复 / Source Fidelity 0 diff） | ✅ File Safety 5/5 |
+| 安全（DOM 白名单 / 链接拦截 / CSP / 远程图片默认关 / 签名自动更新+回滚） | ✅ |
+| 导出（打印 Cmd+P / PDF CJK / HTML）+ 图标/安装器/文件关联/updater 元数据 | ✅ |
+| UX 收敛（侧栏/状态栏默认隐藏、行号默认关、去 ⌘P 按钮） | ✅ |
+| 三平台 CI（MSI/NSIS/DMG/AppImage/deb/rpm + updater 签名）+ GitHub Release v1.0.0 | ✅（macOS 未公证、Win/Linux 未真机验证） |
+| i18n zh-CN/en-US 100% | ✅ |
+
+---
+
+## 三、深度差距分析
+
+### A. 功能面缺口（Typora 有、Mellow 无 —— 按优先级）
+
+| # | 功能 | Typora 行为 | Mellow 现状 | 优先级 |
+|---|---|---|---|---|
+| A1 | **查找替换（Ctrl/Cmd+H）** | 查找 + 替换 + 全部替换 + 正则 + 大小写 + 全词 | 仅 Cmd+F 查找（@codemirror/search 有 replace 能力未接线） | **P0** |
+| A2 | **==高亮== 标记** | `==text==` 黄色高亮，marker 双向 reveal | 无实现（checklist 遗漏项） | **P0** |
+| A3 | **^上标^ / ~下标~** | `x^2^`、`H~2~O` 行内上下标渲染 | 无实现（checklist 遗漏项） | **P0** |
+| A4 | **emoji 补全** | 输入 `:smile:` 弹出补全 → 😄 | 无（editor-core 未启用 emoji autocomplete） | P1 |
+| A5 | **Wiki 链接 [[file]]** | `[[other]]` 点击跳转/新建 | 无（Paperling 同款能力） | P1 |
+| A6 | **脚注交互**（B5） | 点击跳转 / 返回 / hover 预览 / 源码 reveal | 渲染 ✅，交互未接线 | P1 |
+| A7 | **TOC 点击跳转**（B6） | 点击目录项跳转标题 | 渲染 ✅，跳转未接线 | P1 |
+| A8 | **图片尺寸语法** | `![alt](url =100x50)` 缩放 | 无 | P2 |
+| A9 | **导出 Word (.docx)** | File→Export→Word | 无（仅 PDF/HTML/打印） | P2 |
+| A10 | **最近文件夹**（B12） | 最近打开文件夹列表 | 无 | P2 |
+| A11 | **Quick Look 扩展**（PRD §82） | macOS 空格预览 .md（markdown-preview 杀手锏） | 无 | P2 |
+
+### B. 行为/体验差异（有但不等价）
+
+| # | 项 | Typora | Mellow 现状 | 差距 | 优先级 |
+|---|---|---|---|---|---|
+| B1 | **链接点击** | Cmd+Click 打开（普通点击进源码） | 任何点击都 openUrl（H2 安全修复的取舍） | 需对齐：普通点击=光标定位/源码 reveal，Cmd+Click=浏览器（安全拦截保留） | **P0** |
+| B2 | **表格列宽拖拽** | 拖拽分隔线调列宽（对齐列） | 无 | 中等 | P1 |
+| B3 | **行内代码内反引号转义** | 智能处理 | 需实测 | 验证 | P1 |
+| B4 | **列表 Enter 行为细节** | 空项回车退出、`1)`/`-` 自动转换 | 已实现大部分，需逐条实测（清单 §4.1 未全绿） | 验证+补 | P1 |
+| B5 | **右键菜单** | 编辑器内完整右键（剪切/复制/粘贴/加粗/斜体/链接/图片/表格/段落） | ContextMenu 组件仅文件树用；编辑器内依赖 CM6 默认 | 需补齐编辑器右键菜单 | P1 |
+| B6 | **菜单栏结构** | 文件/编辑/段落/格式/视图/主题/帮助 | 仅 Mellow/文件/视图/插入 —— 缺**编辑**（Undo/Redo/查找/替换）、**格式**（加粗/斜体/代码/链接/引用）、**段落**（标题层级）、**主题**、**帮助** | 结构缺失 | **P0**（骨架）+ P1（补全项） |
+| B7 | **单文档 vs 多标签** | 单窗口单文档，打开即替换 | 多标签 | 保留 tabs（更优），但需：打开新文件默认当前窗口新 tab（已符合）+ 明确关闭行为对齐 | 验证 |
+| B8 | **字数统计** | 状态栏 字数/行数 实时 | statusbar stats 存在（口径需对齐：字数） | 验证 | P1 |
+| B9 | **拼写检查** | OS 拼写（红下划线 + 右键建议） | CM6 spellcheck 默认开（largeFile 关）——右键建议未验证 | 验证 | P1 |
+| B10 | **YAML front matter 显示** | 灰色源码（不渲染卡片） | 渲染为卡片（githubAlerts 风格） | 需对齐 Typora：默认源码样式，可折叠 | P1 |
+
+### C. 桌面 UI 差异
+
+| # | 项 | Typora | Mellow 现状 | 优先级 |
+|---|---|---|---|---|
+| C1 | 默认界面 | 文档即视界（无侧栏/无标签/无行号/无状态栏杂物） | U1-U4 已收敛 ✅ | 已完成 |
+| C2 | 标题栏 | 原生标题栏 + 路径 | overlay + tabbar | 保留（更优） |
+| C3 | 主题菜单 | View→Themes 实时切换 | 设置内切换 + 命令 | P1（菜单对齐 B6 顺带） |
+| C4 | 窗口 chrome 三平台 | Win/Linux 行为 | 未真机验证 | 验证（无环境则标注） |
+
+### D. 参考项目借鉴清单（Paperling / markdown-preview）
+
+| # | 借鉴点 | 来源 | 与 Typora 关系 | 优先级 |
+|---|---|---|---|---|
+| D1 | **Find & Replace（Ctrl+H）+ 正则 + 计数** | Paperling | Typora 同款（A1 合并实施） | P0 |
+| D2 | **Cheatsheet（`?` 全局快捷键速查，可搜索）** | Paperling | Typora 无（更优项） | P1 |
+| D3 | **Recent Files 欢迎屏（缺失文件标记）+ 启动恢复上次文件** | Paperling | Typora 有最近文件 | P1 |
+| D4 | **表格可视化工具条（行/列增删、对齐、tidy）** | Paperling | Mellow 已实现 ✅（buildTableToolbarExtension） | 已完成 |
+| D5 | **Interactive task checkbox（点击回写源码）** | Paperling | Mellow 已实现 ✅（taskCheckbox） | 已完成 |
+| D6 | **Frontmatter Properties 卡片（可编辑）** | Paperling | Typora 无（更优项，与 B10 冲突需决策） | P2 |
+| D7 | **Wikilink** | Paperling | Typora 有（A5 合并） | P1 |
+| D8 | **copy-tex（选中公式复制 LaTeX 源码）** | markdown-preview | Mellow 已实现 ✅（copy source） | 已完成 |
+| D9 | **Quick Look 扩展（Finder 空格预览）** | markdown-preview | PRD §82 P1 明确参考 | P2 |
+| D10 | **离线 Mermaid/KaTeX 渲染（无 CDN）** | 两项目 | Mellow 已实现 ✅（本地渲染） | 已完成 |
+| D11 | **4 主题 + 多字体选择** | Paperling | Mellow 有主题引擎（+custom CSS）；字体选择可补 | P2 |
+
+---
+
+## 四、优化实施方案（分阶段，待确认）
+
+### Phase 0 —— Typora 核心编辑闭环补全（P0，预计 2-3 周）
+
+| 任务 | 内容 | 验收 |
+|---|---|---|
+| P0-1 | 查找替换：接线 @codemirror/search 的 Replace（Ctrl+H 面板、全部替换、正则、大小写、全词）+ i18n + Cmd+G/Shift+Cmd+G | golden journey「查找替换」新用例 PASS；engine 测试 |
+| P0-2 | 菜单栏对齐：新增 编辑（撤销/重做/剪切/复制/粘贴/查找/替换）、格式（加粗/斜体/代码/链接/引用）、段落（标题 H1-H6）、主题（主题列表）、帮助（关于/快捷键）菜单 | 菜单项逐项 dispatch 验证（AX 实测） |
+| P0-3 | 链接点击对齐 Typora：普通点击→源码定位/光标进入，Cmd+Click→系统浏览器（保留 H2 导航拦截 + openUrl 安全路径） | H2 安全测试保持全绿；golden journey link 用例 |
+| P0-4 | `==高亮==`：引擎 marker（reveal 双向 + 样式 + i18n）+ editor-core/engine 测试 | highlight.test 全套；Source Fidelity 不回退 |
+| P0-5 | `^上标^` / `~下标~`：行内 widget 渲染 + 测试 | sup/sub 测试；源码 round-trip 不变 |
+
+### Phase 1 —— Typora 体验细节对齐（P1，预计 3-4 周）
+
+| 任务 | 内容 | 验收 |
+|---|---|---|
+| P1-1 | 脚注交互接线（B5：点击跳转/返回/hover 预览/源码 reveal）+ TOC 点击跳转（B6） | golden journey footnote/toc 用例 |
+| P1-2 | emoji 补全（`:smile:` → 😄，editor-core autocomplete） | 测试 + 真机 |
+| P1-3 | Wikilink [[x]]（同目录解析 + 点击跳转/新建，借鉴 Paperling） | 测试 + 真机 |
+| P1-4 | 编辑器右键菜单（剪切/复制/粘贴/加粗/斜体/链接/图片/表格/段落，按上下文） | 右键菜单矩阵实测 |
+| P1-5 | 表格列宽拖拽（对齐列宽度，minimal patch 写回） | table journey 扩展用例 |
+| P1-6 | Cheatsheet（`?` 快捷键速查面板，可搜索，zh/en） | 实测 |
+| P1-7 | Recent Files 欢迎屏（缺失文件标记）+ 启动恢复上次文件 | 实测 |
+| P1-8 | 列表行为/字数统计/拼写右键建议/链接 editing reveal 逐条实测回填（B4/B8/B9 + checklist §3.3/§4.1 未绿项） | 清单逐项标绿 |
+| P1-9 | YAML front matter 对齐 Typora（默认源码样式可折叠，B10；与 D6 Properties 卡片二选一，见决策点） | 视觉对照 |
+
+### Phase 2 —— 增强与生态（P2，预计 3-6 周）
+
+| 任务 | 内容 | 验收 |
+|---|---|---|
+| P2-1 | 导出 Word (.docx) | CJK 实测 |
+| P2-2 | Quick Look 扩展（PRD §82，参考 markdown-preview） | Finder 空格预览实测 |
+| P2-3 | 图片尺寸语法 =WxH | 测试 |
+| P2-4 | 最近文件夹 + Hidden/Non-Markdown 文件策略（B12） | 实测 |
+| P2-5 | 多字体选择 + 主题细节（D11） | 视觉对照 |
+
+### Phase 3 —— 三平台真机验证与细节回填（依赖基础设施）
+
+| 任务 | 内容 | 验收 |
+|---|---|---|
+| P3-1 | Windows 真机：安装矩阵 + IME（微软拼音/五笔）+ 行为矩阵 | windows-ime-matrix 回填 |
+| P3-2 | Linux 真机：fcitx5/ibus + 安装矩阵 + 行为矩阵 | linux 清单回填 |
+| P3-3 | macOS 签名公证（凭据到位后） | spctl 通过 |
+| P3-4 | typing P95 复测（ABC 输入法）+ 30 任务效率 Gate（90% ≤ Typora+5%） | benchmark 报告 |
+
+---
+
+## 五、风险与不变量
+
+1. **不回退已发布资产**：所有改动必须保持 File Safety 5/5、Source Fidelity 0 diff、
+   IME corruption=0、Security（H1/H2/M1/M2）与 updater 签名全绿 —— 每阶段回归门禁。
+2. **三平台一致**：新功能不允许平台分支逻辑进 editor-core/engine（仅 Adapter 层）。
+3. **i18n 同步**：zh-CN 源 + en-US 100% 对齐（类型强制 + 测试）。
+4. **冲突处理**：与 PRD/ADR 冲突先报告（例如 YAML 卡片 vs Typora 源码式、单文档 vs 标签页）。
+
+## 六、待确认的决策点
+
+1. **链接点击行为**（P0-3）：普通点击=源码定位、Cmd+Click=浏览器 —— 是否按此对齐 Typora？
+2. **菜单栏**（P0-2）：新增 编辑/格式/段落/主题/帮助 五组菜单 —— 确认结构？
+3. **YAML front matter**（P1-9）：对齐 Typora（源码样式）还是保留卡片（更优项）？
+4. **标签页**（B7）：保留多标签为「更优」差异 —— 确认？
+5. **P0 范围**：高亮/上标下标/查找替换/链接/菜单 五项为 P0 —— 确认？
+6. **实施节奏**：Phase 0（P0）→ Phase 1（P1）→ Phase 2/3（P2+真机）—— 确认？
+
+---
+
+> 本方案仅为评估与计划，确认后按 Phase 顺序实施，每项带测试与真机验证。
+
+---
+
+## 七、决策记录（2026-08-16 确认）
+
+| # | 决策点 | 确认结果 |
+|---|---|---|
+| 1 | P0 范围 | ✅ 确认五项 P0（查找替换 / 菜单栏 / 链接点击 / 高亮 / 上标下标） |
+| 2 | 链接点击 | ✅ 对齐 Typora：普通点击=源码定位，Cmd+Click=系统浏览器（保留 H2 拦截） |
+| 3 | 菜单栏 | ✅ 五组对齐 Typora：编辑 / 格式 / 段落 / 主题 / 帮助 |
+| 4 | YAML front matter | ✅ 源码式（灰色）+ 可折叠，点击展开卡片 |
+| 5 | 实施节奏 | ✅ **P0+P1 合并连续实施**，完成后统一验收 |
+
+实施顺序（合并后）：高亮 → 上标下标 → 查找替换 → 链接点击 → 菜单栏五组 → YAML 折叠 →
+脚注/TOC 交互 → emoji → Wikilink → 右键菜单 → Cheatsheet → Recent Files → 表格列宽 →
+逐条实测回填。每项带测试；全部完成后跑回归门禁 + golden journeys 增量用例统一验收。
