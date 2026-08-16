@@ -36,6 +36,7 @@ import { buildCodeFenceAutocompleteExtension } from './codeFence';
 import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
 import { buildWikilinkExtension } from './wikilink';
+import { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi } from './contextMenu';
 import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi } from './largeFile';
@@ -77,6 +78,8 @@ export { emojiSource } from './emoji';
 export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
 export { buildWikilinkExtension, scanWikilinks } from './wikilink';
 export type { WikilinkRange } from './wikilink';
+export { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi, inlineLinkAt, imageSourceAt } from './contextMenu';
+export type { EditorContextMenuRequest, EditorContextActions, InlineLinkSpan } from './contextMenu';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -124,6 +127,8 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
   installSearchApi();
   // 格式/段落命令：宿主（菜单）经 iframe window.__MELLOW_FORMAT_API__ 调用
   installFormatApi();
+  // 编辑器右键菜单动作：宿主经 iframe window.__MELLOW_CONTEXT_ACTIONS__ 调用
+  installContextMenuApi();
   return [
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
@@ -148,6 +153,8 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildCodeFenceAutocompleteExtension([emojiSource]),
     buildInlineExtrasExtension(),
     buildWikilinkExtension(),
+    buildContextMenuExtension(),
+    buildContextMenuViewTrackerExtension(),
     buildDocumentSearchExtension(),
   ];
 }

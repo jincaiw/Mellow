@@ -63,11 +63,12 @@ import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import type { SettingDefinition } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
+import type { EditorContextMenuRequest, EditorContextActions } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
 import SplitPreview from './SplitPreview';
 import type { SplitPreviewHandle } from './SplitPreview';
 import ContextMenu from './ContextMenu';
-import type { ContextMenuState } from './ContextMenu';
+import type { ContextMenuItem, ContextMenuState } from './ContextMenu';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import type { Update as TauriUpdate } from '@tauri-apps/plugin-updater';
@@ -1820,6 +1821,12 @@ export default function App() {
           wikilinkWin.__MELLOW_WIKILINK_OPEN__ = (name) => { void openWikilinkRef.current(name); };
         }
 
+        // 注入编辑器右键菜单 handler（engine 检测上下文 → App 弹 ContextMenu）
+        const ctxWin = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_MENU__?: (req: EditorContextMenuRequest) => void }) | null;
+        if (ctxWin) {
+          ctxWin.__MELLOW_CONTEXT_MENU__ = (req) => { handleEditorContextMenuRef.current(req); };
+        }
+
         // Crash Recovery：编辑事件 → 防抖快照（与 Auto Save 分离）
         host.onEvent((e) => {
           if (e.type === 'viewUpdate') {
@@ -1948,12 +1955,55 @@ export default function App() {
     if (fsService !== null) {
       const r = await fsService.exists(target);
       if (!r.ok) { setStatusText(`打开失败: ${r.error.message}`); return; }
-      if (!r.value) { setStatusText(`未找到: ${targetName}`); return; }
+      if (!r.value) { setStatusText(t('msg.wikilinkNotFound', { name: targetName })); return; }
     }
     await openPathInTab(target);
   }, [openPathInTab]);
   const openWikilinkRef = useRef(openWikilink);
   openWikilinkRef.current = openWikilink;
+
+  /** 编辑器右键菜单（engine → __MELLOW_CONTEXT_MENU__ 请求 → 弹 ContextMenu） */
+  const handleEditorContextMenu = useCallback((req: EditorContextMenuRequest) => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_ACTIONS__?: EditorContextActions }) | null;
+    const items: ContextMenuItem[] = [
+      { label: t('contextmenu.editorCut'), enabled: req.hasSelection, onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.cut() },
+      { label: t('contextmenu.editorCopy'), enabled: req.hasSelection, onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.copy() },
+      { label: t('contextmenu.editorPaste'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.paste() },
+    ];
+    if (req.kind === 'link' && req.url !== undefined) {
+      items.push({
+        label: t('contextmenu.editorOpenLink'),
+        onClick: () => { void openerRef.current?.openUrl(req.url as string); },
+      });
+    }
+    if (req.kind === 'wikilink' && req.name !== undefined) {
+      items.push({
+        label: t('contextmenu.editorOpenWikilink', { name: req.name }),
+        onClick: () => { void openWikilinkRef.current(req.name as string); },
+      });
+    }
+    if (req.kind === 'image' && req.src !== undefined) {
+      items.push(
+        { label: t('contextmenu.editorImageOpen'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'open' }); } },
+        { label: t('contextmenu.editorImageReveal'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'reveal' }); } },
+        { label: t('contextmenu.editorImageCopyPath'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'copyPath' }); } },
+        { label: t('contextmenu.editorImageRename'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'rename' }); } },
+      );
+    }
+    if (req.kind === 'table') {
+      items.push(
+        { label: t('contextmenu.tableAddRowBelow'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addRowBelow') },
+        { label: t('contextmenu.tableDeleteRow'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteRow') },
+        { label: t('contextmenu.tableAddColumnRight'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addColumnRight') },
+        { label: t('contextmenu.tableDeleteColumn'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteColumn') },
+        { label: t('contextmenu.tableTidy'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('tidy') },
+      );
+    }
+    setContextMenu({ x: req.x, y: req.y, items });
+  }, [handleImageAction, t]);
+  const handleEditorContextMenuRef = useRef(handleEditorContextMenu);
+  handleEditorContextMenuRef.current = handleEditorContextMenu;
 
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
