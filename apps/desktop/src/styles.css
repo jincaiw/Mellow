@@ -1380,3 +1380,119 @@ html, body, #root {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Cheatsheet（Typora 深度对标：Markdown 速查表）── */
+.cheatsheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(24, 24, 24, 0.2);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 7vh;
+}
+
+.cheatsheet-panel {
+  width: min(680px, calc(100vw - 64px));
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 10px;
+  background: var(--mellow-bg-elevated);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.cheatsheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--mellow-border);
+}
+
+.cheatsheet-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mellow-fg);
+}
+
+.cheatsheet-close {
+  border: 0;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.cheatsheet-close:hover {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+
+.cheatsheet-body {
+  overflow: auto;
+  padding: 6px 16px 16px;
+}
+
+.cheatsheet-section {
+  margin-top: 12px;
+}
+
+.cheatsheet-section-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mellow-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.cheatsheet-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cheatsheet-table td {
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--mellow-fg);
+  border-bottom: 1px solid var(--mellow-bg-hover);
+}
+
+.cheatsheet-label {
+  width: 34%;
+}
+
+.cheatsheet-sample {
+  width: 38%;
+}
+
+.cheatsheet-sample code {
+  font-family: var(--mellow-mono-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  background: var(--mellow-bg-hover);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--mellow-fg);
+}
+
+.cheatsheet-shortcut {
+  width: 28%;
+  text-align: right;
+}
+
+.cheatsheet-shortcut kbd {
+  font-family: var(--mellow-mono-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 11px;
+  color: var(--mellow-fg-subtle);
+  background: var(--mellow-bg-hover);
+  border: 1px solid var(--mellow-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}

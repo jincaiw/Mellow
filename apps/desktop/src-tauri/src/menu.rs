@@ -107,8 +107,8 @@ pub fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     let theme_menu = Submenu::with_items(app, "主题", true, &[&theme_light, &theme_dark, &sep, &theme_system])?;
 
     // ── 帮助 ──
-    let help_shortcuts = MenuItem::with_id(app, "help.shortcuts", "快捷键", true, None::<&str>)?;
-    let help_menu = Submenu::with_items(app, "帮助", true, &[&help_shortcuts])?;
+    let help_cheatsheet = MenuItem::with_id(app, "help.cheatsheet", "Markdown 速查表", true, None::<&str>)?;
+    let help_menu = Submenu::with_items(app, "帮助", true, &[&help_cheatsheet])?;
 
     let menu = Menu::with_items(app, &[&app_menu, &file_menu, &edit_menu, &view_menu, &insert_menu, &format_menu, &paragraph_menu, &theme_menu, &help_menu])?;
     app.set_menu(menu)?;
