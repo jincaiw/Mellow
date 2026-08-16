@@ -79,29 +79,33 @@ pub fn run() {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
             // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），
             // 外部链接由前端 Reader/SplitPreview 拦截后经系统浏览器打开。
-            let window = tauri::webview::WebviewWindowBuilder::new(
-                app,
-                "main",
-                tauri::WebviewUrl::App("index.html".into()),
-            )
-            .title("Mellow")
-            .inner_size(1200.0, 800.0)
-            .min_inner_size(900.0, 600.0)
-            .decorations(true)
-            .resizable(true)
-            .center()
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true)
-            .on_navigation(|url| {
+            let window = {
+                let builder = tauri::webview::WebviewWindowBuilder::new(
+                    app,
+                    "main",
+                    tauri::WebviewUrl::App("index.html".into()),
+                )
+                .title("Mellow")
+                .inner_size(1200.0, 800.0)
+                .min_inner_size(900.0, 600.0)
+                .decorations(true)
+                .resizable(true)
+                .center();
+                #[cfg(target_os = "macos")]
+                let builder = builder
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true);
+                builder.on_navigation(|url| {
                 let scheme = url.scheme();
                 if scheme == "tauri" {
                     return true; // 应用自身页面（release）
                 }
                 // dev server（vite）
                 scheme == "http" && url.host_str() == Some("localhost")
-            })
-            .build()
-            .expect("failed to build main window");
+                })
+                .build()
+                .expect("failed to build main window")
+            };
             let _ = window.set_title("Mellow");
             // macOS Menu Bar：菜单只发命令 id，执行统一走前端 CommandRegistry
             menu::attach_menu_events(app.handle());
@@ -121,6 +125,7 @@ pub fn run() {
         .expect("error while building Mellow")
         .run(|app: &tauri::AppHandle, event| {
             // macOS Finder「打开方式」/ `open -a`（odoc Apple Event）
+            #[cfg(target_os = "macos")]
             if let RunEvent::Opened { urls } = event {
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {

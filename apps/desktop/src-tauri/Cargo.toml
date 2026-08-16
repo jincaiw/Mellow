@@ -22,6 +22,10 @@ regex = "1"
 notify = "8"
 # 系统打开/定位（PRD §54 Open Image / Reveal；三平台）
 tauri-plugin-opener = "2"
+# 跨平台回收站（macOS Finder / Windows Recycle Bin / Linux trash spec；PRD §57）
+trash = "5"
+# 远程图片下载（spec image-workflow §9：仅用户显式命令；rustls TLS）
+ureq = "2"
 
 [dev-dependencies]
 # 更新签名校验测试（与 tauri-plugin-updater 同款 minisign 语义）
@@ -31,10 +35,6 @@ minisign-verify = "0.2"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
-# 跨平台回收站（macOS Finder / Windows Recycle Bin / Linux trash spec；PRD §57）
-trash = "5"
-# 远程图片下载（spec image-workflow §9：仅用户显式命令；rustls TLS）
-ureq = "2"
 
 [profile.release]
 codegen-units = 1
