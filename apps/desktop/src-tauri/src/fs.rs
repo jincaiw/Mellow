@@ -247,9 +247,13 @@ fn tmp_path_for(target: &Path) -> PathBuf {
  * 失败保证：rename 前原文件从未被触碰；任何阶段失败清理 temp，原文件完整。
  */
 pub fn atomic_save(target: &Path, data: &[u8], expected: Option<&DiskState>) -> Result<SaveOutcome, SaveError> {
-    // 1. validate disk revision：前端记录的磁盘状态 vs 当前磁盘
+    // 1. 解析 symlink（spec §11）：保存到真实目标、保留 symlink 本身。
+    //    canonicalize 同时解析 parent 目录里的 symlink；路径不存在（新文档）时回退原路径。
+    let effective = fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+
+    // 2. validate disk revision：前端记录的磁盘状态 vs 当前磁盘（metadata 跟随 symlink）
     if let Some(expected) = expected {
-        match fs::metadata(target) {
+        match fs::metadata(&effective) {
             Ok(meta) => {
                 let current_key = identity_key(&meta);
                 let current_mtime = mtime_ms(&meta);
@@ -266,19 +270,22 @@ pub fn atomic_save(target: &Path, data: &[u8], expected: Option<&DiskState>) -> 
         }
     }
 
-    let tmp_path = tmp_path_for(target);
+    // 3. 记录原文件权限（PRD §104：保留 permissions），replace 后恢复
+    let original_perms = fs::metadata(&effective).ok().map(|m| m.permissions());
+
+    let tmp_path = tmp_path_for(&effective);
 
     // 崩溃残留清理（上次 crash during save 的 temp）
     let _ = fs::remove_file(&tmp_path);
 
-    // 2-5. temp write → flush → fsync → rename
+    // 4-7. temp write → flush → fsync → rename
     let replace = (|| {
         let mut tmp = fs::File::create(&tmp_path).map_err(|e| SaveError::Io(e.to_string()))?;
         tmp.write_all(data).map_err(|e| SaveError::Io(e.to_string()))?;
         tmp.flush().map_err(|e| SaveError::Io(e.to_string()))?;
         tmp.sync_all().map_err(|e| SaveError::Io(e.to_string()))?;
         drop(tmp);
-        fs::rename(&tmp_path, target).map_err(|e| SaveError::Io(e.to_string()))
+        fs::rename(&tmp_path, &effective).map_err(|e| SaveError::Io(e.to_string()))
     })();
 
     if let Err(e) = replace {
@@ -286,14 +293,21 @@ pub fn atomic_save(target: &Path, data: &[u8], expected: Option<&DiskState>) -> 
         return Err(e);
     }
 
-    // 6. verify：替换后读回比对
-    let on_disk = fs::read(target).map_err(|e| SaveError::Io(e.to_string()))?;
+    // 8. 恢复原文件权限（PRD §104 permissions preservation；失败仅告警，不破坏已落盘内容）
+    if let Some(perms) = original_perms {
+        if let Err(e) = fs::set_permissions(&effective, perms) {
+            eprintln!("[mellow] 恢复文件权限失败（{}）: {}", effective.display(), e);
+        }
+    }
+
+    // 9. verify：替换后读回比对
+    let on_disk = fs::read(&effective).map_err(|e| SaveError::Io(e.to_string()))?;
     if on_disk != data {
         return Err(SaveError::VerifyFailed);
     }
 
-    // 7. update revision：返回新磁盘状态
-    let meta = fs::metadata(target).map_err(|e| SaveError::Io(e.to_string()))?;
+    // 10. update revision：返回新磁盘状态（path 保留用户打开时的原始路径，含 symlink）
+    let meta = fs::metadata(&effective).map_err(|e| SaveError::Io(e.to_string()))?;
     Ok(SaveOutcome {
         path: target.to_string_lossy().into_owned(),
         bytes_written: data.len(),
@@ -462,6 +476,26 @@ pub async fn write_text(path: String, content: String) -> Result<SaveDocumentRes
 pub async fn copy_file(from: String, to: String) -> Result<(), String> {
     fs::copy(&from, &to).map_err(|e| format!("copy {} → {}: {}", from, to, e))?;
     Ok(())
+}
+
+/// 保存对话框 → 返回用户选择的路径（取消 → None）。RC F1：PDF 导出等二进制落盘前置。
+#[tauri::command]
+pub async fn pick_save_path(
+    app: tauri::AppHandle,
+    default_name: String,
+    filters: Option<Vec<String>>,
+) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut file = app.dialog().file().set_file_name(&default_name);
+    if let Some(exts) = filters {
+        if !exts.is_empty() {
+            let names: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+            file = file.add_filter("Mellow", &names);
+        }
+    }
+    file.blocking_save_file()
+        .and_then(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 /// 递归建目录（asset dir）

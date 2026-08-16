@@ -35,7 +35,13 @@ pub fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     let reveal = MenuItem::with_id(app, "file.revealInFinder", "在 Finder 中显示", true, None::<&str>)?;
     let close_tab = MenuItem::with_id(app, "tabs.close", "关闭标签页", true, Some("Cmd+W"))?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let file_menu = Submenu::with_items(app, "文件", true, &[&new, &open, &quick_open, &open_folder, &sep, &save, &save_as, &sep, &reveal, &sep, &close_tab])?;
+    // RC F2：打印入口（golden journey #18；执行走前端 file.print）
+    let print = MenuItem::with_id(app, "file.print", "打印…", true, Some("Cmd+P"))?;
+    // RC F1：PDF 导出（golden journey #19；执行走前端 export.pdf）
+    let export_pdf = MenuItem::with_id(app, "export.pdf", "导出 PDF…", true, None::<&str>)?;
+    // RC F6：导出 HTML（PRD §73；执行走前端 export.html）
+    let export_html = MenuItem::with_id(app, "export.html", "导出 HTML…", true, None::<&str>)?;
+    let file_menu = Submenu::with_items(app, "文件", true, &[&new, &open, &quick_open, &open_folder, &sep, &save, &save_as, &sep, &reveal, &sep, &print, &export_pdf, &export_html, &sep, &close_tab])?;
 
     let palette = MenuItem::with_id(app, "commandPalette.open", "命令面板", true, Some("Cmd+Shift+P"))?;
     let focus = MenuItem::with_id(app, "view.focus.cycle", "Focus Mode", true, Some("F8"))?;

@@ -193,6 +193,18 @@ export class EditorCore {
     return win?.__MELLOW_FOCUS_MODE__?.getMode?.() ?? 'off';
   }
 
+  /** Large File Mode（PRD §109）：触发阈值由宿主计算（字节数/行数），经 iframe API 切换。 */
+  setLargeFileMode(active: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_LARGE_FILE__?: { set?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_LARGE_FILE__?.set?.(active);
+  }
+
+  /** 当前是否处于 Large File Mode（iframe 内引擎状态） */
+  isLargeFileMode(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_LARGE_FILE__?: { isActive?: () => boolean } }) | null;
+    return win?.__MELLOW_LARGE_FILE__?.isActive?.() ?? false;
+  }
+
   /** 设置当前文档路径（Image Workflow 相对路径解析，engine 读 window.__MELLOW_DOC_PATH__） */
   setDocumentPath(path: string | null): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_DOC_PATH__?: string | null }) | null;

@@ -12,6 +12,8 @@
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.4.1",
+    "jsdom": "^30.0.1",
     "ts-jest": "^29.0.0",
     "typescript": "^5.0.0"
   }

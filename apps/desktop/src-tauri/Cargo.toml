@@ -1,6 +1,6 @@
 [package]
 name = "mellow-desktop"
-version = "0.0.0"
+version = "1.0.0"
 description = "Mellow V0.0 Runtime Qualification Shell"
 edition = "2021"
 
@@ -14,10 +14,16 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = { version = "2", default-features = false, features = ["xdg-portal"] }
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
 notify = "8"
+
+[dev-dependencies]
+# 更新签名校验测试（与 tauri-plugin-updater 同款 minisign 语义）
+minisign-verify = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

@@ -9,7 +9,7 @@
  * 平台约束：纯数据 + 纯函数（localStorage 读写），零 OS 依赖。
  */
 
-export type SettingsSectionId = 'general' | 'editor' | 'markdown' | 'file' | 'image' | 'appearance' | 'export' | 'shortcuts' | 'extensions' | 'advanced';
+export type SettingsSectionId = 'general' | 'editor' | 'markdown' | 'file' | 'image' | 'appearance' | 'export' | 'shortcuts' | 'extensions' | 'advanced' | 'updater';
 
 export type SettingType = 'toggle' | 'select' | 'number' | 'text' | 'action';
 
@@ -63,7 +63,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.editor',
     settings: [
       { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: 17, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig' },
-      { id: 'editor.lineNumbers', labelKey: 'settings.editor.lineNumbers', type: 'toggle', storageKey: 'mellow.editor.lineNumbers', defaultValue: true, applyCommand: 'settings.editorConfig' },
+      { id: 'editor.lineNumbers', labelKey: 'settings.editor.lineNumbers', type: 'toggle', storageKey: 'mellow.editor.lineNumbers', defaultValue: false, applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineWrapping', labelKey: 'settings.editor.lineWrapping', type: 'toggle', storageKey: 'mellow.editor.lineWrapping', defaultValue: true, applyCommand: 'settings.editorConfig' },
       { id: 'editor.typewriter', labelKey: 'settings.editor.typewriter', type: 'toggle', storageKey: 'mellow.editor.typewriter', defaultValue: false, applyCommand: 'view.typewriter.on' },
       { id: 'editor.focusMode', labelKey: 'settings.editor.focusMode', type: 'select', storageKey: 'mellow.editor.focusMode', defaultValue: 'off',
@@ -96,6 +96,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.image',
     settings: [
       { id: 'image.assetDir', labelKey: 'settings.image.assetDir', type: 'text', storageKey: 'mellow.assetDir', defaultValue: 'assets', applyCommand: 'settings.image.assetDir' },
+      { id: 'image.loadRemote', labelKey: 'settings.image.loadRemote', type: 'toggle', storageKey: 'mellow.image.loadRemote', defaultValue: false, descriptionKey: 'settings.image.loadRemoteDesc' },
     ],
   },
   {
@@ -103,6 +104,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.appearance',
     settings: [
       { id: 'appearance.theme', labelKey: 'settings.appearance.theme', type: 'select', storageKey: 'mellow.theme.settings', defaultValue: 'mellow-light', applyCommand: 'theme.apply.mellow-light' },
+      { id: 'appearance.statusbar', labelKey: 'settings.appearance.statusbar', type: 'toggle', storageKey: 'mellow.statusbar.visible', defaultValue: true, applyCommand: 'settings.statusbar' },
       { id: 'appearance.sidebarMode', labelKey: 'settings.appearance.sidebar', type: 'select', storageKey: 'mellow.sidebar.mode', defaultValue: 'files',
         options: [
           { value: 'files', labelKey: 'settings.sidebar.files' },
@@ -139,6 +141,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     settings: [
       { id: 'advanced.windowBounds', labelKey: 'settings.advanced.windowBounds', type: 'toggle', storageKey: 'mellow.advanced.windowBounds', defaultValue: true, applyCommand: 'settings.windowBounds' },
       { id: 'advanced.userCss', labelKey: 'settings.advanced.userCss', type: 'text', storageKey: '', defaultValue: '', descriptionKey: 'settings.advanced.userCssDesc' },
+    ],
+  },
+  {
+    id: 'updater',
+    labelKey: 'settings.updater.label',
+    settings: [
+      { id: 'updater.channel', labelKey: 'settings.updater.channel', type: 'select', storageKey: 'mellow.updater.channel', defaultValue: 'stable',
+        options: [
+          { value: 'stable', labelKey: 'settings.updater.channel.stable' },
+          { value: 'beta', labelKey: 'settings.updater.channel.beta' },
+        ], descriptionKey: 'settings.updater.channelDesc' },
+      { id: 'updater.checkOnStartup', labelKey: 'settings.updater.checkOnStartup', type: 'toggle', storageKey: 'mellow.updater.checkOnStartup', defaultValue: true },
+      { id: 'updater.checkNow', labelKey: 'settings.updater.checkNow', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.updater.checkNowDesc' },
     ],
   },
 ];

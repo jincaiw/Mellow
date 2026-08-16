@@ -1,3 +1,4 @@
+/** @jest-environment jsdom */
 import { flattenOutline } from '../src/outline';
 import { renderReaderHtml } from '../src/reader';
 

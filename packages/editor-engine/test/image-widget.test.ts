@@ -83,13 +83,29 @@ describe('Live Mode 渲染', () => {
     expect(imgElements(view).length).toBe(0);
   });
 
-  test('远程 URL → img（不静默下载，spec §9）', async () => {
+  test('远程 URL → 默认占位（Security M2：不静默加载）', async () => {
     const view = setUp('![x](https://a.com/x.png)\n', makeHost((s) => s));
     await sleep();
     moveCaret(view, view.state.doc.length);
     await sleep();
-    const img = view.dom.querySelector('img.mellow-md-image-img') as HTMLImageElement | null;
-    expect(img?.src).toContain('https://a.com/x.png');
+    // 默认不加载：无 img，显示占位 + 「加载远程图片」按钮
+    expect(view.dom.querySelector('img.mellow-md-image-img')).toBeNull();
+    expect(view.dom.querySelector(`.${IMG_BROKEN_CLASS}`)).not.toBeNull();
+    expect(view.dom.textContent).toContain('加载远程图片');
+  });
+
+  test('远程 URL → 设置开启后加载 img（Security M2）', async () => {
+    localStorage.setItem('mellow.image.loadRemote', '1');
+    try {
+      const view = setUp('![x](https://a.com/x.png)\n', makeHost((s) => s));
+      await sleep();
+      moveCaret(view, view.state.doc.length);
+      await sleep();
+      const img = view.dom.querySelector('img.mellow-md-image-img') as HTMLImageElement | null;
+      expect(img?.src).toContain('https://a.com/x.png');
+    } finally {
+      localStorage.removeItem('mellow.image.loadRemote');
+    }
   });
 });
 

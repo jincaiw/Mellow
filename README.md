@@ -51,6 +51,7 @@ mellow/
 | [clipboard-smart-paste-spec.md](docs/specs/clipboard-smart-paste-spec.md) | 剪贴板与智能粘贴 |
 | [document-file-safety-spec.md](docs/specs/document-file-safety-spec.md) | 文档与文件安全 |
 | [ime-test-plan.md](docs/specs/ime-test-plan.md) | IME 测试计划 |
+| [auto-update-spec.md](docs/specs/auto-update-spec.md) | 安全自动更新（签名/校验/渠道/回滚） |
 
 ### 判决（ADR）
 

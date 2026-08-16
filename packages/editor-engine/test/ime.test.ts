@@ -95,20 +95,22 @@ describe('Composition Guard', () => {
   });
 
   test('合成结束后 Undo 不破坏文本与 marker（undo corruption guard）', async () => {
-    const view = setUpWithComposition('**bold**');
+    const view = setUpWithComposition('**bold**x');
     await sleep();
     // 合成中输入中文（composition 期间 doc 变化）
     startComposition();
     view.dispatch({ changes: { from: 0, insert: '中文' } });
     endComposition();
     await sleep();
-    expect(view.state.doc.toString()).toBe('中文**bold**');
+    expect(view.state.doc.toString()).toBe('中文**bold**x');
     // Undo 合成输入：文本恢复、marker 正常重建（不残留损坏状态）
     undo(view);
     await sleep();
-    expect(view.state.doc.toString()).toBe('**bold**');
-    // caret 归位后 marker 正常（非损坏）
-    moveCaret(view, 8);
+    expect(view.state.doc.toString()).toBe('**bold**x');
+    // caret 在节点外（bold range 0–8，caret=9）→ marker 正常隐藏重建（非损坏）。
+    // 注意边界语义（types.ts intersects 闭区间）：caret 恰在 range.to（8）视为节点内 →
+    // reveal（0 个隐藏 marker）；断言必须用节点外位置（9）。
+    moveCaret(view, 9);
     await sleep();
     expect(markerElements(view).length).toBe(2);
   });

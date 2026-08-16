@@ -11,6 +11,7 @@
 import type { EditorView, ViewUpdate, DecorationSet } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isSourceMode } from '../mode';
+import { isLargeFileMode } from '../largeFile';
 import type { ImageHost } from './host';
 import { attachEngineView, trackImageWidget, registerEngineImageApi } from './engineApi';
 import { isRemoteSrc } from './scan';
@@ -98,6 +99,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     private container: HTMLSpanElement | null = null;
     private resolvedUrl: string | null = null;
     private broken = false;
+    private remoteLoaded = false;
     private untrack: (() => void) | null = null;
 
     constructor(
@@ -139,8 +141,25 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
         return;
       }
       this.container.textContent = '';
+      // 悬停操作条（宿主注入 handler 时显示；spec §6 单图操作入口，各分支均保留）
+      const appendActions = (): void => {
+        const bar = buildActionsBar(this.spec);
+        if (bar !== null) {
+          this.container?.appendChild(bar);
+        }
+      };
       if (this.broken || this.resolvedUrl === null) {
         this.container.appendChild(buildBrokenPlaceholder(this.spec, this.retry.bind(this)));
+        appendActions();
+        return;
+      }
+      // Security M2：远程图片默认不加载（默认无需联网）；设置开启或显式点击后才加载。
+      if (isRemoteSrc(this.spec.src) && !this.remoteLoaded && !remoteImagesEnabled()) {
+        this.container.appendChild(buildRemotePlaceholder(this.spec.src, () => {
+          this.remoteLoaded = true;
+          this.render();
+        }));
+        appendActions();
         return;
       }
       const img = document.createElement('img');
@@ -148,17 +167,15 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       img.src = this.resolvedUrl;
       img.alt = this.spec.alt;
       img.draggable = false;
+      // Large File Mode：图片懒加载（PRD §109 image lazy）
+      if (isLargeFileMode()) img.loading = 'lazy';
       // img error → broken placeholder（网络失败/文件消失）
       img.addEventListener('error', () => {
         this.broken = true;
         this.render();
       });
       this.container.appendChild(img);
-      // 悬停操作条（宿主注入 handler 时显示；spec §6 单图操作入口）
-      const bar = buildActionsBar(this.spec);
-      if (bar !== null) {
-        this.container.appendChild(bar);
-      }
+      appendActions();
     }
 
     private retry(): void {
@@ -198,6 +215,37 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       }
     });
     el.appendChild(revealBtn);
+
+    return el;
+  }
+
+  /** Security M2：远程图片默认不加载（默认无需联网） */
+  function remoteImagesEnabled(): boolean {
+    try {
+      return localStorage.getItem('mellow.image.loadRemote') === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function buildRemotePlaceholder(src: string, load: () => void): HTMLElement {
+    const el = document.createElement('span');
+    el.className = IMG_BROKEN_CLASS;
+    el.title = src;
+
+    const name = document.createElement('span');
+    name.className = 'mellow-md-image-broken-name';
+    name.textContent = `🌐 ${src.split('/').pop() ?? src}`;
+    el.appendChild(name);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '加载远程图片';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      load();
+    });
+    el.appendChild(btn);
 
     return el;
   }

@@ -212,6 +212,50 @@ html, body, #root {
   border-radius: 4px;
 }
 
+
+/* ── RC parity B1：Pin Folder（固定文件夹）── */
+.file-tree-root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-tree-root-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-tree-pin {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+}
+.pinned-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--mellow-border);
+}
+.pinned-folder {
+  font-size: 11px;
+  padding: 1px 8px;
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 10px;
+  background: var(--mellow-bg);
+  cursor: pointer;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pinned-folder.active {
+  background: var(--mellow-accent);
+  color: var(--mellow-accent-fg);
+  border-color: var(--mellow-accent);
+}
 .file-tree-root {
   padding: 5px 8px;
   font-size: 11px;
@@ -612,6 +656,44 @@ html, body, #root {
   background: var(--mellow-warning-bg);
   border-top: 1px solid var(--mellow-warning-border);
   flex-wrap: wrap;
+}
+
+/* ── 安全 Auto Update 横幅（check / download / restart / rollback）── */
+
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--mellow-accent);
+  color: var(--mellow-accent-fg);
+  border-top: 1px solid var(--mellow-border-strong);
+  flex-wrap: wrap;
+}
+
+.update-bar button {
+  padding: 1px 8px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.update-bar button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.update-bar-error {
+  background: var(--mellow-danger-bg);
+  color: inherit;
+}
+
+.rollback-bar {
+  background: var(--mellow-warning-bg);
+  color: inherit;
 }
 
 .recovery-item {

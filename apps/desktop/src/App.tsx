@@ -42,7 +42,7 @@ import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, 
 import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopExtensionHost } from './extensions/extensionHost';
 import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
-import { ExtensionRegistry, buildExtensionContext } from '../../../packages/app-core/src';
+import { ExtensionRegistry, basename, buildExtensionContext } from '../../../packages/app-core/src';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
 import { createDesktopDialogService } from './host/dialogs';
@@ -69,6 +69,10 @@ import type { SplitPreviewHandle } from './SplitPreview';
 import ContextMenu from './ContextMenu';
 import type { ContextMenuState } from './ContextMenu';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
+import type { Update as TauriUpdate } from '@tauri-apps/plugin-updater';
+import { checkForUpdate, downloadUpdate, installUpdateAndRestart, prepareRollback, rollbackCommit, rollbackNoteLaunch, rollbackRestore, rollbackStatus, restartAfterRollback, updateChannelFromSettings } from './host/updater';
+import type { RollbackStatus } from './host/updater';
 import { PRINT_STYLESHEET } from '../../../packages/export/src/printStyle';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
@@ -175,6 +179,35 @@ export default function App() {
   // validate disk revision：打开时记录的磁盘状态，保存时校验外部变更（spec §5）
   const diskStateRef = useRef<{ mtimeMs: number; identityKey: string } | null>(null);
 
+  // ── 安全 Auto Update（signed update / verify package / release channel / rollback）──
+  // 更新检查只发送版本/平台/渠道元数据；绝不携带文档或用户数据（见 host/updater.ts）。
+  const pendingUpdateRef = useRef<TauriUpdate | null>(null);
+  type UpdateUi =
+    | { phase: 'idle' }
+    | { phase: 'checking' }
+    | { phase: 'available'; version: string }
+    | { phase: 'downloading'; percent: number }
+    | { phase: 'ready' }
+    | { phase: 'upToDate' }
+    | { phase: 'error'; message: string };
+  const [updateUi, setUpdateUi] = useState<UpdateUi>({ phase: 'idle' });
+  const [rollbackPrompt, setRollbackPrompt] = useState<RollbackStatus | null>(null);
+  // RC：Status bar hidden 设置（parity B2；默认显示，可隐藏）
+  const [statusbarVisible, setStatusbarVisible] = useState<boolean>(() => {
+    // U2：状态栏默认隐藏（设置可开启）
+    try { return localStorage.getItem('mellow.statusbar.visible') === '1'; } catch { return false; }
+  });
+  // U1：侧边栏默认隐藏（Cmd+Shift+L / 标题栏按钮唤起）
+  const [sidebarVisible, setSidebarVisible] = useState<boolean>(() => {
+    try { return localStorage.getItem('mellow.sidebar.visible') === '1'; } catch { return false; }
+  });
+  const toggleSidebar = useCallback(() => {
+    setSidebarVisible((v) => {
+      try { localStorage.setItem('mellow.sidebar.visible', v ? '0' : '1'); } catch { /* noop */ }
+      return !v;
+    });
+  }, []);
+
   const [status, setStatus] = useState<EditorStatus>('idle');
   const [localeSetting, setLocaleSetting] = useState<LocaleSetting>(() => {
     try {
@@ -206,6 +239,32 @@ export default function App() {
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
+  // RC parity B1：Pin Folder（固定文件夹 + 会话记忆）
+  const PINNED_KEY = 'mellow.fileTree.pinned';
+  const [pinnedFolders, setPinnedFolders] = useState<string[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(PINNED_KEY) ?? '[]') as unknown;
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+  const persistPinned = useCallback((next: string[]) => {
+    setPinnedFolders(next);
+    try {
+      localStorage.setItem(PINNED_KEY, JSON.stringify(next));
+    } catch {
+      /* noop */
+    }
+  }, []);
+  const handleTogglePinRoot = useCallback(() => {
+    if (fileTreeRoot === null) return;
+    if (pinnedFolders.includes(fileTreeRoot)) {
+      persistPinned(pinnedFolders.filter((p) => p !== fileTreeRoot));
+    } else {
+      persistPinned([...pinnedFolders, fileTreeRoot]);
+    }
+  }, [fileTreeRoot, pinnedFolders, persistPinned]);
   const [sidebarMode, setSidebarModeState] = useState<'files' | 'outline' | 'search'>(() => {
     const saved = localStorage.getItem('mellow.sidebar.mode');
     return saved === 'outline' || saved === 'search' ? saved : 'files';
@@ -422,6 +481,162 @@ export default function App() {
     dirtyRef.current = value;
     setDirtyState(value);
   }, []);
+
+  // ── 安全 Auto Update 处理（channel / check / download / restart / rollback）──
+
+  /** 检查更新（仅发送版本/平台/渠道元数据；无用户数据、无遥测） */
+  const runUpdateCheck = useCallback(async () => {
+    if (!isTauri()) return;
+    setUpdateUi({ phase: 'checking' });
+    try {
+      const update = await checkForUpdate(updateChannelFromSettings());
+      if (update === null) {
+        setUpdateUi({ phase: 'upToDate' });
+        window.setTimeout(() => setUpdateUi({ phase: 'idle' }), 4000);
+        return;
+      }
+      pendingUpdateRef.current = update;
+      setUpdateUi({ phase: 'available', version: update.version });
+    } catch (err) {
+      setUpdateUi({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
+  }, []);
+
+  const handleUpdateLater = useCallback(() => {
+    setUpdateUi({ phase: 'idle' });
+  }, []);
+
+  /** 立即更新：rollback 备份当前版本 → 下载（Rust 校验签名）→ 提示重启安装 */
+  const handleUpdateNow = useCallback(async () => {
+    setUpdateUi({ phase: 'downloading', percent: 0 });
+    try {
+      await prepareRollback();
+      const update = pendingUpdateRef.current;
+      if (update === null) throw new Error('no pending update');
+      await downloadUpdate(update, (p) => {
+        const total = p.total ?? 0;
+        const percent = total > 0 ? Math.min(100, Math.round((p.downloaded / total) * 100)) : 0;
+        setUpdateUi({ phase: 'downloading', percent });
+      });
+      setUpdateUi({ phase: 'ready' });
+    } catch (err) {
+      setUpdateUi({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
+  }, []);
+
+  const handleInstallRestart = useCallback(async () => {
+    const update = pendingUpdateRef.current;
+    if (update === null) return;
+    try {
+      await installUpdateAndRestart(update);
+    } catch (err) {
+      setUpdateUi({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
+  }, []);
+
+  /** 回滚到更新前版本（macOS/Linux 直接 relaunch；Windows 退出交给 helper） */
+  const handleRollback = useCallback(async () => {
+    setRollbackPrompt(null);
+    try {
+      const outcome = await rollbackRestore();
+      await restartAfterRollback(outcome);
+    } catch (err) {
+      setToast({ message: `${t('updater.rollbackFailed')}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [t]);
+
+  /** 继续使用当前版本 → 视为健康，清理备份 */
+  const handleRollbackKeep = useCallback(async () => {
+    setRollbackPrompt(null);
+    await rollbackCommit().catch(() => undefined);
+  }, []);
+
+  // ── RC F1：PDF 导出（PRD §72 / golden journey #19；与打印共享排版常量）──
+  const handleExportPdf = useCallback(async () => {
+    const tab = tabsRef.current.active;
+    if (tab === null || hostRef.current === null) return;
+    try {
+      const [{ createPdfBuffer, loadNotoFonts, DEFAULT_PDF_OPTIONS }, savePath] = await Promise.all([
+        import('../../../packages/export/src/index'),
+        invoke<string | null>('pick_save_path', {
+          defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.pdf`,
+          filters: ['pdf'],
+        }),
+      ]);
+      if (savePath === null) return; // 用户取消
+      const fonts = await loadNotoFonts();
+      const buffer = await createPdfBuffer(hostRef.current.getText(), DEFAULT_PDF_OPTIONS, { fonts });
+      await invoke('write_binary', { path: savePath, data: Array.from(buffer) });
+      setToast({ message: t('export.pdf.done') });
+    } catch (err) {
+      setToast({ message: `${t('export.pdf.failed')}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [t]);
+
+  // ── RC F6：导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize）──
+  const handleExportHtml = useCallback(async () => {
+    const tab = tabsRef.current.active;
+    if (tab === null || hostRef.current === null) return;
+    try {
+      const [{ exportHtml }, savePath] = await Promise.all([
+        import('../../../packages/export/src/html/index'),
+        invoke<string | null>('pick_save_path', {
+          defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.html`,
+          filters: ['html', 'htm'],
+        }),
+      ]);
+      if (savePath === null) return; // 用户取消
+      const html = await exportHtml(hostRef.current.getText(), {
+        mode: 'with-theme',
+        theme: themeSettings.mode === 'dark' ? 'dark' : 'light',
+        title: tab.title ?? undefined,
+      });
+      await invoke('write_text', { path: savePath, content: html });
+      setToast({ message: t('export.html.done') });
+    } catch (err) {
+      setToast({ message: `${t('export.html.failed')}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [t, themeSettings.mode]);
+
+  /** 启动：更新健康确认（rollback 策略）+ 启动后定时检查更新 */
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const status = await rollbackStatus();
+        if (status !== null && status.pending) {
+          const current = await getVersion();
+          if (current === status.previousVersion) {
+            await rollbackCommit(); // 版本未变 → 直接清理
+          } else {
+            const noted = await rollbackNoteLaunch();
+            if (noted !== null && noted.launchCount >= 2) {
+              if (!cancelled) setRollbackPrompt(status); // 上次启动未完成健康确认 → 可回滚
+            } else {
+              // 健康确认窗口：15s 后提交（删除备份与 marker）
+              window.setTimeout(() => { void rollbackCommit().catch(() => undefined); }, 15000);
+            }
+          }
+        }
+      } catch {
+        /* 更新未配置/失败不阻塞启动 */
+      }
+      if (!cancelled) {
+        let checkEnabled = true;
+        try {
+          checkEnabled = localStorage.getItem('mellow.updater.checkOnStartup') !== '0';
+        } catch {
+          /* noop */
+        }
+        if (checkEnabled) {
+          window.setTimeout(() => { void runUpdateCheck(); }, 4000);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [runUpdateCheck]);
+
 
   const readQuickOpenRecent = useCallback((): string[] => {
     try {
@@ -1891,6 +2106,9 @@ export default function App() {
       case 'settings.image.assetDir':
         setAssetDir(String(value));
         break;
+      case 'settings.statusbar':
+        setStatusbarVisible(Boolean(value));
+        break;
       default:
         break;
     }
@@ -1951,6 +2169,12 @@ export default function App() {
       { id: 'reader.zoomOut', localizedTitle: { zh: 'Reader 缩小', en: 'Reader Zoom Out' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(readerZoom - 0.1) },
       { id: 'reader.zoomReset', localizedTitle: { zh: 'Reader 重置缩放', en: 'Reader Reset Zoom' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(1) },
       { id: 'reader.print', localizedTitle: { zh: '打印 Reader', en: 'Print Reader' }, category: 'file', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => { void invoke('print_window').catch(() => window.print()); } },
+      // RC F2：打印入口（对齐 Typora Cmd+P；golden journey #18）
+      { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+P' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
+      // RC F6：导出 HTML（PRD §73）
+      { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtml() },
+      // RC F1：PDF 导出（golden journey #19）
+      { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
       { id: 'split.toggle', localizedTitle: { zh: '切换 Split（Source | Preview）', en: 'Toggle Split (Source | Preview)' }, category: 'view', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => toggleSplit() },
       { id: 'split.open', localizedTitle: { zh: 'Split：打开预览', en: 'Split: Open Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => !splitOpen && tabsRef.current.active !== null, execute: () => openSplit() },
       { id: 'split.close', localizedTitle: { zh: 'Split：关闭预览', en: 'Split: Close Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => splitOpen, execute: () => closeSplit() },
@@ -1976,12 +2200,12 @@ export default function App() {
       { id: 'insert.list', localizedTitle: { zh: '列表', en: 'List' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['ul', 'lb'] } }, enabled: always, execute: () => replaceSlashTrigger('- ') },
       { id: 'insert.task', localizedTitle: { zh: '任务', en: 'Task' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['todo', 'rw'] } }, enabled: always, execute: () => replaceSlashTrigger('- [ ] ') },
       { id: 'insert.quote', localizedTitle: { zh: '引用', en: 'Quote' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['blockquote', 'yy'] } }, enabled: always, execute: () => replaceSlashTrigger('> ') },
-      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
+      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, shortcut: { mac: 'Cmd+Opt+T', winLinux: 'Ctrl+Alt+T' }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
       { id: 'insert.code', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['fence', 'dm'] } }, enabled: always, execute: () => replaceSlashTrigger('```\n\n```') },
       { id: 'insert.math', localizedTitle: { zh: '数学公式', en: 'Math' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['formula', 'sx'] } }, enabled: always, execute: () => replaceSlashTrigger('$$\n\n$$') },
       { id: 'insert.mermaid', localizedTitle: { zh: 'Mermaid 图表', en: 'Mermaid Diagram' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['diagram', 'tt'] } }, enabled: always, execute: () => replaceSlashTrigger('```mermaid\ngraph TD\n  A --> B\n```') },
       { id: 'insert.alert', localizedTitle: { zh: '提示框', en: 'Alert' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['note', 'jg'] } }, enabled: always, execute: () => replaceSlashTrigger('> [!NOTE]\n> ') },
-      { id: 'insert.image', localizedTitle: { zh: '图片', en: 'Image' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['img', 'tp'] } }, enabled: always, execute: () => replaceSlashTrigger('![]( )') },
+      { id: 'insert.image', localizedTitle: { zh: '图片', en: 'Image' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['img', 'tp'] } }, shortcut: { mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Alt+I' }, enabled: always, execute: () => replaceSlashTrigger('![]( )') },
       { id: 'insert.toc', localizedTitle: { zh: '目录', en: 'Table of Contents' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['toc', 'ml'] } }, enabled: always, execute: () => replaceSlashTrigger('\n\n[toc]\n\n') },
       { id: 'fileTree.newFile', localizedTitle: { zh: '新文件', en: 'New File' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFile() },
       { id: 'fileTree.newFolder', localizedTitle: { zh: '新文件夹', en: 'New Folder' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFolder() },
@@ -1992,6 +2216,8 @@ export default function App() {
       { id: 'fileTree.undo', localizedTitle: { zh: '撤销文件操作', en: 'Undo File Operation' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeUndo() },
       { id: 'fileTree.copyPath', localizedTitle: { zh: '复制路径', en: 'Copy Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(false) },
       { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
+      { id: 'updater.check', localizedTitle: { zh: '检查更新', en: 'Check for Updates' }, category: 'app', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => void runUpdateCheck() },
+      { id: 'view.sidebar.toggle', localizedTitle: { zh: '切换侧边栏', en: 'Toggle Sidebar' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+L', winLinux: 'Ctrl+Shift+L' }, enabled: always, execute: toggleSidebar },
     ];
     commands.forEach((command) => registry.register(command));
     for (const theme of BUILTIN_THEMES) {
@@ -2014,7 +2240,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, selectedTreePath, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, runBatch, runUpdateCheck, selectedTreePath, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2328,11 +2554,13 @@ export default function App() {
         <button
           className="titlebar-palette"
           type="button"
-          onClick={() => void dispatchCommand('commandPalette.open', 'menu')}
-          title={t('titlebar.palette.title')}
-        >{platformMac ? '⌘P' : 'Ctrl+P'}</button>
+          onClick={toggleSidebar}
+          title={t('sidebar.toggleTitle')}
+          aria-pressed={sidebarVisible}
+        >{platformMac ? '⇧⌘L' : 'Ctrl+Shift+L'}</button>
       </header>
       <div className="workspace-shell">
+        {sidebarVisible && (
         <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
           <div className="file-tree-header">
             <strong>{sidebarMode === 'outline' ? t('sidebar.outline') : sidebarMode === 'search' ? t('sidebar.search') : t('sidebar.files')}</strong>
@@ -2373,7 +2601,35 @@ export default function App() {
                 <input placeholder={t('tree.includeGlob')} value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
                 <input placeholder={t('tree.excludeGlob')} value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
               </div>
-              <div className="file-tree-root" title={fileTreeRoot ?? ''}>{fileTreeRoot ?? t('tree.rootEmpty')}</div>
+              <div className="file-tree-root" title={fileTreeRoot ?? ''}>
+                <span className="file-tree-root-label">{fileTreeRoot ?? t('tree.rootEmpty')}</span>
+                {fileTreeRoot !== null && (
+                  <button
+                    type="button"
+                    className="file-tree-pin"
+                    title={pinnedFolders.includes(fileTreeRoot) ? t('sidebar.unpin') : t('sidebar.pin')}
+                    aria-pressed={pinnedFolders.includes(fileTreeRoot)}
+                    onClick={handleTogglePinRoot}
+                  >
+                    {pinnedFolders.includes(fileTreeRoot) ? '★' : '☆'}
+                  </button>
+                )}
+              </div>
+              {pinnedFolders.length > 0 && (
+                <div className="pinned-folders" aria-label={t('sidebar.pinnedLabel')}>
+                  {pinnedFolders.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`pinned-folder${p === fileTreeRoot ? ' active' : ''}`}
+                      title={p}
+                      onClick={() => setFileTreeRoot(p)}
+                    >
+                      {p === fileTreeRoot ? '★ ' : ''}{basename(p)}
+                    </button>
+                  ))}
+                </div>
+              )}
               {fileSidebarMode === 'tree' ? (
                 <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
                   {fileTreeNodes.length === 0 ? (
@@ -2426,6 +2682,7 @@ export default function App() {
             </>
           )}
         </aside>
+        )}
         <main className={`editor-container${splitOpen ? ' split' : ''}`}>
           {tabs.length === 0 && !readerOpen && !splitOpen && status === 'ready' && (
             <div className="welcome">
@@ -2568,6 +2825,41 @@ export default function App() {
           ))}
         </div>
       )}
+      {(updateUi.phase === 'checking' || updateUi.phase === 'upToDate' || updateUi.phase === 'error') && (
+        <div className={`update-bar${updateUi.phase === 'error' ? ' update-bar-error' : ''}`}>
+          <span>
+            {updateUi.phase === 'checking' && t('updater.checking')}
+            {updateUi.phase === 'upToDate' && t('updater.upToDate')}
+            {updateUi.phase === 'error' && `${t('updater.checkFailed')}${updateUi.message !== '' ? `：${updateUi.message}` : ''}`}
+          </span>
+        </div>
+      )}
+      {updateUi.phase === 'available' && (
+        <div className="update-bar">
+          <span>{t('updater.updateAvailable', { version: updateUi.version })}</span>
+          <button onClick={handleUpdateLater}>{t('updater.later')}</button>
+          <button onClick={() => void handleUpdateNow()}>{t('updater.update')}</button>
+        </div>
+      )}
+      {updateUi.phase === 'downloading' && (
+        <div className="update-bar">
+          <span>{t('updater.downloading', { percent: updateUi.percent })}</span>
+        </div>
+      )}
+      {updateUi.phase === 'ready' && (
+        <div className="update-bar">
+          <span>{t('updater.ready')}</span>
+          <button onClick={() => void handleInstallRestart()}>{t('updater.restartInstall')}</button>
+        </div>
+      )}
+      {rollbackPrompt !== null && (
+        <div className="update-bar rollback-bar">
+          <span>{t('updater.rollbackPrompt', { version: rollbackPrompt.previousVersion })}</span>
+          <button onClick={() => void handleRollback()}>{t('updater.rollback')}</button>
+          <button onClick={() => void handleRollbackKeep()}>{t('updater.keepNew')}</button>
+        </div>
+      )}
+      {statusbarVisible && (
       <footer className="statusbar">
         <span className="statusbar-item">{dirty ? t('status.unsaved') : t('status.saved')}</span>
         <span className="statusbar-item">{stats}</span>
@@ -2578,7 +2870,8 @@ export default function App() {
         <span className="statusbar-item">{t('status.lf')}</span>
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
-      </footer>
+        </footer>
+      )}
       {settingsOpen && (
         <SettingsPanel
           t={t}

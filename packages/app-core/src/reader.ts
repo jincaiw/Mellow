@@ -51,16 +51,57 @@ export function slugifyHeading(title: string): string {
   return slug === '' ? 'section' : slug;
 }
 
-/** 极简 sanitize：仅保留常用标签，剥离脚本/事件/危险协议。 */
+/**
+ * 安全净化（Security Review H1 修复）：DOM 白名单方案。
+ *
+ * 与 `editor-engine/src/safeHtml.ts` 同源逻辑（保持同步）——HTML 解析器已做实体解码，
+ * 正则净化可被 `java&#115;cript:` 绕过（浏览器解析时实体解码后成为可执行协议）。
+ *
+ * 规则：仅保留白名单标签；剥离事件属性 / style / srcdoc；URL 属性经协议白名单校验；
+ * IFRAME 强制 sandbox。DOMParser 在浏览器可用；测试用 jsdom（jest-environment jsdom）。
+ */
+const SANITIZE_ALLOWED_TAGS = new Set(['A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'S', 'SPAN', 'STRONG', 'SUB', 'SUMMARY', 'SUP', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL', 'VIDEO', 'AUDIO', 'SOURCE', 'IFRAME']);
+const SANITIZE_URL_ATTRS = new Set(['href', 'src', 'poster']);
+const SANITIZE_GLOBAL_ATTRS = new Set(['title', 'alt', 'width', 'height', 'controls', 'colspan', 'rowspan']);
+
+function sanitizeUrlSafe(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed.startsWith('#') || trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('../')) return true;
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:';
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeElement(element: Element): void {
+  for (const child of Array.from(element.children)) sanitizeElement(child);
+  if (!SANITIZE_ALLOWED_TAGS.has(element.tagName)) {
+    element.remove();
+    return;
+  }
+  for (const attr of Array.from(element.attributes)) {
+    const name = attr.name.toLowerCase();
+    const value = attr.value;
+    if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
+      element.removeAttribute(attr.name);
+      continue;
+    }
+    if (SANITIZE_URL_ATTRS.has(name)) {
+      if (!sanitizeUrlSafe(value)) element.removeAttribute(attr.name);
+      continue;
+    }
+    if (element.tagName === 'IFRAME' && (name === 'allow' || name === 'sandbox' || name === 'referrerpolicy')) continue;
+    if (!SANITIZE_GLOBAL_ATTRS.has(name) && !name.startsWith('data-') && !name.startsWith('aria-')) element.removeAttribute(attr.name);
+  }
+  if (element.tagName === 'IFRAME') element.setAttribute('sandbox', '');
+}
+
 function sanitizeHtml(value: string): string {
-  return value
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<script[^>]*>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<style[^>]*>/gi, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/\s?javascript:[^\s"'<>]+/gi, '')
-    .replace(/\s?vbscript:[^\s"'<>]+/gi, '');
+  const doc = new DOMParser().parseFromString(value, 'text/html');
+  for (const el of Array.from(doc.body.children)) sanitizeElement(el);
+  return doc.body.innerHTML;
 }
 
 // ── 行内渲染 ────────────────────────────────────────────────

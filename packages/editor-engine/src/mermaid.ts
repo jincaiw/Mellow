@@ -13,6 +13,7 @@
 import type { EditorView, ViewUpdate, DecorationSet, Decoration as DecorationT, WidgetType as WidgetTypeT } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isComposing } from './composition';
+import { largeFileVersion, largeFileViewportRange } from './largeFile';
 
 interface CmRuntime {
   EditorView: typeof import('@codemirror/view').EditorView;
@@ -101,8 +102,9 @@ function diagramTypeOf(code: string): string {
   return word.replace(/:$/, '');
 }
 
-/** Parse fenced ```mermaid blocks. Keeps exact fenced source for copy source. */
-export function parseMermaidBlocks(doc: string): MermaidBlock[] {
+/** Parse fenced ```mermaid blocks. Keeps exact fenced source for copy source.
+ *  from/to 可选：只处理起始行位于 [from, to) 的 fence（Large File Mode 视口裁剪，PRD §109）。 */
+export function parseMermaidBlocks(doc: string, scanFrom = 0, scanTo = doc.length): MermaidBlock[] {
   const blocks: MermaidBlock[] = [];
   const lines = doc.split(/\n/);
   let offset = 0;
@@ -112,7 +114,8 @@ export function parseMermaidBlocks(doc: string): MermaidBlock[] {
     const open = line.match(/^ {0,3}`{3,}\s*mermaid\s*$/i);
     const lineStart = offset;
     const lineEnd = offset + line.length;
-    if (open === null) {
+    // Large File Mode：视口区间外的 fence 不处理（解析范围裁剪）
+    if (open === null || lineStart < scanFrom || lineStart >= scanTo) {
       offset = lineEnd + 1;
       i += 1;
       continue;
@@ -324,7 +327,9 @@ export function buildMermaidExtension(autoInstallComposition = true, options: Me
     const doc = view.state.doc.toString();
     const head = view.state.selection.main.head;
     const ranges = activeRanges(view);
-    for (const block of parseMermaidBlocks(doc)) {
+    // Large File Mode：只解析视口 ± 余量（PRD §109 pause offscreen Mermaid）
+    const { from, to } = largeFileViewportRange(view);
+    for (const block of parseMermaidBlocks(doc, from, to)) {
       if (caretInside(block, head)) continue;
       if (!mermaidBlockIntersectsViewport(block, ranges)) continue;
       addHiddenSourceMarks(builder, doc, block);
@@ -335,6 +340,7 @@ export function buildMermaidExtension(autoInstallComposition = true, options: Me
 
   const plugin = ViewPlugin.fromClass(class MermaidPlugin {
     decorations: DecorationSet;
+    private largeVersion = largeFileVersion();
     constructor(readonly view: EditorView) {
       this.decorations = buildDecorations(view);
     }
@@ -343,7 +349,10 @@ export function buildMermaidExtension(autoInstallComposition = true, options: Me
         this.decorations = this.decorations.map(update.changes);
       }
       if (isComposing()) return;
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      // Large File Mode 切换（setLargeFileMode → 空 dispatch）也触发重算
+      const largeChanged = largeFileVersion() !== this.largeVersion;
+      if (largeChanged) this.largeVersion = largeFileVersion();
+      if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged) {
         this.decorations = buildDecorations(update.view);
       }
     }

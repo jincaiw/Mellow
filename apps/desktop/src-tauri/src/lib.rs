@@ -4,6 +4,7 @@ pub mod menu;
 pub mod print;
 pub mod recovery;
 pub mod search;
+pub mod updater;
 pub mod watcher;
 
 use tauri::{Emitter, Manager, RunEvent};
@@ -35,6 +36,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             pending_open_path,
             bridge::bridge_call,
@@ -44,6 +47,7 @@ pub fn run() {
             fs::write_text,
             fs::copy_file,
             fs::mkdir,
+            fs::pick_save_path,
             fs::write_binary,
             fs::read_binary,
             fs::path_exists,
@@ -62,12 +66,42 @@ pub fn run() {
             watcher::watch_document,
             watcher::unwatch_document,
             print::print_window,
+            updater::update_rollback_prepare,
+            updater::update_rollback_status,
+            updater::update_rollback_note_launch,
+            updater::update_rollback_commit,
+            updater::update_rollback_restore,
         ])
         .manage(WatcherRegistry::default())
         .manage(DebounceState::default())
         .manage(PendingOpen(Mutex::new(None)))
         .setup(|app| {
-            let window = app.get_webview_window("main").unwrap();
+            // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
+            // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），
+            // 外部链接由前端 Reader/SplitPreview 拦截后经系统浏览器打开。
+            let window = tauri::webview::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Mellow")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(900.0, 600.0)
+            .decorations(true)
+            .resizable(true)
+            .center()
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .on_navigation(|url| {
+                let scheme = url.scheme();
+                if scheme == "tauri" {
+                    return true; // 应用自身页面（release）
+                }
+                // dev server（vite）
+                scheme == "http" && url.host_str() == Some("localhost")
+            })
+            .build()
+            .expect("failed to build main window");
             let _ = window.set_title("Mellow");
             // macOS Menu Bar：菜单只发命令 id，执行统一走前端 CommandRegistry
             menu::attach_menu_events(app.handle());

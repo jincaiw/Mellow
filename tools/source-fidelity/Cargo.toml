@@ -1,0 +1,13 @@
+[package]
+name = "source-fidelity"
+version = "0.1.0"
+edition = "2021"
+description = "Source Fidelity gate tool — 复用 mellow_desktop_lib 的真实 decode/encode/atomic_save 管线"
+publish = false
+
+[dependencies]
+# 复用应用 Rust System Core 的真实保存管线（fs.rs decode/encode/atomic_save）
+mellow-desktop = { path = "../../apps/desktop/src-tauri" }
+
+[profile.release]
+opt-level = 2

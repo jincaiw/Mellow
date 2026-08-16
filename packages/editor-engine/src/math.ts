@@ -11,6 +11,7 @@
 import type { EditorView, ViewUpdate, DecorationSet, Decoration as DecorationT, WidgetType as WidgetTypeT } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isComposing } from './composition';
+import { largeFileVersion, largeFileViewportRange } from './largeFile';
 
 interface CmRuntime {
   ViewPlugin: typeof import('@codemirror/view').ViewPlugin;
@@ -160,11 +161,14 @@ function span(doc: string, from: number, to: number, texFrom: number, texTo: num
   };
 }
 
-/** Parse Typora-compatible math delimiters from Markdown source. */
-export function parseMathSpans(doc: string): MathSpan[] {
+/** Parse Typora-compatible math delimiters from Markdown source.
+ *  from/to 可选：只扫描 [from, to) 区间（Large File Mode 视口裁剪，PRD §109）。
+ *  code-context 判定始终基于全文档（fence 状态不受裁剪影响）。 */
+export function parseMathSpans(doc: string, from = 0, to = doc.length): MathSpan[] {
   const spans: MathSpan[] = [];
-  let i = 0;
-  while (i < doc.length) {
+  let i = from;
+  const scanEnd = Math.min(to, doc.length);
+  while (i < scanEnd) {
     if (isCodeContext(doc, i)) {
       const next = doc.indexOf('\n', i);
       i = next === -1 ? doc.length : next + 1;
@@ -405,7 +409,9 @@ export function buildMathExtension(autoInstallComposition = true, options: MathE
     const doc = view.state.doc.toString();
     const head = view.state.selection.main.head;
     const macros = collectDocumentMathMacros(doc);
-    for (const s of parseMathSpans(doc)) {
+    // Large File Mode：只解析视口 ± 余量（PRD §109 pause offscreen Math）
+    const { from, to } = largeFileViewportRange(view);
+    for (const s of parseMathSpans(doc, from, to)) {
       if (caretInside(s, head)) continue;
       builder.add(s.from, s.to, Decoration.replace({ widget: new MathWidget(s, macros, generation), block: s.kind === 'block' }));
     }
@@ -414,6 +420,7 @@ export function buildMathExtension(autoInstallComposition = true, options: MathE
 
   const plugin = ViewPlugin.fromClass(class MathPlugin {
     decorations: DecorationSet;
+    private largeVersion = largeFileVersion();
     constructor(readonly view: EditorView) {
       this.decorations = buildDecorations(view);
     }
@@ -422,7 +429,10 @@ export function buildMathExtension(autoInstallComposition = true, options: MathE
         this.decorations = this.decorations.map(update.changes);
       }
       if (isComposing()) return;
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      // Large File Mode 切换（setLargeFileMode → 空 dispatch）也触发重算
+      const largeChanged = largeFileVersion() !== this.largeVersion;
+      if (largeChanged) this.largeVersion = largeFileVersion();
+      if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged) {
         this.decorations = buildDecorations(update.view);
       }
     }

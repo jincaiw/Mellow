@@ -32,6 +32,9 @@ import { buildSlashCommandsExtension } from './slashCommands';
 import { buildTypewriterModeExtension } from './typewriterMode';
 import { buildSelectionToolbarExtension } from './selectionToolbar';
 import { buildScrollBridgeExtension } from './scrollBridge';
+import { buildCodeFenceAutocompleteExtension } from './codeFence';
+import { buildDocumentSearchExtension } from './documentSearch';
+import { buildLargeFileExtension, installLargeFileApi } from './largeFile';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
@@ -53,6 +56,19 @@ export { buildSelectionToolbarExtension, shouldShowToolbar, applyInlineFormat, a
 export type { TextRange, ApplyResult, ToolbarVisibility, SelectionToolbarOptions } from './selectionToolbar';
 export { buildScrollBridgeExtension } from './scrollBridge';
 export type { ScrollBridgeApi } from './scrollBridge';
+export {
+  classifyLargeFile,
+  isLargeFileMode,
+  largeFileVersion,
+  setLargeFileMode,
+  largeFileViewportRange,
+  largeFileDecorationLimit,
+  buildLargeFileExtension,
+  installLargeFileApi,
+  LARGE_FILE_BYTES_THRESHOLD,
+  LARGE_FILE_LINES_THRESHOLD,
+} from './largeFile';
+export { buildCodeFenceAutocompleteExtension, fenceLangSource } from './codeFence';
 export type { OutlineBridgeApi } from './outlineBridge';
 export {
   buildSafeHtmlExtension,
@@ -94,6 +110,8 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
   if (autoInstallComposition) {
     installCompositionTracking();
   }
+  // Large File Mode：宿主（EditorCore）经 iframe window.__MELLOW_LARGE_FILE__ 调用
+  installLargeFileApi();
   return [
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
@@ -114,5 +132,8 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildSelectionToolbarExtension(),
     buildScrollBridgeExtension(),
     buildImageExtensions(),
+    buildLargeFileExtension(),
+    buildCodeFenceAutocompleteExtension(),
+    buildDocumentSearchExtension(),
   ];
 }

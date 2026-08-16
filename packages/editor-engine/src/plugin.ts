@@ -25,6 +25,7 @@ import type { RevealContext, MarkerRange } from './types';
 import { MARKER_CLASS, MARKER_DIM_CLASS } from './types';
 import { isComposing } from './composition';
 import { isSourceMode } from './mode';
+import { largeFileDecorationLimit, largeFileVersion } from './largeFile';
 
 /** 隐藏 marker 的 class（CSS: font-size: 0） */
 export { MARKER_CLASS } from './types';
@@ -85,10 +86,13 @@ export function buildMarkerRevealExtension(): Extension {
       : [{ from: 0, to: state.doc.length }];
 
     for (const { from, to } of ranges) {
+      // Large File Mode：heavy decorations 数量上限（PRD §109；回调内不能 break，用标志位）
+      let overLimit = false;
       syntaxTree(state).iterate({
         from,
         to,
         enter: (node) => {
+          if (overLimit) return;
           // 按内容节点处理：一次收集其全部 marker 子节点（mixed 判定需要整节点视角）
           if (!contentNames.has(node.name)) {
             return;
@@ -152,6 +156,10 @@ export function buildMarkerRevealExtension(): Extension {
             : shouldHideMarkers(visual) ? markers : [];
 
           pending.push(...hidden);
+          if (pending.length >= largeFileDecorationLimit()) {
+            overLimit = true;
+            return;
+          }
         },
       });
     }
@@ -168,6 +176,7 @@ export function buildMarkerRevealExtension(): Extension {
   const plugin = ViewPlugin.fromClass(
     class MarkerRevealPlugin {
       decorations: DecorationSet = Decoration.none;
+      private largeVersion = largeFileVersion();
 
       constructor(view: EditorView) {
         this.decorations = buildDecorations(view);
@@ -184,8 +193,12 @@ export function buildMarkerRevealExtension(): Extension {
           return;
         }
 
+        // Large File Mode 切换（setLargeFileMode → 空 dispatch）也触发重算
+        const largeChanged = largeFileVersion() !== this.largeVersion;
+        if (largeChanged) this.largeVersion = largeFileVersion();
+
         // 增量更新：只在 doc/selection/viewport 变化时重算（spec §3）
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged) {
           this.decorations = buildDecorations(update.view);
         }
       }

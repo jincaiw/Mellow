@@ -55,6 +55,18 @@ const SplitPreview = forwardRef<SplitPreviewHandle, SplitPreviewProps>(function 
   }, [onScroll]);
 
   const handleClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    // Security Review H2：链接点击禁止 webview 导航 → 系统浏览器打开（页内 # 锚点除外）
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a');
+    if (link !== null) {
+      const href = link.getAttribute('href') ?? '';
+      if (!href.startsWith('#')) {
+        event.preventDefault();
+        void import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
+          void openUrl(href).catch(() => { /* 非法 URL 忽略 */ });
+        });
+        return;
+      }
+    }
     const el = (event.target as HTMLElement).closest('[data-offset]');
     if (el !== null) {
       const offset = Number(el.getAttribute('data-offset'));

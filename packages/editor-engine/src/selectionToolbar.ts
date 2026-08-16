@@ -234,7 +234,14 @@ function resolveCm(): CmRuntime {
 export function buildSelectionToolbarExtension(options: SelectionToolbarOptions = {}): Extension {
   const { EditorView: CmEditorView, ViewPlugin } = resolveCm();
   const getAnchor = options.getAnchor ?? ((view: EditorView, from: number) => {
-    const coords = view.coordsAtPos(from);
+    let coords;
+    try {
+      coords = view.coordsAtPos(from);
+    } catch {
+      // CM 禁止在 update 中读布局（'Reading the editor layout isn't allowed during an update'）：
+      // 本轮不定位（工具条隐藏），下次 update 重试。避免插件崩溃级联（布局未测量时 coordsAtPos 抛错）。
+      coords = null;
+    }
     if (coords === null) return null;
     const sc = view.scrollDOM;
     return { top: coords.top - sc.scrollTop, left: coords.left - sc.scrollLeft };

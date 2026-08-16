@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Mellow",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "identifier": "com.mellow.editor",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -11,42 +11,121 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "title": "Mellow",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
-        "decorations": true,
-        "resizable": true,
-        "center": true,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
-      }
-    ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http: https: data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "publisher": "Mellow",
-    "icon": [],
-    "linux": {
-      "deb": {
-        "section": "editors"
-      }
+    "targets": [
+      "app",
+      "dmg",
+      "nsis",
+      "msi",
+      "appimage",
+      "deb",
+      "rpm"
+    ],
+    "publisher": "Mellow Contributors",
+    "copyright": "Copyright © 2026 Mellow Contributors",
+    "license": "MIT",
+    "licenseFile": "../../../LICENSE",
+    "shortDescription": "Mellow — Typora 级 Markdown 编辑器",
+    "longDescription": "Mellow 是一款跨平台（Windows / macOS / Linux）的 Typora 级 Markdown 编辑器：实时预览、中文输入法优先、原子保存与崩溃恢复、数据安全优先。",
+    "category": "Productivity",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     },
+    "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
-        "ext": ["md", "markdown"],
+        "ext": [
+          "md",
+          "markdown"
+        ],
         "name": "Markdown Document",
         "description": "Markdown 文档",
         "mimeType": "text/markdown",
         "role": "Editor"
       }
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist",
+      "dmg": {
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "compression": "lzma",
+        "startMenuFolder": "Mellow"
+      },
+      "wix": {
+        "language": "zh-CN",
+        "upgradeCode": "1a5e2ef8-424a-480a-ac7e-b286c474ac7c"
+      }
+    },
+    "linux": {
+      "deb": {
+        "section": "editors",
+        "priority": "optional",
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-2"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "libayatana-appindicator",
+          "librsvg2"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://updates.mellow.app/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNDNUQ4MUNBNEY1OUQ5MQpSV1NSbmZXa0hOakZBNlhSeTE5NmFsSGZHaUFNb3FBdDI0eVArTlZ0emx6OWxEN3BqcGVvd2t4aQo=",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

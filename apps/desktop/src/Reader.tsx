@@ -147,7 +147,7 @@ export default function ReaderView(props: ReaderViewProps) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [lightbox, query]);
 
-  // ── 点击：代码复制 / 图片 lightbox ──
+  // ── 点击：代码复制 / 链接 → 系统浏览器（Security H2）/ 图片 lightbox ──
   const handleContentClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     const copyButton = target.closest<HTMLButtonElement>('.mellow-reader-copy');
@@ -159,10 +159,22 @@ export default function ReaderView(props: ReaderViewProps) {
       window.setTimeout(() => { copyButton.textContent = original; }, 1200);
       return;
     }
+    // Security Review H2：链接点击禁止 webview 导航 → 系统浏览器打开（页内 # 锚点除外）
+    const link = target.closest<HTMLAnchorElement>('a');
+    if (link !== null) {
+      const href = link.getAttribute('href') ?? '';
+      if (!href.startsWith('#')) {
+        event.preventDefault();
+        void import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
+          void openUrl(href).catch(() => { /* 非法 URL（相对/未知协议）忽略 */ });
+        });
+        return;
+      }
+    }
     if (target.tagName === 'IMG' && target.closest('a') === null) {
       setLightbox((target as HTMLImageElement).src);
     }
-  }, []);
+  }, [t]);
 
   return (
     <div className="mellow-reader-shell">
