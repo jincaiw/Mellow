@@ -35,7 +35,7 @@ jobs:
       - name: Install system deps (GUI + X + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk openbox
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk openbox imagemagick
       - name: Install workspace
         working-directory: mellow
         run: pnpm install --frozen-lockfile
@@ -86,6 +86,15 @@ jobs:
             sleep 2
             fcitx5 -d > /tmp/fcitx5.log 2>&1 &
             sleep 6
+            # 截图可视化诊断：启动 → 等待 → 捕获整屏 + 窗口几何
+            printf '# Screenshot Test\\n\\nHello **Mellow** on Linux\\n' > /tmp/mellow-shot.md
+            nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-shot.md > /tmp/mellow-shot.log 2>&1 &
+            sleep 15
+            xdotool search --name Mellow getwindowgeometry > /tmp/mellow-geometry.txt 2>&1 || true
+            import -display :99 -window root /tmp/mellow-screen.png 2>/dev/null || xwd -root -display :99 -out /tmp/mellow-screen.xwd 2>/dev/null || true
+            pkill -f mellow-desktop || true
+            sleep 2
+            # IME 矩阵
             node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 || echo IME_MATRIX_EXIT=$?
           '
       - name: Collect evidence
@@ -95,6 +104,18 @@ jobs:
           cat /tmp/mellow.log 2>/dev/null | tail -20 || true
           cat /tmp/fcitx5.log 2>/dev/null | tail -10 || true
           cat /tmp/openbox.log 2>/dev/null | tail -5 || true
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-runtime-evidence
+          path: |
+            /tmp/mellow-screen.*
+            /tmp/mellow-geometry.txt
+            /tmp/mellow.log
+            /tmp/fcitx5.log
+          if-no-files-found: warn
 
   windows-runtime:
     name: "Windows: launch + SendKeys smoke"
