@@ -259,3 +259,9 @@ NaN
 ### 阶段 4 第四轮（2026-08-18 凌晨）
 - ✅ Open With（PRD §79）：Rust Adapter 平台检测（macOS /Applications 扫描 + open -a；Windows LOCALAPPDATA/ProgramFiles；Linux PATH which）+ 前端弹窗（检测列表 + 自定义命令）+ 文件菜单「打开方式…」+ 命令面板 file.openWith；
 - ✅ 设置 Export 段过时文案修正（导出已可用，指向菜单/命令面板）。
+
+### 阶段 2d/4 第五轮（2026-08-18）
+- ✅ 2d 继续：抽取 OutlineList / SearchResultsList / FileList 到 desktop-ui（App.tsx 3219→3169 行；desktop-ui 已有 6 个组件：Tabbar/StatusBar/Welcome/OutlineList/SearchResultsList/FileList）；
+- ✅ 设置补齐：启动恢复会话开关（PRD §92 general.reopenLast，默认开）；打开用户 CSS 命令（PRD §97 Custom CSS 入口，reveal appData/user.css）；
+- ✅ 全量测试绿（app-core 128 / engine 491 等）；
+NaN
