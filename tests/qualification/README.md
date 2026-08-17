@@ -1,6 +1,8 @@
-# Mellow V0.0 Runtime Qualification — 记录
+# Mellow Runtime Qualification — 记录
 
 对应 `docs/specs/runtime-qualification-plan.md`。
+
+> **2026-08-17 更新（ADR-0021）**：三平台构建矩阵首次全部 PASS（Windows MSI/NSIS、macOS DMG、Linux AppImage/deb/rpm，GitHub Actions release.yml）；CI 5 job 全绿（含 cargo test）。真机 Runtime 矩阵（IME/Caret/Clipboard/Print/10MB）仍待 Windows/Linux 真机执行，执行手册：`docs/qualification/phase1-runtime-qualification-manual.md`。
 
 ## 最终决策
 
