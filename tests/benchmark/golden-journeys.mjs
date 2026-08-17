@@ -32,11 +32,14 @@ const KEYCODES = { a: 0, s: 1, d: 2, f: 3, h: 4, g: 5, z: 6, x: 7, c: 8, v: 9, b
 
 // ---------- app lifecycle ----------
 function launchMellow(file) {
-  spawnSync('pkill', ['-x', 'mellow-desktop']); sleep(800);
+  spawnSync('pkill', ['-x', 'mellow-desktop']); sleep(1000);
   // 清会话/恢复快照（同 benchmark prep）：避免启动恢复旧 tab 干扰单文档 journey
   q(`rm -rf "$HOME/Library/WebKit/com.mellow.editor" "$HOME/Library/Application Support/com.mellow.editor/recovery"* "$HOME/Library/Application Support/com.mellow.editor/settings.json" 2>/dev/null`);
+  // 清 macOS 崩溃恢复锁存（CrashReporter plist + Saved State）：wry 自定义协议偶发
+  // 启动崩溃后，macOS 会在每次启动弹「重新打开窗口」对话框锁死矩阵 —— 必须清除。
+  q(`rm -f "$HOME/Library/Application Support/CrashReporter/mellow-desktop_"*.plist; rm -rf "$HOME/Library/Saved Application State/com.mellow.editor.savedState"; defaults write com.mellow.editor NSQuitAlwaysKeepsWindows -bool false`);
   const proc = spawn(MB, [file], { stdio: 'ignore' });
-  sleep(8000);
+  sleep(9000);
   activate('mellow-desktop');
   // 点击编辑器区域聚焦（Mellow 的 WKWebView 需要真实点击才能接收键盘）
   try { execFileSync(HELPER, ['focus-type', '--pid', String(proc.pid), '--roi', '300,120,600,200'], { encoding: 'utf8', timeout: 20000 }); } catch { /* noop */ }

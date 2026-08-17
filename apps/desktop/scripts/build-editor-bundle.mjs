@@ -13,7 +13,7 @@
  *   4. 复制引擎到 public/editor/engine/ 并补 .js 扩展名（浏览器 ESM 要求）；
  *   5. 注入引擎 loader（MarkEdit.addExtension）。
  */
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // editor-core 平台无关 bundle 构建模块（tsc 产物，CJS）
@@ -113,8 +113,14 @@ function copyEngine() {
       const targetFile = resolve(engineTargetDir, relPath);
       mkdirSync(dirname(targetFile), { recursive: true });
       let content = readFileSync(srcPath, 'utf8');
-      // 浏览器 ESM 要求显式 .js 扩展名（tsc 默认不带）
-      content = content.replace(/(from\s+['"]\.\/[^'"]+)(['"])/g, '$1.js$2');
+      // 浏览器 ESM 要求显式扩展名（tsc 默认不带）：./foo → ./foo.js（文件）或 ./foo/index.js（目录）
+      content = content.replace(/((?:from|import)\s*['"]\.\/([^'"]+))(['"])/g, (m, pre, rel, q) => {
+        const jsPath = resolve(dir, `${rel}.js`);
+        const idxPath = resolve(dir, rel, 'index.js');
+        if (existsSync(jsPath)) return `${pre}.js${q}`;
+        if (existsSync(idxPath)) return `${pre}/index.js${q}`;
+        return m; // 保持原样（非本地相对导入或无法解析，交由运行时处理）
+      });
       writeFileSync(targetFile, content, 'utf8');
       copied.push(relPath);
     }

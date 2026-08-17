@@ -2005,7 +2005,12 @@ export default function App() {
       recoveryRef.current?.dispose();
       void externalRef.current?.stop();
     };
-  }, [handleCleanChange, scheduleRecoverySnapshot, watchDocument, handleImageAction, applyTab, currentTabPatch, refreshTabsState, setDirty, refreshOutline, refreshCursorPos, refreshSplitHtml]);
+    // 注意：挂载 effect 必须只运行一次。若依赖数组包含会随渲染变化的 useCallback
+    // 身份（如 applyTab 链），React 会先跑 cleanup（host.destroy() 移除 iframe →
+    // WebKit -999 取消加载）再重跑，导致编辑器 iframe 竞态空白。所有被引用值均
+    // 经 ref（hostRef/fileServiceRef/...）访问，mount 时快照即安全。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** 记录最近打开（去重置顶、cap 10、持久化） */
   const recordRecentFile = useCallback((path: string) => {

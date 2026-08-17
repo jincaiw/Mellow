@@ -63,12 +63,23 @@ function saveAndRead(pid) {
   return readFileSync(TMP, 'utf8');
 }
 
+/** 清除 macOS 崩溃恢复锁存（CrashReporter plist + Saved State）：
+ * wry/WebKit 自定义协议存在偶发启动崩溃（tokio-rt-worker SIGABRT，历史 crash
+ * 报告签名一致，Aug 13-18 均存在）；崩溃后 macOS 会在后续每次启动弹出
+ * 「重新打开窗口」恢复对话框，锁死矩阵。每次 launch 前清除锁存可避免连锁失败。 */
+function clearCrashLatch() {
+  try {
+    execFileSync('sh', ['-c', 'rm -f "$HOME/Library/Application Support/CrashReporter/mellow-desktop_"*.plist; rm -rf "$HOME/Library/Saved Application State/com.mellow.editor.savedState"; defaults write com.mellow.editor NSQuitAlwaysKeepsWindows -bool false; defaults write com.mellow.editor NSDisableAutomaticTermination -bool true'], { encoding: 'utf8', timeout: 15000 });
+  } catch { /* noop */ }
+}
+
 function launchScenario(doc) {
   spawnSync('pkill', ['-x', 'mellow-desktop']);
-  sleep(800);
+  sleep(1000);
+  clearCrashLatch();
   writeFileSync(TMP, doc);
   const proc = spawn(MB, [TMP], { stdio: 'ignore' });
-  sleep(8000);
+  sleep(9000);
   return proc;
 }
 
