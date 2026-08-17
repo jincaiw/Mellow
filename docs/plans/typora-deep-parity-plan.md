@@ -306,3 +306,7 @@ NaN
 
 ### 阶段 3/4 第十四轮（2026-08-18）
 - ✅ 最近文件夹（deep-parity A10，PRD §56/§62）：侧栏「最近文件夹」区（自动追踪去重置顶、上限 10、与固定文件夹并置）+ 3 测试；app-core 131 全绿。
+
+### 阶段 4 第十五轮（2026-08-18）
+- ✅ Pandoc Word 导出（PRD §75 P1 / deep-parity A9）：Rust pandoc_available/pandoc_export（PATH 检测 + spawn）+ 前端 export.docx 命令 + 文件菜单「导出 Word…」+ i18n；**本机真实验证**（pandoc 已装 → 生成含中文/表格的 DOCX 成功）；CI Linux 装 pandoc 复验；
+NaN
