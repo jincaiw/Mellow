@@ -256,6 +256,9 @@ const zhCN = {
   'recovery.revision': '修订 {rev}',
   // Settings（T-0605）
   'settings.title': '设置',
+  'settings.search': '搜索设置…',
+  'settings.searchResults': '找到 {n} 项设置',
+  'settings.noResults': '没有匹配的设置',
   'settings.close': '关闭设置',
   'settings.navLabel': '设置分类',
   'settings.general': '通用',
@@ -583,6 +586,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'recovery.revision': 'Rev {rev}',
   // Settings (T-0605)
   'settings.title': 'Settings',
+  'settings.search': 'Search settings…',
+  'settings.searchResults': '{n} settings found',
+  'settings.noResults': 'No matching settings',
   'settings.close': 'Close settings',
   'settings.navLabel': 'Settings categories',
   'settings.general': 'General',

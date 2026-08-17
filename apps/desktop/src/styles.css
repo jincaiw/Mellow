@@ -1298,6 +1298,26 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+/* 设置搜索（P1：desktop-ui-design-spec §12） */
+.settings-search {
+  flex: 1;
+  max-width: 280px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 4px;
+  background: var(--mellow-bg);
+  color: var(--mellow-fg);
+  font-size: 12px;
+}
+
+.settings-empty {
+  padding: 16px 8px;
+  color: var(--mellow-fg-subtle);
+  font-size: 12px;
+}
+
+
 .settings-title {
   font-size: 15px;
   font-weight: 600;

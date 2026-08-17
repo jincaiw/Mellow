@@ -4,7 +4,7 @@
  * 结构：左栏一级分类（180–220px）+ 右内容（max 720px）。
  * - settings schema shared（packages/settings）：UI 只按 schema 渲染，不复制定义；
  * - live apply where safe：值修改即持久化并调用 apply 回调（不要求重启）；
- * - searchable P1：schema 已含 labelKey，UI 搜索待 P1；
+ * - searchable：搜索跨分类按 labelKey 过滤（P1，desktop-ui-design-spec §12）；
  * - AI 页面默认不存在：仅当 aiEnabled（AI extension 启用）时追加「AI」分类。
  */
 
@@ -30,6 +30,7 @@ export interface SettingsPanelProps {
 export default function SettingsPanel(props: SettingsPanelProps) {
   const { t, onClose, applySetting, currentLanguage, themeSettings, aiEnabled, shortcuts } = props;
   const [active, setActive] = useState<SettingsSection['id']>('general');
+  const [query, setQuery] = useState('');
 
   const sections: SettingsSection[] = aiEnabled
     ? [...SETTINGS_SECTIONS, {
@@ -42,6 +43,17 @@ export default function SettingsPanel(props: SettingsPanelProps) {
     : SETTINGS_SECTIONS;
 
   const section = sections.find((s) => s.id === active) ?? sections[0];
+
+  // 设置搜索（P1）：跨分类按 labelKey 过滤
+  const q = query.trim().toLowerCase();
+  const searchMode = q.length > 0;
+  const searchResults = searchMode
+    ? sections.flatMap((s) =>
+        s.settings
+          .filter((def) => t(def.labelKey).toLowerCase().includes(q))
+          .map((def) => ({ section: s, def })),
+      )
+    : [];
 
   const readValue = (def: SettingDefinition): string | number | boolean => {
     try {
@@ -113,6 +125,14 @@ export default function SettingsPanel(props: SettingsPanelProps) {
       <div className="settings-panel" onMouseDown={(e) => e.stopPropagation()}>
         <header className="settings-header">
           <span className="settings-title">{t('settings.title')}</span>
+          <input
+            className="settings-search"
+            type="search"
+            placeholder={t('settings.search')}
+            aria-label={t('settings.search')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
           <button type="button" className="settings-close" onClick={onClose} title={t('settings.close')}>✕</button>
         </header>
         <div className="settings-body">
@@ -129,26 +149,41 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             ))}
           </nav>
           <div className="settings-content">
-            <h2 className="settings-section-title">{t(section.labelKey)}</h2>
-            {section.id === 'shortcuts' && (
-              <div className="settings-shortcuts">
-                {shortcuts.map((item) => (
-                  <div key={item.id} className="settings-row">
-                    <span className="settings-row-label">{item.title}</span>
-                    <span className="settings-row-value settings-shortcut">{item.shortcut ?? ''}</span>
+            {searchMode ? (
+              <>
+                <h2 className="settings-section-title">{t('settings.searchResults', { n: searchResults.length })}</h2>
+                {searchResults.map(({ section: s, def }) => (
+                  <div key={def.id} className="settings-row">
+                    <span className="settings-row-label">{t(def.labelKey)}</span>
+                    <span className="settings-row-value settings-shortcut">{t(s.labelKey)}</span>
                   </div>
                 ))}
-              </div>
-            )}
-            {section.settings.map((def) => (
-              <div key={def.id} className="settings-row">
-                <span className="settings-row-label">{t(def.labelKey)}</span>
-                <span className="settings-row-control">{renderControl(def, readValue(def))}</span>
-                {def.descriptionKey !== undefined && (
-                  <span className="settings-row-desc">{t(def.descriptionKey)}</span>
+                {searchResults.length === 0 && <div className="settings-empty">{t('settings.noResults')}</div>}
+              </>
+            ) : (
+              <>
+                <h2 className="settings-section-title">{t(section.labelKey)}</h2>
+                {section.id === 'shortcuts' && (
+                  <div className="settings-shortcuts">
+                    {shortcuts.map((item) => (
+                      <div key={item.id} className="settings-row">
+                        <span className="settings-row-label">{item.title}</span>
+                        <span className="settings-row-value settings-shortcut">{item.shortcut ?? ''}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </div>
-            ))}
+                {section.settings.map((def) => (
+                  <div key={def.id} className="settings-row">
+                    <span className="settings-row-label">{t(def.labelKey)}</span>
+                    <span className="settings-row-control">{renderControl(def, readValue(def))}</span>
+                    {def.descriptionKey !== undefined && (
+                      <span className="settings-row-desc">{t(def.descriptionKey)}</span>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       </div>
