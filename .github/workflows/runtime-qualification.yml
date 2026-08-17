@@ -98,6 +98,22 @@ jobs:
             import -display :99 -window root /tmp/mellow-screen.png 2>/dev/null || xwd -root -display :99 -out /tmp/mellow-screen.xwd 2>/dev/null || true
             pkill -x mellow-desktop || true
             sleep 2
+            # ASCII 输入隔离诊断：聚焦后输入 TEST + Ctrl+S，读回文件
+            WID2=$(xdotool search --onlyvisible --name Mellow 2>/dev/null | head -1)
+            if [ -n "$WID2" ]; then
+              xdotool windowactivate --sync $WID2 2>/dev/null; xdotool windowfocus --sync $WID2 2>/dev/null
+              xdotool mousemove 600 250 click 1
+              sleep 1
+              xdotool type --delay 80 "TEST"
+              sleep 1
+              xdotool key --clearmodifiers ctrl+s
+              sleep 2
+              echo "--- ASCII input diagnostic ---"
+              echo "focus=$(xdotool getwindowfocus 2>/dev/null) target=$WID2"
+              echo "file_after=$(cat /tmp/mellow-shot.md)"
+            fi
+            pkill -x mellow-desktop || true
+            sleep 2
             # IME 矩阵
             node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 || echo IME_MATRIX_EXIT=$?
           '
