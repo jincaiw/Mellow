@@ -524,7 +524,7 @@ export default function App() {
     return (saved as AssetDirConfig | null) ?? 'assets';
   });
   // 文件操作 toast（PRD §58：已移动 xxx [撤销]）
-  const [toast, setToast] = useState<{ message: string; onUndo?: () => void } | null>(null);
+  const [toast, setToast] = useState<{ message: string; onUndo?: () => void; action?: { label: string; run: () => void } } | null>(null);
 
   const setDirty = useCallback((value: boolean) => {
     dirtyRef.current = value;
@@ -2293,7 +2293,8 @@ export default function App() {
           try { features[k] = localStorage.getItem(`mellow.engine.features.${k}`) === '1'; } catch { features[k] = true; }
         }
         try { localStorage.setItem('mellow.engine.features', JSON.stringify(features)); } catch { /* noop */ }
-        setToast({ message: t('settings.markdownReloadHint') });
+        // PRD §K.2：语法开关在编辑器加载时生效 → 提供「重新加载编辑器」动作（会话经 localStorage 恢复）
+        setToast({ message: t('settings.markdownReloadHint'), action: { label: t('settings.markdownReload'), run: () => window.location.reload() } });
         break;
       }
       default:
@@ -3133,6 +3134,7 @@ export default function App() {
         <div className="toast-bar">
           <span className="toast-message">{toast.message}</span>
           {toast.onUndo !== undefined && <button onClick={() => toast.onUndo?.()}>{t('msg.imagesUndo')}</button>}
+          {toast.action !== undefined && <button className="toast-action" onClick={() => toast.action?.run()}>{toast.action.label}</button>}
           <button className="toast-close" onClick={() => setToast(null)}>✕</button>
         </div>
       )}
