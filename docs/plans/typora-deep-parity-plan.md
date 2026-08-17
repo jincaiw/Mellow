@@ -281,3 +281,8 @@ NaN
 - ✅ 单 Tab 自动隐藏标签栏（PRD §11 Typora 行为对齐；设置 editor.autoHideTabBar 默认开）；
 - ✅ 复核 PRD §53 per-document YAML asset_dir 已实现（assetConfig.ts，无需补）；
 - ✅ 三平台 release 流水线复跑全绿（含近两周全部改动：open_with/menu-i18n/desktop-ui 组件/AutoSave/源码模式/CLI/文件信息）。
+
+### 阶段 2/3 第九轮（2026-08-18）
+- ✅ 2d：抽取 SidebarHeader（desktop-ui 第 8 个组件：+SidebarHeader；App.tsx 3185 行）；
+- ✅ Source Fidelity 复跑 PASS（141 文件 0 diff）；
+- ✅ 修复 task-checkbox 测试时序抖动（轮询等待渲染，消除并行负载 flaky）；全量测试绿（engine 491 / app-core 128 等）。
