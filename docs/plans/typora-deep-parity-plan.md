@@ -212,3 +212,33 @@ desktop tsc / cargo check 通过；debug bundle 启动 + 菜单栏 10 菜单实�
 - typing 类 journey（j1 latin / j2 chinese / j4 bold / j7 list）FAIL：本机拼音 ITABC 拦截 ASCII 合成键 + 窗口焦点被 GUI 抢占（既有环境限制，与 ⑭ 改动无关；j15 同为 typing 却 PASS 证实非代码回归）——标注待 ABC 输入法复测
 - 编辑器右键 / Wikilink 点击 / 列宽拖拽：DOM 级功能由 engine jsdom 测试覆盖（⑩ 14 + ⑨ 10 + ⑬ 8）；AX 无法断言 WKWebView 内部 DOM，且本会话屏幕录制权限被系统对话框拦截（视觉验证不可用）——标注待 GUI 捕获基础设施补充
 - 回归门禁：cargo test 37+16(file safety)+4(updater) 全绿；Source Fidelity 137 文件 0 diff；引擎 486 / app-core 119 / i18n 15 全绿；desktop tsc 通过
+
+---
+
+## 九、实施进度更新（2026-08-17 —— 优化方案五阶段执行记录）
+
+### 阶段 0 —— 事实基线修正与工具链（✅ 完成，提交 faedf91/3d0d740）
+- ADR-0020：V1.0 降级为 pre-release（README/标题/元数据修正）；
+- 根 pnpm workspace（package.json + pnpm-workspace.yaml + 根脚本）；
+- 版本统一 0.1.0；npm lockfiles 移除，pnpm-lock.yaml 入库；
+- ci.yml/release.yml 迁移 pnpm；tauri hooks 改 pnpm；
+NaN
+- 全量测试绿：engine 486 / app-core 128 / export 46 / host-api 38 / document-model 26 / i18n 15 / settings 8 / themes 8 / editor-core 16 / Rust 37+16+4。
+
+### 阶段 1 —— 三平台构建矩阵（✅ 构建级完成，ADR-0021；真机矩阵待机器）
+- GitHub Actions release.yml 首次三平台全绿：Windows MSI+NSIS（28MB）、macOS DMG（14.6MB，未签名）、Linux AppImage+deb+rpm（119MB）；
+- CI 5 job 全绿（editor-core/engine/packages/desktop/rust）；
+NaN
+
+### 阶段 2 —— 桌面 UI Typora 化（进行中）
+- ✅ 状态栏真实编码/行尾 + PRD§70 字数统计（wordCount 工具 + 9 测试，app-core 128）；
+- ✅ 原生菜单三平台化（Win/Linux 首次有菜单）+ locale 切换重建（menu.rs 目录 zh/en）；
+- ✅ U6 侧栏过滤控件折叠收纳（⋯）+ U7 tabbar 低干扰化 + macOS 标题栏拖拽区；
+- ✅ 写作宽度（680/820/980/Auto）+ 行高设置（CSS 变量即时生效）；
+- ✅ 设置搜索（P1，跨分类 labelKey 过滤）；
+- ⏳ 剩余：markdown 语法开关（需 engine config 重构，阶段 3 前置）、字体/行高编辑器内生效（需 engine/theme）、App.tsx 组件化（desktop-ui，计划内）。
+
+### 阶段 3-5 —— 待推进
+- 阶段 3：parity 清单 NOT TESTED 项真机回填 + engine config 开关；
+- 阶段 4：Reader/CLI/Open With/文件关联；
+- 阶段 5：真实 UX Score/30 任务 Gate/三平台矩阵回填。
