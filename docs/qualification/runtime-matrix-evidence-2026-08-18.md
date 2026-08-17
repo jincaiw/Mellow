@@ -30,6 +30,15 @@
 | IME 组词（fcitx5） | ⏳ 待真机 | ime-matrix-linux.mjs 8 场景可执行（全部跑完），输入注入受限 |
 | 结论 | **Linux 构建+启动+渲染级验证通过**；键盘/IME 矩阵需真机（无头环境限制已精确定位） | |
 
+## 三.5、10MB 大文件启动冒烟（PRD §110，run 32056415715）
+| 平台 | 打开 10MB 文档后进程存活 |
+|---|---|
+| Windows | ✅ `10mb_alive=True` |
+| macOS | ✅ `10mb_alive=true` |
+| Linux | ✅ `10mb_alive=true` |
+
+**证据**：三平台 release 二进制打开 10MB markdown 后 15s 进程存活（无崩溃）；Linux 同时截取渲染截图（mellow-10mb.png）。
+
 ## 四、结论与影响
 1. **三平台构建 + 启动级 Runtime 证据已获得**（此前完全缺失）：应用在真实 Windows/macOS/Linux 机器上可构建、可启动、可渲染文档。
 2. **Linux 无头输入限制**：WebKitGTK 在 Xvfb 下不处理 XTEST 合成键盘事件（libEGL DRI3 退化 + 输入注入无效）——这是 CI 环境的固有边界，**不影响产品在真实 Linux 桌面的输入**（需真机确认）。
