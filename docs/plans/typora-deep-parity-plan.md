@@ -276,3 +276,8 @@ NaN
 - ✅ 文件信息对话框（PRD §J.1）：路径/大小/修改时间/编码/行尾/行数/字符数/字数/阅读时长（纯前端统计，无新 IO）+ 文件菜单「文件信息…」；
 - ✅ README 更新 desktop-ui 组件清单；
 NaN
+
+### 阶段 2 第八轮（2026-08-18）
+- ✅ 单 Tab 自动隐藏标签栏（PRD §11 Typora 行为对齐；设置 editor.autoHideTabBar 默认开）；
+- ✅ 复核 PRD §53 per-document YAML asset_dir 已实现（assetConfig.ts，无需补）；
+- ✅ 三平台 release 流水线复跑全绿（含近两周全部改动：open_with/menu-i18n/desktop-ui 组件/AutoSave/源码模式/CLI/文件信息）。
