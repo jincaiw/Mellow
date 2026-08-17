@@ -265,3 +265,9 @@ NaN
 - ✅ 设置补齐：启动恢复会话开关（PRD §92 general.reopenLast，默认开）；打开用户 CSS 命令（PRD §97 Custom CSS 入口，reveal appData/user.css）；
 - ✅ 全量测试绿（app-core 128 / engine 491 等）；
 NaN
+
+### 阶段 4/5 第六轮（2026-08-18）
+- ✅ 2d 完成 FileTree 抽取（desktop-ui 现有 7 个组件：Tabbar/StatusBar/Welcome/OutlineList/SearchResultsList/FileList/FileTree；App.tsx 3219→3143 行）；
+- ✅ 阶段 5 门禁模板：docs/qualification/ux-score-gate-template.md（PRD §131 UX Score 评分表 + §132 30 任务清单与执行方法/通过判定/证据要求）；
+- ⏳ 图片上传 adapter（PRD §55 P1）：extension-api 契约已有，宿主接线与 PicGo 适配器需真机+网络验证，明确延期；
+NaN
