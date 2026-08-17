@@ -50,7 +50,15 @@ function launch(doc, im) {
   const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'}`;
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
   sleep(8000);
-  return sh('cat /tmp/mellow.pid').trim();
+  const pid = sh('cat /tmp/mellow.pid').trim();
+  // 启动诊断：窗口列表 + 是否找到 Mellow 窗口
+  sh('xdotool search --name Mellow 2>/dev/null | head -1 > /tmp/mellow-win-id.txt');
+  const winId = sh('cat /tmp/mellow-win-id.txt').trim();
+  console.log(`[boot] pid=${pid} window=${winId || 'NOT_FOUND'}`);
+  if (winId) {
+    sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
+  }
+  return pid;
 }
 
 const SEG1 = ['ni', 'hao'];
@@ -78,7 +86,9 @@ for (const sc of SCENARIOS) {
   const pid = launch(sc.doc, im);
   sleep(1500);
   // 聚焦编辑器：点击窗口中央
-  xdo(`search --name Mellow windowactivate --sync 2>/dev/null; mousemove 600 350 click 1`);
+  const wid = sh('cat /tmp/mellow-win-id.txt').trim();
+  if (wid) sh(`xdotool windowactivate --sync ${wid} 2>/dev/null; xdotool windowfocus --sync ${wid} 2>/dev/null`);
+  xdo('mousemove 600 350 click 1');
   sleep(1200);
   for (const s of SEG1) typeSyl(s);
   for (const s of SEG2) typeSyl(s);
