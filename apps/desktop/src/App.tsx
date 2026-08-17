@@ -1198,7 +1198,7 @@ export default function App() {
     setStatusText(r.value.assetDirRenamed
       ? t('msg.renamedAssets', { n: r.value.patchedCount })
       : t('msg.renamed'));
-    showToast(`已重命名 ${current}`, () => void undo());
+    showToast(t('msg.renamedTo', { name: current }), () => void undo());
   }, [currentTabPatch, refreshTabsState, undo, showToast, setDirty]);
 
   // ── File Tree（PRD §14/§59/§60）──
@@ -2717,7 +2717,7 @@ export default function App() {
     if (!recovery) return;
     await recovery.ignore(entry.documentId);
     setRecoveryEntries((prev) => prev.filter((e) => e.documentId !== entry.documentId));
-    setStatusText(`已忽略 ${entry.documentId}`);
+    setStatusText(t('msg.ignoredSnapshot'));
   }, []);
 
   const formatFileTime = (ms?: number) => {
