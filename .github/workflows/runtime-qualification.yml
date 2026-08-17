@@ -96,10 +96,9 @@ jobs:
             xwininfo -root -children -display :99 2>/dev/null > /tmp/xwininfo.txt || true
             for w in $(cat /tmp/mellow-windows.txt 2>/dev/null); do echo "== window $w ==" >> /tmp/mellow-geometry.txt; xdotool getwindowgeometry $w >> /tmp/mellow-geometry.txt 2>&1 || true; xdotool getwindowname $w >> /tmp/mellow-geometry.txt 2>&1 || true; done
             import -display :99 -window root /tmp/mellow-screen.png 2>/dev/null || xwd -root -display :99 -out /tmp/mellow-screen.xwd 2>/dev/null || true
-            pkill -x mellow-desktop || true
-            sleep 2
-            # ASCII 输入隔离诊断：聚焦后输入 TEST + Ctrl+S，读回文件
+            # ASCII 输入隔离诊断：聚焦后输入 TEST + Ctrl+S，读回文件（同一实例，pkill 之前）
             WID2=$(xdotool search --onlyvisible --name Mellow 2>/dev/null | head -1)
+            echo "diagnostic_wid=$WID2"
             if [ -n "$WID2" ]; then
               xdotool windowactivate --sync $WID2 2>/dev/null; xdotool windowfocus --sync $WID2 2>/dev/null
               xdotool mousemove 600 250 click 1
@@ -108,7 +107,6 @@ jobs:
               sleep 1
               xdotool key --clearmodifiers ctrl+s
               sleep 2
-              echo "--- ASCII input diagnostic ---"
               echo "focus=$(xdotool getwindowfocus 2>/dev/null) target=$WID2"
               echo "file_after=$(cat /tmp/mellow-shot.md)"
             fi
