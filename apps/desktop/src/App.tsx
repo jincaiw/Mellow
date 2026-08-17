@@ -988,6 +988,8 @@ export default function App() {
   const applyTab = useCallback(async (tab: DocumentTab) => {
     const host = hostRef.current;
     if (!host) return;
+    // PRD §101 Auto Save：切换文档前保存当前 dirty 文档（默认 Window Blur + Document Switch）
+    await maybeAutoSaveRef.current?.();
     setReaderOpen(false);
     setSplitOpen(false);
     suppressEditorEventRef.current = true;
@@ -2127,6 +2129,17 @@ export default function App() {
     setStatusText(`已保存 ${result.value.path}`);
   }, [currentTabPatch, refreshTabsState, setDirty, watchDocument]);
 
+  // PRD §101 Auto Save：默认 Window Blur + Document Switch；设置可关闭（mellow.file.autosave）
+  const maybeAutoSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const maybeAutoSave = useCallback(async () => {
+    if (!dirtyRef.current) return;
+    try {
+      if (localStorage.getItem('mellow.file.autosave') === '0') return;
+    } catch { /* 默认开启 */ }
+    await handleSave();
+  }, [handleSave]);
+  maybeAutoSaveRef.current = maybeAutoSave;
+
   const handleSaveAs = useCallback(async () => {
     const host = hostRef.current;
     const documents = documentsRef.current;
@@ -2292,6 +2305,9 @@ export default function App() {
         document.documentElement.style.setProperty('--mellow-line-height', String(Number(value) || 1.65));
         break;
       }
+      case 'settings.autosave':
+        setStatusText(Boolean(value) ? t('msg.autosaveOn') : t('msg.autosaveOff'));
+        break;
       case 'settings.engineFeature': {
         // 语法特性开关（PRD §94）：重建 JSON → mellow.engine.features（bundle loader 读取）
         const keys = ['highlight', 'supSub', 'emoji', 'alerts', 'math', 'mermaid', 'toc', 'footnote', 'wikilink', 'html', 'yaml'];
@@ -2308,6 +2324,12 @@ export default function App() {
         break;
     }
   }, [applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
+  // PRD §101 Auto Save：窗口失焦时保存 dirty 文档（默认开启，设置可关闭）
+  useEffect(() => {
+    const onBlur = () => { void maybeAutoSaveRef.current?.(); };
+    window.addEventListener('blur', onBlur);
+    return () => window.removeEventListener('blur', onBlur);
+  }, []);
   // 外部打开（CLI 参数 / Finder「打开方式」odoc）：Rust 侧 emit mellow://open-file
   // PRD §80 CLI 模式：--reader 打开后进 Reader；--source 打开后切源码模式
   const openPathWithMode = useCallback((req: { path: string; mode?: string }) => {
