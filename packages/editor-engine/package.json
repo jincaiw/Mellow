@@ -22,6 +22,7 @@
     "jest-environment-jsdom": "^30.0.0",
     "ts-jest": "^29.0.0",
     "typescript": "^5.0.0",
-    "@types/node": "^24.13.3"
+    "@types/node": "^24.13.3",
+    "@codemirror/lang-javascript": "^6.2.5"
   }
 }

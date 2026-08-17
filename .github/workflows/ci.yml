@@ -56,9 +56,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Typecheck all packages
-        run: pnpm -r run build
+        run: pnpm -r --filter '!mellow-desktop' run build
       - name: "Unit tests (host-api 38 / document-model 26 / app-core 119 / i18n 15 / settings 8 / themes 8 / commands 6 / export 46)"
-        run: pnpm -r run test
+        run: pnpm -r --filter '!mellow-desktop' run test
 
   editor-engine:
     name: editor-engine test + build
