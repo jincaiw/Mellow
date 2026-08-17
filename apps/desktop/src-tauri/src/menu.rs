@@ -46,6 +46,7 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("file.print", "打印…", "Print…"),
     ("export.pdf", "导出 PDF…", "Export PDF…"),
     ("export.html", "导出 HTML…", "Export HTML…"),
+    ("export.docx", "导出 Word…", "Export Word…"),
     ("commandPalette.open", "命令面板", "Command Palette"),
     ("view.source.toggle", "源码模式", "Source Mode"),
     ("view.focus.cycle", "Focus Mode", "Focus Mode"),
@@ -147,13 +148,14 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let print = MenuItem::with_id(app, "file.print", &l("file.print"), true, accel("Cmd+P", "Ctrl+P"))?;
     let export_pdf = MenuItem::with_id(app, "export.pdf", &l("export.pdf"), true, None::<&str>)?;
     let export_html = MenuItem::with_id(app, "export.html", &l("export.html"), true, None::<&str>)?;
+    let export_docx = MenuItem::with_id(app, "export.docx", &l("export.docx"), true, None::<&str>)?;
     let open_with = MenuItem::with_id(app, "file.openWith", &l("file.openWith"), true, None::<&str>)?;
     let file_info = MenuItem::with_id(app, "file.info", &l("file.info"), true, None::<&str>)?;
     let file_menu = Submenu::with_items(
         app,
         &l("menu.file"),
         true,
-        &[&new, &open, &quick_open, &open_folder, &sep, &save, &save_as, &sep, &reveal, &sep, &print, &export_pdf, &export_html, &sep, &open_with, &file_info, &sep, &close_tab],
+        &[&new, &open, &quick_open, &open_folder, &sep, &save, &save_as, &sep, &reveal, &sep, &print, &export_pdf, &export_html, &export_docx, &sep, &open_with, &file_info, &sep, &close_tab],
     )?;
     subs.push(file_menu);
 

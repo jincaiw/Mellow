@@ -655,6 +655,29 @@ export default function App() {
   }, [t]);
 
   // ── RC F6：导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize）──
+  // Pandoc 导出 Word（PRD §75 P1 / deep-parity A9）：检测 pandoc → 选路径 → 导出 DOCX
+  const handleExportDocx = useCallback(async () => {
+    const tab = tabsRef.current.active;
+    if (tab === null || hostRef.current === null) return;
+    if (!isTauri()) return;
+    try {
+      const available = await invoke<boolean>('pandoc_available');
+      if (!available) {
+        setToast({ message: t('export.docx.needPandoc') });
+        return;
+      }
+      const savePath = await invoke<string | null>('pick_save_path', {
+        defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.docx`,
+        filters: ['docx'],
+      });
+      if (savePath === null) return;
+      await invoke('pandoc_export', { input: tab.path, output: savePath, format: 'docx' });
+      setToast({ message: t('export.docx.done') });
+    } catch (err) {
+      setToast({ message: `${t('export.docx.failed')}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [t]);
+
   const handleExportHtml = useCallback(async () => {
     const tab = tabsRef.current.active;
     if (tab === null || hostRef.current === null) return;
@@ -2473,6 +2496,7 @@ export default function App() {
       } },
       // RC F6：导出 HTML（PRD §73）
       { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtml() },
+      { id: 'export.docx', localizedTitle: { zh: '导出 Word…', en: 'Export Word…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportDocx() },
       // RC F1：PDF 导出（golden journey #19）
       { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
       { id: 'split.toggle', localizedTitle: { zh: '切换 Split（Source | Preview）', en: 'Toggle Split (Source | Preview)' }, category: 'view', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => toggleSplit() },

@@ -2,6 +2,7 @@ pub mod bridge;
 pub mod fs;
 pub mod menu;
 pub mod open_with;
+pub mod pandoc;
 pub mod print;
 pub mod recovery;
 pub mod search;
@@ -77,6 +78,8 @@ pub fn run() {
             print::print_window,
             open_with::detect_open_with,
             open_with::open_with_editor,
+            pandoc::pandoc_available,
+            pandoc::pandoc_export,
             updater::update_rollback_prepare,
             updater::update_rollback_status,
             updater::update_rollback_note_launch,
