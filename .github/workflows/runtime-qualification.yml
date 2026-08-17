@@ -87,7 +87,9 @@ jobs:
             fcitx5 -d > /tmp/fcitx5.log 2>&1 &
             sleep 6
             # 截图可视化诊断：启动 → 等待 → 捕获整屏 + 窗口几何
-            printf '# Screenshot Test\\n\\nHello **Mellow** on Linux\\n' > /tmp/mellow-shot.md
+            echo "# Screenshot Test" > /tmp/mellow-shot.md
+            echo "" >> /tmp/mellow-shot.md
+            echo "Hello **Mellow** on Linux" >> /tmp/mellow-shot.md
             nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-shot.md > /tmp/mellow-shot.log 2>&1 &
             sleep 15
             xdotool search --name Mellow getwindowgeometry > /tmp/mellow-geometry.txt 2>&1 || true
