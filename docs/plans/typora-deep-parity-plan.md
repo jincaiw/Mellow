@@ -255,3 +255,7 @@ NaN
 - ✅ 状态提示串全部 i18n 化（打开/保存/另存/已保存，消除硬编码中文）；
 - ✅ Source Fidelity 门禁复跑 PASS：140 文件 Open→Save 0 diff（File Safety 不回退）；
 - ⏳ 2d 剩余：侧栏渲染函数（tree/outline/search/list）与 App.tsx 主体拆分（依赖面大，待后续轮次）。
+
+### 阶段 4 第四轮（2026-08-18 凌晨）
+- ✅ Open With（PRD §79）：Rust Adapter 平台检测（macOS /Applications 扫描 + open -a；Windows LOCALAPPDATA/ProgramFiles；Linux PATH which）+ 前端弹窗（检测列表 + 自定义命令）+ 文件菜单「打开方式…」+ 命令面板 file.openWith；
+- ✅ 设置 Export 段过时文案修正（导出已可用，指向菜单/命令面板）。
