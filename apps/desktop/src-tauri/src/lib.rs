@@ -1,6 +1,7 @@
 pub mod bridge;
 pub mod fs;
 pub mod menu;
+pub mod open_with;
 pub mod print;
 pub mod recovery;
 pub mod search;
@@ -74,6 +75,8 @@ pub fn run() {
             watcher::watch_document,
             watcher::unwatch_document,
             print::print_window,
+            open_with::detect_open_with,
+            open_with::open_with_editor,
             updater::update_rollback_prepare,
             updater::update_rollback_status,
             updater::update_rollback_note_launch,

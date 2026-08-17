@@ -1292,6 +1292,35 @@ html, body, #root {
   animation: mellow-fade 140ms ease;
 }
 
+/* Open With（PRD §79）*/
+.open-with-backdrop {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+.open-with-panel {
+  width: 360px; max-width: calc(100vw - 48px);
+  background: var(--mellow-bg-elevated);
+  border: 1px solid var(--mellow-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  padding: 12px;
+}
+.open-with-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.open-with-title { font-weight: 700; font-size: 13px; }
+.open-with-close { border: 0; background: transparent; color: var(--mellow-fg-subtle); font-size: 14px; cursor: pointer; }
+.open-with-body { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; }
+.open-with-empty { color: var(--mellow-fg-subtle); font-size: 12px; padding: 8px 0; }
+.open-with-item {
+  text-align: left; padding: 7px 10px;
+  border: 1px solid var(--mellow-border); border-radius: 4px;
+  background: var(--mellow-bg); color: var(--mellow-fg); font-size: 13px;
+}
+.open-with-item:hover { background: var(--mellow-bg-hover); }
+.open-with-custom { display: flex; gap: 6px; margin-top: 4px; }
+.open-with-input { flex: 1; padding: 5px 8px; border: 1px solid var(--mellow-border-strong); border-radius: 4px; background: var(--mellow-bg); color: var(--mellow-fg); font-size: 12px; }
+
+
 .settings-panel {
   width: min(860px, calc(100vw - 64px));
   height: min(600px, calc(100vh - 96px));

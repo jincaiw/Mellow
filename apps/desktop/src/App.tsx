@@ -387,6 +387,10 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // Cheatsheet（帮助菜单 / 命令面板 help.cheatsheet）
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+  // Open With（PRD §79）：检测本机编辑器 → 用其打开当前文件
+  const [openWithOpen, setOpenWithOpen] = useState(false);
+  const [openWithEditors, setOpenWithEditors] = useState<Array<{ id: string; name: string; launch: string }>>([]);
+  const [openWithCustom, setOpenWithCustom] = useState('');
   // Recent Files（Typora 深度对标 ⑫：欢迎屏最近打开 + 缺失标记）
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>(() => {
     try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
@@ -857,6 +861,29 @@ export default function App() {
   const handleSplitPreviewScroll = useCallback((ratio: number) => {
     hostRef.current?.setScrollRatio(ratio);
   }, []);
+
+  const openOpenWith = useCallback(() => {
+    setOpenWithCustom('');
+    setOpenWithEditors([]);
+    setOpenWithOpen(true);
+    if (isTauri()) {
+      void invoke<Array<{ id: string; name: string; launch: string }>>('detect_open_with')
+        .then((apps) => setOpenWithEditors(apps))
+        .catch(() => setOpenWithEditors([]));
+    }
+  }, []);
+
+  const runOpenWith = useCallback(async (launch: string) => {
+    const path = filePathRef.current;
+    if (path === null) { setStatusText(t('msg.saveFirst')); return; }
+    setOpenWithOpen(false);
+    try {
+      await invoke('open_with_editor', { launch, filePath: path });
+      setStatusText(t('msg.openWithLaunched', { editor: launch }));
+    } catch (err) {
+      setStatusText(`${t('msg.openWithFailed')}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [t]);
 
   const openSlashUi = useCallback(() => {
     commandPaletteModelRef.current.selectedIndex = 0;
@@ -2395,6 +2422,7 @@ export default function App() {
       { id: 'reader.print', localizedTitle: { zh: '打印 Reader', en: 'Print Reader' }, category: 'file', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       // RC F2：打印入口（对齐 Typora Cmd+P；golden journey #18）
       { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+P' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
+      { id: 'file.openWith', localizedTitle: { zh: '打开方式…', en: 'Open With…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => openOpenWith() },
       // RC F6：导出 HTML（PRD §73）
       { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtml() },
       // RC F1：PDF 导出（golden journey #19）
@@ -3108,6 +3136,35 @@ export default function App() {
           status={status}
           statusText={statusText}
         />
+      )}
+      {openWithOpen && (
+        <div className="open-with-backdrop" onMouseDown={() => setOpenWithOpen(false)}>
+          <div className="open-with-panel" role="dialog" aria-label={t('file.openWith')} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="open-with-header">
+              <span className="open-with-title">{t('file.openWith')}</span>
+              <button type="button" className="open-with-close" onClick={() => setOpenWithOpen(false)} aria-label={t('settings.close')}>✕</button>
+            </div>
+            <div className="open-with-body">
+              {openWithEditors.length === 0
+                ? <div className="open-with-empty">{t('openWith.empty')}</div>
+                : openWithEditors.map((app) => (
+                    <button key={app.id} type="button" className="open-with-item" onClick={() => void runOpenWith(app.launch)}>
+                      {app.name}
+                    </button>
+                  ))}
+              <div className="open-with-custom">
+                <input
+                  className="open-with-input"
+                  placeholder={t('openWith.customPlaceholder')}
+                  value={openWithCustom}
+                  onChange={(e) => setOpenWithCustom(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && openWithCustom.trim() !== '') void runOpenWith(openWithCustom.trim()); }}
+                />
+                <button type="button" disabled={openWithCustom.trim() === ''} onClick={() => void runOpenWith(openWithCustom.trim())}>{t('openWith.open')}</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       {settingsOpen && (
         <SettingsPanel
