@@ -299,6 +299,8 @@ export default function App() {
     return saved === 'outline' || saved === 'search' ? saved : 'files';
   });
   const [fileSidebarMode, setFileSidebarModeState] = useState<'tree' | 'list'>(() => (localStorage.getItem(FILE_SIDEBAR_MODE_KEY) === 'list' ? 'list' : 'tree'));
+  // U6：侧栏过滤/排序控件默认折叠（⋯ 展开），降低默认界面密度（desktop-ui-design-spec §6）
+  const [fileFiltersOpen, setFileFiltersOpen] = useState(false);
   const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
   const [fileListItems, setFileListItems] = useState<FileListItem[]>([]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
@@ -2702,7 +2704,7 @@ export default function App() {
 
   return (
     <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
-      <header className="titlebar">
+      <header className="titlebar" data-tauri-drag-region>
         <nav className="tabbar" aria-label={t('tabbar.label')}>
           {tabs.map((tab) => (
             <button
@@ -2749,6 +2751,7 @@ export default function App() {
               <>
                 <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')} title={t('sidebar.openFolderTitle')}>{t('sidebar.openFolder')}</button>
                 <button onClick={() => void dispatchCommand('workspace.refresh', 'menu')} disabled={fileTreeRoot === null}>{t('sidebar.refresh')}</button>
+                <button className="file-tree-filters-toggle" onClick={() => setFileFiltersOpen((v) => !v)} title={t('sidebar.filtersTitle')} aria-expanded={fileFiltersOpen}>⋯</button>
               </>
             )}
           </div>
@@ -2758,6 +2761,8 @@ export default function App() {
                 <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>{t('sidebar.tree')}</button>
                 <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>{t('sidebar.list')}</button>
               </div>
+              {fileFiltersOpen && (
+              <>
               <div className="file-tree-filters">
                 <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />{t('sidebar.showHidden')}</label>
                 <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />{t('sidebar.showNonMarkdown')}</label>
@@ -2777,6 +2782,8 @@ export default function App() {
                 <input placeholder={t('tree.includeGlob')} value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
                 <input placeholder={t('tree.excludeGlob')} value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
               </div>
+              </>
+              )}
               <div className="file-tree-root" title={fileTreeRoot ?? ''}>
                 <span className="file-tree-root-label">{fileTreeRoot ?? t('tree.rootEmpty')}</span>
                 {fileTreeRoot !== null && (

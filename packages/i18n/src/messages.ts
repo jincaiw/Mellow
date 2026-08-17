@@ -44,6 +44,7 @@ const zhCN = {
   'sidebar.sortCreated': '创建时间',
   'sidebar.sortAsc': '升序',
   'sidebar.emptyFiles': '打开文件夹以浏览文件',
+  'sidebar.filtersTitle': '过滤与排序选项',
   'sidebar.emptyFolder': '文件夹为空 · 右键新建',
 
   // Outline
@@ -376,6 +377,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'sidebar.sortCreated': 'Created',
   'sidebar.sortAsc': 'Ascending',
   'sidebar.emptyFiles': 'Open a folder to browse files',
+  'sidebar.filtersTitle': 'Filter & sort options',
   'sidebar.emptyFolder': 'Empty folder · right-click to create',
 
   'outline.filter': 'Filter headings',

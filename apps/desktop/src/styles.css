@@ -76,7 +76,8 @@ html, body, #root {
   max-width: 220px;
   padding: 0 8px;
   border: 0;
-  border-right: 1px solid var(--mellow-border);
+  /* U7：去 VS Code 式分隔线，Typora 低干扰 tab */
+  border-right: 0;
   background: transparent;
   color: var(--mellow-fg-subtle);
   font-size: 12px;
@@ -87,10 +88,15 @@ html, body, #root {
   background: var(--mellow-bg-hover);
 }
 
+.tab:hover .tab-close {
+  opacity: 1;
+}
+
 .tab.active {
   background: var(--mellow-bg-elevated);
   color: var(--mellow-fg);
-  box-shadow: inset 0 -2px 0 var(--mellow-accent);
+  /* U7：去 accent 底边，仅用柔和背景区分 */
+  box-shadow: none;
 }
 
 .tab-dirty {
@@ -108,6 +114,7 @@ html, body, #root {
 }
 
 .tab-close {
+  opacity: 0;
   width: 16px;
   height: 16px;
   border-radius: 50%;
@@ -195,6 +202,14 @@ html, body, #root {
 
 .file-tree button:disabled {
   opacity: 0.5;
+}
+
+/* U6：过滤/排序折叠按钮（⋯）——低干扰，默认隐藏控件 */
+.file-tree-filters-toggle {
+  min-width: 20px;
+  padding: 2px 4px !important;
+  font-weight: 700;
+  color: var(--mellow-fg-subtle);
 }
 
 .file-tree-filters label {
