@@ -303,3 +303,6 @@ NaN
 ### 阶段 3/4 第十三轮（2026-08-18）
 - ✅ 图片尺寸语法 `![alt](url =WxH)`（Typora 附录 G 图片，deep-parity A8）：stripImageSize 纯函数 + widget 渲染应用 width/height + scan 剥离尺寸（批量操作路径正确）+ 4 测试；引擎 495 全绿；
 NaN
+
+### 阶段 3/4 第十四轮（2026-08-18）
+- ✅ 最近文件夹（deep-parity A10，PRD §56/§62）：侧栏「最近文件夹」区（自动追踪去重置顶、上限 10、与固定文件夹并置）+ 3 测试；app-core 131 全绿。
