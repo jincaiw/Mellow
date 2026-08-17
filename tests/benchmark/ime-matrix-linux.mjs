@@ -52,7 +52,8 @@ function launch(doc, im) {
   sleep(8000);
   const pid = sh('cat /tmp/mellow.pid').trim();
   // 启动诊断：窗口列表 + 是否找到 Mellow 窗口
-  sh('xdotool search --name Mellow 2>/dev/null | head -1 > /tmp/mellow-win-id.txt');
+  // 只匹配可见主窗口（10x10 的 mellow-desktop 辅助窗口会被 --onlyvisible 过滤）
+  sh('xdotool search --onlyvisible --name Mellow 2>/dev/null | head -1 > /tmp/mellow-win-id.txt');
   const winId = sh('cat /tmp/mellow-win-id.txt').trim();
   console.log(`[boot] pid=${pid} window=${winId || 'NOT_FOUND'}`);
   if (winId) {
