@@ -67,7 +67,7 @@ import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src'
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import type { SettingDefinition } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList } from '../../../packages/desktop-ui/src';
+import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest, EditorContextActions } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -165,7 +165,7 @@ export default function App() {
   // Tabs（PRD §11：open/active/dirty/reorder/close/session restore）
   const tabsRef = useRef<TabManager>(new TabManager());
   const suppressEditorEventRef = useRef(false);
-  const draggedTreePathRef = useRef<string | null>(null);
+
   // File Tree / Articles File List（PRD §14/§15/§59/§60；不创建 .mellow workspace 文件）
   const fileTreeServiceRef = useRef<FileTreeService | null>(null);
   const fileTreeModelRef = useRef<FileTreeModel | null>(null);
@@ -1557,10 +1557,9 @@ export default function App() {
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
-  const handleTreeDrop = useCallback(async (targetDir: string) => {
+  const handleTreeDrop = useCallback(async (targetDir: string, draggedPath: string | null) => {
     const svc = fileTreeServiceRef.current;
-    const path = draggedTreePathRef.current;
-    draggedTreePathRef.current = null;
+    const path = draggedPath;
     if (!svc || path === null || path === targetDir) return;
     const r = await svc.move(path, targetDir);
     setStatusText(r.ok ? t('msg.movedTo', { value: r.value }) : t('msg.moveFailed', { error: r.error.message }));
@@ -2726,31 +2725,6 @@ export default function App() {
     return new Date(ms).toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
-  const renderTreeNodes = (nodes: FileTreeNode[]) => nodes.map((node) => (
-    <div key={node.path}>
-      <button
-        type="button"
-        className={`tree-row ${selectedTreePath === node.path ? 'selected' : ''} ${filePathRef.current === node.path ? 'current' : ''}`}
-        style={{ paddingLeft: 8 + node.depth * 14 }}
-        title={node.path}
-        draggable
-        onDragStart={() => { draggedTreePathRef.current = node.path; }}
-        onDragOver={(e) => { if (node.kind === 'folder') e.preventDefault(); }}
-        onDrop={() => { if (node.kind === 'folder') void handleTreeDrop(node.path); }}
-        onClick={() => handleTreeSelect(node.path)}
-        onDoubleClick={() => { if (node.kind === 'folder') void handleTreeToggle(node.path); else void openTreeFile(node.path); }}
-        onContextMenu={(e) => openTreeContextMenu(e, node.path)}
-      >
-        <span className="tree-disclosure" onClick={(e) => { e.stopPropagation(); if (node.kind === 'folder') void handleTreeToggle(node.path); }}>
-          {node.kind === 'folder' ? (node.expanded ? '▾' : '▸') : ''}
-        </span>
-        <span className="tree-icon">{node.kind === 'folder' ? '📁' : '📄'}</span>
-        <span className="tree-name">{node.name}</span>
-      </button>
-      {node.kind === 'folder' && node.expanded && node.children !== undefined && renderTreeNodes(node.children)}
-    </div>
-  ));
-
   const paletteSource: CommandSource = slashMode || commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette';
   const paletteQuery = commandPaletteQuery.startsWith('/') ? commandPaletteQuery.slice(1) : commandPaletteQuery;
   const paletteCommands: CommandPaletteItem[] = slashMode
@@ -2871,7 +2845,7 @@ export default function App() {
                 <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
                   {fileTreeNodes.length === 0 ? (
                     <div className="sidebar-empty">{fileTreeRoot === null ? t('sidebar.emptyFiles') : t('sidebar.emptyFolder')}</div>
-                  ) : renderTreeNodes(fileTreeNodes)}
+                  ) : <FileTree nodes={fileTreeNodes} selectedPath={selectedTreePath} currentPath={filePathRef.current} onSelect={handleTreeSelect} onToggle={(p) => void handleTreeToggle(p)} onOpen={(p) => void openTreeFile(p)} onDrop={(d, p) => void handleTreeDrop(d, p)} onContextMenu={openTreeContextMenu} />}
                 </div>
               ) : (
                 <div className="file-list" aria-label={t('filelist.articles')}>

@@ -14,3 +14,5 @@ export { SearchResultsList } from './SearchResultsList';
 export type { SearchResultsListProps } from './SearchResultsList';
 export { FileList } from './FileList';
 export type { FileListProps } from './FileList';
+export { FileTree } from './FileTree';
+export type { FileTreeProps } from './FileTree';
