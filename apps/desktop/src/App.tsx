@@ -67,7 +67,7 @@ import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src'
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import type { SettingDefinition } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree } from '../../../packages/desktop-ui/src';
+import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest, EditorContextActions } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -2780,21 +2780,16 @@ export default function App() {
       <div className="workspace-shell">
         {sidebarVisible && (
         <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
-          <div className="file-tree-header">
-            <strong>{sidebarMode === 'outline' ? t('sidebar.outline') : sidebarMode === 'search' ? t('sidebar.search') : t('sidebar.files')}</strong>
-            <div className="file-sidebar-switch" role="tablist" aria-label={t('sidebar.filesSwitchLabel')}>
-              <button className={sidebarMode === 'files' ? 'active' : ''} onClick={() => setSidebarMode('files')}>{t('sidebar.files')}</button>
-              <button className={sidebarMode === 'outline' ? 'active' : ''} onClick={() => { setSidebarMode('outline'); refreshOutlineRef.current(); }}>{t('sidebar.outline')}</button>
-              <button className={sidebarMode === 'search' ? 'active' : ''} onClick={() => setSidebarMode('search')}>{t('sidebar.search')}</button>
-            </div>
-            {sidebarMode === 'files' && (
-              <>
-                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')} title={t('sidebar.openFolderTitle')}>{t('sidebar.openFolder')}</button>
-                <button onClick={() => void dispatchCommand('workspace.refresh', 'menu')} disabled={fileTreeRoot === null}>{t('sidebar.refresh')}</button>
-                <button className="file-tree-filters-toggle" onClick={() => setFileFiltersOpen((v) => !v)} title={t('sidebar.filtersTitle')} aria-expanded={fileFiltersOpen}>⋯</button>
-              </>
-            )}
-          </div>
+          <SidebarHeader
+            mode={sidebarMode}
+            t={t}
+            onModeChange={(m) => { setSidebarMode(m); if (m === 'outline') refreshOutlineRef.current(); }}
+            onOpenFolder={() => void dispatchCommand('workspace.openFolder', 'menu')}
+            onRefresh={() => void dispatchCommand('workspace.refresh', 'menu')}
+            canRefresh={fileTreeRoot !== null}
+            filtersOpen={fileFiltersOpen}
+            onToggleFilters={() => setFileFiltersOpen((v) => !v)}
+          />
           {sidebarMode === 'files' ? (
             <>
               <div className="file-tree-actions file-mode-tabs">

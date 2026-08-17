@@ -16,3 +16,5 @@ export { FileList } from './FileList';
 export type { FileListProps } from './FileList';
 export { FileTree } from './FileTree';
 export type { FileTreeProps } from './FileTree';
+export { SidebarHeader } from './SidebarHeader';
+export type { SidebarHeaderProps, SidebarMode } from './SidebarHeader';
