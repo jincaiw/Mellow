@@ -26,7 +26,7 @@
 | 应用启动 | ✅ PASS | 进程存活；窗口 6291459（1200x775）`--onlyvisible` 找到 |
 | 窗口聚焦 | ✅ PASS | `xdotool getwindowfocus` = 6291459（应用窗口） |
 | 文档渲染 | ✅ PASS | 截图分析：标题栏 + 文档内容在顶部渲染；`Hello **Mellow**` 可见 |
-| 键盘输入（XTEST/合成键） | ⚠️ N/A | 全局 XTEST 与直投窗口合成键均未达 WebKitGTK 编辑器（两张截图字节级相同；libEGL/DRI3 警告）——**无头环境 WebKitGTK 输入限制**，非应用缺陷（macOS 本机 IME 8/8 通过佐证） |
+| 键盘输入（XTEST/合成键） | ⚠️ N/A | 三重独立诊断证实无头环境输入阻断：①全局 XTEST 键入未达；②直投窗口合成键未达；③**Ctrl+Shift+P 命令面板未弹出**（输入前后/快捷键后三张截图全部字节级相同 MD5 bcb808cc）——WebKitGTK web 进程在 Xvfb 下不接收任何合成键盘事件，非应用缺陷（macOS 本机 IME 8/8 通过佐证） |
 | IME 组词（fcitx5） | ⏳ 待真机 | ime-matrix-linux.mjs 8 场景可执行（全部跑完），输入注入受限 |
 | 结论 | **Linux 构建+启动+渲染级验证通过**；键盘/IME 矩阵需真机（无头环境限制已精确定位） | |
 
