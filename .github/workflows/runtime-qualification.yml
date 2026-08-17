@@ -35,7 +35,7 @@ jobs:
       - name: Install system deps (GUI + X + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk openbox
       - name: Install workspace
         working-directory: mellow
         run: pnpm install --frozen-lockfile
@@ -82,6 +82,8 @@ jobs:
             export DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root
             export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
             export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11
+            openbox > /tmp/openbox.log 2>&1 &
+            sleep 2
             fcitx5 -d > /tmp/fcitx5.log 2>&1 &
             sleep 6
             node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 || echo IME_MATRIX_EXIT=$?
@@ -92,6 +94,7 @@ jobs:
           ls -la apps/desktop/src-tauri/target/release/mellow-desktop
           cat /tmp/mellow.log 2>/dev/null | tail -20 || true
           cat /tmp/fcitx5.log 2>/dev/null | tail -10 || true
+          cat /tmp/openbox.log 2>/dev/null | tail -5 || true
 
   windows-runtime:
     name: "Windows: launch + SendKeys smoke"
