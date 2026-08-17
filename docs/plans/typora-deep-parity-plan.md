@@ -271,3 +271,8 @@ NaN
 - ✅ 阶段 5 门禁模板：docs/qualification/ux-score-gate-template.md（PRD §131 UX Score 评分表 + §132 30 任务清单与执行方法/通过判定/证据要求）；
 - ⏳ 图片上传 adapter（PRD §55 P1）：extension-api 契约已有，宿主接线与 PicGo 适配器需真机+网络验证，明确延期；
 NaN
+
+### 阶段 2/5 第七轮（2026-08-18）
+- ✅ 文件信息对话框（PRD §J.1）：路径/大小/修改时间/编码/行尾/行数/字符数/字数/阅读时长（纯前端统计，无新 IO）+ 文件菜单「文件信息…」；
+- ✅ README 更新 desktop-ui 组件清单；
+NaN
