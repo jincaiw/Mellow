@@ -48,21 +48,21 @@ const zhCN = {
 
   // Outline
   'outline.filter': '过滤标题',
-  'outline.flat': 'Flat',
+  'outline.flat': '扁平',
   'outline.number': '编号',
   'outline.empty': '当前文档没有标题',
 
   // Global Search
-  'search.placeholder': 'Search workspace',
+  'search.placeholder': '搜索当前文件夹',
   'search.case': 'Aa',
-  'search.word': 'Word',
+  'search.word': '全词',
   'search.regex': '.*',
   'search.ctx': 'Ctx',
   'search.include': 'include glob（逗号）',
   'search.exclude': 'exclude glob（默认忽略 .git/node_modules/dist/build/target/vendor）',
   'search.run': '搜索',
-  'search.matches': '{n} matches',
-  'search.streaming': 'streaming…',
+  'search.matches': '{n} 个匹配',
+  'search.streaming': '搜索中…',
   'search.empty': '输入关键词搜索当前文件夹',
 
   // Welcome
@@ -74,7 +74,7 @@ const zhCN = {
   'welcome.recentMissing': '已删除',
 
   // Palette / Quick Open
-  'palette.command.placeholder': 'Command Palette / Plugin Commands',
+  'palette.command.placeholder': '命令面板 / 插件命令',
   'palette.slash.placeholder': 'Slash Commands：输入命令（fuzzy）…',
   'quickopen.placeholder': 'Quick Open：输入文件名或相对路径（支持中文 / Unicode）',
   'quickopen.scanning': '正在扫描，结果逐步显示…',
@@ -98,7 +98,7 @@ const zhCN = {
   'reader.math.render.error': '公式渲染失败（已保留源码）',
 
   // Split
-  'split.preview': 'Preview',
+  'split.preview': '预览',
   'split.hint': '点击内容定位到源码',
   'split.divider.title': '拖动调整比例',
 
@@ -299,13 +299,13 @@ const zhCN = {
   'settings.editor.fontSize': '字号',
   'settings.editor.lineNumbers': '显示行号',
   'settings.editor.lineWrapping': '自动换行',
-  'settings.editor.typewriter': 'Typewriter Mode',
-  'settings.editor.focusMode': 'Focus Mode',
+  'settings.editor.typewriter': '打字机模式',
+  'settings.editor.focusMode': '专注模式',
   'settings.editor.toolbar': '浮动格式工具栏',
   'settings.focus.off': '关闭',
   'settings.focus.line': '当前行',
   'settings.focus.paragraph': '当前段落',
-  'settings.markdown.slashCommands': 'Slash Commands',
+  'settings.markdown.slashCommands': 'Slash 命令',
   'settings.file.showHidden': '显示隐藏文件',
   'settings.file.showNonMarkdown': '显示非 Markdown 文件',
   'settings.file.autosave': '自动保存',
@@ -322,13 +322,13 @@ const zhCN = {
   'settings.export.placeholderDesc': '导出能力将在后续版本提供',
   'settings.shortcuts.list': '快捷键列表',
   'settings.shortcuts.listDesc': '只读展示；自定义快捷键 P1',
-  'settings.extensions.ai': 'AI Extension',
+  'settings.extensions.ai': 'AI 扩展',
   'settings.extensions.aiDesc': 'AI extension 未启用时此分类不出现',
   'settings.extensions.plugins': '插件命令',
   'settings.extensions.pluginsDesc': '插件注册的命令统一进入 Command Palette',
   'settings.ai.panel': 'AI 面板',
   'settings.advanced.windowBounds': '记忆窗口大小与位置',
-  'settings.advanced.userCss': 'User CSS',
+  'settings.advanced.userCss': '用户 CSS',
   'settings.advanced.userCssDesc': 'appData/user.css 自动加载（优先级最高）',
   'settings.liveHint': '更改立即生效，无需重启',
 } as const;
