@@ -249,3 +249,9 @@ NaN
 - ✅ Auto Save（PRD §101）：Window Blur + Document Switch 默认保存 dirty 文档，设置可关闭（此前设置项为空转）；
 - ✅ 速查表补充新快捷键条目；
 - ✅ Win/Linux 原生菜单不设加速键（避免与前端 keydown 双重触发切换类命令）。
+
+### 阶段 2d/3 第三轮（2026-08-17 深夜）
+- ✅ 建立 packages/desktop-ui（PRD §117）：从 App.tsx 增量抽取 Tabbar / StatusBar / Welcome（行为等价，拖拽逻辑内聚组件）；
+- ✅ 状态提示串全部 i18n 化（打开/保存/另存/已保存，消除硬编码中文）；
+- ✅ Source Fidelity 门禁复跑 PASS：140 文件 Open→Save 0 diff（File Safety 不回退）；
+- ⏳ 2d 剩余：侧栏渲染函数（tree/outline/search/list）与 App.tsx 主体拆分（依赖面大，待后续轮次）。
