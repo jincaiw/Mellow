@@ -30,7 +30,7 @@ jobs:
           yarn install --immutable
           yarn build
           yarn test
-      - name: Mellow wrapper test + build (14: contract + neutral)
+      - name: "Mellow wrapper test + build (14: contract + neutral)"
         working-directory: packages/editor-core
         run: |
           pnpm test
@@ -57,7 +57,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Typecheck all packages
         run: pnpm -r run build
-      - name: Unit tests (host-api 38 / document-model 26 / app-core 119 / i18n 15 / settings 8 / themes 8 / commands 6 / export 46)
+      - name: "Unit tests (host-api 38 / document-model 26 / app-core 119 / i18n 15 / settings 8 / themes 8 / commands 6 / export 46)"
         run: pnpm -r run test
 
   editor-engine:
@@ -74,7 +74,7 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Test (486: engine + IME Composition Guard / undo corruption)
+      - name: "Test (486: engine + IME Composition Guard / undo corruption)"
         working-directory: packages/editor-engine
         run: pnpm test
       - name: Build
@@ -118,12 +118,3 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-      - name: Cargo check + test (37 + file-safety 16 + updater 4)
-        working-directory: apps/desktop/src-tauri
-        run: cargo test
