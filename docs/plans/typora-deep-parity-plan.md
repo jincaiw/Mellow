@@ -294,3 +294,8 @@ NaN
 NaN
 NaN
 NaN
+
+### 阶段 1 第十二轮（2026-08-18）
+- ✅ 三平台 **10MB 大文件打开冒烟**（PRD §110）：Windows/macOS/Linux 全部 `10mb_alive=true`（release 二进制打开 10MB 文档 15s 无崩溃）+ Linux 渲染截图；
+- ✅ Linux 键盘事件穷尽式诊断完成（Ctrl+Shift+P 面板未弹出，三截图字节级相同）——确认 Xvfb 下 WebKitGTK web 进程不接收合成键，输入交互矩阵归入真机桌面执行包；
+- ✅ Runtime Qualification 流水线累计证据：构建+启动+10MB（三平台）+ 文档渲染（Linux）。
