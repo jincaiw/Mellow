@@ -96,7 +96,7 @@ jobs:
             xwininfo -root -children -display :99 2>/dev/null > /tmp/xwininfo.txt || true
             for w in $(cat /tmp/mellow-windows.txt 2>/dev/null); do echo "== window $w ==" >> /tmp/mellow-geometry.txt; xdotool getwindowgeometry $w >> /tmp/mellow-geometry.txt 2>&1 || true; xdotool getwindowname $w >> /tmp/mellow-geometry.txt 2>&1 || true; done
             import -display :99 -window root /tmp/mellow-screen.png 2>/dev/null || xwd -root -display :99 -out /tmp/mellow-screen.xwd 2>/dev/null || true
-            pkill -f mellow-desktop || true
+            pkill -x mellow-desktop || true
             sleep 2
             # IME 矩阵
             node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 || echo IME_MATRIX_EXIT=$?

@@ -44,8 +44,8 @@ function readBack(pid) {
 }
 
 function launch(doc, im) {
-  spawnSync('pkill', ['-f', 'mellow-desktop']);
-  sleep(800);
+  // 精确匹配进程名（-x），避免 -f 匹配到含 mellow-desktop 的外层 bash -c 命令行 → 误杀父进程
+  spawnSync('pkill', ['-x', 'mellow-desktop']);
   writeFileSync(DOC, doc);
   const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'}`;
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
