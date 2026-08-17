@@ -18,6 +18,19 @@
 - 工具链：pnpm workspace 全流程（含 vendored CoreEditor yarn 特例）在三平台验证通过。
 - CI（ci.yml，ubuntu）5 job 全绿：editor-core（vendored 185+wrapper 14）、editor-engine（486）、mellow-packages（typecheck+unit）、desktop-frontend（bundle+tsc+vite）、rust-check（cargo test 37+16+4）。
 
+
+### 启动级 Runtime 验证（2026-08-18，CI runner 作为测试机）
+用 GitHub Actions windows-latest / ubuntu-latest / macos-latest 作为真实测试机执行 Runtime Qualification 流水线（`.github/workflows/runtime-qualification.yml`）：
+| 平台 | 应用启动 | 文档渲染 | 键盘输入注入 |
+|---|---|---|---|
+| Windows | ✅ PASS（app_alive=True） | 未自动化 | ⚠️ SendKeys 未达 WebView2（CI 无交互桌面） |
+| macOS | ✅ PASS（app_alive=true，CLI 打开） | 未自动化 | 未自动化 |
+| Linux（Xvfb） | ✅ PASS（进程存活 + 1200x775 主窗口 + X 焦点确认） | ✅ PASS（截图可见文档内容） | ⚠️ WebKitGTK 在 Xvfb 下不接收 XTEST 合成键（无头环境限制，已精确定位；非应用缺陷） |
+
+证据：`docs/qualification/runtime-matrix-evidence-2026-08-18.md` + artifact `linux-runtime-evidence`（截图/窗口几何/日志）。
+**结论更新**：三平台「构建 + 启动」级 Runtime 证据已获得；IME 组词/Caret/Clipboard 的「输入交互」级验证仍需真机桌面（Windows/Linux）——ADR-0019 §2 无 FAIL，Tauri 维持锁定。
+
+### 真机 Runtime 矩阵（待执行）
 ### 真机 Runtime 矩阵（待执行）
 - Windows/Linux 真机（或 VM）的 IME（微软拼音/搜狗/fcitx5/ibus）、Caret/Selection、Clipboard（plain/HTML/TSV/image）、拖放、Undo、外部变更、10MB、Print/PDF、焦点——**尚未执行**（需用户提供机器，执行手册见 docs/qualification/phase1-runtime-qualification-manual.md）。
 - macOS 已验部分：简体拼音 8/8（历史矩阵）；日文输入源与 typing P95（ABC）待补。
