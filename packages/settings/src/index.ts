@@ -73,6 +73,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'paragraph', labelKey: 'settings.focus.paragraph' },
         ], applyCommand: 'view.focus.off' },
       { id: 'editor.toolbar', labelKey: 'settings.editor.toolbar', type: 'toggle', storageKey: 'mellow.selectionToolbar.enabled', defaultValue: true, applyCommand: 'view.toolbar.on' },
+      { id: 'editor.writingWidth', labelKey: 'settings.editor.writingWidth', type: 'select', storageKey: 'mellow.editor.writingWidth', defaultValue: '820',
+        options: [
+          { value: '680', labelKey: 'settings.writingWidth.680' },
+          { value: '820', labelKey: 'settings.writingWidth.820' },
+          { value: '980', labelKey: 'settings.writingWidth.980' },
+          { value: 'auto', labelKey: 'settings.writingWidth.auto' },
+        ], applyCommand: 'settings.writingWidth' },
+      { id: 'editor.lineHeight', labelKey: 'settings.editor.lineHeight', type: 'number', storageKey: 'mellow.editor.lineHeight', defaultValue: 1.65, min: 1.2, max: 2.2, step: 0.05, applyCommand: 'settings.lineHeight' },
     ],
   },
   {

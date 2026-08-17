@@ -249,6 +249,17 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+  // 写作宽度 / 行高：从 localStorage 初始化 CSS 变量（设置面板即时生效）
+  useEffect(() => {
+    try {
+      const w = localStorage.getItem('mellow.editor.writingWidth');
+      const wv = w === null ? '820' : w;
+      document.documentElement.style.setProperty('--mellow-writing-width', wv === 'auto' ? 'none' : wv + 'px');
+      const lh = localStorage.getItem('mellow.editor.lineHeight');
+      const lhv = lh === null ? '1.65' : lh;
+      document.documentElement.style.setProperty('--mellow-line-height', lhv);
+    } catch { /* 默认 820 / 1.65 */ }
+  }, []);
   // Native Menu 本地化（menu.rs 目录；locale 切换 → 重建菜单，PRD §23/附录 J）
   useEffect(() => {
     if (!isTauri()) return;
@@ -2263,6 +2274,17 @@ export default function App() {
       case 'settings.statusbar':
         setStatusbarVisible(Boolean(value));
         break;
+      case 'settings.writingWidth': {
+        // 写作宽度：编辑器 iframe max-width（PRD §18：680/820/980/Auto，默认 820）
+        const v = String(value);
+        document.documentElement.style.setProperty('--mellow-writing-width', v === 'auto' ? 'none' : v + 'px');
+        break;
+      }
+      case 'settings.lineHeight': {
+        // 行高：编辑器内容行高（PRD §18：1.55–1.75，默认 1.65）
+        document.documentElement.style.setProperty('--mellow-line-height', String(Number(value) || 1.65));
+        break;
+      }
       default:
         break;
     }

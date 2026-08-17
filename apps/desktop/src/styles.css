@@ -628,6 +628,10 @@ html, body, #root {
 }
 
 .mellow-editor-frame {
+  /* 写作宽度（PRD §18，设置面板即时生效） */
+  max-width: var(--mellow-writing-width, 820px);
+  margin: 0 auto;
+
   position: absolute;
   inset: 0;
   width: 100%;
