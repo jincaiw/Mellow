@@ -1864,12 +1864,20 @@ export default function App() {
       .ready()
       .then(async () => {
         let active = tabsRef.current.active;
+        // PRD §92 启动行为：可关闭「恢复上次会话」（默认开启）
+        let reopenLast = true;
+        try { reopenLast = localStorage.getItem('mellow.general.reopenLast') !== '0'; } catch { /* 默认开启 */ }
         try {
-          const raw = localStorage.getItem(TABS_SESSION_KEY);
-          if (raw !== null) {
-            const parsed = JSON.parse(raw) as TabSessionSnapshot;
-            tabsRef.current = new TabManager(parsed);
-            active = tabsRef.current.active;
+          if (reopenLast) {
+            const raw = localStorage.getItem(TABS_SESSION_KEY);
+            if (raw !== null) {
+              const parsed = JSON.parse(raw) as TabSessionSnapshot;
+              tabsRef.current = new TabManager(parsed);
+              active = tabsRef.current.active;
+            }
+          } else {
+            tabsRef.current = new TabManager();
+            active = null;
           }
         } catch {
           active = null;
@@ -2333,6 +2341,10 @@ export default function App() {
       case 'settings.autosave':
         setStatusText(Boolean(value) ? t('msg.autosaveOn') : t('msg.autosaveOff'));
         break;
+      case 'settings.reopenLast':
+        // 下次启动生效（当前会话不受影响）
+        setStatusText(Boolean(value) ? t('msg.reopenLastOn') : t('msg.reopenLastOff'));
+        break;
       case 'settings.engineFeature': {
         // 语法特性开关（PRD §94）：重建 JSON → mellow.engine.features（bundle loader 读取）
         const keys = ['highlight', 'supSub', 'emoji', 'alerts', 'math', 'mermaid', 'toc', 'footnote', 'wikilink', 'html', 'yaml'];
@@ -2423,6 +2435,15 @@ export default function App() {
       // RC F2：打印入口（对齐 Typora Cmd+P；golden journey #18）
       { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+P' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       { id: 'file.openWith', localizedTitle: { zh: '打开方式…', en: 'Open With…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => openOpenWith() },
+      { id: 'file.openUserCss', localizedTitle: { zh: '打开用户 CSS（appData/user.css）', en: 'Open User CSS (appData/user.css)' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
+        if (!isTauri()) return;
+        void import('@tauri-apps/api/path').then(async ({ appDataDir, join }) => {
+          const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+          const dir = await appDataDir();
+          const p = await join(dir, 'user.css');
+          await revealItemInDir(p).catch(() => undefined);
+        }).catch(() => undefined);
+      } },
       // RC F6：导出 HTML（PRD §73）
       { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtml() },
       // RC F1：PDF 导出（golden journey #19）

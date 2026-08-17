@@ -50,6 +50,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'general',
     labelKey: 'settings.general',
     settings: [
+      { id: 'general.reopenLast', labelKey: 'settings.general.reopenLast', type: 'toggle', storageKey: 'mellow.general.reopenLast', defaultValue: true, applyCommand: 'settings.reopenLast' },
       { id: 'general.language', labelKey: 'settings.general.language', type: 'select', storageKey: 'mellow.locale', defaultValue: 'zh-CN',
         options: [
           { value: 'zh-CN', labelKey: 'settings.language.zh' },
