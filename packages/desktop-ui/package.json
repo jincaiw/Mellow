@@ -1,0 +1,14 @@
+{
+  "name": "@mellow/desktop-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mellow 桌面 UI 组件（PRD §117 desktop-ui；阶段 2 从 App.tsx 增量抽取，行为等价）",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "react": "^18.3.1",
+    "typescript": "^5.0.0"
+  }
+}

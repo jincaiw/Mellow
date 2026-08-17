@@ -67,6 +67,7 @@ import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src'
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import type { SettingDefinition } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
+import { Tabbar, StatusBar, Welcome } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest, EditorContextActions } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -164,7 +165,6 @@ export default function App() {
   // Tabs（PRD §11：open/active/dirty/reorder/close/session restore）
   const tabsRef = useRef<TabManager>(new TabManager());
   const suppressEditorEventRef = useRef(false);
-  const draggedTabIdRef = useRef<string | null>(null);
   const draggedTreePathRef = useRef<string | null>(null);
   // File Tree / Articles File List（PRD §14/§15/§59/§60；不创建 .mellow workspace 文件）
   const fileTreeServiceRef = useRef<FileTreeService | null>(null);
@@ -2240,13 +2240,11 @@ export default function App() {
     setStatusText(`已重新打开 ${tab.title}`);
   }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
 
-  const handleDropTab = useCallback((targetId: string) => {
-    const dragged = draggedTabIdRef.current;
-    draggedTabIdRef.current = null;
-    if (dragged === null || dragged === targetId) return;
+  const handleDropTab = useCallback((targetId: string, draggedId: string | null) => {
+    if (draggedId === null || draggedId === targetId) return;
     syncActiveTabFromEditor();
     const targetIndex = tabsRef.current.all.findIndex((tab) => tab.id === targetId);
-    tabsRef.current.reorder(dragged, targetIndex);
+    tabsRef.current.reorder(draggedId, targetIndex);
     refreshTabsState();
   }, [refreshTabsState, syncActiveTabFromEditor]);
 
@@ -2777,30 +2775,14 @@ export default function App() {
   return (
     <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
       <header className="titlebar" data-tauri-drag-region>
-        <nav className="tabbar" aria-label={t('tabbar.label')}>
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`tab ${tab.id === activeTabId ? 'active' : ''} ${tab.dirty ? 'dirty' : ''}`}
-              title={tab.path ?? t('msg.unsavedDoc')}
-              draggable
-              onDragStart={() => { draggedTabIdRef.current = tab.id; }}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => handleDropTab(tab.id)}
-              onClick={() => void handleSelectTab(tab.id)}
-            >
-              <span className="tab-dirty">{tab.dirty ? '●' : ''}</span>
-              <span className="tab-title">{tab.title}</span>
-              <span
-                className="tab-close"
-                role="button"
-                aria-label={t('tab.close.label', { title: tab.title })}
-                onClick={(e) => { e.stopPropagation(); void handleCloseTab(tab.id); }}
-              >×</span>
-            </button>
-          ))}
-        </nav>
+        <Tabbar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          t={t}
+          onSelect={(id) => void handleSelectTab(id)}
+          onClose={(id) => void handleCloseTab(id)}
+          onDropTab={handleDropTab}
+        />
         <button
           className="titlebar-palette"
           type="button"
@@ -2940,36 +2922,15 @@ export default function App() {
         )}
         <main className={`editor-container${splitOpen ? ' split' : ''}`}>
           {tabs.length === 0 && !readerOpen && !splitOpen && status === 'ready' && (
-            <div className="welcome">
-              <h1 className="welcome-title">Mellow</h1>
-              <div className="welcome-actions">
-                <button onClick={() => void dispatchCommand('file.new', 'menu')}>{t('welcome.new')}</button>
-                <button onClick={() => void dispatchCommand('file.open', 'menu')}>{t('welcome.open')}</button>
-                <button onClick={() => void dispatchCommand('workspace.openFolder', 'menu')}>{t('welcome.openFolder')}</button>
-              </div>
-              {recentFiles.length > 0 && (
-                <div className="welcome-recent">
-                  <div className="welcome-recent-title">{t('welcome.recent')}</div>
-                  <div className="welcome-recent-list">
-                    {recentFiles.map((entry) => {
-                      const missing = recentMissing[entry.path] === true;
-                      return (
-                        <button
-                          key={entry.path}
-                          type="button"
-                          className={`welcome-recent-item${missing ? ' missing' : ''}`}
-                          disabled={missing}
-                          onClick={() => void openPathInTab(entry.path)}
-                        >
-                          <span className="welcome-recent-name">{basename(entry.path)}{missing ? ` · ${t('welcome.recentMissing')}` : ''}</span>
-                          <span className="welcome-recent-dir">{fileTreeDirname(entry.path)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            <Welcome
+              t={t}
+              recentFiles={recentFiles}
+              recentMissing={recentMissing}
+              onNew={() => void dispatchCommand('file.new', 'menu')}
+              onOpen={() => void dispatchCommand('file.open', 'menu')}
+              onOpenFolder={() => void dispatchCommand('workspace.openFolder', 'menu')}
+              onOpenRecent={(path) => void openPathInTab(path)}
+            />
           )}
           {readerOpen && (
             <ReaderView
@@ -3137,17 +3098,16 @@ export default function App() {
         </div>
       )}
       {statusbarVisible && (
-      <footer className="statusbar">
-        <span className="statusbar-item">{dirty ? t('status.unsaved') : t('status.saved')}</span>
-        <span className="statusbar-item">{stats}</span>
-        <span className="statusbar-item">{cursorPos}</span>
-        <span className="statusbar-sep" />
-        <span className="statusbar-item">{t('status.markdown')}</span>
-        <span className="statusbar-item">{encodingLabel}</span>
-        <span className="statusbar-item">{eolLabel}</span>
-        <span className="spacer" />
-        <span className={`status ${status}`}>{statusText}</span>
-        </footer>
+        <StatusBar
+          t={t}
+          dirty={dirty}
+          stats={stats}
+          cursorPos={cursorPos}
+          encodingLabel={encodingLabel}
+          eolLabel={eolLabel}
+          status={status}
+          statusText={statusText}
+        />
       )}
       {settingsOpen && (
         <SettingsPanel
