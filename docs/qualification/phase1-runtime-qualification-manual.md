@@ -10,6 +10,34 @@
 - 对照基线：Typora 1.14.6（安装于同一机器，用于行为对照）。
 - 测试素材：tests/fixtures/（1MB.md、5MB.md、100k-lines.md、large-table.md、100-mermaid.md、1000-images.md 等）。
 
+
+## 0.5 一键执行命令速查（自动化 runner）
+
+### macOS（需 GUI 会话 + 辅助功能权限）
+```bash
+# IME 矩阵（System Events 输入；简体拼音）
+node tests/benchmark/ime-matrix.mjs
+# Golden Journeys（需 Typora 1.14.9 对照安装）
+node tests/benchmark/golden-journeys.mjs --app=mellow
+# 性能对照（screen-timing 需屏幕录制权限）
+node tests/benchmark/run-benchmark.mjs
+```
+
+### Linux（容器或真机：需 xdotool + xclip + fcitx5/ibus）
+```bash
+# IME 矩阵（fcitx5；ibus 用 --im ibus）
+node tests/benchmark/ime-matrix-linux.mjs --im fcitx5
+node tests/benchmark/ime-matrix-linux.mjs --im ibus
+# 素材生成（大文件等）
+node tests/benchmark/generate-fixtures.mjs
+```
+
+### Windows（无自动化 runner —— 手动执行 §2 矩阵，按 I1-I11/C1-C7/P1-P6/D1-D2/U1-U5/O1-O3/A1-A2 逐项记录）
+
+### 结果回填
+- 每平台完成后把结果表写入：docs/qualification/runtime-matrix-{platform}-*.md；
+- 汇总到 tests/qualification/README.md Pass/Fail 表；
+- IME corruption ≠ 0 等任一 §2 触发条件 → 记录并启动 ADR-0019 §2 切换评估（ADR-0022 记录裁决）。
 ## 1. 安装矩阵（每平台）
 | 步骤 | 通过标准 | 结果 |
 |---|---|---|
