@@ -82,6 +82,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'auto', labelKey: 'settings.writingWidth.auto' },
         ], applyCommand: 'settings.writingWidth' },
       { id: 'editor.lineHeight', labelKey: 'settings.editor.lineHeight', type: 'number', storageKey: 'mellow.editor.lineHeight', defaultValue: 1.65, min: 1.2, max: 2.2, step: 0.05, applyCommand: 'settings.lineHeight' },
+      { id: 'editor.autoHideTabBar', labelKey: 'settings.editor.autoHideTabBar', type: 'toggle', storageKey: 'mellow.editor.autoHideTabBar', defaultValue: true, applyCommand: 'settings.autoHideTabBar' },
     ],
   },
   {

@@ -201,6 +201,10 @@ export default function App() {
   const [updateUi, setUpdateUi] = useState<UpdateUi>({ phase: 'idle' });
   const [rollbackPrompt, setRollbackPrompt] = useState<RollbackStatus | null>(null);
   // RC：Status bar hidden 设置（parity B2；默认显示，可隐藏）
+  // PRD §11：单 Tab 自动隐藏 Tab Bar（Typora 行为；设置可关）
+  const [autoHideTabBar, setAutoHideTabBar] = useState<boolean>(() => {
+    try { return localStorage.getItem('mellow.editor.autoHideTabBar') !== '0'; } catch { return true; }
+  });
   const [statusbarVisible, setStatusbarVisible] = useState<boolean>(() => {
     // U2：状态栏默认隐藏（设置可开启）
     try { return localStorage.getItem('mellow.statusbar.visible') === '1'; } catch { return false; }
@@ -2344,6 +2348,9 @@ export default function App() {
       case 'settings.autosave':
         setStatusText(Boolean(value) ? t('msg.autosaveOn') : t('msg.autosaveOff'));
         break;
+      case 'settings.autoHideTabBar':
+        setAutoHideTabBar(Boolean(value));
+        break;
       case 'settings.reopenLast':
         // 下次启动生效（当前会话不受影响）
         setStatusText(Boolean(value) ? t('msg.reopenLastOn') : t('msg.reopenLastOff'));
@@ -2754,14 +2761,14 @@ export default function App() {
   return (
     <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
       <header className="titlebar" data-tauri-drag-region>
-        <Tabbar
+        {(tabs.length > 1 || !autoHideTabBar) && <Tabbar
           tabs={tabs}
           activeTabId={activeTabId}
           t={t}
           onSelect={(id) => void handleSelectTab(id)}
           onClose={(id) => void handleCloseTab(id)}
           onDropTab={handleDropTab}
-        />
+        />}
         <button
           className="titlebar-palette"
           type="button"
