@@ -286,3 +286,11 @@ NaN
 - ✅ 2d：抽取 SidebarHeader（desktop-ui 第 8 个组件：+SidebarHeader；App.tsx 3185 行）；
 - ✅ Source Fidelity 复跑 PASS（141 文件 0 diff）；
 - ✅ 修复 task-checkbox 测试时序抖动（轮询等待渲染，消除并行负载 flaky）；全量测试绿（engine 491 / app-core 128 等）。
+
+### 阶段 1 第十一轮（2026-08-18，CI runner 突破）
+- ✅ Runtime Qualification 流水线（.github/workflows/runtime-qualification.yml）：Windows/macOS/Linux 启动级验证全 PASS（app_alive=True；Linux 1200x775 主窗口 + X 焦点 + 文档渲染截图证据）；
+- ✅ 精确定位 Linux 无头输入限制：WebKitGTK 在 Xvfb 下不接收 XTEST 合成键（双路径诊断+截图比对字节级相同）——非应用缺陷，需真实桌面；
+NaN
+NaN
+NaN
+NaN
