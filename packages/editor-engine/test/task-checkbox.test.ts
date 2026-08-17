@@ -22,6 +22,18 @@ function checkboxes(view: EditorView): HTMLInputElement[] {
   return Array.from(view.dom.querySelectorAll(`.${CHECKBOX_CLASS}`)) as HTMLInputElement[];
 }
 
+/** 轮询等待 checkbox 渲染（防并行负载下的时序抖动） */
+async function waitForCheckboxes(view: EditorView, count: number, timeoutMs = 3000): Promise<HTMLInputElement[]> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const boxes = checkboxes(view);
+    if (boxes.length >= count) return boxes;
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  return checkboxes(view);
+}
+
+
 function click(_view: EditorView, box: HTMLInputElement): void {
   box.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }
@@ -32,7 +44,7 @@ describe('Task Checkbox — Live 显示', () => {
   test('`[ ]` → 未选中 checkbox；`[x]` → 选中', async () => {
     const view = setUp('- [ ] todo\n- [x] done');
     await sleep();
-    const boxes = checkboxes(view);
+    const boxes = await waitForCheckboxes(view, 2);
     expect(boxes.length).toBe(2);
     expect(boxes[0].checked).toBe(false);
     expect(boxes[1].checked).toBe(true);
