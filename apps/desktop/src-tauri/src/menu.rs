@@ -117,10 +117,11 @@ pub fn attach_menu_events(app: &AppHandle) {
 /// 构建完整菜单（macOS 含应用菜单；Win/Linux 为 文件/编辑/…/帮助）
 fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu<tauri::Wry>> {
     let l = |k: &str| label(k, locale);
-    // 快捷键：macOS 用 Cmd/Opt；Win/Linux 用 Ctrl/Alt（与前端 CommandRegistry 一致）。
-    // 入参均为字符串字面量（'static），返回 'static 引用，无借用生命周期问题。
-    let accel = |mac: &'static str, win: &'static str| -> Option<&'static str> {
-        if is_mac { Some(mac) } else { Some(win) }
+    // 快捷键：仅 macOS 原生菜单设置加速键（菜单拦截，单次分发）；
+    // Win/Linux 不设菜单加速键——快捷键统一由前端 keydown → CommandRegistry 处理，
+    // 避免「菜单加速键 + JS keydown」对切换类命令（粗体/源码模式等）的双重触发。
+    let accel = |mac: &'static str, _win: &'static str| -> Option<&'static str> {
+        if is_mac { Some(mac) } else { None }
     };
 
     let mut subs: Vec<Submenu<tauri::Wry>> = Vec::new();
