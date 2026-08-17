@@ -45,11 +45,11 @@ function readBack(pid) {
 
 function launch(doc, im) {
   // 精确匹配进程名（-x），避免 -f 匹配到含 mellow-desktop 的外层 bash -c 命令行 → 误杀父进程
-  spawnSync('pkill', ['-x', 'mellow-desktop']);
-  writeFileSync(DOC, doc);
-  const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'}`;
+  // 按 PID 精确终止旧实例（避免 pkill -f/-x 波及外层 shell）
+  const oldPid = sh('cat /tmp/mellow.pid 2>/dev/null').trim();
+  if (oldPid) { spawnSync('kill', [oldPid]); }
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
-  sleep(8000);
+  sleep(15000);
   const pid = sh('cat /tmp/mellow.pid').trim();
   // 启动诊断：窗口列表 + 是否找到 Mellow 窗口
   // 只匹配可见主窗口（10x10 的 mellow-desktop 辅助窗口会被 --onlyvisible 过滤）
@@ -88,9 +88,13 @@ for (const sc of SCENARIOS) {
   sleep(1500);
   // 聚焦编辑器：点击窗口中央
   const wid = sh('cat /tmp/mellow-win-id.txt').trim();
-  if (wid) sh(`xdotool windowactivate --sync ${wid} 2>/dev/null; xdotool windowfocus --sync ${wid} 2>/dev/null`);
-  xdo('mousemove 600 350 click 1');
-  sleep(1200);
+  if (wid) {
+    sh(`xdotool windowactivate --sync ${wid} 2>/dev/null; xdotool windowfocus --sync ${wid} 2>/dev/null`);
+    sh(`xdotool mousemove 600 250 click 1`);
+    sleep(1000);
+    sh(`xdotool mousemove 600 250 click 1`);
+    sleep(1200);
+  }
   for (const s of SEG1) typeSyl(s);
   for (const s of SEG2) typeSyl(s);
   const text = readBack(pid);
