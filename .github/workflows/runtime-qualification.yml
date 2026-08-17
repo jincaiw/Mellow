@@ -127,6 +127,13 @@ jobs:
             sleep 2
             # IME 矩阵
             node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 || echo IME_MATRIX_EXIT=$?
+            # 10MB 大文件启动冒烟（PRD §110）：打开 10MB 文档 → 存活 → 渲染
+            yes 中文测试行content0123456789 | head -c 10000000 > /tmp/mellow-10mb.md || true
+            nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-10mb.md > /tmp/mellow-10mb.log 2>&1 &
+            sleep 15
+            if kill -0 $! 2>/dev/null; then echo '10mb_alive=true'; else echo '10mb_alive=false'; tail -20 /tmp/mellow-10mb.log; fi
+            import -display :99 -window root /tmp/mellow-10mb.png 2>/dev/null || true
+            pkill -x mellow-desktop || true
           '
       - name: Collect evidence
         working-directory: mellow
@@ -145,6 +152,7 @@ jobs:
             /tmp/mellow-screen.*
             /tmp/mellow-after-type.png
             /tmp/mellow-palette.png
+            /tmp/mellow-10mb.png
             /tmp/mellow-geometry.txt
             /tmp/xwininfo.txt
             /tmp/mellow-windows.txt
@@ -207,6 +215,16 @@ jobs:
           if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
           $content = Get-Content -Path $doc -Raw -ErrorAction SilentlyContinue
           Write-Host ('file_after=' + $content)
+          # 10MB 大文件启动冒烟
+          $big = 'C:/tmp/mellow-10mb.md'
+          $line = 'line content 0123456789'
+          $sb = New-Object System.Text.StringBuilder
+          1..800000 | ForEach-Object { [void]$sb.AppendLine($line) } | Out-Null
+          [IO.File]::WriteAllText($big, $sb.ToString())
+          $p2 = Start-Process -FilePath $bin -ArgumentList $big -PassThru
+          Start-Sleep -Seconds 15
+          Write-Host ('10mb_alive=' + (-not $p2.HasExited))
+          if (-not $p2.HasExited) { Stop-Process -Id $p2.Id -Force }
           Write-Host 'Windows runtime smoke executed on windows-latest'
 
   macos-runtime:
@@ -254,6 +272,13 @@ jobs:
             tail -30 /tmp/mellow-mac.log
           fi
           kill "$APP_PID" 2>/dev/null || true
+          # 10MB 大文件启动冒烟
+          yes 'line content 0123456789' | head -c 10000000 > /tmp/mellow-10mb.md || true
+          "$BIN" /tmp/mellow-10mb.md > /tmp/mellow-10mb.log 2>&1 &
+          BIG_PID=$!
+          sleep 15
+          if kill -0 "$BIG_PID" 2>/dev/null; then echo '10mb_alive=true'; else echo '10mb_alive=false'; tail -20 /tmp/mellow-10mb.log; fi
+          kill "$BIG_PID" 2>/dev/null || true
           echo 'macOS runtime smoke executed on macos-latest'
       - name: Collect evidence
         run: |
