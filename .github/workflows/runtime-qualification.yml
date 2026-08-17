@@ -92,7 +92,9 @@ jobs:
             echo "Hello **Mellow** on Linux" >> /tmp/mellow-shot.md
             nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-shot.md > /tmp/mellow-shot.log 2>&1 &
             sleep 15
-            xdotool search --name Mellow getwindowgeometry > /tmp/mellow-geometry.txt 2>&1 || true
+            xdotool search --name Mellow 2>/dev/null > /tmp/mellow-windows.txt || true
+            xwininfo -root -children -display :99 2>/dev/null > /tmp/xwininfo.txt || true
+            for w in $(cat /tmp/mellow-windows.txt 2>/dev/null); do echo "== window $w ==" >> /tmp/mellow-geometry.txt; xdotool getwindowgeometry $w >> /tmp/mellow-geometry.txt 2>&1 || true; xdotool getwindowname $w >> /tmp/mellow-geometry.txt 2>&1 || true; done
             import -display :99 -window root /tmp/mellow-screen.png 2>/dev/null || xwd -root -display :99 -out /tmp/mellow-screen.xwd 2>/dev/null || true
             pkill -f mellow-desktop || true
             sleep 2
@@ -115,6 +117,9 @@ jobs:
           path: |
             /tmp/mellow-screen.*
             /tmp/mellow-geometry.txt
+            /tmp/xwininfo.txt
+            /tmp/mellow-windows.txt
+            /tmp/mellow-shot.log
             /tmp/mellow.log
             /tmp/fcitx5.log
           if-no-files-found: warn
