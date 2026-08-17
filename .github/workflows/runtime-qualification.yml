@@ -108,7 +108,14 @@ jobs:
               xdotool key --clearmodifiers ctrl+s
               sleep 2
               echo "focus=$(xdotool getwindowfocus 2>/dev/null) target=$WID2"
-              echo "file_after=$(cat /tmp/mellow-shot.md)"
+              echo "file_after_global=$(cat /tmp/mellow-shot.md)"
+              # 直投窗口合成键（绕过焦点/XTEST 差异）
+              xdotool key --window $WID2 --clearmodifiers 'a'
+              sleep 1
+              xdotool key --window $WID2 --clearmodifiers ctrl+s
+              sleep 2
+              echo "file_after_direct=$(cat /tmp/mellow-shot.md)"
+              import -display :99 -window root /tmp/mellow-after-type.png 2>/dev/null || true
             fi
             pkill -x mellow-desktop || true
             sleep 2
@@ -130,6 +137,7 @@ jobs:
           name: linux-runtime-evidence
           path: |
             /tmp/mellow-screen.*
+            /tmp/mellow-after-type.png
             /tmp/mellow-geometry.txt
             /tmp/xwininfo.txt
             /tmp/mellow-windows.txt
