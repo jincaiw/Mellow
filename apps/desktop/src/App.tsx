@@ -391,6 +391,8 @@ export default function App() {
   const [openWithOpen, setOpenWithOpen] = useState(false);
   const [openWithEditors, setOpenWithEditors] = useState<Array<{ id: string; name: string; launch: string }>>([]);
   const [openWithCustom, setOpenWithCustom] = useState('');
+  // 文件信息（PRD §J.1 文件菜单「文件信息」）
+  const [fileInfoOpen, setFileInfoOpen] = useState(false);
   // Recent Files（Typora 深度对标 ⑫：欢迎屏最近打开 + 缺失标记）
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>(() => {
     try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
@@ -861,6 +863,8 @@ export default function App() {
   const handleSplitPreviewScroll = useCallback((ratio: number) => {
     hostRef.current?.setScrollRatio(ratio);
   }, []);
+
+  const openFileInfo = useCallback(() => setFileInfoOpen(true), []);
 
   const openOpenWith = useCallback(() => {
     setOpenWithCustom('');
@@ -2434,6 +2438,7 @@ export default function App() {
       // RC F2：打印入口（对齐 Typora Cmd+P；golden journey #18）
       { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+P' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       { id: 'file.openWith', localizedTitle: { zh: '打开方式…', en: 'Open With…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => openOpenWith() },
+      { id: 'file.info', localizedTitle: { zh: '文件信息', en: 'File Info' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => openFileInfo() },
       { id: 'file.openUserCss', localizedTitle: { zh: '打开用户 CSS（appData/user.css）', en: 'Open User CSS (appData/user.css)' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
         if (!isTauri()) return;
         void import('@tauri-apps/api/path').then(async ({ appDataDir, join }) => {
@@ -3082,6 +3087,41 @@ export default function App() {
           status={status}
           statusText={statusText}
         />
+      )}
+      {fileInfoOpen && (
+        <div className="open-with-backdrop" onMouseDown={() => setFileInfoOpen(false)}>
+          <div className="open-with-panel" role="dialog" aria-label={t('file.info')} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="open-with-header">
+              <span className="open-with-title">{t('file.info')}</span>
+              <button type="button" className="open-with-close" onClick={() => setFileInfoOpen(false)} aria-label={t('settings.close')}>✕</button>
+            </div>
+            <div className="file-info-body">
+              {(() => {
+                const text = hostRef.current?.getText() ?? '';
+                const count = countWords(text);
+                const sizeBytes = new TextEncoder().encode(text).length;
+                const mtime = diskStateRef.current?.mtimeMs;
+                const rows: Array<[string, string]> = [
+                  [t('fileInfo.path'), filePathRef.current ?? t('msg.unsavedDoc')],
+                  [t('fileInfo.size'), `${sizeBytes.toLocaleString()} B`],
+                  [t('fileInfo.modified'), mtime !== undefined && mtime !== null ? new Date(mtime).toLocaleString() : '—'],
+                  [t('fileInfo.encoding'), docMetaRef.current.encoding],
+                  [t('fileInfo.eol'), docMetaRef.current.eol === '\r\n' ? 'CRLF' : docMetaRef.current.eol === '\r' ? 'CR' : 'LF'],
+                  [t('fileInfo.lines'), String(count.lines)],
+                  [t('fileInfo.chars'), String(count.chars)],
+                  [t('fileInfo.words'), `${count.cjkChars} 字 / ${count.words} 词`],
+                  [t('fileInfo.readingTime'), t('status.readingTime', { minutes: count.readingTimeMinutes })],
+                ];
+                return rows.map(([label, value]) => (
+                  <div key={label} className="file-info-row">
+                    <span className="file-info-label">{label}</span>
+                    <span className="file-info-value">{value}</span>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
       )}
       {openWithOpen && (
         <div className="open-with-backdrop" onMouseDown={() => setOpenWithOpen(false)}>

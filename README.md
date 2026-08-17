@@ -35,7 +35,7 @@ mellow/
 │   ├── editor-core/      # vendored MarkEdit CoreEditor（只读，见 UPSTREAM.md）+ 平台无关 EditorCore 契约
 │   ├── editor-engine/    # Mellow Live Markdown 引擎（注入式扩展，marker reveal/表格/数学/Mermaid/脚注/TOC/图片…）
 │   ├── editor-react/     # 编辑器 React 绑定层（契约 re-export；组件化 UI 见阶段 2 计划）
-│   ├── desktop-ui/       # 桌面 UI 组件（阶段 2 建立，当前 UI 位于 apps/desktop/src）
+│   ├── desktop-ui/       # 桌面 UI 组件（Tabbar/StatusBar/Welcome/OutlineList/SearchResultsList/FileList/FileTree）
 │   ├── app-core/         # 应用核心逻辑（Document/Recovery/ExternalChange/Tabs/FileTree/Outline/QuickOpen/Search…）
 │   ├── host-api/         # 系统能力契约（PRD §116，纯类型 + mock/null）
 │   ├── document-model/   # 文档模型（ADR-0008）
@@ -98,28 +98,3 @@ mellow/
 ## 构建与运行
 
 工具链：根目录 pnpm workspace（`pnpm-workspace.yaml`）；vendored CoreEditor 内部保留 yarn（特例）。
-
-```bash
-pnpm install              # 安装全部 workspace 依赖
-pnpm test                 # 全量测试（各 package 测试套件）
-pnpm build                # 构建全部 package
-pnpm desktop:dev          # 启动桌面壳（Vite dev，需先构建 editor bundle）
-pnpm desktop:build        # 桌面前端构建（tsc + vite + editor bundle）
-```
-
-桌面壳完整运行（Tauri）：`cd apps/desktop && pnpm tauri dev`（需本机 Tauri 依赖，见 `src-tauri/Cargo.toml`）。打包：`pnpm tauri build`（三平台目标配置见 `apps/desktop/src-tauri/tauri.conf.json`）。
-
-## 测试
-
-- 单测位于各 package `test/`（jest）：editor-core（vendored 185 + wrapper 14）、editor-engine（486）、app-core（119）、i18n（15）、export（46）、host-api（38）、document-model（26）。
-- Rust 测试：`cargo test`（37 + file-safety 16 + updater 4）。
-- 门禁脚本：`tests/qualification/run-source-fidelity-corpus.sh`（Open→Save→git diff=0）、`run-packaging-smoke.sh`。
-- macOS 对照 harness：`tests/benchmark/`（golden-journeys.mjs / ime-matrix.mjs / run-benchmark.mjs，对照 Typora 1.14.9，仅 macOS）。
-- CI：`.github/workflows/ci.yml`（ubuntu，5 job）+ `release.yml`（三平台打包矩阵）。
-
-## 开发基线
-
-- **架构**：`docs/architecture/`（overview / editor-core / host-adapter / monorepo / extension-api）
-- **合规**：`THIRD_PARTY_NOTICES.md`（MarkEdit MIT 归属 + Paperling Apache-2.0 引用规则 + 依赖清单）
-- **参考项目**：MarkEdit（基础）、Paperling（桌面工作流参考）、markdown-preview（Reader 参考）
-- **阅读顺序建议**：先读宪法（PRD），再读施工图，动某个领域前读对应 Spec + 相关 ADR

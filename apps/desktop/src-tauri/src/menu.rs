@@ -41,6 +41,7 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("file.saveAs", "另存为…", "Save As…"),
     ("file.reveal", "在 Finder 中显示", "Reveal in Finder"),
     ("tabs.close", "关闭标签页", "Close Tab"),
+    ("file.info", "文件信息…", "File Info…"),
     ("file.openWith", "打开方式…", "Open With…"),
     ("file.print", "打印…", "Print…"),
     ("export.pdf", "导出 PDF…", "Export PDF…"),
@@ -147,11 +148,12 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let export_pdf = MenuItem::with_id(app, "export.pdf", &l("export.pdf"), true, None::<&str>)?;
     let export_html = MenuItem::with_id(app, "export.html", &l("export.html"), true, None::<&str>)?;
     let open_with = MenuItem::with_id(app, "file.openWith", &l("file.openWith"), true, None::<&str>)?;
+    let file_info = MenuItem::with_id(app, "file.info", &l("file.info"), true, None::<&str>)?;
     let file_menu = Submenu::with_items(
         app,
         &l("menu.file"),
         true,
-        &[&new, &open, &quick_open, &open_folder, &sep, &save, &save_as, &sep, &reveal, &sep, &print, &export_pdf, &export_html, &sep, &open_with, &sep, &close_tab],
+        &[&new, &open, &quick_open, &open_folder, &sep, &save, &save_as, &sep, &reveal, &sep, &print, &export_pdf, &export_html, &sep, &open_with, &file_info, &sep, &close_tab],
     )?;
     subs.push(file_menu);
 

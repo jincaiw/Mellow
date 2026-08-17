@@ -1318,6 +1318,10 @@ html, body, #root {
 }
 .open-with-item:hover { background: var(--mellow-bg-hover); }
 .open-with-custom { display: flex; gap: 6px; margin-top: 4px; }
+.file-info-body { display: flex; flex-direction: column; gap: 6px; }
+.file-info-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 2px; border-bottom: 1px solid var(--mellow-bg-hover); font-size: 12px; }
+.file-info-label { color: var(--mellow-fg-subtle); }
+.file-info-value { color: var(--mellow-fg); word-break: break-all; text-align: right; }
 .open-with-input { flex: 1; padding: 5px 8px; border: 1px solid var(--mellow-border-strong); border-radius: 4px; background: var(--mellow-bg); color: var(--mellow-fg); font-size: 12px; }
 
 
