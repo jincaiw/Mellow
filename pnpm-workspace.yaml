@@ -5,11 +5,7 @@ packages:
   - "packages/*"
   - "!packages/editor-core/CoreEditor"
 
+# pnpm 11.x：允许构建脚本的依赖（默认阻断 postinstall）
 allowBuilds:
-  esbuild: set this to true or false
-  unrs-resolver: set this to true or false
-
-# 允许构建脚本的依赖（pnpm 10+ 默认阻断 postinstall）
-onlyBuiltDependencies:
-  - esbuild
-  - unrs-resolver
+  esbuild: true
+  unrs-resolver: true
