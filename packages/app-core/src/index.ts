@@ -25,7 +25,7 @@ export { OutlineModel, buildOutline, parseHeadings, flattenOutline, filterOutlin
 export type { OutlineHeading, BuildOutlineOptions } from './outline';
 export { QuickOpenModel, fuzzyScore, rankQuickOpen, scanQuickOpen, quickOpenShortcutAction } from './quickOpen';
 export type { QuickOpenAction, QuickOpenEntry, QuickOpenKeyEvent, QuickOpenPlatform, QuickOpenRankedEntry, QuickOpenScanOptions } from './quickOpen';
-export { pushRecentFile, markRecentMissing, parseRecentFiles, serializeRecentFiles, RECENT_FILES_LIMIT } from './recentFiles';
+export { pushRecentFile, markRecentMissing, parseRecentFiles, serializeRecentFiles, RECENT_FILES_LIMIT, pushRecentFolder, parseRecentFolders, serializeRecentFolders, RECENT_FOLDERS_LIMIT } from './recentFiles';
 export { countWords, formatWordCountStats } from './wordCount';
 export type { WordCount } from './wordCount';
 export type { RecentFileEntry } from './recentFiles';

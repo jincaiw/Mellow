@@ -50,3 +50,33 @@ export function serializeRecentFiles(list: RecentFileEntry[]): string | null {
     return null;
   }
 }
+
+/**
+ * Recent Folders（PRD §56/§62 最近文件夹）—— 最近打开文件夹列表模型。
+ * 纯函数：去重置顶 + 数量上限；App 持久化到 localStorage。
+ */
+export const RECENT_FOLDERS_LIMIT = 10;
+
+export function pushRecentFolder(list: string[], folder: string, limit = RECENT_FOLDERS_LIMIT): string[] {
+  const rest = list.filter((f) => f !== folder);
+  return [folder, ...rest].slice(0, limit);
+}
+
+export function parseRecentFolders(raw: string | null): string[] {
+  if (raw === null) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((f): f is string => typeof f === 'string').slice(0, RECENT_FOLDERS_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+export function serializeRecentFolders(list: string[]): string | null {
+  try {
+    return JSON.stringify(list);
+  } catch {
+    return null;
+  }
+}

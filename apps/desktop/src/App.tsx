@@ -42,6 +42,9 @@ import {
   pushRecentFile,
   parseRecentFiles,
   serializeRecentFiles,
+  pushRecentFolder,
+  parseRecentFolders,
+  serializeRecentFolders,
 } from '../../../packages/app-core/src';
 import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
@@ -86,6 +89,7 @@ import { PRINT_STYLESHEET } from '../../../packages/export/src/printStyle';
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
 const RECENT_FILES_KEY = 'mellow.recent.files';
+const RECENT_FOLDERS_KEY = 'mellow.recent.folders';
 const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
 const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
 const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
@@ -402,6 +406,17 @@ export default function App() {
     try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
   });
   const [recentMissing, setRecentMissing] = useState<Record<string, boolean>>({});
+  // 最近文件夹（PRD §56/§62）：打开文件夹时去重置顶记录
+  const [recentFolders, setRecentFolders] = useState<string[]>(() => {
+    try { return parseRecentFolders(localStorage.getItem(RECENT_FOLDERS_KEY)); } catch { return []; }
+  });
+  const rememberRecentFolder = useCallback((folder: string) => {
+    setRecentFolders((prev) => {
+      const next = pushRecentFolder(prev, folder);
+      try { localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1297,6 +1312,7 @@ export default function App() {
     if (!r.ok || r.value === null) return;
     localStorage.setItem(FILE_TREE_ROOT_KEY, r.value);
     setFileTreeRoot(r.value);
+    rememberRecentFolder(r.value);
     fileTreeModelRef.current = new FileTreeModel(r.value, fileTreeOptions);
     setSelectedTreePath(null);
     setStatusText(t('msg.folderOpened', { value: r.value }));
@@ -2841,9 +2857,25 @@ export default function App() {
                       type="button"
                       className={`pinned-folder${p === fileTreeRoot ? ' active' : ''}`}
                       title={p}
-                      onClick={() => setFileTreeRoot(p)}
+                      onClick={() => { setFileTreeRoot(p); rememberRecentFolder(p); }}
                     >
                       {p === fileTreeRoot ? '★ ' : ''}{basename(p)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {recentFolders.length > 0 && (
+                <div className="pinned-folders" aria-label={t('sidebar.recentFoldersLabel')}>
+                  <span className="file-tree-root-label">{t('sidebar.recentFolders')}</span>
+                  {recentFolders.filter((f) => f !== fileTreeRoot).slice(0, 5).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className="pinned-folder"
+                      title={f}
+                      onClick={() => { setFileTreeRoot(f); rememberRecentFolder(f); }}
+                    >
+                      {basename(f)}
                     </button>
                   ))}
                 </div>
