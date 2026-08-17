@@ -1306,7 +1306,7 @@ export default function App() {
     syncActiveTabFromEditor();
     const r = await documents.readPath(path);
     if (!r.ok) {
-      setStatusText(`打开失败: ${r.error.message}`);
+      setStatusText(t('msg.openFailed', { error: r.error.message }));
       return;
     }
     const tab = tabsRef.current.open({
@@ -1964,7 +1964,7 @@ export default function App() {
     const result = await documents.open();
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
-        setStatusText(`打开失败: ${result.error.message}`);
+        setStatusText(t('msg.openFailed', { error: result.error.message }));
       }
       return;
     }
@@ -1994,7 +1994,7 @@ export default function App() {
     const result = await documents.readPath(path);
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
-        setStatusText(`打开失败: ${result.error.message}`);
+        setStatusText(t('msg.openFailed', { error: result.error.message }));
       }
       return;
     }
@@ -2024,7 +2024,7 @@ export default function App() {
     const target = current !== null ? `${fileTreeDirname(current)}/${targetName}` : targetName;
     if (fsService !== null) {
       const r = await fsService.exists(target);
-      if (!r.ok) { setStatusText(`打开失败: ${r.error.message}`); return; }
+      if (!r.ok) { setStatusText(t('msg.openFailed', { error: r.error.message })); return; }
       if (!r.value) { setStatusText(t('msg.wikilinkNotFound', { name: targetName })); return; }
     }
     await openPathInTab(target);
@@ -2105,7 +2105,7 @@ export default function App() {
     });
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
-        setStatusText(`保存失败: ${result.error.message}`);
+        setStatusText(t('msg.saveFailed', { error: result.error.message }));
       }
       return;
     }
@@ -2126,7 +2126,7 @@ export default function App() {
     // 保存成功 → cleanup recovery（spec §4 clear recovery snapshot）
     void recoveryRef.current?.onSaved(docIdRef.current);
     await watchDocument(result.value.path);
-    setStatusText(`已保存 ${result.value.path}`);
+    setStatusText(t('msg.saved', { path: result.value.path }));
   }, [currentTabPatch, refreshTabsState, setDirty, watchDocument]);
 
   // PRD §101 Auto Save：默认 Window Blur + Document Switch；设置可关闭（mellow.file.autosave）
@@ -2149,7 +2149,7 @@ export default function App() {
     const result = await documents.save(null, content, { encoding: meta.encoding, eol: meta.eol });
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
-        setStatusText(`另存失败: ${result.error.message}`);
+        setStatusText(t('msg.saveAsFailed', { error: result.error.message }));
       }
       return;
     }
