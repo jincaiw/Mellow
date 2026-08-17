@@ -5,14 +5,14 @@
 # - Linux：AppImage + deb + rpm
 #
 # 触发：手动（workflow_dispatch）或推送 v* 标签（标签推送会创建 Draft Release）。
+# 工具链：pnpm workspace（根 package.json + pnpm-workspace.yaml，阶段 0 迁移）；
+#         特例 packages/editor-core/CoreEditor（vendored MarkEdit）保留上游 yarn。
+#
 # 所需 secrets：
 #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD —— updater 签名
-#     （生成：npx tauri signer generate -w <path>，私钥内容作为 secret）
-#   macOS（Signing + Notarization）：
-#     APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY
-#     APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
-#   Windows 代码签名（可选，未设置则跳过）：
-#     WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD / WINDOWS_CERTIFICATE_THUMBPRINT
+#   macOS（Signing + Notarization）：APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD /
+#     APPLE_SIGNING_IDENTITY / APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
+#   Windows 代码签名（可选，未设置则跳过）：WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD
 
 name: Release Packaging
 
@@ -35,35 +35,29 @@ jobs:
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
-      - name: Prepare editor-core (upstream dist)
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+      - name: Prepare editor-core (upstream dist, yarn 特例)
         working-directory: packages/editor-core/CoreEditor
         run: |
           corepack enable
           yarn install --immutable
           yarn build
-      - name: Build editor-core wrapper
-        working-directory: packages/editor-core
+      - name: Build editor-core wrapper + editor-engine
         run: |
-          npm install --no-audit --no-fund --ignore-scripts
-          npm run build
-      - name: Build editor-engine
-        working-directory: packages/editor-engine
-        run: |
-          npm ci
-          npm run build
-      - name: Install export deps
-        working-directory: packages/export
-        run: npm ci
-      - name: Install desktop deps
-        working-directory: apps/desktop
-        run: npm ci
+          pnpm --filter @mellow/editor-core run build
+          pnpm --filter @mellow/editor-engine run build
       - name: Import Windows code signing certificate (optional)
         if: env.WINDOWS_CERTIFICATE != ''
         shell: pwsh
@@ -106,35 +100,29 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
-      - name: Prepare editor-core (upstream dist)
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+      - name: Prepare editor-core (upstream dist, yarn 特例)
         working-directory: packages/editor-core/CoreEditor
         run: |
           corepack enable
           yarn install --immutable
           yarn build
-      - name: Build editor-core wrapper
-        working-directory: packages/editor-core
+      - name: Build editor-core wrapper + editor-engine
         run: |
-          npm install --no-audit --no-fund --ignore-scripts
-          npm run build
-      - name: Build editor-engine
-        working-directory: packages/editor-engine
-        run: |
-          npm ci
-          npm run build
-      - name: Install export deps
-        working-directory: packages/export
-        run: npm ci
-      - name: Install desktop deps
-        working-directory: apps/desktop
-        run: npm ci
+          pnpm --filter @mellow/editor-core run build
+          pnpm --filter @mellow/editor-engine run build
       - name: Configure Apple signing env (when secrets provided)
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -144,7 +132,6 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # 仅当凭据存在时导出（secrets 不能用于 if: 条件；运行时判断）
           if [ -n "$APPLE_CERTIFICATE" ]; then
             echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE" >> "$GITHUB_ENV"
             echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD" >> "$GITHUB_ENV"
@@ -185,9 +172,13 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -196,28 +187,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
-      - name: Prepare editor-core (upstream dist)
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+      - name: Prepare editor-core (upstream dist, yarn 特例)
         working-directory: packages/editor-core/CoreEditor
         run: |
           corepack enable
           yarn install --immutable
           yarn build
-      - name: Build editor-core wrapper
-        working-directory: packages/editor-core
+      - name: Build editor-core wrapper + editor-engine
         run: |
-          npm install --no-audit --no-fund --ignore-scripts
-          npm run build
-      - name: Build editor-engine
-        working-directory: packages/editor-engine
-        run: |
-          npm ci
-          npm run build
-      - name: Install export deps
-        working-directory: packages/export
-        run: npm ci
-      - name: Install desktop deps
-        working-directory: apps/desktop
-        run: npm ci
+          pnpm --filter @mellow/editor-core run build
+          pnpm --filter @mellow/editor-engine run build
       - name: Build AppImage + deb + rpm
         uses: tauri-apps/tauri-action@v0
         env:
