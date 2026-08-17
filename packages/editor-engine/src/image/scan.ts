@@ -10,7 +10,7 @@
  * 与 path.ts 配合：URL/Windows drive/UNC/POSIX 判别、相对路径解析全部复用。
  */
 
-import { resolveImageSrc, dirname, normalizeSlashes, joinPaths, isUrl, basename, unescapeImageSrc } from './path';
+import { resolveImageSrc, dirname, normalizeSlashes, joinPaths, isUrl, basename, unescapeImageSrc, stripImageSize } from './path';
 
 export type ImageRefKind = 'remote' | 'local';
 
@@ -58,7 +58,8 @@ export function scanImageRefs(text: string, docDir: string | null, assetDirAbs: 
     const from = m.index;
     const to = from + m[0].length;
     const alt = m[1];
-    const src = unescapeImageSrc(m[2].trim());
+    const stripped = stripImageSize(unescapeImageSrc(m[2].trim()));
+    const src = stripped.src;
     const kind: ImageRefKind = isRemoteSrc(src) ? 'remote' : 'local';
     let absolutePath: string | null = null;
     if (kind === 'local') {

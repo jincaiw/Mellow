@@ -15,6 +15,8 @@ import { isLargeFileMode } from '../largeFile';
 import type { ImageHost } from './host';
 import { attachEngineView, trackImageWidget, registerEngineImageApi } from './engineApi';
 import { isRemoteSrc } from './scan';
+import { stripImageSize } from './path';
+import type { ImageSize } from './path';
 
 const IMG_WRAPPER_CLASS = 'mellow-md-image';
 const IMG_BROKEN_CLASS = 'mellow-md-image-broken';
@@ -78,16 +80,19 @@ interface ImageSpec {
   from: number;
   to: number;
   src: string;
+  /** 尺寸（Typora =WxH 语法；null = 原始尺寸） */
+  size?: ImageSize | null;
   alt: string;
 }
 
 /** 提取 Image 节点信息：`![alt](src)` → { from, to, src, alt } */
-export function parseImageNode(text: string): { src: string; alt: string } | null {
+export function parseImageNode(text: string): { src: string; alt: string; size: ImageSize | null } | null {
   const m = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(text.trim());
   if (m === null) {
     return null;
   }
-  return { alt: m[1], src: m[2].trim() };
+  const parsed = stripImageSize(m[2].trim());
+  return { alt: m[1], src: parsed.src, size: parsed.size };
 }
 
 /** 构建 Image 渲染扩展（host 注入） */
@@ -165,6 +170,10 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       const img = document.createElement('img');
       img.className = 'mellow-md-image-img';
       img.src = this.resolvedUrl;
+      if (this.spec.size !== undefined && this.spec.size !== null) {
+        img.style.width = `${this.spec.size.width}px`;
+        img.style.height = `${this.spec.size.height}px`;
+      }
       img.alt = this.spec.alt;
       img.draggable = false;
       // Large File Mode：图片懒加载（PRD §109 image lazy）
@@ -316,7 +325,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
           node.from,
           node.to,
           Decoration.replace({
-            widget: new ImageWidget({ from: node.from, to: node.to, src: parsed.src, alt: parsed.alt }),
+            widget: new ImageWidget({ from: node.from, to: node.to, src: parsed.src, alt: parsed.alt, size: parsed.size }),
           }),
         );
       },

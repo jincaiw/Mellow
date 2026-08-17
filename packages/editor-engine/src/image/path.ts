@@ -263,3 +263,20 @@ export function parseImageSrcFromMarkdown(text: string): string | null {
   }
   return unescapeImageSrc(m[2].trim());
 }
+
+/** 图片尺寸语法（Typora：`![alt](url =100x50)`）—— 从 src 剥离尺寸后缀。 */
+export interface ImageSize {
+  width: number;
+  height: number;
+}
+
+export function stripImageSize(src: string): { src: string; size: ImageSize | null } {
+  const m = /\s+=(\d+)[xX](\d+)\s*$/.exec(src);
+  if (m === null) {
+    return { src, size: null };
+  }
+  return {
+    src: src.slice(0, m.index).trim(),
+    size: { width: Number(m[1]), height: Number(m[2]) },
+  };
+}
