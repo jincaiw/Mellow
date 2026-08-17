@@ -242,3 +242,10 @@ NaN
 - 阶段 3：parity 清单 NOT TESTED 项真机回填 + engine config 开关；
 - 阶段 4：Reader/CLI/Open With/文件关联；
 - 阶段 5：真实 UX Score/30 任务 Gate/三平台矩阵回填。
+
+### 阶段 2/3 补充（2026-08-17 晚，第二轮）
+- ✅ 源码模式接线（PRD §30）：引擎 installSourceApi → shell 命令 view.source.toggle（Cmd/Ctrl+/）+ 菜单项；
+- ✅ CLI 模式（PRD §80）：`mellow-desktop [--reader|--source] <file.md>`（Rust OpenRequest + 前端 openPathWithMode）；
+- ✅ Auto Save（PRD §101）：Window Blur + Document Switch 默认保存 dirty 文档，设置可关闭（此前设置项为空转）；
+- ✅ 速查表补充新快捷键条目；
+- ✅ Win/Linux 原生菜单不设加速键（避免与前端 keydown 双重触发切换类命令）。
