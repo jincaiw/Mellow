@@ -116,7 +116,12 @@ jobs:
               xdotool key --window $WID2 --clearmodifiers ctrl+s
               sleep 2
               echo "file_after_direct=$(cat /tmp/mellow-shot.md)"
-              import -display :99 -window root /tmp/mellow-after-type.png 2>/dev/null || true
+              # 快捷键可达性诊断：Ctrl+Shift+P（命令面板）——若弹出则键盘事件可达 WebView
+              xdotool key --clearmodifiers ctrl+shift+p
+              sleep 2
+              import -display :99 -window root /tmp/mellow-palette.png 2>/dev/null || true
+              xdotool key --clearmodifiers Escape
+              sleep 1
             fi
             pkill -x mellow-desktop || true
             sleep 2
@@ -139,6 +144,7 @@ jobs:
           path: |
             /tmp/mellow-screen.*
             /tmp/mellow-after-type.png
+            /tmp/mellow-palette.png
             /tmp/mellow-geometry.txt
             /tmp/xwininfo.txt
             /tmp/mellow-windows.txt
