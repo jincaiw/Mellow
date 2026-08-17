@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe('Settings schema', () => {
-  test('ships exactly the ten top-level sections', () => {
+  test('ships exactly the top-level sections (PRD §91 + updater)', () => {
     const ids = SETTINGS_SECTIONS.map((s) => s.id);
     expect(ids).toEqual([
       'general',
@@ -25,6 +25,7 @@ describe('Settings schema', () => {
       'shortcuts',
       'extensions',
       'advanced',
+      'updater',
     ]);
   });
 

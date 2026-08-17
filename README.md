@@ -2,6 +2,10 @@
 
 > Mellow 首先是一款 Typora 级 Markdown 编辑器，然后才是一款跨平台平台。
 
+Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编辑内核、以 **Typora 1.14.6** 为体验验收基线重新构建的跨平台 Markdown 桌面编辑器：Live Preview、文件树/大纲/搜索、表格/图片/数学/Mermaid、Focus/Typewriter、主题、导出，并吸收 **Paperling**（Tauri/React、Command Palette、Slash、Smart Paste、Visual Table）与 **markdown-preview**（Reader-first、Outline、Zoom）的优点。
+
+**状态：pre-release（ADR-0020）**。真实 V1.0 发布门槛 = PRD P0 范围 + 发布评审 18 项验收全部通过（三平台真机矩阵、UX Score≥92 实测、30 任务效率 Gate、签名公证等）。当前 macOS 本地构建可用；Windows/Linux 构建与真机验证按优化方案阶段 1 推进中。
+
 ## 文档体系
 
 仓库文档按「宪法 → 法律 → 判决 → 施工图」四级组织，优先级自上而下：
@@ -11,25 +15,35 @@
 | **宪法** | `docs/product/Mellow-PRD-V1.2-FINAL.md` | 产品需求文档 V1.2 FINAL，一切需求的最终依据 |
 | **法律** | `docs/specs/` | 各领域具体规范（引擎、UI、表格、图片、剪贴板、文件安全、IME、运行时、Typora parity） |
 | **判决** | `docs/adr/ADR-*.md` | 已做技术决策，**不允许随意推翻**；如需变更，追加新 ADR |
-| **施工图** | `docs/plans/codex-implementation-plan.md` | 实施顺序与验收节奏 |
+| **施工图** | `docs/plans/codex-implementation-plan.md`、`docs/plans/typora-deep-parity-plan.md` | 实施顺序与验收节奏 |
 
 ## 目录结构
 
 ```
 mellow/
-├── README.md
-├── AGENTS.md
+├── README.md / AGENTS.md / LICENSE / THIRD_PARTY_NOTICES.md
 ├── docs/
 │   ├── product/      # 宪法：PRD V1.2 FINAL
-│   ├── specs/        # 具体法律：各领域规范
-│   ├── adr/          # 已定技术决策（ADR-0001 ~ ADR-0018）
-│   └── plans/        # 实施计划
+│   ├── specs/        # 法律：各领域规范
+│   ├── adr/          # 判决：ADR-0001 ~ ADR-0021
+│   ├── plans/        # 施工图：codex 实施计划 / Typora 深度对标计划
+│   ├── architecture/ # 实现架构（overview / editor-core / host-adapter / monorepo / extension-api）
+│   └── qualification/# 验证记录（评审、IME 矩阵、golden journeys、benchmark）
 ├── apps/
-│   └── desktop/      # V0.0 Runtime Qualification Shell（Tauri 2 + React + host 层）
+│   └── desktop/      # Tauri 2 + React 桌面壳（Adapter 装配层，平台代码只允许在此）
 ├── packages/
-│   └── editor-core/  # vendored MarkEdit CoreEditor（CM6+Lezer，固定上游 commit，只读）
+│   ├── editor-core/      # vendored MarkEdit CoreEditor（只读，见 UPSTREAM.md）+ 平台无关 EditorCore 契约
+│   ├── editor-engine/    # Mellow Live Markdown 引擎（注入式扩展，marker reveal/表格/数学/Mermaid/脚注/TOC/图片…）
+│   ├── editor-react/     # 编辑器 React 绑定层（契约 re-export；组件化 UI 见阶段 2 计划）
+│   ├── desktop-ui/       # 桌面 UI 组件（阶段 2 建立，当前 UI 位于 apps/desktop/src）
+│   ├── app-core/         # 应用核心逻辑（Document/Recovery/ExternalChange/Tabs/FileTree/Outline/QuickOpen/Search…）
+│   ├── host-api/         # 系统能力契约（PRD §116，纯类型 + mock/null）
+│   ├── document-model/   # 文档模型（ADR-0008）
+│   ├── workspace/ commands/ i18n/ themes/ extension-api/ export/ settings/ shared/
 └── tests/
-    └── qualification/  # V0.0 运行时门禁记录
+    ├── benchmark/     # macOS 对照 harness（golden journeys / IME 矩阵 / 性能，对照 Typora 1.14.9）
+    ├── fixtures/      # Markdown / 导出 / 文件安全素材库
+    └── qualification/ # V0.0 门禁记录 + 可执行脚本（source-fidelity / packaging smoke）
 ```
 
 ## 文档索引
@@ -55,11 +69,12 @@ mellow/
 
 ### 判决（ADR）
 
-见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ ADR-0018（AI 为可选扩展）。
+见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ ADR-0019（Tauri 2 运行时锁定 + Electron 预案）、ADR-0020（发布状态修正：pre-release）。
 
 ### 施工图
 
 - [codex-implementation-plan.md](docs/plans/codex-implementation-plan.md) — 实施计划
+- [typora-deep-parity-plan.md](docs/plans/typora-deep-parity-plan.md) — Typora 深度对标评估与优化实施方案
 
 ## 核心原则
 
@@ -78,22 +93,33 @@ mellow/
 + Manual Golden Journey
 ```
 
-## 阅读顺序建议
+架构硬规则：Markdown 纯文本是唯一真源；CodeMirror 6 + Lezer 为编辑器核心；TypeScript 负责 Editor Core、Rust 负责 System Core；React + TypeScript 负责 Desktop UI；Tauri 2 为首选 Runtime（ADR-0019，含 Electron fallback 预案）；平台差异只在 Adapter；默认语言简体中文。
 
-1. 先读宪法（PRD），建立全局认知
-2. 再读施工图（实施计划），了解推进节奏
-3. 动某个领域前，读对应的 Spec + 相关 ADR
+## 构建与运行
 
-## 代码现状（V0.0 Runtime Qualification 技术准备）
+工具链：根目录 pnpm workspace（`pnpm-workspace.yaml`）；vendored CoreEditor 内部保留 yarn（特例）。
 
-- `packages/editor-core/`：MarkEdit CoreEditor vendored（上游 `81da2a20`），**不修改源码**，jest 185 用例全绿
-- `apps/desktop/`：最小 Tauri 2 + React 壳，实现打开/编辑/保存 + Host Adapter 桥接（webkit mock → Tauri IPC）
-- `tests/qualification/`：V0.0 门禁清单；三平台真机 IME/Caret/Clipboard/Print/10MB Gate **尚未覆盖**
+```bash
+pnpm install              # 安装全部 workspace 依赖
+pnpm test                 # 全量测试（各 package 测试套件）
+pnpm build                # 构建全部 package
+pnpm desktop:dev          # 启动桌面壳（Vite dev，需先构建 editor bundle）
+pnpm desktop:build        # 桌面前端构建（tsc + vite + editor bundle）
+```
+
+桌面壳完整运行（Tauri）：`cd apps/desktop && pnpm tauri dev`（需本机 Tauri 依赖，见 `src-tauri/Cargo.toml`）。打包：`pnpm tauri build`（三平台目标配置见 `apps/desktop/src-tauri/tauri.conf.json`）。
+
+## 测试
+
+- 单测位于各 package `test/`（jest）：editor-core（vendored 185 + wrapper 14）、editor-engine（486）、app-core（119）、i18n（15）、export（46）、host-api（38）、document-model（26）。
+- Rust 测试：`cargo test`（37 + file-safety 16 + updater 4）。
+- 门禁脚本：`tests/qualification/run-source-fidelity-corpus.sh`（Open→Save→git diff=0）、`run-packaging-smoke.sh`。
+- macOS 对照 harness：`tests/benchmark/`（golden-journeys.mjs / ime-matrix.mjs / run-benchmark.mjs，对照 Typora 1.14.9，仅 macOS）。
+- CI：`.github/workflows/ci.yml`（ubuntu，5 job）+ `release.yml`（三平台打包矩阵）。
 
 ## 开发基线
 
-- **架构**：`docs/architecture/`（overview / editor-core / host-adapter / monorepo / migration）
-- **合规**：`THIRD_PARTY_NOTICES.md`（MarkEdit MIT 归属 + 依赖清单）
-- **测试素材**：`tests/fixtures/markdown/`（8 个 fixture）
-- **CI**：`.github/workflows/ci.yml`（CoreEditor test+build / editor-engine test+build / desktop 构建 / Rust check）
-- **引擎**：`packages/editor-engine/`（marker reveal Phase 1，29 用例）
+- **架构**：`docs/architecture/`（overview / editor-core / host-adapter / monorepo / extension-api）
+- **合规**：`THIRD_PARTY_NOTICES.md`（MarkEdit MIT 归属 + Paperling Apache-2.0 引用规则 + 依赖清单）
+- **参考项目**：MarkEdit（基础）、Paperling（桌面工作流参考）、markdown-preview（Reader 参考）
+- **阅读顺序建议**：先读宪法（PRD），再读施工图，动某个领域前读对应 Spec + 相关 ADR

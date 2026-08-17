@@ -1,6 +1,6 @@
 {
   "name": "@mellow/export",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "PDF 导出（T-0606，pdfmake 确定性布局 + 子集字体）",
   "main": "src/index.ts",
   "directories": {

@@ -1,0 +1,15 @@
+# Mellow monorepo workspace（AGENTS.md 目录约定）
+# 特例：packages/editor-core/CoreEditor 为 vendored MarkEdit（上游 yarn 管理，排除出 workspace）
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "!packages/editor-core/CoreEditor"
+
+allowBuilds:
+  esbuild: set this to true or false
+  unrs-resolver: set this to true or false
+
+# 允许构建脚本的依赖（pnpm 10+ 默认阻断 postinstall）
+onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver

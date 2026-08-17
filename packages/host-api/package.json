@@ -1,6 +1,6 @@
 {
   "name": "@mellow/host-api",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "description": "Mellow 系统能力契约（PRD §116 DesktopHost + notification/opener）— 纯类型包 + Null/Mock",
   "private": true,
   "main": "src/index.ts",

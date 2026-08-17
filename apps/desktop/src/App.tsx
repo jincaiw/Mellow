@@ -1,6 +1,6 @@
 /**
- * App —— Mellow V0.0 Runtime Qualification Shell（最小编辑器壳）。
- * 不开发正式 UI：Open / Save / New + 编辑器容器 + 状态栏。
+ * App —— Mellow 桌面壳装配层（Tauri 2 + React）。
+ * 负责：编辑器挂载、命令注册、Tabs/侧栏/大纲/搜索、视图模式、设置/主题/i18n、生命周期。
  *
  * 依赖注入（host-api 契约）：
  *   EditorHost（editor-react）→ CoreEditor
@@ -1807,7 +1807,7 @@ export default function App() {
           active = tabsRef.current.open({
             path: null,
             title: t('tab.untitled'),
-            content: '# Mellow V0.0\n\nRuntime Qualification Shell',
+            content: '',
             dirty: false,
             documentId: docIdRef.current,
             encoding: 'utf-8',

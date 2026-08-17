@@ -1,6 +1,6 @@
 [package]
 name = "mellow-desktop"
-version = "1.0.0"
+version = "0.1.0"
 description = "Mellow V0.0 Runtime Qualification Shell"
 edition = "2021"
 

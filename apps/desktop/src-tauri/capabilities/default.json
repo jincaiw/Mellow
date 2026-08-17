@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Mellow V0.0 default capabilities",
+  "description": "Mellow default capabilities",
   "windows": [
     "main"
   ],

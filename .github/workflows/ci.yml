@@ -5,35 +5,36 @@ on:
     branches: [main]
   pull_request:
 
+# 统一 pnpm workspace 工具链（根 package.json + pnpm-workspace.yaml，2026-08-18 阶段 0 迁移）。
+# 特例：packages/editor-core/CoreEditor（vendored MarkEdit）排除出 workspace，保留上游 yarn。
+
 jobs:
   editor-core:
-    name: editor-core test + build
+    name: editor-core vendored (yarn) + wrapper (pnpm)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/editor-core/CoreEditor
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: yarn
-          cache-dependency-path: packages/editor-core/CoreEditor/yarn.lock
-      - name: Enable yarn (corepack)
-        run: corepack enable
-      - name: Install
-        run: yarn install --immutable
-      # build.test.ts 读取 dist/index.html（上游构建产物），必须先 Build 再 Test
-      - name: Build (vendored)
-        run: yarn build
-      - name: Test (185, vendored CoreEditor)
-        run: yarn test
-      - name: "Mellow wrapper test (14: contract + neutral)"
+          cache: pnpm
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Vendored CoreEditor (yarn, workspace 特例)
+        working-directory: packages/editor-core/CoreEditor
+        run: |
+          corepack enable
+          yarn install --immutable
+          yarn build
+          yarn test
+      - name: Mellow wrapper test + build (14: contract + neutral)
         working-directory: packages/editor-core
         run: |
-          npm install --no-audit --no-fund --ignore-scripts
-          npm test
-          npm run build
+          pnpm test
+          pnpm run build
       - name: Upload dist
         uses: actions/upload-artifact@v4
         with:
@@ -41,51 +42,44 @@ jobs:
           path: packages/editor-core/CoreEditor/dist
 
   mellow-packages:
-    name: Mellow packages typecheck
+    name: Mellow packages typecheck + unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
       - name: Typecheck all packages
-        run: |
-          for pkg in host-api editor-react app-core document-model workspace commands i18n themes extension-api shared; do
-            echo "== @mellow/$pkg =="
-            cd packages/$pkg
-            npm install --no-audit --no-fund --ignore-scripts
-            npm run build
-            cd ../..
-          done
-      - name: host-api + document-model contract tests
-        working-directory: packages/host-api
-        run: npm test
-      - name: document-model unit tests
-        working-directory: packages/document-model
-        run: npm test
-      - name: app-core unit tests
-        working-directory: packages/app-core
-        run: npm test
+        run: pnpm -r run build
+      - name: Unit tests (host-api 38 / document-model 26 / app-core 119 / i18n 15 / settings 8 / themes 8 / commands 6 / export 46)
+        run: pnpm -r run test
 
   editor-engine:
     name: editor-engine test + build
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/editor-engine
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: packages/editor-engine/package-lock.json
+          cache: pnpm
       - name: Install
-        run: npm ci
-      - name: "Test (430: engine + IME Composition Guard / undo corruption)"
-        run: npm test
+        run: pnpm install --frozen-lockfile
+      - name: Test (486: engine + IME Composition Guard / undo corruption)
+        working-directory: packages/editor-engine
+        run: pnpm test
       - name: Build
-        run: npm run build
+        working-directory: packages/editor-engine
+        run: pnpm run build
 
   desktop-frontend:
     name: Desktop frontend build
@@ -93,40 +87,32 @@ jobs:
     needs: [editor-core, editor-engine]
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Restore editor-core dist
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Restore editor-core dist (vendored bundle)
         uses: actions/download-artifact@v4
         with:
           name: editor-core-dist
           path: packages/editor-core/CoreEditor/dist
-      - name: editor-core deps (bundle build)
-        working-directory: packages/editor-core/CoreEditor
-        run: |
-          corepack enable
-          yarn install --immutable
-      - name: Build editor-core wrapper
+      - name: Build editor-core wrapper (dist/bundle.js)
         working-directory: packages/editor-core
-        run: |
-          npm install --no-audit --no-fund --ignore-scripts
-          npm run build
-      - name: editor-engine deps + build
+        run: pnpm run build
+      - name: Build editor-engine (dist/)
         working-directory: packages/editor-engine
-        run: |
-          npm ci
-          npm run build
-      - name: Install export deps
-        working-directory: packages/export
-        run: npm ci
-      - name: Desktop install + build
+        run: pnpm run build
+      - name: Desktop build (editor bundle + tsc + vite)
         working-directory: apps/desktop
-        run: |
-          npm ci
-          npm run build
+        run: pnpm run build
 
   rust-check:
-    name: Rust system core check
+    name: Rust system core check + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -138,6 +124,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
-      - name: Cargo check
+      - name: Cargo check + test (37 + file-safety 16 + updater 4)
         working-directory: apps/desktop/src-tauri
-        run: cargo check
+        run: cargo test
