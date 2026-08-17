@@ -49,7 +49,7 @@ function launch(doc, im) {
   if (oldPid) { spawnSync('kill', [oldPid]); }
   sleep(800);
   writeFileSync(DOC, doc);
-  const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'}`;
+  const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'} LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0`;
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
   sleep(15000); // 等待 WebView + iframe 编辑器就绪
   const pid = sh('cat /tmp/mellow.pid').trim();
