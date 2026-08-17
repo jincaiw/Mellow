@@ -67,7 +67,7 @@ import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src'
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import type { SettingDefinition } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { Tabbar, StatusBar, Welcome } from '../../../packages/desktop-ui/src';
+import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest, EditorContextActions } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -2751,21 +2751,6 @@ export default function App() {
     </div>
   ));
 
-  const renderFileListItems = (items: FileListItem[]) => items.map((item) => (
-    <button
-      key={item.path}
-      type="button"
-      className={`file-list-item ${selectedListPath === item.path ? 'selected' : ''} ${filePathRef.current === item.path ? 'current' : ''}`}
-      title={item.path}
-      onClick={() => handleFileListSelect(item.path)}
-      onDoubleClick={() => void openTreeFile(item.path)}
-    >
-      <span className="file-list-title">{item.title}</span>
-      <span className="file-list-meta">{item.filename}{formatFileTime(item.modifiedMs) ? ` · ${formatFileTime(item.modifiedMs)}` : ''}</span>
-      {fileListOptions.includeSummary && item.summary && <span className="file-list-summary">{item.summary}</span>}
-    </button>
-  ));
-
   const paletteSource: CommandSource = slashMode || commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette';
   const paletteQuery = commandPaletteQuery.startsWith('/') ? commandPaletteQuery.slice(1) : commandPaletteQuery;
   const paletteCommands: CommandPaletteItem[] = slashMode
@@ -2786,40 +2771,6 @@ export default function App() {
     setCommandPaletteSelected(0);
     void dispatchCommand(id, source);
   };
-
-  const renderSearchGroups = (groups: SearchGroup[]) => groups.map((group) => (
-    <div key={group.path} className="search-group">
-      <div className="search-group-title" title={group.path}>{group.relativePath} <span>{group.matches.length}</span></div>
-      {group.matches.map((match) => (
-        <button key={`${match.path}:${match.line}:${match.column}:${match.snippet}`} type="button" className="search-match" onClick={() => void jumpToSearchResult(match)}>
-          <span className="search-location">{match.line}:{match.column ?? 1}</span>
-          {match.before?.map((line, index) => <span key={`b-${index}`} className="search-context">{line}</span>)}
-          <span className="search-snippet">{match.snippet}</span>
-          {match.after?.map((line, index) => <span key={`a-${index}`} className="search-context">{line}</span>)}
-        </button>
-      ))}
-    </div>
-  ));
-
-  const renderOutlineItems = (items: OutlineHeading[]) => items.map((item) => (
-    <button
-      key={item.id}
-      type="button"
-      className={`outline-row ${currentOutlineId === item.id ? 'current' : ''}`}
-      style={{ paddingLeft: outlineFlat ? 10 : 8 + (item.level - 1) * 14 }}
-      title={item.title}
-      onClick={() => handleOutlineJump(item)}
-    >
-      {!outlineFlat && item.children.length > 0 && (
-        <span className="outline-disclosure" onClick={(e) => { e.stopPropagation(); handleOutlineToggle(item.id); }}>
-          {outlineModelRef.current.collapsed.has(item.id) ? '▸' : '▾'}
-        </span>
-      )}
-      {!outlineFlat && item.children.length === 0 && <span className="outline-disclosure" />}
-      <span className="outline-level">H{item.level}</span>
-      <span className="outline-title">{item.number ? `${item.number} ` : ''}{item.title}</span>
-    </button>
-  ));
 
   return (
     <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
@@ -2926,7 +2877,7 @@ export default function App() {
                 <div className="file-list" aria-label={t('filelist.articles')}>
                   {fileListItems.length === 0 ? (
                     <div className="sidebar-empty">{t('sidebar.emptyFiles')}</div>
-                  ) : renderFileListItems(fileListItems)}
+                  ) : <FileList items={fileListItems} selectedPath={selectedListPath} currentPath={filePathRef.current} includeSummary={fileListOptions.includeSummary} formatFileTime={formatFileTime} onSelect={handleFileListSelect} onOpen={(p) => void openTreeFile(p)} />}
                 </div>
               )}
             </>
@@ -2942,7 +2893,7 @@ export default function App() {
                   const items = readerOpen ? outlineModelRef.current.visibleItems(filterOutline(readerOutlineItems, outlineFilter), outlineFlat) : outlineItems;
                   return items.length === 0
                     ? <div className="sidebar-empty">{t('outline.empty')}</div>
-                    : renderOutlineItems(items);
+                    : <OutlineList items={items} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} />;
                 })()}
               </div>
             </>
@@ -2963,7 +2914,7 @@ export default function App() {
               </div>
               <div className="search-results" aria-label={t('search.resultsLabel')}>
                 {searchQuery === '' && searchResults.length === 0 && <div className="sidebar-empty">{t('search.empty')}</div>}
-                {renderSearchGroups(searchGroups)}
+                {<SearchResultsList groups={searchGroups} onJump={(m) => void jumpToSearchResult(m)} />}
               </div>
             </>
           )}
