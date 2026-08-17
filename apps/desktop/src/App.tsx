@@ -2285,6 +2285,17 @@ export default function App() {
         document.documentElement.style.setProperty('--mellow-line-height', String(Number(value) || 1.65));
         break;
       }
+      case 'settings.engineFeature': {
+        // 语法特性开关（PRD §94）：重建 JSON → mellow.engine.features（bundle loader 读取）
+        const keys = ['highlight', 'supSub', 'emoji', 'alerts', 'math', 'mermaid', 'toc', 'footnote', 'wikilink', 'html', 'yaml'];
+        const features: Record<string, boolean> = {};
+        for (const k of keys) {
+          try { features[k] = localStorage.getItem(`mellow.engine.features.${k}`) === '1'; } catch { features[k] = true; }
+        }
+        try { localStorage.setItem('mellow.engine.features', JSON.stringify(features)); } catch { /* noop */ }
+        setToast({ message: t('settings.markdownReloadHint') });
+        break;
+      }
       default:
         break;
     }

@@ -88,6 +88,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.markdown',
     settings: [
       { id: 'markdown.slashCommands', labelKey: 'settings.markdown.slashCommands', type: 'toggle', storageKey: 'mellow.slashCommands.enabled', defaultValue: true, applyCommand: 'slash.toggleEnabled' },
+      // 语法特性开关（PRD §94）：bundle loader 读取 mellow.engine.features（JSON）
+      { id: 'markdown.highlight', labelKey: 'settings.markdown.highlight', type: 'toggle', storageKey: 'mellow.engine.features.highlight', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.supSub', labelKey: 'settings.markdown.supSub', type: 'toggle', storageKey: 'mellow.engine.features.supSub', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.emoji', labelKey: 'settings.markdown.emoji', type: 'toggle', storageKey: 'mellow.engine.features.emoji', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.alerts', labelKey: 'settings.markdown.alerts', type: 'toggle', storageKey: 'mellow.engine.features.alerts', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.math', labelKey: 'settings.markdown.math', type: 'toggle', storageKey: 'mellow.engine.features.math', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.mermaid', labelKey: 'settings.markdown.mermaid', type: 'toggle', storageKey: 'mellow.engine.features.mermaid', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.toc', labelKey: 'settings.markdown.toc', type: 'toggle', storageKey: 'mellow.engine.features.toc', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.footnote', labelKey: 'settings.markdown.footnote', type: 'toggle', storageKey: 'mellow.engine.features.footnote', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.wikilink', labelKey: 'settings.markdown.wikilink', type: 'toggle', storageKey: 'mellow.engine.features.wikilink', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.html', labelKey: 'settings.markdown.html', type: 'toggle', storageKey: 'mellow.engine.features.html', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.yaml', labelKey: 'settings.markdown.yaml', type: 'toggle', storageKey: 'mellow.engine.features.yaml', defaultValue: true, applyCommand: 'settings.engineFeature' },
     ],
   },
   {

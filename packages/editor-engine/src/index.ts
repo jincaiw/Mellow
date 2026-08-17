@@ -13,6 +13,9 @@
  */
 
 import { buildMarkerRevealExtension } from './plugin';
+import { mergeEngineFeatures } from './config';
+import type { EngineFeatureConfig } from './config';
+import type { Extension } from '@codemirror/state';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
 import { buildTableToolbarExtension } from './table/toolbar';
 import { buildColumnWidthExtension } from './table/columnWidth';
@@ -42,6 +45,8 @@ import { buildDocumentSearchExtension, installSearchApi } from './documentSearch
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi } from './largeFile';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
+export { DEFAULT_ENGINE_FEATURES, mergeEngineFeatures, readEngineFeaturesFromStorage } from './config';
+export type { EngineFeatureConfig } from './config';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
 export * from './table';
 export * from './image';
@@ -117,8 +122,9 @@ export type { NodeVisualState, NodeSpec, MarkerRange, RevealContext } from './ty
  * 宿主安装入口：注册 composition 监听并返回引擎扩展。
  *
  * @param autoInstallComposition 默认 true；测试环境可关闭，自行管理状态
+ * @param features 语法特性开关（PRD §94）；未传则全部开启。变更后需重新加载编辑器生效
  */
-export function install(autoInstallComposition = true): ReturnType<typeof buildMarkerRevealExtension> {
+export function install(autoInstallComposition = true, features?: Partial<EngineFeatureConfig>): ReturnType<typeof buildMarkerRevealExtension> {
   if (autoInstallComposition) {
     installCompositionTracking();
   }
@@ -130,20 +136,14 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
   installFormatApi();
   // 编辑器右键菜单动作：宿主经 iframe window.__MELLOW_CONTEXT_ACTIONS__ 调用
   installContextMenuApi();
-  return [
+  const f = mergeEngineFeatures(features);
+  const ext: Extension[] = [
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
     buildTableToolbarExtension(),
     buildColumnWidthExtension(),
     buildClipboardCopyExtension(),
     buildSmartPasteExtension(),
-    buildMathExtension(false),
-    buildMermaidExtension(false),
-    buildFootnoteExtension(false),
-    buildTocExtension(false),
-    buildGitHubAlertsExtension(false),
-    buildYamlFrontMatterExtension(false),
-    buildSafeHtmlExtension(false),
     buildOutlineBridgeExtension(),
     buildFocusModeExtension(),
     buildSlashCommandsExtension(),
@@ -152,11 +152,20 @@ export function install(autoInstallComposition = true): ReturnType<typeof buildM
     buildScrollBridgeExtension(),
     buildImageExtensions(),
     buildLargeFileExtension(),
-    buildCodeFenceAutocompleteExtension([emojiSource]),
-    buildInlineExtrasExtension(),
-    buildWikilinkExtension(),
     buildContextMenuExtension(),
     buildContextMenuViewTrackerExtension(),
     buildDocumentSearchExtension(),
   ];
+  // 可开关的语法特性（PRD §94 Markdown 设置）
+  if (f.math) ext.push(buildMathExtension(false));
+  if (f.mermaid) ext.push(buildMermaidExtension(false));
+  if (f.footnote) ext.push(buildFootnoteExtension(false));
+  if (f.toc) ext.push(buildTocExtension(false));
+  if (f.alerts) ext.push(buildGitHubAlertsExtension(false));
+  if (f.yaml) ext.push(buildYamlFrontMatterExtension(false));
+  if (f.html) ext.push(buildSafeHtmlExtension(false));
+  if (f.highlight || f.supSub) ext.push(buildInlineExtrasExtension());
+  if (f.wikilink) ext.push(buildWikilinkExtension());
+  ext.push(buildCodeFenceAutocompleteExtension([...f.emoji ? [emojiSource] : []]));
+  return ext;
 }

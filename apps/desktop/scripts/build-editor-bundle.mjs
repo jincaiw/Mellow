@@ -79,7 +79,9 @@ window.MellowEditorEngine = MellowEngine;
         console.error('[mellow] image extensions install failed', e);
       }
       try {
-        window.MarkEdit.addExtension(MellowEngine.install());
+        // 语法特性开关（PRD §94）：localStorage['mellow.engine.features']（设置 UI 写入）
+        const features = MellowEngine.readEngineFeaturesFromStorage();
+        window.MarkEdit.addExtension(MellowEngine.install(undefined, features));
       } catch (e) {
         console.error('[mellow] engine install failed', e);
       }
