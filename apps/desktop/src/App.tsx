@@ -37,6 +37,8 @@ import {
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
   renderReaderHtml,
+  countWords,
+  formatWordCountStats,
   pushRecentFile,
   parseRecentFiles,
   serializeRecentFiles,
@@ -246,6 +248,11 @@ export default function App() {
   // document lang/dir（未来 RTL：localeDir 由 i18n 提供）
   useEffect(() => {
     document.documentElement.lang = locale;
+  }, [locale]);
+  // Native Menu 本地化（menu.rs 目录；locale 切换 → 重建菜单，PRD §23/附录 J）
+  useEffect(() => {
+    if (!isTauri()) return;
+    void invoke('set_menu_locale', { locale }).catch(() => undefined);
   }, [locale]);
   // Print 打印样式表（PRD §77：与 PDF 共享排版常量；@page/@media print 只在打印时生效）
   useEffect(() => {
@@ -903,15 +910,30 @@ export default function App() {
     refreshTabsState();
   }, [currentTabPatch, refreshTabsState]);
 
+  // 状态栏编码/行尾：读真实文档元数据（docMetaRef），不再硬编码
+  const encodingLabel = useMemo(() => {
+    const enc = docMetaRef.current.encoding;
+    if (enc === 'utf-8-bom') return t('status.encoding.utf8bom');
+    if (enc === 'utf-16le') return t('status.encoding.utf16le');
+    if (enc === 'utf-16be') return t('status.encoding.utf16be');
+    if (enc === 'latin1') return t('status.encoding.latin1');
+    return t('status.utf8');
+  }, [t]);
+  const eolLabel = useMemo(() => {
+    return docMetaRef.current.eol === '\r\n' ? t('status.eol.crlf') : t('status.lf');
+  }, [t]);
+
   const refreshStats = useCallback((host: EditorCore) => {
     try {
       const text = host.getText();
-      const lines = text.length === 0 ? 0 : text.split('\n').length;
-      setStats(t('status.words', { count: text.length, lines }));
+      const count = countWords(text);
+      const base = formatWordCountStats(count, locale === 'zh-CN' ? 'zh' : 'en');
+      const reading = t('status.readingTime', { minutes: count.readingTimeMinutes });
+      setStats(base + ' · ' + reading);
     } catch {
       setStats('');
     }
-  }, []);
+  }, [locale, t]);
 
   /** Status Bar 行:列（viewUpdate 时刷新） */
   const refreshCursorPos = useCallback((host: EditorCore) => {
@@ -3042,8 +3064,8 @@ export default function App() {
         <span className="statusbar-item">{cursorPos}</span>
         <span className="statusbar-sep" />
         <span className="statusbar-item">{t('status.markdown')}</span>
-        <span className="statusbar-item">{t('status.utf8')}</span>
-        <span className="statusbar-item">{t('status.lf')}</span>
+        <span className="statusbar-item">{encodingLabel}</span>
+        <span className="statusbar-item">{eolLabel}</span>
         <span className="spacer" />
         <span className={`status ${status}`}>{statusText}</span>
         </footer>

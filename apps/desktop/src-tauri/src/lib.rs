@@ -40,6 +40,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             pending_open_path,
+            menu::set_menu_locale,
             bridge::bridge_call,
             fs::open_document,
             fs::save_document,
@@ -75,6 +76,7 @@ pub fn run() {
         .manage(WatcherRegistry::default())
         .manage(DebounceState::default())
         .manage(PendingOpen(Mutex::new(None)))
+        .manage(menu::MenuLocale(Mutex::new("zh-CN".to_string())))
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
             // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），
@@ -107,7 +109,7 @@ pub fn run() {
                 .expect("failed to build main window")
             };
             let _ = window.set_title("Mellow");
-            // macOS Menu Bar：菜单只发命令 id，执行统一走前端 CommandRegistry
+            // Native Menu（三平台）：菜单只发命令 id，执行统一走前端 CommandRegistry
             menu::attach_menu_events(app.handle());
             let _ = menu::install_menu(app.handle());
             // CLI 打开：`mellow-desktop <file.md>`（benchmark / open-with 用）

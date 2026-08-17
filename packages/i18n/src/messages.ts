@@ -139,6 +139,12 @@ const zhCN = {
   'status.markdown': 'Markdown',
   'status.utf8': 'UTF-8',
   'status.lf': 'LF',
+  'status.readingTime': '约 {minutes} 分钟',
+  'status.encoding.utf8bom': 'UTF-8 BOM',
+  'status.encoding.utf16le': 'UTF-16 LE',
+  'status.encoding.utf16be': 'UTF-16 BE',
+  'status.encoding.latin1': 'Latin-1',
+  'status.eol.crlf': 'CRLF',
 
   // 状态消息
   'msg.commandUnavailable': '命令不可用: {id}',
@@ -456,6 +462,12 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'status.markdown': 'Markdown',
   'status.utf8': 'UTF-8',
   'status.lf': 'LF',
+  'status.readingTime': '~{minutes} min',
+  'status.encoding.utf8bom': 'UTF-8 BOM',
+  'status.encoding.utf16le': 'UTF-16 LE',
+  'status.encoding.utf16be': 'UTF-16 BE',
+  'status.encoding.latin1': 'Latin-1',
+  'status.eol.crlf': 'CRLF',
 
   'msg.commandUnavailable': 'Command unavailable: {id}',
   'msg.focusOff': 'Focus Mode off',
