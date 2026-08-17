@@ -216,6 +216,13 @@ export default function App() {
     win?.__MELLOW_FORMAT_API__?.format(action);
     hostRef.current?.focus();
   }, []);
+  /** 引擎源码模式桥（PRD §30：Cmd/Ctrl+/ 切换；菜单/CLI → iframe __MELLOW_SOURCE_API__） */
+  const engineSourceToggle = useCallback(() => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_SOURCE_API__?: { toggle: () => void } }) | null;
+    win?.__MELLOW_SOURCE_API__?.toggle();
+    hostRef.current?.focus();
+  }, []);
   /** 引擎查找/替换桥（菜单 → iframe __MELLOW_SEARCH_API__） */
   const engineSearch = useCallback((mode: 'find' | 'replace') => {
     const frame = containerRef.current?.querySelector('iframe');
@@ -2302,21 +2309,29 @@ export default function App() {
     }
   }, [applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
   // 外部打开（CLI 参数 / Finder「打开方式」odoc）：Rust 侧 emit mellow://open-file
+  // PRD §80 CLI 模式：--reader 打开后进 Reader；--source 打开后切源码模式
+  const openPathWithMode = useCallback((req: { path: string; mode?: string }) => {
+    void (async () => {
+      await openPathInTab(req.path);
+      if (req.mode === 'reader') openReader();
+      else if (req.mode === 'source') engineSourceToggle();
+    })();
+  }, [engineSourceToggle, openPathInTab, openReader]);
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void import('@tauri-apps/api/event')
-      .then(({ listen }) => listen<string>('mellow://open-file', (e) => { void openPathInTab(e.payload); }))
+      .then(({ listen }) => listen<{ path: string; mode?: string }>('mellow://open-file', (e) => { openPathWithMode(e.payload); }))
       .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
       .catch(() => { /* 非 Tauri 环境 */ });
     // 前端就绪前的事件已存入 Rust state：mount 后主动拉取，保证不丢
     void import('@tauri-apps/api/core')
-      .then(({ invoke }) => invoke<string | null>('pending_open_path'))
-      .then((p) => { if (p && !cancelled) void openPathInTab(p); })
+      .then(({ invoke }) => invoke<{ path: string; mode?: string } | null>('pending_open_path'))
+      .then((p) => { if (p && !cancelled) openPathWithMode(p); })
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
-  }, [openPathInTab]);
+  }, [openPathWithMode]);
   useEffect(() => {
     const registry = new CommandRegistry();
     const always = () => true;
@@ -2346,6 +2361,7 @@ export default function App() {
       { id: 'view.focus.line', localizedTitle: { zh: 'Focus Mode：当前行', en: 'Focus Mode: Current Line' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('line') },
       { id: 'view.focus.paragraph', localizedTitle: { zh: 'Focus Mode：当前段落', en: 'Focus Mode: Current Paragraph' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('paragraph') },
       { id: 'view.typewriter.cycle', localizedTitle: { zh: '切换 Typewriter Mode', en: 'Toggle Typewriter Mode' }, category: 'view', shortcut: { mac: 'F9', winLinux: 'F9' }, context: { scope: 'document' }, enabled: always, execute: () => toggleTypewriter() },
+      { id: 'view.source.toggle', localizedTitle: { zh: '源码模式', en: 'Source Mode' }, category: 'view', shortcut: { mac: 'Cmd+/', winLinux: 'Ctrl+/' }, context: { scope: 'global' }, enabled: always, execute: () => engineSourceToggle() },
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
       { id: 'view.toolbar.toggle', localizedTitle: { zh: '切换格式工具栏', en: 'Toggle Format Toolbar' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleSelectionToolbar() },
@@ -2452,7 +2468,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

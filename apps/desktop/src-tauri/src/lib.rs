@@ -12,13 +12,20 @@ use std::sync::Mutex;
 
 use watcher::{DebounceState, WatcherRegistry};
 
-/// 待打开的文件路径（CLI 参数 / odoc 事件）：前端 ready 前的事件不丢失，
-/// 前端 mount 后经 `pending_open_path` 拉取；ready 后由事件实时投递。
-struct PendingOpen(Mutex<Option<String>>);
+/// 打开请求（CLI `mellow-desktop [--reader|--source] <file>` / Finder odoc）：
+/// 前端 ready 前的事件不丢失，mount 后经 `pending_open_path` 拉取；ready 后由事件实时投递。
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct OpenRequest {
+    pub path: String,
+    /// "normal" | "reader" | "source"（PRD §80 CLI）
+    pub mode: String,
+}
 
-/// 前端就绪后拉取待打开路径（benchmark open-to-editable / open-with）
+struct PendingOpen(Mutex<Option<OpenRequest>>);
+
+/// 前端就绪后拉取待打开请求（benchmark open-to-editable / open-with / CLI）
 #[tauri::command]
-fn pending_open_path(state: tauri::State<PendingOpen>) -> Option<String> {
+fn pending_open_path(state: tauri::State<PendingOpen>) -> Option<OpenRequest> {
     state.0.lock().unwrap().clone()
 }
 
@@ -112,13 +119,31 @@ pub fn run() {
             // Native Menu（三平台）：菜单只发命令 id，执行统一走前端 CommandRegistry
             menu::attach_menu_events(app.handle());
             let _ = menu::install_menu(app.handle());
-            // CLI 打开：`mellow-desktop <file.md>`（benchmark / open-with 用）
+            // CLI 打开：`mellow-desktop [--reader|--source] <file.md>`（PRD §80 / benchmark / open-with）
             // 先存状态（前端未 ready 时不丢），再 emit（前端已 ready 时实时投递）
-            if let Some(arg) = std::env::args().nth(1) {
-                let path = std::path::Path::new(&arg);
-                if path.is_file() {
-                    *app.state::<PendingOpen>().0.lock().unwrap() = Some(arg.clone());
-                    let _ = app.emit("mellow://open-file", arg);
+            {
+                let mut mode = "normal".to_string();
+                let mut cli_path: Option<String> = None;
+                for arg in std::env::args().skip(1) {
+                    match arg.as_str() {
+                        "--reader" => mode = "reader".to_string(),
+                        "--source" => mode = "source".to_string(),
+                        _ => {
+                            if cli_path.is_none() {
+                                cli_path = Some(arg);
+                            }
+                        }
+                    }
+                }
+                if let Some(p) = cli_path {
+                    if std::path::Path::new(&p).is_file() {
+                        let req = OpenRequest {
+                            path: p.clone(),
+                            mode: mode.clone(),
+                        };
+                        *app.state::<PendingOpen>().0.lock().unwrap() = Some(req.clone());
+                        let _ = app.emit("mellow://open-file", req);
+                    }
                 }
             }
             Ok(())
@@ -132,8 +157,9 @@ pub fn run() {
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
                         let s = path.to_string_lossy().to_string();
-                        *app.state::<PendingOpen>().0.lock().unwrap() = Some(s.clone());
-                        let _ = app.emit("mellow://open-file", s);
+                        let req = OpenRequest { path: s.clone(), mode: "normal".to_string() };
+                        *app.state::<PendingOpen>().0.lock().unwrap() = Some(req.clone());
+                        let _ = app.emit("mellow://open-file", req);
                     }
                 }
             }

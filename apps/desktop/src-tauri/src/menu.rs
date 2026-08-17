@@ -45,6 +45,7 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("export.pdf", "导出 PDF…", "Export PDF…"),
     ("export.html", "导出 HTML…", "Export HTML…"),
     ("commandPalette.open", "命令面板", "Command Palette"),
+    ("view.source.toggle", "源码模式", "Source Mode"),
     ("view.focus.cycle", "Focus Mode", "Focus Mode"),
     ("view.typewriter.cycle", "Typewriter Mode", "Typewriter Mode"),
     ("reader.open", "用 Reader 打开", "Open in Reader"),
@@ -165,12 +166,13 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let palette = MenuItem::with_id(app, "commandPalette.open", &l("commandPalette.open"), true, accel("Cmd+Shift+P", "Ctrl+Shift+P"))?;
     let focus = MenuItem::with_id(app, "view.focus.cycle", &l("view.focus.cycle"), true, Some("F8"))?;
     let typewriter = MenuItem::with_id(app, "view.typewriter.cycle", &l("view.typewriter.cycle"), true, Some("F9"))?;
+    let source_toggle = MenuItem::with_id(app, "view.source.toggle", &l("view.source.toggle"), true, accel("Cmd+/", "Ctrl+/"))?;
     let reader = MenuItem::with_id(app, "reader.open", &l("reader.open"), true, None::<&str>)?;
     let split = MenuItem::with_id(app, "split.open", &l("split.open"), true, None::<&str>)?;
     let fullscreen = MenuItem::with_id(app, "window.fullscreen", &l("window.fullscreen"), true, accel("Ctrl+Cmd+F", "F11"))?;
     let minimize = MenuItem::with_id(app, "window.minimize", &l("window.minimize"), true, accel("Cmd+M", "Ctrl+M"))?;
     let maximize = MenuItem::with_id(app, "window.maximizeToggle", &l("window.maximizeToggle"), true, None::<&str>)?;
-    let view_menu = Submenu::with_items(app, &l("menu.view"), true, &[&palette, &sep, &focus, &typewriter, &sep, &reader, &split, &sep, &fullscreen, &minimize, &maximize])?;
+    let view_menu = Submenu::with_items(app, &l("menu.view"), true, &[&palette, &sep, &focus, &typewriter, &source_toggle, &sep, &reader, &split, &sep, &fullscreen, &minimize, &maximize])?;
     subs.push(view_menu);
 
     let h1 = MenuItem::with_id(app, "insert.heading", &l("insert.heading"), true, None::<&str>)?;

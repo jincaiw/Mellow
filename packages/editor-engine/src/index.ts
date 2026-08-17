@@ -39,6 +39,7 @@ import { buildScrollBridgeExtension } from './scrollBridge';
 import { buildCodeFenceAutocompleteExtension } from './codeFence';
 import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
+import { installSourceApi } from './sourceMode';
 import { buildWikilinkExtension } from './wikilink';
 import { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi } from './contextMenu';
 import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
@@ -82,6 +83,7 @@ export {
 export { buildCodeFenceAutocompleteExtension, fenceLangSource } from './codeFence';
 export { emojiSource } from './emoji';
 export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
+export { installSourceApi } from './sourceMode';
 export { buildWikilinkExtension, scanWikilinks } from './wikilink';
 export type { WikilinkRange } from './wikilink';
 export { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi, inlineLinkAt, imageSourceAt } from './contextMenu';
@@ -136,6 +138,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installFormatApi();
   // 编辑器右键菜单动作：宿主经 iframe window.__MELLOW_CONTEXT_ACTIONS__ 调用
   installContextMenuApi();
+  // 源码模式（PRD §30）：宿主经 iframe window.__MELLOW_SOURCE_API__ 调用
+  installSourceApi();
   const f = mergeEngineFeatures(features);
   const ext: Extension[] = [
     buildMarkerRevealExtension(),
