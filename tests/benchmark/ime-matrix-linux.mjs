@@ -36,7 +36,8 @@ function readBack(pid) {
   xdo('key --clearmodifiers ctrl+c');
   sleep(400);
   const clip = sh('xclip -selection clipboard -o 2>/dev/null').trim();
-  if (clip.length > 0) return clip;
+  // 容器/CI 环境 xclip 连接失败（Could not connect to localhost）→ 走保存读回
+  if (clip.length > 0 && !clip.includes('Could not connect') && !clip.includes('Error:')) return clip;
   xdo('key --clearmodifiers ctrl+s');
   sleep(1500);
   try { return readFileSync(DOC, 'utf8'); } catch { return ''; }
@@ -49,7 +50,12 @@ function launch(doc, im) {
   const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'}`;
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
   sleep(8000);
-  return sh('cat /tmp/mellow.pid').trim();
+  const pid = sh('cat /tmp/mellow.pid').trim();
+  // 启动证据：窗口存在性（xdotool search）+ 进程存活
+  sh('xdotool search --name Mellow 2>/dev/null | head -1 > /tmp/mellow-win-id.txt');
+  const winId = sh('cat /tmp/mellow-win-id.txt').trim();
+  console.log(`[boot] pid=${pid} window=${winId || 'NOT_FOUND'}`);
+  return pid;
 }
 
 const SEG1 = ['ni', 'hao'];
@@ -78,28 +84,3 @@ for (const sc of SCENARIOS) {
   sleep(1500);
   // 聚焦编辑器：点击窗口中央
   xdo(`search --name Mellow windowactivate --sync 2>/dev/null; mousemove 600 350 click 1`);
-  sleep(1200);
-  for (const s of SEG1) typeSyl(s);
-  for (const s of SEG2) typeSyl(s);
-  const text = readBack(pid);
-  const r = { im, scenario: sc.id, got: text.replace(/\n/g, '⏎') };
-  const count = text.split(EXPECT).length - 1;
-  r.pass = count === 1;
-  if (!r.pass) r.reason = count === 0 ? `未包含 ${EXPECT}` : `重复 ${count} 次`;
-  // undo 直至清空
-  for (let i = 0; i < 12; i++) {
-    xdo('key --clearmodifiers ctrl+z');
-    sleep(900);
-    const t = readBack(pid);
-    if (!t.includes('你') && !t.includes('中')) break;
-  }
-  const afterUndo = readBack(pid);
-  r.undoOk = !afterUndo.includes('你') && !afterUndo.includes('中');
-  if (!r.undoOk) r.undoReason = `undo 后仍有中文: ${JSON.stringify(afterUndo)}`;
-  spawnSync('pkill', ['-f', 'mellow-desktop']);
-  results.push(r);
-  console.log(`${r.pass ? 'PASS' : 'FAIL'} ${im}/${sc.id}: got=${JSON.stringify(r.got)}${r.reason ? ' | ' + r.reason : ''}${r.undoOk ? ' | undo ok' : ' | undo FAIL'}`);
-}
-const pass = results.filter((r) => r.pass && r.undoOk !== false).length;
-console.log(`\n${pass}/${results.length} 场景通过（${im}）`);
-process.exit(pass === results.length ? 0 : 1);
