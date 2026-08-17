@@ -44,15 +44,16 @@ function readBack(pid) {
 }
 
 function launch(doc, im) {
-  // 精确匹配进程名（-x），避免 -f 匹配到含 mellow-desktop 的外层 bash -c 命令行 → 误杀父进程
-  // 按 PID 精确终止旧实例（避免 pkill -f/-x 波及外层 shell）
+  // 按 PID 精确终止旧实例（避免 pkill -f 匹配外层 bash -c 命令行 → 误杀父进程）
   const oldPid = sh('cat /tmp/mellow.pid 2>/dev/null').trim();
   if (oldPid) { spawnSync('kill', [oldPid]); }
+  sleep(800);
+  writeFileSync(DOC, doc);
+  const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'}`;
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
-  sleep(15000);
+  sleep(15000); // 等待 WebView + iframe 编辑器就绪
   const pid = sh('cat /tmp/mellow.pid').trim();
-  // 启动诊断：窗口列表 + 是否找到 Mellow 窗口
-  // 只匹配可见主窗口（10x10 的 mellow-desktop 辅助窗口会被 --onlyvisible 过滤）
+  // 启动诊断：只匹配可见主窗口（10x10 的 mellow-desktop 辅助窗口被 --onlyvisible 过滤）
   sh('xdotool search --onlyvisible --name Mellow 2>/dev/null | head -1 > /tmp/mellow-win-id.txt');
   const winId = sh('cat /tmp/mellow-win-id.txt').trim();
   console.log(`[boot] pid=${pid} window=${winId || 'NOT_FOUND'}`);
@@ -86,7 +87,7 @@ for (const sc of SCENARIOS) {
   if (only && !only.split(',').includes(sc.id)) continue;
   const pid = launch(sc.doc, im);
   sleep(1500);
-  // 聚焦编辑器：点击窗口中央
+  // 聚焦编辑器：激活主窗口 + 双击编辑器内容区（600,250 位于 1200x775 主窗口内）
   const wid = sh('cat /tmp/mellow-win-id.txt').trim();
   if (wid) {
     sh(`xdotool windowactivate --sync ${wid} 2>/dev/null; xdotool windowfocus --sync ${wid} 2>/dev/null`);
@@ -112,7 +113,8 @@ for (const sc of SCENARIOS) {
   const afterUndo = readBack(pid);
   r.undoOk = !afterUndo.includes('你') && !afterUndo.includes('中');
   if (!r.undoOk) r.undoReason = `undo 后仍有中文: ${JSON.stringify(afterUndo)}`;
-  spawnSync('pkill', ['-f', 'mellow-desktop']);
+  // 按 PID 终止（避免 pkill -f 匹配外层 bash -c → SIGTERM 143）
+  spawnSync('kill', [pid]);
   results.push(r);
   console.log(`${r.pass ? 'PASS' : 'FAIL'} ${im}/${sc.id}: got=${JSON.stringify(r.got)}${r.reason ? ' | ' + r.reason : ''}${r.undoOk ? ' | undo ok' : ' | undo FAIL'}`);
 }
