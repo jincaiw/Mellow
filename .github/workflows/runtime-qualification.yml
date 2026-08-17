@@ -2,10 +2,10 @@
 #
 # - Linux：Xvfb 虚拟显示 + fcitx5 拼音 + xdotool/xclip → 执行 ime-matrix-linux.mjs（8 场景 IME 矩阵，
 #   断言无丢字/重复 + undo 完整性）；
-# - Windows：启动 MSI 级二进制 + SendKeys 输入 + 保存读回（最佳努力）；
+# - Windows：启动 release 二进制 + SendKeys 输入 + 保存读回（最佳努力）；
 # - macOS：启动 + CLI 打开 + 进程存活（无 GUI 自动化权限时的最小运行时证据）。
 #
-# 触发：workflow_dispatch（手动）。产物：runtime-matrix-{platform}.md 结果文件 + 日志。
+# 构建阶段拆分为独立步骤（显式 working-directory，避免跨 shell 的 cd 残留）。
 
 name: Runtime Qualification
 
@@ -35,18 +35,25 @@ jobs:
       - name: Install system deps (GUI + X + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
-            xvfb xdotool xclip dbus-x11 \
-            fcitx5 fcitx5-chinese-addons fonts-noto-cjk
-      - name: Build (pnpm + CoreEditor yarn + frontend + cargo release)
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk
+      - name: Install workspace
+        working-directory: mellow
+        run: pnpm install --frozen-lockfile
+      - name: Build vendored CoreEditor (yarn)
+        working-directory: mellow/packages/editor-core/CoreEditor
+        run: |
+          corepack enable
+          yarn install --immutable
+          yarn build
+      - name: Build wrapper + engine + desktop frontend
         working-directory: mellow
         run: |
-          pnpm install --frozen-lockfile
-          cd packages/editor-core/CoreEditor && corepack enable && yarn install --immutable && yarn build
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
           pnpm --filter mellow-desktop run build
-          cd apps/desktop/src-tauri && cargo build --release
+      - name: Build Rust release binary
+        working-directory: mellow/apps/desktop/src-tauri
+        run: cargo build --release
       - name: Link /mellow for harness
         run: |
           sudo ln -sfn "$GITHUB_WORKSPACE/mellow" /mellow
@@ -56,7 +63,6 @@ jobs:
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 3
           mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
-          # fcitx5 拼音输入法 profile（DefaultIM=pinyin）
           mkdir -p ~/.config/fcitx5
           cat > ~/.config/fcitx5/profile <<'EOF'
           [Groups/0]
@@ -77,17 +83,15 @@ jobs:
             export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
             export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11
             fcitx5 -d > /tmp/fcitx5.log 2>&1 &
-            sleep 5
+            sleep 6
             node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 || echo IME_MATRIX_EXIT=$?
           '
       - name: Collect evidence
+        working-directory: mellow
         run: |
-          mkdir -p /tmp/evidence
-          node -e "const fs=require('fs'); const rows=[]; const m=require('/mellow/tests/benchmark/ime-matrix-linux.mjs');" 2>/dev/null || true
-          cat /tmp/mellow.log 2>/dev/null | tail -20 > /tmp/evidence/linux-app.log || true
-          cat /tmp/fcitx5.log 2>/dev/null | tail -10 > /tmp/evidence/fcitx5.log || true
-          ls -la /mellow/apps/desktop/src-tauri/target/release/mellow-desktop
-          echo 'Linux runtime matrix executed on ubuntu-latest (Xvfb :99 + fcitx5 + xdotool)'
+          ls -la apps/desktop/src-tauri/target/release/mellow-desktop
+          cat /tmp/mellow.log 2>/dev/null | tail -20 || true
+          cat /tmp/fcitx5.log 2>/dev/null | tail -10 || true
 
   windows-runtime:
     name: "Windows: launch + SendKeys smoke"
@@ -103,20 +107,29 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install + build
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build vendored CoreEditor (yarn)
+        working-directory: packages/editor-core/CoreEditor
+        shell: bash
         run: |
-          pnpm install --frozen-lockfile
-          cd packages/editor-core/CoreEditor; corepack enable; yarn install --immutable; yarn build
+          corepack enable
+          yarn install --immutable
+          yarn build
+      - name: Build wrapper + engine + desktop frontend
+        run: |
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
           pnpm --filter mellow-desktop run build
-          cd apps/desktop/src-tauri; cargo build --release
+      - name: Build Rust release binary
+        working-directory: apps/desktop/src-tauri
+        run: cargo build --release
       - name: "Windows runtime smoke (launch + type + save)"
         shell: pwsh
         run: |
           $bin = Resolve-Path 'apps/desktop/src-tauri/target/release/mellow-desktop.exe'
-          $doc = 'C:/tmp/mellow-win-smoke.md'
           New-Item -ItemType Directory -Force -Path 'C:/tmp' | Out-Null
+          $doc = 'C:/tmp/mellow-win-smoke.md'
           Set-Content -Path $doc -Value '# Mellow Windows Smoke'
           $p = Start-Process -FilePath $bin -ArgumentList $doc -PassThru
           Start-Sleep -Seconds 12
@@ -135,10 +148,6 @@ jobs:
           $content = Get-Content -Path $doc -Raw -ErrorAction SilentlyContinue
           Write-Host ('file_after=' + $content)
           Write-Host 'Windows runtime smoke executed on windows-latest'
-      - name: Collect evidence
-        shell: pwsh
-        run: |
-          Write-Host 'windows smoke evidence captured above'
 
   macos-runtime:
     name: "macOS: launch + CLI open smoke"
@@ -154,14 +163,22 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install + build
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build vendored CoreEditor (yarn)
+        working-directory: packages/editor-core/CoreEditor
         run: |
-          pnpm install --frozen-lockfile
-          cd packages/editor-core/CoreEditor; corepack enable; yarn install --immutable; yarn build
+          corepack enable
+          yarn install --immutable
+          yarn build
+      - name: Build wrapper + engine + desktop frontend
+        run: |
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
           pnpm --filter mellow-desktop run build
-          cd apps/desktop/src-tauri; cargo build --release
+      - name: Build Rust release binary
+        working-directory: apps/desktop/src-tauri
+        run: cargo build --release
       - name: "macOS runtime smoke (launch + CLI open + alive)"
         run: |
           BIN=apps/desktop/src-tauri/target/release/mellow-desktop
