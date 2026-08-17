@@ -222,13 +222,11 @@ desktop tsc / cargo check 通过；debug bundle 启动 + 菜单栏 10 菜单实�
 - 根 pnpm workspace（package.json + pnpm-workspace.yaml + 根脚本）；
 - 版本统一 0.1.0；npm lockfiles 移除，pnpm-lock.yaml 入库；
 - ci.yml/release.yml 迁移 pnpm；tauri hooks 改 pnpm；
-NaN
 - 全量测试绿：engine 486 / app-core 128 / export 46 / host-api 38 / document-model 26 / i18n 15 / settings 8 / themes 8 / editor-core 16 / Rust 37+16+4。
 
 ### 阶段 1 —— 三平台构建矩阵（✅ 构建级完成，ADR-0021；真机矩阵待机器）
 - GitHub Actions release.yml 首次三平台全绿：Windows MSI+NSIS（28MB）、macOS DMG（14.6MB，未签名）、Linux AppImage+deb+rpm（119MB）；
 - CI 5 job 全绿（editor-core/engine/packages/desktop/rust）；
-NaN
 
 ### 阶段 2 —— 桌面 UI Typora 化（进行中）
 - ✅ 状态栏真实编码/行尾 + PRD§70 字数统计（wordCount 工具 + 9 测试，app-core 128）；
@@ -264,18 +262,15 @@ NaN
 - ✅ 2d 继续：抽取 OutlineList / SearchResultsList / FileList 到 desktop-ui（App.tsx 3219→3169 行；desktop-ui 已有 6 个组件：Tabbar/StatusBar/Welcome/OutlineList/SearchResultsList/FileList）；
 - ✅ 设置补齐：启动恢复会话开关（PRD §92 general.reopenLast，默认开）；打开用户 CSS 命令（PRD §97 Custom CSS 入口，reveal appData/user.css）；
 - ✅ 全量测试绿（app-core 128 / engine 491 等）；
-NaN
 
 ### 阶段 4/5 第六轮（2026-08-18）
 - ✅ 2d 完成 FileTree 抽取（desktop-ui 现有 7 个组件：Tabbar/StatusBar/Welcome/OutlineList/SearchResultsList/FileList/FileTree；App.tsx 3219→3143 行）；
 - ✅ 阶段 5 门禁模板：docs/qualification/ux-score-gate-template.md（PRD §131 UX Score 评分表 + §132 30 任务清单与执行方法/通过判定/证据要求）；
 - ⏳ 图片上传 adapter（PRD §55 P1）：extension-api 契约已有，宿主接线与 PicGo 适配器需真机+网络验证，明确延期；
-NaN
 
 ### 阶段 2/5 第七轮（2026-08-18）
 - ✅ 文件信息对话框（PRD §J.1）：路径/大小/修改时间/编码/行尾/行数/字符数/字数/阅读时长（纯前端统计，无新 IO）+ 文件菜单「文件信息…」；
 - ✅ README 更新 desktop-ui 组件清单；
-NaN
 
 ### 阶段 2 第八轮（2026-08-18）
 - ✅ 单 Tab 自动隐藏标签栏（PRD §11 Typora 行为对齐；设置 editor.autoHideTabBar 默认开）；
@@ -290,10 +285,6 @@ NaN
 ### 阶段 1 第十一轮（2026-08-18，CI runner 突破）
 - ✅ Runtime Qualification 流水线（.github/workflows/runtime-qualification.yml）：Windows/macOS/Linux 启动级验证全 PASS（app_alive=True；Linux 1200x775 主窗口 + X 焦点 + 文档渲染截图证据）；
 - ✅ 精确定位 Linux 无头输入限制：WebKitGTK 在 Xvfb 下不接收 XTEST 合成键（双路径诊断+截图比对字节级相同）——非应用缺陷，需真实桌面；
-NaN
-NaN
-NaN
-NaN
 
 ### 阶段 1 第十二轮（2026-08-18）
 - ✅ 三平台 **10MB 大文件打开冒烟**（PRD §110）：Windows/macOS/Linux 全部 `10mb_alive=true`（release 二进制打开 10MB 文档 15s 无崩溃）+ Linux 渲染截图；
@@ -302,11 +293,16 @@ NaN
 
 ### 阶段 3/4 第十三轮（2026-08-18）
 - ✅ 图片尺寸语法 `![alt](url =WxH)`（Typora 附录 G 图片，deep-parity A8）：stripImageSize 纯函数 + widget 渲染应用 width/height + scan 剥离尺寸（批量操作路径正确）+ 4 测试；引擎 495 全绿；
-NaN
 
 ### 阶段 3/4 第十四轮（2026-08-18）
 - ✅ 最近文件夹（deep-parity A10，PRD §56/§62）：侧栏「最近文件夹」区（自动追踪去重置顶、上限 10、与固定文件夹并置）+ 3 测试；app-core 131 全绿。
 
 ### 阶段 4 第十五轮（2026-08-18）
 - ✅ Pandoc Word 导出（PRD §75 P1 / deep-parity A9）：Rust pandoc_available/pandoc_export（PATH 检测 + spawn）+ 前端 export.docx 命令 + 文件菜单「导出 Word…」+ i18n；**本机真实验证**（pandoc 已装 → 生成含中文/表格的 DOCX 成功）；CI Linux 装 pandoc 复验；
-NaN
+
+### 阶段 4/5 第十六轮（2026-08-18，发布候选审计）
+- ✅ 全量本地测试复跑绿：TS 789（engine 495 / app-core 131 / export 46 / host-api 38 / document-model 26 / i18n 15 / settings 8 / themes 8 / editor-core 16 / editor-react 6）+ Rust 59（39+16+4）；
+- ✅ 最终 release 打包流水线复跑全绿（run 32059487015，含 open_with/menu-i18n/desktop-ui/AutoSave/源码模式/CLI/文件信息/Pandoc 等全部近两周改动）：Windows MSI+NSIS / macOS Signed+Notarized+DMG / Linux AppImage+deb+rpm，三平台产物齐备；
+- ✅ 发布候选审计：docs/qualification/release-candidate-audit-2026-08-18.md（18 项门禁 × 当前证据逐项对照，标注证据强度与待办）；
+- 🧹 清理进度日志中历史损坏产生的 11 处 NaN 残留行；
+- ⏳ 剩余关键路径（单一阻塞）：真机输入交互矩阵（IME 组合/Caret/剪贴板/10MB 编辑/打印）需 Windows/Linux 真实桌面执行 docs/qualification/real-desktop-execution-bundle.md → ADR-0019 Gate 裁决 → 阶段 5 发布评审（UX Score≥92 + 30 任务门禁）+ Apple 签名凭证；
