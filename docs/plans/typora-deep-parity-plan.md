@@ -306,3 +306,12 @@ desktop tsc / cargo check 通过；debug bundle 启动 + 菜单栏 10 菜单实�
 - ✅ 发布候选审计：docs/qualification/release-candidate-audit-2026-08-18.md（18 项门禁 × 当前证据逐项对照，标注证据强度与待办）；
 - 🧹 清理进度日志中历史损坏产生的 11 处 NaN 残留行；
 - ⏳ 剩余关键路径（单一阻塞）：真机输入交互矩阵（IME 组合/Caret/剪贴板/10MB 编辑/打印）需 Windows/Linux 真实桌面执行 docs/qualification/real-desktop-execution-bundle.md → ADR-0019 Gate 裁决 → 阶段 5 发布评审（UX Score≥92 + 30 任务门禁）+ Apple 签名凭证；
+
+### 深度对标阶段 0/1 第十七轮（2026-08-19，真实功能验收完成）
+
+- ✅ **阶段 0（恢复启动可用性）**：EditorCore 防御性降级（未就绪返回安全值 + `isReady()`）+ 根级 ErrorBoundary + 启动顺序重构 + E2E 冒烟门禁（10 项白屏防线）+ 诊断探针清理；真机 macOS 验证通过；
+- ✅ **阶段 1（真实功能验收）**：9 条自动化 Golden Journeys 真机复跑 **9/9 PASS**（j1 latin / j2 拼音 IME / j4 selection+bold / j7 list / j8 table / j9 math / j10 mermaid / j15 undo / j17 10MB）；j18 打印（`file.print` + Cmd+P）与 j19 PDF 导出（`export.pdf` + 菜单）接线修复验证；PASS-E 八项代码级证据复核全绿（engine 目标套件 103 + externalChange 9 + Rust fs:: 20）；
+- ✅ **行为缺陷修复**：CRLF Source Fidelity bug（CoreEditor 无换行文档默认回退 CRLF → `open()` 增加 lineBreak 参数 + App.tsx 传 eol，editor-core 16→17 测试）；10MB math.ts O(n²) → 单遍行级扫描（加载 ~1.6s，优于 Typora）；
+- ✅ **Harness 基础设施**：定位并消除合成点击破坏 WKWebView 焦点协议问题（移除 focus-type + startup-probe `--no-click`）；`select-input.swift`（Carbon TIS 输入源切换）；j7 光标补偿 / j15 undo 事务覆盖；
+- ✅ **回归门禁全绿**：TS 790（engine 495 / app-core 131 / export 46 / host-api 38 / document-model 26 / i18n 15 / editor-core 17 / settings 8 / themes 8 / commands 6）+ Rust 59（39+16+4）+ E2E 冒烟 10/10 + Source Fidelity **145 文件 0 diff** + desktop tsc 通过；
+- 📋 验收报告：docs/qualification/golden-journeys-2026-08-19.md（20 项 journey 终态：19 达标 / 1 NOT TESTED——j3 日文 IME 无输入源，随 Win/Linux 真机批次回填）；
