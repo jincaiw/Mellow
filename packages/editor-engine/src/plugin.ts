@@ -208,9 +208,13 @@ export function buildMarkerRevealExtension(): Extension {
 
   const style = EditorView.theme({
     [`.${MARKER_CLASS}`]: {
-      fontSize: '0',
       // 视觉隐藏但保留可选中文本语义（copy 时仍包含 marker —— 唯一真源）
       userSelect: 'text',
+    },
+    [`.${MARKER_CLASS}, .${MARKER_CLASS} *`]: {
+      // 后代选择器归零：内层 token 样式（cm-md-heading1 等）带显式字号，
+      // 仅外层 fontSize:0 会被继承覆盖 → marker 仍可见（Aug 19 评估发现）
+      fontSize: '0',
     },
     [`.${MARKER_DIM_CLASS}`]: {
       // 弱化而非隐藏：保留布局（无 caret jump），marker 视觉淡化（Typora list marker）

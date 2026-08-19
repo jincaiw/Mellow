@@ -8,7 +8,6 @@
 
 import type { EditorView } from '@codemirror/view';
 import type { KeyBinding } from '@codemirror/view';
-import { EditorSelection } from '@codemirror/state';
 import type { TableModel, TableCell } from './parser';
 import { parseTable, nextCell, prevCell } from './parser';
 import { addRow } from './commands';
@@ -50,6 +49,9 @@ export function tableContext(view: EditorView, pos: number): { model: TableModel
 
 /** 移到单元格内容起点 */
 function moveToCell(view: EditorView, cell: TableCell): void {
+  // 引擎经 window.require 取 CM 模块（与 iframe 内 CoreEditor 同一实例），
+  // 不允许裸 import '@codemirror/state'（iframe ESM 无 bare specifier 解析）。
+  const { EditorSelection } = requireCm<typeof import('@codemirror/state')>('@codemirror/state');
   view.dispatch({
     selection: EditorSelection.cursor(cell.contentFrom),
     scrollIntoView: true,
