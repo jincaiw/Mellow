@@ -84,10 +84,36 @@ describe('EditorCore — public API', () => {
     core.destroy();
   });
 
-  test('未 mount 时 ready 抛错；未就绪时 core 抛错', async () => {
+  test('未 mount 时 ready 抛错；未就绪时 API 返回安全默认值（防御性降级）', async () => {
     const core = new EditorCore();
     await expect(core.ready()).rejects.toThrow('mount()');
-    expect(() => core.getText()).toThrow('not ready');
+    // 白屏防线：启动竞态期间的任何调用不得抛错（App.tsx effect 曾因此崩溃）
+    expect(core.isReady()).toBe(false);
+    expect(core.getText()).toBe('');
+    expect(core.getState()).toEqual({ hasFocus: false, hasSelection: false });
+    await expect(core.open('# x')).resolves.toBe(false);
+    expect(() => core.insertText('x', 0, 0)).not.toThrow();
+    expect(() => core.replaceText('x', 'wholeDocument')).not.toThrow();
+  });
+
+  test('mount 后、webModules 就绪前同样安全降级；isReady 反映就绪状态', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const core = new EditorCore({ bundleUrl: 'about:blank' });
+    core.mount(container);
+    // iframe 已挂载但 load 未触发（真实启动竞态窗口期）
+    expect(core.isReady()).toBe(false);
+    expect(core.getText()).toBe('');
+    await expect(core.open('# x')).resolves.toBe(false);
+
+    // 就绪后恢复正常委托
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    (iframe.contentWindow as unknown as { webModules: { core: CoreWebModule } }).webModules = { core: createMockCoreModule() };
+    iframe.dispatchEvent(new Event('load'));
+    await core.ready();
+    expect(core.isReady()).toBe(true);
+    expect(core.getText()).toBe('# mock');
+    core.destroy();
   });
 
   test('destroy 清理 iframe 与监听器', async () => {

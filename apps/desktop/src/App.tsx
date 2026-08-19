@@ -1078,7 +1078,7 @@ export default function App() {
     setConflict(null);
     setDirty(tab.dirty);
     host.setDocumentPath(tab.path);
-    await host.open(tab.content, undefined, true);
+    await host.open(tab.content, undefined, true, tab.eol);
     suppressEditorEventRef.current = false;
     // Large File Mode（PRD §109）：>5MB 或 >50,000 行 → 引擎自动降级
     host.setLargeFileMode(classifyLargeFile(new TextEncoder().encode(tab.content).length, tab.content.split('\n').length));
@@ -1744,7 +1744,7 @@ export default function App() {
       ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
       : null;
     // documentChanged=false → CoreEditor resetEditor 保持 scroll + selection
-    await host.open(r.value.content, undefined, false);
+    await host.open(r.value.content, undefined, false, r.value.eol);
     refreshOutline(host.getSelectionHead());
     setDirty(false);
     tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
@@ -1785,7 +1785,7 @@ export default function App() {
     diskStateRef.current = r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined
       ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
       : null;
-    await host.open(r.value.content, undefined, true); // 放弃本地
+    await host.open(r.value.content, undefined, true, r.value.eol); // 放弃本地
     setDirty(false);
     tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
     refreshTabsState();
@@ -2778,7 +2778,7 @@ export default function App() {
     revisionRef.current = snapshot.revision;
     docMetaRef.current = { encoding: snapshot.encoding, eol: snapshot.eol };
     diskStateRef.current = null; // 磁盘状态未知：跳过 validate（恢复场景）
-    await host.open(snapshot.content, undefined, true);
+    await host.open(snapshot.content, undefined, true, snapshot.eol);
     setDirty(true);
     setStatusText(t('msg.recovered', { path: snapshot.path ?? t('msg.unsavedDoc'), rev: snapshot.revision }));
     // 恢复后清理快照（用户已处理）
@@ -2803,7 +2803,7 @@ export default function App() {
     revisionRef.current = snapshot.revision;
     docMetaRef.current = { encoding: snapshot.encoding, eol: snapshot.eol };
     diskStateRef.current = null;
-    await host.open(snapshot.content, undefined, true);
+    await host.open(snapshot.content, undefined, true, snapshot.eol);
     setDirty(true);
     setStatusText(t('msg.compareSnapshot', { path: snapshot.path ?? t('msg.unsavedDoc') }));
     refreshStats(host);

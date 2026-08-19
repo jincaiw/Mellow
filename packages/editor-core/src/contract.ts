@@ -80,10 +80,15 @@ export interface CoreWebModule {
   replaceText(p: { text: string; granularity: ReplaceGranularity }): void;
 }
 
+/** window.webModules.config —— CoreEditor 配置模块（live apply 子集） */
+export interface ConfigWebModule {
+  setDefaultLineBreak?(p: { lineBreak?: string }): void;
+}
+
 /** window.webModules 全集（V0.x 只用 core） */
 export interface WebModules {
   core: CoreWebModule;
-  config?: unknown;
+  config?: ConfigWebModule;
   history?: unknown;
   lineEndings?: unknown;
   selection?: unknown;

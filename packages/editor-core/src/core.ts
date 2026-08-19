@@ -16,7 +16,6 @@ import type {
   EditorConfig,
   EditorEvent,
   EditorEventListener,
-  CoreWebModule,
   WebModules,
   SelectionRange,
   ReplaceGranularity,
@@ -74,6 +73,14 @@ export class EditorCore {
     this.emit({ type: 'ready' });
   }
 
+  /**
+   * 编辑器是否就绪（iframe 已挂载且 webModules.core 可用）。
+   * 宿主可在任何时点安全轮询；未就绪期间其他 API 返回安全默认值（见各方法注释）。
+   */
+  isReady(): boolean {
+    return this.modules()?.core !== undefined;
+  }
+
   /** 订阅编辑器事件；返回取消订阅函数 */
   onEvent(listener: EditorEventListener): () => void {
     this.listeners.add(listener);
@@ -85,29 +92,43 @@ export class EditorCore {
     this.emit(event);
   }
 
-  /** 打开文档（resetEditor） */
-  async open(text: string, selectionRange?: SelectionRange, documentChanged = true): Promise<boolean> {
-    return this.core.resetEditor({ text, selectionRange, documentChanged });
+  /** 打开文档（resetEditor）；未就绪时返回 false（调用方可稍后重试）
+   *
+   * lineBreak：文档行尾（'\n' | '\r\n' | '\r'）。必须在 resetEditor 前设置 ——
+   * CoreEditor 的 getLineBreak 对「无换行文档」且无 defaultLineBreak 时会回落到
+   * CRLF（LFs/CRLFs/CRs 计数全 0 → `CRLFs === usedMost` 命中），导致保存时
+   * Source Fidelity 破坏（LF 文档保存成 CRLF）。传入行尾后：
+   * - '\n' → getLineBreak 返回 undefined（CodeMirror LF 归一化）
+   * - '\r\n'/'\r' → 显式 lineSeparator 保持
+   */
+  async open(text: string, selectionRange?: SelectionRange, documentChanged = true, lineBreak?: string): Promise<boolean> {
+    const modules = this.modules();
+    const core = modules?.core;
+    if (!core) return false;
+    if (lineBreak !== undefined) {
+      modules?.config?.setDefaultLineBreak?.({ lineBreak });
+    }
+    return core.resetEditor({ text, selectionRange, documentChanged });
   }
 
-  /** 获取全文（唯一真源始终是 Markdown 文本） */
+  /** 获取全文（唯一真源始终是 Markdown 文本）；未就绪时返回 '' */
   getText(): string {
-    return this.core.getEditorText();
+    return this.modules()?.core?.getEditorText() ?? '';
   }
 
-  /** 编辑状态（焦点/选区） */
+  /** 编辑状态（焦点/选区）；未就绪时返回全 false */
   getState(): { hasFocus: boolean; hasSelection: boolean } {
-    return this.core.getEditorState();
+    return this.modules()?.core?.getEditorState() ?? { hasFocus: false, hasSelection: false };
   }
 
-  /** 插入文本 */
+  /** 插入文本；未就绪时 no-op */
   insertText(text: string, from: number, to: number): void {
-    this.core.insertText({ text, from, to });
+    this.modules()?.core?.insertText({ text, from, to });
   }
 
-  /** 替换文本（整文档/选区） */
+  /** 替换文本（整文档/选区）；未就绪时 no-op */
   replaceText(text: string, granularity: ReplaceGranularity): void {
-    this.core.replaceText({ text, granularity });
+    this.modules()?.core?.replaceText({ text, granularity });
   }
 
   /** 聚焦编辑器 */
@@ -239,14 +260,6 @@ export class EditorCore {
     this.iframe = null;
     this.readyPromise = null;
     this.listeners.clear();
-  }
-
-  get core(): CoreWebModule {
-    const modules = this.modules();
-    if (!modules?.core) {
-      throw new Error('CoreEditor core module is not ready');
-    }
-    return modules.core;
   }
 
   private modules(): WebModules | null {
