@@ -99,33 +99,10 @@ function isEscaped(text: string, index: number): boolean {
   return count % 2 === 1;
 }
 
-function lineBounds(doc: string, pos: number): { from: number; to: number; text: string } {
-  const from = doc.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
-  const next = doc.indexOf('\n', pos);
-  const to = next === -1 ? doc.length : next;
-  return { from, to, text: doc.slice(from, to) };
-}
-
-function isInsideFencedCode(doc: string, position: number): boolean {
-  let fence: '`' | '~' | null = null;
-  const prefix = doc.slice(0, position).split('\n');
-  for (const line of prefix) {
-    const match = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (match === null) continue;
-    const marker = match[1][0] as '`' | '~';
-    if (fence === null) fence = marker;
-    else if (fence === marker) fence = null;
-  }
-  return fence !== null;
-}
-
-function isIndentedCodeLine(doc: string, position: number): boolean {
-  return /^( {4}|\t)/.test(lineBounds(doc, position).text);
-}
-
-function isCodeContext(doc: string, position: number): boolean {
-  return isInsideFencedCode(doc, position) || isIndentedCodeLine(doc, position);
-}
+/** 行首 fence 标记（≤3 空格缩进 + ```/~~~，与 CommonMark fence 规则一致） */
+const FENCE_MARKER_RE = /^ {0,3}(`{3,}|~{3,})/;
+/** 缩进代码行（4 空格 / Tab） */
+const INDENTED_CODE_RE = /^( {4}|\t)/;
 
 function braceError(tex: string): MathError | undefined {
   let depth = 0;
@@ -163,71 +140,95 @@ function span(doc: string, from: number, to: number, texFrom: number, texTo: num
 
 /** Parse Typora-compatible math delimiters from Markdown source.
  *  from/to 可选：只扫描 [from, to) 区间（Large File Mode 视口裁剪，PRD §109）。
- *  code-context 判定始终基于全文档（fence 状态不受裁剪影响）。 */
+ *  code-context 判定始终基于全文档（fence 状态不受裁剪影响）。
+ *
+ *  实现为单遍行级扫描（fence 状态增量维护），整体 O(n)。
+ *  2026-08-19 修复：原实现逐字符调用 isInsideFencedCode（每次从头重扫全部前缀行）
+ *  为 O(n²)——128KB 文档即同步阻塞主线程 ~13s，10MB 打开白屏（Golden Journey j17）。 */
 export function parseMathSpans(doc: string, from = 0, to = doc.length): MathSpan[] {
   const spans: MathSpan[] = [];
-  let i = from;
   const scanEnd = Math.min(to, doc.length);
-  while (i < scanEnd) {
-    if (isCodeContext(doc, i)) {
-      const next = doc.indexOf('\n', i);
-      i = next === -1 ? doc.length : next + 1;
+  const scanFrom = Math.max(0, from);
+  let fence: '`' | '~' | null = null;
+  let lineFrom = 0;
+  while (lineFrom < scanEnd) {
+    const nl = doc.indexOf('\n', lineFrom);
+    const lineTo = nl === -1 ? doc.length : nl;
+    const lineText = doc.slice(lineFrom, lineTo);
+
+    // fence 开/闭行：整行跳过并维护状态（与原 prefix 扫描同规则）
+    const fenceMatch = lineText.match(FENCE_MARKER_RE);
+    if (fenceMatch !== null) {
+      const marker = fenceMatch[1][0] as '`' | '~';
+      if (fence === null) fence = marker;
+      else if (fence === marker) fence = null;
+      lineFrom = lineTo + 1;
+      continue;
+    }
+    // fence 内 / 缩进代码行：不解析 math
+    if (fence !== null || INDENTED_CODE_RE.test(lineText)) {
+      lineFrom = lineTo + 1;
       continue;
     }
 
-    if (doc.startsWith('$$', i) && !isEscaped(doc, i)) {
-      const line = lineBounds(doc, i);
-      if (line.text.slice(0, i - line.from).trim() === '') {
-        const start = i + 2;
+    // 普通行：扫描 [max(lineFrom, scanFrom), min(lineTo, scanEnd))
+    let p = lineFrom < scanFrom ? scanFrom : lineFrom;
+    const lineScanEnd = Math.min(lineTo, scanEnd);
+    while (p < lineScanEnd) {
+      if (doc.startsWith('$$', p) && !isEscaped(doc, p) && doc.slice(lineFrom, p).trim() === '') {
+        const start = p + 2;
         const close = doc.indexOf('$$', start);
         if (close === -1) {
-          spans.push(span(doc, i, doc.length, start, doc.length, '$$', '$$', 'block', closeError('$$')));
-          break;
+          spans.push(span(doc, p, doc.length, start, doc.length, '$$', '$$', 'block', closeError('$$')));
+          return spans;
         }
-        spans.push(span(doc, i, close + 2, start, close, '$$', '$$', 'block'));
-        i = close + 2;
+        spans.push(span(doc, p, close + 2, start, close, '$$', '$$', 'block'));
+        p = close + 2;
         continue;
       }
-    }
 
-    if (doc.startsWith('\\[', i) && !isEscaped(doc, i)) {
-      const start = i + 2;
-      const close = doc.indexOf('\\]', start);
-      if (close === -1) {
-        spans.push(span(doc, i, doc.length, start, doc.length, '\\[', '\\]', 'block', closeError('\\[')));
-        break;
-      }
-      spans.push(span(doc, i, close + 2, start, close, '\\[', '\\]', 'block'));
-      i = close + 2;
-      continue;
-    }
-
-    if (doc.startsWith('\\(', i) && !isEscaped(doc, i)) {
-      const start = i + 2;
-      const close = doc.indexOf('\\)', start);
-      if (close !== -1) {
-        spans.push(span(doc, i, close + 2, start, close, '\\(', '\\)', 'inline'));
-        i = close + 2;
+      if (doc.startsWith('\\[', p) && !isEscaped(doc, p)) {
+        const start = p + 2;
+        const close = doc.indexOf('\\]', start);
+        if (close === -1) {
+          spans.push(span(doc, p, doc.length, start, doc.length, '\\[', '\\]', 'block', closeError('\\[')));
+          return spans;
+        }
+        spans.push(span(doc, p, close + 2, start, close, '\\[', '\\]', 'block'));
+        p = close + 2;
         continue;
       }
+
+      if (doc.startsWith('\\(', p) && !isEscaped(doc, p)) {
+        const start = p + 2;
+        const close = doc.indexOf('\\)', start);
+        if (close !== -1) {
+          spans.push(span(doc, p, close + 2, start, close, '\\(', '\\)', 'inline'));
+          p = close + 2;
+          continue;
+        }
+      }
+
+      if (doc[p] === '$' && doc[p + 1] !== '$' && !isEscaped(doc, p)) {
+        const start = p + 1;
+        let close = start;
+        while (close < doc.length) {
+          if (doc[close] === '\n') break;
+          if (doc[close] === '$' && doc[close + 1] !== '$' && !isEscaped(doc, close)) break;
+          close += 1;
+        }
+        if (close < doc.length && doc[close] === '$' && close > start) {
+          spans.push(span(doc, p, close + 1, start, close, '$', '$', 'inline'));
+          p = close + 1;
+          continue;
+        }
+      }
+
+      p += 1;
     }
 
-    if (doc[i] === '$' && doc[i + 1] !== '$' && !isEscaped(doc, i)) {
-      const start = i + 1;
-      let close = start;
-      while (close < doc.length) {
-        if (doc[close] === '\n') break;
-        if (doc[close] === '$' && doc[close + 1] !== '$' && !isEscaped(doc, close)) break;
-        close += 1;
-      }
-      if (close < doc.length && doc[close] === '$' && close > start) {
-        spans.push(span(doc, i, close + 1, start, close, '$', '$', 'inline'));
-        i = close + 1;
-        continue;
-      }
-    }
-
-    i += 1;
+    // p 可能越过本行（$$ / \[ / \( 跨行闭合）→ 从 p 恢复行级扫描；否则下一行
+    lineFrom = p > lineTo ? p : lineTo + 1;
   }
   return spans;
 }
@@ -242,6 +243,8 @@ export function extractMathMacros(tex: string): Record<string, string> {
 }
 
 export function collectDocumentMathMacros(doc: string): Record<string, string> {
+  // 快速路径：无宏定义关键字则跳过全文档解析（大文件下每次 build 的全文扫描）
+  if (!doc.includes('\\newcommand') && !doc.includes('\\renewcommand')) return {};
   const macros: Record<string, string> = {};
   for (const s of parseMathSpans(doc)) {
     Object.assign(macros, extractMathMacros(s.tex));
