@@ -384,14 +384,19 @@ func cmdWaitWindow(pid: Int, timeoutMs: Double) {
   out(["ok": false, "error": "窗口 \(timeoutMs)ms 内未出现", "elapsedMs": round((nowMs() - t0) * 10) / 10])
 }
 
-func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double) async {
+func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
   activateApp(pid: pid)
   let probe = Probe()
   guard await startCapture(probe: probe, pid: pid, roi: roi) else { fail("SCK 捕获启动失败（重试 3 次后）") }
   let loadMs = probe.waitStable()
-  // 强制聚焦编辑器（点击后光标闪烁被 calibrate 吸收）
-  if let w = try? await findWindow(pid: pid) { clickToFocus(w, roi: roi) }
+  // 强制聚焦编辑器（点击后光标闪烁被 calibrate 吸收）。
+  // --no-click：WKWebView（Mellow）下合成点击会破坏 WebView 焦点协议，导致后续
+  // 键盘事件全部丢失（2026-08-19 诊断）；WebView 启动自动持有焦点，无需点击。
+  // 原生 app（Typora）光标默认在文档末尾，仍需点击把光标放到 ROI 顶部区域。
+  if clickFocus {
+    if let w = try? await findWindow(pid: pid) { clickToFocus(w, roi: roi) }
+  }
   let cal = probe.calibrateRetry()
   let t0 = nowMs()
   postKey(0x00) // 'a'
@@ -502,7 +507,8 @@ func mainAsync(_ args: [String]) async {
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")
     let timeout = Double(argVal(args, "--timeout") ?? "8000") ?? 8000
-    await cmdStartupProbe(pid: pid, roi: roi, timeoutMs: timeout)
+    let noClick = args.contains("--no-click")
+    await cmdStartupProbe(pid: pid, roi: roi, timeoutMs: timeout, clickFocus: !noClick)
   case "keypress-latency":
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")

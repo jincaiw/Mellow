@@ -101,7 +101,8 @@ const SCENARIOS = [
 
 async function runDocumentScenario(sc) {
   // SE keystroke 偶发不可达 → 场景级重试（≤3 次，输入验证驱动）
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // macOS wry 自定义协议存在偶发 iframe 加载取消（-999）：提高重试上限吸收
+  for (let attempt = 1; attempt <= 5; attempt++) {
     const proc = launchScenario(sc.doc);
     const pid = proc.pid;
     try {

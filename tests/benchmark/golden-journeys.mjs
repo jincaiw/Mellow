@@ -41,9 +41,10 @@ function launchMellow(file) {
   const proc = spawn(MB, [file], { stdio: 'ignore' });
   sleep(9000);
   activate('mellow-desktop');
-  // 点击编辑器区域聚焦（Mellow 的 WKWebView 需要真实点击才能接收键盘）
-  try { execFileSync(HELPER, ['focus-type', '--pid', String(proc.pid), '--roi', '300,120,600,200'], { encoding: 'utf8', timeout: 20000 }); } catch { /* noop */ }
-  sleep(800);
+  // 注意：不做合成点击。WKWebView 启动时自动持有焦点（WebView 为 first responder，
+  // CodeMirror 默认聚焦），SE keystroke / CGEvent 可直达。实测合成鼠标点击（CGEvent
+  // mouseDown/post）反而会破坏 WebView 焦点协议，导致后续键盘事件全部丢失
+  // （2026-08-19 诊断：focus-type 点击后 keystroke 全部失效，不点击则全部生效）。
   return proc.pid;
 }
 function launchTypora(file) {
@@ -80,6 +81,11 @@ async function j1_latin(app, file) {
 
 async function j2_chinese(app, file) {
   const r = record('2. Chinese IME');
+  // 前置：切换输入源到简体拼音（SCIM ITABC），结束后切回 ABC。
+  // select-input 用 Carbon TISSelectInputSource（Ctrl+Space 只能在布局间切换，到不了 IME）。
+  const SELINPUT = '/Volumes/My-Data/jason.wa/codebase/Mellow/tests/benchmark/bin/select-input';
+  try { execFileSync(SELINPUT, ['com.apple.inputmethod.SCIM.ITABC'], { timeout: 5000 }); } catch { /* noop */ }
+  sleep(600);
   const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
   const t0 = Date.now();
   if (app === 'mellow') {
@@ -95,6 +101,8 @@ async function j2_chinese(app, file) {
   const text = readFileSync(file, 'utf8');
   r.result = text.includes('你') ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`读回不含「你」: ${JSON.stringify(text)}`);
+  // 恢复 ABC（后续 journey 的 ASCII 输入不受 IME 影响）
+  try { execFileSync(SELINPUT, ['com.apple.keylayout.ABC'], { timeout: 5000 }); } catch { /* noop */ }
   spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
   return r;
 }
@@ -122,7 +130,14 @@ async function j7_list(app, file) {
   writeFileSync(file, '- item');
   const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
   const t0 = Date.now();
-  if (app === 'typora') { combo('', 36, pid); } else { se('tell application "System Events" to keystroke return'); }
+  if (app === 'typora') {
+    combo('', 36, pid); // Typora 打开文件后光标在文档末尾（行尾）
+  } else {
+    // Mellow 打开文件后光标在文档开头（行首）—— 先 Cmd+→ 移到行尾再 Enter，
+    // 否则 Enter 会在行首拆行（"\n- item"）而非延续列表
+    combo('cmd', 124, pid); sleep(400);
+    se('tell application "System Events" to keystroke return');
+  }
   r.steps.push('行尾 Enter（延续）'); r.timeMs.total = Date.now() - t0;
   sleep(800);
   combo('cmd', 1, pid); sleep(1500);
@@ -138,9 +153,12 @@ async function j8_table(app, file) {
   writeFileSync(file, '| a | b |\n|---|---|\n| 1 | 2 |');
   const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
   const t0 = Date.now();
-  // 点击表格区域 + Tab 移到下一单元格（不改源码）
-  try { execFileSync(HELPER, ['focus-type', '--pid', String(pid), '--roi', '300,150,400,120'], { encoding: 'utf8', timeout: 20000 }); } catch { /* noop */ }
-  sleep(800);
+  // Tab 移到下一单元格（不改源码）。不做合成点击（会破坏 WebView 焦点）：
+  // Mellow 光标默认在文档开头（表格首格），Tab 由 table keymap 捕获导航。
+  if (app === 'typora') {
+    // Typora 光标在文档末尾 —— 先 Cmd+↑ 回到文档首行，使 Tab 落在表格内
+    combo('cmd', 126, pid); sleep(400);
+  }
   combo('', 48, pid); r.steps.push('Tab 下一单元格'); r.timeMs.nav = Date.now() - t0;
   sleep(500);
   combo('cmd', 1, pid); sleep(1500);
@@ -186,7 +204,10 @@ async function j15_undo(app, file) {
   if (app === 'mellow') { typeTextMellow('abc'); r.steps.push('输入 "abc"'); }
   else { typeTextTypora(pid, 'abc'); r.steps.push('输入 "abc"'); }
   sleep(400);
-  combo('cmd', 6, pid); r.steps.push('Cmd+Z'); sleep(800);
+  // undo 事务粒度：SE keystroke "abc" 与 space 分属不同 undo 事务（输入间隔产生
+  // 新分组），Typora 行为相同。按 4 次覆盖 a/b/c/space 最坏分组。
+  for (let i = 0; i < 4; i++) { combo('cmd', 6, pid); sleep(350); }
+  r.steps.push('Cmd+Z ×4'); sleep(800);
   combo('cmd', 1, pid); sleep(1500);
   const text = readFileSync(file, 'utf8');
   r.result = !text.includes('abc') ? 'PASS' : 'FAIL';
@@ -200,11 +221,15 @@ async function j17_10mb(app) {
   const file = '/Volumes/My-Data/jason.wa/codebase/Mellow/tests/benchmark/fixtures/10MB.md';
   const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
   const t0 = Date.now();
-  // 轮询窗口出现 + 首帧稳定（近似 editable 时间）
+  // 轮询窗口出现 + 首帧稳定（近似 editable 时间）。
+  // Mellow 传 --no-click：合成点击会破坏 WKWebView 焦点（见 launchMellow 注释），
+  // WebView 启动自动持有焦点，'a' 可直达编辑器；Typora（原生 app）保留点击聚焦。
   let ready = false;
   for (let i = 0; i < 20 && !ready; i++) {
     try {
-      const out = execFileSync(HELPER, ['startup-probe', '--pid', String(pid), '--roi', '200,100,600,200', '--timeout', '4000'], { encoding: 'utf8', timeout: 10000 });
+      const probeArgs = ['startup-probe', '--pid', String(pid), '--roi', '200,100,600,200', '--timeout', '4000'];
+      if (app === 'mellow') probeArgs.push('--no-click');
+      const out = execFileSync(HELPER, probeArgs, { encoding: 'utf8', timeout: 10000 });
       const parsed = JSON.parse(out.split('\n').filter((l) => l.trim().startsWith('{')).pop());
       if (parsed.ok) { ready = true; r.timeMs.editable = parsed.loadMs ?? null; }
     } catch { /* noop */ }
@@ -222,8 +247,16 @@ const JOURNEYS = {
 };
 
 const args = process.argv.slice(2);
-const appFilter = args.find((a) => a.startsWith('--app='))?.split('=')[1] ?? 'both';
-const journeyFilter = args.find((a) => a.startsWith('--journey='))?.split('=')[1];
+/** 支持 --app=x 与 --app x 两种格式 */
+function flagArg(name) {
+  const eq = args.find((a) => a.startsWith(`--${name}=`));
+  if (eq !== undefined) return eq.split('=')[1];
+  const i = args.indexOf(`--${name}`);
+  if (i !== -1 && i + 1 < args.length) return args[i + 1];
+  return undefined;
+}
+const appFilter = flagArg('app') ?? 'both';
+const journeyFilter = flagArg('journey');
 
 const results = [];
 for (const [id, fn] of Object.entries(JOURNEYS)) {
