@@ -46,9 +46,21 @@ export function updateChannelFromSettings(): UpdateChannel {
 /**
  * 检查更新。返回 null 表示无更新。
  * 请求仅携带版本/平台/渠道元数据（无用户数据）。
+ * 15s 超时：端点不可达时不让启动 banner 永久停在「正在检查更新…」。
  */
 export async function checkForUpdate(channel: UpdateChannel = DEFAULT_UPDATE_CHANNEL): Promise<Update | null> {
-  return check({ headers: { 'X-Mellow-Channel': channel } });
+  const CHECK_TIMEOUT_MS = 15_000;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      check({ headers: { 'X-Mellow-Channel': channel } }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('update check timeout')), CHECK_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface UpdateProgress {

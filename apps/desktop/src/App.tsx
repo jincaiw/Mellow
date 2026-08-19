@@ -733,7 +733,11 @@ export default function App() {
         } catch {
           /* noop */
         }
-        if (checkEnabled) {
+        // dev serve（vite localhost）跳过自动检查：updater 端点未配置/不可达时
+        // check() 挂起，启动 banner「正在检查更新…」永不消失（Aug 19 真机验证发现）。
+        // release 各平台均执行检查（不可达时由 checkForUpdate 的 15s 超时兜底转 error）。
+        const isDevServe = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (checkEnabled && !isDevServe) {
           window.setTimeout(() => { void runUpdateCheck(); }, 4000);
         }
       }
@@ -1846,7 +1850,41 @@ export default function App() {
 
     const host = new EditorCore();
     hostRef.current = host;
-    host.mount(containerRef.current);
+
+    // 编辑器 iframe 启动竞态规避（macOS 真机矩阵 0/12 复现，Aug 18）：
+    // 外壳大 bundle（dist 24MB / index.html inline 641KB）同步执行期间主运行
+    // 循环被占用，iframe 立即发起的 tauri:// 自定义协议请求会使 WebKit 的
+    // WKURLSchemeTaskImpl didReceiveResponse 阻塞在 callOnMainRunLoopAndWait，
+    // 直到 tokio worker panic（panic=abort → SIGABRT）或 iframe -999 取消。
+    // 策略：等主运行循环空闲后再创建 iframe —— requestIdleCallback 优先
+    // （确定性空闲信号），旧 WebKit 回退到实测安全的固定延迟。
+    const editorContainer = containerRef.current;
+    let resolveMount: (() => void) | undefined;
+    const mountGate = new Promise<void>((res) => { resolveMount = res; });
+    const doMount = () => {
+      try {
+        host.mount(editorContainer);
+      } catch (err) {
+        console.error('[editor] mount failed', err);
+      }
+      resolveMount?.();
+    };
+    const idleRequest = (window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    }).requestIdleCallback;
+    let cancelIdle: (() => void) | undefined;
+    let mountTimer = 0;
+    if (typeof idleRequest === 'function') {
+      // timeout 上限兜底：即便持续繁忙也保证挂载（600ms 内）
+      const idleId = idleRequest.call(window, () => doMount(), { timeout: 600 });
+      cancelIdle = () => {
+        (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(idleId);
+      };
+    } else {
+      // 旧 WebKit（无 requestIdleCallback）：回退实测安全延迟（Aug 18 真机值）
+      mountTimer = window.setTimeout(() => doMount(), 800);
+    }
 
     // 扩展运行时（PRD §119-121）：desktop 宿主 + 示例扩展注册
     const extensionHost = createDesktopExtensionHost(() => hostRef.current);
@@ -1906,8 +1944,8 @@ export default function App() {
         .catch(() => { /* 浏览器 dev：无 drag-drop 注入 */ });
     }
 
-    host
-      .ready()
+    mountGate
+      .then(() => host.ready())
       .then(async () => {
         let active = tabsRef.current.active;
         // PRD §92 启动行为：可关闭「恢复上次会话」（默认开启）
@@ -2000,6 +2038,8 @@ export default function App() {
       });
 
     return () => {
+      cancelIdle?.();
+      window.clearTimeout(mountTimer);
       unlistenDragDrop?.();
       host.destroy();
       recoveryRef.current?.dispose();

@@ -48,7 +48,7 @@ const tauriBridgeAdapter = `<script>
     try {
       var convertFileSrc = window.__TAURI__.core.convertFileSrc;
       window.__MELLOW_ASSET_RESOLVER__ = function (src) {
-        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(src) || src.indexOf('data:') === 0) return src;
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:[/]{2}/.test(src) || src.indexOf('data:') === 0) return src;
         try { return typeof convertFileSrc === 'function' ? convertFileSrc(src) : src; } catch (e) { return src; }
       };
     } catch (e) {}
@@ -113,12 +113,15 @@ function copyEngine() {
       const targetFile = resolve(engineTargetDir, relPath);
       mkdirSync(dirname(targetFile), { recursive: true });
       let content = readFileSync(srcPath, 'utf8');
-      // 浏览器 ESM 要求显式扩展名（tsc 默认不带）：./foo → ./foo.js（文件）或 ./foo/index.js（目录）
-      content = content.replace(/((?:from|import)\s*['"]\.\/([^'"]+))(['"])/g, (m, pre, rel, q) => {
+      // 浏览器 ESM 要求显式扩展名（tsc 默认不带）：./foo、../foo、../../foo
+      // → 补 .js（文件）或 /index.js（目录）。修复：旧正则只匹配 ./ 前缀，
+      // 漏掉 table/columnWidth.js 等子目录文件对上级模块（../composition、
+      // ../mode）的导入 → iframe 内 404 → 引擎加载失败（Aug 19 白屏评估发现）。
+      content = content.replace(/((?:from|import)\s*['"])((?:\.\.?\/)+[^'"]+)(['"])/g, (m, pre, rel, q) => {
         const jsPath = resolve(dir, `${rel}.js`);
         const idxPath = resolve(dir, rel, 'index.js');
-        if (existsSync(jsPath)) return `${pre}.js${q}`;
-        if (existsSync(idxPath)) return `${pre}/index.js${q}`;
+        if (existsSync(jsPath)) return `${pre}${rel}.js${q}`;
+        if (existsSync(idxPath)) return `${pre}${rel}/index.js${q}`;
         return m; // 保持原样（非本地相对导入或无法解析，交由运行时处理）
       });
       writeFileSync(targetFile, content, 'utf8');
