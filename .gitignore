@@ -9,6 +9,11 @@ node_modules/
 dist/
 target/
 apps/desktop/public/editor/
+apps/desktop/quicklook/build/
+apps/desktop/quicklook/Resources/quicklook.html
+
+# IDE / 会话内部目录
+.trae/
 
 # 日志与临时文件
 *.log
