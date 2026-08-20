@@ -4,8 +4,21 @@
 //! CommandRegistry（`mellow-menu-command` 事件 → dispatchCommand(id, 'menu')）。
 //! 菜单项 id 与前端注册命令 id 一一对应；菜单本身不含任何业务逻辑。
 //!
-//! 平台差异：macOS 额外安装 Mellow 应用菜单（About/Hide/Quit）与 Services；
-//! Windows/Linux 安装 文件/编辑/视图/插入/格式/段落/主题/帮助（Typora 结构）。
+//! B2 菜单结构补全（对照 Typora 1.14.6 菜单树基准
+//! `tests/benchmark/fixtures/typora-menu-dump.txt`）：
+//! - 应用菜单：设置 ⌘, / 检查更新 / 服务 / 隐藏其他 / 显示全部；
+//! - 文件：打开最近文件（动态子菜单，`set_recent_files` 重建）/ 全部关闭 /
+//!   保存全部 / 从磁盘重新加载 / 导出子菜单；
+//! - 编辑：复制为 Markdown ⇧⌘C / 粘贴为纯文本 ⇧⌘V / 查找子菜单（⌘G/⇧⌘G）；
+//! - 段落：⌘0-6 全加速键 / 提升降低标题 / 警告框 5 类 / 任务状态 / 脚注 /
+//!   水平分割线 / TOC / YAML；
+//! - 格式：删除线 ⌃⇧`；
+//! - 显示（原视图）：工具栏 / 全局搜索 ⇧⌘F / 保持窗口在最前端；
+//! - 主题：6 内置主题 + 打开用户 CSS + 跟随系统；
+//! - 窗口：独立菜单（最小化 / 缩放 / 标签页切换）。
+//!
+//! 平台差异：macOS 额外安装 Mellow 应用菜单（About/Settings/Services/Hide）；
+//! Windows/Linux 安装 文件/编辑/显示/插入/格式/段落/主题/窗口/帮助。
 //!
 //! 本地化：菜单标签属于系统 chrome（Adapter 层），由本模块目录维护 zh/en 两套，
 //! 前端 locale 切换时经 `set_menu_locale` 命令触发重建；核心 UI i18n 仍以
@@ -13,78 +26,78 @@
 
 use std::sync::Mutex;
 
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{AboutMetadata, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// 当前菜单 locale（默认 zh-CN，PRD §87）
 pub struct MenuLocale(pub Mutex<String>);
 
+/// 最近文件列表（前端 recentFiles → `set_recent_files` → 「打开最近文件」子菜单）
+pub struct RecentFiles(pub Mutex<Vec<String>>);
+
+/// 主题选中态（前端 themeSettings/activeTheme → `set_theme_selection` → 主题菜单 radio；
+/// B2-5/B3-2：Typora 主题菜单选中态 parity）
+pub struct ThemeSelection(pub Mutex<ThemeSelectionState>);
+
+#[derive(Clone, Default)]
+pub struct ThemeSelectionState {
+    /// light | dark | system（themeSettings.mode）
+    pub mode: String,
+    /// 当前生效主题 id（system 模式下为亮/暗解析后的 id）
+    pub active_theme_id: String,
+}
+
 /// 菜单标签目录：(key, zh, en)
 static MENU_LABELS: &[(&str, &str, &str)] = &[
+    // ── 应用菜单 ──
     ("menu.mellow", "Mellow", "Mellow"),
     ("menu.about", "关于 Mellow", "About Mellow"),
+    ("menu.settings", "设置…", "Settings…"),
+    ("menu.checkUpdate", "检查更新…", "Check for Updates…"),
+    ("menu.services", "服务", "Services"),
     ("menu.hide", "隐藏 Mellow", "Hide Mellow"),
+    ("menu.hideOthers", "隐藏其他", "Hide Others"),
+    ("menu.showAll", "显示全部", "Show All"),
     ("menu.quit", "退出 Mellow", "Quit Mellow"),
+    // ── 文件 ──
     ("menu.file", "文件", "File"),
-    ("menu.edit", "编辑", "Edit"),
-    ("menu.view", "视图", "View"),
-    ("menu.insert", "插入", "Insert"),
-    ("menu.format", "格式", "Format"),
-    ("menu.paragraph", "段落", "Paragraph"),
-    ("menu.theme", "主题", "Themes"),
-    ("menu.help", "帮助", "Help"),
-    ("file.new", "新建", "New"),
+    ("file.newTab", "新建标签页", "New Tab"),
     ("file.open", "打开…", "Open…"),
+    ("file.recent", "打开最近文件", "Open Recent"),
+    ("file.recentReopen", "重新打开关闭的文件", "Reopen Closed File"),
+    ("file.recentClear", "清除最近文件", "Clear Recent Files"),
     ("quickOpen.open", "Quick Open", "Quick Open"),
     ("workspace.openFolder", "打开文件夹…", "Open Folder…"),
+    ("file.info", "文件信息…", "File Info…"),
+    ("file.reveal", "打开文件位置", "Reveal in Finder"),
+    ("tabs.close", "关闭", "Close"),
+    ("file.closeAll", "全部关闭", "Close All"),
     ("file.save", "保存", "Save"),
     ("file.saveAs", "另存为…", "Save As…"),
-    ("file.reveal", "在 Finder 中显示", "Reveal in Finder"),
-    ("tabs.close", "关闭标签页", "Close Tab"),
-    ("file.info", "文件信息…", "File Info…"),
-    ("file.openWith", "打开方式…", "Open With…"),
+    ("file.saveAll", "保存全部打开的文件…", "Save All Open Files…"),
+    ("file.reloadFromDisk", "从磁盘重新加载", "Reload from Disk"),
+    ("menu.export", "导出", "Export"),
+    ("export.pdf", "PDF…", "PDF…"),
+    ("export.html", "HTML…", "HTML…"),
+    ("export.docx", "Word (.docx)…", "Word (.docx)…"),
     ("file.print", "打印…", "Print…"),
-    ("export.pdf", "导出 PDF…", "Export PDF…"),
-    ("export.html", "导出 HTML…", "Export HTML…"),
-    ("export.docx", "导出 Word…", "Export Word…"),
-    ("commandPalette.open", "命令面板", "Command Palette"),
-    ("view.source.toggle", "源码模式", "Source Mode"),
-    ("view.focus.cycle", "Focus Mode", "Focus Mode"),
-    ("view.typewriter.cycle", "Typewriter Mode", "Typewriter Mode"),
-    ("reader.open", "用 Reader 打开", "Open in Reader"),
-    ("split.open", "Split（Source | Preview）", "Split (Source | Preview)"),
-    ("window.fullscreen", "切换全屏", "Toggle Full Screen"),
-    ("window.minimize", "最小化", "Minimize"),
-    ("window.maximizeToggle", "缩放", "Zoom"),
-    ("insert.heading", "标题", "Heading"),
-    ("insert.list", "列表", "List"),
-    ("insert.task", "任务", "Task"),
-    ("insert.quote", "引用", "Quote"),
-    ("insert.table", "表格", "Table"),
-    ("insert.code", "代码块", "Code Block"),
-    ("insert.math", "数学公式", "Math"),
-    ("insert.mermaid", "Mermaid 图表", "Mermaid"),
-    ("insert.alert", "提示框", "Alert"),
-    ("insert.image", "图片", "Image"),
-    ("insert.toc", "目录", "Table of Contents"),
+    // ── 编辑 ──
+    ("menu.edit", "编辑", "Edit"),
     ("menu.undo", "撤销", "Undo"),
     ("menu.redo", "重做", "Redo"),
     ("menu.cut", "剪切", "Cut"),
-    ("menu.copy", "复制", "Copy"),
+    ("menu.copy", "拷贝", "Copy"),
     ("menu.paste", "粘贴", "Paste"),
     ("menu.selectAll", "全选", "Select All"),
+    ("edit.copyMarkdown", "复制为 Markdown", "Copy as Markdown"),
+    ("edit.pastePlain", "粘贴为纯文本", "Paste as Plain Text"),
+    ("menu.find", "查找", "Find"),
     ("search.find", "查找…", "Find…"),
-    ("search.replace", "替换…", "Replace…"),
-    ("format.bold", "粗体", "Bold"),
-    ("format.italic", "斜体", "Italic"),
-    ("format.strike", "删除线", "Strikethrough"),
-    ("format.code", "行内代码", "Inline Code"),
-    ("format.highlight", "高亮", "Highlight"),
-    ("format.sup", "上标", "Superscript"),
-    ("format.sub", "下标", "Subscript"),
-    ("format.link", "链接…", "Link…"),
-    ("format.quote", "引用", "Quote"),
-    ("format.list", "列表", "List"),
+    ("search.findNext", "查找下一个", "Find Next"),
+    ("search.findPrevious", "查找上一个", "Find Previous"),
+    ("search.replace", "查找和替换…", "Find and Replace…"),
+    // ── 段落 ──
+    ("menu.paragraph", "段落", "Paragraph"),
     ("paragraph.h1", "一级标题", "Heading 1"),
     ("paragraph.h2", "二级标题", "Heading 2"),
     ("paragraph.h3", "三级标题", "Heading 3"),
@@ -92,9 +105,86 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("paragraph.h5", "五级标题", "Heading 5"),
     ("paragraph.h6", "六级标题", "Heading 6"),
     ("paragraph.normal", "段落", "Paragraph"),
+    ("paragraph.headingUp", "提升标题级别", "Increase Heading Level"),
+    ("paragraph.headingDown", "降低标题级别", "Decrease Heading Level"),
+    ("insert.table", "表格", "Table"),
+    ("format.mathBlock", "公式块", "Math Block"),
+    ("format.codeBlock", "代码块", "Code Block"),
+    ("insert.alertMenu", "警告框", "Alert"),
+    ("alert.note", "提醒内容", "Note"),
+    ("alert.tip", "建议内容", "Tip"),
+    ("alert.important", "重要内容", "Important"),
+    ("alert.warning", "警告内容", "Warning"),
+    ("alert.caution", "注意内容", "Caution"),
+    ("format.quote", "引用", "Quote"),
+    ("format.orderedList", "有序列表", "Ordered List"),
+    ("format.list", "无序列表", "Bulleted List"),
+    ("format.taskList", "任务列表", "Task List"),
+    ("paragraph.taskToggle", "切换任务状态", "Toggle Task State"),
+    ("paragraph.footnote", "脚注", "Footnote"),
+    ("paragraph.horizontalRule", "水平分割线", "Horizontal Rule"),
+    ("paragraph.toc", "内容目录", "Table of Contents"),
+    ("paragraph.yamlFrontMatter", "YAML Front Matter", "YAML Front Matter"),
+    // ── 显示 ──
+    ("menu.view", "显示", "View"),
+    ("commandPalette.open", "命令面板", "Command Palette"),
+    ("view.source.toggle", "源代码模式", "Source Code Mode"),
+    ("view.focus.cycle", "专注模式", "Focus Mode"),
+    ("view.typewriter.cycle", "打字机模式", "Typewriter Mode"),
+    ("view.toolbar.toggle", "工具栏", "Toolbar"),
+    ("view.sidebarToggle", "显示／隐藏侧边栏", "Toggle Sidebar"),
+    ("view.sidebarOutline", "大纲", "Outline"),
+    ("view.sidebarFileList", "文档列表", "File List"),
+    ("view.sidebarFileTree", "文件树", "File Tree"),
+    ("view.search", "搜索", "Search"),
+    ("view.zoomReset", "实际大小", "Actual Size"),
+    ("view.zoomIn", "放大", "Zoom In"),
+    ("view.zoomOut", "缩小", "Zoom Out"),
+    ("view.alwaysOnTop", "保持窗口在最前端", "Keep Window on Top"),
+    ("reader.open", "用 Reader 打开", "Open in Reader"),
+    ("split.open", "Split（Source | Preview）", "Split (Source | Preview)"),
+    ("window.fullscreen", "全屏", "Full Screen"),
+    // ── 插入（Mellow 更优保留：slash 命令入口）──
+    ("menu.insert", "插入", "Insert"),
+    ("insert.heading", "标题", "Heading"),
+    ("insert.list", "列表", "List"),
+    ("insert.task", "任务", "Task"),
+    ("insert.quote", "引用", "Quote"),
+    ("insert.code", "代码块", "Code Block"),
+    ("insert.math", "数学公式", "Math"),
+    ("insert.mermaid", "Mermaid 图表", "Mermaid"),
+    ("insert.alert", "提示框", "Alert"),
+    ("insert.image", "图片", "Image"),
+    ("insert.toc", "目录", "Table of Contents"),
+    // ── 格式 ──
+    ("menu.format", "格式", "Format"),
+    ("format.bold", "加粗", "Bold"),
+    ("format.italic", "斜体", "Italic"),
+    ("format.code", "代码", "Code"),
+    ("format.strike", "删除线", "Strikethrough"),
+    ("format.highlight", "高亮", "Highlight"),
+    ("format.sup", "上标", "Superscript"),
+    ("format.sub", "下标", "Subscript"),
+    ("format.link", "超链接…", "Hyperlink…"),
+    ("format.clear", "清除样式", "Clear Formatting"),
+    // ── 主题 ──
+    ("menu.theme", "主题", "Themes"),
     ("theme.mellow-light", "Mellow Light", "Mellow Light"),
     ("theme.mellow-dark", "Mellow Dark", "Mellow Dark"),
+    ("theme.paper", "Paper", "Paper"),
+    ("theme.git-light", "Git Light", "Git Light"),
+    ("theme.git-dark", "Git Dark", "Git Dark"),
+    ("theme.newsprint", "Newsprint", "Newsprint"),
     ("theme.system", "跟随系统", "Follow System"),
+    ("theme.openUserCss", "打开用户 CSS…", "Open User CSS…"),
+    // ── 窗口 ──
+    ("menu.window", "窗口", "Window"),
+    ("window.minimize", "最小化", "Minimize"),
+    ("window.maximizeToggle", "缩放", "Zoom"),
+    ("tabs.prev", "显示上一个标签页", "Show Previous Tab"),
+    ("tabs.next", "显示下一个标签页", "Show Next Tab"),
+    // ── 帮助 ──
+    ("menu.help", "帮助", "Help"),
     ("help.cheatsheet", "Markdown 速查表", "Markdown Cheatsheet"),
 ];
 
@@ -117,6 +207,13 @@ pub fn attach_menu_events(app: &AppHandle) {
     });
 }
 
+/// 当前 locale（供重建菜单复用）
+fn current_locale(app: &AppHandle) -> String {
+    app.try_state::<MenuLocale>()
+        .map(|s| s.0.lock().unwrap().clone())
+        .unwrap_or_else(|| "zh-CN".to_string())
+}
+
 /// 构建完整菜单（macOS 含应用菜单；Win/Linux 为 文件/编辑/…/帮助）
 fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu<tauri::Wry>> {
     let l = |k: &str| label(k, locale);
@@ -128,103 +225,273 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     };
 
     let mut subs: Vec<Submenu<tauri::Wry>> = Vec::new();
+
+    // ── 应用菜单（macOS）────────────────────────────────
     if is_mac {
         let about = PredefinedMenuItem::about(app, Some(&l("menu.about")), Some(AboutMetadata::default()))?;
+        let settings = MenuItem::with_id(app, "settings.open", &l("menu.settings"), true, accel("Cmd+,", "Ctrl+,"))?;
+        let check_update = MenuItem::with_id(app, "updater.check", &l("menu.checkUpdate"), true, None::<&str>)?;
+        let services = PredefinedMenuItem::services(app, Some(&l("menu.services")))?;
         let hide = PredefinedMenuItem::hide(app, Some(&l("menu.hide")))?;
+        let hide_others = PredefinedMenuItem::hide_others(app, Some(&l("menu.hideOthers")))?;
+        let show_all = PredefinedMenuItem::show_all(app, Some(&l("menu.showAll")))?;
         let quit = PredefinedMenuItem::quit(app, Some(&l("menu.quit")))?;
-        subs.push(Submenu::with_items(app, &l("menu.mellow"), true, &[&about, &hide, &quit])?);
+        subs.push(Submenu::with_items(
+            app,
+            &l("menu.mellow"),
+            true,
+            &[&about, &sep_item(app)?, &settings, &check_update, &sep_item(app)?, &services, &sep_item(app)?, &hide, &hide_others, &show_all, &sep_item(app)?, &quit],
+        )?);
     }
 
-    let sep = PredefinedMenuItem::separator(app)?;
-
-    let new = MenuItem::with_id(app, "file.new", &l("file.new"), true, accel("Cmd+T", "Ctrl+Alt+T"))?;
+    // ── 文件 ───────────────────────────────────────────
+    let new_tab = MenuItem::with_id(app, "file.new", &l("file.newTab"), true, accel("Cmd+T", "Ctrl+Alt+T"))?;
     let open = MenuItem::with_id(app, "file.open", &l("file.open"), true, accel("Cmd+O", "Ctrl+O"))?;
+    let reopen_closed = MenuItem::with_id(app, "tabs.reopenClosed", &l("file.recentReopen"), true, accel("Cmd+Shift+T", "Ctrl+Shift+T"))?;
+    let recent_clear = MenuItem::with_id(app, "recent.clear", &l("file.recentClear"), true, None::<&str>)?;
     let quick_open = MenuItem::with_id(app, "quickOpen.open", &l("quickOpen.open"), true, accel("Cmd+Shift+O", "Ctrl+P"))?;
     let open_folder = MenuItem::with_id(app, "workspace.openFolder", &l("workspace.openFolder"), true, None::<&str>)?;
-    let save = MenuItem::with_id(app, "file.save", &l("file.save"), true, accel("Cmd+S", "Ctrl+S"))?;
-    let save_as = MenuItem::with_id(app, "file.saveAs", &l("file.saveAs"), true, accel("Cmd+Shift+S", "Ctrl+Shift+S"))?;
+    let file_info = MenuItem::with_id(app, "file.info", &l("file.info"), true, None::<&str>)?;
     let reveal = MenuItem::with_id(app, "file.revealInFinder", &l("file.reveal"), true, None::<&str>)?;
     let close_tab = MenuItem::with_id(app, "tabs.close", &l("tabs.close"), true, accel("Cmd+W", "Ctrl+W"))?;
-    let print = MenuItem::with_id(app, "file.print", &l("file.print"), true, accel("Cmd+P", "Ctrl+P"))?;
+    let close_all = MenuItem::with_id(app, "file.closeAll", &l("file.closeAll"), true, accel("Cmd+Alt+W", "Ctrl+Shift+W"))?;
+    let save = MenuItem::with_id(app, "file.save", &l("file.save"), true, accel("Cmd+S", "Ctrl+S"))?;
+    let save_as = MenuItem::with_id(app, "file.saveAs", &l("file.saveAs"), true, accel("Cmd+Shift+S", "Ctrl+Shift+S"))?;
+    let save_all = MenuItem::with_id(app, "file.saveAll", &l("file.saveAll"), true, accel("Cmd+Alt+S", "Ctrl+Alt+S"))?;
+    let reload_disk = MenuItem::with_id(app, "file.reloadFromDisk", &l("file.reloadFromDisk"), true, None::<&str>)?;
     let export_pdf = MenuItem::with_id(app, "export.pdf", &l("export.pdf"), true, None::<&str>)?;
     let export_html = MenuItem::with_id(app, "export.html", &l("export.html"), true, None::<&str>)?;
     let export_docx = MenuItem::with_id(app, "export.docx", &l("export.docx"), true, None::<&str>)?;
-    let open_with = MenuItem::with_id(app, "file.openWith", &l("file.openWith"), true, None::<&str>)?;
-    let file_info = MenuItem::with_id(app, "file.info", &l("file.info"), true, None::<&str>)?;
+    let export_menu = Submenu::with_items(app, &l("menu.export"), true, &[&export_pdf, &export_html, &export_docx])?;
+    let print = MenuItem::with_id(app, "file.print", &l("file.print"), true, accel("Cmd+P", "Ctrl+P"))?;
+
+    // 打开最近文件（动态子菜单：前端 set_recent_files 重建）
+    let recent_files: Vec<String> = app
+        .try_state::<RecentFiles>()
+        .map(|s| s.0.lock().unwrap().clone())
+        .unwrap_or_default();
+    let mut recent_items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
+    recent_items.push(Box::new(reopen_closed));
+    if !recent_files.is_empty() {
+        recent_items.push(Box::new(PredefinedMenuItem::separator(app)?));
+        for path in &recent_files {
+            let name = std::path::Path::new(path)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone());
+            recent_items.push(Box::new(MenuItem::with_id(
+                app,
+                format!("recent.file::{path}"),
+                &name,
+                true,
+                None::<&str>,
+            )?));
+        }
+    }
+    recent_items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    recent_items.push(Box::new(recent_clear));
+    let recent_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = recent_items.iter().map(|i| i.as_ref()).collect();
+    let recent_menu = Submenu::with_items(app, &l("file.recent"), true, &recent_refs)?;
+
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    let sep4 = PredefinedMenuItem::separator(app)?;
+    let sep5 = PredefinedMenuItem::separator(app)?;
     let file_menu = Submenu::with_items(
         app,
         &l("menu.file"),
         true,
-        &[&new, &open, &quick_open, &open_folder, &sep, &save, &save_as, &sep, &reveal, &sep, &print, &export_pdf, &export_html, &export_docx, &sep, &open_with, &file_info, &sep, &close_tab],
+        &[
+            &new_tab, &sep1, &open, &recent_menu, &quick_open, &open_folder, &sep2,
+            &file_info, &reveal, &sep3,
+            &close_tab, &close_all, &sep4,
+            &save, &save_as, &save_all, &reload_disk, &sep5,
+            &export_menu, &print,
+        ],
     )?;
     subs.push(file_menu);
 
+    // ── 编辑 ───────────────────────────────────────────
     let undo = PredefinedMenuItem::undo(app, Some(&l("menu.undo")))?;
     let redo = PredefinedMenuItem::redo(app, Some(&l("menu.redo")))?;
     let cut = PredefinedMenuItem::cut(app, Some(&l("menu.cut")))?;
     let copy = PredefinedMenuItem::copy(app, Some(&l("menu.copy")))?;
     let paste = PredefinedMenuItem::paste(app, Some(&l("menu.paste")))?;
     let select_all = PredefinedMenuItem::select_all(app, Some(&l("menu.selectAll")))?;
+    let copy_markdown = MenuItem::with_id(app, "edit.copyMarkdown", &l("edit.copyMarkdown"), true, accel("Cmd+Shift+C", "Ctrl+Shift+C"))?;
+    let paste_plain = MenuItem::with_id(app, "edit.pastePlain", &l("edit.pastePlain"), true, accel("Cmd+Shift+V", "Ctrl+Shift+V"))?;
     let find = MenuItem::with_id(app, "search.find", &l("search.find"), true, accel("Cmd+F", "Ctrl+F"))?;
-    let replace = MenuItem::with_id(app, "search.replace", &l("search.replace"), true, accel("Cmd+H", "Ctrl+H"))?;
-    let edit_menu = Submenu::with_items(app, &l("menu.edit"), true, &[&undo, &redo, &sep, &cut, &copy, &paste, &select_all, &sep, &find, &replace])?;
+    let find_next = MenuItem::with_id(app, "search.findNext", &l("search.findNext"), true, accel("Cmd+G", "Ctrl+G"))?;
+    let find_prev = MenuItem::with_id(app, "search.findPrevious", &l("search.findPrevious"), true, accel("Cmd+Shift+G", "Ctrl+Shift+G"))?;
+    let replace = MenuItem::with_id(app, "search.replace", &l("search.replace"), true, accel("Cmd+Alt+F", "Ctrl+H"))?;
+    let find_sep = PredefinedMenuItem::separator(app)?;
+    let find_menu = Submenu::with_items(app, &l("menu.find"), true, &[&find, &find_next, &find_prev, &find_sep, &replace])?;
+    let sep6 = PredefinedMenuItem::separator(app)?;
+    let sep7 = PredefinedMenuItem::separator(app)?;
+    let edit_menu = Submenu::with_items(
+        app,
+        &l("menu.edit"),
+        true,
+        &[&undo, &redo, &sep6, &cut, &copy, &paste, &select_all, &sep7, &copy_markdown, &paste_plain, &find_menu],
+    )?;
     subs.push(edit_menu);
 
+    // ── 显示 ───────────────────────────────────────────
     let palette = MenuItem::with_id(app, "commandPalette.open", &l("commandPalette.open"), true, accel("Cmd+Shift+P", "Ctrl+Shift+P"))?;
     let focus = MenuItem::with_id(app, "view.focus.cycle", &l("view.focus.cycle"), true, Some("F8"))?;
     let typewriter = MenuItem::with_id(app, "view.typewriter.cycle", &l("view.typewriter.cycle"), true, Some("F9"))?;
+    let toolbar = MenuItem::with_id(app, "view.toolbar.toggle", &l("view.toolbar.toggle"), true, None::<&str>)?;
     let source_toggle = MenuItem::with_id(app, "view.source.toggle", &l("view.source.toggle"), true, accel("Cmd+/", "Ctrl+/"))?;
+    let sidebar_toggle = MenuItem::with_id(app, "view.sidebar.toggle", &l("view.sidebarToggle"), true, accel("Cmd+Shift+L", "Ctrl+Shift+L"))?;
+    let sidebar_outline = MenuItem::with_id(app, "view.sidebar.outline", &l("view.sidebarOutline"), true, accel("Ctrl+Cmd+1", "Ctrl+Shift+1"))?;
+    let sidebar_filelist = MenuItem::with_id(app, "view.sidebar.fileList", &l("view.sidebarFileList"), true, accel("Ctrl+Cmd+2", "Ctrl+Shift+2"))?;
+    let sidebar_filetree = MenuItem::with_id(app, "view.sidebar.fileTree", &l("view.sidebarFileTree"), true, accel("Ctrl+Cmd+3", "Ctrl+Shift+3"))?;
+    let global_search = MenuItem::with_id(app, "search.global", &l("view.search"), true, accel("Cmd+Shift+F", "Ctrl+Shift+F"))?;
+    let zoom_reset = MenuItem::with_id(app, "view.zoomReset", &l("view.zoomReset"), true, accel("Cmd+Shift+0", "Ctrl+Shift+0"))?;
+    let zoom_in = MenuItem::with_id(app, "view.zoomIn", &l("view.zoomIn"), true, accel("Cmd+Shift+=", "Ctrl+Shift+="))?;
+    let zoom_out = MenuItem::with_id(app, "view.zoomOut", &l("view.zoomOut"), true, accel("Cmd+Shift+-", "Ctrl+Shift+-"))?;
+    let always_on_top = MenuItem::with_id(app, "window.alwaysOnTop", &l("view.alwaysOnTop"), true, None::<&str>)?;
     let reader = MenuItem::with_id(app, "reader.open", &l("reader.open"), true, None::<&str>)?;
-    let split = MenuItem::with_id(app, "split.open", &l("split.open"), true, None::<&str>)?;
+    let split = MenuItem::with_id(app, "split.toggle", &l("split.open"), true, None::<&str>)?;
     let fullscreen = MenuItem::with_id(app, "window.fullscreen", &l("window.fullscreen"), true, accel("Ctrl+Cmd+F", "F11"))?;
-    let minimize = MenuItem::with_id(app, "window.minimize", &l("window.minimize"), true, accel("Cmd+M", "Ctrl+M"))?;
-    let maximize = MenuItem::with_id(app, "window.maximizeToggle", &l("window.maximizeToggle"), true, None::<&str>)?;
-    let view_menu = Submenu::with_items(app, &l("menu.view"), true, &[&palette, &sep, &focus, &typewriter, &source_toggle, &sep, &reader, &split, &sep, &fullscreen, &minimize, &maximize])?;
+    let sep8 = PredefinedMenuItem::separator(app)?;
+    let sep9 = PredefinedMenuItem::separator(app)?;
+    let sep10 = PredefinedMenuItem::separator(app)?;
+    let sep11 = PredefinedMenuItem::separator(app)?;
+    let sep12 = PredefinedMenuItem::separator(app)?;
+    let sep13 = PredefinedMenuItem::separator(app)?;
+    let view_menu = Submenu::with_items(
+        app,
+        &l("menu.view"),
+        true,
+        &[
+            &palette, &sep8,
+            &source_toggle, &sep9,
+            &focus, &typewriter, &toolbar, &sep10,
+            &sidebar_toggle, &sidebar_outline, &sidebar_filelist, &sidebar_filetree, &global_search, &sep11,
+            &zoom_reset, &zoom_in, &zoom_out, &sep12,
+            &always_on_top, &sep13,
+            &reader, &split, &fullscreen,
+        ],
+    )?;
     subs.push(view_menu);
 
-    let h1 = MenuItem::with_id(app, "insert.heading", &l("insert.heading"), true, None::<&str>)?;
-    let list = MenuItem::with_id(app, "insert.list", &l("insert.list"), true, None::<&str>)?;
-    let task = MenuItem::with_id(app, "insert.task", &l("insert.task"), true, None::<&str>)?;
-    let quote = MenuItem::with_id(app, "insert.quote", &l("insert.quote"), true, None::<&str>)?;
-    let table = MenuItem::with_id(app, "insert.table", &l("insert.table"), true, accel("Cmd+Opt+T", "Ctrl+Alt+T"))?;
-    let code = MenuItem::with_id(app, "insert.code", &l("insert.code"), true, None::<&str>)?;
-    let math = MenuItem::with_id(app, "insert.math", &l("insert.math"), true, None::<&str>)?;
-    let mermaid = MenuItem::with_id(app, "insert.mermaid", &l("insert.mermaid"), true, None::<&str>)?;
-    let alert = MenuItem::with_id(app, "insert.alert", &l("insert.alert"), true, None::<&str>)?;
-    let image = MenuItem::with_id(app, "insert.image", &l("insert.image"), true, accel("Cmd+Ctrl+I", "Ctrl+Alt+I"))?;
-    let toc = MenuItem::with_id(app, "insert.toc", &l("insert.toc"), true, None::<&str>)?;
-    let insert_menu = Submenu::with_items(app, &l("menu.insert"), true, &[&h1, &list, &task, &quote, &table, &code, &math, &mermaid, &alert, &image, &toc])?;
+    // ── 插入（Mellow 更优保留：slash 命令统一入口）──────
+    let i_heading = MenuItem::with_id(app, "insert.heading", &l("insert.heading"), true, None::<&str>)?;
+    let i_list = MenuItem::with_id(app, "insert.list", &l("insert.list"), true, None::<&str>)?;
+    let i_task = MenuItem::with_id(app, "insert.task", &l("insert.task"), true, None::<&str>)?;
+    let i_quote = MenuItem::with_id(app, "insert.quote", &l("insert.quote"), true, None::<&str>)?;
+    let i_table = MenuItem::with_id(app, "insert.table", &l("insert.table"), true, accel("Cmd+Alt+T", "Ctrl+Alt+T"))?;
+    let i_code = MenuItem::with_id(app, "insert.code", &l("insert.code"), true, None::<&str>)?;
+    let i_math = MenuItem::with_id(app, "insert.math", &l("insert.math"), true, None::<&str>)?;
+    let i_mermaid = MenuItem::with_id(app, "insert.mermaid", &l("insert.mermaid"), true, None::<&str>)?;
+    let i_alert = MenuItem::with_id(app, "insert.alert", &l("insert.alert"), true, None::<&str>)?;
+    let i_image = MenuItem::with_id(app, "insert.image", &l("insert.image"), true, accel("Cmd+Ctrl+I", "Ctrl+Alt+I"))?;
+    let i_toc = MenuItem::with_id(app, "insert.toc", &l("insert.toc"), true, None::<&str>)?;
+    let insert_menu = Submenu::with_items(app, &l("menu.insert"), true, &[&i_heading, &i_list, &i_task, &i_quote, &i_table, &i_code, &i_math, &i_mermaid, &i_alert, &i_image, &i_toc])?;
     subs.push(insert_menu);
 
+    // ── 格式 ───────────────────────────────────────────
     let f_bold = MenuItem::with_id(app, "format.bold", &l("format.bold"), true, accel("Cmd+B", "Ctrl+B"))?;
     let f_italic = MenuItem::with_id(app, "format.italic", &l("format.italic"), true, accel("Cmd+I", "Ctrl+I"))?;
-    let f_strike = MenuItem::with_id(app, "format.strike", &l("format.strike"), true, None::<&str>)?;
-    let f_code = MenuItem::with_id(app, "format.code", &l("format.code"), true, None::<&str>)?;
+    let f_code = MenuItem::with_id(app, "format.code", &l("format.code"), true, accel("Ctrl+`", "Ctrl+`"))?;
+    let f_strike = MenuItem::with_id(app, "format.strike", &l("format.strike"), true, accel("Ctrl+Shift+`", "Ctrl+Shift+`"))?;
     let f_highlight = MenuItem::with_id(app, "format.highlight", &l("format.highlight"), true, None::<&str>)?;
     let f_sup = MenuItem::with_id(app, "format.sup", &l("format.sup"), true, None::<&str>)?;
     let f_sub = MenuItem::with_id(app, "format.sub", &l("format.sub"), true, None::<&str>)?;
     let f_link = MenuItem::with_id(app, "format.link", &l("format.link"), true, accel("Cmd+K", "Ctrl+K"))?;
-    let f_quote = MenuItem::with_id(app, "format.quote", &l("format.quote"), true, None::<&str>)?;
-    let f_list = MenuItem::with_id(app, "format.list", &l("format.list"), true, None::<&str>)?;
-    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_strike, &f_code, &f_highlight, &f_sup, &f_sub, &sep, &f_link, &f_quote, &f_list])?;
+    let f_clear = MenuItem::with_id(app, "format.clear", &l("format.clear"), true, accel("Cmd+\\", "Ctrl+\\"))?;
+    let sep14 = PredefinedMenuItem::separator(app)?;
+    let sep15 = PredefinedMenuItem::separator(app)?;
+    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_code, &f_strike, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &sep15, &f_clear])?;
     subs.push(format_menu);
 
+    // ── 段落 ───────────────────────────────────────────
     let p_h1 = MenuItem::with_id(app, "paragraph.h1", &l("paragraph.h1"), true, accel("Cmd+1", "Ctrl+1"))?;
     let p_h2 = MenuItem::with_id(app, "paragraph.h2", &l("paragraph.h2"), true, accel("Cmd+2", "Ctrl+2"))?;
     let p_h3 = MenuItem::with_id(app, "paragraph.h3", &l("paragraph.h3"), true, accel("Cmd+3", "Ctrl+3"))?;
-    let p_h4 = MenuItem::with_id(app, "paragraph.h4", &l("paragraph.h4"), true, None::<&str>)?;
-    let p_h5 = MenuItem::with_id(app, "paragraph.h5", &l("paragraph.h5"), true, None::<&str>)?;
-    let p_h6 = MenuItem::with_id(app, "paragraph.h6", &l("paragraph.h6"), true, None::<&str>)?;
-    let p_normal = MenuItem::with_id(app, "paragraph.normal", &l("paragraph.normal"), true, None::<&str>)?;
-    let paragraph_menu = Submenu::with_items(app, &l("menu.paragraph"), true, &[&p_h1, &p_h2, &p_h3, &p_h4, &p_h5, &p_h6, &sep, &p_normal])?;
+    let p_h4 = MenuItem::with_id(app, "paragraph.h4", &l("paragraph.h4"), true, accel("Cmd+4", "Ctrl+4"))?;
+    let p_h5 = MenuItem::with_id(app, "paragraph.h5", &l("paragraph.h5"), true, accel("Cmd+5", "Ctrl+5"))?;
+    let p_h6 = MenuItem::with_id(app, "paragraph.h6", &l("paragraph.h6"), true, accel("Cmd+6", "Ctrl+6"))?;
+    let p_normal = MenuItem::with_id(app, "paragraph.normal", &l("paragraph.normal"), true, accel("Cmd+0", "Ctrl+0"))?;
+    let p_up = MenuItem::with_id(app, "paragraph.headingUp", &l("paragraph.headingUp"), true, accel("Cmd+=", "Ctrl+="))?;
+    let p_down = MenuItem::with_id(app, "paragraph.headingDown", &l("paragraph.headingDown"), true, accel("Cmd+-", "Ctrl+-"))?;
+    // 表格/目录与插入菜单复用同一 MenuItem 实例（muda 同项可挂多菜单，事件 id 一致）
+    let p_math = MenuItem::with_id(app, "format.mathBlock", &l("format.mathBlock"), true, accel("Cmd+Alt+B", "Ctrl+Alt+B"))?;
+    let p_code = MenuItem::with_id(app, "format.codeBlock", &l("format.codeBlock"), true, accel("Cmd+Alt+C", "Ctrl+Alt+C"))?;
+    let a_note = MenuItem::with_id(app, "alert.note", &l("alert.note"), true, None::<&str>)?;
+    let a_tip = MenuItem::with_id(app, "alert.tip", &l("alert.tip"), true, None::<&str>)?;
+    let a_important = MenuItem::with_id(app, "alert.important", &l("alert.important"), true, None::<&str>)?;
+    let a_warning = MenuItem::with_id(app, "alert.warning", &l("alert.warning"), true, None::<&str>)?;
+    let a_caution = MenuItem::with_id(app, "alert.caution", &l("alert.caution"), true, None::<&str>)?;
+    let alert_menu = Submenu::with_items(app, &l("insert.alertMenu"), true, &[&a_note, &a_tip, &a_important, &a_warning, &a_caution])?;
+    let p_quote = MenuItem::with_id(app, "format.quote", &l("format.quote"), true, accel("Cmd+Alt+Q", "Ctrl+Alt+Q"))?;
+    let p_ordered = MenuItem::with_id(app, "format.orderedList", &l("format.orderedList"), true, accel("Cmd+Alt+O", "Ctrl+Alt+O"))?;
+    let p_list = MenuItem::with_id(app, "format.list", &l("format.list"), true, accel("Cmd+Alt+U", "Ctrl+Alt+U"))?;
+    let p_task = MenuItem::with_id(app, "format.taskList", &l("format.taskList"), true, accel("Cmd+Alt+X", "Ctrl+Alt+X"))?;
+    let p_task_toggle = MenuItem::with_id(app, "paragraph.taskToggle", &l("paragraph.taskToggle"), true, accel("Ctrl+X", "Ctrl+Alt+X"))?;
+    let p_footnote = MenuItem::with_id(app, "paragraph.footnote", &l("paragraph.footnote"), true, accel("Cmd+Alt+R", "Ctrl+Alt+R"))?;
+    let p_hr = MenuItem::with_id(app, "paragraph.horizontalRule", &l("paragraph.horizontalRule"), true, accel("Cmd+Alt+-", "Ctrl+Alt+-"))?;
+    let p_yaml = MenuItem::with_id(app, "paragraph.yamlFrontMatter", &l("paragraph.yamlFrontMatter"), true, None::<&str>)?;
+    let sep16 = PredefinedMenuItem::separator(app)?;
+    let sep17 = PredefinedMenuItem::separator(app)?;
+    let sep18 = PredefinedMenuItem::separator(app)?;
+    let sep19 = PredefinedMenuItem::separator(app)?;
+    let sep20 = PredefinedMenuItem::separator(app)?;
+    let paragraph_menu = Submenu::with_items(
+        app,
+        &l("menu.paragraph"),
+        true,
+        &[
+            &p_h1, &p_h2, &p_h3, &p_h4, &p_h5, &p_h6, &sep16,
+            &p_normal, &sep17,
+            &p_up, &p_down, &sep18,
+            &i_table, &p_math, &p_code, &alert_menu, &p_quote, &sep19,
+            &p_ordered, &p_list, &p_task, &p_task_toggle, &sep20,
+            &p_footnote, &p_hr, &i_toc, &p_yaml,
+        ],
+    )?;
     subs.push(paragraph_menu);
 
-    let theme_light = MenuItem::with_id(app, "theme.apply.mellow-light", &l("theme.mellow-light"), true, None::<&str>)?;
-    let theme_dark = MenuItem::with_id(app, "theme.apply.mellow-dark", &l("theme.mellow-dark"), true, None::<&str>)?;
-    let theme_system = MenuItem::with_id(app, "theme.mode.system", &l("theme.system"), true, None::<&str>)?;
-    let theme_menu = Submenu::with_items(app, &l("menu.theme"), true, &[&theme_light, &theme_dark, &sep, &theme_system])?;
+    // ── 主题（B2-5/B3-2：radio 选中态 = 当前生效主题；跟随系统 = mode 勾选）──
+    let theme_ids = ["mellow-light", "mellow-dark", "paper", "git-light", "git-dark", "newsprint"];
+    let theme_state = app
+        .try_state::<ThemeSelection>()
+        .map(|s| s.0.lock().unwrap().clone())
+        .unwrap_or_default();
+    let mut theme_items: Vec<CheckMenuItem<tauri::Wry>> = Vec::new();
+    for tid in theme_ids {
+        theme_items.push(CheckMenuItem::with_id(
+            app,
+            format!("theme.apply.{tid}"),
+            &l(&format!("theme.{tid}")),
+            true,
+            theme_state.active_theme_id == tid,
+            None::<&str>,
+        )?);
+    }
+    let theme_system = CheckMenuItem::with_id(app, "theme.mode.system", &l("theme.system"), true, theme_state.mode == "system", None::<&str>)?;
+    let theme_css = MenuItem::with_id(app, "file.openUserCss", &l("theme.openUserCss"), true, None::<&str>)?;
+    let theme_sep = PredefinedMenuItem::separator(app)?;
+    let theme_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = theme_items
+        .iter()
+        .map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
+        .chain([(&theme_sep as &dyn tauri::menu::IsMenuItem<tauri::Wry>), &theme_system, &theme_css])
+        .collect();
+    let theme_menu = Submenu::with_items(app, &l("menu.theme"), true, &theme_refs)?;
     subs.push(theme_menu);
 
+    // ── 窗口（Typora 独立窗口菜单）─────────────────────
+    let w_minimize = MenuItem::with_id(app, "window.minimize", &l("window.minimize"), true, accel("Cmd+M", "Ctrl+M"))?;
+    let w_zoom = MenuItem::with_id(app, "window.maximizeToggle", &l("window.maximizeToggle"), true, None::<&str>)?;
+    let w_tab_prev = MenuItem::with_id(app, "tabs.prev", &l("tabs.prev"), true, None::<&str>)?;
+    let w_tab_next = MenuItem::with_id(app, "tabs.next", &l("tabs.next"), true, None::<&str>)?;
+    let sep21 = PredefinedMenuItem::separator(app)?;
+    let window_menu = Submenu::with_items(app, &l("menu.window"), true, &[&w_minimize, &w_zoom, &sep21, &w_tab_prev, &w_tab_next])?;
+    subs.push(window_menu);
+
+    // ── 帮助 ───────────────────────────────────────────
     let help_cheatsheet = MenuItem::with_id(app, "help.cheatsheet", &l("help.cheatsheet"), true, None::<&str>)?;
     let help_menu = Submenu::with_items(app, &l("menu.help"), true, &[&help_cheatsheet])?;
     subs.push(help_menu);
@@ -233,12 +500,14 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     Menu::with_items(app, &refs)
 }
 
+/// separator 便捷构造（应用菜单条目组）
+fn sep_item(app: &AppHandle) -> tauri::Result<PredefinedMenuItem<tauri::Wry>> {
+    PredefinedMenuItem::separator(app)
+}
+
 /// 安装菜单（三平台；macOS 含应用菜单）
 pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
-    let locale = app
-        .try_state::<MenuLocale>()
-        .map(|s| s.0.lock().unwrap().clone())
-        .unwrap_or_else(|| "zh-CN".to_string());
+    let locale = current_locale(app);
     let is_mac = cfg!(target_os = "macos");
     let menu = build_menu(app, &locale, is_mac)?;
     app.set_menu(menu)?;
@@ -257,8 +526,28 @@ pub fn set_menu_locale(app: AppHandle, locale: String) -> Result<(), String> {
     Ok(())
 }
 
-/// macOS Services：系统会自动在 Application 菜单挂载「服务」子菜单。
-/// 保持 no-op：系统默认行为即可（NSServices 声明为 P1，见 spec）。
-pub fn attach_services(_app: &AppHandle) {
-    /* no-op */
+/// 前端 recentFiles 变化 → 重建菜单（「打开最近文件」动态子菜单）
+#[tauri::command]
+pub fn set_recent_files(app: AppHandle, files: Vec<String>) -> Result<(), String> {
+    if let Some(state) = app.try_state::<RecentFiles>() {
+        *state.0.lock().unwrap() = files;
+    }
+    let locale = current_locale(&app);
+    let is_mac = cfg!(target_os = "macos");
+    let menu = build_menu(&app, &locale, is_mac).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 前端主题选中态变化 → 重建菜单（主题菜单 radio；B2-5/B3-2）
+#[tauri::command]
+pub fn set_theme_selection(app: AppHandle, mode: String, active_theme_id: String) -> Result<(), String> {
+    if let Some(state) = app.try_state::<ThemeSelection>() {
+        *state.0.lock().unwrap() = ThemeSelectionState { mode, active_theme_id };
+    }
+    let locale = current_locale(&app);
+    let is_mac = cfg!(target_os = "macos");
+    let menu = build_menu(&app, &locale, is_mac).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+    Ok(())
 }

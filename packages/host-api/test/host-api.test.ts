@@ -194,6 +194,10 @@ describe('window', () => {
     expect(await host.window.isMaximized()).toEqual({ ok: true, value: false });
     await host.window.setFullscreen(true);
     expect(await host.window.isFullscreen()).toEqual({ ok: true, value: true });
+    await host.window.setAlwaysOnTop(true);
+    expect(await host.window.isAlwaysOnTop()).toEqual({ ok: true, value: true });
+    await host.window.setAlwaysOnTop(false);
+    expect(await host.window.isAlwaysOnTop()).toEqual({ ok: true, value: false });
     await host.window.minimize();
     expect(await host.window.close()).toEqual({ ok: true, value: undefined });
   });

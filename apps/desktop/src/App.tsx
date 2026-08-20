@@ -251,11 +251,24 @@ export default function App() {
     hostRef.current?.focus();
   }, []);
   /** 引擎查找/替换桥（菜单 → iframe __MELLOW_SEARCH_API__） */
-  const engineSearch = useCallback((mode: 'find' | 'replace') => {
+  const engineSearch = useCallback((mode: 'find' | 'replace' | 'findNext' | 'findPrevious') => {
     const frame = containerRef.current?.querySelector('iframe');
-    const win = frame?.contentWindow as (Window & { __MELLOW_SEARCH_API__?: { openFind: () => void; openReplace: () => void } }) | null;
-    if (mode === 'find') win?.__MELLOW_SEARCH_API__?.openFind();
-    else win?.__MELLOW_SEARCH_API__?.openReplace();
+    const win = frame?.contentWindow as (Window & { __MELLOW_SEARCH_API__?: { openFind: () => void; openReplace: () => void; findNext: () => void; findPrevious: () => void } }) | null;
+    const api = win?.__MELLOW_SEARCH_API__;
+    if (api === undefined) return;
+    if (mode === 'find') api.openFind();
+    else if (mode === 'replace') api.openReplace();
+    else if (mode === 'findNext') api.findNext();
+    else api.findPrevious();
+    hostRef.current?.focus();
+  }, []);
+
+  /** 引擎剪贴板桥（菜单「复制为 Markdown / 粘贴为纯文本」→ iframe __MELLOW_CLIPBOARD_API__） */
+  const engineClipboard = useCallback((action: 'copyMarkdown' | 'pastePlain') => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_CLIPBOARD_API__?: { copyAsMarkdown: () => boolean; pastePlain: () => void } }) | null;
+    if (action === 'copyMarkdown') win?.__MELLOW_CLIPBOARD_API__?.copyAsMarkdown();
+    else win?.__MELLOW_CLIPBOARD_API__?.pastePlain();
     hostRef.current?.focus();
   }, []);
 
@@ -2335,6 +2348,52 @@ export default function App() {
     return window.confirm(t('dialog.closeTabsDirty', { names }));
   }, []);
 
+  /** 保存全部（Typora 文件→保存全部）：active 走 handleSave（含冲突校验），其余按 tab.content 落盘 */
+  const handleSaveAll = useCallback(async () => {
+    const documents = documentsRef.current;
+    if (!documents) return;
+    await handleSave(); // active tab 先存（e2e 主路径）
+    const activeId = tabsRef.current.active?.id;
+    for (const tab of tabsRef.current.all) {
+      if (tab.id === activeId || !tab.dirty || tab.path === null) continue;
+      const result = await documents.save(tab.path, tab.content, { encoding: tab.encoding, eol: tab.eol });
+      if (!result.ok) {
+        setStatusText(t('msg.saveFailed', { error: result.error.message }));
+        continue;
+      }
+      tabsRef.current.update(tab.id, {
+        dirty: false,
+        diskState: result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
+          ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
+          : null,
+      });
+    }
+    refreshTabsState();
+  }, [handleSave, refreshTabsState]);
+
+  /** 从磁盘重新加载（Typora 文件→从磁盘重新加载）：放弃本地未保存修改，覆盖为磁盘版本 */
+  const handleReloadFromDisk = useCallback(async () => {
+    const host = hostRef.current;
+    const documents = documentsRef.current;
+    const path = filePathRef.current;
+    if (!host || !documents || path === null) return;
+    const r = await documents.readPath(path);
+    if (!r.ok) {
+      setStatusText(t('msg.reloadFailed', { error: r.error.message }));
+      return;
+    }
+    docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
+    diskStateRef.current = r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined
+      ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
+      : null;
+    await host.open(r.value.content, undefined, true, r.value.eol);
+    setDirty(false);
+    tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
+    refreshTabsState();
+    setStatusText(t('msg.reloadedDisk'));
+    refreshStats(host);
+  }, [currentTabPatch, refreshStats, refreshTabsState, setDirty]);
+
   const ensureOneTab = useCallback(async () => {
     if (tabsRef.current.all.length > 0) return tabsRef.current.active;
     const tab = tabsRef.current.open({ path: null, title: t('tab.untitled'), content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: '\n', diskState: null });
@@ -2350,6 +2409,16 @@ export default function App() {
     refreshTabsState();
     if (tab) await applyTab(tab);
   }, [activeTabId, applyTab, refreshTabsState, syncActiveTabFromEditor]);
+
+  /** 标签页循环切换（Typora 窗口→显示下一个/上一个标签页） */
+  const handleCycleTab = useCallback(async (delta: 1 | -1) => {
+    const all = tabsRef.current.all;
+    if (all.length < 2) return;
+    const idx = tabsRef.current.activeIndex;
+    if (idx < 0) return;
+    const next = all[(idx + delta + all.length) % all.length];
+    await handleSelectTab(next.id);
+  }, [handleSelectTab]);
 
   const handleCloseTab = useCallback(async (id: string) => {
     syncActiveTabFromEditor();
@@ -2383,6 +2452,17 @@ export default function App() {
     tabsRef.current.closeRight(active.id);
     refreshTabsState();
   }, [confirmCloseTabs, refreshTabsState, syncActiveTabFromEditor]);
+
+  /** 全部关闭（Typora 文件→全部关闭 ⌥⌘W）：关全部标签后回落到单个未命名标签 */
+  const handleCloseAll = useCallback(async () => {
+    if (tabsRef.current.all.length === 0) return;
+    syncActiveTabFromEditor();
+    if (!confirmCloseTabs(tabsRef.current.all)) return;
+    for (const tab of [...tabsRef.current.all]) tabsRef.current.close(tab.id);
+    refreshTabsState();
+    const next = tabsRef.current.active ?? await ensureOneTab();
+    if (next) await applyTab(next);
+  }, [applyTab, confirmCloseTabs, ensureOneTab, refreshTabsState, syncActiveTabFromEditor]);
 
   const handleReopenClosed = useCallback(async () => {
     syncActiveTabFromEditor();
@@ -2551,6 +2631,13 @@ export default function App() {
       { id: 'tabs.closeOthers', localizedTitle: { zh: '关闭其他', en: 'Close Others' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseOthers() },
       { id: 'tabs.closeRight', localizedTitle: { zh: '关闭右侧', en: 'Close Right' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseRight() },
       { id: 'tabs.reopenClosed', localizedTitle: { zh: '重开关闭', en: 'Reopen Closed' }, category: 'file', shortcut: { mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' }, context: { scope: 'global' }, enabled: always, execute: () => void handleReopenClosed() },
+      // B2 文件菜单补全（Typora 对齐：全部关闭 / 保存全部 / 从磁盘重新加载）
+      { id: 'file.closeAll', localizedTitle: { zh: '全部关闭', en: 'Close All' }, category: 'file', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' }, context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 0, execute: () => void handleCloseAll() },
+      { id: 'file.saveAll', localizedTitle: { zh: '保存全部打开的文件…', en: 'Save All Open Files…' }, category: 'file', shortcut: { mac: 'Cmd+Alt+S', winLinux: 'Ctrl+Alt+S' }, context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAll() },
+      { id: 'file.reloadFromDisk', localizedTitle: { zh: '从磁盘重新加载', en: 'Reload from Disk' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleReloadFromDisk() },
+      // B2 窗口菜单补全（Typora 对齐：显示下一个/上一个标签页）
+      { id: 'tabs.next', localizedTitle: { zh: '显示下一个标签页', en: 'Show Next Tab' }, category: 'window', shortcut: { mac: 'Ctrl+Tab', winLinux: 'Ctrl+Tab' }, context: { scope: 'global' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCycleTab(1) },
+      { id: 'tabs.prev', localizedTitle: { zh: '显示上一个标签页', en: 'Show Previous Tab' }, category: 'window', shortcut: { mac: 'Ctrl+Shift+Tab', winLinux: 'Ctrl+Shift+Tab' }, context: { scope: 'global' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCycleTab(-1) },
       { id: 'workspace.openFolder', localizedTitle: { zh: '打开文件夹…', en: 'Open Folder…' }, category: 'workspace', context: { scope: 'global' }, enabled: always, execute: () => void chooseFileTreeRoot() },
       { id: 'workspace.refresh', localizedTitle: { zh: '刷新文件', en: 'Refresh Files' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void refreshFilesSidebar() },
       { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', shortcut: { mac: 'Cmd+Shift+O', winLinux: 'Ctrl+P' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
@@ -2603,6 +2690,8 @@ export default function App() {
       { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
       { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },
       { id: 'window.fullscreen', localizedTitle: { zh: '切换全屏', en: 'Toggle Fullscreen' }, category: 'system', shortcut: { mac: 'Ctrl+Cmd+F', winLinux: 'F11' }, context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isFullscreen().then((r) => { if (r.ok) void windowServiceRef.current?.setFullscreen(!r.value); }); } },
+      // B2 显示菜单补全（Typora 对齐：保持窗口在最前端，toggle）
+      { id: 'window.alwaysOnTop', localizedTitle: { zh: '保持窗口在最前端', en: 'Keep Window on Top' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isAlwaysOnTop().then((r) => { if (r.ok) void windowServiceRef.current?.setAlwaysOnTop(!r.value); }); } },
       { id: 'window.close', localizedTitle: { zh: '关闭窗口', en: 'Close Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.close(); } },
       { id: 'file.revealInFinder', localizedTitle: { zh: '在 Finder 中显示', en: 'Reveal in Finder' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => { if (filePathRef.current !== null) void handleTreeReveal(filePathRef.current); } },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
@@ -2618,13 +2707,19 @@ export default function App() {
       { id: 'insert.list', localizedTitle: { zh: '列表', en: 'List' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['ul', 'lb'] } }, enabled: always, execute: () => replaceSlashTrigger('- ') },
       { id: 'insert.task', localizedTitle: { zh: '任务', en: 'Task' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['todo', 'rw'] } }, enabled: always, execute: () => replaceSlashTrigger('- [ ] ') },
       { id: 'insert.quote', localizedTitle: { zh: '引用', en: 'Quote' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['blockquote', 'yy'] } }, enabled: always, execute: () => replaceSlashTrigger('> ') },
-      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, shortcut: { mac: 'Cmd+Opt+T', winLinux: 'Ctrl+Alt+T' }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
+      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, shortcut: { mac: 'Cmd+Alt+T', winLinux: 'Ctrl+Alt+T' }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
       { id: 'insert.code', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['fence', 'dm'] } }, enabled: always, execute: () => replaceSlashTrigger('```\n\n```') },
       { id: 'insert.math', localizedTitle: { zh: '数学公式', en: 'Math' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['formula', 'sx'] } }, enabled: always, execute: () => replaceSlashTrigger('$$\n\n$$') },
       { id: 'insert.mermaid', localizedTitle: { zh: 'Mermaid 图表', en: 'Mermaid Diagram' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['diagram', 'tt'] } }, enabled: always, execute: () => replaceSlashTrigger('```mermaid\ngraph TD\n  A --> B\n```') },
       { id: 'insert.alert', localizedTitle: { zh: '提示框', en: 'Alert' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['note', 'jg'] } }, enabled: always, execute: () => replaceSlashTrigger('> [!NOTE]\n> ') },
       { id: 'insert.image', localizedTitle: { zh: '图片', en: 'Image' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['img', 'tp'] } }, shortcut: { mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Alt+I' }, enabled: always, execute: () => replaceSlashTrigger('![]( )') },
       { id: 'insert.toc', localizedTitle: { zh: '目录', en: 'Table of Contents' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['toc', 'ml'] } }, enabled: always, execute: () => replaceSlashTrigger('\n\n[toc]\n\n') },
+      // B2 段落菜单补全：警告框 5 类（Typora「段落 → 警告框」子菜单，GFM alert）
+      { id: 'alert.note', localizedTitle: { zh: '提醒内容', en: 'Note' }, category: 'insert', context: { scope: 'document' }, enabled: always, execute: () => replaceSlashTrigger('> [!NOTE]\n> ') },
+      { id: 'alert.tip', localizedTitle: { zh: '建议内容', en: 'Tip' }, category: 'insert', context: { scope: 'document' }, enabled: always, execute: () => replaceSlashTrigger('> [!TIP]\n> ') },
+      { id: 'alert.important', localizedTitle: { zh: '重要内容', en: 'Important' }, category: 'insert', context: { scope: 'document' }, enabled: always, execute: () => replaceSlashTrigger('> [!IMPORTANT]\n> ') },
+      { id: 'alert.warning', localizedTitle: { zh: '警告内容', en: 'Warning' }, category: 'insert', context: { scope: 'document' }, enabled: always, execute: () => replaceSlashTrigger('> [!WARNING]\n> ') },
+      { id: 'alert.caution', localizedTitle: { zh: '注意内容', en: 'Caution' }, category: 'insert', context: { scope: 'document' }, enabled: always, execute: () => replaceSlashTrigger('> [!CAUTION]\n> ') },
       { id: 'fileTree.newFile', localizedTitle: { zh: '新文件', en: 'New File' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFile() },
       { id: 'fileTree.newFolder', localizedTitle: { zh: '新文件夹', en: 'New Folder' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeNewFolder() },
       { id: 'fileTree.rename', localizedTitle: { zh: '重命名', en: 'Rename' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeRename() },
@@ -2635,20 +2730,35 @@ export default function App() {
       { id: 'fileTree.copyPath', localizedTitle: { zh: '复制路径', en: 'Copy Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(false) },
       { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
       { id: 'updater.check', localizedTitle: { zh: '检查更新', en: 'Check for Updates' }, category: 'app', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => void runUpdateCheck() },
+      // B2 文件菜单补全：清除最近文件（「打开最近文件」子菜单）
+      { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Recent Files' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { setRecentFiles([]); try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* noop */ } } },
       // 编辑：查找 / 替换（Typora 对齐；Ctrl+H 由引擎 keymap 处理）
-      { id: 'search.find', localizedTitle: { zh: '查找…', en: 'Find…' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => engineSearch('find') },
-      { id: 'search.replace', localizedTitle: { zh: '替换…', en: 'Replace…' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => engineSearch('replace') },
+      { id: 'search.find', localizedTitle: { zh: '查找…', en: 'Find…' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+F', winLinux: 'Ctrl+F' }, enabled: always, execute: () => engineSearch('find') },
+      // Typora：替换 ⌥⌘F（⌘H 与 macOS 系统隐藏冲突，作为别名兜底）；Win/Linux Ctrl+H
+      { id: 'search.replace', localizedTitle: { zh: '替换…', en: 'Replace…' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H' }, shortcutAliases: [{ mac: 'Cmd+H' }], enabled: always, execute: () => engineSearch('replace') },
+      // B2 编辑菜单补全（Typora 对齐：查找下一个/上一个 ⌘G / ⇧⌘G）
+      { id: 'search.findNext', localizedTitle: { zh: '查找下一个', en: 'Find Next' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' }, enabled: always, execute: () => engineSearch('findNext') },
+      { id: 'search.findPrevious', localizedTitle: { zh: '查找上一个', en: 'Find Previous' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+G', winLinux: 'Ctrl+Shift+G' }, enabled: always, execute: () => engineSearch('findPrevious') },
+      // B2 编辑菜单补全（Typora 对齐：复制为 Markdown ⇧⌘C / 粘贴为纯文本 ⇧⌘V）
+      { id: 'edit.copyMarkdown', localizedTitle: { zh: '复制为 Markdown', en: 'Copy as Markdown' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+C', winLinux: 'Ctrl+Shift+C' }, enabled: always, execute: () => engineClipboard('copyMarkdown') },
+      { id: 'edit.pastePlain', localizedTitle: { zh: '粘贴为纯文本', en: 'Paste as Plain Text' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+V', winLinux: 'Ctrl+Shift+V' }, enabled: always, execute: () => engineClipboard('pastePlain') },
       // 格式（Typora 对齐；引擎 applyInlineFormat / 空选区成对插入）
       { id: 'format.bold', localizedTitle: { zh: '粗体', en: 'Bold' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+B', winLinux: 'Ctrl+B' }, enabled: always, execute: () => engineFormat('bold') },
       { id: 'format.italic', localizedTitle: { zh: '斜体', en: 'Italic' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+I', winLinux: 'Ctrl+I' }, enabled: always, execute: () => engineFormat('italic') },
-      { id: 'format.strike', localizedTitle: { zh: '删除线', en: 'Strikethrough' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('strike') },
-      { id: 'format.code', localizedTitle: { zh: '行内代码', en: 'Inline Code' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('code') },
+      { id: 'format.strike', localizedTitle: { zh: '删除线', en: 'Strikethrough' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+Shift+`', winLinux: 'Ctrl+Shift+`' }, enabled: always, execute: () => engineFormat('strike') },
+      { id: 'format.code', localizedTitle: { zh: '行内代码', en: 'Inline Code' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+`', winLinux: 'Ctrl+`' }, enabled: always, execute: () => engineFormat('code') },
       { id: 'format.link', localizedTitle: { zh: '链接…', en: 'Link…' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+K', winLinux: 'Ctrl+K' }, enabled: always, execute: () => engineFormat('link') },
-      { id: 'format.quote', localizedTitle: { zh: '引用', en: 'Blockquote' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('quote') },
-      { id: 'format.list', localizedTitle: { zh: '列表', en: 'Bulleted List' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('list') },
+      { id: 'format.quote', localizedTitle: { zh: '引用', en: 'Blockquote' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+Q', winLinux: 'Ctrl+Alt+Q' }, enabled: always, execute: () => engineFormat('quote') },
+      { id: 'format.list', localizedTitle: { zh: '列表', en: 'Bulleted List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+U', winLinux: 'Ctrl+Alt+U' }, enabled: always, execute: () => engineFormat('list') },
+      { id: 'format.orderedList', localizedTitle: { zh: '有序列表', en: 'Ordered List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+O', winLinux: 'Ctrl+Alt+O' }, enabled: always, execute: () => engineFormat('orderedList') },
+      { id: 'format.taskList', localizedTitle: { zh: '任务列表', en: 'Task List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+X', winLinux: 'Ctrl+Alt+X' }, enabled: always, execute: () => engineFormat('taskList') },
+      { id: 'format.codeBlock', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+C', winLinux: 'Ctrl+Alt+C' }, enabled: always, execute: () => engineFormat('codeBlock') },
+      { id: 'format.mathBlock', localizedTitle: { zh: '数学公式块', en: 'Math Block' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+B', winLinux: 'Ctrl+Alt+B' }, enabled: always, execute: () => engineFormat('mathBlock') },
       { id: 'format.highlight', localizedTitle: { zh: '高亮', en: 'Highlight' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('highlight') },
       { id: 'format.sup', localizedTitle: { zh: '上标', en: 'Superscript' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('sup') },
       { id: 'format.sub', localizedTitle: { zh: '下标', en: 'Subscript' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('sub') },
+      // 清除样式（Typora Format→清除样式 ⌘\）：选区行内 marker + 链接语法剥除
+      { id: 'format.clear', localizedTitle: { zh: '清除样式', en: 'Clear Formatting' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' }, enabled: always, execute: () => engineFormat('clear') },
       // 段落（标题层级 / 段落）
       { id: 'paragraph.h1', localizedTitle: { zh: '一级标题', en: 'Heading 1' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+1', winLinux: 'Ctrl+1' }, enabled: always, execute: () => engineFormat('h1') },
       { id: 'paragraph.h2', localizedTitle: { zh: '二级标题', en: 'Heading 2' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+2', winLinux: 'Ctrl+2' }, enabled: always, execute: () => engineFormat('h2') },
@@ -2828,12 +2938,19 @@ export default function App() {
   }, []);
 
   // macOS Menu Bar → 统一 Command Registry（menu 事件只 dispatch 命令，不做平台业务逻辑）
+  // B2：recent.file::<path>（「打开最近文件」动态子菜单项）在此拦截按路径打开，
+  // 其余 id 一律走 dispatchCommand（与前端注册命令一一对应）。
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
     let unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(async ({ listen }) => {
       unlisten = await listen<string>('mellow-menu-command', (event) => {
-        void dispatchCommand(event.payload, 'menu');
+        const id = event.payload;
+        if (id.startsWith('recent.file::')) {
+          void openPathInTab(id.slice('recent.file::'.length));
+          return;
+        }
+        void dispatchCommand(id, 'menu');
       });
     }).catch(() => {
       /* 非 Tauri 环境 */
@@ -2841,7 +2958,27 @@ export default function App() {
     return () => {
       unlisten?.();
     };
-  }, [dispatchCommand]);
+  }, [dispatchCommand, openPathInTab]);
+
+  // 最近文件 → 原生菜单「打开最近文件」子菜单（B2：recentFiles 变化触发 set_recent_files 重建）
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('set_recent_files', { files: recentFiles.map((f) => f.path) }))
+      .catch(() => {
+        /* 非 Tauri / 菜单不可用 */
+      });
+  }, [recentFiles]);
+
+  // 主题选中态 → 原生菜单「主题」radio（B2-5/B3-2：themeSettings/activeTheme 变化触发 set_theme_selection 重建）
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('set_theme_selection', { mode: themeSettings.mode, activeThemeId: activeTheme.id }))
+      .catch(() => {
+        /* 非 Tauri / 菜单不可用 */
+      });
+  }, [themeSettings.mode, activeTheme.id]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 

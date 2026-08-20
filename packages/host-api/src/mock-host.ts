@@ -33,6 +33,7 @@ export interface MockHostState {
   windowFocused: boolean;
   windowMaximized: boolean;
   windowFullscreen: boolean;
+  windowAlwaysOnTop: boolean;
   /** fs.open 对话框预设路径；null 表示用户取消 */
   nextOpenPath: string | null;
   /** fs.save 对话框预设路径（path 为 null 时使用）；null 表示用户取消 */
@@ -80,6 +81,7 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     windowFocused: initial?.windowFocused ?? true,
     windowMaximized: initial?.windowMaximized ?? false,
     windowFullscreen: initial?.windowFullscreen ?? false,
+    windowAlwaysOnTop: initial?.windowAlwaysOnTop ?? false,
     nextOpenPath: initial?.nextOpenPath ?? null,
     // 注意：null 表示「另存为对话框取消」，必须保留（不能用 ?? 替换默认值）
     nextSavePath: initial?.nextSavePath === undefined ? '/untitled.md' : initial.nextSavePath,
@@ -399,6 +401,11 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
         return ok(undefined);
       },
       isFullscreen: async (): Promise<Result<boolean>> => ok(state.windowFullscreen),
+      setAlwaysOnTop: async (on: boolean): Promise<Result<void>> => {
+        state.windowAlwaysOnTop = on;
+        return ok(undefined);
+      },
+      isAlwaysOnTop: async (): Promise<Result<boolean>> => ok(state.windowAlwaysOnTop),
       close: async (): Promise<Result<void>> => ok(undefined),
     },
 

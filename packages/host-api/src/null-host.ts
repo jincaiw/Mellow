@@ -61,6 +61,8 @@ export function createNullHost(): DesktopHost {
       isMaximized: notImplemented('window.isMaximized'),
       setFullscreen: notImplemented('window.setFullscreen'),
       isFullscreen: notImplemented('window.isFullscreen'),
+      setAlwaysOnTop: notImplemented('window.setAlwaysOnTop'),
+      isAlwaysOnTop: notImplemented('window.isAlwaysOnTop'),
       close: notImplemented('window.close'),
     },
     watcher: { watch: notImplemented('watcher.watch') },

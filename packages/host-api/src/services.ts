@@ -166,6 +166,8 @@ export interface WindowService {
   isMaximized(): Promise<Result<boolean>>;
   setFullscreen(fullscreen: boolean): Promise<Result<void>>;
   isFullscreen(): Promise<Result<boolean>>;
+  setAlwaysOnTop(on: boolean): Promise<Result<void>>;
+  isAlwaysOnTop(): Promise<Result<boolean>>;
   close(): Promise<Result<void>>;
 }
 

@@ -114,6 +114,24 @@ export const tauriWindowService: WindowService = {
       return err({ code: 'io', message: String(e) });
     }
   },
+  setAlwaysOnTop: async (on) => {
+    try {
+      const win = await windowHandle();
+      await win?.setAlwaysOnTop(on);
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
+  isAlwaysOnTop: async () => {
+    try {
+      const win = await windowHandle();
+      const onTop = await win?.isAlwaysOnTop();
+      return ok(onTop === undefined ? false : onTop);
+    } catch (e) {
+      return err({ code: 'io', message: String(e) });
+    }
+  },
   close: async () => {
     try {
       const win = await windowHandle();
