@@ -160,6 +160,115 @@ describe('ImageFileOpsService.copyAll / downloadRemote', () => {
   });
 });
 
+describe('ImageFileOpsService.uploadAll（B5 / PRD §55）', () => {
+  /** 注入 mock uploader 的 setUp 扩展（uploads 原样返回 → 长度由用例控制） */
+  function setUpUpload(doc: string, docPath: string | null, files: Array<[string, string]>, uploads: string[] | null, channel = 'picgo-http') {
+    const base = setUp(doc, docPath, files);
+    const uploaded: string[] = [];
+    const ops = new ImageFileOpsService({
+      fs: base.fs,
+      editor: base.editor.bridge,
+      history: base.history,
+      uploader: {
+        uploadImages: async (input: string[]) => {
+          if (uploads === null) {
+            return { ok: false as const, error: { code: 'io' as const, message: 'upload service down' } };
+          }
+          uploaded.push(...input);
+          return { ok: true as const, value: [...uploads] };
+        },
+      },
+      uploadOptions: () => ({ channel: channel as 'picgo-http', httpUrl: 'http://127.0.0.1:36677/upload', command: '' }),
+    });
+    return { ...base, ops, uploaded };
+  }
+
+  test('本地图片上传 → URL 替换；本地文件保留；无文件 undo；单事务 patch', async () => {
+    const { ops, mock, editor, history, uploaded } = setUpUpload(DOC, '/docs/sub/note.md', [
+      ['/docs/imgs/a.png', 'A'],
+      ['/docs/imgs/b.png', 'B'],
+    ], ['https://cdn.test/a.png', 'https://cdn.test/b.png']);
+    const r = await ops.uploadAll();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.uploaded).toBe(2);
+    // 每个唯一路径只上传一次
+    expect(uploaded).toEqual(['/docs/imgs/a.png', '/docs/imgs/b.png']);
+    // URL 替换
+    expect(editor.text()).toContain('![a](https://cdn.test/a.png)');
+    expect(editor.text()).toContain('![b](https://cdn.test/b.png)');
+    // 本地文件保留（Typora 行为）
+    expect(await mock.fs.exists('/docs/imgs/a.png')).toEqual({ ok: true, value: true });
+    // 上传无 fsOps → 无文件 undo（文档 Undo 由编辑器单事务承担）
+    expect(history.length).toBe(0);
+    expect(editor.patches).toHaveLength(1);
+    expect(editor.refreshCount()).toBe(1);
+    // 远程/缺失跳过
+    const skipped: string[] = r.value.skipped.map((s) => s.src);
+    expect(skipped).toEqual(['https://a.com/r.png', './assets/in.png']);
+  });
+
+  test('同一路径多次引用 → 上传一次，全部替换', async () => {
+    const doc = '![x](../imgs/x.png)\ntext\n![x again](../imgs/x.png)\n';
+    const { ops, uploaded } = setUpUpload(doc, '/docs/sub/note.md', [['/docs/imgs/x.png', 'X']], ['https://cdn.test/x.png']);
+    const r = await ops.uploadAll();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(uploaded).toEqual(['/docs/imgs/x.png']);
+    expect(r.value.uploaded).toBe(2);
+  });
+
+  test('上传服务整体失败 → 全部 failed，文档零改动', async () => {
+    const { ops, editor } = setUpUpload('![a](../imgs/a.png)\n', '/docs/sub/note.md', [['/docs/imgs/a.png', 'A']], null);
+    const r = await ops.uploadAll();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.uploaded).toBe(0);
+    expect(r.value.failed).toHaveLength(1);
+    expect(r.value.failed[0].error).toContain('upload service down');
+    expect(editor.patches).toHaveLength(0);
+    expect(editor.text()).toBe('![a](../imgs/a.png)\n');
+  });
+
+  test('未配置 uploader → not-implemented', async () => {
+    const { ops } = setUp('![a](../imgs/a.png)\n', '/docs/sub/note.md', [['/docs/imgs/a.png', 'A']]);
+    const r = await ops.uploadAll();
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('not-implemented');
+  });
+
+  test("channel 'none'（localStorage 不可信值）→ not-implemented", async () => {
+    const { ops } = setUpUpload('![a](../imgs/a.png)\n', '/docs/sub/note.md', [['/docs/imgs/a.png', 'A']], ['u'], 'none');
+    const r = await ops.uploadAll();
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('not-implemented');
+  });
+
+  test('返回 URL 数量不匹配 → invalid-argument', async () => {
+    const { ops } = setUpUpload('![a](../imgs/a.png)\n![b](../imgs/b.png)\n', '/docs/sub/note.md', [
+      ['/docs/imgs/a.png', 'A'],
+      ['/docs/imgs/b.png', 'B'],
+    ], ['https://cdn.test/only-one.png']);
+    const r = await ops.uploadAll();
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('invalid-argument');
+  });
+
+  test('无本地图片 → 空报告（提前返回，不上传不扫描跳过项）', async () => {
+    const { ops, uploaded } = setUpUpload('![r](https://a.com/r.png)\n', '/docs/sub/note.md', [], ['u']);
+    const r = await ops.uploadAll();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.uploaded).toBe(0);
+    expect(r.value.skipped).toHaveLength(0);
+    expect(r.value.failed).toHaveLength(0);
+    expect(uploaded).toHaveLength(0);
+  });
+});
+
 describe('ImageFileOpsService 单图操作', () => {
   test('moveImage：对话框目标目录 + patch', async () => {
     const { ops, mock, editor } = setUp('![x](../imgs/x.png)\n', '/docs/sub/note.md', [['/docs/imgs/x.png', 'X']]);

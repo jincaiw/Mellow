@@ -10,6 +10,7 @@ import {
   planMoveAll,
   planCopyAll,
   planDownloadRemote,
+  planUploadAll,
   allocateUniqueName,
 } from '../src/image/ops';
 import type { PlanContext } from '../src/image/ops';
@@ -199,5 +200,39 @@ describe('docDir null（未保存文档）→ patch 用绝对路径', () => {
     const plan = planMoveImage(refs[0], { targetDirAbs: ASSET, docDir: null, existingNames: new Set() });
     expect(plan.fsOps[1]).toMatchObject({ kind: 'move', from: '/abs/a.png', to: `${ASSET}/a.png` });
     expect(plan.patches[0].text).toBe(`![x](${ASSET}/a.png)`);
+  });
+});
+
+describe('Upload All（B5 / PRD §55；Typora「上传图片」）', () => {
+  test('成功 → URL patch（alt 保留）；无 fsOps；本地文件保留语义', () => {
+    const refs = refsFor('![x](../imgs/a.png)');
+    const outcomes = new Map([['/Users/jason/imgs/a.png', { url: 'https://cdn.test/a.png' }]]);
+    const plan = planUploadAll(refs, outcomes);
+    expect(plan.report.uploaded).toBe(1);
+    expect(plan.fsOps).toHaveLength(0); // 无文件操作（本地保留）
+    expect(plan.patches).toEqual([{ from: refs[0].from, to: refs[0].to, text: '![x](https://cdn.test/a.png)' }]);
+  });
+
+  test('失败 → failed + 无 patch；未在批次 → skipped；远程/缺失 → skipped', () => {
+    const refs = refsFor('![ok](../imgs/ok.png)\n![bad](../imgs/bad.png)\n![remote](https://a.com/r.png)\n![missing](../imgs/miss.png)');
+    refs.find((r) => r.src === '../imgs/miss.png')!.exists = false; // 模拟缺失回填
+    const outcomes = new Map<string, { url: string | null; error?: string }>([
+      ['/Users/jason/imgs/ok.png', { url: 'https://cdn.test/ok.png' }],
+      ['/Users/jason/imgs/bad.png', { url: null, error: '401 unauthorized' }],
+      ['/Users/jason/imgs/nope.png', { url: 'https://cdn.test/nope.png' }], // 不在 refs（未消费）
+    ]);
+    const plan = planUploadAll(refs, outcomes);
+    expect(plan.report.uploaded).toBe(1);
+    expect(plan.report.failed).toEqual([{ src: '../imgs/bad.png', error: '401 unauthorized' }]);
+    expect(plan.report.skipped.map((s) => s.src)).toEqual(['https://a.com/r.png', '../imgs/miss.png']);
+    expect(plan.patches).toHaveLength(1);
+  });
+
+  test('同一路径多次引用 → 全部替换（outcome 按路径索引）', () => {
+    const refs = refsFor('![a](../imgs/a.png)\ntext\n![b](../imgs/a.png)');
+    const outcomes = new Map([['/Users/jason/imgs/a.png', { url: 'https://cdn.test/a.png' }]]);
+    const plan = planUploadAll(refs, outcomes);
+    expect(plan.report.uploaded).toBe(2);
+    expect(plan.patches).toHaveLength(2);
   });
 });

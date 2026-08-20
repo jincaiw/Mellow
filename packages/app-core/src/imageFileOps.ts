@@ -30,11 +30,13 @@ import {
   planMoveAll,
   planCopyAll,
   planDownloadRemote,
+  planUploadAll,
 } from '../../editor-engine/src/image/ops';
-import type { ImageOpPlan, ImageOpReport, FsOp } from '../../editor-engine/src/image/ops';
+import type { ImageOpPlan, ImageOpReport, FsOp, UploadOutcome } from '../../editor-engine/src/image/ops';
 import type { ImageRef } from '../../editor-engine/src/image/scan';
 import type { AssetDirConfig } from '../../editor-engine/src/image/path';
 import { dirname } from '../../editor-engine/src/image/path';
+import type { ImageUploadOptions, ImageUploadService } from '../../host-api/src';
 
 /** asset 目录全局设置提供者（desktop 从 localStorage 读；测试注入） */
 export interface AssetSettingProvider {
@@ -47,6 +49,10 @@ export interface ImageFileOpsDeps {
   history: FileOpHistory;
   /** 全局 asset 目录设置（PRD §53 global） */
   assetSetting?: AssetSettingProvider;
+  /** 图片上传服务（B5 / PRD §55；缺省 → uploadAll 报 not-implemented） */
+  uploader?: ImageUploadService;
+  /** 上传通道配置提供者（desktop 读 localStorage；每次调用时取 live 值） */
+  uploadOptions?: () => ImageUploadOptions;
 }
 
 export class ImageFileOpsService {
@@ -147,6 +153,49 @@ export class ImageFileOpsService {
   /** Download Remote：全部远程图片本地化（spec §9 仅显式命令） */
   async downloadRemote(): Promise<Result<ImageOpReport>> {
     return this.batch((refs, ctx2) => planDownloadRemote(refs, ctx2));
+  }
+
+  /**
+   * Upload All：全部本地图片上传 → 引用替换为 URL（B5 / PRD §55；Typora「上传图片」）。
+   * 本地文件保留（Typora 行为）；上传为外部副作用，无文件 undo；文档 Undo 可撤销替换。
+   * 部分失败：失败项记 report.failed，成功项照常替换（不回滚）。
+   */
+  async uploadAll(): Promise<Result<ImageOpReport>> {
+    const { refs } = await this.context();
+    const localRefs = refs.filter((r): r is ImageRef & { absolutePath: string } =>
+      r.kind === 'local' && r.absolutePath !== null && r.exists === true);
+    if (localRefs.length === 0) {
+      return ok({ moved: 0, copied: 0, downloaded: 0, uploaded: 0, skipped: [], failed: [] });
+    }
+    if (this.deps.uploader === undefined || this.deps.uploadOptions === undefined) {
+      return err({ code: 'not-implemented', message: '未配置图片上传服务（设置 → 图像 → 上传服务）' });
+    }
+    const options = this.deps.uploadOptions();
+    // localStorage 值不可信任：'none'/未知通道一律视为未配置
+    if (options.channel !== 'picgo-http' && options.channel !== 'picgo-cli' && options.channel !== 'custom-command') {
+      return err({ code: 'not-implemented', message: '未配置图片上传服务（设置 → 图像 → 上传服务）' });
+    }
+    // 同一路径多次引用只上传一次（outcome 按路径索引，全部引用统一替换）
+    const uniquePaths = [...new Set(localRefs.map((r) => r.absolutePath))];
+    const outcomes = new Map<string, UploadOutcome>();
+    const r = await this.deps.uploader.uploadImages(uniquePaths, options);
+    if (r.ok) {
+      if (r.value.length !== uniquePaths.length) {
+        return err({ code: 'invalid-argument', message: `上传服务返回数量不匹配：${r.value.length} != ${uniquePaths.length}` });
+      }
+      uniquePaths.forEach((p, i) => { outcomes.set(p, { url: r.value[i] }); });
+    } else {
+      // 整体失败：每个路径记 failed（Typora 行为：逐项报告）
+      for (const p of uniquePaths) {
+        outcomes.set(p, { url: null, error: r.error.message });
+      }
+    }
+    const plan = planUploadAll(refs, outcomes);
+    if (plan.patches.length > 0) {
+      this.deps.editor.patchChanges(plan.patches);
+    }
+    this.deps.editor.refreshImages();
+    return ok(plan.report);
   }
 
   /** Download Remote（单图，widget 操作条）：src → asset 目录 */

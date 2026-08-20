@@ -6,6 +6,7 @@ pub mod pandoc;
 pub mod print;
 pub mod recovery;
 pub mod search;
+pub mod upload;
 pub mod updater;
 pub mod watcher;
 
@@ -82,6 +83,7 @@ pub fn run() {
             open_with::open_with_editor,
             pandoc::pandoc_available,
             pandoc::pandoc_export,
+            upload::upload_images,
             updater::update_rollback_prepare,
             updater::update_rollback_status,
             updater::update_rollback_note_launch,

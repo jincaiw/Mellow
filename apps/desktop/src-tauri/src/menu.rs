@@ -167,6 +167,12 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("format.sub", "下标", "Subscript"),
     ("format.link", "超链接…", "Hyperlink…"),
     ("format.clear", "清除样式", "Clear Formatting"),
+    // ── 格式 → 图像（B5 / PRD §55，Typora「格式 → 图像」子菜单对齐） ──
+    ("format.imageMenu", "图像", "Image"),
+    ("image.uploadAll", "上传图片", "Upload Images"),
+    ("image.downloadRemote", "下载远程到 asset 目录", "Download Remote to Asset Dir"),
+    ("image.moveAll", "移动全部到 asset 目录", "Move All to Asset Dir"),
+    ("image.copyAll", "复制全部到 asset 目录", "Copy All to Asset Dir"),
     // ── 主题 ──
     ("menu.theme", "主题", "Themes"),
     ("theme.mellow-light", "Mellow Light", "Mellow Light"),
@@ -404,7 +410,13 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let f_clear = MenuItem::with_id(app, "format.clear", &l("format.clear"), true, accel("Cmd+\\", "Ctrl+\\"))?;
     let sep14 = PredefinedMenuItem::separator(app)?;
     let sep15 = PredefinedMenuItem::separator(app)?;
-    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_code, &f_strike, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &sep15, &f_clear])?;
+    // 图像子菜单（Typora「格式 → 图像」：上传图片 + 本地化批量操作）
+    let img_upload = MenuItem::with_id(app, "image.uploadAll", &l("image.uploadAll"), true, None::<&str>)?;
+    let img_download = MenuItem::with_id(app, "image.downloadRemote", &l("image.downloadRemote"), true, None::<&str>)?;
+    let img_move = MenuItem::with_id(app, "image.moveAll", &l("image.moveAll"), true, None::<&str>)?;
+    let img_copy = MenuItem::with_id(app, "image.copyAll", &l("image.copyAll"), true, None::<&str>)?;
+    let image_menu = Submenu::with_items(app, &l("format.imageMenu"), true, &[&img_upload, &img_download, &img_move, &img_copy])?;
+    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_code, &f_strike, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &sep15, &f_clear, &image_menu])?;
     subs.push(format_menu);
 
     // ── 段落 ───────────────────────────────────────────

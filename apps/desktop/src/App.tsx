@@ -57,10 +57,11 @@ import { createDesktopDialogService } from './host/dialogs';
 import { createDesktopOpenerService } from './host/openers';
 import { createDesktopWindowService } from './host/windowService';
 import { createDesktopSearchService } from './host/searchServices';
+import { createDesktopImageUploadService } from './host/uploadService';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import { classifyLargeFile } from '../../../packages/editor-engine/src/largeFile';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
-import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService } from '../../../packages/host-api/src/index';
+import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions } from '../../../packages/host-api/src/index';
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import type { CommandContribution } from '../../../packages/extension-api/src';
@@ -1169,19 +1170,29 @@ export default function App() {
     setToast(null);
   }, [watchDocument]);
 
-  /** 执行批量操作（moveAll/copyAll/downloadRemote），toast 提供撤销 */
-  const runBatch = useCallback(async (kind: 'moveAll' | 'copyAll' | 'downloadRemote') => {
+  /** 执行批量操作（moveAll/copyAll/downloadRemote/uploadAll），toast 提供撤销 */
+  const runBatch = useCallback(async (kind: 'moveAll' | 'copyAll' | 'downloadRemote' | 'uploadAll') => {
     const ops = fileOpsRef.current;
     const history = historyRef.current;
     if (!ops || !history) return;
     const before = history.length;
     const r = await ops[kind]();
     if (!r.ok) {
-      setStatusText(r.error.message);
+      setStatusText(r.error.code === 'not-implemented' ? t('msg.imageUploadNoService') : r.error.message);
       return;
     }
     const rep = r.value;
-    const n = rep.moved + rep.copied + rep.downloaded;
+    const n = rep.moved + rep.copied + rep.downloaded + rep.uploaded;
+    if (kind === 'uploadAll') {
+      // 上传：n=0 且无失败 → 没有可上传图片；失败详情见报告
+      if (n === 0 && rep.failed.length === 0 && rep.skipped.length === 0) {
+        setStatusText(t('msg.imageUploadNoneLocal'));
+        return;
+      }
+      setStatusText(t('msg.imageUploaded', { n, skipped: rep.skipped.length, failed: rep.failed.length > 0 ? `${rep.failed.length}（${rep.failed[0].error}）` : '0' }));
+      if (n > 0) showToast(t('msg.imageUploaded', { n, skipped: rep.skipped.length, failed: rep.failed.length }), undefined);
+      return;
+    }
     const verb = kind === 'moveAll' ? t('msg.moved') : kind === 'copyAll' ? t('msg.copied') : t('msg.downloaded');
     const undoCount = history.length - before;
     setStatusText(t('msg.imageMovedAll', { verb, n, skipped: rep.skipped.length, failed: rep.failed.length > 0 ? `${rep.failed.length}（${rep.failed[0].error}）` : '0' }));
@@ -1974,6 +1985,13 @@ export default function App() {
       assetSetting: {
         getGlobalSetting: () => (localStorage.getItem(GLOBAL_ASSET_DIR_KEY) as AssetDirConfig | null) ?? 'assets',
       },
+      // B5 图片上传（PRD §55）：通道配置每次调用时读 localStorage（live 设置）
+      uploader: createDesktopImageUploadService(),
+      uploadOptions: (): ImageUploadOptions => ({
+        channel: (localStorage.getItem('mellow.image.uploadService') || 'none') as ImageUploadOptions['channel'],
+        httpUrl: localStorage.getItem('mellow.image.uploadHttpUrl') || 'http://127.0.0.1:36677/upload',
+        command: localStorage.getItem('mellow.image.uploadCommand') || '',
+      }),
     });
     renameRef.current = new DocumentRenameService({
       fs: fsService,
@@ -2723,6 +2741,7 @@ export default function App() {
       { id: 'image.moveAll', localizedTitle: { zh: '图片：移动全部到 asset 目录', en: 'Images: Move All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('moveAll') },
       { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
       { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
+      { id: 'image.uploadAll', localizedTitle: { zh: '图片：上传图片', en: 'Images: Upload All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('uploadAll') },
       { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt(t('prompt.assetDir'), assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
       { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
       { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },

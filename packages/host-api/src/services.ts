@@ -265,3 +265,28 @@ export interface OpenerService {
   /** 打开 URL（浏览器） */
   openUrl(url: string): Promise<Result<void>>;
 }
+
+// ─────────────────────────── image upload（B5 / PRD §55） ───────────────────────────
+
+/** 图片上传通道（adapter 由宿主按设置装配） */
+export type ImageUploadChannel =
+  /** PicGo.app / PicList / PicGo-Core server 模式（本地 HTTP API，默认 36677） */
+  | 'picgo-http'
+  /** PicGo-Core 命令行（`picgo upload <files>` 参数形式，stdout URL 列表） */
+  | 'picgo-cli'
+  /** 自定义命令（Typora 兼容契约：stdin 传绝对路径每行一个 → stdout URL 每行一个） */
+  | 'custom-command';
+
+export interface ImageUploadOptions {
+  channel: ImageUploadChannel;
+  /** picgo-http：上传端点（默认 http://127.0.0.1:36677/upload） */
+  httpUrl: string;
+  /** custom-command：完整命令行（可带参数） */
+  command: string;
+}
+
+/** 图片上传服务（PRD §55：上传密钥归 adapter 自管，宿主不存储凭据） */
+export interface ImageUploadService {
+  /** 上传图片文件（绝对路径数组）→ 与输入等长的可插入 Markdown 的 URL 数组 */
+  uploadImages(files: string[], options: ImageUploadOptions): Promise<Result<string[]>>;
+}

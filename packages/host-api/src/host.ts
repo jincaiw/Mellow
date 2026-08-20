@@ -15,6 +15,7 @@ import type {
   NotificationService,
   OpenerService,
   RecoveryStorage,
+  ImageUploadService,
 } from './services';
 
 /** 宿主整体：所有系统能力（平台实现在 Adapter 层，见 PRD §113.4） */
@@ -31,6 +32,7 @@ export interface DesktopHost {
   notification: NotificationService;
   opener: OpenerService;
   recovery: RecoveryStorage;
+  imageUpload: ImageUploadService;
 }
 
 export type {
@@ -46,4 +48,5 @@ export type {
   NotificationService,
   OpenerService,
   RecoveryStorage,
+  ImageUploadService,
 };

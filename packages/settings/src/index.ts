@@ -129,6 +129,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     settings: [
       { id: 'image.assetDir', labelKey: 'settings.image.assetDir', type: 'text', storageKey: 'mellow.assetDir', defaultValue: 'assets', applyCommand: 'settings.image.assetDir' },
       { id: 'image.loadRemote', labelKey: 'settings.image.loadRemote', type: 'toggle', storageKey: 'mellow.image.loadRemote', defaultValue: false, descriptionKey: 'settings.image.loadRemoteDesc' },
+      { id: 'image.uploadService', labelKey: 'settings.image.uploadService', type: 'select', storageKey: 'mellow.image.uploadService', defaultValue: 'none',
+        options: [
+          { value: 'none', labelKey: 'settings.image.upload.none' },
+          { value: 'picgo-http', labelKey: 'settings.image.upload.picgoHttp' },
+          { value: 'picgo-cli', labelKey: 'settings.image.upload.picgoCli' },
+          { value: 'custom-command', labelKey: 'settings.image.upload.customCommand' },
+        ], descriptionKey: 'settings.image.uploadServiceDesc' },
+      { id: 'image.uploadHttpUrl', labelKey: 'settings.image.uploadHttpUrl', type: 'text', storageKey: 'mellow.image.uploadHttpUrl', defaultValue: 'http://127.0.0.1:36677/upload', descriptionKey: 'settings.image.uploadHttpUrlDesc' },
+      { id: 'image.uploadCommand', labelKey: 'settings.image.uploadCommand', type: 'text', storageKey: 'mellow.image.uploadCommand', defaultValue: '', descriptionKey: 'settings.image.uploadCommandDesc' },
     ],
   },
   {

@@ -36,6 +36,8 @@ export interface ImageOpReport {
   moved: number;
   copied: number;
   downloaded: number;
+  /** 上传成功数（B5：URL 替换，本地文件保留） */
+  uploaded: number;
   skipped: Array<{ src: string; reason: string }>;
   failed: Array<{ src: string; error: string }>;
 }
@@ -56,7 +58,7 @@ export interface PlanContext {
 }
 
 function emptyReport(): ImageOpReport {
-  return { moved: 0, copied: 0, downloaded: 0, skipped: [], failed: [] };
+  return { moved: 0, copied: 0, downloaded: 0, uploaded: 0, skipped: [], failed: [] };
 }
 
 function emptyPlan(): ImageOpPlan {
@@ -267,6 +269,44 @@ export function mergeReports(target: ImageOpReport, extra: ImageOpReport): void 
   target.moved += extra.moved;
   target.copied += extra.copied;
   target.downloaded += extra.downloaded;
+  target.uploaded += extra.uploaded;
   target.skipped.push(...extra.skipped);
   target.failed.push(...extra.failed);
+}
+
+// ─────────────────────────── 上传（B5 / PRD §55） ───────────────────────────
+
+/** 单文件上传结果（成功 → url；失败 → url null + error） */
+export interface UploadOutcome {
+  url: string | null;
+  error?: string;
+}
+
+/**
+ * Upload All：本地图片引用替换为上传 URL（Typora 行为：本地文件保留，仅替换引用）。
+ * 无 fsOps（上传是外部副作用，本地零改动）→ 无回滚/文件 undo；文档 Undo 可撤销替换。
+ *
+ * @param refs 文档全部引用（编排层已回填 exists）
+ * @param outcomes 按绝对路径索引的上传结果（同一路径多次引用只上传一次，全部替换）
+ */
+export function planUploadAll(refs: ImageRef[], outcomes: Map<string, UploadOutcome>): ImageOpPlan {
+  const plan = emptyPlan();
+  for (const ref of refs) {
+    if (ref.kind !== 'local' || ref.absolutePath === null || ref.exists !== true) {
+      plan.report.skipped.push({ src: ref.src, reason: '非本地可上传图片（远程/缺失/无法解析）' });
+      continue;
+    }
+    const outcome = outcomes.get(ref.absolutePath);
+    if (outcome === undefined) {
+      plan.report.skipped.push({ src: ref.src, reason: '未上传（不在本次批次）' });
+      continue;
+    }
+    if (outcome.url === null) {
+      plan.report.failed.push({ src: ref.src, error: outcome.error ?? '上传失败' });
+      continue;
+    }
+    plan.patches.push(patchFor(ref, outcome.url));
+    plan.report.uploaded += 1;
+  }
+  return plan;
 }

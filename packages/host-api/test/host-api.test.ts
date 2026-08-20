@@ -298,6 +298,48 @@ describe('opener', () => {
   });
 });
 
+describe('imageUpload（B5 / PRD §55）', () => {
+  const opts = { channel: 'picgo-http' as const, httpUrl: 'http://127.0.0.1:36677/upload', command: '' };
+
+  test('未配置（uploadUrls null）→ not-implemented', async () => {
+    const host = createMockHost();
+    const r = await host.imageUpload.uploadImages(['/imgs/a.png'], opts);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('not-implemented');
+  });
+
+  test('预设 URL 等长返回 + uploaded 记录', async () => {
+    const state = createMockHostState({
+      uploadUrls: ['https://cdn.test/a.png', 'https://cdn.test/b.png'],
+    });
+    const host = createMockHost(state);
+    const r = await host.imageUpload.uploadImages(['/imgs/a.png', '/imgs/b.png'], opts);
+    expect(r).toEqual({ ok: true, value: ['https://cdn.test/a.png', 'https://cdn.test/b.png'] });
+    expect(state.uploaded).toEqual(['/imgs/a.png', '/imgs/b.png']);
+  });
+
+  test('单 URL 广播到多文件', async () => {
+    const state = createMockHostState({ uploadUrls: ['https://cdn.test/single.png'] });
+    const host = createMockHost(state);
+    const r = await host.imageUpload.uploadImages(['/a.png', '/b.png'], opts);
+    expect(r.ok && r.value).toEqual(['https://cdn.test/single.png', 'https://cdn.test/single.png']);
+  });
+
+  test('数量不匹配 → invalid-argument', async () => {
+    const state = createMockHostState({ uploadUrls: ['https://cdn.test/a.png', 'https://cdn.test/b.png', 'https://cdn.test/c.png'] });
+    const host = createMockHost(state);
+    const r = await host.imageUpload.uploadImages(['/a.png', '/b.png'], opts);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invalid-argument');
+  });
+
+  test('createNullHost imageUpload → not-implemented', async () => {
+    const host = createNullHost();
+    const r = await host.imageUpload.uploadImages(['/a.png'], opts);
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe('recovery', () => {
   const payload = {
     documentId: 'doc-1',

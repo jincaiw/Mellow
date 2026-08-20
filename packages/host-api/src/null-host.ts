@@ -93,5 +93,8 @@ export function createNullHost(): DesktopHost {
       revealInFolder: notImplemented('opener.revealInFolder'),
       openUrl: notImplemented('opener.openUrl'),
     },
+    imageUpload: {
+      uploadImages: notImplemented('imageUpload.uploadImages'),
+    },
   };
 }

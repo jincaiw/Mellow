@@ -66,6 +66,10 @@ export interface MockHostState {
   recovery: Map<string, RecoveryPayload>;
   /** watcher 回调存储（测试可手动触发） */
   watchCallbacks: Map<string, (event: import('./services').FileChangeEvent) => void>;
+  /** imageUpload 预设 URL 列表（null = 未配置 → not-implemented；单 URL 广播到全部文件） */
+  uploadUrls: string[] | null;
+  /** imageUpload 已上传记录（测试可断言） */
+  uploaded: string[];
 }
 
 export function createMockHostState(initial?: Partial<MockHostState>): MockHostState {
@@ -103,6 +107,8 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     nextDirectoryPath: initial?.nextDirectoryPath === undefined ? '/dir' : initial.nextDirectoryPath,
     recovery: new Map(initial?.recovery ?? []),
     watchCallbacks: new Map(initial?.watchCallbacks ?? []),
+    uploadUrls: initial?.uploadUrls ?? null,
+    uploaded: initial?.uploaded ?? [],
   };
 }
 
@@ -537,6 +543,23 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
       openUrl: async (url: string): Promise<Result<void>> => {
         state.openedPaths.push(`url:${url}`);
         return ok(undefined);
+      },
+    },
+
+    imageUpload: {
+      uploadImages: async (files: string[]): Promise<Result<string[]>> => {
+        if (state.uploadUrls === null) {
+          return err({ code: 'not-implemented', message: 'image upload not configured (mock)' });
+        }
+        // 与输入等长（或单 URL 广播到全部）
+        if (state.uploadUrls.length === 1 && files.length > 1) {
+          return ok(files.map(() => state.uploadUrls![0]));
+        }
+        if (state.uploadUrls.length !== files.length) {
+          return err({ code: 'invalid-argument', message: `mock uploadUrls length mismatch: ${state.uploadUrls.length} != ${files.length}` });
+        }
+        state.uploaded.push(...files);
+        return ok([...state.uploadUrls]);
       },
     },
   };
