@@ -11,6 +11,7 @@
 import type { EditorView } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isComposing } from './composition';
+import { pastePlain as pastePlainInto } from './smartPaste';
 
 interface CmRuntime {
   ViewPlugin: typeof import('@codemirror/view').ViewPlugin;
@@ -29,6 +30,15 @@ function resolveCm(): CmRuntime {
 export interface ClipboardDataLike {
   setData(type: string, value: string): void;
 }
+
+/** 宿主 → 引擎剪贴板桥（菜单「复制为 Markdown / 粘贴为纯文本」调用） */
+export interface MellowClipboardApi {
+  copyAsMarkdown(): boolean;
+  pastePlain(): void;
+}
+
+// 单编辑器 iframe：模块级视图引用（ViewPlugin 维护）
+let activeClipboardView: EditorView | null = null;
 
 export interface CopyOptions {
   includeHtml: boolean;
@@ -402,7 +412,15 @@ export function copyWithoutTheme(view: EditorView, clipboardData?: ClipboardData
 /** Installs Typora-like multi-format Copy plus Copy as Markdown shortcut. */
 export function buildClipboardCopyExtension(): Extension {
   const { ViewPlugin, keymap } = resolveCm();
-  const plugin = ViewPlugin.fromClass(class ClipboardCopyPlugin {}, {
+  const plugin = ViewPlugin.fromClass(class ClipboardCopyPlugin {
+    constructor(view: EditorView) {
+      activeClipboardView = view;
+    }
+
+    destroy(): void {
+      activeClipboardView = null;
+    }
+  }, {
     eventHandlers: {
       copy: (event: ClipboardEvent, view: EditorView): boolean => {
         if (isComposing()) {
@@ -423,4 +441,24 @@ export function buildClipboardCopyExtension(): Extension {
     { key: 'Mod-Shift-c', run: copyAsMarkdown },
   ]);
   return [plugin, shortcuts];
+}
+
+/** 注册宿主 → 引擎剪贴板桥（install() 调用） */
+export function installClipboardApi(): void {
+  const api: MellowClipboardApi = {
+    copyAsMarkdown: () => {
+      const view = activeClipboardView;
+      if (view === null) return false;
+      return copyAsMarkdown(view);
+    },
+    pastePlain: () => {
+      const view = activeClipboardView;
+      if (view === null) return;
+      view.focus();
+      void navigator.clipboard?.readText?.()
+        .then((text) => { pastePlainInto(view, text); })
+        .catch(() => undefined);
+    },
+  };
+  (window as unknown as { __MELLOW_CLIPBOARD_API__?: MellowClipboardApi }).__MELLOW_CLIPBOARD_API__ = api;
 }

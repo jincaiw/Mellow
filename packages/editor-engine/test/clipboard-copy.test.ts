@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { EditorView } from '@codemirror/view';
-import { copyAsMarkdown, copyAsPlain, copySelectionToClipboard, markdownToClipboardHtml, markdownToPlainText, markdownToRtf } from '../src/clipboardCopy';
+import { copyAsMarkdown, copyAsPlain, copySelectionToClipboard, installClipboardApi, markdownToClipboardHtml, markdownToPlainText, markdownToRtf } from '../src/clipboardCopy';
 import { selectRange, setUpEditor } from './harness';
 
 const fixture = (name: string): string => readFileSync(resolve(__dirname, '../../../tests/fixtures/clipboard', name), 'utf8');
@@ -98,5 +98,27 @@ describe('Clipboard Copy（clipboard-smart-paste-spec §2）', () => {
   test('plain text conversion handles table and link text', () => {
     const plain = markdownToPlainText('| 名称 | 数量 |\n| --- | --- |\n| 苹果 | 2 |\n\n[链接](https://example.com/路径)');
     expect(plain).toBe('名称\t数量\n苹果\t2\n\n链接');
+  });
+});
+
+describe('Clipboard host API（B2 菜单接线：__MELLOW_CLIPBOARD_API__）', () => {
+  test('installClipboardApi 注册 copyAsMarkdown（经 activeView 代理）', () => {
+    const view = setUpEditor('中文 **重点**');
+    selectRange(view, 0, view.state.doc.length);
+    const written: string[] = [];
+    const nav = navigator as Navigator & { clipboard?: { writeText?: (t: string) => Promise<void> } };
+    const original = nav.clipboard;
+    Object.defineProperty(nav, 'clipboard', {
+      value: { writeText: (t: string) => { written.push(t); return Promise.resolve(); } },
+      configurable: true,
+    });
+
+    installClipboardApi();
+    const api = (window as unknown as { __MELLOW_CLIPBOARD_API__?: { copyAsMarkdown(): boolean } }).__MELLOW_CLIPBOARD_API__;
+    expect(api).toBeDefined();
+    expect(api?.copyAsMarkdown()).toBe(true);
+    expect(written).toContain('中文 **重点**');
+
+    Object.defineProperty(nav, 'clipboard', { value: original, configurable: true });
   });
 });

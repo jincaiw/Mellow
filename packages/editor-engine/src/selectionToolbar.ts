@@ -98,7 +98,8 @@ export function applyLink(doc: string, range: TextRange): ApplyResult {
 }
 
 function affectedLines(doc: string, range: TextRange): Array<{ start: number; end: number }> {
-  if (range.from >= range.to) return [];
+  // from === to（caret 位）合法：返回 caret 所在行（段落级动作作用于当前行，Typora 语义）
+  if (range.from > range.to) return [];
   const start = doc.lastIndexOf('\n', range.from - 1) + 1;
   const endPos = Math.max(range.from, range.to - 1);
   const lines: Array<{ start: number; end: number }> = [];
@@ -182,13 +183,251 @@ export function applyHeading(doc: string, range: TextRange, level: number): Appl
   };
 }
 
-type ToolbarAction = 'h1' | 'h2' | 'h3' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'highlight' | 'sup' | 'sub' | 'paragraph';
+type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle';
+
+/** 既有块级 marker（heading/quote/ul/task/ol）：列表互转时先剥离（Typora 段落互转语义） */
+const BLOCK_PREFIX_RE = /^(#{1,6}\s|>\s|[-*+]\s(?:\[[ xX]\]\s)?|\d+\.\s)/;
+
+/** 有序列表（⌥⌘O）：逐行加序号前缀；全部已序号则移除（toggle） */
+export function applyOrderedList(doc: string, range: TextRange): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const allOrdered = lines.every((line) => /^\d+\.\s/.test(doc.slice(line.start, line.end)));
+  const deltas: number[] = [];
+  let replacement = '';
+  let pos = lines[0].start;
+  let n = 0;
+  for (const line of lines) {
+    replacement += doc.slice(pos, line.start);
+    const content = doc.slice(line.start, line.end);
+    if (allOrdered) {
+      const cut = /^\d+\.\s/.exec(content)?.[0].length ?? 0;
+      replacement += content.slice(cut);
+      deltas.push(-cut);
+    } else {
+      n += 1;
+      const stripped = content.replace(BLOCK_PREFIX_RE, '');
+      const prefix = `${n}. `;
+      replacement += prefix + stripped;
+      deltas.push(prefix.length - (content.length - stripped.length));
+    }
+    pos = line.end;
+  }
+  const regionEnd = lines[lines.length - 1].end;
+  return {
+    changes: [{ from: lines[0].start, to: regionEnd, insert: replacement }],
+    selection: { from: mapPosition(range.from, lines, deltas), to: mapPosition(range.to, lines, deltas) },
+  };
+}
+
+/** 任务列表（⌥⌘X）："- [ ] " 前缀 toggle */
+export function applyTaskList(doc: string, range: TextRange): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const allTask = lines.every((line) => /^[-*+]\s\[[ xX]\]\s/.test(doc.slice(line.start, line.end)));
+  const deltas: number[] = [];
+  let replacement = '';
+  let pos = lines[0].start;
+  for (const line of lines) {
+    replacement += doc.slice(pos, line.start);
+    const content = doc.slice(line.start, line.end);
+    if (allTask) {
+      const cut = /^[-*+]\s\[[ xX]\]\s/.exec(content)?.[0].length ?? 0;
+      replacement += content.slice(cut);
+      deltas.push(-cut);
+    } else {
+      const stripped = content.replace(BLOCK_PREFIX_RE, '');
+      const prefix = '- [ ] ';
+      replacement += prefix + stripped;
+      deltas.push(prefix.length - (content.length - stripped.length));
+    }
+    pos = line.end;
+  }
+  const regionEnd = lines[lines.length - 1].end;
+  return {
+    changes: [{ from: lines[0].start, to: regionEnd, insert: replacement }],
+    selection: { from: mapPosition(range.from, lines, deltas), to: mapPosition(range.to, lines, deltas) },
+  };
+}
+
+/** fence 包裹（codeBlock/mathBlock 共用）：前后各插一行 fence；已包裹则移除（toggle） */
+function applyFenceBlock(doc: string, range: TextRange, fence: string): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const start = lines[0].start;
+  const end = lines[lines.length - 1].end;
+  // 前一行 / 后一行（toggle off 检测）
+  const hasPrev = start > 0;
+  const prevStart = hasPrev ? doc.lastIndexOf('\n', start - 2) + 1 : 0;
+  const prev = hasPrev ? doc.slice(prevStart, start - 1) : null;
+  const endNl = doc.indexOf('\n', end);
+  const hasNext = endNl !== -1;
+  let next: string | null = null;
+  let nextStart = 0;
+  let nextEnd = 0;
+  if (hasNext) {
+    nextStart = endNl + 1;
+    const nl2 = doc.indexOf('\n', nextStart);
+    nextEnd = nl2 === -1 ? doc.length : nl2;
+    next = doc.slice(nextStart, nextEnd);
+  }
+  const isFence = (s: string): boolean => s === fence || (fence === '```' && s.startsWith('```'));
+  if (prev !== null && next !== null && isFence(prev) && isFence(next)) {
+    // toggle off：删除两行 fence（后行若为末行连同其前换行）
+    const removeNext = nextEnd < doc.length
+      ? { from: end + 1, to: nextEnd + 1, insert: '' }
+      : { from: end, to: nextEnd, insert: '' };
+    const shift = start - prevStart;
+    const from = Math.max(prevStart, range.from - shift);
+    const to = Math.max(from, range.to - shift);
+    return {
+      changes: [{ from: prevStart, to: start, insert: '' }, removeNext],
+      selection: { from, to },
+    };
+  }
+  const open = `${fence}\n`;
+  return {
+    changes: [
+      { from: start, to: start, insert: open },
+      { from: end, to: end, insert: `\n${fence}` },
+    ],
+    selection: { from: range.from + open.length, to: range.to + open.length },
+  };
+}
+
+/** 代码块（⌥⌘C）：``` fence 包裹 toggle */
+export function applyCodeBlock(doc: string, range: TextRange): ApplyResult {
+  return applyFenceBlock(doc, range, '```');
+}
+
+/** 数学公式块（⌥⌘B）：$$ fence 包裹 toggle */
+export function applyMathBlock(doc: string, range: TextRange): ApplyResult {
+  return applyFenceBlock(doc, range, '$$');
+}
+
+/** 清除样式（⌘\，Typora Format→清除样式）：移除选区内行内 marker 与链接语法 */
+export function applyClearFormat(doc: string, range: TextRange): ApplyResult {
+  const selected = doc.slice(range.from, range.to);
+  if (selected === '') return { changes: [], selection: range };
+  // 成对 marker（长 marker 优先，避免 ** 被 ~ 类规则误拆）
+  const markers = ['**', '~~', '==', '`', '^', '*', '~'];
+  const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let cleared = selected;
+  let prev = '';
+  // 迭代到稳定（嵌套 marker，如 **`code`**）
+  while (prev !== cleared) {
+    prev = cleared;
+    for (const marker of markers) {
+      cleared = cleared.replace(new RegExp(`${escapeRe(marker)}([^${escapeRe(marker)}]+?)${escapeRe(marker)}`, 'g'), '$1');
+    }
+  }
+  // 链接 [text](url) → text
+  cleared = cleared.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  if (cleared === selected) return { changes: [], selection: range };
+  return {
+    changes: [{ from: range.from, to: range.to, insert: cleared }],
+    selection: { from: range.from, to: range.from + cleared.length },
+  };
+}
+
+/** 标题级别提升/降低（⌘= / ⌘-，Typora 段落菜单语义）：
+ *  提升＝级别-1（最小 h1；非标题行 → h1）；降低＝级别+1（最大 h6；非标题行 → h2） */
+export function applyHeadingShift(doc: string, range: TextRange, direction: 1 | -1): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const deltas: number[] = [];
+  let replacement = '';
+  let pos = lines[0].start;
+  for (const line of lines) {
+    replacement += doc.slice(pos, line.start);
+    const content = doc.slice(line.start, line.end);
+    const match = /^(#{1,6})(\s)/.exec(content);
+    if (match !== null) {
+      const level = match[1].length;
+      const next = direction === 1 ? Math.min(6, level + 1) : Math.max(1, level - 1);
+      const prefix = '#'.repeat(next) + match[2];
+      replacement += prefix + content.slice(match[0].length);
+      deltas.push(prefix.length - match[0].length);
+    } else {
+      const next = direction === 1 ? 2 : 1;
+      const prefix = '#'.repeat(next) + ' ';
+      replacement += prefix + content;
+      deltas.push(prefix.length);
+    }
+    pos = line.end;
+  }
+  const regionEnd = lines[lines.length - 1].end;
+  return {
+    changes: [{ from: lines[0].start, to: regionEnd, insert: replacement }],
+    selection: { from: mapPosition(range.from, lines, deltas), to: mapPosition(range.to, lines, deltas) },
+  };
+}
+
+/** 水平分割线（⌥-，Typora 段落→水平分割线）：当前行下方插入 --- 空行分隔 */
+export function applyHorizontalRule(doc: string, range: TextRange): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const line = lines[lines.length - 1];
+  const end = line.end;
+  const hasTail = end < doc.length;
+  const insert = hasTail ? '\n\n---\n' : '\n\n---';
+  return {
+    changes: [{ from: end, to: end, insert }],
+    selection: { from: end + insert.length, to: end + insert.length },
+  };
+}
+
+/** 脚注（⌥R，Typora 段落→脚注）：光标处插入引用 [^n]，文档末尾附定义 */
+export function applyFootnote(doc: string, range: TextRange): ApplyResult {
+  const used = new Set<number>();
+  for (const m of doc.matchAll(/\[\^(\d+)\]/g)) used.add(Number(m[1]));
+  let n = 1;
+  while (used.has(n)) n += 1;
+  const ref = `[^${n}]`;
+  const hasTail = doc.length > 0 && !doc.endsWith('\n');
+  const defPrefix = doc.length === 0 ? '' : hasTail ? '\n\n' : '\n';
+  const changes: Array<{ from: number; to: number; insert: string }> = [
+    { from: range.from, to: range.to, insert: ref },
+    { from: doc.length, to: doc.length, insert: `${defPrefix}${ref}: ` },
+  ];
+  return {
+    changes,
+    selection: { from: range.from + ref.length, to: range.from + ref.length },
+  };
+}
+
+/** YAML Front Matter（Typora 段落→YAML Front Matter）：文档顶部插入 --- 包裹块（已有则忽略） */
+export function applyYamlFrontMatter(doc: string, range: TextRange): ApplyResult {
+  if (/^---\r?\n/.test(doc)) return { changes: [], selection: range };
+  const insert = '---\ntitle: \n---\n\n';
+  return {
+    changes: [{ from: 0, to: 0, insert }],
+    selection: { from: range.from + insert.length, to: range.to + insert.length },
+  };
+}
+
+/** 切换任务状态（⌃X，Typora 段落→任务状态）：当前行 [ ] ↔ [x] */
+export function applyTaskToggle(doc: string, range: TextRange): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const changes: Array<{ from: number; to: number; insert: string }> = [];
+  for (const line of lines) {
+    const content = doc.slice(line.start, line.end);
+    const m = /^([-*+]\s)\[([ xX])\](\s)/.exec(content);
+    if (m === null) continue;
+    const checkboxFrom = line.start + m[1].length;
+    const next = m[2] === ' ' ? 'x' : ' ';
+    changes.push({ from: checkboxFrom + 1, to: checkboxFrom + 2, insert: next });
+  }
+  if (changes.length === 0) return { changes: [], selection: range };
+  return { changes, selection: range };
+}
 
 /** 成对 marker（空选区插入 caret 居中，Typora 行为） */
 const PAIR_MARKERS: Partial<Record<ToolbarAction, string>> = {
   bold: '**', italic: '*', strike: '~~', code: '`', highlight: '==', sup: '^', sub: '~',
 };
-const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'highlight', 'sup', 'sub', 'paragraph']);
+const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle']);
 
 const ACTION_DEFS: Array<{ id: ToolbarAction; label: string; title: string }> = [
   { id: 'h1', label: 'H1', title: '一级标题' },
@@ -208,6 +447,9 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange): Appl
     case 'h1': return applyHeading(doc, range, 1);
     case 'h2': return applyHeading(doc, range, 2);
     case 'h3': return applyHeading(doc, range, 3);
+    case 'h4': return applyHeading(doc, range, 4);
+    case 'h5': return applyHeading(doc, range, 5);
+    case 'h6': return applyHeading(doc, range, 6);
     case 'bold': return applyInlineFormat(doc, range, '**');
     case 'italic': return applyInlineFormat(doc, range, '*');
     case 'strike': return applyInlineFormat(doc, range, '~~');
@@ -215,9 +457,20 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange): Appl
     case 'link': return applyLink(doc, range);
     case 'quote': return applyBlockPrefix(doc, range, '> ');
     case 'list': return applyBlockPrefix(doc, range, '- ');
+    case 'orderedList': return applyOrderedList(doc, range);
+    case 'taskList': return applyTaskList(doc, range);
+    case 'codeBlock': return applyCodeBlock(doc, range);
+    case 'mathBlock': return applyMathBlock(doc, range);
+    case 'clear': return applyClearFormat(doc, range);
     case 'highlight': return applyInlineFormat(doc, range, '==');
     case 'sup': return applyInlineFormat(doc, range, '^');
     case 'sub': return applyInlineFormat(doc, range, '~');
+    case 'headingUp': return applyHeadingShift(doc, range, -1);
+    case 'headingDown': return applyHeadingShift(doc, range, 1);
+    case 'horizontalRule': return applyHorizontalRule(doc, range);
+    case 'footnote': return applyFootnote(doc, range);
+    case 'yamlFrontMatter': return applyYamlFrontMatter(doc, range);
+    case 'taskToggle': return applyTaskToggle(doc, range);
     case 'paragraph': {
       // 段落：去除标题前缀（Typora「段落」语义）
       const lines = affectedLines(doc, range);
@@ -264,6 +517,7 @@ function applyToView(action: ToolbarAction): void {
   const doc = view.state.doc.toString();
   let result: ApplyResult;
   if (sel.empty) {
+    if (action === 'clear') return; // 清除样式需要目标选区（Typora ⌘\ 空选区无操作）
     if (PAIR_MARKERS[action] !== undefined) {
       // 成对 marker：空选区插入 caret 居中（Typora Cmd+B）
       const marker = PAIR_MARKERS[action] as string;

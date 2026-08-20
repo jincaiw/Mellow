@@ -3,9 +3,19 @@ import { EditorSelection } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import {
   applyBlockPrefix,
+  applyClearFormat,
+  applyCodeBlock,
+  applyFootnote,
   applyHeading,
+  applyHeadingShift,
+  applyHorizontalRule,
   applyInlineFormat,
   applyLink,
+  applyMathBlock,
+  applyOrderedList,
+  applyTaskList,
+  applyTaskToggle,
+  applyYamlFrontMatter,
   buildSelectionToolbarExtension,
   installFormatApi,
   setSelectionToolbarEnabled,
@@ -83,6 +93,81 @@ describe('Selection Toolbar — formatting pure functions', () => {
     const off = applyHeading('## hello', { from: 3, to: 8 }, 2);
     expect(off.changes).toEqual([{ from: 0, to: 8, insert: 'hello' }]);
     expect(off.selection).toEqual({ from: 0, to: 5 });
+  });
+
+  test('ordered list numbers sequentially, strips block markers, and toggles off', () => {
+    // 多行序号递增；既有引用 marker 剥离后编号（Typora 段落互转）
+    const on = applyOrderedList('> a\nb', { from: 0, to: 5 });
+    expect(on.changes).toEqual([{ from: 0, to: 5, insert: '1. a\n2. b' }]);
+
+    const off = applyOrderedList('1. a\n2. b', { from: 0, to: 9 });
+    expect(off.changes).toEqual([{ from: 0, to: 9, insert: 'a\nb' }]);
+
+    // caret 位（from === to）：作用于当前行（空行也生效）
+    const emptyLine = applyOrderedList('a\n\nb', { from: 2, to: 2 });
+    expect(emptyLine.changes).toEqual([{ from: 2, to: 2, insert: '1. ' }]);
+  });
+
+  test('task list toggles "- [ ] " prefix per line', () => {
+    const on = applyTaskList('a\nb', { from: 0, to: 3 });
+    expect(on.changes).toEqual([{ from: 0, to: 3, insert: '- [ ] a\n- [ ] b' }]);
+
+    // 已勾选任务也识别为 task 行（toggle off）
+    const off = applyTaskList('- [x] done', { from: 0, to: 10 });
+    expect(off.changes).toEqual([{ from: 0, to: 10, insert: 'done' }]);
+  });
+
+  test('code block wraps selection in ``` fences and unwraps', () => {
+    const on = applyCodeBlock('code', { from: 0, to: 4 });
+    expect(on.changes).toEqual([
+      { from: 0, to: 0, insert: '```\n' },
+      { from: 4, to: 4, insert: '\n```' },
+    ]);
+    expect(on.selection).toEqual({ from: 4, to: 8 });
+
+    // 已包裹 → toggle off（删除两行 fence；后 fence 为末行，连同其前换行）
+    const off = applyCodeBlock('```\ncode\n```', { from: 4, to: 8 });
+    expect(off.changes).toEqual([
+      { from: 0, to: 4, insert: '' },
+      { from: 8, to: 12, insert: '' },
+    ]);
+    expect(off.selection).toEqual({ from: 0, to: 4 });
+  });
+
+  test('math block wraps selection in $$ fences and unwraps', () => {
+    const on = applyMathBlock('E=mc^2', { from: 0, to: 6 });
+    expect(on.changes).toEqual([
+      { from: 0, to: 0, insert: '$$\n' },
+      { from: 6, to: 6, insert: '\n$$' },
+    ]);
+
+    const off = applyMathBlock('$$\nE=mc^2\n$$', { from: 3, to: 9 });
+    expect(off.changes).toEqual([
+      { from: 0, to: 3, insert: '' },
+      { from: 9, to: 12, insert: '' },
+    ]);
+  });
+
+  test('clear format strips inline markers and link syntax (⌘\\)', () => {
+    const markers = applyClearFormat('**bold** and ~~strike~~', { from: 0, to: 23 });
+    expect(markers.changes).toEqual([{ from: 0, to: 23, insert: 'bold and strike' }]);
+
+    const link = applyClearFormat('see [docs](https://example.com) now', { from: 0, to: 35 });
+    expect(link.changes).toEqual([{ from: 0, to: 35, insert: 'see docs now' }]);
+
+    // 嵌套 marker 反复剥离
+    const nested = applyClearFormat('**`code`**', { from: 0, to: 10 });
+    expect(nested.changes).toEqual([{ from: 0, to: 10, insert: 'code' }]);
+
+    // 无 marker → 无变更
+    const plain = applyClearFormat('plain text', { from: 0, to: 10 });
+    expect(plain.changes).toEqual([]);
+  });
+
+  test('block prefix works on empty line at caret position', () => {
+    // affectedLines 放宽 from === to：caret 所在空行插入 "> "（Typora ⌥⌘Q 空行语义）
+    const result = applyBlockPrefix('a\n\nb', { from: 2, to: 2 }, '> ');
+    expect(result.changes).toEqual([{ from: 2, to: 2, insert: '> ' }]);
   });
 
   test('visibility model requires enabled, non-composing, selection and not hidden', () => {
@@ -175,5 +260,63 @@ describe('Format menu actions（Typora 对齐）', () => {
     await sleep();
     expect(view.state.doc.toString()).toBe('# line one\nline two');
     view.destroy();
+  });
+});
+
+describe('Paragraph menu actions（B2 菜单结构补全，Typora 对齐）', () => {
+  test('headingUp：h2 → h1；非标题行 → h1；h1 保持 h1', () => {
+    expect(applyHeadingShift('## hello', { from: 3, to: 8 }, -1).changes)
+      .toEqual([{ from: 0, to: 8, insert: '# hello' }]);
+    expect(applyHeadingShift('hello', { from: 0, to: 5 }, -1).changes)
+      .toEqual([{ from: 0, to: 5, insert: '# hello' }]);
+    expect(applyHeadingShift('# hello', { from: 2, to: 7 }, -1).changes)
+      .toEqual([{ from: 0, to: 7, insert: '# hello' }]);
+  });
+
+  test('headingDown：h2 → h3；非标题行 → h2；h6 保持 h6', () => {
+    expect(applyHeadingShift('## hello', { from: 3, to: 8 }, 1).changes)
+      .toEqual([{ from: 0, to: 8, insert: '### hello' }]);
+    expect(applyHeadingShift('hello', { from: 0, to: 5 }, 1).changes)
+      .toEqual([{ from: 0, to: 5, insert: '## hello' }]);
+    expect(applyHeadingShift('###### hello', { from: 7, to: 12 }, 1).changes)
+      .toEqual([{ from: 0, to: 12, insert: '###### hello' }]);
+  });
+
+  test('horizontalRule：当前行下方插入 --- 空行分隔', () => {
+    const r = applyHorizontalRule('hello\nworld', { from: 0, to: 5 });
+    expect(r.changes).toEqual([{ from: 5, to: 5, insert: '\n\n---\n' }]);
+  });
+
+  test('footnote：插入引用并在文末附定义（编号递增）', () => {
+    const r = applyFootnote('hello[^1] world', { from: 11, to: 11 });
+    expect(r.changes).toEqual([
+      { from: 11, to: 11, insert: '[^2]' },
+      { from: 15, to: 15, insert: '\n\n[^2]: ' },
+    ]);
+  });
+
+  test('yamlFrontMatter：顶部插入；已有则忽略', () => {
+    const add = applyYamlFrontMatter('hello', { from: 0, to: 5 });
+    expect(add.changes[0].insert).toBe('---\ntitle: \n---\n\n');
+    const skip = applyYamlFrontMatter('---\ntitle: x\n---\nbody', { from: 17, to: 21 });
+    expect(skip.changes).toEqual([]);
+  });
+
+  test('taskToggle：[ ] ↔ [x] 切换；非任务行忽略', () => {
+    const on = applyTaskToggle('- [ ] task', { from: 7, to: 11 });
+    expect(on.changes).toEqual([{ from: 3, to: 4, insert: 'x' }]);
+    const off = applyTaskToggle('- [x] task', { from: 7, to: 11 });
+    expect(off.changes).toEqual([{ from: 3, to: 4, insert: ' ' }]);
+    const none = applyTaskToggle('plain', { from: 0, to: 5 });
+    expect(none.changes).toEqual([]);
+  });
+
+  test('h4-h6：格式桥 ACTION_IDS 支持 4-6 级标题（段落菜单 ⌘4-6）', () => {
+    expect(applyHeading('hello', { from: 0, to: 5 }, 4).changes)
+      .toEqual([{ from: 0, to: 5, insert: '#### hello' }]);
+    expect(applyHeading('hello', { from: 0, to: 5 }, 5).changes)
+      .toEqual([{ from: 0, to: 5, insert: '##### hello' }]);
+    expect(applyHeading('hello', { from: 0, to: 5 }, 6).changes)
+      .toEqual([{ from: 0, to: 5, insert: '###### hello' }]);
   });
 });

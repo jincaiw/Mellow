@@ -22,7 +22,7 @@ import { buildColumnWidthExtension } from './table/columnWidth';
 import { installCompositionTracking } from './composition';
 import { buildImageExtensions } from './image';
 import { buildSmartPasteExtension } from './smartPaste';
-import { buildClipboardCopyExtension } from './clipboardCopy';
+import { buildClipboardCopyExtension, installClipboardApi } from './clipboardCopy';
 import { buildMathExtension } from './math';
 import { buildMermaidExtension } from './mermaid';
 import { buildFootnoteExtension } from './footnote';
@@ -136,6 +136,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installSearchApi();
   // 格式/段落命令：宿主（菜单）经 iframe window.__MELLOW_FORMAT_API__ 调用
   installFormatApi();
+  // 剪贴板命令：宿主（菜单）经 iframe window.__MELLOW_CLIPBOARD_API__ 调用
+  installClipboardApi();
   // 编辑器右键菜单动作：宿主经 iframe window.__MELLOW_CONTEXT_ACTIONS__ 调用
   installContextMenuApi();
   // 源码模式（PRD §30）：宿主经 iframe window.__MELLOW_SOURCE_API__ 调用
