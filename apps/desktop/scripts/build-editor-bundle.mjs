@@ -61,6 +61,38 @@ const tauriBridgeAdapter = `<script>
 </script>`;
 
 /**
+ * 按键同步桥（iframe → 宿主）：编辑器 iframe 聚焦时 keydown 不跨 frame 传播，
+ * 宿主 window 级快捷键（Win/Linux 无原生菜单加速键：保存/缩放/查找/切换类全量）
+ * 依赖此通道。同源 iframe 直接同步调用 window.parent.__MELLOW_SHORTCUT_API__.dispatch：
+ *   - 命中命令 → 返回 true → 立即 preventDefault（WKWebView 对未被菜单拦截的
+ *     ⌘ 组合会明文插入字符，如 ⇧⌘= 插入 '='；postMessage 异步回程无法阻止）；
+ *   - 未命中 → 返回 false → 事件自然放行（CodeMirror keymap 已在捕获链消费的
+ *     defaultPrevented 不进入本桥；IME 组合中不派发，PRD §13 IME 优先）；
+ *   - 携带 e.code（物理键位：⌥ 组合在 mac 上 e.key 为特殊字符如 '∫'，
+ *     宿主侧优先用 code 归一，布局无关）。
+ */
+const keyForwarder = `<script>
+(function () {
+  if (window.parent === window) return;
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.isComposing || e.key === 'Process') return;
+    if (!e.metaKey && !e.ctrlKey) return;
+    try {
+      var api = window.parent.__MELLOW_SHORTCUT_API__;
+      if (api && typeof api.dispatch === 'function' &&
+          api.dispatch(e.key, e.code || '', {
+            ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+            altKey: e.altKey, shiftKey: e.shiftKey
+          })) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    } catch (err) { /* 宿主不可达时静默放行 */ }
+  });
+})();
+</script>`;
+
+/**
  * 引擎 loader：等待 MarkEdit 就绪后注入引擎扩展。
  * 放在 CoreEditor bundle script 之后（模块按文档顺序执行）：
  * bundle 顶层同步执行 initMarkEditModules → MarkEdit 已存在 → addExtension 推入扩展存储；
@@ -143,7 +175,7 @@ function build() {
   let out = buildBundleHtml(html, { config: DEFAULT_CONFIG });
 
   // 3b. Tauri 适配器注入（desktop Adapter 层，editor-core 无 Tauri 知识）
-  out = out.replace('</head>', `${tauriBridgeAdapter}\n</head>`);
+  out = out.replace('</head>', `${tauriBridgeAdapter}\n${keyForwarder}\n</head>`);
 
   // 4. 引擎 loader（放在 body 尾部，CoreEditor bundle script 之后）
   out = out.replace('</body>', `${engineLoader}\n</body>`);

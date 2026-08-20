@@ -68,6 +68,7 @@ import { BUILTIN_THEMES, DEFAULT_THEME_SETTINGS, resolveActiveTheme, themeById }
 import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
+import { readSetting, settingById, writeSetting } from '../../../packages/settings/src';
 import type { SettingDefinition } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
 import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader } from '../../../packages/desktop-ui/src';
@@ -105,6 +106,24 @@ const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SPLIT_RATIO_KEY = 'mellow.split.ratio';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
 const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
+
+/**
+ * KeyboardEvent.code → 快捷键 key 归一表（dispatchShortcut 用）。
+ * ⌥ 组合在 macOS 上 e.key 为特殊字符（Opt+B → '∫'），命令注册表以物理键位
+ * 定义（'B'），故优先按 code 归一；未列出的 code（F8、ArrowUp 等）与 key 同形。
+ */
+const CODE_KEY_ALIASES: Record<string, string> = {
+  Equal: '=', Minus: '-', Backslash: '\\', Slash: '/', Backquote: '`',
+  BracketLeft: '[', BracketRight: ']', Semicolon: "'", Quote: "'",
+  Comma: ',', Period: '.', Space: ' ',
+  Digit0: '0', Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4',
+  Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
+  // 字母键（⌥ 组合在 mac 上 e.key 为特殊字符如 'œ'/'∫'，code 布局无关）
+  KeyA: 'A', KeyB: 'B', KeyC: 'C', KeyD: 'D', KeyE: 'E', KeyF: 'F', KeyG: 'G',
+  KeyH: 'H', KeyI: 'I', KeyJ: 'J', KeyK: 'K', KeyL: 'L', KeyM: 'M', KeyN: 'N',
+  KeyO: 'O', KeyP: 'P', KeyQ: 'Q', KeyR: 'R', KeyS: 'S', KeyT: 'T', KeyU: 'U',
+  KeyV: 'V', KeyW: 'W', KeyX: 'X', KeyY: 'Y', KeyZ: 'Z',
+};
 
 type EditorStatus = 'idle' | 'ready' | 'error';
 
@@ -1295,6 +1314,17 @@ export default function App() {
     localStorage.setItem('mellow.sidebar.mode', mode);
   }, []);
 
+  /** 侧边栏模式快捷键（⌃⌘1/2/3，Typora 对齐）：切到大纲/文件列表/文件树；侧栏未开则打开 */
+  const showSidebarAs = useCallback((mode: 'files' | 'outline' | 'search', fileMode?: 'tree' | 'list') => {
+    if (mode === 'files' && fileMode) setFileSidebarMode(fileMode);
+    setSidebarMode(mode);
+    setSidebarVisible((v) => {
+      if (v) return v;
+      try { localStorage.setItem('mellow.sidebar.visible', '1'); } catch { /* noop */ }
+      return true;
+    });
+  }, [setFileSidebarMode, setSidebarMode]);
+
   const setOutlineAutoNumberOption = useCallback((value: boolean) => {
     setOutlineAutoNumber(value);
     localStorage.setItem(OUTLINE_OPTIONS_KEY, JSON.stringify({ autoNumber: value }));
@@ -2374,6 +2404,22 @@ export default function App() {
     refreshTabsState();
   }, [refreshTabsState, syncActiveTabFromEditor]);
 
+  /** 字号缩放（⇧⌘0 实际大小 / ⇧⌘= 放大 / ⇧⌘- 缩小，Typora 视图菜单对齐）：
+   *  读写 editor.fontSize 设置（单一真源）+ live apply；到达 min/max 后静默停。 */
+  const adjustFontSize = useCallback((delta: number) => {
+    const def = settingById('editor.fontSize');
+    if (def === undefined) return;
+    const current = readSetting(def);
+    const base = typeof current === 'number' ? current : Number(def.defaultValue);
+    const next = delta === 0
+      ? Number(def.defaultValue)
+      : Math.min(def.max ?? 32, Math.max(def.min ?? 10, base + delta));
+    if (next === base) return;
+    writeSetting(def, next);
+    hostRef.current?.setEditorConfig('setFontSize', { fontSize: next });
+    setStatusText(`${t('settings.editor.fontSize')}: ${next}px`);
+  }, [t]);
+
   /** Settings live apply（不要求重启；安全项立即生效） */
   const applySetting = useCallback((def: SettingDefinition, value: string | number | boolean) => {
     switch (def.applyCommand) {
@@ -2515,6 +2561,9 @@ export default function App() {
       { id: 'view.focus.paragraph', localizedTitle: { zh: 'Focus Mode：当前段落', en: 'Focus Mode: Current Paragraph' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('paragraph') },
       { id: 'view.typewriter.cycle', localizedTitle: { zh: '切换 Typewriter Mode', en: 'Toggle Typewriter Mode' }, category: 'view', shortcut: { mac: 'F9', winLinux: 'F9' }, context: { scope: 'document' }, enabled: always, execute: () => toggleTypewriter() },
       { id: 'view.source.toggle', localizedTitle: { zh: '源码模式', en: 'Source Mode' }, category: 'view', shortcut: { mac: 'Cmd+/', winLinux: 'Ctrl+/' }, context: { scope: 'global' }, enabled: always, execute: () => engineSourceToggle() },
+      { id: 'view.zoomReset', localizedTitle: { zh: '实际大小', en: 'Actual Size' }, category: 'view', shortcut: { mac: 'Cmd+Shift+0', winLinux: 'Ctrl+Shift+0' }, context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(0) },
+      { id: 'view.zoomIn', localizedTitle: { zh: '放大', en: 'Zoom In' }, category: 'view', shortcut: { mac: 'Cmd+Shift+=', winLinux: 'Ctrl+Shift+=' }, context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(1) },
+      { id: 'view.zoomOut', localizedTitle: { zh: '缩小', en: 'Zoom Out' }, category: 'view', shortcut: { mac: 'Cmd+Shift+-', winLinux: 'Ctrl+Shift+-' }, context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(-1) },
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
       { id: 'view.toolbar.toggle', localizedTitle: { zh: '切换格式工具栏', en: 'Toggle Format Toolbar' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleSelectionToolbar() },
@@ -2607,9 +2656,19 @@ export default function App() {
       { id: 'paragraph.h4', localizedTitle: { zh: '四级标题', en: 'Heading 4' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+4', winLinux: 'Ctrl+4' }, enabled: always, execute: () => engineFormat('h4') },
       { id: 'paragraph.h5', localizedTitle: { zh: '五级标题', en: 'Heading 5' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+5', winLinux: 'Ctrl+5' }, enabled: always, execute: () => engineFormat('h5') },
       { id: 'paragraph.h6', localizedTitle: { zh: '六级标题', en: 'Heading 6' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+6', winLinux: 'Ctrl+6' }, enabled: always, execute: () => engineFormat('h6') },
-      { id: 'paragraph.normal', localizedTitle: { zh: '段落', en: 'Paragraph' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('paragraph') },
+      { id: 'paragraph.normal', localizedTitle: { zh: '段落', en: 'Paragraph' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+0', winLinux: 'Ctrl+0' }, enabled: always, execute: () => engineFormat('paragraph') },
+      // 段落新项（B2 菜单补全，Typora 段落菜单对齐）
+      { id: 'paragraph.headingUp', localizedTitle: { zh: '提升标题级别', en: 'Increase Heading Level' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+=', winLinux: 'Ctrl+=' }, enabled: always, execute: () => engineFormat('headingUp') },
+      { id: 'paragraph.headingDown', localizedTitle: { zh: '降低标题级别', en: 'Decrease Heading Level' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+-', winLinux: 'Ctrl+-' }, enabled: always, execute: () => engineFormat('headingDown') },
+      { id: 'paragraph.horizontalRule', localizedTitle: { zh: '水平分割线', en: 'Horizontal Rule' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+-', winLinux: 'Ctrl+Alt+-' }, enabled: always, execute: () => engineFormat('horizontalRule') },
+      { id: 'paragraph.footnote', localizedTitle: { zh: '脚注', en: 'Footnote' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+R', winLinux: 'Ctrl+Alt+R' }, enabled: always, execute: () => engineFormat('footnote') },
+      { id: 'paragraph.yamlFrontMatter', localizedTitle: { zh: 'YAML Front Matter', en: 'YAML Front Matter' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('yamlFrontMatter') },
+      { id: 'paragraph.taskToggle', localizedTitle: { zh: '切换任务状态', en: 'Toggle Task State' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Alt+X' }, enabled: always, execute: () => engineFormat('taskToggle') },
       { id: 'theme.mode.system', localizedTitle: { zh: '跟随系统', en: 'Follow System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
       { id: 'view.sidebar.toggle', localizedTitle: { zh: '切换侧边栏', en: 'Toggle Sidebar' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+L', winLinux: 'Ctrl+Shift+L' }, enabled: always, execute: toggleSidebar },
+      { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+1', winLinux: 'Ctrl+Shift+1' }, enabled: always, execute: () => showSidebarAs('outline') },
+      { id: 'view.sidebar.fileList', localizedTitle: { zh: '文件列表', en: 'File List' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+2', winLinux: 'Ctrl+Shift+2' }, enabled: always, execute: () => showSidebarAs('files', 'list') },
+      { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+3', winLinux: 'Ctrl+Shift+3' }, enabled: always, execute: () => showSidebarAs('files', 'tree') },
       { id: 'help.cheatsheet', localizedTitle: { zh: 'Markdown 速查表', en: 'Markdown Cheatsheet' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => setCheatsheetOpen(true) },
     ];
     commands.forEach((command) => registry.register(command));
@@ -2633,21 +2692,45 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+
+  /**
+   * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
+   * key 归一优先用物理键位 code（⌥ 组合在 mac 上 e.key 为特殊字符如 '∫'，
+   * code 布局无关）：KeyB→B / Equal→= / Digit0→0 / Slash→/ …
+   */
+  const dispatchShortcut = useCallback((key: string, code: string, mods: { ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }): boolean => {
+    const platform = navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux';
+    const normalizedKey = CODE_KEY_ALIASES[code] ?? key;
+    const parts = [mods.ctrlKey ? 'Ctrl' : '', mods.metaKey ? 'Cmd' : '', mods.altKey ? 'Alt' : '', mods.shiftKey ? 'Shift' : '', normalizedKey].filter(Boolean).join('+');
+    const command = commandRegistryRef.current.findByShortcut(normalizeShortcut(parts), platform);
+    if (!command) return false;
+    void dispatchCommand(command.id, 'shortcut');
+    return true;
+  }, [dispatchCommand]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const platform = navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'win-linux';
-      const parts = [event.ctrlKey ? 'Ctrl' : '', event.metaKey ? 'Cmd' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.key].filter(Boolean).join('+');
-      const command = commandRegistryRef.current.findByShortcut(normalizeShortcut(parts), platform);
-      if (!command) return;
-      // Windows/Linux Ctrl+T 未注册为 New Tab，因此保留给 Table（PRD Shortcut Contract）。
-      event.preventDefault();
-      void dispatchCommand(command.id, 'shortcut');
+      if (event.isComposing) return;
+      if (dispatchShortcut(event.key, event.code, event)) {
+        // Windows/Linux Ctrl+T 未注册为 New Tab，因此保留给 Table（PRD Shortcut Contract）。
+        event.preventDefault();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dispatchCommand]);
+  }, [dispatchShortcut]);
+
+  // 编辑器 iframe 按键同步桥（bundle 内 keyForwarder 同源直调）：命中命令返回 true，
+  // iframe 侧立即 preventDefault（WKWebView 未拦截的 ⌘ 组合会明文插入字符）。
+  useEffect(() => {
+    (window as unknown as { __MELLOW_SHORTCUT_API__?: { dispatch: (key: string, code: string, mods: { ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }) => boolean } }).__MELLOW_SHORTCUT_API__ = {
+      dispatch: (key, code, mods) => dispatchShortcut(key, code, mods),
+    };
+    return () => {
+      delete (window as unknown as { __MELLOW_SHORTCUT_API__?: unknown }).__MELLOW_SHORTCUT_API__;
+    };
+  }, [dispatchShortcut]);
 
   // Engine iframe → host：Slash 行首触发通知
   useEffect(() => {
