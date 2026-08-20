@@ -467,6 +467,17 @@ export default function App() {
   const [systemDark, setSystemDark] = useState(false);
   const activeTheme: MellowTheme = resolveActiveTheme(themeSettings, systemDark);
 
+  // B3-2 编辑器字体族优先级：用户显式设置（localStorage）> 主题级 editorFontFamily > CoreEditor 默认（null）
+  const readEditorFontFamilyPreference = (theme: MellowTheme): string | null => {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem('mellow.editor.fontFamily');
+    } catch { /* 忽略 */
+    }
+    if (raw !== null && raw !== '') return raw;
+    return theme.editorFontFamily ?? null;
+  };
+
   // 系统亮暗跟随（System 模式）
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -492,6 +503,9 @@ export default function App() {
     }
     style.textContent = activeTheme.themeCss;
     hostRef.current?.setTheme(activeTheme.editorTheme);
+    // B3-2 主题级编辑器字体：用户显式设置 > 主题（衬线风）> CoreEditor 默认（ui-monospace）
+    const family = readEditorFontFamilyPreference(activeTheme);
+    hostRef.current?.setEditorConfig('setFontFace', { family: family ?? 'ui-monospace' });
   }, [activeTheme]);
 
   const setThemeSettingsAndPersist = useCallback((next: ThemeSettings) => {
@@ -2022,6 +2036,28 @@ export default function App() {
         }
         refreshTabsState();
         await applyTab(active);
+        // B3-1 编辑器设置启动恢复（fontSize/fontFamily/lineNumbers/lineWrapping：
+        // 持久化在 localStorage，此前仅 live apply 无恢复 → 重启后丢失；B1-1 缩放同享此路径）
+        try {
+          const sizeDef = settingById('editor.fontSize');
+          const size = sizeDef ? readSetting(sizeDef) : 17;
+          if (typeof size === 'number' && size !== 17) {
+            host.setEditorConfig('setFontSize', { fontSize: size });
+          }
+          // B3-2 字体族启动恢复：用户显式设置 > 主题级（Newsprint/Paper 衬线）> CoreEditor 默认
+          const familyPref = readEditorFontFamilyPreference(activeTheme);
+          if (familyPref !== null) {
+            host.setEditorConfig('setFontFace', { family: familyPref });
+          }
+          const lineNumDef = settingById('editor.lineNumbers');
+          if (lineNumDef && readSetting(lineNumDef) === true) {
+            host.setEditorConfig('setShowLineNumbers', { enabled: true });
+          }
+          const wrapDef = settingById('editor.lineWrapping');
+          if (wrapDef && readSetting(wrapDef) === false) {
+            host.setEditorConfig('setLineWrapping', { enabled: false });
+          }
+        } catch { /* 设置读取失败 → 保持默认 */ }
         setStatus('ready');
         setStatusText(t('msg.editorReady'));
         refreshStats(host);
@@ -2514,6 +2550,7 @@ export default function App() {
       case 'settings.editorConfig': {
         const host = hostRef.current;
         if (def.id === 'editor.fontSize') host?.setEditorConfig('setFontSize', { fontSize: Number(value) });
+        else if (def.id === 'editor.fontFamily') host?.setEditorConfig('setFontFace', { family: String(value) });
         else if (def.id === 'editor.lineNumbers') host?.setEditorConfig('setShowLineNumbers', { enabled: Boolean(value) });
         else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
         break;

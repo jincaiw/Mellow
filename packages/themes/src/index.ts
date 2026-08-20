@@ -25,6 +25,8 @@ export interface MellowTheme {
   themeCss: string;
   /** 编辑器内容区映射（CoreEditor webModules.config.setTheme 的 name） */
   editorTheme: string;
+  /** 主题级编辑器内容字体（单个族名，如 'Georgia'；用户显式 fontFamily 设置优先于此） */
+  editorFontFamily?: string;
 }
 
 export interface ThemeSettings {
@@ -173,9 +175,13 @@ export const BUILTIN_THEMES: MellowTheme[] = [
       '--mellow-selection': '#eee7d6',
       '--mellow-code-bg': '#f4efe3',
       '--mellow-toolbar-bg': 'rgba(250, 246, 236, 0.96)',
+      // B3-2 衬线文学风（Typora Pixyll 方向）：Reader/渲染区衬线字体栈
+      '--mellow-content-font': "Georgia, 'Songti SC', 'Noto Serif SC', 'Times New Roman', serif",
     },
     themeCss: '',
     editorTheme: 'solarized-light',
+    // B3-2 主题级编辑器衬线（单个族名；用户 fontFamily 显式设置优先）
+    editorFontFamily: 'Georgia',
   },
   {
     id: 'git-light',
@@ -240,9 +246,23 @@ export const BUILTIN_THEMES: MellowTheme[] = [
       '--mellow-selection': '#e2d3b0',
       '--mellow-code-bg': '#efe5cd',
       '--mellow-code-border': '#d9c9a8',
+      // B3-2 报纸感（Typora Newsprint 方向）：衬线正文
+      '--mellow-content-font': "Georgia, 'Songti SC', 'Noto Serif SC', 'Times New Roman', serif",
     },
-    themeCss: '',
+    // B3-2 报纸排版细节：标题衬线粗体 + h1/h2 下边框（对齐 Typora Newsprint 视觉，参数原创）
+    themeCss: [
+      "[data-theme='newsprint'] .mellow-reader h1,",
+      "[data-theme='newsprint'] .mellow-reader h2 {",
+      "  border-bottom: 2px solid var(--mellow-border-strong);",
+      "  padding-bottom: 0.25em;",
+      '}',
+      "[data-theme='newsprint'] .mellow-reader h1 { letter-spacing: 0.02em; }",
+      "[data-theme='newsprint'] .mellow-reader blockquote {",
+      '  border-left: 3px solid var(--mellow-border-strong);',
+      '}',
+    ].join('\n'),
     editorTheme: 'winter-is-coming-light',
+    editorFontFamily: 'Georgia',
   },
 ];
 

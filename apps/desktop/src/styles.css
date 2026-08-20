@@ -892,7 +892,8 @@ html, body, #root {
   max-width: 820px;
   margin: 0 auto;
   padding: 56px 32px 30vh;
-  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* B3-2 主题级内容字体（衬线风主题 Paper/Newsprint 覆盖；其余主题用默认 UI 栈） */
+  font-family: var(--mellow-content-font, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif);
   font-size: 16px;
   line-height: 1.65;
   color: var(--mellow-fg);

@@ -64,6 +64,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.editor',
     settings: [
       { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: 17, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig' },
+      // B3-1 字体族（Typora parity：偏好设置选 font family；CoreEditor setFontFace live apply）
+      { id: 'editor.fontFamily', labelKey: 'settings.editor.fontFamily', type: 'select', storageKey: 'mellow.editor.fontFamily', defaultValue: 'system-ui',
+        options: [
+          { value: 'system-ui', labelKey: 'settings.fontFamily.system' },
+          { value: 'PingFang SC', labelKey: 'settings.fontFamily.pingfang' },
+          { value: 'Hiragino Sans GB', labelKey: 'settings.fontFamily.hiragino' },
+          { value: 'Microsoft YaHei', labelKey: 'settings.fontFamily.yahei' },
+          { value: 'Songti SC', labelKey: 'settings.fontFamily.songti' },
+          { value: 'ui-monospace', labelKey: 'settings.fontFamily.mono' },
+        ], applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineNumbers', labelKey: 'settings.editor.lineNumbers', type: 'toggle', storageKey: 'mellow.editor.lineNumbers', defaultValue: false, applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineWrapping', labelKey: 'settings.editor.lineWrapping', type: 'toggle', storageKey: 'mellow.editor.lineWrapping', defaultValue: true, applyCommand: 'settings.editorConfig' },
       { id: 'editor.typewriter', labelKey: 'settings.editor.typewriter', type: 'toggle', storageKey: 'mellow.editor.typewriter', defaultValue: false, applyCommand: 'view.typewriter.on' },
