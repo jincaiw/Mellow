@@ -53,6 +53,8 @@ export interface Command {
   execute: (context: CommandContext) => Promise<void> | void;
   context: CommandAvailabilityContext;
   presentation?: CommandPresentation;
+  /** 快捷键别名（同一命令多键位；Typora 兼容，如 macOS 替换 ⌥⌘F 主 + ⌘H 别名） */
+  shortcutAliases?: CommandShortcut[];
 }
 
 export interface RegisterOptions {
@@ -75,22 +77,48 @@ export function createCommandContext(input: Partial<CommandContext> & { source: 
 
 const ORDER = ['Ctrl', 'Cmd', 'Alt', 'Shift'];
 
+/** Shift 变体字符归一到 base key（⇧⌘= 事件在 macOS 报 '='、Win/Linux 报 '+'，统一按 base key 匹配） */
+const SHIFTED_KEY_ALIASES: Record<string, string> = { '+': '=', _: '-' };
+
+function normalizeModifier(part: string): string | null {
+  const lower = part.toLowerCase();
+  if (lower === 'control' || lower === 'ctrl') return 'Ctrl';
+  if (lower === 'command' || lower === 'cmd' || lower === 'meta') return 'Cmd';
+  if (lower === 'option' || lower === 'alt') return 'Alt';
+  if (lower === 'shift') return 'Shift';
+  return null;
+}
+
+/** 快捷键归一化（修饰键排序 + 大小写 + Shift 变体 key 归一）。
+ *  解析用「最后一个 '+' 之后整体作为 key」（同 muda accelerator）——支持 '+' 自身作为
+ *  key（如 Win/Linux 事件 'Ctrl+Shift++'），普通 split 会把它当分隔符吞掉。 */
 export function normalizeShortcut(shortcut: string): string {
-  const parts = shortcut
+  const trimmed = shortcut.trim();
+  if (trimmed === '') return '';
+  const pos = trimmed.lastIndexOf('+');
+  let modStr = '';
+  let rawKey = trimmed;
+  if (pos !== -1) {
+    const after = trimmed.slice(pos + 1);
+    if (after.trim() === '') {
+      // 尾部 '+' 即 key 本身（'Ctrl+Shift++' → mods 'Ctrl+Shift' + key '+'）
+      modStr = trimmed.slice(0, pos).replace(/\++$/, '');
+      rawKey = '+';
+    } else {
+      modStr = trimmed.slice(0, pos);
+      rawKey = after.trim();
+    }
+  }
+  const mods = modStr
     .split('+')
     .map((part) => part.trim())
     .filter(Boolean)
-    .map((part) => {
-      const lower = part.toLowerCase();
-      if (lower === 'control' || lower === 'ctrl') return 'Ctrl';
-      if (lower === 'command' || lower === 'cmd' || lower === 'meta') return 'Cmd';
-      if (lower === 'option' || lower === 'alt') return 'Alt';
-      if (lower === 'shift') return 'Shift';
-      return part.length === 1 ? part.toUpperCase() : part;
-    });
-  const mods = parts.filter((part) => ORDER.includes(part)).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
-  const keys = parts.filter((part) => !ORDER.includes(part));
-  return [...mods, ...keys].join('+');
+    .map(normalizeModifier)
+    .filter((part): part is string => part !== null)
+    .sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+  if (rawKey.trim() === '') return mods.join('+');
+  const key = SHIFTED_KEY_ALIASES[rawKey] ?? (rawKey.length === 1 ? rawKey.toUpperCase() : rawKey);
+  return [...mods, key].join('+');
 }
 
 export function titleFor(command: Command, locale: LocaleCode): string {
@@ -226,9 +254,12 @@ export class CommandRegistry {
 
   findByShortcut(shortcut: string, platform: CommandPlatform): Command | undefined {
     const normalized = normalizeShortcut(shortcut);
+    const pick = (s: CommandShortcut | undefined): string | undefined => (platform === 'mac' ? s?.mac : s?.winLinux);
     return this.all().find((command) => {
-      const candidate = platform === 'mac' ? command.shortcut?.mac : command.shortcut?.winLinux;
-      return candidate !== undefined && normalizeShortcut(candidate) === normalized;
+      const candidates = [command.shortcut, ...(command.shortcutAliases ?? [])]
+        .map(pick)
+        .filter((c): c is string => c !== undefined);
+      return candidates.some((c) => normalizeShortcut(c) === normalized);
     });
   }
 

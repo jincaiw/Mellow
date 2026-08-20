@@ -54,6 +54,59 @@ describe('CommandRegistry', () => {
     expect(registry.findByShortcut('cmd+shift+f', 'mac')?.id).toBe('search.global');
   });
 
+  test('shortcut lookup normalizes shifted key variants (⇧⌘= / ⇧⌘-)', () => {
+    // macOS：Cmd 修饰下 event.key 返回 base key（'=' / '-'）；Win/Linux：Shift 修饰产生 '+' / '_'。
+    // key '+' 自身不能被普通 split('+') 吞掉（'Ctrl+Shift++' 的尾 '+' 是 key）。
+    const registry = new CommandRegistry();
+    registry.register({
+      id: 'view.zoomIn',
+      title: { zh: '放大', en: 'Zoom In' },
+      category: 'view',
+      shortcut: { mac: 'Cmd+Shift+=', winLinux: 'Ctrl+Shift+=' },
+      context: { scope: 'global' },
+      enabled: () => true,
+      execute: jest.fn(),
+    });
+    registry.register({
+      id: 'view.zoomOut',
+      title: { zh: '缩小', en: 'Zoom Out' },
+      category: 'view',
+      shortcut: { mac: 'Cmd+Shift+-', winLinux: 'Ctrl+Shift+-' },
+      context: { scope: 'global' },
+      enabled: () => true,
+      execute: jest.fn(),
+    });
+
+    expect(normalizeShortcut('Cmd+Shift+=')).toBe('Cmd+Shift+=');
+    expect(normalizeShortcut('Ctrl+Shift++')).toBe('Ctrl+Shift+=');
+    expect(normalizeShortcut('Cmd+Shift+-')).toBe('Cmd+Shift+-');
+    expect(normalizeShortcut('Ctrl+Shift+_')).toBe('Ctrl+Shift+-');
+    expect(registry.findByShortcut('Cmd+Shift+=', 'mac')?.id).toBe('view.zoomIn');
+    expect(registry.findByShortcut('Ctrl+Shift++', 'win-linux')?.id).toBe('view.zoomIn');
+    expect(registry.findByShortcut('Cmd+Shift+-', 'mac')?.id).toBe('view.zoomOut');
+    expect(registry.findByShortcut('Ctrl+Shift+_', 'win-linux')?.id).toBe('view.zoomOut');
+  });
+
+  test('shortcut aliases resolve to the same command (⌥⌘F 主 + ⌘H 别名)', () => {
+    const registry = new CommandRegistry();
+    registry.register({
+      id: 'search.replace',
+      title: { zh: '替换', en: 'Replace' },
+      category: 'edit',
+      shortcut: { mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H' },
+      shortcutAliases: [{ mac: 'Cmd+H' }],
+      context: { scope: 'global' },
+      enabled: () => true,
+      execute: jest.fn(),
+    });
+
+    expect(registry.findByShortcut('Cmd+Alt+F', 'mac')?.id).toBe('search.replace');
+    expect(registry.findByShortcut('Cmd+H', 'mac')?.id).toBe('search.replace');
+    expect(registry.findByShortcut('Ctrl+H', 'win-linux')?.id).toBe('search.replace');
+    // 别名不串平台：win-linux 不认 Cmd+H
+    expect(registry.findByShortcut('Cmd+H', 'win-linux')).toBeUndefined();
+  });
+
   test('command palette fuzzy searches localized commands and keeps disabled state', () => {
     const registry = new CommandRegistry();
     registry.register({ id: 'file.save', title: { zh: '保存', en: 'Save' }, category: 'file', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' }, context: { scope: 'document' }, enabled: () => false, execute: jest.fn() });
