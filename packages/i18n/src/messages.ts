@@ -23,6 +23,7 @@ const zhCN = {
   // Sidebar
   'sidebar.files': '文件',
   'sidebar.toggleTitle': '切换侧边栏（Cmd+Shift+L）',
+  'sidebar.resizeTitle': '拖动调整侧边栏宽度',
   'sidebar.outline': '大纲',
   'sidebar.search': '搜索',
   'sidebar.openFolder': '打开…',
@@ -438,6 +439,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
 
   'sidebar.files': 'Files',
   'sidebar.toggleTitle': 'Toggle sidebar (Cmd+Shift+L)',
+  'sidebar.resizeTitle': 'Drag to resize sidebar',
   'sidebar.outline': 'Outline',
   'sidebar.search': 'Search',
   'sidebar.openFolder': 'Open…',

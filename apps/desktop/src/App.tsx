@@ -106,6 +106,7 @@ const LOCALE_SETTING_KEY = 'mellow.locale';
 const AI_ENABLED_KEY = 'mellow.ai.enabled';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SPLIT_RATIO_KEY = 'mellow.split.ratio';
+const SIDEBAR_WIDTH_KEY = 'mellow.sidebar.width';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
 const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
 
@@ -238,6 +239,20 @@ export default function App() {
   const [sidebarVisible, setSidebarVisible] = useState<boolean>(() => {
     try { return localStorage.getItem('mellow.sidebar.visible') === '1'; } catch { return false; }
   });
+  // 侧边栏宽度拖拽（D-J / Typora parity）：200–480px，localStorage 记忆（默认 260）
+  const [sidebarWidth, setSidebarWidthState] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+      return Number.isFinite(saved) && saved >= 200 && saved <= 480 ? saved : 260;
+    } catch {
+      return 260;
+    }
+  });
+  const setSidebarWidth = useCallback((next: number) => {
+    const clamped = Math.max(200, Math.min(480, Math.round(next)));
+    setSidebarWidthState(clamped);
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)); } catch { /* no-op */ }
+  }, []);
   /** 引擎格式/段落命令桥（菜单 → iframe __MELLOW_FORMAT_API__） */
   const engineFormat = useCallback((action: string) => {
     const frame = containerRef.current?.querySelector('iframe');
@@ -280,6 +295,21 @@ export default function App() {
       return !v;
     });
   }, []);
+
+  // 侧边栏右缘拖拽调整宽度（与 split-divider 同模式：window mousemove/mouseup）
+  const handleSidebarDragStart = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const onMove = (ev: MouseEvent): void => {
+      // workspace-shell 贴视口左缘 → clientX 即侧边栏宽度（clamp 由 setSidebarWidth 保证）
+      setSidebarWidth(ev.clientX);
+    };
+    const onUp = (): void => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [setSidebarWidth]);
 
   const [status, setStatus] = useState<EditorStatus>('idle');
   const [localeSetting, setLocaleSetting] = useState<LocaleSetting>(() => {
@@ -3217,7 +3247,7 @@ export default function App() {
       </header>
       <div className="workspace-shell">
         {sidebarVisible && (
-        <aside className="file-tree" onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
+        <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
           <SidebarHeader
             mode={sidebarMode}
             t={t}
@@ -3354,6 +3384,16 @@ export default function App() {
             </>
           )}
         </aside>
+        )}
+        {sidebarVisible && (
+          <div
+            className="sidebar-resizer"
+            onMouseDown={handleSidebarDragStart}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('sidebar.resizeTitle')}
+            title={t('sidebar.resizeTitle')}
+          />
         )}
         <main className={`editor-container${splitOpen ? ' split' : ''}`}>
           {tabs.length === 0 && !readerOpen && !splitOpen && status === 'ready' && (
