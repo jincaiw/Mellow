@@ -158,7 +158,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'export',
     labelKey: 'settings.export',
     settings: [
-      { id: 'export.placeholder', labelKey: 'settings.export.placeholder', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.export.placeholderDesc' },
+      // 图片导出（PRD §74：PNG/JPEG/width/quality/long-image protection）
+      { id: 'export.image.format', labelKey: 'settings.export.image.format', type: 'select', storageKey: 'mellow.export.image.format', defaultValue: 'png',
+        options: [
+          { value: 'png', labelKey: 'settings.export.image.png' },
+          { value: 'jpeg', labelKey: 'settings.export.image.jpeg' },
+        ], descriptionKey: 'settings.export.image.formatDesc' },
+      { id: 'export.image.width', labelKey: 'settings.export.image.width', type: 'number', storageKey: 'mellow.export.image.width', defaultValue: 800, min: 200, max: 4096, step: 10, descriptionKey: 'settings.export.image.widthDesc' },
+      { id: 'export.image.quality', labelKey: 'settings.export.image.quality', type: 'number', storageKey: 'mellow.export.image.quality', defaultValue: 0.92, min: 0.1, max: 1, step: 0.02, descriptionKey: 'settings.export.image.qualityDesc' },
     ],
   },
   {

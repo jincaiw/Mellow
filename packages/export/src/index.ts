@@ -491,6 +491,7 @@ export { PDF_THEME_COLORS, PDF_TYPOGRAPHY, headingFontSize } from './typography'
 export type { PdfThemeColors, PdfThemeName, PdfTypography } from './typography';
 export * from './printStyle';
 export * from './print';
+export * from './image';
 
 /** 生成 PDF 字节（嵌入子集字体）。pdfmake 0.3.11 的字体需注册到 vfs 后以字符串键引用。 */
 export function createPdfBuffer(markdown: string, options: PdfOptions, env: PdfEnv): Promise<Uint8Array> {

@@ -80,6 +80,7 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("export.pdf", "PDF…", "PDF…"),
     ("export.html", "HTML…", "HTML…"),
     ("export.docx", "Word (.docx)…", "Word (.docx)…"),
+    ("export.image", "图片 (PNG/JPEG)…", "Image (PNG/JPEG)…"),
     ("file.print", "打印…", "Print…"),
     // ── 编辑 ──
     ("menu.edit", "编辑", "Edit"),
@@ -268,7 +269,8 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let export_pdf = MenuItem::with_id(app, "export.pdf", &l("export.pdf"), true, None::<&str>)?;
     let export_html = MenuItem::with_id(app, "export.html", &l("export.html"), true, None::<&str>)?;
     let export_docx = MenuItem::with_id(app, "export.docx", &l("export.docx"), true, None::<&str>)?;
-    let export_menu = Submenu::with_items(app, &l("menu.export"), true, &[&export_pdf, &export_html, &export_docx])?;
+    let export_image = MenuItem::with_id(app, "export.image", &l("export.image"), true, None::<&str>)?;
+    let export_menu = Submenu::with_items(app, &l("menu.export"), true, &[&export_pdf, &export_html, &export_docx, &export_image])?;
     let print = MenuItem::with_id(app, "file.print", &l("file.print"), true, accel("Cmd+P", "Ctrl+P"))?;
 
     // 打开最近文件（动态子菜单：前端 set_recent_files 重建）

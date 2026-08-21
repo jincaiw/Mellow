@@ -62,6 +62,7 @@ import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/s
 import { classifyLargeFile } from '../../../packages/editor-engine/src/largeFile';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions } from '../../../packages/host-api/src/index';
+import type { ImageExportOptions, Canvas2DLike } from '../../../packages/export/src/image/index';
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import type { CommandContribution } from '../../../packages/extension-api/src';
@@ -749,6 +750,96 @@ export default function App() {
     }
   }, [t, themeSettings.mode]);
 
+  /** 图片 src → 可显示/可加载 URL（相对路径基于当前文档目录，Tauri asset 协议）；Reader 与图片导出共用 */
+  const readerResolveImageSrc = useCallback((src: string) => {
+    if (/^(?:https?:|data:|#)/i.test(src)) return src;
+    const docPath = filePathRef.current;
+    const base = docPath === null ? '' : docPath.replace(/[\/][^\/]*$/, '');
+    const abs = base === '' ? src : `${base}/${src}`;
+    if ('__TAURI_INTERNALS__' in window) {
+      try {
+        return convertFileSrc(abs.replace(/^file:\/\//, ''));
+      } catch {
+        return abs;
+      }
+    }
+    return abs;
+  }, []);
+
+  // ── B5+: 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）──
+  const handleExportImage = useCallback(async () => {
+    const tab = tabsRef.current.active;
+    if (tab === null || hostRef.current === null) return;
+    try {
+      // 设置读取（PRD §74 参数；localStorage 值不可信任 → 回退默认）
+      const settingsFormat = localStorage.getItem('mellow.export.image.format') === 'jpeg' ? 'jpeg' : 'png';
+      const widthRaw = Number(localStorage.getItem('mellow.export.image.width'));
+      const qualityRaw = Number(localStorage.getItem('mellow.export.image.quality'));
+      const [{ exportImageBytes, DEFAULT_IMAGE_OPTIONS }, savePath] = await Promise.all([
+        import('../../../packages/export/src/image/index'),
+        invoke<string | null>('pick_save_path', {
+          defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.${settingsFormat === 'jpeg' ? 'jpg' : 'png'}`,
+          filters: ['png', 'jpg', 'jpeg'],
+        }),
+      ]);
+      if (savePath === null) return; // 用户取消
+      // 保存路径扩展名优先（用户在对话框中改名 → 按扩展名出格式）
+      const extFormat = /\.(jpe?g)$/i.test(savePath) ? 'jpeg' : /\.png$/i.test(savePath) ? 'png' : settingsFormat;
+      const options: ImageExportOptions = {
+        ...DEFAULT_IMAGE_OPTIONS,
+        format: extFormat,
+        width: Number.isFinite(widthRaw) && widthRaw >= 200 ? widthRaw : DEFAULT_IMAGE_OPTIONS.width,
+        quality: Number.isFinite(qualityRaw) && qualityRaw > 0 ? Math.min(qualityRaw, 1) : DEFAULT_IMAGE_OPTIONS.quality,
+        theme: themeSettings.mode === 'dark' ? 'dark' : 'light',
+      };
+      // canvas 装配（浏览器/webview Adapter）
+      const scratch = document.createElement('canvas').getContext('2d');
+      const imageCache = new Map<string, HTMLImageElement>();
+      const loadImage = (src: string): Promise<{ data: string; width: number; height: number } | null> =>
+        new Promise((resolve) => {
+          const url = readerResolveImageSrc(src);
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            imageCache.set(url, img);
+            resolve({ data: url, width: img.naturalWidth, height: img.naturalHeight });
+          };
+          img.onerror = () => resolve(null);
+          img.src = url;
+        });
+      const drawImage = (src: string, ctx: Canvas2DLike, x: number, y: number, w: number, h: number): void => {
+        const img = imageCache.get(src);
+        if (img !== undefined) (ctx as CanvasRenderingContext2D).drawImage(img, x, y, w, h);
+      };
+      const measureText = (text: string, font: { css: string; size: number }): number => {
+        if (scratch === null) return text.length * font.size * 0.6;
+        scratch.font = font.css;
+        return scratch.measureText(text).width;
+      };
+      const bytes = await exportImageBytes(hostRef.current.getText(), options, {
+        measureText,
+        loadImage,
+        drawImage,
+      }, (w, h) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx === null) throw new Error('canvas 2d context unavailable');
+        // 引擎只写入 string fillStyle/strokeStyle；DOM 联合类型在此断言为写契约
+        return { ctx: ctx as unknown as Canvas2DLike, toDataURL: (mime: string, quality?: number) => canvas.toDataURL(mime, quality) };
+      });
+      await invoke('write_binary', { path: savePath, data: Array.from(bytes) });
+      setToast({ message: t('export.image.done') });
+    } catch (err) {
+      if ((err as { code?: unknown }).code === 'image-too-long') {
+        setToast({ message: t('export.image.tooLong') });
+        return;
+      }
+      setToast({ message: `${t('export.image.failed')}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [t, themeSettings.mode, readerResolveImageSrc]);
+
   /** 启动：更新健康确认（rollback 策略）+ 启动后定时检查更新 */
   useEffect(() => {
     if (!isTauri()) return;
@@ -863,22 +954,6 @@ export default function App() {
   const toggleSelectionToolbar = useCallback(() => {
     setSelectionToolbarEnabled(!selectionToolbarEnabled);
   }, [selectionToolbarEnabled, setSelectionToolbarEnabled]);
-
-  /** Reader 图片 src → 可显示 URL（相对路径基于当前文档目录，Tauri asset 协议） */
-  const readerResolveImageSrc = useCallback((src: string) => {
-    if (/^(?:https?:|data:|#)/i.test(src)) return src;
-    const docPath = filePathRef.current;
-    const base = docPath === null ? '' : docPath.replace(/[\/][^\/]*$/, '');
-    const abs = base === '' ? src : `${base}/${src}`;
-    if ('__TAURI_INTERNALS__' in window) {
-      try {
-        return convertFileSrc(abs.replace(/^file:\/\//, ''));
-      } catch {
-        return abs;
-      }
-    }
-    return abs;
-  }, []);
 
   const openReader = useCallback(() => {
     const host = hostRef.current;
@@ -2733,6 +2808,8 @@ export default function App() {
       // RC F6：导出 HTML（PRD §73）
       { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtml() },
       { id: 'export.docx', localizedTitle: { zh: '导出 Word…', en: 'Export Word…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportDocx() },
+      // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
+      { id: 'export.image', localizedTitle: { zh: '导出图片（PNG/JPEG）…', en: 'Export Image (PNG/JPEG)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportImage() },
       // RC F1：PDF 导出（golden journey #19）
       { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
       { id: 'split.toggle', localizedTitle: { zh: '切换 Split（Source | Preview）', en: 'Toggle Split (Source | Preview)' }, category: 'view', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => toggleSplit() },
@@ -2858,7 +2935,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
