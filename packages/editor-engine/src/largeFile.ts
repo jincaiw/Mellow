@@ -35,6 +35,37 @@ let active = false;
 let version = 0;
 const activeViews = new Set<EditorView>();
 
+// ── 拼写检查用户偏好（D1-1：与 largeFile 模式共用同一 spellcheck Compartment）──
+// effective = userSpellcheck && !largeFileMode（大文件模式始终强制关闭）
+let userSpellcheck = true;
+
+export function setUserSpellcheck(next: boolean): void {
+  if (next === userSpellcheck) return;
+  userSpellcheck = next;
+  for (const view of activeViews) {
+    for (const fn of reconfigureFns) fn(view, active);
+    view.dispatch({ effects: [] });
+  }
+}
+
+export function isUserSpellcheck(): boolean {
+  return userSpellcheck;
+}
+
+/** 宿主 → iframe 拼写开关通道（D1-1） */
+export interface SpellcheckApi {
+  set(v: boolean): void;
+  get(): boolean;
+}
+
+/** 挂到 iframe window，宿主（EditorCore）经 contentWindow 调用 */
+export function installSpellcheckApi(): void {
+  (window as unknown as { __MELLOW_SPELLCHECK__?: SpellcheckApi }).__MELLOW_SPELLCHECK__ = {
+    set: setUserSpellcheck,
+    get: isUserSpellcheck,
+  };
+}
+
 export function isLargeFileMode(): boolean {
   return active;
 }
@@ -117,10 +148,15 @@ function resolveCm(): CmRuntime {
   return { EditorView: view.EditorView, ViewPlugin: view.ViewPlugin, Compartment: state.Compartment };
 }
 
+/** 实际生效的拼写状态：用户偏好 && 非大文件模式 */
+function effectiveSpellcheck(): boolean {
+  return userSpellcheck && !active;
+}
+
 /**
  * 构建 Large File Mode 扩展：
- * - 跟踪 view（setLargeFileMode 时强制重算）；
- * - spellcheck Compartment（大文件模式 → contentAttributes spellcheck=false）；
+ * - 跟踪 view（setLargeFileMode / setUserSpellcheck 时强制重算）；
+ * - spellcheck Compartment（effective = 用户偏好 && !大文件模式）；
  * - .mellow-large-file class + 动画关闭主题。
  */
 export function buildLargeFileExtension(): Extension {
@@ -128,10 +164,10 @@ export function buildLargeFileExtension(): Extension {
   const { EditorView, ViewPlugin, Compartment } = cm;
   const spellcheck = new Compartment();
 
-  registerLargeFileReconfigure((view, next) => {
+  registerLargeFileReconfigure((view) => {
     view.dispatch({
       effects: spellcheck.reconfigure(
-        EditorView.contentAttributes.of({ spellcheck: next ? 'false' : 'true' }),
+        EditorView.contentAttributes.of({ spellcheck: effectiveSpellcheck() ? 'true' : 'false' }),
       ),
     });
   });

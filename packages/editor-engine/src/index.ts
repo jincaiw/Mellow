@@ -44,7 +44,8 @@ import { buildWikilinkExtension } from './wikilink';
 import { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi } from './contextMenu';
 import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
 import { installFormatApi } from './selectionToolbar';
-import { buildLargeFileExtension, installLargeFileApi } from './largeFile';
+import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } from './largeFile';
+import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { DEFAULT_ENGINE_FEATURES, mergeEngineFeatures, readEngineFeaturesFromStorage } from './config';
 export type { EngineFeatureConfig } from './config';
@@ -77,9 +78,14 @@ export {
   largeFileDecorationLimit,
   buildLargeFileExtension,
   installLargeFileApi,
+  setUserSpellcheck,
+  isUserSpellcheck,
+  installSpellcheckApi,
   LARGE_FILE_BYTES_THRESHOLD,
   LARGE_FILE_LINES_THRESHOLD,
 } from './largeFile';
+export { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
+export type { SelectionCommandsApi } from './selectionCommands';
 export { buildCodeFenceAutocompleteExtension, fenceLangSource } from './codeFence';
 export { emojiSource } from './emoji';
 export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
@@ -132,6 +138,10 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   }
   // Large File Mode：宿主（EditorCore）经 iframe window.__MELLOW_LARGE_FILE__ 调用
   installLargeFileApi();
+  // 拼写检查开关（D1-1）：宿主经 iframe window.__MELLOW_SPELLCHECK__ 调用
+  installSpellcheckApi();
+  // 选择命令（D1-4：⌘L 行 / ⌥⌘P 段落）：宿主经 iframe window.__MELLOW_SELECTION_COMMANDS__ 调用
+  installSelectionCommandsApi();
   // 文档查找/替换：宿主（菜单）经 iframe window.__MELLOW_SEARCH_API__ 调用
   installSearchApi();
   // 格式/段落命令：宿主（菜单）经 iframe window.__MELLOW_FORMAT_API__ 调用
@@ -158,6 +168,7 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildScrollBridgeExtension(),
     buildImageExtensions(),
     buildLargeFileExtension(),
+    buildSelectionCommandsExtension(),
     buildContextMenuExtension(),
     buildContextMenuViewTrackerExtension(),
     buildDocumentSearchExtension(),

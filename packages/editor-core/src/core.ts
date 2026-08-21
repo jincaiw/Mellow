@@ -231,6 +231,29 @@ export class EditorCore {
     return win?.__MELLOW_LARGE_FILE__?.isActive?.() ?? false;
   }
 
+  /** 拼写检查用户偏好（D1-1）：effective = 偏好 && !大文件模式（引擎侧裁决） */
+  setSpellcheckEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SPELLCHECK__?: { set?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_SPELLCHECK__?.set?.(on);
+  }
+
+  isSpellcheckEnabled(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SPELLCHECK__?: { get?: () => boolean } }) | null;
+    return win?.__MELLOW_SPELLCHECK__?.get?.() ?? true;
+  }
+
+  /** 选中当前行（整行已选中则扩展下一行；D1-4 ⌘L）；false = 编辑器未就绪 */
+  selectLine(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { selectLine?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.selectLine?.() ?? false;
+  }
+
+  /** 选中当前段落（空行界定；D1-4 ⌥⌘P）；false = 编辑器未就绪 */
+  selectParagraph(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { selectParagraph?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.selectParagraph?.() ?? false;
+  }
+
   /** 设置当前文档路径（Image Workflow 相对路径解析，engine 读 window.__MELLOW_DOC_PATH__） */
   setDocumentPath(path: string | null): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_DOC_PATH__?: string | null }) | null;

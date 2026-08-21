@@ -16,8 +16,10 @@ import { install } from '../src/index';
 import {
   classifyLargeFile,
   isLargeFileMode,
+  isUserSpellcheck,
   largeFileVersion,
   setLargeFileMode,
+  setUserSpellcheck,
   largeFileViewportRange,
   largeFileDecorationLimit,
   LARGE_FILE_BYTES_THRESHOLD,
@@ -91,6 +93,36 @@ describe('Large File Mode — 状态切换', () => {
     setLargeFileMode(false);
     await sleep(30);
     expect(attr()).toBe('true');
+    view.destroy();
+  });
+
+  it('用户拼写偏好（D1-1）：关闭 → false；与大文件模式叠加仍关闭；恢复优先级正确', async () => {
+    const view = new EditorView({
+      doc: '# 标题',
+      parent: document.body,
+      extensions: [markdown({ base: markdownLanguage }), install(false)],
+    });
+    const attr = (): string | null => view.contentDOM.getAttribute('spellcheck');
+    expect(isUserSpellcheck()).toBe(true);
+    // 用户关闭
+    setUserSpellcheck(false);
+    await sleep(30);
+    expect(attr()).toBe('false');
+    expect(isUserSpellcheck()).toBe(false);
+    // 用户关闭 + 大文件开启 → 仍关闭
+    setLargeFileMode(true);
+    await sleep(30);
+    expect(attr()).toBe('false');
+    // 大文件关闭，但用户偏好仍关 → 保持关闭
+    setLargeFileMode(false);
+    await sleep(30);
+    expect(attr()).toBe('false');
+    // 用户恢复 → true
+    setUserSpellcheck(true);
+    await sleep(30);
+    expect(attr()).toBe('true');
+    // 幂等：重复设置不 dispatch
+    setUserSpellcheck(true);
     view.destroy();
   });
 });
