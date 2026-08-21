@@ -76,6 +76,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         ], applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineNumbers', labelKey: 'settings.editor.lineNumbers', type: 'toggle', storageKey: 'mellow.editor.lineNumbers', defaultValue: false, applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineWrapping', labelKey: 'settings.editor.lineWrapping', type: 'toggle', storageKey: 'mellow.editor.lineWrapping', defaultValue: true, applyCommand: 'settings.editorConfig' },
+      // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
+      { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
       // Cmd/Ctrl+滚轮缩放（Typora 偏好→通用；实际字号仍走 editor.fontSize 单一真源）
       { id: 'editor.cmdWheelZoom', labelKey: 'settings.editor.cmdWheelZoom', type: 'toggle', storageKey: 'mellow.editor.cmdWheelZoom', defaultValue: true, descriptionKey: 'settings.editor.cmdWheelZoomDesc' },
       { id: 'editor.typewriter', labelKey: 'settings.editor.typewriter', type: 'toggle', storageKey: 'mellow.editor.typewriter', defaultValue: false, applyCommand: 'view.typewriter.on' },

@@ -2186,6 +2186,15 @@ export default function App() {
           if (wrapDef && readSetting(wrapDef) === false) {
             host.setEditorConfig('setLineWrapping', { enabled: false });
           }
+          // D1-1 拼写检查启动恢复（默认 true；大文件模式由引擎侧强制关闭）
+          const spellDef = settingById('editor.spellcheck');
+          if (spellDef && readSetting(spellDef) === false) {
+            host.setSpellcheckEnabled(false);
+          }
+          if ('__TAURI_INTERNALS__' in window) {
+            const spellInit = spellDef ? readSetting(spellDef) !== false : true;
+            void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: spellInit })).catch(() => undefined);
+          }
         } catch { /* 设置读取失败 → 保持默认 */ }
         setStatus('ready');
         setStatusText(t('msg.editorReady'));
@@ -2607,6 +2616,72 @@ export default function App() {
     if (next) await applyTab(next);
   }, [applyTab, confirmCloseTabs, refreshTabsState, syncActiveTabFromEditor]);
 
+  /** 移动当前文档到其他文件夹（D1-2：Typora 文件→移到…；tab/watcher/引擎路径基准同步） */
+  const handleMoveDocument = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const dialog = dialogRef.current;
+    const path = filePathRef.current;
+    if (!svc || !dialog) return;
+    if (path === null) {
+      setStatusText(t('msg.renameNeedsSave'));
+      return;
+    }
+    const target = await dialog.showDirectory();
+    if (!target.ok || target.value === null) return;
+    const r = await svc.move(path, target.value);
+    if (!r.ok) {
+      setStatusText(t('msg.moveFailed', { error: r.error.message }));
+      return;
+    }
+    const newPath = r.value;
+    filePathRef.current = newPath;
+    const host = hostRef.current;
+    if (host) {
+      host.setDocumentPath(newPath);
+      host.refreshImages();
+      tabsRef.current.updateActive({
+        ...currentTabPatch(host),
+        path: newPath,
+        title: newPath.split(/[\\/]/).pop() ?? newPath,
+      });
+      refreshTabsState();
+    }
+    await watchDocument(newPath);
+    // 最近文件：旧路径条目替换为新路径（避免残留 missing 条目）
+    setRecentFiles((prev) => {
+      const next = prev.map((e) => (e.path === path ? { ...e, path: newPath } : e));
+      try { localStorage.setItem(RECENT_FILES_KEY, serializeRecentFiles(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
+    setStatusText(t('msg.movedTo', { value: newPath }));
+    await refreshFilesSidebar();
+  }, [currentTabPatch, refreshFilesSidebar, refreshTabsState, watchDocument]);
+
+  /** 删除当前文档到系统废纸篓（D1-3：Typora 文件→删除；dirty 时警示丢弃未保存修改） */
+  const handleTrashDocument = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const path = filePathRef.current;
+    if (!svc || path === null) return;
+    const active = tabsRef.current.active;
+    const dirty = active !== null && active.dirty;
+    const message = dirty ? t('dialog.trashConfirmDirty', { path }) : t('dialog.trashConfirm', { path });
+    if (!window.confirm(message)) return;
+    const r = await svc.trash(path);
+    if (!r.ok) {
+      setStatusText(t('msg.deleteFailed', { error: r.error.message }));
+      return;
+    }
+    setStatusText(t('msg.trashed'));
+    // 强制关闭当前 tab（文件已删除，不走 dirty 保存确认——保存会重新创建已删文件）
+    if (active !== null) {
+      const result = tabsRef.current.close(active.id);
+      refreshTabsState();
+      const next = result.active ?? await ensureOneTab();
+      if (next) await applyTab(next);
+    }
+    await refreshFilesSidebar();
+  }, [applyTab, ensureOneTab, refreshFilesSidebar, refreshTabsState]);
+
   const handleCloseRight = useCallback(async () => {
     const active = tabsRef.current.active;
     if (active === null) return;
@@ -2711,6 +2786,15 @@ export default function App() {
         // 主题文件夹入口（Typora 偏好→外观；action 型设置 → 命令派发）
         void dispatchCommand('file.openUserCss');
         break;
+      case 'settings.spellcheck': {
+        // D1-1 拼写检查 live apply：引擎偏好 + 原生菜单 CheckMenuItem 状态同步
+        const on = Boolean(value);
+        hostRef.current?.setSpellcheckEnabled(on);
+        if ('__TAURI_INTERNALS__' in window) {
+          void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: on })).catch(() => undefined);
+        }
+        break;
+      }
       case 'settings.statusbar':
         setStatusbarVisible(Boolean(value));
         break;
@@ -2797,6 +2881,19 @@ export default function App() {
       { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' }, context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
       { id: 'file.saveAs', localizedTitle: { zh: '另存为…', en: 'Save As…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAs() },
       { id: 'document.rename', localizedTitle: { zh: '重命名…', en: 'Rename…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleRenameDocument() },
+      // D1-2/D1-3 文档操作（Typora 文件→移到…/删除）
+      { id: 'file.moveTo', localizedTitle: { zh: '移到…', en: 'Move to…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleMoveDocument() },
+      { id: 'file.trash', localizedTitle: { zh: '删除', en: 'Delete' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleTrashDocument() },
+      // D1-5 快照文件夹入口（替代 macOS Versions 版本复原：崩溃恢复快照可在 Finder 查看）
+      { id: 'file.openSnapshotsFolder', localizedTitle: { zh: '打开快照文件夹…', en: 'Open Snapshots Folder…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
+        if (!isTauri()) return;
+        void import('@tauri-apps/api/path').then(async ({ appDataDir, join }) => {
+          const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+          const dir = await appDataDir();
+          const p = await join(dir, 'recovery');
+          await revealItemInDir(p).catch(() => undefined);
+        }).catch(() => undefined);
+      } },
       { id: 'tabs.close', localizedTitle: { zh: '关闭标签页', en: 'Close Tab' }, category: 'file', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' }, context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => { const active = tabsRef.current.active; if (active) void handleCloseTab(active.id); } },
       { id: 'tabs.closeOthers', localizedTitle: { zh: '关闭其他', en: 'Close Others' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseOthers() },
       { id: 'tabs.closeRight', localizedTitle: { zh: '关闭右侧', en: 'Close Right' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseRight() },
@@ -2917,6 +3014,19 @@ export default function App() {
       { id: 'edit.pastePlain', localizedTitle: { zh: '粘贴为纯文本', en: 'Paste as Plain Text' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+V', winLinux: 'Ctrl+Shift+V' }, enabled: always, execute: () => engineClipboard('pastePlain') },
       // ⇧⌘⌫ 删除行（Typora 编辑→删除行，引擎 applyDeleteLine）
       { id: 'edit.deleteLine', localizedTitle: { zh: '删除行', en: 'Delete Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Shift+Cmd+Backspace', winLinux: 'Ctrl+Shift+Backspace' }, enabled: always, execute: () => engineFormat('deleteLine') },
+      // D1-4 选择命令（Typora 编辑→选择：⌘L 行 / ⌥⌘P 段落或块）
+      { id: 'edit.selectLine', localizedTitle: { zh: '选择行', en: 'Select Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+L', winLinux: 'Ctrl+L' }, enabled: always, execute: () => { hostRef.current?.selectLine(); } },
+      { id: 'edit.selectParagraph', localizedTitle: { zh: '选择段落或块', en: 'Select Paragraph or Block' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+P', winLinux: 'Ctrl+Alt+P' }, enabled: always, execute: () => { hostRef.current?.selectParagraph(); } },
+      // D1-1 拼写检查（Typora 编辑→拼写和语法「键入时检查」；菜单 CheckMenuItem 触发）
+      { id: 'edit.spellcheck.toggle', localizedTitle: { zh: '键入时检查拼写', en: 'Check Spelling While Typing' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.spellcheck');
+        if (!def) return;
+        const next = readSetting(def) !== true;
+        writeSetting(def, next);
+        hostRef.current?.setSpellcheckEnabled(next);
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: next })).catch(() => undefined);
+        setStatusText(t(next ? 'msg.spellcheckOn' : 'msg.spellcheckOff'));
+      } },
       // 格式（Typora 对齐；引擎 applyInlineFormat / 空选区成对插入）
       { id: 'format.bold', localizedTitle: { zh: '粗体', en: 'Bold' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+B', winLinux: 'Ctrl+B' }, enabled: always, execute: () => engineFormat('bold') },
       { id: 'format.italic', localizedTitle: { zh: '斜体', en: 'Italic' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+I', winLinux: 'Ctrl+I' }, enabled: always, execute: () => engineFormat('italic') },

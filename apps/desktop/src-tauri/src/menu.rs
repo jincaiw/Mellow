@@ -35,6 +35,9 @@ pub struct MenuLocale(pub Mutex<String>);
 /// 最近文件列表（前端 recentFiles → `set_recent_files` → 「打开最近文件」子菜单）
 pub struct RecentFiles(pub Mutex<Vec<String>>);
 
+/// 拼写检查选中态（前端 spellcheck 偏好 → `set_spellcheck_state` → 「拼写和语法」CheckMenuItem）
+pub struct SpellcheckState(pub Mutex<bool>);
+
 /// 主题选中态（前端 themeSettings/activeTheme → `set_theme_selection` → 主题菜单 radio；
 /// B2-5/B3-2：Typora 主题菜单选中态 parity）
 pub struct ThemeSelection(pub Mutex<ThemeSelectionState>);
@@ -70,6 +73,9 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("workspace.openFolder", "打开文件夹…", "Open Folder…"),
     ("file.info", "文件信息…", "File Info…"),
     ("file.reveal", "打开文件位置", "Reveal in Finder"),
+    ("file.moveTo", "移到…", "Move to…"),
+    ("file.trash", "删除", "Delete"),
+    ("file.openSnapshotsFolder", "打开快照文件夹…", "Open Snapshots Folder…"),
     ("tabs.close", "关闭", "Close"),
     ("file.closeAll", "全部关闭", "Close All"),
     ("file.save", "保存", "Save"),
@@ -93,6 +99,11 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("edit.copyMarkdown", "复制为 Markdown", "Copy as Markdown"),
     ("edit.pastePlain", "粘贴为纯文本", "Paste as Plain Text"),
     ("edit.deleteLine", "删除行", "Delete Line"),
+    ("edit.selectMenu", "选择", "Select"),
+    ("edit.selectLine", "选择行", "Select Line"),
+    ("edit.selectParagraph", "选择段落或块", "Select Paragraph or Block"),
+    ("edit.spellMenu", "拼写和语法", "Spelling and Grammar"),
+    ("edit.spellcheck", "键入时检查拼写", "Check Spelling While Typing"),
     ("menu.find", "查找", "Find"),
     ("search.find", "查找…", "Find…"),
     ("search.findNext", "查找下一个", "Find Next"),
@@ -267,6 +278,10 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let open_folder = MenuItem::with_id(app, "workspace.openFolder", &l("workspace.openFolder"), true, None::<&str>)?;
     let file_info = MenuItem::with_id(app, "file.info", &l("file.info"), true, None::<&str>)?;
     let reveal = MenuItem::with_id(app, "file.revealInFinder", &l("file.reveal"), true, None::<&str>)?;
+    // D1-2/D1-3/D1-5 文档操作（Typora 文件→移到…/删除；快照文件夹替代版本复原）
+    let move_to = MenuItem::with_id(app, "file.moveTo", &l("file.moveTo"), true, None::<&str>)?;
+    let trash_doc = MenuItem::with_id(app, "file.trash", &l("file.trash"), true, None::<&str>)?;
+    let snapshots = MenuItem::with_id(app, "file.openSnapshotsFolder", &l("file.openSnapshotsFolder"), true, None::<&str>)?;
     let close_tab = MenuItem::with_id(app, "tabs.close", &l("tabs.close"), true, accel("Cmd+W", "Ctrl+W"))?;
     let close_all = MenuItem::with_id(app, "file.closeAll", &l("file.closeAll"), true, accel("Cmd+Alt+W", "Ctrl+Shift+W"))?;
     let save = MenuItem::with_id(app, "file.save", &l("file.save"), true, accel("Cmd+S", "Ctrl+S"))?;
@@ -320,7 +335,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
         true,
         &[
             &new_tab, &sep1, &open, &recent_menu, &quick_open, &open_folder, &sep2,
-            &file_info, &reveal, &sep3,
+            &file_info, &reveal, &move_to, &trash_doc, &snapshots, &sep3,
             &close_tab, &close_all, &sep4,
             &save, &save_as, &save_all, &reload_disk, &sep5,
             &export_menu, &print,
@@ -345,13 +360,24 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let replace = MenuItem::with_id(app, "search.replace", &l("search.replace"), true, accel("Cmd+Alt+F", "Ctrl+H"))?;
     let find_sep = PredefinedMenuItem::separator(app)?;
     let find_menu = Submenu::with_items(app, &l("menu.find"), true, &[&find, &find_next, &find_prev, &find_sep, &replace])?;
+    // D1-4 选择子菜单（Typora 编辑→选择：⌘L 行 / ⌥⌘P 段落或块）
+    let sel_line = MenuItem::with_id(app, "edit.selectLine", &l("edit.selectLine"), true, accel("Cmd+L", "Ctrl+L"))?;
+    let sel_para = MenuItem::with_id(app, "edit.selectParagraph", &l("edit.selectParagraph"), true, accel("Cmd+Alt+P", "Ctrl+Alt+P"))?;
+    let select_menu = Submenu::with_items(app, &l("edit.selectMenu"), true, &[&sel_line, &sel_para])?;
+    // D1-1 拼写和语法子菜单（Typora 编辑→拼写和语法「键入时检查」；CheckMenuItem 选中态走 SpellcheckState）
+    let spell_checked = app
+        .try_state::<SpellcheckState>()
+        .map(|s| *s.0.lock().unwrap())
+        .unwrap_or(true);
+    let spell_toggle = CheckMenuItem::with_id(app, "edit.spellcheck.toggle", &l("edit.spellcheck"), true, spell_checked, None::<&str>)?;
+    let spell_menu = Submenu::with_items(app, &l("edit.spellMenu"), true, &[&spell_toggle])?;
     let sep6 = PredefinedMenuItem::separator(app)?;
     let sep7 = PredefinedMenuItem::separator(app)?;
     let edit_menu = Submenu::with_items(
         app,
         &l("menu.edit"),
         true,
-        &[&undo, &redo, &sep6, &cut, &copy, &paste, &select_all, &sep7, &copy_markdown, &paste_plain, &delete_line, &find_menu],
+        &[&undo, &redo, &sep6, &cut, &copy, &paste, &select_all, &select_menu, &sep7, &copy_markdown, &paste_plain, &delete_line, &spell_menu, &find_menu],
     )?;
     subs.push(edit_menu);
 
@@ -576,6 +602,19 @@ pub fn set_recent_files(app: AppHandle, files: Vec<String>) -> Result<(), String
 pub fn set_theme_selection(app: AppHandle, mode: String, active_theme_id: String) -> Result<(), String> {
     if let Some(state) = app.try_state::<ThemeSelection>() {
         *state.0.lock().unwrap() = ThemeSelectionState { mode, active_theme_id };
+    }
+    let locale = current_locale(&app);
+    let is_mac = cfg!(target_os = "macos");
+    let menu = build_menu(&app, &locale, is_mac).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 前端拼写检查偏好变化 → 重建菜单（「拼写和语法」CheckMenuItem；D1-1）
+#[tauri::command]
+pub fn set_spellcheck_state(app: AppHandle, checked: bool) -> Result<(), String> {
+    if let Some(state) = app.try_state::<SpellcheckState>() {
+        *state.0.lock().unwrap() = checked;
     }
     let locale = current_locale(&app);
     let is_mac = cfg!(target_os = "macos");

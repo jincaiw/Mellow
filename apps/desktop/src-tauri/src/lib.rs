@@ -54,6 +54,7 @@ pub fn run() {
             menu::set_menu_locale,
             menu::set_recent_files,
             menu::set_theme_selection,
+            menu::set_spellcheck_state,
             bridge::bridge_call,
             fs::open_document,
             fs::save_document,
@@ -96,6 +97,7 @@ pub fn run() {
         .manage(PendingOpen(Mutex::new(None)))
         .manage(menu::MenuLocale(Mutex::new("zh-CN".to_string())))
         .manage(menu::RecentFiles(Mutex::new(Vec::new())))
+        .manage(menu::SpellcheckState(Mutex::new(true)))
         .manage(menu::ThemeSelection(Mutex::new(menu::ThemeSelectionState::default())))
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
