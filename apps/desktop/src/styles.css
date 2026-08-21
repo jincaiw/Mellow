@@ -1546,6 +1546,8 @@ html, body, #root {
 }
 
 .settings-action-hint { color: var(--mellow-fg-muted); font-size: 12px; }
+.settings-action-button { padding: 4px 14px; border: 1px solid var(--mellow-border); border-radius: 6px; background: transparent; color: var(--mellow-fg); font-size: 12px; cursor: pointer; }
+.settings-action-button:hover { background: var(--mellow-selection); }
 
 .settings-shortcuts {
   display: flex;

@@ -93,6 +93,29 @@ const keyForwarder = `<script>
 </script>`;
 
 /**
+ * 滚轮缩放桥（iframe → 宿主）：Cmd/Ctrl + 滚轮 → 字号缩放（Typora 偏好→通用）。
+ * 宿主侧 __MELLOW_WHEEL_API__.zoom 由 App.tsx 挂载（读 mellow.editor.cmdWheelZoom
+ * 开关后调 adjustFontSize，与 ⇧⌘= 单一真源 editor.fontSize）。
+ * 仅修饰滚轮触发并 preventDefault（阻止 WKWebView 浏览器级缩放）；无修饰自然放行。
+ */
+const wheelForwarder = `<script>
+(function () {
+  if (window.parent === window) return;
+  document.addEventListener('wheel', function (e) {
+    if (!e.ctrlKey && !e.metaKey) return;
+    try {
+      var api = window.parent.__MELLOW_WHEEL_API__;
+      if (api && typeof api.zoom === 'function') {
+        api.zoom(e.deltaY > 0 ? -1 : 1);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    } catch (err) { /* 宿主不可达时静默放行 */ }
+  }, { passive: false });
+})();
+</script>`;
+
+/**
  * 引擎 loader：等待 MarkEdit 就绪后注入引擎扩展。
  * 放在 CoreEditor bundle script 之后（模块按文档顺序执行）：
  * bundle 顶层同步执行 initMarkEditModules → MarkEdit 已存在 → addExtension 推入扩展存储；
@@ -175,7 +198,7 @@ function build() {
   let out = buildBundleHtml(html, { config: DEFAULT_CONFIG });
 
   // 3b. Tauri 适配器注入（desktop Adapter 层，editor-core 无 Tauri 知识）
-  out = out.replace('</head>', `${tauriBridgeAdapter}\n${keyForwarder}\n</head>`);
+  out = out.replace('</head>', `${tauriBridgeAdapter}\n${keyForwarder}\n${wheelForwarder}\n</head>`);
 
   // 4. 引擎 loader（放在 body 尾部，CoreEditor bundle script 之后）
   out = out.replace('</body>', `${engineLoader}\n</body>`);

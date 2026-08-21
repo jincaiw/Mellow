@@ -2707,6 +2707,10 @@ export default function App() {
       case 'settings.image.assetDir':
         setAssetDir(String(value));
         break;
+      case 'file.openUserCss':
+        // 主题文件夹入口（Typora 偏好→外观；action 型设置 → 命令派发）
+        void dispatchCommand('file.openUserCss');
+        break;
       case 'settings.statusbar':
         setStatusbarVisible(Boolean(value));
         break;
@@ -3021,6 +3025,20 @@ export default function App() {
       delete (window as unknown as { __MELLOW_SHORTCUT_API__?: unknown }).__MELLOW_SHORTCUT_API__;
     };
   }, [dispatchShortcut]);
+
+  // Cmd/Ctrl+滚轮缩放桥（bundle 内 wheelForwarder 同源直调）：读 mellow.editor.cmdWheelZoom
+  // 开关后调 adjustFontSize（与 ⇧⌘= 共用 editor.fontSize 单一真源；关闭时宿主侧静默）
+  useEffect(() => {
+    (window as unknown as { __MELLOW_WHEEL_API__?: { zoom: (direction: number) => void } }).__MELLOW_WHEEL_API__ = {
+      zoom: (direction) => {
+        if (localStorage.getItem('mellow.editor.cmdWheelZoom') === '0') return;
+        void adjustFontSize(direction);
+      },
+    };
+    return () => {
+      delete (window as unknown as { __MELLOW_WHEEL_API__?: unknown }).__MELLOW_WHEEL_API__;
+    };
+  }, [adjustFontSize]);
 
   // Tab Overview Esc 关闭（无输入框聚焦，需 window 级监听）
   useEffect(() => {

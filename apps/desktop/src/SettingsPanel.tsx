@@ -115,6 +115,12 @@ export default function SettingsPanel(props: SettingsPanelProps) {
           />
         );
       case 'action':
+        // 动作型设置（如「打开主题文件夹」）：按钮触发 applyCommand，不持久化
+        return (
+          <button type="button" className="settings-action-button" onClick={() => applySetting(def, true)}>
+            {t('settings.action.open')}
+          </button>
+        );
       default:
         return <span className="settings-action-hint">—</span>;
     }
