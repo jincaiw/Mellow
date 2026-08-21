@@ -64,7 +64,7 @@ export { buildFocusModeExtension, getFocusMode, setFocusMode, FOCUS_DIM_CLASS } 
 export { buildSlashCommandsExtension, canTriggerSlashCommand } from './slashCommands';
 export type { SlashOpenRequest, SlashCommandsOptions } from './slashCommands';
 export { buildTypewriterModeExtension, computeTypewriterScrollTop, getTypewriterMode, setTypewriterMode, TYPEWRITER_CENTER_RATIO } from './typewriterMode';
-export { buildSelectionToolbarExtension, shouldShowToolbar, applyInlineFormat, applyLink, applyBlockPrefix, applyHeading, setSelectionToolbarEnabled, getSelectionToolbarEnabled, SELECTION_TOOLBAR_CLASS } from './selectionToolbar';
+export { buildSelectionToolbarExtension, shouldShowToolbar, applyInlineFormat, applyLink, applyBlockPrefix, applyHeading, applyDeleteLine, applyReferenceLink, setSelectionToolbarEnabled, getSelectionToolbarEnabled, SELECTION_TOOLBAR_CLASS } from './selectionToolbar';
 export type { TextRange, ApplyResult, ToolbarVisibility, SelectionToolbarOptions } from './selectionToolbar';
 export { buildScrollBridgeExtension } from './scrollBridge';
 export type { ScrollBridgeApi } from './scrollBridge';

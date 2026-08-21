@@ -183,7 +183,7 @@ export function applyHeading(doc: string, range: TextRange, level: number): Appl
   };
 }
 
-type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle';
+type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle' | 'deleteLine' | 'referenceLink';
 
 /** 既有块级 marker（heading/quote/ul/task/ol）：列表互转时先剥离（Typora 段落互转语义） */
 const BLOCK_PREFIX_RE = /^(#{1,6}\s|>\s|[-*+]\s(?:\[[ xX]\]\s)?|\d+\.\s)/;
@@ -396,6 +396,60 @@ export function applyFootnote(doc: string, range: TextRange): ApplyResult {
   };
 }
 
+/** 删除行（⇧⌘⌫，Typora 编辑→删除→删除行）：删除受影响整行（含行尾换行；文档尾无换行时连同前置换行，不留空行） */
+export function applyDeleteLine(doc: string, range: TextRange): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  // 文档尾行（无尾随换行）：回退一个字符连前置换行一起删，避免残留空行；caret 落前一行行尾
+  const atDocEnd = last.end >= doc.length && first.start > 0;
+  const from = atDocEnd ? first.start - 1 : first.start;
+  const to = last.end < doc.length ? last.end + 1 : last.end;
+  if (from >= to) return { changes: [], selection: range };
+  const caret = atDocEnd ? first.start - 1 : first.start;
+  return {
+    changes: [{ from, to, insert: '' }],
+    selection: { from: caret, to: caret },
+  };
+}
+
+/** 链接引用（⌥⌘L，Typora 段落→链接引用）：选区文本 → [text][n]；当前段落块下方插入 [n]: 定义。
+ * 空选区 → [][n]（caret 落 label 括号内）；有选区 → caret 落定义行 URL 位。n 为最小未占用引用号。 */
+export function applyReferenceLink(doc: string, range: TextRange): ApplyResult {
+  const used = new Set<number>();
+  for (const m of doc.matchAll(/^\[(\d+)\]:/gm)) used.add(Number(m[1]));
+  let n = 1;
+  while (used.has(n)) n += 1;
+  const label = doc.slice(range.from, range.to);
+  const ref = `[${label}][${n}]`;
+  // 定义插入点：受影响行所在段落块（连续非空行）末尾
+  const lines = affectedLines(doc, range);
+  let blockEnd = lines[lines.length - 1].end;
+  while (blockEnd < doc.length) {
+    const nl = doc.indexOf('\n', blockEnd);
+    if (nl === -1) {
+      blockEnd = doc.length;
+      break;
+    }
+    const nextStart = nl + 1;
+    const nl2 = doc.indexOf('\n', nextStart);
+    const nextEnd = nl2 === -1 ? doc.length : nl2;
+    if (doc.slice(nextStart, nextEnd).trim() === '') break;
+    blockEnd = nextEnd;
+  }
+  const defLine = `\n[${n}]: `;
+  const changes: Array<{ from: number; to: number; insert: string }> = [
+    { from: range.from, to: range.to, insert: ref },
+    { from: blockEnd, to: blockEnd, insert: defLine },
+  ];
+  const delta = ref.length - (range.to - range.from);
+  const caret = label === ''
+    ? range.from + 1
+    : blockEnd + delta + defLine.length;
+  return { changes, selection: { from: caret, to: caret } };
+}
+
 /** YAML Front Matter（Typora 段落→YAML Front Matter）：文档顶部插入 --- 包裹块（已有则忽略） */
 export function applyYamlFrontMatter(doc: string, range: TextRange): ApplyResult {
   if (/^---\r?\n/.test(doc)) return { changes: [], selection: range };
@@ -427,7 +481,7 @@ export function applyTaskToggle(doc: string, range: TextRange): ApplyResult {
 const PAIR_MARKERS: Partial<Record<ToolbarAction, string>> = {
   bold: '**', italic: '*', strike: '~~', code: '`', highlight: '==', sup: '^', sub: '~',
 };
-const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle']);
+const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'referenceLink']);
 
 const ACTION_DEFS: Array<{ id: ToolbarAction; label: string; title: string }> = [
   { id: 'h1', label: 'H1', title: '一级标题' },
@@ -469,6 +523,8 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange): Appl
     case 'headingDown': return applyHeadingShift(doc, range, 1);
     case 'horizontalRule': return applyHorizontalRule(doc, range);
     case 'footnote': return applyFootnote(doc, range);
+    case 'deleteLine': return applyDeleteLine(doc, range);
+    case 'referenceLink': return applyReferenceLink(doc, range);
     case 'yamlFrontMatter': return applyYamlFrontMatter(doc, range);
     case 'taskToggle': return applyTaskToggle(doc, range);
     case 'paragraph': {
@@ -518,7 +574,10 @@ function applyToView(action: ToolbarAction): void {
   let result: ApplyResult;
   if (sel.empty) {
     if (action === 'clear') return; // 清除样式需要目标选区（Typora ⌘\ 空选区无操作）
-    if (PAIR_MARKERS[action] !== undefined) {
+    if (action === 'referenceLink') {
+      // 链接引用：空选区直接以 caret 位调用（内部处理 [][n] + caret 落 label 内）
+      result = applyReferenceLink(doc, { from: sel.head, to: sel.head });
+    } else if (PAIR_MARKERS[action] !== undefined) {
       // 成对 marker：空选区插入 caret 居中（Typora Cmd+B）
       const marker = PAIR_MARKERS[action] as string;
       result = {
