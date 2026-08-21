@@ -637,6 +637,66 @@ html, body, #root {
   font-size: 12px;
 }
 
+/* Tab Overview（⇧⌘\ 显示所有标签页，Typora 视图菜单对齐） */
+.tab-overview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(720px, 80vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--mellow-panel-bg, var(--mellow-bg));
+  border: 1px solid var(--mellow-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  padding: 12px;
+}
+
+.tab-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.tab-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--mellow-border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tab-overview-card:hover {
+  background: var(--mellow-selection);
+}
+
+.tab-overview-card.active {
+  border-color: var(--mellow-accent);
+}
+
+.tab-overview-title {
+  font-size: 13px;
+  color: var(--mellow-fg);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-overview-path {
+  font-size: 11px;
+  color: var(--mellow-fg-subtle);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mellow-editor-frame {
   /* 写作宽度（PRD §18，设置面板即时生效） */
   max-width: var(--mellow-writing-width, 820px);

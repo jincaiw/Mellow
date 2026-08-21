@@ -84,6 +84,9 @@ const zhCN = {
   'quickopen.scanning': '正在扫描，结果逐步显示…',
   'quickopen.scanned': '已扫描 {n} 个文件',
   'quickopen.empty': '没有匹配结果',
+  'tabs.overview.title': '所有标签页',
+  'tabs.overview.hint': '点击切换 · Esc 关闭',
+  'view.devtools.unavailable': '开发者工具仅调试构建可用',
   'quickopen.hint': '↑↓ · Enter · Esc',
 
   // Reader
@@ -496,6 +499,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'quickopen.scanning': 'Scanning, results appear progressively…',
   'quickopen.scanned': 'Scanned {n} files',
   'quickopen.empty': 'No matches',
+  'tabs.overview.title': 'All Tabs',
+  'tabs.overview.hint': 'Click to switch · Esc to close',
+  'view.devtools.unavailable': 'Developer tools are only available in debug builds',
   'quickopen.hint': '↑↓ · Enter · Esc',
 
   'reader.search.placeholder': 'Find in document…',

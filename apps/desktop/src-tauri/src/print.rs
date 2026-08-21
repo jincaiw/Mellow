@@ -13,3 +13,13 @@ use tauri::WebviewWindow;
 pub fn print_window(window: WebviewWindow) -> Result<(), String> {
     window.print().map_err(|e| format!("print failed: {e}"))
 }
+
+/// 打开 DevTools（Typora 视图→开发者工具；仅 debug 构建可用，release 返回 Err）
+#[tauri::command]
+pub fn open_devtools(window: WebviewWindow) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("devtools is only available in debug builds".into());
+    }
+    window.open_devtools();
+    Ok(())
+}

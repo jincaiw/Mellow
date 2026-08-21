@@ -90,6 +90,10 @@ import type { RollbackStatus } from './host/updater';
 import { PRINT_STYLESHEET } from '../../../packages/export/src/printStyle';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
+// 帮助菜单外链（Typora 帮助菜单补全：快速上手 / Markdown 参考 / 反馈）
+const HELP_URL_QUICK_START = 'https://github.com/jincaiw/Mellow#readme';
+const HELP_URL_MARKDOWN_REFERENCE = 'https://commonmark.cn/help/';
+const HELP_URL_FEEDBACK = 'https://github.com/jincaiw/Mellow/issues';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
 const RECENT_FILES_KEY = 'mellow.recent.files';
 const RECENT_FOLDERS_KEY = 'mellow.recent.folders';
@@ -421,6 +425,8 @@ export default function App() {
   });
   const [currentOutlineId, setCurrentOutlineId] = useState<string | null>(null);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
+  // Tab Overview（⇧⌘\ 显示所有标签页，Typora 视图菜单对齐）
+  const [tabOverviewOpen, setTabOverviewOpen] = useState(false);
   const [quickOpenQuery, setQuickOpenQuery] = useState('');
   const [quickOpenAll, setQuickOpenAll] = useState<QuickOpenEntry[]>([]);
   const [quickOpenResults, setQuickOpenResults] = useState<QuickOpenEntry[]>([]);
@@ -2841,7 +2847,7 @@ export default function App() {
       // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
       { id: 'export.image', localizedTitle: { zh: '导出图片（PNG/JPEG）…', en: 'Export Image (PNG/JPEG)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportImage() },
       // RC F1：PDF 导出（golden journey #19）
-      { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
+      { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+Cmd+P' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
       { id: 'split.toggle', localizedTitle: { zh: '切换 Split（Source | Preview）', en: 'Toggle Split (Source | Preview)' }, category: 'view', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => toggleSplit() },
       { id: 'split.open', localizedTitle: { zh: 'Split：打开预览', en: 'Split: Open Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => !splitOpen && tabsRef.current.active !== null, execute: () => openSplit() },
       { id: 'split.close', localizedTitle: { zh: 'Split：关闭预览', en: 'Split: Close Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => splitOpen, execute: () => closeSplit() },
@@ -2905,12 +2911,16 @@ export default function App() {
       // B2 编辑菜单补全（Typora 对齐：复制为 Markdown ⇧⌘C / 粘贴为纯文本 ⇧⌘V）
       { id: 'edit.copyMarkdown', localizedTitle: { zh: '复制为 Markdown', en: 'Copy as Markdown' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+C', winLinux: 'Ctrl+Shift+C' }, enabled: always, execute: () => engineClipboard('copyMarkdown') },
       { id: 'edit.pastePlain', localizedTitle: { zh: '粘贴为纯文本', en: 'Paste as Plain Text' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+V', winLinux: 'Ctrl+Shift+V' }, enabled: always, execute: () => engineClipboard('pastePlain') },
+      // ⇧⌘⌫ 删除行（Typora 编辑→删除行，引擎 applyDeleteLine）
+      { id: 'edit.deleteLine', localizedTitle: { zh: '删除行', en: 'Delete Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Shift+Cmd+Backspace', winLinux: 'Ctrl+Shift+Backspace' }, enabled: always, execute: () => engineFormat('deleteLine') },
       // 格式（Typora 对齐；引擎 applyInlineFormat / 空选区成对插入）
       { id: 'format.bold', localizedTitle: { zh: '粗体', en: 'Bold' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+B', winLinux: 'Ctrl+B' }, enabled: always, execute: () => engineFormat('bold') },
       { id: 'format.italic', localizedTitle: { zh: '斜体', en: 'Italic' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+I', winLinux: 'Ctrl+I' }, enabled: always, execute: () => engineFormat('italic') },
       { id: 'format.strike', localizedTitle: { zh: '删除线', en: 'Strikethrough' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+Shift+`', winLinux: 'Ctrl+Shift+`' }, enabled: always, execute: () => engineFormat('strike') },
       { id: 'format.code', localizedTitle: { zh: '行内代码', en: 'Inline Code' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+`', winLinux: 'Ctrl+`' }, enabled: always, execute: () => engineFormat('code') },
       { id: 'format.link', localizedTitle: { zh: '链接…', en: 'Link…' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+K', winLinux: 'Ctrl+K' }, enabled: always, execute: () => engineFormat('link') },
+      // ⌥⌘L 链接引用（Typora 格式→链接引用，引擎 applyReferenceLink）
+      { id: 'format.referenceLink', localizedTitle: { zh: '链接引用…', en: 'Link Reference…' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+L', winLinux: 'Ctrl+Alt+L' }, enabled: always, execute: () => engineFormat('referenceLink') },
       { id: 'format.quote', localizedTitle: { zh: '引用', en: 'Blockquote' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+Q', winLinux: 'Ctrl+Alt+Q' }, enabled: always, execute: () => engineFormat('quote') },
       { id: 'format.list', localizedTitle: { zh: '列表', en: 'Bulleted List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+U', winLinux: 'Ctrl+Alt+U' }, enabled: always, execute: () => engineFormat('list') },
       { id: 'format.orderedList', localizedTitle: { zh: '有序列表', en: 'Ordered List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+O', winLinux: 'Ctrl+Alt+O' }, enabled: always, execute: () => engineFormat('orderedList') },
@@ -2942,6 +2952,13 @@ export default function App() {
       { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+1', winLinux: 'Ctrl+Shift+1' }, enabled: always, execute: () => showSidebarAs('outline') },
       { id: 'view.sidebar.fileList', localizedTitle: { zh: '文件列表', en: 'File List' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+2', winLinux: 'Ctrl+Shift+2' }, enabled: always, execute: () => showSidebarAs('files', 'list') },
       { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+3', winLinux: 'Ctrl+Shift+3' }, enabled: always, execute: () => showSidebarAs('files', 'tree') },
+      // ⇧⌘\ 显示所有标签页（Typora 视图→显示所有标签页 / Tab Overview）
+      { id: 'tabs.showAll', localizedTitle: { zh: '显示所有标签页', en: 'Show All Tabs' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Shift+Cmd+\\', winLinux: 'Ctrl+Shift+\\' }, enabled: always, execute: () => setTabOverviewOpen((v) => !v) },
+      // DevTools（仅 debug 构建可用；release 返回 Err → toast 提示）
+      { id: 'view.devtools', localizedTitle: { zh: '开发者工具', en: 'Developer Tools' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('open_devtools').catch(() => setToast({ message: t('view.devtools.unavailable') })); } },
+      { id: 'help.quickStart', localizedTitle: { zh: '快速上手', en: 'Quick Start' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_QUICK_START); } },
+      { id: 'help.markdownReference', localizedTitle: { zh: 'Markdown 语法参考', en: 'Markdown Reference' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_MARKDOWN_REFERENCE); } },
+      { id: 'help.feedback', localizedTitle: { zh: '反馈问题…', en: 'Feedback…' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_FEEDBACK); } },
       { id: 'help.cheatsheet', localizedTitle: { zh: 'Markdown 速查表', en: 'Markdown Cheatsheet' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => setCheatsheetOpen(true) },
     ];
     commands.forEach((command) => registry.register(command));
@@ -3004,6 +3021,16 @@ export default function App() {
       delete (window as unknown as { __MELLOW_SHORTCUT_API__?: unknown }).__MELLOW_SHORTCUT_API__;
     };
   }, [dispatchShortcut]);
+
+  // Tab Overview Esc 关闭（无输入框聚焦，需 window 级监听）
+  useEffect(() => {
+    if (!tabOverviewOpen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setTabOverviewOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tabOverviewOpen]);
 
   // Engine iframe → host：Slash 行首触发通知
   useEffect(() => {
@@ -3514,6 +3541,28 @@ export default function App() {
               ))}
               {quickOpenResults.length === 0 && <div className="quick-open-empty">{t('quickopen.empty')}</div>}
             </div>
+          </div>
+        </div>
+      )}
+      {tabOverviewOpen && (
+        <div className="quick-open-backdrop" onMouseDown={() => setTabOverviewOpen(false)}>
+          <div className="tab-overview-panel" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="tab-overview-grid" role="listbox" aria-label={t('tabs.overview.title')}>
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`tab-overview-card ${tab.id === activeTabId ? 'active' : ''}`}
+                  role="option"
+                  aria-selected={tab.id === activeTabId}
+                  onClick={() => { setTabOverviewOpen(false); void handleSelectTab(tab.id); }}
+                >
+                  <span className="tab-overview-title">{tab.title ?? t('tab.untitled')}{tab.dirty ? ' •' : ''}</span>
+                  <span className="tab-overview-path">{tab.path}</span>
+                </button>
+              ))}
+            </div>
+            <div className="quick-open-meta"><span>{t('tabs.overview.hint')}</span></div>
           </div>
         </div>
       )}

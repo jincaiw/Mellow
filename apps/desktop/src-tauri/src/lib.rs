@@ -50,6 +50,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             pending_open_path,
+            print::open_devtools,
             menu::set_menu_locale,
             menu::set_recent_files,
             menu::set_theme_selection,

@@ -92,6 +92,7 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("menu.selectAll", "全选", "Select All"),
     ("edit.copyMarkdown", "复制为 Markdown", "Copy as Markdown"),
     ("edit.pastePlain", "粘贴为纯文本", "Paste as Plain Text"),
+    ("edit.deleteLine", "删除行", "Delete Line"),
     ("menu.find", "查找", "Find"),
     ("search.find", "查找…", "Find…"),
     ("search.findNext", "查找下一个", "Find Next"),
@@ -142,6 +143,8 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("view.zoomIn", "放大", "Zoom In"),
     ("view.zoomOut", "缩小", "Zoom Out"),
     ("view.alwaysOnTop", "保持窗口在最前端", "Keep Window on Top"),
+    ("tabs.showAll", "显示所有标签页", "Show All Tabs"),
+    ("view.devtools", "开发者工具", "Developer Tools"),
     ("reader.open", "用 Reader 打开", "Open in Reader"),
     ("split.open", "Split（Source | Preview）", "Split (Source | Preview)"),
     ("window.fullscreen", "全屏", "Full Screen"),
@@ -168,6 +171,7 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("format.sub", "下标", "Subscript"),
     ("format.link", "超链接…", "Hyperlink…"),
     ("format.clear", "清除样式", "Clear Formatting"),
+    ("format.referenceLink", "链接引用…", "Link Reference…"),
     // ── 格式 → 图像（B5 / PRD §55，Typora「格式 → 图像」子菜单对齐） ──
     ("format.imageMenu", "图像", "Image"),
     ("image.uploadAll", "上传图片", "Upload Images"),
@@ -193,6 +197,9 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     // ── 帮助 ──
     ("menu.help", "帮助", "Help"),
     ("help.cheatsheet", "Markdown 速查表", "Markdown Cheatsheet"),
+    ("help.quickStart", "快速上手", "Quick Start"),
+    ("help.markdownReference", "Markdown 语法参考", "Markdown Reference"),
+    ("help.feedback", "反馈问题…", "Feedback…"),
 ];
 
 fn label(key: &str, locale: &str) -> String {
@@ -266,7 +273,8 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let save_as = MenuItem::with_id(app, "file.saveAs", &l("file.saveAs"), true, accel("Cmd+Shift+S", "Ctrl+Shift+S"))?;
     let save_all = MenuItem::with_id(app, "file.saveAll", &l("file.saveAll"), true, accel("Cmd+Alt+S", "Ctrl+Alt+S"))?;
     let reload_disk = MenuItem::with_id(app, "file.reloadFromDisk", &l("file.reloadFromDisk"), true, None::<&str>)?;
-    let export_pdf = MenuItem::with_id(app, "export.pdf", &l("export.pdf"), true, None::<&str>)?;
+    // ⌃⌘P 导出 PDF（Typora parity；Win/Linux 无默认键，前端 registry 处理）
+    let export_pdf = MenuItem::with_id(app, "export.pdf", &l("export.pdf"), true, accel("Cmd+Ctrl+P", ""))?;
     let export_html = MenuItem::with_id(app, "export.html", &l("export.html"), true, None::<&str>)?;
     let export_docx = MenuItem::with_id(app, "export.docx", &l("export.docx"), true, None::<&str>)?;
     let export_image = MenuItem::with_id(app, "export.image", &l("export.image"), true, None::<&str>)?;
@@ -329,6 +337,8 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let select_all = PredefinedMenuItem::select_all(app, Some(&l("menu.selectAll")))?;
     let copy_markdown = MenuItem::with_id(app, "edit.copyMarkdown", &l("edit.copyMarkdown"), true, accel("Cmd+Shift+C", "Ctrl+Shift+C"))?;
     let paste_plain = MenuItem::with_id(app, "edit.pastePlain", &l("edit.pastePlain"), true, accel("Cmd+Shift+V", "Ctrl+Shift+V"))?;
+    // ⇧⌘⌫ 删除行（Typora 编辑→删除行）
+    let delete_line = MenuItem::with_id(app, "edit.deleteLine", &l("edit.deleteLine"), true, accel("Shift+Cmd+Backspace", "Ctrl+Shift+Backspace"))?;
     let find = MenuItem::with_id(app, "search.find", &l("search.find"), true, accel("Cmd+F", "Ctrl+F"))?;
     let find_next = MenuItem::with_id(app, "search.findNext", &l("search.findNext"), true, accel("Cmd+G", "Ctrl+G"))?;
     let find_prev = MenuItem::with_id(app, "search.findPrevious", &l("search.findPrevious"), true, accel("Cmd+Shift+G", "Ctrl+Shift+G"))?;
@@ -341,7 +351,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
         app,
         &l("menu.edit"),
         true,
-        &[&undo, &redo, &sep6, &cut, &copy, &paste, &select_all, &sep7, &copy_markdown, &paste_plain, &find_menu],
+        &[&undo, &redo, &sep6, &cut, &copy, &paste, &select_all, &sep7, &copy_markdown, &paste_plain, &delete_line, &find_menu],
     )?;
     subs.push(edit_menu);
 
@@ -360,29 +370,32 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let zoom_in = MenuItem::with_id(app, "view.zoomIn", &l("view.zoomIn"), true, accel("Cmd+Shift+=", "Ctrl+Shift+="))?;
     let zoom_out = MenuItem::with_id(app, "view.zoomOut", &l("view.zoomOut"), true, accel("Cmd+Shift+-", "Ctrl+Shift+-"))?;
     let always_on_top = MenuItem::with_id(app, "window.alwaysOnTop", &l("view.alwaysOnTop"), true, None::<&str>)?;
+    // ⇧⌘\ 显示所有标签页（Typora 视图→显示所有标签页 / Tab Overview）
+    let tabs_show_all = MenuItem::with_id(app, "tabs.showAll", &l("tabs.showAll"), true, accel("Shift+Cmd+\\", "Ctrl+Shift+\\"))?;
     let reader = MenuItem::with_id(app, "reader.open", &l("reader.open"), true, None::<&str>)?;
     let split = MenuItem::with_id(app, "split.toggle", &l("split.open"), true, None::<&str>)?;
     let fullscreen = MenuItem::with_id(app, "window.fullscreen", &l("window.fullscreen"), true, accel("Ctrl+Cmd+F", "F11"))?;
+    // DevTools：仅 debug 构建装配（release 菜单不显示；命令侧运行时再门控）
+    #[cfg(debug_assertions)]
+    let devtools = MenuItem::with_id(app, "view.devtools", &l("view.devtools"), true, None::<&str>)?;
     let sep8 = PredefinedMenuItem::separator(app)?;
     let sep9 = PredefinedMenuItem::separator(app)?;
     let sep10 = PredefinedMenuItem::separator(app)?;
     let sep11 = PredefinedMenuItem::separator(app)?;
     let sep12 = PredefinedMenuItem::separator(app)?;
     let sep13 = PredefinedMenuItem::separator(app)?;
-    let view_menu = Submenu::with_items(
-        app,
-        &l("menu.view"),
-        true,
-        &[
-            &palette, &sep8,
-            &source_toggle, &sep9,
-            &focus, &typewriter, &toolbar, &sep10,
-            &sidebar_toggle, &sidebar_outline, &sidebar_filelist, &sidebar_filetree, &global_search, &sep11,
-            &zoom_reset, &zoom_in, &zoom_out, &sep12,
-            &always_on_top, &sep13,
-            &reader, &split, &fullscreen,
-        ],
-    )?;
+    let mut view_items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
+        &palette, &sep8,
+        &source_toggle, &sep9,
+        &focus, &typewriter, &toolbar, &sep10,
+        &sidebar_toggle, &sidebar_outline, &sidebar_filelist, &sidebar_filetree, &global_search, &sep11,
+        &zoom_reset, &zoom_in, &zoom_out, &sep12,
+        &always_on_top, &tabs_show_all, &sep13,
+        &reader, &split, &fullscreen,
+    ];
+    #[cfg(debug_assertions)]
+    view_items.push(&devtools);
+    let view_menu = Submenu::with_items(app, &l("menu.view"), true, &view_items)?;
     subs.push(view_menu);
 
     // ── 插入（Mellow 更优保留：slash 命令统一入口）──────
@@ -409,6 +422,8 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let f_sup = MenuItem::with_id(app, "format.sup", &l("format.sup"), true, None::<&str>)?;
     let f_sub = MenuItem::with_id(app, "format.sub", &l("format.sub"), true, None::<&str>)?;
     let f_link = MenuItem::with_id(app, "format.link", &l("format.link"), true, accel("Cmd+K", "Ctrl+K"))?;
+    // ⌥⌘L 链接引用（Typora 格式→链接引用）
+    let f_reference = MenuItem::with_id(app, "format.referenceLink", &l("format.referenceLink"), true, accel("Cmd+Alt+L", "Ctrl+Alt+L"))?;
     let f_clear = MenuItem::with_id(app, "format.clear", &l("format.clear"), true, accel("Cmd+\\", "Ctrl+\\"))?;
     let sep14 = PredefinedMenuItem::separator(app)?;
     let sep15 = PredefinedMenuItem::separator(app)?;
@@ -418,7 +433,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let img_move = MenuItem::with_id(app, "image.moveAll", &l("image.moveAll"), true, None::<&str>)?;
     let img_copy = MenuItem::with_id(app, "image.copyAll", &l("image.copyAll"), true, None::<&str>)?;
     let image_menu = Submenu::with_items(app, &l("format.imageMenu"), true, &[&img_upload, &img_download, &img_move, &img_copy])?;
-    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_code, &f_strike, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &sep15, &f_clear, &image_menu])?;
+    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_code, &f_strike, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &f_reference, &sep15, &f_clear, &image_menu])?;
     subs.push(format_menu);
 
     // ── 段落 ───────────────────────────────────────────
@@ -505,9 +520,12 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let window_menu = Submenu::with_items(app, &l("menu.window"), true, &[&w_minimize, &w_zoom, &sep21, &w_tab_prev, &w_tab_next])?;
     subs.push(window_menu);
 
-    // ── 帮助 ───────────────────────────────────────────
+    // ── 帮助（B2 补全：快速上手 / Markdown 参考 / 反馈，复用 opener openUrl）──
     let help_cheatsheet = MenuItem::with_id(app, "help.cheatsheet", &l("help.cheatsheet"), true, None::<&str>)?;
-    let help_menu = Submenu::with_items(app, &l("menu.help"), true, &[&help_cheatsheet])?;
+    let help_quick_start = MenuItem::with_id(app, "help.quickStart", &l("help.quickStart"), true, None::<&str>)?;
+    let help_markdown_ref = MenuItem::with_id(app, "help.markdownReference", &l("help.markdownReference"), true, None::<&str>)?;
+    let help_feedback = MenuItem::with_id(app, "help.feedback", &l("help.feedback"), true, None::<&str>)?;
+    let help_menu = Submenu::with_items(app, &l("menu.help"), true, &[&help_quick_start, &help_markdown_ref, &help_cheatsheet, &help_feedback])?;
     subs.push(help_menu);
 
     let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = subs.iter().map(|s| s as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
