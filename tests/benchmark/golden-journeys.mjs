@@ -116,11 +116,18 @@ async function j2_chinese(app, file) {
 async function j3_japanese(app, file) {
   const r = record('3. Japanese IME');
   // 前置：切换输入源到日文罗马字（Kotoeri Romaji，master-plan G12）。
-  // 未启用时 SKIP（系统设置 → 键盘 → 输入源 → 添加「日文 - 罗马字」后重跑），
+  // ID 演进：macOS ≤13 为 com.apple.inputmethod.Kotoeri.Romaji；
+  // macOS 14+ 实测（26.6 TIS 列表）为 com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese。
+  // 两者都不可用时 SKIP（系统设置 → 键盘 → 输入源 → 添加「日文-罗马字」后重跑），
   // 不算 FAIL —— 环境缺输入源 ≠ 功能缺陷。
   const SELINPUT = '/Volumes/My-Data/jason.wa/codebase/Mellow/tests/benchmark/bin/select-input';
+  const JP_IDS = ['com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese', 'com.apple.inputmethod.Kotoeri.Romaji'];
   let imeOk = true;
-  try { execFileSync(SELINPUT, ['com.apple.inputmethod.Kotoeri.Romaji'], { timeout: 5000 }); } catch { imeOk = false; }
+  let jpId = null;
+  for (const id of JP_IDS) {
+    try { execFileSync(SELINPUT, [id], { timeout: 5000 }); jpId = id; break; } catch { /* try next */ }
+  }
+  if (jpId === null) imeOk = false;
   if (!imeOk) {
     r.result = 'SKIP';
     r.platform.macOS = 'NOT TESTED';
@@ -130,20 +137,23 @@ async function j3_japanese(app, file) {
   sleep(600);
   const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
   const t0 = Date.now();
-  // 罗马字 "konnichiwa" → Kotoeri 实时候选 こんにちは（marked text），Enter 提交
+  // 罗马字 "nihongo" → にほんご / 日本語（macOS 26 JapaneseIM 实时候选首选汉字；
+  // 判定准则 = IME 组字提交成功（平假名或汉字转换任一），非词典选择 —— journey
+  // 验证 marked text 经编辑器的完整性与提交，2026-08-22 实测 "konnichiwa" 为
+  // 字面转换 こんにちわ（正字 こんにちは 拼作 konnichiha），故选无歧义词 nihongo）
   if (app === 'mellow') {
-    se('tell application "System Events" to keystroke "konnichiwa"'); sleep(800);
-    se('tell application "System Events" to keystroke return'); r.steps.push('罗马字 konnichiwa + Enter'); r.input.keyboard.push('SE 罗马字组字+提交');
+    se('tell application "System Events" to keystroke "nihongo"'); sleep(800);
+    se('tell application "System Events" to keystroke return'); r.steps.push('罗马字 nihongo + Enter'); r.input.keyboard.push('SE 罗马字组字+提交');
   } else {
-    for (const k of 'konnichiwa'.split('')) { combo('', KEYCODES[k], pid); sleep(150); }
-    combo('', 36, pid); r.steps.push('罗马字 konnichiwa + Enter'); r.input.keyboard.push('CGEvent 罗马字组字+提交');
+    for (const k of 'nihongo'.split('')) { combo('', KEYCODES[k], pid); sleep(150); }
+    combo('', 36, pid); r.steps.push('罗马字 nihongo + Enter'); r.input.keyboard.push('CGEvent 罗马字组字+提交');
   }
   sleep(900);
   combo('cmd', 1, pid); r.timeMs.save = Date.now() - t0;
   sleep(1500);
   const text = readFileSync(file, 'utf8');
-  r.result = text.includes('こんにちは') ? 'PASS' : 'FAIL';
-  if (r.result === 'FAIL') r.errors.push(`读回不含「こんにちは」: ${JSON.stringify(text)}`);
+  r.result = text.includes('にほんご') || text.includes('日本語') ? 'PASS' : 'FAIL';
+  if (r.result === 'FAIL') r.errors.push(`读回不含「にほんご/日本語」: ${JSON.stringify(text)}`);
   // 恢复 ABC
   try { execFileSync(SELINPUT, ['com.apple.keylayout.ABC'], { timeout: 5000 }); } catch { /* noop */ }
   spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);

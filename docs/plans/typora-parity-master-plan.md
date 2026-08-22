@@ -129,7 +129,7 @@ TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E �
 | G9 | 增强 | Open in LLM（文件发给 Codex/Claude/ChatGPT，markdown-preview） | ❌ | P3 | R3 可选 |
 | G10 | 验证 | Windows 真机交互矩阵（微软拼音/五笔 IME + 安装矩阵 + 行为矩阵） | — | **P1** | R4 |
 | G11 | 验证 | Linux 真机交互矩阵（fcitx5/ibus + 安装矩阵） | — | **P1** | R4 |
-| G12 | 验证 | 日文 IME（golden journey j3，NOT TESTED） | — | P2 | R4 |
+| G12 | 验证 | 日文 IME（golden journey j3） | — | P2 | R4（✅ macOS 2026-08-22 达标，见 §八） |
 | G13 | 验收 | UX Score ≥ 92 + 30 任务效率 Gate（≤ Typora+5%） | — | **P1** | R4 |
 
 **更优保留清单**（不实施 Typora 行为）：命令面板 ⇧⌘P / Slash 命令 / Reader / Split 视图 / 重开标签 ⇧⌘T / 单窗口多 tab / 高亮与上下标菜单项 / 状态栏信息常显 / ⇧⌘S 标准另存为。
@@ -234,8 +234,9 @@ TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E �
 | 2026-08-22 | R3-4 | Open in LLM：可选增强，遵守 ADR-0018（AI 可选、默认关）；暂缓待明确需求 | ⏸ 暂缓 |
 | 2026-08-22 | R3-5 | CLI 别名评估：`mellow-desktop` 已可用（PRD §80）；改名/别名涉及 updater/CI 产物名一致性，收益低风险高 → 保持现名，Windows `.cmd` shim 列为后续可选增强 | ✅ 结论：保持现名 |
 | 2026-08-22 | R3 门禁 | 10 包 934 测试全过（engine 601 / export 68 含 mhchem 用例）+ cargo test 20 + desktop tsc clean + vite build 验证（katex 261KB / mhchem 33KB 独立异步 chunk，按需加载达成）| ✅ |
-| 2026-08-22 | — | **G1-G9 代码级差距全部闭环**（R1 portable / R2 尾差 / R3 增强）；剩余 G10-G13（R4 真机验证矩阵）为环境依赖项，待 Windows/Linux 真机与日文 IME 输入源就绪后执行 | 📌 R4 待环境 |
+| 2026-08-22 | — | **G1-G9 代码级差距全部闭环**（R1 portable / R2 尾差 / R3 增强）；剩余 G10/G11/G13（R4 真机验证矩阵 + UX Gate）为环境依赖项，待 Windows/Linux 真机就绪后执行（G12 日文 IME 已于同日 macOS 达标，见下） | 📌 R4 待环境（G10/G11/G13） |
 | 2026-08-22 | j17 性能 | 大文件 dispatch O(n²) 修复：wikilink/inlineExtras 区间检查改 `makeSkipChecker`（归并区间 + 二分 + char-first 快路径）+ 视口裁剪；10MB dispatch 92s → 169ms（LF 预启）；新增性能护栏测试防复杂度回归 | ✅ |
 | 2026-08-22 | j17 白屏根因 | tauri:// WKURLSchemeHandler 下动态 `<style>` CSSOM 永久失效（sheet===null 不可恢复）三层修复：① 分块 IPC 传输大内容（Rust `read_text_meta`/`read_text_chunk` + 前端分块拼接，规避超大单次 IPC 响应卡死 WebKit 事务）；② `EditorCore.open()` 大文档 gate `waitForStylesReady()`（样式 CSSOM 建立后才 dispatch）；③ **styleAdoptShim**（bundle 注入：MutationObserver 监听动态样式，确认 CSSOM 死亡后镜像到 `adoptedStyleSheets`，含 `style.disabled` 原型守卫保 Typewriter Mode 开关语义；正常环境不接管零侵入）+ 主文档 642KB inline module script 外部化（`core-main.js`） | ✅ |
 | 2026-08-22 | LF 收口 | Large File Mode 分类移入 `CoreEditor.open()`（resetEditor 前自动降级，覆盖 applyTab / auto reload / 冲突解决 / 快照恢复全路径）；editor-core 契约测试更新（ready() idle-mount 等待语义 + jsdom TextEncoder 守卫降级路径） | ✅ |
 | 2026-08-22 | j17 门禁 | 重建 release Mellow.app 实测：**j17 10MB PASS 8.5s**（OCR 渲染验证）；TS 10 包 936 tests 全绿（engine 603 / app-core 140 / export 68 / host-api 43 / editor-core 17 / document-model 26 / i18n 15 / settings 8 / themes 8 / commands 8）+ cargo 74 + desktop tsc clean。对照：**Typora 拒渲染 >10MB 文件（弹「该文件过大」），Mellow 正常渲染 = 优于 Typora**（PRD「一致或更优」）。golden-journeys j17 ready 判定改 OCR 内容验证（窗口截屏 OCR fixture 首行）：本机 SCK 窗口捕获流间歇故障（snap 启动失败 / probe 假稳定 → detectChange 无帧），输入（CGEvent/SE keystroke）与渲染均实测正常，非产品缺陷；screen-timing 增加 snap 调试命令 | ✅ |
+| 2026-08-22 | G12 日文 IME | **j3 双 app PASS（Mellow + Typora 1.14.9）**。环境修复：① 启用日文罗马字输入源（GUI 添加；plist 直写与 TISEnableInputSource 均不持久，实测需 System Settings 正规路径）；② 输入源 ID 演进：macOS 26 实测为 `com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese`（旧 `…Kotoeri.Romaji` 已不存在），j3 改双 ID 依次探测；③ 用词修正：`konnichiwa` 在 macOS 26 JapaneseIM 做字面转换得 `こんにちわ`（正字拼作 konnichiha，双 app 同行为 = parity 成立，测试用例问题），改无歧义词 `nihongo`；④ 判定准则明确为「IME 组字提交成功」（にほんご / 日本語 任一），验证 marked text 完整性而非词典选择 | ✅ macOS 达标 |
