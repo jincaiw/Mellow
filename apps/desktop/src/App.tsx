@@ -1464,6 +1464,48 @@ export default function App() {
     }
   }, [t]);
 
+  // ── D4 表格操作 / 链接操作 / 代码块复制（Typora 段落→表格、格式→链接操作、段落→代码工具）──
+
+  /** 引擎表格命令桥（菜单/命令面板 → iframe __MELLOW_CONTEXT_ACTIONS__.tableOp） */
+  const engineTableOp = useCallback((op: 'addRowBelow' | 'deleteRow' | 'addColumnRight' | 'deleteColumn' | 'tidy' | 'addRowAbove' | 'addColumnLeft' | 'moveRowUp' | 'moveRowDown' | 'moveColumnLeft' | 'moveColumnRight' | 'deleteTable' | 'copyTable') => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_ACTIONS__?: { tableOp?: (op: string) => void } }) | null;
+    win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp?.(op);
+    hostRef.current?.focus();
+  }, []);
+
+  /** 打开光标处链接（Typora 格式→链接操作→打开链接） */
+  const handleOpenLinkAtCursor = useCallback(() => {
+    const url = hostRef.current?.linkUrlAtCursor() ?? null;
+    if (url === null) {
+      setStatusText(t('msg.linkNone'));
+      return;
+    }
+    void openerRef.current?.openUrl(url);
+  }, [t]);
+
+  /** 复制光标处链接地址（Typora 格式→链接操作→复制链接地址） */
+  const handleCopyLinkUrl = useCallback(async () => {
+    const url = hostRef.current?.linkUrlAtCursor() ?? null;
+    if (url === null) {
+      setStatusText(t('msg.linkNone'));
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    setStatusText(t('msg.linkUrlCopied'));
+  }, [t]);
+
+  /** 复制光标处代码块内容（Typora 段落→代码工具→复制代码块内容） */
+  const handleCopyCodeBlock = useCallback(async () => {
+    const source = hostRef.current?.codeBlockSourceAtCursor() ?? null;
+    if (source === null) {
+      setStatusText(t('msg.codeBlockNone'));
+      return;
+    }
+    await navigator.clipboard.writeText(source);
+    setStatusText(t('msg.codeBlockCopied'));
+  }, [t]);
+
   /** 文档重命名（spec §6：${stem}.assets 同步 + 引用 patch 原子化） */
   const handleRenameDocument = useCallback(async () => {
     const svc = renameRef.current;
@@ -2514,11 +2556,19 @@ export default function App() {
     }
     if (req.kind === 'table') {
       items.push(
+        { label: t('contextmenu.tableAddRowAbove'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addRowAbove') },
         { label: t('contextmenu.tableAddRowBelow'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addRowBelow') },
         { label: t('contextmenu.tableDeleteRow'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteRow') },
+        { label: t('contextmenu.tableAddColumnLeft'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addColumnLeft') },
         { label: t('contextmenu.tableAddColumnRight'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addColumnRight') },
         { label: t('contextmenu.tableDeleteColumn'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteColumn') },
+        { label: t('contextmenu.tableMoveRowUp'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveRowUp') },
+        { label: t('contextmenu.tableMoveRowDown'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveRowDown') },
+        { label: t('contextmenu.tableMoveColumnLeft'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveColumnLeft') },
+        { label: t('contextmenu.tableMoveColumnRight'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveColumnRight') },
+        { label: t('contextmenu.tableCopyTable'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('copyTable') },
         { label: t('contextmenu.tableTidy'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('tidy') },
+        { label: t('contextmenu.tableDeleteTable'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteTable') },
       );
     }
     setContextMenu({ x: req.x, y: req.y, items });
@@ -3157,6 +3207,22 @@ export default function App() {
       { id: 'edit.copyImage', localizedTitle: { zh: '拷贝图片', en: 'Copy Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyImage() },
       { id: 'edit.copyPlain', localizedTitle: { zh: '复制为纯文本', en: 'Copy as Plain Text' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyPlain') },
       { id: 'edit.copyHtmlSource', localizedTitle: { zh: '复制为 HTML 代码', en: 'Copy as HTML Code' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyHtmlSource') },
+      // D4 表格操作（Typora 段落→表格子菜单；快捷键由引擎 keymap/右键菜单处理，菜单不设 accel）
+      { id: 'table.addRowAbove', localizedTitle: { zh: '上方插入行', en: 'Insert Row Above' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('addRowAbove') },
+      { id: 'table.addRowBelow', localizedTitle: { zh: '下方插入行', en: 'Insert Row Below' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('addRowBelow') },
+      { id: 'table.addColumnLeft', localizedTitle: { zh: '左侧插入列', en: 'Insert Column Left' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('addColumnLeft') },
+      { id: 'table.addColumnRight', localizedTitle: { zh: '右侧插入列', en: 'Insert Column Right' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('addColumnRight') },
+      { id: 'table.moveRowUp', localizedTitle: { zh: '向上移动表格行', en: 'Move Row Up' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('moveRowUp') },
+      { id: 'table.moveRowDown', localizedTitle: { zh: '向下移动表格行', en: 'Move Row Down' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('moveRowDown') },
+      { id: 'table.moveColumnLeft', localizedTitle: { zh: '向左移动表格列', en: 'Move Column Left' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('moveColumnLeft') },
+      { id: 'table.moveColumnRight', localizedTitle: { zh: '向右移动表格列', en: 'Move Column Right' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('moveColumnRight') },
+      { id: 'table.deleteRow', localizedTitle: { zh: '删除行', en: 'Delete Row' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('deleteRow') },
+      { id: 'table.deleteColumn', localizedTitle: { zh: '删除列', en: 'Delete Column' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('deleteColumn') },
+      { id: 'table.copyTable', localizedTitle: { zh: '复制表格', en: 'Copy Table' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('copyTable') },
+      { id: 'table.tidy', localizedTitle: { zh: '格式化表格源码', en: 'Format Table Source' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('tidy') },
+      { id: 'table.deleteTable', localizedTitle: { zh: '删除表格', en: 'Delete Table' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('deleteTable') },
+      // D4 代码工具（Typora 段落→代码工具→复制代码块内容）
+      { id: 'paragraph.copyCodeBlock', localizedTitle: { zh: '复制代码块内容', en: 'Copy Code Block Content' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyCodeBlock() },
       // D1-1 拼写检查（Typora 编辑→拼写和语法「键入时检查」；菜单 CheckMenuItem 触发）
       { id: 'edit.spellcheck.toggle', localizedTitle: { zh: '键入时检查拼写', en: 'Check Spelling While Typing' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
         const def = settingById('editor.spellcheck');
@@ -3184,6 +3250,12 @@ export default function App() {
       { id: 'format.highlight', localizedTitle: { zh: '高亮', en: 'Highlight' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('highlight') },
       { id: 'format.sup', localizedTitle: { zh: '上标', en: 'Superscript' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('sup') },
       { id: 'format.sub', localizedTitle: { zh: '下标', en: 'Subscript' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('sub') },
+      // D4 格式菜单补全（Typora 格式：下划线 ⌘U / 注释 ⌃-；引擎 applyInlineWrap 非对称包裹）
+      { id: 'format.underline', localizedTitle: { zh: '下划线', en: 'Underline' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+U', winLinux: 'Ctrl+U' }, enabled: always, execute: () => engineFormat('underline') },
+      { id: 'format.comment', localizedTitle: { zh: '注释', en: 'Comment' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+-', winLinux: 'Ctrl+-' }, enabled: always, execute: () => engineFormat('comment') },
+      // D4 链接操作（Typora 格式→链接操作：打开链接 / 复制链接地址）
+      { id: 'format.openLink', localizedTitle: { zh: '打开链接', en: 'Open Link' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => handleOpenLinkAtCursor() },
+      { id: 'format.copyLinkUrl', localizedTitle: { zh: '复制链接地址', en: 'Copy Link Address' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyLinkUrl() },
       // 清除样式（Typora Format→清除样式 ⌘\）：选区行内 marker + 链接语法剥除
       { id: 'format.clear', localizedTitle: { zh: '清除样式', en: 'Clear Formatting' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' }, enabled: always, execute: () => engineFormat('clear') },
       // 段落（标题层级 / 段落）
@@ -3201,6 +3273,12 @@ export default function App() {
       { id: 'paragraph.footnote', localizedTitle: { zh: '脚注', en: 'Footnote' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+R', winLinux: 'Ctrl+Alt+R' }, enabled: always, execute: () => engineFormat('footnote') },
       { id: 'paragraph.yamlFrontMatter', localizedTitle: { zh: 'YAML Front Matter', en: 'YAML Front Matter' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('yamlFrontMatter') },
       { id: 'paragraph.taskToggle', localizedTitle: { zh: '切换任务状态', en: 'Toggle Task State' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Alt+X' }, enabled: always, execute: () => engineFormat('taskToggle') },
+      // D4 列表缩进（Typora 段落→列表缩进 ⌘]/⌘[；引擎 applyListIndent）
+      { id: 'paragraph.indentMore', localizedTitle: { zh: '增加缩进', en: 'Increase Indent' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+]', winLinux: 'Ctrl+]' }, enabled: always, execute: () => engineFormat('indentMore') },
+      { id: 'paragraph.indentLess', localizedTitle: { zh: '减少缩进', en: 'Decrease Indent' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+[', winLinux: 'Ctrl+[' }, enabled: always, execute: () => engineFormat('indentLess') },
+      // D4 插入段落（Typora 段落→在上方/下方插入段落；引擎 applyInsertParagraph）
+      { id: 'paragraph.insertAbove', localizedTitle: { zh: '在上方插入段落', en: 'Insert Paragraph Above' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('insertParagraphAbove') },
+      { id: 'paragraph.insertBelow', localizedTitle: { zh: '在下方插入段落', en: 'Insert Paragraph Below' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('insertParagraphBelow') },
       { id: 'theme.mode.system', localizedTitle: { zh: '跟随系统', en: 'Follow System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
       { id: 'view.sidebar.toggle', localizedTitle: { zh: '切换侧边栏', en: 'Toggle Sidebar' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+L', winLinux: 'Ctrl+Shift+L' }, enabled: always, execute: toggleSidebar },
       { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+1', winLinux: 'Ctrl+Shift+1' }, enabled: always, execute: () => showSidebarAs('outline') },

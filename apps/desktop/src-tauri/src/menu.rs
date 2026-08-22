@@ -165,6 +165,27 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("paragraph.horizontalRule", "水平分割线", "Horizontal Rule"),
     ("paragraph.toc", "内容目录", "Table of Contents"),
     ("paragraph.yamlFrontMatter", "YAML Front Matter", "YAML Front Matter"),
+    // ── 段落 → 表格/代码工具/列表缩进/插入段落（D4 Typora 对齐）──
+    ("table.addRowAbove", "上方插入行", "Insert Row Above"),
+    ("table.addRowBelow", "下方插入行", "Insert Row Below"),
+    ("table.addColumnLeft", "左侧插入列", "Insert Column Left"),
+    ("table.addColumnRight", "右侧插入列", "Insert Column Right"),
+    ("table.moveRowUp", "向上移动表格行", "Move Row Up"),
+    ("table.moveRowDown", "向下移动表格行", "Move Row Down"),
+    ("table.moveColumnLeft", "向左移动表格列", "Move Column Left"),
+    ("table.moveColumnRight", "向右移动表格列", "Move Column Right"),
+    ("table.deleteRow", "删除行", "Delete Row"),
+    ("table.deleteColumn", "删除列", "Delete Column"),
+    ("table.copyTable", "复制表格", "Copy Table"),
+    ("table.tidy", "格式化表格源码", "Format Table Source"),
+    ("table.deleteTable", "删除表格", "Delete Table"),
+    ("paragraph.codeToolsMenu", "代码工具", "Code Tools"),
+    ("paragraph.copyCodeBlock", "复制代码块内容", "Copy Code Block Content"),
+    ("paragraph.indentMenu", "列表缩进", "List Indent"),
+    ("paragraph.indentMore", "增加缩进", "Increase Indent"),
+    ("paragraph.indentLess", "减少缩进", "Decrease Indent"),
+    ("paragraph.insertAbove", "在上方插入段落", "Insert Paragraph Above"),
+    ("paragraph.insertBelow", "在下方插入段落", "Insert Paragraph Below"),
     // ── 显示 ──
     ("menu.view", "显示", "View"),
     ("commandPalette.open", "命令面板", "Command Palette"),
@@ -210,6 +231,12 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("format.link", "超链接…", "Hyperlink…"),
     ("format.clear", "清除样式", "Clear Formatting"),
     ("format.referenceLink", "链接引用…", "Link Reference…"),
+    // ── 格式 → 下划线/注释/链接操作（D4 Typora 对齐）──
+    ("format.underline", "下划线", "Underline"),
+    ("format.comment", "注释", "Comment"),
+    ("format.linkOpsMenu", "链接操作", "Link Ops"),
+    ("format.openLink", "打开链接", "Open Link"),
+    ("format.copyLinkUrl", "复制链接地址", "Copy Link Address"),
     // ── 格式 → 图像（B5 / PRD §55，Typora「格式 → 图像」子菜单对齐） ──
     ("format.imageMenu", "图像", "Image"),
     ("image.uploadAll", "上传图片", "Upload Images"),
@@ -541,6 +568,13 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let f_link = MenuItem::with_id(app, "format.link", &l("format.link"), true, accel("Cmd+K", "Ctrl+K"))?;
     // ⌥⌘L 链接引用（Typora 格式→链接引用）
     let f_reference = MenuItem::with_id(app, "format.referenceLink", &l("format.referenceLink"), true, accel("Cmd+Alt+L", "Ctrl+Alt+L"))?;
+    // D4：下划线 ⌘U / 注释 ⌃-（Typora 格式菜单；引擎 applyInlineWrap 非对称包裹）
+    let f_underline = MenuItem::with_id(app, "format.underline", &l("format.underline"), true, accel("Cmd+U", "Ctrl+U"))?;
+    let f_comment = MenuItem::with_id(app, "format.comment", &l("format.comment"), true, accel("Ctrl+-", "Ctrl+-"))?;
+    // D4：链接操作子菜单（Typora 格式→链接操作：打开链接 / 复制链接地址）
+    let f_open_link = MenuItem::with_id(app, "format.openLink", &l("format.openLink"), true, None::<&str>)?;
+    let f_copy_link = MenuItem::with_id(app, "format.copyLinkUrl", &l("format.copyLinkUrl"), true, None::<&str>)?;
+    let link_ops_menu = Submenu::with_items(app, &l("format.linkOpsMenu"), true, &[&f_open_link, &f_copy_link])?;
     let f_clear = MenuItem::with_id(app, "format.clear", &l("format.clear"), true, accel("Cmd+\\", "Ctrl+\\"))?;
     let sep14 = PredefinedMenuItem::separator(app)?;
     let sep15 = PredefinedMenuItem::separator(app)?;
@@ -550,7 +584,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let img_move = MenuItem::with_id(app, "image.moveAll", &l("image.moveAll"), true, None::<&str>)?;
     let img_copy = MenuItem::with_id(app, "image.copyAll", &l("image.copyAll"), true, None::<&str>)?;
     let image_menu = Submenu::with_items(app, &l("format.imageMenu"), true, &[&img_upload, &img_download, &img_move, &img_copy])?;
-    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_code, &f_strike, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &f_reference, &sep15, &f_clear, &image_menu])?;
+    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_underline, &f_code, &f_strike, &f_comment, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &link_ops_menu, &f_reference, &sep15, &f_clear, &image_menu])?;
     subs.push(format_menu);
 
     // ── 段落 ───────────────────────────────────────────
@@ -580,11 +614,57 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let p_footnote = MenuItem::with_id(app, "paragraph.footnote", &l("paragraph.footnote"), true, accel("Cmd+Alt+R", "Ctrl+Alt+R"))?;
     let p_hr = MenuItem::with_id(app, "paragraph.horizontalRule", &l("paragraph.horizontalRule"), true, accel("Cmd+Alt+-", "Ctrl+Alt+-"))?;
     let p_yaml = MenuItem::with_id(app, "paragraph.yamlFrontMatter", &l("paragraph.yamlFrontMatter"), true, None::<&str>)?;
+    // D4：段落→表格操作子菜单（Typora 段落→表格；快捷键留引擎 keymap，菜单不设 accel 避免双触发）
+    let t_add_above = MenuItem::with_id(app, "table.addRowAbove", &l("table.addRowAbove"), true, None::<&str>)?;
+    let t_add_below = MenuItem::with_id(app, "table.addRowBelow", &l("table.addRowBelow"), true, None::<&str>)?;
+    let t_add_col_left = MenuItem::with_id(app, "table.addColumnLeft", &l("table.addColumnLeft"), true, None::<&str>)?;
+    let t_add_col_right = MenuItem::with_id(app, "table.addColumnRight", &l("table.addColumnRight"), true, None::<&str>)?;
+    let t_move_row_up = MenuItem::with_id(app, "table.moveRowUp", &l("table.moveRowUp"), true, None::<&str>)?;
+    let t_move_row_down = MenuItem::with_id(app, "table.moveRowDown", &l("table.moveRowDown"), true, None::<&str>)?;
+    let t_move_col_left = MenuItem::with_id(app, "table.moveColumnLeft", &l("table.moveColumnLeft"), true, None::<&str>)?;
+    let t_move_col_right = MenuItem::with_id(app, "table.moveColumnRight", &l("table.moveColumnRight"), true, None::<&str>)?;
+    let t_del_row = MenuItem::with_id(app, "table.deleteRow", &l("table.deleteRow"), true, None::<&str>)?;
+    let t_del_col = MenuItem::with_id(app, "table.deleteColumn", &l("table.deleteColumn"), true, None::<&str>)?;
+    let t_copy = MenuItem::with_id(app, "table.copyTable", &l("table.copyTable"), true, None::<&str>)?;
+    let t_tidy = MenuItem::with_id(app, "table.tidy", &l("table.tidy"), true, None::<&str>)?;
+    let t_delete = MenuItem::with_id(app, "table.deleteTable", &l("table.deleteTable"), true, None::<&str>)?;
+    let t_sep1 = PredefinedMenuItem::separator(app)?;
+    let t_sep2 = PredefinedMenuItem::separator(app)?;
+    let t_sep3 = PredefinedMenuItem::separator(app)?;
+    let t_sep4 = PredefinedMenuItem::separator(app)?;
+    let t_sep5 = PredefinedMenuItem::separator(app)?;
+    let t_sep6 = PredefinedMenuItem::separator(app)?;
+    // 表格子菜单：插入表格（复用 i_table 实例）+ 行列操作（Typora 顺序）
+    let table_menu = Submenu::with_items(
+        app,
+        &l("insert.table"),
+        true,
+        &[
+            &i_table, &t_sep1,
+            &t_add_above, &t_add_below, &t_sep2,
+            &t_add_col_left, &t_add_col_right, &t_sep3,
+            &t_move_row_up, &t_move_row_down, &t_move_col_left, &t_move_col_right, &t_sep4,
+            &t_del_row, &t_del_col, &t_sep5,
+            &t_copy, &t_tidy, &t_sep6,
+            &t_delete,
+        ],
+    )?;
+    // D4：段落→代码工具子菜单（Typora 段落→代码工具→复制代码块内容）
+    let p_copy_code = MenuItem::with_id(app, "paragraph.copyCodeBlock", &l("paragraph.copyCodeBlock"), true, None::<&str>)?;
+    let code_tools_menu = Submenu::with_items(app, &l("paragraph.codeToolsMenu"), true, &[&p_copy_code])?;
+    // D4：段落→列表缩进子菜单（Typora ⌘]/⌘[；引擎 applyListIndent）
+    let p_indent_more = MenuItem::with_id(app, "paragraph.indentMore", &l("paragraph.indentMore"), true, accel("Cmd+]", "Ctrl+]"))?;
+    let p_indent_less = MenuItem::with_id(app, "paragraph.indentLess", &l("paragraph.indentLess"), true, accel("Cmd+[", "Ctrl+["))?;
+    let indent_menu = Submenu::with_items(app, &l("paragraph.indentMenu"), true, &[&p_indent_more, &p_indent_less])?;
+    // D4：在上方/下方插入段落（Typora 段落菜单；引擎 applyInsertParagraph）
+    let p_insert_above = MenuItem::with_id(app, "paragraph.insertAbove", &l("paragraph.insertAbove"), true, None::<&str>)?;
+    let p_insert_below = MenuItem::with_id(app, "paragraph.insertBelow", &l("paragraph.insertBelow"), true, None::<&str>)?;
     let sep16 = PredefinedMenuItem::separator(app)?;
     let sep17 = PredefinedMenuItem::separator(app)?;
     let sep18 = PredefinedMenuItem::separator(app)?;
     let sep19 = PredefinedMenuItem::separator(app)?;
     let sep20 = PredefinedMenuItem::separator(app)?;
+    let sep21 = PredefinedMenuItem::separator(app)?;
     let paragraph_menu = Submenu::with_items(
         app,
         &l("menu.paragraph"),
@@ -593,8 +673,9 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
             &p_h1, &p_h2, &p_h3, &p_h4, &p_h5, &p_h6, &sep16,
             &p_normal, &sep17,
             &p_up, &p_down, &sep18,
-            &i_table, &p_math, &p_code, &alert_menu, &p_quote, &sep19,
-            &p_ordered, &p_list, &p_task, &p_task_toggle, &sep20,
+            &table_menu, &p_math, &p_code, &code_tools_menu, &alert_menu, &p_quote, &sep19,
+            &p_ordered, &p_list, &p_task, &p_task_toggle, &indent_menu, &sep20,
+            &p_insert_above, &p_insert_below, &sep21,
             &p_footnote, &p_hr, &i_toc, &p_yaml,
         ],
     )?;
