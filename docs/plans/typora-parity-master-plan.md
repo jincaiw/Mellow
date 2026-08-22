@@ -233,3 +233,5 @@ TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E �
 | 2026-08-22 | R3-3 | Share 复制源码：macOS NSSharingServicePicker 需真机验证 → 并入 R4 真机阶段实施（跨平台基础「复制为 Markdown ⇧⌘C」已有） | ⏸ 并入 R4 |
 | 2026-08-22 | R3-4 | Open in LLM：可选增强，遵守 ADR-0018（AI 可选、默认关）；暂缓待明确需求 | ⏸ 暂缓 |
 | 2026-08-22 | R3-5 | CLI 别名评估：`mellow-desktop` 已可用（PRD §80）；改名/别名涉及 updater/CI 产物名一致性，收益低风险高 → 保持现名，Windows `.cmd` shim 列为后续可选增强 | ✅ 结论：保持现名 |
+| 2026-08-22 | R3 门禁 | 10 包 934 测试全过（engine 601 / export 68 含 mhchem 用例）+ cargo test 20 + desktop tsc clean + vite build 验证（katex 261KB / mhchem 33KB 独立异步 chunk，按需加载达成）| ✅ |
+| 2026-08-22 | — | **G1-G9 代码级差距全部闭环**（R1 portable / R2 尾差 / R3 增强）；剩余 G10-G13（R4 真机验证矩阵）为环境依赖项，待 Windows/Linux 真机与日文 IME 输入源就绪后执行 | 📌 R4 待环境 |
