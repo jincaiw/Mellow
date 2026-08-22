@@ -1,4 +1,5 @@
 pub mod bridge;
+pub mod clipboard;
 pub mod fs;
 pub mod menu;
 pub mod open_with;
@@ -56,6 +57,7 @@ pub fn run() {
             menu::set_theme_selection,
             menu::set_spellcheck_state,
             bridge::bridge_call,
+            clipboard::copy_image_to_clipboard,
             fs::open_document,
             fs::save_document,
             fs::read_text,

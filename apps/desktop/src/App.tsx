@@ -284,11 +284,13 @@ export default function App() {
     hostRef.current?.focus();
   }, []);
 
-  /** 引擎剪贴板桥（菜单「复制为 Markdown / 粘贴为纯文本」→ iframe __MELLOW_CLIPBOARD_API__） */
-  const engineClipboard = useCallback((action: 'copyMarkdown' | 'pastePlain') => {
+  /** 引擎剪贴板桥（菜单「复制为 Markdown / 纯文本 / HTML 代码 / 粘贴为纯文本」→ iframe __MELLOW_CLIPBOARD_API__） */
+  const engineClipboard = useCallback((action: 'copyMarkdown' | 'copyPlain' | 'copyHtmlSource' | 'pastePlain') => {
     const frame = containerRef.current?.querySelector('iframe');
-    const win = frame?.contentWindow as (Window & { __MELLOW_CLIPBOARD_API__?: { copyAsMarkdown: () => boolean; pastePlain: () => void } }) | null;
+    const win = frame?.contentWindow as (Window & { __MELLOW_CLIPBOARD_API__?: { copyAsMarkdown: () => boolean; copyAsPlain: () => boolean; copyAsHtmlSource: () => boolean; pastePlain: () => void } }) | null;
     if (action === 'copyMarkdown') win?.__MELLOW_CLIPBOARD_API__?.copyAsMarkdown();
+    else if (action === 'copyPlain') win?.__MELLOW_CLIPBOARD_API__?.copyAsPlain();
+    else if (action === 'copyHtmlSource') win?.__MELLOW_CLIPBOARD_API__?.copyAsHtmlSource();
     else win?.__MELLOW_CLIPBOARD_API__?.pastePlain();
     hostRef.current?.focus();
   }, []);
@@ -1439,6 +1441,28 @@ export default function App() {
       setStatusText(r.value.downloaded > 0 ? t('msg.downloadedAll') : t('msg.skippedReason', { reason: r.value.skipped[0]?.reason ?? '' }));
     }
   }, []);
+
+  /** 拷贝图片（Typora parity D3）：光标处图片 → 本地文件 → 系统剪贴板位图 */
+  const handleCopyImage = useCallback(async () => {
+    const ops = fileOpsRef.current;
+    if (!ops || !isTauri()) return;
+    const src = hostRef.current?.imageSourceAtCursor() ?? null;
+    if (src === null) {
+      setStatusText(t('msg.copyImageNone'));
+      return;
+    }
+    const abs = ops.resolveSrcPath(src);
+    if (abs === null) {
+      setStatusText(t('msg.copyImageRemoteUnsupported'));
+      return;
+    }
+    try {
+      await invoke('copy_image_to_clipboard', { path: abs });
+      setStatusText(t('msg.copyImageDone'));
+    } catch (err) {
+      setStatusText(t('msg.copyImageFailed', { error: err instanceof Error ? err.message : String(err) }));
+    }
+  }, [t]);
 
   /** 文档重命名（spec §6：${stem}.assets 同步 + 引用 patch 原子化） */
   const handleRenameDocument = useCallback(async () => {
@@ -3114,6 +3138,25 @@ export default function App() {
       // D1-4 选择命令（Typora 编辑→选择：⌘L 行 / ⌥⌘P 段落或块）
       { id: 'edit.selectLine', localizedTitle: { zh: '选择行', en: 'Select Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+L', winLinux: 'Ctrl+L' }, enabled: always, execute: () => { hostRef.current?.selectLine(); } },
       { id: 'edit.selectParagraph', localizedTitle: { zh: '选择段落或块', en: 'Select Paragraph or Block' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+P', winLinux: 'Ctrl+Alt+P' }, enabled: always, execute: () => { hostRef.current?.selectParagraph(); } },
+      // D3 选择子菜单补全（Typora 编辑→选择）
+      { id: 'edit.selectWord', localizedTitle: { zh: '选中当前词', en: 'Select Word' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+D', winLinux: 'Ctrl+D' }, enabled: always, execute: () => { hostRef.current?.selectWord(); } },
+      { id: 'edit.selectFormatSpan', localizedTitle: { zh: '选中当前格式文本', en: 'Select Format Span' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+E', winLinux: 'Ctrl+E' }, enabled: always, execute: () => { hostRef.current?.selectFormatSpan(); } },
+      { id: 'edit.gotoDocStart', localizedTitle: { zh: '跳转到文首', en: 'Go to Document Start' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+ArrowUp', winLinux: 'Ctrl+Home' }, enabled: always, execute: () => { hostRef.current?.gotoDocStart(); } },
+      { id: 'edit.gotoDocEnd', localizedTitle: { zh: '跳转到文末', en: 'Go to Document End' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+ArrowDown', winLinux: 'Ctrl+End' }, enabled: always, execute: () => { hostRef.current?.gotoDocEnd(); } },
+      { id: 'edit.gotoSelection', localizedTitle: { zh: '跳转到所选内容', en: 'Go to Selection' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+J', winLinux: 'Ctrl+J' }, enabled: always, execute: () => { hostRef.current?.gotoSelection(); } },
+      { id: 'edit.gotoLineStart', localizedTitle: { zh: '跳转到行首', en: 'Go to Line Start' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+A', winLinux: 'Home' }, enabled: always, execute: () => { hostRef.current?.gotoLineStart(); } },
+      { id: 'edit.gotoLineEnd', localizedTitle: { zh: '跳转到行尾', en: 'Go to Line End' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+ArrowRight', winLinux: 'End' }, enabled: always, execute: () => { hostRef.current?.gotoLineEnd(); } },
+      // D3 删除范围子菜单（Typora 编辑→删除范围）
+      { id: 'edit.deleteParagraph', localizedTitle: { zh: '删除块', en: 'Delete Block' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+Shift+P', winLinux: 'Ctrl+Alt+Shift+P' }, enabled: always, execute: () => { hostRef.current?.deleteParagraph(); } },
+      { id: 'edit.deleteFormatSpan', localizedTitle: { zh: '删除当前格式文本', en: 'Delete Format Span' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+Shift+E', winLinux: 'Ctrl+Alt+Shift+E' }, enabled: always, execute: () => { hostRef.current?.deleteFormatSpan(); } },
+      { id: 'edit.deleteWord', localizedTitle: { zh: '删除当前词', en: 'Delete Word' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Shift+Cmd+D', winLinux: 'Ctrl+Shift+D' }, enabled: always, execute: () => { hostRef.current?.deleteWord(); } },
+      // D3 上移/下移该行（Typora 编辑菜单 ⌥↑/⌥↓）
+      { id: 'edit.moveLineUp', localizedTitle: { zh: '上移该行', en: 'Move Line Up' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Alt+ArrowUp', winLinux: 'Alt+ArrowUp' }, enabled: always, execute: () => { hostRef.current?.moveLineUp(); } },
+      { id: 'edit.moveLineDown', localizedTitle: { zh: '下移该行', en: 'Move Line Down' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Alt+ArrowDown', winLinux: 'Alt+ArrowDown' }, enabled: always, execute: () => { hostRef.current?.moveLineDown(); } },
+      // D3 复制/拷贝（Typora 编辑菜单：拷贝图片 / 复制为纯文本 / 复制为 HTML 代码）
+      { id: 'edit.copyImage', localizedTitle: { zh: '拷贝图片', en: 'Copy Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyImage() },
+      { id: 'edit.copyPlain', localizedTitle: { zh: '复制为纯文本', en: 'Copy as Plain Text' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyPlain') },
+      { id: 'edit.copyHtmlSource', localizedTitle: { zh: '复制为 HTML 代码', en: 'Copy as HTML Code' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyHtmlSource') },
       // D1-1 拼写检查（Typora 编辑→拼写和语法「键入时检查」；菜单 CheckMenuItem 触发）
       { id: 'edit.spellcheck.toggle', localizedTitle: { zh: '键入时检查拼写', en: 'Check Spelling While Typing' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
         const def = settingById('editor.spellcheck');

@@ -26,6 +26,9 @@ tauri-plugin-opener = "2"
 trash = "5"
 # 远程图片下载（spec image-workflow §9：仅用户显式命令；rustls TLS）
 ureq = "2"
+# 剪贴板图片写入（Typora「拷贝图片」D3；三平台）+ 图片解码
+arboard = "3"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 
 [dev-dependencies]
 # 更新签名校验测试（与 tauri-plugin-updater 同款 minisign 语义）

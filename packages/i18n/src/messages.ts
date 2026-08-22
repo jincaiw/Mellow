@@ -278,6 +278,10 @@ const zhCN = {
   'dialog.trashConfirmDirty': '移到回收站？未保存的修改将丢失。\n{path}',
   'msg.spellcheckOn': '拼写检查：已开启（大文件模式自动关闭）',
   'msg.spellcheckOff': '拼写检查：已关闭',
+  'msg.copyImageNone': '光标处没有图片',
+  'msg.copyImageRemoteUnsupported': '远程图片暂不支持拷贝（请先下载到本地）',
+  'msg.copyImageDone': '图片已拷贝到剪贴板',
+  'msg.copyImageFailed': '拷贝图片失败：{error}',
   'dialog.closeTabs': '关闭标签页？',
   'dialog.closeTabsDirty': '以下标签页有未保存修改，仍要关闭吗？\n{names}',
 
@@ -700,6 +704,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'dialog.trashConfirmDirty': 'Move to trash? Unsaved changes will be lost.\n{path}',
   'msg.spellcheckOn': 'Spell check: on (auto-off in large file mode)',
   'msg.spellcheckOff': 'Spell check: off',
+  'msg.copyImageNone': 'No image at the cursor',
+  'msg.copyImageRemoteUnsupported': 'Remote images cannot be copied yet (download to local first)',
+  'msg.copyImageDone': 'Image copied to clipboard',
+  'msg.copyImageFailed': 'Copy image failed: {error}',
   'dialog.closeTabs': 'Close tabs?',
   'dialog.closeTabsDirty': 'The following tabs have unsaved changes. Close anyway?\n{names}',
 

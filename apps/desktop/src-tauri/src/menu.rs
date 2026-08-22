@@ -109,10 +109,26 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("menu.selectAll", "全选", "Select All"),
     ("edit.copyMarkdown", "复制为 Markdown", "Copy as Markdown"),
     ("edit.pastePlain", "粘贴为纯文本", "Paste as Plain Text"),
+    ("edit.copyPlain", "复制为纯文本", "Copy as Plain Text"),
+    ("edit.copyHtmlSource", "复制为 HTML 代码", "Copy as HTML Code"),
+    ("edit.copyImage", "拷贝图片", "Copy Image"),
     ("edit.deleteLine", "删除行", "Delete Line"),
     ("edit.selectMenu", "选择", "Select"),
     ("edit.selectLine", "选择行", "Select Line"),
     ("edit.selectParagraph", "选择段落或块", "Select Paragraph or Block"),
+    ("edit.selectWord", "选中当前词", "Select Word"),
+    ("edit.selectFormatSpan", "选中当前格式文本", "Select Format Span"),
+    ("edit.gotoDocStart", "跳转到文首", "Go to Document Start"),
+    ("edit.gotoDocEnd", "跳转到文末", "Go to Document End"),
+    ("edit.gotoSelection", "跳转到所选内容", "Go to Selection"),
+    ("edit.gotoLineStart", "跳转到行首", "Go to Line Start"),
+    ("edit.gotoLineEnd", "跳转到行尾", "Go to Line End"),
+    ("edit.deleteRangeMenu", "删除范围", "Delete Range"),
+    ("edit.deleteParagraph", "删除块", "Delete Block"),
+    ("edit.deleteFormatSpan", "删除当前格式文本", "Delete Format Span"),
+    ("edit.deleteWord", "删除当前词", "Delete Word"),
+    ("edit.moveLineUp", "上移该行", "Move Line Up"),
+    ("edit.moveLineDown", "下移该行", "Move Line Down"),
     ("edit.spellMenu", "拼写和语法", "Spelling and Grammar"),
     ("edit.spellcheck", "键入时检查拼写", "Check Spelling While Typing"),
     ("menu.find", "查找", "Find"),
@@ -388,18 +404,47 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let select_all = PredefinedMenuItem::select_all(app, Some(&l("menu.selectAll")))?;
     let copy_markdown = MenuItem::with_id(app, "edit.copyMarkdown", &l("edit.copyMarkdown"), true, accel("Cmd+Shift+C", "Ctrl+Shift+C"))?;
     let paste_plain = MenuItem::with_id(app, "edit.pastePlain", &l("edit.pastePlain"), true, accel("Cmd+Shift+V", "Ctrl+Shift+V"))?;
-    // ⇧⌘⌫ 删除行（Typora 编辑→删除行）
-    let delete_line = MenuItem::with_id(app, "edit.deleteLine", &l("edit.deleteLine"), true, accel("Shift+Cmd+Backspace", "Ctrl+Shift+Backspace"))?;
     let find = MenuItem::with_id(app, "search.find", &l("search.find"), true, accel("Cmd+F", "Ctrl+F"))?;
     let find_next = MenuItem::with_id(app, "search.findNext", &l("search.findNext"), true, accel("Cmd+G", "Ctrl+G"))?;
     let find_prev = MenuItem::with_id(app, "search.findPrevious", &l("search.findPrevious"), true, accel("Cmd+Shift+G", "Ctrl+Shift+G"))?;
     let replace = MenuItem::with_id(app, "search.replace", &l("search.replace"), true, accel("Cmd+Alt+F", "Ctrl+H"))?;
     let find_sep = PredefinedMenuItem::separator(app)?;
     let find_menu = Submenu::with_items(app, &l("menu.find"), true, &[&find, &find_next, &find_prev, &find_sep, &replace])?;
-    // D1-4 选择子菜单（Typora 编辑→选择：⌘L 行 / ⌥⌘P 段落或块）
+    // D1-4 + D3 选择子菜单（Typora 编辑→选择全量：全选/段落或块/行/格式文本/词 + 跳转组）
     let sel_line = MenuItem::with_id(app, "edit.selectLine", &l("edit.selectLine"), true, accel("Cmd+L", "Ctrl+L"))?;
     let sel_para = MenuItem::with_id(app, "edit.selectParagraph", &l("edit.selectParagraph"), true, accel("Cmd+Alt+P", "Ctrl+Alt+P"))?;
-    let select_menu = Submenu::with_items(app, &l("edit.selectMenu"), true, &[&sel_line, &sel_para])?;
+    let sel_word = MenuItem::with_id(app, "edit.selectWord", &l("edit.selectWord"), true, accel("Cmd+D", "Ctrl+D"))?;
+    let sel_span = MenuItem::with_id(app, "edit.selectFormatSpan", &l("edit.selectFormatSpan"), true, accel("Cmd+E", "Ctrl+E"))?;
+    let goto_doc_start = MenuItem::with_id(app, "edit.gotoDocStart", &l("edit.gotoDocStart"), true, accel("Cmd+Up", "Ctrl+Home"))?;
+    let goto_doc_end = MenuItem::with_id(app, "edit.gotoDocEnd", &l("edit.gotoDocEnd"), true, accel("Cmd+Down", "Ctrl+End"))?;
+    let goto_selection = MenuItem::with_id(app, "edit.gotoSelection", &l("edit.gotoSelection"), true, accel("Cmd+J", "Ctrl+J"))?;
+    let goto_line_start = MenuItem::with_id(app, "edit.gotoLineStart", &l("edit.gotoLineStart"), true, accel("Ctrl+A", "Home"))?;
+    let goto_line_end = MenuItem::with_id(app, "edit.gotoLineEnd", &l("edit.gotoLineEnd"), true, accel("Cmd+Right", "End"))?;
+    let select_sep1 = PredefinedMenuItem::separator(app)?;
+    let select_sep2 = PredefinedMenuItem::separator(app)?;
+    let select_menu = Submenu::with_items(
+        app,
+        &l("edit.selectMenu"),
+        true,
+        &[
+            &select_all, &sel_para, &sel_line, &sel_span, &sel_word, &select_sep1,
+            &goto_doc_start, &goto_selection, &goto_doc_end, &select_sep2,
+            &goto_line_start, &goto_line_end,
+        ],
+    )?;
+    // D3 删除范围子菜单（Typora 编辑→删除范围：块/行或句/格式文本/词）
+    let del_block = MenuItem::with_id(app, "edit.deleteParagraph", &l("edit.deleteParagraph"), true, accel("Cmd+Alt+Shift+P", "Ctrl+Alt+Shift+P"))?;
+    let del_line_menu = MenuItem::with_id(app, "edit.deleteLine", &l("edit.deleteLine"), true, accel("Shift+Cmd+Backspace", "Ctrl+Shift+Backspace"))?;
+    let del_span = MenuItem::with_id(app, "edit.deleteFormatSpan", &l("edit.deleteFormatSpan"), true, accel("Cmd+Alt+Shift+E", "Ctrl+Alt+Shift+E"))?;
+    let del_word = MenuItem::with_id(app, "edit.deleteWord", &l("edit.deleteWord"), true, accel("Shift+Cmd+D", "Ctrl+Shift+D"))?;
+    let delete_range_menu = Submenu::with_items(app, &l("edit.deleteRangeMenu"), true, &[&del_block, &del_line_menu, &del_span, &del_word])?;
+    // D3 上移/下移该行（Typora 编辑菜单 ⌥↑/⌥↓）
+    let move_line_up = MenuItem::with_id(app, "edit.moveLineUp", &l("edit.moveLineUp"), true, accel("Alt+Up", "Alt+Up"))?;
+    let move_line_down = MenuItem::with_id(app, "edit.moveLineDown", &l("edit.moveLineDown"), true, accel("Alt+Down", "Alt+Down"))?;
+    // D3 拷贝图片 / 复制为纯文本 / 复制为 HTML 代码（Typora 编辑菜单）
+    let copy_image = MenuItem::with_id(app, "edit.copyImage", &l("edit.copyImage"), true, None::<&str>)?;
+    let copy_plain = MenuItem::with_id(app, "edit.copyPlain", &l("edit.copyPlain"), true, None::<&str>)?;
+    let copy_html_source = MenuItem::with_id(app, "edit.copyHtmlSource", &l("edit.copyHtmlSource"), true, None::<&str>)?;
     // D1-1 拼写和语法子菜单（Typora 编辑→拼写和语法「键入时检查」；CheckMenuItem 选中态走 SpellcheckState）
     let spell_checked = app
         .try_state::<SpellcheckState>()
@@ -409,11 +454,21 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let spell_menu = Submenu::with_items(app, &l("edit.spellMenu"), true, &[&spell_toggle])?;
     let sep6 = PredefinedMenuItem::separator(app)?;
     let sep7 = PredefinedMenuItem::separator(app)?;
+    let sep7b = PredefinedMenuItem::separator(app)?;
+    let sep7c = PredefinedMenuItem::separator(app)?;
+    // D3 编辑菜单重排（Typora 顺序：剪切/拷贝/拷贝图片/粘贴 | 复制三兄弟+粘贴纯文本 | 选择 | 移行+删除范围 | 拼写 | 查找）
     let edit_menu = Submenu::with_items(
         app,
         &l("menu.edit"),
         true,
-        &[&undo, &redo, &sep6, &cut, &copy, &paste, &select_all, &select_menu, &sep7, &copy_markdown, &paste_plain, &delete_line, &spell_menu, &find_menu],
+        &[
+            &undo, &redo, &sep6,
+            &cut, &copy, &copy_image, &paste, &sep7,
+            &copy_plain, &copy_markdown, &copy_html_source, &paste_plain, &sep7b,
+            &select_menu,
+            &move_line_up, &move_line_down, &delete_range_menu, &sep7c,
+            &spell_menu, &find_menu,
+        ],
     )?;
     subs.push(edit_menu);
 
