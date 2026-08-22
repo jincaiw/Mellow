@@ -283,6 +283,12 @@ final class Probe: NSObject, SCStreamOutput {
   }
   func setModeCollect() { lock.lock(); mode = .collect; lock.unlock() }
 
+  /// 调试：取最新帧（snap 用）
+  func latestFrame() -> CVPixelBuffer? {
+    lock.lock(); defer { lock.unlock() }
+    return latest
+  }
+
   /// 等待渲染稳定：连续 stableMs 无帧间显著变化（文档加载 / 动画完成后返回），返回等待耗时 ms
   func waitStable(stableMs: Double = 600, timeoutMs: Double = 15000) -> Double {
     lock.lock(); mode = .collect; lock.unlock()
@@ -382,6 +388,22 @@ func cmdWaitWindow(pid: Int, timeoutMs: Double) {
     Thread.sleep(forTimeInterval: 0.05)
   }
   out(["ok": false, "error": "窗口 \(timeoutMs)ms 内未出现", "elapsedMs": round((nowMs() - t0) * 10) / 10])
+}
+
+func cmdSnap(pid: Int32, roi: Roi, outPath: String) async {
+  guard AXIsProcessTrusted() else { fail("辅助功能权限未授予") }
+  activateApp(pid: pid)
+  let probe = Probe()
+  guard await startCapture(probe: probe, pid: pid, roi: roi) else { fail("SCK 捕获启动失败") }
+  Thread.sleep(forTimeInterval: 0.5)
+  guard let buf = probe.latestFrame() else { fail("无帧") }
+  let ci = CIImage(cvPixelBuffer: buf)
+  guard let cg = CIContext().createCGImage(ci, from: ci.extent) else { fail("CIImage→CGImage 失败") }
+  let rep = NSBitmapImageRep(cgImage: cg)
+  guard let data = rep.representation(using: .png, properties: [:]) else { fail("PNG 编码失败") }
+  try! data.write(to: URL(fileURLWithPath: outPath))
+  await probe.stop()
+  out(["ok": true, "out": outPath, "w": Int(roi.w), "h": Int(roi.h)])
 }
 
 func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true) async {
@@ -503,6 +525,12 @@ func mainAsync(_ args: [String]) async {
     Thread.sleep(forTimeInterval: 0.6)
     postKey(0x00) // 'a'
     out(["ok": true, "click": [cx, cy]])
+  case "snap":
+    // 调试：把 ROI 当前帧存为 PNG（诊断 ROI 是否覆盖文本/光标区域）
+    let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
+    let roi = parseRoi(argVal(args, "--roi") ?? "0,0,400,300")
+    let outPath = argVal(args, "--out") ?? "/tmp/screen-timing-snap.png"
+    await cmdSnap(pid: pid, roi: roi, outPath: outPath)
   case "startup-probe":
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")

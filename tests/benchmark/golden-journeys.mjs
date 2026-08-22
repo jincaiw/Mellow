@@ -52,6 +52,12 @@ function launchTypora(file) {
   const proc = spawn(TY, [file], { stdio: 'ignore' });
   sleep(7000);
   activate('Typora');
+  // 2026-08-22 修复：Typora「恢复上次会话」会把 benchmark 旧标签（如 10MB.md）
+  // 重开且可能持有焦点 —— 后续 Cmd+A/B/S 会打到恢复标签（j4 假 FAIL、fixture
+  // 被 Cmd+S 污染均源于此）。二次 open 使目标文件成为活跃文档。
+  q(`open -a Typora '${file.replace(/'/g, "'\\''")}'`);
+  sleep(1200);
+  activate('Typora');
   return proc.pid;
 }
 function saveRead(file, pid) { combo('cmd', 1, pid); sleep(1500); try { return readFileSync(file, 'utf8'); } catch { return ''; } }
@@ -107,8 +113,47 @@ async function j2_chinese(app, file) {
   return r;
 }
 
+async function j3_japanese(app, file) {
+  const r = record('3. Japanese IME');
+  // 前置：切换输入源到日文罗马字（Kotoeri Romaji，master-plan G12）。
+  // 未启用时 SKIP（系统设置 → 键盘 → 输入源 → 添加「日文 - 罗马字」后重跑），
+  // 不算 FAIL —— 环境缺输入源 ≠ 功能缺陷。
+  const SELINPUT = '/Volumes/My-Data/jason.wa/codebase/Mellow/tests/benchmark/bin/select-input';
+  let imeOk = true;
+  try { execFileSync(SELINPUT, ['com.apple.inputmethod.Kotoeri.Romaji'], { timeout: 5000 }); } catch { imeOk = false; }
+  if (!imeOk) {
+    r.result = 'SKIP';
+    r.platform.macOS = 'NOT TESTED';
+    r.errors.push('日文输入源未启用（系统设置 → 键盘 → 输入源 → 添加「日文-罗马字」后重跑）');
+    return r;
+  }
+  sleep(600);
+  const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
+  const t0 = Date.now();
+  // 罗马字 "konnichiwa" → Kotoeri 实时候选 こんにちは（marked text），Enter 提交
+  if (app === 'mellow') {
+    se('tell application "System Events" to keystroke "konnichiwa"'); sleep(800);
+    se('tell application "System Events" to keystroke return'); r.steps.push('罗马字 konnichiwa + Enter'); r.input.keyboard.push('SE 罗马字组字+提交');
+  } else {
+    for (const k of 'konnichiwa'.split('')) { combo('', KEYCODES[k], pid); sleep(150); }
+    combo('', 36, pid); r.steps.push('罗马字 konnichiwa + Enter'); r.input.keyboard.push('CGEvent 罗马字组字+提交');
+  }
+  sleep(900);
+  combo('cmd', 1, pid); r.timeMs.save = Date.now() - t0;
+  sleep(1500);
+  const text = readFileSync(file, 'utf8');
+  r.result = text.includes('こんにちは') ? 'PASS' : 'FAIL';
+  if (r.result === 'FAIL') r.errors.push(`读回不含「こんにちは」: ${JSON.stringify(text)}`);
+  // 恢复 ABC
+  try { execFileSync(SELINPUT, ['com.apple.keylayout.ABC'], { timeout: 5000 }); } catch { /* noop */ }
+  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  return r;
+}
+
 async function j4_selection_bold(app, file) {
   const r = record('4+6. selection + bold');
+  // 每 app 独立 seed：Mellow 保存 **text** 后，Typora 的 Cmd+B 是 toggle 语义
+  // 会把它还原成 text（同文件接力 = 假 FAIL）。两个 app 必须各自从 'text' 开始。
   writeFileSync(file, 'text');
   const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
   const t0 = Date.now();
@@ -218,12 +263,26 @@ async function j15_undo(app, file) {
 
 async function j17_10mb(app) {
   const r = record('17. 10 MB');
-  const file = '/Volumes/My-Data/jason.wa/codebase/Mellow/tests/benchmark/fixtures/10MB.md';
+  // Hermetic：fixture 拷贝到临时目录再打开 —— 2026-08-22 事故：Typora 会话恢复
+  // 会重开上次 benchmark 打开过的 fixtures/10MB.md 标签，后续 journey 的 Cmd+S
+  // 会把自动化输入写回 fixture（污染测试语料）。拷贝件被写不影响语料库。
+  const SRC = '/Volumes/My-Data/jason.wa/codebase/Mellow/tests/benchmark/fixtures/10MB.md';
+  const file = join(WORK, '10MB.md');
+  const big = readFileSync(SRC, 'utf8');
+  if (big.length < 5 * 1024 * 1024) {
+    r.result = 'FAIL';
+    r.errors.push(`fixture 异常（${big.length} 字节 < 5MB，疑似被污染；用 generate-fixtures.mjs 重新生成）`);
+    return r;
+  }
+  writeFileSync(file, big);
   const pid = app === 'typora' ? launchTypora(file) : launchMellow(file);
   const t0 = Date.now();
-  // 轮询窗口出现 + 首帧稳定（近似 editable 时间）。
-  // Mellow 传 --no-click：合成点击会破坏 WKWebView 焦点（见 launchMellow 注释），
-  // WebView 启动自动持有焦点，'a' 可直达编辑器；Typora（原生 app）保留点击聚焦。
+  // 轮询「稳定渲染」。ready 判定 = OCR 内容验证（窗口截屏 OCR 出 fixture 首行
+  // 关键词 entity —— 2026-08-22 起本机 SCK 窗口捕获流间歇故障：probe 假稳定 +
+  // detectChange 无帧，snap 直接失败；OCR 通道独立于 SCK 流且直证「文档已渲染」）。
+  // SCK startup-probe 仍尝试执行，仅取 loadMs 参考值（成功与否不影响 ready）。
+  // Mellow 传 --no-click：合成点击会破坏 WKWebView 焦点（见 launchMellow 注释）；
+  // Typora（原生 app）保留点击聚焦。
   let ready = false;
   for (let i = 0; i < 20 && !ready; i++) {
     try {
@@ -231,19 +290,44 @@ async function j17_10mb(app) {
       if (app === 'mellow') probeArgs.push('--no-click');
       const out = execFileSync(HELPER, probeArgs, { encoding: 'utf8', timeout: 10000 });
       const parsed = JSON.parse(out.split('\n').filter((l) => l.trim().startsWith('{')).pop());
-      if (parsed.ok) { ready = true; r.timeMs.editable = parsed.loadMs ?? null; }
+      if (parsed.ok && r.timeMs.editable === undefined) r.timeMs.editable = parsed.loadMs ?? null;
     } catch { /* noop */ }
+    ready = ocrWindowContains(pid, 'entity');
     if (!ready) sleep(1500);
   }
   r.timeMs.total = Date.now() - t0;
   r.result = ready ? 'PASS' : 'FAIL';
-  if (!ready) r.errors.push('10MB 打开后 30s 内未检测到稳定渲染');
+  if (!ready) {
+    // Typora 已知行为：>10MB 文件弹「该文件过大，无法在 Typora 中呈现」拒渲染。
+    // 如实记录 FAIL（对照数据），并标注根因 —— Mellow 正常渲染 10MB = 优于 Typora。
+    const lastShot = join(WORK, 'j17-window.png');
+    const lastOcr = q(`'${join(HELPER, '..', 'ocr')}' '${lastShot}' 2>/dev/null`);
+    if (lastOcr.includes('过大')) {
+      r.errors.push('Typora 拒渲染 >10MB 文件（该文件过大，无法呈现）—— 产品行为；Mellow 正常渲染 = 优');
+    } else {
+      r.errors.push('10MB 打开后 30s 内未检测到稳定渲染（OCR 未见 fixture 首行）');
+    }
+  }
   spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
   return r;
 }
 
+/** 窗口 OCR 内容验证：激活进程 → AX 取窗口 bounds → 截屏 → OCR 含 needle */
+function ocrWindowContains(pid, needle) {
+  try {
+    se(`tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`);
+    const bounds = q(`osascript -e 'tell application "System Events" to tell (first process whose unix id is ${pid}) to get {position, size} of window 1'`).trim();
+    const m = bounds.match(/(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
+    if (!m) return false;
+    const shot = join(WORK, 'j17-window.png');
+    q(`screencapture -x -R${m[1]},${m[2]},${m[3]},${m[4]} '${shot}'`);
+    const text = q(`'${join(HELPER, '..', 'ocr')}' '${shot}' 2>/dev/null`);
+    return text.includes(needle);
+  } catch { return false; }
+}
+
 const JOURNEYS = {
-  1: j1_latin, 2: j2_chinese, 4: j4_selection_bold, 7: j7_list, 8: j8_table, 9: j9_math, 10: j10_mermaid, 15: j15_undo, 17: j17_10mb,
+  1: j1_latin, 2: j2_chinese, 3: j3_japanese, 4: j4_selection_bold, 7: j7_list, 8: j8_table, 9: j9_math, 10: j10_mermaid, 15: j15_undo, 17: j17_10mb,
 };
 
 const args = process.argv.slice(2);
@@ -277,4 +361,4 @@ for (const [id, fn] of Object.entries(JOURNEYS)) {
   }
 }
 console.log('\n=== 汇总 ===');
-for (const r of results) console.log(`${r.result === 'PASS' ? 'PASS' : 'FAIL'} ${r.journey} [${r.platform?.macOS}]`);
+for (const r of results) console.log(`${r.result ?? '?'} ${r.journey} [${r.platform?.macOS}]`);
