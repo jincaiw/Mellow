@@ -163,8 +163,10 @@ TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E �
 |---|---|---|
 | R2-1 智能标点 | 设置 Markdown 面板开关组（输入时转换/智能引号/智能破折号）；引擎 input handler 按开关转换（`"` → `“”` 成对、`--` → `—`）；编辑→替换子菜单 | 引擎测试 + 中英文引号方向用例 |
 | R2-2 字数统计窗口 | 独立面板（字数/字符/行数/段落/阅读时长，中英文口径区分 CJK）；视图菜单「字数统计窗口」 | 面板实时刷新 + 测试 |
-| R2-3 主题语义补齐 | 新增 Pixyll（衬线风）与 Whitey（极简高对比）主题映射，主题菜单 radio 列全 8 项；主题命名对照表入文档 | 主题切换实测 + themes 测试 |
+| R2-3 主题语义补齐 | 新增 Gothic（衬线深色，Georgia/宋体衬线族）与 Whitey（极简高对比白）主题，主题菜单 radio 列全 8 项；主题命名对照表入文档 | 主题切换实测 + themes 测试 |
 | R2-4 缩放百分比化评估 | 评估 fontSize 12-28px ↔ 50%-300% 映射（Reader 已百分比）；结论二选一：a) 保持 px b) 双轨显示 | 评估结论记录 + 设置面板口径统一 |
+
+**R2-4 评估结论（2026-08-22，选 b 双轨显示）**：编辑器保持 `editor.fontSize` px 单一真源（10-32px，默认 17px），不做全局百分比化。理由：① Typora 偏好设置的字体大小本身即 px 值，px 与 Typora 偏好语义一致；② CodeMirror 行高/padding 与代码块 em 相对布局基于 px 字号精确计算，全百分比化需重构 theme 层，风险高收益低；③ 口径统一改为换算显示——状态栏字号提示为 `17px (100%)`（默认 17px = 100% 基准，Reader zoom 同基准），设置面板字号项新增描述说明该换算关系（i18n zh/en）。
 
 ### R3 —— 参考项目增强（P2/P3，Typora 无有的加分项）
 
@@ -221,3 +223,8 @@ TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E �
 | 2026-08-22 | R1-2 | 前端 updater 降级：便携模式跳过启动自动检查 + 手动检查 toast 提示（i18n zh/en） | ✅ |
 | 2026-08-22 | R1-3 | CI portable 产物：Windows job 追加 `Mellow_<ver>_portable_win64.zip`（exe + Data 占位 + 中英双语 README）并附加到 Release | ✅（真机验证待 R4-1） |
 | 2026-08-22 | R1-4 | 门禁：cargo check/test 74 全过 + desktop tsc clean + i18n 15 过（Windows 代码路径以运行时 cfg! 判定实现，本地可编译验证） | ✅ |
+| 2026-08-22 | R2-1 | 智能标点：引擎 `smartPunctuation.ts`（smart quotes 成对弯引号 + `--␠`→`—`，避开 hr/表格 delimiter）+ iframe `__MELLOW_SMART_PUNCTUATION__` 通道 + 设置开关（默认关，Typora 一致）+ 编辑→替换菜单 CheckMenuItem + 引擎测试 9 用例 | ✅ |
+| 2026-08-22 | R2-2 | 字数统计窗口：`countWords` 新增 paragraphs/charsNoSpace 口径 + 视图菜单「字数统计窗口」+ 独立面板（字/词/字符含去空格/行/段落/阅读时长，实时刷新，复用文件信息面板样式） | ✅ |
+| 2026-08-22 | R2-3 | 主题语义补齐：新增 Whitey（极简高对比白）与 Gothic（衬线深色，Georgia/宋体）主题，内置主题达 8 个，主题菜单 radio 全列 | ✅ |
+| 2026-08-22 | R2-4 | 缩放百分比化评估结论：选 b 双轨显示（保持 px 单一真源 + 换算显示）；状态栏 `17px (100%)` + 设置面板字号描述（zh/en） | ✅ |
+| 2026-08-22 | R2 门禁 | 全 workspace 测试 10 包 932 用例全过（app-core 140 / engine 600 / editor-core 17 / export 67 / host-api 43 / document-model 26 / i18n 15 / settings 8 / themes 8 / commands 8）+ desktop tsc clean + cargo test ok（reveal.test 并发偶发超时已单独复跑确认稳定） | ✅ |

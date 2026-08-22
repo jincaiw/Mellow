@@ -361,6 +361,9 @@ export default function App() {
   const [statusText, setStatusText] = useState(t('msg.editorNotLoaded'));
   const [dirty, setDirtyState] = useState(false);
   const [stats, setStats] = useState('');
+  // R2-2 字数统计窗口（Typora 视图→字数统计窗口）：面板开时 refreshStats 实时刷新
+  const [wordCountOpen, setWordCountOpen] = useState(false);
+  const [wordCountData, setWordCountData] = useState<ReturnType<typeof countWords> | null>(null);
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
@@ -1253,6 +1256,7 @@ export default function App() {
       const base = formatWordCountStats(count, locale === 'zh-CN' ? 'zh' : 'en');
       const reading = t('status.readingTime', { minutes: count.readingTimeMinutes });
       setStats(base + ' · ' + reading);
+      setWordCountData(count); // R2-2 字数统计窗口（面板未开时轻量更新 state）
     } catch {
       setStats('');
     }
@@ -2327,6 +2331,11 @@ export default function App() {
             const spellInit = spellDef ? readSetting(spellDef) !== false : true;
             void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: spellInit })).catch(() => undefined);
           }
+          // R2-1 智能标点启动恢复（默认 false；Typora parity）
+          const smartPunctDef = settingById('editor.smartPunctuation');
+          if (smartPunctDef && readSetting(smartPunctDef) === true) {
+            host.setSmartPunctuationEnabled(true);
+          }
         } catch { /* 设置读取失败 → 保持默认 */ }
         setStatus('ready');
         setStatusText(t('msg.editorReady'));
@@ -2893,7 +2902,8 @@ export default function App() {
   }, [refreshTabsState, syncActiveTabFromEditor]);
 
   /** 字号缩放（⇧⌘0 实际大小 / ⇧⌘= 放大 / ⇧⌘- 缩小，Typora 视图菜单对齐）：
-   *  读写 editor.fontSize 设置（单一真源）+ live apply；到达 min/max 后静默停。 */
+   *  读写 editor.fontSize 设置（单一真源）+ live apply；到达 min/max 后静默停。
+   *  R2-4 口径统一：px 旁显示百分比换算（默认 17px = 100%，Reader zoom 同基准）。 */
   const adjustFontSize = useCallback((delta: number) => {
     const def = settingById('editor.fontSize');
     if (def === undefined) return;
@@ -2905,7 +2915,8 @@ export default function App() {
     if (next === base) return;
     writeSetting(def, next);
     hostRef.current?.setEditorConfig('setFontSize', { fontSize: next });
-    setStatusText(`${t('settings.editor.fontSize')}: ${next}px`);
+    const pct = Math.round((next / Number(def.defaultValue)) * 100);
+    setStatusText(`${t('settings.editor.fontSize')}: ${next}px (${pct}%)`);
   }, [t]);
 
   /** Settings live apply（不要求重启；安全项立即生效） */
@@ -2963,6 +2974,10 @@ export default function App() {
         }
         break;
       }
+      case 'settings.smartPunctuation':
+        // R2-1 智能标点 live apply（引擎 inputHandler 开关）
+        hostRef.current?.setSmartPunctuationEnabled(Boolean(value));
+        break;
       case 'settings.statusbar':
         setStatusbarVisible(Boolean(value));
         break;
@@ -3089,6 +3104,12 @@ export default function App() {
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
       { id: 'view.toolbar.toggle', localizedTitle: { zh: '切换格式工具栏', en: 'Toggle Format Toolbar' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleSelectionToolbar() },
+      // R2-2 字数统计窗口（Typora 视图→字数统计窗口）
+      { id: 'view.wordCount', localizedTitle: { zh: '字数统计窗口', en: 'Word Count Window' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => {
+        setWordCountOpen((v) => !v);
+        const host = hostRef.current;
+        if (host !== null) refreshStats(host);
+      } },
       { id: 'view.toolbar.on', localizedTitle: { zh: '格式工具栏：启用', en: 'Format Toolbar: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(true) },
       { id: 'view.toolbar.off', localizedTitle: { zh: '格式工具栏：禁用', en: 'Format Toolbar: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(false) },
       { id: 'reader.open', localizedTitle: { zh: '用 Reader 打开', en: 'Open in Reader' }, category: 'view', context: { scope: 'document' }, enabled: () => !readerOpen && tabsRef.current.active !== null, execute: () => openReader() },
@@ -3242,6 +3263,16 @@ export default function App() {
         hostRef.current?.setSpellcheckEnabled(next);
         void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: next })).catch(() => undefined);
         setStatusText(t(next ? 'msg.spellcheckOn' : 'msg.spellcheckOff'));
+      } },
+      // R2-1 编辑→替换「智能标点」（Typora parity；设置面板同一真源）
+      { id: 'edit.smartPunctuation.toggle', localizedTitle: { zh: '智能标点', en: 'Smart Punctuation' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.smartPunctuation');
+        if (!def) return;
+        const next = readSetting(def) !== true;
+        writeSetting(def, next);
+        hostRef.current?.setSmartPunctuationEnabled(next);
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_smart_punct_state', { checked: next })).catch(() => undefined);
+        setStatusText(t(next ? 'msg.smartPunctOn' : 'msg.smartPunctOff'));
       } },
       // 格式（Typora 对齐；引擎 applyInlineFormat / 空选区成对插入）
       { id: 'format.bold', localizedTitle: { zh: '粗体', en: 'Bold' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+B', winLinux: 'Ctrl+B' }, enabled: always, execute: () => engineFormat('bold') },
@@ -4024,6 +4055,34 @@ export default function App() {
           </div>
         </div>
       )}
+      {wordCountOpen && wordCountData !== null && (() => {
+        const c = wordCountData;
+        const rows: Array<[string, string]> = [
+          [t('wordCount.cjk'), String(c.cjkChars)],
+          [t('wordCount.words'), String(c.words)],
+          [t('wordCount.chars'), String(c.chars)],
+          [t('wordCount.charsNoSpace'), String(c.charsNoSpace)],
+          [t('wordCount.lines'), String(c.lines)],
+          [t('wordCount.paragraphs'), String(c.paragraphs)],
+          [t('wordCount.readingTime'), t('status.readingTime', { minutes: c.readingTimeMinutes })],
+        ];
+        return (
+          <div className="word-count-window" role="dialog" aria-label={t('wordCount.title')}>
+            <div className="open-with-header">
+              <span className="open-with-title">{t('wordCount.title')}</span>
+              <button type="button" className="open-with-close" onClick={() => setWordCountOpen(false)} aria-label={t('settings.close')}>✕</button>
+            </div>
+            <div className="file-info-body">
+              {rows.map(([label, value]) => (
+                <div key={label} className="file-info-row">
+                  <span className="file-info-label">{label}</span>
+                  <span className="file-info-value">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       {openWithOpen && (
         <div className="open-with-backdrop" onMouseDown={() => setOpenWithOpen(false)}>
           <div className="open-with-panel" role="dialog" aria-label={t('file.openWith')} onMouseDown={(e) => e.stopPropagation()}>

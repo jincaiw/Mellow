@@ -15,6 +15,10 @@ export interface WordCount {
   chars: number;
   lines: number;
   readingTimeMinutes: number;
+  /** 段落数（master-plan R2-2：非空行块） */
+  paragraphs: number;
+  /** 不含空格字符数（master-plan R2-2：Typora 字数统计窗口口径） */
+  charsNoSpace: number;
 }
 
 const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g;
@@ -29,7 +33,10 @@ export function countWords(text: string): WordCount {
   const words = wordMatches === null ? 0 : wordMatches.length;
   const chars = safe.replace(/\n/g, '').length;
   const readingTimeMinutes = Math.max(1, Math.ceil(cjkChars / 300 + words / 200));
-  return { cjkChars, words, chars, lines, readingTimeMinutes };
+  // 段落 = 连续非空行块（Typora 口径；空行分隔）
+  const paragraphs = safe.split(/\n+/).filter((block) => block.trim() !== '').length;
+  const charsNoSpace = safe.replace(/\s/g, '').length;
+  return { cjkChars, words, chars, lines, readingTimeMinutes, paragraphs, charsNoSpace };
 }
 
 /**

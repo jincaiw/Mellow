@@ -97,6 +97,7 @@ pub fn run() {
             menu::set_recent_files,
             menu::set_theme_selection,
             menu::set_spellcheck_state,
+            menu::set_smart_punct_state,
             bridge::bridge_call,
             clipboard::copy_image_to_clipboard,
             fs::open_document,
@@ -143,6 +144,7 @@ pub fn run() {
         .manage(menu::MenuLocale(Mutex::new("zh-CN".to_string())))
         .manage(menu::RecentFiles(Mutex::new(Vec::new())))
         .manage(menu::SpellcheckState(Mutex::new(true)))
+        .manage(menu::SmartPunctState(Mutex::new(false)))
         .manage(menu::ThemeSelection(Mutex::new(menu::ThemeSelectionState::default())))
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：

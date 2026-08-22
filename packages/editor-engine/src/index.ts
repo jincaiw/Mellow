@@ -46,6 +46,7 @@ import { buildDocumentSearchExtension, installSearchApi } from './documentSearch
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } from './largeFile';
 import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
+import { buildSmartPunctuationExtension, installSmartPunctuationApi } from './smartPunctuation';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { DEFAULT_ENGINE_FEATURES, mergeEngineFeatures, readEngineFeaturesFromStorage } from './config';
 export type { EngineFeatureConfig } from './config';
@@ -86,6 +87,15 @@ export {
 } from './largeFile';
 export { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
 export type { SelectionCommandsApi } from './selectionCommands';
+export {
+  buildSmartPunctuationExtension,
+  installSmartPunctuationApi,
+  setSmartPunctuation,
+  isSmartPunctuationEnabled,
+  smartQuoteFor,
+  shouldEmDash,
+} from './smartPunctuation';
+export type { SmartPunctuationApi } from './smartPunctuation';
 export { buildCodeFenceAutocompleteExtension, fenceLangSource } from './codeFence';
 export { emojiSource } from './emoji';
 export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
@@ -152,6 +162,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installContextMenuApi();
   // 源码模式（PRD §30）：宿主经 iframe window.__MELLOW_SOURCE_API__ 调用
   installSourceApi();
+  // 智能标点（master-plan R2-1）：宿主经 iframe window.__MELLOW_SMART_PUNCTUATION__ 调用
+  installSmartPunctuationApi();
   const f = mergeEngineFeatures(features);
   const ext: Extension[] = [
     buildMarkerRevealExtension(),
@@ -169,6 +181,7 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildImageExtensions(),
     buildLargeFileExtension(),
     buildSelectionCommandsExtension(),
+    buildSmartPunctuationExtension(),
     buildContextMenuExtension(),
     buildContextMenuViewTrackerExtension(),
     buildDocumentSearchExtension(),

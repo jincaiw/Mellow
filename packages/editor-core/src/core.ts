@@ -242,6 +242,17 @@ export class EditorCore {
     return win?.__MELLOW_SPELLCHECK__?.get?.() ?? true;
   }
 
+  /** 智能标点开关（master-plan R2-1；默认关闭，Typora parity） */
+  setSmartPunctuationEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { set?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_SMART_PUNCTUATION__?.set?.(on);
+  }
+
+  isSmartPunctuationEnabled(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { get?: () => boolean } }) | null;
+    return win?.__MELLOW_SMART_PUNCTUATION__?.get?.() ?? false;
+  }
+
   /** 选中当前行（整行已选中则扩展下一行；D1-4 ⌘L）；false = 编辑器未就绪 */
   selectLine(): boolean {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { selectLine?: () => boolean } }) | null;

@@ -63,7 +63,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'editor',
     labelKey: 'settings.editor',
     settings: [
-      { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: 17, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig' },
+      { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: 17, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig', descriptionKey: 'settings.editor.fontSizeDesc' },
       // B3-1 字体族（Typora parity：偏好设置选 font family；CoreEditor setFontFace live apply）
       { id: 'editor.fontFamily', labelKey: 'settings.editor.fontFamily', type: 'select', storageKey: 'mellow.editor.fontFamily', defaultValue: 'system-ui',
         options: [
@@ -78,6 +78,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'editor.lineWrapping', labelKey: 'settings.editor.lineWrapping', type: 'toggle', storageKey: 'mellow.editor.lineWrapping', defaultValue: true, applyCommand: 'settings.editorConfig' },
       // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
+      // 智能标点（master-plan R2-1：Typora 编辑→替换「智能引号/破折号」；默认关闭）
+      { id: 'editor.smartPunctuation', labelKey: 'settings.editor.smartPunctuation', type: 'toggle', storageKey: 'mellow.editor.smartPunctuation', defaultValue: false, descriptionKey: 'settings.editor.smartPunctuationDesc', applyCommand: 'settings.smartPunctuation' },
       // Cmd/Ctrl+滚轮缩放（Typora 偏好→通用；实际字号仍走 editor.fontSize 单一真源）
       { id: 'editor.cmdWheelZoom', labelKey: 'settings.editor.cmdWheelZoom', type: 'toggle', storageKey: 'mellow.editor.cmdWheelZoom', defaultValue: true, descriptionKey: 'settings.editor.cmdWheelZoomDesc' },
       { id: 'editor.typewriter', labelKey: 'settings.editor.typewriter', type: 'toggle', storageKey: 'mellow.editor.typewriter', defaultValue: false, applyCommand: 'view.typewriter.on' },

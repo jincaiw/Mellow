@@ -2,7 +2,7 @@ import { countWords, formatWordCountStats } from '../src/wordCount';
 
 describe('wordCount (PRD §70)', () => {
   test('empty document', () => {
-    expect(countWords('')).toEqual({ cjkChars: 0, words: 0, chars: 0, lines: 0, readingTimeMinutes: 1 });
+    expect(countWords('')).toEqual({ cjkChars: 0, words: 0, chars: 0, lines: 0, readingTimeMinutes: 1, paragraphs: 0, charsNoSpace: 0 });
   });
 
   test('pure Chinese counts CJK chars', () => {
@@ -38,13 +38,25 @@ describe('wordCount (PRD §70)', () => {
   });
 
   test('format zh', () => {
-    const s = formatWordCountStats({ cjkChars: 5, words: 2, chars: 10, lines: 1, readingTimeMinutes: 1 }, 'zh');
+    const s = formatWordCountStats({ cjkChars: 5, words: 2, chars: 10, lines: 1, readingTimeMinutes: 1, paragraphs: 1, charsNoSpace: 8 }, 'zh');
     expect(s).toContain('5 字');
     expect(s).toContain('2 词');
   });
 
   test('format en', () => {
-    const s = formatWordCountStats({ cjkChars: 0, words: 2, chars: 10, lines: 1, readingTimeMinutes: 1 }, 'en');
+    const s = formatWordCountStats({ cjkChars: 0, words: 2, chars: 10, lines: 1, readingTimeMinutes: 1, paragraphs: 1, charsNoSpace: 8 }, 'en');
     expect(s).toContain('2 words');
+  });
+
+  // R2-2 字数统计窗口口径：段落 = 非空行块；charsNoSpace 去全部空白
+  test('paragraphs counts non-empty blocks', () => {
+    expect(countWords('a\n\nb\n\n\n\nc').paragraphs).toBe(3);
+    expect(countWords('').paragraphs).toBe(0);
+    expect(countWords('\n\n\n').paragraphs).toBe(0);
+  });
+
+  test('charsNoSpace strips all whitespace', () => {
+    expect(countWords('a b\nc').charsNoSpace).toBe(3);
+    expect(countWords('中 文').charsNoSpace).toBe(2);
   });
 });

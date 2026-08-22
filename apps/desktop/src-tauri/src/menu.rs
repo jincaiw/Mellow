@@ -38,6 +38,9 @@ pub struct RecentFiles(pub Mutex<Vec<String>>);
 /// 拼写检查选中态（前端 spellcheck 偏好 → `set_spellcheck_state` → 「拼写和语法」CheckMenuItem）
 pub struct SpellcheckState(pub Mutex<bool>);
 
+/// 智能标点选中态（master-plan R2-1：前端偏好 → set_smart_punct_state → 「替换」CheckMenuItem）
+pub struct SmartPunctState(pub Mutex<bool>);
+
 /// 主题选中态（前端 themeSettings/activeTheme → `set_theme_selection` → 主题菜单 radio；
 /// B2-5/B3-2：Typora 主题菜单选中态 parity）
 pub struct ThemeSelection(pub Mutex<ThemeSelectionState>);
@@ -131,6 +134,9 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("edit.moveLineDown", "下移该行", "Move Line Down"),
     ("edit.spellMenu", "拼写和语法", "Spelling and Grammar"),
     ("edit.spellcheck", "键入时检查拼写", "Check Spelling While Typing"),
+    ("edit.replaceMenu", "替换", "Substitutions"),
+    ("edit.smartPunctuation", "智能标点", "Smart Punctuation"),
+    ("view.wordCount", "字数统计窗口", "Word Count Window"),
     ("menu.find", "查找", "Find"),
     ("search.find", "查找…", "Find…"),
     ("search.findNext", "查找下一个", "Find Next"),
@@ -479,6 +485,13 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
         .unwrap_or(true);
     let spell_toggle = CheckMenuItem::with_id(app, "edit.spellcheck.toggle", &l("edit.spellcheck"), true, spell_checked, None::<&str>)?;
     let spell_menu = Submenu::with_items(app, &l("edit.spellMenu"), true, &[&spell_toggle])?;
+    // R2-1 替换子菜单（Typora 编辑→替换「智能标点」；默认关闭，与设置面板同一真源）
+    let smart_punct_checked = app
+        .try_state::<SmartPunctState>()
+        .map(|s| *s.0.lock().unwrap())
+        .unwrap_or(false);
+    let smart_punct_toggle = CheckMenuItem::with_id(app, "edit.smartPunctuation.toggle", &l("edit.smartPunctuation"), true, smart_punct_checked, None::<&str>)?;
+    let replace_menu = Submenu::with_items(app, &l("edit.replaceMenu"), true, &[&smart_punct_toggle])?;
     let sep6 = PredefinedMenuItem::separator(app)?;
     let sep7 = PredefinedMenuItem::separator(app)?;
     let sep7b = PredefinedMenuItem::separator(app)?;
@@ -494,7 +507,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
             &copy_plain, &copy_markdown, &copy_html_source, &paste_plain, &sep7b,
             &select_menu,
             &move_line_up, &move_line_down, &delete_range_menu, &sep7c,
-            &spell_menu, &find_menu,
+            &spell_menu, &replace_menu, &find_menu,
         ],
     )?;
     subs.push(edit_menu);
@@ -504,6 +517,8 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let focus = MenuItem::with_id(app, "view.focus.cycle", &l("view.focus.cycle"), true, Some("F8"))?;
     let typewriter = MenuItem::with_id(app, "view.typewriter.cycle", &l("view.typewriter.cycle"), true, Some("F9"))?;
     let toolbar = MenuItem::with_id(app, "view.toolbar.toggle", &l("view.toolbar.toggle"), true, None::<&str>)?;
+    // R2-2 字数统计窗口（Typora 视图→字数统计窗口）
+    let word_count = MenuItem::with_id(app, "view.wordCount", &l("view.wordCount"), true, None::<&str>)?;
     let source_toggle = MenuItem::with_id(app, "view.source.toggle", &l("view.source.toggle"), true, accel("Cmd+/", "Ctrl+/"))?;
     let sidebar_toggle = MenuItem::with_id(app, "view.sidebar.toggle", &l("view.sidebarToggle"), true, accel("Cmd+Shift+L", "Ctrl+Shift+L"))?;
     let sidebar_outline = MenuItem::with_id(app, "view.sidebar.outline", &l("view.sidebarOutline"), true, accel("Ctrl+Cmd+1", "Ctrl+Shift+1"))?;
@@ -531,7 +546,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let mut view_items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
         &palette, &sep8,
         &source_toggle, &sep9,
-        &focus, &typewriter, &toolbar, &sep10,
+        &focus, &typewriter, &toolbar, &word_count, &sep10,
         &sidebar_toggle, &sidebar_outline, &sidebar_filelist, &sidebar_filetree, &global_search, &sep11,
         &zoom_reset, &zoom_in, &zoom_out, &sep12,
         &always_on_top, &tabs_show_all, &sep13,
@@ -786,6 +801,19 @@ pub fn set_theme_selection(app: AppHandle, mode: String, active_theme_id: String
 #[tauri::command]
 pub fn set_spellcheck_state(app: AppHandle, checked: bool) -> Result<(), String> {
     if let Some(state) = app.try_state::<SpellcheckState>() {
+        *state.0.lock().unwrap() = checked;
+    }
+    let locale = current_locale(&app);
+    let is_mac = cfg!(target_os = "macos");
+    let menu = build_menu(&app, &locale, is_mac).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 前端智能标点偏好变化 → 重建菜单（「替换」CheckMenuItem；master-plan R2-1）
+#[tauri::command]
+pub fn set_smart_punct_state(app: AppHandle, checked: bool) -> Result<(), String> {
+    if let Some(state) = app.try_state::<SmartPunctState>() {
         *state.0.lock().unwrap() = checked;
     }
     let locale = current_locale(&app);
