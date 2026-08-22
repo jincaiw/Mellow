@@ -15,7 +15,7 @@ Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编
 | **宪法** | `docs/product/Mellow-PRD-V1.2-FINAL.md` | 产品需求文档 V1.2 FINAL，一切需求的最终依据 |
 | **法律** | `docs/specs/` | 各领域具体规范（引擎、UI、表格、图片、剪贴板、文件安全、IME、运行时、Typora parity） |
 | **判决** | `docs/adr/ADR-*.md` | 已做技术决策，**不允许随意推翻**；如需变更，追加新 ADR |
-| **施工图** | `docs/plans/codex-implementation-plan.md`、`docs/plans/typora-deep-parity-plan.md` | 实施顺序与验收节奏 |
+| **施工图** | `docs/plans/codex-implementation-plan.md`、`docs/plans/typora-parity-master-plan.md` | 实施顺序与验收节奏 |
 
 ## 目录结构
 
@@ -56,7 +56,6 @@ mellow/
 
 | 文档 | 领域 |
 |------|------|
-| [typora-parity-checklist.md](docs/specs/typora-parity-checklist.md) | Typora 体验对齐检查表 |
 | [live-markdown-engine-spec.md](docs/specs/live-markdown-engine-spec.md) | 实时 Markdown 引擎 |
 | [desktop-ui-design-spec.md](docs/specs/desktop-ui-design-spec.md) | 桌面 UI 设计 |
 | [runtime-qualification-plan.md](docs/specs/runtime-qualification-plan.md) | 运行时（Tauri 2）资格认定 |
@@ -74,7 +73,7 @@ mellow/
 ### 施工图
 
 - [codex-implementation-plan.md](docs/plans/codex-implementation-plan.md) — 实施计划
-- [typora-deep-parity-plan.md](docs/plans/typora-deep-parity-plan.md) — Typora 深度对标评估与优化实施方案
+- [typora-parity-master-plan.md](docs/plans/typora-parity-master-plan.md) — Typora 最终对标实施方案（唯一权威，合并旧对标文档）
 
 ## 核心原则
 

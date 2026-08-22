@@ -49,7 +49,7 @@
 关键入口：
 
 - 产品需求：`docs/product/Mellow-PRD-V1.2-FINAL.md`
-- 功能对标：`docs/specs/typora-parity-checklist.md`
+- 功能对标：`docs/plans/typora-parity-master-plan.md`（唯一权威对标方案，2026-08-22 起取代旧 checklist/audit/review/deep-parity-plan 四文档）
 - 实施顺序：`docs/plans/codex-implementation-plan.md`
 
 ## 修改规则
