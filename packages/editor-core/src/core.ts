@@ -330,6 +330,18 @@ export class EditorCore {
     return win?.__MELLOW_SELECTION_COMMANDS__?.imageSourceAtCursor?.() ?? null;
   }
 
+  /** 光标处行内链接 url（D4「打开链接/复制链接地址」）；null = 无链接/未就绪 */
+  linkUrlAtCursor(): string | null {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { linkUrlAtCursor?: () => string | null } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.linkUrlAtCursor?.() ?? null;
+  }
+
+  /** 光标处代码块内容（D4「复制代码块内容」）；null = 无代码块/未就绪 */
+  codeBlockSourceAtCursor(): string | null {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { codeBlockSourceAtCursor?: () => string | null } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.codeBlockSourceAtCursor?.() ?? null;
+  }
+
   /** 设置当前文档路径（Image Workflow 相对路径解析，engine 读 window.__MELLOW_DOC_PATH__） */
   setDocumentPath(path: string | null): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_DOC_PATH__?: string | null }) | null;

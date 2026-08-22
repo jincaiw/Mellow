@@ -70,6 +70,20 @@ export function addRow(view: EditorView, model: TableModel, afterRow: number): v
   view.dispatch({ changes: { from: anchor.to, insert } });
 }
 
+/** 在当前行前添加一行（D4 Typora「上方插入行」；首行=表头前插） */
+export function addRowAbove(view: EditorView, model: TableModel, beforeRow: number): void {
+  const target = model.rows[beforeRow];
+  if (target === undefined) {
+    return;
+  }
+  if (beforeRow > 0) {
+    addRow(view, model, beforeRow - 1);
+    return;
+  }
+  const cells = Array.from({ length: model.columnCount }, () => dataCellText()).join('|');
+  view.dispatch({ changes: { from: target.from, insert: `|${cells}|\n` } });
+}
+
 /** 删除行（minimal：删除该行及前导换行） */
 export function deleteRow(view: EditorView, model: TableModel, row: number): void {
   const target = model.rows[row];
@@ -104,6 +118,20 @@ export function addColumn(view: EditorView, model: TableModel, afterCol: number)
       ? '|' + emptyCellText()
       : '|' + dataCellText();
     changes.push({ from: anchorCell.to, insert });
+  }
+  view.dispatch({ changes });
+}
+
+/** 在指定列左侧添加列（D4 Typora「左侧插入列」；首列=行首 `| ` 后插 `cell |`） */
+export function addColumnLeft(view: EditorView, model: TableModel, beforeCol: number): void {
+  if (beforeCol > 0) {
+    addColumn(view, model, beforeCol - 1);
+    return;
+  }
+  const changes: ChangeSpec[] = [];
+  for (const row of model.rows) {
+    const insert = row.isDelimiter ? emptyCellText() + '|' : dataCellText() + '|';
+    changes.push({ from: row.from + 1, insert });
   }
   view.dispatch({ changes });
 }
@@ -191,4 +219,68 @@ export function tidyTable(view: EditorView, model: TableModel): void {
   const from = model.rows[0]?.from ?? model.from;
   const to = model.rows[model.rows.length - 1]?.to ?? model.to;
   view.dispatch({ changes: { from, to, insert: renderedRows.join('\n') } });
+}
+
+// ──────────────────── D4：移动行/列、删除表、复制表 ────────────────────
+
+/** 交换相邻两数据行（D4 Typora「向上/向下移动表格行」）；不与 delimiter 交换 */
+export function moveRow(view: EditorView, model: TableModel, row: number, direction: 'up' | 'down'): void {
+  const target = model.rows[row];
+  if (target === undefined || target.isDelimiter) return;
+  const other = direction === 'up' ? model.rows[row - 1] : model.rows[row + 1];
+  if (other === undefined || other.isDelimiter) return; // 不跨 delimiter
+  const doc = view.state.doc;
+  const upper = direction === 'up' ? other : target;
+  const lower = direction === 'up' ? target : other;
+  const upperText = doc.sliceString(upper.from, upper.to);
+  const lowerText = doc.sliceString(lower.from, lower.to);
+  // caret 跟随被移动行（列偏移保持）
+  const caret = view.state.selection.main.head;
+  const offset = Math.min(Math.max(caret - target.from, 0), target.to - target.from);
+  const newCaret = (direction === 'up' ? upper.from : upper.from + other.to - other.from + 1) + offset;
+  view.dispatch({
+    changes: { from: upper.from, to: lower.to, insert: `${lowerText}\n${upperText}` },
+    selection: { anchor: newCaret },
+  });
+}
+
+/** 交换相邻两列单元格文本（D4 Typora「向左/向右移动表格列」；delimiter 行对齐标记一并交换） */
+export function moveColumn(view: EditorView, model: TableModel, col: number, direction: 'left' | 'right'): void {
+  const otherCol = direction === 'left' ? col - 1 : col + 1;
+  if (otherCol < 0) return;
+  const changes: ChangeSpec[] = [];
+  for (const row of model.rows) {
+    const a = row.cells[direction === 'left' ? otherCol : col];
+    const b = row.cells[direction === 'left' ? col : otherCol];
+    if (a === undefined || b === undefined) continue;
+    const doc = view.state.doc;
+    const aRaw = doc.sliceString(a.from, a.to);
+    const bRaw = doc.sliceString(b.from, b.to);
+    // 保留各自 padding：交换去空白后的内容
+    const aText = aRaw.trim();
+    const bText = bRaw.trim();
+    changes.push({ from: a.from, to: a.to, insert: aRaw.replace(aText, bText) });
+    changes.push({ from: b.from, to: b.to, insert: bRaw.replace(bText, aText) });
+  }
+  view.dispatch({ changes });
+}
+
+/** 删除整个表格（D4 Typora「删除表格」）：表范围 + 前后各吞一个换行（保持段落间距不翻倍） */
+export function deleteTable(view: EditorView, model: TableModel): void {
+  const doc = view.state.doc;
+  let from = model.from;
+  let to = model.to;
+  if (to < doc.length && doc.sliceString(to, to + 1) === '\n') {
+    to += 1; // 后随换行（存在时）
+  }
+  if (from > 0 && doc.sliceString(from - 1, from) === '\n') {
+    from -= 1; // 前导换行吞并其一，避免删除后出现三连换行
+  }
+  view.dispatch({ changes: { from, to, insert: '' } });
+}
+
+/** 复制表格源码到剪贴板（D4 Typora「复制表格」） */
+export function copyTable(view: EditorView, model: TableModel): void {
+  const source = view.state.sliceDoc(model.from, model.to);
+  void navigator.clipboard?.writeText?.(source);
 }

@@ -16,7 +16,7 @@ import { fencedRanges } from './safeHtml';
 import { scanWikilinks } from './wikilink';
 import { inlineCodeSpans } from './inlineExtras';
 import { tableContext } from './table/keymap';
-import { addRow, deleteRow, addColumn, deleteColumn, tidyTable } from './table/commands';
+import { addRow, addRowAbove, deleteRow, addColumn, addColumnLeft, deleteColumn, tidyTable, moveRow, moveColumn, deleteTable, copyTable } from './table/commands';
 import { copy } from './clipboardCopy';
 
 export interface EditorContextMenuRequest {
@@ -36,7 +36,7 @@ export interface EditorContextActions {
   cut(): void;
   copy(): void;
   paste(): void;
-  tableOp(op: 'addRowBelow' | 'deleteRow' | 'addColumnRight' | 'deleteColumn' | 'tidy'): void;
+  tableOp(op: 'addRowBelow' | 'deleteRow' | 'addColumnRight' | 'deleteColumn' | 'tidy' | 'addRowAbove' | 'addColumnLeft' | 'moveRowUp' | 'moveRowDown' | 'moveColumnLeft' | 'moveColumnRight' | 'deleteTable' | 'copyTable'): void;
 }
 
 export interface InlineLinkSpan {
@@ -206,10 +206,18 @@ export function installContextMenuApi(): void {
       const { model, cell } = ctx;
       switch (op) {
         case 'addRowBelow': addRow(view, model, cell.row); break;
+        case 'addRowAbove': addRowAbove(view, model, cell.row); break;
         case 'deleteRow': deleteRow(view, model, cell.row); break;
         case 'addColumnRight': addColumn(view, model, cell.col); break;
+        case 'addColumnLeft': addColumnLeft(view, model, cell.col); break;
         case 'deleteColumn': deleteColumn(view, model, cell.col); break;
         case 'tidy': tidyTable(view, model); break;
+        case 'moveRowUp': moveRow(view, model, cell.row, 'up'); break;
+        case 'moveRowDown': moveRow(view, model, cell.row, 'down'); break;
+        case 'moveColumnLeft': moveColumn(view, model, cell.col, 'left'); break;
+        case 'moveColumnRight': moveColumn(view, model, cell.col, 'right'); break;
+        case 'deleteTable': deleteTable(view, model); break;
+        case 'copyTable': copyTable(view, model); break;
       }
     },
   };

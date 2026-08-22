@@ -36,6 +36,10 @@ export interface SelectionCommandsApi {
   moveLineDown(): boolean;
   /** 光标处图片 src；null = 无图片/编辑器未就绪（供宿主「拷贝图片」） */
   imageSourceAtCursor(): string | null;
+  /** 光标处行内链接 url；null = 无链接（D4「链接操作」：打开链接/复制链接地址） */
+  linkUrlAtCursor(): string | null;
+  /** 光标处代码块内容（fence 内文本）；null = 无代码块（D4「复制代码块内容」） */
+  codeBlockSourceAtCursor(): string | null;
 }
 
 let activeView: EditorView | null = null;
@@ -144,6 +148,30 @@ export function imageSourceAt(doc: string, pos: number): string | null {
     const from = m.index;
     const to = from + m[0].length;
     if (pos >= from && pos <= to) return m[2].trim();
+  }
+  return null;
+}
+
+/** 光标处行内链接 url（[label](url)）；null = 无（D4 链接操作定位） */
+export function linkUrlAt(doc: string, pos: number): string | null {
+  const re = /(?<!!)\[([^\]]+)\]\(([^)\n]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(doc)) !== null) {
+    const from = m.index;
+    const to = from + m[0].length;
+    if (pos >= from && pos <= to) return m[2].trim();
+  }
+  return null;
+}
+
+/** 光标处围栏代码块内容（``` fence 内文本，不含 fence 行）；null = 无（D4 复制代码块内容） */
+export function codeBlockSourceAt(doc: string, pos: number): string | null {
+  const re = /^[ \t]*(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^[ \t]*\1[ \t]*$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(doc)) !== null) {
+    const from = m.index;
+    const to = from + m[0].length;
+    if (pos >= from && pos <= to) return m[2];
   }
   return null;
 }
@@ -343,6 +371,22 @@ function imageSourceAtCursor(): string | null {
   return imageSourceAt(doc, head);
 }
 
+function linkUrlAtCursor(): string | null {
+  const view = activeView;
+  if (view === null) return null;
+  const doc = view.state.doc.toString();
+  const head = view.state.selection.main.head;
+  return linkUrlAt(doc, head);
+}
+
+function codeBlockSourceAtCursor(): string | null {
+  const view = activeView;
+  if (view === null) return null;
+  const doc = view.state.doc.toString();
+  const head = view.state.selection.main.head;
+  return codeBlockSourceAt(doc, head);
+}
+
 /** 注册全局 API（installSelectionCommandsApi 在 iframe 内调用一次） */
 export function installSelectionCommandsApi(): void {
   (window as unknown as { __MELLOW_SELECTION_COMMANDS__?: SelectionCommandsApi }).__MELLOW_SELECTION_COMMANDS__ = {
@@ -361,6 +405,8 @@ export function installSelectionCommandsApi(): void {
     moveLineUp,
     moveLineDown,
     imageSourceAtCursor,
+    linkUrlAtCursor,
+    codeBlockSourceAtCursor,
   };
 }
 

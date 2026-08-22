@@ -12,7 +12,7 @@
 import { EditorView } from '@codemirror/view';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { install } from '../src/index';
-import { installSelectionCommandsApi, formatSpanAt, wordAt, paragraphRangeAt, imageSourceAt } from '../src/selectionCommands';
+import { installSelectionCommandsApi, formatSpanAt, wordAt, paragraphRangeAt, imageSourceAt, linkUrlAt, codeBlockSourceAt } from '../src/selectionCommands';
 
 const api = (): {
   selectLine: () => boolean;
@@ -30,6 +30,8 @@ const api = (): {
   moveLineUp: () => boolean;
   moveLineDown: () => boolean;
   imageSourceAtCursor: () => string | null;
+  linkUrlAtCursor: () => string | null;
+  codeBlockSourceAtCursor: () => string | null;
 } =>
   (window as unknown as { __MELLOW_SELECTION_COMMANDS__?: Record<string, () => boolean | string | null> }).__MELLOW_SELECTION_COMMANDS__! as ReturnType<typeof api>;
 
@@ -185,6 +187,45 @@ describe('imageSourceAt（光标处图片）', () => {
   });
 });
 
+// ───────────────── D4：链接 / 代码块定位（纯函数） ─────────────────
+
+describe('linkUrlAt（光标处行内链接）', () => {
+  it('命中链接语法返回 url', () => {
+    expect(linkUrlAt('[label](https://a.example) tail', 3)).toBe('https://a.example');
+    expect(linkUrlAt('[label](https://a.example) tail', 24)).toBe('https://a.example'); // 行尾边界
+  });
+
+  it('图片语法不算链接（负向先行排除）', () => {
+    expect(linkUrlAt('![alt](img.png)', 5)).toBeNull();
+  });
+
+  it('非链接位置 → null', () => {
+    expect(linkUrlAt('[label](https://a.example) tail', 30)).toBeNull();
+    expect(linkUrlAt('plain text', 2)).toBeNull();
+  });
+});
+
+describe('codeBlockSourceAt（光标处围栏代码块）', () => {
+  const doc = '前文\n```js\nconst a = 1;\n```\n后文';
+
+  it('fence 内返回内容（不含 fence 行）', () => {
+    expect(codeBlockSourceAt(doc, 12)).toBe('const a = 1;\n');
+  });
+
+  it('fence 行本身命中 → 同块内容', () => {
+    expect(codeBlockSourceAt(doc, 4)).toBe('const a = 1;\n');
+  });
+
+  it('代码块外 → null', () => {
+    expect(codeBlockSourceAt(doc, 1)).toBeNull();
+    expect(codeBlockSourceAt(doc, doc.length - 1)).toBeNull();
+  });
+
+  it('波浪线 fence 同样支持', () => {
+    expect(codeBlockSourceAt('~~~\nx\n~~~', 5)).toBe('x\n');
+  });
+});
+
 // ───────────────── D3：dispatch 行为 ─────────────────
 
 describe('Selection Commands — D3 dispatch', () => {
@@ -296,5 +337,25 @@ describe('Selection Commands — D3 dispatch', () => {
     view.dispatch({ selection: { anchor: 16, head: 16 } });
     expect(api().imageSourceAtCursor()).toBeNull();
     view.destroy();
+  });
+
+  it('linkUrlAtCursor：光标处链接 url（D4 链接操作定位）', () => {
+    const view = makeView('[label](https://a.example) tail');
+    view.dispatch({ selection: { anchor: 3, head: 3 } });
+    expect(api().linkUrlAtCursor()).toBe('https://a.example');
+    view.dispatch({ selection: { anchor: 28, head: 28 } });
+    expect(api().linkUrlAtCursor()).toBeNull();
+    view.destroy();
+  });
+
+  it('codeBlockSourceAtCursor：光标处代码块内容（D4 复制代码块内容）', () => {
+    const view = makeView('```js\nconst a = 1;\n```');
+    view.dispatch({ selection: { anchor: 10, head: 10 } });
+    expect(api().codeBlockSourceAtCursor()).toBe('const a = 1;\n');
+    const view2 = makeView('plain doc');
+    view2.dispatch({ selection: { anchor: 3, head: 3 } });
+    expect(api().codeBlockSourceAtCursor()).toBeNull();
+    view.destroy();
+    view2.destroy();
   });
 });

@@ -87,6 +87,25 @@ export function applyInlineFormat(doc: string, range: TextRange, marker: string)
   };
 }
 
+/** 非对称包裹（D4 Typora parity：下划线 <u></u> / 注释 <!-- -->）；再按一次解包 */
+export function applyInlineWrap(doc: string, range: TextRange, open: string, close: string): ApplyResult {
+  const selected = doc.slice(range.from, range.to);
+  if (selected === '') return { changes: [], selection: range };
+  const before = doc.slice(Math.max(0, range.from - open.length), range.from);
+  const after = doc.slice(range.to, range.to + close.length);
+  if (before === open && after === close) {
+    return {
+      changes: [{ from: range.from - open.length, to: range.to + close.length, insert: selected }],
+      selection: { from: range.from - open.length, to: range.to - open.length },
+    };
+  }
+  const full = open + selected + close;
+  return {
+    changes: [{ from: range.from, to: range.to, insert: full }],
+    selection: { from: range.from + open.length, to: range.to + open.length },
+  };
+}
+
 export function applyLink(doc: string, range: TextRange): ApplyResult {
   const selected = doc.slice(range.from, range.to) || '链接';
   const insert = `[${selected}]()`;
@@ -150,6 +169,55 @@ export function applyBlockPrefix(doc: string, range: TextRange, prefix: string):
   };
 }
 
+/** 列表缩进（D4 Typora ⌘]/⌘[）：选中行统一加/减 2 空格（无缩进可减 → 无变更） */
+export function applyListIndent(doc: string, range: TextRange, direction: 'more' | 'less'): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const UNIT = '  ';
+  const deltas: number[] = [];
+  const inserts: string[] = [];
+  for (const line of lines) {
+    const content = doc.slice(line.start, line.end);
+    if (direction === 'more') {
+      deltas.push(UNIT.length);
+      inserts.push(UNIT + content);
+    } else {
+      // 减缩进：剥前导空格（1-2 个），Tab 视作 2
+      let strip = 0;
+      if (content.startsWith('  ')) strip = 2;
+      else if (content.startsWith(' ')) strip = 1;
+      else if (content.startsWith('\t')) strip = 1;
+      deltas.push(-strip);
+      inserts.push(content.slice(strip));
+    }
+  }
+  let replacement = '';
+  let pos = lines[0].start;
+  lines.forEach((line, i) => {
+    replacement += doc.slice(pos, line.start) + inserts[i];
+    pos = line.end;
+  });
+  return {
+    changes: [{ from: lines[0].start, to: lines[lines.length - 1].end, insert: replacement }],
+    selection: { from: mapPosition(range.from, lines, deltas), to: mapPosition(range.to, lines, deltas) },
+  };
+}
+
+/** 在当前行上方/下方插入空段落（D4 Typora「在上方/下方插入段落」）；caret 落新行行首 */
+export function applyInsertParagraph(doc: string, range: TextRange, position: 'above' | 'below'): ApplyResult {
+  const lines = affectedLines(doc, range);
+  if (lines.length === 0) return { changes: [], selection: range };
+  const line = position === 'above' ? lines[0] : lines[lines.length - 1];
+  const at = position === 'above' ? line.start : line.end;
+  const insert = position === 'above' ? '\n' : (at < doc.length ? '\n\n' : '\n');
+  // above：在行首前插换行（新行 = 原 line.start 位置）；below：行尾后插（doc 末尾只补一个）
+  const caret = position === 'above' ? line.start : line.end + 1;
+  return {
+    changes: [{ from: at, to: at, insert }],
+    selection: { from: caret, to: caret },
+  };
+}
+
 export function applyHeading(doc: string, range: TextRange, level: number): ApplyResult {
   const lines = affectedLines(doc, range);
   if (lines.length === 0) return { changes: [], selection: range };
@@ -183,7 +251,7 @@ export function applyHeading(doc: string, range: TextRange, level: number): Appl
   };
 }
 
-type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle' | 'deleteLine' | 'referenceLink';
+type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle' | 'deleteLine' | 'referenceLink' | 'underline' | 'comment' | 'indentMore' | 'indentLess' | 'insertParagraphAbove' | 'insertParagraphBelow';
 
 /** 既有块级 marker（heading/quote/ul/task/ol）：列表互转时先剥离（Typora 段落互转语义） */
 const BLOCK_PREFIX_RE = /^(#{1,6}\s|>\s|[-*+]\s(?:\[[ xX]\]\s)?|\d+\.\s)/;
@@ -481,7 +549,13 @@ export function applyTaskToggle(doc: string, range: TextRange): ApplyResult {
 const PAIR_MARKERS: Partial<Record<ToolbarAction, string>> = {
   bold: '**', italic: '*', strike: '~~', code: '`', highlight: '==', sup: '^', sub: '~',
 };
-const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'referenceLink']);
+
+/** 非对称成对 marker（D4：下划线/注释 空选区插入 caret 居中） */
+const PAIR_WRAPS: Partial<Record<ToolbarAction, { open: string; close: string }>> = {
+  underline: { open: '<u>', close: '</u>' },
+  comment: { open: '<!--', close: '-->' },
+};
+const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'referenceLink', 'underline', 'comment', 'indentMore', 'indentLess', 'insertParagraphAbove', 'insertParagraphBelow']);
 
 const ACTION_DEFS: Array<{ id: ToolbarAction; label: string; title: string }> = [
   { id: 'h1', label: 'H1', title: '一级标题' },
@@ -527,6 +601,13 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange): Appl
     case 'referenceLink': return applyReferenceLink(doc, range);
     case 'yamlFrontMatter': return applyYamlFrontMatter(doc, range);
     case 'taskToggle': return applyTaskToggle(doc, range);
+    // D4：下划线/注释（非对称包裹）/ 列表缩进 / 上下插段落
+    case 'underline': return applyInlineWrap(doc, range, '<u>', '</u>');
+    case 'comment': return applyInlineWrap(doc, range, '<!--', '-->');
+    case 'indentMore': return applyListIndent(doc, range, 'more');
+    case 'indentLess': return applyListIndent(doc, range, 'less');
+    case 'insertParagraphAbove': return applyInsertParagraph(doc, range, 'above');
+    case 'insertParagraphBelow': return applyInsertParagraph(doc, range, 'below');
     case 'paragraph': {
       // 段落：去除标题前缀（Typora「段落」语义）
       const lines = affectedLines(doc, range);
@@ -583,6 +664,13 @@ function applyToView(action: ToolbarAction): void {
       result = {
         changes: [{ from: sel.head, to: sel.head, insert: marker + marker }],
         selection: { from: sel.head + marker.length, to: sel.head + marker.length },
+      };
+    } else if (PAIR_WRAPS[action] !== undefined) {
+      // 非对称成对（D4 下划线/注释）：空选区插入 open+close，caret 居中
+      const { open, close } = PAIR_WRAPS[action] as { open: string; close: string };
+      result = {
+        changes: [{ from: sel.head, to: sel.head, insert: open + close }],
+        selection: { from: sel.head + open.length, to: sel.head + open.length },
       };
     } else {
       // 块级（heading/quote/list/paragraph）：作用于当前行（Typora Cmd+1 语义）

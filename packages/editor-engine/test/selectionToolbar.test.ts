@@ -10,8 +10,11 @@ import {
   applyHeadingShift,
   applyHorizontalRule,
   applyInlineFormat,
+  applyInlineWrap,
   applyLink,
+  applyListIndent,
   applyMathBlock,
+  applyInsertParagraph,
   applyOrderedList,
   applyTaskList,
   applyTaskToggle,
@@ -67,6 +70,63 @@ describe('Selection Toolbar — formatting pure functions', () => {
     const result = applyLink('abc', { from: 0, to: 3 });
     expect(result.changes).toEqual([{ from: 0, to: 3, insert: '[abc]()' }]);
     expect(result.selection).toEqual({ from: 6, to: 6 });
+  });
+
+  // ── D4：非对称包裹 / 列表缩进 / 插入段落 ──
+
+  test('inline wrap wraps selection with asymmetric markers and unwraps on toggle', () => {
+    const wrap = applyInlineWrap('abc', { from: 0, to: 3 }, '<u>', '</u>');
+    expect(wrap.changes).toEqual([{ from: 0, to: 3, insert: '<u>abc</u>' }]);
+    expect(wrap.selection).toEqual({ from: 3, to: 6 });
+
+    const unwrap = applyInlineWrap('<u>abc</u>', { from: 3, to: 6 }, '<u>', '</u>');
+    expect(unwrap.changes).toEqual([{ from: 0, to: 10, insert: 'abc' }]);
+    expect(unwrap.selection).toEqual({ from: 0, to: 3 });
+  });
+
+  test('inline wrap comment markers (<!-- -->)', () => {
+    const wrap = applyInlineWrap('note', { from: 0, to: 4 }, '<!--', '-->');
+    expect(wrap.changes).toEqual([{ from: 0, to: 4, insert: '<!--note-->' }]);
+    expect(wrap.selection).toEqual({ from: 4, to: 8 });
+  });
+
+  test('inline wrap empty selection is no-op', () => {
+    const result = applyInlineWrap('abc', { from: 1, to: 1 }, '<u>', '</u>');
+    expect(result.changes).toEqual([]);
+    expect(result.selection).toEqual({ from: 1, to: 1 });
+  });
+
+  test('list indent adds two spaces to each selected line', () => {
+    const result = applyListIndent('a\nb', { from: 0, to: 3 }, 'more');
+    expect(result.changes).toEqual([{ from: 0, to: 3, insert: '  a\n  b' }]);
+  });
+
+  test('list indent less strips up to two leading spaces', () => {
+    const result = applyListIndent('  a\n   b', { from: 0, to: 8 }, 'less');
+    expect(result.changes).toEqual([{ from: 0, to: 8, insert: 'a\n b' }]);
+  });
+
+  test('list indent less with no indent is no-op content-wise', () => {
+    const result = applyListIndent('a\nb', { from: 0, to: 3 }, 'less');
+    expect(result.changes).toEqual([{ from: 0, to: 3, insert: 'a\nb' }]);
+  });
+
+  test('insert paragraph above prepends newline at line start', () => {
+    const result = applyInsertParagraph('aa\nbb', { from: 3, to: 3 }, 'above');
+    expect(result.changes).toEqual([{ from: 3, to: 3, insert: '\n' }]);
+    expect(result.selection).toEqual({ from: 3, to: 3 });
+  });
+
+  test('insert paragraph below appends blank line after line end', () => {
+    const result = applyInsertParagraph('aa\nbb\ncc', { from: 3, to: 3 }, 'below');
+    expect(result.changes).toEqual([{ from: 5, to: 5, insert: '\n\n' }]);
+    expect(result.selection).toEqual({ from: 6, to: 6 });
+  });
+
+  test('insert paragraph below at document end appends single newline', () => {
+    const result = applyInsertParagraph('aa', { from: 1, to: 1 }, 'below');
+    expect(result.changes).toEqual([{ from: 2, to: 2, insert: '\n' }]);
+    expect(result.selection).toEqual({ from: 3, to: 3 });
   });
 
   test('block prefix toggles and maps selection', () => {
