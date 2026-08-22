@@ -130,6 +130,16 @@ describe('buildPrintHtml — 自包含打印文档', () => {
     expect(html).not.toContain('h1 { page-break-before: always; }');
   });
 
+  // R3-2 mhchem 化学式：\ce / \pu 经 katex contrib 渲染（下标 + 反应箭头）。
+  // 注：不反向断言 'katex-error' —— self-contained 模式内嵌的 katex JS 源码本身含该类名字符串。
+  it('mhchem 化学式渲染（\\ce 与 \\pu）', async () => {
+    const md = '$\\ce{2H2 + O2 -> 2H2O}$\n\n$\\pu{123 kJ/mol}$';
+    const html = await buildPrintHtml(md, {}, { resolveImage });
+    expect(html).toContain('class="katex');
+    expect(html).toContain('msub'); // 化学式下标
+    expect(html).toContain('→'); // 反应箭头（mhchem 转换 ->）
+  });
+
   it('PRINT_READY_SCRIPT 结构（parent postMessage + 兜底）', () => {
     expect(PRINT_READY_SCRIPT).toContain("postMessage('mellow-print-ready'");
     expect(PRINT_READY_SCRIPT).toContain('mellow-mermaid-ready');

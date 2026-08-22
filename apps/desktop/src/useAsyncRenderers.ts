@@ -1,10 +1,14 @@
 /**
  * 异步渲染 hook：为 Reader / Split Preview 的渲染 HTML 执行 math / mermaid 渲染。
- * 无库（window.MathJax / window.mermaid / __MELLOW_MERMAID_LOADER__）时保留源码。
+ * - math：MathJax（tex2chtmlPromise，若宿主注入）优先；否则按需动态加载 KaTeX
+ *   + mhchem（R3-2：`\ce{}`/`\pu{}` 化学式），renderToString 渲染；
+ * - mermaid：window.mermaid / __MELLOW_MERMAID_LOADER__；
+ * - 全部无库时保留源码。
  */
 
 import { useEffect } from 'react';
 import { createMermaid11Renderer } from '../../../packages/editor-engine/src/mermaid';
+import { loadKatex, renderKatex } from './katexLoader';
 
 let mermaidId = 0;
 
@@ -18,15 +22,31 @@ export function useAsyncRenderers(contentRef: React.RefObject<HTMLElement | null
       __MELLOW_MERMAID_LOADER__?: unknown;
     };
 
-    for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mellow-reader-math, .mellow-reader-math-block'))) {
-      const tex = el.dataset.tex ?? '';
-      if (tex === '' || el.dataset.rendered === '1') continue;
-      el.dataset.rendered = '1';
-      if (win.MathJax?.tex2chtmlPromise === undefined) continue;
-      const display = el.classList.contains('mellow-reader-math-block');
-      void win.MathJax.tex2chtmlPromise(tex, { display }).then((node) => {
-        el.replaceChildren(node);
-      }).catch(() => { /* 保留源码 */ });
+    const mathEls = Array.from(root.querySelectorAll<HTMLElement>('.mellow-reader-math, .mellow-reader-math-block'));
+    if (mathEls.length > 0) {
+      if (win.MathJax?.tex2chtmlPromise !== undefined) {
+        for (const el of mathEls) {
+          const tex = el.dataset.tex ?? '';
+          if (tex === '' || el.dataset.rendered === '1') continue;
+          el.dataset.rendered = '1';
+          const display = el.classList.contains('mellow-reader-math-block');
+          void win.MathJax.tex2chtmlPromise!(tex, { display }).then((node) => {
+            el.replaceChildren(node);
+          }).catch(() => { /* 保留源码 */ });
+        }
+      } else {
+        // R3-2：无 MathJax 时按需加载 KaTeX（含 mhchem \ce/\pu）
+        void loadKatex().then((katex) => {
+          for (const el of mathEls) {
+            const tex = el.dataset.tex ?? '';
+            if (tex === '' || el.dataset.rendered === '1') continue;
+            el.dataset.rendered = '1';
+            const display = el.classList.contains('mellow-reader-math-block');
+            const html = renderKatex(katex, tex, display);
+            if (html !== null) el.innerHTML = html;
+          }
+        }).catch(() => { /* KaTeX 加载失败保留源码 */ });
+      }
     }
 
     for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mellow-reader-mermaid'))) {

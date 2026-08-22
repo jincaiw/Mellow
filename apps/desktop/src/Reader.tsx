@@ -41,6 +41,7 @@ export default function ReaderView(props: ReaderViewProps) {
   const [matchCount, setMatchCount] = useState(0);
   const [matchIndex, setMatchIndex] = useState(-1);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [lightboxScale, setLightboxScale] = useState(1);
   const scrollRafRef = useRef(0);
 
   // ── math / mermaid 异步渲染（无库时保留源码）──
@@ -136,7 +137,7 @@ export default function ReaderView(props: ReaderViewProps) {
         return;
       }
       if (event.key === 'Escape') {
-        if (lightbox !== null) setLightbox(null);
+        if (lightbox !== null) { setLightbox(null); setLightboxScale(1); }
         else if (query !== '') {
           setQuery('');
           searchRef.current?.blur();
@@ -176,6 +177,7 @@ export default function ReaderView(props: ReaderViewProps) {
     }
     if (target.tagName === 'IMG' && target.closest('a') === null) {
       setLightbox((target as HTMLImageElement).src);
+      setLightboxScale(1);
     }
   }, [t]);
 
@@ -207,8 +209,23 @@ export default function ReaderView(props: ReaderViewProps) {
         <article className="mellow-reader" style={{ fontSize: `${zoom * 100}%` }} ref={contentRef} role="main" aria-label={title} dangerouslySetInnerHTML={{ __html: html }} onClick={handleContentClick} />
       </div>
       {lightbox !== null && (
-        <div className="mellow-reader-lightbox" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="lightbox" />
+        // R3-1 lightbox：滚轮缩放（50%-400%）/ 双击重置 / Esc 或点遮罩关闭
+        <div
+          className="mellow-reader-lightbox"
+          onClick={() => { setLightbox(null); setLightboxScale(1); }}
+          onWheel={(e) => {
+            e.preventDefault();
+            setLightboxScale((s) => Math.min(4, Math.max(0.5, s + (e.deltaY < 0 ? 0.1 : -0.1))));
+          }}
+        >
+          <img
+            src={lightbox}
+            alt="lightbox"
+            style={{ transform: `scale(${lightboxScale})` }}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={() => setLightboxScale(1)}
+          />
+          <span className="mellow-reader-lightbox-zoom">{Math.round(lightboxScale * 100)}%</span>
         </div>
       )}
     </div>

@@ -253,6 +253,13 @@ export class EditorCore {
     return win?.__MELLOW_SMART_PUNCTUATION__?.get?.() ?? false;
   }
 
+  /** 安装宿主 KaTeX 渲染通道（master-plan R3-2：编辑器内公式排版 + mhchem \ce/\pu）。
+   *  render 异步返回渲染 HTML；null = 渲染失败（引擎回退源码显示）。 */
+  installKatexRenderer(render: (tex: string, displayMode: boolean) => Promise<string | null>): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_KATEX_RENDER__?: (tex: string, display: boolean) => Promise<string | null> }) | null;
+    if (win !== null) win.__MELLOW_KATEX_RENDER__ = render;
+  }
+
   /** 选中当前行（整行已选中则扩展下一行；D1-4 ⌘L）；false = 编辑器未就绪 */
   selectLine(): boolean {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { selectLine?: () => boolean } }) | null;

@@ -228,3 +228,8 @@ TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E �
 | 2026-08-22 | R2-3 | 主题语义补齐：新增 Whitey（极简高对比白）与 Gothic（衬线深色，Georgia/宋体）主题，内置主题达 8 个，主题菜单 radio 全列 | ✅ |
 | 2026-08-22 | R2-4 | 缩放百分比化评估结论：选 b 双轨显示（保持 px 单一真源 + 换算显示）；状态栏 `17px (100%)` + 设置面板字号描述（zh/en） | ✅ |
 | 2026-08-22 | R2 门禁 | 全 workspace 测试 10 包 932 用例全过（app-core 140 / engine 600 / editor-core 17 / export 67 / host-api 43 / document-model 26 / i18n 15 / settings 8 / themes 8 / commands 8）+ desktop tsc clean + cargo test ok（reveal.test 并发偶发超时已单独复跑确认稳定） | ✅ |
+| 2026-08-22 | R3-1 | Image lightbox：Reader lightbox 增强滚轮缩放（50%-400%）/ 双击重置 / 缩放百分比指示 + 全渲染管线 img `loading="lazy"`（export markdown-it 规则与 app-core reader 行内） | ✅ |
+| 2026-08-22 | R3-2 | mhchem 化学式 + 编辑器内公式排版：export 静态注册 katex contrib mhchem（\ce/\pu，导出/打印生效，测试 msub+→ 特征断言）；Reader/Split 无 MathJax 时按需加载 KaTeX+mhchem 渲染；engine 新增 `__MELLOW_KATEX_RENDER__` 异步通道（宿主注入 iframe，含 KaTeX CSS），fallback 链 MathJax→KaTeX→源码；desktop katexLoader 单例 + engine/editor-core 通道测试 | ✅ |
+| 2026-08-22 | R3-3 | Share 复制源码：macOS NSSharingServicePicker 需真机验证 → 并入 R4 真机阶段实施（跨平台基础「复制为 Markdown ⇧⌘C」已有） | ⏸ 并入 R4 |
+| 2026-08-22 | R3-4 | Open in LLM：可选增强，遵守 ADR-0018（AI 可选、默认关）；暂缓待明确需求 | ⏸ 暂缓 |
+| 2026-08-22 | R3-5 | CLI 别名评估：`mellow-desktop` 已可用（PRD §80）；改名/别名涉及 updater/CI 产物名一致性，收益低风险高 → 保持现名，Windows `.cmd` shim 列为后续可选增强 | ✅ 结论：保持现名 |

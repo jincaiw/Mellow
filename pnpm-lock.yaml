@@ -25,6 +25,9 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2.10.1
         version: 2.10.1
+      katex:
+        specifier: ^0.18.4
+        version: 0.18.4
       react:
         specifier: ^18.3.1
         version: 18.3.1

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { EditorView } from '@codemirror/view';
-import { buildMathExtension, copyMathSourceAt, extractMathMacros, parseMathSpans, renderMathSource, rendererPathFor } from '../src/math';
+import { buildMathExtension, copyMathSourceAt, createMathJaxCompatibleRenderer, extractMathMacros, parseMathSpans, renderMathSource, rendererPathFor } from '../src/math';
 import { selectRange, setUpEditor, sleep } from './harness';
 
 const fixture = (name: string): string => readFileSync(resolve(__dirname, '../../../tests/fixtures/math', name), 'utf8');
@@ -92,5 +92,28 @@ describe('Math Typora Corpus（PRD §42 / ADR-0010）', () => {
     expect(ok).toBe('$\\sqrt{x}$');
     expect(data.get('text/plain')).toBe('$\\sqrt{x}$');
     expect(data.get('text/markdown')).toBe('$\\sqrt{x}$');
+  });
+
+  // R3-2 宿主 KaTeX 通道：__MELLOW_KATEX_RENDER__ 存在时走通道；null 回退源码显示
+  test('host katex channel renders math and null falls back to source', async () => {
+    const hostWindow = window as unknown as { __MELLOW_KATEX_RENDER__?: (tex: string, display: boolean) => Promise<string | null>; MathJax?: unknown };
+    const savedMathJax = hostWindow.MathJax;
+    hostWindow.MathJax = undefined;
+    const renderer = createMathJaxCompatibleRenderer();
+    try {
+      hostWindow.__MELLOW_KATEX_RENDER__ = async (tex, display) => `<span data-katex data-display="${display}">${tex}</span>`;
+      const ok = await renderer.render({ tex: '\\ce{2H2O}', displayMode: true });
+      expect(ok.html).toContain('data-katex');
+      expect(ok.html).toContain('\\ce{2H2O}');
+      expect(ok.html).toContain('data-display="true"');
+
+      hostWindow.__MELLOW_KATEX_RENDER__ = async () => null;
+      const fallback = await renderer.render({ tex: 'x+1', displayMode: false });
+      expect(fallback.html).toContain('mellow-math-rendered');
+      expect(fallback.html).toContain('x+1');
+    } finally {
+      delete hostWindow.__MELLOW_KATEX_RENDER__;
+      hostWindow.MathJax = savedMathJax;
+    }
   });
 });

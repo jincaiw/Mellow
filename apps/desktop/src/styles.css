@@ -1134,6 +1134,20 @@ html, body, #root {
   max-height: 92vh;
   border-radius: 4px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s ease-out;
+  cursor: zoom-in;
+}
+.mellow-reader-lightbox-zoom {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
 }
 
 /* 打印：只输出 Reader 正文 */

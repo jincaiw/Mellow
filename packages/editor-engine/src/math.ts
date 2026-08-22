@@ -310,6 +310,16 @@ export function createMathJaxCompatibleRenderer(): MathRenderer {
         const node = await mathJax.tex2svgPromise(tex, { display: request.displayMode });
         return { html: node.outerHTML, renderer: 'mathjax-compatible' };
       }
+      // R3-2 宿主 KaTeX 通道（含 mhchem \ce/\pu）：宿主向 iframe window 注入
+      // __MELLOW_KATEX_RENDER__（异步 renderToString 封装，首次调用触发按需加载）；
+      // 返回 null / reject = 渲染失败，回退源码显示。
+      const katexRender = (window as unknown as {
+        __MELLOW_KATEX_RENDER__?: (tex: string, display: boolean) => Promise<string | null>;
+      }).__MELLOW_KATEX_RENDER__;
+      if (katexRender !== undefined) {
+        const html = await katexRender(tex, request.displayMode);
+        if (html !== null) return { html, renderer: 'mathjax-compatible' };
+      }
       return renderMathSource(request.tex, request);
     },
   };

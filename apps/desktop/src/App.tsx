@@ -58,6 +58,7 @@ import { createDesktopOpenerService } from './host/openers';
 import { createDesktopWindowService } from './host/windowService';
 import { createDesktopSearchService } from './host/searchServices';
 import { createDesktopImageUploadService } from './host/uploadService';
+import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import { classifyLargeFile } from '../../../packages/editor-engine/src/largeFile';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
@@ -2347,6 +2348,12 @@ export default function App() {
         if (win) {
           win.__MELLOW_IMAGE_ACTIONS__ = (req) => { void handleImageAction(req); };
         }
+
+        // R3-2 编辑器内公式排版：注入宿主 KaTeX 渲染通道（含 mhchem \ce/\pu，按需加载；
+        // 渲染失败引擎回退源码显示）+ iframe KaTeX 样式
+        host.installKatexRenderer((tex, display) =>
+          loadKatex().then((katex) => renderKatex(katex, tex, display)).catch(() => null));
+        injectKatexCssIntoFrame(frame);
 
         // 注入 wikilink 打开 handler（[[name]] → 同目录 name.md；App 解析并打开）
         const wikilinkWin = frame?.contentWindow as (Window & { __MELLOW_WIKILINK_OPEN__?: (name: string) => void }) | null;

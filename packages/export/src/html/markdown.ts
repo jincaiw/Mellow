@@ -12,6 +12,8 @@
 
 import MarkdownIt from 'markdown-it';
 import katex from 'katex';
+// R3-2 mhchem：副作用注册 \ce / \pu 宏（katex 官方 contrib，MIT）
+import 'katex/contrib/mhchem';
 import footnotePlugin from 'markdown-it-footnote';
 import taskListsPlugin from 'markdown-it-task-lists';
 
@@ -301,7 +303,8 @@ export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
     const titleVal = token.attrGet('title');
     const title = titleVal === null || titleVal === undefined ? undefined : String(titleVal);
     const resolved = ctx.imageMap.get(src) ?? src;
-    let out = `<img src="${escapeHtml(resolved)}" alt="${escapeHtml(alt)}"`;
+    // R3-1 懒加载：视口外图片延迟加载（Reader 长文档滚动性能）
+    let out = `<img src="${escapeHtml(resolved)}" alt="${escapeHtml(alt)}" loading="lazy"`;
     if (title !== undefined && title !== '') out += ` title="${escapeHtml(title)}"`;
     out += '>';
     return out;
