@@ -79,6 +79,64 @@ jobs:
           releaseName: 'Mellow ${{ github.ref_name }}'
           releaseDraft: true
           args: --bundles msi,nsis
+      - name: Build portable zip（master-plan R1：exe + Data 占位 → 便携模式）
+        shell: pwsh
+        run: |
+          $ver = (Get-Content apps/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $out = "apps/desktop/src-tauri/target/release/bundle/portable"
+          New-Item -ItemType Directory -Force -Path "$out/Mellow/Data" | Out-Null
+          Copy-Item "apps/desktop/src-tauri/target/release/mellow-desktop.exe" "$out/Mellow/Mellow.exe"
+          New-Item -ItemType File -Force -Path "$out/Mellow/Data/.keep" | Out-Null
+          @'
+          Mellow 便携版 (Windows Portable)
+          =================================
+
+          使用方法：
+            1. 解压到任意有写权限的目录（如 U 盘、桌面）
+            2. 双击 Mellow.exe 直接使用，无需安装、无注册表写入
+
+          数据存储：
+            - 全部数据（设置、最近文件、版本快照）保存在本文件夹的 Data\ 目录
+            - 删除整个 Mellow 文件夹 = 完全卸载，无任何残留
+
+          系统要求：
+            - Windows 10 1809+ 且已安装 WebView2 Runtime
+            - 多数 Windows 11 / 更新后的 Windows 10 已内置；缺失时从以下地址安装：
+              https://developer.microsoft.com/microsoft-edge/webview2/
+
+          升级方式：
+            - 便携版不支持应用内更新；请下载新版压缩包解压覆盖（Data\ 目录保留）
+
+          Mellow Portable (Windows Portable)
+          ==================================
+
+          Usage:
+            1. Extract to any writable location (USB stick, Desktop, etc.)
+            2. Run Mellow.exe directly - no installation, no registry writes
+
+          Data:
+            - All data (settings, recent files, snapshots) stays in the Data\ folder
+            - Delete the whole Mellow folder for a complete uninstall
+
+          Requirements:
+            - Windows 10 1809+ with WebView2 Runtime (preinstalled on most
+              updated systems; otherwise install from
+              https://developer.microsoft.com/microsoft-edge/webview2/)
+
+          Upgrades:
+            - In-app updates are disabled in portable mode; download the new
+              zip and extract over this copy (keep the Data\ folder)
+          '@ | Set-Content -Encoding UTF8 "$out/Mellow/README-Portable.txt"
+          Compress-Archive -Path "$out/Mellow" -DestinationPath "$out/Mellow_${ver}_portable_win64.zip" -Force
+          Get-ChildItem "$out"
+      - name: Attach portable zip to release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/portable/*.zip" | Select-Object -First 1
+          gh release upload $env:GITHUB_REF_NAME $zip.FullName --clobber
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -90,6 +148,7 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
             apps/desktop/src-tauri/target/release/bundle/nsis/*.sig
             apps/desktop/src-tauri/target/release/bundle/nsis/latest.json
+            apps/desktop/src-tauri/target/release/bundle/portable/*.zip
           if-no-files-found: error
 
   macos:

@@ -651,9 +651,17 @@ export default function App() {
 
   // ── 安全 Auto Update 处理（channel / check / download / restart / rollback）──
 
+  // Windows Portable 模式标志（Rust is_portable；启动时加载一次）
+  const portableRef = useRef(false);
+
   /** 检查更新（仅发送版本/平台/渠道元数据；无用户数据、无遥测） */
   const runUpdateCheck = useCallback(async () => {
     if (!isTauri()) return;
+    // Windows Portable：应用内更新不可用（替换 exe 与运行中进程冲突），降级为下载提示（master-plan R1-2）
+    if (portableRef.current) {
+      setToast({ message: t('updater.portable') });
+      return;
+    }
     setUpdateUi({ phase: 'checking' });
     try {
       const update = await checkForUpdate(updateChannelFromSettings());
@@ -939,6 +947,7 @@ export default function App() {
     if (!isTauri()) return;
     let cancelled = false;
     void (async () => {
+      portableRef.current = await invoke<boolean>('is_portable').catch(() => false);
       try {
         const status = await rollbackStatus();
         if (status !== null && status.pending) {
@@ -969,7 +978,8 @@ export default function App() {
         // check() 挂起，启动 banner「正在检查更新…」永不消失（Aug 19 真机验证发现）。
         // release 各平台均执行检查（不可达时由 checkForUpdate 的 15s 超时兜底转 error）。
         const isDevServe = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        if (checkEnabled && !isDevServe) {
+        // Windows Portable 跳过启动自动检查（应用内更新不可用，master-plan R1-2）
+        if (checkEnabled && !isDevServe && !portableRef.current) {
           window.setTimeout(() => { void runUpdateCheck(); }, 4000);
         }
       }

@@ -217,3 +217,7 @@ TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E �
 | 日期 | 阶段 | 内容 | 状态 |
 |---|---|---|---|
 | 2026-08-22 | — | 本方案定稿（合并 4 旧文档，差距矩阵确认剩余 G1-G13） | ✅ |
+| 2026-08-22 | R1-1 | Rust 便携模式：exe 旁 `Data` 检测 + APPDATA/LOCALAPPDATA 重定向（recovery/updater/WebView2 localStorage 全落 Data；`is_portable` 命令暴露前端） | ✅ |
+| 2026-08-22 | R1-2 | 前端 updater 降级：便携模式跳过启动自动检查 + 手动检查 toast 提示（i18n zh/en） | ✅ |
+| 2026-08-22 | R1-3 | CI portable 产物：Windows job 追加 `Mellow_<ver>_portable_win64.zip`（exe + Data 占位 + 中英双语 README）并附加到 Release | ✅（真机验证待 R4-1） |
+| 2026-08-22 | R1-4 | 门禁：cargo check/test 74 全过 + desktop tsc clean + i18n 15 过（Windows 代码路径以运行时 cfg! 判定实现，本地可编译验证） | ✅ |

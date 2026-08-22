@@ -27,6 +27,44 @@ pub struct OpenRequest {
 
 struct PendingOpen(Mutex<Option<OpenRequest>>);
 
+/// Windows Portable 模式标志（master-plan R1：exe 旁 `Data` 文件夹存在 → 便携模式）
+static PORTABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// 检测 exe 同目录是否存在 `Data` 文件夹（便携模式判定；非 Windows 恒为 None）
+fn portable_data_dir() -> Option<std::path::PathBuf> {
+    if !cfg!(target_os = "windows") {
+        return None; // 便携模式仅 Windows（master-plan R1）
+    }
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.join("Data");
+    if dir.is_dir() { Some(dir) } else { None }
+}
+
+/// 便携模式数据重定向：APPDATA / LOCALAPPDATA 指向 `Data` 目录。
+///
+/// 覆盖全部数据落点（dirs crate 环境变量优先于 Known Folder）：
+/// - APPDATA → app_data_dir（recovery 快照、updater 备份）
+/// - LOCALAPPDATA → app_local_data_dir（WebView2 profile：localStorage/IndexedDB）
+///
+/// 删除 `Data` = 完全卸载；无 `Data` 时行为与安装版完全一致。
+/// 必须在 tauri::Builder 之前调用（WebView2 初始化前生效）。
+fn setup_portable_mode() -> bool {
+    match portable_data_dir() {
+        Some(dir) => {
+            std::env::set_var("APPDATA", &dir);
+            std::env::set_var("LOCALAPPDATA", &dir);
+            true
+        }
+        None => false,
+    }
+}
+
+/// 前端查询便携模式（设置面板 / updater 检查降级提示，master-plan R1-2）
+#[tauri::command]
+fn is_portable() -> bool {
+    *PORTABLE.get().unwrap_or(&false)
+}
+
 /// 前端就绪后拉取待打开请求（benchmark open-to-editable / open-with / CLI）
 #[tauri::command]
 fn pending_open_path(state: tauri::State<PendingOpen>) -> Option<OpenRequest> {
@@ -44,6 +82,8 @@ pub struct BridgeMessage {
 /// Rust System Core 入口（ADR-0017：Rust System Core；ADR-0007：Editor/UI 不直接依赖 OS API）
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 便携模式数据重定向必须在 WebView2 初始化前完成（master-plan R1-1）
+    let _ = PORTABLE.set(setup_portable_mode());
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -51,6 +91,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             pending_open_path,
+            is_portable,
             print::open_devtools,
             menu::set_menu_locale,
             menu::set_recent_files,
