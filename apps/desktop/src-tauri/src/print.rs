@@ -15,11 +15,19 @@ pub fn print_window(window: WebviewWindow) -> Result<(), String> {
 }
 
 /// 打开 DevTools（Typora 视图→开发者工具；仅 debug 构建可用，release 返回 Err）
+///
+/// `open_devtools()` 方法需要 tauri devtools feature（release 默认不编译），
+/// 用编译期 cfg 守卫保证 release 可编译；菜单项保留，release 点击返回提示。
 #[tauri::command]
 pub fn open_devtools(window: WebviewWindow) -> Result<(), String> {
-    if !cfg!(debug_assertions) {
-        return Err("devtools is only available in debug builds".into());
+    #[cfg(debug_assertions)]
+    {
+        window.open_devtools();
+        Ok(())
     }
-    window.open_devtools();
-    Ok(())
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = window; // 参数占位（避免 unused 警告）
+        Err("devtools is only available in debug builds".into())
+    }
 }
