@@ -31,9 +31,12 @@ export interface ClipboardDataLike {
   setData(type: string, value: string): void;
 }
 
-/** 宿主 → 引擎剪贴板桥（菜单「复制为 Markdown / 粘贴为纯文本」调用） */
+/** 宿主 → 引擎剪贴板桥（菜单「复制为 Markdown / 纯文本 / HTML 代码 / 粘贴为纯文本」调用） */
 export interface MellowClipboardApi {
   copyAsMarkdown(): boolean;
+  copyAsPlain(): boolean;
+  /** 复制为 HTML 代码（Typora parity D3：HTML 源码作为纯文本写入剪贴板） */
+  copyAsHtmlSource(): boolean;
   pastePlain(): void;
 }
 
@@ -409,6 +412,19 @@ export function copyWithoutTheme(view: EditorView, clipboardData?: ClipboardData
   return copyCommandWithOptions(view, WITHOUT_THEME_COPY, clipboardData);
 }
 
+/** 复制为 HTML 代码：渲染 HTML 源码本身作为纯文本写入（Typora「复制为 HTML 代码」） */
+export function copyAsHtmlSource(view: EditorView, clipboardData?: ClipboardDataLike): boolean {
+  const markdown = selectedMarkdown(view);
+  if (markdown === null) return false;
+  const html = markdownToClipboardHtml(markdown, { includeTheme: false });
+  if (clipboardData !== undefined) {
+    clipboardData.setData('text/plain', html);
+  } else {
+    void navigator.clipboard?.writeText?.(html);
+  }
+  return true;
+}
+
 /** Installs Typora-like multi-format Copy plus Copy as Markdown shortcut. */
 export function buildClipboardCopyExtension(): Extension {
   const { ViewPlugin, keymap } = resolveCm();
@@ -450,6 +466,16 @@ export function installClipboardApi(): void {
       const view = activeClipboardView;
       if (view === null) return false;
       return copyAsMarkdown(view);
+    },
+    copyAsPlain: () => {
+      const view = activeClipboardView;
+      if (view === null) return false;
+      return copyAsPlain(view);
+    },
+    copyAsHtmlSource: () => {
+      const view = activeClipboardView;
+      if (view === null) return false;
+      return copyAsHtmlSource(view);
     },
     pastePlain: () => {
       const view = activeClipboardView;

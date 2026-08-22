@@ -254,6 +254,82 @@ export class EditorCore {
     return win?.__MELLOW_SELECTION_COMMANDS__?.selectParagraph?.() ?? false;
   }
 
+  // ── D3 选择/删除范围/移行（Typora 编辑菜单 parity；false = 编辑器未就绪） ──
+
+  /** 选中当前词（⌘D） */
+  selectWord(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { selectWord?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.selectWord?.() ?? false;
+  }
+
+  /** 选中当前格式文本（⌘E；无标记退化为当前词） */
+  selectFormatSpan(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { selectFormatSpan?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.selectFormatSpan?.() ?? false;
+  }
+
+  gotoDocStart(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { gotoDocStart?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.gotoDocStart?.() ?? false;
+  }
+
+  gotoDocEnd(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { gotoDocEnd?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.gotoDocEnd?.() ?? false;
+  }
+
+  /** 跳转到所选内容（⌘J scrollIntoView） */
+  gotoSelection(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { gotoSelection?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.gotoSelection?.() ?? false;
+  }
+
+  gotoLineStart(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { gotoLineStart?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.gotoLineStart?.() ?? false;
+  }
+
+  gotoLineEnd(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { gotoLineEnd?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.gotoLineEnd?.() ?? false;
+  }
+
+  /** 删除当前词（⇧⌘D） */
+  deleteWord(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { deleteWord?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.deleteWord?.() ?? false;
+  }
+
+  /** 删除当前格式文本（⌥⇧⌘E） */
+  deleteFormatSpan(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { deleteFormatSpan?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.deleteFormatSpan?.() ?? false;
+  }
+
+  /** 删除块（⌥⇧⌘P；空行界定的段落） */
+  deleteParagraph(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { deleteParagraph?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.deleteParagraph?.() ?? false;
+  }
+
+  /** 上移该行（⌥↑）；首行 no-op */
+  moveLineUp(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { moveLineUp?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.moveLineUp?.() ?? false;
+  }
+
+  /** 下移该行（⌥↓）；末行 no-op */
+  moveLineDown(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { moveLineDown?: () => boolean } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.moveLineDown?.() ?? false;
+  }
+
+  /** 光标处图片 src（「拷贝图片」）；null = 无图片/未就绪 */
+  imageSourceAtCursor(): string | null {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SELECTION_COMMANDS__?: { imageSourceAtCursor?: () => string | null } }) | null;
+    return win?.__MELLOW_SELECTION_COMMANDS__?.imageSourceAtCursor?.() ?? null;
+  }
+
   /** 设置当前文档路径（Image Workflow 相对路径解析，engine 读 window.__MELLOW_DOC_PATH__） */
   setDocumentPath(path: string | null): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_DOC_PATH__?: string | null }) | null;

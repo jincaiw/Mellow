@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { EditorView } from '@codemirror/view';
-import { copyAsMarkdown, copyAsPlain, copySelectionToClipboard, installClipboardApi, markdownToClipboardHtml, markdownToPlainText, markdownToRtf } from '../src/clipboardCopy';
+import { copyAsMarkdown, copyAsPlain, copyAsHtmlSource, copySelectionToClipboard, installClipboardApi, markdownToClipboardHtml, markdownToPlainText, markdownToRtf } from '../src/clipboardCopy';
 import { selectRange, setUpEditor } from './harness';
 
 const fixture = (name: string): string => readFileSync(resolve(__dirname, '../../../tests/fixtures/clipboard', name), 'utf8');
@@ -69,6 +69,17 @@ describe('Clipboard Copy（clipboard-smart-paste-spec §2）', () => {
     const data = new FakeClipboardData();
     expect(copyAsPlain(view, data)).toBe(true);
     expect(data.getData('text/plain')).toBe('中文 重点 和 链接');
+  });
+
+  test('Copy as HTML Code writes rendered HTML source as plain text（D3 Typora parity）', () => {
+    const view = setUpEditor('中文 **重点**');
+    selectRange(view, 0, view.state.doc.length);
+    const data = new FakeClipboardData();
+    expect(copyAsHtmlSource(view, data)).toBe(true);
+    // 仅 text/plain 一种 flavor，内容是 HTML 源码本身
+    expect([...data.values.keys()]).toEqual(['text/plain']);
+    expect(data.getData('text/plain')).toContain('<strong>重点</strong>');
+    expect(data.getData('text/plain')).not.toContain('style=');
   });
 
   test('Copy without Theme writes semantic HTML without style/class attributes', () => {
