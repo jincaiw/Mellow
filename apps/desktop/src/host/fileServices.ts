@@ -22,6 +22,8 @@ interface TauriOpenResponse {
   eol: string | null;
   disk_mtime_ms: number | null;
   identity_key: string | null;
+  /** 大文件标记：content 为空，需走 read_text_chunk 分块拉取 */
+  large?: boolean | null;
   error: string | null;
 }
 
@@ -33,15 +35,41 @@ interface TauriSaveResponse {
   error: string | null;
 }
 
+/** 分块读取阈值（decode 后字符数，与 Rust CHUNKED_READ_THRESHOLD_CHARS 对齐） */
+const CHUNKED_READ_THRESHOLD_CHARS = 1_000_000;
+/** 每块字符数：offset 语义为 Rust chars（Unicode scalar），由块序号推进避免 UTF-16 错位 */
+const CHUNK_SIZE_CHARS = 256 * 1024;
+
+/**
+ * 大文件分块读取：read_text_meta 探测 → read_text_chunk 逐块拉取拼接。
+ * 规避 tauri:// 协议下超大 IPC 单次响应卡死 WebKit 事务（动态样式表失效/白屏）。
+ */
+async function readContentChunked(path: string): Promise<string> {
+  const meta = await invoke<{ path: string; char_count: number; mtime_ms: number }>('read_text_meta', { path });
+  const parts: string[] = [];
+  for (let i = 0; i * CHUNK_SIZE_CHARS < meta.char_count; i++) {
+    const r = await invoke<{ chunk: string; total: number }>('read_text_chunk', {
+      path,
+      offset: i * CHUNK_SIZE_CHARS,
+      len: CHUNK_SIZE_CHARS,
+    });
+    parts.push(r.chunk);
+  }
+  const content = parts.join('');
+  return content;
+}
+
 /** Tauri 实现（类型适配到新 Result 契约；命令语义不变） */
 export const tauriFileService: FileService = {
   async open(): Promise<Result<OpenFileResult>> {
     const r = await invoke<TauriOpenResponse>('open_document');
     if (r.error) return err({ code: 'io', message: r.error });
     if (r.path === null) return err({ code: 'canceled', message: '打开已取消' });
+    // 大文件：Rust 侧已把内容放入缓存（content 为空），分块拉取避免超大 IPC 响应
+    const content = r.large === true ? await readContentChunked(r.path) : (r.content ?? '');
     return ok({
       path: r.path,
-      content: r.content ?? '',
+      content,
       encoding: (r.encoding as Encoding) ?? 'utf-8',
       eol: (r.eol as LineEnding) ?? '\n',
       diskMtimeMs: r.disk_mtime_ms ?? undefined,
@@ -75,15 +103,21 @@ export const tauriFileService: FileService = {
   },
   openPath: async (path: string) => {
     try {
-      const r = await invoke<TauriOpenResponse & { error?: string }>('read_text', { path });
-      if (r.error) return err({ code: 'io', message: r.error, path });
+      // 先探测元数据：大文件走分块（避免超大 IPC 响应卡死 WebKit 事务），小文件一次读回
+      const meta = await invoke<{
+        path: string; encoding: string; eol: string; mtime_ms: number; identity_key: string; char_count: number;
+      }>('read_text_meta', { path });
+      const large = meta.char_count > CHUNKED_READ_THRESHOLD_CHARS;
+      const content = large
+        ? await readContentChunked(path)
+        : (await invoke<{ content: string }>('read_text', { path })).content;
       return ok({
         path,
-        content: r.content ?? '',
-        encoding: (r.encoding as Encoding) ?? 'utf-8',
-        eol: (r.eol as LineEnding) ?? '\n',
-        diskMtimeMs: r.disk_mtime_ms ?? undefined,
-        identityKey: r.identity_key ?? undefined,
+        content,
+        encoding: (meta.encoding as Encoding) ?? 'utf-8',
+        eol: (meta.eol as LineEnding) ?? '\n',
+        diskMtimeMs: meta.mtime_ms,
+        identityKey: meta.identity_key,
       });
     } catch (e) {
       return err({ code: 'io', message: String(e), path });

@@ -60,7 +60,6 @@ import { createDesktopSearchService } from './host/searchServices';
 import { createDesktopImageUploadService } from './host/uploadService';
 import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
-import { classifyLargeFile } from '../../../packages/editor-engine/src/largeFile';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions } from '../../../packages/host-api/src/index';
 import type { ImageExportOptions, Canvas2DLike } from '../../../packages/export/src/image/index';
@@ -1311,8 +1310,8 @@ export default function App() {
     host.setDocumentPath(tab.path);
     await host.open(tab.content, undefined, true, tab.eol);
     suppressEditorEventRef.current = false;
-    // Large File Mode（PRD §109）：>5MB 或 >50,000 行 → 引擎自动降级
-    host.setLargeFileMode(classifyLargeFile(new TextEncoder().encode(tab.content).length, tab.content.split('\n').length));
+    // Large File Mode（PRD §109）已在 CoreEditor.open() 收口：resetEditor 前自动
+    // 分类降级（>5MB 或 >50,000 行），覆盖全部 open 路径（含 auto reload/快照恢复）。
     refreshOutlineRef.current(0);
     await watchDocument(tab.path);
     refreshStats(host);
@@ -2481,6 +2480,14 @@ export default function App() {
   const openPathInTab = useCallback(async (path: string) => {
     const documents = documentsRef.current;
     if (!documents) return;
+    // WKURLSchemeHandler 竞态防护：大文档管线（分块 IPC + 拼接 + dispatch）会
+    // 长时间占用主线程；若恰逢 iframe 动态样式 CSSOM pending 窗口，WebKit 会
+    // 永久丢弃 CSSOM → 白屏。读取前确保编辑器就绪且样式建立（正常情况瞬时）。
+    const host = hostRef.current;
+    if (host) {
+      await host.ready();
+      await host.waitForStylesReady();
+    }
     syncActiveTabFromEditor();
     const result = await documents.readPath(path);
     if (!result.ok) {

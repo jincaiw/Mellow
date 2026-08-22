@@ -12,7 +12,9 @@ import type { EditorView, ViewUpdate, DecorationSet } from '@codemirror/view';
 import { isComposing } from './composition';
 import { isSourceMode } from './mode';
 import { fencedRanges } from './safeHtml';
-import { inlineCodeSpans } from './inlineExtras';
+import { inlineCodeSpans, makeSkipChecker, windowLineStart } from './inlineExtras';
+import type { ScanWindow } from './inlineExtras';
+import { isLargeFileMode, largeFileVersion, largeFileViewportRange } from './largeFile';
 
 export interface WikilinkRange {
   from: number; // [[
@@ -20,23 +22,30 @@ export interface WikilinkRange {
   name: string;
 }
 
-/** 扫描 wikilink（纯函数，可测） */
-export function scanWikilinks(doc: string, codeRanges: Array<{ from: number; to: number }>): WikilinkRange[] {
+/** 扫描 wikilink（纯函数，可测；window 省略时全文档） */
+export function scanWikilinks(doc: string, codeRanges: Array<{ from: number; to: number }>, window?: ScanWindow): WikilinkRange[] {
   const out: WikilinkRange[] = [];
-  const codeSpans = inlineCodeSpans(doc);
-  const skipped = (pos: number): boolean =>
-    codeRanges.some((r) => pos >= r.from && pos < r.to) || codeSpans.some((r) => pos >= r.from && pos < r.to);
+  const from = windowLineStart(doc, window);
+  const to = window?.to ?? doc.length;
+  const codeSpans = inlineCodeSpans(doc, window);
+  // 二分 skip 检查器：替代逐字符 some() 线性扫（大文档 O(n×r) → O(n log r)，2026-08-22 j17 排查）
+  const skipped = makeSkipChecker(codeRanges, codeSpans);
 
-  let i = 0;
-  while (i < doc.length - 1) {
-    if (skipped(i) || doc[i] !== '[' || doc[i + 1] !== '[') {
+  let i = from;
+  while (i < to - 1) {
+    // char-first 快路径：非 `[[` 起始位置直接跳过
+    if (doc[i] !== '[' || doc[i + 1] !== '[') {
       i++;
       continue;
     }
-    // 找 ]]（不含换行、不在代码内）
+    if (skipped(i)) {
+      i++;
+      continue;
+    }
+    // 找 ]]（不含换行、不在代码内；行内有界）
     let j = i + 2;
     let close = -1;
-    while (j < doc.length - 1) {
+    while (j < to - 1) {
       if (doc[j] === '\n') break;
       if (skipped(j)) { j++; continue; }
       if (doc[j] === ']' && doc[j + 1] === ']') { close = j; break; }
@@ -86,7 +95,9 @@ export function buildWikilinkExtension(): Extension {
   const build = (view: EditorView): DecorationSet => {
     const builder = new RangeSetBuilder<import('@codemirror/view').Decoration>();
     const doc = view.state.doc.toString();
-    const links = scanWikilinks(doc, fencedRanges(doc));
+    // Large File Mode：扫描裁剪到视口 ± 余量（PRD §109；与 math/mermaid 一致）
+    const win = isLargeFileMode() ? largeFileViewportRange(view) : undefined;
+    const links = scanWikilinks(doc, fencedRanges(doc), win);
     const head = view.state.selection.main.head;
     const sourceMode = isSourceMode();
     for (const l of links) {
@@ -119,13 +130,17 @@ export function buildWikilinkExtension(): Extension {
   const plugin = ViewPlugin.fromClass(
     class WikilinkPlugin {
       decorations: DecorationSet;
+      private largeVersion = largeFileVersion();
       constructor(readonly view: EditorView) {
         this.decorations = build(view);
       }
       update(update: ViewUpdate): void {
         if (update.docChanged) this.decorations = this.decorations.map(update.changes);
         if (isComposing()) return;
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        // Large File Mode 切换（setLargeFileMode → 空 dispatch）也触发重算
+        const largeChanged = largeFileVersion() !== this.largeVersion;
+        if (largeChanged) this.largeVersion = largeFileVersion();
+        if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged) {
           this.decorations = build(update.view);
         }
       }

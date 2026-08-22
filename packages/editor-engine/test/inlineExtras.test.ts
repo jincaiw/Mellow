@@ -45,6 +45,42 @@ describe('scanInlineExtras（纯函数）', () => {
       { from: 8, to: 11 },
     ]);
   });
+
+  test('窗口裁剪：只扫窗口内标记（LF 视口模式语义）', () => {
+    const doc = '==a==\n\n==b==\n\n==c==';
+    // 窗口只盖第二段（==b== 位于 7..12）
+    const r = scanInlineExtras(doc, [], { from: 7, to: 15 });
+    expect(r).toEqual([{ from: 7, to: 12, kind: 'highlight' }]);
+  });
+
+  test('性能护栏：大文档 + 大量 skip 区间不退化（O(n log r)，非 O(n×r)）', () => {
+    // 回归背景（2026-08-22 j17）：逐字符 some() 线性扫 skip 区间，
+    // 7MB 文档单次扫描 60s+。构造 ~600k 字符 + 10k 围栏，限时 2s。
+    // fence 内容不含反引号（避免干扰 inlineCodeSpans 全文配对产生伪 span）。
+    const chunk = 'plain text line ==h== and `c` tail\n';
+    const fenceBlock = '~~~\nfenced ==no== block\n~~~\n';
+    const parts: string[] = [];
+    for (let i = 0; i < 10_000; i++) {
+      parts.push(chunk, fenceBlock);
+    }
+    const doc = parts.join('');
+    const fences: Array<{ from: number; to: number }> = [];
+    let offset = 0;
+    for (let i = 0; i < 10_000; i++) {
+      const blockStart = offset + chunk.length; // chunk.length 已含尾部 \n
+      const blockEnd = blockStart + fenceBlock.length;
+      fences.push({ from: blockStart, to: blockEnd });
+      offset = blockEnd;
+    }
+    const t0 = Date.now();
+    const r = scanInlineExtras(doc, fences);
+    const elapsed = Date.now() - t0;
+    // 每 chunk 恰一个 ==h==（fenced 内的 ==no== 被 skip）
+    expect(r.length).toBe(10_000);
+    expect(r.every((e) => e.kind === 'highlight')).toBe(true);
+    // 旧实现（逐字符 some）在此规模下 >30s；新实现 <2s（实际 ~100ms）
+    expect(elapsed).toBeLessThan(2000);
+  });
 });
 
 describe('Inline Extras 渲染', () => {

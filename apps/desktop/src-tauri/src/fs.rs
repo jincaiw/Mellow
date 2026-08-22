@@ -22,6 +22,8 @@ pub struct OpenDocumentResult {
     pub eol: Option<String>,
     pub disk_mtime_ms: Option<u64>,
     pub identity_key: Option<String>,
+    /// 大文件标记：content 为空，前端应走 read_text_meta + read_text_chunk 分块拉取
+    pub large: Option<bool>,
     pub error: Option<String>,
 }
 
@@ -34,6 +36,7 @@ impl OpenDocumentResult {
             eol: None,
             disk_mtime_ms: None,
             identity_key: None,
+            large: None,
             error: None,
         }
     }
@@ -339,6 +342,7 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
             eol: None,
             disk_mtime_ms: None,
             identity_key: None,
+            large: None,
             error: Some("无法解析所选文件路径".to_string()),
         };
     };
@@ -351,14 +355,42 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
             let (disk_mtime_ms, identity_key) = fs::metadata(&path)
                 .map(|m| (mtime_ms(&m), identity_key(&m)))
                 .unwrap_or((0, String::new()));
-            OpenDocumentResult {
-                path: Some(path.to_string_lossy().into_owned()),
-                content: Some(content),
-                encoding: Some(encoding.to_string()),
-                eol: Some(eol.to_string()),
-                disk_mtime_ms: Some(disk_mtime_ms),
-                identity_key: Some(identity_key),
-                error: None,
+            // 大文件：内容进 Rust 缓存，IPC 只回标记（避免超大响应卡死 WebKit 事务）
+            let char_count = content.chars().count();
+            let large = char_count > CHUNKED_READ_THRESHOLD_CHARS;
+            if large {
+                let mut cache = TEXT_CHUNK_CACHE
+                    .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+                    .lock()
+                    .unwrap();
+                if cache.len() >= TEXT_CACHE_MAX_ENTRIES {
+                    cache.clear();
+                }
+                cache.insert(
+                    path.clone(),
+                    CachedText { content, char_count, encoding, eol, mtime_ms: disk_mtime_ms },
+                );
+                OpenDocumentResult {
+                    path: Some(path.to_string_lossy().into_owned()),
+                    content: None,
+                    encoding: Some(encoding.to_string()),
+                    eol: Some(eol.to_string()),
+                    disk_mtime_ms: Some(disk_mtime_ms),
+                    identity_key: Some(identity_key),
+                    large: Some(true),
+                    error: None,
+                }
+            } else {
+                OpenDocumentResult {
+                    path: Some(path.to_string_lossy().into_owned()),
+                    content: Some(content),
+                    encoding: Some(encoding.to_string()),
+                    eol: Some(eol.to_string()),
+                    disk_mtime_ms: Some(disk_mtime_ms),
+                    identity_key: Some(identity_key),
+                    large: None,
+                    error: None,
+                }
             }
         }
         Err(e) => OpenDocumentResult {
@@ -368,6 +400,7 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
             eol: None,
             disk_mtime_ms: None,
             identity_key: None,
+            large: None,
             error: Some(e.to_string()),
         },
     }
@@ -406,10 +439,13 @@ pub async fn save_document(
     };
 
     let _ = eol; // preserve EOL：content 原样，不转换
-    let encoding = encoding.unwrap_or_else(|| ENC_UTF8.to_string());
-    let data = encode(&content, &encoding);
+    perform_save(&target, &content, encoding.as_deref().unwrap_or(ENC_UTF8), expected.as_ref())
+}
 
-    match atomic_save(&target, &data, expected.as_ref()) {
+/// 保存管线核心（save_document 与 save_chunk_end 共用）：encode → Atomic Save → 结果映射
+fn perform_save(target: &Path, content: &str, encoding: &str, expected: Option<&DiskState>) -> SaveDocumentResult {
+    let data = encode(content, encoding);
+    match atomic_save(target, &data, expected) {
         Ok(outcome) => SaveDocumentResult {
             path: Some(outcome.path),
             disk_mtime_ms: Some(outcome.disk_mtime_ms),
@@ -452,6 +488,102 @@ pub async fn read_text(path: String) -> Result<ReadTextResult, String> {
         mtime_ms: mtime_ms(&meta),
         identity_key: identity_key(&meta),
     })
+}
+
+// ─────────────────────────── 分块 IPC 读取（大文件） ───────────────────────────
+// 背景：tauri:// 自定义协议下，超大 IPC 响应（10MB 文档单次返回）会卡死 WebKit 事务，
+// 导致动态样式表全部失效（sheet === null）、.cm-scroller 布局塌陷（白屏/首行在底部）。
+// 方案：decode 一次放入 Rust 侧缓存，前端按字符区间分块拉取（每块 ≤256K chars）。
+
+/// 走分块读取的阈值（decode 后字符数）
+pub const CHUNKED_READ_THRESHOLD_CHARS: usize = 1_000_000;
+/// 缓存条目上限（防止多个大文件连开导致内存膨胀）
+const TEXT_CACHE_MAX_ENTRIES: usize = 4;
+
+struct CachedText {
+    content: String,
+    char_count: usize,
+    encoding: &'static str,
+    eol: &'static str,
+    mtime_ms: u64,
+}
+
+static TEXT_CHUNK_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, CachedText>>> =
+    std::sync::OnceLock::new();
+
+/// 读取（或复用缓存）decode 后的文本；mtime 变化时重新加载
+fn load_cached_text(path: &Path) -> Result<(), String> {
+    let mtime = fs::metadata(path).map(|m| mtime_ms(&m)).map_err(|e| e.to_string())?;
+    let mut cache = TEXT_CHUNK_CACHE
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .unwrap();
+    let fresh = cache.get(path).map(|c| c.mtime_ms == mtime).unwrap_or(false);
+    if !fresh {
+        let bytes = fs::read(path).map_err(|e| e.to_string())?;
+        let (content, encoding) = decode(&bytes);
+        let eol = detect_eol(&content);
+        let char_count = content.chars().count();
+        if cache.len() >= TEXT_CACHE_MAX_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(
+            path.to_path_buf(),
+            CachedText { content, char_count, encoding, eol, mtime_ms: mtime },
+        );
+    }
+    Ok(())
+}
+
+/// 元数据探测（不含内容）：前端据此决定是否走分块读取
+#[derive(serde::Serialize)]
+pub struct ReadTextMetaResult {
+    pub path: String,
+    pub encoding: String,
+    pub eol: String,
+    pub mtime_ms: u64,
+    pub identity_key: String,
+    pub char_count: usize,
+}
+
+#[tauri::command]
+pub async fn read_text_meta(path: String) -> Result<ReadTextMetaResult, String> {
+    let p = PathBuf::from(&path);
+    load_cached_text(&p)?;
+    let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
+    let cache = TEXT_CHUNK_CACHE
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .unwrap();
+    let entry = cache.get(&p).ok_or_else(|| "文本缓存未命中".to_string())?;
+    Ok(ReadTextMetaResult {
+        path,
+        encoding: entry.encoding.to_string(),
+        eol: entry.eol.to_string(),
+        mtime_ms: mtime_ms(&meta),
+        identity_key: identity_key(&meta),
+        char_count: entry.char_count,
+    })
+}
+
+/// 按字符区间 [offset, offset + len) 读取块；offset 语义为 Unicode scalar 序号（Rust chars）
+#[derive(serde::Serialize)]
+pub struct ReadTextChunkResult {
+    pub chunk: String,
+    pub total: usize,
+}
+
+#[tauri::command]
+pub async fn read_text_chunk(path: String, offset: usize, len: usize) -> Result<ReadTextChunkResult, String> {
+    let p = PathBuf::from(&path);
+    load_cached_text(&p)?;
+    let cache = TEXT_CHUNK_CACHE
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .unwrap();
+    let entry = cache.get(&p).ok_or_else(|| "缓存未命中，请先调用 read_text_meta".to_string())?;
+    let chunk: String = entry.content.chars().skip(offset).take(len).collect();
+    Ok(ReadTextChunkResult { chunk, total: entry.char_count })
 }
 
 #[tauri::command]

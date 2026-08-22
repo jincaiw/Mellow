@@ -37,6 +37,7 @@ export interface EditorCoreOptions {
 export class EditorCore {
   private iframe: HTMLIFrameElement | null = null;
   private readyPromise: Promise<void> | null = null;
+  private readyEmitted = false;
   private listeners = new Set<EditorEventListener>();
   private readonly bundleUrl: string;
 
@@ -63,14 +64,59 @@ export class EditorCore {
     });
   }
 
-  /** 等待编辑器就绪（webModules.core 可用） */
+  /** 等待编辑器就绪（webModules.core 可用）；幂等可重入（重复调用不重复 emit）。
+   *  mount() 由宿主 idle 调度延迟执行，本方法可在 mount 前安全调用（等待挂载）。 */
   async ready(): Promise<void> {
-    if (!this.readyPromise) {
-      throw new Error('EditorCore.mount() must be called before ready()');
+    // mount() 未执行：轮询等待（宿主 idle 挂载通常 <1s；15s 上限防御）
+    const mountDeadline = Date.now() + 15_000;
+    while (this.readyPromise === null) {
+      if (Date.now() > mountDeadline) {
+        throw new Error('EditorCore.mount() was not called within 15s');
+      }
+      await new Promise((r) => setTimeout(r, 50));
     }
     await this.readyPromise;
     await this.waitForModules();
-    this.emit({ type: 'ready' });
+    if (!this.readyEmitted) {
+      this.readyEmitted = true;
+      this.emit({ type: 'ready' });
+    }
+  }
+
+  /**
+   * 等待 iframe 动态样式 CSSOM 建立（WKURLSchemeHandler 竞态防护）。
+   *
+   * 背景（2026-08-22 j17 排查）：tauri:// 自定义协议下，CoreEditor 注入的动态
+   * `<style>` 的 CSSOM 建立存在 pending 窗口；若大文档管线（分块 IPC 读取 +
+   * 10MB 字符串拼接 + dispatch）恰在该窗口长时间占用主线程，WebKit 会永久
+   * 丢弃未完成的 CSSOM（sheet === null，且此后新插入的 style 也不再获得
+   * CSSOM）→ .cm-scroller 布局塌陷 → 大文档白屏（不可恢复，只能重启）。
+   * 样式建立正常时本等待几乎瞬时完成；超时（默认 2s）则放行不阻塞。
+   */
+  async waitForStylesReady(timeoutMs = 2000): Promise<void> {
+    const doc = this.iframe?.contentDocument;
+    const win = this.iframe?.contentWindow;
+    if (!doc || !win) return;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      // 注意：NodeList 展开需要 DOM.Iterable lib（本包 lib 仅 DOM），用 forEach 规避
+      const styles = doc.querySelectorAll('style');
+      if (styles.length > 0) {
+        let allReady = true;
+        styles.forEach((s) => { if ((s as HTMLStyleElement).sheet === null) allReady = false; });
+        if (allReady) return;
+      }
+      // 强制同步 style recalc（WebKit 动态样式 CSSOM 建立 hook 在 recalc 中，
+      // 单纯 setTimeout 等待不驱动渲染管线 → pending CSSOM 永不建立）
+      void win.getComputedStyle(doc.documentElement).color;
+      // rAF 让步（驱动渲染帧）；窗口不可见时 rAF 不触发，setTimeout 兜底
+      await new Promise((r) => {
+        let settled = false;
+        const fin = () => { if (!settled) { settled = true; r(null); } };
+        win.requestAnimationFrame(fin);
+        setTimeout(fin, 100);
+      });
+    }
   }
 
   /**
@@ -107,6 +153,27 @@ export class EditorCore {
     if (!core) return false;
     if (lineBreak !== undefined) {
       modules?.config?.setDefaultLineBreak?.({ lineBreak });
+    }
+    // Large File Mode（PRD §109）：必须在 resetEditor 之前降级 —— dispatch 大内容时
+    // 引擎扫描扩展需已处于视口裁剪模式（否则全文扫描在 dispatch 同步阶段执行；
+    // 2026-08-22 j17 排查：10MB 未预降级时单次 dispatch 92s）。所有 open 路径
+    // （applyTab/auto reload/冲突解决/快照恢复）均经此收口。
+    // 阈值与 editor-engine/src/largeFile.ts 同步维护（包间不引依赖，故内联）。
+    let lines = 1;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 10) lines++;
+    }
+    // jsdom（单测环境）无全局 TextEncoder：退化为 UTF-8 最坏近似（×3，宁早降级）；
+    // 生产 WebView / Node 均有 TextEncoder，走精确字节数。
+    const bytes = typeof TextEncoder !== 'undefined'
+      ? new TextEncoder().encode(text).length
+      : text.length * 3;
+    const large = bytes > 5 * 1024 * 1024 || lines > 50_000;
+    this.setLargeFileMode(large);
+    // 大文档：dispatch 前确保 iframe 样式 CSSOM 已建立（WKURLSchemeHandler 下
+    // 长时间占用主线程会永久丢弃 pending CSSOM → 白屏，见 waitForStylesReady）
+    if (large) {
+      await this.waitForStylesReady();
     }
     return core.resetEditor({ text, selectionRange, documentChanged });
   }

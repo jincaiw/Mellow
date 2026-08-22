@@ -13,6 +13,7 @@ import type { Extension } from '@codemirror/state';
 import { isComposing } from './composition';
 import { isSourceMode } from './mode';
 import { fencedRanges } from './safeHtml';
+import { isLargeFileMode, largeFileVersion, largeFileViewportRange } from './largeFile';
 
 export type InlineExtraKind = 'highlight' | 'sup' | 'sub';
 
@@ -22,12 +23,60 @@ export interface InlineExtraRange {
   kind: InlineExtraKind;
 }
 
-/** 行内代码 span（`...`；不成对则到文末） */
-export function inlineCodeSpans(doc: string): Array<{ from: number; to: number }> {
+/** 扫描窗口（Large File Mode 视口裁剪；from/to 为文档全局位置） */
+export interface ScanWindow {
+  from: number;
+  to: number;
+}
+
+/**
+ * 归并多组升序区间，返回 O(log n) 二分 skip 检查器。
+ *
+ * 性能（2026-08-22 j17 排查）：此前扫描器对每个字符位置调用
+ * `ranges.some(...)` 线性扫全部区间 —— 大文档（>5MB）下 O(chars×ranges)
+ * 二次复杂度，10MB 文档单次 dispatch 118s。归并 + 二分后为 O(chars·log r)。
+ */
+export function makeSkipChecker(
+  ...lists: Array<Array<{ from: number; to: number }>>
+): (pos: number) => boolean {
+  const all = lists.flat().sort((a, b) => a.from - b.from);
+  const merged: Array<{ from: number; to: number }> = [];
+  for (const r of all) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && r.from <= last.to) {
+      if (r.to > last.to) last.to = r.to;
+    } else {
+      merged.push({ from: r.from, to: r.to });
+    }
+  }
+  return (pos: number): boolean => {
+    let lo = 0;
+    let hi = merged.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const r = merged[mid];
+      if (pos < r.from) hi = mid - 1;
+      else if (pos >= r.to) lo = mid + 1;
+      else return true;
+    }
+    return false;
+  };
+}
+
+/** 窗口起点对齐到行首（跨行标记不从行中间开始扫） */
+export function windowLineStart(doc: string, window?: ScanWindow): number {
+  if (window === undefined) return 0;
+  return doc.lastIndexOf('\n', Math.max(0, window.from - 1)) + 1;
+}
+
+/** 行内代码 span（`...`；不成对则到窗口末）。窗口外的 span 不识别（LF 视口余量兜底） */
+export function inlineCodeSpans(doc: string, window?: ScanWindow): Array<{ from: number; to: number }> {
   const spans: Array<{ from: number; to: number }> = [];
+  const from = windowLineStart(doc, window);
+  const end = window?.to ?? doc.length;
   let inSpan = false;
   let start = 0;
-  for (let i = 0; i < doc.length; i++) {
+  for (let i = from; i < end; i++) {
     if (doc[i] !== '`') continue;
     if (!inSpan) {
       inSpan = true;
@@ -37,7 +86,7 @@ export function inlineCodeSpans(doc: string): Array<{ from: number; to: number }
       inSpan = false;
     }
   }
-  if (inSpan) spans.push({ from: start, to: doc.length });
+  if (inSpan) spans.push({ from: start, to: end });
   return spans;
 }
 
@@ -60,37 +109,42 @@ function findCloser(
   return -1;
 }
 
-/** Setext 下划线行（整行仅 `=`/空格）：Heading 语义，非高亮（Typora 一致） */
-export function setextUnderlineRanges(doc: string): Array<{ from: number; to: number }> {
+/** Setext 下划线行（整行仅 `=`/空格）：Heading 语义，非高亮（Typora 一致）。可窗口化 */
+export function setextUnderlineRanges(doc: string, window?: ScanWindow): Array<{ from: number; to: number }> {
   const out: Array<{ from: number; to: number }> = [];
-  let lineStart = 0;
-  for (let i = 0; i <= doc.length; i++) {
-    if (i === doc.length || doc[i] === '\n') {
+  const from = windowLineStart(doc, window);
+  const end = window?.to ?? doc.length;
+  let lineStart = from;
+  for (let i = from; i <= end; i++) {
+    if (i === end || doc[i] === '\n') {
       const line = doc.slice(lineStart, i);
-      if (/^ {0,3}={2,}\s*$/.test(line)) out.push({ from: lineStart, to: i });
+      if (/^ {0,3}={2,}\s*$/.test(line)) out.push({ from: lineStart, to: Math.min(i, end) });
       lineStart = i + 1;
     }
   }
   return out;
 }
 
-/** 扫描行内扩展标记（纯函数） */
-export function scanInlineExtras(doc: string, codeRanges: Array<{ from: number; to: number }>): InlineExtraRange[] {
+/** 扫描行内扩展标记（纯函数，可测；window 省略时全文档） */
+export function scanInlineExtras(doc: string, codeRanges: Array<{ from: number; to: number }>, window?: ScanWindow): InlineExtraRange[] {
   const out: InlineExtraRange[] = [];
-  const codeSpans = inlineCodeSpans(doc);
-  const setext = setextUnderlineRanges(doc);
-  const skipped = (pos: number): boolean =>
-    codeRanges.some((r) => pos >= r.from && pos < r.to)
-    || codeSpans.some((r) => pos >= r.from && pos < r.to)
-    || setext.some((r) => pos >= r.from && pos < r.to);
+  const win: ScanWindow = { from: windowLineStart(doc, window), to: window?.to ?? doc.length };
+  const codeSpans = inlineCodeSpans(doc, win);
+  const setext = setextUnderlineRanges(doc, win);
+  const skipped = makeSkipChecker(codeRanges, codeSpans, setext);
 
-  let i = 0;
-  while (i < doc.length - 1) {
+  let i = win.from;
+  while (i < win.to - 1) {
+    const ch = doc[i];
+    // char-first 快路径：非定界符字符直接跳过（避免每字符一次 skip 查询）
+    if (ch !== '=' && ch !== '^' && ch !== '~') {
+      i++;
+      continue;
+    }
     if (skipped(i)) {
       i++;
       continue;
     }
-    const ch = doc[i];
     // == 高亮
     if (ch === '=' && doc[i + 1] === '=') {
       const end = findCloser(doc, '==', i + 2, skipped, '=');
@@ -157,7 +211,9 @@ export function buildInlineExtrasExtension(): Extension {
 
   const build = (view: EditorView): DecorationSet => {
     const doc = view.state.doc.toString();
-    const extras = scanInlineExtras(doc, fencedRanges(doc));
+    // Large File Mode：扫描裁剪到视口 ± 余量（PRD §109；与 math/mermaid 一致）
+    const win = isLargeFileMode() ? largeFileViewportRange(view) : undefined;
+    const extras = scanInlineExtras(doc, fencedRanges(doc), win);
     const head = view.state.selection.main.head;
     const sourceMode = isSourceMode();
     const builder = new RangeSetBuilder<import('@codemirror/view').Decoration>();
@@ -182,6 +238,7 @@ export function buildInlineExtrasExtension(): Extension {
   const plugin = ViewPlugin.fromClass(
     class InlineExtrasPlugin {
       decorations: DecorationSet;
+      private largeVersion = largeFileVersion();
       constructor(readonly view: EditorView) {
         this.decorations = build(view);
       }
@@ -190,7 +247,10 @@ export function buildInlineExtrasExtension(): Extension {
           this.decorations = this.decorations.map(update.changes);
         }
         if (isComposing()) return;
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        // Large File Mode 切换（setLargeFileMode → 空 dispatch）也触发重算
+        const largeChanged = largeFileVersion() !== this.largeVersion;
+        if (largeChanged) this.largeVersion = largeFileVersion();
+        if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged) {
           this.decorations = build(update.view);
         }
       }

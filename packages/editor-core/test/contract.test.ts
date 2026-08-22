@@ -84,9 +84,10 @@ describe('EditorCore — public API', () => {
     core.destroy();
   });
 
-  test('未 mount 时 ready 抛错；未就绪时 API 返回安全默认值（防御性降级）', async () => {
+  test('未 mount 时 ready 安全等待挂载；未就绪时 API 返回安全默认值（防御性降级）', async () => {
     const core = new EditorCore();
-    await expect(core.ready()).rejects.toThrow('mount()');
+    // 新语义（宿主 idle 调度延迟 mount）：ready() 可在 mount 前调用，等待挂载而非立即抛错
+    const readyPromise = core.ready();
     // 白屏防线：启动竞态期间的任何调用不得抛错（App.tsx effect 曾因此崩溃）
     expect(core.isReady()).toBe(false);
     expect(core.getText()).toBe('');
@@ -94,6 +95,16 @@ describe('EditorCore — public API', () => {
     await expect(core.open('# x')).resolves.toBe(false);
     expect(() => core.insertText('x', 0, 0)).not.toThrow();
     expect(() => core.replaceText('x', 'wholeDocument')).not.toThrow();
+    // 挂载后 ready() 正常就绪（不依赖 15s 轮询超时）
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    core.mount(container);
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    (iframe.contentWindow as unknown as { webModules: { core: CoreWebModule } }).webModules = { core: createMockCoreModule() };
+    iframe.dispatchEvent(new Event('load'));
+    await readyPromise;
+    expect(core.isReady()).toBe(true);
+    core.destroy();
   });
 
   test('mount 后、webModules 就绪前同样安全降级；isReady 反映就绪状态', async () => {
