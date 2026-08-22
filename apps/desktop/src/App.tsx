@@ -739,30 +739,84 @@ export default function App() {
   }, [t]);
 
   // ── RC F6：导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize）──
-  // Pandoc 导出 Word（PRD §75 P1 / deep-parity A9）：检测 pandoc → 选路径 → 导出 DOCX
-  const handleExportDocx = useCallback(async () => {
+  // Pandoc 导出（PRD §75 P1 / deep-parity A9 / D2 格式扩展）：
+  // 检测 pandoc → 选路径 → 导出（docx/odt/rtf/epub/latex/mediawiki/rst/textile/opml）
+  // pandoc 以磁盘文件为输入，未保存文档先提示保存（Typora 导出前隐式落盘的差异点）
+  const handleExportPandoc = useCallback(async (format: string, ext: string) => {
     const tab = tabsRef.current.active;
     if (tab === null || hostRef.current === null) return;
     if (!isTauri()) return;
+    if (tab.path === null) {
+      setStatusText(t('msg.renameNeedsSave'));
+      return;
+    }
     try {
       const available = await invoke<boolean>('pandoc_available');
       if (!available) {
-        setToast({ message: t('export.docx.needPandoc') });
+        setToast({ message: t('export.pandoc.needPandoc') });
         return;
       }
       const savePath = await invoke<string | null>('pick_save_path', {
-        defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.docx`,
-        filters: ['docx'],
+        defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.${ext}`,
+        filters: [ext],
       });
       if (savePath === null) return;
-      await invoke('pandoc_export', { input: tab.path, output: savePath, format: 'docx' });
-      setToast({ message: t('export.docx.done') });
+      await invoke('pandoc_export', { input: tab.path, output: savePath, format });
+      // 记录上次导出（Typora「使用上一次设置导出」⌃E；按文档路径绑定）
+      try {
+        localStorage.setItem('mellow.export.last', JSON.stringify({ docPath: tab.path, format, output: savePath }));
+      } catch { /* quota 满 → 忽略（仅失去 ⌃E 记忆） */ }
+      setToast({ message: t('export.pandoc.done', { format }) });
     } catch (err) {
-      setToast({ message: `${t('export.docx.failed')}: ${err instanceof Error ? err.message : String(err)}` });
+      setToast({ message: `${t('export.pandoc.failed', { format })}: ${err instanceof Error ? err.message : String(err)}` });
     }
   }, [t]);
 
-  const handleExportHtml = useCallback(async () => {
+  /** D2：pandoc 导出命令表（Typora 导出子菜单全量对齐；id = 菜单/命令 id） */
+  const PANDOC_EXPORT_COMMANDS: ReadonlyArray<{ id: string; format: string; ext: string; zh: string; en: string }> = [
+    { id: 'export.docx', format: 'docx', ext: 'docx', zh: '导出 Word…', en: 'Export Word…' },
+    { id: 'export.odt', format: 'odt', ext: 'odt', zh: '导出 OpenOffice…', en: 'Export OpenOffice…' },
+    { id: 'export.rtf', format: 'rtf', ext: 'rtf', zh: '导出 RTF…', en: 'Export RTF…' },
+    { id: 'export.epub', format: 'epub', ext: 'epub', zh: '导出 Epub…', en: 'Export Epub…' },
+    { id: 'export.latex', format: 'latex', ext: 'tex', zh: '导出 LaTeX…', en: 'Export LaTeX…' },
+    { id: 'export.mediawiki', format: 'mediawiki', ext: 'txt', zh: '导出 Media Wiki…', en: 'Export Media Wiki…' },
+    { id: 'export.rst', format: 'rst', ext: 'rst', zh: '导出 reStructuredText…', en: 'Export reStructuredText…' },
+    { id: 'export.textile', format: 'textile', ext: 'textile', zh: '导出 Textile…', en: 'Export Textile…' },
+    { id: 'export.opml', format: 'opml', ext: 'opml', zh: '导出 OPML…', en: 'Export OPML…' },
+  ];
+
+  // D2：使用上一次设置导出（Typora ⌃E 语义合并「覆盖上一次导出文件」：
+  // 同一文档 + 上次 pandoc 导出记录存在 → 直接覆盖导出）
+  const handleExportRepeat = useCallback(async () => {
+    const tab = tabsRef.current.active;
+    if (tab === null || !isTauri()) return;
+    if (tab.path === null) {
+      setStatusText(t('msg.renameNeedsSave'));
+      return;
+    }
+    let last: { docPath: string; format: string; output: string } | null = null;
+    try {
+      last = JSON.parse(localStorage.getItem('mellow.export.last') ?? 'null');
+    } catch { last = null; }
+    if (last === null || last.docPath !== tab.path) {
+      setToast({ message: t('export.repeat.none') });
+      return;
+    }
+    try {
+      const available = await invoke<boolean>('pandoc_available');
+      if (!available) {
+        setToast({ message: t('export.pandoc.needPandoc') });
+        return;
+      }
+      await invoke('pandoc_export', { input: tab.path, output: last.output, format: last.format });
+      setToast({ message: t('export.repeat.done', { path: last.output }) });
+    } catch (err) {
+      setToast({ message: `${t('export.pandoc.failed', { format: last.format })}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [t]);
+
+  // 导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize；D2 增 without-style 无样式模式）
+  const runExportHtml = useCallback(async (mode: 'with-theme' | 'without-style') => {
     const tab = tabsRef.current.active;
     if (tab === null || hostRef.current === null) return;
     try {
@@ -775,7 +829,7 @@ export default function App() {
       ]);
       if (savePath === null) return; // 用户取消
       const html = await exportHtml(hostRef.current.getText(), {
-        mode: 'with-theme',
+        mode,
         theme: themeSettings.mode === 'dark' ? 'dark' : 'light',
         title: tab.title ?? undefined,
       });
@@ -785,6 +839,8 @@ export default function App() {
       setToast({ message: `${t('export.html.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
   }, [t, themeSettings.mode]);
+  const handleExportHtml = useCallback(() => runExportHtml('with-theme'), [runExportHtml]);
+  const handleExportHtmlPlain = useCallback(() => runExportHtml('without-style'), [runExportHtml]);
 
   /** 图片 src → 可显示/可加载 URL（相对路径基于当前文档目录，Tauri asset 协议）；Reader 与图片导出共用 */
   const readerResolveImageSrc = useCallback((src: string) => {
@@ -2359,6 +2415,34 @@ export default function App() {
     recordRecentFile(result.value.path);
   }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile]);
 
+  // D2：导入（Typora File→Import）：pandoc 将 docx/odt/rtf/epub/html/tex 等
+  // 转为 Markdown 落盘，并在新标签页打开。二进制输入不经文本读取，直接传路径给 pandoc。
+  const handleImportDocument = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      const available = await invoke<boolean>('pandoc_available');
+      if (!available) {
+        setToast({ message: t('import.needPandoc') });
+        return;
+      }
+      const input = await invoke<string | null>('pick_open_path', {
+        filters: ['docx', 'odt', 'rtf', 'epub', 'html', 'htm', 'tex', 'latex', 'rst', 'textile', 'wiki', 'opml'],
+      });
+      if (input === null) return;
+      const base = input.split(/[\\/]/).pop() ?? 'imported';
+      const output = await invoke<string | null>('pick_save_path', {
+        defaultName: `${base.replace(/\.[^.]*$/, '')}.md`,
+        filters: ['md'],
+      });
+      if (output === null) return;
+      await invoke('pandoc_import', { input, output });
+      await openPathInTab(output);
+      setToast({ message: t('import.done', { path: output }) });
+    } catch (err) {
+      setToast({ message: `${t('import.failed')}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [openPathInTab, t]);
+
   /** Wikilink [[name]] → 同目录 name.md（无当前路径时相对 name.md）；不存在则提示 */
   const openWikilink = useCallback(async (name: string) => {
     const fsService = fileServiceRef.current;
@@ -2942,9 +3026,22 @@ export default function App() {
           await revealItemInDir(p).catch(() => undefined);
         }).catch(() => undefined);
       } },
-      // RC F6：导出 HTML（PRD §73）
+      // RC F6：导出 HTML（PRD §73）；D2 增无样式 HTML（Typora 导出子菜单对齐）
       { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtml() },
-      { id: 'export.docx', localizedTitle: { zh: '导出 Word…', en: 'Export Word…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportDocx() },
+      { id: 'export.htmlPlain', localizedTitle: { zh: '导出 HTML（无样式）…', en: 'Export HTML (without styles)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtmlPlain() },
+      // D2：pandoc 导出格式全量（Typora 导出子菜单；表定义于 handleExportPandoc 侧）
+      ...PANDOC_EXPORT_COMMANDS.map(({ id, format, ext, zh, en }) => ({
+        id,
+        localizedTitle: { zh, en },
+        category: 'file',
+        context: { scope: 'document' as const },
+        enabled: () => tabsRef.current.active !== null,
+        execute: () => void handleExportPandoc(format, ext),
+      })),
+      // D2：使用上一次设置导出（Typora ⌃E）
+      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Last Settings' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E', winLinux: 'Ctrl+E' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportRepeat() },
+      // D2：导入（Typora File→Import；pandoc → Markdown 新标签页）
+      { id: 'file.import', localizedTitle: { zh: '导入…', en: 'Import…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleImportDocument() },
       // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
       { id: 'export.image', localizedTitle: { zh: '导出图片（PNG/JPEG）…', en: 'Export Image (PNG/JPEG)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportImage() },
       // RC F1：PDF 导出（golden journey #19）

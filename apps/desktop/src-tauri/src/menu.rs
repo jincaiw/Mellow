@@ -82,10 +82,21 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("file.saveAs", "另存为…", "Save As…"),
     ("file.saveAll", "保存全部打开的文件…", "Save All Open Files…"),
     ("file.reloadFromDisk", "从磁盘重新加载", "Reload from Disk"),
+    ("file.import", "导入…", "Import…"),
     ("menu.export", "导出", "Export"),
     ("export.pdf", "PDF…", "PDF…"),
     ("export.html", "HTML…", "HTML…"),
+    ("export.htmlPlain", "HTML (无样式)", "HTML (without styles)"),
     ("export.docx", "Word (.docx)…", "Word (.docx)…"),
+    ("export.odt", "OpenOffice (.odt)…", "OpenOffice (.odt)…"),
+    ("export.rtf", "RTF…", "RTF…"),
+    ("export.epub", "Epub…", "Epub…"),
+    ("export.latex", "LaTeX…", "LaTeX…"),
+    ("export.mediawiki", "Media Wiki…", "Media Wiki…"),
+    ("export.rst", "reStructuredText…", "reStructuredText…"),
+    ("export.textile", "Textile…", "Textile…"),
+    ("export.opml", "OPML…", "OPML…"),
+    ("export.repeat", "使用上一次设置导出", "Export with Last Settings"),
     ("export.image", "图片 (PNG/JPEG)…", "Image (PNG/JPEG)…"),
     ("file.print", "打印…", "Print…"),
     // ── 编辑 ──
@@ -289,11 +300,36 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let save_all = MenuItem::with_id(app, "file.saveAll", &l("file.saveAll"), true, accel("Cmd+Alt+S", "Ctrl+Alt+S"))?;
     let reload_disk = MenuItem::with_id(app, "file.reloadFromDisk", &l("file.reloadFromDisk"), true, None::<&str>)?;
     // ⌃⌘P 导出 PDF（Typora parity；Win/Linux 无默认键，前端 registry 处理）
+    // D2：导出子菜单全量（Typora 顺序：PDF / HTML / 无样式 HTML / 图像 | pandoc 9 格式 | ⌃E 上次设置）
     let export_pdf = MenuItem::with_id(app, "export.pdf", &l("export.pdf"), true, accel("Cmd+Ctrl+P", ""))?;
     let export_html = MenuItem::with_id(app, "export.html", &l("export.html"), true, None::<&str>)?;
-    let export_docx = MenuItem::with_id(app, "export.docx", &l("export.docx"), true, None::<&str>)?;
+    let export_html_plain = MenuItem::with_id(app, "export.htmlPlain", &l("export.htmlPlain"), true, None::<&str>)?;
     let export_image = MenuItem::with_id(app, "export.image", &l("export.image"), true, None::<&str>)?;
-    let export_menu = Submenu::with_items(app, &l("menu.export"), true, &[&export_pdf, &export_html, &export_docx, &export_image])?;
+    let export_docx = MenuItem::with_id(app, "export.docx", &l("export.docx"), true, None::<&str>)?;
+    let export_odt = MenuItem::with_id(app, "export.odt", &l("export.odt"), true, None::<&str>)?;
+    let export_rtf = MenuItem::with_id(app, "export.rtf", &l("export.rtf"), true, None::<&str>)?;
+    let export_epub = MenuItem::with_id(app, "export.epub", &l("export.epub"), true, None::<&str>)?;
+    let export_latex = MenuItem::with_id(app, "export.latex", &l("export.latex"), true, None::<&str>)?;
+    let export_mediawiki = MenuItem::with_id(app, "export.mediawiki", &l("export.mediawiki"), true, None::<&str>)?;
+    let export_rst = MenuItem::with_id(app, "export.rst", &l("export.rst"), true, None::<&str>)?;
+    let export_textile = MenuItem::with_id(app, "export.textile", &l("export.textile"), true, None::<&str>)?;
+    let export_opml = MenuItem::with_id(app, "export.opml", &l("export.opml"), true, None::<&str>)?;
+    let export_repeat = MenuItem::with_id(app, "export.repeat", &l("export.repeat"), true, accel("Ctrl+E", "Ctrl+E"))?;
+    let export_sep1 = PredefinedMenuItem::separator(app)?;
+    let export_sep2 = PredefinedMenuItem::separator(app)?;
+    let export_menu = Submenu::with_items(
+        app,
+        &l("menu.export"),
+        true,
+        &[
+            &export_pdf, &export_html, &export_html_plain, &export_image, &export_sep1,
+            &export_docx, &export_odt, &export_rtf, &export_epub, &export_latex,
+            &export_mediawiki, &export_rst, &export_textile, &export_opml, &export_sep2,
+            &export_repeat,
+        ],
+    )?;
+    // D2：导入…（Typora File→Import；pandoc 转 Markdown 后新标签页打开）
+    let import_doc = MenuItem::with_id(app, "file.import", &l("file.import"), true, None::<&str>)?;
     let print = MenuItem::with_id(app, "file.print", &l("file.print"), true, accel("Cmd+P", "Ctrl+P"))?;
 
     // 打开最近文件（动态子菜单：前端 set_recent_files 重建）
@@ -338,7 +374,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
             &file_info, &reveal, &move_to, &trash_doc, &snapshots, &sep3,
             &close_tab, &close_all, &sep4,
             &save, &save_as, &save_all, &reload_disk, &sep5,
-            &export_menu, &print,
+            &import_doc, &export_menu, &print,
         ],
     )?;
     subs.push(file_menu);

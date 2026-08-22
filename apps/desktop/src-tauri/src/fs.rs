@@ -498,6 +498,23 @@ pub async fn pick_save_path(
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// 打开对话框（只取路径不读内容；取消 → None）。D2 导入：docx/epub 等二进制
+/// 不能走 open_document 的文本读取，先选路径再交 pandoc 转换。
+#[tauri::command]
+pub async fn pick_open_path(app: tauri::AppHandle, filters: Option<Vec<String>>) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut file = app.dialog().file();
+    if let Some(exts) = filters {
+        if !exts.is_empty() {
+            let names: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+            file = file.add_filter("Mellow", &names);
+        }
+    }
+    file.blocking_pick_file()
+        .and_then(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 /// 递归建目录（asset dir）
 #[tauri::command]
 pub async fn mkdir(path: String) -> Result<(), String> {
