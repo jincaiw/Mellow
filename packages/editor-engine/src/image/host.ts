@@ -74,6 +74,12 @@ export interface ImageHost {
   mkdir(path: string): Promise<Result<void>>;
   /** 写二进制文件 */
   writeBinary(path: string, data: ArrayBuffer): Promise<Result<void>>;
+  /**
+   * 图床上传（Typora §55 / PRD：PicGo/PicList 等）。
+   * 可选能力：宿主按「偏好 → 图片 → 上传服务」装配；未开启 → 方法不存在。
+   * 返回与输入等长数组：成功 → URL；该张失败 → null（调用方回退本地插入）。
+   */
+  uploadImages?(paths: string[]): Promise<Array<string | null>>;
   /** 把 image src 解析为 webview 可加载 URL；null → broken */
   resolveWebUrl(src: string): Promise<string | null>;
   /** 把 image src 解析为绝对路径（broken 检测/reveal 用）；null → 无法解析 */
@@ -149,6 +155,19 @@ export function createBridgeImageHost(): ImageHost {
     copyFile: (from, to) => invokeFs('copyFile', { from, to }),
     mkdir: (path) => invokeFs('mkdir', { path }),
     writeBinary: (path, data) => invokeFs('writeBinary', { path, data: Array.from(new Uint8Array(data)) }),
+    // 图床上传（Typora §55）：惰性读宿主注入的 __MELLOW_IMAGE_UPLOAD__
+    // （App 在 host.ready 后注入；构造时可能尚未就绪）。未注入 → 全 null → engine 回退本地插入。
+    uploadImages: async (paths: string[]): Promise<Array<string | null>> => {
+      const upload = (window as unknown as { __MELLOW_IMAGE_UPLOAD__?: (paths: string[]) => Promise<Array<string | null>> }).__MELLOW_IMAGE_UPLOAD__;
+      if (typeof upload !== 'function') {
+        return paths.map(() => null);
+      }
+      try {
+        return await upload(paths);
+      } catch {
+        return paths.map(() => null);
+      }
+    },
     resolveWebUrl: async (src) => {
       const resolver = (window as unknown as { __MELLOW_ASSET_RESOLVER__?: (s: string) => string }).__MELLOW_ASSET_RESOLVER__;
       return typeof resolver === 'function' ? resolver(src) : src;

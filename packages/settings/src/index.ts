@@ -117,6 +117,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'markdown.footnote', labelKey: 'settings.markdown.footnote', type: 'toggle', storageKey: 'mellow.engine.features.footnote', defaultValue: true, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.wikilink', labelKey: 'settings.markdown.wikilink', type: 'toggle', storageKey: 'mellow.engine.features.wikilink', defaultValue: true, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.html', labelKey: 'settings.markdown.html', type: 'toggle', storageKey: 'mellow.engine.features.html', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      // 代码块行号（Typora 偏好→Markdown；live apply，无需重载编辑器）
+      { id: 'markdown.codeLineNumbers', labelKey: 'settings.markdown.codeLineNumbers', type: 'toggle', storageKey: 'mellow.editor.codeLineNumbers', defaultValue: false, applyCommand: 'settings.codeLineNumbers' },
       { id: 'markdown.yaml', labelKey: 'settings.markdown.yaml', type: 'toggle', storageKey: 'mellow.engine.features.yaml', defaultValue: true, applyCommand: 'settings.engineFeature' },
     ],
   },

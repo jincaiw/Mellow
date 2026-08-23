@@ -26,7 +26,15 @@ export function FileTree({ nodes, selectedPath, currentPath, onSelect, onToggle,
         style={{ paddingLeft: 8 + node.depth * 14 }}
         title={node.path}
         draggable
-        onDragStart={() => { draggedRef.current = node.path; }}
+        onDragStart={(e) => {
+          draggedRef.current = node.path;
+          // 写入 dataTransfer：拖入编辑区（iframe）由 engine drop 建链（Typora 拖拽建链）
+          try {
+            e.dataTransfer?.setData('text/plain', node.path);
+            e.dataTransfer?.setData('application/x-mellow-file', node.path);
+            if (e.dataTransfer !== null) e.dataTransfer.effectAllowed = 'copyMove';
+          } catch { /* dataTransfer 不可用：树内移动仍走 draggedRef */ }
+        }}
         onDragOver={(e) => { if (node.kind === 'folder') e.preventDefault(); }}
         onDrop={() => { if (node.kind === 'folder') onDrop(node.path, draggedRef.current); }}
         onClick={() => onSelect(node.path)}

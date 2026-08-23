@@ -340,6 +340,17 @@ export class EditorCore {
     return win?.__MELLOW_SMART_PUNCTUATION__?.get?.() ?? false;
   }
 
+  /** 代码块行号开关（Typora 偏好→Markdown；默认关闭） */
+  setCodeLineNumbersEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_CODE_LINE_NUMBERS__?: { set?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_CODE_LINE_NUMBERS__?.set?.(on);
+  }
+
+  isCodeLineNumbersEnabled(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_CODE_LINE_NUMBERS__?: { get?: () => boolean } }) | null;
+    return win?.__MELLOW_CODE_LINE_NUMBERS__?.get?.() ?? false;
+  }
+
   /** 安装宿主 KaTeX 渲染通道（master-plan R3-2：编辑器内公式排版 + mhchem \ce/\pu）。
    *  render 异步返回渲染 HTML；null = 渲染失败（引擎回退源码显示）。 */
   installKatexRenderer(render: (tex: string, displayMode: boolean) => Promise<string | null>): void {

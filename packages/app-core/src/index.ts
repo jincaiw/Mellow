@@ -21,7 +21,7 @@ export { FileTreeModel, FileTreeService, FileTreeHistory, DEFAULT_FILE_TREE_OPTI
 export type { FileTreeOptions, FileTreeNode, FlatFileTreeNode, FileTreeUndoOp, FileTreeSortBy } from './fileTree';
 export { FileListModel, FileListService, DEFAULT_FILE_LIST_OPTIONS, titleFromMarkdown, summaryFromMarkdown } from './fileList';
 export type { FileListOptions, FileListItem } from './fileList';
-export { OutlineModel, buildOutline, parseHeadings, flattenOutline, filterOutline, currentHeadingId } from './outline';
+export { OutlineModel, buildOutline, parseHeadings, flattenOutline, filterOutline, currentHeadingId, headingOffsetForAnchor } from './outline';
 export type { OutlineHeading, BuildOutlineOptions } from './outline';
 export { QuickOpenModel, fuzzyScore, rankQuickOpen, scanQuickOpen, quickOpenShortcutAction } from './quickOpen';
 export type { QuickOpenAction, QuickOpenEntry, QuickOpenKeyEvent, QuickOpenPlatform, QuickOpenRankedEntry, QuickOpenScanOptions } from './quickOpen';

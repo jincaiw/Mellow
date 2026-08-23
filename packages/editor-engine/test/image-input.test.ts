@@ -68,10 +68,12 @@ function firePaste(view: EditorView, data: Partial<DataTransfer>): void {
   view.contentDOM.dispatchEvent(event);
 }
 
-/** 模拟 drop 事件 */
-function fireDrop(view: EditorView): void {
+/** 模拟 drop 事件（dataTransfer 可覆写：getData/files/items） */
+function fireDrop(view: EditorView, dataTransfer: Record<string, unknown> = {}): void {
   const event = new Event('drop', { bubbles: true, cancelable: true });
-  Object.defineProperty(event, 'dataTransfer', { value: { files: [], items: [] } });
+  Object.defineProperty(event, 'dataTransfer', {
+    value: { files: [], items: [], getData: () => '', ...dataTransfer },
+  });
   view.contentDOM.dispatchEvent(event);
 }
 
@@ -155,7 +157,7 @@ describe('drag（spec §2 single/multiple）', () => {
     const text = view.state.doc.toString();
     expect(text).toContain('![](a.png)');
     expect(text).toContain('![](b.jpg)');
-    expect(text).not.toContain('c.md'); // 非图片过滤
+    expect(text).toContain('[c.md](c.md)'); // 非图片 → 文件链接（Typora 拖拽建链）
     expect(host.copies.length).toBe(0); // keep-original 无复制
   });
 
@@ -163,6 +165,37 @@ describe('drag（spec §2 single/multiple）', () => {
     const host = makeHost({ dropped: [] });
     const view = setUp(host);
     fireDrop(view);
+    await sleep();
+    expect(view.state.doc.toString()).toBe('hello');
+  });
+});
+
+describe('drag 建链（Typora 拖入编辑区 → 文件链接）', () => {
+  test('拖入非图片文件 → [name](相对路径)', async () => {
+    const host = makeHost({ dropped: ['/docs/report.pdf'] });
+    const view = setUp(host);
+    fireDrop(view);
+    await sleep();
+    expect(view.state.doc.toString()).toContain('[report.pdf](report.pdf)');
+  });
+
+  test('侧边栏拖拽（dataTransfer 自定义类型）→ 文件链接', async () => {
+    const host = makeHost({ dropped: [] }); // 无宿主注入：纯 HTML5 DnD
+    const view = setUp(host);
+    fireDrop(view, {
+      getData: (type: string) => (type === 'application/x-mellow-file' ? '/docs/notes.md' : ''),
+    });
+    await sleep();
+    expect(view.state.doc.toString()).toContain('[notes.md](notes.md)');
+  });
+
+  test('建链插入单 Undo 还原（spec §11）', async () => {
+    const host = makeHost({ dropped: ['/docs/report.pdf'] });
+    const view = setUp(host);
+    fireDrop(view);
+    await sleep();
+    expect(view.state.doc.toString()).not.toBe('hello');
+    undo(view);
     await sleep();
     expect(view.state.doc.toString()).toBe('hello');
   });

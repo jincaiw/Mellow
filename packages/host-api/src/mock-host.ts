@@ -15,6 +15,7 @@ import type {
   DirEntry,
   MessageDialogOptions,
   ChildProcessInfo,
+  ImageUploadOptions,
 } from './services';
 
 export interface MockHostState {
@@ -547,7 +548,10 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
     },
 
     imageUpload: {
-      uploadImages: async (files: string[]): Promise<Result<string[]>> => {
+      uploadImages: async (files: string[], options?: ImageUploadOptions): Promise<Result<string[]>> => {
+        if (options !== undefined && options.channel === 'none') {
+          return err({ code: 'not-implemented', message: 'image upload disabled (channel none)' });
+        }
         if (state.uploadUrls === null) {
           return err({ code: 'not-implemented', message: 'image upload not configured (mock)' });
         }

@@ -255,6 +255,15 @@ export function buildImageMarkdown(src: string, alt = ''): string {
   return `![${safeAlt}](${escapeImageSrc(src)})`;
 }
 
+/** markdown 文件链接语法生成：`[label](dest)`（拖拽建链，Typora D 类文件操作）。
+ * - label：转义 `\` `[` `]`（CommonMark link text）；
+ * - dest：与 image src 同规则 %XX 转义（空格/括号/[]/#/%；保留中文）。
+ */
+export function buildFileLinkMarkdown(label: string, dest: string): string {
+  const safeLabel = label.replace(/\\/g, '\\\\').replace(/[\[\]]/g, (c) => `\\${c}`);
+  return `[${safeLabel}](${escapeImageSrc(dest)})`;
+}
+
 /** 提取 markdown image 的 src（`![alt](src)` 或 `![](src)`；失败 → null） */
 export function parseImageSrcFromMarkdown(text: string): string | null {
   const m = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(text.trim());

@@ -13,8 +13,11 @@
 import type { EditorView, ViewUpdate } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import type { ImageHost, ImageCandidate, ImagePlan } from './host';
-import { executeFsOps, planImageCandidate, planImageCandidates, type InsertCandidatesOptions } from './insert';
+import { applyImageUpload, executeFsOps, fileLinkMarkdown, mergePlanDetails, planImageCandidate, planImageCandidatesDetail, type InsertCandidatesOptions } from './insert';
 import { isImageFile, isUrl } from './path';
+
+/** 侧边栏 HTML5 拖拽的自定义 dataTransfer 类型（FileTree dragstart 写入，iframe drop 读取） */
+export const SIDEBAR_FILE_DRAG_TYPE = 'application/x-mellow-file';
 
 /** 运行时 CM6 模块 */
 interface CmRuntime {
@@ -39,8 +42,10 @@ export interface InsertResult {
 }
 
 /**
- * 把候选图片插入编辑器：plan → execute fsOps → dispatch（单 transaction）。
- * 任一失败：不插入文本，返回错误（fs 操作部分成功由调用方提示，spec §11 文件操作不做 undo）。
+ * 把候选图片插入编辑器（Typora §55 图床上传管线）：
+ * plan → execute fsOps（bitmap 副本落盘）→ upload（host 已装配上传服务时；
+ * 成功张替换 URL，失败张回退本地）→ dispatch（单 transaction）。
+ * 任一 fs 失败：不插入文本，返回错误（spec §11 文件操作不做 undo）。
  */
 export async function insertImageCandidates(
   host: ImageHost,
@@ -52,13 +57,23 @@ export async function insertImageCandidates(
   if (filtered.length === 0) {
     return { ok: true, inserted: false };
   }
-  const plan = await planImageCandidates(host, filtered, opts);
-  if (plan.markdown.length === 0) {
+  const details = await planImageCandidatesDetail(host, filtered, opts);
+  const localPlan = mergePlanDetails(details);
+  if (localPlan.markdown.length === 0) {
     return { ok: true, inserted: false };
   }
-  const fsError = await executeFsOps(host, plan.fsOps);
+  const fsError = await executeFsOps(host, localPlan.fsOps);
   if (fsError !== null) {
     return { ok: false, inserted: false, error: fsError };
+  }
+  // 图床上传（Typora §55）：落盘后再上传（bitmap 副本已存在，PicGo 可读）；
+  // upload: 'never' 或 host 未装配 → 跳过（本地插入）
+  if (opts.upload !== 'never') {
+    await applyImageUpload(host, details);
+  }
+  const plan = mergePlanDetails(details);
+  if (plan.markdown.length === 0) {
+    return { ok: true, inserted: false };
   }
   const pos = view.state.selection.main.head;
   view.dispatch({
@@ -113,6 +128,30 @@ function candidatesFromPasteData(
   return candidates;
 }
 
+/** 拖入非图片文件 → `[name](relative/path)` 链接（Typora 拖拽建链；单 transaction 单 Undo）。
+ * 插入位置：drop 坐标（posAtCoords；视图外 → 最近位置），无坐标 → 光标。
+ */
+export function insertDroppedFileLinks(
+  host: ImageHost,
+  view: EditorView,
+  absPaths: string[],
+  at?: { x: number; y: number },
+): boolean {
+  const markdown = absPaths
+    .map((p) => fileLinkMarkdown(host, p))
+    .filter((m) => m.length > 0)
+    .join('\n\n');
+  if (markdown.length === 0) {
+    return false;
+  }
+  const pos = (at !== undefined && Number.isFinite(at.x) && Number.isFinite(at.y) ? view.posAtCoords(at) : null) ?? view.state.selection.main.head;
+  view.dispatch({
+    changes: { from: pos, insert: markdown },
+    selection: { anchor: pos + markdown.length },
+  });
+  return true;
+}
+
 /** 构建 Image 输入扩展（paste/drop/picker） */
 export function buildImageInputExtension(host: ImageHost): Extension {
   const cm = resolveCm();
@@ -133,16 +172,31 @@ export function buildImageInputExtension(host: ImageHost): Extension {
         },
         drop: (event: DragEvent, view: EditorView): boolean => {
           event.preventDefault();
-          // 桌面宿主注入的绝对路径（web File 无路径）
+          // OS 级拖入（Finder/资源管理器）：桌面宿主注入的绝对路径（web File 无路径）
           const paths = host.consumeDroppedFilePaths();
           const candidates: ImageCandidate[] = [];
+          const linkPaths: string[] = [];
           for (const p of paths) {
             if (isImageFile(p)) {
               candidates.push({ kind: 'file', path: p });
+            } else {
+              linkPaths.push(p); // 非图片文件 → 文件链接（Typora 拖拽建链）
             }
+          }
+          // 侧边栏 HTML5 拖拽（FileTree dragstart 写入的路径）
+          const dt = event.dataTransfer;
+          const sidebarPath = typeof dt?.getData === 'function' ? dt.getData(SIDEBAR_FILE_DRAG_TYPE) : '';
+          if (sidebarPath !== '') {
+            linkPaths.push(sidebarPath);
           }
           if (candidates.length > 0) {
             void insertImageCandidates(host, view, candidates);
+          }
+          if (linkPaths.length > 0) {
+            insertDroppedFileLinks(host, view, linkPaths, { x: event.clientX, y: event.clientY });
+            return true;
+          }
+          if (candidates.length > 0) {
             return true;
           }
           // 兜底：web File（无路径 → 不可复制/相对化，忽略）

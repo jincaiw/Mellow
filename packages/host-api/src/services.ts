@@ -270,6 +270,8 @@ export interface OpenerService {
 
 /** 图片上传通道（adapter 由宿主按设置装配） */
 export type ImageUploadChannel =
+  /** 上传关闭（设置默认值：插入图片走本地策略，不上传） */
+  | 'none'
   /** PicGo.app / PicList / PicGo-Core server 模式（本地 HTTP API，默认 36677） */
   | 'picgo-http'
   /** PicGo-Core 命令行（`picgo upload <files>` 参数形式，stdout URL 列表） */

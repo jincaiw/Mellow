@@ -2,7 +2,7 @@
  * Image 插入计划（spec §3 Insert Strategy / §4 Asset Directory / §12 场景）。
  */
 
-import { planImageCandidate, planImageCandidates, executeFsOps } from '../src/image/insert';
+import { planImageCandidate, planImageCandidates, executeFsOps, fileLinkMarkdown } from '../src/image/insert';
 import type { ImageHost, ImageCandidate } from '../src/image/host';
 import { unescapeImageSrc } from '../src/image/path';
 
@@ -154,5 +154,51 @@ describe('URL / 多图 / 执行', () => {
     const host = makeHost('/docs/笔记.md');
     const plan = await planImageCandidate(host, { kind: 'file', path: '/docs/我的 图片.png' });
     expect(unescapeImageSrc(srcOf(plan))).toBe('我的 图片.png');
+  });
+});
+
+describe('拖拽建链：fileLinkMarkdown（Typora 拖入编辑区 → 文件链接）', () => {
+  test('同目录文件 → 相对路径链接', () => {
+    const host = makeHost('/docs/note.md');
+    expect(fileLinkMarkdown(host, '/docs/report.pdf')).toBe('[report.pdf](report.pdf)');
+  });
+
+  test('子目录 / 上级目录 → 相对路径', () => {
+    const host = makeHost('/docs/chapters/c1.md');
+    expect(fileLinkMarkdown(host, '/docs/chapters/sub/a.md')).toBe('[a.md](sub/a.md)');
+    expect(fileLinkMarkdown(host, '/docs/assets/a.md')).toBe('[a.md](../assets/a.md)');
+  });
+
+  test('未保存文档 → 绝对路径', () => {
+    const host = makeHost(null);
+    expect(fileLinkMarkdown(host, '/abs/notes.md')).toBe('[notes.md](/abs/notes.md)');
+  });
+
+  test('跨盘 / UNC → 绝对路径（无法相对化）', () => {
+    const host = makeHost('C:\\docs\\note.md');
+    expect(fileLinkMarkdown(host, 'D:\\x\\a.pdf')).toBe('[a.pdf](D:/x/a.pdf)');
+    const unc = makeHost('\\\\srv\\docs\\note.md');
+    expect(fileLinkMarkdown(unc, '\\\\srv\\share\\a.pdf')).toBe('[a.pdf](//srv/share/a.pdf)');
+  });
+
+  test('中文/空格文件名 → %XX 转义（与 image src 同规则；中文保留）', () => {
+    const host = makeHost('/docs/笔记.md');
+    expect(fileLinkMarkdown(host, '/docs/图 片/照 片.pdf')).toBe('[照 片.pdf](图%20片/照%20片.pdf)');
+  });
+
+  test('label 转义 [ ] \\；dest 转义括号', () => {
+    const host = makeHost('/docs/note.md');
+    expect(fileLinkMarkdown(host, '/docs/草[稿].md')).toBe('[草\\[稿\\].md](草%5B稿%5D.md)');
+    expect(fileLinkMarkdown(host, '/docs/a(1).md')).toBe('[a(1).md](a%281%29.md)');
+  });
+
+  test('文件夹也可建链（basename label）', () => {
+    const host = makeHost('/docs/note.md');
+    expect(fileLinkMarkdown(host, '/docs/assets')).toBe('[assets](assets)');
+  });
+
+  test('空路径 → 空串（不插入）', () => {
+    const host = makeHost('/docs/note.md');
+    expect(fileLinkMarkdown(host, '')).toBe('');
   });
 });

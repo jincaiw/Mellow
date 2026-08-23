@@ -41,12 +41,16 @@ import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
 import { installSourceApi } from './sourceMode';
 import { buildWikilinkExtension } from './wikilink';
+import { buildMdLinkExtension } from './mdLink';
 import { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi } from './contextMenu';
 import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } from './largeFile';
 import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
 import { buildSmartPunctuationExtension, installSmartPunctuationApi } from './smartPunctuation';
+import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
+export { buildCodeLineNumbersExtension, installCodeLineNumbersApi, setCodeLineNumbers, isCodeLineNumbersEnabled, codeLineNumbersVersion, fenceContentRange } from './codeLineNumbers';
+export type { CodeLineNumbersApi } from './codeLineNumbers';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { DEFAULT_ENGINE_FEATURES, mergeEngineFeatures, readEngineFeaturesFromStorage } from './config';
 export type { EngineFeatureConfig } from './config';
@@ -102,6 +106,8 @@ export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from '.
 export { installSourceApi } from './sourceMode';
 export { buildWikilinkExtension, scanWikilinks } from './wikilink';
 export type { WikilinkRange } from './wikilink';
+export { buildMdLinkExtension, scanMdLinks, isMdLinkDest } from './mdLink';
+export type { MdLinkRange } from './mdLink';
 export { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi, inlineLinkAt, imageSourceAt } from './contextMenu';
 export type { EditorContextMenuRequest, EditorContextActions, InlineLinkSpan } from './contextMenu';
 export type { OutlineBridgeApi } from './outlineBridge';
@@ -164,6 +170,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installSourceApi();
   // 智能标点（master-plan R2-1）：宿主经 iframe window.__MELLOW_SMART_PUNCTUATION__ 调用
   installSmartPunctuationApi();
+  // 代码块行号（Typora parity）：宿主经 iframe window.__MELLOW_CODE_LINE_NUMBERS__ 调用
+  installCodeLineNumbersApi();
   const f = mergeEngineFeatures(features);
   const ext: Extension[] = [
     buildMarkerRevealExtension(),
@@ -182,9 +190,11 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildLargeFileExtension(),
     buildSelectionCommandsExtension(),
     buildSmartPunctuationExtension(),
+    buildCodeLineNumbersExtension(),
     buildContextMenuExtension(),
     buildContextMenuViewTrackerExtension(),
     buildDocumentSearchExtension(),
+    buildMdLinkExtension(),
   ];
   // 可开关的语法特性（PRD §94 Markdown 设置）
   if (f.math) ext.push(buildMathExtension(false));

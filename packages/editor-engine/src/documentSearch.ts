@@ -35,7 +35,7 @@ interface SearchRuntime {
   findPrevious: (view: unknown) => boolean;
   replaceNext: (view: unknown) => boolean;
   replaceAll: (view: unknown) => boolean;
-  getSearchQuery: (state: unknown) => { search: string; replace?: string };
+  getSearchQuery: (state: unknown) => { search: string; replace?: string; caseSensitive?: boolean; regexp?: boolean };
   searchPanelOpen: (state: unknown) => boolean;
   SearchQuery: new (spec: Record<string, unknown>) => unknown;
   setSearchQuery: { of: (query: unknown) => unknown };
@@ -99,9 +99,20 @@ function injectPanelStyle(): void {
     '.cm-search button{border:none;background:transparent;border-radius:4px;padding:3px 9px;cursor:pointer;color:inherit;font:inherit;line-height:1.2}',
     '.cm-search button:hover{background:rgba(127,127,127,.18)}',
     '.cm-search .cm-search-close{font-size:12px;padding:2px 6px}',
+    // 查找选项 toggle（Typora parity：区分大小写 Aa / 正则 .*）
+    '.cm-search .cm-search-toggle{padding:3px 6px;font-size:12px;font-family:ui-monospace,monospace;border:1px solid transparent;opacity:.65}',
+    '.cm-search .cm-search-toggle[aria-pressed="true"]{background:rgba(76,139,245,.22);border-color:rgba(76,139,245,.6);opacity:1}',
+    '.cm-search .cm-search-toggle[aria-pressed="true"]:hover{background:rgba(76,139,245,.32)}',
+    '.cm-search input.cm-search-invalid{border-color:#e5484d}',
   ].join('\n');
   document.head.appendChild(style);
 }
+
+// 查找选项会话记忆：面板每次打开重建 DOM，开关状态跨开合保留（Typora 行为）
+const lastQueryOptions: { caseSensitive: boolean; regexp: boolean } = {
+  caseSensitive: false,
+  regexp: false,
+};
 
 /** 自建查找/替换面板 DOM（挂载于 view.dom 顶部；状态由 ViewPlugin 管理）。 */
 function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
@@ -131,7 +142,22 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
   nextBtn.name = 'next';
   nextBtn.textContent = '↓';
   nextBtn.title = '下一个 (Enter)';
-  findRow.append(findInput, prevBtn, nextBtn);
+
+  // 查找选项 toggle（Typora parity：区分大小写 / 正则表达式）
+  const caseBtn = document.createElement('button');
+  caseBtn.className = 'cm-search-toggle';
+  caseBtn.name = 'caseSensitive';
+  caseBtn.textContent = 'Aa';
+  caseBtn.title = '区分大小写';
+  caseBtn.setAttribute('aria-pressed', 'false');
+  const regexBtn = document.createElement('button');
+  regexBtn.className = 'cm-search-toggle';
+  regexBtn.name = 'regexp';
+  regexBtn.textContent = '.*';
+  regexBtn.title = '正则表达式';
+  regexBtn.setAttribute('aria-pressed', 'false');
+
+  findRow.append(findInput, caseBtn, regexBtn, prevBtn, nextBtn);
 
   // 替换行
   const replaceRow = makeRow();
@@ -156,23 +182,61 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
 
   dom.append(findRow, replaceRow);
 
-  // 初始值：openSearchPanel 已 dispatch 默认 query（含选中文本）
+  // 初始值：openSearchPanel 已 dispatch 默认 query（含选中文本）；
+  // 大小写/正则开关取会话记忆（openSearchPanel 每次重置为默认，不作为来源）
   try {
     const spec = searchMod.getSearchQuery(view.state);
     findInput.value = spec.search;
     if (spec.replace !== undefined) replaceInput.value = spec.replace;
   } catch { /* state 未就绪时忽略 */ }
+  caseBtn.setAttribute('aria-pressed', String(lastQueryOptions.caseSensitive));
+  regexBtn.setAttribute('aria-pressed', String(lastQueryOptions.regexp));
+
+  /** 正则合法性预检：非法模式不提交 query，输入框标红 */
+  const validateRegex = (): boolean => {
+    if (!lastQueryOptions.regexp || findInput.value === '') {
+      findInput.classList.remove('cm-search-invalid');
+      return true;
+    }
+    try {
+      void new RegExp(findInput.value);
+      findInput.classList.remove('cm-search-invalid');
+      return true;
+    } catch {
+      findInput.classList.add('cm-search-invalid');
+      return false;
+    }
+  };
 
   const commitQuery = (): void => {
+    if (!validateRegex()) return;
     view.dispatch({
       effects: searchMod.setSearchQuery.of(
-        new searchMod.SearchQuery({ search: findInput.value, replace: replaceInput.value }),
+        new searchMod.SearchQuery({
+          search: findInput.value,
+          replace: replaceInput.value,
+          caseSensitive: lastQueryOptions.caseSensitive,
+          regexp: lastQueryOptions.regexp,
+        }),
       ),
     } as unknown);
   };
 
   findInput.addEventListener('input', commitQuery);
   replaceInput.addEventListener('input', commitQuery);
+  caseBtn.addEventListener('click', () => {
+    lastQueryOptions.caseSensitive = !lastQueryOptions.caseSensitive;
+    caseBtn.setAttribute('aria-pressed', String(lastQueryOptions.caseSensitive));
+    commitQuery();
+  });
+  regexBtn.addEventListener('click', () => {
+    lastQueryOptions.regexp = !lastQueryOptions.regexp;
+    regexBtn.setAttribute('aria-pressed', String(lastQueryOptions.regexp));
+    commitQuery();
+    if (lastQueryOptions.regexp) findInput.focus();
+  });
+  // 会话记忆含非默认开关时，打开即同步到 CM query（否则 toggle 前高亮按默认匹配）
+  if (lastQueryOptions.caseSensitive || lastQueryOptions.regexp) commitQuery();
   nextBtn.addEventListener('click', () => { searchMod.findNext(view); });
   prevBtn.addEventListener('click', () => { searchMod.findPrevious(view); });
   replaceBtn.addEventListener('click', () => { searchMod.replaceNext(view); });

@@ -26,6 +26,7 @@ import {
   buildOutline,
   currentHeadingId,
   filterOutline,
+  headingOffsetForAnchor,
   QuickOpenModel,
   groupSearchResults,
   normalizeSearchRequest,
@@ -61,7 +62,7 @@ import { createDesktopImageUploadService } from './host/uploadService';
 import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
-import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions } from '../../../packages/host-api/src/index';
+import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions, ImageUploadService } from '../../../packages/host-api/src/index';
 import type { ImageExportOptions, Canvas2DLike } from '../../../packages/export/src/image/index';
 import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
@@ -182,6 +183,8 @@ export default function App() {
   const externalRef = useRef<ExternalChangeService | null>(null);
   // 图片文件操作（spec image-workflow §6/§7 + PRD §58）
   const fileOpsRef = useRef<ImageFileOpsService | null>(null);
+  // 图床上传服务（Typora §55：插入图片自动上传；__MELLOW_IMAGE_UPLOAD__ 注入用）
+  const imageUploadServiceRef = useRef<ImageUploadService | null>(null);
   const renameRef = useRef<DocumentRenameService | null>(null);
   const historyRef = useRef<FileOpHistory | null>(null);
   const dialogRef = useRef<DialogService | null>(null);
@@ -367,6 +370,9 @@ export default function App() {
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
+  // ref 镜像：openPathInTab 内免依赖读取（「打开单文件 → 父文件夹自动加载」判断）
+  const fileTreeRootRef = useRef(fileTreeRoot);
+  fileTreeRootRef.current = fileTreeRoot;
   // RC parity B1：Pin Folder（固定文件夹 + 会话记忆）
   const PINNED_KEY = 'mellow.fileTree.pinned';
   const [pinnedFolders, setPinnedFolders] = useState<string[]>(() => {
@@ -488,6 +494,14 @@ export default function App() {
   const rememberRecentFolder = useCallback((folder: string) => {
     setRecentFolders((prev) => {
       const next = pushRecentFolder(prev, folder);
+      try { localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+  // 移除最近位置（Typora parity：悬停最近位置 → 移除入口）
+  const forgetRecentFolder = useCallback((folder: string) => {
+    setRecentFolders((prev) => {
+      const next = prev.filter((f) => f !== folder);
       try { localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
       return next;
     });
@@ -2233,7 +2247,7 @@ export default function App() {
         getGlobalSetting: () => (localStorage.getItem(GLOBAL_ASSET_DIR_KEY) as AssetDirConfig | null) ?? 'assets',
       },
       // B5 图片上传（PRD §55）：通道配置每次调用时读 localStorage（live 设置）
-      uploader: createDesktopImageUploadService(),
+      uploader: (imageUploadServiceRef.current ??= createDesktopImageUploadService()),
       uploadOptions: (): ImageUploadOptions => ({
         channel: (localStorage.getItem('mellow.image.uploadService') || 'none') as ImageUploadOptions['channel'],
         httpUrl: localStorage.getItem('mellow.image.uploadHttpUrl') || 'http://127.0.0.1:36677/upload',
@@ -2336,6 +2350,25 @@ export default function App() {
           if (smartPunctDef && readSetting(smartPunctDef) === true) {
             host.setSmartPunctuationEnabled(true);
           }
+          // 代码块行号启动恢复（默认 false；Typora 偏好→Markdown）
+          const codeLnDef = settingById('markdown.codeLineNumbers');
+          if (codeLnDef && readSetting(codeLnDef) === true) {
+            host.setCodeLineNumbersEnabled(true);
+          }
+          // 专注/打字机「默认开启状态」启动恢复（Typora 偏好→通用：重启后按偏好进入）
+          const typewriterDef = settingById('editor.typewriter');
+          if (typewriterDef && readSetting(typewriterDef) === true) {
+            host.setTypewriterMode(true);
+            setTypewriterEnabled(true);
+          }
+          const focusDef = settingById('editor.focusMode');
+          if (focusDef) {
+            const fv = String(readSetting(focusDef) ?? 'off');
+            if (fv === 'line' || fv === 'paragraph') {
+              host.setFocusMode(fv);
+              setFocusModeState(fv);
+            }
+          }
         } catch { /* 设置读取失败 → 保持默认 */ }
         setStatus('ready');
         setStatusText(t('msg.editorReady'));
@@ -2358,6 +2391,36 @@ export default function App() {
         const wikilinkWin = frame?.contentWindow as (Window & { __MELLOW_WIKILINK_OPEN__?: (name: string) => void }) | null;
         if (wikilinkWin) {
           wikilinkWin.__MELLOW_WIKILINK_OPEN__ = (name) => { void openWikilinkRef.current(name); };
+        }
+
+        // 图床上传（Typora §55 / 清单 1.3）：插入图片（拖拽/粘贴）自动上传替换 URL。
+        // 惰性读 localStorage（live 设置：偏好→图片→上传服务切换即生效）；
+        // 'none'/未装配 → 全 null → engine 回退本地插入策略（keep-original / copy-to-assets）。
+        const uploadWin = frame?.contentWindow as (Window & { __MELLOW_IMAGE_UPLOAD__?: (paths: string[]) => Promise<Array<string | null>> }) | null;
+        if (uploadWin) {
+          uploadWin.__MELLOW_IMAGE_UPLOAD__ = async (paths: string[]): Promise<Array<string | null>> => {
+            const channel = (localStorage.getItem('mellow.image.uploadService') || 'none') as ImageUploadOptions['channel'];
+            if (channel === 'none') return paths.map(() => null);
+            const service = imageUploadServiceRef.current;
+            if (service === null) return paths.map(() => null);
+            const r = await service.uploadImages(paths, {
+              channel,
+              httpUrl: localStorage.getItem('mellow.image.uploadHttpUrl') || 'http://127.0.0.1:36677/upload',
+              command: localStorage.getItem('mellow.image.uploadCommand') || '',
+            });
+            if (!r.ok) {
+              setStatusText(t('msg.uploadFailed', { error: r.error.message }));
+              return paths.map(() => null);
+            }
+            setStatusText(t('msg.uploadDone', { count: r.value.filter((u) => u.length > 0).length }));
+            return r.value.map((u) => (u.length > 0 ? u : null));
+          };
+        }
+
+        // 注入 markdown 文件链接打开 handler（[label](path.md#锚点) → 相对解析打开 + 锚点跳转）
+        const mdLinkWin = frame?.contentWindow as (Window & { __MELLOW_MD_LINK_OPEN__?: (dest: string) => void }) | null;
+        if (mdLinkWin) {
+          mdLinkWin.__MELLOW_MD_LINK_OPEN__ = (dest) => { void openMdLinkRef.current(dest); };
         }
 
         // 注入编辑器右键菜单 handler（engine 检测上下文 → App 弹 ContextMenu）
@@ -2447,6 +2510,17 @@ export default function App() {
     setStatusText(t('msg.newTab'));
   }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
 
+  /** Typora：打开单个文件 → 父文件夹自动加载（清单 2.1 注：无需显式打开文件夹）。
+   *  仅在尚未加载任何文件夹时生效（fileTreeRoot 为 null），不打断已打开的项目根。 */
+  const autoLoadParentFolder = useCallback((path: string) => {
+    if (fileTreeRootRef.current !== null) return;
+    const dir = fileTreeDirname(path);
+    if (dir === '') return;
+    localStorage.setItem(FILE_TREE_ROOT_KEY, dir);
+    setFileTreeRoot(dir);
+    rememberRecentFolder(dir);
+  }, [rememberRecentFolder]);
+
   const handleOpen = useCallback(async () => {
     const documents = documentsRef.current;
     if (!documents) return;
@@ -2472,9 +2546,10 @@ export default function App() {
     });
     refreshTabsState();
     await applyTab(tab);
+    autoLoadParentFolder(result.value.path);
     setStatusText(t('msg.openedPath', { path: result.value.path }));
     recordRecentFile(result.value.path);
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile]);
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile, autoLoadParentFolder]);
 
   /** 外部打开（CLI 参数 / Finder「打开方式」odoc）：按路径直接读入 tab，无对话框 */
   const openPathInTab = useCallback(async (path: string) => {
@@ -2510,9 +2585,10 @@ export default function App() {
     });
     refreshTabsState();
     await applyTab(tab);
+    autoLoadParentFolder(result.value.path);
     setStatusText(t('msg.openedPath', { path: result.value.path }));
     recordRecentFile(result.value.path);
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile]);
+  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile, autoLoadParentFolder]);
 
   // D2：导入（Typora File→Import）：pandoc 将 docx/odt/rtf/epub/html/tex 等
   // 转为 Markdown 落盘，并在新标签页打开。二进制输入不经文本读取，直接传路径给 pandoc。
@@ -2557,6 +2633,45 @@ export default function App() {
   }, [openPathInTab]);
   const openWikilinkRef = useRef(openWikilink);
   openWikilinkRef.current = openWikilink;
+
+  /** Markdown 文件链接 `[label](path.md#锚点)` → 相对当前文档目录解析并打开；
+   *  锚点跳转：heading 文本/ slug 匹配 → jumpToOffset（Typora 文件链接锚点跳转）。 */
+  const openMdLink = useCallback(async (dest: string) => {
+    // dest 可能带 %XX 转义（拖拽建链/外部工具生成）→ 解码后再拆锚点
+    let decoded = dest;
+    try { decoded = decodeURIComponent(dest); } catch { /* 保留原样（含裸 % 等） */ }
+    const hashIndex = decoded.indexOf('#');
+    const pathPart = hashIndex === -1 ? decoded : decoded.slice(0, hashIndex);
+    const anchor = hashIndex === -1 ? '' : decoded.slice(hashIndex + 1);
+    if (pathPart === '') return;
+    const current = filePathRef.current;
+    const target = current !== null ? `${fileTreeDirname(current)}/${pathPart}` : pathPart;
+    const fsService = fileServiceRef.current;
+    if (fsService !== null) {
+      const r = await fsService.exists(target);
+      if (!r.ok) { setStatusText(t('msg.openFailed', { error: r.error.message })); return; }
+      // Typora：链接目标不存在 → 引导自动创建（清单 2.3 文件链接）
+      if (!r.value) {
+        if (!window.confirm(t('dialog.mdLinkCreate', { path: pathPart }))) {
+          setStatusText(t('msg.wikilinkNotFound', { name: pathPart }));
+          return;
+        }
+        const created = await fsService.writeText(target, '');
+        if (!created.ok) {
+          setStatusText(t('msg.openFailed', { error: created.error.message }));
+          return;
+        }
+      }
+    }
+    await openPathInTab(target);
+    if (anchor !== '') {
+      const text = hostRef.current?.getText() ?? '';
+      const offset = headingOffsetForAnchor(text, anchor);
+      if (offset !== null) hostRef.current?.jumpToOffset(offset);
+    }
+  }, [openPathInTab]);
+  const openMdLinkRef = useRef(openMdLink);
+  openMdLinkRef.current = openMdLink;
 
   /** 编辑器右键菜单（engine → __MELLOW_CONTEXT_MENU__ 请求 → 弹 ContextMenu） */
   const handleEditorContextMenu = useCallback((req: EditorContextMenuRequest) => {
@@ -2992,6 +3107,10 @@ export default function App() {
         // R2-1 智能标点 live apply（引擎 inputHandler 开关）
         hostRef.current?.setSmartPunctuationEnabled(Boolean(value));
         break;
+      case 'settings.codeLineNumbers':
+        // 代码块行号 live apply（Typora 偏好→Markdown；引擎行号 widget 开关）
+        hostRef.current?.setCodeLineNumbersEnabled(Boolean(value));
+        break;
       case 'settings.statusbar':
         setStatusbarVisible(Boolean(value));
         break;
@@ -3223,8 +3342,8 @@ export default function App() {
       // Typora：替换 ⌥⌘F（⌘H 与 macOS 系统隐藏冲突，作为别名兜底）；Win/Linux Ctrl+H
       { id: 'search.replace', localizedTitle: { zh: '替换…', en: 'Replace…' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H' }, shortcutAliases: [{ mac: 'Cmd+H' }], enabled: always, execute: () => engineSearch('replace') },
       // B2 编辑菜单补全（Typora 对齐：查找下一个/上一个 ⌘G / ⇧⌘G）
-      { id: 'search.findNext', localizedTitle: { zh: '查找下一个', en: 'Find Next' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' }, enabled: always, execute: () => engineSearch('findNext') },
-      { id: 'search.findPrevious', localizedTitle: { zh: '查找上一个', en: 'Find Previous' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+G', winLinux: 'Ctrl+Shift+G' }, enabled: always, execute: () => engineSearch('findPrevious') },
+      { id: 'search.findNext', localizedTitle: { zh: '查找下一个', en: 'Find Next' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' }, shortcutAliases: [{ winLinux: 'F3' }, { mac: 'F3' }], enabled: always, execute: () => engineSearch('findNext') },
+      { id: 'search.findPrevious', localizedTitle: { zh: '查找上一个', en: 'Find Previous' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+G', winLinux: 'Ctrl+Shift+G' }, shortcutAliases: [{ winLinux: 'Shift+F3' }, { mac: 'Shift+F3' }], enabled: always, execute: () => engineSearch('findPrevious') },
       // B2 编辑菜单补全（Typora 对齐：复制为 Markdown ⇧⌘C / 粘贴为纯文本 ⇧⌘V）
       { id: 'edit.copyMarkdown', localizedTitle: { zh: '复制为 Markdown', en: 'Copy as Markdown' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+C', winLinux: 'Ctrl+Shift+C' }, enabled: always, execute: () => engineClipboard('copyMarkdown') },
       { id: 'edit.pastePlain', localizedTitle: { zh: '粘贴为纯文本', en: 'Paste as Plain Text' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+V', winLinux: 'Ctrl+Shift+V' }, enabled: always, execute: () => engineClipboard('pastePlain') },
@@ -3708,6 +3827,7 @@ export default function App() {
                   </select>
                 </label>
                 <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />{t('sidebar.sortAsc')}</label>
+                <label><input type="checkbox" checked={fileTreeOptions.folderFirst} onChange={(e) => setFileTreeOption({ folderFirst: e.target.checked })} />{t('sidebar.foldersFirst')}</label>
               </div>
               <div className="file-tree-globs">
                 <input placeholder={t('tree.includeGlob')} value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
@@ -3732,15 +3852,25 @@ export default function App() {
               {pinnedFolders.length > 0 && (
                 <div className="pinned-folders" aria-label={t('sidebar.pinnedLabel')}>
                   {pinnedFolders.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      className={`pinned-folder${p === fileTreeRoot ? ' active' : ''}`}
-                      title={p}
-                      onClick={() => { setFileTreeRoot(p); rememberRecentFolder(p); }}
-                    >
-                      {p === fileTreeRoot ? '★ ' : ''}{basename(p)}
-                    </button>
+                    <span key={p} className="pinned-folder-group">
+                      <button
+                        type="button"
+                        className={`pinned-folder${p === fileTreeRoot ? ' active' : ''}`}
+                        title={p}
+                        onClick={() => { setFileTreeRoot(p); rememberRecentFolder(p); }}
+                      >
+                        {p === fileTreeRoot ? '★ ' : ''}{basename(p)}
+                      </button>
+                      <button
+                        type="button"
+                        className="pinned-folder-remove"
+                        title={t('sidebar.unpin')}
+                        aria-label={t('sidebar.unpin')}
+                        onClick={() => persistPinned(pinnedFolders.filter((x) => x !== p))}
+                      >
+                        ✕
+                      </button>
+                    </span>
                   ))}
                 </div>
               )}
@@ -3748,15 +3878,25 @@ export default function App() {
                 <div className="pinned-folders" aria-label={t('sidebar.recentFoldersLabel')}>
                   <span className="file-tree-root-label">{t('sidebar.recentFolders')}</span>
                   {recentFolders.filter((f) => f !== fileTreeRoot).slice(0, 5).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      className="pinned-folder"
-                      title={f}
-                      onClick={() => { setFileTreeRoot(f); rememberRecentFolder(f); }}
-                    >
-                      {basename(f)}
-                    </button>
+                    <span key={f} className="pinned-folder-group">
+                      <button
+                        type="button"
+                        className="pinned-folder"
+                        title={f}
+                        onClick={() => { setFileTreeRoot(f); rememberRecentFolder(f); }}
+                      >
+                        {basename(f)}
+                      </button>
+                      <button
+                        type="button"
+                        className="pinned-folder-remove"
+                        title={t('sidebar.removeRecent')}
+                        aria-label={t('sidebar.removeRecent')}
+                        onClick={() => forgetRecentFolder(f)}
+                      >
+                        ✕
+                      </button>
+                    </span>
                   ))}
                 </div>
               )}

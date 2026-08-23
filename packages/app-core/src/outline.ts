@@ -114,6 +114,25 @@ export function currentHeadingId(flat: OutlineHeading[], offset: number): string
   return current?.id ?? null;
 }
 
+/** 锚点 → heading 文档 offset（Typora `文件.md#标题` 锚点跳转）：
+ * 依次尝试精确文本 → 大小写不敏感 → slug 匹配（GitHub 风格 slug，`[^字母数字]` → `-`）；
+ * 跳过 fenced code / YAML（复用 parseHeadings 语义）；未命中 → null。 */
+export function headingOffsetForAnchor(markdown: string, anchor: string): number | null {
+  const trimmed = anchor.trim();
+  if (trimmed === '') return null;
+  const slugify = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+  const anchorLower = trimmed.toLowerCase();
+  const anchorSlug = slugify(trimmed);
+  let ciOffset: number | null = null;
+  let slugOffset: number | null = null;
+  for (const h of parseHeadings(markdown)) {
+    if (h.title === trimmed) return h.from;
+    if (ciOffset === null && h.title.toLowerCase() === anchorLower) ciOffset = h.from;
+    if (slugOffset === null && slugify(h.title) === anchorSlug) slugOffset = h.from;
+  }
+  return ciOffset ?? slugOffset;
+}
+
 export class OutlineModel {
   collapsed = new Set<string>();
   selectedId: string | null = null;
