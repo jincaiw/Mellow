@@ -127,6 +127,35 @@ describe('EditorCore — public API', () => {
     core.destroy();
   });
 
+  test('webModules 就绪但 EditorView 未创建时（iframe 内抛错）不向宿主传播异常', async () => {
+    // 复现 2026-08-23 启动报错：webModules.core 已可用，但 CoreEditor 异步初始化
+    // 未完成，window.editor 仍是宿主 <div id="editor"> 命名元素引用（无 state），
+    // iframe 内 getEditorState 访问 window.editor.state.selection 抛 TypeError
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const core = new EditorCore({ bundleUrl: 'about:blank' });
+    core.mount(container);
+
+    const notReady = {
+      ...createMockCoreModule(),
+      getEditorState: () => { throw new TypeError("undefined is not an object (evaluating 'window.editor.state.selection')"); },
+      getEditorText: () => { throw new TypeError("undefined is not an object (evaluating 'window.editor.state.doc')"); },
+      insertText: () => { throw new TypeError('EditorView not ready'); },
+      replaceText: () => { throw new TypeError('EditorView not ready'); },
+    };
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    (iframe.contentWindow as unknown as { webModules: { core: CoreWebModule } }).webModules = { core: notReady };
+    iframe.dispatchEvent(new Event('load'));
+    await core.ready();
+
+    // App.tsx commandContext 启动期调用路径：降级为安全默认值而非崩溃
+    expect(core.getState()).toEqual({ hasFocus: false, hasSelection: false });
+    expect(core.getText()).toBe('');
+    expect(() => core.insertText('x', 0, 0)).not.toThrow();
+    expect(() => core.replaceText('x', 'wholeDocument')).not.toThrow();
+    core.destroy();
+  });
+
   test('destroy 清理 iframe 与监听器', async () => {
     const { core, container } = await setUpWithMock();
     core.destroy();

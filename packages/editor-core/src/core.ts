@@ -180,22 +180,42 @@ export class EditorCore {
 
   /** 获取全文（唯一真源始终是 Markdown 文本）；未就绪时返回 '' */
   getText(): string {
-    return this.modules()?.core?.getEditorText() ?? '';
+    // 启动竞态防线：webModules 就绪但 EditorView 未创建时（window.editor 仍为
+    // 宿主 <div id="editor"> 命名元素引用），iframe 内 getEditorText 会抛错
+    try {
+      return this.modules()?.core?.getEditorText() ?? '';
+    } catch {
+      return '';
+    }
   }
 
   /** 编辑状态（焦点/选区）；未就绪时返回全 false */
   getState(): { hasFocus: boolean; hasSelection: boolean } {
-    return this.modules()?.core?.getEditorState() ?? { hasFocus: false, hasSelection: false };
+    // 同 getText：EditorView 未创建窗口期访问 window.editor.state.selection
+    // 抛 TypeError（App.tsx commandContext 启动期即调用，2026-08-23 报错）
+    try {
+      return this.modules()?.core?.getEditorState() ?? { hasFocus: false, hasSelection: false };
+    } catch {
+      return { hasFocus: false, hasSelection: false };
+    }
   }
 
   /** 插入文本；未就绪时 no-op */
   insertText(text: string, from: number, to: number): void {
-    this.modules()?.core?.insertText({ text, from, to });
+    try {
+      this.modules()?.core?.insertText({ text, from, to });
+    } catch {
+      // 未就绪 no-op
+    }
   }
 
   /** 替换文本（整文档/选区）；未就绪时 no-op */
   replaceText(text: string, granularity: ReplaceGranularity): void {
-    this.modules()?.core?.replaceText({ text, granularity });
+    try {
+      this.modules()?.core?.replaceText({ text, granularity });
+    } catch {
+      // 未就绪 no-op
+    }
   }
 
   /** 聚焦编辑器 */
