@@ -175,9 +175,11 @@ fn run_shell(command: &str, stdin_data: Option<&str>) -> Result<(String, String,
         .map_err(|e| format!("启动上传命令失败「{}」: {}", command, e))?;
     if let Some(data) = stdin_data {
         if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(data.as_bytes())
-                .map_err(|e| format!("写入上传命令 stdin 失败: {}", e))?;
+            // EPIPE = 命令提前退出未消费 stdin（echo 类命令 / 鉴权失败早退）：
+            // 不视为致命错误，交由退出码/输出数量判定报告真实原因。
+            if stdin.write_all(data.as_bytes()).is_err() {
+                drop(stdin); // 关闭管道，避免子进程滞留等待输入
+            }
         }
     }
     let output = child
@@ -331,12 +333,27 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn custom_command_count_mismatch_reports_error() {
+        // echo 不读 stdin 即退出（EPIPE 竞态）：容忍后仍应按输出数量判定报告
         let err = upload_via_custom_command(
             &["/tmp/a.png".to_string(), "/tmp/b.png".to_string()],
             "echo https://cdn.test/one.png",
         )
         .unwrap_err();
         assert!(err.contains("数量不匹配"), "{}", err);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn custom_command_early_exit_reports_real_error() {
+        // 命令早退不消费 stdin（如鉴权失败）：应透出退出码与 stderr 真实原因，
+        // 而非「写入 stdin 失败: Broken pipe」
+        let err = upload_via_custom_command(
+            &["/tmp/a.png".to_string()],
+            "echo 'token invalid' >&2; exit 1",
+        )
+        .unwrap_err();
+        assert!(err.contains("退出码 1"), "{}", err);
+        assert!(err.contains("token invalid"), "{}", err);
     }
 
     // ── picgo-http 全链路（本地 mock server，参照 fs::download_remote 测试先例） ──
