@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Golden Journeys runner（PRD §111 Runtime Qualification 20 项）。
- * 每 journey 在 Mellow 与 Typora 1.14.9 上执行相同操作序列，记录：
+ * 每 journey 在 Mellow 与当前已安装 Typora 上执行相同操作序列，记录：
+ * 当前规范判定基线为 Typora 1.14.6；若本机实际版本较新，结果只能标记为 patch observation。
  * steps / time / errors / unexpected / keyboard-mouse / 平台状态。
  * 输入原语：
  * - Mellow：System Events keystroke（CGEvent 字母被 WKWebView 过滤）+ 空格提交

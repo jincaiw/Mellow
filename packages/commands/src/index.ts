@@ -4,6 +4,8 @@
  * 不在 UI 层重复实现业务逻辑。
  */
 
+export * from './menuContract';
+
 export type CommandSource = 'menu' | 'shortcut' | 'command-palette' | 'slash' | 'context-menu' | 'plugin';
 export type CommandPlatform = 'mac' | 'win-linux';
 export type CommandCategory = 'file' | 'edit' | 'view' | 'insert' | 'format' | 'search' | 'navigation' | 'workspace' | 'image' | 'system' | string;
@@ -261,6 +263,19 @@ export class CommandRegistry {
         .filter((c): c is string => c !== undefined);
       return candidates.some((c) => normalizeShortcut(c) === normalized);
     });
+  }
+
+  /** 返回同一平台上被两个不同命令占用的快捷键，供启动期与测试门禁使用。 */
+  shortcutConflicts(platform: CommandPlatform): Array<{ shortcut: string; commandIds: string[] }> {
+    const grouped = new Map<string, string[]>();
+    const pick = (shortcut: CommandShortcut | undefined) => platform === 'mac' ? shortcut?.mac : shortcut?.winLinux;
+    for (const command of this.all()) {
+      for (const shortcut of [command.shortcut, ...(command.shortcutAliases ?? [])].map(pick).filter((v): v is string => v !== undefined)) {
+        const key = normalizeShortcut(shortcut);
+        grouped.set(key, [...(grouped.get(key) ?? []), command.id]);
+      }
+    }
+    return [...grouped.entries()].filter(([, commandIds]) => commandIds.length > 1).map(([shortcut, commandIds]) => ({ shortcut, commandIds }));
   }
 
   async dispatch(id: string, context: CommandContext): Promise<boolean> {

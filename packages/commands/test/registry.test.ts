@@ -1,6 +1,14 @@
-import { CommandRegistry, CommandPaletteModel, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../src';
+import { CommandRegistry, CommandPaletteModel, MENU_COMMAND_CONTRACT, TYPOGRAPHIC_MENU_ORDER, assertMenuContract, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch } from '../src';
 
 describe('CommandRegistry', () => {
+  test('desktop top-level menu follows Typora contract and has no Insert menu', () => {
+    expect(TYPOGRAPHIC_MENU_ORDER).toEqual(['file', 'edit', 'paragraph', 'format', 'view', 'theme', 'window', 'help']);
+    expect(TYPOGRAPHIC_MENU_ORDER).not.toContain('insert');
+    expect(() => assertMenuContract()).not.toThrow();
+    expect(MENU_COMMAND_CONTRACT.find((item) => item.id === 'insert.table')?.menu).toBe('paragraph');
+    expect(MENU_COMMAND_CONTRACT.find((item) => item.id === 'insert.image')?.menu).toBe('format');
+  });
+
   test('command contains required fields and every entry dispatches the same execute', async () => {
     const calls: string[] = [];
     const registry = new CommandRegistry();
@@ -52,6 +60,14 @@ describe('CommandRegistry', () => {
     expect(normalizeShortcut('Shift+Ctrl+F')).toBe('Ctrl+Shift+F');
     expect(registry.findByShortcut('shift+ctrl+f', 'win-linux')?.id).toBe('search.global');
     expect(registry.findByShortcut('cmd+shift+f', 'mac')?.id).toBe('search.global');
+  });
+
+  test('reports shortcut conflicts instead of silently selecting the first command', () => {
+    const registry = new CommandRegistry();
+    for (const id of ['file.print', 'quickOpen.open']) {
+      registry.register({ id, title: { zh: id, en: id }, category: 'file', shortcut: { winLinux: 'Ctrl+P' }, context: { scope: 'global' }, enabled: () => true, execute: jest.fn() });
+    }
+    expect(registry.shortcutConflicts('win-linux')).toEqual([{ shortcut: 'Ctrl+P', commandIds: ['file.print', 'quickOpen.open'] }]);
   });
 
   test('shortcut lookup normalizes shifted key variants (⇧⌘= / ⇧⌘-)', () => {

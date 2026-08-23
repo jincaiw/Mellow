@@ -155,7 +155,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'appearance.theme', labelKey: 'settings.appearance.theme', type: 'select', storageKey: 'mellow.theme.settings', defaultValue: 'mellow-light', applyCommand: 'theme.apply.mellow-light' },
       // 主题文件夹入口（Typora 偏好→外观→打开主题文件夹；复用 file.openUserCss 命令）
       { id: 'appearance.openThemeFolder', labelKey: 'settings.appearance.openThemeFolder', type: 'action', storageKey: 'mellow.appearance.openThemeFolder', defaultValue: '', applyCommand: 'file.openUserCss' },
-      { id: 'appearance.statusbar', labelKey: 'settings.appearance.statusbar', type: 'toggle', storageKey: 'mellow.statusbar.visible', defaultValue: true, applyCommand: 'settings.statusbar' },
+      { id: 'appearance.statusbar', labelKey: 'settings.appearance.statusbar', type: 'toggle', storageKey: 'mellow.statusbar.visible', defaultValue: false, applyCommand: 'settings.statusbar' },
       { id: 'appearance.sidebarMode', labelKey: 'settings.appearance.sidebar', type: 'select', storageKey: 'mellow.sidebar.mode', defaultValue: 'files',
         options: [
           { value: 'files', labelKey: 'settings.sidebar.files' },

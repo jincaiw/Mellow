@@ -1,8 +1,9 @@
 # 阶段 5 真实发布门禁执行模板（UX Score + 30 任务效率 Gate）
 
-> 依据：PRD §130-§132、ADR-0020（pre-release → V1.0 需 18 项全 PASS）、typora-parity-checklist §13。
+> 依据：PRD §130-§132、ADR-0020（pre-release → V1.0 需 18 项全 PASS）、Typora parity master plan §14。
 > 状态：⏳ 模板就绪，待三平台真机执行（需要 Windows/Linux 机器与 Typora 1.14.6 对照）。
 > 原则：所有得分必须来自对照实测（同机器、同文档、同任务），不采信自评。
+> 基线：Typora 1.14.6 为规范验收版本；较新版本仅可记录为 patch observation。
 
 ## 一、UX Score（PRD §131，满分 100）
 

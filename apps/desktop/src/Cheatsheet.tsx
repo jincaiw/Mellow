@@ -10,6 +10,8 @@ import { useCallback, useEffect } from 'react';
 export interface CheatsheetProps {
   open: boolean;
   locale: 'zh-CN' | 'en-US';
+  /** 来自 Command Registry 的当前平台快捷键；优先于展示文案中的静态回退值。 */
+  shortcuts: Record<string, string | undefined>;
   onClose: () => void;
 }
 
@@ -19,6 +21,7 @@ interface Row {
   /** 示例（等宽字体展示） */
   sample?: string;
   shortcut?: string;
+  commandId?: string;
 }
 
 interface Section {
@@ -32,7 +35,7 @@ const SECTIONS: Section[] = [
     zh: '标题',
     en: 'Headings',
     rows: [
-      { zh: '一级标题', en: 'Heading 1', sample: '# 标题', shortcut: 'Cmd/Ctrl+1' },
+      { zh: '一级标题', en: 'Heading 1', sample: '# 标题', shortcut: 'Cmd/Ctrl+1', commandId: 'paragraph.h1' },
       { zh: '二级标题', en: 'Heading 2', sample: '## 标题', shortcut: 'Cmd/Ctrl+2' },
       { zh: '三级标题', en: 'Heading 3', sample: '### 标题', shortcut: 'Cmd/Ctrl+3' },
       { zh: '四级标题', en: 'Heading 4', sample: '#### 标题', shortcut: 'Cmd/Ctrl+4' },
@@ -45,7 +48,7 @@ const SECTIONS: Section[] = [
     zh: '行内格式',
     en: 'Inline Format',
     rows: [
-      { zh: '粗体', en: 'Bold', sample: '**粗体**', shortcut: 'Cmd/Ctrl+B' },
+      { zh: '粗体', en: 'Bold', sample: '**粗体**', shortcut: 'Cmd/Ctrl+B', commandId: 'format.bold' },
       { zh: '斜体', en: 'Italic', sample: '*斜体*', shortcut: 'Cmd/Ctrl+I' },
       { zh: '删除线', en: 'Strikethrough', sample: '~~删除~~' },
       { zh: '高亮', en: 'Highlight', sample: '==高亮==' },
@@ -81,23 +84,23 @@ const SECTIONS: Section[] = [
     zh: '常用快捷键',
     en: 'Shortcuts',
     rows: [
-      { zh: '命令面板', en: 'Command Palette', shortcut: 'Cmd/Ctrl+Shift+P' },
-      { zh: '快速打开', en: 'Quick Open', shortcut: 'Cmd+Shift+O / Ctrl+P' },
-      { zh: '全局搜索', en: 'Global Search', shortcut: 'Cmd/Ctrl+Shift+F' },
-      { zh: '查找', en: 'Find', shortcut: 'Cmd/Ctrl+F' },
-      { zh: '替换', en: 'Replace', shortcut: 'Cmd/Ctrl+H（macOS 建议用菜单/命令面板）' },
-      { zh: '保存', en: 'Save', shortcut: 'Cmd/Ctrl+S' },
-      { zh: '源码模式', en: 'Source Mode', shortcut: 'Cmd/Ctrl+/' },
-      { zh: '专注模式', en: 'Focus Mode', shortcut: 'F8' },
-      { zh: '打字机模式', en: 'Typewriter Mode', shortcut: 'F9' },
-      { zh: '切换侧边栏', en: 'Toggle Sidebar', shortcut: 'Cmd/Ctrl+Shift+L' },
+      { zh: '命令面板', en: 'Command Palette', shortcut: 'Cmd/Ctrl+Shift+P', commandId: 'commandPalette.open' },
+      { zh: '快速打开', en: 'Quick Open', shortcut: 'Cmd+Shift+O / Ctrl+P', commandId: 'quickOpen.open' },
+      { zh: '全局搜索', en: 'Global Search', shortcut: 'Cmd/Ctrl+Shift+F', commandId: 'search.global' },
+      { zh: '查找', en: 'Find', shortcut: 'Cmd/Ctrl+F', commandId: 'search.find' },
+      { zh: '替换', en: 'Replace', shortcut: 'Cmd/Ctrl+H（macOS 建议用菜单/命令面板）', commandId: 'search.replace' },
+      { zh: '保存', en: 'Save', shortcut: 'Cmd/Ctrl+S', commandId: 'file.save' },
+      { zh: '源码模式', en: 'Source Mode', shortcut: 'Cmd/Ctrl+/', commandId: 'view.source.toggle' },
+      { zh: '专注模式', en: 'Focus Mode', shortcut: 'F8', commandId: 'view.focus.cycle' },
+      { zh: '打字机模式', en: 'Typewriter Mode', shortcut: 'F9', commandId: 'view.typewriter.cycle' },
+      { zh: '切换侧边栏', en: 'Toggle Sidebar', shortcut: 'Cmd/Ctrl+Shift+L', commandId: 'view.sidebar.toggle' },
       { zh: '撤销 / 重做', en: 'Undo / Redo', shortcut: 'Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z' },
       { zh: '切换主题', en: 'Switch Theme', shortcut: '设置 → 主题' },
     ],
   },
 ];
 
-export default function Cheatsheet({ open, locale, onClose }: CheatsheetProps) {
+export default function Cheatsheet({ open, locale, shortcuts, onClose }: CheatsheetProps) {
   const isZh = locale === 'zh-CN';
 
   const onKeyDown = useCallback((event: KeyboardEvent) => {
@@ -132,7 +135,7 @@ export default function Cheatsheet({ open, locale, onClose }: CheatsheetProps) {
                     <tr key={row.zh + row.en}>
                       <td className="cheatsheet-label">{isZh ? row.zh : row.en}</td>
                       <td className="cheatsheet-sample">{row.sample !== undefined && <code>{row.sample}</code>}</td>
-                      <td className="cheatsheet-shortcut">{row.shortcut !== undefined && <kbd>{row.shortcut}</kbd>}</td>
+                      <td className="cheatsheet-shortcut">{(row.commandId === undefined ? row.shortcut : shortcuts[row.commandId] ?? row.shortcut) !== undefined && <kbd>{row.commandId === undefined ? row.shortcut : shortcuts[row.commandId] ?? row.shortcut}</kbd>}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -6,7 +6,7 @@ import {
 } from '../src/index';
 
 describe('Theme engine — built-in themes', () => {
-  test('ships exactly the six required built-in themes with unique ids', () => {
+  test('ships the complete built-in theme registry with unique ids', () => {
     const ids = BUILTIN_THEMES.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(expect.arrayContaining([
@@ -16,6 +16,8 @@ describe('Theme engine — built-in themes', () => {
       'git-light',
       'git-dark',
       'newsprint',
+      'whitey',
+      'gothic',
     ]));
   });
 
@@ -27,6 +29,8 @@ describe('Theme engine — built-in themes', () => {
     expect(byId['git-light'].kind).toBe('light');
     expect(byId['git-dark'].kind).toBe('dark');
     expect(byId['newsprint'].kind).toBe('light');
+    expect(byId['whitey'].kind).toBe('light');
+    expect(byId['gothic'].kind).toBe('dark');
   });
 
   test('every theme defines core CSS variable tokens and editor theme mapping', () => {

@@ -1,252 +1,1514 @@
-# Mellow ↔ Typora 最终对标实施方案（Master Plan）
+# Mellow ↔ Typora 最终深度对标实施方案（Master Plan）
 
-> 状态：**定稿基准**（2026-08-22）。本方案是 Typora 对标工作的**唯一权威实施方案**，合并并取代以下四个历史文档（已删除，内容吸收至此）：
->
-> 1. `docs/specs/typora-parity-checklist.md`（110 项 / 13 域功能对标清单）
-> 2. `docs/qualification/typora-parity-review-2026-08-13.md`（首轮对标评审）
-> 3. `docs/qualification/typora-full-parity-audit-2026-08-20.md`（四维全量差距审计）
-> 4. `docs/plans/typora-deep-parity-plan.md`（深度对标五阶段方案与执行记录）
->
-> 验收基线：**Typora 1.14.9**（macOS 本机实测：AX API 菜单树 dump 509 行 + 偏好设置 7 面板 OCR + 主窗口布局实测，证据见 `tests/benchmark/fixtures/typora-menu-dump.txt`）。
-> 判定口径：PASS-E = 一致或更优；PASS-B = 基本一致有小差异；FAIL = 缺失；NOT TESTED = 未验证。
-
----
-
-## 一、最终目标
-
-与 Typora 在**功能、特点、桌面 UI、桌面布局、菜单**五个维度完全一致或更优，同时保持 Mellow 的差异化优势（数据安全、IME 优先、开放架构）：
-
-1. **五维 PASS-E**：功能、快捷键体系、编辑行为、菜单结构、UI 布局逐项达标；
-2. **三平台 + Windows Portable**：Windows（MSI/NSIS/Portable）/ macOS（Signed + Notarized DMG）/ Linux（AppImage/deb/rpm）；
-3. **多语言**：简体中文（默认）+ English 100% 对齐，架构可扩展更多语言；
-4. **不回退红线**：File Safety 5/5、Source Fidelity 0 diff、IME corruption = 0、updater 签名、安全门禁（H1/H2/M1/M2）全绿。
+> 文档状态：**实施中：P1 Command / Menu 单一真源**（P0 已完成）
+> 方案版本：V2.0
+> 更新日期：2026-08-23
+> 审计代码基线：`8bf5d1e`（Desktop `1.3.2`）
+> 产品验收基线：**Typora 1.14.6**
+> 补丁观察样本：Typora 1.14.9（本机 `/Applications/Typora.app`，build 7785）
+> 文档角色：Typora 对标工作的**唯一权威实施方案**
+> 本轮边界：只冻结对标口径、目标体验、差距与施工顺序；**未经确认不进入代码实施**
 
 ---
 
-## 二、项目基础与参考项目
+## 0. 一页结论
 
-### 2.1 基础项目：MarkEdit（MarkEdit-app/MarkEdit）
+Mellow 的目标不是“具备与 Typora 类似的功能”，而是：
 
-- **定位**：CoreEditor 引擎基础（ADR-0001），vendored 于 `packages/editor-core/CoreEditor`（只读，见 UPSTREAM.md）；
-- **保留**：CodeMirror 6 + Lezer 内核（ADR-0004）、Live Markdown 渲染管线（ADR-0006）；
-- **不动**：不从零重写编辑器；上游同步走 vendored 流程。
+> **让 Typora 用户在 Mellow 中以相同心智、相同或更少步骤、相同快捷键和不更差的编辑手感完成核心任务，并在 IME、文件安全、Source Fidelity、大文件、阅读模式和跨平台一致性上明确更优。**
 
-### 2.2 参考项目 A：Paperling（Razee4315/Paperling，Tauri 2 + React + TS）
+截至本方案审计时点，Mellow 已拥有大量功能实现和自动化测试资产，但**还不能宣称“完全对标完成”**。当前最关键的不是继续堆功能，而是完成以下闭环：
 
-| 优点 | Mellow 状态 | 结论 |
+1. 统一 Typora 1.14.6 规范基线，消除文档中 1.14.6 / 1.14.9 混用；
+2. 把“代码存在”与“体验达标”分开，建立逐项 Experience Contract；
+3. 收敛 Desktop Shell、Sidebar 和 Menu，使默认界面真正回到“文档优先”；
+4. 消除 Command Registry、Rust 原生菜单、主题包和 UI 入口之间的漂移；
+5. 对 Live Editing、Caret、Selection、IME、Undo 做节点级真机对照；
+6. 完成 Windows / Linux 真实桌面交互矩阵；
+7. 完成 UX Score ≥ 92 和 30 个计时任务 Gate；
+8. 所有 P0 项达到 PASS-E 后，才允许发布“与 Typora 一致或更优”的结论。
+
+本方案确认后，实施顺序固定为：
+
+```text
+P0 基线与证据治理
+→ P1 Command / Menu 单一真源
+→ P2 Desktop Shell 与默认布局收敛
+→ P3 Sidebar 深度对标
+→ P4 Live Editing 与编辑手感
+→ P5 Table / Image / Clipboard / File Workflow
+→ P6 Settings / Theme / Export / Better 能力
+→ P7 三平台 Native Adapter 收口
+→ P8 真机、效率、盲测与 Release Gate
+```
+
+---
+
+## 1. 权威依据与冲突裁决
+
+### 1.1 文档优先级
+
+| 优先级 | 文档 | 本方案使用方式 |
 |---|---|---|
-| Reader / Code / Split 三视图（双向滚动同步） | ✅ 已有 | 达标 |
-| Focus mode（非活动行变暗）/ Typewriter mode | ✅ 已有（F8/F9） | 达标 |
-| Slash commands（行首 `/` 快捷插入） | ✅ 已有 | 更优保留 |
-| 视觉表格工具条（行列增删 / 对齐 / tidy） | ✅ 已有（buildTableToolbarExtension） | 达标 |
-| Interactive task checkbox（点击回写源码） | ✅ 已有 | 达标 |
-| Smart paste（URL → 链接、HTML → Markdown、TSV → 表格） | ✅ 已有（clipboard-smart-paste-spec） | 达标 |
-| Frontmatter Properties 卡片 | ✅ 已有（灰色源码 + 可折叠卡片，决策 2026-08-16） | 达标 |
-| Wikilink `[[name]]` 同目录解析 | ✅ 已有 | 达标 |
-| Cheatsheet（`?` 全快捷键可搜索） | ✅ 已有（帮助菜单速查表） | 达标 |
-| KaTeX 按需加载 / mhchem 化学式 / Mermaid | KaTeX/Mermaid ✅；mhchem ❌ | R3 吸收 |
-| Image lightbox（点击放大 + 懒加载） | ❌ | R3 吸收 |
-| 欢迎屏最近文件（缺失标记）+ 恢复上次文件 | ✅ 已有 | 达标 |
-| 外部变更检测（重载/保留选择） | ✅ 已有（externalChange 9 测试） | 达标 |
-| 四主题五字体三字号 | 6 主题 + 字体族/字号设置 ✅ | 达标（R2 补主题语义） |
-| AI 侧栏（Ask/Agent inline diff） | ADR-0018：AI 为可选扩展 | R3 可选（尊重 ADR） |
+| P0 | [Mellow PRD V1.2 FINAL](../product/Mellow-PRD-V1.2-FINAL.md) | 产品范围、目标、基线与 Release Gate 的最终依据 |
+| P1 | [Desktop UI Design Spec](../specs/desktop-ui-design-spec.md) | Desktop Shell、Sidebar、布局与低干扰规则 |
+| P1 | [Live Markdown Engine Spec](../specs/live-markdown-engine-spec.md) | Live Editing、Caret、IME、Undo 与节点状态 |
+| P1 | [Table Editing Spec](../specs/table-editing-spec.md) | 表格 GUI、Minimal Patch 与 IME |
+| P1 | [Image Workflow Spec](../specs/image-workflow-spec.md) | 图片输入、路径、批处理与文件操作 |
+| P1 | [Clipboard & Smart Paste Spec](../specs/clipboard-smart-paste-spec.md) | 多格式复制与 Smart Paste |
+| P1 | [Document & File Safety Spec](../specs/document-file-safety-spec.md) | Source Fidelity、保存、恢复与外部冲突 |
+| P1 | [IME Test Plan](../specs/ime-test-plan.md) | 三平台真实输入法矩阵 |
+| P1 | [Performance Benchmark Spec](../specs/performance-benchmark-spec.md) | 同机对照与性能口径 |
+| P2 | ADR-0001 / 0003 / 0005 / 0006 / 0007 / 0009 / 0011 / 0015 / 0016 / 0019 | 架构和已接受决策，不在本方案中推翻 |
+| P3 | 本方案 | 施工顺序、验收拆解、依赖与证据治理 |
 
-### 2.3 参考项目 B：markdown-preview（pluk-inc/markdown-preview，macOS AppKit）
+### 1.2 Typora 版本基线
 
-| 优点 | Mellow 状态 | 结论 |
-|---|---|---|
-| Quick Look 扩展（Finder 空格预览） | ✅ 已有（B4） | 达标 |
-| Open With（真实编辑器列表 + 记忆） | ✅ 已有（PRD §79） | 达标 |
-| 离线 Mermaid/KaTeX（bundled 无 CDN） | ✅ 已有 | 达标 |
-| copy-tex（选中公式复制 LaTeX 源码） | ✅ 已有 | 达标 |
-| 文本缩放（捏合 + ⌘+/⌘-/⌘0，50%-300% 步进） | 字体缩放三键 ✅（12-28px 步进 1px） | R2 评估百分比式 |
-| CLI 工具（`mdp` 打开文件/文件夹） | ✅ 已有（`mellow-desktop [--reader|--source] <file>`，PRD §80） | 达标（R3 评估软链别名） |
-| .md 默认处理器注册提议 | ✅ 已有（fileAssociations） | 达标 |
-| Share = 复制 Markdown 源码 | ❌ | R3 吸收（小项） |
-| Open in LLM（发文件给 Codex/Claude/ChatGPT） | ❌ | R3 可选（与 AI 扩展联动） |
-| 可自定义工具栏（View → Customize Toolbar） | ❌（AppKit 特性，跨平台成本高） | 暂缓（记录不实施理由） |
+仓库存在以下历史冲突：
+
+- PRD、AGENTS.md 和 Performance Spec 指定 **Typora 1.14.6**；
+- 旧版 Master Plan 把本机 1.14.9 写成了“验收基线”。
+
+最终裁决：
+
+1. **Normative Baseline：Typora 1.14.6**；
+2. **Observed Patch Sample：Typora 1.14.9**；
+3. 1.14.9 只能用于本机菜单、偏好、布局和回归观察；
+4. 如 1.14.9 与 1.14.6 行为不同，以 1.14.6 为准；
+5. 1.14.8 的安全修复和 1.14.9 的 Mermaid / installer 修复可作为安全与兼容性补丁吸收，但不得改变 V1 产品范围。
+
+官方 stable release 记录显示，1.14.6 的重点新增是：
+
+- Editor Toolbar；
+- macOS 格式 Context Menu；
+- Sidebar hidden/all/custom glob filter；
+- File Tree keyboard navigation。
+
+这些能力全部属于 Mellow P0 对标范围。
+
+### 1.3 已接受架构，不在本方案中变更
+
+- 保留 MarkEdit CoreEditor，不从零重写；
+- Markdown 纯文本是唯一真源；
+- CodeMirror 6 + Lezer 是 Editor Core；
+- Live Markdown 通过 Decoration / Widget 实现；
+- React + TypeScript 负责 Desktop UI；
+- Rust 负责 System Core；
+- Editor/UI 不直接依赖 Tauri；
+- 平台差异只存在于 Adapter / Native Enhancement；
+- Tauri 2 当前锁定，ADR-0019 触发条件成立时再新增 ADR 切换 Electron；
+- AI 仅为可选扩展，不进入默认界面。
 
 ---
 
-## 三、现状基线（已完成资产，禁止回退）
+## 2. “一致或更优”的最终判定模型
 
-> 截至 v1.2.0（2026-08-22 发布，run 32548372001 三平台全绿）。以下均已落地且有测试/真机证据，**不重复实施**。
+### 2.1 三级目标
 
-### 3.1 引擎与编辑
+| 等级 | 定义 | 允许结果 |
+|---|---|---|
+| E — Equivalent | Typora 核心任务必须体验等价 | 步骤不更多、默认一致、快捷键一致、结果一致、性能不更差 |
+| B — Better | Mellow 明确优于 Typora | 必须有测试和用户验证，不能靠功能数量自评 |
+| D — Deliberate Difference | 有意不同 | 品牌视觉、Logo、原创主题、Reader/Split/Palette/Slash 等不破坏 Typora 心智的增强 |
 
-| 资产 | 证据 |
+### 2.2 Experience Contract
+
+每个对标项必须同时记录：
+
+```text
+Feature
++ Entry Point
++ Default State
++ Keyboard
++ Mouse / Touchpad
++ Caret / Selection
++ IME
++ Undo / Redo
++ Visual Feedback
++ Markdown / File Result
++ Performance
++ Accessibility
++ Windows / macOS / Linux Result
+= Experience Contract
+```
+
+只满足“Feature”不得标记完成。
+
+### 2.3 状态码
+
+| 状态 | 含义 |
 |---|---|
-| Live Markdown 引擎（marker reveal / 表格全操作 / 数学 / Mermaid / 脚注 / YAML / TOC / Wikilink / 高亮 / 上下标） | engine 588 tests 全绿 |
-| 表格完整操作（Tab 导航 / 插行列 / 行列移动 / 删表 / 复制表 / 列宽拖拽 / tidy） | table-engine 套件 |
-| 选择命令组（⌘L 行 / ⌥⌘P 段落 / ⌘D 词 / ⌘E 格式文本 / 跳转组 / 删除范围 / 移行 ⌥↑↓） | D1/D3/D4 |
-| 查找替换（⌘F / ⌥⌘F / ⌘G / ⇧⌘G / ⌃H 别名，正则 / 大小写 / 全词） | search 桥 + golden journey |
-| 智能粘贴（HTML→MD / URL→链接 / TSV→表格）+ 复制四路（plain/html/rtf/markdown + Copy as HTML Code） | clipboard 套件 |
-| IME Composition Guard（拼音 corruption=0）+ Undo guard | golden j2 PASS-E |
-| 非对称标记（下划线 ⌘U / 注释 ⌃-）toggle 包裹 | D4 |
-| 链接/代码块定位（打开链接 / 复制链接地址 / 复制代码块内容） | D4 |
+| ABSENT | 未实现 |
+| IMPL | 已有实现，但未形成充分验收证据 |
+| AUTO | 自动化测试已通过 |
+| MAC | macOS 真机已通过 |
+| WIN | Windows 真机已通过 |
+| LINUX | Linux 真机已通过 |
+| PASS-B | 基本一致，存在已知小差异 |
+| PASS-E | 三平台 Experience Contract 全部通过 |
+| PASS-BETTER | Better 项通过对照或盲测 |
+| BLOCKED | 触发 Release Blocker |
 
-### 3.2 菜单与快捷键（Typora 1.14.9 509 行菜单树逐项对照）
+最终“Done”只能是 `PASS-E` 或 `PASS-BETTER`。
 
-- 10 菜单结构等价映射（文件/编辑/段落/格式/视图/插入/主题/帮助 + Apple/Mellow）；
-- 文件菜单：打开最近（10 项 + 清除）/ 全部关闭 / 保存全部 / 磁盘重载 / 页面设置 / 移到 / 废纸篓删除 / 快照入口 / 导出 13 格式（Pandoc 9 + PDF/HTML/无样式 HTML/图像）+ ⌃⌘P 导出 PDF + ⌃⌘E 上次设置导出；
-- 编辑菜单：Typora 顺序重排 + 选择子菜单 5 项 + 删除子菜单 + 拼写检查子菜单 + 拷贝图片 + 复制为 Markdown ⇧⌘C / 纯文本 ⇧⌘V；
-- 段落菜单：标题 ⌘1-6 + 升降级 + 表格子菜单 17 项 + 代码工具 + 列表缩进 ⌘]/⌘[ + 上下插段落 + 链接引用 ⌥⌘L + 脚注 + 水平线 + TOC + YAML；
-- 格式菜单：下划线 ⌘U / 注释 ⌃- / 链接操作子菜单 / 图像子菜单 / 清除样式 ⌘\；
-- 视图菜单：放大 ⇧⌘= / 缩小 ⇧⌘- / 实际大小 ⇧⌘0 / 侧栏模式 ⌃⌘1-3 / 全部标签 ⇧⌘\ / Always on Top / DevTools（debug）；
-- 快捷键补集：行内代码 ⌃` / 删除线 ⌃⇧` / 公式块 ⌥⌘B / 代码块 ⌥⌘C / 引用 ⌥⌘Q / 列表 ⌥⌘O/U/X 全部落地。
+### 2.4 证据等级
 
-### 3.3 平台与发布
+从高到低：
 
-- 三平台 CI（release.yml）：Windows MSI+NSIS / macOS Signed+Notarized+DMG / Linux AppImage+deb+rpm + updater 签名（.sig + latest.json）；
-- Runtime Qualification 流水线：三平台启动 + 10MB 大文件冒烟 + Linux 渲染截图；
-- 已发布：v1.0.0 → v1.1.0（B 系列 + 导出/侧栏增强）→ **v1.2.0**（D 系列深度对标，14 产物）。
+1. 同机同文档真实 Typora / Mellow 双应用对照；
+2. 三平台真实桌面手工或自动化交互；
+3. AX 树、截图、视频、菜单 dump、文件 diff、导出产物；
+4. E2E / Integration / Unit 自动化；
+5. 代码阅读；
+6. 文档声明。
 
-### 3.4 多语言（需求 3 已满足，维护态）
-
-- `packages/i18n`：`DEFAULT_LOCALE = 'zh-CN'`，zh-CN / en-US 100% 对齐（类型强制 + 测试），菜单/设置/消息全量 i18n；
-- 新语言扩展路径已预留（`LOCALES` 数组 + messages 表 + 菜单目录）。
-
-### 3.5 质量门禁（每阶段回归）
-
-TS 10 包 918 tests / cargo 74 tests / Source Fidelity 145 文件 0 diff / E2E 冒烟 10 项 / desktop tsc clean。
+低等级证据不能替代高等级 Gate。例如“有 600 个测试”不能替代 Windows 微软拼音真机验证。
 
 ---
 
-## 四、剩余差距矩阵（待实施项全集）
+## 3. Typora 1.14.6 体验模型
 
-> 经 B1-B5 / C / D1-D4 六个批次实施后，Typora 对标仅剩以下尾差。D5 浮动窗口已确认不实施（侧栏模式替代）。
+### 3.1 核心特点
 
-| # | 维度 | 差距项 | Typora 基线 | 优先级 | 阶段 |
-|---|---|---|---|---|---|
-| G1 | 功能 | **Windows Portable 版**（新需求，Typora 无 portable 但用户明确要求） | —（增强项） | **P0** | R1 |
-| G2 | 功能 | 智能标点（智能引号/破折号/输入时转换，编辑→替换子菜单） | 偏好设置可开关 | P2 | R2 |
-| G3 | 功能 | 字数统计窗口（独立面板 + 阅读速度换算） | 视图→字数统计窗口 | P3 | R2 |
-| G4 | UI | 主题语义补齐：Typora 六主题命名对照（Gothic/Pixyll/Whitey 风格位） | 6 主题（Github/Gothic/Newsprint/Night/Pixyll/Whitey） | P3 | R2 |
-| G5 | 特点 | 缩放百分比化评估（Safari 式 50%-300% 步进 vs 现 12-28px） | 缩放 % 独立设置 | P3 | R2 评估 |
-| G6 | 增强 | Image lightbox（图片点击放大 + 懒加载，Paperling） | ❌（Typora 无） | P2 | R3 |
-| G7 | 增强 | mhchem 化学式（`$\ce{...}$`，Paperling） | ❌ | P3 | R3 |
-| G8 | 增强 | Share = 复制 Markdown 源码（markdown-preview） | ❌ | P3 | R3 |
-| G9 | 增强 | Open in LLM（文件发给 Codex/Claude/ChatGPT，markdown-preview） | ❌ | P3 | R3 可选 |
-| G10 | 验证 | Windows 真机交互矩阵（微软拼音/五笔 IME + 安装矩阵 + 行为矩阵） | — | **P1** | R4 |
-| G11 | 验证 | Linux 真机交互矩阵（fcitx5/ibus + 安装矩阵） | — | **P1** | R4 |
-| G12 | 验证 | 日文 IME（golden journey j3） | — | P2 | R4（✅ macOS 2026-08-22 达标，见 §八） |
-| G13 | 验收 | UX Score ≥ 92 + 30 任务效率 Gate（≤ Typora+5%） | — | **P1** | R4 |
+Typora 的竞争力不是单个 Markdown Feature，而是五层体验共同成立：
 
-**更优保留清单**（不实施 Typora 行为）：命令面板 ⇧⌘P / Slash 命令 / Reader / Split 视图 / 重开标签 ⇧⌘T / 单窗口多 tab / 高亮与上下标菜单项 / 状态栏信息常显 / ⇧⌘S 标准另存为。
+1. **单一编辑表面**：正文与预览不分离，语法标记按 Caret 智能显隐；
+2. **低干扰桌面壳**：窗口控件、菜单和 Sidebar 退后，文档成为第一视觉；
+3. **结构化编辑 GUI**：Table、Image、Link、Math、Mermaid 等无需切换到富文本模型；
+4. **文件型工作流**：打开单文件即加载父目录，Tree / List / Outline / Search 紧贴文档；
+5. **可预测输出**：复制、粘贴、主题、PDF、HTML 和 Pandoc 与 Markdown 原文兼容。
+
+### 3.2 默认桌面心智
+
+```text
+macOS
+┌──────────────────────────────────────────────────────┐
+│ Traffic Lights · Document / Tabs · Sidebar Toggle   │
+├───────────────┬──────────────────────────────────────┤
+│ Optional      │                                      │
+│ Sidebar       │       Centered Writing Surface       │
+│               │                                      │
+└───────────────┴──────────────────────────────────────┘
+
+Windows / Linux
+┌──────────────────────────────────────────────────────┐
+│ Low-noise Menu / Title / Window Controls            │
+├───────────────┬──────────────────────────────────────┤
+│ Optional      │       Centered Writing Surface       │
+│ Sidebar       │                                      │
+├───────────────┴──────────────────────────────────────┤
+│ Optional low-noise status / sidebar entry           │
+└──────────────────────────────────────────────────────┘
+```
+
+关键不是像素复制，而是：
+
+- 默认打开后可立即写；
+- 用户第一眼看见正文，不是工具条；
+- Sidebar 隐藏时正文写作宽度不变，只改变可用留白；
+- 高级能力只在需要时出现；
+- 常用功能在原菜单位置可找到。
 
 ---
 
-## 五、实施阶段
+## 4. 当前审计结论
 
-### R1 —— Windows Portable 打包（P0，新硬需求）
+### 4.1 已有强资产
 
-**技术方案**（Tauri 2 无官方 portable target，采用 exe-local 数据目录重定向）：
+以下能力已有实现与不同程度测试，本方案要求保留并防回退：
 
-1. **数据目录重定向**（Rust，`apps/desktop/src-tauri/src/lib.rs`）：
-   - `main` 入口在 Builder 之前检测 exe 同目录是否存在 `Data` 文件夹；
-   - 存在 → Windows 下 `std::env::set_var("APPDATA", <exe_dir>/Data)`（Tauri `app_data_dir` 由 `%APPDATA%\<identifier>` 解析，重定向后配置/快照/updater 缓存全部落在 exe 旁）；
-   - 不存在 → 行为不变（安装版不受影响）；macOS/Linux 不启用。
-2. **CI 产物**（`release.yml` windows job 追加 step）：
-   - 复制 `target/release/mellow-desktop.exe` → `Mellow/Mellow.exe`；
-   - 生成 `Mellow/Data/.keep` 占位（激活 portable 模式）+ `portable-README.txt`（WebView2 运行时说明）；
-   - `zip Mellow_<version>_portable_win64.zip` → upload-artifact + tauri-action 后追加到 Release 资产。
-3. **Updater 策略**：portable 模式下设置面板更新项降级为「请下载新版 zip 覆盖」提示（检测 Data 重定向标志）。
-4. **验收门禁**：
-   - 解压即用（无安装、无注册表、无 `%APPDATA%` 残留）；
-   - 配置/最近文件/快照落在 `Data/`；删除 `Data/` = 完全卸载；
-   - Windows 真机（或 VM）打开 10MB 文档冒烟；
-   - 安装版回归不受影响（无 `Data` 目录时行为与 v1.2.0 一致）。
+- MarkEdit CoreEditor + CodeMirror 6 + Lezer；
+- Live Markdown marker reveal 框架；
+- Table GUI、Tab 导航、行列增删移动、Tidy；
+- 图片粘贴、拖拽、路径策略、批量操作与上传 Adapter；
+- Math、Mermaid、Footnote、TOC、Alerts、YAML、Wikilink；
+- Smart Paste 和多格式 Copy；
+- Focus、Typewriter、Reader、Split、Command Palette、Slash；
+- Tabs、File Tree、File List、Outline、Quick Open、Global Search；
+- Atomic Save、Recovery、External Conflict、Encoding、EOL；
+- Source Fidelity corpus；
+- Large File Mode；
+- zh-CN 默认和 en-US i18n；
+- 三平台构建、打包与启动级证据。
 
-### R2 —— Typora 尾差补全（P2/P3）
+这些是“实施基础”，不是自动获得 PASS-E 的理由。
 
-| 任务 | 内容 | 验收 |
-|---|---|---|
-| R2-1 智能标点 | 设置 Markdown 面板开关组（输入时转换/智能引号/智能破折号）；引擎 input handler 按开关转换（`"` → `“”` 成对、`--` → `—`）；编辑→替换子菜单 | 引擎测试 + 中英文引号方向用例 |
-| R2-2 字数统计窗口 | 独立面板（字数/字符/行数/段落/阅读时长，中英文口径区分 CJK）；视图菜单「字数统计窗口」 | 面板实时刷新 + 测试 |
-| R2-3 主题语义补齐 | 新增 Gothic（衬线深色，Georgia/宋体衬线族）与 Whitey（极简高对比白）主题，主题菜单 radio 列全 8 项；主题命名对照表入文档 | 主题切换实测 + themes 测试 |
-| R2-4 缩放百分比化评估 | 评估 fontSize 12-28px ↔ 50%-300% 映射（Reader 已百分比）；结论二选一：a) 保持 px b) 双轨显示 | 评估结论记录 + 设置面板口径统一 |
+### 4.2 当前高优先级差距
 
-**R2-4 评估结论（2026-08-22，选 b 双轨显示）**：编辑器保持 `editor.fontSize` px 单一真源（10-32px，默认 17px），不做全局百分比化。理由：① Typora 偏好设置的字体大小本身即 px 值，px 与 Typora 偏好语义一致；② CodeMirror 行高/padding 与代码块 em 相对布局基于 px 字号精确计算，全百分比化需重构 theme 层，风险高收益低；③ 口径统一改为换算显示——状态栏字号提示为 `17px (100%)`（默认 17px = 100% 基准，Reader zoom 同基准），设置面板字号项新增描述说明该换算关系（i18n zh/en）。
-
-### R3 —— 参考项目增强（P2/P3，Typora 无有的加分项）
-
-| 任务 | 内容 | 来源 | 验收 |
+| ID | 差距 | 当前证据 | 判定 |
 |---|---|---|---|
-| R3-1 Image lightbox | 图片点击全屏放大（遮罩 + 缩放 + Esc 关闭）、编辑区图片懒加载 | Paperling | 交互实测 |
-| R3-2 mhchem 化学式 | KaTeX mhchem 扩展（`$\ce{2H2+O2->2H2O}$`），按需加载 | Paperling | 数学套件扩展用例 |
-| R3-3 Share 复制源码 | macOS Share 子菜单 → 分享面板携带 Markdown 文本（Copy = 源码） | markdown-preview | 真机实测 |
-| R3-4 Open in LLM（可选） | 工具栏/文件菜单 → 系统检测 Codex/Claude/ChatGPT 并以文件上下文打开；遵守 ADR-0018（AI 可选扩展，默认关） | markdown-preview | 真机实测 |
-| R3-5 CLI 别名评估 | 评估 `mellow` 软链/别名（现 `mellow-desktop`），Windows 侧 `.cmd` shim | markdown-preview | 评估结论 |
+| G-BASE-01 | Master Plan 把 1.14.9 当正式基线 | PRD 与旧 Plan 冲突 | 必须先修正文档治理 |
+| G-MENU-01 | 顶层菜单顺序不一致 | Typora：文件/编辑/段落/格式/显示/主题/窗口/帮助；Mellow：文件/编辑/显示/插入/格式/段落/主题/窗口/帮助 | FAIL |
+| G-MENU-02 | Mellow 新增“插入”顶层菜单 | 与 PRD“不得无限新增顶层菜单”冲突 | FAIL；应并回段落/格式 |
+| G-MENU-03 | Theme Registry 与原生菜单漂移 | 主题包已有 Whitey/Gothic；`menu.rs` 仍只装配 6 项 | FAIL |
+| G-MENU-04 | Command Registry 与 Rust Menu 双真源 | 同一命令的名称、快捷键、顺序分散 | 高回归风险 |
+| G-SIDE-01 | Sidebar 顶部控件密度高 | 文件/大纲/搜索 + 打开/刷新/更多 + 树/列表 + 路径 + 最近文件夹 | PASS-B 以下 |
+| G-SIDE-02 | Typora 的 hover/action-panel 心智未完整复刻 | Mellow 多数控制常驻 | 需 UI 收敛 |
+| G-SHELL-01 | 多 Tab 时 Titlebar 视觉占比高 | 当前 Tab 全量横排，标题栏密度随文档数上升 | 需任务效率与视觉评审 |
+| G-SHELL-02 | Sidebar 打开时正文视觉被明显推挤 | 本机截图可见左侧多层 chrome | 需布局收敛 |
+| G-STATUS-01 | 旧文档相互矛盾 | UI Review、P0 Status、Master Plan 使用不同时间点和结论 | 证据治理失败 |
+| G-QA-01 | UX Score 表仍为空 | `ux-score-gate-template.md` | NOT TESTED |
+| G-QA-02 | 30 个任务效率 Gate 未执行 | 只有模板 | NOT TESTED |
+| G-QA-03 | Windows / Linux IME、Caret、Clipboard 真机矩阵未完成 | CI 只有构建/启动级 | Release Blocker 未关闭 |
+| G-QA-04 | 菜单没有结构化自动测试 | `menu.rs` 无对应 menu schema test | 高回归风险 |
+| G-QA-05 | Desktop UI 缺少稳定视觉 Golden | 只有少量主题截图 | 无法证明布局不回退 |
 
-### R4 —— 三平台真机验证与最终验收（依赖真机/VM 基础设施）
+### 4.3 当前总体状态
 
-按 `docs/qualification/real-desktop-execution-bundle.md` 执行包 + `ux-score-gate-template.md` 门禁：
-
-| 任务 | 内容 | 验收 |
+| 维度 | 当前状态 | 结论 |
 |---|---|---|
-| R4-1 Windows 真机 | 安装矩阵（MSI/NSIS/Portable）+ IME（微软拼音/五笔）+ 行为矩阵 + portable 数据落盘核查 | windows-ime-matrix 回填 |
-| R4-2 Linux 真机 | fcitx5/ibus IME + 安装矩阵（AppImage/deb/rpm）+ 行为矩阵 | linux 清单回填 |
-| R4-3 日文 IME | golden journey j3（macOS 日文输入源） | j3 达标 |
-| R4-4 UX Score Gate | UX Score ≥ 92 + 30 任务效率 ≤ Typora+5% + Manual Golden Journey 全绿 | 门禁报告 |
-| R4-5 V1.0 转正评审 | ADR-0019/0020 门禁裁决 + 发布评审 | V1.0 release |
+| 功能覆盖 | IMPL / AUTO 较高 | 不等于 Experience Parity |
+| 编辑手感 | macOS 部分 MAC | Windows / Linux 未闭环 |
+| Sidebar | 功能丰富，视觉与入口待收敛 | 未 PASS-E |
+| Desktop UI / Layout | 已有统一壳，默认复杂度仍需复核 | 未 PASS-E |
+| Menu / Shortcut | 功能项较多，但顶层结构和单一真源存在明确差距 | FAIL |
+| 三平台 | 构建/启动通过 | 真机交互未完成 |
+| Release Gate | UX Score 和效率 Gate 空白 | 不得宣称最终达标 |
 
 ---
 
-## 六、风险与不变量
+## 5. 最终产品与交互总合同
 
-1. **不回退红线**（每阶段回归）：File Safety 5/5 / Source Fidelity 0 diff / IME corruption=0 / updater 签名 / 安全门禁全绿；
-2. **三平台一致**：新功能不允许平台分支逻辑进 editor-core/engine（仅 Adapter 层，PRD §113.4）；
-3. **Portable 不污染安装版**：数据重定向必须以 `Data` 目录存在为前置条件，默认路径行为与已发布版本完全一致；
-4. **i18n 同步**：所有新 UI 词条 zh-CN 源 + en-US 100%（类型强制）；
-5. **冲突处理**：与 PRD/ADR 冲突先报告不擅改（如 R3-4 Open in LLM 需符合 ADR-0018 可选扩展边界）。
+### 5.1 默认状态
+
+| 项目 | 最终默认 |
+|---|---|
+| 编辑模式 | Live Mode |
+| Sidebar | 首次启动隐藏；用户操作后记忆 |
+| Status Bar | 默认隐藏；可设置显示 |
+| Line Numbers | Live Mode 默认关闭；Source Mode 可独立配置 |
+| 单 Tab 栏 | 默认自动隐藏 |
+| 多 Tab 栏 | 显示，但保持 32–36px、低对比、Close 仅 hover |
+| Formatting Toolbar | Selection 后出现；IME 时不出现 |
+| Command Palette | 不常驻，只通过快捷键/菜单 |
+| Reader / Split | 不在 Titlebar 常驻，以 View / Palette 进入 |
+| AI | 默认关闭且无常驻入口 |
+| Language | zh-CN |
+| Writing Width | 820px |
+| Body | 16px / line-height 1.65 |
+| Top Padding | 56px |
+| Bottom Space | ≥ 30vh |
+
+### 5.2 布局不变量
+
+1. Sidebar 开关不得改变 Writing Width；
+2. Sidebar 展开/收起不得导致 Caret 跳跃或横向闪烁；
+3. Titlebar、Tabs、Status Bar 不得抢占正文视觉；
+4. Editor Surface 不出现永久 Formatting Ribbon；
+5. 任何模式切换保持 document、caret、selection、scroll；
+6. Dialog、Toast、Toolbar 不覆盖 IME candidate window；
+7. 900×600 仍可完成打开、编辑、保存、搜索；
+8. 200% Zoom 不截断关键按钮；
+9. 三平台共享产品语义，系统装饰遵循平台习惯；
+10. 原创品牌视觉不得复制 Typora 专有资源。
 
 ---
 
-## 七、文档治理记录（2026-08-22）
+## 6. 功能深度对标矩阵
 
-| 动作 | 文件 | 去向 |
-|---|---|---|
-| 删除 | `docs/specs/typora-parity-checklist.md` | 110 项清单终态吸收至本方案 §三/§四 |
-| 删除 | `docs/qualification/typora-parity-review-2026-08-13.md` | 首轮评审结论吸收至 §三 |
-| 删除 | `docs/qualification/typora-full-parity-audit-2026-08-20.md` | 四维差距矩阵终态吸收至 §四 |
-| 删除 | `docs/plans/typora-deep-parity-plan.md` | 五阶段执行记录吸收至 §三；后续进度记录于本方案 §八 |
-| 保留 | `docs/qualification/` 其余文件 | IME 矩阵 / golden journeys / 门禁模板等为**测试证据**非对标文档，历史引用不改写 |
+### 6.1 Document / File
 
----
-
-## 八、实施进度记录
-
-| 日期 | 阶段 | 内容 | 状态 |
+| 能力 | Typora 合同 | Mellow 目标 | 等级 |
 |---|---|---|---|
-| 2026-08-22 | — | 本方案定稿（合并 4 旧文档，差距矩阵确认剩余 G1-G13） | ✅ |
-| 2026-08-22 | R1-1 | Rust 便携模式：exe 旁 `Data` 检测 + APPDATA/LOCALAPPDATA 重定向（recovery/updater/WebView2 localStorage 全落 Data；`is_portable` 命令暴露前端） | ✅ |
-| 2026-08-22 | R1-2 | 前端 updater 降级：便携模式跳过启动自动检查 + 手动检查 toast 提示（i18n zh/en） | ✅ |
-| 2026-08-22 | R1-3 | CI portable 产物：Windows job 追加 `Mellow_<ver>_portable_win64.zip`（exe + Data 占位 + 中英双语 README）并附加到 Release | ✅（真机验证待 R4-1） |
-| 2026-08-22 | R1-4 | 门禁：cargo check/test 74 全过 + desktop tsc clean + i18n 15 过（Windows 代码路径以运行时 cfg! 判定实现，本地可编译验证） | ✅ |
-| 2026-08-22 | R2-1 | 智能标点：引擎 `smartPunctuation.ts`（smart quotes 成对弯引号 + `--␠`→`—`，避开 hr/表格 delimiter）+ iframe `__MELLOW_SMART_PUNCTUATION__` 通道 + 设置开关（默认关，Typora 一致）+ 编辑→替换菜单 CheckMenuItem + 引擎测试 9 用例 | ✅ |
-| 2026-08-22 | R2-2 | 字数统计窗口：`countWords` 新增 paragraphs/charsNoSpace 口径 + 视图菜单「字数统计窗口」+ 独立面板（字/词/字符含去空格/行/段落/阅读时长，实时刷新，复用文件信息面板样式） | ✅ |
-| 2026-08-22 | R2-3 | 主题语义补齐：新增 Whitey（极简高对比白）与 Gothic（衬线深色，Georgia/宋体）主题，内置主题达 8 个，主题菜单 radio 全列 | ✅ |
-| 2026-08-22 | R2-4 | 缩放百分比化评估结论：选 b 双轨显示（保持 px 单一真源 + 换算显示）；状态栏 `17px (100%)` + 设置面板字号描述（zh/en） | ✅ |
-| 2026-08-22 | R2 门禁 | 全 workspace 测试 10 包 932 用例全过（app-core 140 / engine 600 / editor-core 17 / export 67 / host-api 43 / document-model 26 / i18n 15 / settings 8 / themes 8 / commands 8）+ desktop tsc clean + cargo test ok（reveal.test 并发偶发超时已单独复跑确认稳定） | ✅ |
-| 2026-08-22 | R3-1 | Image lightbox：Reader lightbox 增强滚轮缩放（50%-400%）/ 双击重置 / 缩放百分比指示 + 全渲染管线 img `loading="lazy"`（export markdown-it 规则与 app-core reader 行内） | ✅ |
-| 2026-08-22 | R3-2 | mhchem 化学式 + 编辑器内公式排版：export 静态注册 katex contrib mhchem（\ce/\pu，导出/打印生效，测试 msub+→ 特征断言）；Reader/Split 无 MathJax 时按需加载 KaTeX+mhchem 渲染；engine 新增 `__MELLOW_KATEX_RENDER__` 异步通道（宿主注入 iframe，含 KaTeX CSS），fallback 链 MathJax→KaTeX→源码；desktop katexLoader 单例 + engine/editor-core 通道测试 | ✅ |
-| 2026-08-22 | R3-3 | Share 复制源码：macOS NSSharingServicePicker 需真机验证 → 并入 R4 真机阶段实施（跨平台基础「复制为 Markdown ⇧⌘C」已有） | ⏸ 并入 R4 |
-| 2026-08-22 | R3-4 | Open in LLM：可选增强，遵守 ADR-0018（AI 可选、默认关）；暂缓待明确需求 | ⏸ 暂缓 |
-| 2026-08-22 | R3-5 | CLI 别名评估：`mellow-desktop` 已可用（PRD §80）；改名/别名涉及 updater/CI 产物名一致性，收益低风险高 → 保持现名，Windows `.cmd` shim 列为后续可选增强 | ✅ 结论：保持现名 |
-| 2026-08-22 | R3 门禁 | 10 包 934 测试全过（engine 601 / export 68 含 mhchem 用例）+ cargo test 20 + desktop tsc clean + vite build 验证（katex 261KB / mhchem 33KB 独立异步 chunk，按需加载达成）| ✅ |
-| 2026-08-22 | — | **G1-G9 代码级差距全部闭环**（R1 portable / R2 尾差 / R3 增强）；剩余 G10/G11/G13（R4 真机验证矩阵 + UX Gate）为环境依赖项，待 Windows/Linux 真机就绪后执行（G12 日文 IME 已于同日 macOS 达标，见下） | 📌 R4 待环境（G10/G11/G13） |
-| 2026-08-22 | j17 性能 | 大文件 dispatch O(n²) 修复：wikilink/inlineExtras 区间检查改 `makeSkipChecker`（归并区间 + 二分 + char-first 快路径）+ 视口裁剪；10MB dispatch 92s → 169ms（LF 预启）；新增性能护栏测试防复杂度回归 | ✅ |
-| 2026-08-22 | j17 白屏根因 | tauri:// WKURLSchemeHandler 下动态 `<style>` CSSOM 永久失效（sheet===null 不可恢复）三层修复：① 分块 IPC 传输大内容（Rust `read_text_meta`/`read_text_chunk` + 前端分块拼接，规避超大单次 IPC 响应卡死 WebKit 事务）；② `EditorCore.open()` 大文档 gate `waitForStylesReady()`（样式 CSSOM 建立后才 dispatch）；③ **styleAdoptShim**（bundle 注入：MutationObserver 监听动态样式，确认 CSSOM 死亡后镜像到 `adoptedStyleSheets`，含 `style.disabled` 原型守卫保 Typewriter Mode 开关语义；正常环境不接管零侵入）+ 主文档 642KB inline module script 外部化（`core-main.js`） | ✅ |
-| 2026-08-22 | LF 收口 | Large File Mode 分类移入 `CoreEditor.open()`（resetEditor 前自动降级，覆盖 applyTab / auto reload / 冲突解决 / 快照恢复全路径）；editor-core 契约测试更新（ready() idle-mount 等待语义 + jsdom TextEncoder 守卫降级路径） | ✅ |
-| 2026-08-22 | j17 门禁 | 重建 release Mellow.app 实测：**j17 10MB PASS 8.5s**（OCR 渲染验证）；TS 10 包 936 tests 全绿（engine 603 / app-core 140 / export 68 / host-api 43 / editor-core 17 / document-model 26 / i18n 15 / settings 8 / themes 8 / commands 8）+ cargo 74 + desktop tsc clean。对照：**Typora 拒渲染 >10MB 文件（弹「该文件过大」），Mellow 正常渲染 = 优于 Typora**（PRD「一致或更优」）。golden-journeys j17 ready 判定改 OCR 内容验证（窗口截屏 OCR fixture 首行）：本机 SCK 窗口捕获流间歇故障（snap 启动失败 / probe 假稳定 → detectChange 无帧），输入（CGEvent/SE keystroke）与渲染均实测正常，非产品缺陷；screen-timing 增加 snap 调试命令 | ✅ |
-| 2026-08-22 | G12 日文 IME | **j3 双 app PASS（Mellow + Typora 1.14.9）**。环境修复：① 启用日文罗马字输入源（GUI 添加；plist 直写与 TISEnableInputSource 均不持久，实测需 System Settings 正规路径）；② 输入源 ID 演进：macOS 26 实测为 `com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese`（旧 `…Kotoeri.Romaji` 已不存在），j3 改双 ID 依次探测；③ 用词修正：`konnichiwa` 在 macOS 26 JapaneseIM 做字面转换得 `こんにちわ`（正字拼作 konnichiha，双 app 同行为 = parity 成立，测试用例问题），改无歧义词 `nihongo`；④ 判定准则明确为「IME 组字提交成功」（にほんご / 日本語 任一），验证 marked text 完整性而非词典选择 | ✅ macOS 达标 |
-| 2026-08-22 | macOS 全程门禁 | **Golden Journeys 全量 10 项 Mellow 全 PASS**（j1 拉丁输入 / j2 中文 IME / j3 日文 IME / j4+6 选区加粗 / j7 列表延续 / j8 表格 Tab / j9 数学 / j10 Mermaid / j15 undo / j17 10MB 8.66s）；Typora 对照 9/10 PASS（j17 因其拒渲染 >10MB）。macOS 侧 golden journey 基线全绿 | ✅ |
-| 2026-08-23 | 编辑体验/侧边栏批 | 「编辑体验与侧边栏功能清单」差距收口 6 项：① 搜索面板区分大小写 `Aa` / 正则 `.*` 开关（会话记忆 + 非法正则标红不提交，documentSearch.ts）；② 查找下一个/上一个补 F3 / Shift+F3 别名；③ 文件树「文件夹分组」UI 开关（folderFirst）；④ 代码块行号偏好（engine `codeLineNumbers.ts` 行号 widget + `__MELLOW_CODE_LINE_NUMBERS__` 通道 + 设置 live apply，默认关与 Typora 一致）；⑤ 固定/最近文件夹移除按钮（悬停显示 ✕，i18n 补 `sidebar.removeRecent`）；⑥ **拖拽建链**（Typora「拖入编辑区自动生成文件链接」）：OS 级拖入非图片文件与侧边栏 HTML5 拖拽（`application/x-mellow-file` dataTransfer）统一经 engine drop 建链 `[name](相对路径)`（keep-original 相对化，跨盘/UNC/未保存 → 绝对；label/dest 按 CommonMark 转义；drop 坐标定位 + 单 transaction 单 Undo） | ✅ |
-| 2026-08-23 | 门禁 | 10 包 954 测试全过（engine 620 含新增 17：fileLinkMarkdown 8 + 拖拽建链 3 + fenceContentRange 6）+ 全 workspace build（含 desktop vite）clean | ✅ |
-| 2026-08-23 | 文件链接批 | **Markdown 文件链接全链路**（Typora「`[标签](相对路径.md)` 文件间链接；`文件.md#标题` 锚点跳转」）：① 引擎 `mdLink.ts` —— `[label](dest)` 扫描（跳过 fence/inline code；排除 URL/图片/wikilink/title 形式/空 label）+ label 链接色下划线渲染 + 定界符 caret-aware 隐藏 + 点击 → `__MELLOW_MD_LINK_OPEN__`（Large File Mode 视口裁剪一致）；② 宿主 `openMdLink` —— dest 解码（%XX）→ 拆 `#锚点` → 相对当前文档目录解析 → openPathInTab；③ 锚点跳转 `headingOffsetForAnchor`（app-core，复用 parseHeadings 的 fence/YAML 跳过语义；精确文本 → 大小写不敏感 → GitHub slug 三级匹配 → jumpToOffset）。② 专注/打字机「默认开启状态」启动恢复（设置项 `editor.typewriter` / `editor.focusMode` 已有 live apply，补启动恢复：Typora 偏好→通用「默认开启」语义） | ✅ |
-| 2026-08-23 | 门禁 | 10 包 970 测试全过（engine 632 含新增 12：mdLink 扫描/点击/Source Fidelity；app-core 144 含新增 4：headingOffsetForAnchor 精确/CI/slug/围栏）+ 全 workspace build clean（format-list 全量偶发 flaky 单跑 19/19 PASS 确认） | ✅ |
-| 2026-08-23 | 侧边栏收尾 | **打开单文件 → 父文件夹自动加载**（清单 2.1 注「无需显式打开文件夹」）：`autoLoadParentFolder` —— handleOpen（对话框）与 openPathInTab（CLI/odoc/链接跳转/拖拽建链等）两入口统一接入；仅 fileTreeRoot 为 null 时生效（不打断已打开项目根）；root 变更经既有 effect 自动重建 FileTreeModel + 刷新树 + 记入最近文件夹 | ✅ |
-| 2026-08-23 | 文件链接收尾 | **链接目标不存在 → 引导自动创建**（清单 2.3「目标不存在时引导自动创建」）：openMdLink 内 exists=false → window.confirm（`dialog.mdLinkCreate` zh/en）→ 确认即 writeText 空文件并打开；取消则维持「未找到」状态栏提示 | ✅ |
-| 2026-08-23 | 门禁 | 10 包 970 测试全过 + desktop tsc clean 复验 + i18n 15/15（key 完整性含 mdLinkCreate） | ✅ |
-| 2026-08-23 | 图床上传批 | **图床上传（PicGo/PicList）全链路**（清单 1.3 写作辅助，Typora §55）：① 契约 `host-api ImageUploadService`（channel 含 `none`/`picgo-http`/`picgo-cli`/`custom-command`；mock/null host 实现）；② 引擎 `insert.ts` 第三模式 —— `planImageCandidatesDetail`（file → 原路径直传；bitmap → 落盘副本作上传源）+ `applyImageUpload`（批量上传，成功张替换 `![](URL)`，失败张逐张回退本地策略）+ `insertImageCandidates` 编排 plan → fsOps 落盘 → upload → 单 transaction dispatch；host 桥惰性读 `__MELLOW_IMAGE_UPLOAD__`（App live 读 localStorage 注入，'none' → 全 null 回退本地）；③ Rust `upload.rs` 三通道 —— picgo-http（multipart `list[]` + `{"success","result"}` 解析，默认 36677）/ picgo-cli（参数形式，stdout 过滤 http(s) 行）/ custom-command（Typora 兼容契约：stdin 路径每行一个 → stdout URL 每行一个）；凭据归 PicGo 等自管宿主不经手；④ 设置 → 图像：上传服务 select（4 通道）+ 端点地址 + 自定义命令（live 生效）；⑤ `uploadAll`（格式→图像→上传图片）：本地图片批量上传替换 URL、本地文件保留、部分失败逐项报告；i18n zh/en 补全 | ✅ |
-| 2026-08-23 | 门禁 | 10 包 970 测试全过（app-core 144 含 uploadAll 8 用例；host-api 43 含 imageUpload 5；engine 632）+ cargo upload 8 测试（picgo-http 全链路 mock server / cli stdout 过滤 / custom-command 契约 / multipart 构造）+ 全 workspace build clean + E2E `image-upload-verify.mjs` 14 项全绿（设置装配链路 + 空文档/缺失文件安全分支） | ✅ |
+| New | 新文档立即可写 | 同快捷键、同焦点行为 | E |
+| New Window | 新窗口独立会话 | 系统惯例一致 | E |
+| New Tab | macOS 原生支持，Win/Linux 有差异 | 三平台统一 Tabs，不抢 Table 快捷键 | B |
+| Open File | 打开即 Live | 同步加载父目录 | E |
+| Open Folder | 文件对话框选择目录 | 同步骤或更少 | E |
+| Open Parent Automatically | 单文件打开后父目录出现 | 不打断已有 workspace root | E |
+| Recent | 文件/文件夹可进入 | 清理、Pin、缺失提示更安全 | E/B |
+| Quick Open | fuzzy current folder/recent | Unicode / 中文匹配不更差 | E/B |
+| Save | 可预测保存 | Atomic + Fidelity 更优 | B |
+| Save As | 新路径、状态正确 | 资产目录规则可预测 | E |
+| Save All | 多文档批量保存 | Dirty 与失败逐项反馈 | E/B |
+| Reload from Disk | 明确重载 | Dirty 时禁止静默覆盖 | B |
+| Rename / Move | 文件菜单和 Sidebar | watcher、tab、recent 同步 | E/B |
+| Delete | 移到 Trash | 可撤销时提供 Undo | B |
+| File Info | 路径、统计、编码 | 中文统计更完整 | E/B |
+| File Association | 可选默认应用 | 安装器不强制篡改 | E |
+
+### 6.2 Markdown 元素
+
+以下节点全部执行统一的 15 状态矩阵：
+
+```text
+idle / caret-before / caret-inside / caret-after
+selection-partial / selection-full / mouse-click
+IME / undo / redo / copy / paste
+delete-start / delete-end / source-live-roundtrip
+```
+
+| 节点 | Live 目标 | Source Fidelity 目标 | 等级 |
+|---|---|---|---|
+| Paragraph / Break | Enter / Shift+Enter 与 Typora 一致 | 保留 hard break 与空格 | E |
+| ATX H1–H6 | marker 智能显隐 | `#` 数量不改写 | E |
+| Setext Heading | 正确渲染与回退 | 原 underline 保持 | E |
+| Strong / Emphasis | nested 独立显隐 | 原 marker 风格保持 | E |
+| Strike | 切换与 marker 一致 | minimal wrap | E |
+| Underline HTML | GUI 可操作 | 保留 HTML 源 | E |
+| Inline Code | 关闭 spell/smart punctuation | backtick 数量正确 | E |
+| Link / Reference Link | text/url mixed state | path/title/escape 保持 | E |
+| Image | widget + source reveal | path 不静默改写 | E/B |
+| Blockquote | marker 与嵌套稳定 | 缩进不改写 | E |
+| Ordered / Unordered List | continuation/terminate/indent | marker 风格与编号策略可预测 | E |
+| Task List | clickable checkbox | 只 patch `[ ]` / `[x]` | E/B |
+| Code Fence | language、copy、fold、wrap | fence 长度与 info 保持 | E |
+| Table | GUI 与源码无模式切换 | minimal patch | E/B |
+| Inline / Block Math | Typora 兼容优先 | delimiter 保持 | E |
+| Mermaid | lazy render / error / source edit | fence source 不重写 | E |
+| Footnote | jump / return / hover | label 与 definition 保持 | E |
+| TOC | live update / jump | `[TOC]` 保持 | E |
+| GitHub Alerts | 5 类型 | blockquote source 保持 | E |
+| YAML | source-first + optional card | key order 不默认重排 | E/B |
+| HTML / Media | 安全渲染 | 原文保持 | E + safer |
+| Sup / Sub / Highlight | 与设置联动 | marker 保持 | E |
+
+### 6.3 写作辅助
+
+| 能力 | 对标合同 | 验收重点 |
+|---|---|---|
+| Auto Pair | 成对插入/跳过/删除 | IME 不干扰，Undo 一步 |
+| Smart Punctuation | 默认状态与 Typora 一致，可细分开关 | 中英文引号、破折号、代码/URL 排除 |
+| Spellcheck | 菜单/设置状态一致 | 三平台可用性、代码区排除 |
+| Floating Toolbar | Selection 后显示 | 不遮选择、不遮下一行、Esc、Keyboard、IME hidden |
+| Slash Commands | Mellow Better | 默认不抢 Typora 输入，行首触发，可关闭 |
+| Command Palette | Mellow Better | 可发现命令，不替代原菜单入口 |
+| Focus Mode | F8，非活动内容淡化 | line/block 口径、Theme、IME |
+| Typewriter Mode | F9，Caret 固定 | 鼠标移动设置、滚动稳定 |
+| Reader Mode | Mellow Better | 搜索、Outline、Zoom、Lightbox、Print |
+| Split Mode | Mellow Better | 双向 Scroll Sync、Click Sync、比例记忆 |
+| Word Count | 选择与全文统计 | CJK/英文/字符/段落/阅读时长 |
+
+### 6.4 Table
+
+| 场景 | 合同 |
+|---|---|
+| Create | Source、Menu、Context、Slash、TSV 全部可达 |
+| Resize | 行列数量工具与拖动不更难 |
+| Navigation | Tab / Shift+Tab / Last+Tab / Ctrl/Cmd+Enter |
+| Row / Column | 上下左右插入、删除、移动 |
+| Alignment | 左/中/右只 patch delimiter row |
+| Selection | Cell、Row、Column 操作符合视觉反馈 |
+| Copy / Paste | 单元格与表格复制粘贴可预测 |
+| Tidy | 唯一允许显式重排空格的命令 |
+| Invalid Source | 不自动“修复”或丢数据 |
+| IME | 单元格组词不丢字、不重建整表 |
+| Undo | 每个 GUI 动作一个 Undo |
+| Large | 100×30 可编辑；不每键重建 DOM |
+
+### 6.5 Image
+
+| 场景 | 合同 |
+|---|---|
+| 输入 | typing / picker / drag one / drag many / bitmap / copied file / URL |
+| 路径 | 原路径、relative、`./`、escape、root URL |
+| 资产目录 | assets / images / document.assets / custom |
+| GUI | open / reveal / copy / copy path / resize / syntax convert |
+| 文件操作 | rename / move / copy / delete，Markdown 引用同步且可恢复 |
+| 批量 | Move All / Copy All / Download Remote / Upload All |
+| Broken | placeholder + retry + source reveal，不删除引用 |
+| Remote | lazy、timeout、安全策略、可本地化 |
+| Upload | PicGo HTTP / CLI / PicList / Custom Adapter |
+| 特殊路径 | 中文、空格、#、%、括号、drive、UNC、symlink |
+| Undo | Source patch 一个 Undo；文件操作单独安全撤销 |
+
+### 6.6 Clipboard
+
+| 场景 | 合同 |
+|---|---|
+| Normal Copy | 同时写 plain / HTML / RTF / Markdown flavor |
+| Copy as Markdown | Ctrl/Cmd+Shift+C |
+| Copy as Plain | 显式纯文本 |
+| Copy as HTML Code | HTML 源写入 plain |
+| Copy without Theme | 保留语义，去主题样式 |
+| Paste | HTML 优先转 Markdown |
+| Paste Plain | Ctrl/Cmd+Shift+V，完全忽略 rich |
+| URL on Selection | 生成 link；已有 link 时安全替换 target |
+| TSV | 一步转换 GFM Table |
+| Image/File | 进入 Image Pipeline |
+| Cross-app | VS Code、系统纯文本、Word、Gmail、Apple Notes、LibreOffice |
+
+### 6.7 Search / Navigation
+
+| 能力 | 合同 |
+|---|---|
+| Find | Ctrl/Cmd+F，count、next/prev、case、whole、regex |
+| Replace | Ctrl/Cmd+H 或平台合同，`$1` replacement |
+| F3 Alias | Windows/Linux Find Next / Previous 肌肉记忆 |
+| Global Search | 流式、分组、上下文、Aa/Whole/Regex |
+| Quick Open | fuzzy filename/path/recent/pinned |
+| Outline | hierarchy/current/jump/filter/collapse/flat |
+| File Link | relative/absolute/folder/anchor |
+| Missing Link | 引导创建，不静默失败 |
+| Document Switch | Ctrl+Tab / Cmd+grave，Caret/scroll/session 独立 |
+
+### 6.8 Theme / Export / Print
+
+| 能力 | 合同 |
+|---|---|
+| Themes | 至少 6 个原创主题；Light/Dark 分离；System |
+| Custom CSS | base → theme → base.user → theme.user |
+| Theme Menu | 与 Theme Registry 自动一致，无手工数组漂移 |
+| PDF | CJK、Math、Mermaid、Table、Footnote、Outline、Page Break |
+| HTML | with style / no style / self-contained |
+| Image Export | P1；width/font/quality/long-image guard |
+| Pandoc | 可选路径，错误展示完整但不泄露敏感信息 |
+| Previous Export | 当前文档/窗口语义明确 |
+| Print | 系统 Dialog；与 PDF 共用 print stylesheet |
+
+---
+
+## 7. Sidebar 最终深度合同
+
+### 7.1 信息架构
+
+Sidebar 只承载四个产品任务：
+
+```text
+Files
+├── File Tree
+└── File List
+
+Outline
+
+Search
+```
+
+禁止引入 Activity Bar、右侧永久 Inspector 或插件面板。
+
+### 7.2 默认视觉
+
+Sidebar 打开后的默认层级：
+
+1. 顶部只显示当前模式名称和最多 2–3 个轻图标；
+2. Files 模式默认直接进入 Tree 或上次模式；
+3. Tree/List 切换、Open Folder、Refresh、Sort、Filter 收进 hover/action menu；
+4. Root 路径只在必要时以单行截断显示；
+5. Recent/Pinned 默认折叠或进入 action menu，不在每次打开时占据正文高度；
+6. 高级 glob 不常驻；
+7. 选中态低对比，但 keyboard focus 清晰。
+
+### 7.3 File Tree
+
+| 维度 | 最终合同 |
+|---|---|
+| Hierarchy | disclosure、folder/file icon、层级缩进清晰 |
+| Filter | hidden / non-Markdown / custom include/exclude |
+| Sort | natural / name / modified / created / asc-desc / folder grouping |
+| Watch | 外部新增、删除、移动自动更新 |
+| Keyboard | Up/Down、Left/Right、Enter、F2、Delete、Home/End |
+| Mouse | single select/open、double 行为稳定、drag move |
+| Cross-drop | Finder/Explorer ↔ Sidebar |
+| Editor Drop | Sidebar 文件拖到正文生成相对 Markdown link |
+| Context | New File/Folder、Open、New Window、Rename、Duplicate、Move、Trash、Copy Path、Reveal、Undo |
+| Safety | Trash 优先；失败不丢状态；Undo 有明确反馈 |
+| Current | 当前文档与 keyboard selection 可区分 |
+| Scale | 10k 文件目录不冻结 UI；搜索/扫描可取消 |
+
+### 7.4 File List
+
+| 维度 | 最终合同 |
+|---|---|
+| Item | title、filename，可选 modified/summary |
+| Density | compact 默认，comfortable 可选 |
+| Scope | current folder / recursive |
+| Group | folder grouping 与 Tree 语义一致 |
+| Keyboard | Up/Down、Enter、PageUp/PageDown |
+| State | current、selected、hover、missing |
+| Performance | 大目录虚拟化或等效优化 |
+
+### 7.5 Outline
+
+| 维度 | 最终合同 |
+|---|---|
+| Structure | H1–H6 hierarchy |
+| Active | 当前 Heading 实时高亮 |
+| Jump | click/Enter 跳转，Caret 可预测 |
+| Filter | keyword filter |
+| Tree | collapse / expand / flat |
+| Number | auto-number option |
+| Context | Highlight Current、Collapse All、Expand All、Flat/Tree |
+| Scroll | Active 变化不引发剧烈侧栏滚动 |
+| Export | 与 PDF/HTML Outline 语义一致 |
+
+### 7.6 Global Search
+
+| 维度 | 最终合同 |
+|---|---|
+| Input | 顶部固定；Enter 执行 |
+| Toggles | Aa / Whole Word / Regex 轻图标 |
+| Advanced | include/exclude/context 默认折叠 |
+| Results | file grouping + 1–2 行 context |
+| Streaming | Rust 搜索结果增量显示，可取消 |
+| Jump | 打开文件并定位 match |
+| Keyboard | Up/Down/Enter/Esc |
+| Error | invalid regex 就地提示，不提交 |
+| Scope | 当前打开父目录 / workspace root |
+
+### 7.7 Sidebar 响应式
+
+| 窗口宽度 | 行为 |
+|---|---|
+| ≥ 1200 | 200–480px 可拖动 |
+| 900–1199 | 默认保持用户宽度，限制正文最小可用区域 |
+| < 900 | 不支持作为正式最小窗口；如系统强制缩小则自动隐藏 Sidebar |
+| 200% Zoom | 控件不横向溢出；高级项进入菜单 |
+
+---
+
+## 8. Desktop UI 与布局最终合同
+
+### 8.1 Titlebar / Tabs
+
+| 项 | 合同 |
+|---|---|
+| Height | 32–36px；Windows/Linux 自定义区域不超过 44px |
+| macOS | 原生 Traffic Lights，拖拽区、Fullscreen、系统 Menu Bar |
+| Windows | Snap-compatible controls，不伪造不兼容 window chrome |
+| Linux | GNOME/KDE 可用，尊重系统字体与窗口行为 |
+| Single Tab | 默认自动隐藏 |
+| Multi Tab | 轻背景区分；无强 accent line；Close 仅 hover |
+| Dirty | 低干扰且不只依赖颜色 |
+| Overflow | 横向滚动或 compact，不挤压窗口控件 |
+| Drag | reorder，跨窗口 P1 |
+| Context | Close / Close Others / Close Right / Reopen |
+| Path | Tooltip 显示，不常驻占据 Titlebar |
+| Sidebar Toggle | 轻图标，不显示永久快捷键胶囊按钮 |
+
+### 8.2 Editor Surface
+
+- Writing Width：680 / 820 / 980 / Auto；
+- 默认 820px；
+- Body 16px，Line Height 1.65；
+- Top Padding 56px；
+- Bottom Space ≥ 30vh；
+- Inline marker reveal 不改变 document position；
+- Selection 在 Light/Dark 和中文正文中清晰；
+- 不使用大面积高饱和品牌色；
+- 不对 Caret、marker、table resize 做动画。
+
+### 8.3 Status Bar
+
+默认隐藏。开启后可显示：
+
+- 字数；
+- 行:列；
+- Markdown；
+- Encoding；
+- EOL；
+- Zoom；
+- 保存/错误状态。
+
+要求：
+
+- 高度 22–26px；
+- 可单项配置 P1；
+- 不作为高频命令唯一入口；
+- Windows/Linux 可承载 Sidebar toggle，但必须保持低干扰。
+
+### 8.4 Welcome / Empty
+
+Welcome 只允许：
+
+```text
+Mellow
+
+新建文档
+打开文件
+打开文件夹
+
+最近使用
+```
+
+无营销、账号、新闻、AI Prompt、插画大图。首次启动是否直接显示 Welcome 或新建空白文档，在 P2 用户测试中二选一，判定标准是“启动到输入的步骤不多于 Typora”。
+
+### 8.5 Settings
+
+一级导航固定：
+
+1. 通用；
+2. 编辑器；
+3. Markdown；
+4. 文件；
+5. 图片；
+6. 外观；
+7. 导出；
+8. 快捷键；
+9. 扩展；
+10. 高级；
+11. AI（仅扩展启用后）。
+
+规则：
+
+- 左栏 180–220px；
+- 右侧内容 max 720px；
+- 修改尽量即时生效；
+- 必须 reload 时显示明确按钮；
+- Menu Check State、Settings 和 Command State 必须同一真源；
+- zh-CN / en-US 不硬编码，不用固定宽度按钮。
+
+### 8.6 Dialog / Toast / Recovery
+
+| 类型 | 合同 |
+|---|---|
+| Save / Open | 原生文件对话框 |
+| Unsaved Close | 文档名明确，Save / Don’t Save / Cancel |
+| External Conflict | Compare / Reload Disk / Keep Local |
+| Recovery | Recover / Compare / Ignore |
+| File Operation | Toast + Undo |
+| Error | 说明对象、原因、可恢复动作 |
+| Update | 不阻挡写作；Portable 明确手动覆盖 |
+| Permission | 只在动作需要时申请 |
+
+---
+
+## 9. Menu、Command 与 Shortcut 最终合同
+
+### 9.1 顶层菜单
+
+最终目标：
+
+```text
+macOS
+Mellow | 文件 | 编辑 | 段落 | 格式 | 显示 | 主题 | 窗口 | 帮助
+
+Windows / Linux
+文件 | 编辑 | 段落 | 格式 | 显示 | 主题 | 帮助
+```
+
+裁决：
+
+- 移除独立“插入”顶层菜单；
+- Insert 能力并入“段落”或“格式”；
+- Reader / Split / Command Palette 作为 Mellow Better 项放在“显示”并用 separator 隔开；
+- 不新增 AI 顶层菜单；
+- Windows/Linux 是否展示“窗口”只遵循平台原生惯例，不复制 macOS 专属项。
+
+### 9.2 文件
+
+顺序合同：
+
+1. 新建；
+2. 新建标签页；
+3. 新建窗口；
+4. separator；
+5. 打开；
+6. 打开最近；
+7. 快速打开；
+8. separator；
+9. 文件信息；
+10. 在文档列表中显示；
+11. 在文件树中显示；
+12. 打开文件位置；
+13. separator；
+14. 删除；
+15. separator；
+16. 关闭 / 全部关闭；
+17. separator；
+18. 保存 / 另存为 / 保存全部 / 从磁盘重新加载；
+19. Rename / Move / Duplicate（按平台文案）；
+20. separator；
+21. Import；
+22. Export；
+23. Page Setup；
+24. Print。
+
+Mellow Snapshot / Recovery 入口不得插入 Typora 高频组中破坏查找，可放在 File Info 或 Advanced 子菜单。
+
+### 9.3 编辑
+
+必须覆盖：
+
+- Undo / Redo；
+- Cut / Copy / Copy Image / Paste；
+- Copy as Plain / Markdown / HTML Code / Without Theme；
+- Paste Plain / Match Style；
+- Select 子菜单；
+- Move Line Up / Down；
+- Delete Range 子菜单；
+- Math Tools；
+- EOL；
+- Whitespace / Line Break；
+- Replace / Smart Punctuation；
+- Spelling and Grammar；
+- Find / Replace；
+- macOS Speech / Dictation / Emoji 使用系统项。
+
+### 9.4 段落
+
+必须覆盖：
+
+- H1–H6；
+- Paragraph；
+- Increase / Decrease Heading；
+- Table 全量子菜单；
+- Math Block；
+- Code Fence；
+- Code Tools；
+- GitHub Alerts；
+- Quote；
+- Ordered / Unordered / Task List；
+- Task State；
+- List Indent；
+- Insert Paragraph Above / Below；
+- Reference Link；
+- Footnote；
+- Horizontal Rule；
+- TOC；
+- YAML Front Matter；
+- Mermaid 作为 Code Fence 快速模板，可放在 Code Tools 或 Command Palette，不新增顶层菜单。
+
+### 9.5 格式
+
+必须覆盖：
+
+- Bold / Italic / Underline / Inline Code；
+- Strike / Comment；
+- Hyperlink；
+- Link Operations；
+- Image 子菜单全量；
+- Clear Format；
+- Mellow Highlight / Sup / Sub 作为增强项，以 separator 与 Typora 基础项分隔。
+
+### 9.6 显示
+
+必须覆盖：
+
+- Tab Bar / All Tabs；
+- Source Mode；
+- Read-only 或 Reader Mode；
+- Focus；
+- Typewriter；
+- Toolbar；
+- Toggle Sidebar；
+- Outline / File List / File Tree / Search；
+- Word Count；
+- Outline Window 若不实现独立窗口，记录 Deliberate Difference 与替代路径；
+- Zoom；
+- Always on Top；
+- Fullscreen；
+- Mellow Better：Command Palette / Split，在独立增强分组。
+
+### 9.7 主题
+
+- 菜单从 Theme Registry 自动生成；
+- 选中态与实际主题一致；
+- Light/Dark/System 与主题选择不冲突；
+- Whitey / Gothic 等新增主题不得只存在于 Settings；
+- Open Theme Folder / User CSS 放在 separator 后；
+- 主题切换不重建 EditorView，不丢 Caret/Selection/Undo。
+
+### 9.8 窗口 / 帮助
+
+macOS Window 由系统预定义项优先：
+
+- Minimize / Zoom；
+- Move & Resize / Fullscreen Tile；
+- Previous / Next Tab；
+- Move Tab / Merge All Windows；
+- Bring All to Front；
+- Window list。
+
+Help：
+
+- What’s New；
+- Quick Start；
+- Markdown Reference；
+- Pandoc；
+- Custom Themes；
+- Images；
+- Acknowledgements；
+- Changelog；
+- Privacy；
+- Website；
+- Feedback；
+- Mellow Cheatsheet 可作为增强项。
+
+### 9.9 Command 单一真源
+
+当前 Rust `menu.rs`、TypeScript Command Registry、i18n、Cheatsheet、Settings 各自维护部分名称和快捷键，必须收敛为：
+
+```text
+packages/commands
+└── CommandDescriptor
+    ├── id
+    ├── titleKey
+    ├── category
+    ├── menuPath
+    ├── menuOrder
+    ├── shortcut.mac
+    ├── shortcut.win
+    ├── shortcut.linux
+    ├── checkState
+    ├── enabledWhen
+    └── handler contract
+          ↓
+React Registry / Palette / Cheatsheet / Settings
+          ↓
+Serializable NativeMenuSpec
+          ↓
+apps/desktop Native Menu Adapter
+          ↓
+Tauri Rust materialization + OS predefined items
+```
+
+硬规则：
+
+1. Command ID 只能定义一次；
+2. 快捷键只能定义一次；
+3. 菜单顺序由 schema 测试；
+4. Theme 菜单从 Theme Registry 派生；
+5. 菜单 Check State 与 Settings Store 同一真源；
+6. Rust 只负责原生 materialization 和 OS predefined item；
+7. Menu click 与 keyboard 必须进入同一 Command Handler；
+8. 禁止 native accelerator + JS keydown 双触发；
+9. zh-CN / en-US menu dump 都进入 Golden；
+10. macOS / Windows / Linux 各自生成预期顶层结构。
+
+### 9.10 Shortcut 冲突裁决
+
+| 冲突 | 最终策略 |
+|---|---|
+| Windows/Linux Ctrl+T | 保持 Typora Table；New Tab 使用 Ctrl+Alt+T 或用户自定义 |
+| macOS Cmd+T | New Tab；Table = Cmd+Option+T |
+| Cmd/Ctrl+Shift+P | Command Palette，作为 Mellow Better |
+| Cmd/Ctrl+P | macOS Print；Windows/Linux Quick Open 依 Typora |
+| Source | Cmd/Ctrl+/ |
+| Focus / Typewriter | F8 / F9 |
+| Sidebar | Cmd/Ctrl+Shift+L |
+
+任何冲突必须经过三平台 keymap test，不得在单平台自行决定。
+
+---
+
+## 10. Context Menu 与临时 UI
+
+### 10.1 普通文本
+
+- Cut / Copy / Paste；
+- Paragraph / Heading；
+- Bold / Italic / Strike / Code / Link；
+- Copy as Markdown / Plain；
+- Spelling；
+- AI 只在扩展启用且有 Selection 时出现，并置于末尾增强区。
+
+### 10.2 Link
+
+- Open Link；
+- Copy URL；
+- Edit Link；
+- Remove Link；
+- Local file link 时 Reveal / Open in New Tab。
+
+### 10.3 Image
+
+- Open / Reveal；
+- Copy Image / Copy Path；
+- Resize；
+- Markdown / HTML syntax convert；
+- Rename / Move / Copy；
+- Upload；
+- Delete File 必须二次确认并走 Trash。
+
+### 10.4 Table
+
+- Add/Delete/Move Row；
+- Add/Delete/Move Column；
+- Alignment；
+- Copy Table；
+- Tidy；
+- Delete Table。
+
+### 10.5 Code / Math / Mermaid
+
+- Copy Source；
+- Copy Rendered；
+- Language / Refresh；
+- Export SVG/PNG（适用时）；
+- Error 详情不破坏源文本。
+
+### 10.6 Selection Toolbar
+
+最终项：
+
+```text
+H1 H2 H3 | B I S Code | Link | Quote | List
+```
+
+行为：
+
+- 只在非空 Selection 后出现；
+- 计算可用空间后放在上方或下方；
+- 不遮 Selection 中心与下一输入行；
+- IME composition 时隐藏；
+- Esc 关闭；
+- Tab / Arrow / Enter 可用；
+- 命令执行后 Editor 重新获得焦点；
+- 一个命令一个 Undo。
+
+---
+
+## 11. Better 与 Deliberate Difference 边界
+
+### 11.1 必须保留的 Better
+
+| 能力 | Better 原因 | 不得破坏 |
+|---|---|---|
+| Crash Recovery Compare | 比简单恢复更安全 | 启动速度、隐私 |
+| External Conflict Compare | 防静默覆盖 | 保存主流程 |
+| Source Fidelity | Git 友好 | GUI 编辑效率 |
+| Large File Mode | Typora >10MB 可能拒绝 | 普通文档体验 |
+| Reader Mode | 高质量阅读 | 默认仍为 Live |
+| Split Mode | 开发者调试 | 不常驻模式切换 |
+| Command Palette | 发现性 | 原菜单入口 |
+| Slash Commands | 高效插入 | 普通 `/` 输入与 IME |
+| Three-platform Tabs | 一致性 | Table 快捷键 |
+| Extension Permissions | 开放与安全 | 核心功能不依赖插件 |
+
+### 11.2 不进入 V1
+
+- Knowledge Graph；
+- Backlink Database；
+- Cloud Workspace；
+- Account / Team Collaboration；
+- Full Git GUI；
+- Terminal；
+- Browser；
+- Permanent AI Chat Panel；
+- AI Autonomous Agent；
+- Online Publishing Platform。
+
+---
+
+## 12. 实施工作包
+
+### P0 — Baseline 与证据治理
+
+**目标**：所有后续任务使用同一基线、同一状态、同一证据目录。
+
+任务：
+
+1. 将所有 active 文档的主基线统一为 Typora 1.14.6；
+2. 1.14.9 标记为 patch observation；
+3. 建立 `parity-ledger.json` 或等价 typed fixture；
+4. 每项包含 Typora 行为、Mellow 当前、等级、状态、证据、测试、Owner Package；
+5. 清理“代码完成 = 完全达标”的表述；
+6. 旧 qualification 文档只作为历史证据，不参与当前状态聚合；
+7. 生成当前状态 Dashboard；
+8. 冻结 Typora 官方来源与本机 1.14.9 AX dump。
+
+建议文件：
+
+- `docs/plans/typora-parity-master-plan.md`；
+- `tests/parity/ledger.*`；
+- `tests/benchmark/fixtures/typora-1.14.6-*`；
+- `tests/benchmark/fixtures/typora-1.14.9-observation-*`。
+
+Exit Gate：
+
+- 基线无冲突；
+- 所有 P0 项有唯一 ID；
+- 不存在无证据的 PASS-E。
+
+**实施结果（2026-08-23）**：已完成。`tests/parity/typora-parity-ledger.json` 建立 32 个唯一 P0 条目；`node tests/parity/verify-parity-ledger.mjs` 已纳入根目录 `pnpm test`，会验证 1.14.6 规范基线、补丁观察隔离、ID / 证据完整性与 PASS-E 前置要求，并输出当前状态 Dashboard。带日期的 qualification 报告保留为历史证据，不再参与当前状态聚合。
+
+### P1 — Command / Menu 单一真源
+
+**目标**：先修用户发现路径，再修视觉。
+
+任务：
+
+1. 在 `packages/commands` 定义 CommandDescriptor；
+2. 从 descriptor 生成 Palette / Cheatsheet / NativeMenuSpec；
+3. Rust `menu.rs` 降为平台 Adapter；
+4. 顶层菜单按 §9.1 重排；
+5. 移除 Insert 顶层，条目并入 Paragraph / Format；
+6. 补齐 File / Edit / Paragraph / Format / View / Help 的顺序和 separator；
+7. Theme Menu 从 Theme Registry 生成；
+8. 统一 check state、enabled state、shortcut；
+9. 为 macOS / Windows / Linux 写 menu schema tests；
+10. 真机导出 AX menu dump，与 Typora fixture 做语义 diff；
+11. Context Menu 复用 Command ID；
+12. Shortcut conflict test 覆盖 Ctrl+T、Ctrl+P、Cmd+P 等。
+
+主要模块：
+
+- `packages/commands`；
+- `packages/i18n`；
+- `apps/desktop/src-tauri/src/menu.rs`；
+- `apps/desktop/src/App.tsx`；
+- `apps/desktop/src/Cheatsheet.tsx`；
+- `packages/themes`。
+
+Exit Gate：
+
+- 三平台顶层结构符合合同；
+- 每个 Menu Item 有 Command ID；
+- Theme / Settings / Menu 无漂移；
+- keyboard 与 menu click 只执行一次；
+- zh-CN / en-US dump 通过。
+
+### P2 — Desktop Shell 与默认布局
+
+**目标**：默认打开后第一视觉是文档。
+
+任务：
+
+1. Sidebar 首次启动隐藏，之后记忆用户状态；
+2. Status Bar 首次启动隐藏；
+3. Live Mode Line Numbers 默认关，Source 可独立设置；
+4. 移除 Titlebar 永久快捷键胶囊，改轻图标；
+5. 单 Tab 自动隐藏；
+6. 多 Tab overflow、dirty、close、active 视觉收敛；
+7. Sidebar toggle 保持 Writing Width；
+8. Welcome 做 A/B 对照：空白新文档 vs 极简 Welcome；
+9. Settings 导航补齐 PRD 结构，但不引入复杂嵌套；
+10. 统一 Editor Padding、Writing Width、Focus Ring、Selection；
+11. 加入 900×600、1200×800、1440×900、200% Zoom Golden；
+12. macOS / Windows / Linux 分别做 window chrome screenshot。
+
+主要模块：
+
+- `apps/desktop/src/App.tsx`；
+- `apps/desktop/src/styles.css`；
+- `packages/desktop-ui`；
+- `packages/settings`；
+- `packages/themes`。
+
+Exit Gate：
+
+- UI Review 不再判定为 VS Code / Obsidian 化；
+- 常见任务入口不增步；
+- Screenshot Golden 通过；
+- Keyboard / Focus / Reduced Motion 通过。
+
+### P3 — Sidebar 深度对标
+
+**目标**：功能完整，但默认密度不高于 Typora。
+
+任务：
+
+1. SidebarHeader 改为低密度模式标题 + 轻图标；
+2. Open / Refresh / Tree-List / Filter / Sort 收入 hover/action menu；
+3. Recent / Pinned 改为折叠或 action panel；
+4. 高级 glob 默认折叠；
+5. Tree 完成键盘、拖拽、Context、Watcher 全链路；
+6. List 完成 density、recursive、group、virtualization；
+7. Outline 完成 current/filter/collapse/flat/number/context；
+8. Search 完成轻量 toggle、advanced fold、stream/cancel/jump；
+9. Sidebar resize、记忆、窗口窄化和 200% Zoom；
+10. 与 Finder/Explorer/Desktop Environment 做跨应用拖拽；
+11. 建立四模式 Screenshot Golden；
+12. 完成 Sidebar 12 个计时微任务。
+
+Exit Gate：
+
+- Sidebar 默认只展示当前任务；
+- Tree/List/Outline/Search keyboard-only 全通；
+- 10k 文件、1000 headings、1万结果不阻塞；
+- 三平台真机交互通过。
+
+### P4 — Live Editing 与编辑手感
+
+**目标**：Typora 最难复制的部分达到 PASS-E。
+
+任务：
+
+1. 对 §6.2 每个节点执行 15 状态矩阵；
+2. marker reveal 更新不得改变 Selection；
+3. Composition Guard 覆盖所有 node；
+4. Undo grouping 以用户动作而非 transaction 数量为准；
+5. Enter / Backspace / Delete / Home / End / Word Move 平台化；
+6. mouse click / double / triple / drag selection；
+7. nested inline formatting；
+8. invalid/partial Markdown fallback source；
+9. Source ↔ Live 保持 scroll/caret/selection；
+10. Focus / Typewriter 与 marker reveal 联合测试；
+11. Floating Toolbar 与 IME/Selection 联合测试；
+12. 每个平台真实输入法连续 20 分钟写作；
+13. 同机 Typora/Mellow 输入延迟和任务时间对照；
+14. 所有 Caret / IME / Undo regression 标为 Release Blocker。
+
+主要模块：
+
+- `packages/editor-core`；
+- `packages/editor-engine`；
+- `packages/editor-react`；
+- `tests/fixtures`；
+- `tests/benchmark`。
+
+Exit Gate：
+
+- Live Editing ≥ 24/25；
+- Caret / IME / Undo = 15/15；
+- IME corruption = 0；
+- Typing P95 达 PRD；
+- 任何节点无 Source Fidelity 回退。
+
+### P5 — Table / Image / Clipboard / File Workflow
+
+**目标**：四个高频生产任务达到 GUI 与数据安全双重对标。
+
+Table：
+
+- 22 场景全量；
+- 100×30；
+- cell IME；
+- one action one Undo；
+- minimal diff。
+
+Image：
+
+- 24+ 场景；
+- 三平台路径；
+- 多图 drag/paste；
+- move/copy/upload；
+- document rename + asset folder；
+- failure rollback。
+
+Clipboard：
+
+- 7 个目标应用；
+- plain/html/rtf/markdown；
+- rich paste/TSV/URL/image；
+- Source Mode plain-first。
+
+File：
+
+- open parent；
+- watcher；
+- rename/move/trash/undo；
+- external dirty conflict；
+- recovery compare；
+- network/cloud/disk-full corpus。
+
+Exit Gate：
+
+- Table / Image UX 任务不慢于 Typora +5% 目标；
+- Clipboard cross-app matrix 全绿；
+- Source Fidelity 0 diff；
+- File Safety 5/5；
+- Data loss = 0。
+
+### P6 — Settings / Theme / Export / Better
+
+**目标**：完成核心配置心智和输出质量，不让增强项增加默认复杂度。
+
+任务：
+
+1. Settings 一级导航与搜索；
+2. 菜单、设置、运行状态双向同步；
+3. Theme Registry / User CSS / Light-Dark；
+4. PDF / HTML / Image / Pandoc / Previous Export；
+5. CJK、Math、Mermaid、Table、Footnote、TOC export corpus；
+6. Reader / Split / Palette / Slash 的默认隐藏与可发现性；
+7. Recovery / Conflict Compare；
+8. Large File Mode；
+9. Extension permission 与 Safe Mode；
+10. AI 默认关闭验证。
+
+Exit Gate：
+
+- Typora 用户能在相同一级设置中找到关键配置；
+- PDF/HTML 日常生产可用；
+- Better 能力不改变默认 Typora 心智；
+- Export 三平台视觉高度一致。
+
+### P7 — 三平台 Adapter 与 Native Enhancement
+
+**目标**：共享语义一致，系统行为原生。
+
+macOS：
+
+- Traffic Lights / Menu Bar / Services / Share；
+- Cmd+, / Cmd+W / Native Fullscreen；
+- Quick Look；
+- Signed / Notarized DMG。
+
+Windows：
+
+- Snap / Window Controls；
+- MSI / NSIS / Portable；
+- File Association / Open With / Explorer；
+- Microsoft Pinyin / Sogou；
+- JumpList P1。
+
+Linux：
+
+- GNOME / KDE；
+- Portal / Native File Dialog；
+- AppImage / deb / rpm；
+- MIME / XDG；
+- fcitx5 / ibus。
+
+Exit Gate：
+
+- 核心 Editor 无平台分支；
+- Adapter 行为通过 contract tests；
+- 三平台安装/卸载/更新矩阵通过；
+- ADR-0019 trigger 未触发；若触发，停止并新增 ADR。
+
+### P8 — 最终验收
+
+任务：
+
+1. 三平台 Golden Journeys；
+2. 30 个核心计时任务，两轮交叉顺序；
+3. UX Score 100 分；
+4. Typora 用户盲测；
+5. Accessibility keyboard + screen reader baseline；
+6. Performance 同机对照；
+7. Source Fidelity / File Safety / Export Corpus；
+8. Menu AX dump / Screenshot Golden；
+9. Release Candidate audit；
+10. 只在全部 Gate 通过后更新 Release 文案。
+
+Exit Gate：
+
+- Total UX Score ≥ 92；
+- Live Editing ≥ 24/25；
+- Caret / IME / Undo = 15/15；
+- File Safety = 5/5；
+- ≥ 27/30 任务 ≤ Typora +5%；
+- 关键任务无一慢 >15%；
+- IME corruption = 0；
+- Data loss = 0；
+- Source Fidelity = 0 diff；
+- Windows / macOS / Linux 全 PASS-E。
+
+---
+
+## 13. 依赖与实施顺序
+
+```text
+P0 Baseline
+  ↓
+P1 Command/Menu ───────────────┐
+  ↓                            │
+P2 Desktop Shell               │
+  ↓                            │
+P3 Sidebar                     │
+  ↓                            │
+P4 Live Editing  ←─────────────┘
+  ↓
+P5 Table/Image/Clipboard/File
+  ↓
+P6 Settings/Theme/Export/Better
+  ↓
+P7 Platform Adapters
+  ↓
+P8 Final QA
+```
+
+禁止：
+
+- Menu 未统一前继续增加入口；
+- Desktop Shell 未收敛前加入常驻增强面板；
+- Windows/Linux 真机未通过就宣称三平台等价；
+- 用测试数量替代 Experience Contract；
+- 顺手重构无关模块；
+- 修改 vendored CoreEditor；
+- 直接改写 Accepted ADR。
+
+---
+
+## 14. 测试与证据体系
+
+### 14.1 自动化层
+
+| 层 | 内容 |
+|---|---|
+| Unit | parser、commands、table、image path、clipboard、settings |
+| Contract | CommandDescriptor、Host API、Menu Schema、Adapter |
+| Editor Integration | marker、caret、selection、IME event、undo、mode switch |
+| Rust | save、watcher、recovery、search、export、permission |
+| Desktop E2E | file、sidebar、menu、settings、export、dialog |
+| Visual | shell、sidebar 四模式、tabs、settings、theme、dialog |
+| Corpus | Source Fidelity、File Safety、Export、Typora Markdown |
+
+### 14.2 真机矩阵
+
+| 平台 | 必测 |
+|---|---|
+| Windows 10/11 | 微软拼音、搜狗、WebView2、MSI/NSIS/Portable、Clipboard、Print |
+| macOS | 拼音、五笔、日文 smoke、WKWebView、Menu/Share/Quick Look、DMG |
+| Ubuntu / Fedora | fcitx5、ibus、WebKitGTK、GNOME/KDE、AppImage/deb/rpm |
+
+### 14.3 视觉 Golden
+
+每个平台至少保存：
+
+1. 首次启动；
+2. 单文档 Live；
+3. 多 Tab；
+4. File Tree；
+5. File List；
+6. Outline；
+7. Search；
+8. Settings；
+9. Selection Toolbar；
+10. Table Toolbar；
+11. Reader；
+12. Split；
+13. Light / Dark；
+14. 900×600；
+15. 200% Zoom。
+
+Golden 用于回归，不用于要求三平台像素完全相同。
+
+### 14.4 Menu Golden
+
+- Typora 1.14.6 zh-CN / en-US；
+- Typora 1.14.9 observation；
+- Mellow macOS zh-CN / en-US；
+- Mellow Windows zh-CN / en-US；
+- Mellow Linux zh-CN / en-US；
+- 比较 top-level、item path、order、separator、shortcut、check/enabled state；
+- OS predefined 项允许平台差异。
+
+### 14.5 30 个核心计时任务
+
+沿用 [UX Score Gate Template](../qualification/ux-score-gate-template.md) 的 30 项，并增加以下观测字段：
+
+- entry point；
+- steps；
+- time；
+- errors；
+- hesitation；
+- shortcut success；
+- undo count；
+- caret jump；
+- source diff；
+- subjective complexity；
+- screenshot/video evidence。
+
+每个任务 Typora / Mellow 各做两轮，交换执行顺序。
+
+---
+
+## 15. Release Blockers
+
+任一存在即禁止发布：
+
+- IME 丢字、重复、提前提交；
+- Caret / Selection blocker；
+- Undo semantic corruption；
+- Save / Recovery / External Conflict 数据损坏；
+- Table data loss；
+- Image path/file loss；
+- Source Fidelity fail；
+- 10MB 不可编辑；
+- PDF CJK garble；
+- Clipboard P0 blocker；
+- Menu 高频入口缺失或快捷键冲突；
+- Windows / Linux 真机 Journey 未通过；
+- UX Score < 92；
+- Live Editing < 24/25；
+- Caret / IME / Undo < 15/15；
+- File Safety < 5/5；
+- 未完成 Typora 用户迁移盲测。
+
+---
+
+## 16. 完成定义
+
+每个 P0 Feature 必须同时满足：
+
+```text
+Functional
++ Typora Experience Contract
++ Correct Entry Point
++ Default State
++ Windows
++ macOS
++ Linux
++ zh-CN
++ en-US
++ Keyboard
++ Mouse
++ Accessibility
++ IME
++ Caret / Selection
++ Undo / Redo
++ Source Fidelity
++ Performance Budget
++ Automated Tests
++ Manual Golden Journey
+= PASS-E
+```
+
+任何一项缺失，状态只能是 IMPL / AUTO / platform-partial，不能写“已完成对标”。
+
+---
+
+## 17. 历史实现记录的治理
+
+旧版 Master Plan 中 2026-08-22 至 2026-08-23 的 R1–R3、Large File、IME、Sidebar、File Link、Image Upload 等记录仍是有价值的实现证据，但从本版本起：
+
+1. 不再把时间流水账放在主施工路径中；
+2. 相关实现通过 Git history、tests 和 parity ledger 追踪；
+3. 旧“G1–G9 代码级闭环”只表示 IMPL/AUTO，不自动表示 PASS-E；
+4. 新进度只更新对应 Work Package、状态码和证据链接；
+5. 不允许继续追加没有验收状态的长日志。
+
+---
+
+## 18. 研究与证据入口
+
+### 18.1 Typora 官方
+
+- https://typora.io/releases/stable
+- https://support.typora.io/Quick-Start/
+- https://support.typora.io/Shortcut-Keys/
+- https://support.typora.io/File-Management/
+- https://support.typora.io/Search/
+- https://support.typora.io/Outline/
+- https://support.typora.io/Table-Editing/
+- https://support.typora.io/Images/
+- https://support.typora.io/Upload-Image/
+- https://support.typora.io/Copy-and-Paste/
+- https://support.typora.io/Focus-and-Typewriter-Mode/
+- https://support.typora.io/Markdown-Reference/
+- https://support.typora.io/Export/
+- https://support.typora.io/What%27s-New-1.14/
+
+### 18.2 仓库实测与门禁
+
+- [Typora 菜单 dump](../../tests/benchmark/fixtures/typora-menu-dump.txt)
+- [Desktop UI 历史审查](../qualification/ui-review-2026-08-13.md)
+- [UX Score Gate](../qualification/ux-score-gate-template.md)
+- [真实桌面执行包](../qualification/real-desktop-execution-bundle.md)
+- [Runtime Matrix Evidence](../qualification/runtime-matrix-evidence-2026-08-18.md)
+- [Runtime Qualification 状态](../../tests/qualification/README.md)
+
+---
+
+## 19. 待确认决策
+
+实施前需要确认以下产品级决策：
+
+1. **基线**：正式基线固定 Typora 1.14.6，1.14.9 仅作 patch observation；
+2. **菜单**：移除 Mellow 独立“插入”顶层菜单，恢复 Typora 顶层顺序；
+3. **默认 UI**：Sidebar / Status Bar / Live Line Numbers 默认隐藏，单 Tab 自动隐藏；
+4. **Sidebar**：高级过滤、排序、最近和固定文件夹默认收进 hover/action menu；
+5. **Better 保留**：Reader、Split、Command Palette、Slash、Recovery Compare、Large File；
+6. **完成口径**：现有“代码完成”统一降为 IMPL/AUTO，只有三平台真机 + UX Gate 后可标 PASS-E；
+7. **实施顺序**：严格按 P0 → P8，不先做新增 Feature。
+
+确认后，从 **P0 Baseline 与证据治理** 开始实施。
+
+---
+
+## 20. 最终目标
+
+Mellow V1 的最终状态应当是：
+
+> Typora 用户无需学习新的基础写作方式；默认界面同样克制；菜单、快捷键、Sidebar、Table、Image、Clipboard、Search、Theme、Export 都能在预期位置完成；Live Markdown、Caret、IME、Undo 和文件安全达到正式 Gate；Reader、Split、Recovery、Large File 和开放扩展在不增加默认复杂度的前提下提供明确优势。
+
+在此之前，产品只能描述为：
+
+> **“以 Typora 体验为目标的 Mellow”**
+
+只有 P8 全部通过后，才允许描述为：
+
+> **“与 Typora 1.14.6 核心体验一致，并在安全、中文输入、大文件、阅读和跨平台一致性上更优。”**

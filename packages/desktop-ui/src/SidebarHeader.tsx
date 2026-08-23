@@ -26,8 +26,8 @@ export function SidebarHeader({ mode, t, onModeChange, onOpenFolder, onRefresh, 
       </div>
       {mode === 'files' && (
         <>
-          <button onClick={onOpenFolder} title={t('sidebar.openFolderTitle')}>{t('sidebar.openFolder')}</button>
-          <button onClick={onRefresh} disabled={!canRefresh}>{t('sidebar.refresh')}</button>
+          <button className="file-sidebar-icon-action" onClick={onOpenFolder} title={t('sidebar.openFolderTitle')} aria-label={t('sidebar.openFolderTitle')}>⌑</button>
+          <button className="file-sidebar-icon-action" onClick={onRefresh} disabled={!canRefresh} title={t('sidebar.refresh')} aria-label={t('sidebar.refresh')}>↻</button>
           <button className="file-tree-filters-toggle" onClick={onToggleFilters} title={t('sidebar.filtersTitle')} aria-expanded={filtersOpen}>⋯</button>
         </>
       )}

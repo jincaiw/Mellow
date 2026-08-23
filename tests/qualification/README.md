@@ -2,7 +2,9 @@
 
 对应 `docs/specs/runtime-qualification-plan.md`。
 
-> **2026-08-17 更新（ADR-0021）**：三平台构建矩阵首次全部 PASS（Windows MSI/NSIS、macOS DMG、Linux AppImage/deb/rpm，GitHub Actions release.yml）；CI 5 job 全绿（含 cargo test）。真机 Runtime 矩阵（IME/Caret/Clipboard/Print/10MB）仍待 Windows/Linux 真机执行，执行手册：`docs/qualification/phase1-runtime-qualification-manual.md`。
+> **对标基线治理（2026-08-23）**：当前功能与 UX 验收基线固定为 Typora 1.14.6；本文件及 `docs/qualification/` 内带日期的旧报告保留其当时的 1.14.9 实测记录，仅作为历史证据。当前聚合状态以 `tests/parity/typora-parity-ledger.json` 为准。
+
+> **CI 验收策略（2026-08-23）**：Windows 与 Linux 使用 GitHub Actions 的 `windows-latest` / `ubuntu-latest` 作为正式自动化 Runtime 证据来源；Linux 的 Xvfb + fcitx5 IME 矩阵和 Windows 的启动／保存／10MB 冒烟均为 fail-fast Gate。真实用户输入法候选窗手感仍只能由人工补测，不得以 CI 通过替代该项体验结论。
 
 ## 最终决策
 

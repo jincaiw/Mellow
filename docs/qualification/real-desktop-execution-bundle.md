@@ -4,6 +4,7 @@
 > CI runner 已证明：三平台构建+启动+渲染 PASS（见 runtime-matrix-evidence-2026-08-18.md）；
 > 输入注入在无头 CI 环境受限，需真实桌面会话。本包让任何普通电脑即可执行。
 > 对照基线：Typora 1.14.6（可选，用于效率对照）。
+> 版本说明：任何 1.14.9 及以上实测结果须注明为 patch observation，不得改写本执行包的规范基线。
 
 ## 一、需要的机器
 - Windows 10/11 桌面（1 台）：微软拼音 / 搜狗输入法
@@ -61,7 +62,7 @@ node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5
 ### 3.3 macOS（可选补测）
 ```bash
 node tests/benchmark/ime-matrix.mjs          # 简体拼音（System Events）
-node tests/benchmark/golden-journeys.mjs     # Golden Journeys（需 Typora 1.14.9）
+node tests/benchmark/golden-journeys.mjs     # Golden Journeys（记录实际 Typora 版本；1.14.9 仅作 patch observation）
 ```
 
 ## 四、结果回填

@@ -233,7 +233,7 @@ export default function App() {
     | { phase: 'error'; message: string };
   const [updateUi, setUpdateUi] = useState<UpdateUi>({ phase: 'idle' });
   const [rollbackPrompt, setRollbackPrompt] = useState<RollbackStatus | null>(null);
-  // RC：Status bar hidden 设置（parity B2；默认显示，可隐藏）
+  // Status Bar 默认隐藏；用户显式开启后持久化。
   // PRD §11：单 Tab 自动隐藏 Tab Bar（Typora 行为；设置可关）
   const [autoHideTabBar, setAutoHideTabBar] = useState<boolean>(() => {
     try { return localStorage.getItem('mellow.editor.autoHideTabBar') !== '0'; } catch { return true; }
@@ -3252,7 +3252,7 @@ export default function App() {
       { id: 'reader.zoomReset', localizedTitle: { zh: 'Reader 重置缩放', en: 'Reader Reset Zoom' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(1) },
       { id: 'reader.print', localizedTitle: { zh: '打印 Reader', en: 'Print Reader' }, category: 'file', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       // RC F2：打印入口（对齐 Typora Cmd+P；golden journey #18）
-      { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+P' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
+      { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+Alt+P' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       { id: 'file.openWith', localizedTitle: { zh: '打开方式…', en: 'Open With…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => openOpenWith() },
       { id: 'file.info', localizedTitle: { zh: '文件信息', en: 'File Info' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => openFileInfo() },
       { id: 'file.openUserCss', localizedTitle: { zh: '打开用户 CSS（appData/user.css）', en: 'Open User CSS (appData/user.css)' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
@@ -4284,7 +4284,7 @@ export default function App() {
       {contextMenu !== null && (
         <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />
       )}
-      <Cheatsheet open={cheatsheetOpen} locale={locale} onClose={() => setCheatsheetOpen(false)} />
+      <Cheatsheet open={cheatsheetOpen} locale={locale} shortcuts={Object.fromEntries(commandRegistryRef.current.all().map((c) => [c.id, platformMac ? c.shortcut?.mac : c.shortcut?.winLinux]))} onClose={() => setCheatsheetOpen(false)} />
       {toast !== null && (
         <div className="toast-bar">
           <span className="toast-message">{toast.message}</span>

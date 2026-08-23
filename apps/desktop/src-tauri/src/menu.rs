@@ -18,7 +18,7 @@
 //! - 窗口：独立菜单（最小化 / 缩放 / 标签页切换）。
 //!
 //! 平台差异：macOS 额外安装 Mellow 应用菜单（About/Settings/Services/Hide）；
-//! Windows/Linux 安装 文件/编辑/显示/插入/格式/段落/主题/窗口/帮助。
+//! Windows/Linux 安装 文件/编辑/段落/格式/显示/主题/窗口/帮助。
 //!
 //! 本地化：菜单标签属于系统 chrome（Adapter 层），由本模块目录维护 zh/en 两套，
 //! 前端 locale 切换时经 `set_menu_locale` 命令触发重建；核心 UI i18n 仍以
@@ -257,6 +257,8 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("theme.git-light", "Git Light", "Git Light"),
     ("theme.git-dark", "Git Dark", "Git Dark"),
     ("theme.newsprint", "Newsprint", "Newsprint"),
+    ("theme.whitey", "Whitey", "Whitey"),
+    ("theme.gothic", "Gothic", "Gothic"),
     ("theme.system", "跟随系统", "Follow System"),
     ("theme.openUserCss", "打开用户 CSS…", "Open User CSS…"),
     // ── 窗口 ──
@@ -379,7 +381,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     )?;
     // D2：导入…（Typora File→Import；pandoc 转 Markdown 后新标签页打开）
     let import_doc = MenuItem::with_id(app, "file.import", &l("file.import"), true, None::<&str>)?;
-    let print = MenuItem::with_id(app, "file.print", &l("file.print"), true, accel("Cmd+P", "Ctrl+P"))?;
+    let print = MenuItem::with_id(app, "file.print", &l("file.print"), true, accel("Cmd+P", "Ctrl+Alt+P"))?;
 
     // 打开最近文件（动态子菜单：前端 set_recent_files 重建）
     let recent_files: Vec<String> = app
@@ -555,7 +557,8 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     #[cfg(debug_assertions)]
     view_items.push(&devtools);
     let view_menu = Submenu::with_items(app, &l("menu.view"), true, &view_items)?;
-    subs.push(view_menu);
+    // Push 顺序由 `packages/commands/src/menuContract.ts` 的产品合同约束：
+    // File → Edit → Paragraph → Format → View → Theme → Window → Help。
 
     // ── 插入（Mellow 更优保留：slash 命令统一入口）──────
     let i_heading = MenuItem::with_id(app, "insert.heading", &l("insert.heading"), true, None::<&str>)?;
@@ -569,8 +572,8 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let i_alert = MenuItem::with_id(app, "insert.alert", &l("insert.alert"), true, None::<&str>)?;
     let i_image = MenuItem::with_id(app, "insert.image", &l("insert.image"), true, accel("Cmd+Ctrl+I", "Ctrl+Alt+I"))?;
     let i_toc = MenuItem::with_id(app, "insert.toc", &l("insert.toc"), true, None::<&str>)?;
-    let insert_menu = Submenu::with_items(app, &l("menu.insert"), true, &[&i_heading, &i_list, &i_task, &i_quote, &i_table, &i_code, &i_math, &i_mermaid, &i_alert, &i_image, &i_toc])?;
-    subs.push(insert_menu);
+    // 不创建独立 Insert 顶层菜单：插入类命令归入 Paragraph / Format，
+    // 同时仍以原始 Command ID 发给前端统一分发。
 
     // ── 格式 ───────────────────────────────────────────
     let f_bold = MenuItem::with_id(app, "format.bold", &l("format.bold"), true, accel("Cmd+B", "Ctrl+B"))?;
@@ -599,8 +602,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let img_move = MenuItem::with_id(app, "image.moveAll", &l("image.moveAll"), true, None::<&str>)?;
     let img_copy = MenuItem::with_id(app, "image.copyAll", &l("image.copyAll"), true, None::<&str>)?;
     let image_menu = Submenu::with_items(app, &l("format.imageMenu"), true, &[&img_upload, &img_download, &img_move, &img_copy])?;
-    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_underline, &f_code, &f_strike, &f_comment, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &link_ops_menu, &f_reference, &sep15, &f_clear, &image_menu])?;
-    subs.push(format_menu);
+    let format_menu = Submenu::with_items(app, &l("menu.format"), true, &[&f_bold, &f_italic, &f_underline, &f_code, &f_strike, &f_comment, &f_highlight, &f_sup, &f_sub, &sep14, &f_link, &link_ops_menu, &f_reference, &sep15, &i_image, &f_clear, &image_menu])?;
 
     // ── 段落 ───────────────────────────────────────────
     let p_h1 = MenuItem::with_id(app, "paragraph.h1", &l("paragraph.h1"), true, accel("Cmd+1", "Ctrl+1"))?;
@@ -680,6 +682,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let sep19 = PredefinedMenuItem::separator(app)?;
     let sep20 = PredefinedMenuItem::separator(app)?;
     let sep21 = PredefinedMenuItem::separator(app)?;
+    let sep22 = PredefinedMenuItem::separator(app)?;
     let paragraph_menu = Submenu::with_items(
         app,
         &l("menu.paragraph"),
@@ -691,13 +694,18 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
             &table_menu, &p_math, &p_code, &code_tools_menu, &alert_menu, &p_quote, &sep19,
             &p_ordered, &p_list, &p_task, &p_task_toggle, &indent_menu, &sep20,
             &p_insert_above, &p_insert_below, &sep21,
-            &p_footnote, &p_hr, &i_toc, &p_yaml,
+            &p_footnote, &p_hr, &i_toc, &p_yaml, &sep22,
+            &i_heading, &i_list, &i_task, &i_quote, &i_table, &i_code, &i_math, &i_mermaid, &i_alert,
         ],
     )?;
     subs.push(paragraph_menu);
+    subs.push(format_menu);
+    subs.push(view_menu);
 
     // ── 主题（B2-5/B3-2：radio 选中态 = 当前生效主题；跟随系统 = mode 勾选）──
-    let theme_ids = ["mellow-light", "mellow-dark", "paper", "git-light", "git-dark", "newsprint"];
+    // 与 packages/themes 的 BUILTIN_THEMES 保持逐项同步；此列表由跨语言 Adapter
+    // 消费，受 tests/parity/verify-menu-contract.mjs 回归保护。
+    let theme_ids = ["mellow-light", "mellow-dark", "paper", "git-light", "git-dark", "newsprint", "whitey", "gothic"];
     let theme_state = app
         .try_state::<ThemeSelection>()
         .map(|s| s.0.lock().unwrap().clone())

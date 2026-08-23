@@ -126,12 +126,12 @@ jobs:
             pkill -x mellow-desktop || true
             sleep 2
             # IME 矩阵
-            node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 || echo IME_MATRIX_EXIT=$?
+            node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5
             # 10MB 大文件启动冒烟（PRD §110）：打开 10MB 文档 → 存活 → 渲染
             yes 中文测试行content0123456789 | head -c 10000000 > /tmp/mellow-10mb.md || true
             nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-10mb.md > /tmp/mellow-10mb.log 2>&1 &
             sleep 15
-            if kill -0 $! 2>/dev/null; then echo '10mb_alive=true'; else echo '10mb_alive=false'; tail -20 /tmp/mellow-10mb.log; fi
+            if kill -0 $! 2>/dev/null; then echo '10mb_alive=true'; else echo '10mb_alive=false'; tail -20 /tmp/mellow-10mb.log; exit 1; fi
             import -display :99 -window root /tmp/mellow-10mb.png 2>/dev/null || true
             pkill -x mellow-desktop || true
           '
@@ -203,6 +203,7 @@ jobs:
           Start-Sleep -Seconds 12
           $alive = -not $p.HasExited
           Write-Host ('app_alive=' + $alive)
+          if (-not $alive) { throw 'Mellow exited before Windows runtime smoke input' }
           try {
             $ws = New-Object -ComObject WScript.Shell
             $ws.AppActivate('Mellow') | Out-Null
@@ -223,7 +224,9 @@ jobs:
           [IO.File]::WriteAllText($big, $sb.ToString())
           $p2 = Start-Process -FilePath $bin -ArgumentList $big -PassThru
           Start-Sleep -Seconds 15
-          Write-Host ('10mb_alive=' + (-not $p2.HasExited))
+          $bigAlive = -not $p2.HasExited
+          Write-Host ('10mb_alive=' + $bigAlive)
+          if (-not $bigAlive) { throw 'Mellow exited while opening 10MB document on Windows' }
           if (-not $p2.HasExited) { Stop-Process -Id $p2.Id -Force }
           Write-Host 'Windows runtime smoke executed on windows-latest'
 

@@ -1,6 +1,6 @@
 # 阶段 1 三平台真机 Runtime Qualification 执行手册
 
-> 依据：PRD §111/§112、ADR-0019 §2/§3、docs/specs/runtime-qualification-plan.md、docs/plans/typora-deep-parity-plan.md 阶段 1。
+> 依据：PRD §111/§112、ADR-0019 §2/§3、docs/specs/runtime-qualification-plan.md、docs/plans/typora-parity-master-plan.md §12。
 > 目的：决定 Tauri 2 是否正式锁定；任何 FAIL 触发 ADR-0019 §2 → 切换 Electron。
 > 状态：⏳ 待真机执行（Windows/Linux 需用户提供真机/VM；macOS 本机可执行）。
 
@@ -17,7 +17,7 @@
 ```bash
 # IME 矩阵（System Events 输入；简体拼音）
 node tests/benchmark/ime-matrix.mjs
-# Golden Journeys（需 Typora 1.14.9 对照安装）
+# Golden Journeys（需 Typora 对照安装；实际版本须记录，1.14.9 仅为 patch observation）
 node tests/benchmark/golden-journeys.mjs --app=mellow
 # 性能对照（screen-timing 需屏幕录制权限）
 node tests/benchmark/run-benchmark.mjs
