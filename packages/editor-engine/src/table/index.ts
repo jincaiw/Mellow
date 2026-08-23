@@ -8,3 +8,4 @@ export { addRow, deleteRow, addColumn, deleteColumn, setColumnAlignment, tidyTab
 export { tableKeymap, tableContext } from './keymap';
 export { buildTableToolbarExtension, hideTableToolbar, resetTableToolbarVisibility, TOOLBAR_CLASS, BTN_CLASS } from './toolbar';
 export { buildColumnWidthExtension, dashCount, normalizeDelimiter, delimiterPatch, targetDashCount, COLUMN_DIVIDER_CLASS, COLUMN_WIDTH_CLASS } from './columnWidth';
+export { buildTableLiveViewExtension, TABLE_LIVE_CLASS } from './liveView';

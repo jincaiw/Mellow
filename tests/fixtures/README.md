@@ -20,6 +20,7 @@
 | `markdown/code-fence.md` | 代码块 + 语言标注 |
 | `markdown/quote.md` | 引用、嵌套引用 |
 | `markdown/mixed-document.md` | 综合文档（仿真实写作场景） |
+| `markdown/full-syntax-corpus.md` | 全语法综合渲染测试：CommonMark + GFM + Typora 扩展（高亮/上下标/TOC）+ 引擎特性（脚注/数学 mhchem/Mermaid/Alerts/Wikilink/CJK/转义边界），全部直接渲染 |
 | `clipboard/rich-clipboard.html` | 富文本剪贴板：中文、格式、表格和恶意 HTML |
 | `clipboard/dangerous-rich-clipboard.html` | 安全测试：script、event handler、javascript/data URL 与 Unicode |
 | `clipboard/copy-source.md` | Clipboard Copy：中文、Unicode、链接、列表、表格、代码块 |

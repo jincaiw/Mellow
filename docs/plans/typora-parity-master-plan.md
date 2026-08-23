@@ -42,6 +42,14 @@ P0 基线与证据治理
 → P8 真机、效率、盲测与 Release Gate
 ```
 
+### 0.1 Typora 1.14.9 样例专项回归（2026-08-23）
+
+用户指定的 `markdown-syntax-demo.md` 专项已完成一轮实现与 macOS release 复验，关闭了该样例暴露出的 Source Mode 刷新、Outline 远距虚拟滚动、PageUp / PageDown 空白视口和 GFM Table 原位编辑问题。Table 路径保持 Markdown 唯一真源，并增加 minimal patch、Composition、Tab 导航和 Undo 自动化。
+
+专项证据见 [Markdown 全语法样例 Typora 1.14.9 对标验收报告](../qualification/markdown-syntax-demo-parity-2026-08-23.md)。结果包括 `60 suites / 642 tests` editor-engine 回归、151 / 151 Source Fidelity corpus、macOS AX / 截图证据和 unsigned 1.3.4 release bundle。
+
+该专项只更新对应实现项和证据，不改变本方案的产品级状态码：真实中文输入法 Golden Journey、隔离环境 N=5 外部性能、以及本次代码 push 后的 Windows / Linux GitHub Actions 仍须完成，才能把相关 Experience Contract 提升为 `PASS-E`。
+
 ---
 
 ## 1. 权威依据与冲突裁决

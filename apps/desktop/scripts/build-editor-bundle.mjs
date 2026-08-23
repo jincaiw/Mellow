@@ -26,6 +26,21 @@ const engineDist = resolve(root, '../../packages/editor-engine/dist');
 const targetDir = resolve(root, 'public/editor');
 const target = resolve(targetDir, 'index.html');
 
+// Desktop 使用写作优先的产品默认值。CoreEditor 的 DEFAULT_CONFIG 同时承担
+// 上游开发/调试入口，因此仍会显示行号、不可见字符并使用等宽字体；这些值不应
+// 泄漏到 Mellow 的首次启动体验（PRD §68 / Desktop UI Spec §16）。用户设置会在
+// EditorHost ready 后继续覆盖字体、字号与行号。
+const desktopEditorConfig = {
+  ...DEFAULT_CONFIG,
+  fontFace: { family: 'system-ui' },
+  showLineNumbers: false,
+  showActiveLineIndicator: false,
+  invisiblesBehavior: 'never',
+  // Typora 1.14.9 默认主题约为 32/26/22/19/17/16px（正文 17px）。
+  // CoreEditor 上游默认只给 H1 +5px，真实写作文档的标题层级过弱。
+  headerFontSizeDiffs: [15, 9, 5, 2, 0, -1],
+};
+
 // 与 packages/editor-core/src/bridge-injection.ts BRIDGE_INJECTION 保持一致（由 buildBundleHtml 注入）
 
 /**
@@ -195,7 +210,7 @@ function build() {
   const html = readFileSync(source, 'utf8');
 
   // 1-3. 平台无关注入（config 占位符替换 + 桥接注入）—— editor-core 规范实现
-  let out = buildBundleHtml(html, { config: DEFAULT_CONFIG });
+  let out = buildBundleHtml(html, { config: desktopEditorConfig });
 
   // TEMP→FIX(j17-3): tauri:// WKURLSchemeHandler（macOS WKWebView / Linux WebKitGTK）
   //  下动态插入的 <style> 的 CSSOM 永不建立（sheet===null、规则不生效、不可恢复，

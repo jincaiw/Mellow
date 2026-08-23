@@ -95,7 +95,7 @@ function isSafeHref(value: string): boolean {
   }
 }
 
-function renderInlineMarkdown(markdown: string): string {
+export function renderInlineMarkdown(markdown: string): string {
   const placeholders: string[] = [];
   const put = (html: string): string => {
     const token = `\u0000${placeholders.length}\u0000`;
@@ -104,6 +104,9 @@ function renderInlineMarkdown(markdown: string): string {
   };
 
   let text = normalizeText(markdown);
+  // Protect escaped Markdown punctuation before parsing emphasis/link syntax.
+  // This also turns the GFM table escape `\|` into the rendered `|`.
+  text = text.replace(/\\([\\`*_[\]{}()#+\-.!|>])/g, (_m, literal: string) => put(escapeHtml(literal)));
   text = text.replace(/`([^`\n]+)`/g, (_m, code: string) => put(`<code>${escapeHtml(code)}</code>`));
   text = text.replace(/!\[([^\]]*)\]\(([^\s)]+)\)/g, (_m, alt: string, src: string) => {
     if (!isSafeHref(src)) return escapeHtml(alt);
@@ -122,7 +125,15 @@ function renderInlineMarkdown(markdown: string): string {
   text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
   text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
 
-  return text.replace(/\u0000(\d+)\u0000/g, (_m, index: string) => placeholders[Number(index)] ?? '');
+  let rendered = text;
+  // Placeholders may nest (for example an escaped pipe inside inline code).
+  // Resolve from the outside in without ever reparsing the restored HTML.
+  for (let pass = 0; pass <= placeholders.length; pass += 1) {
+    const next = rendered.replace(/\u0000(\d+)\u0000/g, (_m, index: string) => placeholders[Number(index)] ?? '');
+    if (next === rendered) break;
+    rendered = next;
+  }
+  return rendered;
 }
 
 function renderParagraph(lines: string[]): string {

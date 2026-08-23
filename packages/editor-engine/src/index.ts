@@ -19,6 +19,7 @@ import type { Extension } from '@codemirror/state';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
 import { buildTableToolbarExtension } from './table/toolbar';
 import { buildColumnWidthExtension } from './table/columnWidth';
+import { buildTableLiveViewExtension } from './table/liveView';
 import { installCompositionTracking } from './composition';
 import { buildImageExtensions } from './image';
 import { buildSmartPasteExtension } from './smartPaste';
@@ -36,6 +37,7 @@ import { buildSlashCommandsExtension } from './slashCommands';
 import { buildTypewriterModeExtension } from './typewriterMode';
 import { buildSelectionToolbarExtension } from './selectionToolbar';
 import { buildScrollBridgeExtension } from './scrollBridge';
+import { buildPagingExtension } from './paging';
 import { buildCodeFenceAutocompleteExtension } from './codeFence';
 import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
@@ -74,6 +76,7 @@ export { buildSelectionToolbarExtension, shouldShowToolbar, applyInlineFormat, a
 export type { TextRange, ApplyResult, ToolbarVisibility, SelectionToolbarOptions } from './selectionToolbar';
 export { buildScrollBridgeExtension } from './scrollBridge';
 export type { ScrollBridgeApi } from './scrollBridge';
+export { buildPagingExtension, scrollPageSafely } from './paging';
 export {
   classifyLargeFile,
   isLargeFileMode,
@@ -176,6 +179,7 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   const ext: Extension[] = [
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
+    buildTableLiveViewExtension(),
     buildTableToolbarExtension(),
     buildColumnWidthExtension(),
     buildClipboardCopyExtension(),
@@ -186,6 +190,7 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildTypewriterModeExtension(),
     buildSelectionToolbarExtension(),
     buildScrollBridgeExtension(),
+    buildPagingExtension(),
     buildImageExtensions(),
     buildLargeFileExtension(),
     buildSelectionCommandsExtension(),
