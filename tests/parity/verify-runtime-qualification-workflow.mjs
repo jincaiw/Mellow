@@ -20,4 +20,11 @@ if (!/^custom-protocol\s*=\s*\["tauri\/custom-protocol"\]$/m.test(cargoManifest)
   throw new Error('Desktop Cargo manifest must forward custom-protocol to Tauri');
 }
 
+if (!/ime-matrix-linux\.mjs --im=fcitx5 --driver=xdotool/.test(workflow)) {
+  throw new Error('Linux IME matrix must use the XTEST driver that reaches WebKitGTK and fcitx5');
+}
+if (/apt-get install[^\n]*\bydotool\b|\bydotoold\b|--driver=ydotool/.test(workflow)) {
+  throw new Error('Linux IME workflow must not use raw ydotool injection under Xvfb');
+}
+
 console.log('Runtime Qualification release builds embed frontendDist on Linux, Windows, and macOS');
