@@ -63,10 +63,11 @@ jobs:
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 3
           sudo modprobe uinput || true
-          # Ubuntu 24.04 的 ydotool 0.1.8 不识别这些选项的长形式；使用其兼容的短选项。
-          sudo ydotoold -p /tmp/mellow-ydotool.sock -o "$(id -u):$(id -g)" > /tmp/ydotool.log 2>&1 &
+          # Ubuntu 24.04 的发行版 ydotool 0.1.8 忽略 socket 参数，固定使用默认路径。
+          sudo ydotoold > /tmp/ydotool.log 2>&1 &
           sleep 2
-          test -S /tmp/mellow-ydotool.sock
+          sudo chown "$(id -u):$(id -g)" /tmp/.ydotool_socket
+          test -S /tmp/.ydotool_socket
           mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
           mkdir -p ~/.config/fcitx5
           cat > ~/.config/fcitx5/profile <<'EOF'
@@ -88,7 +89,7 @@ jobs:
             # 没有 errexit 时，后续 10 MB 冒烟或 pkill 的成功会掩盖 IME 失败。
             set -euo pipefail
             export DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root
-            export YDOTOOL_SOCKET=/tmp/mellow-ydotool.sock
+            export YDOTOOL_SOCKET=/tmp/.ydotool_socket
             export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
             export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11
             export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0
