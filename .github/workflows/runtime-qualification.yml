@@ -83,6 +83,9 @@ jobs:
           [Groups/0/Items/1]
           Name=pinyin
           Layout=
+
+          [GroupOrder]
+          0=Default
           EOF
           dbus-run-session -- bash -c '
             # `ime-matrix-linux.mjs` 的非零退出码必须使整个 CI job 失败。
