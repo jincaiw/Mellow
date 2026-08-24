@@ -73,7 +73,7 @@ node tests/benchmark/golden-journeys.mjs     # Golden Journeys（记录实际 Ty
 3. 提交后由维护者更新 ADR-0019 Gate 裁决（全过 → Tauri 最终锁定；任一 FAIL → 切换 Electron 评估）。
 
 ## 五、已知边界（CI 已定位）
-- Linux 的 Xvfb/WebKitGTK 不接收 XTEST 合成键；候选 run `32735541431` 的 8 个 fcitx5 场景均为 `0/8`，且 ASCII／快捷键诊断同样未送达编辑器。Weston headless + `wtype` 的候选 run `32737593888` 也失败，因为 Weston 未公开 `virtual-keyboard` 协议。两者都是 CI 输入适配器限制，Linux IME Gate 仍为未通过；
+- Linux 的 Xvfb/WebKitGTK 不接收 XTEST 合成键；候选 run `32735541431` 的 8 个 fcitx5 场景均为 `0/8`，且 ASCII／快捷键诊断同样未送达编辑器。Weston headless + `wtype` 的候选 run `32737593888` 也失败，因为 Weston 未公开 `virtual-keyboard` 协议。最新的 uinput／`ydotool` run `32742294505` 已可写入英文并触发格式化、Undo，却仍无法让 fcitx5 将拼音提交为「你好中文」（`0/8`）。三者均为 CI 输入适配器／输入法服务链路限制，Linux IME Gate 仍为未通过；
 - Windows CI 无交互桌面，SendKeys 未达 WebView2，因此其保存读回仅作诊断，不能替代输入交互证明。
 
 ## 六、耗时估计

@@ -57,8 +57,9 @@ Runtime Qualification run `32732636928` 在远端 SHA `924d5f2` 显示为成功�
 |---|---|---|---|---|
 | `32735541431` | `3ebaa74` | ✅ 启动／10 MB | ✅ 启动／保存诊断／10 MB | ❌ `0/8`；Xvfb 的 XTEST 普通输入、直投键和快捷键均未到达 WebKitGTK |
 | `32737593888` | `fc0c6ed` | ✅ 启动／10 MB | ✅ 启动／保存诊断／10 MB | ❌ `0/8`；Weston headless 未公开 `virtual-keyboard` 协议，`wtype` 每次输入均被 compositor 拒绝 |
+| `32742294505` | `39ffdd8` | ✅ 启动／10 MB | ✅ 启动／保存诊断／10 MB | ❌ `0/8`；`ydotool` 的 uinput 键流已实际驱动英文输入、格式化和 Undo（各场景 `undo ok`），但 fcitx5 没有把拼音提交为「你好中文」 |
 
-两次失败都发生在输入注入器到 compositor/WebKitGTK 的链路，且应用打开、文档原文、Undo 读回保持正常；它们不构成 Linux 编辑器中文 IME 的产品回归证据，也绝不能被登记为 PASS。根据 ADR-0022 的 fail-fast Gate，候选分支尚不可宣称三平台 Runtime Qualification 完成。
+三次失败都发生在 CI 输入注入器／输入法服务到 WebKitGTK 的链路，且应用打开、文档原文、Undo 读回保持正常。第三次已排除“键盘事件完全未送达”：低层 uinput 键流能写入英文，也能触发格式化与 Undo；剩余失败精确收敛为无头 CI 的 fcitx5 组词提交链路。它们不构成 Linux 编辑器中文 IME 的产品回归证据，也绝不能被登记为 PASS。根据 ADR-0022 的 fail-fast Gate，候选分支尚不可宣称三平台 Runtime Qualification 完成。
 
 ## 五、关键证据文件
 - .github/workflows/runtime-qualification.yml（runner 测试机流水线）
