@@ -49,7 +49,7 @@ export function scrollPageSafely(
   forward: boolean,
   commands: Pick<typeof import('@codemirror/commands'), 'cursorPageDown' | 'cursorPageUp'>,
 ): boolean {
-  if (isComposing()) return true;
+  if (isComposing(view)) return true;
 
   // Moving the caret is deliberate. CodeMirror computes paging from measured
   // line blocks and commits selection + scroll atomically. In WKWebView this is

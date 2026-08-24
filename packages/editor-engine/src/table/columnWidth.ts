@@ -80,7 +80,7 @@ export function buildColumnWidthExtension(): Extension {
 
       update(update: { docChanged: boolean; selectionSet: boolean; viewportChanged: boolean; view: EditorView }): void {
         if (update.docChanged || update.selectionSet || update.viewportChanged) {
-          if (isComposing()) return;
+          if (isComposing(update.view)) return;
           this.updateTable(update.view);
         }
       }
@@ -95,7 +95,7 @@ export function buildColumnWidthExtension(): Extension {
         const ctx = tableContext(view, pos);
         this.handles.forEach((h) => h.remove());
         this.handles = [];
-        if (ctx === null || isSourceMode() || ctx.model.delimiterRow === null) {
+        if (ctx === null || isSourceMode(view) || ctx.model.delimiterRow === null) {
           this.model = null;
           this.dom.style.display = 'none';
           return;

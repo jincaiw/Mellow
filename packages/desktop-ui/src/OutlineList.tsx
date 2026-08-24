@@ -31,7 +31,6 @@ export function OutlineList({ items, currentId, flat, collapsed, onJump, onToggl
             </span>
           )}
           {!flat && item.children.length === 0 && <span className="outline-disclosure" />}
-          <span className="outline-level">H{item.level}</span>
           <span className="outline-title">{item.number ? `${item.number} ` : ''}{item.title}</span>
         </button>
       ))}

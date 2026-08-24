@@ -101,7 +101,7 @@ export function buildTypewriterModeExtension(options: TypewriterOptions = {}): E
       if (enabled) scheduleCenter(view, options.getCaretTop);
     }
     update(update: ViewUpdate): void {
-      if (!enabled || isComposing()) return;
+      if (!enabled || isComposing(update.view)) return;
       const sel = update.state.selection.main;
       // 拖选（非空选区）不居中，避免与选择交互打架；纯滚动不触发这里
       if (!sel.empty) return;

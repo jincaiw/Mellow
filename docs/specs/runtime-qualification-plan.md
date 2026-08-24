@@ -42,6 +42,8 @@ B. Electron/Chromium
 
 ## 4. 平台矩阵
 
+**证据环境：** macOS 使用本机实机；Windows／Linux 使用 GitHub Actions 对应平台 runner（ADR-0022）。Windows／Linux 不再要求人工真机补测；CI 的无交互桌面限制需记录，但不构成缺失证据。
+
 ### Windows
 - Windows 10
 - Windows 11
@@ -67,7 +69,7 @@ B. Electron/Chromium
 ### Input
 - ASCII
 - Chinese IME
-- Japanese IME smoke
+- Chinese / English mixed input
 - emoji
 - dead keys
 

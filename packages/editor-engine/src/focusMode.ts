@@ -79,7 +79,7 @@ export function buildFocusModeExtension(): Extension {
       this.decorations = build(view, Decoration, RangeSetBuilder);
     }
     update(update: ViewUpdate): void {
-      if (isComposing()) {
+      if (isComposing(update.view)) {
         this.decorations = this.decorations.map(update.changes);
         return;
       }

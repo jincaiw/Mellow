@@ -20,9 +20,8 @@
 - fcitx5 Pinyin
 - ibus Pinyin
 
-P1:
-- Japanese
-- Korean
+非 V1 功能承诺：
+- Japanese、Korean 及其他语言输入法仅可作为兼容性观察，不属于 Release Gate。
 
 ---
 

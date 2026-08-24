@@ -125,7 +125,7 @@ Runtime Qualification harness。
 ### T-0407 Typewriter
 ### T-0408 Floating Toolbar
 ### T-0409 Reader
-### T-0410 Split
+### T-0410 已移除（Split Mode 不属于 V1 范围）
 
 ---
 

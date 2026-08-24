@@ -818,7 +818,7 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
     update(update: ViewUpdate): void {
       if (update.docChanged || update.selectionSet) this.hiddenByEscape = false;
       const sel = update.state.selection.main;
-      const show = shouldShowToolbar({ enabled, composing: isComposing(), hasSelection: !sel.empty, hidden: this.hiddenByEscape });
+      const show = shouldShowToolbar({ enabled, composing: isComposing(update.view), hasSelection: !sel.empty, hidden: this.hiddenByEscape });
       if (show !== this.visible) {
         if (show) this.showEl();
         else this.hideEl();

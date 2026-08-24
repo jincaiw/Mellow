@@ -143,8 +143,8 @@ export function buildMarkerRevealExtension(): Extension {
           const nodeInfo = { from: node.from, to: node.to, text: parent.text };
           const ctx: RevealContext = {
             caret: main,
-            composing: isComposing(),
-            forceSource: isSourceMode(), // Source Mode（spec §5.5）
+            composing: isComposing(view),
+            forceSource: isSourceMode(view), // Source Mode（spec §5.5）
           };
           const visual = spec.classify
             ? spec.classify(nodeInfo, markers, ctx)
@@ -189,7 +189,7 @@ export function buildMarkerRevealExtension(): Extension {
         }
 
         // Composition Guard：合成期间只映射位置，不重算（spec §6）
-        if (isComposing()) {
+        if (isComposing(update.view)) {
           return;
         }
 

@@ -59,7 +59,7 @@ function moveToCell(view: EditorView, cell: TableCell): void {
 }
 
 function handleTab(view: EditorView, shift: boolean): boolean {
-  if (isComposing()) {
+  if (isComposing(view)) {
     return true; // IME 合成期间不导航（不干扰 composition，spec §8）
   }
   const sel = view.state.selection.main;
@@ -106,7 +106,7 @@ function refreshModel(view: EditorView, old: TableModel): TableModel | null {
 }
 
 function handleCtrlEnter(view: EditorView): boolean {
-  if (isComposing()) {
+  if (isComposing(view)) {
     return true;
   }
   const sel = view.state.selection.main;

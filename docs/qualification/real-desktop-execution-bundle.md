@@ -1,15 +1,14 @@
 # 真机桌面执行包（Phase 1 输入交互矩阵）—— 在任何 Windows/Linux 桌面机器上执行
 
-> 目的：完成 ADR-0019 Gate 所需的「输入交互」级矩阵（IME 组词 / Caret / Clipboard / 10MB / 打印）。
+> 目的：完成 Runtime Qualification 矩阵。macOS 使用实机；Windows／Linux 使用 GitHub Actions CI（ADR-0022）。
 > CI runner 已证明：三平台构建+启动+渲染 PASS（见 runtime-matrix-evidence-2026-08-18.md）；
 > 输入注入在无头 CI 环境受限，需真实桌面会话。本包让任何普通电脑即可执行。
-> 对照基线：Typora 1.14.6（可选，用于效率对照）。
-> 版本说明：任何 1.14.9 及以上实测结果须注明为 patch observation，不得改写本执行包的规范基线。
+> 对照基线：Typora 1.14.9（build 7785，可选，用于效率对照）。
+> 版本说明：报告必须记录实际 Typora 版本；1.14.6 仅可作为历史参考。
 
-## 一、需要的机器
-- Windows 10/11 桌面（1 台）：微软拼音 / 搜狗输入法
-- Linux 桌面（1 台，Ubuntu LTS 或 Fedora）：fcitx5 或 ibus
-- （macOS 已验 8/8；可跳过或补日文/五笔）
+## 一、需要的环境
+- macOS 桌面（本机可复现）；
+- GitHub Actions：`windows-latest` 与 `ubuntu-latest`（由 `Runtime Qualification` workflow 提供）。
 
 ## 二、安装 Mellow
 从 GitHub Releases 或 CI artifact 下载安装包：
@@ -18,9 +17,9 @@
 
 ## 三、一键执行矩阵
 
-### 3.1 Linux（fcitx5/ibus）—— IME 组词矩阵（8 场景，自动断言）
+### 3.1 Linux（GitHub Actions：Xvfb + fcitx5）—— 中文 IME 矩阵（8 场景，自动断言）
 ```bash
-# 前置：安装依赖
+# workflow 已安装依赖；以下仅用于在 Linux CI job 内复现
 sudo apt install -y xdotool xclip fcitx5 fcitx5-chinese-addons fonts-noto-cjk   # Ubuntu/Debian
 # 或：sudo dnf install -y xdotool xclip fcitx5 fcitx5-chinese-addons            # Fedora
 
@@ -44,26 +43,29 @@ Name=pinyin
 Layout=
 EOF
 
-# 启动 fcitx5 后执行矩阵（DISPLAY 指向真实桌面 :0）
-export DISPLAY=:0 GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
-# 将 harness 中的 DISPLAY=:99 改为 :0，release binary 路径改为安装后的可执行文件
+# 启动 fcitx5 后执行矩阵（CI 使用 DISPLAY=:99）
+export DISPLAY=:99 GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
 node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5
 
 # 预期输出：8/8 场景通过（你好中文 各出现 1 次 + undo 干净）
 ```
 
-### 3.2 Windows —— 手动矩阵（自动化 runner 不存在，按清单执行）
-按 `docs/qualification/phase1-runtime-qualification-manual.md` §2 逐项执行并记录：
-- I1-I11 IME（微软拼音/搜狗：输入/标题/列表/表格/代码/链接/公式/undo）
-- C1-C7 Caret/Selection（点击/方向键/Shift/双击/拖选/Home-End）
-- P1-P6 剪贴板（纯文本/富文本/HTML→MD/TSV→表/位图/文件）
-- D1-D2 拖放、U1-U5 Undo/外部变更/10MB、O1-O3 打印/PDF/HTML、A1-A2 焦点
+### 3.2 Windows（GitHub Actions）
+`windows-latest` job 负责 release 构建、应用启动、Markdown 打开和 10 MB 文档存活。该 job 是 Windows V1 Runtime 的正式 Gate；Save SendKeys 是无交互桌面下的诊断，不可将其读回结果冒充为输入交互验证，也不会再要求人工 Windows 机器补测。
 
 ### 3.3 macOS（可选补测）
 ```bash
 node tests/benchmark/ime-matrix.mjs          # 简体拼音（System Events）
-node tests/benchmark/golden-journeys.mjs     # Golden Journeys（记录实际 Typora 版本；1.14.9 仅作 patch observation）
+node tests/benchmark/golden-journeys.mjs     # Golden Journeys（记录实际 Typora 1.14.9 版本）
 ```
+
+截至 2026-08-24，本机对隔离 release bundle 的 Golden Journey 已复验：Latin input、中文 IME、选区加粗、列表续写、表格 Tab 导航、Undo、数学与 Mermaid 源码保真通过。此前出现的 Latin 输入为空已由编辑事件桥接闭环修复。日文 IME（Journey 3）曾出现偶发截断；修复候选态期间桌面壳跨 WebView 同步后，新 release 对逐键输入 `nihongo` + Enter 的保存读回连续 3 次均含「にほんご」或「日本語」，且 Journey 15 Undo 复验通过。该项保留为兼容性观察；按 2026-08-24 产品决策，它不属于 V1 的语言支持范围或 Gate。Windows/Linux 中文输入法及完整 UX Gate 尚未取得证据，ADR-0019 Gate 仍不得关闭。
+
+同日完整回归（隔离 release、单次连续执行 Journey 1、2、3、4、7、8、9、10、15、17）全部通过：Latin、中文 IME、日文 IME（兼容性观察）、选择加粗、列表 Enter、表格 Tab、数学/ Mermaid 源码保真、Undo、10 MB 编辑保存均为 PASS。10 MB 本轮 `editable=621 ms`、`editSave=5779 ms`。该结果是 Mellow 自身 macOS 回归证据；Typora 1.14.9 的并行 UX 计分仍须在得到关闭现有 Typora 进程的明确授权后执行，Windows/Linux 真机矩阵亦未替代。
+
+10 MB Golden Journey 已升级为「OCR 稳定渲染 → 移至文末并收起选择 → 键入 `z` → Cmd+S → 磁盘读回」完整路径。2026-08-24 的隔离 release 连续 2 次通过：可编辑探测分别为 607.2 ms、611.8 ms（低于 1–1.5 s 目标），总旅程为 7.359 s、6.645 s，编辑与保存读回为 5.833 s、5.538 s。此前一次“仅渲染”及一次首键替换初始选择的 runner 伪影均不作为证据。该项可记为 macOS 已验；Windows/Linux 与完整 N=5 性能报告尚未取得证据，仍不得关闭跨平台性能 Gate。
+
+同日，在用户明确关闭 Typora 后，以 `--app=both --close-existing-typora --journey=1,2,3,4,7,8,9,10,15,17` 执行了同一份临时文件的双端对照，runner 已确认 Typora 为 1.14.9（build 7785）。两端均通过 Latin input、中文 IME、选区加粗、列表 Enter 续写、表格 Tab 导航、数学／Mermaid 源码保真及 Undo。日文 IME 因本机未启用日文罗马字输入源而在两端均为 SKIP；它现为非阻断性兼容性观察。10 MB 文件上，Mellow 完成编辑、保存和读回（总旅程 9.094 s，编辑与保存 5.366 s）；Typora 在 200.753 s 后提示“该文件过大，无法呈现”。后者是 Typora 的产品边界，不是 Mellow 失败，Mellow 在该项为更优实现。此对照只补强 macOS 证据，不能替代 Windows/Linux 真机矩阵或 UX Gate。
 
 ## 四、结果回填
 1. 把结果写入 `docs/qualification/runtime-matrix-{platform}-2026-08-*.md`（模板见 phase1 手册 §3）；

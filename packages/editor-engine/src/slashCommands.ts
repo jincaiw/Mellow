@@ -53,7 +53,7 @@ export function buildSlashCommandsExtension(options: SlashCommandsOptions = {}):
   return CmEditorView.domEventHandlers({
     keydown(event, view) {
       if (event.key !== '/') return false;
-      if (event.isComposing || isComposing()) return false;
+      if (event.isComposing || isComposing(view)) return false;
       const request = canTriggerSlashCommand(view);
       if (request === null) return false;
       event.preventDefault();

@@ -6,9 +6,15 @@
 **文档状态：最终冻结产品需求基线；后续只允许细化实现规范，不再扩张 V1 功能范围**  
 **基础代码项目：MarkEdit-app/MarkEdit**  
 **参考项目：Razee4315/Paperling、pluk-inc/markdown-preview**  
-**核心竞品 / 体验验收基线：Typora 1.14.6**  
+**核心竞品 / 体验验收基线：Typora 1.14.9（build 7785）**
 **正式目标平台：Windows / Linux / macOS**  
 **国际化：完整 i18n 架构；V1 至少内置简体中文、English；简体中文为首次启动默认语言**
+
+> **产品决策修订（2026-08-24）**：规范验收基线固定为 Typora 1.14.9（build 7785），文中 Typora 1.14.6 的版本描述仅为冻结时的历史记录。V1 正式不包含 Split Mode；任何与此相冲突的旧范围、矩阵、快捷键或菜单描述均以本修订为准。Live Mode、Source Mode 与 Reader Mode 保留。
+>
+> **产品决策修订（2026-08-24）**：V1 语言支持与 IME 验收范围仅为简体中文与 English。日文、韩文及其他语言输入法不属于 V1 功能承诺或 Release Gate；现有兼容性测试可保留为非阻断性观察。
+>
+> **产品决策修订（2026-08-24）**：维护环境仅有 macOS。Windows／Linux 的 V1 Runtime 验收以 GitHub Actions 同平台 runner 的 `Runtime Qualification` workflow 为正式证据；macOS 保持本机实测与 Typora 1.14.9 对照。详见 ADR-0022。
 
 ---
 
@@ -3056,7 +3062,7 @@ P95 < 32ms
 
 1. Latin input；
 2. Chinese IME；
-3. Japanese IME smoke；
+3. Chinese / English mixed input；
 4. selection；
 5. marker reveal；
 6. bold；

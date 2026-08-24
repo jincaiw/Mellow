@@ -65,7 +65,7 @@ export function buildTableToolbarExtension(): Extension {
       update(update: ViewUpdate) {
         if (update.docChanged || update.selectionSet || update.viewportChanged) {
           // IME 期间不更新（不干扰 composition）
-          if (isComposing()) {
+          if (isComposing(update.view)) {
             return;
           }
           this.updateToolbar(update.view);
@@ -86,7 +86,7 @@ export function buildTableToolbarExtension(): Extension {
         const ctx = tableContext(view, pos);
 
         // Source Mode：不显示 toolbar（源码编辑，spec §10 source-live）
-        if (ctx === null || toolbarHidden || isSourceMode()) {
+        if (ctx === null || toolbarHidden || isSourceMode(view)) {
           this.hide();
           return;
         }

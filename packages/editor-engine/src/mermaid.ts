@@ -348,7 +348,7 @@ export function buildMermaidExtension(autoInstallComposition = true, options: Me
       if (update.docChanged) {
         this.decorations = this.decorations.map(update.changes);
       }
-      if (isComposing()) return;
+      if (isComposing(update.view)) return;
       // Large File Mode 切换（setLargeFileMode → 空 dispatch）也触发重算
       const largeChanged = largeFileVersion() !== this.largeVersion;
       if (largeChanged) this.largeVersion = largeFileVersion();

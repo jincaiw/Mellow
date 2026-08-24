@@ -176,7 +176,7 @@ export function buildYamlFrontMatterExtension(autoInstallComposition = true, opt
     constructor(readonly view: EditorView) { this.decorations = build(view); }
     update(update: ViewUpdate): void {
       if (update.docChanged) this.decorations = this.decorations.map(update.changes);
-      if (isComposing()) return;
+      if (isComposing(update.view)) return;
       const cardToggled = update.transactions.some((tr) => tr.effects.some((e) => e.is(setCardOpen)));
       if (update.docChanged || update.selectionSet || update.viewportChanged || cardToggled) {
         this.decorations = build(update.view);

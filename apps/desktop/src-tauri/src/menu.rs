@@ -211,7 +211,6 @@ static MENU_LABELS: &[(&str, &str, &str)] = &[
     ("tabs.showAll", "显示所有标签页", "Show All Tabs"),
     ("view.devtools", "开发者工具", "Developer Tools"),
     ("reader.open", "用 Reader 打开", "Open in Reader"),
-    ("split.open", "Split（Source | Preview）", "Split (Source | Preview)"),
     ("window.fullscreen", "全屏", "Full Screen"),
     // ── 插入（Mellow 更优保留：slash 命令入口）──
     ("menu.insert", "插入", "Insert"),
@@ -365,7 +364,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let export_rst = MenuItem::with_id(app, "export.rst", &l("export.rst"), true, None::<&str>)?;
     let export_textile = MenuItem::with_id(app, "export.textile", &l("export.textile"), true, None::<&str>)?;
     let export_opml = MenuItem::with_id(app, "export.opml", &l("export.opml"), true, None::<&str>)?;
-    let export_repeat = MenuItem::with_id(app, "export.repeat", &l("export.repeat"), true, accel("Ctrl+E", "Ctrl+E"))?;
+    let export_repeat = MenuItem::with_id(app, "export.repeat", &l("export.repeat"), true, accel("Ctrl+E", ""))?;
     let export_sep1 = PredefinedMenuItem::separator(app)?;
     let export_sep2 = PredefinedMenuItem::separator(app)?;
     let export_menu = Submenu::with_items(
@@ -447,7 +446,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let find_menu = Submenu::with_items(app, &l("menu.find"), true, &[&find, &find_next, &find_prev, &find_sep, &replace])?;
     // D1-4 + D3 选择子菜单（Typora 编辑→选择全量：全选/段落或块/行/格式文本/词 + 跳转组）
     let sel_line = MenuItem::with_id(app, "edit.selectLine", &l("edit.selectLine"), true, accel("Cmd+L", "Ctrl+L"))?;
-    let sel_para = MenuItem::with_id(app, "edit.selectParagraph", &l("edit.selectParagraph"), true, accel("Cmd+Alt+P", "Ctrl+Alt+P"))?;
+    let sel_para = MenuItem::with_id(app, "edit.selectParagraph", &l("edit.selectParagraph"), true, accel("Cmd+Alt+P", ""))?;
     let sel_word = MenuItem::with_id(app, "edit.selectWord", &l("edit.selectWord"), true, accel("Cmd+D", "Ctrl+D"))?;
     let sel_span = MenuItem::with_id(app, "edit.selectFormatSpan", &l("edit.selectFormatSpan"), true, accel("Cmd+E", "Ctrl+E"))?;
     let goto_doc_start = MenuItem::with_id(app, "edit.gotoDocStart", &l("edit.gotoDocStart"), true, accel("Cmd+Up", "Ctrl+Home"))?;
@@ -534,7 +533,6 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     // ⇧⌘\ 显示所有标签页（Typora 视图→显示所有标签页 / Tab Overview）
     let tabs_show_all = MenuItem::with_id(app, "tabs.showAll", &l("tabs.showAll"), true, accel("Shift+Cmd+\\", "Ctrl+Shift+\\"))?;
     let reader = MenuItem::with_id(app, "reader.open", &l("reader.open"), true, None::<&str>)?;
-    let split = MenuItem::with_id(app, "split.toggle", &l("split.open"), true, None::<&str>)?;
     let fullscreen = MenuItem::with_id(app, "window.fullscreen", &l("window.fullscreen"), true, accel("Ctrl+Cmd+F", "F11"))?;
     // DevTools：仅 debug 构建装配（release 菜单不显示；命令侧运行时再门控）
     #[cfg(debug_assertions)]
@@ -552,7 +550,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
         &sidebar_toggle, &sidebar_outline, &sidebar_filelist, &sidebar_filetree, &global_search, &sep11,
         &zoom_reset, &zoom_in, &zoom_out, &sep12,
         &always_on_top, &tabs_show_all, &sep13,
-        &reader, &split, &fullscreen,
+        &reader, &fullscreen,
     ];
     #[cfg(debug_assertions)]
     view_items.push(&devtools);
@@ -565,7 +563,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let i_list = MenuItem::with_id(app, "insert.list", &l("insert.list"), true, None::<&str>)?;
     let i_task = MenuItem::with_id(app, "insert.task", &l("insert.task"), true, None::<&str>)?;
     let i_quote = MenuItem::with_id(app, "insert.quote", &l("insert.quote"), true, None::<&str>)?;
-    let i_table = MenuItem::with_id(app, "insert.table", &l("insert.table"), true, accel("Cmd+Alt+T", "Ctrl+Alt+T"))?;
+    let i_table = MenuItem::with_id(app, "insert.table", &l("insert.table"), true, accel("Cmd+Alt+T", "Ctrl+T"))?;
     let i_code = MenuItem::with_id(app, "insert.code", &l("insert.code"), true, None::<&str>)?;
     let i_math = MenuItem::with_id(app, "insert.math", &l("insert.math"), true, None::<&str>)?;
     let i_mermaid = MenuItem::with_id(app, "insert.mermaid", &l("insert.mermaid"), true, None::<&str>)?;
@@ -588,7 +586,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let f_reference = MenuItem::with_id(app, "format.referenceLink", &l("format.referenceLink"), true, accel("Cmd+Alt+L", "Ctrl+Alt+L"))?;
     // D4：下划线 ⌘U / 注释 ⌃-（Typora 格式菜单；引擎 applyInlineWrap 非对称包裹）
     let f_underline = MenuItem::with_id(app, "format.underline", &l("format.underline"), true, accel("Cmd+U", "Ctrl+U"))?;
-    let f_comment = MenuItem::with_id(app, "format.comment", &l("format.comment"), true, accel("Ctrl+-", "Ctrl+-"))?;
+    let f_comment = MenuItem::with_id(app, "format.comment", &l("format.comment"), true, accel("Ctrl+-", "Ctrl+Alt+Shift+-"))?;
     // D4：链接操作子菜单（Typora 格式→链接操作：打开链接 / 复制链接地址）
     let f_open_link = MenuItem::with_id(app, "format.openLink", &l("format.openLink"), true, None::<&str>)?;
     let f_copy_link = MenuItem::with_id(app, "format.copyLinkUrl", &l("format.copyLinkUrl"), true, None::<&str>)?;
@@ -627,7 +625,7 @@ fn build_menu(app: &AppHandle, locale: &str, is_mac: bool) -> tauri::Result<Menu
     let p_ordered = MenuItem::with_id(app, "format.orderedList", &l("format.orderedList"), true, accel("Cmd+Alt+O", "Ctrl+Alt+O"))?;
     let p_list = MenuItem::with_id(app, "format.list", &l("format.list"), true, accel("Cmd+Alt+U", "Ctrl+Alt+U"))?;
     let p_task = MenuItem::with_id(app, "format.taskList", &l("format.taskList"), true, accel("Cmd+Alt+X", "Ctrl+Alt+X"))?;
-    let p_task_toggle = MenuItem::with_id(app, "paragraph.taskToggle", &l("paragraph.taskToggle"), true, accel("Ctrl+X", "Ctrl+Alt+X"))?;
+    let p_task_toggle = MenuItem::with_id(app, "paragraph.taskToggle", &l("paragraph.taskToggle"), true, accel("Ctrl+X", "Ctrl+Shift+X"))?;
     let p_footnote = MenuItem::with_id(app, "paragraph.footnote", &l("paragraph.footnote"), true, accel("Cmd+Alt+R", "Ctrl+Alt+R"))?;
     let p_hr = MenuItem::with_id(app, "paragraph.horizontalRule", &l("paragraph.horizontalRule"), true, accel("Cmd+Alt+-", "Ctrl+Alt+-"))?;
     let p_yaml = MenuItem::with_id(app, "paragraph.yamlFrontMatter", &l("paragraph.yamlFrontMatter"), true, None::<&str>)?;

@@ -152,7 +152,7 @@ export function buildMdLinkExtension(): Extension {
     const win = isLargeFileMode() ? largeFileViewportRange(view) : undefined;
     const links = scanMdLinks(doc, fencedRanges(doc), win);
     const head = view.state.selection.main.head;
-    const sourceMode = isSourceMode();
+    const sourceMode = isSourceMode(view);
     for (const l of links) {
       if (l.labelTo <= l.labelFrom) continue;
       // RangeSetBuilder 必须按 from 升序添加：前定界符 → label → 后定界符
@@ -187,7 +187,7 @@ export function buildMdLinkExtension(): Extension {
       }
       update(update: ViewUpdate): void {
         if (update.docChanged) this.decorations = this.decorations.map(update.changes);
-        if (isComposing()) return;
+        if (isComposing(update.view)) return;
         const largeChanged = largeFileVersion() !== this.largeVersion;
         if (largeChanged) this.largeVersion = largeFileVersion();
         if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged) {

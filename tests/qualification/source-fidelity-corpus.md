@@ -7,7 +7,7 @@
 
 | 指标 | 结果 |
 |---|---|
-| Open → No Edit → Save → Git Diff | ✅ **0 diff（129/129 字节级一致）** |
+| Open → No Edit → Save → Git Diff | ✅ **0 diff（151/151 字节级一致）** |
 | 无意源代码变化 | ✅ 0（无需修复） |
 
 ## 执行方式
@@ -25,13 +25,13 @@ bash tests/qualification/run-source-fidelity-corpus.sh
    相同的 `decode → encode → atomic_save`）；
 4. `git status --porcelain` 必须为空；`git diff` 必须为空。
 
-回归：`cargo test --test file_safety_corpus`（16/16）+ `cargo test --lib`（32/32）全绿。
+回归：`cargo test --test file_safety_corpus`（16/16）+ `cargo test --lib`（55/55）全绿。
 
-## 语料库（129 个文件）
+## 语料库（151 个文件）
 
 | 类别 | 文件 | 说明 |
 |---|---|---|
-| real（100） | `tests/fixtures/**`、`docs/**`、`README.md`、`AGENTS.md`、`THIRD_PARTY_NOTICES.md`、`tests/benchmark/reports/*.md` | 仓库全部真实 Markdown/HTML/TSV（含 PRD、ADR、Specs 等大量中文文档） |
+| real（122） | `tests/fixtures/**`、`docs/**`、`README.md`、`AGENTS.md`、`THIRD_PARTY_NOTICES.md`、`tests/benchmark/reports/*.md` | 仓库全部真实 Markdown/HTML/TSV（含 PRD、ADR、Specs 等大量中文文档） |
 | LF（2） | mixed-document / table（LF 原样） | |
 | CRLF（3） | mixed-document / table / yaml-front-matter 转 CRLF | 46 行 CR 验证通过 |
 | BOM（4） | UTF-8 BOM ×2、UTF-16 LE BOM、UTF-16 BE BOM | 真实世界 Word/Sublime/VS Code 产物 |
@@ -47,8 +47,8 @@ bash tests/qualification/run-source-fidelity-corpus.sh
 ## 运行结果
 
 ```text
-[source-fidelity] total=129 identical=129 diff/failed=0
-PASS —— 129 个文件 Open → No Edit → Save 后 git diff = 0（字节级一致）
+[source-fidelity] total=151 identical=151 diff/failed=0
+PASS —— 151 个文件 Open → No Edit → Save 后 git diff = 0（字节级一致）
 ```
 
 - 编码覆盖：UTF-8（无 BOM）、UTF-8 BOM、UTF-16 LE/BE（BOM）全部 byte identical；

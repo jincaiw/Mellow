@@ -3,6 +3,7 @@
 > 依据：ADR-0020（pre-release 状态）、ADR-0021（三平台构建矩阵 PASS）、优化方案阶段 0-5。
 > 结论：**P0 60 项中 58 项代码侧完成；2 项（中文 IME Gate、Typora UX Benchmark）需真机执行。**
 > 判定口径：功能 + 行为 + 快捷键 + i18n + 测试（PRD §146）；真机项以「构建级 ✅ / 真机 ⏳」标注。
+> **历史状态修订（2026-08-24）**：本报告中 Split Mode 的已完成记录仅表示当时实现历史，已不属于 V1 范围；当前验收基线为 Typora 1.14.9（build 7785）。
 
 | # | P0 项 | 状态 | 证据 |
 |---|---|---|---|
@@ -11,7 +12,6 @@
 | 3 | Live Mode | ✅ | editor-engine 491 测试（marker reveal 状态机/增量 decoration） |
 | 4 | Source Mode | ✅ | Cmd/Ctrl+/ 命令+菜单+引擎 API（installSourceApi） |
 | 5 | Reader Mode | ✅ | Reader.tsx：搜索/缩放/打印/Lightbox/代码复制/链接安全 |
-| 6 | Split Mode | ✅ | SplitPreview：滚动同步/点击定位/比例记忆 |
 | 7-9 | Windows/Linux/macOS | ✅/⏳ | 三平台打包全绿（MSI/NSIS/DMG/AppImage/deb/rpm）；真机行为待验 |
 | 10 | Full i18n architecture | ✅ | i18n 包 + completeness 测试 15 + 原生菜单 locale 重建 |
 | 11 | zh-CN default | ✅ | 默认 zh-CN（PRD §87）；zh 词条残留英文已清 |

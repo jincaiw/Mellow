@@ -11,7 +11,7 @@
 | silent overwrite = 0 | ✅ 通过 |
 | Release Blocker | ✅ **0 个**（首轮 3 个已修复并回归） |
 
-**File Safety Corpus：16/16 全绿。** 附加回归：`src-tauri` lib 单元测试 32/32 全绿。
+**File Safety Corpus：16/16 全绿。** 附加回归：`src-tauri` lib 单元测试 55/55 全绿。
 
 ---
 
@@ -20,12 +20,12 @@
 ```sh
 cd apps/desktop/src-tauri
 cargo test --test file_safety_corpus   # File Safety Corpus（16 用例）
-cargo test --lib                       # System Core 单元测试（32 用例，回归）
+cargo test --lib                       # System Core 单元测试（55 用例，回归）
 ```
 
 - 测试文件：`apps/desktop/src-tauri/tests/file_safety_corpus.rs`（16 用例）
 - 只依赖 `mellow_desktop_lib::fs` 的公开原子保存管线，不依赖 Tauri 运行时。
-- 环境：macOS arm64（Apple Silicon），rustc 1.96.1。
+- 环境：macOS arm64（Apple Silicon）。
 
 ## 环境与模拟说明
 

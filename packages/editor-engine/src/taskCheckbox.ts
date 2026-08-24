@@ -84,7 +84,7 @@ export function buildTaskCheckboxExtension(): Extension {
 
   const buildDecorations = (view: EditorView): DecorationSet => {
     // Source Mode：显示原文 `[ ]`（round-trip）
-    if (isSourceMode()) {
+    if (isSourceMode(view)) {
       return Decoration.none;
     }
 

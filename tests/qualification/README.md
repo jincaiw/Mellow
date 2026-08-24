@@ -2,14 +2,14 @@
 
 对应 `docs/specs/runtime-qualification-plan.md`。
 
-> **对标基线治理（2026-08-23）**：当前功能与 UX 验收基线固定为 Typora 1.14.6；本文件及 `docs/qualification/` 内带日期的旧报告保留其当时的 1.14.9 实测记录，仅作为历史证据。当前聚合状态以 `tests/parity/typora-parity-ledger.json` 为准。
+> **对标基线治理（2026-08-24）**：当前功能与 UX 规范验收基线固定为 Typora 1.14.9（build 7785）。任何 1.14.6 或更早版本的带日期报告仅保留其历史上下文，不得替代当前验收。当前聚合状态以 `tests/parity/typora-parity-ledger.json` 为准。
 
-> **CI 验收策略（2026-08-23）**：Windows 与 Linux 使用 GitHub Actions 的 `windows-latest` / `ubuntu-latest` 作为正式自动化 Runtime 证据来源；Linux 的 Xvfb + fcitx5 IME 矩阵和 Windows 的启动／保存／10MB 冒烟均为 fail-fast Gate。真实用户输入法候选窗手感仍只能由人工补测，不得以 CI 通过替代该项体验结论。
+> **CI 验收策略（2026-08-24，ADR-0022）**：Windows 与 Linux 使用 GitHub Actions 的 `windows-latest` / `ubuntu-latest` 作为正式 Runtime 证据来源；Linux 的 Xvfb + fcitx5 中文输入矩阵和 Windows 的启动／文档打开／10 MB 冒烟均为 fail-fast Gate。Windows CI 的 SendKeys 保存读回仅为诊断（无交互桌面可能无法抵达 WebView2），不得误记为已验证的输入交互；Windows／Linux 不再要求人工真机补测；macOS 保持实机 Typora 对照。
 
 ## 最终决策
 
-> **ADR-0019（Accepted）**：锁定 Tauri 2 为产品 Runtime；Electron/Chromium 为已预案 Fallback（触发条款见 ADR-0019 §2）。
-> ADR-0002（Conditional）已被取代。真机矩阵数据回填后触发复审。
+> **ADR-0019（Accepted）**：Tauri 2 为产品 Runtime；Electron/Chromium 为已预案 Fallback（触发条款见 ADR-0019 §2）。
+> macOS 实机与 Windows／Linux CI 矩阵用于持续 Runtime Qualification 与体验证据回填，不回退已接受 ADR。
 
 ## 架构（本轮验证）
 
@@ -45,7 +45,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 | 10MB 可编辑 / P95 | ⛔ | ⛔ | ⛔ | ⛔ |
 | Linux P0 journeys | ⛔ | — | — | ⛔ |
 
-**结论**：ADR-0002 保持 **Conditional**。真机门禁（IME/Caret/Clipboard/Print/10MB）未执行前不得转 Accepted。
+**结论**：ADR-0019 保持 **Accepted**。真机门禁（IME/Caret/Clipboard/Print/10MB）未执行或未回填时，不得将三平台体验结论标记为完整通过。
 
 ## Benchmark 模板（plan §5 Performance，真机填写）
 

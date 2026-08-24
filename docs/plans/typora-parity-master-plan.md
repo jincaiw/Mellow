@@ -1,11 +1,11 @@
 # Mellow ↔ Typora 最终深度对标实施方案（Master Plan）
 
-> 文档状态：**实施中：P1 Command / Menu 单一真源**（P0 已完成）
-> 方案版本：V2.0
-> 更新日期：2026-08-23
+> 文档状态：**实施中：P1 Command / Menu 单一真源**（P0 基线与台账已完成；P0 体验 Gate 尚未关闭）
+> 方案版本：V3.0
+> 更新日期：2026-08-24
 > 审计代码基线：`8bf5d1e`（Desktop `1.3.2`）
-> 产品验收基线：**Typora 1.14.6**
-> 补丁观察样本：Typora 1.14.9（本机 `/Applications/Typora.app`，build 7785）
+> 产品验收基线：**Typora 1.14.9（build 7785）**
+> 历史参考：Typora 1.14.6（不再用于规范验收）
 > 文档角色：Typora 对标工作的**唯一权威实施方案**
 > 本轮边界：只冻结对标口径、目标体验、差距与施工顺序；**未经确认不进入代码实施**
 
@@ -19,7 +19,7 @@ Mellow 的目标不是“具备与 Typora 类似的功能”，而是：
 
 截至本方案审计时点，Mellow 已拥有大量功能实现和自动化测试资产，但**还不能宣称“完全对标完成”**。当前最关键的不是继续堆功能，而是完成以下闭环：
 
-1. 统一 Typora 1.14.6 规范基线，消除文档中 1.14.6 / 1.14.9 混用；
+1. 统一 Typora 1.14.9 规范基线，消除文档中 1.14.6 / 1.14.9 混用；
 2. 把“代码存在”与“体验达标”分开，建立逐项 Experience Contract；
 3. 收敛 Desktop Shell、Sidebar 和 Menu，使默认界面真正回到“文档优先”；
 4. 消除 Command Registry、Rust 原生菜单、主题包和 UI 入口之间的漂移；
@@ -79,11 +79,10 @@ P0 基线与证据治理
 
 最终裁决：
 
-1. **Normative Baseline：Typora 1.14.6**；
-2. **Observed Patch Sample：Typora 1.14.9**；
-3. 1.14.9 只能用于本机菜单、偏好、布局和回归观察；
-4. 如 1.14.9 与 1.14.6 行为不同，以 1.14.6 为准；
-5. 1.14.8 的安全修复和 1.14.9 的 Mermaid / installer 修复可作为安全与兼容性补丁吸收，但不得改变 V1 产品范围。
+1. **Normative Baseline：Typora 1.14.9（build 7785）**；
+2. **Historical Reference：Typora 1.14.6**，只保留历史证据用途；
+3. 如 1.14.9 与历史记录不同，以 1.14.9 的新鲜配置实测为准；
+4. Split Mode 已移出 V1；不得通过菜单、命令、设置或验收项重新引入。
 
 官方 stable release 记录显示，1.14.6 的重点新增是：
 
@@ -174,7 +173,7 @@ Feature
 
 ---
 
-## 3. Typora 1.14.6 体验模型
+## 3. Typora 1.14.9 体验模型
 
 ### 3.1 核心特点
 
@@ -996,8 +995,8 @@ H1 H2 H3 | B I S Code | Link | Quote | List
 
 任务：
 
-1. 将所有 active 文档的主基线统一为 Typora 1.14.6；
-2. 1.14.9 标记为 patch observation；
+1. 将所有 active 文档的主基线统一为 Typora 1.14.9（build 7785）；
+2. 1.14.6 标记为历史参考；
 3. 建立 `parity-ledger.json` 或等价 typed fixture；
 4. 每项包含 Typora 行为、Mellow 当前、等级、状态、证据、测试、Owner Package；
 5. 清理“代码完成 = 完全达标”的表述；
@@ -1009,8 +1008,8 @@ H1 H2 H3 | B I S Code | Link | Quote | List
 
 - `docs/plans/typora-parity-master-plan.md`；
 - `tests/parity/ledger.*`；
-- `tests/benchmark/fixtures/typora-1.14.6-*`；
-- `tests/benchmark/fixtures/typora-1.14.9-observation-*`。
+- `tests/benchmark/fixtures/typora-1.14.9-*`；
+- `tests/benchmark/fixtures/typora-1.14.6-history-*`。
 
 Exit Gate：
 
@@ -1018,7 +1017,7 @@ Exit Gate：
 - 所有 P0 项有唯一 ID；
 - 不存在无证据的 PASS-E。
 
-**实施结果（2026-08-23）**：已完成。`tests/parity/typora-parity-ledger.json` 建立 32 个唯一 P0 条目；`node tests/parity/verify-parity-ledger.mjs` 已纳入根目录 `pnpm test`，会验证 1.14.6 规范基线、补丁观察隔离、ID / 证据完整性与 PASS-E 前置要求，并输出当前状态 Dashboard。带日期的 qualification 报告保留为历史证据，不再参与当前状态聚合。
+**实施结果（2026-08-24）**：已完成。`tests/parity/typora-parity-ledger.json` 建立 32 个唯一 P0 条目；`node tests/parity/verify-parity-ledger.mjs` 已纳入根目录 `pnpm test`，会验证 1.14.9 规范基线、历史版本隔离、ID / 证据完整性与 PASS-E 前置要求，并输出当前状态 Dashboard。带日期的 qualification 报告保留为历史证据，不再参与当前状态聚合。
 
 ### P1 — Command / Menu 单一真源
 
@@ -1339,7 +1338,7 @@ P8 Final QA
 | 平台 | 必测 |
 |---|---|
 | Windows 10/11 | 微软拼音、搜狗、WebView2、MSI/NSIS/Portable、Clipboard、Print |
-| macOS | 拼音、五笔、日文 smoke、WKWebView、Menu/Share/Quick Look、DMG |
+| macOS | 拼音、五笔、WKWebView、Menu/Share/Quick Look、DMG |
 | Ubuntu / Fedora | fcitx5、ibus、WebKitGTK、GNOME/KDE、AppImage/deb/rpm |
 
 ### 14.3 视觉 Golden
@@ -1498,11 +1497,11 @@ Functional
 
 ---
 
-## 19. 待确认决策
+## 19. 已确认决策
 
-实施前需要确认以下产品级决策：
+以下产品级决策已经确认：
 
-1. **基线**：正式基线固定 Typora 1.14.6，1.14.9 仅作 patch observation；
+1. **基线**：正式基线固定 Typora 1.14.9（build 7785），1.14.6 仅作历史参考；
 2. **菜单**：移除 Mellow 独立“插入”顶层菜单，恢复 Typora 顶层顺序；
 3. **默认 UI**：Sidebar / Status Bar / Live Line Numbers 默认隐藏，单 Tab 自动隐藏；
 4. **Sidebar**：高级过滤、排序、最近和固定文件夹默认收进 hover/action menu；
@@ -1510,7 +1509,7 @@ Functional
 6. **完成口径**：现有“代码完成”统一降为 IMPL/AUTO，只有三平台真机 + UX Gate 后可标 PASS-E；
 7. **实施顺序**：严格按 P0 → P8，不先做新增 Feature。
 
-确认后，从 **P0 Baseline 与证据治理** 开始实施。
+已从 **P0 Baseline 与证据治理** 开始实施。
 
 ---
 
@@ -1526,4 +1525,4 @@ Mellow V1 的最终状态应当是：
 
 只有 P8 全部通过后，才允许描述为：
 
-> **“与 Typora 1.14.6 核心体验一致，并在安全、中文输入、大文件、阅读和跨平台一致性上更优。”**
+> **“与 Typora 1.14.9 核心体验一致，并在安全、中文输入、大文件、阅读和跨平台一致性上更优。”**

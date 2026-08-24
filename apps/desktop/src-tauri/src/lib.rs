@@ -68,7 +68,15 @@ fn is_portable() -> bool {
 /// 前端就绪后拉取待打开请求（benchmark open-to-editable / open-with / CLI）
 #[tauri::command]
 fn pending_open_path(state: tauri::State<PendingOpen>) -> Option<OpenRequest> {
-    state.0.lock().unwrap().clone()
+    take_pending_open(&state)
+}
+
+/// PendingOpen 的消费必须是一次性的：实时事件与前端拉取路径可能重叠，旧请求
+/// 绝不能在用户已切换文档后再次注入 EditorCore。
+fn take_pending_open(pending: &PendingOpen) -> Option<OpenRequest> {
+    // 只消费一次。若保留副本，前端完成首次打开后再次查询会把旧文件重新
+    // 注入 EditorCore，可能与用户当前编辑或启动 tab 初始化发生竞态。
+    pending.0.lock().unwrap().take()
 }
 
 /// Web→Native 消息（与 CoreEditor nativeModule.ts 格式一致）
@@ -77,6 +85,25 @@ pub struct BridgeMessage {
     pub module_name: String,
     pub method_name: String,
     pub parameters: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{take_pending_open, OpenRequest, PendingOpen};
+    use std::sync::Mutex;
+
+    #[test]
+    fn pending_open_is_consumed_once() {
+        let pending = PendingOpen(Mutex::new(Some(OpenRequest {
+            path: "/tmp/launch.md".to_string(),
+            mode: "normal".to_string(),
+        })));
+
+        let first = take_pending_open(&pending).expect("first read returns the launch request");
+        assert_eq!(first.path, "/tmp/launch.md");
+        assert_eq!(first.mode, "normal");
+        assert!(take_pending_open(&pending).is_none(), "a consumed launch request must not be replayed");
+    }
 }
 
 /// Rust System Core 入口（ADR-0017：Rust System Core；ADR-0007：Editor/UI 不直接依赖 OS API）

@@ -450,7 +450,7 @@ export function buildClipboardCopyExtension(): Extension {
   }, {
     eventHandlers: {
       copy: (event: ClipboardEvent, view: EditorView): boolean => {
-        if (isComposing()) {
+        if (isComposing(view)) {
           return false;
         }
         if (event.clipboardData === null) {

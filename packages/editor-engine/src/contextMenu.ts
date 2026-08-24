@@ -142,7 +142,7 @@ export function buildContextMenuExtension(): Extension {
     {
       eventHandlers: {
         contextmenu: (event: MouseEvent, view: EditorView): boolean => {
-          if (isComposing()) return false;
+          if (isComposing(view)) return false;
           const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
           if (pos !== null) {
             // 原生文本视图行为：右键把光标移到点击处（若不在现有选区）

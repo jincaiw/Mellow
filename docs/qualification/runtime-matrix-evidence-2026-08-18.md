@@ -45,6 +45,12 @@
 3. **ADR-0019 Gate 状态**：构建级 + 启动级 PASS；IME/Caret/Clipboard 的**输入交互级**验证仍需真机（Windows/Linux）——ADR-0021 维持「构建矩阵 PASS、真机交互矩阵待执行」。
 4. **自动化资产已就绪**：ime-matrix-linux.mjs（8 场景 fcitx5/ibus）、golden-journeys.mjs（macOS）、截图证据管线（Xvfb import + artifact）——真机就绪后可直接执行。
 
+## 2026-08-24 CI 复核说明
+
+Runtime Qualification run `32732636928` 在远端 SHA `924d5f2` 显示为成功，但其 Linux job 日志显示 fcitx5 的 paragraph、heading、format、list、table、code、math、link 共 8 个场景均未写入「你好中文」，结果为 `0/8`。该次绿灯不得作为 Linux 中文 IME 通过证据：内层 `dbus-run-session` shell 当时未启用 `errexit`，随后 10 MB 冒烟与 `pkill` 的成功掩盖了矩阵的非零退出码。
+
+工作区中的 `.github/workflows/runtime-qualification.yml` 已增加 `set -euo pipefail`，并将 macOS 启动／10 MB 存活断言改为 fail-fast。必须在包含该修复的提交上重新运行 workflow，才能产生有效的 Windows／Linux CI 证据。
+
 ## 五、关键证据文件
 - .github/workflows/runtime-qualification.yml（runner 测试机流水线）
 - tests/benchmark/ime-matrix-linux.mjs（Linux IME 矩阵，已加固：读回回退/窗口选择/kill-by-pid/双击聚焦）

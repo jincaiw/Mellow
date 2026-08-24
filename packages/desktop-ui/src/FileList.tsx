@@ -23,7 +23,10 @@ export function FileList({ items, selectedPath, currentPath, includeSummary, for
           type="button"
           className={`file-list-item ${selectedPath === item.path ? 'selected' : ''} ${currentPath === item.path ? 'current' : ''}`}
           title={item.path}
-          onClick={() => onSelect(item.path)}
+          onClick={() => {
+            onSelect(item.path);
+            onOpen(item.path);
+          }}
           onDoubleClick={() => onOpen(item.path)}
         >
           <span className="file-list-title">{item.title}</span>

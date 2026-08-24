@@ -1,24 +1,31 @@
 #!/usr/bin/env node
 /**
- * Golden Journeys runner（PRD §111 Runtime Qualification 20 项）。
+ * Golden Journeys runner（PRD §111 Runtime Qualification：V1 必测项）。
  * 每 journey 在 Mellow 与当前已安装 Typora 上执行相同操作序列，记录：
- * 当前规范判定基线为 Typora 1.14.6；若本机实际版本较新，结果只能标记为 patch observation。
+ * 规范判定基线固定为 Typora 1.14.9（build 7785）。Typora 版本不匹配时拒绝执行对照，
+ * 防止将其他版本结果误记为正式验收证据。
  * steps / time / errors / unexpected / keyboard-mouse / 平台状态。
  * 输入原语：
  * - Mellow：System Events keystroke（CGEvent 字母被 WKWebView 过滤）+ 空格提交
  * - Typora：activate + CGEvent post-combo（原生 app）+ 空格提交（输入源为拼音时）
  * 验证：保存读回（Cmd+S → 读文件）。源码 ASCII 命令（bold/list/table/undo）不受 IME 影响。
  *
- * 用法：node golden-journeys.mjs --app both|mellow|typora [--journey 1,6]
+ * 用法：node golden-journeys.mjs --app mellow [--journey 1,6]
+ *       node golden-journeys.mjs --app both --close-existing-typora
+ *       node golden-journeys.mjs --app mellow --journey 3  # 可选日文兼容性观察
+ * Mellow 始终使用 /tmp 下隔离 profile，不读取、清理或关闭用户的真实 Mellow 状态。
+ * Typora 没有可验证的隔离 profile；对照运行必须显式允许关闭已有 Typora 进程。
  */
 import { execFileSync, spawnSync, spawn } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 const HELPER = '/Volumes/My-Data/jason.wa/codebase/Mellow/tests/benchmark/bin/screen-timing';
-const MB = '/Volumes/My-Data/jason.wa/codebase/Mellow/apps/desktop/src-tauri/target/release/bundle/macos/Mellow.app/Contents/MacOS/mellow-desktop';
+const MB = process.env.MELLOW_GOLDEN_APP ?? '/Volumes/My-Data/jason.wa/codebase/Mellow/apps/desktop/src-tauri/target/release/bundle/macos/Mellow.app/Contents/MacOS/mellow-desktop';
 const TY = '/Applications/Typora.app/Contents/MacOS/Typora';
+const TYPORA_EXPECTED_VERSION = '1.14.9';
 const WORK = '/tmp/mellow-gj';
+const MELLOW_GOLDEN_HOME = join(WORK, 'mellow-home');
 mkdirSync(WORK, { recursive: true });
 
 function q(cmd, timeout = 25000) {
@@ -27,21 +34,37 @@ function q(cmd, timeout = 25000) {
 function sleep(ms) { const at = Date.now() + ms; while (Date.now() < at) { /* busy */ } }
 function combo(mods, key, pid) { try { execFileSync(HELPER, ['post-combo', '--mods', mods, '--key', String(key), '--pid', String(pid)], { encoding: 'utf8', timeout: 15000 }); } catch { /* noop */ } }
 function se(script) { try { execFileSync('osascript', ['-e', script], { encoding: 'utf8', timeout: 15000 }); } catch { /* noop */ } }
-function activate(app) { se(`tell application "System Events" to set frontmost of process "${app}" to true`); sleep(500); }
+function activatePid(pid) { se(`tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`); sleep(500); }
+
+function stopProcess(pid) {
+  if (typeof pid !== 'number' || pid <= 0) return;
+  try { process.kill(pid, 'SIGTERM'); } catch { /* process already exited */ }
+  sleep(300);
+}
+
+function appVersion(appBundle) {
+  try {
+    return execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(appBundle, 'Contents/Info.plist')], { encoding: 'utf8', timeout: 5000 }).trim();
+  } catch {
+    return null;
+  }
+}
 
 const KEYCODES = { a: 0, s: 1, d: 2, f: 3, h: 4, g: 5, z: 6, x: 7, c: 8, v: 9, b: 11, q: 12, w: 13, e: 14, r: 15, t: 17, y: 16, u: 32, i: 34, o: 31, p: 35, k: 40, l: 37, n: 45, m: 46, space: 49, enter: 36, tab: 48, esc: 53, left: 123, right: 124, up: 126, down: 125 };
 
 // ---------- app lifecycle ----------
 function launchMellow(file) {
-  spawnSync('pkill', ['-x', 'mellow-desktop']); sleep(1000);
-  // 清会话/恢复快照（同 benchmark prep）：避免启动恢复旧 tab 干扰单文档 journey
-  q(`rm -rf "$HOME/Library/WebKit/com.mellow.editor" "$HOME/Library/Application Support/com.mellow.editor/recovery"* "$HOME/Library/Application Support/com.mellow.editor/settings.json" 2>/dev/null`);
-  // 清 macOS 崩溃恢复锁存（CrashReporter plist + Saved State）：wry 自定义协议偶发
-  // 启动崩溃后，macOS 会在每次启动弹「重新打开窗口」对话框锁死矩阵 —— 必须清除。
-  q(`rm -f "$HOME/Library/Application Support/CrashReporter/mellow-desktop_"*.plist; rm -rf "$HOME/Library/Saved Application State/com.mellow.editor.savedState"; defaults write com.mellow.editor NSQuitAlwaysKeepsWindows -bool false`);
-  const proc = spawn(MB, [file], { stdio: 'ignore' });
+  if (!existsSync(MB)) {
+    throw new Error(`未找到 Mellow release 可执行文件：${MB}`);
+  }
+  // Golden Journey 只能清理其自身的 /tmp 测试 profile，绝不触碰用户真实的
+  // Application Support、WebKit、Saved State 或运行中的 Mellow 进程。
+  rmSync(MELLOW_GOLDEN_HOME, { recursive: true, force: true });
+  mkdirSync(MELLOW_GOLDEN_HOME, { recursive: true });
+  const profileEnv = { ...process.env, HOME: MELLOW_GOLDEN_HOME, CFFIXED_USER_HOME: MELLOW_GOLDEN_HOME };
+  const proc = spawn(MB, [file], { stdio: 'ignore', env: profileEnv });
   sleep(9000);
-  activate('mellow-desktop');
+  activatePid(proc.pid);
   // 注意：不做合成点击。WKWebView 启动时自动持有焦点（WebView 为 first responder，
   // CodeMirror 默认聚焦），SE keystroke / CGEvent 可直达。实测合成鼠标点击（CGEvent
   // mouseDown/post）反而会破坏 WebView 焦点协议，导致后续键盘事件全部丢失
@@ -49,17 +72,24 @@ function launchMellow(file) {
   return proc.pid;
 }
 function launchTypora(file) {
+  if (!allowTyporaLifecycle) {
+    throw new Error('Typora Journey 会关闭已有 Typora 进程；请显式传入 --close-existing-typora 后重试');
+  }
   spawnSync('pkill', ['-x', 'Typora']); sleep(800);
   const proc = spawn(TY, [file], { stdio: 'ignore' });
   sleep(7000);
-  activate('Typora');
+  activatePid(proc.pid);
   // 2026-08-22 修复：Typora「恢复上次会话」会把 benchmark 旧标签（如 10MB.md）
   // 重开且可能持有焦点 —— 后续 Cmd+A/B/S 会打到恢复标签（j4 假 FAIL、fixture
   // 被 Cmd+S 污染均源于此）。二次 open 使目标文件成为活跃文档。
   q(`open -a Typora '${file.replace(/'/g, "'\\''")}'`);
   sleep(1200);
-  activate('Typora');
+  activatePid(proc.pid);
   return proc.pid;
+}
+function stopApp(app, pid) {
+  // Typora 仅在 --close-existing-typora 明确授权后才可能由本 runner 启动/关闭。
+  stopProcess(pid);
 }
 function saveRead(file, pid) { combo('cmd', 1, pid); sleep(1500); try { return readFileSync(file, 'utf8'); } catch { return ''; } }
 function typeTextTypora(pid, text) { for (const k of text.split('')) { combo('', KEYCODES[k] ?? 0, pid); sleep(150); } combo('', 49, pid); sleep(300); }
@@ -82,7 +112,7 @@ async function j1_latin(app, file) {
   const text = readFileSync(file, 'utf8');
   r.result = text.includes('hello') || text.includes('你好') ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`读回不含 hello: ${JSON.stringify(text)}`);
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -110,7 +140,7 @@ async function j2_chinese(app, file) {
   if (r.result === 'FAIL') r.errors.push(`读回不含「你」: ${JSON.stringify(text)}`);
   // 恢复 ABC（后续 journey 的 ASCII 输入不受 IME 影响）
   try { execFileSync(SELINPUT, ['com.apple.keylayout.ABC'], { timeout: 5000 }); } catch { /* noop */ }
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -143,8 +173,11 @@ async function j3_japanese(app, file) {
   // 验证 marked text 经编辑器的完整性与提交，2026-08-22 实测 "konnichiwa" 为
   // 字面转换 こんにちわ（正字 こんにちは 拼作 konnichiha），故选无歧义词 nihongo）
   if (app === 'mellow') {
-    se('tell application "System Events" to keystroke "nihongo"'); sleep(800);
-    se('tell application "System Events" to keystroke return'); r.steps.push('罗马字 nihongo + Enter'); r.input.keyboard.push('SE 罗马字组字+提交');
+    // 日文 IME 需要逐键接收罗马字以持续维护 marked text；把整串作为一次
+    // System Events keystroke 会在 macOS 中偶发只留下换行，不代表真实键盘路径。
+    for (const key of 'nihongo') { se(`tell application "System Events" to keystroke "${key}"`); sleep(150); }
+    sleep(800);
+    se('tell application "System Events" to key code 36'); r.steps.push('逐键罗马字 nihongo + Enter'); r.input.keyboard.push('逐键 SE 罗马字组字+提交');
   } else {
     for (const k of 'nihongo'.split('')) { combo('', KEYCODES[k], pid); sleep(150); }
     combo('', 36, pid); r.steps.push('罗马字 nihongo + Enter'); r.input.keyboard.push('CGEvent 罗马字组字+提交');
@@ -157,7 +190,7 @@ async function j3_japanese(app, file) {
   if (r.result === 'FAIL') r.errors.push(`读回不含「にほんご/日本語」: ${JSON.stringify(text)}`);
   // 恢复 ABC
   try { execFileSync(SELINPUT, ['com.apple.keylayout.ABC'], { timeout: 5000 }); } catch { /* noop */ }
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -177,7 +210,7 @@ async function j4_selection_bold(app, file) {
   const text = readFileSync(file, 'utf8');
   r.result = text.includes('**text**') ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`bold 后读回: ${JSON.stringify(text)}`);
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -200,7 +233,7 @@ async function j7_list(app, file) {
   const text = readFileSync(file, 'utf8');
   r.result = /^- item\n- \n?$/.test(text) ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`list 延续读回: ${JSON.stringify(text)}`);
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -222,7 +255,7 @@ async function j8_table(app, file) {
   r.result = text.includes('| a | b |') ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`table fidelity 读回: ${JSON.stringify(text)}`);
   r.unexpected.push(text !== '| a | b |\n|---|---|\n| 1 | 2 |' ? 'Tab 导航改变了源码' : '无');
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -236,7 +269,7 @@ async function j9_math(app, file) {
   r.result = text.includes('$x^2$') ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`math fidelity 读回: ${JSON.stringify(text)}`);
   r.unexpected.push(text === '$x^2$ 与 $\\frac{1}{2}$' ? '无（源码不变）' : '源码被改');
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -250,7 +283,7 @@ async function j10_mermaid(app, file) {
   r.result = text.includes('graph TD') ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`mermaid fidelity 读回: ${JSON.stringify(text)}`);
   r.unexpected.push(text.includes('```mermaid\ngraph TD;\n  A-->B\n```') ? '无（源码不变）' : '源码被改');
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -268,7 +301,7 @@ async function j15_undo(app, file) {
   const text = readFileSync(file, 'utf8');
   r.result = !text.includes('abc') ? 'PASS' : 'FAIL';
   if (r.result === 'FAIL') r.errors.push(`undo 后仍有 abc: ${JSON.stringify(text)}`);
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -307,7 +340,26 @@ async function j17_10mb(app) {
     if (!ready) sleep(1500);
   }
   r.timeMs.total = Date.now() - t0;
-  r.result = ready ? 'PASS' : 'FAIL';
+  // 只看到首行不等于「可编辑」。Mellow 必须完成一次真实键入、Cmd+S 与磁盘
+  // 读回，才能作为 10MB Gate 的原生证据；测试文件为 /tmp 拷贝，允许写入。
+  let editSaved = false;
+  if (ready && app === 'mellow') {
+    const before = readFileSync(file, 'utf8');
+    const editStart = Date.now();
+    // 明确收起可能由启动/可访问性保留的选择并移至文末；不能把「首键替换选择」
+    // 误判成大文件保存截断。与真实用户在文末继续编辑的路径一致。
+    combo('cmd', KEYCODES.right, pid);
+    sleep(250);
+    se('tell application "System Events" to keystroke "z"');
+    sleep(400);
+    const saved = saveRead(file, pid);
+    r.timeMs.editSave = Date.now() - editStart;
+    editSaved = saved.length === before.length + 1 && saved.includes('z');
+    if (!editSaved) {
+      r.errors.push(`10MB 编辑/保存读回异常：before=${before.length}, after=${saved.length}`);
+    }
+  }
+  r.result = ready && (app !== 'mellow' || editSaved) ? 'PASS' : 'FAIL';
   if (!ready) {
     // Typora 已知行为：>10MB 文件弹「该文件过大，无法在 Typora 中呈现」拒渲染。
     // 如实记录 FAIL（对照数据），并标注根因 —— Mellow 正常渲染 10MB = 优于 Typora。
@@ -319,7 +371,7 @@ async function j17_10mb(app) {
       r.errors.push('10MB 打开后 30s 内未检测到稳定渲染（OCR 未见 fixture 首行）');
     }
   }
-  spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
+  stopApp(app, pid);
   return r;
 }
 
@@ -337,9 +389,12 @@ function ocrWindowContains(pid, needle) {
   } catch { return false; }
 }
 
-const JOURNEYS = {
-  1: j1_latin, 2: j2_chinese, 3: j3_japanese, 4: j4_selection_bold, 7: j7_list, 8: j8_table, 9: j9_math, 10: j10_mermaid, 15: j15_undo, 17: j17_10mb,
+// V1 的语言支持范围仅为 English 与简体中文。日文 IME 仍可通过
+// `--journey=3` 手动运行以观察兼容性，但绝不参与默认 Gate。
+const REQUIRED_JOURNEYS = {
+  1: j1_latin, 2: j2_chinese, 4: j4_selection_bold, 7: j7_list, 8: j8_table, 9: j9_math, 10: j10_mermaid, 15: j15_undo, 17: j17_10mb,
 };
+const OPTIONAL_COMPATIBILITY_JOURNEYS = { 3: j3_japanese };
 
 const args = process.argv.slice(2);
 /** 支持 --app=x 与 --app x 两种格式 */
@@ -352,6 +407,18 @@ function flagArg(name) {
 }
 const appFilter = flagArg('app') ?? 'both';
 const journeyFilter = flagArg('journey');
+const allowTyporaLifecycle = args.includes('--close-existing-typora');
+const JOURNEYS = journeyFilter
+  ? { ...REQUIRED_JOURNEYS, ...OPTIONAL_COMPATIBILITY_JOURNEYS }
+  : REQUIRED_JOURNEYS;
+
+if ((appFilter === 'both' || appFilter === 'typora')) {
+  const actual = appVersion('/Applications/Typora.app');
+  if (actual !== TYPORA_EXPECTED_VERSION) {
+    throw new Error(`Typora 验收基线必须为 ${TYPORA_EXPECTED_VERSION}（build 7785）；当前检测到 ${actual ?? '未安装'}。`);
+  }
+  console.log(`Typora baseline: ${actual}（build 7785）`);
+}
 
 const results = [];
 for (const [id, fn] of Object.entries(JOURNEYS)) {
@@ -363,12 +430,12 @@ for (const [id, fn] of Object.entries(JOURNEYS)) {
     try {
       const r = await fn(app, file);
       results.push(r);
-      console.log(`[${app}] ${r.journey}: ${r.result}${r.errors.length ? ' | ' + r.errors.join('; ') : ''}${r.timeMs.total ? ' | ' + r.timeMs.total + 'ms' : ''}`);
+      const timings = Object.entries(r.timeMs).map(([name, ms]) => `${name}=${ms}ms`).join(', ');
+      console.log(`[${app}] ${r.journey}: ${r.result}${r.errors.length ? ' | ' + r.errors.join('; ') : ''}${timings ? ' | ' + timings : ''}`);
     } catch (e) {
       results.push({ journey: `j${id}`, result: 'ERROR', errors: [String(e.message)] });
       console.log(`[${app}] j${id}: ERROR ${e.message}`);
     }
-    spawnSync('pkill', ['-x', app === 'typora' ? 'Typora' : 'mellow-desktop']);
   }
 }
 console.log('\n=== 汇总 ===');

@@ -63,7 +63,13 @@ export interface EditorViewState {
 /** 编辑器 → 宿主 事件（V0.x 子集） */
 export type EditorEvent =
   | { type: 'ready' }
-  | { type: 'viewUpdate'; contentEdited: boolean; isDirty: boolean };
+  | {
+    type: 'viewUpdate';
+    contentEdited: boolean;
+    isDirty: boolean;
+    /** false 表示 IME 候选态；宿主不得在此时跨 WebView 读取或重置编辑器。 */
+    compositionEnded?: boolean;
+  };
 
 export type EditorEventListener = (event: EditorEvent) => void;
 

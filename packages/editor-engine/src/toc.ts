@@ -172,7 +172,7 @@ export function buildTocExtension(autoInstallComposition = true): Extension {
     constructor(readonly view: EditorView) { this.decorations = build(view); }
     update(update: ViewUpdate): void {
       if (update.docChanged) this.decorations = this.decorations.map(update.changes);
-      if (isComposing()) return;
+      if (isComposing(update.view)) return;
       if (update.docChanged || update.selectionSet || update.viewportChanged) this.decorations = build(update.view);
     }
   }, { decorations: (value: { decorations: DecorationSet }) => value.decorations });

@@ -248,7 +248,7 @@ export function buildSmartPasteExtension(): Extension {
   const plugin = ViewPlugin.fromClass(class SmartPastePlugin {}, {
     eventHandlers: {
       paste: (event: ClipboardEvent, view: EditorView): boolean => {
-        if (isComposing()) {
+        if (isComposing(view)) {
           return false;
         }
         const handled = handleSmartPaste(event.clipboardData, view);

@@ -1,21 +1,13 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-23",
+  "updatedAt": "2026-08-24",
   "normativeBaseline": {
     "product": "Typora",
-    "version": "1.14.6",
+    "version": "1.14.9",
     "purpose": "功能与 UX 验收基线",
     "authority": "docs/product/Mellow-PRD-V1.2-FINAL.md"
   },
-  "patchObservations": [
-    {
-      "version": "1.14.9",
-      "platform": "macOS",
-      "build": "7785",
-      "purpose": "补丁观察样本，不可替代规范验收基线",
-      "evidence": "tests/benchmark/fixtures/typora-menu-dump.txt"
-    }
-  ],
+  "patchObservations": [],
   "statusDefinitions": {
     "ABSENT": "未实现",
     "IMPL": "已有实现，但没有充分验收证据",
@@ -33,8 +25,8 @@
       "id": "P0-BASELINE-001",
       "domain": "baseline",
       "capability": "唯一规范基线",
-      "typoraBehavior": "以 Typora 1.14.6 作为功能和 UX 验收对象。",
-      "mellowTarget": "所有当前对标结论均以 1.14.6 判定；补丁版本只保留为观察证据。",
+      "typoraBehavior": "以 Typora 1.14.9（build 7785）作为功能和 UX 验收对象。",
+      "mellowTarget": "所有当前对标结论均以 1.14.9 判定；1.14.6 只保留历史证据。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "docs/plans",
@@ -44,9 +36,9 @@
     {
       "id": "P0-BASELINE-002",
       "domain": "baseline",
-      "capability": "补丁观察隔离",
-      "typoraBehavior": "补丁版本可用于发现行为，但不能悄然改变验收合同。",
-      "mellowTarget": "1.14.9 仅标记为 macOS patch observation，并保留来源。",
+      "capability": "历史版本隔离",
+      "typoraBehavior": "历史版本可用于解释旧证据，但不能悄然改变验收合同。",
+      "mellowTarget": "1.14.6 仅标记为历史参考；所有新验收使用 1.14.9。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "tests/parity",
@@ -68,13 +60,13 @@
     {
       "id": "P0-EDITOR-002",
       "domain": "editing",
-      "capability": "源码 / 阅读 / 分屏模式",
+      "capability": "源码 / 阅读模式",
       "typoraBehavior": "默认 Live 编辑；模式切换不破坏 Markdown 源码与选择。",
-      "mellowTarget": "Live、Source、Reader、Split 保持同一文档语义和可恢复状态。",
-      "grade": "B",
-      "status": "IMPL",
+      "mellowTarget": "Live、Source、Reader 保持同一 Markdown 文档语义和可恢复状态；V1 不含 Split。",
+      "grade": "E",
+      "status": "AUTO",
       "ownerPackage": "packages/editor-react",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md"],
+      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
       "requiredEvidence": ["integration", "macos", "windows", "linux"]
     },
     {
@@ -96,9 +88,9 @@
       "typoraBehavior": "组词不被格式化打断，提交后结果正确；一次用户动作对应可预测撤销。",
       "mellowTarget": "Composition Guard 覆盖编辑节点，IME corruption = 0。",
       "grade": "B",
-      "status": "AUTO",
+      "status": "MAC",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/ime-test-plan.md", "packages/editor-engine/test/ime.test.ts", "packages/editor-engine/test/undo.test.ts"],
+      "evidence": ["docs/specs/ime-test-plan.md", "packages/editor-engine/test/ime.test.ts", "packages/editor-engine/test/undo.test.ts", "docs/qualification/real-desktop-execution-bundle.md"],
       "requiredEvidence": ["unit", "macos", "windows", "linux", "ux-gate"]
     },
     {
@@ -240,9 +232,9 @@
       "typoraBehavior": "打开与保存稳定，文档路径和脏状态可见。",
       "mellowTarget": "文件 IO 仅由 Rust System Core 执行，保存采用安全写入。",
       "grade": "B",
-      "status": "IMPL",
+      "status": "AUTO",
       "ownerPackage": "apps/desktop/src-tauri",
-      "evidence": ["docs/specs/document-file-safety-spec.md", "tests/qualification/source-fidelity-corpus.md"],
+      "evidence": ["docs/specs/document-file-safety-spec.md", "tests/qualification/source-fidelity-corpus.md", "apps/desktop/src-tauri/tests/file_safety_corpus.rs"],
       "requiredEvidence": ["integration", "macos", "windows", "linux", "source-fidelity"]
     },
     {
@@ -252,9 +244,9 @@
       "typoraBehavior": "外部修改、dirty 冲突和异常恢复不会静默丢失用户内容。",
       "mellowTarget": "Reload、Keep、Compare 与 Recovery 均有明确决定路径。",
       "grade": "B",
-      "status": "IMPL",
+      "status": "AUTO",
       "ownerPackage": "packages/app-core",
-      "evidence": ["docs/specs/document-file-safety-spec.md", "tests/qualification/file-safety-corpus.md"],
+      "evidence": ["docs/specs/document-file-safety-spec.md", "tests/qualification/file-safety-corpus.md", "packages/app-core/test/externalChange.test.ts", "packages/app-core/test/recovery.test.ts"],
       "requiredEvidence": ["integration", "macos", "windows", "linux", "source-fidelity"]
     },
     {
@@ -264,9 +256,9 @@
       "typoraBehavior": "Sidebar 默认不抢占正文；用户显式打开后记忆状态。",
       "mellowTarget": "首次启动隐藏，后续按工作区记忆；快捷键可切换。",
       "grade": "E",
-      "status": "IMPL",
+      "status": "AUTO",
       "ownerPackage": "packages/desktop-ui",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md"],
+      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
       "requiredEvidence": ["integration", "macos", "windows", "linux", "visual-golden"]
     },
     {
@@ -276,9 +268,9 @@
       "typoraBehavior": "低密度文件树支持键盘导航、排序、过滤和安全文件操作。",
       "mellowTarget": "Files / Outline / Search 统一在 Sidebar，复杂操作按需显露。",
       "grade": "E",
-      "status": "IMPL",
+      "status": "AUTO",
       "ownerPackage": "packages/desktop-ui",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md"],
+      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
       "requiredEvidence": ["integration", "macos", "windows", "linux", "visual-golden"]
     },
     {
@@ -300,9 +292,9 @@
       "typoraBehavior": "默认窗口低干扰，正文表面占视觉主导。",
       "mellowTarget": "默认隐藏 Sidebar / Status Bar，减少常驻操作控件。",
       "grade": "E",
-      "status": "IMPL",
+      "status": "AUTO",
       "ownerPackage": "packages/desktop-ui",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md"],
+      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
       "requiredEvidence": ["macos", "windows", "linux", "visual-golden", "ux-gate"]
     },
     {
@@ -324,9 +316,9 @@
       "typoraBehavior": "File、Edit、Paragraph、Format、View、Theme、Window、Help 顺序稳定。",
       "mellowTarget": "菜单和命令注册表共享同一语义；不保留独立 Insert 顶层菜单。",
       "grade": "E",
-      "status": "IMPL",
+      "status": "AUTO",
       "ownerPackage": "apps/desktop/src-tauri",
-      "evidence": ["tests/benchmark/fixtures/typora-menu-dump.txt", "docs/plans/typora-parity-master-plan.md"],
+      "evidence": ["tests/benchmark/fixtures/typora-menu-dump.txt", "docs/plans/typora-parity-master-plan.md", "tests/parity/verify-menu-contract.mjs"],
       "requiredEvidence": ["menu-schema", "macos", "windows", "linux", "ux-gate"]
     },
     {
@@ -336,9 +328,9 @@
       "typoraBehavior": "菜单入口和快捷键可预测、无冲突。",
       "mellowTarget": "每个用户命令有唯一 ID、可见性、启用条件和平台快捷键。",
       "grade": "B",
-      "status": "IMPL",
+      "status": "AUTO",
       "ownerPackage": "packages/commands",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md"],
+      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/parity/verify-menu-contract.mjs", "packages/commands/test/registry.test.ts"],
       "requiredEvidence": ["command-registry", "macos", "windows", "linux"]
     },
     {
@@ -372,9 +364,9 @@
       "typoraBehavior": "同机、同文档条件下维持可编辑和可导航。",
       "mellowTarget": "性能不差于 Typora 规定阈值，大文件降级不破坏编辑。",
       "grade": "B",
-      "status": "AUTO",
+      "status": "MAC",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/performance-benchmark-spec.md", "packages/editor-engine/test/large-file.test.ts", "tests/benchmark/run-benchmark.mjs"],
+      "evidence": ["docs/specs/performance-benchmark-spec.md", "packages/editor-engine/test/large-file.test.ts", "tests/benchmark/run-benchmark.mjs", "docs/qualification/real-desktop-execution-bundle.md"],
       "requiredEvidence": ["unit", "macos", "windows", "linux", "benchmark"]
     },
     {
@@ -396,10 +388,10 @@
       "typoraBehavior": "核心编辑任务在目标桌面平台可稳定完成。",
       "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。",
       "grade": "E",
-      "status": "BLOCKED",
+      "status": "IMPL",
       "ownerPackage": "apps/desktop",
-      "evidence": ["docs/specs/runtime-qualification-plan.md", "tests/qualification/README.md", "docs/qualification/real-desktop-execution-bundle.md"],
-      "requiredEvidence": ["macos", "windows", "linux", "ime-matrix", "clipboard-matrix"]
+      "evidence": ["docs/adr/ADR-0022-ci-runtime-qualification-evidence-policy.md", "docs/specs/runtime-qualification-plan.md", "tests/qualification/README.md", "tests/benchmark/ime-matrix-linux.mjs", ".github/workflows/runtime-qualification.yml"],
+      "requiredEvidence": ["macos-native", "windows-ci", "linux-ci", "linux-ime-matrix"]
     },
     {
       "id": "P0-QA-001",

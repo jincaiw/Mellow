@@ -2,7 +2,7 @@
 
 > Mellow 首先是一款 Typora 级 Markdown 编辑器，然后才是一款跨平台平台。
 
-Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编辑内核、以 **Typora 1.14.6** 为体验验收基线重新构建的跨平台 Markdown 桌面编辑器：Live Preview、文件树/大纲/搜索、表格/图片/数学/Mermaid、Focus/Typewriter、主题、导出，并吸收 **Paperling**（Tauri/React、Command Palette、Slash、Smart Paste、Visual Table）与 **markdown-preview**（Reader-first、Outline、Zoom）的优点。
+Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编辑内核、以 **Typora 1.14.9（build 7785）** 为功能与 UX 规范验收基线重新构建的跨平台 Markdown 桌面编辑器：Live Preview、文件树/大纲/搜索、表格/图片/数学/Mermaid、Focus/Typewriter、主题、导出，并吸收 **Paperling**（Tauri/React、Command Palette、Slash、Smart Paste、Visual Table）与 **markdown-preview**（Reader-first、Outline、Zoom）的优点。Typora 1.14.6 仅保留历史参考。
 
 **状态：pre-release（ADR-0020）**。真实 V1.0 发布门槛 = PRD P0 范围 + 发布评审 18 项验收全部通过（三平台真机矩阵、UX Score≥92 实测、30 任务效率 Gate、签名公证等）。当前 macOS 本地构建可用；Windows/Linux 构建与真机验证按优化方案阶段 1 推进中。
 

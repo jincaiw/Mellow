@@ -1,4 +1,6 @@
-# 阶段 1 三平台真机 Runtime Qualification 执行手册
+# 阶段 1 三平台 Runtime Qualification 执行手册
+
+> **范围说明（2026-08-24）**：ADR-0022 已将 Windows／Linux 的正式证据环境改为 GitHub Actions CI；本手册的 Windows／Linux 人工步骤仅保留为可选诊断，不构成 V1 Gate。macOS 仍使用实机步骤。
 
 > 依据：PRD §111/§112、ADR-0019 §2/§3、docs/specs/runtime-qualification-plan.md、docs/plans/typora-parity-master-plan.md §12。
 > 目的：决定 Tauri 2 是否正式锁定；任何 FAIL 触发 ADR-0019 §2 → 切换 Electron。
@@ -7,7 +9,7 @@
 ## 0. 前置
 - 从 CI Release Packaging 产物下载安装包：Windows（MSI + NSIS）、Linux（AppImage + deb + rpm）、macOS（DMG）。
 - 每台测试机记录：OS 版本（Win10/11、Ubuntu LTS/Fedora、macOS 版本）、CPU 架构、IME 输入法版本（微软拼音/搜狗/简体拼音/五笔/fcitx5/ibus）、WebView 版本（WebView2 / WebKitGTK / WKWebView）。
-- 对照基线：Typora 1.14.6（安装于同一机器，用于行为对照）。
+- 对照基线：Typora 1.14.9（build 7785，安装于同一机器，用于行为对照）。
 - 测试素材：tests/fixtures/（1MB.md、5MB.md、100k-lines.md、large-table.md、100-mermaid.md、1000-images.md 等）。
 
 
@@ -17,8 +19,10 @@
 ```bash
 # IME 矩阵（System Events 输入；简体拼音）
 node tests/benchmark/ime-matrix.mjs
-# Golden Journeys（需 Typora 对照安装；实际版本须记录，1.14.9 仅为 patch observation）
+# Golden Journeys（需 Typora 1.14.9 对照安装；实际版本须记录）
 node tests/benchmark/golden-journeys.mjs --app=mellow
+# Typora 对照会关闭 Typora；确认无未保存文档后才显式允许：
+node tests/benchmark/golden-journeys.mjs --app=both --close-existing-typora
 # 性能对照（screen-timing 需屏幕录制权限）
 node tests/benchmark/run-benchmark.mjs
 ```
@@ -60,7 +64,7 @@ node tests/benchmark/generate-fixtures.mjs
 | I6 | 在表格单元格输入中文 | 同上 |
 | I7 | 在代码块/行内代码输入 | 无自动格式化 |
 | I8 | 在链接/图片 alt/数学公式中输入中文 | 同上 |
-| I9 | 日文 IME smoke（如有输入源） | 无 corruption |
+| I9 | 中文 / English 混合输入 | 无 corruption |
 | I10 | Emoji 输入 | 正常 |
 | I11 | Dead keys（如 Linux compose key） | 正常 |
 

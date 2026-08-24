@@ -17,11 +17,11 @@ function assert(condition, message) {
 
 assert(ledger.schemaVersion === 1, 'schemaVersion 必须为 1');
 assert(ledger.normativeBaseline?.product === 'Typora', '规范产品必须为 Typora');
-assert(ledger.normativeBaseline?.version === '1.14.6', '规范验收基线必须为 Typora 1.14.6');
-assert(Array.isArray(ledger.patchObservations) && ledger.patchObservations.length > 0, '必须记录补丁观察样本');
+assert(ledger.normativeBaseline?.version === '1.14.9', '规范验收基线必须为 Typora 1.14.9');
+assert(Array.isArray(ledger.patchObservations), 'patchObservations 必须为数组');
 
 for (const observation of ledger.patchObservations ?? []) {
-  assert(observation.version !== '1.14.6', `补丁观察 ${observation.version} 不应重复规范基线`);
+  assert(observation.version !== '1.14.9', `补丁观察 ${observation.version} 不应重复规范基线`);
   assert(/不可替代规范验收基线/.test(observation.purpose ?? ''), `补丁观察 ${observation.version} 必须声明其非规范性`);
   assert(typeof observation.evidence === 'string' && existsSync(resolve(root, observation.evidence)), `补丁观察 ${observation.version} 的证据不存在`);
 }

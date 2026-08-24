@@ -1,6 +1,6 @@
 /**
  * FileTree（PRD §14 / desktop-ui-design-spec §6 文件树）—— 从 App.tsx 增量抽取（阶段 2d）。
- * 纯展示 + 本地拖拽状态：层级、选中/当前高亮、展开、双击、右键、拖入文件夹移动。
+ * 纯展示 + 本地拖拽状态：层级、选中/当前高亮、展开、右键、拖入文件夹移动。
  */
 import { useRef } from 'react';
 import type { FileTreeNode } from '../../app-core/src';
@@ -37,14 +37,17 @@ export function FileTree({ nodes, selectedPath, currentPath, onSelect, onToggle,
         }}
         onDragOver={(e) => { if (node.kind === 'folder') e.preventDefault(); }}
         onDrop={() => { if (node.kind === 'folder') onDrop(node.path, draggedRef.current); }}
-        onClick={() => onSelect(node.path)}
+        onClick={() => {
+          onSelect(node.path);
+          if (node.kind === 'file') onOpen(node.path);
+        }}
         onDoubleClick={() => { if (node.kind === 'folder') onToggle(node.path); else onOpen(node.path); }}
         onContextMenu={(e) => onContextMenu(e, node.path)}
       >
         <span className="tree-disclosure" onClick={(e) => { e.stopPropagation(); if (node.kind === 'folder') onToggle(node.path); }}>
           {node.kind === 'folder' ? (node.expanded ? '▾' : '▸') : ''}
         </span>
-        <span className="tree-icon">{node.kind === 'folder' ? '📁' : '📄'}</span>
+        <span className={`tree-icon tree-icon-${node.kind}`} aria-hidden="true" />
         <span className="tree-name">{node.name}</span>
       </button>
       {node.kind === 'folder' && node.expanded && node.children !== undefined && node.children.map(renderNode)}

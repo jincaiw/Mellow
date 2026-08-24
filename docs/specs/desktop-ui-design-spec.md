@@ -283,7 +283,6 @@ Markdown
 - Outline
 - Source
 - Reader
-- Split
 - Focus
 - Typewriter
 - Toolbar

@@ -71,15 +71,15 @@ describe('EditorCore — public API', () => {
 
   test('onEvent 订阅与取消订阅', async () => {
     const { core } = await setUpWithMock();
-    const received: string[] = [];
-    const unsubscribe = core.onEvent((e) => received.push(e.type));
+    const received: Array<{ type: string; compositionEnded?: boolean }> = [];
+    const unsubscribe = core.onEvent((e) => received.push({ type: e.type, compositionEnded: e.type === 'viewUpdate' ? e.compositionEnded : undefined }));
 
-    core.emitExternalEvent({ type: 'viewUpdate', contentEdited: true, isDirty: true });
-    expect(received).toEqual(['viewUpdate']);
+    core.emitExternalEvent({ type: 'viewUpdate', contentEdited: true, isDirty: true, compositionEnded: false });
+    expect(received).toEqual([{ type: 'viewUpdate', compositionEnded: false }]);
 
     unsubscribe();
     core.emitExternalEvent({ type: 'viewUpdate', contentEdited: false, isDirty: false });
-    expect(received).toEqual(['viewUpdate']); // 不再增长
+    expect(received).toEqual([{ type: 'viewUpdate', compositionEnded: false }]); // 不再增长
 
     core.destroy();
   });

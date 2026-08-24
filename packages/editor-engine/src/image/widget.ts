@@ -299,7 +299,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
   }
 
   const buildDecorations = (view: EditorView): DecorationSet => {
-    if (isSourceMode()) {
+    if (isSourceMode(view)) {
       return Decoration.none;
     }
     const { state } = view;

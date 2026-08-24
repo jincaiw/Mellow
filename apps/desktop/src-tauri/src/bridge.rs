@@ -19,12 +19,15 @@ pub fn bridge_call(
 ) -> Result<Option<serde_json::Value>, String> {
     match message.module_name.as_str() {
         "core" => {
-            // 状态通知：转发为事件供 React 订阅（当前无订阅者，no-op）
+            // 状态通知：转发为事件供 React 订阅。parameters 必须原样保留：
+            // notifyViewDidUpdate 的 contentEdited/isDirty 是桌面壳判定 dirty、
+            // recovery 与状态栏刷新的唯一编辑器事实来源。
             let _ = app.emit(
                 "mellow://bridge",
                 serde_json::json!({
                     "moduleName": message.module_name,
                     "methodName": message.method_name,
+                    "parameters": message.parameters,
                 }),
             );
             Ok(None)

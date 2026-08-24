@@ -79,6 +79,9 @@ jobs:
           Layout=
           EOF
           dbus-run-session -- bash -c '
+            # `ime-matrix-linux.mjs` 的非零退出码必须使整个 CI job 失败。
+            # 没有 errexit 时，后续 10 MB 冒烟或 pkill 的成功会掩盖 IME 失败。
+            set -euo pipefail
             export DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root
             export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
             export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11
@@ -273,6 +276,7 @@ jobs:
           else
             echo 'app_alive=false'
             tail -30 /tmp/mellow-mac.log
+            exit 1
           fi
           kill "$APP_PID" 2>/dev/null || true
           # 10MB 大文件启动冒烟
@@ -280,7 +284,13 @@ jobs:
           "$BIN" /tmp/mellow-10mb.md > /tmp/mellow-10mb.log 2>&1 &
           BIG_PID=$!
           sleep 15
-          if kill -0 "$BIG_PID" 2>/dev/null; then echo '10mb_alive=true'; else echo '10mb_alive=false'; tail -20 /tmp/mellow-10mb.log; fi
+          if kill -0 "$BIG_PID" 2>/dev/null; then
+            echo '10mb_alive=true'
+          else
+            echo '10mb_alive=false'
+            tail -20 /tmp/mellow-10mb.log
+            exit 1
+          fi
           kill "$BIG_PID" 2>/dev/null || true
           echo 'macOS runtime smoke executed on macos-latest'
       - name: Collect evidence

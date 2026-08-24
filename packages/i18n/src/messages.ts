@@ -39,6 +39,7 @@ const zhCN = {
   'sidebar.pinnedLabel': '固定文件夹',
   'sidebar.recentFolders': '最近文件夹',
   'sidebar.recentFoldersLabel': '最近打开的文件夹',
+  'sidebar.removeRecentFolder': '从最近文件夹中移除',
 
   'sidebar.sort': '排序',
   'sidebar.sortNatural': '自然',
@@ -505,6 +506,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'sidebar.pinnedLabel': 'Pinned folders',
   'sidebar.recentFolders': 'Recent Folders',
   'sidebar.recentFoldersLabel': 'Recently opened folders',
+  'sidebar.removeRecentFolder': 'Remove from recent folders',
 
   'sidebar.sort': 'Sort',
   'sidebar.sortNatural': 'Natural',

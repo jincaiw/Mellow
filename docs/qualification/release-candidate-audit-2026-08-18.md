@@ -6,7 +6,7 @@
 | # | 验收项 | 状态 | 证据 |
 |---|---|---|---|
 | 1 | P0 100% | ✅ | PRD §133 60 项：58 代码完成 + 2 项（IME Gate/UX Benchmark）本质为真机执行；p0-scope-status-2026-08-18.md |
-| 2 | Typora UX Score ≥92 | ⏳ | 门禁模板 ux-score-gate-template.md 就绪；需真机对照 Typora 1.14.6 计分 |
+| 2 | Typora UX Score ≥92 | ⏳ | 门禁模板 ux-score-gate-template.md 就绪；需真机对照 Typora 1.14.9 计分 |
 | 3 | Live Editing ≥24/25 | ⚠️ | 引擎 495 测试全绿 + macOS 历史 8/8；正式 24/25 计分待真机 |
 | 4 | Caret/IME/Undo 15/15 | ⚠️ | macOS 简体拼音 8/8（历史）+ undo guard 测试；Win/Linux 待真机 |
 | 5 | File Safety 5/5 | ✅ | file-safety 16 测试 + Source Fidelity 141 文件 0 diff 复跑 PASS |

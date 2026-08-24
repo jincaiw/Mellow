@@ -46,12 +46,13 @@ import {
   pushRecentFolder,
   parseRecentFolders,
   serializeRecentFolders,
+  basename,
 } from '../../../packages/app-core/src';
 import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopExtensionHost } from './extensions/extensionHost';
 import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
-import { ExtensionRegistry, basename, buildExtensionContext } from '../../../packages/app-core/src';
+import { ExtensionRegistry, buildExtensionContext } from '../../../packages/app-core/src';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
 import { createDesktopDialogService } from './host/dialogs';
@@ -97,6 +98,7 @@ const TABS_SESSION_KEY = 'mellow.tabs.session';
 const RECENT_FILES_KEY = 'mellow.recent.files';
 const RECENT_FOLDERS_KEY = 'mellow.recent.folders';
 const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
+const PINNED_FOLDERS_KEY = 'mellow.fileTree.pinned';
 const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
 const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
 const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
@@ -140,6 +142,19 @@ interface DocMeta {
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<EditorCore | null>(null);
+  // IME 候选态中禁止由桌面壳反向读取 iframe。等 compositionend 到达后，
+  // 将候选期间发生的修改作为一次普通编辑统一结算。
+  const compositionEditPendingRef = useRef(false);
+  // CLI/Finder 打开事件可能在 iframe 初始化期间抵达。必须先完成默认 tab /
+  // 会话恢复的 applyTab，再读入外部文件；否则晚到的空白 tab 会覆盖文件。
+  const editorStartupReadyRef = useRef<Promise<void> | null>(null);
+  const resolveEditorStartupRef = useRef<(() => void) | null>(null);
+  if (editorStartupReadyRef.current === null) {
+    editorStartupReadyRef.current = new Promise<void>((resolve) => { resolveEditorStartupRef.current = resolve; });
+  }
+  // Rust 在前端 ready 前保存打开请求、在 ready 后 emit 实时事件；两条通道可能
+  // 抵达同一请求。保持 in-flight 去重，避免同一路径同时 apply 两次。
+  const externalOpenInflightRef = useRef(new Set<string>());
   const filePathRef = useRef<string | null>(null);
   const extensionRegistryRef = useRef<ExtensionRegistry | null>(null);
   const extensionHostRef = useRef<ReturnType<typeof createDesktopExtensionHost> | null>(null);
@@ -243,6 +258,12 @@ export default function App() {
   const [sidebarVisible, setSidebarVisible] = useState<boolean>(() => {
     try { return localStorage.getItem('mellow.sidebar.visible') === '1'; } catch { return false; }
   });
+  // 窄窗口时临时收起 Sidebar，但不覆盖用户的显式显示偏好；恢复到正式最小宽度后
+  // 自动恢复原状态（master plan §7.7），避免把一次系统缩窗误记成用户关闭。
+  const [sidebarSuppressedByWidth, setSidebarSuppressedByWidth] = useState<boolean>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 900,
+  );
+  const sidebarShown = sidebarVisible && !sidebarSuppressedByWidth;
   // 侧边栏宽度拖拽（D-J / Typora parity）：200–480px，localStorage 记忆（默认 260）
   const [sidebarWidth, setSidebarWidthState] = useState<number>(() => {
     try {
@@ -256,6 +277,12 @@ export default function App() {
     const clamped = Math.max(200, Math.min(480, Math.round(next)));
     setSidebarWidthState(clamped);
     try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)); } catch { /* no-op */ }
+  }, []);
+  useEffect(() => {
+    const updateSidebarWidthGate = () => setSidebarSuppressedByWidth(window.innerWidth < 900);
+    updateSidebarWidthGate();
+    window.addEventListener('resize', updateSidebarWidthGate);
+    return () => window.removeEventListener('resize', updateSidebarWidthGate);
   }, []);
   /** 引擎格式/段落命令桥（菜单 → iframe __MELLOW_FORMAT_API__） */
   const engineFormat = useCallback((action: string) => {
@@ -367,35 +394,17 @@ export default function App() {
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
-  // ref 镜像：openPathInTab 内免依赖读取（「打开单文件 → 父文件夹自动加载」判断）
-  const fileTreeRootRef = useRef(fileTreeRoot);
-  fileTreeRootRef.current = fileTreeRoot;
-  // RC parity B1：Pin Folder（固定文件夹 + 会话记忆）
-  const PINNED_KEY = 'mellow.fileTree.pinned';
   const [pinnedFolders, setPinnedFolders] = useState<string[]>(() => {
     try {
-      const parsed = JSON.parse(localStorage.getItem(PINNED_KEY) ?? '[]') as unknown;
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+      const value = JSON.parse(localStorage.getItem(PINNED_FOLDERS_KEY) ?? '[]') as unknown;
+      return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : [];
     } catch {
       return [];
     }
   });
-  const persistPinned = useCallback((next: string[]) => {
-    setPinnedFolders(next);
-    try {
-      localStorage.setItem(PINNED_KEY, JSON.stringify(next));
-    } catch {
-      /* noop */
-    }
-  }, []);
-  const handleTogglePinRoot = useCallback(() => {
-    if (fileTreeRoot === null) return;
-    if (pinnedFolders.includes(fileTreeRoot)) {
-      persistPinned(pinnedFolders.filter((p) => p !== fileTreeRoot));
-    } else {
-      persistPinned([...pinnedFolders, fileTreeRoot]);
-    }
-  }, [fileTreeRoot, pinnedFolders, persistPinned]);
+  // ref 镜像：openPathInTab 内免依赖读取（「打开单文件 → 父文件夹自动加载」判断）
+  const fileTreeRootRef = useRef(fileTreeRoot);
+  fileTreeRootRef.current = fileTreeRoot;
   const [sidebarMode, setSidebarModeState] = useState<'files' | 'outline' | 'search'>(() => {
     const saved = localStorage.getItem('mellow.sidebar.mode');
     return saved === 'outline' || saved === 'search' ? saved : 'files';
@@ -481,26 +490,10 @@ export default function App() {
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>(() => {
     try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
   });
-  const [recentMissing, setRecentMissing] = useState<Record<string, boolean>>({});
-  // 最近文件夹（PRD §56/§62）：打开文件夹时去重置顶记录
   const [recentFolders, setRecentFolders] = useState<string[]>(() => {
     try { return parseRecentFolders(localStorage.getItem(RECENT_FOLDERS_KEY)); } catch { return []; }
   });
-  const rememberRecentFolder = useCallback((folder: string) => {
-    setRecentFolders((prev) => {
-      const next = pushRecentFolder(prev, folder);
-      try { localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
-      return next;
-    });
-  }, []);
-  // 移除最近位置（Typora parity：悬停最近位置 → 移除入口）
-  const forgetRecentFolder = useCallback((folder: string) => {
-    setRecentFolders((prev) => {
-      const next = prev.filter((f) => f !== folder);
-      try { localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
-      return next;
-    });
-  }, []);
+  const [recentMissing, setRecentMissing] = useState<Record<string, boolean>>({});
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1595,6 +1588,36 @@ export default function App() {
     refreshOutline(outlineActiveRef.current === id ? undefined : hostRef.current?.getSelectionHead());
   }, [refreshOutline]);
 
+  const rememberRecentFolder = useCallback((folder: string) => {
+    setRecentFolders((current) => {
+      const next = pushRecentFolder(current, folder);
+      localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]');
+      return next;
+    });
+  }, []);
+
+  const forgetRecentFolder = useCallback((folder: string) => {
+    setRecentFolders((current) => {
+      const next = current.filter((path) => path !== folder);
+      localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]');
+      return next;
+    });
+  }, []);
+
+  const persistPinnedFolders = useCallback((folders: string[]) => {
+    setPinnedFolders(folders);
+    localStorage.setItem(PINNED_FOLDERS_KEY, JSON.stringify(folders));
+  }, []);
+
+  const handleTogglePinRoot = useCallback(() => {
+    if (fileTreeRoot === null) return;
+    persistPinnedFolders(
+      pinnedFolders.includes(fileTreeRoot)
+        ? pinnedFolders.filter((path) => path !== fileTreeRoot)
+        : [...pinnedFolders, fileTreeRoot],
+    );
+  }, [fileTreeRoot, pinnedFolders, persistPinnedFolders]);
+
   const chooseFileTreeRoot = useCallback(async () => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -1606,7 +1629,7 @@ export default function App() {
     fileTreeModelRef.current = new FileTreeModel(r.value, fileTreeOptions);
     setSelectedTreePath(null);
     setStatusText(t('msg.folderOpened', { value: r.value }));
-  }, [fileTreeOptions]);
+  }, [fileTreeOptions, rememberRecentFolder]);
 
   const treeFlatten = useCallback(() => {
     const model = fileTreeModelRef.current;
@@ -2249,6 +2272,10 @@ export default function App() {
         }
         refreshTabsState();
         await applyTab(active);
+        // 外部打开请求必须等到此处：初始空 tab / 恢复会话已经完成，不能再
+        // 把随后打开的真实文件回写为初始化内容。
+        resolveEditorStartupRef.current?.();
+        resolveEditorStartupRef.current = null;
         // B3-1 编辑器设置启动恢复（fontSize/fontFamily/lineNumbers/lineWrapping：
         // 持久化在 localStorage，此前仅 live apply 无恢复 → 重启后丢失；B1-1 缩放同享此路径）
         try {
@@ -2366,9 +2393,17 @@ export default function App() {
         // Crash Recovery：编辑事件 → 防抖快照（与 Auto Save 分离）
         host.onEvent((e) => {
           if (e.type === 'viewUpdate') {
+            if (e.compositionEnded === false) {
+              compositionEditPendingRef.current ||= e.contentEdited;
+              return;
+            }
+            const contentEdited = e.contentEdited || compositionEditPendingRef.current;
+            compositionEditPendingRef.current = false;
             refreshOutline(host.getSelectionHead());
             refreshCursorPos(host);
-            if (suppressEditorEventRef.current) return;
+            // 光标/选区变化同样需要刷新 UI，但绝不能把它们记成未保存内容。
+            // CoreEditor 的 contentEdited 精确对应 CodeMirror Transaction.docChanged。
+            if (!contentEdited || suppressEditorEventRef.current) return;
             revisionRef.current += 1;
             setDirty(true);
             tabsRef.current.updateActive({
@@ -2392,6 +2427,9 @@ export default function App() {
         }
       })
       .catch((err) => {
+        // 启动失败也释放等待者，避免外部打开请求永久挂起；其自身会安全报错。
+        resolveEditorStartupRef.current?.();
+        resolveEditorStartupRef.current = null;
         console.error('editor init failed', err);
         setStatus('error');
         setStatusText(t('msg.editorInitFailed', { error: String(err) }));
@@ -3093,10 +3131,18 @@ export default function App() {
   // 外部打开（CLI 参数 / Finder「打开方式」odoc）：Rust 侧 emit mellow://open-file
   // PRD §80 CLI 模式：--reader 打开后进 Reader；--source 打开后切源码模式
   const openPathWithMode = useCallback((req: { path: string; mode?: string }) => {
+    const key = `${req.mode ?? 'normal'}\u0000${req.path}`;
+    if (externalOpenInflightRef.current.has(key)) return;
+    externalOpenInflightRef.current.add(key);
     void (async () => {
-      await openPathInTab(req.path);
-      if (req.mode === 'reader') openReader();
-      else if (req.mode === 'source') engineSourceToggle();
+      try {
+        await editorStartupReadyRef.current;
+        await openPathInTab(req.path);
+        if (req.mode === 'reader') openReader();
+        else if (req.mode === 'source') engineSourceToggle();
+      } finally {
+        externalOpenInflightRef.current.delete(key);
+      }
     })();
   }, [engineSourceToggle, openPathInTab, openReader]);
   useEffect(() => {
@@ -3114,6 +3160,40 @@ export default function App() {
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
   }, [openPathWithMode]);
+  // CoreEditor 位于 iframe 中，编辑事件经 Tauri bridge 回到桌面壳。不能只依赖
+  // window keydown：IME、粘贴、拖放和输入法提交都可能绕过该路径。
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void import('@tauri-apps/api/event')
+      .then(({ listen }) => listen<{ moduleName: string; methodName: string; parameters: string }>('mellow://bridge', (e) => {
+        if (e.payload.moduleName !== 'core') return;
+        if (e.payload.methodName === 'notifyCompositionEnded') {
+          hostRef.current?.emitExternalEvent({
+            type: 'viewUpdate', contentEdited: false, isDirty: true, compositionEnded: true,
+          });
+          return;
+        }
+        if (e.payload.methodName !== 'notifyViewDidUpdate') return;
+        let parameters: { contentEdited?: unknown; isDirty?: unknown; compositionEnded?: unknown };
+        try {
+          parameters = JSON.parse(e.payload.parameters) as { contentEdited?: unknown; isDirty?: unknown; compositionEnded?: unknown };
+        } catch {
+          return;
+        }
+        hostRef.current?.emitExternalEvent({
+          type: 'viewUpdate',
+          contentEdited: parameters.contentEdited === true,
+          isDirty: parameters.isDirty === true,
+          // 老 bundle 未包含该字段时，保持原有非合成态行为。
+          compositionEnded: parameters.compositionEnded !== false,
+        });
+      }))
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .catch(() => { /* 非 Tauri 环境 */ });
+    return () => { cancelled = true; unlisten?.(); };
+  }, []);
   useEffect(() => {
     const registry = new CommandRegistry();
     const always = () => true;
@@ -3210,7 +3290,7 @@ export default function App() {
         execute: () => void handleExportPandoc(format, ext),
       })),
       // D2：使用上一次设置导出（Typora ⌃E）
-      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Last Settings' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E', winLinux: 'Ctrl+E' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportRepeat() },
+      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Last Settings' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportRepeat() },
       // D2：导入（Typora File→Import；pandoc → Markdown 新标签页）
       { id: 'file.import', localizedTitle: { zh: '导入…', en: 'Import…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleImportDocument() },
       // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
@@ -3242,7 +3322,7 @@ export default function App() {
       { id: 'insert.list', localizedTitle: { zh: '列表', en: 'List' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['ul', 'lb'] } }, enabled: always, execute: () => replaceSlashTrigger('- ') },
       { id: 'insert.task', localizedTitle: { zh: '任务', en: 'Task' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['todo', 'rw'] } }, enabled: always, execute: () => replaceSlashTrigger('- [ ] ') },
       { id: 'insert.quote', localizedTitle: { zh: '引用', en: 'Quote' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['blockquote', 'yy'] } }, enabled: always, execute: () => replaceSlashTrigger('> ') },
-      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, shortcut: { mac: 'Cmd+Alt+T', winLinux: 'Ctrl+Alt+T' }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
+      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, shortcut: { mac: 'Cmd+Alt+T', winLinux: 'Ctrl+T' }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
       { id: 'insert.code', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['fence', 'dm'] } }, enabled: always, execute: () => replaceSlashTrigger('```\n\n```') },
       { id: 'insert.math', localizedTitle: { zh: '数学公式', en: 'Math' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['formula', 'sx'] } }, enabled: always, execute: () => replaceSlashTrigger('$$\n\n$$') },
       { id: 'insert.mermaid', localizedTitle: { zh: 'Mermaid 图表', en: 'Mermaid Diagram' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['diagram', 'tt'] } }, enabled: always, execute: () => replaceSlashTrigger('```mermaid\ngraph TD\n  A --> B\n```') },
@@ -3281,7 +3361,7 @@ export default function App() {
       { id: 'edit.deleteLine', localizedTitle: { zh: '删除行', en: 'Delete Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Shift+Cmd+Backspace', winLinux: 'Ctrl+Shift+Backspace' }, enabled: always, execute: () => engineFormat('deleteLine') },
       // D1-4 选择命令（Typora 编辑→选择：⌘L 行 / ⌥⌘P 段落或块）
       { id: 'edit.selectLine', localizedTitle: { zh: '选择行', en: 'Select Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+L', winLinux: 'Ctrl+L' }, enabled: always, execute: () => { hostRef.current?.selectLine(); } },
-      { id: 'edit.selectParagraph', localizedTitle: { zh: '选择段落或块', en: 'Select Paragraph or Block' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+P', winLinux: 'Ctrl+Alt+P' }, enabled: always, execute: () => { hostRef.current?.selectParagraph(); } },
+      { id: 'edit.selectParagraph', localizedTitle: { zh: '选择段落或块', en: 'Select Paragraph or Block' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+P' }, enabled: always, execute: () => { hostRef.current?.selectParagraph(); } },
       // D3 选择子菜单补全（Typora 编辑→选择）
       { id: 'edit.selectWord', localizedTitle: { zh: '选中当前词', en: 'Select Word' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+D', winLinux: 'Ctrl+D' }, enabled: always, execute: () => { hostRef.current?.selectWord(); } },
       { id: 'edit.selectFormatSpan', localizedTitle: { zh: '选中当前格式文本', en: 'Select Format Span' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+E', winLinux: 'Ctrl+E' }, enabled: always, execute: () => { hostRef.current?.selectFormatSpan(); } },
@@ -3356,7 +3436,7 @@ export default function App() {
       { id: 'format.sub', localizedTitle: { zh: '下标', en: 'Subscript' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('sub') },
       // D4 格式菜单补全（Typora 格式：下划线 ⌘U / 注释 ⌃-；引擎 applyInlineWrap 非对称包裹）
       { id: 'format.underline', localizedTitle: { zh: '下划线', en: 'Underline' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+U', winLinux: 'Ctrl+U' }, enabled: always, execute: () => engineFormat('underline') },
-      { id: 'format.comment', localizedTitle: { zh: '注释', en: 'Comment' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+-', winLinux: 'Ctrl+-' }, enabled: always, execute: () => engineFormat('comment') },
+      { id: 'format.comment', localizedTitle: { zh: '注释', en: 'Comment' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+-', winLinux: 'Ctrl+Alt+Shift+-' }, enabled: always, execute: () => engineFormat('comment') },
       // D4 链接操作（Typora 格式→链接操作：打开链接 / 复制链接地址）
       { id: 'format.openLink', localizedTitle: { zh: '打开链接', en: 'Open Link' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => handleOpenLinkAtCursor() },
       { id: 'format.copyLinkUrl', localizedTitle: { zh: '复制链接地址', en: 'Copy Link Address' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyLinkUrl() },
@@ -3376,7 +3456,7 @@ export default function App() {
       { id: 'paragraph.horizontalRule', localizedTitle: { zh: '水平分割线', en: 'Horizontal Rule' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+-', winLinux: 'Ctrl+Alt+-' }, enabled: always, execute: () => engineFormat('horizontalRule') },
       { id: 'paragraph.footnote', localizedTitle: { zh: '脚注', en: 'Footnote' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+R', winLinux: 'Ctrl+Alt+R' }, enabled: always, execute: () => engineFormat('footnote') },
       { id: 'paragraph.yamlFrontMatter', localizedTitle: { zh: 'YAML Front Matter', en: 'YAML Front Matter' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('yamlFrontMatter') },
-      { id: 'paragraph.taskToggle', localizedTitle: { zh: '切换任务状态', en: 'Toggle Task State' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Alt+X' }, enabled: always, execute: () => engineFormat('taskToggle') },
+      { id: 'paragraph.taskToggle', localizedTitle: { zh: '切换任务状态', en: 'Toggle Task State' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Shift+X' }, enabled: always, execute: () => engineFormat('taskToggle') },
       // D4 列表缩进（Typora 段落→列表缩进 ⌘]/⌘[；引擎 applyListIndent）
       { id: 'paragraph.indentMore', localizedTitle: { zh: '增加缩进', en: 'Increase Indent' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+]', winLinux: 'Ctrl+]' }, enabled: always, execute: () => engineFormat('indentMore') },
       { id: 'paragraph.indentLess', localizedTitle: { zh: '减少缩进', en: 'Decrease Indent' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+[', winLinux: 'Ctrl+[' }, enabled: always, execute: () => engineFormat('indentLess') },
@@ -3690,11 +3770,11 @@ export default function App() {
           type="button"
           onClick={toggleSidebar}
           title={t('sidebar.toggleTitle')}
-          aria-pressed={sidebarVisible}
-        >{platformMac ? '⇧⌘L' : 'Ctrl+Shift+L'}</button>
+          aria-pressed={sidebarShown}
+        ><span aria-hidden="true">☰</span><span className="sr-only">{platformMac ? '⇧⌘L' : 'Ctrl+Shift+L'}</span></button>
       </header>
       <div className="workspace-shell">
-        {sidebarVisible && (
+        {sidebarShown && (
         <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
           <SidebarHeader
             mode={sidebarMode}
@@ -3708,10 +3788,6 @@ export default function App() {
           />
           {sidebarMode === 'files' ? (
             <>
-              <div className="file-tree-actions file-mode-tabs">
-                <button className={fileSidebarMode === 'tree' ? 'active' : ''} onClick={() => setFileSidebarMode('tree')}>{t('sidebar.tree')}</button>
-                <button className={fileSidebarMode === 'list' ? 'active' : ''} onClick={() => setFileSidebarMode('list')}>{t('sidebar.list')}</button>
-              </div>
               {fileFiltersOpen && (
               <>
               <div className="file-tree-filters">
@@ -3734,73 +3810,43 @@ export default function App() {
                 <input placeholder={t('tree.includeGlob')} value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
                 <input placeholder={t('tree.excludeGlob')} value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
               </div>
+              <div className="sidebar-folder-history">
+                {fileTreeRoot !== null && (
+                  <button type="button" className="file-tree-pin" onClick={handleTogglePinRoot} title={pinnedFolders.includes(fileTreeRoot) ? t('sidebar.unpin') : t('sidebar.pin')} aria-label={pinnedFolders.includes(fileTreeRoot) ? t('sidebar.unpin') : t('sidebar.pin')}>
+                    {pinnedFolders.includes(fileTreeRoot) ? '★' : '☆'} {t('sidebar.pin')}
+                  </button>
+                )}
+                {pinnedFolders.length > 0 && (
+                  <div className="pinned-folders" aria-label={t('sidebar.pinnedLabel')}>
+                    {pinnedFolders.map((folder) => (
+                      <span key={folder} className="pinned-folder-group">
+                        <button type="button" className={`pinned-folder${folder === fileTreeRoot ? ' active' : ''}`} title={folder} onClick={() => { localStorage.setItem(FILE_TREE_ROOT_KEY, folder); setFileTreeRoot(folder); setSelectedTreePath(null); rememberRecentFolder(folder); }}>
+                          {basename(folder)}
+                        </button>
+                        <button type="button" className="pinned-folder-remove" title={t('sidebar.unpin')} aria-label={t('sidebar.unpin')} onClick={() => persistPinnedFolders(pinnedFolders.filter((path) => path !== folder))}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {recentFolders.length > 0 && (
+                  <div className="recent-folders" aria-label={t('sidebar.recentFoldersLabel')}>
+                    <span className="sidebar-folder-history-label">{t('sidebar.recentFolders')}</span>
+                    {recentFolders.map((folder) => (
+                      <span key={folder} className="recent-folder-group">
+                        <button type="button" className={`recent-folder${folder === fileTreeRoot ? ' active' : ''}`} title={folder} onClick={() => { localStorage.setItem(FILE_TREE_ROOT_KEY, folder); setFileTreeRoot(folder); setSelectedTreePath(null); rememberRecentFolder(folder); }}>
+                          {basename(folder)}
+                        </button>
+                        <button type="button" className="recent-folder-remove" title={t('sidebar.removeRecentFolder')} aria-label={t('sidebar.removeRecentFolder')} onClick={() => forgetRecentFolder(folder)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               </>
               )}
               <div className="file-tree-root" title={fileTreeRoot ?? ''}>
                 <span className="file-tree-root-label">{fileTreeRoot ?? t('tree.rootEmpty')}</span>
-                {fileTreeRoot !== null && (
-                  <button
-                    type="button"
-                    className="file-tree-pin"
-                    title={pinnedFolders.includes(fileTreeRoot) ? t('sidebar.unpin') : t('sidebar.pin')}
-                    aria-pressed={pinnedFolders.includes(fileTreeRoot)}
-                    onClick={handleTogglePinRoot}
-                  >
-                    {pinnedFolders.includes(fileTreeRoot) ? '★' : '☆'}
-                  </button>
-                )}
               </div>
-              {pinnedFolders.length > 0 && (
-                <div className="pinned-folders" aria-label={t('sidebar.pinnedLabel')}>
-                  {pinnedFolders.map((p) => (
-                    <span key={p} className="pinned-folder-group">
-                      <button
-                        type="button"
-                        className={`pinned-folder${p === fileTreeRoot ? ' active' : ''}`}
-                        title={p}
-                        onClick={() => { setFileTreeRoot(p); rememberRecentFolder(p); }}
-                      >
-                        {p === fileTreeRoot ? '★ ' : ''}{basename(p)}
-                      </button>
-                      <button
-                        type="button"
-                        className="pinned-folder-remove"
-                        title={t('sidebar.unpin')}
-                        aria-label={t('sidebar.unpin')}
-                        onClick={() => persistPinned(pinnedFolders.filter((x) => x !== p))}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {recentFolders.length > 0 && (
-                <div className="pinned-folders" aria-label={t('sidebar.recentFoldersLabel')}>
-                  <span className="file-tree-root-label">{t('sidebar.recentFolders')}</span>
-                  {recentFolders.filter((f) => f !== fileTreeRoot).slice(0, 5).map((f) => (
-                    <span key={f} className="pinned-folder-group">
-                      <button
-                        type="button"
-                        className="pinned-folder"
-                        title={f}
-                        onClick={() => { setFileTreeRoot(f); rememberRecentFolder(f); }}
-                      >
-                        {basename(f)}
-                      </button>
-                      <button
-                        type="button"
-                        className="pinned-folder-remove"
-                        title={t('sidebar.removeRecent')}
-                        aria-label={t('sidebar.removeRecent')}
-                        onClick={() => forgetRecentFolder(f)}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
               {fileSidebarMode === 'tree' ? (
                 <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
                   {fileTreeNodes.length === 0 ? (
@@ -3854,7 +3900,7 @@ export default function App() {
           )}
         </aside>
         )}
-        {sidebarVisible && (
+        {sidebarShown && (
           <div
             className="sidebar-resizer"
             onMouseDown={handleSidebarDragStart}

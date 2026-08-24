@@ -99,7 +99,7 @@ export function buildWikilinkExtension(): Extension {
     const win = isLargeFileMode() ? largeFileViewportRange(view) : undefined;
     const links = scanWikilinks(doc, fencedRanges(doc), win);
     const head = view.state.selection.main.head;
-    const sourceMode = isSourceMode();
+    const sourceMode = isSourceMode(view);
     for (const l of links) {
       const innerFrom = l.from + 2;
       const innerTo = l.to - 2;
@@ -136,7 +136,7 @@ export function buildWikilinkExtension(): Extension {
       }
       update(update: ViewUpdate): void {
         if (update.docChanged) this.decorations = this.decorations.map(update.changes);
-        if (isComposing()) return;
+        if (isComposing(update.view)) return;
         // Large File Mode 切换（setLargeFileMode → 空 dispatch）也触发重算
         const largeChanged = largeFileVersion() !== this.largeVersion;
         if (largeChanged) this.largeVersion = largeFileVersion();

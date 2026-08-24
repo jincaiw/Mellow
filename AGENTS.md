@@ -26,7 +26,7 @@
 11. 平台差异只能存在于 Adapter / Native Enhancement。
 12. 默认语言简体中文，完整支持 English 和 i18n。
 13. 数据安全、IME、Caret、Undo 优先于新增功能。
-14. Typora 1.14.6 是功能和 UX 验收基线。
+14. Typora 1.14.9（build 7785）是功能和 UX 验收基线；1.14.6 仅保留历史参考。
 15. 不允许未经要求进行无关重构。
 16. 不允许擅自替换已经 Accepted 的 ADR。
 17. 每完成一个任务必须执行测试并报告结果。
@@ -65,7 +65,7 @@
 完成后必须：
 
 1. 运行测试（统一规则 17）
-2. 验证 Typora parity（对照 Typora 1.14.6，统一规则 14）
+2. 验证 Typora parity（对照 Typora 1.14.9，统一规则 14）
 3. 验证 Undo/Redo
 4. 编辑器改动验证 IME
 5. 文件改动验证 Source Fidelity

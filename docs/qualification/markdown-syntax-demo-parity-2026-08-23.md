@@ -4,7 +4,7 @@
 > 输入：`/Volumes/My-Data/jason.wa/Downloads/markdown-syntax-demo.md`
 > 样例 SHA-256：`23d01902be09eb4abe7902c2d2a4d234396022922423a9bac033e0d0c4bf35db`
 > 实测对照：Typora 1.14.9 build 7785
-> 产品规范基线：Typora 1.14.6
+> **历史报告修订（2026-08-24）**：本报告记录当时的 Typora 1.14.6 口径；当前产品规范验收基线为 Typora 1.14.9（build 7785）。
 > Mellow：1.3.4，源码基线 commit `74c454b` 加本轮工作区修改
 
 ## 1. 最终判定
@@ -32,7 +32,7 @@ macOS release 应用已用同一工作副本复验：从大纲点击“表格”
 | 原文 | 299 行，UTF-8 Markdown |
 | 原文 SHA-256 | `23d01902be09eb4abe7902c2d2a4d234396022922423a9bac033e0d0c4bf35db` |
 
-仓库 PRD 与 Accepted ADR 没有被改写：Typora 1.14.6 仍是产品级规范基线；用户确认的 Typora 1.14.9 只作为本次样例的实机观察基线。
+仓库 Accepted ADR 没有被改写；本报告中的 Typora 1.14.6 仅为历史证据。用户确认的 Typora 1.14.9 已成为产品级规范基线。
 
 ## 3. 对标结果
 
