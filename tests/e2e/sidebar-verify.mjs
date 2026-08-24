@@ -209,12 +209,13 @@ async function main() {
       return {
         tabs: Array.from(aside?.querySelectorAll('[role="tab"]') ?? []).map((element) => element.textContent?.trim()),
         hasPermanentTreeListSwitch: !!aside?.querySelector('.file-tree-actions, .file-sidebar-switch'),
+        hasAdvancedViewMode: !!aside?.querySelector('.sidebar-file-view-mode'),
         hasFolderHistory: !!aside?.querySelector('.sidebar-folder-history'),
         hasMoreButton: !!aside?.querySelector('.file-tree-filters-toggle'),
       };
     });
     check('files default keeps only three primary sidebar modes', JSON.stringify(filesDefault.tabs) === JSON.stringify(['文件', '大纲', '搜索']), JSON.stringify(filesDefault));
-    check('files default has no permanent tree/list switch or folder history', !filesDefault.hasPermanentTreeListSwitch && !filesDefault.hasFolderHistory && filesDefault.hasMoreButton, JSON.stringify(filesDefault));
+    check('files default has no permanent tree/list switch or folder history', !filesDefault.hasPermanentTreeListSwitch && !filesDefault.hasAdvancedViewMode && !filesDefault.hasFolderHistory && filesDefault.hasMoreButton, JSON.stringify(filesDefault));
 
     // 低频文件管理能力不删除，收纳至 ⋯ 展开层。
     await page.locator('.file-tree-filters-toggle').click();
@@ -222,11 +223,16 @@ async function main() {
       const aside = document.querySelector('aside.file-tree');
       return {
         filters: !!aside?.querySelector('.file-tree-filters'),
+        viewMode: !!aside?.querySelector('.sidebar-file-view-mode'),
         globs: !!aside?.querySelector('.file-tree-globs'),
         folderHistorySlot: !!aside?.querySelector('.sidebar-folder-history'),
       };
     });
-    check('files more panel reveals advanced filters and folder-history slot', filesMore.filters && filesMore.globs && filesMore.folderHistorySlot, JSON.stringify(filesMore));
+    check('files more panel reveals advanced filters, view switch, and folder-history slot', filesMore.filters && filesMore.viewMode && filesMore.globs && filesMore.folderHistorySlot, JSON.stringify(filesMore));
+    await page.locator('.sidebar-file-view-mode button').filter({ hasText: '列表' }).click();
+    await new Promise((r) => setTimeout(r, 100));
+    check('more panel switches to file list and persists the choice', await page.evaluate(() => localStorage.getItem('mellow.fileSidebar.mode') === 'list'));
+    await page.locator('.sidebar-file-view-mode button').filter({ hasText: '树' }).click();
 
     // 4. 文档文本不被插入字面字符
     if (frame && typeof textBefore === 'string') {
