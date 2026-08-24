@@ -1,6 +1,6 @@
 # Runtime Qualification —— 用 GitHub Actions runner 作为真机测试机（用户无本地 Windows/Linux 环境）。
 #
-# - Linux：Xvfb 虚拟显示 + fcitx5 拼音 + xdotool/xclip → 执行 ime-matrix-linux.mjs（8 场景 IME 矩阵，
+# - Linux：Weston headless Wayland + fcitx5 拼音 + wtype virtual keyboard → 执行 ime-matrix-linux.mjs（8 场景 IME 矩阵，
 #   断言无丢字/重复 + undo 完整性）；
 # - Windows：启动 release 二进制 + SendKeys 输入 + 保存读回（最佳努力）；
 # - macOS：启动 + CLI 打开 + 进程存活（无 GUI 自动化权限时的最小运行时证据）。
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   linux-runtime:
-    name: "Linux: Xvfb + fcitx5 IME matrix"
+    name: "Linux: Wayland + fcitx5 IME matrix"
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -32,10 +32,10 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: mellow/pnpm-lock.yaml
-      - name: Install system deps (GUI + X + IME)
+      - name: Install system deps (GUI + Wayland + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk openbox imagemagick pandoc
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk weston wtype pandoc
       - name: Install workspace
         working-directory: mellow
         run: pnpm install --frozen-lockfile
@@ -57,11 +57,9 @@ jobs:
       - name: Link /mellow for harness
         run: |
           sudo ln -sfn "$GITHUB_WORKSPACE/mellow" /mellow
-      - name: "Linux runtime matrix (Xvfb + fcitx5)"
+      - name: "Linux runtime matrix (Wayland + fcitx5 virtual keyboard)"
         working-directory: mellow
         run: |
-          Xvfb :99 -screen 0 1280x800x24 &
-          sleep 3
           mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
           mkdir -p ~/.config/fcitx5
           cat > ~/.config/fcitx5/profile <<'EOF'
@@ -79,63 +77,29 @@ jobs:
           Layout=
           EOF
           dbus-run-session -- bash -c '
-            # `ime-matrix-linux.mjs` 的非零退出码必须使整个 CI job 失败。
-            # 没有 errexit 时，后续 10 MB 冒烟或 pkill 的成功会掩盖 IME 失败。
+            # 不能以 Xvfb/XTEST 验证 WebKitGTK：该组合不把合成键送到 web process。
+            # Weston 提供真正的 Wayland seat；wtype 经 virtual-keyboard 协议输入，fcitx5
+            # 可以接到同一键流。非零退出码必须使整个 CI job 失败。
             set -euo pipefail
-            export DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root
+            export XDG_RUNTIME_DIR=/tmp/runtime-root WAYLAND_DISPLAY=wayland-0
             export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
-            export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11
+            export GDK_BACKEND=wayland
             export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0
-            openbox > /tmp/openbox.log 2>&1 &
-            sleep 2
+            unset DISPLAY
+            weston --backend=headless-backend.so --socket=$WAYLAND_DISPLAY --width=1280 --height=800 > /tmp/weston.log 2>&1 &
+            sleep 5
             fcitx5 -d > /tmp/fcitx5.log 2>&1 &
             sleep 6
-            # 截图可视化诊断：启动 → 等待 → 捕获整屏 + 窗口几何
-            echo "# Screenshot Test" > /tmp/mellow-shot.md
-            echo "" >> /tmp/mellow-shot.md
-            echo "Hello **Mellow** on Linux" >> /tmp/mellow-shot.md
-            nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-shot.md > /tmp/mellow-shot.log 2>&1 &
-            sleep 15
-            xdotool search --name Mellow 2>/dev/null > /tmp/mellow-windows.txt || true
-            xwininfo -root -children -display :99 2>/dev/null > /tmp/xwininfo.txt || true
-            for w in $(cat /tmp/mellow-windows.txt 2>/dev/null); do echo "== window $w ==" >> /tmp/mellow-geometry.txt; xdotool getwindowgeometry $w >> /tmp/mellow-geometry.txt 2>&1 || true; xdotool getwindowname $w >> /tmp/mellow-geometry.txt 2>&1 || true; done
-            import -display :99 -window root /tmp/mellow-screen.png 2>/dev/null || xwd -root -display :99 -out /tmp/mellow-screen.xwd 2>/dev/null || true
-            # ASCII 输入隔离诊断：聚焦后输入 TEST + Ctrl+S，读回文件（同一实例，pkill 之前）
-            WID2=$(xdotool search --onlyvisible --name Mellow 2>/dev/null | head -1)
-            echo "diagnostic_wid=$WID2"
-            if [ -n "$WID2" ]; then
-              xdotool windowactivate --sync $WID2 2>/dev/null; xdotool windowfocus --sync $WID2 2>/dev/null
-              xdotool mousemove 600 250 click 1
-              sleep 1
-              xdotool type --delay 80 "TEST"
-              sleep 1
-              xdotool key --clearmodifiers ctrl+s
-              sleep 2
-              echo "focus=$(xdotool getwindowfocus 2>/dev/null) target=$WID2"
-              echo "file_after_global=$(cat /tmp/mellow-shot.md)"
-              # 直投窗口合成键（绕过焦点/XTEST 差异）
-              xdotool key --window $WID2 --clearmodifiers 'a'
-              sleep 1
-              xdotool key --window $WID2 --clearmodifiers ctrl+s
-              sleep 2
-              echo "file_after_direct=$(cat /tmp/mellow-shot.md)"
-              # 快捷键可达性诊断：Ctrl+Shift+P（命令面板）——若弹出则键盘事件可达 WebView
-              xdotool key --clearmodifiers ctrl+shift+p
-              sleep 2
-              import -display :99 -window root /tmp/mellow-palette.png 2>/dev/null || true
-              xdotool key --clearmodifiers Escape
-              sleep 1
-            fi
+            fcitx5-remote -s pinyin || true
             pkill -x mellow-desktop || true
             sleep 2
             # IME 矩阵
-            node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5
+            node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 --driver=wayland
             # 10MB 大文件启动冒烟（PRD §110）：打开 10MB 文档 → 存活 → 渲染
             yes 中文测试行content0123456789 | head -c 10000000 > /tmp/mellow-10mb.md || true
             nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-10mb.md > /tmp/mellow-10mb.log 2>&1 &
             sleep 15
             if kill -0 $! 2>/dev/null; then echo '10mb_alive=true'; else echo '10mb_alive=false'; tail -20 /tmp/mellow-10mb.log; exit 1; fi
-            import -display :99 -window root /tmp/mellow-10mb.png 2>/dev/null || true
             pkill -x mellow-desktop || true
           '
       - name: Collect evidence
@@ -144,7 +108,7 @@ jobs:
           ls -la apps/desktop/src-tauri/target/release/mellow-desktop
           cat /tmp/mellow.log 2>/dev/null | tail -20 || true
           cat /tmp/fcitx5.log 2>/dev/null | tail -10 || true
-          cat /tmp/openbox.log 2>/dev/null | tail -5 || true
+          cat /tmp/weston.log 2>/dev/null | tail -20 || true
 
       - name: Upload Linux evidence
         if: always()
@@ -152,16 +116,9 @@ jobs:
         with:
           name: linux-runtime-evidence
           path: |
-            /tmp/mellow-screen.*
-            /tmp/mellow-after-type.png
-            /tmp/mellow-palette.png
-            /tmp/mellow-10mb.png
-            /tmp/mellow-geometry.txt
-            /tmp/xwininfo.txt
-            /tmp/mellow-windows.txt
-            /tmp/mellow-shot.log
             /tmp/mellow.log
             /tmp/fcitx5.log
+            /tmp/weston.log
           if-no-files-found: warn
 
   windows-runtime:

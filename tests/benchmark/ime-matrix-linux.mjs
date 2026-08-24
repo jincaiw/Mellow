@@ -2,12 +2,13 @@
 /**
  * Linux IME Matrix runner（fcitx5 / ibus）——在 mellow-linux-ime 容器内执行。
  *
- * 输入：xdotool type（XTEST 经 GTK IM → fcitx5/ibus 组词）+ xdotool key space（提交候选 1）。
+ * 输入：X11 使用 xdotool；Wayland 使用 wtype 的 virtual-keyboard 协议，经 GTK IM →
+ * fcitx5/ibus 组词，再以 space 提交候选 1。
  * 读回：优先 Ctrl+A Ctrl+C + xclip（X11 剪贴板）；失败 fallback Ctrl+S 保存读回。
  * 断言：丢字/重复（输入词出现 1 次）/ caret 连续（两段）/ undo（Ctrl+Z 直至清空，无 corruption）。
  *
  * 用法（容器内）：
- *   node ime-matrix-linux.mjs --im fcitx5 [--scenario paragraph]
+ *   node ime-matrix-linux.mjs --im fcitx5 [--scenario paragraph] [--driver x11|wayland]
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { writeFileSync, readFileSync } from 'node:fs';
@@ -19,26 +20,58 @@ function sh(cmd, timeout = 20000) {
 }
 function sleep(ms) { const at = Date.now() + ms; while (Date.now() < at) { /* busy */ } }
 
-function xdo(args) { sh(`xdotool ${args}`); }
+const args = process.argv.slice(2);
+const im = args.find((a) => a.startsWith('--im='))?.split('=')[1] ?? 'fcitx5';
+const only = args.find((a) => a.startsWith('--scenario='))?.split('=')[1];
+const driver = args.find((a) => a.startsWith('--driver='))?.split('=')[1] ?? 'x11';
+
+if (!['x11', 'wayland'].includes(driver)) {
+  throw new Error(`Unsupported input driver: ${driver}`);
+}
+
+function keyCombo(combo) {
+  if (driver === 'wayland') {
+    const [modifier, key] = combo.split('+');
+    sh(`wtype -M ${modifier} ${key} -m ${modifier}`);
+    return;
+  }
+  sh(`xdotool key --clearmodifiers ${combo}`);
+}
+
+function typeText(value) {
+  if (driver === 'wayland') {
+    sh(`wtype -d 80 "${value}"`);
+    return;
+  }
+  sh(`xdotool type --delay 80 "${value}"`);
+}
+
+function pressKey(key) {
+  if (driver === 'wayland') {
+    sh(`wtype -P ${key} -p ${key}`);
+    return;
+  }
+  sh(`xdotool key ${key}`);
+}
 
 /** 输入拼音音节 + 空格提交（候选 1） */
 function typeSyl(syl) {
-  xdo(`type --delay 80 "${syl}"`);
+  typeText(syl);
   sleep(500);
-  xdo('key space');
+  pressKey('space');
   sleep(700);
 }
 
 /** 读回：优先剪贴板，fallback 保存读回 */
 function readBack(pid) {
-  xdo('key --clearmodifiers ctrl+a');
+  keyCombo('ctrl+a');
   sleep(200);
-  xdo('key --clearmodifiers ctrl+c');
+  keyCombo('ctrl+c');
   sleep(400);
-  const clip = sh('xclip -selection clipboard -o 2>/dev/null').trim();
+  const clip = driver === 'x11' ? sh('xclip -selection clipboard -o 2>/dev/null').trim() : '';
   // 容器/CI 环境 xclip 连接失败（Could not connect to localhost）→ 走保存读回
   if (clip.length > 0 && !clip.includes('Could not connect') && !clip.includes('Error:')) return clip;
-  xdo('key --clearmodifiers ctrl+s');
+  keyCombo('ctrl+s');
   sleep(1500);
   try { return readFileSync(DOC, 'utf8'); } catch { return ''; }
 }
@@ -49,15 +82,20 @@ function launch(doc, im) {
   if (oldPid) { spawnSync('kill', [oldPid]); }
   sleep(800);
   writeFileSync(DOC, doc);
-  const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'} LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0`;
+  const displayEnv = driver === 'wayland'
+    ? 'WAYLAND_DISPLAY=wayland-0 GDK_BACKEND=wayland'
+    : 'DISPLAY=:99';
+  const env = `${displayEnv} XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'} LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0`;
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
   sleep(15000); // 等待 WebView + iframe 编辑器就绪
   const pid = sh('cat /tmp/mellow.pid').trim();
-  // 启动诊断：只匹配可见主窗口（10x10 的 mellow-desktop 辅助窗口被 --onlyvisible 过滤）
-  sh('xdotool search --onlyvisible --name Mellow 2>/dev/null | head -1 > /tmp/mellow-win-id.txt');
-  const winId = sh('cat /tmp/mellow-win-id.txt').trim();
-  console.log(`[boot] pid=${pid} window=${winId || 'NOT_FOUND'}`);
-  if (winId) {
+  // X11 通过窗口 ID 显式聚焦；Wayland headless session 中新映射窗口自动获得键盘焦点。
+  const winId = driver === 'x11'
+    ? sh('xdotool search --onlyvisible --name Mellow 2>/dev/null | head -1')
+    : 'wayland-auto-focus';
+  if (driver === 'x11') sh(`echo '${winId}' > /tmp/mellow-win-id.txt`);
+  console.log(`[boot] driver=${driver} pid=${pid} window=${winId || 'NOT_FOUND'}`);
+  if (driver === 'x11' && winId) {
     sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
   }
   return pid;
@@ -78,18 +116,14 @@ const SCENARIOS = [
   { id: 'link', doc: '[label](https://example.com)' },
 ];
 
-const args = process.argv.slice(2);
-const im = args.find((a) => a.startsWith('--im='))?.split('=')[1] ?? 'fcitx5';
-const only = args.find((a) => a.startsWith('--scenario='))?.split('=')[1];
-
 const results = [];
 for (const sc of SCENARIOS) {
   if (only && !only.split(',').includes(sc.id)) continue;
   const pid = launch(sc.doc, im);
   sleep(1500);
   // 聚焦编辑器：激活主窗口 + 双击编辑器内容区（600,250 位于 1200x775 主窗口内）
-  const wid = sh('cat /tmp/mellow-win-id.txt').trim();
-  if (wid) {
+  const wid = driver === 'x11' ? sh('cat /tmp/mellow-win-id.txt').trim() : '';
+  if (driver === 'x11' && wid) {
     sh(`xdotool windowactivate --sync ${wid} 2>/dev/null; xdotool windowfocus --sync ${wid} 2>/dev/null`);
     sh(`xdotool mousemove 600 250 click 1`);
     sleep(1000);
@@ -105,7 +139,7 @@ for (const sc of SCENARIOS) {
   if (!r.pass) r.reason = count === 0 ? `未包含 ${EXPECT}` : `重复 ${count} 次`;
   // undo 直至清空
   for (let i = 0; i < 12; i++) {
-    xdo('key --clearmodifiers ctrl+z');
+    keyCombo('ctrl+z');
     sleep(900);
     const t = readBack(pid);
     if (!t.includes('你') && !t.includes('中')) break;
