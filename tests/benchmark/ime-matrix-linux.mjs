@@ -49,8 +49,16 @@ function typeSyl(syl) {
  */
 function ensureFcitxPinyin() {
   if (im !== 'fcitx5') return;
-  const current = sh('fcitx5-remote -o && fcitx5-remote -s pinyin && busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod');
-  console.log(`[ime] focused-current=${current.trim() || 'UNAVAILABLE'}`);
+  let current = '';
+  // WebKitGTK 创建 InputContext 与窗口 focus 之间有一个异步边界。只在编辑器已被
+  // 双击聚焦后重试；没有得到实际 pinyin 状态仍然是失败，而不是降级为原始按键注入。
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    sh('fcitx5-remote -o; fcitx5-remote -s pinyin');
+    current = sh('busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod');
+    console.log(`[ime] focused-current attempt=${attempt} value=${current.trim() || 'UNAVAILABLE'}`);
+    if (current.includes('pinyin')) return;
+    sleep(500);
+  }
   if (!current.includes('pinyin')) throw new Error('fcitx5 pinyin is not active for the focused editor');
 }
 

@@ -100,22 +100,14 @@ jobs:
             sleep 2
             fcitx5 -d > /tmp/fcitx5.log 2>&1 &
             sleep 6
-            # 确保 WebKitGTK 能加载 fcitx GTK 输入法模块，并显式切到拼音。
-            # 旧 run 只证明 pinyin addon 已加载，未证明输入法前端和当前 IM 状态。
+            # 确保 WebKitGTK 能加载 fcitx GTK 输入法模块。
+            # 当前输入法只能在应用编辑器获得焦点、创建 InputContext 后可靠读取；
+            # ime-matrix-linux.mjs 会在每个场景聚焦编辑器后切换并严格断言 pinyin。
             # 直接验证 fcitx GTK3 输入法模块。Ubuntu 24 的 gtk-query-immodules
             # 二进制位于私有 libgtk 目录且不在 PATH，不能把其命令名当作 Gate。
             FCITX_GTK_IMMODULE=$(dpkg -L fcitx5-frontend-gtk3 | awk "/\\/im-fcitx5\\.so$/ { print; exit }")
             test -f "$FCITX_GTK_IMMODULE"
             echo "fcitx_gtk_immodule=$FCITX_GTK_IMMODULE"
-            fcitx5-remote -o
-            fcitx5-remote -s pinyin
-            for _ in $(seq 1 10); do
-              FCITX_CURRENT=$(busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod 2>/dev/null || true)
-              echo "fcitx_current=$FCITX_CURRENT"
-              case "$FCITX_CURRENT" in *pinyin*) break ;; esac
-              sleep 1
-            done
-            case "$FCITX_CURRENT" in *pinyin*) ;; *) echo "fcitx5 did not select pinyin" >&2; exit 1 ;; esac
             fcitx5-diagnose > /tmp/fcitx5-diagnose.txt 2>&1 || true
             # 截图可视化诊断：启动 → 等待 → 捕获整屏 + 窗口几何
             echo "# Screenshot Test" > /tmp/mellow-shot.md
