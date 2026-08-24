@@ -3791,6 +3791,10 @@ export default function App() {
               {fileFiltersOpen && (
               <>
               <div className="file-tree-filters">
+                <div className="sidebar-file-view-mode" role="group" aria-label={t('sidebar.filesSwitchLabel')}>
+                  <button type="button" className={fileSidebarMode === 'tree' ? 'active' : ''} aria-pressed={fileSidebarMode === 'tree'} onClick={() => setFileSidebarMode('tree')}>{t('sidebar.tree')}</button>
+                  <button type="button" className={fileSidebarMode === 'list' ? 'active' : ''} aria-pressed={fileSidebarMode === 'list'} onClick={() => setFileSidebarMode('list')}>{t('sidebar.list')}</button>
+                </div>
                 <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />{t('sidebar.showHidden')}</label>
                 <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />{t('sidebar.showNonMarkdown')}</label>
                 {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.recursive} onChange={(e) => setFileListOption({ recursive: e.target.checked })} />{t('sidebar.recursive')}</label>}

@@ -267,6 +267,24 @@ html, body, #root {
   color: var(--mellow-fg-subtle);
 }
 
+/* Tree／List 是文件模式的低频切换，收进“更多”面板而非常驻第二排。 */
+.sidebar-file-view-mode {
+  display: inline-flex;
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.sidebar-file-view-mode button {
+  border: 0;
+  border-radius: 0;
+  min-width: 34px;
+}
+.sidebar-file-view-mode button.active {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+  font-weight: 600;
+}
+
 .file-tree-globs input {
   width: 100%;
   padding: 2px 4px;
