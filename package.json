@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
-    "test": "pnpm -r --workspace-concurrency=4 run test && node tests/parity/verify-parity-ledger.mjs && node tests/parity/verify-menu-contract.mjs",
+    "test": "pnpm -r --workspace-concurrency=4 run test && node tests/parity/verify-parity-ledger.mjs && node tests/parity/verify-menu-contract.mjs && node tests/parity/verify-runtime-qualification-workflow.mjs",
     "typecheck": "pnpm -r --workspace-concurrency=4 run build",
     "desktop:dev": "pnpm --filter mellow-desktop dev",
     "desktop:build": "pnpm --filter mellow-desktop build",

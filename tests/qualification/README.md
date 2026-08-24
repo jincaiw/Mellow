@@ -6,6 +6,8 @@
 
 > **CI 验收策略（2026-08-24，ADR-0022）**：Windows 与 Linux 使用 GitHub Actions 的 `windows-latest` / `ubuntu-latest` 作为正式 Runtime 证据来源；Linux 的 Xvfb + fcitx5 中文输入矩阵和 Windows 的启动／文档打开／10 MB 冒烟均为 fail-fast Gate。Windows CI 的 SendKeys 保存读回仅为诊断（无交互桌面可能无法抵达 WebView2），不得误记为已验证的输入交互；Windows／Linux 不再要求人工真机补测；macOS 保持实机 Typora 对照。
 
+> **Release 构建不变量（2026-08-25）**：Runtime Qualification 的三平台二进制必须以 `cargo build --release --features custom-protocol` 构建。该 feature 使 Tauri 嵌入 `frontendDist`；否则直接 Cargo 构建会加载 `devUrl`（`localhost:1420`），启动存活并不代表编辑器已加载。此不变量由 `tests/parity/verify-runtime-qualification-workflow.mjs` 保护。
+
 ## 最终决策
 
 > **ADR-0019（Accepted）**：Tauri 2 为产品 Runtime；Electron/Chromium 为已预案 Fallback（触发条款见 ADR-0019 §2）。

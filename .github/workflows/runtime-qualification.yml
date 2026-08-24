@@ -51,9 +51,12 @@ jobs:
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
           pnpm --filter mellow-desktop run build
-      - name: Build Rust release binary
+      - name: Build Rust release binary with embedded frontend
         working-directory: mellow/apps/desktop/src-tauri
-        run: cargo build --release
+        # `custom-protocol` makes Tauri embed frontendDist. Without it, direct
+        # cargo builds use devUrl and a runtime smoke merely renders the failed
+        # localhost page rather than the editor.
+        run: cargo build --release --features custom-protocol
       - name: Link /mellow for harness
         run: |
           sudo ln -sfn "$GITHUB_WORKSPACE/mellow" /mellow
@@ -218,9 +221,9 @@ jobs:
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
           pnpm --filter mellow-desktop run build
-      - name: Build Rust release binary
+      - name: Build Rust release binary with embedded frontend
         working-directory: apps/desktop/src-tauri
-        run: cargo build --release
+        run: cargo build --release --features custom-protocol
       - name: "Windows runtime smoke (launch + type + save)"
         shell: pwsh
         run: |
@@ -286,9 +289,9 @@ jobs:
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
           pnpm --filter mellow-desktop run build
-      - name: Build Rust release binary
+      - name: Build Rust release binary with embedded frontend
         working-directory: apps/desktop/src-tauri
-        run: cargo build --release
+        run: cargo build --release --features custom-protocol
       - name: "macOS runtime smoke (launch + CLI open + alive)"
         run: |
           BIN=apps/desktop/src-tauri/target/release/mellow-desktop

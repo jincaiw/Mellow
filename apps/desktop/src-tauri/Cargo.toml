@@ -8,6 +8,11 @@ edition = "2021"
 name = "mellow_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Runtime Qualification 直接调用 Cargo，而不是 Tauri CLI；显式转发此 feature
+# 才会把 `frontendDist` 嵌入 release 二进制，而非在运行时请求 devUrl。
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
