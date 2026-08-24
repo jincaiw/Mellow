@@ -35,7 +35,7 @@ jobs:
       - name: Install system deps (GUI + X + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk openbox imagemagick pandoc
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk openbox imagemagick pandoc ydotool ydotoold
       - name: Install workspace
         working-directory: mellow
         run: pnpm install --frozen-lockfile
@@ -62,6 +62,10 @@ jobs:
         run: |
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 3
+          sudo modprobe uinput || true
+          sudo ydotoold --socket-path=/tmp/mellow-ydotool.sock --socket-own="$(id -u):$(id -g)" > /tmp/ydotool.log 2>&1 &
+          sleep 2
+          test -S /tmp/mellow-ydotool.sock
           mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
           mkdir -p ~/.config/fcitx5
           cat > ~/.config/fcitx5/profile <<'EOF'
@@ -83,6 +87,7 @@ jobs:
             # 没有 errexit 时，后续 10 MB 冒烟或 pkill 的成功会掩盖 IME 失败。
             set -euo pipefail
             export DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root
+            export YDOTOOL_SOCKET=/tmp/mellow-ydotool.sock
             export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
             export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11
             export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0
@@ -129,7 +134,7 @@ jobs:
             pkill -x mellow-desktop || true
             sleep 2
             # IME 矩阵
-            node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5
+            node tests/benchmark/ime-matrix-linux.mjs --im=fcitx5 --driver=ydotool
             # 10MB 大文件启动冒烟（PRD §110）：打开 10MB 文档 → 存活 → 渲染
             yes 中文测试行content0123456789 | head -c 10000000 > /tmp/mellow-10mb.md || true
             nohup ./apps/desktop/src-tauri/target/release/mellow-desktop /tmp/mellow-10mb.md > /tmp/mellow-10mb.log 2>&1 &
@@ -145,6 +150,7 @@ jobs:
           cat /tmp/mellow.log 2>/dev/null | tail -20 || true
           cat /tmp/fcitx5.log 2>/dev/null | tail -10 || true
           cat /tmp/openbox.log 2>/dev/null | tail -5 || true
+          cat /tmp/ydotool.log 2>/dev/null | tail -20 || true
 
       - name: Upload Linux evidence
         if: always()
@@ -162,6 +168,7 @@ jobs:
             /tmp/mellow-shot.log
             /tmp/mellow.log
             /tmp/fcitx5.log
+            /tmp/ydotool.log
           if-no-files-found: warn
 
   windows-runtime:

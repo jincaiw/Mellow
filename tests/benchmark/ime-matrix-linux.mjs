@@ -7,7 +7,7 @@
  * 断言：丢字/重复（输入词出现 1 次）/ caret 连续（两段）/ undo（Ctrl+Z 直至清空，无 corruption）。
  *
  * 用法（容器内）：
- *   node ime-matrix-linux.mjs --im fcitx5 [--scenario paragraph]
+ *   node ime-matrix-linux.mjs --im fcitx5 [--scenario paragraph] [--driver xdotool|ydotool]
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { writeFileSync, readFileSync } from 'node:fs';
@@ -19,26 +19,39 @@ function sh(cmd, timeout = 20000) {
 }
 function sleep(ms) { const at = Date.now() + ms; while (Date.now() < at) { /* busy */ } }
 
+const args = process.argv.slice(2);
+const im = args.find((a) => a.startsWith('--im='))?.split('=')[1] ?? 'fcitx5';
+const only = args.find((a) => a.startsWith('--scenario='))?.split('=')[1];
+const driver = args.find((a) => a.startsWith('--driver='))?.split('=')[1] ?? 'xdotool';
+
+if (!['xdotool', 'ydotool'].includes(driver)) throw new Error(`Unsupported input driver: ${driver}`);
+
 function xdo(args) { sh(`xdotool ${args}`); }
+function ydo(args) { sh(`ydotool ${args}`); }
+function combo(combo, ydotoolCodes) {
+  if (driver === 'ydotool') { ydo(`key ${ydotoolCodes}`); return; }
+  xdo(`key --clearmodifiers ${combo}`);
+}
 
 /** 输入拼音音节 + 空格提交（候选 1） */
 function typeSyl(syl) {
-  xdo(`type --delay 80 "${syl}"`);
+  if (driver === 'ydotool') ydo(`type --key-delay 80 "${syl}"`);
+  else xdo(`type --delay 80 "${syl}"`);
   sleep(500);
-  xdo('key space');
+  if (driver === 'ydotool') ydo('key 57:1 57:0'); else xdo('key space');
   sleep(700);
 }
 
 /** 读回：优先剪贴板，fallback 保存读回 */
 function readBack(pid) {
-  xdo('key --clearmodifiers ctrl+a');
+  combo('ctrl+a', '29:1 30:1 30:0 29:0');
   sleep(200);
-  xdo('key --clearmodifiers ctrl+c');
+  combo('ctrl+c', '29:1 46:1 46:0 29:0');
   sleep(400);
   const clip = sh('xclip -selection clipboard -o 2>/dev/null').trim();
   // 容器/CI 环境 xclip 连接失败（Could not connect to localhost）→ 走保存读回
   if (clip.length > 0 && !clip.includes('Could not connect') && !clip.includes('Error:')) return clip;
-  xdo('key --clearmodifiers ctrl+s');
+  combo('ctrl+s', '29:1 31:1 31:0 29:0');
   sleep(1500);
   try { return readFileSync(DOC, 'utf8'); } catch { return ''; }
 }
@@ -78,10 +91,6 @@ const SCENARIOS = [
   { id: 'link', doc: '[label](https://example.com)' },
 ];
 
-const args = process.argv.slice(2);
-const im = args.find((a) => a.startsWith('--im='))?.split('=')[1] ?? 'fcitx5';
-const only = args.find((a) => a.startsWith('--scenario='))?.split('=')[1];
-
 const results = [];
 for (const sc of SCENARIOS) {
   if (only && !only.split(',').includes(sc.id)) continue;
@@ -105,7 +114,7 @@ for (const sc of SCENARIOS) {
   if (!r.pass) r.reason = count === 0 ? `未包含 ${EXPECT}` : `重复 ${count} 次`;
   // undo 直至清空
   for (let i = 0; i < 12; i++) {
-    xdo('key --clearmodifiers ctrl+z');
+    combo('ctrl+z', '29:1 44:1 44:0 29:0');
     sleep(900);
     const t = readBack(pid);
     if (!t.includes('你') && !t.includes('中')) break;
