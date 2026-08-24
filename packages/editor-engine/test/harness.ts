@@ -52,6 +52,19 @@ export async function sleep(ms = 200): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 等待 CM6 异步 decoration 已实际反映到 DOM。测试不以固定时延猜测渲染已完成：
+ * 超过 timeout 仍未满足时返回 false，让调用方保留明确的功能断言。
+ */
+export async function waitFor(check: () => boolean, timeout = 1000, interval = 25): Promise<boolean> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (check()) return true;
+    await sleep(interval);
+  }
+  return check();
+}
+
 /** 获取当前 caret 位置（主选区 head） */
 export function caretPos(view: EditorView): number {
   return view.state.selection.main.head;

@@ -7,7 +7,7 @@ import { EditorView } from '@codemirror/view';
 import { history, undo } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { install, setSourceMode, resetModeState, MARKER_DIM_CLASS, MARKER_CLASS } from '../src/index';
-import { setUpEditor, moveCaret, sleep, startComposition, endComposition } from './harness';
+import { setUpEditor, moveCaret, sleep, waitFor, startComposition, endComposition } from './harness';
 
 function setUpWithHistory(doc: string): EditorView {
   const view = new EditorView({
@@ -53,7 +53,7 @@ describe('List — marker reveal', () => {
     const view = setUpEditor('- item one\n- item two\n\nplain');
     await sleep();
     caretOutsideList(view);
-    await sleep();
+    expect(await waitFor(() => dimCount(view) === 2)).toBe(true);
     expect(dimCount(view)).toBe(2);
   });
 
