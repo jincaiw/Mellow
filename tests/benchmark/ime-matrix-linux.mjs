@@ -63,7 +63,9 @@ function readBack(pid) {
   sleep(200);
   combo('ctrl+c', '29:1 46:1 46:0 29:0');
   sleep(400);
-  const clip = sh('xclip -selection clipboard -o 2>/dev/null').trim();
+  // CI/Xvfb 中可能没有可响应的 clipboard owner；xclip 会一直等待，不能让每次
+  // Undo 的读回被通用 20s shell timeout 放大。1s 后可靠地回退到保存读回。
+  const clip = sh('timeout 1 xclip -selection clipboard -o 2>/dev/null').trim();
   // 容器/CI 环境 xclip 连接失败（Could not connect to localhost）→ 走保存读回
   if (clip.length > 0 && !clip.includes('Could not connect') && !clip.includes('Error:')) return clip;
   combo('ctrl+s', '29:1 31:1 31:0 29:0');
