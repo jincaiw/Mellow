@@ -63,7 +63,8 @@ jobs:
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 3
           sudo modprobe uinput || true
-          sudo ydotoold --socket-path=/tmp/mellow-ydotool.sock --socket-own="$(id -u):$(id -g)" > /tmp/ydotool.log 2>&1 &
+          # Ubuntu 24.04 的 ydotool 0.1.8 不识别这些选项的长形式；使用其兼容的短选项。
+          sudo ydotoold -p /tmp/mellow-ydotool.sock -o "$(id -u):$(id -g)" > /tmp/ydotool.log 2>&1 &
           sleep 2
           test -S /tmp/mellow-ydotool.sock
           mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
