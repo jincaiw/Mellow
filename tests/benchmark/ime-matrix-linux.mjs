@@ -42,6 +42,18 @@ function typeSyl(syl) {
   sleep(700);
 }
 
+/**
+ * fcitx5 可以按输入上下文记忆当前 IM；因此在文档获得焦点后再次显式选择拼音，
+ * 并以 D-Bus 读取实际状态。这样矩阵验证的是“焦点中的编辑器 + 中文输入法”，
+ * 而不是仅验证启动阶段的默认 profile。
+ */
+function ensureFcitxPinyin() {
+  if (im !== 'fcitx5') return;
+  const current = sh('fcitx5-remote -o && fcitx5-remote -s pinyin && busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod');
+  console.log(`[ime] focused-current=${current.trim() || 'UNAVAILABLE'}`);
+  if (!current.includes('pinyin')) throw new Error('fcitx5 pinyin is not active for the focused editor');
+}
+
 /** 读回：优先剪贴板，fallback 保存读回 */
 function readBack(pid) {
   combo('ctrl+a', '29:1 30:1 30:0 29:0');
@@ -105,6 +117,7 @@ for (const sc of SCENARIOS) {
     sh(`xdotool mousemove 600 250 click 1`);
     sleep(1200);
   }
+  ensureFcitxPinyin();
   for (const s of SEG1) typeSyl(s);
   for (const s of SEG2) typeSyl(s);
   const text = readBack(pid);
