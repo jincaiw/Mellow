@@ -35,7 +35,7 @@ jobs:
       - name: Install system deps (GUI + X + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libgtk-3-bin patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fonts-noto-cjk openbox imagemagick pandoc ydotool ydotoold
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fonts-noto-cjk openbox imagemagick pandoc ydotool ydotoold
       - name: Install workspace
         working-directory: mellow
         run: pnpm install --frozen-lockfile
@@ -99,11 +99,11 @@ jobs:
             sleep 6
             # 确保 WebKitGTK 能加载 fcitx GTK 输入法模块，并显式切到拼音。
             # 旧 run 只证明 pinyin addon 已加载，未证明输入法前端和当前 IM 状态。
-            # Ubuntu 24.04 将 GTK3 查询工具命名为 gtk-query-immodules-3.0-0；
-            # 其他发行版通常保留无版本后缀。两者都接受，缺失则明确 fail-fast。
-            GTK_QUERY_IMMODULES=$(command -v gtk-query-immodules-3.0 || command -v gtk-query-immodules-3.0-0 || true)
-            test -n "$GTK_QUERY_IMMODULES"
-            "$GTK_QUERY_IMMODULES" --update-cache
+            # 直接验证 fcitx GTK3 输入法模块。Ubuntu 24 的 gtk-query-immodules
+            # 二进制位于私有 libgtk 目录且不在 PATH，不能把其命令名当作 Gate。
+            FCITX_GTK_IMMODULE=$(dpkg -L fcitx5-frontend-gtk3 | awk "/\\/im-fcitx5\\.so$/ { print; exit }")
+            test -f "$FCITX_GTK_IMMODULE"
+            echo "fcitx_gtk_immodule=$FCITX_GTK_IMMODULE"
             fcitx5-remote -o
             fcitx5-remote -s pinyin
             for _ in $(seq 1 10); do
