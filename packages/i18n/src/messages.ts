@@ -110,11 +110,6 @@ const zhCN = {
   'reader.copied': '已复制',
   'reader.math.render.error': '公式渲染失败（已保留源码）',
 
-  // Split
-  'split.preview': '预览',
-  'split.hint': '点击内容定位到源码',
-  'split.divider.title': '拖动调整比例',
-
   // Context menu
   'contextmenu.newFile': '新文件',
   'contextmenu.newFolder': '新文件夹',
@@ -198,8 +193,6 @@ const zhCN = {
   'msg.toolbarOff': '格式工具栏：已禁用',
   'msg.readerOn': 'Reader 模式（只读）',
   'msg.readerOff': '已切回编辑器',
-  'msg.splitOn': 'Split 模式：Source | Preview',
-  'msg.splitOff': '已退出 Split 模式',
   'msg.switchedTab': '已切换到 {title}{suffix}',
   'msg.unsavedSuffix': '（未保存）',
   'msg.assetDirSet': 'asset 目录已设为 ./{value}/',
@@ -578,10 +571,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'reader.copied': 'Copied',
   'reader.math.render.error': 'Math render failed (source kept)',
 
-  'split.preview': 'Preview',
-  'split.hint': 'Click content to locate source',
-  'split.divider.title': 'Drag to adjust ratio',
-
   'contextmenu.newFile': 'New File',
   'contextmenu.newFolder': 'New Folder',
   'contextmenu.rename': 'Rename',
@@ -661,8 +650,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'msg.toolbarOff': 'Format toolbar: disabled',
   'msg.readerOn': 'Reader mode (read-only)',
   'msg.readerOff': 'Back to editor',
-  'msg.splitOn': 'Split mode: Source | Preview',
-  'msg.splitOff': 'Left split mode',
   'msg.switchedTab': 'Switched to {title}{suffix}',
   'msg.unsavedSuffix': ' (unsaved)',
   'msg.assetDirSet': 'Asset directory set to ./{value}/',

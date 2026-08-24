@@ -78,8 +78,6 @@ import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, F
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest, EditorContextActions } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
-import SplitPreview from './SplitPreview';
-import type { SplitPreviewHandle } from './SplitPreview';
 import ContextMenu from './ContextMenu';
 import type { ContextMenuItem, ContextMenuState } from './ContextMenu';
 import Cheatsheet from './Cheatsheet';
@@ -110,7 +108,6 @@ const THEME_SETTINGS_KEY = 'mellow.theme.settings';
 const LOCALE_SETTING_KEY = 'mellow.locale';
 const AI_ENABLED_KEY = 'mellow.ai.enabled';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
-const SPLIT_RATIO_KEY = 'mellow.split.ratio';
 const SIDEBAR_WIDTH_KEY = 'mellow.sidebar.width';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
 const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
@@ -471,8 +468,6 @@ export default function App() {
       return 1;
     }
   });
-  const [splitOpen, setSplitOpen] = useState(false);
-  const [splitHtml, setSplitHtml] = useState('');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // Cheatsheet（帮助菜单 / 命令面板 help.cheatsheet）
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
@@ -619,17 +614,6 @@ export default function App() {
       cancelled = true;
     };
   }, []);
-  const [splitRatio, setSplitRatioState] = useState<number>(() => {
-    try {
-      const saved = Number(localStorage.getItem(SPLIT_RATIO_KEY));
-      return saved >= 0.1 && saved <= 0.9 ? saved : 0.5;
-    } catch {
-      return 0.5;
-    }
-  });
-  const splitOpenRef = useRef(false);
-  splitOpenRef.current = splitOpen;
-  const splitPreviewRef = useRef<SplitPreviewHandle | null>(null);
   const [slashEnabled, setSlashEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SLASH_ENABLED_KEY) !== 'false';
@@ -1085,7 +1069,6 @@ export default function App() {
     setReaderHtml(result.html);
     setReaderOutlineItems(result.outline);
     setReaderTitle(active.title);
-    setSplitOpen(false);
     setReaderOpen(true);
     setStatusText(t('msg.readerOn'));
   }, [readerResolveImageSrc]);
@@ -1103,54 +1086,6 @@ export default function App() {
     } catch {
       /* no-op */
     }
-  }, []);
-
-  /** Split：预览从编辑器真源渲染（no second document state） */
-  const refreshSplitHtml = useCallback(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    const content = host.getText();
-    setSplitHtml(renderReaderHtml(content, { resolveImageSrc: readerResolveImageSrc }).html);
-  }, [readerResolveImageSrc]);
-
-  const openSplit = useCallback(() => {
-    setReaderOpen(false);
-    refreshSplitHtml();
-    setSplitOpen(true);
-    setStatusText(t('msg.splitOn'));
-  }, [refreshSplitHtml]);
-
-  const closeSplit = useCallback(() => {
-    setSplitOpen(false);
-    setStatusText(t('msg.splitOff'));
-  }, []);
-
-  const toggleSplit = useCallback(() => {
-    if (splitOpen) closeSplit();
-    else openSplit();
-  }, [closeSplit, openSplit, splitOpen]);
-
-  const setSplitRatio = useCallback((next: number) => {
-    const clamped = Math.max(0.1, Math.min(0.9, next));
-    setSplitRatioState(clamped);
-    try {
-      localStorage.setItem(SPLIT_RATIO_KEY, String(clamped));
-    } catch {
-      /* no-op */
-    }
-  }, []);
-
-  /** Preview 点击 → Source 定位（heading anchor / click navigation） */
-  const handleSplitPreviewClick = useCallback((offset: number) => {
-    const host = hostRef.current;
-    if (!host) return;
-    host.jumpToOffset(offset);
-    host.focus();
-  }, []);
-
-  /** Preview 滚动 → Source 同步（阈值防回环由两端 setRatio 同值忽略保证） */
-  const handleSplitPreviewScroll = useCallback((ratio: number) => {
-    hostRef.current?.setScrollRatio(ratio);
   }, []);
 
   const openFileInfo = useCallback(() => setFileInfoOpen(true), []);
@@ -1312,7 +1247,6 @@ export default function App() {
     // PRD §101 Auto Save：切换文档前保存当前 dirty 文档（默认 Window Blur + Document Switch）
     await maybeAutoSaveRef.current?.();
     setReaderOpen(false);
-    setSplitOpen(false);
     suppressEditorEventRef.current = true;
     filePathRef.current = tab.path;
     docIdRef.current = tab.documentId;
@@ -2434,7 +2368,6 @@ export default function App() {
           if (e.type === 'viewUpdate') {
             refreshOutline(host.getSelectionHead());
             refreshCursorPos(host);
-            if (e.contentEdited && splitOpenRef.current) refreshSplitHtml();
             if (suppressEditorEventRef.current) return;
             revisionRef.current += 1;
             setDirty(true);
@@ -3284,9 +3217,6 @@ export default function App() {
       { id: 'export.image', localizedTitle: { zh: '导出图片（PNG/JPEG）…', en: 'Export Image (PNG/JPEG)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportImage() },
       // RC F1：PDF 导出（golden journey #19）
       { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+Cmd+P' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
-      { id: 'split.toggle', localizedTitle: { zh: '切换 Split（Source | Preview）', en: 'Toggle Split (Source | Preview)' }, category: 'view', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => toggleSplit() },
-      { id: 'split.open', localizedTitle: { zh: 'Split：打开预览', en: 'Split: Open Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => !splitOpen && tabsRef.current.active !== null, execute: () => openSplit() },
-      { id: 'split.close', localizedTitle: { zh: 'Split：关闭预览', en: 'Split: Close Preview' }, category: 'view', context: { scope: 'document' }, enabled: () => splitOpen, execute: () => closeSplit() },
       { id: 'image.moveAll', localizedTitle: { zh: '图片：移动全部到 asset 目录', en: 'Images: Move All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('moveAll') },
       { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
       { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
@@ -3488,7 +3418,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, closeSplit, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, openSplit, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, splitOpen, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleSplit, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
@@ -3560,35 +3490,6 @@ export default function App() {
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [handleSlashOpen]);
-
-  // Split 双向滚动同步：编辑器滚动 → Preview（阈值防回环由两端同值忽略保证）
-  useEffect(() => {
-    if (!splitOpen) return;
-    const host = hostRef.current;
-    if (!host) return;
-    const unsub = host.onScroll((ratio) => {
-      splitPreviewRef.current?.setRatio(ratio);
-    });
-    return unsub;
-  }, [splitOpen]);
-
-  // Split 分隔条拖拽 → 调整 Source/Preview 比例（localStorage 记忆）
-  const handleSplitDragStart = useCallback((event: React.MouseEvent) => {
-    event.preventDefault();
-    const onMove = (ev: MouseEvent) => {
-      const container = containerRef.current?.parentElement;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      if (rect.width <= 0) return;
-      setSplitRatio((ev.clientX - rect.left) / rect.width);
-    };
-    const onUp = (): void => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [setSplitRatio]);
 
   // 窗口 size/position 记忆（desktop-ui-design-spec §3 Window；settings.advanced.windowBounds 开关）
   useEffect(() => {
@@ -3963,8 +3864,8 @@ export default function App() {
             title={t('sidebar.resizeTitle')}
           />
         )}
-        <main className={`editor-container${splitOpen ? ' split' : ''}`}>
-          {tabs.length === 0 && !readerOpen && !splitOpen && status === 'ready' && (
+        <main className="editor-container">
+          {tabs.length === 0 && !readerOpen && status === 'ready' && (
             <Welcome
               t={t}
               recentFiles={recentFiles}
@@ -3989,22 +3890,8 @@ export default function App() {
           )}
           <div
             ref={containerRef}
-            style={readerOpen ? { display: 'none' } : splitOpen ? { flexGrow: splitRatio, minWidth: 0, height: '100%' } : undefined}
+            style={readerOpen ? { display: 'none' } : undefined}
           />
-          {splitOpen && (
-            <>
-              <div className="split-divider" onMouseDown={handleSplitDragStart} title={t('split.divider.title')} />
-              <div className="split-preview-wrap" style={{ flexGrow: 1 - splitRatio, minWidth: 0 }}>
-                <SplitPreview
-                  t={t}
-                  ref={splitPreviewRef}
-                  html={splitHtml}
-                  onPreviewClick={handleSplitPreviewClick}
-                  onScroll={handleSplitPreviewScroll}
-                />
-              </div>
-            </>
-          )}
         </main>
       </div>
       {commandPaletteVisible && (

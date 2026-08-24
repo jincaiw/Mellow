@@ -36,7 +36,6 @@ import { buildFocusModeExtension } from './focusMode';
 import { buildSlashCommandsExtension } from './slashCommands';
 import { buildTypewriterModeExtension } from './typewriterMode';
 import { buildSelectionToolbarExtension } from './selectionToolbar';
-import { buildScrollBridgeExtension } from './scrollBridge';
 import { buildPagingExtension } from './paging';
 import { buildCodeFenceAutocompleteExtension } from './codeFence';
 import { emojiSource } from './emoji';
@@ -74,8 +73,6 @@ export type { SlashOpenRequest, SlashCommandsOptions } from './slashCommands';
 export { buildTypewriterModeExtension, computeTypewriterScrollTop, getTypewriterMode, setTypewriterMode, TYPEWRITER_CENTER_RATIO } from './typewriterMode';
 export { buildSelectionToolbarExtension, shouldShowToolbar, applyInlineFormat, applyLink, applyBlockPrefix, applyHeading, applyDeleteLine, applyReferenceLink, setSelectionToolbarEnabled, getSelectionToolbarEnabled, SELECTION_TOOLBAR_CLASS } from './selectionToolbar';
 export type { TextRange, ApplyResult, ToolbarVisibility, SelectionToolbarOptions } from './selectionToolbar';
-export { buildScrollBridgeExtension } from './scrollBridge';
-export type { ScrollBridgeApi } from './scrollBridge';
 export { buildPagingExtension, scrollPageSafely } from './paging';
 export {
   classifyLargeFile,
@@ -189,7 +186,6 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildSlashCommandsExtension(),
     buildTypewriterModeExtension(),
     buildSelectionToolbarExtension(),
-    buildScrollBridgeExtension(),
     buildPagingExtension(),
     buildImageExtensions(),
     buildLargeFileExtension(),

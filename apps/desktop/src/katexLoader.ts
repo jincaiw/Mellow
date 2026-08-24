@@ -2,7 +2,7 @@
  * KaTeX 按需加载器（master-plan R3-2）。
  *
  * 首次遇到公式才动态 import（katex + mhchem 扩展 + 主窗口 CSS）；
- * 供 Reader/Split（useAsyncRenderers）与编辑器 iframe 渲染通道共用。
+ * 供 Reader（useAsyncRenderers）与编辑器 iframe 渲染通道共用。
  */
 
 import katexCssUrl from 'katex/dist/katex.min.css?url';

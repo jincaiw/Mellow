@@ -1,5 +1,5 @@
 /**
- * 异步渲染 hook：为 Reader / Split Preview 的渲染 HTML 执行 math / mermaid 渲染。
+ * 异步渲染 hook：为 Reader 的渲染 HTML 执行 math / mermaid 渲染。
  * - math：MathJax（tex2chtmlPromise，若宿主注入）优先；否则按需动态加载 KaTeX
  *   + mhchem（R3-2：`\ce{}`/`\pu{}` 化学式），renderToString 渲染；
  * - mermaid：window.mermaid / __MELLOW_MERMAID_LOADER__；

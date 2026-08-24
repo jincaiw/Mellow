@@ -117,7 +117,7 @@ P0 基线与证据治理
 |---|---|---|
 | E — Equivalent | Typora 核心任务必须体验等价 | 步骤不更多、默认一致、快捷键一致、结果一致、性能不更差 |
 | B — Better | Mellow 明确优于 Typora | 必须有测试和用户验证，不能靠功能数量自评 |
-| D — Deliberate Difference | 有意不同 | 品牌视觉、Logo、原创主题、Reader/Split/Palette/Slash 等不破坏 Typora 心智的增强 |
+| D — Deliberate Difference | 有意不同 | 品牌视觉、Logo、原创主题、Reader/Palette/Slash 等不破坏 Typora 心智的增强 |
 
 ### 2.2 Experience Contract
 
@@ -231,7 +231,7 @@ Windows / Linux
 - 图片粘贴、拖拽、路径策略、批量操作与上传 Adapter；
 - Math、Mermaid、Footnote、TOC、Alerts、YAML、Wikilink；
 - Smart Paste 和多格式 Copy；
-- Focus、Typewriter、Reader、Split、Command Palette、Slash；
+- Focus、Typewriter、Reader、Command Palette、Slash；
 - Tabs、File Tree、File List、Outline、Quick Open、Global Search；
 - Atomic Save、Recovery、External Conflict、Encoding、EOL；
 - Source Fidelity corpus；
@@ -289,7 +289,7 @@ Windows / Linux
 | 多 Tab 栏 | 显示，但保持 32–36px、低对比、Close 仅 hover |
 | Formatting Toolbar | Selection 后出现；IME 时不出现 |
 | Command Palette | 不常驻，只通过快捷键/菜单 |
-| Reader / Split | 不在 Titlebar 常驻，以 View / Palette 进入 |
+| Reader | 不在 Titlebar 常驻，以 View / Palette 进入 |
 | AI | 默认关闭且无常驻入口 |
 | Language | zh-CN |
 | Writing Width | 820px |
@@ -384,7 +384,7 @@ delete-start / delete-end / source-live-roundtrip
 | Focus Mode | F8，非活动内容淡化 | line/block 口径、Theme、IME |
 | Typewriter Mode | F9，Caret 固定 | 鼠标移动设置、滚动稳定 |
 | Reader Mode | Mellow Better | 搜索、Outline、Zoom、Lightbox、Print |
-| Split Mode | Mellow Better | 双向 Scroll Sync、Click Sync、比例记忆 |
+| Split Mode | 已移除（2026-08-24） | 与 WYSIWYG 单一真源理念冲突，产品决策删除 |
 | Word Count | 选择与全文统计 | CJK/英文/字符/段落/阅读时长 |
 
 ### 6.4 Table
@@ -688,7 +688,7 @@ Windows / Linux
 
 - 移除独立“插入”顶层菜单；
 - Insert 能力并入“段落”或“格式”；
-- Reader / Split / Command Palette 作为 Mellow Better 项放在“显示”并用 separator 隔开；
+- Reader / Command Palette 作为 Mellow Better 项放在“显示”并用 separator 隔开；
 - 不新增 AI 顶层菜单；
 - Windows/Linux 是否展示“窗口”只遵循平台原生惯例，不复制 macOS 专属项。
 
@@ -795,7 +795,7 @@ Mellow Snapshot / Recovery 入口不得插入 Typora 高频组中破坏查找，
 - Zoom；
 - Always on Top；
 - Fullscreen；
-- Mellow Better：Command Palette / Split，在独立增强分组。
+- Mellow Better：Command Palette，在独立增强分组。
 
 ### 9.7 主题
 
@@ -967,7 +967,7 @@ H1 H2 H3 | B I S Code | Link | Quote | List
 | Source Fidelity | Git 友好 | GUI 编辑效率 |
 | Large File Mode | Typora >10MB 可能拒绝 | 普通文档体验 |
 | Reader Mode | 高质量阅读 | 默认仍为 Live |
-| Split Mode | 开发者调试 | 不常驻模式切换 |
+| Split Mode | 已移除（2026-08-24） | 与 WYSIWYG 单一真源理念冲突，产品决策删除 |
 | Command Palette | 发现性 | 原菜单入口 |
 | Slash Commands | 高效插入 | 普通 `/` 输入与 IME |
 | Three-platform Tabs | 一致性 | Table 快捷键 |
@@ -1209,7 +1209,7 @@ Exit Gate：
 3. Theme Registry / User CSS / Light-Dark；
 4. PDF / HTML / Image / Pandoc / Previous Export；
 5. CJK、Math、Mermaid、Table、Footnote、TOC export corpus；
-6. Reader / Split / Palette / Slash 的默认隐藏与可发现性；
+6. Reader / Palette / Slash 的默认隐藏与可发现性；
 7. Recovery / Conflict Compare；
 8. Large File Mode；
 9. Extension permission 与 Safe Mode；
@@ -1357,10 +1357,9 @@ P8 Final QA
 9. Selection Toolbar；
 10. Table Toolbar；
 11. Reader；
-12. Split；
-13. Light / Dark；
-14. 900×600；
-15. 200% Zoom。
+12. Light / Dark；
+13. 900×600；
+14. 200% Zoom。
 
 Golden 用于回归，不用于要求三平台像素完全相同。
 
@@ -1449,6 +1448,14 @@ Functional
 
 ---
 
+## 16.1 变更记录
+
+| 日期 | 变更 | 说明 |
+|---|---|---|
+| 2026-08-24 | 移除 Split Mode（Source｜Preview） | 产品决策：与 WYSIWYG「编辑即预览、单一真源」理念冲突。删除 SplitPreview 组件、split.* 命令、scrollBridge 引擎扩展（含 9 测试）、core.ts 滚动桥三方法、Split 样式与 i18n key；Reader 模式不受影响。门禁：10 包测试全过 + 16 包 build clean |
+
+---
+
 ## 17. 历史实现记录的治理
 
 旧版 Master Plan 中 2026-08-22 至 2026-08-23 的 R1–R3、Large File、IME、Sidebar、File Link、Image Upload 等记录仍是有价值的实现证据，但从本版本起：
@@ -1499,7 +1506,7 @@ Functional
 2. **菜单**：移除 Mellow 独立“插入”顶层菜单，恢复 Typora 顶层顺序；
 3. **默认 UI**：Sidebar / Status Bar / Live Line Numbers 默认隐藏，单 Tab 自动隐藏；
 4. **Sidebar**：高级过滤、排序、最近和固定文件夹默认收进 hover/action menu；
-5. **Better 保留**：Reader、Split、Command Palette、Slash、Recovery Compare、Large File；
+5. **Better 保留**：Reader、Command Palette、Slash、Recovery Compare、Large File（Split 已于 2026-08-24 移除）；
 6. **完成口径**：现有“代码完成”统一降为 IMPL/AUTO，只有三平台真机 + UX Gate 后可标 PASS-E；
 7. **实施顺序**：严格按 P0 → P8，不先做新增 Feature。
 
@@ -1511,7 +1518,7 @@ Functional
 
 Mellow V1 的最终状态应当是：
 
-> Typora 用户无需学习新的基础写作方式；默认界面同样克制；菜单、快捷键、Sidebar、Table、Image、Clipboard、Search、Theme、Export 都能在预期位置完成；Live Markdown、Caret、IME、Undo 和文件安全达到正式 Gate；Reader、Split、Recovery、Large File 和开放扩展在不增加默认复杂度的前提下提供明确优势。
+> Typora 用户无需学习新的基础写作方式；默认界面同样克制；菜单、快捷键、Sidebar、Table、Image、Clipboard、Search、Theme、Export 都能在预期位置完成；Live Markdown、Caret、IME、Undo 和文件安全达到正式 Gate；Reader、Recovery、Large File 和开放扩展在不增加默认复杂度的前提下提供明确优势。
 
 在此之前，产品只能描述为：
 
