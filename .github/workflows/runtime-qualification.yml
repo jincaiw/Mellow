@@ -108,6 +108,10 @@ jobs:
             FCITX_GTK_IMMODULE=$(dpkg -L fcitx5-frontend-gtk3 | awk "/\\/im-fcitx5\\.so$/ { print; exit }")
             test -f "$FCITX_GTK_IMMODULE"
             echo "fcitx_gtk_immodule=$FCITX_GTK_IMMODULE"
+            # Xvfb 没有桌面会话管理器为新 X11 InputContext 选择 group；明确切到
+            # profile 中的 Default，随后矩阵仍会在已聚焦编辑器中验证 pinyin。
+            fcitx5-remote -g Default
+            test "$(fcitx5-remote -q)" = "Default"
             fcitx5-diagnose > /tmp/fcitx5-diagnose.txt 2>&1 || true
             # 截图可视化诊断：启动 → 等待 → 捕获整屏 + 窗口几何
             echo "# Screenshot Test" > /tmp/mellow-shot.md
