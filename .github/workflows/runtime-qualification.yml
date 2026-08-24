@@ -99,7 +99,11 @@ jobs:
             sleep 6
             # 确保 WebKitGTK 能加载 fcitx GTK 输入法模块，并显式切到拼音。
             # 旧 run 只证明 pinyin addon 已加载，未证明输入法前端和当前 IM 状态。
-            gtk-query-immodules-3.0 --update-cache
+            # Ubuntu 24.04 将 GTK3 查询工具命名为 gtk-query-immodules-3.0-0；
+            # 其他发行版通常保留无版本后缀。两者都接受，缺失则明确 fail-fast。
+            GTK_QUERY_IMMODULES=$(command -v gtk-query-immodules-3.0 || command -v gtk-query-immodules-3.0-0 || true)
+            test -n "$GTK_QUERY_IMMODULES"
+            "$GTK_QUERY_IMMODULES" --update-cache
             fcitx5-remote -o
             fcitx5-remote -s pinyin
             for _ in $(seq 1 10); do
