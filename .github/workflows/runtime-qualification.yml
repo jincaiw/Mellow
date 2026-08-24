@@ -35,7 +35,7 @@ jobs:
       - name: Install system deps (GUI + X + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fonts-noto-cjk openbox imagemagick pandoc ydotool ydotoold
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libgtk-3-bin patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fonts-noto-cjk openbox imagemagick pandoc ydotool ydotoold
       - name: Install workspace
         working-directory: mellow
         run: pnpm install --frozen-lockfile
@@ -97,6 +97,19 @@ jobs:
             sleep 2
             fcitx5 -d > /tmp/fcitx5.log 2>&1 &
             sleep 6
+            # 确保 WebKitGTK 能加载 fcitx GTK 输入法模块，并显式切到拼音。
+            # 旧 run 只证明 pinyin addon 已加载，未证明输入法前端和当前 IM 状态。
+            gtk-query-immodules-3.0 --update-cache
+            fcitx5-remote -o
+            fcitx5-remote -s pinyin
+            for _ in $(seq 1 10); do
+              FCITX_CURRENT=$(busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod 2>/dev/null || true)
+              echo "fcitx_current=$FCITX_CURRENT"
+              case "$FCITX_CURRENT" in *pinyin*) break ;; esac
+              sleep 1
+            done
+            case "$FCITX_CURRENT" in *pinyin*) ;; *) echo "fcitx5 did not select pinyin" >&2; exit 1 ;; esac
+            fcitx5-diagnose > /tmp/fcitx5-diagnose.txt 2>&1 || true
             # 截图可视化诊断：启动 → 等待 → 捕获整屏 + 窗口几何
             echo "# Screenshot Test" > /tmp/mellow-shot.md
             echo "" >> /tmp/mellow-shot.md
@@ -170,6 +183,7 @@ jobs:
             /tmp/mellow-shot.log
             /tmp/mellow.log
             /tmp/fcitx5.log
+            /tmp/fcitx5-diagnose.txt
             /tmp/ydotool.log
           if-no-files-found: warn
 
