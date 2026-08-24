@@ -4,7 +4,7 @@
 
 > **对标基线治理（2026-08-24）**：当前功能与 UX 规范验收基线固定为 Typora 1.14.9（build 7785）。任何 1.14.6 或更早版本的带日期报告仅保留其历史上下文，不得替代当前验收。当前聚合状态以 `tests/parity/typora-parity-ledger.json` 为准。
 
-> **CI 验收策略（2026-08-24，ADR-0022）**：Windows 与 Linux 使用 GitHub Actions 的 `windows-latest` / `ubuntu-latest` 作为正式 Runtime 证据来源；Linux 的 Weston headless Wayland + fcitx5 + `wtype` virtual keyboard 中文输入矩阵和 Windows 的启动／文档打开／10 MB 冒烟均为 fail-fast Gate。Windows CI 的 SendKeys 保存读回仅为诊断（无交互桌面可能无法抵达 WebView2），不得误记为已验证的输入交互；Windows／Linux 不再要求人工真机补测；macOS 保持实机 Typora 对照。
+> **CI 验收策略（2026-08-24，ADR-0022）**：Windows 与 Linux 使用 GitHub Actions 的 `windows-latest` / `ubuntu-latest` 作为正式 Runtime 证据来源；Linux 的 Xvfb + fcitx5 中文输入矩阵和 Windows 的启动／文档打开／10 MB 冒烟均为 fail-fast Gate。Windows CI 的 SendKeys 保存读回仅为诊断（无交互桌面可能无法抵达 WebView2），不得误记为已验证的输入交互；Windows／Linux 不再要求人工真机补测；macOS 保持实机 Typora 对照。
 
 ## 最终决策
 

@@ -51,6 +51,15 @@ Runtime Qualification run `32732636928` 在远端 SHA `924d5f2` 显示为成功�
 
 工作区中的 `.github/workflows/runtime-qualification.yml` 已增加 `set -euo pipefail`，并将 macOS 启动／10 MB 存活断言改为 fail-fast。必须在包含该修复的提交上重新运行 workflow，才能产生有效的 Windows／Linux CI 证据。
 
+## 2026-08-24 候选分支复验
+
+| Run | SHA | macOS | Windows | Linux fcitx5 |
+|---|---|---|---|---|
+| `32735541431` | `3ebaa74` | ✅ 启动／10 MB | ✅ 启动／保存诊断／10 MB | ❌ `0/8`；Xvfb 的 XTEST 普通输入、直投键和快捷键均未到达 WebKitGTK |
+| `32737593888` | `fc0c6ed` | ✅ 启动／10 MB | ✅ 启动／保存诊断／10 MB | ❌ `0/8`；Weston headless 未公开 `virtual-keyboard` 协议，`wtype` 每次输入均被 compositor 拒绝 |
+
+两次失败都发生在输入注入器到 compositor/WebKitGTK 的链路，且应用打开、文档原文、Undo 读回保持正常；它们不构成 Linux 编辑器中文 IME 的产品回归证据，也绝不能被登记为 PASS。根据 ADR-0022 的 fail-fast Gate，候选分支尚不可宣称三平台 Runtime Qualification 完成。
+
 ## 五、关键证据文件
 - .github/workflows/runtime-qualification.yml（runner 测试机流水线）
 - tests/benchmark/ime-matrix-linux.mjs（Linux IME 矩阵，已加固：读回回退/窗口选择/kill-by-pid/双击聚焦）
