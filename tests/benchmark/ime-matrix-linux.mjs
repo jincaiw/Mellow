@@ -43,24 +43,18 @@ function typeSyl(syl) {
 }
 
 /**
- * fcitx5 可以按输入上下文记忆当前 IM；因此在文档获得焦点后再次显式选择拼音，
- * 并以 D-Bus 读取实际状态。这样矩阵验证的是“焦点中的编辑器 + 中文输入法”，
- * 而不是仅验证启动阶段的默认 profile。
+ * fcitx5 可以按输入上下文记忆当前 IM；因此在文档获得焦点后再次显式选择拼音。
+ * WebKitGTK 的 InputContext 不保证被 Controller1.CurrentInputMethod 枚举；因此
+ * 不把空 D-Bus 状态误判为产品失败。随后“拼音音节 → 中文提交 → 保存读回 → Undo”
+ * 的八场景断言才是输入法是否真正进入编辑器的强证据。
  */
 function ensureFcitxPinyin() {
   if (im !== 'fcitx5') return;
-  let current = '';
-  // WebKitGTK 创建 InputContext 与窗口 focus 之间有一个异步边界。只在编辑器已被
-  // 双击聚焦后重试；没有得到实际 pinyin 状态仍然是失败，而不是降级为原始按键注入。
-  for (let attempt = 1; attempt <= 10; attempt++) {
-    sh('fcitx5-remote -g Default; fcitx5-remote -o; fcitx5-remote -s pinyin');
-    const group = sh('fcitx5-remote -q').trim();
-    current = sh('busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod');
-    console.log(`[ime] focused-current attempt=${attempt} group=${group || 'UNAVAILABLE'} value=${current.trim() || 'UNAVAILABLE'}`);
-    if (group === 'Default' && current.includes('pinyin')) return;
-    sleep(500);
-  }
-  if (!current.includes('pinyin')) throw new Error('fcitx5 pinyin is not active for the focused editor');
+  sh('fcitx5-remote -g Default; fcitx5-remote -o; fcitx5-remote -s pinyin');
+  const group = sh('fcitx5-remote -q').trim();
+  const current = sh('busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod').trim();
+  console.log(`[ime] selected-group=${group || 'UNAVAILABLE'} controller-current=${current || 'UNAVAILABLE'}`);
+  if (group !== 'Default') throw new Error('fcitx5 Default input-method group is not active');
 }
 
 /** 读回：优先剪贴板，fallback 保存读回 */
