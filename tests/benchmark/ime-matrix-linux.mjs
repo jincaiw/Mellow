@@ -57,6 +57,21 @@ function ensureFcitxPinyin() {
   if (group !== 'Default') throw new Error('fcitx5 Default input-method group is not active');
 }
 
+/**
+ * Xvfb + WebKitGTK 下，切换 fcitx5 input context 后会短暂把 X11 焦点归还给
+ * 顶层窗口。必须在选择拼音后重新落到编辑器内容区，并把插入点显式移动到文档末尾；
+ * 不能依赖上一次 click 的偶然焦点状态。
+ */
+function focusEditor(winId) {
+  if (!winId) throw new Error('Mellow main window was not found');
+  sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
+  sh(`xdotool mousemove --window ${winId} 600 250 click 1`);
+  sleep(700);
+  xdo('key --clearmodifiers ctrl+end');
+  sleep(500);
+  console.log(`[focus] target=${winId} active=${sh('xdotool getwindowfocus 2>/dev/null').trim() || 'UNAVAILABLE'}`);
+}
+
 /** 读回：优先剪贴板，fallback 保存读回 */
 function readBack(pid) {
   combo('ctrl+a', '29:1 30:1 30:0 29:0');
@@ -116,13 +131,12 @@ for (const sc of SCENARIOS) {
   // 聚焦编辑器：激活主窗口 + 双击编辑器内容区（600,250 位于 1200x775 主窗口内）
   const wid = sh('cat /tmp/mellow-win-id.txt').trim();
   if (wid) {
-    sh(`xdotool windowactivate --sync ${wid} 2>/dev/null; xdotool windowfocus --sync ${wid} 2>/dev/null`);
-    sh(`xdotool mousemove 600 250 click 1`);
-    sleep(1000);
-    sh(`xdotool mousemove 600 250 click 1`);
-    sleep(1200);
+    focusEditor(wid);
   }
   ensureFcitxPinyin();
+  // fcitx5 在 InputContext 切换后可能重置 X11 focus；切换完成后再次聚焦是
+  // 真实桌面操作链的一部分，而不是绕过 IME 的直接写文件。
+  focusEditor(wid);
   for (const s of SEG1) typeSyl(s);
   for (const s of SEG2) typeSyl(s);
   const text = readBack(pid);
