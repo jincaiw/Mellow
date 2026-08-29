@@ -1,13 +1,15 @@
 # Mellow ↔ Typora 最终深度对标实施方案（Master Plan）
 
-> 文档状态：**实施中：P1 Command / Menu 单一真源**（P0 基线与台账已完成；P0 体验 Gate 尚未关闭）
+> 文档状态：**已确认，实施中**（P1–P3 已进入实现与自动化验证；P0 / P7 / P8 体验 Gate 尚未关闭）
 > 方案版本：V3.0
-> 更新日期：2026-08-24
-> 审计代码基线：`8bf5d1e`（Desktop `1.3.2`）
+> 更新日期：2026-08-30
+> 审计代码基线：`b5c52de`（Desktop `1.3.6`）
 > 产品验收基线：**Typora 1.14.9（build 7785）**
 > 历史参考：Typora 1.14.6（不再用于规范验收）
+> 语言范围：**仅简体中文（zh-CN）与 English（en-US）**
+> 验证环境：**macOS 本机真实桌面验收；Windows / Linux 由 GitHub Actions CI/CD 执行**
 > 文档角色：Typora 对标工作的**唯一权威实施方案**
-> 本轮边界：只冻结对标口径、目标体验、差距与施工顺序；**未经确认不进入代码实施**
+> 实施约束：严格按 P0 → P8 推进；P8 全部通过前不得宣称“完全一致或更优”
 
 ---
 
@@ -1335,6 +1337,8 @@ P8 Final QA
 
 ### 14.2 真机矩阵
 
+执行方式固定如下：macOS 在当前本机完成 Typora 1.14.9 与 Mellow 的同机对照、真实 IME 和视觉验收；Windows / Linux 不依赖本地设备，统一在 GitHub Actions 托管桌面环境中完成构建、启动、输入、读回和证据归档。CI 只能在真实桌面输入链路、文件读回与 Undo 断言全部成立时计为通过，单纯构建成功不得替代体验验收。
+
 | 平台 | 必测 |
 |---|---|
 | Windows 10/11 | 微软拼音、搜狗、WebView2、MSI/NSIS/Portable、Clipboard、Print |
@@ -1364,8 +1368,8 @@ Golden 用于回归，不用于要求三平台像素完全相同。
 
 ### 14.4 Menu Golden
 
-- Typora 1.14.6 zh-CN / en-US；
-- Typora 1.14.9 observation；
+- Typora 1.14.9 zh-CN / en-US（规范 Golden）；
+- Typora 1.14.6 zh-CN / en-US 仅作历史归档，不参与 diff 与 Release 判定；
 - Mellow macOS zh-CN / en-US；
 - Mellow Windows zh-CN / en-US；
 - Mellow Linux zh-CN / en-US；
