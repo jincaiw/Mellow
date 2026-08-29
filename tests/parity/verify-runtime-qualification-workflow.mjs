@@ -26,5 +26,9 @@ if (!/ime-matrix-linux\.mjs --im=fcitx5 --driver=xdotool/.test(workflow)) {
 if (/apt-get install[^\n]*\bydotool\b|\bydotoold\b|--driver=ydotool/.test(workflow)) {
   throw new Error('Linux IME workflow must not use raw ydotool injection under Xvfb');
 }
+if (!/locale-gen\s+zh_CN\.UTF-8/.test(workflow)
+  || !/export LANG=zh_CN\.UTF-8 LC_CTYPE=zh_CN\.UTF-8/.test(workflow)) {
+  throw new Error('Linux XIM-based IME matrix must generate and export zh_CN.UTF-8');
+}
 
 console.log('Runtime Qualification release builds embed frontendDist on Linux, Windows, and macOS');

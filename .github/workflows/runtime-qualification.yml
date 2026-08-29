@@ -35,7 +35,8 @@ jobs:
       - name: Install system deps (GUI + X + IME)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fonts-noto-cjk openbox imagemagick pandoc
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xdotool xclip dbus-x11 locales fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fonts-noto-cjk openbox imagemagick pandoc
+          sudo locale-gen zh_CN.UTF-8
       - name: Install workspace
         working-directory: mellow
         run: pnpm install --frozen-lockfile
@@ -89,6 +90,10 @@ jobs:
             # 没有 errexit 时，后续 10 MB 冒烟或 pkill 的成功会掩盖 IME 失败。
             set -euo pipefail
             export DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root
+            # WebKitGTK 在此 Tauri/X11 组合下会创建 XIM InputContext。fcitx5 官方
+            # 文档要求 XIM 使用非 C/POSIX locale；否则拼音按键可能被输入法接收却
+            # 无法向 WebKit 提交候选文本。
+            export LANG=zh_CN.UTF-8 LC_CTYPE=zh_CN.UTF-8
             export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
             export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11
             export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0
