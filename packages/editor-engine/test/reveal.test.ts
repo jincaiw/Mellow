@@ -4,7 +4,7 @@
  * 断言基于渲染 DOM：hidden marker 表现为带 .mellow-md-marker class 的 span。
  */
 
-import { setUp, moveCaret, selectRange, markerElements, sleep } from './utils/editor';
+import { setUp, moveCaret, selectRange, markerElements, sleep, waitForMarkerCount } from './utils/editor';
 
 const DOC = '# Title\n\nplain text\n\n**bold** *italic* ~~strike~~ `code`';
 
@@ -24,6 +24,7 @@ describe('Marker Reveal — idle（caret 在节点外）', () => {
     await sleep();
     moveCaret(view, DOC.indexOf('plain') + 1);
     await sleep();
+    await waitForMarkerCount(view, ALL_MARKERS);
 
     const texts = markerTexts(view);
     expect(texts).toContain('# ');

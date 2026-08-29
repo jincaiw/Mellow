@@ -44,4 +44,15 @@ export async function sleep(ms = 200): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Markdown parser 在负载较高时会先发布局部 syntax tree，随后异步补齐其余节点。
+ * 测试应等待目标装饰就绪，而不是把某一固定延迟后的半解析 DOM 当成最终结果。
+ */
+export async function waitForMarkerCount(view: EditorView, expected: number, timeout = 1500): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (markerElements(view).length < expected && Date.now() < deadline) {
+    await sleep(25);
+  }
+}
+
 export { MARKER_CLASS };
