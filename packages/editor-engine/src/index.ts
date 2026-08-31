@@ -15,6 +15,7 @@
 import { buildMarkerRevealExtension } from './plugin';
 import { mergeEngineFeatures } from './config';
 import type { EngineFeatureConfig } from './config';
+import { Prec } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
@@ -179,7 +180,11 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     // Source-state tables do not have a Live View cell DOM to own Tab. Register
     // the same table navigation keymap in the production engine so Tab never
     // falls through to CodeMirror's default indentation and mutates Markdown.
-    keymap.of(tableKeymap()),
+    // MarkEdit's built-in indentation keymap is installed before addExtension()
+    // user extensions. `Prec.highest` makes table navigation win only when its
+    // handler reports a table cell context; outside a table it still returns
+    // false and lets the normal Tab indentation semantics run.
+    Prec.highest(keymap.of(tableKeymap())),
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
     buildTableLiveViewExtension(),

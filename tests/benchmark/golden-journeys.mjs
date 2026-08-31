@@ -247,6 +247,12 @@ async function j8_table(app, file) {
   if (app === 'typora') {
     // Typora 光标在文档末尾 —— 先 Cmd+↑ 回到文档首行，使 Tab 落在表格内
     combo('cmd', 126, pid); sleep(400);
+  } else {
+    // Mellow 打开文件后 caret 位于 offset 0，即首个 `|` 之前，而不是首个
+    // 单元格内容。Tab 在 Markdown 标记前应交回默认缩进；先右移到 `a` 内才是
+    // spec §5「Tab next cell」的真实前置条件。
+    combo('', 124, pid); sleep(150);
+    combo('', 124, pid); sleep(300);
   }
   combo('', 48, pid); r.steps.push('Tab 下一单元格'); r.timeMs.nav = Date.now() - t0;
   sleep(500);
