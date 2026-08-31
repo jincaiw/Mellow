@@ -35,11 +35,24 @@ export function tableContext(view: EditorView, pos: number): { model: TableModel
       nodeTo = n.to;
     }
   }});
+  // MarkEdit's bundled markdown grammar can omit a Table syntax node until a
+  // live-preview transaction has completed. Keyboard routing must not depend
+  // on that rendering timing: derive a bounded source table as a fidelity
+  // fallback. The delimiter-row requirement prevents ordinary pipe text from
+  // being treated as a table.
   if (!found) {
-    return null;
+    const current = view.state.doc.lineAt(pos);
+    if (!current.text.includes('|')) return null;
+    let first = current.number;
+    let last = current.number;
+    while (first > 1 && view.state.doc.line(first - 1).text.includes('|')) first--;
+    while (last < view.state.doc.lines && view.state.doc.line(last + 1).text.includes('|')) last++;
+    nodeFrom = view.state.doc.line(first).from;
+    nodeTo = view.state.doc.line(last).to;
   }
   const text = view.state.sliceDoc(nodeFrom, nodeTo);
   const model = parseTable(text, nodeFrom);
+  if (model.delimiterRow === null) return null;
   const cell = model.rows.flatMap((r) => r.cells).find((c) => pos >= c.from && pos <= c.to) ?? null;
   if (cell === null) {
     return null;
@@ -58,7 +71,13 @@ function moveToCell(view: EditorView, cell: TableCell): void {
   });
 }
 
-function handleTab(view: EditorView, shift: boolean): boolean {
+/**
+ * 表格 Tab 导航的共享实现。
+ *
+ * 除了 CM keymap，桌面宿主还会通过最高优先级 DOM keydown adapter 调用它：
+ * MarkEdit 自带的 Tab 缩进绑定位于 addExtension 之前，不能依赖扩展数组顺序。
+ */
+export function handleTableTab(view: EditorView, shift: boolean): boolean {
   if (isComposing(view)) {
     return true; // IME 合成期间不导航（不干扰 composition，spec §8）
   }
@@ -132,8 +151,8 @@ function handleCtrlEnter(view: EditorView): boolean {
 /** Table 键盘扩展（Tab/Shift+Tab/Ctrl+Enter） */
 export function tableKeymap(): KeyBinding[] {
   return [
-    { key: 'Tab', run: (view) => handleTab(view, false) },
-    { key: 'Shift-Tab', run: (view) => handleTab(view, true) },
+    { key: 'Tab', run: (view) => handleTableTab(view, false) },
+    { key: 'Shift-Tab', run: (view) => handleTableTab(view, true) },
     { key: 'Mod-Enter', run: (view) => handleCtrlEnter(view) },
   ];
 }

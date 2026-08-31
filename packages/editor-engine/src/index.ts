@@ -17,12 +17,12 @@ import { mergeEngineFeatures } from './config';
 import type { EngineFeatureConfig } from './config';
 import { Prec } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
-import { keymap } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
 import { buildTableToolbarExtension } from './table/toolbar';
 import { buildColumnWidthExtension } from './table/columnWidth';
 import { buildTableLiveViewExtension } from './table/liveView';
-import { tableKeymap } from './table/keymap';
+import { handleTableTab, tableKeymap } from './table/keymap';
 import { installCompositionTracking } from './composition';
 import { buildImageExtensions } from './image';
 import { buildSmartPasteExtension } from './smartPaste';
@@ -145,6 +145,28 @@ export { setSourceMode, isSourceMode, resetModeState } from './mode';
 export { intersects } from './types';
 export type { NodeVisualState, NodeSpec, MarkerRange, RevealContext } from './types';
 
+let tableTabCaptureInstalled = false;
+
+/**
+ * MarkEdit installs its indentation keymap before extensions added through
+ * `MarkEdit.addExtension()`. On native WebViews that binding consumes Tab
+ * before a dynamically appended CM keymap can run. Capture at the document
+ * boundary instead, but only consume an event when the engine can prove that
+ * the caret belongs to a table cell; all normal Tab behavior remains owned by
+ * the vendored editor.
+ */
+export function installTableTabCapture(): void {
+  if (tableTabCaptureInstalled || typeof document === 'undefined') return;
+  tableTabCaptureInstalled = true;
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') return;
+    const view = (window as unknown as { editor?: EditorView }).editor;
+    if (view === undefined || !handleTableTab(view, event.shiftKey)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+}
+
 /**
  * 宿主安装入口：注册 composition 监听并返回引擎扩展。
  *
@@ -152,6 +174,7 @@ export type { NodeVisualState, NodeSpec, MarkerRange, RevealContext } from './ty
  * @param features 语法特性开关（PRD §94）；未传则全部开启。变更后需重新加载编辑器生效
  */
 export function install(autoInstallComposition = true, features?: Partial<EngineFeatureConfig>): ReturnType<typeof buildMarkerRevealExtension> {
+  installTableTabCapture();
   if (autoInstallComposition) {
     installCompositionTracking();
   }
@@ -184,6 +207,14 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     // user extensions. `Prec.highest` makes table navigation win only when its
     // handler reports a table cell context; outside a table it still returns
     // false and lets the normal Tab indentation semantics run.
+    Prec.highest(EditorView.domEventHandlers({
+      keydown: (event, view) => {
+        if (event.key !== 'Tab') return false;
+        const handled = handleTableTab(view, event.shiftKey);
+        if (handled) event.preventDefault();
+        return handled;
+      },
+    })),
     Prec.highest(keymap.of(tableKeymap())),
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),

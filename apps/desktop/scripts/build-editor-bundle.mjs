@@ -89,6 +89,23 @@ const tauriBridgeAdapter = `<script>
 const keyForwarder = `<script>
 (function () {
   if (window.parent === window) return;
+  // MarkEdit's built-in indentation binding consumes Tab before extensions
+  // appended with MarkEdit.addExtension() on WKWebView. Keep the product
+  // rule in editor-engine, but invoke it from this earliest iframe capture
+  // boundary so a table cell never receives a literal indentation tab.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    try {
+      var engine = window.MellowEditorEngine;
+      var editor = window.editor;
+      var handled = engine && editor && typeof engine.handleTableTab === 'function' &&
+          engine.handleTableTab(editor, e.shiftKey);
+      if (handled) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    } catch (err) { /* engine not ready / non-table: leave native editor behavior intact */ }
+  }, true);
   document.addEventListener('keydown', function (e) {
     if (e.defaultPrevented || e.isComposing || e.key === 'Process') return;
     if (!e.metaKey && !e.ctrlKey) return;
@@ -194,6 +211,12 @@ function copyEngine() {
         if (existsSync(idxPath)) return `${pre}${rel}/index.js${q}`;
         return m; // 保持原样（非本地相对导入或无法解析，交由运行时处理）
       });
+      // CoreEditor bundles CodeMirror internally and exposes the exact module
+      // instances through window.require. Browser ESM cannot resolve bare
+      // @codemirror specifiers, so bridge named imports to that registry rather
+      // than bundling a second (incompatible) CodeMirror copy.
+      content = content.replace(/import\s+\{([^}]+)\}\s+from\s+['"](@(?:codemirror|lezer)\/[^'"]+)['"];?/g, (_m, names, pkg) =>
+        `const {${names}} = window.require('${pkg}');`);
       writeFileSync(targetFile, content, 'utf8');
       copied.push(relPath);
     }

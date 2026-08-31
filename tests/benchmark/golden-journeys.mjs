@@ -254,7 +254,11 @@ async function j8_table(app, file) {
     combo('', 124, pid); sleep(150);
     combo('', 124, pid); sleep(300);
   }
-  combo('', 48, pid); r.steps.push('Tab 下一单元格'); r.timeMs.nav = Date.now() - t0;
+  // WKWebView 将进程级 CGEvent Tab 作为 TextInput 注入，绕过 DOM keydown；
+  // 用 System Events 的常规键盘路径模拟真实用户按键，才能验证 CM 表格 keymap。
+  if (app === 'mellow') se('tell application "System Events" to key code 48');
+  else combo('', 48, pid);
+  r.steps.push('Tab 下一单元格'); r.timeMs.nav = Date.now() - t0;
   sleep(500);
   combo('cmd', 1, pid); sleep(1500);
   const text = readFileSync(file, 'utf8');
