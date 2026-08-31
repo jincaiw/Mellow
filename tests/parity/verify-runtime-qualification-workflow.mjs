@@ -37,10 +37,11 @@ if (!/locale-gen\s+zh_CN\.UTF-8/.test(workflow)
   throw new Error('Linux XIM-based IME matrix must generate and export zh_CN.UTF-8');
 }
 
-if (!/MELLOW_WINDOWS_RUNTIME_SENTINEL_20260831/.test(workflow)
-  || !/Windows runtime smoke did not persist the editor input marker/.test(workflow)
-  || !/\$content -notmatch \[regex\]::Escape\(\$marker\)/.test(workflow)) {
-  throw new Error('Windows Runtime Qualification must assert that typed Markdown is saved back to disk');
+if (!/Windows Source Fidelity gate/.test(workflow)
+  || !/cargo test --features custom-protocol --test file_safety_corpus source_fidelity_open_no_edit_save_byte_identical/.test(workflow)
+  || !/interactive_input_skipped=true/.test(workflow)
+  || !/\$interactiveDesktop -and \$content -notmatch \[regex\]::Escape\(\$marker\)/.test(workflow)) {
+  throw new Error('Windows Runtime Qualification must gate source fidelity and report its hosted-desktop interaction limit');
 }
 
-console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source persistence');
+console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
