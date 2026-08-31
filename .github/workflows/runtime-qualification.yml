@@ -11,6 +11,16 @@ name: Runtime Qualification
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Qualification target; use macos-windows while Linux is intentionally deferred.'
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - macos-windows
+          - linux
 
 permissions:
   contents: read
@@ -18,6 +28,7 @@ permissions:
 jobs:
   linux-runtime:
     name: "Linux: Xvfb + fcitx5 IME matrix"
+    if: ${{ inputs.target == 'all' || inputs.target == 'linux' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -194,6 +205,7 @@ jobs:
 
   windows-runtime:
     name: "Windows: launch + SendKeys smoke"
+    if: ${{ inputs.target == 'all' || inputs.target == 'macos-windows' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -229,6 +241,10 @@ jobs:
           $bin = Resolve-Path 'apps/desktop/src-tauri/target/release/mellow-desktop.exe'
           New-Item -ItemType Directory -Force -Path 'C:/tmp' | Out-Null
           $doc = 'C:/tmp/mellow-win-smoke.md'
+          # Source Fidelity gate: the marker must make a complete round trip through
+          # the focused WebView editor and Ctrl+S. A process-alive check alone cannot
+          # prove that Windows accepts typing or persists the actual Markdown source.
+          $marker = 'MELLOW_WINDOWS_RUNTIME_SENTINEL_20260831'
           Set-Content -Path $doc -Value '# Mellow Windows Smoke'
           $p = Start-Process -FilePath $bin -ArgumentList $doc -PassThru
           Start-Sleep -Seconds 12
@@ -239,14 +255,19 @@ jobs:
             $ws = New-Object -ComObject WScript.Shell
             $ws.AppActivate('Mellow') | Out-Null
             Start-Sleep -Seconds 2
-            $ws.SendKeys('Hello Mellow 123')
+            $ws.SendKeys('^{END}')
+            $ws.SendKeys('{ENTER}')
+            $ws.SendKeys($marker)
             Start-Sleep -Seconds 2
             $ws.SendKeys('^s')
             Start-Sleep -Seconds 3
-          } catch { Write-Host ('sendkeys_failed=' + $_.Exception.Message) }
+          } catch { throw ('sendkeys_failed=' + $_.Exception.Message) }
           if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
           $content = Get-Content -Path $doc -Raw -ErrorAction SilentlyContinue
           Write-Host ('file_after=' + $content)
+          if ($content -notmatch [regex]::Escape($marker)) {
+            throw 'Windows runtime smoke did not persist the editor input marker'
+          }
           # 10MB 大文件启动冒烟
           $big = 'C:/tmp/mellow-10mb.md'
           $line = 'line content 0123456789'
@@ -263,6 +284,7 @@ jobs:
 
   macos-runtime:
     name: "macOS: launch + CLI open smoke"
+    if: ${{ inputs.target == 'all' || inputs.target == 'macos-windows' }}
     runs-on: macos-latest
     timeout-minutes: 45
     steps:

@@ -6,6 +6,12 @@ const workflow = readFileSync(resolve(root, '.github/workflows/runtime-qualifica
 const cargoManifest = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8');
 const releaseBuilds = [...workflow.matchAll(/run:\s*cargo build --release([^\n]*)/g)];
 
+if (!/workflow_dispatch:\s*\n\s+inputs:\s*\n\s+target:/.test(workflow)
+  || !/macos-windows/.test(workflow)
+  || !/inputs\.target == 'all' \|\| inputs\.target == 'macos-windows'/.test(workflow)) {
+  throw new Error('Runtime Qualification must support a macOS/Windows-only dispatch while Linux is deferred');
+}
+
 if (releaseBuilds.length !== 3) {
   throw new Error(`Expected exactly 3 Runtime Qualification release builds, found ${releaseBuilds.length}`);
 }
@@ -31,4 +37,10 @@ if (!/locale-gen\s+zh_CN\.UTF-8/.test(workflow)
   throw new Error('Linux XIM-based IME matrix must generate and export zh_CN.UTF-8');
 }
 
-console.log('Runtime Qualification release builds embed frontendDist on Linux, Windows, and macOS');
+if (!/MELLOW_WINDOWS_RUNTIME_SENTINEL_20260831/.test(workflow)
+  || !/Windows runtime smoke did not persist the editor input marker/.test(workflow)
+  || !/\$content -notmatch \[regex\]::Escape\(\$marker\)/.test(workflow)) {
+  throw new Error('Windows Runtime Qualification must assert that typed Markdown is saved back to disk');
+}
+
+console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source persistence');
