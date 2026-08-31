@@ -40,7 +40,7 @@ if (!/locale-gen\s+zh_CN\.UTF-8/.test(workflow)
 if (!/Windows Source Fidelity gate/.test(workflow)
   || !/cargo test --features custom-protocol --test file_safety_corpus source_fidelity_open_no_edit_save_byte_identical/.test(workflow)
   || !/interactive_input_skipped=true/.test(workflow)
-  || !/\$interactiveDesktop -and \$content -notmatch \[regex\]::Escape\(\$marker\)/.test(workflow)) {
+  || !/interactive_input_persisted=/.test(workflow)) {
   throw new Error('Windows Runtime Qualification must gate source fidelity and report its hosted-desktop interaction limit');
 }
 
