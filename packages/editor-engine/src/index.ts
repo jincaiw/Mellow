@@ -16,10 +16,12 @@ import { buildMarkerRevealExtension } from './plugin';
 import { mergeEngineFeatures } from './config';
 import type { EngineFeatureConfig } from './config';
 import type { Extension } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
 import { buildTableToolbarExtension } from './table/toolbar';
 import { buildColumnWidthExtension } from './table/columnWidth';
 import { buildTableLiveViewExtension } from './table/liveView';
+import { tableKeymap } from './table/keymap';
 import { installCompositionTracking } from './composition';
 import { buildImageExtensions } from './image';
 import { buildSmartPasteExtension } from './smartPaste';
@@ -174,6 +176,10 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installCodeLineNumbersApi();
   const f = mergeEngineFeatures(features);
   const ext: Extension[] = [
+    // Source-state tables do not have a Live View cell DOM to own Tab. Register
+    // the same table navigation keymap in the production engine so Tab never
+    // falls through to CodeMirror's default indentation and mutates Markdown.
+    keymap.of(tableKeymap()),
     buildMarkerRevealExtension(),
     buildTaskCheckboxExtension(),
     buildTableLiveViewExtension(),

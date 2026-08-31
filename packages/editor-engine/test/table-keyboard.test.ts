@@ -23,6 +23,18 @@ function setUp(doc: string): EditorView {
   return view;
 }
 
+function setUpProductionEngine(doc: string): EditorView {
+  const view = new EditorView({
+    doc,
+    parent: document.body,
+    // Deliberately omit the test-only keymap injection: this is the extension
+    // list used by the desktop editor through install().
+    extensions: [markdown({ base: markdownLanguage }), install()],
+  });
+  view.focus();
+  return view;
+}
+
 const TABLE = '| a | b |\n| :-: | --- |\n| 1 | 2 |';
 
 /** 真实按键：dispatch keydown 到 contentDOM（CM6 keymap 管道） */
@@ -46,6 +58,17 @@ function toolbarVisible(view: EditorView): boolean {
 beforeEach(() => resetCompositionState());
 
 describe('Table — 真实按键管道（spec §5）', () => {
+  test('production install：源码态 Tab 进入下一单元格且不写入制表符', async () => {
+    const view = setUpProductionEngine(TABLE);
+    await sleep();
+    moveCaret(view, 2); // 'a' 内，Live View 按 reveal policy 显示源码
+    const before = view.state.doc.toString();
+    pressKey(view, 'Tab'); await sleep();
+    expect(caretCell(view)).toBe('b');
+    expect(view.state.doc.toString()).toBe(before);
+    view.destroy();
+  });
+
   test('Tab：a → b → 1 → 2（keydown dispatch 触发 keymap）', async () => {
     const view = setUp(TABLE);
     await sleep();
