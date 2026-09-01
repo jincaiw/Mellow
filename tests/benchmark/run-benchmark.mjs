@@ -9,8 +9,9 @@
  *
  * 输出：results/<ts>-<app>.json（原始数据）+ reports/<ts>-mellow-vs-typora.md（汇总）
  */
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { spawnSync, execSync } from 'node:child_process';
 import {
   BENCH_DIR, HELPER, FIXTURES_DIR, RESULTS_DIR,
@@ -51,10 +52,42 @@ const APPS = {
 function run(cmd, argv) {
   spawnSync(cmd, argv, { stdio: 'ignore' });
 }
-function focusAndTypeMellow(pid, win, text) {
+function stopLaunchedApp(launched) {
+  // 仅终止本 runner spawn 的子进程。macOS bundle 进程显示名可能与可执行文件
+  // 不同，按名字 pkill 既可能漏掉旧实例，也不应影响用户正在使用的实例。
+  if (!launched?.proc || launched.proc.killed) return;
+  try { launched.proc.kill('SIGTERM'); } catch { /* 已退出 */ }
+  const isGoneOrZombie = () => {
+    const state = spawnSync('ps', ['-o', 'stat=', '-p', String(launched.pid)], { encoding: 'utf8' }).stdout.trim();
+    return state === '' || state.startsWith('Z');
+  };
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (isGoneOrZombie()) return;
+    sleep(100);
+  }
+  // Tauri bundle 在 macOS 上可能忽略 SIGTERM（单实例运行循环仍存活）。该 PID
+  // 由本 runner spawn，升级 SIGKILL 不会影响用户进程；必须清场才能测独立文档。
+  try { process.kill(launched.pid, 'SIGKILL'); } catch { return; }
+  const killDeadline = Date.now() + 1000;
+  while (Date.now() < killDeadline) {
+    if (isGoneOrZombie()) return;
+    sleep(50);
+  }
+  throw new Error(`测试子进程 ${launched.pid} 未能退出`);
+}
+function focusAndTypeMellow(pid, text) {
   if (!/^[A-Za-z0-9]$/.test(text)) throw new Error('仅支持单个 ASCII 字母或数字');
-  const x = Math.round(win.x + win.w * 0.5);
-  const y = Math.round(win.y + win.h * 0.55);
+  // Accessibility 的窗口坐标与 ScreenCaptureKit/CGWindow 的坐标系在 Retina、
+  // 多显示器下不一定相同。Golden Journey 用 AX 坐标已验证，保存基准必须复用。
+  const boundsResult = spawnSync('osascript', [
+    '-e', `tell application "System Events" to tell (first process whose unix id is ${pid}) to get {position, size} of window 1`,
+  ], { encoding: 'utf8', timeout: 15000 });
+  if (boundsResult.status !== 0) throw new Error(boundsResult.stderr || '无法读取 Mellow 窗口坐标');
+  const match = boundsResult.stdout.trim().match(/(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
+  if (!match) throw new Error('无法解析 Mellow 窗口坐标');
+  const x = Math.round(Number(match[1]) + Number(match[3]) * 0.5);
+  const y = Math.round(Number(match[2]) + Number(match[4]) * 0.55);
   const result = spawnSync('osascript', [
     '-e', `tell application "System Events"
       set frontmost of (first process whose unix id is ${pid}) to true
@@ -73,6 +106,9 @@ const ALL_METRICS = ['startup', 'open', 'typing', 'scroll', 'search', 'save', 'm
 // PRD V1.2 FINAL 与 AGENTS.md 冻结的唯一性能/体验对标版本。
 // 非该版本的运行仍可用于历史观察，但不可作为当前 P0 判定证据。
 const TYPORA_NORMATIVE_VERSION = '1.14.9';
+// 保存测量永不直接写 fixture。独立副本也避免 touchOld 被宿主当作外部变更，
+// 使性能口径保持为“正常打开 → 编辑 → 保存”。
+const BENCHMARK_WORKDIR = mkdtempSync(join(tmpdir(), 'mellow-benchmark-'));
 
 function parseList(s) { return s.split(',').map((x) => x.trim()).filter(Boolean); }
 
@@ -224,49 +260,65 @@ async function measureApp(appKey, opts) {
         // save 放最后：独立 launch（touchOld 必须在 launch 前，否则 Typora 检测外部 mtime 变化弹「重新加载」对话框）
         mSafe('save', () => {
           if (!opts.metrics.includes('save')) return;
-          killApp(app.killPattern);
+          stopLaunchedApp(l);
+          if (app.killPattern === 'Typora') killApp(app.killPattern);
           sleep(600);
-          touchOld(fpath); // launch 前拨老 mtime
-          const l2 = launchApp(fpath);
+          const savePath = join(BENCHMARK_WORKDIR, `${appKey}-${fixture}`);
+          copyFileSync(fpath, savePath);
+          touchOld(savePath); // launch 前拨老 mtime
+          const l2 = launchApp(savePath);
           try {
-            const saveWin = waitWindow(l2.pid, 30000);
+            waitWindow(l2.pid, 30000);
             // 大文件模式需等待首轮虚拟化/渲染稳定后再输入，否则 resetEditor 的后续
             // transaction 会覆盖测试字符，造成 mtime 假阳性或错误的不可编辑结论。
             // Typora 维持原有 5s；Mellow 对齐 Golden Journey 的 10s 就绪窗口。
             sleep(app.killPattern === 'Typora' ? 5000 : 10000);
+            // 在输入前捕获源文件状态。不得在输入后才取 before：若宿主已提前
+            // 持久化输入，后续 Cmd+S 是 no-op，旧逻辑会把真实的源码变化误报为 FAIL。
+            const beforeText = readFileSync(savePath, 'utf8');
             // 预热：制造修改（'a'）。Mellow 的 WKWebView 会过滤 CGEventPost
             // 字符；必须走 System Events 的真实输入通路。不要合成点击正文，
             // 因为它会破坏 WebView 的 first-responder 焦点协议。
             if (app.killPattern === 'Typora') {
               helper('post-combo', '--mods', '', '--key', '0', '--pid', String(l2.pid));
             } else {
-              focusAndTypeMellow(l2.pid, saveWin, 'a');
+              focusAndTypeMellow(l2.pid, 'a');
             }
             sleep(400);
-            const before = fileMtimeMs(fpath);
-            const beforeText = readFileSync(fpath, 'utf8');
+            const afterInputText = readFileSync(savePath, 'utf8');
+            const afterInputMtime = fileMtimeMs(savePath);
+            const persistedBeforeExplicitSave = afterInputText !== beforeText;
             helper('post-combo', '--mods', 'cmd', '--key', '1', '--pid', String(l2.pid)); // Cmd+S
             const t0 = Date.now();
             let changed = false;
             while (Date.now() - t0 < 10000) {
-              const now = fileMtimeMs(fpath);
-              if (now !== null && now !== before) { changed = true; break; }
+              const now = fileMtimeMs(savePath);
+              if (now !== null && now !== afterInputMtime) { changed = true; break; }
               sleep(25);
             }
-            const afterText = readFileSync(fpath, 'utf8');
+            const afterText = readFileSync(savePath, 'utf8');
             const sourceChanged = afterText !== beforeText;
-            m.save = changed && sourceChanged
-              ? { ms: Date.now() - t0, note: null, sourceChanged: true }
+            m.save = sourceChanged && (changed || persistedBeforeExplicitSave)
+              ? {
+                ms: changed ? Date.now() - t0 : null,
+                note: persistedBeforeExplicitSave ? '输入已在显式 Cmd+S 前持久化' : null,
+                sourceChanged: true,
+                persistedBeforeExplicitSave,
+              }
               : {
                 ms: null,
                 sourceChanged,
-                note: !changed
-                  ? '10s 内 mtime 未变化'
+                persistedBeforeExplicitSave,
+                note: !sourceChanged
+                  ? '输入后 Markdown 源码未变化（输入焦点或编辑失败）'
+                  : !changed
+                    ? '10s 内 mtime 未变化'
                   : 'mtime 已变化但 Markdown 源码未变化（输入焦点或编辑失败）',
               };
             console.log(`save: ${m.save.ms ?? 'FAIL'}ms`);
           } finally {
-            killApp(app.killPattern);
+            stopLaunchedApp(l2);
+            if (app.killPattern === 'Typora') killApp(app.killPattern);
           }
         });
       } catch (e) {
