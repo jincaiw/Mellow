@@ -67,7 +67,7 @@ function focusEditor(winId) {
   sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
   sh(`xdotool mousemove --window ${winId} 600 250 click 1`);
   sleep(700);
-  xdo('key --clearmodifiers ctrl+end');
+  xdo('key --clearmodifiers ctrl+End');
   sleep(500);
   console.log(`[focus] target=${winId} active=${sh('xdotool getwindowfocus 2>/dev/null').trim() || 'UNAVAILABLE'}`);
 }
@@ -109,8 +109,11 @@ function launch(doc, im) {
 }
 
 const SEG1 = ['ni', 'hao'];
-const SEG2 = ['zhong', 'wen'];
-const EXPECT = '你好中文';
+// `wen` 在不同 fcitx5 词库/学习状态下首候选可能是「问」，用它判断会把输入法
+// 词库排序误报成编辑器 corruption。「中国」的两个音节首候选稳定，仍完整覆盖
+// 拼音 composition → 候选提交 → WebKitGTK 文本写入 → 保存读回 → Undo 路径。
+const SEG2 = ['zhong', 'guo'];
+const EXPECT = '你好中国';
 
 const SCENARIOS = [
   { id: 'paragraph', doc: '' },
