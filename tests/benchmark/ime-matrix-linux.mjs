@@ -127,9 +127,9 @@ const SCENARIOS = [
   // default blank-body point is below it and only focuses the editor shell;
   // target the code node itself so this scenario verifies composition inside it.
   // Coordinates are window-relative (and therefore include title/menu/tab chrome).
-  // The actual short code line is near y=65; double-click transitions the code node
-  // from preview to its editable source surface before composition begins.
-  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 65, clicks: 2 } },
+  // y=65 targets the opening fence, which is a non-text marker. The editable `code`
+  // content line is one visual row lower at y≈90; focus that line directly.
+  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 90 } },
   { id: 'math', doc: '$x+1$' },
   { id: 'link', doc: '[label](https://example.com)' },
 ];
