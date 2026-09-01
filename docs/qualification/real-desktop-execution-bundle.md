@@ -80,3 +80,11 @@ node tests/benchmark/golden-journeys.mjs     # Golden Journeys（记录实际 Ty
 - Linux 自动矩阵：约 10 分钟（8 场景）；
 - Windows CI 冒烟：约 10 分钟；
 - macOS 补测：约 30 分钟。
+
+## 七、2026-09-01 候选分支追加证据
+
+候选提交 `61ffac6`（`fix(benchmark): 独立保存测量会话`）已在 GitHub Actions [Runtime Qualification #33477689238](https://github.com/jincaiw/Mellow/actions/runs/33477689238) 完成 macOS 与 Windows Gate：macOS 的 launch、CLI open、process-alive 均通过；Windows 的 release build、Source Fidelity、launch、SendKeys smoke 均通过。Linux job 按当前产品推进顺序显式跳过，未被记作 Linux 验收通过。
+
+本机使用隔离 release bundle、Typora 1.14.9（build 7785）和 `--close-existing-typora` 执行 Journey 1、2、4、7、8、9、10、15。Mellow 与 Typora 的 16 个执行结果均为 PASS：Latin input、中文 IME、selection + bold、list Enter continuation、table Tab navigation、math / Mermaid source fidelity、Undo。保存路径的独立同机 10 MB 样本亦通过源码读回验证：Mellow 108 ms，Typora 150 ms；该单次样本仅作为保存路径证据，不作完整效率排名。
+
+以上证据不关闭 P8：30 个核心任务的两轮交叉计时、UX Score、主观评分和 Typora 用户迁移盲测仍需按 `ux-score-gate-template.md` 由真实使用者完成。Windows CI 的无交互桌面限制与 Linux 后置安排也不应被解释为这两类体验 Gate 已通过。
