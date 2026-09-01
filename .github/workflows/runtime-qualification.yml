@@ -191,6 +191,7 @@ jobs:
           name: linux-runtime-evidence
           path: |
             /tmp/mellow-screen.*
+            /tmp/mellow-code-focus.png
             /tmp/mellow-after-type.png
             /tmp/mellow-palette.png
             /tmp/mellow-10mb.png

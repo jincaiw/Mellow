@@ -128,8 +128,8 @@ const SCENARIOS = [
   // target the code node itself so this scenario verifies composition inside it.
   // Coordinates are window-relative (and therefore include title/menu/tab chrome).
   // y=65 targets the opening fence, which is a non-text marker. The editable `code`
-  // content line is one visual row lower at y≈90; focus that line directly.
-  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 90 } },
+  // content line is one visual row lower at y≈110; focus that line directly.
+  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 110 } },
   { id: 'math', doc: '$x+1$' },
   { id: 'link', doc: '[label](https://example.com)' },
 ];
@@ -148,6 +148,9 @@ for (const sc of SCENARIOS) {
   // fcitx5 在 InputContext 切换后可能重置 X11 focus；切换完成后再次聚焦是
   // 真实桌面操作链的一部分，而不是绕过 IME 的直接写文件。
   focusEditor(wid, sc.focusPoint);
+  // 代码块是唯一需命中内嵌编辑节点的场景。保留聚焦后的截图，以便 CI 若失败时
+  // 能依据实际渲染坐标诊断，而不是继续猜测 click 落点。
+  if (sc.id === 'code') sh('import -display :99 -window root /tmp/mellow-code-focus.png 2>/dev/null || true');
   for (const s of SEG1) typeSyl(s);
   for (const s of SEG2) typeSyl(s);
   const text = readBack(pid);
