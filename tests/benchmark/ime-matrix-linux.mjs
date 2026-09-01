@@ -4,7 +4,8 @@
  *
  * 输入：xdotool type（XTEST 经 GTK IM → fcitx5/ibus 组词）+ xdotool key space（提交候选 1）。
  * 读回：优先 Ctrl+A Ctrl+C + xclip（X11 剪贴板）；失败 fallback Ctrl+S 保存读回。
- * 断言：丢字/重复（输入词出现 1 次）/ caret 连续（两段）/ undo（Ctrl+Z 直至清空，无 corruption）。
+ * 断言：四个拼音音节各提交一个汉字（无丢字/重复）/ caret 连续（两段）/
+ * undo（Ctrl+Z 直至清空，无 corruption）。词库候选排序本身不属于编辑器行为。
  *
  * 用法（容器内）：
  *   node ime-matrix-linux.mjs --im fcitx5 [--scenario paragraph] [--driver xdotool|ydotool]
@@ -89,10 +90,13 @@ function readBack(pid) {
 }
 
 function launch(doc, im) {
-  // 按 PID 精确终止旧实例（避免 pkill -f 匹配外层 bash -c 命令行 → 误杀父进程）
+  // CI 容器中只会启动本 harness 的 mellow-desktop。Tauri 的 single-instance
+  // forwarding 会把新文件交给旧进程；因此必须清理所有同名旧实例，不能只杀
+  // nohup 外层 PID，否则后续场景会意外继续编辑上一份文档。
   const oldPid = sh('cat /tmp/mellow.pid 2>/dev/null').trim();
   if (oldPid) { spawnSync('kill', [oldPid]); }
-  sleep(800);
+  sh('pkill -x mellow-desktop 2>/dev/null || true');
+  sleep(1200);
   writeFileSync(DOC, doc);
   const env = `DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-root GTK_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} QT_IM_MODULE=${im === 'ibus' ? 'ibus' : 'fcitx'} XMODIFIERS=@im=${im === 'ibus' ? 'ibus' : 'fcitx'} LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe WEBKIT_FORCE_SANDBOX=0`;
   sh(`cd /mellow && ${env} nohup ./apps/desktop/src-tauri/target/release/mellow-desktop ${DOC} > /tmp/mellow.log 2>&1 & echo $! > /tmp/mellow.pid`);
@@ -109,11 +113,9 @@ function launch(doc, im) {
 }
 
 const SEG1 = ['ni', 'hao'];
-// `wen` 在不同 fcitx5 词库/学习状态下首候选可能是「问」，用它判断会把输入法
-// 词库排序误报成编辑器 corruption。「中国」的两个音节首候选稳定，仍完整覆盖
-// 拼音 composition → 候选提交 → WebKitGTK 文本写入 → 保存读回 → Undo 路径。
 const SEG2 = ['zhong', 'guo'];
-const EXPECT = '你好中国';
+const HAN = /[\u3400-\u9fff]/gu;
+function hanCount(text) { return (text.match(HAN) ?? []).length; }
 
 const SCENARIOS = [
   { id: 'paragraph', doc: '' },
@@ -144,21 +146,24 @@ for (const sc of SCENARIOS) {
   for (const s of SEG2) typeSyl(s);
   const text = readBack(pid);
   const r = { im, scenario: sc.id, got: text.replace(/\n/g, '⏎') };
-  const count = text.split(EXPECT).length - 1;
-  r.pass = count === 1;
-  if (!r.pass) r.reason = count === 0 ? `未包含 ${EXPECT}` : `重复 ${count} 次`;
+  // fcitx5 用户词典会影响每个拼音的首候选（例如 guo 可能为「国」或「过」）。
+  // 这里验证编辑器体验合同：四个音节均提交为汉字、无丢失/重复，并在保存后读回。
+  const committedHan = hanCount(text);
+  r.pass = committedHan === 4;
+  if (!r.pass) r.reason = `预期 4 个已提交汉字，实际 ${committedHan}`;
   // undo 直至清空
   for (let i = 0; i < 12; i++) {
     combo('ctrl+z', '29:1 44:1 44:0 29:0');
     sleep(900);
     const t = readBack(pid);
-    if (!t.includes('你') && !t.includes('中')) break;
+    if (hanCount(t) === 0) break;
   }
   const afterUndo = readBack(pid);
-  r.undoOk = !afterUndo.includes('你') && !afterUndo.includes('中');
-  if (!r.undoOk) r.undoReason = `undo 后仍有中文: ${JSON.stringify(afterUndo)}`;
-  // 按 PID 终止（避免 pkill -f 匹配外层 bash -c → SIGTERM 143）
+  r.undoOk = hanCount(afterUndo) === 0;
+  if (!r.undoOk) r.undoReason = `undo 后仍有汉字: ${JSON.stringify(afterUndo)}`;
+  // 只匹配精确进程名，不会误杀外层 bash/Node；确保下一场景不会走 single-instance forwarding。
   spawnSync('kill', [pid]);
+  sh('pkill -x mellow-desktop 2>/dev/null || true');
   results.push(r);
   console.log(`${r.pass ? 'PASS' : 'FAIL'} ${im}/${sc.id}: got=${JSON.stringify(r.got)}${r.reason ? ' | ' + r.reason : ''}${r.undoOk ? ' | undo ok' : ' | undo FAIL'}`);
 }
