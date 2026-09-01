@@ -63,10 +63,10 @@ function ensureFcitxPinyin() {
  * 顶层窗口。必须在选择拼音后重新落到编辑器内容区，并把插入点显式移动到文档末尾；
  * 不能依赖上一次 click 的偶然焦点状态。
  */
-function focusEditor(winId) {
+function focusEditor(winId, point = { x: 600, y: 250 }) {
   if (!winId) throw new Error('Mellow main window was not found');
   sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
-  sh(`xdotool mousemove --window ${winId} 600 250 click 1`);
+  sh(`xdotool mousemove --window ${winId} ${point.x} ${point.y} click 1`);
   sleep(700);
   xdo('key --clearmodifiers ctrl+End');
   sleep(500);
@@ -123,7 +123,10 @@ const SCENARIOS = [
   { id: 'format', doc: '**bold**' },
   { id: 'list', doc: '- item' },
   { id: 'table', doc: '| a | b |\n|---|---|\n| 1 | 2 |' },
-  { id: 'code', doc: '```\ncode\n```' },
+  // Fenced code is a short inline node near the top of the document. The
+  // default blank-body point is below it and only focuses the editor shell;
+  // target the code node itself so this scenario verifies composition inside it.
+  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 320, y: 125 } },
   { id: 'math', doc: '$x+1$' },
   { id: 'link', doc: '[label](https://example.com)' },
 ];
@@ -136,12 +139,12 @@ for (const sc of SCENARIOS) {
   // 聚焦编辑器：激活主窗口 + 双击编辑器内容区（600,250 位于 1200x775 主窗口内）
   const wid = sh('cat /tmp/mellow-win-id.txt').trim();
   if (wid) {
-    focusEditor(wid);
+    focusEditor(wid, sc.focusPoint);
   }
   ensureFcitxPinyin();
   // fcitx5 在 InputContext 切换后可能重置 X11 focus；切换完成后再次聚焦是
   // 真实桌面操作链的一部分，而不是绕过 IME 的直接写文件。
-  focusEditor(wid);
+  focusEditor(wid, sc.focusPoint);
   for (const s of SEG1) typeSyl(s);
   for (const s of SEG2) typeSyl(s);
   const text = readBack(pid);
