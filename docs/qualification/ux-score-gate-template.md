@@ -36,6 +36,22 @@
 3. 换顺序再做一轮（消除熟练度偏差），取均值；
 4. 要求：≥90% 任务完成时间 ≤ Typora+5%；任一关键任务不慢 >15%；错误率不高于 Typora；IME corruption=0；data loss=0。
 
+### 记录与校验
+
+使用 `tests/qualification/ux-gate-recorder.mjs` 创建平台记录；该工具只校验真人填写的双轮数据与 PRD 阈值，不会自动完成任务、生成耗时或给出主观评分。
+
+```bash
+node tests/qualification/ux-gate-recorder.mjs init \
+  --output docs/qualification/evidence/macos-ux-gate-<date>.json \
+  --platform macos --commit <Mellow-commit>
+
+# 填写每项 Typora / Mellow 各两轮记录与证据后：
+node tests/qualification/ux-gate-recorder.mjs validate \
+  --input docs/qualification/evidence/macos-ux-gate-<date>.json
+```
+
+校验器要求 30 × 2 app × 2 round 共 120 条记录、每任务两轮交换 app 顺序、截图/视频/日志证据、IME/data-loss 明确为零，并计算 PRD §132 的 +5%、关键任务 +15%、错误率与主观评分 Gate。
+
 ### 任务清单
 | # | 任务 | Typora 时间 | Mellow 时间 | 误差% | 错误 | 评分 |
 |---|---|---|---|---|---|---|
