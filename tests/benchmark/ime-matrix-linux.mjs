@@ -66,7 +66,7 @@ function ensureFcitxPinyin() {
 function focusEditor(winId, point = { x: 600, y: 250 }) {
   if (!winId) throw new Error('Mellow main window was not found');
   sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
-  sh(`xdotool mousemove --window ${winId} ${point.x} ${point.y} click 1`);
+  sh(`xdotool mousemove --window ${winId} ${point.x} ${point.y} click --repeat ${point.clicks ?? 1} 1`);
   sleep(700);
   xdo('key --clearmodifiers ctrl+End');
   sleep(500);
@@ -126,7 +126,10 @@ const SCENARIOS = [
   // Fenced code is a short inline node near the top of the document. The
   // default blank-body point is below it and only focuses the editor shell;
   // target the code node itself so this scenario verifies composition inside it.
-  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 320, y: 125 } },
+  // Coordinates are window-relative (and therefore include title/menu/tab chrome).
+  // The actual short code line is near y=65; double-click transitions the code node
+  // from preview to its editable source surface before composition begins.
+  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 65, clicks: 2 } },
   { id: 'math', doc: '$x+1$' },
   { id: 'link', doc: '[label](https://example.com)' },
 ];
