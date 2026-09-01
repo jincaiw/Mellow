@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const ledgerPath = resolve(import.meta.dirname, 'typora-parity-ledger.json');
+const benchmarkRunnerPath = resolve(root, 'tests/benchmark/run-benchmark.mjs');
 const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
 const allowedGrades = new Set(['E', 'B', 'D']);
 const allowedStatuses = new Set([
@@ -19,6 +20,14 @@ assert(ledger.schemaVersion === 1, 'schemaVersion 必须为 1');
 assert(ledger.normativeBaseline?.product === 'Typora', '规范产品必须为 Typora');
 assert(ledger.normativeBaseline?.version === '1.14.9', '规范验收基线必须为 Typora 1.14.9');
 assert(Array.isArray(ledger.patchObservations), 'patchObservations 必须为数组');
+assert(existsSync(benchmarkRunnerPath), '性能 benchmark runner 不存在');
+if (existsSync(benchmarkRunnerPath)) {
+  const benchmarkRunner = readFileSync(benchmarkRunnerPath, 'utf8');
+  assert(/TYPORA_NORMATIVE_VERSION\s*=\s*['"]1\.14\.9['"]/.test(benchmarkRunner),
+    '性能 benchmark runner 必须声明 Typora 1.14.9 为规范基线');
+  assert(!/PRD 基线 1\.14\.6/.test(benchmarkRunner),
+    '性能 benchmark runner 不得将 Typora 1.14.6 标记为 PRD 基线');
+}
 
 for (const observation of ledger.patchObservations ?? []) {
   assert(observation.version !== '1.14.9', `补丁观察 ${observation.version} 不应重复规范基线`);

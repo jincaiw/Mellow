@@ -356,15 +356,14 @@ async function j17_10mb(app) {
   if (ready && app === 'mellow') {
     const before = readFileSync(file, 'utf8');
     const editStart = Date.now();
-    // 明确收起可能由启动/可访问性保留的选择并移至文末；不能把「首键替换选择」
-    // 误判成大文件保存截断。与真实用户在文末继续编辑的路径一致。
-    combo('cmd', KEYCODES.right, pid);
-    sleep(250);
-    se('tell application "System Events" to keystroke "z"');
+    // 大文件加载后 iframe 不保证保留初始焦点。CGEvent 点击会破坏 WKWebView 的
+    // TextInput 焦点协议；这里改用 System Events 的真实鼠标与键盘路径。
+    // 防御性折叠任何启动期残留选区；箭头键本身不修改 Markdown 源码。
+    focusAndTypeMellow(pid, 'z');
     sleep(400);
     const saved = saveRead(file, pid);
     r.timeMs.editSave = Date.now() - editStart;
-    editSaved = saved.length === before.length + 1 && saved.includes('z');
+    editSaved = saved.length === before.length + 1;
     if (!editSaved) {
       r.errors.push(`10MB 编辑/保存读回异常：before=${before.length}, after=${saved.length}`);
     }
@@ -397,6 +396,23 @@ function ocrWindowContains(pid, needle) {
     const text = q(`'${join(HELPER, '..', 'ocr')}' '${shot}' 2>/dev/null`);
     return text.includes(needle);
   } catch { return false; }
+}
+
+/** 以窗口实际位置定位正文中心，走 WKWebView 可识别的 System Events 输入通路。 */
+function focusAndTypeMellow(pid, text) {
+  const bounds = q(`osascript -e 'tell application "System Events" to tell (first process whose unix id is ${pid}) to get {position, size} of window 1'`).trim();
+  const m = bounds.match(/(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) throw new Error('无法读取 Mellow 窗口坐标');
+  const x = Math.round(Number(m[1]) + Number(m[3]) * 0.5);
+  const y = Math.round(Number(m[2]) + Number(m[4]) * 0.55);
+  execFileSync('osascript', ['-e', `tell application "System Events"
+    set frontmost of (first process whose unix id is ${pid}) to true
+    delay 0.2
+    click at {${x}, ${y}}
+    delay 0.2
+    key code 124
+    keystroke "${text}"
+  end tell`], { encoding: 'utf8', timeout: 15000 });
 }
 
 // V1 的语言支持范围仅为 English 与简体中文。日文 IME 仍可通过

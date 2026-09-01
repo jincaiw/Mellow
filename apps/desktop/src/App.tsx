@@ -1250,6 +1250,14 @@ export default function App() {
     setDirty(tab.dirty);
     host.setDocumentPath(tab.path);
     await host.open(tab.content, undefined, true, tab.eol);
+    // Typora 打开/切换文档后可立即继续书写。大文件 reset 会重建 CodeMirror 的
+    // contenteditable，因此必须在 open 完成后显式恢复 EditorView focus。
+    host.focus();
+    // resetEditor 完成后仍可能有一帧的 CodeMirror 布局/虚拟化收尾；在该帧后再
+    // 确认一次焦点，避免 10 MB 文档只渲染而无法接收首个真实键盘输入。
+    requestAnimationFrame(() => {
+      if (hostRef.current === host && docIdRef.current === tab.documentId) host.focus();
+    });
     suppressEditorEventRef.current = false;
     // Large File Mode（PRD §109）已在 CoreEditor.open() 收口：resetEditor 前自动
     // 分类降级（>5MB 或 >50,000 行），覆盖全部 open 路径（含 auto reload/快照恢复）。

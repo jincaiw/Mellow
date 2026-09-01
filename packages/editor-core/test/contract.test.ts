@@ -84,6 +84,22 @@ describe('EditorCore — public API', () => {
     core.destroy();
   });
 
+  test('focus 同时聚焦 iframe 与真实 EditorView，避免大文档 open 后键盘落到外壳', async () => {
+    const { core, container } = await setUpWithMock();
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const win = iframe.contentWindow as Window;
+    const frameFocus = jest.spyOn(win, 'focus').mockImplementation(() => undefined);
+    const editorFocus = jest.fn();
+    Object.defineProperty(win, 'editor', { configurable: true, value: { focus: editorFocus } });
+
+    core.focus();
+
+    expect(frameFocus).toHaveBeenCalledTimes(1);
+    expect(editorFocus).toHaveBeenCalledTimes(1);
+    frameFocus.mockRestore();
+    core.destroy();
+  });
+
   test('未 mount 时 ready 安全等待挂载；未就绪时 API 返回安全默认值（防御性降级）', async () => {
     const core = new EditorCore();
     // 新语义（宿主 idle 调度延迟 mount）：ready() 可在 mount 前调用，等待挂载而非立即抛错

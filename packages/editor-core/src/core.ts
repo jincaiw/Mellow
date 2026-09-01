@@ -220,7 +220,12 @@ export class EditorCore {
 
   /** 聚焦编辑器 */
   focus(): void {
-    this.iframe?.contentWindow?.focus();
+    const win = this.iframe?.contentWindow as (Window & { editor?: { focus?: () => void } }) | null;
+    // iframe window 成为 first responder 并不足以让 CodeMirror 的 contenteditable
+    // 接收文本，尤其是大文件 reset 后。必须再聚焦真实 EditorView；否则 macOS
+    // System Events/硬件键盘可能落到桌面壳，表现为已渲染但不可直接输入。
+    win?.focus();
+    win?.editor?.focus?.();
   }
 
   /** 设置编辑器内容区主题（CoreEditor webModules.config.setTheme） */

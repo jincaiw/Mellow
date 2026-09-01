@@ -9,7 +9,7 @@
  *
  * 输出：results/<ts>-<app>.json（原始数据）+ reports/<ts>-mellow-vs-typora.md（汇总）
  */
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync, execSync } from 'node:child_process';
 import {
@@ -51,9 +51,28 @@ const APPS = {
 function run(cmd, argv) {
   spawnSync(cmd, argv, { stdio: 'ignore' });
 }
+function focusAndTypeMellow(pid, win, text) {
+  if (!/^[A-Za-z0-9]$/.test(text)) throw new Error('仅支持单个 ASCII 字母或数字');
+  const x = Math.round(win.x + win.w * 0.5);
+  const y = Math.round(win.y + win.h * 0.55);
+  const result = spawnSync('osascript', [
+    '-e', `tell application "System Events"
+      set frontmost of (first process whose unix id is ${pid}) to true
+      delay 0.2
+      click at {${x}, ${y}}
+      delay 0.2
+      key code 124
+      keystroke "${text}"
+    end tell`,
+  ], { encoding: 'utf8', timeout: 15000 });
+  if (result.status !== 0) throw new Error(result.stderr || 'System Events 输入失败');
+}
 
 const FIXTURES = ['1MB.md', '5MB.md', '10MB.md', '100k-lines.md', 'large-table.md', '100-mermaid.md', '1000-images.md'];
 const ALL_METRICS = ['startup', 'open', 'typing', 'scroll', 'search', 'save', 'memory'];
+// PRD V1.2 FINAL 与 AGENTS.md 冻结的唯一性能/体验对标版本。
+// 非该版本的运行仍可用于历史观察，但不可作为当前 P0 判定证据。
+const TYPORA_NORMATIVE_VERSION = '1.14.9';
 
 function parseList(s) { return s.split(',').map((x) => x.trim()).filter(Boolean); }
 
@@ -210,16 +229,22 @@ async function measureApp(appKey, opts) {
           touchOld(fpath); // launch 前拨老 mtime
           const l2 = launchApp(fpath);
           try {
-            waitWindow(l2.pid, 30000);
-            sleep(5000); // 文档加载完成（避免 'a' 被加载覆盖）
-            // 预热：制造修改（'a'）。Mellow 需点击聚焦编辑器；Typora 点击内容区会使编辑器失焦 → 直接按键
+            const saveWin = waitWindow(l2.pid, 30000);
+            // 大文件模式需等待首轮虚拟化/渲染稳定后再输入，否则 resetEditor 的后续
+            // transaction 会覆盖测试字符，造成 mtime 假阳性或错误的不可编辑结论。
+            // Typora 维持原有 5s；Mellow 对齐 Golden Journey 的 10s 就绪窗口。
+            sleep(app.killPattern === 'Typora' ? 5000 : 10000);
+            // 预热：制造修改（'a'）。Mellow 的 WKWebView 会过滤 CGEventPost
+            // 字符；必须走 System Events 的真实输入通路。不要合成点击正文，
+            // 因为它会破坏 WebView 的 first-responder 焦点协议。
             if (app.killPattern === 'Typora') {
               helper('post-combo', '--mods', '', '--key', '0', '--pid', String(l2.pid));
             } else {
-              helper('focus-type', '--pid', String(l2.pid), '--roi', roiStr(roi));
+              focusAndTypeMellow(l2.pid, saveWin, 'a');
             }
             sleep(400);
             const before = fileMtimeMs(fpath);
+            const beforeText = readFileSync(fpath, 'utf8');
             helper('post-combo', '--mods', 'cmd', '--key', '1', '--pid', String(l2.pid)); // Cmd+S
             const t0 = Date.now();
             let changed = false;
@@ -228,7 +253,17 @@ async function measureApp(appKey, opts) {
               if (now !== null && now !== before) { changed = true; break; }
               sleep(25);
             }
-            m.save = changed ? { ms: Date.now() - t0, note: null } : { ms: null, note: '10s 内 mtime 未变化' };
+            const afterText = readFileSync(fpath, 'utf8');
+            const sourceChanged = afterText !== beforeText;
+            m.save = changed && sourceChanged
+              ? { ms: Date.now() - t0, note: null, sourceChanged: true }
+              : {
+                ms: null,
+                sourceChanged,
+                note: !changed
+                  ? '10s 内 mtime 未变化'
+                  : 'mtime 已变化但 Markdown 源码未变化（输入焦点或编辑失败）',
+              };
             console.log(`save: ${m.save.ms ?? 'FAIL'}ms`);
           } finally {
             killApp(app.killPattern);
@@ -269,7 +304,10 @@ function renderReport(env, results, opts) {
   L.push(`- 机器：${env.sys.cpu} / ${env.sys.memGB}GB / ${env.sys.os} (${env.sys.arch})`);
   L.push(`- Mellow commit：\`${env.git.hash}\`${env.git.dirty ? '（工作区有未提交改动）' : ''}`);
   L.push(`- Mellow 构建：release（cargo build --release）`);
-  L.push(`- Typora 版本：${env.typoraVersion}（PRD 基线 1.14.6，patch 级差异）`);
+  const typoraEvidence = env.typoraVersion === TYPORA_NORMATIVE_VERSION
+    ? `规范验收基线 ${TYPORA_NORMATIVE_VERSION} ✓`
+    : `当前规范验收基线 ${TYPORA_NORMATIVE_VERSION}；此版本仅作历史/观察数据，不能用于 P0 对标`;
+  L.push(`- Typora 版本：${env.typoraVersion}（${typoraEvidence}）`);
   L.push(`- 输入法：${env.inputSource ? 'ABC（英文）✓' : '非英文（typing 结果可能受 IME 影响）'}`);
   L.push(`- 权限：Accessibility ${env.perms.accessibility ? '✓' : '✗'} / Screen Recording ${env.perms.screenRecording ? '✓' : '✗'}`);
   L.push(`- 重复次数：open/startup N=${opts.runs}，typing ${opts.keystrokes} 键/次`);
