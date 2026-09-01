@@ -204,9 +204,9 @@ async function measureApp(appKey, opts) {
       console.log(`open-to-editable: median=${m.openToEditable.stats.median?.toFixed(1)}ms p95=${m.openToEditable.stats.p95?.toFixed(1)}ms`);
     }
 
-    // 打开状态下测 typing / scroll / save / memory / search（每指标独立容错：单指标失败不拖垮整块）
+    // 打开状态下测 typing / scroll / memory / search（每指标独立容错：单指标失败不拖垮整块）
     let pid = null;
-    if (['typing', 'scroll', 'save', 'memory', 'search'].some((k) => opts.metrics.includes(k))) {
+    if (['typing', 'scroll', 'memory', 'search'].some((k) => opts.metrics.includes(k))) {
       killApp(app.killPattern);
       sleep(600);
       const l = launchApp(fpath);
@@ -257,75 +257,63 @@ async function measureApp(appKey, opts) {
           console.log(`search: ${r.ok ? r.latencyMs + 'ms' : 'N/A (' + m.search.note + ')'}`);
         });
 
-        // save 放最后：独立 launch（touchOld 必须在 launch 前，否则 Typora 检测外部 mtime 变化弹「重新加载」对话框）
-        mSafe('save', () => {
-          if (!opts.metrics.includes('save')) return;
-          stopLaunchedApp(l);
-          if (app.killPattern === 'Typora') killApp(app.killPattern);
-          sleep(600);
-          const savePath = join(BENCHMARK_WORKDIR, `${appKey}-${fixture}`);
-          copyFileSync(fpath, savePath);
-          touchOld(savePath); // launch 前拨老 mtime
-          const l2 = launchApp(savePath);
-          try {
-            waitWindow(l2.pid, 30000);
-            // 大文件模式需等待首轮虚拟化/渲染稳定后再输入，否则 resetEditor 的后续
-            // transaction 会覆盖测试字符，造成 mtime 假阳性或错误的不可编辑结论。
-            // Typora 维持原有 5s；Mellow 对齐 Golden Journey 的 10s 就绪窗口。
-            sleep(app.killPattern === 'Typora' ? 5000 : 10000);
-            // 在输入前捕获源文件状态。不得在输入后才取 before：若宿主已提前
-            // 持久化输入，后续 Cmd+S 是 no-op，旧逻辑会把真实的源码变化误报为 FAIL。
-            const beforeText = readFileSync(savePath, 'utf8');
-            // 预热：制造修改（'a'）。Mellow 的 WKWebView 会过滤 CGEventPost
-            // 字符；必须走 System Events 的真实输入通路。不要合成点击正文，
-            // 因为它会破坏 WebView 的 first-responder 焦点协议。
-            if (app.killPattern === 'Typora') {
-              helper('post-combo', '--mods', '', '--key', '0', '--pid', String(l2.pid));
-            } else {
-              focusAndTypeMellow(l2.pid, 'a');
-            }
-            sleep(400);
-            const afterInputText = readFileSync(savePath, 'utf8');
-            const afterInputMtime = fileMtimeMs(savePath);
-            const persistedBeforeExplicitSave = afterInputText !== beforeText;
-            helper('post-combo', '--mods', 'cmd', '--key', '1', '--pid', String(l2.pid)); // Cmd+S
-            const t0 = Date.now();
-            let changed = false;
-            while (Date.now() - t0 < 10000) {
-              const now = fileMtimeMs(savePath);
-              if (now !== null && now !== afterInputMtime) { changed = true; break; }
-              sleep(25);
-            }
-            const afterText = readFileSync(savePath, 'utf8');
-            const sourceChanged = afterText !== beforeText;
-            m.save = sourceChanged && (changed || persistedBeforeExplicitSave)
-              ? {
-                ms: changed ? Date.now() - t0 : null,
-                note: persistedBeforeExplicitSave ? '输入已在显式 Cmd+S 前持久化' : null,
-                sourceChanged: true,
-                persistedBeforeExplicitSave,
-              }
-              : {
-                ms: null,
-                sourceChanged,
-                persistedBeforeExplicitSave,
-                note: !sourceChanged
-                  ? '输入后 Markdown 源码未变化（输入焦点或编辑失败）'
-                  : !changed
-                    ? '10s 内 mtime 未变化'
-                  : 'mtime 已变化但 Markdown 源码未变化（输入焦点或编辑失败）',
-              };
-            console.log(`save: ${m.save.ms ?? 'FAIL'}ms`);
-          } finally {
-            stopLaunchedApp(l2);
-            if (app.killPattern === 'Typora') killApp(app.killPattern);
-          }
-        });
       } catch (e) {
         console.warn(`[${app.name}/${fixture}] 打开态基础失败: ${e.message}`);
         m.openStateFailed = true;
       } finally {
         killApp(app.killPattern);
+      }
+    }
+
+    // save 必须使用单独的进程和窗口：此前任何性能指标均不应影响 WebView 首响应者。
+    // touchOld 必须在 launch 前，否则 Typora 会把它当成外部改动并显示「重新加载」对话框。
+    if (opts.metrics.includes('save')) {
+      try {
+        killApp(app.killPattern);
+        sleep(600);
+        const savePath = join(BENCHMARK_WORKDIR, `${appKey}-${fixture}`);
+        copyFileSync(fpath, savePath);
+        touchOld(savePath);
+        const l = launchApp(savePath);
+        try {
+          waitWindow(l.pid, 30000);
+          sleep(app.killPattern === 'Typora' ? 5000 : 10000);
+          const beforeText = readFileSync(savePath, 'utf8');
+          if (app.killPattern === 'Typora') {
+            helper('post-combo', '--mods', '', '--key', '0', '--pid', String(l.pid));
+          } else {
+            focusAndTypeMellow(l.pid, 'a');
+          }
+          sleep(400);
+          const afterInputText = readFileSync(savePath, 'utf8');
+          const afterInputMtime = fileMtimeMs(savePath);
+          const persistedBeforeExplicitSave = afterInputText !== beforeText;
+          helper('post-combo', '--mods', 'cmd', '--key', '1', '--pid', String(l.pid));
+          const t0 = Date.now();
+          let changed = false;
+          while (Date.now() - t0 < 10000) {
+            const now = fileMtimeMs(savePath);
+            if (now !== null && now !== afterInputMtime) { changed = true; break; }
+            sleep(25);
+          }
+          const afterText = readFileSync(savePath, 'utf8');
+          const sourceChanged = afterText !== beforeText;
+          m.save = sourceChanged && (changed || persistedBeforeExplicitSave)
+            ? { ms: changed ? Date.now() - t0 : null, note: persistedBeforeExplicitSave ? '输入已在显式 Cmd+S 前持久化' : null, sourceChanged: true, persistedBeforeExplicitSave }
+            : {
+              ms: null, sourceChanged, persistedBeforeExplicitSave,
+              note: !sourceChanged
+                ? '输入后 Markdown 源码未变化（输入焦点或编辑失败）'
+                : !changed ? '10s 内 mtime 未变化' : 'mtime 已变化但 Markdown 源码未变化（输入焦点或编辑失败）',
+            };
+          console.log(`save: ${m.save.ms ?? 'FAIL'}ms`);
+        } finally {
+          stopLaunchedApp(l);
+          if (app.killPattern === 'Typora') killApp(app.killPattern);
+        }
+      } catch (e) {
+        m.save = { error: e.message };
+        console.warn(`[${app.name}/${fixture}] save 失败: ${e.message}`);
       }
     }
     result.metrics[fixture] = m;
