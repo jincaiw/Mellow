@@ -13,6 +13,7 @@
 import type { EditorView, ViewUpdate, DecorationSet } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isLargeFileMode, largeFileDecorationLimit } from './largeFile';
+import { isComposing } from './composition';
 
 const LINE_NUMBER_CLASS = 'mellow-cln';
 
@@ -170,6 +171,10 @@ export function buildCodeLineNumbersExtension(): Extension {
         const versionChanged = codeLineNumbersVersion() !== this.watchedVersion;
         if (versionChanged) this.watchedVersion = codeLineNumbersVersion();
         if (update.docChanged || update.viewportChanged || versionChanged) {
+          // Composition Guard：合成期间只映射位置，不重算（spec §6）
+          if (isComposing(update.view)) {
+            return;
+          }
           this.decorations = buildDecorations(update.view);
         }
       }

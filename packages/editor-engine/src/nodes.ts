@@ -227,8 +227,13 @@ export function registerBlockquoteNode(): void {
   registerNode({
     contentNodeNames: ['Blockquote'],
     markerNodeNames: ['QuoteMark'],
-    classify: (node, _markers, ctx) => {
+    classify: (node, markers, ctx) => {
       if (ctx.forceSource) {
+        return 'source';
+      }
+      // spec §5.2：selection（非 caret）碰 marker → source（整块显示）
+      const isCaret = ctx.caret.anchor === ctx.caret.head;
+      if (!isCaret && markers.some((m) => intersects(ctx.caret.anchor, ctx.caret.head, m.from, m.to))) {
         return 'source';
       }
       return intersects(ctx.caret.anchor, ctx.caret.head, node.from, node.to) ? 'mixed' : 'rendered';

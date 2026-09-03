@@ -12,6 +12,7 @@
  */
 
 import type { EditorView } from '@codemirror/view';
+import { isComposing } from '../composition';
 
 /** 文本替换（from/to 为文档字符偏移；text 为替换内容） */
 export interface TextChange {
@@ -58,6 +59,11 @@ export function registerEngineImageApi(): void {
   const api: EngineImageApi = {
     applyChanges(changes) {
       if (activeView === null || changes.length === 0) {
+        return false;
+      }
+      // Composition Guard：合成期间不接受宿主外部事务（spec §6，
+      // 只允许 CM 原生 composition transaction；宿主操作结束后重试）
+      if (isComposing(activeView)) {
         return false;
       }
       // 单事务：全部替换一次应用（CM 内部处理选区映射；一次 Undo 撤销全部，spec §11）

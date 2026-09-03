@@ -4,7 +4,13 @@
 import { EditorView } from '@codemirror/view';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { install } from '../src/index';
-import { imageSourceAt, inlineLinkAt } from '../src/contextMenu';
+import {
+  imageSourceAt,
+  inlineLinkAt,
+  codeFenceAt,
+  mathBlockAt,
+  mermaidBlockAt,
+} from '../src/contextMenu';
 import type { EditorContextMenuRequest } from '../src/contextMenu';
 import { moveCaret, sleep } from './harness';
 
@@ -33,6 +39,72 @@ describe('inlineLinkAt / imageSourceAt（纯函数）', () => {
     const doc = '![logo](img/logo.png) text';
     expect(imageSourceAt(doc, 5, NONE)).toBe('img/logo.png');
     expect(imageSourceAt(doc, 23, NONE)).toBeNull(); // 引用外（span 0..21）
+  });
+});
+
+/**
+ * P1-1.7：块级右键分支的判定函数。
+ * 契约来源 Typora 1.14.9 appsrc/main.js getMenuItemsForMac()，
+ * 按 mdtype 分成 fences / math_block / fences+md-diagram 三类块级右键。
+ */
+describe('块级判定：codeFenceAt / mathBlockAt / mermaidBlockAt', () => {
+  test('codeFenceAt：``` 围栏内命中并返回语言', () => {
+    const doc = 'before\n```js\nconst a = 1;\n```\nafter';
+    // from = 围栏起始行偏移（7）；to = 闭合围栏行结束偏移（26 + 3 = 29，不含换行）
+    expect(codeFenceAt(doc, 12)).toEqual({ lang: 'js', from: 7, to: 29 });
+  });
+
+  test('codeFenceAt：~~~ 围栏同样识别', () => {
+    const doc = '~~~python\nx = 1\n~~~';
+    expect(codeFenceAt(doc, 12)?.lang).toBe('python');
+  });
+
+  test('codeFenceAt：无语言时 lang 为空串（仍属代码块）', () => {
+    const doc = '```\nplain\n```';
+    // to = 闭合围栏行结束偏移（10 + 3 = 13）
+    expect(codeFenceAt(doc, 6)).toEqual({ lang: '', from: 0, to: 13 });
+  });
+
+  test('codeFenceAt：围栏外返回 null', () => {
+    const doc = 'before\n```js\nconst a = 1;\n```\nafter';
+    expect(codeFenceAt(doc, 2)).toBeNull();
+    expect(codeFenceAt(doc, 34)).toBeNull();
+  });
+
+  test('codeFenceAt：未闭合围栏按 Typora 行为算到文末', () => {
+    const doc = '```js\nconst a = 1;';
+    const hit = codeFenceAt(doc, 12);
+    expect(hit?.lang).toBe('js');
+    expect(hit?.to).toBe(doc.length);
+  });
+
+  test('codeFenceAt：~~~ 与 ``` 不互相闭合（CommonMark：块延伸到文末）', () => {
+    const doc = '```js\na\n~~~';
+    // ~~~ 不闭合 ``` 围栏 → 块未闭合，pos 8 仍在块内（与 Typora 渲染行为一致）
+    expect(codeFenceAt(doc, 8)).toEqual({ lang: 'js', from: 0, to: doc.length });
+  });
+
+  test('mathBlockAt：$$ 块内为 true，块外为 false', () => {
+    const doc = 'text\n$$\nX^2\n$$\nend';
+    expect(mathBlockAt(doc, 8)).toBe(true);
+    expect(mathBlockAt(doc, 1)).toBe(false);
+    expect(mathBlockAt(doc, doc.length - 1)).toBe(false);
+  });
+
+  test('mathBlockAt：行内 $...$ 不算块级公式', () => {
+    const doc = 'inline $a+b$ here';
+    expect(mathBlockAt(doc, 10)).toBe(false);
+  });
+
+  test('mermaidBlockAt：```mermaid 围栏内为 true', () => {
+    const doc = 'text\n```mermaid\ngraph TD;\nA-->B;\n```\nend';
+    expect(mermaidBlockAt(doc, 20)).toBe(true);
+    expect(mermaidBlockAt(doc, 1)).toBe(false);
+  });
+
+  test('mermaidBlockAt：普通代码块不算图表', () => {
+    const doc = '```js\ngraph TD;\n```';
+    expect(mermaidBlockAt(doc, 10)).toBe(false);
   });
 });
 
@@ -91,6 +163,43 @@ describe('右键上下文检测（contextmenu 事件）', () => {
     view.destroy();
   });
 
+  // P1-1.7：块级分支（Typora 1.14.9 getMenuItemsForMac 按 mdtype 分 fences / math_block / md-diagram）
+  test('代码块：kind=code 且携带围栏语言', async () => {
+    const doc = 'text\n```js\nconst a = 1;\n```';
+    const { view, requests } = setUp(doc);
+    moveCaret(view, 0);
+    await rightClick(view, 12); // js 代码行内
+    expect(requests[0]).toMatchObject({ kind: 'code', lang: 'js' });
+    view.destroy();
+  });
+
+  test('公式块：```math 围栏 → kind=math', async () => {
+    const doc = '```math\nX^2\n```';
+    const { view, requests } = setUp(doc);
+    moveCaret(view, 0);
+    await rightClick(view, 10); // X^2 行内
+    expect(requests[0]).toMatchObject({ kind: 'math', lang: 'math' });
+    view.destroy();
+  });
+
+  test('公式块：$$ … $$ → kind=math', async () => {
+    const doc = 'text\n$$\nX^2\n$$\nend';
+    const { view, requests } = setUp(doc);
+    moveCaret(view, 0);
+    await rightClick(view, 8); // X^2 行内
+    expect(requests[0]).toMatchObject({ kind: 'math' });
+    view.destroy();
+  });
+
+  test('图表块：```mermaid → kind=mermaid', async () => {
+    const doc = '```mermaid\ngraph TD;\nA-->B;\n```';
+    const { view, requests } = setUp(doc);
+    moveCaret(view, 0);
+    await rightClick(view, 15); // graph 行内
+    expect(requests[0]).toMatchObject({ kind: 'mermaid', lang: 'mermaid' });
+    view.destroy();
+  });
+
   test('选区存在时 hasSelection=true', async () => {
     const { view, requests } = setUp('hello world');
     view.dispatch({ selection: { anchor: 0, head: 5 } });
@@ -101,16 +210,31 @@ describe('右键上下文检测（contextmenu 事件）', () => {
   });
 });
 
+interface ContextActions {
+  cut(): void;
+  copy(): void;
+  paste(): void;
+  tableOp(op: string): void;
+  copySource(kind: 'math' | 'mermaid'): boolean;
+}
+
 describe('动作 API（__MELLOW_CONTEXT_ACTIONS__）', () => {
-  function setUp(doc: string): { view: EditorView; actions: { cut(): void; copy(): void; paste(): void; tableOp(op: string): void } } {
+  function setUp(doc: string): { view: EditorView; actions: ContextActions } {
     const view = new EditorView({
       doc,
       parent: document.body,
       extensions: [markdown({ base: markdownLanguage }), install(true)],
     });
     view.focus();
-    const actions = (window as unknown as Record<string, unknown>)[ACTIONS_KEY] as { cut(): void; copy(): void; paste(): void; tableOp(op: string): void };
+    const actions = (window as unknown as Record<string, unknown>)[ACTIONS_KEY] as ContextActions;
     return { view, actions };
+  }
+
+  /** P1-1.7：复制光标处的公式 / 图表源码（右键「复制为 Tex 代码」经 dispatchCommand 走到这里） */
+  function stubClipboard(): { writeText: jest.Mock } {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    return { writeText };
   }
 
   test('copy：execCommand("copy")（多格式复制由 clipboardCopy 事件处理）', async () => {
@@ -177,6 +301,36 @@ describe('动作 API（__MELLOW_CONTEXT_ACTIONS__）', () => {
     moveCaret(view, 2);
     actions.tableOp('addRowBelow');
     expect(view.state.doc.toString()).toBe('plain text');
+    view.destroy();
+  });
+
+  test('copySource("math")：光标在公式块内 → 写入源码并返回 true', () => {
+    const doc = 'text\n$$\nX^2\n$$\nend';
+    const { view, actions } = setUp(doc);
+    const { writeText } = stubClipboard();
+    moveCaret(view, 8); // X^2 行内
+    expect(actions.copySource('math')).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('X^2');
+    view.destroy();
+  });
+
+  test('copySource("mermaid")：光标在图表块内 → 写入源码并返回 true', () => {
+    const doc = '```mermaid\ngraph TD;\nA-->B;\n```';
+    const { view, actions } = setUp(doc);
+    const { writeText } = stubClipboard();
+    moveCaret(view, 15); // graph 行内
+    expect(actions.copySource('mermaid')).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('graph TD;\nA-->B;');
+    view.destroy();
+  });
+
+  test('copySource：光标不在块内 → 返回 false 且不写剪贴板', () => {
+    const { view, actions } = setUp('plain text');
+    const { writeText } = stubClipboard();
+    moveCaret(view, 2);
+    expect(actions.copySource('math')).toBe(false);
+    expect(actions.copySource('mermaid')).toBe(false);
+    expect(writeText).not.toHaveBeenCalled();
     view.destroy();
   });
 });

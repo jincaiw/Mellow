@@ -7,6 +7,7 @@
  */
 
 import type { Extension } from '@codemirror/state';
+import { isComposing } from './composition';
 
 /** 常见语言列表（Typora 同款常用集） */
 const FENCE_LANGUAGES: Array<{ label: string; detail: string }> = [
@@ -55,6 +56,8 @@ const FENCE_LANGUAGES: Array<{ label: string; detail: string }> = [
 interface CompletionContextLike {
   pos: number;
   state: { sliceDoc(from: number, to: number): string };
+  /** CM CompletionContext 携带 view（Composition Guard 用；测试可缺省） */
+  view?: { dom: Element };
 }
 interface CompletionResultLike {
   from: number;
@@ -76,6 +79,8 @@ function resolveAutoComplete(): AutoCompleteRuntime {
 
 /** 围栏行补全源（纯函数，可测） */
 export function fenceLangSource(context: CompletionContextLike): CompletionResultLike | null {
+  // Composition Guard：合成期间不弹补全（spec §6，与 slashCommands 同语义）
+  if (isComposing(context.view)) return null;
   const textBefore = context.state.sliceDoc(0, context.pos);
   const lastLine = textBefore.slice(textBefore.lastIndexOf('\n') + 1);
   const match = lastLine.match(/^ {0,3}(`{3,}|~{3,})([a-zA-Z0-9_-]*)$/);

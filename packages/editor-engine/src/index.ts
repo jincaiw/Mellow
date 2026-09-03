@@ -48,6 +48,8 @@ import { buildWikilinkExtension } from './wikilink';
 import { buildMdLinkExtension } from './mdLink';
 import { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi } from './contextMenu';
 import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
+import { buildUndoGroupingExtension } from './undoGrouping';
+import { buildPlatformNavKeymap } from './platformNav';
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } from './largeFile';
 import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
@@ -56,6 +58,9 @@ import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './code
 export { buildCodeLineNumbersExtension, installCodeLineNumbersApi, setCodeLineNumbers, isCodeLineNumbersEnabled, codeLineNumbersVersion, fenceContentRange } from './codeLineNumbers';
 export type { CodeLineNumbersApi } from './codeLineNumbers';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
+export { buildUndoGroupingExtension } from './undoGrouping';
+export { buildPlatformNavKeymap, detectPlatform } from './platformNav';
+export type { MellowPlatform } from './platformNav';
 export { DEFAULT_ENGINE_FEATURES, mergeEngineFeatures, readEngineFeaturesFromStorage } from './config';
 export type { EngineFeatureConfig } from './config';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
@@ -238,6 +243,9 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildContextMenuViewTrackerExtension(),
     buildDocumentSearchExtension(),
     buildMdLinkExtension(),
+    buildUndoGroupingExtension(),
+    // Home/End 平台化（P4.4）：Windows/Linux 移动 caret 行首尾，mac 保持 CoreEditor 滚动语义
+    buildPlatformNavKeymap(),
   ];
   // 可开关的语法特性（PRD §94 Markdown 设置）
   if (f.math) ext.push(buildMathExtension(false));

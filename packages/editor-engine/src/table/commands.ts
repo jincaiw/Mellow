@@ -14,6 +14,12 @@ import type { EditorView } from '@codemirror/view';
 import type { ChangeSpec } from '@codemirror/state';
 import type { TableModel, CellAlignment } from './parser';
 import { parseTable, parseAlignment } from './parser';
+import { isComposing } from '../composition';
+
+/** Composition Guard：合成期间不接受表格编辑事务（spec §6） */
+function frozenDuringComposition(view: EditorView): boolean {
+  return isComposing(view);
+}
 
 /** 运行时获取 CM 模块（iframe 内与 CoreEditor 同一实例） */
 function requireCm<T>(id: string): T {
@@ -61,6 +67,7 @@ export function tableAt(view: EditorView, pos: number): { model: TableModel } | 
 
 /** 在当前行后添加一行（minimal：1 处 insert） */
 export function addRow(view: EditorView, model: TableModel, afterRow: number): void {
+  if (frozenDuringComposition(view)) return;
   const anchor = model.rows[afterRow];
   if (anchor === undefined) {
     return;
@@ -72,6 +79,7 @@ export function addRow(view: EditorView, model: TableModel, afterRow: number): v
 
 /** 在当前行前添加一行（D4 Typora「上方插入行」；首行=表头前插） */
 export function addRowAbove(view: EditorView, model: TableModel, beforeRow: number): void {
+  if (frozenDuringComposition(view)) return;
   const target = model.rows[beforeRow];
   if (target === undefined) {
     return;
@@ -86,6 +94,7 @@ export function addRowAbove(view: EditorView, model: TableModel, beforeRow: numb
 
 /** 删除行（minimal：删除该行及前导换行） */
 export function deleteRow(view: EditorView, model: TableModel, row: number): void {
+  if (frozenDuringComposition(view)) return;
   const target = model.rows[row];
   if (target === undefined || target.isDelimiter) {
     return; // 不删 delimiter（否则表格失效）
@@ -105,6 +114,7 @@ export function deleteRow(view: EditorView, model: TableModel, row: number): voi
 
 /** 添加列（每行插入 cell；delimiter 行加对齐 mark） */
 export function addColumn(view: EditorView, model: TableModel, afterCol: number): void {
+  if (frozenDuringComposition(view)) return;
   const changes: ChangeSpec[] = [];
   for (const row of model.rows) {
     // 在 afterCol 单元格后插入 `| cell`
@@ -124,6 +134,7 @@ export function addColumn(view: EditorView, model: TableModel, afterCol: number)
 
 /** 在指定列左侧添加列（D4 Typora「左侧插入列」；首列=行首 `| ` 后插 `cell |`） */
 export function addColumnLeft(view: EditorView, model: TableModel, beforeCol: number): void {
+  if (frozenDuringComposition(view)) return;
   if (beforeCol > 0) {
     addColumn(view, model, beforeCol - 1);
     return;
@@ -138,6 +149,7 @@ export function addColumnLeft(view: EditorView, model: TableModel, beforeCol: nu
 
 /** 删除列（每行删除对应 cell；跳过列数不足的行） */
 export function deleteColumn(view: EditorView, model: TableModel, col: number): void {
+  if (frozenDuringComposition(view)) return;
   const changes: ChangeSpec[] = [];
   for (const row of model.rows) {
     const cell = row.cells[col];
@@ -157,6 +169,7 @@ export function deleteColumn(view: EditorView, model: TableModel, col: number): 
 
 /** 设置列对齐：**只 patch delimiter 行**（spec §6） */
 export function setColumnAlignment(view: EditorView, model: TableModel, col: number, align: CellAlignment): void {
+  if (frozenDuringComposition(view)) return;
   const delimiter = model.delimiterRow;
   if (delimiter === null) {
     return;
@@ -180,6 +193,7 @@ export function setColumnAlignment(view: EditorView, model: TableModel, col: num
 
 /** Tidy：完整重新对齐（spec §6：唯一允许 full reformat 的命令）——Phase 1 标记实现点 */
 export function tidyTable(view: EditorView, model: TableModel): void {
+  if (frozenDuringComposition(view)) return;
   // 计算每列最大宽度（跳过 delimiter 行——对齐标记不参与宽度）
   const widths = Array.from({ length: model.columnCount }, (_, c) => {
     let max = 0;
@@ -225,6 +239,7 @@ export function tidyTable(view: EditorView, model: TableModel): void {
 
 /** 交换相邻两数据行（D4 Typora「向上/向下移动表格行」）；不与 delimiter 交换 */
 export function moveRow(view: EditorView, model: TableModel, row: number, direction: 'up' | 'down'): void {
+  if (frozenDuringComposition(view)) return;
   const target = model.rows[row];
   if (target === undefined || target.isDelimiter) return;
   const other = direction === 'up' ? model.rows[row - 1] : model.rows[row + 1];
@@ -246,6 +261,7 @@ export function moveRow(view: EditorView, model: TableModel, row: number, direct
 
 /** 交换相邻两列单元格文本（D4 Typora「向左/向右移动表格列」；delimiter 行对齐标记一并交换） */
 export function moveColumn(view: EditorView, model: TableModel, col: number, direction: 'left' | 'right'): void {
+  if (frozenDuringComposition(view)) return;
   const otherCol = direction === 'left' ? col - 1 : col + 1;
   if (otherCol < 0) return;
   const changes: ChangeSpec[] = [];
@@ -267,6 +283,7 @@ export function moveColumn(view: EditorView, model: TableModel, col: number, dir
 
 /** 删除整个表格（D4 Typora「删除表格」）：表范围 + 前后各吞一个换行（保持段落间距不翻倍） */
 export function deleteTable(view: EditorView, model: TableModel): void {
+  if (frozenDuringComposition(view)) return;
   const doc = view.state.doc;
   let from = model.from;
   let to = model.to;

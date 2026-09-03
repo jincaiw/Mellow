@@ -11,6 +11,7 @@
 import type { EditorView, ViewUpdate, DecorationSet } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isSourceMode } from './mode';
+import { isComposing } from './composition';
 
 const CHECKBOX_CLASS = 'mellow-md-task-checkbox';
 
@@ -119,8 +120,16 @@ export function buildTaskCheckboxExtension(): Extension {
       }
 
       update(update: ViewUpdate) {
+        // 文本变化：先映射 decoration 位置，保持渲染正确
+        if (update.docChanged) {
+          this.decorations = this.decorations.map(update.changes);
+        }
         // doc/viewport/source-mode（经 selectionSet 触发）变化时重算
         if (update.docChanged || update.viewportChanged || update.selectionSet) {
+          // Composition Guard：合成期间只映射位置，不重算（spec §6）
+          if (isComposing(update.view)) {
+            return;
+          }
           this.decorations = buildDecorations(update.view);
         }
       }

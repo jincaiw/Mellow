@@ -380,3 +380,166 @@ describe('Paragraph menu actions（B2 菜单结构补全，Typora 对齐）', ()
       .toEqual([{ from: 0, to: 5, insert: '###### hello' }]);
   });
 });
+
+describe('P4.10 Floating Toolbar × IME / Selection 联合矩阵', () => {
+  beforeEach(() => {
+    resetCompositionState();
+    setSelectionToolbarEnabled(true);
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    resetCompositionState();
+    setSelectionToolbarEnabled(true);
+    document.body.innerHTML = '';
+  });
+
+  /** 锚点随选区起点变化的 setUp（观察 position 更新） */
+  function setUpSpy(doc: string): EditorView {
+    installFormatApi();
+    return new EditorView({
+      doc,
+      parent: document.body,
+      extensions: [
+        markdown({ base: markdownLanguage }),
+        buildSelectionToolbarExtension({ getAnchor: (_view, from) => ({ top: 200, left: from * 2 }) }),
+      ],
+    });
+  }
+
+  test('连续 selectionSet 更新：显示且锚点位置随选区起点移动', async () => {
+    const view = setUpSpy('0123456789abcdef');
+    view.focus();
+    select(view, 0, 3);
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+    expect(toolbarEl()?.style.left).toBe('0px');
+
+    select(view, 10, 13);
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+    expect(toolbarEl()?.style.left).toBe('20px'); // anchor = from×2
+    view.destroy();
+  });
+
+  test('跨节点选区（heading + bold）→ 显示；bold 按钮跨节点包裹', async () => {
+    const view = setUp('# H\n**b** tail');
+    select(view, 2, 13); // 跨 heading 内容与 bold 节点（2..13）
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+
+    const bold = toolbarEl()?.querySelector('button[data-action="bold"]') as HTMLButtonElement | null;
+    bold?.click();
+    await sleep(10);
+    // applyInlineFormat 对选区文本整体包裹（跨节点保持字面，不解析嵌套）
+    expect(view.state.doc.toString()).toBe('# **H\n**b** tai**l');
+    view.destroy();
+  });
+
+  test('strike / inline-code 按钮点击生效且不抢焦点', async () => {
+    const view = setUp('hello world');
+    select(view, 0, 5);
+    await sleep(30);
+    const strike = toolbarEl()?.querySelector('button[data-action="strike"]') as HTMLButtonElement | null;
+    strike?.click();
+    await sleep(10);
+    expect(view.state.doc.toString()).toBe('~~hello~~ world');
+    expect(view.hasFocus).toBe(true);
+
+    // 选中新内容 → 点 code 按钮
+    // '~~hello~~ world'：0..8 '~~hello~~'、9 空格、10..14 'world'
+    select(view, 12, 15); // 'rld'（端点互斥，15=文末）
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+    const code = toolbarEl()?.querySelector('button[data-action="code"]') as HTMLButtonElement | null;
+    code?.click();
+    await sleep(10);
+    expect(view.state.doc.toString()).toBe('~~hello~~ wo`rld`');
+    expect(view.hasFocus).toBe(true);
+    view.destroy();
+  });
+
+  test('IME 生命周期：compositionstart 隐藏 → compositionend + selectionSet（等价提交）恢复显示', async () => {
+    installCompositionTracking();
+    const view = setUp('abc def');
+    select(view, 0, 3);
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+
+    document.dispatchEvent(new CompositionEvent('compositionstart'));
+    select(view, 0, 3); // composition 中选区更新仍隐藏
+    await sleep(30);
+    expect(toolbarEl()?.style.display).toBe('none');
+
+    document.dispatchEvent(new CompositionEvent('compositionend'));
+    await sleep(30);
+    // compositionend 本身不产生 transaction（真实场景由提交文本触发）→ 仍隐藏
+    expect(toolbarEl()?.style.display).toBe('none');
+    select(view, 4, 7); // 等价提交后的 selectionSet → 恢复显示
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+    view.destroy();
+  });
+
+  test('Escape 后同一选区再 selectionSet → hiddenByEscape 重置恢复显示', async () => {
+    const view = setUp('abc def');
+    select(view, 0, 3);
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+
+    key(view, 'Escape');
+    await sleep(30);
+    expect(toolbarEl()?.style.display).toBe('none');
+
+    select(view, 0, 3); // 同一选区重派 → selectionSet 重置 hiddenByEscape
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+    view.destroy();
+  });
+
+  test('host API hide() → 隐藏；selectionSet 后恢复显示', async () => {
+    const view = setUp('abc def');
+    select(view, 0, 3);
+    await sleep(30);
+    const api = (window as unknown as { __MELLOW_SELECTION_TOOLBAR__?: { hide: () => void } }).__MELLOW_SELECTION_TOOLBAR__;
+    expect(api).toBeDefined();
+    api?.hide();
+    await sleep(30);
+    expect(toolbarEl()?.style.display).toBe('none');
+
+    select(view, 4, 7);
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+    view.destroy();
+  });
+
+  test('先选中后禁用 → 下次 update 隐藏；重新启用 → 恢复', async () => {
+    const view = setUp('abc def');
+    select(view, 0, 3);
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+
+    setSelectionToolbarEnabled(false);
+    select(view, 4, 7); // 触发 update → show=false
+    await sleep(30);
+    expect(toolbarEl()?.style.display).toBe('none');
+
+    setSelectionToolbarEnabled(true);
+    select(view, 0, 3);
+    await sleep(30);
+    expect(toolbarEl()?.style.display).not.toBe('none');
+    view.destroy();
+  });
+
+  test('Escape 后选区清空 → 保持隐藏（无选区不显示）', async () => {
+    const view = setUp('abc def');
+    select(view, 0, 3);
+    await sleep(30);
+    key(view, 'Escape');
+    await sleep(30);
+    select(view, 2, 2); // 空选区
+    await sleep(30);
+    expect(toolbarEl()?.style.display).toBe('none');
+    view.destroy();
+  });
+});

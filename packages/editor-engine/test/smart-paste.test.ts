@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { EditorView } from '@codemirror/view';
 import { history, undo } from '@codemirror/commands';
 import { buildSmartPasteExtension, htmlToMarkdown, pastePlain, sanitizeHtml, tsvToGfmTable } from '../src/smartPaste';
-import { selectRange, sleep } from './harness';
+import { installCompositionTracking, resetCompositionState } from '../src/composition';
+import { endComposition, selectRange, sleep, startComposition } from './harness';
 
 const fixture = (name: string): string => readFileSync(resolve(__dirname, '../../../tests/fixtures/clipboard', name), 'utf8');
 
@@ -16,10 +17,11 @@ function setUp(doc = ''): EditorView {
   });
 }
 
-function firePaste(view: EditorView, formats: Record<string, string>): void {
+function firePaste(view: EditorView, formats: Record<string, string>): Event {
   const event = new Event('paste', { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'clipboardData', { value: { getData: (type: string) => formats[type] ?? '' } });
   view.contentDOM.dispatchEvent(event);
+  return event;
 }
 
 describe('Smart Paste（clipboard-smart-paste-spec §3-§10）', () => {
@@ -106,5 +108,98 @@ describe('Smart Paste（clipboard-smart-paste-spec §3-§10）', () => {
     expect(view.state.doc.toString()).toBe('A中文\nemoji: 😀');
     undo(view);
     expect(view.state.doc.toString()).toBe('A');
+  });
+});
+
+// ───────────────── P5.3 Clipboard — paste priority / IME / 边界（V4 计划 P5 Clipboard 行自动化部分） ─────────────────
+
+describe('P5.3 Clipboard — paste priority 链 / IME guard / 边界', () => {
+  beforeEach(() => {
+    resetCompositionState();
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    resetCompositionState();
+    document.body.innerHTML = '';
+  });
+
+  test('spec §9：composition 期间 TSV paste 不转换、事件不拦截（editor owns transaction）', () => {
+    installCompositionTracking();
+    const view = setUp('表格：\n');
+    startComposition();
+    firePaste(view, { 'text/plain': '名称\t数量\n苹果\t2' });
+    expect(view.state.doc.toString()).not.toContain('| --- |');
+    endComposition();
+    view.destroy();
+  });
+
+  test('spec §9：composition 期间 HTML paste 不转换；compositionend 后同一格式生效', () => {
+    installCompositionTracking();
+    const view = setUp('开始');
+    startComposition();
+    firePaste(view, { 'text/html': '<p>中文 <strong>内容</strong></p>' });
+    expect(view.state.doc.toString()).toBe('开始'); // 默认管道无数据 → 不变
+    endComposition();
+    firePaste(view, { 'text/html': '<p>中文 <strong>内容</strong></p>' });
+    expect(view.state.doc.toString()).toBe('开始中文 **内容**');
+    view.destroy();
+  });
+
+  test('priority：TSV 优先于 HTML（spec §3 顺序 3 > 4）', () => {
+    const view = setUp('');
+    firePaste(view, {
+      'text/plain': '名称\t数量\n苹果\t2',
+      'text/html': '<p><strong>被忽略的富文本</strong></p>',
+    });
+    const doc = view.state.doc.toString();
+    expect(doc).toContain('| 名称 | 数量 |');
+    expect(doc).not.toContain('**被忽略的富文本**');
+    view.destroy();
+  });
+
+  test('priority：HTML 优先于 URL-on-selection（spec §3 顺序 4 > 5）', () => {
+    const view = setUp('中文文本');
+    selectRange(view, 0, 4);
+    firePaste(view, {
+      'text/plain': 'https://example.com/x',
+      'text/html': '<p><strong>富</strong></p>',
+    });
+    const doc = view.state.doc.toString();
+    expect(doc).toBe('**富**'); // HTML 转换替换选区，而非 [中文文本](url)
+    view.destroy();
+  });
+
+  test('priority：无选区 + plain URL → 交回 CM 默认按纯文本插入（不误建链接）', () => {
+    const view = setUp('正文');
+    view.dispatch({ selection: { anchor: 2 } });
+    firePaste(view, { 'text/plain': 'https://example.com/x' });
+    expect(view.state.doc.toString()).toBe('正文https://example.com/x'); // 纯文本，无 [链接](url) 包裹
+    view.destroy();
+  });
+
+  test('priority：选区 + plain 非 URL 非 TSV → 交回 CM 默认按纯文本替换（无转换）', () => {
+    const view = setUp('中文文本');
+    selectRange(view, 0, 2);
+    firePaste(view, { 'text/plain': '普通词' });
+    expect(view.state.doc.toString()).toBe('普通词文本'); // plain 直接替换，无任何 smart 转换
+    view.destroy();
+  });
+
+  test('pastePlain 空文本 → false 且 doc 不变（Paste Plain 边界）', () => {
+    const view = setUp('A');
+    expect(pastePlain(view, '')).toBe(false);
+    expect(view.state.doc.toString()).toBe('A');
+    view.destroy();
+  });
+
+  test('URL on selection：单 Undo 还原（与 HTML/TSV 同一 Undo 语义）', () => {
+    const view = setUp('文本');
+    selectRange(view, 0, 2);
+    firePaste(view, { 'text/plain': 'https://example.com' });
+    expect(view.state.doc.toString()).toBe('[文本](https://example.com)');
+    undo(view);
+    expect(view.state.doc.toString()).toBe('文本');
+    view.destroy();
   });
 });

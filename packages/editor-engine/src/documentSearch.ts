@@ -19,6 +19,7 @@
 
 import type { Extension } from '@codemirror/state';
 import type { ViewUpdate } from '@codemirror/view';
+import { isComposing } from './composition';
 
 interface EditorViewLike {
   state: unknown;
@@ -209,6 +210,9 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
   };
 
   const commitQuery = (): void => {
+    // Composition Guard：合成期间不提交查询（避免 IME 半程拼音进入搜索状态，
+    // spec §6；compositionend 后的最终 input 事件会补一次提交）
+    if (isComposing(view)) return;
     if (!validateRegex()) return;
     view.dispatch({
       effects: searchMod.setSearchQuery.of(
@@ -250,6 +254,8 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
 
   dom.addEventListener('keydown', (event) => {
     const kev = event as KeyboardEvent;
+    // Composition Guard：合成期间 Enter/Esc 属 IME 候选确认/取消，不触发查找（spec §6）
+    if (kev.isComposing || isComposing(view)) return;
     if (kev.key === 'Escape') {
       kev.preventDefault();
       close();

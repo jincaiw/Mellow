@@ -9,7 +9,7 @@
  */
 
 import type { EditorView, ViewUpdate, DecorationSet, Decoration as DecorationT, WidgetType as WidgetTypeT } from '@codemirror/view';
-import type { Extension } from '@codemirror/state';
+import type { Extension, EditorState, StateField as StateFieldT } from '@codemirror/state';
 import { isComposing } from './composition';
 import { largeFileVersion, largeFileViewportRange } from './largeFile';
 
@@ -18,7 +18,9 @@ interface CmRuntime {
   Decoration: typeof import('@codemirror/view').Decoration;
   WidgetType: typeof import('@codemirror/view').WidgetType;
   keymap: typeof import('@codemirror/view').keymap;
+  EditorView: typeof import('@codemirror/view').EditorView;
   RangeSetBuilder: typeof import('@codemirror/state').RangeSetBuilder;
+  StateField: typeof import('@codemirror/state').StateField;
 }
 
 function resolveCm(): CmRuntime {
@@ -33,7 +35,9 @@ function resolveCm(): CmRuntime {
     Decoration: view.Decoration,
     WidgetType: view.WidgetType,
     keymap: view.keymap,
+    EditorView: view.EditorView,
     RangeSetBuilder: state.RangeSetBuilder,
+    StateField: state.StateField,
   };
 }
 
@@ -416,6 +420,35 @@ export function buildMathExtension(autoInstallComposition = true, options: MathE
     }
   }
 
+  // P1 修复（CM6 合规）：block decoration 禁止由 ViewPlugin 提供（RangeError: Block
+  // decorations may not be specified via plugins），必须来自 StateField。此处把 block
+  // span（$$…$$ / \[…\]）拆到独立 StateField，inline span 留在 ViewPlugin（point
+  // decoration 不受限）。field 无法读取 viewport，故按全文档解析 block span——block
+  // 数学块在文档中极稀疏，O(n) 单遍扫描可接受（e0f4df2 已将解析优化为线性）。
+  const buildBlockDecorations = (state: EditorState): DecorationSet => {
+    generation += 1;
+    const builder = new RangeSetBuilder<DecorationT>();
+    const doc = state.doc.toString();
+    const head = state.selection.main.head;
+    const macros = collectDocumentMathMacros(doc);
+    for (const s of parseMathSpans(doc)) {
+      if (s.kind !== 'block') continue;
+      if (caretInside(s, head)) continue;
+      builder.add(s.from, s.to, Decoration.replace({ widget: new MathWidget(s, macros, generation), block: true }));
+    }
+    return builder.finish();
+  };
+
+  const blockField: StateFieldT<DecorationSet> = cm.StateField.define<DecorationSet>({
+    create: (state) => buildBlockDecorations(state),
+    update: (value, tr) => {
+      // caretInside 依赖选区（光标进入块内 → 显示源码），doc / selection 变化都重建
+      if (tr.docChanged || tr.selection) return buildBlockDecorations(tr.state);
+      return value;
+    },
+    provide: (field) => cm.EditorView.decorations.compute([field], (state) => state.field(field)),
+  });
+
   const buildDecorations = (view: EditorView): DecorationSet => {
     generation += 1;
     const builder = new RangeSetBuilder<DecorationT>();
@@ -425,8 +458,9 @@ export function buildMathExtension(autoInstallComposition = true, options: MathE
     // Large File Mode：只解析视口 ± 余量（PRD §109 pause offscreen Math）
     const { from, to } = largeFileViewportRange(view);
     for (const s of parseMathSpans(doc, from, to)) {
+      if (s.kind === 'block') continue; // block span 由 blockField 提供
       if (caretInside(s, head)) continue;
-      builder.add(s.from, s.to, Decoration.replace({ widget: new MathWidget(s, macros, generation), block: s.kind === 'block' }));
+      builder.add(s.from, s.to, Decoration.replace({ widget: new MathWidget(s, macros, generation) }));
     }
     return builder.finish();
   };
@@ -457,5 +491,5 @@ export function buildMathExtension(autoInstallComposition = true, options: MathE
 
   const theme = Decoration.none;
   void theme;
-  return [plugin, shortcuts];
+  return [plugin, blockField, shortcuts];
 }

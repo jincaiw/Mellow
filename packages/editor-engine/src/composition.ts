@@ -12,7 +12,7 @@ let composing = false;
 let installed = false;
 let composingRoot: Element | null = null;
 
-type EditorViewLike = { dom: Element };
+type EditorViewLike = { dom?: Element };
 
 function editorRoot(target: EventTarget | null): Element | null {
   return target instanceof Element ? target.closest('.cm-editor') : null;
@@ -44,8 +44,9 @@ export function installCompositionTracking(): void {
 /** 是否处于 IME composition 中 */
 export function isComposing(view?: EditorViewLike): boolean {
   if (!composing) return false;
-  // 合成事件由 document 触发（部分 WebView / 测试环境）时保守地守护全部视图。
-  if (view === undefined || composingRoot === null) return true;
+  // 合成事件由 document 触发（部分 WebView / 测试环境）时保守地守护全部视图；
+  // dom 未知的调用方同样保守守护。
+  if (view === undefined || view.dom === undefined || composingRoot === null) return true;
   return view.dom === composingRoot || view.dom.contains(composingRoot) || composingRoot.contains(view.dom);
 }
 

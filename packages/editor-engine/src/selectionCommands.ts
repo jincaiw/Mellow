@@ -18,6 +18,7 @@
 
 import type { EditorView } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
+import { isComposing } from './composition';
 
 export interface SelectionCommandsApi {
   selectLine(): boolean;
@@ -181,6 +182,7 @@ export function codeBlockSourceAt(doc: string, pos: number): string | null {
 function selectLine(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false; // IME 合成期间不改 selection（spec §6）
   const sel = view.state.selection.main;
   const doc = view.state.doc;
   const line = doc.lineAt(sel.head);
@@ -198,6 +200,7 @@ function selectLine(): boolean {
 function selectParagraph(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc;
   const head = view.state.selection.main.head;
   const line = doc.lineAt(head);
@@ -215,6 +218,7 @@ function selectParagraph(): boolean {
 function selectWord(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc.toString();
   const head = view.state.selection.main.head;
   const word = wordAt(doc, head);
@@ -226,6 +230,7 @@ function selectWord(): boolean {
 function selectFormatSpan(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc.toString();
   const head = view.state.selection.main.head;
   const span = formatSpanAt(doc, head) ?? wordAt(doc, head);
@@ -237,6 +242,7 @@ function selectFormatSpan(): boolean {
 function gotoDocStart(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true });
   return true;
 }
@@ -244,6 +250,7 @@ function gotoDocStart(): boolean {
 function gotoDocEnd(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true });
   return true;
 }
@@ -258,6 +265,7 @@ function gotoSelection(): boolean {
 function gotoLineStart(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const line = view.state.doc.lineAt(view.state.selection.main.head);
   view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
   return true;
@@ -266,6 +274,7 @@ function gotoLineStart(): boolean {
 function gotoLineEnd(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const line = view.state.doc.lineAt(view.state.selection.main.head);
   view.dispatch({ selection: { anchor: line.to }, scrollIntoView: true });
   return true;
@@ -294,6 +303,7 @@ function deleteRange(view: EditorView, from: number, to: number): boolean {
 function deleteWord(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc.toString();
   const head = view.state.selection.main.head;
   const word = wordAt(doc, head);
@@ -304,6 +314,7 @@ function deleteWord(): boolean {
 function deleteFormatSpan(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc.toString();
   const head = view.state.selection.main.head;
   const span = formatSpanAt(doc, head);
@@ -314,6 +325,7 @@ function deleteFormatSpan(): boolean {
 function deleteParagraph(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc.toString();
   const head = view.state.selection.main.head;
   const para = paragraphRangeAt(doc, head);
@@ -325,6 +337,7 @@ function deleteParagraph(): boolean {
 function moveLineUp(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc;
   const line = doc.lineAt(view.state.selection.main.head);
   if (line.number === 1) return false;
@@ -346,6 +359,7 @@ function moveLineUp(): boolean {
 function moveLineDown(): boolean {
   const view = activeView;
   if (view === null) return false;
+  if (isComposing(view)) return false;
   const doc = view.state.doc;
   const line = doc.lineAt(view.state.selection.main.head);
   if (line.number === doc.lines) return false;

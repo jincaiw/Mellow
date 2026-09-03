@@ -5,6 +5,7 @@
  * 追加 emoji 源 —— 触发条件：光标前是 `:字母` 模式（GitHub emoji shortcode）。
  */
 
+import { isComposing } from './composition';
 
 /** 常用 GitHub emoji（shortcode → 字符） */
 const EMOJI: Array<[string, string]> = [
@@ -24,6 +25,8 @@ const EMOJI: Array<[string, string]> = [
 interface CompletionContextLike {
   pos: number;
   state: { sliceDoc(from: number, to: number): string };
+  /** CM CompletionContext 携带 view（Composition Guard 用；测试可缺省） */
+  view?: { dom: Element };
 }
 interface CompletionResultLike {
   from: number;
@@ -33,6 +36,8 @@ interface CompletionResultLike {
 
 /** emoji 补全源（纯函数，可测） */
 export function emojiSource(context: CompletionContextLike): CompletionResultLike | null {
+  // Composition Guard：合成期间不弹补全（spec §6，与 slashCommands 同语义）
+  if (isComposing(context.view)) return null;
   const before = context.state.sliceDoc(0, context.pos);
   // 匹配 `:name`（冒号 + 字母；不在行内代码内——粗粒度：不检查反引号，emojicode 罕见）
   const m = /:([a-zA-Z0-9_+-]*)$/.exec(before);

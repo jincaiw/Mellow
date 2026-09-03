@@ -19,7 +19,7 @@
 import type { EditorView, ViewUpdate, DecorationSet, Decoration as DecorationT } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 
-import { registerBuiltinNodes, contentNodeNames, markerNodeNames, extractMarkers, getNodeSpec } from './nodes';
+import { registerBuiltinNodes, contentNodeNames, extractMarkers, getNodeSpec } from './nodes';
 import { classifyNodeState, shouldHideMarkers } from './state';
 import type { RevealContext, MarkerRange } from './types';
 import { MARKER_CLASS, MARKER_DIM_CLASS } from './types';
@@ -72,7 +72,6 @@ export function buildMarkerRevealExtension(): Extension {
   const cm = resolveCm();
   const { EditorView, ViewPlugin, Decoration, RangeSetBuilder, syntaxTree } = cm;
   const contentNames = contentNodeNames();
-  const markerNames = markerNodeNames();
 
   const buildDecorations = (view: EditorView): DecorationSet => {
     const { state } = view;
@@ -108,14 +107,17 @@ export function buildMarkerRevealExtension(): Extension {
           const parent = { from: node.from, text: state.sliceDoc(node.from, node.to) };
           const rawMarkers: Array<{ from: number; to: number; name: string; text: string }> = [];
 
-          // 递归收集 marker 子节点（跳过嵌套内容节点——它们各自处理自己的 marker）
+          // 递归收集 marker 子节点（跳过嵌套内容节点——它们各自处理自己的 marker）。
+          // 只收集当前 spec 声明的 markerNodeNames：全局集合会让 FencedCode 的
+          // CodeMark（``` fence）被 InlineCode 的注册误收集并隐藏（违反 spec §16）。
+          const specMarkerNames = new Set(spec.markerNodeNames);
           const collectMarkers = (cur: import('@lezer/common').TreeCursor): void => {
             if (!cur.firstChild()) {
               return;
             }
             do {
               const name = cur.type.name;
-              if (markerNames.has(name)) {
+              if (specMarkerNames.has(name)) {
                 rawMarkers.push({
                   from: cur.from,
                   to: cur.to,
