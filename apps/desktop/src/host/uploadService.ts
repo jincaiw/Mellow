@@ -6,7 +6,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { ImageUploadOptions, ImageUploadService, Result } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 import { isTauri } from './fileServices';
@@ -29,7 +29,7 @@ export const tauriImageUploadService: ImageUploadService = {
 };
 
 /** 浏览器 dev 模式（mock；测试经 state.uploadUrls 预设） */
-export const browserImageUploadService: ImageUploadService = createMockHost().imageUpload;
+export const browserImageUploadService: ImageUploadService = browserMockHost.imageUpload;
 
 /** 按运行时选择实现（Adapter 装配点） */
 export function createDesktopImageUploadService(): ImageUploadService {

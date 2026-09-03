@@ -90,6 +90,14 @@ html, body, #root {
   background: var(--mellow-bg-hover);
 }
 
+/* P2-2.3 compact：tab 数量 ≥8（Tabbar COMPACT_THRESHOLD）时缩窄，滚动兜底不破版 */
+.tabbar.compact .tab {
+  min-width: 56px;
+  max-width: 140px;
+  padding: 0 6px;
+  gap: 4px;
+}
+
 .tab:hover .tab-close {
   opacity: 1;
 }
@@ -565,6 +573,45 @@ html, body, #root {
   border-radius: 4px;
 }
 
+/* P3.6（G4-SIDE-06）常驻 filter 输入框 + 新建文件/文件夹轻按钮 */
+.file-quickbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--mellow-border);
+}
+
+.file-filter-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.file-quickbtn {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.file-quickbtn:hover:not(:disabled) {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+
+.file-quickbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .outline-row {
   width: 100%;
   min-height: 28px;
@@ -583,6 +630,16 @@ html, body, #root {
 }
 
 .outline-row.current {
+  background: var(--mellow-selection);
+}
+
+/* P3.3 键盘选中：与 caret 驱动的 current 区分（左侧指示条 + 更轻的底色） */
+.outline-row.selected {
+  background: var(--mellow-bg-hover);
+  box-shadow: inset 2px 0 0 var(--mellow-selection);
+}
+
+.search-match.selected {
   background: var(--mellow-selection);
 }
 
@@ -722,6 +779,37 @@ html, body, #root {
   min-height: 0;
   background: var(--mellow-bg);
   position: relative;
+}
+
+/* P2-2.5 模式状态指示：仅非默认模式时渲染，右上角轻量 badge，低干扰。
+   容器 pointer-events: none 不拦截编辑区点击，badge 自身恢复交互。 */
+.mode-indicators {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.mode-indicator {
+  pointer-events: auto;
+  border: 1px solid var(--mellow-border);
+  background: var(--mellow-bg-subtle);
+  color: var(--mellow-fg-subtle);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.mode-indicator:hover {
+  opacity: 1;
+  background: var(--mellow-bg-hover);
 }
 
 .quick-open-backdrop {
@@ -1135,7 +1223,8 @@ html, body, #root {
   /* B3-2 主题级内容字体（衬线风主题 Paper/Newsprint 覆盖；其余主题用默认 UI 栈） */
   font-family: var(--mellow-content-font, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif);
   font-size: 16px;
-  line-height: 1.65;
+  /* P2-2.1：行高设置（--mellow-line-height）同文档消费；编辑器侧走 setEditorConfig 通道 */
+  line-height: var(--mellow-line-height, 1.65);
   color: var(--mellow-fg);
   word-wrap: break-word;
   cursor: auto;
@@ -1691,6 +1780,29 @@ html, body, #root {
   border: 1px solid var(--mellow-border);
   border-radius: 4px;
   padding: 2px 8px;
+}
+
+/* P2-2.6 快捷键录制按钮（Settings → 快捷键）：外观沿用 kbd 风格，可点击录制 */
+.settings-shortcut-edit {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--mellow-fg-subtle);
+  background: var(--mellow-bg-subtle);
+  border: 1px solid var(--mellow-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  min-width: 88px;
+  text-align: center;
+}
+
+.settings-shortcut-edit:hover {
+  background: var(--mellow-bg-hover);
+}
+
+.settings-shortcut-edit.recording {
+  color: var(--mellow-focus-ring, #4c8dff);
+  border-color: var(--mellow-focus-ring, #4c8dff);
 }
 
 

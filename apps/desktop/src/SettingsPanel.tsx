@@ -8,7 +8,7 @@
  * - AI 页面默认不存在：仅当 aiEnabled（AI extension 启用）时追加「AI」分类。
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SETTINGS_SECTIONS } from '../../../packages/settings/src';
 import type { SettingDefinition, SettingsSection } from '../../../packages/settings/src';
 import type { ThemeSettings } from '../../../packages/themes/src';
@@ -23,12 +23,72 @@ export interface SettingsPanelProps {
   themeSettings: ThemeSettings;
   /** AI extension 是否启用（默认 false → AI 分类不出现） */
   aiEnabled: boolean;
-  /** 快捷键列表（分类「快捷键」只读展示） */
+  /** 快捷键列表（分类「快捷键」；P2-2.6 起支持点击录制自定义键位） */
   shortcuts: Array<{ id: string; title: string; shortcut?: string }>;
+  /** P2-2.6 录制回调：accelerator = null 表示恢复 schema 默认键位 */
+  onShortcutChange?: (commandId: string, accelerator: string | null) => void;
+}
+
+/** P2-2.6 可编辑快捷键列表：点击键位进入录制态（capture-phase keydown 捕获组合键）；
+ *  Esc 取消录制；Backspace/Delete 恢复默认；无修饰键的单击不生效（防止覆盖文本输入键）。 */
+function ShortcutList({ t, shortcuts, onShortcutChange }: {
+  t: (key: string) => string;
+  shortcuts: Array<{ id: string; title: string; shortcut?: string }>;
+  onShortcutChange?: (commandId: string, accelerator: string | null) => void;
+}) {
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (recordingId === null) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        setRecordingId(null);
+        return;
+      }
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        onShortcutChange?.(recordingId, null);
+        setRecordingId(null);
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) return;
+      // 物理键位归一（与 dispatchShortcut 的 code 优先策略一致；布局无关）
+      const normalizedKey = event.code.startsWith('Key') ? event.code.slice(3)
+        : event.code.startsWith('Digit') ? event.code.slice(5)
+        : event.key.length === 1 ? event.key.toUpperCase()
+        : event.key;
+      const parts = [event.ctrlKey ? 'Ctrl' : '', event.metaKey ? 'Cmd' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', normalizedKey].filter(Boolean).join('+');
+      onShortcutChange?.(recordingId, parts);
+      setRecordingId(null);
+    };
+    // capture-phase：抢在 App 全局 keydown（bubble）前消费，避免录制时误触发命令
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [recordingId, onShortcutChange]);
+
+  return (
+    <div className="settings-shortcuts">
+      {shortcuts.map((item) => (
+        <div key={item.id} className="settings-row">
+          <span className="settings-row-label">{item.title}</span>
+          <button
+            type="button"
+            className={`settings-shortcut-edit${recordingId === item.id ? ' recording' : ''}`}
+            onClick={() => setRecordingId(item.id)}
+            title={t('settings.shortcuts.editHint')}
+            aria-label={`${item.title}: ${t('settings.shortcuts.editHint')}`}
+          >
+            {recordingId === item.id ? t('settings.shortcuts.recording') : (item.shortcut !== undefined && item.shortcut !== '' ? item.shortcut : t('settings.shortcuts.none'))}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function SettingsPanel(props: SettingsPanelProps) {
-  const { t, onClose, applySetting, currentLanguage, themeSettings, aiEnabled, shortcuts } = props;
+  const { t, onClose, applySetting, currentLanguage, themeSettings, aiEnabled, shortcuts, onShortcutChange } = props;
   const [active, setActive] = useState<SettingsSection['id']>('general');
   const [query, setQuery] = useState('');
 
@@ -170,14 +230,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               <>
                 <h2 className="settings-section-title">{t(section.labelKey)}</h2>
                 {section.id === 'shortcuts' && (
-                  <div className="settings-shortcuts">
-                    {shortcuts.map((item) => (
-                      <div key={item.id} className="settings-row">
-                        <span className="settings-row-label">{item.title}</span>
-                        <span className="settings-row-value settings-shortcut">{item.shortcut ?? ''}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <ShortcutList t={t} shortcuts={shortcuts} onShortcutChange={onShortcutChange} />
                 )}
                 {section.settings.map((def) => (
                   <div key={def.id} className="settings-row">

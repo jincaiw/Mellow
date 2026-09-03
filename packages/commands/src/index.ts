@@ -5,6 +5,7 @@
  */
 
 export * from './menuContract';
+export * from './menuSchema';
 
 export type CommandSource = 'menu' | 'shortcut' | 'command-palette' | 'slash' | 'context-menu' | 'plugin';
 export type CommandPlatform = 'mac' | 'win-linux';

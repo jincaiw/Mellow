@@ -2,7 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { Result, SearchRequest, SearchResult, SearchService } from '../../../../packages/host-api/src/index';
 import { err, ok } from '../../../../packages/host-api/src/index';
 import { isTauri } from './fileServices';
@@ -65,7 +65,7 @@ export const tauriSearchService: SearchService = {
   },
 };
 
-export const browserSearchService: SearchService = createMockHost().search;
+export const browserSearchService: SearchService = browserMockHost.search;
 
 export function createDesktopSearchService(): SearchService {
   return isTauri() ? tauriSearchService : browserSearchService;

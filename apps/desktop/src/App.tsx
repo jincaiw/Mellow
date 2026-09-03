@@ -29,6 +29,7 @@ import {
   headingOffsetForAnchor,
   QuickOpenModel,
   groupSearchResults,
+  SearchResultsModel,
   normalizeSearchRequest,
   rankQuickOpen,
   scanQuickOpen,
@@ -47,6 +48,8 @@ import {
   parseRecentFolders,
   serializeRecentFolders,
   basename,
+  filterFileTree,
+  filterFileList,
 } from '../../../packages/app-core/src';
 import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
@@ -65,19 +68,20 @@ import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/s
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions, ImageUploadService } from '../../../packages/host-api/src/index';
 import type { ImageExportOptions, Canvas2DLike } from '../../../packages/export/src/image/index';
-import { CommandPaletteModel, CommandRegistry, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
+import { CommandPaletteModel, CommandRegistry, SCHEMA_SHORTCUTS, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import type { CommandContribution } from '../../../packages/extension-api/src';
 import { BUILTIN_THEMES, DEFAULT_THEME_SETTINGS, resolveActiveTheme, themeById } from '../../../packages/themes/src';
 import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
+import { buildNativeMenuSpec } from './nativeMenu';
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
-import { readSetting, settingById, writeSetting } from '../../../packages/settings/src';
-import type { SettingDefinition } from '../../../packages/settings/src';
+import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting } from '../../../packages/settings/src';
+import type { SettingDefinition, ShortcutOverrideMap } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
 import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
-import type { EditorContextMenuRequest, EditorContextActions } from '../../../packages/editor-engine/src';
+import type { EditorContextMenuRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
 import ContextMenu from './ContextMenu';
 import type { ContextMenuItem, ContextMenuState } from './ContextMenu';
@@ -112,7 +116,6 @@ const AI_ENABLED_KEY = 'mellow.ai.enabled';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SIDEBAR_WIDTH_KEY = 'mellow.sidebar.width';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
-const COMMAND_PALETTE_SHORTCUT = { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' };
 
 /**
  * KeyboardEvent.code → 快捷键 key 归一表（dispatchShortcut 用）。
@@ -220,6 +223,7 @@ export default function App() {
   const outlineActiveRef = useRef<string | null>(null);
   const refreshOutlineRef = useRef<(head?: number | null) => void>(() => {});
   const quickOpenModelRef = useRef<QuickOpenModel>(new QuickOpenModel());
+  const searchResultsModelRef = useRef<SearchResultsModel>(new SearchResultsModel());
   const quickOpenAbortRef = useRef<AbortController | null>(null);
   const quickOpenQueryRef = useRef('');
   // 外部变化检测需要实时读取 dirty / 磁盘基准（ref 保持最新）
@@ -372,11 +376,7 @@ export default function App() {
       document.documentElement.style.setProperty('--mellow-line-height', lhv);
     } catch { /* 默认 820 / 1.65 */ }
   }, []);
-  // Native Menu 本地化（menu.rs 目录；locale 切换 → 重建菜单，PRD §23/附录 J）
-  useEffect(() => {
-    if (!isTauri()) return;
-    void invoke('set_menu_locale', { locale }).catch(() => undefined);
-  }, [locale]);
+  // Native Menu 本地化（P1-1.3：locale 纳入 syncNativeMenu 统一重建；PRD §23/附录 J）
   // Print 打印样式表（PRD §77：与 PDF 共享排版常量；@page/@media print 只在打印时生效）
   useEffect(() => {
     const style = document.createElement('style');
@@ -414,6 +414,10 @@ export default function App() {
   const [fileFiltersOpen, setFileFiltersOpen] = useState(false);
   const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
   const [fileListItems, setFileListItems] = useState<FileListItem[]>([]);
+  // P3.6（G4-SIDE-06）常驻 filter：Files 模式（Tree/List 共用）按名称过滤
+  const [fileFilterQuery, setFileFilterQuery] = useState('');
+  const filteredFileTreeNodes = useMemo(() => filterFileTree(fileTreeNodes, fileFilterQuery), [fileTreeNodes, fileFilterQuery]);
+  const filteredFileListItems = useMemo(() => filterFileList(fileListItems, fileFilterQuery), [fileListItems, fileFilterQuery]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
   const [selectedListPath, setSelectedListPath] = useState<string | null>(null);
   const [fileTreeOptions, setFileTreeOptions] = useState<FileTreeOptions>(() => {
@@ -441,6 +445,8 @@ export default function App() {
     }
   });
   const [currentOutlineId, setCurrentOutlineId] = useState<string | null>(null);
+  // P3.3 Outline 键盘选中（与 caret 驱动的 currentOutlineId 分离，避免互相打架）
+  const [outlineSelectedId, setOutlineSelectedId] = useState<string | null>(null);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   // Tab Overview（⇧⌘\ 显示所有标签页，Typora 视图菜单对齐）
   const [tabOverviewOpen, setTabOverviewOpen] = useState(false);
@@ -459,6 +465,8 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchGroups, setSearchGroups] = useState<SearchGroup[]>([]);
   const [searchRunning, setSearchRunning] = useState(false);
+  // P3.3 Search 键盘选中（扁平匹配序列上的索引；流式追加时由渲染侧越界忽略）
+  const [searchSelectedIndex, setSearchSelectedIndex] = useState(-1);
   const [commandPaletteVisible, setCommandPaletteVisible] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
@@ -496,6 +504,10 @@ export default function App() {
   const [recentMissing, setRecentMissing] = useState<Record<string, boolean>>({});
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
+  // P2-2.6 快捷键自定义 override：Settings 录制 → localStorage → registry/native menu 装配边界生效
+  const [shortcutOverrides, setShortcutOverrides] = useState<ShortcutOverrideMap>(() => readShortcutOverrides());
+  const shortcutOverridesRef = useRef(shortcutOverrides);
+  shortcutOverridesRef.current = shortcutOverrides;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiEnabled] = useState(() => { try { return localStorage.getItem(AI_ENABLED_KEY) === '1'; } catch { return false; } });
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => {
@@ -1043,6 +1055,21 @@ export default function App() {
     setTypewriterMode(!typewriterEnabled);
   }, [setTypewriterMode, typewriterEnabled]);
 
+  // P2-2.6 快捷键可编辑：Settings 录制新键位（accelerator = null 表示恢复默认）。
+  // 单一真源不变 —— schema 仍是默认值唯一来源，override 仅在装配边界覆盖。
+  const handleShortcutOverride = useCallback((commandId: string, accelerator: string | null) => {
+    const next: ShortcutOverrideMap = { ...shortcutOverridesRef.current };
+    if (accelerator === null) {
+      delete next[commandId];
+    } else {
+      const platformKey = platformMac ? 'mac' as const : 'winLinux' as const;
+      next[commandId] = { ...next[commandId], [platformKey]: accelerator };
+    }
+    shortcutOverridesRef.current = next;
+    setShortcutOverrides(next);
+    writeShortcutOverrides(next);
+  }, [platformMac]);
+
   const setSelectionToolbarEnabled = useCallback((on: boolean) => {
     hostRef.current?.setSelectionToolbarEnabled(on);
     setSelectionToolbarEnabledState(on);
@@ -1437,6 +1464,28 @@ export default function App() {
     hostRef.current?.focus();
   }, []);
 
+  /** P1-1.7：复制光标处的数学 / Mermaid 源码（右键菜单经 dispatchCommand 调用） */
+  const engineCopySource = useCallback((kind: 'math' | 'mermaid') => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_ACTIONS__?: { copySource?: (kind: 'math' | 'mermaid') => boolean } }) | null;
+    const ok = win?.__MELLOW_CONTEXT_ACTIONS__?.copySource?.(kind) ?? false;
+    setStatusText(ok
+      ? t(kind === 'math' ? 'msg.mathSourceCopied' : 'msg.mermaidSourceCopied')
+      : t(kind === 'math' ? 'msg.mathSourceNone' : 'msg.mermaidSourceNone'));
+    return ok;
+  }, [t]);
+
+  /** P1-1.7：编辑动作（剪切/复制/粘贴）统一经 Registry 命令，右键菜单不再直连引擎 */
+  const engineEditAction = useCallback((action: 'cut' | 'copy' | 'paste') => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_ACTIONS__?: { cut?: () => void; copy?: () => void; paste?: () => void } }) | null;
+    const api = win?.__MELLOW_CONTEXT_ACTIONS__;
+    if (action === 'cut') api?.cut?.();
+    else if (action === 'copy') api?.copy?.();
+    else api?.paste?.();
+    hostRef.current?.focus();
+  }, []);
+
   /** 打开光标处链接（Typora 格式→链接操作→打开链接） */
   const handleOpenLinkAtCursor = useCallback(() => {
     const url = hostRef.current?.linkUrlAtCursor() ?? null;
@@ -1596,6 +1645,48 @@ export default function App() {
     refreshOutline(outlineActiveRef.current === id ? undefined : hostRef.current?.getSelectionHead());
   }, [refreshOutline]);
 
+  // ── P3.3 Outline 键盘导航（G4-SIDE-02：↑↓/Enter/Esc/Home/End）──
+  // 可见行序列：渲染与键盘导航共用同一计算（编辑器 outlineItems / Reader 大纲两种数据源）
+  const visibleOutlineItems = useCallback((): OutlineHeading[] => (
+    readerOpen
+      ? outlineModelRef.current.visibleItems(filterOutline(readerOutlineItems, outlineFilter), outlineFlat)
+      : outlineItems
+  ), [outlineFilter, outlineFlat, outlineItems, readerOpen, readerOutlineItems]);
+
+  // 过滤词变化 → 选中项可能已不在可见序列，清空键盘选中
+  useEffect(() => {
+    setOutlineSelectedId(null);
+    outlineModelRef.current.selectedId = null;
+  }, [outlineFilter]);
+
+  const handleOutlineKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    const model = outlineModelRef.current;
+    const items = visibleOutlineItems();
+    const map: Record<string, 'up' | 'down' | 'home' | 'end' | 'enter' | undefined> = { ArrowUp: 'up', ArrowDown: 'down', Home: 'home', End: 'end', Enter: 'enter' };
+    if (event.target instanceof HTMLInputElement) {
+      // 焦点在过滤输入框：↑↓ 移动选中、Esc 清空过滤；Home/End/Enter 保留输入框光标/原生行为
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOutlineFilter('');
+        setOutlineSelectedId(null);
+        model.selectedId = null;
+        return;
+      }
+      const key = map[event.key];
+      if (key === 'up' || key === 'down') {
+        event.preventDefault();
+        setOutlineSelectedId(model.navigate(items, key).selectedId);
+      }
+      return;
+    }
+    const key = map[event.key];
+    if (key === undefined) return;
+    event.preventDefault();
+    const r = model.navigate(items, key);
+    setOutlineSelectedId(r.selectedId);
+    if (r.jump) handleOutlineJump(r.jump);
+  }, [handleOutlineJump, visibleOutlineItems]);
+
   const rememberRecentFolder = useCallback((folder: string) => {
     setRecentFolders((current) => {
       const next = pushRecentFolder(current, folder);
@@ -1641,8 +1732,9 @@ export default function App() {
 
   const treeFlatten = useCallback(() => {
     const model = fileTreeModelRef.current;
-    return model?.flatten(fileTreeNodes) ?? [];
-  }, [fileTreeNodes]);
+    // P3.6：键盘导航/选中目录解析均基于过滤后序列（与渲染同源）
+    return model?.flatten(filteredFileTreeNodes) ?? [];
+  }, [filteredFileTreeNodes]);
 
   const selectedTreeDir = useCallback(() => {
     const selected = selectedTreePath;
@@ -1671,6 +1763,14 @@ export default function App() {
     await refreshFileTree();
     await refreshFileList();
   }, [refreshFileList, refreshFileTree]);
+
+  // P3.7 修复：refreshFilesSidebar 的引用链为 refreshFileList → selectedTreeDir →
+  // treeFlatten → filteredFileTreeNodes → fileTreeNodes，每次树刷新（setFileTreeNodes
+  // 产生新数组）都会重建该函数。它直接作 effect deps 时，打开 workspace 即陷入
+  // 「刷新 → 函数重建 → effect 重跑 → 再刷新」的无限循环（P3.4 起引入，此前无测试
+  // 打开过 workspace 未暴露）。经 ref 间接调用，effect 只依赖真正驱动重建的配置值。
+  const refreshFilesSidebarRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => { refreshFilesSidebarRef.current = refreshFilesSidebar; }, [refreshFilesSidebar]);
 
   const openTreeFile = useCallback(async (path: string) => {
     const documents = documentsRef.current;
@@ -1835,6 +1935,46 @@ export default function App() {
     });
   }, [openTreeFile]);
 
+  // ── P3.3 Search 键盘导航（G4-SIDE-02：↑↓/Enter/Esc/Home/End）──
+  // 扁平匹配序列（行序 = 组序 + 组内序），键盘导航与 SearchResultsList 高亮共用
+  const flatSearchMatches = useMemo(() => searchGroups.flatMap((group) => group.matches), [searchGroups]);
+
+  // 查询词变化 → 旧选中失效
+  useEffect(() => {
+    searchResultsModelRef.current.reset();
+    setSearchSelectedIndex(-1);
+  }, [searchQuery]);
+
+  const handleSearchKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    const model = searchResultsModelRef.current;
+    const map: Record<string, 'up' | 'down' | 'home' | 'end' | 'enter' | undefined> = { ArrowUp: 'up', ArrowDown: 'down', Home: 'home', End: 'end', Enter: 'enter' };
+    if (event.target instanceof HTMLInputElement) {
+      // 焦点在搜索输入框：↑↓ 移动选中、Esc 清空搜索；Home/End 保留光标移动、Enter 保留原生（运行搜索）
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        searchCancelRef.current?.();
+        setSearchQuery('');
+        setSearchResults([]);
+        setSearchGroups([]);
+        setSearchSelectedIndex(-1);
+        model.reset();
+        return;
+      }
+      const key = map[event.key];
+      if (key === 'up' || key === 'down') {
+        event.preventDefault();
+        setSearchSelectedIndex(model.navigate(flatSearchMatches, key).selectedIndex);
+      }
+      return;
+    }
+    const key = map[event.key];
+    if (key === undefined) return;
+    event.preventDefault();
+    const r = model.navigate(flatSearchMatches, key);
+    setSearchSelectedIndex(r.selectedIndex);
+    if (r.jump) void jumpToSearchResult(r.jump);
+  }, [flatSearchMatches, jumpToSearchResult]);
+
   const handleTreeToggle = useCallback(async (path: string) => {
     const model = fileTreeModelRef.current;
     if (!model) return;
@@ -1871,14 +2011,22 @@ export default function App() {
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreeDir]);
 
-  const handleTreeRename = useCallback(async (name?: string) => {
+  const handleTreeRename = useCallback(async (name?: string, pathOverride?: string) => {
     const svc = fileTreeServiceRef.current;
-    if (!svc || selectedTreePath === null) return;
-    const next = name ?? window.prompt(t('prompt.rename'), selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
+    // P3.4：File List 键盘 F2 复用同一重命名流（pathOverride = 列表选中项）
+    const target = pathOverride ?? selectedTreePath;
+    if (!svc || target === null) return;
+    const next = name ?? window.prompt(t('prompt.rename'), target.split(/[\\/]/).pop() ?? target);
     if (!next) return;
-    const r = await svc.rename(selectedTreePath, next);
+    const r = await svc.rename(target, next);
     setStatusText(r.ok ? t('msg.renamed', { value: r.value }) : t('msg.renameFailed', { error: r.error.message }));
-    if (r.ok) setSelectedTreePath(r.value);
+    if (r.ok) {
+      setSelectedTreePath(r.value);
+      if (pathOverride !== undefined) {
+        fileListModelRef.current.selectedPath = r.value;
+        setSelectedListPath(r.value);
+      }
+    }
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
@@ -1912,13 +2060,21 @@ export default function App() {
     await refreshFilesSidebar();
   }, [refreshFileTree]);
 
-  const handleTreeTrash = useCallback(async () => {
+  const handleTreeTrash = useCallback(async (pathOverride?: string) => {
     const svc = fileTreeServiceRef.current;
-    if (!svc || selectedTreePath === null) return;
-    if (!window.confirm(t('dialog.trashConfirm', { path: selectedTreePath }))) return;
-    const r = await svc.trash(selectedTreePath);
+    // P3.4：File List 键盘 Delete 复用同一 Trash 流（pathOverride = 列表选中项）
+    const target = pathOverride ?? selectedTreePath;
+    if (!svc || target === null) return;
+    if (!window.confirm(t('dialog.trashConfirm', { path: target }))) return;
+    const r = await svc.trash(target);
     setStatusText(r.ok ? t('msg.trashed') : t('msg.deleteFailed', { error: r.error.message }));
-    if (r.ok) setSelectedTreePath(null);
+    if (r.ok) {
+      setSelectedTreePath(null);
+      if (pathOverride !== undefined) {
+        fileListModelRef.current.selectedPath = null;
+        setSelectedListPath(null);
+      }
+    }
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
@@ -1930,9 +2086,11 @@ export default function App() {
     await refreshFilesSidebar();
   }, [refreshFileTree]);
 
-  const handleTreeCopyPath = useCallback(async (relative: boolean) => {
-    if (selectedTreePath === null) return;
-    const text = relative && fileTreeRoot !== null ? fileTreeRelativePath(fileTreeRoot, selectedTreePath) : selectedTreePath;
+  const handleTreeCopyPath = useCallback(async (relative: boolean, pathOverride?: string) => {
+    // P3.5：File List / Search 右键复制路径复用同一流（pathOverride = 目标项路径）
+    const target = pathOverride ?? selectedTreePath;
+    if (target === null) return;
+    const text = relative && fileTreeRoot !== null ? fileTreeRelativePath(fileTreeRoot, target) : target;
     await navigator.clipboard.writeText(text);
     setStatusText(relative ? t('msg.copiedRelativePath', { text }) : t('msg.copiedPath', { text }));
   }, [fileTreeRoot, selectedTreePath]);
@@ -1971,6 +2129,52 @@ export default function App() {
     });
   }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo]);
 
+  /** P3.5 File List 右键菜单：行内项（打开/在文件树中显示/重命名/Trash/复制路径）；空白区仅刷新 */
+  const openFileListContextMenu = useCallback((event: React.MouseEvent, path?: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (path !== undefined) {
+      fileListModelRef.current.selectedPath = path;
+      setSelectedListPath(path);
+    }
+    const items: ContextMenuItem[] = path !== undefined ? [
+      { label: t('contextmenu.open'), enabled: true, onClick: () => void openTreeFile(path) },
+      { label: t('contextmenu.revealInTree'), enabled: true, onClick: () => { setFileSidebarMode('tree'); setSelectedTreePath(path); } },
+      { label: t('contextmenu.rename'), enabled: true, onClick: () => void handleTreeRename(undefined, path) },
+      { label: t('contextmenu.trash'), enabled: true, onClick: () => void handleTreeTrash(path) },
+      { label: t('contextmenu.copyPath'), enabled: true, onClick: () => void handleTreeCopyPath(false, path) },
+      { label: t('contextmenu.copyRelativePath'), enabled: fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true, path) },
+    ] : [
+      { label: t('sidebar.refresh'), enabled: fileTreeRoot !== null, onClick: () => void refreshFilesSidebar() },
+    ];
+    setContextMenu({ x: event.clientX, y: event.clientY, items });
+  }, [fileTreeRoot, handleTreeCopyPath, handleTreeRename, handleTreeTrash, openTreeFile, refreshFilesSidebar, setFileSidebarMode]);
+
+  /** P3.5 Outline 右键菜单：跳转/平铺-树形切换/全部折叠/全部展开（8.5 合同 Context 项） */
+  const openOutlineContextMenu = useCallback((event: React.MouseEvent, item: OutlineHeading) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const items: ContextMenuItem[] = [
+      { label: t('outline.jumpToHeading'), enabled: true, onClick: () => handleOutlineJump(item) },
+      { label: outlineFlat ? t('outline.switchTree') : t('outline.switchFlat'), enabled: true, onClick: () => setOutlineFlat(!outlineFlat) },
+      { label: t('outline.collapseAll'), enabled: !outlineFlat, onClick: () => { outlineModelRef.current.collapseAll(visibleOutlineItems()); refreshOutline(hostRef.current?.getSelectionHead()); } },
+      { label: t('outline.expandAll'), enabled: !outlineFlat, onClick: () => { outlineModelRef.current.collapsed.clear(); refreshOutline(hostRef.current?.getSelectionHead()); } },
+    ];
+    setContextMenu({ x: event.clientX, y: event.clientY, items });
+  }, [handleOutlineJump, outlineFlat, refreshOutline, visibleOutlineItems]);
+
+  /** P3.5 Search 右键菜单：跳转/复制路径/复制相对路径 */
+  const openSearchContextMenu = useCallback((event: React.MouseEvent, match: SearchResult) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const items: ContextMenuItem[] = [
+      { label: t('search.jumpToMatch'), enabled: true, onClick: () => void jumpToSearchResult(match) },
+      { label: t('contextmenu.copyPath'), enabled: true, onClick: () => void handleTreeCopyPath(false, match.path) },
+      { label: t('contextmenu.copyRelativePath'), enabled: fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true, match.path) },
+    ];
+    setContextMenu({ x: event.clientX, y: event.clientY, items });
+  }, [fileTreeRoot, handleTreeCopyPath, jumpToSearchResult]);
+
   const handleTreeKeyDown = useCallback((event: ReactKeyboardEvent) => {
     const model = fileTreeModelRef.current;
     if (!model) return;
@@ -2002,20 +2206,34 @@ export default function App() {
   }, []);
 
   const handleFileListKeyDown = useCallback((event: ReactKeyboardEvent) => {
-    const key = event.key === 'ArrowDown' ? 'down' : event.key === 'ArrowUp' ? 'up' : event.key === 'Enter' ? 'enter' : null;
-    if (key === null) return;
-    event.preventDefault();
-    const r = fileListModelRef.current.navigate(fileListItems, key);
-    setSelectedListPath(r.selected);
-    if (r.open) void openTreeFile(r.open);
-  }, [fileListItems, openTreeFile]);
+    // P3.4（G4-SIDE-01）：↑↓/Enter 既有 + ←→（单列列表与 ↑↓ 同义）+ PageUp/PageDown 整页移动
+    const map: Record<string, 'up' | 'down' | 'left' | 'right' | 'enter' | 'pageup' | 'pagedown' | undefined> = {
+      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter', PageUp: 'pageup', PageDown: 'pagedown',
+    };
+    const key = map[event.key];
+    if (key !== undefined) {
+      event.preventDefault();
+      const r = fileListModelRef.current.navigate(filteredFileListItems, key);
+      setSelectedListPath(r.selected);
+      if (r.open) void openTreeFile(r.open);
+      return;
+    }
+    if (event.key === 'F2' && selectedListPath !== null) {
+      event.preventDefault();
+      void handleTreeRename(undefined, selectedListPath);
+    }
+    if (event.key === 'Delete' && selectedListPath !== null) {
+      event.preventDefault();
+      void handleTreeTrash(selectedListPath);
+    }
+  }, [filteredFileListItems, handleTreeRename, handleTreeTrash, openTreeFile, selectedListPath]);
 
   useEffect(() => {
     if (fileTreeRoot !== null) {
       fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
-      void refreshFilesSidebar();
+      void refreshFilesSidebarRef.current();
     }
-  }, [fileListOptions, fileTreeOptions, fileTreeRoot, refreshFilesSidebar]);
+  }, [fileListOptions, fileTreeOptions, fileTreeRoot]);
 
   useEffect(() => {
     refreshOutlineRef.current();
@@ -2305,6 +2523,11 @@ export default function App() {
           if (wrapDef && readSetting(wrapDef) === false) {
             host.setEditorConfig('setLineWrapping', { enabled: false });
           }
+          // P2-2.1 行高启动恢复：CoreEditor 默认 1.5 ≠ Mellow 默认 1.65，必须无条件
+          // apply 对齐（读不到设置时回落 1.65），不能沿用「非默认才 apply」模式。
+          const lineHeightDef = settingById('editor.lineHeight');
+          const lineHeightValue = lineHeightDef ? readSetting(lineHeightDef) : 1.65;
+          host.setEditorConfig('setLineHeight', { lineHeight: typeof lineHeightValue === 'number' && lineHeightValue > 0 ? lineHeightValue : 1.65 });
           // D1-1 拼写检查启动恢复（默认 true；大文件模式由引擎侧强制关闭）
           const spellDef = settingById('editor.spellcheck');
           if (spellDef && readSetting(spellDef) === false) {
@@ -2654,18 +2877,21 @@ export default function App() {
 
   /** 编辑器右键菜单（engine → __MELLOW_CONTEXT_MENU__ 请求 → 弹 ContextMenu） */
   const handleEditorContextMenu = useCallback((req: EditorContextMenuRequest) => {
-    const frame = containerRef.current?.querySelector('iframe');
-    const win = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_ACTIONS__?: EditorContextActions }) | null;
+    // P1-1.7（G4-MENU-07）：右键菜单只发命令，不直接调用引擎。
+    // 所有条目走 dispatchCommand，与菜单 / 快捷键 / 命令面板共用同一入口与同一 enabledWhen。
+    const run = (id: string) => () => { void dispatchCommand(id, 'context-menu'); };
     const items: ContextMenuItem[] = [
-      { label: t('contextmenu.editorCut'), enabled: req.hasSelection, onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.cut() },
-      { label: t('contextmenu.editorCopy'), enabled: req.hasSelection, onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.copy() },
-      { label: t('contextmenu.editorPaste'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.paste() },
+      { label: t('contextmenu.editorCut'), enabled: req.hasSelection, onClick: run('edit.cut') },
+      { label: t('contextmenu.editorCopy'), enabled: req.hasSelection, onClick: run('edit.copy') },
+      { label: t('contextmenu.editorPaste'), onClick: run('edit.paste') },
     ];
+    // P1-1.7：链接右键。依据 Typora 1.14.9 getMenuItemsForMac，链接上的条目序列为
+    // ["openLink","copyLink","|","normal",download]，即「打开链接 / 复制链接地址 / ── / 剪切拷贝粘贴」。
     if (req.kind === 'link' && req.url !== undefined) {
-      items.push({
-        label: t('contextmenu.editorOpenLink'),
-        onClick: () => { void openerRef.current?.openUrl(req.url as string); },
-      });
+      items.push(
+        { label: t('contextmenu.editorOpenLink'), onClick: run('format.openLink') },
+        { label: t('contextmenu.editorCopyLink'), onClick: run('format.copyLinkUrl') },
+      );
     }
     if (req.kind === 'wikilink' && req.name !== undefined) {
       items.push({
@@ -2681,25 +2907,40 @@ export default function App() {
         { label: t('contextmenu.editorImageRename'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'rename' }); } },
       );
     }
+    // P1-1.7：代码块 / 公式块 / 图表块级分支。
+    // 依据 Typora 1.14.9 appsrc/main.js getMenuItemsForMac：
+    //   fences（普通代码块）→ ["|","code-tools","|","insertParagraphBefore","insertParagraphAfter","delete-fences"]
+    //   math_block            → ["|","edit","copyMathBlock","download-math","code-tools","|",...]
+    //   fences + md-diagram   → ["|","edit","copy-as-image","download-diagram","code-tools","|",...]
+    // 其中 code-tools 是子菜单（Copy Code Content / Auto Indent Whole Code / Auto Indent Selected Code）。
+    // Mellow 的 ContextMenuItem 目前不支持子菜单，故扁平化呈现内容复制项（Adapter 层已知差异，见 parity ledger）。
+    if (req.kind === 'code') {
+      items.push({ label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') });
+    }
+    if (req.kind === 'math') {
+      items.push({ label: t('contextmenu.mathCopyAsTex'), onClick: run('math.copyAsTex') });
+    }
+    // req.kind === 'mermaid'：Typora 只提供「复制为图片 / 下载」，无源码复制项，
+    // 故此处不追加条目；源码复制保留为命令面板命令（mermaid.copySource，B 类增强）。
     if (req.kind === 'table') {
       items.push(
-        { label: t('contextmenu.tableAddRowAbove'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addRowAbove') },
-        { label: t('contextmenu.tableAddRowBelow'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addRowBelow') },
-        { label: t('contextmenu.tableDeleteRow'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteRow') },
-        { label: t('contextmenu.tableAddColumnLeft'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addColumnLeft') },
-        { label: t('contextmenu.tableAddColumnRight'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('addColumnRight') },
-        { label: t('contextmenu.tableDeleteColumn'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteColumn') },
-        { label: t('contextmenu.tableMoveRowUp'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveRowUp') },
-        { label: t('contextmenu.tableMoveRowDown'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveRowDown') },
-        { label: t('contextmenu.tableMoveColumnLeft'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveColumnLeft') },
-        { label: t('contextmenu.tableMoveColumnRight'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('moveColumnRight') },
-        { label: t('contextmenu.tableCopyTable'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('copyTable') },
-        { label: t('contextmenu.tableTidy'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('tidy') },
-        { label: t('contextmenu.tableDeleteTable'), onClick: () => win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp('deleteTable') },
+        { label: t('contextmenu.tableAddRowAbove'), onClick: run('table.addRowAbove') },
+        { label: t('contextmenu.tableAddRowBelow'), onClick: run('table.addRowBelow') },
+        { label: t('contextmenu.tableDeleteRow'), onClick: run('table.deleteRow') },
+        { label: t('contextmenu.tableAddColumnLeft'), onClick: run('table.addColumnLeft') },
+        { label: t('contextmenu.tableAddColumnRight'), onClick: run('table.addColumnRight') },
+        { label: t('contextmenu.tableDeleteColumn'), onClick: run('table.deleteColumn') },
+        { label: t('contextmenu.tableMoveRowUp'), onClick: run('table.moveRowUp') },
+        { label: t('contextmenu.tableMoveRowDown'), onClick: run('table.moveRowDown') },
+        { label: t('contextmenu.tableMoveColumnLeft'), onClick: run('table.moveColumnLeft') },
+        { label: t('contextmenu.tableMoveColumnRight'), onClick: run('table.moveColumnRight') },
+        { label: t('contextmenu.tableCopyTable'), onClick: run('table.copyTable') },
+        { label: t('contextmenu.tableTidy'), onClick: run('table.tidy') },
+        { label: t('contextmenu.tableDeleteTable'), onClick: run('table.deleteTable') },
       );
     }
     setContextMenu({ x: req.x, y: req.y, items });
-  }, [handleImageAction, t]);
+  }, [dispatchCommand, handleImageAction, t]);
   const handleEditorContextMenuRef = useRef(handleEditorContextMenu);
   handleEditorContextMenuRef.current = handleEditorContextMenu;
 
@@ -2889,13 +3130,14 @@ export default function App() {
     if (next) await applyTab(next);
   }, [applyTab, confirmCloseTabs, ensureOneTab, refreshTabsState, syncActiveTabFromEditor]);
 
-  const handleCloseOthers = useCallback(async () => {
-    const active = tabsRef.current.active;
-    if (active === null) return;
+  const handleCloseOthers = useCallback(async (anchorId?: string) => {
     syncActiveTabFromEditor();
-    const closing = tabsRef.current.all.filter((tab) => tab.id !== active.id);
+    // P2-2.4：Tab 右键以被右键 tab 为锚点（命令路径不传参 → 保持 active 基准）
+    const anchor = (anchorId !== undefined ? tabsRef.current.all.find((tb) => tb.id === anchorId) : null) ?? tabsRef.current.active;
+    if (anchor === null) return;
+    const closing = tabsRef.current.all.filter((tab) => tab.id !== anchor.id);
     if (!confirmCloseTabs(closing)) return;
-    tabsRef.current.closeOthers(active.id);
+    tabsRef.current.closeOthers(anchor.id);
     refreshTabsState();
     const next = tabsRef.current.active;
     if (next) await applyTab(next);
@@ -2967,14 +3209,15 @@ export default function App() {
     await refreshFilesSidebar();
   }, [applyTab, ensureOneTab, refreshFilesSidebar, refreshTabsState]);
 
-  const handleCloseRight = useCallback(async () => {
-    const active = tabsRef.current.active;
-    if (active === null) return;
+  const handleCloseRight = useCallback(async (anchorId?: string) => {
     syncActiveTabFromEditor();
-    const index = tabsRef.current.activeIndex;
+    // P2-2.4：Tab 右键以被右键 tab 为锚点（命令路径不传参 → 保持 active 基准）
+    const anchor = (anchorId !== undefined ? tabsRef.current.all.find((tb) => tb.id === anchorId) : null) ?? tabsRef.current.active;
+    if (anchor === null) return;
+    const index = tabsRef.current.all.findIndex((tb) => tb.id === anchor.id);
     const closing = tabsRef.current.all.slice(index + 1);
     if (!confirmCloseTabs(closing)) return;
-    tabsRef.current.closeRight(active.id);
+    tabsRef.current.closeRight(anchor.id);
     refreshTabsState();
   }, [confirmCloseTabs, refreshTabsState, syncActiveTabFromEditor]);
 
@@ -3061,7 +3304,7 @@ export default function App() {
         setSlashEnabled(Boolean(value));
         break;
       case 'settings.fileTreeOptions':
-        setFileTreeOption(def.id === 'file.showHidden' ? { showHidden: Boolean(value) } : { showNonMarkdown: Boolean(value) });
+        setFileTreeOption(def.id === 'files.showHidden' ? { showHidden: Boolean(value) } : { showNonMarkdown: Boolean(value) });
         break;
       case 'settings.sidebarMode':
         setSidebarMode(String(value) as 'files' | 'outline' | 'search');
@@ -3072,6 +3315,14 @@ export default function App() {
       case 'file.openUserCss':
         // 主题文件夹入口（Typora 偏好→外观；action 型设置 → 命令派发）
         void dispatchCommand('file.openUserCss');
+        break;
+      case 'help.cheatsheet':
+        // P2-2.6：Settings 快捷键列表入口 → 快捷键速查表
+        void dispatchCommand('help.cheatsheet');
+        break;
+      case 'updater.check':
+        // P2-2.6：Settings「检查更新」→ 既有 updater.check 命令
+        void dispatchCommand('updater.check');
         break;
       case 'settings.spellcheck': {
         // D1-1 拼写检查 live apply：引擎偏好 + 原生菜单 CheckMenuItem 状态同步
@@ -3100,8 +3351,12 @@ export default function App() {
         break;
       }
       case 'settings.lineHeight': {
-        // 行高：编辑器内容行高（PRD §18：1.55–1.75，默认 1.65）
-        document.documentElement.style.setProperty('--mellow-line-height', String(Number(value) || 1.65));
+        // 行高：编辑器内容行高（PRD §18：1.2–2.2，默认 1.65）。
+        // P2-2.1：CSS 变量只对同文档 Reader 生效；编辑器在 iframe 内读不到外层
+        // document 变量，必须经 setEditorConfig('setLineHeight') 走 CoreEditor 通道。
+        const lh = Number(value) || 1.65;
+        document.documentElement.style.setProperty('--mellow-line-height', String(lh));
+        hostRef.current?.setEditorConfig('setLineHeight', { lineHeight: lh });
         break;
       }
       case 'settings.autosave':
@@ -3202,10 +3457,16 @@ export default function App() {
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
   }, []);
+  // P1-1.3：菜单 checkState 变更 tick —— spellcheck/smartPunct 写入 localStorage 设置
+  // （非 React state），toggle 后自增以触发 syncNativeMenu 重建原生菜单。
+  const [menuCheckTick, setMenuCheckTick] = useState(0);
   useEffect(() => {
     const registry = new CommandRegistry();
     const always = () => true;
     const hasWorkspace = () => fileTreeRoot !== null;
+    // P1-1.7：剪贴板命令的可用性。右键菜单与菜单/快捷键共用同一 enabledWhen（§7.4 硬规则 5/7），
+    // 避免「菜单里可点、快捷键无效」或反之的双真源问题。
+    const hasSelection = () => hostRef.current?.getState().hasSelection ?? false;
     const commands: Command[] = [
       { id: 'extensions.list', localizedTitle: { zh: '扩展列表', en: 'Extensions List' }, category: 'extension', context: { scope: 'global' }, enabled: always, execute: () => {
         const reg = extensionRegistryRef.current;
@@ -3213,9 +3474,20 @@ export default function App() {
         const list = reg.list().map((e) => `${e.enabled ? '✅' : '⛔'} ${e.name} (${e.id}) v${e.version}${e.setupError !== undefined ? ` [${e.setupError}]` : ''}`).join('；');
         setStatusText(`扩展: ${list === '' ? '无' : list}`);
       } },
-      { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', shortcut: { mac: 'Cmd+T', winLinux: 'Ctrl+Alt+T' }, context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
+      // P1-1.8：Typora 官方键位 —— 新建 ⌘N/Ctrl+N、新建窗口 ⇧⌘N/Ctrl+Shift+N、新建标签页 ⌘T/Ctrl+Alt+T
+      { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
+      { id: 'file.newWindow', localizedTitle: { zh: '新建窗口', en: 'New Window' }, category: 'file', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => {
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window')).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
+      } },
+      { id: 'file.newTab', localizedTitle: { zh: '新建标签页', en: 'New Tab' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
+      // P1-1.9：「在文档列表中显示 / 在文件树中显示」（Typora 文件菜单，§7.2 第 11/12 项）
+      { id: 'file.revealInFileList', localizedTitle: { zh: '在文档列表中显示', en: 'Reveal in File List' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files', 'list') },
+      { id: 'file.revealInFileTree', localizedTitle: { zh: '在文件树中显示', en: 'Reveal in File Tree' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files', 'tree') },
+      { id: 'file.pageSetup', localizedTitle: { zh: '页面设置…', en: 'Page Setup…' }, category: 'file', context: { scope: 'document' }, enabled: () => isTauri(), execute: () => {
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('page_setup')).catch(() => setToast({ message: t('file.pageSetup.unavailable') }));
+      } },
       { id: 'file.open', localizedTitle: { zh: '打开…', en: 'Open…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleOpen() },
-      { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' }, context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
+      { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
       { id: 'file.saveAs', localizedTitle: { zh: '另存为…', en: 'Save As…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAs() },
       { id: 'document.rename', localizedTitle: { zh: '重命名…', en: 'Rename…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleRenameDocument() },
       // D1-2/D1-3 文档操作（Typora 文件→移到…/删除）
@@ -3231,30 +3503,30 @@ export default function App() {
           await revealItemInDir(p).catch(() => undefined);
         }).catch(() => undefined);
       } },
-      { id: 'tabs.close', localizedTitle: { zh: '关闭标签页', en: 'Close Tab' }, category: 'file', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' }, context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => { const active = tabsRef.current.active; if (active) void handleCloseTab(active.id); } },
+      { id: 'tabs.close', localizedTitle: { zh: '关闭标签页', en: 'Close Tab' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => { const active = tabsRef.current.active; if (active) void handleCloseTab(active.id); } },
       { id: 'tabs.closeOthers', localizedTitle: { zh: '关闭其他', en: 'Close Others' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseOthers() },
       { id: 'tabs.closeRight', localizedTitle: { zh: '关闭右侧', en: 'Close Right' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseRight() },
-      { id: 'tabs.reopenClosed', localizedTitle: { zh: '重开关闭', en: 'Reopen Closed' }, category: 'file', shortcut: { mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' }, context: { scope: 'global' }, enabled: always, execute: () => void handleReopenClosed() },
+      { id: 'tabs.reopenClosed', localizedTitle: { zh: '重开关闭', en: 'Reopen Closed' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleReopenClosed() },
       // B2 文件菜单补全（Typora 对齐：全部关闭 / 保存全部 / 从磁盘重新加载）
-      { id: 'file.closeAll', localizedTitle: { zh: '全部关闭', en: 'Close All' }, category: 'file', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' }, context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 0, execute: () => void handleCloseAll() },
-      { id: 'file.saveAll', localizedTitle: { zh: '保存全部打开的文件…', en: 'Save All Open Files…' }, category: 'file', shortcut: { mac: 'Cmd+Alt+S', winLinux: 'Ctrl+Alt+S' }, context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAll() },
+      { id: 'file.closeAll', localizedTitle: { zh: '全部关闭', en: 'Close All' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 0, execute: () => void handleCloseAll() },
+      { id: 'file.saveAll', localizedTitle: { zh: '保存全部打开的文件…', en: 'Save All Open Files…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAll() },
       { id: 'file.reloadFromDisk', localizedTitle: { zh: '从磁盘重新加载', en: 'Reload from Disk' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleReloadFromDisk() },
       // B2 窗口菜单补全（Typora 对齐：显示下一个/上一个标签页）
       { id: 'tabs.next', localizedTitle: { zh: '显示下一个标签页', en: 'Show Next Tab' }, category: 'window', shortcut: { mac: 'Ctrl+Tab', winLinux: 'Ctrl+Tab' }, context: { scope: 'global' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCycleTab(1) },
       { id: 'tabs.prev', localizedTitle: { zh: '显示上一个标签页', en: 'Show Previous Tab' }, category: 'window', shortcut: { mac: 'Ctrl+Shift+Tab', winLinux: 'Ctrl+Shift+Tab' }, context: { scope: 'global' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCycleTab(-1) },
       { id: 'workspace.openFolder', localizedTitle: { zh: '打开文件夹…', en: 'Open Folder…' }, category: 'workspace', context: { scope: 'global' }, enabled: always, execute: () => void chooseFileTreeRoot() },
       { id: 'workspace.refresh', localizedTitle: { zh: '刷新文件', en: 'Refresh Files' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void refreshFilesSidebar() },
-      { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', shortcut: { mac: 'Cmd+Shift+O', winLinux: 'Ctrl+P' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
-      { id: 'search.global', localizedTitle: { zh: '全局搜索', en: 'Global Search' }, category: 'search', shortcut: { mac: 'Cmd+Shift+F', winLinux: 'Ctrl+Shift+F' }, context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => openGlobalSearch() },
-      { id: 'view.focus.cycle', localizedTitle: { zh: '切换 Focus Mode', en: 'Toggle Focus Mode' }, category: 'view', shortcut: { mac: 'F8', winLinux: 'F8' }, context: { scope: 'document' }, enabled: always, execute: () => cycleFocusMode() },
+      { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
+      { id: 'search.global', localizedTitle: { zh: '全局搜索', en: 'Global Search' }, category: 'search', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => openGlobalSearch() },
+      { id: 'view.focus.cycle', localizedTitle: { zh: '切换 Focus Mode', en: 'Toggle Focus Mode' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => cycleFocusMode() },
       { id: 'view.focus.off', localizedTitle: { zh: 'Focus Mode：关闭', en: 'Focus Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('off') },
       { id: 'view.focus.line', localizedTitle: { zh: 'Focus Mode：当前行', en: 'Focus Mode: Current Line' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('line') },
       { id: 'view.focus.paragraph', localizedTitle: { zh: 'Focus Mode：当前段落', en: 'Focus Mode: Current Paragraph' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('paragraph') },
-      { id: 'view.typewriter.cycle', localizedTitle: { zh: '切换 Typewriter Mode', en: 'Toggle Typewriter Mode' }, category: 'view', shortcut: { mac: 'F9', winLinux: 'F9' }, context: { scope: 'document' }, enabled: always, execute: () => toggleTypewriter() },
-      { id: 'view.source.toggle', localizedTitle: { zh: '源码模式', en: 'Source Mode' }, category: 'view', shortcut: { mac: 'Cmd+/', winLinux: 'Ctrl+/' }, context: { scope: 'global' }, enabled: always, execute: () => engineSourceToggle() },
-      { id: 'view.zoomReset', localizedTitle: { zh: '实际大小', en: 'Actual Size' }, category: 'view', shortcut: { mac: 'Cmd+Shift+0', winLinux: 'Ctrl+Shift+0' }, context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(0) },
-      { id: 'view.zoomIn', localizedTitle: { zh: '放大', en: 'Zoom In' }, category: 'view', shortcut: { mac: 'Cmd+Shift+=', winLinux: 'Ctrl+Shift+=' }, context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(1) },
-      { id: 'view.zoomOut', localizedTitle: { zh: '缩小', en: 'Zoom Out' }, category: 'view', shortcut: { mac: 'Cmd+Shift+-', winLinux: 'Ctrl+Shift+-' }, context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(-1) },
+      { id: 'view.typewriter.cycle', localizedTitle: { zh: '切换 Typewriter Mode', en: 'Toggle Typewriter Mode' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleTypewriter() },
+      { id: 'view.source.toggle', localizedTitle: { zh: '源码模式', en: 'Source Mode' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => engineSourceToggle() },
+      { id: 'view.zoomReset', localizedTitle: { zh: '实际大小', en: 'Actual Size' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(0) },
+      { id: 'view.zoomIn', localizedTitle: { zh: '放大', en: 'Zoom In' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(1) },
+      { id: 'view.zoomOut', localizedTitle: { zh: '缩小', en: 'Zoom Out' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(-1) },
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
       { id: 'view.toolbar.toggle', localizedTitle: { zh: '切换格式工具栏', en: 'Toggle Format Toolbar' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleSelectionToolbar() },
@@ -3273,7 +3545,7 @@ export default function App() {
       { id: 'reader.zoomReset', localizedTitle: { zh: 'Reader 重置缩放', en: 'Reader Reset Zoom' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(1) },
       { id: 'reader.print', localizedTitle: { zh: '打印 Reader', en: 'Print Reader' }, category: 'file', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       // RC F2：打印入口（对齐 Typora Cmd+P；golden journey #18）
-      { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+Alt+P' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
+      { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       { id: 'file.openWith', localizedTitle: { zh: '打开方式…', en: 'Open With…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => openOpenWith() },
       { id: 'file.info', localizedTitle: { zh: '文件信息', en: 'File Info' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => openFileInfo() },
       { id: 'file.openUserCss', localizedTitle: { zh: '打开用户 CSS（appData/user.css）', en: 'Open User CSS (appData/user.css)' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
@@ -3304,7 +3576,7 @@ export default function App() {
       // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
       { id: 'export.image', localizedTitle: { zh: '导出图片（PNG/JPEG）…', en: 'Export Image (PNG/JPEG)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportImage() },
       // RC F1：PDF 导出（golden journey #19）
-      { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+Cmd+P' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
+      { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
       { id: 'image.moveAll', localizedTitle: { zh: '图片：移动全部到 asset 目录', en: 'Images: Move All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('moveAll') },
       { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
       { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
@@ -3312,12 +3584,12 @@ export default function App() {
       { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt(t('prompt.assetDir'), assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
       { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
       { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },
-      { id: 'window.fullscreen', localizedTitle: { zh: '切换全屏', en: 'Toggle Fullscreen' }, category: 'system', shortcut: { mac: 'Ctrl+Cmd+F', winLinux: 'F11' }, context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isFullscreen().then((r) => { if (r.ok) void windowServiceRef.current?.setFullscreen(!r.value); }); } },
+      { id: 'window.fullscreen', localizedTitle: { zh: '切换全屏', en: 'Toggle Fullscreen' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isFullscreen().then((r) => { if (r.ok) void windowServiceRef.current?.setFullscreen(!r.value); }); } },
       // B2 显示菜单补全（Typora 对齐：保持窗口在最前端，toggle）
       { id: 'window.alwaysOnTop', localizedTitle: { zh: '保持窗口在最前端', en: 'Keep Window on Top' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isAlwaysOnTop().then((r) => { if (r.ok) void windowServiceRef.current?.setAlwaysOnTop(!r.value); }); } },
       { id: 'window.close', localizedTitle: { zh: '关闭窗口', en: 'Close Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.close(); } },
       { id: 'file.revealInFinder', localizedTitle: { zh: '在 Finder 中显示', en: 'Reveal in Finder' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => { if (filePathRef.current !== null) void handleTreeReveal(filePathRef.current); } },
-      { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', shortcut: COMMAND_PALETTE_SHORTCUT, context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
+      { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'settings.open', localizedTitle: { zh: '设置…', en: 'Settings…' }, category: 'system', shortcut: { mac: 'Cmd+,', winLinux: 'Ctrl+,' }, context: { scope: 'global' }, enabled: always, execute: () => setSettingsOpen(true) },
       { id: 'theme.system', localizedTitle: { zh: '主题：跟随系统', en: 'Theme: System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
       { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const next = BUILTIN_THEMES[(BUILTIN_THEMES.findIndex((t) => t.id === activeTheme.id) + 1) % BUILTIN_THEMES.length]; applyThemeById(next.id); } },
@@ -3330,12 +3602,12 @@ export default function App() {
       { id: 'insert.list', localizedTitle: { zh: '列表', en: 'List' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['ul', 'lb'] } }, enabled: always, execute: () => replaceSlashTrigger('- ') },
       { id: 'insert.task', localizedTitle: { zh: '任务', en: 'Task' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['todo', 'rw'] } }, enabled: always, execute: () => replaceSlashTrigger('- [ ] ') },
       { id: 'insert.quote', localizedTitle: { zh: '引用', en: 'Quote' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['blockquote', 'yy'] } }, enabled: always, execute: () => replaceSlashTrigger('> ') },
-      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, shortcut: { mac: 'Cmd+Alt+T', winLinux: 'Ctrl+T' }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
+      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
       { id: 'insert.code', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['fence', 'dm'] } }, enabled: always, execute: () => replaceSlashTrigger('```\n\n```') },
       { id: 'insert.math', localizedTitle: { zh: '数学公式', en: 'Math' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['formula', 'sx'] } }, enabled: always, execute: () => replaceSlashTrigger('$$\n\n$$') },
       { id: 'insert.mermaid', localizedTitle: { zh: 'Mermaid 图表', en: 'Mermaid Diagram' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['diagram', 'tt'] } }, enabled: always, execute: () => replaceSlashTrigger('```mermaid\ngraph TD\n  A --> B\n```') },
       { id: 'insert.alert', localizedTitle: { zh: '提示框', en: 'Alert' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['note', 'jg'] } }, enabled: always, execute: () => replaceSlashTrigger('> [!NOTE]\n> ') },
-      { id: 'insert.image', localizedTitle: { zh: '图片', en: 'Image' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['img', 'tp'] } }, shortcut: { mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Alt+I' }, enabled: always, execute: () => replaceSlashTrigger('![]( )') },
+      { id: 'insert.image', localizedTitle: { zh: '图片', en: 'Image' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['img', 'tp'] } }, enabled: always, execute: () => replaceSlashTrigger('![]( )') },
       { id: 'insert.toc', localizedTitle: { zh: '目录', en: 'Table of Contents' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['toc', 'ml'] } }, enabled: always, execute: () => replaceSlashTrigger('\n\n[toc]\n\n') },
       // B2 段落菜单补全：警告框 5 类（Typora「段落 → 警告框」子菜单，GFM alert）
       { id: 'alert.note', localizedTitle: { zh: '提醒内容', en: 'Note' }, category: 'insert', context: { scope: 'document' }, enabled: always, execute: () => replaceSlashTrigger('> [!NOTE]\n> ') },
@@ -3356,37 +3628,50 @@ export default function App() {
       // B2 文件菜单补全：清除最近文件（「打开最近文件」子菜单）
       { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Recent Files' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { setRecentFiles([]); try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* noop */ } } },
       // 编辑：查找 / 替换（Typora 对齐；Ctrl+H 由引擎 keymap 处理）
-      { id: 'search.find', localizedTitle: { zh: '查找…', en: 'Find…' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+F', winLinux: 'Ctrl+F' }, enabled: always, execute: () => engineSearch('find') },
+      { id: 'search.find', localizedTitle: { zh: '查找…', en: 'Find…' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => engineSearch('find') },
       // Typora：替换 ⌥⌘F（⌘H 与 macOS 系统隐藏冲突，作为别名兜底）；Win/Linux Ctrl+H
-      { id: 'search.replace', localizedTitle: { zh: '替换…', en: 'Replace…' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H' }, shortcutAliases: [{ mac: 'Cmd+H' }], enabled: always, execute: () => engineSearch('replace') },
+      { id: 'search.replace', localizedTitle: { zh: '替换…', en: 'Replace…' }, category: 'edit', context: { scope: 'global' }, shortcutAliases: [{ mac: 'Cmd+H' }], enabled: always, execute: () => engineSearch('replace') },
       // B2 编辑菜单补全（Typora 对齐：查找下一个/上一个 ⌘G / ⇧⌘G）
-      { id: 'search.findNext', localizedTitle: { zh: '查找下一个', en: 'Find Next' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' }, shortcutAliases: [{ winLinux: 'F3' }, { mac: 'F3' }], enabled: always, execute: () => engineSearch('findNext') },
-      { id: 'search.findPrevious', localizedTitle: { zh: '查找上一个', en: 'Find Previous' }, category: 'edit', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+G', winLinux: 'Ctrl+Shift+G' }, shortcutAliases: [{ winLinux: 'Shift+F3' }, { mac: 'Shift+F3' }], enabled: always, execute: () => engineSearch('findPrevious') },
+      { id: 'search.findNext', localizedTitle: { zh: '查找下一个', en: 'Find Next' }, category: 'edit', context: { scope: 'global' }, shortcutAliases: [{ winLinux: 'F3' }, { mac: 'F3' }], enabled: always, execute: () => engineSearch('findNext') },
+      { id: 'search.findPrevious', localizedTitle: { zh: '查找上一个', en: 'Find Previous' }, category: 'edit', context: { scope: 'global' }, shortcutAliases: [{ winLinux: 'Shift+F3' }, { mac: 'Shift+F3' }], enabled: always, execute: () => engineSearch('findPrevious') },
       // B2 编辑菜单补全（Typora 对齐：复制为 Markdown ⇧⌘C / 粘贴为纯文本 ⇧⌘V）
-      { id: 'edit.copyMarkdown', localizedTitle: { zh: '复制为 Markdown', en: 'Copy as Markdown' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+C', winLinux: 'Ctrl+Shift+C' }, enabled: always, execute: () => engineClipboard('copyMarkdown') },
-      { id: 'edit.pastePlain', localizedTitle: { zh: '粘贴为纯文本', en: 'Paste as Plain Text' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Shift+V', winLinux: 'Ctrl+Shift+V' }, enabled: always, execute: () => engineClipboard('pastePlain') },
+      { id: 'edit.copyMarkdown', localizedTitle: { zh: '复制为 Markdown', en: 'Copy as Markdown' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyMarkdown') },
+      { id: 'edit.pastePlain', localizedTitle: { zh: '粘贴为纯文本', en: 'Paste as Plain Text' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('pastePlain') },
       // ⇧⌘⌫ 删除行（Typora 编辑→删除行，引擎 applyDeleteLine）
-      { id: 'edit.deleteLine', localizedTitle: { zh: '删除行', en: 'Delete Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Shift+Cmd+Backspace', winLinux: 'Ctrl+Shift+Backspace' }, enabled: always, execute: () => engineFormat('deleteLine') },
+      { id: 'edit.deleteLine', localizedTitle: { zh: '删除行', en: 'Delete Line' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('deleteLine') },
       // D1-4 选择命令（Typora 编辑→选择：⌘L 行 / ⌥⌘P 段落或块）
-      { id: 'edit.selectLine', localizedTitle: { zh: '选择行', en: 'Select Line' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+L', winLinux: 'Ctrl+L' }, enabled: always, execute: () => { hostRef.current?.selectLine(); } },
-      { id: 'edit.selectParagraph', localizedTitle: { zh: '选择段落或块', en: 'Select Paragraph or Block' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+P' }, enabled: always, execute: () => { hostRef.current?.selectParagraph(); } },
+      { id: 'edit.selectLine', localizedTitle: { zh: '选择行', en: 'Select Line' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.selectLine(); } },
+      { id: 'edit.selectParagraph', localizedTitle: { zh: '选择段落或块', en: 'Select Paragraph or Block' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.selectParagraph(); } },
       // D3 选择子菜单补全（Typora 编辑→选择）
-      { id: 'edit.selectWord', localizedTitle: { zh: '选中当前词', en: 'Select Word' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+D', winLinux: 'Ctrl+D' }, enabled: always, execute: () => { hostRef.current?.selectWord(); } },
-      { id: 'edit.selectFormatSpan', localizedTitle: { zh: '选中当前格式文本', en: 'Select Format Span' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+E', winLinux: 'Ctrl+E' }, enabled: always, execute: () => { hostRef.current?.selectFormatSpan(); } },
-      { id: 'edit.gotoDocStart', localizedTitle: { zh: '跳转到文首', en: 'Go to Document Start' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+ArrowUp', winLinux: 'Ctrl+Home' }, enabled: always, execute: () => { hostRef.current?.gotoDocStart(); } },
-      { id: 'edit.gotoDocEnd', localizedTitle: { zh: '跳转到文末', en: 'Go to Document End' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+ArrowDown', winLinux: 'Ctrl+End' }, enabled: always, execute: () => { hostRef.current?.gotoDocEnd(); } },
-      { id: 'edit.gotoSelection', localizedTitle: { zh: '跳转到所选内容', en: 'Go to Selection' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+J', winLinux: 'Ctrl+J' }, enabled: always, execute: () => { hostRef.current?.gotoSelection(); } },
-      { id: 'edit.gotoLineStart', localizedTitle: { zh: '跳转到行首', en: 'Go to Line Start' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+A', winLinux: 'Home' }, enabled: always, execute: () => { hostRef.current?.gotoLineStart(); } },
-      { id: 'edit.gotoLineEnd', localizedTitle: { zh: '跳转到行尾', en: 'Go to Line End' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+ArrowRight', winLinux: 'End' }, enabled: always, execute: () => { hostRef.current?.gotoLineEnd(); } },
+      { id: 'edit.selectWord', localizedTitle: { zh: '选中当前词', en: 'Select Word' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.selectWord(); } },
+      { id: 'edit.selectFormatSpan', localizedTitle: { zh: '选中当前格式文本', en: 'Select Format Span' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.selectFormatSpan(); } },
+      { id: 'edit.gotoDocStart', localizedTitle: { zh: '跳转到文首', en: 'Go to Document Start' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.gotoDocStart(); } },
+      { id: 'edit.gotoDocEnd', localizedTitle: { zh: '跳转到文末', en: 'Go to Document End' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.gotoDocEnd(); } },
+      { id: 'edit.gotoSelection', localizedTitle: { zh: '跳转到所选内容', en: 'Go to Selection' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.gotoSelection(); } },
+      { id: 'edit.gotoLineStart', localizedTitle: { zh: '跳转到行首', en: 'Go to Line Start' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.gotoLineStart(); } },
+      { id: 'edit.gotoLineEnd', localizedTitle: { zh: '跳转到行尾', en: 'Go to Line End' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.gotoLineEnd(); } },
       // D3 删除范围子菜单（Typora 编辑→删除范围）
-      { id: 'edit.deleteParagraph', localizedTitle: { zh: '删除块', en: 'Delete Block' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+Shift+P', winLinux: 'Ctrl+Alt+Shift+P' }, enabled: always, execute: () => { hostRef.current?.deleteParagraph(); } },
-      { id: 'edit.deleteFormatSpan', localizedTitle: { zh: '删除当前格式文本', en: 'Delete Format Span' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+Shift+E', winLinux: 'Ctrl+Alt+Shift+E' }, enabled: always, execute: () => { hostRef.current?.deleteFormatSpan(); } },
-      { id: 'edit.deleteWord', localizedTitle: { zh: '删除当前词', en: 'Delete Word' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Shift+Cmd+D', winLinux: 'Ctrl+Shift+D' }, enabled: always, execute: () => { hostRef.current?.deleteWord(); } },
+      { id: 'edit.deleteParagraph', localizedTitle: { zh: '删除块', en: 'Delete Block' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.deleteParagraph(); } },
+      { id: 'edit.deleteFormatSpan', localizedTitle: { zh: '删除当前格式文本', en: 'Delete Format Span' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.deleteFormatSpan(); } },
+      { id: 'edit.deleteWord', localizedTitle: { zh: '删除当前词', en: 'Delete Word' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.deleteWord(); } },
       // D3 上移/下移该行（Typora 编辑菜单 ⌥↑/⌥↓）
-      { id: 'edit.moveLineUp', localizedTitle: { zh: '上移该行', en: 'Move Line Up' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Alt+ArrowUp', winLinux: 'Alt+ArrowUp' }, enabled: always, execute: () => { hostRef.current?.moveLineUp(); } },
-      { id: 'edit.moveLineDown', localizedTitle: { zh: '下移该行', en: 'Move Line Down' }, category: 'edit', context: { scope: 'document' }, shortcut: { mac: 'Alt+ArrowDown', winLinux: 'Alt+ArrowDown' }, enabled: always, execute: () => { hostRef.current?.moveLineDown(); } },
+      { id: 'edit.moveLineUp', localizedTitle: { zh: '上移该行', en: 'Move Line Up' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.moveLineUp(); } },
+      { id: 'edit.moveLineDown', localizedTitle: { zh: '下移该行', en: 'Move Line Down' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.moveLineDown(); } },
       // D3 复制/拷贝（Typora 编辑菜单：拷贝图片 / 复制为纯文本 / 复制为 HTML 代码）
+      // P1-1.7：右键菜单的剪切/复制/粘贴与菜单、快捷键共用同一命令入口
+      { id: 'edit.cut', localizedTitle: { zh: '剪切', en: 'Cut' }, category: 'edit', shortcut: { mac: 'Cmd+X', winLinux: 'Ctrl+X' }, context: { scope: 'selection' }, enabled: hasSelection, execute: () => engineEditAction('cut') },
+      { id: 'edit.copy', localizedTitle: { zh: '拷贝', en: 'Copy' }, category: 'edit', shortcut: { mac: 'Cmd+C', winLinux: 'Ctrl+C' }, context: { scope: 'selection' }, enabled: hasSelection, execute: () => engineEditAction('copy') },
+      { id: 'edit.paste', localizedTitle: { zh: '粘贴', en: 'Paste' }, category: 'edit', shortcut: { mac: 'Cmd+V', winLinux: 'Ctrl+V' }, context: { scope: 'document' }, enabled: always, execute: () => engineEditAction('paste') },
       { id: 'edit.copyImage', localizedTitle: { zh: '拷贝图片', en: 'Copy Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyImage() },
+      // P1-1.7：公式块「复制为 Tex 代码」——对应 Typora 1.14.9 mathBlock.copyAsTex()
+      // 证据：Typora 1.14.9 appsrc/main.js getMenuItemsForMac，math_block 分支条目为
+      // ["|","edit","copyMathBlock","download-math","code-tools","|","insertParagraphBefore","insertParagraphAfter","delete"]，
+      // copyMathBlock 的动作为 mathBlock.copyAsTex() / copyAsMathML() / copyAsImage()；文案取自官方 Menu.json「Copy as Tex」=「复制为 Tex 代码」。
+      { id: 'math.copyAsTex', localizedTitle: { zh: '复制为 Tex 代码', en: 'Copy as Tex' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { engineCopySource('math'); } },
+      // P1-1.7：图表源码复制 —— 属 B（Better）增强，Typora 1.14.9 图表的右键条目为
+      // ["|","edit","copy-as-image","download-diagram","code-tools","|",...]，无源码复制项。
+      // 因此只在命令面板提供，不进右键菜单，避免与 Typora parity 混淆。
+      { id: 'mermaid.copySource', localizedTitle: { zh: '复制图表源码', en: 'Copy Diagram Source' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { engineCopySource('mermaid'); } },
       { id: 'edit.copyPlain', localizedTitle: { zh: '复制为纯文本', en: 'Copy as Plain Text' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyPlain') },
       { id: 'edit.copyHtmlSource', localizedTitle: { zh: '复制为 HTML 代码', en: 'Copy as HTML Code' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyHtmlSource') },
       // D4 表格操作（Typora 段落→表格子菜单；快捷键由引擎 keymap/右键菜单处理，菜单不设 accel）
@@ -3412,7 +3697,7 @@ export default function App() {
         const next = readSetting(def) !== true;
         writeSetting(def, next);
         hostRef.current?.setSpellcheckEnabled(next);
-        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: next })).catch(() => undefined);
+        setMenuCheckTick((v) => v + 1); // P1-1.3：菜单 CheckMenuItem 选中态随 syncNativeMenu 重建
         setStatusText(t(next ? 'msg.spellcheckOn' : 'msg.spellcheckOff'));
       } },
       // R2-1 编辑→替换「智能标点」（Typora parity；设置面板同一真源）
@@ -3422,62 +3707,65 @@ export default function App() {
         const next = readSetting(def) !== true;
         writeSetting(def, next);
         hostRef.current?.setSmartPunctuationEnabled(next);
-        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_smart_punct_state', { checked: next })).catch(() => undefined);
+        setMenuCheckTick((v) => v + 1); // P1-1.3：菜单 CheckMenuItem 选中态随 syncNativeMenu 重建
         setStatusText(t(next ? 'msg.smartPunctOn' : 'msg.smartPunctOff'));
       } },
       // 格式（Typora 对齐；引擎 applyInlineFormat / 空选区成对插入）
-      { id: 'format.bold', localizedTitle: { zh: '粗体', en: 'Bold' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+B', winLinux: 'Ctrl+B' }, enabled: always, execute: () => engineFormat('bold') },
-      { id: 'format.italic', localizedTitle: { zh: '斜体', en: 'Italic' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+I', winLinux: 'Ctrl+I' }, enabled: always, execute: () => engineFormat('italic') },
-      { id: 'format.strike', localizedTitle: { zh: '删除线', en: 'Strikethrough' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+Shift+`', winLinux: 'Ctrl+Shift+`' }, enabled: always, execute: () => engineFormat('strike') },
-      { id: 'format.code', localizedTitle: { zh: '行内代码', en: 'Inline Code' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+`', winLinux: 'Ctrl+`' }, enabled: always, execute: () => engineFormat('code') },
-      { id: 'format.link', localizedTitle: { zh: '链接…', en: 'Link…' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+K', winLinux: 'Ctrl+K' }, enabled: always, execute: () => engineFormat('link') },
+      { id: 'format.bold', localizedTitle: { zh: '粗体', en: 'Bold' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('bold') },
+      { id: 'format.italic', localizedTitle: { zh: '斜体', en: 'Italic' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('italic') },
+      // P1-1.8：官方键位 —— 删除线 Alt+Shift+5、行内代码 Ctrl+Shift+`（Win/Linux）
+      { id: 'format.strike', localizedTitle: { zh: '删除线', en: 'Strikethrough' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('strike') },
+      { id: 'format.code', localizedTitle: { zh: '行内代码', en: 'Inline Code' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('code') },
+      { id: 'format.link', localizedTitle: { zh: '链接…', en: 'Link…' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('link') },
       // ⌥⌘L 链接引用（Typora 格式→链接引用，引擎 applyReferenceLink）
-      { id: 'format.referenceLink', localizedTitle: { zh: '链接引用…', en: 'Link Reference…' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+L', winLinux: 'Ctrl+Alt+L' }, enabled: always, execute: () => engineFormat('referenceLink') },
-      { id: 'format.quote', localizedTitle: { zh: '引用', en: 'Blockquote' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+Q', winLinux: 'Ctrl+Alt+Q' }, enabled: always, execute: () => engineFormat('quote') },
-      { id: 'format.list', localizedTitle: { zh: '列表', en: 'Bulleted List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+U', winLinux: 'Ctrl+Alt+U' }, enabled: always, execute: () => engineFormat('list') },
-      { id: 'format.orderedList', localizedTitle: { zh: '有序列表', en: 'Ordered List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+O', winLinux: 'Ctrl+Alt+O' }, enabled: always, execute: () => engineFormat('orderedList') },
-      { id: 'format.taskList', localizedTitle: { zh: '任务列表', en: 'Task List' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+X', winLinux: 'Ctrl+Alt+X' }, enabled: always, execute: () => engineFormat('taskList') },
-      { id: 'format.codeBlock', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+C', winLinux: 'Ctrl+Alt+C' }, enabled: always, execute: () => engineFormat('codeBlock') },
-      { id: 'format.mathBlock', localizedTitle: { zh: '数学公式块', en: 'Math Block' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+B', winLinux: 'Ctrl+Alt+B' }, enabled: always, execute: () => engineFormat('mathBlock') },
+      { id: 'format.referenceLink', localizedTitle: { zh: '链接引用…', en: 'Link Reference…' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('referenceLink') },
+      // P1-1.8：官方键位 —— 引用 Ctrl+Shift+Q、无序列表 Ctrl+Shift+]、有序列表 Ctrl+Shift+[（Win/Linux）
+      { id: 'format.quote', localizedTitle: { zh: '引用', en: 'Blockquote' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('quote') },
+      { id: 'format.list', localizedTitle: { zh: '列表', en: 'Bulleted List' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('list') },
+      { id: 'format.orderedList', localizedTitle: { zh: '有序列表', en: 'Ordered List' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('orderedList') },
+      { id: 'format.taskList', localizedTitle: { zh: '任务列表', en: 'Task List' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('taskList') },
+      // P1-1.8：官方键位 —— 代码块 Ctrl+Shift+K、数学块 Ctrl+Shift+M（Win/Linux）
+      { id: 'format.codeBlock', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('codeBlock') },
+      { id: 'format.mathBlock', localizedTitle: { zh: '数学公式块', en: 'Math Block' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('mathBlock') },
       { id: 'format.highlight', localizedTitle: { zh: '高亮', en: 'Highlight' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('highlight') },
       { id: 'format.sup', localizedTitle: { zh: '上标', en: 'Superscript' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('sup') },
       { id: 'format.sub', localizedTitle: { zh: '下标', en: 'Subscript' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('sub') },
       // D4 格式菜单补全（Typora 格式：下划线 ⌘U / 注释 ⌃-；引擎 applyInlineWrap 非对称包裹）
-      { id: 'format.underline', localizedTitle: { zh: '下划线', en: 'Underline' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+U', winLinux: 'Ctrl+U' }, enabled: always, execute: () => engineFormat('underline') },
-      { id: 'format.comment', localizedTitle: { zh: '注释', en: 'Comment' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+-', winLinux: 'Ctrl+Alt+Shift+-' }, enabled: always, execute: () => engineFormat('comment') },
+      { id: 'format.underline', localizedTitle: { zh: '下划线', en: 'Underline' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('underline') },
+      { id: 'format.comment', localizedTitle: { zh: '注释', en: 'Comment' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('comment') },
       // D4 链接操作（Typora 格式→链接操作：打开链接 / 复制链接地址）
       { id: 'format.openLink', localizedTitle: { zh: '打开链接', en: 'Open Link' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => handleOpenLinkAtCursor() },
       { id: 'format.copyLinkUrl', localizedTitle: { zh: '复制链接地址', en: 'Copy Link Address' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyLinkUrl() },
       // 清除样式（Typora Format→清除样式 ⌘\）：选区行内 marker + 链接语法剥除
-      { id: 'format.clear', localizedTitle: { zh: '清除样式', en: 'Clear Formatting' }, category: 'format', context: { scope: 'document' }, shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' }, enabled: always, execute: () => engineFormat('clear') },
+      { id: 'format.clear', localizedTitle: { zh: '清除样式', en: 'Clear Formatting' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('clear') },
       // 段落（标题层级 / 段落）
-      { id: 'paragraph.h1', localizedTitle: { zh: '一级标题', en: 'Heading 1' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+1', winLinux: 'Ctrl+1' }, enabled: always, execute: () => engineFormat('h1') },
-      { id: 'paragraph.h2', localizedTitle: { zh: '二级标题', en: 'Heading 2' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+2', winLinux: 'Ctrl+2' }, enabled: always, execute: () => engineFormat('h2') },
-      { id: 'paragraph.h3', localizedTitle: { zh: '三级标题', en: 'Heading 3' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+3', winLinux: 'Ctrl+3' }, enabled: always, execute: () => engineFormat('h3') },
-      { id: 'paragraph.h4', localizedTitle: { zh: '四级标题', en: 'Heading 4' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+4', winLinux: 'Ctrl+4' }, enabled: always, execute: () => engineFormat('h4') },
-      { id: 'paragraph.h5', localizedTitle: { zh: '五级标题', en: 'Heading 5' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+5', winLinux: 'Ctrl+5' }, enabled: always, execute: () => engineFormat('h5') },
-      { id: 'paragraph.h6', localizedTitle: { zh: '六级标题', en: 'Heading 6' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+6', winLinux: 'Ctrl+6' }, enabled: always, execute: () => engineFormat('h6') },
-      { id: 'paragraph.normal', localizedTitle: { zh: '段落', en: 'Paragraph' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+0', winLinux: 'Ctrl+0' }, enabled: always, execute: () => engineFormat('paragraph') },
+      { id: 'paragraph.h1', localizedTitle: { zh: '一级标题', en: 'Heading 1' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('h1') },
+      { id: 'paragraph.h2', localizedTitle: { zh: '二级标题', en: 'Heading 2' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('h2') },
+      { id: 'paragraph.h3', localizedTitle: { zh: '三级标题', en: 'Heading 3' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('h3') },
+      { id: 'paragraph.h4', localizedTitle: { zh: '四级标题', en: 'Heading 4' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('h4') },
+      { id: 'paragraph.h5', localizedTitle: { zh: '五级标题', en: 'Heading 5' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('h5') },
+      { id: 'paragraph.h6', localizedTitle: { zh: '六级标题', en: 'Heading 6' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('h6') },
+      { id: 'paragraph.normal', localizedTitle: { zh: '段落', en: 'Paragraph' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('paragraph') },
       // 段落新项（B2 菜单补全，Typora 段落菜单对齐）
-      { id: 'paragraph.headingUp', localizedTitle: { zh: '提升标题级别', en: 'Increase Heading Level' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+=', winLinux: 'Ctrl+=' }, enabled: always, execute: () => engineFormat('headingUp') },
-      { id: 'paragraph.headingDown', localizedTitle: { zh: '降低标题级别', en: 'Decrease Heading Level' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+-', winLinux: 'Ctrl+-' }, enabled: always, execute: () => engineFormat('headingDown') },
-      { id: 'paragraph.horizontalRule', localizedTitle: { zh: '水平分割线', en: 'Horizontal Rule' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+-', winLinux: 'Ctrl+Alt+-' }, enabled: always, execute: () => engineFormat('horizontalRule') },
-      { id: 'paragraph.footnote', localizedTitle: { zh: '脚注', en: 'Footnote' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+Alt+R', winLinux: 'Ctrl+Alt+R' }, enabled: always, execute: () => engineFormat('footnote') },
+      { id: 'paragraph.headingUp', localizedTitle: { zh: '提升标题级别', en: 'Increase Heading Level' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('headingUp') },
+      { id: 'paragraph.headingDown', localizedTitle: { zh: '降低标题级别', en: 'Decrease Heading Level' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('headingDown') },
+      { id: 'paragraph.horizontalRule', localizedTitle: { zh: '水平分割线', en: 'Horizontal Rule' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('horizontalRule') },
+      { id: 'paragraph.footnote', localizedTitle: { zh: '脚注', en: 'Footnote' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('footnote') },
       { id: 'paragraph.yamlFrontMatter', localizedTitle: { zh: 'YAML Front Matter', en: 'YAML Front Matter' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('yamlFrontMatter') },
-      { id: 'paragraph.taskToggle', localizedTitle: { zh: '切换任务状态', en: 'Toggle Task State' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Shift+X' }, enabled: always, execute: () => engineFormat('taskToggle') },
+      { id: 'paragraph.taskToggle', localizedTitle: { zh: '切换任务状态', en: 'Toggle Task State' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('taskToggle') },
       // D4 列表缩进（Typora 段落→列表缩进 ⌘]/⌘[；引擎 applyListIndent）
-      { id: 'paragraph.indentMore', localizedTitle: { zh: '增加缩进', en: 'Increase Indent' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+]', winLinux: 'Ctrl+]' }, enabled: always, execute: () => engineFormat('indentMore') },
-      { id: 'paragraph.indentLess', localizedTitle: { zh: '减少缩进', en: 'Decrease Indent' }, category: 'paragraph', context: { scope: 'document' }, shortcut: { mac: 'Cmd+[', winLinux: 'Ctrl+[' }, enabled: always, execute: () => engineFormat('indentLess') },
+      { id: 'paragraph.indentMore', localizedTitle: { zh: '增加缩进', en: 'Increase Indent' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('indentMore') },
+      { id: 'paragraph.indentLess', localizedTitle: { zh: '减少缩进', en: 'Decrease Indent' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('indentLess') },
       // D4 插入段落（Typora 段落→在上方/下方插入段落；引擎 applyInsertParagraph）
       { id: 'paragraph.insertAbove', localizedTitle: { zh: '在上方插入段落', en: 'Insert Paragraph Above' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('insertParagraphAbove') },
       { id: 'paragraph.insertBelow', localizedTitle: { zh: '在下方插入段落', en: 'Insert Paragraph Below' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('insertParagraphBelow') },
       { id: 'theme.mode.system', localizedTitle: { zh: '跟随系统', en: 'Follow System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
-      { id: 'view.sidebar.toggle', localizedTitle: { zh: '切换侧边栏', en: 'Toggle Sidebar' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Cmd+Shift+L', winLinux: 'Ctrl+Shift+L' }, enabled: always, execute: toggleSidebar },
-      { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+1', winLinux: 'Ctrl+Shift+1' }, enabled: always, execute: () => showSidebarAs('outline') },
-      { id: 'view.sidebar.fileList', localizedTitle: { zh: '文件列表', en: 'File List' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+2', winLinux: 'Ctrl+Shift+2' }, enabled: always, execute: () => showSidebarAs('files', 'list') },
-      { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Ctrl+Cmd+3', winLinux: 'Ctrl+Shift+3' }, enabled: always, execute: () => showSidebarAs('files', 'tree') },
+      { id: 'view.sidebar.toggle', localizedTitle: { zh: '切换侧边栏', en: 'Toggle Sidebar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: toggleSidebar },
+      { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('outline') },
+      { id: 'view.sidebar.fileList', localizedTitle: { zh: '文件列表', en: 'File List' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files', 'list') },
+      { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files', 'tree') },
       // ⇧⌘\ 显示所有标签页（Typora 视图→显示所有标签页 / Tab Overview）
-      { id: 'tabs.showAll', localizedTitle: { zh: '显示所有标签页', en: 'Show All Tabs' }, category: 'view', context: { scope: 'global' }, shortcut: { mac: 'Shift+Cmd+\\', winLinux: 'Ctrl+Shift+\\' }, enabled: always, execute: () => setTabOverviewOpen((v) => !v) },
+      { id: 'tabs.showAll', localizedTitle: { zh: '显示所有标签页', en: 'Show All Tabs' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => setTabOverviewOpen((v) => !v) },
       // DevTools（仅 debug 构建可用；release 返回 Err → toast 提示）
       { id: 'view.devtools', localizedTitle: { zh: '开发者工具', en: 'Developer Tools' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('open_devtools').catch(() => setToast({ message: t('view.devtools.unavailable') })); } },
       { id: 'help.quickStart', localizedTitle: { zh: '快速上手', en: 'Quick Start' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_QUICK_START); } },
@@ -3485,6 +3773,25 @@ export default function App() {
       { id: 'help.feedback', localizedTitle: { zh: '反馈问题…', en: 'Feedback…' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_FEEDBACK); } },
       { id: 'help.cheatsheet', localizedTitle: { zh: 'Markdown 速查表', en: 'Markdown Cheatsheet' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => setCheatsheetOpen(true) },
     ];
+    // P1-1.2：快捷键单一真源注入（§7.4 硬规则 2）—— schema 覆盖命令的 shortcut 由
+    // SCHEMA_SHORTCUTS（packages/commands/menuSchema.ts）统一提供，内联只保留
+    // 平台互补的键盘补充键位（settings.open win / export.repeat mac）与纯键盘快捷键
+    // （tabs.prev/next、edit.cut/copy/paste 等，菜单条目为 OS predefined 项）。
+    for (const command of commands) {
+      const injected = SCHEMA_SHORTCUTS.get(command.id);
+      if (injected !== undefined) command.shortcut = { ...injected, ...command.shortcut };
+    }
+    // P2-2.6：用户自定义键位 override（Settings 录制）在装配边界覆盖 schema 默认值；
+    // 仅覆盖有 schema 键位的命令（无键位命令不允许凭空造键位，保持单一真源纪律）。
+    for (const command of commands) {
+      const override = shortcutOverrides[command.id];
+      if (override !== undefined && command.shortcut !== undefined) {
+        command.shortcut = {
+          mac: override.mac ?? command.shortcut.mac,
+          winLinux: override.winLinux ?? command.shortcut.winLinux,
+        };
+      }
+    }
     commands.forEach((command) => registry.register(command));
     for (const theme of BUILTIN_THEMES) {
       registry.register({
@@ -3506,7 +3813,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
@@ -3659,25 +3966,73 @@ export default function App() {
     };
   }, [dispatchCommand, openPathInTab]);
 
-  // 最近文件 → 原生菜单「打开最近文件」子菜单（B2：recentFiles 变化触发 set_recent_files 重建）
+  // P3.1 目录 watcher：打开 workspace 时递归监听目录树，外部 create/remove/modify
+  // 经 250ms 合并窗口后刷新 FileTree / FileList（增量 = 只重建侧栏树，不动编辑器状态）；
+  // 换根或关闭时 unwatch_dir 取消（drop watcher 即取消底层 inotify/FSEvents/RDW）。
   useEffect(() => {
-    if (!('__TAURI_INTERNALS__' in window)) return;
-    void import('@tauri-apps/api/core')
-      .then(({ invoke }) => invoke('set_recent_files', { files: recentFiles.map((f) => f.path) }))
-      .catch(() => {
-        /* 非 Tauri / 菜单不可用 */
-      });
-  }, [recentFiles]);
+    if (!isTauri() || fileTreeRoot === null) return;
+    const root = fileTreeRoot;
+    let watcherId: number | null = null;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => { void refreshFilesSidebarRef.current(); }, 250);
+    };
+    void Promise.all([
+      import('@tauri-apps/api/core').then(({ invoke }) => invoke<number>('watch_dir', { path: root })),
+      import('@tauri-apps/api/event').then(({ listen }) => listen<{ root: string; path: string; kind: string }>('mellow://dir-changed', (e) => {
+        if (e.payload.root !== root) return;
+        scheduleRefresh();
+      })),
+    ]).then(([id, fn]) => {
+      if (cancelled) {
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('unwatch_dir', { watcherId: id })).catch(() => undefined);
+        fn();
+        return;
+      }
+      watcherId = id;
+      unlisten = fn;
+    }).catch(() => {
+      /* 非 Tauri / watcher 不可用 */
+    });
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+      if (watcherId !== null) {
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('unwatch_dir', { watcherId })).catch(() => undefined);
+      }
+      unlisten?.();
+    };
+    // P3.7 修复：refreshFilesSidebar 经 ref 调用（引用随 fileTreeNodes 抖动，见其定义处注释）
+  }, [fileTreeRoot]);
 
-  // 主题选中态 → 原生菜单「主题」radio（B2-5/B3-2：themeSettings/activeTheme 变化触发 set_theme_selection 重建）
+  // P1-1.3 / P1-1.4 / P1-1.5：原生菜单单一真源 —— 前端把 MENU_SCHEMA（含 locale 文案、
+  // 最近文件、BUILTIN_THEMES 主题派生、spellcheck/smartPunct/themeMode checkState）物化为
+  // NativeMenuSpec 下发，Rust menu.rs 只做 materialization（§7.4 硬规则 5/6）。
+  // 任一输入变化整体重建，取代旧 set_menu_locale / set_recent_files / set_theme_selection /
+  // set_spellcheck_state / set_smart_punct_state 五条状态同步命令。
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
+    const spec = buildNativeMenuSpec({
+      locale,
+      translate: t,
+      recentFiles: recentFiles.map((f) => f.path),
+      activeThemeId: activeTheme.id,
+      themeMode: themeSettings.mode,
+      spellcheck: (() => { const def = settingById('editor.spellcheck'); return def ? readSetting(def) !== false : true; })(),
+      smartPunct: (() => { const def = settingById('editor.smartPunctuation'); return def ? readSetting(def) === true : false; })(),
+      // P2-2.6：自定义键位随 override 变化重建原生菜单（accelerator 物化）
+      shortcutOverrides,
+    });
     void import('@tauri-apps/api/core')
-      .then(({ invoke }) => invoke('set_theme_selection', { mode: themeSettings.mode, activeThemeId: activeTheme.id }))
+      .then(({ invoke }) => invoke('set_menu_spec', { spec }))
       .catch(() => {
         /* 非 Tauri / 菜单不可用 */
       });
-  }, [themeSettings.mode, activeTheme.id]);
+    // menuCheckTick：spellcheck/smartPunct toggle 写 localStorage 后自增触发重建
+  }, [locale, t, recentFiles, activeTheme.id, themeSettings.mode, menuCheckTick, shortcutOverrides]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -3772,6 +4127,20 @@ export default function App() {
           onSelect={(id) => void handleSelectTab(id)}
           onClose={(id) => void handleCloseTab(id)}
           onDropTab={handleDropTab}
+          onTabContextMenu={(tabId, x, y) => {
+            // P2-2.4：Tab 右键菜单 —— 关闭（锚点 tab）/ 关闭其他 / 关闭右侧（锚点）/ 重新打开。
+            // 关闭其他/右侧需锚点参数，故直接调 handle*（带 anchor）而非无参 dispatchCommand。
+            const anchorIndex = tabs.findIndex((tb) => tb.id === tabId);
+            setContextMenu({
+              x, y,
+              items: [
+                { label: t('tab.ctx.close'), onClick: () => void handleCloseTab(tabId) },
+                { label: t('tab.ctx.closeOthers'), enabled: tabs.length > 1, onClick: () => void handleCloseOthers(tabId) },
+                { label: t('tab.ctx.closeRight'), enabled: anchorIndex !== -1 && anchorIndex < tabs.length - 1, onClick: () => void handleCloseRight(tabId) },
+                { label: t('tab.ctx.reopenClosed'), onClick: () => void handleReopenClosed() },
+              ],
+            });
+          }}
         />}
         <button
           className="titlebar-palette"
@@ -3783,7 +4152,7 @@ export default function App() {
       </header>
       <div className="workspace-shell">
         {sidebarShown && (
-        <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : undefined} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
+        <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
           <SidebarHeader
             mode={sidebarMode}
             t={t}
@@ -3796,6 +4165,23 @@ export default function App() {
           />
           {sidebarMode === 'files' ? (
             <>
+              {/* P3.6（G4-SIDE-06）常驻 filter 输入框 + 新建文件/文件夹轻按钮（Tree/List 共用） */}
+              <div className="file-quickbar">
+                <input
+                  className="file-filter-input"
+                  type="text"
+                  placeholder={t('files.filterPlaceholder')}
+                  value={fileFilterQuery}
+                  onChange={(e) => setFileFilterQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') { e.stopPropagation(); setFileFilterQuery(''); }
+                    // ←→ 保护输入框光标移动（aside 层把它们映射为折叠/展开）
+                    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
+                  }}
+                />
+                <button type="button" className="file-quickbtn" title={t('files.newFile')} aria-label={t('files.newFile')} disabled={fileTreeRoot === null} onClick={() => void handleTreeNewFile()}>＋</button>
+                <button type="button" className="file-quickbtn" title={t('files.newFolder')} aria-label={t('files.newFolder')} disabled={fileTreeRoot === null} onClick={() => void handleTreeNewFolder()}>＋/</button>
+              </div>
               {fileFiltersOpen && (
               <>
               <div className="file-tree-filters">
@@ -3861,15 +4247,15 @@ export default function App() {
               </div>
               {fileSidebarMode === 'tree' ? (
                 <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
-                  {fileTreeNodes.length === 0 ? (
-                    <div className="sidebar-empty">{fileTreeRoot === null ? t('sidebar.emptyFiles') : t('sidebar.emptyFolder')}</div>
-                  ) : <FileTree nodes={fileTreeNodes} selectedPath={selectedTreePath} currentPath={filePathRef.current} onSelect={handleTreeSelect} onToggle={(p) => void handleTreeToggle(p)} onOpen={(p) => void openTreeFile(p)} onDrop={(d, p) => void handleTreeDrop(d, p)} onContextMenu={openTreeContextMenu} />}
+                  {filteredFileTreeNodes.length === 0 ? (
+                    <div className="sidebar-empty">{fileTreeRoot === null ? t('sidebar.emptyFiles') : (fileTreeNodes.length === 0 ? t('sidebar.emptyFolder') : t('sidebar.noFilterMatch'))}</div>
+                  ) : <FileTree nodes={filteredFileTreeNodes} selectedPath={selectedTreePath} currentPath={filePathRef.current} onSelect={handleTreeSelect} onToggle={(p) => void handleTreeToggle(p)} onOpen={(p) => void openTreeFile(p)} onDrop={(d, p) => void handleTreeDrop(d, p)} onContextMenu={openTreeContextMenu} />}
                 </div>
               ) : (
-                <div className="file-list" aria-label={t('filelist.articles')}>
-                  {fileListItems.length === 0 ? (
-                    <div className="sidebar-empty">{t('sidebar.emptyFiles')}</div>
-                  ) : <FileList items={fileListItems} selectedPath={selectedListPath} currentPath={filePathRef.current} includeSummary={fileListOptions.includeSummary} formatFileTime={formatFileTime} onSelect={handleFileListSelect} onOpen={(p) => void openTreeFile(p)} />}
+                <div className="file-list" aria-label={t('filelist.articles')} onContextMenu={(e) => openFileListContextMenu(e)}>
+                  {filteredFileListItems.length === 0 ? (
+                    <div className="sidebar-empty">{fileListItems.length === 0 ? t('sidebar.emptyFiles') : t('sidebar.noFilterMatch')}</div>
+                  ) : <FileList items={filteredFileListItems} selectedPath={selectedListPath} currentPath={filePathRef.current} includeSummary={fileListOptions.includeSummary} formatFileTime={formatFileTime} onSelect={handleFileListSelect} onOpen={(p) => void openTreeFile(p)} onContextMenu={openFileListContextMenu} />}
                 </div>
               )}
             </>
@@ -3882,10 +4268,10 @@ export default function App() {
               </div>
               <div className="outline-list" aria-label={t('outline.listLabel')}>
                 {(() => {
-                  const items = readerOpen ? outlineModelRef.current.visibleItems(filterOutline(readerOutlineItems, outlineFilter), outlineFlat) : outlineItems;
+                  const items = visibleOutlineItems();
                   return items.length === 0
                     ? <div className="sidebar-empty">{t('outline.empty')}</div>
-                    : <OutlineList items={items} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} />;
+                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} />;
                 })()}
               </div>
             </>
@@ -3906,7 +4292,7 @@ export default function App() {
               </div>
               <div className="search-results" aria-label={t('search.resultsLabel')}>
                 {searchQuery === '' && searchResults.length === 0 && <div className="sidebar-empty">{t('search.empty')}</div>}
-                {<SearchResultsList groups={searchGroups} onJump={(m) => void jumpToSearchResult(m)} />}
+                {<SearchResultsList groups={searchGroups} selectedIndex={searchSelectedIndex} onJump={(m) => void jumpToSearchResult(m)} onContextMenu={openSearchContextMenu} />}
               </div>
             </>
           )}
@@ -3923,6 +4309,33 @@ export default function App() {
           />
         )}
         <main className="editor-container">
+          {/* P2-2.5 模式状态指示（不常驻，轻量）：仅非默认模式时渲染 badge，点击即退出。
+              Reader 有自带 bar（mellow-reader-bar 含关闭入口），重复 badge 反增干扰；
+              Slash 为瞬态面板且 slashEnabled 默认开启，常显违反「不常驻」——均不做常驻指示。 */}
+          {(focusMode !== 'off' || typewriterEnabled) && (
+            <div className="mode-indicators">
+              {focusMode !== 'off' && (
+                <button
+                  type="button"
+                  className="mode-indicator"
+                  title={t('mode.indicatorHint')}
+                  onClick={() => setFocusMode('off')}
+                >
+                  {focusMode === 'line' ? t('mode.focusLine') : t('mode.focusParagraph')}
+                </button>
+              )}
+              {typewriterEnabled && (
+                <button
+                  type="button"
+                  className="mode-indicator"
+                  title={t('mode.indicatorHint')}
+                  onClick={() => setTypewriterMode(false)}
+                >
+                  {t('mode.typewriter')}
+                </button>
+              )}
+            </div>
+          )}
           {tabs.length === 0 && !readerOpen && status === 'ready' && (
             <Welcome
               t={t}
@@ -4224,6 +4637,7 @@ export default function App() {
             title: titleFor(c, locale === 'zh-CN' ? 'zh' : 'en'),
             shortcut: platformMac ? c.shortcut?.mac : c.shortcut?.winLinux,
           }))}
+          onShortcutChange={handleShortcutOverride}
         />
       )}
       {contextMenu !== null && (

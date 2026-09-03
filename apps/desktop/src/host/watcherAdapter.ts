@@ -6,7 +6,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { WatchService, FileChangeEvent, Result } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 
@@ -43,7 +43,7 @@ export const tauriWatcher: WatchService = {
   },
 };
 
-export const browserWatcher: WatchService = createMockHost().watcher;
+export const browserWatcher: WatchService = browserMockHost.watcher;
 
 /** 按运行时选择实现（Adapter 装配点） */
 export function createDesktopWatcher(): WatchService {

@@ -4,12 +4,12 @@
  * - Tauri：@tauri-apps/api/window getCurrentWindow（minimize/maximize/close/fullscreen）。
  *   Windows：保留原生 decorations → 原生标题栏控制按钮 + Windows 11 Snap Layout 免费获得；
  *   本服务提供统一契约，供命令/插件/未来自定义控件调用。
- * - 浏览器 dev：mock（createMockHost().window）。
+ * - 浏览器 dev：mock（browserMockHost.window，共享单例）。
  *
  * 平台约束：本模块只做平台调用映射，不含任何 Markdown / 命令业务逻辑。
  */
 
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { WindowService, Size } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 import { isTauri } from './fileServices';
@@ -144,7 +144,7 @@ export const tauriWindowService: WindowService = {
 };
 
 /** 浏览器 dev 模式（mock） */
-export const browserWindowService: WindowService = createMockHost().window;
+export const browserWindowService: WindowService = browserMockHost.window;
 
 export function createDesktopWindowService(): WindowService {
   return isTauri() ? tauriWindowService : browserWindowService;

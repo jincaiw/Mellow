@@ -11,6 +11,7 @@ use notify::{Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode,
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
@@ -24,9 +25,21 @@ pub struct FileChangeEventDto {
     pub kind: String,
 }
 
+/// P3.1 目录变化事件（FileTree 增量刷新输入）
+#[derive(Clone, Serialize)]
+pub struct DirChangeEventDto {
+    pub root: String,
+    pub path: String,
+    pub kind: String,
+}
+
 /// watcher 注册表（Tauri state）
 #[derive(Default)]
 pub struct WatcherRegistry(pub Mutex<HashMap<u64, RecommendedWatcher>>);
+
+/// watcher id 计数器（修复旧 registry.len()+1 递增在 remove 后撞 key 的缺陷）
+#[derive(Default)]
+pub struct WatcherIdCounter(pub AtomicU64);
 
 /// 防抖状态：path → 上次 emit 时间
 #[derive(Default)]
@@ -59,10 +72,8 @@ pub fn should_debounce(debounce: &mut HashMap<String, Instant>, path: &str, now:
 #[tauri::command]
 pub fn watch_document(app: AppHandle, path: String) -> Result<u64, String> {
     let watcher_id = {
-        let state = app.state::<WatcherRegistry>();
-        let mut registry = state.0.lock().unwrap();
-        // 简单递增 id
-        registry.len() as u64 + 1
+        let counter = app.state::<WatcherIdCounter>();
+        counter.0.fetch_add(1, Ordering::SeqCst) + 1
     };
 
     let app_emit = app.clone();
@@ -118,6 +129,61 @@ pub fn unwatch_document(app: AppHandle, watcher_id: u64) -> Result<(), String> {
     Ok(())
 }
 
+/// P3.1 目录监听（Recursive）：子树内 create/remove/modify → mellow://dir-changed。
+/// 前端在打开 workspace 时调用，离开（换根/关闭）时用返回的 watcher_id 调 unwatch_dir。
+#[tauri::command]
+pub fn watch_dir(app: AppHandle, path: String) -> Result<u64, String> {
+    let watcher_id = {
+        let counter = app.state::<WatcherIdCounter>();
+        counter.0.fetch_add(1, Ordering::SeqCst) + 1
+    };
+    let root = path.clone();
+    let app_emit = app.clone();
+
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<NotifyEvent>| {
+        let Ok(event) = res else { return };
+        let Some(path) = event.paths.first() else { return };
+        let path_str = path.to_string_lossy().into_owned();
+
+        // rapid repeated updates 防抖（与文档 watcher 共用 DebounceState）
+        {
+            let state = app_emit.state::<DebounceState>();
+            let mut debounce = state.0.lock().unwrap();
+            if should_debounce(&mut debounce, &path_str, Instant::now()) {
+                return;
+            }
+        }
+
+        let _ = app_emit.emit(
+            "mellow://dir-changed",
+            DirChangeEventDto {
+                root: root.clone(),
+                path: path_str,
+                kind: kind_str(&event.kind).to_string(),
+            },
+        );
+    })
+    .map_err(|e| e.to_string())?;
+
+    watcher
+        .watch(std::path::Path::new(&path), RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+
+    let state = app.state::<WatcherRegistry>();
+    let mut registry = state.0.lock().unwrap();
+    registry.insert(watcher_id, watcher);
+    Ok(watcher_id)
+}
+
+/// 取消目录监听（drop RecommendedWatcher 即取消底层 inotify/FSEvents/ReadDirectoryChangesW）
+#[tauri::command]
+pub fn unwatch_dir(app: AppHandle, watcher_id: u64) -> Result<(), String> {
+    let state = app.state::<WatcherRegistry>();
+    let mut registry = state.0.lock().unwrap();
+    registry.remove(&watcher_id);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,5 +216,23 @@ mod tests {
         assert_eq!(kind_str(&EventKind::Create(notify::event::CreateKind::File)), "create");
         assert_eq!(kind_str(&EventKind::Remove(notify::event::RemoveKind::File)), "remove");
         assert_eq!(kind_str(&EventKind::Modify(notify::event::ModifyKind::Data(notify::event::DataChange::Any))), "modify");
+    }
+
+    #[test]
+    fn watcher_ids_never_collide_after_removal() {
+        // P3.1：旧 registry.len()+1 递增在 remove 后会撞 key；计数器必须单调
+        let counter = WatcherIdCounter(AtomicU64::new(0));
+        let a = counter.0.fetch_add(1, Ordering::SeqCst) + 1;
+        let b = counter.0.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut registry: HashMap<u64, ()> = HashMap::new();
+        registry.insert(a, ());
+        registry.insert(b, ());
+        registry.remove(&a);
+        let c = counter.0.fetch_add(1, Ordering::SeqCst) + 1;
+        // c = 3，不与仍在册的 b = 2 冲突，也不会复活已移除的 a 的槽位语义
+        assert_eq!(c, 3);
+        assert!(registry.contains_key(&b));
+        registry.insert(c, ());
+        assert_eq!(registry.len(), 2);
     }
 }

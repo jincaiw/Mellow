@@ -229,11 +229,27 @@ function copyEngine() {
   console.log(`engine copied: ${copied.join(', ')}`);
 }
 
+/**
+ * 编辑区留白契约 CSS（P2-2.2）：Top Padding 56px / Bottom Space ≥30vh，跨主题一致。
+ *
+ * 注入位置 = desktop Adapter 层（CoreEditor vendored 源码只读，见 UPSTREAM.md；
+ * 上游 sharedStyles .cm-content padding-top 仅 2px）。Reader 侧同值见
+ * desktop styles.css .mellow-reader（padding: 56px 32px 30vh）。
+ * !important 需覆盖 EditorView.theme 的 style-mod 规则；typewriter 模式的
+ * 50vh padding-top stylesheet 运行时后置且同为 !important，按文档顺序胜出。
+ */
+const typographyContract = `<style data-mellow-typography="P2-2.2">
+.cm-content { padding-top: 56px !important; }
+</style>`;
+
 function build() {
   const html = readFileSync(source, 'utf8');
 
   // 1-3. 平台无关注入（config 占位符替换 + 桥接注入）—— editor-core 规范实现
   let out = buildBundleHtml(html, { config: desktopEditorConfig });
+
+  // P2-2.2 留白契约（必须在 head 内、styleAdoptShim 观察范围内）
+  out = out.replace('</head>', `${typographyContract}\n</head>`);
 
   // TEMP→FIX(j17-3): tauri:// WKURLSchemeHandler（macOS WKWebView / Linux WebKitGTK）
   //  下动态插入的 <style> 的 CSSOM 永不建立（sheet===null、规则不生效、不可恢复，

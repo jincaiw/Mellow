@@ -2,11 +2,11 @@
  * desktop 装配：DialogService 实现（Adapter 层，PRD §113.4）。
  *
  * - Tauri：tauri-plugin-dialog（原生对话框；Rust 侧已注册插件）
- * - 浏览器 dev：window.confirm / mock（createMockHost().dialog）
+ * - 浏览器 dev：window.confirm / mock（browserMockHost.dialog，共享单例）
  */
 
 import { confirm, open } from '@tauri-apps/plugin-dialog';
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { DialogService, OpenFileOptions } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 import { isTauri } from './fileServices';
@@ -53,7 +53,7 @@ export const tauriDialogService: DialogService = {
 };
 
 /** 浏览器 dev 模式（mock dialog） */
-export const browserDialogService: DialogService = createMockHost().dialog;
+export const browserDialogService: DialogService = browserMockHost.dialog;
 
 /** 按运行时选择实现 */
 export function createDesktopDialogService(): DialogService {

@@ -2,10 +2,10 @@
  * desktop 装配：OpenerService 实现（PRD §54 Open Image / Reveal；tauri-plugin-opener）。
  *
  * - Tauri：plugin-opener（openPath / revealInFolder / openUrl）
- * - 浏览器 dev：mock（createMockHost().opener）
+ * - 浏览器 dev：mock（browserMockHost.opener，共享单例）
  */
 
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { OpenerService } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 import { isTauri } from './fileServices';
@@ -42,7 +42,7 @@ export const tauriOpenerService: OpenerService = {
 };
 
 /** 浏览器 dev 模式（mock） */
-export const browserOpenerService: OpenerService = createMockHost().opener;
+export const browserOpenerService: OpenerService = browserMockHost.opener;
 
 export function createDesktopOpenerService(): OpenerService {
   return isTauri() ? tauriOpenerService : browserOpenerService;

@@ -18,3 +18,7 @@ export { FileTree } from './FileTree';
 export type { FileTreeProps } from './FileTree';
 export { SidebarHeader } from './SidebarHeader';
 export type { SidebarHeaderProps, SidebarMode } from './SidebarHeader';
+export { VirtualRows } from './VirtualRows';
+export type { VirtualRowsProps } from './VirtualRows';
+export { buildOffsets, findRange } from './virtual';
+export type { VirtualRange } from './virtual';

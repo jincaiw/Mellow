@@ -38,7 +38,8 @@ export interface RestoreOutcome {
 }
 
 export function updateChannelFromSettings(): UpdateChannel {
-  const def = settingById('updater.channel');
+  // P2-2.6：updater section 归位到 general，设置 id 同步为 general.updater.channel
+  const def = settingById('general.updater.channel');
   const value = def === undefined ? DEFAULT_UPDATE_CHANNEL : readSetting(def);
   return value === 'beta' ? 'beta' : DEFAULT_UPDATE_CHANNEL;
 }

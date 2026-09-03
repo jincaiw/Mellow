@@ -5,7 +5,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { RecoveryStorage, RecoveryPayload, RecoveryEntry, Result } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 
@@ -94,7 +94,7 @@ export const tauriRecoveryStorage: RecoveryStorage = {
   },
 };
 
-export const browserRecoveryStorage: RecoveryStorage = createMockHost().recovery;
+export const browserRecoveryStorage: RecoveryStorage = browserMockHost.recovery;
 
 /** 按运行时选择实现（Adapter 装配点） */
 export function createDesktopRecoveryStorage(): RecoveryStorage {

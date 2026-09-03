@@ -10,8 +10,10 @@ pub mod search;
 pub mod upload;
 pub mod updater;
 pub mod watcher;
+pub mod window;
 
 use tauri::{Emitter, Manager, RunEvent};
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
 use watcher::{DebounceState, WatcherRegistry};
@@ -120,11 +122,7 @@ pub fn run() {
             pending_open_path,
             is_portable,
             print::open_devtools,
-            menu::set_menu_locale,
-            menu::set_recent_files,
-            menu::set_theme_selection,
-            menu::set_spellcheck_state,
-            menu::set_smart_punct_state,
+            menu::set_menu_spec,
             bridge::bridge_call,
             clipboard::copy_image_to_clipboard,
             fs::open_document,
@@ -154,7 +152,11 @@ pub fn run() {
             recovery::recovery_delete,
             watcher::watch_document,
             watcher::unwatch_document,
+            watcher::watch_dir,
+            watcher::unwatch_dir,
             print::print_window,
+            window::new_window,
+            window::page_setup,
             open_with::detect_open_with,
             open_with::open_with_editor,
             pandoc::pandoc_available,
@@ -168,13 +170,9 @@ pub fn run() {
             updater::update_rollback_restore,
         ])
         .manage(WatcherRegistry::default())
+        .manage(watcher::WatcherIdCounter(AtomicU64::new(0)))
         .manage(DebounceState::default())
         .manage(PendingOpen(Mutex::new(None)))
-        .manage(menu::MenuLocale(Mutex::new("zh-CN".to_string())))
-        .manage(menu::RecentFiles(Mutex::new(Vec::new())))
-        .manage(menu::SpellcheckState(Mutex::new(true)))
-        .manage(menu::SmartPunctState(Mutex::new(false)))
-        .manage(menu::ThemeSelection(Mutex::new(menu::ThemeSelectionState::default())))
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
             // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），

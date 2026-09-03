@@ -6,7 +6,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { createMockHost } from '../../../../packages/host-api/src/index';
+import { browserMockHost } from './browserMockHost';
 import type { FileService, Result, OpenFileResult, WriteFileResult, SaveOptions, Encoding, LineEnding } from '../../../../packages/host-api/src/index';
 import { ok, err } from '../../../../packages/host-api/src/index';
 
@@ -246,7 +246,7 @@ export const tauriFileService: FileService = {
 };
 
 /** 浏览器 dev 模式文件服务（host-api 官方 mock） */
-export const browserFileService: FileService = createMockHost().fs;
+export const browserFileService: FileService = browserMockHost.fs;
 
 /** 按运行时选择实现（Adapter 装配点） */
 export function createDesktopFileService(): FileService {
