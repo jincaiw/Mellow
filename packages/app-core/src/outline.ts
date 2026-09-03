@@ -140,6 +140,13 @@ export class OutlineModel {
   expand(id: string): void { this.collapsed.delete(id); }
   toggle(id: string): void { if (this.collapsed.has(id)) this.collapsed.delete(id); else this.collapsed.add(id); }
 
+  /** P3.5 右键菜单「全部折叠」：把给定可见序列中有子级的全部置为折叠。 */
+  collapseAll(items: readonly OutlineHeading[]): void {
+    for (const item of items) {
+      if (item.children.length > 0) this.collapsed.add(item.id);
+    }
+  }
+
   visibleItems(headings: OutlineHeading[], flat: boolean): OutlineHeading[] {
     if (flat) return flattenOutline(headings);
     const out: OutlineHeading[] = [];
@@ -151,5 +158,28 @@ export class OutlineModel {
     };
     walk(headings);
     return out;
+  }
+
+  /** P3.3 键盘导航（G4-SIDE-02）：↑↓/Home/End 在可见行序列上移动选中，Enter 返回跳转目标。
+   * 跳转本身由调用方执行（Editor 跳 offset / Reader 滚锚点），本模型只管选中态。 */
+  navigate(items: OutlineHeading[], key: 'up' | 'down' | 'home' | 'end' | 'enter'): { selectedId: string | null; jump?: OutlineHeading } {
+    if (items.length === 0) {
+      this.selectedId = null;
+      return { selectedId: null };
+    }
+    const index = items.findIndex((item) => item.id === this.selectedId);
+    if (key === 'enter') {
+      // 未选中时 Enter 落到第一项（与 QuickOpen 心智一致）
+      const target = index === -1 ? items[0] : items[index];
+      this.selectedId = target.id;
+      return { selectedId: target.id, jump: target };
+    }
+    let next = index === -1 ? 0 : index;
+    if (key === 'home') next = 0;
+    else if (key === 'end') next = items.length - 1;
+    else if (key === 'down') next = index === -1 ? 0 : Math.min(items.length - 1, index + 1);
+    else if (key === 'up') next = index === -1 ? 0 : Math.max(0, index - 1);
+    this.selectedId = items[next].id;
+    return { selectedId: items[next].id };
   }
 }

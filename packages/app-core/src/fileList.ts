@@ -54,13 +54,32 @@ export function summaryFromMarkdown(content: string, maxChars: number): string |
   return body.length > maxChars ? `${body.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…` : body;
 }
 
+/**
+ * P3.6（G4-SIDE-06）常驻 filter：按 title / filename 过滤 File List（大小写不敏感 includes）。
+ * 空 query 原样返回（浅拷贝）。
+ */
+export function filterFileList(items: readonly FileListItem[], query: string): FileListItem[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...items];
+  return items.filter((item) => item.title.toLowerCase().includes(q) || item.filename.toLowerCase().includes(q));
+}
+
 export class FileListModel {
   selectedPath: string | null = null;
-  navigate(items: Array<{ path: string }>, key: 'up' | 'down' | 'enter'): { selected: string | null; open?: string } {
+  /** P3.4（G4-SIDE-01）键位补齐：↑↓/Enter 既有；←→ 在单列列表上与 ↑↓ 同义（桌面单列列表惯例）；
+   * PageUp/PageDown 按 pageSize 整页移动（默认 10 项，clamp 边界）；未选中时任意移动键落到第一项。 */
+  navigate(items: Array<{ path: string }>, key: 'up' | 'down' | 'left' | 'right' | 'enter' | 'pageup' | 'pagedown', pageSize = 10): { selected: string | null; open?: string } {
     if (items.length === 0) return { selected: null };
     const currentIndex = this.selectedPath === null ? -1 : items.findIndex((item) => item.path === this.selectedPath);
-    if (key === 'down') this.selectedPath = items[Math.min(items.length - 1, currentIndex + 1)].path;
-    if (key === 'up') this.selectedPath = items[Math.max(0, currentIndex <= 0 ? 0 : currentIndex - 1)].path;
+    const step = key === 'down' || key === 'right' ? 1
+      : key === 'up' || key === 'left' ? -1
+      : key === 'pagedown' ? Math.max(1, pageSize)
+      : key === 'pageup' ? -Math.max(1, pageSize)
+      : 0;
+    if (step !== 0) {
+      const base = currentIndex === -1 ? 0 : currentIndex + step;
+      this.selectedPath = items[Math.max(0, Math.min(items.length - 1, base))].path;
+    }
     if (key === 'enter' && this.selectedPath !== null) return { selected: this.selectedPath, open: this.selectedPath };
     return { selected: this.selectedPath };
   }

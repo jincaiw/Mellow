@@ -120,6 +120,35 @@ export function sortEntries(entries: DirEntry[], options: FileTreeOptions): DirE
   });
 }
 
+/**
+ * P3.6（G4-SIDE-06）常驻 filter：按名称过滤 File Tree（大小写不敏感 includes）。
+ * - 空 query 原样返回（浅拷贝，不改动引用语义）。
+ * - 匹配的文件保留；匹配的文件夹保留整棵子树（保持原 expanded）。
+ * - 文件夹自身不匹配但子孙匹配 → 保留祖先链且 expanded 强制 true（过滤视图下展示匹配子树）。
+ */
+export function filterFileTree(nodes: readonly FileTreeNode[], query: string): FileTreeNode[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...nodes];
+  const walk = (list: readonly FileTreeNode[]): FileTreeNode[] => {
+    const out: FileTreeNode[] = [];
+    for (const node of list) {
+      const selfMatch = node.name.toLowerCase().includes(q);
+      if (node.kind === 'folder') {
+        if (selfMatch) {
+          out.push(node);
+        } else if (node.children !== undefined) {
+          const children = walk(node.children);
+          if (children.length > 0) out.push({ ...node, expanded: true, children });
+        }
+      } else if (selfMatch) {
+        out.push(node);
+      }
+    }
+    return out;
+  };
+  return walk(nodes);
+}
+
 export class FileTreeModel {
   expanded = new Set<string>();
   selectedPath: string | null = null;
