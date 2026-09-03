@@ -44,6 +44,8 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 | 编辑（CoreEditor 185 + 全仓 jest 1419） | ✅ | ✅（同构建） | 🔶 | ✅（同构建） |
 | 保存（atomic write + source fidelity corpus） | ✅（Windows byte-identical gate） | ✅（CI gate） | 🔶 | 🔶（corpus 待 CI 扩展） |
 | Live Markdown（marker reveal / nodes） | ✅（editor-engine 971，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
+| File links（渲染/点击打开/broken indicator，spec engine §12） | ✅（md-link 15 例 + settings/adapter 护栏锚点；2026-09-03 用户裁决解冻实现） | — | 🔶（broken 视觉一致 Typora 对照待真机） | — |
+| Windows JumpList（系统最近文档，PRD §134 P1） | ✅（jumplist.rs + windows-sys 交叉 check EXIT=0 + Windows CI 编译 12m2s） | 🔶（任务栏 Recent 展示/点击打开待真机） | — | — |
 | Table 编辑（one-undo/minimal diff/100×30） | ✅（table-undo-diff 16 + table-large 7） | — | 🔶 | — |
 | 中文输入（composition guard + IME 冻结） | ✅（逻辑层全绿） | ✅（Xvfb+fcitx5 矩阵 gate，Linux 列；Windows IME 矩阵 CI 仅诊断级） | 🔶（20 分钟实机写作待 P4.11） | ✅（CI IME matrix） |
 | IME corruption = 0 | ✅（自动化层） | 🔶（SendKeys 保存读回为诊断，不入证据） | ⛔（实机待执行） | 🔶（CI 矩阵内断言） |

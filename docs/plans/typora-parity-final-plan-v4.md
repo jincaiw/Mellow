@@ -884,6 +884,7 @@ Functional
 | 2026-09-01 | V4.0 | 基于 `2482503` 全量代码审计重写：关闭顶层菜单差距；新暴露 Win/Linux 9 处快捷键偏离、9 模块缺失 IME guard、侧边栏 watcher/虚拟化/键盘缺口、line-height 变量失效、Table 100×30 与 Clipboard 跨应用零测试、无视觉 Golden；固化 P1–P8 施工包 |
 | 2026-09-01 | V4.0 | 用户确认 D1（全改 Typora 官方键位）、D5（Windows self-hosted runner）、D7（冻结新功能至 P8 通过）；D2 转真机复核后定案 |
 | 2026-09-03 | V4.1 | P0-P8 自动化范围全部收口（12 包 jest 1418 例 + parity 护栏 12 个），v1.4.0 tag 发布（pre-release，ADR-0020）；§17.2 决策点复核：D3/D4/D6/D9 落地关闭（D6 新增 ADR-0023），D8 待用户提供 runner 机器；P8 剩余项全部为真机/人工 Gate |
+| 2026-09-03 | V4.2 | 用户裁决（互动确认）：D6 Accepted 定级确认、D8 暂缓继续用 hosted runner、D7 单项解冻 JumpList 与 broken-link indicator 并当日实现收口（d96346c/f56abcb）；导出能力复核纠正（Pandoc/Previous Export/Image Export 早已实现）；PRD P1 功能清零；v1.4.1 tag 发布（CI 三平台全绿，Draft pre-release） |
 
 ---
 
