@@ -9,7 +9,10 @@
   },
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
-    "test": "pnpm -r --workspace-concurrency=4 run test && node tests/parity/verify-parity-ledger.mjs && node tests/parity/verify-menu-contract.mjs && node tests/parity/verify-runtime-qualification-workflow.mjs && node tests/qualification/ux-gate-recorder.mjs --self-test",
+    "pretest": "node tests/benchmark/generate-typora-menu-dump.mjs",
+    "test": "pnpm -r --workspace-concurrency=4 run test && pnpm run typecheck:desktop && node tests/parity/verify-parity-ledger.mjs && node tests/parity/verify-menu-contract.mjs && node tests/parity/verify-menu-contract-guard.mjs && node tests/parity/verify-shell-typography.mjs && node tests/parity/verify-shell-widgets.mjs && node tests/parity/verify-settings-contract.mjs && node tests/parity/verify-visual-golden.mjs && node tests/parity/verify-sidebar-contract.mjs && node tests/parity/verify-context-menu-parity.mjs && node tests/parity/verify-context-menu-guard.mjs && node tests/parity/verify-adapter-contract.mjs && node tests/parity/verify-runtime-qualification-workflow.mjs && node tests/qualification/ux-gate-recorder.mjs --self-test",
+    "parity": "npm run pretest && node tests/parity/verify-parity-ledger.mjs && node tests/parity/verify-menu-contract.mjs && node tests/parity/verify-menu-contract-guard.mjs && node tests/parity/verify-shell-typography.mjs && node tests/parity/verify-shell-widgets.mjs && node tests/parity/verify-settings-contract.mjs && node tests/parity/verify-visual-golden.mjs && node tests/parity/verify-sidebar-contract.mjs && node tests/parity/verify-context-menu-parity.mjs && node tests/parity/verify-context-menu-guard.mjs && node tests/parity/verify-adapter-contract.mjs && node tests/parity/verify-runtime-qualification-workflow.mjs && node tests/qualification/ux-gate-recorder.mjs --self-test",
+    "typecheck:desktop": "pnpm --filter mellow-desktop exec tsc --noEmit",
     "typecheck": "pnpm -r --workspace-concurrency=4 run build",
     "desktop:dev": "pnpm --filter mellow-desktop dev",
     "desktop:build": "pnpm --filter mellow-desktop build",

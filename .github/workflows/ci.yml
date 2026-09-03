@@ -111,6 +111,21 @@ jobs:
         working-directory: apps/desktop
         run: pnpm run build
 
+  parity-guard:
+    name: Typora parity guardrails (ledger + menu schema + guard self-test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 护栏脚本只依赖 Node 内建模块，无需 pnpm install，可在 30s 内给出结论。
+      # 无 Typora 授权环境时 dump 生成器退化为 UNVERIFIED 占位（不构成验收证据）。
+      - name: Generate Typora baseline dump
+        run: node tests/benchmark/generate-typora-menu-dump.mjs
+      - name: Parity ledger + menu contract + guard self-test + runtime qualification + UX gate
+        run: npm run parity
+
   rust-check:
     name: Rust system core check + test
     runs-on: ubuntu-latest

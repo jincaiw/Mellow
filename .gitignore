@@ -19,3 +19,6 @@ apps/desktop/quicklook/Resources/quicklook.html
 *.log
 *.tmp
 *.mellow-tmp
+
+# WorkBuddy 工作区元数据（memory 日志等，本地过程资产）
+.workbuddy/
