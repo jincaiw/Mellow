@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "mellow-desktop"
-version = "1.3.6"
+version = "1.4.1"
 dependencies = [
  "arboard",
  "image",
@@ -2318,6 +2318,7 @@ dependencies = [
  "tauri-plugin-updater",
  "trash",
  "ureq",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
