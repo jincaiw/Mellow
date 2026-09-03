@@ -1,6 +1,7 @@
 pub mod bridge;
 pub mod clipboard;
 pub mod fs;
+pub mod jumplist;
 pub mod menu;
 pub mod open_with;
 pub mod pandoc;
@@ -67,6 +68,13 @@ fn is_portable() -> bool {
     *PORTABLE.get().unwrap_or(&false)
 }
 
+/// 记录最近文档到系统（Windows JumpList Recent category；PRD §134 P1；
+/// 非 Windows no-op。调用点：前端 recordRecentFile——仅用户成功打开文档语义处）
+#[tauri::command]
+fn jump_list_add_recent(path: String) {
+    jumplist::add_recent(&path);
+}
+
 /// 前端就绪后拉取待打开请求（benchmark open-to-editable / open-with / CLI）
 #[tauri::command]
 fn pending_open_path(state: tauri::State<PendingOpen>) -> Option<OpenRequest> {
@@ -121,6 +129,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pending_open_path,
             is_portable,
+            jump_list_add_recent,
             print::open_devtools,
             menu::set_menu_spec,
             bridge::bridge_call,

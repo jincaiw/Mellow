@@ -44,6 +44,10 @@ objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 
+# Windows JumpList（PRD §134 P1 Recent integration）：SHAddToRecentDocs 系统最近文档
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_Foundation"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

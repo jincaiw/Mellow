@@ -87,6 +87,25 @@ if (!/"createUpdaterArtifacts": true/.test(tauriConf)) {
   fail('tauri.conf.json 未开启 createUpdaterArtifacts（P7 Exit Gate「更新矩阵」的构建级前提）');
 }
 
+// ── ③-b Windows JumpList（2026-09-03 用户裁决纳入实施；PRD §134 P1 Recent integration）──
+//    三方锚点：前端 recordRecentFile（用户打开文档语义）→ Rust 命令 → Shell API 模块。
+const jumplistRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/jumplist.rs'), 'utf8');
+// 词边界正则（\b）：add_recent_renamed 之类超集子串不得假绿（canary 实证过 includes 缺陷）
+if (!/\bpub fn add_recent\b/.test(jumplistRust) || !jumplistRust.includes('SHAddToRecentDocs')) {
+  fail('src-tauri jumplist.rs 缺少 add_recent/SHAddToRecentDocs（Windows JumpList Rust 侧实现）');
+}
+const libRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/lib.rs'), 'utf8');
+if (!libRust.includes('jump_list_add_recent')) {
+  fail('src-tauri lib.rs 未注册 jump_list_add_recent 命令（JumpList 前端入口）');
+}
+const appTsSource = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8');
+if (!appTsSource.includes("invoke('jump_list_add_recent'")) {
+  fail('App.tsx recordRecentFile 未调用 jump_list_add_recent（JumpList 系统最近文档挂点）');
+}
+if (!readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').includes('windows-sys')) {
+  fail('src-tauri Cargo.toml 缺少 windows-sys（cfg(windows) target 依赖，JumpList Shell API）');
+}
+
 // ── ⑤ drift canary：扫描器自检（防「永远绿」假护栏）──────────────────────
 const canaryViolations = [];
 const canaryText = "import { invoke } from '@tauri-apps/api/core';\nwindow.__TAURI_INTERNALS__.invoke('x');";

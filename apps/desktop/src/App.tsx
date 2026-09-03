@@ -2696,7 +2696,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** 记录最近打开（去重置顶、cap 10、持久化） */
+  /** 记录最近打开（去重置顶、cap 10、持久化）+ Windows JumpList 系统最近文档 */
   const recordRecentFile = useCallback((path: string) => {
     setRecentFiles((prev) => {
       const next = pushRecentFile(prev, path, Date.now());
@@ -2706,6 +2706,9 @@ export default function App() {
       }
       return next;
     });
+    // Windows JumpList（PRD §134 P1 Recent integration）：SHAddToRecentDocs 系统聚合，
+    // 任务栏右键「最近」直达；非 Windows 后端 no-op。失败静默（体验增强，不影响主流程）。
+    void invoke('jump_list_add_recent', { path }).catch(() => undefined);
   }, []);
 
   const handleNew = useCallback(async () => {
