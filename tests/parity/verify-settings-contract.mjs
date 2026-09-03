@@ -212,6 +212,19 @@ for (const key of ['mellow.export.image.format', 'mellow.export.image.width', 'm
   if (!settingsSource.includes(`storageKey: '${key}'`)) fail(`Settings schema 缺少图片导出设置 ${key}`);
   if (!appSource.includes(`'${key}'`)) fail(`App.tsx 未消费 ${key}（图片导出设置断链）`);
 }
+// broken local link indicator（2026-09-03 用户裁决纳入实施；engine spec §12 subtle error indicator）
+//    桥链三方：engine 装饰/刷新钩子 → core.ts 转发 → 宿主 exists checker 注入（fs.exists 缓存预取）。
+if (!appSource.includes('__MELLOW_MD_LINK_EXISTS__') || !appSource.includes('refreshMdLinks()')) {
+  fail('App.tsx 缺少 broken-link exists checker 注入或引擎重绘调用（engine spec §12 broken local link）');
+}
+const coreSource = read('packages/editor-core/src/core.ts');
+if (!coreSource.includes('refreshMdLinks(): void') || !coreSource.includes('__MELLOW_MD_LINK_REFRESH__')) {
+  fail('editor-core core.ts 缺少 refreshMdLinks 转发（宿主 → iframe __MELLOW_MD_LINK_REFRESH__）');
+}
+const mdLinkSource = read('packages/editor-engine/src/mdLink.ts');
+for (const anchor of ['__MELLOW_MD_LINK_EXISTS__', 'mellow-mdlink-broken', '__MELLOW_MD_LINK_REFRESH__']) {
+  if (!mdLinkSource.includes(anchor)) fail(`mdLink.ts 缺少 broken indicator 锚点 ${anchor}（engine spec §12）`);
+}
 
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {

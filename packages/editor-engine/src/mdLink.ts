@@ -138,12 +138,36 @@ function opener(): MdLinkOpener | undefined {
   return (window as unknown as { __MELLOW_MD_LINK_OPEN__?: MdLinkOpener }).__MELLOW_MD_LINK_OPEN__;
 }
 
+// ── broken local link indicator（engine spec §12：subtle error indicator，source unchanged）──
+// 宿主注入目标存在性检查：false = 确认不存在（label 加 broken 样式）；
+// true = 存在；undefined = 未知（未预取/查询中，首帧不误标）。
+// 宿主异步预取完成后调用本模块注册的 __MELLOW_MD_LINK_REFRESH__（bump 版本 + 重绘）。
+type MdLinkExistsChecker = (dest: string) => boolean | undefined;
+function existsChecker(): MdLinkExistsChecker | undefined {
+  return (window as unknown as { __MELLOW_MD_LINK_EXISTS__?: MdLinkExistsChecker }).__MELLOW_MD_LINK_EXISTS__;
+}
+
+let existsVersion = 0;
+/** 存在性结果版本号（宿主 refresh 通道 bump；plugin update 检测后重建装饰） */
+export function mdLinkExistsVersion(): number {
+  return existsVersion;
+}
+
 const LINK_CLASS = 'mellow-mdlink';
+const LINK_BROKEN_CLASS = 'mellow-mdlink-broken';
 const DELIM_CLASS = 'mellow-mdlink-delim';
+const REFRESH_KEY = '__MELLOW_MD_LINK_REFRESH__' as const;
 
 export function buildMdLinkExtension(): Extension {
   const cm = resolveCm();
   const { EditorView: CmEditorView, ViewPlugin, Decoration, RangeSetBuilder } = cm;
+
+  // 宿主刷新通道：存在性预取完成后 bump 版本并触发当前视图重建（空事务 → 同步 update）。
+  let activeLinkView: EditorView | null = null;
+  (window as unknown as Record<string, unknown>)[REFRESH_KEY] = () => {
+    existsVersion += 1;
+    activeLinkView?.dispatch({});
+  };
 
   const build = (view: EditorView): DecorationSet => {
     const builder = new RangeSetBuilder<import('@codemirror/view').Decoration>();
@@ -153,13 +177,16 @@ export function buildMdLinkExtension(): Extension {
     const links = scanMdLinks(doc, fencedRanges(doc), win);
     const head = view.state.selection.main.head;
     const sourceMode = isSourceMode(view);
+    const checker = existsChecker();
     for (const l of links) {
       if (l.labelTo <= l.labelFrom) continue;
       // RangeSetBuilder 必须按 from 升序添加：前定界符 → label → 后定界符
       if (!sourceMode && !(head >= l.from && head <= l.to)) {
         builder.add(l.from, l.from + 1, Decoration.mark({ class: DELIM_CLASS }));
       }
-      builder.add(l.labelFrom, l.labelTo, Decoration.mark({ class: LINK_CLASS }));
+      // spec §12：仅宿主明确返回 false（确认不存在）才标 broken；undefined 不误标
+      const broken = checker?.(l.dest) === false;
+      builder.add(l.labelFrom, l.labelTo, Decoration.mark({ class: broken ? `${LINK_CLASS} ${LINK_BROKEN_CLASS}` : LINK_CLASS }));
       if (!sourceMode && !(head >= l.from && head <= l.to)) {
         builder.add(l.labelTo, l.to, Decoration.mark({ class: DELIM_CLASS }));
       }
@@ -182,7 +209,9 @@ export function buildMdLinkExtension(): Extension {
     class MdLinkPlugin {
       decorations: DecorationSet;
       private largeVersion = largeFileVersion();
+      private seenExistsVersion = mdLinkExistsVersion();
       constructor(readonly view: EditorView) {
+        activeLinkView = view;
         this.decorations = build(view);
       }
       update(update: ViewUpdate): void {
@@ -190,7 +219,9 @@ export function buildMdLinkExtension(): Extension {
         if (isComposing(update.view)) return;
         const largeChanged = largeFileVersion() !== this.largeVersion;
         if (largeChanged) this.largeVersion = largeFileVersion();
-        if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged) {
+        const existsChanged = mdLinkExistsVersion() !== this.seenExistsVersion;
+        if (existsChanged) this.seenExistsVersion = mdLinkExistsVersion();
+        if (update.docChanged || update.selectionSet || update.viewportChanged || largeChanged || existsChanged) {
           this.decorations = build(update.view);
         }
       }
@@ -203,6 +234,10 @@ export function buildMdLinkExtension(): Extension {
       color: 'var(--mellow-accent, #3563d6)',
       textDecoration: 'underline',
       cursor: 'pointer',
+    },
+    // subtle error indicator（spec §12）：暗红文字，不改动下划线形态与文档源码
+    [`.${LINK_BROKEN_CLASS}`]: {
+      color: 'var(--mellow-danger, #b3261e)',
     },
     [`.${DELIM_CLASS}`]: { fontSize: '0', userSelect: 'text' },
   });

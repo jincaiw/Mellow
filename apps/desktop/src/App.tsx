@@ -142,6 +142,19 @@ interface DocMeta {
   eol: LineEnding;
 }
 
+/** mdLink dest → 解析结果（decode + 剥锚点 + 相对当前文档目录拼接）。空目标 → null。
+ *  openMdLink 与 broken-link exists checker 共用（spec §12 同口径，避免两套解析漂移）。 */
+function resolveMdLinkTarget(dest: string, currentDocPath: string | null): { pathPart: string; target: string; anchor: string } | null {
+  let decoded = dest;
+  try { decoded = decodeURIComponent(dest); } catch { /* 保留原样（含裸 % 等） */ }
+  const hashIndex = decoded.indexOf('#');
+  const pathPart = hashIndex === -1 ? decoded : decoded.slice(0, hashIndex);
+  if (pathPart === '') return null;
+  const anchor = hashIndex === -1 ? '' : decoded.slice(hashIndex + 1);
+  const target = currentDocPath !== null ? `${fileTreeDirname(currentDocPath)}/${pathPart}` : pathPart;
+  return { pathPart, target, anchor };
+}
+
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<EditorCore | null>(null);
@@ -2610,9 +2623,11 @@ export default function App() {
         }
 
         // 注入 markdown 文件链接打开 handler（[label](path.md#锚点) → 相对解析打开 + 锚点跳转）
-        const mdLinkWin = frame?.contentWindow as (Window & { __MELLOW_MD_LINK_OPEN__?: (dest: string) => void }) | null;
+        // 与 broken local link indicator 的 exists checker（spec §12：false 才标错，undefined 不误标）
+        const mdLinkWin = frame?.contentWindow as (Window & { __MELLOW_MD_LINK_OPEN__?: (dest: string) => void; __MELLOW_MD_LINK_EXISTS__?: (dest: string) => boolean | undefined }) | null;
         if (mdLinkWin) {
           mdLinkWin.__MELLOW_MD_LINK_OPEN__ = (dest) => { void openMdLinkRef.current(dest); };
+          mdLinkWin.__MELLOW_MD_LINK_EXISTS__ = (dest) => checkMdLinkExistsRef.current(dest);
         }
 
         // 注入编辑器右键菜单 handler（engine 检测上下文 → App 弹 ContextMenu）
@@ -2838,16 +2853,41 @@ export default function App() {
 
   /** Markdown 文件链接 `[label](path.md#锚点)` → 相对当前文档目录解析并打开；
    *  锚点跳转：heading 文本/ slug 匹配 → jumpToOffset（Typora 文件链接锚点跳转）。 */
+  // broken local link indicator（engine spec §12：subtle error indicator）：
+  // engine 装饰时同步查缓存；miss → 去重异步预取（fs.exists）→ 写缓存 → 通知引擎重绘。
+  // undefined（未预取）首帧不误标；fs 查询失败保守视为存在（不误标）。
+  const mdLinkExistsCacheRef = useRef(new Map<string, boolean>());
+  const mdLinkExistsPendingRef = useRef(new Set<string>());
+  const checkMdLinkExists = useCallback((dest: string): boolean | undefined => {
+    const resolved = resolveMdLinkTarget(dest, filePathRef.current);
+    if (resolved === null) return true; // 空/纯锚点 → 不标错
+    const cached = mdLinkExistsCacheRef.current.get(resolved.target);
+    if (cached !== undefined) return cached;
+    if (!mdLinkExistsPendingRef.current.has(resolved.target)) {
+      mdLinkExistsPendingRef.current.add(resolved.target);
+      void (async () => {
+        let exists = true;
+        const fsService = fileServiceRef.current;
+        if (fsService !== null) {
+          const r = await fsService.exists(resolved.target);
+          if (r.ok) exists = r.value;
+        }
+        mdLinkExistsPendingRef.current.delete(resolved.target);
+        if (mdLinkExistsCacheRef.current.size > 512) mdLinkExistsCacheRef.current.clear();
+        mdLinkExistsCacheRef.current.set(resolved.target, exists);
+        hostRef.current?.refreshMdLinks();
+      })();
+    }
+    return undefined;
+  }, []);
+  const checkMdLinkExistsRef = useRef(checkMdLinkExists);
+  checkMdLinkExistsRef.current = checkMdLinkExists;
+
   const openMdLink = useCallback(async (dest: string) => {
-    // dest 可能带 %XX 转义（拖拽建链/外部工具生成）→ 解码后再拆锚点
-    let decoded = dest;
-    try { decoded = decodeURIComponent(dest); } catch { /* 保留原样（含裸 % 等） */ }
-    const hashIndex = decoded.indexOf('#');
-    const pathPart = hashIndex === -1 ? decoded : decoded.slice(0, hashIndex);
-    const anchor = hashIndex === -1 ? '' : decoded.slice(hashIndex + 1);
-    if (pathPart === '') return;
-    const current = filePathRef.current;
-    const target = current !== null ? `${fileTreeDirname(current)}/${pathPart}` : pathPart;
+    // dest 可能带 %XX 转义（拖拽建链/外部工具生成）→ resolveMdLinkTarget 统一解码拆锚点
+    const resolved = resolveMdLinkTarget(dest, filePathRef.current);
+    if (resolved === null) return;
+    const { pathPart, target, anchor } = resolved;
     const fsService = fileServiceRef.current;
     if (fsService !== null) {
       const r = await fsService.exists(target);
@@ -2863,6 +2903,8 @@ export default function App() {
           setStatusText(t('msg.openFailed', { error: created.error.message }));
           return;
         }
+        // 自动创建成功 → 同步 exists 缓存，broken 指示立即消失
+        mdLinkExistsCacheRef.current.set(target, true);
       }
     }
     await openPathInTab(target);

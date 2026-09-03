@@ -472,6 +472,12 @@ export class EditorCore {
     win?.__MELLOW_ENGINE_API__?.refreshImages?.();
   }
 
+  /** 重新检查文件链接目标存在性（宿主 fs.exists 预取完成后；引擎 MdLink API，spec §12 broken indicator） */
+  refreshMdLinks(): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_MD_LINK_REFRESH__?: () => void }) | null;
+    win?.__MELLOW_MD_LINK_REFRESH__?.();
+  }
+
   /** 销毁 */
   destroy(): void {
     this.iframe?.remove();

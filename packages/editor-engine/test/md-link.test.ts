@@ -123,3 +123,48 @@ describe('点击打开（__MELLOW_MD_LINK_OPEN__）', () => {
     expect(view.state.doc.toString()).toBe(before);
   });
 });
+
+describe('broken local link indicator（spec §12：subtle error indicator）', () => {
+  const EXISTS_KEY = '__MELLOW_MD_LINK_EXISTS__' as keyof Window;
+  const REFRESH_KEY = '__MELLOW_MD_LINK_REFRESH__' as keyof Window;
+
+  /** 取 label span（mellow-mdlink 类节点） */
+  function labelEls(view: EditorView): HTMLElement[] {
+    return Array.from(view.dom.querySelectorAll('.mellow-mdlink')) as HTMLElement[];
+  }
+
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>)[EXISTS_KEY];
+    delete (window as unknown as Record<string, unknown>)[REFRESH_KEY];
+  });
+
+  test('宿主返回 false 的链接 → label 加 broken class；正常链接不受影响', () => {
+    (window as unknown as Record<string, unknown>)[EXISTS_KEY] = (dest: string) => dest !== 'missing.md';
+    const view = setUp('see [断链](missing.md) and [好链](real.md) end');
+    const els = labelEls(view);
+    expect(els).toHaveLength(2);
+    expect(els[0].classList.contains('mellow-mdlink-broken')).toBe(true);
+    expect(els[0].textContent).toBe('断链');
+    expect(els[1].classList.contains('mellow-mdlink-broken')).toBe(false);
+    // Source Fidelity：doc 文本不变
+    expect(view.state.doc.toString()).toBe('see [断链](missing.md) and [好链](real.md) end');
+  });
+
+  test('未注入 checker 或返回 undefined（未知）→ 不误标', () => {
+    const view = setUp('[a](b.md)');
+    expect(labelEls(view)[0].classList.contains('mellow-mdlink-broken')).toBe(false);
+    (window as unknown as Record<string, unknown>)[EXISTS_KEY] = () => undefined;
+    const view2 = setUp('[a](b.md)');
+    expect(labelEls(view2)[0].classList.contains('mellow-mdlink-broken')).toBe(false);
+  });
+
+  test('预取完成 → __MELLOW_MD_LINK_REFRESH__ 触发重绘（版本号 bump）', () => {
+    let mockExists: ((dest: string) => boolean | undefined) | undefined;
+    (window as unknown as Record<string, unknown>)[EXISTS_KEY] = (dest: string) => mockExists?.(dest);
+    const view = setUp('[a](b.md)');
+    expect(labelEls(view)[0].classList.contains('mellow-mdlink-broken')).toBe(false); // 首帧未知不误标
+    mockExists = () => false; // 预取结果：不存在
+    (window as unknown as { __MELLOW_MD_LINK_REFRESH__?: () => void }).__MELLOW_MD_LINK_REFRESH__?.(); // 宿主通知 → bump + dispatch
+    expect(labelEls(view)[0].classList.contains('mellow-mdlink-broken')).toBe(true);
+  });
+});
