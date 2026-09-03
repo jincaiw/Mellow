@@ -868,9 +868,11 @@ Functional
 |---|---|---|
 | D3 | P1 是否包含"Win/Linux 原生 accelerator 落地" | ✅ **已随 P1 单一真源落地**：`menuSchema` `shortcut` 三平台字段驱动，`menu.rs` `syncNativeMenu` 物化（含平台过滤与平台 accelerator），`verify-menu-contract` 护栏断言 |
 | D4 | 视觉 Golden 采用像素 diff 还是关键区域容差截图 | ✅ **已落地**：关键区域契约点采样 + `layout-golden.json` 基准 + 容差（`tests/parity/verify-visual-golden.mjs` ①-⑤） |
-| D6 | 是否新增 ADR 记录"菜单单一真源" | ✅ **已新增** `docs/adr/ADR-0023-menu-single-source-menuschema.md`（以实际机制 `menuSchema` 命名，不动已有 ADR） |
-| D8 | Windows self-hosted runner 的机器来源与安全基线 | ⏳ **待用户提供**；需常驻、可联网、无公司数据留存（D5 已确认接入，机器未到位） |
+| D6 | 是否新增 ADR 记录"菜单单一真源" | ✅ **已新增并经用户确认 Accepted（2026-09-03）** `docs/adr/ADR-0023-menu-single-source-menuschema.md`（以实际机制 `menuSchema` 命名，不动已有 ADR） |
+| D8 | Windows self-hosted runner 的机器来源与安全基线 | ⏸ **暂缓（2026-09-03 用户确认）**：继续使用 GitHub hosted runner（三平台 CI 已全绿，够用于现有验证矩阵）；机器到位后再接入 |
 | D9 | 9 处键位改后，Cheatsheet 与 i18n 快捷键提示是否同步 | ✅ **已落地**：Cheatsheet 从 Command Registry（menuSchema 派生）读取当前平台键位，无手工维护 |
+
+> **D7 解冻记录（2026-09-03 用户裁决）**：P1 观察项 **Windows JumpList** 与 **broken local link error indicator** 两项经用户确认纳入实施（D7 单项解冻，其余新功能继续冻结至 P8 真机 Gate 通过）。Pandoc / Previous Export / Image Export 经复核确认为已实现（见 `tests/qualification/README.md` 2026-09-03 纠正）。
 
 ---
 
