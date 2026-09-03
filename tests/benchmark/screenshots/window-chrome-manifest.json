@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-09-01T23:48:57.340Z",
+  "captures": [
+    {
+      "id": "macos",
+      "label": "macOS",
+      "file": "tests/benchmark/screenshots/p2-8-window-chrome-macos.png",
+      "status": "CAPTURED",
+      "mode": "dev-browser（shell.titlebar 模拟 window chrome；原生 traffic lights 归真机评审）",
+      "viewport": "1440x900",
+      "platformMacClass": true,
+      "titlebarPaddingLeft": "76px",
+      "capturedAt": "2026-09-01T23:48:57.322Z"
+    },
+    {
+      "id": "windows",
+      "label": "Windows",
+      "file": "tests/benchmark/screenshots/p2-8-window-chrome-windows.png",
+      "status": "PENDING_REAL_MACHINE",
+      "note": "dev 浏览器无法代表原生 window chrome；按 D5 由对应平台真机/runner 归档",
+      "capturedAt": null
+    },
+    {
+      "id": "linux",
+      "label": "Linux",
+      "file": "tests/benchmark/screenshots/p2-8-window-chrome-linux.png",
+      "status": "PENDING_REAL_MACHINE",
+      "note": "dev 浏览器无法代表原生 window chrome；按 D5 由对应平台真机/runner 归档",
+      "capturedAt": null
+    }
+  ]
+}

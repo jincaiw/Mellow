@@ -1,0 +1,1489 @@
+# Typora Menu Dump（Mellow Typora parity 规范基线证据）
+# 本文件为生成产物，由 tests/benchmark/generate-typora-menu-dump.mjs 生成，请勿手改。
+
+STATUS: EXTRACTED
+SOURCE_APP: /Applications/Typora.app
+SOURCE_VERSION: 1.14.9
+SOURCE_BUILD: 7785
+NORMATIVE_MATCH: yes
+GENERATED_AT: 2026-09-03T11:05:39.735Z
+
+## 证据来源与校验和
+- Info.plist: sha256:e663f70fe40526d4
+- Menu.strings(zh-Hans): sha256:ac643d9bb61ce05a
+- MainMenu.nib: sha256:fdccfd93b4457a12
+- frame.js: sha256:b08c94bab8e99943
+
+## 1. 编辑器键位映射（frame.js / CodeMirror keymap，实机代码提取）
+
+### keymap.basic
+  Shift-Backspace => delCharBefore
+  Shift-Tab => indentAuto
+
+### keymap.pcDefault
+  Alt-Left => goLineStart
+  Alt-Right => goLineEnd
+  Alt-U => redoSelection
+  Ctrl-A => selectAll
+  Ctrl-Backspace => delGroupBefore
+  Ctrl-Delete => delGroupAfter
+  Ctrl-Down => goDocEnd
+  Ctrl-Left => goGroupLeft
+  Ctrl-Right => goGroupRight
+  Ctrl-U => undoSelection
+  Ctrl-Up => goDocStart
+  Ctrl-[ => indentLess
+  Ctrl-] => indentMore
+  Shift-Ctrl-U => redoSelection
+
+### keymap.emacsy
+  Alt-B => goWordLeft
+  Alt-Backspace => delWordBefore
+  Alt-D => delWordAfter
+  Alt-F => goWordRight
+  Ctrl-A => goLineStart
+  Ctrl-B => goCharLeft
+  Ctrl-D => delCharAfter
+  Ctrl-E => goLineEnd
+  Ctrl-F => goCharRight
+  Ctrl-H => delCharBefore
+  Ctrl-K => killLine
+  Ctrl-N => goLineDown
+  Ctrl-O => openLine
+  Ctrl-P => goLineUp
+  Ctrl-T => transposeChars
+  Ctrl-V => goPageDown
+  Shift-Ctrl-V => goPageUp
+
+### keymap.macDefault
+  Alt-Backspace => delGroupBefore
+  Alt-Delete => delGroupAfter
+  Alt-Left => goGroupLeft
+  Alt-Right => goGroupRight
+  Cmd-A => selectAll
+  Cmd-Backspace => delWrappedLineLeft
+  Cmd-Delete => delWrappedLineRight
+  Cmd-Down => goDocEnd
+  Cmd-Left => goLineLeft
+  Cmd-Right => goLineRight
+  Cmd-U => undoSelection
+  Cmd-Up => goDocStart
+  Cmd-[ => indentLess
+  Cmd-] => indentMore
+  Ctrl-Alt-Backspace => delGroupAfter
+  Ctrl-Down => goDocEnd
+  Ctrl-Up => goDocStart
+  Shift-Cmd-U => redoSelection
+
+## 2. 简体中文菜单文案（zh-Hans.lproj/Menu.strings，实机资源提取）
+
+  About => 关于
+  About Typora => 关于
+  Actual Size => 实际大小
+  Add Column After => 右侧插入列
+  Add Column Before => 左侧插入列
+  Add Row Above => 上方插入行
+  Add Row Below => 下方插入行
+  Alert => 警告框
+  Allow Magnification => 双指缩放
+  Always on Top => 保持窗口在最前端
+  Articles => 文档列表
+  Articles (List View) => 文档列表
+  Auto => 自动
+  Auto Indent Selected Code => 为选中内容调整缩进
+  Auto Indent Whole Code => 为整个代码块调整缩进
+  Block Styles => 块样式
+  Bring All to Front => 前置全部窗口
+  Browse All Versions => 浏览所有版本
+  Caution Block => 注意内容
+  Change Log => 更新日志
+  Check Document Now => 立即检查文稿
+  Check Grammar With Spelling => 检查拼写和语法
+  Check Spelling While Typing => 键入时检查拼写
+  Check Updates => 检查更新
+  Check for Updates => 检查更新
+  Clear Format => 清除样式
+  Clear Items => 清除最近文件
+  Click => 点击
+  Close => 关闭
+  Code => 代码
+  Code Fences => 代码块
+  Code Tools => 代码工具
+  Collapse All => 全部折叠
+  Collapsible Outline => 大纲视图（可折叠）
+  Comment => 注释
+  Convert on Input => 输入时转换
+  Convert on Rendering => 渲染时转换
+  Copy => 拷贝
+  Copy '%@' => 复制 '%@'
+  Copy / Paste As => 复制／粘贴为
+  Copy All Images to => 复制所有图片到
+  Copy Code Content => 复制代码块内容
+  Copy File Path => 复制文件路径
+  Copy Image Content => 拷贝图片
+  Copy Image File to Folder => 复制图片到文件夹
+  Copy Image to => 复制图片到
+  Copy Link Address => 复制链接地址
+  Copy Math => 复制公式
+  Copy Table => 复制表格
+  Copy as HTML Code => 复制为 HTML 代码
+  Copy as Image => 复制为图片
+  Copy as Markdown => 复制为 Markdown
+  Copy as MathML => 复制为 MathML
+  Copy as Plain Text => 复制为纯文本
+  Copy as Tex => 复制为 Tex 代码
+  Copy to %@ => 复制到 %@
+  Copy to MS Word => 复制到 MS Word
+  Copy without Theme Styling => 复制内容并简化格式
+  Correct Spelling Automatically => 自动纠正拼写
+  Credits => 鸣谢
+  Cut => 剪切
+  Decrease Heading Level => 降低标题级别
+  Delete => 删除
+  Delete %@ => 删除 %@
+  Delete Block => 删除块
+  Delete Code Block => 删除代码块
+  Delete Column => 删除列
+  Delete Image => 删除图片
+  Delete Image File => 删除图片文件
+  Delete Line / Sentence => 删除当前行或句
+  Delete Paragraph / Block => 删除块
+  Delete Range => 删除范围
+  Delete Row => 删除行
+  Delete Selected => 删除所选范围
+  Delete Styled Scope => 删除当前格式文本
+  Delete Table => 删除表格
+  Delete Word => 删除当前词
+  Duplicate => 创建副本
+  Edit => 编辑
+  Emoji and Symbols => 表情与符号
+  Emphasis => 斜体
+  Exit Source Code Mode => 退出源代码模式
+  Expand All => 全部展开
+  Export => 导出
+  Export Setting => 导出设置
+  Export and Overwrite with Previous => 导出并覆盖上一次导出的文件
+  Export with Previous => 使用上一次设置导出
+  Feedback => 反馈
+  File => 文件
+  File Results => 匹配的文件
+  File Tree => 文件树
+  File Tree (Tree View) => 文档树
+  File or folder does not exist. => 目标文件或文件夹不存在。
+  Filter => 搜索
+  Find => 查找
+  Find Next => 查找下一个
+  Find Previous => 查找上一个
+  Find and Replace => 查找和替换
+  Flat Outline => 大纲视图（无折叠）
+  Focus Mode => 专注模式
+  Footnotes => 脚注
+  Format => 格式
+  Full Screen => 全屏
+  Get Info => 显示简介
+  Global Image Settings => 全局图像设置
+  HTML (without Styles) => HTML (无样式)
+  HTML Block => HTML 内容
+  HTML Style => HTML 格式
+  Heading 1 => 一级标题
+  Heading 2 => 二级标题
+  Heading 3 => 三级标题
+  Heading 4 => 四级标题
+  Heading 5 => 五级标题
+  Heading 6 => 六级标题
+  Help => 帮助
+  Hide Others => 隐藏其他
+  Hide Toolbar => 隐藏工具栏
+  Hide Typora => 隐藏 Typora
+  Highlight => 高亮
+  Highlight Current Header => 高亮当前标题
+  Horizontal Line => 水平分割线
+  Hyperlink => 超链接
+  Hyperlink Actions => 链接操作
+  Image => 图像
+  Image Tools => 图像工具
+  Import => 导入
+  Important Block => 重要内容
+  Increase Heading Level => 提升标题级别
+  Indent => 增加缩进
+  Indent first line of paragraphs => 首行缩进
+  Inline Math => 内联公式
+  Inline Styles => 内联样式
+  Insert => 插入
+  Insert Final New Line On Save => 保存时在文末添加空行
+  Insert Image => 插入图片
+  Insert Local Images => 插入本地图片
+  Insert Paragraph After => 在下方插入段落
+  Insert Paragraph Before => 在上方插入段落
+  Insert Table => 插入表格
+  Inspect Element => 检查元素
+  Jump To => 跳转到
+  Jump to Bottom => 跳转到文末
+  Jump to Line End => 跳转到行尾
+  Jump to Line Start => 跳转到行首
+  Jump to Selection => 跳转到所选内容
+  Jump to Top => 跳转到文首
+  Learn More => 了解更多
+  Learn Spelling => 添加到字典
+  Line Endings => 换行符
+  Link Reference => 链接引用
+  List Indentation => 列表缩进
+  List Styles / Remove Block => 列表样式／移除块
+  Mark as Complete => 标记为已完成
+  Mark as Incomplete => 标记为未完成
+  Markdown Style => Markdown 格式
+  Math => 公式
+  Math Block => 公式块
+  Math Tools => 数学工具
+  Minimize => 最小化
+  More Actions => 更多操作
+  More Options => 更多选项
+  Move All Images to => 移动所有图片到
+  Move Column Left => 左移该列
+  Move Column Right => 右移该列
+  Move Row Down => 下移该行
+  Move Row Up => 上移该行
+  Move Table Column Left => 向左移动表格列
+  Move Table Column Right => 向右移动表格列
+  Move Table Row Down => 向下移动表格行
+  Move Table Row Up => 向上移动表格行
+  Move To => 移动到
+  Move to %@ => 移动到 %@
+  My License => 我的许可证
+  New => 新建
+  New File => 新建文件
+  New Folder => 新建文件夹
+  New Tab => 新建标签页
+  New Window => 新建窗口
+  No Recent Files => 空
+  Note Block => 提醒内容
+  Open => 打开
+  Open Failed => 无法打开
+  Open File Location => 打开文件位置
+  Open Folder => 打开文件夹
+  Open Image Location => 打开图片位置
+  Open Image in Browser => 在浏览器中打开图片
+  Open Link => 打开链接
+  Open Quickly => 快速打开
+  Open Recent => 打开最近文件
+  Open in New Window => 在新窗口中打开
+  Ordered List => 有序列表
+  Outdent => 减少缩进
+  Outline => 大纲
+  Page Setup => 页面设置
+  Paragraph => 段落
+  Paragraph (after) => 段落（下方）
+  Paragraph (before) => 段落（上方）
+  Paste => 粘贴
+  Paste as Plain Text => 粘贴为纯文本
+  Pause => 暂停
+  Play => 播放
+  Preferences => 偏好设置
+  Preserve single line break => 保留单换行符
+  Prettify Source Code => 格式化表格源码
+  Print => 打印
+  Privacy Policy => 隐私条款
+  Properties => 属性
+  Quit Typora => 退出
+  Quote => 引用
+  Readonly Mode => 只读模式
+  Recent Files => 最近打开的文件
+  Recent Locations => 最近使用的目录
+  Redo => 重做
+  Refresh All Math Expressions => 刷新所有数学公式
+  Registration / Activation => 许可证信息
+  Reload All Images => 重新加载所有图片
+  Reload from Disk => 从磁盘重新加载
+  Remap Unicode Punctuation on Parse => 解析 Markdown 时允许并转化 Unicode 标点
+  Rename => 重命名
+  Rename or Move Image to => 重命名 / 移动图片到
+  Reopen Closed File => 重新打开关闭的文件
+  Reopen with Encoding => 选择编码重新打开
+  Replace => 替换
+  Replace Next => 替换下一个
+  Reveal in File Tree => 在文件树中显示
+  Reveal in Finder => 在 Finder 中显示
+  Reveal in Library => 在文档列表中显示
+  Reveal in Sidebar => 在侧边栏中显示
+  Revert To => 恢复
+  Save => 保存
+  Save %@ As => 将 %@ 另存为
+  Save All => 保存全部打开的文件
+  Save As => 另存为
+  Search => 搜索
+  Search With… => 搜索…
+  Search with Google => 使用 Google 搜索
+  Select All => 全选
+  Select Line / Sentence => 选中当前行或句
+  Select Paragraph / Block => 选择段落或块
+  Select Styled Scope => 选中当前格式文本
+  Select Word => 选中当前词
+  Selection => 选择
+  Services => 服务
+  Show All => 全部显示
+  Show Status Bar => 状态栏
+  Smart Dashes => 智能破折号
+  Smart Punctuation => 智能标点
+  Smart Quotes => 智能引号
+  Source Code Mode => 源代码模式
+  Speech => 语音
+  Spell Check => 拼写检查
+  Spelling and Grammar => 拼写和语法检查
+  Start Speaking => 开始朗读
+  Stop Speaking => 结束朗读
+  Strike => 删除线
+  Strong => 加粗
+  Subscript => 下标
+  Substitutions => 替换
+  Superscript => 上标
+  Switch Between Opened Documents => 应用内窗口切换
+  Switch Image Syntax => 转换图片语法
+  Table => 表格
+  Table of Contents => 内容目录
+  Task List => 任务列表
+  Task Status => 任务状态
+  Text Replacement => 文本替换
+  Themes => 主题
+  Tip Block => 建议内容
+  Toggle DevTools => 开发者工具
+  Toggle Fullscreen => 切换全屏
+  Toggle Outline Popover => 大纲窗口
+  Toggle Sidebar => 显示／隐藏侧边栏
+  Toggle Source Code Mode => 启用源代码模式
+  Toggle Task Status => 切换任务状态
+  Toggle Word Count Popover => 字数统计窗口
+  Toolbar => 工具栏
+  Toolbar hidden, reopen from {0} => 工具栏已隐藏，可从 {0} 重新打开
+  Typewriter Mode => 打字机模式
+  Underline => 下划线
+  Undo => 撤消
+  Unix Line Endings (LF) => Unix 换行符 (LF)
+  Unlearn Spelling => 忘记拼写
+  Unordered List => 无序列表
+  Upload All Local Images => 上传所有本地图片
+  Upload Image => 上传图片
+  Upload Local Images via iPic => 使用 iPic 上传本地图片
+  Use Image Root Path => 设置图片根目录
+  View => 显示
+  Visible <br/> => 显示 <br/>
+  Warning Block => 警告内容
+  Website => 官方网站
+  When Insert Local Image => 当插入本地图片时
+  Whitespace and Line Breaks => 空格与换行
+  Window => 窗口
+  Windows Line Endings (CRLF) => Windows 换行符 (CRLF)
+  YAML Front Matter => YAML Front Matter
+  Zoom => 缩放
+  Zoom Image => 缩放图片
+  Zoom Image to %@ => 缩放图片至 %@
+  Zoom In => 放大
+  Zoom Out => 缩小
+
+## 3. MainMenu.nib 字符串清单（按文件偏移顺序）
+
+说明：nib 序列化按对象顺序写入，故本清单近似反映菜单顺序；
+      但层级关系需完整解析 NIBArchive 对象图才能确定，此处不做推测。
+      单字符条目为键位（keyEquivalent），`:` 结尾条目为 action selector。
+
+  9792	NSSubmenu
+  9802	NSSource
+  9811	NSKEAllowedWhenHidden
+  9833	IBModuleName
+  9846	NS.sizeval
+  9857	NS.bytes
+  9866	NSMnemonicLoc
+  9880	NSLabel
+  9888	NSAccessibilityOidsKeys
+  9912	NSTag
+  9918	NSNoAutoenable
+  9933	NSCatalogName
+  9947	NSAction
+  9956	IBModuleProvider
+  9973	NSConnections
+  9987	NSOidsValues
+  10000	NSMenuItemIdentifier
+  10021	NSDestination
+  10035	NSResourceName
+  10050	NSClassName
+  10062	NSObjectsValues
+  10078	NSImage
+  10086	NSIsSeparator
+  10100	NSAccessibilityConnectors
+  10126	NSMenu
+  10133	NSHiddenInRepresentation
+  10158	IBClassReference
+  10175	NSTarget
+  10184	IB.systemFontUpdateVersion
+  10211	NSKeyEquiv
+  10222	NSAllowsKeyEquivalentMirroring
+  10253	NSOidsKeys
+  10264	NSTitle
+  10272	NSRoot
+  10279	NSOnImage
+  10289	NSIsAlternate
+  10303	NSIsDisabled
+  10316	NSMenuItems
+  10328	NSChildControllerCreationSelectorName
+  10366	NS.intval
+  10376	NSInlinedValue
+  10391	NSSharedInstance
+  10408	IBNamespaceID
+  10422	UINibEncoderEmptyKey
+  10443	NSDev
+  10449	NSIsHidden
+  10460	IBDesignImageConfiguration
+  10487	NSVisibleWindows
+  10504	NSKeyEquivModMask
+  10522	IBClassName
+  10534	NSMixedImage
+  10547	NSAllowsKeyEquivalentLocalization
+  10581	NSObjectsKeys
+  10595	NSKey
+  10601	NSAccessibilityOidsValues
+  10627	NS.special
+  10638	IB.objectdata
+  10652	NSMenuExcludeMarkColumn
+  10676	IBDesignSize
+  10689	NSName
+  10789	TyApplication
+  12165	TyApplicationDelegate
+  12189	delegate
+  12242	DocumentController
+  12275	Open Recent
+  12301	C1t-Qc-yjM.title
+  12320	Open Recent
+  12390	Reopen Closed File
+  12423	nFL-4U-LGo.title
+  12442	Reopen Closed File
+  12463	T
+  12489	NSImage
+  12499	NSMenuCheckmark
+  12559	NSMenuMixedState
+  12597	recentFilesMenu
+  12683	Allow Magnification
+  12717	xqj-cg-ZnG.title
+  12736	Allow Magnification
+  12793	hand.raised.fingers.spread
+  12822	system
+  12851	allowMagnification
+  12940	Clear Format
+  12967	YMu-OO-UNC.title
+  12986	Clear Format
+  13005	clearFormatItem
+  13109	Export
+  13130	CTJ-m5-gh5.title
+  13149	Export
+  13190	arrow.down.left
+  13217	submenuAction:
+  13246	Export
+  13267	Xhb-GY-ffj.title
+  13367	zUr-mg-2O3.title
+  13399	exportMenuItem
+  13484	Take Picture
+  13511	XeS-Ic-NtF.title
+  13530	Take Picture
+  13545	NSMenuItemImportFromDeviceIdentifier
+  13584	importImageMenuItem
+  13674	Decrease Heading Level
+  13711	57Y-dJ-EBO.title
+  13730	Decrease Heading Level
+  13759	levelDownItem
+  13843	Increase Heading Level
+  13880	Dbe-sU-rQl.title
+  13899	Increase Heading Level
+  13928	levelUpItem
+  14038	9MF-1P-dNy.title
+  14105	person
+  14123	licensePanelItem
+  14184	PandocBridge
+  14199	pandoc
+  14294	Substitutions
+  14322	axj-zd-rwJ.title
+  14341	Substitutions
+  14389	character.bubble
+  14431	Substitutions
+  14459	Bqj-Mw-afT.title
+  14582	Convert on Input
+  14613	ie3-EA-3DD.title
+  14632	Convert on Input
+  14693	Convert on Rendering
+  14728	eiG-B0-9Qo.title
+  14747	Convert on Rendering
+  14858	Smart Quotes
+  14885	D9J-nc-sJv.title
+  14904	Smart Quotes
+  14961	Smart Dashes
+  14988	GQ0-7B-gMA.title
+  15007	Smart Dashes
+  15064	Text Replacement
+  15095	Onz-ZR-529.title
+  15114	Text Replacement
+  15221	Remap Unicode Punctuation on Parse
+  15270	QGx-Ol-hmi.title
+  15289	Remap Unicode Punctuation on Parse
+  15444	mEs-2p-TKs.title
+  15481	smartyPantsMenuItem
+  15571	Source Code Mode
+  15602	mGa-6I-k38.title
+  15621	Source Code Mode
+  15644	sourceCodeMenuItem
+  15727	Welcome Guide
+  15755	Wpc-kc-3Ik.title
+  15774	Welcome Guide
+  15790	welcomePanelItem
+  15869	Paste as Plain Text
+  15903	0x6-Gf-XUG.title
+  15922	Paste as Plain Text
+  15944	V
+  15948	pastePlainText:
+  16039	1By-np-gYp.title
+  16065	opZoomImageTo:
+  16148	Outline
+  16170	1Cg-MP-zcz.title
+  16189	Outline
+  16235	list.bullet
+  16258	toggleOutlinePanel:
+  16342	Task List
+  16366	1T6-bP-siK.title
+  16385	Task List
+  16397	x
+  16401	opTaskList:
+  16487	1h9-gy-u0D.title
+  16574	Insert Table
+  16601	258-xv-fJJ.title
+  16620	Insert Table
+  16635	t
+  16639	opTable:
+  16722	2LZ-JI-I1g.title
+  16801	Windows Line Endings (CRLF)
+  16843	2qa-3U-yWH.title
+  16862	Windows Line Endings (CRLF)
+  16892	setWindowsLineEnding:
+  16976	Quit Typora
+  17002	4sb-4s-VLi.title
+  17021	Quit Typora
+  17035	q
+  17039	terminate:
+  17064	opDecreaseHeader:
+  17146	Code Fences
+  17172	59U-F0-m8t.title
+  17191	Code Fences
+  17205	c
+  17209	opFences:
+  17277	Add Row Above
+  17305	5NP-BP-PKr.title
+  17324	Add Row Above
+  17340	opAddRowBefore:
+  17418	Select Word
+  17444	5RD-dd-KmF.title
+  17463	Select Word
+  17477	d
+  17481	opSelectWord:
+  17557	About Typora
+  17584	5kV-Vb-QxS.title
+  17603	About Typora
+  17650	info.circle
+  17673	orderFrontStandardAboutPanel:
+  17773	Redo
+  17792	6dh-zS-Vam.title
+  17811	Redo
+  17818	Z
+  17854	arrow.uturn.forward
+  17885	opRedo:
+  17949	Insert Paragraph After
+  17986	7n9-ks-YjD.title
+  18005	Insert Paragraph After
+  18030	opParagraphAfter:
+  18106	Delete Column
+  18134	7pd-Ok-qhc.title
+  18153	Delete Column
+  18169	opDeleteCol:
+  18277	8JW-Yb-Tq6.title
+  18323	openPreferenceForImages:
+  18422	8MN-T8-QrH.title
+  18501	Toggle Outline Popover
+  18538	8Uv-eb-U7R.title
+  18557	Toggle Outline Popover
+  18582	toggleOutlinePopover:
+  18660	HTML Style
+  18685	8fd-0t-4Ui.title
+  18704	HTML Style
+  18717	opSwitchImageToHTMLSyntax:
+  18841	986-I5-HDY.title
+  18913	gear
+  18929	showPreferences:
+  18966	showLicense:
+  19043	Math Block
+  19068	9xj-RM-Pbl.title
+  19087	Math Block
+  19100	b
+  19104	opMathBlock:
+  19175	Delete Table
+  19202	CsL-po-gfq.title
+  19221	Delete Table
+  19236	opDeleteTable:
+  19313	Delete Line / Sentence
+  19350	D5K-qj-zDk.title
+  19369	Delete Line / Sentence
+  19394	L
+  19398	opDeleteLine:
+  19426	toggleSmartQuote:
+  19500	Stop Speaking
+  19528	DBh-x6-Uv4.title
+  19547	Stop Speaking
+  19563	stopWebViewSpeaking:
+  19646	Close
+  19666	DVo-aG-piG.title
+  19685	Close
+  19693	w
+  19697	performClose:
+  19725	opIncreaseHeader:
+  19811	Move Row Up
+  19837	Dde-rz-7nf.title
+  19856	Move Row Up
+  19908	arrow.up.to.line
+  19936	copyAsSemanticHTML:
+  20024	Move Row Down
+  20052	DoW-9y-zvV.title
+  20071	Move Row Down
+  20125	arrow.down.to.line
+  20219	More Topics...
+  20248	ELC-9v-8wP.title
+  20267	More Topics...
+  20284	showHelp:
+  20382	FKE-Sm-Kum.title
+  20417	showWhatsNew:
+  20491	Reveal in Library
+  20523	Ff4-il-2Q4.title
+  20542	Reveal in Library
+  20562	revealInFileList:
+  20644	Move Table Row Down
+  20678	GMs-yQ-DAA.title
+  20697	Move Table Row Down
+  20719	opMoveRowDown:
+  20748	toggleSmartDash:
+  20827	Delete Paragraph / Block
+  20866	Gcy-BA-M5L.title
+  20885	Delete Paragraph / Block
+  20912	P
+  20916	opDeleteBlock:
+  20997	Install and Use Pandoc
+  21034	HAV-5F-XuQ.title
+  21053	Install and Use Pandoc
+  21144	Search
+  21165	HNO-wG-Uyn.title
+  21184	Search
+  21193	F
+  21229	magnifyingglass
+  21256	toggleGlobalSearch:
+  21375	HdG-h2-PHd.title
+  21425	toggleCopyImageToFolder:
+  21546	IAo-SY-fd9.title
+  21575	o
+  21611	arrow.up.right
+  21637	openDocument:
+  21743	IOZ-iS-nTP.title
+  21786	copyAllImage:
+  21862	Important Block
+  21892	ITo-1c-cha.title
+  21911	Important Block
+  21929	alert-important
+  21947	opAlertImportant:
+  22063	IYs-4I-Ou0.title
+  22100	O
+  22136	inset.filled.topthird.square
+  22176	quickOpen:
+  22251	Ordered List
+  22278	IiE-h2-N4N.title
+  22297	Ordered List
+  22312	opOrderedList:
+  22389	Heading 4
+  22413	IwH-hO-wIP.title
+  22432	Heading 4
+  22448	opHeader4:
+  22525	Markdown Reference
+  22558	Ixy-NV-jp1.title
+  22577	Markdown Reference
+  22658	Jump to Top
+  22684	Jgs-Ad-OBS.title
+  22703	Jump to Top
+  22717	jumpTop:
+  22792	Change Log
+  22817	Jv3-eb-eCe.title
+  22836	Change Log
+  22909	Select Line / Sentence
+  22946	K3V-nT-TIQ.title
+  22965	Select Line / Sentence
+  22990	l
+  22994	opSelectLine:
+  23070	Jump to Line End
+  23101	KPX-CG-ga5.title
+  23120	Jump to Line End
+  23139	e
+  23143	jumpLineEnd:
+  23218	Revert to Saved
+  23248	KaW-ft-85H.title
+  23267	Revert to Saved
+  23317	arrow.counterclockwise
+  23351	revertDocumentToSaved:
+  23430	Show All
+  23453	Kd2-mp-pUS.title
+  23472	Show All
+  23483	unhideAllApplications:
+  23574	New Tab
+  23596	Kfo-XA-Ze7.title
+  23615	New Tab
+  23657	plus.rectangle.on.rectangle
+  23696	newTab:
+  23774	Toggle Sidebar
+  23803	KsX-3b-KcI.title
+  23822	Toggle Sidebar
+  23871	sidebar.left
+  23895	toggleSidebar:
+  23972	Toggle Task Status
+  24005	Kyf-sQ-Ddf.title
+  24024	Toggle Task Status
+  24045	opToggleTaskStatus:
+  24127	Comment
+  24149	LuY-a7-pCM.title
+  24168	Comment
+  24178	opComment:
+  24251	Check Document Now
+  24284	MAx-hX-t7X.title
+  24303	Check Document Now
+  24328	checkSpelling:
+  24427	ML6-Oh-MgA.title
+  24462	showHelpForLineBreak:
+  24544	Reveal in File Tree
+  24578	Ms7-dB-vDm.title
+  24597	Reveal in File Tree
+  24619	revealInFileTree:
+  24705	Check for Updates
+  24737	Mti-1x-4tG.title
+  24756	Check for Updates
+  24808	arrow.trianglehead.2.clockwise
+  24872	SUUpdater
+  24884	checkForUpdates:
+  24957	Check Grammar With Spelling
+  24999	N60-1N-YRy.title
+  25018	Check Grammar With Spelling
+  25048	toggleGrammarChecking:
+  25135	Underline
+  25159	NnN-D0-niO.title
+  25178	Underline
+  25190	u
+  25194	opUnderline:
+  25269	Jump to Line Start
+  25302	O9m-zj-q2I.title
+  25321	Jump to Line Start
+  25342	a
+  25346	jumpLineStart:
+  25423	Minimize
+  25446	OY7-WF-poV.title
+  25465	Minimize
+  25476	m
+  25480	performMiniaturize:
+  25562	Hide Typora
+  25588	Olw-nP-bQN.title
+  25607	Hide Typora
+  25621	h
+  25625	hide:
+  25645	toggleAutoTextReplacement:
+  25737	Find Previous
+  25765	OwM-mh-QMV.title
+  25784	Find Previous
+  25800	G
+  25804	showSearchPanelPrev:
+  25881	Clear Menu
+  25906	P2J-Hy-zmz.title
+  25925	Clear Menu
+  25938	clearRecentDocuments:
+  26020	Upload All Local Images
+  26058	P8E-iF-Inr.title
+  26077	Upload All Local Images
+  26103	uploadAllImage:
+  26175	Delete Image File
+  26207	PNQ-hU-ytt.title
+  26226	Delete Image File
+  26246	deleteImage:
+  26315	Visible <br/>
+  26343	PeQ-V7-fd5.title
+  26362	Visible <br/>
+  26378	setHideBrAndLineBreak:
+  26463	Jump to Selection
+  26495	Pzu-uA-mt3.title
+  26514	Jump to Selection
+  26534	j
+  26538	jumpSelection:
+  26567	toggleRemapPunctuation:
+  26655	Move Table Row Up
+  26687	QSw-GN-bDP.title
+  26706	Move Table Row Up
+  26726	opMoveRowUp:
+  26795	Zoom
+  26814	R4o-n2-Eq4.title
+  26833	Zoom
+  26840	performZoom:
+  26915	Indent
+  26936	RWx-Qz-yzr.title
+  26955	Indent
+  26968	opIndent:
+  27040	Heading 5
+  27064	Rca-vd-Sno.title
+  27083	Heading 5
+  27099	opHeader5:
+  27166	Readonly Mode
+  27194	Rd1-aa-aaa.title
+  27213	Readonly Mode
+  27229	toggleReadonlyMode:
+  27311	Select All
+  27336	Ruw-6m-B2m.title
+  27355	Select All
+  27368	opSelectAll:
+  27443	Jump to Selection
+  27475	S0p-oC-mLd.title
+  27554	Strong
+  27575	SK4-aW-xWI.title
+  27594	Strong
+  27603	opStrong:
+  27669	Always on Top
+  27697	Sxw-30-3yN.title
+  27716	Always on Top
+  27732	togglePinOnTop:
+  27804	Copy as Plain Text
+  27837	Sz2-lb-E4Z.title
+  27856	Copy as Plain Text
+  27877	copyAsPlainText:
+  27950	Toolbar
+  27972	Tb1-00-aaa.title
+  27991	Toolbar
+  28001	toggleEditorToolbar:
+  28078	Copy as HTML Code
+  28110	Tm6-wW-35B.title
+  28129	Copy as HTML Code
+  28149	copyAsHTMLSource:
+  28223	Copy Link Address
+  28255	Ua6-bI-ESp.title
+  28274	Copy Link Address
+  28294	opCopyLink:
+  28371	Replace Next
+  28398	Urk-5J-nmb.title
+  28417	Replace Next
+  28432	showReplacePanelNext:
+  28518	Heading 6
+  28542	UwT-iR-icZ.title
+  28561	Heading 6
+  28577	opHeader6:
+  28644	Mark as Complete
+  28675	V6l-T8-Xjb.title
+  28694	Mark as Complete
+  28713	opCheckTask:
+  28819	VCp-I1-qh6.title
+  28863	openImageLocation:
+  28944	Hide Others
+  28970	Vdr-fp-XzO.title
+  28989	Hide Others
+  29003	hideOtherApplications:
+  29112	VgU-2w-5ag.title
+  29175	arrow.up.left
+  29200	import:
+  29298	ViE-WR-H84.title
+  29355	NSTouchBarDeleteTemplate
+  29402	trashSelf:
+  29469	Open Link
+  29493	Vmx-dl-A3H.title
+  29512	Open Link
+  29524	opOpenLink:
+  29610	New
+  29628	Was-JA-tGl.title
+  29647	New
+  29653	n
+  29689	plus
+  29705	newDocument:
+  29774	Auto Indent Selected Code
+  29814	Wnr-P7-F7s.title
+  29833	Auto Indent Selected Code
+  29861	opIndentSelectedCode:
+  29970	Xz5-n4-O0W.title
+  29999	f
+  30003	showSearchPanel:
+  30076	Superscript
+  30102	Y9O-kv-9Od.title
+  30121	Superscript
+  30135	opSuperscript:
+  30249	YEy-JH-Tfz.title
+  30290	showReplacePanel:
+  30322	opClearFormat:
+  30401	Add Row Below
+  30429	YPe-9D-eWP.title
+  30448	Add Row Below
+  30468	opAddRowAfter:
+  30539	Mark as Incomplete
+  30572	YYN-OI-f5U.title
+  30591	Mark as Incomplete
+  30612	opUncheckTask:
+  30689	Note Block
+  30714	Ymb-M1-obu.title
+  30733	Note Block
+  30746	alert-note
+  30759	opAlertNote:
+  30832	Use Image Root Path
+  30866	YzW-kU-dcH.title
+  30885	Use Image Root Path
+  30907	toggleSetImageRootPath:
+  30987	Correct Spelling Automatically
+  31032	Z3e-In-TIL.title
+  31051	Correct Spelling Automatically
+  31084	toggleAutomaticSpellingCorrection:
+  31181	Jump to Bottom
+  31210	ZBc-4y-g5x.title
+  31229	Jump to Bottom
+  31246	jumpBottom:
+  31322	Copy Image Content
+  31355	ZEU-tB-yX1.title
+  31374	Copy Image Content
+  31427	photo
+  31444	copyImage:
+  31552	Zdv-EQ-SmX.title
+  31600	moveImageToSelect:
+  31687	Articles
+  31710	Zvp-gc-ThY.title
+  31729	Articles
+  31776	square.fill.text.grid.1x2
+  31813	toggleFileList:
+  31922	a7L-fr-Jer.title
+  31966	insertLocalImage:
+  32046	Heading 2
+  32070	a9J-tu-gF0.title
+  32089	Heading 2
+  32101	opHeader2:
+  32172	Open File Location
+  32205	aLg-iZ-oaS.title
+  32224	Open File Location
+  32245	openInFolder:
+  32350	aTl-1u-JFS.title
+  32380	p
+  32416	printer
+  32435	printFile:
+  32514	New Window
+  32539	b23-nV-Dho.title
+  32558	New Window
+  32571	N
+  32607	plus.rectangle
+  32633	newWindow:
+  32706	Emphasis
+  32729	b9m-LC-qnm.title
+  32748	Emphasis
+  32759	i
+  32763	opEmphasis:
+  32847	Quick Start
+  32873	c7P-Cv-eZp.title
+  32892	Quick Start
+  32972	Horizontal Line
+  33002	cBe-oC-xN5.title
+  33021	Horizontal Line
+  33039	opHr:
+  33119	cEp-wI-wxG.title
+  33204	Outdent
+  33226	cKi-91-VDM.title
+  33245	Outdent
+  33259	opOutdent:
+  33332	Delete Word
+  33358	cbY-Gf-XDM.title
+  33377	Delete Word
+  33391	D
+  33395	opDeleteWord:
+  33475	Feedback
+  33498	cfk-KB-D7M.title
+  33517	Feedback
+  33596	Undo
+  33615	dRJ-4n-Yzg.title
+  33634	Undo
+  33641	z
+  33677	arrow.uturn.backward
+  33709	opUndo:
+  33781	Link Reference
+  33810	dUz-xk-lc6.title
+  33829	Link Reference
+  33846	opLinkDef:
+  33923	Custom Themes
+  33951	dav-9g-s9i.title
+  33970	Custom Themes
+  34042	Add Column After
+  34073	deN-vr-y0A.title
+  34092	Add Column After
+  34111	opAddColAfter:
+  34140	toggleConvertTiming:
+  34223	Heading 1
+  34247	eoA-tE-dU5.title
+  34266	Heading 1
+  34278	opHeader1:
+  34385	f3j-fm-wVC.title
+  34418	s
+  34454	square.and.arrow.down.on.square
+  34497	saveAllDocuments:
+  34577	Highlight
+  34601	fDL-d6-uew.title
+  34620	Highlight
+  34632	H
+  34636	opHighlight:
+  34711	Select Styled Scope
+  34745	fvD-fw-4wK.title
+  34764	Select Styled Scope
+  34786	opSelectScope:
+  34857	Table of Contents
+  34889	fze-nJ-T6u.title
+  34908	Table of Contents
+  34928	opToc:
+  34999	Unordered List
+  35028	gK4-Fi-fQc.title
+  35047	Unordered List
+  35064	opUnorderedList:
+  35149	Paste
+  35169	gVA-U4-sdL.title
+  35188	Paste
+  35196	v
+  35232	document.on.clipboard
+  35265	paste:
+  35328	Focus Mode
+  35353	gku-W1-0kB.title
+  35372	Focus Mode
+  35391	toggleFocusMode:
+  35476	File Tree
+  35500	gnG-Ae-UZ7.title
+  35519	File Tree
+  35567	list.bullet.indent
+  35597	toggleFileTree:
+  35669	Upload Image
+  35696	h7A-8f-Rb1.title
+  35715	Upload Image
+  35730	toggleCopyImageToiPic:
+  35819	Use Images in Typora
+  35854	hMH-QI-fnh.title
+  35873	Use Images in Typora
+  35950	Subscript
+  35974	hk6-Kk-aVB.title
+  35993	Subscript
+  36005	opSubscript:
+  36110	hsz-sy-aXt.title
+  36153	moveAllImage:
+  36223	Reload All Images
+  36255	iTH-Sl-4to.title
+  36274	Reload All Images
+  36294	reloadImages:
+  36374	Website
+  36396	idH-MU-heQ.title
+  36415	Website
+  36522	jR4-DQ-4eD.title
+  36560	copyImageToSelect:
+  36641	Hyperlink
+  36665	jVf-c1-UtV.title
+  36684	Hyperlink
+  36696	k
+  36700	opHyperlink:
+  36769	Upload Image
+  36796	jaA-KV-b7i.title
+  36815	uploadImage:
+  36890	Caution Block
+  36918	jk5-uS-YBP.title
+  36937	Caution Block
+  36953	alert-caution
+  36969	opAlertCaution:
+  37041	Copy Code Content
+  37073	kCN-ku-ER4.title
+  37092	Copy Code Content
+  37112	opCopyCode:
+  37194	Zoom In
+  37216	kDE-Em-Lck.title
+  37235	Zoom In
+  37277	plus.magnifyingglass
+  37309	zoomIn:
+  37379	Copy as Markdown
+  37410	kKJ-zd-Dsx.title
+  37429	Copy as Markdown
+  37448	C
+  37452	copyAsMarkdown:
+  37532	Inline Math
+  37558	kc0-ZK-KfA.title
+  37577	Inline Math
+  37591	opInlineMath:
+  37661	Copy without Theme Styling
+  37702	kzp-ed-HJb.title
+  37721	Copy without Theme Styling
+  37816	Actual Size
+  37842	l6q-2k-081.title
+  37861	Actual Size
+  37911	square.arrowtriangle.4.outward
+  37953	resetZoom:
+  38020	Indent first line of paragraphs
+  38066	lIS-1z-RNd.title
+  38085	Indent first line of paragraphs
+  38119	setIndentFirstLine:
+  38203	Quote
+  38223	lbL-UU-IJN.title
+  38242	Quote
+  38250	opQuote:
+  38321	Select Paragraph / Block
+  38360	m2F-c5-cmd.title
+  38379	Select Paragraph / Block
+  38406	opSelectBlock:
+  38483	Insert Image
+  38510	m9F-jM-61t.title
+  38529	Insert Image
+  38544	opImage:
+  38573	openPreferenceForSmartPunctuation:
+  38622	toggleSourceMode:
+  38704	Move Table Column Right
+  38742	nBA-hs-zRC.title
+  38761	Move Table Column Right
+  38793	opMoveColRight:
+  38823	reopenClosedFilesMenu:
+  38908	Delete Styled Scope
+  38942	nl9-LW-maQ.title
+  38961	Delete Styled Scope
+  38983	E
+  38987	opDeleteScope:
+  39066	Footnotes
+  39090	nrf-ix-5JJ.title
+  39109	Footnotes
+  39121	r
+  39125	opFootnote:
+  39203	Credits
+  39225	nwF-cd-osc.title
+  39244	Credits
+  39338	oia-JL-kfh.title
+  39371	showProperties:
+  39457	Zoom Out
+  39480	one-hc-b7Q.title
+  39499	Zoom Out
+  39542	minus.magnifyingglass
+  39575	zoomOut:
+  39648	Strike
+  39669	pAR-jD-WiJ.title
+  39688	Strike
+  39701	opStrike:
+  39775	Move Table Column Left
+  39812	pUY-KA-ssb.title
+  39831	Move Table Column Left
+  39862	opMoveColLeft:
+  39939	Delete
+  39960	pa3-QI-u2k.title
+  39979	Delete
+  40020	trash
+  40037	delete:
+  40103	Copy Image Content
+  40136	pjd-f0-uqa.title
+  40228	pjn-0r-iEj.title
+  40336	pxx-59-PXV.title
+  40365	saveDocument:
+  40444	Find Next
+  40468	q09-fT-Sye.title
+  40487	Find Next
+  40499	g
+  40503	showSearchPanelNext:
+  40620	qIS-W8-SiK.title
+  40687	text.page
+  40708	runPageLayout:
+  40779	Markdown Style
+  40808	qa3-Df-HGc.title
+  40827	Markdown Style
+  40844	opSwitchImageToMarkdownSyntax:
+  40933	Prettify Source Code
+  40968	qrW-sQ-1f6.title
+  40987	Prettify Source Code
+  41010	opReformatTable:
+  41083	Auto Indent Whole Code
+  41120	qwv-jK-Chf.title
+  41139	Auto Indent Whole Code
+  41164	opIndentAllCode:
+  41239	Add Column Before
+  41271	rDK-Gs-Hv6.title
+  41290	Add Column Before
+  41310	opAddColBefore:
+  41392	Reload from Disk
+  41423	rfd-ds-k01.title
+  41442	Reload from Disk
+  41493	arrow.clockwise
+  41520	reloadFromDisk:
+  41592	Unix Line Endings (LF)
+  41629	rj9-Fb-ngK.title
+  41648	Unix Line Endings (LF)
+  41673	setUnixLineEnding:
+  41754	Tip Block
+  41778	ro7-jx-USg.title
+  41797	Tip Block
+  41809	alert-tip
+  41821	opAlertTip:
+  41889	Typewriter Mode
+  41919	s1P-CU-aut.title
+  41938	Typewriter Mode
+  41962	toggleTypeWriterMode:
+  42058	sXk-pd-iGI.title
+  42143	Heading 3
+  42167	t1I-nG-QmQ.title
+  42186	Heading 3
+  42198	opHeader3:
+  42265	Refresh All Math Expressions
+  42308	uEP-zC-PAG.title
+  42327	Refresh All Math Expressions
+  42358	refreshAllMath:
+  42442	Cut
+  42460	uRl-iY-unG.title
+  42479	Cut
+  42517	scissors
+  42537	cut:
+  42604	Full Screen
+  42630	uTt-5H-sY4.title
+  42649	Full Screen
+  42663	toggleFullScreen:
+  42737	Start Speaking
+  42766	vdu-Kl-2zb.title
+  42785	Start Speaking
+  42802	startWebViewSpeaking:
+  42882	Insert Paragraph Before
+  42920	vgQ-pd-Bm3.title
+  42939	Insert Paragraph Before
+  42965	opParagraphBefore:
+  43040	YAML Front Matter
+  43072	vsL-a8-PaA.title
+  43091	YAML Front Matter
+  43111	opYAML:
+  43175	Insert Final New Line On Save
+  43219	vy2-gc-m0b.title
+  43238	Insert Final New Line On Save
+  43270	setInsertFinalNewLine:
+  43355	Paragraph
+  43379	wDJ-Sy-ycd.title
+  43398	Paragraph
+  43410	opParagraph:
+  43487	Code
+  43506	wIF-Ir-5ve.title
+  43525	Code
+  43532	opCode:
+  43596	Toggle Word Count Popover
+  43636	x2j-cU-OVa.title
+  43655	Toggle Word Count Popover
+  43683	toggleWordCountPopover:
+  43775	Copy
+  43794	x3v-GG-iWU.title
+  43813	Copy
+  43852	document.on.document
+  43884	copy:
+  43952	Warning Block
+  43980	xPY-RT-PIF.title
+  43999	Warning Block
+  44015	alert-warning
+  44031	opAlertWarning:
+  44113	Privacy Policy
+  44142	xST-k1-WjL.title
+  44161	Privacy Policy
+  44232	Preserve single line break
+  44273	xjz-bp-bJw.title
+  44292	Preserve single line break
+  44321	setIgnoreLineBreak:
+  44397	Check Spelling While Typing
+  44439	xkP-t4-bKc.title
+  44458	Check Spelling While Typing
+  44488	toggleContinuousSpellChecking:
+  44583	Paste and Match Style
+  44619	xnq-KE-4eb.title
+  44638	Paste and Match Style
+  44680	toggleAllowMagnification:
+  44781	y5L-pm-ggC.title
+  44863	Copy Table
+  44888	yzp-Gf-xPV.title
+  44907	Copy Table
+  44920	opCopyTable:
+  44995	Show Spelling and Grammar
+  45035	zo1-Kx-EIy.title
+  45054	Show Spelling and Grammar
+  45086	showGuessPanel:
+  45166	Delete Row
+  45191	zue-Rw-MDY.title
+  45210	Delete Row
+  45227	opDeleteRow:
+  47402	NSObject
+  47413	NSApplication
+  47449	Main Menu
+  47473	AYu-sK-qS6.title
+  47492	Main Menu
+  47620	Typora
+  47641	1Xt-HY-uBw.title
+  47660	Typora
+  47687	Typora
+  47708	uQy-DD-JDr.title
+  48011	Services
+  48034	NMo-om-nkz.title
+  48053	Services
+  48082	Services
+  48105	hz9-B4-Xy5.title
+  48126	_NSServicesMenu
+  48236	_NSAppleMenu
+  48311	File
+  48330	dMs-cI-mzQ.title
+  48349	File
+  48370	File
+  48389	bib-Uj-vzu.title
+  48698	Open Recent
+  48724	tXI-mr-wws.title
+  48775	clock
+  48810	Open Recent
+  48836	oas-Oc-fiZ.title
+  48863	_NSRecentDocumentsMenu
+  48954	Open Recent
+  48980	tKe-V6-8mD.title
+  49384	Edit
+  49403	5QF-Oa-p0T.title
+  49422	Edit
+  49445	Edit
+  49464	W48-6f-4Dl.title
+  49945	Selection
+  49969	40S-TD-PV2.title
+  49988	Selection
+  50032	filemenu.and.cursorarrow
+  50080	Selection
+  50104	XHc-0u-NBo.title
+  50447	Delete Range
+  50474	Zzb-97-IWH.title
+  50493	Delete Range
+  50540	trash.fill
+  50574	Delete Range
+  50601	NYj-u9-FJg.title
+  50758	Math Tools
+  50783	gU1-gk-ffy.title
+  50802	Math Tools
+  50847	x.squareroot
+  50883	Math Tools
+  50908	KW9-xt-1Fj.title
+  51047	Line Endings
+  51074	I0y-AF-kfJ.title
+  51093	Line Endings
+  51140	return
+  51172	Line Endings
+  51199	brN-jl-dbw.title
+  51356	Whitespace and Line Breaks
+  51397	Yp6-Wn-ZO9.title
+  51416	Whitespace and Line Breaks
+  51477	space
+  51508	Whitespace and Line Breaks
+  51549	tnd-cU-j84.title
+  51764	Spelling and Grammar
+  51799	oBv-eQ-pJG.title
+  51818	Spelling and Grammar
+  51873	textformat.abc.dottedunderline
+  51927	Spelling
+  51950	IMq-nj-o7N.title
+  51969	Spelling
+  52132	Transformations
+  52162	2oI-Rn-ZJC.title
+  52181	Transformations
+  52231	characters.uppercase
+  52275	Transformations
+  52305	c8a-y6-VQd.title
+  52386	Make Upper Case
+  52416	vmV-6d-7jI.title
+  52435	Make Upper Case
+  52495	Make Lower Case
+  52525	d9M-CD-aMd.title
+  52544	Make Lower Case
+  52604	Capitalize
+  52629	UEZ-Bs-lqG.title
+  52648	Capitalize
+  52773	Find
+  52792	4EN-yA-p0u.title
+  52811	Find
+  52850	text.page.badge.magnifyingglass
+  52905	Find
+  52924	1b7-l0-nxx.title
+  53197	Speech
+  53218	xrE-MZ-jX0.title
+  53237	Speech
+  53278	microphone
+  53312	Speech
+  53333	3rS-ZA-NoH.title
+  53426	Paragraph
+  53450	jxT-CU-nIS.title
+  53483	Paragraph
+  53507	8xs-az-hgb.title
+  53932	Table
+  53952	QrM-tl-O9J.title
+  53971	Table
+  53993	Table
+  54013	TdR-zK-a0z.title
+  54490	Code Tools
+  54515	D88-uG-K1t.title
+  54534	Code Tools
+  54561	Code Tools
+  54586	9Fw-Ec-myA.title
+  54685	Alert
+  54705	Noe-pG-SlV.title
+  54724	Alert
+  54746	Alert
+  54766	xrR-jH-aHz.title
+  54965	Task Status
+  54991	x4D-4R-XLM.title
+  55010	Task Status
+  55036	Task Status
+  55062	7Xe-0S-ArS.title
+  55213	List Indentation
+  55244	Cia-60-6gH.title
+  55263	List Indentation
+  55294	List Indentation
+  55325	ehO-oE-XbB.title
+  55552	Format
+  55573	H8h-7b-M4v.title
+  55592	Format
+  55615	Format
+  55636	CXx-Dr-bSx.title
+  55919	Hyperlink Actions
+  55951	cMs-N9-cg9.title
+  55970	Hyperlink Actions
+  56004	Hyperlink Actions
+  56036	8Xw-fx-UNu.title
+  56133	Image
+  56153	ix5-QI-lAe.title
+  56172	Image
+  56194	Image
+  56214	ose-2F-wXS.title
+  56485	Zoom Image
+  56510	lUy-nk-Uxb.title
+  56529	Zoom Image
+  56554	Zoom Image
+  56579	9CL-bv-Mbn.title
+  56812	Switch Image Syntax
+  56846	eOj-8Q-VX7.title
+  56865	Switch Image Syntax
+  56899	Switch Image Syntax
+  56933	hfO-V3-t2n.title
+  57256	When Insert Local Image
+  57294	PTK-aI-DKe.title
+  57313	When Insert Local Image
+  57351	When Insert Local Image
+  57389	66f-iu-ZRE.title
+  57572	View
+  57591	4wt-GC-0zd.title
+  57610	View
+  57631	View
+  57650	J2k-83-r7r.title
+  58155	Themes
+  58176	rLq-E7-Apk.title
+  58195	Themes
+  58218	Themes
+  58239	NKG-oc-0Uj.title
+  58320	Window
+  58341	aUF-d1-5bR.title
+  58360	Window
+  58387	Window
+  58408	Td7-aD-5lo.title
+  58541	Bring All to Front
+  58574	LE2-aR-0XJ.title
+  58593	Bring All to Front
+  58614	_NSWindowsMenu
+  58695	Help
+  58714	wpr-3q-Mcd.title
+  58733	Help
+  58758	Help
+  58777	F2S-fz-NVQ.title
+  58980	_NSHelpMenu
+  58994	_NSMainMenu
+

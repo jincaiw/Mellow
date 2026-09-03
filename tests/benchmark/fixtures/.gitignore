@@ -2,3 +2,5 @@
 *
 !.gitignore
 !README.md
+# P1-1.12：Typora 1.14.9 (build 7785) 真机 AX menu dump 是 Golden 真值，必须入库
+!typora-menu-dump.txt
