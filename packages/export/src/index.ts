@@ -216,11 +216,20 @@ export function parseBlocks(markdown: string): PdfBlock[] {
     }
 
     if (TABLE_ROW_RE.test(line) && i + 1 < lines.length && TABLE_SEP_RE.test(lines[i + 1].text)) {
-      const header = line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
+      // GFM：cell 内 \| 是字面竖线，不构成列分隔。先用占位符保护，拆列后还原，
+      // 否则含 \| 的行会多出列，下游 pdfmake 表格 widths 越界崩溃。
+      const splitRow = (raw: string): string[] =>
+        raw
+          .replace(/^\s*\|/, '')
+          .replace(/\|\s*$/, '')
+          .replace(/\\\|/g, '\u0000')
+          .split('|')
+          .map((c) => c.trim().replace(/\u0000/g, '|'));
+      const header = splitRow(line);
       const rows: string[][] = [];
       i += 2;
       while (i < lines.length && TABLE_ROW_RE.test(lines[i].text)) {
-        rows.push(lines[i].text.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim()));
+        rows.push(splitRow(lines[i].text));
         i += 1;
       }
       blocks.push({ type: 'table', header, rows });
@@ -504,8 +513,10 @@ export function createPdfBuffer(markdown: string, options: PdfOptions, env: PdfE
       pdfMake.virtualfs.writeFileSync(normalKey, Buffer.from(env.fonts.normal));
       pdfMake.virtualfs.writeFileSync(boldKey, Buffer.from(env.fonts.bold));
     }
+    // CJK 字体无真斜体档位（Typora 同样映射到同文件），缺失会导致
+    // 含 *斜体* 的中文文档导出 PDF 时抛 "Font ... in style 'italics' is not defined"。
     pdfMake.fonts = {
-      NotoSansSC: { normal: normalKey, bold: boldKey },
+      NotoSansSC: { normal: normalKey, bold: boldKey, italics: normalKey, bolditalics: boldKey },
     };
     return pdfMake.createPdf(doc).getBuffer().then((buffer: Buffer) => new Uint8Array(buffer));
   });
