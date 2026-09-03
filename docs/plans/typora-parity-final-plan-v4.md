@@ -862,15 +862,15 @@ Functional
 | **D5** | Windows 真机交互验收 | **接入 Windows self-hosted runner（物理机或常驻 VM）**，跑微软拼音、搜狗、剪贴板、打印的真实交互矩阵，替换当前诊断级 SendKeys 段；作为 P7 前置，需提供机器 | P7 |
 | **D7** | 实施期功能冻结 | **冻结至 P8 全部通过**。P1–P8 期间只做对标收敛与缺陷修复，不新增 Feature | 全局 |
 
-### 17.2 待确认（实施前需补拍板）
+### 17.2 决策点状态（2026-09-03 复核更新）
 
-| # | 决策点 | 建议 |
+| # | 决策点 | 状态 |
 |---|---|---|
-| D3 | P1 是否包含"Win/Linux 原生 accelerator 落地"（涉及 `menu.rs` 较大改造） | 建议纳入 P1，与单一真源一起做，避免二次改造 |
-| D4 | 视觉 Golden 采用像素 diff 还是关键区域容差截图 | 建议**关键区域截图 + 容差 diff**，兼顾稳定与可维护 |
-| D6 | 是否新增 ADR 记录"菜单单一真源 CommandDescriptor" | 建议新增 ADR-0023，不动已有 ADR |
-| D8 | Windows self-hosted runner 的机器来源与安全基线 | 待用户提供；需常驻、可联网、无公司数据留存 |
-| D9 | 9 处键位改后，是否同步更新 Cheatsheet 与 i18n 快捷键提示 | 建议随 P1 单一真源一起自动派生，不手工维护 |
+| D3 | P1 是否包含"Win/Linux 原生 accelerator 落地" | ✅ **已随 P1 单一真源落地**：`menuSchema` `shortcut` 三平台字段驱动，`menu.rs` `syncNativeMenu` 物化（含平台过滤与平台 accelerator），`verify-menu-contract` 护栏断言 |
+| D4 | 视觉 Golden 采用像素 diff 还是关键区域容差截图 | ✅ **已落地**：关键区域契约点采样 + `layout-golden.json` 基准 + 容差（`tests/parity/verify-visual-golden.mjs` ①-⑤） |
+| D6 | 是否新增 ADR 记录"菜单单一真源" | ✅ **已新增** `docs/adr/ADR-0023-menu-single-source-menuschema.md`（以实际机制 `menuSchema` 命名，不动已有 ADR） |
+| D8 | Windows self-hosted runner 的机器来源与安全基线 | ⏳ **待用户提供**；需常驻、可联网、无公司数据留存（D5 已确认接入，机器未到位） |
+| D9 | 9 处键位改后，Cheatsheet 与 i18n 快捷键提示是否同步 | ✅ **已落地**：Cheatsheet 从 Command Registry（menuSchema 派生）读取当前平台键位，无手工维护 |
 
 ---
 
@@ -881,6 +881,7 @@ Functional
 | 2026-08-24 | V3.0 | 移除 Split Mode；P0 基线治理完成 |
 | 2026-09-01 | V4.0 | 基于 `2482503` 全量代码审计重写：关闭顶层菜单差距；新暴露 Win/Linux 9 处快捷键偏离、9 模块缺失 IME guard、侧边栏 watcher/虚拟化/键盘缺口、line-height 变量失效、Table 100×30 与 Clipboard 跨应用零测试、无视觉 Golden；固化 P1–P8 施工包 |
 | 2026-09-01 | V4.0 | 用户确认 D1（全改 Typora 官方键位）、D5（Windows self-hosted runner）、D7（冻结新功能至 P8 通过）；D2 转真机复核后定案 |
+| 2026-09-03 | V4.1 | P0-P8 自动化范围全部收口（12 包 jest 1418 例 + parity 护栏 12 个），v1.4.0 tag 发布（pre-release，ADR-0020）；§17.2 决策点复核：D3/D4/D6/D9 落地关闭（D6 新增 ADR-0023），D8 待用户提供 runner 机器；P8 剩余项全部为真机/人工 Gate |
 
 ---
 
