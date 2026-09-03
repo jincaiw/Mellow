@@ -9,7 +9,7 @@
  * 平台约束：纯数据 + 纯函数（localStorage 读写），零 OS 依赖。
  */
 
-export type SettingsSectionId = 'general' | 'editor' | 'markdown' | 'file' | 'image' | 'appearance' | 'export' | 'shortcuts' | 'extensions' | 'advanced' | 'updater';
+export type SettingsSectionId = 'general' | 'editor' | 'markdown' | 'files' | 'image' | 'appearance' | 'export' | 'shortcuts' | 'extensions' | 'advanced';
 
 export type SettingType = 'toggle' | 'select' | 'number' | 'text' | 'action';
 
@@ -57,6 +57,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'en-US', labelKey: 'settings.language.en' },
           { value: 'system', labelKey: 'settings.language.system' },
         ], applyCommand: 'locale.set.system' },
+      // P2-2.6 updater 归位：独立 updater 一级分类不符合 Typora 一级导航合同，
+      // 条目并入「通用」（Typora 自动更新位于偏好设置首页区域）。
+      { id: 'general.updater.channel', labelKey: 'settings.updater.channel', type: 'select', storageKey: 'mellow.updater.channel', defaultValue: 'stable',
+        options: [
+          { value: 'stable', labelKey: 'settings.updater.channel.stable' },
+          { value: 'beta', labelKey: 'settings.updater.channel.beta' },
+        ], descriptionKey: 'settings.updater.channelDesc' },
+      { id: 'general.updater.checkOnStartup', labelKey: 'settings.updater.checkOnStartup', type: 'toggle', storageKey: 'mellow.updater.checkOnStartup', defaultValue: true },
+      { id: 'general.updater.checkNow', labelKey: 'settings.updater.checkNow', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.updater.checkNowDesc', applyCommand: 'updater.check' },
     ],
   },
   {
@@ -123,12 +132,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
-    id: 'file',
+    // P2-2.6 file id 归一：一级导航对齐 Typora「文件 / Files」复数 id（storageKey 保持
+    // 既有值不变，避免用户已持久化设置丢失）。
+    id: 'files',
     labelKey: 'settings.file',
     settings: [
-      { id: 'file.showHidden', labelKey: 'settings.file.showHidden', type: 'toggle', storageKey: 'mellow.fileTree.showHidden', defaultValue: false, applyCommand: 'settings.fileTreeOptions' },
-      { id: 'file.showNonMarkdown', labelKey: 'settings.file.showNonMarkdown', type: 'toggle', storageKey: 'mellow.fileTree.showNonMarkdown', defaultValue: false, applyCommand: 'settings.fileTreeOptions' },
-      { id: 'file.autosave', labelKey: 'settings.file.autosave', type: 'toggle', storageKey: 'mellow.file.autosave', defaultValue: true, applyCommand: 'settings.autosave' },
+      { id: 'files.showHidden', labelKey: 'settings.file.showHidden', type: 'toggle', storageKey: 'mellow.fileTree.showHidden', defaultValue: false, applyCommand: 'settings.fileTreeOptions' },
+      { id: 'files.showNonMarkdown', labelKey: 'settings.file.showNonMarkdown', type: 'toggle', storageKey: 'mellow.fileTree.showNonMarkdown', defaultValue: false, applyCommand: 'settings.fileTreeOptions' },
+      { id: 'files.autosave', labelKey: 'settings.file.autosave', type: 'toggle', storageKey: 'mellow.file.autosave', defaultValue: true, applyCommand: 'settings.autosave' },
     ],
   },
   {
@@ -182,7 +193,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'shortcuts',
     labelKey: 'settings.shortcuts',
     settings: [
-      { id: 'shortcuts.list', labelKey: 'settings.shortcuts.list', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.shortcuts.listDesc' },
+      // P2-2.6 action 接通既有命令（搜索可达且真实可用）
+      { id: 'shortcuts.list', labelKey: 'settings.shortcuts.list', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.shortcuts.listDesc', applyCommand: 'help.cheatsheet' },
     ],
   },
   {
@@ -199,19 +211,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     settings: [
       { id: 'advanced.windowBounds', labelKey: 'settings.advanced.windowBounds', type: 'toggle', storageKey: 'mellow.advanced.windowBounds', defaultValue: true, applyCommand: 'settings.windowBounds' },
       { id: 'advanced.userCss', labelKey: 'settings.advanced.userCss', type: 'text', storageKey: '', defaultValue: '', descriptionKey: 'settings.advanced.userCssDesc' },
-    ],
-  },
-  {
-    id: 'updater',
-    labelKey: 'settings.updater.label',
-    settings: [
-      { id: 'updater.channel', labelKey: 'settings.updater.channel', type: 'select', storageKey: 'mellow.updater.channel', defaultValue: 'stable',
-        options: [
-          { value: 'stable', labelKey: 'settings.updater.channel.stable' },
-          { value: 'beta', labelKey: 'settings.updater.channel.beta' },
-        ], descriptionKey: 'settings.updater.channelDesc' },
-      { id: 'updater.checkOnStartup', labelKey: 'settings.updater.checkOnStartup', type: 'toggle', storageKey: 'mellow.updater.checkOnStartup', defaultValue: true },
-      { id: 'updater.checkNow', labelKey: 'settings.updater.checkNow', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.updater.checkNowDesc' },
     ],
   },
 ];
@@ -255,4 +254,42 @@ export function writeSetting(def: SettingDefinition, value: string | number | bo
   if (typeof value === 'boolean') raw = value ? '1' : '0';
   else raw = String(value);
   localStorage.setItem(def.storageKey, raw);
+}
+
+// ── P2-2.6 快捷键自定义 override 层 ─────────────────────────────────
+// 单一真源不变：menuSchema 仍是键位默认值唯一来源（§7.4 硬规则 2）；用户在 Settings
+// 录制的自定义键位存为 override，仅在装配边界生效（App registry 注入 / native menu spec）。
+export const SHORTCUT_OVERRIDES_KEY = 'mellow.shortcuts.overrides';
+
+export interface ShortcutOverrideEntry {
+  mac?: string;
+  winLinux?: string;
+}
+
+export type ShortcutOverrideMap = Record<string, ShortcutOverrideEntry>;
+
+/** 读取用户自定义键位（损坏/非法 JSON → 空表，等同无 override） */
+export function readShortcutOverrides(): ShortcutOverrideMap {
+  try {
+    const raw = localStorage.getItem(SHORTCUT_OVERRIDES_KEY);
+    if (raw === null) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    const result: ShortcutOverrideMap = {};
+    for (const [id, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof id !== 'string' || id === '' || typeof entry !== 'object' || entry === null) continue;
+      const rec = entry as Record<string, unknown>;
+      const mac = typeof rec.mac === 'string' ? rec.mac : undefined;
+      const winLinux = typeof rec.winLinux === 'string' ? rec.winLinux : undefined;
+      if (mac !== undefined || winLinux !== undefined) result[id] = { ...(mac !== undefined ? { mac } : {}), ...(winLinux !== undefined ? { winLinux } : {}) };
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+/** 持久化用户自定义键位 */
+export function writeShortcutOverrides(map: ShortcutOverrideMap): void {
+  localStorage.setItem(SHORTCUT_OVERRIDES_KEY, JSON.stringify(map));
 }

@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "test": "../settings/node_modules/.bin/jest --rootDir ."
   },
   "devDependencies": {
     "typescript": "^5.0.0"
