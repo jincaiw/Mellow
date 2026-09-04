@@ -48,6 +48,42 @@ html, body, #root {
   background: var(--mellow-bg-hover);
 }
 
+/* Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：
+   非 macOS 平台 titlebar 右侧窗口控制按钮（最小化 / 最大化 / 关闭）。
+   浏览器 dev（非 Tauri）不渲染该容器，仅样式兜底隐藏。 */
+.titlebar-window-controls {
+  display: none;
+}
+
+.shell:not(.platform-mac) .titlebar-window-controls {
+  display: flex;
+  align-self: stretch;
+  margin-left: auto;
+}
+
+.titlebar-win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+  cursor: default;
+}
+
+.titlebar-win-btn:hover {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+
+.titlebar-win-close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
 .spacer {
   flex: 1;
 }

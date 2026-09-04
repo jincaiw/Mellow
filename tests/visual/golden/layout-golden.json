@@ -23,10 +23,11 @@
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
+    "colorScheme": "light",
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 56,
+      "paddingTop": 2,
       "contentWidth": 820,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
@@ -57,10 +58,11 @@
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
+    "colorScheme": "light",
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 56,
+      "paddingTop": 2,
       "contentWidth": 820,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
@@ -91,10 +93,11 @@
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
+    "colorScheme": "light",
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 56,
+      "paddingTop": 2,
       "contentWidth": 820,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
@@ -125,14 +128,85 @@
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
+    "colorScheme": "light",
     "editor": {
       "fontSize": 34,
       "lineHeightPx": 56.1,
-      "paddingTop": 56,
+      "paddingTop": 2,
       "contentWidth": 820,
       "expectedFontSize": 34,
       "expectedPaddingTop": 56,
       "expectedLineHeightPx": 56.1
+    }
+  },
+  "dark-900x600": {
+    "viewport": {
+      "w": 900,
+      "h": 600
+    },
+    "titlebarH": 36,
+    "tabbarH": 35,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 900,
+      "h": 564
+    },
+    "editorFrame": {
+      "x": 40,
+      "y": 36,
+      "w": 820,
+      "h": 564
+    },
+    "editorFrameMaxWidth": "820px",
+    "editorFrameCentered": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "dark",
+    "editor": {
+      "fontSize": 17,
+      "lineHeightPx": 28.05,
+      "paddingTop": 2,
+      "contentWidth": 820,
+      "expectedFontSize": 17,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 28.1
+    }
+  },
+  "dark-1440x900": {
+    "viewport": {
+      "w": 1440,
+      "h": 900
+    },
+    "titlebarH": 36,
+    "tabbarH": 35,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 1440,
+      "h": 864
+    },
+    "editorFrame": {
+      "x": 310,
+      "y": 36,
+      "w": 820,
+      "h": 864
+    },
+    "editorFrameMaxWidth": "820px",
+    "editorFrameCentered": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "dark",
+    "editor": {
+      "fontSize": 17,
+      "lineHeightPx": 28.05,
+      "paddingTop": 2,
+      "contentWidth": 820,
+      "expectedFontSize": 17,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 28.1
     }
   }
 }

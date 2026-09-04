@@ -21,6 +21,8 @@ export interface NativeMenuInputs {
   activeThemeId: string;
   /** 主题模式 light | dark | system。 */
   themeMode: string;
+  /** 用户主题（appData/themes/*.css 加载结果；与内置主题一并派生主题菜单）。 */
+  userThemes?: ReadonlyArray<{ id: string; name: string }>;
   /** 键入时检查拼写（CheckMenuItem 选中态，与 Settings Store 同一真源）。 */
   spellcheck: boolean;
   /** 智能标点（CheckMenuItem 选中态）。 */
@@ -38,8 +40,11 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
     debug,
     translate: inputs.translate,
     recentFiles: inputs.recentFiles,
-    // P1-1.5：主题菜单从 Theme Registry（BUILTIN_THEMES）派生，Rust 零主题知识
-    themes: BUILTIN_THEMES.map((theme) => ({ id: theme.id, name: theme.name })),
+    // P1-1.5：主题菜单从 Theme Registry（BUILTIN_THEMES + 用户主题）派生，Rust 零主题知识
+    themes: [
+      ...BUILTIN_THEMES.map((theme) => ({ id: theme.id, name: theme.name })),
+      ...(inputs.userThemes ?? []),
+    ],
     activeThemeId: inputs.activeThemeId,
     themeMode: inputs.themeMode,
     spellcheck: inputs.spellcheck,

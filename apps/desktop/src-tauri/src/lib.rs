@@ -202,6 +202,12 @@ pub fn run() {
                 let builder = builder
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
                     .hidden_title(true);
+                // Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：去掉系统 chrome，
+                // 由应用内 36px titlebar 承担拖拽/控制按钮；边缘 resize 与拖拽由 tao
+                // undecorated hit-testing 提供。macOS 维持 Overlay（原生 Traffic Lights）；
+                // Linux 维持系统装饰（GNOME/KDE undecorated resize 兼容性风险，记为 D）。
+                #[cfg(target_os = "windows")]
+                let builder = builder.decorations(false);
                 builder.on_navigation(|url| {
                 let scheme = url.scheme();
                 if scheme == "tauri" {

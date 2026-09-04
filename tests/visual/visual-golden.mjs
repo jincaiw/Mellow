@@ -39,6 +39,9 @@ const CONFIGS = [
   { name: 'win-1440x900', width: 1440, height: 900, fontSize: 17 },
   // Typora parity：⇧⌘= 放大至 200%（R2-4 口径 17px = 100% → 34px）
   { name: 'zoom-200', width: 1200, height: 800, fontSize: 34 },
+  // V4 §14.3 Light-Dark：暗色模式布局契约（几何应与亮色一致，主题仅切换 CSS 变量）
+  { name: 'dark-900x600', width: 900, height: 600, fontSize: 17, mode: 'dark' },
+  { name: 'dark-1440x900', width: 1440, height: 900, fontSize: 17, mode: 'dark' },
 ];
 
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -95,6 +98,8 @@ async function sampleLayout(page, frame, config) {
       sidebarVisible: document.querySelector('.sidebar') !== null,
       statusbarVisible: document.querySelector('.statusbar') !== null,
       modeIndicatorsVisible: document.querySelector('.mode-indicators') !== null,
+      // 主题断言（V4 §14.3 Light-Dark）：暗色配置若静默回退亮色即在此暴露
+      colorScheme: document.documentElement.dataset.colorScheme ?? null,
     };
   });
   const inner = await frame.evaluate(() => {
@@ -126,6 +131,7 @@ async function sampleLayout(page, frame, config) {
     sidebarVisible: outer.sidebarVisible,
     statusbarVisible: outer.statusbarVisible,
     modeIndicatorsVisible: outer.modeIndicatorsVisible,
+    colorScheme: outer.colorScheme,
     editor: {
       ...inner,
       // P2-2.2 契约：Top Padding 56px；行高 = fontSize × 1.65（默认设置）
@@ -170,11 +176,14 @@ async function main() {
       const context = await browser.newContext({ viewport: { width: config.width, height: config.height } });
       const page = await context.newPage();
       await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-      // 配置写入（fontSize 写完需重载走启动恢复链路）
-      await page.evaluate((size) => {
+      // 配置写入（fontSize 写完需重载走启动恢复链路；mode 走 mellow.theme.settings）
+      await page.evaluate(({ size, mode }) => {
         localStorage.clear();
         localStorage.setItem('mellow.editor.fontSize', String(size));
-      }, config.fontSize);
+        if (mode === 'dark') {
+          localStorage.setItem('mellow.theme.settings', JSON.stringify({ mode: 'dark' }));
+        }
+      }, { size: config.fontSize, mode: config.mode });
       await page.reload({ waitUntil: 'domcontentloaded' });
       const frame = await waitEditorFrame(page);
       // 新建两个 tab：单 tab 自动隐藏（Typora parity），双 tab 才能采样 tabbar

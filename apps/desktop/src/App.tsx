@@ -63,6 +63,7 @@ import { createDesktopOpenerService } from './host/openers';
 import { createDesktopWindowService } from './host/windowService';
 import { createDesktopSearchService } from './host/searchServices';
 import { createDesktopImageUploadService } from './host/uploadService';
+import { openThemesFolder, refreshUserThemes } from './host/userThemes';
 import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
@@ -71,7 +72,7 @@ import type { ImageExportOptions, Canvas2DLike } from '../../../packages/export/
 import { CommandPaletteModel, CommandRegistry, SCHEMA_SHORTCUTS, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import type { CommandContribution } from '../../../packages/extension-api/src';
-import { BUILTIN_THEMES, DEFAULT_THEME_SETTINGS, resolveActiveTheme, themeById } from '../../../packages/themes/src';
+import { DEFAULT_THEME_SETTINGS, allThemes, resolveActiveTheme, themeById } from '../../../packages/themes/src';
 import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
 import { buildNativeMenuSpec } from './nativeMenu';
@@ -536,6 +537,21 @@ export default function App() {
   });
   const [systemDark, setSystemDark] = useState(false);
   const activeTheme: MellowTheme = resolveActiveTheme(themeSettings, systemDark);
+
+  // 用户主题（Typora themes 文件夹语义）：appData/themes/*.css → 主题菜单 / theme.apply.*
+  // 加载 + 注册（registerUserThemes 使 resolveActiveTheme/themeById 可见）；
+  // 窗口重新聚焦时重扫（用户在外部投放 CSS 后回到应用即生效）。
+  const [userThemeList, setUserThemeList] = useState<MellowTheme[]>([]);
+  const refreshUserThemeList = useCallback(() => {
+    void refreshUserThemes().then((themes) => {
+      setUserThemeList(themes);
+    }).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    refreshUserThemeList();
+    window.addEventListener('focus', refreshUserThemeList);
+    return () => window.removeEventListener('focus', refreshUserThemeList);
+  }, [refreshUserThemeList]);
 
   // B3-2 编辑器字体族优先级：用户显式设置（localStorage）> 主题级 editorFontFamily > CoreEditor 默认（null）
   const readEditorFontFamilyPreference = (theme: MellowTheme): string | null => {
@@ -3637,7 +3653,9 @@ export default function App() {
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'settings.open', localizedTitle: { zh: '设置…', en: 'Settings…' }, category: 'system', shortcut: { mac: 'Cmd+,', winLinux: 'Ctrl+,' }, context: { scope: 'global' }, enabled: always, execute: () => setSettingsOpen(true) },
       { id: 'theme.system', localizedTitle: { zh: '主题：跟随系统', en: 'Theme: System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
-      { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const next = BUILTIN_THEMES[(BUILTIN_THEMES.findIndex((t) => t.id === activeTheme.id) + 1) % BUILTIN_THEMES.length]; applyThemeById(next.id); } },
+      { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const all = allThemes(); const next = all[(all.findIndex((t) => t.id === activeTheme.id) + 1) % all.length]; applyThemeById(next.id); } },
+      // Typora 主题机制对标（V4 §7.3）：打开主题文件夹（appData/themes，投放 *.css 即成为主题）
+      { id: 'theme.openFolder', localizedTitle: { zh: '打开主题文件夹…', en: 'Open Themes Folder…' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void openThemesFolder(); } },
       { id: 'locale.set.zh-CN', localizedTitle: { zh: '语言：简体中文', en: 'Language: 简体中文' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'zh-CN', execute: () => setLocaleSettingPersist('zh-CN') },
       { id: 'locale.set.en-US', localizedTitle: { zh: '语言：English', en: 'Language: English' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'en-US', execute: () => setLocaleSettingPersist('en-US') },
       { id: 'locale.set.system', localizedTitle: { zh: '语言：跟随系统', en: 'Language: Follow System' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'system', execute: () => setLocaleSettingPersist('system') },
@@ -3838,7 +3856,7 @@ export default function App() {
       }
     }
     commands.forEach((command) => registry.register(command));
-    for (const theme of BUILTIN_THEMES) {
+    for (const theme of allThemes()) {
       registry.register({
         id: `theme.apply.${theme.id}`,
         localizedTitle: { zh: `主题：${theme.name}`, en: `Theme: ${theme.name}` },
@@ -4068,6 +4086,8 @@ export default function App() {
       themeMode: themeSettings.mode,
       spellcheck: (() => { const def = settingById('editor.spellcheck'); return def ? readSetting(def) !== false : true; })(),
       smartPunct: (() => { const def = settingById('editor.smartPunctuation'); return def ? readSetting(def) === true : false; })(),
+      // 用户主题（appData/themes/*.css）：随加载/重扫变化重建主题菜单派生
+      userThemes: userThemeList.map((theme) => ({ id: theme.id, name: theme.name })),
       // P2-2.6：自定义键位随 override 变化重建原生菜单（accelerator 物化）
       shortcutOverrides,
     });
@@ -4077,7 +4097,7 @@ export default function App() {
         /* 非 Tauri / 菜单不可用 */
       });
     // menuCheckTick：spellcheck/smartPunct toggle 写 localStorage 后自增触发重建
-  }, [locale, t, recentFiles, activeTheme.id, themeSettings.mode, menuCheckTick, shortcutOverrides]);
+  }, [locale, t, recentFiles, activeTheme.id, themeSettings.mode, userThemeList, menuCheckTick, shortcutOverrides]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -4194,6 +4214,32 @@ export default function App() {
           title={t('sidebar.toggleTitle')}
           aria-pressed={sidebarShown}
         ><span aria-hidden="true">☰</span><span className="sr-only">{platformMac ? '⇧⌘L' : 'Ctrl+Shift+L'}</span></button>
+        {/* Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：非 macOS Tauri 环境显示窗口控制按钮 */}
+        {!platformMac && isTauri() && (
+          <div className="titlebar-window-controls" role="group" aria-label="Window controls">
+            <button
+              type="button"
+              className="titlebar-win-btn"
+              title={t('menu.window.minimize')}
+              aria-label={t('menu.window.minimize')}
+              onClick={() => { void windowServiceRef.current?.minimize(); }}
+            ><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor" strokeWidth="1" /></svg></button>
+            <button
+              type="button"
+              className="titlebar-win-btn"
+              title={t('menu.window.maximizeToggle')}
+              aria-label={t('menu.window.maximizeToggle')}
+              onClick={() => { void windowServiceRef.current?.toggleMaximize(); }}
+            ><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg></button>
+            <button
+              type="button"
+              className="titlebar-win-btn titlebar-win-close"
+              title={t('titlebar.closeWindow')}
+              aria-label={t('titlebar.closeWindow')}
+              onClick={() => { void windowServiceRef.current?.close(); }}
+            ><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" strokeWidth="1" /></svg></button>
+          </div>
+        )}
       </header>
       <div className="workspace-shell">
         {sidebarShown && (

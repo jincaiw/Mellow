@@ -3,6 +3,12 @@
 对应 `docs/specs/clipboard-smart-paste-spec.md` §2 / §8 与 PRD §50。
 
 > 状态：自动化覆盖已完成；以下为真机 GUI 手动验收记录模板。执行前运行 `cd apps/desktop && npm run tauri dev`。
+>
+> **自动化（2026-09-04 新增）**：「系统纯文本编辑器」列由 `tests/benchmark/clipboard-cross-app.mjs`
+> 自动执行（macOS，目标 TextEdit；C1 多 MIME 断言 / C2 Copy-as-Markdown 逐字符读回 /
+> C3 纯文本粘贴逐字符读回）。运行前提：`tauri build` 产出 release Mellow.app + 终端已授予
+> 辅助功能权限（System Events / CGEvent 在 WorkBuddy 托管会话内不可用，须在用户终端执行）。
+> 结果归档 `tests/benchmark/results/<ts>-clipboard-cross-app.json`。
 
 ## 测试源文档
 

@@ -342,6 +342,8 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'dynamic', dynamic: 'themes' },
     { kind: 'separator' },
     { kind: 'command', id: 'theme.mode.system', labelKey: 'menu.theme.system', checkedFrom: 'themeModeSystem' },
+    // V4 §7.3：Open Theme Folder / User CSS 放 separator 后（Typora 主题机制对标）
+    { kind: 'command', id: 'theme.openFolder', labelKey: 'menu.theme.openFolder' },
     { kind: 'command', id: 'file.openUserCss', labelKey: 'menu.theme.openUserCss' },
   ] },
 

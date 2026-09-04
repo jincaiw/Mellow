@@ -176,9 +176,21 @@ macOS                                            Windows / Linux
 
 ---
 
-## 4. 当前实现审计（2026-09-01 @ `2482503`）
+## 4. 当前实现审计
 
-### 4.1 桌面 UI / 布局
+### 4.0 重审计（2026-09-04 @ `316a082`，本节为最新状态，§4.1–§4.4 保留为 2026-09-01 历史基线）
+
+对 §4.1–§4.4 全部 G4 缺陷逐项对照当前 HEAD 复核，结果如下：
+
+| 状态 | 项 |
+|---|---|
+| **已修复（15 项）** | G4-SHELL-01（line-height 已消费，`build-editor-bundle.mjs:242` + `verify-shell-typography.mjs` 护栏）、G4-SHELL-03（四模式虚拟化 `VirtualRows.tsx`/`virtual.ts`）、G4-SHELL-04（Tab scrollIntoView + compact，`Tabbar.tsx:32-44`）、G4-SHELL-05（Tab 右键菜单）、G4-SHELL-07（`verify-visual-golden.mjs` + `tests/visual/visual-golden.mjs` 四分辨率）、G4-SHELL-08（Top 56px / Bottom 30vh 固化）、G4-SIDE-01（File List 全键位）、G4-SIDE-02（Outline/Search 键盘导航，`App.tsx:4200`）、G4-SIDE-03（四模式右键菜单）、G4-SIDE-06（常驻 filter + 新建按钮）、G4-MENU-01~06/08/09（menuSchema 单一真源、主题 registry 派生、新建窗口/Ctrl+N、context menu 走 dispatchCommand、三平台 accelerator、menu dump 入库）、G4-EDIT-02（9 模块 IME guard，`ime-guards.test.ts`）、G4-EDIT-03（Undo 分组 `undoGrouping.ts`，21 用例）、G4-EDIT-04（Table 100×30，`table-large.test.ts`）、G4-EDIT-07（Source↔Live 往返 8 用例） |
+| **部分修复** | G4-SHELL-06（focus/typewriter 有 mode-indicator；Reader 不做常驻指示为代码注释明示的设计取舍，记为 D）、G4-EDIT-05（引擎层 11 用例已过；跨应用 GUI 自动化仍缺，属真机 Gate）、G4-EDIT-06（mock uploader 已测；PicGo 真实外部进程链路属真机 Gate） |
+| **仍存在** | **G4-SHELL-02 / G4-SIDE-04（Sidebar 目录 watcher）**——唯一待施工硬缺口 |
+
+Settings 快捷键可编辑（§9.5 缺口）已随 P2-2.6 落地。跨应用拖拽 e2e（`tests/e2e/drag-drop-verify.mjs`）已存在，OS 级 Finder/Explorer ↔ Sidebar 跨应用拖拽仍属真机验证范围。
+
+### 4.1 桌面 UI / 布局（2026-09-01 历史基线）
 
 **已达标**
 
@@ -874,6 +886,15 @@ Functional
 
 > **D7 解冻记录（2026-09-03 用户裁决）**：P1 观察项 **Windows JumpList** 与 **broken local link error indicator** 两项经用户确认纳入实施（D7 单项解冻，其余新功能继续冻结至 P8 真机 Gate 通过）。Pandoc / Previous Export / Image Export 经复核确认为已实现（见 `tests/qualification/README.md` 2026-09-03 纠正）。
 
+### 17.3 D10 — Windows 一体化自绘标题栏（2026-09-04 用户确认"评估并实施"）
+
+| 项 | 结论 |
+|---|---|
+| 决议 | **Windows**：`decorations(false)` + 应用内 36px titlebar 承担拖拽与窗口控制按钮（最小化/最大化/关闭，非 macOS Tauri 环境显示，关闭键 hover `#e81123`）；边缘 resize 与拖拽由 tao undecorated hit-testing 提供。**macOS**：维持 `TitleBarStyle::Overlay`（原生 Traffic Lights）。**Linux**：维持系统装饰（undecorated 在 GNOME/KDE 下边缘 resize 兼容性风险高），记为 D 有意差异，待 Linux 真机证据再评估 |
+| 落地 | `src-tauri/src/lib.rs`（`#[cfg(target_os = "windows")] decorations(false)`）、`App.tsx` titlebar-window-controls、`styles.css`、i18n `titlebar.closeWindow` |
+| 与 V4 §9.1 的关系 | 原"不伪造 chrome"条款由本决议在 Windows 平台取代（用户裁决优先）；"Snap-compatible"由原生按钮 hover 行为提供，**Windows 11 Snap Layout 悬停卡片为已知限制**，归入 P7 Windows 真机矩阵验证 |
+| 验证 | 本机 macOS 不可验证 Windows 行为；Windows 真机交互验证（拖拽/Snap/resize/最大化）列入 P7 真机 Gate 待办（D8 runner 到位后执行） |
+
 ---
 
 ## 18. 变更记录
@@ -885,6 +906,7 @@ Functional
 | 2026-09-01 | V4.0 | 用户确认 D1（全改 Typora 官方键位）、D5（Windows self-hosted runner）、D7（冻结新功能至 P8 通过）；D2 转真机复核后定案 |
 | 2026-09-03 | V4.1 | P0-P8 自动化范围全部收口（12 包 jest 1418 例 + parity 护栏 12 个），v1.4.0 tag 发布（pre-release，ADR-0020）；§17.2 决策点复核：D3/D4/D6/D9 落地关闭（D6 新增 ADR-0023），D8 待用户提供 runner 机器；P8 剩余项全部为真机/人工 Gate |
 | 2026-09-03 | V4.2 | 用户裁决（互动确认）：D6 Accepted 定级确认、D8 暂缓继续用 hosted runner、D7 单项解冻 JumpList 与 broken-link indicator 并当日实现收口（d96346c/f56abcb）；导出能力复核纠正（Pandoc/Previous Export/Image Export 早已实现）；PRD P1 功能清零；v1.4.1 tag 发布（CI 三平台全绿，Draft pre-release） |
+| 2026-09-04 | V4.3 | 重审计（§4.0）：§4.1–§4.4 全部 18 项 G4 缺陷经逐项代码复核确认已随 v1.4.x 修复（含目录 watcher，初判"仍存在"系检索路径笔误，已更正）；3 项属真机 Gate（G4-SHELL-06 记 D、G4-EDIT-05/06）；新增用户确认范围——主题 Open Theme Folder / User CSS、Win/Linux 自绘标题栏纳入实施 |
 
 ---
 

@@ -321,6 +321,83 @@ export const BUILTIN_THEMES: MellowTheme[] = [
 
 const themeMap = new Map(BUILTIN_THEMES.map((t) => [t.id, t]));
 
+/** 用户主题注册表（Typora themes 文件夹语义：*.css 放入 appData/themes → 出现在主题菜单） */
+let userThemeList: MellowTheme[] = [];
+
+/** 注册/替换用户主题（桌面 Adapter 加载后调用；id 约定 `user/<文件名>`） */
+export function registerUserThemes(themes: MellowTheme[]): void {
+  for (const id of [...themeMap.keys()]) {
+    if (id.startsWith('user/')) themeMap.delete(id);
+  }
+  for (const theme of themes) themeMap.set(theme.id, theme);
+  userThemeList = themes;
+}
+
+/** 全部可用主题（内置 + 已注册用户主题；主题菜单/循环切换按此派生） */
+export function allThemes(): MellowTheme[] {
+  return [...BUILTIN_THEMES, ...userThemeList];
+}
+
+/** 已注册用户主题（只读快照） */
+export function userThemes(): readonly MellowTheme[] {
+  return userThemeList;
+}
+
+/** sRGB 感知亮度（0-255）——用户主题暗色自动判定用 */
+function hexLuminance(hex: string): number | null {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (m === null) return null;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * 解析用户主题 CSS（纯函数，node 可测）。
+ *
+ * - 文件名（去 .css）即主题 id/name，可用 `/* mellow-theme: name=X kind=dark *\/` 元注释覆盖；
+ * - kind 判定：显式 kind=dark/light > `--mellow-bg` 颜色亮度（<128 视为暗色）> 默认 light；
+ * - CSS 中声明的 `--mellow-*` 变量覆盖对应基础 token（保证 chrome 完整可用）；
+ * - 原始 CSS 整体作为 themeCss 注入（任意选择器均可生效）。
+ */
+export function parseUserThemeCss(fileName: string, css: string): MellowTheme {
+  const baseName = fileName.replace(/\.css$/i, '');
+  const metaMatch = /mellow-theme\s*:\s*([^*]*)\*\//.exec(css);
+  const meta = new Map<string, string>();
+  if (metaMatch !== null) {
+    for (const pair of metaMatch[1].split(/\s+/)) {
+      const kv = pair.split('=');
+      if (kv.length === 2 && kv[0] !== '' && kv[1] !== '') meta.set(kv[0], kv[1]);
+    }
+  }
+
+  const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const overrides: Record<string, string> = {};
+  const varRe = /(--mellow-[a-zA-Z0-9-]+)\s*:\s*([^;{}]+)[;}]/g;
+  let vm: RegExpExecArray | null;
+  while ((vm = varRe.exec(cssWithoutComments)) !== null) {
+    overrides[vm[1]] = vm[2].trim();
+  }
+
+  const bg = overrides['--mellow-bg'];
+  const bgLum = bg === undefined ? null : hexLuminance(bg);
+  const kindMeta = meta.get('kind');
+  const kind: ThemeKind = kindMeta === 'dark' || kindMeta === 'light'
+    ? kindMeta
+    : bgLum !== null && bgLum < 128 ? 'dark' : 'light';
+
+  return {
+    id: `user/${baseName}`,
+    name: meta.get('name') ?? baseName,
+    kind,
+    variables: { ...(kind === 'dark' ? DARK_BASE : LIGHT_BASE), ...overrides },
+    themeCss: css,
+    editorTheme: kind === 'dark' ? 'minimal-dark' : 'minimal-light',
+  };
+}
+
 export function themeById(id: string): MellowTheme | undefined {
   return themeMap.get(id);
 }
