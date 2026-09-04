@@ -297,7 +297,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          RELEASE_ID=$(gh release view "$GITHUB_REF_NAME" --json id --jq .id)
+          # 注意：--json id 是 GraphQL 节点 ID（RE_...），REST PATCH 必须用数字 databaseId。
+          RELEASE_ID=$(gh release view "$GITHUB_REF_NAME" --json databaseId --jq .databaseId)
           BODY=$(sed "s/__TAG__/$GITHUB_REF_NAME/g" .github/release-template.md)
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             -X PATCH \
