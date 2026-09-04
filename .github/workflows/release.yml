@@ -6,8 +6,10 @@
 #
 # 触发：手动（workflow_dispatch）或推送 v* 标签（标签推送会创建 Draft Release）。
 # 收尾：三平台构建成功后由 finalize 作业写入 Release Notes（.github/release-template.md +
-#       自动生成的提交清单）并标记 prerelease=true（ADR-0020）——此后仅需人工执行
+#       git log 生成的提交清单）并标记 prerelease=true（ADR-0020）——此后仅需人工执行
 #       `gh release edit vX --draft=false` 即可发布。
+#       注：generate_release_notes 对 Draft Release 不生效，且 PATCH draft 不带 tag_name
+#       会把 tag 关联重置为 untagged-…（v1.4.2 首发实证），故 finalize 自行生成清单。
 # 工具链：pnpm workspace（根 package.json + pnpm-workspace.yaml，阶段 0 迁移）；
 #         特例 packages/editor-core/CoreEditor（vendored MarkEdit）保留上游 yarn。
 #
@@ -292,6 +294,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Fill release notes and mark prerelease (ADR-0020)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -299,11 +303,19 @@ jobs:
           set -euo pipefail
           # 注意：--json id 是 GraphQL 节点 ID（RE_...），REST PATCH 必须用数字 databaseId。
           RELEASE_ID=$(gh release view "$GITHUB_REF_NAME" --json databaseId --jq .databaseId)
-          BODY=$(sed "s/__TAG__/$GITHUB_REF_NAME/g" .github/release-template.md)
+          git fetch --tags --force origin
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^")
+          {
+            sed "s/__TAG__/${GITHUB_REF_NAME}/g" .github/release-template.md
+            git log --oneline "${PREV_TAG}..${GITHUB_REF_NAME}" | sed 's/^/  - /'
+            echo
+            echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${GITHUB_REF_NAME}"
+          } > /tmp/release-body.md
+          # PATCH draft 必须显式带 tag_name，否则 tag 关联会被重置为 untagged-…。
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             -X PATCH \
-            -f body="$BODY" \
-            -F generate_release_notes=true \
+            -f tag_name="$GITHUB_REF_NAME" \
+            -f body="$(cat /tmp/release-body.md)" \
             -F prerelease=true
           gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,assets \
             --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease) assets=\(.assets | length)"'
