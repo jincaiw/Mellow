@@ -7,7 +7,12 @@ import { install } from '../src/index';
 import {
   imageSourceAt,
   inlineLinkAt,
+  inlineLinkRangeAt,
+  imageSpanFullAt,
+  htmlImgAt,
   codeFenceAt,
+  fenceContentRange,
+  dedentText,
   mathBlockAt,
   mermaidBlockAt,
 } from '../src/contextMenu';
@@ -332,5 +337,64 @@ describe('动作 API（__MELLOW_CONTEXT_ACTIONS__）', () => {
     expect(actions.copySource('mermaid')).toBe(false);
     expect(writeText).not.toHaveBeenCalled();
     view.destroy();
+  });
+});
+
+/**
+ * C1：右键菜单全面对标的纯函数新增（链接区间 / 图片结构化 / HTML img / 围栏内容 / 去缩进）。
+ */
+describe('C1 纯函数新增', () => {
+  const NONE: Array<{ from: number; to: number }> = [];
+
+  test('inlineLinkRangeAt：返回 label/url 与原文区间', () => {
+    const doc = 'see [文档](https://example.com) here';
+    const hit = inlineLinkRangeAt(doc, 6, NONE);
+    expect(hit).toEqual({ label: '文档', url: 'https://example.com', from: 4, to: 29 });
+    expect(hit !== null ? doc.slice(hit.from, hit.to) : '').toBe('[文档](https://example.com)');
+    expect(inlineLinkRangeAt(doc, 0, NONE)).toBeNull();
+  });
+
+  test('imageSpanFullAt：拆出 alt / src / 尺寸后缀', () => {
+    const doc = 'before ![logo](img/a.png =300x200) after';
+    const hit = imageSpanFullAt(doc, 12, NONE);
+    expect(hit).toEqual({ alt: 'logo', src: 'img/a.png', size: { w: 300, h: 200 }, from: 7, to: 34 });
+    const plain = imageSpanFullAt('![x](y.png)', 3, NONE);
+    expect(plain).toEqual({ alt: 'x', src: 'y.png', size: null, from: 0, to: 11 });
+  });
+
+  test('htmlImgAt：解析 src / alt / 尺寸（attr 与 style）', () => {
+    const doc = 'a <img src="b.png" alt="B" width="100px" /> c';
+    const hit = htmlImgAt(doc, 10, NONE);
+    expect(hit?.src).toBe('b.png');
+    expect(hit?.alt).toBe('B');
+    expect(hit?.width).toBe(100);
+    expect(hit?.height).toBeNull();
+    const styleHit = htmlImgAt('<img src="c.png" style="width:20px;height:30px;">', 5, NONE);
+    expect(styleHit?.width).toBe(20);
+    expect(styleHit?.height).toBe(30);
+  });
+
+  test('fenceContentRange：剥离首尾围栏行', () => {
+    const doc = '```js\nconst a = 1;\nconst b = 2;\n```\n';
+    const fence = codeFenceAt(doc, 8);
+    expect(fence).not.toBeNull();
+    if (fence === null) return;
+    const range = fenceContentRange(doc, fence);
+    expect(doc.slice(range.from, range.to)).toBe('const a = 1;\nconst b = 2;');
+  });
+
+  test('fenceContentRange：未闭合围栏内容延伸到文末', () => {
+    const doc = '```js\nx = 1';
+    const fence = codeFenceAt(doc, 7);
+    expect(fence).not.toBeNull();
+    if (fence === null) return;
+    const range = fenceContentRange(doc, fence);
+    expect(doc.slice(range.from, range.to)).toBe('x = 1');
+  });
+
+  test('dedentText：剥离公共缩进，空行不动', () => {
+    expect(dedentText('    a\n      b\n\n    c')).toBe('a\n  b\n\nc');
+    expect(dedentText('a\nb')).toBe('a\nb');
+    expect(dedentText('')).toBe('');
   });
 });

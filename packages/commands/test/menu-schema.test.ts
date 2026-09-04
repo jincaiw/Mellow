@@ -120,7 +120,7 @@ describe('toNativeMenuSpec 物化', () => {
     const file = spec.menus.find((m) => m.id === 'file');
     const newFile = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'file.new');
     expect(newFile).toMatchObject({ id: 'file.new', label: '#menu.file.new', accel: 'Cmd+N' });
-    // export.repeat 仅 Win/Linux 有 accelerator，mac 无
+    // export.repeat 无任何平台 accelerator（原 Ctrl+E 与 selectFormatSpan 冲突，已移除）
     const exportRepeat = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.top.export')
       ?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'export.repeat');
     expect(exportRepeat?.accel).toBeUndefined();
@@ -132,10 +132,11 @@ describe('toNativeMenuSpec 物化', () => {
     const file = spec.menus.find((m) => m.id === 'file');
     const newFile = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'file.new');
     expect(newFile?.accel).toBe('Ctrl+N');
-    // export.repeat Win/Linux = Ctrl+E
+    // export.repeat 的 winLinux 快捷键已移除（Ctrl+E 与 format.selectFormatSpan 冲突，
+    // 见 verify-menu-contract 快捷键单一真源收口），Win/Linux 仅菜单无 accelerator
     const exportRepeat = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.top.export')
       ?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'export.repeat');
-    expect(exportRepeat?.accel).toBe('Ctrl+E');
+    expect(exportRepeat?.accel).toBeUndefined();
   });
 
   test('debugOnly 条目：debug=false 不装配，debug=true 装配', () => {

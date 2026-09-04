@@ -190,6 +190,8 @@ macOS                                            Windows / Linux
 
 Settings 快捷键可编辑（§9.5 缺口）已随 P2-2.6 落地。跨应用拖拽 e2e（`tests/e2e/drag-drop-verify.mjs`）已存在，OS 级 Finder/Explorer ↔ Sidebar 跨应用拖拽仍属真机验证范围。
 
+**2026-09-04 增补（桌面对标第二轮，v1.4.4）**：用户裁决"再次完全对标 Typora 桌面 UI/布局并补足功能与编辑体验"（C1–C6 全量）已完成自动化收口——C1 右键菜单全面对标（code/math/mermaid/table/link/image 13 类条目、渲染导出 copyAsImage/download、单 Undo 文档变换、guarded by `verify-context-menu-parity.mjs` 契约序列 + `verify-context-menu-guard.mjs` 12 缺陷变异）、C2 菜单 §7.3 收口（edit 菜单 pasteMatchStyle/copyWithoutTheme/EOL/trimTrailing；快捷键冲突 export.repeat Ctrl+E 移除，单一真源保持）、C3 StatusBar 单项配置 + Zoom 项（localStorage `mellow.statusbar.fields`）、C4 编辑器默认字体回退缺陷修复（`ui-monospace` 契约全链路）、C5 widget 节点 15 状态矩阵（9 家族 × 15 态 = 126 用例，caret 语义以源码为准）。§4.1–§4.4 状态不变；G4-SHELL-02/G4-SIDE-04（目录 watcher）已在前轮关闭。
+
 ### 4.1 桌面 UI / 布局（2026-09-01 历史基线）
 
 **已达标**
@@ -907,6 +909,7 @@ Functional
 | 2026-09-03 | V4.1 | P0-P8 自动化范围全部收口（12 包 jest 1418 例 + parity 护栏 12 个），v1.4.0 tag 发布（pre-release，ADR-0020）；§17.2 决策点复核：D3/D4/D6/D9 落地关闭（D6 新增 ADR-0023），D8 待用户提供 runner 机器；P8 剩余项全部为真机/人工 Gate |
 | 2026-09-03 | V4.2 | 用户裁决（互动确认）：D6 Accepted 定级确认、D8 暂缓继续用 hosted runner、D7 单项解冻 JumpList 与 broken-link indicator 并当日实现收口（d96346c/f56abcb）；导出能力复核纠正（Pandoc/Previous Export/Image Export 早已实现）；PRD P1 功能清零；v1.4.1 tag 发布（CI 三平台全绿，Draft pre-release） |
 | 2026-09-04 | V4.3 | 重审计（§4.0）：§4.1–§4.4 全部 18 项 G4 缺陷经逐项代码复核确认已随 v1.4.x 修复（含目录 watcher，初判"仍存在"系检索路径笔误，已更正）；3 项属真机 Gate（G4-SHELL-06 记 D、G4-EDIT-05/06）；新增用户确认范围——主题 Open Theme Folder / User CSS、Win/Linux 自绘标题栏纳入实施 |
+| 2026-09-04 | V4.4 | 桌面对标第二轮（用户确认 C1–C6 全量 + Mermaid 导出命令 + 发版 v1.4.4）：C1 右键菜单全面对标（`ContextMenu.tsx` 子菜单体系 + engine `contextMenu.ts` 表格对齐/代码工具/数学与 Mermaid PNG 渲染导出/链接编辑/图片就地上传等 28 条新命令注册）；C2 菜单 §7.3 收口（edit.pasteMatchStyle/copyWithoutTheme/eol/trimTrailing，pasteMatchStyle 改 mac 专用修 Ctrl+Shift+V 冲突，移除 export.repeat winLinux Ctrl+E）；C3 StatusBar 单项配置 + Zoom（`mellow.statusbar.fields`）；C4 默认字体 `ui-monospace` 启动恢复修复（index.html 初始 config + host 无条件 apply）；C5 widget 15 状态矩阵 9 家族 126 用例；新增 i18n 约 60 键双语、护栏契约扩展 + 变异缺陷 12 拒绝；e2e 六项全绿（font-family-verify 就绪探针加固：要求 requestMeasure + .cm-content 在场，修冷启动竞态） |
 
 ---
 

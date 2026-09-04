@@ -31,7 +31,17 @@ export type ImageWidgetAction =
   | 'move'
   | 'copy'
   | 'copyPath'
-  | 'downloadRemote';
+  | 'downloadRemote'
+  /** C1 右键菜单新增：设置显示尺寸（ =WxH 后缀） */
+  | 'setSize'
+  /** C1：Markdown → HTML 转换（光标处单张） */
+  | 'mdToHtml'
+  /** C1：HTML → Markdown 转换 */
+  | 'htmlToMd'
+  /** C1：上传到图床并替换 src */
+  | 'upload'
+  /** C1：删除（本地文件进回收站 + 二次确认；移除 Markdown 引用） */
+  | 'delete';
 
 export interface ImageWidgetActionRequest {
   /** 原始 src（未反转义） */

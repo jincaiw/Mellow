@@ -37,6 +37,8 @@ export interface MellowClipboardApi {
   copyAsPlain(): boolean;
   /** 复制为 HTML 代码（Typora parity D3：HTML 源码作为纯文本写入剪贴板） */
   copyAsHtmlSource(): boolean;
+  /** C1/C2：复制但剥离主题样式（Typora 编辑→复制为无主题 HTML 的引擎侧） */
+  copyWithoutTheme(): boolean;
   pastePlain(): void;
 }
 
@@ -487,6 +489,11 @@ export function installClipboardApi(): void {
       const view = activeClipboardView;
       if (view === null) return false;
       return copyAsHtmlSource(view);
+    },
+    copyWithoutTheme: () => {
+      const view = activeClipboardView;
+      if (view === null) return false;
+      return copyWithoutTheme(view);
     },
     pastePlain: () => {
       const view = activeClipboardView;

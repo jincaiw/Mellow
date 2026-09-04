@@ -1020,6 +1020,19 @@ html, body, #root {
   white-space: nowrap;
 }
 
+/* C3：Zoom 项为 button（点击恢复实际大小），外观与普通 statusbar-item 一致 */
+.statusbar-zoom {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.statusbar-zoom:hover {
+  color: var(--mellow-fg);
+}
+
 .statusbar-sep {
   width: 1px;
   height: 14px;
@@ -1574,6 +1587,31 @@ html, body, #root {
 .context-menu-item.disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* C1：右键菜单分隔线与子菜单（Typora code-tools / Alignment 语义） */
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--mellow-border, rgba(128, 128, 128, 0.35));
+}
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.context-menu-item-label {
+  flex: 1 1 auto;
+}
+.context-menu-submenu-arrow {
+  flex: 0 0 auto;
+  font-size: 12px;
+  opacity: 0.6;
+}
+.context-menu-submenu {
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
 /* Sidebar empty states（§17） */

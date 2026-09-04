@@ -164,6 +164,25 @@ export class ImageFileOpsService {
     const { refs } = await this.context();
     const localRefs = refs.filter((r): r is ImageRef & { absolutePath: string } =>
       r.kind === 'local' && r.absolutePath !== null && r.exists === true);
+    return this.uploadLocalRefs(refs, localRefs);
+  }
+
+  /** C1：单图上传（右键菜单「上传图片」）：仅上传指定 src 的本地图片并替换引用 */
+  async uploadOne(src: string): Promise<Result<ImageOpReport>> {
+    const { refs } = await this.context();
+    const localRefs = refs.filter((r): r is ImageRef & { absolutePath: string } =>
+      r.kind === 'local' && r.src === src && r.absolutePath !== null && r.exists === true);
+    if (localRefs.length === 0) {
+      return err({ code: 'not-found', message: `未找到可上传的本地图片引用: ${src}` });
+    }
+    return this.uploadLocalRefs(refs, localRefs);
+  }
+
+  /** 上传管线（uploadAll / uploadOne 共用；refs 为全量引用，供同路径多引用统一替换） */
+  private async uploadLocalRefs(
+    refs: ImageRef[],
+    localRefs: Array<ImageRef & { absolutePath: string }>,
+  ): Promise<Result<ImageOpReport>> {
     if (localRefs.length === 0) {
       return ok({ moved: 0, copied: 0, downloaded: 0, uploaded: 0, skipped: [], failed: [] });
     }

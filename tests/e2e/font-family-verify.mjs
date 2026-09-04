@@ -47,7 +47,7 @@ async function main() {
       while (Date.now() < deadline) {
         for (const f of page.frames()) {
           if (f.url().includes('/editor/index.html')) {
-            const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor)).catch(() => false);
+            const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor && typeof window.editor.requestMeasure === 'function' && document.querySelector('.cm-content'))).catch(() => false);
             if (ready) return f;
           }
         }
@@ -93,7 +93,7 @@ async function main() {
       while (Date.now() < deadline) {
         for (const f of page.frames()) {
           if (f.url().includes('/editor/index.html')) {
-            const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor)).catch(() => false);
+            const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor && typeof window.editor.requestMeasure === 'function' && document.querySelector('.cm-content'))).catch(() => false);
             if (ready) return f;
           }
         }

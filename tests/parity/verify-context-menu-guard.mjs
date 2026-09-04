@@ -46,8 +46,8 @@ const CASES = [
   {
     name: '代码块右键凭空加一条 Typora 不存在的源码复制项',
     mutate: (s) => s.replace(
-      `      items.push({ label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') });`,
-      `      items.push({ label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') });\n      items.push({ label: t('contextmenu.mermaidCopySource'), onClick: run('mermaid.copySource') });`,
+      `          { label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') },`,
+      `          { label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') },\n          { label: t('contextmenu.mermaidCopySource'), onClick: run('mermaid.copySource') },`,
     ),
   },
   {
@@ -57,17 +57,31 @@ const CASES = [
   {
     name: '表格右键条目缺失（删掉删除表格）',
     mutate: (s) => s.replace(
-      `        { label: t('contextmenu.tableDeleteTable'), onClick: run('table.deleteTable') },\n`,
+      `            { label: t('contextmenu.tableDeleteTable'), onClick: run('table.deleteTable') },\n`,
       ``,
     ),
   },
   {
     name: '表格右键条目顺序漂移（删除行移到最前）',
     mutate: (s) => s
-      .replace(`        { label: t('contextmenu.tableAddRowAbove'), onClick: run('table.addRowAbove') },`, `@@A@@`)
-      .replace(`        { label: t('contextmenu.tableDeleteRow'), onClick: run('table.deleteRow') },`,
-               `        { label: t('contextmenu.tableAddRowAbove'), onClick: run('table.addRowAbove') },`)
-      .replace(`@@A@@`, `        { label: t('contextmenu.tableDeleteRow'), onClick: run('table.deleteRow') },`),
+      .replace(`            { label: t('contextmenu.tableAddRowAbove'), onClick: run('table.addRowAbove') },`, `@@A@@`)
+      .replace(`            { label: t('contextmenu.tableDeleteRow'), onClick: run('table.deleteRow') },`,
+               `            { label: t('contextmenu.tableAddRowAbove'), onClick: run('table.addRowAbove') },`)
+      .replace(`@@A@@`, `            { label: t('contextmenu.tableDeleteRow'), onClick: run('table.deleteRow') },`),
+  },
+  {
+    name: '对齐子菜单缺失（删掉居中对齐）',
+    mutate: (s) => s.replace(
+      `            { label: t('contextmenu.tableAlignCenter'), onClick: run('table.alignCenter') },\n`,
+      ``,
+    ),
+  },
+  {
+    name: 'mermaid 渲染导出缺失（删掉复制为图片）',
+    mutate: (s) => s.replace(
+      `        { label: t('contextmenu.mermaidCopyAsImage'), onClick: run('mermaid.copyAsImage') },\n`,
+      ``,
+    ),
   },
   {
     name: '右键条目绕过 dispatchCommand 直连引擎（违反 G4-MENU-07）',

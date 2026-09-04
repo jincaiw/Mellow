@@ -34,33 +34,33 @@ const fail = (msg) => errors.push(msg);
 /**
  * Typora 1.14.9 右键条目 → Mellow 命令 id 的映射契约。
  *
- * Typora 把 code-tools / table 做成子菜单；Mellow 的 ContextMenuItem 目前是扁平结构，
- * 因此子菜单被展开为同级条目——这是 Adapter 层的已知差异，用 flatten 标记说明，
- * 但**条目的存在性与顺序仍必须与 Typora 一致**。
+ * Typora 把 code-tools / table / Alignment / copyMathBlock 做成子菜单；
+ * C1 起 ContextMenu 支持一层子菜单，条目以「展开后的 dispatch 序列」比对——
+ * 子菜单父项不 dispatch，子项顺序必须与 Typora 子菜单展开序一致。
  */
 const BASE = ['edit.cut', 'edit.copy', 'edit.paste'];
 
+/** code-tools 子菜单展开（code / math / mermaid 共用） */
+const CODE_TOOLS = ['paragraph.copyCodeBlock', 'paragraph.autoIndentCodeBlock', 'paragraph.autoIndentSelection'];
+const INSERT_PARAGRAPHS = ['paragraph.insertParagraphBefore', 'paragraph.insertParagraphAfter'];
+
 const CTX_CONTRACT = {
   text: { typora: ['normal'], items: [...BASE] },
-  link: { typora: ['openLink', 'copyLink', '|', 'normal'], items: [...BASE, 'format.openLink', 'format.copyLinkUrl'] },
+  link: {
+    typora: ['openLink', 'copyLink', '|', 'normal'],
+    items: [...BASE, 'format.openLink', 'format.copyLinkUrl', 'format.editLinkUrl', 'format.removeLink'],
+  },
   code: {
     typora: ['|', 'code-tools', '|', 'insertParagraphBefore', 'insertParagraphAfter', 'delete-fences'],
-    items: [...BASE, 'paragraph.copyCodeBlock'],
-    flatten: 'code-tools 子菜单（Copy Code Content / Auto Indent …）扁平化',
-    missing: ['edit', 'insertParagraphBefore', 'insertParagraphAfter', 'delete-fences'],
+    items: [...BASE, ...CODE_TOOLS, ...INSERT_PARAGRAPHS, 'paragraph.deleteFences'],
   },
   math: {
     typora: ['|', 'edit', 'copyMathBlock', 'download-math', 'code-tools', '|', 'insertParagraphBefore', 'insertParagraphAfter', 'delete'],
-    items: [...BASE, 'math.copyAsTex'],
-    missing: ['edit', 'download-math', 'copyMathBlock→MathML/Image', 'insertParagraphBefore', 'insertParagraphAfter', 'delete'],
+    items: [...BASE, 'math.copyAsTex', 'math.copyAsMathML', 'math.copyAsImage', 'math.download', ...CODE_TOOLS, ...INSERT_PARAGRAPHS, 'math.deleteBlock'],
   },
   mermaid: {
     typora: ['|', 'edit', 'copy-as-image', 'download-diagram', 'code-tools', '|', 'insertParagraphBefore', 'insertParagraphAfter', 'delete'],
-    items: [...BASE],
-    // Typora 对该块确有右键条目，但 Mellow 目前一项都未实现（copy-as-image / download-diagram 依赖渲染导出）。
-    // 声明为已登记缺口：护栏只提示，不判失败；一旦有人加上分支，契约立即生效。
-    notImplemented: true,
-    missing: ['edit', 'copy-as-image', 'download-diagram', 'code-tools', 'insertParagraphBefore', 'insertParagraphAfter', 'delete'],
+    items: [...BASE, 'mermaid.copyAsImage', 'mermaid.download', ...CODE_TOOLS, ...INSERT_PARAGRAPHS, 'mermaid.deleteBlock'],
   },
   table: {
     typora: ['|', 'table', '|', 'insertParagraphBefore', 'insertParagraphAfter'],
@@ -70,9 +70,8 @@ const CTX_CONTRACT = {
       'table.addColumnLeft', 'table.addColumnRight', 'table.deleteColumn',
       'table.moveRowUp', 'table.moveRowDown', 'table.moveColumnLeft', 'table.moveColumnRight',
       'table.copyTable', 'table.tidy', 'table.deleteTable',
+      'table.alignLeft', 'table.alignCenter', 'table.alignRight', 'table.alignDefault',
     ],
-    flatten: 'table 子菜单扁平化（Typora 为 Table 子菜单）',
-    missing: ['insertParagraphBefore', 'insertParagraphAfter'],
   },
 };
 
@@ -106,14 +105,16 @@ function parseKindBlocks(handler) {
   while ((m = re.exec(handler)) !== null) {
     const [, kind, body] = m;
     const ids = [...body.matchAll(/run\('([^']+)'\)/g)].map((x) => x[1]);
-    const direct = (body.match(/onClick: \(\) =>/g) ?? []).length;
-    blocks.set(kind, { ids, direct });
+    // 直连条目 = 所有 onClick: 减去经 run( 派发的（C1：image 分支用 img('op') 帮助函数）
+    const allOnClick = (body.match(/onClick:/g) ?? []).length;
+    const viaRun = (body.match(/onClick: run\(/g) ?? []).length;
+    blocks.set(kind, { ids, direct: allOnClick - viaRun });
   }
   return blocks;
 }
 
 function parseBaseItems(handler) {
-  const start = handler.indexOf('const items: ContextMenuItem[] = [');
+  const start = handler.indexOf('const items: ContextMenuEntry[] = [');
   const end = handler.indexOf('];', start);
   const body = handler.slice(start, end);
   return [...body.matchAll(/run\('([^']+)'\)/g)].map((x) => x[1]);

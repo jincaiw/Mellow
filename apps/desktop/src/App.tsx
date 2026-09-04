@@ -85,7 +85,7 @@ import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
 import ContextMenu from './ContextMenu';
-import type { ContextMenuItem, ContextMenuState } from './ContextMenu';
+import type { ContextMenuEntry, ContextMenuItem, ContextMenuState } from './ContextMenu';
 import Cheatsheet from './Cheatsheet';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
@@ -329,13 +329,14 @@ export default function App() {
     hostRef.current?.focus();
   }, []);
 
-  /** 引擎剪贴板桥（菜单「复制为 Markdown / 纯文本 / HTML 代码 / 粘贴为纯文本」→ iframe __MELLOW_CLIPBOARD_API__） */
-  const engineClipboard = useCallback((action: 'copyMarkdown' | 'copyPlain' | 'copyHtmlSource' | 'pastePlain') => {
+  /** 引擎剪贴板桥（菜单「复制为 Markdown / 纯文本 / HTML 代码 / 无主题 HTML / 粘贴为纯文本」→ iframe __MELLOW_CLIPBOARD_API__） */
+  const engineClipboard = useCallback((action: 'copyMarkdown' | 'copyPlain' | 'copyHtmlSource' | 'copyWithoutTheme' | 'pastePlain') => {
     const frame = containerRef.current?.querySelector('iframe');
-    const win = frame?.contentWindow as (Window & { __MELLOW_CLIPBOARD_API__?: { copyAsMarkdown: () => boolean; copyAsPlain: () => boolean; copyAsHtmlSource: () => boolean; pastePlain: () => void } }) | null;
+    const win = frame?.contentWindow as (Window & { __MELLOW_CLIPBOARD_API__?: { copyAsMarkdown: () => boolean; copyAsPlain: () => boolean; copyAsHtmlSource: () => boolean; copyWithoutTheme: () => boolean; pastePlain: () => void } }) | null;
     if (action === 'copyMarkdown') win?.__MELLOW_CLIPBOARD_API__?.copyAsMarkdown();
     else if (action === 'copyPlain') win?.__MELLOW_CLIPBOARD_API__?.copyAsPlain();
     else if (action === 'copyHtmlSource') win?.__MELLOW_CLIPBOARD_API__?.copyAsHtmlSource();
+    else if (action === 'copyWithoutTheme') win?.__MELLOW_CLIPBOARD_API__?.copyWithoutTheme();
     else win?.__MELLOW_CLIPBOARD_API__?.pastePlain();
     hostRef.current?.focus();
   }, []);
@@ -374,6 +375,38 @@ export default function App() {
   const locale: Locale = resolveLocale(localeSetting);
   const i18n = useMemo(() => createI18n(MESSAGES, locale), [locale]);
   const t = i18n.t;
+
+  // C3（V4 §9.3）：状态栏单项可见性配置（右键 StatusBar 切换；localStorage 持久化）
+  const [statusbarFields, setStatusbarFields] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('mellow.statusbar.fields');
+      return raw !== null ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch { return {}; }
+  });
+  const toggleStatusbarField = useCallback((field: string) => {
+    setStatusbarFields((prev) => {
+      const next = { ...prev, [field]: prev[field] === false };
+      try { localStorage.setItem('mellow.statusbar.fields', JSON.stringify(next)); } catch { /* no-op */ }
+      return next;
+    });
+  }, []);
+  const handleStatusbarContextMenu = useCallback((x: number, y: number) => {
+    const labels: Record<string, string> = {
+      dirty: t('statusbar.field.dirty'),
+      stats: t('statusbar.field.stats'),
+      cursor: t('statusbar.field.cursor'),
+      markdown: t('statusbar.field.markdown'),
+      encoding: t('statusbar.field.encoding'),
+      eol: t('statusbar.field.eol'),
+      zoom: t('statusbar.field.zoom'),
+      status: t('statusbar.field.status'),
+    };
+    const items: ContextMenuEntry[] = Object.entries(labels).map(([key, label]) => ({
+      label,
+      onClick: () => toggleStatusbarField(key),
+    }));
+    setContextMenu({ x, y, items });
+  }, [t, toggleStatusbarField]);
 
   // document lang/dir（未来 RTL：localeDir 由 i18n 提供）
   useEffect(() => {
@@ -1458,6 +1491,45 @@ export default function App() {
         return;
       }
       setStatusText(r.value.downloaded > 0 ? t('msg.downloadedAll') : t('msg.skippedReason', { reason: r.value.skipped[0]?.reason ?? '' }));
+      return;
+    }
+    // C1 右键菜单新增（V4 §10 image 行：Resize / Markdown↔HTML / Upload / Delete）
+    if (action === 'setSize') {
+      const current = window.prompt(t('prompt.imageSize'), '300x200');
+      if (current === null) return;
+      void engineContextRef.current('imageSpanOp', 'setSize', current.trim());
+      return;
+    }
+    if (action === 'mdToHtml' || action === 'htmlToMd') {
+      void engineContextRef.current('imageSpanOp', action);
+      return;
+    }
+    if (action === 'upload') {
+      const r = await ops.uploadOne(src);
+      if (!r.ok) {
+        setStatusText(r.error.message);
+        return;
+      }
+      setStatusText(r.value.uploaded > 0 ? t('msg.imageUploaded', { n: r.value.uploaded, skipped: r.value.skipped.length, failed: r.value.failed.length > 0 ? `${r.value.failed.length}（${r.value.failed[0].error}）` : '0' }) : t('msg.skippedReason', { reason: r.value.skipped[0]?.reason ?? r.value.failed[0]?.error ?? '' }));
+      return;
+    }
+    if (action === 'delete') {
+      const abs = ops.resolveSrcPath(src);
+      if (!window.confirm(t('dialog.imageDeleteConfirm', { src }))) return;
+      // 本地文件 → 回收站（Trash，不直接删）；远程/未解析 → 只移除引用
+      if (abs !== null) {
+        const svc = fileTreeServiceRef.current;
+        if (svc !== null) {
+          const r = await svc.trash(abs);
+          if (!r.ok) {
+            setStatusText(t('msg.deleteFailed', { error: r.error.message }));
+            return;
+          }
+        }
+      }
+      void engineContextRef.current('imageSpanOp', 'delete');
+      setStatusText(t('msg.trashed'));
+      return;
     }
   }, []);
 
@@ -1485,13 +1557,97 @@ export default function App() {
 
   // ── D4 表格操作 / 链接操作 / 代码块复制（Typora 段落→表格、格式→链接操作、段落→代码工具）──
 
-  /** 引擎表格命令桥（菜单/命令面板 → iframe __MELLOW_CONTEXT_ACTIONS__.tableOp） */
-  const engineTableOp = useCallback((op: 'addRowBelow' | 'deleteRow' | 'addColumnRight' | 'deleteColumn' | 'tidy' | 'addRowAbove' | 'addColumnLeft' | 'moveRowUp' | 'moveRowDown' | 'moveColumnLeft' | 'moveColumnRight' | 'deleteTable' | 'copyTable') => {
+  /** 引擎表格命令桥（菜单/命令面板 → iframe __MELLOW_CONTEXT_ACTIONS__.tableOp；C1 + 对齐子菜单） */
+  const engineTableOp = useCallback((op: 'addRowBelow' | 'deleteRow' | 'addColumnRight' | 'deleteColumn' | 'tidy' | 'addRowAbove' | 'addColumnLeft' | 'moveRowUp' | 'moveRowDown' | 'moveColumnLeft' | 'moveColumnRight' | 'deleteTable' | 'copyTable' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'alignDefault') => {
     const frame = containerRef.current?.querySelector('iframe');
     const win = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_ACTIONS__?: { tableOp?: (op: string) => void } }) | null;
     win?.__MELLOW_CONTEXT_ACTIONS__?.tableOp?.(op);
     hostRef.current?.focus();
   }, []);
+
+  /** C1：引擎上下文动作桥（右键菜单 code-tools / copy-as-image / deleteBlock / 图片引用编辑 / 链接编辑） */
+  const engineContext = useCallback(<T = void>(method: string, ...args: unknown[]): Promise<T | null> => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_CONTEXT_ACTIONS__?: Record<string, ((...a: unknown[]) => unknown) | undefined> }) | null;
+    const fn = win?.__MELLOW_CONTEXT_ACTIONS__?.[method];
+    const result = typeof fn === 'function' ? fn(...args) : undefined;
+    hostRef.current?.focus();
+    return Promise.resolve((result ?? null) as T | null);
+  }, []);
+  const engineContextRef = useRef(engineContext);
+  engineContextRef.current = engineContext;
+
+  /** C1：复制渲染结果为 PNG（Typora copyMathBlock→copyAsImage / 图表 copy-as-image） */
+  const handleCopyRendered = useCallback((kind: 'math' | 'mermaid') => {
+    void engineContextRef.current<boolean>('copyRendered', kind).then((ok) => {
+      setStatusText(ok ? t('msg.copied') : t('msg.copyImageFailed', { error: t('msg.renderUnavailable') }));
+    });
+  }, [t]);
+
+  /** C1：渲染导出为 PNG 文件（Typora download-math / download-diagram） */
+  const handleDownloadRendered = useCallback(async (kind: 'math' | 'mermaid') => {
+    const dataUrl = await engineContextRef.current<string>('renderPng', kind);
+    if (dataUrl === null) {
+      setStatusText(t('msg.renderUnavailable'));
+      return;
+    }
+    try {
+      const defaultName = kind === 'math' ? 'formula.png' : 'diagram.png';
+      const savePath = await invoke<string | null>('pick_save_path', { defaultName, filters: ['png'] });
+      if (savePath === null) return; // 用户取消
+      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+      const bin = atob(base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      await invoke('write_binary', { path: savePath, data: Array.from(bytes) });
+      setToast({ message: t('export.image.done') });
+    } catch (err) {
+      setToast({ message: `${t('export.image.failed')}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }, [t]);
+
+  /** C1：复制光标处数学块的 MathML（Typora copyAsMathML） */
+  const handleCopyMathMl = useCallback(() => {
+    void engineContextRef.current<boolean>('copyMathMl');
+  }, []);
+
+  /** C1：编辑链接 URL（Typora link Edit：以当前 URL 为默认值） */
+  const handleEditLinkUrl = useCallback(async () => {
+    const current = await engineContextRef.current<string>('getLinkUrl');
+    if (current === null) return;
+    const next = window.prompt(t('prompt.editLinkUrl'), current);
+    if (next === null || next.trim() === '') return;
+    void engineContextRef.current('setLinkUrl', next.trim());
+  }, [t]);
+
+  /** C1：移除链接（保留文本；Typora link Remove） */
+  const handleRemoveLink = useCallback(() => {
+    void engineContextRef.current('unlink');
+  }, []);
+
+  /** C2：行结束符转换（Typora 编辑→行结束符；整文一次 patchChanges → 一次 Undo） */
+  const handleDocEol = useCallback((eol: '\n' | '\r\n') => {
+    const host = hostRef.current;
+    if (!host) return;
+    const text = host.getText();
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const next = eol === '\r\n' ? normalized.replace(/\n/g, '\r\n') : normalized;
+    if (next === text) {
+      setStatusText(t('msg.eolAlready', { eol: eol === '\r\n' ? 'CRLF' : 'LF' }));
+      return;
+    }
+    if (!host.patchChanges([{ from: 0, to: text.length, text: next }])) return;
+    docMetaRef.current = { ...docMetaRef.current, eol };
+    setStatusText(t('msg.eolConverted', { eol: eol === '\r\n' ? 'CRLF' : 'LF' }));
+  }, [t]);
+
+  /** C2：清理行尾空白（引擎 docTransform：保护代码围栏与行内代码） */
+  const handleTrimTrailing = useCallback(() => {
+    const ok = engineContextRef.current<boolean>('docTransform', 'trimTrailing');
+    void ok.then((done) => {
+      setStatusText(done ? t('msg.trimmedTrailing') : t('msg.trimNothing'));
+    });
+  }, [t]);
 
   /** P1-1.7：复制光标处的数学 / Mermaid 源码（右键菜单经 dispatchCommand 调用） */
   const engineCopySource = useCallback((kind: 'math' | 'mermaid') => {
@@ -2539,11 +2695,13 @@ export default function App() {
           if (typeof size === 'number' && size !== 17) {
             host.setEditorConfig('setFontSize', { fontSize: size });
           }
-          // B3-2 字体族启动恢复：用户显式设置 > 主题级（Newsprint/Paper 衬线）> CoreEditor 默认
+          // B3-2 字体族启动恢复：用户显式设置 > 主题级（Newsprint/Paper 衬线）> CoreEditor 默认。
+          // C4 修复（G4-EDIT / theme-verify）：无用户设置且主题未声明字体时也必须显式
+          // apply 'ui-monospace' —— iframe 初始 window.config 的 fontFace.family 为
+          // system-ui（vendored CoreEditor 契约默认），不覆盖会残留为 system-ui 开头的
+          // 回退栈，导致切回 mellow-light 后编辑器字体不是 ui-monospace。
           const familyPref = readEditorFontFamilyPreference(activeTheme);
-          if (familyPref !== null) {
-            host.setEditorConfig('setFontFace', { family: familyPref });
-          }
+          host.setEditorConfig('setFontFace', { family: familyPref ?? 'ui-monospace' });
           const lineNumDef = settingById('editor.lineNumbers');
           if (lineNumDef && readSetting(lineNumDef) === true) {
             host.setEditorConfig('setShowLineNumbers', { enabled: true });
@@ -2940,18 +3098,26 @@ export default function App() {
   const handleEditorContextMenu = useCallback((req: EditorContextMenuRequest) => {
     // P1-1.7（G4-MENU-07）：右键菜单只发命令，不直接调用引擎。
     // 所有条目走 dispatchCommand，与菜单 / 快捷键 / 命令面板共用同一入口与同一 enabledWhen。
+    // C1：ContextMenu 升级支持分隔线与一层子菜单，Typora 子菜单结构（code-tools / table / Alignment /
+    // copyMathBlock）按原层级呈现，不再扁平化。
     const run = (id: string) => () => { void dispatchCommand(id, 'context-menu'); };
-    const items: ContextMenuItem[] = [
+    const items: ContextMenuEntry[] = [
       { label: t('contextmenu.editorCut'), enabled: req.hasSelection, onClick: run('edit.cut') },
       { label: t('contextmenu.editorCopy'), enabled: req.hasSelection, onClick: run('edit.copy') },
       { label: t('contextmenu.editorPaste'), onClick: run('edit.paste') },
     ];
-    // P1-1.7：链接右键。依据 Typora 1.14.9 getMenuItemsForMac，链接上的条目序列为
-    // ["openLink","copyLink","|","normal",download]，即「打开链接 / 复制链接地址 / ── / 剪切拷贝粘贴」。
+    // Typora 通用子菜单（code-tools：Copy Code Content / Auto Indent Whole / Auto Indent Selected）
+    // 注意：codeTools / insertParagraph 条目在 code/math/mermaid 三个分支内各内联一份
+    // （护栏 verify-context-menu-parity.mjs 按 kind 块内 run( 调用抽取序列）。
+    // P1-1.7：链接右键。Typora 1.14.9：["openLink","copyLink","|","normal",download]；
+    // C1 补齐 Edit / Remove（Typora link 右键的编辑与移除）。
     if (req.kind === 'link' && req.url !== undefined) {
       items.push(
+        { separator: true },
         { label: t('contextmenu.editorOpenLink'), onClick: run('format.openLink') },
         { label: t('contextmenu.editorCopyLink'), onClick: run('format.copyLinkUrl') },
+        { label: t('contextmenu.linkEdit'), onClick: run('format.editLinkUrl') },
+        { label: t('contextmenu.linkRemove'), onClick: run('format.removeLink') },
       );
     }
     if (req.kind === 'wikilink' && req.name !== undefined) {
@@ -2960,44 +3126,159 @@ export default function App() {
         onClick: () => { void openWikilinkRef.current(req.name as string); },
       });
     }
+    // V4 §10 image 行：Open/Reveal、Copy Image/Copy Path、Resize、Markdown↔HTML、
+    // Rename/Move/Copy、Upload、Delete（二次确认 + Trash）。直连 handleImageAction（已登记例外）。
     if (req.kind === 'image' && req.src !== undefined) {
+      const img = (action: Parameters<typeof handleImageAction>[0]['action']) => () => {
+        void handleImageAction({ src: req.src as string, action });
+      };
       items.push(
-        { label: t('contextmenu.editorImageOpen'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'open' }); } },
-        { label: t('contextmenu.editorImageReveal'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'reveal' }); } },
-        { label: t('contextmenu.editorImageCopyPath'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'copyPath' }); } },
-        { label: t('contextmenu.editorImageRename'), onClick: () => { void handleImageAction({ src: req.src as string, action: 'rename' }); } },
+        { separator: true },
+        { label: t('contextmenu.editorImageOpen'), onClick: img('open') },
+        { label: t('contextmenu.editorImageReveal'), onClick: img('reveal') },
+        { label: t('contextmenu.editorImageCopy'), onClick: run('edit.copyImage') },
+        { label: t('contextmenu.editorImageCopyPath'), onClick: img('copyPath') },
+        { separator: true },
+        { label: t('contextmenu.editorImageRename'), onClick: img('rename') },
+        { label: t('contextmenu.editorImageMove'), onClick: img('move') },
+        { label: t('contextmenu.editorImageResize'), onClick: img('setSize') },
+        { separator: true },
+        { label: t('contextmenu.editorImageMdToHtml'), onClick: img('mdToHtml') },
+        { label: t('contextmenu.editorImageHtmlToMd'), onClick: img('htmlToMd') },
+        { label: t('contextmenu.editorImageUpload'), onClick: img('upload') },
+        { separator: true },
+        { label: t('contextmenu.editorImageDelete'), onClick: img('delete') },
+      );
+    }
+    // 普通文本：段落 / 格式转换子菜单 + 复制为（V4 §10 text 行）。
+    if (req.kind === 'text') {
+      items.push(
+        { separator: true },
+        {
+          label: t('contextmenu.textParagraph'),
+          children: [
+            { label: t('menu.paragraph.h1'), onClick: run('paragraph.h1') },
+            { label: t('menu.paragraph.h2'), onClick: run('paragraph.h2') },
+            { label: t('menu.paragraph.h3'), onClick: run('paragraph.h3') },
+            { label: t('menu.paragraph.h4'), onClick: run('paragraph.h4') },
+            { label: t('menu.paragraph.h5'), onClick: run('paragraph.h5') },
+            { label: t('menu.paragraph.h6'), onClick: run('paragraph.h6') },
+            { label: t('menu.paragraph.normal'), onClick: run('paragraph.normal') },
+          ],
+        },
+        {
+          label: t('contextmenu.textFormat'),
+          children: [
+            { label: t('menu.format.bold'), onClick: run('format.bold') },
+            { label: t('menu.format.italic'), onClick: run('format.italic') },
+            { label: t('menu.format.strike'), onClick: run('format.strike') },
+            { label: t('menu.format.code'), onClick: run('format.code') },
+            { label: t('menu.format.link'), onClick: run('format.link') },
+          ],
+        },
+        { separator: true },
+        { label: t('contextmenu.textCopyAsMarkdown'), onClick: run('edit.copyMarkdown') },
+        { label: t('contextmenu.textCopyAsPlain'), onClick: run('edit.copyPlain') },
       );
     }
     // P1-1.7：代码块 / 公式块 / 图表块级分支。
     // 依据 Typora 1.14.9 appsrc/main.js getMenuItemsForMac：
     //   fences（普通代码块）→ ["|","code-tools","|","insertParagraphBefore","insertParagraphAfter","delete-fences"]
-    //   math_block            → ["|","edit","copyMathBlock","download-math","code-tools","|",...]
-    //   fences + md-diagram   → ["|","edit","copy-as-image","download-diagram","code-tools","|",...]
-    // 其中 code-tools 是子菜单（Copy Code Content / Auto Indent Whole Code / Auto Indent Selected Code）。
-    // Mellow 的 ContextMenuItem 目前不支持子菜单，故扁平化呈现内容复制项（Adapter 层已知差异，见 parity ledger）。
+    //   math_block            → ["|","edit","copyMathBlock","download-math","code-tools","|","insertParagraphBefore","insertParagraphAfter","delete"]
+    //   fences + md-diagram   → ["|","edit","copy-as-image","download-diagram","code-tools","|","insertParagraphBefore","insertParagraphAfter","delete"]
+    // C1：子菜单结构与 Typora 一致；copy-as-image / download 经引擎渲染导出（SVG/σMathML → PNG）。
     if (req.kind === 'code') {
-      items.push({ label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') });
+      items.push(
+        { separator: true },
+        {
+          label: t('contextmenu.codeTools'),
+          children: [
+            { label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') },
+            { label: t('contextmenu.codeAutoIndentAll'), onClick: run('paragraph.autoIndentCodeBlock') },
+            { label: t('contextmenu.codeAutoIndentSelected'), onClick: run('paragraph.autoIndentSelection') },
+          ],
+        },
+        { separator: true },
+        { label: t('contextmenu.codeInsertParagraphBefore'), onClick: run('paragraph.insertParagraphBefore') },
+        { label: t('contextmenu.codeInsertParagraphAfter'), onClick: run('paragraph.insertParagraphAfter') },
+        { label: t('contextmenu.codeDeleteFences'), onClick: run('paragraph.deleteFences') },
+      );
     }
     if (req.kind === 'math') {
-      items.push({ label: t('contextmenu.mathCopyAsTex'), onClick: run('math.copyAsTex') });
+      items.push(
+        { separator: true },
+        {
+          label: t('contextmenu.mathCopyMenu'),
+          children: [
+            { label: t('contextmenu.mathCopyAsTex'), onClick: run('math.copyAsTex') },
+            { label: t('contextmenu.mathCopyAsMathML'), onClick: run('math.copyAsMathML') },
+            { label: t('contextmenu.mathCopyAsImage'), onClick: run('math.copyAsImage') },
+          ],
+        },
+        { label: t('contextmenu.mathDownload'), onClick: run('math.download') },
+        {
+          label: t('contextmenu.codeTools'),
+          children: [
+            { label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') },
+            { label: t('contextmenu.codeAutoIndentAll'), onClick: run('paragraph.autoIndentCodeBlock') },
+            { label: t('contextmenu.codeAutoIndentSelected'), onClick: run('paragraph.autoIndentSelection') },
+          ],
+        },
+        { separator: true },
+        { label: t('contextmenu.codeInsertParagraphBefore'), onClick: run('paragraph.insertParagraphBefore') },
+        { label: t('contextmenu.codeInsertParagraphAfter'), onClick: run('paragraph.insertParagraphAfter') },
+        { label: t('contextmenu.mathDelete'), onClick: run('math.deleteBlock') },
+      );
     }
-    // req.kind === 'mermaid'：Typora 只提供「复制为图片 / 下载」，无源码复制项，
-    // 故此处不追加条目；源码复制保留为命令面板命令（mermaid.copySource，B 类增强）。
+    if (req.kind === 'mermaid') {
+      items.push(
+        { separator: true },
+        { label: t('contextmenu.mermaidCopyAsImage'), onClick: run('mermaid.copyAsImage') },
+        { label: t('contextmenu.mermaidDownload'), onClick: run('mermaid.download') },
+        {
+          label: t('contextmenu.codeTools'),
+          children: [
+            { label: t('contextmenu.codeCopyContent'), onClick: run('paragraph.copyCodeBlock') },
+            { label: t('contextmenu.codeAutoIndentAll'), onClick: run('paragraph.autoIndentCodeBlock') },
+            { label: t('contextmenu.codeAutoIndentSelected'), onClick: run('paragraph.autoIndentSelection') },
+          ],
+        },
+        { separator: true },
+        { label: t('contextmenu.codeInsertParagraphBefore'), onClick: run('paragraph.insertParagraphBefore') },
+        { label: t('contextmenu.codeInsertParagraphAfter'), onClick: run('paragraph.insertParagraphAfter') },
+        { label: t('contextmenu.mermaidDelete'), onClick: run('mermaid.deleteBlock') },
+      );
+    }
     if (req.kind === 'table') {
       items.push(
-        { label: t('contextmenu.tableAddRowAbove'), onClick: run('table.addRowAbove') },
-        { label: t('contextmenu.tableAddRowBelow'), onClick: run('table.addRowBelow') },
-        { label: t('contextmenu.tableDeleteRow'), onClick: run('table.deleteRow') },
-        { label: t('contextmenu.tableAddColumnLeft'), onClick: run('table.addColumnLeft') },
-        { label: t('contextmenu.tableAddColumnRight'), onClick: run('table.addColumnRight') },
-        { label: t('contextmenu.tableDeleteColumn'), onClick: run('table.deleteColumn') },
-        { label: t('contextmenu.tableMoveRowUp'), onClick: run('table.moveRowUp') },
-        { label: t('contextmenu.tableMoveRowDown'), onClick: run('table.moveRowDown') },
-        { label: t('contextmenu.tableMoveColumnLeft'), onClick: run('table.moveColumnLeft') },
-        { label: t('contextmenu.tableMoveColumnRight'), onClick: run('table.moveColumnRight') },
-        { label: t('contextmenu.tableCopyTable'), onClick: run('table.copyTable') },
-        { label: t('contextmenu.tableTidy'), onClick: run('table.tidy') },
-        { label: t('contextmenu.tableDeleteTable'), onClick: run('table.deleteTable') },
+        { separator: true },
+        {
+          label: t('contextmenu.tableMenu'),
+          children: [
+            { label: t('contextmenu.tableAddRowAbove'), onClick: run('table.addRowAbove') },
+            { label: t('contextmenu.tableAddRowBelow'), onClick: run('table.addRowBelow') },
+            { label: t('contextmenu.tableDeleteRow'), onClick: run('table.deleteRow') },
+            { label: t('contextmenu.tableAddColumnLeft'), onClick: run('table.addColumnLeft') },
+            { label: t('contextmenu.tableAddColumnRight'), onClick: run('table.addColumnRight') },
+            { label: t('contextmenu.tableDeleteColumn'), onClick: run('table.deleteColumn') },
+            { label: t('contextmenu.tableMoveRowUp'), onClick: run('table.moveRowUp') },
+            { label: t('contextmenu.tableMoveRowDown'), onClick: run('table.moveRowDown') },
+            { label: t('contextmenu.tableMoveColumnLeft'), onClick: run('table.moveColumnLeft') },
+            { label: t('contextmenu.tableMoveColumnRight'), onClick: run('table.moveColumnRight') },
+            { label: t('contextmenu.tableCopyTable'), onClick: run('table.copyTable') },
+            { label: t('contextmenu.tableTidy'), onClick: run('table.tidy') },
+            { label: t('contextmenu.tableDeleteTable'), onClick: run('table.deleteTable') },
+          ],
+        },
+        {
+          label: t('contextmenu.tableAlign'),
+          children: [
+            { label: t('contextmenu.tableAlignLeft'), onClick: run('table.alignLeft') },
+            { label: t('contextmenu.tableAlignCenter'), onClick: run('table.alignCenter') },
+            { label: t('contextmenu.tableAlignRight'), onClick: run('table.alignRight') },
+            { label: t('contextmenu.tableAlignDefault'), onClick: run('table.alignDefault') },
+          ],
+        },
       );
     }
     setContextMenu({ x: req.x, y: req.y, items });
@@ -3735,6 +4016,35 @@ export default function App() {
       // ["|","edit","copy-as-image","download-diagram","code-tools","|",...]，无源码复制项。
       // 因此只在命令面板提供，不进右键菜单，避免与 Typora parity 混淆。
       { id: 'mermaid.copySource', localizedTitle: { zh: '复制图表源码', en: 'Copy Diagram Source' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { engineCopySource('mermaid'); } },
+      // C1：代码工具（Typora code-tools 子菜单：Auto Indent Whole/Selected Code + delete-fences + 前后插入段落）
+      { id: 'paragraph.autoIndentCodeBlock', localizedTitle: { zh: '整体自动缩进', en: 'Auto Indent Whole Code' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'autoIndentAll'); } },
+      { id: 'paragraph.autoIndentSelection', localizedTitle: { zh: '所选内容自动缩进', en: 'Auto Indent Selected Code' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'autoIndentSelected'); } },
+      { id: 'paragraph.deleteFences', localizedTitle: { zh: '删除围栏', en: 'Delete Fences' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'deleteFences'); } },
+      { id: 'paragraph.insertParagraphBefore', localizedTitle: { zh: '在上方插入段落', en: 'Insert Paragraph Before' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'insertParagraphBefore'); } },
+      { id: 'paragraph.insertParagraphAfter', localizedTitle: { zh: '在下方插入段落', en: 'Insert Paragraph After' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'insertParagraphAfter'); } },
+      // C1：公式块右键（Typora copyMathBlock 子菜单 + download-math + delete）
+      { id: 'math.copyAsMathML', localizedTitle: { zh: '复制为 MathML', en: 'Copy as MathML' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { handleCopyMathMl(); } },
+      { id: 'math.copyAsImage', localizedTitle: { zh: '复制为图片', en: 'Copy as Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { handleCopyRendered('math'); } },
+      { id: 'math.download', localizedTitle: { zh: '下载公式（PNG）…', en: 'Download Formula (PNG)…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleDownloadRendered('math') },
+      { id: 'math.deleteBlock', localizedTitle: { zh: '删除公式块', en: 'Delete Math Block' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('deleteBlock', 'math'); } },
+      // C1：图表右键（Typora copy-as-image / download-diagram / delete）
+      { id: 'mermaid.copyAsImage', localizedTitle: { zh: '复制为图片', en: 'Copy as Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { handleCopyRendered('mermaid'); } },
+      { id: 'mermaid.download', localizedTitle: { zh: '下载图表…', en: 'Download Diagram…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleDownloadRendered('mermaid') },
+      { id: 'mermaid.deleteBlock', localizedTitle: { zh: '删除图表', en: 'Delete Diagram' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('deleteBlock', 'mermaid'); } },
+      // C1：表格对齐子菜单（Typora table 右键 Alignment）
+      { id: 'table.alignLeft', localizedTitle: { zh: '左对齐', en: 'Align Left' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('alignLeft') },
+      { id: 'table.alignCenter', localizedTitle: { zh: '居中对齐', en: 'Align Center' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('alignCenter') },
+      { id: 'table.alignRight', localizedTitle: { zh: '右对齐', en: 'Align Right' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('alignRight') },
+      { id: 'table.alignDefault', localizedTitle: { zh: '默认对齐', en: 'Default Alignment' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => engineTableOp('alignDefault') },
+      // C1：链接编辑 / 移除（Typora link 右键 Edit / Remove）
+      { id: 'format.editLinkUrl', localizedTitle: { zh: '编辑链接…', en: 'Edit Link…' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => void handleEditLinkUrl() },
+      { id: 'format.removeLink', localizedTitle: { zh: '移除链接', en: 'Remove Link' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => { handleRemoveLink(); } },
+      // C2：编辑菜单收口（Typora 对齐：粘贴并匹配样式 / 复制为无主题 HTML / 行结束符 / 空白）
+      { id: 'edit.pasteMatchStyle', localizedTitle: { zh: '粘贴并匹配样式', en: 'Paste and Match Style' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('pastePlain') },
+      { id: 'edit.copyWithoutTheme', localizedTitle: { zh: '复制为无主题 HTML', en: 'Copy as HTML without Theme' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyWithoutTheme') },
+      { id: 'edit.eol.lf', localizedTitle: { zh: '行结束符：LF（Unix/macOS）', en: 'Line Endings: LF (Unix/macOS)' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => handleDocEol('\n') },
+      { id: 'edit.eol.crlf', localizedTitle: { zh: '行结束符：CRLF（Windows）', en: 'Line Endings: CRLF (Windows)' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => handleDocEol('\r\n') },
+      { id: 'edit.trimTrailingSpaces', localizedTitle: { zh: '清理行尾空白', en: 'Trim Trailing Whitespace' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => handleTrimTrailing() },
       { id: 'edit.copyPlain', localizedTitle: { zh: '复制为纯文本', en: 'Copy as Plain Text' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyPlain') },
       { id: 'edit.copyHtmlSource', localizedTitle: { zh: '复制为 HTML 代码', en: 'Copy as HTML Code' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyHtmlSource') },
       // D4 表格操作（Typora 段落→表格子菜单；快捷键由引擎 keymap/右键菜单处理，菜单不设 accel）
@@ -3876,7 +4186,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, fileTreeRoot, handleCloseOthers, handleCloseRight, handleCloseTab, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, handleCloseOthers, handleCloseRight, handleCloseTab, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
@@ -4612,16 +4922,33 @@ export default function App() {
         </div>
       )}
       {statusbarVisible && (
-        <StatusBar
-          t={t}
-          dirty={dirty}
-          stats={stats}
-          cursorPos={cursorPos}
-          encodingLabel={encodingLabel}
-          eolLabel={eolLabel}
-          status={status}
-          statusText={statusText}
-        />
+        <div
+          className="statusbar-wrap"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            handleStatusbarContextMenu(e.clientX, e.clientY);
+          }}
+        >
+          <StatusBar
+            t={t}
+            dirty={dirty}
+            stats={stats}
+            cursorPos={cursorPos}
+            encodingLabel={encodingLabel}
+            eolLabel={eolLabel}
+            status={status}
+            statusText={statusText}
+            zoom={(() => {
+              const def = settingById('editor.fontSize');
+              if (def === undefined) return undefined;
+              const v = readSetting(def);
+              const size = typeof v === 'number' ? v : Number(def.defaultValue);
+              return `${Math.round((size / Number(def.defaultValue)) * 100)}%`;
+            })()}
+            fields={statusbarFields}
+            onZoomReset={() => adjustFontSize(0)}
+          />
+        </div>
       )}
       {fileInfoOpen && (
         <div className="open-with-backdrop" onMouseDown={() => setFileInfoOpen(false)}>

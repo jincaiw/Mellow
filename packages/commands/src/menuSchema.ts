@@ -139,7 +139,7 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'export.textile', labelKey: 'menu.export.textile' },
       { kind: 'command', id: 'export.opml', labelKey: 'menu.export.opml' },
       { kind: 'separator' },
-      { kind: 'command', id: 'export.repeat', labelKey: 'menu.export.repeat', shortcut: { winLinux: 'Ctrl+E' } },
+      { kind: 'command', id: 'export.repeat', labelKey: 'menu.export.repeat' },
     ] },
     { kind: 'command', id: 'file.pageSetup', labelKey: 'menu.file.pageSetup' },
     { kind: 'command', id: 'file.print', labelKey: 'menu.file.print', shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+Alt+P' } },
@@ -156,10 +156,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'predefined', predefined: 'copy', labelKey: 'menu.top.copy' },
     { kind: 'command', id: 'edit.copyImage', labelKey: 'menu.edit.copyImage' },
     { kind: 'predefined', predefined: 'paste', labelKey: 'menu.top.paste' },
+    { kind: 'command', id: 'edit.pasteMatchStyle', labelKey: 'menu.edit.pasteMatchStyle', shortcut: { mac: 'Cmd+Alt+Shift+V' } },
     { kind: 'separator' },
     { kind: 'command', id: 'edit.copyPlain', labelKey: 'menu.edit.copyPlain' },
     { kind: 'command', id: 'edit.copyMarkdown', labelKey: 'menu.edit.copyMarkdown', shortcut: { mac: 'Cmd+Shift+C', winLinux: 'Ctrl+Shift+C' } },
     { kind: 'command', id: 'edit.copyHtmlSource', labelKey: 'menu.edit.copyHtmlSource' },
+    { kind: 'command', id: 'edit.copyWithoutTheme', labelKey: 'menu.edit.copyWithoutTheme' },
     { kind: 'command', id: 'edit.pastePlain', labelKey: 'menu.edit.pastePlain', shortcut: { mac: 'Cmd+Shift+V', winLinux: 'Ctrl+Shift+V' } },
     { kind: 'separator' },
     { kind: 'submenu', id: 'edit.select', labelKey: 'menu.edit.selectMenu', entries: [
@@ -191,6 +193,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'submenu', id: 'edit.replace', labelKey: 'menu.edit.replaceMenu', entries: [
       { kind: 'command', id: 'edit.smartPunctuation.toggle', labelKey: 'menu.edit.smartPunctuation', checkedFrom: 'smartPunct' },
     ] },
+    // C2：行结束符 / 空白（Typora 编辑菜单对齐）
+    { kind: 'submenu', id: 'edit.eol', labelKey: 'menu.edit.eolMenu', entries: [
+      { kind: 'command', id: 'edit.eol.lf', labelKey: 'menu.edit.eolLf' },
+      { kind: 'command', id: 'edit.eol.crlf', labelKey: 'menu.edit.eolCrlf' },
+    ] },
+    { kind: 'command', id: 'edit.trimTrailingSpaces', labelKey: 'menu.edit.trimTrailing' },
     { kind: 'submenu', id: 'edit.find', labelKey: 'menu.top.find', entries: [
       { kind: 'command', id: 'search.find', labelKey: 'menu.search.find', shortcut: { mac: 'Cmd+F', winLinux: 'Ctrl+F' } },
       { kind: 'command', id: 'search.findNext', labelKey: 'menu.search.findNext', shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' } },
@@ -233,6 +241,13 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'separator' },
       { kind: 'command', id: 'table.copyTable', labelKey: 'menu.table.copyTable' },
       { kind: 'command', id: 'table.tidy', labelKey: 'menu.table.tidy' },
+      // C2：对齐子菜单（Typora table 子菜单的 Alignment）
+      { kind: 'submenu', id: 'paragraph.tableAlign', labelKey: 'menu.table.alignMenu', entries: [
+        { kind: 'command', id: 'table.alignLeft', labelKey: 'menu.table.alignLeft' },
+        { kind: 'command', id: 'table.alignCenter', labelKey: 'menu.table.alignCenter' },
+        { kind: 'command', id: 'table.alignRight', labelKey: 'menu.table.alignRight' },
+        { kind: 'command', id: 'table.alignDefault', labelKey: 'menu.table.alignDefault' },
+      ] },
       { kind: 'separator' },
       { kind: 'command', id: 'table.deleteTable', labelKey: 'menu.table.deleteTable' },
     ] },
@@ -240,6 +255,8 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'format.codeBlock', labelKey: 'menu.format.codeBlock', shortcut: { mac: 'Cmd+Alt+C', winLinux: 'Ctrl+Shift+K' } },
     { kind: 'submenu', id: 'paragraph.codeTools', labelKey: 'menu.paragraph.codeToolsMenu', entries: [
       { kind: 'command', id: 'paragraph.copyCodeBlock', labelKey: 'menu.paragraph.copyCodeBlock' },
+      { kind: 'command', id: 'paragraph.autoIndentCodeBlock', labelKey: 'menu.paragraph.autoIndentCodeBlock' },
+      { kind: 'command', id: 'paragraph.autoIndentSelection', labelKey: 'menu.paragraph.autoIndentSelection' },
     ] },
     { kind: 'submenu', id: 'paragraph.alert', labelKey: 'menu.insert.alertMenu', entries: [
       { kind: 'command', id: 'alert.note', labelKey: 'menu.alert.note' },
@@ -262,6 +279,8 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'paragraph.insertAbove', labelKey: 'menu.paragraph.insertAbove' },
     { kind: 'command', id: 'paragraph.insertBelow', labelKey: 'menu.paragraph.insertBelow' },
     { kind: 'separator' },
+    // C2：链接引用迁入段落菜单（Typora 1.14.9 Paragraph → Link Reference 位置）
+    { kind: 'command', id: 'format.referenceLink', labelKey: 'menu.format.referenceLink', shortcut: { mac: 'Cmd+Alt+L', winLinux: 'Ctrl+Alt+L' } },
     { kind: 'command', id: 'paragraph.footnote', labelKey: 'menu.paragraph.footnote', shortcut: { mac: 'Cmd+Alt+R', winLinux: 'Ctrl+Alt+R' } },
     { kind: 'command', id: 'paragraph.horizontalRule', labelKey: 'menu.paragraph.horizontalRule', shortcut: { mac: 'Cmd+Alt+-', winLinux: 'Ctrl+Alt+-' } },
     { kind: 'command', id: 'insert.toc', labelKey: 'menu.paragraph.toc' },
@@ -296,7 +315,6 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'format.openLink', labelKey: 'menu.format.openLink' },
       { kind: 'command', id: 'format.copyLinkUrl', labelKey: 'menu.format.copyLinkUrl' },
     ] },
-    { kind: 'command', id: 'format.referenceLink', labelKey: 'menu.format.referenceLink', shortcut: { mac: 'Cmd+Alt+L', winLinux: 'Ctrl+Alt+L' } },
     { kind: 'separator' },
     { kind: 'command', id: 'insert.image', labelKey: 'menu.insert.image', shortcut: { mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Shift+I' } },
     { kind: 'command', id: 'format.clear', labelKey: 'menu.format.clear', shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' } },
