@@ -26,7 +26,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = resolve(root, 'tests/benchmark/fixtures/typora-menu-dump.txt');
-const TYPORA = '/Applications/Typora.app';
+// 可用 MELLOW_TYPORA_APP 覆盖（测试用）；生产恒为 macOS 安装路径。
+const TYPORA = process.env.MELLOW_TYPORA_APP ?? '/Applications/Typora.app';
 
 const NORMATIVE_VERSION = '1.14.9';
 
@@ -135,6 +136,14 @@ push('# 本文件为生成产物，由 tests/benchmark/generate-typora-menu-dump
 push('');
 
 if (!existsSync(TYPORA)) {
+  // 本机无 Typora（如 CI runner）：若仓库已含真机提取入库的 EXTRACTED 基线，保持不动，
+  // 让菜单契约护栏直接校验入库基线（不重写、不产生 GENERATED_AT 噪音）；
+  // 仅当基线缺失或非 EXTRACTED 时才写 UNVERIFIED 占位（护栏将按设计失败）。
+  const existing = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
+  if (/^# Typora Menu Dump/m.test(existing) && /^STATUS: EXTRACTED$/m.test(existing)) {
+    console.log(`typora-menu-dump.txt: 保留入库 EXTRACTED 基线（本机无 ${TYPORA}，不重写）→ ${OUT}`);
+    process.exit(0);
+  }
   push(`STATUS: UNVERIFIED`);
   push(`REASON: 本机未找到 ${TYPORA}，无法提取真机菜单数据。`);
   push('');
