@@ -176,6 +176,30 @@ html, body, #root {
   color: var(--mellow-fg);
 }
 
+/* F3（第四轮）：tabbar 右侧「＋」新建钮（Typora 桌面惯例） */
+.tab-new {
+  align-self: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 20px;
+  margin: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+  font-size: 14px;
+  line-height: 1;
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-new:hover {
+  background: var(--mellow-border-strong);
+  color: var(--mellow-fg);
+}
+
 .workspace-shell {
   flex: 1;
   min-height: 0;
@@ -992,10 +1016,8 @@ html, body, #root {
 }
 
 .mellow-editor-frame {
-  /* 写作宽度（PRD §18，设置面板即时生效） */
-  max-width: var(--mellow-writing-width, 820px);
-  margin: 0 auto;
-
+  /* A1（第四轮）：iframe 通栏，写作宽度改在 iframe 内 .cm-content 限宽居中
+     （CoreEditor setContentMaxWidth），滚动条贴窗缘、两侧编辑器底色连续（Typora parity） */
   position: absolute;
   inset: 0;
   width: 100%;

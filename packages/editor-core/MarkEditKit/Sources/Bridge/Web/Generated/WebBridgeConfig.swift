@@ -106,6 +106,14 @@ public final class WebBridgeConfig {
     webView?.invoke(path: "webModules.config.setLineHeight", message: message, completion: completion)
   }
 
+  public func setContentMaxWidth(width: Double?, completion: ((Result<Void, WKWebView.InvokeError>) -> Void)? = nil) {
+    let message = BridgeMessage(
+      ("width", width)
+    )
+
+    webView?.invoke(path: "webModules.config.setContentMaxWidth", message: message, completion: completion)
+  }
+
   public func setDefaultLineBreak(lineBreak: String?, completion: ((Result<Void, WKWebView.InvokeError>) -> Void)? = nil) {
     let message = BridgeMessage(
       ("lineBreak", lineBreak)

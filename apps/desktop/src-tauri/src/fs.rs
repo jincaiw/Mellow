@@ -414,6 +414,7 @@ pub async fn save_document(
     content: String,
     encoding: Option<String>,
     eol: Option<String>,
+    default_name: Option<String>,
     expected: Option<DiskState>,
 ) -> SaveDocumentResult {
     use tauri_plugin_dialog::DialogExt;
@@ -421,11 +422,17 @@ pub async fn save_document(
     let resolved = match path {
         Some(p) => Some(PathBuf::from(p)),
         None => {
+            // C1（第四轮）：建议文件名来自文档首行/首个标题（Typora parity），
+            // rust 兜底 "untitled.md"；始终确保 .md 后缀。
+            let suggested = default_name
+                .filter(|n| !n.trim().is_empty())
+                .map(|n| if n.ends_with(".md") { n } else { format!("{n}.md") })
+                .unwrap_or_else(|| "untitled.md".to_string());
             let Some(file) = app
                 .dialog()
                 .file()
                 .add_filter("Markdown", &["md", "markdown"])
-                .set_file_name("untitled.md")
+                .set_file_name(&suggested)
                 .blocking_save_file()
             else {
                 return SaveDocumentResult::canceled();

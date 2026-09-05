@@ -26,6 +26,7 @@ export default interface StyleSheets {
   focusMode?: HTMLStyleElement;
   lineHeight?: HTMLStyleElement;
   taskMarker?: HTMLStyleElement;
+  contentWidth?: HTMLStyleElement;
 }
 
 export function setUp(config: Config, colors: EditorColors) {
@@ -168,6 +169,28 @@ export function setLineHeight(lineHeight: number) {
 
   // Prefer numbers (like 1.5) over percentages (like 150%), see https://developer.mozilla.org/en-US/docs/Web/CSS/line-height#number
   updateStyleSheet(styleSheets.lineHeight, style => style.lineHeight = `${lineHeight}`);
+}
+
+export function setContentMaxWidth(width: number | null) {
+  // CSSStyleDeclaration 直接赋值会丢弃 !important —— 必须走 setProperty 显式声明优先级，
+  // 才能压过 MarkEdit 主题对 .cm-content 的默认 display / margin 0 覆盖（A1 第四轮）。
+  if (styleSheets.contentWidth === undefined) {
+    styleSheets.contentWidth = createStyleSheet('.cm-content {}');
+  }
+
+  updateStyleSheet(styleSheets.contentWidth, style => {
+    if (width === null) {
+      style.removeProperty('max-width');
+      style.removeProperty('margin-left');
+      style.removeProperty('margin-right');
+      style.removeProperty('display');
+    } else {
+      style.setProperty('max-width', `${width}px`, 'important');
+      style.setProperty('margin-left', 'auto', 'important');
+      style.setProperty('margin-right', 'auto', 'important');
+      style.setProperty('display', 'block', 'important');
+    }
+  });
 }
 
 export function setTaskMarkerStyle(enabled: boolean) {

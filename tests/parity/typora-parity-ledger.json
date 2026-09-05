@@ -30,8 +30,15 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "docs/plans",
-      "evidence": ["AGENTS.md", "docs/product/Mellow-PRD-V1.2-FINAL.md", "docs/plans/typora-parity-master-plan.md"],
-      "requiredEvidence": ["document-review", "ledger-validation"]
+      "evidence": [
+        "AGENTS.md",
+        "docs/product/Mellow-PRD-V1.2-FINAL.md",
+        "docs/plans/typora-parity-master-plan.md"
+      ],
+      "requiredEvidence": [
+        "document-review",
+        "ledger-validation"
+      ]
     },
     {
       "id": "P0-BASELINE-002",
@@ -42,8 +49,14 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "tests/parity",
-      "evidence": ["tests/benchmark/fixtures/typora-menu-dump.txt", "tests/parity/typora-parity-ledger.json"],
-      "requiredEvidence": ["source-freeze", "ledger-validation"]
+      "evidence": [
+        "tests/benchmark/fixtures/typora-menu-dump.txt",
+        "tests/parity/typora-parity-ledger.json"
+      ],
+      "requiredEvidence": [
+        "source-freeze",
+        "ledger-validation"
+      ]
     },
     {
       "id": "P0-EDITOR-001",
@@ -54,8 +67,17 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/live-markdown-engine-spec.md", "packages/editor-engine/test/nodes.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "ux-gate"]
+      "evidence": [
+        "docs/specs/live-markdown-engine-spec.md",
+        "packages/editor-engine/test/nodes.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "ux-gate"
+      ]
     },
     {
       "id": "P0-EDITOR-002",
@@ -66,8 +88,17 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-react",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
-      "requiredEvidence": ["integration", "macos", "windows", "linux"]
+      "evidence": [
+        "docs/specs/desktop-ui-design-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/e2e/sidebar-verify.mjs"
+      ],
+      "requiredEvidence": [
+        "integration",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-EDITOR-003",
@@ -78,8 +109,18 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/live-markdown-engine-spec.md", "packages/editor-engine/test/reveal.test.ts", "packages/editor-engine/test/selection-commands.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "ux-gate"]
+      "evidence": [
+        "docs/specs/live-markdown-engine-spec.md",
+        "packages/editor-engine/test/reveal.test.ts",
+        "packages/editor-engine/test/selection-commands.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "ux-gate"
+      ]
     },
     {
       "id": "P0-EDITOR-004",
@@ -90,8 +131,19 @@
       "grade": "B",
       "status": "MAC",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/ime-test-plan.md", "packages/editor-engine/test/ime.test.ts", "packages/editor-engine/test/undo.test.ts", "docs/qualification/real-desktop-execution-bundle.md"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "ux-gate"]
+      "evidence": [
+        "docs/specs/ime-test-plan.md",
+        "packages/editor-engine/test/ime.test.ts",
+        "packages/editor-engine/test/undo.test.ts",
+        "docs/qualification/real-desktop-execution-bundle.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "ux-gate"
+      ]
     },
     {
       "id": "P0-MARKDOWN-001",
@@ -102,8 +154,16 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/heading.test.ts", "packages/editor-engine/test/nodes.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux"]
+      "evidence": [
+        "packages/editor-engine/test/heading.test.ts",
+        "packages/editor-engine/test/nodes.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-MARKDOWN-002",
@@ -114,8 +174,17 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/format-bold.test.ts", "packages/editor-engine/test/format-link.test.ts", "packages/editor-engine/test/format-inline-code.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux"]
+      "evidence": [
+        "packages/editor-engine/test/format-bold.test.ts",
+        "packages/editor-engine/test/format-link.test.ts",
+        "packages/editor-engine/test/format-inline-code.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-MARKDOWN-003",
@@ -126,8 +195,16 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/format-list.test.ts", "packages/editor-engine/test/task-checkbox.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux"]
+      "evidence": [
+        "packages/editor-engine/test/format-list.test.ts",
+        "packages/editor-engine/test/task-checkbox.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-MARKDOWN-004",
@@ -138,8 +215,17 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/codeFence.test.ts", "packages/editor-engine/test/math.test.ts", "packages/editor-engine/test/mermaid.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux"]
+      "evidence": [
+        "packages/editor-engine/test/codeFence.test.ts",
+        "packages/editor-engine/test/math.test.ts",
+        "packages/editor-engine/test/mermaid.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-MARKDOWN-005",
@@ -150,8 +236,18 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/footnote.test.ts", "packages/editor-engine/test/toc.test.ts", "packages/editor-engine/test/yaml-front-matter.test.ts", "packages/editor-engine/test/wikilink.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux"]
+      "evidence": [
+        "packages/editor-engine/test/footnote.test.ts",
+        "packages/editor-engine/test/toc.test.ts",
+        "packages/editor-engine/test/yaml-front-matter.test.ts",
+        "packages/editor-engine/test/wikilink.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-TABLE-001",
@@ -162,8 +258,18 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/table-editing-spec.md", "packages/editor-engine/test/table-keyboard.test.ts", "packages/editor-engine/test/table-engine.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "source-fidelity"]
+      "evidence": [
+        "docs/specs/table-editing-spec.md",
+        "packages/editor-engine/test/table-keyboard.test.ts",
+        "packages/editor-engine/test/table-engine.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "source-fidelity"
+      ]
     },
     {
       "id": "P0-TABLE-002",
@@ -174,8 +280,17 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/table-toolbar.test.ts", "packages/editor-engine/test/table-column-width.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "source-fidelity"]
+      "evidence": [
+        "packages/editor-engine/test/table-toolbar.test.ts",
+        "packages/editor-engine/test/table-column-width.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "source-fidelity"
+      ]
     },
     {
       "id": "P0-IMAGE-001",
@@ -186,8 +301,18 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/image-workflow-spec.md", "packages/editor-engine/test/image-insert.test.ts", "packages/editor-engine/test/image-path.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "source-fidelity"]
+      "evidence": [
+        "docs/specs/image-workflow-spec.md",
+        "packages/editor-engine/test/image-insert.test.ts",
+        "packages/editor-engine/test/image-path.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "source-fidelity"
+      ]
     },
     {
       "id": "P0-IMAGE-002",
@@ -198,8 +323,18 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/image-size.test.ts", "packages/editor-engine/test/image-scan.test.ts", "packages/editor-engine/test/image-ops.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "source-fidelity"]
+      "evidence": [
+        "packages/editor-engine/test/image-size.test.ts",
+        "packages/editor-engine/test/image-scan.test.ts",
+        "packages/editor-engine/test/image-ops.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "source-fidelity"
+      ]
     },
     {
       "id": "P0-CLIPBOARD-001",
@@ -210,8 +345,17 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/clipboard-smart-paste-spec.md", "packages/editor-engine/test/clipboard-copy.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "cross-app"]
+      "evidence": [
+        "docs/specs/clipboard-smart-paste-spec.md",
+        "packages/editor-engine/test/clipboard-copy.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "cross-app"
+      ]
     },
     {
       "id": "P0-CLIPBOARD-002",
@@ -222,8 +366,17 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/smart-paste.test.ts", "docs/specs/clipboard-smart-paste-spec.md"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "cross-app"]
+      "evidence": [
+        "packages/editor-engine/test/smart-paste.test.ts",
+        "docs/specs/clipboard-smart-paste-spec.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "cross-app"
+      ]
     },
     {
       "id": "P0-FILE-001",
@@ -234,8 +387,18 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "apps/desktop/src-tauri",
-      "evidence": ["docs/specs/document-file-safety-spec.md", "tests/qualification/source-fidelity-corpus.md", "apps/desktop/src-tauri/tests/file_safety_corpus.rs"],
-      "requiredEvidence": ["integration", "macos", "windows", "linux", "source-fidelity"]
+      "evidence": [
+        "docs/specs/document-file-safety-spec.md",
+        "tests/qualification/source-fidelity-corpus.md",
+        "apps/desktop/src-tauri/tests/file_safety_corpus.rs"
+      ],
+      "requiredEvidence": [
+        "integration",
+        "macos",
+        "windows",
+        "linux",
+        "source-fidelity"
+      ]
     },
     {
       "id": "P0-FILE-002",
@@ -246,8 +409,19 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/app-core",
-      "evidence": ["docs/specs/document-file-safety-spec.md", "tests/qualification/file-safety-corpus.md", "packages/app-core/test/externalChange.test.ts", "packages/app-core/test/recovery.test.ts"],
-      "requiredEvidence": ["integration", "macos", "windows", "linux", "source-fidelity"]
+      "evidence": [
+        "docs/specs/document-file-safety-spec.md",
+        "tests/qualification/file-safety-corpus.md",
+        "packages/app-core/test/externalChange.test.ts",
+        "packages/app-core/test/recovery.test.ts"
+      ],
+      "requiredEvidence": [
+        "integration",
+        "macos",
+        "windows",
+        "linux",
+        "source-fidelity"
+      ]
     },
     {
       "id": "P0-SIDEBAR-001",
@@ -258,8 +432,18 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/desktop-ui",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
-      "requiredEvidence": ["integration", "macos", "windows", "linux", "visual-golden"]
+      "evidence": [
+        "docs/specs/desktop-ui-design-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/e2e/sidebar-verify.mjs"
+      ],
+      "requiredEvidence": [
+        "integration",
+        "macos",
+        "windows",
+        "linux",
+        "visual-golden"
+      ]
     },
     {
       "id": "P0-SIDEBAR-002",
@@ -270,8 +454,18 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/desktop-ui",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
-      "requiredEvidence": ["integration", "macos", "windows", "linux", "visual-golden"]
+      "evidence": [
+        "docs/specs/desktop-ui-design-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/e2e/sidebar-verify.mjs"
+      ],
+      "requiredEvidence": [
+        "integration",
+        "macos",
+        "windows",
+        "linux",
+        "visual-golden"
+      ]
     },
     {
       "id": "P0-SIDEBAR-003",
@@ -282,8 +476,17 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/toc.test.ts", "packages/editor-engine/test/documentSearch.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "visual-golden"]
+      "evidence": [
+        "packages/editor-engine/test/toc.test.ts",
+        "packages/editor-engine/test/documentSearch.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "visual-golden"
+      ]
     },
     {
       "id": "P0-SHELL-001",
@@ -294,8 +497,18 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/desktop-ui",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/e2e/sidebar-verify.mjs"],
-      "requiredEvidence": ["macos", "windows", "linux", "visual-golden", "ux-gate"]
+      "evidence": [
+        "docs/specs/desktop-ui-design-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/e2e/sidebar-verify.mjs"
+      ],
+      "requiredEvidence": [
+        "macos",
+        "windows",
+        "linux",
+        "visual-golden",
+        "ux-gate"
+      ]
     },
     {
       "id": "P0-SHELL-002",
@@ -306,8 +519,17 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["packages/editor-engine/test/focusMode.test.ts", "packages/editor-engine/test/typewriterMode.test.ts"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "visual-golden"]
+      "evidence": [
+        "packages/editor-engine/test/focusMode.test.ts",
+        "packages/editor-engine/test/typewriterMode.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "visual-golden"
+      ]
     },
     {
       "id": "P0-MENU-001",
@@ -318,8 +540,18 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "apps/desktop/src-tauri",
-      "evidence": ["tests/benchmark/fixtures/typora-menu-dump.txt", "docs/plans/typora-parity-master-plan.md", "tests/parity/verify-menu-contract.mjs"],
-      "requiredEvidence": ["menu-schema", "macos", "windows", "linux", "ux-gate"]
+      "evidence": [
+        "tests/benchmark/fixtures/typora-menu-dump.txt",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/parity/verify-menu-contract.mjs"
+      ],
+      "requiredEvidence": [
+        "menu-schema",
+        "macos",
+        "windows",
+        "linux",
+        "ux-gate"
+      ]
     },
     {
       "id": "P0-MENU-002",
@@ -330,8 +562,18 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/commands",
-      "evidence": ["docs/specs/desktop-ui-design-spec.md", "docs/plans/typora-parity-master-plan.md", "tests/parity/verify-menu-contract.mjs", "packages/commands/test/registry.test.ts"],
-      "requiredEvidence": ["command-registry", "macos", "windows", "linux"]
+      "evidence": [
+        "docs/specs/desktop-ui-design-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/parity/verify-menu-contract.mjs",
+        "packages/commands/test/registry.test.ts"
+      ],
+      "requiredEvidence": [
+        "command-registry",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-THEME-001",
@@ -342,8 +584,17 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/themes",
-      "evidence": ["packages/themes/src/index.ts", "docs/specs/desktop-ui-design-spec.md"],
-      "requiredEvidence": ["unit", "integration", "macos", "windows", "linux"]
+      "evidence": [
+        "packages/themes/src/index.ts",
+        "docs/specs/desktop-ui-design-spec.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "integration",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-EXPORT-001",
@@ -354,8 +605,17 @@
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/export",
-      "evidence": ["docs/specs/document-file-safety-spec.md", "docs/plans/typora-parity-master-plan.md"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "export-corpus"]
+      "evidence": [
+        "docs/specs/document-file-safety-spec.md",
+        "docs/plans/typora-parity-master-plan.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "export-corpus"
+      ]
     },
     {
       "id": "P0-PERF-001",
@@ -366,8 +626,19 @@
       "grade": "B",
       "status": "MAC",
       "ownerPackage": "packages/editor-engine",
-      "evidence": ["docs/specs/performance-benchmark-spec.md", "packages/editor-engine/test/large-file.test.ts", "tests/benchmark/run-benchmark.mjs", "docs/qualification/real-desktop-execution-bundle.md"],
-      "requiredEvidence": ["unit", "macos", "windows", "linux", "benchmark"]
+      "evidence": [
+        "docs/specs/performance-benchmark-spec.md",
+        "packages/editor-engine/test/large-file.test.ts",
+        "tests/benchmark/run-benchmark.mjs",
+        "docs/qualification/real-desktop-execution-bundle.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows",
+        "linux",
+        "benchmark"
+      ]
     },
     {
       "id": "P0-I18N-001",
@@ -378,8 +649,17 @@
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/i18n",
-      "evidence": ["docs/product/Mellow-PRD-V1.2-FINAL.md", "packages/i18n"],
-      "requiredEvidence": ["unit", "integration", "macos", "windows", "linux"]
+      "evidence": [
+        "docs/product/Mellow-PRD-V1.2-FINAL.md",
+        "packages/i18n"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "integration",
+        "macos",
+        "windows",
+        "linux"
+      ]
     },
     {
       "id": "P0-PLATFORM-001",
@@ -390,8 +670,19 @@
       "grade": "E",
       "status": "IMPL",
       "ownerPackage": "apps/desktop",
-      "evidence": ["docs/adr/ADR-0022-ci-runtime-qualification-evidence-policy.md", "docs/specs/runtime-qualification-plan.md", "tests/qualification/README.md", "tests/benchmark/ime-matrix-linux.mjs", ".github/workflows/runtime-qualification.yml"],
-      "requiredEvidence": ["macos-native", "windows-ci", "linux-ci", "linux-ime-matrix"]
+      "evidence": [
+        "docs/adr/ADR-0022-ci-runtime-qualification-evidence-policy.md",
+        "docs/specs/runtime-qualification-plan.md",
+        "tests/qualification/README.md",
+        "tests/benchmark/ime-matrix-linux.mjs",
+        ".github/workflows/runtime-qualification.yml"
+      ],
+      "requiredEvidence": [
+        "macos-native",
+        "windows-ci",
+        "linux-ci",
+        "linux-ime-matrix"
+      ]
     },
     {
       "id": "P0-QA-001",
@@ -402,8 +693,16 @@
       "grade": "E",
       "status": "NOT_TESTED",
       "ownerPackage": "tests/benchmark",
-      "evidence": ["docs/qualification/ux-score-gate-template.md", "tests/benchmark/golden-journeys.mjs"],
-      "requiredEvidence": ["macos", "windows", "linux", "ux-gate"]
+      "evidence": [
+        "docs/qualification/ux-score-gate-template.md",
+        "tests/benchmark/golden-journeys.mjs"
+      ],
+      "requiredEvidence": [
+        "macos",
+        "windows",
+        "linux",
+        "ux-gate"
+      ]
     }
   ]
 }

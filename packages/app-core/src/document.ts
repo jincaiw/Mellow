@@ -37,6 +37,30 @@ export class DocumentService {
   }
 }
 
+const BAD_FILENAME_CHARS = /[\\/:*?"<>|\x00-\x1f]/g;
+const MD_EMPHASIS = /[*_`~]/g;
+
+/**
+ * C1（第四轮，Typora parity）：另存对话框建议文件名。
+ * 取文档首个标题（# …）或首个非空行 → 净化 markdown 强调/链接语法与非法文件名字符
+ * → 截断 ≤48 字符 → trim；无任何候选时返回 null（rust 回落 "untitled.md"）。
+ */
+export function documentSuggestedName(content: string): string | null {
+  const heading = content.match(/^#{1,6}[ \t]+(.+)$/m);
+  const firstLine = content.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0);
+  const raw = heading?.[1]?.trim() ?? firstLine ?? '';
+  if (raw.length === 0) return null;
+  let name = raw
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')       // 图片 ![alt](url) → 整图删除（首行装饰图 alt 不成文件名）
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')   // 链接 [text](url) → text
+    .replace(MD_EMPHASIS, '')
+    .replace(BAD_FILENAME_CHARS, '')
+    .trim();
+  if (name.length === 0) return null;
+  name = name.slice(0, 48).trim();
+  return name.length > 0 ? name : null;
+}
+
 /** 宿主服务门面：把 DesktopHost 注入到 app-core 各服务（V0.x 只暴露文档） */
 export function createAppServices(host: DesktopHost): { documents: DocumentService } {
   return {

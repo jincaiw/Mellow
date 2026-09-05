@@ -107,6 +107,12 @@ export function setLineHeight(lineHeight: number) {
   }
 }
 
+export function setContentMaxWidth(width: number | null) {
+  window.config.contentMaxWidth = width;
+  styling.setContentMaxWidth(width);
+  window.editor.requestMeasure();
+}
+
 export function setDefaultLineBreak(lineBreak?: string) {
   window.config.defaultLineBreak = lineBreak;
 }

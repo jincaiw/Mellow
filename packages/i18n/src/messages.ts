@@ -16,6 +16,7 @@ const zhCN = {
   'tab.ctx.closeRight': '关闭右侧标签页',
   'tab.ctx.reopenClosed': '重新打开关闭的标签页',
   'tabbar.label': '打开的文档标签页',
+  'tabbar.newTab': '新建文档',
   'sidebar.filesSwitchLabel': '侧栏切换',
   'sidebar.openFolderTitle': '打开文件夹',
   'tree.includeGlob': 'include glob（逗号分隔）',
@@ -83,14 +84,6 @@ const zhCN = {
   'search.matches': '{n} 个匹配',
   'search.streaming': '搜索中…',
   'search.empty': '输入关键词搜索当前文件夹',
-
-  // Welcome
-  'welcome.title': 'Mellow',
-  'welcome.new': '新建文档',
-  'welcome.open': '打开文件',
-  'welcome.openFolder': '打开文件夹',
-  'welcome.recent': '最近打开',
-  'welcome.recentMissing': '已删除',
 
   // Palette / Quick Open
   'palette.command.placeholder': '命令面板 / 插件命令',
@@ -799,6 +792,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'tab.ctx.closeRight': 'Close Tabs to the Right',
   'tab.ctx.reopenClosed': 'Reopen Closed Tab',
   'tabbar.label': 'Open document tabs',
+  'tabbar.newTab': 'New Document',
   'sidebar.filesSwitchLabel': 'Sidebar switch',
   'sidebar.openFolderTitle': 'Open folder',
   'tree.includeGlob': 'include glob (comma separated)',
@@ -863,13 +857,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'search.matches': '{n} matches',
   'search.streaming': 'streaming…',
   'search.empty': 'Type keywords to search the current folder',
-
-  'welcome.title': 'Mellow',
-  'welcome.new': 'New Document',
-  'welcome.open': 'Open File',
-  'welcome.openFolder': 'Open Folder',
-  'welcome.recent': 'Recent',
-  'welcome.recentMissing': 'Deleted',
 
   'palette.command.placeholder': 'Command Palette / Plugin Commands',
   'palette.slash.placeholder': 'Slash Commands: type to filter…',

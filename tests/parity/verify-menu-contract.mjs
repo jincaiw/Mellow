@@ -112,8 +112,13 @@ const rootIds = MENU_SCHEMA.map((r) => r.id);
 if (JSON.stringify(rootIds) !== JSON.stringify(['app', ...TYPOGRAPHIC_MENU_ORDER])) {
   fail(`顶层菜单顺序违反产品合同：${rootIds.join(' → ')}`);
 }
+// B3（第四轮）：window 顶层菜单仅 macOS（Typora Windows/Linux 无「窗口」菜单，
+// 最小化/还原由系统标题栏承担）。平台差异在 spec 侧（macOnly）完成，Rust 零分支。
+const macOnlyRoots = MENU_SCHEMA.filter((r) => r.macOnly).map((r) => r.id);
+if (JSON.stringify(macOnlyRoots) !== JSON.stringify(['app', 'window'])) {
+  fail(`macOnly 顶层菜单集合漂移：应为 [app, window]，实际 ${macOnlyRoots.join(', ')}`);
+}
 if (!MENU_SCHEMA[0].macOnly) fail('应用菜单必须声明 macOnly（Windows/Linux 不得出现应用菜单）');
-if (MENU_SCHEMA.slice(1).some((r) => r.macOnly)) fail('非应用菜单不得声明 macOnly（三平台顶层结构必须一致）');
 
 // ── 2. 命令覆盖：schema 命令 id 必须能被前端 CommandRegistry 处理 ───────────
 const desktopCommandIds = new Set([...appSource.matchAll(/\{\s*\n?\s*id: '([^']+)'/g)].map((m) => m[1]));

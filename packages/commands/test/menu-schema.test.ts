@@ -27,11 +27,15 @@ function* walk(entries: readonly MenuEntry[]): Generator<MenuEntry> {
 const allEntries = (): MenuEntry[] => MENU_SCHEMA.flatMap((root) => [...walk(root.entries)]);
 
 describe('MENU_SCHEMA 结构不变量', () => {
-  test('顶层顺序符合产品合同（app 仅 mac，排在 file 之前）', () => {
+  test('顶层顺序符合产品合同（app 与 window 仅 mac，其余三平台共有）', () => {
     const ids = MENU_SCHEMA.map((root) => root.id);
     expect(ids).toEqual(['app', ...TYPOGRAPHIC_MENU_ORDER]);
-    expect(MENU_SCHEMA[0].macOnly).toBe(true);
-    expect(MENU_SCHEMA.slice(1).every((root) => !root.macOnly)).toBe(true);
+    expect(MENU_SCHEMA[0].macOnly).toBe(true); // app：仅 macOS
+    // B3（第四轮）：window 顶层菜单仅 macOS（Typora Windows/Linux 无「窗口」菜单）
+    const windowRoot = MENU_SCHEMA.find((r) => r.id === 'window');
+    expect(windowRoot?.macOnly).toBe(true);
+    const shared = MENU_SCHEMA.filter((r) => r.id !== 'app' && r.id !== 'window');
+    expect(shared.every((root) => !root.macOnly)).toBe(true);
   });
 
   test('Command ID 只定义一次（submenu 内同名 insert.table 复用同一 id 属合法重复挂载）', () => {
@@ -126,9 +130,11 @@ describe('toNativeMenuSpec 物化', () => {
     expect(exportRepeat?.accel).toBeUndefined();
   });
 
-  test('win-linux 平台：过滤 app 菜单与 macOnly 条目，accelerator 取 winLinux 键位', () => {
+  test('win-linux 平台：过滤 app 与 window（macOnly），accelerator 取 winLinux 键位', () => {
     const spec = toNativeMenuSpec({ ...base, platform: 'win-linux' });
-    expect(spec.menus.map((m) => m.id)).toEqual(TYPOGRAPHIC_MENU_ORDER);
+    // B3：Windows/Linux 顶层菜单无「窗口」（Typora parity），仅剩 7 组
+    expect(spec.menus.map((m) => m.id)).toEqual(TYPOGRAPHIC_MENU_ORDER.filter((id) => id !== 'window'));
+    expect(spec.menus.some((m) => m.id === 'window')).toBe(false);
     const file = spec.menus.find((m) => m.id === 'file');
     const newFile = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'file.new');
     expect(newFile?.accel).toBe('Ctrl+N');

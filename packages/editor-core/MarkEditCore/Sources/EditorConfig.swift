@@ -23,6 +23,7 @@ public struct EditorConfig: Encodable {
   let focusMode: Bool
   let lineWrapping: Bool
   let lineHeight: Double
+  let contentMaxWidth: Double?
   let suggestWhileTyping: Bool
   let standardDirectories: [String: String]
   let runtimeInfo: RuntimeInfo?
@@ -52,6 +53,7 @@ public struct EditorConfig: Encodable {
     focusMode: Bool,
     lineWrapping: Bool,
     lineHeight: Double,
+    contentMaxWidth: Double?,
     suggestWhileTyping: Bool,
     standardDirectories: [String: String],
     runtimeInfo: RuntimeInfo?,
@@ -80,6 +82,7 @@ public struct EditorConfig: Encodable {
     self.focusMode = focusMode
     self.lineWrapping = lineWrapping
     self.lineHeight = lineHeight
+    self.contentMaxWidth = contentMaxWidth
     self.suggestWhileTyping = suggestWhileTyping
     self.standardDirectories = standardDirectories
     self.runtimeInfo = runtimeInfo
@@ -111,6 +114,7 @@ public struct EditorConfig: Encodable {
     try container.encode(focusMode, forKey: "focusMode")
     try container.encode(lineWrapping, forKey: "lineWrapping")
     try container.encode(lineHeight, forKey: "lineHeight")
+    try container.encode(contentMaxWidth, forKey: "contentMaxWidth")
     try container.encode(suggestWhileTyping, forKey: "suggestWhileTyping")
     try container.encode(standardDirectories, forKey: "standardDirectories")
     try container.encode(runtimeInfo, forKey: "runtimeInfo")

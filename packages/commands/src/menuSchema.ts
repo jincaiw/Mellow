@@ -368,8 +368,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'file.openUserCss', labelKey: 'menu.theme.openUserCss' },
   ] },
 
-  // ── 窗口 ────────────────────────────────────────────────────
-  { id: 'window', labelKey: 'menu.top.window', entries: [
+  // ── 窗口（B3，第四轮：仅 macOS —— Typora Windows/Linux 顶层菜单无「窗口」，
+  // 最小化/还原由系统标题栏控制按钮承担；本菜单内 tabs.prev/next 在 Win/Linux
+  // 仍可用 Ctrl+Tab / Ctrl+Shift+Tab 键盘键位，不依赖菜单入口）─────────
+  { id: 'window', labelKey: 'menu.top.window', macOnly: true, entries: [
     { kind: 'command', id: 'window.minimize', labelKey: 'menu.window.minimize', shortcut: { mac: 'Cmd+M', winLinux: 'Ctrl+M' } },
     { kind: 'command', id: 'window.maximizeToggle', labelKey: 'menu.window.maximizeToggle' },
     { kind: 'separator' },

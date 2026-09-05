@@ -5,10 +5,11 @@
  *   1. vite dev server + Playwright Chromium；
  *   2. 四配置各建 tab（file.new）、等待编辑器 iframe 就绪；
  *   3. 采样布局契约（外层 shell + iframe 内编辑器排版）与基准对比（±1px）：
- *        - 外层：titlebar 高、tabbar 高、editor-container 框、editor-frame 写作宽度
- *          （820px 居中）、sidebar/statusbar/mode-indicators 默认隐藏；
+ *        - 外层：titlebar 高、tabbar 高、editor-container 框、editor-frame 通栏
+ *          （A1 写作宽度内部化：max-width none）；sidebar/statusbar/mode-indicators 默认隐藏；
  *        - iframe：.cm-content paddingTop（P2-2.2 契约 56px）、fontSize（17px 基准 /
- *          34px = 200% Zoom）、lineHeight（fontSize × 1.65）。
+ *          34px = 200% Zoom）、lineHeight（fontSize × 1.65）、
+ *          写作宽度 max-width（默认 820px）+ 内容居中（A1）。
  *   4. 整窗截图归档 tests/visual/actual/<config>.png（人工评审 + P2-2.8 素材）。
  *
  * 基准：tests/visual/golden/layout-golden.json（首跑自动生成；--update 重建）。
@@ -92,8 +93,15 @@ async function sampleLayout(page, frame, config) {
       titlebar: box('.titlebar'),
       tabbar: box('.tabbar'),
       editorContainer: box('.editor-container'),
+      // A1（第四轮）：editor-frame 通栏（写作宽度内部化到 iframe .cm-content），
+      // frame 不再自带 max-width/margin 约束 —— 采样 box 保留，宽度契约改采内区
       editorFrame: box('.mellow-editor-frame'),
-      editorFrameMaxWidth: css('.mellow-editor-frame', 'max-width'),
+      editorFrameFullBleed: (() => {
+        const el = document.querySelector('.mellow-editor-frame');
+        if (el === null) return null;
+        const cs = getComputedStyle(el);
+        return cs.maxWidth === 'none' && cs.marginLeft === '0px';
+      })(),
       // Typora parity 默认隐藏项（任一可见即为布局回退）
       sidebarVisible: document.querySelector('.sidebar') !== null,
       statusbarVisible: document.querySelector('.statusbar') !== null,
@@ -116,6 +124,20 @@ async function sampleLayout(page, frame, config) {
       lineHeightPx: lineHeightRaw.endsWith('px') ? parseFloat(lineHeightRaw) : null,
       paddingTop: parseFloat(cs.paddingTop),
       contentWidth: round1(content.getBoundingClientRect().width),
+      // A1（第四轮）：写作宽度内部化 —— .cm-content max-width（默认 820px）+ 居中
+      contentMaxWidth: cs.maxWidth === 'none' ? null : parseFloat(cs.maxWidth),
+      contentCentered: (() => {
+        const box = content.getBoundingClientRect();
+        const scrollable = content.closest('.cm-scroller') ?? document.querySelector('.cm-editor');
+        if (scrollable === null) return box.width === 0 ? null : true;
+        const rect = scrollable.getBoundingClientRect();
+        // clientWidth 排除垂直滚动条，避免居中判定受滚动条宽度伪差影响
+        const visLeft = rect.x + (scrollable.clientLeft ?? 0);
+        const visWidth = scrollable.clientWidth;
+        const visCenter = visLeft + visWidth / 2;
+        const boxCenter = box.x + box.width / 2;
+        return box.width === 0 ? null : Math.abs(boxCenter - visCenter) <= 1;
+      })(),
     };
   });
   if (inner === null) throw new Error('iframe 内未找到 .cm-content');
@@ -125,9 +147,7 @@ async function sampleLayout(page, frame, config) {
     tabbarH: outer.tabbar?.h ?? null,
     editorContainer: outer.editorContainer,
     editorFrame: outer.editorFrame,
-    editorFrameMaxWidth: outer.editorFrameMaxWidth,
-    editorFrameCentered: outer.editorFrame === null ? null
-      : Math.abs((outer.editorFrame.x * 2 + outer.editorFrame.w) - outer.viewport.w) <= TOLERANCE_PX,
+    editorFrameFullBleed: outer.editorFrameFullBleed,
     sidebarVisible: outer.sidebarVisible,
     statusbarVisible: outer.statusbarVisible,
     modeIndicatorsVisible: outer.modeIndicatorsVisible,

@@ -74,6 +74,8 @@ export interface SaveOptions {
   filters?: FileFilter[];
   /** 期望的磁盘状态（validate disk revision；不提供则跳过校验） */
   expectedDisk?: { mtimeMs: number; identityKey: string };
+  /** C1（第四轮）：另存对话框建议文件名（不含目录；文档首行/首个标题提炼，Typora parity） */
+  suggestedName?: string;
 }
 
 /**

@@ -13,13 +13,12 @@
       "h": 564
     },
     "editorFrame": {
-      "x": 40,
+      "x": 0,
       "y": 36,
-      "w": 820,
+      "w": 900,
       "h": 564
     },
-    "editorFrameMaxWidth": "820px",
-    "editorFrameCentered": true,
+    "editorFrameFullBleed": true,
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
@@ -27,8 +26,10 @@
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 2,
+      "paddingTop": 56,
       "contentWidth": 820,
+      "contentMaxWidth": 820,
+      "contentCentered": true,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
       "expectedLineHeightPx": 28.1
@@ -48,13 +49,12 @@
       "h": 764
     },
     "editorFrame": {
-      "x": 190,
+      "x": 0,
       "y": 36,
-      "w": 820,
+      "w": 1200,
       "h": 764
     },
-    "editorFrameMaxWidth": "820px",
-    "editorFrameCentered": true,
+    "editorFrameFullBleed": true,
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
@@ -62,8 +62,10 @@
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 2,
+      "paddingTop": 56,
       "contentWidth": 820,
+      "contentMaxWidth": 820,
+      "contentCentered": true,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
       "expectedLineHeightPx": 28.1
@@ -83,13 +85,12 @@
       "h": 864
     },
     "editorFrame": {
-      "x": 310,
+      "x": 0,
       "y": 36,
-      "w": 820,
+      "w": 1440,
       "h": 864
     },
-    "editorFrameMaxWidth": "820px",
-    "editorFrameCentered": true,
+    "editorFrameFullBleed": true,
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
@@ -97,8 +98,10 @@
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 2,
+      "paddingTop": 56,
       "contentWidth": 820,
+      "contentMaxWidth": 820,
+      "contentCentered": true,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
       "expectedLineHeightPx": 28.1
@@ -118,13 +121,12 @@
       "h": 764
     },
     "editorFrame": {
-      "x": 190,
+      "x": 0,
       "y": 36,
-      "w": 820,
+      "w": 1200,
       "h": 764
     },
-    "editorFrameMaxWidth": "820px",
-    "editorFrameCentered": true,
+    "editorFrameFullBleed": true,
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
@@ -132,8 +134,10 @@
     "editor": {
       "fontSize": 34,
       "lineHeightPx": 56.1,
-      "paddingTop": 2,
+      "paddingTop": 56,
       "contentWidth": 820,
+      "contentMaxWidth": 820,
+      "contentCentered": true,
       "expectedFontSize": 34,
       "expectedPaddingTop": 56,
       "expectedLineHeightPx": 56.1
@@ -153,13 +157,12 @@
       "h": 564
     },
     "editorFrame": {
-      "x": 40,
+      "x": 0,
       "y": 36,
-      "w": 820,
+      "w": 900,
       "h": 564
     },
-    "editorFrameMaxWidth": "820px",
-    "editorFrameCentered": true,
+    "editorFrameFullBleed": true,
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
@@ -167,8 +170,10 @@
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 2,
+      "paddingTop": 56,
       "contentWidth": 820,
+      "contentMaxWidth": 820,
+      "contentCentered": true,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
       "expectedLineHeightPx": 28.1
@@ -188,13 +193,12 @@
       "h": 864
     },
     "editorFrame": {
-      "x": 310,
+      "x": 0,
       "y": 36,
-      "w": 820,
+      "w": 1440,
       "h": 864
     },
-    "editorFrameMaxWidth": "820px",
-    "editorFrameCentered": true,
+    "editorFrameFullBleed": true,
     "sidebarVisible": false,
     "statusbarVisible": false,
     "modeIndicatorsVisible": false,
@@ -202,8 +206,10 @@
     "editor": {
       "fontSize": 17,
       "lineHeightPx": 28.05,
-      "paddingTop": 2,
+      "paddingTop": 56,
       "contentWidth": 820,
+      "contentMaxWidth": 820,
+      "contentCentered": true,
       "expectedFontSize": 17,
       "expectedPaddingTop": 56,
       "expectedLineHeightPx": 28.1

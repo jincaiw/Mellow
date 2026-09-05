@@ -1,6 +1,7 @@
 /**
  * @mellow/desktop-ui —— Mellow 桌面 UI 组件（PRD §117；阶段 2 从 App.tsx 增量抽取）。
- * 纯展示组件：Tabbar / StatusBar / Welcome。
+ * 纯展示组件：Tabbar / StatusBar / Sidebar 列表 / EditorToolbar。
+ * （B2，第四轮：Welcome 欢迎页停用并移除 —— 启动即文档，对齐 Typora。）
  */
 export { Tabbar } from './Tabbar';
 export type { TabbarProps } from './Tabbar';
@@ -8,8 +9,6 @@ export { StatusBar, STATUSBAR_DEFAULT_HIDDEN, fieldVisible } from './StatusBar';
 export type { StatusBarProps, StatusBarField } from './StatusBar';
 export { EditorToolbar, EDITOR_TOOLBAR_BUTTONS } from './EditorToolbar';
 export type { EditorToolbarProps, EditorToolbarButton } from './EditorToolbar';
-export { Welcome } from './Welcome';
-export type { WelcomeProps } from './Welcome';
 export { OutlineList } from './OutlineList';
 export type { OutlineListProps } from './OutlineList';
 export { SearchResultsList } from './SearchResultsList';

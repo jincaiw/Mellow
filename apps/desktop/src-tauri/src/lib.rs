@@ -1,6 +1,7 @@
 pub mod bridge;
 pub mod clipboard;
 pub mod fs;
+pub mod geometry;
 pub mod jumplist;
 pub mod menu;
 pub mod open_with;
@@ -182,6 +183,7 @@ pub fn run() {
         .manage(watcher::WatcherIdCounter(AtomicU64::new(0)))
         .manage(DebounceState::default())
         .manage(PendingOpen(Mutex::new(None)))
+        .manage(geometry::GeometryState::default())
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
             // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），
@@ -220,6 +222,15 @@ pub fn run() {
                 .expect("failed to build main window")
             };
             let _ = window.set_title("Mellow");
+            // A2（第四轮）：窗口几何记忆 —— 恢复上次位置/尺寸/最大化；
+            // 之后监听 Moved/Resized 更新进程内状态，Destroyed/Exit 时落盘。
+            {
+                let app_handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    geometry::handle_window_event(&app_handle, event);
+                });
+                geometry::restore(app.handle(), &window);
+            }
             // Native Menu（三平台）：菜单只发命令 id，执行统一走前端 CommandRegistry
             menu::attach_menu_events(app.handle());
             let _ = menu::install_menu(app.handle());
@@ -255,17 +266,22 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Mellow")
         .run(|app: &tauri::AppHandle, event| {
-            // macOS Finder「打开方式」/ `open -a`（odoc Apple Event）
-            #[cfg(target_os = "macos")]
-            if let RunEvent::Opened { urls } = event {
-                for url in urls {
-                    if let Ok(path) = url.to_file_path() {
-                        let s = path.to_string_lossy().to_string();
-                        let req = OpenRequest { path: s.clone(), mode: "normal".to_string() };
-                        *app.state::<PendingOpen>().0.lock().unwrap() = Some(req.clone());
-                        let _ = app.emit("mellow://open-file", req);
+            match event {
+                // A2：应用退出/最后窗口关闭 → 把进程内最新几何落盘
+                RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app),
+                // macOS Finder「打开方式」/ `open -a`（odoc Apple Event）
+                #[cfg(target_os = "macos")]
+                RunEvent::Opened { urls } => {
+                    for url in urls {
+                        if let Ok(path) = url.to_file_path() {
+                            let s = path.to_string_lossy().to_string();
+                            let req = OpenRequest { path: s.clone(), mode: "normal".to_string() };
+                            *app.state::<PendingOpen>().0.lock().unwrap() = Some(req.clone());
+                            let _ = app.emit("mellow://open-file", req);
+                        }
                     }
                 }
+                _ => {}
             }
         });
 }

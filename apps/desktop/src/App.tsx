@@ -50,6 +50,7 @@ import {
   basename,
   filterFileTree,
   filterFileList,
+  documentSuggestedName,
 } from '../../../packages/app-core/src';
 import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
@@ -80,7 +81,7 @@ import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting } from '../../../packages/settings/src';
 import type { SettingDefinition, ShortcutOverrideMap } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
+import { Tabbar, StatusBar, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -462,13 +463,13 @@ export default function App() {
   // 写作宽度 / 行高：从 localStorage 初始化 CSS 变量（设置面板即时生效）
   useEffect(() => {
     try {
-      const w = localStorage.getItem('mellow.editor.writingWidth');
-      const wv = w === null ? '820' : w;
-      document.documentElement.style.setProperty('--mellow-writing-width', wv === 'auto' ? 'none' : wv + 'px');
+      // A1（第四轮）：写作宽度不再缩窄 iframe 本体，改经编辑器就绪恢复段
+      // setContentMaxWidth 在 iframe 内 .cm-content 限宽居中（滚动条贴窗、两侧背景连续）。
+      // 此处仅保留行高 CSS 变量（Reader 同文档排版用）。
       const lh = localStorage.getItem('mellow.editor.lineHeight');
       const lhv = lh === null ? '1.65' : lh;
       document.documentElement.style.setProperty('--mellow-line-height', lhv);
-    } catch { /* 默认 820 / 1.65 */ }
+    } catch { /* 默认 1.65 */ }
   }, []);
   // Native Menu 本地化（P1-1.3：locale 纳入 syncNativeMenu 统一重建；PRD §23/附录 J）
   // Print 打印样式表（PRD §77：与 PDF 共享排版常量；@page/@media print 只在打印时生效）
@@ -595,7 +596,6 @@ export default function App() {
   const [recentFolders, setRecentFolders] = useState<string[]>(() => {
     try { return parseRecentFolders(localStorage.getItem(RECENT_FOLDERS_KEY)); } catch { return []; }
   });
-  const [recentMissing, setRecentMissing] = useState<Record<string, boolean>>({});
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   // P2-2.6 快捷键自定义 override：Settings 录制 → localStorage → registry/native menu 装配边界生效
@@ -2773,6 +2773,15 @@ export default function App() {
           const lineHeightDef = settingById('editor.lineHeight');
           const lineHeightValue = lineHeightDef ? readSetting(lineHeightDef) : 1.65;
           host.setEditorConfig('setLineHeight', { lineHeight: typeof lineHeightValue === 'number' && lineHeightValue > 0 ? lineHeightValue : 1.65 });
+          // A1（第四轮）写作宽度启动恢复：iframe 内 .cm-content 限宽居中
+          // （680/820/980/Auto，默认 820）；Auto(null) = 全宽。替代 v1.4.5 前缩窄
+          // iframe 本体的做法，滚动条贴窗缘、两侧编辑器底色连续（Typora parity）。
+          {
+            const widthDef = settingById('editor.writingWidth');
+            const raw = widthDef ? readSetting(widthDef) : 820;
+            const num = typeof raw === 'number' && raw > 0 ? raw : Number(raw);
+            host.setEditorConfig('setContentMaxWidth', { width: raw === 'auto' || Number.isNaN(num) ? null : num });
+          }
           // D1-1 拼写检查启动恢复（默认 true；大文件模式由引擎侧强制关闭）
           const spellDef = settingById('editor.spellcheck');
           if (spellDef && readSetting(spellDef) === false) {
@@ -3344,22 +3353,6 @@ export default function App() {
   const handleEditorContextMenuRef = useRef(handleEditorContextMenu);
   handleEditorContextMenuRef.current = handleEditorContextMenu;
 
-  // 欢迎屏：异步检测最近文件是否存在（缺失 → 置灰 + 「已删除」标记）
-  useEffect(() => {
-    const fs = fileServiceRef.current;
-    if (fs === null || recentFiles.length === 0) return;
-    let cancelled = false;
-    void (async () => {
-      const map: Record<string, boolean> = {};
-      for (const entry of recentFiles) {
-        const r = await fs.exists(entry.path);
-        if (!cancelled) map[entry.path] = !r.ok || !r.value;
-      }
-      if (!cancelled) setRecentMissing(map);
-    })();
-    return () => { cancelled = true; };
-  }, [recentFiles]);
-
   const handleSave = useCallback(async () => {
     const host = hostRef.current;
     const documents = documentsRef.current;
@@ -3371,6 +3364,8 @@ export default function App() {
       encoding: meta.encoding,
       eol: meta.eol,
       expectedDisk: expected,
+      // C1：未命名首存（Ctrl+S 弹对话框）建议名同样取首行/首个标题
+      suggestedName: filePathRef.current === null ? documentSuggestedName(content) ?? undefined : undefined,
     });
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
@@ -3415,7 +3410,12 @@ export default function App() {
     if (!host || !documents) return;
     const content = host.getText();
     const meta = docMetaRef.current;
-    const result = await documents.save(null, content, { encoding: meta.encoding, eol: meta.eol });
+    // C1（第四轮）：另存对话框建议文件名 = 内容首行/首个标题提炼（Typora parity）
+    const result = await documents.save(null, content, {
+      encoding: meta.encoding,
+      eol: meta.eol,
+      suggestedName: documentSuggestedName(content) ?? undefined,
+    });
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
         setStatusText(t('msg.saveAsFailed', { error: result.error.message }));
@@ -3746,9 +3746,12 @@ export default function App() {
         setStatusbarVisible(Boolean(value));
         break;
       case 'settings.writingWidth': {
-        // 写作宽度：编辑器 iframe max-width（PRD §18：680/820/980/Auto，默认 820）
+        // A1（第四轮）：写作宽度 live apply —— 经 CoreEditor setContentMaxWidth 在
+        // iframe 内 .cm-content 限宽居中（PRD §18：680/820/980/Auto，默认 820）。
+        // Auto(null) = 全宽（编辑器通栏，Typora parity 滚动条贴窗缘）。
         const v = String(value);
-        document.documentElement.style.setProperty('--mellow-writing-width', v === 'auto' ? 'none' : v + 'px');
+        const n = Number(v);
+        hostRef.current?.setEditorConfig('setContentMaxWidth', { width: v === 'auto' ? null : n });
         break;
       }
       case 'settings.lineHeight': {
@@ -4562,6 +4565,7 @@ export default function App() {
           onSelect={(id) => void handleSelectTab(id)}
           onClose={(id) => void handleCloseTab(id)}
           onDropTab={handleDropTab}
+          onNewTab={() => void dispatchCommand('file.new', 'menu')}
           onTabContextMenu={(tabId, x, y) => {
             // P2-2.4：Tab 右键菜单 —— 关闭（锚点 tab）/ 关闭其他 / 关闭右侧（锚点）/ 重新打开。
             // 关闭其他/右侧需锚点参数，故直接调 handle*（带 anchor）而非无参 dispatchCommand。
@@ -4796,17 +4800,6 @@ export default function App() {
                 </button>
               )}
             </div>
-          )}
-          {tabs.length === 0 && !readerOpen && status === 'ready' && (
-            <Welcome
-              t={t}
-              recentFiles={recentFiles}
-              recentMissing={recentMissing}
-              onNew={() => void dispatchCommand('file.new', 'menu')}
-              onOpen={() => void dispatchCommand('file.open', 'menu')}
-              onOpenFolder={() => void dispatchCommand('workspace.openFolder', 'menu')}
-              onOpenRecent={(path) => void openPathInTab(path)}
-            />
           )}
           {readerOpen && (
             <ReaderView

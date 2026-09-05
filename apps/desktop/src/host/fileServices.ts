@@ -82,6 +82,7 @@ export const tauriFileService: FileService = {
       content,
       encoding: options?.encoding ?? null,
       eol: options?.eol ?? null,
+      default_name: options?.suggestedName ?? null,
       expected: options?.expectedDisk
         ? { mtime_ms: options.expectedDisk.mtimeMs, identity_key: options.expectedDisk.identityKey }
         : null,

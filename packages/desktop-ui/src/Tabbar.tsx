@@ -19,12 +19,14 @@ export interface TabbarProps {
   onDropTab: (targetId: string, draggedId: string | null) => void;
   /** P2-2.4：tab 右键（viewport 坐标） */
   onTabContextMenu?: (tabId: string, x: number, y: number) => void;
+  /** F3（第四轮）：新建文档（+ 按钮 / 双击空白 / ⌘T 语义由宿主菜单承载） */
+  onNewTab: () => void;
 }
 
 /** compact 阈值：≥ 此数量时缩小 tab 宽度（Typora 低干扰；滚动兜底不破版） */
 const COMPACT_THRESHOLD = 8;
 
-export function Tabbar({ tabs, activeTabId, t, onSelect, onClose, onDropTab, onTabContextMenu }: TabbarProps) {
+export function Tabbar({ tabs, activeTabId, t, onSelect, onClose, onDropTab, onTabContextMenu, onNewTab }: TabbarProps) {
   const draggedTabIdRef = useRef<string | null>(null);
   const navRef = useRef<HTMLElement | null>(null);
 
@@ -41,7 +43,16 @@ export function Tabbar({ tabs, activeTabId, t, onSelect, onClose, onDropTab, onT
   const compact = tabs.length >= COMPACT_THRESHOLD;
 
   return (
-    <nav ref={navRef} className={`tabbar${compact ? ' compact' : ''}`} aria-label={t('tabbar.label')}>
+    <nav
+      ref={navRef}
+      className={`tabbar${compact ? ' compact' : ''}`}
+      aria-label={t('tabbar.label')}
+      onDoubleClick={(e) => {
+        // F3：双击 tabbar 空白处新建文档（双击 tab 本体不触发）
+        if ((e.target as HTMLElement).closest('.tab') !== null) return;
+        onNewTab();
+      }}
+    >
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -53,6 +64,7 @@ export function Tabbar({ tabs, activeTabId, t, onSelect, onClose, onDropTab, onT
           onDragOver={(e) => e.preventDefault()}
           onDrop={() => onDropTab(tab.id, draggedTabIdRef.current)}
           onClick={() => onSelect(tab.id)}
+          onAuxClick={(e) => { if (e.button === 1) onClose(tab.id); }}
           onContextMenu={onTabContextMenu === undefined
             ? undefined
             : (e) => { e.preventDefault(); onTabContextMenu(tab.id, e.clientX, e.clientY); }}
@@ -67,6 +79,13 @@ export function Tabbar({ tabs, activeTabId, t, onSelect, onClose, onDropTab, onT
           >×</span>
         </button>
       ))}
+      <button
+        type="button"
+        className="tab-new"
+        aria-label={t('tabbar.newTab')}
+        title={t('tabbar.newTab')}
+        onClick={(e) => { e.stopPropagation(); onNewTab(); }}
+      >＋</button>
     </nav>
   );
 }

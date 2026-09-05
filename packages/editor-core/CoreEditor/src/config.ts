@@ -69,6 +69,7 @@ export interface Config {
   focusMode: boolean;
   lineWrapping: boolean;
   lineHeight: number;
+  contentMaxWidth?: number | null; // Mellow：正文写作限宽（px；null = 全宽，Typora parity 视觉）
   suggestWhileTyping: boolean;
   standardDirectories: { [key: string]: string };
   runtimeInfo?: RuntimeInfo;
