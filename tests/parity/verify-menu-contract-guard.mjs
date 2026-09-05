@@ -68,8 +68,8 @@ const CASES = [
     "      { kind: 'command', id: 'edit.spellcheck.toggle', labelKey: 'menu.edit.spellcheck', checkedFrom: 'spellcheck' },",
     "      { kind: 'command', id: 'edit.spellcheck.toggle', labelKey: 'menu.edit.spellcheck', checkedFrom: 'spellcheck' },\n      { kind: 'command', id: 'view.split.toggle', labelKey: 'menu.edit.spellcheck' },"))],
   ['文件菜单丢失 separator', () => patch(schema(), (s) => s.replace(
-    "    { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },\n    { kind: 'separator' },\n    { kind: 'command', id: 'tabs.close',",
-    "    { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },\n    { kind: 'command', id: 'tabs.close',"))],
+    "    { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },\n    { kind: 'separator' },\n    // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）\n    { kind: 'command', id: 'file.closeWindow',",
+    "    { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },\n    // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）\n    { kind: 'command', id: 'file.closeWindow',"))],
   ['文件菜单顺序漂移（save ↔ saveAs 互换）', () => patch(schema(), (s) => {
     const save = "    { kind: 'command', id: 'file.save', labelKey: 'menu.file.save', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' } },";
     const saveAs = "    { kind: 'command', id: 'file.saveAs', labelKey: 'menu.file.saveAs', shortcut: { mac: 'Cmd+Shift+S', winLinux: 'Ctrl+Shift+S' } },";

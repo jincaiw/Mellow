@@ -97,109 +97,6 @@ html, body, #root {
   color: var(--mellow-danger);
 }
 
-.tabbar {
-  display: flex;
-  align-items: stretch;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  user-select: none;
-}
-
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 120px;
-  max-width: 220px;
-  padding: 0 8px;
-  border: 0;
-  /* U7：去 VS Code 式分隔线，Typora 低干扰 tab */
-  border-right: 0;
-  background: transparent;
-  color: var(--mellow-fg-subtle);
-  font-size: 12px;
-  cursor: default;
-}
-
-.tab:hover {
-  background: var(--mellow-bg-hover);
-}
-
-/* P2-2.3 compact：tab 数量 ≥8（Tabbar COMPACT_THRESHOLD）时缩窄，滚动兜底不破版 */
-.tabbar.compact .tab {
-  min-width: 56px;
-  max-width: 140px;
-  padding: 0 6px;
-  gap: 4px;
-}
-
-.tab:hover .tab-close {
-  opacity: 1;
-}
-
-.tab.active {
-  background: var(--mellow-bg-elevated);
-  color: var(--mellow-fg);
-  /* U7：去 accent 底边，仅用柔和背景区分 */
-  box-shadow: none;
-}
-
-.tab-dirty {
-  width: 10px;
-  color: var(--mellow-accent);
-  font-size: 10px;
-}
-
-.tab-title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-.tab-close {
-  opacity: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--mellow-fg-subtle);
-  font-size: 13px;
-}
-
-.tab-close:hover {
-  background: var(--mellow-border-strong);
-  color: var(--mellow-fg);
-}
-
-/* F3（第四轮）：tabbar 右侧「＋」新建钮（Typora 桌面惯例） */
-.tab-new {
-  align-self: center;
-  flex: 0 0 auto;
-  width: 24px;
-  height: 20px;
-  margin: 0 4px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--mellow-fg-subtle);
-  font-size: 14px;
-  line-height: 1;
-  cursor: default;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.tab-new:hover {
-  background: var(--mellow-border-strong);
-  color: var(--mellow-fg);
-}
-
 .workspace-shell {
   flex: 1;
   min-height: 0;
@@ -955,66 +852,6 @@ html, body, #root {
   font-size: 12px;
 }
 
-/* Tab Overview（⇧⌘\ 显示所有标签页，Typora 视图菜单对齐） */
-.tab-overview-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(720px, 80vw);
-  max-height: 70vh;
-  overflow-y: auto;
-  background: var(--mellow-panel-bg, var(--mellow-bg));
-  border: 1px solid var(--mellow-border);
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
-  padding: 12px;
-}
-
-.tab-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-}
-
-.tab-overview-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
-  padding: 10px 12px;
-  border: 1px solid var(--mellow-border);
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.tab-overview-card:hover {
-  background: var(--mellow-selection);
-}
-
-.tab-overview-card.active {
-  border-color: var(--mellow-accent);
-}
-
-.tab-overview-title {
-  font-size: 13px;
-  color: var(--mellow-fg);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tab-overview-path {
-  font-size: 11px;
-  color: var(--mellow-fg-subtle);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .mellow-editor-frame {
   /* A1（第四轮）：iframe 通栏，写作宽度改在 iframe 内 .cm-content 限宽居中
      （CoreEditor setContentMaxWidth），滚动条贴窗缘、两侧编辑器底色连续（Typora parity） */
@@ -1510,7 +1347,7 @@ html, body, #root {
 
 /* 打印：只输出 Reader 正文 */
 @media print {
-  .titlebar, .tabbar, .file-tree, .sidebar-resizer, .quick-open-backdrop, .mellow-reader-bar, .status-bar, .toast {
+  .titlebar, .file-tree, .sidebar-resizer, .quick-open-backdrop, .mellow-reader-bar, .status-bar, .toast {
     display: none !important;
   }
   .shell { height: auto; }

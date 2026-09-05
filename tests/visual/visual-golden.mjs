@@ -91,7 +91,8 @@ async function sampleLayout(page, frame, config) {
     return {
       viewport: { w: round1(window.innerWidth), h: round1(window.innerHeight) },
       titlebar: box('.titlebar'),
-      tabbar: box('.tabbar'),
+      // B1（SDI）：已无 .tabbar —— 采样契约同步移除，防止 Tabbar UI 复活不被发现
+      tabbarAbsent: document.querySelector('.tabbar') === null,
       editorContainer: box('.editor-container'),
       // A1（第四轮）：editor-frame 通栏（写作宽度内部化到 iframe .cm-content），
       // frame 不再自带 max-width/margin 约束 —— 采样 box 保留，宽度契约改采内区
@@ -144,7 +145,7 @@ async function sampleLayout(page, frame, config) {
   return {
     viewport: outer.viewport,
     titlebarH: outer.titlebar?.h ?? null,
-    tabbarH: outer.tabbar?.h ?? null,
+    tabbarAbsent: outer.tabbarAbsent,
     editorContainer: outer.editorContainer,
     editorFrame: outer.editorFrame,
     editorFrameFullBleed: outer.editorFrameFullBleed,
@@ -206,11 +207,7 @@ async function main() {
       }, { size: config.fontSize, mode: config.mode });
       await page.reload({ waitUntil: 'domcontentloaded' });
       const frame = await waitEditorFrame(page);
-      // 新建两个 tab：单 tab 自动隐藏（Typora parity），双 tab 才能采样 tabbar
-      await page.evaluate(() => {
-        void window.__MELLOW_COMMANDS__?.dispatch('file.new');
-        void window.__MELLOW_COMMANDS__?.dispatch('file.new');
-      });
+      // B1（SDI）：单文档采样（无 Tabbar，无需再建双 tab；file.new 在浏览器回落 = 替换当前文档）
       await page.waitForTimeout(600);
       const sample = await sampleLayout(page, frame, config);
       samples[config.name] = sample;

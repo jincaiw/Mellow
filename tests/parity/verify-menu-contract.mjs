@@ -156,7 +156,6 @@ const SEP = { kind: 'separator' };
 const FILE_MENU_CONTRACT = [
   { kind: 'command', id: 'file.new' },
   { kind: 'command', id: 'file.newWindow' },
-  { kind: 'command', id: 'file.newTab' },
   SEP,
   { kind: 'command', id: 'file.open' },
   { kind: 'submenu', id: 'file.recent' },
@@ -171,7 +170,7 @@ const FILE_MENU_CONTRACT = [
   { kind: 'command', id: 'file.moveTo' },
   { kind: 'command', id: 'file.trash' },
   SEP,
-  { kind: 'command', id: 'tabs.close' },
+  { kind: 'command', id: 'file.closeWindow' }, // B1：⌘W 关闭窗口（mac performClose: 真值）
   { kind: 'command', id: 'file.closeAll' },
   SEP,
   { kind: 'command', id: 'file.save' },

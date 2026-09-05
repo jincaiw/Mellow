@@ -1,10 +1,9 @@
 /**
  * @mellow/desktop-ui —— Mellow 桌面 UI 组件（PRD §117；阶段 2 从 App.tsx 增量抽取）。
- * 纯展示组件：Tabbar / StatusBar / Sidebar 列表 / EditorToolbar。
- * （B2，第四轮：Welcome 欢迎页停用并移除 —— 启动即文档，对齐 Typora。）
+ * 纯展示组件：StatusBar / Sidebar 列表 / EditorToolbar。
+ * （B2，第四轮：Welcome 欢迎页停用并移除 —— 启动即文档，对齐 Typora。
+ *   B1（SDI）：Tabbar 随多标签能力一并移除 —— 单文档单窗口。）
  */
-export { Tabbar } from './Tabbar';
-export type { TabbarProps } from './Tabbar';
 export { StatusBar, STATUSBAR_DEFAULT_HIDDEN, fieldVisible } from './StatusBar';
 export type { StatusBarProps, StatusBarField } from './StatusBar';
 export { EditorToolbar, EDITOR_TOOLBAR_BUTTONS } from './EditorToolbar';

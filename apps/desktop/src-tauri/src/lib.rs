@@ -167,6 +167,7 @@ pub fn run() {
             print::print_window,
             window::new_window,
             window::page_setup,
+            window::allow_close_window,
             open_with::detect_open_with,
             open_with::open_with_editor,
             pandoc::pandoc_available,
@@ -184,6 +185,7 @@ pub fn run() {
         .manage(DebounceState::default())
         .manage(PendingOpen(Mutex::new(None)))
         .manage(geometry::GeometryState::default())
+        .manage(window::CloseGate::default())
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
             // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），
@@ -230,6 +232,8 @@ pub fn run() {
                     geometry::handle_window_event(&app_handle, event);
                 });
                 geometry::restore(app.handle(), &window);
+                // B1（SDI）：主窗口关闭保护（红绿灯/✕ → 前端 dirty 确认后放行）
+                window::install_close_gate(app.handle(), &window);
             }
             // Native Menu（三平台）：菜单只发命令 id，执行统一走前端 CommandRegistry
             menu::attach_menu_events(app.handle());

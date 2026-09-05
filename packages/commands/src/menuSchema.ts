@@ -34,6 +34,8 @@ export interface MenuCommandEntry {
   checkedFrom?: string;
   /** 仅 macOS 菜单装配（如应用菜单、mac 专属 accelerator 条目）。 */
   macOnly?: boolean;
+  /** 仅 Win/Linux 菜单装配（macOS 缺省不显示 —— B1：mac Typora 无「全部关闭」菜单项）。 */
+  winLinuxOnly?: boolean;
   /** 仅 debug 构建装配（如 DevTools）。 */
   debugOnly?: boolean;
 }
@@ -92,13 +94,14 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
 
   // ── 文件（§7.2：31 槽位契约）─────────────────────────────────
   { id: 'file', labelKey: 'menu.top.file', entries: [
+    // B1（SDI）：⌘N = 新建（新窗口空白文档）；「新建标签页」随多标签能力移除
     { kind: 'command', id: 'file.new', labelKey: 'menu.file.new', shortcut: { mac: 'Cmd+N', winLinux: 'Ctrl+N' } },
     { kind: 'command', id: 'file.newWindow', labelKey: 'menu.file.newWindow', shortcut: { mac: 'Cmd+Shift+N', winLinux: 'Ctrl+Shift+N' } },
-    { kind: 'command', id: 'file.newTab', labelKey: 'menu.file.newTab', shortcut: { mac: 'Cmd+T', winLinux: 'Ctrl+Alt+T' } },
     { kind: 'separator' },
     { kind: 'command', id: 'file.open', labelKey: 'menu.file.open', shortcut: { mac: 'Cmd+O', winLinux: 'Ctrl+O' } },
     { kind: 'submenu', id: 'file.recent', labelKey: 'menu.file.recent', entries: [
-      { kind: 'command', id: 'tabs.reopenClosed', labelKey: 'menu.file.recentReopen', shortcut: { mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' } },
+      // B1（SDI）：tabs.reopenClosed 移除（窗口关闭后状态随之结束；跨窗口重开待
+      // Phase 4 窗口注册表落地后按 macOS「Reopen Closed File」真值恢复）
       { kind: 'dynamic', dynamic: 'recent-files' },
       { kind: 'separator' },
       { kind: 'command', id: 'recent.clear', labelKey: 'menu.file.recentClear' },
@@ -114,8 +117,11 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'file.moveTo', labelKey: 'menu.file.moveTo' },
     { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },
     { kind: 'separator' },
-    { kind: 'command', id: 'tabs.close', labelKey: 'menu.tabs.close', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' } },
-    { kind: 'command', id: 'file.closeAll', labelKey: 'menu.file.closeAll', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' } },
+    // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）
+    { kind: 'command', id: 'file.closeWindow', labelKey: 'menu.file.closeWindow', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' } },
+    // B1（SDI）：file.closeAll 仅 Win/Linux 保留（macOS Typora 1.14.9 File 菜单无「全部关闭」，
+    // 资源中无 Close All 文案/动作 —— sdi-truth-table-v1.md 0.8 行）
+    { kind: 'command', id: 'file.closeAll', labelKey: 'menu.file.closeAll', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' }, winLinuxOnly: true },
     { kind: 'separator' },
     { kind: 'command', id: 'file.save', labelKey: 'menu.file.save', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' } },
     { kind: 'command', id: 'file.saveAs', labelKey: 'menu.file.saveAs', shortcut: { mac: 'Cmd+Shift+S', winLinux: 'Ctrl+Shift+S' } },
@@ -351,7 +357,6 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'view.zoomOut', labelKey: 'menu.view.zoomOut', shortcut: { mac: 'Cmd+Shift+-', winLinux: 'Ctrl+Shift+-' } },
     { kind: 'separator' },
     { kind: 'command', id: 'window.alwaysOnTop', labelKey: 'menu.view.alwaysOnTop' },
-    { kind: 'command', id: 'tabs.showAll', labelKey: 'menu.tabs.showAll', shortcut: { mac: 'Shift+Cmd+\\', winLinux: 'Ctrl+Shift+\\' } },
     { kind: 'separator' },
     { kind: 'command', id: 'reader.open', labelKey: 'menu.reader.open' },
     { kind: 'command', id: 'window.fullscreen', labelKey: 'menu.window.fullscreen', shortcut: { mac: 'Ctrl+Cmd+F', winLinux: 'F11' } },
@@ -369,14 +374,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
   ] },
 
   // ── 窗口（B3，第四轮：仅 macOS —— Typora Windows/Linux 顶层菜单无「窗口」，
-  // 最小化/还原由系统标题栏控制按钮承担；本菜单内 tabs.prev/next 在 Win/Linux
-  // 仍可用 Ctrl+Tab / Ctrl+Shift+Tab 键盘键位，不依赖菜单入口）─────────
+  // 最小化/还原由系统标题栏控制按钮承担。
+  // B1（SDI）：tabs.prev/next 移除 —— macOS Typora「显示上一个/下一个标签页」为系统
+  // NSWindow tabbing 运行时注入项，非菜单常驻槽位（sdi-truth-table-v1.md 0.9 行））─────────
   { id: 'window', labelKey: 'menu.top.window', macOnly: true, entries: [
     { kind: 'command', id: 'window.minimize', labelKey: 'menu.window.minimize', shortcut: { mac: 'Cmd+M', winLinux: 'Ctrl+M' } },
     { kind: 'command', id: 'window.maximizeToggle', labelKey: 'menu.window.maximizeToggle' },
-    { kind: 'separator' },
-    { kind: 'command', id: 'tabs.prev', labelKey: 'menu.tabs.prev' },
-    { kind: 'command', id: 'tabs.next', labelKey: 'menu.tabs.next' },
   ] },
 
   // ── 帮助 ────────────────────────────────────────────────────
@@ -527,6 +530,7 @@ function buildItems(entries: readonly MenuEntry[], input: NativeMenuSpecInput): 
       continue;
     }
     if (entry.macOnly && input.platform !== 'mac') continue;
+    if (entry.winLinuxOnly && input.platform === 'mac') continue;
     if (entry.debugOnly && !input.debug) continue;
     // P2-2.6：用户 override 优先于 schema 默认键位（仅覆盖当前平台字段；空串 = 清除）
     const override = input.shortcutOverrides?.[entry.id];

@@ -57,6 +57,7 @@ if (!existsSync(goldenPath)) {
     else if (sample.sidebarVisible !== false || sample.statusbarVisible !== false || sample.modeIndicatorsVisible !== false) {
       fail(`golden ${config} 存在默认可见的 sidebar/statusbar/mode-indicators（违反 Typora parity 隐藏契约）`);
     }
+    if ('tabbarH' in sample) fail(`golden ${config} 含已删除的 tabbarH 契约键（B1 SDI：--update 重刷基准）`);
   }
 }
 

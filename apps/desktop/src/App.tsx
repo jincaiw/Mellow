@@ -17,7 +17,7 @@ import {
   ImageFileOpsService,
   DocumentRenameService,
   FileOpHistory,
-  TabManager,
+  DocumentState,
   FileTreeModel,
   FileTreeService,
   FileListModel,
@@ -52,7 +52,7 @@ import {
   filterFileList,
   documentSuggestedName,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, TabSessionSnapshot, RecentFileEntry } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, DocumentStateInput, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopExtensionHost } from './extensions/extensionHost';
 import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
@@ -81,7 +81,7 @@ import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting } from '../../../packages/settings/src';
 import type { SettingDefinition, ShortcutOverrideMap } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { Tabbar, StatusBar, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
+import { StatusBar, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -225,8 +225,11 @@ export default function App() {
   const commandRegistryRef = useRef<CommandRegistry>(new CommandRegistry());
   const pluginCommandsRef = useRef<Command[]>([]);
   const commandPaletteModelRef = useRef<CommandPaletteModel>(new CommandPaletteModel());
-  // Tabs（PRD §11：open/active/dirty/reorder/close/session restore）
-  const tabsRef = useRef<TabManager>(new TabManager());
+  // B1（SDI）：单文档状态（DocumentState，D2=1b 收敛）—— 一窗口 ⇔ 一文档；
+  // UI/命令/菜单已约束为窗口=文档，多标签语义（tabs[]/activeId/closed 栈）已删除。
+  const docStateRef = useRef<DocumentState>(new DocumentState());
+  // B1（SDI）：是否主窗口（label 'main'）—— 仅主窗口参与会话恢复与持久化，避免多窗口互相覆盖
+  const primaryWindowRef = useRef(true);
   const suppressEditorEventRef = useRef(false);
 
   // File Tree / Articles File List（PRD §14/§15/§59/§60；不创建 .mellow workspace 文件）
@@ -265,10 +268,6 @@ export default function App() {
   const [updateUi, setUpdateUi] = useState<UpdateUi>({ phase: 'idle' });
   const [rollbackPrompt, setRollbackPrompt] = useState<RollbackStatus | null>(null);
   // Status Bar 默认隐藏；用户显式开启后持久化。
-  // PRD §11：单 Tab 自动隐藏 Tab Bar（Typora 行为；设置可关）
-  const [autoHideTabBar, setAutoHideTabBar] = useState<boolean>(() => {
-    try { return localStorage.getItem('mellow.editor.autoHideTabBar') !== '0'; } catch { return true; }
-  });
   const [statusbarVisible, setStatusbarVisible] = useState<boolean>(() => {
     // U2：状态栏默认隐藏（设置可开启）
     try { return localStorage.getItem('mellow.statusbar.visible') === '1'; } catch { return false; }
@@ -486,8 +485,8 @@ export default function App() {
   // R2-2 字数统计窗口（Typora 视图→字数统计窗口）：面板开时 refreshStats 实时刷新
   const [wordCountOpen, setWordCountOpen] = useState(false);
   const [wordCountData, setWordCountData] = useState<ReturnType<typeof countWords> | null>(null);
-  const [tabs, setTabs] = useState<DocumentTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // B1（SDI）：tabs/activeTabId React 状态移除 —— 无标签栏/Overview 消费方，
+  // 单文档状态经 docStateRef 表达，DOM 重渲染由 applyTab/setDirty 等既有路径驱动。
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
   const [pinnedFolders, setPinnedFolders] = useState<string[]>(() => {
     try {
@@ -543,8 +542,6 @@ export default function App() {
   // P3.3 Outline 键盘选中（与 caret 驱动的 currentOutlineId 分离，避免互相打架）
   const [outlineSelectedId, setOutlineSelectedId] = useState<string | null>(null);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
-  // Tab Overview（⇧⌘\ 显示所有标签页，Typora 视图菜单对齐）
-  const [tabOverviewOpen, setTabOverviewOpen] = useState(false);
   const [quickOpenQuery, setQuickOpenQuery] = useState('');
   const [quickOpenAll, setQuickOpenAll] = useState<QuickOpenEntry[]>([]);
   const [quickOpenResults, setQuickOpenResults] = useState<QuickOpenEntry[]>([]);
@@ -843,7 +840,7 @@ export default function App() {
 
   // ── RC F1：PDF 导出（PRD §72 / golden journey #19；与打印共享排版常量）──
   const handleExportPdf = useCallback(async () => {
-    const tab = tabsRef.current.active;
+    const tab = docStateRef.current.doc;
     if (tab === null || hostRef.current === null) return;
     try {
       const [{ createPdfBuffer, loadNotoFonts, DEFAULT_PDF_OPTIONS }, savePath] = await Promise.all([
@@ -868,7 +865,7 @@ export default function App() {
   // 检测 pandoc → 选路径 → 导出（docx/odt/rtf/epub/latex/mediawiki/rst/textile/opml）
   // pandoc 以磁盘文件为输入，未保存文档先提示保存（Typora 导出前隐式落盘的差异点）
   const handleExportPandoc = useCallback(async (format: string, ext: string) => {
-    const tab = tabsRef.current.active;
+    const tab = docStateRef.current.doc;
     if (tab === null || hostRef.current === null) return;
     if (!isTauri()) return;
     if (tab.path === null) {
@@ -913,7 +910,7 @@ export default function App() {
   // D2：使用上一次设置导出（Typora ⌃E 语义合并「覆盖上一次导出文件」：
   // 同一文档 + 上次 pandoc 导出记录存在 → 直接覆盖导出）
   const handleExportRepeat = useCallback(async () => {
-    const tab = tabsRef.current.active;
+    const tab = docStateRef.current.doc;
     if (tab === null || !isTauri()) return;
     if (tab.path === null) {
       setStatusText(t('msg.renameNeedsSave'));
@@ -942,7 +939,7 @@ export default function App() {
 
   // 导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize；D2 增 without-style 无样式模式）
   const runExportHtml = useCallback(async (mode: 'with-theme' | 'without-style') => {
-    const tab = tabsRef.current.active;
+    const tab = docStateRef.current.doc;
     if (tab === null || hostRef.current === null) return;
     try {
       const [{ exportHtml }, savePath] = await Promise.all([
@@ -985,7 +982,7 @@ export default function App() {
 
   // ── B5+: 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）──
   const handleExportImage = useCallback(async () => {
-    const tab = tabsRef.current.active;
+    const tab = docStateRef.current.doc;
     if (tab === null || hostRef.current === null) return;
     try {
       // 设置读取（PRD §74 参数；localStorage 值不可信任 → 回退默认）
@@ -1191,7 +1188,7 @@ export default function App() {
 
   const openReader = useCallback(() => {
     const host = hostRef.current;
-    const active = tabsRef.current.active;
+    const active = docStateRef.current.doc;
     if (!host || active === null) return;
     const content = host.getText();
     const result = renderReaderHtml(content, { resolveImageSrc: readerResolveImageSrc });
@@ -1280,23 +1277,25 @@ export default function App() {
   }, []);
 
   const persistTabs = useCallback(() => {
+    // B1（SDI）：仅主窗口写会话（mellow.tabs.session）；非主窗口（⌘N 新窗）不参与，
+    // 避免多窗口并发覆盖同一 localStorage key。Phase 4 将整体迁至 Rust windows.json。
+    if (!primaryWindowRef.current) return;
     try {
-      localStorage.setItem(TABS_SESSION_KEY, JSON.stringify(tabsRef.current.snapshot()));
+      localStorage.setItem(TABS_SESSION_KEY, JSON.stringify(docStateRef.current.snapshot()));
     } catch {
       // localStorage quota / private mode：session restore 降级，不影响编辑
     }
   }, []);
 
   const refreshTabsState = useCallback(() => {
-    const snapshot = tabsRef.current.snapshot();
-    setTabs(snapshot.tabs);
-    setActiveTabId(snapshot.activeId);
+    // B1（SDI）：tabs/activeTabId state 已移除（无标签栏/Overview 消费方），
+    // 本函数保留为「写入会话 + 命名稳定的刷新点」，供各 handler 调用。
     persistTabs();
   }, [persistTabs]);
 
   const currentTabPatch = useCallback((host: EditorCore): Partial<DocumentTab> => ({
     path: filePathRef.current,
-    title: filePathRef.current === null ? t('tab.untitled') : filePathRef.current.split(/[\\/]/).pop() ?? filePathRef.current,
+    title: filePathRef.current === null ? t('doc.untitled') : filePathRef.current.split(/[\\/]/).pop() ?? filePathRef.current,
     content: host.getText(),
     dirty: dirtyRef.current,
     documentId: docIdRef.current,
@@ -1306,13 +1305,33 @@ export default function App() {
     diskState: diskStateRef.current,
   }), []);
 
-  const syncActiveTabFromEditor = useCallback(() => {
+  /** B1（SDI）：把编辑器的当前内容/元数据同步进单文档状态（DocumentState）。 */
+  const syncDocFromEditor = useCallback(() => {
     const host = hostRef.current;
-    const active = tabsRef.current.active;
-    if (!host || active === null) return;
-    tabsRef.current.update(active.id, currentTabPatch(host));
+    if (!host || docStateRef.current.doc === null) return;
+    docStateRef.current.updateCurrent(currentTabPatch(host));
     refreshTabsState();
   }, [currentTabPatch, refreshTabsState]);
+
+  /** B1（SDI）：单文档关闭确认 —— 当前文档 dirty 时弹「丢弃修改」确认；干净直接放行。 */
+  const confirmCloseDocument = useCallback((doc: DocumentTab): boolean => {
+    if (!doc.dirty) return true;
+    return window.confirm(t('dialog.closeDocDirty'));
+  }, []);
+
+  /** B1（SDI）：打开/新建另一文档前确保窗口内只有当前文档。
+   *  当前文档 dirty → 丢弃确认；通过后清空文档状态，随后调用方再 open 新文档。
+   *  返回 false 表示用户取消（调用方不得继续打开）。
+   *  注：必须先于 openTreeFile/handleNew/handleOpen 等调用方声明（deps 数组即时求值）。 */
+  const guardSingleDocument = useCallback((): boolean => {
+    syncDocFromEditor();
+    const existing = docStateRef.current.doc;
+    if (existing !== null) {
+      if (!confirmCloseDocument(existing)) return false;
+      docStateRef.current = new DocumentState();
+    }
+    return true;
+  }, [confirmCloseDocument, syncDocFromEditor]);
 
   // 状态栏编码/行尾：读真实文档元数据（docMetaRef），不再硬编码
   const encodingLabel = useMemo(() => {
@@ -1401,7 +1420,7 @@ export default function App() {
     await watchDocument(tab.path);
     refreshStats(host);
     refreshCursorPos(host);
-    setStatusText(t('msg.switchedTab', { title: tab.title, suffix: tab.dirty ? t('msg.unsavedSuffix') : '' }));
+    setStatusText(t('msg.openedDoc', { title: tab.title, suffix: tab.dirty ? t('msg.unsavedSuffix') : '' }));
   }, [refreshCursorPos, refreshStats, setDirty, watchDocument]);
 
   // ── 图片文件操作（spec image-workflow §6/§7 + PRD §57/§58）──
@@ -1771,7 +1790,7 @@ export default function App() {
     setDirty(true);
     const host = hostRef.current;
     if (host) {
-      tabsRef.current.updateActive({
+      docStateRef.current.updateCurrent({
         ...currentTabPatch(host),
         path: r.value.newPath,
         title: r.value.newPath.split(/[\\/]/).pop() ?? r.value.newPath,
@@ -2007,13 +2026,14 @@ export default function App() {
   const openTreeFile = useCallback(async (path: string) => {
     const documents = documentsRef.current;
     if (!documents) return;
-    syncActiveTabFromEditor();
+    // B1（SDI）：文件树/QuickOpen 打开 = 当前窗口替换（Typora 文件树单击换文档）
+    if (!guardSingleDocument()) return;
     const r = await documents.readPath(path);
     if (!r.ok) {
       setStatusText(t('msg.openFailed', { error: r.error.message }));
       return;
     }
-    const tab = tabsRef.current.open({
+    const tab = docStateRef.current.open({
       path: r.value.path,
       content: r.value.content,
       dirty: false,
@@ -2026,7 +2046,7 @@ export default function App() {
     refreshTabsState();
     rememberQuickOpenRecent(path);
     await applyTab(tab);
-  }, [applyTab, refreshTabsState, rememberQuickOpenRecent, syncActiveTabFromEditor]);
+  }, [applyTab, guardSingleDocument, refreshTabsState, rememberQuickOpenRecent]);
 
   const updateQuickOpenResults = useCallback((entries: QuickOpenEntry[], query: string) => {
     const unique = [...new Map(entries.map((entry) => [entry.path, entry])).values()];
@@ -2491,7 +2511,7 @@ export default function App() {
     await host.open(r.value.content, undefined, false, r.value.eol);
     refreshOutline(host.getSelectionHead());
     setDirty(false);
-    tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
+    docStateRef.current.updateCurrent({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
     refreshTabsState();
     setStatusText(t('msg.autoReloaded'));
     refreshStats(host);
@@ -2531,7 +2551,7 @@ export default function App() {
       : null;
     await host.open(r.value.content, undefined, true, r.value.eol); // 放弃本地
     setDirty(false);
-    tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
+    docStateRef.current.updateCurrent({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
     refreshTabsState();
     setConflict(null);
     setStatusText(t('msg.reloadedDisk'));
@@ -2698,29 +2718,40 @@ export default function App() {
     mountGate
       .then(() => host.ready())
       .then(async () => {
-        let active = tabsRef.current.active;
+        let active = docStateRef.current.doc;
+        // B1（SDI）：会话恢复仅主窗口（label 'main'）执行；⌘N/新建窗口不继承
+        // 上一会话文档，直接从空白「未命名」启动（Typora 新窗口 = 空白文档）。
+        let isPrimaryWindow = true;
+        if ('__TAURI_INTERNALS__' in window) {
+          try {
+            const { getCurrentWindow } = await import('@tauri-apps/api/window');
+            isPrimaryWindow = getCurrentWindow().label === 'main';
+          } catch { isPrimaryWindow = true; }
+        }
+        primaryWindowRef.current = isPrimaryWindow;
         // PRD §92 启动行为：可关闭「恢复上次会话」（默认开启）
         let reopenLast = true;
         try { reopenLast = localStorage.getItem('mellow.general.reopenLast') !== '0'; } catch { /* 默认开启 */ }
         try {
-          if (reopenLast) {
+          if (reopenLast && isPrimaryWindow) {
             const raw = localStorage.getItem(TABS_SESSION_KEY);
             if (raw !== null) {
-              const parsed = JSON.parse(raw) as TabSessionSnapshot;
-              tabsRef.current = new TabManager(parsed);
-              active = tabsRef.current.active;
+              // 兼容 v≤1.4.6 旧结构（{tabs,activeId,closed}）与新结构（{tab}）
+              const parsed = JSON.parse(raw) as DocumentStateInput;
+              docStateRef.current = new DocumentState(parsed);
+              active = docStateRef.current.doc;
             }
           } else {
-            tabsRef.current = new TabManager();
+            docStateRef.current = new DocumentState();
             active = null;
           }
         } catch {
           active = null;
         }
         if (active === null) {
-          active = tabsRef.current.open({
+          active = docStateRef.current.open({
             path: null,
-            title: t('tab.untitled'),
+            title: t('doc.untitled'),
             content: '',
             dirty: false,
             documentId: docIdRef.current,
@@ -2893,7 +2924,7 @@ export default function App() {
             if (!contentEdited || suppressEditorEventRef.current) return;
             revisionRef.current += 1;
             setDirty(true);
-            tabsRef.current.updateActive({
+            docStateRef.current.updateCurrent({
               ...currentTabPatch(host),
               dirty: true,
               revision: revisionRef.current,
@@ -2955,10 +2986,11 @@ export default function App() {
   const handleNew = useCallback(async () => {
     const host = hostRef.current;
     if (!host) return;
-    syncActiveTabFromEditor();
-    const tab = tabsRef.current.open({
+    // B1（SDI）：非 Tauri 回落路径也保持一窗一文档 —— 清空现有文档（dirty 需确认）
+    if (!guardSingleDocument()) return;
+    const tab = docStateRef.current.open({
       path: null,
-      title: t('tab.untitled'),
+      title: t('doc.untitled'),
       content: '',
       dirty: false,
       documentId: crypto.randomUUID(),
@@ -2968,8 +3000,8 @@ export default function App() {
     });
     refreshTabsState();
     await applyTab(tab);
-    setStatusText(t('msg.newTab'));
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
+    setStatusText(t('msg.untitledCreated'));
+  }, [applyTab, guardSingleDocument, refreshTabsState]);
 
   /** Typora：打开单个文件 → 父文件夹自动加载（清单 2.1 注：无需显式打开文件夹）。
    *  仅在尚未加载任何文件夹时生效（fileTreeRoot 为 null），不打断已打开的项目根。 */
@@ -2985,7 +3017,8 @@ export default function App() {
   const handleOpen = useCallback(async () => {
     const documents = documentsRef.current;
     if (!documents) return;
-    syncActiveTabFromEditor();
+    // B1（SDI）：⌘O 打开文档 = 当前窗口内替换当前文档（脏文档先确认）
+    if (!guardSingleDocument()) return;
     const result = await documents.open();
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
@@ -2993,7 +3026,7 @@ export default function App() {
       }
       return;
     }
-    const tab = tabsRef.current.open({
+    const tab = docStateRef.current.open({
       path: result.value.path,
       content: result.value.content,
       dirty: false,
@@ -3010,9 +3043,9 @@ export default function App() {
     autoLoadParentFolder(result.value.path);
     setStatusText(t('msg.openedPath', { path: result.value.path }));
     recordRecentFile(result.value.path);
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile, autoLoadParentFolder]);
+  }, [applyTab, guardSingleDocument, refreshTabsState, recordRecentFile, autoLoadParentFolder]);
 
-  /** 外部打开（CLI 参数 / Finder「打开方式」odoc）：按路径直接读入 tab，无对话框 */
+  /** 外部打开（CLI 参数 / Finder「打开方式」odoc）：按路径直接读入当前窗口（替换语义），无对话框 */
   const openPathInTab = useCallback(async (path: string) => {
     const documents = documentsRef.current;
     if (!documents) return;
@@ -3024,7 +3057,8 @@ export default function App() {
       await host.ready();
       await host.waitForStylesReady();
     }
-    syncActiveTabFromEditor();
+    // B1（SDI）：odoc/CLI 打开 = 当前窗口替换（脏文档先确认）；Phase 4 提供新窗口模式
+    if (!guardSingleDocument()) return;
     const result = await documents.readPath(path);
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
@@ -3032,7 +3066,7 @@ export default function App() {
       }
       return;
     }
-    const tab = tabsRef.current.open({
+    const tab = docStateRef.current.open({
       path: result.value.path,
       content: result.value.content,
       dirty: false,
@@ -3049,10 +3083,11 @@ export default function App() {
     autoLoadParentFolder(result.value.path);
     setStatusText(t('msg.openedPath', { path: result.value.path }));
     recordRecentFile(result.value.path);
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor, recordRecentFile, autoLoadParentFolder]);
+  }, [applyTab, guardSingleDocument, refreshTabsState, recordRecentFile, autoLoadParentFolder]);
 
   // D2：导入（Typora File→Import）：pandoc 将 docx/odt/rtf/epub/html/tex 等
-  // 转为 Markdown 落盘，并在新标签页打开。二进制输入不经文本读取，直接传路径给 pandoc。
+  // 转为 Markdown 落盘，并经 openPathInTab 在当前窗口打开（B1 SDI：替换语义）。
+  // 二进制输入不经文本读取，直接传路径给 pandoc。
   const handleImportDocument = useCallback(async () => {
     if (!isTauri()) return;
     try {
@@ -3379,7 +3414,7 @@ export default function App() {
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
     setDirty(false);
-    tabsRef.current.updateActive({
+    docStateRef.current.updateCurrent({
       ...currentTabPatch(host),
       path: result.value.path,
       title: result.value.path.split(/[\\/]/).pop() ?? result.value.path,
@@ -3428,7 +3463,7 @@ export default function App() {
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
     setDirty(false);
-    tabsRef.current.updateActive({
+    docStateRef.current.updateCurrent({
       ...currentTabPatch(host),
       path: result.value.path,
       title: result.value.path.split(/[\\/]/).pop() ?? result.value.path,
@@ -3441,35 +3476,11 @@ export default function App() {
     setStatusText(`已另存 ${result.value.path}`);
   }, [currentTabPatch, refreshTabsState, setDirty, watchDocument]);
 
-  const confirmCloseTabs = useCallback((closing: DocumentTab[]): boolean => {
-    const dirtyTabs = closing.filter((tab) => tab.dirty);
-    if (dirtyTabs.length === 0) return true;
-    const names = dirtyTabs.map((tab) => tab.title).join('、');
-    return window.confirm(t('dialog.closeTabsDirty', { names }));
-  }, []);
-
-  /** 保存全部（Typora 文件→保存全部）：active 走 handleSave（含冲突校验），其余按 tab.content 落盘 */
+  /** B1（SDI）：保存全部（Typora 文件→保存全部）—— 单文档窗口下即保存当前文档；
+   *  多窗口场景各窗口分别触发本命令（每窗口各自保存自身文档）。 */
   const handleSaveAll = useCallback(async () => {
-    const documents = documentsRef.current;
-    if (!documents) return;
-    await handleSave(); // active tab 先存（e2e 主路径）
-    const activeId = tabsRef.current.active?.id;
-    for (const tab of tabsRef.current.all) {
-      if (tab.id === activeId || !tab.dirty || tab.path === null) continue;
-      const result = await documents.save(tab.path, tab.content, { encoding: tab.encoding, eol: tab.eol });
-      if (!result.ok) {
-        setStatusText(t('msg.saveFailed', { error: result.error.message }));
-        continue;
-      }
-      tabsRef.current.update(tab.id, {
-        dirty: false,
-        diskState: result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
-          ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
-          : null,
-      });
-    }
-    refreshTabsState();
-  }, [handleSave, refreshTabsState]);
+    await handleSave();
+  }, [handleSave]);
 
   /** 从磁盘重新加载（Typora 文件→从磁盘重新加载）：放弃本地未保存修改，覆盖为磁盘版本 */
   const handleReloadFromDisk = useCallback(async () => {
@@ -3488,60 +3499,60 @@ export default function App() {
       : null;
     await host.open(r.value.content, undefined, true, r.value.eol);
     setDirty(false);
-    tabsRef.current.updateActive({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
+    docStateRef.current.updateCurrent({ ...currentTabPatch(host), content: r.value.content, dirty: false, diskState: diskStateRef.current });
     refreshTabsState();
     setStatusText(t('msg.reloadedDisk'));
     refreshStats(host);
   }, [currentTabPatch, refreshStats, refreshTabsState, setDirty]);
 
-  const ensureOneTab = useCallback(async () => {
-    if (tabsRef.current.all.length > 0) return tabsRef.current.active;
-    const tab = tabsRef.current.open({ path: null, title: t('tab.untitled'), content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: '\n', diskState: null });
+  /** B1（SDI）：窗口内无文档时的兜底 —— 打开空白「未命名」文档。
+   *  仅 dev/浏览器（无真实窗口）在关闭文档后需要；Tauri 下关闭文档 = 关窗。 */
+  const ensureBlankDoc = useCallback(async (): Promise<DocumentTab> => {
+    const current = docStateRef.current.doc;
+    if (current !== null) return current;
+    const tab = docStateRef.current.open({ path: null, title: t('doc.untitled'), content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: '\n', diskState: null });
     refreshTabsState();
     await applyTab(tab);
     return tab;
   }, [applyTab, refreshTabsState]);
 
-  const handleSelectTab = useCallback(async (id: string) => {
-    if (id === activeTabId) return;
-    syncActiveTabFromEditor();
-    const tab = tabsRef.current.setActive(id);
-    refreshTabsState();
-    if (tab) await applyTab(tab);
-  }, [activeTabId, applyTab, refreshTabsState, syncActiveTabFromEditor]);
+  /** B1（SDI）：Tauri 下关闭当前窗口前先「武装」关闭许可 —— 已在前端完成 dirty 确认的
+   *  关闭（⌘W / 删除文档后关窗）需通知 Rust 放行，避免 CloseRequested 二次拦截重复确认。 */
+  const armWindowClose = useCallback(async () => {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const label = getCurrentWindow().label;
+      await invoke('allow_close_window', { label });
+    } catch { /* 非 Tauri / 后端未提供：忽略 */ }
+  }, []);
 
-  /** 标签页循环切换（Typora 窗口→显示下一个/上一个标签页） */
-  const handleCycleTab = useCallback(async (delta: 1 | -1) => {
-    const all = tabsRef.current.all;
-    if (all.length < 2) return;
-    const idx = tabsRef.current.activeIndex;
-    if (idx < 0) return;
-    const next = all[(idx + delta + all.length) % all.length];
-    await handleSelectTab(next.id);
-  }, [handleSelectTab]);
-
-  const handleCloseTab = useCallback(async (id: string) => {
-    syncActiveTabFromEditor();
-    const tab = tabsRef.current.all.find((t) => t.id === id);
-    if (tab === undefined || !confirmCloseTabs([tab])) return;
-    const result = tabsRef.current.close(id);
+  /** B1（SDI）：关闭当前文档 = 关闭当前窗口（Typora ⌘W；mac 真值：File→Close = performClose: 关窗口）。
+   *  dirty → 丢弃确认（confirmCloseDocument）；随后关闭窗口。非 Tauri（dev/浏览器）无窗口可关，
+   *  回落到空白未命名文档（原「关到最后一个回落 ensureOneTab」行为）。
+   *  系统关闭（红绿灯/✕）的 dirty 拦截由 Rust CloseRequested 通道承担（B1 Phase 4）。 */
+  const closeCurrentWindow = useCallback(async () => {
+    syncDocFromEditor();
+    const active = docStateRef.current.doc;
+    if (active === null) return;
+    if (!confirmCloseDocument(active)) return;
+    const svc = windowServiceRef.current;
+    if (isTauri() && svc) { await armWindowClose(); void svc.close(); return; }
+    docStateRef.current.close();
     refreshTabsState();
-    const next = result.active ?? await ensureOneTab();
+    const next = await ensureBlankDoc();
     if (next) await applyTab(next);
-  }, [applyTab, confirmCloseTabs, ensureOneTab, refreshTabsState, syncActiveTabFromEditor]);
+  }, [applyTab, armWindowClose, confirmCloseDocument, ensureBlankDoc, refreshTabsState, syncDocFromEditor]);
 
-  const handleCloseOthers = useCallback(async (anchorId?: string) => {
-    syncActiveTabFromEditor();
-    // P2-2.4：Tab 右键以被右键 tab 为锚点（命令路径不传参 → 保持 active 基准）
-    const anchor = (anchorId !== undefined ? tabsRef.current.all.find((tb) => tb.id === anchorId) : null) ?? tabsRef.current.active;
-    if (anchor === null) return;
-    const closing = tabsRef.current.all.filter((tab) => tab.id !== anchor.id);
-    if (!confirmCloseTabs(closing)) return;
-    tabsRef.current.closeOthers(anchor.id);
-    refreshTabsState();
-    const next = tabsRef.current.active;
-    if (next) await applyTab(next);
-  }, [applyTab, confirmCloseTabs, refreshTabsState, syncActiveTabFromEditor]);
+  /** B1（SDI，D4=A）：系统关闭请求（mac 红绿灯 / Win ✕ 或原生 close）—— Rust
+   *  CloseRequested 拦截后 emit `mellow://window-close-requested` 到此窗口。
+   *  这里对当前文档做 dirty 确认：确认（或干净）→ arm 放行 + 关窗；取消 → 留在窗口。 */
+  const handleSystemCloseRequest = useCallback(async () => {
+    syncDocFromEditor();
+    const doc = docStateRef.current.doc;
+    if (doc !== null && !confirmCloseDocument(doc)) return;
+    const svc = windowServiceRef.current;
+    if (isTauri() && svc) { await armWindowClose(); void svc.close(); }
+  }, [armWindowClose, confirmCloseDocument, syncDocFromEditor]);
 
   /** 移动当前文档到其他文件夹（D1-2：Typora 文件→移到…；tab/watcher/引擎路径基准同步） */
   const handleMoveDocument = useCallback(async () => {
@@ -3566,7 +3577,7 @@ export default function App() {
     if (host) {
       host.setDocumentPath(newPath);
       host.refreshImages();
-      tabsRef.current.updateActive({
+      docStateRef.current.updateCurrent({
         ...currentTabPatch(host),
         path: newPath,
         title: newPath.split(/[\\/]/).pop() ?? newPath,
@@ -3589,7 +3600,7 @@ export default function App() {
     const svc = fileTreeServiceRef.current;
     const path = filePathRef.current;
     if (!svc || path === null) return;
-    const active = tabsRef.current.active;
+    const active = docStateRef.current.doc;
     const dirty = active !== null && active.dirty;
     const message = dirty ? t('dialog.trashConfirmDirty', { path }) : t('dialog.trashConfirm', { path });
     if (!window.confirm(message)) return;
@@ -3599,58 +3610,18 @@ export default function App() {
       return;
     }
     setStatusText(t('msg.trashed'));
-    // 强制关闭当前 tab（文件已删除，不走 dirty 保存确认——保存会重新创建已删文件）
+    // B1（SDI）：文档即窗口 —— 文件已删除（不走 dirty 保存确认，保存会重新创建已删文件），
+    // Tauri 下关闭当前窗口；dev/浏览器回落空白未命名文档。
     if (active !== null) {
-      const result = tabsRef.current.close(active.id);
+      docStateRef.current.close();
       refreshTabsState();
-      const next = result.active ?? await ensureOneTab();
+      const winSvc = windowServiceRef.current;
+      if (isTauri() && winSvc) { await armWindowClose(); void winSvc.close(); return; }
+      const next = await ensureBlankDoc();
       if (next) await applyTab(next);
     }
     await refreshFilesSidebar();
-  }, [applyTab, ensureOneTab, refreshFilesSidebar, refreshTabsState]);
-
-  const handleCloseRight = useCallback(async (anchorId?: string) => {
-    syncActiveTabFromEditor();
-    // P2-2.4：Tab 右键以被右键 tab 为锚点（命令路径不传参 → 保持 active 基准）
-    const anchor = (anchorId !== undefined ? tabsRef.current.all.find((tb) => tb.id === anchorId) : null) ?? tabsRef.current.active;
-    if (anchor === null) return;
-    const index = tabsRef.current.all.findIndex((tb) => tb.id === anchor.id);
-    const closing = tabsRef.current.all.slice(index + 1);
-    if (!confirmCloseTabs(closing)) return;
-    tabsRef.current.closeRight(anchor.id);
-    refreshTabsState();
-  }, [confirmCloseTabs, refreshTabsState, syncActiveTabFromEditor]);
-
-  /** 全部关闭（Typora 文件→全部关闭 ⌥⌘W）：关全部标签后回落到单个未命名标签 */
-  const handleCloseAll = useCallback(async () => {
-    if (tabsRef.current.all.length === 0) return;
-    syncActiveTabFromEditor();
-    if (!confirmCloseTabs(tabsRef.current.all)) return;
-    for (const tab of [...tabsRef.current.all]) tabsRef.current.close(tab.id);
-    refreshTabsState();
-    const next = tabsRef.current.active ?? await ensureOneTab();
-    if (next) await applyTab(next);
-  }, [applyTab, confirmCloseTabs, ensureOneTab, refreshTabsState, syncActiveTabFromEditor]);
-
-  const handleReopenClosed = useCallback(async () => {
-    syncActiveTabFromEditor();
-    const tab = tabsRef.current.reopenClosed();
-    if (tab === null) {
-      setStatusText(t('msg.noReopenTab'));
-      return;
-    }
-    refreshTabsState();
-    await applyTab(tab);
-    setStatusText(`已重新打开 ${tab.title}`);
-  }, [applyTab, refreshTabsState, syncActiveTabFromEditor]);
-
-  const handleDropTab = useCallback((targetId: string, draggedId: string | null) => {
-    if (draggedId === null || draggedId === targetId) return;
-    syncActiveTabFromEditor();
-    const targetIndex = tabsRef.current.all.findIndex((tab) => tab.id === targetId);
-    tabsRef.current.reorder(draggedId, targetIndex);
-    refreshTabsState();
-  }, [refreshTabsState, syncActiveTabFromEditor]);
+  }, [applyTab, armWindowClose, ensureBlankDoc, refreshFilesSidebar, refreshTabsState]);
 
   /** 字号缩放（⇧⌘0 实际大小 / ⇧⌘= 放大 / ⇧⌘- 缩小，Typora 视图菜单对齐）：
    *  读写 editor.fontSize 设置（单一真源）+ live apply；到达 min/max 后静默停。
@@ -3766,9 +3737,6 @@ export default function App() {
       case 'settings.autosave':
         setStatusText(Boolean(value) ? t('msg.autosaveOn') : t('msg.autosaveOff'));
         break;
-      case 'settings.autoHideTabBar':
-        setAutoHideTabBar(Boolean(value));
-        break;
       case 'settings.reopenLast':
         // 下次启动生效（当前会话不受影响）
         setStatusText(Boolean(value) ? t('msg.reopenLastOn') : t('msg.reopenLastOff'));
@@ -3827,6 +3795,18 @@ export default function App() {
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
   }, [openPathWithMode]);
+  // B1（SDI，D4=A）：Rust 侧 CloseRequested 拦截（红绿灯/✕/原生 close）→ 此监听做
+  // dirty 确认。窗口自身发起的关闭（⌘W）已在 closeCurrentWindow 内 arm，不经过此事件。
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void import('@tauri-apps/api/event')
+      .then(({ listen }) => listen('mellow://window-close-requested', () => { void handleSystemCloseRequest(); }))
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .catch(() => { /* 非 Tauri 环境 */ });
+    return () => { cancelled = true; unlisten?.(); };
+  }, [handleSystemCloseRequest]);
   // CoreEditor 位于 iframe 中，编辑事件经 Tauri bridge 回到桌面壳。不能只依赖
   // window keydown：IME、粘贴、拖放和输入法提交都可能绕过该路径。
   useEffect(() => {
@@ -3878,12 +3858,18 @@ export default function App() {
         const list = reg.list().map((e) => `${e.enabled ? '✅' : '⛔'} ${e.name} (${e.id}) v${e.version}${e.setupError !== undefined ? ` [${e.setupError}]` : ''}`).join('；');
         setStatusText(`扩展: ${list === '' ? '无' : list}`);
       } },
-      // P1-1.8：Typora 官方键位 —— 新建 ⌘N/Ctrl+N、新建窗口 ⇧⌘N/Ctrl+Shift+N、新建标签页 ⌘T/Ctrl+Alt+T
-      { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
+      // B1（SDI，Typora 对齐）：新建 ⌘N/Ctrl+N = 新窗口空白文档（Typora 单文档窗口）；
+      // 「新建标签页 ⌘T / Ctrl+Alt+T」随多标签能力移除。file.new 在非 Tauri（dev/浏览器）回落 handleNew。
+      { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
+        if (isTauri()) {
+          void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window')).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
+        } else {
+          void handleNew();
+        }
+      } },
       { id: 'file.newWindow', localizedTitle: { zh: '新建窗口', en: 'New Window' }, category: 'file', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => {
         void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window')).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
       } },
-      { id: 'file.newTab', localizedTitle: { zh: '新建标签页', en: 'New Tab' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleNew() },
       // P1-1.9：「在文档列表中显示 / 在文件树中显示」（Typora 文件菜单，§7.2 第 11/12 项）
       { id: 'file.revealInFileList', localizedTitle: { zh: '在文档列表中显示', en: 'Reveal in File List' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files', 'list') },
       { id: 'file.revealInFileTree', localizedTitle: { zh: '在文件树中显示', en: 'Reveal in File Tree' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files', 'tree') },
@@ -3907,17 +3893,14 @@ export default function App() {
           await revealItemInDir(p).catch(() => undefined);
         }).catch(() => undefined);
       } },
-      { id: 'tabs.close', localizedTitle: { zh: '关闭标签页', en: 'Close Tab' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => { const active = tabsRef.current.active; if (active) void handleCloseTab(active.id); } },
-      { id: 'tabs.closeOthers', localizedTitle: { zh: '关闭其他', en: 'Close Others' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseOthers() },
-      { id: 'tabs.closeRight', localizedTitle: { zh: '关闭右侧', en: 'Close Right' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCloseRight() },
-      { id: 'tabs.reopenClosed', localizedTitle: { zh: '重开关闭', en: 'Reopen Closed' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleReopenClosed() },
+      // B1（SDI）：⌘W = 关闭当前文档 = 关闭当前窗口（macOS Typora 真值：File→Close=performClose:）。
+      // tabs.closeOthers/closeRight/reopenClosed/next/prev/showAll 随多标签能力一并移除。
+      { id: 'file.closeWindow', localizedTitle: { zh: '关闭窗口', en: 'Close Window' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void closeCurrentWindow() },
       // B2 文件菜单补全（Typora 对齐：全部关闭 / 保存全部 / 从磁盘重新加载）
-      { id: 'file.closeAll', localizedTitle: { zh: '全部关闭', en: 'Close All' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.all.length > 0, execute: () => void handleCloseAll() },
+      // B1：file.closeAll 语义=关闭全部窗口（mac Typora 无此菜单项，见 menuSchema 平台条件化）。
+      { id: 'file.closeAll', localizedTitle: { zh: '全部关闭', en: 'Close All' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void closeCurrentWindow() },
       { id: 'file.saveAll', localizedTitle: { zh: '保存全部打开的文件…', en: 'Save All Open Files…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAll() },
       { id: 'file.reloadFromDisk', localizedTitle: { zh: '从磁盘重新加载', en: 'Reload from Disk' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleReloadFromDisk() },
-      // B2 窗口菜单补全（Typora 对齐：显示下一个/上一个标签页）
-      { id: 'tabs.next', localizedTitle: { zh: '显示下一个标签页', en: 'Show Next Tab' }, category: 'window', shortcut: { mac: 'Ctrl+Tab', winLinux: 'Ctrl+Tab' }, context: { scope: 'global' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCycleTab(1) },
-      { id: 'tabs.prev', localizedTitle: { zh: '显示上一个标签页', en: 'Show Previous Tab' }, category: 'window', shortcut: { mac: 'Ctrl+Shift+Tab', winLinux: 'Ctrl+Shift+Tab' }, context: { scope: 'global' }, enabled: () => tabsRef.current.all.length > 1, execute: () => void handleCycleTab(-1) },
       { id: 'workspace.openFolder', localizedTitle: { zh: '打开文件夹…', en: 'Open Folder…' }, category: 'workspace', context: { scope: 'global' }, enabled: always, execute: () => void chooseFileTreeRoot() },
       { id: 'workspace.refresh', localizedTitle: { zh: '刷新文件', en: 'Refresh Files' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void refreshFilesSidebar() },
       { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
@@ -3943,7 +3926,7 @@ export default function App() {
       } },
       { id: 'view.toolbar.on', localizedTitle: { zh: '格式工具栏：启用', en: 'Format Toolbar: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(true) },
       { id: 'view.toolbar.off', localizedTitle: { zh: '格式工具栏：禁用', en: 'Format Toolbar: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => selectionToolbarEnabled, execute: () => setSelectionToolbarEnabled(false) },
-      { id: 'reader.open', localizedTitle: { zh: '用 Reader 打开', en: 'Open in Reader' }, category: 'view', context: { scope: 'document' }, enabled: () => !readerOpen && tabsRef.current.active !== null, execute: () => openReader() },
+      { id: 'reader.open', localizedTitle: { zh: '用 Reader 打开', en: 'Open in Reader' }, category: 'view', context: { scope: 'document' }, enabled: () => !readerOpen && docStateRef.current.doc !== null, execute: () => openReader() },
       { id: 'reader.openInEditor', localizedTitle: { zh: '用编辑器打开', en: 'Open in Editor' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => closeReader() },
       { id: 'reader.zoomIn', localizedTitle: { zh: 'Reader 放大', en: 'Reader Zoom In' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(readerZoom + 0.1) },
       { id: 'reader.zoomOut', localizedTitle: { zh: 'Reader 缩小', en: 'Reader Zoom Out' }, category: 'view', context: { scope: 'document' }, enabled: () => readerOpen, execute: () => setReaderZoom(readerZoom - 0.1) },
@@ -3952,7 +3935,7 @@ export default function App() {
       // RC F2：打印入口（对齐 Typora Cmd+P；golden journey #18）
       { id: 'file.print', localizedTitle: { zh: '打印…', en: 'Print…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('print_window').catch(() => window.print()); } },
       { id: 'file.openWith', localizedTitle: { zh: '打开方式…', en: 'Open With…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => openOpenWith() },
-      { id: 'file.info', localizedTitle: { zh: '文件信息', en: 'File Info' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => openFileInfo() },
+      { id: 'file.info', localizedTitle: { zh: '文件信息', en: 'File Info' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => openFileInfo() },
       { id: 'file.openUserCss', localizedTitle: { zh: '打开用户 CSS（appData/user.css）', en: 'Open User CSS (appData/user.css)' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
         if (!isTauri()) return;
         void import('@tauri-apps/api/path').then(async ({ appDataDir, join }) => {
@@ -3963,25 +3946,25 @@ export default function App() {
         }).catch(() => undefined);
       } },
       // RC F6：导出 HTML（PRD §73）；D2 增无样式 HTML（Typora 导出子菜单对齐）
-      { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtml() },
-      { id: 'export.htmlPlain', localizedTitle: { zh: '导出 HTML（无样式）…', en: 'Export HTML (without styles)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportHtmlPlain() },
+      { id: 'export.html', localizedTitle: { zh: '导出 HTML…', en: 'Export HTML…' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportHtml() },
+      { id: 'export.htmlPlain', localizedTitle: { zh: '导出 HTML（无样式）…', en: 'Export HTML (without styles)…' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportHtmlPlain() },
       // D2：pandoc 导出格式全量（Typora 导出子菜单；表定义于 handleExportPandoc 侧）
       ...PANDOC_EXPORT_COMMANDS.map(({ id, format, ext, zh, en }) => ({
         id,
         localizedTitle: { zh, en },
         category: 'file',
         context: { scope: 'document' as const },
-        enabled: () => tabsRef.current.active !== null,
+        enabled: () => docStateRef.current.doc !== null,
         execute: () => void handleExportPandoc(format, ext),
       })),
       // D2：使用上一次设置导出（Typora ⌃E）
-      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Last Settings' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportRepeat() },
+      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Last Settings' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportRepeat() },
       // D2：导入（Typora File→Import；pandoc → Markdown 新标签页）
       { id: 'file.import', localizedTitle: { zh: '导入…', en: 'Import…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleImportDocument() },
       // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
-      { id: 'export.image', localizedTitle: { zh: '导出图片（PNG/JPEG）…', en: 'Export Image (PNG/JPEG)…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportImage() },
+      { id: 'export.image', localizedTitle: { zh: '导出图片（PNG/JPEG）…', en: 'Export Image (PNG/JPEG)…' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportImage() },
       // RC F1：PDF 导出（golden journey #19）
-      { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, enabled: () => tabsRef.current.active !== null, execute: () => void handleExportPdf() },
+      { id: 'export.pdf', localizedTitle: { zh: '导出 PDF…', en: 'Export PDF…' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportPdf() },
       { id: 'image.moveAll', localizedTitle: { zh: '图片：移动全部到 asset 目录', en: 'Images: Move All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('moveAll') },
       { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
       { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
@@ -4200,8 +4183,7 @@ export default function App() {
       { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('outline') },
       { id: 'view.sidebar.fileList', localizedTitle: { zh: '文件列表', en: 'File List' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files', 'list') },
       { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files', 'tree') },
-      // ⇧⌘\ 显示所有标签页（Typora 视图→显示所有标签页 / Tab Overview）
-      { id: 'tabs.showAll', localizedTitle: { zh: '显示所有标签页', en: 'Show All Tabs' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => setTabOverviewOpen((v) => !v) },
+      // B1（SDI）：tabs.showAll（⇧⌘\ Tab Overview）随多标签能力移除
       // DevTools（仅 debug 构建可用；release 返回 Err → toast 提示）
       { id: 'view.devtools', localizedTitle: { zh: '开发者工具', en: 'Developer Tools' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('open_devtools').catch(() => setToast({ message: t('view.devtools.unavailable') })); } },
       { id: 'help.quickStart', localizedTitle: { zh: '快速上手', en: 'Quick Start' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_QUICK_START); } },
@@ -4249,7 +4231,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, handleCloseOthers, handleCloseRight, handleCloseTab, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, toggleEditorToolbar, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, closeCurrentWindow, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, toggleEditorToolbar, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
@@ -4302,16 +4284,6 @@ export default function App() {
       delete (window as unknown as { __MELLOW_WHEEL_API__?: unknown }).__MELLOW_WHEEL_API__;
     };
   }, [adjustFontSize]);
-
-  // Tab Overview Esc 关闭（无输入框聚焦，需 window 级监听）
-  useEffect(() => {
-    if (!tabOverviewOpen) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setTabOverviewOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [tabOverviewOpen]);
 
   // Engine iframe → host：Slash 行首触发通知
   useEffect(() => {
@@ -4478,6 +4450,8 @@ export default function App() {
     const host = hostRef.current;
     const recovery = recoveryRef.current;
     if (!host || !recovery) return;
+    // B1（SDI）：恢复 = 用快照替换当前窗口文档；当前 dirty 时先确认丢弃
+    if (!guardSingleDocument()) return;
     const result = await recovery.recover(entry.documentId);
     if (!result.ok || result.value === null) {
       setStatusText(t('msg.recoverFailed', { error: result.ok ? t('msg.snapshotMissing') : result.error.message }));
@@ -4492,17 +4466,22 @@ export default function App() {
     diskStateRef.current = null; // 磁盘状态未知：跳过 validate（恢复场景）
     await host.open(snapshot.content, undefined, true, snapshot.eol);
     setDirty(true);
+    const host2 = hostRef.current;
+    if (host2) docStateRef.current.updateCurrent({ ...currentTabPatch(host2), dirty: true });
+    refreshTabsState();
     setStatusText(t('msg.recovered', { path: snapshot.path ?? t('msg.unsavedDoc'), rev: snapshot.revision }));
     // 恢复后清理快照（用户已处理）
     await recovery.onSaved(entry.documentId);
     setRecoveryEntries((prev) => prev.filter((e) => e.documentId !== entry.documentId));
     refreshStats(host);
-  }, [refreshStats]);
+  }, [currentTabPatch, guardSingleDocument, refreshStats, refreshTabsState]);
 
   const handleCompare = useCallback(async (entry: RecoveryEntry) => {
     const host = hostRef.current;
     const recovery = recoveryRef.current;
     if (!host || !recovery) return;
+    // B1（SDI）：比较 = 加载快照到当前窗口（覆盖当前内容前同样做 dirty 确认）
+    if (!guardSingleDocument()) return;
     const result = await recovery.recover(entry.documentId);
     if (!result.ok || result.value === null) {
       setStatusText(t('msg.readSnapshotFailed', { error: result.ok ? t('msg.snapshotMissing') : result.error.message }));
@@ -4517,9 +4496,12 @@ export default function App() {
     diskStateRef.current = null;
     await host.open(snapshot.content, undefined, true, snapshot.eol);
     setDirty(true);
+    const host2 = hostRef.current;
+    if (host2) docStateRef.current.updateCurrent({ ...currentTabPatch(host2), dirty: true });
+    refreshTabsState();
     setStatusText(t('msg.compareSnapshot', { path: snapshot.path ?? t('msg.unsavedDoc') }));
     refreshStats(host);
-  }, [refreshStats]);
+  }, [currentTabPatch, guardSingleDocument, refreshStats, refreshTabsState]);
 
   const handleIgnore = useCallback(async (entry: RecoveryEntry) => {
     const recovery = recoveryRef.current;
@@ -4558,29 +4540,6 @@ export default function App() {
   return (
     <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
       <header className="titlebar" data-tauri-drag-region>
-        {(tabs.length > 1 || !autoHideTabBar) && <Tabbar
-          tabs={tabs}
-          activeTabId={activeTabId}
-          t={t}
-          onSelect={(id) => void handleSelectTab(id)}
-          onClose={(id) => void handleCloseTab(id)}
-          onDropTab={handleDropTab}
-          onNewTab={() => void dispatchCommand('file.new', 'menu')}
-          onTabContextMenu={(tabId, x, y) => {
-            // P2-2.4：Tab 右键菜单 —— 关闭（锚点 tab）/ 关闭其他 / 关闭右侧（锚点）/ 重新打开。
-            // 关闭其他/右侧需锚点参数，故直接调 handle*（带 anchor）而非无参 dispatchCommand。
-            const anchorIndex = tabs.findIndex((tb) => tb.id === tabId);
-            setContextMenu({
-              x, y,
-              items: [
-                { label: t('tab.ctx.close'), onClick: () => void handleCloseTab(tabId) },
-                { label: t('tab.ctx.closeOthers'), enabled: tabs.length > 1, onClick: () => void handleCloseOthers(tabId) },
-                { label: t('tab.ctx.closeRight'), enabled: anchorIndex !== -1 && anchorIndex < tabs.length - 1, onClick: () => void handleCloseRight(tabId) },
-                { label: t('tab.ctx.reopenClosed'), onClick: () => void handleReopenClosed() },
-              ],
-            });
-          }}
-        />}
         <button
           className="titlebar-palette"
           type="button"
@@ -4898,28 +4857,6 @@ export default function App() {
               ))}
               {quickOpenResults.length === 0 && <div className="quick-open-empty">{t('quickopen.empty')}</div>}
             </div>
-          </div>
-        </div>
-      )}
-      {tabOverviewOpen && (
-        <div className="quick-open-backdrop" onMouseDown={() => setTabOverviewOpen(false)}>
-          <div className="tab-overview-panel" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="tab-overview-grid" role="listbox" aria-label={t('tabs.overview.title')}>
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={`tab-overview-card ${tab.id === activeTabId ? 'active' : ''}`}
-                  role="option"
-                  aria-selected={tab.id === activeTabId}
-                  onClick={() => { setTabOverviewOpen(false); void handleSelectTab(tab.id); }}
-                >
-                  <span className="tab-overview-title">{tab.title ?? t('tab.untitled')}{tab.dirty ? ' •' : ''}</span>
-                  <span className="tab-overview-path">{tab.path}</span>
-                </button>
-              ))}
-            </div>
-            <div className="quick-open-meta"><span>{t('tabs.overview.hint')}</span></div>
           </div>
         </div>
       )}

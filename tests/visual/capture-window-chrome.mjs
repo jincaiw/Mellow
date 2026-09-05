@@ -58,7 +58,8 @@ async function main() {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: 'domcontentloaded' });
-    // 等编辑器 iframe（webModules.core 可用）后新建 tab，让 titlebar/tabbar 完整呈现
+    // B1（SDI）：单文档窗口采样（无 Tabbar）。等编辑器 iframe（webModules.core）
+    // 就绪后即截图 —— 不再新建 tab（浏览器回落 file.new = 替换当前文档，无 UI 增量）。
     const deadline = Date.now() + 20000;
     while (Date.now() < deadline) {
       const ready = await page.evaluate(() => {
@@ -68,7 +69,6 @@ async function main() {
       if (ready) break;
       await new Promise((r) => setTimeout(r, 300));
     }
-    await page.evaluate(() => { void window.__MELLOW_COMMANDS__?.dispatch('file.new'); });
     await page.waitForTimeout(600);
 
     const platformClass = await page.evaluate(() => document.querySelector('.shell')?.className ?? '');

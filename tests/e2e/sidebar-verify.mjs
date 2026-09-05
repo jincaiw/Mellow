@@ -80,19 +80,19 @@ async function main() {
 
     check('initial: sidebar closed', (await sidebarState()).visible === false);
 
-    // P2 默认桌面壳：文档优先。状态栏、Sidebar 与单标签 Tab Bar 都不可常驻；
-    // 这些只验证首次默认，不影响用户在设置中显式开启后的持久化行为。
+    // P2 默认桌面壳：文档优先。状态栏、Sidebar 与 Tabbar 都不可常驻；
+    // B1（SDI）：.tabbar 已从 DOM 删除 —— 断言恒为 null（不依赖任何设置项）；
+    // 其余只验证首次默认，不影响用户在设置中显式开启后的持久化行为。
     const desktopDefaults = await page.evaluate(() => ({
       sidebar: !!document.querySelector('aside.file-tree'),
       statusBar: !!document.querySelector('.status-bar'),
       tabBar: !!document.querySelector('.tabbar'),
-      autoHideTabBar: localStorage.getItem('mellow.editor.autoHideTabBar'),
       statusBarVisible: localStorage.getItem('mellow.statusbar.visible'),
     }));
     check(
-      'document-first defaults hide sidebar, status bar, and single-tab bar',
+      'document-first defaults hide sidebar, status bar, and tab bar (B1 SDI: .tabbar absent)',
       !desktopDefaults.sidebar && !desktopDefaults.statusBar && !desktopDefaults.tabBar
-        && desktopDefaults.autoHideTabBar !== '0' && desktopDefaults.statusBarVisible !== '1',
+        && desktopDefaults.statusBarVisible !== '1',
       JSON.stringify(desktopDefaults),
     );
 

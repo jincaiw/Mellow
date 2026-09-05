@@ -1,13 +1,12 @@
 /**
- * Shell Widget 契约护栏（P2-2.3 Tab overflow + P2-2.4 Tab 右键菜单 + P2-2.5 模式状态指示）
+ * Shell Widget 契约护栏（B1 修订：Tabbar 移除，保留 P2-2.5 模式状态指示）
  *
- * P2-2.3 —— Tab 溢出行为（验收：20 Tab 不破版）：
- *   ① active 变化自动 scrollIntoView（滚动到可视区）；
- *   ② tab 数量达阈值进入 compact（缩窄），溢出由 overflow-x 滚动兜底。
- *
- * P2-2.4 —— Tab 右键菜单：关闭 / 关闭其他 / 关闭右侧 / 重新打开；
- *   关闭其他/右侧以被右键 tab 为锚点（handle* 可选 anchorId 参数），
- *   zh/en 文案必须齐备。
+ * B1（SDI）—— Tabbar / 多标签 UI 全量移除（typora-parity-b1-sdi-plan.md）：
+ *   ① desktop-ui 不再存在 Tabbar 组件与导出；
+ *   ② App.tsx 不再渲染 Tabbar / overview / 读取 autoHideTabBar；
+ *   ③ styles.css 无 .tabbar / .tab-overview 残留；
+ *   ④ 已废弃命令 id（tabs.close/closeOthers/closeRight/prev/next/showAll/reopenClosed
+ *      与 file.newTab）不出现在 schema 且 Registry 无残留。
  *
  * P2-2.5 —— 模式状态指示（不常驻，轻量，验收：可见且低干扰）：
  *   ① 仅非默认模式时渲染 badge（默认 off/false 时 DOM 零输出，即「不常驻」）；
@@ -15,7 +14,7 @@
  *   ③ Reader（自带 bar）与 Slash（瞬态面板、默认开启）不做常驻指示；
  *   ④ CSS 低干扰（12px、半透明 opacity、pointer-events 穿透容器）。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -23,44 +22,31 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const errors = [];
 const fail = (message) => errors.push(message);
 
-const tabbarSource = read('packages/desktop-ui/src/Tabbar.tsx');
 const stylesSource = read('apps/desktop/src/styles.css');
 const appSource = read('apps/desktop/src/App.tsx');
 const messagesSource = read('packages/i18n/src/messages.ts');
+const desktopUiIndex = read('packages/desktop-ui/src/index.ts');
 
-// ── P2-2.3：Tab overflow ─────────────────────────────────────────────────
-if (!/scrollIntoView\(\{ block: 'nearest', inline: 'nearest' \}\)/.test(tabbarSource)) {
-  fail('Tabbar 缺少 active tab scrollIntoView（block/inline nearest，P2-2.3）');
+// ── B1（SDI）：Tabbar / 多标签 UI 移除契约 ───────────────────────────────
+if (existsSync(resolve(root, 'packages/desktop-ui/src/Tabbar.tsx'))) {
+  fail('desktop-ui/src/Tabbar.tsx 不得存在（B1：Tabbar 随多标签能力移除）');
 }
-if (!/\[activeTabId, tabs\.length\]/.test(tabbarSource)) {
-  fail('Tabbar 滚动 effect 依赖缺失（[activeTabId, tabs.length]），关闭/新建后不会滚动到 active');
+if (/export \{ Tabbar \}|export type \{ TabbarProps \}/.test(desktopUiIndex)) {
+  fail('desktop-ui index.ts 不得导出 Tabbar/TabbarProps（B1）');
 }
-if (!/const COMPACT_THRESHOLD = \d+;/.test(tabbarSource)) {
-  fail('Tabbar 缺少 COMPACT_THRESHOLD 常量（compact 档位，P2-2.3）');
+if (/\bTabbar\b|setTabOverviewOpen|tabOverviewOpen|tab-overview/.test(appSource)) {
+  fail('App.tsx 不得残留 Tabbar / Tab Overview 渲染或状态（B1）');
 }
-const compactBlock = /\.tabbar\.compact \.tab \{[^}]*\}/.exec(stylesSource)?.[0];
-if (!compactBlock || !/min-width: 56px/.test(compactBlock) || !/max-width: 140px/.test(compactBlock)) {
-  fail('styles.css 缺少 .tabbar.compact .tab 缩窄规则（min 56px / max 140px，P2-2.3）');
+if (/mellow\.editor\.autoHideTabBar|setAutoHideTabBar|autoHideTabBar/.test(appSource)) {
+  fail('App.tsx 不得残留 autoHideTabBar（设置项已移除，B1）');
 }
-
-// ── P2-2.4：Tab 右键菜单 ─────────────────────────────────────────────────
-if (!/onTabContextMenu\?: \(tabId: string, x: number, y: number\) => void/.test(tabbarSource)) {
-  fail('Tabbar 缺少 onTabContextMenu prop（P2-2.4）');
+for (const sel of ['.tabbar', '.tab-overview-panel', '.tab-overview-card', '.tab-new']) {
+  if (stylesSource.includes(sel)) fail(`styles.css 不得残留 ${sel} 规则（B1）`);
 }
-if (!/onContextMenu=\{onTabContextMenu === undefined[\s\S]*?preventDefault\(\)/.test(tabbarSource)) {
-  fail('Tabbar tab 元素未接 onContextMenu preventDefault（P2-2.4）');
-}
-for (const key of ['tab.ctx.close', 'tab.ctx.closeOthers', 'tab.ctx.closeRight', 'tab.ctx.reopenClosed']) {
-  let count = 0;
-  for (const [, value] of messagesSource.matchAll(new RegExp(`'${key}': '([^']*)'`, 'g'))) {
-    if (value.trim() !== '') count += 1;
-  }
-  if (count < 2) fail(`Tab 右键文案 ${key} 需 zh/en 双语且非空（实际 ${count} 组）`);
-  if (!appSource.includes(`t('${key}')`)) fail(`App.tsx Tab 右键菜单缺少条目 ${key}`);
-}
-if (!/const handleCloseOthers = useCallback\(async \(anchorId\?: string\)/.test(appSource) ||
-    !/const handleCloseRight = useCallback\(async \(anchorId\?: string\)/.test(appSource)) {
-  fail('handleCloseOthers/handleCloseRight 需支持可选 anchorId 锚点参数（P2-2.4 右键以被右键 tab 为基准）');
+// 已废弃命令 id：schema 不应再引用（App Registry 残留由 verify-menu-contract 的
+// schema→registry 覆盖检查兜底，这里只做正面的 DOM/组件级反残留）
+for (const key of ['tab.ctx.close', 'tabbar.label', 'tabs.overview.title', 'settings.editor.autoHideTabBar']) {
+  if (messagesSource.includes(`'${key}'`)) fail(`i18n 不得残留已废弃键 ${key}（B1）`);
 }
 
 // ── P2-2.5：模式状态指示（不常驻，轻量）──────────────────────────────────
@@ -105,9 +91,15 @@ if (!/\.mode-indicator:hover \{[^}]*\}/.test(stylesSource)) {
 }
 
 // ── drift canary：护栏必须能抓住契约漂移（防「永远绿」假护栏）─────────────
-const driftedTabbar = tabbarSource.replace("scrollIntoView({ block: 'nearest', inline: 'nearest' })", 'scrollIntoView()');
-if (/scrollIntoView\(\{ block: 'nearest', inline: 'nearest' \}\)/.test(driftedTabbar)) {
-  fail('Tab overflow 护栏自检失败：无法模拟 scrollIntoView 漂移，护栏已失效');
+// B1 canary：注入「Tabbar 复活」漂移（App 引用组件 + overview 状态复活），
+// 上述反残留断言（第 30–45 行）必须能命中；同时当前干净的 App.tsx 不得误报。
+const b1Detector = (s) => /\bTabbar\b|setTabOverviewOpen|tabOverviewOpen|tab-overview/.test(s);
+const revivedApp = appSource.replace(
+  'const guardSingleDocument',
+  "import { Tabbar } from '../../../packages/desktop-ui/src';\nconst [tabOverviewOpen, setTabOverviewOpen] = useState(false);\nconst guardSingleDocument",
+);
+if (b1Detector(appSource) || !b1Detector(revivedApp)) {
+  fail('B1 反残留护栏自检失败：无法模拟 Tabbar/overview 复活漂移，护栏已失效');
 }
 // P2-2.5 canary：模拟「常驻化」漂移（条件渲染退化为 true），条件渲染断言必须失效
 const driftedAppForMode = appSource.replace("(focusMode !== 'off' || typewriterEnabled) && (", "(true) && (");
@@ -121,4 +113,4 @@ if (errors.length > 0) {
   throw new Error(`Shell widget contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Shell widgets: tab overflow scroll-to-active + compact armed; tab context menu (close/others/right/reopen) bilingual with anchor semantics; mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS');
+console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS');

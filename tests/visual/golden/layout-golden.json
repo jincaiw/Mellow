@@ -5,7 +5,7 @@
       "h": 600
     },
     "titlebarH": 36,
-    "tabbarH": 35,
+    "tabbarAbsent": true,
     "editorContainer": {
       "x": 0,
       "y": 36,
@@ -41,7 +41,7 @@
       "h": 800
     },
     "titlebarH": 36,
-    "tabbarH": 35,
+    "tabbarAbsent": true,
     "editorContainer": {
       "x": 0,
       "y": 36,
@@ -77,7 +77,7 @@
       "h": 900
     },
     "titlebarH": 36,
-    "tabbarH": 35,
+    "tabbarAbsent": true,
     "editorContainer": {
       "x": 0,
       "y": 36,
@@ -113,7 +113,7 @@
       "h": 800
     },
     "titlebarH": 36,
-    "tabbarH": 35,
+    "tabbarAbsent": true,
     "editorContainer": {
       "x": 0,
       "y": 36,
@@ -149,7 +149,7 @@
       "h": 600
     },
     "titlebarH": 36,
-    "tabbarH": 35,
+    "tabbarAbsent": true,
     "editorContainer": {
       "x": 0,
       "y": 36,
@@ -185,7 +185,7 @@
       "h": 900
     },
     "titlebarH": 36,
-    "tabbarH": 35,
+    "tabbarAbsent": true,
     "editorContainer": {
       "x": 0,
       "y": 36,
