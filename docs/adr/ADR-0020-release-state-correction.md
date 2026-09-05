@@ -28,3 +28,10 @@
 - `docs/qualification/v1.0-final-release-review-2026-08-16.md`
 - ADR-0019（Runtime 最终决策，§3 真机回填前置）
 - PRD §133（P0 范围）、§131/§132（UX Score / 任务效率 Gate）
+
+## 2026-09-05 更新：v1.4.4 转正为正式发布（用户裁决）
+
+- 用户在 GitHub CI（main @ `458857f` CI success + Release Packaging @ v1.4.4 success，三平台 15 资产）全绿后，明确指示"通过 github ci 后，正式发布"。
+- 执行：`gh release edit v1.4.4 --latest=true --prerelease=false`，`releases/latest` 现指向 `v1.4.4`；Release Notes 改写为正式版表述。
+- 残余真机 Gate（Windows 标题栏/IME 矩阵、macOS 30 计时任务 + UX Score、PicGo 真链、D8 runner）转为**发布后跟踪项**，证据回填后如有缺陷按常规 patch 版本修复，不再阻塞发布状态。
+- 本更新为用户裁决优先（同 D10 先例），后续版本发布默认沿用"CI 绿即正式发布"流程。
