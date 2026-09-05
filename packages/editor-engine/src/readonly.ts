@@ -23,6 +23,11 @@ function resolveCm(): CmRuntime {
   return { EditorView: view.EditorView, ViewPlugin: view.ViewPlugin, Compartment: state.Compartment, EditorState: state.EditorState };
 }
 
+/** 只读态 dom 属性（class 经 CM editorAttributes facet 管理，CM 确定性合并主题类名） */
+function readonlyAttrs(readonly: boolean): Record<string, string> {
+  return readonly ? { class: 'mellow-readonly' } : {};
+}
+
 type ReadonlyView = {
   dispatch: (t: { effects: unknown }) => void;
   dom: HTMLElement;
@@ -49,12 +54,12 @@ export function buildReadonlyExtension(): Extension {
         effects: comp.reconfigure([
           cm.EditorView.editable.of(!readonly),
           cm.EditorState.readOnly.of(readonly) as unknown as Extension,
+          cm.EditorView.editorAttributes.of(readonlyAttrs(readonly)),
         ]),
       });
     } catch {
       // 视图已销毁等场景：跳过（单视图失败不阻断其余视图）
     }
-    view.dom.classList.toggle('mellow-readonly', readonly);
   };
   reconfigureAll = (): void => {
     for (const view of trackedViews) apply(view, readonlyMode);
@@ -65,16 +70,8 @@ export function buildReadonlyExtension(): Extension {
       constructor(readonly view: import('@codemirror/view').EditorView) {
         trackedViews.add(view as unknown as ReadonlyView);
         // 构造期禁止 dispatch（CM update 进行中，reconfigure 会抛错破坏视图初始化）；
-        // editable 初始值已按 readonlyMode 构建。视觉 class 必须在 CM 完成主题类名
-        // 应用之后写（requestMeasure.write 恰在 update 收尾执行），否则会被抹掉；
-        // setReadonlyMode 的事务路径由 update() 同步。
-        view.requestMeasure({
-          read: () => 0,
-          write: () => { view.dom.classList.toggle('mellow-readonly', readonlyMode); },
-        });
-      }
-      update(): void {
-        this.view.dom.classList.toggle('mellow-readonly', readonlyMode);
+        // editable / .mellow-readonly class 的初始值已按 readonlyMode 构建（editorAttributes
+        // 由 CM 在创建时确定性合并进 dom class，不会被主题类名应用抹掉）。
       }
       destroy(): void {
         trackedViews.delete(this.view as unknown as ReadonlyView);
@@ -85,7 +82,15 @@ export function buildReadonlyExtension(): Extension {
     '&.mellow-readonly .cm-content': { cursor: 'default' },
     '&.mellow-readonly .cm-cursor': { display: 'none' },
   });
-  return [comp.of([cm.EditorView.editable.of(!readonlyMode), cm.EditorState.readOnly.of(readonlyMode) as unknown as Extension]), plugin, theme];
+  return [
+    comp.of([
+      cm.EditorView.editable.of(!readonlyMode),
+      cm.EditorState.readOnly.of(readonlyMode) as unknown as Extension,
+      cm.EditorView.editorAttributes.of(readonlyAttrs(readonlyMode)),
+    ]),
+    plugin,
+    theme,
+  ];
 }
 
 /** 切换只读（对全部已跟踪视图重配置） */
