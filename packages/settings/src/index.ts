@@ -84,6 +84,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'ui-monospace', labelKey: 'settings.fontFamily.mono' },
         ], applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineNumbers', labelKey: 'settings.editor.lineNumbers', type: 'toggle', storageKey: 'mellow.editor.lineNumbers', defaultValue: false, applyCommand: 'settings.editorConfig' },
+      // E4（§5.1 合同兑现）：Source 模式行号独立开关（Typora 源码模式默认显示行号）
+      { id: 'editor.sourceLineNumbers', labelKey: 'settings.editor.sourceLineNumbers', type: 'toggle', storageKey: 'mellow.editor.sourceLineNumbers', defaultValue: true, applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineWrapping', labelKey: 'settings.editor.lineWrapping', type: 'toggle', storageKey: 'mellow.editor.lineWrapping', defaultValue: true, applyCommand: 'settings.editorConfig' },
       // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },

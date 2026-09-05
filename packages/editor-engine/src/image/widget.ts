@@ -159,7 +159,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       this.container.textContent = '';
       // 悬停操作条（宿主注入 handler 时显示；spec §6 单图操作入口，各分支均保留）
       const appendActions = (): void => {
-        const bar = buildActionsBar(this.spec);
+        const bar = buildActionsBar(this.spec, () => this.container?.querySelector('img') ?? null);
         if (bar !== null) {
           this.container?.appendChild(bar);
         }
@@ -270,8 +270,12 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     return el;
   }
 
-  /** 悬停操作条（spec §6 单图操作；宿主注入 handler 时显示） */
-  function buildActionsBar(spec: ImageSpec): HTMLElement | null {
+  /**
+   * 悬停操作条（spec §6 单图操作；宿主注入 handler 时显示）。
+   * E2（Typora 对标）：追加尺寸徽标（渲染尺寸 + 缩放比例）与画布内尺寸编辑入口
+   * （复用右键 setSize 管线，=WxH 后缀语法）。
+   */
+  function buildActionsBar(spec: ImageSpec, getImg: () => HTMLImageElement | null): HTMLElement | null {
     const handler = getActionsHandler();
     if (handler === null) {
       return null;
@@ -279,11 +283,13 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     const remote = isRemoteSrc(spec.src);
     const items: Array<{ action: ImageWidgetAction; label: string; title: string }> = remote
       ? [
+          { action: 'setSize', label: '尺寸', title: '设置显示尺寸（宽×高）' },
           { action: 'downloadRemote', label: '下载', title: '下载到本地 asset 目录并更新引用' },
           { action: 'open', label: '打开', title: '在浏览器中打开' },
           { action: 'copyPath', label: '复制路径', title: '复制图片 URL' },
         ]
       : [
+          { action: 'setSize', label: '尺寸', title: '设置显示尺寸（宽×高）' },
           { action: 'reveal', label: '定位', title: '在文件管理器中定位' },
           { action: 'open', label: '打开', title: '用系统默认应用打开' },
           { action: 'rename', label: '重命名', title: '重命名文件并更新引用' },
@@ -293,6 +299,25 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
         ];
     const bar = document.createElement('span');
     bar.className = IMG_ACTIONS_CLASS;
+    // E2：尺寸徽标（img 加载完成后填充：渲染宽×高 + 非原始尺寸时的缩放百分比）
+    const badge = document.createElement('span');
+    badge.className = 'mellow-md-image-size-badge';
+    badge.style.display = 'none';
+    const updateBadge = (): void => {
+      const img = getImg();
+      if (img === null || !img.complete || img.naturalWidth === 0) {
+        return;
+      }
+      const w = Number.parseFloat(img.style.width) || img.naturalWidth;
+      const h = Number.parseFloat(img.style.height) || img.naturalHeight;
+      const scaled = w !== img.naturalWidth || h !== img.naturalHeight;
+      const pct = scaled ? ` · ${Math.round((w / img.naturalWidth) * 100)}%` : '';
+      badge.textContent = `${Math.round(w)}×${Math.round(h)}${pct}`;
+      badge.style.display = 'inline';
+    };
+    getImg()?.addEventListener('load', updateBadge);
+    updateBadge();
+    bar.appendChild(badge);
     for (const item of items) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -430,6 +455,13 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     },
     [`.mellow-md-image-action-btn:hover`]: {
       background: 'rgba(255,255,255,0.2)',
+    },
+    // E2：尺寸徽标（渲染尺寸 + 缩放比例）
+    [`.mellow-md-image-size-badge`]: {
+      color: 'rgba(255,255,255,0.85)',
+      fontSize: '11px',
+      padding: '1px 4px',
+      whiteSpace: 'nowrap',
     },
   });
 

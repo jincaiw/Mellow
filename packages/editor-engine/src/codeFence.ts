@@ -9,8 +9,8 @@
 import type { Extension } from '@codemirror/state';
 import { isComposing } from './composition';
 
-/** 常见语言列表（Typora 同款常用集） */
-const FENCE_LANGUAGES: Array<{ label: string; detail: string }> = [
+/** 常见语言列表（Typora 同款常用集；代码块语言标签下拉复用） */
+export const FENCE_LANGUAGES: Array<{ label: string; detail: string }> = [
   { label: 'markdown', detail: 'Markdown' },
   { label: 'javascript', detail: 'JavaScript' },
   { label: 'js', detail: 'JavaScript' },

@@ -80,7 +80,7 @@ import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting } from '../../../packages/settings/src';
 import type { SettingDefinition, ShortcutOverrideMap } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader } from '../../../packages/desktop-ui/src';
+import { Tabbar, StatusBar, Welcome, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -316,6 +316,27 @@ export default function App() {
     win?.__MELLOW_SOURCE_API__?.toggle();
     hostRef.current?.focus();
   }, []);
+  /** E4（§5.1 合同兑现）：行号双偏好写入引擎 + 按当前模式应用。
+   * Live 行号仍走 CoreEditor setShowLineNumbers 单一真源；Source 行号独立开关由
+   * sourceMode.toggle 读 `__MELLOW_LINE_NUMBER_PREFS__.source` 自行切换。此处把
+   * 两个偏好写入 iframe 全局，并按当前模式立即应用对应值（设置 live apply 用）。
+   */
+  const applyLineNumberPrefs = useCallback(() => {
+    const liveDef = settingById('editor.lineNumbers');
+    const sourceDef = settingById('editor.sourceLineNumbers');
+    const live = liveDef ? readSetting(liveDef) === true : false;
+    const source = sourceDef ? readSetting(sourceDef) === true : true;
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & {
+      __MELLOW_LINE_NUMBER_PREFS__?: { live: boolean; source: boolean };
+      __MELLOW_SOURCE_API__?: { isActive: () => boolean };
+      webModules?: { config?: { setShowLineNumbers?: (p: { enabled: boolean }) => void } };
+    }) | null;
+    if (win === null || win === undefined) return;
+    win.__MELLOW_LINE_NUMBER_PREFS__ = { live, source };
+    const isSource = win.__MELLOW_SOURCE_API__?.isActive?.() === true;
+    win.webModules?.config?.setShowLineNumbers?.({ enabled: isSource ? source : live });
+  }, []);
   /** 引擎查找/替换桥（菜单 → iframe __MELLOW_SEARCH_API__） */
   const engineSearch = useCallback((mode: 'find' | 'replace' | 'findNext' | 'findPrevious') => {
     const frame = containerRef.current?.querySelector('iframe');
@@ -385,7 +406,9 @@ export default function App() {
   });
   const toggleStatusbarField = useCallback((field: string) => {
     setStatusbarFields((prev) => {
-      const next = { ...prev, [field]: prev[field] === false };
+      // E7：按有效状态翻转（未持久化的字段以 STATUSBAR_DEFAULT_HIDDEN 为默认）
+      const current = fieldVisible(prev, field as never);
+      const next = { ...prev, [field]: !current };
       try { localStorage.setItem('mellow.statusbar.fields', JSON.stringify(next)); } catch { /* no-op */ }
       return next;
     });
@@ -407,6 +430,30 @@ export default function App() {
     }));
     setContextMenu({ x, y, items });
   }, [t, toggleStatusbarField]);
+  /** E6a：只读模式（Typora 1.14.9 toggleReadonlyMode:）——引擎 editable Compartment 切换 */
+  const engineReadonlyToggle = useCallback(() => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_READONLY_API__?: { toggle: () => boolean } }) | null;
+    const next = win?.__MELLOW_READONLY_API__?.toggle();
+    if (typeof next === 'boolean') {
+      setToast({ message: next ? t('msg.readonlyOn') : t('msg.readonlyOff') });
+    }
+    hostRef.current?.focus();
+  }, [t]);
+  /**
+   * E1（Typora 1.14.6 editor toolbar 对标）：常驻编辑器工具栏开关。
+   * 默认隐藏（与 Typora 一致：用户从 View→工具栏 开启），持久化到 localStorage。
+   */
+  const [editorToolbarVisible, setEditorToolbarVisible] = useState<boolean>(() => {
+    try { return localStorage.getItem('mellow.editor.toolbarVisible') === '1'; } catch { return false; }
+  });
+  const toggleEditorToolbar = useCallback(() => {
+    setEditorToolbarVisible((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('mellow.editor.toolbarVisible', next ? '1' : '0'); } catch { /* no-op */ }
+      return next;
+    });
+  }, []);
 
   // document lang/dir（未来 RTL：localeDir 由 i18n 提供）
   useEffect(() => {
@@ -2706,6 +2753,17 @@ export default function App() {
           if (lineNumDef && readSetting(lineNumDef) === true) {
             host.setEditorConfig('setShowLineNumbers', { enabled: true });
           }
+          // E4：行号双偏好写入引擎（Source 模式行号独立开关，Typora 源码模式默认显示）
+          {
+            const sourceLineNumDef = settingById('editor.sourceLineNumbers');
+            const liveOn = lineNumDef ? readSetting(lineNumDef) === true : false;
+            const sourceOn = sourceLineNumDef ? readSetting(sourceLineNumDef) === true : true;
+            const frameEl = containerRef.current?.querySelector('iframe');
+            const frameWin = frameEl?.contentWindow as (Window & { __MELLOW_LINE_NUMBER_PREFS__?: { live: boolean; source: boolean } }) | null;
+            if (frameWin !== null && frameWin !== undefined) {
+              frameWin.__MELLOW_LINE_NUMBER_PREFS__ = { live: liveOn, source: sourceOn };
+            }
+          }
           const wrapDef = settingById('editor.lineWrapping');
           if (wrapDef && readSetting(wrapDef) === false) {
             host.setEditorConfig('setLineWrapping', { enabled: false });
@@ -3627,7 +3685,8 @@ export default function App() {
         const host = hostRef.current;
         if (def.id === 'editor.fontSize') host?.setEditorConfig('setFontSize', { fontSize: Number(value) });
         else if (def.id === 'editor.fontFamily') host?.setEditorConfig('setFontFace', { family: String(value) });
-        else if (def.id === 'editor.lineNumbers') host?.setEditorConfig('setShowLineNumbers', { enabled: Boolean(value) });
+        else if (def.id === 'editor.lineNumbers') { host?.setEditorConfig('setShowLineNumbers', { enabled: Boolean(value) }); applyLineNumberPrefs(); }
+        else if (def.id === 'editor.sourceLineNumbers') applyLineNumberPrefs();
         else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
         break;
       }
@@ -3726,7 +3785,7 @@ export default function App() {
       default:
         break;
     }
-  }, [applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
+  }, [applyLineNumberPrefs, applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
   // PRD §101 Auto Save：窗口失焦时保存 dirty 文档（默认开启，设置可关闭）
   useEffect(() => {
     const onBlur = () => { void maybeAutoSaveRef.current?.(); };
@@ -3749,7 +3808,7 @@ export default function App() {
         externalOpenInflightRef.current.delete(key);
       }
     })();
-  }, [engineSourceToggle, openPathInTab, openReader]);
+  }, [engineReadonlyToggle, engineSourceToggle, openPathInTab, openReader]);
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -3866,12 +3925,13 @@ export default function App() {
       { id: 'view.focus.paragraph', localizedTitle: { zh: 'Focus Mode：当前段落', en: 'Focus Mode: Current Paragraph' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('paragraph') },
       { id: 'view.typewriter.cycle', localizedTitle: { zh: '切换 Typewriter Mode', en: 'Toggle Typewriter Mode' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleTypewriter() },
       { id: 'view.source.toggle', localizedTitle: { zh: '源码模式', en: 'Source Mode' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => engineSourceToggle() },
+      { id: 'view.readonly.toggle', localizedTitle: { zh: '只读模式', en: 'Readonly Mode' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => engineReadonlyToggle() },
       { id: 'view.zoomReset', localizedTitle: { zh: '实际大小', en: 'Actual Size' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(0) },
       { id: 'view.zoomIn', localizedTitle: { zh: '放大', en: 'Zoom In' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(1) },
       { id: 'view.zoomOut', localizedTitle: { zh: '缩小', en: 'Zoom Out' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(-1) },
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
-      { id: 'view.toolbar.toggle', localizedTitle: { zh: '切换格式工具栏', en: 'Toggle Format Toolbar' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => toggleSelectionToolbar() },
+      { id: 'view.toolbar.toggle', localizedTitle: { zh: '工具栏', en: 'Toolbar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => toggleEditorToolbar() },
       // R2-2 字数统计窗口（Typora 视图→字数统计窗口）
       { id: 'view.wordCount', localizedTitle: { zh: '字数统计窗口', en: 'Word Count Window' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => {
         setWordCountOpen((v) => !v);
@@ -4186,7 +4246,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, handleCloseOthers, handleCloseRight, handleCloseTab, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, handleCloseOthers, handleCloseRight, handleCloseTab, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleReopenClosed, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, toggleEditorToolbar, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
@@ -4759,6 +4819,10 @@ export default function App() {
               onClose={closeReader}
               onCurrentHeadingChange={(id) => { outlineActiveRef.current = id; setCurrentOutlineId(id); }}
             />
+          )}
+          {/* E1：常驻编辑器工具栏（Typora 1.14.6 editor toolbar；View→工具栏开关，默认隐藏） */}
+          {editorToolbarVisible && !readerOpen && (
+            <EditorToolbar t={t} onCommand={(id) => void dispatchCommand(id, 'menu')} />
           )}
           <div
             ref={containerRef}

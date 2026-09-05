@@ -86,6 +86,12 @@ describe('Settings persistence helpers', () => {
     writeSetting(lineNumbers!, false);
     expect(readSetting(lineNumbers!)).toBe(false);
 
+    // E4：Source 模式行号独立开关（默认开，Typora 源码视图行为）
+    const sourceLineNumbers = settingById('editor.sourceLineNumbers');
+    expect(sourceLineNumbers?.defaultValue).toBe(true);
+    writeSetting(sourceLineNumbers!, false);
+    expect(readSetting(sourceLineNumbers!)).toBe(false);
+
     const language = settingById('general.language');
     writeSetting(language!, 'en-US');
     expect(readSetting(language!)).toBe('en-US');

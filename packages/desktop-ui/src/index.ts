@@ -4,8 +4,10 @@
  */
 export { Tabbar } from './Tabbar';
 export type { TabbarProps } from './Tabbar';
-export { StatusBar } from './StatusBar';
-export type { StatusBarProps } from './StatusBar';
+export { StatusBar, STATUSBAR_DEFAULT_HIDDEN, fieldVisible } from './StatusBar';
+export type { StatusBarProps, StatusBarField } from './StatusBar';
+export { EditorToolbar, EDITOR_TOOLBAR_BUTTONS } from './EditorToolbar';
+export type { EditorToolbarProps, EditorToolbarButton } from './EditorToolbar';
 export { Welcome } from './Welcome';
 export type { WelcomeProps } from './Welcome';
 export { OutlineList } from './OutlineList';

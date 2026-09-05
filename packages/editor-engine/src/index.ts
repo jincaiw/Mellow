@@ -41,9 +41,11 @@ import { buildTypewriterModeExtension } from './typewriterMode';
 import { buildSelectionToolbarExtension } from './selectionToolbar';
 import { buildPagingExtension } from './paging';
 import { buildCodeFenceAutocompleteExtension } from './codeFence';
+import { buildCodeBlockLabelExtension } from './codeBlockLabel';
 import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
 import { installSourceApi } from './sourceMode';
+import { buildReadonlyExtension, installReadonlyApi } from './readonly';
 import { buildWikilinkExtension } from './wikilink';
 import { buildMdLinkExtension } from './mdLink';
 import { buildContextMenuExtension, buildContextMenuViewTrackerExtension, installContextMenuApi } from './contextMenu';
@@ -56,6 +58,7 @@ import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './
 import { buildSmartPunctuationExtension, installSmartPunctuationApi } from './smartPunctuation';
 import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
 export { buildCodeLineNumbersExtension, installCodeLineNumbersApi, setCodeLineNumbers, isCodeLineNumbersEnabled, codeLineNumbersVersion, fenceContentRange } from './codeLineNumbers';
+export { buildReadonlyExtension, installReadonlyApi, setReadonlyMode, isReadonlyMode } from './readonly';
 export type { CodeLineNumbersApi } from './codeLineNumbers';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
 export { buildUndoGroupingExtension } from './undoGrouping';
@@ -108,7 +111,8 @@ export {
   shouldEmDash,
 } from './smartPunctuation';
 export type { SmartPunctuationApi } from './smartPunctuation';
-export { buildCodeFenceAutocompleteExtension, fenceLangSource } from './codeFence';
+export { buildCodeFenceAutocompleteExtension, fenceLangSource, FENCE_LANGUAGES } from './codeFence';
+export { buildCodeBlockLabelExtension, parseFenceBlocks, CODEBLOCK_LANG_CLASS, EDITING_OUTLINE_CLASS, CODEBLOCK_LANG_OPTIONS } from './codeBlockLabel';
 export { emojiSource } from './emoji';
 export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
 export { installSourceApi } from './sourceMode';
@@ -199,6 +203,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installContextMenuApi();
   // 源码模式（PRD §30）：宿主经 iframe window.__MELLOW_SOURCE_API__ 调用
   installSourceApi();
+  // 只读模式（E6a：Typora 1.14.9 toggleReadonlyMode:）：宿主经 iframe window.__MELLOW_READONLY_API__ 调用
+  installReadonlyApi();
   // 智能标点（master-plan R2-1）：宿主经 iframe window.__MELLOW_SMART_PUNCTUATION__ 调用
   installSmartPunctuationApi();
   // 代码块行号（Typora parity）：宿主经 iframe window.__MELLOW_CODE_LINE_NUMBERS__ 调用
@@ -239,11 +245,15 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildSelectionCommandsExtension(),
     buildSmartPunctuationExtension(),
     buildCodeLineNumbersExtension(),
+    // 代码块语言标签 + math/围栏块编辑态描边（E3：Typora parity 第三轮）
+    buildCodeBlockLabelExtension(),
     buildContextMenuExtension(),
     buildContextMenuViewTrackerExtension(),
     buildDocumentSearchExtension(),
     buildMdLinkExtension(),
     buildUndoGroupingExtension(),
+    // 只读模式（E6a）：editable Compartment（View→只读模式切换）
+    buildReadonlyExtension(),
     // Home/End 平台化（P4.4）：Windows/Linux 移动 caret 行首尾，mac 保持 CoreEditor 滚动语义
     buildPlatformNavKeymap(),
   ];

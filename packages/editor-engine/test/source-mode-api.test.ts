@@ -45,6 +45,68 @@ describe('Source Mode host API', () => {
   });
 });
 
+describe('E4：Source/Live 行号独立偏好（§5.1 合同）', () => {
+  afterEach(() => {
+    setSourceMode(false);
+    delete (window as unknown as { editor?: unknown }).editor;
+    delete (window as unknown as { __MELLOW_LINE_NUMBER_PREFS__?: unknown }).__MELLOW_LINE_NUMBER_PREFS__;
+    delete (window as unknown as { webModules?: unknown }).webModules;
+    document.body.innerHTML = '';
+  });
+
+  interface LineNumberRecorder {
+    calls: Array<{ enabled: boolean }>;
+    webModules: { config: { setShowLineNumbers: (p: { enabled: boolean }) => void } };
+  }
+
+  function installRecorder(): LineNumberRecorder {
+    const calls: Array<{ enabled: boolean }> = [];
+    const rec = {
+      calls,
+      webModules: { config: { setShowLineNumbers: (p: { enabled: boolean }) => { calls.push(p); } } },
+    };
+    (window as unknown as { webModules?: unknown }).webModules = rec.webModules;
+    return rec;
+  }
+
+  test('默认偏好：进 Source 行号开，回 Live 行号关', async () => {
+    const view = setUpEditor('# Title\n\nplain');
+    const api = bindSourceApi(view);
+    const rec = installRecorder();
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+
+    api.toggle();
+    await sleep();
+    expect(api.isActive()).toBe(true);
+    expect(rec.calls[rec.calls.length - 1]).toEqual({ enabled: true });
+
+    api.toggle();
+    await sleep();
+    expect(api.isActive()).toBe(false);
+    expect(rec.calls[rec.calls.length - 1]).toEqual({ enabled: false });
+    view.destroy();
+  });
+
+  test('宿主偏好覆盖默认：source=false / live=true', async () => {
+    const view = setUpEditor('# Title\n\nplain');
+    const api = bindSourceApi(view);
+    const rec = installRecorder();
+    (window as unknown as { __MELLOW_LINE_NUMBER_PREFS__?: { live: boolean; source: boolean } }).__MELLOW_LINE_NUMBER_PREFS__ = { live: true, source: false };
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+
+    api.toggle();
+    await sleep();
+    expect(rec.calls[rec.calls.length - 1]).toEqual({ enabled: false }); // source=false
+
+    api.toggle();
+    await sleep();
+    expect(rec.calls[rec.calls.length - 1]).toEqual({ enabled: true }); // live=true
+    view.destroy();
+  });
+});
+
 describe('P4.8 Source↔Live 往返保持 caret / selection / scroll', () => {
   afterEach(() => {
     setSourceMode(false);

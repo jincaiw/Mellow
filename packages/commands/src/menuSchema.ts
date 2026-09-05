@@ -291,11 +291,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'insert.list', labelKey: 'menu.insert.list' },
     { kind: 'command', id: 'insert.task', labelKey: 'menu.insert.task' },
     { kind: 'command', id: 'insert.quote', labelKey: 'menu.insert.quote' },
-    { kind: 'command', id: 'insert.table', labelKey: 'menu.insert.table' },
     { kind: 'command', id: 'insert.code', labelKey: 'menu.insert.code' },
     { kind: 'command', id: 'insert.math', labelKey: 'menu.insert.math' },
     { kind: 'command', id: 'insert.mermaid', labelKey: 'menu.insert.mermaid' },
-    { kind: 'command', id: 'insert.alert', labelKey: 'menu.insert.alert' },
+    // E5（D 类收敛）：insert.alert 与段落菜单「警告框」子菜单 alert.note 语义完全
+    // 重复，insert.table 与上方表格子菜单重复挂载 —— 均从菜单移除；命令保留
+    // （slash 触发与 palette 分发不受影响）。
   ] },
 
   // ── 格式 ────────────────────────────────────────────────────
@@ -331,6 +332,8 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'commandPalette.open', labelKey: 'menu.commandPalette.open', shortcut: { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' } },
     { kind: 'separator' },
     { kind: 'command', id: 'view.source.toggle', labelKey: 'menu.view.source.toggle', shortcut: { mac: 'Cmd+/', winLinux: 'Ctrl+/' } },
+    // E6a：Typora 1.14.9「Readonly Mode」（dump toggleReadonlyMode:）
+    { kind: 'command', id: 'view.readonly.toggle', labelKey: 'menu.view.readonly.toggle' },
     { kind: 'separator' },
     { kind: 'command', id: 'view.focus.cycle', labelKey: 'menu.view.focus.cycle', shortcut: { mac: 'F8', winLinux: 'F8' } },
     { kind: 'command', id: 'view.typewriter.cycle', labelKey: 'menu.view.typewriter.cycle', shortcut: { mac: 'F9', winLinux: 'F9' } },

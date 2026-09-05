@@ -64,8 +64,10 @@ async function main() {
     if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 预置：状态栏可见（默认隐藏）+ 上传通道 none
+    // E7 收敛默认集后 status 字段默认隐藏 → 字段级 key 显式开启
     await context.addInitScript(() => {
       localStorage.setItem('mellow.statusbar.visible', '1');
+      localStorage.setItem('mellow.statusbar.fields', JSON.stringify({ status: true }));
       localStorage.setItem('mellow.image.uploadService', 'none');
     });
     const page = await context.newPage();

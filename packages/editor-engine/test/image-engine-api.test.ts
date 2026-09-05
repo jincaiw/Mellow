@@ -104,9 +104,9 @@ describe('Image widget 悬停操作条（spec §6）', () => {
     expect(wrapper).not.toBeNull();
     const bar = wrapper!.querySelector(`.${IMG_ACTIONS_CLASS}`);
     expect(bar).not.toBeNull();
-    // 本地图 → 定位/打开/重命名/移动/复制/复制路径
+    // 本地图 → 尺寸/定位/打开/重命名/移动/复制/复制路径（E2 新增"尺寸"按钮）
     const labels = Array.from(wrapper!.querySelectorAll('.mellow-md-image-action-btn')).map((b) => b.textContent);
-    expect(labels).toEqual(['定位', '打开', '重命名', '移动', '复制', '复制路径']);
+    expect(labels).toEqual(['尺寸', '定位', '打开', '重命名', '移动', '复制', '复制路径']);
     // 点击"移动"
     const moveBtn = Array.from(wrapper!.querySelectorAll('.mellow-md-image-action-btn'))
       .find((b) => b.textContent === '移动') as HTMLButtonElement;
@@ -124,8 +124,9 @@ describe('Image widget 悬停操作条（spec §6）', () => {
     moveCaret(view, view.state.doc.length);
     await sleep();
     const wrapper = view.dom.querySelector(`.${IMG_WRAPPER_CLASS}`) as HTMLElement | null;
+    // E2 新增"尺寸"按钮置首
     const labels = Array.from(wrapper!.querySelectorAll('.mellow-md-image-action-btn')).map((b) => b.textContent);
-    expect(labels).toEqual(['下载', '打开', '复制路径']);
+    expect(labels).toEqual(['尺寸', '下载', '打开', '复制路径']);
     const dl = Array.from(wrapper!.querySelectorAll('.mellow-md-image-action-btn'))
       .find((b) => b.textContent === '下载') as HTMLButtonElement;
     dl.click();

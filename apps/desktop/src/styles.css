@@ -1033,6 +1033,34 @@ html, body, #root {
   color: var(--mellow-fg);
 }
 
+/* E1：常驻编辑器工具栏（Typora 1.14.6 editor toolbar；View→工具栏开启，默认隐藏） */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 8px;
+  background: var(--mellow-bg-subtle);
+  border-bottom: 1px solid var(--mellow-border);
+  user-select: none;
+}
+
+.editor-toolbar-btn {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--mellow-fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.editor-toolbar-btn:hover {
+  color: var(--mellow-fg);
+  background: var(--mellow-bg, rgba(127, 127, 127, 0.12));
+}
+
 .statusbar-sep {
   width: 1px;
   height: 14px;
