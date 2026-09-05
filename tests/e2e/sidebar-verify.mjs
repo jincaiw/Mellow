@@ -1,10 +1,10 @@
 /**
  * B1-2 侧边栏模式快捷键验证（浏览器 dev 模式，Playwright Chromium）。
- * 验证点（Typora 对齐：⌃⌘1 大纲 / ⌃⌘2 文件列表 / ⌃⌘3 文件树）：
+ * 验证点（V5-A1 Typora 对齐：⌃⌘1 大纲 / ⌃⌘3 文件树；⌃⌘2 文件列表已随 list 视图退役）：
  *   1. 侧栏关闭时 ⌃⌘1 → 打开侧栏并切到大纲（aria-label + localStorage）
- *   2. ⌃⌘2 → files + list（文件列表）
+ *   2. ⌃⌘2 不再绑定任何模式切换（保持大纲态，不向文档插字符）
  *   3. ⌃⌘3 → files + tree（文件树）
- *   4. 三键不向文档插入字面字符（回归防线）
+ *   4. 快捷键不向文档插入字面字符（回归防线）
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -121,7 +121,8 @@ async function main() {
       return null;
     })() : '';
     const writingWidthBefore = frame
-      ? await frame.evaluate(() => frameElement?.getBoundingClientRect().width ?? null)
+      // V5（A1 全幅化后）：外层 iframe full-bleed，写作限宽在内层 .cm-content
+      ? await frame.evaluate(() => document.querySelector('.cm-content')?.getBoundingClientRect().width ?? null)
       : null;
 
     // Source Mode 是纯呈现切换：快捷键必须透传到 iframe，且不得改写 Markdown。
@@ -199,7 +200,7 @@ async function main() {
     let s = await sidebarState();
     check('⌃⌘1 opens sidebar in outline mode', s.visible && s.label === '大纲' && s.mode === 'outline', JSON.stringify(s));
     const writingWidthWithSidebar = frame
-      ? await frame.evaluate(() => frameElement?.getBoundingClientRect().width ?? null)
+      ? await frame.evaluate(() => document.querySelector('.cm-content')?.getBoundingClientRect().width ?? null)
       : null;
     check(
       'sidebar keeps writing width at supported desktop size',
@@ -207,48 +208,42 @@ async function main() {
       JSON.stringify({ writingWidthBefore, writingWidthWithSidebar }),
     );
 
-    // 2. ⌃⌘2 → 文件列表
+    // 2. ⌃⌘2 不再绑定（V5-A1：list 视图退役，模式保持大纲不变）
     await page.keyboard.press('Control+Meta+2');
     await new Promise((r) => setTimeout(r, 300));
     s = await sidebarState();
-    check('⌃⌘2 switches to file list', s.visible && s.label === '文件列表' && s.mode === 'files' && s.fileMode === 'list', JSON.stringify(s));
+    check('⌃⌘2 unbound (V5-A1: list retired, mode unchanged)', s.visible && s.label === '大纲' && s.mode === 'outline', JSON.stringify(s));
 
     // 3. ⌃⌘3 → 文件树
     await page.keyboard.press('Control+Meta+3');
     await new Promise((r) => setTimeout(r, 300));
     s = await sidebarState();
-    check('⌃⌘3 switches to file tree', s.visible && s.label === '文件树' && s.mode === 'files' && s.fileMode === 'tree', JSON.stringify(s));
+    check('⌃⌘3 switches to file tree (V5-A1: single tree view)', s.visible && s.label === '文件树' && s.mode === 'files', JSON.stringify(s));
 
-    // Typora 1.14.9 默认密度：只保留文件／大纲／搜索，不常驻树／列表切换、固定或最近文件夹。
+    // V5-A1（Typora 1.14.9 完全对齐）：单标签下拉切换；树/列表切换、固定/最近文件夹、
+    // 过滤面板与根路径条全部移除；文件树仅树形。
     const filesDefault = await page.evaluate(() => {
       const aside = document.querySelector('aside.file-tree');
       return {
-        tabs: Array.from(aside?.querySelectorAll('[role="tab"]') ?? []).map((element) => element.textContent?.trim()),
-        hasPermanentTreeListSwitch: !!aside?.querySelector('.file-tree-actions, .file-sidebar-switch'),
+        // 触发器文案取 label span（整个 trigger 含 ▾ caret）
+        trigger: aside?.querySelector('.sidebar-mode-trigger-label')?.textContent?.trim() ?? null,
+        hasModeMenuHidden: aside?.querySelector('.sidebar-mode-menu') === null,
         hasAdvancedViewMode: !!aside?.querySelector('.sidebar-file-view-mode'),
         hasFolderHistory: !!aside?.querySelector('.sidebar-folder-history'),
         hasMoreButton: !!aside?.querySelector('.file-tree-filters-toggle'),
+        hasRootPathBar: !!aside?.querySelector('.file-tree-root'),
+        hasQuickbar: !!aside?.querySelector('.file-quickbar'),
       };
     });
-    check('files default keeps only three primary sidebar modes', JSON.stringify(filesDefault.tabs) === JSON.stringify(['文件', '大纲', '搜索']), JSON.stringify(filesDefault));
-    check('files default has no permanent tree/list switch or folder history', !filesDefault.hasPermanentTreeListSwitch && !filesDefault.hasAdvancedViewMode && !filesDefault.hasFolderHistory && filesDefault.hasMoreButton, JSON.stringify(filesDefault));
+    check('files default shows single mode trigger without legacy panels', filesDefault.trigger === '文件' && filesDefault.hasModeMenuHidden && !filesDefault.hasAdvancedViewMode && !filesDefault.hasFolderHistory && !filesDefault.hasMoreButton && !filesDefault.hasRootPathBar && filesDefault.hasQuickbar, JSON.stringify(filesDefault));
 
-    // 低频文件管理能力不删除，收纳至 ⋯ 展开层。
-    await page.locator('.file-tree-filters-toggle').click();
-    const filesMore = await page.evaluate(() => {
-      const aside = document.querySelector('aside.file-tree');
-      return {
-        filters: !!aside?.querySelector('.file-tree-filters'),
-        viewMode: !!aside?.querySelector('.sidebar-file-view-mode'),
-        globs: !!aside?.querySelector('.file-tree-globs'),
-        folderHistorySlot: !!aside?.querySelector('.sidebar-folder-history'),
-      };
-    });
-    check('files more panel reveals advanced filters, view switch, and folder-history slot', filesMore.filters && filesMore.viewMode && filesMore.globs && filesMore.folderHistorySlot, JSON.stringify(filesMore));
-    await page.locator('.sidebar-file-view-mode button').filter({ hasText: '列表' }).click();
+    // 模式下拉：展开后含 文件/大纲/搜索 三项
+    await page.locator('.sidebar-mode-trigger').click();
+    const menu = await page.evaluate(() => Array.from(document.querySelectorAll('.sidebar-mode-item')).map((element) => element.textContent?.trim()));
+    check('mode dropdown lists files/outline/search', JSON.stringify(menu) === JSON.stringify(['文件', '大纲', '搜索']), JSON.stringify(menu));
+    await page.keyboard.press('Escape');
     await new Promise((r) => setTimeout(r, 100));
-    check('more panel switches to file list and persists the choice', await page.evaluate(() => localStorage.getItem('mellow.fileSidebar.mode') === 'list'));
-    await page.locator('.sidebar-file-view-mode button').filter({ hasText: '树' }).click();
+    check('mode dropdown closes on Escape', await page.evaluate(() => document.querySelector('.sidebar-mode-menu') === null));
 
     // 4. 文档文本不被插入字面字符
     if (frame && typeof textBefore === 'string') {

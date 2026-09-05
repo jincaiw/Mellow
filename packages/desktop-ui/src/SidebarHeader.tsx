@@ -1,35 +1,81 @@
 /**
- * SidebarHeader（desktop-ui-design-spec §5 侧栏）—— 从 App.tsx 增量抽取（阶段 2d）。
- * 模式切换（文件/大纲/搜索）+ 低频操作菜单。
+ * SidebarHeader（desktop-ui-design-spec §5 侧栏）。
+ *
+ * V5-A1 Typora 化：顶部收敛为单个「当前模式」标签，点击弹出切换菜单
+ * （文件/大纲/搜索）；打开文件夹/刷新等低频操作走命令面板/菜单，不再占侧栏头部。
  */
+import { useEffect, useRef, useState } from 'react';
+
 export type SidebarMode = 'files' | 'outline' | 'search';
 
 export interface SidebarHeaderProps {
   mode: SidebarMode;
   t: (key: string, params?: Record<string, string | number>) => string;
   onModeChange: (mode: SidebarMode) => void;
-  onOpenFolder: () => void;
-  onRefresh: () => void;
-  canRefresh: boolean;
-  filtersOpen: boolean;
-  onToggleFilters: () => void;
 }
 
-export function SidebarHeader({ mode, t, onModeChange, onOpenFolder, onRefresh, canRefresh, filtersOpen, onToggleFilters }: SidebarHeaderProps) {
+const MODES: SidebarMode[] = ['files', 'outline', 'search'];
+
+export function SidebarHeader({ mode, t, onModeChange }: SidebarHeaderProps) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocMouseDown = (event: MouseEvent): void => {
+      if (rootRef.current !== null && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const label = mode === 'files' ? t('sidebar.files') : mode === 'outline' ? t('sidebar.outline') : t('sidebar.search');
+
   return (
-    <div className="file-tree-header">
-      <div className="sidebar-mode-nav" role="tablist" aria-label={t('sidebar.filesSwitchLabel')}>
-        <button type="button" role="tab" aria-selected={mode === 'files'} className={mode === 'files' ? 'active' : ''} onClick={() => onModeChange('files')}>{t('sidebar.files')}</button>
-        <button type="button" role="tab" aria-selected={mode === 'outline'} className={mode === 'outline' ? 'active' : ''} onClick={() => onModeChange('outline')}>{t('sidebar.outline')}</button>
-        <button type="button" role="tab" aria-selected={mode === 'search'} className={mode === 'search' ? 'active' : ''} onClick={() => onModeChange('search')}>{t('sidebar.search')}</button>
+    <div className="file-tree-header" ref={rootRef}>
+      <div className="sidebar-mode-nav">
+        <button
+          type="button"
+          className="sidebar-mode-trigger"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={t('sidebar.filesSwitchLabel')}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="sidebar-mode-trigger-label">{label}</span>
+          <span className="sidebar-mode-caret" aria-hidden="true">▾</span>
+        </button>
+        {open && (
+          <div className="sidebar-mode-menu" role="menu">
+            {MODES.map((m) => {
+              const text = m === 'files' ? t('sidebar.files') : m === 'outline' ? t('sidebar.outline') : t('sidebar.search');
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  role="menuitem"
+                  className={`sidebar-mode-item${m === mode ? ' active' : ''}`}
+                  aria-checked={m === mode}
+                  onClick={() => { setOpen(false); onModeChange(m); }}
+                >
+                  {text}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
-      {mode === 'files' && (
-        <div className="sidebar-header-actions" aria-label={t('sidebar.filtersTitle')}>
-          <button type="button" className="file-sidebar-icon-action" onClick={onOpenFolder} title={t('sidebar.openFolderTitle')} aria-label={t('sidebar.openFolderTitle')}>⌑</button>
-          <button type="button" className="file-sidebar-icon-action" onClick={onRefresh} disabled={!canRefresh} title={t('sidebar.refresh')} aria-label={t('sidebar.refresh')}>↻</button>
-          <button type="button" className="file-tree-filters-toggle" onClick={onToggleFilters} title={t('sidebar.filtersTitle')} aria-expanded={filtersOpen}>⋯</button>
-        </div>
-      )}
     </div>
   );
 }

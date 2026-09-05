@@ -151,8 +151,9 @@ const virtualTest = read('packages/desktop-ui/test/virtual.test.ts');
 if (!/10000/.test(virtualTest) || !/MAX_WINDOW/.test(virtualTest)) {
   fail('虚拟化内核单测缺少 10k 窗口上界断言（P3.2 Exit Gate：DOM 节点不随数据量增长）');
 }
-// 四个滚动容器仍在 App.tsx（虚拟化复用它们作滚动源，不得改挂载结构）
-for (const cls of ['file-tree-list', 'file-list', 'outline-list', 'search-results']) {
+// 滚动容器仍在 App.tsx（虚拟化复用它们作滚动源，不得改挂载结构）；
+// V5-A1：.file-list 随 list 视图退役，App 层不再渲染
+for (const cls of ['file-tree-list', 'outline-list', 'search-results']) {
   if (!appSource.includes(`className="${cls}"`)) {
     fail(`App.tsx 丢失滚动容器 .${cls}（P3.2：VirtualRows 以其 parentElement 为滚动源）`);
   }
@@ -231,7 +232,8 @@ if (/sidebarMode === 'outline' \? handleOutlineKeyDown : handleSearchKeyDown/.te
   fail('Sidebar 护栏自检失败：无法模拟 outline/search 键盘路由回退（P3.3），护栏已失效');
 }
 
-// ── ⑪ P3.4 File List 键位补齐（G4-SIDE-01：←→/F2/Delete/PageUp/PageDown）──
+// ── ⑪ P3.4 File List 键位（G4-SIDE-01）——V5-A1 起 App 层 list 视图退役，
+//    FileListModel 库能力与键位仍受护栏保护，App 层改为退役断言 ──────────────
 const fileListModelTs = read('packages/app-core/src/fileList.ts');
 if (!/navigate\(items: Array<\{ path: string \}>, key: 'up' \| 'down' \| 'left' \| 'right' \| 'enter' \| 'pageup' \| 'pagedown'/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 ←→/PageUp/PageDown 键位（P3.4 G4-SIDE-01）');
@@ -239,31 +241,26 @@ if (!/navigate\(items: Array<\{ path: string \}>, key: 'up' \| 'down' \| 'left' 
 if (!/pageSize = 10/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 pageSize 翻页步长（P3.4）');
 }
-if (!/ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter', PageUp: 'pageup', PageDown: 'pagedown'/.test(appSource)) {
-  fail('App.tsx handleFileListKeyDown 键位表缺 ←→/PageUp/PageDown（P3.4）');
+// V5-A1（D1=完全 Typora 化，仅树形）：App.tsx 不得再装配 list 视图
+if (/handleFileListKeyDown|handleFileListSelect|openFileListContextMenu|selectedListPath|filteredFileListItems|fileListOptions/.test(appSource)) {
+  fail('App.tsx 仍残留 File List 装配（V5-A1：list 视图应完全退役）');
 }
-if (!/event\.key === 'F2' && selectedListPath !== null/.test(appSource) || !/event\.key === 'Delete' && selectedListPath !== null/.test(appSource)) {
-  fail('App.tsx handleFileListKeyDown 缺少 F2/Delete（P3.4）');
-}
-// F2/Delete 复用树处理器（列表路径 override），不复制第二份重命名/Trash 流程
-if (!/handleTreeRename\(undefined, selectedListPath\)/.test(appSource) || !/handleTreeTrash\(selectedListPath\)/.test(appSource)) {
-  fail('App.tsx 列表 F2/Delete 未复用树处理器 override 路径（P3.4：禁止第二份实现）');
-}
-if (!/const handleTreeRename = useCallback\(async \(name\?: string, pathOverride\?: string\)/.test(appSource)) {
-  fail('handleTreeRename 缺少 pathOverride 参数（P3.4）');
-}
-if (!/const handleTreeTrash = useCallback\(async \(pathOverride\?: string\)/.test(appSource)) {
-  fail('handleTreeTrash 缺少 pathOverride 参数（P3.4）');
+if (/\bFileList\b[,}]/.test(appSource.split('\n').filter((l) => l.includes('desktop-ui/src')).join('\n'))) {
+  fail('App.tsx 仍从 desktop-ui 导入 FileList 组件（V5-A1）');
 }
 // 列表选中滚动跟随（翻页后选中必须可见）
 if (!/\.file-list \.file-list-item\.selected/.test(fileListTsx) || !/scrollIntoView\(\{ block: 'nearest' \}\)/.test(fileListTsx)) {
   fail('FileList 缺少键盘选中滚动跟随（P3.4）');
 }
 
-// ── ⑫ P3.4 canary：护栏必须能抓住键位回退 ────────────────────────────────
-const fileListKeyDrift = appSource.replace("PageUp: 'pageup', PageDown: 'pagedown'", '');
-if (/ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter', PageUp: 'pageup', PageDown: 'pagedown'/.test(fileListKeyDrift)) {
-  fail('Sidebar 护栏自检失败：无法模拟 File List 键位回退（P3.4），护栏已失效');
+// ── ⑫ V5-A1 canary：护栏必须能抓住 list 视图回潮 ─────────────────────────
+// 哨兵：侧栏键盘路由必须是「三态直连」（files→tree / outline / search）。
+// 若有人重新引入 tree/list 二级切换，该形态即被破坏，护栏显式报失效。
+if (!appSource.includes("sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown")) {
+  fail('Sidebar 护栏自检失败：侧栏键盘路由形态已变化，⑫ canary 需同步更新（V5-A1）');
+}
+if (/mellow\.fileSidebar\.mode/.test(appSource) || /'sidebar\.listAria'/.test(appSource)) {
+  fail('App.tsx 仍引用 list 模式存储/文案（V5-A1）');
 }
 
 // ── ⑬ P3.5 File List / Outline / Search 右键菜单 ────────────────────────
@@ -271,18 +268,14 @@ const outlineModelTs = read('packages/app-core/src/outline.ts');
 if (!/collapseAll\(items: readonly OutlineHeading\[\]\): void/.test(outlineModelTs)) {
   fail('OutlineModel 缺少 collapseAll（P3.5 全部折叠）');
 }
-for (const handler of ['openFileListContextMenu', 'openOutlineContextMenu', 'openSearchContextMenu']) {
+for (const handler of ['openOutlineContextMenu', 'openSearchContextMenu']) {
   if (!appSource.includes(`const ${handler} = useCallback`)) {
-    fail(`App.tsx 缺少 ${handler}（P3.5 三模式右键菜单）`);
+    fail(`App.tsx 缺少 ${handler}（P3.5 右键菜单；V5-A1 起 openFileListContextMenu 随 list 退役）`);
   }
 }
-// File List 空白区也要有菜单入口（刷新），行内经组件透传
-if (!/className="file-list" aria-label=\{t\('filelist\.articles'\)\} onContextMenu=\{\(e\) => openFileListContextMenu\(e\)\}/.test(appSource)) {
-  fail('App.tsx File List 容器缺空白区右键入口（P3.5）');
-}
-// 列表行右键经组件 props 透传（与 FileTree onContextMenu 同一模式）
-if (!/onContextMenu=\{openFileListContextMenu\} \/>}/.test(appSource) || !/onContextMenu=\{openOutlineContextMenu\} \/>/.test(appSource) || !/onContextMenu=\{openSearchContextMenu\} \/>/.test(appSource)) {
-  fail('App.tsx 未把右键处理器透传给 FileList/OutlineList/SearchResultsList（P3.5）');
+// 行右键经组件 props 透传（与 FileTree onContextMenu 同一模式）
+if (!/onContextMenu=\{openOutlineContextMenu\} \/>/.test(appSource) || !/onContextMenu=\{openSearchContextMenu\} \/>/.test(appSource)) {
+  fail('App.tsx 未把右键处理器透传给 OutlineList/SearchResultsList（P3.5）');
 }
 const uiFileList = read('packages/desktop-ui/src/FileList.tsx');
 if (!/onContextMenu\?: \(e: React\.MouseEvent, path: string\) => void/.test(uiFileList) || !/onContextMenu\?\.\(e, item\.path\)/.test(uiFileList)) {
@@ -293,10 +286,6 @@ if (!/onContextMenu\?: \(e: React\.MouseEvent, item: OutlineHeading\) => void/.t
 }
 if (!/onContextMenu\?: \(e: React\.MouseEvent, match: SearchGroup\['matches'\]\[number\]\) => void/.test(searchListTsxP33) || !/onContextMenu\?\.\(e, match\)/.test(searchListTsxP33)) {
   fail('SearchResultsList 组件缺 onContextMenu prop 透传（P3.5）');
-}
-// F2/右键重命名与 Trash 复用 override 流（不造第二份实现）
-if (!/handleTreeRename\(undefined, path\)/.test(appSource) || !/handleTreeTrash\(path\)/.test(appSource)) {
-  fail('App.tsx File List 右键未复用 rename/trash override 流（P3.5）');
 }
 // 双语文案
 const messagesTs = read('packages/i18n/src/messages.ts');
@@ -345,14 +334,11 @@ if (!fileFilterTest.includes('expanded 强制 true') || !fileFilterTest.includes
 if (!/const \[fileFilterQuery, setFileFilterQuery\] = useState\(''\)/.test(appSource)) {
   fail('App.tsx 缺少 fileFilterQuery state（P3.6）');
 }
-if (!/filterFileTree\(fileTreeNodes, fileFilterQuery\)/.test(appSource) || !/filterFileList\(fileListItems, fileFilterQuery\)/.test(appSource)) {
-  fail('App.tsx 缺少 filtered 派生 useMemo（P3.6）');
+if (!/filterFileTree\(fileTreeNodes, fileFilterQuery\)/.test(appSource)) {
+  fail('App.tsx 缺少 filtered 派生 useMemo（P3.6；V5-A1 起 filterFileList 派生随 list 退役）');
 }
 if (!/model\?\.flatten\(filteredFileTreeNodes\)/.test(appSource)) {
   fail('App.tsx treeFlatten 未改用过滤后序列（P3.6：导航与渲染必须同源）');
-}
-if (!/navigate\(filteredFileListItems, key\)/.test(appSource)) {
-  fail('App.tsx File List 键盘导航未改用过滤后序列（P3.6）');
 }
 // Quickbar UI：常驻输入框 + 两轻按钮 + Esc 清空
 if (!/className="file-quickbar"/.test(appSource) || !/className="file-filter-input"/.test(appSource)) {
@@ -365,8 +351,8 @@ if (!/e\.key === 'Escape'/.test(appSource.split('file-filter-input')[1]?.split('
   fail('filter 输入框缺 Esc 清空（P3.6）');
 }
 // 渲染改用过滤后数组
-if (!/nodes=\{filteredFileTreeNodes\}/.test(appSource) || !/items=\{filteredFileListItems\}/.test(appSource)) {
-  fail('App.tsx FileTree/FileList 未渲染过滤后数组（P3.6）');
+if (!/nodes=\{filteredFileTreeNodes\}/.test(appSource)) {
+  fail('App.tsx FileTree 未渲染过滤后数组（P3.6）');
 }
 // 双语文案（4 组 × zh/en ≥ 2 处）
 for (const key of ['files.filterPlaceholder', 'files.newFile', 'files.newFolder', 'sidebar.noFilterMatch']) {
@@ -470,16 +456,17 @@ if (!clampDrift.includes('const clamped = next;') || /Math\.max\(200, Math\.min\
   fail('Sidebar 护栏自检失败：无法模拟 clamp 回退（P3.8），护栏已失效');
 }
 
-// ── ㉑ P3.9 四模式 Sidebar Screenshot Golden ─────────────────────────────
+// ── ㉑ P3.9 Sidebar Screenshot Golden（V5-A1 三模式：files-tree / outline / search）──
 const sidebarGoldenScript = 'tests/visual/sidebar-golden.mjs';
 if (!existsSync(sidebarGoldenScript)) {
-  fail('缺少 tests/visual/sidebar-golden.mjs（P3.9 四模式 Sidebar Golden 主脚本）');
+  fail('缺少 tests/visual/sidebar-golden.mjs（P3.9 Sidebar Golden 主脚本）');
 } else {
   const sg = read(sidebarGoldenScript);
-  for (const view of ['files-tree', 'files-list', 'outline', 'search']) {
-    if (!sg.includes(`'${view}'`)) fail(`sidebar-golden 缺少视图 ${view}（P3.9 四模式）`);
+  for (const view of ['files-tree', 'outline', 'search']) {
+    if (!sg.includes(`'${view}'`)) fail(`sidebar-golden 缺少视图 ${view}（P3.9）`);
     if (!sg.includes(`sidebar-${view}.png`)) fail(`sidebar-golden 缺少截图归档 sidebar-${view}.png（P3.9）`);
   }
+  if (sg.includes('files-list')) fail('sidebar-golden 仍采样 files-list（V5-A1：list 视图退役）');
   for (const item of [
     ['golden/sidebar-golden.json', '基准文件名'],
     ['--update', '基准重建开关'],
@@ -496,12 +483,13 @@ if (!existsSync(sidebarGoldenJsonPath)) {
   fail('tests/visual/golden/sidebar-golden.json 缺失（首跑 node tests/visual/sidebar-golden.mjs 生成）');
 } else {
   const sgGolden = JSON.parse(read(sidebarGoldenJsonPath));
-  const sidebarViewsWithRows = { 'files-tree': 3, 'files-list': 2, outline: 3 };
-  for (const view of ['files-tree', 'files-list', 'outline', 'search']) {
+  const sidebarViewsWithRows = { 'files-tree': 3, outline: 3 };
+  for (const view of ['files-tree', 'outline', 'search']) {
     const sample = sgGolden[view];
     if (sample === undefined) { fail(`sidebar golden 基准缺少视图 ${view}`); continue; }
     if (sample.aside?.w !== 260) fail(`sidebar golden ${view} aside 宽度契约应为 260（实际 ${sample.aside?.w}）`);
   }
+  if ('files-list' in sgGolden) fail('sidebar golden 基准仍含 files-list（V5-A1：list 视图退役，--update 重建）');
   for (const [view, expected] of Object.entries(sidebarViewsWithRows)) {
     if (sgGolden[view]?.rowCount !== expected) fail(`sidebar golden ${view} rowCount 契约应为 ${expected}（实际 ${sgGolden[view]?.rowCount}）`);
   }
@@ -511,7 +499,7 @@ if (!existsSync(sidebarGoldenJsonPath)) {
     fail(`sidebar golden search 应为 1 组 2 匹配（DOC_CONTENT 契约，实际 ${sgGolden.search?.groupCount} 组 ${sgGolden.search?.matchCount} 匹配）`);
   }
 }
-for (const view of ['files-tree', 'files-list', 'outline', 'search']) {
+for (const view of ['files-tree', 'outline', 'search']) {
   if (!existsSync(`tests/visual/actual/sidebar-${view}.png`)) {
     fail(`tests/visual/actual/sidebar-${view}.png 缺失（跑 sidebar-golden.mjs 归档）`);
   }

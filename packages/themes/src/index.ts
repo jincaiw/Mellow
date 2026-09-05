@@ -92,6 +92,23 @@ const LIGHT_BASE: Record<string, string> = {
   '--mellow-alert-caution-bg': '#ffecec',
   '--mellow-alert-caution-border': '#f3a6a6',
   '--mellow-alert-caution-fg': '#8a1a1a',
+  // V5：md 排版 token（Typora Github 主题真值，docs/plans/typora-parity-v5-truth-table.md §3）
+  '--mellow-md-fg': '#333333',
+  '--mellow-md-heading-border': '#eeeeee',
+  '--mellow-md-quote-border': '#dfe2e5',
+  '--mellow-md-quote-fg': '#777777',
+  '--mellow-md-inline-code-bg': '#f3f4f4',
+  '--mellow-md-code-bg': '#f8f8f8',
+  '--mellow-md-code-border': '#e7eaed',
+  '--mellow-md-metablock-bg': '#f7f7f7',
+  '--mellow-md-metablock-fg': '#777777',
+  '--mellow-md-hr': '#e7e7e7',
+  '--mellow-md-link': '#4183c4',
+  '--mellow-md-table-border': '#dfe2e5',
+  '--mellow-md-table-head-bg': '#f8f8f8',
+  // V5-A：侧栏 Typora 对齐（#fafafa 底 / #eee 选中条，github.css sidebar 真值）
+  '--mellow-sidebar-bg': '#fafafa',
+  '--mellow-sidebar-active': '#eeeeee',
 };
 
 const DARK_BASE: Record<string, string> = {
@@ -140,6 +157,23 @@ const DARK_BASE: Record<string, string> = {
   '--mellow-alert-caution-bg': '#361b1b',
   '--mellow-alert-caution-border': '#5c3030',
   '--mellow-alert-caution-fg': '#f0a0a0',
+  // V5：md 排版 token（暗色对应，参数原创）
+  '--mellow-md-fg': '#e6e6e6',
+  '--mellow-md-heading-border': '#3a3a3a',
+  '--mellow-md-quote-border': '#4a4a4a',
+  '--mellow-md-quote-fg': '#a0a0a0',
+  '--mellow-md-inline-code-bg': '#2d2d2f',
+  '--mellow-md-code-bg': '#262a2e',
+  '--mellow-md-code-border': '#3a4046',
+  '--mellow-md-metablock-bg': '#2a2a2b',
+  '--mellow-md-metablock-fg': '#a0a0a0',
+  '--mellow-md-hr': '#3a3a3a',
+  '--mellow-md-link': '#79b8ff',
+  '--mellow-md-table-border': '#3a3a3a',
+  '--mellow-md-table-head-bg': '#2d2d2f',
+  // V5-A：侧栏（暗色）
+  '--mellow-sidebar-bg': '#252526',
+  '--mellow-sidebar-active': '#3a3a3d',
 };
 
 export const BUILTIN_THEMES: MellowTheme[] = [

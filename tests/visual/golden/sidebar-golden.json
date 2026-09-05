@@ -23,25 +23,9 @@
     "rowCount": 3,
     "firstRow": {
       "x": 0,
-      "y": 131.4,
+      "y": 107.4,
       "w": 259,
       "h": 28
-    }
-  },
-  "files-list": {
-    "aside": {
-      "x": 0,
-      "y": 36,
-      "w": 260,
-      "h": 864
-    },
-    "widthSaved": null,
-    "rowCount": 2,
-    "firstRow": {
-      "x": 0,
-      "y": 288.4,
-      "w": 259,
-      "h": 36.3
     }
   },
   "outline": {

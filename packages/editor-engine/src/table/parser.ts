@@ -44,6 +44,9 @@ export interface TableModel {
 /**
  * 解析表格源码（doc 从 tableFrom 到 tableTo 之间的内容）。
  * 单元格分割：跳过转义 pipe（\|）与 inline code 内的 pipe（`a|b`）。
+ *
+ * V5-C2：lezer 给出的 BlockQuote 内 Table 节点范围包含行首 `> ` 前缀，
+ * 每行先剥离 blockquote/缩进前缀再切分单元格，偏移按前缀长度回补。
  */
 export function parseTable(text: string, baseFrom: number): TableModel {
   const lines = text.split('\n');
@@ -55,18 +58,23 @@ export function parseTable(text: string, baseFrom: number): TableModel {
     const lineFrom = baseFrom + lines.slice(0, i).reduce((sum, l) => sum + l.length + 1, 0);
     const lineTo = lineFrom + line.length;
 
+    // 行首 blockquote 前缀（如 "> " / "> > "），顶层表格为 0
+    const prefixMatch = /^(?:[ \t]*>[ \t]?)+/.exec(line);
+    const prefixLength = prefixMatch === null ? 0 : prefixMatch[0].length;
+    const effectiveLine = line.slice(prefixLength);
+
     // 行必须是表格行（以 | 开头或包含 |）
-    const cellPositions = splitCellPositions(line, lineFrom);
-    if (cellPositions.length < 2 && !line.trim().startsWith('|')) {
+    const cellPositions = splitCellPositions(effectiveLine, lineFrom + prefixLength);
+    if (cellPositions.length < 2 && !effectiveLine.trim().startsWith('|')) {
       // 非表格行（表格结束）
       break;
     }
 
-    const isDelimiter = isDelimiterLine(line);
+    const isDelimiter = isDelimiterLine(effectiveLine);
     const cells: TableCell[] = cellPositions.map((pos, col) => {
       const from = pos.from;
       const to = pos.to;
-      const raw = line.slice(pos.offsetFrom, pos.offsetTo);
+      const raw = effectiveLine.slice(pos.offsetFrom, pos.offsetTo);
       // 内容范围（去掉前导空白）
       const leading = raw.length - raw.trimStart().length;
       return {

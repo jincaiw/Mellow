@@ -7,6 +7,7 @@
  * @returns Font size for a *possible* header
  */
 export function calculateFontSize(fontSize: number, level: number) {
-  const diffs = window.config.headerFontSizeDiffs ?? [5, 3, 1];
+  // V5：Typora Github 主题真值（2.25/1.75/1.5/1.25/1/1 em @16px → +20/+12/+8/+4/+0/+0）
+  const diffs = window.config.headerFontSizeDiffs ?? [20, 12, 8, 4, 0, 0];
   return fontSize + ([0, ...diffs][level] || 0);
 }

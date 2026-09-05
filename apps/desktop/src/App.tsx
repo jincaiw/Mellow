@@ -20,8 +20,6 @@ import {
   DocumentState,
   FileTreeModel,
   FileTreeService,
-  FileListModel,
-  FileListService,
   OutlineModel,
   buildOutline,
   currentHeadingId,
@@ -34,7 +32,6 @@ import {
   rankQuickOpen,
   scanQuickOpen,
   DEFAULT_FILE_TREE_OPTIONS,
-  DEFAULT_FILE_LIST_OPTIONS,
   dirname as fileTreeDirname,
   relativePath as fileTreeRelativePath,
   createEditorBridgeFromCore,
@@ -45,14 +42,11 @@ import {
   parseRecentFiles,
   serializeRecentFiles,
   pushRecentFolder,
-  parseRecentFolders,
   serializeRecentFolders,
-  basename,
   filterFileTree,
-  filterFileList,
   documentSuggestedName,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileListItem, FileListOptions, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, DocumentStateInput, RecentFileEntry } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, DocumentStateInput, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopExtensionHost } from './extensions/extensionHost';
 import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
@@ -81,7 +75,7 @@ import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
 import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting } from '../../../packages/settings/src';
 import type { SettingDefinition, ShortcutOverrideMap } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { StatusBar, OutlineList, SearchResultsList, FileList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
+import { StatusBar, OutlineList, SearchResultsList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -104,10 +98,7 @@ const TABS_SESSION_KEY = 'mellow.tabs.session';
 const RECENT_FILES_KEY = 'mellow.recent.files';
 const RECENT_FOLDERS_KEY = 'mellow.recent.folders';
 const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
-const PINNED_FOLDERS_KEY = 'mellow.fileTree.pinned';
 const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
-const FILE_LIST_OPTIONS_KEY = 'mellow.fileList.options';
-const FILE_SIDEBAR_MODE_KEY = 'mellow.fileSidebar.mode';
 const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
 const QUICK_OPEN_RECENT_KEY = 'mellow.quickOpen.recent';
 const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
@@ -235,8 +226,7 @@ export default function App() {
   // File Tree / Articles File List（PRD §14/§15/§59/§60；不创建 .mellow workspace 文件）
   const fileTreeServiceRef = useRef<FileTreeService | null>(null);
   const fileTreeModelRef = useRef<FileTreeModel | null>(null);
-  const fileListServiceRef = useRef<FileListService | null>(null);
-  const fileListModelRef = useRef<FileListModel>(new FileListModel());
+  // V5-A1：FileListService 随 list 视图退役（fileList.ts 库代码与单测保留）
   const outlineModelRef = useRef<OutlineModel>(new OutlineModel());
   const outlineActiveRef = useRef<string | null>(null);
   const refreshOutlineRef = useRef<(head?: number | null) => void>(() => {});
@@ -488,14 +478,6 @@ export default function App() {
   // B1（SDI）：tabs/activeTabId React 状态移除 —— 无标签栏/Overview 消费方，
   // 单文档状态经 docStateRef 表达，DOM 重渲染由 applyTab/setDirty 等既有路径驱动。
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
-  const [pinnedFolders, setPinnedFolders] = useState<string[]>(() => {
-    try {
-      const value = JSON.parse(localStorage.getItem(PINNED_FOLDERS_KEY) ?? '[]') as unknown;
-      return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : [];
-    } catch {
-      return [];
-    }
-  });
   // ref 镜像：openPathInTab 内免依赖读取（「打开单文件 → 父文件夹自动加载」判断）
   const fileTreeRootRef = useRef(fileTreeRoot);
   fileTreeRootRef.current = fileTreeRoot;
@@ -503,29 +485,17 @@ export default function App() {
     const saved = localStorage.getItem('mellow.sidebar.mode');
     return saved === 'outline' || saved === 'search' ? saved : 'files';
   });
-  const [fileSidebarMode, setFileSidebarModeState] = useState<'tree' | 'list'>(() => (localStorage.getItem(FILE_SIDEBAR_MODE_KEY) === 'list' ? 'list' : 'tree'));
   // U6：侧栏过滤/排序控件默认折叠（⋯ 展开），降低默认界面密度（desktop-ui-design-spec §6）
-  const [fileFiltersOpen, setFileFiltersOpen] = useState(false);
   const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
-  const [fileListItems, setFileListItems] = useState<FileListItem[]>([]);
-  // P3.6（G4-SIDE-06）常驻 filter：Files 模式（Tree/List 共用）按名称过滤
+  // P3.6（G4-SIDE-06）常驻 filter：Files 模式按名称过滤
   const [fileFilterQuery, setFileFilterQuery] = useState('');
   const filteredFileTreeNodes = useMemo(() => filterFileTree(fileTreeNodes, fileFilterQuery), [fileTreeNodes, fileFilterQuery]);
-  const filteredFileListItems = useMemo(() => filterFileList(fileListItems, fileFilterQuery), [fileListItems, fileFilterQuery]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
-  const [selectedListPath, setSelectedListPath] = useState<string | null>(null);
   const [fileTreeOptions, setFileTreeOptions] = useState<FileTreeOptions>(() => {
     try {
       return { ...DEFAULT_FILE_TREE_OPTIONS, ...(JSON.parse(localStorage.getItem(FILE_TREE_OPTIONS_KEY) ?? '{}') as Partial<FileTreeOptions>) };
     } catch {
       return DEFAULT_FILE_TREE_OPTIONS;
-    }
-  });
-  const [fileListOptions, setFileListOptions] = useState<FileListOptions>(() => {
-    try {
-      return { ...DEFAULT_FILE_LIST_OPTIONS, ...(JSON.parse(localStorage.getItem(FILE_LIST_OPTIONS_KEY) ?? '{}') as Partial<FileListOptions>) };
-    } catch {
-      return DEFAULT_FILE_LIST_OPTIONS;
     }
   });
   const [outlineItems, setOutlineItems] = useState<OutlineHeading[]>([]);
@@ -589,9 +559,6 @@ export default function App() {
   // Recent Files（Typora 深度对标 ⑫：欢迎屏最近打开 + 缺失标记）
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>(() => {
     try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
-  });
-  const [recentFolders, setRecentFolders] = useState<string[]>(() => {
-    try { return parseRecentFolders(localStorage.getItem(RECENT_FOLDERS_KEY)); } catch { return []; }
   });
   const [cursorPos, setCursorPos] = useState('');
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
@@ -666,6 +633,8 @@ export default function App() {
     }
     style.textContent = activeTheme.themeCss;
     hostRef.current?.setTheme(activeTheme.editorTheme);
+    // V5：md 排版 token 注入编辑器 iframe（engine __MELLOW_THEME_TOKENS__ 桥）
+    hostRef.current?.setMdTokens(activeTheme.variables);
     // B3-2 主题级编辑器字体：用户显式设置 > 主题（衬线风）> CoreEditor 默认（ui-monospace）
     const family = readEditorFontFamilyPreference(activeTheme);
     hostRef.current?.setEditorConfig('setFontFace', { family: family ?? 'ui-monospace' });
@@ -1830,34 +1799,21 @@ export default function App() {
     });
   }, []);
 
-  const setFileListOption = useCallback((patch: Partial<FileListOptions>) => {
-    setFileListOptions((prev) => {
-      const next = { ...prev, ...patch };
-      localStorage.setItem(FILE_LIST_OPTIONS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
-  const setFileSidebarMode = useCallback((mode: 'tree' | 'list') => {
-    setFileSidebarModeState(mode);
-    localStorage.setItem(FILE_SIDEBAR_MODE_KEY, mode);
-  }, []);
-
   const setSidebarMode = useCallback((mode: 'files' | 'outline' | 'search') => {
     setSidebarModeState(mode);
     localStorage.setItem('mellow.sidebar.mode', mode);
   }, []);
 
-  /** 侧边栏模式快捷键（⌃⌘1/2/3，Typora 对齐）：切到大纲/文件列表/文件树；侧栏未开则打开 */
-  const showSidebarAs = useCallback((mode: 'files' | 'outline' | 'search', fileMode?: 'tree' | 'list') => {
-    if (mode === 'files' && fileMode) setFileSidebarMode(fileMode);
+  /** 侧边栏模式快捷键（⌃⌘1/3，Typora 对齐）：切到大纲/文件树；侧栏未开则打开。
+   *  V5-A1：⌃⌘2（文件列表）随 list 视图退役。 */
+  const showSidebarAs = useCallback((mode: 'files' | 'outline' | 'search') => {
     setSidebarMode(mode);
     setSidebarVisible((v) => {
       if (v) return v;
       try { localStorage.setItem('mellow.sidebar.visible', '1'); } catch { /* noop */ }
       return true;
     });
-  }, [setFileSidebarMode, setSidebarMode]);
+  }, [setSidebarMode]);
 
   const setOutlineAutoNumberOption = useCallback((value: boolean) => {
     setOutlineAutoNumber(value);
@@ -1939,34 +1895,20 @@ export default function App() {
   }, [handleOutlineJump, visibleOutlineItems]);
 
   const rememberRecentFolder = useCallback((folder: string) => {
-    setRecentFolders((current) => {
+    // V5-A1：最近文件夹 UI 已移除，仅保留持久化记录（打开文件夹时更新）
+    try {
+      const current = (() => {
+        try {
+          const value = JSON.parse(localStorage.getItem(RECENT_FOLDERS_KEY) ?? '[]') as unknown;
+          return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : [];
+        } catch {
+          return [];
+        }
+      })();
       const next = pushRecentFolder(current, folder);
       localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]');
-      return next;
-    });
+    } catch { /* noop */ }
   }, []);
-
-  const forgetRecentFolder = useCallback((folder: string) => {
-    setRecentFolders((current) => {
-      const next = current.filter((path) => path !== folder);
-      localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]');
-      return next;
-    });
-  }, []);
-
-  const persistPinnedFolders = useCallback((folders: string[]) => {
-    setPinnedFolders(folders);
-    localStorage.setItem(PINNED_FOLDERS_KEY, JSON.stringify(folders));
-  }, []);
-
-  const handleTogglePinRoot = useCallback(() => {
-    if (fileTreeRoot === null) return;
-    persistPinnedFolders(
-      pinnedFolders.includes(fileTreeRoot)
-        ? pinnedFolders.filter((path) => path !== fileTreeRoot)
-        : [...pinnedFolders, fileTreeRoot],
-    );
-  }, [fileTreeRoot, pinnedFolders, persistPinnedFolders]);
 
   const chooseFileTreeRoot = useCallback(async () => {
     const dialog = dialogRef.current;
@@ -1995,31 +1937,13 @@ export default function App() {
     return node?.kind === 'folder' ? selected : fileTreeDirname(selected);
   }, [fileTreeRoot, selectedTreePath, treeFlatten]);
 
-  const refreshFileList = useCallback(async () => {
-    const svc = fileListServiceRef.current;
-    if (!svc || fileTreeRoot === null) {
-      setFileListItems([]);
-      return;
-    }
-    const root = fileListOptions.recursive ? fileTreeRoot : (selectedTreeDir() ?? fileTreeRoot);
-    const r = await svc.readList(root, fileListOptions, fileTreeOptions);
-    if (!r.ok) {
-      setStatusText(t('msg.listRefreshFailed', { error: r.error.message }));
-      return;
-    }
-    setFileListItems(r.value);
-  }, [fileListOptions, fileTreeOptions, fileTreeRoot, selectedTreeDir]);
-
   const refreshFilesSidebar = useCallback(async () => {
     await refreshFileTree();
-    await refreshFileList();
-  }, [refreshFileList, refreshFileTree]);
+  }, [refreshFileTree]);
 
-  // P3.7 修复：refreshFilesSidebar 的引用链为 refreshFileList → selectedTreeDir →
-  // treeFlatten → filteredFileTreeNodes → fileTreeNodes，每次树刷新（setFileTreeNodes
-  // 产生新数组）都会重建该函数。它直接作 effect deps 时，打开 workspace 即陷入
-  // 「刷新 → 函数重建 → effect 重跑 → 再刷新」的无限循环（P3.4 起引入，此前无测试
-  // 打开过 workspace 未暴露）。经 ref 间接调用，effect 只依赖真正驱动重建的配置值。
+  // P3.7 修复（历史）：refreshFilesSidebar 曾引用 refreshFileList → selectedTreeDir →
+  // treeFlatten → filteredFileTreeNodes → fileTreeNodes 长链，effect deps 直接引用会陷入
+  // 「刷新 → 重建 → effect 重跑」死循环。经 ref 间接调用，effect 只依赖真正的配置值。
   const refreshFilesSidebarRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => { refreshFilesSidebarRef.current = refreshFilesSidebar; }, [refreshFilesSidebar]);
 
@@ -2272,13 +2196,7 @@ export default function App() {
     if (!next) return;
     const r = await svc.rename(target, next);
     setStatusText(r.ok ? t('msg.renamed', { value: r.value }) : t('msg.renameFailed', { error: r.error.message }));
-    if (r.ok) {
-      setSelectedTreePath(r.value);
-      if (pathOverride !== undefined) {
-        fileListModelRef.current.selectedPath = r.value;
-        setSelectedListPath(r.value);
-      }
-    }
+    if (r.ok) setSelectedTreePath(r.value);
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
@@ -2320,13 +2238,7 @@ export default function App() {
     if (!window.confirm(t('dialog.trashConfirm', { path: target }))) return;
     const r = await svc.trash(target);
     setStatusText(r.ok ? t('msg.trashed') : t('msg.deleteFailed', { error: r.error.message }));
-    if (r.ok) {
-      setSelectedTreePath(null);
-      if (pathOverride !== undefined) {
-        fileListModelRef.current.selectedPath = null;
-        setSelectedListPath(null);
-      }
-    }
+    if (r.ok) setSelectedTreePath(null);
     await refreshFilesSidebar();
   }, [refreshFileTree, selectedTreePath]);
 
@@ -2381,27 +2293,6 @@ export default function App() {
     });
   }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo]);
 
-  /** P3.5 File List 右键菜单：行内项（打开/在文件树中显示/重命名/Trash/复制路径）；空白区仅刷新 */
-  const openFileListContextMenu = useCallback((event: React.MouseEvent, path?: string) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (path !== undefined) {
-      fileListModelRef.current.selectedPath = path;
-      setSelectedListPath(path);
-    }
-    const items: ContextMenuItem[] = path !== undefined ? [
-      { label: t('contextmenu.open'), enabled: true, onClick: () => void openTreeFile(path) },
-      { label: t('contextmenu.revealInTree'), enabled: true, onClick: () => { setFileSidebarMode('tree'); setSelectedTreePath(path); } },
-      { label: t('contextmenu.rename'), enabled: true, onClick: () => void handleTreeRename(undefined, path) },
-      { label: t('contextmenu.trash'), enabled: true, onClick: () => void handleTreeTrash(path) },
-      { label: t('contextmenu.copyPath'), enabled: true, onClick: () => void handleTreeCopyPath(false, path) },
-      { label: t('contextmenu.copyRelativePath'), enabled: fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true, path) },
-    ] : [
-      { label: t('sidebar.refresh'), enabled: fileTreeRoot !== null, onClick: () => void refreshFilesSidebar() },
-    ];
-    setContextMenu({ x: event.clientX, y: event.clientY, items });
-  }, [fileTreeRoot, handleTreeCopyPath, handleTreeRename, handleTreeTrash, openTreeFile, refreshFilesSidebar, setFileSidebarMode]);
-
   /** P3.5 Outline 右键菜单：跳转/平铺-树形切换/全部折叠/全部展开（8.5 合同 Context 项） */
   const openOutlineContextMenu = useCallback((event: React.MouseEvent, item: OutlineHeading) => {
     event.preventDefault();
@@ -2452,40 +2343,12 @@ export default function App() {
     }
   }, [handleTreeRename, handleTreeTrash, openTreeFile, refreshFileTree, selectedTreePath, treeFlatten]);
 
-  const handleFileListSelect = useCallback((path: string) => {
-    fileListModelRef.current.selectedPath = path;
-    setSelectedListPath(path);
-  }, []);
-
-  const handleFileListKeyDown = useCallback((event: ReactKeyboardEvent) => {
-    // P3.4（G4-SIDE-01）：↑↓/Enter 既有 + ←→（单列列表与 ↑↓ 同义）+ PageUp/PageDown 整页移动
-    const map: Record<string, 'up' | 'down' | 'left' | 'right' | 'enter' | 'pageup' | 'pagedown' | undefined> = {
-      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter', PageUp: 'pageup', PageDown: 'pagedown',
-    };
-    const key = map[event.key];
-    if (key !== undefined) {
-      event.preventDefault();
-      const r = fileListModelRef.current.navigate(filteredFileListItems, key);
-      setSelectedListPath(r.selected);
-      if (r.open) void openTreeFile(r.open);
-      return;
-    }
-    if (event.key === 'F2' && selectedListPath !== null) {
-      event.preventDefault();
-      void handleTreeRename(undefined, selectedListPath);
-    }
-    if (event.key === 'Delete' && selectedListPath !== null) {
-      event.preventDefault();
-      void handleTreeTrash(selectedListPath);
-    }
-  }, [filteredFileListItems, handleTreeRename, handleTreeTrash, openTreeFile, selectedListPath]);
-
   useEffect(() => {
     if (fileTreeRoot !== null) {
       fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
       void refreshFilesSidebarRef.current();
     }
-  }, [fileListOptions, fileTreeOptions, fileTreeRoot]);
+  }, [fileTreeOptions, fileTreeRoot]);
 
   useEffect(() => {
     refreshOutlineRef.current();
@@ -2590,7 +2453,6 @@ export default function App() {
     fileServiceRef.current = fsService;
     documentsRef.current = new DocumentService(fsService);
     fileTreeServiceRef.current = new FileTreeService(fsService);
-    fileListServiceRef.current = new FileListService(fsService);
     if (fileTreeRoot !== null) {
       fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
     }
@@ -3743,10 +3605,16 @@ export default function App() {
         break;
       case 'settings.engineFeature': {
         // 语法特性开关（PRD §94）：重建 JSON → mellow.engine.features（bundle loader 读取）
+        // V5-C4：无 localStorage 键 = 从未设置 → 默认开启（此前 `=== '1'` 让新装用户全量默认关闭）
         const keys = ['highlight', 'supSub', 'emoji', 'alerts', 'math', 'mermaid', 'toc', 'footnote', 'wikilink', 'html', 'yaml'];
         const features: Record<string, boolean> = {};
         for (const k of keys) {
-          try { features[k] = localStorage.getItem(`mellow.engine.features.${k}`) === '1'; } catch { features[k] = true; }
+          let value = true;
+          try {
+            const raw = localStorage.getItem(`mellow.engine.features.${k}`);
+            if (raw !== null) value = raw === '1';
+          } catch { value = true; }
+          features[k] = value;
         }
         try { localStorage.setItem('mellow.engine.features', JSON.stringify(features)); } catch { /* noop */ }
         // PRD §K.2：语法开关在编辑器加载时生效 → 提供「重新加载编辑器」动作（会话经 localStorage 恢复）
@@ -3870,9 +3738,10 @@ export default function App() {
       { id: 'file.newWindow', localizedTitle: { zh: '新建窗口', en: 'New Window' }, category: 'file', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => {
         void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window')).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
       } },
-      // P1-1.9：「在文档列表中显示 / 在文件树中显示」（Typora 文件菜单，§7.2 第 11/12 项）
-      { id: 'file.revealInFileList', localizedTitle: { zh: '在文档列表中显示', en: 'Reveal in File List' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files', 'list') },
-      { id: 'file.revealInFileTree', localizedTitle: { zh: '在文件树中显示', en: 'Reveal in File Tree' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files', 'tree') },
+      // P1-1.9：「在文库中显示 / 在文件树中显示」（Typora 文件菜单，§7.2 第 11/12 项；
+      // V5-A1 侧栏仅树形，Reveal in Library 语义等同切到文件树）
+      { id: 'file.revealInFileList', localizedTitle: { zh: '在文库中显示', en: 'Reveal in Library' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files') },
+      { id: 'file.revealInFileTree', localizedTitle: { zh: '在文件树中显示', en: 'Reveal in File Tree' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files') },
       { id: 'file.pageSetup', localizedTitle: { zh: '页面设置…', en: 'Page Setup…' }, category: 'file', context: { scope: 'document' }, enabled: () => isTauri(), execute: () => {
         void import('@tauri-apps/api/core').then(({ invoke }) => invoke('page_setup')).catch(() => setToast({ message: t('file.pageSetup.unavailable') }));
       } },
@@ -4181,8 +4050,7 @@ export default function App() {
       { id: 'theme.mode.system', localizedTitle: { zh: '跟随系统', en: 'Follow System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
       { id: 'view.sidebar.toggle', localizedTitle: { zh: '切换侧边栏', en: 'Toggle Sidebar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: toggleSidebar },
       { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('outline') },
-      { id: 'view.sidebar.fileList', localizedTitle: { zh: '文件列表', en: 'File List' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files', 'list') },
-      { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files', 'tree') },
+      { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files') },
       // B1（SDI）：tabs.showAll（⇧⌘\ Tab Overview）随多标签能力移除
       // DevTools（仅 debug 构建可用；release 返回 Err → toast 提示）
       { id: 'view.devtools', localizedTitle: { zh: '开发者工具', en: 'Developer Tools' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('open_devtools').catch(() => setToast({ message: t('view.devtools.unavailable') })); } },
@@ -4511,11 +4379,6 @@ export default function App() {
     setStatusText(t('msg.ignoredSnapshot'));
   }, []);
 
-  const formatFileTime = (ms?: number) => {
-    if (ms === undefined || ms <= 0) return '';
-    return new Date(ms).toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-  };
-
   const paletteSource: CommandSource = slashMode || commandPaletteQuery.startsWith('/') ? 'slash' : 'command-palette';
   const paletteQuery = commandPaletteQuery.startsWith('/') ? commandPaletteQuery.slice(1) : commandPaletteQuery;
   const paletteCommands: CommandPaletteItem[] = slashMode
@@ -4576,20 +4439,17 @@ export default function App() {
       </header>
       <div className="workspace-shell">
         {sidebarShown && (
-        <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? (fileSidebarMode === 'tree' ? handleTreeKeyDown : handleFileListKeyDown) : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : (fileSidebarMode === 'tree' ? t('sidebar.treeAria') : t('sidebar.listAria'))}>
+        <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : t('sidebar.treeAria')}>
           <SidebarHeader
             mode={sidebarMode}
             t={t}
             onModeChange={(m) => { setSidebarMode(m); if (m === 'outline') refreshOutlineRef.current(); }}
-            onOpenFolder={() => void dispatchCommand('workspace.openFolder', 'menu')}
-            onRefresh={() => void dispatchCommand('workspace.refresh', 'menu')}
-            canRefresh={fileTreeRoot !== null}
-            filtersOpen={fileFiltersOpen}
-            onToggleFilters={() => setFileFiltersOpen((v) => !v)}
           />
           {sidebarMode === 'files' ? (
             <>
-              {/* P3.6（G4-SIDE-06）常驻 filter 输入框 + 新建文件/文件夹轻按钮（Tree/List 共用） */}
+              {/* P3.6（G4-SIDE-06）常驻 filter 输入框 + 新建文件/文件夹轻按钮（Tree/List 共用）；
+                  V5-A1：过滤器面板（Tree/List 切换/隐藏文件/glob/固定/最近）与根路径条移除，
+                  打开文件夹/刷新走命令面板与菜单（Typora 极简侧栏对齐） */}
               <div className="file-quickbar">
                 <input
                   className="file-filter-input"
@@ -4606,82 +4466,12 @@ export default function App() {
                 <button type="button" className="file-quickbtn" title={t('files.newFile')} aria-label={t('files.newFile')} disabled={fileTreeRoot === null} onClick={() => void handleTreeNewFile()}>＋</button>
                 <button type="button" className="file-quickbtn" title={t('files.newFolder')} aria-label={t('files.newFolder')} disabled={fileTreeRoot === null} onClick={() => void handleTreeNewFolder()}>＋/</button>
               </div>
-              {fileFiltersOpen && (
-              <>
-              <div className="file-tree-filters">
-                <div className="sidebar-file-view-mode" role="group" aria-label={t('sidebar.filesSwitchLabel')}>
-                  <button type="button" className={fileSidebarMode === 'tree' ? 'active' : ''} aria-pressed={fileSidebarMode === 'tree'} onClick={() => setFileSidebarMode('tree')}>{t('sidebar.tree')}</button>
-                  <button type="button" className={fileSidebarMode === 'list' ? 'active' : ''} aria-pressed={fileSidebarMode === 'list'} onClick={() => setFileSidebarMode('list')}>{t('sidebar.list')}</button>
-                </div>
-                <label><input type="checkbox" checked={fileTreeOptions.showHidden} onChange={(e) => setFileTreeOption({ showHidden: e.target.checked })} />{t('sidebar.showHidden')}</label>
-                <label><input type="checkbox" checked={fileTreeOptions.showNonMarkdown} onChange={(e) => setFileTreeOption({ showNonMarkdown: e.target.checked })} />{t('sidebar.showNonMarkdown')}</label>
-                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.recursive} onChange={(e) => setFileListOption({ recursive: e.target.checked })} />{t('sidebar.recursive')}</label>}
-                {fileSidebarMode === 'list' && <label><input type="checkbox" checked={fileListOptions.includeSummary} onChange={(e) => setFileListOption({ includeSummary: e.target.checked })} />{t('sidebar.summary')}</label>}
-                <label>{t('sidebar.sort')}
-                  <select value={fileTreeOptions.sortBy} onChange={(e) => setFileTreeOption({ sortBy: e.target.value as FileTreeOptions['sortBy'] })}>
-                    <option value="natural">{t('sidebar.sortNatural')}</option>
-                    <option value="name">{t('sidebar.sortName')}</option>
-                    <option value="modified">{t('sidebar.sortModified')}</option>
-                    <option value="created">{t('sidebar.sortCreated')}</option>
-                  </select>
-                </label>
-                <label><input type="checkbox" checked={fileTreeOptions.sortAsc} onChange={(e) => setFileTreeOption({ sortAsc: e.target.checked })} />{t('sidebar.sortAsc')}</label>
-                <label><input type="checkbox" checked={fileTreeOptions.folderFirst} onChange={(e) => setFileTreeOption({ folderFirst: e.target.checked })} />{t('sidebar.foldersFirst')}</label>
+              {/* V5-A1（D1=完全 Typora 化）：仅树形——列表视图与树/列表切换已退役 */}
+              <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
+                {filteredFileTreeNodes.length === 0 ? (
+                  <div className="sidebar-empty">{fileTreeRoot === null ? t('sidebar.emptyFiles') : (fileTreeNodes.length === 0 ? t('sidebar.emptyFolder') : t('sidebar.noFilterMatch'))}</div>
+                ) : <FileTree nodes={filteredFileTreeNodes} selectedPath={selectedTreePath} currentPath={filePathRef.current} onSelect={handleTreeSelect} onToggle={(p) => void handleTreeToggle(p)} onOpen={(p) => void openTreeFile(p)} onDrop={(d, p) => void handleTreeDrop(d, p)} onContextMenu={openTreeContextMenu} />}
               </div>
-              <div className="file-tree-globs">
-                <input placeholder={t('tree.includeGlob')} value={fileTreeOptions.includeGlobs.join(',')} onChange={(e) => setFileTreeOption({ includeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
-                <input placeholder={t('tree.excludeGlob')} value={fileTreeOptions.excludeGlobs.join(',')} onChange={(e) => setFileTreeOption({ excludeGlobs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
-              </div>
-              <div className="sidebar-folder-history">
-                {fileTreeRoot !== null && (
-                  <button type="button" className="file-tree-pin" onClick={handleTogglePinRoot} title={pinnedFolders.includes(fileTreeRoot) ? t('sidebar.unpin') : t('sidebar.pin')} aria-label={pinnedFolders.includes(fileTreeRoot) ? t('sidebar.unpin') : t('sidebar.pin')}>
-                    {pinnedFolders.includes(fileTreeRoot) ? '★' : '☆'} {t('sidebar.pin')}
-                  </button>
-                )}
-                {pinnedFolders.length > 0 && (
-                  <div className="pinned-folders" aria-label={t('sidebar.pinnedLabel')}>
-                    {pinnedFolders.map((folder) => (
-                      <span key={folder} className="pinned-folder-group">
-                        <button type="button" className={`pinned-folder${folder === fileTreeRoot ? ' active' : ''}`} title={folder} onClick={() => { localStorage.setItem(FILE_TREE_ROOT_KEY, folder); setFileTreeRoot(folder); setSelectedTreePath(null); rememberRecentFolder(folder); }}>
-                          {basename(folder)}
-                        </button>
-                        <button type="button" className="pinned-folder-remove" title={t('sidebar.unpin')} aria-label={t('sidebar.unpin')} onClick={() => persistPinnedFolders(pinnedFolders.filter((path) => path !== folder))}>×</button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {recentFolders.length > 0 && (
-                  <div className="recent-folders" aria-label={t('sidebar.recentFoldersLabel')}>
-                    <span className="sidebar-folder-history-label">{t('sidebar.recentFolders')}</span>
-                    {recentFolders.map((folder) => (
-                      <span key={folder} className="recent-folder-group">
-                        <button type="button" className={`recent-folder${folder === fileTreeRoot ? ' active' : ''}`} title={folder} onClick={() => { localStorage.setItem(FILE_TREE_ROOT_KEY, folder); setFileTreeRoot(folder); setSelectedTreePath(null); rememberRecentFolder(folder); }}>
-                          {basename(folder)}
-                        </button>
-                        <button type="button" className="recent-folder-remove" title={t('sidebar.removeRecentFolder')} aria-label={t('sidebar.removeRecentFolder')} onClick={() => forgetRecentFolder(folder)}>×</button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              </>
-              )}
-              <div className="file-tree-root" title={fileTreeRoot ?? ''}>
-                <span className="file-tree-root-label">{fileTreeRoot ?? t('tree.rootEmpty')}</span>
-              </div>
-              {fileSidebarMode === 'tree' ? (
-                <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
-                  {filteredFileTreeNodes.length === 0 ? (
-                    <div className="sidebar-empty">{fileTreeRoot === null ? t('sidebar.emptyFiles') : (fileTreeNodes.length === 0 ? t('sidebar.emptyFolder') : t('sidebar.noFilterMatch'))}</div>
-                  ) : <FileTree nodes={filteredFileTreeNodes} selectedPath={selectedTreePath} currentPath={filePathRef.current} onSelect={handleTreeSelect} onToggle={(p) => void handleTreeToggle(p)} onOpen={(p) => void openTreeFile(p)} onDrop={(d, p) => void handleTreeDrop(d, p)} onContextMenu={openTreeContextMenu} />}
-                </div>
-              ) : (
-                <div className="file-list" aria-label={t('filelist.articles')} onContextMenu={(e) => openFileListContextMenu(e)}>
-                  {filteredFileListItems.length === 0 ? (
-                    <div className="sidebar-empty">{fileListItems.length === 0 ? t('sidebar.emptyFiles') : t('sidebar.noFilterMatch')}</div>
-                  ) : <FileList items={filteredFileListItems} selectedPath={selectedListPath} currentPath={filePathRef.current} includeSummary={fileListOptions.includeSummary} formatFileTime={formatFileTime} onSelect={handleFileListSelect} onOpen={(p) => void openTreeFile(p)} onContextMenu={openFileListContextMenu} />}
-                </div>
-              )}
             </>
           ) : sidebarMode === 'outline' ? (
             <>

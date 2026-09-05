@@ -110,7 +110,9 @@ html, body, #root {
   max-width: 480px;
   flex-shrink: 0;
   border-right: 1px solid var(--mellow-border);
-  background: var(--mellow-bg-subtle);
+  /* V5-A：Typora 侧栏灰底（--side-bar-bg-color #fafafa 真值） */
+  background: var(--mellow-sidebar-bg, var(--mellow-bg-subtle));
+  font-size: 14px;
   display: flex;
   flex-direction: column;
   outline: none;
@@ -126,9 +128,7 @@ html, body, #root {
 .sidebar-resizer:hover { background: var(--mellow-accent); opacity: 0.35; }
 
 .file-tree-header,
-.file-tree-actions,
-.file-tree-filters,
-.file-tree-globs {
+.file-tree-filters {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -137,44 +137,68 @@ html, body, #root {
   flex-wrap: wrap;
 }
 
-.file-tree-header strong {
-  margin-right: auto;
-  font-size: 13px;
-}
-
+/* V5-A1：Typora 式单标签模式切换（「文件 ▾」+ 下拉菜单） */
 .sidebar-mode-nav {
   display: flex;
   min-width: 0;
-  gap: 2px;
+  position: relative;
 }
 
-.sidebar-mode-nav button {
-  padding: 3px 5px;
+.sidebar-mode-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 4px;
   background: transparent;
   color: var(--mellow-fg-subtle);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.sidebar-mode-nav button:hover,
-.sidebar-mode-nav button.active {
+.sidebar-mode-trigger:hover {
   background: var(--mellow-bg-hover);
   color: var(--mellow-fg);
 }
 
-.sidebar-header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  opacity: 0;
-  transition: opacity 120ms ease;
+.sidebar-mode-caret {
+  font-size: 9px;
+  opacity: 0.7;
 }
 
-.file-tree:focus-within .sidebar-header-actions,
-.file-tree:hover .sidebar-header-actions {
-  opacity: 1;
+.sidebar-mode-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--mellow-border);
+  border-radius: 6px;
+  background: var(--mellow-bg-elevated);
+  box-shadow: 0 4px 16px var(--mellow-shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-mode-item {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mellow-fg);
+  font-size: 13px;
+  text-align: left;
+  padding: 5px 10px;
+}
+
+.sidebar-mode-item:hover {
+  background: var(--mellow-bg-hover);
+}
+
+.sidebar-mode-item.active {
+  background: var(--mellow-sidebar-active, var(--mellow-bg-hover));
+  font-weight: 600;
 }
 
 .file-sidebar-switch {
@@ -216,45 +240,12 @@ html, body, #root {
   opacity: 0.5;
 }
 
-/* U6：过滤/排序折叠按钮（⋯）——低干扰，默认隐藏控件 */
-.file-tree-filters-toggle {
-  min-width: 20px;
-  padding: 2px 4px !important;
-  font-weight: 700;
-  color: var(--mellow-fg-subtle);
-}
-
 .file-tree-filters label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 11px;
   color: var(--mellow-fg-subtle);
-}
-
-/* Tree／List 是文件模式的低频切换，收进“更多”面板而非常驻第二排。 */
-.sidebar-file-view-mode {
-  display: inline-flex;
-  border: 1px solid var(--mellow-border-strong);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.sidebar-file-view-mode button {
-  border: 0;
-  border-radius: 0;
-  min-width: 34px;
-}
-.sidebar-file-view-mode button.active {
-  background: var(--mellow-bg-hover);
-  color: var(--mellow-fg);
-  font-weight: 600;
-}
-
-.file-tree-globs input {
-  width: 100%;
-  padding: 2px 4px;
-  border: 1px solid var(--mellow-border-strong);
-  border-radius: 4px;
 }
 
 
@@ -418,27 +409,35 @@ html, body, #root {
 
 .tree-row {
   width: 100%;
-  min-height: 28px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   gap: 4px;
   border: 0;
+  border-radius: 4px;
   background: transparent;
-  color: var(--mellow-fg);
-  font-size: 12px;
+  /* V5-A：Typora 文件行（line-height 22px、#777 字色、14px 字号） */
+  color: var(--mellow-fg-subtle);
+  font-size: 14px;
+  line-height: 22px;
+  padding: 1px 8px;
   text-align: left;
 }
 
 .tree-row:hover {
   background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
 }
 
-.tree-row.selected {
-  background: var(--mellow-selection);
+/* V5-A：选中/当前文件 = 浅灰圆角条（Typora --active-file-bg-color #eee 真值） */
+.tree-row.selected,
+.tree-row.current {
+  background: var(--mellow-sidebar-active, var(--mellow-bg-hover));
+  color: var(--mellow-fg);
 }
 
 .tree-row.current .tree-name {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .tree-disclosure {

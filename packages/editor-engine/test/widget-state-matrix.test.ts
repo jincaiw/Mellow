@@ -395,21 +395,16 @@ runWidgetStateMatrix({
 });
 
 runWidgetStateMatrix({
-  label: 'YAML Front Matter（严格内 reveal）',
+  label: 'YAML Front Matter（V5-R5 常驻灰底卡片）',
   doc: '---\ntitle: x\n---\n\nbody text',
   nodeText: '---\ntitle: x\n---',
   insideOffset: 6,
-  count: (v) => widgetCount(v, '.mellow-yaml-front-matter'),
-  // idle（Typora 对齐）：默认灰显源码 + 折叠按钮；点击后才出现卡片
-  rendered: (v) =>
-    (widgetCount(v, '.mellow-yaml-source-dim') > 0 && widgetCount(v, '.mellow-yaml-fold-button') > 0)
-    || widgetCount(v, '.mellow-yaml-front-matter') > 0,
-  // caret 严格内 → 装饰整体撤除（灰显/按钮/卡片都不在场）
-  sourced: (v) =>
-    widgetCount(v, '.mellow-yaml-source-dim') === 0
-    && widgetCount(v, '.mellow-yaml-fold-button') === 0
-    && widgetCount(v, '.mellow-yaml-front-matter') === 0,
+  count: (v) => widgetCount(v, '.mellow-yaml-card-line'),
+  // V5-R5：常驻灰底卡片（源码可编辑），任何状态都在场
+  rendered: (v) => widgetCount(v, '.mellow-yaml-card-line') > 0,
+  sourced: (v) => widgetCount(v, '.mellow-yaml-card-line') > 0,
   boundaryReveals: false,
+  alwaysRendered: true,
   copyExpect: 'title',
 });
 

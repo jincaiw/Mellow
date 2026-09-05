@@ -234,6 +234,12 @@ export class EditorCore {
     win?.webModules?.config?.setTheme?.({ name });
   }
 
+  /** V5：注入 md 排版 token（--mellow-md-*，engine __MELLOW_THEME_TOKENS__ 桥；桥未就绪时静默跳过，engine 侧从 localStorage 兜底） */
+  setMdTokens(tokens: Record<string, string>): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_THEME_TOKENS__?: { set?: (tokens: Record<string, string>) => void } }) | null;
+    win?.__MELLOW_THEME_TOKENS__?.set?.(tokens);
+  }
+
   /** 编辑器 config live apply（CoreEditor webModules.config.<method>；Settings live apply where safe） */
   setEditorConfig(method: 'setFontSize' | 'setFontFace' | 'setLineHeight' | 'setShowLineNumbers' | 'setLineWrapping' | 'setContentMaxWidth', params: { fontSize?: number; family?: string; lineHeight?: number; enabled?: boolean; width?: number | null }): void {
     const win = this.iframe?.contentWindow as (Window & { webModules?: { config?: Record<string, (p: unknown) => void> } }) | null;

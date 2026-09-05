@@ -71,8 +71,9 @@ describe('Settings schema', () => {
 describe('Settings persistence helpers', () => {
   test('readSetting returns defaultValue when nothing stored', () => {
     const def = settingById('editor.fontSize');
-    expect(def?.defaultValue).toBe(17);
-    expect(readSetting(def!)).toBe(17);
+    // V5-D3：默认字号对齐 Typora Github 主题真值 16px
+    expect(def?.defaultValue).toBe(16);
+    expect(readSetting(def!)).toBe(16);
   });
 
   test('writeSetting persists and readSetting reads back', () => {

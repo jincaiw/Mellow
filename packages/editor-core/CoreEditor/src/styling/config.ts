@@ -235,11 +235,12 @@ export function applyReducedMotion(reduceMotion: boolean, types: 'both' | 'curso
 
 function setEditorColors(colors: EditorColors) {
   if (styleSheets.accentColor === undefined) {
+    // V5：Typora 对齐——标题使用正文字色（此前为 accent 色）
     styleSheets.accentColor = createStyleSheet('.cm-md-header:not(.cm-md-quote) {}');
   }
 
   updateStyleSheet(styleSheets.accentColor, style => {
-    const cssColor = shadowableTextColor(colors.accent);
+    const cssColor = shadowableTextColor(colors.text);
     Object.keys(cssColor).forEach(key => style.setProperty(key, cssColor[key] as string));
   });
 

@@ -72,7 +72,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'editor',
     labelKey: 'settings.editor',
     settings: [
-      { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: 17, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig', descriptionKey: 'settings.editor.fontSizeDesc' },
+      { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: 16, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig', descriptionKey: 'settings.editor.fontSizeDesc' },
       // B3-1 字体族（Typora parity：偏好设置选 font family；CoreEditor setFontFace live apply）
       { id: 'editor.fontFamily', labelKey: 'settings.editor.fontFamily', type: 'select', storageKey: 'mellow.editor.fontFamily', defaultValue: 'system-ui',
         options: [
@@ -101,14 +101,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'paragraph', labelKey: 'settings.focus.paragraph' },
         ], applyCommand: 'view.focus.off' },
       { id: 'editor.toolbar', labelKey: 'settings.editor.toolbar', type: 'toggle', storageKey: 'mellow.selectionToolbar.enabled', defaultValue: true, applyCommand: 'view.toolbar.on' },
-      { id: 'editor.writingWidth', labelKey: 'settings.editor.writingWidth', type: 'select', storageKey: 'mellow.editor.writingWidth', defaultValue: '820',
+      { id: 'editor.writingWidth', labelKey: 'settings.editor.writingWidth', type: 'select', storageKey: 'mellow.editor.writingWidth', defaultValue: '860',
         options: [
           { value: '680', labelKey: 'settings.writingWidth.680' },
-          { value: '820', labelKey: 'settings.writingWidth.820' },
+          { value: '860', labelKey: 'settings.writingWidth.860' },
           { value: '980', labelKey: 'settings.writingWidth.980' },
           { value: 'auto', labelKey: 'settings.writingWidth.auto' },
         ], applyCommand: 'settings.writingWidth' },
-      { id: 'editor.lineHeight', labelKey: 'settings.editor.lineHeight', type: 'number', storageKey: 'mellow.editor.lineHeight', defaultValue: 1.65, min: 1.2, max: 2.2, step: 0.05, applyCommand: 'settings.lineHeight' },
+      { id: 'editor.lineHeight', labelKey: 'settings.editor.lineHeight', type: 'number', storageKey: 'mellow.editor.lineHeight', defaultValue: 1.6, min: 1.2, max: 2.2, step: 0.05, applyCommand: 'settings.lineHeight' },
     ],
   },
   {

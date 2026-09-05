@@ -348,7 +348,6 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'separator' },
     { kind: 'command', id: 'view.sidebar.toggle', labelKey: 'menu.view.sidebarToggle', shortcut: { mac: 'Cmd+Shift+L', winLinux: 'Ctrl+Shift+L' } },
     { kind: 'command', id: 'view.sidebar.outline', labelKey: 'menu.view.sidebarOutline', shortcut: { mac: 'Ctrl+Cmd+1', winLinux: 'Ctrl+Shift+1' } },
-    { kind: 'command', id: 'view.sidebar.fileList', labelKey: 'menu.view.sidebarFileList', shortcut: { mac: 'Ctrl+Cmd+2', winLinux: 'Ctrl+Shift+2' } },
     { kind: 'command', id: 'view.sidebar.fileTree', labelKey: 'menu.view.sidebarFileTree', shortcut: { mac: 'Ctrl+Cmd+3', winLinux: 'Ctrl+Shift+3' } },
     { kind: 'command', id: 'search.global', labelKey: 'menu.view.search', shortcut: { mac: 'Cmd+Shift+F', winLinux: 'Ctrl+Shift+F' } },
     { kind: 'separator' },

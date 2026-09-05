@@ -57,7 +57,11 @@ import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } fr
 import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
 import { buildSmartPunctuationExtension, installSmartPunctuationApi } from './smartPunctuation';
 import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
+import { buildWysiwygBlocksExtension } from './wysiwygBlocks';
+import { installMdTokensBridge } from './mdTokens';
 export { buildCodeLineNumbersExtension, installCodeLineNumbersApi, setCodeLineNumbers, isCodeLineNumbersEnabled, codeLineNumbersVersion, fenceContentRange } from './codeLineNumbers';
+export { buildWysiwygBlocksExtension } from './wysiwygBlocks';
+export { installMdTokensBridge, applyMdTokens, MD_TOKEN_DEFAULTS } from './mdTokens';
 export { buildReadonlyExtension, installReadonlyApi, setReadonlyMode, isReadonlyMode } from './readonly';
 export type { CodeLineNumbersApi } from './codeLineNumbers';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
@@ -209,6 +213,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installSmartPunctuationApi();
   // 代码块行号（Typora parity）：宿主经 iframe window.__MELLOW_CODE_LINE_NUMBERS__ 调用
   installCodeLineNumbersApi();
+  // V5：md 排版 token 桥（宿主经 EditorCore.setMdTokens 注入 --mellow-md-*）
+  installMdTokensBridge();
   const f = mergeEngineFeatures(features);
   const ext: Extension[] = [
     // Source-state tables do not have a Live View cell DOM to own Tab. Register
@@ -245,6 +251,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildSelectionCommandsExtension(),
     buildSmartPunctuationExtension(),
     buildCodeLineNumbersExtension(),
+    // V5：非聚焦块渲染（Typora WYSIWYG 对齐：引用/标题/代码块/HR 源码标记隐藏 + Github 排版）
+    buildWysiwygBlocksExtension(),
     // 代码块语言标签 + math/围栏块编辑态描边（E3：Typora parity 第三轮）
     buildCodeBlockLabelExtension(),
     buildContextMenuExtension(),

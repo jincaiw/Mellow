@@ -35,34 +35,29 @@ describe('YAML Front Matter（PRD §47）', () => {
     expect(html).toContain('Line 1: expected key: value');
   });
 
-  test('idle：灰色源码样式 + 折叠按钮（Typora 对齐，点击展开卡片）', async () => {
+  test('V5-R5 idle：常驻灰底卡片（源码可编辑，无折叠按钮/无 dim）', async () => {
     const view = setUpEditor(fixture('front-matter-corpus.md'));
     await sleep();
-    // 默认不隐藏源码：灰色（dim）显示 + 「展开卡片」按钮
-    expect(view.dom.querySelector('.mellow-yaml-source-dim')).not.toBeNull();
-    expect(view.dom.querySelector('.mellow-yaml-fold-button')).not.toBeNull();
-    // 点击折叠按钮 → 卡片出现
-    const btn = view.dom.querySelector<HTMLButtonElement>('.mellow-yaml-fold-button');
-    btn?.click();
-    await sleep();
-    expect(view.dom.querySelector('.mellow-yaml-front-matter')?.textContent).toContain('title: 中文标题 😀');
+    expect(view.dom.querySelector('.mellow-yaml-card-line')).not.toBeNull();
+    expect(view.dom.querySelector('.mellow-yaml-fold-button')).toBeNull();
+    expect(view.dom.querySelector('.mellow-yaml-source-dim')).toBeNull();
   });
 
-  test('source reveal: caret inside front matter keeps source', async () => {
+  test('V5-R5 卡片常驻：光标进入 front matter 仍显示灰底卡片（源码直接编辑）', async () => {
     const view = setUpEditor(fixture('front-matter-corpus.md'));
     view.dispatch({ selection: { anchor: 4 } });
     await sleep();
-    expect(view.dom.querySelector('.mellow-yaml-front-matter')).toBeNull();
+    expect(view.dom.querySelector('.mellow-yaml-card-line')).not.toBeNull();
   });
 
-  test('can disable folding while keeping parser utilities', async () => {
+  test('fold 选项不再影响常驻卡片行为（兼容旧调用方）', async () => {
     const view = new EditorView({
       doc: fixture('front-matter-corpus.md'),
       parent: document.body,
       extensions: [buildYamlFrontMatterExtension(false, { fold: false })],
     });
     await sleep();
-    expect(view.dom.querySelector('.mellow-yaml-front-matter')).toBeNull();
+    expect(view.dom.querySelector('.mellow-yaml-card-line')).not.toBeNull();
     expect(parseYamlFrontMatter(view.state.doc.toString())?.yaml).toContain('draft: false');
   });
 });

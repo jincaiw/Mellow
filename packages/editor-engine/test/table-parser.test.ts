@@ -64,6 +64,17 @@ describe('parseTable', () => {
     expect(isDelimiterLine('| --- | --- |')).toBe(true);
     expect(isDelimiterLine('| a | b |')).toBe(false);
   });
+
+  test('V5-C2 引用内表格（行首 "> " 前缀）', () => {
+    const model = parseTable('| a | b |\n> | :---: | ---: |\n> | 1 | 2 |', 0);
+    expect(model.delimiterRow).not.toBeNull();
+    expect(model.alignments).toEqual(['center', 'right']);
+    expect(model.rows[2].cells[0].text).toBe('1');
+    // contentFrom 必须指向剥掉前缀后的真实编辑位置
+    expect(model.rows[2].cells[0].contentFrom).toBeGreaterThan(model.rows[2].from);
+    const cell = model.rows[2].cells[0];
+    expect(cell.text).toBe('1');
+  });
 });
 
 describe('cell 导航', () => {

@@ -1,16 +1,16 @@
 /**
- * P3.9 四模式 Sidebar Screenshot Golden（files-tree / files-list / outline / search）—— 防回退。
+ * V5-A Typora 化三模式 Sidebar Screenshot Golden（files-tree / outline / search）—— 防回退。
  *
  * 结构（跟随 visual-golden.mjs 惯例，零新增依赖）：
  *   1. vite dev server + Playwright Chromium（浏览器 dev 走 host-api mock fs）；
  *   2. mock workspace：/dir/{a.md, notes.md, sub/}（fileTree.newFile/newFolder + prompt accept）；
  *   3. 打开 a.md，经 iframe window.editor.view.dispatch 写入含 3 个 heading 的正文并
  *      file.save 落盘（mock fs writeText 持久化 → 全局搜索可命中）；
- *   4. 四视图各采样布局契约（aside / quickbar / 行数 / 首行几何）与基准对比（±1px）：
+ *   4. 三视图各采样布局契约（aside / quickbar / 行数 / 首行几何）与基准对比（±1px）：
  *        - files-tree：quickbar 存在、树行数、首行框；
- *        - files-list：列表行数、首行框；
  *        - outline：heading 行数（1×h1 + 2×h2）、首行框；
  *        - search：分组数 + 匹配行数、首匹配框（查询 'Mellow'）。
+ *      模式切换经头部单标签下拉（.sidebar-mode-trigger → .sidebar-mode-item）。
  *   5. 整窗截图归档 tests/visual/actual/sidebar-<view>.png（人工评审素材）。
  *
  * 基准：tests/visual/golden/sidebar-golden.json（首跑自动生成；--update 重建）。
@@ -186,13 +186,6 @@ async function main() {
           firstRow: box('button.tree-row'),
         };
       }
-      if (v === 'files-list') {
-        return {
-          ...base,
-          rowCount: count('.file-list-item'),
-          firstRow: box('.file-list-item'),
-        };
-      }
       if (v === 'outline') {
         return {
           ...base,
@@ -213,27 +206,21 @@ async function main() {
     samples['files-tree'] = await sampleView('files-tree');
     await page.screenshot({ path: resolve(ACTUAL_DIR, 'sidebar-files-tree.png'), fullPage: false });
 
-    // ── 视图 2：files-list（树/列表切换在 ⋯ 过滤面板内，先展开再切换） ────────
-    await syntheticClick(page, '.file-tree-filters-toggle');
-    const filtersOpen = await waitFor(async () => (await page.evaluate(() => document.querySelector('.sidebar-file-view-mode'))) !== null);
-    if (!filtersOpen) throw new Error('过滤面板未展开（树/列表切换不可达）');
-    await syntheticClick(page, '.sidebar-file-view-mode button:nth-child(2)');
-    const listReady = await waitFor(async () => (await page.evaluate(() => document.querySelectorAll('.file-list-item').length)) >= 2);
-    if (!listReady) throw new Error('files-list 视图未就绪（行数不足）');
-    await sleep(300);
-    samples['files-list'] = await sampleView('files-list');
-    await page.screenshot({ path: resolve(ACTUAL_DIR, 'sidebar-files-list.png'), fullPage: false });
-
-    // ── 视图 3：outline（模式 tab aria-selected） ────────────────────────────
-    await syntheticClick(page, '.sidebar-mode-nav button[role="tab"][aria-selected="false"]:nth-of-type(2)');
+    // ── 视图 2：outline（头部单标签下拉切换） ────────────────────────────────
+    await syntheticClick(page, '.sidebar-mode-trigger');
+    const menuOpen = await waitFor(async () => (await page.evaluate(() => document.querySelectorAll('.sidebar-mode-item').length)) >= 3);
+    if (!menuOpen) throw new Error('模式下拉菜单未展开');
+    await syntheticClick(page, '.sidebar-mode-item:nth-of-type(2)'); // files → outline
     const outlineReady = await waitFor(async () => (await page.evaluate(() => document.querySelectorAll('.outline-row').length)) >= 3);
     if (!outlineReady) throw new Error('outline 视图未就绪（heading 行数不足）');
     await sleep(300);
     samples['outline'] = await sampleView('outline');
     await page.screenshot({ path: resolve(ACTUAL_DIR, 'sidebar-outline.png'), fullPage: false });
 
-    // ── 视图 4：search（填查询 + 点运行按钮，不用 Enter 免触发 aside 导航跳转） ──
-    await syntheticClick(page, '.sidebar-mode-nav button[role="tab"]:nth-of-type(3)');
+    // ── 视图 3：search（下拉切换 + 填查询 + 点运行按钮，不用 Enter 免触发 aside 导航跳转） ──
+    await syntheticClick(page, '.sidebar-mode-trigger');
+    await waitFor(async () => (await page.evaluate(() => document.querySelectorAll('.sidebar-mode-item').length)) >= 3);
+    await syntheticClick(page, '.sidebar-mode-item:nth-of-type(3)'); // outline → search
     const searchInputReady = await waitFor(async () => (await page.evaluate(() => document.querySelector('.search-input'))) !== null);
     if (!searchInputReady) throw new Error('search 输入框未出现');
     await page.evaluate(() => {
@@ -245,7 +232,7 @@ async function main() {
     await sleep(200);
     const runClicked = await page.evaluate(() => {
       // 运行按钮：search 分支内的动作按钮（zh「搜索」/ en「Search」）。
-      // 必须排除 .sidebar-mode-nav 内的模式 tab（其文本同为「搜索」，但点击只切 tab 不执行搜索）
+      // 必须排除 .sidebar-mode-nav 内的下拉触发/菜单项（其文本同为「搜索」，但点击只切模式不执行搜索）
       const buttons = Array.from(document.querySelectorAll('aside.file-tree button'))
         .filter((b) => b.closest('.sidebar-mode-nav') === null);
       const target = buttons.find((b) => !b.disabled && ['搜索', 'Search'].includes(b.textContent.trim())) ?? null;
@@ -290,7 +277,7 @@ async function main() {
       else walk(g[key], a[key], `${path}.${key}`);
     }
   };
-  for (const view of ['files-tree', 'files-list', 'outline', 'search']) {
+  for (const view of ['files-tree', 'outline', 'search']) {
     if (!(view in golden)) problems.push(`${view}: golden 基准缺失（--update 重建）`);
     else walk(golden[view], samples[view], view);
   }
@@ -300,8 +287,8 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  console.log('Sidebar golden: 4 views match baseline (±1px)');
-  for (const view of ['files-tree', 'files-list', 'outline', 'search']) console.log(`  ✅ ${view}`);
+  console.log('Sidebar golden: 3 views match baseline (±1px)');
+  for (const view of ['files-tree', 'outline', 'search']) console.log(`  ✅ ${view}`);
 }
 
 main().catch((error) => {
