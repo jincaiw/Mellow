@@ -218,13 +218,15 @@ pub fn run() {
                 .decorations(true)
                 .resizable(true)
                 .center();
-                #[cfg(target_os = "macos")]
-                let builder = builder
-                    .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .hidden_title(true);
+                // V6-P2 2.2（与 Typora 完全一致）：macOS 回归原生标题栏（显示文件名标题，
+                // 红绿灯在原生栏内），不再 Overlay/隐藏标题、不再自绘顶栏。
+                // #[cfg(target_os = "macos")]
+                // let builder = builder
+                //     .title_bar_style(tauri::TitleBarStyle::Overlay)
+                //     .hidden_title(true);
                 // Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：去掉系统 chrome，
                 // 由应用内 36px titlebar 承担拖拽/控制按钮；边缘 resize 与拖拽由 tao
-                // undecorated hit-testing 提供。macOS 维持 Overlay（原生 Traffic Lights）；
+                // undecorated hit-testing 提供。
                 // Linux 维持系统装饰（GNOME/KDE undecorated resize 兼容性风险，记为 D）。
                 #[cfg(target_os = "windows")]
                 let builder = builder.decorations(false);

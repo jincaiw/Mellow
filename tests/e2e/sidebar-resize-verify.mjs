@@ -189,25 +189,24 @@ async function main() {
 
       let s = await sample(page);
       check('200% zoom: sidebar visible with resizer', s.asideVisible && s.resizer !== null && s.resizer.w > 0, JSON.stringify({ asideW: s.asideW, resizer: s.resizer }));
-      check('200% zoom: quickbar has no horizontal overflow (no clipped controls)', s.quickbarOverflow !== null && s.quickbarOverflow <= 1, JSON.stringify({ quickbarOverflow: s.quickbarOverflow }));
 
       // zoom 下 resize 拖拽照常工作
       await dragResizer(page, 420);
       s = await sample(page);
       check('200% zoom: resize drag still works', near(s.asideW, 420), JSON.stringify({ asideW: s.asideW }));
 
-      // 常驻工具行按钮与 filter 输入框可交互（未被遮挡/截断）
+      // V6-P2 2.1：quickbar 常驻条退役；⌘F 临时过滤框在 200% zoom 下可唤出且无横向截断
+      await page.evaluate(() => { document.querySelector('aside.file-tree')?.focus(); });
+      await page.keyboard.press('ControlOrMeta+f');
+      await new Promise((r) => setTimeout(r, 250));
       const controls = await page.evaluate(() => {
         const input = document.querySelector('.file-filter-input');
-        const buttons = document.querySelectorAll('.file-quickbtn');
-        const visible = (el) => {
-          if (el === null) return false;
-          const r = el.getBoundingClientRect();
-          return r.width > 0 && r.height > 0;
-        };
-        return { input: visible(input), buttons: buttons.length === 2 && Array.from(buttons).every(visible) };
+        const quickbar = document.querySelector('.file-quickbar');
+        if (input === null || quickbar === null) return { input: false, overflow: null };
+        const r = input.getBoundingClientRect();
+        return { input: r.width > 0 && r.height > 0, overflow: quickbar.scrollWidth - quickbar.clientWidth };
       });
-      check('200% zoom: filter input and both quick buttons fully visible', controls.input && controls.buttons, JSON.stringify(controls));
+      check('200% zoom: ⌘F transient filter visible without horizontal overflow', controls.input && controls.overflow !== null && controls.overflow <= 1, JSON.stringify(controls));
       await context.close();
     }
   } finally {

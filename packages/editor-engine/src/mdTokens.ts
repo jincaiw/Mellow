@@ -20,7 +20,8 @@ export const MD_TOKEN_DEFAULTS: Record<string, string> = {
   '--mellow-md-metablock-bg': '#f7f7f7',
   '--mellow-md-metablock-fg': '#777777',
   '--mellow-md-hr': '#e7e7e7',
-  '--mellow-md-link': '#4183c4',
+  // V6-P1：Typora 蓝（github.css 新版 a 真值）
+  '--mellow-md-link': '#0969da',
   '--mellow-md-table-border': '#dfe2e5',
   '--mellow-md-table-head-bg': '#f8f8f8',
 };

@@ -13,7 +13,7 @@
  *   4. 复制引擎到 public/editor/engine/ 并补 .js 扩展名（浏览器 ESM 要求）；
  *   5. 注入引擎 loader（MarkEdit.addExtension）。
  */
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // editor-core 平台无关 bundle 构建模块（tsc 产物，CJS）
@@ -26,6 +26,16 @@ const engineDist = resolve(root, '../../packages/editor-engine/dist');
 const targetDir = resolve(root, 'public/editor');
 const target = resolve(targetDir, 'index.html');
 
+// V6-P0 渲染层交付可信化：以 app 版本作为 bundle 资产指纹。core-main.js 与
+// engine/ 目录名携带版本（core-main-1.5.0.js / engine-1.5.0/），升级后
+// WKWebView 无法再命中旧版本缓存（此前文件名固定，真机升级后可能继续加载
+// 旧渲染层 —— v1.4.8 真机截图审计确认了该混合态）。构建前清理旧版本产物，
+// 保证 frontendDist 只打包当前版本。
+const appVersion = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version;
+const assetVersion = `v${appVersion}`;
+const coreMainName = `core-main-${assetVersion}.js`;
+const engineDirName = `engine-${assetVersion}`;
+
 // Desktop 使用写作优先的产品默认值。CoreEditor 的 DEFAULT_CONFIG 同时承担
 // 上游开发/调试入口，因此仍会显示行号、不可见字符并使用等宽字体；这些值不应
 // 泄漏到 Mellow 的首次启动体验（PRD §68 / Desktop UI Spec §16）。用户设置会在
@@ -36,9 +46,11 @@ const desktopEditorConfig = {
   showLineNumbers: false,
   showActiveLineIndicator: false,
   invisiblesBehavior: 'never',
-  // Typora 1.14.9 默认主题约为 32/26/22/19/17/16px（正文 17px）。
-  // CoreEditor 上游默认只给 H1 +5px，真实写作文档的标题层级过弱。
-  headerFontSizeDiffs: [15, 9, 5, 2, 0, -1],
+  // V5-B 排版真值：Typora Github 主题标题阶梯 2.25/1.75/1.5/1.25/1/1 em
+  //（×16px = 36/28/24/20/16/16px）。此 config 在运行时覆盖 CoreEditor
+  // heading.ts 的同名默认值 —— V5 曾只改 heading.ts 导致真机阶梯未生效
+  //（v1.4.8 截图审计定位）。两处必须保持一致，verify-release-bundle.mjs 锁定。
+  headerFontSizeDiffs: [20, 12, 8, 4, 0, 0],
 };
 
 // 与 packages/editor-core/src/bridge-injection.ts BRIDGE_INJECTION 保持一致（由 buildBundleHtml 注入）
@@ -154,8 +166,9 @@ const wheelForwarder = `<script>
  * resetEditor（window.onload）创建编辑器时自动包含用户扩展。
  */
 const engineLoader = `<script type="module">
-import * as MellowEngine from './engine/index.js';
+import * as MellowEngine from './${engineDirName}/index.js';
 window.MellowEditorEngine = MellowEngine;
+window.__MELLOW_BUNDLE_VERSION__ = '${assetVersion}';
 (function () {
   function tryInit() {
     if (window.MarkEdit && typeof window.MarkEdit.addExtension === 'function') {
@@ -180,9 +193,9 @@ window.MellowEditorEngine = MellowEngine;
 })();
 </script>`;
 
-/** 复制引擎 dist → public/editor/engine/（递归，保留子目录；浏览器 ESM 要求显式 .js 扩展名） */
+/** 复制引擎 dist → public/editor/engine-<version>/（递归，保留子目录；浏览器 ESM 要求显式 .js 扩展名） */
 function copyEngine() {
-  const engineTargetDir = resolve(targetDir, 'engine');
+  const engineTargetDir = resolve(targetDir, engineDirName);
   mkdirSync(engineTargetDir, { recursive: true });
 
   const copied = [];
@@ -370,9 +383,17 @@ function build() {
   //    文档稳定期（module defer 语义保序，行为不变）。
   const moduleMatch = out.match(/<script type="module" crossorigin>([\s\S]*?)<\/script>/);
   if (moduleMatch && moduleMatch[1].length > 100_000) {
-    writeFileSync(resolve(targetDir, 'core-main.js'), moduleMatch[1], 'utf8');
-    out = out.replace(moduleMatch[0], '<script type="module" crossorigin src="./core-main.js"></script>');
-    console.log(`core-main.js extracted: ${moduleMatch[1].length} bytes`);
+    writeFileSync(resolve(targetDir, coreMainName), moduleMatch[1], 'utf8');
+    out = out.replace(moduleMatch[0], `<script type="module" crossorigin src="./${coreMainName}"></script>`);
+    console.log(`core-main extracted: ${coreMainName} (${moduleMatch[1].length} bytes)`);
+  }
+
+  // V6-P0：清理旧版本资产（engine-* / core-main-*.js），frontendDist 只打包当前版本
+  for (const name of readdirSync(targetDir)) {
+    if (name === 'index.html' || name === coreMainName || name === engineDirName) continue;
+    if (name.startsWith('engine') || /^core-main.*\.js$/.test(name)) {
+      rmSync(resolve(targetDir, name), { recursive: true, force: true });
+    }
   }
 
   mkdirSync(targetDir, { recursive: true });

@@ -762,9 +762,16 @@ const zhCN = {
   'menu.window.maximizeToggle': '缩放',
   'menu.top.help': '帮助',
   'menu.help.cheatsheet': 'Markdown 速查表',
+  'menu.help.diagnostics': '诊断信息…',
+  'menu.help.website': '官方网站',
   'menu.help.quickStart': '快速上手',
   'menu.help.markdownReference': 'Markdown 语法参考',
   'menu.help.feedback': '反馈问题…',
+  'diag.title': '诊断信息',
+  'diag.appVersion': '应用版本',
+  'diag.bundleVersion': '渲染层版本',
+  'diag.platform': '运行环境',
+  'diag.mismatch': '渲染层版本与应用版本不一致：渲染层命中旧缓存，请在设置中清理渲染层缓存或重装应用。',
 } as const;
 
 const enUS: Record<keyof typeof zhCN, string> = {
@@ -1512,9 +1519,16 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'menu.window.maximizeToggle': 'Zoom',
   'menu.top.help': 'Help',
   'menu.help.cheatsheet': 'Markdown Cheatsheet',
+  'menu.help.diagnostics': 'Diagnostics…',
+  'menu.help.website': 'Website',
   'menu.help.quickStart': 'Quick Start',
   'menu.help.markdownReference': 'Markdown Reference',
   'menu.help.feedback': 'Feedback…',
+  'diag.title': 'Diagnostics',
+  'diag.appVersion': 'App Version',
+  'diag.bundleVersion': 'Renderer Bundle Version',
+  'diag.platform': 'Environment',
+  'diag.mismatch': 'Renderer bundle version does not match the app version: the WebView is serving a stale cached bundle. Clear the renderer cache in Settings or reinstall the app.',
 };
 
 export const MESSAGES: MessageCatalog = {

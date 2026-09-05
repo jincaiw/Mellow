@@ -239,12 +239,12 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     return el;
   }
 
-  /** Security M2：远程图片默认不加载（默认无需联网） */
+  /** V6-P1 1.2.6：远程图片默认自动加载（Typora 行为）；设置关闭（'0'）后回退手动确认 */
   function remoteImagesEnabled(): boolean {
     try {
-      return localStorage.getItem('mellow.image.loadRemote') === '1';
+      return localStorage.getItem('mellow.image.loadRemote') !== '0';
     } catch {
-      return false;
+      return true;
     }
   }
 

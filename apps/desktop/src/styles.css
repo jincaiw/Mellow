@@ -25,9 +25,11 @@ html, body, #root {
   user-select: none;
 }
 
-/* macOS traffic lights 留白（desktop-ui-design-spec §14） */
+/* V6-P2 2.2（与 Typora 完全一致）：macOS 无应用内顶栏 —— 原生 Overlay 标题栏
+   （hiddenTitle + 红绿灯浮于内容上，区域仍可拖拽窗口）。侧栏开关走 ⇧⌘L / 显示菜单。
+   Windows 保留自绘标题栏（Typora Windows 同样有窗口标题栏 + 控制按钮）。 */
 .shell.platform-mac .titlebar {
-  padding-left: 76px;
+  display: none;
 }
 
 .titlebar-palette {
@@ -1571,6 +1573,12 @@ html, body, #root {
 .file-info-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 2px; border-bottom: 1px solid var(--mellow-bg-hover); font-size: 12px; }
 .file-info-label { color: var(--mellow-fg-subtle); }
 .file-info-value { color: var(--mellow-fg); word-break: break-all; text-align: right; }
+/* V6-P0-E 诊断信息：渲染层版本与应用版本不一致的警示条（纯主题变量，明暗主题通吃） */
+.diag-warning {
+  padding: 6px 8px; border-radius: 4px; font-size: 12px; line-height: 1.5;
+  color: var(--mellow-fg); background: var(--mellow-bg-hover);
+  border: 1px solid var(--mellow-border-strong);
+}
 .open-with-input { flex: 1; padding: 5px 8px; border: 1px solid var(--mellow-border-strong); border-radius: 4px; background: var(--mellow-bg); color: var(--mellow-fg); font-size: 12px; }
 
 

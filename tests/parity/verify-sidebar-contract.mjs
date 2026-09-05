@@ -340,12 +340,16 @@ if (!/filterFileTree\(fileTreeNodes, fileFilterQuery\)/.test(appSource)) {
 if (!/model\?\.flatten\(filteredFileTreeNodes\)/.test(appSource)) {
   fail('App.tsx treeFlatten 未改用过滤后序列（P3.6：导航与渲染必须同源）');
 }
-// Quickbar UI：常驻输入框 + 两轻按钮 + Esc 清空
-if (!/className="file-quickbar"/.test(appSource) || !/className="file-filter-input"/.test(appSource)) {
-  fail('App.tsx 缺少 file-quickbar / file-filter-input（P3.6）');
+// V6-P2 2.1：quickbar 常驻条退役 —— 过滤框仅在 ⌘F 临时唤出（treeFilterOpen 条件渲染），
+// 新建轻按钮（file-quickbtn）不再出现于 App.tsx（新建走右键菜单/命令面板）
+if (!/treeFilterOpen && \(/.test(appSource) || !/className="file-filter-input"/.test(appSource)) {
+  fail('App.tsx 缺少 ⌘F 临时过滤框（treeFilterOpen 条件渲染 + file-filter-input）（V6-P2）');
 }
-if (!/onClick=\{\(\) => void handleTreeNewFile\(\)\}/.test(appSource) || !/onClick=\{\(\) => void handleTreeNewFolder\(\)\}/.test(appSource)) {
-  fail('App.tsx 新建文件/文件夹轻按钮未复用既有 handler（P3.6）');
+if (/className="file-quickbtn"/.test(appSource)) {
+  fail('App.tsx 仍含 file-quickbtn 新建轻按钮（V6-P2 2.1 quickbar 已退役）');
+}
+if (!/setTreeFilterOpen\(true\)/.test(appSource) || !/setTreeFilterOpen\(false\)/.test(appSource)) {
+  fail('App.tsx 缺少 ⌘F 唤出 / Esc·Enter 收起临时过滤框逻辑（V6-P2）');
 }
 if (!/e\.key === 'Escape'/.test(appSource.split('file-filter-input')[1]?.split('</div>')[0] ?? '')) {
   fail('filter 输入框缺 Esc 清空（P3.6）');
@@ -362,8 +366,8 @@ for (const key of ['files.filterPlaceholder', 'files.newFile', 'files.newFolder'
   }
 }
 const stylesCssP36 = read('apps/desktop/src/styles.css');
-if (!stylesCssP36.includes('.file-quickbar') || !stylesCssP36.includes('.file-filter-input') || !stylesCssP36.includes('.file-quickbtn')) {
-  fail('styles.css 缺少 file-quickbar / file-filter-input / file-quickbtn 样式（P3.6）');
+if (!stylesCssP36.includes('.file-quickbar') || !stylesCssP36.includes('.file-filter-input')) {
+  fail('styles.css 缺少 file-quickbar / file-filter-input 样式（P3.6）');
 }
 
 // ── ⑯ P3.6 canary：护栏必须能抓住常驻 filter 回退 ───────────────────────
@@ -493,13 +497,16 @@ if (!existsSync(sidebarGoldenJsonPath)) {
   for (const [view, expected] of Object.entries(sidebarViewsWithRows)) {
     if (sgGolden[view]?.rowCount !== expected) fail(`sidebar golden ${view} rowCount 契约应为 ${expected}（实际 ${sgGolden[view]?.rowCount}）`);
   }
-  if (sgGolden['files-tree']?.quickBtnCount !== 2) fail('sidebar golden files-tree quickBtnCount 契约应为 2（P3.6 quickbar）');
-  if (sgGolden['files-tree']?.quickbar === null) fail('sidebar golden files-tree 缺少 quickbar 采样（P3.6）');
+  if (sgGolden['files-tree']?.quickBtnCount !== 0) fail('sidebar golden files-tree quickBtnCount 契约应为 0（V6-P2 quickbar 退役）');
+  if (sgGolden['files-tree']?.quickbar !== null) fail('sidebar golden files-tree quickbar 应为 null（V6-P2 quickbar 退役）');
+  if (sgGolden['files-tree-filter']?.input === null || sgGolden['files-tree-filter']?.input?.w === undefined) {
+    fail('sidebar golden 缺少 ⌘F 临时过滤框采样（V6-P2，--update 重建）');
+  }
   if (sgGolden.search?.groupCount !== 1 || sgGolden.search?.matchCount !== 2) {
     fail(`sidebar golden search 应为 1 组 2 匹配（DOC_CONTENT 契约，实际 ${sgGolden.search?.groupCount} 组 ${sgGolden.search?.matchCount} 匹配）`);
   }
 }
-for (const view of ['files-tree', 'outline', 'search']) {
+for (const view of ['files-tree', 'files-tree-filter', 'outline', 'search']) {
   if (!existsSync(`tests/visual/actual/sidebar-${view}.png`)) {
     fail(`tests/visual/actual/sidebar-${view}.png 缺失（跑 sidebar-golden.mjs 归档）`);
   }

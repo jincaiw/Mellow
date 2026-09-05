@@ -92,6 +92,7 @@ import { PRINT_STYLESHEET } from '../../../packages/export/src/printStyle';
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
 // 帮助菜单外链（Typora 帮助菜单补全：快速上手 / Markdown 参考 / 反馈）
 const HELP_URL_QUICK_START = 'https://github.com/jincaiw/Mellow#readme';
+const HELP_URL_WEBSITE = 'https://github.com/jincaiw/Mellow';
 const HELP_URL_MARKDOWN_REFERENCE = 'https://commonmark.cn/help/';
 const HELP_URL_FEEDBACK = 'https://github.com/jincaiw/Mellow/issues';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
@@ -556,11 +557,41 @@ export default function App() {
   const [openWithCustom, setOpenWithCustom] = useState('');
   // 文件信息（PRD §J.1 文件菜单「文件信息」）
   const [fileInfoOpen, setFileInfoOpen] = useState(false);
+  // 诊断信息（V6-P0-E：appVersion + 渲染层 bundle 指纹，定位 WKWebView 缓存陈旧）
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
   // Recent Files（Typora 深度对标 ⑫：欢迎屏最近打开 + 缺失标记）
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>(() => {
     try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
   });
   const [cursorPos, setCursorPos] = useState('');
+  // V6-P2 2.2：窗口标题跟随文档名（Typora 行为；原生标题栏显示）
+  const [docTitle, setDocTitle] = useState<string | null>(null);
+  // V6-P2 2.1：⌘F 侧栏临时过滤框（quickbar 常驻条已移除）
+  const [treeFilterOpen, setTreeFilterOpen] = useState(false);
+  const treeFilterRef = useRef<HTMLInputElement | null>(null);
+  // 编辑器 iframe 会在挂载后抢焦点（mellow-editor-frame 成为 activeElement）→
+  // 挂载后短窗内反复夺回焦点，保证键入直接落在过滤框
+  useEffect(() => {
+    if (!treeFilterOpen) return;
+    const deadline = Date.now() + 1200;
+    const timer = window.setInterval(() => {
+      const el = treeFilterRef.current;
+      if (el === null || !document.contains(el)) { window.clearInterval(timer); return; }
+      if (document.activeElement === el) { window.clearInterval(timer); return; }
+      if (Date.now() > deadline) { window.clearInterval(timer); return; }
+      el.focus();
+    }, 60);
+    treeFilterRef.current?.focus();
+    return () => window.clearInterval(timer);
+  }, [treeFilterOpen]);
+  // V6-P2 2.2：窗口标题跟随文档名（Typora 行为：macOS 原生标题栏显示「文档名 — Mellow」，
+  // dirty 时前缀 ●；无文档时回落「Mellow」）
+  useEffect(() => {
+    if (!isTauri()) return;
+    const title = docTitle === null ? 'Mellow' : `${dirty ? '● ' : ''}${docTitle} — Mellow`;
+    void windowServiceRef.current?.setTitle(title);
+  }, [docTitle, dirty]);
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   // P2-2.6 快捷键自定义 override：Settings 录制 → localStorage → registry/native menu 装配边界生效
   const [shortcutOverrides, setShortcutOverrides] = useState<ShortcutOverrideMap>(() => readShortcutOverrides());
@@ -1080,6 +1111,8 @@ export default function App() {
       portableRef.current = await invoke<boolean>('is_portable').catch(() => false);
       // release 构建守卫（updater 安装路径）：invoke 失败按保守 false 处理
       releaseBuildRef.current = await invoke<boolean>('is_release_build').catch(() => false);
+      // 诊断信息用 appVersion（V6-P0-E）
+      setAppVersion(await getVersion().catch(() => ''));
       try {
         const status = await rollbackStatus();
         if (status !== null && status.pending) {
@@ -1235,6 +1268,12 @@ export default function App() {
   }, []);
 
   const openFileInfo = useCallback(() => setFileInfoOpen(true), []);
+  /** 诊断信息（V6-P0-E）：读取渲染层 bundle 指纹；与 appVersion 不一致 = WKWebView 命中旧缓存 */
+  const readBundleVersion = useCallback((): string => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_BUNDLE_VERSION__?: string }) | null;
+    return win?.__MELLOW_BUNDLE_VERSION__ ?? '—';
+  }, []);
 
   const openOpenWith = useCallback(() => {
     setOpenWithCustom('');
@@ -1418,6 +1457,7 @@ export default function App() {
     suppressEditorEventRef.current = true;
     filePathRef.current = tab.path;
     docIdRef.current = tab.documentId;
+    setDocTitle(tab.title);
     revisionRef.current = tab.revision;
     docMetaRef.current = { encoding: tab.encoding, eol: tab.eol };
     diskStateRef.current = tab.diskState;
@@ -2370,6 +2410,12 @@ export default function App() {
   }, [fileTreeRoot, handleTreeCopyPath, jumpToSearchResult]);
 
   const handleTreeKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    // V6-P2 2.1：⌘F 在侧栏临时唤出过滤框（无需 workspace 也可用，先于 model 守卫）
+    if (event.key === 'f' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      setTreeFilterOpen(true);
+      return;
+    }
     const model = fileTreeModelRef.current;
     if (!model) return;
     const map: Record<string, 'up' | 'down' | 'left' | 'right' | 'enter' | undefined> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter' };
@@ -4106,9 +4152,11 @@ export default function App() {
       // DevTools（仅 debug 构建可用；release 返回 Err → toast 提示）
       { id: 'view.devtools', localizedTitle: { zh: '开发者工具', en: 'Developer Tools' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('open_devtools').catch(() => setToast({ message: t('view.devtools.unavailable') })); } },
       { id: 'help.quickStart', localizedTitle: { zh: '快速上手', en: 'Quick Start' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_QUICK_START); } },
+      { id: 'help.website', localizedTitle: { zh: '官方网站', en: 'Website' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_WEBSITE); } },
       { id: 'help.markdownReference', localizedTitle: { zh: 'Markdown 语法参考', en: 'Markdown Reference' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_MARKDOWN_REFERENCE); } },
       { id: 'help.feedback', localizedTitle: { zh: '反馈问题…', en: 'Feedback…' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(HELP_URL_FEEDBACK); } },
       { id: 'help.cheatsheet', localizedTitle: { zh: 'Markdown 速查表', en: 'Markdown Cheatsheet' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => setCheatsheetOpen(true) },
+      { id: 'help.diagnostics', localizedTitle: { zh: '诊断信息', en: 'Diagnostics…' }, category: 'help', context: { scope: 'global' }, enabled: always, execute: () => setDiagnosticsOpen(true) },
     ];
     // P1-1.2：快捷键单一真源注入（§7.4 硬规则 2）—— schema 覆盖命令的 shortcut 由
     // SCHEMA_SHORTCUTS（packages/commands/menuSchema.ts）统一提供，内联只保留
@@ -4498,25 +4546,26 @@ export default function App() {
           />
           {sidebarMode === 'files' ? (
             <>
-              {/* P3.6（G4-SIDE-06）常驻 filter 输入框 + 新建文件/文件夹轻按钮（Tree/List 共用）；
-                  V5-A1：过滤器面板（Tree/List 切换/隐藏文件/glob/固定/最近）与根路径条移除，
-                  打开文件夹/刷新走命令面板与菜单（Typora 极简侧栏对齐） */}
-              <div className="file-quickbar">
-                <input
-                  className="file-filter-input"
-                  type="text"
-                  placeholder={t('files.filterPlaceholder')}
-                  value={fileFilterQuery}
-                  onChange={(e) => setFileFilterQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') { e.stopPropagation(); setFileFilterQuery(''); }
-                    // ←→ 保护输入框光标移动（aside 层把它们映射为折叠/展开）
-                    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
-                  }}
-                />
-                <button type="button" className="file-quickbtn" title={t('files.newFile')} aria-label={t('files.newFile')} disabled={fileTreeRoot === null} onClick={() => void handleTreeNewFile()}>＋</button>
-                <button type="button" className="file-quickbtn" title={t('files.newFolder')} aria-label={t('files.newFolder')} disabled={fileTreeRoot === null} onClick={() => void handleTreeNewFolder()}>＋/</button>
-              </div>
+              {/* V6-P2 2.1（D1=完全 Typora 化）：quickbar 常驻条（过滤框 + 新建按钮）移除 ——
+                  新建走右键菜单/命令面板；⌘F 在侧栏临时唤出过滤框（Enter 确认 / Esc 清空收起） */}
+              {treeFilterOpen && (
+                <div className="file-quickbar">
+                  <input
+                    ref={treeFilterRef}
+                    className="file-filter-input"
+                    type="text"
+                    placeholder={t('files.filterPlaceholder')}
+                    value={fileFilterQuery}
+                    onChange={(e) => setFileFilterQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.stopPropagation(); setTreeFilterOpen(false); }
+                      else if (e.key === 'Escape') { e.stopPropagation(); setFileFilterQuery(''); setTreeFilterOpen(false); }
+                      // ←→ 保护输入框光标移动（aside 层把它们映射为折叠/展开）
+                      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
+                    }}
+                  />
+                </div>
+              )}
               {/* V5-A1（D1=完全 Typora 化）：仅树形——列表视图与树/列表切换已退役 */}
               <div className="file-tree-list" onContextMenu={(e) => openTreeContextMenu(e)}>
                 {filteredFileTreeNodes.length === 0 ? (
@@ -4839,6 +4888,34 @@ export default function App() {
               <button type="button" className="open-with-close" onClick={() => setWordCountOpen(false)} aria-label={t('settings.close')}>✕</button>
             </div>
             <div className="file-info-body">
+              {rows.map(([label, value]) => (
+                <div key={label} className="file-info-row">
+                  <span className="file-info-label">{label}</span>
+                  <span className="file-info-value">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      {diagnosticsOpen && (() => {
+        // V6-P0-E 诊断信息：appVersion（tauri.conf）+ 渲染层 bundle 指纹（iframe 注入）。
+        // 两者不一致 → WKWebView 命中旧缓存（v1.4.8 真机事故的直接判据）。
+        const bundle = readBundleVersion();
+        const rows: Array<[string, string]> = [
+          [t('diag.appVersion'), `v${appVersion}`],
+          [t('diag.bundleVersion'), bundle],
+          [t('diag.platform'), navigator.userAgent],
+        ];
+        const mismatch = appVersion !== '' && bundle !== '—' && bundle !== `v${appVersion}`;
+        return (
+          <div className="word-count-window" role="dialog" aria-label={t('diag.title')}>
+            <div className="open-with-header">
+              <span className="open-with-title">{t('diag.title')}</span>
+              <button type="button" className="open-with-close" onClick={() => setDiagnosticsOpen(false)} aria-label={t('settings.close')}>✕</button>
+            </div>
+            <div className="file-info-body">
+              {mismatch && <div className="diag-warning">{t('diag.mismatch')}</div>}
               {rows.map(([label, value]) => (
                 <div key={label} className="file-info-row">
                   <span className="file-info-label">{label}</span>

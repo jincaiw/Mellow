@@ -222,6 +222,7 @@ async function main() {
 
     // V5-A1（Typora 1.14.9 完全对齐）：单标签下拉切换；树/列表切换、固定/最近文件夹、
     // 过滤面板与根路径条全部移除；文件树仅树形。
+    // V6-P2 2.1：quickbar 常驻条退役（Typora 无）；⌘F 临时唤出过滤框。
     const filesDefault = await page.evaluate(() => {
       const aside = document.querySelector('aside.file-tree');
       return {
@@ -235,7 +236,27 @@ async function main() {
         hasQuickbar: !!aside?.querySelector('.file-quickbar'),
       };
     });
-    check('files default shows single mode trigger without legacy panels', filesDefault.trigger === '文件' && filesDefault.hasModeMenuHidden && !filesDefault.hasAdvancedViewMode && !filesDefault.hasFolderHistory && !filesDefault.hasMoreButton && !filesDefault.hasRootPathBar && filesDefault.hasQuickbar, JSON.stringify(filesDefault));
+    check('files default shows single mode trigger without legacy panels (V6-P2: no quickbar)', filesDefault.trigger === '文件' && filesDefault.hasModeMenuHidden && !filesDefault.hasAdvancedViewMode && !filesDefault.hasFolderHistory && !filesDefault.hasMoreButton && !filesDefault.hasRootPathBar && !filesDefault.hasQuickbar, JSON.stringify(filesDefault));
+
+    // V6-P2 2.1：⌘F 侧栏内唤出临时过滤框；Esc 清空并收起
+    //（合成 keydown 直达输入框——物理键在 CDP 层可能被编辑器 iframe 的 focused frame 截走）
+    await page.evaluate(() => {
+      document.querySelector('aside.file-tree')?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: navigator.platform.toLowerCase().includes('mac'), ctrlKey: !navigator.platform.toLowerCase().includes('mac'), bubbles: true, cancelable: true }),
+      );
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    let filterShown = await page.evaluate(() => {
+      return document.querySelector('aside.file-tree .file-filter-input') !== null;
+    });
+    check('⌘F summons transient filter input', filterShown);
+    await page.evaluate(() => {
+      const el = document.querySelector('aside.file-tree .file-filter-input');
+      el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    filterShown = await page.evaluate(() => document.querySelector('aside.file-tree .file-filter-input') !== null);
+    check('Escape clears and closes transient filter', !filterShown);
 
     // 模式下拉：展开后含 文件/大纲/搜索 三项
     await page.locator('.sidebar-mode-trigger').click();

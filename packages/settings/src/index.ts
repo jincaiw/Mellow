@@ -151,7 +151,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.image',
     settings: [
       { id: 'image.assetDir', labelKey: 'settings.image.assetDir', type: 'text', storageKey: 'mellow.assetDir', defaultValue: 'assets', applyCommand: 'settings.image.assetDir' },
-      { id: 'image.loadRemote', labelKey: 'settings.image.loadRemote', type: 'toggle', storageKey: 'mellow.image.loadRemote', defaultValue: false, descriptionKey: 'settings.image.loadRemoteDesc' },
+      // V6-P1 1.2.6：默认自动加载远程图片（Typora 行为）；引擎读 '0' 为关（默认开）
+      { id: 'image.loadRemote', labelKey: 'settings.image.loadRemote', type: 'toggle', storageKey: 'mellow.image.loadRemote', defaultValue: true, descriptionKey: 'settings.image.loadRemoteDesc' },
       { id: 'image.uploadService', labelKey: 'settings.image.uploadService', type: 'select', storageKey: 'mellow.image.uploadService', defaultValue: 'none',
         options: [
           { value: 'none', labelKey: 'settings.image.upload.none' },

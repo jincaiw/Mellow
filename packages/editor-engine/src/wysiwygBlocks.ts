@@ -107,6 +107,7 @@ export function buildWysiwygBlocksExtension(): Extension {
           name === 'FencedCode' || name === 'Table' || name === 'Blockquote' || name === 'BlockQuote'
           || name === 'HorizontalRule' || name.startsWith('ATXHeading')
           || name === 'SetextHeading1' || name === 'SetextHeading2'
+          || name === 'ListItem'
           || SPACED_BLOCKS.has(name)
         ) {
           if (node.from < node.to) {
@@ -185,6 +186,15 @@ export function buildWysiwygBlocksExtension(): Extension {
       if (name === 'SetextHeading1' || name === 'SetextHeading2') {
         const level = name.slice('SetextHeading'.length);
         decos.push(Decoration.line({ class: `mellow-heading-line mellow-h${level}` }).range(state.doc.lineAt(from).from));
+        continue;
+      }
+
+      // ── 列表项间距（V6-P1 1.2.4，Typora github.css li 间距观感）──
+      // 仅首个 item 不加（与列表上方块距 0.8em 相接），后续 item 首行加 0.25em 上边距
+      if (name === 'ListItem') {
+        if (syntax.prevSibling !== null) {
+          decos.push(Decoration.line({ class: 'mellow-li-gap' }).range(state.doc.lineAt(from).from));
+        }
         continue;
       }
 
@@ -339,9 +349,14 @@ export function buildWysiwygBlocksExtension(): Extension {
       marginBottom: '0.8em',
     },
 
-    // ── 链接色（github.css a: #4183C4）──
+    // ── 列表项间距（V6-P1 1.2.4：非首 item 首行 0.25em 上边距）──
+    '.cm-line.mellow-li-gap': {
+      marginTop: '0.25em',
+    },
+
+    // ── 链接色（V6-P1：Typora 蓝 #0969da，github.css 新版真值）──
     '.cm-md-url': {
-      color: 'var(--mellow-md-link, #4183c4)',
+      color: 'var(--mellow-md-link, #0969da)',
     },
   });
 

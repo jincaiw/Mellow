@@ -179,6 +179,7 @@ async function main() {
       if (v === 'files-tree') {
         return {
           ...base,
+          // V6-P2 2.1：quickbar 常驻条退役 —— 恒为 null/0（退役断言）
           quickbar: box('.file-quickbar'),
           filterInput: box('.file-filter-input'),
           quickBtnCount: count('.file-quickbtn'),
@@ -205,6 +206,28 @@ async function main() {
     // ── 视图 1：files-tree（当前态） ─────────────────────────────────────────
     samples['files-tree'] = await sampleView('files-tree');
     await page.screenshot({ path: resolve(ACTUAL_DIR, 'sidebar-files-tree.png'), fullPage: false });
+
+    // ── 视图 1b：⌘F 临时过滤框（V6-P2 2.1：quickbar 退役后的唯一过滤入口） ──
+    await page.evaluate(() => { document.querySelector('aside.file-tree')?.focus(); });
+    await page.keyboard.press('ControlOrMeta+f');
+    const transientReady = await waitFor(async () => (await page.evaluate(() => document.querySelector('.file-filter-input'))) !== null);
+    if (!transientReady) throw new Error('⌘F 临时过滤框未出现');
+    samples['files-tree-filter'] = await page.evaluate(() => {
+      const round = (n) => Math.round(n * 10) / 10;
+      const el = document.querySelector('.file-filter-input');
+      const r = el.getBoundingClientRect();
+      const aside = document.querySelector('aside.file-tree').getBoundingClientRect();
+      return { asideW: round(aside.width), input: { x: round(r.x), y: round(r.y), w: round(r.width), h: round(r.height) }, focused: document.activeElement === el };
+    });
+    await page.screenshot({ path: resolve(ACTUAL_DIR, 'sidebar-files-tree-filter.png'), fullPage: false });
+    // Esc 收起（合成 keydown 直达输入框——page.keyboard 的物理键在 CDP 层可能被
+    // 编辑器 iframe 的 focused frame 截走；物理键盘路径由 e2e/sidebar-verify 覆盖）
+    await page.evaluate(() => {
+      const el = document.querySelector('.file-filter-input');
+      el?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+    const transientClosed = await waitFor(async () => (await page.evaluate(() => document.querySelector('.file-filter-input'))) === null);
+    if (!transientClosed) throw new Error('Esc 未收起临时过滤框');
 
     // ── 视图 2：outline（头部单标签下拉切换） ────────────────────────────────
     await syntheticClick(page, '.sidebar-mode-trigger');
@@ -277,7 +300,7 @@ async function main() {
       else walk(g[key], a[key], `${path}.${key}`);
     }
   };
-  for (const view of ['files-tree', 'outline', 'search']) {
+  for (const view of ['files-tree', 'files-tree-filter', 'outline', 'search']) {
     if (!(view in golden)) problems.push(`${view}: golden 基准缺失（--update 重建）`);
     else walk(golden[view], samples[view], view);
   }
@@ -287,8 +310,8 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  console.log('Sidebar golden: 3 views match baseline (±1px)');
-  for (const view of ['files-tree', 'outline', 'search']) console.log(`  ✅ ${view}`);
+  console.log('Sidebar golden: 4 views match baseline (±1px)');
+  for (const view of ['files-tree', 'files-tree-filter', 'outline', 'search']) console.log(`  ✅ ${view}`);
 }
 
 main().catch((error) => {

@@ -385,7 +385,11 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
   { id: 'help', labelKey: 'menu.top.help', entries: [
     { kind: 'command', id: 'help.quickStart', labelKey: 'menu.help.quickStart' },
     { kind: 'command', id: 'help.markdownReference', labelKey: 'menu.help.markdownReference' },
+    // V6-P3：Typora 帮助菜单「官方网站」对标（Mellow 官网 = GitHub 仓库主页）
+    { kind: 'command', id: 'help.website', labelKey: 'menu.help.website' },
     { kind: 'command', id: 'help.cheatsheet', labelKey: 'menu.help.cheatsheet' },
+    // V6-P0-E：诊断信息（appVersion + 渲染层 bundle 指纹）
+    { kind: 'command', id: 'help.diagnostics', labelKey: 'menu.help.diagnostics' },
     { kind: 'command', id: 'help.feedback', labelKey: 'menu.help.feedback' },
   ] },
 ];

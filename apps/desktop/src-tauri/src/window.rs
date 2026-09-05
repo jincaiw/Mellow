@@ -72,10 +72,13 @@ pub fn new_window(app: tauri::AppHandle) -> Result<(), String> {
     .resizable(true)
     .center();
 
-    #[cfg(target_os = "macos")]
-    let builder = builder
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true);
+    // V6-P2 2.2（与 Typora 完全一致）：macOS 回归原生标题栏 —— 显示窗口标题
+    // （文件名由前端 setTitle 跟随），不再 Overlay/隐藏标题、不再自绘顶栏。
+    // Windows 仍走下方 decorations(false) 分支 + 自绘标题栏（V4 §17 D10 不变）。
+    // #[cfg(target_os = "macos")]
+    // let builder = builder
+    //     .title_bar_style(tauri::TitleBarStyle::Overlay)
+    //     .hidden_title(true);
 
     let window = builder
         .on_navigation(|url| {

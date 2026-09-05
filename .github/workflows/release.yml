@@ -63,6 +63,10 @@ jobs:
         run: |
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
+      - name: Verify release bundle (V6-P0)
+        run: |
+          node apps/desktop/scripts/build-editor-bundle.mjs
+          node apps/desktop/scripts/verify-release-bundle.mjs
       - name: Import Windows code signing certificate (optional)
         if: env.WINDOWS_CERTIFICATE != ''
         shell: pwsh
@@ -187,6 +191,10 @@ jobs:
         run: |
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
+      - name: Verify release bundle (V6-P0)
+        run: |
+          node apps/desktop/scripts/build-editor-bundle.mjs
+          node apps/desktop/scripts/verify-release-bundle.mjs
       - name: Configure Apple signing env (when secrets provided)
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -263,6 +271,10 @@ jobs:
         run: |
           pnpm --filter @mellow/editor-core run build
           pnpm --filter @mellow/editor-engine run build
+      - name: Verify release bundle (V6-P0)
+        run: |
+          node apps/desktop/scripts/build-editor-bundle.mjs
+          node apps/desktop/scripts/verify-release-bundle.mjs
       - name: Build AppImage + deb + rpm
         uses: tauri-apps/tauri-action@v0
         env:

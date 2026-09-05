@@ -103,7 +103,8 @@ const LIGHT_BASE: Record<string, string> = {
   '--mellow-md-metablock-bg': '#f7f7f7',
   '--mellow-md-metablock-fg': '#777777',
   '--mellow-md-hr': '#e7e7e7',
-  '--mellow-md-link': '#4183c4',
+  // V6-P1：链接 = Typora 蓝（github.css 新版 a: #0969da，用户裁决）
+  '--mellow-md-link': '#0969da',
   '--mellow-md-table-border': '#dfe2e5',
   '--mellow-md-table-head-bg': '#f8f8f8',
   // V5-A：侧栏 Typora 对齐（#fafafa 底 / #eee 选中条，github.css sidebar 真值）
@@ -168,7 +169,8 @@ const DARK_BASE: Record<string, string> = {
   '--mellow-md-metablock-bg': '#2a2a2b',
   '--mellow-md-metablock-fg': '#a0a0a0',
   '--mellow-md-hr': '#3a3a3a',
-  '--mellow-md-link': '#79b8ff',
+  // V6-P1：暗色链接提亮（#0969da 暗底对比不足，取 GitHub Dark #4493f8）
+  '--mellow-md-link': '#4493f8',
   '--mellow-md-table-border': '#3a3a3a',
   '--mellow-md-table-head-bg': '#2d2d2f',
   // V5-A：侧栏（暗色）

@@ -26,7 +26,7 @@ export interface HtmlBlock {
   source: string;
 }
 
-const ALLOWED_TAGS = new Set(['A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'S', 'SPAN', 'STRONG', 'SUB', 'SUMMARY', 'SUP', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL', 'VIDEO', 'AUDIO', 'SOURCE', 'IFRAME']);
+const ALLOWED_TAGS = new Set(['A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'KBD', 'LI', 'OL', 'P', 'PRE', 'S', 'SPAN', 'STRONG', 'SUB', 'SUMMARY', 'SUP', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL', 'VIDEO', 'AUDIO', 'SOURCE', 'IFRAME']);
 const URL_ATTRS = new Set(['href', 'src', 'poster']);
 const GLOBAL_ATTRS = new Set(['title', 'alt', 'width', 'height', 'controls', 'colspan', 'rowspan']);
 

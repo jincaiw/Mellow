@@ -44,6 +44,7 @@ import { buildCodeFenceAutocompleteExtension } from './codeFence';
 import { buildCodeBlockLabelExtension } from './codeBlockLabel';
 import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
+import { buildKbdCapsExtension } from './kbdCaps';
 import { installSourceApi } from './sourceMode';
 import { buildReadonlyExtension, installReadonlyApi } from './readonly';
 import { buildWikilinkExtension } from './wikilink';
@@ -119,6 +120,8 @@ export { buildCodeFenceAutocompleteExtension, fenceLangSource, FENCE_LANGUAGES }
 export { buildCodeBlockLabelExtension, parseFenceBlocks, CODEBLOCK_LANG_CLASS, EDITING_OUTLINE_CLASS, CODEBLOCK_LANG_OPTIONS } from './codeBlockLabel';
 export { emojiSource } from './emoji';
 export { buildInlineExtrasExtension, scanInlineExtras, inlineCodeSpans } from './inlineExtras';
+export { buildKbdCapsExtension, scanKbdCaps } from './kbdCaps';
+export type { KbdRange } from './kbdCaps';
 export { installSourceApi } from './sourceMode';
 export { buildWikilinkExtension, scanWikilinks } from './wikilink';
 export type { WikilinkRange } from './wikilink';
@@ -274,6 +277,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   if (f.yaml) ext.push(buildYamlFrontMatterExtension(false));
   if (f.html) ext.push(buildSafeHtmlExtension(false));
   if (f.highlight || f.supSub) ext.push(buildInlineExtrasExtension());
+  // V6-P1：行内 HTML `<kbd>` 键帽（Typora 图16 对标；随 HTML 特性开关）
+  if (f.html) ext.push(buildKbdCapsExtension());
   if (f.wikilink) ext.push(buildWikilinkExtension());
   ext.push(buildCodeFenceAutocompleteExtension([...f.emoji ? [emojiSource] : []]));
   return ext;

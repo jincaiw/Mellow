@@ -83,26 +83,26 @@ describe('Live Mode 渲染', () => {
     expect(imgElements(view).length).toBe(0);
   });
 
-  test('远程 URL → 默认占位（Security M2：不静默加载）', async () => {
+  test('远程 URL → 默认自动加载 img（V6-P1 1.2.6：Typora 行为）', async () => {
     const view = setUp('![x](https://a.com/x.png)\n', makeHost((s) => s));
     await sleep();
     moveCaret(view, view.state.doc.length);
     await sleep();
-    // 默认不加载：无 img，显示占位 + 「加载远程图片」按钮
-    expect(view.dom.querySelector('img.mellow-md-image-img')).toBeNull();
-    expect(view.dom.querySelector(`.${IMG_BROKEN_CLASS}`)).not.toBeNull();
-    expect(view.dom.textContent).toContain('加载远程图片');
+    const img = view.dom.querySelector('img.mellow-md-image-img') as HTMLImageElement | null;
+    expect(img?.src).toContain('https://a.com/x.png');
   });
 
-  test('远程 URL → 设置开启后加载 img（Security M2）', async () => {
-    localStorage.setItem('mellow.image.loadRemote', '1');
+  test('远程 URL → 设置关闭（\'0\'）后显示占位 + 手动加载按钮（V6-P1 回退路径）', async () => {
+    localStorage.setItem('mellow.image.loadRemote', '0');
     try {
       const view = setUp('![x](https://a.com/x.png)\n', makeHost((s) => s));
       await sleep();
       moveCaret(view, view.state.doc.length);
       await sleep();
-      const img = view.dom.querySelector('img.mellow-md-image-img') as HTMLImageElement | null;
-      expect(img?.src).toContain('https://a.com/x.png');
+      // 关闭自动加载：无 img，显示占位 + 「加载远程图片」按钮
+      expect(view.dom.querySelector('img.mellow-md-image-img')).toBeNull();
+      expect(view.dom.querySelector(`.${IMG_BROKEN_CLASS}`)).not.toBeNull();
+      expect(view.dom.textContent).toContain('加载远程图片');
     } finally {
       localStorage.removeItem('mellow.image.loadRemote');
     }

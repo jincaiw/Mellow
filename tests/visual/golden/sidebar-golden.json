@@ -2,44 +2,44 @@
   "files-tree": {
     "aside": {
       "x": 0,
-      "y": 36,
+      "y": 0,
       "w": 260,
-      "h": 864
+      "h": 900
     },
     "widthSaved": null,
-    "quickbar": {
-      "x": 0,
-      "y": 71,
-      "w": 259,
-      "h": 32.4
-    },
-    "filterInput": {
-      "x": 8,
-      "y": 77.7,
-      "w": 181.9,
-      "h": 18
-    },
-    "quickBtnCount": 2,
+    "quickbar": null,
+    "filterInput": null,
+    "quickBtnCount": 0,
     "rowCount": 3,
     "firstRow": {
       "x": 0,
-      "y": 107.4,
+      "y": 39,
       "w": 259,
       "h": 28
     }
   },
+  "files-tree-filter": {
+    "asideW": 260,
+    "input": {
+      "x": 8,
+      "y": 40,
+      "w": 243,
+      "h": 18
+    },
+    "focused": false
+  },
   "outline": {
     "aside": {
       "x": 0,
-      "y": 36,
+      "y": 0,
       "w": 260,
-      "h": 864
+      "h": 900
     },
     "widthSaved": null,
     "rowCount": 3,
     "firstRow": {
       "x": 0,
-      "y": 128,
+      "y": 92,
       "w": 259,
       "h": 28
     }
@@ -47,14 +47,14 @@
   "search": {
     "aside": {
       "x": 0,
-      "y": 36,
+      "y": 0,
       "w": 260,
-      "h": 864
+      "h": 900
     },
     "widthSaved": null,
     "searchInput": {
       "x": 8,
-      "y": 79,
+      "y": 43,
       "w": 243,
       "h": 22
     },
@@ -62,7 +62,7 @@
     "matchCount": 2,
     "firstMatch": {
       "x": 0,
-      "y": 267,
+      "y": 231,
       "w": 259,
       "h": 29.3
     }
