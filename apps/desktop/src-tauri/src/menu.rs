@@ -13,7 +13,9 @@
 //! 主题列表或任何菜单状态（MenuLocale/RecentFiles/SpellcheckState/SmartPunctState/
 //! ThemeSelection 已随 P1-1.3 移除）。
 
-use tauri::menu::{AboutMetadata, CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{
+    AboutMetadata, CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu,
+};
 use tauri::{AppHandle, Emitter};
 
 /// 菜单点击 → 前端统一 dispatch 命令（不区分平台）
@@ -68,7 +70,11 @@ enum SpecItem {
     },
 }
 
-fn build_predefined(app: &AppHandle, kind: &str, label: Option<&str>) -> tauri::Result<Box<dyn IsMenuItem<tauri::Wry>>> {
+fn build_predefined(
+    app: &AppHandle,
+    kind: &str,
+    label: Option<&str>,
+) -> tauri::Result<Box<dyn IsMenuItem<tauri::Wry>>> {
     let item: Box<dyn IsMenuItem<tauri::Wry>> = match kind {
         "undo" => Box::new(PredefinedMenuItem::undo(app, label)?),
         "redo" => Box::new(PredefinedMenuItem::redo(app, label)?),
@@ -76,7 +82,11 @@ fn build_predefined(app: &AppHandle, kind: &str, label: Option<&str>) -> tauri::
         "copy" => Box::new(PredefinedMenuItem::copy(app, label)?),
         "paste" => Box::new(PredefinedMenuItem::paste(app, label)?),
         "selectAll" => Box::new(PredefinedMenuItem::select_all(app, label)?),
-        "about" => Box::new(PredefinedMenuItem::about(app, label, Some(AboutMetadata::default()))?),
+        "about" => Box::new(PredefinedMenuItem::about(
+            app,
+            label,
+            Some(AboutMetadata::default()),
+        )?),
         "services" => Box::new(PredefinedMenuItem::services(app, label)?),
         "hide" => Box::new(PredefinedMenuItem::hide(app, label)?),
         "hideOthers" => Box::new(PredefinedMenuItem::hide_others(app, label)?),
@@ -91,14 +101,34 @@ fn build_predefined(app: &AppHandle, kind: &str, label: Option<&str>) -> tauri::
 fn build_item(app: &AppHandle, item: &SpecItem) -> tauri::Result<Box<dyn IsMenuItem<tauri::Wry>>> {
     match item {
         SpecItem::Separator => Ok(Box::new(PredefinedMenuItem::separator(app)?)),
-        SpecItem::Command { id, label, accel, checked } => {
+        SpecItem::Command {
+            id,
+            label,
+            accel,
+            checked,
+        } => {
             if let Some(checked) = checked {
-                Ok(Box::new(CheckMenuItem::with_id(app, id, label, true, *checked, accel.as_deref())?))
+                Ok(Box::new(CheckMenuItem::with_id(
+                    app,
+                    id,
+                    label,
+                    true,
+                    *checked,
+                    accel.as_deref(),
+                )?))
             } else {
-                Ok(Box::new(MenuItem::with_id(app, id, label, true, accel.as_deref())?))
+                Ok(Box::new(MenuItem::with_id(
+                    app,
+                    id,
+                    label,
+                    true,
+                    accel.as_deref(),
+                )?))
             }
         }
-        SpecItem::Predefined { predefined, label } => build_predefined(app, predefined, label.as_deref()),
+        SpecItem::Predefined { predefined, label } => {
+            build_predefined(app, predefined, label.as_deref())
+        }
         SpecItem::Submenu { label, items } => {
             let built = build_items(app, items)?;
             let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = built.iter().map(|i| i.as_ref()).collect();
@@ -107,7 +137,10 @@ fn build_item(app: &AppHandle, item: &SpecItem) -> tauri::Result<Box<dyn IsMenuI
     }
 }
 
-fn build_items(app: &AppHandle, items: &[SpecItem]) -> tauri::Result<Vec<Box<dyn IsMenuItem<tauri::Wry>>>> {
+fn build_items(
+    app: &AppHandle,
+    items: &[SpecItem],
+) -> tauri::Result<Vec<Box<dyn IsMenuItem<tauri::Wry>>>> {
     items.iter().map(|item| build_item(app, item)).collect()
 }
 
@@ -118,7 +151,8 @@ pub fn set_menu_spec(app: AppHandle, spec: MenuSpec) -> Result<(), String> {
     for menu in &spec.menus {
         let built = build_items(&app, &menu.items).map_err(|e| e.to_string())?;
         let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = built.iter().map(|i| i.as_ref()).collect();
-        let submenu = Submenu::with_items(&app, &menu.label, true, &refs).map_err(|e| e.to_string())?;
+        let submenu =
+            Submenu::with_items(&app, &menu.label, true, &refs).map_err(|e| e.to_string())?;
         roots.push(Box::new(submenu));
     }
     let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = roots.iter().map(|i| i.as_ref()).collect();
@@ -132,7 +166,8 @@ pub fn set_menu_spec(app: AppHandle, spec: MenuSpec) -> Result<(), String> {
 /// Rust 在此只做 OS predefined item materialization（§7.4 硬规则 6）。
 pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
     if cfg!(target_os = "macos") {
-        let about = PredefinedMenuItem::about(app, Some("关于 Mellow"), Some(AboutMetadata::default()))?;
+        let about =
+            PredefinedMenuItem::about(app, Some("关于 Mellow"), Some(AboutMetadata::default()))?;
         let quit = PredefinedMenuItem::quit(app, Some("退出 Mellow"))?;
         let sep = PredefinedMenuItem::separator(app)?;
         let app_menu = Submenu::with_items(app, "Mellow", true, &[&about, &sep, &quit])?;

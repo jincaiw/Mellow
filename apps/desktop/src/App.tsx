@@ -734,9 +734,22 @@ export default function App() {
 
   // Windows Portable 模式标志（Rust is_portable；启动时加载一次）
   const portableRef = useRef(false);
+  // release 构建守卫（Rust is_release_build，anySSH 模式）：debug/dev 构建绝不
+  // 自更新（会把 release 覆盖到运行中的二进制上造成损坏）；未知按保守处理
+  const releaseBuildRef = useRef<boolean | null>(null);
+  const isAutoInstallEnabled = useCallback(() => {
+    const def = settingById('general.updater.autoInstall');
+    return def !== undefined && readSetting(def) === true;
+  }, []);
 
-  /** 检查更新（仅发送版本/平台/渠道元数据；无用户数据、无遥测） */
-  const runUpdateCheck = useCallback(async () => {
+  /**
+   * 检查更新（仅发送版本/平台/渠道元数据；无用户数据、无遥测）。
+   * manual=true（设置页/命令触发）：忽略「跳过此版本」，且发现即展示。
+   * 自动安装（anySSH autoUpdate 模式）：autoInstall 开 + release 构建 →
+   * 静默 rollback 备份 → 下载（Rust 校验签名）→ 安装并重启进入新版本。
+   */
+  const runUpdateCheck = useCallback(async (options?: { manual?: boolean }) => {
+    const manual = options?.manual === true;
     if (!isTauri()) return;
     // Windows Portable：应用内更新不可用（替换 exe 与运行中进程冲突），降级为下载提示（master-plan R1-2）
     if (portableRef.current) {
@@ -752,18 +765,54 @@ export default function App() {
         return;
       }
       pendingUpdateRef.current = update;
+      // 自动升级：静默下载安装并重启（dev 构建由 releaseBuildRef 拦截）
+      if (isAutoInstallEnabled() && releaseBuildRef.current === true) {
+        setToast({ message: t('updater.autoInstalling', { version: update.version }) });
+        await prepareRollback();
+        await downloadUpdate(update, (p) => {
+          const total = p.total ?? 0;
+          const percent = total > 0 ? Math.min(100, Math.round((p.downloaded / total) * 100)) : 0;
+          setUpdateUi({ phase: 'downloading', percent });
+        });
+        await installUpdateAndRestart(update); // 安装并重启进入新版本
+        return;
+      }
+      // 非自动模式：启动/定时检查不打扰「已跳过」的版本；手动检查始终展示
+      if (!manual) {
+        let skipped: string | null = null;
+        try { skipped = localStorage.getItem('mellow.updater.skippedVersion'); } catch { /* noop */ }
+        if (skipped === update.version) {
+          setUpdateUi({ phase: 'idle' });
+          return;
+        }
+      }
       setUpdateUi({ phase: 'available', version: update.version });
     } catch (err) {
       setUpdateUi({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
     }
-  }, []);
+  }, [isAutoInstallEnabled, t]);
 
   const handleUpdateLater = useCallback(() => {
     setUpdateUi({ phase: 'idle' });
   }, []);
 
+  /** 跳过此版本：记录版本号，本次安装内不再弹启动/定时提示（anySSH skipUpdate 模式） */
+  const handleSkipUpdate = useCallback(() => {
+    const version = pendingUpdateRef.current?.version;
+    if (version !== undefined) {
+      try { localStorage.setItem('mellow.updater.skippedVersion', version); } catch { /* noop */ }
+    }
+    setUpdateUi({ phase: 'idle' });
+  }, []);
+
   /** 立即更新：rollback 备份当前版本 → 下载（Rust 校验签名）→ 提示重启安装 */
   const handleUpdateNow = useCallback(async () => {
+    // dev/debug 构建守卫：绝不把 release 覆盖到运行中的二进制上（anySSH is_release_build 模式）
+    if (releaseBuildRef.current !== true) {
+      setToast({ message: t('updater.devGuard') });
+      setUpdateUi({ phase: 'idle' });
+      return;
+    }
     setUpdateUi({ phase: 'downloading', percent: 0 });
     try {
       await prepareRollback();
@@ -778,7 +827,7 @@ export default function App() {
     } catch (err) {
       setUpdateUi({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
     }
-  }, []);
+  }, [t]);
 
   const handleInstallRestart = useCallback(async () => {
     const update = pendingUpdateRef.current;
@@ -1029,6 +1078,8 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       portableRef.current = await invoke<boolean>('is_portable').catch(() => false);
+      // release 构建守卫（updater 安装路径）：invoke 失败按保守 false 处理
+      releaseBuildRef.current = await invoke<boolean>('is_release_build').catch(() => false);
       try {
         const status = await rollbackStatus();
         if (status !== null && status.pending) {
@@ -3883,7 +3934,7 @@ export default function App() {
       { id: 'fileTree.undo', localizedTitle: { zh: '撤销文件操作', en: 'Undo File Operation' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void handleTreeUndo() },
       { id: 'fileTree.copyPath', localizedTitle: { zh: '复制路径', en: 'Copy Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(false) },
       { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
-      { id: 'updater.check', localizedTitle: { zh: '检查更新', en: 'Check for Updates' }, category: 'app', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => void runUpdateCheck() },
+      { id: 'updater.check', localizedTitle: { zh: '检查更新', en: 'Check for Updates' }, category: 'app', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => void runUpdateCheck({ manual: true }) },
       // B2 文件菜单补全：清除最近文件（「打开最近文件」子菜单）
       { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Recent Files' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { setRecentFiles([]); try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* noop */ } } },
       // 编辑：查找 / 替换（Typora 对齐；Ctrl+H 由引擎 keymap 处理）
@@ -4684,6 +4735,7 @@ export default function App() {
         <div className="update-bar">
           <span>{t('updater.updateAvailable', { version: updateUi.version })}</span>
           <button onClick={handleUpdateLater}>{t('updater.later')}</button>
+          <button onClick={handleSkipUpdate}>{t('updater.skipVersion')}</button>
           <button onClick={() => void handleUpdateNow()}>{t('updater.update')}</button>
         </div>
       )}

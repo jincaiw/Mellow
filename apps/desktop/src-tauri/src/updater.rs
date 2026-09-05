@@ -113,7 +113,8 @@ fn copy_recursive(src: &Path, dst: &Path) -> Result<(), String> {
         }
         Ok(())
     } else {
-        fs::copy(src, dst).map_err(|e| format!("copy {} → {}: {e}", src.display(), dst.display()))?;
+        fs::copy(src, dst)
+            .map_err(|e| format!("copy {} → {}: {e}", src.display(), dst.display()))?;
         Ok(())
     }
 }
@@ -352,7 +353,10 @@ mod tests {
         let backup = backup_root(&dir);
         let copied = copy_app(&app, &backup).unwrap();
         assert_eq!(copied.file_name().unwrap(), "FakeApp.app");
-        assert_eq!(fs::read(copied.join("Contents/MacOS/fake")).unwrap(), b"old-binary");
+        assert_eq!(
+            fs::read(copied.join("Contents/MacOS/fake")).unwrap(),
+            b"old-binary"
+        );
 
         // 模拟更新替换了 app（新内容）
         fs::write(app.join("Contents/MacOS/fake"), b"new-binary").unwrap();
@@ -360,7 +364,10 @@ mod tests {
         let outcome = restore_app(&backup, &app).unwrap();
         assert!(outcome.restored);
         assert!(!outcome.scheduled_restart);
-        assert_eq!(fs::read(app.join("Contents/MacOS/fake")).unwrap(), b"old-binary");
+        assert_eq!(
+            fs::read(app.join("Contents/MacOS/fake")).unwrap(),
+            b"old-binary"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -398,7 +405,12 @@ mod tests {
         copy_app(&app, &backup).unwrap();
         write_marker(
             &dir,
-            &RollbackInfo { previous_version: "0.1.0".into(), pending: true, launch_count: 1, prepared_at: 1 },
+            &RollbackInfo {
+                previous_version: "0.1.0".into(),
+                pending: true,
+                launch_count: 1,
+                prepared_at: 1,
+            },
         )
         .unwrap();
         assert!(backup.exists());

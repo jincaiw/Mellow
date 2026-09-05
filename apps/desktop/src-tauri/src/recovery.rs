@@ -8,7 +8,6 @@
  *
  * 纯函数核心可独立测试（kill process / multiple docs / renamed 等场景）。
  */
-
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
@@ -55,7 +54,13 @@ pub struct RecoveryEntry {
 pub fn snapshot_file_name(document_id: &str) -> String {
     let sanitized: String = document_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     format!("{}.json", sanitized)
 }
@@ -147,7 +152,10 @@ pub async fn recovery_list(app: tauri::AppHandle) -> Result<Vec<RecoveryEntry>, 
 }
 
 #[tauri::command]
-pub async fn recovery_get(app: tauri::AppHandle, document_id: String) -> Result<Option<RecoveryPayload>, String> {
+pub async fn recovery_get(
+    app: tauri::AppHandle,
+    document_id: String,
+) -> Result<Option<RecoveryPayload>, String> {
     let dir = recovery_dir(&app)?;
     Ok(load_snapshot(&dir, &document_id))
 }
@@ -169,7 +177,12 @@ mod tests {
         dir
     }
 
-    fn payload(document_id: &str, path: Option<&str>, content: &str, revision: u64) -> RecoveryPayload {
+    fn payload(
+        document_id: &str,
+        path: Option<&str>,
+        content: &str,
+        revision: u64,
+    ) -> RecoveryPayload {
         RecoveryPayload {
             document_id: document_id.to_string(),
             path: path.map(|p| p.to_string()),
@@ -268,7 +281,10 @@ mod tests {
 
     #[test]
     fn snapshot_file_name_sanitizes() {
-        assert_eq!(snapshot_file_name("550e8400-e29b-41d4-a716-446655440000"), "550e8400-e29b-41d4-a716-446655440000.json");
+        assert_eq!(
+            snapshot_file_name("550e8400-e29b-41d4-a716-446655440000"),
+            "550e8400-e29b-41d4-a716-446655440000.json"
+        );
         // 非法字符 → _（防路径穿越）
         assert!(!snapshot_file_name("../../etc/passwd").contains('/'));
         assert_eq!(snapshot_file_name("a/b"), "a_b.json");

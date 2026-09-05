@@ -9,14 +9,14 @@ pub mod pandoc;
 pub mod print;
 pub mod recovery;
 pub mod search;
-pub mod upload;
 pub mod updater;
+pub mod upload;
 pub mod watcher;
 pub mod window;
 
-use tauri::{Emitter, Manager, RunEvent};
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
+use tauri::{Emitter, Manager, RunEvent};
 
 use watcher::{DebounceState, WatcherRegistry};
 
@@ -41,7 +41,11 @@ fn portable_data_dir() -> Option<std::path::PathBuf> {
     }
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?.join("Data");
-    if dir.is_dir() { Some(dir) } else { None }
+    if dir.is_dir() {
+        Some(dir)
+    } else {
+        None
+    }
 }
 
 /// 便携模式数据重定向：APPDATA / LOCALAPPDATA 指向 `Data` 目录。
@@ -67,6 +71,14 @@ fn setup_portable_mode() -> bool {
 #[tauri::command]
 fn is_portable() -> bool {
     *PORTABLE.get().unwrap_or(&false)
+}
+
+/// 前端 updater 安装路径守卫（anySSH 模式对齐）：debug/dev 构建绝不能下载并
+/// 把 release 覆盖到自身可执行文件上（会损坏运行中的二进制）。仅真正的
+/// release 构建允许自更新；未知（invoke 失败）时前端按保守处理。
+#[tauri::command]
+fn is_release_build() -> bool {
+    !cfg!(debug_assertions)
 }
 
 /// 记录最近文档到系统（Windows JumpList Recent category；PRD §134 P1；
@@ -113,7 +125,10 @@ mod tests {
         let first = take_pending_open(&pending).expect("first read returns the launch request");
         assert_eq!(first.path, "/tmp/launch.md");
         assert_eq!(first.mode, "normal");
-        assert!(take_pending_open(&pending).is_none(), "a consumed launch request must not be replayed");
+        assert!(
+            take_pending_open(&pending).is_none(),
+            "a consumed launch request must not be replayed"
+        );
     }
 }
 
@@ -130,6 +145,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pending_open_path,
             is_portable,
+            is_release_build,
             jump_list_add_recent,
             print::open_devtools,
             menu::set_menu_spec,
@@ -212,16 +228,17 @@ pub fn run() {
                 // Linux 维持系统装饰（GNOME/KDE undecorated resize 兼容性风险，记为 D）。
                 #[cfg(target_os = "windows")]
                 let builder = builder.decorations(false);
-                builder.on_navigation(|url| {
-                let scheme = url.scheme();
-                if scheme == "tauri" {
-                    return true; // 应用自身页面（release）
-                }
-                // dev server（vite）
-                scheme == "http" && url.host_str() == Some("localhost")
-                })
-                .build()
-                .expect("failed to build main window")
+                builder
+                    .on_navigation(|url| {
+                        let scheme = url.scheme();
+                        if scheme == "tauri" {
+                            return true; // 应用自身页面（release）
+                        }
+                        // dev server（vite）
+                        scheme == "http" && url.host_str() == Some("localhost")
+                    })
+                    .build()
+                    .expect("failed to build main window")
             };
             let _ = window.set_title("Mellow");
             // A2（第四轮）：窗口几何记忆 —— 恢复上次位置/尺寸/最大化；
@@ -279,7 +296,10 @@ pub fn run() {
                     for url in urls {
                         if let Ok(path) = url.to_file_path() {
                             let s = path.to_string_lossy().to_string();
-                            let req = OpenRequest { path: s.clone(), mode: "normal".to_string() };
+                            let req = OpenRequest {
+                                path: s.clone(),
+                                mode: "normal".to_string(),
+                            };
                             *app.state::<PendingOpen>().0.lock().unwrap() = Some(req.clone());
                             let _ = app.emit("mellow://open-file", req);
                         }

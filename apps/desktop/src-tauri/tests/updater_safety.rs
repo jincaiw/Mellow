@@ -50,7 +50,9 @@ fn base64_std_decode(data: &[u8]) -> Vec<u8> {
 fn verify_signature(data: &[u8], signature_b64: &str, pubkey_b64: &str) -> Result<(), String> {
     let pubkey = PublicKey::decode(&b64_decode(pubkey_b64)).map_err(|e| format!("pubkey: {e}"))?;
     let sig = Signature::decode(&b64_decode(signature_b64)).map_err(|e| format!("sig: {e}"))?;
-    pubkey.verify(data, &sig, true).map_err(|e| format!("verify: {e}"))
+    pubkey
+        .verify(data, &sig, true)
+        .map_err(|e| format!("verify: {e}"))
 }
 
 fn current_target() -> &'static str {
@@ -116,7 +118,9 @@ fn production_pubkey_is_valid_minisign_key() {
             .unwrap(),
     )
     .unwrap();
-    let pubkey = conf["plugins"]["updater"]["pubkey"].as_str().expect("pubkey 缺失");
+    let pubkey = conf["plugins"]["updater"]["pubkey"]
+        .as_str()
+        .expect("pubkey 缺失");
     let decoded = b64_decode(pubkey);
     PublicKey::decode(&decoded).expect("生产 pubkey 必须是合法 minisign 公钥");
 }
@@ -124,7 +128,11 @@ fn production_pubkey_is_valid_minisign_key() {
 // ─────────────────────────── 4. mock 更新服务器端到端 ───────────────────────────
 
 /// 极简 HTTP 服务器：任何路径 → latest.json；/artifact → 产物
-fn spawn_mock_server(artifact: Vec<u8>, sig: String, target: String) -> (u16, std::thread::JoinHandle<()>) {
+fn spawn_mock_server(
+    artifact: Vec<u8>,
+    sig: String,
+    target: String,
+) -> (u16, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let handle = std::thread::spawn(move || {
@@ -201,10 +209,12 @@ fn mock_server_check_download_verify() {
     let pubkey = std::fs::read_to_string(fixture("test-pub.key")).unwrap();
     let target = current_target();
 
-    let (port, handle) = spawn_mock_server(artifact.clone(), sig.trim().to_string(), target.to_string());
+    let (port, handle) =
+        spawn_mock_server(artifact.clone(), sig.trim().to_string(), target.to_string());
 
     // check：拉取 latest.json（endpoint 模板与生产一致）
-    let endpoint = format!("http://127.0.0.1:{port}/{{{{target}}}}/{{{{arch}}}}/{{{{current_version}}}}");
+    let endpoint =
+        format!("http://127.0.0.1:{port}/{{{{target}}}}/{{{{arch}}}}/{{{{current_version}}}}");
     let manifest_raw = http_get(&endpoint).unwrap();
     let manifest: serde_json::Value = serde_json::from_slice(&manifest_raw).unwrap();
     assert_eq!(manifest["version"], "99.0.0");

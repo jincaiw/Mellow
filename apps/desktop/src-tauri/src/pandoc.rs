@@ -12,12 +12,31 @@ use std::process::Command;
 
 /// 允许的 pandoc 导出格式（Typora 1.14.6 导出子菜单对齐；html 供无样式导出复用）
 pub const ALLOWED_EXPORT_FORMATS: &[&str] = &[
-    "docx", "odt", "rtf", "epub", "latex", "mediawiki", "rst", "textile", "opml", "html",
+    "docx",
+    "odt",
+    "rtf",
+    "epub",
+    "latex",
+    "mediawiki",
+    "rst",
+    "textile",
+    "opml",
+    "html",
 ];
 
 /// 允许的导入输入格式（pandoc -f 值；Typora File→Import 对齐）
-pub const ALLOWED_IMPORT_FORMATS: &[&str] =
-    &["docx", "odt", "rtf", "epub", "html", "latex", "rst", "textile", "mediawiki", "opml"];
+pub const ALLOWED_IMPORT_FORMATS: &[&str] = &[
+    "docx",
+    "odt",
+    "rtf",
+    "epub",
+    "html",
+    "latex",
+    "rst",
+    "textile",
+    "mediawiki",
+    "opml",
+];
 
 /// 扩展名 → pandoc 输入格式（导入时按所选文件推断）
 fn import_format_from_ext(path: &str) -> Option<&'static str> {
@@ -114,7 +133,11 @@ mod tests {
         let output = tmp("out.docx");
         let _ = fs::remove_file(&input);
         let _ = fs::remove_file(&output);
-        fs::write(&input, "# 中文标题\n\n段落 **bold** 与 `code`。\n\n| a | b |\n|---|---|\n| 1 | 2 |\n").unwrap();
+        fs::write(
+            &input,
+            "# 中文标题\n\n段落 **bold** 与 `code`。\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+        )
+        .unwrap();
         let input_s = input.to_string_lossy().to_string();
         let output_s = output.to_string_lossy().to_string();
         pandoc_export(input_s, output_s, None).expect("pandoc export should succeed");
@@ -134,7 +157,11 @@ mod tests {
     fn export_format_allowlist() {
         // 白名单内格式放行（无 pandoc 环境下 spawn 失败 ≠ 格式拒绝）
         for fmt in ALLOWED_EXPORT_FORMATS {
-            let r = pandoc_export("/nonexistent.md".into(), "/tmp/x.out".into(), Some(fmt.to_string()));
+            let r = pandoc_export(
+                "/nonexistent.md".into(),
+                "/tmp/x.out".into(),
+                Some(fmt.to_string()),
+            );
             if pandoc_available() {
                 // pandoc 存在：输入文件不存在 → spawn 报错，但不是格式拒绝
                 assert!(r.is_err());
@@ -145,8 +172,15 @@ mod tests {
         }
         // 白名单外格式直接拒绝（不触发 spawn）
         for bad in ["sh", "doc", "rm -rf", ""] {
-            let r = pandoc_export("/nonexistent.md".into(), "/tmp/x.out".into(), Some(bad.to_string()));
-            assert!(r.unwrap_err().contains("unsupported export format"), "bad={bad}");
+            let r = pandoc_export(
+                "/nonexistent.md".into(),
+                "/tmp/x.out".into(),
+                Some(bad.to_string()),
+            );
+            assert!(
+                r.unwrap_err().contains("unsupported export format"),
+                "bad={bad}"
+            );
         }
     }
 
@@ -187,7 +221,11 @@ mod tests {
         let output = tmp("out.md");
         let _ = fs::remove_file(&input);
         let _ = fs::remove_file(&output);
-        fs::write(&input, "<h1>标题</h1>\n<p>段落 <strong>加粗</strong>。</p>\n").unwrap();
+        fs::write(
+            &input,
+            "<h1>标题</h1>\n<p>段落 <strong>加粗</strong>。</p>\n",
+        )
+        .unwrap();
         pandoc_import(
             input.to_string_lossy().into_owned(),
             output.to_string_lossy().into_owned(),

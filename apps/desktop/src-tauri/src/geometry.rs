@@ -37,13 +37,18 @@ pub struct GeometryState(pub Mutex<Option<WindowGeometry>>);
 
 /// 几何文件路径。
 pub fn file_path(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().ok().map(|dir| dir.join(FILE_NAME))
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join(FILE_NAME))
 }
 
 /// 从磁盘读取历史几何（文件缺失/损坏 → None）。
 pub fn load(path: &Path) -> Option<WindowGeometry> {
     let raw = fs::read(path).ok()?;
-    serde_json::from_slice(&raw).ok().filter(|g: &WindowGeometry| g.width > 0 && g.height > 0)
+    serde_json::from_slice(&raw)
+        .ok()
+        .filter(|g: &WindowGeometry| g.width > 0 && g.height > 0)
 }
 
 /// 原子写入（temp + rename，与 recovery.rs 同思路）。
@@ -75,10 +80,7 @@ pub fn save(path: &Path, geometry: &WindowGeometry) {
 /// 纯函数：几何是否与任一显示器有效相交。
 /// 每个显示器以 (x, y, w, h) 物理矩形描述；要求窗口至少露出一个可观区域
 /// （≥120px 宽 × ≥48px 高），避免仅剩 1~2px 边缘时仍被判定为"在屏"。
-pub fn visible_on_any_screen(
-    monitors: &[(i32, i32, u32, u32)],
-    g: &WindowGeometry,
-) -> bool {
+pub fn visible_on_any_screen(monitors: &[(i32, i32, u32, u32)], g: &WindowGeometry) -> bool {
     const MIN_VISIBLE_W: i64 = 120;
     const MIN_VISIBLE_H: i64 = 48;
     let (wx, wy) = (g.x as i64, g.y as i64);
@@ -189,7 +191,13 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join(FILE_NAME);
-        let g = WindowGeometry { x: -1200, y: 320, width: 1440, height: 900, maximized: true };
+        let g = WindowGeometry {
+            x: -1200,
+            y: 320,
+            width: 1440,
+            height: 900,
+            maximized: true,
+        };
         save(&path, &g);
         assert_eq!(load(&path), Some(g));
         let _ = fs::remove_dir_all(&dir);
@@ -204,7 +212,11 @@ mod tests {
         assert_eq!(load(&path), None); // 不存在
         fs::write(&path, "not json").unwrap();
         assert_eq!(load(&path), None); // 损坏
-        fs::write(&path, r#"{"x":0,"y":0,"width":0,"height":0,"maximized":false}"#).unwrap();
+        fs::write(
+            &path,
+            r#"{"x":0,"y":0,"width":0,"height":0,"maximized":false}"#,
+        )
+        .unwrap();
         assert_eq!(load(&path), None); // 零尺寸视为非法
         let _ = fs::remove_dir_all(&dir);
     }
@@ -213,20 +225,50 @@ mod tests {
     fn off_screen_geometry_is_rejected() {
         let monitors = [(0, 0, 1920, 1080), (1920, 0, 1920, 1080)];
         // 主屏内 → 可见
-        let ok = WindowGeometry { x: 100, y: 80, width: 900, height: 600, maximized: false };
+        let ok = WindowGeometry {
+            x: 100,
+            y: 80,
+            width: 900,
+            height: 600,
+            maximized: false,
+        };
         assert!(visible_on_any_screen(&monitors, &ok));
         // 完全在右侧副屏 → 可见
-        let right = WindowGeometry { x: 2200, y: 100, width: 800, height: 600, maximized: false };
+        let right = WindowGeometry {
+            x: 2200,
+            y: 100,
+            width: 800,
+            height: 600,
+            maximized: false,
+        };
         assert!(visible_on_any_screen(&monitors, &right));
         // 完全在屏幕外（旧副屏拔掉后遗留位置）→ 拒绝
-        let lost = WindowGeometry { x: -4000, y: 100, width: 800, height: 600, maximized: false };
+        let lost = WindowGeometry {
+            x: -4000,
+            y: 100,
+            width: 800,
+            height: 600,
+            maximized: false,
+        };
         assert!(!visible_on_any_screen(&monitors, &lost));
         // 只剩 2px 边缘露出 → 拒绝（防误判）
         let single = [(0, 0, 1920, 1080)];
-        let sliver = WindowGeometry { x: 1918, y: 0, width: 800, height: 600, maximized: false };
+        let sliver = WindowGeometry {
+            x: 1918,
+            y: 0,
+            width: 800,
+            height: 600,
+            maximized: false,
+        };
         assert!(!visible_on_any_screen(&single, &sliver));
         // 绝大部分在屏但仅小部分在右副屏内 → 接受（跨屏窗口不误杀）
-        let spanning = WindowGeometry { x: 1900, y: 100, width: 400, height: 600, maximized: false };
+        let spanning = WindowGeometry {
+            x: 1900,
+            y: 100,
+            width: 400,
+            height: 600,
+            maximized: false,
+        };
         assert!(visible_on_any_screen(&monitors, &spanning));
     }
 }

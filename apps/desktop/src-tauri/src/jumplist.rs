@@ -15,7 +15,10 @@ pub fn add_recent(path: &str) {
         use std::os::windows::ffi::OsStrExt;
         // SHARD_PATHW = 0x3（windows_sys 未导出该常量；见 WinUI ShellAPI 文档）
         const SHARD_PATHW: u32 = 0x3;
-        let wide: Vec<u16> = std::ffi::OsStr::new(path).encode_wide().chain([0]).collect();
+        let wide: Vec<u16> = std::ffi::OsStr::new(path)
+            .encode_wide()
+            .chain([0])
+            .collect();
         // API 仅入队系统 Recent 通知，不校验文件存在性（不存在的路径入队无副作用）
         unsafe {
             windows_sys::Win32::UI::Shell::SHAddToRecentDocs(

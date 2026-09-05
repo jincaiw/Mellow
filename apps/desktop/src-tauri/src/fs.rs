@@ -54,7 +54,13 @@ pub struct SaveDocumentResult {
 
 impl SaveDocumentResult {
     fn canceled() -> Self {
-        Self { path: None, disk_mtime_ms: None, identity_key: None, error_code: None, error: None }
+        Self {
+            path: None,
+            disk_mtime_ms: None,
+            identity_key: None,
+            error_code: None,
+            error: None,
+        }
     }
 }
 
@@ -107,7 +113,10 @@ impl SaveError {
 
 pub fn decode(bytes: &[u8]) -> (String, &'static str) {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        (String::from_utf8_lossy(&bytes[3..]).into_owned(), ENC_UTF8_BOM)
+        (
+            String::from_utf8_lossy(&bytes[3..]).into_owned(),
+            ENC_UTF8_BOM,
+        )
     } else if bytes.starts_with(&[0xFF, 0xFE]) {
         (decode_utf16(&bytes[2..], true), ENC_UTF16LE)
     } else if bytes.starts_with(&[0xFE, 0xFF]) {
@@ -249,7 +258,11 @@ fn tmp_path_for(target: &Path) -> PathBuf {
  *
  * 失败保证：rename 前原文件从未被触碰；任何阶段失败清理 temp，原文件完整。
  */
-pub fn atomic_save(target: &Path, data: &[u8], expected: Option<&DiskState>) -> Result<SaveOutcome, SaveError> {
+pub fn atomic_save(
+    target: &Path,
+    data: &[u8],
+    expected: Option<&DiskState>,
+) -> Result<SaveOutcome, SaveError> {
     // 1. 解析 symlink（spec §11）：保存到真实目标、保留 symlink 本身。
     //    canonicalize 同时解析 parent 目录里的 symlink；路径不存在（新文档）时回退原路径。
     let effective = fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
@@ -284,7 +297,8 @@ pub fn atomic_save(target: &Path, data: &[u8], expected: Option<&DiskState>) -> 
     // 4-7. temp write → flush → fsync → rename
     let replace = (|| {
         let mut tmp = fs::File::create(&tmp_path).map_err(|e| SaveError::Io(e.to_string()))?;
-        tmp.write_all(data).map_err(|e| SaveError::Io(e.to_string()))?;
+        tmp.write_all(data)
+            .map_err(|e| SaveError::Io(e.to_string()))?;
         tmp.flush().map_err(|e| SaveError::Io(e.to_string()))?;
         tmp.sync_all().map_err(|e| SaveError::Io(e.to_string()))?;
         drop(tmp);
@@ -299,7 +313,11 @@ pub fn atomic_save(target: &Path, data: &[u8], expected: Option<&DiskState>) -> 
     // 8. 恢复原文件权限（PRD §104 permissions preservation；失败仅告警，不破坏已落盘内容）
     if let Some(perms) = original_perms {
         if let Err(e) = fs::set_permissions(&effective, perms) {
-            eprintln!("[mellow] 恢复文件权限失败（{}）: {}", effective.display(), e);
+            eprintln!(
+                "[mellow] 恢复文件权限失败（{}）: {}",
+                effective.display(),
+                e
+            );
         }
     }
 
@@ -368,7 +386,13 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
                 }
                 cache.insert(
                     path.clone(),
-                    CachedText { content, char_count, encoding, eol, mtime_ms: disk_mtime_ms },
+                    CachedText {
+                        content,
+                        char_count,
+                        encoding,
+                        eol,
+                        mtime_ms: disk_mtime_ms,
+                    },
                 );
                 OpenDocumentResult {
                     path: Some(path.to_string_lossy().into_owned()),
@@ -426,7 +450,13 @@ pub async fn save_document(
             // rust 兜底 "untitled.md"；始终确保 .md 后缀。
             let suggested = default_name
                 .filter(|n| !n.trim().is_empty())
-                .map(|n| if n.ends_with(".md") { n } else { format!("{n}.md") })
+                .map(|n| {
+                    if n.ends_with(".md") {
+                        n
+                    } else {
+                        format!("{n}.md")
+                    }
+                })
                 .unwrap_or_else(|| "untitled.md".to_string());
             let Some(file) = app
                 .dialog()
@@ -446,11 +476,21 @@ pub async fn save_document(
     };
 
     let _ = eol; // preserve EOL：content 原样，不转换
-    perform_save(&target, &content, encoding.as_deref().unwrap_or(ENC_UTF8), expected.as_ref())
+    perform_save(
+        &target,
+        &content,
+        encoding.as_deref().unwrap_or(ENC_UTF8),
+        expected.as_ref(),
+    )
 }
 
 /// 保存管线核心（save_document 与 save_chunk_end 共用）：encode → Atomic Save → 结果映射
-fn perform_save(target: &Path, content: &str, encoding: &str, expected: Option<&DiskState>) -> SaveDocumentResult {
+fn perform_save(
+    target: &Path,
+    content: &str,
+    encoding: &str,
+    expected: Option<&DiskState>,
+) -> SaveDocumentResult {
     let data = encode(content, encoding);
     match atomic_save(target, &data, expected) {
         Ok(outcome) => SaveDocumentResult {
@@ -515,17 +555,23 @@ struct CachedText {
     mtime_ms: u64,
 }
 
-static TEXT_CHUNK_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, CachedText>>> =
-    std::sync::OnceLock::new();
+static TEXT_CHUNK_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, CachedText>>,
+> = std::sync::OnceLock::new();
 
 /// 读取（或复用缓存）decode 后的文本；mtime 变化时重新加载
 fn load_cached_text(path: &Path) -> Result<(), String> {
-    let mtime = fs::metadata(path).map(|m| mtime_ms(&m)).map_err(|e| e.to_string())?;
+    let mtime = fs::metadata(path)
+        .map(|m| mtime_ms(&m))
+        .map_err(|e| e.to_string())?;
     let mut cache = TEXT_CHUNK_CACHE
         .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
         .lock()
         .unwrap();
-    let fresh = cache.get(path).map(|c| c.mtime_ms == mtime).unwrap_or(false);
+    let fresh = cache
+        .get(path)
+        .map(|c| c.mtime_ms == mtime)
+        .unwrap_or(false);
     if !fresh {
         let bytes = fs::read(path).map_err(|e| e.to_string())?;
         let (content, encoding) = decode(&bytes);
@@ -536,7 +582,13 @@ fn load_cached_text(path: &Path) -> Result<(), String> {
         }
         cache.insert(
             path.to_path_buf(),
-            CachedText { content, char_count, encoding, eol, mtime_ms: mtime },
+            CachedText {
+                content,
+                char_count,
+                encoding,
+                eol,
+                mtime_ms: mtime,
+            },
         );
     }
     Ok(())
@@ -581,16 +633,25 @@ pub struct ReadTextChunkResult {
 }
 
 #[tauri::command]
-pub async fn read_text_chunk(path: String, offset: usize, len: usize) -> Result<ReadTextChunkResult, String> {
+pub async fn read_text_chunk(
+    path: String,
+    offset: usize,
+    len: usize,
+) -> Result<ReadTextChunkResult, String> {
     let p = PathBuf::from(&path);
     load_cached_text(&p)?;
     let cache = TEXT_CHUNK_CACHE
         .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
         .lock()
         .unwrap();
-    let entry = cache.get(&p).ok_or_else(|| "缓存未命中，请先调用 read_text_meta".to_string())?;
+    let entry = cache
+        .get(&p)
+        .ok_or_else(|| "缓存未命中，请先调用 read_text_meta".to_string())?;
     let chunk: String = entry.content.chars().skip(offset).take(len).collect();
-    Ok(ReadTextChunkResult { chunk, total: entry.char_count })
+    Ok(ReadTextChunkResult {
+        chunk,
+        total: entry.char_count,
+    })
 }
 
 #[tauri::command]
@@ -669,15 +730,19 @@ pub async fn write_binary(path: String, data: Vec<u8>) -> Result<(), String> {
     if !dir.as_os_str().is_empty() && !dir.exists() {
         fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
     }
-    let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("mellow-bin");
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("mellow-bin");
     let tmp = dir.join(format!(".{}.mellow-tmp", name));
     let _ = fs::remove_file(&tmp);
     fs::write(&tmp, &data).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &target).map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        e.to_string()
-    })
-    .map_err(|e| format!("write {}: {}", path, e))
+    fs::rename(&tmp, &target)
+        .map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            e.to_string()
+        })
+        .map_err(|e| format!("write {}: {}", path, e))
 }
 
 /// 读二进制文件（复制/检测）
@@ -731,7 +796,9 @@ fn move_file_impl(src: &Path, dst: &Path, from: &str, to: &str) -> Result<(), St
     match fs::rename(src, dst) {
         Ok(()) => Ok(()),
         // EXDEV：跨设备移动 → 安全降级（copy→verify→删源；任何失败源文件不动）
-        Err(e) if e.raw_os_error() == Some(libc_cross_device()) => move_cross_device(src, dst, from, to),
+        Err(e) if e.raw_os_error() == Some(libc_cross_device()) => {
+            move_cross_device(src, dst, from, to)
+        }
         Err(e) => Err(format!("move {} → {}: {}", from, to, e)),
     }
 }
@@ -751,15 +818,22 @@ fn libc_cross_device() -> i32 {
 /// 失败保证：目标未落盘前源文件不动；verify 失败删除目标副本，源文件保留。
 fn move_cross_device(src: &Path, dst: &Path, from: &str, to: &str) -> Result<(), String> {
     let dir = dst.parent().unwrap_or_else(|| Path::new("."));
-    let name = dst.file_name().and_then(|n| n.to_str()).unwrap_or("mellow-move");
+    let name = dst
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("mellow-move");
     let tmp = dir.join(format!(".{}.mellow-move-tmp", name));
     let _ = fs::remove_file(&tmp);
 
-    let copied = fs::copy(src, &tmp).map_err(|e| format!("move {} → {}: 跨设备复制失败: {}", from, to, e))?;
+    let copied = fs::copy(src, &tmp)
+        .map_err(|e| format!("move {} → {}: 跨设备复制失败: {}", from, to, e))?;
     let src_len = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
     if copied != src_len {
         let _ = fs::remove_file(&tmp);
-        return Err(format!("move {} → {}: 复制校验失败（{} ≠ {}）", from, to, copied, src_len));
+        return Err(format!(
+            "move {} → {}: 复制校验失败（{} ≠ {}）",
+            from, to, copied, src_len
+        ));
     }
     // verify 通过 → 目标就位
     fs::rename(&tmp, dst).map_err(|e| {
@@ -817,7 +891,13 @@ pub async fn read_dir(path: String) -> Result<Vec<DirEntryJson>, String> {
             .and_then(|m| m.created().ok())
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64);
-        out.push(DirEntryJson { path: p.to_string_lossy().into_owned(), name, is_directory: is_dir, modified_ms, created_ms });
+        out.push(DirEntryJson {
+            path: p.to_string_lossy().into_owned(),
+            name,
+            is_directory: is_dir,
+            modified_ms,
+            created_ms,
+        });
     }
     Ok(out)
 }
@@ -835,7 +915,10 @@ fn download_remote_impl(url: &str, target: &Path) -> Result<(), String> {
     if !dir.as_os_str().is_empty() && !dir.exists() {
         fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
     }
-    let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("mellow-download");
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("mellow-download");
     let tmp = dir.join(format!(".{}.mellow-dl-tmp", name));
     let _ = fs::remove_file(&tmp);
 
@@ -865,8 +948,11 @@ mod tests {
     fn test_dir() -> PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let dir = std::env::temp_dir()
-            .join(format!("mellow-save-{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::SeqCst)));
+        let dir = std::env::temp_dir().join(format!(
+            "mellow-save-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -924,7 +1010,10 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), b"new content"); // verify 通过
         assert_eq!(outcome.bytes_written, 11);
         assert!(outcome.disk_mtime_ms >= expected.mtime_ms);
-        assert_eq!(outcome.identity_key, identity_key(&fs::metadata(&target).unwrap()));
+        assert_eq!(
+            outcome.identity_key,
+            identity_key(&fs::metadata(&target).unwrap())
+        );
         assert!(!tmp_path_for(&target).exists()); // temp 清理
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -936,7 +1025,10 @@ mod tests {
         fs::write(&target, b"local").unwrap();
 
         // 模拟外部修改：mtime 过期（expected 是旧的）
-        let stale = DiskState { mtime_ms: 1, identity_key: "0:0".to_string() };
+        let stale = DiskState {
+            mtime_ms: 1,
+            identity_key: "0:0".to_string(),
+        };
         let err = atomic_save(&target, b"overwrite?", Some(&stale)).unwrap_err();
         assert!(matches!(err, SaveError::Conflict(_)));
         // 原文件未被破坏
@@ -948,7 +1040,10 @@ mod tests {
     fn deleted_target_conflict() {
         let dir = test_dir();
         let target = dir.join("gone.md");
-        let expected = DiskState { mtime_ms: 1, identity_key: "0:0".to_string() };
+        let expected = DiskState {
+            mtime_ms: 1,
+            identity_key: "0:0".to_string(),
+        };
         let err = atomic_save(&target, b"x", Some(&expected)).unwrap_err();
         assert!(matches!(err, SaveError::Conflict(_)));
         fs::remove_dir_all(&dir).unwrap();
@@ -973,7 +1068,7 @@ mod tests {
 
         let result = atomic_save(&target, b"new", None);
         assert!(result.is_err()); // Io
-        // 原文件未被破坏
+                                  // 原文件未被破坏
         assert_eq!(fs::read(&target).unwrap(), b"keep me");
 
         #[cfg(unix)]
@@ -1112,7 +1207,10 @@ mod tests {
         fs::write(&src, b"img").unwrap();
         // 目标父目录不存在 → 自动建
         let nested = dir.join("assets").join("b.png");
-        let (from, to) = (src.to_string_lossy().into_owned(), nested.to_string_lossy().into_owned());
+        let (from, to) = (
+            src.to_string_lossy().into_owned(),
+            nested.to_string_lossy().into_owned(),
+        );
         let r = move_file_impl(&src, &nested, &from, &to);
         assert!(r.is_ok());
         assert!(nested.exists());
@@ -1121,7 +1219,10 @@ mod tests {
         // 目标已存在 → 拒绝覆盖（存在性检查在 rename 前）
         let src2 = dir.join("c.png");
         fs::write(&src2, b"x").unwrap();
-        let (from2, to2) = (src2.to_string_lossy().into_owned(), nested.to_string_lossy().into_owned());
+        let (from2, to2) = (
+            src2.to_string_lossy().into_owned(),
+            nested.to_string_lossy().into_owned(),
+        );
         let r = move_file_impl(&src2, &nested, &from2, &to2);
         assert!(r.is_err());
         // 源文件未被破坏
@@ -1135,7 +1236,10 @@ mod tests {
         let dir = test_dir();
         let src = dir.join("missing.png");
         let dst = dir.join("b.png");
-        let (from, to) = (src.to_string_lossy().into_owned(), dst.to_string_lossy().into_owned());
+        let (from, to) = (
+            src.to_string_lossy().into_owned(),
+            dst.to_string_lossy().into_owned(),
+        );
         let r = move_file_impl(&src, &dst, &from, &to);
         assert!(r.is_err());
         fs::remove_dir_all(&dir).unwrap();
@@ -1148,7 +1252,10 @@ mod tests {
         let dst = dir.join("assets").join("b.png");
         fs::create_dir_all(dst.parent().unwrap()).unwrap();
         fs::write(&src, b"\x89PNG-cross-device").unwrap();
-        let (from, to) = (src.to_string_lossy().into_owned(), dst.to_string_lossy().into_owned());
+        let (from, to) = (
+            src.to_string_lossy().into_owned(),
+            dst.to_string_lossy().into_owned(),
+        );
         // 直接调用核心逻辑（同设备路径，验证 copy→verify→rename→删源 顺序）
         let r = move_cross_device(&src, &dst, &from, &to);
         assert!(r.is_ok(), "{}", r.unwrap_err());
@@ -1220,7 +1327,10 @@ mod tests {
         handle.join().unwrap();
         assert!(result.is_ok(), "{:?}", result.err());
         assert_eq!(fs::read(&target).unwrap(), body);
-        assert!(!dir.join("assets").join(".remote.png.mellow-dl-tmp").exists());
+        assert!(!dir
+            .join("assets")
+            .join(".remote.png.mellow-dl-tmp")
+            .exists());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

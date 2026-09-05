@@ -65,6 +65,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'beta', labelKey: 'settings.updater.channel.beta' },
         ], descriptionKey: 'settings.updater.channelDesc' },
       { id: 'general.updater.checkOnStartup', labelKey: 'settings.updater.checkOnStartup', type: 'toggle', storageKey: 'mellow.updater.checkOnStartup', defaultValue: true },
+      // V5.1 对齐 anySSH autoUpdate：开启后检查到新版本静默下载安装并重启
+      //（安装前仍走 rollback 备份 + 签名校验；dev/便携构建由前端守卫拦截）
+      { id: 'general.updater.autoInstall', labelKey: 'settings.updater.autoInstall', type: 'toggle', storageKey: 'mellow.updater.autoInstall', defaultValue: false, descriptionKey: 'settings.updater.autoInstallDesc' },
       { id: 'general.updater.checkNow', labelKey: 'settings.updater.checkNow', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.updater.checkNowDesc', applyCommand: 'updater.check' },
     ],
   },

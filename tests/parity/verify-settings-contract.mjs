@@ -44,8 +44,18 @@ for (const key of ['mellow.fileTree.showHidden', 'mellow.fileTree.showNonMarkdow
 if (/id: 'updater',/.test(settingsSource)) {
   fail('Settings schema 不应再有独立 updater section（P2-2.6 归位到 general）');
 }
-for (const id of ['general.updater.channel', 'general.updater.checkOnStartup', 'general.updater.checkNow']) {
+for (const id of ['general.updater.channel', 'general.updater.checkOnStartup', 'general.updater.autoInstall', 'general.updater.checkNow']) {
   if (!settingsSource.includes(`id: '${id}'`)) fail(`updater 条目未归位：缺少 ${id}（P2-2.6）`);
+}
+// V5.1 自动升级合同（anySSH autoUpdate 模式）：autoInstall 开关 + App 层 release 构建守卫
+if (!/storageKey: 'mellow\.updater\.autoInstall', defaultValue: false/.test(settingsSource)) {
+  fail('general.updater.autoInstall 必须默认关闭（自动安装需用户显式开启）');
+}
+if (!/releaseBuildRef\.current !== true/.test(appSource) || !/invoke<boolean>\('is_release_build'\)/.test(appSource)) {
+  fail('App.tsx 缺少 is_release_build 安装守卫（dev 构建绝不能自更新）');
+}
+if (!appSource.includes("mellow.updater.skippedVersion")) {
+  fail('App.tsx 缺少跳过此版本记录（mellow.updater.skippedVersion）');
 }
 if (!settingsTestSource.includes("'files',") || settingsTestSource.includes("'updater',")) {
   fail('settings 单测未同步 P2-2.6 section 合同（files 复数 / 无 updater）');

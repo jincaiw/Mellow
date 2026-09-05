@@ -49,7 +49,8 @@ fn bridge_fs(message: &BridgeMessage) -> Result<Option<serde_json::Value>, Strin
                 to: String,
             }
             let p: Params = serde_json::from_str(&message.parameters).map_err(|e| e.to_string())?;
-            std::fs::copy(&p.from, &p.to).map_err(|e| format!("copy {} → {}: {}", p.from, p.to, e))?;
+            std::fs::copy(&p.from, &p.to)
+                .map_err(|e| format!("copy {} → {}: {}", p.from, p.to, e))?;
             Ok(Some(serde_json::json!({ "ok": true })))
         }
         "mkdir" => {
@@ -71,9 +72,13 @@ fn bridge_fs(message: &BridgeMessage) -> Result<Option<serde_json::Value>, Strin
             let target = PathBuf::from(&p.path);
             let dir = target.parent().unwrap_or_else(|| std::path::Path::new("."));
             if !dir.as_os_str().is_empty() && !dir.exists() {
-                std::fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
+                std::fs::create_dir_all(dir)
+                    .map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
             }
-            let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("mellow-bin");
+            let name = target
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("mellow-bin");
             let tmp = dir.join(format!(".{}.mellow-tmp", name));
             let _ = std::fs::remove_file(&tmp);
             std::fs::write(&tmp, &p.data).map_err(|e| e.to_string())?;
@@ -89,7 +94,9 @@ fn bridge_fs(message: &BridgeMessage) -> Result<Option<serde_json::Value>, Strin
                 path: String,
             }
             let p: Params = serde_json::from_str(&message.parameters).map_err(|e| e.to_string())?;
-            Ok(Some(serde_json::json!({ "ok": true, "exists": std::path::Path::new(&p.path).exists() })))
+            Ok(Some(
+                serde_json::json!({ "ok": true, "exists": std::path::Path::new(&p.path).exists() }),
+            ))
         }
         "reveal" => {
             #[derive(serde::Deserialize)]

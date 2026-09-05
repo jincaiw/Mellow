@@ -67,26 +67,61 @@ pub fn detect_open_with() -> Vec<EditorApp> {
         for (id, name, exe) in candidates {
             let mut found = false;
             if let Ok(local) = std::env::var("LOCALAPPDATA") {
-                found = std::path::Path::new(&local).join("Programs").join("Microsoft VS Code").join(exe).exists()
-                    || std::path::Path::new(&local).join("Programs").join("Cursor").join(exe).exists();
+                found = std::path::Path::new(&local)
+                    .join("Programs")
+                    .join("Microsoft VS Code")
+                    .join(exe)
+                    .exists()
+                    || std::path::Path::new(&local)
+                        .join("Programs")
+                        .join("Cursor")
+                        .join(exe)
+                        .exists();
             }
             if !found {
                 if let Ok(pf) = std::env::var("ProgramFiles") {
-                    found = std::path::Path::new(&pf).join("Microsoft VS Code").join(exe).exists();
+                    found = std::path::Path::new(&pf)
+                        .join("Microsoft VS Code")
+                        .join(exe)
+                        .exists();
                 }
             }
             if found {
-                apps.push(EditorApp { id: (*id).to_string(), name: (*name).to_string(), launch: (*name).to_string() });
+                apps.push(EditorApp {
+                    id: (*id).to_string(),
+                    name: (*name).to_string(),
+                    launch: (*name).to_string(),
+                });
             }
         }
-        apps.push(EditorApp { id: "notepad".to_string(), name: "记事本（系统）".to_string(), launch: "notepad".to_string() });
+        apps.push(EditorApp {
+            id: "notepad".to_string(),
+            name: "记事本（系统）".to_string(),
+            launch: "notepad".to_string(),
+        });
     }
 
     #[cfg(target_os = "linux")]
     {
-        for (id, name, cmd) in [("vscode", "VS Code", "code"), ("cursor", "Cursor", "cursor"), ("zed", "Zed", "zed"), ("sublime", "Sublime Text", "subl"), ("gedit", "gedit", "gedit"), ("kate", "Kate", "kate")] {
-            if Command::new("sh").args(["-c", &format!("command -v {cmd}")]).output().map(|o| o.status.success()).unwrap_or(false) {
-                apps.push(EditorApp { id: id.to_string(), name: name.to_string(), launch: cmd.to_string() });
+        for (id, name, cmd) in [
+            ("vscode", "VS Code", "code"),
+            ("cursor", "Cursor", "cursor"),
+            ("zed", "Zed", "zed"),
+            ("sublime", "Sublime Text", "subl"),
+            ("gedit", "gedit", "gedit"),
+            ("kate", "Kate", "kate"),
+        ] {
+            if Command::new("sh")
+                .args(["-c", &format!("command -v {cmd}")])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                apps.push(EditorApp {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    launch: cmd.to_string(),
+                });
             }
         }
     }
@@ -107,12 +142,18 @@ pub fn open_with_editor(launch: String, file_path: String) -> Result<(), String>
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new(&launch).arg(&file_path).spawn().map_err(|e| format!("spawn failed: {e}"))?;
+        Command::new(&launch)
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("spawn failed: {e}"))?;
         Ok(())
     }
     #[cfg(target_os = "linux")]
     {
-        Command::new(&launch).arg(&file_path).spawn().map_err(|e| format!("spawn failed: {e}"))?;
+        Command::new(&launch)
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("spawn failed: {e}"))?;
         Ok(())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]

@@ -45,7 +45,10 @@ fn scratch(tag: &str) -> PathBuf {
 
 fn disk_state(path: &Path) -> DiskState {
     let meta = fs::metadata(path).unwrap();
-    DiskState { mtime_ms: mtime_ms(&meta), identity_key: identity_key(&meta) }
+    DiskState {
+        mtime_ms: mtime_ms(&meta),
+        identity_key: identity_key(&meta),
+    }
 }
 
 fn read_bytes(path: &Path) -> Vec<u8> {
@@ -53,7 +56,9 @@ fn read_bytes(path: &Path) -> Vec<u8> {
 }
 
 fn is_child(mode: &str) -> bool {
-    std::env::var("MELLOW_FS_CORPUS_CHILD").map(|v| v == mode).unwrap_or(false)
+    std::env::var("MELLOW_FS_CORPUS_CHILD")
+        .map(|v| v == mode)
+        .unwrap_or(false)
 }
 
 /// 让 mtime 至少前进 1ms（APFS/EXT4 纳秒粒度，ms 比较必然变化）
@@ -64,7 +69,10 @@ fn bump_mtime() {
 /// `atomic_save` 的 temp 命名（与 fs.rs `tmp_path_for` 一致：`.{name}.mellow-tmp`）
 fn temp_for(target: &Path) -> PathBuf {
     let dir = target.parent().unwrap_or_else(|| Path::new("."));
-    let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("mellow-save");
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("mellow-save");
     dir.join(format!(".{name}.mellow-tmp"))
 }
 
@@ -103,7 +111,10 @@ fn source_fidelity_open_no_edit_save_byte_identical() {
         let (content, encoding) = decode(bytes);
         let _eol = detect_eol(&content); // preserve EOL：encode 不转换
         let saved = encode(&content, encoding);
-        assert_eq!(&saved, bytes, "encoding/EOL roundtrip mismatch for sample {i}");
+        assert_eq!(
+            &saved, bytes,
+            "encoding/EOL roundtrip mismatch for sample {i}"
+        );
     }
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -138,11 +149,21 @@ fn git_checkout_external_replace_never_overwrites() {
     fs::rename(&tmp, &target).unwrap();
 
     let after_identity = identity_key(&fs::metadata(&target).unwrap());
-    assert_ne!(after_identity, before.identity_key, "git checkout should change inode");
+    assert_ne!(
+        after_identity, before.identity_key,
+        "git checkout should change inode"
+    );
 
     let err = atomic_save(&target, b"local dirty edits", Some(&before)).unwrap_err();
-    assert!(matches!(err, SaveError::Conflict(_)), "expected Conflict, got {err:?}");
-    assert_eq!(read_bytes(&target), b"new branch content", "SILENT OVERWRITE: git content lost");
+    assert!(
+        matches!(err, SaveError::Conflict(_)),
+        "expected Conflict, got {err:?}"
+    );
+    assert_eq!(
+        read_bytes(&target),
+        b"new branch content",
+        "SILENT OVERWRITE: git content lost"
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -155,18 +176,34 @@ fn external_editor_in_place_edit_never_overwrites() {
     let before = disk_state(&target);
 
     bump_mtime();
-    let mut f = fs::OpenOptions::new().write(true).truncate(true).open(&target).unwrap();
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&target)
+        .unwrap();
     f.write_all(b"edited by vscode").unwrap();
     f.sync_all().unwrap();
     drop(f);
 
     let meta = fs::metadata(&target).unwrap();
-    assert_eq!(identity_key(&meta), before.identity_key, "in-place edit preserves inode");
-    assert_ne!(mtime_ms(&meta), before.mtime_ms, "in-place edit must change mtime");
+    assert_eq!(
+        identity_key(&meta),
+        before.identity_key,
+        "in-place edit preserves inode"
+    );
+    assert_ne!(
+        mtime_ms(&meta),
+        before.mtime_ms,
+        "in-place edit must change mtime"
+    );
 
     let err = atomic_save(&target, b"local dirty edits", Some(&before)).unwrap_err();
     assert!(matches!(err, SaveError::Conflict(_)));
-    assert_eq!(read_bytes(&target), b"edited by vscode", "SILENT OVERWRITE: external edit lost");
+    assert_eq!(
+        read_bytes(&target),
+        b"edited by vscode",
+        "SILENT OVERWRITE: external edit lost"
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -188,7 +225,11 @@ fn cloud_sync_replace_never_overwrites() {
 
     let err = atomic_save(&target, b"local dirty edits", Some(&before)).unwrap_err();
     assert!(matches!(err, SaveError::Conflict(_)));
-    assert_eq!(read_bytes(&target), b"remote version from cloud", "SILENT OVERWRITE: cloud version lost");
+    assert_eq!(
+        read_bytes(&target),
+        b"remote version from cloud",
+        "SILENT OVERWRITE: cloud version lost"
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -208,7 +249,11 @@ fn network_share_read_only_fails_original_intact() {
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
         let err = atomic_save(&target, b"edits", Some(&before)).unwrap_err();
         assert!(matches!(err, SaveError::Io(_)), "expected Io, got {err:?}");
-        assert_eq!(read_bytes(&target), b"on remote share", "read-only share must not be written");
+        assert_eq!(
+            read_bytes(&target),
+            b"on remote share",
+            "read-only share must not be written"
+        );
 
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
         fs::remove_dir_all(&dir).unwrap();
@@ -234,7 +279,10 @@ fn read_only_file_save_preserves_permissions() {
         Err(_) => {
             // 拒绝保存：原文件与只读位完整
             assert_eq!(read_bytes(&target), b"secret");
-            assert_eq!(fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o444);
+            assert_eq!(
+                fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+                0o444
+            );
         }
         Ok(_) => {
             // 保存成功：内容更新但只读位必须保留（PRD §104）
@@ -266,7 +314,11 @@ fn permission_denied_directory_fails_original_intact() {
     fs::set_permissions(&sub, fs::Permissions::from_mode(0o555)).unwrap();
     let err = atomic_save(&target, b"new", Some(&before)).unwrap_err();
     assert!(matches!(err, SaveError::Io(_)));
-    assert_eq!(read_bytes(&target), b"keep me", "permission denied must not corrupt original");
+    assert_eq!(
+        read_bytes(&target),
+        b"keep me",
+        "permission denied must not corrupt original"
+    );
 
     fs::set_permissions(&sub, fs::Permissions::from_mode(0o755)).unwrap();
     fs::remove_dir_all(&dir).unwrap();
@@ -335,7 +387,11 @@ fn disk_full_write_fails_original_intact() {
 
     eprintln!("[diskfull] child status: {status:?}");
     // 原文件绝不损坏（无论子进程是被 EFBIG 正常拒绝，还是被 SIGXFSZ 终止）
-    assert_eq!(read_bytes(&target), b"precious original", "disk full corrupted original");
+    assert_eq!(
+        read_bytes(&target),
+        b"precious original",
+        "disk full corrupted original"
+    );
     // 残留 temp（若有）由下一次保存清理，保存成功
     let outcome = atomic_save(&target, b"recovered", None).unwrap();
     assert_eq!(outcome.bytes_written, 9);
@@ -360,7 +416,11 @@ fn external_rename_save_to_old_path_conflicts() {
     let err = atomic_save(&target, b"edits", Some(&before)).unwrap_err();
     assert!(matches!(err, SaveError::Conflict(_)));
     assert!(!target.exists(), "must not recreate file at old path");
-    assert_eq!(read_bytes(&renamed), b"content", "renamed file content lost");
+    assert_eq!(
+        read_bytes(&renamed),
+        b"content",
+        "renamed file content lost"
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -401,14 +461,20 @@ fn symlink_save_preserves_symlink_and_updates_target() {
     match result {
         Err(_) => {
             assert!(
-                fs::symlink_metadata(&link).unwrap().file_type().is_symlink(),
+                fs::symlink_metadata(&link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink(),
                 "refused save must keep the symlink"
             );
             assert_eq!(read_bytes(&real), b"REAL");
         }
         Ok(_) => {
             assert!(
-                fs::symlink_metadata(&link).unwrap().file_type().is_symlink(),
+                fs::symlink_metadata(&link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink(),
                 "SYMLINK DESTROYED: save replaced the symlink with a regular file"
             );
             assert_eq!(
@@ -512,7 +578,10 @@ fn rename_fails_original_intact_temp_cleaned() {
 
     let err = atomic_save(&target, b"new", None).unwrap_err();
     assert!(matches!(err, SaveError::Io(_)));
-    assert!(!temp_for(&target).exists(), "temp must be cleaned on rename failure");
+    assert!(
+        !temp_for(&target).exists(),
+        "temp must be cleaned on rename failure"
+    );
     assert!(target.is_dir(), "original (dir) must be intact");
     fs::remove_dir_all(&dir).unwrap();
 }

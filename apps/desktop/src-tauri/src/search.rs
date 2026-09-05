@@ -42,16 +42,36 @@ pub struct SearchEvent {
 }
 
 #[tauri::command]
-pub async fn search_start(app: AppHandle, search_id: String, request: SearchRequest) -> Result<String, String> {
+pub async fn search_start(
+    app: AppHandle,
+    search_id: String,
+    request: SearchRequest,
+) -> Result<String, String> {
     if request.query.is_empty() {
         return Err("搜索关键词为空".to_string());
     }
     let id = search_id.clone();
     thread::spawn(move || {
         if let Err(e) = run_search(&app, &id, &request) {
-            let _ = app.emit("mellow://search-result", SearchEvent { search_id: id.clone(), event_type: "error".into(), result: None, error: Some(e) });
+            let _ = app.emit(
+                "mellow://search-result",
+                SearchEvent {
+                    search_id: id.clone(),
+                    event_type: "error".into(),
+                    result: None,
+                    error: Some(e),
+                },
+            );
         }
-        let _ = app.emit("mellow://search-result", SearchEvent { search_id: id, event_type: "done".into(), result: None, error: None });
+        let _ = app.emit(
+            "mellow://search-result",
+            SearchEvent {
+                search_id: id,
+                event_type: "done".into(),
+                result: None,
+                error: None,
+            },
+        );
     });
     Ok(search_id)
 }
@@ -63,8 +83,16 @@ pub async fn search_cancel(_search_id: String) -> Result<(), String> {
 }
 
 fn run_search(app: &AppHandle, search_id: &str, request: &SearchRequest) -> Result<(), String> {
-    let pattern = if request.regex { request.query.clone() } else { regex::escape(&request.query) };
-    let pattern = if request.whole_word { format!(r"\b(?:{})\b", pattern) } else { pattern };
+    let pattern = if request.regex {
+        request.query.clone()
+    } else {
+        regex::escape(&request.query)
+    };
+    let pattern = if request.whole_word {
+        format!(r"\b(?:{})\b", pattern)
+    } else {
+        pattern
+    };
     let re = RegexBuilder::new(&pattern)
         .case_insensitive(!request.case_sensitive)
         .unicode(true)
@@ -77,9 +105,15 @@ fn run_search(app: &AppHandle, search_id: &str, request: &SearchRequest) -> Resu
             for (idx, line) in lines.iter().enumerate() {
                 if let Some(m) = re.find(line) {
                     let before_start = idx.saturating_sub(request.context);
-                    let before = lines[before_start..idx].iter().map(|s| (*s).to_string()).collect();
+                    let before = lines[before_start..idx]
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect();
                     let after_end = usize::min(lines.len(), idx + 1 + request.context);
-                    let after = lines[idx + 1..after_end].iter().map(|s| (*s).to_string()).collect();
+                    let after = lines[idx + 1..after_end]
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect();
                     let column = line[..m.start()].chars().count() + 1;
                     let result = SearchResultJson {
                         path: file.to_string_lossy().into_owned(),
@@ -90,7 +124,15 @@ fn run_search(app: &AppHandle, search_id: &str, request: &SearchRequest) -> Resu
                         before,
                         after,
                     };
-                    let _ = app.emit("mellow://search-result", SearchEvent { search_id: search_id.to_string(), event_type: "match".into(), result: Some(result), error: None });
+                    let _ = app.emit(
+                        "mellow://search-result",
+                        SearchEvent {
+                            search_id: search_id.to_string(),
+                            event_type: "match".into(),
+                            result: Some(result),
+                            error: None,
+                        },
+                    );
                 }
             }
         }
@@ -98,13 +140,22 @@ fn run_search(app: &AppHandle, search_id: &str, request: &SearchRequest) -> Resu
     Ok(())
 }
 
-fn visit_dir<F: FnMut(&Path)>(dir: &Path, request: &SearchRequest, on_file: &mut F) -> Result<(), String> {
+fn visit_dir<F: FnMut(&Path)>(
+    dir: &Path,
+    request: &SearchRequest,
+    on_file: &mut F,
+) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("read_dir {}: {}", dir.display(), e))?;
     for entry in entries {
-        let entry = match entry { Ok(e) => e, Err(_) => continue };
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if should_exclude(&path, &name, request) { continue; }
+        if should_exclude(&path, &name, request) {
+            continue;
+        }
         if path.is_dir() {
             visit_dir(&path, request, on_file)?;
         } else if path.is_file() && should_include(&path, request) {
@@ -115,26 +166,39 @@ fn visit_dir<F: FnMut(&Path)>(dir: &Path, request: &SearchRequest, on_file: &mut
 }
 
 fn should_exclude(path: &Path, name: &str, request: &SearchRequest) -> bool {
-    if DEFAULT_IGNORE.contains(&name) { return true; }
+    if DEFAULT_IGNORE.contains(&name) {
+        return true;
+    }
     let p = path.to_string_lossy().replace('\\', "/");
-    request.exclude.iter().any(|g| glob_match(g, &p) || path.components().any(|c| c.as_os_str().to_string_lossy() == g.as_str()))
+    request.exclude.iter().any(|g| {
+        glob_match(g, &p)
+            || path
+                .components()
+                .any(|c| c.as_os_str().to_string_lossy() == g.as_str())
+    })
 }
 
 fn should_include(path: &Path, request: &SearchRequest) -> bool {
-    if request.include.is_empty() { return true; }
+    if request.include.is_empty() {
+        return true;
+    }
     let p = path.to_string_lossy().replace('\\', "/");
     request.include.iter().any(|g| glob_match(g, &p))
 }
 
 fn glob_match(pattern: &str, value: &str) -> bool {
     let p = pattern.trim().replace('\\', "/");
-    if p.is_empty() { return false; }
+    if p.is_empty() {
+        return false;
+    }
     wildcard_match(&p, value) || wildcard_match(&format!("**/{}", p), value)
 }
 
 fn wildcard_match(pattern: &str, value: &str) -> bool {
     fn inner(p: &[char], v: &[char]) -> bool {
-        if p.is_empty() { return v.is_empty(); }
+        if p.is_empty() {
+            return v.is_empty();
+        }
         if p[0] == '*' {
             return inner(&p[1..], v) || (!v.is_empty() && inner(p, &v[1..]));
         }
@@ -143,7 +207,10 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
         }
         false
     }
-    inner(&pattern.chars().collect::<Vec<_>>(), &value.chars().collect::<Vec<_>>())
+    inner(
+        &pattern.chars().collect::<Vec<_>>(),
+        &value.chars().collect::<Vec<_>>(),
+    )
 }
 
 fn now_ms() -> u128 {

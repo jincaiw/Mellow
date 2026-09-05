@@ -6,8 +6,9 @@
  * - rapid repeated updates 防抖：同路径 200ms 窗口合并（最后事件为准）；
  * - watcher 生命周期由 registry 管理（watch_document / unwatch_document）。
  */
-
-use notify::{Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
+use notify::{
+    Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher,
+};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -80,7 +81,9 @@ pub fn watch_document(app: AppHandle, path: String) -> Result<u64, String> {
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<NotifyEvent>| {
         let Ok(event) = res else { return };
-        let Some(path) = event.paths.first() else { return };
+        let Some(path) = event.paths.first() else {
+            return;
+        };
         let path_str = path.to_string_lossy().into_owned();
 
         // rapid repeated updates 防抖（回调线程经 AppHandle 访问 state）
@@ -142,7 +145,9 @@ pub fn watch_dir(app: AppHandle, path: String) -> Result<u64, String> {
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<NotifyEvent>| {
         let Ok(event) = res else { return };
-        let Some(path) = event.paths.first() else { return };
+        let Some(path) = event.paths.first() else {
+            return;
+        };
         let path_str = path.to_string_lossy().into_owned();
 
         // rapid repeated updates 防抖（与文档 watcher 共用 DebounceState）
@@ -195,9 +200,17 @@ mod tests {
         // 第一次：通过（记录时间）
         assert!(!should_debounce(&mut map, "/a.md", now));
         // 200ms 内再次：跳过（rapid repeated updates 合并）
-        assert!(should_debounce(&mut map, "/a.md", now + std::time::Duration::from_millis(100)));
+        assert!(should_debounce(
+            &mut map,
+            "/a.md",
+            now + std::time::Duration::from_millis(100)
+        ));
         // 超过窗口：再次通过
-        assert!(!should_debounce(&mut map, "/a.md", now + std::time::Duration::from_millis(300)));
+        assert!(!should_debounce(
+            &mut map,
+            "/a.md",
+            now + std::time::Duration::from_millis(300)
+        ));
     }
 
     #[test]
@@ -208,14 +221,29 @@ mod tests {
         // 不同路径不受影响
         assert!(!should_debounce(&mut map, "/b.md", now));
         // a 仍被防抖
-        assert!(should_debounce(&mut map, "/a.md", now + std::time::Duration::from_millis(50)));
+        assert!(should_debounce(
+            &mut map,
+            "/a.md",
+            now + std::time::Duration::from_millis(50)
+        ));
     }
 
     #[test]
     fn kind_mapping() {
-        assert_eq!(kind_str(&EventKind::Create(notify::event::CreateKind::File)), "create");
-        assert_eq!(kind_str(&EventKind::Remove(notify::event::RemoveKind::File)), "remove");
-        assert_eq!(kind_str(&EventKind::Modify(notify::event::ModifyKind::Data(notify::event::DataChange::Any))), "modify");
+        assert_eq!(
+            kind_str(&EventKind::Create(notify::event::CreateKind::File)),
+            "create"
+        );
+        assert_eq!(
+            kind_str(&EventKind::Remove(notify::event::RemoveKind::File)),
+            "remove"
+        );
+        assert_eq!(
+            kind_str(&EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any
+            ))),
+            "modify"
+        );
     }
 
     #[test]

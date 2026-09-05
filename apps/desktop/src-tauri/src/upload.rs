@@ -16,7 +16,6 @@
  * 安全：命令仅经用户显式配置执行；文件路径注入 shell 前做引号包裹；
  * 上传端点不限制 localhost（PicGo server 可远程部署，Typora 同）。
  */
-
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -47,7 +46,10 @@ pub fn upload_images_impl(
         "picgo-http" => upload_via_http(files, http_url),
         "picgo-cli" => upload_via_picgo_cli(files),
         "custom-command" => upload_via_custom_command(files, command),
-        other => Err(format!("未知上传通道: {}（可选 picgo-http / picgo-cli / custom-command）", other)),
+        other => Err(format!(
+            "未知上传通道: {}（可选 picgo-http / picgo-cli / custom-command）",
+            other
+        )),
     }
 }
 
@@ -207,7 +209,11 @@ fn upload_via_picgo_cli(files: &[String]) -> Result<Vec<String>, String> {
         return Err(format!(
             "picgo 命令退出码 {}: {}",
             code,
-            stderr.trim().is_empty().then(|| stdout.trim().to_string()).unwrap_or(stderr.trim().to_string())
+            stderr
+                .trim()
+                .is_empty()
+                .then(|| stdout.trim().to_string())
+                .unwrap_or(stderr.trim().to_string())
         ));
     }
     parse_picgo_cli_stdout(&stdout, files.len())
@@ -243,7 +249,11 @@ fn upload_via_custom_command(files: &[String], command: &str) -> Result<Vec<Stri
         return Err(format!(
             "上传命令退出码 {}: {}",
             code,
-            if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
+            if stderr.trim().is_empty() {
+                stdout.trim()
+            } else {
+                stderr.trim()
+            }
         ));
     }
     let urls: Vec<String> = stdout
@@ -271,7 +281,8 @@ mod tests {
 
     #[test]
     fn parse_picgo_response_ok() {
-        let text = r#"{"success":true,"result":["https://cdn.test/a.png","https://cdn.test/b.png"]}"#;
+        let text =
+            r#"{"success":true,"result":["https://cdn.test/a.png","https://cdn.test/b.png"]}"#;
         assert_eq!(
             parse_picgo_response(text, 2).unwrap(),
             vec!["https://cdn.test/a.png", "https://cdn.test/b.png"]
@@ -327,7 +338,10 @@ mod tests {
             "sed 's|^|https://cdn.test/|'",
         )
         .unwrap();
-        assert_eq!(urls, vec!["https://cdn.test//tmp/a.png", "https://cdn.test//tmp/b.png"]);
+        assert_eq!(
+            urls,
+            vec!["https://cdn.test//tmp/a.png", "https://cdn.test//tmp/b.png"]
+        );
     }
 
     #[cfg(unix)]
@@ -379,7 +393,9 @@ mod tests {
             let mut raw = Vec::new();
             loop {
                 let k = stream.read(&mut buf).unwrap();
-                if k == 0 { break; }
+                if k == 0 {
+                    break;
+                }
                 raw.extend_from_slice(&buf[..k]);
                 n += k;
                 let s = String::from_utf8_lossy(&raw);
@@ -390,7 +406,9 @@ mod tests {
                         .and_then(|l| l.split(':').nth(1))
                         .and_then(|v| v.trim().parse().ok())
                         .unwrap_or(0);
-                    if raw.len() >= h + 4 + len { break; }
+                    if raw.len() >= h + 4 + len {
+                        break;
+                    }
                 }
             }
             let request = String::from_utf8_lossy(&raw).into_owned();
@@ -411,7 +429,11 @@ mod tests {
 
         let request = server.join().unwrap();
         assert!(request.starts_with("POST /upload HTTP/1.1"), "{}", request);
-        assert!(request.contains("multipart/form-data; boundary=----mellow-upload-"), "{}", request);
+        assert!(
+            request.contains("multipart/form-data; boundary=----mellow-upload-"),
+            "{}",
+            request
+        );
         assert!(request.contains("name=\"list[]\""), "{}", request);
         assert!(request.contains("filename=\"img.png\""), "{}", request);
         assert!(request.contains("PNGHTTPDATA"), "{}", request);
