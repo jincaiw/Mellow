@@ -151,9 +151,8 @@ const virtualTest = read('packages/desktop-ui/test/virtual.test.ts');
 if (!/10000/.test(virtualTest) || !/MAX_WINDOW/.test(virtualTest)) {
   fail('虚拟化内核单测缺少 10k 窗口上界断言（P3.2 Exit Gate：DOM 节点不随数据量增长）');
 }
-// 滚动容器仍在 App.tsx（虚拟化复用它们作滚动源，不得改挂载结构）；
-// V5-A1：.file-list 随 list 视图退役，App 层不再渲染
-for (const cls of ['file-tree-list', 'outline-list', 'search-results']) {
+// 滚动容器仍在 App.tsx（虚拟化复用它们作滚动源，不得改挂载结构）。
+for (const cls of ['file-tree-list', 'file-list', 'outline-list', 'search-results']) {
   if (!appSource.includes(`className="${cls}"`)) {
     fail(`App.tsx 丢失滚动容器 .${cls}（P3.2：VirtualRows 以其 parentElement 为滚动源）`);
   }
@@ -183,9 +182,9 @@ if (!/export \{.*SearchResultsModel.*\} from '\.\/globalSearch';/.test(read('pac
 if (!read('packages/app-core/test/sidebar-keyboard.test.ts')) {
   fail('缺少 sidebar-keyboard.test.ts（P3.3 导航模型单测）');
 }
-// 装配层：aside 三模式路由 + Esc/Enter 语义 + 渲染传参
+// 装配层：aside 四模式路由 + Esc/Enter 语义 + 渲染传参
 if (!/sidebarMode === 'outline' \? handleOutlineKeyDown : handleSearchKeyDown/.test(appSource)) {
-  fail('App.tsx aside onKeyDown 未路由 outline/search 键盘处理（P3.3 G4-SIDE-02）');
+  fail('App.tsx aside onKeyDown 未在 File List 路由后继续路由 outline/search 键盘处理（P3.3 G4-SIDE-02）');
 }
 if (!/handleOutlineKeyDown/.test(appSource) || !/handleSearchKeyDown/.test(appSource)) {
   fail('App.tsx 缺少 outline/search keydown 处理器（P3.3）');
@@ -232,8 +231,7 @@ if (/sidebarMode === 'outline' \? handleOutlineKeyDown : handleSearchKeyDown/.te
   fail('Sidebar 护栏自检失败：无法模拟 outline/search 键盘路由回退（P3.3），护栏已失效');
 }
 
-// ── ⑪ P3.4 File List 键位（G4-SIDE-01）——V5-A1 起 App 层 list 视图退役，
-//    FileListModel 库能力与键位仍受护栏保护，App 层改为退役断言 ──────────────
+// ── ⑪ P3.4 File List 键位（G4-SIDE-01）────────────────────────────────
 const fileListModelTs = read('packages/app-core/src/fileList.ts');
 if (!/navigate\(items: Array<\{ path: string \}>, key: 'up' \| 'down' \| 'left' \| 'right' \| 'enter' \| 'pageup' \| 'pagedown'/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 ←→/PageUp/PageDown 键位（P3.4 G4-SIDE-01）');
@@ -241,26 +239,27 @@ if (!/navigate\(items: Array<\{ path: string \}>, key: 'up' \| 'down' \| 'left' 
 if (!/pageSize = 10/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 pageSize 翻页步长（P3.4）');
 }
-// V5-A1（D1=完全 Typora 化，仅树形）：App.tsx 不得再装配 list 视图
-if (/handleFileListKeyDown|handleFileListSelect|openFileListContextMenu|selectedListPath|filteredFileListItems|fileListOptions/.test(appSource)) {
-  fail('App.tsx 仍残留 File List 装配（V5-A1：list 视图应完全退役）');
+for (const marker of ['FileListService', 'handleFileListKeyDown', 'handleFileListSelect', "sidebarMode === 'fileList'", "showSidebarAs('fileList')", 'view.sidebar.fileList']) {
+  if (!appSource.includes(marker)) {
+    fail(`App.tsx 缺少 File List 装配标记 ${marker}（PRD §15 / Typora 文档列表）`);
+  }
 }
-if (/\bFileList\b[,}]/.test(appSource.split('\n').filter((l) => l.includes('desktop-ui/src')).join('\n'))) {
-  fail('App.tsx 仍从 desktop-ui 导入 FileList 组件（V5-A1）');
+if (!/\bFileList\b/.test(appSource.split('\n').filter((l) => l.includes('desktop-ui/src')).join('\n'))) {
+  fail('App.tsx 未从 desktop-ui 导入 FileList 组件（PRD §15）');
 }
 // 列表选中滚动跟随（翻页后选中必须可见）
 if (!/\.file-list \.file-list-item\.selected/.test(fileListTsx) || !/scrollIntoView\(\{ block: 'nearest' \}\)/.test(fileListTsx)) {
   fail('FileList 缺少键盘选中滚动跟随（P3.4）');
 }
 
-// ── ⑫ V5-A1 canary：护栏必须能抓住 list 视图回潮 ─────────────────────────
-// 哨兵：侧栏键盘路由必须是「三态直连」（files→tree / outline / search）。
-// 若有人重新引入 tree/list 二级切换，该形态即被破坏，护栏显式报失效。
-if (!appSource.includes("sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown")) {
-  fail('Sidebar 护栏自检失败：侧栏键盘路由形态已变化，⑫ canary 需同步更新（V5-A1）');
+// ── ⑫ File List canary：护栏必须能抓住键盘路由回退 ───────────────────────
+const fileListRoute = "sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'fileList' ? handleFileListKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown";
+if (!appSource.includes(fileListRoute)) {
+  fail('App.tsx 缺少 files/fileList/outline/search 四态键盘路由');
 }
-if (/mellow\.fileSidebar\.mode/.test(appSource) || /'sidebar\.listAria'/.test(appSource)) {
-  fail('App.tsx 仍引用 list 模式存储/文案（V5-A1）');
+const fileListRouteDrift = appSource.replace(fileListRoute, "sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown");
+if (fileListRouteDrift.includes(fileListRoute) || fileListRouteDrift.length >= appSource.length) {
+  fail('Sidebar 护栏自检失败：无法模拟 File List 键盘路由回退');
 }
 
 // ── ⑬ P3.5 File List / Outline / Search 右键菜单 ────────────────────────

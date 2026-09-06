@@ -1,12 +1,6 @@
 /**
- * Shell Widget 契约护栏（B1 修订：Tabbar 移除，保留 P2-2.5 模式状态指示）
- *
- * B1（SDI）—— Tabbar / 多标签 UI 全量移除（typora-parity-b1-sdi-plan.md）：
- *   ① desktop-ui 不再存在 Tabbar 组件与导出；
- *   ② App.tsx 不再渲染 Tabbar / overview / 读取 autoHideTabBar；
- *   ③ styles.css 无 .tabbar / .tab-overview 残留；
- *   ④ 已废弃命令 id（tabs.close/closeOthers/closeRight/prev/next/showAll/reopenClosed
- *      与 file.newTab）不出现在 schema 且 Registry 无残留。
+ * Shell Widget 契约护栏：按 D01 恢复轻量多文档 Tabbar，保留 P2-2.5 模式状态指示。
+ * Tabbar 必须单标签静默、支持激活／关闭／新建，且不引入 Tab Overview 的高密度面板。
  *
  * P2-2.5 —— 模式状态指示（不常驻，轻量，验收：可见且低干扰）：
  *   ① 仅非默认模式时渲染 badge（默认 off/false 时 DOM 零输出，即「不常驻」）；
@@ -27,26 +21,22 @@ const appSource = read('apps/desktop/src/App.tsx');
 const messagesSource = read('packages/i18n/src/messages.ts');
 const desktopUiIndex = read('packages/desktop-ui/src/index.ts');
 
-// ── B1（SDI）：Tabbar / 多标签 UI 移除契约 ───────────────────────────────
-if (existsSync(resolve(root, 'packages/desktop-ui/src/Tabbar.tsx'))) {
-  fail('desktop-ui/src/Tabbar.tsx 不得存在（B1：Tabbar 随多标签能力移除）');
+// ── D01：轻量多文档 Tabbar ───────────────────────────────────────────────
+if (!existsSync(resolve(root, 'packages/desktop-ui/src/Tabbar.tsx'))) fail('缺少 desktop-ui Tabbar 组件（D01）');
+if (!/export \{ Tabbar \}|export type \{ TabbarProps \}/.test(desktopUiIndex)) fail('desktop-ui index.ts 未导出 Tabbar/TabbarProps（D01）');
+if (!/<Tabbar[\s\S]*?tabs=\{documentTabs\}[\s\S]*?onActivate=[\s\S]*?onClose=[\s\S]*?onNew=/.test(appSource)) fail('App.tsx 未将 DocumentState 标签接入 Tabbar 的激活／关闭／新建事件（D01）');
+if (!/onContextMenu=\{\(event, id\) => \{ void openTabContextMenu\(event, id\); \}\}/.test(appSource)) fail('Tabbar 未接入命中标签的右键菜单（M04）');
+if (!/menu\.file\.closeOtherTabs[\s\S]*?menu\.file\.closeTabsRight[\s\S]*?menu\.file\.reopenClosed/.test(appSource)) fail('标签右键菜单缺少关闭其他／右侧／重新打开操作（M04）');
+if (!/if \(tabs\.length < 2\) return null/.test(read('packages/desktop-ui/src/Tabbar.tsx'))) fail('Tabbar 必须在单文档时静默（D06）');
+for (const sel of ['.tabbar', '.tab-new', '.tabbar-close']) if (!stylesSource.includes(sel)) fail(`styles.css 缺少 ${sel} 样式（D01）`);
+if (/tab-overview-panel|tab-overview-card/.test(appSource) || stylesSource.includes('.tab-overview-panel')) fail('D06 默认界面不得恢复 Tab Overview 面板');
+for (const key of ['menu.file.newTab', 'menu.file.closeTab', 'menu.file.reopenClosed']) {
+  if (!messagesSource.includes(`'${key}'`)) fail(`i18n 缺少标签命令文案 ${key}`);
 }
-if (/export \{ Tabbar \}|export type \{ TabbarProps \}/.test(desktopUiIndex)) {
-  fail('desktop-ui index.ts 不得导出 Tabbar/TabbarProps（B1）');
-}
-if (/\bTabbar\b|setTabOverviewOpen|tabOverviewOpen|tab-overview/.test(appSource)) {
-  fail('App.tsx 不得残留 Tabbar / Tab Overview 渲染或状态（B1）');
-}
-if (/mellow\.editor\.autoHideTabBar|setAutoHideTabBar|autoHideTabBar/.test(appSource)) {
-  fail('App.tsx 不得残留 autoHideTabBar（设置项已移除，B1）');
-}
-for (const sel of ['.tabbar', '.tab-overview-panel', '.tab-overview-card', '.tab-new']) {
-  if (stylesSource.includes(sel)) fail(`styles.css 不得残留 ${sel} 规则（B1）`);
-}
-// 已废弃命令 id：schema 不应再引用（App Registry 残留由 verify-menu-contract 的
-// schema→registry 覆盖检查兜底，这里只做正面的 DOM/组件级反残留）
-for (const key of ['tab.ctx.close', 'tabbar.label', 'tabs.overview.title', 'settings.editor.autoHideTabBar']) {
-  if (messagesSource.includes(`'${key}'`)) fail(`i18n 不得残留已废弃键 ${key}（B1）`);
+if (!/const focusExistingDocument = useCallback[\s\S]*?findByPath\(path\)/.test(appSource)) fail('缺少同路径已打开标签的定位守卫（F03）');
+for (const name of ['openTreeFile', 'handleOpen', 'openPathInTab']) {
+  const block = new RegExp(`const ${name} = useCallback[\\s\\S]*?\\n  }, \\[`, 'm').exec(appSource)?.[0] ?? '';
+  if (!block.includes('focusExistingDocument')) fail(`${name} 未复用同路径定位守卫（F03）`);
 }
 
 // ── P2-2.5：模式状态指示（不常驻，轻量）──────────────────────────────────
@@ -91,16 +81,8 @@ if (!/\.mode-indicator:hover \{[^}]*\}/.test(stylesSource)) {
 }
 
 // ── drift canary：护栏必须能抓住契约漂移（防「永远绿」假护栏）─────────────
-// B1 canary：注入「Tabbar 复活」漂移（App 引用组件 + overview 状态复活），
-// 上述反残留断言（第 30–45 行）必须能命中；同时当前干净的 App.tsx 不得误报。
-const b1Detector = (s) => /\bTabbar\b|setTabOverviewOpen|tabOverviewOpen|tab-overview/.test(s);
-const revivedApp = appSource.replace(
-  'const guardSingleDocument',
-  "import { Tabbar } from '../../../packages/desktop-ui/src';\nconst [tabOverviewOpen, setTabOverviewOpen] = useState(false);\nconst guardSingleDocument",
-);
-if (b1Detector(appSource) || !b1Detector(revivedApp)) {
-  fail('B1 反残留护栏自检失败：无法模拟 Tabbar/overview 复活漂移，护栏已失效');
-}
+const noTabs = appSource.replace('tabs={documentTabs}', 'tabs={[]}');
+if (!/<Tabbar[\s\S]*?tabs=\{documentTabs\}/.test(appSource) || /<Tabbar[\s\S]*?tabs=\{documentTabs\}/.test(noTabs)) fail('Tabbar 护栏自检失败：无法识别 documentTabs 漂移');
 // P2-2.5 canary：模拟「常驻化」漂移（条件渲染退化为 true），条件渲染断言必须失效
 const driftedAppForMode = appSource.replace("(focusMode !== 'off' || typewriterEnabled) && (", "(true) && (");
 if (!/\{\(focusMode !== 'off' \|\| typewriterEnabled\) && \(\s*<div className="mode-indicators">/.test(appSource) ||
@@ -113,4 +95,4 @@ if (errors.length > 0) {
   throw new Error(`Shell widget contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS');
+console.log('Shell widgets: quiet multi-document Tabbar verified; mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS');

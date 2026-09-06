@@ -1,8 +1,8 @@
 /**
  * B1-2 侧边栏模式快捷键验证（浏览器 dev 模式，Playwright Chromium）。
- * 验证点（V5-A1 Typora 对齐：⌃⌘1 大纲 / ⌃⌘3 文件树；⌃⌘2 文件列表已随 list 视图退役）：
+ * 验证点（Typora 对齐：⌃⌘1 大纲 / ⌃⌘2 文档列表 / ⌃⌘3 文件树）：
  *   1. 侧栏关闭时 ⌃⌘1 → 打开侧栏并切到大纲（aria-label + localStorage）
- *   2. ⌃⌘2 不再绑定任何模式切换（保持大纲态，不向文档插字符）
+ *   2. ⌃⌘2 → 打开侧栏并切到独立文档列表（不以树形目录冒充）
  *   3. ⌃⌘3 → files + tree（文件树）
  *   4. 快捷键不向文档插入字面字符（回归防线）
  */
@@ -80,9 +80,8 @@ async function main() {
 
     check('initial: sidebar closed', (await sidebarState()).visible === false);
 
-    // P2 默认桌面壳：文档优先。状态栏、Sidebar 与 Tabbar 都不可常驻；
-    // B1（SDI）：.tabbar 已从 DOM 删除 —— 断言恒为 null（不依赖任何设置项）；
-    // 其余只验证首次默认，不影响用户在设置中显式开启后的持久化行为。
+    // P2 默认桌面壳：文档优先。状态栏与侧栏默认隐藏；单文档时标签栏自动隐藏。
+    // 此断言仅验证首次默认，不影响用户显式开启后状态的持久化行为。
     const desktopDefaults = await page.evaluate(() => ({
       sidebar: !!document.querySelector('aside.file-tree'),
       statusBar: !!document.querySelector('.status-bar'),
@@ -90,7 +89,7 @@ async function main() {
       statusBarVisible: localStorage.getItem('mellow.statusbar.visible'),
     }));
     check(
-      'document-first defaults hide sidebar, status bar, and tab bar (B1 SDI: .tabbar absent)',
+      'document-first defaults hide sidebar and status bar; a single document hides the tab bar',
       !desktopDefaults.sidebar && !desktopDefaults.statusBar && !desktopDefaults.tabBar
         && desktopDefaults.statusBarVisible !== '1',
       JSON.stringify(desktopDefaults),
@@ -208,20 +207,19 @@ async function main() {
       JSON.stringify({ writingWidthBefore, writingWidthWithSidebar }),
     );
 
-    // 2. ⌃⌘2 不再绑定（V5-A1：list 视图退役，模式保持大纲不变）
+    // 2. ⌃⌘2 → 文档列表（独立列表视图）
     await page.keyboard.press('Control+Meta+2');
     await new Promise((r) => setTimeout(r, 300));
     s = await sidebarState();
-    check('⌃⌘2 unbound (V5-A1: list retired, mode unchanged)', s.visible && s.label === '大纲' && s.mode === 'outline', JSON.stringify(s));
+    check('⌃⌘2 opens sidebar in file-list mode', s.visible && s.label === '文档列表' && s.mode === 'fileList', JSON.stringify(s));
 
     // 3. ⌃⌘3 → 文件树
     await page.keyboard.press('Control+Meta+3');
     await new Promise((r) => setTimeout(r, 300));
     s = await sidebarState();
-    check('⌃⌘3 switches to file tree (V5-A1: single tree view)', s.visible && s.label === '文件树' && s.mode === 'files', JSON.stringify(s));
+    check('⌃⌘3 switches to file tree', s.visible && s.label === '文件树' && s.mode === 'files', JSON.stringify(s));
 
-    // V5-A1（Typora 1.14.9 完全对齐）：单标签下拉切换；树/列表切换、固定/最近文件夹、
-    // 过滤面板与根路径条全部移除；文件树仅树形。
+    // 文件树与文档列表是独立视图；文件树自身仅以层级方式展示目录。
     // V6-P2 2.1：quickbar 常驻条退役（Typora 无）；⌘F 临时唤出过滤框。
     const filesDefault = await page.evaluate(() => {
       const aside = document.querySelector('aside.file-tree');

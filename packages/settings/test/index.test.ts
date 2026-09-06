@@ -71,9 +71,14 @@ describe('Settings schema', () => {
 describe('Settings persistence helpers', () => {
   test('readSetting returns defaultValue when nothing stored', () => {
     const def = settingById('editor.fontSize');
-    // V5-D3：默认字号对齐 Typora Github 主题真值 16px
+    // PRD §18：默认字号为 16px。CoreEditor 的内部默认值不构成产品默认值。
     expect(def?.defaultValue).toBe(16);
     expect(readSetting(def!)).toBe(16);
+  });
+
+  test('PRD §18 typography defaults remain aligned', () => {
+    expect(settingById('editor.writingWidth')?.defaultValue).toBe('820');
+    expect(settingById('editor.lineHeight')?.defaultValue).toBe(1.65);
   });
 
   test('writeSetting persists and readSetting reads back', () => {

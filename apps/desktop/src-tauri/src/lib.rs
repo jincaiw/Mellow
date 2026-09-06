@@ -184,6 +184,7 @@ pub fn run() {
             window::new_window,
             window::page_setup,
             window::allow_close_window,
+            window::broadcast_window_command,
             open_with::detect_open_with,
             open_with::open_with_editor,
             pandoc::pandoc_available,

@@ -106,6 +106,27 @@ html, body, #root {
   background: var(--mellow-bg);
 }
 
+.tabbar {
+  height: 34px;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  background: var(--mellow-bg-subtle);
+  border-bottom: 1px solid var(--mellow-border);
+  user-select: none;
+}
+
+.tabbar-list { display: flex; min-width: 0; overflow-x: auto; flex: 1; }
+.tabbar-tab { display: flex; align-items: center; min-width: 120px; max-width: 220px; border-right: 1px solid var(--mellow-border); color: var(--mellow-fg-muted); }
+.tabbar-tab.active { color: var(--mellow-fg); background: var(--mellow-bg); }
+.tabbar-title { min-width: 0; flex: 1; overflow: hidden; display: flex; align-items: center; gap: 6px; border: 0; padding: 0 8px 0 12px; background: transparent; color: inherit; font: inherit; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; cursor: default; }
+.tabbar-title > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.tabbar-dirty { color: var(--mellow-accent); font-size: 9px; }
+.tabbar-close, .tab-new { border: 0; background: transparent; color: var(--mellow-fg-muted); font: inherit; cursor: default; }
+.tabbar-close { width: 27px; height: 100%; font-size: 18px; line-height: 1; }
+.tab-new { width: 36px; flex: 0 0 36px; border-left: 1px solid var(--mellow-border); font-size: 20px; }
+.tabbar-close:hover, .tab-new:hover, .tabbar-title:hover { background: var(--mellow-bg-hover); color: var(--mellow-fg); }
+
 .file-tree {
   width: 260px;
   min-width: 200px;
@@ -530,7 +551,7 @@ html, body, #root {
   gap: 2px;
   padding: 7px 10px;
   border: 0;
-  border-bottom: 1px solid var(--mellow-border)eee;
+  border-bottom: 1px solid var(--mellow-border);
   background: transparent;
   color: var(--mellow-fg);
   text-align: left;

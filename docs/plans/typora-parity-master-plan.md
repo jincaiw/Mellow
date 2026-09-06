@@ -1,5 +1,7 @@
 # Mellow ↔ Typora 最终深度对标实施方案（Master Plan）
 
+> **2026-09-06 已批准实施入口**：[最终深度对标实施方案（确认稿）](./typora-parity-final-review-2026-09-06.md)。已确认窗口／标签、文档列表、全局保存关闭、默认排版与分期范围；按其 W0 → W8 执行。该稿将在 W0 结束时归并回本 Master，并消除下列历史权威声明与 AGENTS 的冲突。
+
 > 文档状态：**已被 V4.0 取代**（保留为历史版本，结论不再更新）
 > ⚠️ 自 2026-09-01 起，Typora 对标工作的唯一权威施工文件为
 > **[`docs/plans/typora-parity-final-plan-v4.md`](./typora-parity-final-plan-v4.md)**（V4.0，审计基线 `2482503`）。

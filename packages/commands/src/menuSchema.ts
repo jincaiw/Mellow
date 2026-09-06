@@ -94,14 +94,14 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
 
   // ── 文件（§7.2：31 槽位契约）─────────────────────────────────
   { id: 'file', labelKey: 'menu.top.file', entries: [
-    // B1（SDI）：⌘N = 新建（新窗口空白文档）；「新建标签页」随多标签能力移除
     { kind: 'command', id: 'file.new', labelKey: 'menu.file.new', shortcut: { mac: 'Cmd+N', winLinux: 'Ctrl+N' } },
     { kind: 'command', id: 'file.newWindow', labelKey: 'menu.file.newWindow', shortcut: { mac: 'Cmd+Shift+N', winLinux: 'Ctrl+Shift+N' } },
+    // PRD 附录 H：Windows/Linux Ctrl+T 保留给 Table；标签使用不冲突的 Ctrl+Alt+T。
+    { kind: 'command', id: 'file.newTab', labelKey: 'menu.file.newTab', shortcut: { mac: 'Cmd+T', winLinux: 'Ctrl+Alt+T' } },
     { kind: 'separator' },
     { kind: 'command', id: 'file.open', labelKey: 'menu.file.open', shortcut: { mac: 'Cmd+O', winLinux: 'Ctrl+O' } },
     { kind: 'submenu', id: 'file.recent', labelKey: 'menu.file.recent', entries: [
-      // B1（SDI）：tabs.reopenClosed 移除（窗口关闭后状态随之结束；跨窗口重开待
-      // Phase 4 窗口注册表落地后按 macOS「Reopen Closed File」真值恢复）
+      { kind: 'command', id: 'tabs.reopenClosed', labelKey: 'menu.file.reopenClosed', shortcut: { mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' } },
       { kind: 'dynamic', dynamic: 'recent-files' },
       { kind: 'separator' },
       { kind: 'command', id: 'recent.clear', labelKey: 'menu.file.recentClear' },
@@ -117,11 +117,13 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'file.moveTo', labelKey: 'menu.file.moveTo' },
     { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },
     { kind: 'separator' },
-    // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）
-    { kind: 'command', id: 'file.closeWindow', labelKey: 'menu.file.closeWindow', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' } },
-    // B1（SDI）：file.closeAll 仅 Win/Linux 保留（macOS Typora 1.14.9 File 菜单无「全部关闭」，
-    // 资源中无 Close All 文案/动作 —— sdi-truth-table-v1.md 0.8 行）
-    { kind: 'command', id: 'file.closeAll', labelKey: 'menu.file.closeAll', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' }, winLinuxOnly: true },
+    { kind: 'command', id: 'tabs.close', labelKey: 'menu.file.closeTab', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' } },
+    { kind: 'command', id: 'tabs.closeOthers', labelKey: 'menu.file.closeOtherTabs' },
+    { kind: 'command', id: 'tabs.closeRight', labelKey: 'menu.file.closeTabsRight' },
+    { kind: 'command', id: 'file.closeWindow', labelKey: 'menu.file.closeWindow', shortcut: { mac: 'Cmd+Shift+W', winLinux: 'Ctrl+Shift+W' } },
+    // 批量关闭是 Mellow 的跨窗口安全动作。Typora 官方快捷键表只定义 Close（Ctrl/Cmd+W），
+    // 因此不为 Close All 臆造快捷键，更不能和 Close Window 争用 Ctrl+Shift+W。
+    { kind: 'command', id: 'file.closeAll', labelKey: 'menu.file.closeAll', winLinuxOnly: true },
     { kind: 'separator' },
     { kind: 'command', id: 'file.save', labelKey: 'menu.file.save', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' } },
     { kind: 'command', id: 'file.saveAs', labelKey: 'menu.file.saveAs', shortcut: { mac: 'Cmd+Shift+S', winLinux: 'Ctrl+Shift+S' } },
@@ -346,6 +348,7 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'separator' },
     { kind: 'command', id: 'view.sidebar.toggle', labelKey: 'menu.view.sidebarToggle', shortcut: { mac: 'Cmd+Shift+L', winLinux: 'Ctrl+Shift+L' } },
     { kind: 'command', id: 'view.sidebar.outline', labelKey: 'menu.view.sidebarOutline', shortcut: { mac: 'Ctrl+Cmd+1', winLinux: 'Ctrl+Shift+1' } },
+    { kind: 'command', id: 'view.sidebar.fileList', labelKey: 'menu.view.sidebarFileList', shortcut: { mac: 'Ctrl+Cmd+2', winLinux: 'Ctrl+Shift+2' } },
     { kind: 'command', id: 'view.sidebar.fileTree', labelKey: 'menu.view.sidebarFileTree', shortcut: { mac: 'Ctrl+Cmd+3', winLinux: 'Ctrl+Shift+3' } },
     { kind: 'command', id: 'search.global', labelKey: 'menu.view.search', shortcut: { mac: 'Cmd+Shift+F', winLinux: 'Ctrl+Shift+F' } },
     { kind: 'separator' },
