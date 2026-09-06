@@ -123,18 +123,18 @@ export function setFontSize(fontSize: number) {
   // 重写（纯 CSS 文本由浏览器原生解析，无 CSSOM 逐条赋值依赖）
   const sheet = styleSheets.fontSize.sheet;
   let needsFallback = !cssomOk;
-  if (!needsFallback && sheet !== null && sheet !== undefined && sheet.cssRules.length > 0) {
+  if (!needsFallback && sheet !== null && sheet.cssRules.length > 0) {
     const first = sheet.cssRules[0] as CSSStyleRule;
-    needsFallback = first.style === undefined || first.style.getPropertyValue('font-size') === '';
+    needsFallback = first.style.getPropertyValue('font-size') === '';
   }
-  if (needsFallback) {
-    const parts: string[] = [];
-    const rules = sheet?.cssRules;
-    if (rules !== undefined && rules !== null && rules.length > 0) {
+  if (needsFallback && sheet !== null) {
+    const rules = sheet.cssRules;
+    if (rules.length > 0) {
+      const parts: string[] = [];
       for (const rule of Array.from(rules)) {
         const styleRule = rule as CSSStyleRule;
-        const match = styleRule.selectorText?.match(/\d+/);
-        const headingLevel = parseInt(match === null || match === undefined ? '0' : match[0]);
+        const match = styleRule.selectorText.match(/\d+/);
+        const headingLevel = parseInt(match === null ? '0' : match[0]);
         const size = styleRule.selectorText === '.cm-foldPlaceholder' ? fontSize - 4 : calculateFontSize(fontSize, headingLevel);
         parts.push(`${styleRule.selectorText} { font-size: ${size}px; }`);
       }
