@@ -365,22 +365,29 @@ export function buildWysiwygBlocksExtension(): Extension {
 
   const theme = EditorView.theme({
     // ── 引用块（github.css: border-left 4px #dfe2e5; padding 0 15px; color #777）──
+    // V7-I8：CoreEditor contentIndent（QuoteMark 分支）会给引用行注入内联
+    // `text-indent:-X; margin-inline-start:X`（为源码 `> ` 对齐设计）——与本扩展的
+    // border+padding 叠加后，软换行首行贴条、续行缩进（v1.5.4 真机截图复现，
+    // Chromium/WebKit 探针一致）。!important 类规则可压过内联样式，全部行对齐 bar+15px。
     '.cm-line.mellow-quote-line': {
       position: 'relative',
       borderLeft: '4px solid var(--mellow-md-quote-border, #dfe2e5)',
       paddingLeft: '15px',
       color: 'var(--mellow-md-quote-fg, #777777)',
+      marginInlineStart: '0 !important',
+      textIndent: '0 !important',
     },
     // 嵌套引用：第二/三条竖线。v1.5.4 由绝对定位 ::before 改为多段 linear-gradient
-    // 背景（padding-box 坐标：d2 条 @15–19px、d3 条 @15–19/34–38px）——消除对
-    // position/abs 定位的依赖（真机 WKWebView 分段竖条异常的加固）。
+    // 背景（padding-box 坐标：d2 条 @15–19px、d3 条 @15–19/34–38px）。
+    // V7-I8：每个 stop 用单位置写法（`C 15px` 而非 `C 15px 19px`）——双位置语法
+    // 在真机 WKWebView 上整条声明解析失败 → 内条消失（v1.5.4 真机截图）。
     '.cm-line.mellow-quote-d2': {
       paddingLeft: '34px',
-      background: 'linear-gradient(to right, transparent 0 15px, var(--mellow-md-quote-border, #dfe2e5) 15px 19px, transparent 19px)',
+      background: 'linear-gradient(to right, transparent 0, transparent 15px, var(--mellow-md-quote-border, #dfe2e5) 15px, var(--mellow-md-quote-border, #dfe2e5) 19px, transparent 19px, transparent 100%)',
     },
     '.cm-line.mellow-quote-d3': {
       paddingLeft: '53px',
-      background: 'linear-gradient(to right, transparent 0 15px, var(--mellow-md-quote-border, #dfe2e5) 15px 19px, transparent 19px 34px, var(--mellow-md-quote-border, #dfe2e5) 34px 38px, transparent 38px)',
+      background: 'linear-gradient(to right, transparent 0, transparent 15px, var(--mellow-md-quote-border, #dfe2e5) 15px, var(--mellow-md-quote-border, #dfe2e5) 19px, transparent 19px, transparent 34px, var(--mellow-md-quote-border, #dfe2e5) 34px, var(--mellow-md-quote-border, #dfe2e5) 38px, transparent 38px, transparent 100%)',
     },
 
     // ── 代码块容器（github.css .md-fences: bg #f8f8f8; border #e7eaed; radius 3px; margin 15px 0）──
@@ -436,17 +443,20 @@ export function buildWysiwygBlocksExtension(): Extension {
       margin: '16px 0',
     },
 
-    // ── 标题排版（github.css: bold; margin 1rem 0; lh 按级; h1/h2 底线 1px #eee）──
+    // ── 标题排版（github.css: bold; lh 按级; h1/h2 底线 1px #eee）──
     // V7-I4：块间距用 padding 而非 margin——margin 产生的行间「死区」会让
     // posAtCoords 把落在空隙里的点击映射到错误行（光标与鼠标位置分离）。
-    // h1/h2 底线经 ::after 贴住文本，1rem 下间距留在 padding 内。
+    // V7-I8：间距按实测 Typora 真值收敛——此前固定 1rem×2 + 引擎级字号生效后
+    // 真机标题/段落间距约为 Typora 的 1.5 倍。em 相对行级 font-size（v1.5.4 起
+    // 行装饰内联 font-size）自动缩放；非对称（pt>pb）拟合 Typora ink-gap：
+    // h1↔文 22px / 文↔h3 28 / h3↔h4 26.5 / h6↔h2 43。
     '.cm-line.mellow-heading-line': {
       fontWeight: 'bold',
-      paddingTop: '1rem',
-      paddingBottom: '1rem',
     },
     '.cm-line.mellow-h1': {
       lineHeight: '1.2',
+      paddingTop: '0.5em',
+      paddingBottom: '0.2em',
     },
     '.cm-line.mellow-h1::after': {
       content: "''",
@@ -456,6 +466,8 @@ export function buildWysiwygBlocksExtension(): Extension {
     },
     '.cm-line.mellow-h2': {
       lineHeight: '1.225',
+      paddingTop: '0.9em',
+      paddingBottom: '0.3em',
     },
     '.cm-line.mellow-h2::after': {
       content: "''",
@@ -465,21 +477,28 @@ export function buildWysiwygBlocksExtension(): Extension {
     },
     '.cm-line.mellow-h3': {
       lineHeight: '1.43',
+      paddingTop: '0.45em',
+      paddingBottom: '0.3em',
     },
     '.cm-line.mellow-h4, .cm-line.mellow-h5': {
       lineHeight: '1.4',
+      paddingTop: '0.35em',
+      paddingBottom: '0.3em',
     },
     '.cm-line.mellow-h6': {
       lineHeight: '1.4',
+      paddingTop: '0.35em',
+      paddingBottom: '0.3em',
       color: 'var(--mellow-md-quote-fg, #777777)',
     },
 
-    // ── 顶层块距（github.css: p/blockquote/ul/ol margin 0.8em 0；V7-I4 改 padding）──
+    // ── 顶层块距（github.css: p/blockquote/ul/ol margin 0.8em 0；V7-I4 改 padding；
+    // V7-I8：相邻块 padding 相加无 margin 折叠 → 0.4em×2 = 0.8em 总距）──
     '.cm-line.mellow-block-first': {
-      paddingTop: '0.8em',
+      paddingTop: '0.4em',
     },
     '.cm-line.mellow-block-last': {
-      paddingBottom: '0.8em',
+      paddingBottom: '0.4em',
     },
 
     // ── 列表项间距（V6-P1 1.2.4：非首 item 首行 0.25em 上边距；V7-I4 改 padding）──

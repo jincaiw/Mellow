@@ -235,14 +235,17 @@ export function buildMarkerRevealExtension(): Extension {
       opacity: '0.35',
     },
     [`.${MARKER_BULLET_CLASS}`]: {
-      // V7-I5：无序列表源字符（`-`/`*`）透明保宽，::before 叠画 Typora 圆点
-      color: 'transparent',
-      position: 'relative',
+      // V7-I8：源字符用 font-size:0 藏（color:transparent 会被内层 token span 的
+      // 自身 color 覆盖 → 「•-」双 marker，WebKit/Chromium 探针一致）；内层
+      // token span 无显式 font-size → 0 继承穿透，全平台可靠。
+      fontSize: '0',
     },
     [`.${MARKER_BULLET_CLASS}::before`]: {
+      // V7-I8：内联渲染（非绝对定位）——真机 WKWebView 对 adoptedStyleSheets 下
+      // inline 元素内 abs 定位 ::before 的放置不可靠 → 圆点整体消失（v1.5.4 真机）。
+      // 显式 font-size（不继承 span 的 0）、baseline 内联对齐，无定位依赖。
       content: "'•'",
-      position: 'absolute',
-      left: '0',
+      fontSize: '16px',
       color: 'var(--mellow-md-list-bullet, #8b949e)',
     },
   });
