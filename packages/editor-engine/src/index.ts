@@ -61,7 +61,7 @@ import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './code
 import { buildWysiwygBlocksExtension } from './wysiwygBlocks';
 import { installMdTokensBridge } from './mdTokens';
 export { buildCodeLineNumbersExtension, installCodeLineNumbersApi, setCodeLineNumbers, isCodeLineNumbersEnabled, codeLineNumbersVersion, fenceContentRange } from './codeLineNumbers';
-export { buildWysiwygBlocksExtension } from './wysiwygBlocks';
+export { buildWysiwygBlocksExtension, bumpHeadingFont } from './wysiwygBlocks';
 export { installMdTokensBridge, applyMdTokens, MD_TOKEN_DEFAULTS } from './mdTokens';
 export { buildReadonlyExtension, installReadonlyApi, setReadonlyMode, isReadonlyMode } from './readonly';
 export type { CodeLineNumbersApi } from './codeLineNumbers';

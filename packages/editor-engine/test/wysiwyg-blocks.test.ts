@@ -54,7 +54,10 @@ describe('V5 非聚焦块渲染（wysiwygBlocks）', () => {
     expect(content).not.toBeNull();
     const allText = Array.from(view.dom.querySelectorAll('.cm-line')).map((el) => el.textContent ?? '').join('\n');
     expect(allText).not.toContain('```');
-    expect(view.dom.querySelector('.mellow-code-lang-label')?.textContent).toBe('js');
+    // v1.5.4：label 容器 = 语言文本 + 复制按钮；语言文本独立 span 断言
+    const label = view.dom.querySelector('.mellow-code-lang-label');
+    expect(label?.querySelector('.mellow-code-lang-text')?.textContent).toBe('js');
+    expect(label?.querySelector('.mellow-code-copy-btn')).not.toBeNull();
 
     moveCaret(view, 2);
     await sleep();

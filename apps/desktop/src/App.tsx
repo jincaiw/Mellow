@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { EditorCore } from '../../../packages/editor-core/src';
+import { EditorCore, EDITOR_BUNDLE_URL } from '../../../packages/editor-core/src';
 import {
   DocumentService,
   RecoveryService,
@@ -512,6 +512,8 @@ export default function App() {
   const [currentOutlineId, setCurrentOutlineId] = useState<string | null>(null);
   // P3.3 Outline 键盘选中（与 caret 驱动的 currentOutlineId 分离，避免互相打架）
   const [outlineSelectedId, setOutlineSelectedId] = useState<string | null>(null);
+  // V7-I7（v1.5.4 Typora parity）：编辑器右侧浮动大纲面板（overlay，不挤压正文）
+  const [outlineFloatOpen, setOutlineFloatOpen] = useState(false);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [quickOpenQuery, setQuickOpenQuery] = useState('');
   const [quickOpenAll, setQuickOpenAll] = useState<QuickOpenEntry[]>([]);
@@ -1488,6 +1490,9 @@ export default function App() {
     filePathRef.current = tab.path;
     docIdRef.current = tab.documentId;
     setDocTitle(tab.title);
+    // 窗口标题兜底：标题 effect（依赖 re-render + windowServiceRef 时序）在真机上
+    // 可能未生效（v1.5.3 截图标题栏仅 "Mellow"），这里在文档应用点直接同步设置。
+    void windowServiceRef.current?.setTitle(`${tab.dirty ? '● ' : ''}${tab.title} — Mellow`);
     revisionRef.current = tab.revision;
     docMetaRef.current = { encoding: tab.encoding, eol: tab.eol };
     diskStateRef.current = tab.diskState;
@@ -2601,7 +2606,13 @@ export default function App() {
       },
     });
 
-    const host = new EditorCore();
+    const host = new EditorCore({
+      // 防缓存击穿：iframe src 固定为 /editor/index.html（URL 跨版本不变），
+      // WKWebView 磁盘缓存可能让升级后仍命中旧 index.html + 旧指纹资源——
+      // 一个内部自洽的旧编辑器（真机 v1.5.1–v1.5.3 显示修复不生效的头号嫌疑）。
+      // 每次启动换查询参数强制走新 URL；tauri 协议按 path 部分解析，query 不影响资源定位。
+      bundleUrl: `${EDITOR_BUNDLE_URL}?v=${Date.now().toString(36)}`,
+    });
     hostRef.current = host;
 
     // 编辑器 iframe 启动竞态规避（macOS 真机矩阵 0/12 复现，Aug 18）：
@@ -4574,6 +4585,8 @@ export default function App() {
             t={t}
             onModeChange={(m) => { setSidebarMode(m); if (m === 'outline') refreshOutlineRef.current(); }}
             onSearchClick={() => { setSidebarMode('search'); }}
+            onHide={() => { setSidebarVisible(false); }}
+            hideLabel={t('sidebar.hideSidebar')}
           />
           {sidebarMode === 'files' ? (
             <>
@@ -4654,6 +4667,46 @@ export default function App() {
           />
         )}
         <main className="editor-container">
+          {/* V7-I7（v1.5.4 Typora parity）：主区顶栏——居中文档名；左槽在侧边栏隐藏时
+              提供「显示侧边栏」恢复入口；右槽为浮动大纲开关。 */}
+          {!readerOpen && (
+            <div className="editor-topbar" data-tauri-drag-region>
+              <div className="editor-topbar-side editor-topbar-left">
+                {!sidebarShown && (
+                  <button
+                    type="button"
+                    className="editor-topbar-btn"
+                    aria-label={t('sidebar.showSidebar')}
+                    title={t('sidebar.showSidebar')}
+                    onClick={() => { setSidebarVisible(true); }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M5.5 3.5L10 8l-4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      <path d="M13.5 3v10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <div className="editor-topbar-title">{docTitle ?? ''}</div>
+              <div className="editor-topbar-side editor-topbar-right">
+                <button
+                  type="button"
+                  className={`editor-topbar-btn${outlineFloatOpen ? ' active' : ''}`}
+                  aria-label={t('sidebar.outline')}
+                  aria-pressed={outlineFloatOpen}
+                  title={t('sidebar.outline')}
+                  onClick={() => { setOutlineFloatOpen((v) => !v); refreshOutlineRef.current(); }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2 3.5h9M2 8h7M2 12.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+                    <circle cx="13.2" cy="3.5" r="0.9" fill="currentColor" />
+                    <circle cx="11.7" cy="8" r="0.9" fill="currentColor" />
+                    <circle cx="13.2" cy="12.5" r="0.9" fill="currentColor" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
           {/* P2-2.5 模式状态指示（不常驻，轻量）：仅非默认模式时渲染 badge，点击即退出。
               Reader 有自带 bar（mellow-reader-bar 含关闭入口），重复 badge 反增干扰；
               Slash 为瞬态面板且 slashEnabled 默认开启，常显违反「不常驻」——均不做常驻指示。 */}
@@ -4699,8 +4752,36 @@ export default function App() {
           )}
           <div
             ref={containerRef}
+            className="editor-host"
             style={readerOpen ? { display: 'none' } : undefined}
           />
+          {/* V7-I7（v1.5.4 Typora parity）：浮动大纲面板（编辑器右侧 overlay，不挤压正文） */}
+          {outlineFloatOpen && !readerOpen && (
+            <div className="outline-float" role="complementary" aria-label={t('outline.listLabel')}>
+              <div className="outline-float-header">
+                <span className="outline-float-title">{t('sidebar.outline')}</span>
+                <button
+                  type="button"
+                  className="outline-float-close"
+                  aria-label={t('reader.close')}
+                  title={t('reader.close')}
+                  onClick={() => { setOutlineFloatOpen(false); }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+              <div className="outline-float-list">
+                {(() => {
+                  const items = visibleOutlineItems();
+                  return items.length === 0
+                    ? <div className="sidebar-empty">{t('outline.empty')}</div>
+                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} />;
+                })()}
+              </div>
+            </div>
+          )}
         </main>
       </div>
       {commandPaletteVisible && (

@@ -141,6 +141,16 @@ export function setFontSize(fontSize: number) {
       styleSheets.fontSize.textContent = parts.join('\n');
     }
   }
+
+  // V7-I6：引擎级字号阶梯同步（Mellow editor-engine wysiwygBlocks 行装饰
+  // attributes.style 直接写 font-size，真机 span-class 路径失效时的兜底）。
+  // 引擎经 window.MellowEditorEngine 注入；缺失（纯上游环境）时静默跳过。
+  try {
+    const engine = (window as unknown as { MellowEditorEngine?: { bumpHeadingFont?: () => void } }).MellowEditorEngine;
+    engine?.bumpHeadingFont?.();
+  } catch {
+    // 引擎未就绪：下次任意事务经引擎 fontKey 比对自然重建
+  }
 }
 
 export function setShowLineNumbers(enabled: boolean) {

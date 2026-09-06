@@ -45,30 +45,133 @@ function resolveCm(): CmRuntime {
   };
 }
 
-/** 代码块语言标签（非聚焦时代码块右上角驻留） */
+/** 代码块语言标签 + 复制按钮（非聚焦时代码块右上角驻留；v1.5.4 增加复制按钮） */
 function createCodeLangLabel(cm: CmRuntime) {
   const { WidgetType } = cm;
   return class CodeLangLabel extends WidgetType {
-    constructor(readonly lang: string) {
+    constructor(readonly lang: string, readonly code: string) {
       super();
     }
 
     override eq(other: CodeLangLabel): boolean {
-      return other.lang === this.lang;
+      return other.lang === this.lang && other.code === this.code;
     }
 
     override toDOM(): HTMLElement {
-      const span = document.createElement('span');
-      span.className = 'mellow-code-lang-label';
-      span.textContent = this.lang;
-      span.setAttribute('aria-hidden', 'true');
-      return span;
+      const zh = /^zh/i.test(typeof navigator !== 'undefined' ? navigator.language : 'en');
+      const wrap = document.createElement('span');
+      wrap.className = 'mellow-code-lang-label';
+      wrap.setAttribute('aria-hidden', 'true');
+      const text = document.createElement('span');
+      text.className = 'mellow-code-lang-text';
+      text.textContent = this.lang;
+      wrap.appendChild(text);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mellow-code-copy-btn';
+      btn.textContent = zh ? '复制' : 'Copy';
+      btn.title = zh ? '复制代码' : 'Copy code';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copyCodeText(this.code, btn, zh);
+      });
+      wrap.appendChild(btn);
+      return wrap;
     }
 
     override ignoreEvent(): boolean {
       return true;
     }
   };
+}
+
+/** 复制反馈 + 剪贴板写入（navigator.clipboard 优先，execCommand 兜底） */
+function copyCodeText(text: string, btn: HTMLButtonElement, zh: boolean): void {
+  const original = btn.textContent;
+  const done = (): void => {
+    btn.textContent = zh ? '已复制' : 'Copied';
+    window.setTimeout(() => { btn.textContent = original; }, 1200);
+  };
+  const fallback = (): boolean => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+  const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+  if (clip && typeof clip.writeText === 'function') {
+    void clip.writeText(text).then(done).catch(() => { if (fallback()) done(); });
+  } else if (fallback()) {
+    done();
+  }
+}
+
+/** 围栏代码文本（复制按钮载荷）：闭合/未闭合/单行围栏统一收口 */
+function fenceCodeText(
+  state: EditorState,
+  firstLine: { to: number; number: number; text: string },
+  lastLine: { from: number; to: number; number: number; text: string },
+): string {
+  if (lastLine.number > firstLine.number) {
+    const closed = /^\s*(?:`{3,}|~{3,})\s*$/.test(lastLine.text.trimEnd());
+    const from = firstLine.to + 1;
+    const to = closed ? lastLine.from : lastLine.to;
+    return to > from ? state.doc.sliceString(from, to) : '';
+  }
+  // 单行围栏 ```code```：剥标记取内容
+  const m = /^\s*(?:`{3,}|~{3,})\s*[^`]*?(.*?)\s*(?:`{3,}|~{3,})\s*$/.exec(firstLine.text);
+  return m === null ? '' : m[1];
+}
+
+// ── 引擎级标题字号阶梯（v1.5.4 真机兜底）──
+// CoreEditor 的 span-class 字号路径在真机 WKWebView 上失效（v1.5.1–v1.5.3 均未复现修复），
+// 而引擎行装饰在真机已验证有效（粗体/底线/引用竖线均在）。此处在行装饰 attributes.style
+// 直接写 font-size（真源 window.config.fontSize + headerFontSizeDiffs），绕过 span-class 路径。
+interface HeadingFontConfig {
+  fontSize?: number;
+  headerFontSizeDiffs?: number[];
+}
+
+function readHeadingFontConfig(): { base: number; diffs: number[] } | null {
+  const cfg = (window as unknown as { config?: HeadingFontConfig }).config;
+  const base = cfg?.fontSize;
+  if (typeof base !== 'number' || !Number.isFinite(base) || base <= 0) return null;
+  const raw = Array.isArray(cfg?.headerFontSizeDiffs) ? cfg.headerFontSizeDiffs : [];
+  const diffs = [0, 1, 2, 3, 4, 5].map((i) =>
+    (typeof raw[i] === 'number' && Number.isFinite(raw[i]) ? raw[i] : 0));
+  return { base, diffs };
+}
+
+/** 字号签名：StateField 据此感知设置变更（任意事务触发 update 时比对） */
+function headingFontSignature(): string {
+  const c = readHeadingFontConfig();
+  return c === null ? '' : `${c.base}|${c.diffs.join(',')}`;
+}
+
+function headingFontSizePx(level: number): string | null {
+  const c = readHeadingFontConfig();
+  if (c === null || !(level >= 1 && level <= 6)) return null;
+  return `${c.base + (c.diffs[level - 1] ?? 0)}px`;
+}
+
+/** 设置变更（setFontSize / ⌘+ 滚轮）后调用：对当前视图派发空事务触发重建 */
+export function bumpHeadingFont(): void {
+  const view = (window as unknown as { editor?: { dispatch: (tr: { effects: readonly unknown[] }) => void } }).editor;
+  try {
+    view?.dispatch({ effects: [] });
+  } catch {
+    // 视图未就绪时忽略；下次任意事务经 fontKey 比对自然重建
+  }
 }
 
 interface CollectedNode {
@@ -152,10 +255,11 @@ export function buildWysiwygBlocksExtension(): Extension {
         const lastLine = state.doc.lineAt(to);
         const info = syntax.getChild('CodeInfo');
         const lang = info === null ? '' : state.doc.sliceString(info.from, info.to);
+        const codeText = fenceCodeText(state, firstLine, lastLine);
         if (!seenReplace.has(firstLine.number)) {
           seenReplace.add(firstLine.number);
           decos.push(Decoration.replace({
-            widget: new CodeLangLabel(lang),
+            widget: new CodeLangLabel(lang, codeText),
           }).range(firstLine.from, firstLine.to));
         }
         if (lastLine.number !== firstLine.number && !seenReplace.has(lastLine.number)) {
@@ -177,15 +281,23 @@ export function buildWysiwygBlocksExtension(): Extension {
       }
 
       if (name.startsWith('ATXHeading')) {
-        // marker 隐藏走 reveal 框架；此处仅排版 class
-        const level = name.slice('ATXHeading'.length);
-        decos.push(Decoration.line({ class: `mellow-heading-line mellow-h${level}` }).range(state.doc.lineAt(from).from));
+        // marker 隐藏走 reveal 框架；此处排版 class + 引擎级字号（真机兜底，见文件头说明）
+        const level = Number(name.slice('ATXHeading'.length));
+        const style = headingFontSizePx(level);
+        decos.push(Decoration.line({
+          class: `mellow-heading-line mellow-h${name.slice('ATXHeading'.length)}`,
+          ...(style === null ? {} : { attributes: { style: `font-size: ${style}` } }),
+        }).range(state.doc.lineAt(from).from));
         continue;
       }
 
       if (name === 'SetextHeading1' || name === 'SetextHeading2') {
-        const level = name.slice('SetextHeading'.length);
-        decos.push(Decoration.line({ class: `mellow-heading-line mellow-h${level}` }).range(state.doc.lineAt(from).from));
+        const levelText = name.slice('SetextHeading'.length);
+        const style = headingFontSizePx(Number(levelText));
+        decos.push(Decoration.line({
+          class: `mellow-heading-line mellow-h${levelText}`,
+          ...(style === null ? {} : { attributes: { style: `font-size: ${style}` } }),
+        }).range(state.doc.lineAt(from).from));
         continue;
       }
 
@@ -218,6 +330,7 @@ export function buildWysiwygBlocksExtension(): Extension {
     decorations: DecorationSet;
     sourceMode: boolean;
     largeVersion: number;
+    fontKey: string;
   }
 
   const field = StateField.define<WysiwygState>({
@@ -225,21 +338,25 @@ export function buildWysiwygBlocksExtension(): Extension {
       decorations: buildDecorations(state),
       sourceMode: isSourceMode(),
       largeVersion: largeFileVersion(),
+      fontKey: headingFontSignature(),
     }),
     update: (value, transaction) => {
       const sourceMode = isSourceMode();
       const nextLargeVersion = largeFileVersion();
+      const nextFontKey = headingFontSignature();
       const selectionChanged = !transaction.startState.selection.eq(transaction.state.selection);
       if (
         transaction.docChanged
         || selectionChanged
         || value.sourceMode !== sourceMode
         || value.largeVersion !== nextLargeVersion
+        || value.fontKey !== nextFontKey
       ) {
         return {
           decorations: buildDecorations(transaction.state),
           sourceMode,
           largeVersion: nextLargeVersion,
+          fontKey: nextFontKey,
         };
       }
       return value;
@@ -254,32 +371,16 @@ export function buildWysiwygBlocksExtension(): Extension {
       paddingLeft: '15px',
       color: 'var(--mellow-md-quote-fg, #777777)',
     },
-    // 嵌套引用：第二/三条竖线（border 只有一条，::before 补画）
+    // 嵌套引用：第二/三条竖线。v1.5.4 由绝对定位 ::before 改为多段 linear-gradient
+    // 背景（padding-box 坐标：d2 条 @15–19px、d3 条 @15–19/34–38px）——消除对
+    // position/abs 定位的依赖（真机 WKWebView 分段竖条异常的加固）。
     '.cm-line.mellow-quote-d2': {
       paddingLeft: '34px',
-    },
-    '.cm-line.mellow-quote-d2::before': {
-      content: "''",
-      display: 'block',
-      width: '4px',
-      position: 'absolute',
-      left: '15px',
-      top: '0',
-      bottom: '0',
-      background: 'var(--mellow-md-quote-border, #dfe2e5)',
+      background: 'linear-gradient(to right, transparent 0 15px, var(--mellow-md-quote-border, #dfe2e5) 15px 19px, transparent 19px)',
     },
     '.cm-line.mellow-quote-d3': {
       paddingLeft: '53px',
-    },
-    '.cm-line.mellow-quote-d3::before': {
-      content: "''",
-      display: 'block',
-      width: '4px',
-      position: 'absolute',
-      left: '34px',
-      top: '0',
-      bottom: '0',
-      background: 'var(--mellow-md-quote-border, #dfe2e5)',
+      background: 'linear-gradient(to right, transparent 0 15px, var(--mellow-md-quote-border, #dfe2e5) 15px 19px, transparent 19px 34px, var(--mellow-md-quote-border, #dfe2e5) 34px 38px, transparent 38px)',
     },
 
     // ── 代码块容器（github.css .md-fences: bg #f8f8f8; border #e7eaed; radius 3px; margin 15px 0）──
@@ -299,6 +400,27 @@ export function buildWysiwygBlocksExtension(): Extension {
       color: 'var(--mellow-md-quote-fg, #777777)',
       opacity: '0.7',
       pointerEvents: 'none',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+    },
+    // v1.5.4：代码块复制按钮（容器 pointer-events:none，按钮单独恢复可点）
+    '.mellow-code-copy-btn': {
+      pointerEvents: 'auto',
+      fontSize: '11px',
+      lineHeight: '1.4',
+      padding: '0 6px',
+      border: 'none',
+      borderRadius: '3px',
+      background: 'transparent',
+      color: 'var(--mellow-md-quote-fg, #777777)',
+      cursor: 'pointer',
+      opacity: '0.85',
+      fontFamily: 'inherit',
+    },
+    '.mellow-code-copy-btn:hover': {
+      opacity: '1',
+      background: 'var(--mellow-bg-hover, rgba(0, 0, 0, 0.06))',
     },
 
     // ── 分隔线（github.css hr: 2px #e7e7e7）──

@@ -14,9 +14,9 @@
     },
     "editorFrame": {
       "x": 0,
-      "y": 0,
+      "y": 34,
       "w": 900,
-      "h": 600
+      "h": 566
     },
     "editorFrameFullBleed": true,
     "sidebarVisible": false,
@@ -50,9 +50,9 @@
     },
     "editorFrame": {
       "x": 0,
-      "y": 0,
+      "y": 34,
       "w": 1200,
-      "h": 800
+      "h": 766
     },
     "editorFrameFullBleed": true,
     "sidebarVisible": false,
@@ -86,9 +86,9 @@
     },
     "editorFrame": {
       "x": 0,
-      "y": 0,
+      "y": 34,
       "w": 1440,
-      "h": 900
+      "h": 866
     },
     "editorFrameFullBleed": true,
     "sidebarVisible": false,
@@ -122,9 +122,9 @@
     },
     "editorFrame": {
       "x": 0,
-      "y": 0,
+      "y": 34,
       "w": 1200,
-      "h": 800
+      "h": 766
     },
     "editorFrameFullBleed": true,
     "sidebarVisible": false,
@@ -158,9 +158,9 @@
     },
     "editorFrame": {
       "x": 0,
-      "y": 0,
+      "y": 34,
       "w": 900,
-      "h": 600
+      "h": 566
     },
     "editorFrameFullBleed": true,
     "sidebarVisible": false,
@@ -194,9 +194,9 @@
     },
     "editorFrame": {
       "x": 0,
-      "y": 0,
+      "y": 34,
       "w": 1440,
-      "h": 900
+      "h": 866
     },
     "editorFrameFullBleed": true,
     "sidebarVisible": false,

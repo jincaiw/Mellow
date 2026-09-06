@@ -202,6 +202,21 @@ html, body, #root {
   color: var(--mellow-fg);
 }
 
+/* V7-I7（v1.5.4）：侧边栏隐藏按钮（Typora parity，位于 ☰ 左侧） */
+.sidebar-hide-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+}
+.sidebar-hide-btn:hover {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+
 .sidebar-mode-menu {
   position: absolute;
   top: 100%;
@@ -442,7 +457,9 @@ html, body, #root {
   padding: 4px 0;
 }
 
-.tree-row {
+/* 双类选择器：压过 .file-tree button (0,1,1) 的卡片描边（真机 v1.5.3 截图「文件之间有横线」根因，与 outline-row 同模式） */
+.tree-row,
+.file-tree .tree-row {
   width: 100%;
   min-height: 24px;
   display: flex;
@@ -773,6 +790,122 @@ html, body, #root {
   min-height: 0;
   background: var(--mellow-bg);
   position: relative;
+}
+
+/* ── V7-I7（v1.5.4 Typora parity）：主区顶栏（居中文档名 + 侧栏恢复 + 浮动大纲开关）── */
+.editor-host {
+  /* iframe 宿主：让位顶栏 34px（iframe absolute inset:0 相对本宿主） */
+  position: absolute;
+  top: 34px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.editor-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  flex: 0 0 34px;
+  -webkit-app-region: drag;
+}
+.editor-topbar-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 28px;
+}
+.editor-topbar-left {
+  justify-content: flex-start;
+}
+.editor-topbar-right {
+  justify-content: flex-end;
+}
+.editor-topbar-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mellow-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+.editor-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+  -webkit-app-region: no-drag;
+}
+.editor-topbar-btn:hover {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+.editor-topbar-btn.active {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+
+/* ── V7-I7：浮动大纲面板（编辑器右侧 overlay）── */
+.outline-float {
+  position: absolute;
+  top: 42px;
+  right: 12px;
+  bottom: 42px;
+  width: 240px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--mellow-bg-elevated);
+  border: 1px solid var(--mellow-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px var(--mellow-shadow);
+  overflow: hidden;
+}
+.outline-float-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--mellow-border);
+}
+.outline-float-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mellow-fg-subtle);
+}
+.outline-float-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+  cursor: pointer;
+}
+.outline-float-close:hover {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+.outline-float-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
 }
 
 /* P2-2.5 模式状态指示：仅非默认模式时渲染，右上角轻量 badge，低干扰。

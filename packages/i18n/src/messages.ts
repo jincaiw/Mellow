@@ -22,6 +22,8 @@ const zhCN = {
   // Sidebar
   'sidebar.files': '文件',
   'sidebar.toggleTitle': '切换侧边栏（Cmd+Shift+L）',
+  'sidebar.hideSidebar': '隐藏侧边栏',
+  'sidebar.showSidebar': '显示侧边栏',
   'sidebar.resizeTitle': '拖动调整侧边栏宽度',
   'sidebar.outline': '大纲',
   'sidebar.search': '搜索',
@@ -792,6 +794,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
 
   'sidebar.files': 'Files',
   'sidebar.toggleTitle': 'Toggle sidebar (Cmd+Shift+L)',
+  'sidebar.hideSidebar': 'Hide sidebar',
+  'sidebar.showSidebar': 'Show sidebar',
   'sidebar.resizeTitle': 'Drag to resize sidebar',
   'sidebar.outline': 'Outline',
   'sidebar.search': 'Search',
