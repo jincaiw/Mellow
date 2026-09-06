@@ -70,8 +70,8 @@ CI 需要以下 secrets（tauri-action 自动导入证书、签名、公证）�
     密码 → `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
   - 本机开发密钥位于 `~/.tauri/mellow.key`（repo 外）。
 - `createUpdaterArtifacts: true`：构建产物附带 `.sig` 与 `latest.json`。
-- endpoints：`https://updates.mellow.app/{{target}}/{{arch}}/{{current_version}}`
-  —— 正式上线前必须替换为真实更新服务器地址。
+- endpoints：`https://github.com/jincaiw/Mellow/releases/latest/download/latest.json`
+  （GitHub Releases 静态 JSON，插件按 `platforms` 键匹配目标；v1.5.2 起，替换占位域名 updates.mellow.app）。
 - 发布更新：把新版本的 `latest.json` + `.sig` + 安装包发布到 endpoints 指向的服务器。
 
 ## 6. License / Third Party Notices / Locale

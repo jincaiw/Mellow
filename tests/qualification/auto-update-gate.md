@@ -54,7 +54,7 @@ cargo test --test updater_safety  # 4 项：fixture 签名 / 篡改拒绝 / 生�
 
 ## 已知限制
 
-- endpoints 为占位 URL（`updates.mellow.app`），上线前替换为真实服务器；
+- endpoints：GitHub Releases 静态 latest.json（v1.5.2 起；`updates.mellow.app` 占位域名曾致 update check timeout，已替换）；
 - macOS 自动更新要求签名+公证（CI secrets）；
 - deb/rpm 无文件级回滚（包管理器语义）；
 - Windows 回滚走 detached helper（未真机验证，需 Windows runner）。

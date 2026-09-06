@@ -69,7 +69,7 @@ bash tests/qualification/run-packaging-smoke.sh
 3. **tauri 2.11 bundler 已知问题**：`bundle.macOS.infoPlist` 配置键会写坏 Info.plist；
    已规避（只用文件自动合并，见 packaging-release.md）。
 4. **DMG EULA**（来自 licenseFile）使自动化 attach 受 GUI 会话限制；正式分发无碍。
-5. **updater endpoints 为占位 URL**（updates.mellow.app）——正式上线前替换为真实更新服务器；
+5. **updater endpoints**：GitHub Releases 静态 latest.json（v1.5.2 起）；
    私钥 `~/.tauri/mellow.key` 在 repo 外，CI 需配置 `TAURI_SIGNING_PRIVATE_KEY` secret。
 6. Windows 代码签名为可选（提供 `WINDOWS_CERTIFICATE*` secrets 时启用）。
 

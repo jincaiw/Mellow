@@ -84,6 +84,6 @@
 
 ## 8. 已知限制
 
-- endpoints 为占位 URL（`updates.mellow.app`），上线前替换为真实更新服务器；
+- endpoints：GitHub Releases 静态 latest.json（v1.5.2 起；此前 `updates.mellow.app` 占位域名返回空响应，导致真机 `update check timeout`，已替换）；
 - macOS 自动更新要求应用已签名+公证（CI secrets）；
 - deb/rpm 无文件级回滚（包管理器语义）。
