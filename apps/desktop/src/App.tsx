@@ -4543,6 +4543,7 @@ export default function App() {
             mode={sidebarMode}
             t={t}
             onModeChange={(m) => { setSidebarMode(m); if (m === 'outline') refreshOutlineRef.current(); }}
+            onSearchClick={() => { setSidebarMode('search'); }}
           />
           {sidebarMode === 'files' ? (
             <>

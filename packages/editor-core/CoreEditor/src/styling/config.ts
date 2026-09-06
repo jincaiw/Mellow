@@ -84,9 +84,12 @@ export function setFontFace(fontFace: WebFontFace) {
 
 export function setFontSize(fontSize: number) {
   if (styleSheets.fontSize === undefined) {
+    // V7-I3：`.cls, *:has(> .cls)` 合并选择器列表在不支持 :has() 的旧 WebKit
+    // （整条规则会被丢弃）会导致标题字号阶梯全灭——拆成两条独立规则兜底，
+    // :has() 行级规则失效时 span 级 `.cm-md-headingN` 仍生效。
     const h = (level: number): string => {
       const cls = `.cm-md-heading${level}`;
-      return `${cls}, *:has(> ${cls}) {}`;
+      return `${cls} {}\n*:has(> ${cls}) {}`;
     };
 
     styleSheets.fontSize = createStyleSheet(`

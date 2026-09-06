@@ -122,7 +122,7 @@ const sharedStyles: { [selector: string]: StyleSpec } = {
 // Here we define color independent highlight styles
 const sharedHighlights = [
   { tag: tags.strong, fontWeight: 'bolder' },
-  { tag: [tags.emphasis, tags.quote], fontStyle: 'italic' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
   { tag: tags.strikethrough, textDecoration: 'line-through' },
   { tag: tags.link, textDecoration: 'underline' },
   { tag: tags.monospace, fontFamily: 'ui-monospace, monospace' },

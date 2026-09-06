@@ -1,8 +1,8 @@
 /**
- * SidebarHeader（desktop-ui-design-spec §5 侧栏）。
+ * SidebarHeader（desktop-ui-design-spec §5 侧栏；V7-I2 Typora 截图对齐）。
  *
- * V5-A1 Typora 化：顶部收敛为单个「当前模式」标签，点击弹出切换菜单
- * （文件/大纲/搜索）；打开文件夹/刷新等低频操作走命令面板/菜单，不再占侧栏头部。
+ * 头部三段式布局：☰ 汉堡（左，弹出模式切换菜单：文件/大纲/搜索）
+ * + 居中模式标题（「文件」）+ 🔍 搜索（右，切到搜索面板）——与 Typora 文件面板头部一致。
  */
 import { useEffect, useRef, useState } from 'react';
 
@@ -12,11 +12,12 @@ export interface SidebarHeaderProps {
   mode: SidebarMode;
   t: (key: string, params?: Record<string, string | number>) => string;
   onModeChange: (mode: SidebarMode) => void;
+  onSearchClick: () => void;
 }
 
 const MODES: SidebarMode[] = ['files', 'outline', 'search'];
 
-export function SidebarHeader({ mode, t, onModeChange }: SidebarHeaderProps) {
+export function SidebarHeader({ mode, t, onModeChange, onSearchClick }: SidebarHeaderProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -53,8 +54,9 @@ export function SidebarHeader({ mode, t, onModeChange }: SidebarHeaderProps) {
           aria-label={t('sidebar.filesSwitchLabel')}
           onClick={() => setOpen((v) => !v)}
         >
-          <span className="sidebar-mode-trigger-label">{label}</span>
-          <span className="sidebar-mode-caret" aria-hidden="true">▾</span>
+          <svg className="sidebar-mode-icon" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M1.5 3.5h13M1.5 8h13M1.5 12.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+          </svg>
         </button>
         {open && (
           <div className="sidebar-mode-menu" role="menu">
@@ -76,6 +78,19 @@ export function SidebarHeader({ mode, t, onModeChange }: SidebarHeaderProps) {
           </div>
         )}
       </div>
+      <span className="sidebar-mode-trigger-label sidebar-title">{label}</span>
+      <button
+        type="button"
+        className="sidebar-search-btn"
+        aria-label={t('sidebar.search')}
+        title={t('sidebar.search')}
+        onClick={onSearchClick}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          <path d="M10 10l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </button>
     </div>
   );
 }

@@ -315,20 +315,31 @@ export function buildWysiwygBlocksExtension(): Extension {
     },
 
     // ── 标题排版（github.css: bold; margin 1rem 0; lh 按级; h1/h2 底线 1px #eee）──
+    // V7-I4：块间距用 padding 而非 margin——margin 产生的行间「死区」会让
+    // posAtCoords 把落在空隙里的点击映射到错误行（光标与鼠标位置分离）。
+    // h1/h2 底线经 ::after 贴住文本，1rem 下间距留在 padding 内。
     '.cm-line.mellow-heading-line': {
       fontWeight: 'bold',
-      marginTop: '1rem',
-      marginBottom: '1rem',
+      paddingTop: '1rem',
+      paddingBottom: '1rem',
     },
     '.cm-line.mellow-h1': {
       lineHeight: '1.2',
+    },
+    '.cm-line.mellow-h1::after': {
+      content: "''",
+      display: 'block',
       borderBottom: '1px solid var(--mellow-md-heading-border, #eeeeee)',
-      paddingBottom: '0.2em',
+      marginTop: '0.2em',
     },
     '.cm-line.mellow-h2': {
       lineHeight: '1.225',
+    },
+    '.cm-line.mellow-h2::after': {
+      content: "''",
+      display: 'block',
       borderBottom: '1px solid var(--mellow-md-heading-border, #eeeeee)',
-      paddingBottom: '0.2em',
+      marginTop: '0.2em',
     },
     '.cm-line.mellow-h3': {
       lineHeight: '1.43',
@@ -341,17 +352,17 @@ export function buildWysiwygBlocksExtension(): Extension {
       color: 'var(--mellow-md-quote-fg, #777777)',
     },
 
-    // ── 顶层块距（github.css: p/blockquote/ul/ol margin 0.8em 0）──
+    // ── 顶层块距（github.css: p/blockquote/ul/ol margin 0.8em 0；V7-I4 改 padding）──
     '.cm-line.mellow-block-first': {
-      marginTop: '0.8em',
+      paddingTop: '0.8em',
     },
     '.cm-line.mellow-block-last': {
-      marginBottom: '0.8em',
+      paddingBottom: '0.8em',
     },
 
-    // ── 列表项间距（V6-P1 1.2.4：非首 item 首行 0.25em 上边距）──
+    // ── 列表项间距（V6-P1 1.2.4：非首 item 首行 0.25em 上边距；V7-I4 改 padding）──
     '.cm-line.mellow-li-gap': {
-      marginTop: '0.25em',
+      paddingTop: '0.25em',
     },
 
     // ── 链接色（V6-P1：Typora 蓝 #0969da，github.css 新版真值）──

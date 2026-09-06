@@ -139,6 +139,44 @@ html, body, #root {
   flex-wrap: wrap;
 }
 
+/* V7-I2：Typora 头部三段式——☰（左）+ 居中标题 + 🔍（右），单行不换行 */
+.file-tree-header {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+}
+
+.sidebar-mode-trigger-label.sidebar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mellow-fg);
+}
+
+.sidebar-mode-icon {
+  display: block;
+}
+
+.sidebar-search-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+}
+
+.sidebar-search-btn:hover {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
+}
+
 /* V5-A1：Typora 式单标签模式切换（「文件 ▾」+ 下拉菜单） */
 .sidebar-mode-nav {
   display: flex;
@@ -162,11 +200,6 @@ html, body, #root {
 .sidebar-mode-trigger:hover {
   background: var(--mellow-bg-hover);
   color: var(--mellow-fg);
-}
-
-.sidebar-mode-caret {
-  font-size: 9px;
-  opacity: 0.7;
 }
 
 .sidebar-mode-menu {

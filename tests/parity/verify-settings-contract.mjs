@@ -162,9 +162,10 @@ if (!/const \[commandPaletteVisible, setCommandPaletteVisible\] = useState\(fals
 if (!/const \[slashMode, setSlashMode\] = useState\(false\);/.test(appSource)) {
   fail('App.tsx slashMode 初始态必须为 false（V4 P6.3 Slash UI 默认隐藏）');
 }
-// 可发现性入口：menu schema 暴露 reader.open 与 commandPalette.open（后者含平台快捷键）。
-if (!menuSchemaSource.includes("id: 'reader.open'")) {
-  fail('menuSchema 缺少 reader.open 入口（V4 P6.3 Reader 可发现性）');
+// V7-I1：用户裁决——「用 Reader 打开」「只读模式」从显示菜单移除（命令保留在注册表，
+// 仍可经命令面板/Reader 内按钮触达）；menuSchema 不得再含这两个入口。
+if (menuSchemaSource.includes("id: 'reader.open'") || menuSchemaSource.includes("id: 'view.readonly.toggle'")) {
+  fail('menuSchema 含已裁撤的 reader.open / view.readonly.toggle 菜单入口（V7-I1 应删除）');
 }
 if (!menuSchemaSource.includes("id: 'commandPalette.open'") || !/commandPalette\.open.*mac: 'Cmd\+Shift\+P'/.test(menuSchemaSource)) {
   fail('menuSchema 缺少 commandPalette.open（含 Cmd+Shift+P / Ctrl+Shift+P，V4 P6.3 Palette 可发现性）');

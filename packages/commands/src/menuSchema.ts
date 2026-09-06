@@ -338,8 +338,6 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'commandPalette.open', labelKey: 'menu.commandPalette.open', shortcut: { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' } },
     { kind: 'separator' },
     { kind: 'command', id: 'view.source.toggle', labelKey: 'menu.view.source.toggle', shortcut: { mac: 'Cmd+/', winLinux: 'Ctrl+/' } },
-    // E6a：Typora 1.14.9「Readonly Mode」（dump toggleReadonlyMode:）
-    { kind: 'command', id: 'view.readonly.toggle', labelKey: 'menu.view.readonly.toggle' },
     { kind: 'separator' },
     { kind: 'command', id: 'view.focus.cycle', labelKey: 'menu.view.focus.cycle', shortcut: { mac: 'F8', winLinux: 'F8' } },
     { kind: 'command', id: 'view.typewriter.cycle', labelKey: 'menu.view.typewriter.cycle', shortcut: { mac: 'F9', winLinux: 'F9' } },
@@ -357,7 +355,6 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'separator' },
     { kind: 'command', id: 'window.alwaysOnTop', labelKey: 'menu.view.alwaysOnTop' },
     { kind: 'separator' },
-    { kind: 'command', id: 'reader.open', labelKey: 'menu.reader.open' },
     { kind: 'command', id: 'window.fullscreen', labelKey: 'menu.window.fullscreen', shortcut: { mac: 'Ctrl+Cmd+F', winLinux: 'F11' } },
     { kind: 'command', id: 'view.devtools', labelKey: 'menu.view.devtools', debugOnly: true },
   ] },

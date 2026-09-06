@@ -29,12 +29,15 @@ function highlight() {
     { tag: [tags.keyword, tags.modifier, tags.operator, tags.operatorKeyword], color: '#ff7b72' },
     { tag: [tags.literal, tags.inserted, tags.tagName], color: base.green },
     { tag: [tags.deleted, tags.macroName], color: base.red },
-    { tag: [tags.className, tags.definition(tags.propertyName), tags.definition(tags.typeName), tags.listMark, tags.codeInfo], color: '#ffa657' },
+    { tag: [tags.className, tags.definition(tags.propertyName), tags.definition(tags.typeName), tags.codeInfo], color: '#ffa657' },
+    // V7-I3：列表标记 Typora 对齐——与正文同色（此前 #ffa657 橙色）
+    { tag: tags.listMark, color: colors.text },
     { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#d2a8ff' },
     { tag: [tags.meta, tags.comment], color: colors.comment, fontStyle: 'italic' },
     { tag: [tags.link, tags.escape, tags.string, tags.regexp, tags.special(tags.string)], color: '#a5d6ff' },
     { tag: [tags.url, tags.linkMark, tags.propertyName], color: colors.text },
-    { tag: [tags.quote, tags.quoteMark], color: base.green, fontStyle: 'italic' },
+    // V7-I3：引用 Typora 对齐——灰色非斜体（此前绿色斜体）
+    { tag: [tags.quote, tags.quoteMark], color: '#8b949e' },
   ], 'dark');
 }
 
