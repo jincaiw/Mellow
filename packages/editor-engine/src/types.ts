@@ -66,3 +66,9 @@ export const MARKER_CLASS = 'mellow-md-marker';
 
 /** 弱化 class（CSS: opacity，list 的 visually normalized，spec §14） */
 export const MARKER_DIM_CLASS = 'mellow-md-marker-dim';
+
+/**
+ * 无序列表 bullet class（V7-I5：Typora 对齐）—— `-`/`*` 源字符透明保宽，
+ * ::before 画 `•` 圆点；有序列表（`1.`）仍走 dim（数字与 Typora 一致）。
+ */
+export const MARKER_BULLET_CLASS = 'mellow-md-marker-bullet';

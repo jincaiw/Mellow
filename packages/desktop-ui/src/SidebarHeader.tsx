@@ -1,10 +1,12 @@
 /**
- * SidebarHeader（desktop-ui-design-spec §5 侧栏；V7-I2 Typora 截图对齐）。
+ * SidebarHeader（desktop-ui-design-spec §5 侧栏；V7-I2/V7-I5 Typora 对齐）。
  *
- * 头部三段式布局：☰ 汉堡（左，弹出模式切换菜单：文件/大纲/搜索）
- * + 居中模式标题（「文件」）+ 🔍 搜索（右，切到搜索面板）——与 Typora 文件面板头部一致。
+ * 头部三段式：☰（左）+ 居中模式标题 + 🔍（右）。
+ * V7-I5（用户裁决）：☰ 不是菜单 —— 单击直接在 文件/大纲 之间切换
+ * （与 Typora 一致，tooltip 随目标模式变化，如「切换到大纲视图」）；
+ * 搜索经 🔍 进入，☰ 从任意模式返回文件。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 
 export type SidebarMode = 'files' | 'outline' | 'search';
 
@@ -15,33 +17,13 @@ export interface SidebarHeaderProps {
   onSearchClick: () => void;
 }
 
-const MODES: SidebarMode[] = ['files', 'outline', 'search'];
-
 export function SidebarHeader({ mode, t, onModeChange, onSearchClick }: SidebarHeaderProps) {
-  const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocMouseDown = (event: MouseEvent): void => {
-      if (rootRef.current !== null && !rootRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
   const label = mode === 'files' ? t('sidebar.files') : mode === 'outline' ? t('sidebar.outline') : t('sidebar.search');
+  // ☰ 目标：files ↔ outline 直接互切；search 下单击返回文件（Typora 行为）
+  const toggleTarget: SidebarMode = mode === 'files' ? 'outline' : 'files';
+  const toggleLabel = toggleTarget === 'outline' ? t('sidebar.switchToOutline') : t('sidebar.switchToFiles');
 
   return (
     <div className="file-tree-header" ref={rootRef}>
@@ -49,34 +31,14 @@ export function SidebarHeader({ mode, t, onModeChange, onSearchClick }: SidebarH
         <button
           type="button"
           className="sidebar-mode-trigger"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-label={t('sidebar.filesSwitchLabel')}
-          onClick={() => setOpen((v) => !v)}
+          aria-label={toggleLabel}
+          title={toggleLabel}
+          onClick={() => onModeChange(toggleTarget)}
         >
           <svg className="sidebar-mode-icon" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M1.5 3.5h13M1.5 8h13M1.5 12.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
           </svg>
         </button>
-        {open && (
-          <div className="sidebar-mode-menu" role="menu">
-            {MODES.map((m) => {
-              const text = m === 'files' ? t('sidebar.files') : m === 'outline' ? t('sidebar.outline') : t('sidebar.search');
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  role="menuitem"
-                  className={`sidebar-mode-item${m === mode ? ' active' : ''}`}
-                  aria-checked={m === mode}
-                  onClick={() => { setOpen(false); onModeChange(m); }}
-                >
-                  {text}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
       <span className="sidebar-mode-trigger-label sidebar-title">{label}</span>
       <button

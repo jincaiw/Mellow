@@ -99,18 +99,48 @@ export function setFontSize(fontSize: number) {
     `);
   }
 
-  updateStyleSheet(styleSheets.fontSize, (style, rule) => {
-    // Smaller font size for fold placeholder (...)
-    if (rule.selectorText === '.cm-foldPlaceholder') {
-      style.fontSize = `${fontSize - 4}px`;
-      return;
-    }
+  // V7-I5 加固：CSSOM 迭代写入包 try/catch——老 WebKit 对某些规则类型抛异常时
+  // 不能中断 setUp 后续链路；异常或静默失败都走 textContent 整体重写自愈
+  let cssomOk = true;
+  try {
+    updateStyleSheet(styleSheets.fontSize, (style, rule) => {
+      // Smaller font size for fold placeholder (...)
+      if (rule.selectorText === '.cm-foldPlaceholder') {
+        style.setProperty('font-size', `${fontSize - 4}px`);
+        return;
+      }
 
-    // E.g., .cm-md-heading1 -> 1, .cm-editor -> 0
-    const match = rule.selectorText.match(/\d+/);
-    const headingLevel = parseInt(match === null ? '0' : match[0]);
-    style.fontSize = `${calculateFontSize(fontSize, headingLevel)}px`;
-  });
+      // E.g., .cm-md-heading1 -> 1, .cm-editor -> 0
+      const match = rule.selectorText.match(/\d+/);
+      const headingLevel = parseInt(match === null ? '0' : match[0]);
+      style.setProperty('font-size', `${calculateFontSize(fontSize, headingLevel)}px`);
+    });
+  } catch {
+    cssomOk = false;
+  }
+
+  // V7-I5 自愈回读：CSSOM 写入抛错或被目标 WebView 忽略时，改用整体 textContent
+  // 重写（纯 CSS 文本由浏览器原生解析，无 CSSOM 逐条赋值依赖）
+  const sheet = styleSheets.fontSize.sheet;
+  let needsFallback = !cssomOk;
+  if (!needsFallback && sheet !== null && sheet !== undefined && sheet.cssRules.length > 0) {
+    const first = sheet.cssRules[0] as CSSStyleRule;
+    needsFallback = first.style === undefined || first.style.getPropertyValue('font-size') === '';
+  }
+  if (needsFallback) {
+    const parts: string[] = [];
+    const rules = sheet?.cssRules;
+    if (rules !== undefined && rules !== null && rules.length > 0) {
+      for (const rule of Array.from(rules)) {
+        const styleRule = rule as CSSStyleRule;
+        const match = styleRule.selectorText?.match(/\d+/);
+        const headingLevel = parseInt(match === null || match === undefined ? '0' : match[0]);
+        const size = styleRule.selectorText === '.cm-foldPlaceholder' ? fontSize - 4 : calculateFontSize(fontSize, headingLevel);
+        parts.push(`${styleRule.selectorText} { font-size: ${size}px; }`);
+      }
+      styleSheets.fontSize.textContent = parts.join('\n');
+    }
+  }
 }
 
 export function setShowLineNumbers(enabled: boolean) {

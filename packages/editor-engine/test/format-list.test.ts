@@ -36,8 +36,9 @@ function caretOutsideList(view: EditorView): void {
   moveCaret(view, pos);
 }
 
+/** idle 弱化 marker 数（V7-I5：无序 `-`/`*` 走 bullet class，有序 `1.` 走 dim —— 都算弱化语义） */
 function dimCount(view: EditorView): number {
-  return view.dom.querySelectorAll(`.${MARKER_DIM_CLASS}`).length;
+  return view.dom.querySelectorAll(`.${MARKER_DIM_CLASS}, .mellow-md-marker-bullet`).length;
 }
 
 function hiddenCount(view: EditorView): number {

@@ -1275,6 +1275,36 @@ export default function App() {
     return win?.__MELLOW_BUNDLE_VERSION__ ?? '—';
   }, []);
 
+  /** 诊断探针（V7-I5）：渲染层 config 字号阶梯 + DOM 实测 H1/正文字号（真机「标题同字号」定位） */
+  const readEditorStyleProbe = useCallback((): { configFontSize: number; diffs: number[]; h1Measured: string; bodyMeasured: string } | null => {
+    try {
+      const frame = containerRef.current?.querySelector('iframe');
+      const doc = frame?.contentDocument;
+      const win = frame?.contentWindow as (Window & { config?: { fontSize?: number; headerFontSizeDiffs?: number[] } }) | null;
+      if (doc === null || doc === undefined || win === null || win === undefined) return null;
+      const configFontSize = win.config?.fontSize ?? 0;
+      const diffs = win.config?.headerFontSizeDiffs ?? [];
+      const probeLine = (text: string): string => {
+        const lines = Array.from(doc.querySelectorAll('.cm-content .cm-line'));
+        const line = lines.find((l) => (l.textContent ?? '').includes(text));
+        if (line === null || line === undefined) return '—';
+        const span = Array.from(line.querySelectorAll('span')).find((s) => (s.textContent ?? '').includes(text) && parseFloat(getComputedStyle(s).fontSize) > 0);
+        return span !== null && span !== undefined
+          ? `${getComputedStyle(span).fontSize} (line ${getComputedStyle(line).fontSize})`
+          : getComputedStyle(line).fontSize;
+      };
+      const bodyLine = Array.from(doc.querySelectorAll('.cm-content .cm-line')).find((l) => !l.classList.contains('mellow-heading-line'));
+      return {
+        configFontSize,
+        diffs,
+        h1Measured: probeLine('H1'),
+        bodyMeasured: bodyLine !== null && bodyLine !== undefined ? getComputedStyle(bodyLine).fontSize : '—',
+      };
+    } catch {
+      return null;
+    }
+  }, []);
+
   const openOpenWith = useCallback(() => {
     setOpenWithCustom('');
     setOpenWithEditors([]);
@@ -4902,12 +4932,20 @@ export default function App() {
       {diagnosticsOpen && (() => {
         // V6-P0-E 诊断信息：appVersion（tauri.conf）+ 渲染层 bundle 指纹（iframe 注入）。
         // 两者不一致 → WKWebView 命中旧缓存（v1.4.8 真机事故的直接判据）。
+        // V7-I5：追加渲染层实时探针（config 字号阶梯 + DOM 实测 H1 字号）——
+        // 真机「标题同字号」一键定位失效层级（config → 样式表 → computed）。
         const bundle = readBundleVersion();
+        const probe = readEditorStyleProbe();
         const rows: Array<[string, string]> = [
           [t('diag.appVersion'), `v${appVersion}`],
           [t('diag.bundleVersion'), bundle],
           [t('diag.platform'), navigator.userAgent],
         ];
+        if (probe !== null) {
+          rows.push([t('diag.configFont'), `${probe.configFontSize}px / diffs [${probe.diffs.join(',')}]`]);
+          rows.push([t('diag.h1Measured'), probe.h1Measured]);
+          rows.push([t('diag.bodyMeasured'), probe.bodyMeasured]);
+        }
         const mismatch = appVersion !== '' && bundle !== '—' && bundle !== `v${appVersion}`;
         return (
           <div className="word-count-window" role="dialog" aria-label={t('diag.title')}>

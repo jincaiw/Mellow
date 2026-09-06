@@ -39,9 +39,9 @@ function hiddenCount(view: EditorView): number {
   return markerTexts(view).length;
 }
 
-/** 弱化中的 marker 数（List idle 语义，MARKER_DIM_CLASS 元素） */
-function dimCount(view: EditorView): number {
-  return view.dom.querySelectorAll('.mellow-md-marker-dim').length;
+/** 无序列表 bullet marker 数（V7-I5：`-`/`*` → `•`，MARKER_BULLET_CLASS 元素） */
+function bulletCount(view: EditorView): number {
+  return view.dom.querySelectorAll('.mellow-md-marker-bullet').length;
 }
 
 /** inlineExtras 定界符元素数（idle 2 个；caret 进入后 0 个） */
@@ -397,12 +397,12 @@ runStateMatrix({
 });
 
 runStateMatrix({
-  label: 'ListItem（- second，idle 弱化）',
+  label: 'ListItem（- second，idle → bullet，V7-I5）',
   doc: '- first\n- second\n\nplain',
   nodeText: '- second',
   insideOffset: 2,
-  hiddenWhenIdle: (v) => dimCount(v) === 2,
-  revealedWhenTouched: (v) => dimCount(v) <= 1,
+  hiddenWhenIdle: (v) => bulletCount(v) === 2,
+  revealedWhenTouched: (v) => bulletCount(v) <= 1,
   copyExpect: 'second',
 });
 

@@ -22,7 +22,7 @@ import type { Extension } from '@codemirror/state';
 import { registerBuiltinNodes, contentNodeNames, extractMarkers, getNodeSpec } from './nodes';
 import { classifyNodeState, shouldHideMarkers } from './state';
 import type { RevealContext, MarkerRange } from './types';
-import { MARKER_CLASS, MARKER_DIM_CLASS } from './types';
+import { MARKER_CLASS, MARKER_DIM_CLASS, MARKER_BULLET_CLASS } from './types';
 import { isComposing } from './composition';
 import { isSourceMode } from './mode';
 import { largeFileDecorationLimit, largeFileVersion } from './largeFile';
@@ -32,6 +32,9 @@ export { MARKER_CLASS } from './types';
 
 /** 弱化 marker 的 class（CSS: opacity 保留布局；list 的 visually normalized，spec §14） */
 export { MARKER_DIM_CLASS } from './types';
+
+/** 无序列表 bullet class（V7-I5：`-`/`*` → `•`，Typora 对齐） */
+export { MARKER_BULLET_CLASS } from './types';
 
 /** 运行时 CM6 模块（iframe 内与 CoreEditor 同一实例，保证扩展兼容） */
 interface CmRuntime {
@@ -169,7 +172,16 @@ export function buildMarkerRevealExtension(): Extension {
     // RangeSetBuilder 要求按 from 升序添加（嵌套节点批次可能乱序）
     pending.sort((a, b) => a.from - b.from);
     for (const m of pending) {
-      builder.add(m.from, m.to, Decoration.mark({ class: m.cls ?? MARKER_CLASS }));
+      // V7-I5：无序列表 dim marker → bullet class（`-`/`*` 透明保宽 + ::before 画 `•`）；
+      // 有序（`1.`）保持 dim（数字可见，与 Typora 一致）
+      let cls = m.cls ?? MARKER_CLASS;
+      if (cls === MARKER_DIM_CLASS) {
+        const text = view.state.doc.sliceString(m.from, m.to);
+        if (/^[-*+]$/.test(text.trim())) {
+          cls = MARKER_BULLET_CLASS;
+        }
+      }
+      builder.add(m.from, m.to, Decoration.mark({ class: cls }));
     }
 
     return builder.finish();
@@ -221,6 +233,17 @@ export function buildMarkerRevealExtension(): Extension {
     [`.${MARKER_DIM_CLASS}`]: {
       // 弱化而非隐藏：保留布局（无 caret jump），marker 视觉淡化（Typora list marker）
       opacity: '0.35',
+    },
+    [`.${MARKER_BULLET_CLASS}`]: {
+      // V7-I5：无序列表源字符（`-`/`*`）透明保宽，::before 叠画 Typora 圆点
+      color: 'transparent',
+      position: 'relative',
+    },
+    [`.${MARKER_BULLET_CLASS}::before`]: {
+      content: "'•'",
+      position: 'absolute',
+      left: '0',
+      color: 'var(--mellow-md-list-bullet, #8b949e)',
     },
   });
 

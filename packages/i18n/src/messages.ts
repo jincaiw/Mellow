@@ -11,6 +11,8 @@ const zhCN = {
   'titlebar.palette.title': '命令面板（Ctrl/Cmd+Shift+P）',
   'doc.untitled': '未命名',
   'sidebar.filesSwitchLabel': '侧栏切换',
+  'sidebar.switchToOutline': '切换到大纲视图',
+  'sidebar.switchToFiles': '切换到文件视图',
   'sidebar.openFolderTitle': '打开文件夹',
   'tree.includeGlob': 'include glob（逗号分隔）',
   'tree.excludeGlob': 'exclude glob（逗号分隔）',
@@ -769,6 +771,9 @@ const zhCN = {
   'diag.appVersion': '应用版本',
   'diag.bundleVersion': '渲染层版本',
   'diag.platform': '运行环境',
+  'diag.configFont': '字号阶梯配置',
+  'diag.h1Measured': '标题实测字号',
+  'diag.bodyMeasured': '正文实测字号',
   'diag.mismatch': '渲染层版本与应用版本不一致：渲染层命中旧缓存，请在设置中清理渲染层缓存或重装应用。',
 } as const;
 
@@ -777,6 +782,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'titlebar.palette.title': 'Command Palette (Ctrl/Cmd+Shift+P)',
   'doc.untitled': 'Untitled',
   'sidebar.filesSwitchLabel': 'Sidebar switch',
+  'sidebar.switchToOutline': 'Switch to Outline View',
+  'sidebar.switchToFiles': 'Switch to Files View',
   'sidebar.openFolderTitle': 'Open folder',
   'tree.includeGlob': 'include glob (comma separated)',
   'tree.excludeGlob': 'exclude glob (comma separated)',
@@ -1524,6 +1531,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'diag.appVersion': 'App Version',
   'diag.bundleVersion': 'Renderer Bundle Version',
   'diag.platform': 'Environment',
+  'diag.configFont': 'Heading Ladder Config',
+  'diag.h1Measured': 'Measured Heading Size',
+  'diag.bodyMeasured': 'Measured Body Size',
   'diag.mismatch': 'Renderer bundle version does not match the app version: the WebView is serving a stale cached bundle. Clear the renderer cache in Settings or reinstall the app.',
 };
 

@@ -10,7 +10,7 @@
  *        - files-tree：quickbar 存在、树行数、首行框；
  *        - outline：heading 行数（1×h1 + 2×h2）、首行框；
  *        - search：分组数 + 匹配行数、首匹配框（查询 'Mellow'）。
- *      模式切换经头部单标签下拉（.sidebar-mode-trigger → .sidebar-mode-item）。
+ *      模式切换：☰ 直接切换 文件↔大纲（V7-I5，无下拉菜单）；🔍 进入搜索。
  *   5. 整窗截图归档 tests/visual/actual/sidebar-<view>.png（人工评审素材）。
  *
  * 基准：tests/visual/golden/sidebar-golden.json（首跑自动生成；--update 重建）。
@@ -229,21 +229,16 @@ async function main() {
     const transientClosed = await waitFor(async () => (await page.evaluate(() => document.querySelector('.file-filter-input'))) === null);
     if (!transientClosed) throw new Error('Esc 未收起临时过滤框');
 
-    // ── 视图 2：outline（头部单标签下拉切换） ────────────────────────────────
+    // ── 视图 2：outline（V7-I5：☰ 直接切换 文件↔大纲，无下拉菜单） ─────────────
     await syntheticClick(page, '.sidebar-mode-trigger');
-    const menuOpen = await waitFor(async () => (await page.evaluate(() => document.querySelectorAll('.sidebar-mode-item').length)) >= 3);
-    if (!menuOpen) throw new Error('模式下拉菜单未展开');
-    await syntheticClick(page, '.sidebar-mode-item:nth-of-type(2)'); // files → outline
     const outlineReady = await waitFor(async () => (await page.evaluate(() => document.querySelectorAll('.outline-row').length)) >= 3);
     if (!outlineReady) throw new Error('outline 视图未就绪（heading 行数不足）');
     await sleep(300);
     samples['outline'] = await sampleView('outline');
     await page.screenshot({ path: resolve(ACTUAL_DIR, 'sidebar-outline.png'), fullPage: false });
 
-    // ── 视图 3：search（下拉切换 + 填查询 + 点运行按钮，不用 Enter 免触发 aside 导航跳转） ──
-    await syntheticClick(page, '.sidebar-mode-trigger');
-    await waitFor(async () => (await page.evaluate(() => document.querySelectorAll('.sidebar-mode-item').length)) >= 3);
-    await syntheticClick(page, '.sidebar-mode-item:nth-of-type(3)'); // outline → search
+    // ── 视图 3：search（🔍 按钮进入 + 填查询 + 点运行按钮，不用 Enter 免触发 aside 导航跳转） ──
+    await syntheticClick(page, '.sidebar-search-btn');
     const searchInputReady = await waitFor(async () => (await page.evaluate(() => document.querySelector('.search-input'))) !== null);
     if (!searchInputReady) throw new Error('search 输入框未出现');
     await page.evaluate(() => {

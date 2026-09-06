@@ -258,13 +258,26 @@ async function main() {
     filterShown = await page.evaluate(() => document.querySelector('aside.file-tree .file-filter-input') !== null);
     check('Escape clears and closes transient filter', !filterShown);
 
-    // 模式下拉：展开后含 文件/大纲/搜索 三项
+    // V7-I5：☰ 为直接切换按钮（非菜单）：files → outline → files 往返；🔍 进入 search
     await page.locator('.sidebar-mode-trigger').click();
-    const menu = await page.evaluate(() => Array.from(document.querySelectorAll('.sidebar-mode-item')).map((element) => element.textContent?.trim()));
-    check('mode dropdown lists files/outline/search', JSON.stringify(menu) === JSON.stringify(['文件', '大纲', '搜索']), JSON.stringify(menu));
-    await page.keyboard.press('Escape');
-    await new Promise((r) => setTimeout(r, 100));
-    check('mode dropdown closes on Escape', await page.evaluate(() => document.querySelector('.sidebar-mode-menu') === null));
+    await new Promise((r) => setTimeout(r, 250));
+    const afterToggle = await page.evaluate(() => ({
+      label: document.querySelector('.sidebar-mode-trigger-label')?.textContent?.trim() ?? null,
+      hasMenu: document.querySelector('.sidebar-mode-menu') !== null,
+      outlineRows: document.querySelectorAll('.outline-row').length,
+    }));
+    check('☰ toggles files → outline directly (no menu, V7-I5)', afterToggle.label === '大纲' && !afterToggle.hasMenu && afterToggle.outlineRows >= 1, JSON.stringify(afterToggle));
+    await page.locator('.sidebar-mode-trigger').click();
+    await new Promise((r) => setTimeout(r, 250));
+    const afterToggleBack = await page.evaluate(() => document.querySelector('.sidebar-mode-trigger-label')?.textContent?.trim() ?? null);
+    check('☰ toggles outline → files back', afterToggleBack === '文件', JSON.stringify(afterToggleBack));
+    await page.locator('.sidebar-search-btn').click();
+    await new Promise((r) => setTimeout(r, 250));
+    const afterSearch = await page.evaluate(() => ({
+      label: document.querySelector('.sidebar-mode-trigger-label')?.textContent?.trim() ?? null,
+      hasSearchInput: document.querySelector('.search-input') !== null,
+    }));
+    check('🔍 enters search mode', afterSearch.label === '搜索' && afterSearch.hasSearchInput, JSON.stringify(afterSearch));
 
     // 4. 文档文本不被插入字面字符
     if (frame && typeof textBefore === 'string') {
