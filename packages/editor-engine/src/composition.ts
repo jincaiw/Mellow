@@ -8,9 +8,11 @@
  * 但 ViewPlugin 必须传入自身 view，避免一个编辑器的候选输入冻结另一个文档。
  */
 
-let composing = false;
 let installed = false;
-let composingRoot: Element | null = null;
+/** 有些 WebView 会把 composition 事件直接派发到 document；该计数保留全局保守保护。 */
+let documentCompositionDepth = 0;
+/** 正常 DOM composition 按编辑器根节点隔离，允许多个 EditorView 同时工作。 */
+const composingRoots = new Map<Element, number>();
 
 type EditorViewLike = { dom?: Element };
 
@@ -25,33 +27,46 @@ export function installCompositionTracking(): void {
   installed = true;
 
   document.addEventListener('compositionstart', (event) => {
-    composing = true;
-    composingRoot = editorRoot(event.target);
+    const root = editorRoot(event.target);
+    if (root === null) {
+      documentCompositionDepth += 1;
+      return;
+    }
+    composingRoots.set(root, (composingRoots.get(root) ?? 0) + 1);
   });
-  document.addEventListener('compositionend', () => {
-    composing = false;
-    composingRoot = null;
+  document.addEventListener('compositionend', (event) => {
+    const root = editorRoot(event.target);
+    if (root === null) {
+      documentCompositionDepth = Math.max(0, documentCompositionDepth - 1);
+      return;
+    }
+    const depth = composingRoots.get(root) ?? 0;
+    if (depth <= 1) composingRoots.delete(root);
+    else composingRoots.set(root, depth - 1);
   });
   // 某些平台组合键/取消合成可能不触发 compositionend，keydown 兜底
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' || event.key === 'Process') {
-      composing = false;
-      composingRoot = null;
+      documentCompositionDepth = 0;
+      composingRoots.clear();
     }
   });
 }
 
 /** 是否处于 IME composition 中 */
 export function isComposing(view?: EditorViewLike): boolean {
-  if (!composing) return false;
-  // 合成事件由 document 触发（部分 WebView / 测试环境）时保守地守护全部视图；
-  // dom 未知的调用方同样保守守护。
-  if (view === undefined || view.dom === undefined || composingRoot === null) return true;
-  return view.dom === composingRoot || view.dom.contains(composingRoot) || composingRoot.contains(view.dom);
+  if (documentCompositionDepth > 0) return true;
+  if (composingRoots.size === 0) return false;
+  // dom 未知的旧调用方保持保守保护；ViewPlugin 则只守护自己的根。
+  if (view === undefined || view.dom === undefined) return true;
+  for (const root of composingRoots.keys()) {
+    if (view.dom === root || view.dom.contains(root) || root.contains(view.dom)) return true;
+  }
+  return false;
 }
 
 /** 仅供测试：重置状态 */
 export function resetCompositionState(): void {
-  composing = false;
-  composingRoot = null;
+  documentCompositionDepth = 0;
+  composingRoots.clear();
 }

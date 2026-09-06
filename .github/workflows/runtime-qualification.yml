@@ -10,10 +10,27 @@
 name: Runtime Qualification
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - '.github/workflows/runtime-qualification.yml'
+      - 'apps/desktop/**'
+      - 'packages/editor-core/**'
+      - 'packages/editor-engine/**'
+      - 'packages/editor-react/**'
+      - 'packages/app-core/**'
+      - 'packages/document-model/**'
+      - 'packages/host-api/**'
+      - 'packages/commands/**'
+      - 'packages/settings/**'
+      - 'packages/themes/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
   workflow_dispatch:
     inputs:
       target:
-        description: 'Qualification target; use macos-windows while Linux is intentionally deferred.'
+        description: 'Qualification target. Automatic PR/main runs always execute the full matrix.'
         required: true
         default: all
         type: choice
@@ -28,7 +45,7 @@ permissions:
 jobs:
   linux-runtime:
     name: "Linux: Xvfb + fcitx5 IME matrix"
-    if: ${{ inputs.target == 'all' || inputs.target == 'linux' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'linux' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -206,7 +223,7 @@ jobs:
 
   windows-runtime:
     name: "Windows: launch + SendKeys smoke"
-    if: ${{ inputs.target == 'all' || inputs.target == 'macos-windows' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'macos-windows' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -296,7 +313,7 @@ jobs:
 
   macos-runtime:
     name: "macOS: launch + CLI open smoke"
-    if: ${{ inputs.target == 'all' || inputs.target == 'macos-windows' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'macos-windows' }}
     runs-on: macos-latest
     timeout-minutes: 45
     steps:

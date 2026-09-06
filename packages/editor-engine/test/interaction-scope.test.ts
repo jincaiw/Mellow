@@ -31,6 +31,25 @@ describe('editor interaction state is view-scoped', () => {
     expect(isComposing({ dom: second })).toBe(false);
   });
 
+  test('ending one editor composition does not unguard another active editor', () => {
+    const first = document.createElement('div');
+    const firstContent = document.createElement('div');
+    first.className = 'cm-editor';
+    first.append(firstContent);
+    const second = document.createElement('div');
+    const secondContent = document.createElement('div');
+    second.className = 'cm-editor';
+    second.append(secondContent);
+    document.body.append(first, second);
+
+    firstContent.dispatchEvent(new Event('compositionstart', { bubbles: true }));
+    secondContent.dispatchEvent(new Event('compositionstart', { bubbles: true }));
+    firstContent.dispatchEvent(new Event('compositionend', { bubbles: true }));
+
+    expect(isComposing({ dom: first })).toBe(false);
+    expect(isComposing({ dom: second })).toBe(true);
+  });
+
   test('source mode supports a view-local override without changing the default mode', () => {
     const first = {};
     const second = {};

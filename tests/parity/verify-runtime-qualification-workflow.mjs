@@ -12,6 +12,18 @@ if (!/workflow_dispatch:\s*\n\s+inputs:\s*\n\s+target:/.test(workflow)
   throw new Error('Runtime Qualification must support a macOS/Windows-only dispatch while Linux is deferred');
 }
 
+if (!/push:\s*\n\s+branches:\s*\[main\]/.test(workflow)
+  || !/pull_request:\s*\n\s+paths:/.test(workflow)) {
+  throw new Error('Runtime Qualification must run automatically for main and relevant pull requests');
+}
+
+for (const job of ['linux-runtime', 'windows-runtime', 'macos-runtime']) {
+  const jobPattern = new RegExp(`${job}:[\\s\\S]*?if: \\$\\{\\{ github\\.event_name != 'workflow_dispatch' \\|\\|`, 'm');
+  if (!jobPattern.test(workflow)) {
+    throw new Error(`Runtime Qualification ${job} must run the full matrix outside workflow_dispatch`);
+  }
+}
+
 if (releaseBuilds.length !== 3) {
   throw new Error(`Expected exactly 3 Runtime Qualification release builds, found ${releaseBuilds.length}`);
 }
@@ -44,4 +56,4 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   throw new Error('Windows Runtime Qualification must gate source fidelity and report its hosted-desktop interaction limit');
 }
 
-console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
+console.log('Runtime Qualification runs automatically for candidate commits, embeds frontendDist on all platforms, and gates Windows source fidelity');

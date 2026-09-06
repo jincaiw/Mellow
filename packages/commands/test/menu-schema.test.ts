@@ -72,7 +72,7 @@ describe('MENU_SCHEMA 结构不变量', () => {
     expect(SCHEMA_SHORTCUTS.get('view.typewriter.cycle')).toEqual({ mac: 'F9', winLinux: 'F9' });
   });
 
-  test('文件菜单 §7.2：槽位顺序契约（B1 修订：去 file.newTab，tabs.close→file.closeWindow）', () => {
+  test('文件菜单 §7.2：多文档标签与窗口命令的槽位顺序契约', () => {
     const fileRoot = MENU_SCHEMA.find((root) => root.id === 'file');
     expect(fileRoot).toBeDefined();
     const slots = (fileRoot as NonNullable<typeof fileRoot>).entries.map((entry): string => {
@@ -83,25 +83,27 @@ describe('MENU_SCHEMA 结构不变量', () => {
       return entry.id;
     });
     expect(slots).toEqual([
-      'file.new', 'file.newWindow', '---',
+      'file.new', 'file.newWindow', 'file.newTab', '---',
       'file.open', '[file.recent]', 'quickOpen.open', 'workspace.openFolder', '---',
       'file.info', 'file.revealInFileList', 'file.revealInFileTree', 'file.revealInFinder', '---',
       'file.moveTo', 'file.trash', '---',
-      'file.closeWindow', 'file.closeAll', '---',
+      'tabs.close', 'tabs.closeOthers', 'tabs.closeRight', 'file.closeWindow', 'file.closeAll', '---',
       'file.save', 'file.saveAs', 'file.saveAll', 'file.reloadFromDisk', '---',
       'file.import', '[file.export]', 'file.pageSetup', 'file.print', '---',
       'file.openSnapshotsFolder',
     ]);
-    expect(slots.length).toBe(30);
+    expect(slots.length).toBe(34);
   });
 
-  test('B1：file.newTab / tabs.*（close/closeOthers/closeRight/prev/next/showAll/reopenClosed）不再存在于 schema', () => {
-    const banned = ['file.newTab', 'tabs.close', 'tabs.closeOthers', 'tabs.closeRight', 'tabs.reopenClosed', 'tabs.prev', 'tabs.next', 'tabs.showAll'];
+  test('标签命令：新建、关闭与重新打开关闭文档进入 schema', () => {
+    const absent = ['tabs.prev', 'tabs.next', 'tabs.showAll'];
     const ids = allEntries().filter((e): e is Extract<MenuEntry, { kind: 'command' }> => e.kind === 'command').map((e) => e.id);
-    for (const id of banned) expect(ids).not.toContain(id);
+    for (const id of ['file.newTab', 'tabs.close', 'tabs.closeOthers', 'tabs.closeRight', 'tabs.reopenClosed']) expect(ids).toContain(id);
+    for (const id of absent) expect(ids).not.toContain(id);
     expect(ids).toContain('file.closeWindow');
     expect(SCHEMA_COMMAND_IDS.has('file.closeWindow')).toBe(true);
-    for (const id of banned) expect(SCHEMA_COMMAND_IDS.has(id)).toBe(false);
+    for (const id of ['file.newTab', 'tabs.close', 'tabs.closeOthers', 'tabs.closeRight', 'tabs.reopenClosed']) expect(SCHEMA_COMMAND_IDS.has(id)).toBe(true);
+    for (const id of absent) expect(SCHEMA_COMMAND_IDS.has(id)).toBe(false);
   });
 
   test('主题菜单是 dynamic 占位（Rust 无主题列表的结构前提）', () => {
@@ -181,9 +183,8 @@ describe('toNativeMenuSpec 物化', () => {
     const recent = spec.menus.find((m) => m.id === 'file')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.file.recent')!;
     const ids = recent.items.map((i) => (i.type === 'command' ? i.id : i.type));
-    // B1：tabs.reopenClosed 移除后，最近文件子菜单从动态项直接开始
-    expect(ids).toEqual(['recent.file::/Users/a/docs/笔记.md', 'recent.file::/tmp/x.md', 'separator', 'recent.clear']);
-    const first = recent.items[0] as Extract<NativeMenuItem, { type: 'command' }>;
+    expect(ids).toEqual(['tabs.reopenClosed', 'recent.file::/Users/a/docs/笔记.md', 'recent.file::/tmp/x.md', 'separator', 'recent.clear']);
+    const first = recent.items[1] as Extract<NativeMenuItem, { type: 'command' }>;
     expect(first).toMatchObject({ id: 'recent.file::/Users/a/docs/笔记.md', label: '笔记.md' });
   });
 

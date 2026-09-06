@@ -25,6 +25,24 @@ pub fn allow_close_window(app: tauri::AppHandle, label: String) -> Result<(), St
     Ok(())
 }
 
+/// 向所有现有窗口广播一个经过白名单约束的全局文件命令。
+///
+/// Rust 只负责窗口间投递，不读取或写入 Markdown；每个前端窗口仍各自通过
+/// DocumentService / CloseGate 执行原子保存、冲突检查与 dirty 确认。这样既能让
+/// “保存全部／全部关闭”覆盖所有窗口，也不会让一个窗口绕过另一个窗口的安全门禁。
+#[tauri::command]
+pub fn broadcast_window_command(app: tauri::AppHandle, command: String) -> Result<(), String> {
+    if !supports_global_window_command(&command) {
+        return Err("unsupported window command".to_string());
+    }
+    app.emit("mellow://window-command", command)
+        .map_err(|e| format!("broadcast window command failed: {e}"))
+}
+
+fn supports_global_window_command(command: &str) -> bool {
+    matches!(command, "save-all" | "close-all")
+}
+
 /// 为单个窗口安装关闭保护（B1 D4 = A：系统关窗 = 关文档，需 dirty 确认）。
 /// 与 A2 几何监听各自独立挂载；几何事件不受影响。
 pub fn install_close_gate(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
@@ -130,7 +148,7 @@ pub fn page_setup(_window: WebviewWindow) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::CloseGate;
+    use super::{supports_global_window_command, CloseGate};
 
     #[test]
     fn close_gate_allow_once_then_consumed() {
@@ -160,5 +178,12 @@ mod tests {
             assert!(!set.remove("main-456")); // 其它窗口不被误放行
             assert!(set.remove("main-123"));
         }
+    }
+
+    #[test]
+    fn global_window_commands_are_limited_to_safe_allowlist() {
+        assert!(supports_global_window_command("save-all"));
+        assert!(supports_global_window_command("close-all"));
+        assert!(!supports_global_window_command("delete-all"));
     }
 }

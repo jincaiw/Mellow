@@ -60,30 +60,30 @@ function ensureFcitxPinyin() {
 
 /**
  * Xvfb + WebKitGTK 下，切换 fcitx5 input context 后会短暂把 X11 焦点归还给
- * 顶层窗口。必须在选择拼音后重新落到编辑器内容区，并把插入点显式移动到文档末尾；
- * 不能依赖上一次 click 的偶然焦点状态。
+ * 顶层窗口。普通场景将插入点移至文末；代码场景使用键盘从文首精确进入 fenced
+ * code 内容行，不能点击后又 Ctrl+End 跳出围栏。
  */
-function focusEditor(winId, point = { x: 600, y: 250 }) {
+function focusEditor(winId, point = { x: 600, y: 250 }, caret = 'end') {
   if (!winId) throw new Error('Mellow main window was not found');
   sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
   sh(`xdotool mousemove --window ${winId} ${point.x} ${point.y} click --repeat ${point.clicks ?? 1} 1`);
   sleep(700);
-  xdo('key --clearmodifiers ctrl+End');
+  if (caret === 'code') {
+    xdo('key --clearmodifiers ctrl+Home');
+    xdo('key --clearmodifiers Down');
+    xdo('key --clearmodifiers End');
+  } else {
+    xdo('key --clearmodifiers ctrl+End');
+  }
   sleep(500);
   console.log(`[focus] target=${winId} active=${sh('xdotool getwindowfocus 2>/dev/null').trim() || 'UNAVAILABLE'}`);
 }
 
-/** 读回：优先剪贴板，fallback 保存读回 */
-function readBack(pid) {
-  combo('ctrl+a', '29:1 30:1 30:0 29:0');
-  sleep(200);
-  combo('ctrl+c', '29:1 46:1 46:0 29:0');
-  sleep(400);
-  // CI/Xvfb 中可能没有可响应的 clipboard owner；xclip 会一直等待，不能让每次
-  // Undo 的读回被通用 20s shell timeout 放大。1s 后可靠地回退到保存读回。
-  const clip = sh('timeout 1 xclip -selection clipboard -o 2>/dev/null').trim();
-  // 容器/CI 环境 xclip 连接失败（Could not connect to localhost）→ 走保存读回
-  if (clip.length > 0 && !clip.includes('Could not connect') && !clip.includes('Error:')) return clip;
+/**
+ * 读回统一走 Ctrl+S 后的磁盘字节。X11 clipboard 在 Xvfb 中是异步的，且 Ctrl+A
+ * 会改变选区，不能作为 IME Undo Gate 的真值来源。
+ */
+function readBack() {
   combo('ctrl+s', '29:1 31:1 31:0 29:0');
   sleep(1500);
   try { return readFileSync(DOC, 'utf8'); } catch { return ''; }
@@ -129,7 +129,7 @@ const SCENARIOS = [
   // Coordinates are window-relative (and therefore include title/menu/tab chrome).
   // y=65 targets the opening fence, which is a non-text marker. The editable `code`
   // content line is one visual row lower at y≈110; focus that line directly.
-  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 110 } },
+  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 110 }, caret: 'code' },
   { id: 'math', doc: '$x+1$' },
   { id: 'link', doc: '[label](https://example.com)' },
 ];
@@ -142,18 +142,18 @@ for (const sc of SCENARIOS) {
   // 聚焦编辑器：激活主窗口 + 双击编辑器内容区（600,250 位于 1200x775 主窗口内）
   const wid = sh('cat /tmp/mellow-win-id.txt').trim();
   if (wid) {
-    focusEditor(wid, sc.focusPoint);
+    focusEditor(wid, sc.focusPoint, sc.caret);
   }
   ensureFcitxPinyin();
   // fcitx5 在 InputContext 切换后可能重置 X11 focus；切换完成后再次聚焦是
   // 真实桌面操作链的一部分，而不是绕过 IME 的直接写文件。
-  focusEditor(wid, sc.focusPoint);
+  focusEditor(wid, sc.focusPoint, sc.caret);
   // 代码块是唯一需命中内嵌编辑节点的场景。保留聚焦后的截图，以便 CI 若失败时
   // 能依据实际渲染坐标诊断，而不是继续猜测 click 落点。
   if (sc.id === 'code') sh('import -display :99 -window root /tmp/mellow-code-focus.png 2>/dev/null || true');
   for (const s of SEG1) typeSyl(s);
   for (const s of SEG2) typeSyl(s);
-  const text = readBack(pid);
+  const text = readBack();
   const r = { im, scenario: sc.id, got: text.replace(/\n/g, '⏎') };
   // fcitx5 用户词典会影响每个拼音的首候选（例如 guo 可能为「国」或「过」）。
   // 这里验证编辑器体验合同：四个音节均提交为汉字、无丢失/重复，并在保存后读回。
@@ -164,17 +164,17 @@ for (const sc of SCENARIOS) {
   for (let i = 0; i < 12; i++) {
     combo('ctrl+z', '29:1 44:1 44:0 29:0');
     sleep(900);
-    const t = readBack(pid);
+    const t = readBack();
     if (hanCount(t) === 0) break;
   }
-  const afterUndo = readBack(pid);
+  const afterUndo = readBack();
   r.undoOk = hanCount(afterUndo) === 0;
   if (!r.undoOk) r.undoReason = `undo 后仍有汉字: ${JSON.stringify(afterUndo)}`;
   // 只匹配精确进程名，不会误杀外层 bash/Node；确保下一场景不会走 single-instance forwarding。
   spawnSync('kill', [pid]);
   sh('pkill -x mellow-desktop 2>/dev/null || true');
   results.push(r);
-  console.log(`${r.pass ? 'PASS' : 'FAIL'} ${im}/${sc.id}: got=${JSON.stringify(r.got)}${r.reason ? ' | ' + r.reason : ''}${r.undoOk ? ' | undo ok' : ' | undo FAIL'}`);
+  console.log(`${r.pass ? 'PASS' : 'FAIL'} ${im}/${sc.id}: got=${JSON.stringify(r.got)}${r.reason ? ' | ' + r.reason : ''}${r.undoOk ? ' | undo ok' : ` | undo FAIL: ${JSON.stringify(afterUndo)}`}`);
 }
 const pass = results.filter((r) => r.pass && r.undoOk !== false).length;
 console.log(`\n${pass}/${results.length} 场景通过（${im}）`);
