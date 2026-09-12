@@ -51,6 +51,12 @@ for (const item of ledger.items ?? []) {
   assert(Array.isArray(item.requiredEvidence) && item.requiredEvidence.length > 0, `${item.id} 缺少验收证据要求`);
   for (const evidence of item.evidence ?? []) {
     assert(existsSync(resolve(root, evidence)), `${item.id} 的证据不存在：${evidence}`);
+    // 证据必须能随仓库提交 —— `tests/benchmark/results/` 与 `reports/` 已在其
+    // .gitignore 中被忽略，指向那里的证据在本机存在、在 CI 上必然缺失
+    // （2026-09-13 实测：正是它让 parity 护栏在 CI 连续四轮失败，而本地全绿）。
+    // 生成产物若要作为证据，先复制到 `tests/qualification/evidence/` 再登记。
+    assert(!/^tests\/benchmark\/(results|reports)\//.test(evidence),
+      `${item.id} 的证据位于被 gitignore 的生成目录：${evidence}（请复制到 tests/qualification/evidence/ 后登记）`);
   }
   if (item.status === 'PASS-E') {
     for (const platform of platformEvidence) {

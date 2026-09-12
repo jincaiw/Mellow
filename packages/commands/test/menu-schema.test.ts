@@ -255,9 +255,22 @@ describe('toNativeMenuSpec 物化', () => {
   test('predefined 条目携带本地化文案且无 id（OS 提供行为）', () => {
     const spec = toNativeMenuSpec({ ...base, platform: 'mac' });
     const edit = spec.menus.find((m) => m.id === 'edit')!.items;
-    expect(edit[0]).toEqual({ type: 'predefined', predefined: 'undo', label: '#menu.top.undo' });
-    // separator 直通
+    // V7（G7-MENU-06）：Edit 菜单顶部现为官方表的 New Paragraph / New Line，
+    // 故 undo 的索引由 0 后移；这里同时锁定该官方顺序，防止再次漂移。
+    expect(edit[0]).toEqual({ type: 'command', id: 'edit.newParagraph', label: '#menu.edit.newParagraph' });
+    expect(edit[1]).toEqual({ type: 'command', id: 'edit.newLine', label: '#menu.edit.newLine' });
     expect(edit[2]).toEqual({ type: 'separator' });
+    expect(edit[3]).toEqual({ type: 'predefined', predefined: 'undo', label: '#menu.top.undo' });
+  });
+
+  test('V7（G7-MENU-06）：Edit 菜单前两项为官方「New Paragraph / New Line」', () => {
+    const spec = toNativeMenuSpec({ ...base, platform: 'mac' });
+    const edit = spec.menus.find((m) => m.id === 'edit')!.items;
+    const firstTwo = edit.slice(0, 2).map((i) => (i as { id?: string }).id);
+    expect(firstTwo).toEqual(['edit.newParagraph', 'edit.newLine']);
+    // 两者均不得声明 shortcut —— Enter / Shift+Enter 作为 accelerator 会吞掉回车键
+    expect(SCHEMA_SHORTCUTS.has('edit.newParagraph')).toBe(false);
+    expect(SCHEMA_SHORTCUTS.has('edit.newLine')).toBe(false);
   });
 });
 

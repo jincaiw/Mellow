@@ -357,7 +357,7 @@
       "evidence": [
         "docs/specs/clipboard-smart-paste-spec.md",
         "packages/editor-engine/test/clipboard-copy.test.ts",
-        "tests/benchmark/results/2026-09-12T09-29-12-829Z-clipboard-cross-app.json"
+        "tests/qualification/evidence/2026-09-12-macos-clipboard-cross-app.json"
       ],
       "requiredEvidence": [
         "unit",
@@ -379,7 +379,7 @@
       "evidence": [
         "packages/editor-engine/test/smart-paste.test.ts",
         "docs/specs/clipboard-smart-paste-spec.md",
-        "tests/benchmark/results/2026-09-12T09-29-12-829Z-clipboard-cross-app.json"
+        "tests/qualification/evidence/2026-09-12-macos-clipboard-cross-app.json"
       ],
       "requiredEvidence": [
         "unit",
@@ -643,7 +643,7 @@
         "tests/benchmark/run-benchmark.mjs",
         "docs/qualification/real-desktop-execution-bundle.md",
         "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/benchmark/reports/2026-09-12T09-04-16-mellow-vs-typora.md"
+        "tests/qualification/evidence/2026-09-12-macos-open-scroll-vs-typora.md"
       ],
       "requiredEvidence": [
         "unit",

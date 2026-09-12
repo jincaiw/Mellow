@@ -1,0 +1,21 @@
+{
+  "platform": "macos",
+  "target": "TextEdit",
+  "results": [
+    {
+      "id": "C1 rich-copy-mime",
+      "ok": true,
+      "detail": "«class utf8»"
+    },
+    {
+      "id": "C2 copy-markdown-to-TextEdit",
+      "ok": true,
+      "detail": "\"Hello **bold** world\""
+    },
+    {
+      "id": "C3 TextEdit-paste-plain-to-Mellow",
+      "ok": false,
+      "detail": "\"Hello **bold** world\""
+    }
+  ]
+}
