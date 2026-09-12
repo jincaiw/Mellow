@@ -167,7 +167,37 @@ async function main() {
     check('输入 `/` 触发 Slash 菜单', slashOpen.open && slashOpen.count > 0, JSON.stringify(slashOpen));
     await press('Escape');
 
-    // ── 6. Source ↔ Live 往返保持正文 ───────────────────────────────────
+    // ── 6. Edit → New Paragraph / New Line（G7-MENU-06）──────────────────
+    // 官方表定义：New Paragraph = 真分段（\n\n）；New Line = 段内软换行（\n）。
+    // 注意 Mellow 的 Enter 产出的是单 \n（= New Line 语义），故 New Paragraph 必须自己插 \n\n。
+    // **顺序约束**：必须在 Source↔Live 往返之前执行 —— 源码模式切换后 activeFormatView
+    // 指向的视图状态不同，此处再取会得到空文档（实测踩过）。
+    const resetAtEnd = (t) => frame.evaluate((x) => {
+      const v = window.editor?.dispatch ? window.editor : window.editor?.view;
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: x }, selection: { anchor: x.length, head: x.length } });
+    }, t);
+    const lineHeights = () => frame.evaluate(() => Array.from(document.querySelectorAll('.cm-line'))
+      .map((el) => Math.round(el.getBoundingClientRect().height)));
+
+    await frame.click('.cm-content');
+    await resetAtEnd('abc');
+    await sleep(400);
+    await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('edit.newParagraph'));
+    await sleep(600);
+    const npText = await getText();
+    const npHeights = await lineHeights();
+    check('Edit → 新段落插入真分段（\\n\\n）', npText === 'abc\n\n', `got=${JSON.stringify(npText)}`);
+    // 分段行高应大于段内软换行（实测 38 vs 32）
+    check('Edit → 新段落渲染为分段（行高 > 32）', npHeights.some((h) => h > 32), `heights=${JSON.stringify(npHeights)}`);
+
+    await resetAtEnd('abc');
+    await sleep(400);
+    await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('edit.newLine'));
+    await sleep(600);
+    const nlText = await getText();
+    check('Edit → 新行插入段内软换行（\\n）', nlText === 'abc\n', `got=${JSON.stringify(nlText)}`);
+
+    // ── 7. Source ↔ Live 往返保持正文 ───────────────────────────────────
     await frame.click('.cm-content');
     const ORIGINAL = '# Title\n\npara **bold**\n';
     await setDoc(ORIGINAL);

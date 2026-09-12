@@ -4496,6 +4496,12 @@ export default function App() {
       { id: 'edit.deleteParagraph', localizedTitle: { zh: '删除块', en: 'Delete Block' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.deleteParagraph(); } },
       { id: 'edit.deleteFormatSpan', localizedTitle: { zh: '删除当前格式文本', en: 'Delete Format Span' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.deleteFormatSpan(); } },
       { id: 'edit.deleteWord', localizedTitle: { zh: '删除当前词', en: 'Delete Word' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.deleteWord(); } },
+      // V7-W1 后续批次（G7-MENU-06）：Typora Edit 菜单顶部的「新段落 / 新行」。
+      // 语义按官方 Shortcut Keys 表：New Paragraph = 真分段（\n\n）；New Line = 段内软换行（\n）。
+      // 刻意**不改 Enter 键本身** —— Mellow 的 Enter 目前产出单 \n（= New Line 语义），
+      // 改动输入路径风险过高，故只把两项能力经菜单显式暴露。
+      { id: 'edit.newParagraph', localizedTitle: { zh: '新段落', en: 'New Paragraph' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('newParagraph') },
+      { id: 'edit.newLine', localizedTitle: { zh: '新行', en: 'New Line' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('newLine') },
       // D3 上移/下移该行（Typora 编辑菜单 ⌥↑/⌥↓）
       { id: 'edit.moveLineUp', localizedTitle: { zh: '上移该行', en: 'Move Line Up' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.moveLineUp(); } },
       { id: 'edit.moveLineDown', localizedTitle: { zh: '下移该行', en: 'Move Line Down' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.moveLineDown(); } },

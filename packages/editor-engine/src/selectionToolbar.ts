@@ -218,6 +218,37 @@ export function applyInsertParagraph(doc: string, range: TextRange, position: 'a
   };
 }
 
+/**
+ * New Paragraph（Typora Edit → New Paragraph，官方表键位 Enter）。
+ *
+ * **语义说明（2026-09-13 实测纠正）**：Mellow 的 Enter 只插入单个 `\n`，而单个 `\n` 在
+ * Markdown 中是**段内软换行**（渲染属同一段落，行高 32px、行距 32px 紧凑）；真正的分段需要
+ * 空行分隔（`\n\n`，行高 38px、段间距 64px）。故本命令按官方定义插入 `\n\n`，**不复用 Enter**
+ * —— Enter 本身不在本轮改动（输入路径为最高风险面，改动等同「打字坏了」级别事故，同 D-V 判据）。
+ */
+export function applyNewParagraph(doc: string, range: TextRange): ApplyResult {
+  const from = Math.min(range.from, range.to);
+  const to = Math.max(range.from, range.to);
+  // 已存在空行分隔时只补一个换行，避免连按堆叠出连续空行
+  const alreadySeparated = /\n[ \t]*\n[ \t]*$/.test(doc.slice(0, from)) || /^[ \t]*\n[ \t]*\n/.test(doc.slice(to));
+  const insert = alreadySeparated ? '\n' : '\n\n';
+  const caret = from + insert.length;
+  return { changes: [{ from, to, insert }], selection: { from: caret, to: caret } };
+}
+
+/**
+ * New Line（Typora Edit → New Line，官方表键位 Shift+Enter）：段内软换行（单个 `\n`）。
+ * 与 Mellow 现有 Enter 行为一致 —— 即 Typora 的「New Line」在 Mellow 中本就可达（经 Enter），
+ * 本命令将其**显式暴露为菜单项**，使 Edit 菜单两项与官方表一一对应。
+ */
+export function applyNewLine(_doc: string, range: TextRange): ApplyResult {
+  const from = Math.min(range.from, range.to);
+  const to = Math.max(range.from, range.to);
+  const insert = '\n';
+  const caret = from + insert.length;
+  return { changes: [{ from, to, insert }], selection: { from: caret, to: caret } };
+}
+
 export function applyHeading(doc: string, range: TextRange, level: number): ApplyResult {
   const lines = affectedLines(doc, range);
   if (lines.length === 0) return { changes: [], selection: range };
@@ -251,7 +282,7 @@ export function applyHeading(doc: string, range: TextRange, level: number): Appl
   };
 }
 
-type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle' | 'deleteLine' | 'referenceLink' | 'underline' | 'comment' | 'indentMore' | 'indentLess' | 'insertParagraphAbove' | 'insertParagraphBelow';
+type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle' | 'deleteLine' | 'referenceLink' | 'underline' | 'comment' | 'indentMore' | 'indentLess' | 'insertParagraphAbove' | 'insertParagraphBelow' | 'newParagraph' | 'newLine';
 
 /** 既有块级 marker（heading/quote/ul/task/ol）：列表互转时先剥离（Typora 段落互转语义） */
 const BLOCK_PREFIX_RE = /^(#{1,6}\s|>\s|[-*+]\s(?:\[[ xX]\]\s)?|\d+\.\s)/;
@@ -555,7 +586,7 @@ const PAIR_WRAPS: Partial<Record<ToolbarAction, { open: string; close: string }>
   underline: { open: '<u>', close: '</u>' },
   comment: { open: '<!--', close: '-->' },
 };
-const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'referenceLink', 'underline', 'comment', 'indentMore', 'indentLess', 'insertParagraphAbove', 'insertParagraphBelow']);
+const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'referenceLink', 'underline', 'comment', 'indentMore', 'indentLess', 'insertParagraphAbove', 'insertParagraphBelow', 'newParagraph', 'newLine']);
 
 const ACTION_DEFS: Array<{ id: ToolbarAction; label: string; title: string }> = [
   { id: 'h1', label: 'H1', title: '一级标题' },
@@ -608,6 +639,8 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange): Appl
     case 'indentLess': return applyListIndent(doc, range, 'less');
     case 'insertParagraphAbove': return applyInsertParagraph(doc, range, 'above');
     case 'insertParagraphBelow': return applyInsertParagraph(doc, range, 'below');
+    case 'newParagraph': return applyNewParagraph(doc, range);
+    case 'newLine': return applyNewLine(doc, range);
     case 'paragraph': {
       // 段落：去除标题前缀（Typora「段落」语义）
       const lines = affectedLines(doc, range);
@@ -658,6 +691,10 @@ function applyToView(action: ToolbarAction): void {
     if (action === 'referenceLink') {
       // 链接引用：空选区直接以 caret 位调用（内部处理 [][n] + caret 落 label 内）
       result = applyReferenceLink(doc, { from: sel.head, to: sel.head });
+    } else if (action === 'newParagraph' || action === 'newLine') {
+      // 「新段落 / 新行」是**光标处插入**语义，不是块级（块级作用于整行会把当前行替换掉）。
+      // 故与 referenceLink 一样以 caret 为锚点，空选区也在光标处插入。
+      result = applyAction(action, doc, { from: sel.head, to: sel.head });
     } else if (PAIR_MARKERS[action] !== undefined) {
       // 成对 marker：空选区插入 caret 居中（Typora Cmd+B）
       const marker = PAIR_MARKERS[action] as string;

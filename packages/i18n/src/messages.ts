@@ -672,6 +672,8 @@ const zhCN = {
   'menu.edit.deleteParagraph': '删除块',
   'menu.edit.deleteFormatSpan': '删除当前格式文本',
   'menu.edit.deleteWord': '删除当前词',
+  'menu.edit.newParagraph': '新段落',
+  'menu.edit.newLine': '新行',
   'menu.edit.moveLineUp': '上移该行',
   'menu.edit.moveLineDown': '下移该行',
   // V7-W1.4：子菜单标题文案对齐 Typora 真机 Menu.strings（拼写和语法检查 / 替换）
@@ -1467,6 +1469,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'menu.edit.deleteParagraph': 'Delete Block',
   'menu.edit.deleteFormatSpan': 'Delete Format Span',
   'menu.edit.deleteWord': 'Delete Word',
+  'menu.edit.newParagraph': 'New Paragraph',
+  'menu.edit.newLine': 'New Line',
   'menu.edit.moveLineUp': 'Move Line Up',
   'menu.edit.moveLineDown': 'Move Line Down',
   'menu.edit.spellMenu': 'Spelling and Grammar',

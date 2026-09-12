@@ -157,6 +157,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
 
   // ── 编辑 ────────────────────────────────────────────────────
   { id: 'edit', labelKey: 'menu.top.edit', entries: [
+    // V7（G7-MENU-06）：官方 Shortcut Keys 表 Edit 段开头即这两项，顺序在 Undo/Cut 之前。
+    // 不声明 shortcut —— 官方表给的是 Enter / Shift+Enter，把它注册为菜单 accelerator
+    // 会全局吞掉回车键（打字直接坏掉）。故仅暴露菜单项，键位保持系统自然输入。
+    { kind: 'command', id: 'edit.newParagraph', labelKey: 'menu.edit.newParagraph' },
+    { kind: 'command', id: 'edit.newLine', labelKey: 'menu.edit.newLine' },
+    { kind: 'separator' },
     { kind: 'predefined', predefined: 'undo', labelKey: 'menu.top.undo' },
     { kind: 'predefined', predefined: 'redo', labelKey: 'menu.top.redo' },
     { kind: 'separator' },
