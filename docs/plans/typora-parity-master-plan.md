@@ -33,7 +33,7 @@ Mellow 的目标不是「具备与 Typora 类似的功能」，而是：
 | 侧边栏 | 能力缺口明确 | **PASS-B** | watcher/虚拟化/键盘已补齐；**File List 模式整体缺失** |
 | 编辑体验 | macOS 部分证据 | **AUTO / MAC** | 15 状态矩阵与 IME guard 已大面积补齐；跨应用真机未闭环 |
 | 排版与渲染 | 未评估 | **PASS-B** | 渲染真值已到位（v1.5.0 指纹治理后）；**默认值三处自相矛盾** |
-| 三平台 | 构建/启动通过 | **IMPL** | Linux 真机 IME 已通；Windows 仍为诊断级 |
+| 三平台 | 构建/启动通过 | **IMPL** | **原「Linux 真机 IME 已通」为失真，已更正** —— CI 历史（Runtime Qualification run 58–61）证明 Linux IME 矩阵持续失败；**Windows Runtime 证据已取得**（run 60/61 success，含 Source Fidelity 与 launch+type+save），原「仅诊断级」已过时。详见 §5.8 G7-QA-03。 |
 | Release Gate | 空白 | **NOT_TESTED** | UX Score 与 30 任务仍空白 |
 
 `tests/parity/typora-parity-ledger.json` 看板：**32 项中 PASS-E = 0**，AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1。
@@ -540,7 +540,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 |---|---|---|
 | **G7-QA-01** | UX Score 100 分表为空（`docs/qualification/ux-score-gate-template.md`） | NOT_TESTED |
 | **G7-QA-02** | 30 个核心计时任务未执行 | NOT_TESTED |
-| **G7-QA-03** | 三平台真机矩阵未闭环（Windows 仅诊断级；Linux 已通 IME，Keyboard/Caret/Clipboard 未扩） | BLOCKED |
+| **G7-QA-03** | 三平台真机矩阵未闭环 | **BLOCKED —— 且原判定失真，已更正（2026-09-13）**。原写「Linux 已通 IME」，但 **CI 历史证伪**：`Runtime Qualification` 的 `Linux: Xvfb + fcitx5 IME matrix` 自 **run 58（2026-09-06）起连续失败**（58/59/60/61 全挂，含早于本轮改动的 run 59），而同 run 的 Windows / macOS job 均 success。即 **Linux IME 矩阵从未真正通过**，Keyboard / Caret / Clipboard 更无从谈起。<br/>**Windows 侧已反转**：run 60/61 的 `Windows: launch + SendKeys smoke` 与 `Windows Source Fidelity gate` **均已 success** —— 原「Windows 仅诊断级」的定性已过时，Windows Runtime 证据已取得。<br/>**为何长期未被发现**：该 workflow 只有 `workflow_dispatch`，需人工点按，失败不进入日常视野。已改为随 `v*` 标签自动触发（见 §9.3）。 |
 | **G7-QA-04** | 视觉 Golden 仅本机，三平台 chrome 截图未归档 | 部分 |
 | **G7-QA-05** | `tests/qualification/README.md` 门禁表过期（大量 ⛔ 未回填） | **已修（V7-W0）** —— 门禁表已按当日实跑刷新数字（editor-engine 971→1135、app-core 200→217、desktop-ui 13→17、themes 8→12、护栏 12→13、台账 32→50）；真机列仍为 ⛔ 并显式注明「本环境无真机，不得臆造为通过」 |
 | **G7-QA-06** | 台账 `P0-SHELL-002` 仍写「Tabs 可扩展」，与 SDI 删除 Tabbar 矛盾 | **已修（V7-W0）** —— capability 改为「Focus 与 Typewriter（SDI：无 Tabs）」，目标改写为「Tabs 不提供并登记 D-D，台账不得再写可扩展」，grade 由 B 改 D；台账同步扩容 32 → 50 项 |
