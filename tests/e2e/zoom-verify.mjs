@@ -93,7 +93,7 @@ async function main() {
     const box26 = await lineBoxOf();
     check('direct webModules.config.setFontSize(26) applies', after26 === '26px', `computed=${after26} lineBox=${box26}px`);
 
-    // 3. 快捷键全链路（localStorage 默认 17 → 18 → 17 → 重置 17）
+    // 3. 快捷键全链路（V7-W2.2 基准：默认 16 → 17 → 16 → 重置 16）
     // 同时断言文档文本不被插入字面字符（WKWebView ⇧⌘= 明文插入回归防线）
     const textBefore = await frame.evaluate(() => window.webModules.core.getEditorText());
     await page.keyboard.press('Meta+Shift+=');
@@ -101,7 +101,7 @@ async function main() {
     const ls1 = await page.evaluate(() => localStorage.getItem('mellow.editor.fontSize'));
     const afterKey = await fontSizeOf();
     const textAfterIn = await frame.evaluate(() => window.webModules.core.getEditorText());
-    check('shortcut ⇧⌘= bumps fontSize to 18', ls1 === '18' && afterKey === '18px', `localStorage=${ls1} computed=${afterKey}`);
+    check('shortcut ⇧⌘= bumps fontSize to 17', ls1 === '17' && afterKey === '17px', `localStorage=${ls1} computed=${afterKey}`);
     check('shortcut ⇧⌘= does not insert literal char', textAfterIn === textBefore, `text=${JSON.stringify(textAfterIn.slice(0, 40))}`);
 
     await page.keyboard.press('Meta+Shift+-');
@@ -109,14 +109,14 @@ async function main() {
     const ls2 = await page.evaluate(() => localStorage.getItem('mellow.editor.fontSize'));
     const afterKey2 = await fontSizeOf();
     const textAfterOut = await frame.evaluate(() => window.webModules.core.getEditorText());
-    check('shortcut ⇧⌘- decreases fontSize to 17', ls2 === '17' && afterKey2 === '17px', `localStorage=${ls2} computed=${afterKey2}`);
+    check('shortcut ⇧⌘- decreases fontSize back to 16', ls2 === '16' && afterKey2 === '16px', `localStorage=${ls2} computed=${afterKey2}`);
     check('shortcut ⇧⌘- does not insert literal char', textAfterOut === textBefore, `text=${JSON.stringify(textAfterOut.slice(0, 40))}`);
 
     await page.keyboard.press('Meta+Shift+0');
     await new Promise((r) => setTimeout(r, 400));
     const afterReset = await fontSizeOf();
     const textAfterReset = await frame.evaluate(() => window.webModules.core.getEditorText());
-    check('shortcut ⇧⌘0 resets fontSize', afterReset === '17px', `computed=${afterReset}`);
+    check('shortcut ⇧⌘0 resets fontSize to default 16', afterReset === '16px', `computed=${afterReset}`);
     check('shortcut ⇧⌘0 does not insert literal char', textAfterReset === textBefore, `text=${JSON.stringify(textAfterReset.slice(0, 40))}`);
   } finally {
     await browser.close().catch(() => {});

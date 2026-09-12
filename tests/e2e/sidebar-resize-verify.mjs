@@ -1,8 +1,8 @@
 /**
  * P3.8 Sidebar resize / 记忆 / 窄化 / 200% Zoom E2E 验证（浏览器 dev 模式，Playwright Chromium）。
  *
- * 验证点（功能在 D-J / §7.7 已实现，本任务补齐自动化验证；200% Zoom 口径 = R2-4：
- * editor fontSize 17px = 100% → 34px = 200%，与 tests/visual/visual-golden.mjs 对齐）：
+ * 验证点（功能在 D-J / §7.7 已实现，本任务补齐自动化验证；200% Zoom 口径 = V7-W2.2：
+ * editor fontSize 16px = 100% → 32px = 200%，与 tests/visual/visual-golden.mjs 对齐）：
  *   1. resize 拖拽：mouse 拖 .sidebar-resizer → aside 宽度跟随（clamp 200–480）
  *   2. clamp 边界：超界拖拽收在 200 / 480
  *   3. 记忆：拖拽后 reload 宽度保持；预置越界值（999）→ 初始化 clamp 到 480
@@ -174,13 +174,13 @@ async function main() {
       await context.close();
     }
 
-    // ── 5. 200% Zoom（editor fontSize 34px = 200%）：侧栏关键控件不截断 ────
+    // ── 5. 200% Zoom（editor fontSize 32px = 200%，V7-W2.2 基准 16px）：侧栏关键控件不截断 ────
     {
       const context = await browser.newContext({ viewport: { width: 1200, height: 800 } });
       await context.addInitScript(() => {
         localStorage.setItem('mellow.sidebar.visible', '1');
         localStorage.setItem('mellow.sidebar.mode', 'files');
-        localStorage.setItem('mellow.editor.fontSize', '34');
+        localStorage.setItem('mellow.editor.fontSize', '32');
       });
       const page = await context.newPage();
       await page.goto(BASE, { waitUntil: 'domcontentloaded' });

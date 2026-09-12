@@ -1,4 +1,4 @@
-import { DEFAULT_SEARCH_EXCLUDES, globalSearchShortcutAction, groupSearchResults, matchSearchLine, normalizeSearchRequest } from '../src/globalSearch';
+import { DEFAULT_SEARCH_EXCLUDES, buildSearchRegex, globalSearchShortcutAction, groupSearchResults, isSearchRegexValid, matchSearchLine, normalizeSearchRequest } from '../src/globalSearch';
 
 describe('Global Search pure logic', () => {
   test('default ignore includes heavy workspace directories', () => {
@@ -24,6 +24,33 @@ describe('Global Search pure logic', () => {
       { relativePath: 'b.md', count: 1 },
     ]);
     expect(groups[0].matches[0].before).toEqual(['a']);
+  });
+
+  // §7.3「invalid regex 就地提示」：非法正则必须与「空查询 / 零匹配」区分开，
+  // 否则 UI 只显示「无结果」，用户无法判断是语法错还是真没匹配。
+  test('isSearchRegexValid 只校验 regex 模式下的语法', () => {
+    expect(isSearchRegexValid({ query: 'issue-\\d+', caseSensitive: false, wholeWord: false, regex: true })).toBe(true);
+    expect(isSearchRegexValid({ query: '(unclosed', caseSensitive: false, wholeWord: false, regex: true })).toBe(false);
+    expect(isSearchRegexValid({ query: '[a-', caseSensitive: false, wholeWord: false, regex: true })).toBe(false);
+    expect(isSearchRegexValid({ query: '*bad', caseSensitive: false, wholeWord: false, regex: true })).toBe(false);
+    // 非 regex 模式：转义后必然合法 —— 元字符不是语法错误
+    expect(isSearchRegexValid({ query: '(unclosed', caseSensitive: false, wholeWord: false, regex: false })).toBe(true);
+    expect(isSearchRegexValid({ query: '*bad', caseSensitive: false, wholeWord: false, regex: false })).toBe(true);
+    // 空查询：无意义校验，恒合法
+    expect(isSearchRegexValid({ query: '', caseSensitive: false, wholeWord: false, regex: true })).toBe(true);
+  });
+
+  test('buildSearchRegex 与 isSearchRegexValid 判定一致（无旁路）', () => {
+    const cases: Array<[string, boolean]> = [
+      ['issue-\\d+', true],
+      ['(unclosed', false],
+      ['a{2,1}', false],
+      ['\\\\', true],
+    ];
+    for (const [query, regex] of cases) {
+      const options = { query, caseSensitive: false, wholeWord: false, regex: true };
+      expect(isSearchRegexValid(options)).toBe(buildSearchRegex(options) !== null);
+    }
   });
 
   test('shortcut Ctrl/Cmd+Shift+F', () => {

@@ -1,7 +1,11 @@
 /**
  * Theme Engine（T-0601 / T-0602）。
  *
- * - 内置 6 主题：Mellow Light / Mellow Dark / Paper / Git Light / Git Dark / Newsprint
+ * - 内置 8 主题：Mellow Light / Mellow Dark / Paper / Git Light / Git Dark / Newsprint /
+ *   Whitey / Gothic
+ *   （V7-W4.8：原注释写「6 主题」，与实际 8 个不一致 —— 文档失真已修正。
+ *    D-J 裁决 = ① 保持 8 个：PRD 要求 ≥6 原创，更多不破坏心智，且 Typora 的 6 个是
+ *    「主题数量」而非「主题名单」约束，无需收敛。）
  *   （通用主题名，非 Typora 专有文件；色板原创/通用，禁止复制 Typora 专有主题文件）；
  * - CSS variables：每个主题定义一套 --mellow-* token（桌面 chrome 与 Reader 共用）；
  * - theme CSS：主题可附带主题专属 CSS（衬线字体/特殊背景等）；
@@ -92,7 +96,7 @@ const LIGHT_BASE: Record<string, string> = {
   '--mellow-alert-caution-bg': '#ffecec',
   '--mellow-alert-caution-border': '#f3a6a6',
   '--mellow-alert-caution-fg': '#8a1a1a',
-  // V5：md 排版 token（Typora Github 主题真值，docs/plans/typora-parity-v5-truth-table.md §3）
+  // V5：md 排版 token（Typora Github 主题真值，docs/plans/archive/typora-parity-v5-truth-table.md §3）
   '--mellow-md-fg': '#333333',
   '--mellow-md-heading-border': '#eeeeee',
   '--mellow-md-quote-border': '#dfe2e5',

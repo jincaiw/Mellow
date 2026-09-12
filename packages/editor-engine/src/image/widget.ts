@@ -20,6 +20,8 @@ import { stripImageSize } from './path';
 import type { ImageSize } from './path';
 
 const IMG_WRAPPER_CLASS = 'mellow-md-image';
+/** V7-W4.3：单图独占段落 → 居中（Typora `p > img:only-child`） */
+export const IMG_CENTERED_CLASS = 'mellow-md-image-centered';
 const IMG_BROKEN_CLASS = 'mellow-md-image-broken';
 const IMG_ACTIONS_CLASS = 'mellow-md-image-actions';
 
@@ -94,6 +96,12 @@ interface ImageSpec {
   /** 尺寸（Typora =WxH 语法；null = 原始尺寸） */
   size?: ImageSize | null;
   alt: string;
+  /**
+   * V7-W4.3（G7-TYPO-01）：该图片是否独占其所在段落 → 居中。
+   * Typora 官方 CSS 语义：`p > img:only-child { display: block; margin: auto; }`。
+   * CodeMirror 无 `<p>` 节点，等价判定为「该行除空白外只有这一个 Image 节点」。
+   */
+  centered?: boolean;
 }
 
 /** 提取 Image 节点信息：`![alt](src)` → { from, to, src, alt } */
@@ -132,9 +140,12 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     }
 
     override eq(other: ImageWidget): boolean {
+      // V7-W4.3：centered 必须参与相等判定 —— 否则「独占 → 非独占」变化时
+      // CM 复用旧 widget，居中态不会更新。
       return other.spec.from === this.spec.from
         && other.spec.to === this.spec.to
-        && other.spec.src === this.spec.src;
+        && other.spec.src === this.spec.src
+        && other.spec.centered === this.spec.centered;
     }
 
     private async resolve(): Promise<void> {
@@ -146,7 +157,8 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
 
     override toDOM(): HTMLElement {
       this.container = document.createElement('span');
-      this.container.className = IMG_WRAPPER_CLASS;
+      // V7-W4.3：独占段落的图片加 `centered` 类（Typora `p > img:only-child` 语义）
+      this.container.className = this.spec.centered === true ? `${IMG_WRAPPER_CLASS} ${IMG_CENTERED_CLASS}` : IMG_WRAPPER_CLASS;
       this.render();
       return this.container;
     }
@@ -357,11 +369,19 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
         if (parsed === null) {
           return;
         }
+        // V7-W4.3（G7-TYPO-01）单图独占段落居中：Typora `p > img:only-child`。
+        // 判定：该行去掉首尾空白后完全等于这张图片的 Markdown 文本 —— 即行内无其他内容
+        // （含「两张图并排」的情形，此时 line.text 更长，不居中，与 Typora 一致）。
+        let centered = false;
+        try {
+          const line = state.doc.lineAt(node.from);
+          centered = line.text.trim() === text.trim();
+        } catch { centered = false; }
         builder.add(
           node.from,
           node.to,
           Decoration.replace({
-            widget: new ImageWidget({ from: node.from, to: node.to, src: parsed.src, alt: parsed.alt, size: parsed.size }),
+            widget: new ImageWidget({ from: node.from, to: node.to, src: parsed.src, alt: parsed.alt, size: parsed.size, centered }),
           }),
         );
       },
@@ -411,6 +431,15 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       maxHeight: '480px',
       borderRadius: '4px',
       cursor: 'default',
+    },
+    // V7-W4.3（G7-TYPO-01）：单图独占段落居中 —— Typora 官方 CSS 语义
+    // `p > img:only-child { display: block; margin: auto; }`。CM 无 p 节点，
+    // 故由 widget 判定「行内无其他内容」后加 `.mellow-md-image-centered`：
+    // 包层转 block 并 text-align:center，内层 img 保持 inline → 视觉居中。
+    [`.${IMG_CENTERED_CLASS}`]: {
+      display: 'block',
+      margin: '0 auto',
+      textAlign: 'center',
     },
     [`.${IMG_BROKEN_CLASS}`]: {
       display: 'inline-flex',

@@ -12,7 +12,19 @@
 import type { EditorConfig } from './contract';
 import { BRIDGE_INJECTION } from './bridge-injection';
 
-/** V0.x 默认配置（与 CoreEditor dev config 对齐） */
+/**
+ * V0.x 默认配置（与 CoreEditor dev config 对齐）。
+ *
+ * V7-W2.2（G7-SHELL-03）说明：此处 `fontSize: 17` / `lineHeight: 1.5` 是 **vendored
+ * CoreEditor 上游的初始值**，不是 Mellow 的产品默认。Mellow 的产品默认声明在
+ * `@mellow/settings` 的 `TYPOGRAPHY_DEFAULTS`（fontSize 16 / lineHeight 1.6 /
+ * writingWidth 860），由桌面宿主在编辑器就绪后**无条件** apply 覆盖本初始值。
+ *
+ * 为什么不在本文件引用 TYPOGRAPHY_DEFAULTS：editor-core 是零 OS 依赖的底层包
+ * （见 AGENTS.md 包依赖规则），不得反向依赖 settings；故两者保持解耦，
+ * 由宿主承担「初始值 → 设置值」的收敛，并由 `tests/parity/verify-shell-typography.mjs`
+ * 与 `verify-visual-golden.mjs` 守护（护栏交叉比对，防止初始值被误当默认值）。
+ */
 export const DEFAULT_CONFIG: EditorConfig = {
   host: 'mainApp',
   text: '',

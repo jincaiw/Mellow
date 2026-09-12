@@ -24,15 +24,16 @@
     "modeIndicatorsVisible": false,
     "colorScheme": "light",
     "editor": {
-      "fontSize": 17,
-      "lineHeightPx": 27.2,
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
       "paddingTop": 56,
       "contentWidth": 860,
       "contentMaxWidth": 860,
       "contentCentered": true,
-      "expectedFontSize": 17,
+      "expectedFontSize": 16,
       "expectedPaddingTop": 56,
-      "expectedLineHeightPx": 28.1
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
     }
   },
   "win-1200x800": {
@@ -60,15 +61,16 @@
     "modeIndicatorsVisible": false,
     "colorScheme": "light",
     "editor": {
-      "fontSize": 17,
-      "lineHeightPx": 27.2,
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
       "paddingTop": 56,
       "contentWidth": 860,
       "contentMaxWidth": 860,
       "contentCentered": true,
-      "expectedFontSize": 17,
+      "expectedFontSize": 16,
       "expectedPaddingTop": 56,
-      "expectedLineHeightPx": 28.1
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
     }
   },
   "win-1440x900": {
@@ -96,15 +98,16 @@
     "modeIndicatorsVisible": false,
     "colorScheme": "light",
     "editor": {
-      "fontSize": 17,
-      "lineHeightPx": 27.2,
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
       "paddingTop": 56,
       "contentWidth": 860,
       "contentMaxWidth": 860,
       "contentCentered": true,
-      "expectedFontSize": 17,
+      "expectedFontSize": 16,
       "expectedPaddingTop": 56,
-      "expectedLineHeightPx": 28.1
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
     }
   },
   "zoom-200": {
@@ -132,15 +135,16 @@
     "modeIndicatorsVisible": false,
     "colorScheme": "light",
     "editor": {
-      "fontSize": 34,
-      "lineHeightPx": 54.4,
+      "fontSize": 32,
+      "lineHeightPx": 51.2,
       "paddingTop": 56,
       "contentWidth": 860,
       "contentMaxWidth": 860,
       "contentCentered": true,
-      "expectedFontSize": 34,
+      "expectedFontSize": 32,
       "expectedPaddingTop": 56,
-      "expectedLineHeightPx": 56.1
+      "expectedLineHeightPx": 51.2,
+      "expectedWritingWidth": 860
     }
   },
   "dark-900x600": {
@@ -168,15 +172,16 @@
     "modeIndicatorsVisible": false,
     "colorScheme": "dark",
     "editor": {
-      "fontSize": 17,
-      "lineHeightPx": 27.2,
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
       "paddingTop": 56,
       "contentWidth": 860,
       "contentMaxWidth": 860,
       "contentCentered": true,
-      "expectedFontSize": 17,
+      "expectedFontSize": 16,
       "expectedPaddingTop": 56,
-      "expectedLineHeightPx": 28.1
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
     }
   },
   "dark-1440x900": {
@@ -204,15 +209,16 @@
     "modeIndicatorsVisible": false,
     "colorScheme": "dark",
     "editor": {
-      "fontSize": 17,
-      "lineHeightPx": 27.2,
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
       "paddingTop": 56,
       "contentWidth": 860,
       "contentMaxWidth": 860,
       "contentCentered": true,
-      "expectedFontSize": 17,
+      "expectedFontSize": 16,
       "expectedPaddingTop": 56,
-      "expectedLineHeightPx": 28.1
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
     }
   }
 }

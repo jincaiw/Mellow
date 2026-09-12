@@ -46,6 +46,18 @@ export function buildSearchRegex(options: SearchLineOptions): RegExp | null {
   }
 }
 
+/**
+ * 正则模式下的语法合法性（§7.3「invalid regex 就地提示」）。
+ *
+ * `buildSearchRegex` 对非法正则返回 `null`，与「空查询」「零匹配」无法区分 —— 用户界面
+ * 只会显示「无结果」，用户不知道是语法写错还是真的没有匹配。本函数把二者分开：
+ * 非 regex 模式或空查询恒为合法（不做无意义的校验）。
+ */
+export function isSearchRegexValid(options: SearchLineOptions): boolean {
+  if (!options.regex || !options.query) return true;
+  return buildSearchRegex(options) !== null;
+}
+
 export function matchSearchLine(line: string, options: SearchLineOptions): { column: number; match: string } | null {
   const re = buildSearchRegex(options);
   if (!re) return null;

@@ -149,9 +149,38 @@ export function filterFileTree(nodes: readonly FileTreeNode[], query: string): F
   return walk(nodes);
 }
 
+/**
+ * V7-W3.5：收集树中全部文件夹路径（「展开全部 / 折叠全部」用）。
+ * 只收集**当前已加载**的子树 —— File Tree 为惰性读取（`readTree` 仅下钻展开项），
+ * 未展开文件夹的子节点不在 `nodes` 中，故「展开全部」必须靠 `readTree` 的
+ * `expandAll` 递归读取，本函数用于读取后回填 `model.expanded`，使后续单个折叠可用。
+ */
+export function collectFolderPaths(nodes: readonly FileTreeNode[], out: string[] = []): string[] {
+  for (const node of nodes) {
+    if (node.kind !== 'folder') continue;
+    out.push(node.path);
+    if (node.children !== undefined) collectFolderPaths(node.children, out);
+  }
+  return out;
+}
+
 export class FileTreeModel {
   expanded = new Set<string>();
   selectedPath: string | null = null;
+
+  /**
+   * V7-W3.5：展开全部 / 折叠全部（G7-SIDE-04）。
+   * 惰性读取使得「展开全部」无法仅靠 expanded 集合一次完成 —— 未知层级的子孙尚未加载。
+   * 故由宿主置 `expandAll` 标记 → `FileTreeService.readTree` 递归读取 →
+   * 用 `collectFolderPaths` 回填本集合，之后用户可逐个折叠。
+   */
+  expandAllPaths(nodes: readonly FileTreeNode[]): void {
+    for (const path of collectFolderPaths(nodes)) this.expanded.add(path);
+  }
+
+  collapseAllPaths(): void {
+    this.expanded.clear();
+  }
 
   constructor(readonly root: string, readonly options: FileTreeOptions = DEFAULT_FILE_TREE_OPTIONS) {}
 
@@ -193,11 +222,26 @@ export class FileTreeModel {
   }
 }
 
+/**
+ * V7-W3.8：撤销栈**只保留最近一次**操作。
+ *
+ * Typora 官方 File Management 原文：「only the last **one** file operation in
+ * Typora is undoable」—— 即新建后立即重命名，只能撤销重命名，不能继续撤销新建。
+ * 此前本类为无界栈（`push` 追加），语义比 Typora 更宽松，属「不一致」而非「缺失」，
+ * 按 §7.3 合同「文件操作撤销 | 语义与 Typora 对齐并显式记录差异」改为深度 1。
+ *
+ * 显式登记的差异（D）：
+ * - **trash 撤销**：Typora 在 **macOS** 可撤销删除（Windows/Linux 不可 —— 官方原文
+ *   「on Windows/Linux, delete file is not undoable」）；Mellow 当前**全平台不可撤销**，
+ *   因系统回收站恢复需平台原生 API（macOS `NSWorkspace` recycle / Windows
+ *   `SHFileOperation`），`FileService` 契约未暴露。差异保留至 W6 三平台 Adapter 评估。
+ */
 export class FileTreeHistory {
   private stack: FileTreeUndoOp[] = [];
   constructor(private readonly fs: FileService) {}
   get length(): number { return this.stack.length; }
-  push(op: FileTreeUndoOp): void { this.stack.push(op); }
+  /** 深度 1：新操作入栈即清空历史（Typora「仅最近一次可撤销」） */
+  push(op: FileTreeUndoOp): void { this.stack = [op]; }
   async undo(): Promise<Result<string>> {
     const op = this.stack.pop();
     if (!op) return err({ code: 'invalid-argument', message: '没有可撤销的文件树操作' });
@@ -217,7 +261,8 @@ export class FileTreeHistory {
         return r.ok ? ok('已撤销移动/重命名') : r;
       }
       case 'trash':
-        return err({ code: 'unsupported', message: '系统回收站恢复依赖平台，File Tree 暂不做应用内恢复' });
+        // V7-W3.8（登记 D）：Typora 在 macOS 可撤销删除，Mellow 全平台依赖系统回收站手动恢复。
+        return err({ code: 'unsupported', message: '删除撤销依赖平台回收站 API，请从系统回收站手动恢复（Typora 在 Windows/Linux 同样不可撤销）' });
     }
   }
 }
@@ -226,16 +271,21 @@ export class FileTreeService {
   constructor(private readonly fs: FileService, private readonly history = new FileTreeHistory(fs)) {}
   get undoHistory(): FileTreeHistory { return this.history; }
 
-  async readTree(root: string, expanded: Set<string>, options: FileTreeOptions = DEFAULT_FILE_TREE_OPTIONS, depth = 0): Promise<Result<FileTreeNode[]>> {
+  /**
+   * @param expandAll V7-W3.5：true 时递归读取全部层级（「展开全部」）——
+   *   平时的惰性读取只下钻 `expanded` 中的项，未知层级读不到，无法一次展开到底。
+   */
+  async readTree(root: string, expanded: Set<string>, options: FileTreeOptions = DEFAULT_FILE_TREE_OPTIONS, depth = 0, expandAll = false): Promise<Result<FileTreeNode[]>> {
     const r = await this.fs.readDir(root);
     if (!r.ok) return r;
     const entries = sortEntries(r.value.filter((e) => shouldShowEntry(e, options)), options);
     const nodes: FileTreeNode[] = [];
     for (const entry of entries) {
       const path = normalize(entry.path);
-      const node: FileTreeNode = { path, name: entry.name, kind: entry.isDirectory ? 'folder' : 'file', depth, expanded: expanded.has(path) };
-      if (entry.isDirectory && expanded.has(path)) {
-        const child = await this.readTree(path, expanded, options, depth + 1);
+      const isExpanded = expandAll || expanded.has(path);
+      const node: FileTreeNode = { path, name: entry.name, kind: entry.isDirectory ? 'folder' : 'file', depth, expanded: isExpanded };
+      if (entry.isDirectory && isExpanded) {
+        const child = await this.readTree(path, expanded, options, depth + 1, expandAll);
         if (!child.ok) return child;
         node.children = child.value;
       }

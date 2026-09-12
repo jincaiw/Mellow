@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-05",
+  "updatedAt": "2026-09-12",
   "normativeBaseline": {
     "product": "Typora",
     "version": "1.14.9",
@@ -33,7 +33,8 @@
       "evidence": [
         "AGENTS.md",
         "docs/product/Mellow-PRD-V1.2-FINAL.md",
-        "docs/plans/typora-parity-master-plan.md"
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
       ],
       "requiredEvidence": [
         "document-review",
@@ -51,7 +52,8 @@
       "ownerPackage": "tests/parity",
       "evidence": [
         "tests/benchmark/fixtures/typora-menu-dump.txt",
-        "tests/parity/typora-parity-ledger.json"
+        "tests/parity/typora-parity-ledger.json",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
       ],
       "requiredEvidence": [
         "source-freeze",
@@ -74,8 +76,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "ux-gate"
       ]
     },
@@ -96,8 +98,8 @@
       "requiredEvidence": [
         "integration",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -105,20 +107,21 @@
       "domain": "editing",
       "capability": "Caret、Selection 与 marker reveal",
       "typoraBehavior": "光标进入、离开节点时标记显隐稳定，选择不跳变。",
-      "mellowTarget": "所有节点状态矩阵中 Caret 与 Selection 不回退。",
+      "mellowTarget": "所有节点状态矩阵中 Caret 与 Selection 不回退。 【2026-09-12】鼠标选择矩阵已取得运行时证据：tests/e2e/mouse-selection-verify.mjs 7/7（单击定位 / 双击选词 / 三击选整行含行尾换行 / 拖拽连续选区 / Shift+单击扩展 / 列表行三击含 marker）。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "docs/specs/live-markdown-engine-spec.md",
         "packages/editor-engine/test/reveal.test.ts",
-        "packages/editor-engine/test/selection-commands.test.ts"
+        "packages/editor-engine/test/selection-commands.test.ts",
+        "tests/e2e/mouse-selection-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "ux-gate"
       ]
     },
@@ -135,13 +138,15 @@
         "docs/specs/ime-test-plan.md",
         "packages/editor-engine/test/ime.test.ts",
         "packages/editor-engine/test/undo.test.ts",
-        "docs/qualification/real-desktop-execution-bundle.md"
+        "docs/qualification/real-desktop-execution-bundle.md",
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/e2e/ime-composition-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "ux-gate"
       ]
     },
@@ -161,8 +166,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -182,8 +187,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -202,8 +207,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -223,8 +228,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -245,8 +250,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -254,20 +259,22 @@
       "domain": "table",
       "capability": "表格创建与键盘导航",
       "typoraBehavior": "Tab 在单元格间移动、末格加行，表格仍是标准 Markdown。",
-      "mellowTarget": "表格编辑、Undo、IME 与最小 patch 均可验。",
+      "mellowTarget": "表格编辑、Undo、IME 与最小 patch 均可验。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "docs/specs/table-editing-spec.md",
         "packages/editor-engine/test/table-keyboard.test.ts",
-        "packages/editor-engine/test/table-engine.test.ts"
+        "packages/editor-engine/test/table-engine.test.ts",
+        "tests/e2e/ime-composition-verify.mjs",
+        "tests/e2e/widget-buttons-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "source-fidelity"
       ]
     },
@@ -276,19 +283,21 @@
       "domain": "table",
       "capability": "表格 GUI 与对齐",
       "typoraBehavior": "表格工具可在不改变未触及单元格的前提下完成行列与对齐操作。",
-      "mellowTarget": "工具栏按上下文出现，键盘路径始终可用。",
+      "mellowTarget": "工具栏按上下文出现，键盘路径始终可用。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。",
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "packages/editor-engine/test/table-toolbar.test.ts",
-        "packages/editor-engine/test/table-column-width.test.ts"
+        "packages/editor-engine/test/table-column-width.test.ts",
+        "tests/e2e/ime-composition-verify.mjs",
+        "tests/e2e/widget-buttons-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "source-fidelity"
       ]
     },
@@ -309,8 +318,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "source-fidelity"
       ]
     },
@@ -331,8 +340,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "source-fidelity"
       ]
     },
@@ -341,19 +350,20 @@
       "domain": "clipboard",
       "capability": "复制为纯文本、Markdown 与 HTML",
       "typoraBehavior": "复制到不同目标应用保留符合目标预期的格式。",
-      "mellowTarget": "同一次复制提供多 MIME 表示，降级路径明确。",
+      "mellowTarget": "同一次复制提供多 MIME 表示，降级路径明确。 【2026-09-12 跨应用实测】C1 富文本 MIME ✅、C2 Mellow→TextEdit Markdown 读回精确一致 ✅、C3 TextEdit→Mellow 纯文本 ⛔（TextEdit 输入阶段未生效，待完整 System Events 上下文复跑），不升 PASS-E。",
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "docs/specs/clipboard-smart-paste-spec.md",
-        "packages/editor-engine/test/clipboard-copy.test.ts"
+        "packages/editor-engine/test/clipboard-copy.test.ts",
+        "tests/benchmark/results/2026-09-12T09-29-12-829Z-clipboard-cross-app.json"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "cross-app"
       ]
     },
@@ -362,19 +372,20 @@
       "domain": "clipboard",
       "capability": "Smart Paste",
       "typoraBehavior": "URL、HTML、TSV、图片和文件粘贴走可预测路径。",
-      "mellowTarget": "智能识别不改变纯文本粘贴语义，且可撤销。",
+      "mellowTarget": "智能识别不改变纯文本粘贴语义，且可撤销。 【2026-09-12】跨应用矩阵同上，C3 未形成有效证据，暂不判定 Smart Paste 实现。",
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "packages/editor-engine/test/smart-paste.test.ts",
-        "docs/specs/clipboard-smart-paste-spec.md"
+        "docs/specs/clipboard-smart-paste-spec.md",
+        "tests/benchmark/results/2026-09-12T09-29-12-829Z-clipboard-cross-app.json"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "cross-app"
       ]
     },
@@ -395,8 +406,8 @@
       "requiredEvidence": [
         "integration",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "source-fidelity"
       ]
     },
@@ -418,8 +429,8 @@
       "requiredEvidence": [
         "integration",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "source-fidelity"
       ]
     },
@@ -440,8 +451,8 @@
       "requiredEvidence": [
         "integration",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "visual-golden"
       ]
     },
@@ -462,8 +473,8 @@
       "requiredEvidence": [
         "integration",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "visual-golden"
       ]
     },
@@ -483,8 +494,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "visual-golden"
       ]
     },
@@ -504,8 +515,8 @@
       ],
       "requiredEvidence": [
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "visual-golden",
         "ux-gate"
       ]
@@ -513,10 +524,10 @@
     {
       "id": "P0-SHELL-002",
       "domain": "desktop-ui",
-      "capability": "Tabs、Focus 与 Typewriter",
-      "typoraBehavior": "多文档切换和专注写作不会让 chrome 喧宾夺主。",
-      "mellowTarget": "Tabs 可扩展且低干扰；Focus / Typewriter 可被键盘发现。",
-      "grade": "B",
+      "capability": "Focus 与 Typewriter（SDI：无 Tabs）",
+      "typoraBehavior": "专注写作与打字机模式不让 chrome 喧宾夺主；Typora 的多标签在 Mellow 的 SDI 模型下不存在（D-D）。",
+      "mellowTarget": "Focus / Typewriter 可被键盘发现（F8 / F9）；Tabs 在 SDI 下不提供并登记为 D-D，台账不得再写「Tabs 可扩展」。",
+      "grade": "D",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
@@ -526,8 +537,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "visual-golden"
       ]
     },
@@ -548,8 +559,8 @@
       "requiredEvidence": [
         "menu-schema",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "ux-gate"
       ]
     },
@@ -571,8 +582,8 @@
       "requiredEvidence": [
         "command-registry",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -592,8 +603,8 @@
         "unit",
         "integration",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -612,8 +623,8 @@
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "export-corpus"
       ]
     },
@@ -622,7 +633,7 @@
       "domain": "performance",
       "capability": "大文件与交互性能",
       "typoraBehavior": "同机、同文档条件下维持可编辑和可导航。",
-      "mellowTarget": "性能不差于 Typora 规定阈值，大文件降级不破坏编辑。",
+      "mellowTarget": "性能不差于 Typora 规定阈值，大文件降级不破坏编辑。 【2026-09-12 本机原生基准】冷启动带文件 N=3：1MB open median 1289.2ms（Typora 1326.9ms，0.97×）、10MB open median 1109.7ms（Typora 428.1ms，2.59×）；scroll 两侧均约 57 FPS 无掉帧。10MB 打开为真实优化项，未擅自重写大文件架构，状态保持 MAC。",
       "grade": "B",
       "status": "MAC",
       "ownerPackage": "packages/editor-engine",
@@ -630,13 +641,15 @@
         "docs/specs/performance-benchmark-spec.md",
         "packages/editor-engine/test/large-file.test.ts",
         "tests/benchmark/run-benchmark.mjs",
-        "docs/qualification/real-desktop-execution-bundle.md"
+        "docs/qualification/real-desktop-execution-bundle.md",
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/benchmark/reports/2026-09-12T09-04-16-mellow-vs-typora.md"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "benchmark"
       ]
     },
@@ -657,8 +670,8 @@
         "unit",
         "integration",
         "macos",
-        "windows",
-        "linux"
+        "windows-ci",
+        "linux-ci"
       ]
     },
     {
@@ -675,7 +688,8 @@
         "docs/specs/runtime-qualification-plan.md",
         "tests/qualification/README.md",
         "tests/benchmark/ime-matrix-linux.mjs",
-        ".github/workflows/runtime-qualification.yml"
+        ".github/workflows/runtime-qualification.yml",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
       ],
       "requiredEvidence": [
         "macos-native",
@@ -695,13 +709,400 @@
       "ownerPackage": "tests/benchmark",
       "evidence": [
         "docs/qualification/ux-score-gate-template.md",
-        "tests/benchmark/golden-journeys.mjs"
+        "tests/benchmark/golden-journeys.mjs",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
       ],
       "requiredEvidence": [
         "macos",
-        "windows",
-        "linux",
+        "windows-ci",
+        "linux-ci",
         "ux-gate"
+      ]
+    },
+    {
+      "id": "P0-FILE-003",
+      "domain": "file",
+      "capability": "重新打开关闭的文件",
+      "typoraBehavior": "Typora File → Reopen Closed File（⇧⌘T / Ctrl+Shift+T）恢复最近关闭的文档。",
+      "mellowTarget": "app 级已关闭文件栈（localStorage，上限 20）+ 同键位；SDI 下语义 = 当前窗口打开（D-R），未保存修改仍经 guardSingleDocument() 确认。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "apps/desktop/src/App.tsx",
+        "packages/commands/src/menuSchema.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-FILE-004",
+      "domain": "file",
+      "capability": "定时自动保存",
+      "typoraBehavior": "官方《Auto Save》：Win/Linux 默认每 5 分钟保存一次（`conf.user.json` 的 autoSaveTimer，Double/分钟，默认 5，GUI 不可达）；macOS 为 NSDocument 系统特性、始终开启。",
+      "mellowTarget": "三平台统一 5 分钟定时保存（受既有 mellow.file.autosave 开关控制）；间隔在 GUI 暴露（Typora 需手改 JSON）= B 级增强。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/app-core",
+      "evidence": [
+        "packages/app-core/src/autosave.ts",
+        "packages/app-core/test/autosave.test.ts",
+        "packages/settings/src/index.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-FILE-005",
+      "domain": "file",
+      "capability": "页面设置与打印",
+      "typoraBehavior": "File 菜单只有 Print 与 Page Setup 两项（typora-menu-dump.txt 实证），**没有**打印预览窗口。",
+      "mellowTarget": "Print 直接调系统打印对话框（D-H = ②，护栏禁止 file.printPreview 复活）；Page Setup 在 macOS 走 NSApplication.runPageLayout:，非 macOS 给出可操作提示（G7-FEAT-02）。",
+      "grade": "D",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "apps/desktop/src-tauri/src/window.rs",
+        "apps/desktop/src-tauri/src/print.rs",
+        "packages/export/src/print.ts",
+        "packages/export/test/print.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-EDITOR-005",
+      "domain": "editing",
+      "capability": "拼写检查词典与替换建议",
+      "typoraBehavior": "Typora 使用系统拼写检查（词典 + 建议 + 智能引号 / 文本替换）。",
+      "mellowTarget": "结构已对齐（Edit → Spelling and Grammar / Substitutions 子菜单，D-S）。【2026-09-12 本机实测收窄缺口】系统拼写检查**已真实接线并可调**：edit.spellcheck.toggle 实测把 contentDOM 的 spellcheck 属性从 true 翻到 false（CoreEditor modules/textChecker + 大文件模式自动关闭），红色下划线能力具备。因此本项缺口**比原描述更窄**：仅缺「词典与右键建议列表」（属平台能力，需 host-api 扩展后补齐），而非「拼写检查本身不工作」。证据：tests/e2e/feature-liveness-verify.mjs（拼写检查开关断言）。",
+      "grade": "D",
+      "status": "BLOCKED",
+      "ownerPackage": "packages/host-api",
+      "evidence": [
+        "packages/commands/src/menuSchema.ts",
+        "tests/parity/verify-menu-contract.mjs",
+        "tests/e2e/feature-liveness-verify.mjs",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-EDITOR-006",
+      "domain": "editing",
+      "capability": "字数统计语义",
+      "typoraBehavior": "词 / 行 / 字符 / 段落 / 阅读时长；选中时显示选中统计；排除格式语法。",
+      "mellowTarget": "同语义，**中文一字一词**（CJK 计数与 Typora 对齐）；macOS 标题栏常显可配置（G7-SHELL-06 已修），Win/Linux 走状态栏。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/app-core",
+      "evidence": [
+        "packages/app-core/src/wordCount.ts",
+        "packages/app-core/test/wordCount.test.ts",
+        "packages/desktop-ui/src/StatusBar.tsx"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-SIDEBAR-004",
+      "domain": "sidebar",
+      "capability": "File List / Articles 视图",
+      "typoraBehavior": "侧栏 Files 可切 Tree / List；List 显示 title + filename，紧凑行，按文件夹分组，可含子文件夹。",
+      "mellowTarget": "四态 sidebarMode（files / fileList / outline / search）+ View → Articles（⌃⌘2）；compact 默认开、folder grouping 单组自动退化、PageUp/PageDown 已接线。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/desktop-ui",
+      "evidence": [
+        "packages/desktop-ui/src/FileList.tsx",
+        "tests/parity/verify-sidebar-contract.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-SIDEBAR-005",
+      "domain": "sidebar",
+      "capability": "侧栏排序五组 × 升降序",
+      "typoraBehavior": "Group by Folder + natural / alphabet / modified / created，各可升降序。",
+      "mellowTarget": "模型本就具备（sortBy 4 值 + folderFirst + sortAsc）；底部文件夹菜单逐项勾选暴露（G7-SIDE-05）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/app-core",
+      "evidence": [
+        "packages/app-core/src/fileTree.ts",
+        "packages/app-core/test/fileTree.test.ts",
+        "tests/parity/verify-sidebar-contract.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-SIDEBAR-006",
+      "domain": "sidebar",
+      "capability": "文件操作撤销语义",
+      "typoraBehavior": "官方：only the last one file operation is undoable；Windows/Linux 删除不可撤销。",
+      "mellowTarget": "撤销栈收敛为深度 1（G7-EDIT-06）；trash 撤销全平台依赖系统回收站，与 macOS Typora 的差异登记 D-N，待 FileService 暴露平台回收站 API。",
+      "grade": "D",
+      "status": "AUTO",
+      "ownerPackage": "packages/app-core",
+      "evidence": [
+        "packages/app-core/src/fileTree.ts",
+        "packages/app-core/test/fileTree.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-SIDEBAR-007",
+      "domain": "sidebar",
+      "capability": "侧栏底部文件夹菜单（D-C）",
+      "typoraBehavior": "官方 File Management：At the bottom of the left side bar, users can pop up menu items for the current folder。",
+      "mellowTarget": "SidebarFooter + openFolderMenu（刷新 / 打开文件夹… / 展开·折叠全部 / 排序 / 最近文件夹含 pin·trash），D-C 裁决 = ①。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/desktop-ui",
+      "evidence": [
+        "packages/desktop-ui/src/SidebarFooter.tsx",
+        "tests/parity/verify-sidebar-contract.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-FEATURE-001",
+      "domain": "feature",
+      "capability": "单一编辑表面（无编辑/预览分区）",
+      "typoraBehavior": "不存在编辑/预览分区；标记按 Caret 显隐且不改变文档位置。",
+      "mellowTarget": "Live Markdown 经 Decoration / Widget 实现，Markdown 纯文本唯一真源（禁止私有 Rich Text 模型）；15 状态矩阵覆盖（11 家族 × 15 态，约 171 例）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "packages/editor-engine/test/state-matrix.test.ts",
+        "tests/parity/verify-menu-contract.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-FEATURE-002",
+      "domain": "feature",
+      "capability": "可预测输出（Source Fidelity）",
+      "typoraBehavior": "保存 / 复制 / 导出不引入非用户输入的 Markdown 变更。",
+      "mellowTarget": "Source Fidelity 0 diff（保存路径）；多格式剪贴板；导出 corpus 覆盖 CJK + Math + Mermaid + Table + Footnote + TOC。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/export",
+      "evidence": [
+        "packages/export/src/print.ts",
+        "packages/export/test/print.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-SHELL-003",
+      "domain": "desktop-ui",
+      "capability": "Editor Toolbar 形态（D-B）",
+      "typoraBehavior": "1.14 What's New：可从 View → Toolbar 或 Settings → Appearance 启用的**浮动**工具栏。",
+      "mellowTarget": "D-B 裁决 = ①：单一浮动工具栏（Selection 锚定、IME 冻结、可键盘操作），退役壳层常驻横条；入口与设置项同源 storageKey。 【2026-09-12 真 bug 修复】结构契约在、功能曾是死的：position() 在 CodeMirror update 周期内调用 view.coordsAtPos()（CM6 禁止读布局）→ 抛错被 getAnchor 的 catch 吞掉 → 返回 null → 立即 hideEl()，且 visible=false 后不再重定位，浮动工具栏**永不显示**（实测程序化选区与真实鼠标拖拽均 display:none）。已改为 schedulePosition() 把定位推迟到 update 周期外（rAF），实测 w×h=300.7×34 可见；destroy 取消待执行帧。回归防线：verify-shell-widgets.mjs 静态契约（禁止 showEl/update 同步定位 + canary）+ tests/visual/scenes-golden.mjs 的 selection-toolbar 场景硬断言 visible===true。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "tests/parity/verify-shell-widgets.mjs",
+        "packages/settings/src/index.ts",
+        "tests/visual/scenes-golden.mjs",
+        "tests/visual/golden/scenes-golden.json",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-SHELL-004",
+      "domain": "desktop-ui",
+      "capability": "状态栏与字数可见性",
+      "typoraBehavior": "状态栏默认隐藏、View 菜单可开；macOS 字数在标题栏（hover 或常显）。",
+      "mellowTarget": "view.statusbar.toggle 入菜单（G7-MENU-03 已修）；appearance.wordCount 常显开关 + 标题并入字数（G7-SHELL-06 已修）；hover 显隐登记 D。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/desktop-ui",
+      "evidence": [
+        "packages/desktop-ui/src/StatusBar.tsx",
+        "packages/commands/src/menuSchema.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-LAYOUT-001",
+      "domain": "layout",
+      "capability": "排版单一真源",
+      "typoraBehavior": "正文 16px / line-height 1.6；写作宽度分档可选。",
+      "mellowTarget": "`TYPOGRAPHY_DEFAULTS = { fontSize: 16, lineHeight: 1.6, writingWidth: 860 }` 唯一真源；编辑器（setEditorConfig）与 Reader（CSS 变量）同源（V7-W5 补齐字号）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/settings",
+      "evidence": [
+        "packages/settings/src/index.ts",
+        "tests/parity/verify-shell-typography.mjs",
+        "apps/desktop/src/styles.css",
+        "tests/visual/golden/layout-golden.json",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-LAYOUT-002",
+      "domain": "layout",
+      "capability": "三平台视觉 Golden（14 场景）",
+      "typoraBehavior": "以 Typora 1.14.9 三平台截图为参照。",
+      "mellowTarget": "三平台 × 14 场景截图归档并比对（§9.3）；当前仅本机，三平台 chrome 截图未归档 = G7-QA-04。 【2026-09-12】基线已支持按平台分离（tests/visual/golden-path.mjs：macOS 主基线 / *-golden.linux.json / *-golden.windows.json），避免用 macOS 测量值比对跨平台产物；runtime-qualification.yml 的 Linux / Windows job 已加入 §9.3 14 场景 Golden 采集与产物上传。首次运行自动生成该平台基线，基线提交后即进入比对模式。",
+      "grade": "E",
+      "status": "BLOCKED",
+      "ownerPackage": "tests/parity",
+      "evidence": [
+        "tests/parity/verify-visual-golden.mjs",
+        "tests/visual/golden/layout-golden.json",
+        "tests/visual/golden/sidebar-golden.json",
+        "tests/benchmark/screenshots/p2-8-window-chrome-macos.png",
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/visual/golden-path.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-MENU-003",
+      "domain": "menu",
+      "capability": "Context Menu 覆盖面",
+      "typoraBehavior": "文本 / 链接 / 图片 / 代码 / 公式 / Mermaid / 表格 / 文件树 / 大纲 / 搜索均有上下文菜单。",
+      "mellowTarget": "11 类上下文菜单全部走 dispatchCommand（命令单一真源，ADR-0023）。 【2026-09-12】新增运行时证据 tests/e2e/context-menu-verify.mjs（4/4）：编辑器右键弹出 7 项（剪切/复制/粘贴/段落/格式/复制为 Markdown/复制为纯文本），「格式」子菜单展开为 加粗/斜体/删除线/代码/超链接…，点击「加粗」真的加粗文档且菜单关闭 —— 此前仅静态护栏，无运行时验证。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "tests/parity/verify-context-menu-parity.mjs",
+        "tests/parity/verify-context-menu-guard.mjs",
+        "tests/parity/verify-menu-contract.mjs",
+        "tests/e2e/context-menu-verify.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-MENU-004",
+      "domain": "menu",
+      "capability": "菜单护栏（schema diff）",
+      "typoraBehavior": "菜单结构、条目顺序、separator、accelerator、勾选态三平台一致且与 Typora 对齐。",
+      "mellowTarget": "MENU_SCHEMA 单一真源 → toNativeMenuSpec() 只做 materialization；护栏覆盖条目顺序 / separator / accel / checkState / 三平台 × 双语。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/commands",
+      "evidence": [
+        "packages/commands/src/menuSchema.ts",
+        "tests/parity/verify-menu-contract.mjs",
+        "tests/parity/verify-menu-contract-guard.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-BUILD-001",
+      "domain": "build",
+      "capability": "渲染层资产指纹与构建链一致性",
+      "typoraBehavior": "（工程治理项，非 Typora 功能）渲染层资产为版本化文件名，指纹错配会静默降级。",
+      "mellowTarget": "`verify-release-bundle.mjs` 必须在 CI 执行（G7-TYPO-04 已修）；护栏 `verify-build-pipeline.mjs` 锁定一键构建 5 步链路与 CI 序位。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "apps/desktop/scripts/verify-release-bundle.mjs",
+        ".github/workflows/ci.yml",
+        "tests/parity/verify-build-pipeline.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
       ]
     }
   ]

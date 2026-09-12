@@ -21,6 +21,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { goldenFile, platformLabel } from './golden-path.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -29,7 +30,7 @@ const PORT = 1426;
 const BASE = `http://localhost:${PORT}`;
 const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
 const HERE = new URL('.', import.meta.url).pathname;
-const GOLDEN = resolve(HERE, 'golden/sidebar-golden.json');
+const GOLDEN = goldenFile('sidebar');
 const ACTUAL_DIR = resolve(HERE, 'actual');
 const UPDATE = process.argv.includes('--update');
 const TOLERANCE_PX = 1;

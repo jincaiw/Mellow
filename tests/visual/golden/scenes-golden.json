@@ -1,0 +1,68 @@
+{
+  "first-run": {
+    "sidebar": false,
+    "tabbar": false,
+    "statusBar": false,
+    "writingWidth": 860
+  },
+  "single-doc-live": {
+    "writingWidth": 860,
+    "lineCount": 19,
+    "fontSize": 16,
+    "lineHeight": 22.4,
+    "boldMarkerWidth": 0
+  },
+  "file-list": {
+    "aside": {
+      "x": 0,
+      "y": 0,
+      "w": 260,
+      "h": 900
+    },
+    "label": "文档列表",
+    "itemCount": 0,
+    "groupCount": 0,
+    "empty": true
+  },
+  "settings": {
+    "panel": {
+      "x": 210,
+      "y": 150,
+      "w": 860,
+      "h": 600
+    },
+    "categoryCount": 10,
+    "scrollable": false
+  },
+  "selection-toolbar": {
+    "bar": {
+      "x": 83.5,
+      "y": 31,
+      "w": 300.7,
+      "h": 34
+    },
+    "buttonCount": 10,
+    "visible": true
+  },
+  "table-toolbar": {
+    "bar": {
+      "x": 83.5,
+      "y": 644.6,
+      "w": 436,
+      "h": 33
+    },
+    "buttonCount": 11,
+    "visible": true
+  },
+  "reader": {
+    "shell": {
+      "x": 265,
+      "y": 0,
+      "w": 1015,
+      "h": 900
+    },
+    "hasTitle": true,
+    "tableCount": 1,
+    "codeBlockCount": 1
+  }
+}

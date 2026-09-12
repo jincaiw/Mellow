@@ -178,16 +178,14 @@ export function setColumnAlignment(view: EditorView, model: TableModel, col: num
   if (cell === undefined) {
     return;
   }
-  const mark = align === 'center' ? ':--:' : align === 'right' ? '--:' : ':--';
-  // 保留 cell 前导/后随空白结构（minimal：只替换 -- 部分）
-  const text = cell.text;
-  const newText = text.startsWith(':') && text.endsWith(':')
-    ? `:${mark.slice(1, -1)}:`
-    : text.endsWith(':')
-      ? `${mark.slice(0, -1)}:`
-      : text.startsWith(':')
-        ? `:${mark.slice(1)}`
-        : mark;
+  // 保留 cell 原有的**连字符数量**（此前用固定的 2 连字符 mark 再 slice 拼装，
+  // 会丢弃原始长度 → 每切换一次对齐就少一个连字符：
+  // `---` → `:--:` → `:-:` → `::`（非法），反复切换会侵蚀破坏分隔符）。
+  const dashes = (() => {
+    const core = cell.text.replace(/^:+|:+$/g, '');
+    return core.length > 0 ? core : '--';
+  })();
+  const newText = align === 'center' ? `:${dashes}:` : align === 'right' ? `${dashes}:` : `:${dashes}`;
   view.dispatch({ changes: { from: cell.from, to: cell.to, insert: ` ${newText} ` } });
 }
 

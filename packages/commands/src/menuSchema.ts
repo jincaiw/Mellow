@@ -100,12 +100,14 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'separator' },
     { kind: 'command', id: 'file.open', labelKey: 'menu.file.open', shortcut: { mac: 'Cmd+O', winLinux: 'Ctrl+O' } },
     { kind: 'submenu', id: 'file.recent', labelKey: 'menu.file.recent', entries: [
-      // B1（SDI）：tabs.reopenClosed 移除（窗口关闭后状态随之结束；跨窗口重开待
-      // Phase 4 窗口注册表落地后按 macOS「Reopen Closed File」真值恢复）
       { kind: 'dynamic', dynamic: 'recent-files' },
       { kind: 'separator' },
       { kind: 'command', id: 'recent.clear', labelKey: 'menu.file.recentClear' },
     ] },
+    // V7-W1.1：Typora「Reopen Closed File」对标（1.14.9 File 菜单存在 reopenClosedFilesMenu:，
+    // 官方键位 Win/Linux Ctrl+Shift+T、macOS Cmd+Shift+T）。SDI 下语义 = 以新窗口打开
+    // 最近关闭的有路径文档；关闭栈为 app 级（localStorage `mellow.closedFiles`）。
+    { kind: 'command', id: 'file.reopenClosed', labelKey: 'menu.file.reopenClosed', shortcut: { mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' } },
     { kind: 'command', id: 'quickOpen.open', labelKey: 'menu.quickOpen.open', shortcut: { mac: 'Cmd+Shift+O', winLinux: 'Ctrl+P' } },
     { kind: 'command', id: 'workspace.openFolder', labelKey: 'menu.workspace.openFolder' },
     { kind: 'separator' },
@@ -120,7 +122,7 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）
     { kind: 'command', id: 'file.closeWindow', labelKey: 'menu.file.closeWindow', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' } },
     // B1（SDI）：file.closeAll 仅 Win/Linux 保留（macOS Typora 1.14.9 File 菜单无「全部关闭」，
-    // 资源中无 Close All 文案/动作 —— sdi-truth-table-v1.md 0.8 行）
+    // 资源中无 Close All 文案/动作 —— archive/sdi-truth-table-v1.md 0.8 行）
     { kind: 'command', id: 'file.closeAll', labelKey: 'menu.file.closeAll', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' }, winLinuxOnly: true },
     { kind: 'separator' },
     { kind: 'command', id: 'file.save', labelKey: 'menu.file.save', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' } },
@@ -193,6 +195,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'edit.deleteWord', labelKey: 'menu.edit.deleteWord', shortcut: { mac: 'Shift+Cmd+D', winLinux: 'Ctrl+Shift+D' } },
     ] },
     { kind: 'separator' },
+    // V7-W1.4（修正）：Typora macOS 编辑菜单确有「拼写和语法检查 / 替换」两个子菜单
+    // （真机 nib 提取：NSSubmenu `Substitutions` 含 Convert on Input / Convert on
+    // Rendering / Smart Quotes / Smart Dashes / Text Replacement；Menu.strings zh 文案
+    // 「拼写和语法检查」「替换」）。故保留子菜单结构以对齐 Typora 菜单树，
+    // 当前仅装配 Mellow 已实现项；词典/语法/智能引号/智能破折号为已登记缺口
+    // （方案 §5 G7-EDIT-04，W5 补齐后在同一子菜单内追加，无需再改结构）。
     { kind: 'submenu', id: 'edit.spell', labelKey: 'menu.edit.spellMenu', entries: [
       { kind: 'command', id: 'edit.spellcheck.toggle', labelKey: 'menu.edit.spellcheck', checkedFrom: 'spellcheck' },
     ] },
@@ -278,8 +286,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'format.taskList', labelKey: 'menu.format.taskList', shortcut: { mac: 'Cmd+Alt+X', winLinux: 'Ctrl+Alt+X' } },
     { kind: 'command', id: 'paragraph.taskToggle', labelKey: 'menu.paragraph.taskToggle', shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Shift+X' } },
     { kind: 'submenu', id: 'paragraph.indent', labelKey: 'menu.paragraph.indentMenu', entries: [
-      { kind: 'command', id: 'paragraph.indentMore', labelKey: 'menu.paragraph.indentMore', shortcut: { mac: 'Cmd+]', winLinux: 'Ctrl+]' } },
-      { kind: 'command', id: 'paragraph.indentLess', labelKey: 'menu.paragraph.indentLess', shortcut: { mac: 'Cmd+[', winLinux: 'Ctrl+[' } },
+      // V7-W1.2：键位对齐 Typora 官方表（Indent = Ctrl/Cmd+[，Outdent = Ctrl/Cmd+]）。
+      // 官方表与「[ 是左/减少」的直觉相反，此处以官方表为准（真机复核项见方案 §12 D-F）。
+      { kind: 'command', id: 'paragraph.indentMore', labelKey: 'menu.paragraph.indentMore', shortcut: { mac: 'Cmd+[', winLinux: 'Ctrl+[' } },
+      { kind: 'command', id: 'paragraph.indentLess', labelKey: 'menu.paragraph.indentLess', shortcut: { mac: 'Cmd+]', winLinux: 'Ctrl+]' } },
     ] },
     { kind: 'separator' },
     { kind: 'command', id: 'paragraph.insertAbove', labelKey: 'menu.paragraph.insertAbove' },
@@ -291,15 +301,9 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'paragraph.horizontalRule', labelKey: 'menu.paragraph.horizontalRule', shortcut: { mac: 'Cmd+Alt+-', winLinux: 'Ctrl+Alt+-' } },
     { kind: 'command', id: 'insert.toc', labelKey: 'menu.paragraph.toc' },
     { kind: 'command', id: 'paragraph.yamlFrontMatter', labelKey: 'menu.paragraph.yamlFrontMatter' },
-    { kind: 'separator' },
-    // Slash 命令入口（Mellow 更优保留）：插入类命令同时保留原始 Command ID 分发
-    { kind: 'command', id: 'insert.heading', labelKey: 'menu.insert.heading' },
-    { kind: 'command', id: 'insert.list', labelKey: 'menu.insert.list' },
-    { kind: 'command', id: 'insert.task', labelKey: 'menu.insert.task' },
-    { kind: 'command', id: 'insert.quote', labelKey: 'menu.insert.quote' },
-    { kind: 'command', id: 'insert.code', labelKey: 'menu.insert.code' },
-    { kind: 'command', id: 'insert.math', labelKey: 'menu.insert.math' },
-    { kind: 'command', id: 'insert.mermaid', labelKey: 'menu.insert.mermaid' },
+    // V7-W1.3：段落菜单尾部曾挂 7 个 Slash 插入命令（insert.heading/list/task/quote/
+    // code/math/mermaid）—— Typora 段落菜单无此分组，常驻会破坏「菜单入口可预期」；
+    // 已从菜单移除，命令保留供 Slash / Command Palette 分发。
     // E5（D 类收敛）：insert.alert 与段落菜单「警告框」子菜单 alert.note 语义完全
     // 重复，insert.table 与上方表格子菜单重复挂载 —— 均从菜单移除；命令保留
     // （slash 触发与 palette 分发不受影响）。
@@ -310,7 +314,8 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'format.bold', labelKey: 'menu.format.bold', shortcut: { mac: 'Cmd+B', winLinux: 'Ctrl+B' } },
     { kind: 'command', id: 'format.italic', labelKey: 'menu.format.italic', shortcut: { mac: 'Cmd+I', winLinux: 'Ctrl+I' } },
     { kind: 'command', id: 'format.underline', labelKey: 'menu.format.underline', shortcut: { mac: 'Cmd+U', winLinux: 'Ctrl+U' } },
-    { kind: 'command', id: 'format.code', labelKey: 'menu.format.code', shortcut: { mac: 'Ctrl+`', winLinux: 'Ctrl+Shift+`' } },
+    // V7-W1.9：行内 Code 的 macOS 键位对齐 Typora 官方表（Cmd+Shift+`）。
+    { kind: 'command', id: 'format.code', labelKey: 'menu.format.code', shortcut: { mac: 'Cmd+Shift+`', winLinux: 'Ctrl+Shift+`' } },
     { kind: 'command', id: 'format.strike', labelKey: 'menu.format.strike', shortcut: { mac: 'Ctrl+Shift+`', winLinux: 'Alt+Shift+5' } },
     { kind: 'command', id: 'format.comment', labelKey: 'menu.format.comment', shortcut: { mac: 'Ctrl+-', winLinux: 'Ctrl+Alt+Shift+-' } },
     { kind: 'command', id: 'format.highlight', labelKey: 'menu.format.highlight' },
@@ -323,9 +328,13 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'format.copyLinkUrl', labelKey: 'menu.format.copyLinkUrl' },
     ] },
     { kind: 'separator' },
-    { kind: 'command', id: 'insert.image', labelKey: 'menu.insert.image', shortcut: { mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Shift+I' } },
     { kind: 'command', id: 'format.clear', labelKey: 'menu.format.clear', shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' } },
+    // V7-W1.7：格式 → 图像子菜单对齐 Typora（Format → Image ▸ Insert Local Images… /
+    // Move All / Copy All / Download All）。插入图片命令移入子菜单首位并保留原快捷键。
     { kind: 'submenu', id: 'format.image', labelKey: 'menu.format.imageMenu', entries: [
+      { kind: 'command', id: 'insert.image', labelKey: 'menu.insert.image', shortcut: { mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Shift+I' } },
+      { kind: 'command', id: 'image.insertLocal', labelKey: 'menu.image.insertLocal' },
+      { kind: 'separator' },
       { kind: 'command', id: 'image.uploadAll', labelKey: 'menu.image.uploadAll' },
       { kind: 'command', id: 'image.downloadRemote', labelKey: 'menu.image.downloadRemote' },
       { kind: 'command', id: 'image.moveAll', labelKey: 'menu.image.moveAll' },
@@ -333,29 +342,36 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     ] },
   ] },
 
-  // ── 显示（Typora「显示」菜单）───────────────────────────────
+  // ── 显示（V7-W1.5：按 Typora「显示」菜单顺序重排，Mellow 增强项 separator 后置）──
   { id: 'view', labelKey: 'menu.top.view', entries: [
-    { kind: 'command', id: 'commandPalette.open', labelKey: 'menu.commandPalette.open', shortcut: { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' } },
-    { kind: 'separator' },
-    { kind: 'command', id: 'view.source.toggle', labelKey: 'menu.view.source.toggle', shortcut: { mac: 'Cmd+/', winLinux: 'Ctrl+/' } },
-    { kind: 'separator' },
-    { kind: 'command', id: 'view.focus.cycle', labelKey: 'menu.view.focus.cycle', shortcut: { mac: 'F8', winLinux: 'F8' } },
-    { kind: 'command', id: 'view.typewriter.cycle', labelKey: 'menu.view.typewriter.cycle', shortcut: { mac: 'F9', winLinux: 'F9' } },
-    { kind: 'command', id: 'view.toolbar.toggle', labelKey: 'menu.view.toolbar.toggle' },
-    { kind: 'command', id: 'view.wordCount', labelKey: 'menu.view.wordCount' },
-    { kind: 'separator' },
+    // 侧栏三视图（Typora：Toggle Sidebar → Outline → Articles → File Tree）
     { kind: 'command', id: 'view.sidebar.toggle', labelKey: 'menu.view.sidebarToggle', shortcut: { mac: 'Cmd+Shift+L', winLinux: 'Ctrl+Shift+L' } },
+    { kind: 'separator' },
     { kind: 'command', id: 'view.sidebar.outline', labelKey: 'menu.view.sidebarOutline', shortcut: { mac: 'Ctrl+Cmd+1', winLinux: 'Ctrl+Shift+1' } },
+    { kind: 'command', id: 'view.sidebar.fileList', labelKey: 'menu.view.sidebarFileList', shortcut: { mac: 'Ctrl+Cmd+2', winLinux: 'Ctrl+Shift+2' } },
     { kind: 'command', id: 'view.sidebar.fileTree', labelKey: 'menu.view.sidebarFileTree', shortcut: { mac: 'Ctrl+Cmd+3', winLinux: 'Ctrl+Shift+3' } },
     { kind: 'command', id: 'search.global', labelKey: 'menu.view.search', shortcut: { mac: 'Cmd+Shift+F', winLinux: 'Ctrl+Shift+F' } },
     { kind: 'separator' },
+    // 模式（Typora：Source Code Mode → Focus → Typewriter → Toolbar）
+    { kind: 'command', id: 'view.source.toggle', labelKey: 'menu.view.source.toggle', shortcut: { mac: 'Cmd+/', winLinux: 'Ctrl+/' } },
+    { kind: 'command', id: 'view.focus.cycle', labelKey: 'menu.view.focus.cycle', shortcut: { mac: 'F8', winLinux: 'F8' } },
+    { kind: 'command', id: 'view.typewriter.cycle', labelKey: 'menu.view.typewriter.cycle', shortcut: { mac: 'F9', winLinux: 'F9' } },
+    { kind: 'command', id: 'view.toolbar.toggle', labelKey: 'menu.view.toolbar.toggle', checkedFrom: 'toolbar' },
+    { kind: 'separator' },
+    // 全屏与缩放（Typora：Toggle Fullscreen → Actual Size → Zoom In → Zoom Out）
+    // V7-W1.9：macOS 全屏对齐官方表 Cmd+Option+F（原 Ctrl+Cmd+F 为系统约定值）。
+    { kind: 'command', id: 'window.fullscreen', labelKey: 'menu.window.fullscreen', shortcut: { mac: 'Cmd+Alt+F', winLinux: 'F11' } },
     { kind: 'command', id: 'view.zoomReset', labelKey: 'menu.view.zoomReset', shortcut: { mac: 'Cmd+Shift+0', winLinux: 'Ctrl+Shift+0' } },
     { kind: 'command', id: 'view.zoomIn', labelKey: 'menu.view.zoomIn', shortcut: { mac: 'Cmd+Shift+=', winLinux: 'Ctrl+Shift+=' } },
     { kind: 'command', id: 'view.zoomOut', labelKey: 'menu.view.zoomOut', shortcut: { mac: 'Cmd+Shift+-', winLinux: 'Ctrl+Shift+-' } },
     { kind: 'separator' },
+    // 状态与窗口（Typora Win/Linux 可从 View 菜单开启状态栏）
+    { kind: 'command', id: 'view.statusbar.toggle', labelKey: 'menu.view.statusbarToggle', checkedFrom: 'statusbar' },
+    { kind: 'command', id: 'view.wordCount', labelKey: 'menu.view.wordCount' },
     { kind: 'command', id: 'window.alwaysOnTop', labelKey: 'menu.view.alwaysOnTop' },
     { kind: 'separator' },
-    { kind: 'command', id: 'window.fullscreen', labelKey: 'menu.window.fullscreen', shortcut: { mac: 'Ctrl+Cmd+F', winLinux: 'F11' } },
+    // Mellow 增强（D 类）：以 separator 与 Typora 基础项隔离，统一置于末尾
+    { kind: 'command', id: 'commandPalette.open', labelKey: 'menu.commandPalette.open', shortcut: { mac: 'Cmd+Shift+P', winLinux: 'Ctrl+Shift+P' } },
     { kind: 'command', id: 'view.devtools', labelKey: 'menu.view.devtools', debugOnly: true },
   ] },
 
@@ -366,13 +382,15 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'theme.mode.system', labelKey: 'menu.theme.system', checkedFrom: 'themeModeSystem' },
     // V4 §7.3：Open Theme Folder / User CSS 放 separator 后（Typora 主题机制对标）
     { kind: 'command', id: 'theme.openFolder', labelKey: 'menu.theme.openFolder' },
+    // V7-W1.11：Typora 主题菜单含「获取主题」（官方 Theme Gallery 入口）
+    { kind: 'command', id: 'theme.getThemes', labelKey: 'menu.theme.getThemes' },
     { kind: 'command', id: 'file.openUserCss', labelKey: 'menu.theme.openUserCss' },
   ] },
 
   // ── 窗口（B3，第四轮：仅 macOS —— Typora Windows/Linux 顶层菜单无「窗口」，
   // 最小化/还原由系统标题栏控制按钮承担。
   // B1（SDI）：tabs.prev/next 移除 —— macOS Typora「显示上一个/下一个标签页」为系统
-  // NSWindow tabbing 运行时注入项，非菜单常驻槽位（sdi-truth-table-v1.md 0.9 行））─────────
+  // NSWindow tabbing 运行时注入项，非菜单常驻槽位（archive/sdi-truth-table-v1.md 0.9 行））─────────
   { id: 'window', labelKey: 'menu.top.window', macOnly: true, entries: [
     { kind: 'command', id: 'window.minimize', labelKey: 'menu.window.minimize', shortcut: { mac: 'Cmd+M', winLinux: 'Ctrl+M' } },
     { kind: 'command', id: 'window.maximizeToggle', labelKey: 'menu.window.maximizeToggle' },
@@ -474,6 +492,10 @@ export interface NativeMenuSpecInput {
   spellcheck?: boolean;
   /** 智能标点勾选态（「替换 → 智能标点」）。 */
   smartPunct?: boolean;
+  /** 状态栏可见性勾选态（V7-W1.6：Typora Win/Linux 显示菜单「状态栏」开关）。 */
+  statusbar?: boolean;
+  /** 浮动编辑器工具栏启用态（V7-W2.4 D-B：Typora 1.14 `View → Toolbar` 开关语义）。 */
+  toolbar?: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制；schema 仍是默认值唯一真源，
    *  override 仅在 materialization 边界覆盖同平台字段；空串 = 已清除）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
@@ -483,6 +505,8 @@ export interface NativeMenuSpecInput {
 function resolveChecked(checkedFrom: string, input: NativeMenuSpecInput): boolean {
   if (checkedFrom === 'spellcheck') return input.spellcheck ?? true;
   if (checkedFrom === 'smartPunct') return input.smartPunct ?? false;
+  if (checkedFrom === 'statusbar') return input.statusbar ?? true;
+  if (checkedFrom === 'toolbar') return input.toolbar ?? true;
   if (checkedFrom === 'themeModeSystem') return input.themeMode === 'system';
   if (checkedFrom.startsWith('activeTheme:')) return input.activeThemeId === checkedFrom.slice('activeTheme:'.length);
   return false;

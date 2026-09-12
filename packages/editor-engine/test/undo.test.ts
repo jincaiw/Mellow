@@ -454,3 +454,67 @@ describe('Undo — 通用契约', () => {
     view.destroy();
   });
 });
+
+/**
+ * V7-W4.4（G7-EDIT-04 相邻项 + §7.2 Undo 合同）：GUI 动作各一个 Undo。
+ *
+ * 说明：真正的「加粗 / 斜体」格式命令与图片拖拽缩放属 vendored CoreEditor
+ * （MarkEdit）的 keymap / DOM 交互，不在 editor-engine 内；本组用**引擎可表达的
+ * 等价程序化事务**（wrap `**` 与 `=WxH` 尺寸改写）锁定「一个 GUI 动作 = 一个 undo 单元」。
+ */
+describe('V7-W4.4 GUI 动作各一个 Undo（格式命令 / 图片尺寸改写）', () => {
+  test('格式命令（程序化 wrap **）→ 一次 undo 精确还原，且不与前后输入合并', async () => {
+    const view = setUpWithHistory('hello world');
+    try {
+      typeText(view, 11, '!'); // 用户输入组 A
+      await sleep();
+      // 程序化格式命令（无 userEvent → undoGrouping isolate('full')）
+      view.dispatch({ changes: [{ from: 6, insert: '**' }, { from: 11, insert: '**' }] });
+      await sleep();
+      expect(view.state.doc.toString()).toBe('hello **world**!');
+      undo(view);
+      await sleep();
+      // 只撤格式命令，输入组仍在
+      expect(view.state.doc.toString()).toBe('hello world!');
+      undo(view);
+      await sleep();
+      expect(view.state.doc.toString()).toBe('hello world');
+    } finally { view.destroy(); }
+  });
+
+  test('图片尺寸改写（=WxH）→ 一次 undo 精确还原', async () => {
+    const view = setUpWithHistory('![a](x.png)');
+    try {
+      const before = view.state.doc.toString();
+      // from 10 = 右括号 `)` 之前（Typora 的 =WxH 写在括号内）
+      view.dispatch({ changes: { from: 10, insert: ' =100x50' } });
+      await sleep();
+      expect(view.state.doc.toString()).toBe('![a](x.png =100x50)');
+      undo(view);
+      await sleep();
+      expect(view.state.doc.toString()).toBe(before);
+    } finally { view.destroy(); }
+  });
+
+  test('GUI 动作连发两次 → 精确两次 undo（不多不少）', async () => {
+    const view = setUpWithHistory('![a](x.png)');
+    try {
+      const before = view.state.doc.toString();
+      view.dispatch({ changes: { from: 10, insert: ' =100x50' } });
+      await sleep();
+      view.dispatch({ changes: { from: 18, insert: '0' } }); // =100x500（`50` 之后）
+      await sleep();
+      expect(view.state.doc.toString()).toBe('![a](x.png =100x500)');
+      undo(view);
+      await sleep();
+      expect(view.state.doc.toString()).toBe('![a](x.png =100x50)');
+      undo(view);
+      await sleep();
+      expect(view.state.doc.toString()).toBe(before);
+      // 第三次 undo 应为 no-op（GUI 动作已撤净）
+      undo(view);
+      await sleep();
+      expect(view.state.doc.toString()).toBe(before);
+    } finally { view.destroy(); }
+  });
+});

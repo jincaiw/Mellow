@@ -90,7 +90,7 @@ if (!/toggleTypewriter, typewriterEnabled, shortcutOverrides\]\)/.test(appSource
 if (!appSource.includes('shortcutOverrides,\n    });')) {
   fail('buildNativeMenuSpec 输入缺少 shortcutOverrides（P2-2.6）');
 }
-if (!/menuCheckTick, shortcutOverrides\]\)/.test(appSource)) {
+if (!/menuCheckTick,\s*shortcutOverrides[^\]]*\]\)/.test(appSource)) {
   fail('native menu effect 依赖缺少 shortcutOverrides（P2-2.6）');
 }
 if (!nativeMenuSource.includes('shortcutOverrides: inputs.shortcutOverrides,')) {
@@ -180,8 +180,10 @@ if (!appSlashKey || !schemaSlashKey || appSlashKey !== schemaSlashKey) {
 if (!settingsSource.includes("id: 'advanced.userCss'")) {
   fail('Settings schema 缺少 advanced.userCss 入口（V4 P6 User CSS 可发现性）');
 }
-if (!appSource.includes("style.id = 'mellow-user-css'") || !appSource.includes("join(dir, 'user.css')")) {
-  fail('App.tsx 缺少 user.css 加载与 mellow-user-css 注入实现（V4 P6 User CSS）');
+// V7-W5 起 user CSS 由「单文件」升级为 Typora 式**三层**（base / <theme> / user），
+// 锚点相应更新：原 `style.id = 'mellow-user-css'` 字面量已随分层重构消失。
+if (!/const USER_CSS_FILE = 'user\.css';/.test(appSource) || !appSource.includes("id: 'mellow-user-css'")) {
+  fail('App.tsx 缺少 user.css 加载与 mellow-user-css 注入实现（V4 P6 User CSS，V7-W5 起为三层）');
 }
 // ⑤ 涉及文案的 zh/en 双语。
 for (const key of ['settings.advanced.userCss', 'settings.advanced.userCssDesc', 'settings.extensions.ai', 'settings.extensions.aiDesc', 'settings.markdown.slashCommands']) {
@@ -237,9 +239,120 @@ for (const anchor of ['__MELLOW_MD_LINK_EXISTS__', 'mellow-mdlink-broken', '__ME
   if (!mdLinkSource.includes(anchor)) fail(`mdLink.ts 缺少 broken indicator 锚点 ${anchor}（engine spec §12）`);
 }
 
+// ── ⑦ V7-W5 功能域：定时自动保存 + Print / Page Setup（G7-FEAT-01/02/03）────
+// 依据 Typora 官方《Auto Save》支持文档：macOS 自动保存为 NSDocument 系统特性（始终开）；
+// Windows / Linux 默认**每 5 分钟**保存一次，间隔藏在 conf/conf.user.json 的
+// `autoSaveTimer`（Double / minute / 默认 5），GUI 不可达。Mellow 对齐 5 分钟默认
+// 并把间隔暴露到 GUI（B 级增强）。护栏锁定：默认值、解析函数、定时器接线、i18n 双语。
+const autosaveSource = read('packages/app-core/src/autosave.ts');
+if (!/export const DEFAULT_AUTOSAVE_MINUTES = 5;/.test(autosaveSource)) {
+  fail('app-core/autosave.ts 的 DEFAULT_AUTOSAVE_MINUTES 必须为 5（Typora conf.user.json autoSaveTimer 默认值）');
+}
+for (const fn of ['export function parseAutosaveMinutes', 'export function isAutosaveEnabled', 'export function autosaveIntervalMs']) {
+  if (!autosaveSource.includes(fn)) fail(`app-core/autosave.ts 缺少 ${fn}（G7-FEAT-03 定时保存策略）`);
+}
+if (!settingsSource.includes("id: 'files.autosaveTimer'")) {
+  fail('Settings schema 缺少 files.autosaveTimer（G7-FEAT-03：Typora 该配置 GUI 不可达，Mellow 暴露为设置项）');
+}
+if (!/id: 'files\.autosaveTimer'.*storageKey: 'mellow\.file\.autosaveTimer', defaultValue: '5'/s.test(settingsSource)) {
+  fail('files.autosaveTimer 必须 storageKey=mellow.file.autosaveTimer 且 defaultValue=5（与 Typora 默认一致）');
+}
+for (const anchor of ['parseAutosaveMinutes,', 'isAutosaveEnabled,', 'autosaveIntervalMs,']) {
+  if (!appSource.includes(anchor)) fail(`App.tsx 未导入 ${anchor.replace(',', '')}（定时保存断链）`);
+}
+// 定时器必须真实存在且随开关/间隔重排（否则「改了设置不生效」）。
+// 用**单一正则**同时锁定三要素（setInterval → maybeAutoSaveRef → autosaveIntervalMs），
+// 避免「别处也有 setInterval」造成假绿；canary 复用同一函数做变异复检。
+const AUTOSAVE_TIMER_RE = /window\.setInterval\(\(\) => \{[\s\S]{0,200}?maybeAutoSaveRef\.current\?\.\(\)[\s\S]{0,200}?autosaveIntervalMs\(autosaveMinutes\)/;
+const autosaveTimerWired = (src) => AUTOSAVE_TIMER_RE.test(src);
+if (!autosaveTimerWired(appSource)) {
+  fail('App.tsx 缺少定时自动保存 setInterval（maybeAutoSaveRef + autosaveIntervalMs 三要素，G7-FEAT-03）');
+}
+if (!/\}, \[autosaveEnabled, autosaveMinutes\]\);/.test(appSource)) {
+  fail('定时保存 effect 依赖必须为 [autosaveEnabled, autosaveMinutes]（开关/间隔变更须重排定时器）');
+}
+if (!/case 'settings\.autosaveTimer':/.test(appSource)) {
+  fail("App.tsx applySetting 缺少 'settings.autosaveTimer' 分支（设置变更无法生效）");
+}
+// G7-FEAT-01（D-H = ②）：Typora 只有 Print / Page Setup，**没有**打印预览窗口
+// （证据：tests/benchmark/fixtures/typora-menu-dump.txt 仅含 "Print" 与 "Page Setup"）。
+// 护栏禁止 printPreview 复活，避免未裁决的 UI 分叉。
+if (!appSource.includes("id: 'file.print'") || !appSource.includes("invoke('print_window')")) {
+  fail('App.tsx 缺少 file.print → print_window 接线（Typora File → Print 直接调系统打印对话框）');
+}
+const hasPrintPreview = (app, schema) => /file\.printPreview/.test(app) || /file\.printPreview/.test(schema);
+if (hasPrintPreview(appSource, menuSchemaSource)) {
+  fail('出现 file.printPreview：Typora 无打印预览窗口（D-H 裁决 = ②），不得复活（G7-FEAT-01）');
+}
+// G7-FEAT-02：非 macOS 无系统页面设置面板 → 必须是**可操作提示**，不能静默失败或空转 Err
+if (!/if \(!platformMac\) \{[\s\S]*?file\.pageSetup\.unsupportedHint/.test(appSource)) {
+  fail('file.pageSetup 缺少 platformMac 守卫 + unsupportedHint 可操作提示（G7-FEAT-02）');
+}
+for (const key of ['settings.file.autosaveTimer', 'settings.file.autosaveTimerDesc', 'msg.autosaveTimer', 'file.pageSetup.unsupportedHint']) {
+  let count = 0;
+  for (const [, value] of messagesSource.matchAll(new RegExp(`'${key}': '([^']*)'`, 'g'))) {
+    if (value.trim() !== '') count += 1;
+  }
+  if (count < 2) fail(`W5 文案 ${key} 需 zh/en 双语且非空（实际 ${count} 组）`);
+}
+// Typora 式 user CSS 分层（PRD §主题机制；W5「主题」域）：base.user.css（全主题）→
+// <themeId>.user.css（主题专属）→ user.css（最高优先级）。层叠顺序必须由**同步按序创建**
+// 的三个 style 节点保证，不能按异步 resolve 顺序 append（否则同一份 CSS 表现时好时坏）。
+const USER_CSS_LAYER_RE = /mellow-user-css-base[\s\S]{0,400}?mellow-user-css-theme[\s\S]{0,400}?mellow-user-css'/;
+const userCssLayered = (src) => USER_CSS_LAYER_RE.test(src);
+if (!userCssLayered(appSource)) {
+  fail('App.tsx 缺少 Typora 式 user CSS 三层（base → <theme> → user），顺序错误会导致层叠漂移（W5 主题域）');
+}
+if (!/const USER_CSS_BASE_FILE = 'base\.user\.css';/.test(appSource)) {
+  fail('USER_CSS_BASE_FILE 必须为 base.user.css（Typora base.user.css 全局层）');
+}
+if (!/file: themeUserCssFile\(activeTheme\.id\)/.test(appSource)) {
+  fail('主题专属层必须按 activeTheme.id 解析文件名（Typora [theme].user.css）');
+}
+// user 主题 id 形如 `user/<name>`，`/` 非法文件名 —— 必须剥掉前缀，否则该层永远读不到
+if (!/themeId\.replace\(\/\^user\\\/\/, ''\)/.test(appSource)) {
+  fail('themeUserCssFile 必须剥离 user/ 前缀（用户主题 id 含 `/`，直接拼文件名会永远读不到）');
+}
+// 目录必须与 Typora 一致：base / <theme> 两层在 **themes 目录**
+if (!/const USER_THEMES_DIR = 'themes';/.test(appSource) || !/subDir: USER_THEMES_DIR/.test(appSource)) {
+  fail('user CSS 的 base / <theme> 两层必须位于 themes 目录（Typora 机制；Mellow 既有 user.css 在 appData 根）');
+}
+// *.user.css 不是主题：主题扫描必须排除，否则菜单出现 "base.user" 伪主题
+const userThemesSource = read('apps/desktop/src/host/userThemes.ts');
+if (!/endsWith\('\.user\.css'\)\) continue;/.test(userThemesSource)) {
+  fail('host/userThemes.ts 未排除 *.user.css（会被注册成名为 base.user 的伪主题，V7-W5）');
+}
+if (!/\}, \[activeTheme\.id\]\);/.test(appSource)) {
+  fail('user CSS 分层 effect 依赖必须含 activeTheme.id（切主题后专属层不刷新 = 旧主题样式残留）');
+}
+// 读取失败必须**清空**而非保留旧内容（切到无专属 CSS 的主题时旧样式必须立即失效）
+if (!/\} catch \{[\s\S]{0,200}?nodes\[i\]\.textContent = '';/.test(appSource)) {
+  fail('user CSS 读取失败未清空节点（主题切换后旧主题专属样式会残留）');
+}
+// drift canary（W5）：变异复检 —— 把「已捕获的锚点片段」整体抹掉，护栏必须转为失败态。
+// 若抹掉后仍判定为已接线，说明断言锚点选错（例如命中了别处的 setInterval），护栏是假绿。
+const timerAnchor = appSource.match(AUTOSAVE_TIMER_RE)?.[0];
+if (timerAnchor === undefined) {
+  fail('W5 契约护栏自检失败：无法提取定时保存锚点片段，护栏已失效');
+} else {
+  const driftedApp = appSource.replace(timerAnchor, '/* drifted: autosave timer removed */');
+  if (autosaveTimerWired(driftedApp)) {
+    fail('W5 契约护栏自检失败：定时保存接线被抹除后仍判定为已接线（假绿），护栏已失效');
+  }
+}
+if (!hasPrintPreview(`${appSource}\n{ id: 'file.printPreview' }`, menuSchemaSource)) {
+  fail('W5 契约护栏自检失败：注入 file.printPreview 未被检出，护栏已失效');
+}
+const cssLayerAnchor = appSource.match(USER_CSS_LAYER_RE)?.[0];
+if (cssLayerAnchor === undefined) {
+  fail('W5 契约护栏自检失败：无法提取 user CSS 分层锚点，护栏已失效');
+} else if (userCssLayered(appSource.replace(cssLayerAnchor, "'mellow-user-css'"))) {
+  fail('W5 契约护栏自检失败：user CSS 分层被抹除后仍判定为已分层（假绿），护栏已失效');
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors)');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan)');

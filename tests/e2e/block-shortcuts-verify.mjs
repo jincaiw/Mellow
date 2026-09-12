@@ -6,8 +6,13 @@
  * 验证点：
  *   B1-3 段落块级：⌥⌘Q 引用 / ⌥⌘U 列表 / ⌥⌘O 有序列表 / ⌥⌘X 任务列表 /
  *                  ⌥⌘C 代码块 / ⌥⌘B 数学块（空行 caret 作用于当前行）
- *   B1-4 格式类：⌃` 行内代码 / ⌃⇧` 代码块别名 / ⌘\ 清除样式
- *   B1-5 查找替换：⌥⌘F 替换面板（主键）+ ⌘H 别名 + ⌘F 查找（回归）
+ *   B1-4 格式类：⌘⇧` 行内代码 / ⌃⇧` 删除线 / ⌘\ 清除样式
+ *   B1-5 查找替换：⌥⌘F 替换面板（主键）+ ⌘F 查找（回归）
+ *
+ * 断言过期史（记录以免重蹈）：本文件原断言「⌃` 行内代码」。W1.9 已按 Typora 官方表
+ * 将行内 Code 的 macOS 键位改为 ⌘⇧`（⌃⇧` 为删除线），实现是对的、断言是错的，
+ * 长期呈现 1 项 ❌。键位真值现由 tests/parity/verify-menu-contract.mjs §11
+ * 「官方快捷键表真值合同」锁定，本脚本只验证「键位能走到正确格式」。
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -92,15 +97,20 @@ async function main() {
     }
 
     // ── B1-4 格式类快捷键 ────────────────────────────────────────────
-    // ⌃` 行内代码（选区包裹）
+    // ⌘⇧` 行内代码（选区包裹；Typora 官方表 Code = Command+Shift+`，W1.9 纠偏）
     await setDoc('hello', 0, 5);
-    await press('Control+`');
-    check('⌃` wraps selection as inline code', (await getText()) === '`hello`', `got=${JSON.stringify(await getText())}`);
+    await press('Meta+Shift+`');
+    check('⌘⇧` wraps selection as inline code', (await getText()) === '`hello`', `got=${JSON.stringify(await getText())}`);
 
-    // ⌃⇧` 删除线（Typora 格式菜单基准：删除线 [⌃⇧`]；B2 修正原 codeBlock 归属）
+    // ⌃⇧` 删除线（Typora 官方表 Strike = Control+Shift+`）
     await setDoc('hello', 0, 5);
     await press('Control+Shift+`');
     check('⌃⇧` wraps selection as strikethrough', (await getText()) === '~~hello~~', `got=${JSON.stringify(await getText())}`);
+
+    // 反残留：⌃` 在官方表 macOS 下不绑定行内代码（否则意味着 W1.9 纠偏被回退）
+    await setDoc('hello', 0, 5);
+    await press('Control+`');
+    check('⌃` must not wrap as inline code (W1.9 regression guard)', (await getText()) === 'hello', `got=${JSON.stringify(await getText())}`);
 
     // ⌘\ 清除样式（行内 marker + 链接剥除）
     await setDoc('**bold** and ~~strike~~', 0, 23);
@@ -155,6 +165,49 @@ async function main() {
     });
     await new Promise((r) => setTimeout(r, 200));
     check('replaceAll via panel updates document', (await getText()) === 'hi world', `got=${JSON.stringify(await getText())}`);
+
+    // ── G7-KEY-07：Find Next 别名（官方表 F3 / Enter）───────────────────
+    // 官方 Typora：Find Next = `F3` / `Enter`（Win/Linux）、`Cmd+G` / `Enter`（macOS）。
+    // Mellow：主绑定 `Cmd+G`；`F3` / `Shift+F3` 别名已在两平台注册（App.tsx:4477-4478）；
+    // `Enter` 由 CM 查找面板在输入框聚焦时接管。此处验证「Enter 与 F3 都能推进到下一个匹配」。
+    await press('Escape');
+    await setDoc('alpha beta alpha', 0, 0);
+    await press('Meta+F');
+    await frame.evaluate(() => {
+      const find = document.querySelector('.cm-search input[name="search"]');
+      if (find instanceof HTMLInputElement) {
+        find.value = 'alpha';
+        find.dispatchEvent(new Event('input', { bubbles: true }));
+        find.focus();
+      }
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const selPos = () => frame.evaluate(() => {
+      const v = window.editor?.dispatch ? window.editor : window.editor?.view;
+      const s = v.state.selection.main;
+      return { from: s.from, to: s.to, text: v.state.sliceDoc(s.from, s.to) };
+    });
+    const at = (p) => `${p.from}-${p.to}`;
+    const p0 = await selPos();
+    await page.keyboard.press('Enter');
+    await new Promise((r) => setTimeout(r, 300));
+    const p1 = await selPos();
+    // Enter 由 CM 查找面板接管（输入框聚焦时）：无选区 → 首个匹配
+    check('Enter in find panel selects next match (G7-KEY-07)',
+      p1.text === 'alpha' && at(p1) !== at(p0), `${JSON.stringify(p0)} → ${JSON.stringify(p1)}`);
+    await page.keyboard.press('Enter');
+    await new Promise((r) => setTimeout(r, 300));
+    const p2 = await selPos();
+    check('Enter again advances to the following match (G7-KEY-07)',
+      p2.text === 'alpha' && at(p2) !== at(p1), `${JSON.stringify(p1)} → ${JSON.stringify(p2)}`);
+    // F3：把焦点交回编辑区后再按（dev 环境没有原生菜单 accelerator 通道，
+    // 查找输入框聚焦时按键不会经 keymap 分发；真机由菜单快捷键分发，此处不作断言）。
+    await frame.click('.cm-content');
+    await new Promise((r) => setTimeout(r, 250));
+    await press('F3');
+    const p3 = await selPos();
+    check('F3 alias advances to another match with editor focused (G7-KEY-07)',
+      p3.text === 'alpha' && at(p3) !== at(p2), `${JSON.stringify(p2)} → ${JSON.stringify(p3)}`);
 
     // 关闭面板，恢复干净文档
     await press('Escape');

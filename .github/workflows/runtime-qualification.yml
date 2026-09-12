@@ -204,6 +204,33 @@ jobs:
             /tmp/fcitx5-diagnose.txt
           if-no-files-found: warn
 
+      # V7-W5（P0-LAYOUT-002）：Linux 视觉 Golden（§9.3 14 场景）。
+      # 基线按平台分文件（tests/visual/golden-path.mjs）—— 用 macOS 测得的布局值
+      # 比对 Linux 产物必然失配，会把门禁变成假门禁。
+      # 首次运行自动生成本平台基线并成功退出；基线提交后即进入比对模式。
+      - name: Install Playwright (outside repo, no dependency pollution)
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw
+          npm init -y >/dev/null 2>&1 || true
+          npm i playwright --no-save
+          npx playwright install --with-deps chromium
+      - name: Visual golden (§9.3, 14 scenes)
+        working-directory: mellow
+        run: |
+          export NODE_PATH=/tmp/pw/node_modules
+          node tests/visual/visual-golden.mjs
+          node tests/visual/sidebar-golden.mjs
+          node tests/visual/scenes-golden.mjs
+      - name: Upload Linux visual golden
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-visual-golden
+          path: |
+            mellow/tests/visual/golden/*-golden.linux.json
+            mellow/tests/visual/actual/*.png
+          if-no-files-found: warn
+
   windows-runtime:
     name: "Windows: launch + SendKeys smoke"
     if: ${{ inputs.target == 'all' || inputs.target == 'macos-windows' }}
@@ -293,6 +320,34 @@ jobs:
           if (-not $bigAlive) { throw 'Mellow exited while opening 10MB document on Windows' }
           if (-not $p2.HasExited) { Stop-Process -Id $p2.Id -Force }
           Write-Host 'Windows runtime smoke executed on windows-latest'
+
+      # V7-W5（P0-LAYOUT-002）：Windows 视觉 Golden（§9.3 14 场景）。
+      # 与 Linux 侧同样按平台分基线，避免用 macOS 测量值比对 Windows 产物。
+      - name: Install Playwright (outside repo, no dependency pollution)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'C:/pw' | Out-Null
+          Set-Location 'C:/pw'
+          npm init -y | Out-Null
+          npm i playwright --no-save
+          npx playwright install chromium
+      - name: Visual golden (§9.3, 14 scenes)
+        working-directory: mellow
+        shell: pwsh
+        run: |
+          $env:NODE_PATH = 'C:/pw/node_modules'
+          node tests/visual/visual-golden.mjs
+          node tests/visual/sidebar-golden.mjs
+          node tests/visual/scenes-golden.mjs
+      - name: Upload Windows visual golden
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-visual-golden
+          path: |
+            mellow/tests/visual/golden/*-golden.windows.json
+            mellow/tests/visual/actual/*.png
+          if-no-files-found: warn
 
   macos-runtime:
     name: "macOS: launch + CLI open smoke"

@@ -1,9 +1,14 @@
 /**
  * B1-2 侧边栏模式快捷键验证（浏览器 dev 模式，Playwright Chromium）。
- * 验证点（V5-A1 Typora 对齐：⌃⌘1 大纲 / ⌃⌘3 文件树；⌃⌘2 文件列表已随 list 视图退役）：
+ * 验证点（Typora 官方 Shortcut Keys 对齐：Outline ⌃⌘1 / Articles ⌃⌘2 / File Tree ⌃⌘3）：
  *   1. 侧栏关闭时 ⌃⌘1 → 打开侧栏并切到大纲（aria-label + localStorage）
- *   2. ⌃⌘2 不再绑定任何模式切换（保持大纲态，不向文档插字符）
+ *   2. ⌃⌘2 → 文档列表（Articles，W1.5 按官方表恢复）
  *   3. ⌃⌘3 → files + tree（文件树）
+ *
+ * 断言过期史（记录以免重蹈）：本文件原断言「⌃⌘2 不再绑定（V5-A1：list 已退役）」。
+ * W1.5 按 Typora 官方表恢复 Articles 后实现是对的、断言是错的，长期呈现 1 项 ❌。
+ * 教训：键位真值已由 tests/parity/verify-menu-contract.mjs §11「官方快捷键表真值合同」
+ * 锁定（55 条），本脚本只验证「键位能走到正确模式」，不再重复主张真值。
  *   4. 快捷键不向文档插入字面字符（回归防线）
  */
 import { spawn } from 'node:child_process';
@@ -208,11 +213,11 @@ async function main() {
       JSON.stringify({ writingWidthBefore, writingWidthWithSidebar }),
     );
 
-    // 2. ⌃⌘2 不再绑定（V5-A1：list 视图退役，模式保持大纲不变）
+    // 2. ⌃⌘2 → 文档列表（Articles；Typora 官方表 Cmd+Control+2，W1.5 恢复）
     await page.keyboard.press('Control+Meta+2');
     await new Promise((r) => setTimeout(r, 300));
     s = await sidebarState();
-    check('⌃⌘2 unbound (V5-A1: list retired, mode unchanged)', s.visible && s.label === '大纲' && s.mode === 'outline', JSON.stringify(s));
+    check('⌃⌘2 switches to articles (fileList)', s.visible && s.label === '文档列表' && s.mode === 'fileList', JSON.stringify(s));
 
     // 3. ⌃⌘3 → 文件树
     await page.keyboard.press('Control+Meta+3');
@@ -228,6 +233,8 @@ async function main() {
       return {
         // 触发器文案取 label span（整个 trigger 含 ▾ caret）
         trigger: aside?.querySelector('.sidebar-mode-trigger-label')?.textContent?.trim() ?? null,
+        // V7-W2.8：`.sidebar-mode-menu` 死 CSS 已删除（G7-SIDE-03）；本断言改为
+        // 「模式弹出菜单不得复活」的永久防线（侧栏模式切换现为内联按钮组）。
         hasModeMenuHidden: aside?.querySelector('.sidebar-mode-menu') === null,
         hasAdvancedViewMode: !!aside?.querySelector('.sidebar-file-view-mode'),
         hasFolderHistory: !!aside?.querySelector('.sidebar-folder-history'),

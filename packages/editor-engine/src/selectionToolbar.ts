@@ -726,7 +726,30 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
     visible = false;
     hiddenByEscape = false;
     focusIndex = 0;
-    private onResize = (): void => { if (this.visible) this.position(); };
+    /**
+     * 待执行的定位帧句柄。null = 无待执行。
+     *
+     * 背景（真 bug 修复）：`position()` 内部调用 `view.coordsAtPos()`，而 CodeMirror 6
+     * **禁止在 update 周期内读取布局**（抛 "Reading the editor layout isn't allowed
+     * during an update"）。此前 `showEl()` / `update()` 同步调用 `position()`，异常被
+     * `getAnchor` 的 catch 吞掉并返回 null → 立即 `hideEl()`，且 `visible=false` 后
+     * 后续 update 不再重定位 —— 结果是**浮动工具栏永远不会显示**（实测：程序化选区与
+     * 真实鼠标拖拽选区均 `display:none`）。定位必须推迟到 update 周期之外执行。
+     */
+    private pendingPosition: number | null = null;
+    private schedulePosition(): void {
+      if (this.pendingPosition !== null) return;
+      // 无 rAF 的环境（jsdom 等）退化为同步定位，保持纯函数单测可用。
+      if (typeof requestAnimationFrame !== 'function') {
+        this.position();
+        return;
+      }
+      this.pendingPosition = requestAnimationFrame(() => {
+        this.pendingPosition = null;
+        if (this.visible) this.position();
+      });
+    }
+    private onResize = (): void => { if (this.visible) this.schedulePosition(); };
 
     constructor(readonly view: EditorView) {
       activeFormatView = view;
@@ -792,7 +815,7 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
       this.focusIndex = 0;
       this.buttons.forEach((b, i) => { b.tabIndex = i === 0 ? 0 : -1; });
       this.el.style.display = '';
-      this.position();
+      this.schedulePosition();
     }
 
     hideEl(): void {
@@ -824,11 +847,15 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
         else this.hideEl();
       }
       if (this.visible && (update.docChanged || update.selectionSet || update.viewportChanged)) {
-        this.position();
+        this.schedulePosition();
       }
     }
 
     destroy(): void {
+      if (this.pendingPosition !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(this.pendingPosition);
+        this.pendingPosition = null;
+      }
       window.removeEventListener('resize', this.onResize);
       this.el.remove();
     }

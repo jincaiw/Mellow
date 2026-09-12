@@ -63,7 +63,12 @@ for (const item of ledger.items ?? []) {
 for (const domain of ['editing', 'sidebar', 'desktop-ui', 'menu', 'acceptance']) {
   assert(domains.has(domain), `台账缺少关键域：${domain}`);
 }
-assert(ids.size >= 25, '台账必须覆盖至少 25 个 P0 项');
+// V7-W0（2026-09-12）：台账从 32 项扩容到覆盖 §7 分域合同的 50 项。下限提到 45，
+// 防止未来「删条目瘦身」悄悄退回只覆盖少数域。
+assert(ids.size >= 45, `台账必须覆盖至少 45 个 P0 项（当前 ${ids.size}，V7-W0 扩容后基线 50）`);
+for (const domain of ['file', 'layout', 'feature', 'build']) {
+  assert(domains.has(domain), `台账缺少 V7-W0 新增域：${domain}`);
+}
 
 if (errors.length) {
   console.error('Typora parity ledger validation failed:');

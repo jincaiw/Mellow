@@ -11,7 +11,6 @@ use notify::{
 };
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;

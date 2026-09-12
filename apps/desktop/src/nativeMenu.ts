@@ -27,6 +27,10 @@ export interface NativeMenuInputs {
   spellcheck: boolean;
   /** 智能标点（CheckMenuItem 选中态）。 */
   smartPunct: boolean;
+  /** V7-W1.6：状态栏可见性（Typora Win/Linux 显示菜单「状态栏」CheckMenuItem 选中态）。 */
+  statusbar: boolean;
+  /** V7-W2.4：浮动编辑器工具栏启用态（Typora 1.14 View → Toolbar CheckMenuItem 选中态）。 */
+  toolbar: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制 → localStorage → 装配边界生效）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
 }
@@ -49,6 +53,8 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
     themeMode: inputs.themeMode,
     spellcheck: inputs.spellcheck,
     smartPunct: inputs.smartPunct,
+    statusbar: inputs.statusbar,
+    toolbar: inputs.toolbar,
     shortcutOverrides: inputs.shortcutOverrides,
   });
 }

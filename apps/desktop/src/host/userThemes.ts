@@ -36,6 +36,9 @@ export async function loadUserThemes(): Promise<MellowTheme[]> {
     const themes: MellowTheme[] = [];
     for (const entry of entries) {
       if (entry.is_directory || !entry.name.toLowerCase().endsWith('.css')) continue;
+      // V7-W5：`*.user.css` 是 user CSS 分层文件（base / <theme>），**不是主题**——
+      // 若不排除，会被注册成名为 "base.user" 的伪主题出现在主题菜单里。
+      if (entry.name.toLowerCase().endsWith('.user.css')) continue;
       // read_text 返回 { content } 结构（App 既有用法）；失败跳过单个文件不阻塞其余
       const result = await invoke<{ content: string }>('read_text', { path: entry.path }).catch(() => null);
       const content = result?.content;

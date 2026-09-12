@@ -10,6 +10,23 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/**
+ * V7-W3.9：行内 hover 操作按钮（Typora Recent Locations 的 trash / pin 图标）。
+ * 用 `<span role="button">` 而非 `<button>` —— 菜单项本身已是 button，
+ * 嵌套 button 属非法 HTML 且会破坏键盘导航与 Enter 语义。
+ */
+export interface ContextMenuAction {
+  /** React key + 语义标识（'pin' / 'trash'） */
+  key: string;
+  /** 图标字符（Typora 为图标，此处用等宽符号保持零依赖） */
+  label: string;
+  /** tooltip / 无障碍名 */
+  title: string;
+  /** 点亮态（如已固定的 pin） */
+  active?: boolean;
+  onClick: () => void;
+}
+
 export interface ContextMenuItem {
   label: string;
   enabled?: boolean;
@@ -17,6 +34,10 @@ export interface ContextMenuItem {
   onClick?: () => void;
   /** C1：子菜单（仅一层） */
   children?: ContextMenuItem[];
+  /** V7-W3.3：勾选标记（排序单选 / Group by Folder 开关） */
+  checked?: boolean;
+  /** V7-W3.9：行内 hover 操作（Typora Recent Locations 的 pin + trash） */
+  actions?: ContextMenuAction[];
 }
 
 /** C1：分隔线条目 */
@@ -213,7 +234,23 @@ export default function ContextMenu({ state, onClose }: ContextMenuProps) {
                 onClose();
               }}
             >
+              <span className="context-menu-check" aria-hidden="true">{item.checked === true ? '✓' : ''}</span>
               <span className="context-menu-item-label">{item.label}</span>
+              {item.actions !== undefined && item.actions.length > 0 && (
+                <span className="context-menu-item-actions">
+                  {item.actions.map((action) => (
+                    <span
+                      key={action.key}
+                      role="button"
+                      tabIndex={-1}
+                      className={`context-menu-action ${action.active === true ? 'active' : ''}`}
+                      title={action.title}
+                      aria-label={action.title}
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); action.onClick(); }}
+                    >{action.label}</span>
+                  ))}
+                </span>
+              )}
               {hasChildren ? <span className="context-menu-submenu-arrow" aria-hidden="true">›</span> : null}
             </button>
           );
@@ -243,7 +280,23 @@ export default function ContextMenu({ state, onClose }: ContextMenuProps) {
                 onClose();
               }}
             >
+              <span className="context-menu-check" aria-hidden="true">{item.checked === true ? '✓' : ''}</span>
               <span className="context-menu-item-label">{item.label}</span>
+              {item.actions !== undefined && item.actions.length > 0 && (
+                <span className="context-menu-item-actions">
+                  {item.actions.map((action) => (
+                    <span
+                      key={action.key}
+                      role="button"
+                      tabIndex={-1}
+                      className={`context-menu-action ${action.active === true ? 'active' : ''}`}
+                      title={action.title}
+                      aria-label={action.title}
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); action.onClick(); }}
+                    >{action.label}</span>
+                  ))}
+                </span>
+              )}
             </button>
           ))}
         </div>

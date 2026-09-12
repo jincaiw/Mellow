@@ -80,3 +80,28 @@ export function serializeRecentFolders(list: string[]): string | null {
     return null;
   }
 }
+
+/**
+ * V7-W3.9 —— Recent Locations 的 **trash（移除）** 与 **pin（固定）** 语义。
+ *
+ * Typora 官方 File Management 原文：「hover on folders under "Recent Locations" …
+ * click the "trash" icon to remove it from the list … click the "Pin" icon to pin
+ * the folder … pinned folders will also show in `File → Open Recent` and Open Quickly」。
+ *
+ * 实现选择：pin 集合持久化于**独立键**（`mellow.recent.folders.pinned`），与既有的
+ * `string[]` 最近文件夹载荷解耦 —— 避免改动 `pushRecentFolder` / `parseRecentFolders`
+ * 的类型与既有单测，同时保留旧存档兼容。解析/序列化直接复用同形状的 string[] 工具。
+ */
+export function removeRecentFolder(list: string[], folder: string): string[] {
+  return list.filter((f) => f !== folder);
+}
+
+export function togglePinRecentFolder(pinned: string[], folder: string): string[] {
+  return pinned.includes(folder) ? pinned.filter((f) => f !== folder) : [folder, ...pinned];
+}
+
+/** 固定项置顶（Typora：pinned 优先），其余保持最近打开顺序（稳定排序） */
+export function sortRecentFolders(list: string[], pinned: string[]): string[] {
+  const pinnedSet = new Set(pinned.filter((p) => list.includes(p)));
+  return [...list].sort((a, b) => Number(pinnedSet.has(b)) - Number(pinnedSet.has(a)));
+}

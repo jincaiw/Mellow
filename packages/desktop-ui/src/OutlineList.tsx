@@ -18,14 +18,20 @@ export interface OutlineListProps {
   onToggle: (id: string) => void;
   /** P3.5 右键菜单（App 层组装菜单项） */
   onContextMenu?: (e: React.MouseEvent, item: OutlineHeading) => void;
+  /**
+   * V7-W3.7：强制滚动一次的计数器（Typora 右键 `Highlight Current Header`）。
+   * 仅靠 `selectedId` 变化不够 —— 若当前项已是键盘选中项，再次触发时 state 未变、
+   * effect 不重跑、视口不动，用户会以为该功能失效。
+   */
+  highlightNonce?: number;
 }
 
-export function OutlineList({ items, currentId, selectedId = null, flat, collapsed, onJump, onToggle, onContextMenu }: OutlineListProps) {
+export function OutlineList({ items, currentId, selectedId = null, flat, collapsed, onJump, onToggle, onContextMenu, highlightNonce = 0 }: OutlineListProps) {
   // 键盘选中滚动跟随（block: 'nearest' 不干扰用户当前视口）
   useEffect(() => {
     if (selectedId === null) return;
     document.querySelector('.outline-list .outline-row.selected')?.scrollIntoView({ block: 'nearest' });
-  }, [selectedId, items.length]);
+  }, [selectedId, items.length, highlightNonce]);
   const renderRow = (index: number) => {
     const item = items[index];
     return (

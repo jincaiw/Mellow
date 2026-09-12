@@ -57,7 +57,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Typecheck all packages
         run: pnpm -r --filter '!mellow-desktop' run build
-      - name: "Unit tests (host-api 38 / document-model 26 / app-core 119 / i18n 15 / settings 8 / themes 8 / commands 6 / export 46)"
+      # V7-W5：括号内数字为各包用例数（2026-09-12 实跑），仅作可读性参考；数量变化不会使 Job 失败。
+      - name: "Unit tests (host-api 43 / document-model 26 / app-core 217 / i18n 15 / settings 13 / themes 12 / commands 30 / export 72)"
         run: pnpm -r --filter '!mellow-desktop' run test
 
   editor-engine:
@@ -74,7 +75,7 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: "Test (486: engine + IME Composition Guard / undo corruption)"
+      - name: "Test (1135: engine + IME Composition Guard / undo corruption)"
         working-directory: packages/editor-engine
         run: pnpm test
       - name: Build
@@ -110,6 +111,12 @@ jobs:
       - name: Desktop build (editor bundle + tsc + vite)
         working-directory: apps/desktop
         run: pnpm run build
+      # V7-W5（G7-TYPO-04）：渲染层指纹锁此前从未在 CI 执行 —— 本地 bundle 与 CI 产物
+      # 分叉无人发现（版本化文件名 + 时间戳 query，指纹漂移会静默加载旧引擎）。
+      # 构建后必须跑 verify-release-bundle.mjs 断言 public/editor 产物与清单一致。
+      - name: Verify editor release bundle fingerprint
+        working-directory: apps/desktop
+        run: node scripts/verify-release-bundle.mjs
 
   parity-guard:
     name: Typora parity guardrails (ledger + menu schema + guard self-test)
@@ -124,6 +131,32 @@ jobs:
       - name: Generate Typora baseline dump
         run: node tests/benchmark/generate-typora-menu-dump.mjs
       - name: Parity ledger + menu contract + guard self-test + runtime qualification + UX gate
+        run: npm run parity
+
+  # V7-W5（2026-09-12）：补 Windows 契约门禁。
+  # 背景：本 workflow 此前 6 个 job 全部 runs-on ubuntu-latest，**没有任何 Windows job**，
+  # 与 ADR-0022「Windows 以 GitHub Actions 为正式 Runtime 证据来源」存在落差 ——
+  # 台账中 47 项要求 windows-ci 证据，却只有 workflow_dispatch 手动触发的
+  # runtime-qualification.yml 能产出。本 job 让 windows-ci 成为常态门禁。
+  #
+  # 范围（有意收窄，保证快速且低 flake）：只跑纯 Node 的 parity 契约链，
+  # 与上面的 parity-guard 同源 —— 不需要 pnpm install、不构建 Rust。
+  # 它验证的是「契约在 Windows 的路径分隔符 / 换行 / Node 行为下同样成立」。
+  # 仍属缺口、未纳入本 job：Windows 打包矩阵、安装/卸载、SendKeys 输入交互
+  # （由 runtime-qualification.yml 的 windows-runtime 承担）。
+  windows-parity-guard:
+    name: Typora parity guardrails (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 无 Typora 的 runner 上，生成器会保留仓库已入库的 EXTRACTED 基线而不重写
+      # （见 generate-typora-menu-dump.mjs），故不会退化成 UNVERIFIED。
+      - name: Generate Typora baseline dump
+        run: node tests/benchmark/generate-typora-menu-dump.mjs
+      - name: Parity guard chain
         run: npm run parity
 
   rust-check:

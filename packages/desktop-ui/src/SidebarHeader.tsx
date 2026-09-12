@@ -10,7 +10,7 @@
  */
 import { useRef } from 'react';
 
-export type SidebarMode = 'files' | 'outline' | 'search';
+export type SidebarMode = 'files' | 'fileList' | 'outline' | 'search';
 
 export interface SidebarHeaderProps {
   mode: SidebarMode;
@@ -25,9 +25,9 @@ export interface SidebarHeaderProps {
 export function SidebarHeader({ mode, t, onModeChange, onSearchClick, onHide, hideLabel }: SidebarHeaderProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const label = mode === 'files' ? t('sidebar.files') : mode === 'outline' ? t('sidebar.outline') : t('sidebar.search');
-  // ☰ 目标：files ↔ outline 直接互切；search 下单击返回文件（Typora 行为）
-  const toggleTarget: SidebarMode = mode === 'files' ? 'outline' : 'files';
+  const label = mode === 'files' ? t('sidebar.files') : mode === 'fileList' ? t('sidebar.articles') : mode === 'outline' ? t('sidebar.outline') : t('sidebar.search');
+  // ☰ 目标：files / fileList → outline；outline / search → files（search 下单击返回文件，Typora 行为）
+  const toggleTarget: SidebarMode = mode === 'files' || mode === 'fileList' ? 'outline' : 'files';
   const toggleLabel = toggleTarget === 'outline' ? t('sidebar.switchToOutline') : t('sidebar.switchToFiles');
 
   return (

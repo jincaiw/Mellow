@@ -5,7 +5,7 @@
  * 宿主（App.tsx applyTheme）经 EditorCore.setMdTokens() → 本桥把 --mellow-md-* token
  * 批量写入 iframe documentElement，供 engine 扩展 theme（wysiwygBlocks 等）消费。
  *
- * token 默认值 = Typora Github 主题真值（docs/plans/typora-parity-v5-truth-table.md §3），
+ * token 默认值 = Typora Github 主题真值（docs/plans/archive/typora-parity-v5-truth-table.md §3），
  * 未注入 token 时 fallback 也保持该观感。
  */
 

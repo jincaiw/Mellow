@@ -27,6 +27,12 @@ export interface StatusBarProps {
   fields?: Partial<Record<StatusBarField, boolean>>;
   /** C3：点击 Zoom 项 → 重置为实际大小（Typora 行为） */
   onZoomReset?: () => void;
+  /**
+   * V7-W2.7：点击字数项 → 打开字数统计面板。
+   * Typora 官方文档：「You could click on the "word count" button to show all of those
+   * statistics in the popup panel」—— 故状态栏字数项必须是**按钮**而非纯文本。
+   */
+  onStatsClick?: () => void;
 }
 
 /** E7（Typora 观感收敛）：默认隐藏集——未持久化配置的字段按此渲染（stats/cursor 常显） */
@@ -39,12 +45,21 @@ export function fieldVisible(fields: Partial<Record<StatusBarField, boolean>> | 
   return fields?.[field] ?? !STATUSBAR_DEFAULT_HIDDEN.has(field);
 }
 
-export function StatusBar({ t, dirty, stats, cursorPos, encodingLabel, eolLabel, status, statusText, zoom, fields, onZoomReset }: StatusBarProps) {
+export function StatusBar({ t, dirty, stats, cursorPos, encodingLabel, eolLabel, status, statusText, zoom, fields, onZoomReset, onStatsClick }: StatusBarProps) {
   const f = (field: StatusBarField): boolean => fieldVisible(fields, field);
   return (
     <footer className="statusbar">
       {f('dirty') && <span className="statusbar-item">{dirty ? t('status.unsaved') : t('status.saved')}</span>}
-      {f('stats') && <span className="statusbar-item">{stats}</span>}
+      {/* V7-W2.7：字数项为按钮，点击展开字数统计面板（Typora 行为） */}
+      {f('stats') && (
+        onStatsClick === undefined
+          ? <span className="statusbar-item">{stats}</span>
+          : (
+            <button type="button" className="statusbar-item statusbar-stats" onClick={onStatsClick} title={t('wordCount.title')}>
+              {stats}
+            </button>
+          )
+      )}
       {f('cursor') && <span className="statusbar-item">{cursorPos}</span>}
       <span className="statusbar-sep" />
       {f('markdown') && <span className="statusbar-item">{t('status.markdown')}</span>}

@@ -80,6 +80,13 @@ pub fn new_window(app: tauri::AppHandle) -> Result<(), String> {
     //     .title_bar_style(tauri::TitleBarStyle::Overlay)
     //     .hidden_title(true);
 
+    // V7-W2.1（G7-SHELL-01 修复）：Windows 新窗口此前恒 `.decorations(true)`，
+    // 而前端 Windows 分支渲染自绘 36px titlebar → 出现「系统标题栏 + 应用内 titlebar」
+    // 双栏。此处与主窗口（lib.rs 主窗口装配）保持完全一致：Windows 去系统 chrome，
+    // Linux 维持系统装饰（GNOME/KDE undecorated resize 兼容性风险，记为 D）。
+    #[cfg(target_os = "windows")]
+    let builder = builder.decorations(false);
+
     let window = builder
         .on_navigation(|url| {
             let scheme = url.scheme();

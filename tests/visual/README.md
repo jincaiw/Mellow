@@ -2,11 +2,18 @@
 
 ## visual-golden.mjs（P2-2.7，防回退）
 
-四配置布局契约 Golden：`win-900x600` / `win-1200x800` / `win-1440x900` / `zoom-200`（200% Zoom = fontSize 34px，R2-4 口径 17px = 100%）。
+四配置布局契约 Golden：`win-900x600` / `win-1200x800` / `win-1440x900` / `zoom-200`（200% Zoom = fontSize 32px，100% 基准 = `TYPOGRAPHY_DEFAULTS.fontSize` = 16px —— Typora 真值 html font-size 16px）。
+
+> V7-W2.2（G7-SHELL-03）：本文件的 16 / 1.6 / 860 三个数值取自排版单一真源
+> `packages/settings/src/index.ts` 的 `TYPOGRAPHY_DEFAULTS`，由
+> `tests/parity/verify-visual-golden.mjs` 做字面量交叉比对（漂移即红）。
+> 历史值 17px / ×1.65 / 820px 已废弃：17 是 vendored CoreEditor iframe 的初始值（非 Mellow 默认），
+> 1.65 / 820 是运行时回落残留。
 
 - **采样**（±1px 对比 `golden/layout-golden.json`）：
-  - 外层 shell：titlebar 36px、tabbar（双 tab 才显示——单 tab 自动隐藏是 Typora parity）、editor-container、editor-frame 写作宽度 820px 居中、sidebar / statusbar / mode-indicators **默认不可见**；
-  - iframe 编辑器：`.cm-content` paddingTop **56px**（P2-2.2）、`.cm-line` lineHeight = **fontSize × 1.65**（P2-1.6，setLineHeight stylesheet 作用域在 .cm-line）、fontSize 17 / 34。
+  - 外层 shell：titlebar、editor-container、editor-frame 通栏（A1 写作宽度内部化，max-width none）、sidebar / statusbar / mode-indicators **默认不可见**；
+  - iframe 编辑器：`.cm-content` paddingTop **56px**（P2-2.2）、`.cm-line` lineHeight = **fontSize × 1.6**（`TYPOGRAPHY_DEFAULTS.lineHeight`，setLineHeight stylesheet 作用域在 .cm-line）、fontSize 16 / 32、写作宽度 max-width **860px** + 内容居中。
+  - **实测 vs 期望硬断言**（`assertEditorContract`）：字号 / 行高 / 写作宽度三项都会与单一真源比对，期望字段不再「只记录不比对」。
 - **截图归档**：`actual/<config>.png`（人工评审素材）。
 - 布局回退时退出码 1；基准漂移（有意变更）用 `--update` 重建并随 PR 提交评审。
 

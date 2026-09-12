@@ -28,6 +28,26 @@ const watcherRs = read('apps/desktop/src-tauri/src/watcher.rs');
 const libRs = read('apps/desktop/src-tauri/src/lib.rs');
 const appSource = read('apps/desktop/src/App.tsx');
 
+/**
+ * V7-W2 教训：反残留断言必须针对**代码**而非注释 —— 注释会合法提及历史类名/键名
+ * （如「W2.4 已删除 EditorToolbar」），直接匹配源码会产生假阳性。
+ * 先剥块注释（含 JSX `{/* * /}`）再剥行注释。
+ */
+function stripComments(source) {
+  return source
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+}
+const appCode = stripComments(appSource);
+const fileTreeSrc = read('packages/app-core/src/fileTree.ts');
+const recentFilesSrc = read('packages/app-core/src/recentFiles.ts');
+const settingsSrc = read('packages/settings/src/index.ts');
+const contextMenuSrc = read('apps/desktop/src/ContextMenu.tsx');
+const desktopUiIndex = read('packages/desktop-ui/src/index.ts');
+
 // ── ① Rust watcher 契约 ─────────────────────────────────────────────────
 if (!/pub fn watch_dir\(app: AppHandle, path: String\)/.test(watcherRs)) {
   fail('watcher.rs 缺少 watch_dir 命令（P3.1 目录监听）');
@@ -160,7 +180,9 @@ for (const cls of ['file-tree-list', 'outline-list', 'search-results']) {
 }
 
 // ── ⑧ P3.2 canary：护栏必须能抓住虚拟化回退 ─────────────────────────────
-const virtualDrift = fileListTsx.replace(/return <VirtualRows[\s\S]*?renderItem=\{renderRow\} \/>;/, 'return <>{items.map((item) => renderRow(items.indexOf(item)))}</>;');
+// V7-W3.2：FileList 的 VirtualRows 改为多行 JSX 写法（新增 compact/groupByFolder 参数），
+// 正则同步放宽为「任意空白 + 自闭标签」，否则 canary 匹配不到 → 护栏误报失效。
+const virtualDrift = fileListTsx.replace(/<VirtualRows[\s\S]*?renderItem=\{renderRow\}\s*\/>/, '<>{items.map((item) => renderRow(items.indexOf(item)))}</>');
 if (virtualDrift === fileListTsx) {
   fail('Sidebar 护栏自检失败：无法模拟 FileList 虚拟化回退（P3.2），护栏已失效');
 }
@@ -232,8 +254,10 @@ if (/sidebarMode === 'outline' \? handleOutlineKeyDown : handleSearchKeyDown/.te
   fail('Sidebar 护栏自检失败：无法模拟 outline/search 键盘路由回退（P3.3），护栏已失效');
 }
 
-// ── ⑪ P3.4 File List 键位（G4-SIDE-01）——V5-A1 起 App 层 list 视图退役，
-//    FileListModel 库能力与键位仍受护栏保护，App 层改为退役断言 ──────────────
+// ── ⑪ P3.4 File List 键位（G4-SIDE-01）——V7-W1.5 起 Articles（文档列表）视图
+//    按 Typora 1.14.9 真值恢复装配。V5-A1 的退役前提是「Typora 无列表视图」，
+//    该前提已被真机 Menu.strings「Articles => 文档列表」与 Shortcut Keys
+//    「Articles: Ctrl+Shift+2 / Command+Control+2」证伪 ────────────────────
 const fileListModelTs = read('packages/app-core/src/fileList.ts');
 if (!/navigate\(items: Array<\{ path: string \}>, key: 'up' \| 'down' \| 'left' \| 'right' \| 'enter' \| 'pageup' \| 'pagedown'/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 ←→/PageUp/PageDown 键位（P3.4 G4-SIDE-01）');
@@ -241,26 +265,30 @@ if (!/navigate\(items: Array<\{ path: string \}>, key: 'up' \| 'down' \| 'left' 
 if (!/pageSize = 10/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 pageSize 翻页步长（P3.4）');
 }
-// V5-A1（D1=完全 Typora 化，仅树形）：App.tsx 不得再装配 list 视图
-if (/handleFileListKeyDown|handleFileListSelect|openFileListContextMenu|selectedListPath|filteredFileListItems|fileListOptions/.test(appSource)) {
-  fail('App.tsx 仍残留 File List 装配（V5-A1：list 视图应完全退役）');
+// V7-W1.5：App.tsx 必须装配 Articles 视图（菜单 ⌃⌘2 → fileList 模式 → FileList 组件）
+for (const anchor of ['handleFileListKeyDown', 'filteredFileListItems', "'view.sidebar.fileList'", "sidebarMode === 'fileList'"]) {
+  if (!appSource.includes(anchor)) fail(`App.tsx 缺少 Articles 视图装配锚点 ${anchor}（V7-W1.5）`);
 }
-if (/\bFileList\b[,}]/.test(appSource.split('\n').filter((l) => l.includes('desktop-ui/src')).join('\n'))) {
-  fail('App.tsx 仍从 desktop-ui 导入 FileList 组件（V5-A1）');
+if (!/\bFileList\b[,}]/.test(appSource.split('\n').filter((l) => l.includes('desktop-ui/src')).join('\n'))) {
+  fail('App.tsx 未从 desktop-ui 导入 FileList 组件（V7-W1.5 Articles 视图）');
 }
 // 列表选中滚动跟随（翻页后选中必须可见）
 if (!/\.file-list \.file-list-item\.selected/.test(fileListTsx) || !/scrollIntoView\(\{ block: 'nearest' \}\)/.test(fileListTsx)) {
   fail('FileList 缺少键盘选中滚动跟随（P3.4）');
 }
 
-// ── ⑫ V5-A1 canary：护栏必须能抓住 list 视图回潮 ─────────────────────────
-// 哨兵：侧栏键盘路由必须是「三态直连」（files→tree / outline / search）。
-// 若有人重新引入 tree/list 二级切换，该形态即被破坏，护栏显式报失效。
-if (!appSource.includes("sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown")) {
-  fail('Sidebar 护栏自检失败：侧栏键盘路由形态已变化，⑫ canary 需同步更新（V5-A1）');
+// ── ⑫ V7-W1.5 canary：护栏必须能抓住 Articles 视图回退 ───────────────────
+// 哨兵：侧栏键盘路由必须是「四态直连」（files→tree / fileList→list / outline / search）。
+// 若有人再次移除 Articles 装配，该形态即被破坏，护栏显式报失效。
+const listRouteDrift = appSource.replace("sidebarMode === 'fileList' ? handleFileListKeyDown :", '');
+if (listRouteDrift.includes("sidebarMode === 'fileList' ? handleFileListKeyDown :")) {
+  fail('Sidebar 护栏自检失败：无法模拟 Articles 键盘路由回退（V7-W1.5），护栏已失效');
+}
+if (!appSource.includes("sidebarMode === 'fileList' ? handleFileListKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown")) {
+  fail('Sidebar 护栏自检失败：侧栏键盘路由形态已变化，⑫ canary 需同步更新（V7-W1.5）');
 }
 if (/mellow\.fileSidebar\.mode/.test(appSource) || /'sidebar\.listAria'/.test(appSource)) {
-  fail('App.tsx 仍引用 list 模式存储/文案（V5-A1）');
+  fail('App.tsx 仍引用旧 list 模式存储/文案（V7-W1.5 使用 fileList + sidebar.articlesAria）');
 }
 
 // ── ⑬ P3.5 File List / Outline / Search 右键菜单 ────────────────────────
@@ -270,11 +298,13 @@ if (!/collapseAll\(items: readonly OutlineHeading\[\]\): void/.test(outlineModel
 }
 for (const handler of ['openOutlineContextMenu', 'openSearchContextMenu']) {
   if (!appSource.includes(`const ${handler} = useCallback`)) {
-    fail(`App.tsx 缺少 ${handler}（P3.5 右键菜单；V5-A1 起 openFileListContextMenu 随 list 退役）`);
+    fail(`App.tsx 缺少 ${handler}（P3.5 右键菜单；Articles 视图复用 openTreeContextMenu）`);
   }
 }
 // 行右键经组件 props 透传（与 FileTree onContextMenu 同一模式）
-if (!/onContextMenu=\{openOutlineContextMenu\} \/>/.test(appSource) || !/onContextMenu=\{openSearchContextMenu\} \/>/.test(appSource)) {
+// V7-W3.7：OutlineList 追加了 highlightNonce prop（在 onContextMenu 之后），
+// 故断言收敛为「prop 存在」而非「prop 紧邻闭合标签」。
+if (!/onContextMenu=\{openOutlineContextMenu\}/.test(appSource) || !/onContextMenu=\{openSearchContextMenu\}/.test(appSource)) {
   fail('App.tsx 未把右键处理器透传给 OutlineList/SearchResultsList（P3.5）');
 }
 const uiFileList = read('packages/desktop-ui/src/FileList.tsx');
@@ -335,7 +365,11 @@ if (!/const \[fileFilterQuery, setFileFilterQuery\] = useState\(''\)/.test(appSo
   fail('App.tsx 缺少 fileFilterQuery state（P3.6）');
 }
 if (!/filterFileTree\(fileTreeNodes, fileFilterQuery\)/.test(appSource)) {
-  fail('App.tsx 缺少 filtered 派生 useMemo（P3.6；V5-A1 起 filterFileList 派生随 list 退役）');
+  fail('App.tsx 缺少 filtered 派生 useMemo（P3.6）');
+}
+// V7-W1.5：Articles 视图与 File Tree 共用同一过滤串（两侧派生必须同源）
+if (!/filterFileList\(fileListItems, fileFilterQuery\)/.test(appSource)) {
+  fail('App.tsx 缺少 filterFileList 派生（V7-W1.5 Articles 视图共用侧栏过滤）');
 }
 if (!/model\?\.flatten\(filteredFileTreeNodes\)/.test(appSource)) {
   fail('App.tsx treeFlatten 未改用过滤后序列（P3.6：导航与渲染必须同源）');
@@ -555,6 +589,173 @@ if (benchDrift.includes('expect(ms).toBeLessThan(budgetMs);') || benchDrift.leng
   fail('Sidebar 护栏自检失败：无法模拟微任务预算断言回退（P3.10），护栏已失效');
 }
 
+// ── ㉕ V7-W3.2 File List 契约补齐（compact / folder grouping / PageUp·PageDown）──
+const fileListTsxW32 = read('packages/desktop-ui/src/FileList.tsx');
+for (const marker of ['compact = true', 'groupByFolder', 'file-list-group', "kind === 'group'"]) {
+  if (!fileListTsxW32.includes(marker)) fail(`FileList 缺少 ${marker}（V7-W3.2 域 C「File List」合同）`);
+}
+// 键盘：模型早支持 PageUp/PageDown，此前未接线（契约 §7.3）
+if (!/PageUp: 'pageup'/.test(appCode) || !/PageDown: 'pagedown'/.test(appCode)) {
+  fail('App.tsx Articles 键盘未接线 PageUp / PageDown（V7-W3.2）');
+}
+// 分组渲染要求「同文件夹连续」—— 否则组标题会随排序重复出现
+if (!appCode.includes('fileListItemsForRender') || !appCode.includes('fileListFolderLabel')) {
+  fail('App.tsx 缺少 Articles 分组序列 / 分组标题（V7-W3.2）');
+}
+if (appCode.includes('filteredFileListItems, key')) {
+  fail('App.tsx Articles 键盘导航仍用未分组序列（V7-W3.2：导航与渲染必须同源）');
+}
+if (!stylesCss.includes('.file-list-group') || !stylesCss.includes('.file-list-item.compact')) {
+  fail('styles.css 缺少 .file-list-group / .file-list-item.compact（V7-W3.2）');
+}
+// 「missing 态」：当前文档不在已加载文件夹 → 底部显式提示（Typora 无任何提示）
+if (!appCode.includes('currentDocOutsideFolder') || !appCode.includes('currentOutsideFolder={currentDocOutsideFolder}')) {
+  fail('App.tsx 缺少 missing 态判定与透传（V7-W3.2）');
+}
+const sidebarFooterSrc = read('packages/desktop-ui/src/SidebarFooter.tsx');
+if (!sidebarFooterSrc.includes('sidebar-footer-hint') || !sidebarFooterSrc.includes("t('sidebar.currentOutsideHint')")) {
+  fail('SidebarFooter 缺少 missing 态提示条（V7-W3.2）');
+}
+
+// ── ㉖ V7-W3.3（D-C = ①）侧栏底部文件夹操作菜单 ──────────────────────────
+if (!existsSync('packages/desktop-ui/src/SidebarFooter.tsx')) {
+  fail('缺少 packages/desktop-ui/src/SidebarFooter.tsx（V7-W3.3 D-C = ①）');
+}
+if (!desktopUiIndex.includes('SidebarFooter')) fail('desktop-ui index.ts 未导出 SidebarFooter（V7-W3.3）');
+if (!/<SidebarFooter\b/.test(appCode)) fail('App.tsx 未渲染 SidebarFooter（V7-W3.3）');
+if (!/onMenu=\{openFolderMenu\}/.test(appCode)) fail('App.tsx Footer 未接 openFolderMenu（V7-W3.3）');
+if (!/const openFolderMenu = useCallback/.test(appCode)) fail('App.tsx 缺少 openFolderMenu（V7-W3.3）');
+// 菜单必备项：Refresh / Open Folder…（Typora 官方「pop up menu items for the current folder」）
+if (!appCode.includes("t('sidebar.refresh')") || !appCode.includes("t('sidebar.openFolderTitle')")) {
+  fail('底部文件夹菜单缺少 Refresh / Open Folder…（V7-W3.3）');
+}
+// 只在 Files（树 / 列表）模式出现 —— Typora 的 Outline / Search 面板底部无此条
+if (!/sidebarMode === 'files' \|\| sidebarMode === 'fileList'/.test(appCode)) {
+  fail('SidebarFooter 未按 Files 模式条件渲染（V7-W3.3）');
+}
+if (!stylesCss.includes('.sidebar-footer')) fail('styles.css 缺少 .sidebar-footer（V7-W3.3）');
+
+// ── ㉗ V7-W3.4 排序 5 组 × 升降序（Typora File Management）────────────────
+// 5 组 = Group by Folder + natural / alphabet(name) / modified / created，各升降序
+for (const by of ['natural', 'name', 'modified', 'created']) {
+  if (!appCode.includes(`sortBy: '${by}'`)) fail(`底部菜单缺少排序项 ${by}（V7-W3.4）`);
+}
+if (!appCode.includes('folderFirst:')) fail('底部菜单缺少 Group by Folder 开关（V7-W3.4）');
+if (!appCode.includes('sortAsc: true') || !appCode.includes('sortAsc: false')) {
+  fail('底部菜单缺少升序 / 降序（V7-W3.4 各升降序）');
+}
+for (const key of ['sidebar.sortNatural', 'sidebar.sortName', 'sidebar.sortModified', 'sidebar.sortCreated', 'sidebar.sortAsc', 'sidebar.sortDesc', 'sidebar.foldersFirst']) {
+  if (messagesTs.split(`'${key}':`).length - 1 < 2) fail(`i18n 缺少 ${key} 的 zh/en 双语文案（V7-W3.4）`);
+}
+
+// ── ㉘ V7-W3.5 File Tree 展开全部 / 折叠全部 ──────────────────────────────
+// 惰性读取使「展开全部」不能只改 expanded 集合 —— 必须走 readTree 的 expandAll 递归读取
+if (!/readTree\(fileTreeRoot, model\.expanded, fileTreeOptions, 0, true\)/.test(appCode)) {
+  fail('App.tsx「展开全部」未走 readTree 的 expandAll 递归读取（V7-W3.5）');
+}
+if (!/readTree\(fileTreeRoot, model\.expanded, fileTreeOptions, 0, treeExpandAll\)/.test(appCode)) {
+  fail('refreshFileTree 未消费 treeExpandAll（V7-W3.5）');
+}
+if (!/expandAllPaths\(nodes: readonly FileTreeNode\[\]\)/.test(fileTreeSrc)) fail('FileTreeModel 缺少 expandAllPaths（V7-W3.5）');
+if (!/collapseAllPaths\(\): void/.test(fileTreeSrc)) fail('FileTreeModel 缺少 collapseAllPaths（V7-W3.5）');
+if (!/export function collectFolderPaths/.test(fileTreeSrc)) fail('app-core 缺少 collectFolderPaths（V7-W3.5）');
+if (!/expandAll = false/.test(fileTreeSrc) || !/expandAll\)/.test(fileTreeSrc)) {
+  fail('FileTreeService.readTree 缺少 expandAll 递归参数（V7-W3.5）');
+}
+for (const key of ['files.expandAll', 'files.collapseAll']) {
+  if (messagesTs.split(`'${key}':`).length - 1 < 2) fail(`i18n 缺少 ${key} 的 zh/en 双语文案（V7-W3.5）`);
+}
+
+// ── ㉙ V7-W3.6 文件过滤配置对齐（Typora 1.14 偏好设置项）──────────────────
+if (!settingsSrc.includes("'files.includeGlobs'") || !settingsSrc.includes("'files.excludeGlobs'")) {
+  fail('settings 缺少自定义显示 / 隐藏规则项（V7-W3.6）');
+}
+if (!appCode.includes('parseGlobList')) fail('App.tsx 缺少 parseGlobList（V7-W3.6）');
+for (const id of ['files.includeGlobs', 'files.excludeGlobs']) {
+  if (!appCode.includes(`def.id === '${id}'`)) fail(`App.tsx applySetting 未处理 ${id}（V7-W3.6）`);
+}
+for (const key of ['settings.file.includeGlobs', 'settings.file.excludeGlobs', 'settings.file.includeGlobsDesc', 'settings.file.excludeGlobsDesc']) {
+  if (messagesTs.split(`'${key}':`).length - 1 < 2) fail(`i18n 缺少 ${key} 的 zh/en 双语文案（V7-W3.6）`);
+}
+
+// ── ㉚ V7-W3.7 Outline 右键 Highlight Current Header ─────────────────────
+if (!appCode.includes("t('outline.highlightCurrent')")) fail('Outline 右键缺少 Highlight Current Header（V7-W3.7）');
+// 仅靠 selectedId 变化不足以重跑滚动（当前项已是选中项时点了没反应）→ nonce 强制触发
+if (!appCode.includes('setOutlineHighlightNonce((n) => n + 1)')) fail('App.tsx 缺少 highlightNonce 递増（V7-W3.7）');
+if (!outlineListTsxP33.includes('highlightNonce')) fail('OutlineList 缺少 highlightNonce prop（V7-W3.7）');
+if (messagesTs.split("'outline.highlightCurrent':").length - 1 < 2) {
+  fail('i18n 缺少 outline.highlightCurrent 的 zh/en 双语文案（V7-W3.7）');
+}
+
+// ── ㉛ V7-W3.8 文件操作撤销语义对齐 Typora ────────────────────────────────
+if (!/push\(op: FileTreeUndoOp\): void \{ this\.stack = \[op\]; \}/.test(fileTreeSrc)) {
+  fail('FileTreeHistory 未收敛为深度 1（V7-W3.8：Typora「only the last one file operation is undoable」）');
+}
+if (!fileTreeSrc.includes('only the last **one** file operation')) {
+  fail('fileTree.ts 缺少 Typora 撤销语义的官方依据引用（V7-W3.8）');
+}
+if (!fileTreeSrc.includes('Windows/Linux, delete file is not undoable')) {
+  fail('fileTree.ts 未显式登记 trash 撤销的平台差异（V7-W3.8）');
+}
+
+// ── ㉜ V7-W3.9 Recent Locations 的 pin / trash hover 图标 ─────────────────
+for (const fn of ['export function removeRecentFolder', 'export function togglePinRecentFolder', 'export function sortRecentFolders']) {
+  if (!recentFilesSrc.includes(fn)) fail(`recentFiles.ts 缺少 ${fn}（V7-W3.9）`);
+}
+for (const fn of ['removeRecentFolder', 'togglePinRecentFolder', 'sortRecentFolders']) {
+  if (!appCode.includes(fn)) fail(`App.tsx 未使用 ${fn}（V7-W3.9 Recent Locations）`);
+}
+// pin 集合独立键持久化（避免改动既有 string[] 载荷与旧存档兼容）
+if (!appCode.includes('mellow.recent.folders.pinned')) fail('App.tsx 缺少 pinned 独立持久化键（V7-W3.9）');
+// 行内 hover 操作：ContextMenu 必须支持 actions（pin + trash 两个图标）
+if (!contextMenuSrc.includes('ContextMenuAction') || !contextMenuSrc.includes('context-menu-action')) {
+  fail('ContextMenu 缺少行内 hover 操作（V7-W3.9：Recent 的 pin / trash 图标）');
+}
+for (const key of ['sidebar.noFolder', 'sidebar.folderMenuLabel', 'sidebar.currentOutsideHint', 'sidebar.noRecentFolders']) {
+  if (messagesTs.split(`'${key}':`).length - 1 < 2) fail(`i18n 缺少 ${key} 的 zh/en 双语文案（V7-W3.3/W3.9）`);
+}
+
+// ── ㉝ V7-W3 canary：护栏必须能抓住 W3 契约漂移 ──────────────────────────
+const w33Drift = appCode.replace('<SidebarFooter', '<div');
+if (w33Drift.includes('<SidebarFooter')) fail('Sidebar 护栏自检失败：无法模拟 Footer 回退（V7-W3.3），护栏已失效');
+const w34Drift = appCode.replace("sortBy: 'created'", "sortBy: 'natural'");
+if (w34Drift.includes("sortBy: 'created'")) fail('Sidebar 护栏自检失败：无法模拟排序项回退（V7-W3.4），护栏已失效');
+const w35Drift = appCode.replace('readTree(fileTreeRoot, model.expanded, fileTreeOptions, 0, true)', 'readTree(fileTreeRoot, model.expanded, fileTreeOptions)');
+if (w35Drift.includes('fileTreeOptions, 0, true')) fail('Sidebar 护栏自检失败：无法模拟 expandAll 回退（V7-W3.5），护栏已失效');
+const w38Drift = fileTreeSrc.replace('push(op: FileTreeUndoOp): void { this.stack = [op]; }', 'push(op: FileTreeUndoOp): void { this.stack.push(op); }');
+if (w38Drift.includes('this.stack = [op];')) fail('Sidebar 护栏自检失败：无法模拟撤销深度回退（V7-W3.8），护栏已失效');
+const w39Drift = appCode.replace('sortRecentFolders(recentFolders, pinnedFolders)', 'recentFolders');
+if (w39Drift.includes('sortRecentFolders(recentFolders, pinnedFolders)')) fail('Sidebar 护栏自检失败：无法模拟 pinned 置顶回退（V7-W3.9），护栏已失效');
+
+// ── ㉞ V7-W5（§7.3）：Search 的 invalid regex 就地提示 ───────────────────
+// `buildSearchRegex` 对非法正则返回 null，与「空查询 / 零匹配」不可区分 —— 不提示时
+// 用户会以为是文档里没匹配，实际是语法写错。必须有独立的合法性判定 + 就地提示。
+const globalSearchSrc = read('packages/app-core/src/globalSearch.ts');
+if (!/export function isSearchRegexValid/.test(globalSearchSrc)) {
+  fail('app-core/globalSearch.ts 缺少 isSearchRegexValid（§7.3 invalid regex 就地提示）');
+}
+// 非 regex 模式 / 空查询不得报非法（否则纯文本搜索会误报）
+if (!/if \(!options\.regex \|\| !options\.query\) return true;/.test(globalSearchSrc)) {
+  fail('isSearchRegexValid 必须豁免「非 regex 模式」与「空查询」（否则纯文本搜索被误判为非法）');
+}
+if (!appCode.includes('isSearchRegexValid(') || !appCode.includes('searchRegexInvalid')) {
+  fail('App.tsx 未接入 invalid regex 判定（§7.3）');
+}
+if (!/searchRegexInvalid && <div className="search-regex-invalid"/.test(appCode)) {
+  fail('App.tsx 缺少 invalid regex 就地提示节点（.search-regex-invalid，§7.3）');
+}
+if (!/\.search-regex-invalid \{/.test(read('apps/desktop/src/styles.css'))) {
+  fail('styles.css 缺少 .search-regex-invalid 样式（§7.3）');
+}
+if (messagesTs.split("'search.regexInvalid':").length - 1 < 2) {
+  fail("i18n 缺少 search.regexInvalid 的 zh/en 双语文案（V7-W5 / §7.3）");
+}
+// canary：抹掉 isSearchRegexValid 的豁免分支后，护栏必须转为失败
+const w5RegexDrift = globalSearchSrc.replace('if (!options.regex || !options.query) return true;', '');
+if (/if \(!options\.regex \|\| !options\.query\) return true;/.test(w5RegexDrift)) {
+  fail('Sidebar 护栏自检失败：无法模拟 isSearchRegexValid 豁免分支漂移（V7-W5），护栏已失效');
+}
+
 // ── drift canary：护栏必须能抓住契约漂移 ─────────────────────────────────
 const drifted = watcherRs.replace('RecursiveMode::Recursive', 'RecursiveMode::NonRecursive');
 if (!/RecursiveMode::NonRecursive/.test(drifted)) {
@@ -565,4 +766,15 @@ if (errors.length > 0) {
   throw new Error(`Sidebar contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Sidebar contract: dir watcher recursive + debounced incremental sidebar refresh + unwatch on root change; monotonic watcher ids (collision fixed); all four sidebar modes virtualized (binary-search windowing, measured heights, padding spacer, sticky preserved); outline/search keyboard navigation (arrows/enter/esc/home/end with scroll-follow highlight); file list keyboard complete (arrows/f2/delete/pageup/pagedown reusing tree rename/trash flows); context menus for file list/outline/search modes (bilingual, reusing rename/trash/copy-path flows); persistent filter input + new-file/new-folder quick buttons sharing filtered sequences for render and keyboard navigation; cross-app drag e2e (dataTransfer link contract, tree-internal move, external-drop stale-ref guard) + workspace refresh loop fixed via stable ref indirection; sidebar resize drag (window mousemove/mouseup with cleanup, clamp 200-480, persisted width with out-of-range fallback to 260, <900px narrow suppression without clearing preference, 200% zoom e2e with synthetic mouse drag); four-mode sidebar screenshot golden (files-tree/files-list/outline/search, ±1px layout contract + archived screenshots, shared browser mock host singleton so fs writes are visible to global search); 12 sidebar timing micro-benchmarks in jest (app-core T1-T11: filterFileTree/filterFileList/flatten/navigate full-traversal/pageup-pagedown/outline navigate/collapseAll/search feed+shrink/navigate/matchSearchLine 10k lines/groupSearchResults; desktop-ui T12: buildOffsets 10k + findRange x1000; generous budgets, enforced in pnpm test chain)');
+console.log(`Sidebar contract: dir watcher recursive + debounced incremental sidebar refresh + unwatch on root change; monotonic watcher ids (collision fixed); all four sidebar modes virtualized (binary-search windowing, measured heights, padding spacer, sticky preserved); outline/search keyboard navigation (arrows/enter/esc/home/end with scroll-follow highlight); file list keyboard complete (arrows/f2/delete/pageup/pagedown reusing tree rename/trash flows); context menus for file list/outline/search modes (bilingual, reusing rename/trash/copy-path flows); persistent filter input + new-file/new-folder quick buttons sharing filtered sequences for render and keyboard navigation; cross-app drag e2e (dataTransfer link contract, tree-internal move, external-drop stale-ref guard) + workspace refresh loop fixed via stable ref indirection; sidebar resize drag (window mousemove/mouseup with cleanup, clamp 200-480, persisted width with out-of-range fallback to 260, <900px narrow suppression without clearing preference, 200% zoom e2e with synthetic mouse drag); four-mode sidebar screenshot golden (files-tree/files-list/outline/search, ±1px layout contract + archived screenshots, shared browser mock host singleton so fs writes are visible to global search); 12 sidebar timing micro-benchmarks in jest (app-core T1-T11: filterFileTree/filterFileList/flatten/navigate full-traversal/pageup-pagedown/outline navigate/collapseAll/search feed+shrink/navigate/matchSearchLine 10k lines/groupSearchResults; desktop-ui T12: buildOffsets 10k + findRange x1000; generous budgets, enforced in pnpm test chain); ${''
+}--- V7-W3（侧边栏深度对标）---${''
+} W3.2 File List 契约：compact 默认 + 按文件夹分组（sticky 组标题，单组时自动退化）+ PageUp/PageDown 接线 + 导航与渲染同源 + missing 态提示（当前文档不在已加载文件夹 → 底部可点击载入）;${''
+} W3.3（D-C = ①）侧栏底部「当前文件夹」操作条：Refresh / Open Folder… / 展开折叠 / 排序 / Recent Locations，仅 Files（树·列表）模式出现;${''
+} W3.4 排序 5 组 × 升降序：Group by Folder + natural / alphabet / modified / created，各含升序·降序;${''
+} W3.5 展开全部 / 折叠全部：readTree expandAll 递归读取（惰性读取无法只改 expanded 集合）+ 回填 expanded 使单个折叠可用;${''
+} W3.6 文件过滤配置：显示隐藏文件 / 显示非 Markdown / 自定义显示·隐藏规则（glob，逗号或换行分隔）;${''
+} W3.7 Outline 右键 Highlight Current Header（nonce 强制滚动，避免「点了没反应」）;${''
+} W3.8 文件操作撤销：栈深度收敛为 1（Typora「only the last one file operation is undoable」）+ trash 撤销平台差异显式登记为 D;${''
+} W3.9 Recent Locations：pin（★/☆ 置顶）与 trash（✕ 移除）行内 hover 图标，pinned 独立键持久化;${''
+}--- V7-W5 ---${''
+} Search invalid regex 就地提示：isSearchRegexValid 独立判定（豁免非 regex 模式与空查询）+ UI 提示节点 + subtle 样式 + zh/en 文案（§7.3，此前非法正则被静默吞成「无结果」）`);

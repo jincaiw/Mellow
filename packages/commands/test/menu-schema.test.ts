@@ -72,7 +72,7 @@ describe('MENU_SCHEMA 结构不变量', () => {
     expect(SCHEMA_SHORTCUTS.get('view.typewriter.cycle')).toEqual({ mac: 'F9', winLinux: 'F9' });
   });
 
-  test('文件菜单 §7.2：槽位顺序契约（B1 修订：去 file.newTab，tabs.close→file.closeWindow）', () => {
+  test('文件菜单 §7.2：槽位顺序契约（B1 修订：去 file.newTab，tabs.close→file.closeWindow；V7-W1.1 增 file.reopenClosed）', () => {
     const fileRoot = MENU_SCHEMA.find((root) => root.id === 'file');
     expect(fileRoot).toBeDefined();
     const slots = (fileRoot as NonNullable<typeof fileRoot>).entries.map((entry): string => {
@@ -84,7 +84,7 @@ describe('MENU_SCHEMA 结构不变量', () => {
     });
     expect(slots).toEqual([
       'file.new', 'file.newWindow', '---',
-      'file.open', '[file.recent]', 'quickOpen.open', 'workspace.openFolder', '---',
+      'file.open', '[file.recent]', 'file.reopenClosed', 'quickOpen.open', 'workspace.openFolder', '---',
       'file.info', 'file.revealInFileList', 'file.revealInFileTree', 'file.revealInFinder', '---',
       'file.moveTo', 'file.trash', '---',
       'file.closeWindow', 'file.closeAll', '---',
@@ -92,7 +92,7 @@ describe('MENU_SCHEMA 结构不变量', () => {
       'file.import', '[file.export]', 'file.pageSetup', 'file.print', '---',
       'file.openSnapshotsFolder',
     ]);
-    expect(slots.length).toBe(30);
+    expect(slots.length).toBe(31);
   });
 
   test('B1：file.newTab / tabs.*（close/closeOthers/closeRight/prev/next/showAll/reopenClosed）不再存在于 schema', () => {
@@ -158,7 +158,7 @@ describe('toNativeMenuSpec 物化', () => {
     const fileIds = (platform: 'mac' | 'win-linux') => toNativeMenuSpec({ ...base, platform }).menus
       .find((m) => m.id === 'file')!.items
       .filter((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command').map((i) => i.id);
-    // mac Typora 1.14.9 File 菜单无「全部关闭」（sdi-truth-table-v1.md 0.8）→ mac 侧过滤
+    // mac Typora 1.14.9 File 菜单无「全部关闭」（archive/sdi-truth-table-v1.md 0.8）→ mac 侧过滤
     expect(fileIds('mac')).toContain('file.closeWindow');
     expect(fileIds('mac')).not.toContain('file.closeAll');
     expect(fileIds('win-linux')).toContain('file.closeAll');
@@ -197,8 +197,8 @@ describe('toNativeMenuSpec 物化', () => {
     expect(system?.checked).toBe(false);
   });
 
-  test('checkState：spellcheck/smartPunct/themeModeSystem 三来源解析', () => {
-    const spec = toNativeMenuSpec({ ...base, platform: 'mac', themeMode: 'system', spellcheck: false, smartPunct: true });
+  test('checkState：spellcheck/smartPunct/themeModeSystem/statusbar/toolbar 五来源解析', () => {
+    const spec = toNativeMenuSpec({ ...base, platform: 'mac', themeMode: 'system', spellcheck: false, smartPunct: true, statusbar: false, toolbar: false });
     const editItems = spec.menus.find((m) => m.id === 'edit')!.items
       .filter((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu');
     const spellToggle = editItems.find((i) => i.label === '#menu.edit.spellMenu')!.items[0] as Extract<NativeMenuItem, { type: 'command' }>;
@@ -208,6 +208,48 @@ describe('toNativeMenuSpec 物化', () => {
     const themeSystem = spec.menus.find((m) => m.id === 'theme')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'theme.mode.system');
     expect(themeSystem?.checked).toBe(true);
+    // V7-W1.6：状态栏开关勾选态（Typora Win/Linux 显示菜单）
+    const statusbar = spec.menus.find((m) => m.id === 'view')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.statusbar.toggle');
+    expect(statusbar).toMatchObject({ id: 'view.statusbar.toggle', checked: false });
+    // 缺省（未传 statusbar）按可见处理（Mellow 默认隐藏由 UI 状态给出，schema 侧保守取 true）
+    const specDefault = toNativeMenuSpec({ ...base, platform: 'mac' });
+    const statusbarDefault = specDefault.menus.find((m) => m.id === 'view')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.statusbar.toggle');
+    expect(statusbarDefault?.checked).toBe(true);
+    // V7-W2.4：浮动编辑器工具栏开关勾选态（Typora 1.14 View → Toolbar）
+    const toolbar = spec.menus.find((m) => m.id === 'view')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.toolbar.toggle');
+    expect(toolbar).toMatchObject({ id: 'view.toolbar.toggle', checked: false });
+    const toolbarDefault = specDefault.menus.find((m) => m.id === 'view')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.toolbar.toggle');
+    expect(toolbarDefault?.checked).toBe(true);
+  });
+
+  test('V7-W1.5：显示菜单顺序对齐 Typora（侧栏三视图 → 模式 → 全屏缩放 → 状态 → Mellow 增强）', () => {
+    const viewIds = toNativeMenuSpec({ ...base, platform: 'mac' }).menus
+      .find((m) => m.id === 'view')!.items
+      .map((i) => (i.type === 'separator' ? '---' : i.type === 'command' ? i.id : i.type));
+    expect(viewIds).toEqual([
+      'view.sidebar.toggle', '---',
+      'view.sidebar.outline', 'view.sidebar.fileList', 'view.sidebar.fileTree', 'search.global', '---',
+      'view.source.toggle', 'view.focus.cycle', 'view.typewriter.cycle', 'view.toolbar.toggle', '---',
+      'window.fullscreen', 'view.zoomReset', 'view.zoomIn', 'view.zoomOut', '---',
+      'view.statusbar.toggle', 'view.wordCount', 'window.alwaysOnTop', '---',
+      'commandPalette.open',
+    ]);
+  });
+
+  test('V7-W1.2/W1.9：缩进方向与官方键位表一致（Indent=Cmd+[/Ctrl+[，Outdent=Cmd+]/Ctrl+]）', () => {
+    expect(SCHEMA_SHORTCUTS.get('paragraph.indentMore')).toEqual({ mac: 'Cmd+[', winLinux: 'Ctrl+[' });
+    expect(SCHEMA_SHORTCUTS.get('paragraph.indentLess')).toEqual({ mac: 'Cmd+]', winLinux: 'Ctrl+]' });
+    expect(SCHEMA_SHORTCUTS.get('format.code')).toEqual({ mac: 'Cmd+Shift+`', winLinux: 'Ctrl+Shift+`' });
+    expect(SCHEMA_SHORTCUTS.get('window.fullscreen')).toEqual({ mac: 'Cmd+Alt+F', winLinux: 'F11' });
+  });
+
+  test('V7-W1.1：file.reopenClosed 声明官方键位（⇧⌘T / Ctrl+Shift+T）', () => {
+    expect(SCHEMA_SHORTCUTS.get('file.reopenClosed')).toEqual({ mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' });
+    expect(SCHEMA_COMMAND_IDS.has('file.reopenClosed')).toBe(true);
   });
 
   test('predefined 条目携带本地化文案且无 id（OS 提供行为）', () => {

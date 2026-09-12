@@ -45,6 +45,28 @@ export interface SettingsSection {
   settings: SettingDefinition[];
 }
 
+/**
+ * 排版默认值**单一真源**（V7-W2.2，修复 G7-SHELL-03）。
+ *
+ * 历史缺陷：同一组默认值散落三处且互相矛盾 ——
+ *   fontSize     settings 16 / iframe 初始 17（CoreEditor 上游值）❌
+ *   lineHeight   settings 1.6 / App 回落 1.65 / Reader CSS 回落 1.65 ❌
+ *   writingWidth settings '860' / App 回落 820 / Reader CSS 820px ❌
+ * 现以本常量为唯一声明处；`SETTINGS_SECTIONS` 的 defaultValue、App 启动/apply 回落、
+ * Reader CSS 变量回落值全部引用此处，禁止再各自硬编码。
+ * 数值依据：Typora 真机 html font-size = 16px（见 archive/typora-parity-v5-truth-table.md）。
+ *
+ * 注意：必须声明在 `SETTINGS_SECTIONS` **之前** —— 该表在模块顶层求值，`const` 无提升。
+ */
+export const TYPOGRAPHY_DEFAULTS = {
+  /** 正文字号（px）；100% 缩放基准。 */
+  fontSize: 16,
+  /** 正文行高（无单位倍率）。 */
+  lineHeight: 1.6,
+  /** 写作限宽（px；'auto' 语义为通栏，由设置项表达）。 */
+  writingWidth: 860,
+} as const;
+
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     id: 'general',
@@ -75,7 +97,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'editor',
     labelKey: 'settings.editor',
     settings: [
-      { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: 16, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig', descriptionKey: 'settings.editor.fontSizeDesc' },
+      { id: 'editor.fontSize', labelKey: 'settings.editor.fontSize', type: 'number', storageKey: 'mellow.editor.fontSize', defaultValue: TYPOGRAPHY_DEFAULTS.fontSize, min: 10, max: 32, step: 1, applyCommand: 'settings.editorConfig', descriptionKey: 'settings.editor.fontSizeDesc' },
       // B3-1 字体族（Typora parity：偏好设置选 font family；CoreEditor setFontFace live apply）
       { id: 'editor.fontFamily', labelKey: 'settings.editor.fontFamily', type: 'select', storageKey: 'mellow.editor.fontFamily', defaultValue: 'system-ui',
         options: [
@@ -103,15 +125,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'line', labelKey: 'settings.focus.line' },
           { value: 'paragraph', labelKey: 'settings.focus.paragraph' },
         ], applyCommand: 'view.focus.off' },
-      { id: 'editor.toolbar', labelKey: 'settings.editor.toolbar', type: 'toggle', storageKey: 'mellow.selectionToolbar.enabled', defaultValue: true, applyCommand: 'view.toolbar.on' },
-      { id: 'editor.writingWidth', labelKey: 'settings.editor.writingWidth', type: 'select', storageKey: 'mellow.editor.writingWidth', defaultValue: '860',
+      { id: 'editor.writingWidth', labelKey: 'settings.editor.writingWidth', type: 'select', storageKey: 'mellow.editor.writingWidth', defaultValue: String(TYPOGRAPHY_DEFAULTS.writingWidth),
         options: [
           { value: '680', labelKey: 'settings.writingWidth.680' },
           { value: '860', labelKey: 'settings.writingWidth.860' },
           { value: '980', labelKey: 'settings.writingWidth.980' },
           { value: 'auto', labelKey: 'settings.writingWidth.auto' },
         ], applyCommand: 'settings.writingWidth' },
-      { id: 'editor.lineHeight', labelKey: 'settings.editor.lineHeight', type: 'number', storageKey: 'mellow.editor.lineHeight', defaultValue: 1.6, min: 1.2, max: 2.2, step: 0.05, applyCommand: 'settings.lineHeight' },
+      { id: 'editor.lineHeight', labelKey: 'settings.editor.lineHeight', type: 'number', storageKey: 'mellow.editor.lineHeight', defaultValue: TYPOGRAPHY_DEFAULTS.lineHeight, min: 1.2, max: 2.2, step: 0.05, applyCommand: 'settings.lineHeight' },
     ],
   },
   {
@@ -143,7 +164,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     settings: [
       { id: 'files.showHidden', labelKey: 'settings.file.showHidden', type: 'toggle', storageKey: 'mellow.fileTree.showHidden', defaultValue: false, applyCommand: 'settings.fileTreeOptions' },
       { id: 'files.showNonMarkdown', labelKey: 'settings.file.showNonMarkdown', type: 'toggle', storageKey: 'mellow.fileTree.showNonMarkdown', defaultValue: false, applyCommand: 'settings.fileTreeOptions' },
+      // V7-W3.6（G7-SIDE-06）：Typora 1.14 的「自定义显示 / 隐藏规则」——
+      // 官方原文「custom rules to show/hide files」；Mellow 用 glob 列表表达
+      // （`shouldShowEntry` 的 includeGlobs / excludeGlobs），逗号或换行分隔。
+      { id: 'files.includeGlobs', labelKey: 'settings.file.includeGlobs', type: 'text', storageKey: 'mellow.fileTree.includeGlobs', defaultValue: '', descriptionKey: 'settings.file.includeGlobsDesc', applyCommand: 'settings.fileTreeOptions' },
+      { id: 'files.excludeGlobs', labelKey: 'settings.file.excludeGlobs', type: 'text', storageKey: 'mellow.fileTree.excludeGlobs', defaultValue: '', descriptionKey: 'settings.file.excludeGlobsDesc', applyCommand: 'settings.fileTreeOptions' },
       { id: 'files.autosave', labelKey: 'settings.file.autosave', type: 'toggle', storageKey: 'mellow.file.autosave', defaultValue: true, applyCommand: 'settings.autosave' },
+      // V7-W5（G7-FEAT-03）：定时保存间隔（分钟）。Typora Win/Linux 默认 5 分钟，但只在
+      // conf/conf.user.json 的 `autoSaveTimer` 中可改、GUI 不可达；Mellow 暴露为设置项 = B。
+      { id: 'files.autosaveTimer', labelKey: 'settings.file.autosaveTimer', type: 'text', storageKey: 'mellow.file.autosaveTimer', defaultValue: '5', descriptionKey: 'settings.file.autosaveTimerDesc', applyCommand: 'settings.autosaveTimer' },
     ],
   },
   {
@@ -172,9 +201,25 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 主题文件夹入口（Typora 偏好→外观→打开主题文件夹；复用 file.openUserCss 命令）
       { id: 'appearance.openThemeFolder', labelKey: 'settings.appearance.openThemeFolder', type: 'action', storageKey: 'mellow.appearance.openThemeFolder', defaultValue: '', applyCommand: 'file.openUserCss' },
       { id: 'appearance.statusbar', labelKey: 'settings.appearance.statusbar', type: 'toggle', storageKey: 'mellow.statusbar.visible', defaultValue: false, applyCommand: 'settings.statusbar' },
+      // V7-W2.4（D-B = ①）：浮动编辑器工具栏开关。
+      // Typora 1.14 What's New 原文：「You can now enable the float toolbar from menubar
+      // → View → Toolbar or from Settings → Appearance」—— 故本项归属「外观」而非「编辑器」，
+      // 且与 View → 工具栏（view.toolbar.toggle）同源（storageKey 相同）。
+      { id: 'appearance.toolbar', labelKey: 'settings.appearance.toolbar', type: 'toggle', storageKey: 'mellow.selectionToolbar.enabled', defaultValue: true, applyCommand: 'settings.toolbar' },
+      // V7-W2.6（G7-SHELL-06）：macOS 字数可见性。
+      // Typora 官方：「For macOS version, the word count are shown when user hover on the
+      // titlebar. To "always" show it, please enable this option in Preferences Panel →
+      // Appearance section.」Mellow 的 macOS 窗口用原生标题栏（装饰在 webview 之外），
+      // 原生栏 hover 事件不进入 webview，无法在 Web 层实现 hover 显隐；因此实现 Typora
+      // 同样提供的「始终显示」选项（把字数并入窗口标题），hover 行为登记为 D（需 tao
+      // 暴露原生 titlebar tracking）。
+      { id: 'appearance.wordCount', labelKey: 'settings.appearance.wordCount', type: 'toggle', storageKey: 'mellow.appearance.wordCount', defaultValue: false, descriptionKey: 'settings.appearance.wordCountDesc', applyCommand: 'settings.wordCount' },
       { id: 'appearance.sidebarMode', labelKey: 'settings.appearance.sidebar', type: 'select', storageKey: 'mellow.sidebar.mode', defaultValue: 'files',
         options: [
           { value: 'files', labelKey: 'settings.sidebar.files' },
+          // V7-W2.4 附带修复：Articles（文档列表）已在 W1.5 实装为第四种侧栏模式，
+          // 但本选项表仍停在三种模式 → 用户无法把「文档列表」设为默认视图。
+          { value: 'fileList', labelKey: 'settings.sidebar.articles' },
           { value: 'outline', labelKey: 'settings.sidebar.outline' },
           { value: 'search', labelKey: 'settings.sidebar.search' },
         ], applyCommand: 'settings.sidebarMode' },

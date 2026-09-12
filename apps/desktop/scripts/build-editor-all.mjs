@@ -7,7 +7,13 @@
  *   5. verify-release-bundle.mjs 自检
  *
  * 用法：node apps/desktop/scripts/build-editor-all.mjs
- * （CI 的 release.yml 已按相同顺序编排；本脚本供本地手工构建/排查）
+ *
+ * V7-W5（G7-TYPO-04）：原注释写「CI 的 release.yml 已按相同顺序编排」是**假的** ——
+ * `ci.yml` 与 `release.yml` 都从未调用本脚本，也从未执行 `verify-release-bundle.mjs`
+ * （渲染层指纹锁形同虚设 → 本地/CI 构建链分叉无人发现）。现由 `ci.yml` 的
+ * `desktop-frontend` job 在 `pnpm run build` 之后显式跑指纹校验，
+ * 并由 `tests/parity/verify-build-pipeline.mjs` 护栏锁定该步骤不得被删。
+ * 本脚本仍供本地一键构建/排查使用。
  */
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';

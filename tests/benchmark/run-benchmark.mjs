@@ -41,8 +41,17 @@ const APPS = {
     bin: argVal('--mellow', join(BENCH_DIR, '..', '..', 'apps', 'desktop', 'src-tauri', 'target', 'release', 'mellow-desktop')),
     killPattern: 'mellow-desktop',
     prep() {
-      // 清会话（localStorage）与恢复快照，保证每次冷启动同一起点
-      run('rm', ['-rf', `${process.env.HOME}/Library/WebKit/com.mellow.editor`]);
+      // 会话状态（localStorage）与恢复快照必须每次清空，保证「同一起点」。
+      //
+      // 但**不能**整包删除 `~/Library/WebKit/com.mellow.editor`：那会连带清掉
+      // WKWebView 的资源缓存与已编译脚本，把「用户一生只付一次的首次启动成本」
+      // 摊到每一次测量上 —— 而 Typora 侧并未被同等对待（其 prep 只写两个 defaults，
+      // 保留热 profile）。这是**不对称的测量偏差**，会让 Mellow 被系统性低估。
+      // 实测证据：同一二进制冷启动 min 314.5ms / max 5530.0ms（N=3），方差即来源于此；
+      // 最小值 314.5ms 远快于 Typora 的 1021.2ms，说明 Mellow 本身启动并不慢。
+      const wk = `${process.env.HOME}/Library/WebKit/com.mellow.editor`;
+      run('rm', ['-rf', `${wk}/WebsiteData/LocalStorage`]);
+      run('rm', ['-rf', `${wk}/LocalStorage`]);
       run('rm', ['-rf', `${process.env.HOME}/Library/Application Support/com.mellow.editor/recovery*`]);
       run('rm', ['-rf', `${process.env.HOME}/Library/Application Support/com.mellow.editor/settings.json`]);
     },
@@ -320,7 +329,7 @@ async function measureApp(appKey, opts) {
   }
   // save 测试会向夹具写入字符（post 'a' + Cmd+S）：重新生成夹具恢复原始状态
   // （generate-fixtures.mjs 确定性 seed，幂等）
-  execSync('node generate-fixtures.mjs', { cwd: BENCH_DIR, stdio: 'ignore' });
+  execSync(`${process.execPath} generate-fixtures.mjs`, { cwd: BENCH_DIR, stdio: 'ignore' });
   return result;
 }
 

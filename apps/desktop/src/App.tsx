@@ -20,6 +20,9 @@ import {
   DocumentState,
   FileTreeModel,
   FileTreeService,
+  FileListModel,
+  FileListService,
+  DEFAULT_FILE_LIST_OPTIONS,
   OutlineModel,
   buildOutline,
   currentHeadingId,
@@ -33,7 +36,12 @@ import {
   scanQuickOpen,
   DEFAULT_FILE_TREE_OPTIONS,
   dirname as fileTreeDirname,
+  basename as fileTreeBasename,
   relativePath as fileTreeRelativePath,
+  parseRecentFolders,
+  removeRecentFolder,
+  togglePinRecentFolder,
+  sortRecentFolders,
   createEditorBridgeFromCore,
   renderReaderHtml,
   countWords,
@@ -44,9 +52,16 @@ import {
   pushRecentFolder,
   serializeRecentFolders,
   filterFileTree,
+  filterFileList,
   documentSuggestedName,
+  // V7-W5（G7-FEAT-03）：定时自动保存（Typora Win/Linux 默认 5 分钟）
+  parseAutosaveMinutes,
+  isAutosaveEnabled,
+  autosaveIntervalMs,
+  // V7-W5（§7.3）：invalid regex 就地提示
+  isSearchRegexValid,
 } from '../../../packages/app-core/src';
-import type { DocumentTab, ExternalChangeDetail, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, DocumentStateInput, RecentFileEntry } from '../../../packages/app-core/src';
+import type { DocumentTab, ExternalChangeDetail, FileListItem, FileTreeNode, FileTreeOptions, OutlineHeading, QuickOpenEntry, SearchGroup, DocumentStateInput, RecentFileEntry } from '../../../packages/app-core/src';
 import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopExtensionHost } from './extensions/extensionHost';
 import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
@@ -72,10 +87,10 @@ import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
 import { buildNativeMenuSpec } from './nativeMenu';
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
-import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting } from '../../../packages/settings/src';
+import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting, TYPOGRAPHY_DEFAULTS } from '../../../packages/settings/src';
 import type { SettingDefinition, ShortcutOverrideMap } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
-import { StatusBar, OutlineList, SearchResultsList, FileTree, SidebarHeader, EditorToolbar, fieldVisible } from '../../../packages/desktop-ui/src';
+import { StatusBar, OutlineList, SearchResultsList, FileTree, FileList, SidebarHeader, SidebarFooter, fieldVisible } from '../../../packages/desktop-ui/src';
 import type { SlashOpenRequest } from '../../../packages/editor-engine/src';
 import type { EditorContextMenuRequest } from '../../../packages/editor-engine/src';
 import ReaderView from './Reader';
@@ -90,14 +105,76 @@ import type { RollbackStatus } from './host/updater';
 import { PRINT_STYLESHEET } from '../../../packages/export/src/printStyle';
 
 const GLOBAL_ASSET_DIR_KEY = 'mellow.assetDir';
+// V7-W5（G7-FEAT-03）：定时自动保存间隔（分钟）。Typora Win/Linux 默认 5 分钟且只存在
+// conf/conf.user.json 的 `autoSaveTimer`（GUI 不可达）；Mellow 用 localStorage 暴露为设置项。
+const AUTOSAVE_TIMER_KEY = 'mellow.file.autosaveTimer';
+// V7-W5：Typora 式 user CSS 分层（appData 目录下）。base = 全主题；<themeId> = 主题专属。
+const USER_CSS_BASE_FILE = 'base.user.css';
+const USER_CSS_FILE = 'user.css';
+/** 用户主题目录（与 `host/userThemes.ts` 的 `appData/themes` 同值）。 */
+const USER_THEMES_DIR = 'themes';
+/** 安全读取 localStorage（隐私模式 / 禁用存储时抛异常，不得让启动崩）。 */
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+/**
+ * 主题专属 user CSS 的文件名（Typora：`themes/<theme>.user.css`）。
+ * 用户主题 id 形如 `user/<name>`，`/` 不是合法文件名字符 → 取 `<name>` 段。
+ */
+function themeUserCssFile(themeId: string): string {
+  return `${themeId.replace(/^user\//, '')}.user.css`;
+}
+/**
+ * 正文字号有**两个消费方**：编辑器（iframe，走 `setEditorConfig('setFontSize')`）与
+ * Reader（`.mellow-reader`，CSS 变量 `--mellow-content-font-size`）。两者必须同源，
+ * 否则出现「设置里 20px、Reader 仍 16px」—— §6.1「排版默认值三处不一致」的残余。
+ */
+function applyContentFontSize(px: number): void {
+  document.documentElement.style.setProperty('--mellow-content-font-size', `${px}px`);
+}
 // 帮助菜单外链（Typora 帮助菜单补全：快速上手 / Markdown 参考 / 反馈）
 const HELP_URL_QUICK_START = 'https://github.com/jincaiw/Mellow#readme';
 const HELP_URL_WEBSITE = 'https://github.com/jincaiw/Mellow';
 const HELP_URL_MARKDOWN_REFERENCE = 'https://commonmark.cn/help/';
 const HELP_URL_FEEDBACK = 'https://github.com/jincaiw/Mellow/issues';
+// V7-W1.11：Typora 主题菜单「获取主题」对标入口（Typora → 官方 Theme Gallery；
+// Mellow → 主题文档/社区主题说明，与「打开主题文件夹」配套）
+const THEME_GALLERY_URL = 'https://github.com/jincaiw/Mellow#themes';
 const TABS_SESSION_KEY = 'mellow.tabs.session';
 const RECENT_FILES_KEY = 'mellow.recent.files';
+// V7-W1.1：已关闭文件栈（Typora File → Reopen Closed File，⇧⌘T）。app 级，跨窗口共享。
+const CLOSED_FILES_KEY = 'mellow.closedFiles';
+/** 已关闭文件栈上限（Typora 无上限 UI，取 20 足够且避免 localStorage 无限增长）。 */
+const CLOSED_FILES_LIMIT = 20;
+/** 读取已关闭文件栈（最近关闭的在前）。 */
+function readClosedFiles(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CLOSED_FILES_KEY) ?? '[]') as unknown;
+    return Array.isArray(raw) ? raw.filter((p): p is string => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+/** 压入已关闭文件栈（去重 + 上限裁剪）。 */
+function pushClosedFile(path: string): string[] {
+  const next = [path, ...readClosedFiles().filter((p) => p !== path)].slice(0, CLOSED_FILES_LIMIT);
+  try { localStorage.setItem(CLOSED_FILES_KEY, JSON.stringify(next)); } catch { /* noop */ }
+  return next;
+}
+/**
+ * V7-W3.6（G7-SIDE-06）：Typora 1.14 的「自定义显示 / 隐藏规则」——
+ * 逗号或换行分隔的 glob 列表（`shouldShowEntry` 消费 `includeGlobs` / `excludeGlobs`）。
+ */
+function parseGlobList(raw: string): string[] {
+  return raw.split(/[,\n]/).map((s) => s.trim()).filter((s) => s.length > 0);
+}
 const RECENT_FOLDERS_KEY = 'mellow.recent.folders';
+/** V7-W3.9：Recent Locations 的 pin（固定）集合 —— 独立键，避免改动既有 string[] 载荷。 */
+const PINNED_FOLDERS_KEY = 'mellow.recent.folders.pinned';
 const FILE_TREE_ROOT_KEY = 'mellow.fileTree.root';
 const FILE_TREE_OPTIONS_KEY = 'mellow.fileTree.options';
 const OUTLINE_OPTIONS_KEY = 'mellow.outline.options';
@@ -227,7 +304,10 @@ export default function App() {
   // File Tree / Articles File List（PRD §14/§15/§59/§60；不创建 .mellow workspace 文件）
   const fileTreeServiceRef = useRef<FileTreeService | null>(null);
   const fileTreeModelRef = useRef<FileTreeModel | null>(null);
-  // V5-A1：FileListService 随 list 视图退役（fileList.ts 库代码与单测保留）
+  // V7-W1.5：Articles（文档列表）视图复建 —— Typora 显示菜单为 Outline / Articles /
+  // File Tree 三视图；V5-A1 曾随 SDI 一并退役，现按 Typora 1.14.9 真值恢复（⌃⌘2）。
+  const fileListServiceRef = useRef<FileListService | null>(null);
+  const fileListModelRef = useRef<FileListModel>(new FileListModel());
   const outlineModelRef = useRef<OutlineModel>(new OutlineModel());
   const outlineActiveRef = useRef<string | null>(null);
   const refreshOutlineRef = useRef<(head?: number | null) => void>(() => {});
@@ -432,19 +512,20 @@ export default function App() {
     hostRef.current?.focus();
   }, [t]);
   /**
-   * E1（Typora 1.14.6 editor toolbar 对标）：常驻编辑器工具栏开关。
-   * 默认隐藏（与 Typora 一致：用户从 View→工具栏 开启），持久化到 localStorage。
+   * V7-W2.4（D-B 裁决 = 方案 §12 选项 ①）：退役常驻 `.editor-toolbar` 横条。
+   *
+   * 依据 Typora 1.14 What's New 原文：「You can now enable the float toolbar from
+   * menubar → View → Toolbar or from Settings → Appearance」—— Typora 只有**一个**
+   * 「编辑器工具栏」概念，且是**浮动**的（Selection 锚定），入口是 View → Toolbar
+   * 或 设置 → 外观。Mellow 此前有两个：引擎级浮动工具栏（`selectionToolbar`，
+   * 设置 → 外观「浮动编辑器工具栏」，默认开）+ 壳层常驻横条（`mellow.editor.toolbarVisible`，
+   * View → 工具栏，默认关，13 键）。后者在 Typora 中不存在，且与前者功能重叠、
+   * 造成「两套格式工具」心智负担与设置项语义割裂。
+   *
+   * 处置：移除常驻横条与其独立持久化键；`View → Toolbar` 改为切换**浮动**工具栏，
+   * 与 Typora `toggleEditorToolbar` 语义一致，并与设置项同源（storageKey
+   * `mellow.selectionToolbar.enabled`）。
    */
-  const [editorToolbarVisible, setEditorToolbarVisible] = useState<boolean>(() => {
-    try { return localStorage.getItem('mellow.editor.toolbarVisible') === '1'; } catch { return false; }
-  });
-  const toggleEditorToolbar = useCallback(() => {
-    setEditorToolbarVisible((prev) => {
-      const next = !prev;
-      try { localStorage.setItem('mellow.editor.toolbarVisible', next ? '1' : '0'); } catch { /* no-op */ }
-      return next;
-    });
-  }, []);
 
   // document lang/dir（未来 RTL：localeDir 由 i18n 提供）
   useEffect(() => {
@@ -455,11 +536,15 @@ export default function App() {
     try {
       // A1（第四轮）：写作宽度不再缩窄 iframe 本体，改经编辑器就绪恢复段
       // setContentMaxWidth 在 iframe 内 .cm-content 限宽居中（滚动条贴窗、两侧背景连续）。
-      // 此处仅保留行高 CSS 变量（Reader 同文档排版用）。
+      // V7-W2.2：Reader 同文档排版也消费 --mellow-writing-width（此前 Reader 硬编码 820px，
+      // 与设置值 860 不一致 —— G7-SHELL-03）。
+      const ww = localStorage.getItem('mellow.editor.writingWidth');
+      const wwv = ww === null || ww === '' ? String(TYPOGRAPHY_DEFAULTS.writingWidth) : ww;
+      document.documentElement.style.setProperty('--mellow-writing-width', wwv === 'auto' ? 'none' : `${wwv}px`);
       const lh = localStorage.getItem('mellow.editor.lineHeight');
-      const lhv = lh === null ? '1.65' : lh;
+      const lhv = lh === null ? String(TYPOGRAPHY_DEFAULTS.lineHeight) : lh;
       document.documentElement.style.setProperty('--mellow-line-height', lhv);
-    } catch { /* 默认 1.65 */ }
+    } catch { /* 单一真源默认值由 CSS fallback 承担 */ }
   }, []);
   // Native Menu 本地化（P1-1.3：locale 纳入 syncNativeMenu 统一重建；PRD §23/附录 J）
   // Print 打印样式表（PRD §77：与 PDF 共享排版常量；@page/@media print 只在打印时生效）
@@ -482,15 +567,20 @@ export default function App() {
   // ref 镜像：openPathInTab 内免依赖读取（「打开单文件 → 父文件夹自动加载」判断）
   const fileTreeRootRef = useRef(fileTreeRoot);
   fileTreeRootRef.current = fileTreeRoot;
-  const [sidebarMode, setSidebarModeState] = useState<'files' | 'outline' | 'search'>(() => {
+  const [sidebarMode, setSidebarModeState] = useState<'files' | 'fileList' | 'outline' | 'search'>(() => {
     const saved = localStorage.getItem('mellow.sidebar.mode');
-    return saved === 'outline' || saved === 'search' ? saved : 'files';
+    return saved === 'outline' || saved === 'search' || saved === 'fileList' ? saved : 'files';
   });
   // U6：侧栏过滤/排序控件默认折叠（⋯ 展开），降低默认界面密度（desktop-ui-design-spec §6）
   const [fileTreeNodes, setFileTreeNodes] = useState<FileTreeNode[]>([]);
+  // V7-W1.5：Articles（文档列表）视图 —— 递归收集的 Markdown 文件，显示名取首个标题
+  const [fileListItems, setFileListItems] = useState<FileListItem[]>([]);
+  const [fileListSelectedPath, setFileListSelectedPath] = useState<string | null>(null);
   // P3.6（G4-SIDE-06）常驻 filter：Files 模式按名称过滤
   const [fileFilterQuery, setFileFilterQuery] = useState('');
   const filteredFileTreeNodes = useMemo(() => filterFileTree(fileTreeNodes, fileFilterQuery), [fileTreeNodes, fileFilterQuery]);
+  // V7-W1.5：Articles 视图与 File Tree 共用同一过滤串（Typora 三视图共用侧栏过滤）
+  const filteredFileListItems = useMemo(() => filterFileList(fileListItems, fileFilterQuery), [fileListItems, fileFilterQuery]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
   const [fileTreeOptions, setFileTreeOptions] = useState<FileTreeOptions>(() => {
     try {
@@ -499,6 +589,14 @@ export default function App() {
       return DEFAULT_FILE_TREE_OPTIONS;
     }
   });
+  // V7-W3.5（G7-SIDE-04）：「展开全部」标記。File Tree 为惰性读取（只下钻 expanded 项），
+  // 未知层级读不到，故必须由 readTree 的 expandAll 递归读取，不能只改 expanded 集合。
+  const [treeExpandAll, setTreeExpandAll] = useState(false);
+  // V7-W3.9：Recent Locations（侧栏底部文件夹菜单）。pinned 独立持久化，固定项置顶。
+  const [recentFolders, setRecentFolders] = useState<string[]>(() => parseRecentFolders(localStorage.getItem(RECENT_FOLDERS_KEY)));
+  const [pinnedFolders, setPinnedFolders] = useState<string[]>(() => parseRecentFolders(localStorage.getItem(PINNED_FOLDERS_KEY)));
+  // V7-W3.2：Articles 是否递归收集子文件夹（Typora Articles 的 current / recursive 开关）
+  const [fileListRecursive, setFileListRecursive] = useState(true);
   const [outlineItems, setOutlineItems] = useState<OutlineHeading[]>([]);
   const [outlineFilter, setOutlineFilter] = useState('');
   const [outlineFlat, setOutlineFlat] = useState(false);
@@ -512,6 +610,9 @@ export default function App() {
   const [currentOutlineId, setCurrentOutlineId] = useState<string | null>(null);
   // P3.3 Outline 键盘选中（与 caret 驱动的 currentOutlineId 分离，避免互相打架）
   const [outlineSelectedId, setOutlineSelectedId] = useState<string | null>(null);
+  // V7-W3.7：强制滚动计数（右键 Highlight Current Header）—— 当前项已是选中项时 state 不变、
+  // effect 不重跑会导致「点了没反应」，用递增 nonce 强制触发 OutlineList 的滚动跟随。
+  const [outlineHighlightNonce, setOutlineHighlightNonce] = useState(0);
   // V7-I7（v1.5.4 Typora parity）：编辑器右侧浮动大纲面板（overlay，不挤压正文）
   const [outlineFloatOpen, setOutlineFloatOpen] = useState(false);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
@@ -537,7 +638,19 @@ export default function App() {
   const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
   const [focusMode, setFocusModeState] = useState<'off' | 'line' | 'paragraph'>('off');
   const [typewriterEnabled, setTypewriterEnabled] = useState(false);
-  const [selectionToolbarEnabled, setSelectionToolbarEnabledState] = useState(true);
+  // V7-W2.4：浮动编辑器工具栏（Typora 1.14 Editor Toolbar）启用态。
+  // 与引擎同源（storageKey `mellow.selectionToolbar.enabled`，引擎侧同样读该键），
+  // 启动必须从持久化值初始化 —— 此前恒为 true，用户关闭后重启会出现
+  // 「菜单勾选态 = 开，实际工具栏 = 关」的真值分裂。
+  const [selectionToolbarEnabled, setSelectionToolbarEnabledState] = useState<boolean>(() => {
+    const def = settingById('appearance.toolbar');
+    return def === undefined ? true : readSetting(def) !== false;
+  });
+  // V7-W2.6（G7-SHELL-06）：字数并入标题栏（Typora macOS「始终显示」选项）
+  const [wordCountInTitle, setWordCountInTitle] = useState<boolean>(() => {
+    const def = settingById('appearance.wordCount');
+    return def !== undefined && readSetting(def) === true;
+  });
   const [readerOpen, setReaderOpen] = useState(false);
   const [readerTitle, setReaderTitle] = useState('');
   const [readerHtml, setReaderHtml] = useState('');
@@ -566,6 +679,8 @@ export default function App() {
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>(() => {
     try { return parseRecentFiles(localStorage.getItem(RECENT_FILES_KEY)); } catch { return []; }
   });
+  // V7-W1.1：已关闭文件栈（Typora File → Reopen Closed File；菜单 enabled 依据）
+  const [closedFiles, setClosedFiles] = useState<string[]>(() => readClosedFiles());
   const [cursorPos, setCursorPos] = useState('');
   // V6-P2 2.2：窗口标题跟随文档名（Typora 行为；原生标题栏显示）
   const [docTitle, setDocTitle] = useState<string | null>(null);
@@ -589,11 +704,20 @@ export default function App() {
   }, [treeFilterOpen]);
   // V6-P2 2.2：窗口标题跟随文档名（Typora 行为：macOS 原生标题栏显示「文档名 — Mellow」，
   // dirty 时前缀 ●；无文档时回落「Mellow」）
+  // V7-W2.6（G7-SHELL-06）：开启「在标题栏显示字数」后把字数并入标题（Typora macOS
+  // 「始终显示」选项；hover 显隐见设置项注释里的 D 类说明）。
   useEffect(() => {
     if (!isTauri()) return;
-    const title = docTitle === null ? 'Mellow' : `${dirty ? '● ' : ''}${docTitle} — Mellow`;
-    void windowServiceRef.current?.setTitle(title);
-  }, [docTitle, dirty]);
+    if (docTitle === null) {
+      void windowServiceRef.current?.setTitle('Mellow');
+      return;
+    }
+    const prefix = dirty ? '● ' : '';
+    const words = wordCountInTitle && wordCountData !== null
+      ? ` — ${t('status.wordCountShort', { count: wordCountData.cjkChars + wordCountData.words })}`
+      : '';
+    void windowServiceRef.current?.setTitle(`${prefix}${docTitle}${words} — Mellow`);
+  }, [docTitle, dirty, wordCountInTitle, wordCountData, t]);
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   // P2-2.6 快捷键自定义 override：Settings 录制 → localStorage → registry/native menu 装配边界生效
   const [shortcutOverrides, setShortcutOverrides] = useState<ShortcutOverrideMap>(() => readShortcutOverrides());
@@ -703,30 +827,54 @@ export default function App() {
     });
   }, [setThemeSettingsAndPersist, themeSettings]);
 
-  // User CSS（appData/user.css，优先级最高）
+  // User CSS（Typora 机制对标，V7-W5）：三层叠加，**后层覆盖前层**——
+  //   ① `base.user.css`        全局，对所有主题生效（Typora base.user.css）
+  //   ② `<themeId>.user.css`   当前主题专属（Typora [theme].user.css）
+  //   ③ `user.css`             Mellow 既有单文件，优先级最高（向后兼容既有用户）
+  // 三个 <style> 元素**同步按序创建**后再异步填内容：读取是异步且完成顺序不确定，
+  // 若按 resolve 顺序 append，层叠顺序会漂移（同一份 CSS 表现时好时坏）。
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
     let cancelled = false;
+    // 目录与 Typora 一致：base / <theme> 在 **themes 目录**；Mellow 既有的单文件
+    // user.css 留在 appData 根（向后兼容既有用户），作为最高优先级层。
+    const layers: ReadonlyArray<{ id: string; subDir: string; file: string }> = [
+      { id: 'mellow-user-css-base', subDir: USER_THEMES_DIR, file: USER_CSS_BASE_FILE },
+      { id: 'mellow-user-css-theme', subDir: USER_THEMES_DIR, file: themeUserCssFile(activeTheme.id) },
+      { id: 'mellow-user-css', subDir: '', file: USER_CSS_FILE },
+    ];
+    // 按 layers 顺序取得（必要时创建）style 节点，保证 DOM 顺序 == 层叠顺序
+    const nodes = layers.map((layer) => {
+      const existing = document.getElementById(layer.id) as HTMLStyleElement | null;
+      if (existing !== null) return existing;
+      const style = document.createElement('style');
+      style.id = layer.id;
+      document.head.appendChild(style);
+      return style;
+    });
     void import('@tauri-apps/api/path').then(async ({ appDataDir, join }) => {
       const { invoke } = await import('@tauri-apps/api/core');
-      const dir = await appDataDir();
-      const userCssPath = await join(dir, 'user.css');
-      const content = await invoke<string>('read_text', { path: userCssPath });
-      if (cancelled) return;
-      let style = document.getElementById('mellow-user-css') as HTMLStyleElement | null;
-      if (style === null) {
-        style = document.createElement('style');
-        style.id = 'mellow-user-css';
-        document.head.appendChild(style);
+      const appData = await appDataDir();
+      for (let i = 0; i < layers.length; i += 1) {
+        try {
+          const dir = layers[i].subDir === '' ? appData : await join(appData, layers[i].subDir);
+          const path = await join(dir, layers[i].file);
+          const content = await invoke<string>('read_text', { path });
+          if (cancelled) return;
+          nodes[i].textContent = content;
+        } catch {
+          if (cancelled) return;
+          // 文件不存在/不可读 → 清空（切换主题后旧主题的专属 CSS 必须立即失效）
+          nodes[i].textContent = '';
+        }
       }
-      style.textContent = content;
     }).catch(() => {
-      /* user.css 不存在或不可读：静默 */
+      /* appDataDir 不可用时整体静默 */
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeTheme.id]);
   const [slashEnabled, setSlashEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SLASH_ENABLED_KEY) !== 'false';
@@ -1235,7 +1383,8 @@ export default function App() {
     hostRef.current?.setSelectionToolbarEnabled(on);
     setSelectionToolbarEnabledState(on);
     setStatusText(on ? t('msg.toolbarOn') : t('msg.toolbarOff'));
-  }, []);
+    // 原生菜单勾选态（View → 工具栏）由 syncNativeMenu 的 selectionToolbarEnabled 依赖自动重建
+  }, [t]);
 
   const toggleSelectionToolbar = useCallback(() => {
     setSelectionToolbarEnabled(!selectionToolbarEnabled);
@@ -1366,6 +1515,28 @@ export default function App() {
       host.insertText(text, head, head);
     }
   }, []);
+
+  /** V7-W1.7：格式 → 图像 → 插入本地图片…（Typora「Insert Local Images」）。
+   *  文件选择器选图 → 光标处插入 Markdown 图片语法；同根路径下优先相对路径（Typora 行为）。 */
+  const insertLocalImage = useCallback(async () => {
+    const dialog = dialogRef.current;
+    const host = hostRef.current;
+    if (!dialog || !host) return;
+    const r = await dialog.showOpen({
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'] }],
+    });
+    if (!r.ok || r.value === null) return;
+    const docPath = filePathRef.current;
+    let src = r.value;
+    if (docPath !== null) {
+      const dir = fileTreeDirname(docPath);
+      // 仅同根（同盘/同卷）用相对路径，避免跨卷产生一长串 ../
+      const rootOf = (p: string): string => p.replace(/\\/g, '/').split('/').filter(Boolean)[0] ?? '';
+      if (rootOf(dir) === rootOf(r.value)) src = fileTreeRelativePath(dir, r.value);
+    }
+    const alt = src.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') ?? '';
+    replaceSlashTrigger(`![${alt}](${src})`);
+  }, [replaceSlashTrigger]);
 
   const persistTabs = useCallback(() => {
     // B1（SDI）：仅主窗口写会话（mellow.tabs.session）；非主窗口（⌘N 新窗）不参与，
@@ -1908,14 +2079,58 @@ export default function App() {
       setFileTreeNodes([]);
       return;
     }
-    const r = await svc.readTree(fileTreeRoot, model.expanded, fileTreeOptions);
+    const r = await svc.readTree(fileTreeRoot, model.expanded, fileTreeOptions, 0, treeExpandAll);
     if (!r.ok) {
       setStatusText(t('msg.treeRefreshFailed', { error: r.error.message }));
       return;
     }
+    // V7-W3.5：expandAll 读取后回填 expanded —— 否则节点的 expanded 为 true 但集合里没有，
+    // 用户点击折叠时 readTree 仍会重新展开（折叠失效）。
+    if (treeExpandAll) model.expandAllPaths(r.value);
     setFileTreeNodes(r.value);
-  }, [fileTreeOptions, fileTreeRoot]);
+  }, [fileTreeOptions, fileTreeRoot, treeExpandAll]);
 
+
+  /** V7-W1.5：Articles（文档列表）视图刷新 —— 递归收集 Markdown，标题取首个标题行。
+   *  Typora Articles 与 File Tree 是同一数据源的两种呈现，故共用 fileTreeRoot。 */
+  const refreshFileList = useCallback(async () => {
+    const svc = fileListServiceRef.current;
+    if (!svc || fileTreeRoot === null) {
+      setFileListItems([]);
+      return;
+    }
+    const r = await svc.readList(
+      fileTreeRoot,
+      { ...DEFAULT_FILE_LIST_OPTIONS, recursive: fileListRecursive },
+      fileTreeOptions,
+    );
+    if (r.ok) setFileListItems(r.value);
+  }, [fileListRecursive, fileTreeOptions, fileTreeRoot]);
+
+  /** V7-W3.2：Articles 分组标题 —— 相对当前根的路径（根本身显示为「.」）。 */
+  const fileListFolderLabel = useCallback((path: string): string => {
+    const dir = fileTreeDirname(path);
+    if (fileTreeRoot === null) return dir;
+    if (dir === fileTreeRoot) return '.';
+    return fileTreeRelativePath(fileTreeRoot, dir);
+  }, [fileTreeRoot]);
+
+  /** V7-W3.2：folder grouping 要求同文件夹的项连续 —— 按文件夹路径排序（组内保持原排序）。 */
+  const fileListItemsForRender = useMemo(() => {
+    if (!fileListRecursive) return filteredFileListItems;
+    return [...filteredFileListItems].sort((a, b) => fileTreeDirname(a.path).localeCompare(fileTreeDirname(b.path)));
+  }, [fileListRecursive, filteredFileListItems]);
+
+  /** V7-W1.5：Articles 列表的修改时间列（同日显示时刻，跨日显示日期）。 */
+  const formatFileTime = useCallback((ms?: number): string => {
+    if (ms === undefined) return '';
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return '';
+    const tag = locale === 'en-US' ? 'en-US' : 'zh-CN';
+    return d.toDateString() === new Date().toDateString()
+      ? d.toLocaleTimeString(tag, { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString(tag, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  }, [locale]);
 
   const setFileTreeOption = useCallback((patch: Partial<FileTreeOptions>) => {
     setFileTreeOptions((prev) => {
@@ -1925,14 +2140,53 @@ export default function App() {
     });
   }, []);
 
-  const setSidebarMode = useCallback((mode: 'files' | 'outline' | 'search') => {
+  const setSidebarMode = useCallback((mode: 'files' | 'fileList' | 'outline' | 'search') => {
     setSidebarModeState(mode);
     localStorage.setItem('mellow.sidebar.mode', mode);
   }, []);
 
-  /** 侧边栏模式快捷键（⌃⌘1/3，Typora 对齐）：切到大纲/文件树；侧栏未开则打开。
-   *  V5-A1：⌃⌘2（文件列表）随 list 视图退役。 */
-  const showSidebarAs = useCallback((mode: 'files' | 'outline' | 'search') => {
+  // ── V7-W3.5（G7-SIDE-04）展开全部 / 折叠全部 ──────────────────────────
+  /** 展开全部：惰性读取导致未知层级读不到，必须走 readTree 的 expandAll 递归读取。 */
+  const handleExpandAllTrees = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const model = fileTreeModelRef.current;
+    if (!svc || !model || fileTreeRoot === null) return;
+    setTreeExpandAll(true);
+    const r = await svc.readTree(fileTreeRoot, model.expanded, fileTreeOptions, 0, true);
+    if (!r.ok) {
+      setStatusText(t('msg.treeRefreshFailed', { error: r.error.message }));
+      return;
+    }
+    model.expandAllPaths(r.value);
+    setFileTreeNodes(r.value);
+  }, [fileTreeOptions, fileTreeRoot]);
+
+  const handleCollapseAllTrees = useCallback(async () => {
+    setTreeExpandAll(false);
+    fileTreeModelRef.current?.collapseAllPaths();
+    await refreshFileTree();
+  }, [refreshFileTree]);
+
+  // ── V7-W3.9 Recent Locations：pin（固定）/ trash（移除） ────────────────
+  const togglePinnedFolder = useCallback((folder: string) => {
+    setPinnedFolders((prev) => {
+      const next = togglePinRecentFolder(prev, folder);
+      try { localStorage.setItem(PINNED_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
+  const forgetRecentFolder = useCallback((folder: string) => {
+    setRecentFolders((prev) => {
+      const next = removeRecentFolder(prev, folder);
+      try { localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
+    setPinnedFolders((prev) => prev.filter((f) => f !== folder));
+  }, []);
+
+  /** 侧边栏模式快捷键（⌃⌘1/2/3，Typora 对齐）：切到大纲／文档列表／文件树；侧栏未开则打开。 */
+  const showSidebarAs = useCallback((mode: 'files' | 'fileList' | 'outline' | 'search') => {
     setSidebarMode(mode);
     setSidebarVisible((v) => {
       if (v) return v;
@@ -2021,33 +2275,98 @@ export default function App() {
   }, [handleOutlineJump, visibleOutlineItems]);
 
   const rememberRecentFolder = useCallback((folder: string) => {
-    // V5-A1：最近文件夹 UI 已移除，仅保留持久化记录（打开文件夹时更新）
-    try {
-      const current = (() => {
-        try {
-          const value = JSON.parse(localStorage.getItem(RECENT_FOLDERS_KEY) ?? '[]') as unknown;
-          return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : [];
-        } catch {
-          return [];
-        }
-      })();
-      const next = pushRecentFolder(current, folder);
-      localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]');
-    } catch { /* noop */ }
+    // V7-W3.9：最近文件夹 UI 经侧栏底部菜单恢复（D-C = ①），此处同步 state + 持久化
+    setRecentFolders((prev) => {
+      const next = pushRecentFolder(prev, folder);
+      try { localStorage.setItem(RECENT_FOLDERS_KEY, serializeRecentFolders(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
   }, []);
+
+  /** 载入文件夹根（Open Folder… 与 Recent Locations 共用，避免两份装配漂移） */
+  const loadFolderRoot = useCallback((folder: string) => {
+    localStorage.setItem(FILE_TREE_ROOT_KEY, folder);
+    setFileTreeRoot(folder);
+    rememberRecentFolder(folder);
+    fileTreeModelRef.current = new FileTreeModel(folder, fileTreeOptions);
+    setSelectedTreePath(null);
+  }, [fileTreeOptions, rememberRecentFolder]);
 
   const chooseFileTreeRoot = useCallback(async () => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     const r = await dialog.showDirectory();
     if (!r.ok || r.value === null) return;
-    localStorage.setItem(FILE_TREE_ROOT_KEY, r.value);
-    setFileTreeRoot(r.value);
-    rememberRecentFolder(r.value);
-    fileTreeModelRef.current = new FileTreeModel(r.value, fileTreeOptions);
-    setSelectedTreePath(null);
+    loadFolderRoot(r.value);
     setStatusText(t('msg.folderOpened', { value: r.value }));
-  }, [fileTreeOptions, rememberRecentFolder]);
+  }, [loadFolderRoot, t]);
+
+  /**
+   * V7-W3.3（D-C = ①）+ W3.4 + W3.9：侧栏底部「当前文件夹」弹出菜单。
+   * Typora 官方 File Management：「At the bottom of the left side bar, users can pop up
+   * menu items for the current folder」—— 含 Refresh / Open Folder… / 展开折叠 / 排序
+   * （Group by Folder + 4 种排序 × 升降序）/ Recent Locations（hover 显示 pin + trash）。
+   */
+  const openFolderMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const sortLabel = (by: FileTreeOptions['sortBy']): string =>
+      by === 'natural' ? t('sidebar.sortNatural')
+        : by === 'name' ? t('sidebar.sortName')
+          : by === 'modified' ? t('sidebar.sortModified')
+            : t('sidebar.sortCreated');
+    const sortItems: ContextMenuItem[] = [
+      { label: t('sidebar.foldersFirst'), checked: fileTreeOptions.folderFirst, onClick: () => setFileTreeOption({ folderFirst: !fileTreeOptions.folderFirst }) },
+      { label: sortLabel('natural'), checked: fileTreeOptions.sortBy === 'natural', onClick: () => setFileTreeOption({ sortBy: 'natural' }) },
+      { label: sortLabel('name'), checked: fileTreeOptions.sortBy === 'name', onClick: () => setFileTreeOption({ sortBy: 'name' }) },
+      { label: sortLabel('modified'), checked: fileTreeOptions.sortBy === 'modified', onClick: () => setFileTreeOption({ sortBy: 'modified' }) },
+      { label: sortLabel('created'), checked: fileTreeOptions.sortBy === 'created', onClick: () => setFileTreeOption({ sortBy: 'created' }) },
+      { label: t('sidebar.sortAsc'), checked: fileTreeOptions.sortAsc, onClick: () => setFileTreeOption({ sortAsc: true }) },
+      { label: t('sidebar.sortDesc'), checked: !fileTreeOptions.sortAsc, onClick: () => setFileTreeOption({ sortAsc: false }) },
+    ];
+    const orderedRecent = sortRecentFolders(recentFolders, pinnedFolders);
+    const recentItems: ContextMenuItem[] = orderedRecent.length === 0
+      ? [{ label: t('sidebar.noRecentFolders'), enabled: false }]
+      : orderedRecent.map((folder) => {
+        const pinned = pinnedFolders.includes(folder);
+        return {
+          label: fileTreeBasename(folder) || folder,
+          onClick: () => loadFolderRoot(folder),
+          actions: [
+            { key: 'pin', label: pinned ? '★' : '☆', title: pinned ? t('sidebar.unpin') : t('sidebar.pin'), active: pinned, onClick: () => togglePinnedFolder(folder) },
+            { key: 'trash', label: '✕', title: t('sidebar.removeRecent'), onClick: () => forgetRecentFolder(folder) },
+          ],
+        };
+      });
+    const items: ContextMenuEntry[] = [
+      { label: t('sidebar.refresh'), onClick: () => { void refreshFilesSidebarRef.current(); } },
+      { label: t('sidebar.openFolderTitle'), onClick: () => { void chooseFileTreeRoot(); } },
+      { separator: true },
+      { label: t('files.expandAll'), enabled: fileTreeRoot !== null && !treeExpandAll, onClick: () => { void handleExpandAllTrees(); } },
+      { label: t('files.collapseAll'), enabled: fileTreeRoot !== null, onClick: () => { void handleCollapseAllTrees(); } },
+    ];
+    // V7-W3.2：Articles（文档列表）专属的 current / recursive 开关只在列表视图下出现
+    if (sidebarMode === 'fileList') {
+      items.push({ label: t('sidebar.recursive'), checked: fileListRecursive, onClick: () => setFileListRecursive((v) => !v) });
+    }
+    items.push(
+      { label: t('sidebar.sort'), children: sortItems },
+      { label: t('sidebar.recentFolders'), children: recentItems },
+    );
+    setContextMenu({ x: event.clientX, y: event.clientY, items });
+  }, [chooseFileTreeRoot, fileListRecursive, fileTreeOptions, fileTreeRoot, forgetRecentFolder, handleCollapseAllTrees, handleExpandAllTrees, loadFolderRoot, pinnedFolders, recentFolders, setFileTreeOption, sidebarMode, t, togglePinnedFolder, treeExpandAll]);
+
+  /**
+   * V7-W3.2「missing 态」：当前文档不在已加载文件夹内。
+   * Typora 此时侧栏无任何 current 高亮，用户会以为列表没刷新 —— Mellow 在底部给出显式提示
+   * 与「载入所在文件夹」入口（B 级增强，登记于 §7.3）。
+   * 注：filePath 只有 ref（`filePathRef`），故借 `docTitle` 触发重渲染后再读取。
+   */
+  const currentDocOutsideFolder = (() => {
+    const p = docTitle === null ? null : filePathRef.current;
+    if (p === null || fileTreeRoot === null) return false;
+    return !(p === fileTreeRoot || p.startsWith(`${fileTreeRoot}/`));
+  })();
 
   const treeFlatten = useCallback(() => {
     const model = fileTreeModelRef.current;
@@ -2064,8 +2383,9 @@ export default function App() {
   }, [fileTreeRoot, selectedTreePath, treeFlatten]);
 
   const refreshFilesSidebar = useCallback(async () => {
-    await refreshFileTree();
-  }, [refreshFileTree]);
+    // V7-W1.5：File Tree 与 Articles 同源刷新（任一视图切换即得最新数据）
+    await Promise.all([refreshFileTree(), refreshFileList()]);
+  }, [refreshFileList, refreshFileTree]);
 
   // P3.7 修复（历史）：refreshFilesSidebar 曾引用 refreshFileList → selectedTreeDir →
   // treeFlatten → filteredFileTreeNodes → fileTreeNodes 长链，effect deps 直接引用会陷入
@@ -2073,15 +2393,15 @@ export default function App() {
   const refreshFilesSidebarRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => { refreshFilesSidebarRef.current = refreshFilesSidebar; }, [refreshFilesSidebar]);
 
-  const openTreeFile = useCallback(async (path: string) => {
+  const openTreeFile = useCallback(async (path: string): Promise<boolean> => {
     const documents = documentsRef.current;
-    if (!documents) return;
+    if (!documents) return false;
     // B1（SDI）：文件树/QuickOpen 打开 = 当前窗口替换（Typora 文件树单击换文档）
-    if (!guardSingleDocument()) return;
+    if (!guardSingleDocument()) return false;
     const r = await documents.readPath(path);
     if (!r.ok) {
       setStatusText(t('msg.openFailed', { error: r.error.message }));
-      return;
+      return false;
     }
     const tab = docStateRef.current.open({
       path: r.value.path,
@@ -2096,7 +2416,21 @@ export default function App() {
     refreshTabsState();
     rememberQuickOpenRecent(path);
     await applyTab(tab);
+    return true;
   }, [applyTab, guardSingleDocument, refreshTabsState, rememberQuickOpenRecent]);
+
+  /** V7-W1.1：重新打开最近关闭的文件（Typora File → Reopen Closed File，⇧⌘T）。
+   *  Typora 多标签语义为「恢复标签页」；Mellow 为 SDI 单文档窗口，等价映射为
+   *  在当前窗口打开（未保存修改仍经 guardSingleDocument 确认）。
+   *  文件已失效（删除/移动）时不弹错——openTreeFile 已给状态栏提示，并保留栈项待重试。 */
+  const handleReopenClosed = useCallback(async () => {
+    const target = readClosedFiles().find((p) => p !== filePathRef.current);
+    if (target === undefined) return;
+    if (!(await openTreeFile(target))) return;
+    const rest = readClosedFiles().filter((p) => p !== target);
+    try { localStorage.setItem(CLOSED_FILES_KEY, JSON.stringify(rest)); } catch { /* noop */ }
+    setClosedFiles(rest);
+  }, [openTreeFile]);
 
   const updateQuickOpenResults = useCallback((entries: QuickOpenEntry[], query: string) => {
     const unique = [...new Map(entries.map((entry) => [entry.path, entry])).values()];
@@ -2184,6 +2518,18 @@ export default function App() {
   const openGlobalSearch = useCallback(() => {
     setSidebarMode('search');
   }, [setSidebarMode]);
+
+  // §7.3：invalid regex 就地提示。`buildSearchRegex` 对非法正则返回 null，与「空查询」
+  // 和「零匹配」不可区分 —— 不提示的话用户会以为是文档里没有匹配，实际是语法写错。
+  const searchRegexInvalid = useMemo(
+    () => searchRegex && searchQuery !== '' && !isSearchRegexValid({
+      query: searchQuery,
+      caseSensitive: searchCase,
+      wholeWord: searchWholeWord,
+      regex: true,
+    }),
+    [searchCase, searchQuery, searchRegex, searchWholeWord],
+  );
 
   const runGlobalSearch = useCallback(async () => {
     const svc = searchRef.current;
@@ -2428,9 +2774,15 @@ export default function App() {
       { label: outlineFlat ? t('outline.switchTree') : t('outline.switchFlat'), enabled: true, onClick: () => setOutlineFlat(!outlineFlat) },
       { label: t('outline.collapseAll'), enabled: !outlineFlat, onClick: () => { outlineModelRef.current.collapseAll(visibleOutlineItems()); refreshOutline(hostRef.current?.getSelectionHead()); } },
       { label: t('outline.expandAll'), enabled: !outlineFlat, onClick: () => { outlineModelRef.current.collapsed.clear(); refreshOutline(hostRef.current?.getSelectionHead()); } },
+      // V7-W3.7：Typora Outline 右键「Highlight Current Header」—— 当前章节滚出视野时快速定位。
+      // 走 setOutlineSelectedId 复用键盘选中态（OutlineList 的 scrollIntoView 效果随之触发）。
+      { label: t('outline.highlightCurrent'), enabled: currentOutlineId !== null, onClick: () => {
+        setOutlineSelectedId(currentOutlineId);
+        setOutlineHighlightNonce((n) => n + 1);
+      } },
     ];
     setContextMenu({ x: event.clientX, y: event.clientY, items });
-  }, [handleOutlineJump, outlineFlat, refreshOutline, visibleOutlineItems]);
+  }, [currentOutlineId, handleOutlineJump, outlineFlat, refreshOutline, visibleOutlineItems]);
 
   /** P3.5 Search 右键菜单：跳转/复制路径/复制相对路径 */
   const openSearchContextMenu = useCallback((event: React.MouseEvent, match: SearchResult) => {
@@ -2474,6 +2826,26 @@ export default function App() {
       void handleTreeTrash();
     }
   }, [handleTreeRename, handleTreeTrash, openTreeFile, refreshFileTree, selectedTreePath, treeFlatten]);
+
+  /** V7-W1.5：Articles（文档列表）键盘导航 —— 单列列表，↑↓/←→ 同义，Enter 打开。
+   *  ⌘F 与 File Tree 一致临时唤出过滤框。 */
+  const handleFileListKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    if (event.key === 'f' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      setTreeFilterOpen(true);
+      return;
+    }
+    // V7-W3.2：补齐 PageUp / PageDown（模型早已支持，此前未接线 —— 契约 §7.3「键盘 ↑↓ Enter PageUp/PageDown」）
+    const map: Record<string, 'up' | 'down' | 'enter' | 'pageup' | 'pagedown' | undefined> = {
+      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'up', ArrowRight: 'down', Enter: 'enter', PageUp: 'pageup', PageDown: 'pagedown',
+    };
+    const key = map[event.key];
+    if (key === undefined) return;
+    event.preventDefault();
+    const r = fileListModelRef.current.navigate(fileListItemsForRender, key);
+    setFileListSelectedPath(r.selected);
+    if (r.open) void openTreeFile(r.open);
+  }, [fileListItemsForRender, openTreeFile]);
 
   useEffect(() => {
     if (fileTreeRoot !== null) {
@@ -2585,6 +2957,8 @@ export default function App() {
     fileServiceRef.current = fsService;
     documentsRef.current = new DocumentService(fsService);
     fileTreeServiceRef.current = new FileTreeService(fsService);
+    // V7-W1.5：Articles（文档列表）数据源（与 File Tree 同一 FileService）
+    fileListServiceRef.current = new FileListService(fsService);
     if (fileTreeRoot !== null) {
       fileTreeModelRef.current = new FileTreeModel(fileTreeRoot, fileTreeOptions);
     }
@@ -2768,11 +3142,17 @@ export default function App() {
         // B3-1 编辑器设置启动恢复（fontSize/fontFamily/lineNumbers/lineWrapping：
         // 持久化在 localStorage，此前仅 live apply 无恢复 → 重启后丢失；B1-1 缩放同享此路径）
         try {
+          // V7-W2.2（G7-SHELL-03）：字号启动恢复必须**无条件 apply**，与行高同一模式。
+          // 历史缺陷：此处硬编码「size !== 17 才 apply」，而 17 是 vendored CoreEditor
+          // iframe 的初始值（`editor-core/CoreEditor/index.ts:40`、`src/bundle.ts:21`），
+          // 并非 Mellow 默认（TYPOGRAPHY_DEFAULTS.fontSize = 16）。后果：用户保持默认
+          // 16px 时该分支被跳过，编辑器实际停在 iframe 的 17px —— 设置显示 16 而正文
+          // 渲染 17。现改为无条件写入设置值（读不到设置时回落同一真源）。
           const sizeDef = settingById('editor.fontSize');
-          const size = sizeDef ? readSetting(sizeDef) : 17;
-          if (typeof size === 'number' && size !== 17) {
-            host.setEditorConfig('setFontSize', { fontSize: size });
-          }
+          const size = sizeDef ? readSetting(sizeDef) : TYPOGRAPHY_DEFAULTS.fontSize;
+          const fontSize = typeof size === 'number' && size > 0 ? size : TYPOGRAPHY_DEFAULTS.fontSize;
+          host.setEditorConfig('setFontSize', { fontSize });
+          applyContentFontSize(fontSize); // Reader 同源（见 applyContentFontSize 注释）
           // B3-2 字体族启动恢复：用户显式设置 > 主题级（Newsprint/Paper 衬线）> CoreEditor 默认。
           // C4 修复（G4-EDIT / theme-verify）：无用户设置且主题未声明字体时也必须显式
           // apply 'ui-monospace' —— iframe 初始 window.config 的 fontFace.family 为
@@ -2799,17 +3179,17 @@ export default function App() {
           if (wrapDef && readSetting(wrapDef) === false) {
             host.setEditorConfig('setLineWrapping', { enabled: false });
           }
-          // P2-2.1 行高启动恢复：CoreEditor 默认 1.5 ≠ Mellow 默认 1.65，必须无条件
-          // apply 对齐（读不到设置时回落 1.65），不能沿用「非默认才 apply」模式。
+          // P2-2.1 行高启动恢复：CoreEditor 默认 1.5 ≠ Mellow 默认（TYPOGRAPHY_DEFAULTS.lineHeight），
+          // 必须无条件 apply 对齐（读不到设置时回落同一真源），不能沿用「非默认才 apply」模式。
           const lineHeightDef = settingById('editor.lineHeight');
-          const lineHeightValue = lineHeightDef ? readSetting(lineHeightDef) : 1.65;
-          host.setEditorConfig('setLineHeight', { lineHeight: typeof lineHeightValue === 'number' && lineHeightValue > 0 ? lineHeightValue : 1.65 });
+          const lineHeightValue = lineHeightDef ? readSetting(lineHeightDef) : TYPOGRAPHY_DEFAULTS.lineHeight;
+          host.setEditorConfig('setLineHeight', { lineHeight: typeof lineHeightValue === 'number' && lineHeightValue > 0 ? lineHeightValue : TYPOGRAPHY_DEFAULTS.lineHeight });
           // A1（第四轮）写作宽度启动恢复：iframe 内 .cm-content 限宽居中
-          // （680/820/980/Auto，默认 820）；Auto(null) = 全宽。替代 v1.4.5 前缩窄
+          // （680/860/980/Auto，默认见 TYPOGRAPHY_DEFAULTS）；Auto(null) = 全宽。替代 v1.4.5 前缩窄
           // iframe 本体的做法，滚动条贴窗缘、两侧编辑器底色连续（Typora parity）。
           {
             const widthDef = settingById('editor.writingWidth');
-            const raw = widthDef ? readSetting(widthDef) : 820;
+            const raw = widthDef ? readSetting(widthDef) : TYPOGRAPHY_DEFAULTS.writingWidth;
             const num = typeof raw === 'number' && raw > 0 ? raw : Number(raw);
             host.setEditorConfig('setContentMaxWidth', { width: raw === 'auto' || Number.isNaN(num) ? null : num });
           }
@@ -3432,12 +3812,25 @@ export default function App() {
   const maybeAutoSaveRef = useRef<(() => Promise<void>) | null>(null);
   const maybeAutoSave = useCallback(async () => {
     if (!dirtyRef.current) return;
-    try {
-      if (localStorage.getItem('mellow.file.autosave') === '0') return;
-    } catch { /* 默认开启 */ }
+    if (!isAutosaveEnabled(readStored('mellow.file.autosave'))) return;
     await handleSave();
   }, [handleSave]);
   maybeAutoSaveRef.current = maybeAutoSave;
+  // V7-W5（G7-FEAT-03）定时自动保存：Typora Win/Linux 默认每 5 分钟保存一次
+  // （官方《Auto Save》：`autoSaveTimer` Double，单位 minute，默认 5）；macOS 为
+  // NSDocument 系统特性、始终开启。Mellow 三平台统一启用（规则 10 共享产品语义），
+  // 并把间隔暴露到 GUI（Typora 需手改 JSON），判定 B（更优）。
+  const [autosaveEnabled, setAutosaveEnabled] = useState(() => isAutosaveEnabled(readStored('mellow.file.autosave')));
+  const [autosaveMinutes, setAutosaveMinutes] = useState(() => parseAutosaveMinutes(readStored(AUTOSAVE_TIMER_KEY)));
+  useEffect(() => {
+    if (!autosaveEnabled) return;
+    const timer = window.setInterval(() => {
+      void maybeAutoSaveRef.current?.();
+    }, autosaveIntervalMs(autosaveMinutes));
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [autosaveEnabled, autosaveMinutes]);
 
   const handleSaveAs = useCallback(async () => {
     const host = hostRef.current;
@@ -3535,6 +3928,8 @@ export default function App() {
     const active = docStateRef.current.doc;
     if (active === null) return;
     if (!confirmCloseDocument(active)) return;
+    // V7-W1.1：关窗前记录路径，供 File → Reopen Closed File（⇧⌘T）恢复
+    if (active.path !== null) setClosedFiles(pushClosedFile(active.path));
     const svc = windowServiceRef.current;
     if (isTauri() && svc) { await armWindowClose(); void svc.close(); return; }
     docStateRef.current.close();
@@ -3550,6 +3945,8 @@ export default function App() {
     syncDocFromEditor();
     const doc = docStateRef.current.doc;
     if (doc !== null && !confirmCloseDocument(doc)) return;
+    // V7-W1.1：系统关闭（红绿灯 / ✕）同样入栈，保证 ⇧⌘T 可恢复
+    if (doc !== null && doc.path !== null) setClosedFiles(pushClosedFile(doc.path));
     const svc = windowServiceRef.current;
     if (isTauri() && svc) { await armWindowClose(); void svc.close(); }
   }, [armWindowClose, confirmCloseDocument, syncDocFromEditor]);
@@ -3625,7 +4022,7 @@ export default function App() {
 
   /** 字号缩放（⇧⌘0 实际大小 / ⇧⌘= 放大 / ⇧⌘- 缩小，Typora 视图菜单对齐）：
    *  读写 editor.fontSize 设置（单一真源）+ live apply；到达 min/max 后静默停。
-   *  R2-4 口径统一：px 旁显示百分比换算（默认 17px = 100%，Reader zoom 同基准）。 */
+   *  百分比换算基准 = 设置项 defaultValue（V7-W2.2 起为 TYPOGRAPHY_DEFAULTS.fontSize = 16px = 100%）。 */
   const adjustFontSize = useCallback((delta: number) => {
     const def = settingById('editor.fontSize');
     if (def === undefined) return;
@@ -3637,6 +4034,7 @@ export default function App() {
     if (next === base) return;
     writeSetting(def, next);
     hostRef.current?.setEditorConfig('setFontSize', { fontSize: next });
+    applyContentFontSize(next); // Reader 同源（见 applyContentFontSize 注释）
     const pct = Math.round((next / Number(def.defaultValue)) * 100);
     setStatusText(`${t('settings.editor.fontSize')}: ${next}px (${pct}%)`);
   }, [t]);
@@ -3654,7 +4052,11 @@ export default function App() {
         break;
       case 'settings.editorConfig': {
         const host = hostRef.current;
-        if (def.id === 'editor.fontSize') host?.setEditorConfig('setFontSize', { fontSize: Number(value) });
+        if (def.id === 'editor.fontSize') {
+          const px = Number(value);
+          host?.setEditorConfig('setFontSize', { fontSize: px });
+          applyContentFontSize(px);
+        }
         else if (def.id === 'editor.fontFamily') host?.setEditorConfig('setFontFace', { family: String(value) });
         else if (def.id === 'editor.lineNumbers') { host?.setEditorConfig('setShowLineNumbers', { enabled: Boolean(value) }); applyLineNumberPrefs(); }
         else if (def.id === 'editor.sourceLineNumbers') applyLineNumberPrefs();
@@ -3669,17 +4071,28 @@ export default function App() {
         void dispatchCommand(v === 'line' ? 'view.focus.line' : v === 'paragraph' ? 'view.focus.paragraph' : 'view.focus.off', 'menu');
         break;
       }
-      case 'view.toolbar.on':
+      case 'settings.toolbar':
+        // V7-W2.4（D-B = ①）：设置 → 外观「浮动编辑器工具栏」与 View → 工具栏同源
+        // （同一 storageKey / 同一状态），故两处入口都收敛到 view.toolbar.on|off。
         void dispatchCommand(value ? 'view.toolbar.on' : 'view.toolbar.off', 'menu');
+        break;
+      case 'settings.wordCount':
+        // V7-W2.6：字数并入标题栏（标题 effect 依赖该 state 重建窗口标题）
+        setWordCountInTitle(Boolean(value));
         break;
       case 'slash.toggleEnabled':
         setSlashEnabled(Boolean(value));
         break;
       case 'settings.fileTreeOptions':
-        setFileTreeOption(def.id === 'files.showHidden' ? { showHidden: Boolean(value) } : { showNonMarkdown: Boolean(value) });
+        // V7-W3.6（G7-SIDE-06）：Typora 1.14 的三项文件过滤配置 —— 显示隐藏文件 /
+        // 显示非 Markdown 文件 / 自定义显示隐藏规则（glob 列表，逗号或换行分隔）。
+        if (def.id === 'files.showHidden') setFileTreeOption({ showHidden: Boolean(value) });
+        else if (def.id === 'files.showNonMarkdown') setFileTreeOption({ showNonMarkdown: Boolean(value) });
+        else if (def.id === 'files.includeGlobs') setFileTreeOption({ includeGlobs: parseGlobList(String(value ?? '')) });
+        else if (def.id === 'files.excludeGlobs') setFileTreeOption({ excludeGlobs: parseGlobList(String(value ?? '')) });
         break;
       case 'settings.sidebarMode':
-        setSidebarMode(String(value) as 'files' | 'outline' | 'search');
+        setSidebarMode(String(value) as 'files' | 'fileList' | 'outline' | 'search');
         break;
       case 'settings.image.assetDir':
         setAssetDir(String(value));
@@ -3718,25 +4131,36 @@ export default function App() {
         break;
       case 'settings.writingWidth': {
         // A1（第四轮）：写作宽度 live apply —— 经 CoreEditor setContentMaxWidth 在
-        // iframe 内 .cm-content 限宽居中（PRD §18：680/820/980/Auto，默认 820）。
+        // iframe 内 .cm-content 限宽居中（PRD §18：680/860/980/Auto，默认见 TYPOGRAPHY_DEFAULTS）。
         // Auto(null) = 全宽（编辑器通栏，Typora parity 滚动条贴窗缘）。
+        // V7-W2.2：同步 --mellow-writing-width，Reader 与编辑器同一宽度真源。
         const v = String(value);
         const n = Number(v);
         hostRef.current?.setEditorConfig('setContentMaxWidth', { width: v === 'auto' ? null : n });
+        document.documentElement.style.setProperty('--mellow-writing-width', v === 'auto' ? 'none' : `${n}px`);
         break;
       }
       case 'settings.lineHeight': {
-        // 行高：编辑器内容行高（PRD §18：1.2–2.2，默认 1.65）。
+        // 行高：编辑器内容行高（PRD §18：1.2–2.2，默认见 TYPOGRAPHY_DEFAULTS）。
         // P2-2.1：CSS 变量只对同文档 Reader 生效；编辑器在 iframe 内读不到外层
         // document 变量，必须经 setEditorConfig('setLineHeight') 走 CoreEditor 通道。
-        const lh = Number(value) || 1.65;
+        const lh = Number(value) || TYPOGRAPHY_DEFAULTS.lineHeight;
         document.documentElement.style.setProperty('--mellow-line-height', String(lh));
         hostRef.current?.setEditorConfig('setLineHeight', { lineHeight: lh });
         break;
       }
       case 'settings.autosave':
+        // V7-W5：同步定时器启停（写盘后再更新 state，保证与持久化一致）
+        setAutosaveEnabled(Boolean(value));
         setStatusText(Boolean(value) ? t('msg.autosaveOn') : t('msg.autosaveOff'));
         break;
+      case 'settings.autosaveTimer': {
+        // V7-W5（G7-FEAT-03）：间隔变更立即重排定时器（Typora 需重启 / 手改 JSON）
+        const minutes = parseAutosaveMinutes(String(value));
+        setAutosaveMinutes(minutes);
+        setStatusText(t('msg.autosaveTimer', { minutes: String(minutes) }));
+        break;
+      }
       case 'settings.reopenLast':
         // 下次启动生效（当前会话不受影响）
         setStatusText(Boolean(value) ? t('msg.reopenLastOn') : t('msg.reopenLastOff'));
@@ -3878,12 +4302,21 @@ export default function App() {
       } },
       // P1-1.9：「在文库中显示 / 在文件树中显示」（Typora 文件菜单，§7.2 第 11/12 项；
       // V5-A1 侧栏仅树形，Reveal in Library 语义等同切到文件树）
-      { id: 'file.revealInFileList', localizedTitle: { zh: '在文库中显示', en: 'Reveal in Library' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files') },
+      { id: 'file.revealInFileList', localizedTitle: { zh: '在文档列表中显示', en: 'Reveal in Library' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('fileList') },
       { id: 'file.revealInFileTree', localizedTitle: { zh: '在文件树中显示', en: 'Reveal in File Tree' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('files') },
+      // V7-W5（G7-FEAT-02）：macOS 走 NSApplication.runPageLayout: 系统面板；
+      // Windows / Linux 的 Tauri 无等价原生 API（Rust 侧返回 Err），改为**可操作提示**
+      // 而非「点了弹错」——告知用户在「打印…」对话框中设置纸张与边距。
       { id: 'file.pageSetup', localizedTitle: { zh: '页面设置…', en: 'Page Setup…' }, category: 'file', context: { scope: 'document' }, enabled: () => isTauri(), execute: () => {
+        if (!platformMac) {
+          setToast({ message: t('file.pageSetup.unsupportedHint') });
+          return;
+        }
         void import('@tauri-apps/api/core').then(({ invoke }) => invoke('page_setup')).catch(() => setToast({ message: t('file.pageSetup.unavailable') }));
       } },
       { id: 'file.open', localizedTitle: { zh: '打开…', en: 'Open…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleOpen() },
+      // V7-W1.1：Typora File → Reopen Closed File（⇧⌘T）；栈为 app 级 localStorage
+      { id: 'file.reopenClosed', localizedTitle: { zh: '重新打开关闭的文件', en: 'Reopen Closed File' }, category: 'file', context: { scope: 'global' }, enabled: () => closedFiles.length > 0, execute: () => void handleReopenClosed() },
       { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
       { id: 'file.saveAs', localizedTitle: { zh: '另存为…', en: 'Save As…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAs() },
       { id: 'document.rename', localizedTitle: { zh: '重命名…', en: 'Rename…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleRenameDocument() },
@@ -3924,7 +4357,15 @@ export default function App() {
       { id: 'view.zoomOut', localizedTitle: { zh: '缩小', en: 'Zoom Out' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(-1) },
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
-      { id: 'view.toolbar.toggle', localizedTitle: { zh: '工具栏', en: 'Toolbar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => toggleEditorToolbar() },
+      { id: 'view.toolbar.toggle', localizedTitle: { zh: '工具栏', en: 'Toolbar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => toggleSelectionToolbar() },
+      // V7-W1.6：状态栏开关（Typora Win/Linux 显示菜单「状态栏」，checkState 与 Settings 同源）
+      { id: 'view.statusbar.toggle', localizedTitle: { zh: '状态栏', en: 'Status Bar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => {
+        setStatusbarVisible((v) => {
+          const next = !v;
+          try { localStorage.setItem('mellow.statusbar.visible', next ? '1' : '0'); } catch { /* noop */ }
+          return next;
+        });
+      } },
       // R2-2 字数统计窗口（Typora 视图→字数统计窗口）
       { id: 'view.wordCount', localizedTitle: { zh: '字数统计窗口', en: 'Word Count Window' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => {
         setWordCountOpen((v) => !v);
@@ -3976,6 +4417,8 @@ export default function App() {
       { id: 'image.copyAll', localizedTitle: { zh: '图片：复制全部到 asset 目录', en: 'Images: Copy All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('copyAll') },
       { id: 'image.downloadRemote', localizedTitle: { zh: '图片：下载远程到 asset 目录', en: 'Images: Download Remote' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('downloadRemote') },
       { id: 'image.uploadAll', localizedTitle: { zh: '图片：上传图片', en: 'Images: Upload All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('uploadAll') },
+      // V7-W1.7：Typora 格式 → 图像 → 插入本地图片…（文件选择器 → 光标处插入图片语法）
+      { id: 'image.insertLocal', localizedTitle: { zh: '插入本地图片…', en: 'Insert Local Images…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void insertLocalImage() },
       { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt(t('prompt.assetDir'), assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
       { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
       { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },
@@ -3990,6 +4433,8 @@ export default function App() {
       { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const all = allThemes(); const next = all[(all.findIndex((t) => t.id === activeTheme.id) + 1) % all.length]; applyThemeById(next.id); } },
       // Typora 主题机制对标（V4 §7.3）：打开主题文件夹（appData/themes，投放 *.css 即成为主题）
       { id: 'theme.openFolder', localizedTitle: { zh: '打开主题文件夹…', en: 'Open Themes Folder…' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void openThemesFolder(); } },
+      // V7-W1.11：Typora 主题菜单「获取主题」（官方 Theme Gallery 入口）
+      { id: 'theme.getThemes', localizedTitle: { zh: '获取主题…', en: 'Get Themes…' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void openerRef.current?.openUrl(THEME_GALLERY_URL); } },
       { id: 'locale.set.zh-CN', localizedTitle: { zh: '语言：简体中文', en: 'Language: 简体中文' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'zh-CN', execute: () => setLocaleSettingPersist('zh-CN') },
       { id: 'locale.set.en-US', localizedTitle: { zh: '语言：English', en: 'Language: English' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'en-US', execute: () => setLocaleSettingPersist('en-US') },
       { id: 'locale.set.system', localizedTitle: { zh: '语言：跟随系统', en: 'Language: Follow System' }, category: 'system', context: { scope: 'global' }, enabled: () => localeSetting !== 'system', execute: () => setLocaleSettingPersist('system') },
@@ -4189,6 +4634,8 @@ export default function App() {
       { id: 'view.sidebar.toggle', localizedTitle: { zh: '切换侧边栏', en: 'Toggle Sidebar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: toggleSidebar },
       { id: 'view.sidebar.outline', localizedTitle: { zh: '大纲', en: 'Outline' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('outline') },
       { id: 'view.sidebar.fileTree', localizedTitle: { zh: '文件树', en: 'File Tree' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('files') },
+      // V7-W1.5：Typora 显示菜单第二视图 Articles（文档列表，⌃⌘2）
+      { id: 'view.sidebar.fileList', localizedTitle: { zh: '文档列表', en: 'Articles' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => showSidebarAs('fileList') },
       // B1（SDI）：tabs.showAll（⇧⌘\ Tab Overview）随多标签能力移除
       // DevTools（仅 debug 构建可用；release 返回 Err → toast 提示）
       { id: 'view.devtools', localizedTitle: { zh: '开发者工具', en: 'Developer Tools' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('open_devtools').catch(() => setToast({ message: t('view.devtools.unavailable') })); } },
@@ -4239,7 +4686,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, closeCurrentWindow, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, toggleEditorToolbar, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, closeCurrentWindow, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
@@ -4439,6 +4886,10 @@ export default function App() {
       themeMode: themeSettings.mode,
       spellcheck: (() => { const def = settingById('editor.spellcheck'); return def ? readSetting(def) !== false : true; })(),
       smartPunct: (() => { const def = settingById('editor.smartPunctuation'); return def ? readSetting(def) === true : false; })(),
+      // V7-W1.6：状态栏开关勾选态（Typora Win/Linux 显示菜单「状态栏」）
+      statusbar: statusbarVisible,
+      // V7-W2.4：浮动编辑器工具栏勾选态（Typora 1.14 View → Toolbar）
+      toolbar: selectionToolbarEnabled,
       // 用户主题（appData/themes/*.css）：随加载/重扫变化重建主题菜单派生
       userThemes: userThemeList.map((theme) => ({ id: theme.id, name: theme.name })),
       // P2-2.6：自定义键位随 override 变化重建原生菜单（accelerator 物化）
@@ -4450,7 +4901,7 @@ export default function App() {
         /* 非 Tauri / 菜单不可用 */
       });
     // menuCheckTick：spellcheck/smartPunct toggle 写 localStorage 后自增触发重建
-  }, [locale, t, recentFiles, activeTheme.id, themeSettings.mode, userThemeList, menuCheckTick, shortcutOverrides]);
+  }, [locale, t, recentFiles, activeTheme.id, themeSettings.mode, userThemeList, menuCheckTick, shortcutOverrides, statusbarVisible, selectionToolbarEnabled]);
 
   // ── Crash Recovery 三选项（spec §6：Recover / Compare / Ignore）──
 
@@ -4579,7 +5030,7 @@ export default function App() {
       </header>
       <div className="workspace-shell">
         {sidebarShown && (
-        <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : t('sidebar.treeAria')}>
+        <aside className="file-tree" style={{ width: sidebarWidth }} onKeyDown={sidebarMode === 'files' ? handleTreeKeyDown : sidebarMode === 'fileList' ? handleFileListKeyDown : sidebarMode === 'outline' ? handleOutlineKeyDown : handleSearchKeyDown} tabIndex={0} aria-label={sidebarMode === 'outline' ? t('sidebar.outlineAria') : sidebarMode === 'search' ? t('sidebar.searchAria') : sidebarMode === 'fileList' ? t('sidebar.articlesAria') : t('sidebar.treeAria')}>
           <SidebarHeader
             mode={sidebarMode}
             t={t}
@@ -4617,6 +5068,48 @@ export default function App() {
                 ) : <FileTree nodes={filteredFileTreeNodes} selectedPath={selectedTreePath} currentPath={filePathRef.current} onSelect={handleTreeSelect} onToggle={(p) => void handleTreeToggle(p)} onOpen={(p) => void openTreeFile(p)} onDrop={(d, p) => void handleTreeDrop(d, p)} onContextMenu={openTreeContextMenu} />}
               </div>
             </>
+          ) : sidebarMode === 'fileList' ? (
+            /* V7-W1.5：Articles（文档列表）—— Typora 显示菜单第二视图（⌃⌘2）。
+               与 File Tree 同源（同一根目录），差异仅在呈现：树形 vs 平铺列表。 */
+            <>
+              {treeFilterOpen && (
+                <div className="file-quickbar">
+                  <input
+                    ref={treeFilterRef}
+                    className="file-filter-input"
+                    type="text"
+                    placeholder={t('files.filterPlaceholder')}
+                    value={fileFilterQuery}
+                    onChange={(e) => setFileFilterQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.stopPropagation(); setTreeFilterOpen(false); }
+                      else if (e.key === 'Escape') { e.stopPropagation(); setFileFilterQuery(''); setTreeFilterOpen(false); }
+                      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
+                    }}
+                  />
+                </div>
+              )}
+              {/* .file-list 自身即滚动容器（VirtualRows 经 parentElement 探测滚动源） */}
+              <div className="file-list" onContextMenu={(e) => openTreeContextMenu(e)}>
+                {filteredFileListItems.length === 0 ? (
+                  <div className="sidebar-empty">{fileTreeRoot === null ? t('sidebar.emptyFiles') : (fileListItems.length === 0 ? t('sidebar.emptyFolder') : t('sidebar.noFilterMatch'))}</div>
+                ) : (
+                  <FileList
+                    items={fileListItemsForRender}
+                    selectedPath={fileListSelectedPath}
+                    currentPath={filePathRef.current}
+                    includeSummary={false}
+                    compact
+                    groupByFolder={fileListRecursive}
+                    folderLabel={fileListFolderLabel}
+                    formatFileTime={formatFileTime}
+                    onSelect={setFileListSelectedPath}
+                    onOpen={(p) => void openTreeFile(p)}
+                    onContextMenu={openTreeContextMenu}
+                  />
+                )}
+              </div>
+            </>
           ) : sidebarMode === 'outline' ? (
             <>
               <div className="file-tree-filters">
@@ -4629,7 +5122,7 @@ export default function App() {
                   const items = visibleOutlineItems();
                   return items.length === 0
                     ? <div className="sidebar-empty">{t('outline.empty')}</div>
-                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} />;
+                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} highlightNonce={outlineHighlightNonce} />;
                 })()}
               </div>
             </>
@@ -4643,6 +5136,8 @@ export default function App() {
                   <label><input type="checkbox" checked={searchRegex} onChange={(e) => setSearchRegex(e.target.checked)} />{t('search.regex')}</label>
                   <label>{t('search.ctx')} <input type="number" min="0" max="2" value={searchContext} onChange={(e) => setSearchContext(Math.max(0, Math.min(2, Number(e.target.value) || 0)))} /></label>
                 </div>
+                {/* §7.3：invalid regex 就地提示 —— 非法正则此前被静默吞成「无结果」 */}
+                {searchRegexInvalid && <div className="search-regex-invalid" role="alert">{t('search.regexInvalid')}</div>}
                 <input className="search-input small" placeholder={t('search.include')} value={searchInclude} onChange={(e) => setSearchInclude(e.target.value)} />
                 <input className="search-input small" placeholder={t('search.exclude')} value={searchExclude} onChange={(e) => setSearchExclude(e.target.value)} />
                 <button onClick={() => void runGlobalSearch()} disabled={!searchQuery || fileTreeRoot === null}>{t('search.run')}</button>
@@ -4653,6 +5148,19 @@ export default function App() {
                 {<SearchResultsList groups={searchGroups} selectedIndex={searchSelectedIndex} onJump={(m) => void jumpToSearchResult(m)} onContextMenu={openSearchContextMenu} />}
               </div>
             </>
+          )}
+          {/* V7-W3.3（D-C = ①）：侧栏底部「当前文件夹」操作条 —— Typora File Management 真值
+              「At the bottom of the left side bar, users can pop up menu items for the current folder」。
+              仅 Files（树 / 列表）模式出现 —— Typora 的 Outline / Search 面板底部无此条。 */}
+          {(sidebarMode === 'files' || sidebarMode === 'fileList') && (
+            <SidebarFooter
+              folderName={fileTreeRoot === null ? null : (fileTreeBasename(fileTreeRoot) || fileTreeRoot)}
+              folderPath={fileTreeRoot}
+              t={t}
+              onMenu={openFolderMenu}
+              currentOutsideFolder={currentDocOutsideFolder}
+              onLoadCurrentFolder={filePathRef.current === null ? undefined : () => loadFolderRoot(fileTreeDirname(filePathRef.current ?? ''))}
+            />
           )}
         </aside>
         )}
@@ -4667,18 +5175,27 @@ export default function App() {
           />
         )}
         <main className="editor-container">
-          {/* V7-I7（v1.5.4 Typora parity）：主区顶栏——居中文档名；左槽在侧边栏隐藏时
-              提供「显示侧边栏」恢复入口；右槽为浮动大纲开关。 */}
+          {/* V7-W2.3（D-A 裁决 = 方案 §12 选项 ③「改造为纯操作条」）：
+              1) **移除居中文档名** —— 文件名唯一真源是窗口标题栏（`windowService.setTitle`，
+                 `● ` 前缀表 dirty，Typora 行为，见上方 effect）。此前 `.editor-topbar-title`
+                 把同一信息渲染第二次：macOS 原生标题栏（V6-P2 2.2 已回归）+ 本条 = 重复；
+                 Typora 本身无应用内文件名条，故删除该节点与对应 CSS。
+              2) **保留本条作为纯操作条**，因为它是 macOS 上唯一可发现的侧栏入口
+                 （G7-SHELL-05：`.shell.platform-mac .titlebar { display: none }` 隐藏了 ☰）
+                 与浮动大纲的唯一入口。左侧按钮在 macOS 恒显（Typora macOS 同样在标题栏行
+                 提供侧栏开关），非 macOS 仅在侧栏隐藏时显示（此时自绘 `.titlebar` 已有 ☰）。
+              3) 条高保持 34px 不变，避免布局基线漂移；残余差异（Typora 无此条）登记为 D。 */}
           {!readerOpen && (
             <div className="editor-topbar" data-tauri-drag-region>
               <div className="editor-topbar-side editor-topbar-left">
-                {!sidebarShown && (
+                {(platformMac || !sidebarShown) && (
                   <button
                     type="button"
-                    className="editor-topbar-btn"
-                    aria-label={t('sidebar.showSidebar')}
-                    title={t('sidebar.showSidebar')}
-                    onClick={() => { setSidebarVisible(true); }}
+                    className={`editor-topbar-btn${sidebarShown ? ' active' : ''}`}
+                    aria-label={sidebarShown ? t('sidebar.hideSidebar') : t('sidebar.showSidebar')}
+                    aria-pressed={sidebarShown}
+                    title={sidebarShown ? t('sidebar.hideSidebar') : t('sidebar.showSidebar')}
+                    onClick={toggleSidebar}
                   >
                     <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
                       <path d="M5.5 3.5L10 8l-4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -4687,7 +5204,7 @@ export default function App() {
                   </button>
                 )}
               </div>
-              <div className="editor-topbar-title">{docTitle ?? ''}</div>
+              <div className="editor-topbar-spacer" />
               <div className="editor-topbar-side editor-topbar-right">
                 <button
                   type="button"
@@ -4746,10 +5263,10 @@ export default function App() {
               onCurrentHeadingChange={(id) => { outlineActiveRef.current = id; setCurrentOutlineId(id); }}
             />
           )}
-          {/* E1：常驻编辑器工具栏（Typora 1.14.6 editor toolbar；View→工具栏开关，默认隐藏） */}
-          {editorToolbarVisible && !readerOpen && (
-            <EditorToolbar t={t} onCommand={(id) => void dispatchCommand(id, 'menu')} />
-          )}
+          {/* V7-W2.4（D-B = ①）：常驻 `.editor-toolbar` 横条已退役 —— Typora 1.14 只有
+              一个「编辑器工具栏」概念且为浮动（Selection 锚定），已由引擎级
+              `selectionToolbar` 提供（View → 工具栏 / 设置 → 外观 同源开关）。
+              残留常驻横条会形成「两套格式工具」并偏离 Typora 布局。 */}
           <div
             ref={containerRef}
             className="editor-host"
@@ -4777,7 +5294,7 @@ export default function App() {
                   const items = visibleOutlineItems();
                   return items.length === 0
                     ? <div className="sidebar-empty">{t('outline.empty')}</div>
-                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} />;
+                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} highlightNonce={outlineHighlightNonce} />;
                 })()}
               </div>
             </div>
@@ -4944,6 +5461,12 @@ export default function App() {
             })()}
             fields={statusbarFields}
             onZoomReset={() => adjustFontSize(0)}
+            // V7-W2.7：点击字数项展开字数统计面板（Typora：word count 按钮 → popup panel）
+            onStatsClick={() => {
+              const host = hostRef.current;
+              if (host !== null) refreshStats(host);
+              setWordCountOpen(true);
+            }}
           />
         </div>
       )}

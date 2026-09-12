@@ -128,7 +128,9 @@ describe('P5.2 — 100×30 大表（spec §9）', () => {
     setColumnAlignment(view, ctx.model, 15, 'center');
     await sleep();
     const lines = view.state.doc.toString().split('\n');
-    expect(lines[1].split('|')[15 + 1].trim()).toBe(':--:'); // split 首元素为空串，col 15 → index 16
+    // 原始分隔符是 ` --- `（3 连字符），居中后应为 `:---:` —— 保留原连字符数。
+    // 旧实现用固定 2 连字符 mark，产出 `:--:`（连字符被侵蚀），此断言曾把 bug 固化成期望。
+    expect(lines[1].split('|')[15 + 1].trim()).toBe(':---:'); // split 首元素为空串，col 15 → index 16
     // 数据行一字未动
     expect(lines[52]).toContain('r50c15');
     expect(lines[101]).toContain('r99c29');

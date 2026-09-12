@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-01T23:48:57.340Z",
+  "generatedAt": "2026-09-12T05:15:50.283Z",
   "captures": [
     {
       "id": "macos",
@@ -9,8 +9,8 @@
       "mode": "dev-browser（shell.titlebar 模拟 window chrome；原生 traffic lights 归真机评审）",
       "viewport": "1440x900",
       "platformMacClass": true,
-      "titlebarPaddingLeft": "76px",
-      "capturedAt": "2026-09-01T23:48:57.322Z"
+      "titlebarPaddingLeft": "0px",
+      "capturedAt": "2026-09-12T05:15:50.253Z"
     },
     {
       "id": "windows",

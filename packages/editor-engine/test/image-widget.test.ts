@@ -5,7 +5,7 @@
 import { EditorView } from '@codemirror/view';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { setSourceMode } from '../src/index';
-import { buildImageWidgetExtension, IMG_WRAPPER_CLASS, IMG_BROKEN_CLASS } from '../src/image/widget';
+import { buildImageWidgetExtension, IMG_WRAPPER_CLASS, IMG_BROKEN_CLASS, IMG_CENTERED_CLASS } from '../src/image/widget';
 import type { ImageHost } from '../src/image/host';
 import { moveCaret, sleep } from './harness';
 
@@ -47,6 +47,66 @@ function makeHost(resolve: (src: string) => string | null = (s) => `mock://${s}`
     revealFile: async (path) => { revealed.push(path); },
   };
 }
+
+/**
+ * V7-W4.3（G7-TYPO-01）：单图独占段落居中 —— Typora 官方 CSS 语义
+ * `p > img:only-child { display: block; margin: auto; }`。
+ * 编辑器的「段落」= 一行；判定为该行除空白外只有这一个 Image 节点。
+ */
+describe('V7-W4.3 单图独占段落居中（Typora p > img:only-child）', () => {
+  afterEach(() => setSourceMode(false));
+
+  test('独占一行 → 包层带 centered 类', async () => {
+    const view = setUp('![alt](assets/a.png)\n', makeHost());
+    await sleep();
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+    const wrapper = imgElements(view)[0];
+    expect(wrapper).toBeDefined();
+    expect(wrapper?.classList.contains(IMG_CENTERED_CLASS)).toBe(true);
+  });
+
+  test('行内还有其他文字 → 不居中（Typora 同样不居中）', async () => {
+    const view = setUp('caption ![alt](assets/a.png)\n', makeHost());
+    await sleep();
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+    expect(imgElements(view)[0]?.classList.contains(IMG_CENTERED_CLASS)).toBe(false);
+  });
+
+  test('两张图并排 → 都不居中（only-child 语义）', async () => {
+    const view = setUp('![a](assets/a.png) ![b](assets/b.png)\n', makeHost());
+    await sleep();
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+    const wrappers = imgElements(view);
+    expect(wrappers.length).toBe(2);
+    for (const w of wrappers) expect(w.classList.contains(IMG_CENTERED_CLASS)).toBe(false);
+  });
+
+  test('多段落：仅独占段落的图居中（居中态随段落独立判定）', async () => {
+    const view = setUp('![solo](assets/a.png)\n\ninline ![x](assets/b.png) tail\n', makeHost());
+    await sleep();
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+    const wrappers = imgElements(view);
+    expect(wrappers.length).toBe(2);
+    expect(wrappers[0]?.classList.contains(IMG_CENTERED_CLASS)).toBe(true);
+    expect(wrappers[1]?.classList.contains(IMG_CENTERED_CLASS)).toBe(false);
+  });
+
+  test('居中态随编辑变化：同段落追加文字后取消居中（eq 必须含 centered）', async () => {
+    const view = setUp('![alt](assets/a.png)\n', makeHost());
+    await sleep();
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+    expect(imgElements(view)[0]?.classList.contains(IMG_CENTERED_CLASS)).toBe(true);
+    // 在图片前插入文字 → 不再是 only-child
+    view.dispatch({ changes: { from: 0, insert: 'lead ' } });
+    await sleep();
+    expect(imgElements(view)[0]?.classList.contains(IMG_CENTERED_CLASS)).toBe(false);
+  });
+});
 
 describe('Live Mode 渲染', () => {
   afterEach(() => setSourceMode(false)); // Source Mode 用例后重置（防跨用例污染）

@@ -1,5 +1,6 @@
 import { createMockHost } from '../../host-api/src';
-import { DEFAULT_FILE_TREE_OPTIONS, FileTreeHistory, FileTreeModel, FileTreeService, relativePath, shouldShowEntry, sortEntries } from '../src/fileTree';
+import { DEFAULT_FILE_TREE_OPTIONS, FileTreeHistory, FileTreeModel, FileTreeService, relativePath, shouldShowEntry, sortEntries, collectFolderPaths } from '../src/fileTree';
+import type { FileTreeNode } from '../src/fileTree';
 
 function host() {
   return createMockHost({
@@ -97,5 +98,70 @@ describe('FileTreeService operations + undo', () => {
     expect(await h.fs.exists('/ws/a.md')).toEqual({ ok: true, value: false });
     const undoTrash = await history.undo();
     expect(undoTrash.ok).toBe(false);
+  });
+});
+
+// ── V7-W3.5（G7-SIDE-04）展开全部 / 折叠全部 ─────────────────────────────
+describe('V7-W3.5 expand all / collapse all', () => {
+  test('collectFolderPaths 收集全部已加载文件夹（文件不收集）', () => {
+    const nodes: FileTreeNode[] = [
+      { path: '/ws/a', name: 'a', kind: 'folder', depth: 0, expanded: true, children: [
+        { path: '/ws/a/b', name: 'b', kind: 'folder', depth: 1, expanded: true, children: [
+          { path: '/ws/a/b/c.md', name: 'c.md', kind: 'file', depth: 2, expanded: false },
+        ] },
+      ] },
+      { path: '/ws/d.md', name: 'd.md', kind: 'file', depth: 0, expanded: false },
+    ];
+    expect(collectFolderPaths(nodes)).toEqual(['/ws/a', '/ws/a/b']);
+  });
+
+  test('readTree(expandAll) 递归读取未知层级；collapseAllPaths 后回到全折叠', async () => {
+    const h = host();
+    const svc = new FileTreeService(h.fs);
+    const model = new FileTreeModel('/ws');
+
+    // 惰性读取：未展开时 folder 无 children（子层级尚未加载）
+    const lazy = await svc.readTree('/ws', model.expanded);
+    if (!lazy.ok) throw new Error('readTree failed');
+    expect(lazy.value.find((n) => n.name === 'folder')?.children).toBeUndefined();
+
+    // expandAll：递归读取 + 回填 expanded，使后续单个折叠可用
+    const all = await svc.readTree('/ws', model.expanded, undefined, 0, true);
+    if (!all.ok) throw new Error('readTree(expandAll) failed');
+    model.expandAllPaths(all.value);
+    expect(model.expanded.has('/ws/folder')).toBe(true);
+    expect(all.value.find((n) => n.name === 'folder')?.children?.map((n) => n.name)).toEqual(['c.md', 'note2.md', 'note10.md']);
+
+    model.collapseAllPaths();
+    expect(model.expanded.size).toBe(0);
+  });
+});
+
+// ── V7-W3.8（G7-SIDE-07）撤销语义对齐 Typora ────────────────────────────
+describe('V7-W3.8 file operation undo semantics（Typora：仅最近一次可撤销）', () => {
+  test('连续两次操作后只能撤销最近一次', async () => {
+    const h = host();
+    const history = new FileTreeHistory(h.fs);
+    const svc = new FileTreeService(h.fs, history);
+
+    expect((await svc.newFile('/ws', 'x.md')).ok).toBe(true);
+    expect((await svc.newFile('/ws', 'y.md')).ok).toBe(true);
+    expect(history.length).toBe(1);
+
+    expect((await history.undo()).ok).toBe(true);
+    expect(await h.fs.exists('/ws/y.md')).toEqual({ ok: true, value: false });
+    // 第二次操作入栈时已清空第一次的历史 → x.md 保留
+    expect(await h.fs.exists('/ws/x.md')).toEqual({ ok: true, value: true });
+    expect((await history.undo()).ok).toBe(false);
+  });
+
+  test('trash 不可撤销（登记 D：Typora macOS 可撤销，Mellow 依赖系统回收站）', async () => {
+    const h = host();
+    const history = new FileTreeHistory(h.fs);
+    const svc = new FileTreeService(h.fs, history);
+    expect((await svc.trash('/ws/a.md')).ok).toBe(true);
+    const r = await history.undo();
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('unsupported');
   });
 });

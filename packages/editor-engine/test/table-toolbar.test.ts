@@ -228,6 +228,41 @@ describe('Toolbar 对齐', () => {
     const re = reparse(view);
     expect(re.alignments[1]).toBe('right');
   });
+
+  // 回归：此前 mark 用固定 2 连字符再 slice 拼装，会丢弃原始连字符长度，
+  // 每切换一次对齐少一个连字符（`---` → `:--:` → `:-:` → `::` 非法）。
+  // 只断言「解析后的对齐语义」抓不到这个退化（`:--:` 与 `:-:` 解析结果相同），
+  // 必须锁定**字面量**与反复切换后的不变式。
+  test('11b. 反复切换对齐不得侵蚀连字符数量', async () => {
+    // 注意：必须用「未对齐」的 `---` 起始 —— 本文件 TABLE 的第 0 列本就是
+    // `:-:`（已居中），用它做基线会让断言失去意义。
+    const PLAIN = '| a | b |\n| --- | --- |\n| 1 | 2 |';
+    const view = setUp(PLAIN);
+    await sleep();
+    moveCaret(view, 2); // 第 0 列
+    const sepText = () => (view.state.doc.toString().split('\n')[1] ?? '');
+    const dashCount = () => (sepText().match(/-+/)?.[0].length ?? 0);
+    const d0 = dashCount();
+
+    clickBtn(view, 'Align Center');
+    await sleep();
+    expect(sepText()).toContain(':---:'); // 居中：保留原连字符数
+    expect(dashCount()).toBe(d0);
+
+    clickBtn(view, 'Align Left');
+    await sleep();
+    expect(sepText()).toContain(':---'); // 左对齐：仍保留原连字符数（旧实现会退化成 :-:）
+    expect(dashCount()).toBe(d0);
+
+    // 连续切换 10 次：连字符数不得减少，且始终合法（旧实现会一路侵蚀到 `::`）
+    for (let i = 0; i < 10; i++) {
+      clickBtn(view, i % 2 === 0 ? 'Align Center' : 'Align Left');
+      await sleep();
+    }
+    expect(dashCount()).toBe(d0);
+    expect(sepText()).toMatch(/\|[ ]*:-+:?[ ]*\|/);
+    view.destroy();
+  });
 });
 
 describe('Toolbar 整体操作', () => {

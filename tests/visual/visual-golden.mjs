@@ -7,20 +7,29 @@
  *   3. 采样布局契约（外层 shell + iframe 内编辑器排版）与基准对比（±1px）：
  *        - 外层：titlebar 高、tabbar 高、editor-container 框、editor-frame 通栏
  *          （A1 写作宽度内部化：max-width none）；sidebar/statusbar/mode-indicators 默认隐藏；
- *        - iframe：.cm-content paddingTop（P2-2.2 契约 56px）、fontSize（17px 基准 /
- *          34px = 200% Zoom）、lineHeight（fontSize × 1.65）、
- *          写作宽度 max-width（默认 820px）+ 内容居中（A1）。
+ *        - iframe：.cm-content paddingTop（P2-2.2 契约 56px）、fontSize（16px = 100% 基准 /
+ *          32px = 200% Zoom）、lineHeight（fontSize × 1.6）、
+ *          写作宽度 max-width（默认 860px）+ 内容居中（A1）。
  *   4. 整窗截图归档 tests/visual/actual/<config>.png（人工评审 + P2-2.8 素材）。
+ *
+ * V7-W2.2（G7-SHELL-03）：上列数值全部取自排版单一真源
+ * `packages/settings/src/index.ts` 的 TYPOGRAPHY_DEFAULTS（16 / 1.6 / 860）。
+ * 本脚本为纯 .mjs，不引 TS 源码，故此处以字面量复写；`tests/parity/verify-visual-golden.mjs`
+ * 负责把这三个字面量与 TYPOGRAPHY_DEFAULTS 做交叉比对，漂移即红。
+ * 历史值 17px / ×1.65 / 820px 已废弃：17 是 vendored CoreEditor iframe 的初始值（非 Mellow 默认），
+ * 1.65 / 820 是运行时回落残留（Typora 真值为 html font-size 16px）。
  *
  * 基准：tests/visual/golden/layout-golden.json（首跑自动生成；--update 重建）。
  * 运行：node tests/visual/visual-golden.mjs [--update]
  * 前置：CoreEditor 上游构建（packages/editor-core/CoreEditor && yarn build）+
- *       pnpm --filter mellow-desktop exec node scripts/build-editor-bundle.mjs。
+ *       pnpm --filter mellow-editor-core build +
+ *       node apps/desktop/scripts/build-editor-bundle.mjs。
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { goldenFile, platformLabel } from './golden-path.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -29,20 +38,27 @@ const PORT = 1425;
 const BASE = `http://localhost:${PORT}`;
 const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
 const HERE = new URL('.', import.meta.url).pathname;
-const GOLDEN = resolve(HERE, 'golden/layout-golden.json');
+const GOLDEN = goldenFile('layout');
 const ACTUAL_DIR = resolve(HERE, 'actual');
 const UPDATE = process.argv.includes('--update');
 const TOLERANCE_PX = 1;
 
+// V7-W2.2：fontSize 取自排版单一真源 TYPOGRAPHY_DEFAULTS.fontSize = 16（Typora 真值
+// html font-size 16px）；100% 基准 = 16px，200% = 32px。
+// 注意：vendored CoreEditor iframe 的初始 fontSize 是 17（上游值），Mellow 启动恢复
+// 无条件 apply 设置值覆盖它，故采样到的必须是本表数值（差异即 G7-SHELL-03 回归）。
+const TYPOGRAPHY_FONT_SIZE = 16;
+const TYPOGRAPHY_LINE_HEIGHT = 1.6;
+const TYPOGRAPHY_WRITING_WIDTH = 860;
 const CONFIGS = [
-  { name: 'win-900x600', width: 900, height: 600, fontSize: 17 },
-  { name: 'win-1200x800', width: 1200, height: 800, fontSize: 17 },
-  { name: 'win-1440x900', width: 1440, height: 900, fontSize: 17 },
-  // Typora parity：⇧⌘= 放大至 200%（R2-4 口径 17px = 100% → 34px）
-  { name: 'zoom-200', width: 1200, height: 800, fontSize: 34 },
+  { name: 'win-900x600', width: 900, height: 600, fontSize: TYPOGRAPHY_FONT_SIZE },
+  { name: 'win-1200x800', width: 1200, height: 800, fontSize: TYPOGRAPHY_FONT_SIZE },
+  { name: 'win-1440x900', width: 1440, height: 900, fontSize: TYPOGRAPHY_FONT_SIZE },
+  // Typora parity：⇧⌘= 放大至 200%（100% = 16px → 32px）
+  { name: 'zoom-200', width: 1200, height: 800, fontSize: TYPOGRAPHY_FONT_SIZE * 2 },
   // V4 §14.3 Light-Dark：暗色模式布局契约（几何应与亮色一致，主题仅切换 CSS 变量）
-  { name: 'dark-900x600', width: 900, height: 600, fontSize: 17, mode: 'dark' },
-  { name: 'dark-1440x900', width: 1440, height: 900, fontSize: 17, mode: 'dark' },
+  { name: 'dark-900x600', width: 900, height: 600, fontSize: TYPOGRAPHY_FONT_SIZE, mode: 'dark' },
+  { name: 'dark-1440x900', width: 1440, height: 900, fontSize: TYPOGRAPHY_FONT_SIZE, mode: 'dark' },
 ];
 
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -104,7 +120,10 @@ async function sampleLayout(page, frame, config) {
         return cs.maxWidth === 'none' && cs.marginLeft === '0px';
       })(),
       // Typora parity 默认隐藏项（任一可见即为布局回退）
-      sidebarVisible: document.querySelector('.sidebar') !== null,
+      // V7-W2.9 修复：此前选择器为 `.sidebar`，而应用内不存在该 class
+      // （侧栏节点是 `aside.file-tree`）→ 该采样恒为 false，永远抓不到
+      // 「侧栏默认可见」回归（假护栏）。现改为真实节点选择器。
+      sidebarVisible: document.querySelector('aside.file-tree') !== null,
       statusbarVisible: document.querySelector('.statusbar') !== null,
       modeIndicatorsVisible: document.querySelector('.mode-indicators') !== null,
       // 主题断言（V4 §14.3 Light-Dark）：暗色配置若静默回退亮色即在此暴露
@@ -125,7 +144,7 @@ async function sampleLayout(page, frame, config) {
       lineHeightPx: lineHeightRaw.endsWith('px') ? parseFloat(lineHeightRaw) : null,
       paddingTop: parseFloat(cs.paddingTop),
       contentWidth: round1(content.getBoundingClientRect().width),
-      // A1（第四轮）：写作宽度内部化 —— .cm-content max-width（默认 820px）+ 居中
+      // A1（第四轮）：写作宽度内部化 —— .cm-content max-width（默认 860px，TYPOGRAPHY_DEFAULTS.writingWidth）+ 居中
       contentMaxWidth: cs.maxWidth === 'none' ? null : parseFloat(cs.maxWidth),
       contentCentered: (() => {
         const box = content.getBoundingClientRect();
@@ -155,12 +174,43 @@ async function sampleLayout(page, frame, config) {
     colorScheme: outer.colorScheme,
     editor: {
       ...inner,
-      // P2-2.2 契约：Top Padding 56px；行高 = fontSize × 1.65（默认设置）
+      // P2-2.2 契约：Top Padding 56px；
+      // V7-W2.2 契约：行高 = fontSize × TYPOGRAPHY_DEFAULTS.lineHeight（单一真源 1.6）。
+      // expected* 字段与实测值由 assertEditorContract 做真实比对（非仅记录）。
       expectedFontSize: config.fontSize,
       expectedPaddingTop: 56,
-      expectedLineHeightPx: round1(config.fontSize * 1.65),
+      expectedLineHeightPx: round1(config.fontSize * TYPOGRAPHY_LINE_HEIGHT),
+      expectedWritingWidth: TYPOGRAPHY_WRITING_WIDTH,
     },
   };
+}
+
+/**
+ * V7-W2.2：把「实测 vs 期望」做真实比对。
+ * 历史缺陷：expected* 字段只写入基准、从不与实测比对，且期望公式停在 ×1.65 ——
+ * 于是基准里同时存在 lineHeightPx 27.2（实测）与 expectedLineHeightPx 28.1（期望），
+ * 二者自相矛盾却永远为绿。此处改为硬断言。
+ */
+function assertEditorContract(name, sample) {
+  const problems = [];
+  const e = sample.editor;
+  if (e.fontSize !== e.expectedFontSize) {
+    problems.push(`${name}: 实测 fontSize ${e.fontSize} ≠ 期望 ${e.expectedFontSize}（V7-W2.2：启动恢复未覆盖 CoreEditor 上游 17px？）`);
+  }
+  if (Math.abs(e.paddingTop - e.expectedPaddingTop) > TOLERANCE_PX) {
+    problems.push(`${name}: 实测 paddingTop ${e.paddingTop} ≠ 期望 ${e.expectedPaddingTop}`);
+  }
+  if (e.lineHeightPx === null || Math.abs(e.lineHeightPx - e.expectedLineHeightPx) > TOLERANCE_PX) {
+    problems.push(`${name}: 实测 lineHeightPx ${e.lineHeightPx} ≠ 期望 ${e.expectedLineHeightPx}（V7-W2.2：行高应 = fontSize × ${TYPOGRAPHY_LINE_HEIGHT}）`);
+  }
+  // 写作宽度：viewWidth 足够宽时（≥ 限宽）必须精确等于单一真源；否则应等于可用宽度（auto/窄窗）
+  if (e.contentMaxWidth !== null && Math.abs(e.contentMaxWidth - e.expectedWritingWidth) > TOLERANCE_PX) {
+    problems.push(`${name}: 实测 contentMaxWidth ${e.contentMaxWidth} ≠ 期望 ${e.expectedWritingWidth}（V7-W2.2：写作宽度单一真源）`);
+  }
+  if (e.contentCentered !== true) {
+    problems.push(`${name}: 内容未在滚动容器内居中（contentCentered=${e.contentCentered}）`);
+  }
+  return problems;
 }
 
 function diffSample(name, golden, actual) {
@@ -230,6 +280,8 @@ async function main() {
   const golden = JSON.parse(readFileSync(GOLDEN, 'utf8'));
   const problems = [];
   for (const config of CONFIGS) {
+    // V7-W2.2：先做「实测 vs 期望」硬断言（含字号/行高/写作宽度单一真源），再比对基准
+    problems.push(...assertEditorContract(config.name, samples[config.name]));
     if (!(config.name in golden)) problems.push(`${config.name}: golden 基准缺失（--update 重建）`);
     else problems.push(...diffSample(config.name, golden[config.name], samples[config.name]));
   }
