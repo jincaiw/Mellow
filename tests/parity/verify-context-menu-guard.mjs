@@ -17,7 +17,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const APP_TSX = join(root, 'apps', 'desktop', 'src', 'App.tsx');
 const GUARD = join(root, 'tests', 'parity', 'verify-context-menu-parity.mjs');
 
-const original = readFileSync(APP_TSX, 'utf8');
+// Windows 上 `actions/checkout` 以 CRLF 检出，而下方注入用例的锚点含 `\n` ——
+// 不归一化会导致 `replace` 全部不生效，护栏误报「注入没有生效（锚点已漂移）」。
+// 实测：正是它让 Windows parity job 连续失败，而 Linux / macOS 全绿
+// （2026-09-13 本地复现确认：把 App.tsx 转成 CRLF 后 4 个用例同时报锚点漂移）。
+const original = readFileSync(APP_TSX, 'utf8').replace(/\r\n/g, '\n');
 
 /** 每个用例：把 source 改成带缺陷的版本；护栏必须返回非 0 */
 const CASES = [
