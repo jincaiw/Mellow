@@ -679,7 +679,7 @@
       "domain": "platform",
       "capability": "三平台 Runtime 体验门禁",
       "typoraBehavior": "核心编辑任务在目标桌面平台可稳定完成。",
-      "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。",
+      "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。 【2026-09-13 windows-ci 证据】ci.yml 新增的 windows-parity-guard（纯 Node parity 契约链）已在 windows-latest 常态通过（CI run 144，7/7 job 全绿）—— 契约层（菜单 schema / 键位表 / 设置 / 侧栏 / 排版 / 视觉 Golden / 台账 / 发布门禁）在 Windows 上成立。修复过程中暴露并根治了一个真实缺陷：Windows 的 actions/checkout 以 CRLF 检出源码，护栏注入与 canary 的 \\n 锚点全部失配（已全局归一化 + 元护栏守护）。仍缺：Windows Runtime 级证据（打包/启动/10MB/输入交互），需 runtime-qualification.yml 运行，故状态维持 IMPL。",
       "grade": "E",
       "status": "IMPL",
       "ownerPackage": "apps/desktop",
