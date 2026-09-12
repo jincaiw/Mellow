@@ -21,6 +21,14 @@ on:
           - all
           - macos-windows
           - linux
+  # V7（2026-09-13）：发版标签自动触发。
+  # 依据 ADR-0022：Windows / Linux 的 V1 Runtime 证据以本 workflow 为正式来源，
+  # 且「每次候选提交必须通过 Runtime Qualification」。此前只有 workflow_dispatch，
+  # 需人工点按且容易被跳过 —— 改为随 v* 标签自动运行，使三平台证据可复现、随版本归档。
+  # 注意：标签触发时 `inputs.target` 为空，故各 job 的 if 需额外接受 push 事件（见下）。
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
@@ -28,7 +36,7 @@ permissions:
 jobs:
   linux-runtime:
     name: "Linux: Xvfb + fcitx5 IME matrix"
-    if: ${{ inputs.target == 'all' || inputs.target == 'linux' }}
+    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'linux' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -233,7 +241,7 @@ jobs:
 
   windows-runtime:
     name: "Windows: launch + SendKeys smoke"
-    if: ${{ inputs.target == 'all' || inputs.target == 'macos-windows' }}
+    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'macos-windows' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -351,7 +359,7 @@ jobs:
 
   macos-runtime:
     name: "macOS: launch + CLI open smoke"
-    if: ${{ inputs.target == 'all' || inputs.target == 'macos-windows' }}
+    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'macos-windows' }}
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
