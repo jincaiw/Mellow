@@ -156,34 +156,8 @@ jobs:
       # （见 generate-typora-menu-dump.mjs），故不会退化成 UNVERIFIED。
       - name: Generate Typora baseline dump
         run: node tests/benchmark/generate-typora-menu-dump.mjs
-      - name: "diag: verify-adapter-contract.mjs"
-        run: node tests/parity/verify-adapter-contract.mjs
-      - name: "diag: verify-build-pipeline.mjs"
-        run: node tests/parity/verify-build-pipeline.mjs
-      - name: "diag: verify-context-menu-guard.mjs"
-        run: node tests/parity/verify-context-menu-guard.mjs
-      - name: "diag: verify-context-menu-parity.mjs"
-        run: node tests/parity/verify-context-menu-parity.mjs
-      - name: "diag: verify-menu-contract-guard.mjs"
-        run: node tests/parity/verify-menu-contract-guard.mjs
-      - name: "diag: verify-menu-contract.mjs"
-        run: node tests/parity/verify-menu-contract.mjs
-      - name: "diag: verify-parity-ledger.mjs"
-        run: node tests/parity/verify-parity-ledger.mjs
-      - name: "diag: verify-release-gate.mjs"
-        run: node tests/parity/verify-release-gate.mjs
-      - name: "diag: verify-runtime-qualification-workflow.mjs"
-        run: node tests/parity/verify-runtime-qualification-workflow.mjs
-      - name: "diag: verify-settings-contract.mjs"
-        run: node tests/parity/verify-settings-contract.mjs
-      - name: "diag: verify-shell-typography.mjs"
-        run: node tests/parity/verify-shell-typography.mjs
-      - name: "diag: verify-shell-widgets.mjs"
-        run: node tests/parity/verify-shell-widgets.mjs
-      - name: "diag: verify-sidebar-contract.mjs"
-        run: node tests/parity/verify-sidebar-contract.mjs
-      - name: "diag: verify-visual-golden.mjs"
-        run: node tests/parity/verify-visual-golden.mjs
+      - name: Parity guard chain
+        run: npm run parity
 
   rust-check:
     name: Rust system core check + test

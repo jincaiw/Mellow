@@ -20,7 +20,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const read = (p) => readFileSync(resolve(root, p), 'utf8');
+const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 const errors = [];
 const fail = (message) => errors.push(message);
 
@@ -141,7 +141,7 @@ const scan = (dir) => {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) scan(full);
-    else if (name.endsWith('.ts') && /cm-content|paddingTop|padding-top/.test(readFileSync(full, 'utf8'))) {
+    else if (name.endsWith('.ts') && /cm-content|paddingTop|padding-top/.test(readFileSync(full, 'utf8').replace(/\r\n/g, '\n'))) {
       offenders.push(full.slice(root.length + 1));
     }
   }

@@ -53,7 +53,7 @@ const cheatsheet = () => join(work, 'apps/desktop/src/Cheatsheet.tsx');
 const nativeMenu = () => join(work, 'apps/desktop/src/nativeMenu.ts');
 const messages = () => join(work, 'packages/i18n/src/messages.ts');
 const menuRs = () => join(work, 'apps/desktop/src-tauri/src/menu.rs');
-const patch = (file, mutate) => writeFileSync(file, mutate(readFileSync(file, 'utf8')));
+const patch = (file, mutate) => writeFileSync(file, mutate(readFileSync(file, 'utf8').replace(/\r\n/g, '\n')));
 
 /** 每个用例：注入一处缺陷，护栏必须失败（exit ≠ 0） */
 const CASES = [

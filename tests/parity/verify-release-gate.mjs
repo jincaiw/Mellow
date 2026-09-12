@@ -17,7 +17,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const read = (p) => readFileSync(resolve(root, p), 'utf8');
+const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 const errors = [];
 const fail = (message) => errors.push(message);
 
@@ -145,6 +145,33 @@ if (driftedChain.includes(removed) || guardFiles.length === 0) {
 const driftedMissing = guardFiles.filter((name) => !driftedChain.includes(name));
 if (driftedMissing.length === 0) {
   fail('Release Gate 护栏自检失败：断链未被检出（假绿），护栏已失效');
+}
+
+// ── ⑤ 护栏必须容忍 CRLF（2026-09-13 Windows CI 事故）────────────────────
+// Windows 的 `actions/checkout` 以 CRLF 检出源码，而护栏大量依赖
+// `.replace()` 做注入与 canary 自检 —— 锚点里的 `\n` 在 CRLF 下全部失配，
+// 表现为「注入没有生效」/「canary 未武装」，于是 Windows job 连挂而
+// Linux / macOS 全绿。故每个读取源码的护栏都必须做换行归一化。
+{
+  const parityDir = resolve(root, 'tests/parity');
+  const guardFiles = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs'))
+    : [];
+  for (const f of guardFiles) {
+    const src = read(`tests/parity/${f}`);
+    if (/readFileSync/.test(src) && !/\\r\\n/.test(src)) {
+      errors.push(`${f} 读取源码但未归一化 CRLF（Windows 下注入 / canary 会失配）`);
+    }
+  }
+  // canary：去掉自身的归一化必须被检出（证明断言不是摆设）
+  const selfSrc = read('tests/parity/verify-release-gate.mjs');
+  const anchored = "readFileSync(resolve(root, p), 'utf8').replace(/\\r\\n/g, '\\n')";
+  const drifted = selfSrc.replace(anchored, "readFileSync(resolve(root, p), 'utf8')");
+  if (drifted === selfSrc) {
+    errors.push('CRLF canary 未武装：无法模拟「去掉归一化」的漂移，护栏已失效');
+  } else if (/\\r\\n/.test(drifted)) {
+    errors.push('CRLF canary 失效：注入后仍未检出缺失归一化');
+  }
 }
 
 if (errors.length > 0) {

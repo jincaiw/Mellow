@@ -20,7 +20,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const read = (p) => readFileSync(resolve(root, p), 'utf8');
+const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 const errors = [];
 const fail = (message) => errors.push(message);
 

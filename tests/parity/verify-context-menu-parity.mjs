@@ -126,7 +126,7 @@ function parseRegistryIds(source) {
 
 // ---------------------------------------------------------------- 校验
 
-const source = readFileSync(APP_TSX, 'utf8');
+const source = readFileSync(APP_TSX, 'utf8').replace(/\r\n/g, '\n');
 const handler = extractHandler(source);
 
 if (handler === null) {

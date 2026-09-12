@@ -21,11 +21,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const schemaSource = readFileSync(resolve(root, 'packages/commands/src/menuSchema.ts'), 'utf8');
-const appSource = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8');
-const nativeMenuSource = readFileSync(resolve(root, 'apps/desktop/src/nativeMenu.ts'), 'utf8');
-const menuRsSource = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/menu.rs'), 'utf8');
-const messagesSource = readFileSync(resolve(root, 'packages/i18n/src/messages.ts'), 'utf8');
+const schemaSource = readFileSync(resolve(root, 'packages/commands/src/menuSchema.ts'), 'utf8').replace(/\r\n/g, '\n');
+const appSource = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const nativeMenuSource = readFileSync(resolve(root, 'apps/desktop/src/nativeMenu.ts'), 'utf8').replace(/\r\n/g, '\n');
+const menuRsSource = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/menu.rs'), 'utf8').replace(/\r\n/g, '\n');
+const messagesSource = readFileSync(resolve(root, 'packages/i18n/src/messages.ts'), 'utf8').replace(/\r\n/g, '\n');
 const errors = [];
 const fail = (message) => errors.push(message);
 
@@ -351,7 +351,7 @@ const staleExceptions = [...VIEW_GROUP_EXCEPTIONS].filter((id) => {
 if (staleExceptions.length > 0) fail(`VIEW_GROUP_EXCEPTIONS 已过期，请从例外表移除：${staleExceptions.join(', ')}`);
 
 // ── 9. Cheatsheet 快捷键派生（P1-1.6：无静态键位串）───────────────────────
-const cheatsheetSource = readFileSync(resolve(root, 'apps/desktop/src/Cheatsheet.tsx'), 'utf8');
+const cheatsheetSource = readFileSync(resolve(root, 'apps/desktop/src/Cheatsheet.tsx'), 'utf8').replace(/\r\n/g, '\n');
 if (/[^a-zA-Z]shortcut: '/.test(cheatsheetSource)) {
   fail('Cheatsheet.tsx 出现静态键位串（shortcut:），必须改用 commandId 从 registry 派生（P1-1.6）');
 }
@@ -363,7 +363,7 @@ if (cheatsheetUnknown.length > 0) fail(`Cheatsheet commandId 未在 CommandRegis
 const dumpPath = resolve(root, 'tests/benchmark/fixtures/typora-menu-dump.txt');
 let dumpSource = '';
 try {
-  dumpSource = readFileSync(dumpPath, 'utf8');
+  dumpSource = readFileSync(dumpPath, 'utf8').replace(/\r\n/g, '\n');
 } catch {
   fail('typora-menu-dump.txt 不存在：Typora 1.14.9 Golden 真值必须入库（P1-1.12），运行 tests/benchmark/generate-typora-menu-dump.mjs 在真机生成');
 }

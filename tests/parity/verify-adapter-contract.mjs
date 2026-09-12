@@ -42,7 +42,7 @@ function* walkSources(dir) {
 function scanSources(baseDir, tokens) {
   const violations = [];
   for (const file of walkSources(baseDir)) {
-    const text = readFileSync(file, 'utf8');
+    const text = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
     for (const token of tokens) {
       if (token.test(text)) violations.push(`${relative(root, file)} ↔ ${token}`);
     }
@@ -60,21 +60,21 @@ if (platformViolations.length > 0) {
 }
 
 // ── ③ Adapter contract 三方锚点 ─────────────────────────────────────────
-const bridgeInjection = readFileSync(resolve(root, 'packages/editor-core/src/bridge-injection.ts'), 'utf8');
+const bridgeInjection = readFileSync(resolve(root, 'packages/editor-core/src/bridge-injection.ts'), 'utf8').replace(/\r\n/g, '\n');
 if (!bridgeInjection.includes('__MELLOW_BRIDGE__')) {
   fail('editor-core bridge-injection.ts 缺少 __MELLOW_BRIDGE__ 契约定义（ADR-0007）');
 }
-const bundleScript = readFileSync(resolve(root, 'apps/desktop/scripts/build-editor-bundle.mjs'), 'utf8');
+const bundleScript = readFileSync(resolve(root, 'apps/desktop/scripts/build-editor-bundle.mjs'), 'utf8').replace(/\r\n/g, '\n');
 if (!bundleScript.includes('__MELLOW_BRIDGE__') || !bundleScript.includes('__TAURI__')) {
   fail('build-editor-bundle.mjs 缺少 __MELLOW_BRIDGE__ → __TAURI__ 适配器接线（desktop 专属 Tauri Bridge Adapter）');
 }
-const bridgeRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/bridge.rs'), 'utf8');
+const bridgeRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/bridge.rs'), 'utf8').replace(/\r\n/g, '\n');
 if (!bridgeRust.includes('bridge_call')) {
   fail('Rust System Core bridge.rs 缺少 bridge_call 命令（桥契约 Rust 侧实现）');
 }
 
 // ── ④ 三平台打包矩阵（P7 任务表的构建级锚点）────────────────────────────
-const tauriConf = readFileSync(resolve(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8');
+const tauriConf = readFileSync(resolve(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8').replace(/\r\n/g, '\n');
 for (const target of ['"dmg"', '"nsis"', '"msi"', '"appimage"', '"deb"', '"rpm"']) {
   if (!tauriConf.includes(target)) {
     fail(`tauri.conf.json bundle targets 缺少 ${target}（P7 三平台安装矩阵的构建级前提）`);
@@ -89,20 +89,20 @@ if (!/"createUpdaterArtifacts": true/.test(tauriConf)) {
 
 // ── ③-b Windows JumpList（2026-09-03 用户裁决纳入实施；PRD §134 P1 Recent integration）──
 //    三方锚点：前端 recordRecentFile（用户打开文档语义）→ Rust 命令 → Shell API 模块。
-const jumplistRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/jumplist.rs'), 'utf8');
+const jumplistRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/jumplist.rs'), 'utf8').replace(/\r\n/g, '\n');
 // 词边界正则（\b）：add_recent_renamed 之类超集子串不得假绿（canary 实证过 includes 缺陷）
 if (!/\bpub fn add_recent\b/.test(jumplistRust) || !jumplistRust.includes('SHAddToRecentDocs')) {
   fail('src-tauri jumplist.rs 缺少 add_recent/SHAddToRecentDocs（Windows JumpList Rust 侧实现）');
 }
-const libRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/lib.rs'), 'utf8');
+const libRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/lib.rs'), 'utf8').replace(/\r\n/g, '\n');
 if (!libRust.includes('jump_list_add_recent')) {
   fail('src-tauri lib.rs 未注册 jump_list_add_recent 命令（JumpList 前端入口）');
 }
-const appTsSource = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8');
+const appTsSource = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8').replace(/\r\n/g, '\n');
 if (!appTsSource.includes("invoke('jump_list_add_recent'")) {
   fail('App.tsx recordRecentFile 未调用 jump_list_add_recent（JumpList 系统最近文档挂点）');
 }
-if (!readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').includes('windows-sys')) {
+if (!readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n').includes('windows-sys')) {
   fail('src-tauri Cargo.toml 缺少 windows-sys（cfg(windows) target 依赖，JumpList Shell API）');
 }
 

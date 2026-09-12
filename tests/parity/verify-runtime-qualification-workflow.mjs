@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const workflow = readFileSync(resolve(root, '.github/workflows/runtime-qualification.yml'), 'utf8');
-const cargoManifest = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8');
+const workflow = readFileSync(resolve(root, '.github/workflows/runtime-qualification.yml'), 'utf8').replace(/\r\n/g, '\n');
+const cargoManifest = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n');
 const releaseBuilds = [...workflow.matchAll(/run:\s*cargo build --release([^\n]*)/g)];
 
 if (!/workflow_dispatch:\s*\n\s+inputs:\s*\n\s+target:/.test(workflow)

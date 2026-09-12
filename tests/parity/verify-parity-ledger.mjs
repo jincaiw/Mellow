@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 const ledgerPath = resolve(import.meta.dirname, 'typora-parity-ledger.json');
 const benchmarkRunnerPath = resolve(root, 'tests/benchmark/run-benchmark.mjs');
-const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
+const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8').replace(/\r\n/g, '\n'));
 const allowedGrades = new Set(['E', 'B', 'D']);
 const allowedStatuses = new Set([
   'ABSENT', 'IMPL', 'AUTO', 'MAC', 'WIN', 'LINUX', 'PASS-B', 'PASS-E', 'BLOCKED', 'NOT_TESTED'
@@ -22,7 +22,7 @@ assert(ledger.normativeBaseline?.version === '1.14.9', '规范验收基线必须
 assert(Array.isArray(ledger.patchObservations), 'patchObservations 必须为数组');
 assert(existsSync(benchmarkRunnerPath), '性能 benchmark runner 不存在');
 if (existsSync(benchmarkRunnerPath)) {
-  const benchmarkRunner = readFileSync(benchmarkRunnerPath, 'utf8');
+  const benchmarkRunner = readFileSync(benchmarkRunnerPath, 'utf8').replace(/\r\n/g, '\n');
   assert(/TYPORA_NORMATIVE_VERSION\s*=\s*['"]1\.14\.9['"]/.test(benchmarkRunner),
     '性能 benchmark runner 必须声明 Typora 1.14.9 为规范基线');
   assert(!/PRD 基线 1\.14\.6/.test(benchmarkRunner),
