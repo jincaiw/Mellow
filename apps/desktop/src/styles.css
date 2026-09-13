@@ -1150,6 +1150,74 @@ html, body, #root {
   background: var(--mellow-bg);
 }
 
+/* ── 应用内确认对话框（V7-W6 / G7-EDIT-09）──
+   替代 `window.confirm`：脏文档离开确认需要**三选一**（保存 / 放弃更改 / 取消），
+   而 confirm 只有两选一。视觉语言与 conflict-bar / recovery-bar 一致，均为应用内面板。 */
+.confirm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.confirm-modal {
+  min-width: 320px;
+  max-width: min(520px, calc(100vw - 64px));
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--mellow-bg);
+  color: var(--mellow-fg);
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+}
+
+.confirm-modal-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.confirm-modal-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mellow-fg-subtle);
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.confirm-modal-actions button {
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 5px;
+  background: var(--mellow-bg);
+  color: var(--mellow-fg);
+  cursor: pointer;
+}
+
+.confirm-modal-actions button:hover {
+  background: var(--mellow-bg-hover);
+}
+
+.confirm-modal-actions .confirm-modal-primary {
+  background: var(--mellow-accent);
+  color: var(--mellow-accent-fg);
+  border-color: var(--mellow-accent);
+}
+
 /* ── 图片文件操作（spec §6/§7）── */
 
 .toolbar-sep {

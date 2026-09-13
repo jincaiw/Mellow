@@ -920,6 +920,50 @@ export default function App() {
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>([]);
   // 外部变更冲突（dirty 时三选项：比较 / 重新加载磁盘版本 / 保留 Mellow 版本）
   const [conflict, setConflict] = useState<ExternalChangeDetail | null>(null);
+  // 应用内确认对话框（V7-W6，G7-EDIT-09）。
+  // 立此机制的原因：Typora 的脏文档离开确认是**「保存 / 放弃更改 / 取消」三选一**
+  // （一手证据：`TypeMark/appsrc/main.js` 的 `tryLeaveDocument` → `showDialog`，
+  // buttons = [Save, filePath ? "Discard Changes" : "Discard", Cancel]），而 Mellow
+  // 此前用 `window.confirm` —— 只有「确定（=丢弃）/ 取消」，**用户无法在对话框里保存**：
+  // SDI 下「切换文档」是主流程（文件树单击 / Quick Open / 最近文件 / CLI），
+  // 每次脏文档切换都要「取消 → 手动保存 → 再切换」。
+  // 顺带把该对话框从 WebView 原生面板换成应用内面板，与 conflict-bar 同一视觉语言。
+  const [askDialog, setAskDialog] = useState<{
+    title: string;
+    message: string;
+    buttons: Array<{ label: string; value: string; primary?: boolean }>;
+  } | null>(null);
+  const askResolverRef = useRef<((value: string) => void) | null>(null);
+  const askUser = useCallback((options: {
+    title: string;
+    message: string;
+    buttons: Array<{ label: string; value: string; primary?: boolean }>;
+  }): Promise<string> => new Promise<string>((resolve) => {
+    const previous = askResolverRef.current;
+    askResolverRef.current = resolve;
+    setAskDialog(options);
+    // 已有未决对话框（理论不可达）→ 以「取消」结束旧的，避免旧 await 永久悬空
+    previous?.(options.buttons[options.buttons.length - 1]?.value ?? 'cancel');
+  }), []);
+  const answerAsk = useCallback((value: string) => {
+    const resolve = askResolverRef.current;
+    askResolverRef.current = null;
+    setAskDialog(null);
+    resolve?.(value);
+  }, []);
+  /** Esc = 选最后一个按钮（本对话框的约定是「取消」）—— 键盘用户不会被困在模态里。 */
+  useEffect(() => {
+    if (askDialog === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      answerAsk(askDialog.buttons[askDialog.buttons.length - 1]?.value ?? 'cancel');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [askDialog, answerAsk]);
   // asset 目录全局设置（PRD §53 global；localStorage 持久化）
   const [assetDir, setAssetDirState] = useState<AssetDirConfig>(() => {
     const saved = localStorage.getItem(GLOBAL_ASSET_DIR_KEY);
@@ -1598,20 +1642,37 @@ export default function App() {
   }, [currentTabPatch, refreshTabsState]);
 
   /** B1（SDI）：单文档关闭确认 —— 当前文档 dirty 时弹「丢弃修改」确认；干净直接放行。 */
-  const confirmCloseDocument = useCallback((doc: DocumentTab): boolean => {
+  /** 保存当前文档（handleSave 的 ref 镜像：confirmCloseDocument 声明在前，
+   *  依赖数组即时求值 → 不能直接引用后声明的 handleSave，否则 TDZ 报错）。 */
+  const saveDocumentRef = useRef<() => Promise<boolean>>(async () => false);
+  /** 脏文档离开确认（Typora `tryLeaveDocument` 的三选一语义）。
+   *  返回 true = 可以离开（已保存成功，或用户明确放弃）；false = 用户取消 / 保存失败 → 调用方必须中止。 */
+  const confirmCloseDocument = useCallback(async (doc: DocumentTab): Promise<boolean> => {
     if (!doc.dirty) return true;
-    return window.confirm(t('dialog.closeDocDirty'));
-  }, []);
+    const choice = await askUser({
+      title: t('dialog.saveChangesTitle'),
+      message: t('dialog.closeDocDirty'),
+      buttons: [
+        { label: t('dialog.save'), value: 'save', primary: true },
+        // Typora：有磁盘路径时是「放弃更改」，未命名文档是「丢弃」
+        { label: doc.path === null ? t('dialog.discard') : t('dialog.discardChanges'), value: 'discard' },
+        { label: t('dialog.cancel'), value: 'cancel' },
+      ],
+    });
+    // 保存失败 / 保存对话框被取消 → **中止离开**（绝不静默丢弃内容）
+    if (choice === 'save') return await saveDocumentRef.current();
+    return choice === 'discard';
+  }, [askUser, t]);
 
   /** B1（SDI）：打开/新建另一文档前确保窗口内只有当前文档。
    *  当前文档 dirty → 丢弃确认；通过后清空文档状态，随后调用方再 open 新文档。
    *  返回 false 表示用户取消（调用方不得继续打开）。
    *  注：必须先于 openTreeFile/handleNew/handleOpen 等调用方声明（deps 数组即时求值）。 */
-  const guardSingleDocument = useCallback((): boolean => {
+  const guardSingleDocument = useCallback(async (): Promise<boolean> => {
     syncDocFromEditor();
     const existing = docStateRef.current.doc;
     if (existing !== null) {
-      if (!confirmCloseDocument(existing)) return false;
+      if (!(await confirmCloseDocument(existing))) return false;
       docStateRef.current = new DocumentState();
     }
     return true;
@@ -2453,7 +2514,7 @@ export default function App() {
     const documents = documentsRef.current;
     if (!documents) return false;
     // B1（SDI）：文件树/QuickOpen 打开 = 当前窗口替换（Typora 文件树单击换文档）
-    if (!guardSingleDocument()) return false;
+    if (!(await guardSingleDocument())) return false;
     const r = await documents.readPath(path);
     if (!r.ok) {
       setStatusText(t('msg.openFailed', { error: r.error.message }));
@@ -3453,7 +3514,7 @@ export default function App() {
     const host = hostRef.current;
     if (!host) return;
     // B1（SDI）：非 Tauri 回落路径也保持一窗一文档 —— 清空现有文档（dirty 需确认）
-    if (!guardSingleDocument()) return;
+    if (!(await guardSingleDocument())) return;
     const tab = docStateRef.current.open({
       path: null,
       title: t('doc.untitled'),
@@ -3484,7 +3545,7 @@ export default function App() {
     const documents = documentsRef.current;
     if (!documents) return;
     // B1（SDI）：⌘O 打开文档 = 当前窗口内替换当前文档（脏文档先确认）
-    if (!guardSingleDocument()) return;
+    if (!(await guardSingleDocument())) return;
     const result = await documents.open();
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
@@ -3524,7 +3585,7 @@ export default function App() {
       await host.waitForStylesReady();
     }
     // B1（SDI）：odoc/CLI 打开 = 当前窗口替换（脏文档先确认）；Phase 4 提供新窗口模式
-    if (!guardSingleDocument()) return;
+    if (!(await guardSingleDocument())) return;
     const result = await documents.readPath(path);
     if (!result.ok) {
       if (result.error.code !== 'canceled') {
@@ -3854,10 +3915,11 @@ export default function App() {
   const handleEditorContextMenuRef = useRef(handleEditorContextMenu);
   handleEditorContextMenuRef.current = handleEditorContextMenu;
 
-  const handleSave = useCallback(async () => {
+  /** 保存当前文档。返回 true 仅当**内容确实落盘**（脏文档离开确认需要据此决定是否继续）。 */
+  const handleSave = useCallback(async (): Promise<boolean> => {
     const host = hostRef.current;
     const documents = documentsRef.current;
-    if (!host || !documents) return;
+    if (!host || !documents) return false;
     const content = host.getText();
     const meta = docMetaRef.current;
     const expected = diskStateRef.current ?? undefined;
@@ -3872,7 +3934,7 @@ export default function App() {
       if (result.error.code !== 'canceled') {
         setStatusText(t('msg.saveFailed', { error: result.error.message }));
       }
-      return;
+      return false;
     }
     filePathRef.current = result.value.path;
     host.setDocumentPath(result.value.path);
@@ -3897,7 +3959,10 @@ export default function App() {
     void recoveryRef.current?.onSaved(docIdRef.current);
     await watchDocument(result.value.path);
     setStatusText(t('msg.saved', { path: result.value.path }));
+    return true;
   }, [currentTabPatch, refreshTabsState, setDirty, watchDocument]);
+  // 脏文档离开确认的「保存」按钮走此引用（声明顺序见 saveDocumentRef 注释）
+  saveDocumentRef.current = handleSave;
 
   // PRD §101 Auto Save：默认 Window Blur + Document Switch；设置可关闭（mellow.file.autosave）
   const maybeAutoSaveRef = useRef<(() => Promise<void>) | null>(null);
@@ -4023,7 +4088,7 @@ export default function App() {
     syncDocFromEditor();
     const active = docStateRef.current.doc;
     if (active === null) return;
-    if (!confirmCloseDocument(active)) return;
+    if (!(await confirmCloseDocument(active))) return;
     // V7-W1.1：关窗前记录路径，供 File → Reopen Closed File（⇧⌘T）恢复
     if (active.path !== null) setClosedFiles(pushClosedFile(active.path));
     const svc = windowServiceRef.current;
@@ -4040,7 +4105,7 @@ export default function App() {
   const handleSystemCloseRequest = useCallback(async () => {
     syncDocFromEditor();
     const doc = docStateRef.current.doc;
-    if (doc !== null && !confirmCloseDocument(doc)) return;
+    if (doc !== null && !(await confirmCloseDocument(doc))) return;
     // V7-W1.1：系统关闭（红绿灯 / ✕）同样入栈，保证 ⇧⌘T 可恢复
     if (doc !== null && doc.path !== null) setClosedFiles(pushClosedFile(doc.path));
     const svc = windowServiceRef.current;
@@ -5036,8 +5101,8 @@ export default function App() {
     const host = hostRef.current;
     const recovery = recoveryRef.current;
     if (!host || !recovery) return;
-    // B1（SDI）：恢复 = 用快照替换当前窗口文档；当前 dirty 时先确认丢弃
-    if (!guardSingleDocument()) return;
+    // B1（SDI）：恢复 = 用快照替换当前窗口文档；当前 dirty 时先确认（保存 / 放弃更改 / 取消）
+    if (!(await guardSingleDocument())) return;
     const result = await recovery.recover(entry.documentId);
     if (!result.ok || result.value === null) {
       setStatusText(t('msg.recoverFailed', { error: result.ok ? t('msg.snapshotMissing') : result.error.message }));
@@ -5067,7 +5132,7 @@ export default function App() {
     const recovery = recoveryRef.current;
     if (!host || !recovery) return;
     // B1（SDI）：比较 = 加载快照到当前窗口（覆盖当前内容前同样做 dirty 确认）
-    if (!guardSingleDocument()) return;
+    if (!(await guardSingleDocument())) return;
     const result = await recovery.recover(entry.documentId);
     if (!result.ok || result.value === null) {
       setStatusText(t('msg.readSnapshotFailed', { error: result.ok ? t('msg.snapshotMissing') : result.error.message }));
@@ -5560,6 +5625,38 @@ export default function App() {
           <span>{t('updater.rollbackPrompt', { version: rollbackPrompt.previousVersion })}</span>
           <button onClick={() => void handleRollback()}>{t('updater.rollback')}</button>
           <button onClick={() => void handleRollbackKeep()}>{t('updater.keepNew')}</button>
+        </div>
+      )}
+      {askDialog !== null && (
+        <div
+          className="confirm-modal-backdrop"
+          onMouseDown={(event) => {
+            // 点遮罩 = 选最后一个按钮（「取消」）—— 永不静默丢弃内容
+            if (event.target === event.currentTarget) {
+              answerAsk(askDialog.buttons[askDialog.buttons.length - 1]?.value ?? 'cancel');
+            }
+          }}
+        >
+          <div className="confirm-modal" role="dialog" aria-modal="true" aria-label={askDialog.title}>
+            <div className="confirm-modal-title">{askDialog.title}</div>
+            <div className="confirm-modal-message">
+              {askDialog.message.split('\n').map((line, index) => (
+                <span key={index} className="confirm-modal-line">{line}</span>
+              ))}
+            </div>
+            <div className="confirm-modal-actions">
+              {askDialog.buttons.map((button) => (
+                <button
+                  key={button.value}
+                  className={button.primary === true ? 'confirm-modal-primary' : undefined}
+                  autoFocus={button.primary === true}
+                  onClick={() => answerAsk(button.value)}
+                >
+                  {button.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
       {statusbarVisible && (

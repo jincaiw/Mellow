@@ -402,7 +402,14 @@ const zhCN = {
   'msg.copyImageRemoteUnsupported': '远程图片暂不支持拷贝（请先下载到本地）',
   'msg.copyImageDone': '图片已拷贝到剪贴板',
   'msg.copyImageFailed': '拷贝图片失败：{error}',
-  'dialog.closeDocDirty': '当前文档有未保存修改，仍要关闭吗？',
+  // 脏文档「保存 / 放弃更改 / 取消」三选一（Typora 真值：`TypeMark/appsrc/main.js`
+  // 的 `tryLeaveDocument` → showDialog，title=Save，buttons=[Save, Discard Changes|Discard, Cancel]）
+  'dialog.closeDocDirty': '是否要保存对文档的更改？\n如果不保存，你的更改将丢失。',
+  'dialog.saveChangesTitle': '保存',
+  'dialog.save': '保存',
+  'dialog.discard': '丢弃',
+  'dialog.discardChanges': '放弃更改',
+  'dialog.cancel': '取消',
 
   // 冲突 / 恢复
   'conflict.title': '磁盘文件已被外部修改（{kind}）—— 禁止覆盖：',
@@ -1207,7 +1214,12 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'msg.copyImageRemoteUnsupported': 'Remote images cannot be copied yet (download to local first)',
   'msg.copyImageDone': 'Image copied to clipboard',
   'msg.copyImageFailed': 'Copy image failed: {error}',
-  'dialog.closeDocDirty': 'This document has unsaved changes. Close anyway?',
+  'dialog.closeDocDirty': 'Do you want to save the changes made to this document?\nYour changes will be lost if you don\'t save them.',
+  'dialog.saveChangesTitle': 'Save',
+  'dialog.save': 'Save',
+  'dialog.discard': 'Discard',
+  'dialog.discardChanges': 'Discard Changes',
+  'dialog.cancel': 'Cancel',
 
   'conflict.title': 'File modified on disk ({kind}) — overwrite blocked:',
   'conflict.compare': 'Compare',

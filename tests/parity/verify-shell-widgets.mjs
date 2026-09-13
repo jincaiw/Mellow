@@ -259,9 +259,68 @@ if (showElBody !== '') {
   }
 }
 
+// ── 脏文档离开确认：必须是应用内「保存 / 放弃更改 / 取消」三选一 ─────────────
+//
+// 立节原因（G7-EDIT-09）：Mellow 此前用 `window.confirm` —— 只有「确定（=丢弃）/ 取消」，
+// **用户无法在对话框里保存**；而 Typora 的 `tryLeaveDocument` 是
+// `showDialog({ title: 'Save', buttons: [Save, Discard Changes|Discard, Cancel] })`
+// （一手证据：`TypeMark/appsrc/main.js`）。SDI 下「切换文档」是主流程
+// （文件树单击 / Quick Open / 最近文件 / CLI / 恢复快照），缺「保存」意味着每次都要
+// 「取消 → 手动保存 → 再切换」，且「确定」就是丢内容。
+{
+  const confirmBody = /const confirmCloseDocument = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\);/m.exec(appSource)?.[0] ?? '';
+  if (confirmBody === '') {
+    fail('App.tsx 缺少 confirmCloseDocument（脏文档离开确认）');
+  } else {
+    if (/window\.confirm/.test(confirmBody)) fail('脏文档确认不得再用 window.confirm（只有两选一，缺「保存」）');
+    if (!/askUser\(/.test(confirmBody)) fail('脏文档确认必须走应用内对话框 askUser()');
+    for (const [label, key] of [['保存', 'dialog.save'], ['取消', 'dialog.cancel']]) {
+      if (!confirmBody.includes(`t('${key}')`)) fail(`脏文档确认缺少「${label}」按钮（t('${key}')）`);
+    }
+    // 「放弃更改 / 丢弃」按是否有磁盘路径切换（Typora 真值：未命名 → Discard，已命名 → Discard Changes）
+    if (!/doc\.path === null \? t\('dialog\.discard'\) : t\('dialog\.discardChanges'\)/.test(confirmBody)) {
+      fail('脏文档确认的放弃按钮必须按 doc.path 切换为 Typora 真值（未命名 → 丢弃 / 已命名 → 放弃更改）');
+    }
+    // 选「保存」后必须以**保存结果**决定是否离开 —— 保存失败/取消必须中止（绝不静默丢弃）
+    if (!/choice === 'save'\) return await saveDocumentRef\.current\(\)/.test(confirmBody)) {
+      fail('脏文档确认选「保存」后必须用保存结果决定是否离开（saveDocumentRef），否则保存失败仍会丢弃内容');
+    }
+  }
+  if (!/const handleSave = useCallback\(async \(\): Promise<boolean> =>/.test(appSource)) {
+    fail('handleSave 必须返回 Promise<boolean>（脏文档确认的「保存」分支依赖它判断是否可离开）');
+  }
+  // 模态必须真的渲染（否则 askUser 的 await 永久悬空 → 切换文档卡死）
+  if (!/className="confirm-modal-backdrop"/.test(appSource)) fail('App.tsx 未渲染确认模态（await 会永久悬空 → 切换文档卡死）');
+  if (!/className="confirm-modal-actions"/.test(appSource)) fail('确认模态缺少按钮容器 .confirm-modal-actions');
+  for (const sel of ['.confirm-modal-backdrop', '.confirm-modal-actions', '.confirm-modal-primary']) {
+    if (!stylesSource.includes(sel)) fail(`styles.css 缺少 ${sel} 样式`);
+  }
+  // 文案对齐 Typora 原文
+  if (!messagesSource.includes("'dialog.closeDocDirty': '是否要保存对文档的更改？\\n如果不保存，你的更改将丢失。'")) {
+    fail('dialog.closeDocDirty 必须对齐 Typora 原文（是否要保存对文档的更改？/ 不保存则更改丢失）');
+  }
+  for (const key of ['dialog.saveChangesTitle', 'dialog.save', 'dialog.discard', 'dialog.discardChanges', 'dialog.cancel']) {
+    if (!messagesSource.includes(`'${key}':`)) fail(`缺少对话框文案 ${key}`);
+  }
+  // 守卫已改为 async：**漏 await 会让「取消」失效**（Promise 恒为真 → 用户点取消仍会切走并丢内容）
+  const unawaited = [...appSource.matchAll(/(?<!await )!(\(?)(guardSingleDocument|confirmCloseDocument)\(/g)];
+  if (unawaited.length > 0) {
+    fail(`脏文档守卫存在 ${unawaited.length} 处未 await 的调用点 —— Promise 恒为真，「取消」将失效（点取消仍会切走并丢内容）`);
+  }
+  const guardDrift = appSource.replace(
+    'if (!(await guardSingleDocument())) return false;',
+    'if (!guardSingleDocument()) return false;',
+  );
+  if (guardDrift === appSource) {
+    fail('脏文档守卫 canary 未武装：无法注入「漏 await」漂移（锚点漂移，请更新护栏）');
+  } else if (!/(?<!await )!(\(?)(guardSingleDocument|confirmCloseDocument)\(/.test(guardDrift)) {
+    fail('脏文档守卫 canary 失效：注入的「漏 await」调用点未被检出');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Shell widget contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS; editor-topbar is a pure action strip (no filename, macOS sidebar entry, 34px baseline); standalone EditorToolbar retired in favour of the floating selection toolbar (V7-W2.4); word count clickable in status bar + optional title-bar count (V7-W2.6/W2.7); sidebar mode-menu dead CSS removed (V7-W2.8)');
+console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS; editor-topbar is a pure action strip (no filename, macOS sidebar entry, 34px baseline); standalone EditorToolbar retired in favour of the floating selection toolbar (V7-W2.4); word count clickable in status bar + optional title-bar count (V7-W2.6/W2.7); sidebar mode-menu dead CSS removed (V7-W2.8); dirty-document leave prompt is an in-app Save / Discard / Cancel dialog with every guard call site awaited (V7-W6, G7-EDIT-09)');

@@ -60,3 +60,24 @@ NODE_PATH=/tmp/pw/node_modules node tests/e2e/<script>.mjs
 
 图片 widget 有「光标/选区碰到节点 → 显示源码、不渲染 widget」语义
 （`image/widget.ts`）。光标压在图片上时 `.mellow-md-image-*` 根本不存在。
+
+### 7. **dev harness 不投递编辑器事件 → 「文档脏状态」造不出来**（2026-09-13 实测）
+
+在 iframe 内真实键盘输入后，编辑器内容确实变了，但 **App 的 `dirty` 恒为 false**：
+
+- `document.title` 不带脏标记；
+- ⌘N 直接**无对话框**清空文档；
+- ⌘S 同样无效果（mock 保存不落盘、不改标题），无法借「保存后重命名」间接置脏。
+
+**根因**：`dirty` 的唯一建立点是
+`host.onEvent(e => e.type === 'viewUpdate' && e.contentEdited)`（`App.tsx` 约 3440 行），
+而 `host/browserMockHost.ts` **没有 onEvent / viewUpdate 通道**。
+
+**影响面（比单个测试大）**：凡以「脏状态」为前提的行为都**无法在 e2e 中验证** ——
+脏文档离开确认（G7-EDIT-09）、自动保存、定时保存、崩溃恢复快照、标题栏脏标记、
+`reloadFromDisk` 前的未保存确认。
+
+**处置**：`dirty-leave-dialog-verify.mjs` 写成**能力探针** —— 探测不到脏状态时明确
+`SKIP` 并说明原因（同时仍断言「⌘N 在不脏时不被误拦」「全流程不出现 WebView 原生面板」），
+**不伪造通过**；完整断言已写好，harness 补齐事件通道后自动生效。
+详见方案 §5.8 **G7-QA-07**。
