@@ -72,6 +72,25 @@ export function printStylesheet(options: PrintStylesheetOptions = {}): string {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  /*
+   * 屏幕专用留白不得进入打印（Typora 亦在 @media print 内把 #write 的
+   * padding-top / padding-bottom 归零）。两条来源：
+   *   · Reader 的 .mellow-reader { padding: 56px 32px 30vh }
+   *     —— 30vh 底部留白会额外产生**尾部空白页**；
+   *   · 编辑器的 .cm-content { paddingBottom: 50vh }（CoreEditor 的滚动手感留白）
+   *     —— 从编辑器直接打印时同样会产生空白页（file.print 的 enabled 为 always）。
+   * 二者都必须在打印时归零，否则打印件首尾各带一段无意义空白。
+   */
+  .mellow-reader,
+  .cm-content,
+  .cm-scroller {
+    padding: 0 !important;
+  }
+  /* 首元素的上边距归零：@page 已提供页边距，再叠加段前距会让首页内容整体下移 */
+  .mellow-reader > :first-child,
+  #write > :first-child {
+    margin-top: 0 !important;
+  }
   body {
     font-size: ${t.body}pt;
     line-height: ${t.lineHeight};
