@@ -560,6 +560,7 @@ V4 暴露的 Win/Linux 9 处偏离**已全部纠偏**（`menuSchema.ts` 逐条�
 | G7-KEY-08 | Switch Between Opened Documents | `Ctrl+Tab` / `Cmd+`` ` | 无（SDI 下语义变为窗口切换） | D（已显式登记，见 **D-Y**） |
 | G7-KEY-09 | New Tab | macOS `Cmd+T` | 无（SDI 决策移除） | D（已显式登记，见 **D-Y**） |
 | G7-KEY-10 | Actual Size / Zoom In / Out（macOS） | 官方「不支持」 | Mellow 提供 `Cmd+Shift+0/=/-` | D（增强，已显式登记，见 **D-Z**） |
+| **G7-KEY-11（新，2026-09-13 跑 e2e 暴露）** | **macOS 快捷键冲突：`Cmd+Alt+F` 同时绑给「查找和替换」与「全屏」** | 官方表：Replace = `Cmd+H`；Toggle Fullscreen = `Cmd+Option+F` | **已修复**。`search.replace` 的 mac 键（D-Q 为规避系统「隐藏应用」而设的 `Cmd+Alt+F`）与 **W1.9 按官方表改定的 `window.fullscreen = Cmd+Option+F`** 撞车 —— W1.9 改键位时未发现该键已被 replace 占用。<br/>**严重性**：§10 Release Blockers 明确「**菜单高频入口缺失或快捷键冲突**」为阻断项。<br/>**为何长期未发现**：唯一性**只由 `tests/e2e/sidebar-verify.mjs` 检查，而 e2e 不进 CI** —— 与 D-X 同型的结构性缺口（真值放在不进 CI 的地方）。<br/>**修复取舍**：全屏保留官方键（有据）；`search.replace` 改为 **`Cmd+Alt+H`** —— 取官方 `Cmd+H` 的同一字母、加 Alt 规避 macOS 系统「隐藏应用」（与 D-Q 既有思路一致）。<br/>**护栏提升**：`verify-menu-contract.mjs` 新增 **§13 快捷键唯一性**（按平台归一化后检测重复 + canary，已实测注入验证），把该不变量从 e2e 提升到 CI 常跑的 parity 链。实测 80 条 mac 快捷键中此前恰好 1 组重复。 |
 
 **W1.2 键位方向的证据链（重要）**：`tests/benchmark/fixtures/typora-menu-dump.txt` 的
 `keymap.macDefault` / `keymap.pcDefault` 段显示 `Cmd-[ => indentLess`、`Cmd-] => indentMore`，
@@ -1310,7 +1311,7 @@ Functional
 
 | # | 决策点 | 裁决 | 依据 |
 |---|---|---|---|
-| **D-Q**（原 D-G 新） | macOS Replace 键位 | **保留 `Cmd+Alt+F`，登记 D** | 官方表写 `Cmd+H`，但 macOS 保留 `Cmd+H` = 隐藏应用（NSApplication.hide:），改用它会导致系统菜单冲突。Mellow 为 macOS 原生菜单装配，冲突不可接受。 |
+| **D-Q**（原 D-G 新） | macOS Replace 键位 | **`Cmd+Alt+H`，登记 D**（2026-09-13 由 `Cmd+Alt+F` 更正） | 官方表写 `Cmd+H`，但 macOS 保留 `Cmd+H` = 隐藏应用（NSApplication.hide:），改用它会导致系统菜单冲突。Mellow 为 macOS 原生菜单装配，冲突不可接受。<br/>**为何不是 `Cmd+Alt+F`**：该键与 W1.9 按官方表改定的 `window.fullscreen = Cmd+Option+F` 撞车（同一 mac 组合绑两个命令 → §10 Release Blocker「快捷键冲突」）。取舍：**全屏保留官方键**（有据可查），Replace 取官方 `Cmd+H` 的**同一字母**并加 Alt（`Cmd+Alt+H`），既规避系统冲突又保持助记一致。详见 G7-KEY-11。 |
 | **D-R**（原 D-H 新） | Reopen Closed File 在 SDI 下的语义 | **在当前窗口打开**（非新窗口） | Typora 为多标签，`Reopen Closed File` 恢复标签页；Mellow 为 SDI 单文档窗口，语义等价映射为「替换当前文档」，未保存修改仍经 `guardSingleDocument()` 确认。避免为此新增 Rust 窗口传参通道。 |
 | **D-S**（原 D-I 新） | Edit 菜单「拼写和语法检查 / 替换」子菜单 | **保留子菜单结构，内容缺口转 W5** | 真机 nib 提取证实 Typora 确有这两个 NSSubmenu（`Substitutions` 含 5 项）。原 W1.4「平铺」计划被证据推翻，已回退。结构对齐优先，内容（词典/语法/智能引号/文本替换）作为 G7-EDIT-04 在 W5 补齐。 |
 | **D-T**（原 D-J 新） | `file.openSnapshotsFolder` 位置 | **保留 File 菜单末位独立分组** | 属 Mellow 崩溃恢复能力入口，Typora 无对应项；置于 separator 后不污染高频组，由 §7.2 31 槽位契约锁定，防未来漂移。 |

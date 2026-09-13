@@ -519,9 +519,13 @@ function checkOfficialShortcuts(src) {
 for (const message of checkOfficialShortcuts(schemaSource)) fail(message);
 
 // 有意差异必须「按登记值」存在：既防止悄悄回退，也防止例外表本身过期。
+// 2026-09-13：D-Q 登记值由 `Cmd+Alt+F` 改为 `Cmd+Alt+H` —— 前者与 W1.9 按官方表
+// 改定的 `window.fullscreen = Cmd+Option+F` 撞车（同一 mac 组合绑两个命令，
+// 属 §10 Release Blocker 的「快捷键冲突」）。取舍：全屏保留官方键（有据），
+// replace 取官方 `Cmd+H` 的同一字母并加 Alt 规避 macOS 系统「隐藏应用」。
 const replaceShortcut = schemaShortcuts.get('search.replace');
-if (replaceShortcut?.mac !== 'Cmd+Alt+F' || replaceShortcut?.winLinux !== 'Ctrl+H') {
-  fail(`search.replace 键位与 §12 D-Q 登记值不符：期望 mac=Cmd+Alt+F / winLinux=Ctrl+H，实际 ${JSON.stringify(replaceShortcut ?? null)}`);
+if (replaceShortcut?.mac !== 'Cmd+Alt+H' || replaceShortcut?.winLinux !== 'Ctrl+H') {
+  fail(`search.replace 键位与 §12 D-Q 登记值不符：期望 mac=Cmd+Alt+H / winLinux=Ctrl+H，实际 ${JSON.stringify(replaceShortcut ?? null)}`);
 }
 for (const [id] of OFFICIAL_SHORTCUT_EXCEPTIONS) {
   if (!schemaShortcuts.has(id)) fail(`OFFICIAL_SHORTCUT_EXCEPTIONS 已过期：schema 不再包含 ${id}`);
@@ -621,6 +625,44 @@ for (const msg of checkTyporaMenuLabels(parseLocaleBlock('zhCN', ''), parseLocal
   driftedZh.set('menu.file.open', '打开…');
   if (checkTyporaMenuLabels(driftedZh, enMenu).length === 0) {
     fail('菜单文案 canary 未生效：把「打开」改成「打开…」仍未被拒绝');
+  }
+}
+
+// ── §13 快捷键唯一性（Release Blocker 项）────────────────────────────────
+//
+// 立节原因：§10 Release Blockers 明确「菜单高频入口缺失或**快捷键冲突**」为阻断项，
+// 但唯一性此前**只由 tests/e2e/sidebar-verify.mjs 检查，而 e2e 不进 CI** ——
+// 于是 `Cmd+Alt+F` 同时绑给 `search.replace` 与 `window.fullscreen` 长期无人发现
+// （2026-09-13 跑 e2e 才暴露；W1.9 把全屏改为官方键时撞上了 D-Q 给 replace 的键）。
+// 现把该不变量提升到 CI 常跑的 parity 链。
+{
+  const byPlatform = new Map();
+  for (const [id, combo] of schemaShortcuts) {
+    // schemaShortcuts 已在别处收集；此处按平台展开
+    const entry = typeof combo === 'string' ? { mac: combo, winLinux: combo } : combo;
+    for (const [platform, key] of [['mac', entry.mac], ['winLinux', entry.winLinux]]) {
+      if (typeof key !== 'string' || key === '') continue;
+      const norm = normalizeCombo(key);
+      const bucket = byPlatform.get(platform) ?? new Map();
+      const ids = bucket.get(norm) ?? [];
+      ids.push(id);
+      bucket.set(norm, ids);
+      byPlatform.set(platform, bucket);
+    }
+  }
+  for (const [platform, bucket] of byPlatform) {
+    for (const [combo, ids] of bucket) {
+      if (ids.length > 1) {
+        fail(`快捷键冲突（${platform}）：${combo} 同时绑给 ${ids.join(', ')} —— §10 Release Blocker`);
+      }
+    }
+  }
+  // canary：人为把 fullscreen 改回 Cmd+Alt+F 必须被检出
+  const dupDrift = schemaSource.replace("shortcut: { mac: 'Cmd+Alt+H', winLinux: 'Ctrl+H' }", "shortcut: { mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H' }");
+  if (dupDrift === schemaSource) {
+    fail('快捷键唯一性 canary 未武装：无法注入 replace 的键位漂移');
+  } else if (!dupDrift.includes("mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H'")) {
+    fail('快捷键唯一性 canary 失效：注入后未命中漂移值');
   }
 }
 

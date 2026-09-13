@@ -224,7 +224,11 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'search.findNext', labelKey: 'menu.search.findNext', shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' } },
       { kind: 'command', id: 'search.findPrevious', labelKey: 'menu.search.findPrevious', shortcut: { mac: 'Cmd+Shift+G', winLinux: 'Ctrl+Shift+G' } },
       { kind: 'separator' },
-      { kind: 'command', id: 'search.replace', labelKey: 'menu.search.replace', shortcut: { mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H' } },
+      // 2026-09-13 修复键位冲突：原 mac 绑定 `Cmd+Alt+F` 与 `window.fullscreen` 撞车
+      // （W1.9 按官方表把全屏改为 `Cmd+Option+F` 时，未发现该键已被 replace 占用）。
+      // 取舍：全屏保留官方键（有据）；replace 改为 `Cmd+Alt+H` —— 取官方 `Cmd+H`
+      // 的同一字母、加 Alt 规避 macOS 系统「隐藏应用」（与 D-Q 的既有思路一致）。
+      { kind: 'command', id: 'search.replace', labelKey: 'menu.search.replace', shortcut: { mac: 'Cmd+Alt+H', winLinux: 'Ctrl+H' } },
     ] },
   ] },
 
