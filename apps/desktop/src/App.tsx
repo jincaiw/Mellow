@@ -2098,6 +2098,14 @@ export default function App() {
       });
       refreshTabsState();
     }
+    // 2026-09-13 修复：重命名后必须把外部变更监听**重挂到新路径**。
+    // 此前只有 applyDocumentMove / handleSave / handleSaveAs 做了这一步，rename 漏了 →
+    // watcher 仍盯着**已消失的旧路径**，会触发 remove/rename 事件
+    // （externalChange.ts：「remove/rename 时 mtimeMs=0 / identity 为空」）：
+    //   · dirty  → 立刻弹出「文件已被外部修改」冲突对话框（用户刚改的名，属误报）
+    //   · clean  → 触发自动重载，去读已不存在的文件
+    // 同时新路径无人监听 → 之后对该文件的真实外部改动不会被发现。
+    await watchDocument(r.value.newPath);
     // 2026-09-13 修复：最近文件里的旧路径必须替换为新路径。
     // 此前只有 applyDocumentMove 做了这一步，rename 漏了 —— 重命名后
     // File → 打开最近文件 仍指向**已不存在的旧路径**，点击必然失败，
@@ -2112,7 +2120,7 @@ export default function App() {
       : t('msg.renamed'));
     showToast(t('msg.renamedTo', { name: current }), () => void undo());
     return true;
-  }, [currentTabPatch, refreshTabsState, undo, showToast, setDirty]);
+  }, [currentTabPatch, refreshTabsState, undo, showToast, setDirty, watchDocument]);
 
   const handleRenameDocument = useCallback(async () => {
     await applyDocumentRename();

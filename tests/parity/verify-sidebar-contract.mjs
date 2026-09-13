@@ -556,6 +556,16 @@ for (const [fn, guard, delegate] of DOC_DELEGATION) {
     fail(`${fn} 未委托给文档级实现（${delegate}）—— 需同步 filePathRef / docState / assets / 引用 patch`);
   }
 }
+// 共用：取某个 useCallback 的函数体（到下一个顶层 `const xxx` 为止）。
+// 支持传入 src，便于 canary 在**漂移后的源码**上复算同一判定。
+const bodyOfUseCallback = (name, src = appSource) => {
+  const start = src.indexOf(`const ${name} = useCallback`);
+  if (start === -1) return '';
+  const rest = src.slice(start + 10);
+  const nextIdx = rest.search(/\n  const [a-zA-Z]/);
+  return nextIdx === -1 ? rest : rest.slice(0, nextIdx);
+};
+
 // ── ⑳b 最近文件必须与磁盘保持一致（改路径 / 删文件 / 新增路径都要同步）──────
 //
 // 2026-09-13 修复的同类缺陷：只有 applyDocumentMove 维护了 recent，
@@ -563,14 +573,6 @@ for (const [fn, guard, delegate] of DOC_DELEGATION) {
 // （新路径不记录）—— 后果是 File → 打开最近文件 里出现点不开的条目，
 // 或刚保存的文件不出现。此处把「四个改动路径的操作都要同步 recent」固化为契约。
 {
-  // 取函数体：从 `const <name> = useCallback` 到下一个顶层 `const ` 为止
-  const bodyOf = (name) => {
-    const start = appSource.indexOf(`const ${name} = useCallback`);
-    if (start === -1) return '';
-    const rest = appSource.slice(start + 10);
-    const nextIdx = rest.search(/\n  const [a-zA-Z]/);
-    return nextIdx === -1 ? rest : rest.slice(0, nextIdx);
-  };
   const RECENT = ['RECENT_FILES_KEY', 'setRecentFiles', 'recordRecentFile'];
   const RECENT_CONTRACT = [
     ['applyDocumentRename', '重命名后最近文件仍指向旧路径（点击必然失败）'],
@@ -580,7 +582,7 @@ for (const [fn, guard, delegate] of DOC_DELEGATION) {
     ['handleSaveAs', '另存为的新路径未记入最近文件'],
   ];
   for (const [fn, why] of RECENT_CONTRACT) {
-    const body = bodyOf(fn);
+    const body = bodyOfUseCallback(fn);
     if (body === '') { fail(`${fn} 不存在（最近文件契约无法校验）`); continue; }
     if (!RECENT.some((token) => body.includes(token))) {
       fail(`${fn} 未同步最近文件 —— ${why}`);
@@ -590,6 +592,42 @@ for (const [fn, guard, delegate] of DOC_DELEGATION) {
   const recentDrift = appSource.replace(/setRecentFiles\(\(prev\) => \{\s*\n\s*const next = prev\.map\(\(e\) => \(e\.path === path/g, 'setRecentFiles((prev) => { const next = prev.map((e) => (e.path === "__none__"');
   if (recentDrift === appSource) {
     fail('最近文件 canary 未武装：无法注入 rename 的 recent 漂移');
+  }
+}
+
+// ── ⑳c 改变文档路径的操作必须把外部变更监听重挂到新路径 ───────────────────
+//
+// 2026-09-13 修复的同类缺陷：applyDocumentMove / handleSave / handleSaveAs 都调了
+// watchDocument(newPath)，只有 applyDocumentRename 漏了。后果：
+// watcher 仍盯**已消失的旧路径** → 触发 remove/rename 事件（externalChange.ts 注释：
+// 「remove/rename 时 mtimeMs=0 / identity 为空」）→ dirty 时**误报冲突对话框**、
+// clean 时触发自动重载去读不存在的文件；且新路径无人监听（真实外部改动漏检）。
+// handleTrashDocument 不在此列 —— 文件已删除并关闭文档，无需监听。
+{
+
+  const WATCH_CONTRACT = [
+    ['applyDocumentRename', '重命名后 watcher 仍盯旧路径 → 误报冲突 / 漏检新路径的外部改动'],
+    ['applyDocumentMove', '移动后 watcher 未重挂'],
+    ['handleSave', '保存（首次赋路径）后 watcher 未重挂'],
+    ['handleSaveAs', '另存为后 watcher 未重挂'],
+  ];
+  // 注意必须匹配**调用**（`watchDocument(`）而非标识符 —— useCallback 的依赖数组里
+  // 也会出现 `watchDocument`，只查标识符会让「调用被删掉」漏检（首版即栽在此处，
+  // canary 报「未武装」才暴露）。
+  const callsWatch = (src, fn) => {
+    const body = bodyOfUseCallback(fn, src);
+    return body !== '' && /watchDocument\s*\(/.test(body);
+  };
+  for (const [fn, why] of WATCH_CONTRACT) {
+    if (bodyOfUseCallback(fn) === '') { fail(`${fn} 不存在（watcher 契约无法校验）`); continue; }
+    if (!callsWatch(appSource, fn)) fail(`${fn} 未重挂外部变更监听 —— ${why}`);
+  }
+  // canary：抽掉 applyDocumentRename 的 watchDocument **调用**必须被检出
+  const watchDrift = appSource.replace(/await watchDocument\(r\.value\.newPath\);/g, '');
+  if (watchDrift === appSource) {
+    fail('watcher 重挂 canary 未武装：无法注入 rename 的 watchDocument 调用漂移');
+  } else if (callsWatch(watchDrift, 'applyDocumentRename')) {
+    fail('watcher 重挂 canary 失效：抽掉调用后仍判定为已重挂');
   }
 }
 
