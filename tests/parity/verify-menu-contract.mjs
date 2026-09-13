@@ -211,7 +211,12 @@ if (fileItems.length !== FILE_MENU_CONTRACT.length || fileItems.some((it, i) => 
 }
 
 // ── 6. 双语完整：schema 用到的每个 labelKey 都必须在 i18n menu.* 有中英文 ──
-function parseLocaleBlock(name) {
+/**
+ * 解析某个 locale 块的 key → value。
+ * @param name 块名（zhCN / enUS）
+ * @param prefix 只保留该前缀的键；传 '' 表示不过滤（§12 文案合同需要取 contextmenu.* 键）
+ */
+function parseLocaleBlock(name, prefix = 'menu.') {
   // 声明形式兼容类型注解：const zhCN = { / const enUS: Record<keyof typeof zhCN, string> = {
   const decl = new RegExp(`const ${name}[^=\\n]*= \\{`).exec(messagesSource);
   const startIdx = decl?.index ?? -1;
@@ -224,7 +229,7 @@ function parseLocaleBlock(name) {
   const block = endRel === -1 ? rest : rest.slice(0, endRel);
   const map = new Map();
   for (const [, key, value] of block.matchAll(/^\s*'([^']+)':\s*'((?:[^'\\]|\\.)*)',/gm)) {
-    if (key.startsWith('menu.')) map.set(key, value);
+    if (prefix === '' || key.startsWith(prefix)) map.set(key, value);
   }
   return map;
 }
@@ -590,6 +595,10 @@ const TYPORA_MENU_LABELS = [
   ['menu.format.link', '超链接', 'Hyperlink'],
   ['menu.format.referenceLink', '链接引用', 'Link Reference'],
   ['menu.image.insertLocal', '插入本地图片', 'Insert Local Images'],
+  // 右键菜单：Typora 区分 `Delete Image`（仅移除引用）与 `Delete Image File`（删磁盘文件）。
+  // Mellow 该项确认框是「将图片移到回收站并移除引用？」= 会删磁盘文件，
+  // 故文案必须对齐 `Delete Image File` —— 否则破坏性操作的标签比实际行为更轻。
+  ['contextmenu.editorImageDelete', '删除图片文件', 'Delete Image File'],
 ];
 function checkTyporaMenuLabels(zhMap, enMap) {
   const bad = [];
@@ -599,7 +608,11 @@ function checkTyporaMenuLabels(zhMap, enMap) {
   }
   return bad;
 }
-for (const msg of checkTyporaMenuLabels(zhMenu, enMenu)) fail(`菜单文案偏离 Typora：${msg}`);
+// 注意：`zhMenu` / `enMenu` 只含 `menu.*` 键，而本合同的条目里含右键菜单键
+// （`contextmenu.*`）—— 故这里用不过滤前缀的完整映射。
+for (const msg of checkTyporaMenuLabels(parseLocaleBlock('zhCN', ''), parseLocaleBlock('enUS', ''))) {
+  fail(`菜单文案偏离 Typora：${msg}`);
+}
 
 // 省略号合同：Typora 全库仅 1 处 `…`，故 Mellow 不得对上述「Typora 有对应项」
 // 的条目自行添加省略号。canary：把 file.open 的 zh 文案改成「打开…」必须被拒。

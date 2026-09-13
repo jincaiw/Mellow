@@ -185,7 +185,10 @@ const zhCN = {
   'contextmenu.editorImageMdToHtml': '转换为 HTML',
   'contextmenu.editorImageHtmlToMd': '转换为 Markdown',
   'contextmenu.editorImageUpload': '上传图片',
-  'contextmenu.editorImageDelete': '删除图片',
+  // Typora 区分 `Delete Image`（仅移除引用）与 `Delete Image File`（删磁盘文件）。
+  // Mellow 该项的确认框是「将图片移到回收站并移除引用？」—— **会删磁盘文件**，
+  // 故文案应对齐 Typora 的「删除图片文件」，否则破坏性操作的标签比实际行为更轻。
+  'contextmenu.editorImageDelete': '删除图片文件',
   'contextmenu.codeTools': '代码工具',
   'contextmenu.codeAutoIndentAll': '整体自动缩进',
   'contextmenu.codeAutoIndentSelected': '所选内容自动缩进',
@@ -988,7 +991,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'contextmenu.editorImageMdToHtml': 'Convert to HTML',
   'contextmenu.editorImageHtmlToMd': 'Convert to Markdown',
   'contextmenu.editorImageUpload': 'Upload Image',
-  'contextmenu.editorImageDelete': 'Delete Image',
+  'contextmenu.editorImageDelete': 'Delete Image File',
   'contextmenu.codeTools': 'Code Tools',
   'contextmenu.codeAutoIndentAll': 'Auto Indent Whole Code',
   'contextmenu.codeAutoIndentSelected': 'Auto Indent Selected Code',

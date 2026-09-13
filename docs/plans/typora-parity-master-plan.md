@@ -519,6 +519,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | **G7-SIDE-05** | 排序项未达 Typora 5 组 × 升降序 | Typora：Group by Folder / natural / alphabet / modified / created | **已修复（V7-W3.4）** —— 底部菜单 5 组勾选 + 升序 / 降序 |
 | **G7-SIDE-06** | 1.14 的「显示隐藏文件 / 显示非 Markdown 文件」配置形态未核对 | Typora 为**偏好设置项**，Mellow 为折叠态 filter | **已修复（V7-W3.6）** —— 偏好设置三项：显示隐藏文件 / 显示非 Markdown / 自定义显示·隐藏规则（glob） |
 | **G7-SIDE-07** | 文件操作撤销语义未与 Typora 对齐核对（Typora：仅最近一次；Win/Linux 删除不可撤销） | `FileTreeHistory.undo` | **已修复（V7-W3.8）** —— 撤销栈收敛为深度 1；**trash 撤销登记 D**（Typora macOS 可撤销，Mellow 全平台依赖系统回收站，需 `FileService` 暴露平台回收站 API） |
+| **G7-SIDE-08（新，2026-09-13 实机对照）** | **文件树右键缺「在新窗口中打开」** | 本机 Typora 1.14.9 `Menu.strings` 有 `Open in New Window` →「在新窗口中打开」；§3.5 已将其列为 Typora 右键菜单真值、§7.3 约定「右键 10 项」 | **未实现（如实登记）** —— Mellow 文件树右键实测 12 项（新文件/新文件夹/重命名/复制/移动…/移到回收站/复制路径/复制相对路径/撤销文件操作/在文件管理器中显示/打开/在文件树中显示），**无「在新窗口中打开」**。<br/>**未实施的原因**：需向新窗口传目标文件路径，而 Mellow 当前 `file.newWindow` 只开空窗口 —— 新增窗口传参通道的成本与本方案 **D-R**（Reopen Closed File 因此降级为「当前窗口打开」）同源，属需单独裁决的结构性改动，不擅自动手。 |
 
 **W3 新识别并登记的差异（D）**
 
@@ -540,6 +541,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | **G7-EDIT-04** | 拼写检查仅切 `spellcheck` 属性，无词典与替换建议；跨平台行为不一致 | FAIL（W5：词典与替换建议属平台能力，需 `host-api` 扩展） |
 | **G7-EDIT-05** | 三平台真实输入法连续 20 分钟写作未执行 | NOT_TESTED（W7 真机） |
 | **G7-EDIT-06（新）** | **`FileTreeHistory` 撤销栈为无界栈，与 Typora「仅最近一次可撤销」不一致** | **已修复（V7-W3.8 随侧栏一并收敛）** |
+| **G7-EDIT-08（新，2026-09-13 实机对照）** | **编辑器右键菜单文案/条目与 Typora 有差** | **部分修复 + 部分登记**。本机 Typora 1.14.9 `Menu.strings` 对照 Mellow 的 70 条右键文案：<br/>**① 已修（安全相关）**：`contextmenu.editorImageDelete` 原写「删除图片」，但其确认框是「将图片移到回收站并移除引用？」—— **会删磁盘文件**。而 Typora 区分 `Delete Image`（仅移除引用）与 `Delete Image File`（删磁盘文件）。即原标签比实际行为更轻，破坏性操作易被误认为仅移除引用 → 已对齐为「**删除图片文件**」并纳入 §12 文案合同锁定。<br/>**② 未实施（登记）**：Typora 右键另有 `Open Image in Browser`（在浏览器中打开图片）、`Refresh All Math Expressions`（刷新所有数学公式）、`Task Status`（任务状态）、`Block/Inline/List Styles`（块/内联/列表样式）、`Learn More`（了解更多）、`Image Tools`（图像工具，Mellow 用并列条目替代子菜单）—— 均未实现，属**功能候选**而非文案差异，需单独裁决。<br/>**③ 有意不同**：`Reveal in Sidebar`（在侧边栏中显示）↔ Mellow 拆为「在文件树中显示」/「在文档列表中显示」两项，属更精确的增强。 |
 | **G7-EDIT-07（新，2026-09-13 实测）** | **Enter 的语义与 Typora 相反：Mellow 的 Enter = 软换行，而非新段落** | **FAIL（真实行为差距，方案此前未记录）** —— 实测（Playwright，光标置于行尾）：<br/>① `abc` + Enter → `"abc\ndef"`（单 `\n`），渲染为**同一段落**（行高 32、行距 32 紧凑）；<br/>② `abc` + Shift+Enter → `"abc\ndef"`，与 ① **完全一致**（无 `Shift-Enter` 绑定）；<br/>③ 真正的分段是 `abc\n\ndef`（行高 38、段间距 64）。<br/>而官方表定义 **Enter = New Paragraph、Shift+Enter = New Line** —— 即 Mellow 的 Enter 实际承担的是「New Line」语义，**缺的是 New Paragraph**。<br/>根因：`lang-markdown` 只绑定 `{key:"Enter", run: insertNewlineContinueMarkup}`；全仓无 `Shift-Enter` 绑定。<br/>**本轮处置**：**不动 Enter**（输入路径最高风险面，且 `insertNewlineContinueMarkup` 还负责列表续写，改动会连带破坏列表），改为把两项能力经 **Edit 菜单** 显式暴露（见 **G7-MENU-06** 已修复），用户由此可获得真正的「新段落」。<br/>**残余差距（登记，非阻塞）**：Enter 键位语义仍与 Typora 相反；彻底对齐需谨慎改造 Enter（含列表续写分支），风险显著高于收益，按 D-V 判据维持现状并显式登记。 |
 
 ### 5.6 排版与渲染（G7-TYPO）
