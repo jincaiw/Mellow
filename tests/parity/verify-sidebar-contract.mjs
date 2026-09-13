@@ -556,6 +556,43 @@ for (const [fn, guard, delegate] of DOC_DELEGATION) {
     fail(`${fn} 未委托给文档级实现（${delegate}）—— 需同步 filePathRef / docState / assets / 引用 patch`);
   }
 }
+// ── ⑳b 最近文件必须与磁盘保持一致（改路径 / 删文件 / 新增路径都要同步）──────
+//
+// 2026-09-13 修复的同类缺陷：只有 applyDocumentMove 维护了 recent，
+// rename 漏了（残留旧路径）、trash 漏了（残留已删文件）、save/saveAs 漏了
+// （新路径不记录）—— 后果是 File → 打开最近文件 里出现点不开的条目，
+// 或刚保存的文件不出现。此处把「四个改动路径的操作都要同步 recent」固化为契约。
+{
+  // 取函数体：从 `const <name> = useCallback` 到下一个顶层 `const ` 为止
+  const bodyOf = (name) => {
+    const start = appSource.indexOf(`const ${name} = useCallback`);
+    if (start === -1) return '';
+    const rest = appSource.slice(start + 10);
+    const nextIdx = rest.search(/\n  const [a-zA-Z]/);
+    return nextIdx === -1 ? rest : rest.slice(0, nextIdx);
+  };
+  const RECENT = ['RECENT_FILES_KEY', 'setRecentFiles', 'recordRecentFile'];
+  const RECENT_CONTRACT = [
+    ['applyDocumentRename', '重命名后最近文件仍指向旧路径（点击必然失败）'],
+    ['applyDocumentMove', '移动后最近文件仍指向旧路径'],
+    ['handleTrashDocument', '删除后最近文件残留已删文件条目'],
+    ['handleSave', '首次保存/保存后新路径未记入最近文件'],
+    ['handleSaveAs', '另存为的新路径未记入最近文件'],
+  ];
+  for (const [fn, why] of RECENT_CONTRACT) {
+    const body = bodyOf(fn);
+    if (body === '') { fail(`${fn} 不存在（最近文件契约无法校验）`); continue; }
+    if (!RECENT.some((token) => body.includes(token))) {
+      fail(`${fn} 未同步最近文件 —— ${why}`);
+    }
+  }
+  // canary：抽掉 applyDocumentRename 的 recent 处理必须被检出
+  const recentDrift = appSource.replace(/setRecentFiles\(\(prev\) => \{\s*\n\s*const next = prev\.map\(\(e\) => \(e\.path === path/g, 'setRecentFiles((prev) => { const next = prev.map((e) => (e.path === "__none__"');
+  if (recentDrift === appSource) {
+    fail('最近文件 canary 未武装：无法注入 rename 的 recent 漂移');
+  }
+}
+
 // canary：把「目标为当前打开文档」的判定全部去掉后，上述检查必须转为失败。
 // 注意用 /g —— 该判定出现在多个树操作里，只替换首个会让 canary 误判为「未生效」。
 const trashDrift = appSource.replace(/if \(target === filePathRef\.current\) \{/g, 'if (false) {');

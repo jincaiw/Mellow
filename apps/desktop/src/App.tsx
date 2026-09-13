@@ -2098,6 +2098,15 @@ export default function App() {
       });
       refreshTabsState();
     }
+    // 2026-09-13 修复：最近文件里的旧路径必须替换为新路径。
+    // 此前只有 applyDocumentMove 做了这一步，rename 漏了 —— 重命名后
+    // File → 打开最近文件 仍指向**已不存在的旧路径**，点击必然失败，
+    // 且列表里长期残留一条 missing 条目（与 move 的行为不一致）。
+    setRecentFiles((prev) => {
+      const next = prev.map((e) => (e.path === path ? { ...e, path: r.value.newPath } : e));
+      try { localStorage.setItem(RECENT_FILES_KEY, serializeRecentFiles(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
     setStatusText(r.value.assetDirRenamed
       ? t('msg.renamedAssets', { n: r.value.patchedCount })
       : t('msg.renamed'));
@@ -3859,6 +3868,11 @@ export default function App() {
     }
     filePathRef.current = result.value.path;
     host.setDocumentPath(result.value.path);
+    // 2026-09-13 修复：保存/另存为产生了**新的磁盘路径**（未命名文档首次保存、
+    // 或另存到别处）→ 记入最近文件。此前只在「打开」时记录，导致刚保存的文件
+    // 不出现在 File → 打开最近文件，与 Typora 行为不一致。已是同一路径时
+    // recordRecentFile 内部去重置顶，重复调用无副作用。
+    recordRecentFile(result.value.path);
     diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
@@ -3921,6 +3935,11 @@ export default function App() {
     }
     filePathRef.current = result.value.path;
     host.setDocumentPath(result.value.path);
+    // 2026-09-13 修复：保存/另存为产生了**新的磁盘路径**（未命名文档首次保存、
+    // 或另存到别处）→ 记入最近文件。此前只在「打开」时记录，导致刚保存的文件
+    // 不出现在 File → 打开最近文件，与 Typora 行为不一致。已是同一路径时
+    // recordRecentFile 内部去重置顶，重复调用无副作用。
+    recordRecentFile(result.value.path);
     diskStateRef.current = result.value.diskMtimeMs !== undefined && result.value.identityKey !== undefined
       ? { mtimeMs: result.value.diskMtimeMs, identityKey: result.value.identityKey }
       : null;
@@ -4090,6 +4109,14 @@ export default function App() {
       return;
     }
     setStatusText(t('msg.trashed'));
+    // 2026-09-13 修复：文件已删除 → 必须从最近文件移除该条目。
+    // 否则 File → 打开最近文件 长期残留一条指向已删文件的条目，点击必然失败
+    // （与 applyDocumentMove 的「替换旧路径」同属保持 recent 与磁盘一致的处理）。
+    setRecentFiles((prev) => {
+      const next = prev.filter((e) => e.path !== path);
+      try { localStorage.setItem(RECENT_FILES_KEY, serializeRecentFiles(next) ?? '[]'); } catch { /* noop */ }
+      return next;
+    });
     // B1（SDI）：文档即窗口 —— 文件已删除（不走 dirty 保存确认，保存会重新创建已删文件），
     // Tauri 下关闭当前窗口；dev/浏览器回落空白未命名文档。
     if (active !== null) {
