@@ -361,6 +361,32 @@ Search 面板  （跨文件全局搜索）
 | 自定义 CSS | `base.user.css` / `[theme].user.css`（Add Custom CSS） |
 | 获取主题 | 官方 Typora Theme Gallery（`theme.typora.io`），Themes 菜单提供入口 🟡 |
 
+### 3.8b Typora 真实偏好实测（2026-09-13，第 1 级证据）
+
+> 来源：本机 Typora 1.14.9（build 7785）的偏好 plist —— `defaults read abnerworks.Typora`。
+> **这是全方案唯一一处「真实安装的偏好真值」**，此前所有默认值判断都只能靠官方文档推断。
+> 注意：该 plist 混合了**默认值**与**用户选择**（如 `recentFolder` / `uuid` 显然是后者），
+> 故下面只列与对标相关、且可用于**交叉验证**的项；不据此单独判定默认值。
+
+| 键 | 值 | 含义 / 与 Mellow 的关系 |
+|---|---|---|
+| `initialize_ver` | `1.14.9` | 首次初始化版本，与本方案基线一致 |
+| `theme` / `darkTheme` | `Github` / `Night` | **暗色主题叫 `Night`**（Mellow 无 `night`，见 G7-TYPO-05） |
+| `useSeparateDarkTheme` / `useDarkTheme` | `1` / `0` | 明暗分离开启，当前用浅色 |
+| `useTreeStyle` | `0` | **Files 侧栏用列表（List）而非树（Tree）** —— 对应 `View → Articles`；Mellow 的「侧栏默认视图」设置项语义一致 |
+| `strict_mode` | `1` | 严格模式。**与 §5.5 G7-EDIT-07（Enter / 单换行语义）相关**，但该键的确切行为需真机复核，本方案不据它下结论 |
+| `preLinebreakOnExport` | `1` | **导出时保留单换行**（对应 Menu.strings 的「保留单换行符」）—— Mellow 无对应设置项 |
+| `copy_markdown_by_default` | `1` | **复制默认按 Markdown**（Mellow 的 `edit.copy` 是系统预定义复制，另有 `edit.copyMarkdown`）—— 默认行为可能不同，需复核 |
+| `enable_inline_math` | `0` | **内联公式关闭**（对应 Menu.strings 的「内联公式」）—— Mellow 无对应设置项 |
+| `WebAutomaticQuoteSubstitutionEnabled` / `WebAutomaticDashSubstitutionEnabled` | `0` / `0` | **智能引号 / 智能破折号均关闭** —— Mellow 的 `edit.smartPunctuation` 默认值需与此交叉验证 |
+| `useRegexp` / `wholeWord` | `0` / `0` | 搜索选项（正则 / 全词）默认关 |
+| `use_seamless_window` | `0` | 无缝窗口关闭 |
+| `noHintForOpenLink` | `1` | 打开链接不再提示 |
+
+**由此登记的新候选（尚未逐项裁决，见 §15.3）**：
+`Insert Final New Line On Save`（保存时在文末添加空行）、`Preserve single line break`（保留单换行符）、
+`Allow Magnification`（双指缩放）—— 三项均为 Typora 的**偏好设置项**，Mellow 侧经代码检索确认**均无实现**。
+
 ### 3.9 参考模型的一句话总结
 
 > Typora 的一致性来自「**默认极简 + 入口可预期 + 结果可预测**」：默认状态下只有正文；需要什么时，功能出现在菜单里它该在的位置；任何操作都不静默改写 Markdown 原文。
@@ -1293,6 +1319,7 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 | 7 | **G7-QA-03 / P0-PLATFORM-001** 三平台真机矩阵 | Windows ✅ macOS ✅；**Linux IME 失败**（已定位：6/8 场景通过，`paragraph` + `code` 失败，且失败点漂移） | 需 Linux 环境或该 job 日志 |
 | 8 | **G7-QA-04 / P0-LAYOUT-002** 三平台视觉 Golden | 采集流水线**已跑通**（Runtime Qualification run 61 已产出 `linux-visual-golden` / `windows-visual-golden` 制品，各含基线 JSON 与场景 PNG），但**基线尚未入库**；且制品下载需鉴权（401），本环境无法取回 | 从 GitHub Actions 制品页下载两个 `*-visual-golden`，把 `*-golden.linux.json` / `*-golden.windows.json` 提交到 `tests/visual/golden/` |
 | 9 | **W5 图片 / 剪贴板 / 导出 corpus** | 需真机 + 外部服务 | 真机执行 + 三平台视觉比对 |
+| 10 | **Typora 三项偏好设置项 Mellow 无实现**（§3.8b 实机对照新发现） | 均为**偏好设置**而非菜单项；经代码检索确认 Mellow 无对应实现：`Insert Final New Line On Save`（保存时在文末添加空行）、`Preserve single line break`（保留单换行符）、`Allow Magnification`（双指缩放） | **需先裁决**：判定为 E（补齐）还是 D（有意差异）。注意 `Preserve single line break` 与 §5.5 G7-EDIT-07（Enter / 单换行语义）同源，宜一并裁决 |
 
 > **注意**：表格 5、6 两项（UX Score / 30 任务）**不可能由 Agent 代填** —— 不是「没做」，而是工具契约明确禁止伪造计时。
 
