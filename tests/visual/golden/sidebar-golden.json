@@ -3,7 +3,7 @@
     "aside": {
       "x": 0,
       "y": 0,
-      "w": 260,
+      "w": 270,
       "h": 900
     },
     "widthSaved": null,
@@ -14,16 +14,16 @@
     "firstRow": {
       "x": 0,
       "y": 38,
-      "w": 259,
+      "w": 269,
       "h": 24
     }
   },
   "files-tree-filter": {
-    "asideW": 260,
+    "asideW": 270,
     "input": {
       "x": 8,
       "y": 39,
-      "w": 243,
+      "w": 253,
       "h": 18
     },
     "focused": false
@@ -32,7 +32,7 @@
     "aside": {
       "x": 0,
       "y": 0,
-      "w": 260,
+      "w": 270,
       "h": 900
     },
     "widthSaved": null,
@@ -40,7 +40,7 @@
     "firstRow": {
       "x": 0,
       "y": 91,
-      "w": 259,
+      "w": 269,
       "h": 28
     }
   },
@@ -48,14 +48,14 @@
     "aside": {
       "x": 0,
       "y": 0,
-      "w": 260,
+      "w": 270,
       "h": 900
     },
     "widthSaved": null,
     "searchInput": {
       "x": 8,
       "y": 42,
-      "w": 243,
+      "w": 253,
       "h": 22
     },
     "groupCount": 1,
@@ -63,7 +63,7 @@
     "firstMatch": {
       "x": 0,
       "y": 230,
-      "w": 259,
+      "w": 269,
       "h": 29.3
     }
   }
