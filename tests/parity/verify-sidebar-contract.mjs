@@ -523,7 +523,49 @@ for (const marker of [
   }
 }
 
-// ── ⑳ canary：护栏必须能抓住 clamp 回退 ─────────────────────────────────
+// ── ⑳ 树/列表文件操作必须对「当前打开文档」走文档级实现 ─────────────────
+//
+// 2026-09-13 修复的真实缺陷：同一个操作存在**两套实现** ——
+//   · 文档级（File 菜单 / 命令面板）：handleRenameDocument / handleMoveDocument /
+//     handleTrashDocument —— 会同步 filePathRef / docState / watchDocument /
+//     recent files，并在删除后关闭文档；
+//   · 树/列表级（侧栏右键 / F2 / Delete）：原先只做 fileTreeService 的纯 fs 操作。
+// 后者对「正在编辑的那个文件」会造成：
+//   · 重命名/移动后 filePathRef 失联 → 之后保存把内容写回**旧路径**（在旧位置重建文件）；
+//   · 删除后文档未关闭 → 保存把已删文件**重建**（复活）；
+//   · 重命名不联动 `${stem}.assets` 与文档内图片引用 → 图片断链。
+// 故要求四个树操作在目标 === filePathRef.current 时必须委托给文档级实现。
+const DOC_DELEGATION = [
+  ['handleTreeRename', 'target === filePathRef.current', 'applyDocumentRename'],
+  ['handleTreeMove', 'selectedTreePath === filePathRef.current', 'moveDocumentRef.current'],
+  ['handleTreeDrop', 'path === filePathRef.current', 'moveDocumentRef.current'],
+  ['handleTreeTrash', 'target === filePathRef.current', 'trashDocumentRef.current'],
+];
+for (const [fn, guard, delegate] of DOC_DELEGATION) {
+  const start = appSource.indexOf(`const ${fn} = useCallback`);
+  if (start === -1) {
+    fail(`${fn} 不存在（侧栏文件操作入口缺失）`);
+    continue;
+  }
+  // 取该 callback 的函数体（到下一个顶层 `const xxx = useCallback` 或 `}, [` 收尾）
+  const body = appSource.slice(start, start + 3000);
+  if (!body.includes(guard)) {
+    fail(`${fn} 缺少「目标为当前打开文档」的判定（${guard}）—— 会写回旧路径或让已删文件复活`);
+  }
+  if (!body.includes(delegate)) {
+    fail(`${fn} 未委托给文档级实现（${delegate}）—— 需同步 filePathRef / docState / assets / 引用 patch`);
+  }
+}
+// canary：把「目标为当前打开文档」的判定全部去掉后，上述检查必须转为失败。
+// 注意用 /g —— 该判定出现在多个树操作里，只替换首个会让 canary 误判为「未生效」。
+const trashDrift = appSource.replace(/if \(target === filePathRef\.current\) \{/g, 'if (false) {');
+if (trashDrift === appSource) {
+  fail('文件操作委托 canary 未武装：无法注入「去掉当前文档判定」的漂移');
+} else if (/if \(target === filePathRef\.current\) \{/.test(trashDrift)) {
+  fail('文件操作委托 canary 失效：注入后仍命中判定');
+}
+
+// ── ㉑ canary：护栏必须能抓住 clamp 回退 ─────────────────────────────────
 // 模拟「去掉 clamp 直接透传」的漂移：突变后源码应包含退化形态，且 clamp 正则不再命中
 const CLAMP_EXPR = 'Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(next)))';
 const clampDrift = appSource.replace(CLAMP_EXPR, 'next');

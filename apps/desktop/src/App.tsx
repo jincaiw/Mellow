@@ -285,6 +285,17 @@ export default function App() {
   // 图床上传服务（Typora §55：插入图片自动上传；__MELLOW_IMAGE_UPLOAD__ 注入用）
   const imageUploadServiceRef = useRef<ImageUploadService | null>(null);
   const renameRef = useRef<DocumentRenameService | null>(null);
+  /**
+   * 文档级 move / trash 的间接引用（同 maybeAutoSaveRef 模式）。
+   *
+   * 2026-09-13：树/列表操作（handleTreeMove / handleTreeDrop / handleTreeTrash）
+   * 定义在文件较早处，而文档级实现（handleMoveDocument / handleTrashDocument）在较晚处，
+   * 无法直接引用 —— 故经 ref 调用。**当目标正是当前打开文档时必须走文档级实现**，
+   * 否则会出现：移动后保存写回旧路径、删除后保存把已删文件**重建**（复活）。
+   */
+  const moveDocumentRef = useRef<((dir: string) => Promise<boolean>) | null>(null);
+  // handleTrashDocument 有多条早退路径（无返回值），故用 unknown 而非 boolean
+  const trashDocumentRef = useRef<(() => Promise<unknown>) | null>(null);
   const historyRef = useRef<FileOpHistory | null>(null);
   const dialogRef = useRef<DialogService | null>(null);
   const openerRef = useRef<OpenerService | null>(null);
@@ -2046,22 +2057,34 @@ export default function App() {
     setStatusText(t('msg.codeBlockCopied'));
   }, [t]);
 
-  /** 文档重命名（spec §6：${stem}.assets 同步 + 引用 patch 原子化） */
-  const handleRenameDocument = useCallback(async () => {
+  /**
+   * 文档重命名（spec §6：${stem}.assets 同步 + 引用 patch 原子化）。
+   *
+   * 2026-09-13：从 handleRenameDocument 抽出，供**侧栏树/列表重命名**复用。
+   * 原因：此前侧栏重命名走的是 `fileTreeService.rename()`（纯 `fs.move`），
+   * 而本函数才是「重命名**打开的文档**」的正确实现 —— 它会
+   * ① 更新 filePathRef / docState（否则后续保存会写回**旧路径**，在旧位置重建文件）；
+   * ② 同步 `${stem}.assets` 目录；③ patch 文档内图片引用（否则图片断链）。
+   * 两条路径并存且只有一条正确，属「同一操作两套实现」的结构性缺陷。
+   *
+   * @param name 省略时弹输入框；由调用方传入可避免重复询问
+   * @returns 是否成功执行
+   */
+  const applyDocumentRename = useCallback(async (name?: string): Promise<boolean> => {
     const svc = renameRef.current;
-    if (!svc) return;
+    if (!svc) return false;
     const path = filePathRef.current;
     if (path === null) {
       setStatusText(t('msg.renameNeedsSave'));
-      return;
+      return false;
     }
     const current = path.split('/').pop() ?? '';
-    const name = window.prompt(t('prompt.newFileShort'), current);
-    if (name === null || name.trim() === '') return;
-    const r = await svc.renameDocument(name);
+    const next = name ?? window.prompt(t('prompt.newFileShort'), current);
+    if (next === null || next.trim() === '') return false;
+    const r = await svc.renameDocument(next);
     if (!r.ok) {
       setStatusText(r.error.message);
-      return;
+      return false;
     }
     filePathRef.current = r.value.newPath;
     setDirty(true);
@@ -2079,7 +2102,12 @@ export default function App() {
       ? t('msg.renamedAssets', { n: r.value.patchedCount })
       : t('msg.renamed'));
     showToast(t('msg.renamedTo', { name: current }), () => void undo());
+    return true;
   }, [currentTabPatch, refreshTabsState, undo, showToast, setDirty]);
+
+  const handleRenameDocument = useCallback(async () => {
+    await applyDocumentRename();
+  }, [applyDocumentRename]);
 
   // ── File Tree（PRD §14/§59/§60）──
 
@@ -2675,13 +2703,25 @@ export default function App() {
     // P3.4：File List 键盘 F2 复用同一重命名流（pathOverride = 列表选中项）
     const target = pathOverride ?? selectedTreePath;
     if (!svc || target === null) return;
+    // 2026-09-13 修复：目标**正是当前打开文档**时，必须走文档级重命名。
+    // 侧栏此前的 `svc.rename()` 只是 `fs.move`，会导致：
+    //   ① filePathRef 失联 → 之后保存把内容写回**旧路径**，在旧位置重建文件；
+    //   ② `${stem}.assets` 目录不同步；③ 文档内图片引用不 patch（图片断链）。
+    // 文档级实现（applyDocumentRename）三者都处理，故此处委托给它。
+    if (target === filePathRef.current) {
+      if (await applyDocumentRename(name)) {
+        setSelectedTreePath(filePathRef.current);
+        await refreshFilesSidebar();
+      }
+      return;
+    }
     const next = name ?? window.prompt(t('prompt.rename'), target.split(/[\\/]/).pop() ?? target);
     if (!next) return;
     const r = await svc.rename(target, next);
     setStatusText(r.ok ? t('msg.renamed', { value: r.value }) : t('msg.renameFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(r.value);
     await refreshFilesSidebar();
-  }, [refreshFileTree, selectedTreePath]);
+  }, [applyDocumentRename, refreshFilesSidebar, selectedTreePath]);
 
   const handleTreeDuplicate = useCallback(async () => {
     const svc = fileTreeServiceRef.current;
@@ -2697,6 +2737,12 @@ export default function App() {
     if (!svc || !dialog || selectedTreePath === null) return;
     const target = await dialog.showDirectory();
     if (!target.ok || target.value === null) return;
+    // 2026-09-13 修复：目标为当前打开文档时走文档级移动（同步 filePathRef /
+    // docState / watchDocument / recent files）；否则保存会写回旧路径。
+    if (selectedTreePath === filePathRef.current) {
+      await moveDocumentRef.current?.(target.value);
+      return;
+    }
     const r = await svc.move(selectedTreePath, target.value);
     setStatusText(r.ok ? t('msg.movedTo', { value: r.value }) : t('msg.moveFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(r.value);
@@ -2707,6 +2753,11 @@ export default function App() {
     const svc = fileTreeServiceRef.current;
     const path = draggedPath;
     if (!svc || path === null || path === targetDir) return;
+    // 同 handleTreeMove：拖拽移动的若正是当前打开文档，走文档级移动
+    if (path === filePathRef.current) {
+      await moveDocumentRef.current?.(targetDir);
+      return;
+    }
     const r = await svc.move(path, targetDir);
     setStatusText(r.ok ? t('msg.movedTo', { value: r.value }) : t('msg.moveFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(r.value);
@@ -2718,6 +2769,13 @@ export default function App() {
     // P3.4：File List 键盘 Delete 复用同一 Trash 流（pathOverride = 列表选中项）
     const target = pathOverride ?? selectedTreePath;
     if (!svc || target === null) return;
+    // 2026-09-13 修复：目标为当前打开文档时走文档级删除 —— 它会在删除后**关闭文档**。
+    // 否则编辑器仍持有已删路径，用户继续编辑并保存会把文件**重建出来**（复活），
+    // 且该实现带 dirty 警示与窗口关闭语义。确认框由它内部处理。
+    if (target === filePathRef.current) {
+      await trashDocumentRef.current?.();
+      return;
+    }
     if (!window.confirm(t('dialog.trashConfirm', { path: target }))) return;
     const r = await svc.trash(target);
     setStatusText(r.ok ? t('msg.trashed') : t('msg.deleteFailed', { error: r.error.message }));
@@ -3963,21 +4021,24 @@ export default function App() {
   }, [armWindowClose, confirmCloseDocument, syncDocFromEditor]);
 
   /** 移动当前文档到其他文件夹（D1-2：Typora 文件→移到…；tab/watcher/引擎路径基准同步） */
-  const handleMoveDocument = useCallback(async () => {
+  /**
+   * 文档级移动：把**当前打开文档**移到指定目录，并同步全部关联状态。
+   * 2026-09-13 从 handleMoveDocument 抽出，供侧栏树/列表移动复用
+   * （树此前只做 svc.move，导致 filePathRef 失联 → 之后保存写回旧路径、
+   *  watchDocument 未重挂、recent files 残留旧条目）。
+   */
+  const applyDocumentMove = useCallback(async (dir: string): Promise<boolean> => {
     const svc = fileTreeServiceRef.current;
-    const dialog = dialogRef.current;
     const path = filePathRef.current;
-    if (!svc || !dialog) return;
+    if (!svc) return false;
     if (path === null) {
       setStatusText(t('msg.renameNeedsSave'));
-      return;
+      return false;
     }
-    const target = await dialog.showDirectory();
-    if (!target.ok || target.value === null) return;
-    const r = await svc.move(path, target.value);
+    const r = await svc.move(path, dir);
     if (!r.ok) {
       setStatusText(t('msg.moveFailed', { error: r.error.message }));
-      return;
+      return false;
     }
     const newPath = r.value;
     filePathRef.current = newPath;
@@ -4001,7 +4062,18 @@ export default function App() {
     });
     setStatusText(t('msg.movedTo', { value: newPath }));
     await refreshFilesSidebar();
+    return true;
   }, [currentTabPatch, refreshFilesSidebar, refreshTabsState, watchDocument]);
+  // 树/列表移动（定义在文件较早处）经此引用调用文档级实现
+  moveDocumentRef.current = applyDocumentMove;
+
+  const handleMoveDocument = useCallback(async () => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const target = await dialog.showDirectory();
+    if (!target.ok || target.value === null) return;
+    await applyDocumentMove(target.value);
+  }, [applyDocumentMove]);
 
   /** 删除当前文档到系统废纸篓（D1-3：Typora 文件→删除；dirty 时警示丢弃未保存修改） */
   const handleTrashDocument = useCallback(async () => {
@@ -4030,6 +4102,9 @@ export default function App() {
     }
     await refreshFilesSidebar();
   }, [applyTab, armWindowClose, ensureBlankDoc, refreshFilesSidebar, refreshTabsState]);
+  // 树/列表删除（定义在文件较早处）经此引用调用文档级实现 —— 该实现会在删除后
+  // **关闭文档**，否则用户继续编辑并保存会把已删文件重建出来（复活）。
+  trashDocumentRef.current = handleTrashDocument;
 
   /** 字号缩放（⇧⌘0 实际大小 / ⇧⌘= 放大 / ⇧⌘- 缩小，Typora 视图菜单对齐）：
    *  读写 editor.fontSize 设置（单一真源）+ live apply；到达 min/max 后静默停。
