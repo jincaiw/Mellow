@@ -187,8 +187,26 @@ describe('toNativeMenuSpec 物化', () => {
     expect(first).toMatchObject({ id: 'recent.file::/Users/a/docs/笔记.md', label: '笔记.md' });
   });
 
-  test('动态 themes：从 Theme Registry 派生 radio，选中态跟随 activeThemeId', () => {
-    const spec = toNativeMenuSpec({ ...base, platform: 'mac' });
+  test('动态 recent-files：列表为空时输出禁用占位项 recent.empty（Typora「空」/ No Recent Files）', () => {
+    const spec = toNativeMenuSpec({ ...base, platform: 'mac', recentFiles: [] });
+    const recent = spec.menus.find((m) => m.id === 'file')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.file.recent')!;
+    const ids = recent.items.map((i) => (i.type === 'command' ? i.id : i.type));
+    expect(ids).toEqual(['recent.empty', 'separator', 'recent.clear']);
+    const empty = recent.items[0] as Extract<NativeMenuItem, { type: 'command' }>;
+    // 必须灰显（enabled:false）—— 否则点它什么也不发生，比不显示更糟
+    expect(empty).toMatchObject({ id: 'recent.empty', label: '#menu.file.recentEmpty', enabled: false });
+  });
+
+  test('动态 recent-files：有文件时不得出现空态占位项', () => {
+    const spec = toNativeMenuSpec({ ...base, platform: 'mac', recentFiles: ['/tmp/a.md'] });
+    const recent = spec.menus.find((m) => m.id === 'file')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.file.recent')!;
+    const ids = recent.items.map((i) => (i.type === 'command' ? i.id : i.type));
+    expect(ids).not.toContain('recent.empty');
+  });
+
+  test('动态 themes：从 Theme Registry 派生 radio，选中态跟随 activeThemeId', () => {    const spec = toNativeMenuSpec({ ...base, platform: 'mac' });
     const themeItems = spec.menus.find((m) => m.id === 'theme')!.items
       .filter((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command');
     expect(themeItems[0]).toMatchObject({ id: 'theme.apply.mellow-light', label: 'Mellow Light', checked: true });

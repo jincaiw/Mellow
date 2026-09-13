@@ -55,6 +55,9 @@ enum SpecItem {
         /// Some(v) = CheckMenuItem（radio/checkbox），None = 普通 MenuItem
         #[serde(default)]
         checked: Option<bool>,
+        /// Some(false) = 灰显不可点击（占位/提示项，如「打开最近文件」空态的「空」）
+        #[serde(default)]
+        enabled: Option<bool>,
     },
     Predefined {
         /// OS 预定义动作：undo/redo/cut/copy/paste/selectAll/about/services/hide/
@@ -106,13 +109,15 @@ fn build_item(app: &AppHandle, item: &SpecItem) -> tauri::Result<Box<dyn IsMenuI
             label,
             accel,
             checked,
+            enabled,
         } => {
+            let is_enabled = enabled.unwrap_or(true);
             if let Some(checked) = checked {
                 Ok(Box::new(CheckMenuItem::with_id(
                     app,
                     id,
                     label,
-                    true,
+                    is_enabled,
                     *checked,
                     accel.as_deref(),
                 )?))
@@ -121,7 +126,7 @@ fn build_item(app: &AppHandle, item: &SpecItem) -> tauri::Result<Box<dyn IsMenuI
                     app,
                     id,
                     label,
-                    true,
+                    is_enabled,
                     accel.as_deref(),
                 )?))
             }
@@ -175,4 +180,53 @@ pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
         app.set_menu(menu)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 前端下发的 spec 必须能**整体**反序列化。
+    ///
+    /// 立此测试的原因：`set_menu_spec` 是「一份 spec → 整棵菜单」的原子替换，**任一字段
+    /// 名/类型对不上都会让整条菜单装配失败**（表现为菜单整体消失，而不是某字段被忽略）。
+    /// `enabled` 是「打开最近文件」空态占位项新增的跨层字段（TS `NativeMenuCommandItem.enabled`
+    /// → Rust `SpecItem::Command.enabled`），一旦两端拼写漂移，前端单测与 parity 护栏都看不见，
+    /// 只有真机才会发现菜单没了 —— 故在此做一次契约测试。
+    #[test]
+    fn spec_round_trips_with_enabled_field() {
+        let json = r#"{"menus":[{"id":"file","label":"File","items":[
+            {"type":"command","id":"recent.empty","label":"空","enabled":false},
+            {"type":"command","id":"file.save","label":"Save","accel":"Cmd+S","checked":true},
+            {"type":"separator"},
+            {"type":"submenu","label":"Open Recent","items":[
+                {"type":"command","id":"recent.clear","label":"Clear Items"}
+            ]}
+        ]}]}"#;
+        let spec: MenuSpec = serde_json::from_str(json).expect("菜单 spec 必须可反序列化");
+        let items = &spec.menus[0].items;
+        assert_eq!(items.len(), 4);
+
+        match &items[0] {
+            SpecItem::Command { id, enabled, .. } => {
+                assert_eq!(id, "recent.empty");
+                assert_eq!(*enabled, Some(false), "enabled:false 必须被保留（占位项要灰显）");
+            }
+            other => panic!("第一项应为 command，实际 {:?}", std::mem::discriminant(other)),
+        }
+        match &items[1] {
+            SpecItem::Command {
+                enabled, checked, ..
+            } => {
+                assert_eq!(*enabled, None, "未声明 enabled 时应为 None（物化时视为可用）");
+                assert_eq!(*checked, Some(true), "checked 仍须按原语义解析为 CheckMenuItem");
+            }
+            other => panic!("第二项应为 command，实际 {:?}", std::mem::discriminant(other)),
+        }
+        assert!(matches!(items[2], SpecItem::Separator));
+        match &items[3] {
+            SpecItem::Submenu { items, .. } => assert_eq!(items.len(), 1, "子菜单须递归解析"),
+            other => panic!("第四项应为 submenu，实际 {:?}", std::mem::discriminant(other)),
+        }
+    }
 }

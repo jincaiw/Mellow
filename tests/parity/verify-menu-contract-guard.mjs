@@ -107,6 +107,33 @@ const CASES = [
   ['菜单文案缺失（en 整行删除）', () => patch(messages(), (s) => s.replace(
     "  'menu.file.new': 'New',\n",
     ''))],
+  // §12 官方文案合同：真值漂移必须被拒（含本轮新纳入合同的条目）
+  ['文案偏离官方真值（en：Open Quickly → Quick Open）', () => patch(messages(), (s) => s.replace(
+    "'menu.quickOpen.open': 'Open Quickly',",
+    "'menu.quickOpen.open': 'Quick Open',"))],
+  ['文案偏离官方真值（en：Save All → Save All Open Files）', () => patch(messages(), (s) => s.replace(
+    "'menu.file.saveAll': 'Save All',",
+    "'menu.file.saveAll': 'Save All Open Files',"))],
+  ['文案偏离官方真值（zh：移动所有图片到 → 移动全部到 asset 目录）', () => patch(messages(), (s) => s.replace(
+    "'menu.image.moveAll': '移动所有图片到',",
+    "'menu.image.moveAll': '移动全部到 asset 目录',"))],
+  // ── §12b enabled 通道：空态占位必须两端贯通 ───────────────────────────
+  ['最近文件空态占位被改名（recent.empty）', () => patch(schema(), (s) => s.replace(
+    "            id: 'recent.empty',",
+    "            id: 'recent.placeholder',"))],
+  ['最近文件空态占位未灰显（enabled: false → true）', () => patch(schema(), (s) => s.replace(
+    'enabled: false,',
+    'enabled: true,'))],
+  ['Rust 丢弃 enabled（占位项退化为可点击的空操作）', () => patch(menuRs(), (s) => s.replace(
+    'enabled.unwrap_or(true)',
+    'true'))],
+  // ── §14 命令面板文案：漏译与形态漂移 ──────────────────────────────────
+  ['命令面板中文漏译（quickOpen.open 的 zh 改回英文）', () => patch(appTsx(), (s) => s.replace(
+    "localizedTitle: { zh: '快速打开', en: 'Open Quickly' }",
+    "localizedTitle: { zh: 'Open Quickly', en: 'Open Quickly' }"))],
+  ['命令面板新增未登记的 localizedTitle 形态（§14 会静默漏检）', () => patch(appTsx(), (s) => s.replace(
+    'localizedTitle: { zh, en },',
+    'localizedTitle: { zh: zh, en: en },'))],
   // ── menu.rs：materialization 边界（§7.4 硬规则 6）─────────────────────
   ['主题硬编码进 Rust', () => patch(menuRs(), (s) => `${s}\nconst _HARDCODED_THEMES: &[&str] = &["mellow-light"];\n`)],
   ['Rust 复活旧状态同步命令', () => patch(menuRs(), (s) => `${s}\nfn set_spellcheck_state() {}\n`)],

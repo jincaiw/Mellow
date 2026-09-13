@@ -453,6 +453,8 @@ export interface NativeMenuCommandItem {
   label: string;
   accel?: string;
   checked?: boolean;
+  /** false = 灰显不可点击（仅用于占位/提示类条目，如「打开最近文件」空态的「空」）。 */
+  enabled?: boolean;
 }
 
 export interface NativeMenuPredefinedItem {
@@ -537,8 +539,19 @@ function buildItems(entries: readonly MenuEntry[], input: NativeMenuSpecInput): 
     }
     if (entry.kind === 'dynamic') {
       if (entry.dynamic === 'recent-files') {
-        // 有文件才展开分隔线 + 文件项（与旧 menu.rs 行为一致；无文件时仅剩静态项）
-        for (const path of input.recentFiles ?? []) {
+        // 有文件才展开分隔线 + 文件项（与旧 menu.rs 行为一致）
+        const recent = input.recentFiles ?? [];
+        if (recent.length === 0) {
+          // Typora 1.14.9 Menu.strings：'No Recent Files'（zh「空」）为**禁用占位项**。
+          // 无此占位时子菜单只剩「清除最近文件」，看起来像坏掉的下拉（Typora 亦有此项）。
+          items.push({
+            type: 'command',
+            id: 'recent.empty',
+            label: input.translate('menu.file.recentEmpty'),
+            enabled: false,
+          });
+        }
+        for (const path of recent) {
           items.push({ type: 'command', id: `recent.file::${path}`, label: basenameOf(path) });
         }
       } else {

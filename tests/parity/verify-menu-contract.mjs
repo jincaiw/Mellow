@@ -235,9 +235,13 @@ function parseLocaleBlock(name, prefix = 'menu.') {
 }
 const zhMenu = parseLocaleBlock('zhCN');
 const enMenu = parseLocaleBlock('enUS');
+// 动态项（如「打开最近文件」空态占位）不走 `labelKey:` 声明，而是直接
+// `input.translate('menu.*')` —— 不把这部分计入引用集合，它们会被误判为孤儿文案。
+const translateKeys = [...schemaSource.matchAll(/input\.translate\('([^']+)'\)/g)].map((m) => m[1]);
 const usedLabelKeys = new Set([
   ...MENU_SCHEMA.map((r) => r.labelKey),
   ...allEntries().flatMap((e) => (e.labelKey ? [e.labelKey] : [])),
+  ...translateKeys,
 ]);
 for (const key of usedLabelKeys) {
   if (!zhMenu.has(key)) fail(`菜单 labelKey 缺少 zh-CN 文案: ${key}`);
@@ -578,12 +582,22 @@ if (!articlesAnchor) {
 //
 // 真值不能靠 CI 现读（runner 上不装 Typora），故把期望值内嵌于此，
 // 由本护栏长期锁定，防再次漂移。修改前请先对照 Typora 的 Menu.strings。
+//
+// ⚠️ 2026-09-13 二次核对（第九轮）：用本机 Typora 反查本表**内嵌值本身**是否真的
+// 来自官方，发现 **2 条「Typora en」是伪造的** —— 实为把 Mellow 自己的英文值填进了
+// 官方列，护栏于是「自己给自己盖章」，永远绿：
+//   · `menu.file.saveAll` 官方 Base 为 `Save All`（非 `Save All Open Files`）；
+//   · `menu.quickOpen.open` 官方 Base 为 `Open Quickly`（非 `Quick Open`）。
+// 同批核对还发现 7 条**从未纳入合同**的偏离（recentClear / export.htmlPlain /
+// export.repeat / image.uploadAll / image.moveAll / image.copyAll / 空态占位）。
+// 复核脚本：`node tests/parity/tools/audit-typora-menu-labels.mjs`
+// （需本机装有 Typora，不进 CI；用于每次扩充本表后自查内嵌真值）。
 const TYPORA_MENU_LABELS = [
   // [labelKey, Typora zh-Hans, Typora en（Base）]
   ['menu.file.open', '打开', 'Open'],
   ['menu.workspace.openFolder', '打开文件夹', 'Open Folder'],
   ['menu.file.saveAs', '另存为', 'Save As'],
-  ['menu.file.saveAll', '保存全部打开的文件', 'Save All Open Files'],
+  ['menu.file.saveAll', '保存全部打开的文件', 'Save All'],
   ['menu.file.import', '导入', 'Import'],
   ['menu.file.print', '打印', 'Print'],
   ['menu.file.moveTo', '移动到', 'Move To'],
@@ -593,7 +607,16 @@ const TYPORA_MENU_LABELS = [
   ['menu.top.settings', '偏好设置', 'Preferences'],
   ['menu.top.checkUpdate', '检查更新', 'Check for Updates'],
   ['menu.help.feedback', '反馈', 'Feedback'],
-  ['menu.quickOpen.open', '快速打开', 'Quick Open'],
+  ['menu.quickOpen.open', '快速打开', 'Open Quickly'],
+  // 「打开最近文件」子菜单：Typora 的「清除」项官方 en 是 `Clear Items`（zh「清除最近文件」），
+  // 空态是**禁用占位项** `No Recent Files`（zh 真值即「空」）。
+  ['menu.file.recentClear', '清除最近文件', 'Clear Items'],
+  ['menu.file.recentEmpty', '空', 'No Recent Files'],
+  ['menu.export.htmlPlain', 'HTML (无样式)', 'HTML (without Styles)'],
+  ['menu.export.repeat', '使用上一次设置导出', 'Export with Previous'],
+  ['menu.image.uploadAll', '上传所有本地图片', 'Upload All Local Images'],
+  ['menu.image.moveAll', '移动所有图片到', 'Move All Images to'],
+  ['menu.image.copyAll', '复制所有图片到', 'Copy All Images to'],
   ['menu.search.find', '查找', 'Find'],
   ['menu.search.replace', '查找和替换', 'Find and Replace'],
   ['menu.format.link', '超链接', 'Hyperlink'],
@@ -626,6 +649,39 @@ for (const msg of checkTyporaMenuLabels(parseLocaleBlock('zhCN', ''), parseLocal
   if (checkTyporaMenuLabels(driftedZh, enMenu).length === 0) {
     fail('菜单文案 canary 未生效：把「打开」改成「打开…」仍未被拒绝');
   }
+}
+
+// ── §12b 菜单项 enabled 通道（占位项必须真的灰显）────────────────────────
+//
+// 立节原因：Typora 的「打开最近文件」在**空态**是一个**禁用项**「空」/No Recent Files，
+// 而 Mellow 此前空态只剩「清除最近文件」，下拉看起来像坏掉。补上占位项时新增了
+// 跨层字段 `enabled`（TS spec → Rust materialization），而**只在前端加字段是不够的**：
+// Rust 若忽略它，该项会**可点击且点击无任何反应** —— 比不显示更糟，且屏幕上看不出异常
+// （点击被 CommandRegistry 静默丢弃）。故两端 + 三个前端要点一起锁。
+{
+  const enabledChannelOk = (schemaSrc, rsSrc) =>
+    /enabled\?: boolean/.test(schemaSrc) // ① spec 类型声明
+    && /id: 'recent\.empty'/.test(schemaSrc) // ② 空态占位确实被装配
+    && /input\.translate\('menu\.file\.recentEmpty'\)/.test(schemaSrc) // ③ 文案走 i18n（不得硬编码）
+    && /enabled: false/.test(schemaSrc) // ④ 占位项声明为禁用
+    && /enabled: Option<bool>/.test(rsSrc) // ⑤ Rust 反序列化字段
+    && /enabled\.unwrap_or\(true\)/.test(rsSrc); // ⑥ Rust 透传到 MenuItem
+
+  if (!enabledChannelOk(schemaSource, menuRsSource)) {
+    fail('菜单项 enabled 通道不完整：空态占位可能变成「可点击但无反应」的假死项（见 §12b 注释）');
+  }
+  const schemaDrifts = [
+    ['spec 未声明 enabled', schemaSource.replace('enabled?: boolean', 'checked?: boolean')],
+    ['空态占位未装配', schemaSource.replace("id: 'recent.empty'", "id: 'recent.placeholder'")],
+    ['空态占位未灰显', schemaSource.replace('enabled: false', 'enabled: true')],
+  ];
+  for (const [name, drift] of schemaDrifts) {
+    if (drift === schemaSource) fail(`enabled 通道 canary 未武装（${name}）：注入点未命中`);
+    else if (enabledChannelOk(drift, menuRsSource)) fail(`enabled 通道 canary 失效（${name}）：漂移未被检出`);
+  }
+  const rsDrift = menuRsSource.replace('enabled.unwrap_or(true)', 'true');
+  if (rsDrift === menuRsSource) fail('enabled 通道 canary 未武装（Rust 未透传）：注入点未命中');
+  else if (enabledChannelOk(schemaSource, rsDrift)) fail('enabled 通道 canary 失效（Rust 未透传）：漂移未被检出');
 }
 
 // ── §13 快捷键唯一性（Release Blocker 项）────────────────────────────────
@@ -664,6 +720,56 @@ for (const msg of checkTyporaMenuLabels(parseLocaleBlock('zhCN', ''), parseLocal
   } else if (!dupDrift.includes("mac: 'Cmd+Alt+F', winLinux: 'Ctrl+H'")) {
     fail('快捷键唯一性 canary 失效：注入后未命中漂移值');
   }
+}
+
+// ── §14 命令面板文案不得漏译（中文界面出现纯英文标题）────────────────────
+//
+// 立节原因：命令面板与原生菜单是**两套独立的文案源** ——
+//   · 菜单：`menuSchema.ts` 的 `labelKey` → i18n `menu.*`（由 §12 官方文案合同看管）；
+//   · 面板：App.tsx 命令注册项的**内联 `localizedTitle: { zh, en }`**（此前无任何护栏）。
+// 实测（2026-09-13）：菜单侧把 `quickOpen.open` 的 zh 从英文 `Quick Open` 修正为
+// 「快速打开」后，**面板侧仍是 `Quick Open`** —— 中文界面里长期挂着一个纯英文标题。
+// 同批交叉比对发现两套文案共 46 处用词不同，其中绝大多数是**两套表面的表达习惯**
+// （菜单名词式「专注模式」/ 面板动词式「切换 Focus Mode」），不算缺陷、不应强行统一；
+// 唯一可判定的缺陷类是**漏译**。故本节点只锁漏译，不锁风格。
+{
+  const cjk = /[\u3400-\u9FFF\uF900-\uFAFF]/;
+  // 专有名词白名单：中文标题本来就该是拉丁文（登记后不得过期）。
+  const NON_TRANSLATED_TITLES = new Set(['paragraph.yamlFrontMatter']);
+  const LITERAL_TITLE = /\{\s*id: '([^']+)',\s*localizedTitle: \{\s*zh: '((?:[^'\\]|\\.)*)',\s*en: '((?:[^'\\]|\\.)*)'\s*\}/g;
+  // 已知的动态形态（无法用字面量正则解析）。数量必须对得上，否则本节点会**静默漏检**。
+  const DYNAMIC_TITLE_FORMS = [
+    /localizedTitle: \{ zh: c\.title\.zh \?\?/,
+    /localizedTitle: \{ zh, en \}/,
+    /localizedTitle: \{ zh: `主题：\$\{theme\.name\}`/,
+  ];
+  const parseTitles = (src) => [...src.matchAll(LITERAL_TITLE)].map((m) => ({ id: m[1], zh: m[2], en: m[3] }));
+  const paletteLeaks = (src) => parseTitles(src)
+    .filter((t) => !cjk.test(t.zh) && !NON_TRANSLATED_TITLES.has(t.id))
+    .map((t) => `${t.id}（zh「${t.zh}」/ en「${t.en}」）`);
+
+  const totalTitles = (appCode.match(/localizedTitle:/g) ?? []).length;
+  const dynamicCount = DYNAMIC_TITLE_FORMS.reduce((n, re) => n + (appCode.match(re) ?? []).length, 0);
+  const parsedCount = parseTitles(appCode).length;
+  if (parsedCount + dynamicCount !== totalTitles) {
+    fail(`命令面板 localizedTitle 解析不完整：总数 ${totalTitles} = 字面量 ${parsedCount} + 已知动态 ${dynamicCount} —— 出现未登记的新形态，§14 会静默漏检，请同步正则/白名单`);
+  }
+  const leaks = paletteLeaks(appCode);
+  if (leaks.length > 0) {
+    fail(`命令面板中文标题漏译（中文界面出现纯拉丁标题，且不在专有名词白名单）：\n    ${leaks.join('\n    ')}`);
+  }
+  for (const id of NON_TRANSLATED_TITLES) {
+    if (!parseTitles(appCode).some((t) => t.id === id)) {
+      fail(`§14 专有名词白名单已过期（App.tsx 命令表中已无该命令）：${id}`);
+    }
+  }
+  // canary：把 quickOpen.open 的面板 zh 改回英文必须被拒
+  const drift = appCode.replace(
+    "localizedTitle: { zh: '快速打开', en: 'Open Quickly' }",
+    "localizedTitle: { zh: 'Open Quickly', en: 'Open Quickly' }",
+  );
+  if (drift === appCode) fail('§14 漏译 canary 未武装：注入点未命中');
+  else if (paletteLeaks(drift).length === 0) fail('§14 漏译 canary 失效：注入的英文标题未被检出');
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────

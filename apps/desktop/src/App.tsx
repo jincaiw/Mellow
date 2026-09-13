@@ -4460,11 +4460,11 @@ export default function App() {
       // B2 文件菜单补全（Typora 对齐：全部关闭 / 保存全部 / 从磁盘重新加载）
       // B1：file.closeAll 语义=关闭全部窗口（mac Typora 无此菜单项，见 menuSchema 平台条件化）。
       { id: 'file.closeAll', localizedTitle: { zh: '全部关闭', en: 'Close All' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void closeCurrentWindow() },
-      { id: 'file.saveAll', localizedTitle: { zh: '保存全部打开的文件…', en: 'Save All Open Files…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAll() },
+      { id: 'file.saveAll', localizedTitle: { zh: '保存全部打开的文件', en: 'Save All' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAll() },
       { id: 'file.reloadFromDisk', localizedTitle: { zh: '从磁盘重新加载', en: 'Reload from Disk' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleReloadFromDisk() },
       { id: 'workspace.openFolder', localizedTitle: { zh: '打开文件夹…', en: 'Open Folder…' }, category: 'workspace', context: { scope: 'global' }, enabled: always, execute: () => void chooseFileTreeRoot() },
       { id: 'workspace.refresh', localizedTitle: { zh: '刷新文件', en: 'Refresh Files' }, category: 'workspace', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void refreshFilesSidebar() },
-      { id: 'quickOpen.open', localizedTitle: { zh: 'Quick Open', en: 'Quick Open' }, category: 'navigation', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
+      { id: 'quickOpen.open', localizedTitle: { zh: '快速打开', en: 'Open Quickly' }, category: 'navigation', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => void openQuickOpen() },
       { id: 'search.global', localizedTitle: { zh: '全局搜索', en: 'Global Search' }, category: 'search', context: { scope: 'workspace' }, enabled: hasWorkspace, execute: () => openGlobalSearch() },
       { id: 'view.focus.cycle', localizedTitle: { zh: '切换 Focus Mode', en: 'Toggle Focus Mode' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => cycleFocusMode() },
       { id: 'view.focus.off', localizedTitle: { zh: 'Focus Mode：关闭', en: 'Focus Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: always, execute: () => setFocusMode('off') },
@@ -4527,7 +4527,7 @@ export default function App() {
         execute: () => void handleExportPandoc(format, ext),
       })),
       // D2：使用上一次设置导出（Typora ⌃E）
-      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Last Settings' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportRepeat() },
+      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Previous' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportRepeat() },
       // D2：导入（Typora File→Import；pandoc → Markdown 新标签页）
       { id: 'file.import', localizedTitle: { zh: '导入…', en: 'Import…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleImportDocument() },
       // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
@@ -4589,7 +4589,7 @@ export default function App() {
       { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
       { id: 'updater.check', localizedTitle: { zh: '检查更新', en: 'Check for Updates' }, category: 'app', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => void runUpdateCheck({ manual: true }) },
       // B2 文件菜单补全：清除最近文件（「打开最近文件」子菜单）
-      { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Recent Files' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { setRecentFiles([]); try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* noop */ } } },
+      { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Items' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { setRecentFiles([]); try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* noop */ } } },
       // 编辑：查找 / 替换（Typora 对齐；Ctrl+H 由引擎 keymap 处理）
       { id: 'search.find', localizedTitle: { zh: '查找…', en: 'Find…' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => engineSearch('find') },
       // Typora：替换 ⌥⌘F（⌘H 与 macOS 系统隐藏冲突，作为别名兜底）；Win/Linux Ctrl+H

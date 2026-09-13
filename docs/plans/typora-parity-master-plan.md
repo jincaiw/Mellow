@@ -542,7 +542,40 @@ Feature
 | **G7-MENU-08** | `file.openSnapshotsFolder` 位于 File 菜单末位 | Typora File 菜单无此高频位 | 应在「文件信息」或高级子菜单（V4 §7.2 已裁决，未落地） | **D（有意差异）**：置于 File 菜单末尾独立分组（separator 后），属 Mellow 恢复能力入口，不插入 Typora 高频组；已由 `verify-menu-contract.mjs` §7.2 契约锁定 |
 | **G7-MENU-09** | View 菜单顺序与 Typora 不同 | Toggle Sidebar → Outline → Articles → File Tree → Source → Focus → Typewriter → Fullscreen → Zoom → Switch Documents → DevTools | Mellow 以 Command Palette 打头，分组顺序不同 | FAIL → 已修复（W1.5） |
 | **G7-MENU-10** | 菜单护栏只做存在性 + 顶层顺序 | — | `tests/parity/verify-menu-contract.mjs` 未覆盖条目顺序 / separator / accel / checkState / 文案 | FAIL（治理）→ 已修复（W1.10：新增 File 菜单 31 槽位契约 / View 顺序断言 / checkState 四来源 / 双语块定界缺陷修复） |
-| **G7-MENU-11** | **菜单文案 19 处偏离 Typora**（此前从未逐条对过） | Typora 1.14.9 `zh-Hans.lproj/Menu.strings` + Base 英文 | ✅ **已修复（2026-09-13）** —— 本机装有 Typora 1.14.9（build 7785），**直接读其 Menu.strings 逐条对照**（§4.4 第 3 级证据），发现 19 处偏离：<br/>**① 12 处多加省略号** —— Typora 的 Menu.strings **全库只有 1 处 `…`**（`Search With…`），而 Mellow 给「打开 / 另存为 / 打印 / 导入 / 查找 / 查找和替换 / 超链接 / 链接引用 / 插入本地图片 / 打开文件夹 / 保存全部打开的文件 / 检查更新」统统加了 `…`。<br/>**② 7 处用词不同** —— `设置…`→**偏好设置**、`移到…`→**移动到**、`文件信息…`→**显示简介**、`关闭窗口`→**关闭**、`打开文件位置`→**在 Finder 中显示**、`检查更新…`/`反馈问题…`→**检查更新**/**反馈**。<br/>**③ 1 处 i18n 缺漏（最严重）** —— `menu.quickOpen.open` 的**中文文案直接是英文 `Quick Open`**（Typora 为「快速打开」），即中文菜单里长期显示英文条目。<br/>**修复**：zh + en 共 38 处文案对齐（36 行改动）。<br/>**护栏**：`verify-menu-contract.mjs` 新增 **§12 官方菜单文案合同** —— 内嵌 19 条 Typora 期望值（zh + en）长期锁定（CI 上不装 Typora，故不能现读），并带漂移 canary（把「打开」改成「打开…」必须被拒，已实测验证）。 |
+| **G7-MENU-11** | **菜单文案 19 处偏离 Typora**（此前从未逐条对过） | Typora 1.14.9 `zh-Hans.lproj/Menu.strings` + Base 英文 | ✅ **已修复（2026-09-13）** —— 本机装有 Typora 1.14.9（build 7785），**直接读其 Menu.strings 逐条对照**（§4.4 第 3 级证据），发现 19 处偏离：<br/>**① 12 处多加省略号** —— Typora 的 Menu.strings **全库只有 1 处 `…`**（`Search With…`），而 Mellow 给「打开 / 另存为 / 打印 / 导入 / 查找 / 查找和替换 / 超链接 / 链接引用 / 插入本地图片 / 打开文件夹 / 保存全部打开的文件 / 检查更新」统统加了 `…`。<br/>**② 7 处用词不同** —— `设置…`→**偏好设置**、`移到…`→**移动到**、`文件信息…`→**显示简介**、`关闭窗口`→**关闭**、`打开文件位置`→**在 Finder 中显示**、`检查更新…`/`反馈问题…`→**检查更新**/**反馈**。<br/>**③ 1 处 i18n 缺漏（最严重）** —— `menu.quickOpen.open` 的**中文文案直接是英文 `Quick Open`**（Typora 为「快速打开」），即中文菜单里长期显示英文条目。<br/>**修复**：zh + en 共 38 处文案对齐（36 行改动）。<br/>**护栏**：`verify-menu-contract.mjs` 新增 **§12 官方菜单文案合同** —— 内嵌 19 条 Typora 期望值（zh + en）长期锁定（CI 上不装 Typora，故不能现读），并带漂移 canary（把「打开」改成「打开…」必须被拒，已实测验证）。<br/>⚠️ 本条**只对了 zh 列** —— en 列未逐条核对，其中 2 条实为伪造值；已在第九轮由 **G7-MENU-12** 修正，§12 现为 **27 条**。 |
+
+**G7-MENU-12（新，2026-09-13 第九轮实机复核，治理级）**
+
+| # | 缺陷 | Typora 1.14.9 真值 | 结论 |
+|---|---|---|---|
+| **G7-MENU-12** | **§12 文案合同里内嵌的「官方真值」自身失真**（护栏自己给自己盖章）+ **7 条从未纳入合同**的偏离 + **「打开最近文件」空态占位缺失** | 本机 `Base.lproj/Menu.strings`（英文）+ `zh-Hans.lproj/Menu.strings`（301 条） | ✅ **已修复**（见下） |
+| **G7-MENU-13** | **命令面板与菜单是两套独立文案源，此前只有菜单侧有护栏** | — | ✅ **漏译已修 + 新增 §14 护栏**；46 处风格差异**登记为「两套表面的表达习惯」不改** |
+| **G7-MENU-14** | 「清除最近文件」在 Typora 是**带作用域选择的对话框**，Mellow 是直接清空 | `Panel.strings`：`Clear Recent Folders and Files`「清除历史文件记录」/ `Clear Recent Folders / Files Only`「只清除历史文件和文件夹」/ `Clear Recent and Pinned Folders / Files`「清除历史和固定的文件和文件夹」/ `Also clear pinned folders`「同时清除固定的文件夹」 | **未实现（如实登记）** —— 需新增一个带 3 选项 + 1 复选项的确认对话框，且牵动 pinned 文件夹集合的清除语义（`mellow.recent.folders.pinned`）。属独立 UI 特性，不擅自动手。 |
+
+**G7-MENU-12 详情（为什么「内嵌真值」比「没有护栏」更危险）**
+
+§12 的立节理由是把官方文案内嵌进护栏（CI runner 上不装 Typora，无法现读真值）。
+但内嵌的代价是：**没有任何机制保证内嵌值真的来自官方**。本轮用本机 Typora 反查该表**自身**，抓到：
+
+- **2 条「Typora en」是伪造的** —— 实为把 **Mellow 自己的英文值**填进了官方列，护栏于是「自己给自己盖章」，永远绿：
+  - `menu.file.saveAll` 官方 Base 为 **`Save All`**（护栏曾写 `Save All Open Files`）；
+  - `menu.quickOpen.open` 官方 Base 为 **`Open Quickly`**（护栏曾写 `Quick Open`）。
+  > 这正是 G7-MENU-11 只修了 zh 列、没核对 en 列留下的尾巴：**同一轮修复里「中文对齐了、英文没有」**。
+- **7 条偏离从未纳入合同**（此前无任何检查）：`recentClear` en 应为 `Clear Items`、`export.htmlPlain` en 应为 `HTML (without Styles)`、`export.repeat` en 应为 `Export with Previous`、`image.uploadAll` 应为「上传所有本地图片 / Upload All Local Images」、`image.moveAll` 应为「移动所有图片到 / Move All Images to」、`image.copyAll` 应为「复制所有图片到 / Copy All Images to」、以及**空态占位**（下条）。
+  > `image.*` 三条的旧文案还把内部术语「asset 目录」暴露给了用户。
+- **空态占位缺失（能力缺口，非文案）** —— Typora 在最近文件为空时显示**禁用项** `No Recent Files`（zh 真值即「空」）；Mellow 此前空态只剩「清除最近文件」，下拉看起来像坏掉。已实现：
+  - `menuSchema.ts` 空列表时输出 `recent.empty`（`enabled: false`）；
+  - **跨层字段**：`NativeMenuCommandItem.enabled` → Rust `SpecItem::Command.enabled` → `MenuItem::with_id(..., enabled, ...)`。
+    **只在前端加字段是不够的** —— Rust 若忽略它，该项会**可点击且点击无任何反应**（被 CommandRegistry 静默丢弃），比不显示更糟，且屏幕上看不出异常。
+
+**修复清单**：`messages.ts`（zh 3 处 + en 8 处 + 新增 `menu.file.recentEmpty`）、`menuSchema.ts`（空态占位 + `enabled` 字段）、`menu.rs`（`enabled` 透传）、`App.tsx`（命令面板 4 处：`quickOpen.open` zh 漏译、`file.saveAll`/`export.repeat`/`recent.clear` 与菜单同名不同值）。
+
+**护栏**（`verify-menu-contract.mjs`）：
+- §12 扩至 **27 条**并**修正 2 条伪造值**；
+- 新增 **§12b enabled 通道** —— 同时锁「前端声明 / 占位装配 / 走 i18n / 声明禁用 / Rust 反序列化 / Rust 透传」六点，任一缺失即失败（含 canary）；
+- 新增 **§14 命令面板不得漏译** —— 解析 App.tsx 的 `localizedTitle`，中文标题必须含汉字（专有名词白名单登记），并**断言解析完整性**（字面量数 + 已知动态形态数 == 总数），否则新形态会静默漏检；
+- `verify-menu-contract-guard.mjs` 变异用例 **18 → 26 条**（新增：伪造真值回潮 ×3、空态占位改名、占位未灰显、Rust 丢弃 enabled、面板漏译、面板形态漂移）；
+- **新增本地自审工具** `tests/parity/tools/audit-typora-menu-labels.mjs`（需本机 Typora，**不进 CI**）—— 反查 §12 每一条内嵌 zh/en 是否真能在本机 `Menu.strings` 中原样查到。**每次扩充 §12 后必须先跑它**，这是「内嵌真值」这一治理模式的唯一防线。
 
 ### 5.2 快捷键（G7-KEY）
 
@@ -1323,6 +1356,7 @@ Functional
 | **D-Z**（2026-09-13 补登记） | **macOS Actual Size / Zoom In / Zoom Out**（`Cmd+Shift+0` / `=` / `-`） | **保留 Mellow 实现，登记为 D（增强）** | 官方 Shortcut Keys 表（2026-09-06 复核）对 macOS 三档缩放均标注 ***(Not Supported)*** —— 即 Typora 在 macOS **不提供**菜单缩放。Mellow 提供且可用（§6.1 默认 100%），属**超出 Typora 的增强**，不破坏心智，故登记 D 而非删除。<br/>复核同时确认 G7-KEY-08/09/10 三行与官方表一致，§3.4 键位表无漂移。 |
 | **D-AA**（2026-09-13） | 格式 → 图片子菜单「Use Image Root Path」 | **不加菜单开关，登记 D** | 证据：`insertLocalImage`（`App.tsx:1530-1536`）在同根时已**默认输出相对路径**（`fileTreeRelativePath`），与 Typora 该选项默认态一致。补一个恒开的菜单开关不增加能力，只增加与设置面板不一致的第二入口。 |
 | **D-AD**（2026-09-13） | **侧栏最大宽度 480px** | **保留 Mellow 的保护上限，登记 D** | Typora 的 `setSidebarWidth` 只做 `Math.max(e, 160)`，**无硬上限**（仅受窗口宽度约束）。Mellow 另加 `SIDEBAR_MAX_WIDTH = 480`，避免侧栏无限扩张挤压写作区 —— 属**有意的保护**，不照抄 Typora 的无上限行为。默认值与最小值已按实机真值对齐（270 / 160）。 |
+| **D-AE**（2026-09-13） | **命令面板文案与原生菜单文案不统一** | **保留两套表达习惯，登记 D；只锁「漏译」** | 交叉比对 163 个同名命令，两套文案共 **46 处用词不同**（菜单名词式「专注模式」/ 面板动词式「切换 Focus Mode」；菜单「PDF…」/ 面板「导出 PDF…」；菜单「引用」/ 面板「Blockquote」）。命令面板是 Mellow 自有能力（Typora 无），其**分类前缀 + 动词式**表达是有意设计，强行统一到菜单文案会削弱面板的可检索性（「图片：上传」便于按类别搜）。故**不统一**。<br/>**但同一命令在同一语言下不得出现两个名字** —— 已对齐 4 处：`quickOpen.open` 面板 zh 漏译（`Quick Open` → 「快速打开」，与 G7-MENU-11 修过的菜单侧同源却漏了面板侧）、`file.saveAll`（含多余的 `…`）/`export.repeat`/`recent.clear` 的 en 与菜单同名不同值。<br/>**护栏**：`verify-menu-contract.mjs` **§14** 锁「中文标题不得漏译」并断言解析完整性（防新形态静默漏检）；专有名词走白名单（当前仅 `paragraph.yamlFrontMatter`）。 |
 | **D-AC**（2026-09-13 补登记，原为 **V7-I1 用户裁决**） | **「用 Reader 打开」与「只读模式」是否进显示菜单** | **两者均从显示菜单移除；命令保留在注册表，仍可经命令面板 / Reader 内按钮触达** | 该裁决此前**只写在 `verify-settings-contract.mjs` 的注释与断言里**，方案正文从未登记 —— 2026-09-13 本轮做 Typora 实机对照时，因发现 `view.readonly.toggle` 「能力已实现但菜单不可达」而**误加了菜单项**，被该护栏当场拦下（`menuSchema 含已裁撤的 view.readonly.toggle 菜单入口（V7-I1 应删除）`）。<br/>**教训**：护栏注释**不是**决策登记处 —— 裁决必须进本 D 表，否则后续轮次无法发现。<br/>**注意与 §3.3 的关系**：Typora 确有 `Readonly Mode`（Menu.strings 有「只读模式」），故这属**有意差异（D）**而非缺口；补登记后，本表是唯一可发现处。 | 该 Typora 菜单项的语义（插入时复制到资源目录 / 上传 / 保留原路径）已由 `image.assetDir` + `image.uploadService` 两个设置项覆盖（`settings/src/index.ts:182-193`）。以设置承载而非菜单承载，符合「同一语义单一入口」，不复制 Typora 的入口形态。 |
 | **D-L（新）** | View 菜单「Search」条目 | **置于侧栏三视图之后、模式组之前** | 官方 View 菜单无 Search（搜索在侧栏内）；Mellow 全局搜索（⇧⌘F）需常驻入口，紧邻侧栏组语义最近，且不与 Typora 基础项混淆。 |
 | **D-M（新）** | View 菜单「Word Count / Always on Top」位置 | **归入状态组，排在状态栏开关之后** | 二者均为「窗口/状态」语义，与 Typora 的 `Show Status Bar` 同组；不插入 Typora 的显示模式组。 |
@@ -1343,6 +1377,7 @@ Functional
 | **2026-09-12** | v1.5.6（审计 + 实装收口） | ① 修复 **浮动工具栏永不显示**（`position()` 在 CM6 update 周期内读布局被拒 → 静默自隐）与 **表格列对齐连字符侵蚀**（固定 2 连字符 mark 吞掉原始长度）两个真 bug；② §9.3 视觉 Golden 补齐 7 场景，macOS 侧 14 场景全覆盖；③ 新增 5 个运行时验证脚本（功能存活 25 / 鼠标选择 7 / UX 流程 / 工具栏按钮 / 右键菜单）；④ 补齐 Windows CI（`ci.yml` 此前 6 个 job 全跑 ubuntu）、Golden 基线按平台分离、官方键位表合同（§11，55 条）；⑤ 补登记 D-W / D-X / D-V；⑥ 发布 v1.5.6 |
 | **2026-09-13（下半日）** | 实机对照 Typora 1.14.9 | ① **确认 Typora 1.14.9（build 7785）就装在本机** —— 此前多轮均按「本机无 Typora」处理，仅能靠官方文档推断；本轮起可用**第 1/3 级证据**（同机实机资源）。② 用真实 Typora 重新生成菜单 dump（EXTRACTED，内容与已入库一致，反证此前基线可信）。③ **直接读 Typora 的 `Menu.strings` 逐条对照，发现 19 处菜单文案偏离**（12 处多加省略号 + 7 处用词不同 + `Quick Open` 中文菜单里显示英文）→ 已全部修复（zh+en 共 38 处），并新增 **§12 官方菜单文案合同**护栏（内嵌 19 条期望值 + canary）。④ 实测 Typora 内置主题**恰好 6 个**（§3.8 准确），但发现 **3 个主题与 Typora 同名而外观不同**（`gothic` 明暗相反）→ 登记 **G7-TYPO-05**，因属品牌决策未擅自改名。 |
 | **2026-09-13** | v1.5.7 / v1.5.8（CI 修复 + 三平台证据） | ① **补齐 Edit 菜单「新段落 / 新行」**（G7-MENU-06），并实测纠正换行真值（Mellow 的 Enter = 软换行，官方定义 Enter = 新段落）→ 新登记 G7-EDIT-07；② 修复 3 类 CI 失败（台账 evidence 指向 gitignore 目录 / Edit 菜单索引断言 / **Windows CRLF 致护栏注入与 canary 全部失配**）；③ 新增「已修复」项运行时审计（6 项）；④ `runtime-qualification.yml` 改为随 `v*` 标签自动触发 → **首次取得 Windows Runtime 证据**（Source Fidelity + launch/type/save）；⑤ 更正失真「Linux 真机 IME 已通」（CI run 58 起持续失败），并用制品名通道精确定位（6/8 场景通过，paragraph + code 失败，失败点漂移）；⑥ 补登记 D-Y / D-Z / D-AA / D-AB，收敛 D-E 与 D-Q 重复；⑦ 更正 §0.2 / §11.2 台账数字（32 → 50） |
+| **2026-09-13（第九轮）** | 内嵌真值自审 + 空态占位 | ① **反查 §12 护栏自身内嵌的「官方真值」**，抓到 **2 条伪造值**（把 Mellow 自己的英文当官方：`Save All Open Files` 实为 `Save All`、`Quick Open` 实为 `Open Quickly`）→ 护栏此前「自己给自己盖章」；② 同批找出 **7 条从未纳入合同**的文案偏离（含 `image.*` 三条把内部术语「asset 目录」暴露给用户）→ 全部对齐官方；③ 补 **「打开最近文件」空态占位**（Typora 的禁用项「空」/`No Recent Files`），并打通跨层 `enabled` 字段（TS spec → Rust `MenuItem::with_id`）—— 只改前端会让占位项「可点击但无反应」；④ **交叉比对命令面板与菜单两套文案**（163 个同名命令 / 46 处不一致），修掉面板侧的中文漏译与 3 处同名不同值，其余按 **D-AE** 保留两套表达习惯；⑤ 护栏：§12 扩至 27 条、新增 §12b（enabled 通道六点）与 §14（面板不得漏译 + 解析完整性断言），变异用例 18 → 26 条；⑥ **新增本地自审工具** `tests/parity/tools/audit-typora-menu-labels.mjs`（内嵌真值治理的唯一防线，需本机 Typora、不进 CI）；⑦ 新登记 G7-MENU-12/13/14 与 D-AE |
 
 ---
 

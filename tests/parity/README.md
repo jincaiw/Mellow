@@ -9,3 +9,19 @@
 - 历史 qualification 报告保留其当时版本和结论，只能被引用为证据，不参与当前状态聚合。
 
 运行 `node tests/parity/verify-parity-ledger.mjs` 可验证台账，并输出当前状态 Dashboard。根目录 `pnpm test` 也会执行此检查。
+
+## 工具（需本机装有 Typora，**不进 CI**）
+
+`tests/parity/tools/` 下的脚本依赖本机 Typora 安装，只用于**人工复核护栏里内嵌的官方真值**，
+不参与 `pnpm test` / `pnpm run parity`（CI runner 上不装 Typora）：
+
+- `audit-typora-menu-labels.mjs` —— 反查 `verify-menu-contract.mjs` §12 里内嵌的每一条
+  zh/en 是否真的能在本机 `Typora.app/Contents/Resources/{Base,zh-Hans}.lproj/Menu.strings`
+  中原样查到。立此脚本的原因：内嵌真值的代价是**没人能保证它真的来自官方** —— 实测抓到
+  2 条「Typora en」其实是 Mellow 自己的英文值（护栏于是自己给自己盖章，永远绿）。
+  每次扩充 §12 合同后都应先跑一次。
+
+  ```bash
+  node tests/parity/tools/audit-typora-menu-labels.mjs
+  ```
+
