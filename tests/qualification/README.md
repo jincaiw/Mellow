@@ -166,6 +166,8 @@ cd <repo> && NODE_PATH=/tmp/pw/node_modules node tests/e2e/smoke.mjs
 | e2e 右键菜单运行时（4 项） | `node tests/e2e/context-menu-verify.mjs` | 4/4 ✅（含「格式」子菜单 → 加粗真的生效） |
 | e2e「已修复」项运行时审计（6 项） | `node tests/e2e/claimed-fixes-verify.mjs` | 6/6 ✅（单图独占居中 / 混排不居中 / 并排不居中 / 状态栏开关 / 字数按钮 / 字数面板） |
 | e2e「已完成」项审计 第二批（9 项） | `node tests/e2e/remaining-claims-verify.mjs` | 9/9 ✅（侧栏底部操作条 / 底部菜单 / 排序 5 组+升降序 / 展开折叠 / 非法正则提示 / Get Themes） |
+| e2e 设置项启动生效审计（7 项） | `node tests/e2e/settings-live-apply-verify.mjs` | 7/7 ✅（自动保存排程 300000ms / autosaveTimer=2 → 120000ms / 关闭后不排程 / Reader 字号同源 / 标题字数接线） |
+| 本地构建 macOS .app（pnpm 不可用时） | `bash apps/desktop/scripts/build-local.sh [--launch]` | 见脚本头注释（DMG 打包会失败，`.app` 已产出） |
 | e2e UX 流程（12 项，含新段落·新行） | `node tests/e2e/ux-flows-verify.mjs` | 12/12 ✅ |
 | 视觉 Golden（布局 6 配置） | `node tests/visual/visual-golden.mjs` | 6/6 ✅ |
 | 视觉 Golden（侧栏 4 视图） | `node tests/visual/sidebar-golden.mjs` | 4/4 ✅ |
