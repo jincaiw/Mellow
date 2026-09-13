@@ -560,7 +560,10 @@ const zhCN = {
   'settings.image.uploadHttpUrl': '上传服务地址',
   'settings.image.uploadHttpUrlDesc': 'PicGo.app / PicList 本地 HTTP 端点（默认端口 36677）。',
   'settings.image.uploadCommand': '自定义上传命令',
-  'settings.image.uploadCommandDesc': 'stdin 接收文件绝对路径（每行一个），stdout 输出 URL（每行一个，Typora 兼容契约）。',
+  // 2026-09-13：补第三方执行的提示（对齐 Typora「安全」分区的告知义务）。
+  // Typora 在启用第三方上传前会确认「会调用第三方软件…它们将读访问上传的图片文件」；
+  // Mellow 此前只描述 stdin/stdout 契约，未告知「该程序会被执行且能读到你的本地图片」。
+  'settings.image.uploadCommandDesc': 'stdin 接收文件绝对路径（每行一个），stdout 输出 URL（每行一个，Typora 兼容契约）。注意：该命令会被系统执行，且可读取传入的本地图片文件，请仅使用你信任的程序。',
   'settings.appearance.theme': '主题',
   'settings.appearance.openThemeFolder': '打开主题文件夹',
   'settings.action.open': '打开',
@@ -1358,7 +1361,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.image.uploadHttpUrl': 'Upload endpoint URL',
   'settings.image.uploadHttpUrlDesc': 'PicGo.app / PicList local HTTP endpoint (default port 36677).',
   'settings.image.uploadCommand': 'Custom upload command',
-  'settings.image.uploadCommandDesc': 'stdin receives absolute file paths (one per line), stdout outputs URLs (one per line, Typora-compatible contract).',
+  'settings.image.uploadCommandDesc': 'stdin receives absolute file paths (one per line), stdout outputs URLs (one per line, Typora-compatible contract). Note: this command is executed by the system and can read the local image files passed to it — only use programs you trust.',
   'settings.appearance.theme': 'Theme',
   'settings.appearance.openThemeFolder': 'Open theme folder',
   'settings.action.open': 'Open',
