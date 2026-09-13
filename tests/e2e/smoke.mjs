@@ -22,8 +22,30 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-const PORT = 1421;
-const BASE = `http://localhost:${PORT}`;
+// 2026-09-13 修复「假红」：原为固定端口 1421 + `--strictPort`。
+// 若上一次运行残留了 vite（`pkill` 只杀 node 主进程、vite 子进程可能存活），
+// 新实例因端口被占**静默启动失败**，而 `waitForServer` 会连上**旧实例** ——
+// 旧实例带着上次会话（root innerHTML 33873 vs 全新 1598），
+// 于是「iframe 未挂载」等 5 条断言集体假红，且换任何等待时长都无效。
+// 实测：同一脚本换到空闲端口后 9/9 全绿 → 属环境残留而非实现缺陷。
+// 改为**动态选空闲端口**，彻底消除该环境耦合。
+let PORT = 0;
+let BASE = '';
+
+/** 取一个当前空闲的端口（listen(0) 由内核分配后立即释放） */
+async function pickFreePort() {
+  const { createServer } = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.on('error', reject);
+    srv.listen(0, () => {
+      const addr = srv.address();
+      const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
 const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
 
 /** 等待端口可访问（vite 就绪信号） */
@@ -47,7 +69,9 @@ function check(name, ok, detail = '') {
 }
 
 async function main() {
-  // 1. 启动 vite dev server（隔离端口，不干扰并行开发）
+  // 1. 启动 vite dev server（动态空闲端口，不干扰并行开发、也不受残留实例影响）
+  PORT = await pickFreePort();
+  BASE = `http://localhost:${PORT}`;
   const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
     cwd: DESKTOP_DIR,
     stdio: 'ignore',
@@ -68,8 +92,16 @@ async function main() {
     page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 200)); });
 
     await page.goto(BASE, { waitUntil: 'networkidle', timeout: 20000 });
-    // 等待：idle 挂载 iframe → load → webModules → 会话恢复（首次约 2-4s）
-    await page.waitForTimeout(5000);
+    // 等待：idle 挂载 iframe → load → webModules → 会话恢复。
+    // 2026-09-13 修复：原为固定 `waitForTimeout(5000)` 魔法值 —— 编辑器挂载走
+    // requestIdleCallback（`App.tsx` mountGate），在负载高的机器/CI 上可能超过 5s，
+    // 于是「iframe 未挂载」等 5 条断言集体假红（实测本机 smoke 稳定失败，
+    // 而同一时刻用轮询探针 8ms 即取到 iframe → 证明是实现正常、测试等待方式不对）。
+    // 改为**等待条件**（轮询直到 webModules.core 就绪），上限 30s。
+    await page.waitForFunction(() => {
+      const f = document.querySelector('iframe.mellow-editor-frame');
+      return !!(f && f.contentWindow && f.contentWindow.webModules && f.contentWindow.webModules.core);
+    }, null, { timeout: 30000, polling: 200 }).catch(() => { /* 交给下方断言报错 */ });
 
     // 2. React App 挂载
     const rootLen = await page.evaluate("document.getElementById('root')?.innerHTML?.length ?? -1");
