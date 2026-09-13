@@ -400,6 +400,38 @@ Search 面板  （跨文件全局搜索）
 > 与 Typora 内置主题逐项吻合。**这是 §5.3 G7-SHELL-03（排版默认值）的最终证据闭环**，
 > 该争议点可视为关闭。
 
+**渲染 token 逐项核对（2026-09-13，第 1 级证据）** —— Mellow 的 13 个
+`--mellow-md-*` 渲染 token 声称取自「Typora Github 主题真值」。用本机 Typora 的
+`themes/github.css` + `TypeMark/style/base.css` 逐条核对：
+
+| token | Mellow | Typora 实际 | 结论 |
+|---|---|---|---|
+| `--mellow-md-fg` | `#333333` | `body{color:rgb(51,51,51)}` | ✅ |
+| `--mellow-md-heading-border` | `#eeeeee` | `h1,h2{border-bottom:1px solid #eee}` | ✅ |
+| `--mellow-md-quote-border` | `#dfe2e5` | `blockquote{border-left:4px solid #dfe2e5}` | ✅ |
+| `--mellow-md-quote-fg` | `#777777` | `blockquote{color:#777777}` | ✅ |
+| `--mellow-md-inline-code-bg` | `#f3f4f4` | `code{background-color:#f3f4f4}` | ✅ |
+| `--mellow-md-code-bg` | `#f8f8f8` | `code,tt{background-color:#f8f8f8}` | ✅ |
+| `--mellow-md-code-border` | `#e7eaed` | `code,tt{border:1px solid #e7eaed}` | ✅ |
+| `--mellow-md-metablock-bg` | `#f7f7f7` | `pre.md-meta-block{background-color:#f7f7f7}` | ✅ |
+| `--mellow-md-metablock-fg` | `#777777` | 同 quote-fg 族 | ✅ |
+| `--mellow-md-hr` | `#e7e7e7` | `hr{background-color:#e7e7e7}` | ✅ |
+| `--mellow-md-table-border` | `#dfe2e5` | `table tr{border:1px solid #dfe2e5}` | ✅ |
+| `--mellow-md-table-head-bg` | `#f8f8f8` | `thead{background-color:#f8f8f8}` | ✅ |
+| **`--mellow-md-link`** | **`#0969da`** | **`a{color:#4183C4}`** | **⚠️ 有意差异（D）** |
+
+**关于链接色（本轮更正一处代码注释失真）**：原注释写「链接 = Typora 蓝（github.css
+新版 a: #0969da，用户裁决）」，**该归因不成立** ——
+① 主题 `github.css` 实为 `a{color:#4183C4}`；
+② `base.css` 中 `a` **没有颜色**（仅 `a{cursor:pointer}`），链接色由主题提供；
+③ `#0969da` 在 Typora 中的真实用途是 **GitHub Alerts 的 Note 色**
+（`.md-alert-note{border-left-color:#0969da}` / `.md-alert-text-note{color:#0969da}`），与链接无关。
+→ 该值确系**用户裁决**（GitHub 现代蓝），属 **D 类有意差异**；已在源码注释中更正归因，
+并明确「不得再以『Typora 真值』为由引用」。
+
+> **意义**：13 个渲染 token 中 **12 个与 Typora 主题逐字吻合**，1 个为用户有意差异且
+> 已更正归因。§5.6 G7-TYPO 系列的渲染真值可视为**已用外部证据闭环**。
+
 **由此登记的新候选（尚未逐项裁决，见 §15.3）**：
 `Insert Final New Line On Save`（保存时在文末添加空行）、`Preserve single line break`（保留单换行符）、
 `Allow Magnification`（双指缩放）—— 三项均为 Typora 的**偏好设置项**，Mellow 侧经代码检索确认**均无实现**。

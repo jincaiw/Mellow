@@ -107,7 +107,17 @@ const LIGHT_BASE: Record<string, string> = {
   '--mellow-md-metablock-bg': '#f7f7f7',
   '--mellow-md-metablock-fg': '#777777',
   '--mellow-md-hr': '#e7e7e7',
-  // V6-P1：链接 = Typora 蓝（github.css 新版 a: #0969da，用户裁决）
+  // 链接色：**用户裁决为 #0969da（D 类有意差异）**，非 Typora 实际值。
+  //
+  // 2026-09-13 实机核对更正（原注释称「github.css 新版 a: #0969da」属**失真**）：
+  //   · Typora 主题 `themes/github.css` 实为 `a { color: #4183C4 }`；
+  //   · `TypeMark/style/base.css` 中 `a` **没有颜色**（仅 `a{cursor:pointer}`），
+  //     链接色由主题提供；
+  //   · `#0969da` 在 Typora 中的用途是 **GitHub Alerts 的 Note 色**
+  //     （`.md-alert.md-alert-note{border-left-color:#0969da}` 与
+  //       `.md-alert-text-note{color:#0969da}`），与链接无关。
+  // 即：本值与 Typora 的 Github 主题**不一致**（#0969da vs #4183C4），
+  // 属用户选定的 GitHub 现代蓝，登记为 D。切勿再以「Typora 真值」为由引用。
   '--mellow-md-link': '#0969da',
   '--mellow-md-table-border': '#dfe2e5',
   '--mellow-md-table-head-bg': '#f8f8f8',
