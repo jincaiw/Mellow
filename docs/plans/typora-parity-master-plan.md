@@ -432,6 +432,24 @@ Search 面板  （跨文件全局搜索）
 > **意义**：13 个渲染 token 中 **12 个与 Typora 主题逐字吻合**，1 个为用户有意差异且
 > 已更正归因。§5.6 G7-TYPO 系列的渲染真值可视为**已用外部证据闭环**。
 
+**外壳 UI 尺寸对照（2026-09-13，第 1 级证据）** —— 来源：Typora 的
+`TypeMark/style/base-control.css`（86KB，外壳 UI 全部样式）与 `base.css`。
+
+| 项 | Typora 实际 | Mellow | 结论 |
+|---|---|---|---|
+| 根字号 | `html{font-size:14px}` | — | 基准 |
+| 侧栏宽度（默认/最小/最大） | `270px` / `160px` / 无上限 | 270 / 160 / 480 | **已修复**（原 260 / 200 / 480 无据）→ 见 §7.6、D-AD |
+| 侧栏容器字号 | 继承 14px | `.file-tree{font-size:14px}` | ✅ |
+| 文件树行 | `.file-node-content{padding-top:4px;line-height:22px;color:#777}` | `.tree-row{line-height:22px;color:--mellow-fg-subtle;font-size:14px}` | ✅ |
+| File List 摘要 | `.file-list-item-summary{font-size:13px;line-height:18px}` | `font-size:13px` | ✅ |
+| File List 时间/位置 | `.file-list-item-time,.file-list-item-parent-loc{font-size:12px}` | `font-size:11px` | 🟡 差 1px（候选） |
+| 侧栏底部菜单 | `#sidebar-files-menu{font-size:12px}`；其 `>li{font-size:12.5px}` | 底部**触发条** `.sidebar-footer{font-size:10px}`（弹出菜单为 `.context-menu`，非同一元素） | 🟡 映射不确定，需真机比对 |
+| 侧栏 tab 按钮 | `.sidebar-tab-btn{line-height:40px;width:40px}` | 内联模式按钮组（形态不同） | D（形态差异） |
+
+**意义**：外壳尺寸**主体已与 Typora 一致**（字号基准 14px、文件树行高 22px、字色 #777、
+File List 摘要 13px）；本轮唯一确定的**数值错误**是侧栏宽度（已修复）。
+两处 🟡 属 1px / 映射不确定级别，登记为候选而非缺陷。
+
 **由此登记的新候选（尚未逐项裁决，见 §15.3）**：
 `Insert Final New Line On Save`（保存时在文末添加空行）、`Preserve single line break`（保留单换行符）、
 `Allow Magnification`（双指缩放）—— 三项均为 Typora 的**偏好设置项**，Mellow 侧经代码检索确认**均无实现**。
