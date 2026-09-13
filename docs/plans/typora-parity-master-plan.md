@@ -383,6 +383,23 @@ Search 面板  （跨文件全局搜索）
 | `use_seamless_window` | `0` | 无缝窗口关闭 |
 | `noHintForOpenLink` | `1` | 打开链接不再提示 |
 
+**排版真值交叉验证（2026-09-13，第 1 级证据）** —— 读本机 Typora 的
+`themes/github.css`（其内置主题，即当前使用中的主题）逐项比对：
+
+| 项 | Typora `github.css` | Mellow `TYPOGRAPHY_DEFAULTS` | 一致 |
+|---|---|---|---|
+| 正文字号 | `font-size: 16px` | `fontSize: 16` | ✅ |
+| 正文行高 | `line-height: 1.6` | `lineHeight: 1.6` | ✅ |
+| 写作宽度 | `max-width: 860px` | `writingWidth: 860` | ✅ |
+| 标题阶梯 | h1 2.25em / h2 1.75em / h3 1.5em / h4 1.25em / h5 1em / h6 1em | `headerFontSizeDiffs = [20,12,8,4,0,0]` | ✅ 完全一致 |
+| H1·H2 底部分隔线 | `border-bottom: 1px solid #eee` | 有 | ✅ |
+| h6 弱化色 | `color: #777` | 有弱化 | ✅ |
+
+> **意义**：§6.1 的 `Body 16px / line-height 1.6` 与 `Writing Width 860` 此前只有
+> 「三处数值交叉比对」这类**内部自洽**证据（W2.2），本轮首次拿到**外部真值**：
+> 与 Typora 内置主题逐项吻合。**这是 §5.3 G7-SHELL-03（排版默认值）的最终证据闭环**，
+> 该争议点可视为关闭。
+
 **由此登记的新候选（尚未逐项裁决，见 §15.3）**：
 `Insert Final New Line On Save`（保存时在文末添加空行）、`Preserve single line break`（保留单换行符）、
 `Allow Magnification`（双指缩放）—— 三项均为 Typora 的**偏好设置项**，Mellow 侧经代码检索确认**均无实现**。
