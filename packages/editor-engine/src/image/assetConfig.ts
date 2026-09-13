@@ -33,11 +33,25 @@ export function extractFrontMatter(text: string): string | null {
 }
 
 /**
- * 从 front matter 提取 `asset_dir` 值（PRD §53 per-document YAML）。
- * 支持：`asset_dir: images` / `asset_dir: "my dir"` / 行内注释；无 → null。
+ * 从 front matter 提取 asset 目录配置（PRD §53 per-document YAML）。
+ *
+ * 支持两种键名：
+ *   1. `asset_dir`（Mellow 原生键，**优先**）
+ *   2. `typora-copy-images-to`（**Typora 兼容键**）
+ *
+ * 为什么要认 Typora 的键：Typora 用户已有文档里的图片存放目录写在
+ * `typora-copy-images-to: ./assets` 中（Typora 默认值形如 `./${filename}.assets`）。
+ * 若不识别，迁移用户的**每篇文档级设置会被静默忽略**，图片被放进 Mellow 的全局
+ * 目录 —— 属「看起来能跑、结果不对」的静默偏差。故按 Typora 官方 Images 文档
+ * 的键名做别名兼容（语义相同：都表示「插入图片时复制到哪个目录」）。
+ *
+ * 取值语法：`asset_dir: images` / `typora-copy-images-to: ./assets` / 引号包裹 /
+ * 行内注释；均无 → null。
  */
 export function parseFrontMatterAssetDir(frontMatter: string): AssetDirConfig | null {
-  const m = /^\s*asset_dir\s*:\s*(.*)$/m.exec(frontMatter);
+  // 原生键优先；缺失时回退到 Typora 兼容键
+  const m = /^\s*asset_dir\s*:\s*(.*)$/m.exec(frontMatter)
+    ?? /^\s*typora-copy-images-to\s*:\s*(.*)$/m.exec(frontMatter);
   if (m === null) {
     return null;
   }
