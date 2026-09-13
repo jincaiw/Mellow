@@ -555,6 +555,62 @@ if (!articlesAnchor) {
   }
 }
 
+// ── §12 官方菜单文案合同（Typora 1.14.9 build 7785 Menu.strings）─────────
+//
+// 立节原因（第六类失真的回归防线）：本机装有 Typora 1.14.9，直接读其
+// `zh-Hans.lproj/Menu.strings` 与 Base（英文）逐条对照，发现 Mellow 有 **19 处**
+// 文案偏离官方：
+//   · 12 处**多加省略号** —— Typora 的 Menu.strings 全库只有 1 处 `…`
+//     （`Search With…`），而 Mellow 给「打开 / 另存为 / 打印 / 导入 / 查找 /
+//     超链接 / 插入本地图片 …」统统加了 `…`；
+//   · 7 处用词不同 —— 设置…(应为「偏好设置」)、移到…(「移动到」)、
+//     文件信息…(「显示简介」)、关闭窗口(「关闭」)、打开文件位置(「在 Finder 中显示」)、
+//     Quick Open(中文菜单里**直接是英文**，应为「快速打开」)、检查更新…/反馈问题…。
+//
+// 真值不能靠 CI 现读（runner 上不装 Typora），故把期望值内嵌于此，
+// 由本护栏长期锁定，防再次漂移。修改前请先对照 Typora 的 Menu.strings。
+const TYPORA_MENU_LABELS = [
+  // [labelKey, Typora zh-Hans, Typora en（Base）]
+  ['menu.file.open', '打开', 'Open'],
+  ['menu.workspace.openFolder', '打开文件夹', 'Open Folder'],
+  ['menu.file.saveAs', '另存为', 'Save As'],
+  ['menu.file.saveAll', '保存全部打开的文件', 'Save All Open Files'],
+  ['menu.file.import', '导入', 'Import'],
+  ['menu.file.print', '打印', 'Print'],
+  ['menu.file.moveTo', '移动到', 'Move To'],
+  ['menu.file.info', '显示简介', 'Get Info'],
+  ['menu.file.closeWindow', '关闭', 'Close'],
+  ['menu.file.reveal', '在 Finder 中显示', 'Reveal in Finder'],
+  ['menu.top.settings', '偏好设置', 'Preferences'],
+  ['menu.top.checkUpdate', '检查更新', 'Check for Updates'],
+  ['menu.help.feedback', '反馈', 'Feedback'],
+  ['menu.quickOpen.open', '快速打开', 'Quick Open'],
+  ['menu.search.find', '查找', 'Find'],
+  ['menu.search.replace', '查找和替换', 'Find and Replace'],
+  ['menu.format.link', '超链接', 'Hyperlink'],
+  ['menu.format.referenceLink', '链接引用', 'Link Reference'],
+  ['menu.image.insertLocal', '插入本地图片', 'Insert Local Images'],
+];
+function checkTyporaMenuLabels(zhMap, enMap) {
+  const bad = [];
+  for (const [key, zh, en] of TYPORA_MENU_LABELS) {
+    if (zhMap.get(key) !== zh) bad.push(`${key} zh 期望「${zh}」实际「${zhMap.get(key) ?? '(缺失)'}」`);
+    if (enMap.get(key) !== en) bad.push(`${key} en 期望「${en}」实际「${enMap.get(key) ?? '(缺失)'}」`);
+  }
+  return bad;
+}
+for (const msg of checkTyporaMenuLabels(zhMenu, enMenu)) fail(`菜单文案偏离 Typora：${msg}`);
+
+// 省略号合同：Typora 全库仅 1 处 `…`，故 Mellow 不得对上述「Typora 有对应项」
+// 的条目自行添加省略号。canary：把 file.open 的 zh 文案改成「打开…」必须被拒。
+{
+  const driftedZh = new Map(zhMenu);
+  driftedZh.set('menu.file.open', '打开…');
+  if (checkTyporaMenuLabels(driftedZh, enMenu).length === 0) {
+    fail('菜单文案 canary 未生效：把「打开」改成「打开…」仍未被拒绝');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Menu contract violations:\n  ${errors.join('\n  ')}`);
@@ -567,3 +623,4 @@ console.log(`Shortcut single source: ${schemaShortcuts.size} accelerators declar
 console.log(`Bilingual labels: ${usedLabelKeys.size} label keys resolved from i18n menu.* (zh-CN + en-US); Rust menu.rs is a pure materialization adapter`);
 console.log(`Check state: ${CHECK_STATE_CONTRACT.length} toggles from Settings Store, ${VIEW_GROUP_EXCEPTIONS.size} tracked view-group exceptions; themes derived from Theme Registry`);
 console.log(`Official shortcut table: ${OFFICIAL_SHORTCUTS.length} bindings match Typora Shortcut Keys (rev. 2026-09-06); ${OFFICIAL_SHORTCUT_EXCEPTIONS.size} registered D-exceptions (drift canary armed)`);
+console.log(`Official menu labels: ${TYPORA_MENU_LABELS.length} labels match Typora 1.14.9 Menu.strings (zh-Hans + en, read from the local install; drift canary armed)`);
