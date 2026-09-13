@@ -446,17 +446,53 @@ if (!loopDrift.includes('void refreshFilesSidebar();')) {
   fail('Sidebar 护栏自检失败：无法模拟无限刷新循环回退（P3.7），护栏已失效');
 }
 
-// ── ⑲ P3.8 Sidebar resize / 记忆 / 窄化 / 200% Zoom ─────────────────────
+// ── ⑲ Sidebar resize / 记忆 / 窄化 / 200% Zoom ──────────────────────────
+//
+// 数值真值来源（2026-09-13 用本机 Typora 1.14.9 实机核对，第 1 级证据）：
+//   · 默认 270px ← `TypeMark/style/base-control.css` 的 `--sidebar-width: 270px`
+//   · 最小 160px ← `appsrc/main.js` 的 `setSidebarWidth` 内 `Math.max(e, 160)`
+//   · 最大 480px ← **Mellow 有意加的保护**（Typora 无硬上限，仅受窗口约束），登记 D
+// 此前锁定的 260 / 200 无据：注释引「D-J」（实为「内置主题数量」）为引错，
+// 护栏引「P3.8」在现文档与台账中均查无此编号。
 if (!/const SIDEBAR_WIDTH_KEY = 'mellow\.sidebar\.width';/.test(appSource)) {
-  fail('App.tsx 缺少 SIDEBAR_WIDTH_KEY 常量（P3.8）');
+  fail('App.tsx 缺少 SIDEBAR_WIDTH_KEY 常量');
 }
-// 初始化：范围校验回退（越界存档视为损坏 → 默认 260，而非 clamp）
-if (!/saved >= 200 && saved <= 480 \? saved : 260/.test(appSource)) {
-  fail('sidebarWidth 初始化缺少 200–480 范围校验回退默认 260（P3.8）');
+// 三个宽度常量必须存在且取值与 Typora 真值一致
+const sidebarConsts = { SIDEBAR_MIN_WIDTH: 160, SIDEBAR_MAX_WIDTH: 480, SIDEBAR_DEFAULT_WIDTH: 270 };
+for (const [name, value] of Object.entries(sidebarConsts)) {
+  const re = new RegExp(`const ${name} = ${value};`);
+  if (!re.test(appSource)) {
+    fail(`App.tsx 的 ${name} 应为 ${value}（默认/最小取自 Typora 1.14.9 实机真值；最大为 Mellow 有意保护）`);
+  }
 }
-// 拖拽 clamp：setSidebarWidth 内 Math.max/Math.min 200–480
-if (!/Math\.max\(200, Math\.min\(480, Math\.round\(next\)\)\)/.test(appSource)) {
-  fail('setSidebarWidth 缺少 200–480 clamp（P3.8）');
+// 初始化：范围校验回退（越界存档视为损坏 → 回默认，而非 clamp）
+if (!/saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH\s*\n?\s*\? saved\s*\n?\s*: SIDEBAR_DEFAULT_WIDTH/.test(appSource)) {
+  fail('sidebarWidth 初始化缺少范围校验回退默认值');
+}
+// 拖拽 clamp：setSidebarWidth 内 Math.max/Math.min 使用上述常量
+if (!/Math\.max\(SIDEBAR_MIN_WIDTH, Math\.min\(SIDEBAR_MAX_WIDTH, Math\.round\(next\)\)\)/.test(appSource)) {
+  fail('setSidebarWidth 缺少以常量表达的 clamp');
+}
+// **CSS 与 JS 必须同源**（2026-09-13 实测事故）：`.file-tree` 的 min-width 会先于 JS 生效，
+// 若与 SIDEBAR_MIN_WIDTH 不一致会直接顶住拖拽结果 —— 当时 JS 已改 160 但 CSS 仍是 200px，
+// 表现为「拖到底停在 200」。故此处交叉比对三个数值，防止再次散落。
+{
+  const fileTreeRule = stylesCss.match(/\.file-tree \{[\s\S]*?\}/)?.[0] ?? '';
+  if (fileTreeRule === '') {
+    fail('styles.css 缺少 .file-tree 规则（无法交叉比对侧栏宽度真值）');
+  } else {
+    for (const [prop, value] of [['width', 270], ['min-width', 160], ['max-width', 480]]) {
+      const re = new RegExp(`${prop}:\\s*${value}px;`);
+      if (!re.test(fileTreeRule)) {
+        fail(`styles.css 的 .file-tree ${prop} 应为 ${value}px（须与 App.tsx 的 SIDEBAR_* 常量同源）`);
+      }
+    }
+  }
+  // canary：把 CSS 的 min-width 改回 200 必须被检出
+  const cssDrift = stylesCss.replace(/min-width:\s*160px;/, 'min-width: 200px;');
+  if (cssDrift === stylesCss) {
+    fail('侧栏宽度 CSS canary 未武装：无法注入 .file-tree min-width 漂移');
+  }
 }
 // 拖拽 listener 链：mousedown 注册 window mousemove/mouseup，up 时清理
 if (!/window\.addEventListener\('mousemove', onMove\)/.test(appSource) || !/window\.addEventListener\('mouseup', onUp\)/.test(appSource)) {
@@ -477,21 +513,29 @@ const resizeE2e = read('tests/e2e/sidebar-resize-verify.mjs');
 for (const marker of [
   "localStorage.getItem('mellow.sidebar.width')",
   'drag above 480 clamps to 480',
-  'out-of-range saved width falls back to default 260',
+  'out-of-range saved width falls back to default 270',
   'temporarily hides sidebar without clearing preference',
   '200% zoom: resize drag still works',
   'new MouseEvent',
 ]) {
   if (!resizeE2e.includes(marker)) {
-    fail(`sidebar-resize-verify.mjs 缺少关键断言标记 ${JSON.stringify(marker)}（P3.8）`);
+    fail(`sidebar-resize-verify.mjs 缺少关键断言标记 ${JSON.stringify(marker)}`);
   }
 }
 
-// ── ⑳ P3.8 canary：护栏必须能抓住 clamp 回退 ────────────────────────────
+// ── ⑳ canary：护栏必须能抓住 clamp 回退 ─────────────────────────────────
 // 模拟「去掉 clamp 直接透传」的漂移：突变后源码应包含退化形态，且 clamp 正则不再命中
-const clampDrift = appSource.replace('Math.max(200, Math.min(480, Math.round(next)))', 'next');
-if (!clampDrift.includes('const clamped = next;') || /Math\.max\(200, Math\.min\(480, Math\.round\(next\)\)\)/.test(clampDrift)) {
-  fail('Sidebar 护栏自检失败：无法模拟 clamp 回退（P3.8），护栏已失效');
+const CLAMP_EXPR = 'Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(next)))';
+const clampDrift = appSource.replace(CLAMP_EXPR, 'next');
+if (!clampDrift.includes('const clamped = next;') || clampDrift.includes(CLAMP_EXPR)) {
+  fail('Sidebar 护栏自检失败：无法模拟 clamp 回退，护栏已失效');
+}
+// 数值漂移 canary：把最小宽度改回无据的 200，上述常量检查必须拒绝
+const minDrift = appSource.replace('const SIDEBAR_MIN_WIDTH = 160;', 'const SIDEBAR_MIN_WIDTH = 200;');
+if (minDrift === appSource) {
+  fail('Sidebar 数值 canary 未武装：无法注入 SIDEBAR_MIN_WIDTH 漂移');
+} else if (/const SIDEBAR_MIN_WIDTH = 160;/.test(minDrift)) {
+  fail('Sidebar 数值 canary 失效：注入漂移后仍命中期望值');
 }
 
 // ── ㉑ P3.9 Sidebar Screenshot Golden（V5-A1 三模式：files-tree / outline / search）──
@@ -766,7 +810,7 @@ if (errors.length > 0) {
   throw new Error(`Sidebar contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log(`Sidebar contract: dir watcher recursive + debounced incremental sidebar refresh + unwatch on root change; monotonic watcher ids (collision fixed); all four sidebar modes virtualized (binary-search windowing, measured heights, padding spacer, sticky preserved); outline/search keyboard navigation (arrows/enter/esc/home/end with scroll-follow highlight); file list keyboard complete (arrows/f2/delete/pageup/pagedown reusing tree rename/trash flows); context menus for file list/outline/search modes (bilingual, reusing rename/trash/copy-path flows); persistent filter input + new-file/new-folder quick buttons sharing filtered sequences for render and keyboard navigation; cross-app drag e2e (dataTransfer link contract, tree-internal move, external-drop stale-ref guard) + workspace refresh loop fixed via stable ref indirection; sidebar resize drag (window mousemove/mouseup with cleanup, clamp 200-480, persisted width with out-of-range fallback to 260, <900px narrow suppression without clearing preference, 200% zoom e2e with synthetic mouse drag); four-mode sidebar screenshot golden (files-tree/files-list/outline/search, ±1px layout contract + archived screenshots, shared browser mock host singleton so fs writes are visible to global search); 12 sidebar timing micro-benchmarks in jest (app-core T1-T11: filterFileTree/filterFileList/flatten/navigate full-traversal/pageup-pagedown/outline navigate/collapseAll/search feed+shrink/navigate/matchSearchLine 10k lines/groupSearchResults; desktop-ui T12: buildOffsets 10k + findRange x1000; generous budgets, enforced in pnpm test chain); ${''
+console.log(`Sidebar contract: dir watcher recursive + debounced incremental sidebar refresh + unwatch on root change; monotonic watcher ids (collision fixed); all four sidebar modes virtualized (binary-search windowing, measured heights, padding spacer, sticky preserved); outline/search keyboard navigation (arrows/enter/esc/home/end with scroll-follow highlight); file list keyboard complete (arrows/f2/delete/pageup/pagedown reusing tree rename/trash flows); context menus for file list/outline/search modes (bilingual, reusing rename/trash/copy-path flows); persistent filter input + new-file/new-folder quick buttons sharing filtered sequences for render and keyboard navigation; cross-app drag e2e (dataTransfer link contract, tree-internal move, external-drop stale-ref guard) + workspace refresh loop fixed via stable ref indirection; sidebar resize drag (window mousemove/mouseup with cleanup, clamp 160-480 (min/default from Typora 1.14.9 real values; 480 is Mellow's deliberate guard), persisted width with out-of-range fallback to 270, <900px narrow suppression without clearing preference, 200% zoom e2e with synthetic mouse drag); four-mode sidebar screenshot golden (files-tree/files-list/outline/search, ±1px layout contract + archived screenshots, shared browser mock host singleton so fs writes are visible to global search); 12 sidebar timing micro-benchmarks in jest (app-core T1-T11: filterFileTree/filterFileList/flatten/navigate full-traversal/pageup-pagedown/outline navigate/collapseAll/search feed+shrink/navigate/matchSearchLine 10k lines/groupSearchResults; desktop-ui T12: buildOffsets 10k + findRange x1000; generous budgets, enforced in pnpm test chain); ${''
 }--- V7-W3（侧边栏深度对标）---${''
 } W3.2 File List 契约：compact 默认 + 按文件夹分组（sticky 组标题，单组时自动退化）+ PageUp/PageDown 接线 + 导航与渲染同源 + missing 态提示（当前文档不在已加载文件夹 → 底部可点击载入）;${''
 } W3.3（D-C = ①）侧栏底部「当前文件夹」操作条：Refresh / Open Folder… / 展开折叠 / 排序 / Recent Locations，仅 Files（树·列表）模式出现;${''

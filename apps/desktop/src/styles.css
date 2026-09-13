@@ -107,8 +107,13 @@ html, body, #root {
 }
 
 .file-tree {
-  width: 260px;
-  min-width: 200px;
+  /* 宽度真值与 App.tsx 的 SIDEBAR_* 常量同源（默认 270 / 最小 160 取自 Typora 1.14.9
+     实机：`--sidebar-width: 270px` 与 `setSidebarWidth` 的 `Math.max(e, 160)`；
+     最大 480 为 Mellow 有意加的保护）。
+     注意：本规则会**先于 JS 生效**，min-width 若与 JS 不一致会直接顶住拖拽结果
+     （2026-09-13 实测：JS 改成 160 后仍停在 200，根因就是这里的 min-width: 200px）。 */
+  width: 270px;
+  min-width: 160px;
   max-width: 480px;
   flex-shrink: 0;
   border-right: 1px solid var(--mellow-border);

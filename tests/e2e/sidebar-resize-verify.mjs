@@ -106,7 +106,7 @@ async function main() {
       await page.locator('aside.file-tree').waitFor({ state: 'visible', timeout: 10000 });
 
       let s = await sample(page);
-      check('initial sidebar width 260 (default)', near(s.asideW, 260), JSON.stringify({ asideW: s.asideW }));
+      check('initial sidebar width 270 (default, Typora 真值)', near(s.asideW, 270), JSON.stringify({ asideW: s.asideW }));
 
       await dragResizer(page, 380);
       s = await sample(page);
@@ -114,7 +114,7 @@ async function main() {
 
       await dragResizer(page, 60);
       s = await sample(page);
-      check('drag below 200 clamps to 200', near(s.asideW, 200), JSON.stringify({ asideW: s.asideW }));
+      check('drag below 160 clamps to 160 (Typora 最小)', near(s.asideW, 160), JSON.stringify({ asideW: s.asideW }));
 
       await dragResizer(page, 900);
       s = await sample(page);
@@ -144,7 +144,7 @@ async function main() {
       await page.goto(BASE, { waitUntil: 'domcontentloaded' });
       await page.locator('aside.file-tree').waitFor({ state: 'visible', timeout: 10000 });
       const s = await sample(page);
-      check('out-of-range saved width falls back to default 260 on init', near(s.asideW, 260), JSON.stringify({ asideW: s.asideW }));
+      check('out-of-range saved width falls back to default 270 on init', near(s.asideW, 270), JSON.stringify({ asideW: s.asideW }));
       await context.close();
     }
 

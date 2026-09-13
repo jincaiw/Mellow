@@ -353,17 +353,28 @@ export default function App() {
     typeof window !== 'undefined' && window.innerWidth < 900,
   );
   const sidebarShown = sidebarVisible && !sidebarSuppressedByWidth;
-  // 侧边栏宽度拖拽（D-J / Typora parity）：200–480px，localStorage 记忆（默认 260）
+  // 侧边栏宽度拖拽：默认 270px、最小 160px —— 取自 Typora 1.14.9 实机真值
+  // （`TypeMark/style/base-control.css` 的 `--sidebar-width: 270px`；
+  //   `appsrc/main.js` 的 `setSidebarWidth` 内 `Math.max(e, 160)`）。
+  // 2026-09-13 更正：原值 260 / 200 无据 —— 注释曾引「D-J」（实为「内置主题数量」，引错），
+  // 护栏曾引「P3.8」（现文档与台账均查无此编号）。
+  // **最大 480px 为 Mellow 有意加的保护**（Typora 无硬上限，仅受窗口宽度约束）：
+  // 避免侧栏无限扩张挤压写作区，登记为 D。
+  const SIDEBAR_MIN_WIDTH = 160;
+  const SIDEBAR_MAX_WIDTH = 480;
+  const SIDEBAR_DEFAULT_WIDTH = 270;
   const [sidebarWidth, setSidebarWidthState] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-      return Number.isFinite(saved) && saved >= 200 && saved <= 480 ? saved : 260;
+      return Number.isFinite(saved) && saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH
+        ? saved
+        : SIDEBAR_DEFAULT_WIDTH;
     } catch {
-      return 260;
+      return SIDEBAR_DEFAULT_WIDTH;
     }
   });
   const setSidebarWidth = useCallback((next: number) => {
-    const clamped = Math.max(200, Math.min(480, Math.round(next)));
+    const clamped = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(next)));
     setSidebarWidthState(clamped);
     try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)); } catch { /* no-op */ }
   }, []);

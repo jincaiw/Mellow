@@ -740,7 +740,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | 写作宽度 | 680 / **860** / 980 / Auto，默认 **860**，单一真源（V7-W0 修正：原表写 820，与 `TYPOGRAPHY_DEFAULTS.writingWidth = 860` 及设置项选项值不符） | E |
 | 正文 | 16px / line-height 1.6，单一真源 | E |
 | 留白 | Top 56px；Bottom ≥30vh；跨主题一致 | E |
-| 侧栏宽度 | 200–480px 可拖，默认 260px | E |
+| 侧栏宽度 | **160–480px 可拖，默认 270px**（2026-09-13 更正：原写「200–480，默认 260」无据 —— 注释引「D-J」实为「内置主题数量」、护栏引「P3.8」在现文档与台账均查无此编号。现取值与 Typora 1.14.9 实机一致：`--sidebar-width: 270px`、`setSidebarWidth` 的 `Math.max(e, 160)`）。**最大 480px 为 Mellow 有意加的保护**（Typora 无硬上限），登记 **D-AD** | E（除 480 上限为 D） |
 | 响应式 | 900×600 可用；<900 自动隐藏侧栏；200% Zoom 不截断 | E |
 | 视觉 Golden | 三平台 × 14 场景（见 §9.3） | E |
 
@@ -1285,6 +1285,7 @@ Functional
 | **D-Y**（2026-09-13 补登记） | **New Tab（macOS `Cmd+T`）与 Switch Between Opened Documents（`Ctrl+Tab` / ``Cmd+` ``）** | **维持 SDI 不提供，显式登记 D** | §5.2 的 G7-KEY-08 判为「D 或实现」、G7-KEY-09 判为「D（需显式登记）」，但二者此前**从未进入 D 表** —— 属「要求登记却漏登记」，已补齐。依据：SDI 单窗口单文档为已确认产品决策（B1），多标签语义在 SDI 下无对应物；`Cmd+T` 在 macOS 亦无「新标签」可映射。<br/>**同 D-D（显式登记要求一致）**。 |
 | **D-Z**（2026-09-13 补登记） | **macOS Actual Size / Zoom In / Zoom Out**（`Cmd+Shift+0` / `=` / `-`） | **保留 Mellow 实现，登记为 D（增强）** | 官方 Shortcut Keys 表（2026-09-06 复核）对 macOS 三档缩放均标注 ***(Not Supported)*** —— 即 Typora 在 macOS **不提供**菜单缩放。Mellow 提供且可用（§6.1 默认 100%），属**超出 Typora 的增强**，不破坏心智，故登记 D 而非删除。<br/>复核同时确认 G7-KEY-08/09/10 三行与官方表一致，§3.4 键位表无漂移。 |
 | **D-AA**（2026-09-13） | 格式 → 图片子菜单「Use Image Root Path」 | **不加菜单开关，登记 D** | 证据：`insertLocalImage`（`App.tsx:1530-1536`）在同根时已**默认输出相对路径**（`fileTreeRelativePath`），与 Typora 该选项默认态一致。补一个恒开的菜单开关不增加能力，只增加与设置面板不一致的第二入口。 |
+| **D-AD**（2026-09-13） | **侧栏最大宽度 480px** | **保留 Mellow 的保护上限，登记 D** | Typora 的 `setSidebarWidth` 只做 `Math.max(e, 160)`，**无硬上限**（仅受窗口宽度约束）。Mellow 另加 `SIDEBAR_MAX_WIDTH = 480`，避免侧栏无限扩张挤压写作区 —— 属**有意的保护**，不照抄 Typora 的无上限行为。默认值与最小值已按实机真值对齐（270 / 160）。 |
 | **D-AC**（2026-09-13 补登记，原为 **V7-I1 用户裁决**） | **「用 Reader 打开」与「只读模式」是否进显示菜单** | **两者均从显示菜单移除；命令保留在注册表，仍可经命令面板 / Reader 内按钮触达** | 该裁决此前**只写在 `verify-settings-contract.mjs` 的注释与断言里**，方案正文从未登记 —— 2026-09-13 本轮做 Typora 实机对照时，因发现 `view.readonly.toggle` 「能力已实现但菜单不可达」而**误加了菜单项**，被该护栏当场拦下（`menuSchema 含已裁撤的 view.readonly.toggle 菜单入口（V7-I1 应删除）`）。<br/>**教训**：护栏注释**不是**决策登记处 —— 裁决必须进本 D 表，否则后续轮次无法发现。<br/>**注意与 §3.3 的关系**：Typora 确有 `Readonly Mode`（Menu.strings 有「只读模式」），故这属**有意差异（D）**而非缺口；补登记后，本表是唯一可发现处。 | 该 Typora 菜单项的语义（插入时复制到资源目录 / 上传 / 保留原路径）已由 `image.assetDir` + `image.uploadService` 两个设置项覆盖（`settings/src/index.ts:182-193`）。以设置承载而非菜单承载，符合「同一语义单一入口」，不复制 Typora 的入口形态。 |
 | **D-L（新）** | View 菜单「Search」条目 | **置于侧栏三视图之后、模式组之前** | 官方 View 菜单无 Search（搜索在侧栏内）；Mellow 全局搜索（⇧⌘F）需常驻入口，紧邻侧栏组语义最近，且不与 Typora 基础项混淆。 |
 | **D-M（新）** | View 菜单「Word Count / Always on Top」位置 | **归入状态组，排在状态栏开关之后** | 二者均为「窗口/状态」语义，与 Typora 的 `Show Status Bar` 同组；不插入 Typora 的显示模式组。 |
