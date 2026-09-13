@@ -316,6 +316,45 @@ if (showElBody !== '') {
   } else if (!/(?<!await )!(\(?)(guardSingleDocument|confirmCloseDocument)\(/.test(guardDrift)) {
     fail('脏文档守卫 canary 失效：注入的「漏 await」调用点未被检出');
   }
+
+  // ── 离开决策的**唯一入口**是 guardSingleDocument（G7-EDIT-11）────────────────
+  // 立节原因：PRD §101 规定自动保存默认含 Document Switch，但该自动保存此前被写在
+  // `applyTab()`（切文档前一刻）里，而 applyTab 总在守卫**之后**执行，于是：
+  //   · 免不掉确认对话框（PRD 的默认形同未实现）；
+  //   · 用户选「放弃更改」后 `dirtyRef` 仍为 true → 又把**已丢弃的内容写回磁盘**；
+  //   · `handleTrashDocument` 路径会把**刚删除的文件重新创建**出来。
+  // 现将「离开时自动保存」收进守卫（Typora `tryLeaveDocument` 分支 ①），并禁止 applyTab 再自动保存。
+  const appCode = stripComments(appSource);
+  const guardBody = /const guardSingleDocument = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\);/m.exec(appCode)?.[0] ?? '';
+  if (guardBody === '') {
+    fail('App.tsx 缺少 guardSingleDocument');
+  } else {
+    if (!/isAutosaveEnabled\(readStored\('mellow\.file\.autosave'\)\)/.test(guardBody)) {
+      fail('guardSingleDocument 缺少「自动保存开启 → 静默保存后离开」分支（PRD §101 默认含 Document Switch；Typora tryLeaveDocument 分支 ①）');
+    }
+    if (!/existing\.path !== null/.test(guardBody)) {
+      fail('静默保存分支必须以「文档有磁盘路径」为前提（未命名文档须先另存为 → 必须走三选一）');
+    }
+    if (!/if \(!\(await saveDocumentRef\.current\(\)\)\) return false;/.test(guardBody)) {
+      fail('静默保存失败必须中止离开（否则静默丢内容）');
+    }
+  }
+  const applyTabBody = /const applyTab = useCallback\(async \(tab: DocumentTab\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/m.exec(appCode)?.[0] ?? '';
+  if (applyTabBody === '') {
+    fail('App.tsx 缺少 applyTab');
+  } else if (/maybeAutoSave/.test(applyTabBody)) {
+    fail('applyTab 不得再自动保存（G7-EDIT-11）：它总在 guardSingleDocument 之后执行 → 会覆盖「放弃更改」把已丢弃内容写回磁盘，且 handleTrashDocument 会重建已删文件');
+  }
+  const applyTabDrift = appCode.replace(
+    '  const applyTab = useCallback(async (tab: DocumentTab) => {\n    const host = hostRef.current;\n    if (!host) return;',
+    '  const applyTab = useCallback(async (tab: DocumentTab) => {\n    const host = hostRef.current;\n    if (!host) return;\n    await maybeAutoSaveRef.current?.();',
+  );
+  if (applyTabDrift === appCode) {
+    fail('applyTab 自动保存 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+  } else {
+    const driftedApplyTab = /const applyTab = useCallback\(async \(tab: DocumentTab\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/m.exec(applyTabDrift)?.[0] ?? '';
+    if (!/maybeAutoSave/.test(driftedApplyTab)) fail('applyTab 自动保存 canary 失效：注入后未检出');
+  }
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────
@@ -323,4 +362,4 @@ if (errors.length > 0) {
   throw new Error(`Shell widget contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS; editor-topbar is a pure action strip (no filename, macOS sidebar entry, 34px baseline); standalone EditorToolbar retired in favour of the floating selection toolbar (V7-W2.4); word count clickable in status bar + optional title-bar count (V7-W2.6/W2.7); sidebar mode-menu dead CSS removed (V7-W2.8); dirty-document leave prompt is an in-app Save / Discard / Cancel dialog with every guard call site awaited (V7-W6, G7-EDIT-09)');
+console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS; editor-topbar is a pure action strip (no filename, macOS sidebar entry, 34px baseline); standalone EditorToolbar retired in favour of the floating selection toolbar (V7-W2.4); word count clickable in status bar + optional title-bar count (V7-W2.6/W2.7); sidebar mode-menu dead CSS removed (V7-W2.8); dirty-document leave prompt is an in-app Save / Discard / Cancel dialog with every guard call site awaited (V7-W6, G7-EDIT-09); leave-time auto save lives in guardSingleDocument only — applyTab must not auto save (G7-EDIT-11)');

@@ -1641,7 +1641,6 @@ export default function App() {
     refreshTabsState();
   }, [currentTabPatch, refreshTabsState]);
 
-  /** B1（SDI）：单文档关闭确认 —— 当前文档 dirty 时弹「丢弃修改」确认；干净直接放行。 */
   /** 保存当前文档（handleSave 的 ref 镜像：confirmCloseDocument 声明在前，
    *  依赖数组即时求值 → 不能直接引用后声明的 handleSave，否则 TDZ 报错）。 */
   const saveDocumentRef = useRef<() => Promise<boolean>>(async () => false);
@@ -1665,14 +1664,33 @@ export default function App() {
   }, [askUser, t]);
 
   /** B1（SDI）：打开/新建另一文档前确保窗口内只有当前文档。
-   *  当前文档 dirty → 丢弃确认；通过后清空文档状态，随后调用方再 open 新文档。
-   *  返回 false 表示用户取消（调用方不得继续打开）。
-   *  注：必须先于 openTreeFile/handleNew/handleOpen 等调用方声明（deps 数组即时求值）。 */
+   *
+   *  完整对齐 Typora 的 `tryLeaveDocument`（一手证据：`TypeMark/appsrc/main.js`）：
+   *    ① `enableAutoSave || saveFileOnSwitch` 且**文档有磁盘路径** → 静默保存后离开；
+   *    ② 否则 `showDialog` 三选一（保存 / 放弃更改 / 取消），保存失败即中止离开。
+   *  Mellow 的「自动保存」按 PRD §101 默认已含 **Document Switch**（另含 Window Blur + 定时），
+   *  故 ① 的条件是「自动保存开启 && path !== null」；未命名文档仍走 ②（须先另存为）。
+   *
+   *  ⚠️ 2026-09-13 修复（G7-EDIT-11）：① 此前**放错了位置** —— 它写在 `applyTab()` 里
+   *  （切文档前一刻），而 `applyTab` 在 `guardSingleDocument()` **之后**才执行，于是：
+   *    · 确认对话框照样弹出（自动保存没能免掉打扰，PRD §101 的默认形同未实现）；
+   *    · 用户在 ② 选「放弃更改」后，`dirtyRef` 仍为 true → ① 又把**已丢弃的内容写回磁盘**
+   *      （用户的明确选择被静默推翻）；未命名文档还会因此弹出「另存为」；
+   *    · `handleTrashDocument` 的 `applyTab` 更危险 —— 会把**刚删除的文件重新创建出来**。
+   *  现把 ① 收进本守卫（离开决策的唯一入口），并从 `applyTab` 移除。
+   *  返回 false 表示不得离开（用户取消 / 保存失败）。
+   */
   const guardSingleDocument = useCallback(async (): Promise<boolean> => {
     syncDocFromEditor();
     const existing = docStateRef.current.doc;
     if (existing !== null) {
-      if (!(await confirmCloseDocument(existing))) return false;
+      if (existing.dirty && existing.path !== null && isAutosaveEnabled(readStored('mellow.file.autosave'))) {
+        // ① 静默保存（PRD §101 默认含 Document Switch）；保存失败 → 中止离开，绝不静默丢弃
+        if (!(await saveDocumentRef.current())) return false;
+      } else if (!(await confirmCloseDocument(existing))) {
+        // ② 三选一确认
+        return false;
+      }
       docStateRef.current = new DocumentState();
     }
     return true;
@@ -1737,8 +1755,13 @@ export default function App() {
   const applyTab = useCallback(async (tab: DocumentTab) => {
     const host = hostRef.current;
     if (!host) return;
-    // PRD §101 Auto Save：切换文档前保存当前 dirty 文档（默认 Window Blur + Document Switch）
-    await maybeAutoSaveRef.current?.();
+    // ⚠️ 2026-09-13（G7-EDIT-11）：**此处不得再自动保存**。
+    // 原实现按 PRD §101「切换文档前保存当前 dirty 文档」在切文档前一刻调 maybeAutoSave，
+    // 但本函数总在 `guardSingleDocument()` **之后**执行，于是那份自动保存
+    //   · 免不掉确认对话框（打扰照旧），
+    //   · 且在用户选「放弃更改」后仍把**已丢弃的内容写回磁盘**（未命名文档还会弹另存为），
+    //   · `handleTrashDocument` 路径更会把**刚删除的文件重新创建**出来。
+    // 「离开时自动保存」已收进 `guardSingleDocument()`（离开决策的唯一入口）。
     setReaderOpen(false);
     suppressEditorEventRef.current = true;
     filePathRef.current = tab.path;
