@@ -36,7 +36,9 @@ Mellow 的目标不是「具备与 Typora 类似的功能」，而是：
 | 三平台 | 构建/启动通过 | **IMPL** | **原「Linux 真机 IME 已通」为失真，已更正** —— CI 历史（Runtime Qualification run 58–61）证明 Linux IME 矩阵持续失败；**Windows Runtime 证据已取得**（run 60/61 success，含 Source Fidelity 与 launch+type+save），原「仅诊断级」已过时。详见 §5.8 G7-QA-03。 |
 | Release Gate | 空白 | **NOT_TESTED** | UX Score 与 30 任务仍空白 |
 
-`tests/parity/typora-parity-ledger.json` 看板：**32 项中 PASS-E = 0**，AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1。
+`tests/parity/typora-parity-ledger.json` 看板（**2026-09-13 实跑，50 项**）：**PASS-E = 0**，AUTO 44 / MAC 2 / IMPL 1 / BLOCKED 2 / NOT_TESTED 1。
+
+> **数字更正**：本表原写「32 项 AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1」，是 V7.0 定稿时的旧值。V7-W0 已将台账扩容至覆盖 §7 全部合同条目（32 → 50），且新增了 `BLOCKED` 状态。以 `node tests/parity/verify-parity-ledger.mjs` 输出为准，不以文档记忆为准。
 
 ### 0.3 剩余差距的三类性质
 
@@ -451,9 +453,9 @@ V4 暴露的 Win/Linux 9 处偏离**已全部纠偏**（`menuSchema.ts` 逐条�
 | **G7-KEY-05** | macOS 行内 Code | `Cmd+Shift+`` ` | `Ctrl+`` `（`menuSchema.ts:313`） | FAIL → 已修复（W1.9） |
 | **G7-KEY-06** | macOS Replace | `Cmd+H` 🟡 | `Cmd+Alt+F`（`menuSchema.ts:213`） | **D（有意差异）**：`Cmd+H` 被 macOS 系统「隐藏应用」占用，沿用 `Cmd+Alt+F`；见 §12 D-Q |
 | **G7-KEY-07** | Find Next（Win/Linux） | `F3` / `Enter` | 主绑定 `Ctrl+G` / `Cmd+G`；`F3` / `Shift+F3` 别名**两平台均已注册**（`App.tsx:4477-4478`）；`Enter` 由 CM 查找面板接管 | ✅ **已复核（2026-09-12）** —— `tests/e2e/block-shortcuts-verify.mjs` 实测 18/18：Enter 连续推进匹配（0→11）、F3 在编辑区聚焦时推进（含环绕）。<br/>**边界（如实记录）**：dev 环境无原生菜单 accelerator 通道，故「查找输入框聚焦时按 F3」无法验证；真机由菜单快捷键分发，不作断言 |
-| G7-KEY-08 | Switch Between Opened Documents | `Ctrl+Tab` / `Cmd+`` ` | 无（SDI 下语义变为窗口切换） | D 或实现 |
-| G7-KEY-09 | New Tab | macOS `Cmd+T` | 无（SDI 决策移除） | D（需显式登记） |
-| G7-KEY-10 | Actual Size / Zoom In / Out（macOS） | 官方「不支持」 | Mellow 提供 `Cmd+Shift+0/=/-` | D（增强） |
+| G7-KEY-08 | Switch Between Opened Documents | `Ctrl+Tab` / `Cmd+`` ` | 无（SDI 下语义变为窗口切换） | D（已显式登记，见 **D-Y**） |
+| G7-KEY-09 | New Tab | macOS `Cmd+T` | 无（SDI 决策移除） | D（已显式登记，见 **D-Y**） |
+| G7-KEY-10 | Actual Size / Zoom In / Out（macOS） | 官方「不支持」 | Mellow 提供 `Cmd+Shift+0/=/-` | D（增强，已显式登记，见 **D-Z**） |
 
 **W1.2 键位方向的证据链（重要）**：`tests/benchmark/fixtures/typora-menu-dump.txt` 的
 `keymap.macDefault` / `keymap.pcDefault` 段显示 `Cmd-[ => indentLess`、`Cmd-] => indentMore`，
@@ -1151,17 +1153,20 @@ Functional
 
 任何一项缺失，状态只能是 IMPL / AUTO / platform-partial，**不得写「已完成对标」**。
 
-### 11.2 当前看板（台账 32 项）
+### 11.2 当前看板（台账 50 项 · 2026-09-13 实跑）
 
 | 状态 | 数量 | 说明 |
 |---|---|---|
-| PASS-E | **0** | 尚无 |
-| AUTO | 28 | 自动化通过，真机未验 |
-| MAC | 2 | IME/Undo、性能 |
-| IMPL | 1 | 三平台 Runtime 门禁 |
-| NOT_TESTED | 1 | UX Score 与 30 任务 |
+| PASS-E | **0** | 尚无 —— 三平台 Experience Contract 未闭环前不得标 PASS-E |
+| AUTO | 44 | 自动化通过，真机体验验收未完成 |
+| MAC | 2 | IME / Undo、性能（仅 macOS 有证据） |
+| IMPL | 1 | 三平台 Runtime 门禁（Windows ✅ / macOS ✅ / Linux ❌） |
+| BLOCKED | 2 | 拼写检查词典（需 host-api）、三平台视觉 Golden（需基线入库） |
+| NOT_TESTED | 1 | UX Score / 30 任务（工具设计上禁止自动生成计时，只能人工） |
 
-W0 完成后台账将扩容至覆盖 §7 全部合同条目。
+**W0 的扩容目标已完成**（32 → 50，覆盖 §7 全部合同条目）；原表「32 项」为旧值，已更正。
+
+**完整任务完成度审计见 §15。**
 
 ---
 
@@ -1175,7 +1180,7 @@ W0 完成后台账将扩容至覆盖 §7 全部合同条目。
 | **D-B** | EditorToolbar 形态 | ① 改为 Typora 1.14 式**浮动**工具栏（Selection 锚定）② 保留常驻横条并补全按钮（H1 / 正文 / 表格行列 / 查找）③ 两者并存 | **已裁决 = ①**（W2.4 落地）。依据 Typora 1.14 What's New 原文「You can now enable the **float toolbar** from menubar → **View → Toolbar** or from **Settings → Appearance**」：Typora 只有一个「编辑器工具栏」概念且为浮动。Mellow 的浮动工具栏**早已存在**（引擎级 `selectionToolbar`，Selection 锚定、IME 冻结、可键盘操作），故 ① 的落地形式是**退役**与之重叠的壳层常驻横条（`packages/desktop-ui/src/EditorToolbar.tsx` 及 `.editor-toolbar` 样式），并把 `View → 工具栏` 指向浮动工具栏（与设置项同源 storageKey `mellow.selectionToolbar.enabled`），同时把设置项从「编辑器」移到「外观」对齐 Typora。②③ 均被否：② 会留下 Typora 不存在的常驻横条；③ 制造两套格式工具心智负担。 |
 | **D-C** | 侧栏操作入口位置 | ① 改为 Typora 式**侧栏底部**文件夹菜单（Refresh / Open Folder… / 排序 / Recent）② 保留现顶部 header + 右键菜单 | **已裁决 = ①**（W3.3 落地）。依据 Typora 官方 File Management 原文「At the bottom of the left side bar, users can pop up menu items for the current folder」。落地形态：新建 `SidebarFooter.tsx`（底部单行按钮：文件夹图标 + 当前文件夹名 + 上箭头）+ `openFolderMenu`（Refresh / Open Folder… / 展开·折叠全部 / [包含子文件夹] / 排序子菜单 / 最近文件夹子菜单）；仅在 Files（树·列表）模式渲染（Typora 的 Outline / Search 面板底部无此条）。**顶部 `SidebarHeader` 与行右键菜单全部保留** —— ① 是「补齐 Typora 真机具备的入口」，不是替换既有入口；② 被否因它等于放弃一个 Typora 真值条目。 |
 | **D-D** | New Tab 与 Switch Between Opened Documents | ① 维持 SDI 不提供，登记为 D ② 恢复 macOS `Cmd+T` 新窗口语义 + 文档切换 | **①**：SDI 是已确认产品决策，但需显式登记为 D |
-| **D-E** | macOS Replace 键位 | ① 改为 `Cmd+H`（官方表）② 保留 `Cmd+Alt+F`（避免与系统 Hide 冲突）并登记 D | **先真机复核** Typora 1.14.9 实机行为再定 |
+| **D-E** | macOS Replace 键位 | ① 改为 `Cmd+H`（官方表）② 保留 `Cmd+Alt+F`（避免与系统 Hide 冲突）并登记 D | **已由 D-Q 裁决 = ②**（本行与 D-Q 原为同一决策的重复登记，结论却不一致 —— 一个写「待真机复核」、一个已裁决保留 `Cmd+Alt+F`，属文档二义，已收敛）。<br/>**复核记录**：仓库内 `typora-menu-dump.txt` **不足以定论** —— 其中仅有本地化串（「Replace => 替换」「Replace Next」），nib 段未出现 Replace 的 keyEquivalent 单字符，故无法据此判定实机键位；仍以官方 Shortcut Keys 表（写 `Cmd+H`）为唯一键位依据，并按 D-Q 保留 `Cmd+Alt+F`。 |
 | **D-F** | 缩进方向 | ① 照抄官方（Indent = `[`，Outdent = `]`）② 以实机为准 | **已裁决 = ①**（W1.2 落地）。证据：官方 Shortcut Keys 页明确 `Indent: Ctrl+[ / Tab`、`Outdent: Ctrl+] / Shift+Tab`，且该页自述「键位即菜单项右侧显示值」。`typora-menu-dump.txt` 的 CodeMirror `keymap` 段（`Cmd-[ => indentLess`）是编辑器内部默认，被原生菜单 accelerator 覆盖，不作为裁决依据。 |
 | **D-G** | 自动保存行为 | ① 对齐 Typora 实测默认 ② 增加定时保存 | **已裁决 = ①（V7-W5）**。官方《Auto Save》原文：Win/Linux「documents will be saved every **5 minutes**」，间隔由 `conf/conf.user.json` 的 `autoSaveTimer`（Double / minute / 默认 5）改写且 **GUI 不可达**；macOS「auto-save is always enabled as a system feature」。落地：三平台统一 5 分钟定时保存（规则 10），受既有 `mellow.file.autosave` 开关控制，并把间隔暴露到 GUI（Typora 需手改 JSON）= **B 级增强** |
 | **D-H** | 打印预览 | ① 实施预览窗口 ② 维持直接系统打印对话框（对齐 Typora） | **已裁决 = ②（V7-W5）**。`typora-menu-dump.txt` 全文只有 `Print => 打印` 与 `Page Setup => 页面设置`，**无 Print Preview 条目**；故「无预览窗口」不是差距。维持 `file.print → print_window`（系统对话框），并在护栏中永久禁止 `file.printPreview` 复活 |
@@ -1219,6 +1224,8 @@ W0 完成后台账将扩容至覆盖 §7 全部合同条目。
 | 2026-09-05 | V4.5–V4.6 | 第三、四轮（常驻工具栏、只读模式、图片尺寸、代码块语言标签、源码行号、窗口几何记忆、写作限宽内部化、SDI 真值表）；V5 渲染/侧栏对标；V6 渲染层指纹治理 |
 | 2026-09-06 ~ 09-11 | v1.5.0–v1.5.5 | 真机反馈五轮：渲染层指纹 + 视觉残差清零 + 壳 UI Typora 化 + 侧栏 Typora 化 + 树形去边框 + 引擎级字号阶梯 + 引用加固 + 代码高亮与复制按钮 + 浮动大纲 + iframe 防缓存 + 标题段落间距收敛 |
 | **2026-09-11** | **V7.0** | **归并 V3–V6 与全部真机反馈轮次为唯一权威版本；以 Typora 官方文档 + 1.14.9 dump 重建参考模型（§3）；差距重新分类为「缺失 / 不一致 / 未验收」三类；新识别 3 项 E 级缺失（Reopen Closed File、File List / Articles、macOS 标题栏字数）与 1 项真实缺陷（排版默认值三处不一致、Windows 新窗口双标题栏）；工作包重排为 W0–W8；新增 D-A ~ D-K 待裁决决策点** |
+| **2026-09-12** | v1.5.6（审计 + 实装收口） | ① 修复 **浮动工具栏永不显示**（`position()` 在 CM6 update 周期内读布局被拒 → 静默自隐）与 **表格列对齐连字符侵蚀**（固定 2 连字符 mark 吞掉原始长度）两个真 bug；② §9.3 视觉 Golden 补齐 7 场景，macOS 侧 14 场景全覆盖；③ 新增 5 个运行时验证脚本（功能存活 25 / 鼠标选择 7 / UX 流程 / 工具栏按钮 / 右键菜单）；④ 补齐 Windows CI（`ci.yml` 此前 6 个 job 全跑 ubuntu）、Golden 基线按平台分离、官方键位表合同（§11，55 条）；⑤ 补登记 D-W / D-X / D-V；⑥ 发布 v1.5.6 |
+| **2026-09-13** | v1.5.7 / v1.5.8（CI 修复 + 三平台证据） | ① **补齐 Edit 菜单「新段落 / 新行」**（G7-MENU-06），并实测纠正换行真值（Mellow 的 Enter = 软换行，官方定义 Enter = 新段落）→ 新登记 G7-EDIT-07；② 修复 3 类 CI 失败（台账 evidence 指向 gitignore 目录 / Edit 菜单索引断言 / **Windows CRLF 致护栏注入与 canary 全部失配**）；③ 新增「已修复」项运行时审计（6 项）；④ `runtime-qualification.yml` 改为随 `v*` 标签自动触发 → **首次取得 Windows Runtime 证据**（Source Fidelity + launch/type/save）；⑤ 更正失真「Linux 真机 IME 已通」（CI run 58 起持续失败），并用制品名通道精确定位（6/8 场景通过，paragraph + code 失败，失败点漂移）；⑥ 补登记 D-Y / D-Z / D-AA / D-AB，收敛 D-E 与 D-Q 重复；⑦ 更正 §0.2 / §11.2 台账数字（32 → 50） |
 
 ---
 
@@ -1231,3 +1238,63 @@ Mellow V1 的最终状态：
 在此之前只能描述为：**「以 Typora 体验为目标的 Mellow」**。
 
 W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一致，并在安全、中文输入、大文件、阅读和跨平台一致性上更优。」**
+
+---
+
+## 15. 完成度审计（2026-09-13）
+
+> 本节回答一个问题：**方案里的任务是否全部完成？** 结论先行：**没有全部完成，且剩余项全部依赖真机 / 人工 / host-api，本环境无法闭环。**
+
+### 15.1 总判定
+
+| 类别 | 数量 | 说明 |
+|---|---|---|
+| 已完成（含按 D 登记） | **大部分** | 见 §15.2 |
+| **未完成** | **9 类** | 见 §15.3 —— 全部为环境阻塞，非「没做」 |
+| 本轮更正的文档失真 | **7 处** | 见 §15.4 |
+
+**当前仍只可描述为「以 Typora 体验为目标的 Mellow」**，不得宣称「与 Typora 1.14.9 核心体验一致或更优」。
+
+### 15.2 已完成
+
+| 域 | 已完成项 |
+|---|---|
+| 菜单（§5.1） | G7-MENU-01/02/03/04/06/09/10 已修复；07 余项按 D-AA / D-AB 登记；08 为 D |
+| 快捷键（§5.2） | G7-KEY-01~05 已纠偏；06 按 D-Q（=D-E）登记；07 已复核；08/09/10 按 D-Y / D-Z 登记 |
+| 桌面 UI（§5.3） | G7-SHELL-01~08 全部已修复或按 D 登记 |
+| 侧边栏（§5.4） | G7-SIDE-01~07 已修复；D-N / D-O / D-P 已登记 |
+| 编辑体验（§5.5） | G7-EDIT-01 更正为无缺口；06 已修复；07 已登记残余差异；02/03/04/05 见未完成 |
+| 排版（§5.6） | G7-TYPO-01~04 已修复 / 记录 |
+| 功能域（§5.7） | G7-FEAT-01 关闭（非差距）、02/03/05 已修；04 按 PRD P1 维持 |
+| 质量治理（§5.8） | G7-QA-05 / 06 已修；01~04 见未完成 |
+| 基建 | 14 个 parity 护栏全绿并接入双链；CI 三平台 job 全绿；Windows / macOS Runtime 证据已取得；Golden 采集流水线就绪 |
+
+### 15.3 未完成（9 类，含阻塞原因与解除条件）
+
+| # | 项 | 阻塞原因 | 解除条件 |
+|---|---|---|---|
+| 1 | **G7-EDIT-02** 跨应用剪贴板（7 目标应用） | 脚本已有，但需真机 + System Events | 在有 GUI 权限的终端运行 `clipboard-cross-app.mjs` |
+| 2 | **G7-EDIT-03** PicGo / 图床真实链路 | 需 PicGo 服务与图床凭据 | 提供凭据或本地 PicGo |
+| 3 | **G7-EDIT-04 / P0-EDITOR-005** 拼写检查词典与建议 | 需 `host-api` 暴露 `NSSpellChecker` / Hunspell | 扩展 Host 契约（需新增 ADR） |
+| 4 | **G7-EDIT-05** 三平台 20 分钟连续写作 | 需真机 + 原生输入法 | 真机执行 |
+| 5 | **G7-QA-01** UX Score 100 分表 | 工具设计上**禁止自动生成计时**（`ux-gate-recorder` 只接受人工记录） | 人工评分 |
+| 6 | **G7-QA-02** 30 任务计时 | 同上 | 人工计时（两轮交叉顺序） |
+| 7 | **G7-QA-03 / P0-PLATFORM-001** 三平台真机矩阵 | Windows ✅ macOS ✅；**Linux IME 失败**（已定位：6/8 场景通过，`paragraph` + `code` 失败，且失败点漂移） | 需 Linux 环境或该 job 日志 |
+| 8 | **G7-QA-04 / P0-LAYOUT-002** 三平台视觉 Golden | 采集流水线就绪，但 Linux / Windows 基线尚未入库 | 首次 CI 运行后人工提交基线 |
+| 9 | **W5 图片 / 剪贴板 / 导出 corpus** | 需真机 + 外部服务 | 真机执行 + 三平台视觉比对 |
+
+> **注意**：表格 5、6 两项（UX Score / 30 任务）**不可能由 Agent 代填** —— 不是「没做」，而是工具契约明确禁止伪造计时。
+
+### 15.4 本轮更正的文档失真（累计 7 处）
+
+1. **§0.2 / §11.2 台账数字**：仍写「32 项 AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1」，实为 50 项（AUTO 44 / MAC 2 / IMPL 1 / BLOCKED 2 / NOT_TESTED 1）。
+2. **「Linux 真机 IME 已通」**：CI run 58（2026-09-06）起持续失败，从未通过（§5.8 G7-QA-03）。
+3. **「Windows 仅诊断级」已过时**：run 60/61 的 Source Fidelity 与 launch/type/save 均 success。
+4. **G7-EDIT-01「矩阵覆盖不足」**：实为 11 家族 × 15 态参数化，无缺口。
+5. **G7-SHELL-07「状态栏缺字段」**：`formatWordCountStats` 早已输出，真实缺口是字数项不可点击。
+6. **G7-FEAT-01「缺打印预览」**：Typora 本身无预览窗口，非差距。
+7. **D-E 与 D-Q 重复登记**：同一决策（macOS Replace 键位）结论不一致，已收敛为 D-Q = ②。
+
+### 15.5 一句话结论
+
+> 结构性对标工作**已基本完成并有证据**；剩余 9 类全部是「验收未闭环」，需要真机、人工评分或 `host-api` 扩展。**在补齐前不得发布 PASS-E 结论。**
