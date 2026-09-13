@@ -1340,6 +1340,7 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 | 9 | **W5 图片 / 剪贴板 / 导出 corpus** | 需真机 + 外部服务 | 真机执行 + 三平台视觉比对 |
 | 10 | **Typora 三项偏好设置项 Mellow 无实现**（§3.8b 实机对照新发现） | 均为**偏好设置**而非菜单项；经代码检索确认 Mellow 无对应实现：`Insert Final New Line On Save`（保存时在文末添加空行）、`Preserve single line break`（保留单换行符）、`Allow Magnification`（双指缩放） | **需先裁决**：判定为 E（补齐）还是 D（有意差异）。注意 `Preserve single line break` 与 §5.5 G7-EDIT-07（Enter / 单换行语义）同源，宜一并裁决 |
 | 11 | **Typora 右键/菜单候选功能尚未实现**（§5.6 G7-EDIT-08 ②） | 本机 `Menu.strings` 实测存在：`Open Image in Browser`（在浏览器中打开图片）、`Refresh All Math Expressions`（刷新所有数学公式）、`Task Status`（任务状态）、`Block/Inline/List Styles`（块/内联/列表样式）、`Learn More`（了解更多）、`Image Tools`（图像工具）；Mellow 目前没有对应注册命令/入口（代码检索确认）。 | **需先裁决**：这些是功能候选，不能因文案存在就直接实现；建议按 P1/P2 分批，不阻塞核心 Gate |
+| 13 | **Typora 偏好面板中 Mellow 无对应项的候选**（§3.8b 延伸，实机对照） | 对照本机 Typora 的 `Panel.strings`（**498 条**，偏好面板权威清单）与 Mellow 设置项（**56 项**），经代码检索确认以下**均无实现**：`默认的代码块语言`（Default Code Language，及「以下情况自动添加代码块语言」）、`使用主题的字体大小`（Use theme font size）、`导出后运行命令`（After Export）、`目录显示的标题层数`（Chapter Level in Outline）、`PicList 路径`、`插入文件夹链接`（Insert Folder Link）。 | **需先裁决 P1/P2**。注：Mellow 设置项文案 131 条 vs Typora 498 条，但后者**多数是 UI 文本而非偏好项**（如「操作失败」「已完成」「您的 Typora 尚未激活」），不可按数量差直接判定缺口。 |
 | 12 | **文件树右键「在新窗口中打开」**（G7-SIDE-08） | Typora `Open in New Window`；Mellow 当前仅 `file.newWindow`（开空窗口），没有向新窗口传目标路径的 Host / Rust 通道 | **需先裁决**：结构性窗口传参改动；与 D-R（SDI 下 Reopen Closed File 语义降级）同源 |
 
 > **注意**：表格 5、6 两项（UX Score / 30 任务）**不可能由 Agent 代填** —— 不是「没做」，而是工具契约明确禁止伪造计时。
