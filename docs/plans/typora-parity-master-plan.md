@@ -445,6 +445,16 @@ Search 面板  （跨文件全局搜索）
 | File List 时间/位置 | `.file-list-item-time,.file-list-item-parent-loc{font-size:12px}` | `font-size:11px` | 🟡 差 1px（候选） |
 | 侧栏底部菜单 | `#sidebar-files-menu{font-size:12px}`；其 `>li{font-size:12.5px}` | 底部**触发条** `.sidebar-footer{font-size:10px}`（弹出菜单为 `.context-menu`，非同一元素） | 🟡 映射不确定，需真机比对 |
 | 侧栏 tab 按钮 | `.sidebar-tab-btn{line-height:40px;width:40px}` | 内联模式按钮组（形态不同） | D（形态差异） |
+| 正文顶部留白 | `#write{padding:30px}`（github 主题）/ 36px（base）+ 首段 `p{margin-top:1rem}`=14px → **≈44px** | 实测首行在 iframe 内 y=**56px** | 🟡 差 ≈12px，**不构成缺陷**（见下） |
+
+> **关于「顶部留白 ≈12px 差」的判定说明**：初看 56 vs 30 像是 26px 差，但换算后
+> Typora 侧还需计入首段自身的 `margin-top: 1rem`（根字号 `html{font-size:14px}` ⇒ 14px），
+> 实际到首行约 44px。且两侧渲染模型不同（Mellow 是 iframe 内首行 y 坐标；
+> Typora 是文档内 padding + margin），跨模型比较存在系统偏差。
+> 故**判定为「不构成明确缺陷」，不做改动** —— 按 §4.4「低等级证据不能替代高等级 Gate」，
+> 该项若需定论应在真机上做同文档截图比对，而不是按 CSS 数值推。
+> **另注**：`.mellow-reader` 的 `padding: 56px 32px 30vh` 是 **Reader** 的留白，
+> 与编辑器无关，勿混淆。
 
 **意义**：外壳尺寸**主体已与 Typora 一致**（字号基准 14px、文件树行高 22px、字色 #777、
 File List 摘要 13px）；本轮唯一确定的**数值错误**是侧栏宽度（已修复）。
