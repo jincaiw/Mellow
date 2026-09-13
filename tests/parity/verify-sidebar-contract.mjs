@@ -569,7 +569,9 @@ if (!existsSync(sidebarGoldenJsonPath)) {
   for (const view of ['files-tree', 'outline', 'search']) {
     const sample = sgGolden[view];
     if (sample === undefined) { fail(`sidebar golden 基准缺少视图 ${view}`); continue; }
-    if (sample.aside?.w !== 260) fail(`sidebar golden ${view} aside 宽度契约应为 260（实际 ${sample.aside?.w}）`);
+    // 侧栏默认宽度真值 = 270（Typora 1.14.9 实机 `--sidebar-width: 270px`；
+    // 2026-09-13 由 260 更正，原值无据）。此处与 App.tsx 的 SIDEBAR_DEFAULT_WIDTH 同源。
+    if (sample.aside?.w !== 270) fail(`sidebar golden ${view} aside 宽度契约应为 270（实际 ${sample.aside?.w}）`);
   }
   if ('files-list' in sgGolden) fail('sidebar golden 基准仍含 files-list（V5-A1：list 视图退役，--update 重建）');
   for (const [view, expected] of Object.entries(sidebarViewsWithRows)) {
