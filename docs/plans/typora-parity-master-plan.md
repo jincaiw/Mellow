@@ -1271,6 +1271,15 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 
 ### 15.3 未完成（9 类，含阻塞原因与解除条件）
 
+> **2026-09-13 复核补充（第二批运行时审计）**：本轮又对 5 项「已完成但从未运行时验证」的项做了实证，
+> 新增 `tests/e2e/remaining-claims-verify.mjs`（**9/9 通过，未发现新的假修复**）：
+> ① `G7-SIDE-02` 侧栏底部操作条真的渲染（259×19，显示文件夹名 `dir`）且菜单可弹出
+> （刷新 / 打开文件夹 / 展开全部 / 折叠全部 / 排序 / 最近文件夹）；② `G7-SIDE-05` 排序子菜单
+> 含 Typora **5 组**（文件夹分组 / 自然 / 名称 / 修改时间 / 创建时间）+ 升序 / 降序；
+> ③ `G7-SIDE-04` 展开 / 折叠全部条目可达；④ `§5.6` 非法正则**就地提示**真的出现
+> （非静默「无结果」）；⑤ `G7-FEAT-05` `theme.getThemes` 命令已注册。
+> 连同第一批 `claimed-fixes-verify.mjs`（6 项），**「已完成」项累计已实证 11 项**。
+
 | # | 项 | 阻塞原因 | 解除条件 |
 |---|---|---|---|
 | 1 | **G7-EDIT-02** 跨应用剪贴板（7 目标应用） | 脚本已有，但需真机 + System Events | 在有 GUI 权限的终端运行 `clipboard-cross-app.mjs` |
@@ -1280,7 +1289,7 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 | 5 | **G7-QA-01** UX Score 100 分表 | 工具设计上**禁止自动生成计时**（`ux-gate-recorder` 只接受人工记录） | 人工评分 |
 | 6 | **G7-QA-02** 30 任务计时 | 同上 | 人工计时（两轮交叉顺序） |
 | 7 | **G7-QA-03 / P0-PLATFORM-001** 三平台真机矩阵 | Windows ✅ macOS ✅；**Linux IME 失败**（已定位：6/8 场景通过，`paragraph` + `code` 失败，且失败点漂移） | 需 Linux 环境或该 job 日志 |
-| 8 | **G7-QA-04 / P0-LAYOUT-002** 三平台视觉 Golden | 采集流水线就绪，但 Linux / Windows 基线尚未入库 | 首次 CI 运行后人工提交基线 |
+| 8 | **G7-QA-04 / P0-LAYOUT-002** 三平台视觉 Golden | 采集流水线**已跑通**（Runtime Qualification run 61 已产出 `linux-visual-golden` / `windows-visual-golden` 制品，各含基线 JSON 与场景 PNG），但**基线尚未入库**；且制品下载需鉴权（401），本环境无法取回 | 从 GitHub Actions 制品页下载两个 `*-visual-golden`，把 `*-golden.linux.json` / `*-golden.windows.json` 提交到 `tests/visual/golden/` |
 | 9 | **W5 图片 / 剪贴板 / 导出 corpus** | 需真机 + 外部服务 | 真机执行 + 三平台视觉比对 |
 
 > **注意**：表格 5、6 两项（UX Score / 30 任务）**不可能由 Agent 代填** —— 不是「没做」，而是工具契约明确禁止伪造计时。
