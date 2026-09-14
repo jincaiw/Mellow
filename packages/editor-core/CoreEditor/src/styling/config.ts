@@ -10,6 +10,7 @@ import { lineIndicatorLayer } from './nodes/line';
 import { selectedLinesDecoration } from './nodes/selection';
 import { calculateFontSize } from './nodes/heading';
 import { autoPairExtensions } from './markdown';
+import { paragraphFirstLineIndentStyle } from './nodes/indent';
 import { shadowableTextColor, updateStyleSheet } from './helper';
 import { isMouseDown } from '../modules/events';
 import { tryGetEditor, afterDomUpdate, isMotionReduced } from '../common/utils';
@@ -215,6 +216,13 @@ export function setLineWrapping(enabled: boolean) {
 export function setAutoPair() {
   tryGetEditor()?.dispatch({
     effects: window.dynamics.autoPair?.reconfigure(autoPairExtensions()),
+  });
+}
+
+/** 首行缩进开关（V7-W6，G7-EDIT-15）：只重配普通 Paragraph 的首行 decoration。 */
+export function setFirstLineIndent(enabled: boolean) {
+  tryGetEditor()?.dispatch({
+    effects: window.dynamics.firstLineIndent?.reconfigure(enabled ? paragraphFirstLineIndentStyle : []),
   });
 }
 

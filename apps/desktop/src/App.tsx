@@ -3393,6 +3393,11 @@ export default function App() {
           // 无条件 apply（读不到设置时回落 2 空格 = Typora 默认；此前落到引擎默认 insertTab = 裸制表符）。
           const tabBehaviorDef = settingById('editor.tabBehavior');
           host.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(tabBehaviorDef ? readSetting(tabBehaviorDef) : 'twoSpaces') });
+          // V7-W6（G7-EDIT-15）首行缩进启动恢复（Typora indentFirstLine 默认 false）。
+          const firstLineDef = settingById('editor.firstLineIndent');
+          if (firstLineDef && readSetting(firstLineDef) === true) {
+            host.setEditorConfig('setFirstLineIndent', { enabled: true });
+          }
           // P2-2.1 行高启动恢复：CoreEditor 默认 1.5 ≠ Mellow 默认（TYPOGRAPHY_DEFAULTS.lineHeight），
           // 必须无条件 apply 对齐（读不到设置时回落同一真源），不能沿用「非默认才 apply」模式。
           const lineHeightDef = settingById('editor.lineHeight');
@@ -4320,6 +4325,7 @@ export default function App() {
         else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
         else if (def.id === 'editor.autoPair') host?.setEditorConfig('setAutoPair', { enabled: Boolean(value) });
         else if (def.id === 'editor.tabBehavior') host?.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(value) });
+        else if (def.id === 'editor.firstLineIndent') host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) });
         break;
       }
       case 'view.typewriter.on':

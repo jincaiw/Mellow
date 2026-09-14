@@ -25,7 +25,7 @@ import { lineIndicatorLayer } from './styling/nodes/line';
 import { linkStyles } from './styling/nodes/link';
 import { selectedLinesDecoration } from './styling/nodes/selection';
 import { invisiblesExtension } from './styling/nodes/invisible';
-import { paragraphIndentStyle, lineIndentStyle } from './styling/nodes/indent';
+import { paragraphIndentStyle, lineIndentStyle, paragraphFirstLineIndentStyle } from './styling/nodes/indent';
 import { gutterExtensions } from './styling/nodes/gutter';
 import { IndentBehavior } from './config';
 import { bundledLanguages } from './languages';
@@ -52,6 +52,7 @@ const indentUnit = new Compartment;
 const selectionHighlight = new Compartment;
 const extensionConfigurator = new Compartment;
 const markdownConfigurator = new Compartment;
+const firstLineIndentCompartment = new Compartment;
 
 window.dynamics = {
   theme,
@@ -67,6 +68,7 @@ window.dynamics = {
   extensionConfigurator,
   markdownConfigurator,
   autoPair: autoPairCompartment,
+  firstLineIndent: firstLineIndentCompartment,
 };
 
 export function extensions(options: { lineBreak?: string }) {
@@ -91,6 +93,7 @@ export function extensions(options: { lineBreak?: string }) {
     indentOnInput(),
     bracketMatching(),
     autoPairCompartment.of(autoPairExtensions()),
+    firstLineIndentCompartment.of(window.config.firstLineIndent ? firstLineIndentExtension() : []),
     rectangularSelection(),
     crosshairCursor(),
     activeLine.of(window.config.showActiveLineIndicator && !editingState.hasSelection ? lineIndicatorLayer : []),
@@ -200,4 +203,9 @@ function indentBehaviorExtension() {
     case IndentBehavior.line: return lineIndentStyle;
     default: return [];
   }
+}
+
+/** 首行缩进只对普通 Paragraph 生效，不与列表 / 引用 / 代码块结构缩进叠加。 */
+function firstLineIndentExtension() {
+  return paragraphFirstLineIndentStyle;
 }

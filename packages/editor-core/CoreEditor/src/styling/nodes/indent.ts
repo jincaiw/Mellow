@@ -40,6 +40,24 @@ export const paragraphIndentStyle = createDecoPlugin(() => {
 });
 
 /**
+ * Typora「Indent first line of paragraphs」（V7-W6，G7-EDIT-15）。
+ *
+ * 只给普通 Markdown Paragraph 的首个编辑器行加 text-indent；不作用于列表、引用、代码块。
+ * 以 Lezer 节点范围定位首行，避免把多行软换行段落的每一行都缩进。
+ */
+export const paragraphFirstLineIndentStyle = createDecoPlugin(() => {
+  return createDecos(['Paragraph'], node => {
+    const editor = window.editor;
+    const line = editor.state.doc.lineAt(node.from);
+    // 有显式前导空白的段落不再叠加 CSS 首行缩进（用户已手工缩进）。
+    if (/^[ \t]/.test(line.text)) return null;
+    return Decoration.line({
+      attributes: { style: 'text-indent: 2em;' },
+    }).range(line.from, line.from);
+  });
+});
+
+/**
  * Content indentation for all lines, content is aligned to the first non-white character.
  */
 export const lineIndentStyle = createDecoPlugin(() => {

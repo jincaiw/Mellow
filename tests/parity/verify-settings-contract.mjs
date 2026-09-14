@@ -492,6 +492,54 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── ⑫ 「首行缩进」的端到端接线（V7-W6，G7-EDIT-15）──────────────────────────
+//
+// Typora `indentFirstLine` 默认 false（`window/frame.js` DEFAULT_OPTIONS）；Mellow 此前全仓无实现。
+// 该设置必须只作用于普通 Paragraph 的首行，不能叠加到列表/引用/代码块。
+{
+  const coreEditorExtensions = read('packages/editor-core/CoreEditor/src/extensions.ts');
+  const indentSource = read('packages/editor-core/CoreEditor/src/styling/nodes/indent.ts');
+  const coreEditorConfig = read('packages/editor-core/CoreEditor/src/styling/config.ts');
+  const coreEditorBridge = read('packages/editor-core/CoreEditor/src/bridge/web/config.ts');
+
+  if (!/id: 'editor\.firstLineIndent'.*defaultValue: false.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
+    fail('settings 缺少 editor.firstLineIndent（或默认值/applyCommand 不符）：Typora indentFirstLine 默认 false');
+  }
+  if (!/def\.id === 'editor\.firstLineIndent'\) host\?\.setEditorConfig\('setFirstLineIndent', \{ enabled: Boolean\(value\) \}\)/.test(appSource)) {
+    fail("App.tsx 缺少 firstLineIndent 的 live apply（setEditorConfig('setFirstLineIndent')）");
+  }
+  if (!/settingById\('editor\.firstLineIndent'\)[\s\S]{0,260}?setEditorConfig\('setFirstLineIndent', \{ enabled: true \}\)/.test(appSource)) {
+    fail('App.tsx 缺少 firstLineIndent 的启动恢复下发');
+  }
+  if (!/paragraphFirstLineIndentStyle/.test(indentSource) || !/createDecos\(\['Paragraph'\]/.test(indentSource)) {
+    fail('CoreEditor 首行缩进必须只创建在 Paragraph 节点上（不得作用于列表/引用/代码块）');
+  }
+  if (!/text-indent: 2em/.test(indentSource)) {
+    fail('CoreEditor 首行缩进缺少 2em text-indent（Typora indentFirstLine 的默认视觉语义）');
+  }
+  if (!/firstLineIndentCompartment\.of\(window\.config\.firstLineIndent \? firstLineIndentExtension\(\) : \[\]\)/.test(coreEditorExtensions)) {
+    fail('CoreEditor extensions.ts 未把首行缩进接入 compartment');
+  }
+  if (!/firstLineIndent\?\.reconfigure\(enabled \? paragraphFirstLineIndentStyle : \[\]\)/.test(coreEditorConfig)) {
+    fail('CoreEditor styling/config.ts 缺少首行缩进 live reconfigure');
+  }
+  if (!/setFirstLineIndent\(\{ enabled \}/.test(coreEditorBridge)) {
+    fail('CoreEditor bridge 缺少 setFirstLineIndent 消息');
+  }
+  if (!/'setFirstLineIndent'/.test(coreSource)) {
+    fail("editor-core wrapper 白名单缺少 'setFirstLineIndent'");
+  }
+  const firstLineDrift = appSource.replace(
+    "host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) })",
+    'undefined',
+  );
+  if (firstLineDrift === appSource) {
+    fail('首行缩进 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+  } else if (/setFirstLineIndent', \{ enabled: Boolean\(value\) \}/.test(firstLineDrift)) {
+    fail('首行缩进 canary 失效：注入的漂移未被检出');
+  }
+}
+
 // ── ⑪ 「导出时保留单换行符」同时作用于两条导出管线（V7-W6，G7-FEAT-13）─────────
 //
 // 立节原因：Typora 有 `preLinebreakOnExport`（「导出时保留单换行符」，默认 false）。
@@ -539,4 +587,4 @@ if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13)');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15)');

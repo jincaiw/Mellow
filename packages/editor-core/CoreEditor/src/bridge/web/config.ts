@@ -20,6 +20,7 @@ import {
   setIndentUnit,
   setSuggestWhileTyping,
   setAutoPair,
+  setFirstLineIndent,
 } from '../../modules/config';
 
 /**
@@ -45,6 +46,7 @@ export interface WebModuleConfig extends WebModule {
   setIndentUnit({ unit }: { unit: string }): void;
   setSuggestWhileTyping({ enabled }: { enabled: boolean }): void;
   setAutoPair({ enabled }: { enabled: boolean }): void;
+  setFirstLineIndent({ enabled }: { enabled: boolean }): void;
 }
 
 export class WebModuleConfigImpl implements WebModuleConfig {
@@ -114,5 +116,9 @@ export class WebModuleConfigImpl implements WebModuleConfig {
 
   setAutoPair({ enabled }: { enabled: boolean }): void {
     setAutoPair(enabled);
+  }
+
+  setFirstLineIndent({ enabled }: { enabled: boolean }): void {
+    setFirstLineIndent(enabled);
   }
 }

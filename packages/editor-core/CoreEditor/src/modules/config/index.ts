@@ -113,6 +113,11 @@ export function setAutoPair(enabled: boolean) {
   styling.setAutoPair();
 }
 
+/** 首行缩进开关（V7-W6，G7-EDIT-15）。 */
+export function setFirstLineIndent(enabled: boolean) {
+  styling.setFirstLineIndent(enabled);
+}
+
 export function setLineHeight(lineHeight: number) {
   window.config.lineHeight = lineHeight;
   styling.setLineHeight(lineHeight);

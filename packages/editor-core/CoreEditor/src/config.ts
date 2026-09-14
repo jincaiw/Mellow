@@ -79,6 +79,8 @@ export interface Config {
   localizable?: Localizable;
   // Runtime config from settings.json, not dynamically changeable
   autoCharacterPairs: boolean;
+  /** 首行缩进（V7-W6，G7-EDIT-15），默认 false。 */
+  firstLineIndent?: boolean;
   indentBehavior: IndentBehavior;
   undoGroupingInterval?: number;
   headerFontSizeDiffs?: number[];
@@ -105,6 +107,8 @@ export interface Dynamics {
   markdownConfigurator?: Compartment;
   /** 自动配对（V7-W6，G7-EDIT-12）：`autoCharacterPairs` 的运行时重配通道。 */
   autoPair?: Compartment;
+  /** 首行缩进（V7-W6，G7-EDIT-15）：Paragraph decoration 的运行时重配通道。 */
+  firstLineIndent?: Compartment;
 }
 
 export type { WebFontFace };
