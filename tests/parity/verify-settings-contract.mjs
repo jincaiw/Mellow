@@ -446,9 +446,55 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── ⑩ 「Tab 键缩进」的端到端接线（V7-W6，G7-EDIT-13）────────────────────────
+//
+// 立节原因：Typora 有「默认缩进」（`indentSize`，默认 **2 空格**）与「使用Tab」（`indentByTab`，默认 false），
+// 而 Mellow **从未调用**引擎早已提供的 `setTabKeyBehavior` → Tab 一直落到引擎默认 `insertTab`
+// （插入**裸制表符**；行首制表符在 CommonMark 里是缩进代码块，属真实隐患）。
+//
+// ⚠️ 本节同时锁一个**反例**（比正例更值钱）：**不得改用 `setIndentUnit` 实现该设置** ——
+// 2026-09-14 探针实测（Playwright，真机 iframe）：`indentUnit` facet 在 Mellow **无任何消费方**
+// （设 2 空格 / 4 空格 / 制表符，`abc`+Tab 与 `- a`+Tab 与列表续写行为**完全一致**）→ 用它做出来的是
+// **空开关**（设置里能选、毫无效果）。把「实测过」这件事固化进护栏，防止后来者「顺手」换回去。
+{
+  if (!/id: 'editor\.tabBehavior'.*defaultValue: 'twoSpaces'.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
+    fail("settings 缺少 editor.tabBehavior（或默认值/applyCommand 不符）：Typora「默认缩进」默认 2 空格");
+  }
+  if (!/def\.id === 'editor\.tabBehavior'\) host\?\.setEditorConfig\('setTabKeyBehavior', \{ behavior: tabBehaviorFor\(value\) \}\)/.test(appSource)) {
+    fail("App.tsx 缺少 editor.tabBehavior 的 live apply（setEditorConfig('setTabKeyBehavior')）");
+  }
+  if (!/settingById\('editor\.tabBehavior'\)[\s\S]{0,260}?setEditorConfig\('setTabKeyBehavior', \{ behavior: tabBehaviorFor\(/.test(appSource)) {
+    fail('App.tsx 缺少 editor.tabBehavior 的启动恢复下发（重启后设置会失效）');
+  }
+  const tabFn = /function tabBehaviorFor\(value: unknown\): number \{[\s\S]*?\n\}/.exec(appSource)?.[0] ?? '';
+  if (tabFn === '') {
+    fail('App.tsx 缺少 tabBehaviorFor（设置值 → TabKeyBehavior 枚举值的映射）');
+  } else {
+    // 枚举真值：insertTab=0 / insertTwoSpaces=1 / insertFourSpaces=2（CoreEditor/modules/indentation/types.ts）
+    for (const [label, re] of [['insertTab(0)', /return 0;/], ['insertTwoSpaces(1)', /return 1;/], ['insertFourSpaces(2)', /return 2;/]]) {
+      if (!re.test(tabFn)) fail(`tabBehaviorFor 未映射 ${label} —— 枚举值取自 CoreEditor/modules/indentation/types.ts`);
+    }
+  }
+  if (!/'setTabKeyBehavior'/.test(coreSource)) {
+    fail("editor-core wrapper 的 setEditorConfig 白名单缺少 'setTabKeyBehavior' —— 调用会被静默丢弃");
+  }
+  if (/'setIndentUnit'/.test(appSource)) {
+    fail('App.tsx 不得用 setIndentUnit 实现缩进设置：实测该 facet 在 Mellow 无消费方（空开关），应走 tabKeyBehavior');
+  }
+  const tabDrift = appSource.replace(
+    "host?.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(value) })",
+    'undefined',
+  );
+  if (tabDrift === appSource) {
+    fail('Tab 缩进 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+  } else if (/setTabKeyBehavior', \{ behavior: tabBehaviorFor\(value\)/.test(tabDrift)) {
+    fail('Tab 缩进 canary 失效：注入的漂移未被检出');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12)');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13)');

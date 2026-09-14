@@ -134,6 +134,18 @@ function readBoolSetting(id: string, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 /**
+ * 「Tab 键缩进」设置值 → CoreEditor `TabKeyBehavior` 枚举值（V7-W6，G7-EDIT-13）。
+ * 取值 `'twoSpaces' | 'fourSpaces' | 'tab'`；非法值回落 2 空格（= Typora `indentSize: 2` 默认）。
+ *
+ * 枚举真值见 `CoreEditor/src/modules/indentation/types.ts`：
+ * insertTab=0 / insertTwoSpaces=1 / insertFourSpaces=2 / indentMore=3。
+ */
+function tabBehaviorFor(value: unknown): number {
+  if (value === 'tab') return 0; // insertTab
+  if (value === 'fourSpaces') return 2; // insertFourSpaces
+  return 1; // insertTwoSpaces
+}
+/**
  * 主题专属 user CSS 的文件名（Typora：`themes/<theme>.user.css`）。
  * 用户主题 id 形如 `user/<name>`，`/` 不是合法文件名字符 → 取 `<name>` 段。
  */
@@ -3368,6 +3380,12 @@ export default function App() {
           if (autoPairDef && readSetting(autoPairDef) === false) {
             host.setEditorConfig('setAutoPair', { enabled: false });
           }
+          // V7-W6（G7-EDIT-13）Tab 键缩进启动恢复（Typora「默认缩进」/「使用Tab」）。
+          // ⚠️ 引擎的 `indentUnit` facet 在 Mellow **无消费方**（2026-09-14 探针实测：设 2/4 空格/制表符，
+          // Tab 与列表续写行为完全一致）→ 用它会做出**空开关**。真正的控制点是 `tabKeyBehavior`。
+          // 无条件 apply（读不到设置时回落 2 空格 = Typora 默认；此前落到引擎默认 insertTab = 裸制表符）。
+          const tabBehaviorDef = settingById('editor.tabBehavior');
+          host.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(tabBehaviorDef ? readSetting(tabBehaviorDef) : 'twoSpaces') });
           // P2-2.1 行高启动恢复：CoreEditor 默认 1.5 ≠ Mellow 默认（TYPOGRAPHY_DEFAULTS.lineHeight），
           // 必须无条件 apply 对齐（读不到设置时回落同一真源），不能沿用「非默认才 apply」模式。
           const lineHeightDef = settingById('editor.lineHeight');
@@ -4294,6 +4312,7 @@ export default function App() {
         else if (def.id === 'editor.sourceLineNumbers') applyLineNumberPrefs();
         else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
         else if (def.id === 'editor.autoPair') host?.setEditorConfig('setAutoPair', { enabled: Boolean(value) });
+        else if (def.id === 'editor.tabBehavior') host?.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(value) });
         break;
       }
       case 'view.typewriter.on':

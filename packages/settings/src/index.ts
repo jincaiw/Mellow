@@ -116,6 +116,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 默认 false 即默认**开启**配对）。此前 Mellow 把 autoCharacterPairs 写死为 true 且无 UI
       // → 用户无法关闭自动配对。同时控制选区包裹 / 行内代码等 Markdown 字符辅助。
       { id: 'editor.autoPair', labelKey: 'settings.editor.autoPair', type: 'toggle', storageKey: 'mellow.editor.autoPair', defaultValue: true, descriptionKey: 'settings.editor.autoPairDesc', applyCommand: 'settings.editorConfig' },
+      // V7-W6（G7-EDIT-13）：Typora「默认缩进」（`indentSize` 默认 2 空格）与「使用Tab」（`indentByTab` 默认 false）。
+      // ⚠️ 实测（2026-09-14，Playwright 真机探针）：引擎的 `indentUnit` facet 在 Mellow **无任何消费方**
+      //   —— 设成 2/4 空格或制表符，Tab 与列表续写行为**完全一致** → 用 `setIndentUnit` 会做出**空开关**。
+      //   真正的控制点是 `tabKeyBehavior`（`modules/indentation/index.ts` 的 Tab 处理分支），
+      //   引擎已支持 2/4 空格/Tab，而 Mellow 从未调用 → 一直落到默认 `insertTab`（插入**裸制表符**，
+      //   行首制表符在 CommonMark 里是缩进代码块，属真实隐患）。
+      //   默认取 Typora 的 2 空格（`indentSize: 2` + `indentByTab: false`）。
+      { id: 'editor.tabBehavior', labelKey: 'settings.editor.tabBehavior', type: 'select', storageKey: 'mellow.editor.tabBehavior', defaultValue: 'twoSpaces', descriptionKey: 'settings.editor.tabBehaviorDesc', applyCommand: 'settings.editorConfig',
+        options: [
+          { value: 'twoSpaces', labelKey: 'settings.tabBehavior.twoSpaces' },
+          { value: 'fourSpaces', labelKey: 'settings.tabBehavior.fourSpaces' },
+          { value: 'tab', labelKey: 'settings.tabBehavior.tab' },
+        ] },
       // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
       // 智能标点（master-plan R2-1：Typora 编辑→替换「智能引号/破折号」；默认关闭）
