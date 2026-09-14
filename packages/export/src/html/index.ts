@@ -21,7 +21,7 @@ import { themeCss } from './styles';
 import { DEFAULT_HTML_OPTIONS, type HtmlExportEnv, type HtmlExportMode, type HtmlExportOptions } from './types';
 import type { HtmlRenderContext } from './markdown';
 
-function normalizeOptions(options: HtmlExportOptions): Required<Pick<HtmlExportOptions, 'lang' | 'theme' | 'tocMaxLevel' | 'includeOutline' | 'rawHtml' | 'math' | 'mermaid' | 'embedImages'>> & HtmlExportOptions {
+function normalizeOptions(options: HtmlExportOptions): Required<Pick<HtmlExportOptions, 'lang' | 'theme' | 'tocMaxLevel' | 'includeOutline' | 'rawHtml' | 'math' | 'mermaid' | 'embedImages' | 'preserveLineBreaks'>> & HtmlExportOptions {
   const base = { ...DEFAULT_HTML_OPTIONS, ...options };
   return {
     ...base,
@@ -34,6 +34,8 @@ function normalizeOptions(options: HtmlExportOptions): Required<Pick<HtmlExportO
     mermaid: base.mermaid ?? true,
     // self-contained 强制内联图片；without-style 强制保持引用（进一步处理用）；with-theme 默认内联
     embedImages: base.mode === 'self-contained' ? true : base.mode === 'without-style' ? false : base.embedImages ?? true,
+    // V7-W6（G7-FEAT-13）：Typora `preLinebreakOnExport` 默认 false
+    preserveLineBreaks: base.preserveLineBreaks ?? false,
   };
 }
 
@@ -90,6 +92,7 @@ export async function exportHtml(markdown: string, options: HtmlExportOptions, e
     tocMaxLevel: opts.tocMaxLevel,
     imageMap: new Map<string, string>(),
     tocItems: [],
+    preserveLineBreaks: opts.preserveLineBreaks,
   };
 
   // 1. 预解析 tokens（headings 收集与最终渲染同源）

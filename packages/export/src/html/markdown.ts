@@ -33,6 +33,8 @@ export interface HtmlRenderContext {
   /** 原文图片 src → data URL（无映射则保留原 src） */
   imageMap: Map<string, string>;
   tocItems: TocItem[];
+  /** 导出时保留单换行符（Typora `preLinebreakOnExport`，默认 false；见 types.ts 说明） */
+  preserveLineBreaks?: boolean;
 }
 
 export function escapeHtml(value: string): string {
@@ -135,7 +137,10 @@ export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
   const md = new MarkdownIt({
     html: true,
     linkify: true,
-    breaks: false,
+    // V7-W6（G7-FEAT-13）：Typora `preLinebreakOnExport`「导出时保留单换行符」（默认 false）。
+    // 开启后段内单个 `\n` 渲染为 `<br>`；关闭时按 CommonMark 渲染为空格
+    // （注意：Mellow 的 Enter 正是产单换行，故关闭时「编辑器里的换行在导出件里会消失」）。
+    breaks: ctx.preserveLineBreaks === true,
     typographer: false,
   });
 

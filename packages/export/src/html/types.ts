@@ -42,6 +42,17 @@ export interface HtmlExportOptions {
   mermaid?: boolean;
   /** 本地图片是否内联为 data URL。with-theme 默认 true；self-contained 强制 true；without-style 忽略 */
   embedImages?: boolean;
+  /**
+   * 导出时保留单换行符（V7-W6，G7-FEAT-13）。
+   *
+   * 对齐 Typora 的 `preLinebreakOnExport`（「导出时保留单换行符」，**默认 false**）。
+   * 背景：Mellow 的 Enter 产出**单个 `\n`**（= Typora 的 New Line 语义，见方案 G7-EDIT-07），
+   * 而 CommonMark 把段内单换行渲染为**空格** → 不开启时，编辑器里看到的换行会在导出件里**消失**
+   * （所见非所得）。开启后段内 `\n` 渲染为硬换行。
+   *
+   * 为何默认关闭：与 Typora 一致；且对**硬折行**的源文件（按 80 列断行）会把每个折行都变成硬换行。
+   */
+  preserveLineBreaks?: boolean;
 }
 
 export interface HtmlExportEnv {
@@ -69,4 +80,5 @@ export const DEFAULT_HTML_OPTIONS: HtmlExportOptions = {
   math: true,
   mermaid: true,
   embedImages: true,
+  preserveLineBreaks: false,
 };

@@ -492,9 +492,51 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── ⑪ 「导出时保留单换行符」同时作用于两条导出管线（V7-W6，G7-FEAT-13）─────────
+//
+// 立节原因：Typora 有 `preLinebreakOnExport`（「导出时保留单换行符」，默认 false）。
+// Mellow 侧该缺口比 Typora 更**要紧**：Mellow 的 Enter 产出**单个 `\n`**（G7-EDIT-07），
+// 而 CommonMark 把段内单换行渲染为空格 → 默认导出时「编辑器里看到的换行在导出件里消失」。
+//
+// 而 Mellow 有**两条**导出管线（HTML 走 markdown-it；PDF 走自有 parseBlocks），
+// 只接一条就会出现「导出 HTML 有换行、导出 PDF 没有」——**屏幕上看不出来**的偏差，故锁「两条都接」。
+{
+  const exportMarkdown = read('packages/export/src/html/markdown.ts');
+  const exportIndex = read('packages/export/src/index.ts');
+
+  if (!/id: 'export\.preserveLineBreaks'.*defaultValue: false/.test(settingsSource)) {
+    fail('settings 缺少 export.preserveLineBreaks（或默认值不为 false）：Typora preLinebreakOnExport 默认 false');
+  }
+  // 管线①：HTML（markdown-it breaks）
+  if (!/breaks: ctx\.preserveLineBreaks === true/.test(exportMarkdown)) {
+    fail('HTML 导出未把 preserveLineBreaks 接到 markdown-it 的 breaks（导出 HTML 的换行不会被保留）');
+  }
+  if (/\bbreaks: false\b/.test(exportMarkdown)) {
+    fail('HTML 导出仍硬编码 breaks: false —— 开关会失效');
+  }
+  // 管线②：PDF（自有 parseBlocks 的段落拼接）
+  if (!/para\.join\(options\.preserveLineBreaks === true \? '\\n' : ' '\)/.test(exportIndex)) {
+    fail("PDF 导出未按 preserveLineBreaks 决定段内拼接（应为 '\\n' / ' '）—— 导出 PDF 的换行不会被保留");
+  }
+  if (!/parseBlocks\(markdown, \{ preserveLineBreaks: options\.preserveLineBreaks \}\)/.test(exportIndex)) {
+    fail('buildPdfDocument 未把 preserveLineBreaks 透传给 parseBlocks');
+  }
+  // App 侧两条导出路径都必须下发该设置（漏一条 → 其中一种导出格式静默失效）
+  const appPreserve = (appSource.match(/preserveLineBreaks: readBoolSetting\('export\.preserveLineBreaks', false\)/g) ?? []).length;
+  if (appPreserve < 2) {
+    fail(`App.tsx 只在 ${appPreserve} 条导出路径下发了 preserveLineBreaks（应 ≥2：HTML + PDF）—— 漏掉的那种格式会静默失效`);
+  }
+  const preserveDrift = appSource.replace(/preserveLineBreaks: readBoolSetting\('export\.preserveLineBreaks', false\)/g, 'undefined');
+  if (preserveDrift === appSource) {
+    fail('导出保留换行 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+  } else if ((preserveDrift.match(/preserveLineBreaks: readBoolSetting/g) ?? []).length !== 0) {
+    fail('导出保留换行 canary 失效：注入的漂移未被检出');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13)');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13)');

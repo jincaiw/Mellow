@@ -1141,7 +1141,12 @@ export default function App() {
       ]);
       if (savePath === null) return; // 用户取消
       const fonts = await loadNotoFonts();
-      const buffer = await createPdfBuffer(hostRef.current.getText(), DEFAULT_PDF_OPTIONS, { fonts });
+      // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（preLinebreakOnExport，默认关）——
+      // 与 HTML 导出同源同一设置，两条管线语义一致（见 export 包 types.ts / PdfOptions 说明）。
+      const buffer = await createPdfBuffer(hostRef.current.getText(), {
+        ...DEFAULT_PDF_OPTIONS,
+        preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
+      }, { fonts });
       await invoke('write_binary', { path: savePath, data: Array.from(buffer) });
       setToast({ message: t('export.pdf.done') });
     } catch (err) {
@@ -1243,6 +1248,8 @@ export default function App() {
         mode,
         theme: themeSettings.mode === 'dark' ? 'dark' : 'light',
         title: tab.title ?? undefined,
+        // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（preLinebreakOnExport，默认关）
+        preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
       });
       await invoke('write_text', { path: savePath, content: html });
       setToast({ message: t('export.html.done') });

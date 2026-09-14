@@ -604,6 +604,9 @@ const zhCN = {
   'settings.export.image.widthDesc': '导出长图的整体宽度（200–4096，默认 800）。',
   'settings.export.image.quality': 'JPEG 质量',
   'settings.export.image.qualityDesc': '0.1–1，仅 JPEG 生效；PNG 无损。',
+  // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」官方文案
+  'settings.export.preserveLineBreaks': '导出时保留单换行符',
+  'settings.export.preserveLineBreaksDesc': '把段落内的单个换行也导出为换行（默认按 Markdown 规则渲染为空格）。适用于写诗、歌词、地址等依赖软换行的内容。',
   'settings.shortcuts.list': '快捷键列表',
   'settings.shortcuts.listDesc': '点击键位录制新快捷键；Esc 取消；Delete 恢复默认',
   'settings.shortcuts.recording': '按下新快捷键…',
@@ -1418,6 +1421,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.export.image.widthDesc': 'Overall width of exported long image (200–4096, default 800).',
   'settings.export.image.quality': 'JPEG quality',
   'settings.export.image.qualityDesc': '0.1–1, only for JPEG; PNG is lossless.',
+  'settings.export.preserveLineBreaks': 'Preserve single line breaks on export',
+  'settings.export.preserveLineBreaksDesc': 'Export single line breaks inside a paragraph as real line breaks (by default Markdown renders them as spaces). Useful for poetry, lyrics, or addresses that rely on soft line breaks.',
   'settings.shortcuts.list': 'Shortcut list',
   'settings.shortcuts.listDesc': 'Click a shortcut to record a new one; Esc cancels; Delete restores the default',
   'settings.shortcuts.recording': 'Press new shortcut…',

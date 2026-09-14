@@ -35,6 +35,17 @@ export interface PdfOptions {
   includeOutline: boolean;
   /** 页眉/页脚显示标题 */
   title?: string;
+  /**
+   * 导出时保留单换行符（V7-W6，G7-FEAT-13）。
+   *
+   * 对齐 Typora 的 `preLinebreakOnExport`（「导出时保留单换行符」，**默认 false**）。
+   * 背景：Mellow 的 Enter 产出**单个 `\n`**（见方案 G7-EDIT-07），而 CommonMark 把段内单换行
+   * 渲染为**空格** → 不开启时编辑器里看到的换行会在导出件里**消失**（所见非所得）。
+   * 开启后段内 `\n` 直接进入 pdfmake 文本（其将 `\n` 渲染为换行）。
+   *
+   * 与 HTML 导出同名选项保持**语义一致**（同一设置同时作用于两条管线）。
+   */
+  preserveLineBreaks?: boolean;
 }
 
 export const DEFAULT_PDF_OPTIONS: PdfOptions = {
@@ -47,6 +58,7 @@ export const DEFAULT_PDF_OPTIONS: PdfOptions = {
   pageNumbers: true,
   pageBreakAtH1: true,
   includeOutline: true,
+  preserveLineBreaks: false,
 };
 
 export interface PdfEnv {
@@ -166,7 +178,7 @@ export function parseInline(text: string): Inline[] {
   return tokens;
 }
 
-export function parseBlocks(markdown: string): PdfBlock[] {
+export function parseBlocks(markdown: string, options: { preserveLineBreaks?: boolean } = {}): PdfBlock[] {
   const lines = splitLines(markdown);
   const blocks: PdfBlock[] = [];
   let i = 0;
@@ -317,7 +329,9 @@ export function parseBlocks(markdown: string): PdfBlock[] {
       para.push(t);
       i += 1;
     }
-    blocks.push({ type: 'paragraph', content: parseInline(para.join(' ')) });
+    // V7-W6（G7-FEAT-13）：Typora `preLinebreakOnExport` —— 开启时保留段内单换行
+    // （CommonMark 默认把段内 `\n` 渲染为空格；Mellow 的 Enter 正是产单换行）。
+    blocks.push({ type: 'paragraph', content: parseInline(para.join(options.preserveLineBreaks === true ? '\n' : ' ')) });
   }
   return blocks;
 }
@@ -355,7 +369,7 @@ function escapePdfText(value: string): string {
 }
 
 export async function buildPdfDocument(markdown: string, options: PdfOptions, env: PdfEnv): Promise<PdfDocDefinition> {
-  const blocks = parseBlocks(markdown);
+  const blocks = parseBlocks(markdown, { preserveLineBreaks: options.preserveLineBreaks });
   const colors = THEME_COLORS[options.theme];
   const content: any[] = [];
 

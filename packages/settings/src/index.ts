@@ -258,6 +258,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         ], descriptionKey: 'settings.export.image.formatDesc' },
       { id: 'export.image.width', labelKey: 'settings.export.image.width', type: 'number', storageKey: 'mellow.export.image.width', defaultValue: 800, min: 200, max: 4096, step: 10, descriptionKey: 'settings.export.image.widthDesc' },
       { id: 'export.image.quality', labelKey: 'settings.export.image.quality', type: 'number', storageKey: 'mellow.export.image.quality', defaultValue: 0.92, min: 0.1, max: 1, step: 0.02, descriptionKey: 'settings.export.image.qualityDesc' },
+      // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（配置键 `preLinebreakOnExport`，默认 false）。
+      // 背景：Mellow 的 Enter 产**单个 `\n`**（G7-EDIT-07），而 CommonMark 把段内单换行渲染为空格
+      // → 不开启时「编辑器里看到的换行在导出件里消失」。同时作用于 HTML 与 PDF 两条导出管线。
+      // 无 applyCommand —— 导出时读取。
+      { id: 'export.preserveLineBreaks', labelKey: 'settings.export.preserveLineBreaks', type: 'toggle', storageKey: 'mellow.export.preserveLineBreaks', defaultValue: false, descriptionKey: 'settings.export.preserveLineBreaksDesc' },
     ],
   },
   {
