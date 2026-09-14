@@ -350,9 +350,60 @@ if (cssLayerAnchor === undefined) {
   fail('W5 契约护栏自检失败：user CSS 分层被抹除后仍判定为已分层（假绿），护栏已失效');
 }
 
+// ── ⑧ 自动配对开关的端到端接线（V7-W6，G7-EDIT-12）─────────────────────────
+//
+// 立节原因：Typora 有「匹配括号和引号」开关（配置键 `noPairingMatch`，默认 `false` 即**默认开启**），
+// 而 Mellow 把 `autoCharacterPairs` 写死为 `true` 且无任何 UI —— 用户无法关闭自动配对。
+// 该开关横跨**四层**（设置 schema → App 启动/live apply → editor-core wrapper 白名单 →
+// vendored CoreEditor 的 compartment + 语言数据 + bridge）。任一层断掉都表现为
+// 「设置里能勾但没反应」——**屏幕上看不出来**，故逐层锁死。
+{
+  const coreEditorExtensions = read('packages/editor-core/CoreEditor/src/extensions.ts');
+  const coreEditorMarkdown = read('packages/editor-core/CoreEditor/src/styling/markdown.ts');
+  const coreEditorBridge = read('packages/editor-core/CoreEditor/src/bridge/web/config.ts');
+
+  if (!/id: 'editor\.autoPair'.*defaultValue: true.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
+    fail('settings 缺少 editor.autoPair（或默认值/applyCommand 不符）：Typora「匹配括号和引号」默认开启');
+  }
+  if (!/def\.id === 'editor\.autoPair'\) host\?\.setEditorConfig\('setAutoPair', \{ enabled: Boolean\(value\) \}\)/.test(appSource)) {
+    fail("App.tsx 缺少 editor.autoPair 的 live apply（setEditorConfig('setAutoPair')）");
+  }
+  if (!/settingById\('editor\.autoPair'\)[\s\S]{0,240}?setEditorConfig\('setAutoPair', \{ enabled: false \}\)/.test(appSource)) {
+    fail('App.tsx 缺少 editor.autoPair 的启动恢复下发（重启后开关会失效）');
+  }
+  if (!/'setAutoPair'/.test(coreSource)) {
+    fail("editor-core wrapper 的 setEditorConfig 白名单缺少 'setAutoPair' —— 调用会被静默丢弃");
+  }
+  if (!/setAutoPair\(\{ enabled \}/.test(coreEditorBridge)) {
+    fail('CoreEditor bridge 缺少 setAutoPair 消息 —— 前端下发无处接收');
+  }
+  if (!/autoPairCompartment\.of\(autoPairExtensions\(\)\)/.test(coreEditorExtensions)) {
+    fail('CoreEditor extensions.ts 的 closeBrackets 未纳入 autoPairCompartment → 运行时开关无效');
+  }
+  if (/window\.config\.autoCharacterPairs \? closeBrackets\(\)/.test(coreEditorExtensions)) {
+    fail('CoreEditor 仍在装配期静态判断 autoCharacterPairs → 无法运行时关闭配对');
+  }
+  // CM6 的 closeBrackets **优先读语言数据**，故语言数据覆盖必须与 closeBrackets 同进同退
+  if (!/markdownLanguage\.data\.of\(\{ closeBrackets: \{ brackets: AUTO_PAIR_BRACKETS \} \}\)/.test(coreEditorMarkdown)) {
+    fail('Markdown 语言数据的括号集覆盖未随开关一起进出（CM6 优先读语言数据，漏一处则「关不干净」）');
+  }
+  if (!/if \(!window\.config\.autoCharacterPairs\) return \[\];/.test(coreEditorMarkdown)) {
+    fail('autoPairExtensions() 未在关闭时返回空数组');
+  }
+  const driftedExt = coreEditorExtensions.replace(
+    'autoPairCompartment.of(autoPairExtensions())',
+    'window.config.autoCharacterPairs ? closeBrackets() : []',
+  );
+  if (driftedExt === coreEditorExtensions) {
+    fail('自动配对 canary 未武装：无法注入「装配期静态判断」漂移（锚点漂移，请更新护栏）');
+  } else if (/autoPairCompartment\.of\(autoPairExtensions\(\)\)/.test(driftedExt)) {
+    fail('自动配对 canary 失效：注入的装配期静态判断未被检出');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan)');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12)');

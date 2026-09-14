@@ -20,7 +20,7 @@ import { html as bundledHTML } from '@codemirror/lang-html';
 import { history, historyKeymap } from './@vendor/commands/history';
 
 import { loadTheme } from './styling/themes';
-import { classHighlighters, markdownExtensions, markdownExtendedData, renderExtensions, actionExtensions } from './styling/markdown';
+import { classHighlighters, markdownExtensions, autoPairCompartment, autoPairExtensions, renderExtensions, actionExtensions } from './styling/markdown';
 import { lineIndicatorLayer } from './styling/nodes/line';
 import { linkStyles } from './styling/nodes/link';
 import { selectedLinesDecoration } from './styling/nodes/selection';
@@ -66,6 +66,7 @@ window.dynamics = {
   selectionHighlight,
   extensionConfigurator,
   markdownConfigurator,
+  autoPair: autoPairCompartment,
 };
 
 export function extensions(options: { lineBreak?: string }) {
@@ -89,7 +90,7 @@ export function extensions(options: { lineBreak?: string }) {
     indentUnit.of(window.config.indentUnit !== undefined ? indentUnitFacet.of(window.config.indentUnit) : []),
     indentOnInput(),
     bracketMatching(),
-    window.config.autoCharacterPairs ? closeBrackets() : [],
+    autoPairCompartment.of(autoPairExtensions()),
     rectangularSelection(),
     crosshairCursor(),
     activeLine.of(window.config.showActiveLineIndicator && !editingState.hasSelection ? lineIndicatorLayer : []),
@@ -144,7 +145,6 @@ export function extensions(options: { lineBreak?: string }) {
 
     // Markdown
     markdownConfigurator.of(markdownConfigurations()),
-    markdownLanguage.data.of(markdownExtendedData),
     markdownLanguage.data.of(standardLinkCompletion),
     markdownLanguage.data.of(referenceLinkCompletion),
 

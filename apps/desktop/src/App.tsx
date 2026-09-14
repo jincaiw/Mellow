@@ -3349,6 +3349,13 @@ export default function App() {
           if (wrapDef && readSetting(wrapDef) === false) {
             host.setEditorConfig('setLineWrapping', { enabled: false });
           }
+          // V7-W6（G7-EDIT-12）自动配对启动恢复：iframe 初始值来自 DEFAULT_CONFIG
+          // （autoCharacterPairs: true），故仅当用户**关闭**时才下发（与 lineWrapping
+          // 同款「非默认才 apply」模式，避免无谓的 compartment 重配）。
+          const autoPairDef = settingById('editor.autoPair');
+          if (autoPairDef && readSetting(autoPairDef) === false) {
+            host.setEditorConfig('setAutoPair', { enabled: false });
+          }
           // P2-2.1 行高启动恢复：CoreEditor 默认 1.5 ≠ Mellow 默认（TYPOGRAPHY_DEFAULTS.lineHeight），
           // 必须无条件 apply 对齐（读不到设置时回落同一真源），不能沿用「非默认才 apply」模式。
           const lineHeightDef = settingById('editor.lineHeight');
@@ -4270,6 +4277,7 @@ export default function App() {
         else if (def.id === 'editor.lineNumbers') { host?.setEditorConfig('setShowLineNumbers', { enabled: Boolean(value) }); applyLineNumberPrefs(); }
         else if (def.id === 'editor.sourceLineNumbers') applyLineNumberPrefs();
         else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
+        else if (def.id === 'editor.autoPair') host?.setEditorConfig('setAutoPair', { enabled: Boolean(value) });
         break;
       }
       case 'view.typewriter.on':

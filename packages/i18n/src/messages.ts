@@ -501,6 +501,9 @@ const zhCN = {
   'settings.editor.lineNumbers': '显示行号',
   'settings.editor.sourceLineNumbers': '源码模式显示行号',
   'settings.editor.lineWrapping': '自动换行',
+  // V7-W6（G7-EDIT-12）：Typora「匹配括号和引号」官方文案
+  'settings.editor.autoPair': '匹配括号和引号',
+  'settings.editor.autoPairDesc': '输入左括号或引号时自动补全右半，并在右半已存在时跳过。同时控制选区包裹、行内代码等 Markdown 字符辅助。',
   'settings.editor.spellcheck': '键入时检查拼写',
   'settings.editor.spellcheckDesc': '系统拼写检查（红色下划线）；大文件模式下自动关闭。',
   'settings.editor.smartPunctuation': '智能标点',
@@ -1310,6 +1313,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.editor.lineNumbers': 'Show line numbers',
   'settings.editor.sourceLineNumbers': 'Show line numbers in source mode',
   'settings.editor.lineWrapping': 'Wrap lines',
+  'settings.editor.autoPair': 'Auto pair brackets and quotes',
+  'settings.editor.autoPairDesc': 'Insert the closing bracket or quote automatically, and skip over it when it already exists. Also controls Markdown helpers such as wrapping the selection and inline code.',
   'settings.editor.spellcheck': 'Check spelling while typing',
   'settings.editor.spellcheckDesc': 'System spell check (red underline); automatically off in large file mode.',
   'settings.editor.smartPunctuation': 'Smart punctuation',

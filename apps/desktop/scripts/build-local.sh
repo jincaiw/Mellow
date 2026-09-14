@@ -32,13 +32,31 @@ export PATH="$NODE_BIN:$CARGO_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
 
 cd "$DESKTOP"
 
-echo "==> 1/4 渲染层 bundle"
+echo "==> 0/5 渲染层源码新鲜度（CoreEditor/dist 是 gitignore 的构建前置）"
+# 坑：`CoreEditor/dist/index.html` 不入库（见 packages/editor-core/CoreEditor/.gitignore），
+# 由 CI 用 yarn 单独构建并作为 artifact 传递。本地若改了 CoreEditor/src 却忘了重建，
+# 后续步骤会**静默**使用旧包 —— 改了渲染层却「没有任何效果」，且屏幕上看不出原因。
+# 这里按 mtime 判断：源码比产物新就自动重建（约 1.5s）。
+CORE_EDITOR="$REPO_ROOT/packages/editor-core/CoreEditor"
+CORE_DIST="$CORE_EDITOR/dist/index.html"
+if [ -d "$CORE_EDITOR/node_modules" ]; then
+  if [ ! -f "$CORE_DIST" ] || [ -n "$(find "$CORE_EDITOR/src" -name '*.ts' -newer "$CORE_DIST" -print -quit)" ]; then
+    echo "  (检测到 CoreEditor/src 比 dist 新，重建渲染层)"
+    (cd "$CORE_EDITOR" && ./node_modules/.bin/vite build)
+  else
+    echo "  (CoreEditor/dist 已是最新)"
+  fi
+else
+  echo "  ⚠️ CoreEditor/node_modules 缺失，跳过新鲜度检查（若改了渲染层源码，产物将是旧的）"
+fi
+
+echo "==> 1/5 渲染层 bundle"
 node scripts/build-editor-bundle.mjs
 
-echo "==> 2/4 类型检查"
+echo "==> 2/5 类型检查"
 ./node_modules/.bin/tsc --noEmit
 
-echo "==> 3/4 前端构建"
+echo "==> 3/5 前端构建"
 # 注意：vite 默认会清空 outDir（`emptyOutDir`），而本环境的 safe-delete 守卫会拦截
 # 批量删除（dist/assets 有 70+ 文件，超过 50 的阈值）：
 #   [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] count=72 threshold=50
@@ -50,7 +68,7 @@ if [ -d dist ]; then
 fi
 ./node_modules/.bin/vite build
 
-echo "==> 4/4 指纹自检"
+echo "==> 4/5 指纹自检"
 node scripts/verify-release-bundle.mjs
 
 echo "==> Rust release + 打包（跳过 beforeBuildCommand，避免走 pnpm）"

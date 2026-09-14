@@ -9,6 +9,7 @@ import { invisiblesExtension } from './nodes/invisible';
 import { lineIndicatorLayer } from './nodes/line';
 import { selectedLinesDecoration } from './nodes/selection';
 import { calculateFontSize } from './nodes/heading';
+import { autoPairExtensions } from './markdown';
 import { shadowableTextColor, updateStyleSheet } from './helper';
 import { isMouseDown } from '../modules/events';
 import { tryGetEditor, afterDomUpdate, isMotionReduced } from '../common/utils';
@@ -203,6 +204,18 @@ export function setLineWrapping(enabled: boolean) {
   });
 
   setOverscrollBehavior(enabled);
+}
+
+/**
+ * 自动配对重配（V7-W6，G7-EDIT-12）。
+ *
+ * 无需参数 —— 真源是 `window.config.autoCharacterPairs`（由 modules/config 层写入），
+ * `autoPairExtensions()` 按该值决定安装或撤销（见 styling/markdown.ts）。
+ */
+export function setAutoPair() {
+  tryGetEditor()?.dispatch({
+    effects: window.dynamics.autoPair?.reconfigure(autoPairExtensions()),
+  });
 }
 
 export function setLineHeight(lineHeight: number) {

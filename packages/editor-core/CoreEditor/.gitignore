@@ -1,3 +1,5 @@
 dist/
 node_modules/
 .yarn/install-state.gz
+# tsc 增量编译产物（本机 `tsc --noEmit` 也会生成）
+*.tsbuildinfo

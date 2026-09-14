@@ -97,6 +97,22 @@ export function setLineWrapping(enabled: boolean) {
   styling.setLineWrapping(enabled);
 }
 
+/**
+ * 自动配对开关（V7-W6，G7-EDIT-12）。
+ *
+ * 对齐 Typora 1.14.9「Auto pair brackets and quotes」——其配置键是 `noPairingMatch`
+ * （默认 `false` 即**默认开启配对**），Mellow 此前写死 `autoCharacterPairs: true`
+ * 且无 UI，用户无法关闭。
+ *
+ * 注意 `window.config.autoCharacterPairs` 是**唯一真源**：`modules/input/index.ts` 的
+ * Markdown 字符辅助（选区包裹 / 行内代码 / 代码块插入）也读它，故赋值与 compartment
+ * 重配必须同时发生（本函数即该边界）。
+ */
+export function setAutoPair(enabled: boolean) {
+  window.config.autoCharacterPairs = enabled;
+  styling.setAutoPair();
+}
+
 export function setLineHeight(lineHeight: number) {
   window.config.lineHeight = lineHeight;
   styling.setLineHeight(lineHeight);

@@ -19,6 +19,7 @@ import {
   setTabKeyBehavior,
   setIndentUnit,
   setSuggestWhileTyping,
+  setAutoPair,
 } from '../../modules/config';
 
 /**
@@ -43,6 +44,7 @@ export interface WebModuleConfig extends WebModule {
   setTabKeyBehavior({ behavior }: { behavior: TabKeyBehavior }): void;
   setIndentUnit({ unit }: { unit: string }): void;
   setSuggestWhileTyping({ enabled }: { enabled: boolean }): void;
+  setAutoPair({ enabled }: { enabled: boolean }): void;
 }
 
 export class WebModuleConfigImpl implements WebModuleConfig {
@@ -108,5 +110,9 @@ export class WebModuleConfigImpl implements WebModuleConfig {
 
   setSuggestWhileTyping({ enabled }: { enabled: boolean }): void {
     setSuggestWhileTyping(enabled);
+  }
+
+  setAutoPair({ enabled }: { enabled: boolean }): void {
+    setAutoPair(enabled);
   }
 }

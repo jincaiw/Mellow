@@ -112,6 +112,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // E4（§5.1 合同兑现）：Source 模式行号独立开关（Typora 源码模式默认显示行号）
       { id: 'editor.sourceLineNumbers', labelKey: 'settings.editor.sourceLineNumbers', type: 'toggle', storageKey: 'mellow.editor.sourceLineNumbers', defaultValue: true, applyCommand: 'settings.editorConfig' },
       { id: 'editor.lineWrapping', labelKey: 'settings.editor.lineWrapping', type: 'toggle', storageKey: 'mellow.editor.lineWrapping', defaultValue: true, applyCommand: 'settings.editorConfig' },
+      // V7-W6（G7-EDIT-12）：Typora 1.14.9「匹配括号和引号」（配置键 `noPairingMatch`，
+      // 默认 false 即默认**开启**配对）。此前 Mellow 把 autoCharacterPairs 写死为 true 且无 UI
+      // → 用户无法关闭自动配对。同时控制选区包裹 / 行内代码等 Markdown 字符辅助。
+      { id: 'editor.autoPair', labelKey: 'settings.editor.autoPair', type: 'toggle', storageKey: 'mellow.editor.autoPair', defaultValue: true, descriptionKey: 'settings.editor.autoPairDesc', applyCommand: 'settings.editorConfig' },
       // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
       // 智能标点（master-plan R2-1：Typora 编辑→替换「智能引号/破折号」；默认关闭）

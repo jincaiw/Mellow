@@ -103,6 +103,8 @@ export interface Dynamics {
   selectionHighlight?: Compartment;
   extensionConfigurator?: Compartment;
   markdownConfigurator?: Compartment;
+  /** 自动配对（V7-W6，G7-EDIT-12）：`autoCharacterPairs` 的运行时重配通道。 */
+  autoPair?: Compartment;
 }
 
 export type { WebFontFace };

@@ -1,4 +1,7 @@
 import { syntaxHighlighting } from '@codemirror/language';
+import { Compartment } from '@codemirror/state';
+import { closeBrackets } from '@codemirror/autocomplete';
+import { markdownLanguage } from '@codemirror/lang-markdown';
 import { classHighlighter, tagHighlighter, styleTags } from '@lezer/highlight';
 import { MarkdownConfig } from '@lezer/markdown';
 import { markdownMathExtension as markdownMathConfig } from '../@vendor/joplin/markdownMathParser';
@@ -58,17 +61,36 @@ export const markdownExtensions: MarkdownConfig[] = [
   markdownMathConfig,
 ];
 
-// https://codemirror.net/docs/ref/#state.EditorState.languageDataAt
-export const markdownExtendedData = {
-  closeBrackets: {
-    brackets: [
-      // Default
-      '(', '[', '{', '\'', '"',
-      // Custom
-      '`',
-    ],
-  },
-};
+/**
+ * 自动配对（V7-W6，G7-EDIT-12）。
+ *
+ * 对齐 Typora 1.14.9 的 `Auto pair brackets and quotes`（配置键 `noPairingMatch`，
+ * 默认 `false` 即**开启**；一手证据：`TypeMark/appsrc/main.js` 中
+ * `autoCloseBrackets: !File.option.noPairingMatch`）。Mellow 此前把 `autoCharacterPairs`
+ * 写死为 `true` 且无任何 UI —— 用户**无法关闭自动配对**。
+ *
+ * 两个消费点必须同进同退（CM6 的 `closeBrackets` **优先读语言数据**，
+ * 语言数据里没有才回落到 `closeBrackets()` 的 `brackets` 配置）：
+ *   ① `closeBrackets()` 本身（补全与跳过行为）；
+ *   ② Markdown 语言数据的 `closeBrackets.brackets` 覆盖。
+ *
+ * 另注：`modules/input/index.ts` 也读同一个 `window.config.autoCharacterPairs`
+ * （选区包裹 / 行内代码 / 代码块等 Markdown 字符辅助），关闭总开关时一并生效。
+ */
+export const autoPairCompartment = new Compartment;
+
+/** 配对括号集：CM6 默认（`( [ { ' "`，见 `@codemirror/autocomplete` 的 `defaults.brackets`）
+ *  + Mellow 扩展的反引号（用于行内代码）。 */
+export const AUTO_PAIR_BRACKETS: readonly string[] = ['(', '[', '{', "'", '"', '`'];
+
+/** 当前配置下应安装的自动配对扩展（关闭时为空数组 → 两处一起撤销）。 */
+export function autoPairExtensions() {
+  if (!window.config.autoCharacterPairs) return [];
+  return [
+    closeBrackets(),
+    markdownLanguage.data.of({ closeBrackets: { brackets: AUTO_PAIR_BRACKETS } }),
+  ];
+}
 
 /**
  * Extensions used in all scenarios.
