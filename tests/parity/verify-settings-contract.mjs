@@ -401,9 +401,54 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── ⑨ 保存时补文末换行（V7-W6，G7-FEAT-12）─────────────────────────────────
+//
+// 立节原因：Typora「Insert Final New Line On Save」（配置键 `preferFinalNewline`，默认 false）
+// 在 Mellow 侧此前**无实现**。该能力落在**保存路径**上，而保存路径有**两处**
+// （handleSave / handleSaveAs）—— 只接一处就会出现「另存为时行为不同」这类
+// **屏幕上看不出来**的偏差，故锁「不变量」而非字面量：
+// **任何 `documents.save(...)` 都不得直接把原始 content 交给宿主**。
+{
+  const finalNewlineSource = read('packages/app-core/src/finalNewline.ts');
+
+  if (!/id: 'files\.finalNewline'.*type: 'toggle'.*defaultValue: false/.test(settingsSource)) {
+    fail('settings 缺少 files.finalNewline（或不是默认关闭的 toggle）：Typora preferFinalNewline 默认 false');
+  }
+  // 语义锁：默认关闭时短路（零影响）、按 EOL 追加、且**不得**删除/裁剪内容
+  const fnBody = finalNewlineSource.slice(finalNewlineSource.indexOf('export function applyFinalNewline'));
+  if (!/if \(!enabled\) return content;/.test(fnBody)) {
+    fail('applyFinalNewline 未在关闭时短路 —— 默认关闭必须对既有行为零影响');
+  }
+  if (!/if \(content\.endsWith\('\\n'\)\) return content;/.test(fnBody)) {
+    fail("applyFinalNewline 未判定「已有文末换行」（应以 endsWith('\\n') 判定，含 CRLF 结尾）");
+  }
+  if (!/return content \+ \(eol === '\\r\\n' \? '\\r\\n' : '\\n'\);/.test(fnBody)) {
+    fail('applyFinalNewline 未按文档 EOL 追加（CRLF 文档须补 \\r\\n）');
+  }
+  if (/\.replace\(|\.trim\(|\.slice\(/.test(fnBody)) {
+    fail('applyFinalNewline 不得删除或裁剪已有换行 —— Typora 语义是「缺失时追加」，不是「规范化」');
+  }
+  // 不变量：不得有绕过该变换的保存路径（两处 save 都必须走 applyFinalNewline）
+  const rawSave = /documents\.save\([^)]*,\s*content\s*,/.test(appSource);
+  if (rawSave) {
+    fail('存在绕过 applyFinalNewline 的保存路径（把原始 content 直接交给 documents.save）—— 另存为/保存行为会不一致');
+  }
+  if ((appSource.match(/applyFinalNewline\(/g) ?? []).length < 2) {
+    fail('App.tsx 中 applyFinalNewline 的调用点少于 2 处（handleSave / handleSaveAs 都要接）');
+  }
+  // 注意：必须用 /g —— `String.replace(str, …)` 只替换**首个**匹配，只会改到声明处，
+  // 调用点仍是 contentToWrite，漂移不会被检出（canary 会误报「失效」）。
+  const saveDrift = appSource.replace(/contentToWrite/g, 'content');
+  if (saveDrift === appSource) {
+    fail('文末换行 canary 未武装：无法注入「绕过变换」漂移（锚点漂移，请更新护栏）');
+  } else if (!/documents\.save\([^)]*,\s*content\s*,/.test(saveDrift)) {
+    fail('文末换行 canary 失效：注入的「绕过变换」未被检出');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12)');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12)');

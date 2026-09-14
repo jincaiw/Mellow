@@ -558,6 +558,9 @@ const zhCN = {
   'settings.file.autosave': '自动保存',
   'settings.file.autosaveTimer': '自动保存间隔（分钟）',
   'settings.file.autosaveTimerDesc': '默认 5 分钟，与 Typora 一致；Typora 需手改 conf.user.json 才能调整。',
+  // V7-W6（G7-FEAT-12）：Typora「Insert Final New Line On Save」官方文案
+  'settings.file.finalNewline': '保存时在文末添加空行',
+  'settings.file.finalNewlineDesc': '保存时若文末缺少换行符则补一个（跟随文档当前的换行符风格），不会删除已有的空行。',
   'settings.image.assetDir': 'asset 目录',
   'settings.image.loadRemote': '加载远程图片',
   'settings.image.loadRemoteDesc': '默认不联网加载远程图片（安全/隐私）；开启后打开含远程图片的文档即加载。',
@@ -1369,6 +1372,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.file.autosave': 'Auto save',
   'settings.file.autosaveTimer': 'Auto save interval (minutes)',
   'settings.file.autosaveTimerDesc': 'Defaults to 5 minutes, same as Typora; Typora requires editing conf.user.json by hand to change it.',
+  'settings.file.finalNewline': 'Insert final new line on save',
+  'settings.file.finalNewlineDesc': 'Append a line break at the end of the file on save when it is missing (matching the document\u2019s current line ending). Existing blank lines are never removed.',
   'settings.image.assetDir': 'Asset directory',
   'settings.image.loadRemote': 'Load remote images',
   'settings.image.loadRemoteDesc': 'Off by default (privacy); when on, remote images load when the document opens.',

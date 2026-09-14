@@ -46,6 +46,8 @@ import {
   renderReaderHtml,
   countWords,
   formatWordCountStats,
+  // V7-W6（G7-FEAT-12）：Typora「保存时在文末添加空行」（preferFinalNewline，默认关）
+  applyFinalNewline,
   pushRecentFile,
   parseRecentFiles,
   serializeRecentFiles,
@@ -120,6 +122,16 @@ function readStored(key: string): string | null {
   } catch {
     return null;
   }
+}
+/**
+ * 读取布尔型设置项（真源 = settings schema 的 `defaultValue`；非法/缺失回落 `fallback`）。
+ * 走 `settingById` + `readSetting` 而非自行拼 storageKey —— 避免真值散落两处。
+ */
+function readBoolSetting(id: string, fallback: boolean): boolean {
+  const def = settingById(id);
+  if (!def) return fallback;
+  const value = readSetting(def);
+  return typeof value === 'boolean' ? value : fallback;
 }
 /**
  * 主题专属 user CSS 的文件名（Typora：`themes/<theme>.user.css`）。
@@ -3953,7 +3965,10 @@ export default function App() {
     const content = host.getText();
     const meta = docMetaRef.current;
     const expected = diskStateRef.current ?? undefined;
-    const result = await documents.save(filePathRef.current, content, {
+    // V7-W6（G7-FEAT-12）：Typora「保存时在文末添加空行」（配置键 `preferFinalNewline`，默认关）。
+    // 语义 = **缺失时追加**（跟随文档 EOL，从不删除已有换行），见 app-core/src/finalNewline.ts。
+    const contentToWrite = applyFinalNewline(content, meta.eol, readBoolSetting('files.finalNewline', false));
+    const result = await documents.save(filePathRef.current, contentToWrite, {
       encoding: meta.encoding,
       eol: meta.eol,
       expectedDisk: expected,
@@ -4025,7 +4040,8 @@ export default function App() {
     const content = host.getText();
     const meta = docMetaRef.current;
     // C1（第四轮）：另存对话框建议文件名 = 内容首行/首个标题提炼（Typora parity）
-    const result = await documents.save(null, content, {
+    // V7-W6（G7-FEAT-12）：文末换行与 handleSave 同源（同一设置 + 同一纯函数）
+    const result = await documents.save(null, applyFinalNewline(content, meta.eol, readBoolSetting('files.finalNewline', false)), {
       encoding: meta.encoding,
       eol: meta.eol,
       suggestedName: documentSuggestedName(content) ?? undefined,

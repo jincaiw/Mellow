@@ -177,6 +177,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // V7-W5（G7-FEAT-03）：定时保存间隔（分钟）。Typora Win/Linux 默认 5 分钟，但只在
       // conf/conf.user.json 的 `autoSaveTimer` 中可改、GUI 不可达；Mellow 暴露为设置项 = B。
       { id: 'files.autosaveTimer', labelKey: 'settings.file.autosaveTimer', type: 'text', storageKey: 'mellow.file.autosaveTimer', defaultValue: '5', descriptionKey: 'settings.file.autosaveTimerDesc', applyCommand: 'settings.autosaveTimer' },
+      // V7-W6（G7-FEAT-12）：Typora「保存时在文末添加空行」（配置键 `preferFinalNewline`，默认 false）。
+      // 语义 = **缺失时追加**（跟随文档当前 EOL），**从不删除**已有换行；故默认关闭时对既有行为零影响。
+      // 无 applyCommand：它在**保存时**读取（handleSave / handleSaveAs），无需 live apply。
+      { id: 'files.finalNewline', labelKey: 'settings.file.finalNewline', type: 'toggle', storageKey: 'mellow.file.finalNewline', defaultValue: false, descriptionKey: 'settings.file.finalNewlineDesc' },
     ],
   },
   {

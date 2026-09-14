@@ -28,6 +28,7 @@ export type { QuickOpenAction, QuickOpenEntry, QuickOpenKeyEvent, QuickOpenPlatf
 export { pushRecentFile, markRecentMissing, parseRecentFiles, serializeRecentFiles, RECENT_FILES_LIMIT, pushRecentFolder, parseRecentFolders, serializeRecentFolders, RECENT_FOLDERS_LIMIT, removeRecentFolder, togglePinRecentFolder, sortRecentFolders } from './recentFiles';
 export { countWords, formatWordCountStats } from './wordCount';
 export type { WordCount } from './wordCount';
+export { applyFinalNewline } from './finalNewline';
 export type { RecentFileEntry } from './recentFiles';
 export { DEFAULT_SEARCH_EXCLUDES, buildSearchRegex, isSearchRegexValid, globalSearchShortcutAction, groupSearchResults, matchSearchLine, normalizeSearchRequest, SearchResultsModel } from './globalSearch';
 export type { SearchGroup, SearchLineOptions } from './globalSearch';
