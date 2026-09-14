@@ -106,6 +106,27 @@ function sanitizeHtml(value: string): string {
 
 // ── 行内渲染 ────────────────────────────────────────────────
 
+/**
+ * 段内软换行 → `<br>`（V7-W6，G7-EDIT-14）。
+ *
+ * Typora 真值（一手证据：`main.js` 的 `setIgnoreLineBreak`）：菜单
+ * `Edit → Whitespace and Line Breaks → Preserve single line break` 的 `state: !e`，
+ * 而 `ignoreLineBreak` **默认 false** → **该项默认勾选**，即 **Typora 默认保留单换行**；
+ * 这也与 Mellow 编辑器一致（CM6 行式渲染，单个 `\n` 必然显示为换行）。
+ *
+ * 而本渲染器此前把段落各行 `join(' ')` → **段落折叠、引用却保留 `<br>`**（自身不一致）。
+ *
+ * 实现要点（哨兵法）：用私有区字符承载换行，**先整段做行内渲染**（从而保留跨行行内标记，
+ * 如 `**a\nb**` 这类跨软换行的粗体），再把哨兵换回 `<br>`。
+ * 不能逐行渲染（会切断跨行标记），也不能在渲染后直接替换 `\n`
+ * （会误伤代码段内本应保留的换行）。
+ */
+const SOFT_BREAK_MARK = '\uE001';
+function renderInlineWithSoftBreaks(lines: readonly string[]): string {
+  const rendered = renderInline(lines.join(SOFT_BREAK_MARK));
+  return rendered.split(SOFT_BREAK_MARK).join('<br>');
+}
+
 export function renderInline(text: string): string {
   let out = escapeHtml(text);
   // 图片
@@ -237,9 +258,9 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
   const html: string[] = [];
   let i = 0;
 
-  const pushInlineParagraph = (text: string, offset: number): void => {
-    if (text.trim() === '') return;
-    html.push(`<p data-offset="${offset}">${renderInline(text)}</p>`);
+  const pushInlineParagraph = (paraLines: readonly string[], offset: number): void => {
+    if (paraLines.every((line) => line.trim() === '')) return;
+    html.push(`<p data-offset="${offset}">${renderInlineWithSoftBreaks(paraLines)}</p>`);
   };
 
   while (i < lines.length) {
@@ -320,7 +341,8 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
           : body.map((t) => `<p>${renderInline(t)}</p>`).join('');
         html.push(`<div class="mellow-reader-alert mellow-reader-alert-${escapeHtml(kind)}" data-offset="${blockOffset}"><div class="mellow-reader-alert-title">${escapeHtml(alertMatch[1].toUpperCase())}</div><div class="mellow-reader-alert-body">${bodyHtml}</div></div>`);
       } else {
-        const body = quoteLines.map((t) => renderInline(t)).join('<br>');
+        // 与段落同源（renderInlineWithSoftBreaks）：此前逐行渲染，会切断跨行的行内标记（如跨软换行的粗体）
+        const body = renderInlineWithSoftBreaks(quoteLines);
         html.push(`<blockquote data-offset="${blockOffset}">${body}</blockquote>`);
       }
       continue;
@@ -402,7 +424,9 @@ export function renderReaderHtml(markdown: string, options: ReaderRenderOptions 
       para.push(t);
       i += 1;
     }
-    pushInlineParagraph(para.join(' '), paraOffset);
+    // V7-W6（G7-EDIT-14）：段内单换行保留为 <br>（Typora「Preserve single line break」默认开，
+    // 且与 Mellow 编辑器的行式渲染一致）；此前是 para.join(' ') → 段落折叠、引用却保留 <br>。
+    pushInlineParagraph(para, paraOffset);
   }
 
   return { html: html.join('\n'), outline };

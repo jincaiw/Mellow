@@ -113,3 +113,38 @@ describe('Reader renderer — outline', () => {
     expect(html).toContain('id="a"');
   });
 });
+
+/**
+ * 段内单换行保留为 `<br>`（V7-W6，G7-EDIT-14）。
+ *
+ * Typora 真值：菜单 `Edit → Whitespace and Line Breaks → Preserve single line break` 默认**勾选**
+ * （`ignoreLineBreak` 默认 false，`state: !e`）→ Typora 默认保留单换行，与 Mellow 编辑器
+ * （CM6 行式渲染）一致。此前 Reader 把段落 `join(' ')` 折叠，而**引用却保留 `<br>`**（自身不一致）。
+ */
+describe('Reader renderer — soft line breaks (Preserve single line break)', () => {
+  test('段落内单个换行渲染为 <br>（此前被折叠为空格）', () => {
+    expect(renderReaderHtml('a\nb').html).toContain('<p data-offset="0">a<br>b</p>');
+  });
+
+  test('空行仍是分段（不得把两段粘成一段）', () => {
+    const { html } = renderReaderHtml('a\nb\n\nc');
+    expect((html.match(/<p /g) ?? []).length).toBe(2);
+    expect(html).toContain('<br>');
+  });
+
+  test('跨软换行的行内标记不被切断（哨兵法必须整段渲染，不能逐行）', () => {
+    expect(renderReaderHtml('**a\nb**').html).toContain('<strong>a<br>b</strong>');
+  });
+
+  test('引用与段落行为一致（此前引用保留 <br>、段落折叠）', () => {
+    expect(renderReaderHtml('> a\n> b').html).toContain('a<br>b');
+  });
+
+  test('行内代码不被误伤（不得在渲染后直接替换 \\n）', () => {
+    expect(renderReaderHtml('`a`\nb').html).toContain('<code>a</code><br>b');
+  });
+
+  test('图片与换行共存', () => {
+    expect(renderReaderHtml('![alt](img.png)\nnext').html).toContain('loading="lazy"><br>next');
+  });
+});

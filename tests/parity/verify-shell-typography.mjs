@@ -212,6 +212,49 @@ if (Number(/内置 (\d+) 主题/.exec(themeCountDrift)?.[1] ?? NaN) === declared
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────
+// ── Reader 段内单换行必须保留（V7-W6，G7-EDIT-14）──────────────────────────
+//
+// 立节原因：Typora 的菜单 `Edit → Whitespace and Line Breaks → Preserve single line break`
+// **默认勾选**（一手证据：`main.js` 的 `setIgnoreLineBreak` → `state: !e`，而 `ignoreLineBreak`
+// 默认 false），且 Mellow 编辑器本身是 CM6 **行式渲染**（单 `\n` 必然显示为换行）。
+// 而 Reader 此前把段落 `join(' ')` 折叠、**引用却保留 `<br>`**（自身不一致）→
+// 「编辑区看得见换行、切到 Reader 就消失」。这类不一致**必须开 Reader 才发现**，故锁进 CI 护栏。
+{
+  const readerSource = read('packages/app-core/src/reader.ts');
+  // 断言前必须剥注释：本节的说明文字里就有 `join(' ')` 字样，否则会**自我命中**（假阳性）。
+  const readerCode = readerSource
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+  if (!/function renderInlineWithSoftBreaks\(lines: readonly string\[\]\): string/.test(readerCode)) {
+    fail('Reader 缺少 renderInlineWithSoftBreaks（段内软换行 → <br> 的统一入口）');
+  }
+  if (!/const SOFT_BREAK_MARK = '\\uE001'/.test(readerCode)) {
+    fail('Reader 缺少软换行哨兵 SOFT_BREAK_MARK —— 逐行渲染会切断跨行行内标记（如跨软换行的粗体）');
+  }
+  // 链路：段落分支 → pushInlineParagraph → renderInlineWithSoftBreaks
+  if (!/pushInlineParagraph\(para, paraOffset\)/.test(readerCode)) {
+    fail('Reader 段落分支未把「整段行数组」交给 pushInlineParagraph（应为 pushInlineParagraph(para, …)）');
+  }
+  if (!/renderInlineWithSoftBreaks\(paraLines\)/.test(readerCode)) {
+    fail('pushInlineParagraph 未走 renderInlineWithSoftBreaks（段落软换行会被折叠）');
+  }
+  if (!/renderInlineWithSoftBreaks\(quoteLines\)/.test(readerCode)) {
+    fail('Reader 引用未与段落共用 renderInlineWithSoftBreaks（两者必须同源，否则又会不一致）');
+  }
+  // 不变量：reader 代码里不得再用 `join(' ')` 把段内行折叠（段落/引用都会命中）
+  if (/\.join\(' '\)/.test(readerCode)) {
+    fail("Reader 仍存在 .join(' ') 的段落折叠（应与引用一致保留 <br>）");
+  }
+  const softBreakDrift = readerCode.replace('renderInlineWithSoftBreaks(paraLines)', "renderInline(paraLines.join(' '))");
+  if (softBreakDrift === readerCode) {
+    fail('Reader 软换行 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+  } else if (!/\.join\(' '\)/.test(softBreakDrift)) {
+    fail('Reader 软换行 canary 失效：注入的「折叠」漂移未被检出');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Shell typography contract violations:\n  ${errors.join('\n  ')}`);
 }
@@ -221,4 +264,6 @@ console.log(`Shell typography: line-height chain intact (CSS var → Reader; set
 } W4.3 单图独占段落居中（Typora \`p > img:only-child\`）：widget 按「行内无其他内容」判定（图文混排 / 两图并排均不居中）+ centered 参与 widget 相等判定（居中态随编辑更新）+ 5 例单测;${''
 } W4.8 主题数量文档一致：内置 ${themeIds.length} 主题，注释声明 ${declared} 个（交叉比对，防再次失真）;${''
 }--- V7-W5 ---${''
-} 正文字号双消费方同源：Reader 消费 --mellow-content-font-size（回落 ${defFontSize}px）+ 编辑器 setEditorConfig，三个写入点（启动恢复 / 缩放 / live apply）齐全（消除「设置 20px、Reader 仍 16px」）`);
+} 正文字号双消费方同源：Reader 消费 --mellow-content-font-size（回落 ${defFontSize}px）+ 编辑器 setEditorConfig，三个写入点（启动恢复 / 缩放 / live apply）齐全（消除「设置 20px、Reader 仍 16px」）;${''}
+}--- V7-W6 ---${''}
+} Reader 段内单换行保留为 <br>（Typora「Preserve single line break」默认开）：段落与引用共用 renderInlineWithSoftBreaks（哨兵法整段渲染，跨行行内标记不被切断）`);
