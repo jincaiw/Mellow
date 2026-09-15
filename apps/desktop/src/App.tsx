@@ -4858,6 +4858,18 @@ export default function App() {
         setMenuCheckTick((v) => v + 1); // P1-1.3：菜单 CheckMenuItem 选中态随 syncNativeMenu 重建
         setStatusText(t(next ? 'msg.smartPunctOn' : 'msg.smartPunctOff'));
       } },
+      // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行 → 首行缩进`（可勾选菜单项）。
+      // 菜单项与设置面板**同一真值**（`editor.firstLineIndent`）—— 两处入口必须走同一条写入路径，
+      // 否则会出现「菜单勾上了、设置里没变」。
+      { id: 'edit.firstLineIndent.toggle', localizedTitle: { zh: '首行缩进', en: 'Indent first line of paragraphs' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.firstLineIndent');
+        if (!def) return;
+        const next = readSetting(def) !== true;
+        writeSetting(def, next);
+        hostRef.current?.setEditorConfig('setFirstLineIndent', { enabled: next });
+        setMenuCheckTick((v) => v + 1); // 菜单 CheckMenuItem 选中态随 syncNativeMenu 重建
+        setStatusText(t(next ? 'msg.firstLineIndentOn' : 'msg.firstLineIndentOff'));
+      } },
       // 格式（Typora 对齐；引擎 applyInlineFormat / 空选区成对插入）
       { id: 'format.bold', localizedTitle: { zh: '粗体', en: 'Bold' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('bold') },
       { id: 'format.italic', localizedTitle: { zh: '斜体', en: 'Italic' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('italic') },
@@ -5167,6 +5179,8 @@ export default function App() {
       statusbar: statusbarVisible,
       // V7-W2.4：浮动编辑器工具栏勾选态（Typora 1.14 View → Toolbar）
       toolbar: selectionToolbarEnabled,
+      // V7-W6（G7-EDIT-15）：Typora Edit → 空格与换行 → 首行缩进 勾选态
+      firstLineIndent: (() => { const def = settingById('editor.firstLineIndent'); return def ? readSetting(def) === true : false; })(),
       // 用户主题（appData/themes/*.css）：随加载/重扫变化重建主题菜单派生
       userThemes: userThemeList.map((theme) => ({ id: theme.id, name: theme.name })),
       // P2-2.6：自定义键位随 override 变化重建原生菜单（accelerator 物化）

@@ -325,6 +325,8 @@ const CHECK_STATE_CONTRACT = [
   { id: 'view.statusbar.toggle', checkedFrom: 'statusbar' },
   // V7-W2.4：浮动编辑器工具栏启用态（Typora 1.14 View → Toolbar）
   { id: 'view.toolbar.toggle', checkedFrom: 'toolbar' },
+  // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行 → 首行缩进`
+  { id: 'edit.firstLineIndent.toggle', checkedFrom: 'firstLineIndent' },
 ];
 const VIEW_GROUP_EXCEPTIONS = new Set([
   'view.source.toggle', 'view.focus.cycle', 'view.typewriter.cycle',
@@ -352,6 +354,45 @@ if (!/execute: \(\) => toggleSelectionToolbar\(\) \}/.test(appSource)) {
 if (/mellow\.editor\.toolbarVisible/.test(appCode)) {
   fail('App.tsx 不得残留 mellow.editor.toolbarVisible（V7-W2.4：常驻横条已退役，开关与浮动工具栏同源）');
 }
+// V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行` 子菜单 —— 首行缩进勾选态必须来自单一真值。
+// 该菜单项与设置面板是**同一真值**（`editor.firstLineIndent`），两处入口必须走同一条写入路径，
+// 否则会出现「菜单勾上了、设置里没变」（或反之），而屏幕上看不出哪个是对的。
+if (!/firstLineIndent: \(\(\) => \{ const def = settingById\('editor\.firstLineIndent'\); return def \? readSetting\(def\) === true : false; \}\)\(\)/.test(appSource)) {
+  fail('syncNativeMenu 必须从 Settings Store 读取 firstLineIndent 勾选态（单一真源）');
+}
+const firstLineCmd = /id: 'edit\.firstLineIndent\.toggle'[\s\S]{0,700}?setStatusText/.exec(appSource)?.[0] ?? '';
+if (firstLineCmd === '') {
+  fail('App.tsx 缺少 edit.firstLineIndent.toggle 命令');
+} else {
+  if (!/writeSetting\(def, next\)/.test(firstLineCmd)) {
+    fail('edit.firstLineIndent.toggle 必须写回 Settings Store（否则菜单勾上了、设置里没变）');
+  }
+  if (!/setEditorConfig\('setFirstLineIndent', \{ enabled: next \}\)/.test(firstLineCmd)) {
+    fail('edit.firstLineIndent.toggle 必须即时下发到编辑器（否则要重启才生效）');
+  }
+  if (!/setMenuCheckTick/.test(firstLineCmd)) {
+    fail('edit.firstLineIndent.toggle 缺少 setMenuCheckTick（勾选态不会重建原生菜单）');
+  }
+}
+// ⚠️ 通用不变量：menuSchema 里出现的每个 `checkedFrom` 都必须在 resolveChecked 有**显式分支**。
+// 末尾的 `return false` 是静默兜底 —— 来源名写错只会让菜单项**永远显示未勾选**（屏幕看不出异常），
+// 而用户点一次后显示与真实状态就不符了。这条不变量覆盖未来新增的所有勾选项。
+const declaredCheckedFrom = [...schemaSource.matchAll(/checkedFrom: '([^']+)'/g)].map((m) => m[1]);
+const collectUnhandled = (source) => [...new Set([...source.matchAll(/checkedFrom: '([^']+)'/g)].map((m) => m[1]))]
+  .filter((name) => !name.startsWith('activeTheme:') && !source.includes("checkedFrom === '" + name + "'"));
+const unhandledCheckedFrom = collectUnhandled(schemaSource);
+if (unhandledCheckedFrom.length > 0) {
+  fail(`resolveChecked 未处理这些 checkedFrom 来源（会静默显示未勾选）：${unhandledCheckedFrom.join(', ')}`);
+}
+// canary：注入一个错拼的来源名，必须被同一条不变量检出
+const checkedDrift = schemaSource.replace("checkedFrom: 'firstLineIndent'", "checkedFrom: 'firstLineIndnet'");
+if (checkedDrift === schemaSource) {
+  fail('checkedFrom 不变量 canary 未武装：注入点未命中');
+} else if (collectUnhandled(checkedDrift).length === 0) {
+  fail('checkedFrom 不变量 canary 失效：注入的错名未被检出');
+}
+if (declaredCheckedFrom.length === 0) fail('未从 menuSchema 解析到任何 checkedFrom（解析逻辑失效）');
+
 // 例外过期检测：View 组一旦声明 checkedFrom 即从例外表移除
 const staleExceptions = [...VIEW_GROUP_EXCEPTIONS].filter((id) => {
   const entry = allEntries().find((e) => e.kind === 'command' && e.id === id);

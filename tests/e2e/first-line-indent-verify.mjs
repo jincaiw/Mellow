@@ -117,6 +117,30 @@ async function main() {
     const backOff = await inspect();
     const paraFirstBackOff = backOff.find((line) => line.text === 'para one');
     check('live toggle：关闭 → 开启 → 关闭后首行缩进撤销', paraFirstBackOff?.textIndent === '0px' && paraFirstBackOff?.style === null, JSON.stringify(paraFirstBackOff));
+
+    // ── 菜单命令链路：Edit → 空格与换行 → 首行缩进（G7-EDIT-15）────────────
+    // 该菜单项与设置面板是同一真值；此处验证「命令 → Settings Store → 编辑器」整条链，
+    // 而不是只验证引擎的 bridge（bridge 已由上面的 toggle 覆盖）。
+    const commandReady = await page.evaluate(() => typeof window.__MELLOW_COMMANDS__?.dispatch === 'function');
+    check('命令注册表可派发（__MELLOW_COMMANDS__）', commandReady, String(commandReady));
+    if (commandReady) {
+      await page.evaluate(() => localStorage.removeItem('mellow.editor.firstLineIndent'));
+      await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('edit.firstLineIndent.toggle'));
+      await sleep(300);
+      const afterOn = await page.evaluate(() => localStorage.getItem('mellow.editor.firstLineIndent'));
+      const onLines = await inspect();
+      const onFirst = onLines.find((line) => line.text === 'para one');
+      check('菜单命令开启：写回 Settings Store（mellow.editor.firstLineIndent = 1）', afterOn === '1', JSON.stringify(afterOn));
+      check('菜单命令开启：编辑器首行缩进即时生效', onFirst?.style?.includes('text-indent: 2em'), JSON.stringify(onFirst?.style));
+
+      await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('edit.firstLineIndent.toggle'));
+      await sleep(300);
+      const afterOff = await page.evaluate(() => localStorage.getItem('mellow.editor.firstLineIndent'));
+      const offLines = await inspect();
+      const offFirst = offLines.find((line) => line.text === 'para one');
+      check('菜单命令再点一次：写回 Settings Store（= 0）', afterOff === '0', JSON.stringify(afterOff));
+      check('菜单命令再点一次：编辑器首行缩进撤销', offFirst?.style === null, JSON.stringify(offFirst?.style));
+    }
   } finally {
     await browser.close();
     vite.kill('SIGTERM');

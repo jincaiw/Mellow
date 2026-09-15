@@ -31,6 +31,8 @@ export interface NativeMenuInputs {
   statusbar: boolean;
   /** V7-W2.4：浮动编辑器工具栏启用态（Typora 1.14 View → Toolbar CheckMenuItem 选中态）。 */
   toolbar: boolean;
+  /** V7-W6（G7-EDIT-15）：首行缩进（Typora Edit → 空格与换行 → 首行缩进 CheckMenuItem 选中态）。 */
+  firstLineIndent: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制 → localStorage → 装配边界生效）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
 }
@@ -55,6 +57,7 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
     smartPunct: inputs.smartPunct,
     statusbar: inputs.statusbar,
     toolbar: inputs.toolbar,
+    firstLineIndent: inputs.firstLineIndent,
     shortcutOverrides: inputs.shortcutOverrides,
   });
 }

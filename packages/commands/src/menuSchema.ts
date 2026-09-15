@@ -219,6 +219,14 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'edit.eol.crlf', labelKey: 'menu.edit.eolCrlf' },
     ] },
     { kind: 'command', id: 'edit.trimTrailingSpaces', labelKey: 'menu.edit.trimTrailing' },
+    // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行` 子菜单。
+    // 一手证据（main.js 的 menu.update 路径）：该子菜单实际含 **3 项** ——
+    // `Indent first line of paragraphs`（首行缩进）/ `Visible <br/>` / `Preserve single line break`。
+    // Mellow 当前只装配已实现项；另两项为已登记缺口（G7-EDIT-15 与 G7-EDIT-14 的未做部分），
+    // 补齐时在本子菜单内追加即可，无需再改结构（同 edit.spell 的处理方式）。
+    { kind: 'submenu', id: 'edit.whitespace', labelKey: 'menu.edit.whitespaceMenu', entries: [
+      { kind: 'command', id: 'edit.firstLineIndent.toggle', labelKey: 'menu.edit.firstLineIndent', checkedFrom: 'firstLineIndent' },
+    ] },
     { kind: 'submenu', id: 'edit.find', labelKey: 'menu.top.find', entries: [
       { kind: 'command', id: 'search.find', labelKey: 'menu.search.find', shortcut: { mac: 'Cmd+F', winLinux: 'Ctrl+F' } },
       { kind: 'command', id: 'search.findNext', labelKey: 'menu.search.findNext', shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' } },
@@ -508,17 +516,24 @@ export interface NativeMenuSpecInput {
   statusbar?: boolean;
   /** 浮动编辑器工具栏启用态（V7-W2.4 D-B：Typora 1.14 `View → Toolbar` 开关语义）。 */
   toolbar?: boolean;
+  /** 首行缩进勾选态（V7-W6，G7-EDIT-15：Typora `Edit → 空格与换行 → 首行缩进`）。 */
+  firstLineIndent?: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制；schema 仍是默认值唯一真源，
    *  override 仅在 materialization 边界覆盖同平台字段；空串 = 已清除）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
 }
 
-/** checkedFrom 来源 → 当前勾选值解析。 */
+/** checkedFrom 来源 → 当前勾选值解析。
+ *
+ * ⚠️ 末尾 `return false` 是**静默兜底**：写错来源名不会报错，只会让菜单项**永远显示未勾选**
+ * （屏幕上看不出异常，但用户点一次后状态就与显示不符）。故 `verify-menu-contract.mjs`
+ * 有一条不变量：**menuSchema 里出现的每个 `checkedFrom` 都必须在此处有显式分支**。 */
 function resolveChecked(checkedFrom: string, input: NativeMenuSpecInput): boolean {
   if (checkedFrom === 'spellcheck') return input.spellcheck ?? true;
   if (checkedFrom === 'smartPunct') return input.smartPunct ?? false;
   if (checkedFrom === 'statusbar') return input.statusbar ?? true;
   if (checkedFrom === 'toolbar') return input.toolbar ?? true;
+  if (checkedFrom === 'firstLineIndent') return input.firstLineIndent ?? false;
   if (checkedFrom === 'themeModeSystem') return input.themeMode === 'system';
   if (checkedFrom.startsWith('activeTheme:')) return input.activeThemeId === checkedFrom.slice('activeTheme:'.length);
   return false;
