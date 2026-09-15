@@ -41,6 +41,9 @@ export const DEFAULT_CONFIG: EditorConfig = {
   lineHeight: 1.5,
   suggestWhileTyping: false,
   autoCharacterPairs: true,
+  // Typora `autoPairExtendSymbol` /「匹配 Markdown 字符」默认 false：
+  // 与括号/引号自动配对是独立开关。
+  autoMarkdownSyntaxPairs: false,
   indentBehavior: 'paragraph',
   standardDirectories: {},
   localizable: {

@@ -365,6 +365,16 @@ if (cssLayerAnchor === undefined) {
   if (!/id: 'editor\.autoPair'.*defaultValue: true.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
     fail('settings 缺少 editor.autoPair（或默认值/applyCommand 不符）：Typora「匹配括号和引号」默认开启');
   }
+  if (!/id: 'editor\.markdownSyntaxPairs'.*defaultValue: false.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
+    fail('settings 缺少 editor.markdownSyntaxPairs（或默认值/applyCommand 不符）：Typora autoPairExtendSymbol 默认关闭');
+  }
+  if (!/def\.id === 'editor\.markdownSyntaxPairs'\) host\?\.setEditorConfig\('setMarkdownSyntaxPairs', \{ enabled: Boolean\(value\) \}\)/.test(appSource)) {
+    fail("App.tsx 缺少 markdownSyntaxPairs live apply（setEditorConfig('setMarkdownSyntaxPairs')）");
+  }
+  if (!/settingById\('editor\.markdownSyntaxPairs'\)[\s\S]{0,260}?setEditorConfig\('setMarkdownSyntaxPairs', \{ enabled: true \}\)/.test(appSource)) {
+    fail('App.tsx 缺少 markdownSyntaxPairs 启动恢复下发');
+  }
+  if (!/'setMarkdownSyntaxPairs'/.test(coreSource)) fail("editor-core wrapper 白名单缺少 'setMarkdownSyntaxPairs'");
   if (!/def\.id === 'editor\.autoPair'\) host\?\.setEditorConfig\('setAutoPair', \{ enabled: Boolean\(value\) \}\)/.test(appSource)) {
     fail("App.tsx 缺少 editor.autoPair 的 live apply（setEditorConfig('setAutoPair')）");
   }
@@ -389,6 +399,13 @@ if (cssLayerAnchor === undefined) {
   }
   if (!/if \(!window\.config\.autoCharacterPairs\) return \[\];/.test(coreEditorMarkdown)) {
     fail('autoPairExtensions() 未在关闭时返回空数组');
+  }
+  const inputSource = read('packages/editor-core/CoreEditor/src/modules/input/index.ts');
+  if (!/window\.config\.autoMarkdownSyntaxPairs === true/.test(inputSource)) {
+    fail('modules/input 未读取 autoMarkdownSyntaxPairs（第二个开关不会影响实际输入辅助）');
+  }
+  if (/autoCharacterPairs && marksToWrap/.test(inputSource) || /autoCharacterPairs && insert === '`'/.test(inputSource)) {
+    fail('Markdown 字符辅助仍复用 autoCharacterPairs：两个 Typora 开关未真正拆分');
   }
   const driftedExt = coreEditorExtensions.replace(
     'autoPairCompartment.of(autoPairExtensions())',

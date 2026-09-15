@@ -3387,6 +3387,11 @@ export default function App() {
           if (autoPairDef && readSetting(autoPairDef) === false) {
             host.setEditorConfig('setAutoPair', { enabled: false });
           }
+          // Typora `autoPairExtendSymbol` /「匹配 Markdown 字符」默认 false。
+          const markdownSyntaxPairsDef = settingById('editor.markdownSyntaxPairs');
+          if (markdownSyntaxPairsDef && readSetting(markdownSyntaxPairsDef) === true) {
+            host.setEditorConfig('setMarkdownSyntaxPairs', { enabled: true });
+          }
           // V7-W6（G7-EDIT-13）Tab 键缩进启动恢复（Typora「默认缩进」/「使用Tab」）。
           // ⚠️ 引擎的 `indentUnit` facet 在 Mellow **无消费方**（2026-09-14 探针实测：设 2/4 空格/制表符，
           // Tab 与列表续写行为完全一致）→ 用它会做出**空开关**。真正的控制点是 `tabKeyBehavior`。
@@ -4324,6 +4329,7 @@ export default function App() {
         else if (def.id === 'editor.sourceLineNumbers') applyLineNumberPrefs();
         else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
         else if (def.id === 'editor.autoPair') host?.setEditorConfig('setAutoPair', { enabled: Boolean(value) });
+        else if (def.id === 'editor.markdownSyntaxPairs') host?.setEditorConfig('setMarkdownSyntaxPairs', { enabled: Boolean(value) });
         else if (def.id === 'editor.tabBehavior') host?.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(value) });
         else if (def.id === 'editor.firstLineIndent') host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) });
         break;

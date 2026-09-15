@@ -37,6 +37,8 @@ export interface EditorConfig {
   lineHeight: number;
   suggestWhileTyping: boolean;
   autoCharacterPairs: boolean;
+  /** Typora autoPairExtendSymbol / Markdown 字符辅助，默认 false。 */
+  autoMarkdownSyntaxPairs?: boolean;
   indentBehavior: 'never' | 'paragraph' | 'line';
   standardDirectories: Record<string, string>;
   localizable?: Record<string, string>;

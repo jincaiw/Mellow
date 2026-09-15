@@ -113,6 +113,12 @@ export function setAutoPair(enabled: boolean) {
   styling.setAutoPair();
 }
 
+/** Typora `autoPairExtendSymbol` /「匹配 Markdown 字符」（默认 false）。
+ * 输入辅助直接读取 config，每次输入都会看到最新值，无需 Compartment。 */
+export function setMarkdownSyntaxPairs(enabled: boolean) {
+  window.config.autoMarkdownSyntaxPairs = enabled;
+}
+
 /** 首行缩进开关（V7-W6，G7-EDIT-15）。 */
 export function setFirstLineIndent(enabled: boolean) {
   styling.setFirstLineIndent(enabled);

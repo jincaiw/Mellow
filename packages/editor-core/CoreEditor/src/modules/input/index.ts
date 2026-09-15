@@ -99,14 +99,17 @@ export function interceptInputs() {
     // Enable auto character pairs only after composition ends,
     // some characters act as marked text in certain languages, e.g., typing '`' followed by 'a' to input 'à'.
     const autoCharacterPairs = window.config.autoCharacterPairs && !isComposing();
+    // 独立于括号/引号配对的 Markdown 字符辅助（Typora `autoPairExtendSymbol`，默认 false）。
+    // 它控制选区包裹与反引号代码块快捷插入；不得复用 autoCharacterPairs，否则无法分别对齐两项偏好。
+    const autoMarkdownSyntaxPairs = window.config.autoMarkdownSyntaxPairs === true && !isComposing();
 
     // E.g., wrap "selection" as "*selection*"
-    if (autoCharacterPairs && marksToWrap.includes(insert)) {
+    if (autoMarkdownSyntaxPairs && marksToWrap.includes(insert)) {
       return wrapBlock(insert, editor);
     }
 
     // Insert triple backticks to create a code block
-    if (autoCharacterPairs && insert === '`') {
+    if (autoMarkdownSyntaxPairs && insert === '`') {
       return insertCodeBlock(editor);
     }
 

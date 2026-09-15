@@ -503,7 +503,9 @@ const zhCN = {
   'settings.editor.lineWrapping': '自动换行',
   // V7-W6（G7-EDIT-12）：Typora「匹配括号和引号」官方文案
   'settings.editor.autoPair': '匹配括号和引号',
-  'settings.editor.autoPairDesc': '输入左括号或引号时自动补全右半，并在右半已存在时跳过。同时控制选区包裹、行内代码等 Markdown 字符辅助。',
+  'settings.editor.autoPairDesc': '输入左括号或引号时自动补全右半，并在右半已存在时跳过。',
+  'settings.editor.markdownSyntaxPairs': '匹配 Markdown 字符',
+  'settings.editor.markdownSyntaxPairsDesc': '输入 Markdown 字符时自动包裹选区，并将反引号快捷扩展为代码块；默认关闭。',
   // V7-W6（G7-EDIT-13）：Typora「默认缩进」/「使用Tab」官方文案
   'settings.editor.tabBehavior': 'Tab 键缩进',
   'settings.editor.tabBehaviorDesc': '在段落中按 Tab 时插入的缩进；列表内按 Tab 始终是增加列表缩进。',
@@ -1328,7 +1330,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.editor.sourceLineNumbers': 'Show line numbers in source mode',
   'settings.editor.lineWrapping': 'Wrap lines',
   'settings.editor.autoPair': 'Auto pair brackets and quotes',
-  'settings.editor.autoPairDesc': 'Insert the closing bracket or quote automatically, and skip over it when it already exists. Also controls Markdown helpers such as wrapping the selection and inline code.',
+  'settings.editor.autoPairDesc': 'Insert the closing bracket or quote automatically, and skip over it when it already exists.',
+  'settings.editor.markdownSyntaxPairs': 'Pair Markdown syntax characters',
+  'settings.editor.markdownSyntaxPairsDesc': 'Wrap selections with Markdown characters and expand backticks into code blocks; off by default.',
   'settings.editor.tabBehavior': 'Tab key indent',
   'settings.editor.tabBehaviorDesc': 'What Tab inserts in a paragraph; inside a list, Tab always increases the list indent.',
   'settings.tabBehavior.twoSpaces': '2 spaces',

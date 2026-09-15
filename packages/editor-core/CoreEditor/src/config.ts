@@ -79,6 +79,8 @@ export interface Config {
   localizable?: Localizable;
   // Runtime config from settings.json, not dynamically changeable
   autoCharacterPairs: boolean;
+  /** Markdown 字符辅助（Typora `autoPairExtendSymbol`，默认 false）。 */
+  autoMarkdownSyntaxPairs?: boolean;
   /** 首行缩进（V7-W6，G7-EDIT-15），默认 false。 */
   firstLineIndent?: boolean;
   indentBehavior: IndentBehavior;

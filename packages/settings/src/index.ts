@@ -116,6 +116,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 默认 false 即默认**开启**配对）。此前 Mellow 把 autoCharacterPairs 写死为 true 且无 UI
       // → 用户无法关闭自动配对。同时控制选区包裹 / 行内代码等 Markdown 字符辅助。
       { id: 'editor.autoPair', labelKey: 'settings.editor.autoPair', type: 'toggle', storageKey: 'mellow.editor.autoPair', defaultValue: true, descriptionKey: 'settings.editor.autoPairDesc', applyCommand: 'settings.editorConfig' },
+      // Typora `autoPairExtendSymbol` /「匹配 Markdown 字符」，默认 false；独立于括号/引号配对。
+      { id: 'editor.markdownSyntaxPairs', labelKey: 'settings.editor.markdownSyntaxPairs', type: 'toggle', storageKey: 'mellow.editor.markdownSyntaxPairs', defaultValue: false, descriptionKey: 'settings.editor.markdownSyntaxPairsDesc', applyCommand: 'settings.editorConfig' },
       // V7-W6（G7-EDIT-13）：Typora「默认缩进」（`indentSize` 默认 2 空格）与「使用Tab」（`indentByTab` 默认 false）。
       // ⚠️ 实测（2026-09-14，Playwright 真机探针）：引擎的 `indentUnit` facet 在 Mellow **无任何消费方**
       //   —— 设成 2/4 空格或制表符，Tab 与列表续写行为**完全一致** → 用 `setIndentUnit` 会做出**空开关**。
