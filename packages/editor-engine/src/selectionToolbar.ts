@@ -349,8 +349,24 @@ export function applyTaskList(doc: string, range: TextRange): ApplyResult {
   };
 }
 
-/** fence 包裹（codeBlock/mathBlock 共用）：前后各插一行 fence；已包裹则移除（toggle） */
-function applyFenceBlock(doc: string, range: TextRange, fence: string): ApplyResult {
+/**
+ * 清洗默认代码块语言。
+ *
+ * ⚠️ 与 CoreEditor `modules/input/insertCodeBlock.ts` 的同名函数**必须同规则**：
+ * CoreEditor 是 vendored 上游代码（不引入 Mellow 包依赖）、engine 是独立包，
+ * 故不做跨包 import，改由 `verify-settings-contract.mjs` ⑬ 节做**交叉比对**
+ * （字符类 + 截断长度一致），避免两处漂移。
+ */
+export function sanitizeCodeLang(value: string | undefined): string {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[`\r\n\t\s]+/g, '').slice(0, 32);
+}
+
+/** fence 包裹（codeBlock/mathBlock 共用）：前后各插一行 fence；已包裹则移除（toggle）
+ *
+ * @param openSuffix 只加在**开**围栏上的后缀（默认代码块语言）；闭围栏恒为裸围栏。
+ */
+function applyFenceBlock(doc: string, range: TextRange, fence: string, openSuffix = ''): ApplyResult {
   const lines = affectedLines(doc, range);
   if (lines.length === 0) return { changes: [], selection: range };
   const start = lines[0].start;
@@ -384,7 +400,7 @@ function applyFenceBlock(doc: string, range: TextRange, fence: string): ApplyRes
       selection: { from, to },
     };
   }
-  const open = `${fence}\n`;
+  const open = `${fence}${openSuffix}\n`;
   return {
     changes: [
       { from: start, to: start, insert: open },
@@ -394,9 +410,15 @@ function applyFenceBlock(doc: string, range: TextRange, fence: string): ApplyRes
   };
 }
 
-/** 代码块（⌥⌘C）：``` fence 包裹 toggle */
-export function applyCodeBlock(doc: string, range: TextRange): ApplyResult {
-  return applyFenceBlock(doc, range, '```');
+/** 代码块（⌥⌘C）：``` fence 包裹 toggle。
+ *
+ * 开围栏带**默认代码块语言**（Typora `defaultCodeLang`）。生效通道对应
+ * `defaultCodeLangOption` 位掩码的 **Menu 位**（`DefaultCodeLangOptionMenu = 2`，
+ * 即「当通过菜单栏代码插入代码块」）—— 菜单/快捷键插入走本函数。
+ * 闭围栏**恒为裸围栏**（`` ```js … ```js `` 是错的）。
+ */
+export function applyCodeBlock(doc: string, range: TextRange, defaultLang = ''): ApplyResult {
+  return applyFenceBlock(doc, range, '```', sanitizeCodeLang(defaultLang));
 }
 
 /** 数学公式块（⌥⌘B）：$$ fence 包裹 toggle */
@@ -601,7 +623,7 @@ const ACTION_DEFS: Array<{ id: ToolbarAction; label: string; title: string }> = 
   { id: 'list', label: '•', title: '列表' },
 ];
 
-function applyAction(action: ToolbarAction, doc: string, range: TextRange): ApplyResult {
+function applyAction(action: ToolbarAction, doc: string, range: TextRange, defaultCodeLang = ''): ApplyResult {
   switch (action) {
     case 'h1': return applyHeading(doc, range, 1);
     case 'h2': return applyHeading(doc, range, 2);
@@ -618,7 +640,7 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange): Appl
     case 'list': return applyBlockPrefix(doc, range, '- ');
     case 'orderedList': return applyOrderedList(doc, range);
     case 'taskList': return applyTaskList(doc, range);
-    case 'codeBlock': return applyCodeBlock(doc, range);
+    case 'codeBlock': return applyCodeBlock(doc, range, defaultCodeLang);
     case 'mathBlock': return applyMathBlock(doc, range);
     case 'clear': return applyClearFormat(doc, range);
     case 'highlight': return applyInlineFormat(doc, range, '==');
@@ -680,7 +702,7 @@ interface CmRuntime {
 let activeFormatView: import('@codemirror/view').EditorView | null = null;
 
 /** 统一格式应用（空选区 → 成对插入 caret 居中，对齐 Typora Cmd+B） */
-function applyToView(action: ToolbarAction): void {
+function applyToView(action: ToolbarAction, defaultCodeLang = ''): void {
   const view = activeFormatView;
   if (view === null) return;
   const sel = view.state.selection.main;
@@ -694,7 +716,7 @@ function applyToView(action: ToolbarAction): void {
     } else if (action === 'newParagraph' || action === 'newLine') {
       // 「新段落 / 新行」是**光标处插入**语义，不是块级（块级作用于整行会把当前行替换掉）。
       // 故与 referenceLink 一样以 caret 为锚点，空选区也在光标处插入。
-      result = applyAction(action, doc, { from: sel.head, to: sel.head });
+      result = applyAction(action, doc, { from: sel.head, to: sel.head }, defaultCodeLang);
     } else if (PAIR_MARKERS[action] !== undefined) {
       // 成对 marker：空选区插入 caret 居中（Typora Cmd+B）
       const marker = PAIR_MARKERS[action] as string;
@@ -712,10 +734,10 @@ function applyToView(action: ToolbarAction): void {
     } else {
       // 块级（heading/quote/list/paragraph）：作用于当前行（Typora Cmd+1 语义）
       const line = view.state.doc.lineAt(sel.head);
-      result = applyAction(action, doc, { from: line.from, to: line.to });
+      result = applyAction(action, doc, { from: line.from, to: line.to }, defaultCodeLang);
     }
   } else {
-    result = applyAction(action, doc, { from: sel.from, to: sel.to });
+    result = applyAction(action, doc, { from: sel.from, to: sel.to }, defaultCodeLang);
   }
   if (result.changes.length === 0) return;
   view.dispatch({
@@ -725,11 +747,20 @@ function applyToView(action: ToolbarAction): void {
   view.focus();
 }
 
-/** 宿主 → 引擎格式桥（菜单「格式/段落」调用） */
+/** 宿主 → 引擎格式桥（菜单「格式/段落」调用）。
+ *
+ * `options.defaultCodeLang`：默认代码块语言（Typora `defaultCodeLang`）——
+ * 由宿主按设置下发，引擎**不读** `window.config`（引擎既有分层只经
+ * `window.webModules.config.setX` 调 CoreEditor，不反向读取其配置对象）。
+ */
 export function installFormatApi(): void {
-  (window as unknown as { __MELLOW_FORMAT_API__?: { format: (action: string) => void } }).__MELLOW_FORMAT_API__ = {
-    format: (action: string) => {
-      if (ACTION_IDS.has(action as ToolbarAction)) applyToView(action as ToolbarAction);
+  (window as unknown as {
+    __MELLOW_FORMAT_API__?: { format: (action: string, options?: { defaultCodeLang?: string }) => void };
+  }).__MELLOW_FORMAT_API__ = {
+    format: (action: string, options?: { defaultCodeLang?: string }) => {
+      if (ACTION_IDS.has(action as ToolbarAction)) {
+        applyToView(action as ToolbarAction, options?.defaultCodeLang ?? '');
+      }
     },
   };
 }

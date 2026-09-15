@@ -665,6 +665,43 @@ if (cssLayerAnchor === undefined) {
   } else if (fenceDrift.includes('open: `${fence}${sanitizeCodeLang(defaultLang)}`')) {
     fail('默认代码块语言 canary 失效：注入的漂移未被检出');
   }
+
+  // ── ⑬-b 引擎侧：菜单/快捷键通道（Typora `defaultCodeLangOption` 的 **Menu 位**）──────
+  // Typora 的位掩码 `DefaultCodeLangOptionMenu = 2` 即「当通过菜单栏代码插入代码块」。
+  // Mellow 的菜单/快捷键插入走引擎 `applyCodeBlock`，故语言必须在这条路径也生效 ——
+  // 只做 CoreEditor 的输入通道 = 只实现了 Typora 位掩码的一位（「N 处只做了 1 处」）。
+  const toolbarSource = read('packages/editor-engine/src/selectionToolbar.ts');
+  if (!/export function applyCodeBlock\(doc: string, range: TextRange, defaultLang = ''\)/.test(toolbarSource)) {
+    fail('引擎 applyCodeBlock 未接收默认代码块语言（菜单通道不生效）');
+  }
+  if (!/applyFenceBlock\(doc, range, '```', sanitizeCodeLang\(defaultLang\)\)/.test(toolbarSource)) {
+    fail('applyCodeBlock 未把清洗后的语言传给 applyFenceBlock');
+  }
+  if (!/const open = `\$\{fence\}\$\{openSuffix\}\\n`/.test(toolbarSource)) {
+    fail('applyFenceBlock 的开围栏未拼接 openSuffix（语言不会生效）');
+  }
+  if (!/case 'codeBlock': return applyCodeBlock\(doc, range, defaultCodeLang\)/.test(toolbarSource)) {
+    fail("applyAction 未把 defaultCodeLang 传给 codeBlock 分支");
+  }
+  if (!/options\?\.defaultCodeLang \?\? ''/.test(toolbarSource)) {
+    fail('installFormatApi 未接收/传递 options.defaultCodeLang');
+  }
+  if (!/action === 'codeBlock'[\s\S]{0,260}?format\(action, \{ defaultCodeLang/.test(appSource)) {
+    fail('App.engineFormat 未在 codeBlock 时下发默认语言（引擎不读 window.config，必须宿主传入）');
+  }
+  // ⚠️ 交叉比对：两个 sanitizer 必须同规则（CoreEditor 与引擎各一份，不做跨包 import）
+  const ruleOf = (source) => {
+    const m = /replace\(\/\[([^\]]+)\]\+?\/g, ''\)\.slice\(0, (\d+)\)/.exec(source)
+      ?? /replace\(\/\[([^\]]+)\]\+?\/g, ''\)/.exec(source);
+    return m === null ? null : `${m[1]}|${m[2] ?? ''}`;
+  };
+  const coreRule = ruleOf(insertSource);
+  const engineRule = ruleOf(toolbarSource);
+  if (coreRule === null || engineRule === null) {
+    fail('未能解析 sanitizeCodeLang 的清洗规则（交叉比对失效）');
+  } else if (coreRule !== engineRule) {
+    fail(`两处 sanitizeCodeLang 规则漂移：CoreEditor=${coreRule} / engine=${engineRule}（必须同规则）`);
+  }
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────

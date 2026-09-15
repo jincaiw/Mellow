@@ -419,11 +419,23 @@ export default function App() {
     window.addEventListener('resize', updateSidebarWidthGate);
     return () => window.removeEventListener('resize', updateSidebarWidthGate);
   }, []);
-  /** 引擎格式/段落命令桥（菜单 → iframe __MELLOW_FORMAT_API__） */
+  /** 引擎格式/段落命令桥（菜单 → iframe __MELLOW_FORMAT_API__）
+   *
+   * `codeBlock` 额外下发**默认代码块语言**（Typora `defaultCodeLang` + `defaultCodeLangOption`
+   * 的 Menu 位）：引擎不读 `window.config`，语言一律由宿主按设置传入（单一真值 = Settings Store）。
+   */
   const engineFormat = useCallback((action: string) => {
     const frame = containerRef.current?.querySelector('iframe');
-    const win = frame?.contentWindow as (Window & { __MELLOW_FORMAT_API__?: { format: (a: string) => void } }) | null;
-    win?.__MELLOW_FORMAT_API__?.format(action);
+    const win = frame?.contentWindow as (Window & {
+      __MELLOW_FORMAT_API__?: { format: (a: string, o?: { defaultCodeLang?: string }) => void };
+    }) | null;
+    if (action === 'codeBlock') {
+      const def = settingById('markdown.defaultCodeLang');
+      const lang = def ? readSetting(def) : '';
+      win?.__MELLOW_FORMAT_API__?.format(action, { defaultCodeLang: typeof lang === 'string' ? lang : '' });
+    } else {
+      win?.__MELLOW_FORMAT_API__?.format(action);
+    }
     hostRef.current?.focus();
   }, []);
   /** 引擎源码模式桥（PRD §30：Cmd/Ctrl+/ 切换；菜单/CLI → iframe __MELLOW_SOURCE_API__） */

@@ -90,6 +90,43 @@ async function main() {
     await setCodeLang('');
     await sleep(150);
     check('bridge 下发空串：回落不添加语言', (await readConfig()) === '', JSON.stringify(await readConfig()));
+
+    // ── 菜单/快捷键通道（Typora `defaultCodeLangOption` 的 Menu 位 = 2）──────────
+    // 经命令注册表派发 `format.codeBlock`，走完整链：
+    //   Settings Store → App.engineFormat（读设置）→ iframe __MELLOW_FORMAT_API__ → 引擎 applyCodeBlock
+    // 这条路径是**直接 dispatch**（非 CM6 默认插入），故在 harness 中可靠可验。
+    const setDocCaretOnLine = () => frame.evaluate(() => {
+      const view = window.editor?.dispatch ? window.editor : window.editor?.view;
+      if (!view) throw new Error('editor view unavailable');
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: 'abc' }, selection: { anchor: 1 } });
+    });
+    const docText = () => frame.evaluate(() => {
+      const view = window.editor?.dispatch ? window.editor : window.editor?.view;
+      return view.state.doc.toString();
+    });
+    const dispatchCodeBlock = () => page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('format.codeBlock'));
+
+    const commandReady = await page.evaluate(() => typeof window.__MELLOW_COMMANDS__?.dispatch === 'function');
+    check('命令注册表可派发（__MELLOW_COMMANDS__）', commandReady, String(commandReady));
+    if (commandReady) {
+      await page.evaluate(() => localStorage.setItem('mellow.editor.defaultCodeLang', 'js'));
+      await setDocCaretOnLine();
+      await sleep(150);
+      await dispatchCodeBlock();
+      await sleep(350);
+      const withLang = await docText();
+      check('菜单通道（设置 js）：开围栏带语言', withLang.startsWith('```js'), JSON.stringify(withLang));
+      check('菜单通道（设置 js）：闭围栏仍是裸围栏', withLang.trimEnd().endsWith('```') && !withLang.trimEnd().endsWith('```js'), JSON.stringify(withLang));
+
+      await page.evaluate(() => localStorage.setItem('mellow.editor.defaultCodeLang', ''));
+      await setDocCaretOnLine();
+      await sleep(150);
+      await dispatchCodeBlock();
+      await sleep(350);
+      const noLang = await docText();
+      check('菜单通道（设置为空）：开围栏不带语言', /^```\n/.test(noLang), JSON.stringify(noLang));
+      await page.evaluate(() => localStorage.removeItem('mellow.editor.defaultCodeLang'));
+    }
   } finally {
     await browser.close();
     vite.kill('SIGTERM');
