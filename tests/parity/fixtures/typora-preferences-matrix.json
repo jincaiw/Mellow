@@ -1,55 +1,65 @@
 {
   "source": "Typora 1.14.9 (7785) — TypeMark/appsrc/window/frame.js 的 DEFAULT_OPTIONS",
-  "note": "status: implemented（Mellow 已实装，mellow 列出设置 id）/ gap（已登记缺口，note 写理由与 G7 编号）/ not-applicable（Typora 内部状态或 Mellow 架构不适用）。由 audit-typora-preferences.mjs 校验完备性。",
+  "note": "status: implemented（Mellow 已实装，mellow 列出设置 id）/ gap（已登记缺口，note 写理由与 G7 编号）/ not-applicable（Typora 内部状态或 Mellow 架构不适用）。由 audit-typora-preferences.mjs 校验完备性。 第三层 behavior（仅 gap 条目）：matches-default（无该选项但行为与 Typora 默认一致，无害）/ differs（行为不同 = 真缺陷）/ unverified（待核实，即工作清单）。",
   "entries": [
     {
       "typora": "allowImageMove",
       "default": true,
       "status": "gap",
       "mellow": [],
-      "note": "图片拖动移动的开关未作为设置暴露"
+      "note": "图片拖动移动的开关未作为设置暴露",
+      "behavior": "unverified"
     },
     {
       "typora": "allowImageUpload",
       "default": true,
       "status": "gap",
       "mellow": [],
-      "note": "图片自动上传的开关未作为设置暴露（Mellow 经 image.uploadService 装配即启用）"
+      "note": "图片自动上传的开关未作为设置暴露（Mellow 经 image.uploadService 装配即启用）",
+      "behavior": "unverified"
     },
     {
       "typora": "applyImageMoveForLocal",
       "default": true,
       "status": "gap",
       "mellow": [],
-      "note": "本地图片移动应用范围未作为设置暴露"
+      "note": "本地图片移动应用范围未作为设置暴露",
+      "behavior": "unverified"
     },
     {
       "typora": "applyImageMoveForWeb",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "网络图片移动应用范围未作为设置暴露"
+      "note": "网络图片移动应用范围未作为设置暴露",
+      "behavior": "unverified"
     },
     {
       "typora": "autoCorrectMisspell",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "自动纠正拼写未实装（Mellow 只有拼写检查 editor.spellcheck，非自动纠正）"
+      "note": "自动纠正拼写未实装（Mellow 只有拼写检查 editor.spellcheck，非自动纠正）",
+      "behavior": "matches-default",
+      "behaviorNote": "Mellow 无自动纠正拼写能力，与 Typora 默认 false（不自动纠正）一致"
     },
     {
       "typora": "autoEscapeImageURL",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "Mellow 恒做 %XX 转义（空格 / 括号 / [] / # / %）；Typora 默认不转义（可读性优先）。差异登记：Mellow 取互操作性"
+      "note": "Mellow 恒做 %XX 转义（空格 / 括号 / [] / # / %）；Typora 默认不转义（可读性优先）。差异登记：Mellow 取互操作性",
+      "behavior": "differs",
+      "behaviorNote": "实测（G7-QA-05 前一轮）：Mellow 恒做 %XX 转义；Typora 默认不转义 → 行为不同（Mellow 取互操作性）"
     },
     {
       "typora": "autoNumberingForMath",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "公式自动编号未实装"
+      "note": "公式自动编号未实装",
+      "behavior": "matches-default",
+      "behaviorNote": "Mellow 无公式自动编号，与 Typora 默认 false 一致"
     },
     {
       "typora": "autoPairExtendSymbol",
@@ -97,14 +107,16 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "「转换时应用智能标点」未实装"
+      "note": "「转换时应用智能标点」未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "copyMarkdownByDefault",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "默认复制行为（复制为 Markdown 源码）未实装"
+      "note": "默认复制行为（复制为 Markdown 源码）未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "defaultCodeLang",
@@ -145,14 +157,17 @@
       "default": "md",
       "status": "gap",
       "mellow": [],
-      "note": "新建文件默认扩展名未作为设置暴露（Mellow 固定 md）"
+      "note": "新建文件默认扩展名未作为设置暴露（Mellow 固定 md）",
+      "behavior": "matches-default",
+      "behaviorNote": "Mellow 新建文档固定 .md，与 Typora 默认 `md` 一致"
     },
     {
       "typora": "defaultImageStorage",
       "default": null,
       "status": "gap",
       "mellow": [],
-      "note": "默认图床/存储位置未实装（Mellow 经 image.uploadService 配置上传，无「默认存储」概念）"
+      "note": "默认图床/存储位置未实装（Mellow 经 image.uploadService 配置上传，无「默认存储」概念）",
+      "behavior": "unverified"
     },
     {
       "typora": "enableAlert",
@@ -242,56 +257,67 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "「展开简单块」未实装"
+      "note": "「展开简单块」未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "fileSearchCaseSensitive",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "文件搜索的大小写选项未持久化"
+      "note": "文件搜索的大小写选项未持久化",
+      "behavior": "unverified"
     },
     {
       "typora": "fileSearchWholeWord",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "文件搜索的全词选项未持久化"
+      "note": "文件搜索的全词选项未持久化",
+      "behavior": "unverified"
     },
     {
       "typora": "gitlabMath",
       "default": true,
       "status": "gap",
       "mellow": [],
-      "note": "GitLab 数学语法兼容未实装"
+      "note": "GitLab 数学语法兼容未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "headingStyle",
       "default": 0,
       "status": "gap",
       "mellow": [],
-      "note": "标题样式（ATX / Setext）选择未实装（Mellow 固定 ATX）"
+      "note": "标题样式（ATX / Setext）选择未实装（Mellow 固定 ATX）",
+      "behavior": "matches-default",
+      "behaviorNote": "实测（探针）：标题命令写 `# x`（ATX），与 Typora `headingStyle: 0` 一致"
     },
     {
       "typora": "hideBrAndLineBreak",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "「显示 <br/>」的**隐藏**方向未实装 —— 默认态已一致（Typora 默认可见、Mellow 亦显示）；隐藏需行内标记隐藏能力，与已登记原则「marker reveal 从不 replace 文本」冲突（G7-EDIT-15）"
+      "note": "「显示 <br/>」的**隐藏**方向未实装 —— 默认态已一致（Typora 默认可见、Mellow 亦显示）；隐藏需行内标记隐藏能力，与已登记原则「marker reveal 从不 replace 文本」冲突（G7-EDIT-15）",
+      "behavior": "matches-default",
+      "behaviorNote": "实测（探针，G7-EDIT-15）：Mellow 显示 `<br>` 原文，与 Typora 默认 hideBrAndLineBreak=false（可见）一致"
     },
     {
       "typora": "htmlMath",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "HTML 数学输出未实装"
+      "note": "HTML 数学输出未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "ignoreLineBreak",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "「保留单换行符」的**开关**未实装 —— 行为已对齐（G7-EDIT-14，恒保留 = Typora 默认）；Typora 该开关作用于编辑区（移除 .md-softbreak span），Mellow 为 CM6 行式渲染无法合并两行"
+      "note": "「保留单换行符」的**开关**未实装 —— 行为已对齐（G7-EDIT-14，恒保留 = Typora 默认）；Typora 该开关作用于编辑区（移除 .md-softbreak span），Mellow 为 CM6 行式渲染无法合并两行",
+      "behavior": "matches-default",
+      "behaviorNote": "行为已对齐（G7-EDIT-14）：Mellow 恒保留段内单换行 = Typora 默认 ignoreLineBreak=false"
     },
     {
       "typora": "indentByTab",
@@ -336,70 +362,83 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "旧版行内数学解析兼容未实装"
+      "note": "旧版行内数学解析兼容未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "libraryFileFilterMode",
       "default": "supported",
       "status": "gap",
       "mellow": [],
-      "note": "「文件库」功能 Mellow 无对应实现"
+      "note": "「文件库」功能 Mellow 无对应实现",
+      "behavior": "unverified"
     },
     {
       "typora": "libraryFileFilterPatterns",
       "default": "[]",
       "status": "gap",
       "mellow": [],
-      "note": "同上"
+      "note": "同上",
+      "behavior": "unverified"
     },
     {
       "typora": "lineWiseCopyCut",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "未选中时复制/剪切整行未实装（Typora 默认关闭）"
+      "note": "未选中时复制/剪切整行未实装（Typora 默认关闭）",
+      "behavior": "unverified"
     },
     {
       "typora": "listNoGroup",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "列表不分组显示未实装（侧栏）"
+      "note": "列表不分组显示未实装（侧栏）",
+      "behavior": "unverified"
     },
     {
       "typora": "mathFormatOnCopy",
       "default": "svg",
       "status": "gap",
       "mellow": [],
-      "note": "复制公式的格式（SVG / LaTeX）未作为设置暴露"
+      "note": "复制公式的格式（SVG / LaTeX）未作为设置暴露",
+      "behavior": "unverified"
     },
     {
       "typora": "monocolorEmoji",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "单色 Emoji 未实装"
+      "note": "单色 Emoji 未实装",
+      "behavior": "matches-default",
+      "behaviorNote": "Mellow 显示彩色 Emoji，与 Typora 默认 false（单色关）一致"
     },
     {
       "typora": "noAutoLink",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "「不自动识别链接」未实装"
+      "note": "「不自动识别链接」未实装",
+      "behavior": "matches-default",
+      "behaviorNote": "实测（探针）：裸 URL 自动成链（DOM 含 `cm-md-link` + `cm-md-url`），与 Typora 默认 noAutoLink=false 一致"
     },
     {
       "typora": "noEmojiAutoComplete",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "「表情自动补全」开关未分离（Mellow 只有 markdown.emoji 总开关）"
+      "note": "「表情自动补全」开关未分离（Mellow 只有 markdown.emoji 总开关）",
+      "behavior": "matches-default",
+      "behaviorNote": "Mellow 提供表情补全（engine `emoji.ts`），与 Typora 默认 false（补全开）一致"
     },
     {
       "typora": "noLegacyMath",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "旧版数学语法兼容开关未实装"
+      "note": "旧版数学语法兼容开关未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "noLineWrapping",
@@ -426,14 +465,17 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "未保存草稿备份开关未实装"
+      "note": "未保存草稿备份开关未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "olStyle",
       "default": 0,
       "status": "gap",
       "mellow": [],
-      "note": "有序列表样式（1. / 1) ）选择未实装"
+      "note": "有序列表样式（1. / 1) ）选择未实装",
+      "behavior": "matches-default",
+      "behaviorNote": "实测（探针）：有序列表命令写 `1. x`，与 Typora `olStyle: 0` 一致"
     },
     {
       "typora": "preferCRLF",
@@ -465,28 +507,32 @@
       "default": "auto",
       "status": "gap",
       "mellow": [],
-      "note": "预置拼写检查（词典/语言）未实装 —— 依赖 host-api 的拼写词典能力（P0-EDITOR-005）"
+      "note": "预置拼写检查（词典/语言）未实装 —— 依赖 host-api 的拼写词典能力（P0-EDITOR-005）",
+      "behavior": "unverified"
     },
     {
       "typora": "prettyIndent",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "列表续行对齐缩进未实装"
+      "note": "列表续行对齐缩进未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "remapUnicodePunctuation",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "Unicode 标点重映射未实装"
+      "note": "Unicode 标点重映射未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "scrollWithCursor",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "「跟随光标滚动」未实装（Mellow 有打字机模式 editor.typewriter，语义不同）"
+      "note": "「跟随光标滚动」未实装（Mellow 有打字机模式 editor.typewriter，语义不同）",
+      "behavior": "unverified"
     },
     {
       "typora": "sendAnonymousUsage",
@@ -542,7 +588,8 @@
       "default": null,
       "status": "gap",
       "mellow": [],
-      "note": "侧栏宽度可拖拽（D-AD 有意 480 上限），但未作为设置项持久化；Typora 以 sidebarWidth 记录"
+      "note": "侧栏宽度可拖拽（D-AD 有意 480 上限），但未作为设置项持久化；Typora 以 sidebarWidth 记录",
+      "behavior": "unverified"
     },
     {
       "typora": "smartDash",
@@ -567,28 +614,33 @@
       "default": 0,
       "status": "gap",
       "mellow": [],
-      "note": "侧栏排序方式未作为设置暴露"
+      "note": "侧栏排序方式未作为设置暴露",
+      "behavior": "unverified"
     },
     {
       "typora": "spellcheckForCodeAndLink",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "代码与链接内拼写检查开关未实装"
+      "note": "代码与链接内拼写检查开关未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "strictMarkdown",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "严格模式未实装"
+      "note": "严格模式未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "strictNumberStartOnNewLine",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "行首数字不触发有序列表的严格规则未实装"
+      "note": "行首数字不触发有序列表的严格规则未实装",
+      "behavior": "matches-default",
+      "behaviorNote": "实测（探针）：`2024. hello` 的 `2024.` 被识别为 `cm-md-listMark`（宽松），与 Typora 默认 false 一致"
     },
     {
       "typora": "treeFileFilterMode",
@@ -620,14 +672,17 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "文件树不分组显示未实装"
+      "note": "文件树不分组显示未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "ulStyle",
       "default": 0,
       "status": "gap",
       "mellow": [],
-      "note": "无序列表符号（- / * / +）选择未实装"
+      "note": "无序列表符号（- / * / +）选择未实装",
+      "behavior": "matches-default",
+      "behaviorNote": "实测（探针）：Mellow 列表命令写 `- x`，与 Typora `ulStyle: 0` 一致"
     },
     {
       "typora": "useFsQueue",
@@ -641,21 +696,25 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "Mellow 恒写**相对**路径；Typora 默认写**绝对**路径（useRelativePathForImg=false）。差异登记：Mellow 取可移植性"
+      "note": "Mellow 恒写**相对**路径；Typora 默认写**绝对**路径（useRelativePathForImg=false）。差异登记：Mellow 取可移植性",
+      "behavior": "differs",
+      "behaviorNote": "实测（G7-QA-05 前一轮）：Mellow 恒写**相对**路径；Typora 默认写**绝对**路径 → 行为不同（Mellow 取可移植性）"
     },
     {
       "typora": "userQuotesArray",
       "default": null,
       "status": "gap",
       "mellow": [],
-      "note": "自定义引号对未实装"
+      "note": "自定义引号对未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "useTreeStyle",
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "文件树样式（树形 / 平铺）未实装"
+      "note": "文件树样式（树形 / 平铺）未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "wholeWord",
@@ -669,14 +728,16 @@
       "default": 0,
       "status": "gap",
       "mellow": [],
-      "note": "字数统计分隔符设置未实装"
+      "note": "字数统计分隔符设置未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "wordsPerMinute",
       "default": 382,
       "status": "gap",
       "mellow": [],
-      "note": "阅读速度估算（用于显示阅读时长）未实装"
+      "note": "阅读速度估算（用于显示阅读时长）未实装",
+      "behavior": "unverified"
     },
     {
       "typora": "zoomByMouse",

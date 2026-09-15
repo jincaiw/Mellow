@@ -760,6 +760,16 @@ if (cssLayerAnchor === undefined) {
         badMeta.push(`${e.typora}(comparable:false 未写明原因)`);
       }
       if (e.polarity !== undefined && e.polarity !== 'inverted') badMeta.push(`${e.typora}(polarity=${e.polarity})`);
+      // 第三层：gap 条目必须标注行为判定（matches-default / differs / unverified）
+      if (e.status === 'gap' && !['matches-default', 'differs', 'unverified'].includes(e.behavior)) {
+        badMeta.push(`${e.typora}(gap 缺 behavior=${e.behavior})`);
+      }
+      if (e.behavior === 'differs' && (typeof e.behaviorNote !== 'string' || e.behaviorNote.trim() === '')) {
+        badMeta.push(`${e.typora}(behavior=differs 未写明证据)`);
+      }
+      if (e.behavior !== undefined && e.status !== 'gap') {
+        badMeta.push(`${e.typora}(非 gap 条目不应带 behavior)`);
+      }
     }
     if (badMeta.length > 0) fail(`偏好项矩阵元数据不完整（${badMeta.length}）：${badMeta.join(', ')}`);
     if (!entries.some((e) => e.deviation !== undefined)) {

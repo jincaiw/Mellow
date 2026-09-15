@@ -210,4 +210,14 @@ if (deviations.length > 0) {
   console.log(`\n已登记默认值偏离 ${deviations.length} 项：`);
   for (const d of deviations) console.log(`  · ${d}`);
 }
+const gaps = entries.filter((e) => e.status === 'gap');
+const differs = gaps.filter((e) => e.behavior === 'differs');
+const unverified = gaps.filter((e) => e.behavior !== 'differs' && e.behavior !== 'matches-default');
+if (differs.length > 0) {
+  console.log(`\n⚠️ gap 中【行为偏离 Typora 默认】${differs.length} 项（真缺陷，优先级高于「选项缺失」）：`);
+  for (const e of differs) console.log(`  · ${e.typora} — ${e.behaviorNote ?? '(无说明)'}`);
+}
+if (unverified.length > 0) {
+  console.log(`\n未核实行为（工作清单，${unverified.length} 项）：${unverified.map((e) => e.typora).join(', ')}`);
+}
 console.log('\n✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记（implemented / gap / not-applicable）');
