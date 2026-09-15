@@ -404,8 +404,19 @@ if (cssLayerAnchor === undefined) {
   if (!/window\.config\.autoMarkdownSyntaxPairs === true/.test(inputSource)) {
     fail('modules/input 未读取 autoMarkdownSyntaxPairs（第二个开关不会影响实际输入辅助）');
   }
-  if (/autoCharacterPairs && marksToWrap/.test(inputSource) || /autoCharacterPairs && insert === '`'/.test(inputSource)) {
-    fail('Markdown 字符辅助仍复用 autoCharacterPairs：两个 Typora 开关未真正拆分');
+  // 选区包裹必须走第二个开关（否则两个 Typora 开关只是名义拆分）
+  if (/autoCharacterPairs && marksToWrap/.test(inputSource)) {
+    fail('选区包裹仍复用 autoCharacterPairs：两个 Typora 开关未真正拆分');
+  }
+  // ⚠️ 反向断言（2026-09-15 修正）：**围栏展开必须挂 autoCharacterPairs，不得挂 autoMarkdownSyntaxPairs**。
+  // 起因：拆分时曾把 `insert === '`'` 一并挪到默认关闭的新开关下 → **输入 ``` 不再展开代码块**
+  // （默认行为回归），而当时无任何测试覆盖。一手证据（main.js 的 autoPairExtendSymbol 全部 5 处命中点）
+  // 表明该偏好**不含**围栏展开。故此处锁「必须挂在 autoCharacterPairs（默认 true）下」。
+  if (!/if \(autoCharacterPairs && insert === '`'\)/.test(inputSource)) {
+    fail("围栏展开（insert === '`'）必须挂在 autoCharacterPairs 下 —— 挂到默认关闭的 autoMarkdownSyntaxPairs 会让「输入 ``` 展开代码块」默认失效（曾发生）");
+  }
+  if (/autoMarkdownSyntaxPairs && insert === '`'/.test(inputSource)) {
+    fail("围栏展开不得挂 autoMarkdownSyntaxPairs（Typora 的 autoPairExtendSymbol 不含围栏展开，且该开关默认关闭）");
   }
   const driftedExt = coreEditorExtensions.replace(
     'autoPairCompartment.of(autoPairExtensions())',
@@ -598,6 +609,61 @@ if (cssLayerAnchor === undefined) {
     fail('导出保留换行 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
   } else if ((preserveDrift.match(/preserveLineBreaks: readBoolSetting/g) ?? []).length !== 0) {
     fail('导出保留换行 canary 失效：注入的漂移未被检出');
+  }
+}
+
+// ── ⑬ 「默认代码块语言」的端到端接线（V7-W6，G7-EDIT-16）────────────────────
+//
+// Typora 真值（一手证据 window/frame.js DEFAULT_OPTIONS + main.js）：`defaultCodeLang` 默认**空串**；
+// `defaultCodeLangOption` 是**位掩码**（`DefaultCodeLangOptionCode = 1` / `...Menu = 2`），
+// 默认值 **1** = 只在「输入 Markdown 反引号」通道生效。另支持特殊值 `__LAST`（用上次用过的语言）。
+{
+  const insertSource = read('packages/editor-core/CoreEditor/src/modules/input/insertCodeBlock.ts');
+
+  if (!/id: 'markdown\.defaultCodeLang'.*type: 'text'.*defaultValue: ''.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
+    fail("settings 缺少 markdown.defaultCodeLang（或类型/默认值/applyCommand 不符）：Typora defaultCodeLang 默认空串");
+  }
+  if (!/def\.id === 'markdown\.defaultCodeLang'\) host\?\.setEditorConfig\('setDefaultCodeLang', \{ lang: String\(value\) \}\)/.test(appSource)) {
+    fail("App.tsx 缺少 defaultCodeLang 的 live apply（setEditorConfig('setDefaultCodeLang')）");
+  }
+  if (!/settingById\('markdown\.defaultCodeLang'\)[\s\S]{0,300}?setEditorConfig\('setDefaultCodeLang', \{ lang: defaultCodeLang \}\)/.test(appSource)) {
+    fail('App.tsx 缺少 defaultCodeLang 的启动恢复下发');
+  }
+  if (!/'setDefaultCodeLang'/.test(coreSource)) {
+    fail("editor-core wrapper 白名单缺少 'setDefaultCodeLang'");
+  }
+  // 语言必须只加在**开**围栏：codeBlockFences() 返回 open（带语言）/ close（裸）
+  if (!/export function codeBlockFences\(defaultLang: string \| undefined\): \{ open: string; close: string \}/.test(insertSource)) {
+    fail('insertCodeBlock 缺少 codeBlockFences 纯函数（单测与护栏的锚点）');
+  }
+  if (!insertSource.includes('open: `${fence}${sanitizeCodeLang(defaultLang)}`')) {
+    fail('codeBlockFences 的开围栏未拼接默认语言');
+  }
+  if (!insertSource.includes('close: fence')) {
+    fail('codeBlockFences 的闭围栏被改动 —— 闭围栏**必须**是裸围栏（`` ```js … ```js `` 是错的）');
+  }
+  if (!insertSource.includes('${openFence}#{}')) {
+    fail('insertCodeBlock 的开围栏未使用 openFence（默认语言不会生效）');
+  }
+  if (!insertSource.includes('${lineBreak}${closeFence}${trailing}')) {
+    fail('insertCodeBlock 的闭围栏未使用 closeFence');
+  }
+  // 用户设置值必须清洗：反引号/换行/空白会破坏围栏语法（属「输入即写坏文档」）
+  if (!insertSource.includes("/[`\\r\\n\\t\\s]+/g, ''")) {
+    fail('sanitizeCodeLang 未清洗反引号与空白 —— 用户填错值会破坏围栏语法');
+  }
+  if (!insertSource.includes('.slice(0, 32)')) {
+    fail('sanitizeCodeLang 未限制长度（超长 info string 会挤坏版面）');
+  }
+  // 纯函数单测必须存在（该行为在 harness 中无法用合成按键走通，见文件头注释）
+  if (!/codeBlockFences/.test(read('packages/editor-core/CoreEditor/test/codeBlockFence.test.ts'))) {
+    fail('缺少 codeBlockFences 单测（浏览器 harness 无法覆盖该路径，单测是唯一行为锁定）');
+  }
+  const fenceDrift = insertSource.replace('open: `${fence}${sanitizeCodeLang(defaultLang)}`', 'open: `${fence}`');
+  if (fenceDrift === insertSource) {
+    fail('默认代码块语言 canary 未武装：注入点未命中');
+  } else if (fenceDrift.includes('open: `${fence}${sanitizeCodeLang(defaultLang)}`')) {
+    fail('默认代码块语言 canary 失效：注入的漂移未被检出');
   }
 }
 

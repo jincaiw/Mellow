@@ -96,18 +96,26 @@ export function interceptInputs() {
   const marksToWrap = ['*', '_', '~', '$'];
 
   return EditorView.inputHandler.of((editor, from, to, insert) => {
-    // Markdown 字符辅助（Typora `autoPairExtendSymbol`，默认 false）控制选区包裹与反引号代码块快捷插入。
+    // 合成结束后才启用：某些语言里这些字符是标记文本的一部分，如输入 '`' 再输入 'a' 得到 'à'。
+    const composing = isComposing();
+    // 括号/引号配对开关（同时作为「关闭一切自动插入」的保守开关，见下方围栏展开）
+    const autoCharacterPairs = window.config.autoCharacterPairs === true && !composing;
+    // Markdown 字符辅助（Typora `autoPairExtendSymbol`，默认 false）控制**选区包裹**。
     // 与括号/引号配对（`autoCharacterPairs`，由 CM6 closeBrackets 扩展消费）是**两个独立开关**，不得互相复用。
-    // 同样只在合成结束后启用：某些语言里这些字符是标记文本的一部分，如输入 '`' 再输入 'a' 得到 'à'。
-    const autoMarkdownSyntaxPairs = window.config.autoMarkdownSyntaxPairs === true && !isComposing();
+    const autoMarkdownSyntaxPairs = window.config.autoMarkdownSyntaxPairs === true && !composing;
 
     // E.g., wrap "selection" as "*selection*"
     if (autoMarkdownSyntaxPairs && marksToWrap.includes(insert)) {
       return wrapBlock(insert, editor);
     }
 
-    // Insert triple backticks to create a code block
-    if (autoMarkdownSyntaxPairs && insert === '`') {
+    // 输入反引号展开代码块。⚠️ **不得**挂在 autoMarkdownSyntaxPairs 下 ——
+    // 一手证据（main.js 的 autoPairExtendSymbol 全部 5 处命中点已逐条核对）：该偏好只作用于
+    // 「成对符号插入 / 删除配对起点 / 列表标记」三类分支，**不含围栏展开**；
+    // 而 Typora 的围栏展开是**无条件**的。Mellow 沿用 `autoCharacterPairs`（默认 true）
+    // 作为「关闭一切自动插入」的保守开关，与拆分前行为一致；Typora 侧的无条件语义属有意收窄，
+    // 见方案 G7-EDIT-16。
+    if (autoCharacterPairs && insert === '`') {
       return insertCodeBlock(editor);
     }
 

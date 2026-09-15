@@ -175,6 +175,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'markdown.html', labelKey: 'settings.markdown.html', type: 'toggle', storageKey: 'mellow.engine.features.html', defaultValue: true, applyCommand: 'settings.engineFeature' },
       // 代码块行号（Typora 偏好→Markdown；live apply，无需重载编辑器）
       { id: 'markdown.codeLineNumbers', labelKey: 'settings.markdown.codeLineNumbers', type: 'toggle', storageKey: 'mellow.editor.codeLineNumbers', defaultValue: false, applyCommand: 'settings.codeLineNumbers' },
+      // V7-W6（G7-EDIT-16）：Typora「默认的代码块语言」（配置键 `defaultCodeLang`，默认**空串** = 不自动添加）。
+      // 生效通道 = Typora `defaultCodeLangOption` 位掩码的 **Code 位**（值 1，即 Typora 默认）：
+      // 只在**输入 Markdown 反引号**展开代码块时套用（菜单插入通道对应 Menu 位 = 2，未实装，见方案）。
+      { id: 'markdown.defaultCodeLang', labelKey: 'settings.markdown.defaultCodeLang', type: 'text', storageKey: 'mellow.editor.defaultCodeLang', defaultValue: '', applyCommand: 'settings.editorConfig', descriptionKey: 'settings.markdown.defaultCodeLangDesc' },
       { id: 'markdown.yaml', labelKey: 'settings.markdown.yaml', type: 'toggle', storageKey: 'mellow.engine.features.yaml', defaultValue: true, applyCommand: 'settings.engineFeature' },
     ],
   },

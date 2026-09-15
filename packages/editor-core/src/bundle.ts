@@ -44,6 +44,8 @@ export const DEFAULT_CONFIG: EditorConfig = {
   // Typora `autoPairExtendSymbol` /「匹配 Markdown 字符」默认 false：
   // 与括号/引号自动配对是独立开关。
   autoMarkdownSyntaxPairs: false,
+  // Typora `defaultCodeLang` 默认空串（= 不自动添加语言）。
+  defaultCodeLang: '',
   indentBehavior: 'paragraph',
   standardDirectories: {},
   localizable: {

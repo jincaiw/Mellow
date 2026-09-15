@@ -21,6 +21,7 @@ import {
   setSuggestWhileTyping,
   setAutoPair,
   setMarkdownSyntaxPairs,
+  setDefaultCodeLang,
   setFirstLineIndent,
 } from '../../modules/config';
 
@@ -48,6 +49,7 @@ export interface WebModuleConfig extends WebModule {
   setSuggestWhileTyping({ enabled }: { enabled: boolean }): void;
   setAutoPair({ enabled }: { enabled: boolean }): void;
   setMarkdownSyntaxPairs({ enabled }: { enabled: boolean }): void;
+  setDefaultCodeLang({ lang }: { lang: string }): void;
   setFirstLineIndent({ enabled }: { enabled: boolean }): void;
 }
 
@@ -122,6 +124,10 @@ export class WebModuleConfigImpl implements WebModuleConfig {
 
   setMarkdownSyntaxPairs({ enabled }: { enabled: boolean }): void {
     setMarkdownSyntaxPairs(enabled);
+  }
+
+  setDefaultCodeLang({ lang }: { lang: string }): void {
+    setDefaultCodeLang(lang);
   }
 
   setFirstLineIndent({ enabled }: { enabled: boolean }): void {

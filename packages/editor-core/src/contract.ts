@@ -39,6 +39,8 @@ export interface EditorConfig {
   autoCharacterPairs: boolean;
   /** Typora autoPairExtendSymbol / Markdown 字符辅助，默认 false。 */
   autoMarkdownSyntaxPairs?: boolean;
+  /** Typora defaultCodeLang / 默认代码块语言，默认空串（不自动添加）。 */
+  defaultCodeLang?: string;
   indentBehavior: 'never' | 'paragraph' | 'line';
   standardDirectories: Record<string, string>;
   localizable?: Record<string, string>;

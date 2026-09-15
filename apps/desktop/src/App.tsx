@@ -3398,6 +3398,12 @@ export default function App() {
           // 无条件 apply（读不到设置时回落 2 空格 = Typora 默认；此前落到引擎默认 insertTab = 裸制表符）。
           const tabBehaviorDef = settingById('editor.tabBehavior');
           host.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(tabBehaviorDef ? readSetting(tabBehaviorDef) : 'twoSpaces') });
+          // V7-W6（G7-EDIT-16）默认代码块语言启动恢复（Typora `defaultCodeLang` 默认空串）。
+          const defaultCodeLangDef = settingById('markdown.defaultCodeLang');
+          const defaultCodeLang = defaultCodeLangDef ? readSetting(defaultCodeLangDef) : '';
+          if (typeof defaultCodeLang === 'string' && defaultCodeLang !== '') {
+            host.setEditorConfig('setDefaultCodeLang', { lang: defaultCodeLang });
+          }
           // V7-W6（G7-EDIT-15）首行缩进启动恢复（Typora indentFirstLine 默认 false）。
           const firstLineDef = settingById('editor.firstLineIndent');
           if (firstLineDef && readSetting(firstLineDef) === true) {
@@ -4330,6 +4336,7 @@ export default function App() {
         else if (def.id === 'editor.lineWrapping') host?.setEditorConfig('setLineWrapping', { enabled: Boolean(value) });
         else if (def.id === 'editor.autoPair') host?.setEditorConfig('setAutoPair', { enabled: Boolean(value) });
         else if (def.id === 'editor.markdownSyntaxPairs') host?.setEditorConfig('setMarkdownSyntaxPairs', { enabled: Boolean(value) });
+        else if (def.id === 'markdown.defaultCodeLang') host?.setEditorConfig('setDefaultCodeLang', { lang: String(value) });
         else if (def.id === 'editor.tabBehavior') host?.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(value) });
         else if (def.id === 'editor.firstLineIndent') host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) });
         break;

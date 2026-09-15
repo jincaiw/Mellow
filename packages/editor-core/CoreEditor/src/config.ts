@@ -81,6 +81,14 @@ export interface Config {
   autoCharacterPairs: boolean;
   /** Markdown 字符辅助（Typora `autoPairExtendSymbol`，默认 false）。 */
   autoMarkdownSyntaxPairs?: boolean;
+  /**
+   * 默认代码块语言（Typora `defaultCodeLang`，默认空串 = 不自动添加）。
+   *
+   * 生效通道对应 Typora 的 `defaultCodeLangOption` 位掩码的 **Code 位**（值 1，即 Typora 默认）：
+   * 只在**输入 Markdown 反引号**展开代码块时套用；经菜单插入代码块不套用
+   * （Typora 的 Menu 位为 2，默认未启用 —— Mellow 未实装该位，见方案 G7-EDIT-16）。
+   */
+  defaultCodeLang?: string;
   /** 首行缩进（V7-W6，G7-EDIT-15），默认 false。 */
   firstLineIndent?: boolean;
   indentBehavior: IndentBehavior;

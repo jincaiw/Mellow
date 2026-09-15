@@ -32,7 +32,7 @@ export PATH="$NODE_BIN:$CARGO_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
 
 cd "$DESKTOP"
 
-echo "==> 0/5 渲染层源码新鲜度（CoreEditor/dist 是 gitignore 的构建前置）"
+echo "==> 0/6 渲染层源码新鲜度（CoreEditor/dist 是 gitignore 的构建前置）"
 # 坑：`CoreEditor/dist/index.html` 不入库（见 packages/editor-core/CoreEditor/.gitignore），
 # 由 CI 用 yarn 单独构建并作为 artifact 传递。本地若改了 CoreEditor/src 却忘了重建，
 # 后续步骤会**静默**使用旧包 —— 改了渲染层却「没有任何效果」，且屏幕上看不出原因。
@@ -50,13 +50,36 @@ else
   echo "  ⚠️ CoreEditor/node_modules 缺失，跳过新鲜度检查（若改了渲染层源码，产物将是旧的）"
 fi
 
-echo "==> 1/5 渲染层 bundle"
+echo "==> 1/6 依赖包 dist 新鲜度（wrapper / engine 的 dist 会被 bundle 步骤读取）"
+# 坑（2026-09-15 实测踩到）：`packages/editor-core`（wrapper）与 `packages/editor-engine`
+# 的 `dist/` **由 tsc 单独构建**，本脚本原先**不重建它们** —— 于是「改了 bundle.ts / contract.ts
+# 的 config 字段，构建却静默用旧 dist」，表现是**新设置项在应用里完全不生效**
+# （iframe 的初始 config 里根本没有该字段），而屏幕上看不出原因、CI 也照样绿。
+# 这里按 mtime 判断，源码比 dist 新就自动重建。
+for pkg in editor-core editor-engine; do
+  PKG_DIR="$REPO_ROOT/packages/$pkg"
+  PKG_DIST="$PKG_DIR/dist/index.js"
+  TSCONFIG="$PKG_DIR/tsconfig.build.json"
+  [ -f "$TSCONFIG" ] || TSCONFIG="$PKG_DIR/tsconfig.json"
+  if [ -d "$PKG_DIR/node_modules" ] && [ -f "$TSCONFIG" ]; then
+    if [ ! -f "$PKG_DIST" ] || [ -n "$(find "$PKG_DIR/src" -name '*.ts' -newer "$PKG_DIST" -print -quit)" ]; then
+      echo "  (检测到 $pkg/src 比 dist 新，重建 $pkg dist)"
+      (cd "$PKG_DIR" && ./node_modules/.bin/tsc -p "$(basename "$TSCONFIG")")
+    else
+      echo "  ($pkg/dist 已是最新)"
+    fi
+  else
+    echo "  ⚠️ $pkg 缺少 node_modules 或 tsconfig，跳过（若改了其源码，产物将是旧的）"
+  fi
+done
+
+echo "==> 2/6 渲染层 bundle"
 node scripts/build-editor-bundle.mjs
 
-echo "==> 2/5 类型检查"
+echo "==> 3/6 类型检查"
 ./node_modules/.bin/tsc --noEmit
 
-echo "==> 3/5 前端构建"
+echo "==> 4/6 前端构建"
 # 注意：vite 默认会清空 outDir（`emptyOutDir`），而本环境的 safe-delete 守卫会拦截
 # 批量删除（dist/assets 有 70+ 文件，超过 50 的阈值）：
 #   [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] count=72 threshold=50
@@ -68,7 +91,7 @@ if [ -d dist ]; then
 fi
 ./node_modules/.bin/vite build
 
-echo "==> 4/5 指纹自检"
+echo "==> 5/6 指纹自检"
 node scripts/verify-release-bundle.mjs
 
 echo "==> Rust release + 打包（跳过 beforeBuildCommand，避免走 pnpm）"

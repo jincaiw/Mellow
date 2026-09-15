@@ -119,6 +119,12 @@ export function setMarkdownSyntaxPairs(enabled: boolean) {
   window.config.autoMarkdownSyntaxPairs = enabled;
 }
 
+/** 默认代码块语言（Typora `defaultCodeLang`，默认空串）。
+ * 同样在插入时读取 config，无需 Compartment。 */
+export function setDefaultCodeLang(lang: string) {
+  window.config.defaultCodeLang = lang;
+}
+
 /** 首行缩进开关（V7-W6，G7-EDIT-15）。 */
 export function setFirstLineIndent(enabled: boolean) {
   styling.setFirstLineIndent(enabled);
