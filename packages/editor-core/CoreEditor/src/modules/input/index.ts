@@ -96,11 +96,9 @@ export function interceptInputs() {
   const marksToWrap = ['*', '_', '~', '$'];
 
   return EditorView.inputHandler.of((editor, from, to, insert) => {
-    // Enable auto character pairs only after composition ends,
-    // some characters act as marked text in certain languages, e.g., typing '`' followed by 'a' to input 'à'.
-    const autoCharacterPairs = window.config.autoCharacterPairs && !isComposing();
-    // 独立于括号/引号配对的 Markdown 字符辅助（Typora `autoPairExtendSymbol`，默认 false）。
-    // 它控制选区包裹与反引号代码块快捷插入；不得复用 autoCharacterPairs，否则无法分别对齐两项偏好。
+    // Markdown 字符辅助（Typora `autoPairExtendSymbol`，默认 false）控制选区包裹与反引号代码块快捷插入。
+    // 与括号/引号配对（`autoCharacterPairs`，由 CM6 closeBrackets 扩展消费）是**两个独立开关**，不得互相复用。
+    // 同样只在合成结束后启用：某些语言里这些字符是标记文本的一部分，如输入 '`' 再输入 'a' 得到 'à'。
     const autoMarkdownSyntaxPairs = window.config.autoMarkdownSyntaxPairs === true && !isComposing();
 
     // E.g., wrap "selection" as "*selection*"

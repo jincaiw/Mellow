@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "mellow-desktop"
-version = "1.5.8"
+version = "1.5.9"
 dependencies = [
  "arboard",
  "image",

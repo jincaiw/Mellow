@@ -534,7 +534,9 @@ if (cssLayerAnchor === undefined) {
   if (!/text-indent: 2em/.test(indentSource)) {
     fail('CoreEditor 首行缩进缺少 2em text-indent（Typora indentFirstLine 的默认视觉语义）');
   }
-  if (!/firstLineIndentCompartment\.of\(window\.config\.firstLineIndent \? firstLineIndentExtension\(\) : \[\]\)/.test(coreEditorExtensions)) {
+  // 注意：`=== true` 不可省 —— `firstLineIndent?: boolean` 是可空布尔，
+  // CoreEditor 的 eslint 规则 `@typescript-eslint/strict-boolean-expressions` 要求显式处理 nullish。
+  if (!/firstLineIndentCompartment\.of\(window\.config\.firstLineIndent === true \? firstLineIndentExtension\(\) : \[\]\)/.test(coreEditorExtensions)) {
     fail('CoreEditor extensions.ts 未把首行缩进接入 compartment');
   }
   if (!/firstLineIndent\?\.reconfigure\(enabled \? paragraphFirstLineIndentStyle : \[\]\)/.test(coreEditorConfig)) {

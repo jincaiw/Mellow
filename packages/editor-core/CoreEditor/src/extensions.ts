@@ -14,7 +14,7 @@ import { indentUnit as indentUnitFacet, indentOnInput, bracketMatching, foldKeym
 import { yamlFrontmatter as frontMatter } from '@codemirror/lang-yaml';
 import { defaultKeymap } from '@codemirror/commands';
 import { highlightSelectionMatches, search } from '@codemirror/search';
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { closeBracketsKeymap } from '@codemirror/autocomplete';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { html as bundledHTML } from '@codemirror/lang-html';
 import { history, historyKeymap } from './@vendor/commands/history';
@@ -93,7 +93,7 @@ export function extensions(options: { lineBreak?: string }) {
     indentOnInput(),
     bracketMatching(),
     autoPairCompartment.of(autoPairExtensions()),
-    firstLineIndentCompartment.of(window.config.firstLineIndent ? firstLineIndentExtension() : []),
+    firstLineIndentCompartment.of(window.config.firstLineIndent === true ? firstLineIndentExtension() : []),
     rectangularSelection(),
     crosshairCursor(),
     activeLine.of(window.config.showActiveLineIndicator && !editingState.hasSelection ? lineIndicatorLayer : []),
