@@ -22,6 +22,7 @@ import {
   setAutoPair,
   setMarkdownSyntaxPairs,
   setDefaultCodeLang,
+  setCodeIndentSize,
   setFirstLineIndent,
 } from '../../modules/config';
 
@@ -50,6 +51,7 @@ export interface WebModuleConfig extends WebModule {
   setAutoPair({ enabled }: { enabled: boolean }): void;
   setMarkdownSyntaxPairs({ enabled }: { enabled: boolean }): void;
   setDefaultCodeLang({ lang }: { lang: string }): void;
+  setCodeIndentSize({ width }: { width: number }): void;
   setFirstLineIndent({ enabled }: { enabled: boolean }): void;
 }
 
@@ -128,6 +130,10 @@ export class WebModuleConfigImpl implements WebModuleConfig {
 
   setDefaultCodeLang({ lang }: { lang: string }): void {
     setDefaultCodeLang(lang);
+  }
+
+  setCodeIndentSize({ width }: { width: number }): void {
+    setCodeIndentSize(width);
   }
 
   setFirstLineIndent({ enabled }: { enabled: boolean }): void {

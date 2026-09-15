@@ -136,6 +136,46 @@ async function main() {
     await sleep(150);
     const tabChar = await tabInsertion();
     check('tabKeyBehavior=insertTab → Tab 插入制表符（引擎原默认，保留为可选项）', tabChar === '\t', JSON.stringify(tabChar));
+
+    // ── 5/6/7：代码块缩进宽度独立于正文（Typora `codeIndentSize` 默认 4）────────
+    // Typora 里正文缩进（indentSize，默认 2）与代码块缩进（codeIndentSize，默认 4）是两个独立偏好。
+    // 改动前实测：代码块内按 Tab 得到正文宽度（2）→ 与 Typora 默认不符。
+    const setCodeIndent = (width) => frame.evaluate((w) => window.webModules.config.setCodeIndentSize({ width: w }), width);
+    /** 在代码块内按 Tab，返回插入的空白 */
+    const codeTabInsertion = async () => {
+      await frame.evaluate(() => {
+        const view = window.editor;
+        const doc = '```js\ncode\n```';
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc }, selection: { anchor: doc.indexOf('code') } });
+      });
+      await frame.locator('.cm-content').focus();
+      await sleep(180);
+      await page.keyboard.press('Tab');
+      await sleep(200);
+      const text = await docText();
+      const line = text.split('\n').find((l) => l.includes('code')) ?? '';
+      return line.slice(0, line.indexOf('code'));
+    };
+
+    await setTabBehavior(1); // 正文两空格
+    await sleep(120);
+    const codeDefault = await codeTabInsertion();
+    check(
+      '代码块内 Tab 用独立宽度：默认 4 个空格（正文仍是 2 —— Typora codeIndentSize 默认 4）',
+      codeDefault === '    ',
+      JSON.stringify(codeDefault),
+    );
+
+    const bodyAfterCode = await tabInsertion();
+    check('同一次运行里正文 Tab 仍为 2 个空格（两个偏好互不影响）', bodyAfterCode === '  ', JSON.stringify(bodyAfterCode));
+
+    await setCodeIndent(2);
+    await sleep(150);
+    const codeTwo = await codeTabInsertion();
+    check('codeIndentSize 可配置：设为 2 → 代码块内 Tab 插入 2 个空格', codeTwo === '  ', JSON.stringify(codeTwo));
+
+    await setCodeIndent(4);
+    await sleep(120);
   } finally {
     await browser.close();
     vite.kill('SIGTERM');

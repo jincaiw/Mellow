@@ -174,6 +174,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'markdown.wikilink', labelKey: 'settings.markdown.wikilink', type: 'toggle', storageKey: 'mellow.engine.features.wikilink', defaultValue: true, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.html', labelKey: 'settings.markdown.html', type: 'toggle', storageKey: 'mellow.engine.features.html', defaultValue: true, applyCommand: 'settings.engineFeature' },
       // 代码块行号（Typora 偏好→Markdown；live apply，无需重载编辑器）
+      // V7-W6（G7-EDIT-17）：Typora「代码块缩进宽度」`codeIndentSize`（默认 **4**）。
+      // 与正文缩进（`indentSize`，默认 2）是**两个独立偏好** —— Mellow 此前只有一个
+      // `editor.tabBehavior` 兼管，实测代码块内按 Tab 得到正文宽度（2 而非 Typora 的 4）。
+      { id: 'editor.codeIndentSize', labelKey: 'settings.editor.codeIndentSize', type: 'number', storageKey: 'mellow.editor.codeIndentSize', defaultValue: 4, min: 1, max: 16, step: 1, applyCommand: 'settings.editorConfig', descriptionKey: 'settings.editor.codeIndentSizeDesc' },
       { id: 'markdown.codeLineNumbers', labelKey: 'settings.markdown.codeLineNumbers', type: 'toggle', storageKey: 'mellow.editor.codeLineNumbers', defaultValue: false, applyCommand: 'settings.codeLineNumbers' },
       // V7-W6（G7-EDIT-16）：Typora「默认的代码块语言」（配置键 `defaultCodeLang`，默认**空串** = 不自动添加）。
       // 生效通道 = Typora `defaultCodeLangOption` 位掩码的 **Code 位**（值 1，即 Typora 默认）：

@@ -755,6 +755,49 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── ⑮ 「代码块缩进宽度」的端到端接线（V7-W6，G7-EDIT-17）────────────────────
+//
+// Typora 真值（一手证据 window/frame.js DEFAULT_OPTIONS）：`indentSize: 2`（正文）与
+// `codeIndentSize: 4`（代码块）是**两个独立偏好**。Mellow 此前只有一个 `editor.tabBehavior`
+// 兼管两者 → 实测代码块内按 Tab 得到正文宽度（2 而非 4），属**行为偏离 Typora 默认**。
+{
+  const indentSource = read('packages/editor-core/CoreEditor/src/modules/indentation/index.ts');
+
+  if (!/id: 'editor\.codeIndentSize'.*type: 'number'.*defaultValue: 4.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
+    fail("settings 缺少 editor.codeIndentSize（或类型/默认值/applyCommand 不符）：Typora codeIndentSize 默认 4");
+  }
+  if (!/def\.id === 'editor\.codeIndentSize'\) host\?\.setEditorConfig\('setCodeIndentSize', \{ indentWidth: Number\(value\) \}\)/.test(appSource)) {
+    fail("App.tsx 缺少 codeIndentSize 的 live apply（setEditorConfig('setCodeIndentSize')）");
+  }
+  if (!/settingById\('editor\.codeIndentSize'\)[\s\S]{0,300}?setEditorConfig\('setCodeIndentSize', \{ indentWidth/.test(appSource)) {
+    fail('App.tsx 缺少 codeIndentSize 的启动恢复下发');
+  }
+  if (!/'setCodeIndentSize'/.test(coreSource)) {
+    fail("editor-core wrapper 白名单缺少 'setCodeIndentSize'");
+  }
+  // 判定必须沿父链（只看 innermost 节点会漏：光标所在节点是代码文本而非 FencedCode）
+  if (!/export function insideCodeBlock\(state: EditorState, pos: number\): boolean \{[\s\S]{0,220}?node\.parent/.test(indentSource)) {
+    fail('insideCodeBlock 未沿父链判定（只看 innermost 节点会漏判代码块内）');
+  }
+  // 只在「空格」两档生效：insertTab 插制表符、indentMore 由 CM 处理
+  if (!/behavior === TabKeyBehavior\.insertTwoSpaces \|\| behavior === TabKeyBehavior\.insertFourSpaces[\s\S]{0,120}?insideCodeBlock\(editor\.state, cursor\)/.test(indentSource)) {
+    fail('Tab 处理的代码块分支未限定在「空格」两档（insertTab / indentMore 会被误改）');
+  }
+  if (!/replaceSelections\(' '\.repeat\(codeIndentWidth\(\)\)\)/.test(indentSource)) {
+    fail('代码块内 Tab 未使用 codeIndentWidth()');
+  }
+  // 用户设置值必须夹取：异常值会一次插入超长空白（属「输入即写坏文档」）
+  if (!/Math\.min\(16, Math\.max\(1, Math\.round\(raw\)\)\)/.test(indentSource)) {
+    fail('codeIndentWidth 未夹取到 1..16 —— 用户填错值会一次插入超长空白');
+  }
+  const indentDrift = indentSource.replace('replaceSelections(\' \'.repeat(codeIndentWidth()))', 'replaceSelections(\'  \')');
+  if (indentDrift === indentSource) {
+    fail('代码块缩进宽度 canary 未武装：注入点未命中');
+  } else if (indentDrift.includes('replaceSelections(\' \'.repeat(codeIndentWidth()))')) {
+    fail('代码块缩进宽度 canary 失效：注入的漂移未被检出');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);

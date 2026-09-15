@@ -46,6 +46,8 @@ export const DEFAULT_CONFIG: EditorConfig = {
   autoMarkdownSyntaxPairs: false,
   // Typora `defaultCodeLang` 默认空串（= 不自动添加语言）。
   defaultCodeLang: '',
+  // Typora `codeIndentSize` 默认 4（正文缩进 `indentSize` 默认 2 —— 两者独立）。
+  codeIndentSize: 4,
   indentBehavior: 'paragraph',
   standardDirectories: {},
   localizable: {

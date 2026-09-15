@@ -86,9 +86,11 @@
     {
       "typora": "codeIndentSize",
       "default": 4,
-      "status": "gap",
-      "mellow": [],
-      "note": "Mellow 未分离「代码块缩进宽度」（Typora 默认 4）"
+      "status": "implemented",
+      "mellow": [
+        "editor.codeIndentSize"
+      ],
+      "note": "G7-EDIT-17：默认 4（Typora 默认），与正文缩进 editor.tabBehavior（默认 2 空格）相互独立"
     },
     {
       "typora": "convertSmartOnRender",

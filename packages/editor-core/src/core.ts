@@ -241,7 +241,7 @@ export class EditorCore {
   }
 
   /** 编辑器 config live apply（CoreEditor webModules.config.<method>；Settings live apply where safe） */
-  setEditorConfig(method: 'setFontSize' | 'setFontFace' | 'setLineHeight' | 'setShowLineNumbers' | 'setLineWrapping' | 'setContentMaxWidth' | 'setAutoPair' | 'setMarkdownSyntaxPairs' | 'setDefaultCodeLang' | 'setTabKeyBehavior' | 'setFirstLineIndent', params: { fontSize?: number; family?: string; lineHeight?: number; enabled?: boolean; width?: number | null; behavior?: number; lang?: string }): void {
+  setEditorConfig(method: 'setFontSize' | 'setFontFace' | 'setLineHeight' | 'setShowLineNumbers' | 'setLineWrapping' | 'setContentMaxWidth' | 'setAutoPair' | 'setMarkdownSyntaxPairs' | 'setDefaultCodeLang' | 'setCodeIndentSize' | 'setTabKeyBehavior' | 'setFirstLineIndent', params: { fontSize?: number; family?: string; lineHeight?: number; enabled?: boolean; width?: number | null; behavior?: number; lang?: string; indentWidth?: number }): void {
     const win = this.iframe?.contentWindow as (Window & { webModules?: { config?: Record<string, (p: unknown) => void> } }) | null;
     if (method === 'setFontFace') {
       // CoreEditor setFontFace 参数：{ fontFace: { family } }（WebFontFace 契约）

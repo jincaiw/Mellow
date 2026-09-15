@@ -62,6 +62,9 @@ const zhCN = {
   'msg.uploadFailed': '图床上传失败：{error}（已回退本地插入）',
   'msg.uploadDone': '已上传 {count} 张图片',
   'settings.markdown.codeLineNumbers': '代码块行号',
+  // V7-W6（G7-EDIT-17）：Typora「代码块缩进宽度」官方文案
+  'settings.editor.codeIndentSize': '代码块缩进宽度',
+  'settings.editor.codeIndentSizeDesc': '在代码块内按 Tab 插入的空格数（正文缩进见「缩进」设置）。',
   // V7-W6（G7-EDIT-16）：Typora「默认的代码块语言」官方文案
   'settings.markdown.defaultCodeLang': '默认的代码块语言',
   'settings.markdown.defaultCodeLangDesc': '输入 Markdown 反引号展开代码块时自动添加该语言；留空则不添加。',
@@ -917,6 +920,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'msg.uploadFailed': 'Image upload failed: {error} (fell back to local insert)',
   'msg.uploadDone': 'Uploaded {count} image(s)',
   'settings.markdown.codeLineNumbers': 'Code block line numbers',
+  'settings.editor.codeIndentSize': 'Code block indent size',
+  'settings.editor.codeIndentSizeDesc': 'Spaces inserted by Tab inside code blocks (see the Indentation setting for body text).',
   'settings.markdown.defaultCodeLang': 'Default code language',
   'settings.markdown.defaultCodeLangDesc': 'Automatically add this language when expanding a code block by typing Markdown backticks; leave empty to add none.',
   'sidebar.emptyFiles': 'Open a folder to browse files',

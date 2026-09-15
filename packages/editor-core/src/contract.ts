@@ -41,6 +41,8 @@ export interface EditorConfig {
   autoMarkdownSyntaxPairs?: boolean;
   /** Typora defaultCodeLang / 默认代码块语言，默认空串（不自动添加）。 */
   defaultCodeLang?: string;
+  /** Typora codeIndentSize / 代码块缩进宽度，默认 4（与正文缩进是两个独立偏好）。 */
+  codeIndentSize?: number;
   indentBehavior: 'never' | 'paragraph' | 'line';
   standardDirectories: Record<string, string>;
   localizable?: Record<string, string>;

@@ -89,6 +89,13 @@ export interface Config {
    * （Typora 的 Menu 位为 2，默认未启用 —— Mellow 未实装该位，见方案 G7-EDIT-16）。
    */
   defaultCodeLang?: string;
+  /**
+   * 代码块缩进宽度（Typora `codeIndentSize`，默认 **4**）。
+   *
+   * Typora 里正文缩进（`indentSize`，默认 2）与代码块缩进是**两个独立偏好**；
+   * Mellow 的 `tabKeyBehavior` 只管正文，代码块用本值（G7-EDIT-17）。
+   */
+  codeIndentSize?: number;
   /** 首行缩进（V7-W6，G7-EDIT-15），默认 false。 */
   firstLineIndent?: boolean;
   indentBehavior: IndentBehavior;

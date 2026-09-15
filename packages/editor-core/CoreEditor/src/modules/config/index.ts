@@ -125,6 +125,12 @@ export function setDefaultCodeLang(lang: string) {
   window.config.defaultCodeLang = lang;
 }
 
+/** 代码块缩进宽度（Typora `codeIndentSize`，默认 4）。
+ * Tab 处理在按键时读取 config，无需 Compartment。 */
+export function setCodeIndentSize(width: number) {
+  window.config.codeIndentSize = width;
+}
+
 /** 首行缩进开关（V7-W6，G7-EDIT-15）。 */
 export function setFirstLineIndent(enabled: boolean) {
   styling.setFirstLineIndent(enabled);
