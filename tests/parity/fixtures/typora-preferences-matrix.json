@@ -122,7 +122,9 @@
       "mellow": [
         "markdown.defaultCodeLang"
       ],
-      "note": "G7-EDIT-16：位掩码的两位（Code / Menu）Mellow 均已实装，故无需位掩码"
+      "note": "G7-EDIT-16：位掩码的两位（Code / Menu）Mellow 均已实装，故无需位掩码",
+      "comparable": false,
+      "comparableNote": "位掩码 vs 单个语言值，语义不可直接比"
     },
     {
       "typora": "DefaultCodeLangOptionCode",
@@ -168,7 +170,11 @@
       "mellow": [
         "files.autosave"
       ],
-      "note": "W5：另有 files.autosaveTimer（Typora 需手改 conf.user.json）"
+      "note": "W5：另有 files.autosaveTimer（Typora 需手改 conf.user.json）",
+      "deviation": {
+        "kind": "deliberate",
+        "reason": "PRD §101（宪法级）明文规定默认 = `Window Blur + Document Switch`；Typora 的 enableAutoSave 默认 false（切换前先问）→ Mellow 按 PRD 取「默认保存」。App.tsx 注释亦标明该映射（mellow.file.autosave 门控 Window Blur + Document Switch）"
+      }
     },
     {
       "typora": "enableDiagram",
@@ -177,7 +183,11 @@
       "mellow": [
         "markdown.mermaid"
       ],
-      "note": "对应 Mellow「Mermaid 图表」"
+      "note": "对应 Mellow「Mermaid 图表」",
+      "deviation": {
+        "kind": "undecided",
+        "reason": "Typora 默认关（```mermaid 默认按普通代码块显示）；Mellow `markdown.mermaid` 默认开 → 同一份文档显示不同，需裁决"
+      }
     },
     {
       "typora": "enableHighlight",
@@ -186,7 +196,11 @@
       "mellow": [
         "markdown.highlight"
       ],
-      "note": ""
+      "note": "",
+      "deviation": {
+        "kind": "undecided",
+        "reason": "Typora 默认关闭（`==高亮==` 是非标准 Markdown 扩展，默认不改变普通文本渲染）；Mellow `markdown.highlight` 默认开 —— 方案未见裁决，需用户确认是否改默认"
+      }
     },
     {
       "typora": "enableInlineMath",
@@ -204,7 +218,11 @@
       "mellow": [
         "markdown.supSub"
       ],
-      "note": "Mellow 合并上标/下标为一个开关"
+      "note": "Mellow 合并上标/下标为一个开关",
+      "deviation": {
+        "kind": "undecided",
+        "reason": "同上（`~下标~` 非标准扩展）：Typora 默认关，Mellow `markdown.supSub` 默认开"
+      }
     },
     {
       "typora": "enableSuperscript",
@@ -213,7 +231,11 @@
       "mellow": [
         "markdown.supSub"
       ],
-      "note": "同上"
+      "note": "同上",
+      "deviation": {
+        "kind": "undecided",
+        "reason": "同上（`^上标^` 非标准扩展）：Typora 默认关，Mellow `markdown.supSub` 默认开"
+      }
     },
     {
       "typora": "expandSimpleBlock",
@@ -278,7 +300,9 @@
       "mellow": [
         "editor.tabBehavior"
       ],
-      "note": "Typora indentByTab=false 即 2 空格；Mellow editor.tabBehavior 三档（2 空格 / 4 空格 / 使用 Tab）"
+      "note": "Typora indentByTab=false 即 2 空格；Mellow editor.tabBehavior 三档（2 空格 / 4 空格 / 使用 Tab）",
+      "comparable": false,
+      "comparableNote": "Mellow 以 editor.tabBehavior 单值兼管「字符/宽度」，无独立布尔可比"
     },
     {
       "typora": "indentFirstLine",
@@ -296,7 +320,9 @@
       "mellow": [
         "editor.tabBehavior"
       ],
-      "note": "同上（Mellow 合并为单值；代码块缩进宽度未分离，见 codeIndentSize）"
+      "note": "同上（Mellow 合并为单值；代码块缩进宽度未分离，见 codeIndentSize）",
+      "comparable": false,
+      "comparableNote": "同上（twoSpaces 等价于 indentByTab=false + indentSize=2）"
     },
     {
       "typora": "isLocked",
@@ -382,7 +408,8 @@
       "mellow": [
         "editor.lineWrapping"
       ],
-      "note": "反向语义（Mellow「自动换行」默认开）"
+      "note": "反向语义（Mellow「自动换行」默认开）",
+      "polarity": "inverted"
     },
     {
       "typora": "noPairingMatch",
@@ -391,7 +418,8 @@
       "mellow": [
         "editor.autoPair"
       ],
-      "note": "G7-EDIT-12：反向语义（Mellow「匹配括号和引号」默认开）"
+      "note": "G7-EDIT-12：反向语义（Mellow「匹配括号和引号」默认开）",
+      "polarity": "inverted"
     },
     {
       "typora": "noUnsavedDraftsBackup",
@@ -492,7 +520,11 @@
       "mellow": [
         "appearance.toolbar"
       ],
-      "note": "对应浮动选择工具栏"
+      "note": "对应浮动选择工具栏",
+      "deviation": {
+        "kind": "deliberate",
+        "reason": "方案 §5.1 已登记「Editor Toolbar 浮动（Selection 锚定），**默认开启**；入口 = View → 工具栏 或 设置 → 外观」（V7-W2.4 D-B = ①）"
+      }
     },
     {
       "typora": "sidebarTab",
@@ -501,7 +533,9 @@
       "mellow": [
         "appearance.sidebarMode"
       ],
-      "note": "Mellow 以设置持久化侧栏模式"
+      "note": "Mellow 以设置持久化侧栏模式",
+      "comparable": false,
+      "comparableNote": "Typora 记录当前标签（UI 状态），Mellow 的 sidebarMode 是模式枚举"
     },
     {
       "typora": "sidebarWidth",
@@ -565,7 +599,9 @@
         "files.includeGlobs",
         "files.excludeGlobs"
       ],
-      "note": "Mellow 拆为「显示非 Markdown」+ 包含/排除 glob"
+      "note": "Mellow 拆为「显示非 Markdown」+ 包含/排除 glob",
+      "comparable": false,
+      "comparableNote": "1:N 映射（Mellow 拆为「显示非 Markdown」+ 包含/排除 glob），无单一可比值"
     },
     {
       "typora": "treeFileFilterPatterns",
@@ -575,7 +611,9 @@
         "files.includeGlobs",
         "files.excludeGlobs"
       ],
-      "note": ""
+      "note": "",
+      "comparable": false,
+      "comparableNote": "同上"
     },
     {
       "typora": "treeNoGroup",
@@ -647,7 +685,11 @@
       "mellow": [
         "editor.cmdWheelZoom"
       ],
-      "note": ""
+      "note": "",
+      "deviation": {
+        "kind": "undecided",
+        "reason": "Typora `zoomByMouse` 默认 false；Mellow `editor.cmdWheelZoom` 默认开（Cmd/Ctrl+滚轮缩放）—— 方案未见裁决，需确认"
+      }
     }
   ]
 }

@@ -746,6 +746,26 @@ if (cssLayerAnchor === undefined) {
       && (e.mellow ?? []).some((id) => !knownIds.has(id)));
     if (!driftBad) fail('偏好项矩阵 canary 失效：注入的无效设置 id 未被检出');
 
+    // 「登记而非擅改」的 CI 可判定部分：默认值偏离必须带理由；不可比必须写明原因。
+    // （与 Typora 的**实际**默认值比对需要本机 Typora，在 audit-typora-preferences.mjs 中做。）
+    const badMeta = [];
+    for (const e of entries) {
+      if (e.deviation !== undefined) {
+        const kind = e.deviation?.kind;
+        const reason = e.deviation?.reason;
+        if (kind !== 'deliberate' && kind !== 'undecided') badMeta.push(`${e.typora}(deviation.kind=${kind})`);
+        if (typeof reason !== 'string' || reason.trim() === '') badMeta.push(`${e.typora}(deviation 无理由)`);
+      }
+      if (e.comparable === false && (typeof e.comparableNote !== 'string' || e.comparableNote.trim() === '')) {
+        badMeta.push(`${e.typora}(comparable:false 未写明原因)`);
+      }
+      if (e.polarity !== undefined && e.polarity !== 'inverted') badMeta.push(`${e.typora}(polarity=${e.polarity})`);
+    }
+    if (badMeta.length > 0) fail(`偏好项矩阵元数据不完整（${badMeta.length}）：${badMeta.join(', ')}`);
+    if (!entries.some((e) => e.deviation !== undefined)) {
+      fail('偏好项矩阵没有任何 deviation 条目 —— 与 Typora 的默认值不可能全部一致，疑为登记缺失');
+    }
+
     // 审计工具必须存在（否则「与 Typora 的完备性比对」会随工具丢失而静默消失）
     try {
       read('tests/parity/tools/audit-typora-preferences.mjs');

@@ -124,6 +124,45 @@ if (process.argv.includes('--write')) {
   process.exit(0);
 }
 
+// ── 默认值比对（Typora 默认 vs Mellow 默认）──────────────────────────────
+//
+// 为什么需要：**「选项缺失」与「行为偏离默认值」是两类不同的问题**，后者用户直接能感知
+// （例如 Typora 默认不渲染 `==高亮==`，Mellow 默认渲染 → 同一份文档显示不同）。
+//
+// 映射语义不可直接比值的条目用 `comparable: false` 显式排除（反向语义用 `polarity: 'inverted'`）。
+// **凡默认值确实不同者，必须带 `deviation: { kind, reason }`** —— 把「登记而非擅改」机械化。
+function mellowDefaults() {
+  const src = readFileSync(SETTINGS_PATH, 'utf8').replace(/\r\n/g, '\n');
+  const out = new Map();
+  const re = /\{ id: '([^']+)'[^}]*?defaultValue: ([^,}]+)/g;
+  let m;
+  while ((m = re.exec(src)) !== null) out.set(m[1], m[2].trim());
+  return out;
+}
+
+function normalize(v) {
+  if (typeof v === 'string') return v.replace(/^["']|["']$/g, '');
+  return v;
+}
+
+const mellowDef = mellowDefaults();
+const deviations = [];
+const unregisteredDeviations = [];
+for (const e of entries) {
+  if (e.status !== 'implemented' || e.comparable === false) continue;
+  for (const id of e.mellow ?? []) {
+    const raw = mellowDef.get(id);
+    if (raw === undefined) continue;
+    const mine = normalize(raw === 'true' ? true : raw === 'false' ? false : /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw);
+    const theirs = e.polarity === 'inverted' ? !e.default : e.default;
+    if (mine !== theirs) {
+      const label = `${e.typora}（Typora ${JSON.stringify(e.default)} / Mellow ${id}=${JSON.stringify(mine)}）`;
+      if (e.deviation?.reason) deviations.push(`${label} — ${e.deviation.kind}: ${e.deviation.reason}`);
+      else unregisteredDeviations.push(label);
+    }
+  }
+}
+
 // ── 审计 ────────────────────────────────────────────────────────────────
 const errors = [];
 const settingsSource = readFileSync(SETTINGS_PATH, 'utf8').replace(/\r\n/g, '\n');
@@ -145,6 +184,10 @@ const count = (s) => entries.filter((e) => e.status === s).length;
 console.log(`Typora DEFAULT_OPTIONS：${defaults.size} 项（已排除嵌套 keys）`);
 console.log(`矩阵：${entries.length} 项 —— implemented ${count('implemented')} / gap ${count('gap')} / not-applicable ${count('not-applicable')} / TODO ${todo.length}`);
 
+if (unregisteredDeviations.length > 0) {
+  errors.push(`默认值偏离 Typora 但未登记 deviation（${unregisteredDeviations.length}）：${unregisteredDeviations.join(' / ')}`);
+}
+
 if (unregistered.length > 0) {
   errors.push(`Typora 有但矩阵未登记（${unregistered.length}）：${unregistered.join(', ')}`);
 }
@@ -162,5 +205,9 @@ if (errors.length > 0) {
   console.error('\n❌ 偏好项审计未通过：');
   for (const e of errors) console.error(`  - ${e}`);
   process.exit(1);
+}
+if (deviations.length > 0) {
+  console.log(`\n已登记默认值偏离 ${deviations.length} 项：`);
+  for (const d of deviations) console.log(`  · ${d}`);
 }
 console.log('\n✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记（implemented / gap / not-applicable）');
