@@ -704,6 +704,57 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── ⑭ Typora 偏好项矩阵（G7-QA-05）──────────────────────────────────────
+//
+// 矩阵 `tests/parity/fixtures/typora-preferences-matrix.json` 是「Typora 每个偏好键各自状态」的
+// **唯一登记处**。此前是凭手感挑一项来对标 —— 那种方式永远发现不了没人想到的键。
+//
+// 与 Typora 的**完备性比对**需要本机 Typora（`tests/parity/tools/audit-typora-preferences.mjs`，
+// 与 audit-typora-menu-labels.mjs 同类，**不进 CI**）；此处只锁 CI 可判定的部分：
+// 状态合法、无 TODO、无重复键、implemented 条目引用的 Mellow 设置 id 真实存在。
+{
+  const matrixPath = 'tests/parity/fixtures/typora-preferences-matrix.json';
+  let matrix = null;
+  try {
+    matrix = JSON.parse(read(matrixPath));
+  } catch {
+    fail(`偏好项矩阵缺失或不是合法 JSON：${matrixPath}`);
+  }
+  if (matrix !== null) {
+    const entries = matrix.entries ?? [];
+    if (entries.length === 0) fail('偏好项矩阵为空');
+    const knownIds = new Set([...settingsSource.matchAll(/id: '([^']+)'/g)].map((m) => m[1]));
+    const seen = new Set();
+    const bad = [];
+    for (const e of entries) {
+      if (seen.has(e.typora)) fail(`偏好项矩阵有重复键：${e.typora}`);
+      seen.add(e.typora);
+      if (!['implemented', 'gap', 'not-applicable'].includes(e.status)) {
+        bad.push(`${e.typora}(status=${e.status})`);
+      }
+      if (e.status === 'implemented') {
+        for (const id of e.mellow ?? []) {
+          if (!knownIds.has(id)) bad.push(`${e.typora}→${id}`);
+        }
+      }
+    }
+    if (bad.length > 0) fail(`偏好项矩阵非法条目（${bad.length}）：${bad.join(', ')}`);
+
+    // canary：注入一个不存在的设置 id，同一条检查必须检出
+    const drift = { entries: [...entries, { typora: '__canary__', status: 'implemented', mellow: ['no.such.setting.id'], note: '' }] };
+    const driftBad = drift.entries.some((e) => e.status === 'implemented'
+      && (e.mellow ?? []).some((id) => !knownIds.has(id)));
+    if (!driftBad) fail('偏好项矩阵 canary 失效：注入的无效设置 id 未被检出');
+
+    // 审计工具必须存在（否则「与 Typora 的完备性比对」会随工具丢失而静默消失）
+    try {
+      read('tests/parity/tools/audit-typora-preferences.mjs');
+    } catch {
+      fail('缺少偏好项审计工具 tests/parity/tools/audit-typora-preferences.mjs（需本机 Typora，不进 CI）');
+    }
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);

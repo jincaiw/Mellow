@@ -1,0 +1,651 @@
+{
+  "source": "Typora 1.14.9 (7785) — TypeMark/appsrc/window/frame.js 的 DEFAULT_OPTIONS",
+  "note": "status: implemented（Mellow 已实装，mellow 列出设置 id）/ gap（已登记缺口，note 写理由与 G7 编号）/ not-applicable（Typora 内部状态或 Mellow 架构不适用）。由 audit-typora-preferences.mjs 校验完备性。",
+  "entries": [
+    {
+      "typora": "allowImageMove",
+      "default": true,
+      "status": "gap",
+      "mellow": [],
+      "note": "图片拖动移动的开关未作为设置暴露"
+    },
+    {
+      "typora": "allowImageUpload",
+      "default": true,
+      "status": "gap",
+      "mellow": [],
+      "note": "图片自动上传的开关未作为设置暴露（Mellow 经 image.uploadService 装配即启用）"
+    },
+    {
+      "typora": "applyImageMoveForLocal",
+      "default": true,
+      "status": "gap",
+      "mellow": [],
+      "note": "本地图片移动应用范围未作为设置暴露"
+    },
+    {
+      "typora": "applyImageMoveForWeb",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "网络图片移动应用范围未作为设置暴露"
+    },
+    {
+      "typora": "autoCorrectMisspell",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "自动纠正拼写未实装（Mellow 只有拼写检查 editor.spellcheck，非自动纠正）"
+    },
+    {
+      "typora": "autoEscapeImageURL",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "Mellow 恒做 %XX 转义（空格 / 括号 / [] / # / %）；Typora 默认不转义（可读性优先）。差异登记：Mellow 取互操作性"
+    },
+    {
+      "typora": "autoNumberingForMath",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "公式自动编号未实装"
+    },
+    {
+      "typora": "autoPairExtendSymbol",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.markdownSyntaxPairs"
+      ],
+      "note": "G7-EDIT-12：默认关闭，对齐 Typora"
+    },
+    {
+      "typora": "autoResizeIframe",
+      "default": true,
+      "status": "not-applicable",
+      "mellow": [],
+      "note": "Typora 内部实现细节（iframe 高度自适应）"
+    },
+    {
+      "typora": "blockHTML",
+      "default": true,
+      "status": "implemented",
+      "mellow": [
+        "markdown.html"
+      ],
+      "note": "Mellow 以 widget 渲染块级 HTML"
+    },
+    {
+      "typora": "caseSensitive",
+      "default": false,
+      "status": "implemented",
+      "mellow": [],
+      "note": "查找面板有「区分大小写」选项（App.tsx searchCase），但未作为持久化设置（Typora 会记住）"
+    },
+    {
+      "typora": "codeIndentSize",
+      "default": 4,
+      "status": "gap",
+      "mellow": [],
+      "note": "Mellow 未分离「代码块缩进宽度」（Typora 默认 4）"
+    },
+    {
+      "typora": "convertSmartOnRender",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "「转换时应用智能标点」未实装"
+    },
+    {
+      "typora": "copyMarkdownByDefault",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "默认复制行为（复制为 Markdown 源码）未实装"
+    },
+    {
+      "typora": "defaultCodeLang",
+      "default": "",
+      "status": "implemented",
+      "mellow": [
+        "markdown.defaultCodeLang"
+      ],
+      "note": "G7-EDIT-16：默认空串"
+    },
+    {
+      "typora": "defaultCodeLangOption",
+      "default": 1,
+      "status": "implemented",
+      "mellow": [
+        "markdown.defaultCodeLang"
+      ],
+      "note": "G7-EDIT-16：位掩码的两位（Code / Menu）Mellow 均已实装，故无需位掩码"
+    },
+    {
+      "typora": "DefaultCodeLangOptionCode",
+      "default": 1,
+      "status": "not-applicable",
+      "mellow": [],
+      "note": "具名常量（=1），非用户偏好"
+    },
+    {
+      "typora": "DefaultCodeLangOptionMenu",
+      "default": 2,
+      "status": "not-applicable",
+      "mellow": [],
+      "note": "具名常量（=2），非用户偏好"
+    },
+    {
+      "typora": "defaultExtension",
+      "default": "md",
+      "status": "gap",
+      "mellow": [],
+      "note": "新建文件默认扩展名未作为设置暴露（Mellow 固定 md）"
+    },
+    {
+      "typora": "defaultImageStorage",
+      "default": null,
+      "status": "gap",
+      "mellow": [],
+      "note": "默认图床/存储位置未实装（Mellow 经 image.uploadService 配置上传，无「默认存储」概念）"
+    },
+    {
+      "typora": "enableAlert",
+      "default": true,
+      "status": "implemented",
+      "mellow": [
+        "markdown.alerts"
+      ],
+      "note": ""
+    },
+    {
+      "typora": "enableAutoSave",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "files.autosave"
+      ],
+      "note": "W5：另有 files.autosaveTimer（Typora 需手改 conf.user.json）"
+    },
+    {
+      "typora": "enableDiagram",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "markdown.mermaid"
+      ],
+      "note": "对应 Mellow「Mermaid 图表」"
+    },
+    {
+      "typora": "enableHighlight",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "markdown.highlight"
+      ],
+      "note": ""
+    },
+    {
+      "typora": "enableInlineMath",
+      "default": true,
+      "status": "implemented",
+      "mellow": [
+        "markdown.math"
+      ],
+      "note": "Mellow 合并为单个「数学公式」开关"
+    },
+    {
+      "typora": "enableSubscript",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "markdown.supSub"
+      ],
+      "note": "Mellow 合并上标/下标为一个开关"
+    },
+    {
+      "typora": "enableSuperscript",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "markdown.supSub"
+      ],
+      "note": "同上"
+    },
+    {
+      "typora": "expandSimpleBlock",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "「展开简单块」未实装"
+    },
+    {
+      "typora": "fileSearchCaseSensitive",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "文件搜索的大小写选项未持久化"
+    },
+    {
+      "typora": "fileSearchWholeWord",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "文件搜索的全词选项未持久化"
+    },
+    {
+      "typora": "gitlabMath",
+      "default": true,
+      "status": "gap",
+      "mellow": [],
+      "note": "GitLab 数学语法兼容未实装"
+    },
+    {
+      "typora": "headingStyle",
+      "default": 0,
+      "status": "gap",
+      "mellow": [],
+      "note": "标题样式（ATX / Setext）选择未实装（Mellow 固定 ATX）"
+    },
+    {
+      "typora": "hideBrAndLineBreak",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "「显示 <br/>」的**隐藏**方向未实装 —— 默认态已一致（Typora 默认可见、Mellow 亦显示）；隐藏需行内标记隐藏能力，与已登记原则「marker reveal 从不 replace 文本」冲突（G7-EDIT-15）"
+    },
+    {
+      "typora": "htmlMath",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "HTML 数学输出未实装"
+    },
+    {
+      "typora": "ignoreLineBreak",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "「保留单换行符」的**开关**未实装 —— 行为已对齐（G7-EDIT-14，恒保留 = Typora 默认）；Typora 该开关作用于编辑区（移除 .md-softbreak span），Mellow 为 CM6 行式渲染无法合并两行"
+    },
+    {
+      "typora": "indentByTab",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.tabBehavior"
+      ],
+      "note": "Typora indentByTab=false 即 2 空格；Mellow editor.tabBehavior 三档（2 空格 / 4 空格 / 使用 Tab）"
+    },
+    {
+      "typora": "indentFirstLine",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.firstLineIndent"
+      ],
+      "note": "G7-EDIT-15：默认关闭；另在 Edit → 空格与换行 提供勾选项"
+    },
+    {
+      "typora": "indentSize",
+      "default": 2,
+      "status": "implemented",
+      "mellow": [
+        "editor.tabBehavior"
+      ],
+      "note": "同上（Mellow 合并为单值；代码块缩进宽度未分离，见 codeIndentSize）"
+    },
+    {
+      "typora": "isLocked",
+      "default": false,
+      "status": "not-applicable",
+      "mellow": [],
+      "note": "文档锁定状态，非偏好项"
+    },
+    {
+      "typora": "legacyInlineMathParse",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "旧版行内数学解析兼容未实装"
+    },
+    {
+      "typora": "libraryFileFilterMode",
+      "default": "supported",
+      "status": "gap",
+      "mellow": [],
+      "note": "「文件库」功能 Mellow 无对应实现"
+    },
+    {
+      "typora": "libraryFileFilterPatterns",
+      "default": "[]",
+      "status": "gap",
+      "mellow": [],
+      "note": "同上"
+    },
+    {
+      "typora": "lineWiseCopyCut",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "未选中时复制/剪切整行未实装（Typora 默认关闭）"
+    },
+    {
+      "typora": "listNoGroup",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "列表不分组显示未实装（侧栏）"
+    },
+    {
+      "typora": "mathFormatOnCopy",
+      "default": "svg",
+      "status": "gap",
+      "mellow": [],
+      "note": "复制公式的格式（SVG / LaTeX）未作为设置暴露"
+    },
+    {
+      "typora": "monocolorEmoji",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "单色 Emoji 未实装"
+    },
+    {
+      "typora": "noAutoLink",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "「不自动识别链接」未实装"
+    },
+    {
+      "typora": "noEmojiAutoComplete",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "「表情自动补全」开关未分离（Mellow 只有 markdown.emoji 总开关）"
+    },
+    {
+      "typora": "noLegacyMath",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "旧版数学语法兼容开关未实装"
+    },
+    {
+      "typora": "noLineWrapping",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.lineWrapping"
+      ],
+      "note": "反向语义（Mellow「自动换行」默认开）"
+    },
+    {
+      "typora": "noPairingMatch",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.autoPair"
+      ],
+      "note": "G7-EDIT-12：反向语义（Mellow「匹配括号和引号」默认开）"
+    },
+    {
+      "typora": "noUnsavedDraftsBackup",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "未保存草稿备份开关未实装"
+    },
+    {
+      "typora": "olStyle",
+      "default": 0,
+      "status": "gap",
+      "mellow": [],
+      "note": "有序列表样式（1. / 1) ）选择未实装"
+    },
+    {
+      "typora": "preferCRLF",
+      "default": false,
+      "status": "implemented",
+      "mellow": [],
+      "note": "经 Edit → 行结束符菜单（edit.eol.lf / edit.eol.crlf）切换，无独立设置项"
+    },
+    {
+      "typora": "preferFinalNewline",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "files.finalNewline"
+      ],
+      "note": "G7-FEAT-12"
+    },
+    {
+      "typora": "preLinebreakOnExport",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "export.preserveLineBreaks"
+      ],
+      "note": "G7-FEAT-13"
+    },
+    {
+      "typora": "presetSpellCheck",
+      "default": "auto",
+      "status": "gap",
+      "mellow": [],
+      "note": "预置拼写检查（词典/语言）未实装 —— 依赖 host-api 的拼写词典能力（P0-EDITOR-005）"
+    },
+    {
+      "typora": "prettyIndent",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "列表续行对齐缩进未实装"
+    },
+    {
+      "typora": "remapUnicodePunctuation",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "Unicode 标点重映射未实装"
+    },
+    {
+      "typora": "scrollWithCursor",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "「跟随光标滚动」未实装（Mellow 有打字机模式 editor.typewriter，语义不同）"
+    },
+    {
+      "typora": "sendAnonymousUsage",
+      "default": false,
+      "status": "not-applicable",
+      "mellow": [],
+      "note": "匿名使用统计 —— Mellow 无遥测，有意不做"
+    },
+    {
+      "typora": "showHiddenFiles",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "files.showHidden"
+      ],
+      "note": ""
+    },
+    {
+      "typora": "showLineNumbersForFence",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "markdown.codeLineNumbers"
+      ],
+      "note": ""
+    },
+    {
+      "typora": "showToolbar",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "appearance.toolbar"
+      ],
+      "note": "对应浮动选择工具栏"
+    },
+    {
+      "typora": "sidebarTab",
+      "default": "",
+      "status": "implemented",
+      "mellow": [
+        "appearance.sidebarMode"
+      ],
+      "note": "Mellow 以设置持久化侧栏模式"
+    },
+    {
+      "typora": "sidebarWidth",
+      "default": null,
+      "status": "gap",
+      "mellow": [],
+      "note": "侧栏宽度可拖拽（D-AD 有意 480 上限），但未作为设置项持久化；Typora 以 sidebarWidth 记录"
+    },
+    {
+      "typora": "smartDash",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.smartPunctuation"
+      ],
+      "note": "同上"
+    },
+    {
+      "typora": "smartQuote",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.smartPunctuation"
+      ],
+      "note": "Mellow 合并引号/破折号为一个「智能标点」开关"
+    },
+    {
+      "typora": "sortType",
+      "default": 0,
+      "status": "gap",
+      "mellow": [],
+      "note": "侧栏排序方式未作为设置暴露"
+    },
+    {
+      "typora": "spellcheckForCodeAndLink",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "代码与链接内拼写检查开关未实装"
+    },
+    {
+      "typora": "strictMarkdown",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "严格模式未实装"
+    },
+    {
+      "typora": "strictNumberStartOnNewLine",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "行首数字不触发有序列表的严格规则未实装"
+    },
+    {
+      "typora": "treeFileFilterMode",
+      "default": "supported",
+      "status": "implemented",
+      "mellow": [
+        "files.showNonMarkdown",
+        "files.includeGlobs",
+        "files.excludeGlobs"
+      ],
+      "note": "Mellow 拆为「显示非 Markdown」+ 包含/排除 glob"
+    },
+    {
+      "typora": "treeFileFilterPatterns",
+      "default": "[]",
+      "status": "implemented",
+      "mellow": [
+        "files.includeGlobs",
+        "files.excludeGlobs"
+      ],
+      "note": ""
+    },
+    {
+      "typora": "treeNoGroup",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "文件树不分组显示未实装"
+    },
+    {
+      "typora": "ulStyle",
+      "default": 0,
+      "status": "gap",
+      "mellow": [],
+      "note": "无序列表符号（- / * / +）选择未实装"
+    },
+    {
+      "typora": "useFsQueue",
+      "default": true,
+      "status": "not-applicable",
+      "mellow": [],
+      "note": "Typora 内部实现细节（文件系统操作队列）"
+    },
+    {
+      "typora": "useRelativePathForImg",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "Mellow 恒写**相对**路径；Typora 默认写**绝对**路径（useRelativePathForImg=false）。差异登记：Mellow 取可移植性"
+    },
+    {
+      "typora": "userQuotesArray",
+      "default": null,
+      "status": "gap",
+      "mellow": [],
+      "note": "自定义引号对未实装"
+    },
+    {
+      "typora": "useTreeStyle",
+      "default": false,
+      "status": "gap",
+      "mellow": [],
+      "note": "文件树样式（树形 / 平铺）未实装"
+    },
+    {
+      "typora": "wholeWord",
+      "default": false,
+      "status": "implemented",
+      "mellow": [],
+      "note": "查找面板有「全词匹配」选项（searchWholeWord），但未作为持久化设置（Typora 会记住）"
+    },
+    {
+      "typora": "wordCountDelimiter",
+      "default": 0,
+      "status": "gap",
+      "mellow": [],
+      "note": "字数统计分隔符设置未实装"
+    },
+    {
+      "typora": "wordsPerMinute",
+      "default": 382,
+      "status": "gap",
+      "mellow": [],
+      "note": "阅读速度估算（用于显示阅读时长）未实装"
+    },
+    {
+      "typora": "zoomByMouse",
+      "default": false,
+      "status": "implemented",
+      "mellow": [
+        "editor.cmdWheelZoom"
+      ],
+      "note": ""
+    }
+  ]
+}
