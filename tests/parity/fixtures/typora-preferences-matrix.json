@@ -1,6 +1,6 @@
 {
   "source": "Typora 1.14.9 (7785) — TypeMark/appsrc/window/frame.js 的 DEFAULT_OPTIONS",
-  "note": "status: implemented（Mellow 已实装，mellow 列出设置 id）/ gap（已登记缺口，note 写理由与 G7 编号）/ not-applicable（Typora 内部状态或 Mellow 架构不适用）。由 audit-typora-preferences.mjs 校验完备性。 第三层 behavior（仅 gap 条目）：matches-default（无该选项但行为与 Typora 默认一致，无害）/ differs（行为不同 = 真缺陷）/ unverified（待核实，即工作清单）。",
+  "note": "status: implemented（Mellow 已实装，mellow 列出设置 id）/ gap（已登记缺口，note 写理由与 G7 编号）/ not-applicable（Typora 内部状态或 Mellow 架构不适用）。由 audit-typora-preferences.mjs 校验完备性。 第三层 behavior（仅 gap 条目）：matches-default（无该选项但行为与 Typora 默认一致，无害）/ differs（行为不同 = 真缺陷）/ unverified（待核实，即工作清单）、n/a（Mellow 整体缺失该功能 → 行为不可比）。",
   "entries": [
     {
       "typora": "allowImageMove",
@@ -16,7 +16,8 @@
       "status": "gap",
       "mellow": [],
       "note": "图片自动上传的开关未作为设置暴露（Mellow 经 image.uploadService 装配即启用）",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码（image/host.ts 惰性读宿主注入的 __MELLOW_IMAGE_UPLOAD__）：装配上传服务即上传 → 与 Typora 默认 true 一致"
     },
     {
       "typora": "applyImageMoveForLocal",
@@ -116,7 +117,8 @@
       "status": "gap",
       "mellow": [],
       "note": "默认复制行为（复制为 Markdown 源码）未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "实测/代码（clipboardCopy.ts）：Mellow 普通复制写【渲染后】的 text/plain + text/html + text/rtf，另附 text/markdown flavor 并提供独立的 Mod-Shift-C「复制为 Markdown」→ 与 Typora 默认 false（默认复制富文本、非 Markdown 源码）一致"
     },
     {
       "typora": "defaultCodeLang",
@@ -371,7 +373,8 @@
       "status": "gap",
       "mellow": [],
       "note": "「文件库」功能 Mellow 无对应实现",
-      "behavior": "unverified"
+      "behavior": "n/a",
+      "behaviorNote": "Mellow 无「文件库」功能 → 无对应行为可比"
     },
     {
       "typora": "libraryFileFilterPatterns",
@@ -379,7 +382,8 @@
       "status": "gap",
       "mellow": [],
       "note": "同上",
-      "behavior": "unverified"
+      "behavior": "n/a",
+      "behaviorNote": "同上"
     },
     {
       "typora": "lineWiseCopyCut",
@@ -387,7 +391,8 @@
       "status": "gap",
       "mellow": [],
       "note": "未选中时复制/剪切整行未实装（Typora 默认关闭）",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码（clipboardCopy.ts `selectedMarkdown`）：空选区时返回 null，复制不执行 → 与 Typora 默认 false（未选中时不复制整行）一致"
     },
     {
       "typora": "listNoGroup",
@@ -403,7 +408,8 @@
       "status": "gap",
       "mellow": [],
       "note": "复制公式的格式（SVG / LaTeX）未作为设置暴露",
-      "behavior": "unverified"
+      "behavior": "differs",
+      "behaviorNote": "代码（clipboardCopy.ts）：复制路径**无 math/SVG 处理** —— 复制公式得到 LaTeX 源码而非渲染图；而 Mellow 的公式渲染用 MathJax `tex2svgPromise`（**异步**），复制必须在 copy 事件里**同步**写剪贴板 → 需预渲染缓存等设计，属独立功能，暂不实装"
     },
     {
       "typora": "monocolorEmoji",
@@ -466,7 +472,8 @@
       "status": "gap",
       "mellow": [],
       "note": "未保存草稿备份开关未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码（document-model `RecoverySnapshot` / `fromRecovery`，spec §6 Recovery、PRD §102）：Mellow 有恢复快照 → 与 Typora 默认 false（备份未保存草稿）一致"
     },
     {
       "typora": "olStyle",
@@ -589,7 +596,8 @@
       "status": "gap",
       "mellow": [],
       "note": "侧栏宽度可拖拽（D-AD 有意 480 上限），但未作为设置项持久化；Typora 以 sidebarWidth 记录",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "实测/真值（Typora 实机默认 270px；Mellow 默认亦 270px，D-AD 有意 480 上限）→ 与 Typora 默认 null（取默认宽度）一致"
     },
     {
       "typora": "smartDash",

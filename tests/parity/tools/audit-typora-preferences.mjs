@@ -212,7 +212,7 @@ if (deviations.length > 0) {
 }
 const gaps = entries.filter((e) => e.status === 'gap');
 const differs = gaps.filter((e) => e.behavior === 'differs');
-const unverified = gaps.filter((e) => e.behavior !== 'differs' && e.behavior !== 'matches-default');
+const unverified = gaps.filter((e) => e.behavior !== 'differs' && e.behavior !== 'matches-default' && e.behavior !== 'n/a');
 if (differs.length > 0) {
   console.log(`\n⚠️ gap 中【行为偏离 Typora 默认】${differs.length} 项（真缺陷，优先级高于「选项缺失」）：`);
   for (const e of differs) console.log(`  · ${e.typora} — ${e.behaviorNote ?? '(无说明)'}`);

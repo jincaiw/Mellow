@@ -761,7 +761,7 @@ if (cssLayerAnchor === undefined) {
       }
       if (e.polarity !== undefined && e.polarity !== 'inverted') badMeta.push(`${e.typora}(polarity=${e.polarity})`);
       // 第三层：gap 条目必须标注行为判定（matches-default / differs / unverified）
-      if (e.status === 'gap' && !['matches-default', 'differs', 'unverified'].includes(e.behavior)) {
+      if (e.status === 'gap' && !['matches-default', 'differs', 'unverified', 'n/a'].includes(e.behavior)) {
         badMeta.push(`${e.typora}(gap 缺 behavior=${e.behavior})`);
       }
       if (e.behavior === 'differs' && (typeof e.behaviorNote !== 'string' || e.behaviorNote.trim() === '')) {
