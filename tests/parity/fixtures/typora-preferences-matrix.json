@@ -112,7 +112,8 @@
       "status": "gap",
       "mellow": [],
       "note": "「转换时应用智能标点」未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "检索：智能标点仅在**输入时**应用（engine smartPunctuation.ts），无「渲染时转换」开关 → 与 Typora 默认 false 一致"
     },
     {
       "typora": "copyMarkdownByDefault",
@@ -264,7 +265,8 @@
       "status": "gap",
       "mellow": [],
       "note": "「展开简单块」未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "检索（editor-engine/src 全量）：无 simpleBlock 展开实现 → Mellow 不展开，与 Typora 默认 false 一致"
     },
     {
       "typora": "fileSearchCaseSensitive",
@@ -529,7 +531,8 @@
       "status": "gap",
       "mellow": [],
       "note": "列表续行对齐缩进未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "检索：无列表续行对齐缩进实现 → Mellow 不对齐，与 Typora 默认 false 一致"
     },
     {
       "typora": "remapUnicodePunctuation",
