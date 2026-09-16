@@ -1996,7 +1996,17 @@ export default function App() {
     }
     if (action === 'delete') {
       const abs = ops.resolveSrcPath(src);
-      if (!window.confirm(t('dialog.imageDeleteConfirm', { src }))) return;
+      // 应用内确认对话框（G7-EDIT-10）：替代 window.confirm —— 原生面板无法给出按钮的 i18n 文案，
+      // 且与 conflict-bar 视觉语言不一致。语义仍是二选一（删除 / 取消），故用通用 askUser。
+      const answer = await askUser({
+        title: t('dialog.imageDeleteTitle'),
+        message: t('dialog.imageDeleteConfirm', { src }),
+        buttons: [
+          { label: t('dialog.delete'), value: 'delete', primary: true },
+          { label: t('dialog.cancel'), value: 'cancel' },
+        ],
+      });
+      if (answer !== 'delete') return;
       // 本地文件 → 回收站（Trash，不直接删）；远程/未解析 → 只移除引用
       if (abs !== null) {
         const svc = fileTreeServiceRef.current;
@@ -2920,7 +2930,16 @@ export default function App() {
       await trashDocumentRef.current?.();
       return;
     }
-    if (!window.confirm(t('dialog.trashConfirm', { path: target }))) return;
+    // 应用内确认对话框（G7-EDIT-10）：替代 window.confirm（按钮文案可 i18n + 与 conflict-bar 同一视觉语言）
+    const answer = await askUser({
+      title: t('dialog.trashTitle'),
+      message: t('dialog.trashConfirm', { path: target }),
+      buttons: [
+        { label: t('dialog.moveToTrash'), value: 'trash', primary: true },
+        { label: t('dialog.cancel'), value: 'cancel' },
+      ],
+    });
+    if (answer !== 'trash') return;
     const r = await svc.trash(target);
     setStatusText(r.ok ? t('msg.trashed') : t('msg.deleteFailed', { error: r.error.message }));
     if (r.ok) setSelectedTreePath(null);
@@ -3800,7 +3819,16 @@ export default function App() {
       if (!r.ok) { setStatusText(t('msg.openFailed', { error: r.error.message })); return; }
       // Typora：链接目标不存在 → 引导自动创建（清单 2.3 文件链接）
       if (!r.value) {
-        if (!window.confirm(t('dialog.mdLinkCreate', { path: pathPart }))) {
+        // 应用内确认对话框（G7-EDIT-10）：替代 window.confirm（按钮文案可 i18n）
+        const answer = await askUser({
+          title: t('dialog.createFileTitle'),
+          message: t('dialog.mdLinkCreate', { path: pathPart }),
+          buttons: [
+            { label: t('dialog.create'), value: 'create', primary: true },
+            { label: t('dialog.cancel'), value: 'cancel' },
+          ],
+        });
+        if (answer !== 'create') {
           setStatusText(t('msg.wikilinkNotFound', { name: pathPart }));
           return;
         }
@@ -4279,7 +4307,16 @@ export default function App() {
     const active = docStateRef.current.doc;
     const dirty = active !== null && active.dirty;
     const message = dirty ? t('dialog.trashConfirmDirty', { path }) : t('dialog.trashConfirm', { path });
-    if (!window.confirm(message)) return;
+    // 应用内确认对话框（G7-EDIT-10）：替代 window.confirm。当前文档可能是脏的 → message 已带 dirty 警示。
+    const answer = await askUser({
+      title: t('dialog.trashTitle'),
+      message,
+      buttons: [
+        { label: t('dialog.moveToTrash'), value: 'trash', primary: true },
+        { label: t('dialog.cancel'), value: 'cancel' },
+      ],
+    });
+    if (answer !== 'trash') return;
     const r = await svc.trash(path);
     if (!r.ok) {
       setStatusText(t('msg.deleteFailed', { error: r.error.message }));

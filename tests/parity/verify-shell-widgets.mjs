@@ -357,6 +357,35 @@ if (showElBody !== '') {
   }
 }
 
+// ── N. 原生确认面板清零（G7-EDIT-10）────────────────────────────────────
+//
+// 立节原因：脏文档确认（G7-EDIT-09）迁到应用内 `askUser()` 后，App 里还剩下 4 处
+// `window.confirm`（删除图片 / 文件树删除 / 当前文档删除 / 文件链接自动创建）。
+// 它们语义上都是**二选一**，而 `askUser()` 是通用 N 按钮，完全够用；继续用原生面板的代价是：
+//   ① 按钮文案无法 i18n（原生面板文案由浏览器/系统语言决定）；
+//   ② 与 conflict-bar 视觉语言不一致；
+//   ③ 后续若某处需要三选一，会再次踩 G7-EDIT-09 那个坑（两选一表达不了）。
+// 本轮 4 处已迁完 → 直接锁**零出现**，比逐处断言更耐用（以后新增也会被拦下）。
+{
+  const desktopSrc = ['apps/desktop/src/App.tsx'].map((f) => read(f)).join('\n');
+  if (/window\.confirm\(/.test(desktopSrc)) {
+    fail('apps/desktop/src 仍存在 window.confirm —— 应用内 askUser 对话框已具备二选一能力，不应再用原生面板');
+  }
+  // 三处迁移后的按钮 value 必须存在（证明「确实在问」，而不是直接执行）
+  for (const value of ['delete', 'trash', 'create']) {
+    if (!desktopSrc.includes(`value: '${value}'`)) {
+      fail(`缺少 askUser 的 ${value} 按钮（G7-EDIT-10 迁移后应存在）`);
+    }
+  }
+  // canary：注入一处 window.confirm，同一条检查必须检出
+  const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.confirm('x') ? 'y' : 'n'; void (0, {");
+  if (drift === desktopSrc) {
+    fail('原生确认面板 canary 未武装：注入点未命中');
+  } else if (!/window\.confirm\(/.test(drift)) {
+    fail('原生确认面板 canary 失效：注入后未检出');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Shell widget contract violations:\n  ${errors.join('\n  ')}`);

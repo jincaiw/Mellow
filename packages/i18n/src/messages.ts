@@ -419,6 +419,13 @@ const zhCN = {
   'dialog.discard': '丢弃',
   'dialog.discardChanges': '放弃更改',
   'dialog.cancel': '取消',
+  // V7-W6（G7-EDIT-10）：把剩余 window.confirm 换成应用内对话框所需的按钮/标题文案
+  'dialog.imageDeleteTitle': '删除图片',
+  'dialog.trashTitle': '移入废纸篓',
+  'dialog.createFileTitle': '创建文件',
+  'dialog.delete': '删除',
+  'dialog.moveToTrash': '移入废纸篓',
+  'dialog.create': '创建',
 
   // 冲突 / 恢复
   'conflict.title': '磁盘文件已被外部修改（{kind}）—— 禁止覆盖：',
@@ -1255,6 +1262,12 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'dialog.save': 'Save',
   'dialog.discard': 'Discard',
   'dialog.discardChanges': 'Discard Changes',
+  'dialog.imageDeleteTitle': 'Delete Image',
+  'dialog.trashTitle': 'Move to Trash',
+  'dialog.createFileTitle': 'Create File',
+  'dialog.delete': 'Delete',
+  'dialog.moveToTrash': 'Move to Trash',
+  'dialog.create': 'Create',
   'dialog.cancel': 'Cancel',
 
   'conflict.title': 'File modified on disk ({kind}) — overwrite blocked:',
