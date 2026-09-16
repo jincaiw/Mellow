@@ -8,7 +8,8 @@
       "status": "gap",
       "mellow": [],
       "note": "图片拖动移动的开关未作为设置暴露",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码（image/ops.ts：planMoveImage / planMoveAll / planMoveSingle）：Mellow 有图片移动能力 → 与 Typora 默认 true（允许移动）一致"
     },
     {
       "typora": "allowImageUpload",
@@ -25,7 +26,8 @@
       "status": "gap",
       "mellow": [],
       "note": "本地图片移动应用范围未作为设置暴露",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码（image/insert.ts 本地图片 → copy-to-assets）：本地图片插入会落到 asset 目录 → 与 Typora 默认 true 一致"
     },
     {
       "typora": "applyImageMoveForWeb",
@@ -33,7 +35,8 @@
       "status": "gap",
       "mellow": [],
       "note": "网络图片移动应用范围未作为设置暴露",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码：网络图片不移动（直接直插 URL）→ 与 Typora 默认 false 一致"
     },
     {
       "typora": "autoCorrectMisspell",
@@ -169,7 +172,8 @@
       "status": "gap",
       "mellow": [],
       "note": "默认图床/存储位置未实装（Mellow 经 image.uploadService 配置上传，无「默认存储」概念）",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码：Mellow 无「默认存储位置」概念（上传服务按需配置 image.uploadService）→ 与 Typora 默认 null（无默认）一致"
     },
     {
       "typora": "enableAlert",
@@ -268,7 +272,8 @@
       "status": "gap",
       "mellow": [],
       "note": "文件搜索的大小写选项未持久化",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码（host/searchServices.ts）：文件搜索固定传 `caseSensitive: false` → 与 Typora 默认 false 一致（选项未暴露，但行为相同）"
     },
     {
       "typora": "fileSearchWholeWord",
@@ -276,7 +281,8 @@
       "status": "gap",
       "mellow": [],
       "note": "文件搜索的全词选项未持久化",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "代码（host/searchServices.ts）：固定传 `wholeWord: false` → 与 Typora 默认 false 一致"
     },
     {
       "typora": "gitlabMath",
@@ -531,7 +537,8 @@
       "status": "gap",
       "mellow": [],
       "note": "Unicode 标点重映射未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "Mellow 无 Unicode 标点重映射 → 与 Typora 默认 false（不重映射）一致"
     },
     {
       "typora": "scrollWithCursor",
@@ -714,7 +721,8 @@
       "status": "gap",
       "mellow": [],
       "note": "自定义引号对未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "Mellow 无自定义引号对 → 与 Typora 默认 null（无自定义）一致"
     },
     {
       "typora": "useTreeStyle",
@@ -745,7 +753,8 @@
       "status": "gap",
       "mellow": [],
       "note": "阅读速度估算（用于显示阅读时长）未实装",
-      "behavior": "unverified"
+      "behavior": "differs",
+      "behaviorNote": "Mellow **有**阅读时长（app-core/wordCount.ts：中文 300 字/分 + 英文 200 词/分，**CJK-aware 有意设计**）；Typora 默认单一 382 词/分 → 英文文本的估算值不同（Mellow 约为 Typora 的 2 倍时长）。属为中文场景做的有意取舍，非缺陷，但数值确实不同"
     },
     {
       "typora": "zoomByMouse",
