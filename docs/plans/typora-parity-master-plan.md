@@ -551,7 +551,7 @@ Feature
 |---|---|---|---|
 | **G7-MENU-12** | **§12 文案合同里内嵌的「官方真值」自身失真**（护栏自己给自己盖章）+ **7 条从未纳入合同**的偏离 + **「打开最近文件」空态占位缺失** | 本机 `Base.lproj/Menu.strings`（英文）+ `zh-Hans.lproj/Menu.strings`（301 条） | ✅ **已修复**（见下） |
 | **G7-MENU-13** | **命令面板与菜单是两套独立文案源，此前只有菜单侧有护栏** | — | ✅ **漏译已修 + 新增 §14 护栏**；46 处风格差异**登记为「两套表面的表达习惯」不改** |
-| **G7-MENU-14** | 「清除最近文件」在 Typora 是**带作用域选择的对话框**，Mellow 是直接清空 | `Panel.strings`：`Clear Recent Folders and Files`「清除历史文件记录」/ `Clear Recent Folders / Files Only`「只清除历史文件和文件夹」/ `Clear Recent and Pinned Folders / Files`「清除历史和固定的文件和文件夹」/ `Also clear pinned folders`「同时清除固定的文件夹」 | **未实现（如实登记）** —— 需新增一个带 3 选项 + 1 复选项的确认对话框，且牵动 pinned 文件夹集合的清除语义（`mellow.recent.folders.pinned`）。属独立 UI 特性，不擅自动手。 |
+| **G7-MENU-14（2026-09-17 实装）** | **「清除最近文件」不能直接清空：Typora 先让用户选择作用域** | **已修复**。Typora 一手文案（`Base.lproj/Panel.strings` + `zh-Hans.lproj/Panel.strings`）有 4 个相关作用域：`Clear Recent Documents` / `Clear Recent Folders / Files Only` / `Clear Recent Folders and Files` / `Clear Recent and Pinned Folders / Files`。Mellow 此前 `recent.clear` 直接 `setRecentFiles([])` + remove storage，**既误清/漏清范围，也没有给用户选择**。**实现**：`clearRecentItems()` 复用应用内 `askUser()` 弹 4 按钮作用域对话框：`documents` 只清 `mellow.recent.files`；`locations` 只清 `mellow.recent.folders`（保留 pinned）；`all` 清文档 + 历史文件夹 + `mellow.recent.folders.pinned`；`cancel` 不改任何状态。命令 execute 改为 fire-and-forget `void clearRecentItems()`（会弹异步模态，不能同步返回）。zh/en 文案新增。**运行时实证**：`tests/e2e/recent-clear-scope-verify.mjs` 全绿 —— 4 按钮出现；逐项验证三种作用域的 localStorage 精确清理与保留关系。**护栏**：`verify-shell-widgets.mjs` 锁 `recent.clear` 必须调用 `clearRecentItems` + `documents/locations/all` 三个作用域 value（防退化回直接清空）。 |
 
 **G7-MENU-12 详情（为什么「内嵌真值」比「没有护栏」更危险）**
 
@@ -1414,6 +1414,7 @@ Functional
 | **2026-09-15（第三十轮）** | 行为判定第四轮（清工作清单 16 → 13，可自动化部分收尾） | ① `expandSimpleBlock` / `prettyIndent` / `convertSmartOnRender` 全量检索无对应实现，且 Typora 默认均为 false → 行为一致（无害）；② 明确**剩余 13 项不再在纯代码层面硬判**：数学方言簇需先明确 Typora 各方言开关语义、侧栏选项簇需参考机截图，靠读码下结论误判风险高（对应「不得从自己的实现里取值」的纪律）；③ 三层矩阵的**可自动化部分已完成**，后续依赖参考机复核（13 项）与产品裁决（3 项 differs + 5 项默认值）。 |
 | **2026-09-16（第三十一轮）** | G7-EDIT-10：剩余 4 处 `window.confirm` 迁为应用内对话框 | ① 4 处（删除图片 / 文件树删除 / 当前文档删除 / 文件链接自动创建）全用 `askUser()` 二选一，新增按钮与标题的 zh/en 文案；② 护栏锁 `apps/desktop/src` 中 `window.confirm` **零出现**（比逐处断言耐用）+ 三处按钮 value + canary；③ 先确认**没有 e2e stub 原生对话框**（addInitScript 只设 localStorage）→ 迁移不会破坏既有测试；④ 如实登记：这 4 处在 harness 中**无法触发**（`file.trash` 需 `filePathRef` 非空），故覆盖 = 静态契约 + 共享机制已有的端到端实测；⑤ 9 处 `window.prompt` 仍需**输入型**对话框，属新能力，未硬做。 |
 | **2026-09-17（第三十二轮）** | G7-EDIT-10 收尾：9 处 `window.prompt` 迁入输入型应用内对话框 | ① 新增 `askInput()` —— **复用 `askUser()` 同一状态机**（同一视觉/Esc/点遮罩语义），只多渲染一个输入框，故无需第二套对话框；② 语义与 `window.prompt` 严格对齐（确定→文本含空串；取消/Esc/遮罩→null）；③ 处理两个易错点：输入值的**镜像 ref**（`.then` 里读 state 是过期闭包）、有输入框时焦点归输入框（Enter = 确定）；④ **运行时实证**：派发 `image.setAssetDir`（`enabled: always`，harness 可触发）断言应用内输入框/预填值/Enter 生效/遮罩取消不应用/**零原生面板**；⑤ 护栏改为同时锁 confirm 与 prompt 零出现 + askInput/输入框/样式断言 + canary。**至此原生确认/输入面板归零**。 |
+| **2026-09-17（第三十三轮）** | G7-MENU-14：清除最近项增加 Typora 作用域选择 | ① 一手核对 `Base/zh-Hans Panel.strings` 的四种作用域文案；② `recent.clear` 从直接清空 recentFiles 改为 `clearRecentItems()` + 应用内 4 按钮对话框；③ documents 只清文档、locations 只清历史文件夹（保留 pinned）、all 清三类、cancel 不改；④ `recent-clear-scope-verify.mjs` 逐项验证 localStorage 清理/保留关系全绿；⑤ shell 护栏锁命令接线与三作用域 value。 |
 
 ---
 

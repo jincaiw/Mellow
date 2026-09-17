@@ -84,7 +84,7 @@ if (!/const handleShortcutOverride = useCallback\(\(commandId: string, accelerat
 if (!/const override = shortcutOverrides\[command\.id\];[\s\S]*?command\.shortcut !== undefined/.test(appSource)) {
   fail('App.tsx registry 注入未应用 override（或未限定 command.shortcut !== undefined，P2-2.6 单一真源纪律）');
 }
-if (!/toggleTypewriter, typewriterEnabled, shortcutOverrides\]\)/.test(appSource)) {
+if (!/toggleTypewriter, typewriterEnabled, (?:clearRecentItems, )?shortcutOverrides\]\)/.test(appSource)) {
   fail('registry effect 依赖缺少 shortcutOverrides（override 变化不会重建 registry，P2-2.6）');
 }
 if (!appSource.includes('shortcutOverrides,\n    });')) {

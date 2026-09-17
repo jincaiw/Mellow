@@ -389,6 +389,18 @@ if (showElBody !== '') {
   if (!/\.confirm-modal-input \{/.test(read('apps/desktop/src/styles.css'))) {
     fail('styles.css 缺少 .confirm-modal-input 样式');
   }
+  // G7-MENU-14：清除最近项必须先让用户选择作用域（Typora 官方有四种相关文案，
+  // 不能退化为「直接清空 recentFiles」）。
+  if (!/const clearRecentItems = useCallback\(async \(\) => \{[\s\S]{0,1200}?dialog\.clearRecentTitle/.test(desktopSrc)) {
+    fail('recent.clear 缺少作用域选择对话框（G7-MENU-14）');
+  }
+  for (const value of ['documents', 'locations', 'all']) {
+    if (!desktopSrc.includes(`value: '${value}'`)) fail(`recent.clear 缺少作用域按钮 value=${value}`);
+  }
+  if (!/id: 'recent\.clear'[\s\S]{0,280}?void clearRecentItems\(\)/.test(desktopSrc)) {
+    fail('recent.clear 未调用 clearRecentItems（可能又退化为直接清空）');
+  }
+
   // canary：注入一处 window.prompt，同一条检查必须检出
   const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.prompt('x') ?? ''; void (0, {");
   if (drift === desktopSrc) {

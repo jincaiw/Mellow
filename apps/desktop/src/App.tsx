@@ -2407,6 +2407,36 @@ export default function App() {
     setPinnedFolders((prev) => prev.filter((f) => f !== folder));
   }, []);
 
+  /**
+   * 清除最近项（G7-MENU-14）：Typora 不是「直接清空」——它先让用户选择作用域：
+   * 文档 / 历史文件夹与文件 / 历史及固定的文件夹与文件。状态与 localStorage 必须同步清理。
+   */
+  const clearRecentItems = useCallback(async () => {
+    const choice = await askUser({
+      title: t('dialog.clearRecentTitle'),
+      message: t('dialog.clearRecentMessage'),
+      buttons: [
+        { label: t('dialog.clearRecentDocuments'), value: 'documents' },
+        { label: t('dialog.clearRecentFoldersFiles'), value: 'locations' },
+        { label: t('dialog.clearRecentAllPinned'), value: 'all', primary: true },
+        { label: t('dialog.cancel'), value: 'cancel' },
+      ],
+    });
+    if (choice === 'cancel') return;
+    if (choice === 'documents' || choice === 'all') {
+      setRecentFiles([]);
+      try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* noop */ }
+    }
+    if (choice === 'locations' || choice === 'all') {
+      setRecentFolders([]);
+      try { localStorage.removeItem(RECENT_FOLDERS_KEY); } catch { /* noop */ }
+    }
+    if (choice === 'all') {
+      setPinnedFolders([]);
+      try { localStorage.removeItem(PINNED_FOLDERS_KEY); } catch { /* noop */ }
+    }
+  }, [askUser, t]);
+
   /** 侧边栏模式快捷键（⌃⌘1/2/3，Typora 对齐）：切到大纲／文档列表／文件树；侧栏未开则打开。 */
   const showSidebarAs = useCallback((mode: 'files' | 'fileList' | 'outline' | 'search') => {
     setSidebarMode(mode);
@@ -4829,8 +4859,8 @@ export default function App() {
       { id: 'fileTree.copyPath', localizedTitle: { zh: '复制路径', en: 'Copy Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(false) },
       { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
       { id: 'updater.check', localizedTitle: { zh: '检查更新', en: 'Check for Updates' }, category: 'app', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => void runUpdateCheck({ manual: true }) },
-      // B2 文件菜单补全：清除最近文件（「打开最近文件」子菜单）
-      { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Items' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { setRecentFiles([]); try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* noop */ } } },
+      // B2 文件菜单补全：清除最近文件（Typora 的「打开最近文件」子菜单；执行时先选作用域）
+      { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Items' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { void clearRecentItems(); } },
       // 编辑：查找 / 替换（Typora 对齐；Ctrl+H 由引擎 keymap 处理）
       { id: 'search.find', localizedTitle: { zh: '查找…', en: 'Find…' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => engineSearch('find') },
       // Typora：替换 ⌥⌘F（⌘H 与 macOS 系统隐藏冲突，作为别名兜底）；Win/Linux Ctrl+H
@@ -5066,7 +5096,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, closeCurrentWindow, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, shortcutOverrides]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, closeCurrentWindow, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, clearRecentItems, shortcutOverrides]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
