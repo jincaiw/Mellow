@@ -29,7 +29,12 @@ pub struct OpenRequest {
     pub mode: String,
 }
 
-struct PendingOpen(Mutex<Option<OpenRequest>>);
+/// 待打开请求**按窗口 label 隔离**。
+///
+/// 为什么不能是全局单槽：多窗口下会「串窗」—— 新窗口要打开的文件可能被已有窗口先消费
+/// （`pending_open_path` 是谁先 mount 谁先拿），反之亦然。macOS Finder「打开方式」
+/// 仍投递给**当前聚焦窗口**，行为不变。
+pub(crate) struct PendingOpen(Mutex<std::collections::HashMap<String, OpenRequest>>);
 
 /// Windows Portable 模式标志（master-plan R1：exe 旁 `Data` 文件夹存在 → 便携模式）
 static PORTABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -90,16 +95,27 @@ fn jump_list_add_recent(path: String) {
 
 /// 前端就绪后拉取待打开请求（benchmark open-to-editable / open-with / CLI）
 #[tauri::command]
-fn pending_open_path(state: tauri::State<PendingOpen>) -> Option<OpenRequest> {
-    take_pending_open(&state)
+fn pending_open_path(window: tauri::WebviewWindow, state: tauri::State<PendingOpen>) -> Option<OpenRequest> {
+    // 只取**本窗口**的待打开请求（Tauri 自动注入调用方窗口）
+    take_pending_open(&state, window.label())
 }
 
 /// PendingOpen 的消费必须是一次性的：实时事件与前端拉取路径可能重叠，旧请求
 /// 绝不能在用户已切换文档后再次注入 EditorCore。
-fn take_pending_open(pending: &PendingOpen) -> Option<OpenRequest> {
+fn take_pending_open(pending: &PendingOpen, label: &str) -> Option<OpenRequest> {
     // 只消费一次。若保留副本，前端完成首次打开后再次查询会把旧文件重新
     // 注入 EditorCore，可能与用户当前编辑或启动 tab 初始化发生竞态。
-    pending.0.lock().unwrap().take()
+    pending.0.lock().unwrap().remove(label)
+}
+
+/// 把待打开请求挂到**指定窗口**的 label 下（该窗口 mount 时经 `pending_open_path` 拉取）。
+/// 目标窗口尚未就绪也不会丢 —— 这正是 PendingOpen 存在的意义。
+pub(crate) fn insert_pending_open(app: &tauri::AppHandle, label: &str, req: OpenRequest) {
+    app.state::<PendingOpen>()
+        .0
+        .lock()
+        .unwrap()
+        .insert(label.to_string(), req);
 }
 
 /// Web→Native 消息（与 CoreEditor nativeModule.ts 格式一致）
@@ -113,21 +129,53 @@ pub struct BridgeMessage {
 #[cfg(test)]
 mod tests {
     use super::{take_pending_open, OpenRequest, PendingOpen};
+    use std::collections::HashMap;
     use std::sync::Mutex;
+
+    fn pending_with(entries: &[(&str, &str)]) -> PendingOpen {
+        let mut map = HashMap::new();
+        for (label, path) in entries {
+            map.insert(
+                (*label).to_string(),
+                OpenRequest {
+                    path: (*path).to_string(),
+                    mode: "normal".to_string(),
+                },
+            );
+        }
+        PendingOpen(Mutex::new(map))
+    }
 
     #[test]
     fn pending_open_is_consumed_once() {
-        let pending = PendingOpen(Mutex::new(Some(OpenRequest {
-            path: "/tmp/launch.md".to_string(),
-            mode: "normal".to_string(),
-        })));
+        let pending = pending_with(&[("main", "/tmp/launch.md")]);
 
-        let first = take_pending_open(&pending).expect("first read returns the launch request");
+        let first = take_pending_open(&pending, "main").expect("first read returns the launch request");
         assert_eq!(first.path, "/tmp/launch.md");
         assert_eq!(first.mode, "normal");
         assert!(
-            take_pending_open(&pending).is_none(),
+            take_pending_open(&pending, "main").is_none(),
             "a consumed launch request must not be replayed"
+        );
+    }
+
+    /// 按窗口隔离：A 窗口的请求不得被 B 窗口取走（否则「在新窗口中打开」会串窗）。
+    #[test]
+    fn pending_open_is_per_window() {
+        let pending = pending_with(&[("main-1", "/tmp/one.md"), ("main-2", "/tmp/two.md")]);
+
+        let two = take_pending_open(&pending, "main-2").expect("second window gets its own request");
+        assert_eq!(two.path, "/tmp/two.md");
+        assert!(
+            take_pending_open(&pending, "main-2").is_none(),
+            "second window must not get it twice"
+        );
+
+        let one = take_pending_open(&pending, "main-1").expect("first window keeps its own request");
+        assert_eq!(one.path, "/tmp/one.md");
+        assert!(
+            take_pending_open(&pending, "unknown-window").is_none(),
+            "an unknown window label must not steal another window's request"
         );
     }
 }
@@ -199,7 +247,7 @@ pub fn run() {
         .manage(WatcherRegistry::default())
         .manage(watcher::WatcherIdCounter(AtomicU64::new(0)))
         .manage(DebounceState::default())
-        .manage(PendingOpen(Mutex::new(None)))
+        .manage(PendingOpen(Mutex::new(std::collections::HashMap::new())))
         .manage(geometry::GeometryState::default())
         .manage(window::CloseGate::default())
         .setup(|app| {
@@ -279,8 +327,9 @@ pub fn run() {
                             path: p.clone(),
                             mode: mode.clone(),
                         };
-                        *app.state::<PendingOpen>().0.lock().unwrap() = Some(req.clone());
-                        let _ = app.emit("mellow://open-file", req);
+                        // CLI 启动参数 → 主窗口（此处 app 是 &mut App，取 handle()）
+                        insert_pending_open(app.handle(), "main", req.clone());
+                        let _ = app.emit_to("main", "mellow://open-file", req);
                     }
                 }
             }
@@ -302,8 +351,16 @@ pub fn run() {
                                 path: s.clone(),
                                 mode: "normal".to_string(),
                             };
-                            *app.state::<PendingOpen>().0.lock().unwrap() = Some(req.clone());
-                            let _ = app.emit("mellow://open-file", req);
+                            // 投递给**当前聚焦窗口**（无聚焦窗口则主窗口），不再广播：
+                            // 广播在多窗口下会让非目标窗口也收到。
+                            let target = app
+                                .webview_windows()
+                                .iter()
+                                .find(|(_, w)| w.is_focused().unwrap_or(false))
+                                .map(|(label, _)| label.clone())
+                                .unwrap_or_else(|| "main".to_string());
+                            insert_pending_open(app, &target, req.clone());
+                            let _ = app.emit_to(target.as_str(), "mellow://open-file", req);
                         }
                     }
                 }

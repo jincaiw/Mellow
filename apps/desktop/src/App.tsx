@@ -2670,6 +2670,22 @@ export default function App() {
     await applyTab(tab);
     return true;
   }, [applyTab, guardSingleDocument, refreshTabsState, rememberQuickOpenRecent]);
+  /**
+   * 「在新窗口中打开」（Typora 文件树右键 / 文件菜单，G7-SIDE-08）。
+   *
+   * 路径交给 Rust：新窗口带**自己的 label** 写入待打开请求，mount 时经 `pending_open_path` 拉取
+   * —— 前端 ready 之前也不会丢（这是 PendingOpen 的设计目的）。
+   * 非 Tauri（dev/浏览器）回落为在当前窗口打开，保 dev 可用（与 `file.new` 同策略）。
+   */
+  const openInNewWindow = useCallback((path: string) => {
+    if (isTauri()) {
+      void import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('new_window', { path, mode: null }))
+        .catch(() => setToast({ message: t('window.newWindow.unavailable') }));
+    } else {
+      void openTreeFile(path);
+    }
+  }, [openTreeFile, t]);
 
   /** V7-W1.1：重新打开最近关闭的文件（Typora File → Reopen Closed File，⇧⌘T）。
    *  Typora 多标签语义为「恢复标签页」；Mellow 为 SDI 单文档窗口，等价映射为
@@ -3049,12 +3065,14 @@ export default function App() {
         { label: t('contextmenu.move'), enabled: path !== undefined, onClick: () => void handleTreeMove() },
         { label: t('contextmenu.trash'), enabled: path !== undefined, onClick: () => void handleTreeTrash() },
         { label: t('contextmenu.reveal'), enabled: path !== undefined, onClick: () => void handleTreeReveal(path as string) },
+        // G7-SIDE-08：Typora 文件树右键「在新窗口中打开」（需多窗口能力；dev 回落当前窗口）
+        { label: t('contextmenu.openInNewWindow'), enabled: path !== undefined, onClick: () => openInNewWindow(path as string) },
         { label: t('contextmenu.copyPath'), enabled: path !== undefined, onClick: () => void handleTreeCopyPath(false) },
         { label: t('contextmenu.copyRelativePath'), enabled: path !== undefined && fileTreeRoot !== null, onClick: () => void handleTreeCopyPath(true) },
         { label: t('contextmenu.undo'), enabled: fileTreeRoot !== null, onClick: () => void handleTreeUndo() },
       ],
     });
-  }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo]);
+  }, [fileTreeRoot, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, openInNewWindow]);
 
   /** P3.5 Outline 右键菜单：跳转/平铺-树形切换/全部折叠/全部展开（8.5 合同 Context 项） */
   const openOutlineContextMenu = useCallback((event: React.MouseEvent, item: OutlineHeading) => {
@@ -4684,14 +4702,16 @@ export default function App() {
       // 「新建标签页 ⌘T / Ctrl+Alt+T」随多标签能力移除。file.new 在非 Tauri（dev/浏览器）回落 handleNew。
       { id: 'file.new', localizedTitle: { zh: '新建', en: 'New' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => {
         if (isTauri()) {
-          void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window')).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
+          void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window', { path: null, mode: null })).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
         } else {
           void handleNew();
         }
       } },
       { id: 'file.newWindow', localizedTitle: { zh: '新建窗口', en: 'New Window' }, category: 'file', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => {
-        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window')).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('new_window', { path: null, mode: null })).catch(() => setToast({ message: t('window.newWindow.unavailable') }));
       } },
+      // G7-SIDE-08：Typora 文件菜单「在新窗口中打开」（当前文档）
+      { id: 'file.openInNewWindow', localizedTitle: { zh: '在新窗口中打开', en: 'Open in New Window' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => { const p = filePathRef.current; if (p !== null) openInNewWindow(p); } },
       // P1-1.9：「在文库中显示 / 在文件树中显示」（Typora 文件菜单，§7.2 第 11/12 项；
       // V5-A1 侧栏仅树形，Reveal in Library 语义等同切到文件树）
       { id: 'file.revealInFileList', localizedTitle: { zh: '在文档列表中显示', en: 'Reveal in Library' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => showSidebarAs('fileList') },

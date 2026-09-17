@@ -52,13 +52,20 @@ pub fn install_close_gate(app: &tauri::AppHandle, window: &tauri::WebviewWindow)
 /// 与主窗口共用同一 URL 与导航约束（Security Review H2：`on_navigation` 白名单），
 /// 标题、尺寸与 macOS 标题栏风格沿用主窗口默认值，避免两套窗口行为分叉。
 #[tauri::command]
-pub fn new_window(app: tauri::AppHandle) -> Result<(), String> {
+pub fn new_window(
+    app: tauri::AppHandle,
+    state: tauri::State<crate::PendingOpen>,
+    path: Option<String>,
+    mode: Option<String>,
+) -> Result<(), String> {
+    let _ = &state; // 仅用于保证 Tauri 注入 state（写待打开请求走 insert_pending_open）
     // label 必须唯一：用单调时间戳，避免与既有窗口冲突
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or_default();
     let label = format!("main-{stamp}");
+    let window_label = label.clone();
 
     let builder = tauri::webview::WebviewWindowBuilder::new(
         &app,
@@ -103,6 +110,18 @@ pub fn new_window(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("set title failed: {e}"))?;
     // B1（SDI）：新窗口同样安装关闭保护（红绿灯/✕ → dirty 确认）
     install_close_gate(&app, &window);
+    // 「在新窗口中打开」（Typora 文件树右键）：把待打开请求挂到**本窗口**的 label 下，
+    // 新窗口 mount 时经 pending_open_path 拉取 —— 前端 ready 之前也不会丢。
+    if let Some(p) = path {
+        crate::insert_pending_open(
+            &app,
+            &window_label,
+            crate::OpenRequest {
+                path: p,
+                mode: mode.unwrap_or_else(|| "normal".to_string()),
+            },
+        );
+    }
     Ok(())
 }
 

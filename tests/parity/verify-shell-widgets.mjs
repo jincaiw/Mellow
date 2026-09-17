@@ -401,6 +401,39 @@ if (showElBody !== '') {
     fail('recent.clear 未调用 clearRecentItems（可能又退化为直接清空）');
   }
 
+  // ── G7-SIDE-08：「在新窗口中打开」的**跨层**契约 ─────────────────────────
+  //
+  // 立节原因：该能力横跨 Rust（建窗口 + 待打开请求）与 TS（菜单入口 + invoke 传参），
+  // 任一端缺失都表现为「点了没反应」——而屏幕上看不出原因（与 §12b 的 enabled 通道同类）。
+  // 另：`PendingOpen` 必须是**按窗口隔离**的 —— 全局单槽在多窗口下会「串窗」。
+  const rustLib = read('apps/desktop/src-tauri/src/lib.rs');
+  const rustWindow = read('apps/desktop/src-tauri/src/window.rs');
+  const crossLayer = [
+    // Rust：按窗口隔离的待打开请求
+    ['PendingOpen 必须按窗口 label 隔离（HashMap）', /PendingOpen\(Mutex<std::collections::HashMap<String, OpenRequest>>\)/.test(rustLib)],
+    ['pending_open_path 必须取调用方窗口的 label', /fn pending_open_path\(window: tauri::WebviewWindow/.test(rustLib)],
+    ['take_pending_open 必须按 label 取', /fn take_pending_open\(pending: &PendingOpen, label: &str\)/.test(rustLib)],
+    // Rust：new_window 接受路径并挂到新窗口 label
+    ['new_window 必须接受 path/mode', /pub fn new_window\([\s\S]{0,120}?path: Option<String>/.test(rustWindow)],
+    ['new_window 必须把路径挂到本窗口 label', /insert_pending_open\([\s\S]{0,200}?&window_label/.test(rustWindow)],
+    // TS：菜单入口 + invoke 传参
+    ['文件树右键必须有「在新窗口中打开」', /contextmenu\.openInNewWindow/.test(desktopSrc)],
+    ['openInNewWindow 必须把 path 传给 new_window', /invoke\('new_window', \{ path, mode: null \}\)/.test(desktopSrc)],
+  ];
+  for (const [name, ok] of crossLayer) {
+    if (!ok) fail(`G7-SIDE-08 跨层契约不完整：${name}`);
+  }
+  // canary：把「按窗口隔离」改回全局单槽，同一条检查必须检出
+  const rustDrift = rustLib.replace(
+    'PendingOpen(Mutex<std::collections::HashMap<String, OpenRequest>>)',
+    'PendingOpen(Mutex<Option<OpenRequest>>)',
+  );
+  if (rustDrift === rustLib) {
+    fail('按窗口隔离 canary 未武装：注入点未命中');
+  } else if (/PendingOpen\(Mutex<std::collections::HashMap<String, OpenRequest>>\)/.test(rustDrift)) {
+    fail('按窗口隔离 canary 失效：注入全局单槽后未被检出');
+  }
+
   // canary：注入一处 window.prompt，同一条检查必须检出
   const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.prompt('x') ?? ''; void (0, {");
   if (drift === desktopSrc) {

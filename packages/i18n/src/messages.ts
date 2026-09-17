@@ -140,6 +140,8 @@ const zhCN = {
   'contextmenu.copyRelativePath': '复制相对路径',
   'contextmenu.undo': '撤销文件操作',
   'contextmenu.reveal': '在文件管理器中显示',
+  // Typora Menu.strings 官方原文：New Window / Open in New Window
+  'contextmenu.openInNewWindow': '在新窗口中打开',
   'contextmenu.open': '打开',
   'contextmenu.revealInTree': '在文件树中显示',
   'outline.jumpToHeading': '跳转到标题',
@@ -1002,6 +1004,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'contextmenu.copyRelativePath': 'Copy Relative Path',
   'contextmenu.undo': 'Undo File Operation',
   'contextmenu.reveal': 'Reveal in File Manager',
+  'contextmenu.openInNewWindow': 'Open in New Window',
   'contextmenu.open': 'Open',
   'contextmenu.revealInTree': 'Reveal in File Tree',
   'outline.jumpToHeading': 'Jump to Heading',
