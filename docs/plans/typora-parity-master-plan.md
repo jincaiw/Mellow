@@ -552,6 +552,7 @@ Feature
 | **G7-MENU-12** | **§12 文案合同里内嵌的「官方真值」自身失真**（护栏自己给自己盖章）+ **7 条从未纳入合同**的偏离 + **「打开最近文件」空态占位缺失** | 本机 `Base.lproj/Menu.strings`（英文）+ `zh-Hans.lproj/Menu.strings`（301 条） | ✅ **已修复**（见下） |
 | **G7-MENU-13** | **命令面板与菜单是两套独立文案源，此前只有菜单侧有护栏** | — | ✅ **漏译已修 + 新增 §14 护栏**；46 处风格差异**登记为「两套表面的表达习惯」不改** |
 | **G7-MENU-14（2026-09-17 实装）** | **「清除最近文件」不能直接清空：Typora 先让用户选择作用域** | **已修复**。Typora 一手文案（`Base.lproj/Panel.strings` + `zh-Hans.lproj/Panel.strings`）有 4 个相关作用域：`Clear Recent Documents` / `Clear Recent Folders / Files Only` / `Clear Recent Folders and Files` / `Clear Recent and Pinned Folders / Files`。Mellow 此前 `recent.clear` 直接 `setRecentFiles([])` + remove storage，**既误清/漏清范围，也没有给用户选择**。**实现**：`clearRecentItems()` 复用应用内 `askUser()` 弹 4 按钮作用域对话框：`documents` 只清 `mellow.recent.files`；`locations` 只清 `mellow.recent.folders`（保留 pinned）；`all` 清文档 + 历史文件夹 + `mellow.recent.folders.pinned`；`cancel` 不改任何状态。命令 execute 改为 fire-and-forget `void clearRecentItems()`（会弹异步模态，不能同步返回）。zh/en 文案新增。**运行时实证**：`tests/e2e/recent-clear-scope-verify.mjs` 全绿 —— 4 按钮出现；逐项验证三种作用域的 localStorage 精确清理与保留关系。**护栏**：`verify-shell-widgets.mjs` 锁 `recent.clear` 必须调用 `clearRecentItems` + `documents/locations/all` 三个作用域 value（防退化回直接清空）。 |
+| **G7-EDIT-08（2026-09-17 核查）** | 右键菜单开放项 | **继续登记，未擅自扩展**：`Open Image in Browser` / `Refresh All Math Expressions` / `Task Status` / `Block/Inline/List Styles` / `Learn More` / `Image Tools` 仍是功能候选；现有安全相关文案已对齐，未把「文案差异」冒充「功能完成」。下一步需单独设计/真机验收，避免右键入口复活未裁决能力。 |
 
 **G7-MENU-12 详情（为什么「内嵌真值」比「没有护栏」更危险）**
 
