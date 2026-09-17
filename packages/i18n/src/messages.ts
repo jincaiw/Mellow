@@ -424,6 +424,7 @@ const zhCN = {
   'dialog.trashTitle': '移入废纸篓',
   'dialog.createFileTitle': '创建文件',
   'dialog.delete': '删除',
+  'dialog.ok': '确定',
   'dialog.moveToTrash': '移入废纸篓',
   'dialog.create': '创建',
 
@@ -1266,6 +1267,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'dialog.trashTitle': 'Move to Trash',
   'dialog.createFileTitle': 'Create File',
   'dialog.delete': 'Delete',
+  'dialog.ok': 'OK',
   'dialog.moveToTrash': 'Move to Trash',
   'dialog.create': 'Create',
   'dialog.cancel': 'Cancel',

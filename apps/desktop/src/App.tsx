@@ -967,20 +967,49 @@ export default function App() {
   const [askDialog, setAskDialog] = useState<{
     title: string;
     message: string;
+    /** 输入型对话框（G7-EDIT-10）：存在则渲染输入框 */
+    input?: { initialValue: string; placeholder?: string };
     buttons: Array<{ label: string; value: string; primary?: boolean }>;
   } | null>(null);
+  const [askInputDraft, setAskInputDraft] = useState('');
+  /** 输入框当前值的**镜像 ref**：`.then` 里读 state 会拿到过期闭包值 */
+  const askInputValueRef = useRef('');
   const askResolverRef = useRef<((value: string) => void) | null>(null);
   const askUser = useCallback((options: {
     title: string;
     message: string;
+    input?: { initialValue: string; placeholder?: string };
     buttons: Array<{ label: string; value: string; primary?: boolean }>;
   }): Promise<string> => new Promise<string>((resolve) => {
     const previous = askResolverRef.current;
     askResolverRef.current = resolve;
+    askInputValueRef.current = options.input?.initialValue ?? '';
+    setAskInputDraft(options.input?.initialValue ?? '');
     setAskDialog(options);
     // 已有未决对话框（理论不可达）→ 以「取消」结束旧的，避免旧 await 永久悬空
     previous?.(options.buttons[options.buttons.length - 1]?.value ?? 'cancel');
   }), []);
+  /**
+   * 输入型应用内对话框（V7-W6，G7-EDIT-10）—— 替代 `window.prompt`。
+   *
+   * 语义与 `window.prompt` 对齐：**确定 → 返回文本**（可为空串）；**取消 / Esc / 点遮罩 → `null`**。
+   * 复用 `askUser` 的同一状态机（同一视觉、同一 Esc 约定、同一「点遮罩 = 取消」），只多渲染一个输入框。
+   */
+  const askInput = useCallback((options: {
+    title: string;
+    message?: string;
+    initialValue?: string;
+    placeholder?: string;
+    confirmLabel?: string;
+  }): Promise<string | null> => askUser({
+    title: options.title,
+    message: options.message ?? '',
+    input: { initialValue: options.initialValue ?? '', placeholder: options.placeholder },
+    buttons: [
+      { label: options.confirmLabel ?? t('dialog.ok'), value: 'ok', primary: true },
+      { label: t('dialog.cancel'), value: 'cancel' },
+    ],
+  }).then((button) => (button === 'ok' ? askInputValueRef.current : null)), [askUser, t]);
   const answerAsk = useCallback((value: string) => {
     const resolve = askResolverRef.current;
     askResolverRef.current = null;
@@ -1941,7 +1970,7 @@ export default function App() {
     if (action === 'rename') {
       const abs = ops.resolveSrcPath(src);
       const current = abs === null ? '' : abs.split('/').pop() ?? '';
-      const name = window.prompt(t('prompt.newFile'), current);
+      const name = await askInput({ title: t('prompt.newFile'), initialValue: current });
       if (name === null || name.trim() === '') return;
       const r = await ops.renameImage(src, name);
       if (!r.ok) {
@@ -1976,7 +2005,7 @@ export default function App() {
     }
     // C1 右键菜单新增（V4 §10 image 行：Resize / Markdown↔HTML / Upload / Delete）
     if (action === 'setSize') {
-      const current = window.prompt(t('prompt.imageSize'), '300x200');
+      const current = await askInput({ title: t('prompt.imageSize'), initialValue: '300x200' });
       if (current === null) return;
       void engineContextRef.current('imageSpanOp', 'setSize', current.trim());
       return;
@@ -2106,7 +2135,7 @@ export default function App() {
   const handleEditLinkUrl = useCallback(async () => {
     const current = await engineContextRef.current<string>('getLinkUrl');
     if (current === null) return;
-    const next = window.prompt(t('prompt.editLinkUrl'), current);
+    const next = await askInput({ title: t('prompt.editLinkUrl'), initialValue: current });
     if (next === null || next.trim() === '') return;
     void engineContextRef.current('setLinkUrl', next.trim());
   }, [t]);
@@ -2216,7 +2245,7 @@ export default function App() {
       return false;
     }
     const current = path.split('/').pop() ?? '';
-    const next = name ?? window.prompt(t('prompt.newFileShort'), current);
+    const next = name ?? await askInput({ title: t('prompt.newFileShort'), initialValue: current });
     if (next === null || next.trim() === '') return false;
     const r = await svc.renameDocument(next);
     if (!r.ok) {
@@ -2834,7 +2863,7 @@ export default function App() {
     const svc = fileTreeServiceRef.current;
     const dir = selectedTreeDir();
     if (!svc || dir === null) return;
-    const name = window.prompt(t('prompt.newFileShort'), t('prompt.untitledMd'));
+    const name = await askInput({ title: t('prompt.newFileShort'), initialValue: t('prompt.untitledMd') });
     if (!name) return;
     const r = await svc.newFile(dir, name);
     setStatusText(r.ok ? t('msg.newFile', { value: r.value }) : t('msg.newFileFailed', { error: r.error.message }));
@@ -2845,7 +2874,7 @@ export default function App() {
     const svc = fileTreeServiceRef.current;
     const dir = selectedTreeDir();
     if (!svc || dir === null) return;
-    const name = window.prompt(t('prompt.newFolder'), t('prompt.newFolderDefault'));
+    const name = await askInput({ title: t('prompt.newFolder'), initialValue: t('prompt.newFolderDefault') });
     if (!name) return;
     const r = await svc.newFolder(dir, name);
     setStatusText(r.ok ? t('msg.newFolder', { value: r.value }) : t('msg.newFileFailed', { error: r.error.message }));
@@ -2869,7 +2898,7 @@ export default function App() {
       }
       return;
     }
-    const next = name ?? window.prompt(t('prompt.rename'), target.split(/[\\/]/).pop() ?? target);
+    const next = name ?? await askInput({ title: t('prompt.rename'), initialValue: target.split(/[\\/]/).pop() ?? target });
     if (!next) return;
     const r = await svc.rename(target, next);
     setStatusText(r.ok ? t('msg.renamed', { value: r.value }) : t('msg.renameFailed', { error: r.error.message }));
@@ -3049,7 +3078,7 @@ export default function App() {
     if (event.key === 'F2' && selectedTreePath !== null) {
       event.preventDefault();
       void (async () => {
-        const name = window.prompt(t('prompt.rename'), selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath);
+        const name = await askInput({ title: t('prompt.rename'), initialValue: selectedTreePath.split(/[\\/]/).pop() ?? selectedTreePath });
         if (name) await handleTreeRename(name);
       })();
     }
@@ -4752,7 +4781,7 @@ export default function App() {
       { id: 'image.uploadAll', localizedTitle: { zh: '图片：上传图片', en: 'Images: Upload All' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void runBatch('uploadAll') },
       // V7-W1.7：Typora 格式 → 图像 → 插入本地图片…（文件选择器 → 光标处插入图片语法）
       { id: 'image.insertLocal', localizedTitle: { zh: '插入本地图片…', en: 'Insert Local Images…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void insertLocalImage() },
-      { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { const v = window.prompt(t('prompt.assetDir'), assetDir); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
+      { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: async () => { const v = await askInput({ title: t('prompt.assetDir'), initialValue: assetDir }); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
       { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
       { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },
       { id: 'window.fullscreen', localizedTitle: { zh: '切换全屏', en: 'Toggle Fullscreen' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isFullscreen().then((r) => { if (r.ok) void windowServiceRef.current?.setFullscreen(!r.value); }); } },
@@ -5800,17 +5829,40 @@ export default function App() {
         >
           <div className="confirm-modal" role="dialog" aria-modal="true" aria-label={askDialog.title}>
             <div className="confirm-modal-title">{askDialog.title}</div>
-            <div className="confirm-modal-message">
-              {askDialog.message.split('\n').map((line, index) => (
-                <span key={index} className="confirm-modal-line">{line}</span>
-              ))}
-            </div>
+            {askDialog.message !== '' && (
+              <div className="confirm-modal-message">
+                {askDialog.message.split('\n').map((line, index) => (
+                  <span key={index} className="confirm-modal-line">{line}</span>
+                ))}
+              </div>
+            )}
+            {askDialog.input !== undefined && (
+              <input
+                className="confirm-modal-input"
+                type="text"
+                value={askInputDraft}
+                placeholder={askDialog.input.placeholder ?? ''}
+                // 有输入框时焦点给输入框（键盘用户可直接输入）
+                autoFocus
+                onChange={(event) => {
+                  setAskInputDraft(event.target.value);
+                  askInputValueRef.current = event.target.value;
+                }}
+                onKeyDown={(event) => {
+                  // Enter = 主按钮（确定）；Esc 由全局 handler 处理（= 取消）
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    answerAsk('ok');
+                  }
+                }}
+              />
+            )}
             <div className="confirm-modal-actions">
               {askDialog.buttons.map((button) => (
                 <button
                   key={button.value}
                   className={button.primary === true ? 'confirm-modal-primary' : undefined}
-                  autoFocus={button.primary === true}
+                  autoFocus={askDialog.input === undefined && button.primary === true}
                   onClick={() => answerAsk(button.value)}
                 >
                   {button.label}

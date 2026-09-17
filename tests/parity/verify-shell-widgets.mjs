@@ -368,8 +368,10 @@ if (showElBody !== '') {
 // 本轮 4 处已迁完 → 直接锁**零出现**，比逐处断言更耐用（以后新增也会被拦下）。
 {
   const desktopSrc = ['apps/desktop/src/App.tsx'].map((f) => read(f)).join('\n');
-  if (/window\.confirm\(/.test(desktopSrc)) {
-    fail('apps/desktop/src 仍存在 window.confirm —— 应用内 askUser 对话框已具备二选一能力，不应再用原生面板');
+  for (const api of ['confirm', 'prompt']) {
+    if (new RegExp(`window\\.${api}\\(`).test(desktopSrc)) {
+      fail(`apps/desktop/src 仍存在 window.${api} —— 应用内 askUser / askInput 已具备二选一与输入能力，不应再用原生面板`);
+    }
   }
   // 三处迁移后的按钮 value 必须存在（证明「确实在问」，而不是直接执行）
   for (const value of ['delete', 'trash', 'create']) {
@@ -377,11 +379,21 @@ if (showElBody !== '') {
       fail(`缺少 askUser 的 ${value} 按钮（G7-EDIT-10 迁移后应存在）`);
     }
   }
-  // canary：注入一处 window.confirm，同一条检查必须检出
-  const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.confirm('x') ? 'y' : 'n'; void (0, {");
+  // 输入型对话框：askInput 存在 + 输入框真的渲染（有输入框才谈得上替代 window.prompt）
+  if (!/const askInput = useCallback\(/.test(desktopSrc)) {
+    fail('缺少 askInput（替代 window.prompt 的输入型应用内对话框）');
+  }
+  if (!/className="confirm-modal-input"/.test(desktopSrc)) {
+    fail('输入型对话框未渲染 .confirm-modal-input（askInput 会拿不到用户输入）');
+  }
+  if (!/\.confirm-modal-input \{/.test(read('apps/desktop/src/styles.css'))) {
+    fail('styles.css 缺少 .confirm-modal-input 样式');
+  }
+  // canary：注入一处 window.prompt，同一条检查必须检出
+  const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.prompt('x') ?? ''; void (0, {");
   if (drift === desktopSrc) {
     fail('原生确认面板 canary 未武装：注入点未命中');
-  } else if (!/window\.confirm\(/.test(drift)) {
+  } else if (!/window\.prompt\(/.test(drift)) {
     fail('原生确认面板 canary 失效：注入后未检出');
   }
 }

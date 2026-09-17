@@ -1198,6 +1198,22 @@ html, body, #root {
   margin-top: 4px;
 }
 
+/* 输入型对话框（G7-EDIT-10）：替代 window.prompt。视觉与 .confirm-modal-actions button 同族。 */
+.confirm-modal-input {
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--mellow-border-strong);
+  border-radius: 5px;
+  background: var(--mellow-bg);
+  color: var(--mellow-fg);
+  outline: none;
+}
+
+.confirm-modal-input:focus {
+  border-color: var(--mellow-accent);
+}
+
 .confirm-modal-actions button {
   padding: 4px 14px;
   font-size: 12px;
