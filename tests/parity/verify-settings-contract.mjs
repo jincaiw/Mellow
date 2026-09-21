@@ -856,6 +856,12 @@ if (cssLayerAnchor === undefined) {
     ['宿主：Reader/导出链走同一 resolveImageSrc 并读 root-url 基准',
       /resolveImageSrc\(src, docDir, imageRootUrlRef\.current\)/.test(desktopSrc2)
       && /refreshImageRootUrl\(content\)/.test(desktopSrc2)],
+    ['HTML 导出：with-theme/self-contained 内联图片必须走 root-url + Rust read_binary',
+      /const exportRootDir = docDir === null \? null : parseRootUrl\(content, docDir\)/.test(desktopSrc2)
+      && /const abs = resolveImageSrc\(src, docDir, exportRootDir\)/.test(desktopSrc2)
+      && /invoke<number\[\]>\('read_binary', \{ path: abs \}\)/.test(desktopSrc2)],
+    ['HTML 导出：读取失败必须回退保留原 src（不能阻断导出）',
+      /return null; \/\/ 读取失败由 exportHtml 保留原 src/.test(desktopSrc2)],
     ['front matter 边界只有一处实现（宿主不为扫描 front matter 拉入 CodeMirror）',
       /export function frontMatterBounds/.test(read('packages/editor-engine/src/frontMatter.ts'))
       && /frontMatterBounds\(doc\)/.test(read('packages/editor-engine/src/yamlFrontMatter.ts'))],

@@ -1287,12 +1287,41 @@ export default function App() {
         }),
       ]);
       if (savePath === null) return; // 用户取消
-      const html = await exportHtml(hostRef.current.getText(), {
+      const content = hostRef.current.getText();
+      // G7-FEAT-08：HTML with-theme/self-contained 的本地图片内联必须遵循 typora-root-url。
+      // 文件 IO 仍走 Rust（UI 不直接读文件）；exportHtml 只接收 data URL resolver。
+      const docPath = filePathRef.current;
+      const docDir = docPath === null ? null : docPath.replace(/[\/][^\/]*$/, '');
+      const exportRootDir = docDir === null ? null : parseRootUrl(content, docDir);
+      const html = await exportHtml(content, {
         mode,
         theme: themeSettings.mode === 'dark' ? 'dark' : 'light',
         title: tab.title ?? undefined,
         // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（preLinebreakOnExport，默认关）
         preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
+      }, {
+        // 仅在 exportHtml 需要内联图片时调用；without-style 不会触发（embedImages=false）。
+        resolveImage: async (src: string): Promise<string | null> => {
+          if (!isTauri() || /^(?:https?:|data:)/i.test(src)) return null;
+          const abs = resolveImageSrc(src, docDir, exportRootDir);
+          if (abs === null) return null;
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const bytes = await invoke<number[]>('read_binary', { path: abs });
+            // 不要把整张图片 spread 给 String.fromCharCode：大图会触发调用栈溢出。
+            const binaryParts: string[] = [];
+            const data = new Uint8Array(bytes);
+            for (let i = 0; i < data.length; i += 8192) {
+              binaryParts.push(String.fromCharCode(...data.subarray(i, i + 8192)));
+            }
+            const base64 = btoa(binaryParts.join(''));
+            const ext = abs.split('?')[0].split('#')[0].toLowerCase().split('.').pop() ?? '';
+            const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : ext === 'svg' ? 'image/svg+xml' : 'image/png';
+            return `data:${mime};base64,${base64}`;
+          } catch {
+            return null; // 读取失败由 exportHtml 保留原 src，不能阻断整份导出
+          }
+        },
       });
       await invoke('write_text', { path: savePath, content: html });
       setToast({ message: t('export.html.done') });
