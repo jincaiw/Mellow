@@ -177,12 +177,12 @@ for (const sc of SCENARIOS) {
   // window chrome；Undo 必须重新落到编辑器并把 caret 放到文末，否则 Ctrl+Z 会
   // 被窗口菜单吞掉（实测 paragraph 出现「输入成功但 undo FAIL」，而 heading 等场景正常）。
   if (wid) focusEditor(wid, sc.focusPoint);
-  // undo 直至清空
+  // 一次性执行 Undo，再做一次保存读回。不能在每个 Ctrl+Z 之间 Ctrl+S：
+  // 保存会让应用重新同步 dirty/disk 状态，且某些 WebKitGTK 路径会改变编辑器 focus/history
+  // 观察窗口，导致本来有效的 IME composition undo 被读回动作污染。
   for (let i = 0; i < 12; i++) {
     combo('ctrl+z', '29:1 44:1 44:0 29:0');
     sleep(900);
-    const t = readBackForUndo();
-    if (hanCount(t) === 0) break;
   }
   const afterUndo = readBackForUndo();
   r.undoOk = hanCount(afterUndo) === 0;
