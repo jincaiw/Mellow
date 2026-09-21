@@ -127,9 +127,10 @@ const SCENARIOS = [
   // default blank-body point is below it and only focuses the editor shell;
   // target the code node itself so this scenario verifies composition inside it.
   // Coordinates are window-relative (and therefore include title/menu/tab chrome).
-  // y=65 targets the opening fence, which is a non-text marker. The editable `code`
-  // content line is one visual row lower at y≈110; focus that line directly.
-  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 110 } },
+  // The Linux screenshot shows title/menu/toolbar chrome through ~165px; the
+  // editable `code` content line is around y=195. y=110 is blank chrome and
+  // silently caused the old matrix to type nowhere (false product failure).
+  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 195 } },
   { id: 'math', doc: '$x+1$' },
   { id: 'link', doc: '[label](https://example.com)' },
 ];
@@ -160,6 +161,10 @@ for (const sc of SCENARIOS) {
   const committedHan = hanCount(text);
   r.pass = committedHan === 4;
   if (!r.pass) r.reason = `预期 4 个已提交汉字，实际 ${committedHan}`;
+  // readBack 会经过 Ctrl+A/C + Ctrl+S，X11/WebKit 在空文档场景偶尔把焦点留在
+  // window chrome；Undo 必须重新落到编辑器并把 caret 放到文末，否则 Ctrl+Z 会
+  // 被窗口菜单吞掉（实测 paragraph 出现「输入成功但 undo FAIL」，而 heading 等场景正常）。
+  if (wid) focusEditor(wid, sc.focusPoint);
   // undo 直至清空
   for (let i = 0; i < 12; i++) {
     combo('ctrl+z', '29:1 44:1 44:0 29:0');
