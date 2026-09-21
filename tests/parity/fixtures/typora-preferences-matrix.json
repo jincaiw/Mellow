@@ -292,7 +292,8 @@
       "status": "gap",
       "mellow": [],
       "note": "GitLab 数学语法兼容未实装",
-      "behavior": "unverified"
+      "behavior": "differs",
+      "behaviorNote": "一手证据（Typora main.js）：默认 true，GitLab math fenced language 会被识别为数学类型（`isMathType`）；Mellow math.ts 未处理 `math` 代码围栏，仅处理 `$`/`\\(`/`\\[` 数学分隔符 → behavior differs，需单独实现/裁决"
     },
     {
       "typora": "headingStyle",
@@ -318,7 +319,8 @@
       "status": "gap",
       "mellow": [],
       "note": "HTML 数学输出未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "一手证据（Typora main.js）：默认 htmlMath=false，仅在 HTML 数学输出开关开启时参与；Mellow 没有 HTML 数学输出，默认行为同样不输出 HTML 数学 → matches-default"
     },
     {
       "typora": "ignoreLineBreak",
@@ -373,7 +375,8 @@
       "status": "gap",
       "mellow": [],
       "note": "旧版行内数学解析兼容未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "一手证据（Typora main.js）：默认 false，使用现代 inline_math 规则；Mellow parseMathSpans 仅实现现代 `$`/`\\(`/`\\[` 分隔符，无 legacy 分支 → matches-default"
     },
     {
       "typora": "libraryFileFilterMode",
@@ -452,7 +455,8 @@
       "status": "gap",
       "mellow": [],
       "note": "旧版数学语法兼容开关未实装",
-      "behavior": "unverified"
+      "behavior": "differs",
+      "behaviorNote": "一手证据（Typora main.js）：默认 false，legacy 数学解析仍启用；Mellow 没有 legacy 数学分支，实际等价于 Typora noLegacyMath=true → behavior differs，需明确 legacy 语法范围后再实现"
     },
     {
       "typora": "noLineWrapping",
@@ -523,7 +527,8 @@
       "status": "gap",
       "mellow": [],
       "note": "预置拼写检查（词典/语言）未实装 —— 依赖 host-api 的拼写词典能力（P0-EDITOR-005）",
-      "behavior": "unverified"
+      "behavior": "differs",
+      "behaviorNote": "Typora 默认 `auto`（预置拼写检查自动选择）；Mellow 无 spellcheck 消费方/词典能力（P0-EDITOR-005）→ 默认能力不同，属于真实 gap，依赖 host-api 词典设计"
     },
     {
       "typora": "prettyIndent",
@@ -549,7 +554,8 @@
       "status": "gap",
       "mellow": [],
       "note": "「跟随光标滚动」未实装（Mellow 有打字机模式 editor.typewriter，语义不同）",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "默认 false；Mellow 默认不启用随光标滚动，打字机模式是独立手动模式（editor.typewriter）→ matches-default"
     },
     {
       "typora": "sendAnonymousUsage",
@@ -641,7 +647,8 @@
       "status": "gap",
       "mellow": [],
       "note": "代码与链接内拼写检查开关未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "默认 false；Mellow 没有拼写检查消费方，代码/链接内自然不标拼写错误 → matches-default"
     },
     {
       "typora": "strictMarkdown",
@@ -649,7 +656,8 @@
       "status": "gap",
       "mellow": [],
       "note": "严格模式未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "默认 false；Mellow Markdown 解析/编辑路径未启用严格模式，默认走宽松语义 → matches-default"
     },
     {
       "typora": "strictNumberStartOnNewLine",
