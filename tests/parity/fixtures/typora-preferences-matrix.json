@@ -411,7 +411,8 @@
       "status": "gap",
       "mellow": [],
       "note": "列表不分组显示未实装（侧栏）",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "Typora 默认 false = 文档列表按文件夹分组；Mellow 文档列表默认 fileListRecursive=true 且 FileList `groupByFolder={fileListRecursive}` → 默认行为为分组，matches-default"
     },
     {
       "typora": "mathFormatOnCopy",
@@ -639,7 +640,8 @@
       "status": "gap",
       "mellow": [],
       "note": "侧栏排序方式未作为设置暴露",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "Typora 默认 sortType=0 = Natural 升序；Mellow DEFAULT_FILE_TREE_OPTIONS 为 sortBy=natural、sortAsc=true、folderFirst=true → 默认排序行为一致，matches-default"
     },
     {
       "typora": "spellcheckForCodeAndLink",
@@ -699,7 +701,8 @@
       "status": "gap",
       "mellow": [],
       "note": "文件树不分组显示未实装",
-      "behavior": "unverified"
+      "behavior": "matches-default",
+      "behaviorNote": "Typora 默认 false = 文件树按目录层级分组；Mellow Files 视图使用 FileTree 层级节点并展开/折叠目录 → 默认行为为分组，matches-default"
     },
     {
       "typora": "ulStyle",
@@ -741,7 +744,8 @@
       "status": "gap",
       "mellow": [],
       "note": "文件树样式（树形 / 平铺）未实装",
-      "behavior": "unverified"
+      "behavior": "differs",
+      "behaviorNote": "一手证据（Typora main.js）：默认 useTreeStyle=false，默认委托 fileList（列表呈现）；Mellow sidebarMode 无持久化时默认 `files`，渲染 FileTree 目录树 → 整体默认呈现不同（Mellow 选择文件树作为产品默认），属有意差异而非单一缺失开关。"
     },
     {
       "typora": "wholeWord",
@@ -756,7 +760,8 @@
       "status": "gap",
       "mellow": [],
       "note": "字数统计分隔符设置未实装",
-      "behavior": "unverified"
+      "behavior": "differs",
+      "behaviorNote": "一手证据（Typora main.js）：`wordCountDelimiter=0` 对应 WORD，WordCount 面板按 WORD/CHAR/LINE/TIME 四种模式切换；Mellow wordCount.ts 固定同时计算并展示 words/chars/lines/readingTime，无 delimiter 模式切换 → 默认呈现/计算口径不同，需单独裁决，不能把现有 CJK-aware 统计冒充完全对齐。"
     },
     {
       "typora": "wordsPerMinute",
