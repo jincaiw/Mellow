@@ -828,6 +828,47 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── ⑯ Typora `typora-root-url`（G7-FEAT-08）：**两条解析链必须同时支持** ──────
+//
+// 立节原因：Mellow 有**两条**图片 src → 绝对路径的解析链，改一处必查另一处：
+//   ① 引擎 `image/scan.ts` → `resolveImageSrc(src, docDir, rootDir)`（编辑器内显示/图片操作）
+//   ② 宿主 `App.tsx` 的 `readerResolveImageSrc`（Reader 渲染 + 图片导出）
+// 只改一条的后果是「编辑器里显示正常、Reader/导出里图片全丢」，而屏幕上看不出原因。
+//
+// 另外锁两个易错点：
+//   - `typora-root-url` **只能从 front matter 读**（正文/代码块里同名文本不算）；
+//   - 引号内空白（`"  "`）必须判为空值（本轮单测抓到的真 bug）。
+{
+  const pathSrc = read('packages/editor-engine/src/image/path.ts');
+  const scanSrc = read('packages/editor-engine/src/image/scan.ts');
+  const desktopSrc2 = read('apps/desktop/src/App.tsx');
+  const checks = [
+    ['引擎：resolveImageSrc 必须接受 rootDir 并处理根相对 src',
+      /export function resolveImageSrc\(src: string, docDir: string \| null, rootDir: string \| null = null\)/.test(pathSrc)
+      && /kind === 'posix-absolute' && rootDir !== null/.test(pathSrc)],
+    ['引擎：parseRootUrl 存在且只读 front matter',
+      /export function parseRootUrl\(doc: string, docDir: string \| null\)/.test(pathSrc)
+      && /frontMatterYaml\(doc\)/.test(pathSrc)],
+    ['引擎：引号内空白必须判空（先剥引号再 trim）',
+      /m\[1\]\.replace\(\/\^\["\'\]\|\["\'\]\$\/g, ''\)\.trim\(\)/.test(pathSrc)],
+    ['引擎：scan 链传入 rootDir', /const rootDir = parseRootUrl\(text, docDir\)/.test(scanSrc)
+      && /resolveImageSrc\(src, docDir, rootDir\)/.test(scanSrc)],
+    ['宿主：Reader/导出链走同一 resolveImageSrc 并读 root-url 基准',
+      /resolveImageSrc\(src, docDir, imageRootUrlRef\.current\)/.test(desktopSrc2)
+      && /refreshImageRootUrl\(content\)/.test(desktopSrc2)],
+    ['front matter 边界只有一处实现（宿主不为扫描 front matter 拉入 CodeMirror）',
+      /export function frontMatterBounds/.test(read('packages/editor-engine/src/frontMatter.ts'))
+      && /frontMatterBounds\(doc\)/.test(read('packages/editor-engine/src/yamlFrontMatter.ts'))],
+  ];
+  for (const [name, ok] of checks) {
+    if (!ok) fail(`typora-root-url 契约不完整：${name}`);
+  }
+  // canary：把「根相对按 root 解析」改回「按文件系统根」，必须被检出
+  const drift = pathSrc.replace("if (kind === 'posix-absolute' && rootDir !== null) {", 'if (false) {');
+  if (drift === pathSrc) fail('typora-root-url canary 未武装：注入点未命中');
+  else if (/kind === 'posix-absolute' && rootDir !== null/.test(drift)) fail('typora-root-url canary 失效');
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);

@@ -7,6 +7,7 @@
  */
 
 import type { EditorView, ViewUpdate, DecorationSet, Decoration as DecorationT } from '@codemirror/view';
+import { frontMatterBounds } from './frontMatter';
 import type { Extension } from '@codemirror/state';
 
 interface CmRuntime {
@@ -48,12 +49,17 @@ function escapeHtml(value: string): string {
 }
 
 export function parseYamlFrontMatter(doc: string): YamlFrontMatter | null {
-  if (!doc.startsWith('---\n')) return null;
-  const close = doc.indexOf('\n---', 4);
-  if (close === -1) return null;
-  const closeLineEnd = doc.indexOf('\n', close + 1);
-  const to = closeLineEnd === -1 ? doc.length : closeLineEnd;
-  return { from: 0, to, yamlFrom: 4, yamlTo: close, source: doc.slice(0, to), yaml: doc.slice(4, close) };
+  // 边界规则由 frontMatter.ts 统一提供（宿主侧也要读 front matter，不能为此拉入 CodeMirror）
+  const bounds = frontMatterBounds(doc);
+  if (bounds === null) return null;
+  return {
+    from: 0,
+    to: bounds.to,
+    yamlFrom: bounds.yamlFrom,
+    yamlTo: bounds.yamlTo,
+    source: doc.slice(0, bounds.to),
+    yaml: doc.slice(bounds.yamlFrom, bounds.yamlTo),
+  };
 }
 
 export function validateFrontMatterYaml(yaml: string): YamlValidationResult {

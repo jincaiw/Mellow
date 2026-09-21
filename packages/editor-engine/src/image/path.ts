@@ -9,6 +9,8 @@
  * - 图片扩展名检测
  */
 
+import { frontMatterYaml } from '../frontMatter';
+
 /** 路径种类（spec §5） */
 export type PathKind = 'url' | 'windows-drive' | 'unc' | 'posix-absolute' | 'relative';
 
@@ -214,24 +216,60 @@ export function unescapeImageSrc(src: string): string {
 }
 
 /**
+ * 解析 Typora `typora-root-url`（G7-FEAT-08）→ **绝对目录**；未设置 → null。
+ *
+ * 一手语义（`TypeMark/appsrc/main.js` 的 `docMenu.getLocalRootUrl()`）：
+ * - 只从 **YAML front matter** 读（Typora 用 `getMetaNode()`）—— 正文/代码块里出现同名文本不算；
+ * - 相对值以**文档目录**为基准解析为绝对目录，绝对值原样；
+ * - 空值 → 视为未设置。
+ *
+ * 作用：设置后文档内的图片 src 以该目录（而非文档目录）为基准解析 —— 典型用途是
+ * 「文档与图片分处不同目录、共享一个容器目录」，即 Typora 图片菜单的
+ * `Use Image Root Path`。
+ */
+export function parseRootUrl(doc: string, docDir: string | null): string | null {
+  const yaml = frontMatterYaml(doc);
+  if (yaml === null) return null;
+  const m = /^\s*typora-root-url\s*:\s*(.*)$/im.exec(yaml);
+  if (m === null) return null;
+  // ⚠️ 先剥引号再 trim：`"  "` 这类「引号内空白」必须先露出空白才能被判为空值，
+  // 否则会解析出 `/docs/  ` 这种垃圾基准（用户察觉不到，图片全部解析失败）。
+  const raw = m[1].replace(/^["']|["']$/g, '').trim();
+  if (raw === '') return null;
+  if (isAbsolutePath(raw)) return normalizeSlashes(raw);
+  if (docDir === null) return null; // 未保存文档 + 相对 root → 无法解析
+  return normalizePath(joinPaths(docDir, raw));
+}
+
+/**
  * 把 image src 解析为绝对路径（spec §5 resolve）。
  * - url → 原样
  * - 绝对（drive/UNC/POSIX）→ 归一化后原样
  * - 相对 → join(docDir, src)
  * 返回 null：src 为空或无法解析。
+ *
+ * `rootDir`（Typora `typora-root-url`，G7-FEAT-08）非 null 时改变基准：
+ * - **根相对** src（前导 `/`）→ 解析到 `rootDir` 之下（而不是文件系统根）—— Typora
+ *   `resolveImagePath` 在设置 root 时把 src 写成根相对，显示时用 `path.resolve(root, src)`；
+ * - 普通相对 src → 基准从 `docDir` 换成 `rootDir`（Typora：`path.resolve(rootUrl || docFolder, src)`）。
  */
-export function resolveImageSrc(src: string, docDir: string | null): string | null {
+export function resolveImageSrc(src: string, docDir: string | null, rootDir: string | null = null): string | null {
   const kind = pathKind(src);
   if (kind === 'url') {
     return src;
   }
+  if (kind === 'posix-absolute' && rootDir !== null) {
+    // 根相对：剥掉前导斜杠后挂到 root 之下
+    return normalizePath(joinPaths(rootDir, src.replace(/^\/+/, '')));
+  }
   if (kind === 'windows-drive' || kind === 'unc' || kind === 'posix-absolute') {
     return normalizeSlashes(src);
   }
-  if (docDir === null) {
+  const base = rootDir ?? docDir;
+  if (base === null) {
     return null; // 未保存文档 + 相对路径 → 无法解析
   }
-  return normalizePath(joinPaths(docDir, src));
+  return normalizePath(joinPaths(base, src));
 }
 
 /** 图片扩展名检测（spec §3 insert 判定） */

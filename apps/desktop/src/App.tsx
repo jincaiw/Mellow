@@ -79,6 +79,8 @@ import { openThemesFolder, refreshUserThemes } from './host/userThemes';
 import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
+// G7-FEAT-08：引擎的图片路径纯函数（parseRootUrl / resolveImageSrc）—— 与编辑器内 scan 链共用同一语义
+import { parseRootUrl, resolveImageSrc } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions, ImageUploadService } from '../../../packages/host-api/src/index';
 import type { ImageExportOptions, Canvas2DLike } from '../../../packages/export/src/image/index';
 import { CommandPaletteModel, CommandRegistry, SCHEMA_SHORTCUTS, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
@@ -1301,12 +1303,33 @@ export default function App() {
   const handleExportHtml = useCallback(() => runExportHtml('with-theme'), [runExportHtml]);
   const handleExportHtmlPlain = useCallback(() => runExportHtml('without-style'), [runExportHtml]);
 
-  /** 图片 src → 可显示/可加载 URL（相对路径基于当前文档目录，Tauri asset 协议）；Reader 与图片导出共用 */
+  /**
+   * 当前渲染上下文的 `typora-root-url` 绝对目录（G7-FEAT-08）。
+   *
+   * 由渲染入口（Reader / 图片导出）在拿到文档内容后**设置一次**，解析器只读 ——
+   * 否则每张图片都要调一次 `host.getText()`。
+   */
+  const imageRootUrlRef = useRef<string | null>(null);
+
+  /** 用当前文档内容刷新 root-url 基准（渲染入口调用一次） */
+  const refreshImageRootUrl = useCallback((content: string) => {
+    const docPath = filePathRef.current;
+    const docDir = docPath === null ? null : docPath.replace(/[\/][^\/]*$/, '');
+    imageRootUrlRef.current = docDir === null ? null : parseRootUrl(content, docDir);
+  }, []);
+
+  /**
+   * 图片 src → 可显示/可加载 URL（Tauri asset 协议）；Reader 与图片导出共用。
+   *
+   * G7-FEAT-08：走引擎的 `resolveImageSrc`（与编辑器内 scan 链**同一语义**）——
+   * 原实现是朴素拼接 `${base}/${src}`，对根相对 src（`/images/a.png`）会拼出 `base//images/...`，
+   * 而 `typora-root-url` 的典型用法正是根相对路径。
+   */
   const readerResolveImageSrc = useCallback((src: string) => {
     if (/^(?:https?:|data:|#)/i.test(src)) return src;
     const docPath = filePathRef.current;
-    const base = docPath === null ? '' : docPath.replace(/[\/][^\/]*$/, '');
-    const abs = base === '' ? src : `${base}/${src}`;
+    const docDir = docPath === null ? null : docPath.replace(/[\/][^\/]*$/, '');
+    const abs = resolveImageSrc(src, docDir, imageRootUrlRef.current) ?? src;
     if ('__TAURI_INTERNALS__' in window) {
       try {
         return convertFileSrc(abs.replace(/^file:\/\//, ''));
@@ -1321,6 +1344,8 @@ export default function App() {
   const handleExportImage = useCallback(async () => {
     const tab = docStateRef.current.doc;
     if (tab === null || hostRef.current === null) return;
+    // G7-FEAT-08：图片导出的图片解析同样要遵循 typora-root-url
+    refreshImageRootUrl(hostRef.current.getText());
     try {
       // 设置读取（PRD §74 参数；localStorage 值不可信任 → 回退默认）
       const settingsFormat = localStorage.getItem('mellow.export.image.format') === 'jpeg' ? 'jpeg' : 'png';
@@ -1389,7 +1414,7 @@ export default function App() {
       }
       setToast({ message: `${t('export.image.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t, themeSettings.mode, readerResolveImageSrc]);
+  }, [t, themeSettings.mode, readerResolveImageSrc, refreshImageRootUrl]);
 
   /** 启动：更新健康确认（rollback 策略）+ 启动后定时检查更新 */
   useEffect(() => {
@@ -1533,13 +1558,15 @@ export default function App() {
     const active = docStateRef.current.doc;
     if (!host || active === null) return;
     const content = host.getText();
+    // G7-FEAT-08：以本次渲染的文档内容刷新 root-url 基准
+    refreshImageRootUrl(content);
     const result = renderReaderHtml(content, { resolveImageSrc: readerResolveImageSrc });
     setReaderHtml(result.html);
     setReaderOutlineItems(result.outline);
     setReaderTitle(active.title);
     setReaderOpen(true);
     setStatusText(t('msg.readerOn'));
-  }, [readerResolveImageSrc]);
+  }, [readerResolveImageSrc, refreshImageRootUrl]);
 
   const closeReader = useCallback(() => {
     setReaderOpen(false);

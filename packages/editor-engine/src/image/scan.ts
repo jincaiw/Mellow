@@ -10,7 +10,7 @@
  * 与 path.ts 配合：URL/Windows drive/UNC/POSIX 判别、相对路径解析全部复用。
  */
 
-import { resolveImageSrc, dirname, normalizeSlashes, joinPaths, isUrl, basename, unescapeImageSrc, stripImageSize } from './path';
+import { resolveImageSrc, parseRootUrl, dirname, normalizeSlashes, joinPaths, isUrl, basename, unescapeImageSrc, stripImageSize } from './path';
 
 export type ImageRefKind = 'remote' | 'local';
 
@@ -51,6 +51,8 @@ export function isRemoteSrc(src: string): boolean {
  */
 export function scanImageRefs(text: string, docDir: string | null, assetDirAbs: string | null): ImageRef[] {
   const refs: ImageRef[] = [];
+  // G7-FEAT-08：Typora `typora-root-url` 设置后，图片 src 以该目录为基准解析（而非文档目录）
+  const rootDir = parseRootUrl(text, docDir);
   // 与 path.ts parseImageSrcFromMarkdown 同构：`![alt](src)`；src 不含 `)`（Typora 同语义）
   const RE = /!\[([^\]]*)\]\(([^)]*)\)/g;
   let m: RegExpExecArray | null;
@@ -63,7 +65,7 @@ export function scanImageRefs(text: string, docDir: string | null, assetDirAbs: 
     const kind: ImageRefKind = isRemoteSrc(src) ? 'remote' : 'local';
     let absolutePath: string | null = null;
     if (kind === 'local') {
-      absolutePath = resolveImageSrc(src, docDir);
+      absolutePath = resolveImageSrc(src, docDir, rootDir);
     }
     let inAssetDir = false;
     if (absolutePath !== null && assetDirAbs !== null) {
