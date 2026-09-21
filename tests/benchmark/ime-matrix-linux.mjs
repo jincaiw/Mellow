@@ -94,6 +94,13 @@ function readBack(pid) {
   try { return readFileSync(DOC, 'utf8'); } catch { return ''; }
 }
 
+/** Undo 读回：只保存，不做 Ctrl+A/C，避免改变编辑器 selection/history 语义。 */
+function readBackForUndo() {
+  combo('ctrl+s', '29:1 31:1 31:0 29:0');
+  sleep(1500);
+  try { return readFileSync(DOC, 'utf8'); } catch { return ''; }
+}
+
 function launch(doc, im) {
   // CI 容器中只会启动本 harness 的 mellow-desktop。Tauri 的 single-instance
   // forwarding 会把新文件交给旧进程；因此必须清理所有同名旧实例，不能只杀
@@ -174,10 +181,10 @@ for (const sc of SCENARIOS) {
   for (let i = 0; i < 12; i++) {
     combo('ctrl+z', '29:1 44:1 44:0 29:0');
     sleep(900);
-    const t = readBack(pid);
+    const t = readBackForUndo();
     if (hanCount(t) === 0) break;
   }
-  const afterUndo = readBack(pid);
+  const afterUndo = readBackForUndo();
   r.undoOk = hanCount(afterUndo) === 0;
   if (!r.undoOk) r.undoReason = `undo 后仍有汉字: ${JSON.stringify(afterUndo)}`;
   // 只匹配精确进程名，不会误杀外层 bash/Node；确保下一场景不会走 single-instance forwarding。
