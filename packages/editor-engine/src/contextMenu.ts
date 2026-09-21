@@ -53,6 +53,8 @@ export interface EditorContextActions {
   copySource(kind: 'math' | 'mermaid'): boolean;
   /** C1：Typora code-tools 子菜单（复制内容 / 整体自动缩进 / 所选自动缩进 / 删除围栏 / 前后插入段落） */
   codeTool(op: 'copyContent' | 'autoIndentAll' | 'autoIndentSelected' | 'deleteFences' | 'insertParagraphBefore' | 'insertParagraphAfter'): boolean;
+  /** G7-EDIT-08：请求全部数学 widget 重新解析/渲染（不修改 Markdown 文本） */
+  refreshMath(): boolean;
   /** C1：复制渲染结果为 PNG（math → MathML 转 PNG；mermaid → 渲染 SVG 转 PNG），写入剪贴板 */
   copyRendered(kind: 'math' | 'mermaid'): Promise<boolean>;
   /** C1：渲染导出（宿主「下载」用）：返回 PNG dataURL，无渲染结果时为 null */
@@ -572,6 +574,15 @@ export function installContextMenuApi(): void {
           return true;
         }
       }
+    },
+    refreshMath() {
+      const view = activeView;
+      if (view === null) return false;
+      // 显式 selection transaction 触发 Math block StateField 与 inline ViewPlugin 重建。
+      // 不改文档文本，Undo/Source Fidelity 均不受影响；相较改空白，这是可观察且无副作用的刷新信号。
+      const selection = view.state.selection.main;
+      view.dispatch({ selection: { anchor: selection.anchor, head: selection.head } });
+      return true;
     },
     async copyRendered(kind) {
       const view = activeView;

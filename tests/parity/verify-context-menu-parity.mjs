@@ -56,7 +56,7 @@ const CTX_CONTRACT = {
   },
   math: {
     typora: ['|', 'edit', 'copyMathBlock', 'download-math', 'code-tools', '|', 'insertParagraphBefore', 'insertParagraphAfter', 'delete'],
-    items: [...BASE, 'math.copyAsTex', 'math.copyAsMathML', 'math.copyAsImage', 'math.download', ...CODE_TOOLS, ...INSERT_PARAGRAPHS, 'math.deleteBlock'],
+    items: [...BASE, 'math.copyAsTex', 'math.copyAsMathML', 'math.copyAsImage', 'math.download', 'math.refreshAll', ...CODE_TOOLS, ...INSERT_PARAGRAPHS, 'math.deleteBlock'],
   },
   mermaid: {
     typora: ['|', 'edit', 'copy-as-image', 'download-diagram', 'code-tools', '|', 'insertParagraphBefore', 'insertParagraphAfter', 'delete'],

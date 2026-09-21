@@ -4119,6 +4119,7 @@ export default function App() {
           ],
         },
         { label: t('contextmenu.mathDownload'), onClick: run('math.download') },
+        { label: t('contextmenu.mathRefreshAll'), onClick: run('math.refreshAll') },
         {
           label: t('contextmenu.codeTools'),
           children: [
@@ -5008,6 +5009,8 @@ export default function App() {
       { id: 'paragraph.deleteFences', localizedTitle: { zh: '删除围栏', en: 'Delete Fences' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'deleteFences'); } },
       { id: 'paragraph.insertParagraphBefore', localizedTitle: { zh: '在上方插入段落', en: 'Insert Paragraph Before' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'insertParagraphBefore'); } },
       { id: 'paragraph.insertParagraphAfter', localizedTitle: { zh: '在下方插入段落', en: 'Insert Paragraph After' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'insertParagraphAfter'); } },
+      // G7-EDIT-08：刷新所有数学公式（只触发渲染重建，不修改 Markdown/Undo）
+      { id: 'math.refreshAll', localizedTitle: { zh: '刷新所有数学公式', en: 'Refresh All Math Expressions' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('refreshMath'); } },
       // C1：公式块右键（Typora copyMathBlock 子菜单 + download-math + delete）
       { id: 'math.copyAsMathML', localizedTitle: { zh: '复制为 MathML', en: 'Copy as MathML' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { handleCopyMathMl(); } },
       { id: 'math.copyAsImage', localizedTitle: { zh: '复制为图片', en: 'Copy as Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { handleCopyRendered('math'); } },

@@ -455,6 +455,19 @@ if (showElBody !== '') {
     fail('图片浏览器打开 canary 失效：URL 分流调用漂移未检出');
   }
 
+  // G7-EDIT-08：刷新所有数学公式必须是无文本副作用的 context action。
+  if (!/id: 'math\.refreshAll'/.test(desktopSrc)
+    || !/contextmenu\.mathRefreshAll/.test(desktopSrc)
+    || !/refreshMath\(\)/.test(read('packages/editor-engine/src/contextMenu.ts'))
+    || !/view\.dispatch\(\{ selection: \{ anchor: selection\.anchor, head: selection\.head \} \}\)/.test(read('packages/editor-engine/src/contextMenu.ts'))) {
+    fail('G7-EDIT-08 数学刷新接线不完整：命令 / 右键入口 / context action / 无文本变更 transaction 必须同时存在');
+  }
+
+  // canary：把数学刷新改成空函数，必须被同一条契约检出
+  const mathRefreshDrift = desktopSrc.replace("void engineContext('refreshMath')", "void Promise.resolve(false)");
+  if (mathRefreshDrift === desktopSrc) fail('数学刷新 canary 未武装：注入点未命中');
+  else if (/void engineContext\('refreshMath'\)/.test(mathRefreshDrift)) fail('数学刷新 canary 失效');
+
   // canary：注入一处 window.prompt，同一条检查必须检出
   const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.prompt('x') ?? ''; void (0, {");
   if (drift === desktopSrc) {
