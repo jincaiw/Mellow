@@ -62,6 +62,10 @@ const CTX_CONTRACT = {
     typora: ['|', 'edit', 'copy-as-image', 'download-diagram', 'code-tools', '|', 'insertParagraphBefore', 'insertParagraphAfter', 'delete'],
     items: [...BASE, 'mermaid.copyAsImage', 'mermaid.download', ...CODE_TOOLS, ...INSERT_PARAGRAPHS, 'mermaid.deleteBlock'],
   },
+  task: {
+    typora: ['|', 'Task Status'],
+    items: [...BASE, 'task.markComplete', 'task.markIncomplete'],
+  },
   table: {
     typora: ['|', 'table', '|', 'insertParagraphBefore', 'insertParagraphAfter'],
     items: [

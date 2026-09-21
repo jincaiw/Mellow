@@ -4054,6 +4054,18 @@ export default function App() {
       );
     }
     // 普通文本：段落 / 格式转换子菜单 + 复制为（V4 §10 text 行）。
+    if (req.kind === 'task') {
+      items.push(
+        { separator: true },
+        {
+          label: t('contextmenu.taskStatus'),
+          children: [
+            { label: t('contextmenu.taskMarkComplete'), onClick: run('task.markComplete') },
+            { label: t('contextmenu.taskMarkIncomplete'), onClick: run('task.markIncomplete') },
+          ],
+        },
+      );
+    }
     if (req.kind === 'text') {
       items.push(
         { separator: true },
@@ -5011,6 +5023,9 @@ export default function App() {
       { id: 'paragraph.insertParagraphAfter', localizedTitle: { zh: '在下方插入段落', en: 'Insert Paragraph After' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'insertParagraphAfter'); } },
       // G7-EDIT-08：刷新所有数学公式（只触发渲染重建，不修改 Markdown/Undo）
       { id: 'math.refreshAll', localizedTitle: { zh: '刷新所有数学公式', en: 'Refresh All Math Expressions' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('refreshMath'); } },
+      // G7-EDIT-08：Typora Paragraph → Task Status
+      { id: 'task.markComplete', localizedTitle: { zh: '标记为已完成', en: 'Mark as Complete' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('setTaskStatus', true); } },
+      { id: 'task.markIncomplete', localizedTitle: { zh: '标记为未完成', en: 'Mark as Incomplete' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('setTaskStatus', false); } },
       // C1：公式块右键（Typora copyMathBlock 子菜单 + download-math + delete）
       { id: 'math.copyAsMathML', localizedTitle: { zh: '复制为 MathML', en: 'Copy as MathML' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { handleCopyMathMl(); } },
       { id: 'math.copyAsImage', localizedTitle: { zh: '复制为图片', en: 'Copy as Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { handleCopyRendered('math'); } },

@@ -468,6 +468,20 @@ if (showElBody !== '') {
   if (mathRefreshDrift === desktopSrc) fail('数学刷新 canary 未武装：注入点未命中');
   else if (/void engineContext\('refreshMath'\)/.test(mathRefreshDrift)) fail('数学刷新 canary 失效');
 
+  // G7-EDIT-08：Task Status 必须实现两个互斥命令，并只 patch checkbox marker。
+  const contextSource = read('packages/editor-engine/src/contextMenu.ts');
+  if (!/id: 'task\.markComplete'/.test(desktopSrc)
+    || !/id: 'task\.markIncomplete'/.test(desktopSrc)
+    || !/contextmenu\.taskStatus/.test(desktopSrc)
+    || !/setTaskStatus\(complete: boolean\)/.test(contextSource)
+    || !/view\.dispatch\(\{ changes: \{ from, to: from \+ 1, insert: complete \? 'x' : ' ' \} \}\)/.test(contextSource)) {
+    fail('G7-EDIT-08 Task Status 接线不完整：两个命令 / 右键子菜单 / 单字符 marker patch 必须同时存在');
+  }
+  // canary：将 marker patch 改成整行替换，必须被同一条契约检出
+  const taskDrift = contextSource.replace("to: from + 1, insert: complete ? 'x' : ' '", "to: line.to, insert: line.text");
+  if (taskDrift === contextSource) fail('Task Status canary 未武装：注入点未命中');
+  else if (/to: from \+ 1, insert: complete \? 'x' : ' '/.test(taskDrift)) fail('Task Status canary 失效：整行替换漂移未检出');
+
   // canary：注入一处 window.prompt，同一条检查必须检出
   const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.prompt('x') ?? ''; void (0, {");
   if (drift === desktopSrc) {

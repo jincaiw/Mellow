@@ -23,7 +23,7 @@ import { parseMathSpans } from './math';
 import { parseMermaidBlocks } from './mermaid';
 
 export interface EditorContextMenuRequest {
-  kind: 'text' | 'link' | 'wikilink' | 'image' | 'table' | 'code' | 'math' | 'mermaid';
+  kind: 'text' | 'link' | 'wikilink' | 'image' | 'task' | 'table' | 'code' | 'math' | 'mermaid';
   x: number;
   y: number;
   hasSelection: boolean;
@@ -69,6 +69,8 @@ export interface EditorContextActions {
   deleteBlock(kind: 'math' | 'mermaid' | 'code'): boolean;
   /** C1：图片引用的文档编辑类操作（Markdown↔HTML / 设置尺寸 / 改路径 / 删除引用） */
   imageSpanOp(op: 'mdToHtml' | 'htmlToMd' | 'setSize' | 'replaceSrc' | 'delete', arg?: string): boolean;
+  /** G7-EDIT-08：任务状态菜单动作（Mark as Complete / Incomplete） */
+  setTaskStatus(complete: boolean): boolean;
   /** G7-EDIT-08：读取光标处图片的原始 src，宿主负责安全地打开本地/远程目标 */
   getImageSrc(): string | null;
   /** C1：链接操作（编辑链接 URL / 移除链接保留文本） */
@@ -337,6 +339,11 @@ function buildRequest(view: EditorView, pos: number | null, x: number, y: number
     if (el !== null) {
       const src = imageSourceAt(doc, pos, code);
       if (src !== null) return { ...base, kind: 'image', src };
+    }
+    // G7-EDIT-08：任务列表右键「Task Status」—— 只在当前行确有 task marker 时进入 task 分支。
+    const line = view.state.doc.lineAt(pos);
+    if (/^\s*[-*+]\s\[[ xX]\](?:\s|$)/.test(line.text)) {
+      return { ...base, kind: 'task' };
     }
     const wl = scanWikilinks(doc, code).find((l) => pos >= l.from && pos <= l.to);
     if (wl !== undefined) return { ...base, kind: 'wikilink', name: wl.name };
@@ -688,6 +695,16 @@ export function installContextMenuApi(): void {
           return true;
         }
       }
+    },
+    setTaskStatus(complete) {
+      const view = activeView;
+      if (view === null) return false;
+      const line = view.state.doc.lineAt(view.state.selection.main.head);
+      const match = /^(\s*[-*+]\s\[)([ xX])(\])/.exec(line.text);
+      if (match === null) return false;
+      const from = line.from + match[1].length;
+      view.dispatch({ changes: { from, to: from + 1, insert: complete ? 'x' : ' ' } });
+      return true;
     },
     getImageSrc() {
       const view = activeView;
