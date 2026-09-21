@@ -68,8 +68,13 @@ function focusEditor(winId, point = { x: 600, y: 250 }) {
   sh(`xdotool windowactivate --sync ${winId} 2>/dev/null; xdotool windowfocus --sync ${winId} 2>/dev/null`);
   sh(`xdotool mousemove --window ${winId} ${point.x} ${point.y} click --repeat ${point.clicks ?? 1} 1`);
   sleep(700);
-  xdo('key --clearmodifiers ctrl+End');
-  sleep(500);
+  // Most scenarios intentionally reset the caret to document end. Code is different:
+  // Ctrl+End after clicking the code line moves the caret OUTSIDE the fence, so the
+  // IME result is appended after ``` and the matrix falsely reports code input loss.
+  if (point.end !== false) {
+    xdo('key --clearmodifiers ctrl+End');
+    sleep(500);
+  }
   console.log(`[focus] target=${winId} active=${sh('xdotool getwindowfocus 2>/dev/null').trim() || 'UNAVAILABLE'}`);
 }
 
@@ -130,7 +135,7 @@ const SCENARIOS = [
   // The Linux screenshot shows title/menu/toolbar chrome through ~165px; the
   // editable `code` content line is around y=195. y=110 is blank chrome and
   // silently caused the old matrix to type nowhere (false product failure).
-  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 195 } },
+  { id: 'code', doc: '```\ncode\n```', focusPoint: { x: 300, y: 195, end: false } },
   { id: 'math', doc: '$x+1$' },
   { id: 'link', doc: '[label](https://example.com)' },
 ];
