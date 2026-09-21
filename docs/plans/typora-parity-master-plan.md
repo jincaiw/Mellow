@@ -552,7 +552,7 @@ Feature
 | **G7-MENU-12** | **§12 文案合同里内嵌的「官方真值」自身失真**（护栏自己给自己盖章）+ **7 条从未纳入合同**的偏离 + **「打开最近文件」空态占位缺失** | 本机 `Base.lproj/Menu.strings`（英文）+ `zh-Hans.lproj/Menu.strings`（301 条） | ✅ **已修复**（见下） |
 | **G7-MENU-13** | **命令面板与菜单是两套独立文案源，此前只有菜单侧有护栏** | — | ✅ **漏译已修 + 新增 §14 护栏**；46 处风格差异**登记为「两套表面的表达习惯」不改** |
 | **G7-MENU-14（2026-09-17 实装）** | **「清除最近文件」不能直接清空：Typora 先让用户选择作用域** | **已修复**。Typora 一手文案（`Base.lproj/Panel.strings` + `zh-Hans.lproj/Panel.strings`）有 4 个相关作用域：`Clear Recent Documents` / `Clear Recent Folders / Files Only` / `Clear Recent Folders and Files` / `Clear Recent and Pinned Folders / Files`。Mellow 此前 `recent.clear` 直接 `setRecentFiles([])` + remove storage，**既误清/漏清范围，也没有给用户选择**。**实现**：`clearRecentItems()` 复用应用内 `askUser()` 弹 4 按钮作用域对话框：`documents` 只清 `mellow.recent.files`；`locations` 只清 `mellow.recent.folders`（保留 pinned）；`all` 清文档 + 历史文件夹 + `mellow.recent.folders.pinned`；`cancel` 不改任何状态。命令 execute 改为 fire-and-forget `void clearRecentItems()`（会弹异步模态，不能同步返回）。zh/en 文案新增。**运行时实证**：`tests/e2e/recent-clear-scope-verify.mjs` 全绿 —— 4 按钮出现；逐项验证三种作用域的 localStorage 精确清理与保留关系。**护栏**：`verify-shell-widgets.mjs` 锁 `recent.clear` 必须调用 `clearRecentItems` + `documents/locations/all` 三个作用域 value（防退化回直接清空）。 |
-| **G7-EDIT-08（2026-09-17 核查）** | 右键菜单开放项 | **继续登记，未擅自扩展**：`Open Image in Browser` / `Refresh All Math Expressions` / `Task Status` / `Block/Inline/List Styles` / `Learn More` / `Image Tools` 仍是功能候选；现有安全相关文案已对齐，未把「文案差异」冒充「功能完成」。下一步需单独设计/真机验收，避免右键入口复活未裁决能力。 |
+| **G7-EDIT-08（2026-09-21 实装更新）** | 右键菜单开放项 | **Open Image in Browser 已实装**：编辑器图片右键新增入口，command `edit.openImageInBrowser` → engine `getImageSrc()` → 宿主 `OpenerService`；远程/`data:` 走 `openUrl`，本地路径走 `openPath`，不直接调用 `window.open`。其余 `Refresh All Math Expressions` / `Task Status` / `Block/Inline/List Styles` / `Learn More` / `Image Tools` 仍未实现，继续登记为功能候选。 |
 
 **G7-MENU-12 详情（为什么「内嵌真值」比「没有护栏」更危险）**
 
@@ -1423,6 +1423,7 @@ Functional
 | **2026-09-21（第三十九轮）** | 偏好矩阵第五轮：数学/拼写/默认行为判定 | ① 基于 Typora `main.js` 消费点与 Mellow `math.ts` 对照，`htmlMath` / `legacyInlineMathParse` / `spellcheckForCodeAndLink` / `scrollWithCursor` / `strictMarkdown` 判为 matches-default（33）；② `gitlabMath` / `noLegacyMath` / `presetSpellCheck` 判为 differs（7），不擅自实现，附证据与前置条件；③ 剩余 5 项（侧栏分组/排序 + wordCountDelimiter）保留 unverified，需参考机/真机复核。 |
 | **2026-09-21（第四十一轮）** | 偏好矩阵第六轮：侧栏分组/排序判定 | ① 交叉核对 Typora `main.js` 与 Mellow `FileList`/`FileTree`/`DEFAULT_FILE_TREE_OPTIONS`；② `listNoGroup` / `treeNoGroup` / `sortType` 判为 matches-default（总 36）；③ `useTreeStyle` / `wordCountDelimiter` 保留 unverified，前者是整体呈现差异、后者需参考机确认分隔语义。 |
 | **2026-09-21（第四十二轮）** | 偏好矩阵收口：最后两项判定，unverified=0 | ① `useTreeStyle`：Typora 默认 fileList vs Mellow 默认 FileTree，判为有意 differs；② `wordCountDelimiter`：Typora 默认 WORD 模式且支持四种模式 vs Mellow 固定展示多项统计，判为 differs；③ 两项均附 Typora main.js 一手证据；④ 偏好矩阵未核实行为归零。 |
+| **2026-09-21（第四十三轮）** | G7-EDIT-08：Open Image in Browser 实装 | ① Typora 候选已核对；② 图片右键新增 command `edit.openImageInBrowser`；③ engine context `getImageSrc` 只读当前图片引用；④ 远程/data URL 用 OpenerService.openUrl，本地 src 用 OpenerService.openPath；⑤ 禁止 window.open；⑥ shell 护栏锁 command/入口/分流/canary；⑦ context-menu parity 保持通过；其余右键候选继续登记。 |
 
 ---
 

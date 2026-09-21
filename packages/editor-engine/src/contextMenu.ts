@@ -67,6 +67,8 @@ export interface EditorContextActions {
   deleteBlock(kind: 'math' | 'mermaid' | 'code'): boolean;
   /** C1：图片引用的文档编辑类操作（Markdown↔HTML / 设置尺寸 / 改路径 / 删除引用） */
   imageSpanOp(op: 'mdToHtml' | 'htmlToMd' | 'setSize' | 'replaceSrc' | 'delete', arg?: string): boolean;
+  /** G7-EDIT-08：读取光标处图片的原始 src，宿主负责安全地打开本地/远程目标 */
+  getImageSrc(): string | null;
   /** C1：链接操作（编辑链接 URL / 移除链接保留文本） */
   setLinkUrl(url: string): boolean;
   unlink(): boolean;
@@ -675,6 +677,13 @@ export function installContextMenuApi(): void {
           return true;
         }
       }
+    },
+    getImageSrc() {
+      const view = activeView;
+      if (view === null) return null;
+      const doc = view.state.doc.toString();
+      const pos = view.state.selection.main.head;
+      return imageSpanFullAt(doc, pos, fencedRanges(doc))?.src ?? null;
     },
     setLinkUrl(url) {
       const view = activeView;

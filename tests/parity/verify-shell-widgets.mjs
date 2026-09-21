@@ -434,6 +434,27 @@ if (showElBody !== '') {
     fail('按窗口隔离 canary 失效：注入全局单槽后未被检出');
   }
 
+  // G7-EDIT-08：图片右键「在浏览器中打开」必须走已存在的 OpenerService，不能在引擎/React 里
+  // 直接调用 window.open（绕过 Tauri opener 安全与 dev mock）。
+  if (!/id: 'edit\.openImageInBrowser'/.test(desktopSrc)
+    || !/contextmenu\.editorImageOpenInBrowser/.test(desktopSrc)
+    || !/const handleOpenImageInBrowser = useCallback/.test(desktopSrc)
+    || !/opener\.openUrl\(src\)/.test(desktopSrc)
+    || !/opener\.openPath\(src\)/.test(desktopSrc)) {
+    fail('G7-EDIT-08 图片「在浏览器中打开」接线不完整：命令 / 右键入口 / OpenerService / URL与本地路径分流必须同时存在');
+  }
+  if (/window\.open\(/.test(desktopSrc)) {
+    fail('G7-EDIT-08 图片打开不得直接调用 window.open（必须走 OpenerService）');
+  }
+
+  // canary：删除 OpenerService 的 URL 分流调用，同一条检查必须检出
+  const imageOpenDrift = desktopSrc.replace('opener.openUrl(src)', 'opener.openUrl(\'\')');
+  if (imageOpenDrift === desktopSrc) {
+    fail('图片浏览器打开 canary 未武装：注入点未命中');
+  } else if (!/opener\.openUrl\(src\)/.test(imageOpenDrift)) {
+    fail('图片浏览器打开 canary 失效：URL 分流调用漂移未检出');
+  }
+
   // canary：注入一处 window.prompt，同一条检查必须检出
   const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.prompt('x') ?? ''; void (0, {");
   if (drift === desktopSrc) {

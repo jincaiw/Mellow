@@ -81,7 +81,7 @@ const CTX_CONTRACT = {
  */
 const DIRECT_CALL_EXCEPTIONS = [
   { kind: 'wikilink', why: '打开 [[wikilink]] 需解析目标文件，尚无对应 command id（P1-1.3 后迁入 registry）' },
-  { kind: 'image', why: '图片 4 项走 handleImageAction（打开/显示/复制路径/重命名），尚无对应 command id（P1-1.3 后迁入 registry）' },
+  { kind: 'image', why: '图片仍有若干动作走 handleImageAction（打开/显示/复制路径/重命名等）；本轮「在浏览器中打开」已迁入 edit.openImageInBrowser command，但图片上下文仍保留直连例外，待整体迁移（G7-EDIT-08）' },
 ];
 
 /** 直连例外的 kind 不参与命令序列比对（因为条目不经过 dispatchCommand），但仍受「例外过期」检测约束。 */

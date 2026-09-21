@@ -2059,7 +2059,7 @@ export default function App() {
       setStatusText(r.value.downloaded > 0 ? t('msg.downloadedAll') : t('msg.skippedReason', { reason: r.value.skipped[0]?.reason ?? '' }));
       return;
     }
-    // C1 右键菜单新增（V4 §10 image 行：Resize / Markdown↔HTML / Upload / Delete）
+    // C1 右键菜单新增 (V4 §10 image 行：Resize / Markdown↔HTML / Upload / Delete)
     if (action === 'setSize') {
       const current = await askInput({ title: t('prompt.imageSize'), initialValue: '300x200' });
       if (current === null) return;
@@ -2152,6 +2152,18 @@ export default function App() {
   }, []);
   const engineContextRef = useRef(engineContext);
   engineContextRef.current = engineContext;
+
+  /** G7-EDIT-08：编辑器右键图片「在浏览器中打开」 */
+  const handleOpenImageInBrowser = useCallback(async () => {
+    const src = await engineContextRef.current<string>('getImageSrc');
+    if (src === null || src === '') return;
+    const opener = openerRef.current;
+    if (opener === null) return;
+    const result = /^(?:https?:|data:)/i.test(src)
+      ? await opener.openUrl(src)
+      : await opener.openPath(src);
+    setStatusText(result.ok ? t('msg.imageOpened') : t('msg.imageOpenFailed', { error: result.error.message }));
+  }, [t]);
 
   /** C1：复制渲染结果为 PNG（Typora copyMathBlock→copyAsImage / 图表 copy-as-image） */
   const handleCopyRendered = useCallback((kind: 'math' | 'mermaid') => {
@@ -4025,6 +4037,7 @@ export default function App() {
       items.push(
         { separator: true },
         { label: t('contextmenu.editorImageOpen'), onClick: img('open') },
+        { label: t('contextmenu.editorImageOpenInBrowser'), onClick: run('edit.openImageInBrowser') },
         { label: t('contextmenu.editorImageReveal'), onClick: img('reveal') },
         { label: t('contextmenu.editorImageCopy'), onClick: run('edit.copyImage') },
         { label: t('contextmenu.editorImageCopyPath'), onClick: img('copyPath') },
@@ -4979,6 +4992,7 @@ export default function App() {
       { id: 'edit.copy', localizedTitle: { zh: '拷贝', en: 'Copy' }, category: 'edit', shortcut: { mac: 'Cmd+C', winLinux: 'Ctrl+C' }, context: { scope: 'selection' }, enabled: hasSelection, execute: () => engineEditAction('copy') },
       { id: 'edit.paste', localizedTitle: { zh: '粘贴', en: 'Paste' }, category: 'edit', shortcut: { mac: 'Cmd+V', winLinux: 'Ctrl+V' }, context: { scope: 'document' }, enabled: always, execute: () => engineEditAction('paste') },
       { id: 'edit.copyImage', localizedTitle: { zh: '拷贝图片', en: 'Copy Image' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void handleCopyImage() },
+      { id: 'edit.openImageInBrowser', localizedTitle: { zh: '在浏览器中打开图片', en: 'Open Image in Browser' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void handleOpenImageInBrowser() },
       // P1-1.7：公式块「复制为 Tex 代码」——对应 Typora 1.14.9 mathBlock.copyAsTex()
       // 证据：Typora 1.14.9 appsrc/main.js getMenuItemsForMac，math_block 分支条目为
       // ["|","edit","copyMathBlock","download-math","code-tools","|","insertParagraphBefore","insertParagraphAfter","delete"]，
@@ -5172,7 +5186,7 @@ export default function App() {
       dispatch: (id, payload) => dispatchCommand(id, 'plugin', payload),
       all: () => commandRegistryRef.current.all(),
     };
-  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, closeCurrentWindow, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, clearRecentItems, shortcutOverrides]);
+  }, [activeTheme, adjustFontSize, applySetting, applyThemeById, assetDir, chooseFileTreeRoot, closeReader, cycleFocusMode, dispatchCommand, engineContext, fileTreeRoot, handleDocEol, closeCurrentWindow, handleCopyMathMl, handleCopyRendered, handleDownloadRendered, handleEditLinkUrl, handleExportHtml, handleExportPdf, handleExportImage, handleNew, handleOpen, handleRemoveLink, handleRenameDocument, handleSave, handleSaveAs, handleTrimTrailing, handleTreeCopyPath, handleTreeDuplicate, handleTreeMove, handleTreeNewFile, handleTreeNewFolder, handleTreeRename, handleTreeReveal, handleTreeTrash, handleTreeUndo, localeSetting, openGlobalSearch, openQuickOpen, openReader, openSlashUi, readerOpen, readerZoom, refreshFilesSidebar, replaceSlashTrigger, engineFormat, engineSearch, engineSourceToggle, engineReadonlyToggle, runBatch, runUpdateCheck, selectedTreePath, setCheatsheetOpen, showSidebarAs, toggleSidebar, selectionToolbarEnabled, setAssetDir, setFocusMode, setLocaleSettingPersist, setReaderZoom, setSelectionToolbarEnabled, setThemeSettingsAndPersist, setTypewriterMode, themeSettings, toggleSelectionToolbar, toggleSlashEnabled, toggleTypewriter, typewriterEnabled, clearRecentItems, handleOpenImageInBrowser, shortcutOverrides]);
 
   /**
    * 快捷键统一分发（window keydown 与编辑器 iframe 转发共用）。
