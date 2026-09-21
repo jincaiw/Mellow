@@ -183,6 +183,9 @@ const zhCN = {
   'contextmenu.mathCopyAsTex': '复制为 Tex 代码',
   // C1 右键菜单全面对标（Typora 1.14.9 getMenuItemsForMac 文案）
   'contextmenu.textParagraph': '段落',
+  'contextmenu.textBlockStyles': '块样式',
+  'contextmenu.textInlineStyles': '内联样式',
+  'contextmenu.textListStyles': '列表样式 / 删除块',
   'contextmenu.textFormat': '格式',
   'contextmenu.textCopyAsMarkdown': '复制为 Markdown',
   'contextmenu.textCopyAsPlain': '复制为纯文本',
@@ -1051,6 +1054,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'contextmenu.mathCopyAsTex': 'Copy as Tex',
   // C1 context menu full parity (Typora 1.14.9 getMenuItemsForMac labels)
   'contextmenu.textParagraph': 'Paragraph',
+  'contextmenu.textBlockStyles': 'Block Styles',
+  'contextmenu.textInlineStyles': 'Inline Styles',
+  'contextmenu.textListStyles': 'List Styles / Remove Block',
   'contextmenu.textFormat': 'Format',
   'contextmenu.textCopyAsMarkdown': 'Copy as Markdown',
   'contextmenu.textCopyAsPlain': 'Copy as Plain Text',

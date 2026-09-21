@@ -45,7 +45,7 @@ const CODE_TOOLS = ['paragraph.copyCodeBlock', 'paragraph.autoIndentCodeBlock', 
 const INSERT_PARAGRAPHS = ['paragraph.insertParagraphBefore', 'paragraph.insertParagraphAfter'];
 
 const CTX_CONTRACT = {
-  text: { typora: ['normal'], items: [...BASE] },
+  text: { typora: ['normal', 'Block Styles', 'Inline Styles', 'List Styles / Remove Block'], items: [...BASE, 'paragraph.h1', 'paragraph.h2', 'paragraph.h3', 'paragraph.h4', 'paragraph.h5', 'paragraph.h6', 'paragraph.normal', 'format.bold', 'format.italic', 'format.strike', 'format.code', 'format.link', 'format.list', 'format.orderedList', 'format.taskList', 'paragraph.normal', 'edit.copyMarkdown', 'edit.copyPlain'] },
   link: {
     typora: ['openLink', 'copyLink', '|', 'normal'],
     items: [...BASE, 'format.openLink', 'format.copyLinkUrl', 'format.editLinkUrl', 'format.removeLink'],

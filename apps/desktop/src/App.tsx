@@ -4070,7 +4070,7 @@ export default function App() {
       items.push(
         { separator: true },
         {
-          label: t('contextmenu.textParagraph'),
+          label: t('contextmenu.textBlockStyles'),
           children: [
             { label: t('menu.paragraph.h1'), onClick: run('paragraph.h1') },
             { label: t('menu.paragraph.h2'), onClick: run('paragraph.h2') },
@@ -4082,13 +4082,22 @@ export default function App() {
           ],
         },
         {
-          label: t('contextmenu.textFormat'),
+          label: t('contextmenu.textInlineStyles'),
           children: [
             { label: t('menu.format.bold'), onClick: run('format.bold') },
             { label: t('menu.format.italic'), onClick: run('format.italic') },
             { label: t('menu.format.strike'), onClick: run('format.strike') },
             { label: t('menu.format.code'), onClick: run('format.code') },
             { label: t('menu.format.link'), onClick: run('format.link') },
+          ],
+        },
+        {
+          label: t('contextmenu.textListStyles'),
+          children: [
+            { label: t('menu.format.list'), onClick: run('format.list') },
+            { label: t('menu.format.orderedList'), onClick: run('format.orderedList') },
+            { label: t('menu.format.taskList'), onClick: run('format.taskList') },
+            { label: t('menu.paragraph.normal'), onClick: run('paragraph.normal') },
           ],
         },
         { separator: true },
