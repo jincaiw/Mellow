@@ -34,7 +34,7 @@ pub struct OpenRequest {
 /// 为什么不能是全局单槽：多窗口下会「串窗」—— 新窗口要打开的文件可能被已有窗口先消费
 /// （`pending_open_path` 是谁先 mount 谁先拿），反之亦然。macOS Finder「打开方式」
 /// 仍投递给**当前聚焦窗口**，行为不变。
-pub(crate) struct PendingOpen(Mutex<std::collections::HashMap<String, OpenRequest>>);
+pub struct PendingOpen(Mutex<std::collections::HashMap<String, OpenRequest>>);
 
 /// Windows Portable 模式标志（master-plan R1：exe 旁 `Data` 文件夹存在 → 便携模式）
 static PORTABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
