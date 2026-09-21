@@ -11,7 +11,7 @@
  */
 
 import type { ImageRef } from './scan';
-import { buildImageMarkdown, computeRelativePath, joinPaths, basename, dirname, normalizeSlashes } from './path';
+import { buildImageSrcFrom, buildImageMarkdown, joinPaths, basename, dirname } from './path';
 
 export type FsOpKind = 'mkdir' | 'move' | 'copy' | 'download';
 
@@ -53,6 +53,8 @@ export interface PlanContext {
   targetDirAbs: string;
   /** 文档目录（相对路径计算基准；null → patch 用绝对路径） */
   docDir: string | null;
+  /** Typora `typora-root-url` 绝对目录（G7-FEAT-08）：非 null → 写根相对 src */
+  rootDir?: string | null;
   /** 目标目录现有文件名（不区分大小写按平台；此处精确匹配 + 同批去重） */
   existingNames: Set<string>;
 }
@@ -94,11 +96,9 @@ function withMkdir(plan: ImageOpPlan, ctx: PlanContext): void {
 }
 
 /** 新 src（相对优先；docDir null → 绝对） */
-function newSrc(docDir: string | null, targetAbs: string): string {
-  if (docDir === null) {
-    return normalizeSlashes(targetAbs);
-  }
-  return computeRelativePath(docDir, targetAbs) || basename(targetAbs);
+/** 新 src（Typora `typora-root-url` 设置时写根相对；否则相对优先、docDir null → 绝对） */
+function newSrc(docDir: string | null, targetAbs: string, rootDir: string | null): string {
+  return buildImageSrcFrom(targetAbs, docDir, rootDir);
 }
 
 function patchFor(ref: ImageRef, newSrcValue: string): RefPatch {
@@ -131,7 +131,7 @@ function planSingleFileOp(kind: 'move' | 'copy', ref: ImageRef, ctx: PlanContext
   const target = joinPaths(ctx.targetDirAbs, name);
   withMkdir(plan, ctx);
   plan.fsOps.push({ kind, from: ref.absolutePath, to: target });
-  plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target)));
+  plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target, ctx.rootDir ?? null)));
   if (kind === 'move') {
     plan.report.moved = 1;
   } else {
@@ -169,7 +169,7 @@ export function planRenameImage(ref: ImageRef, newName: string, ctx: PlanContext
     return plan;
   }
   plan.fsOps.push({ kind: 'move', from: ref.absolutePath, to: target });
-  plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target)));
+  plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target, ctx.rootDir ?? null)));
   plan.report.moved = 1;
   return plan;
 }
@@ -208,7 +208,7 @@ function planBatch(kind: 'move' | 'copy', refs: ImageRef[], ctx: PlanContext): I
     const name = allocateUniqueName(ctx.existingNames, basename(ref.absolutePath));
     const target = joinPaths(ctx.targetDirAbs, name);
     plan.fsOps.push({ kind, from: ref.absolutePath, to: target });
-    plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target)));
+    plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target, ctx.rootDir ?? null)));
     if (kind === 'move') {
       plan.report.moved += 1;
     } else {
@@ -236,7 +236,7 @@ export function planDownloadRemote(refs: ImageRef[], ctx: PlanContext): ImageOpP
     const name = allocateUniqueName(ctx.existingNames, remoteTargetName(ref.src));
     const target = joinPaths(ctx.targetDirAbs, name);
     plan.fsOps.push({ kind: 'download', url: ref.src, to: target });
-    plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target)));
+    plan.patches.push(patchFor(ref, newSrc(ctx.docDir, target, ctx.rootDir ?? null)));
     plan.report.downloaded += 1;
   }
   if (plan.fsOps.length > 0) {

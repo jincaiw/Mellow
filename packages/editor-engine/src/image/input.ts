@@ -14,7 +14,7 @@ import type { EditorView, ViewUpdate } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import type { ImageHost, ImageCandidate, ImagePlan } from './host';
 import { applyImageUpload, executeFsOps, fileLinkMarkdown, mergePlanDetails, planImageCandidate, planImageCandidatesDetail, type InsertCandidatesOptions } from './insert';
-import { isImageFile, isUrl } from './path';
+import { dirname, isImageFile, isUrl, parseRootUrl } from './path';
 
 /** 侧边栏 HTML5 拖拽的自定义 dataTransfer 类型（FileTree dragstart 写入，iframe drop 读取） */
 export const SIDEBAR_FILE_DRAG_TYPE = 'application/x-mellow-file';
@@ -57,7 +57,13 @@ export async function insertImageCandidates(
   if (filtered.length === 0) {
     return { ok: true, inserted: false };
   }
-  const details = await planImageCandidatesDetail(host, filtered, opts);
+  // G7-FEAT-08 **写入侧**：设置了 `typora-root-url` → 写根相对 src（Typora `resolveImagePath` 同语义）。
+  // 在此处单点解析（本函数持有 view，能读到文档全文），避免各插入入口各算一遍而漂移。
+  const docPath = host.getDocumentPath();
+  const rootDir = opts.rootDir === undefined
+    ? parseRootUrl(view.state.doc.toString(), docPath === null ? null : dirname(docPath))
+    : opts.rootDir;
+  const details = await planImageCandidatesDetail(host, filtered, { ...opts, rootDir });
   const localPlan = mergePlanDetails(details);
   if (localPlan.markdown.length === 0) {
     return { ok: true, inserted: false };

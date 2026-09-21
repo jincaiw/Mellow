@@ -5,7 +5,7 @@
  * 只从 **YAML front matter** 读 `typora-root-url`，相对值以文档目录为基准解析为绝对目录；
  * 设置后文档内图片 src 以该目录为基准解析（Typora `path.resolve(rootUrl || docFolder, src)`）。
  */
-import { parseRootUrl, resolveImageSrc } from '../src/image/path';
+import { buildImageSrcFrom, parseRootUrl, resolveImageSrc } from '../src/image/path';
 import { frontMatterYaml } from '../src/frontMatter';
 import { parseYamlFrontMatter } from '../src/yamlFrontMatter';
 
@@ -71,6 +71,36 @@ describe('resolveImageSrc + rootDir', () => {
 
   it('未保存文档 + rootDir → 仍可解析根相对 src', () => {
     expect(resolveImageSrc('/images/a.png', null, '/docs')).toBe('/docs/images/a.png');
+  });
+});
+
+describe('buildImageSrcFrom（写入侧）与 resolveImageSrc 互为逆运算', () => {
+  it('无 rootDir：相对文档目录（行为不变）', () => {
+    expect(buildImageSrcFrom('/docs/assets/a.png', '/docs', null)).toBe('assets/a.png');
+  });
+
+  it('有 rootDir：写根相对（前导 /）', () => {
+    expect(buildImageSrcFrom('/docs/images/a.png', '/docs/sub', '/docs')).toBe('/images/a.png');
+  });
+
+  it('有 rootDir 且目标就在 root 下（root === docDir）', () => {
+    expect(buildImageSrcFrom('/docs/a.png', '/docs', '/docs')).toBe('/a.png');
+  });
+
+  it('未保存文档：绝对路径（无 rootDir）', () => {
+    expect(buildImageSrcFrom('/tmp/a.png', null, null)).toBe('/tmp/a.png');
+  });
+
+  // 关键不变量：写进去的 src 必须能被解析回同一绝对路径（否则「插入即坏图」）
+  it.each([
+    ['/docs/assets/a.png', '/docs', null],
+    ['/docs/images/a.png', '/docs/sub', '/docs'],
+    ['/docs/a.png', '/docs', '/docs'],
+    ['/other/x/a.png', '/docs/sub', '/docs'],
+    ['/tmp/a.png', null, null],
+  ])('往返一致：abs=%s docDir=%s rootDir=%s', (abs, docDir, rootDir) => {
+    const src = buildImageSrcFrom(abs, docDir, rootDir);
+    expect(resolveImageSrc(src, docDir, rootDir)).toBe(abs);
   });
 });
 

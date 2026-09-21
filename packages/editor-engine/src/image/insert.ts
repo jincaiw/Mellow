@@ -13,7 +13,7 @@
  */
 
 import type { ImageHost, ImageCandidate, ImagePlan } from './host';
-import { buildFileLinkMarkdown, buildImageMarkdown, computeRelativePath, dirname, joinPaths, pathKind, normalizeSlashes, assetDirName, basename } from './path';
+import { buildFileLinkMarkdown, buildImageMarkdown, buildImageSrcFrom, computeRelativePath, dirname, joinPaths, pathKind, normalizeSlashes, assetDirName, basename } from './path';
 import type { AssetDirConfig } from './path';
 
 export interface InsertOptions {
@@ -30,6 +30,8 @@ export interface InsertOptions {
    * 上传成功 → `![](URL)`；失败/未装配 → 逐张回退本地策略（keep-original / copy-to-assets）。
    */
   upload?: 'auto' | 'never';
+  /** Typora `typora-root-url` 解析出的绝对目录（G7-FEAT-08 写入侧）：非 null → 写根相对 src */
+  rootDir?: string | null;
 }
 
 /** 插入候选的调用方选项（paste copied file 传 copy-to-assets，spec §3） */
@@ -38,6 +40,8 @@ export interface InsertCandidatesOptions {
   assetDir?: AssetDirConfig;
   /** 图床上传（默认 'auto'：host 装配了上传服务即上传；'never' 强制本地） */
   upload?: 'auto' | 'never';
+  /** Typora `typora-root-url` 绝对目录（G7-FEAT-08）：非 null → 写根相对 src */
+  rootDir?: string | null;
 }
 
 const DEFAULT_BITMAP_NAME = (index: number, mime: string): string => {
@@ -52,6 +56,7 @@ export async function planImageCandidate(
   opts: InsertOptions = {},
 ): Promise<ImagePlan> {
   const strategy = opts.strategy ?? 'auto';
+  const rootDir = opts.rootDir ?? null;
 
   // url：直插，无 fs 操作
   if (candidate.kind === 'url') {
@@ -73,7 +78,7 @@ export async function planImageCandidate(
     const assetRelative = assetDirName(docPath === null ? null : docStem(docPath), opts.assetDir ?? 'assets');
     const assetAbs = joinPaths(docDir, assetRelative.replace(/^\.\//, ''));
     const target = joinPaths(assetAbs, name);
-    const src = computeRelativePath(docDir, target) || name;
+    const src = buildImageSrcFrom(target, docDir, rootDir);
     const escaped = buildImageMarkdown(src, candidate.alt);
     return {
       markdown: escaped,
@@ -93,6 +98,10 @@ export async function planImageCandidate(
 
   if (strategy === 'keep-original' || strategy === 'auto') {
     // keep-original：相对路径（绝对路径无法相对化时退回绝对）
+    // G7-FEAT-08 写入侧：设置了 typora-root-url → 写根相对（Typora 同语义）
+    if (rootDir !== null) {
+      return { markdown: buildImageMarkdown(buildImageSrcFrom(abs, docDir, rootDir), candidate.alt), fsOps: [] };
+    }
     if (docDir !== null) {
       const rel = computeRelativePath(docDir, abs);
       if (!pathIsUnrelativizable(rel, abs)) {
@@ -112,7 +121,7 @@ export async function planImageCandidate(
   const assetRelative = assetDirName(docPath === null ? null : docStem(docPath), opts.assetDir ?? 'assets');
   const assetAbs = joinPaths(docDir, assetRelative.replace(/^\.\//, ''));
   const target = joinPaths(assetAbs, name);
-  const src = computeRelativePath(docDir, target) || name;
+  const src = buildImageSrcFrom(target, docDir, rootDir);
   return {
     markdown: buildImageMarkdown(src, candidate.alt),
     fsOps: [

@@ -859,6 +859,21 @@ if (cssLayerAnchor === undefined) {
     ['front matter 边界只有一处实现（宿主不为扫描 front matter 拉入 CodeMirror）',
       /export function frontMatterBounds/.test(read('packages/editor-engine/src/frontMatter.ts'))
       && /frontMatterBounds\(doc\)/.test(read('packages/editor-engine/src/yamlFrontMatter.ts'))],
+    // 写入侧（2026-09-21）：设置 root 时必须写**根相对**，且三条生成路径都要走同一函数
+    ['写入侧：buildImageSrcFrom 存在且写根相对',
+      /export function buildImageSrcFrom\(targetAbs: string, docDir: string \| null, rootDir: string \| null = null\)/.test(pathSrc)
+      && /return relToRoot\.startsWith\('\.\/'\) \? relToRoot : `\/\$\{relToRoot\}`/.test(pathSrc)],
+    ['写入侧：insert 链用 buildImageSrcFrom（而非自己拼相对路径）',
+      /const src = buildImageSrcFrom\(target, docDir, rootDir\)/.test(read('packages/editor-engine/src/image/insert.ts'))
+      && /buildImageMarkdown\(buildImageSrcFrom\(abs, docDir, rootDir\)/.test(read('packages/editor-engine/src/image/insert.ts'))],
+    ['写入侧：ops 链（移动/复制/重命名后重写引用）用同一函数',
+      /function newSrc\(docDir: string \| null, targetAbs: string, rootDir: string \| null\)/.test(read('packages/editor-engine/src/image/ops.ts'))
+      && /buildImageSrcFrom\(targetAbs, docDir, rootDir\)/.test(read('packages/editor-engine/src/image/ops.ts'))],
+    ['写入侧：rootDir 由单点解析并透传（insert 持 view / app-core context()）',
+      /parseRootUrl\(view\.state\.doc\.toString\(\)/.test(read('packages/editor-engine/src/image/input.ts'))
+      && /const rootDir = parseRootUrl\(text, docDir\)/.test(read('packages/app-core/src/imageFileOps.ts'))],
+    ['写入侧：app-core 的 plan 上下文必须全部带 rootDir（防「算了但没传」空开关）',
+      (read('packages/app-core/src/imageFileOps.ts').match(/docDir, rootDir, (?:assetDirAbs, )?existingNames/g) ?? []).length >= 4],
   ];
   for (const [name, ok] of checks) {
     if (!ok) fail(`typora-root-url 契约不完整：${name}`);

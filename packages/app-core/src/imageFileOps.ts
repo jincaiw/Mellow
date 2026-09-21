@@ -35,7 +35,7 @@ import {
 import type { ImageOpPlan, ImageOpReport, FsOp, UploadOutcome } from '../../editor-engine/src/image/ops';
 import type { ImageRef } from '../../editor-engine/src/image/scan';
 import type { AssetDirConfig } from '../../editor-engine/src/image/path';
-import { dirname } from '../../editor-engine/src/image/path';
+import { dirname, parseRootUrl } from '../../editor-engine/src/image/path';
 import type { ImageUploadOptions, ImageUploadService } from '../../host-api/src';
 
 /** asset 目录全局设置提供者（desktop 从 localStorage 读；测试注入） */
@@ -63,6 +63,8 @@ export class ImageFileOpsService {
     text: string;
     docPath: string | null;
     docDir: string | null;
+    /** G7-FEAT-08：Typora `typora-root-url` 解析出的绝对目录（非 null → 写根相对 src） */
+    rootDir: string | null;
     setting: AssetDirConfig;
     assetDirAbs: string | null;
     refs: ImageRef[];
@@ -83,7 +85,9 @@ export class ImageFileOpsService {
         r.exists = e.ok ? e.value : null;
       }
     }));
-    return { text, docPath, docDir, setting, assetDirAbs, refs };
+    // G7-FEAT-08：root-url 只在此处解析一次，向下透传给所有 plan*（避免多处漂移）
+    const rootDir = parseRootUrl(text, docDir);
+    return { text, docPath, docDir, rootDir, setting, assetDirAbs, refs };
   }
 
   /** 目标目录现有文件名（目录不存在 → 空集；mkdir 由计划兜底） */
@@ -109,7 +113,7 @@ export class ImageFileOpsService {
 
   /** Rename 单图（同目录） */
   async renameImage(src: string, newName: string): Promise<Result<ImageOpReport>> {
-    const { docDir, refs } = await this.context();
+    const { docDir, rootDir, refs } = await this.context();
     const ref = refs.find((r) => r.src === src);
     if (ref === undefined) {
       return err({ code: 'not-found', message: `未找到图片引用: ${src}` });
@@ -119,22 +123,22 @@ export class ImageFileOpsService {
     }
     const dir = dirname(ref.absolutePath);
     const existing = await this.existingNames(dir);
-    const plan = planRenameImage(ref, newName, { targetDirAbs: dir, docDir, existingNames: existing });
+    const plan = planRenameImage(ref, newName, { targetDirAbs: dir, docDir, rootDir, existingNames: existing });
     return this.execute(plan);
   }
 
   private async singleOp(
     src: string,
     targetDirAbs: string,
-    build: (ref: ImageRef, ctx2: { targetDirAbs: string; docDir: string | null; existingNames: Set<string> }) => ImageOpPlan,
+    build: (ref: ImageRef, ctx2: { targetDirAbs: string; docDir: string | null; rootDir: string | null; existingNames: Set<string> }) => ImageOpPlan,
   ): Promise<Result<ImageOpReport>> {
-    const { docDir, refs } = await this.context();
+    const { docDir, rootDir, refs } = await this.context();
     const ref = refs.find((r) => r.src === src);
     if (ref === undefined) {
       return err({ code: 'not-found', message: `未找到图片引用: ${src}` });
     }
     const existing = await this.existingNames(targetDirAbs);
-    const plan = build(ref, { targetDirAbs, docDir, existingNames: existing });
+    const plan = build(ref, { targetDirAbs, docDir, rootDir, existingNames: existing });
     return this.execute(plan);
   }
 
@@ -219,7 +223,7 @@ export class ImageFileOpsService {
 
   /** Download Remote（单图，widget 操作条）：src → asset 目录 */
   async downloadRemoteImage(src: string): Promise<Result<ImageOpReport>> {
-    const { docDir, assetDirAbs, refs } = await this.context();
+    const { docDir, rootDir, assetDirAbs, refs } = await this.context();
     if (assetDirAbs === null) {
       return err({ code: 'invalid-argument', message: '未保存文档：无法解析 asset 目录（请先保存文档）' });
     }
@@ -231,7 +235,7 @@ export class ImageFileOpsService {
       return err({ code: 'invalid-argument', message: '该引用不是可下载的远程图片' });
     }
     const existing = await this.existingNames(assetDirAbs);
-    const plan = planDownloadRemote([ref], { targetDirAbs: assetDirAbs, docDir, existingNames: existing });
+    const plan = planDownloadRemote([ref], { targetDirAbs: assetDirAbs, docDir, rootDir, existingNames: existing });
     return this.execute(plan);
   }
 
@@ -245,14 +249,14 @@ export class ImageFileOpsService {
   }
 
   private async batch(
-    build: (refs: ImageRef[], ctx2: { targetDirAbs: string; docDir: string | null; existingNames: Set<string> }) => ImageOpPlan,
+    build: (refs: ImageRef[], ctx2: { targetDirAbs: string; docDir: string | null; rootDir: string | null; existingNames: Set<string> }) => ImageOpPlan,
   ): Promise<Result<ImageOpReport>> {
-    const { docDir, assetDirAbs, refs } = await this.context();
+    const { docDir, rootDir, assetDirAbs, refs } = await this.context();
     if (assetDirAbs === null) {
       return err({ code: 'invalid-argument', message: '未保存文档：无法解析 asset 目录（请先保存文档）' });
     }
     const existing = await this.existingNames(assetDirAbs);
-    const plan = build(refs, { targetDirAbs: assetDirAbs, docDir, existingNames: existing });
+    const plan = build(refs, { targetDirAbs: assetDirAbs, docDir, rootDir, existingNames: existing });
     return this.execute(plan);
   }
 

@@ -272,6 +272,30 @@ export function resolveImageSrc(src: string, docDir: string | null, rootDir: str
   return normalizePath(joinPaths(base, src));
 }
 
+/**
+ * 生成写入文档的图片 src（G7-FEAT-08 **写入侧**）。
+ *
+ * Typora `resolveImagePath`：设置 `typora-root-url` 时写**根相对**（前导 `/`，即相对 root 目录）；
+ * 未设置时维持原行为 —— 相对文档目录，无法相对化（跨盘/UNC）或未保存文档 → 绝对路径。
+ *
+ * 与 `resolveImageSrc` 互为逆运算：写进去的 src 必须能被解析回同一绝对路径。
+ */
+export function buildImageSrcFrom(targetAbs: string, docDir: string | null, rootDir: string | null = null): string {
+  if (rootDir !== null) {
+    const relToRoot = computeRelativePath(rootDir, targetAbs);
+    // 已在 root 之下 → 根相对；跨盘等不可相对 → 退回绝对路径（与 resolveImageSrc 一致）
+    // computeRelativePath 不可相对化时返回归一化绝对路径（与 insert.ts 的 pathIsUnrelativizable 等价）
+    if (relToRoot !== '' && relToRoot !== normalizeSlashes(targetAbs)) {
+      return relToRoot.startsWith('./') ? relToRoot : `/${relToRoot}`;
+    }
+    return normalizeSlashes(targetAbs);
+  }
+  if (docDir === null) {
+    return normalizeSlashes(targetAbs);
+  }
+  return computeRelativePath(docDir, targetAbs) || basename(targetAbs);
+}
+
 /** 图片扩展名检测（spec §3 insert 判定） */
 export function isImageFile(name: string): boolean {
   return IMAGE_EXT_RE.test(name);
