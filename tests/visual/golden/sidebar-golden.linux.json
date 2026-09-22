@@ -1,0 +1,70 @@
+{
+  "files-tree": {
+    "aside": {
+      "x": 0,
+      "y": 36,
+      "w": 270,
+      "h": 864
+    },
+    "widthSaved": null,
+    "quickbar": null,
+    "filterInput": null,
+    "quickBtnCount": 0,
+    "rowCount": 3,
+    "firstRow": {
+      "x": 0,
+      "y": 74,
+      "w": 269,
+      "h": 24
+    }
+  },
+  "files-tree-filter": {
+    "asideW": 270,
+    "input": {
+      "x": 8,
+      "y": 75,
+      "w": 253,
+      "h": 18
+    },
+    "focused": false
+  },
+  "outline": {
+    "aside": {
+      "x": 0,
+      "y": 36,
+      "w": 270,
+      "h": 864
+    },
+    "widthSaved": null,
+    "rowCount": 3,
+    "firstRow": {
+      "x": 0,
+      "y": 127,
+      "w": 269,
+      "h": 28
+    }
+  },
+  "search": {
+    "aside": {
+      "x": 0,
+      "y": 36,
+      "w": 270,
+      "h": 864
+    },
+    "widthSaved": null,
+    "searchInput": {
+      "x": 8,
+      "y": 78,
+      "w": 253,
+      "h": 22
+    },
+    "groupCount": 1,
+    "matchCount": 2,
+    "firstMatch": {
+      "x": 0,
+      "y": 266,
+      "w": 269,
+      "h": 29.3
+    }
+  }
+}
