@@ -7,6 +7,7 @@
  *   4. 视觉对照截图（mellow-light / paper / newsprint）
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -14,7 +15,7 @@ const { chromium } = require('playwright');
 
 const PORT = 1423;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 
 async function waitForServer(timeoutMs) {
   const deadline = Date.now() + timeoutMs;

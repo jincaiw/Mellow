@@ -14,6 +14,7 @@
  * 运行：NODE_PATH=<playwright 目录>/node_modules node tests/e2e/ux-flows-verify.mjs
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -21,7 +22,7 @@ const { chromium } = require('playwright');
 
 const PORT = 1440;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function waitForServer(timeoutMs) {

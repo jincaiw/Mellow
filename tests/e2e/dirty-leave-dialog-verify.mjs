@@ -23,13 +23,14 @@
  * 运行：NODE_PATH=<playwright 目录>/node_modules node tests/e2e/dirty-leave-dialog-verify.mjs
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 动态选空闲端口：固定端口 + --strictPort 时残留 vite 会让新实例静默启动失败，

@@ -9,6 +9,7 @@
  * 运行：node tests/visual/capture-window-chrome.mjs
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
@@ -18,8 +19,8 @@ const { chromium } = require('playwright');
 
 const PORT = 1426;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
-const SCREENSHOTS_DIR = new URL('../benchmark/screenshots/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
+const SCREENSHOTS_DIR = fileURLToPath(new URL('../benchmark/screenshots/', import.meta.url));
 const MANIFEST = resolve(SCREENSHOTS_DIR, 'window-chrome-manifest.json');
 
 const isMac = process.platform === 'darwin';

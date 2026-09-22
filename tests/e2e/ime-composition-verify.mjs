@@ -23,6 +23,7 @@
  *   5. 撤销后无中文残留（IME corruption = 0）
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -30,7 +31,7 @@ const { chromium } = require('playwright');
 
 const PORT = 1431;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 
 async function waitForServer(timeoutMs) {
   const deadline = Date.now() + timeoutMs;

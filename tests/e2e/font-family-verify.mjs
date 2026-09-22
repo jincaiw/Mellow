@@ -6,6 +6,7 @@
  *   3. 重启恢复：reload 后启动路径重放 setFontFace（此前仅 live apply 无恢复的回归防线）
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -13,7 +14,7 @@ const { chromium } = require('playwright');
 
 const PORT = 1423;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 
 async function waitForServer(timeoutMs) {
   const deadline = Date.now() + timeoutMs;

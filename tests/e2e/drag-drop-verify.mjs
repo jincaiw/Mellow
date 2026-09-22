@@ -17,6 +17,7 @@
  * 运行：node tests/e2e/drag-drop-verify.mjs
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createWorkspaceEntry } from '../shared/in-app-dialog.mjs';
 
@@ -25,7 +26,7 @@ const { chromium } = require('playwright');
 
 const PORT = 1429;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 
 async function waitForServer(timeoutMs) {
   const deadline = Date.now() + timeoutMs;

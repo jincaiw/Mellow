@@ -15,6 +15,7 @@
  * 「官方快捷键表真值合同」锁定，本脚本只验证「键位能走到正确格式」。
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -22,7 +23,7 @@ const { chromium } = require('playwright');
 
 const PORT = 1425;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 
 async function waitForServer(timeoutMs) {
   const deadline = Date.now() + timeoutMs;

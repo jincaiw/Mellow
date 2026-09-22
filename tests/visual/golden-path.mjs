@@ -18,9 +18,10 @@
  * 便于在本机验证路径逻辑（**注意**：不要提交在非对应平台上生成的基线文件）。
  */
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { platform as osPlatform } from 'node:os';
 
-const HERE = new URL('.', import.meta.url).pathname;
+const HERE = fileURLToPath(new URL('.', import.meta.url));
 
 /** 返回基线文件名后缀；macOS 返回 null（使用无后缀的主基线名） */
 export function platformTag() {

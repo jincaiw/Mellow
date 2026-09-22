@@ -17,6 +17,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -46,7 +47,7 @@ async function pickFreePort() {
   });
 }
 
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 
 /** 等待端口可访问（vite 就绪信号） */
 async function waitForServer(timeoutMs) {

@@ -327,6 +327,53 @@ if (existsSync(resolve(root, 'tests/visual/sidebar-golden.mjs'))
   }
 }
 
+// ── 禁止取 URL 对象的 pathname（2026-09-22）────────────────────────────────
+// 立此节的原因：`URL.pathname` 在 Windows 上返回 `/D:/a/...`（带前导斜杠），
+// 交给 fs 会被当成「当前盘符下的相对路径」→ 实测报
+//   ❌ scenes-golden 失败：ENOENT: no such file or directory,
+//      mkdir 'D:\D:\a\Mellow\Mellow\tests\visual\actual'
+// （盘符重复）。这正是 Windows 侧视觉采集长期产不出基线的第三个独立缺陷：
+// 它被前两个缺陷（working-directory 指向不存在的目录、spawn('npx') ENOENT）掩盖，
+// 前两者修好后才暴露出来。
+// 正确写法：`fileURLToPath(new URL(..., import.meta.url))`。
+// 该模式在 tests/ 下曾有 32 处（visual 5 + e2e 27），故做**全目录扫描**，
+// 避免「N 处只做了 1 处」。
+{
+  const walkMjs = (dir) => {
+    const abs = resolve(root, dir);
+    if (!existsSync(abs)) return [];
+    return readdirSync(abs, { withFileTypes: true }).flatMap((entry) => {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return walkMjs(rel);
+      return entry.name.endsWith('.mjs') ? [rel] : [];
+    });
+  };
+  const offenders = [];
+  for (const rel of ['tests/visual', 'tests/e2e', 'tests/benchmark', 'tests/parity', 'tests/qualification'].flatMap(walkMjs)) {
+    const code = stripComments(read(rel));
+    if (/new URL\([^()]*import\.meta\.url\)\.pathname/.test(code)) offenders.push(rel);
+  }
+  if (offenders.length > 0) {
+    // ⚠️ 消息里不得出现连续的目标模式：本文件也在扫描范围内，写连续了就会「检出自己」。
+    fail(`以下脚本取 URL 对象的 pathname（Windows 上得到 /D:/... 盘符重复的非法路径，应改用 fileURLToPath）：${offenders.join(', ')}`);
+  }
+  // canary：自检检测规则（不用真实文件注入，避免与具体写法耦合）。
+  // ⚠️ 样本必须**拼接构造**：若写成连续字面量，本文件自身会被上面的全目录扫描命中
+  // （stripComments 只去注释、不去字符串），实测护栏会「检出自己」。
+  const URLNAME_RE = /new URL\([^()]*import\.meta\.url\)\.pathname/;
+  const ILLEGAL_SAMPLE = "const D = new URL('../../apps/desktop/', import.meta.url)." + 'pathname;';
+  const LEGAL_SAMPLE = "const D = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));";
+  if (!URLNAME_RE.test(ILLEGAL_SAMPLE)) {
+    fail('fileURLToPath canary 失效：非法写法未被检出');
+  }
+  if (URLNAME_RE.test(LEGAL_SAMPLE)) {
+    fail('fileURLToPath canary 过宽：正确写法被误判为非法');
+  }
+  if (URLNAME_RE.test(stripComments(read('tests/parity/verify-visual-golden.mjs')))) {
+    fail('本护栏自身含连续非法写法字面量（会自我检出）—— canary 样本必须拼接构造');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Visual golden contract violations:\n  ${errors.join('\n  ')}`);
 }

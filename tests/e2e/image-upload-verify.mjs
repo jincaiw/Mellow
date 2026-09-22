@@ -15,6 +15,7 @@
  * 运行：node tests/e2e/image-upload-verify.mjs
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -22,7 +23,7 @@ const { chromium } = require('playwright');
 
 const PORT = 1426;
 const BASE = `http://localhost:${PORT}`;
-const DESKTOP_DIR = new URL('../../apps/desktop/', import.meta.url).pathname;
+const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 
 const MSG_NONE_LOCAL = '没有可上传的本地图片';
 

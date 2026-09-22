@@ -9,11 +9,12 @@
  * 关闭后再次撤销（证明 live 值是动态读取，不是启动快照）。
  */
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
-const cwd = new URL('../../apps/desktop/', import.meta.url).pathname;
+const cwd = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function pickFreePort() {
   return new Promise((resolve, reject) => {
