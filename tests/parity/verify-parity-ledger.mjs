@@ -45,10 +45,17 @@ if (existsSync(benchmarkRunnerPath)) {
   const WARMUP_RE = /argVal\('--warmup',\s*'[1-9]\d*'\)/;
   assert(WARMUP_RE.test(benchCode),
     '性能 benchmark 必须默认执行 ≥1 轮预热（--warmup 默认值须 ≥1）：否则首个 fixture 吸收一次性启动成本，产生「越大越快」假象');
-  assert(/metrics,\s*fixtures,\s*runs,\s*keystrokes,\s*warmup\s*\}/.test(benchCode),
+  assert(/metrics,\s*fixtures,\s*runs,\s*keystrokes,\s*warmup\s*(?:,\s*\w+)*\s*\}/.test(benchCode),
     '性能 benchmark 必须把 warmup 传入 measureApp（否则预热参数不生效）');
   assert(/try\s*\{[\s\S]{0,300}?generate-fixtures\.mjs[\s\S]{0,600}?\}\s*catch/.test(benchCode),
     '夹具重建必须容错（try/catch）：裸 execSync 失败会中止 measureApp，导致 results JSON 不落盘、整批已测数据丢失');
+  // 逐样本分量必须落盘：open 指标 = winMs + loadMs + latencyMs，只存总量时
+  // 双峰/常量无法归因（实测：`loadMs` 是 ≈600ms 常量、探针成功率随 app/fixture 漂移，
+  // 只存总量会把它误读成「大文件处理慢」）。
+  for (const field of ['samplesWinMs', 'samplesLoadMs', 'samplesLatencyMs', 'samplesProbeOk']) {
+    assert(benchCode.includes(field),
+      `open 指标必须逐样本记录 ${field}（只存总量无法诊断双峰/常量分量，会把 harness 假象读成性能结论）`);
+  }
   // canary：自检「检测规则」本身，而不是拿真实文件做注入 ——
   // 后者与默认值字面量耦合，合法调整默认值（如 1 → 2）时会误报「canary 未武装」。
   if (!WARMUP_RE.test("const warmup = parseInt(argVal('--warmup', '1'), 10);")) {

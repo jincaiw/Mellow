@@ -198,9 +198,10 @@ async function measureApp(appKey, opts) {
     // 因此先跑一轮不计入统计的预热，保证所有被测量的启动都处于同一热状态。
     if (opts.metrics.includes('open')) {
       const warmup = opts.warmup ?? 1;
+      const settle = opts.settle ?? 600;
       for (let i = 0; i < warmup; i++) {
         killApp(app.killPattern);
-        sleep(600);
+        sleep(settle);
         try {
           const w = launchApp(fpath);
           const win = waitWindow(w.pid, 30000);
@@ -214,18 +215,26 @@ async function measureApp(appKey, opts) {
       const opens = [];
       const probes = [];
       const loads = [];
+      const winMs = [];
+      const probeOk = [];
       for (let i = 0; i < opts.runs; i++) {
         killApp(app.killPattern);
-        sleep(600);
+        sleep(settle);
         const { pid, t0Ms } = launchApp(fpath);
         try {
           const win = waitWindow(pid, 30000);
           const roi = topRoi(win);
           const probe = helper('startup-probe', '--pid', String(pid), '--roi', roiStr(roi), '--timeout', '8000');
+          // 逐样本记录三个分量：只有分解才能判断双峰落在哪一段
+          // （窗口出现 / 内容加载 / 首键回显），否则只能看到总量在跳。
+          winMs.push(win.wallMs - t0Ms);
+          probeOk.push(probe.ok === true);
           opens.push((win.wallMs - t0Ms) + (probe.ok ? (probe.loadMs ?? 0) + probe.latencyMs : null));
           probes.push(probe.ok ? probe.latencyMs : null);
           loads.push(probe.ok ? probe.loadMs : null);
         } catch (e) {
+          winMs.push(null);
+          probeOk.push(false);
           opens.push(null);
           probes.push(null);
           loads.push(null);
@@ -233,8 +242,21 @@ async function measureApp(appKey, opts) {
         }
         killApp(app.killPattern);
       }
-      m.openToEditable = { stats: stats(opens), samples: opens, probeLatency: stats(probes), loadMs: stats(loads) };
+      m.openToEditable = {
+        stats: stats(opens),
+        samples: opens,
+        probeLatency: stats(probes),
+        loadMs: stats(loads),
+        // 分量逐样本（诊断用；统计量看不出双峰）
+        samplesWinMs: winMs,
+        samplesLoadMs: loads.slice(),
+        samplesLatencyMs: probes.slice(),
+        samplesProbeOk: probeOk.slice(),
+      };
       console.log(`open-to-editable: median=${m.openToEditable.stats.median?.toFixed(1)}ms p95=${m.openToEditable.stats.p95?.toFixed(1)}ms`);
+      console.log(`  分量 winMs=${JSON.stringify(winMs.map((x) => (x === null ? null : Math.round(x))))}`);
+      console.log(`       loadMs=${JSON.stringify(loads.map((x) => (x === null ? null : Math.round(x))))}`);
+      console.log(`    latencyMs=${JSON.stringify(probes.map((x) => (x === null ? null : Math.round(x))))}`);
     }
 
     // 打开状态下测 typing / scroll / memory / search（每指标独立容错：单指标失败不拖垮整块）
@@ -568,6 +590,9 @@ async function main() {
   // 预热轮：每个 app×fixture 在统计前先跑 N 轮并丢弃（默认 1）。
   // 不预热会把「首次启动的一次性缓存成本」算进首个 fixture，产生「越大越快」的假象。
   const warmup = parseInt(argVal('--warmup', '1'), 10);
+  // kill → 下次 launch 之间的静默时长。用于区分「被测应用的间歇成本」与
+  // 「OS/WKWebView 进程池在两态间交替」——后者会随静默时长变化而消失。
+  const settle = parseInt(argVal('--settle', '600'), 10);
   const keystrokes = parseInt(argVal('--keystrokes', '100'), 10);
   const appArg = argVal('--app', 'both');
   const appKeys = appArg === 'both' ? ['typora', 'mellow'] : [appArg];
@@ -596,7 +621,7 @@ async function main() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const results = [];
   for (const appKey of appKeys) {
-    const r = await measureApp(appKey, { metrics, fixtures, runs, keystrokes, warmup });
+    const r = await measureApp(appKey, { metrics, fixtures, runs, keystrokes, warmup, settle });
     results.push(r);
     writeFileSync(join(RESULTS_DIR, `${ts}-${appKey}.json`), JSON.stringify(r, null, 2));
   }
