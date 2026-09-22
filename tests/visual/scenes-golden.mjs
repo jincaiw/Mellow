@@ -90,7 +90,10 @@ async function waitEditorFrame(page, timeoutMs = 20000) {
   while (Date.now() < deadline) {
     for (const f of page.frames()) {
       if (f.url().includes('/editor/index.html')) {
-        const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor)).catch(() => false);
+        // 就绪判定必须覆盖**采样真正需要的 DOM**：只查 window.editor 时，慢 runner 上
+        // 编辑器已挂载但 .cm-content 尚未出现 → 采样阶段才炸（实测 Windows 间歇性
+        // 报「iframe 内未找到 .cm-content」）。对齐 font-family-verify.mjs 的既有写法。
+        const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor && document.querySelector('.cm-content'))).catch(() => false);
         if (ready) return f;
       }
     }

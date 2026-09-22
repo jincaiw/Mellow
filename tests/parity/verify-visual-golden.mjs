@@ -374,6 +374,30 @@ if (existsSync(resolve(root, 'tests/visual/sidebar-golden.mjs'))
   }
 }
 
+// ── 视觉脚本的就绪判定必须覆盖采样所需的 DOM（2026-09-22）────────────────────
+// 立此节的原因：三个视觉脚本的 `waitEditorFrame` 只查 `window.webModules.core &&
+// window.editor`，但采样阶段直接读 `.cm-content`。慢 runner（Windows）上编辑器已挂载
+// 而 `.cm-content` 尚未出现 → 采样阶段才炸，表现为**间歇性**的
+//   Error: iframe 内未找到 .cm-content
+// （实测：同一提交两次运行，一次 visual-golden 通过、另一次失败）。
+// 仓库既有正确写法在 `tests/e2e/font-family-verify.mjs`（含 `.cm-content`），
+// 视觉脚本属漏改。锁：三个视觉脚本的就绪判定必须包含 `.cm-content`。
+for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-golden.mjs', 'tests/visual/scenes-golden.mjs']) {
+  if (!existsSync(resolve(root, script))) continue;
+  const code = stripComments(read(script));
+  if (!/window\.webModules\?\.core && window\.editor && document\.querySelector\('\.cm-content'\)/.test(code)) {
+    fail(`${script} 的就绪判定未覆盖 .cm-content —— 慢 runner 上会在采样阶段间歇性报「iframe 内未找到 .cm-content」`);
+  }
+}
+// canary：自检规则（样本拼接构造，避免本文件被自身扫描命中）
+{
+  const READY_RE = /window\.webModules\?\.core && window\.editor && document\.querySelector\('\.cm-content'\)/;
+  const WEAK = 'window.webModules?.core && window.editor' + ')';
+  const STRONG = "window.webModules?.core && window.editor && document.querySelector('.cm-content')";
+  if (READY_RE.test(WEAK)) fail('就绪判定 canary 过宽：弱判定被误判为合格');
+  if (!READY_RE.test(STRONG)) fail('就绪判定 canary 失效：合格写法未被检出');
+}
+
 if (errors.length > 0) {
   throw new Error(`Visual golden contract violations:\n  ${errors.join('\n  ')}`);
 }

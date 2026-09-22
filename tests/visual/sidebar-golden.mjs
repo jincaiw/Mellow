@@ -79,7 +79,10 @@ async function waitEditorFrame(page, timeoutMs = 20000) {
   while (Date.now() < deadline) {
     for (const f of page.frames()) {
       if (f.url().includes('/editor/index.html')) {
-        const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor)).catch(() => false);
+        // 就绪判定必须覆盖**采样真正需要的 DOM**：只查 window.editor 时，慢 runner 上
+        // 编辑器已挂载但 .cm-content 尚未出现 → 采样阶段才炸（实测 Windows 间歇性
+        // 报「iframe 内未找到 .cm-content」）。对齐 font-family-verify.mjs 的既有写法。
+        const ready = await f.evaluate(() => !!(window.webModules?.core && window.editor && document.querySelector('.cm-content'))).catch(() => false);
         if (ready) return f;
       }
     }
@@ -148,7 +151,10 @@ async function main() {
     // 「是可见性开关没生效 / 模式没切到 tree / 根路径被拒 / mock fs 为空」中的哪一个。
     // 这类「只报超时、不报前置条件」的错误会让下一轮排查继续靠猜。
     try {
-      await page.locator('aside.file-tree').waitFor({ state: 'visible', timeout: 10000 });
+      // 30s（原 10s）：侧栏与编辑器同属一次冷启动，慢 runner 上 10s 会间歇性不够
+      // （实测 Windows 一次通过、一次 10s 超时 —— 属启动竞态而非产品缺陷）。
+      // 超时仍**指名**报出前置条件诊断，见下方 catch。
+      await page.locator('aside.file-tree').waitFor({ state: 'visible', timeout: 30000 });
     } catch (e) {
       const diag = await page.evaluate(() => ({
         ls: {
@@ -167,7 +173,7 @@ async function main() {
         })(),
         bodyText: (document.body?.innerText ?? '').slice(0, 200),
       })).catch(() => null);
-      throw new Error(`侧栏未出现（aside.file-tree 不可见，10s 超时）。诊断：${JSON.stringify(diag)}。原始错误：${e.message.split('\n')[0]}`);
+      throw new Error(`侧栏未出现（aside.file-tree 不可见，30s 超时）。诊断：${JSON.stringify(diag)}。原始错误：${e.message.split('\n')[0]}`);
     }
     await waitEditorFrame(page);
 
