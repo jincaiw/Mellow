@@ -369,8 +369,15 @@ jobs:
         # 叠加 Windows 上 `spawn('npx')` 的 ENOENT（已由 tests/visual/dev-server.mjs 根治），
         # 结果就是采集静默产出 0 个基线文件：upload-artifact 报 "No files were found"，
         # 制品缺失，屏幕上看不出任何异常。现在逐条记录退出码并让失败可见。
+        #
+        # ⚠️ 2026-09-22 第二处根因：本 job 的 actions/checkout **没有** `path: mellow`
+        # （与 Linux job 不同，仓库直接落在工作区根），但本步骤原先写了
+        # `working-directory: mellow` —— 该目录不存在，pwsh 根本无法启动：
+        #   ##[error]An error occurred trying to start process '…pwsh.EXE'
+        #            with working directory 'D:\a\Mellow\Mellow\mellow'. The directory name is invalid.
+        # 步骤因此**一步都没执行**（连脚本都没跑），continue-on-error 又把错误吞掉。
+        # 现已移除该 working-directory（与同 job 其它步骤一致，使用仓库根）。
         continue-on-error: true
-        working-directory: mellow
         shell: pwsh
         run: |
           $env:NODE_PATH = 'C:/pw/node_modules'
@@ -392,9 +399,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-visual-golden
+          # 与 checkout 落点一致（本 job 无 `path: mellow`）—— 路径前缀写错同样是
+          # 「制品静默缺失」的一类：upload-artifact 只会 warn，步骤仍显示 ✓。
           path: |
-            mellow/tests/visual/golden/*-golden.windows.json
-            mellow/tests/visual/actual/*.png
+            tests/visual/golden/*-golden.windows.json
+            tests/visual/actual/*.png
           if-no-files-found: warn
 
   macos-runtime:
