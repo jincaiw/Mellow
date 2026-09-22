@@ -142,18 +142,50 @@ async function main() {
     });
     const page = await context.newPage();
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-    await page.locator('aside.file-tree').waitFor({ state: 'visible', timeout: 10000 });
+    // 侧栏未出现时**指名**失败原因（2026-09-22）。
+    // 立此诊断的原因：Windows 侧本步骤报的是一句 `locator.waitFor: Timeout 10000ms
+    // exceeded（waiting for aside.file-tree）` —— 只知道「没等到」，不知道
+    // 「是可见性开关没生效 / 模式没切到 tree / 根路径被拒 / mock fs 为空」中的哪一个。
+    // 这类「只报超时、不报前置条件」的错误会让下一轮排查继续靠猜。
+    try {
+      await page.locator('aside.file-tree').waitFor({ state: 'visible', timeout: 10000 });
+    } catch (e) {
+      const diag = await page.evaluate(() => ({
+        ls: {
+          visible: localStorage.getItem('mellow.sidebar.visible'),
+          mode: localStorage.getItem('mellow.sidebar.mode'),
+          fileSidebarMode: localStorage.getItem('mellow.fileSidebar.mode'),
+          fileTreeRoot: localStorage.getItem('mellow.fileTree.root'),
+        },
+        asideExists: document.querySelector('aside') !== null,
+        asideClass: document.querySelector('aside')?.className ?? null,
+        asideRect: (() => {
+          const a = document.querySelector('aside');
+          if (a === null) return null;
+          const r = a.getBoundingClientRect();
+          return { w: Math.round(r.width), h: Math.round(r.height) };
+        })(),
+        bodyText: (document.body?.innerText ?? '').slice(0, 200),
+      })).catch(() => null);
+      throw new Error(`侧栏未出现（aside.file-tree 不可见，10s 超时）。诊断：${JSON.stringify(diag)}。原始错误：${e.message.split('\n')[0]}`);
+    }
     await waitEditorFrame(page);
 
     // ── mock workspace：/dir/{a.md, notes.md, sub/} ─────────────────────────
     await createEntry(page, 'fileTree.newFile', 'a.md');
     await createEntry(page, 'fileTree.newFile', 'notes.md');
     await createEntry(page, 'fileTree.newFolder', 'sub');
+    // 失败时把**实际看到的 tree-row 标题**一并抛出（2026-09-22）。
+    // 原先只抛 `mock workspace 构建失败`，不显示实际标题 —— Linux 侧当初正是
+    // 因为这个错误太模糊，才需要翻 CI 日志与截图逐步定位到「askInput 迁移漏改消费者」。
+    let lastTitles = [];
     const workspaceReady = await waitFor(async () => {
-      const titles = await page.evaluate(() => Array.from(document.querySelectorAll('button.tree-row')).map((r) => r.getAttribute('title')));
-      return titles.includes('/dir/a.md') && titles.includes('/dir/notes.md') && titles.includes('/dir/sub');
+      lastTitles = await page.evaluate(() => Array.from(document.querySelectorAll('button.tree-row')).map((r) => r.getAttribute('title')));
+      return lastTitles.includes('/dir/a.md') && lastTitles.includes('/dir/notes.md') && lastTitles.includes('/dir/sub');
     });
-    if (!workspaceReady) throw new Error('mock workspace 构建失败');
+    if (!workspaceReady) {
+      throw new Error(`mock workspace 构建失败：期望标题含 /dir/a.md、/dir/notes.md、/dir/sub，实际 tree-row 标题 = ${JSON.stringify(lastTitles)}`);
+    }
 
     // ── 打开 a.md 并写入正文（双击 = onOpen；view.dispatch 绕开 CDP 键盘不可靠）──
     await syntheticClick(page, 'button.tree-row[title="/dir/a.md"]'); // 先选中
