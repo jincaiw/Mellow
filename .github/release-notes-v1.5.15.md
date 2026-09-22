@@ -16,6 +16,12 @@
 - 侧栏默认宽度新增与 `App.tsx` `SIDEBAR_DEFAULT_WIDTH` 的单一真源交叉比对。
 - Linux 布局基线 `tests/visual/golden/layout-golden.linux.json` 校验后入库（6 配置，
   实测值与期望逐项一致）→ Linux 布局漂移自下次运行起受门禁保护。
+- 修复 `sidebar-golden` / `drag-drop-verify` 的 `window.prompt` 残留（真实回归）：
+  commit `5cb37df`（G7-EDIT-10 收尾）把 9 处 `window.prompt` 迁到应用内 `askInput()`，
+  但漏改这两个既有消费者，它们仍用 `page.on('dialog', …).accept()` 应答 ——
+  该事件迁移后**永不触发**，于是「mock workspace 构建失败」静默腐烂。
+  新增共享驱动 `tests/shared/in-app-dialog.mjs`，两者统一改用它；
+  `verify-shell-widgets.mjs` 锁反例（不得再用 dialog 事件应答输入，保留 `dismiss` 负向记录用法）。
 
 ## 验证
 

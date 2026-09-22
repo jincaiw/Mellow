@@ -389,6 +389,46 @@ if (showElBody !== '') {
   if (!/\.confirm-modal-input \{/.test(read('apps/desktop/src/styles.css'))) {
     fail('styles.css 缺少 .confirm-modal-input 样式');
   }
+  // G7-EDIT-10 收尾（2026-09-22 补漏）：迁移到应用内输入框后，**消费者**必须同步。
+  // commit 5cb37df 把 9 处 window.prompt 迁走并加了新测试，却漏改两个既有消费者
+  // （tests/visual/sidebar-golden.mjs、tests/e2e/drag-drop-verify.mjs）——
+  // 它们仍用 `page.on('dialog', d => d.accept(name))` 应答，而该事件永不触发，
+  // 于是「mock workspace 构建失败」静默腐烂数天（两者都不在 CI 主链上）。
+  // 此处锁：应答输入必须走共享驱动；只有**负向记录**（断言无原生面板）才可用 dialog 事件。
+  const inputDialogConsumers = [
+    'tests/visual/sidebar-golden.mjs',
+    'tests/e2e/drag-drop-verify.mjs',
+  ];
+  const sharedDialog = read('tests/shared/in-app-dialog.mjs');
+  if (!/export async function createWorkspaceEntry/.test(sharedDialog)) {
+    fail('缺少 tests/shared/in-app-dialog.mjs 的 createWorkspaceEntry（应用内输入框的唯一驱动）');
+  }
+  if (!/confirm-modal-input/.test(sharedDialog)) {
+    fail('in-app-dialog.mjs 未使用 .confirm-modal-input（迁移后的真实 DOM 契约）');
+  }
+  // 「应答输入」的判定规则：dialog 事件 + accept（dismiss 属负向记录，必须放行）
+  const INPUT_ANSWER_RE = /on\('dialog'[\s\S]{0,200}?\.accept\(/;
+  for (const script of inputDialogConsumers) {
+    const src = stripComments(read(script));
+    if (!src.includes("from '../shared/in-app-dialog.mjs'")) {
+      fail(`${script} 未使用共享的应用内输入框驱动（window.prompt 已被 askInput 取代）`);
+    }
+    if (!/createWorkspaceEntry\(/.test(src)) {
+      fail(`${script} 未调用 createWorkspaceEntry()`);
+    }
+    // 反例锁：不得再用 dialog 事件**应答**输入
+    if (INPUT_ANSWER_RE.test(src)) {
+      fail(`${script} 仍用 page.on('dialog').accept() 应答输入 —— 该事件在 askInput 迁移后永不触发`);
+    }
+  }
+  // canary：自检「检测规则」本身，而不是拿真实文件做注入 ——
+  // 后者与调用签名耦合，消费者合法重构时会误报「canary 未武装」。
+  if (!INPUT_ANSWER_RE.test("page.on('dialog', (d) => d.accept(name))")) {
+    fail('in-app-dialog canary 失效：dialog 应答形态未被检出');
+  }
+  if (INPUT_ANSWER_RE.test("page.on('dialog', async (d) => { nativeDialogs.push(d.type()); await d.dismiss(); })")) {
+    fail('in-app-dialog canary 过宽：负向记录（dismiss）被误判为应答');
+  }
   // G7-MENU-14：清除最近项必须先让用户选择作用域（Typora 官方有四种相关文案，
   // 不能退化为「直接清空 recentFiles」）。
   if (!/const clearRecentItems = useCallback\(async \(\) => \{[\s\S]{0,1200}?dialog\.clearRecentTitle/.test(desktopSrc)) {

@@ -18,6 +18,7 @@
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { createWorkspaceEntry } from '../shared/in-app-dialog.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -55,16 +56,19 @@ async function waitForRow(page, path, timeoutMs = 8000) {
   }
 }
 
-/** 通过命令 + prompt 对话框在 mock workspace 中创建文件/文件夹 */
+/**
+ * 通过命令 + **应用内**输入对话框在 mock workspace 中创建文件 / 文件夹。
+ *
+ * G7-EDIT-10（commit 5cb37df，2026-09-17）把 `fileTree.newFile` 等命令从
+ * `window.prompt` 迁到应用内 `askInput()`，原先的 `page.on('dialog', …)`
+ * 因此永不触发 → 前置工作区从未建立。统一走 `tests/shared/in-app-dialog.mjs`。
+ */
 async function createEntry(page, commandId, name) {
-  const dialogTaker = (dialog) => dialog.accept(name).catch(() => {});
-  page.on('dialog', dialogTaker);
-  try {
-    await page.evaluate((id) => window.__MELLOW_COMMANDS__.dispatch(id), commandId);
-    await new Promise((r) => setTimeout(r, 400));
-  } finally {
-    page.off('dialog', dialogTaker);
+  const ok = await createWorkspaceEntry(page, commandId, name);
+  if (!ok) {
+    throw new Error(`${commandId} 未弹出应用内输入框（.confirm-modal-input）—— 命令缺失或迁移被回退`);
   }
+  await new Promise((r) => setTimeout(r, 400));
 }
 
 /** 在页面内派发完整 HTML5 DnD 事件序列（合成事件等价驱动 React 合成 handler） */

@@ -22,6 +22,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { goldenFile, platformLabel } from './golden-path.mjs';
 import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
+import { createWorkspaceEntry } from '../shared/in-app-dialog.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -86,16 +87,20 @@ async function waitEditorFrame(page, timeoutMs = 20000) {
   throw new Error('editor iframe not ready（先构建 editor bundle：node apps/desktop/scripts/build-editor-bundle.mjs）');
 }
 
-/** 通过命令 + prompt 对话框在 mock workspace 中创建文件/文件夹（同 drag-drop-verify.mjs） */
+/**
+ * 通过命令 + **应用内**输入对话框在 mock workspace 中创建文件 / 文件夹。
+ *
+ * G7-EDIT-10（commit 5cb37df，2026-09-17）把 `fileTree.newFile` 等命令从
+ * `window.prompt` 迁到应用内 `askInput()`，本脚本原先的 `page.on('dialog', …)`
+ * 因此永不触发 → 条目从未创建 → `mock workspace 构建失败`（P0-LAYOUT-002 长期缺基线）。
+ * 统一走 `tests/shared/in-app-dialog.mjs`。
+ */
 async function createEntry(page, commandId, name) {
-  const dialogTaker = (dialog) => dialog.accept(name).catch(() => {});
-  page.on('dialog', dialogTaker);
-  try {
-    await page.evaluate((id) => window.__MELLOW_COMMANDS__.dispatch(id), commandId);
-    await sleep(400);
-  } finally {
-    page.off('dialog', dialogTaker);
+  const ok = await createWorkspaceEntry(page, commandId, name);
+  if (!ok) {
+    throw new Error(`${commandId} 未弹出应用内输入框（.confirm-modal-input）—— 命令缺失或迁移被回退`);
   }
+  await sleep(400);
 }
 
 /** 页面内合成 click（Playwright action 类在虚拟列表重渲染下不收敛，同 P3.7 结论） */
