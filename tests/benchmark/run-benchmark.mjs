@@ -9,7 +9,7 @@
  *
  * 输出：results/<ts>-<app>.json（原始数据）+ reports/<ts>-mellow-vs-typora.md（汇总）
  */
-import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, mkdtempSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync, execSync } from 'node:child_process';
@@ -186,7 +186,31 @@ async function measureApp(appKey, opts) {
     console.log(`\n=== ${app.name} / ${fixture} ===`);
 
     // open-to-editable：N 次冷启动打开
+    //
+    // 预热轮（2026-09-22 补）：**首个 launch 必须丢弃**。
+    // 立此轮的原因：`--app both --fixtures 1MB.md,10MB.md` 实测得到
+    //   Typora 1MB median 1107.2ms / 10MB median 397.4ms
+    // —— 10MB 比 1MB 快 2.8×，物理上不可能。说明首个 fixture 的首次启动吸收了
+    // 一次性成本（二进制页缓存、字体/着色器缓存、WKWebView 资源编译等），
+    // 后续测量实际测的是「缓存命中后的启动」，与文件尺寸无关。
+    // 台账原结论「10MB 打开 2.59× 于 Typora」正是该假象的产物（同批数据里
+    // Mellow 1MB 1289.2ms vs 10MB 1109.7ms 也呈「越大越快」，方向一致）。
+    // 因此先跑一轮不计入统计的预热，保证所有被测量的启动都处于同一热状态。
     if (opts.metrics.includes('open')) {
+      const warmup = opts.warmup ?? 1;
+      for (let i = 0; i < warmup; i++) {
+        killApp(app.killPattern);
+        sleep(600);
+        try {
+          const w = launchApp(fpath);
+          const win = waitWindow(w.pid, 30000);
+          helper('startup-probe', '--pid', String(w.pid), '--roi', roiStr(topRoi(win)), '--timeout', '8000');
+        } catch (e) {
+          console.warn(`[${app.name}/${fixture}] 预热 ${i + 1} 失败（不计入统计）: ${e.message}`);
+        }
+        killApp(app.killPattern);
+      }
+      if (warmup > 0) console.log(`[${app.name}/${fixture}] 预热 ${warmup} 轮完成（已丢弃）`);
       const opens = [];
       const probes = [];
       const loads = [];
@@ -329,7 +353,16 @@ async function measureApp(appKey, opts) {
   }
   // save 测试会向夹具写入字符（post 'a' + Cmd+S）：重新生成夹具恢复原始状态
   // （generate-fixtures.mjs 确定性 seed，幂等）
-  execSync(`${process.execPath} generate-fixtures.mjs`, { cwd: BENCH_DIR, stdio: 'ignore' });
+  //
+  // 容错（2026-09-22）：夹具重建失败**不得**丢掉整批已测数据 —— 原先 execSync 直接
+  // 抛出会让 measureApp 中止，于是 results/<ts>-<app>.json 永不落盘，
+  // 「Typora 两个 fixture 已测完、Mellow 一个都没跑」这种半成品状态连原始数据都没留下。
+  // 改为警告并继续（夹具在每次运行前由调用方保证，且本步只影响「写回原状」）。
+  try {
+    execSync(`${process.execPath} generate-fixtures.mjs`, { cwd: BENCH_DIR, stdio: 'ignore' });
+  } catch (e) {
+    console.warn(`[${app.name}] 夹具重建失败（不影响本轮已测数据）: ${e.message.split('\n')[0]}`);
+  }
   return result;
 }
 
@@ -359,7 +392,7 @@ function renderReport(env, results, opts) {
   L.push(`- Typora 版本：${env.typoraVersion}（${typoraEvidence}）`);
   L.push(`- 输入法：${env.inputSource ? 'ABC（英文）✓' : '非英文（typing 结果可能受 IME 影响）'}`);
   L.push(`- 权限：Accessibility ${env.perms.accessibility ? '✓' : '✗'} / Screen Recording ${env.perms.screenRecording ? '✓' : '✗'}`);
-  L.push(`- 重复次数：open/startup N=${opts.runs}，typing ${opts.keystrokes} 键/次`);
+  L.push(`- 重复次数：open/startup N=${opts.runs}（另有 ${opts.warmup ?? 0} 轮预热，已丢弃不计入统计），typing ${opts.keystrokes} 键/次`);
   L.push('');
   L.push('## 测量口径');
   L.push('- **startup**：冷启动（`_blank.md`）→ 窗口出现 → 首个合成按键屏幕回显，总耗时；');
@@ -400,8 +433,49 @@ function renderReport(env, results, opts) {
   }
   L.push('');
 
-  // typing
-  L.push('## 3. typing P95（按键→回显，ms）');
+  // ── 尺寸标度诊断（P0-PERF-001 归因护栏）───────────────────────────────────
+  // 立此诊断的原因：台账原结论「10MB 打开 2.59× 于 Typora」把 ratio 直接读作
+  // 「大文件处理慢」。但若某应用的 open 时间**不随文件尺寸增长**，该值就被
+  // **固定启动成本**主导，ratio 不能归因于大文件处理能力。
+  //
+  // 实测反例（2026-09-12 数据）：Mellow 1MB median 1289.2ms vs 10MB 1109.7ms ——
+  // 10MB 反而更快，差值远小于 run 间方差（同批 startup 实测 min 314.5 / max 5530.0ms）
+  // → Mellow 侧由固定成本主导；同批 Typora 1MB 1326.9ms vs 10MB 428.1ms 呈相反方向
+  // （首个 fixture 吸收冷启动）。两侧方向相反，说明该批测量主要反映**启动成本与
+  // 执行顺序**，而非文件尺寸。
+  //
+  // 结论：ratio 只有在**同应用内随尺寸单调增长**时才可作为「大文件处理」证据；
+  // 否则必须标注为「启动成本主导，需 hot-open 口径复测」。
+  {
+    const sizeOf = (f) => {
+      try { return statSync(join(FIXTURES_DIR, f)).size; } catch { return 0; }
+    };
+    const ordered = [...opts.fixtures].sort((a, b) => sizeOf(a) - sizeOf(b));
+    L.push('### 2b. 尺寸标度诊断（open 时间是否随文件尺寸增长）');
+    L.push('');
+    if (ordered.length < 2) {
+      L.push('（仅一个 fixture，无法判断尺寸标度 —— 结论不得归因于大文件处理）');
+    } else {
+      const small = ordered[0]; const large = ordered[ordered.length - 1];
+      L.push(`对比 ${small}（${sizeOf(small)} B）→ ${large}（${sizeOf(large)} B）`);
+      L.push('');
+      L.push('| app | 小 fixture median | 大 fixture median | 增长倍数 | 判定 |');
+      L.push('|---|---|---|---|---|');
+      for (const appName of ['Mellow', 'Typora']) {
+        const r = results.find((x) => x.app === appName);
+        const a = r?.metrics[small]?.openToEditable?.stats?.median;
+        const b = r?.metrics[large]?.openToEditable?.stats?.median;
+        if (!a || !b) { L.push(`| ${appName} | ${fmt(a)} | ${fmt(b)} | — | 数据不足 |`); continue; }
+        const growth = b / a;
+        const verdict = growth > 1.15
+          ? '随尺寸增长 → ratio 可归因于大文件处理'
+          : '**未随尺寸增长 → 固定启动成本主导，ratio 不得归因于大文件处理**';
+        L.push(`| ${appName} | ${fmt(a)} | ${fmt(b)} | ${growth.toFixed(2)}× | ${verdict} |`);
+      }
+    }
+    L.push('');
+  }
+
   L.push('');
   L.push('| fixture | 模式 | Mellow P95 | Mellow median | Typora P95 | Typora median | ratio P95 (M/T) | PRD 目标 | 达标 |');
   L.push('|---|---|---|---|---|---|---|---|');
@@ -491,6 +565,9 @@ async function main() {
   const metrics = has('--all') ? ALL_METRICS : parseList(argVal('--metrics', 'open'));
   const fixtures = has('--all') ? FIXTURES : parseList(argVal('--fixtures', '1MB.md'));
   const runs = parseInt(argVal('--runs', '5'), 10);
+  // 预热轮：每个 app×fixture 在统计前先跑 N 轮并丢弃（默认 1）。
+  // 不预热会把「首次启动的一次性缓存成本」算进首个 fixture，产生「越大越快」的假象。
+  const warmup = parseInt(argVal('--warmup', '1'), 10);
   const keystrokes = parseInt(argVal('--keystrokes', '100'), 10);
   const appArg = argVal('--app', 'both');
   const appKeys = appArg === 'both' ? ['typora', 'mellow'] : [appArg];
@@ -519,7 +596,7 @@ async function main() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const results = [];
   for (const appKey of appKeys) {
-    const r = await measureApp(appKey, { metrics, fixtures, runs, keystrokes });
+    const r = await measureApp(appKey, { metrics, fixtures, runs, keystrokes, warmup });
     results.push(r);
     writeFileSync(join(RESULTS_DIR, `${ts}-${appKey}.json`), JSON.stringify(r, null, 2));
   }

@@ -27,6 +27,36 @@ if (existsSync(benchmarkRunnerPath)) {
     '性能 benchmark runner 必须声明 Typora 1.14.9 为规范基线');
   assert(!/PRD 基线 1\.14\.6/.test(benchmarkRunner),
     '性能 benchmark runner 不得将 Typora 1.14.6 标记为 PRD 基线');
+
+  // ── 测量口径护栏（2026-09-22）─────────────────────────────────────────────
+  // 立此节的原因：台账原结论「10MB open 2.59× 于 Typora」实为**缺预热**造成的假象 ——
+  // 首个 fixture 的首次启动吸收一次性成本，后续测量实际测「缓存命中后的启动」，
+  // 于是出现「越大越快」（同批 Typora 1MB 1021.8ms > 10MB 398.5ms，物理不可能）。
+  // 另：measureApp 末尾的夹具重建原先用裸 execSync，失败即抛出 → results JSON 不落盘，
+  // 整批已测数据丢失（实测「Typora 测完、Mellow 一个未跑」）。
+  // 注释里也会出现这些关键字，故先剥注释再断言。
+  const stripComments = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+  const benchCode = stripComments(benchmarkRunner);
+  const WARMUP_RE = /argVal\('--warmup',\s*'[1-9]\d*'\)/;
+  assert(WARMUP_RE.test(benchCode),
+    '性能 benchmark 必须默认执行 ≥1 轮预热（--warmup 默认值须 ≥1）：否则首个 fixture 吸收一次性启动成本，产生「越大越快」假象');
+  assert(/metrics,\s*fixtures,\s*runs,\s*keystrokes,\s*warmup\s*\}/.test(benchCode),
+    '性能 benchmark 必须把 warmup 传入 measureApp（否则预热参数不生效）');
+  assert(/try\s*\{[\s\S]{0,300}?generate-fixtures\.mjs[\s\S]{0,600}?\}\s*catch/.test(benchCode),
+    '夹具重建必须容错（try/catch）：裸 execSync 失败会中止 measureApp，导致 results JSON 不落盘、整批已测数据丢失');
+  // canary：自检「检测规则」本身，而不是拿真实文件做注入 ——
+  // 后者与默认值字面量耦合，合法调整默认值（如 1 → 2）时会误报「canary 未武装」。
+  if (!WARMUP_RE.test("const warmup = parseInt(argVal('--warmup', '1'), 10);")) {
+    errors.push('benchmark 预热 canary 失效：合法默认值未被检出');
+  }
+  if (WARMUP_RE.test("const warmup = parseInt(argVal('--warmup', '0'), 10);")) {
+    errors.push('benchmark 预热 canary 过宽：0 轮预热（会制造「越大越快」假象）被误判为合法');
+  }
 }
 
 for (const observation of ledger.patchObservations ?? []) {
