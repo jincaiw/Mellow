@@ -120,6 +120,7 @@ const TYPORA_NORMATIVE_VERSION = '1.14.9';
 const BENCHMARK_WORKDIR = mkdtempSync(join(tmpdir(), 'mellow-benchmark-'));
 
 function parseList(s) { return s.split(',').map((x) => x.trim()).filter(Boolean); }
+const round3 = (n) => Math.round(n * 1000) / 1000;
 
 // ---------- 版本信息 ----------
 function gitInfo() {
@@ -157,6 +158,8 @@ async function measureApp(appKey, opts) {
   if (opts.metrics.includes('startup')) {
     const vals = [];
     const loads = [];
+    const winMs = [];
+    const probeOk = [];
     for (let i = 0; i < opts.runs; i++) {
       killApp(app.killPattern);
       sleep(600);
@@ -165,17 +168,38 @@ async function measureApp(appKey, opts) {
         const win = waitWindow(pid, 30000);
         const roi = topRoi(win);
         const probe = helper('startup-probe', '--pid', String(pid), '--roi', roiStr(roi), '--timeout', '8000');
-        const toEdit = (win.wallMs - t0Ms) + (probe.ok ? (probe.loadMs ?? 0) + probe.latencyMs : null);
-        vals.push(toEdit);
+        winMs.push(win.wallMs - t0Ms);
+        probeOk.push(probe.ok === true);
+        // 与 open 指标同一契约：探针失败 = 首键回显没测到 → 记 null（无效），
+        // 不得用「窗口出现」冒充（JS 的 number + null 会静默退化，见 open 处注释）。
+        if (probe.ok === true) {
+          vals.push((win.wallMs - t0Ms) + (probe.loadMs ?? 0) + probe.latencyMs);
+        } else {
+          vals.push(null);
+        }
         loads.push(probe.ok ? probe.loadMs : null);
       } catch (e) {
+        winMs.push(null);
+        probeOk.push(false);
         vals.push(null);
         loads.push(null);
         console.warn(`[${app.name}] startup run ${i + 1} failed: ${e.message}`);
       }
       killApp(app.killPattern);
     }
-    result.metrics.startup = { samples: vals, stats: stats(vals), loadMs: stats(loads) };
+    const probeFailures = probeOk.filter((ok) => !ok).length;
+    result.metrics.startup = {
+      samples: vals,
+      stats: stats(vals),
+      loadMs: stats(loads),
+      samplesWinMs: winMs,
+      samplesProbeOk: probeOk.slice(),
+      probeFailures,
+      validSamples: opts.runs - probeFailures,
+    };
+    if (probeFailures > 0) {
+      console.warn(`⚠️ [${app.name}/startup] ${probeFailures}/${opts.runs} 个样本的 startup-probe 失败（首键回显未测到）→ 记 null 不计入中位数。`);
+    }
   }
 
   // 各夹具指标
@@ -229,7 +253,17 @@ async function measureApp(appKey, opts) {
           // （窗口出现 / 内容加载 / 首键回显），否则只能看到总量在跳。
           winMs.push(win.wallMs - t0Ms);
           probeOk.push(probe.ok === true);
-          opens.push((win.wallMs - t0Ms) + (probe.ok ? (probe.loadMs ?? 0) + probe.latencyMs : null));
+          if (probe.ok === true) {
+            opens.push((win.wallMs - t0Ms) + (probe.loadMs ?? 0) + probe.latencyMs);
+          } else {
+            // ⚠️ 探针失败 = **首键回显没测到**，该样本不是 open-to-editable。
+            // 旧实现写 `winMs + (ok ? … : null)`，而 JS 里 `number + null === number`，
+            // 于是「窗口出现」被静默当成完整 open-to-editable 参与统计 —— 两种**不可比**的
+            // 量混进同一个中位数，直接制造了「Typora 10MB 比 1MB 快 2.6×」这一物理不可能
+            // 的反转（探针 0/5 成功 vs 5/5 成功）。现在失败样本记 null（无效），
+            // 并在下面响亮报出失败率，绝不冒充有效读数。
+            opens.push(null);
+          }
           probes.push(probe.ok ? probe.latencyMs : null);
           loads.push(probe.ok ? probe.loadMs : null);
         } catch (e) {
@@ -242,6 +276,7 @@ async function measureApp(appKey, opts) {
         }
         killApp(app.killPattern);
       }
+      const probeFailures = probeOk.filter((ok) => !ok).length;
       m.openToEditable = {
         stats: stats(opens),
         samples: opens,
@@ -252,8 +287,15 @@ async function measureApp(appKey, opts) {
         samplesLoadMs: loads.slice(),
         samplesLatencyMs: probes.slice(),
         samplesProbeOk: probeOk.slice(),
+        probeFailures,
+        probeFailureRate: opts.runs > 0 ? round3(probeFailures / opts.runs) : null,
+        /** 有效样本数（探针成功的那些才是真正的 open-to-editable） */
+        validSamples: opts.runs - probeFailures,
       };
-      console.log(`open-to-editable: median=${m.openToEditable.stats.median?.toFixed(1)}ms p95=${m.openToEditable.stats.p95?.toFixed(1)}ms`);
+      console.log(`open-to-editable: median=${m.openToEditable.stats.median?.toFixed(1)}ms p95=${m.openToEditable.stats.p95?.toFixed(1)}ms（有效样本 ${m.openToEditable.validSamples}/${opts.runs}）`);
+      if (probeFailures > 0) {
+        console.warn(`⚠️ [${app.name}/${fixture}] ${probeFailures}/${opts.runs} 个样本的 startup-probe 失败（首键回显未测到）→ 这些样本记 null 不计入中位数。失败率高说明该行数字不可用于「谁快谁慢」。`);
+      }
       console.log(`  分量 winMs=${JSON.stringify(winMs.map((x) => (x === null ? null : Math.round(x))))}`);
       console.log(`       loadMs=${JSON.stringify(loads.map((x) => (x === null ? null : Math.round(x))))}`);
       console.log(`    latencyMs=${JSON.stringify(probes.map((x) => (x === null ? null : Math.round(x))))}`);
@@ -455,7 +497,35 @@ function renderReport(env, results, opts) {
   }
   L.push('');
 
-  // ── 尺寸标度诊断（P0-PERF-001 归因护栏）───────────────────────────────────
+  // ── 有效样本 / 探针失败率（2026-09-22）────────────────────────────────────
+  // 立此节的必要性：`open` 的绝对值只有在 startup-probe 成功时才是
+  // 「open-to-editable」；失败样本已改记为 null（不再用「窗口出现」冒充）。
+  // 但若失败率高，两侧的有效样本数不同 → 中位数仍不可比。必须显式列出，
+  // 否则读者会拿「N=5」与「N=0」两个数字直接相减（实测正是这样产生了
+  // 「Typora 10MB 比 1MB 快 2.6×」的假象）。
+  {
+    const rows = [];
+    for (const f of opts.fixtures) {
+      for (const appName of ['Mellow', 'Typora']) {
+        const r = results.find((x) => x.app === appName);
+        const o = r?.metrics[f]?.openToEditable;
+        if (!o) continue;
+        rows.push(`| ${appName} | ${f} | ${o.validSamples ?? '—'} / ${opts.runs} | ${o.probeFailures ?? '—'} | ${fmt(o.stats?.median)} | ${fmt(o.samplesWinMs ? o.samplesWinMs.filter((x) => x !== null).reduce((a, b) => a + b, 0) / Math.max(1, o.samplesWinMs.filter((x) => x !== null).length) : null)} |`);
+      }
+    }
+    if (rows.length > 0) {
+      L.push('### 2c. 有效样本与探针失败率（open 指标的可比性前提）');
+      L.push('');
+      L.push('`startup-probe` 失败时该样本**不是** open-to-editable（首键回显未测到），已记为 null。');
+      L.push('失败率高的行，其中位数不可用于「谁快谁慢」。');
+      L.push('');
+      L.push('| app | fixture | 有效样本 | 探针失败 | 有效中位数 | 平均窗口出现 |');
+      L.push('|---|---|---|---|---|---|');
+      L.push(...rows);
+      L.push('');
+    }
+  }
+
   // 立此诊断的原因：台账原结论「10MB 打开 2.59× 于 Typora」把 ratio 直接读作
   // 「大文件处理慢」。但若某应用的 open 时间**不随文件尺寸增长**，该值就被
   // **固定启动成本**主导，ratio 不能归因于大文件处理能力。

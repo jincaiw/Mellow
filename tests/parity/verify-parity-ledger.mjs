@@ -56,6 +56,14 @@ if (existsSync(benchmarkRunnerPath)) {
     assert(benchCode.includes(field),
       `open 指标必须逐样本记录 ${field}（只存总量无法诊断双峰/常量分量，会把 harness 假象读成性能结论）`);
   }
+  // 反例锁：探针失败时**不得**把「窗口出现」当成有效 open-to-editable。
+  // 旧写法 `winMs + (probe.ok ? … : null)` 在 JS 里 `number + null === number`，
+  // 于是失败样本静默退化为 winMs 并与成功样本一起求中位数 —— 两种不可比的量混进
+  // 同一个统计量，实测直接制造了「Typora 10MB 比 1MB 快 2.6×」这一物理不可能的反转。
+  assert(!/\+\s*\(\s*probe\.ok\s*\?/.test(benchCode),
+    'open 指标不得用 `winMs + (probe.ok ? … : null)` 这种写法：JS 的 number + null 会静默退化为 winMs，把「窗口出现」冒充成 open-to-editable');
+  assert(/validSamples/.test(benchCode) && /probeFailures/.test(benchCode),
+    'open 指标必须报出有效样本数与探针失败数（否则读者会拿 N=5 与 N=0 两个数字直接相减）');
   // canary：自检「检测规则」本身，而不是拿真实文件做注入 ——
   // 后者与默认值字面量耦合，合法调整默认值（如 1 → 2）时会误报「canary 未武装」。
   if (!WARMUP_RE.test("const warmup = parseInt(argVal('--warmup', '1'), 10);")) {

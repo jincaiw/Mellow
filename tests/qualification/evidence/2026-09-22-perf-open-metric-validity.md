@@ -43,34 +43,59 @@ Typora 10MB.md = [ 418.1, 398.5,  351.4,  340.3,  424.3]
 | Typora 1MB | `[1012, 1029, 1022, 1047, 1008]` | **5 / 5** | 629.8 | 55.5 |
 | Typora 10MB | `[418, 398, 351, 340, 424]` | **0 / 5** | — | — |
 
-两条结论直接落地：
+#### (a) `loadMs` 是 600ms 硬地板 —— 已在源码层面确证
 
-1. **`loadMs` 是一个 ≈600ms 的常量，不是测量值**。它在 Mellow 1MB / Mellow 10MB /
-   Typora 1MB 上分别是 603.8 / 604.0 / 629.8 —— 跨应用、跨文件尺寸几乎不变。
-   真正的文档加载不可能对 1MB 与 10MB 给出同一个数。
-2. **样本总量完全由「探针这次成功没成功」决定**：
-   - Typora 10MB 之所以「快」（398ms），是因为探针 **0/5 成功** → 该指标静默退化为
-     「窗口出现时间」；
-   - Typora 1MB 之所以「慢」（1022ms），是因为探针 **5/5 成功** → 额外加上了
-     `loadMs + latencyMs ≈ 685ms`。
-   - 于是「Typora 10MB 比 1MB 快 2.6×」这一物理上不可能的反转被完整解释；
-     同理，台账的「Mellow 10MB 2.59× 于 Typora」也只是
-     **探针成功率差异**（Mellow 3/5 成功 vs Typora 0/5 成功），与文件尺寸无关。
+`tests/benchmark/lib/screen-timing.swift`：
 
-3. **Mellow 的窗口出现时间是稳定的 ~230ms**。单独复测（`--runs 8 --warmup 1`）：
+```swift
+func waitStable(stableMs: Double = 600, timeoutMs: Double = 15000) -> Double {
+  ...
+  if stable && nowMs() - lastChange >= stableMs { break }   // 连续 600ms 无像素变化才退出
+  ...
+  return nowMs() - start
+}
+```
 
-   ```
-   total   = [230, 228, 236, 231, 228, 234, 242, 229]
-   winMs   = [230, 228, 236, 231, 228, 234, 242, 229]   ← 8/8 稳定，无双峰
-   probeOk = [false × 8]                                 ← 探针 8/8 失败
-   ```
+该循环**在结构上不可能早于 600ms 返回**。所以 `loadMs` 不是「文档加载耗时」，
+而是「等待画面连续 600ms 静止」的等待时长，**天然带 600ms 地板**。
+实测跨应用、跨尺寸的取值带（603.8 / 604.0 / 624 / 605 / 629 / 629.8）只反映
+30ms 采样抖动 —— 真实加载不可能对 1MB 与 10MB 给出同一个数。
 
-   即 Mellow 10MB 的窗口出现稳定在 228–242ms，**无间歇成本**，且远低于 PRD 目标
-   1.0–1.5s。此前观测到的「约 1.06s 间歇成本」全部来自探针分量，**不是产品缺陷**。
+#### (b) 总量完全由「探针这次成功没成功」决定
 
-> 诚实边界：因为探针在本轮 8/8 失败，上述 230ms 只覆盖「窗口出现」，
-> **不含「首键回显」**。要得到完整 `open-to-editable`，必须先修 `startup-probe`
-> （见 §五）。
+- Typora 10MB 之所以「快」（398ms）：探针 **0/5 成功** → 该指标静默退化为
+  「窗口出现时间」（不含 600ms 地板、不含首键回显）。
+- Typora 1MB 之所以「慢」（1022ms）：探针 **5/5 成功** → 额外加上了
+  `loadMs + latencyMs ≈ 685ms`。
+- 于是「Typora 10MB 比 1MB 快 2.6×」这一物理上不可能的反转被完整解释；
+  台账原「Mellow 10MB 2.59× 于 Typora」同样只是**探针成功率差异**
+  （Mellow 3/5 vs Typora 0/5），与文件尺寸无关。
+
+#### (c) 旧实现把两种不可比的量混进同一个统计量
+
+```js
+opens.push((win.wallMs - t0Ms) + (probe.ok ? (probe.loadMs ?? 0) + probe.latencyMs : null));
+```
+
+JS 里 `number + null === number`，所以探针失败时该样本静默变成「窗口出现」，
+与成功样本（含 600ms 地板 + 首键回显）**一起求中位数**。
+已修：失败样本记 `null`（无效），并响亮报出失败率与有效样本数。
+
+#### (d) 修正后的真实读数
+
+`--runs 4 --warmup 1`（Mellow 10MB）：
+
+```
+open-to-editable: median=1355.8ms（有效样本 3/4）
+⚠️ 1/4 个样本的 startup-probe 失败 → 记 null 不计入中位数
+  分量 winMs=[288,291,227,290]   loadMs=[624,605,null,629]   latencyMs=[443,493,null,406]
+```
+
+即：**Mellow 10MB 的有效 open-to-editable ≈ 1356ms，落在 PRD 目标 1.0–1.5s 内**
+（其中约 610ms 是 `waitStable` 地板，真实内容约 735ms）。
+
+**Typora 10MB 的有效读数至今为空**（该轮 0/5 成功）→
+**目前不存在任何可比的 Mellow vs Typora 10MB 结论**，两个方向都不能下结论。
 
 ### 3.1 Mellow 侧：严格交替的双峰（旧表述，已被 3.0 取代）
 
@@ -113,20 +138,25 @@ open = (win.wallMs - t0Ms) + probe.loadMs + probe.latencyMs
 
 ## 五、仍未解决（不得据此关闭本项）
 
-- **`startup-probe` 必须修**：它的 `loadMs` 表现为 ≈600ms 常量（跨应用/尺寸不变），
-  且成功率随 app/fixture 大幅波动（Mellow 1MB 1/5、Mellow 10MB 3/5、
-  Typora 1MB 5/5、Typora 10MB 0/5）。在它被修正前，`open` 指标的绝对值不可用，
-  更不可用于「谁快谁慢」的结论。
+- **`startup-probe` 必须改**（两条，均已在源码层面定位）：
+  1. `waitStable(stableMs: 600)` 是**结构性的 600ms 地板** —— 它测的是「画面连续静止
+     600ms」，不是「文档加载完成」。应改为真正的「内容就绪」信号（例如编辑器
+     caret/首行已绘制），或明确把该地板从指标里剔除。
+  2. 探针成功率随 app/fixture 大幅漂移（Mellow 1MB 1/5、Mellow 10MB 3/5、
+     Typora 1MB 5/5、Typora 10MB 0/5）→ 有效样本数不同时中位数不可比。
+     现状已改为失败样本记 `null` + 响亮报失败率，但**根因（为何 0/5）未隔离**。
 - **需要 hot-open 口径**（同进程内连续打开多文档）才能绕开启动态，得到可比的
   「文档打开成本」。
 - 因此本项**状态维持 MAC**，不升 PASS-E；台账原「2.59×」表述已更正为口径无效。
 
 ## 六、对 PRD 目标的当前读数（仅供参考，非判定）
 
-- **Mellow 窗口出现（10MB）：稳定 ~230ms**（8/8 样本 228–242ms），远低于 PRD
-  1.0–1.5s 目标，且**无间歇成本**。
-- 该读数**不含首键回显**（本轮探针 8/8 失败），故不能直接等同于
-  `open-to-editable` 达标。
+- **Mellow 10MB 有效 open-to-editable ≈ 1356ms**（3/4 有效样本），
+  落在 PRD 目标 1.0–1.5s 内；其中约 610ms 是 `waitStable` 地板。
+- **Mellow 10MB 窗口出现稳定 ~230ms**（另一轮 8/8 样本 228–242ms）。
+- **Typora 10MB 有效读数为空**（该轮探针 0/5）→
+  **目前不存在任何可比的 Mellow vs Typora 10MB 结论**。
 - 台账原「10MB 打开 2.59× 于 Typora」应替换为：
-  **「指标口径无效（探针常量 + 成功率漂移）；已知窗口出现 ~230ms 稳定」**。
+  **「原口径无效（探针 600ms 地板 + 成功率漂移 + 失败样本被静默当成有效）；
+  已知 Mellow 有效读数 ≈1356ms 在目标内，Typora 侧缺有效样本」**。
   真实待办只剩「修 `startup-probe`」+「补 hot-open 口径」两条，均属 harness 工作。
