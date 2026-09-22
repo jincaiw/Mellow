@@ -220,6 +220,113 @@ for (const f of existsSync(goldenDir) ? readdirSync(goldenDir) : []) {
   if (!allowed.test(f)) fail(`tests/visual/golden/${f} 命名不符合按平台分离的基线约定`);
 }
 
+// ── 跨平台 dev server 启动（P0-LAYOUT-002，2026-09-22）────────────────────
+// Windows 侧 §9.3 视觉采集长期「静默产出 0 文件」的根因是 `spawn('npx')`：Windows 上
+// `npx` 实际是 `npx.cmd`，无 shell 时 spawn 抛 ENOENT；而该步骤是 continue-on-error，
+// 错误被吞掉 → 无基线 → upload-artifact 报 "No files were found" → 制品缺失，
+// 屏幕上看不出任何异常（`P0-LAYOUT-002` 因此永久 BLOCKED）。
+// 四个视觉脚本必须共用 dev-server.mjs 的平台感知启动器；此处同时锁反例。
+const stripComments = (s) => s
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n')
+  .filter((line) => !/^\s*\/\//.test(line))
+  .join('\n');
+const devServerPath = 'tests/visual/dev-server.mjs';
+const visualScripts = [
+  'tests/visual/visual-golden.mjs',
+  'tests/visual/sidebar-golden.mjs',
+  'tests/visual/scenes-golden.mjs',
+  'tests/visual/capture-window-chrome.mjs',
+];
+if (!existsSync(resolve(root, devServerPath))) {
+  fail(`缺少 ${devServerPath}（跨平台 dev server 启动器：Windows 的 .cmd 必须经 shell）`);
+} else {
+  const devServer = stripComments(read(devServerPath));
+  if (!/isWindows \? 'npx\.cmd' : 'npx'/.test(devServer)) {
+    fail(`${devServerPath} 必须在 Windows 用 npx.cmd（否则 spawn ENOENT，采集静默产出 0 文件）`);
+  }
+  if (!/child\.on\('error'/.test(devServer)) {
+    fail(`${devServerPath} 必须监听 spawn 'error'（否则启动失败被静默丢弃，只剩无法定位的超时）`);
+  }
+  if (!/shell: isWindows/.test(devServer)) {
+    fail(`${devServerPath} 必须仅在 Windows 启用 shell: isWindows（其余平台保持直接 spawn）`);
+  }
+}
+for (const script of visualScripts) {
+  if (!existsSync(resolve(root, script))) continue;
+  const code = stripComments(read(script));
+  if (!code.includes("from './dev-server.mjs'")) {
+    fail(`${script} 未使用 dev-server.mjs（dev server 启动必须跨平台：Windows 需 .cmd + shell）`);
+  }
+  if (!/startViteDevServer\(/.test(code)) fail(`${script} 未调用 startViteDevServer()`);
+  if (/spawn\(\s*'npx'/.test(code)) {
+    fail(`${script} 残留裸 spawn('npx')（Windows 上为 .cmd → ENOENT → 采集静默产出 0 文件）`);
+  }
+}
+// canary：把平台分支改回裸 'npx'，同一条检查必须检出
+if (existsSync(resolve(root, devServerPath))) {
+  const original = read(devServerPath);
+  const drifted = original.replace("isWindows ? 'npx.cmd' : 'npx'", "'npx'");
+  if (drifted === original) {
+    fail('dev-server canary 未武装：注入点未命中');
+  } else if (/isWindows \? 'npx\.cmd' : 'npx'/.test(drifted)) {
+    fail('dev-server canary 失效：平台分支漂移未检出');
+  }
+}
+
+// ── 「实测 vs 期望」硬断言必须先于基线写入（2026-09-22）──────────────────
+// 只在**比对**路径断言是不够的：首次采集（基线缺失）会把「字号/行高/写作宽度错」
+// 「侧栏没渲染」「退役选择器复活」这类真实缺陷直接烘进基准，此后比对永远绿 ——
+// 即「把功能不工作固化成基准」。故锁真正的不变量：**任何基线写入之前**，
+// 硬断言必须已经执行（断言放在创建分支内、写入之前是允许且推荐的）。
+const WRITE_BASELINE = 'writeFileSync(GOLDEN';
+for (const [script, marker] of [
+  ['tests/visual/visual-golden.mjs', 'assertEditorContract(config.name'],
+  ['tests/visual/sidebar-golden.mjs', 'EXPECT(samples)'],
+  ['tests/visual/scenes-golden.mjs', 'EXPECT(samples)'],
+]) {
+  if (!existsSync(resolve(root, script))) continue;
+  const code = stripComments(read(script));
+  const writeAt = code.indexOf(WRITE_BASELINE);
+  const assertAt = code.indexOf(marker);
+  if (writeAt < 0) {
+    fail(`${script} 缺少基线写入（${WRITE_BASELINE}）`);
+  } else if (assertAt < 0) {
+    fail(`${script} 缺少「实测 vs 期望」硬断言（${marker}）`);
+  } else if (assertAt > writeAt) {
+    fail(`${script} 的硬断言出现在基线写入之后 —— 首跑会把真实缺陷固化成基准`);
+  }
+}
+// canary：把 visual-golden 的断言块整体删掉，同一条检查必须检出
+if (existsSync(resolve(root, 'tests/visual/visual-golden.mjs'))) {
+  const original = stripComments(read('tests/visual/visual-golden.mjs'));
+  const drifted = original.replace(/assertEditorContract\(config\.name/g, 'assertEditorContractX(config.name');
+  if (drifted === original) {
+    fail('visual-golden 硬断言 canary 未武装：注入点未命中');
+  } else if (/assertEditorContract\(config\.name/.test(drifted)) {
+    fail('visual-golden 硬断言 canary 失效：断言漂移未检出');
+  }
+}
+
+// ── 侧栏默认宽度单一真源交叉比对（P0-LAYOUT-002）──────────────────────────
+// sidebar-golden.mjs 是纯 .mjs（不引 TS），故以字面量复写 SIDEBAR_DEFAULT_WIDTH；
+// 此处与 App.tsx 的真源做交叉比对，防止两处漂移后基线仍「绿」。
+if (existsSync(resolve(root, 'tests/visual/sidebar-golden.mjs'))
+  && existsSync(resolve(root, 'apps/desktop/src/App.tsx'))) {
+  const sidebarSrc = stripComments(read('tests/visual/sidebar-golden.mjs'));
+  const appSrc = stripComments(read('apps/desktop/src/App.tsx'));
+  const literal = /const SIDEBAR_DEFAULT_WIDTH = (\d+)/.exec(sidebarSrc)?.[1];
+  const truth = /const SIDEBAR_DEFAULT_WIDTH = (\d+)/.exec(appSrc)?.[1];
+  if (literal === undefined) {
+    fail('sidebar-golden.mjs 缺少 SIDEBAR_DEFAULT_WIDTH 字面量（侧栏宽度断言需要单一真源）');
+  } else if (truth === undefined) {
+    fail('App.tsx 缺少 SIDEBAR_DEFAULT_WIDTH（侧栏宽度真源）');
+  } else if (literal !== truth) {
+    fail(`侧栏默认宽度漂移：sidebar-golden.mjs=${literal} vs App.tsx=${truth}`);
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Visual golden contract violations:\n  ${errors.join('\n  ')}`);
 }

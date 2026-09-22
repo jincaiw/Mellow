@@ -17,11 +17,11 @@
  * 运行：node tests/visual/sidebar-golden.mjs [--update]
  * 前置：与 visual-golden.mjs 相同（CoreEditor 构建 + build-editor-bundle）。
  */
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { goldenFile, platformLabel } from './golden-path.mjs';
+import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -34,6 +34,11 @@ const GOLDEN = goldenFile('sidebar');
 const ACTUAL_DIR = resolve(HERE, 'actual');
 const UPDATE = process.argv.includes('--update');
 const TOLERANCE_PX = 1;
+
+// 侧栏默认宽度单一真源 = apps/desktop/src/App.tsx 的 SIDEBAR_DEFAULT_WIDTH（Typora 实机 270px）。
+// 本脚本为纯 .mjs，不引 TS 源码，故此处以字面量复写；
+// tests/parity/verify-visual-golden.mjs 负责把该字面量与 App.tsx 做交叉比对，漂移即红。
+const SIDEBAR_DEFAULT_WIDTH = 270;
 
 const round1 = (n) => Math.round(n * 10) / 10;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -114,13 +119,13 @@ const waitFor = async (fn, timeoutMs = 8000, stepMs = 200) => {
 
 async function main() {
   mkdirSync(ACTUAL_DIR, { recursive: true });
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
   const browser = await chromium.launch();
   const samples = {};
   try {
-    if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
+    if (!(await waitForServer(30000))) {
+      throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
+    }
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 预置：侧栏可见 + files/tree 模式 + mock workspace 根（同 drag-drop-verify.mjs）
     await context.addInitScript(() => {
@@ -269,7 +274,36 @@ async function main() {
     await context.close();
   } finally {
     await browser.close().catch(() => {});
-    vite.kill('SIGTERM');
+    server.stop();
+  }
+
+  // ── 实测 vs 期望硬断言（必须在**写入基线之前**）─────────────────────────
+  // 与 scenes-golden.mjs 的 EXPECT / visual-golden.mjs 的 assertEditorContract 同思路：
+  // 期望不能「只记录不比对」。若只在比对路径断言，首次采集就会把
+  // 「侧栏没渲染 / 宽度错 / 退役选择器复活」这类真实缺陷烘进基准，
+  // 此后比对永远绿（= 把功能不工作固化成基准）。
+  const EXPECT = (s) => ([
+    ['aside 侧栏必须真实渲染（每个视图）',
+      ['files-tree', 'outline', 'search'].every((v) => s[v]?.aside !== null && s[v]?.aside?.w > 0 && s[v]?.aside?.h > 0)],
+    [`aside 默认宽度 = 单一真源 SIDEBAR_DEFAULT_WIDTH（${SIDEBAR_DEFAULT_WIDTH}px）`,
+      ['files-tree', 'outline', 'search'].every((v) => s[v]?.aside?.w === SIDEBAR_DEFAULT_WIDTH)],
+    ['quickbar / quick-btn 必须保持退役（V6-P2 2.1：不得复活）',
+      s['files-tree'].quickbar === null && s['files-tree'].quickBtnCount === 0],
+    ['files-tree 必须渲染出 mock workspace 的 3 个条目',
+      s['files-tree'].rowCount === 3],
+    ['⌘F 临时过滤框必须出现（V6-P2 2.1：唯一过滤入口）',
+      s['files-tree-filter'].input !== null && s['files-tree-filter'].input.w > 0],
+    ['outline 必须渲染标题行',
+      s.outline.rowCount > 0],
+    ['search 必须产出分组与命中行',
+      s.search.groupCount > 0 && s.search.matchCount > 0],
+  ]);
+  const contractFailures = EXPECT(samples).filter(([, ok]) => !ok).map(([name]) => name);
+  if (contractFailures.length > 0) {
+    console.error('Sidebar golden: 实测 vs 期望硬断言失败（基线未写入）');
+    for (const name of contractFailures) console.error(`  ✗ ${name}`);
+    console.error(JSON.stringify(samples, null, 2));
+    process.exit(1);
   }
 
   if (UPDATE || !existsSync(GOLDEN)) {

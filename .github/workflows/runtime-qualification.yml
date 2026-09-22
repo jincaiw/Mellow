@@ -224,13 +224,28 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Visual golden (§9.3, 14 scenes)
         # 同 Windows 侧：本步骤用于采集基线，不作为门禁（详见 Windows job 注释）。
+        #
+        # 2026-09-22：原先三条 `node …` 串行执行且不检查退出码 —— bash 下步骤退出码取
+        # **最后一条**命令，于是「visual-golden 失败、scenes-golden 成功」会被判为成功，
+        # 采集静默产出 0 个基线文件而屏幕上看不出异常（P0-LAYOUT-002 因此长期无制品）。
+        # 现在逐条记录退出码、失败即非零退出，让 continue-on-error 只降级「job 结论」
+        # 而不隐藏「哪条脚本失败」。
         continue-on-error: true
         working-directory: mellow
         run: |
           export NODE_PATH=/tmp/pw/node_modules
-          node tests/visual/visual-golden.mjs
-          node tests/visual/sidebar-golden.mjs
-          node tests/visual/scenes-golden.mjs
+          status=0
+          for script in visual-golden sidebar-golden scenes-golden; do
+            if node "tests/visual/${script}.mjs"; then
+              echo "VISUAL_GOLDEN ${script}: OK"
+            else
+              echo "VISUAL_GOLDEN ${script}: FAILED (exit $?)"
+              status=1
+            fi
+          done
+          echo "VISUAL_GOLDEN baseline files:"
+          ls -l tests/visual/golden/ 2>/dev/null || echo "(golden dir missing)"
+          exit $status
       - name: Upload Linux visual golden
         if: always()
         uses: actions/upload-artifact@v4
@@ -348,14 +363,30 @@ jobs:
         # 「Windows Source Fidelity gate」「runtime smoke」均已通过，
         # 却因本步骤失败而被判为 failure）。故设为不阻断；
         # 基线入库后如需作为门禁，再改为严格比对。
+        #
+        # 2026-09-22：原先三条 `node …` 串行执行且不检查退出码 —— pwsh 下步骤退出码取
+        # **最后一条**命令，于是「visual-golden 失败、scenes-golden 成功」会被判为成功。
+        # 叠加 Windows 上 `spawn('npx')` 的 ENOENT（已由 tests/visual/dev-server.mjs 根治），
+        # 结果就是采集静默产出 0 个基线文件：upload-artifact 报 "No files were found"，
+        # 制品缺失，屏幕上看不出任何异常。现在逐条记录退出码并让失败可见。
         continue-on-error: true
         working-directory: mellow
         shell: pwsh
         run: |
           $env:NODE_PATH = 'C:/pw/node_modules'
-          node tests/visual/visual-golden.mjs
-          node tests/visual/sidebar-golden.mjs
-          node tests/visual/scenes-golden.mjs
+          $status = 0
+          foreach ($script in @('visual-golden', 'sidebar-golden', 'scenes-golden')) {
+            node "tests/visual/$script.mjs"
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "VISUAL_GOLDEN ${script}: OK"
+            } else {
+              Write-Host "VISUAL_GOLDEN ${script}: FAILED (exit $LASTEXITCODE)"
+              $status = 1
+            }
+          }
+          Write-Host 'VISUAL_GOLDEN baseline files:'
+          if (Test-Path 'tests/visual/golden') { Get-ChildItem 'tests/visual/golden' } else { Write-Host '(golden dir missing)' }
+          exit $status
       - name: Upload Windows visual golden
         if: always()
         uses: actions/upload-artifact@v4

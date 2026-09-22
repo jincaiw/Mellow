@@ -25,11 +25,11 @@
  *       pnpm --filter mellow-editor-core build +
  *       node apps/desktop/scripts/build-editor-bundle.mjs。
  */
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { goldenFile, platformLabel } from './golden-path.mjs';
+import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -235,14 +235,14 @@ function diffSample(name, golden, actual) {
 
 async function main() {
   mkdirSync(ACTUAL_DIR, { recursive: true });
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
   const browser = await chromium.launch();
   const samples = {};
   let failed = false;
   try {
-    if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
+    if (!(await waitForServer(30000))) {
+      throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
+    }
     for (const config of CONFIGS) {
       const context = await browser.newContext({ viewport: { width: config.width, height: config.height } });
       const page = await context.newPage();
@@ -266,10 +266,23 @@ async function main() {
     }
   } finally {
     await browser.close();
-    vite.kill();
+    server.stop();
   }
 
   if (UPDATE || !existsSync(GOLDEN)) {
+    // 「实测 vs 期望」硬断言必须在**写入基线之前**执行：否则首次采集会把
+    // 「字号/行高/写作宽度/paddingTop 错」这类真实缺陷烘进基准，此后比对永远绿。
+    // （scenes-golden.mjs 早已如此；本脚本此前只在比对路径断言，属同族漏网。）
+    const contractProblems = [];
+    for (const config of CONFIGS) {
+      contractProblems.push(...assertEditorContract(config.name, samples[config.name]));
+    }
+    if (contractProblems.length > 0) {
+      console.error('Visual golden contract violations（基线未写入）:');
+      for (const p of contractProblems) console.error(`  ❌ ${p}`);
+      process.exitCode = 1;
+      return;
+    }
     mkdirSync(resolve(HERE, 'golden'), { recursive: true });
     writeFileSync(GOLDEN, `${JSON.stringify(samples, null, 2)}\n`);
     console.log(`Visual golden baseline ${UPDATE ? 'updated' : 'created'}: ${GOLDEN}`);

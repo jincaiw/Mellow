@@ -130,7 +130,7 @@
       "domain": "editing",
       "capability": "IME 与 Undo / Redo",
       "typoraBehavior": "组词不被格式化打断，提交后结果正确；一次用户动作对应可预测撤销。",
-      "mellowTarget": "Composition Guard 覆盖编辑节点，IME corruption = 0。 【2026-09-13 更正】本机/文档原称「Linux 真机 IME 已通」不成立：Runtime Qualification 的 Linux Xvfb+fcitx5 IME 矩阵自 run 58（2026-09-06）起连续失败（58/59/60/61），含早于本轮改动的 run 59 → 属既有失败，非本轮引入。同 run 的 macOS 与 Windows Runtime job 均 success。",
+      "mellowTarget": "Composition Guard 覆盖编辑节点，IME corruption = 0。 【2026-09-13 更正】本机/文档原称「Linux 真机 IME 已通」不成立：Runtime Qualification 的 Linux Xvfb+fcitx5 IME 矩阵自 run 58（2026-09-06）起连续失败（58/59/60/61），含早于本轮改动的 run 59 → 属既有失败，非本轮引入。同 run 的 macOS 与 Windows Runtime job 均 success。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】Linux Xvfb + fcitx5 IME 矩阵 **8/8 场景全部通过**（paragraph/heading/format/list/table/code/math/link：四音节各提交一汉字、无丢字重复、保存读回一致、Undo 后汉字归零），Windows Source Fidelity gate + runtime smoke（SendKeys 输入 + 保存读回）通过，macOS launch/CLI-open smoke 通过。此前「Linux IME 自 run 58 起连续失败」的结论已作废：两个根因都在 harness 侧（code 场景探针坐标与 caret 复位错误；Undo 验证被 Ctrl+A/C 读回动作污染观察窗口），已修复。状态仍不升 PASS-E：全局策略要求 PASS-E 必须带 ux-gate，而 ux-gate-recorder 按设计只接受人工计时记录。",
       "grade": "B",
       "status": "MAC",
       "ownerPackage": "packages/editor-engine",
@@ -140,7 +140,8 @@
         "packages/editor-engine/test/undo.test.ts",
         "docs/qualification/real-desktop-execution-bundle.md",
         "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/e2e/ime-composition-verify.mjs"
+        "tests/e2e/ime-composition-verify.mjs",
+        "tests/qualification/evidence/2026-09-22-v1.5.14-three-platform-runtime-qualification.md"
       ],
       "requiredEvidence": [
         "unit",
@@ -679,7 +680,7 @@
       "domain": "platform",
       "capability": "三平台 Runtime 体验门禁",
       "typoraBehavior": "核心编辑任务在目标桌面平台可稳定完成。",
-      "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。 【2026-09-13 windows-ci 证据】ci.yml 新增的 windows-parity-guard（纯 Node parity 契约链）已在 windows-latest 常态通过（CI run 144，7/7 job 全绿）—— 契约层（菜单 schema / 键位表 / 设置 / 侧栏 / 排版 / 视觉 Golden / 台账 / 发布门禁）在 Windows 上成立。修复过程中暴露并根治了一个真实缺陷：Windows 的 actions/checkout 以 CRLF 检出源码，护栏注入与 canary 的 \\n 锚点全部失配（已全局归一化 + 元护栏守护）。仍缺：Windows Runtime 级证据（打包/启动/10MB/输入交互），需 runtime-qualification.yml 运行，故状态维持 IMPL。 【2026-09-13 Runtime 证据（Runtime Qualification run 60，v1.5.7 标签自动触发）】Windows：Source Fidelity gate ✅（真实原子保存管线、字节级一致）、runtime smoke（launch + SendKeys type + save 读回）✅；macOS：launch + CLI open smoke ✅。**Windows Runtime 级证据首次取得**。Linux：Xvfb + fcitx5 IME 矩阵 ❌（本轮失败，需排查）。另 Visual golden 采集步骤在 runner 上失败（各平台 dev server / 字体度量不同，首次无可比基线），已改为不阻断，仅作基线采集。 【2026-09-13 run 61】Windows Runtime job 整体 success（Source Fidelity gate + launch/SendKeys/save 读回）；macOS launch smoke success；仅 Linux IME 矩阵失败（既有问题）。",
+      "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。 【2026-09-13 windows-ci 证据】ci.yml 新增的 windows-parity-guard（纯 Node parity 契约链）已在 windows-latest 常态通过（CI run 144，7/7 job 全绿）—— 契约层（菜单 schema / 键位表 / 设置 / 侧栏 / 排版 / 视觉 Golden / 台账 / 发布门禁）在 Windows 上成立。修复过程中暴露并根治了一个真实缺陷：Windows 的 actions/checkout 以 CRLF 检出源码，护栏注入与 canary 的 \\n 锚点全部失配（已全局归一化 + 元护栏守护）。仍缺：Windows Runtime 级证据（打包/启动/10MB/输入交互），需 runtime-qualification.yml 运行，故状态维持 IMPL。 【2026-09-13 Runtime 证据（Runtime Qualification run 60，v1.5.7 标签自动触发）】Windows：Source Fidelity gate ✅（真实原子保存管线、字节级一致）、runtime smoke（launch + SendKeys type + save 读回）✅；macOS：launch + CLI open smoke ✅。**Windows Runtime 级证据首次取得**。Linux：Xvfb + fcitx5 IME 矩阵 ❌（本轮失败，需排查）。另 Visual golden 采集步骤在 runner 上失败（各平台 dev server / 字体度量不同，首次无可比基线），已改为不阻断，仅作基线采集。 【2026-09-13 run 61】Windows Runtime job 整体 success（Source Fidelity gate + launch/SendKeys/save 读回）；macOS launch smoke success；仅 Linux IME 矩阵失败（既有问题）。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】三平台 Runtime 级证据**首次全部通过**：Linux IME 矩阵 8/8（含 undo）、Windows Source Fidelity gate + launch/SendKeys/save 读回、macOS launch + CLI open + 存活。本项 requiredEvidence（macos-native / windows-ci / linux-ci / linux-ime-matrix）至此**已全部取得**。状态仍维持 IMPL：PASS-E 全局策略额外要求 ux-gate，需人工计时会话（P0-QA-001）后才能宣称结论。",
       "grade": "E",
       "status": "IMPL",
       "ownerPackage": "apps/desktop",
@@ -690,7 +691,8 @@
         "tests/benchmark/ime-matrix-linux.mjs",
         ".github/workflows/runtime-qualification.yml",
         "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/qualification/evidence"
+        "tests/qualification/evidence",
+        "tests/qualification/evidence/2026-09-22-v1.5.14-three-platform-runtime-qualification.md"
       ],
       "requiredEvidence": [
         "macos-native",
@@ -1022,7 +1024,7 @@
       "domain": "layout",
       "capability": "三平台视觉 Golden（14 场景）",
       "typoraBehavior": "以 Typora 1.14.9 三平台截图为参照。",
-      "mellowTarget": "三平台 × 14 场景截图归档并比对（§9.3）；当前仅本机，三平台 chrome 截图未归档 = G7-QA-04。 【2026-09-12】基线已支持按平台分离（tests/visual/golden-path.mjs：macOS 主基线 / *-golden.linux.json / *-golden.windows.json），避免用 macOS 测量值比对跨平台产物；runtime-qualification.yml 的 Linux / Windows job 已加入 §9.3 14 场景 Golden 采集与产物上传。首次运行自动生成该平台基线，基线提交后即进入比对模式。",
+      "mellowTarget": "三平台 × 14 场景截图归档并比对（§9.3）；当前仅本机，三平台 chrome 截图未归档 = G7-QA-04。 【2026-09-12】基线已支持按平台分离（tests/visual/golden-path.mjs：macOS 主基线 / *-golden.linux.json / *-golden.windows.json），避免用 macOS 测量值比对跨平台产物；runtime-qualification.yml 的 Linux / Windows job 已加入 §9.3 14 场景 Golden 采集与产物上传。首次运行自动生成该平台基线，基线提交后即进入比对模式。 【2026-09-22 v1.5.14 run 35635085958】Linux 侧 `visual-golden.mjs` 成功产出 6 配置布局基线，逐项「实测 vs 期望」校验一致（fontSize 16 / lineHeight 25.6 / paddingTop 56 / writingWidth 860），基线 `layout-golden.linux.json` 已提交入库 → Linux 布局漂移自下次运行起受门禁保护。仍缺：① Windows 基线 —— 采集步骤此前静默产出 0 文件（根因 `spawn('npx')` 在 Windows 无法执行 `npx.cmd` → ENOENT，叠加 continue-on-error 与「步骤退出码取最后一条命令」），已新增跨平台启动器 `tests/visual/dev-server.mjs` + workflow 逐条记录退出码，**修复待 runner 验证**；② Linux sidebar / scenes 基线 —— `sidebar-golden.mjs` 在 Linux 报 `mock workspace 构建失败`，需 Linux 环境复现。另新增护栏：硬断言必须先于基线写入（防把真实缺陷固化成基准）、侧栏默认宽度与 App.tsx 单一真源交叉比对。",
       "grade": "E",
       "status": "BLOCKED",
       "ownerPackage": "tests/parity",
@@ -1032,7 +1034,9 @@
         "tests/visual/golden/sidebar-golden.json",
         "tests/benchmark/screenshots/p2-8-window-chrome-macos.png",
         "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/visual/golden-path.mjs"
+        "tests/visual/golden-path.mjs",
+        "tests/qualification/evidence/2026-09-22-v1.5.14-three-platform-runtime-qualification.md",
+        "tests/visual/golden/layout-golden.linux.json"
       ],
       "requiredEvidence": [
         "unit",

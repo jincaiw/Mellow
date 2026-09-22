@@ -1,0 +1,224 @@
+{
+  "win-900x600": {
+    "viewport": {
+      "w": 900,
+      "h": 600
+    },
+    "titlebarH": 36,
+    "tabbarAbsent": true,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 900,
+      "h": 564
+    },
+    "editorFrame": {
+      "x": 0,
+      "y": 70,
+      "w": 900,
+      "h": 530
+    },
+    "editorFrameFullBleed": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "light",
+    "editor": {
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
+      "paddingTop": 56,
+      "contentWidth": 860,
+      "contentMaxWidth": 860,
+      "contentCentered": true,
+      "expectedFontSize": 16,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
+    }
+  },
+  "win-1200x800": {
+    "viewport": {
+      "w": 1200,
+      "h": 800
+    },
+    "titlebarH": 36,
+    "tabbarAbsent": true,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 1200,
+      "h": 764
+    },
+    "editorFrame": {
+      "x": 0,
+      "y": 70,
+      "w": 1200,
+      "h": 730
+    },
+    "editorFrameFullBleed": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "light",
+    "editor": {
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
+      "paddingTop": 56,
+      "contentWidth": 860,
+      "contentMaxWidth": 860,
+      "contentCentered": true,
+      "expectedFontSize": 16,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
+    }
+  },
+  "win-1440x900": {
+    "viewport": {
+      "w": 1440,
+      "h": 900
+    },
+    "titlebarH": 36,
+    "tabbarAbsent": true,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 1440,
+      "h": 864
+    },
+    "editorFrame": {
+      "x": 0,
+      "y": 70,
+      "w": 1440,
+      "h": 830
+    },
+    "editorFrameFullBleed": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "light",
+    "editor": {
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
+      "paddingTop": 56,
+      "contentWidth": 860,
+      "contentMaxWidth": 860,
+      "contentCentered": true,
+      "expectedFontSize": 16,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
+    }
+  },
+  "zoom-200": {
+    "viewport": {
+      "w": 1200,
+      "h": 800
+    },
+    "titlebarH": 36,
+    "tabbarAbsent": true,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 1200,
+      "h": 764
+    },
+    "editorFrame": {
+      "x": 0,
+      "y": 70,
+      "w": 1200,
+      "h": 730
+    },
+    "editorFrameFullBleed": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "light",
+    "editor": {
+      "fontSize": 32,
+      "lineHeightPx": 51.2,
+      "paddingTop": 56,
+      "contentWidth": 860,
+      "contentMaxWidth": 860,
+      "contentCentered": true,
+      "expectedFontSize": 32,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 51.2,
+      "expectedWritingWidth": 860
+    }
+  },
+  "dark-900x600": {
+    "viewport": {
+      "w": 900,
+      "h": 600
+    },
+    "titlebarH": 36,
+    "tabbarAbsent": true,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 900,
+      "h": 564
+    },
+    "editorFrame": {
+      "x": 0,
+      "y": 70,
+      "w": 900,
+      "h": 530
+    },
+    "editorFrameFullBleed": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "dark",
+    "editor": {
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
+      "paddingTop": 56,
+      "contentWidth": 860,
+      "contentMaxWidth": 860,
+      "contentCentered": true,
+      "expectedFontSize": 16,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
+    }
+  },
+  "dark-1440x900": {
+    "viewport": {
+      "w": 1440,
+      "h": 900
+    },
+    "titlebarH": 36,
+    "tabbarAbsent": true,
+    "editorContainer": {
+      "x": 0,
+      "y": 36,
+      "w": 1440,
+      "h": 864
+    },
+    "editorFrame": {
+      "x": 0,
+      "y": 70,
+      "w": 1440,
+      "h": 830
+    },
+    "editorFrameFullBleed": true,
+    "sidebarVisible": false,
+    "statusbarVisible": false,
+    "modeIndicatorsVisible": false,
+    "colorScheme": "dark",
+    "editor": {
+      "fontSize": 16,
+      "lineHeightPx": 25.6,
+      "paddingTop": 56,
+      "contentWidth": 860,
+      "contentMaxWidth": 860,
+      "contentCentered": true,
+      "expectedFontSize": 16,
+      "expectedPaddingTop": 56,
+      "expectedLineHeightPx": 25.6,
+      "expectedWritingWidth": 860
+    }
+  }
+}

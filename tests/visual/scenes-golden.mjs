@@ -25,11 +25,11 @@
  * 运行：NODE_PATH=<playwright 目录>/node_modules node tests/visual/scenes-golden.mjs [--update]
  * 前置：CoreEditor 已构建 + node apps/desktop/scripts/build-editor-bundle.mjs
  */
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { goldenFile, platformLabel } from './golden-path.mjs';
+import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -109,13 +109,13 @@ const waitFor = async (fn, timeoutMs = 8000, stepMs = 200) => {
 
 async function main() {
   mkdirSync(ACTUAL_DIR, { recursive: true });
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
   const browser = await chromium.launch();
   const samples = {};
   try {
-    if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
+    if (!(await waitForServer(30000))) {
+      throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
+    }
 
     // ── 场景 1：首次启动（不注入任何 localStorage 覆写 = 全新 profile）──────
     {
@@ -294,7 +294,7 @@ async function main() {
     await context.close();
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 
   // ── 实测 vs 期望硬断言 ──────────────────────────────────────────────────

@@ -1427,6 +1427,7 @@ Functional
 | **2026-09-21（第四十四轮）** | G7-EDIT-08：Refresh All Math Expressions 实装 | ① 基于现有 math StateField/ViewPlugin 的重建机制，新增 `EditorContextActions.refreshMath()`；② 用显式同选区 transaction 触发 block/inline 数学重建，不改 Markdown 文本、不产生内容 Undo；③ Command Registry `math.refreshAll` + 数学右键入口 + zh/en 文案；④ shell 护栏锁无文本变更 transaction + canary；context-menu parity 更新通过。 |
 | **2026-09-21（第四十五轮）** | G7-EDIT-08：Task Status 实装 | ① Typora main.js 真值：Task Status 有 Mark as Complete / Mark as Incomplete 两项；② engine buildRequest 只在当前行有 task marker 时进入 task kind；③ `setTaskStatus(complete)` 只替换 `[ ]`/`[x]` 中的单字符；④ Command Registry 两命令 + 右键子菜单 + zh/en 文案；⑤ shell 护栏锁单字符 patch + canary；context-menu parity 扩至 6 类并通过。 |
 | **2026-09-21（第四十六轮）** | G7-EDIT-08：Block/Inline/List Styles 右键分组实装 | ① Typora 官方文案核对：Block Styles / Inline Styles / List Styles / Remove Block；② Mellow 将已有 Paragraph/Format 组改为对应官方分组；③ 新增 List Styles 组，复用 `format.list` / `format.orderedList` / `format.taskList` / `paragraph.normal`，不新增空命令；④ context-menu parity 文本类契约扩展并通过。 |
+| **2026-09-22（第四十七轮）** | v1.5.14 三平台 Runtime 全绿 + 视觉采集静默失败根治 | ① Linux IME 矩阵 8/8（两个根因均在 harness 侧：code 场景探针坐标/caret 复位错误、Undo 验证被 Ctrl+A/C 读回污染观察窗口）；② 新增 `tests/visual/dev-server.mjs` 跨平台启动器，根治 Windows `spawn('npx')` → `npx.cmd` ENOENT 导致的「采集静默产出 0 文件」；③ Runtime Qualification 的视觉步骤改为逐条记录退出码（原先「步骤退出码取最后一条命令」会掩盖前面的失败）；④ 三处视觉脚本的「实测 vs 期望」硬断言提到基线写入之前（原先首跑不校验 → 会把真实缺陷固化成基准）；⑤ 侧栏默认宽度与 App.tsx `SIDEBAR_DEFAULT_WIDTH` 交叉比对；⑥ Linux 布局基线 `layout-golden.linux.json` 校验后入库；⑦ 新增三平台 Runtime 证据文档并登记进台账。 |
 
 ---
 
@@ -1489,8 +1490,8 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 | 4 | **G7-EDIT-05** 三平台 20 分钟连续写作 | 需真机 + 原生输入法 | 真机执行 |
 | 5 | **G7-QA-01** UX Score 100 分表 | 工具设计上**禁止自动生成计时**（`ux-gate-recorder` 只接受人工记录） | 人工评分 |
 | 6 | **G7-QA-02** 30 任务计时 | 同上 | 人工计时（两轮交叉顺序） |
-| 7 | **G7-QA-03 / P0-PLATFORM-001** 三平台真机矩阵 | Windows ✅ macOS ✅；**Linux IME 失败**（已定位：6/8 场景通过，`paragraph` + `code` 失败，且失败点漂移） | 需 Linux 环境或该 job 日志 |
-| 8 | **G7-QA-04 / P0-LAYOUT-002** 三平台视觉 Golden | 采集流水线**已跑通**（Runtime Qualification run 61 已产出 `linux-visual-golden` / `windows-visual-golden` 制品，各含基线 JSON 与场景 PNG），但**基线尚未入库**；且制品下载需鉴权（401），本环境无法取回 | 从 GitHub Actions 制品页下载两个 `*-visual-golden`，把 `*-golden.linux.json` / `*-golden.windows.json` 提交到 `tests/visual/golden/` |
+| 7 | **G7-QA-03 / P0-PLATFORM-001** 三平台真机矩阵 | **三平台全部通过**（v1.5.14 run `35635085958`）：Linux IME 矩阵 **8/8**（含 undo）、Windows Source Fidelity gate + launch/SendKeys/save 读回、macOS launch + CLI open。本项 requiredEvidence 已齐备；唯一剩余是 PASS-E 全局策略要求的 `ux-gate`（人工计时） | 人工 UX Gate 会话（与第 5/6 行同批） |
+| 8 | **G7-QA-04 / P0-LAYOUT-002** 三平台视觉 Golden | Linux 布局基线（6 配置）**已校验并入库** `layout-golden.linux.json`；Windows 基线仍缺 —— 根因已定性为 `spawn('npx')` 在 Windows 无法执行 `npx.cmd`（ENOENT）+ 步骤 `continue-on-error` + 「步骤退出码取最后一条命令」三重叠加导致**静默产出 0 文件**，已新增 `tests/visual/dev-server.mjs` 跨平台启动器与逐条退出码记录，**修复待 runner 验证**；Linux `sidebar-golden` 报 `mock workspace 构建失败`，需 Linux 环境复现 | 下一次 tag 触发的 Runtime Qualification 验证 Windows 采集；在 Linux 复现 sidebar mock workspace 失败 |
 | 9 | **W5 图片 / 剪贴板 / 导出 corpus** | 需真机 + 外部服务 | 真机执行 + 三平台视觉比对 |
 | 10 | **Typora 三项偏好设置项 Mellow 无实现**（§3.8b 实机对照新发现） | 均为**偏好设置**而非菜单项；经代码检索确认 Mellow 无对应实现：`Insert Final New Line On Save`（保存时在文末添加空行）、`Preserve single line break`（保留单换行符）、`Allow Magnification`（双指缩放） | **需先裁决**：判定为 E（补齐）还是 D（有意差异）。注意 `Preserve single line break` 与 §5.5 G7-EDIT-07（Enter / 单换行语义）同源，宜一并裁决 |
 | 11 | **Typora 右键/菜单候选功能尚未实现**（§5.6 G7-EDIT-08 ②） | 本机 `Menu.strings` 实测存在：`Open Image in Browser`（在浏览器中打开图片）、`Refresh All Math Expressions`（刷新所有数学公式）、`Task Status`（任务状态）、`Block/Inline/List Styles`（块/内联/列表样式）、`Learn More`（了解更多）、`Image Tools`（图像工具）；Mellow 目前没有对应注册命令/入口（代码检索确认）。 | **需先裁决**：这些是功能候选，不能因文案存在就直接实现；建议按 P1/P2 分批，不阻塞核心 Gate |

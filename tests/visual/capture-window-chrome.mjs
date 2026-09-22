@@ -8,10 +8,10 @@
  *
  * 运行：node tests/visual/capture-window-chrome.mjs
  */
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -46,13 +46,13 @@ async function main() {
   const manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : { captures: [] };
   const captures = Array.isArray(manifest.captures) ? manifest.captures : [];
 
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
   const browser = await chromium.launch();
   const captured = [];
   try {
-    if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
+    if (!(await waitForServer(30000))) {
+      throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
+    }
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
@@ -109,7 +109,7 @@ async function main() {
     await context.close();
   } finally {
     await browser.close();
-    vite.kill();
+    server.stop();
   }
 
   writeFileSync(MANIFEST, `${JSON.stringify({ generatedAt: new Date().toISOString(), captures: captured }, null, 2)}\n`);
