@@ -144,6 +144,14 @@ winMs=[534,393,382,398,401]（窗口出现稳定）
    已有 OCR 方案）。但把 OCR 引入 `open` 指标会**改变指标定义**（像素变化 → 内容识别），
    属于需裁决的度量变更，不得由 runner 单方面引入。
 2. **hot-open 口径**：同进程内连续打开多文档，绕开启动态，才能得到纯「文档打开成本」。
+   机制已确认可行、但需改 harness 启动方式：Mellow 侧 `apps/desktop/src-tauri/src/lib.rs:346`
+   已实现 `RunEvent::Opened { urls }` → 把文件投递给**当前聚焦窗口**（`mellow://open-file`），
+   即「向运行中实例打开文件」是支持的；但投递依赖 LaunchServices 路由，**必须以 `.app`
+   包启动**，而当前 benchmark 直接 spawn `target/release/mellow-desktop`（裸二进制），
+   `open -a` 找不到它、Apple Event 也不会路由。因此 hot-open 需先把 benchmark 的启动
+   目标从裸二进制换成 `Mellow.app`（并确认包身份注册），再新增一条 helper 命令
+   （由 helper 自己触发 open、测「内容切换」与「首键回显」两个分量 —— 触发必须留在
+   helper 内，否则 execFileSync 的同步模型会在触发与测量之间丢掉切换瞬间）。
 3. **平台范围**：本项在方案 §8 记为「仅 macOS」，而台账 `requiredEvidence` 含
    `windows-ci`/`linux-ci`（PASS-E 需三平台）。两者不一致 → 发布门禁按状态判定为
    「MAC 仅单平台」。**该口径冲突需裁决**，本环境不擅自放宽。
