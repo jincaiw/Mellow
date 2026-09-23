@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync, execSync } from 'node:child_process';
 import {
   BENCH_DIR, HELPER, FIXTURES_DIR, RESULTS_DIR,
-  helper, killApp, launch, waitWindow, topRoi, roiStr,
+  helper, killApp, launch, waitWindow,
   sampleRss, stats, sleep, fileMtimeMs, touchOld, checkPerms, inputSourceIsEnglish,
 } from './perf-common.mjs';
 
@@ -31,6 +31,8 @@ const APPS = {
     killPattern: 'Typora',
     // 忽略 macOS window restoration：否则 Typora 恢复上次全部标签（多文档污染单文档测量）
     launchArgs: ['-ApplePersistenceIgnoreState', 'YES'],
+    // 原生 app：光标默认在文档末尾，需要合成点击把焦点放到 ROI 顶部区域。
+    probeArgs: [],
     prep() {
       run('defaults', ['write', 'abnerworks.Typora', 'SUEnableAutomaticChecks', '-bool', 'NO']);
       run('defaults', ['write', 'abnerworks.Typora', 'NSQuitAlwaysKeepsWindows', '-bool', 'NO']);
@@ -40,6 +42,13 @@ const APPS = {
     name: 'Mellow',
     bin: argVal('--mellow', join(BENCH_DIR, '..', '..', 'apps', 'desktop', 'src-tauri', 'target', 'release', 'mellow-desktop')),
     killPattern: 'mellow-desktop',
+    // 必须传 --no-click（2026-09-23 定位）：合成点击会破坏 WKWebView 的 TextInput
+    // 焦点协议 → 随后的 CGEvent 按键全部丢失，探针实测 detectMaxDiff=0 且
+    // frontmostPid == expectPid（前台正确、窗口正确，就是收不到输入）。
+    // 这正是台账里「探针成功率随 app/fixture 大幅漂移」的根因 —— 它与文件尺寸
+    // 无关，只与「这次点击有没有踩坏焦点」有关，所以表现为间歇性（本轮 1/3）。
+    // WebView 启动后自动持有焦点，无需点击。golden-journeys.mjs 早有同款处理。
+    probeArgs: ['--no-click'],
     prep() {
       // 会话状态（localStorage）与恢复快照必须每次清空，保证「同一起点」。
       //
@@ -122,6 +131,19 @@ const BENCHMARK_WORKDIR = mkdtempSync(join(tmpdir(), 'mellow-benchmark-'));
 function parseList(s) { return s.split(',').map((x) => x.trim()).filter(Boolean); }
 const round3 = (n) => Math.round(n * 1000) / 1000;
 
+// ---------- ROI 表达方式（2026-09-23 修正）----------
+// startup-probe 的 ROI 必须用「**将要捕获的那个窗口**的比例」表达，绝不可用
+// waitWindow 返回的几何换算绝对像素。原因：waitWindow 走 CGWindowList，返回的是窗口
+// 出现**瞬间**的过渡尺寸 —— 实测 Tauri 主窗出现时为 1178×786，最终 resize 到 960×963。
+// 按过渡几何算出的 ROI 施加到最终窗口上会落到空白处：探针实测 detectMaxDiff=0，
+// 失败截图整幅纯白（仅右上角一条工具条残影）。这就是台账里「探针成功率随 app/fixture
+// 大幅漂移」的根因，与文件尺寸无关。
+// helper 侧现由 resolveRoiForCapture 用「它即将捕获的那个窗口」的 frame 求 ROI，
+// 两个来源合一。实测：改用比例后同一场景 10/10 成功（改前 6/10）。
+const ROI_FRAC_TOP = ['--roi-frac', '0.2,0.06,0.6,0.10']; // 顶部 10% 高带（光标在文首）
+const ROI_FRAC_TOP6 = ['--roi-frac', '0.2,0.06,0.6,0.06']; // 顶部 6% 高带（find bar）
+const ROI_FRAC_FULL = ['--roi-frac', '0,0,1,1']; // 整窗（滚动帧统计）
+
 // ---------- 版本信息 ----------
 function gitInfo() {
   try {
@@ -160,24 +182,33 @@ async function measureApp(appKey, opts) {
     const loads = [];
     const winMs = [];
     const probeOk = [];
+    const failureHints = [];
     for (let i = 0; i < opts.runs; i++) {
       killApp(app.killPattern);
       sleep(600);
       const { pid, t0Ms } = launchApp(blank);
       try {
         const win = waitWindow(pid, 30000);
-        const roi = topRoi(win);
-        const probe = helper('startup-probe', '--pid', String(pid), '--roi', roiStr(roi), '--timeout', '8000');
+        const probe = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []));
         winMs.push(win.wallMs - t0Ms);
         probeOk.push(probe.ok === true);
         // 与 open 指标同一契约：探针失败 = 首键回显没测到 → 记 null（无效），
         // 不得用「窗口出现」冒充（JS 的 number + null 会静默退化，见 open 处注释）。
         if (probe.ok === true) {
-          vals.push((win.wallMs - t0Ms) + (probe.loadMs ?? 0) + probe.latencyMs);
+          // 与 open 指标同一契约（2026-09-22）：不含 loadMs（waitStable 的 600ms 地板）。
+          vals.push((win.wallMs - t0Ms) + probe.latencyMs);
         } else {
           vals.push(null);
         }
         loads.push(probe.ok ? probe.loadMs : null);
+        // 失败样本保留探针自报的失败形态（与 open 指标同一契约）。
+        if (probe.ok !== true) {
+          failureHints.push(
+            `${probe.hint ?? probe.error ?? 'unknown'}`
+            + `（detectMaxDiff=${probe.detectMaxDiff ?? '?'} threshold=${probe.threshold ?? '?'}`
+            + ` calibMaxDiff=${probe.calibMaxDiff ?? '?'} frontmostPid=${probe.frontmostPid ?? '?'} expectPid=${probe.expectPid ?? '?'}）`,
+          );
+        }
       } catch (e) {
         winMs.push(null);
         probeOk.push(false);
@@ -193,8 +224,12 @@ async function measureApp(appKey, opts) {
       stats: stats(vals),
       loadMs: stats(loads),
       samplesWinMs: winMs,
+      samplesLoadMs: loads.slice(),
       samplesProbeOk: probeOk.slice(),
+      // 与 open 指标同一诊断契约（2026-09-22）：失败样本保留探针自报的失败形态。
+      failureHints: failureHints.slice(),
       probeFailures,
+      probeFailureRate: opts.runs > 0 ? round3(probeFailures / opts.runs) : null,
       validSamples: opts.runs - probeFailures,
     };
     if (probeFailures > 0) {
@@ -228,8 +263,9 @@ async function measureApp(appKey, opts) {
         sleep(settle);
         try {
           const w = launchApp(fpath);
-          const win = waitWindow(w.pid, 30000);
-          helper('startup-probe', '--pid', String(w.pid), '--roi', roiStr(topRoi(win)), '--timeout', '8000');
+          // 只为「等窗口出现」；其几何**不**参与 ROI（见 ROI_FRAC_TOP 注释）。
+          waitWindow(w.pid, 30000);
+          helper('startup-probe', '--pid', String(w.pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []));
         } catch (e) {
           console.warn(`[${app.name}/${fixture}] 预热 ${i + 1} 失败（不计入统计）: ${e.message}`);
         }
@@ -241,20 +277,26 @@ async function measureApp(appKey, opts) {
       const loads = [];
       const winMs = [];
       const probeOk = [];
+      const failureHints = [];
       for (let i = 0; i < opts.runs; i++) {
         killApp(app.killPattern);
         sleep(settle);
         const { pid, t0Ms } = launchApp(fpath);
         try {
           const win = waitWindow(pid, 30000);
-          const roi = topRoi(win);
-          const probe = helper('startup-probe', '--pid', String(pid), '--roi', roiStr(roi), '--timeout', '8000');
+          const probe = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []));
           // 逐样本记录三个分量：只有分解才能判断双峰落在哪一段
           // （窗口出现 / 内容加载 / 首键回显），否则只能看到总量在跳。
           winMs.push(win.wallMs - t0Ms);
           probeOk.push(probe.ok === true);
           if (probe.ok === true) {
-            opens.push((win.wallMs - t0Ms) + (probe.loadMs ?? 0) + probe.latencyMs);
+            // 指标定义（2026-09-22 修正）：open-to-editable = 窗口出现 + 首键回显。
+            // **不含** probe.loadMs —— 它是 `waitStable(stableMs: 600)` 的返回值，
+            // 而该循环要求 ROI「连续 600ms 无像素变化」才退出，结构上不可能早于
+            // 600ms 返回（见 screen-timing.swift）。把它计入总量等于给每个样本
+            // 加一个 ~600ms 常量，实测跨应用/跨尺寸取值带仅 603.8–629.8ms。
+            // loadMs 仍单独落盘（settleWaitMs），供诊断与人工解读。
+            opens.push((win.wallMs - t0Ms) + probe.latencyMs);
           } else {
             // ⚠️ 探针失败 = **首键回显没测到**，该样本不是 open-to-editable。
             // 旧实现写 `winMs + (ok ? … : null)`，而 JS 里 `number + null === number`，
@@ -266,6 +308,16 @@ async function measureApp(appKey, opts) {
           }
           probes.push(probe.ok ? probe.latencyMs : null);
           loads.push(probe.ok ? probe.loadMs : null);
+          // 失败样本保留探针自报的**失败形态**与关键实测值（2026-09-22）：
+          // hint 区分「未收到帧 / 完全无变化（焦点问题）/ 有变化未跨阈值（校准问题）」，
+          // 三者修法完全不同；不记下来就只能反复跑 runner 猜。
+          if (probe.ok !== true) {
+            failureHints.push(
+              `${probe.hint ?? probe.error ?? 'unknown'}`
+              + `（detectMaxDiff=${probe.detectMaxDiff ?? '?'} detectFrames=${probe.detectFrames ?? '?'} threshold=${probe.threshold ?? '?'}`
+              + ` calibMaxDiff=${probe.calibMaxDiff ?? '?'} frontmostPid=${probe.frontmostPid ?? '?'} expectPid=${probe.expectPid ?? '?'}）`,
+            );
+          }
         } catch (e) {
           winMs.push(null);
           probeOk.push(false);
@@ -287,6 +339,7 @@ async function measureApp(appKey, opts) {
         samplesLoadMs: loads.slice(),
         samplesLatencyMs: probes.slice(),
         samplesProbeOk: probeOk.slice(),
+        failureHints: failureHints.slice(),
         probeFailures,
         probeFailureRate: opts.runs > 0 ? round3(probeFailures / opts.runs) : null,
         /** 有效样本数（探针成功的那些才是真正的 open-to-editable） */
@@ -315,13 +368,13 @@ async function measureApp(appKey, opts) {
         }
       };
       try {
-        const win = waitWindow(pid, 30000);
-        const roi = topRoi(win);
+        waitWindow(pid, 30000); // 只为等窗口出现；几何不参与 ROI
 
         mSafe('typing', () => {
           if (!opts.metrics.includes('typing')) return;
-          const r = helper('keypress-latency', '--pid', String(pid), '--roi', roiStr(roi),
-            '--key', '0', '--count', String(opts.keystrokes), '--interval', '200', '--timeout', '5000');
+          const r = helper('keypress-latency', '--pid', String(pid), ...ROI_FRAC_TOP,
+            '--key', '0', '--count', String(opts.keystrokes), '--interval', '200', '--timeout', '5000',
+            ...(app.probeArgs ?? []));
           const lats = r.latencies || [];
           m.typing = { stats: stats(lats), samples: lats, timeouts: lats.filter((x) => x < 0).length, calibMaxDiff: r.calibMaxDiff, threshold: r.threshold };
           console.log(`typing: p95=${m.typing.stats.p95?.toFixed(2)}ms median=${m.typing.stats.median?.toFixed(2)}ms timeouts=${m.typing.timeouts}`);
@@ -329,7 +382,7 @@ async function measureApp(appKey, opts) {
 
         mSafe('scroll', () => {
           if (!opts.metrics.includes('scroll')) return;
-          const r = helper('scroll-frames', '--pid', String(pid), '--roi', roiStr({ x: 0, y: 0, w: win.w, h: win.h }),
+          const r = helper('scroll-frames', '--pid', String(pid), ...ROI_FRAC_FULL,
             '--count', '40', '--delta', '-80', '--interval', '30', '--timeout', '15000');
           m.scroll = frameStats(r.frames || []);
           console.log(`scroll: p95Frame=${m.scroll.p95FrameMs?.toFixed(1)}ms fps=${m.scroll.fps?.toFixed(1)} dropped=${m.scroll.dropped}`);
@@ -348,7 +401,7 @@ async function measureApp(appKey, opts) {
           sleep(2000); // SCK stream 释放冷却
           helper('post-combo', '--mods', 'cmd', '--key', '3', '--pid', String(pid)); // Cmd+F
           sleep(700);
-          const r = helper('startup-probe', '--pid', String(pid), '--roi', roiStr(topRoi(win, 0.06)), '--timeout', '5000');
+          const r = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP6, '--timeout', '5000', ...(app.probeArgs ?? []));
           m.search = { ok: r.ok, latencyMs: r.ok ? r.latencyMs : null, note: r.ok ? null : 'ROI 无变化（find bar 未出现在预期 ROI）' };
           helper('post-combo', '--mods', '', '--key', '53', '--pid', String(pid)); // Esc 关闭 find bar
           console.log(`search: ${r.ok ? r.latencyMs + 'ms' : 'N/A (' + m.search.note + ')'}`);

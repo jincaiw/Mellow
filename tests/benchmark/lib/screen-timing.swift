@@ -186,6 +186,13 @@ final class Probe: NSObject, SCStreamOutput {
   private var calibMax = 0
   private var changedFlag = false
   private var changedTime = 0.0
+  /// detect 窗口内「相对 base 的最大帧差」与帧数（2026-09-22 诊断用）。
+  ///
+  /// 立此字段的原因：`startup-probe` 失败时只报「Nms 内 ROI 无变化」，无法区分
+  /// ① 按键没落到编辑区（diff≈0）与 ② 有变化但未跨过阈值（calibMax*3 被噪声抬高）。
+  /// 这两者的修法完全不同（前者查焦点、后者查校准），所以必须把实测值报出来。
+  private var detectMaxDiff = 0
+  private var detectFrames = 0
   private var frameTimesArr: [Double] = []
   private var ready = false
   private let readySema = DispatchSemaphore(value: 0)
@@ -227,8 +234,10 @@ final class Probe: NSObject, SCStreamOutput {
       }
       latest = buf
     case .detect:
+      detectFrames += 1
       if let b = base, !changedFlag {
         let d = pixelDiff(b, buf)
+        if d > detectMaxDiff { detectMaxDiff = d }
         if d >= threshold {
           changedFlag = true
           changedTime = t
@@ -266,6 +275,8 @@ final class Probe: NSObject, SCStreamOutput {
     mode = .detect
     changedFlag = false
     changedTime = 0
+    detectMaxDiff = 0
+    detectFrames = 0
     base = latest
     lock.unlock()
     let deadline = Date().addingTimeInterval(timeoutMs / 1000.0)
@@ -275,6 +286,12 @@ final class Probe: NSObject, SCStreamOutput {
       Thread.sleep(forTimeInterval: 0.002)
     }
     return (false, 0)
+  }
+
+  /// detect 窗口的实测统计（诊断用：区分「按键没落到编辑区」与「未跨过阈值」）
+  func detectStats() -> (maxDiff: Int, frames: Int) {
+    lock.lock(); defer { lock.unlock() }
+    return (detectMaxDiff, detectFrames)
   }
 
   func collectFrameTimes() -> [Double] {
@@ -359,6 +376,29 @@ func startCapture(probe: Probe, pid: Int32, roi: Roi) async -> Bool {
   return false
 }
 
+/// 解析捕获窗口并（可选）按窗口比例求 ROI（2026-09-23）。
+///
+/// 立此函数的原因：ROI 是**窗口相对**坐标，调用方却只能从另一个来源
+/// （`wait-window`，走 CGWindowList）拿窗口几何。实测两者会不一致 ——
+/// Tauri 窗口出现瞬间的尺寸是**过渡值**（实测 1178×786），最终才 resize 到
+/// 960×963；调用方按过渡几何算出的 ROI 施加到最终窗口上就落到了空白处
+/// （失败截图整幅纯白，仅右上角一个工具条残影），探针因此报 detectMaxDiff=0。
+/// 让 helper 用「即将捕获的那个窗口」自己的 frame 求 ROI，两个来源合一，根除该错配。
+func resolveRoiForCapture(pid: Int32, fallback: Roi, roiFrac: [Double]?) async -> (SCWindow, Roi)? {
+  var window: SCWindow? = nil
+  for attempt in 0..<5 {
+    if let w = try? await findWindow(pid: pid) { window = w; break }
+    if attempt == 4 { break }
+    Thread.sleep(forTimeInterval: 3.0)
+  }
+  guard let win = window else { return nil }
+  guard let f = roiFrac, f.count == 4 else { return (win, fallback) }
+  let fw = Double(win.frame.width)
+  let fh = Double(win.frame.height)
+  let roi = Roi(x: fw * f[0], y: fh * f[1], w: max(1, fw * f[2]), h: max(24, fh * f[3]))
+  return (win, roi)
+}
+
 // MARK: - 命令实现
 
 func cmdCheck() async {
@@ -406,39 +446,94 @@ func cmdSnap(pid: Int32, roi: Roi, outPath: String) async {
   out(["ok": true, "out": outPath, "w": Int(roi.w), "h": Int(roi.h)])
 }
 
-func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true) async {
+func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true, snapOnFail: String? = nil, roiFrac: [Double]? = nil) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
   activateApp(pid: pid)
   let probe = Probe()
-  guard await startCapture(probe: probe, pid: pid, roi: roi) else { fail("SCK 捕获启动失败（重试 3 次后）") }
+  guard let (win, effRoi) = await resolveRoiForCapture(pid: pid, fallback: roi, roiFrac: roiFrac) else {
+    fail("SCK 捕获启动失败（找不到 pid=\(pid) 的可捕获窗口，重试 3 次后）")
+  }
+  do { try await probe.start(window: win, roi: effRoi) } catch { fail("SCK 捕获启动失败: \(error)") }
   let loadMs = probe.waitStable()
   // 强制聚焦编辑器（点击后光标闪烁被 calibrate 吸收）。
   // --no-click：WKWebView（Mellow）下合成点击会破坏 WebView 焦点协议，导致后续
   // 键盘事件全部丢失（2026-08-19 诊断）；WebView 启动自动持有焦点，无需点击。
   // 原生 app（Typora）光标默认在文档末尾，仍需点击把光标放到 ROI 顶部区域。
   if clickFocus {
-    if let w = try? await findWindow(pid: pid) { clickToFocus(w, roi: roi) }
+    clickToFocus(win, roi: effRoi)
   }
   let cal = probe.calibrateRetry()
   let t0 = nowMs()
   postKey(0x00) // 'a'
   let r = probe.detectChange(timeoutMs: timeoutMs)
+  let ds = probe.detectStats()
+  // 失败时把 ROI 最后一帧落盘（2026-09-23）：`detectMaxDiff=0` 有两种完全不同的
+  // 成因 —— ① ROI 压根没覆盖编辑区（几何错）② 覆盖了但按键没进去（焦点错）。
+  // 只报数字分不出来，一张 ROI 截图即可定案（图里有文字=几何对、焦点错）。
+  let frameForSnap = r.changed ? nil : probe.latestFrame()
   await probe.stop()
+  // 诊断字段两个分支都报（2026-09-22）：失败时最需要的就是这些值。
+  //  - detectMaxDiff vs threshold：diff 接近但未达阈值 → 校准被噪声抬高（修校准）；
+  //    diff ≈ 0 → 按键没落到编辑区（修焦点）。
+  //  - frontmostPid vs pid：不等说明按键发给了别的窗口。
+  let front = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
+  var diag: [String: Any] = [
+    "calibMaxDiff": cal.max,
+    "threshold": cal.threshold,
+    "detectMaxDiff": ds.maxDiff,
+    "detectFrames": ds.frames,
+    "frontmostPid": Int(front),
+    "expectPid": Int(pid),
+    // effRoi 是**实际生效**的 ROI（按捕获窗口求得），不是调用方传入的那个 ——
+    // 两者不一致正是本 bug 的形态，必须分别可见。
+    "roi": "\(Int(effRoi.x)),\(Int(effRoi.y)),\(Int(effRoi.w)),\(Int(effRoi.h))",
+    "winFrame": "\(Int(win.frame.origin.x)),\(Int(win.frame.origin.y)),\(Int(win.frame.width)),\(Int(win.frame.height))",
+    "roiSource": roiFrac == nil ? "absolute" : "frac",
+  ]
   if r.changed {
-    let latency = r.latencyMs - t0
-    out(["ok": true, "latencyMs": round(latency * 100) / 100, "loadMs": round(loadMs * 10) / 10, "calibMaxDiff": cal.max, "threshold": cal.threshold])
+    diag["ok"] = true
+    diag["latencyMs"] = round((r.latencyMs - t0) * 100) / 100
+    diag["loadMs"] = round(loadMs * 10) / 10
+    out(diag)
   } else {
-    out(["ok": false, "error": "按键后 \(timeoutMs)ms 内 ROI 无变化", "loadMs": round(loadMs * 10) / 10])
+    diag["ok"] = false
+    diag["loadMs"] = round(loadMs * 10) / 10
+    // 指名失败形态，便于下一轮直接定位而不是再猜
+    let hint: String
+    if ds.frames == 0 {
+      hint = "detect 窗口内未收到任何帧（SCK 停流）"
+    } else if ds.maxDiff <= 2 {
+      hint = "ROI 完全无变化（按键可能未落到编辑区：检查 frontmostPid 是否等于 expectPid）"
+    } else {
+      hint = "有变化但未跨阈值（detectMaxDiff < threshold → 校准被动画噪声抬高）"
+    }
+    diag["error"] = "按键后 \(timeoutMs)ms 内 ROI 未跨阈值"
+    diag["hint"] = hint
+    if let path = snapOnFail, let buf = frameForSnap {
+      let ci = CIImage(cvPixelBuffer: buf)
+      if let cg = CIContext().createCGImage(ci, from: ci.extent) {
+        let rep = NSBitmapImageRep(cgImage: cg)
+        if let data = rep.representation(using: .png, properties: [:]) {
+          try? data.write(to: URL(fileURLWithPath: path))
+          diag["snap"] = path
+        }
+      }
+    }
+    out(diag)
   }
 }
 
-func cmdKeypressLatency(pid: Int32, roi: Roi, key: CGKeyCode, count: Int, intervalMs: Double, timeoutMs: Double) async {
+func cmdKeypressLatency(pid: Int32, roi: Roi, key: CGKeyCode, count: Int, intervalMs: Double, timeoutMs: Double, clickFocus: Bool = true, roiFrac: [Double]? = nil) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予") }
   activateApp(pid: pid)
   let probe = Probe()
-  guard await startCapture(probe: probe, pid: pid, roi: roi) else { fail("SCK 捕获启动失败（重试 3 次后）") }
+  guard let (win, effRoi) = await resolveRoiForCapture(pid: pid, fallback: roi, roiFrac: roiFrac) else {
+    fail("SCK 捕获启动失败（找不到 pid=\(pid) 的可捕获窗口，重试 3 次后）")
+  }
+  do { try await probe.start(window: win, roi: effRoi) } catch { fail("SCK 捕获启动失败: \(error)") }
   _ = probe.waitStable()
-  if let w = try? await findWindow(pid: pid) { clickToFocus(w, roi: roi) }
+  // --no-click：与 startup-probe 同因（WKWebView 合成点击破坏 TextInput 焦点协议）。
+  if clickFocus { clickToFocus(win, roi: effRoi) }
   let cal = probe.calibrateRetry()
   var latencies: [Double] = []
   var consecutiveTimeout = 0
@@ -465,11 +560,14 @@ func cmdKeypressLatency(pid: Int32, roi: Roi, key: CGKeyCode, count: Int, interv
   out(["ok": true, "truncated": consecutiveTimeout >= 8, "calibMaxDiff": cal.max, "threshold": cal.threshold, "latencies": latencies])
 }
 
-func cmdScrollFrames(pid: Int32, roi: Roi, count: Int, delta: Int32, intervalMs: Double, timeoutMs: Double) async {
+func cmdScrollFrames(pid: Int32, roi: Roi, count: Int, delta: Int32, intervalMs: Double, timeoutMs: Double, roiFrac: [Double]? = nil) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予") }
   activateApp(pid: pid)
   let probe = Probe()
-  guard await startCapture(probe: probe, pid: pid, roi: roi) else { fail("SCK 捕获启动失败（重试 3 次后）") }
+  guard let (win, effRoi) = await resolveRoiForCapture(pid: pid, fallback: roi, roiFrac: roiFrac) else {
+    fail("SCK 捕获启动失败（找不到 pid=\(pid) 的可捕获窗口，重试 3 次后）")
+  }
+  do { try await probe.start(window: win, roi: effRoi) } catch { fail("SCK 捕获启动失败: \(error)") }
   _ = probe.waitStable()
   probe.setModeCollect()
   Thread.sleep(forTimeInterval: 0.5) // warm 帧
@@ -525,8 +623,17 @@ func mainAsync(_ args: [String]) async {
     Thread.sleep(forTimeInterval: 0.6)
     postKey(0x00) // 'a'
     out(["ok": true, "click": [cx, cy]])
-  case "snap":
-    // 调试：把 ROI 当前帧存为 PNG（诊断 ROI 是否覆盖文本/光标区域）
+  case "windows":
+    // 诊断（2026-09-23）：同一 pid 下可能有多个 layer-0 窗口（Tauri 主窗 + 辅助窗），
+    // `wait-window` 与 SCK `findWindow` 各自取「第一个」，取到的可能不是同一个 →
+    // 调用方按 A 的几何算出的 ROI，被施加到 B 上，ROI 落空（实测 ROI 截图全白）。
+    let pid = Int(argVal(args, "--pid") ?? "") ?? -1
+    let all = windowList().filter { ($0["pid"] as? Int) == pid }
+    let sc = (try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))?.windows
+      .filter { $0.owningApplication?.processID == Int32(pid) }
+      .map { ["w": Double($0.frame.width), "h": Double($0.frame.height), "x": Double($0.frame.origin.x), "y": Double($0.frame.origin.y)] } ?? []
+    out(["ok": true, "cgWindows": all, "sckWindows": sc])
+  case "snap":    // 调试：把 ROI 当前帧存为 PNG（诊断 ROI 是否覆盖文本/光标区域）
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,400,300")
     let outPath = argVal(args, "--out") ?? "/tmp/screen-timing-snap.png"
@@ -536,7 +643,10 @@ func mainAsync(_ args: [String]) async {
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")
     let timeout = Double(argVal(args, "--timeout") ?? "8000") ?? 8000
     let noClick = args.contains("--no-click")
-    await cmdStartupProbe(pid: pid, roi: roi, timeoutMs: timeout, clickFocus: !noClick)
+    let snapOnFail = argVal(args, "--snap-on-fail")
+    // --roi-frac "x,y,w,h"：按「实际捕获窗口」的比例求 ROI（推荐；见 resolveRoiForCapture）。
+    let roiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
+    await cmdStartupProbe(pid: pid, roi: roi, timeoutMs: timeout, clickFocus: !noClick, snapOnFail: snapOnFail, roiFrac: roiFrac)
   case "keypress-latency":
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")
@@ -544,7 +654,9 @@ func mainAsync(_ args: [String]) async {
     let count = Int(argVal(args, "--count") ?? "100") ?? 100
     let interval = Double(argVal(args, "--interval") ?? "150") ?? 150
     let timeout = Double(argVal(args, "--timeout") ?? "2000") ?? 2000
-    await cmdKeypressLatency(pid: pid, roi: roi, key: key, count: count, intervalMs: interval, timeoutMs: timeout)
+    let kpRoiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
+    await cmdKeypressLatency(pid: pid, roi: roi, key: key, count: count, intervalMs: interval, timeoutMs: timeout,
+                             clickFocus: !args.contains("--no-click"), roiFrac: kpRoiFrac)
   case "scroll-frames":
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")
@@ -552,7 +664,8 @@ func mainAsync(_ args: [String]) async {
     let delta = Int32(argVal(args, "--delta") ?? "-60") ?? -60
     let interval = Double(argVal(args, "--interval") ?? "30") ?? 30
     let timeout = Double(argVal(args, "--timeout") ?? "15000") ?? 15000
-    await cmdScrollFrames(pid: pid, roi: roi, count: count, delta: delta, intervalMs: interval, timeoutMs: timeout)
+    let sfRoiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
+    await cmdScrollFrames(pid: pid, roi: roi, count: count, delta: delta, intervalMs: interval, timeoutMs: timeout, roiFrac: sfRoiFrac)
   default:
     fail("未知命令: \(cmd)")
   }

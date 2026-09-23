@@ -72,6 +72,55 @@ if (existsSync(benchmarkRunnerPath)) {
   if (WARMUP_RE.test("const warmup = parseInt(argVal('--warmup', '0'), 10);")) {
     errors.push('benchmark 预热 canary 过宽：0 轮预热（会制造「越大越快」假象）被误判为合法');
   }
+
+  // ── ROI 来源 / 焦点护栏（2026-09-23）────────────────────────────────────
+  // 立此节的原因：`startup-probe` 的 ROI 是**窗口相对**坐标，而 runner 原先用
+  // `waitWindow` 返回的几何换算绝对像素。`waitWindow` 走 CGWindowList，返回的是窗口
+  // 出现**瞬间的过渡尺寸**（实测 Tauri 主窗出现时 1178×786，最终 resize 到 960×963；
+  // 而 SCK 侧始终是 960×963）。按过渡几何算出的 ROI 施加到最终窗口上会落到空白处 ——
+  // 探针实测 detectMaxDiff=0、失败截图整幅纯白（仅右上角一条工具条残影），成功率
+  // 随 app/fixture 漂移（实测 6/10），台账曾把它误读成「探针本身不稳定」。
+  // 另：Mellow（WKWebView）下合成点击会破坏 TextInput 焦点协议 → 后续 CGEvent 按键
+  // 全部丢失，这是同一症状的**第二个独立成因**，必须同时传 --no-click。
+  // 修法：ROI 由「即将捕获的那个窗口」的比例求得（helper 侧 resolveRoiForCapture），
+  // 两个来源合一。实测改后同一场景 10/10 成功。
+  const STARTUP_CALL_SRC = "helper\\(\\s*'startup-probe'[\\s\\S]*?;";
+  const startupCalls = benchCode.match(new RegExp(STARTUP_CALL_SRC, 'g')) ?? [];
+  assert(startupCalls.length > 0,
+    '未找到 startup-probe 调用点（ROI 护栏失效，请同步更新本护栏）');
+  for (const call of startupCalls) {
+    assert(/ROI_FRAC/.test(call),
+      'startup-probe 必须以窗口比例（ROI_FRAC_*）给出 ROI：绝对像素来自 waitWindow 的过渡几何，与 SCK 实际捕获的窗口不一致，ROI 会落到空白处');
+    assert(/app\.probeArgs/.test(call),
+      'startup-probe 调用必须透传 app.probeArgs（否则 Mellow 的 --no-click 不生效，按键全部丢失）');
+  }
+  assert(/probeArgs:\s*\[\s*'--no-click'\s*\]/.test(benchCode),
+    'Mellow 必须声明 probeArgs 含 --no-click：合成点击会破坏 WKWebView 的 TextInput 焦点协议，导致后续按键全部丢失（探针报 detectMaxDiff=0）');
+  // 反例锁：不得用 waitWindow 的几何换算探针 ROI（本 bug 的原写法）。
+  assert(!/roiStr\(\s*topRoi\(/.test(benchCode),
+    '不得用 roiStr(topRoi(win)) 作为探针 ROI：waitWindow 返回的是窗口出现瞬间的过渡尺寸，会与 SCK 捕获的窗口错配');
+
+  // canary：自检上述两条规则本身（样本用拼接构造，避免护栏与字面量耦合）
+  const BAD_ROI_SAMPLE = 'helper(' + "'startup-probe', '--pid', String(pid), '--roi', " + 'roiStr(topRoi(win)));';
+  if (!new RegExp(STARTUP_CALL_SRC).test(BAD_ROI_SAMPLE)) {
+    errors.push('ROI 正例锁 canary 失效：缺 ROI_FRAC 的调用样本未被识别为 startup-probe 调用');
+  } else if (/ROI_FRAC/.test(BAD_ROI_SAMPLE)) {
+    errors.push('ROI 正例锁 canary 失效：缺 ROI_FRAC 的调用样本被误判为合规');
+  }
+  if (!/roiStr\(\s*topRoi\(/.test(BAD_ROI_SAMPLE)) {
+    errors.push('ROI 反例锁 canary 失效：旧写法样本未被检出');
+  }
+
+  // 跨层锁：ROI 比例解析必须真的在 helper 里实现（只改 runner 传参 = 参数被静默忽略）。
+  const helperPath = resolve(root, 'tests/benchmark/lib/screen-timing.swift');
+  assert(existsSync(helperPath), '探针源码 tests/benchmark/lib/screen-timing.swift 不存在');
+  if (existsSync(helperPath)) {
+    const helperSrc = readFileSync(helperPath, 'utf8').replace(/\r\n/g, '\n');
+    assert(/func resolveRoiForCapture/.test(helperSrc),
+      'helper 必须实现 resolveRoiForCapture（用「即将捕获的那个窗口」求 ROI）：跨层字段必须两端同时锁');
+    assert(/roiFrac/.test(helperSrc), 'helper 必须支持按窗口比例解析 ROI（--roi-frac）');
+    assert(/--no-click/.test(helperSrc), 'helper 必须支持 --no-click（Mellow/WKWebView 必需）');
+  }
 }
 
 for (const observation of ledger.patchObservations ?? []) {
