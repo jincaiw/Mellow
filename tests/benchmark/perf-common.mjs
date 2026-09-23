@@ -42,6 +42,21 @@ export function launch(bin, args) {
   return { pid: proc.pid, t0Ms: Date.now(), proc };
 }
 
+/**
+ * 等待某进程名出现并返回 pid（2026-09-23 新增）。
+ * hot-open 用 `open -a <bundle> <file>` 启动（拿不到子进程句柄），故按进程名取 pid。
+ */
+export function waitForPid(pattern, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const r = spawnSync('pgrep', ['-x', pattern], { encoding: 'utf8' });
+    const pid = String(r.stdout || '').trim().split('\n').filter(Boolean)[0];
+    if (pid) return Number(pid);
+    sleep(100);
+  }
+  throw new Error(`进程 ${pattern} 在 ${timeoutMs}ms 内未出现`);
+}
+
 /** 等待窗口出现，返回 { window, wallMs, elapsedMs } */
 export function waitWindow(pid, timeoutMs = 20000) {
   const r = helper('wait-window', '--pid', String(pid), '--timeout', String(timeoutMs));
@@ -136,10 +151,37 @@ export function checkPerms() {
   return { ok: r.accessibility && r.screenRecording, accessibility: r.accessibility, screenRecording: r.screenRecording, detail };
 }
 
-/** 当前输入源是否 ABC/英文（typing 测试需要） */
-export function inputSourceIsEnglish() {
+/**
+ * 查询**当前**输入源（TIS 权威值，2026-09-23 新增）。
+ * 返回 { ok, id, type, name, isKeyboardLayout, isAsciiCapable }。
+ */
+export function currentInputSource() {
   try {
-    const out = spawnSync('defaults', ['read', 'com.apple.HIToolbox', 'AppleSelectedInputSources'], { encoding: 'utf8' });
-    return /ABC|U\.S\.|English/.test(out.stdout) && !/Pinyin|Chinese|Wubi|ABC.*Chinese/.test(out.stdout.replace(/ABC\s*\)/, ''));
-  } catch { return false; }
+    const out = execFileSync(HELPER, ['current-input'], { encoding: 'utf8', timeout: 15000 });
+    const line = out.split('\n').filter((l) => l.trim().startsWith('{')).pop();
+    return JSON.parse(line);
+  } catch (e) {
+    return { ok: false, error: `helper current-input 失败: ${e.message}` };
+  }
+}
+
+/**
+ * 当前输入源是否为「无 IME 干扰的键盘布局」（typing / 首键回显类测量需要）。
+ *
+ * **2026-09-23 重写**。旧实现读 `defaults read … AppleSelectedInputSources`
+ * ——那是**已启用列表**而非当前源——且用正则 `/ABC|U\.S\.|English/` 判定。
+ * 而简体拼音的输入源 id 是 `com.apple.inputmethod.SCIM.ITABC`，
+ * **字面量里就含 `ABC`**（"IT**ABC**"），于是该函数对本机实际状态恒返回 true。
+ *
+ * 后果（实测）：合成按键落到拼音 IME 上弹出候选窗，而不是回显文本 ——
+ * `open` / `startup` / `typing` / `search` 的「首键回显」分量测的其实是
+ * 「IME 候选窗出现的耗时」，且方差远大于真实回显（实测 10MB 同机两轮
+ * 中位数 743.9ms vs 1586.4ms，差异几乎全在该分量）。
+ *
+ * 现改用 helper 的 TIS 查询：只有 `isKeyboardLayout === true`
+ * （即 `TISTypeKeyboardLayout`，非 `TISTypeKeyboardInputMode`）才算无 IME 干扰。
+ */
+export function inputSourceIsEnglish() {
+  const s = currentInputSource();
+  return s.ok === true && s.isKeyboardLayout === true;
 }

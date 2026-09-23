@@ -177,6 +177,82 @@ if (existsSync(benchmarkRunnerPath)) {
       errors.push('夹具原子性正例锁 canary 失效：直写 outDir 的样本未被检出');
     }
   }
+
+  // ── 输入源判定护栏（2026-09-23）──────────────────────────────────────────
+  // 立此节的原因：`inputSourceIsEnglish()` 原实现读
+  // `defaults read com.apple.HIToolbox AppleSelectedInputSources` ——
+  // 那是**已启用列表**（不是当前源）—— 且用正则 `/ABC|U\.S\.|English/` 判定。
+  // 而简体拼音的输入源 id 是 `com.apple.inputmethod.SCIM.ITABC`，
+  // **字面量里就含 `ABC`**（"IT**ABC**"），于是该函数对本机实际状态恒返回 true。
+  // 后果：合成按键落到拼音 IME 上弹出候选窗而不是回显文本 ——
+  // startup/open/typing/search 的「首键回显」分量测的是「候选窗出现的耗时」，
+  // 数字看着正常却不可用（实测 10MB 同机中位数 743.9 / 1586.4 / 2098.3ms 三档）。
+  // 现改用 helper 的 TIS 查询（只有 TISTypeKeyboardLayout 才算无 IME 干扰），
+  // 且把门禁从「仅警告」升级为「拒绝执行」。
+  const perfCommonPath = resolve(root, 'tests/benchmark/perf-common.mjs');
+  assert(existsSync(perfCommonPath), 'tests/benchmark/perf-common.mjs 不存在');
+  if (existsSync(perfCommonPath)) {
+    // 必须先剥注释再断言：本轮 `inputSourceIsEnglish` 的**解释性注释**里写了旧实现
+    // 用的键名（正是为了说明为什么不能用它），不剥注释会把自己的说明当成违规。
+    // 这与本文件早先 `benchCode` 的处理同理（见 stripComments 定义处的注释）。
+    const commonSrc = stripComments(readFileSync(perfCommonPath, 'utf8').replace(/\r\n/g, '\n'));
+    assert(/export function currentInputSource/.test(commonSrc),
+      'perf-common 必须实现 currentInputSource（经 helper 的 TIS 查询取**当前**输入源）');
+    assert(/'current-input'/.test(commonSrc),
+      'currentInputSource 必须调用 helper 的 current-input 命令');
+    // 反例锁：不得再用「已启用输入源列表 + ASCII 关键词」判定 —— 拼音的 id 含 ABC 会误报
+    assert(!/AppleSelectedInputSources/.test(commonSrc),
+      '不得用 AppleSelectedInputSources 判定输入源：那是已启用列表且拼音 id 含 "ABC"（com.apple.inputmethod.SCIM.ITABC）会误报为英文');
+    // canary：自检反例锁本身（样本拼接构造）
+    const NAIVE_SAMPLE = "spawnSync('defaults', ['read', 'com.apple.HIToolbox', '" + 'AppleSelectedInputSources' + "'])";
+    if (!/AppleSelectedInputSources/.test(NAIVE_SAMPLE)) {
+      errors.push('输入源反例锁 canary 失效：旧实现样本未被检出');
+    }
+    // 正例锁：判定必须落在 isKeyboardLayout 上
+    assert(/isKeyboardLayout/.test(commonSrc),
+      'inputSourceIsEnglish 必须以 isKeyboardLayout 为准（TISTypeKeyboardLayout 才无 IME 干扰）');
+  }
+  // 门禁必须是硬失败：合成按键类指标在非键盘布局下拒绝执行
+  assert(/KEYSTROKE_METRICS/.test(benchCode),
+    'run-benchmark 必须声明 KEYSTROKE_METRICS（合成按键类指标集合）');
+  {
+    const i = benchCode.indexOf('KEYSTROKE_METRICS');
+    const tail = i >= 0 ? benchCode.slice(i, i + 1200) : '';
+    assert(/process\.exit\(1\)/.test(tail),
+      '输入源非键盘布局时必须**拒绝执行**（process.exit(1)），不能只警告放行 —— 否则产出的是「IME 候选窗耗时」');
+  }
+  // hot-open 口径必须存在（2026-09-22 文档列出的待办）
+  assert(/'hotopen'/.test(benchCode), 'run-benchmark 必须支持 hotopen 指标');
+  assert(/hot-open-probe/.test(benchCode), 'run-benchmark 必须调用 helper 的 hot-open-probe');
+  {
+    // 注意：helperSrc 是上一节块级作用域内的常量，此处需重新读取（否则 ReferenceError）
+    const helperPath2 = resolve(root, 'tests/benchmark/lib/screen-timing.swift');
+    if (existsSync(helperPath2)) {
+      const hs = readFileSync(helperPath2, 'utf8').replace(/\r\n/g, '\n');
+      assert(/case "hot-open-probe"/.test(hs), 'helper 必须实现 hot-open-probe 命令');
+      assert(/case "current-input"/.test(hs), 'helper 必须实现 current-input 命令（TIS 权威输入源查询）');
+      assert(/func ensureAsciiInputSource/.test(hs),
+        'helper 必须实现 ensureAsciiInputSource：macOS 按应用记忆输入源，激活后需重新断言为键盘布局');
+      // 反例锁：需要合成按键的命令必须走 activateAndEnsureInput，不得裸调 activateApp
+      for (const fn of ['cmdStartupProbe', 'cmdKeypressLatency', 'cmdHotOpenProbe']) {
+        const i = hs.indexOf(`func ${fn}(`);
+        assert(i >= 0, `helper 缺少 ${fn}`);
+        if (i >= 0) {
+          const body = hs.slice(i, i + 900);
+          assert(/activateAndEnsureInput\(/.test(body),
+            `${fn} 必须用 activateAndEnsureInput（激活后重新断言输入源），不得裸调 activateApp`);
+        }
+      }
+      // canary：自检该反例锁
+      const BARE_ACTIVATE_SAMPLE = 'func cmdStartupProbe(pid: Int32) async {\n  activateApp(pid: pid)\n}';
+      const i = BARE_ACTIVATE_SAMPLE.indexOf('func cmdStartupProbe(');
+      if (!/activateAndEnsureInput\(/.test(BARE_ACTIVATE_SAMPLE.slice(i, i + 900))) {
+        // 预期：裸调样本「不含」activateAndEnsureInput → 锁能检出
+      } else {
+        errors.push('输入源断言反例锁 canary 失效：裸 activateApp 样本未被检出');
+      }
+    }
+  }
 }
 
 for (const observation of ledger.patchObservations ?? []) {

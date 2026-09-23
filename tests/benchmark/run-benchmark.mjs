@@ -15,8 +15,8 @@ import { tmpdir } from 'node:os';
 import { spawnSync, execSync } from 'node:child_process';
 import {
   BENCH_DIR, HELPER, FIXTURES_DIR, RESULTS_DIR,
-  helper, killApp, launch, waitWindow,
-  sampleRss, stats, sleep, fileMtimeMs, touchOld, checkPerms, inputSourceIsEnglish,
+  helper, killApp, launch, waitWindow, waitForPid,
+  sampleRss, stats, sleep, fileMtimeMs, touchOld, checkPerms, inputSourceIsEnglish, currentInputSource,
 } from './perf-common.mjs';
 
 // ---------- 参数 ----------
@@ -33,6 +33,10 @@ const APPS = {
     launchArgs: ['-ApplePersistenceIgnoreState', 'YES'],
     // 原生 app：光标默认在文档末尾，需要合成点击把焦点放到 ROI 顶部区域。
     probeArgs: [],
+    /** hot-open 用：.app 包路径（`open -a` 需要包身份，裸二进制收不到 odoc 事件） */
+    bundle: '/Applications/Typora.app',
+    /** hot-open 用：pgrep 进程名 */
+    pidPattern: 'Typora',
     prep() {
       run('defaults', ['write', 'abnerworks.Typora', 'SUEnableAutomaticChecks', '-bool', 'NO']);
       run('defaults', ['write', 'abnerworks.Typora', 'NSQuitAlwaysKeepsWindows', '-bool', 'NO']);
@@ -49,6 +53,10 @@ const APPS = {
     // 无关，只与「这次点击有没有踩坏焦点」有关，所以表现为间歇性（本轮 1/3）。
     // WebView 启动后自动持有焦点，无需点击。golden-journeys.mjs 早有同款处理。
     probeArgs: ['--no-click'],
+    /** hot-open 用：.app 包路径（`open -a` 需要包身份，裸二进制收不到 odoc 事件） */
+    bundle: join(BENCH_DIR, '..', '..', 'apps', 'desktop', 'src-tauri', 'target', 'release', 'bundle', 'macos', 'Mellow.app'),
+    /** hot-open 用：pgrep 进程名 */
+    pidPattern: 'mellow-desktop',
     prep() {
       // 会话状态（localStorage）与恢复快照必须每次清空，保证「同一起点」。
       //
@@ -120,7 +128,7 @@ function focusAndTypeMellow(pid, text) {
 }
 
 const FIXTURES = ['1MB.md', '5MB.md', '10MB.md', '100k-lines.md', 'large-table.md', '100-mermaid.md', '1000-images.md'];
-const ALL_METRICS = ['startup', 'open', 'typing', 'scroll', 'search', 'save', 'memory'];
+const ALL_METRICS = ['startup', 'open', 'hotopen', 'typing', 'scroll', 'search', 'save', 'memory'];
 // PRD V1.2 FINAL 与 AGENTS.md 冻结的唯一性能/体验对标版本。
 // 非该版本的运行仍可用于历史观察，但不可作为当前 P0 判定证据。
 const TYPORA_NORMATIVE_VERSION = '1.14.9';
@@ -182,6 +190,11 @@ const round3 = (n) => Math.round(n * 1000) / 1000;
 const ROI_FRAC_TOP = ['--roi-frac', '0.2,0.06,0.6,0.10']; // 顶部 10% 高带（光标在文首）
 const ROI_FRAC_TOP6 = ['--roi-frac', '0.2,0.06,0.6,0.06']; // 顶部 6% 高带（find bar）
 const ROI_FRAC_FULL = ['--roi-frac', '0,0,1,1']; // 整窗（滚动帧统计）
+// 合成按键类探针必须**在激活 app 之后**再断言输入源为键盘布局（2026-09-23）：
+// macOS 会**按应用记忆**输入源 —— 实测 runner 启动时断言为 ABC，激活 Typora 后
+// 变回「Pinyin – Simplified」。输入源是 IME 时按键会弹候选窗而非回显文本，
+// 于是「首键回显」分量测的是候选窗出现的耗时（数字看似正常但不可用）。
+const ENSURE_ASCII = ['--ensure-ascii'];
 
 // ---------- 版本信息 ----------
 function gitInfo() {
@@ -228,7 +241,7 @@ async function measureApp(appKey, opts) {
       const { pid, t0Ms } = launchApp(blank);
       try {
         const win = waitWindow(pid, 30000);
-        const probe = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []));
+        const probe = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []), ...ENSURE_ASCII);
         winMs.push(win.wallMs - t0Ms);
         probeOk.push(probe.ok === true);
         // 与 open 指标同一契约：探针失败 = 首键回显没测到 → 记 null（无效），
@@ -304,7 +317,7 @@ async function measureApp(appKey, opts) {
           const w = launchApp(fpath);
           // 只为「等窗口出现」；其几何**不**参与 ROI（见 ROI_FRAC_TOP 注释）。
           waitWindow(w.pid, 30000);
-          helper('startup-probe', '--pid', String(w.pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []));
+          helper('startup-probe', '--pid', String(w.pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []), ...ENSURE_ASCII);
         } catch (e) {
           console.warn(`[${app.name}/${fixture}] 预热 ${i + 1} 失败（不计入统计）: ${e.message}`);
         }
@@ -323,7 +336,7 @@ async function measureApp(appKey, opts) {
         const { pid, t0Ms } = launchApp(fpath);
         try {
           const win = waitWindow(pid, 30000);
-          const probe = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []));
+          const probe = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []), ...ENSURE_ASCII);
           // 逐样本记录三个分量：只有分解才能判断双峰落在哪一段
           // （窗口出现 / 内容加载 / 首键回显），否则只能看到总量在跳。
           winMs.push(win.wallMs - t0Ms);
@@ -413,7 +426,7 @@ async function measureApp(appKey, opts) {
           if (!opts.metrics.includes('typing')) return;
           const r = helper('keypress-latency', '--pid', String(pid), ...ROI_FRAC_TOP,
             '--key', '0', '--count', String(opts.keystrokes), '--interval', '200', '--timeout', '5000',
-            ...(app.probeArgs ?? []));
+            ...(app.probeArgs ?? []), ...ENSURE_ASCII);
           const lats = r.latencies || [];
           m.typing = { stats: stats(lats), samples: lats, timeouts: lats.filter((x) => x < 0).length, calibMaxDiff: r.calibMaxDiff, threshold: r.threshold };
           console.log(`typing: p95=${m.typing.stats.p95?.toFixed(2)}ms median=${m.typing.stats.median?.toFixed(2)}ms timeouts=${m.typing.timeouts}`);
@@ -440,7 +453,7 @@ async function measureApp(appKey, opts) {
           sleep(2000); // SCK stream 释放冷却
           helper('post-combo', '--mods', 'cmd', '--key', '3', '--pid', String(pid)); // Cmd+F
           sleep(700);
-          const r = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP6, '--timeout', '5000', ...(app.probeArgs ?? []));
+          const r = helper('startup-probe', '--pid', String(pid), ...ROI_FRAC_TOP6, '--timeout', '5000', ...(app.probeArgs ?? []), ...ENSURE_ASCII);
           m.search = { ok: r.ok, latencyMs: r.ok ? r.latencyMs : null, note: r.ok ? null : 'ROI 无变化（find bar 未出现在预期 ROI）' };
           helper('post-combo', '--mods', '', '--key', '53', '--pid', String(pid)); // Esc 关闭 find bar
           console.log(`search: ${r.ok ? r.latencyMs + 'ms' : 'N/A (' + m.search.note + ')'}`);
@@ -507,6 +520,101 @@ async function measureApp(appKey, opts) {
     }
     result.metrics[fixture] = m;
   }
+
+  // ── hot-open：在**已运行的实例**内换文档（2026-09-23 新增）────────────────
+  //
+  // 与 `open` 的分工：`open` = 窗口出现 + 首键回显，含进程启动与 WebView 初始化，
+  // 量的是「冷启动」；PRD 关心的「文档打开成本」是**同一实例内换文档**要多久。
+  // 这也是 2026-09-22 文档列出的待办（「需要 hot-open 口径绕开启动态」）。
+  //
+  // 前置：必须以 **.app 包**启动 —— `open -a <app> <file>` 走 odoc Apple Event，
+  // 依赖 LaunchServices 的包身份；裸二进制不会被路由（实测确认）。
+  // 触发必须由 helper 自己发（见 lib/screen-timing.swift 的 cmdHotOpenProbe）：
+  // runner 用 execFileSync 同步调 helper，若先触发再调，切换瞬间已被错过。
+  if (opts.metrics.includes('hotopen')) {
+    const usable = opts.fixtures.filter((f) => existsSync(join(FIXTURES_DIR, f)));
+    if (!app.bundle || !existsSync(app.bundle) || usable.length < 2) {
+      console.warn(`⚠️ [${app.name}/hotopen] 跳过：需要 ≥2 个夹具且 .app 包存在`
+        + `（bundle=${app.bundle ?? '(未配置)'}，可用夹具=${usable.length}）`);
+    } else {
+      const total = [];
+      const switches = [];
+      const echoes = [];
+      const settles = [];
+      const probeOk = [];
+      const hints = [];
+      // 包陈旧告警（2026-09-23）：hot-open 必须走 .app，而 .app 是**构建产物**，
+      // 很容易落后于 target/release 里的裸二进制（本机实测：.app 为 09-15 的 v1.5.9，
+      // 而二进制是 09-22 构建）。不告警就会把「旧构建的性能」当成当前提交的读数 ——
+      // 与本项目其它「静默加载旧产物」陷阱同类。
+      let bundleStale = null;
+      let bundleMtime = null;
+      let binMtime = null;
+      try {
+        const bundleM = statSync(app.bundle).mtimeMs;
+        const binM = statSync(app.bin).mtimeMs;
+        bundleMtime = new Date(bundleM).toISOString();
+        binMtime = new Date(binM).toISOString();
+        bundleStale = bundleM < binM - 60_000;
+        if (bundleStale) {
+          console.warn(`⚠️ [${app.name}/hotopen] .app 包早于裸二进制（${bundleMtime} < ${binMtime}）`
+            + ' → 本段读数来自**旧构建**，不可作为当前提交的结论。请重建包后再跑。');
+        }
+      } catch { /* 时间戳不可得则不阻断 */ }
+      killApp(app.killPattern);
+      sleep(800);
+      try {
+        // 以 .app 启动并打开第一个夹具（LaunchServices 注册包身份）
+        execSync(`open -a ${JSON.stringify(app.bundle)} ${JSON.stringify(join(FIXTURES_DIR, usable[0]))}`);
+        const pid = waitForPid(app.pidPattern, 20000);
+        waitWindow(pid, 30000);
+        sleep(3000); // 首篇文档渲染完成，基准帧才有意义
+        for (let i = 0; i < opts.runs; i++) {
+          // 目标文档与当前文档必须不同，否则「切换」无变化可言 → 交替投递
+          const target = join(FIXTURES_DIR, usable[(i + 1) % usable.length]);
+          const p = helper('hot-open-probe', '--pid', String(pid),
+            '--open-app', app.bundle, '--open-file', target,
+            ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []), ...ENSURE_ASCII);
+          probeOk.push(p.ok === true);
+          switches.push(p.ok ? p.switchMs : null);
+          echoes.push(p.ok ? p.echoMs : null);
+          settles.push(p.ok ? p.settleMs : null);
+          total.push(p.ok ? p.totalMs : null);
+          if (p.ok !== true) {
+            hints.push(`${p.hint ?? 'unknown'}（openSpawned=${p.openSpawned} switchDiff=${p.switchDetectMaxDiff} echoDiff=${p.echoDetectMaxDiff}）`);
+          }
+          sleep(1500); // 让下一次投递前画面稳定
+        }
+      } catch (e) {
+        console.warn(`[${app.name}/hotopen] 失败: ${e.message}`);
+      }
+      killApp(app.killPattern);
+      const failures = probeOk.filter((ok) => !ok).length;
+      result.metrics.hotOpen = {
+        stats: stats(total),
+        samples: total,
+        samplesSwitchMs: switches,
+        samplesEchoMs: echoes,
+        samplesSettleMs: settles,
+        samplesProbeOk: probeOk.slice(),
+        failureHints: hints.slice(),
+        probeFailures: failures,
+        validSamples: opts.runs - failures,
+        /** .app 包是否早于裸二进制（true = 本段读数来自旧构建） */
+        bundleStale,
+        bundleMtime,
+        binMtime,
+        /** 该口径**不含** waitStable 的 600ms 地板（与 open 同契约），地板另存 samplesSettleMs */
+        note: 'hot-open-to-editable = switchMs + echoMs；settleMs 为 waitStable 地板，不计入',
+      };
+      console.log(`hot-open: median=${result.metrics.hotOpen.stats.median?.toFixed(1)}ms（有效样本 ${result.metrics.hotOpen.validSamples}/${opts.runs}）`);
+      if (failures > 0) {
+        console.warn(`⚠️ [${app.name}/hotopen] ${failures}/${opts.runs} 个样本失败 → 记 null 不计入中位数。`);
+        for (const h of hints) console.warn(`    ${h}`);
+      }
+    }
+  }
+
   // save 测试会向夹具写入字符（post 'a' + Cmd+S）：重新生成夹具恢复原始状态
   // （generate-fixtures.mjs 确定性 seed，幂等）
   //
@@ -626,6 +734,44 @@ function renderReport(env, results, opts) {
       L.push('|---|---|---|---|---|---|');
       L.push(...rows);
       L.push('');
+    }
+  }
+
+  // ── §2d hot-open（同一实例内换文档）──────────────────────────────────────
+  // 与 §2 的分工：§2 的 `open` 含进程启动与 WebView 初始化（冷启动）；
+  // hot-open 绕开它们，量的是「文档打开成本」本身（2026-09-22 文档列出的待办）。
+  {
+    const rows = results.filter((r) => r.metrics?.hotOpen).map((r) => ({ app: R(r), h: r.metrics.hotOpen }));
+    if (rows.length > 0) {
+      L.push('### 2d. hot-open（同一实例内换文档，2026-09-23 新增）');
+      L.push('');
+      L.push('绕开进程启动与 WebView 初始化，量「文档打开成本」本身：');
+      L.push('`hot-open-to-editable = switchMs（触发 open → 画面首次变化）+ echoMs（首键 → 回显）`；');
+      L.push('`settleMs` 是 `waitStable` 的 600ms 地板，**不计入**指标（与 §2 的 open 同契约）。');
+      L.push('前置：以 `.app` 包启动（`open -a` 依赖 LaunchServices 包身份）；');
+      L.push('输入源必须是键盘布局（`--ensure-ascii` 在激活后重新断言，IME 会拦按键）。');
+      L.push('');
+      // 包陈旧必须写进**报告**（报告是耐久产物，只在 stderr 告警会被漏掉）：
+      // .app 是构建产物，极易落后于裸二进制，届时读数属于旧构建而非当前提交。
+      for (const { app: appName, h } of rows.filter((x) => x.h.bundleStale)) {
+        L.push(`⚠️ **${appName} 的 .app 包早于裸二进制**（${h.bundleMtime} < ${h.binMtime}）→`);
+        L.push('本段读数来自**旧构建**，**不得作为当前提交的结论**。请先重建包（`bash apps/desktop/scripts/build-local.sh`）再复测。');
+        L.push('');
+      }
+      L.push('| app | 有效样本 | median | p95 | switchMs(中位) | echoMs(中位) | settleMs(中位，不计入) |');
+      L.push('|---|---|---|---|---|---|---|');
+      for (const { app: appName, h } of rows) {
+        L.push(`| ${appName} | ${h.validSamples} / ${h.samples.length} | ${fmt(h.stats?.median)} | ${fmt(h.stats?.p95)}`
+          + ` | ${fmt(stats(h.samplesSwitchMs ?? []).median)} | ${fmt(stats(h.samplesEchoMs ?? []).median)}`
+          + ` | ${fmt(stats((h.samplesSettleMs ?? []).filter((x) => x !== null)).median)} |`);
+      }
+      L.push('');
+      const hints = rows.flatMap(({ app: a, h }) => (h.failureHints ?? []).map((s) => `${a}: ${s}`));
+      if (hints.length > 0) {
+        L.push('失败样本形态：');
+        for (const h of hints) L.push(`- ${h}`);
+        L.push('');
+      }
     }
   }
 
@@ -792,8 +938,42 @@ async function main() {
     process.exit(1);
   }
   console.log('权限 OK：Accessibility ✓ / Screen Recording ✓');
-  if (!inputSourceIsEnglish()) {
-    console.warn('⚠️ 输入法非英文（ABC）。typing 测试请先切换到 ABC 输入法。');
+  // 输入源**硬门禁**（2026-09-23 由「仅警告」升级为「拒绝执行」）。
+  //
+  // 立此门禁的原因：合成按键类指标依赖「按键真的落到文档并回显」。输入源是 IME 时，
+  // 按键会弹候选窗而不是回显文本 —— 数字看着正常，测的却是「候选窗出现的耗时」，
+  // 且方差远大于真实回显（实测同机两轮 10MB 中位数 743.9ms vs 1586.4ms）。
+  // 旧实现只 warn 放行，而且判定函数因简体拼音的 id `com.apple.inputmethod.SCIM.ITABC`
+  // **字面量里含 `ABC`** 而恒为 true → 门禁形同虚设（见 perf-common 的 currentInputSource）。
+  const KEYSTROKE_METRICS = ['startup', 'open', 'typing', 'search', 'hotopen'];
+  const needsKeystrokes = metrics.some((m) => KEYSTROKE_METRICS.includes(m));
+  let inputSrc = currentInputSource();
+  if (needsKeystrokes && !inputSourceIsEnglish()) {
+    // 先尝试自行切到 ABC（可逆、无副作用；golden-journeys 亦用同一工具）。
+    // 注意：这里只是**起点**断言 —— macOS 按应用记忆输入源，激活目标 app 后可能又切回 IME，
+    // 故每次探针还会带 --ensure-ascii 在 activateApp 之后重新断言（见 ENSURE_ASCII）。
+    console.warn(`⚠️ 当前输入源是「${inputSrc.name || '未知'}」，尝试切换到 ABC…`);
+    try {
+      execSync(`${join(BENCH_DIR, 'bin', 'select-input')} com.apple.keylayout.ABC`, { stdio: 'ignore' });
+      sleep(500);
+      inputSrc = currentInputSource();
+    } catch (e) {
+      console.warn(`   切换失败：${e.message.split('\n')[0]}`);
+    }
+  }
+  if (needsKeystrokes && !inputSourceIsEnglish()) {
+    console.error(`\n✗ 当前输入源是「${inputSrc.name || '未知'}」（id=${inputSrc.id || '?'}, type=${inputSrc.type || '?'}），不是键盘布局。`);
+    console.error('  startup / open / typing / search / hotopen 依赖合成按键落到文档并回显；');
+    console.error('  IME 会拦下按键并弹出候选窗 → 这些指标的「首键回显」分量不可用。');
+    console.error('  请手动切换到 ABC / U.S. 键盘布局后重跑：');
+    console.error(`    ${join(BENCH_DIR, 'bin', 'select-input')} com.apple.keylayout.ABC`);
+    console.error('  或 系统设置 → 键盘 → 输入法 → 选择 ABC。');
+    process.exit(1);
+  }
+  if (inputSrc.ok !== true) {
+    console.warn(`⚠️ 无法确认当前输入源（${inputSrc.error ?? '未知原因'}）→ 首键回显分量的有效性未经验证。`);
+  } else {
+    console.log(`输入源 OK：${inputSrc.name}（${inputSrc.type}）`);
   }
 
   mkdirSync(RESULTS_DIR, { recursive: true });

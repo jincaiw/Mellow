@@ -31,6 +31,7 @@ import CoreMedia
 import ScreenCaptureKit
 import ApplicationServices
 import AppKit
+import Carbon.HIToolbox
 
 // MARK: - JSON 输出
 
@@ -446,9 +447,41 @@ func cmdSnap(pid: Int32, roi: Roi, outPath: String) async {
   out(["ok": true, "out": outPath, "w": Int(roi.w), "h": Int(roi.h)])
 }
 
-func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true, snapOnFail: String? = nil, roiFrac: [Double]? = nil) async {
-  guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
+/// 确保当前输入源为 ASCII 键盘布局（ABC）。返回是否成功。
+///
+/// 为什么必须在 `activateApp` **之后**断言：macOS 会**按应用记忆**输入源 ——
+/// 激活目标 app 时可能被切回该 app 上次用的 IME（实测：runner 启动时断言为 ABC，
+/// 激活 Typora 后变回「Pinyin – Simplified」）。在 runner 里断言一次是不够的。
+func ensureAsciiInputSource() -> Bool {
+  let props = [kTISPropertyInputSourceID as String: "com.apple.keylayout.ABC"] as CFDictionary
+  guard let list = TISCreateInputSourceList(props, false)?.takeRetainedValue() as? [TISInputSource],
+        let src = list.first else { return false }
+  return TISSelectInputSource(src) == noErr
+}
+
+/// 当前输入源是否为键盘布局（无 IME 干扰）
+func currentIsKeyboardLayout() -> Bool {
+  guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+        let raw = TISGetInputSourceProperty(src, kTISPropertyInputSourceType) else { return false }
+  let type = Unmanaged<CFString>.fromOpaque(raw).takeUnretainedValue() as String
+  return type == (kTISTypeKeyboardLayout as String)
+}
+
+/// 需要合成按键的命令统一走这里：激活 app → 断言输入源为键盘布局。
+/// 输入源是 IME 时按键会弹候选窗而不是回显文本，测出来的不是「编辑器回显」。
+func activateAndEnsureInput(pid: Int32, ensureAscii: Bool) {
   activateApp(pid: pid)
+  guard ensureAscii else { return }
+  if currentIsKeyboardLayout() { return }
+  guard ensureAsciiInputSource() else {
+    fail("当前输入源不是键盘布局，且切换到 com.apple.keylayout.ABC 失败 —— 合成按键会被 IME 拦截，该指标不可用")
+  }
+  Thread.sleep(forTimeInterval: 0.3) // 等输入源切换生效
+}
+
+func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true, snapOnFail: String? = nil, roiFrac: [Double]? = nil, ensureAscii: Bool = false) async {
+  guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
+  activateAndEnsureInput(pid: pid, ensureAscii: ensureAscii)
   let probe = Probe()
   guard let (win, effRoi) = await resolveRoiForCapture(pid: pid, fallback: roi, roiFrac: roiFrac) else {
     fail("SCK 捕获启动失败（找不到 pid=\(pid) 的可捕获窗口，重试 3 次后）")
@@ -523,9 +556,119 @@ func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool =
   }
 }
 
-func cmdKeypressLatency(pid: Int32, roi: Roi, key: CGKeyCode, count: Int, intervalMs: Double, timeoutMs: Double, clickFocus: Bool = true, roiFrac: [Double]? = nil) async {
+/// 用 `open -a <app> <file>` 向**已在运行的实例**投递一篇文档（macOS 走 odoc Apple Event）。
+/// 不等待子进程退出：触发开销本身就是用户感知成本的一部分。
+func spawnOpen(app: String, file: String) -> Bool {
+  let p = Process()
+  p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+  p.arguments = ["-a", app, file]
+  do { try p.run() } catch { return false }
+  return true
+}
+
+/// hot-open 口径（2026-09-23）：在**已运行的实例**内打开另一篇文档，测两个分量：
+///   ① `switchMs` 触发 open → 画面首次变化（新文档开始呈现）
+///   ② `echoMs`  切换后首键 → 屏幕回显
+/// 指标值 = switchMs + echoMs（与 `open` 指标同契约：**不含** waitStable 的 600ms 地板，
+/// 地板另存 `settleMs` 供诊断）。
+///
+/// 立此口径的原因：`open` 指标 = 窗口出现 + 首键回显，含进程启动与 WebView 初始化，
+/// 量的是「冷启动」；而 PRD 关心的「文档打开成本」是**同一实例内换文档**要多久。
+///
+/// 触发**必须**留在 helper 内：runner 用 execFileSync 同步调用 helper，
+/// 若由 runner 触发 open 再调 helper，helper 启动时切换早已发生，测不到切换瞬间。
+func cmdHotOpenProbe(pid: Int32, openApp: String, openFile: String, roi: Roi, timeoutMs: Double,
+                     clickFocus: Bool = true, roiFrac: [Double]? = nil, snapOnFail: String? = nil,
+                     ensureAscii: Bool = false) async {
+  guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
+  activateAndEnsureInput(pid: pid, ensureAscii: ensureAscii)
+  let probe = Probe()
+  guard let (win, effRoi) = await resolveRoiForCapture(pid: pid, fallback: roi, roiFrac: roiFrac) else {
+    fail("SCK 捕获启动失败（找不到 pid=\(pid) 的可捕获窗口，重试 3 次后）")
+  }
+  do { try await probe.start(window: win, roi: effRoi) } catch { fail("SCK 捕获启动失败: \(error)") }
+  _ = probe.waitStable() // 让「切换前」的画面先稳定，否则基准帧是动画中间态
+
+  // ① 切换分量
+  let tOpen = nowMs()
+  let spawned = spawnOpen(app: openApp, file: openFile)
+  let sw = probe.detectChange(timeoutMs: timeoutMs)
+  let switchMs = sw.changed ? (sw.latencyMs - tOpen) : -1
+  let switchStats = probe.detectStats()
+
+  // ② 等新文档渲染稳定（**不计入指标**，单独落盘）
+  let settleMs = sw.changed ? probe.waitStable() : -1
+
+  // ③ 首键回显分量
+  var echoMs = -1.0
+  var echoStats = (maxDiff: 0, frames: 0)
+  var cal = (max: 0, threshold: 0)
+  if sw.changed {
+    // --no-click：WKWebView（Mellow）下合成点击破坏 TextInput 焦点协议（同 startup-probe）。
+    if clickFocus { clickToFocus(win, roi: effRoi) }
+    cal = probe.calibrateRetry()
+    let t0 = nowMs()
+    postKey(0x00) // 'a'
+    let r = probe.detectChange(timeoutMs: timeoutMs)
+    echoStats = probe.detectStats()
+    if r.changed { echoMs = r.latencyMs - t0 }
+  }
+  // 失败时落盘「当时的画面」：切换失败（sw.changed == false）比回显失败更需要这张图 ——
+  // 它直接回答「屏幕上到底是新文档、旧文档，还是一个确认对话框」。
+  let frameForSnap = (sw.changed && echoMs >= 0) ? nil : probe.latestFrame()
+  await probe.stop()
+
+  let ok = sw.changed && echoMs >= 0
+  let front = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
+  var diag: [String: Any] = [
+    "ok": ok,
+    "openApp": openApp,
+    "openFile": openFile,
+    "openSpawned": spawned,
+    "switchMs": round(switchMs * 100) / 100,
+    "settleMs": round(settleMs * 10) / 10,
+    "echoMs": round(echoMs * 100) / 100,
+    "totalMs": ok ? round((switchMs + echoMs) * 100) / 100 : -1,
+    "switchDetectMaxDiff": switchStats.maxDiff,
+    "switchDetectFrames": switchStats.frames,
+    "echoDetectMaxDiff": echoStats.maxDiff,
+    "echoDetectFrames": echoStats.frames,
+    "calibMaxDiff": cal.max,
+    "threshold": cal.threshold,
+    "frontmostPid": Int(front),
+    "expectPid": Int(pid),
+    "roi": "\(Int(effRoi.x)),\(Int(effRoi.y)),\(Int(effRoi.w)),\(Int(effRoi.h))",
+    "winFrame": "\(Int(win.frame.origin.x)),\(Int(win.frame.origin.y)),\(Int(win.frame.width)),\(Int(win.frame.height))",
+    "roiSource": roiFrac == nil ? "absolute" : "frac",
+  ]
+  if !ok {
+    // 指名失败形态：两种失败的修法完全不同
+    let hint: String
+    if !spawned {
+      hint = "无法执行 open -a \(openApp)（路径/权限问题）"
+    } else if !sw.changed {
+      hint = "触发 open 后 ROI 未变化（文档未切换，或 ROI 未覆盖文档区）"
+    } else {
+      hint = "文档已切换但首键回显未测到（切换后焦点未落在编辑区，或渲染未完成）"
+    }
+    diag["hint"] = hint
+    if let path = snapOnFail, let buf = frameForSnap {
+      let ci = CIImage(cvPixelBuffer: buf)
+      if let cg = CIContext().createCGImage(ci, from: ci.extent) {
+        let rep = NSBitmapImageRep(cgImage: cg)
+        if let data = rep.representation(using: .png, properties: [:]) {
+          try? data.write(to: URL(fileURLWithPath: path))
+          diag["snap"] = path
+        }
+      }
+    }
+  }
+  out(diag)
+}
+
+func cmdKeypressLatency(pid: Int32, roi: Roi, key: CGKeyCode, count: Int, intervalMs: Double, timeoutMs: Double, clickFocus: Bool = true, roiFrac: [Double]? = nil, ensureAscii: Bool = false) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予") }
-  activateApp(pid: pid)
+  activateAndEnsureInput(pid: pid, ensureAscii: ensureAscii)
   let probe = Probe()
   guard let (win, effRoi) = await resolveRoiForCapture(pid: pid, fallback: roi, roiFrac: roiFrac) else {
     fail("SCK 捕获启动失败（找不到 pid=\(pid) 的可捕获窗口，重试 3 次后）")
@@ -633,6 +776,38 @@ func mainAsync(_ args: [String]) async {
       .filter { $0.owningApplication?.processID == Int32(pid) }
       .map { ["w": Double($0.frame.width), "h": Double($0.frame.height), "x": Double($0.frame.origin.x), "y": Double($0.frame.origin.y)] } ?? []
     out(["ok": true, "cgWindows": all, "sckWindows": sc])
+  case "current-input":
+    // 权威查询**当前**输入源（2026-09-23）。
+    //
+    // 立此命令的原因：Node 侧原先用 `defaults read … AppleSelectedInputSources`
+    // 判定「是否英文」，那读的是**已启用列表**（不是当前源），且用正则
+    // `/ABC|U\.S\.|English/` —— 而简体拼音的输入源 id 是
+    // `com.apple.inputmethod.SCIM.ITABC`，**字面量里就含 `ABC`**，于是误报「英文」。
+    // 后果：合成按键落到拼音 IME 上，弹出候选窗而不是回显文本，
+    // 「首键回显」分量测的是候选窗出现的耗时。
+    // TIS 的 `kTISPropertyInputSourceType` 能直接区分「键盘布局」与「输入法模式」，
+    // 这才是可靠判据（键盘布局 = 无 IME 干扰）。
+    if let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() {
+      func prop(_ key: CFString) -> String {
+        guard let raw = TISGetInputSourceProperty(src, key) else { return "" }
+        return (Unmanaged<CFString>.fromOpaque(raw).takeUnretainedValue() as String)
+      }
+      let id = prop(kTISPropertyInputSourceID)
+      let type = prop(kTISPropertyInputSourceType)
+      let name = prop(kTISPropertyLocalizedName)
+      out([
+        "ok": true,
+        "id": id,
+        "type": type,
+        "name": name,
+        // 只有键盘布局（keyboard layout）才没有 IME 干扰；输入法模式（input mode）会拦按键
+        "isKeyboardLayout": type == (kTISTypeKeyboardLayout as String),
+        "isAsciiCapable": (TISGetInputSourceProperty(src, kTISPropertyInputSourceIsASCIICapable)
+          .map { Unmanaged<CFBoolean>.fromOpaque($0).takeUnretainedValue() == kCFBooleanTrue } ?? false),
+      ])
+    } else {
+      out(["ok": false, "error": "无法取得当前输入源"])
+    }
   case "snap":    // 调试：把 ROI 当前帧存为 PNG（诊断 ROI 是否覆盖文本/光标区域）
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,400,300")
@@ -646,7 +821,19 @@ func mainAsync(_ args: [String]) async {
     let snapOnFail = argVal(args, "--snap-on-fail")
     // --roi-frac "x,y,w,h"：按「实际捕获窗口」的比例求 ROI（推荐；见 resolveRoiForCapture）。
     let roiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
-    await cmdStartupProbe(pid: pid, roi: roi, timeoutMs: timeout, clickFocus: !noClick, snapOnFail: snapOnFail, roiFrac: roiFrac)
+    await cmdStartupProbe(pid: pid, roi: roi, timeoutMs: timeout, clickFocus: !noClick, snapOnFail: snapOnFail, roiFrac: roiFrac, ensureAscii: args.contains("--ensure-ascii"))
+  case "hot-open-probe":
+    // 在已运行的实例内打开另一篇文档（见 cmdHotOpenProbe 注释）。
+    let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
+    let openApp = argVal(args, "--open-app") ?? ""
+    let openFile = argVal(args, "--open-file") ?? ""
+    let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")
+    let timeout = Double(argVal(args, "--timeout") ?? "8000") ?? 8000
+    let hoRoiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
+    await cmdHotOpenProbe(pid: pid, openApp: openApp, openFile: openFile, roi: roi, timeoutMs: timeout,
+                          clickFocus: !args.contains("--no-click"),
+                          roiFrac: hoRoiFrac, snapOnFail: argVal(args, "--snap-on-fail"),
+                          ensureAscii: args.contains("--ensure-ascii"))
   case "keypress-latency":
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")
@@ -656,7 +843,8 @@ func mainAsync(_ args: [String]) async {
     let timeout = Double(argVal(args, "--timeout") ?? "2000") ?? 2000
     let kpRoiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
     await cmdKeypressLatency(pid: pid, roi: roi, key: key, count: count, intervalMs: interval, timeoutMs: timeout,
-                             clickFocus: !args.contains("--no-click"), roiFrac: kpRoiFrac)
+                             clickFocus: !args.contains("--no-click"), roiFrac: kpRoiFrac,
+                             ensureAscii: args.contains("--ensure-ascii"))
   case "scroll-frames":
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")

@@ -101,6 +101,13 @@ open-to-editable: median=743.9ms p95=777.7ms（有效样本 5/5）
 743.9ms 落在 PRD 目标 1.0–1.5s 内。注意该值**不含** `loadMs`（`waitStable(stableMs:600)`
 的结构地板，见 09-22 文档 §3.0a），因此是可比的「窗口出现 + 首键回显」。
 
+> **⚠️ 本节的绝对值已作废（同日稍后）**：该组读数是在**输入源为简体拼音**时测得的 ——
+> `inputSourceIsEnglish()` 因拼音 id `com.apple.inputmethod.SCIM.ITABC` 含 `ABC`
+> 而误报为「英文」，于是合成按键被 IME 接走、弹出候选窗，
+> 这一分量测的其实是「候选窗出现的耗时」。详见
+> `2026-09-23-input-source-validity-and-hot-open.md`。
+> **本节以下内容仅保留为「缺陷是如何被发现的」的过程记录，其中的 ms 数值不得引用。**
+
 #### 4.1a 该指标**有效但 run 间方差大**（不得把单次中位数当定论）
 
 同日另一轮 `--fixtures 1MB.md,10MB.md --runs 3 --warmup 1`（机器同时在跑其他任务）：
