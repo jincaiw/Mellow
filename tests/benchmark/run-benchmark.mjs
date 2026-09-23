@@ -124,6 +124,45 @@ const ALL_METRICS = ['startup', 'open', 'typing', 'scroll', 'search', 'save', 'm
 // PRD V1.2 FINAL 与 AGENTS.md 冻结的唯一性能/体验对标版本。
 // 非该版本的运行仍可用于历史观察，但不可作为当前 P0 判定证据。
 const TYPORA_NORMATIVE_VERSION = '1.14.9';
+// Typora 的**渲染上限**（2026-09-23 一级取证）。
+//
+// `TypeMark/appsrc/window/frame.js` 中：
+//   tryEnterOversize: function(e,t,n){ return (!File.isMac||File.bundle.filePath)
+//     && (a.bindOversizePlaceholder(), t || e.length > File.MAX_FILE_SIZE)
+//       ? (File.doEnterOversize(n), "") : (File.exitOversize(), e) }
+// 且同文件内 `MAX_FILE_SIZE: 2e6`。
+// 即：**文档内容超过 2,000,000 字符时 Typora 完全不渲染**，只显示
+// 「The file is too large to render in Typora.」（zh-Hans: 「该文件过大，因此无法在 Typora 中呈现」）
+// 提示页 + 一个 QuickLook 按钮。
+//
+// 实测边界（本机 1.14.9 build 7785，整窗截图字节数判别）：
+//   1,900,000 字符 → 正常渲染（截图 270,186 B）
+//   2,100,000 字符 → oversize 提示页（截图 36,417 B）
+//   1MB.md(1,048,576) 正常；5MB.md / 10MB.md / 100k-lines.md(5,485,326) 全部为提示页
+//
+// 后果（必须写进报告，否则主动误导）：对超过该阈值的夹具，**Typora 侧不存在可比读数**。
+// 台账原结论「10MB open 2.59× 于 Typora」里的 Typora 侧数字，实际测的是
+// 「Typora 显示『文件过大』提示页的耗时」，与「打开并编辑 10MB 文档」不是同一件事。
+// 故所有跨应用比值必须经 ratioOrNA() 判定基线有效性，禁止直接相除。
+const TYPORA_MAX_FILE_SIZE = 2_000_000;
+/** 该夹具是否在 Typora 的渲染上限之内（超出 → Typora 侧无有效基线） */
+function baselineRendersFixture(fixture) {
+  try { return statSync(join(FIXTURES_DIR, fixture)).size <= TYPORA_MAX_FILE_SIZE; } catch { return false; }
+}
+/**
+ * 跨应用比值。基线不渲染该夹具时返回 `n/a（Typora 拒渲染）`，
+ * 而不是把「提示页耗时」当成「打开耗时」参与相除。
+ */
+function ratioOrNA(mellowValue, typoraValue, fixture) {
+  if (!baselineRendersFixture(fixture)) return 'n/a（Typora 拒渲染）';
+  if (!mellowValue || !typoraValue) return '—';
+  return (mellowValue / typoraValue).toFixed(2);
+}
+/** 表格单元格：基线不渲染该夹具时标注，避免读者把空值读成 0 或「很快」。 */
+function cellOrRefused(value, fixture, fmtFn) {
+  if (!baselineRendersFixture(fixture)) return '—（拒渲染）';
+  return fmtFn(value);
+}
 // 保存测量永不直接写 fixture。独立副本也避免 touchOld 被宿主当作外部变更，
 // 使性能口径保持为“正常打开 → 编辑 → 保存”。
 const BENCHMARK_WORKDIR = mkdtempSync(join(tmpdir(), 'mellow-benchmark-'));
@@ -539,14 +578,25 @@ function renderReport(env, results, opts) {
   // open-to-editable per fixture
   L.push('## 2. open-to-editable（ms）');
   L.push('');
+  // 基线有效性提示（2026-09-23）：Typora 不渲染 >2MB 的文档，此时其数字是
+  // 「提示页耗时」，不得与 Mellow 的真实打开耗时相比。
+  {
+    const refused = opts.fixtures.filter((f) => !baselineRendersFixture(f));
+    if (refused.length > 0) {
+      L.push(`⚠️ **基线不适用**：${refused.join('、')} 超过 Typora 的渲染上限`);
+      L.push(`（\`MAX_FILE_SIZE = ${TYPORA_MAX_FILE_SIZE}\` 字符，见 \`frame.js\` 的 \`tryEnterOversize\`），`);
+      L.push('Typora 对它们只显示「文件过大」提示页、不渲染也不可编辑 → 该行 Typora 列与 ratio **无意义**，已标注。');
+      L.push('');
+    }
+  }
   L.push('| fixture | Mellow median | Mellow p95 | Typora median | Typora p95 | ratio med (M/T) | PRD 目标（热打开口径，参考） |');
   L.push('|---|---|---|---|---|---|---|');
   const targetMap = { '1MB.md': '≤250ms', '10MB.md': '1.0–1.5s', '5MB.md': '参考', '100k-lines.md': '参考', 'large-table.md': '参考', '100-mermaid.md': '参考', '1000-images.md': '参考' };
   for (const f of opts.fixtures) {
     const g = (appKey) => { const r = results.find((x) => x.app === appKey); return r?.metrics[f]?.openToEditable?.stats; };
     const mt = g('Mellow'); const tt = g('Typora');
-    const ratio = mt?.median && tt?.median ? (mt.median / tt.median).toFixed(2) : '—';
-    L.push(`| ${f} | ${fmt(mt?.median)} | ${fmt(mt?.p95)} | ${fmt(tt?.median)} | ${fmt(tt?.p95)} | ${ratio} | ${targetMap[f] ?? ''} |`);
+    const ratio = ratioOrNA(mt?.median, tt?.median, f);
+    L.push(`| ${f} | ${fmt(mt?.median)} | ${fmt(mt?.p95)} | ${cellOrRefused(tt?.median, f, fmt)} | ${cellOrRefused(tt?.p95, f, fmt)} | ${ratio} | ${targetMap[f] ?? ''} |`);
   }
   L.push('');
 
@@ -603,6 +653,12 @@ function renderReport(env, results, opts) {
     } else {
       const small = ordered[0]; const large = ordered[ordered.length - 1];
       L.push(`对比 ${small}（${sizeOf(small)} B）→ ${large}（${sizeOf(large)} B）`);
+      if (!baselineRendersFixture(large)) {
+        L.push('');
+        L.push(`⚠️ 大 fixture \`${large}\` 超出 Typora 渲染上限（${TYPORA_MAX_FILE_SIZE} 字符）→`);
+        L.push('Typora 侧为提示页、无有效读数，其行只能是「数据不足」；');
+        L.push('**不得据此说「Mellow 在该尺寸上更快/更慢」**。');
+      }
       L.push('');
       L.push('| app | 小 fixture median | 大 fixture median | 增长倍数 | 判定 |');
       L.push('|---|---|---|---|---|');
@@ -629,10 +685,10 @@ function renderReport(env, results, opts) {
   for (const f of opts.fixtures) {
     const g = (appKey) => { const r = results.find((x) => x.app === appKey); return r?.metrics[f]?.typing?.stats; };
     const mt = g('Mellow'); const tt = g('Typora');
-    const ratio = mt?.p95 && tt?.p95 ? (mt.p95 / tt.p95).toFixed(2) : '—';
+    const ratio = ratioOrNA(mt?.p95, tt?.p95, f);
     const target = targetTyping[f];
     const pass = mt?.p95 && target ? (f.includes('1MB') ? mt.p95 < 16 : mt.p95 < 32) : null;
-    L.push(`| ${f} | ${modeMap[f] ?? ''} | ${fmt(mt?.p95, 2)} | ${fmt(mt?.median, 2)} | ${fmt(tt?.p95, 2)} | ${fmt(tt?.median, 2)} | ${ratio} | ${target ?? '参考'} | ${pass === null ? '' : pass ? '✅' : '❌'} |`);
+    L.push(`| ${f} | ${modeMap[f] ?? ''} | ${fmt(mt?.p95, 2)} | ${fmt(mt?.median, 2)} | ${cellOrRefused(tt?.p95, f, (v) => fmt(v, 2))} | ${cellOrRefused(tt?.median, f, (v) => fmt(v, 2))} | ${ratio} | ${target ?? '参考'} | ${pass === null ? '' : pass ? '✅' : '❌'} |`);
   }
   L.push('');
 
@@ -645,7 +701,7 @@ function renderReport(env, results, opts) {
     const g = (appKey) => { const r = results.find((x) => x.app === appKey); return r?.metrics[f]?.scroll; };
     const ms = g('Mellow'); const ts = g('Typora');
     if (!ms && !ts) continue;
-    L.push(`| ${f} | ${fmt(ms?.p95FrameMs, 1)} | ${fmt(ms?.fps, 1)} | ${ms?.dropped ?? '—'} | ${fmt(ts?.p95FrameMs, 1)} | ${fmt(ts?.fps, 1)} | ${ts?.dropped ?? '—'} |`);
+    L.push(`| ${f} | ${fmt(ms?.p95FrameMs, 1)} | ${fmt(ms?.fps, 1)} | ${ms?.dropped ?? '—'} | ${cellOrRefused(ts?.p95FrameMs, f, (v) => fmt(v, 1))} | ${cellOrRefused(ts?.fps, f, (v) => fmt(v, 1))} | ${baselineRendersFixture(f) ? (ts?.dropped ?? '—') : '—（拒渲染）'} |`);
   }
   L.push('');
 
@@ -685,8 +741,8 @@ function renderReport(env, results, opts) {
     const g = (appKey) => { const r = results.find((x) => x.app === appKey); return r?.metrics[f]?.memory; };
     const ms = g('Mellow'); const ts = g('Typora');
     if (!ms && !ts) continue;
-    const ratio = ms?.medianMB && ts?.medianMB ? (ms.medianMB / ts.medianMB).toFixed(2) : '—';
-    L.push(`| ${f} | ${fmt(ms?.medianMB, 0)} | ${fmt(ms?.peakMB, 0)} | ${fmt(ts?.medianMB, 0)} | ${fmt(ts?.peakMB, 0)} | ${ratio} |`);
+    const ratio = ratioOrNA(ms?.medianMB, ts?.medianMB, f);
+    L.push(`| ${f} | ${fmt(ms?.medianMB, 0)} | ${fmt(ms?.peakMB, 0)} | ${cellOrRefused(ts?.medianMB, f, (v) => fmt(v, 0))} | ${cellOrRefused(ts?.peakMB, f, (v) => fmt(v, 0))} | ${ratio} |`);
   }
   L.push('');
 

@@ -121,6 +121,62 @@ if (existsSync(benchmarkRunnerPath)) {
     assert(/roiFrac/.test(helperSrc), 'helper 必须支持按窗口比例解析 ROI（--roi-frac）');
     assert(/--no-click/.test(helperSrc), 'helper 必须支持 --no-click（Mellow/WKWebView 必需）');
   }
+
+  // ── 基线有效性护栏（2026-09-23）──────────────────────────────────────────
+  // 立此节的原因：Typora **不渲染超过 2,000,000 字符的文档** ——
+  // `TypeMark/appsrc/window/frame.js` 的 `tryEnterOversize` 判定 `e.length > File.MAX_FILE_SIZE`
+  // 且同文件内 `MAX_FILE_SIZE: 2e6`；命中时只显示「The file is too large to render in Typora.」
+  // 提示页（实测边界：1,900,000 字符正常渲染 / 2,100,000 字符为提示页）。
+  // 于是报告里 5MB/10MB/100k-lines 那几行的 Typora 数字，测的是**提示页耗时**，
+  // 与「打开并编辑该文档」不是同一件事。台账原结论「10MB open 2.59× 于 Typora」
+  // 正是把这两个量直接相除的产物。故：所有跨应用比值必须经 ratioOrNA 判定基线有效性。
+  // 注意 `2[_0]{6,}`：常量写作千位分隔的 `2_000_000`，其中**连续 0 只有 3 个**，
+  // 用 `0{5,}` 会漏判（本护栏首跑即因此误报，属 fail-safe 方向）。
+  assert(/TYPORA_MAX_FILE_SIZE\s*=\s*2[_0]{6,}/.test(benchCode),
+    'benchmark 必须声明 Typora 渲染上限 TYPORA_MAX_FILE_SIZE = 2000000（来源：Typora 1.14.9 frame.js 的 MAX_FILE_SIZE 与 tryEnterOversize）');
+  assert(/function baselineRendersFixture/.test(benchCode),
+    'benchmark 必须实现 baselineRendersFixture（判定某夹具是否在 Typora 渲染上限内）');
+  assert(/function ratioOrNA/.test(benchCode),
+    'benchmark 必须实现 ratioOrNA：基线不渲染该夹具时不得相除');
+  assert(/TYPORA_MAX_FILE_SIZE/.test(benchCode.slice(benchCode.indexOf('function ratioOrNA'))),
+    'ratioOrNA 必须引用 TYPORA_MAX_FILE_SIZE（否则判定与阈值脱钩）');
+  // 反例锁：不得出现「把 Typora 的 median/p95 直接当分母」的裸相除。
+  // 命中即为「把提示页耗时当成打开耗时」，是台账那条错误结论的原写法。
+  const RAW_RATIO_RE = /\.(?:median|p95|medianMB|peakMB)\s*\/\s*(?:tt|ts)\??\./;
+  assert(!RAW_RATIO_RE.test(benchCode),
+    '不得直接把 Typora 的 median/p95 当分母（须经 ratioOrNA）：超过 Typora 渲染上限的夹具其 Typora 侧是提示页耗时，不是打开耗时');
+  // canary：自检反例锁本身（样本用拼接构造）
+  const RAW_RATIO_SAMPLE = 'const ratio = (mt' + '.median / ' + 'tt.median).toFixed(2);';
+  if (!RAW_RATIO_RE.test(RAW_RATIO_SAMPLE)) {
+    errors.push('基线有效性反例锁 canary 失效：裸相除样本未被检出');
+  }
+
+  // ── 夹具生成原子性护栏（2026-09-23）────────────────────────────────────
+  // 立此节的原因：`generate-fixtures.mjs` 原实现**先 rmSync 掉全部夹具再重新生成**。
+  // 一旦中途失败（实测：沙箱下写 1000 张 PNG 被拒），夹具整体丢失且无提示 ——
+  // 表现为 runner 在 Typora 那一轮重建失败后，Mellow 那一轮两个夹具被
+  // 「跳过（夹具缺失）」，整批测量静默变成空跑，而 results JSON 看起来「跑过了」。
+  // 现在改为写入 `.staging/`，全部成功后才 renameSync 搬入。
+  const fixturesPath = resolve(root, 'tests/benchmark/generate-fixtures.mjs');
+  assert(existsSync(fixturesPath), '夹具生成器 tests/benchmark/generate-fixtures.mjs 不存在');
+  if (existsSync(fixturesPath)) {
+    const fixtureSrc = readFileSync(fixturesPath, 'utf8').replace(/\r\n/g, '\n');
+    assert(/join\(outDir,\s*'\.staging'\)/.test(fixtureSrc),
+      '夹具生成必须使用 staging 目录（.staging）：先删后写会在中途失败时整体丢失夹具');
+    // 正例锁：生成内容必须写进 staging，**不得**直接写 outDir
+    assert(/writeFileSync\(join\(stagingDir,\s*job\.name\)/.test(fixtureSrc),
+      '夹具内容必须写入 stagingDir（写入 outDir 会让失败时的半成品覆盖可用夹具）');
+    assert(!/writeFileSync\(join\(outDir,\s*job\.name\)/.test(fixtureSrc),
+      '夹具内容不得直接写入 outDir：生成中途失败会留下残缺夹具，runner 会当作有效夹具使用');
+    // 正例锁：搬入必须用 renameSync（POSIX 原子替换），不得「先删再搬」
+    assert(/renameSync\(join\(stagingDir,\s*f\),\s*join\(outDir,\s*f\)\)/.test(fixtureSrc),
+      '夹具搬入必须用 renameSync 原子替换：先 rmSync 再写会留下「旧已删、新未到」的空档');
+    // canary：自检上述正例锁本身
+    const WRITE_OUTDIR_SAMPLE = 'writeFileSync(join(outDir, ' + 'job.name), text);';
+    if (!/writeFileSync\(join\(outDir,\s*job\.name\)/.test(WRITE_OUTDIR_SAMPLE)) {
+      errors.push('夹具原子性正例锁 canary 失效：直写 outDir 的样本未被检出');
+    }
+  }
 }
 
 for (const observation of ledger.patchObservations ?? []) {

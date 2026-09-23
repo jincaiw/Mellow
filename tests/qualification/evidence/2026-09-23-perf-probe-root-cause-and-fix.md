@@ -101,26 +101,50 @@ open-to-editable: median=743.9ms p95=777.7ms（有效样本 5/5）
 743.9ms 落在 PRD 目标 1.0–1.5s 内。注意该值**不含** `loadMs`（`waitStable(stableMs:600)`
 的结构地板，见 09-22 文档 §3.0a），因此是可比的「窗口出现 + 首键回显」。
 
-### 4.2 Typora 10MB：仍是 0/5，但根因已变
+#### 4.1a 该指标**有效但 run 间方差大**（不得把单次中位数当定论）
+
+同日另一轮 `--fixtures 1MB.md,10MB.md --runs 3 --warmup 1`（机器同时在跑其他任务）：
+
+```
+10MB.md  median=1586.4ms p95=1616.6ms（有效样本 3/3）
+  分量 winMs=[220,246,235]  loadMs=[603,626,630]  latencyMs=[1397,1314,1351]
+1MB.md   median=386.6ms  Typora 452.8ms  ratio 0.85（两侧均有效，可比）
+```
+
+两轮对比：`winMs` 稳定（233–284 vs 220–246），**`latencyMs` 从 ~500ms 漂到 ~1350ms**。
+即方差几乎全部落在「首键回显」分量。原因待查（可能是按键落在渲染尚未完成的时刻，
+也可能与机器负载有关）。**结论**：修后的指标已做到「每个样本都有效」，但
+**绝对值仍需多轮取中位数、并在报告里保留分量**，单轮数字不足以作为判定。
+`1MB.md` 那一行是修后**第一个真正可比的点**（两侧都渲染）：Mellow 386.6ms vs
+Typora 452.8ms，ratio 0.85。
+
+### 4.2 Typora 10MB：仍是 0/5 —— 真正原因是**基线不渲染该文档**
 
 ```
 detectFrames≈458（帧在到达）  calibMaxDiff=0  detectMaxDiff=0
 winMs=[534,393,382,398,401]（窗口出现稳定）
 ```
 
-失败截图（`/tmp/typora-diag/fail-1.png`）：ROI 带**整幅空白**（右侧一条深色滚动条）。
-且 `snap` 命令对 Typora 直接报 `SCK 捕获启动失败`。
+> **⚠️ 更正（同日稍后）**：本文初稿把此现象记为「本机 SCK 对 Typora 窗口的捕获返回
+> 静止/空白画面」，**该归因错误**。整窗截图证明 Typora 的捕获完全正常 ——
+> 静止的是 **Typora 自己画出来的那页提示**：
+>
+> > ⚠️ 该文件过大，因此无法在 Typora 中呈现　[QuickLook]
+>
+> 即 Typora 1.14.9 **不渲染内容超过 2,000,000 字符的文档**
+> （`frame.js` 的 `tryEnterOversize` 判定 `e.length > File.MAX_FILE_SIZE`，
+> 且 `MAX_FILE_SIZE: 2e6`；实测边界 1,900,000 渲染 / 2,100,000 不渲染）。
+> 详见 `2026-09-23-typora-render-limit-2mb.md`。
+>
+> 因此 ROI 全白、`calibMaxDiff=0`、`detectMaxDiff=0` 都是**必然结果**：
+> 那个区域本来就没有可编辑内容，探针当然测不到「首键回显」。
 
-这与 `golden-journeys.mjs` 第 334–336 行的既有记载一致：
-
-> 2026-08-22 起本机 SCK 窗口捕获流间歇故障：probe 假稳定 + detectChange 无帧
-> —— 故 golden-journeys 改用 OCR 作为就绪判定通道。
-
-**结论**：本机上 Typora 的 SCK 窗口捕获返回静止/空白画面，属**环境限制**，
-非 harness 缺陷、更非 Mellow 性能结论。因此：
-
-> **目前仍不存在任何可比的 Mellow vs Typora 10MB 结论。**
-> 台账原「10MB open 2.59× 于 Typora」维持**口径无效**的更正，两个方向都不能下结论。
+**结论（修正后）**：10MB 夹具上 Typora **没有可比的用户行为** ——
+它既不渲染也不可编辑，其「428ms」只是画出提示页的耗时。
+对 ≥2MB 的文档，Mellow 能打开并编辑、Typora 不能，这是 Mellow 的**能力优势**，
+且**不存在可比的比值**（不是「Mellow 慢 2.59×」）。
+台账原「10MB open 2.59× 于 Typora」的更正理由由此从「口径无效」升级为
+「**基线在该尺寸上无行为可对标**」。
 
 ## 五、新增护栏（防回退）
 
@@ -140,18 +164,25 @@ winMs=[534,393,382,398,401]（窗口出现稳定）
 
 ## 六、仍未解决（本项不得据此关闭）
 
-1. **Typora 侧缺有效读数**：需要一条不依赖本机 SCK 的窗口就绪通道（`golden-journeys.mjs`
-   已有 OCR 方案）。但把 OCR 引入 `open` 指标会**改变指标定义**（像素变化 → 内容识别），
-   属于需裁决的度量变更，不得由 runner 单方面引入。
-2. **hot-open 口径**：同进程内连续打开多文档，绕开启动态，才能得到纯「文档打开成本」。
-   机制已确认可行、但需改 harness 启动方式：Mellow 侧 `apps/desktop/src-tauri/src/lib.rs:346`
-   已实现 `RunEvent::Opened { urls }` → 把文件投递给**当前聚焦窗口**（`mellow://open-file`），
-   即「向运行中实例打开文件」是支持的；但投递依赖 LaunchServices 路由，**必须以 `.app`
-   包启动**，而当前 benchmark 直接 spawn `target/release/mellow-desktop`（裸二进制），
-   `open -a` 找不到它、Apple Event 也不会路由。因此 hot-open 需先把 benchmark 的启动
-   目标从裸二进制换成 `Mellow.app`（并确认包身份注册），再新增一条 helper 命令
-   （由 helper 自己触发 open、测「内容切换」与「首键回显」两个分量 —— 触发必须留在
-   helper 内，否则 execFileSync 的同步模型会在触发与测量之间丢掉切换瞬间）。
+1. **Typora 侧无有效读数，且这不是 harness 问题**：Typora 1.14.9 不渲染 >2,000,000
+   字符的文档（见 `2026-09-23-typora-render-limit-2mb.md`）。因此 >2MB 夹具上
+   **不存在可比的基线行为**；报告已改为标注 `—（拒渲染）` 并输出 `n/a`，
+   护栏禁止把 Typora 的 median/p95 直接当分母。台账 `typoraBehavior` 的合同文本与
+   UX Gate 任务 30 因此需要修订 —— **属合同/门禁变更，需裁决，本环境不擅自改**。
+2. **夹具生成曾是非原子的（已修）**：`generate-fixtures.mjs` 原先**先 rmSync 掉全部夹具
+   再重新生成**，中途失败（实测沙箱下写 1000 张 PNG 被拒）即**整体丢失**且无提示 ——
+   表现为 runner 在 Typora 那一轮重建失败后，Mellow 那一轮两个夹具被
+   「跳过（夹具缺失）」，整批测量静默空跑。已改为写 `.staging/` 全部成功后再
+   `renameSync` 搬入；实测注入「生成中途失败」后旧夹具 8 个 .md + assets 原样保留。
+3. **hot-open 口径**：机制已确认可行、但需改 harness 启动方式：Mellow 侧
+   `apps/desktop/src-tauri/src/lib.rs:346` 已实现 `RunEvent::Opened { urls }` →
+   把文件投递给**当前聚焦窗口**（`mellow://open-file`），实测 `open -a Mellow.app <file>`
+   可向运行中实例投递（pid 不变、整窗截图哈希改变，确认内容真的切换）；但投递依赖
+   LaunchServices 路由，**必须以 `.app` 包启动**，而当前 benchmark 直接 spawn
+   `target/release/mellow-desktop`（裸二进制）。故 hot-open 需先把 benchmark 的启动
+   目标换成 `Mellow.app`，再新增一条 helper 命令（由 helper 自己触发 open、测
+   「内容切换」与「首键回显」两个分量 —— 触发必须留在 helper 内，否则 execFileSync
+   的同步模型会在触发与测量之间丢掉切换瞬间）。
 3. **平台范围**：本项在方案 §8 记为「仅 macOS」，而台账 `requiredEvidence` 含
    `windows-ci`/`linux-ci`（PASS-E 需三平台）。两者不一致 → 发布门禁按状态判定为
    「MAC 仅单平台」。**该口径冲突需裁决**，本环境不擅自放宽。

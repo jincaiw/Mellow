@@ -7,7 +7,7 @@
  * 确定性：固定 seed → 固定内容；manifest 记录实际字节数（UTF-8）。
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync, readdirSync, statSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync, statSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -158,8 +158,8 @@ function genImages() {
   return lines.join('\n') + '\n';
 }
 
-function writePngs() {
-  const assetsDir = join(outDir, 'assets');
+function writePngs(dir) {
+  const assetsDir = join(dir, 'assets');
   mkdirSync(assetsDir, { recursive: true });
   const buf = Buffer.from(PNG_1PX_B64, 'base64');
   for (let i = 0; i < 1000; i++) {
@@ -175,11 +175,20 @@ function linesOf(text) {
   return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
 }
 
-// 只删除生成产物（保留提交的 README.md / .gitignore）
-for (const f of ['manifest.json', '1MB.md', '5MB.md', '10MB.md', '100k-lines.md', 'large-table.md', '100-mermaid.md', '1000-images.md', '_blank.md']) {
-  rmSync(join(outDir, f), { force: true });
-}
-rmSync(join(outDir, 'assets'), { recursive: true, force: true });
+// 生成产物清单（保留提交的 README.md / .gitignore / typora-menu-dump.txt）
+// `_blank.md` 不在其中：它是 runner 按需创建的临时空白文档，不由本脚本生成，
+// 故只参与「清理旧产物」而不参与「搬入新产物」。
+const GENERATED = ['manifest.json', '1MB.md', '5MB.md', '10MB.md', '100k-lines.md', 'large-table.md', '100-mermaid.md', '1000-images.md'];
+const STALE_EXTRA = ['_blank.md'];
+
+// **原子生成**（2026-09-23 修复）：原实现先 rmSync 掉全部夹具再重新生成，
+// 一旦中途失败（实测：沙箱下写 PNG 被拒）夹具就**整体丢失**且无任何提示 ——
+// 表现为 runner 在 Typora 那一轮重建失败后，Mellow 那一轮的两个夹具被
+// 「跳过（夹具缺失）」，整批测量静默变成空跑，而 results JSON 看起来「跑过了」。
+// 现在：全部写入 .staging/，**全部成功之后**才删除旧产物并搬入。
+const stagingDir = join(outDir, '.staging');
+rmSync(stagingDir, { recursive: true, force: true });
+mkdirSync(stagingDir, { recursive: true });
 mkdirSync(outDir, { recursive: true });
 
 const jobs = [
@@ -201,17 +210,33 @@ const manifest = {
 
 for (const job of jobs) {
   const text = job.make();
-  writeFileSync(join(outDir, job.name), text);
+  writeFileSync(join(stagingDir, job.name), text);
   manifest.files[job.name] = {
     bytes: Buffer.byteLength(text),
     lines: linesOf(text),
     sha256: sha256(text),
   };
-  console.log(`${job.name}: ${manifest.files[job.name].bytes} bytes / ${manifest.files[job.name].lines} lines`);
 }
 
-writePngs();
-const pngCount = readdirSync(join(outDir, 'assets')).filter((f) => f.endsWith('.png')).length;
+writePngs(stagingDir);
+const pngCount = readdirSync(join(stagingDir, 'assets')).filter((f) => f.endsWith('.png')).length;
 manifest.assets = { pngCount };
-writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+writeFileSync(join(stagingDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+// —— 走到这里说明全部生成成功，现在才替换正式产物（失败则旧夹具原样保留）——
+// 单个文件用 renameSync 直接覆盖（POSIX 上是对目标位置的原子替换），因此**不需要**
+// 先删旧文件 —— 先删再搬会在中途失败时留下「旧已删、新未到」的空档。
+for (const f of GENERATED) renameSync(join(stagingDir, f), join(outDir, f));
+// assets 是目录，rename 不能覆盖非空目录 → 先把旧目录移开，再移入新的，最后清理。
+const oldAssets = join(stagingDir, '.old-assets');
+rmSync(oldAssets, { recursive: true, force: true });
+if (existsSync(join(outDir, 'assets'))) renameSync(join(outDir, 'assets'), oldAssets);
+renameSync(join(stagingDir, 'assets'), join(outDir, 'assets'));
+rmSync(oldAssets, { recursive: true, force: true });
+for (const f of STALE_EXTRA) rmSync(join(outDir, f), { force: true });
+rmSync(stagingDir, { recursive: true, force: true });
+
+for (const [name, meta] of Object.entries(manifest.files)) {
+  console.log(`${name}: ${meta.bytes} bytes / ${meta.lines} lines`);
+}
 console.log(`assets: ${pngCount} pngs, manifest written`);
