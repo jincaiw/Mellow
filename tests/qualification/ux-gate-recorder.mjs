@@ -119,6 +119,83 @@ function sampleObservation(task, app, round, appOrder) {
   return { task, app, round, appOrder, durationMs: app === 'mellow' ? 1000 : 1000, error: false, steps: 1, subjectiveScore: 4, evidence: [`evidence/task-${task}-${app}-${round}.png`], entryPoint: 'manual', sourceDiff: 'none' };
 }
 
+/**
+ * 进度报告（2026-09-25 新增）。
+ *
+ * 立此命令的原因：`validate` 要求 120 条观测齐备后才给结论，中途**无法知道还差哪些** ——
+ * 人工会话动辄数小时，填到一半想核对只能靠肉眼数；而 `validate` 会把「还没填」与
+ * 「填错了」混在同一次报错里，无法区分。
+ *
+ * 本命令**只读**：报告每条观测的填写状态与字段完整性，并单独检查 appOrder 交替规则。
+ * **不做任何阈值判定、不生成任何数值、不因未填完而失败**（进度 ≠ 门禁）。
+ */
+function progressReport(input) {
+  const record = JSON.parse(readFileSync(resolve(input), 'utf8'));
+  const observations = Array.isArray(record?.observations) ? record.observations : [];
+  const byKey = new Map();
+  for (const o of observations) byKey.set(`${o?.task}/${o?.app}/${o?.round}`, o);
+
+  const fieldProblem = (o, f) => {
+    const v = o[f];
+    if (f === 'evidence') return (!Array.isArray(v) || v.length === 0) ? 'evidence' : null;
+    if (f === 'durationMs') return (Number.isFinite(v) && v > 0) ? null : 'durationMs';
+    if (f === 'error') return (typeof v === 'boolean') ? null : 'error';
+    if (f === 'steps') return (Number.isInteger(v) && v > 0) ? null : 'steps';
+    if (f === 'subjectiveScore') return (Number.isInteger(v) && v >= 1 && v <= 5) ? null : 'subjectiveScore';
+    if (f === 'appOrder') return ['typora-first', 'mellow-first'].includes(v) ? null : 'appOrder';
+    return (typeof v === 'string' && v.length > 0) ? null : f;
+  };
+  const REQUIRED = ['durationMs', 'error', 'steps', 'subjectiveScore', 'evidence', 'appOrder', 'entryPoint', 'sourceDiff'];
+
+  const missingKeys = [];
+  const incompleteList = [];
+  let filled = 0;
+  for (let task = 1; task <= TASKS.length; task++) {
+    for (const round of ROUNDS) {
+      for (const app of APPS) {
+        const key = `${task}/${app}/${round}`;
+        const o = byKey.get(key);
+        if (!o) { missingKeys.push(key); continue; }
+        const bad = REQUIRED.map((f) => fieldProblem(o, f)).filter(Boolean);
+        if (bad.length) incompleteList.push(`${key}（缺 ${bad.join('/')}）`);
+        else filled += 1;
+      }
+    }
+  }
+
+  const orderIssues = [];
+  for (let task = 1; task <= TASKS.length; task++) {
+    for (const round of ROUNDS) {
+      const t = byKey.get(`${task}/typora/${round}`);
+      const m = byKey.get(`${task}/mellow/${round}`);
+      if (t?.appOrder && m?.appOrder && t.appOrder !== m.appOrder) {
+        orderIssues.push(`task ${task} round ${round}：同一轮内 typora 与 mellow 的 appOrder 不一致（${t.appOrder} vs ${m.appOrder}）`);
+      }
+    }
+    const t1 = byKey.get(`${task}/typora/1`)?.appOrder;
+    const t2 = byKey.get(`${task}/typora/2`)?.appOrder;
+    if (t1 && t2 && t1 === t2) orderIssues.push(`task ${task}：两轮未交换执行顺序（都是 ${t1}）`);
+  }
+
+  const filledOr = (v) => (typeof v === 'string' && v.length > 0 && !v.startsWith('REPLACE_')) ? '已填' : '未填';
+  return {
+    total: TASKS.length * APPS.length * ROUNDS.length,
+    filled,
+    incompleteCount: incompleteList.length,
+    missingCount: missingKeys.length,
+    meta: {
+      tester: filledOr(record?.tester),
+      machine: filledOr(record?.machine),
+      mellowCommit: filledOr(record?.mellowCommit),
+      imeCorruption: record?.imeCorruption === false ? 'false ✓' : '未填（必须明确为 false）',
+      dataLoss: record?.dataLoss === false ? 'false ✓' : '未填（必须明确为 false）',
+    },
+    missingKeys,
+    incompleteList,
+    orderIssues,
+  };
+}
+
 function selfTest() {
   const record = blankRecord('macos', 'deadbeef');
   record.tester = 'test'; record.machine = 'test-machine'; record.imeCorruption = false; record.dataLoss = false;
@@ -143,12 +220,35 @@ try {
     if (existsSync(path)) fail(`拒绝覆盖已有记录：${path}`);
     writeFileSync(path, `${JSON.stringify(blankRecord(platform, commit), null, 2)}\n`);
     console.log(`已创建 UX Gate 记录：${path}`);
+  } else if (command === 'progress') {
+    const input = option('--input'); if (!input) fail('用法：progress --input <file.json>');
+    const r = progressReport(input);
+    console.log(`UX Gate 进度：${r.filled}/${r.total} 条已填写完整（字段不完整 ${r.incompleteCount}，未填 ${r.missingCount}）`);
+    console.log(`元数据：${Object.entries(r.meta).map(([k, v]) => `${k}=${v}`).join('  ')}`);
+    if (r.incompleteList.length) {
+      console.log('字段不完整：');
+      for (const x of r.incompleteList.slice(0, 30)) console.log(`  - ${x}`);
+      if (r.incompleteList.length > 30) console.log(`  … 另有 ${r.incompleteList.length - 30} 条`);
+    }
+    if (r.missingKeys.length) {
+      console.log(`未填（共 ${r.missingKeys.length} 条，列前 20）：`);
+      for (const x of r.missingKeys.slice(0, 20)) console.log(`  - ${x}`);
+    }
+    if (r.orderIssues.length) {
+      console.log('顺序规则问题：');
+      for (const x of r.orderIssues.slice(0, 20)) console.log(`  - ${x}`);
+    }
+    if (r.filled === r.total && r.orderIssues.length === 0 && r.meta.imeCorruption.endsWith('✓') && r.meta.dataLoss.endsWith('✓')) {
+      console.log('✓ 120 条齐备、顺序规则与两项安全声明均通过 → 可执行 validate');
+    }
+    // 进度报告**不是门禁**：未填完不失败，否则无法在会话中途查看进度
+    process.exitCode = 0;
   } else if (command === 'validate') {
     const input = option('--input'); if (!input) fail('用法：validate --input <file.json>');
     const result = validate(JSON.parse(readFileSync(resolve(input), 'utf8')));
     console.log(JSON.stringify(result, null, 2));
     if (!result.valid) process.exitCode = 1;
-  } else fail('用法：--self-test | init --output <file.json> --platform <platform> --commit <sha> | validate --input <file.json>');
+  } else fail('用法：--self-test | init --output <file.json> --platform <platform> --commit <sha> | progress --input <file.json> | validate --input <file.json>');
 } catch (error) {
   console.error(`UX Gate recorder: ${error.message}`);
   process.exitCode = 1;

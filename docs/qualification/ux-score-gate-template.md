@@ -38,19 +38,27 @@
 
 ### 记录与校验
 
-使用 `tests/qualification/ux-gate-recorder.mjs` 创建平台记录；该工具只校验真人填写的双轮数据与 PRD 阈值，不会自动完成任务、生成耗时或给出主观评分。
+空白记录已生成（**含当前 commit**）：`docs/qualification/evidence/macos-ux-gate-DRAFT.json`。
+直接填写该文件即可；填完后重命名为 `macos-ux-gate-<date>.json` 再校验。
+（`ux-gate-recorder.mjs init` 拒绝覆盖已存在文件，故不要重复 init。）
 
 ```bash
-node tests/qualification/ux-gate-recorder.mjs init \
-  --output docs/qualification/evidence/macos-ux-gate-<date>.json \
-  --platform macos --commit <Mellow-commit>
+# 中途随时查看进度（只读，不判定、不因未填完而失败）
+node tests/qualification/ux-gate-recorder.mjs progress \
+  --input docs/qualification/evidence/macos-ux-gate-DRAFT.json
 
-# 填写每项 Typora / Mellow 各两轮记录与证据后：
+# 120 条填完并改名后校验（计算 PRD §132 的 +5% / 关键任务 +15% / 错误率 / 主观评分 Gate）
 node tests/qualification/ux-gate-recorder.mjs validate \
   --input docs/qualification/evidence/macos-ux-gate-<date>.json
 ```
 
-校验器要求 30 × 2 app × 2 round 共 120 条记录、每任务两轮交换 app 顺序、截图/视频/日志证据、IME/data-loss 明确为零，并计算 PRD §132 的 +5%、关键任务 +15%、错误率与主观评分 Gate。
+`progress` 会报告：已填写完整条数、字段不完整的条目（指明缺哪个字段）、未填条目、
+以及 **appOrder 交替规则**（同一轮内 typora/mellow 顺序必须一致；两轮之间必须交换）。
+`validate` 要求 30 × 2 app × 2 round 共 120 条记录、每任务两轮交换 app 顺序、
+截图/视频/日志证据、IME/data-loss 明确为零。
+
+> ⚠️ **`DRAFT` 文件是未填写的草稿，不得作为证据登记**：它的 `tester`/`machine` 仍是
+> `REPLACE_WITH_*` 占位符，`validate` 会直接拒绝。登记进台账前必须由真人填写并改名。
 
 ### 任务清单
 | # | 任务 | Typora 时间 | Mellow 时间 | 误差% | 错误 | 评分 |
@@ -92,10 +100,42 @@ node tests/qualification/ux-gate-recorder.mjs validate \
 - 错误率 ≤ Typora；IME corruption=0；data loss=0；
 - 主观评分均值 Mellow ≥ Typora。
 
-## 三、证据要求
+## 三、执行前必读：两项已知障碍
+
+### 3.1 ⚠️ 任务 30 在 Typora 侧**无法执行**（需先裁决）
+
+任务 30 是「10 MB 文件打开 → 搜索 → 编辑 → 保存」，但 **Typora 1.14.9 不渲染
+超过 2,000,000 字符的文档** —— 它对 10MB 只显示「该文件过大，因此无法在 Typora 中呈现」
+提示页，既不渲染也不可编辑。
+
+一级证据：`TypeMark/appsrc/window/frame.js` 的 `tryEnterOversize` 判定
+`e.length > File.MAX_FILE_SIZE`，且同文件 `MAX_FILE_SIZE: 2e6`；
+实测边界 1,900,000 字符正常渲染 / 2,100,000 字符为提示页。
+详见 `tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md`。
+
+**因此任务 30 的 Typora 两轮无法产生有意义记录。** 在裁决前不要为该任务编造 Typora 侧
+数据（本门禁明令禁止伪造计时）；建议的处置是二选一：
+
+- 把任务 30 的对照尺寸改为 ≤2MB（Typora 侧可执行），另立一条「>2MB 能力差异」的
+  **非对照**观察项；
+- 或任务 30 只评 Mellow 绝对指标，Typora 侧记「不适用」并说明原因。
+
+### 3.2 环境前置
+
+- **输入源须为键盘布局（如 ABC）**：IME 类任务另需按 `docs/specs/ime-test-plan.md`
+  准备中文/日文输入源；若会话中途输入源被切成 IME，非 IME 任务的耗时会被候选窗干扰。
+- **屏幕不得锁定/屏保**：锁定状态下任何应用都无法成为前台，截图与「外部修改重载」
+  一类任务会得到静止画面。
+- **同一台机器、同一份文档**：对照必须在同机同文档下进行（PRD §132）。
+
+## 四、证据要求
 - 每平台一份本表（windows-ux-gate-*.md / linux-ux-gate-*.md / macos-ux-gate-*.md）；
 - 每任务附耗时记录与关键截图；
 - 三平台全部通过 + 其余 18 项验收全 PASS 后，才生成 V1.0 Release Notes（ADR-0020）。
 
-## 四、更新记录
+## 五、更新记录
 - 2026-08-18：创建模板（待真机执行）。
+- 2026-09-25：① 记录与校验改为使用已生成的空白记录 `docs/qualification/evidence/macos-ux-gate-DRAFT.json`
+  （含当前 commit），并新增 `progress` 中途进度报告（只读，不判定）；② 新增「执行前必读」
+  一节，登记**任务 30 在 Typora 侧无法执行**（>2MB 拒渲染）与环境前置（输入源、锁屏）；
+  ③ 修正 `init` 的落点目录此前不存在的问题（`docs/qualification/evidence/` 已创建）。

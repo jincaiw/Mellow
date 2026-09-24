@@ -222,6 +222,31 @@ if (existsSync(benchmarkRunnerPath)) {
     errors.push('大文件模式跨层锁 canary 失效：样本阈值未被正确求值');
   }
 
+  // ── UX Gate 记录器：进度报告必须只读（2026-09-25）──────────────────────
+  // 立此节的原因：`validate` 要 120 条齐备才给结论，人工会话中途无法知道「还差哪些」，
+  // 且它把「还没填」与「填错了」混在同一次报错里。新增的 `progress` 命令必须**只读**：
+  // 它报告填写状态与顺序规则，**不得写文件、不得生成任何耗时数值**
+  // （ux-gate-recorder 的设计前提是「只接受人工记录，禁止伪造计时」）。
+  const recorderPath = resolve(root, 'tests/qualification/ux-gate-recorder.mjs');
+  assert(existsSync(recorderPath), 'ux-gate-recorder.mjs 不存在');
+  if (existsSync(recorderPath)) {
+    const recSrc = readFileSync(recorderPath, 'utf8').replace(/\r\n/g, '\n');
+    assert(/function progressReport/.test(recSrc), 'ux-gate-recorder 必须实现 progressReport');
+    assert(/command === 'progress'/.test(recSrc), 'ux-gate-recorder 必须支持 progress 子命令');
+    const pStart = recSrc.indexOf('function progressReport');
+    const pEnd = recSrc.indexOf('\nfunction ', pStart + 1);
+    const pBody = (pStart >= 0 && pEnd > pStart) ? recSrc.slice(pStart, pEnd) : '';
+    assert(pBody.length > 0, '无法定位 progressReport 函数体（护栏失效）');
+    // 反例锁：只读 + 不造数
+    assert(!/writeFileSync/.test(pBody), 'progressReport 必须只读：它只报告填写状态，不得写文件');
+    assert(!/durationMs\s*[:=]\s*\d/.test(pBody), 'progressReport 不得生成任何耗时数值（ux-gate 禁止伪造计时）');
+    // canary：自检反例锁
+    const WRITE_SAMPLE = 'function progressReport() { ' + 'writeFileSync("x", "y"); }';
+    if (!/writeFileSync/.test(WRITE_SAMPLE)) {
+      errors.push('progress 只读锁 canary 失效：写文件样本未被检出');
+    }
+  }
+
   // ── 锁屏/遮挡前置门禁（2026-09-25）──────────────────────────────────────
   // 立此节的原因：**屏幕锁定/屏保激活时 `loginwindow` 成为前台**，此时任何应用都无法
   // 被激活 → SCK 对**被遮挡**窗口只能拿到**静止帧** → 整批样本以

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "normativeBaseline": {
+    "product": "Typora",
+    "version": "1.14.9",
+    "build": "7785"
+  },
+  "platform": "macos",
+  "mellowCommit": "c518dbc",
+  "tester": "REPLACE_WITH_TESTER",
+  "machine": "REPLACE_WITH_MACHINE",
+  "imeCorruption": null,
+  "dataLoss": null,
+  "observations": [],
+  "notes": "每个任务需记录 Typora/Mellow 各两轮；两轮 appOrder 必须相反。"
+}
