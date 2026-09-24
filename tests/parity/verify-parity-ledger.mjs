@@ -178,6 +178,82 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── 大文件模式阈值跨层锁（2026-09-25）────────────────────────────────────
+  // 立此节的原因：`5MB.md` 的字节数**恰好等于** `LARGE_FILE_BYTES_THRESHOLD`（5 MiB），
+  // 而判据是**严格大于** → 该夹具**不**进入大文件模式 → 对 5MB 文档付全量渲染成本，
+  // 反而比进入降级路径的 10MB 慢。benchmark 报告必须把「哪一侧」显式标注出来，
+  // 否则读者会把这条反直觉结果读成噪声或产品缺陷。
+  // 报告里的阈值是**复刻**，必须与真值源逐一相等 —— 单侧改动会立刻报错。
+  const largeFileSrc = readFileSync(resolve(root, 'packages/editor-engine/src/largeFile.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const benchSrc = benchCode;
+  const evalArith = (expr) => {
+    const cleaned = expr.replace(/_/g, '');
+    if (!/^[\d*\s]+$/.test(cleaned)) return null; // 只接受纯算术，不做 eval
+    return cleaned.split('*').map((s) => Number(s.trim())).reduce((a, b) => a * b, 1);
+  };
+  const srcBytes = evalArith((largeFileSrc.match(/LARGE_FILE_BYTES_THRESHOLD\s*=\s*([\d_*\s]+);/) ?? [])[1] ?? '');
+  const srcLines = evalArith((largeFileSrc.match(/LARGE_FILE_LINES_THRESHOLD\s*=\s*([\d_*\s]+);/) ?? [])[1] ?? '');
+  const benchBytes = evalArith((benchSrc.match(/MELLOW_LARGE_FILE_BYTES_THRESHOLD\s*=\s*([\d_*\s]+);/) ?? [])[1] ?? '');
+  const benchLines = evalArith((benchSrc.match(/MELLOW_LARGE_FILE_LINES_THRESHOLD\s*=\s*([\d_*\s]+);/) ?? [])[1] ?? '');
+  assert(Number.isFinite(srcBytes) && srcBytes > 0, '无法从 largeFile.ts 解析 LARGE_FILE_BYTES_THRESHOLD');
+  assert(Number.isFinite(srcLines) && srcLines > 0, '无法从 largeFile.ts 解析 LARGE_FILE_LINES_THRESHOLD');
+  assert(Number.isFinite(benchBytes), 'run-benchmark 必须声明 MELLOW_LARGE_FILE_BYTES_THRESHOLD（复刻真值源）');
+  assert(Number.isFinite(benchLines), 'run-benchmark 必须声明 MELLOW_LARGE_FILE_LINES_THRESHOLD（复刻真值源）');
+  if (Number.isFinite(srcBytes) && Number.isFinite(benchBytes)) {
+    assert(srcBytes === benchBytes,
+      `大文件模式字节阈值跨层不一致：largeFile.ts=${srcBytes}，benchmark=${benchBytes}（单侧改动会让报告的「哪一侧」标注失真）`);
+  }
+  if (Number.isFinite(srcLines) && Number.isFinite(benchLines)) {
+    assert(srcLines === benchLines,
+      `大文件模式行数阈值跨层不一致：largeFile.ts=${srcLines}，benchmark=${benchLines}`);
+  }
+  // 判据方向必须同为「严格大于」：若一侧改成 >=，`5MB.md` 的归属就会翻转
+  assert(/byteLength\s*>\s*LARGE_FILE_BYTES_THRESHOLD\s*\|\|\s*lineCount\s*>\s*LARGE_FILE_LINES_THRESHOLD/.test(largeFileSrc),
+    'classifyLargeFile 必须是「严格大于」两阈值（>，不是 >=）：5MB.md 恰好压线，改成 >= 会翻转其归属');
+  assert(/bytes\s*>\s*MELLOW_LARGE_FILE_BYTES_THRESHOLD\s*\|\|\s*lines\s*>\s*MELLOW_LARGE_FILE_LINES_THRESHOLD/.test(benchSrc),
+    'benchmark 的 mellowLargeFileMode 必须与 classifyLargeFile 同为「严格大于」');
+  // 报告必须把归属标注出来（否则反直觉结论会被误读）
+  assert(/function largeModeLabel/.test(benchSrc), '报告必须实现 largeModeLabel（标注夹具落在阈值哪一侧）');
+  assert(/恰好压线/.test(benchSrc), '报告必须显式标注「恰好压线」这种边界情形');
+  // canary：自检跨层锁
+  const SRC_SAMPLE = 'LARGE_FILE_BYTES_THRESHOLD = ' + '5 * 1024 * 1024;';
+  const m = SRC_SAMPLE.match(/LARGE_FILE_BYTES_THRESHOLD\s*=\s*([\d_*\s]+);/);
+  if (!m || evalArith(m[1]) !== 5242880) {
+    errors.push('大文件模式跨层锁 canary 失效：样本阈值未被正确求值');
+  }
+
+  // ── 锁屏/遮挡前置门禁（2026-09-25）──────────────────────────────────────
+  // 立此节的原因：**屏幕锁定/屏保激活时 `loginwindow` 成为前台**，此时任何应用都无法
+  // 被激活 → SCK 对**被遮挡**窗口只能拿到**静止帧** → 整批样本以
+  // `detectMaxDiff=0 calibMaxDiff=0` 失败。实测一次 0/6，而失败信息只有一行 pid，
+  // 排查方向被指向「焦点/按键」而不是「窗口被遮挡」。
+  // 这类失败必须在开跑前拒绝，且 helper 侧激活失败必须**响亮失败并指名当前前台应用**。
+  // 这两处源码在前面的块级作用域里读过，这里需重新读取（否则 ReferenceError）
+  const hs2 = existsSync(resolve(root, 'tests/benchmark/lib/screen-timing.swift'))
+    ? readFileSync(resolve(root, 'tests/benchmark/lib/screen-timing.swift'), 'utf8').replace(/\r\n/g, '\n') : '';
+  const commonSrc2 = existsSync(resolve(root, 'tests/benchmark/perf-common.mjs'))
+    ? stripComments(readFileSync(resolve(root, 'tests/benchmark/perf-common.mjs'), 'utf8').replace(/\r\n/g, '\n')) : '';
+  assert(/case "frontmost"/.test(hs2), 'helper 必须实现 frontmost 命令（供锁屏前置门禁使用）');
+  assert(/isLockScreen/.test(hs2), 'helper 的 frontmost 必须给出 isLockScreen 判据');
+  assert(/func activateAppAndConfirm/.test(hs2),
+    'helper 必须实现 activateAppAndConfirm：激活后确认目标确实成为前台，失败即响亮失败');
+  assert(/未能成为前台/.test(hs2),
+    '激活失败必须指名「当前前台应用」（只报 pid 会把排查方向带向「焦点/按键」而非「窗口被遮挡」）');
+  assert(/export function frontmostApp/.test(commonSrc2), 'perf-common 必须实现 frontmostApp');
+  assert(/'frontmost'/.test(commonSrc2), 'frontmostApp 必须调用 helper 的 frontmost 命令');
+  {
+    const i = benchCode.indexOf('isLockScreen');
+    assert(i >= 0, 'run-benchmark 必须检查 isLockScreen（锁屏时拒绝执行）');
+    const tail = i >= 0 ? benchCode.slice(i, i + 700) : '';
+    assert(/process\.exit\(1\)/.test(tail),
+      '锁屏时必须 process.exit(1) 拒绝执行，不能产出「0 个有效样本」的报告');
+  }
+  // canary：自检锁屏门禁
+  const LOCK_SAMPLE = '{"bundleId":"com.apple.login' + 'window","isLockScreen":true}';
+  if (!/isLockScreen":true/.test(LOCK_SAMPLE)) {
+    errors.push('锁屏门禁 canary 失效：锁屏样本未被构造出来');
+  }
+
   // ── 输入源判定护栏（2026-09-23）──────────────────────────────────────────
   // 立此节的原因：`inputSourceIsEnglish()` 原实现读
   // `defaults read com.apple.HIToolbox AppleSelectedInputSources` ——

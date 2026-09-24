@@ -185,3 +185,21 @@ export function inputSourceIsEnglish() {
   const s = currentInputSource();
   return s.ok === true && s.isKeyboardLayout === true;
 }
+
+/**
+ * 当前前台应用（2026-09-25 新增）。返回 { ok, pid, name, bundleId, isLockScreen }。
+ *
+ * 用途：**屏幕锁定/屏保激活时 `loginwindow` 成为前台**，此时任何应用都无法被激活，
+ * SCK 对被遮挡窗口只能拿到静止帧 → 整批样本以 `detectMaxDiff=0 calibMaxDiff=0`
+ * 静默失败（实测一次 0/6，失败信息只有一行 pid，排查方向被指向「焦点/按键」）。
+ * 开跑前必须先拒绝，而不是产出「0 个有效样本」的报告。
+ */
+export function frontmostApp() {
+  try {
+    const out = execFileSync(HELPER, ['frontmost'], { encoding: 'utf8', timeout: 15000 });
+    const line = out.split('\n').filter((l) => l.trim().startsWith('{')).pop();
+    return JSON.parse(line);
+  } catch (e) {
+    return { ok: false, isLockScreen: true, error: `helper frontmost 失败: ${e.message}` };
+  }
+}

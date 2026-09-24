@@ -433,6 +433,42 @@ func activateApp(pid: Int32) {
   Thread.sleep(forTimeInterval: 0.4)
 }
 
+/// 激活目标并**确认它确实成为前台**，否则响亮失败。
+///
+/// 立此函数的原因（2026-09-25）：ScreenCaptureKit 对**被遮挡**的窗口只能拿到
+/// **静止帧**，症状是 `detectMaxDiff=0` + `calibMaxDiff=0` 且
+/// `frontmostPid != expectPid` —— 与「按键没落到编辑区」症状相同但成因完全不同。
+/// 实测一次整批 0/6 有效样本（三个夹具各 0/2），失败信息只有一行 pid，
+/// 排查方向被指向「焦点/按键」而不是「窗口被遮挡」。
+/// 激活失败必须**响亮失败**并**指名当前前台应用**，不能静默产出 0 个有效样本。
+func activateAppAndConfirm(pid: Int32, attempts: Int = 3) -> Bool {
+  for i in 0..<attempts {
+    activateApp(pid: pid)
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { return true }
+    if i < attempts - 1 { Thread.sleep(forTimeInterval: 0.6) }
+  }
+  return NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+}
+
+/// 需要合成按键的命令统一走这里：确认前台 → 断言输入源为键盘布局。
+/// 输入源是 IME 时按键会弹候选窗而不是回显文本，测出来的不是「编辑器回显」。
+func activateAndEnsureInput(pid: Int32, ensureAscii: Bool) {
+  guard activateAppAndConfirm(pid: pid) else {
+    let front = NSWorkspace.shared.frontmostApplication
+    let name = front?.localizedName ?? "?"
+    let fpid = front?.processIdentifier ?? -1
+    fail("目标进程 \(pid) 未能成为前台（当前前台：\(name) pid=\(fpid)）。"
+      + "SCK 对**被遮挡**的窗口只能拿到静止帧，会产出 detectMaxDiff=0 的假失败（与「按键没进去」症状相同）。"
+      + "请关闭抢占焦点的窗口后重试。")
+  }
+  guard ensureAscii else { return }
+  if currentIsKeyboardLayout() { return }
+  guard ensureAsciiInputSource() else {
+    fail("当前输入源不是键盘布局，且切换到 com.apple.keylayout.ABC 失败 —— 合成按键会被 IME 拦截，该指标不可用")
+  }
+  Thread.sleep(forTimeInterval: 0.3) // 等输入源切换生效
+}
+
 /// 模拟鼠标点击 ROI 中心，强制编辑器聚焦（Tauri 窗口重新激活后焦点可能落在侧边栏等非编辑器区域）
 func clickToFocus(_ window: SCWindow, roi: Roi) {
   let cx = window.frame.origin.x + roi.x + roi.w / 2
@@ -550,16 +586,6 @@ func currentIsKeyboardLayout() -> Bool {
 
 /// 需要合成按键的命令统一走这里：激活 app → 断言输入源为键盘布局。
 /// 输入源是 IME 时按键会弹候选窗而不是回显文本，测出来的不是「编辑器回显」。
-func activateAndEnsureInput(pid: Int32, ensureAscii: Bool) {
-  activateApp(pid: pid)
-  guard ensureAscii else { return }
-  if currentIsKeyboardLayout() { return }
-  guard ensureAsciiInputSource() else {
-    fail("当前输入源不是键盘布局，且切换到 com.apple.keylayout.ABC 失败 —— 合成按键会被 IME 拦截，该指标不可用")
-  }
-  Thread.sleep(forTimeInterval: 0.3) // 等输入源切换生效
-}
-
 func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true, snapOnFail: String? = nil, roiFrac: [Double]? = nil, ensureAscii: Bool = false) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
   activateAndEnsureInput(pid: pid, ensureAscii: ensureAscii)
@@ -909,6 +935,26 @@ func mainAsync(_ args: [String]) async {
       ])
     } else {
       out(["ok": false, "error": "无法取得当前输入源"])
+    }
+  case "frontmost":
+    // 当前前台应用（2026-09-25）。
+    //
+    // 立此命令的原因：**屏幕锁定/屏保激活时 `loginwindow` 成为前台**，此时任何应用都
+    // 无法被激活 → SCK 对被遮挡窗口只能拿到静止帧 → 整批样本以
+    // `detectMaxDiff=0 calibMaxDiff=0` 静默失败（实测一次 0/6，失败信息只有一行 pid）。
+    // runner 必须能在开跑前就拒绝，而不是产出「0 个有效样本」的报告。
+    if let front = NSWorkspace.shared.frontmostApplication {
+      out([
+        "ok": true,
+        "pid": Int(front.processIdentifier),
+        "name": front.localizedName ?? "",
+        "bundleId": front.bundleIdentifier ?? "",
+        // 锁屏/屏保的判据：前台是 loginwindow（或无可激活应用）
+        "isLockScreen": (front.bundleIdentifier ?? "").contains("loginwindow")
+          || (front.localizedName ?? "").lowercased() == "loginwindow",
+      ])
+    } else {
+      out(["ok": false, "error": "无法取得前台应用", "isLockScreen": true])
     }
   case "snap":    // 调试：把 ROI 当前帧存为 PNG（诊断 ROI 是否覆盖文本/光标区域）
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1

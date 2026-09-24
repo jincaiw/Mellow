@@ -16,7 +16,7 @@ import { spawnSync, execSync } from 'node:child_process';
 import {
   BENCH_DIR, HELPER, FIXTURES_DIR, RESULTS_DIR,
   helper, killApp, launch, waitWindow, waitForPid,
-  sampleRss, stats, sleep, fileMtimeMs, touchOld, checkPerms, inputSourceIsEnglish, currentInputSource,
+  sampleRss, stats, sleep, fileMtimeMs, touchOld, checkPerms, inputSourceIsEnglish, currentInputSource, frontmostApp,
 } from './perf-common.mjs';
 
 // ---------- 参数 ----------
@@ -153,6 +153,32 @@ const TYPORA_NORMATIVE_VERSION = '1.14.9';
 // 「Typora 显示『文件过大』提示页的耗时」，与「打开并编辑 10MB 文档」不是同一件事。
 // 故所有跨应用比值必须经 ratioOrNA() 判定基线有效性，禁止直接相除。
 const TYPORA_MAX_FILE_SIZE = 2_000_000;
+// Mellow 的大文件模式阈值（2026-09-25 新增，**必须与真值源一致**）。
+//
+// 真值源：`packages/editor-engine/src/largeFile.ts`
+//   export const LARGE_FILE_BYTES_THRESHOLD = 5 * 1024 * 1024;
+//   export const LARGE_FILE_LINES_THRESHOLD = 50_000;
+//   classifyLargeFile = byteLength > BYTES || lineCount > LINES   ← **严格大于**
+// 护栏 `verify-parity-ledger.mjs` 会把这里的值**与源码逐一比对**（跨层锁），
+// 单侧改动会立刻报错。
+//
+// 为什么报告必须暴露这一层：夹具 `5MB.md` 的字节数**恰好等于** 5 MiB，
+// 因判据是严格大于 → **不**触发降级 → 对 5MB 文档付**全量**渲染成本；
+// `10MB.md` 触发降级（视口裁剪解析、装饰上限、关拼写、关动画）→ 反而更快。
+// 读者若不知道这一层，会把「5MB 比 10MB 慢」读成测量噪声或产品缺陷。
+const MELLOW_LARGE_FILE_BYTES_THRESHOLD = 5 * 1024 * 1024;
+const MELLOW_LARGE_FILE_LINES_THRESHOLD = 50_000;
+/** 该夹具是否落在 Mellow 的大文件模式下（复刻 classifyLargeFile 的语义） */
+function mellowLargeFileMode(fixture) {
+  try {
+    const p = join(FIXTURES_DIR, fixture);
+    const bytes = statSync(p).size;
+    // 行数按 `\n` 计数；10MB 级夹具读一次可接受（每夹具仅一次）
+    const text = readFileSync(p, 'utf8');
+    const lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+    return { bytes, lines, large: bytes > MELLOW_LARGE_FILE_BYTES_THRESHOLD || lines > MELLOW_LARGE_FILE_LINES_THRESHOLD };
+  } catch { return null; }
+}
 /** 该夹具是否在 Typora 的渲染上限之内（超出 → Typora 侧无有效基线） */
 function baselineRendersFixture(fixture) {
   try { return statSync(join(FIXTURES_DIR, fixture)).size <= TYPORA_MAX_FILE_SIZE; } catch { return false; }
@@ -170,6 +196,25 @@ function ratioOrNA(mellowValue, typoraValue, fixture) {
 function cellOrRefused(value, fixture, fmtFn) {
   if (!baselineRendersFixture(fixture)) return '—（拒渲染）';
   return fmtFn(value);
+}
+/**
+ * 大文件模式的表格标注（2026-09-25）。
+ *
+ * 为什么必须显式标注：`5MB.md` 的字节数**恰好等于**阈值（严格大于 → 不降级），
+ * 于是「5MB 比 10MB 慢」这种反直觉结果会被误读为噪声或缺陷。
+ * 标注出「哪一侧」后，读者一眼能看出对比的两行不在同一渲染路径上。
+ */
+function largeModeLabel(info) {
+  if (!info) return '—';
+  const mb = (n) => `${(n / 1024 / 1024).toFixed(2)} MiB`;
+  if (!info.large) {
+    const onByteEdge = info.bytes === MELLOW_LARGE_FILE_BYTES_THRESHOLD;
+    return onByteEdge
+      ? `否（**恰好压线**：${info.bytes} B = 5 MiB，判据是严格大于）`
+      : `否（${mb(info.bytes)}，${info.lines} 行）`;
+  }
+  const why = info.bytes > MELLOW_LARGE_FILE_BYTES_THRESHOLD ? '字节超阈值' : '行数超阈值';
+  return `**是**（${why}：${mb(info.bytes)}，${info.lines} 行）`;
 }
 // 保存测量永不直接写 fixture。独立副本也避免 touchOld 被宿主当作外部变更，
 // 使性能口径保持为“正常打开 → 编辑 → 保存”。
@@ -721,6 +766,22 @@ function renderReport(env, results, opts) {
       L.push('');
     }
   }
+  // Mellow 侧渲染路径提示（2026-09-25）：不同夹具可能**不在同一条渲染路径上**，
+  // 跨夹具比较前必须先看这一行，否则「5MB 比 10MB 慢」会被误读为噪声或缺陷。
+  {
+    const modes = opts.fixtures.map((f) => [f, mellowLargeFileMode(f)]).filter(([, m]) => m);
+    const on = modes.filter(([, m]) => m.large).map(([f]) => f);
+    const off = modes.filter(([, m]) => !m.large).map(([f]) => f);
+    if (on.length > 0 && off.length > 0) {
+      L.push(`ℹ️ **Mellow 渲染路径不同**：${on.join('、')} 处于大文件模式（降级），`);
+      L.push(`${off.join('、')} 不处于（全量）。`);
+      L.push(`阈值 \`LARGE_FILE_BYTES_THRESHOLD = ${MELLOW_LARGE_FILE_BYTES_THRESHOLD}\` 字节 / `
+        + `\`LARGE_FILE_LINES_THRESHOLD = ${MELLOW_LARGE_FILE_LINES_THRESHOLD}\` 行，`
+        + '判据是**严格大于**（见 `packages/editor-engine/src/largeFile.ts`）。');
+      L.push('**跨这两组比较性能会得出反直觉结论**（降级侧可能更快）；比较前请确认两行在同一侧。');
+      L.push('');
+    }
+  }
   L.push('| fixture | Mellow median | Mellow p95 | Typora median | Typora p95 | ratio med (M/T) | PRD 目标（热打开口径，参考） |');
   L.push('|---|---|---|---|---|---|---|');
   const targetMap = { '1MB.md': '≤250ms', '10MB.md': '1.0–1.5s', '5MB.md': '参考', '100k-lines.md': '参考', 'large-table.md': '参考', '100-mermaid.md': '参考', '1000-images.md': '参考' };
@@ -782,8 +843,8 @@ function renderReport(env, results, opts) {
         L.push('本段读数来自**旧构建**，**不得作为当前提交的结论**。请先重建包（`bash apps/desktop/scripts/build-local.sh`）再复测。');
         L.push('');
       }
-      L.push('| app | 目标夹具 | 有效样本 | median | p95 | switchMs(中位) | echoMs(中位) |');
-      L.push('|---|---|---|---|---|---|---|');
+      L.push('| app | 目标夹具 | Mellow 大文件模式 | 有效样本 | median | p95 | switchMs(中位) | echoMs(中位) |');
+      L.push('|---|---|---|---|---|---|---|---|');
       // **按目标夹具分组**：每次投递的目标是交替的，不同尺寸的切换成本差一个数量级，
       // 混进同一个中位数会让读数失去意义。
       for (const { app: appName, h } of rows) {
@@ -799,12 +860,13 @@ function renderReport(env, results, opts) {
           }
         });
         if (byTarget.size === 0) {
-          L.push(`| ${appName} | — | ${h.validSamples} / ${h.samples.length} | ${fmt(h.stats?.median)} | ${fmt(h.stats?.p95)}`
+          L.push(`| ${appName} | — | — | ${h.validSamples} / ${h.samples.length} | ${fmt(h.stats?.median)} | ${fmt(h.stats?.p95)}`
             + ` | ${fmt(stats(h.samplesSwitchMs ?? []).median)} | ${fmt(stats(h.samplesEchoMs ?? []).median)} |`);
           continue;
         }
         for (const [t, g] of byTarget) {
-          L.push(`| ${appName} | ${t} | ${g.total.length} / ${g.n} | ${fmt(stats(g.total).median)} | ${fmt(stats(g.total).p95)}`
+          const lm = mellowLargeFileMode(t);
+          L.push(`| ${appName} | ${t} | ${largeModeLabel(lm)} | ${g.total.length} / ${g.n} | ${fmt(stats(g.total).median)} | ${fmt(stats(g.total).p95)}`
             + ` | ${fmt(stats(g.sw).median)} | ${fmt(stats(g.echo).median)} |`);
         }
       }
@@ -861,6 +923,19 @@ function renderReport(env, results, opts) {
         L.push(`⚠️ 大 fixture \`${large}\` 超出 Typora 渲染上限（${TYPORA_MAX_FILE_SIZE} 字符）→`);
         L.push('Typora 侧为提示页、无有效读数，其行只能是「数据不足」；');
         L.push('**不得据此说「Mellow 在该尺寸上更快/更慢」**。');
+      }
+      // 大文件模式提示（2026-09-25）：本节的判据是「同应用内 open 时间是否随尺寸增长」，
+      // 若两端分处阈值两侧，增长倍数反映的是**渲染路径切换**而非尺寸本身。
+      {
+        const ms = mellowLargeFileMode(small);
+        const ml = mellowLargeFileMode(large);
+        if (ms && ml && ms.large !== ml.large) {
+          L.push('');
+          L.push(`⚠️ 这两个 fixture **不在同一条 Mellow 渲染路径上**：`);
+          L.push(`\`${small}\` ${ms.large ? '处于' : '不处于'}大文件模式，`
+            + `\`${large}\` ${ml.large ? '处于' : '不处于'}大文件模式 →`);
+          L.push('增长倍数反映的是**阈值两侧的路径切换**，**不得**读作「大文件处理成本随尺寸增长」。');
+        }
       }
       L.push('');
       L.push('| app | 小 fixture median | 大 fixture median | 增长倍数 | 判定 |');
@@ -995,6 +1070,19 @@ async function main() {
     process.exit(1);
   }
   console.log('权限 OK：Accessibility ✓ / Screen Recording ✓');
+  // 屏幕锁定**硬门禁**（2026-09-25）。立此门禁的原因：屏保/锁屏时 `loginwindow`
+  // 成为前台 → 任何应用都无法被激活 → SCK 对**被遮挡**的窗口只能拿到**静止帧**
+  // → 整批样本以 `detectMaxDiff=0 calibMaxDiff=0` 失败。实测一次 0/6，
+  // 而失败信息只有一行 pid，排查方向被指向「焦点/按键」而非「窗口被遮挡」。
+  // 这类失败必须在开跑前拒绝，不能产出「0 个有效样本」的报告。
+  const front = frontmostApp();
+  if (front.isLockScreen) {
+    console.error(`\n✗ 当前前台是「${front.name || '?'}」（pid=${front.pid ?? '?'}）→ 屏幕已锁定或屏保激活。`);
+    console.error('  锁定状态下任何应用都无法成为前台，SCK 只能捕获被遮挡窗口的静止帧，');
+    console.error('  所有视觉指标都会产出 detectMaxDiff=0 的假失败。');
+    console.error('  请解锁屏幕并关闭屏保后重跑。');
+    process.exit(1);
+  }
   // 输入源**硬门禁**（2026-09-23 由「仅警告」升级为「拒绝执行」）。
   //
   // 立此门禁的原因：合成按键类指标依赖「按键真的落到文档并回显」。输入源是 IME 时，
