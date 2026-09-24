@@ -117,6 +117,44 @@ func windowList() -> [[String: Any]] {
 
 // MARK: - 像素 diff
 
+/// 按**实际帧对**统计变化采样点数，并返回该对的采样点总数。
+///
+/// 为什么必须返回 total（2026-09-25）：`pixelDiff` 只取 `a` 的几何，且全仓假设
+/// 「一个流生命周期内帧尺寸恒定」。实测该假设**不成立** —— 曾出现
+/// `sampleCount=13824`（取自 576×96）而实测 `changed=17372`，**超过采样点总数**，
+/// 数学上不可能。唯一解释是基准帧与比较帧几何不同（SCK 在流启动初期可能先交付
+/// 未套用 `config.width/height` 的帧）。于是任何「变化点数 / 事先算好的采样点总数」
+/// 的比例阈值都建立在错误的分母上。
+/// 现按 `min(wA,wB) × min(hA,hB)/4` 逐对计算总数，比例才成立。
+func pixelDiffPair(_ a: CVPixelBuffer, _ b: CVPixelBuffer) -> (changed: Int, total: Int) {
+  CVPixelBufferLockBaseAddress(a, .readOnly)
+  CVPixelBufferLockBaseAddress(b, .readOnly)
+  defer {
+    CVPixelBufferUnlockBaseAddress(a, .readOnly)
+    CVPixelBufferUnlockBaseAddress(b, .readOnly)
+  }
+  guard let pa = CVPixelBufferGetBaseAddress(a), let pb = CVPixelBufferGetBaseAddress(b) else { return (Int.max, 1) }
+  let w = min(CVPixelBufferGetWidth(a), CVPixelBufferGetWidth(b))
+  let h = min(CVPixelBufferGetHeight(a), CVPixelBufferGetHeight(b))
+  let sa = CVPixelBufferGetBytesPerRow(a)
+  let sb = CVPixelBufferGetBytesPerRow(b)
+  let ab = pa.assumingMemoryBound(to: UInt8.self)
+  let bb = pb.assumingMemoryBound(to: UInt8.self)
+  var changed = 0
+  var y = 0
+  while y < h {
+    let oa = y * sa, ob = y * sb
+    var x = 0
+    while x < w * 4 {
+      let d = abs(Int(ab[oa + x]) - Int(bb[ob + x]))
+      if d > 24 { changed += 1 }
+      x += 4
+    }
+    y += 4
+  }
+  return (changed, w * max(1, h / 4))
+}
+
 func pixelDiff(_ a: CVPixelBuffer, _ b: CVPixelBuffer) -> Int {
   CVPixelBufferLockBaseAddress(a, .readOnly)
   CVPixelBufferLockBaseAddress(b, .readOnly)
@@ -184,6 +222,15 @@ final class Probe: NSObject, SCStreamOutput {
   private var latest: CVPixelBuffer?
   private var base: CVPixelBuffer?
   private var threshold = 60
+  /// 阈值覆盖（2026-09-25）：校准阈值 `max(calibMax*3, 60)` 只能排除噪声 ——
+  /// 它只要求「有像素动了」。对**文档切换**这种判定，工具条/滚动条/光标的偶发重绘
+  /// 就能跨过它，于是 switchMs 抓到与文档无关的重绘。
+  private var thresholdOverride: Int? = nil
+  /// 比例阈值（2026-09-25）：按实际帧对算出的变化采样点占比，优先于绝对阈值。
+  private var detectFracOverride: Double? = nil
+  private var detectMaxFrac: Double = 0
+  /// 基准帧与比较帧**几何不一致**的帧数（>0 即证明「帧尺寸恒定」假设不成立）
+  private var detectDimMismatch = 0
   private var calibMax = 0
   private var changedFlag = false
   private var changedTime = 0.0
@@ -237,9 +284,24 @@ final class Probe: NSObject, SCStreamOutput {
     case .detect:
       detectFrames += 1
       if let b = base, !changedFlag {
-        let d = pixelDiff(b, buf)
+        // 帧几何不一致计数：SCK 不保证流生命周期内帧尺寸恒定（实测 changed > total
+        // 这种数学上不可能的值即由此产生）。这里把它显式计数，使问题可见而非静默。
+        if CVPixelBufferGetWidth(b) != CVPixelBufferGetWidth(buf)
+          || CVPixelBufferGetHeight(b) != CVPixelBufferGetHeight(buf) {
+          detectDimMismatch += 1
+        }
+        let (d, total) = pixelDiffPair(b, buf)
         if d > detectMaxDiff { detectMaxDiff = d }
-        if d >= threshold {
+        let frac = Double(d) / Double(max(1, total))
+        if frac > detectMaxFrac { detectMaxFrac = frac }
+        // 比例阈值优先（见 pixelDiffPair 注释：绝对阈值建立在可能错误的分母上）
+        let fired: Bool
+        if let f = detectFracOverride {
+          fired = frac >= f
+        } else {
+          fired = d >= (thresholdOverride ?? threshold)
+        }
+        if fired {
           changedFlag = true
           changedTime = t
         }
@@ -278,6 +340,8 @@ final class Probe: NSObject, SCStreamOutput {
     changedTime = 0
     detectMaxDiff = 0
     detectFrames = 0
+    detectMaxFrac = 0
+    detectDimMismatch = 0
     base = latest
     lock.unlock()
     let deadline = Date().addingTimeInterval(timeoutMs / 1000.0)
@@ -290,9 +354,26 @@ final class Probe: NSObject, SCStreamOutput {
   }
 
   /// detect 窗口的实测统计（诊断用：区分「按键没落到编辑区」与「未跨过阈值」）
-  func detectStats() -> (maxDiff: Int, frames: Int) {
+  func detectStats() -> (maxDiff: Int, frames: Int, maxFrac: Double, dimMismatch: Int) {
     lock.lock(); defer { lock.unlock() }
-    return (detectMaxDiff, detectFrames)
+    return (detectMaxDiff, detectFrames, detectMaxFrac, detectDimMismatch)
+  }
+
+  func setThresholdOverride(_ v: Int?) { lock.lock(); thresholdOverride = v; lock.unlock() }
+  func setFracOverride(_ v: Double?) { lock.lock(); detectFracOverride = v; lock.unlock() }
+
+  /// `pixelDiff` 的采样点总数（用于把「实质变化」表达成比例而非绝对值）：
+  /// pixelDiff 每 4 行取一行、每像素取 1 个通道 → w * (h/4)。
+  ///
+  /// 同时返回帧的实际像素尺寸：`config.width/height` 是**点**，SCK 可能按显示器
+  /// 缩放比交付**像素**（Retina 2×）→ 二者不等。若不核对，`sampleCount()` 会低估
+  /// 采样点总数，于是「15% 采样点」实际不是 15%（实测出现过阈值 2073 而 diff 达 20547）。
+  func sampleCount() -> (count: Int, w: Int, h: Int) {
+    lock.lock(); defer { lock.unlock() }
+    guard let f = latest else { return (0, 0, 0) }
+    let w = CVPixelBufferGetWidth(f)
+    let h = CVPixelBufferGetHeight(f)
+    return (w * max(1, h / 4), w, h)
   }
 
   func collectFrameTimes() -> [Double] {
@@ -579,7 +660,7 @@ func spawnOpen(app: String, file: String) -> Bool {
 /// 若由 runner 触发 open 再调 helper，helper 启动时切换早已发生，测不到切换瞬间。
 func cmdHotOpenProbe(pid: Int32, openApp: String, openFile: String, roi: Roi, timeoutMs: Double,
                      clickFocus: Bool = true, roiFrac: [Double]? = nil, snapOnFail: String? = nil,
-                     ensureAscii: Bool = false) async {
+                     ensureAscii: Bool = false, switchMinFrac: Double = 0.03) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
   activateAndEnsureInput(pid: pid, ensureAscii: ensureAscii)
   let probe = Probe()
@@ -589,19 +670,33 @@ func cmdHotOpenProbe(pid: Int32, openApp: String, openFile: String, roi: Roi, ti
   do { try await probe.start(window: win, roi: effRoi) } catch { fail("SCK 捕获启动失败: \(error)") }
   _ = probe.waitStable() // 让「切换前」的画面先稳定，否则基准帧是动画中间态
 
-  // ① 切换分量
+  // ① 切换分量。
+  //
+  // 阈值必须要求**实质**变化（2026-09-25 修正）：校准阈值 `max(calibMax*3, 60)` 对
+  // 一个 ~5.5 万采样点的 ROI 只占 0.1%，它只回答「有没有像素动」——工具条、滚动条、
+  // 光标的偶发重绘就能跨过，于是 switchMs 抓到与文档无关的重绘。实测症状：
+  // 8–10MiB 的 switchMs 只有 21–33ms，**比 1MiB 的 108ms 还快**，物理上不可能；
+  // 且尺寸扫描（1–10MiB）完全看不出与尺寸的关系。
+  // 现改为要求「变化采样点 ≥ sampleCount × switchMinFrac」（默认 15%）。
+  let sc = probe.sampleCount()
+  let sampleCount = sc.count
+  // 用**比例**阈值（不是绝对点数）：绝对点数需要事先知道采样点总数，而实测帧几何
+  // 在流生命周期内会变（见 pixelDiffPair 注释），事先算的分母不可靠。
+  probe.setFracOverride(switchMinFrac)
   let tOpen = nowMs()
   let spawned = spawnOpen(app: openApp, file: openFile)
   let sw = probe.detectChange(timeoutMs: timeoutMs)
+  probe.setFracOverride(nil)
   let switchMs = sw.changed ? (sw.latencyMs - tOpen) : -1
   let switchStats = probe.detectStats()
+  let switchThreshold = Int(Double(sampleCount) * switchMinFrac)
 
   // ② 等新文档渲染稳定（**不计入指标**，单独落盘）
   let settleMs = sw.changed ? probe.waitStable() : -1
 
   // ③ 首键回显分量
   var echoMs = -1.0
-  var echoStats = (maxDiff: 0, frames: 0)
+  var echoStats = (maxDiff: 0, frames: 0, maxFrac: 0.0, dimMismatch: 0)
   var cal = (max: 0, threshold: 0)
   if sw.changed {
     // --no-click：WKWebView（Mellow）下合成点击破坏 TextInput 焦点协议（同 startup-probe）。
@@ -631,6 +726,13 @@ func cmdHotOpenProbe(pid: Int32, openApp: String, openFile: String, roi: Roi, ti
     "totalMs": ok ? round((switchMs + echoMs) * 100) / 100 : -1,
     "switchDetectMaxDiff": switchStats.maxDiff,
     "switchDetectFrames": switchStats.frames,
+    "switchDetectMaxFrac": (round(switchStats.maxFrac * 10000) / 10000),
+    "switchDimMismatchFrames": switchStats.dimMismatch,
+    "switchMinFrac": switchMinFrac,
+    "switchThreshold": switchThreshold,
+    "sampleCount": sampleCount,
+    "frameW": sc.w,
+    "frameH": sc.h,
     "echoDetectMaxDiff": echoStats.maxDiff,
     "echoDetectFrames": echoStats.frames,
     "calibMaxDiff": cal.max,
@@ -833,7 +935,8 @@ func mainAsync(_ args: [String]) async {
     await cmdHotOpenProbe(pid: pid, openApp: openApp, openFile: openFile, roi: roi, timeoutMs: timeout,
                           clickFocus: !args.contains("--no-click"),
                           roiFrac: hoRoiFrac, snapOnFail: argVal(args, "--snap-on-fail"),
-                          ensureAscii: args.contains("--ensure-ascii"))
+                          ensureAscii: args.contains("--ensure-ascii"),
+                          switchMinFrac: Double(argVal(args, "--switch-min-frac") ?? "0.03") ?? 0.03)
   case "keypress-latency":
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
     let roi = parseRoi(argVal(args, "--roi") ?? "0,0,100,50")

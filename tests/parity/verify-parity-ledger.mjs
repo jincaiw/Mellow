@@ -233,6 +233,33 @@ if (existsSync(benchmarkRunnerPath)) {
       assert(/case "current-input"/.test(hs), 'helper 必须实现 current-input 命令（TIS 权威输入源查询）');
       assert(/func ensureAsciiInputSource/.test(hs),
         'helper 必须实现 ensureAsciiInputSource：macOS 按应用记忆输入源，激活后需重新断言为键盘布局');
+      // 判据护栏（2026-09-25）：切换判定必须用**帧对比例**，不得用绝对点数。
+      // 立此条的原因：`pixelDiff` 只取 `a` 的几何，且全仓假设「流生命周期内帧尺寸恒定」——
+      // 该假设不成立（实测 changed=17372 > sampleCount=13824，数学上不可能）。
+      // 绝对阈值 `max(calibMax*3, 60)` 对 13824 个采样点只占 0.4%，而真实切换信号是
+      // 5.3–7.6% → 原阈值比真实信号低约 12 倍，工具条重绘即可触发。
+      assert(/func pixelDiffPair/.test(hs),
+        'helper 必须实现 pixelDiffPair（按实际帧对算变化比例）：绝对点数依赖事先算好的采样点总数，而帧几何在流内会变');
+      assert(/switchMinFrac/.test(hs), 'hot-open 必须支持按比例给出切换判据（--switch-min-frac）');
+      assert(/switchDimMismatchFrames/.test(hs),
+        'helper 必须报出 switchDimMismatchFrames（基准帧与比较帧几何不一致的帧数），使该假设失效可见而非静默');
+      {
+        // 反例锁：detect 分支不得直接用 pixelDiff（会重新引入错误分母）
+        const i = hs.indexOf('case .detect:');
+        assert(i >= 0, 'helper 缺少 detect 分支');
+        if (i >= 0) {
+          const body = hs.slice(i, i + 1400);
+          assert(!/[^P]pixelDiff\(/.test(body.replace(/pixelDiffPair\(/g, '')),
+            'detect 分支不得直接用 pixelDiff（其分母取自单一帧的几何，帧几何变化时会得到 changed > total）');
+          assert(/pixelDiffPair\(/.test(body), 'detect 分支必须用 pixelDiffPair 计算变化比例');
+        }
+      }
+      // canary：自检上述反例锁
+      const PIXEL_DIFF_SAMPLE = 'let d = ' + 'pixelDiff(base, buf)';
+      const i2 = hs.indexOf('case .detect:');
+      if (i2 >= 0 && !/[^P]pixelDiff\(/.test(PIXEL_DIFF_SAMPLE.replace(/pixelDiffPair\(/g, ''))) {
+        errors.push('pixelDiffPair 反例锁 canary 失效：裸 pixelDiff 样本未被检出');
+      }
       // 反例锁：需要合成按键的命令必须走 activateAndEnsureInput，不得裸调 activateApp
       for (const fn of ['cmdStartupProbe', 'cmdKeypressLatency', 'cmdHotOpenProbe']) {
         const i = hs.indexOf(`func ${fn}(`);

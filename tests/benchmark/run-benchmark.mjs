@@ -195,6 +195,16 @@ const ROI_FRAC_FULL = ['--roi-frac', '0,0,1,1']; // 整窗（滚动帧统计）
 // 变回「Pinyin – Simplified」。输入源是 IME 时按键会弹候选窗而非回显文本，
 // 于是「首键回显」分量测的是候选窗出现的耗时（数字看似正常但不可用）。
 const ENSURE_ASCII = ['--ensure-ascii'];
+// hot-open 的「切换」判据：**帧对变化比例**，不是绝对点数（2026-09-25）。
+//
+// 为什么不能用绝对阈值：`pixelDiff` 的分母取自单一帧的几何，而 SCK 不保证流生命周期内
+// 帧尺寸恒定（实测 changed=17372 > sampleCount=13824，数学上不可能）。
+// 而校准阈值 `max(calibMax*3, 60)` 对 13824 个采样点只占 **0.4%** ——
+// 工具条/滚动条/光标的偶发重绘即可触发；实测真实切换信号是 **5.3%–7.6%**，
+// 即原阈值比真实信号低约 12 倍（症状：8–10MiB 的 switchMs 只有 21–33ms，
+// 比 1MiB 的 108ms 还快，物理上不可能）。
+// 3% 落在「噪声 0.4%」与「真实信号 5%+」之间，两侧各留约 2.5× 余量。
+const HOT_OPEN_SWITCH_MIN_FRAC = '0.03';
 
 // ---------- 版本信息 ----------
 function gitInfo() {
@@ -546,6 +556,9 @@ async function measureApp(appKey, opts) {
       // 逐样本记录**目标夹具**：hot-open 每次投递的目标是交替的，
       // 把不同尺寸混进一个中位数会让读数失去意义（5MB 的切换成本 ≫ 1MB）。
       const targets = [];
+      /** 逐样本的切换判据诊断：实测变化比例、以及基准帧与比较帧几何不一致的帧数 */
+      const switchFracs = [];
+      const dimMismatch = [];
       // 包陈旧告警（2026-09-23）：hot-open 必须走 .app，而 .app 是**构建产物**，
       // 很容易落后于 target/release 里的裸二进制（本机实测：.app 为 09-15 的 v1.5.9，
       // 而二进制是 09-22 构建）。不告警就会把「旧构建的性能」当成当前提交的读数 ——
@@ -577,9 +590,12 @@ async function measureApp(appKey, opts) {
           const target = join(FIXTURES_DIR, usable[(i + 1) % usable.length]);
           const p = helper('hot-open-probe', '--pid', String(pid),
             '--open-app', app.bundle, '--open-file', target,
+            '--switch-min-frac', HOT_OPEN_SWITCH_MIN_FRAC,
             ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []), ...ENSURE_ASCII);
           probeOk.push(p.ok === true);
           targets.push(usable[(i + 1) % usable.length]);
+          switchFracs.push(p.switchDetectMaxFrac ?? null);
+          dimMismatch.push(p.switchDimMismatchFrames ?? null);
           switches.push(p.ok ? p.switchMs : null);
           echoes.push(p.ok ? p.echoMs : null);
           settles.push(p.ok ? p.settleMs : null);
@@ -602,6 +618,9 @@ async function measureApp(appKey, opts) {
         samplesSettleMs: settles,
         samplesProbeOk: probeOk.slice(),
         samplesTarget: targets.slice(),
+        samplesSwitchFrac: switchFracs.slice(),
+        samplesDimMismatchFrames: dimMismatch.slice(),
+        switchMinFrac: Number(HOT_OPEN_SWITCH_MIN_FRAC),
         failureHints: hints.slice(),
         probeFailures: failures,
         validSamples: opts.runs - failures,
@@ -792,6 +811,17 @@ function renderReport(env, results, opts) {
       L.push('');
       L.push('settleMs（`waitStable` 地板，不计入指标）逐样本：'
         + rows.map(({ app: a, h }) => `${a}=[${(h.samplesSettleMs ?? []).map((x) => (x === null || x === undefined) ? 'null' : Number(x).toFixed(0)).join(', ')}]`).join('；'));
+      // 切换判据的自证（2026-09-25）：把「实测变化比例」与「帧几何不一致帧数」列出，
+      // 使读者能判断 switchMs 是否真由一次实质切换触发，而不是被偶发重绘骗过。
+      for (const { app: a, h } of rows) {
+        const fracs = (h.samplesSwitchFrac ?? []).map((x) => (x === null || x === undefined) ? 'null' : `${(Number(x) * 100).toFixed(1)}%`);
+        const dims = h.samplesDimMismatchFrames ?? [];
+        L.push('');
+        L.push(`判据自证（${a}）：切换判据 = 帧对变化比例 ≥ ${((h.switchMinFrac ?? 0) * 100).toFixed(0)}%；`
+          + `实测比例逐样本 = [${fracs.join(', ')}]；`
+          + `基准帧/比较帧几何不一致帧数 = [${dims.map((x) => x === null || x === undefined ? 'null' : x).join(', ')}]`
+          + `${dims.some((x) => Number(x) > 0) ? ' ← **>0 说明「帧尺寸恒定」假设不成立，该批读数需复测**' : ''}`);
+      }
       L.push('');
       const hints = rows.flatMap(({ app: a, h }) => (h.failureHints ?? []).map((s) => `${a}: ${s}`));
       if (hints.length > 0) {
