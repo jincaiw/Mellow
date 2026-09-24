@@ -82,8 +82,27 @@ if (buildDrift.includes('build-editor-bundle.mjs')) {
   fail('构建链护栏自检失败：无法模拟抽取步骤回退（V7-W5），护栏已失效');
 }
 
+// ── ⑥ 本地构建脚本不得硬编码受管 Node 版本号（2026-09-25）─────────────────
+// 立此条的原因：`build-local.sh` 曾把 `…/node/versions/22.22.2-2/bin` 写死。
+// 运行时升级到 `22.22.2-3` 后，PATH 里没有 node，**失败点却落在**
+// `./node_modules/.bin/tsc`（`exec: node: not found`）—— 报错看上去像 TypeScript
+// 问题，实际是脚本里的路径失效，排查方向被完全带偏。
+// 现改为读 `versions/current` 指针（缺失时按版本号排序取最大），并在此锁死。
+const buildLocal = read('apps/desktop/scripts/build-local.sh');
+if (/node\/versions\/\d+\.\d+\.\d+-\d+/.test(buildLocal)) {
+  fail('build-local.sh 硬编码了受管 Node 版本号（如 22.22.2-2）：运行时升级后 PATH 里没有 node，'
+    + '失败点会落在 tsc 上（看似 TS 问题）。请改为读 versions/current 指针（V7-W5 追加）');
+}
+if (!/versions\/current/.test(buildLocal)) {
+  fail('build-local.sh 必须按 versions/current 指针解析受管 Node（缺失时退回按版本号排序取最大）');
+}
+// canary：自检该反例锁
+if (!/node\/versions\/\d+\.\d+\.\d+-\d+/.test('NODE_BIN="$ROOT/.workbuddy-ai/binaries/node/versions/' + '22.22.2-2/bin"')) {
+  fail('受管 Node 版本硬编码护栏自检失败：硬编码样本未被检出（V7-W5 追加）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Build pipeline: one-shot build chain complete (CoreEditor yarn build → editor-core wrapper → editor-engine → build-editor-bundle → verify-release-bundle fingerprint); CI runs the fingerprint lock after desktop build (was never executed before V7-W5 — local/CI divergence had no signal); desktop build script extracts the bundle before vite build; script comments no longer falsely claim CI orchestration');
+console.log('Build pipeline: one-shot build chain complete (CoreEditor yarn build → editor-core wrapper → editor-engine → build-editor-bundle → verify-release-bundle fingerprint); CI runs the fingerprint lock after desktop build (was never executed before V7-W5 — local/CI divergence had no signal); desktop build script extracts the bundle before vite build; script comments no longer falsely claim CI orchestration; build-local.sh resolves the managed Node via the versions/current pointer instead of a hardcoded version (a stale pin made the failure surface as a bogus tsc error)');

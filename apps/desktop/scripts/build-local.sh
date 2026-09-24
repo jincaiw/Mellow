@@ -23,12 +23,28 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DESKTOP="$REPO_ROOT/apps/desktop"
-NODE_BIN="$REPO_ROOT/../../.workbuddy-ai/binaries/node/versions/22.22.2-2/bin"
-[ -d "$NODE_BIN" ] || NODE_BIN="/Volumes/My-Data/jason.wa/.workbuddy-ai/binaries/node/versions/22.22.2-2/bin"
+# 受管 Node 的版本号**会变**（本机曾为 22.22.2-2，2026-09-23 起为 22.22.2-3）。
+# 硬编码版本号会在运行时升级后直接失败，且失败点落在 `./node_modules/.bin/tsc`
+# 报 `exec: node: not found` —— 看上去像 TypeScript 问题，实际是 PATH 里没有 node。
+# 故按 versions/current 指针解析，指针缺失或失效时退回「按版本号排序取最大」。
+NODE_VERSIONS_ROOT="/Volumes/My-Data/jason.wa/.workbuddy-ai/binaries/node/versions"
+NODE_VER=""
+if [ -f "$NODE_VERSIONS_ROOT/current" ]; then NODE_VER="$(cat "$NODE_VERSIONS_ROOT/current")"; fi
+if [ -z "$NODE_VER" ] || [ ! -x "$NODE_VERSIONS_ROOT/$NODE_VER/bin/node" ]; then
+  NODE_VER="$(ls -1 "$NODE_VERSIONS_ROOT" 2>/dev/null | grep -v '^current$' | sort -V | tail -1)"
+fi
+NODE_BIN="$NODE_VERSIONS_ROOT/$NODE_VER/bin"
+if [ ! -x "$NODE_BIN/node" ]; then
+  echo "✗ 未找到可用的受管 Node（$NODE_BIN/node 不存在）。请检查 $NODE_VERSIONS_ROOT。" >&2
+  exit 1
+fi
 CARGO_BIN="/Volumes/My-Data/jason.wa/.cargo/bin"
 
 # 用受管 Node 22，避开 homebrew 的 Node 26（corepack / undici 不兼容）
 export PATH="$NODE_BIN:$CARGO_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
+# 注意必须写 `${NODE_VER}`：紧跟在变量名后的全角括号是多字节字符，
+# bash 会把它并入变量名（报 `NODE_VER\xef\xbc\x88: unbound variable`）。
+echo "==> 使用 Node ${NODE_VER}（${NODE_BIN}）"
 
 cd "$DESKTOP"
 

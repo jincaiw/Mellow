@@ -543,6 +543,9 @@ async function measureApp(appKey, opts) {
       const settles = [];
       const probeOk = [];
       const hints = [];
+      // 逐样本记录**目标夹具**：hot-open 每次投递的目标是交替的，
+      // 把不同尺寸混进一个中位数会让读数失去意义（5MB 的切换成本 ≫ 1MB）。
+      const targets = [];
       // 包陈旧告警（2026-09-23）：hot-open 必须走 .app，而 .app 是**构建产物**，
       // 很容易落后于 target/release 里的裸二进制（本机实测：.app 为 09-15 的 v1.5.9，
       // 而二进制是 09-22 构建）。不告警就会把「旧构建的性能」当成当前提交的读数 ——
@@ -576,6 +579,7 @@ async function measureApp(appKey, opts) {
             '--open-app', app.bundle, '--open-file', target,
             ...ROI_FRAC_TOP, '--timeout', '8000', ...(app.probeArgs ?? []), ...ENSURE_ASCII);
           probeOk.push(p.ok === true);
+          targets.push(usable[(i + 1) % usable.length]);
           switches.push(p.ok ? p.switchMs : null);
           echoes.push(p.ok ? p.echoMs : null);
           settles.push(p.ok ? p.settleMs : null);
@@ -597,6 +601,7 @@ async function measureApp(appKey, opts) {
         samplesEchoMs: echoes,
         samplesSettleMs: settles,
         samplesProbeOk: probeOk.slice(),
+        samplesTarget: targets.slice(),
         failureHints: hints.slice(),
         probeFailures: failures,
         validSamples: opts.runs - failures,
@@ -758,13 +763,35 @@ function renderReport(env, results, opts) {
         L.push('本段读数来自**旧构建**，**不得作为当前提交的结论**。请先重建包（`bash apps/desktop/scripts/build-local.sh`）再复测。');
         L.push('');
       }
-      L.push('| app | 有效样本 | median | p95 | switchMs(中位) | echoMs(中位) | settleMs(中位，不计入) |');
+      L.push('| app | 目标夹具 | 有效样本 | median | p95 | switchMs(中位) | echoMs(中位) |');
       L.push('|---|---|---|---|---|---|---|');
+      // **按目标夹具分组**：每次投递的目标是交替的，不同尺寸的切换成本差一个数量级，
+      // 混进同一个中位数会让读数失去意义。
       for (const { app: appName, h } of rows) {
-        L.push(`| ${appName} | ${h.validSamples} / ${h.samples.length} | ${fmt(h.stats?.median)} | ${fmt(h.stats?.p95)}`
-          + ` | ${fmt(stats(h.samplesSwitchMs ?? []).median)} | ${fmt(stats(h.samplesEchoMs ?? []).median)}`
-          + ` | ${fmt(stats((h.samplesSettleMs ?? []).filter((x) => x !== null)).median)} |`);
+        const byTarget = new Map();
+        (h.samplesTarget ?? []).forEach((t, i) => {
+          if (!byTarget.has(t)) byTarget.set(t, { total: [], sw: [], echo: [], n: 0 });
+          const g = byTarget.get(t);
+          g.n += 1;
+          if (h.samples[i] !== null && h.samples[i] !== undefined) {
+            g.total.push(h.samples[i]);
+            g.sw.push(h.samplesSwitchMs[i]);
+            g.echo.push(h.samplesEchoMs[i]);
+          }
+        });
+        if (byTarget.size === 0) {
+          L.push(`| ${appName} | — | ${h.validSamples} / ${h.samples.length} | ${fmt(h.stats?.median)} | ${fmt(h.stats?.p95)}`
+            + ` | ${fmt(stats(h.samplesSwitchMs ?? []).median)} | ${fmt(stats(h.samplesEchoMs ?? []).median)} |`);
+          continue;
+        }
+        for (const [t, g] of byTarget) {
+          L.push(`| ${appName} | ${t} | ${g.total.length} / ${g.n} | ${fmt(stats(g.total).median)} | ${fmt(stats(g.total).p95)}`
+            + ` | ${fmt(stats(g.sw).median)} | ${fmt(stats(g.echo).median)} |`);
+        }
       }
+      L.push('');
+      L.push('settleMs（`waitStable` 地板，不计入指标）逐样本：'
+        + rows.map(({ app: a, h }) => `${a}=[${(h.samplesSettleMs ?? []).map((x) => (x === null || x === undefined) ? 'null' : Number(x).toFixed(0)).join(', ')}]`).join('；'));
       L.push('');
       const hints = rows.flatMap(({ app: a, h }) => (h.failureHints ?? []).map((s) => `${a}: ${s}`));
       if (hints.length > 0) {
