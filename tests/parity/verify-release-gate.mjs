@@ -218,6 +218,18 @@ for (const item of ledger.items ?? []) {
   if (!byReason.has(key)) byReason.set(key, []);
   byReason.get(key).push(item.id);
 }
+// ── 「闭环」口径必须显式声明（2026-09-25）────────────────────────────────
+// 立此节的必要性：本门禁把 `AUTO` 视为**不阻断**，而 master-plan §4.3 定义
+// `AUTO` = 「自动化测试通过，**真机体验验收未完成**」；§8 的 V1.0 Exit Gate 又要求
+// 「Windows / macOS / Linux 全 PASS-E」。两者口径不同 —— 只输出「6 项未闭环」
+// 会被读成「只有 6 项没做完」，实际 PASS-E 为 **0**。
+// 更危险的是 §5.7 已记录过一次教训：`P0-SHELL-003` 的 `AUTO` 曾把一个**完全不可用**的
+// 功能（浮动工具栏永不显示）当作已闭环 —— 单测只覆盖纯函数，属「有测试但不工作」。
+const totalItems = (ledger.items ?? []).length;
+const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').length;
+const autoWithUxGate = (ledger.items ?? []).filter(
+  (i) => i.status === 'AUTO' && (i.requiredEvidence ?? []).includes('ux-gate'),
+);
 console.log(
   `Release gate: ${guardFiles.length} parity guards wired into both root test and parity chains; `
   + 'PASS-E conclusion reachability checked; CI gates armed (packages/engine unit, desktop build + bundle fingerprint, parity chain, cargo test); '
@@ -226,4 +238,12 @@ console.log(
   + (byReason.size > 0
     ? `\n  Blocked by: ${[...byReason.entries()].map(([r, ids]) => `${r} → ${ids.join(', ')}`).join(' | ')}`
     : '')
+  + `\n  Closure basis: 本门禁的「不阻断」口径 = PASS-E / PASS-B / AUTO；`
+  + `按 master-plan §4.3，AUTO 的含义是「自动化测试通过、**真机体验验收未完成**」。`
+  + `实际 PASS-E = ${passECount}/${totalItems}。`
+  + (autoWithUxGate.length > 0
+    ? `\n  ⚠️ ${autoWithUxGate.length} 项标 AUTO 但 requiredEvidence 含 ux-gate`
+      + `（${autoWithUxGate.map((i) => i.id).join(', ')}）：按 §8 的 V1.0 Exit Gate（三平台全 PASS-E）它们尚未闭环。`
+    : '')
+  + '\n  ⚠️ §5.7 已记录一次「AUTO 把一个完全不可用的功能当作已闭环」（P0-SHELL-003 浮动工具栏）—— 不要把 AUTO 读作「已完成」。'
 );

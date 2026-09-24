@@ -222,6 +222,32 @@ if (existsSync(benchmarkRunnerPath)) {
     errors.push('大文件模式跨层锁 canary 失效：样本阈值未被正确求值');
   }
 
+  // ── 发布门禁必须声明「闭环口径」（2026-09-25）──────────────────────────
+  // 立此节的原因：`verify-release-gate` 把 `AUTO` 视为**不阻断**，而 master-plan §4.3
+  // 定义 `AUTO` = 「自动化测试通过、**真机体验验收未完成**」，§8 的 V1.0 Exit Gate 又要求
+  // 「三平台全 PASS-E」。只输出「6 项未闭环」会被读成「只有 6 项没做完」——
+  // 实测 PASS-E 为 **0/50**，且有 4 项标 AUTO 却要求 ux-gate。
+  // §5.7 更记录过一次教训：`P0-SHELL-003` 的 AUTO 曾把一个**完全不可用**的功能
+  // （浮动工具栏永不显示）当作已闭环。故口径必须出现在门禁输出里，且不得被删。
+  const gatePath = resolve(root, 'tests/parity/verify-release-gate.mjs');
+  assert(existsSync(gatePath), 'verify-release-gate.mjs 不存在');
+  if (existsSync(gatePath)) {
+    const gateSrc = readFileSync(gatePath, 'utf8').replace(/\r\n/g, '\n');
+    assert(/Closure basis/.test(gateSrc),
+      'release gate 必须显式声明「不阻断口径」（PASS-E/PASS-B/AUTO）：否则「N 项未闭环」会被误读成「只有 N 项没做完」');
+    assert(/实际 PASS-E = \$\{passECount\}\/\$\{totalItems\}/.test(gateSrc),
+      'release gate 必须报出 PASS-E 实际数量与总项数（AUTO 不等于 PASS-E）');
+    assert(/标 AUTO 但 requiredEvidence 含 ux-gate/.test(gateSrc),
+      'release gate 必须暴露「标 AUTO 却要求 ux-gate」的项（它们按 §8 Exit Gate 尚未闭环）');
+    assert(/不要把 AUTO 读作/.test(gateSrc),
+      'release gate 必须保留 §5.7 的警示（AUTO 曾把一个完全不可用的功能当作已闭环）');
+    // canary：自检这几条字符串锁
+    const GATE_SAMPLE = 'Closure basis: ' + '实际 PASS-E = ${passECount}/${totalItems}';
+    if (!/Closure basis/.test(GATE_SAMPLE) || !/实际 PASS-E = \$\{passECount\}\/\$\{totalItems\}/.test(GATE_SAMPLE)) {
+      errors.push('闭环口径护栏 canary 失效：样本未被检出');
+    }
+  }
+
   // ── UX Gate 记录器：进度报告必须只读（2026-09-25）──────────────────────
   // 立此节的原因：`validate` 要 120 条齐备才给结论，人工会话中途无法知道「还差哪些」，
   // 且它把「还没填」与「填错了」混在同一次报错里。新增的 `progress` 命令必须**只读**：
