@@ -63,6 +63,8 @@ const BANNED_EVIDENCE = ['windows', 'linux', 'win', 'mac'];
 // 三平台证据必须齐备：macOS 走本机，Win/Linux 走 CI（各自只需其中之一即可满足该平台）
 const PLATFORM_EVIDENCE_GROUPS = [['macos', 'macos-native'], ['windows-ci'], ['linux-ci']];
 const noGo = [];
+/** 未闭环项的阻塞原因集合（用于在输出里按原因归类，而不是只列状态码） */
+const blockers = new Set();
 for (const item of ledger.items ?? []) {
   const required = item.requiredEvidence ?? [];
   for (const token of required) {
@@ -82,11 +84,38 @@ for (const item of ledger.items ?? []) {
       fail(`${item.id} 标记 PASS-E 但 requiredEvidence 缺 ux-gate（结论不可达）`);
     }
   }
+  // 未闭环项必须**声明阻塞原因**（2026-09-25）。
+  //
+  // 立此条的原因：此前「为什么这项没闭环」只写在 mellowTarget 的长段散文里，
+  // 门禁输出只有 `P0-XXX(MAC 仅单平台)` 这样的状态码 —— 实测其中三项
+  // （P0-EDITOR-004 / P0-PLATFORM-001 / P0-LAYOUT-002）**自身 requiredEvidence 已全部取得**，
+  // 仅因「PASS-E 必须含 ux-gate」的全局策略而未升，状态码 `MAC 仅单平台` 反而**误导**
+  // （读者会以为缺平台证据）。阻塞原因必须成为**机器可读的字段**，否则每次审计都要重读散文。
+  const isClosed = item.status === 'PASS-E' || item.status === 'PASS-B' || item.status === 'AUTO';
+  if (!isClosed) {
+    if (typeof item.blockedBy !== 'string' || item.blockedBy.trim() === '') {
+      fail(`${item.id} 未闭环但未声明 blockedBy（阻塞原因必须机器可读，不能只写在散文里）`);
+    } else {
+      blockers.add(item.blockedBy);
+    }
+  }
   if (item.status === 'NOT_TESTED' || item.status === 'BLOCKED' || item.status === 'ABSENT' || item.status === 'IMPL') {
-    noGo.push(`${item.id}(${item.status})`);
+    noGo.push(`${item.id}(${item.status} — ${item.blockedBy ?? '未声明阻塞原因'})`);
   } else if (['MAC', 'WIN', 'LINUX'].includes(item.status)) {
     // 仅单一平台证据：三平台未闭环，同样不得作为发布结论
-    noGo.push(`${item.id}(${item.status} 仅单平台)`);
+    noGo.push(`${item.id}(${item.status} — ${item.blockedBy ?? '未声明阻塞原因'})`);
+  }
+}
+// canary：自检「未闭环项必须声明阻塞原因」这条规则本身（样本拼接构造）
+{
+  const SAMPLE_BAD = { id: 'P0-X', status: 'BLOCKED' };
+  const SAMPLE_GOOD = { id: 'P0-X', status: 'BLOCKED', blockedBy: 'reason' };
+  const closedOk = (it) => it.status === 'PASS-E' || it.status === 'PASS-B' || it.status === 'AUTO';
+  if (closedOk(SAMPLE_BAD) || typeof SAMPLE_BAD.blockedBy === 'string') {
+    fail('阻塞原因门禁 canary 失效：缺 blockedBy 的样本未被判为不合规');
+  }
+  if (!closedOk(SAMPLE_GOOD) && (typeof SAMPLE_GOOD.blockedBy !== 'string' || SAMPLE_GOOD.blockedBy === '')) {
+    fail('阻塞原因门禁 canary 失效：带 blockedBy 的样本被判为不合规');
   }
 }
 
@@ -179,9 +208,22 @@ if (errors.length > 0) {
 }
 
 const goNoGo = noGo.length === 0 ? 'GO（全部 P0 已闭环）' : `NO-GO：${noGo.length} 项未闭环`;
+// 按阻塞原因归类输出（2026-09-25）：只列状态码会让「三项自身证据已齐备、仅被全局
+// ux-gate 策略挡住」这种关键事实淹没在 `MAC 仅单平台` 里（该状态码本身还会误导）。
+const byReason = new Map();
+for (const item of ledger.items ?? []) {
+  const closed = item.status === 'PASS-E' || item.status === 'PASS-B' || item.status === 'AUTO';
+  if (closed) continue;
+  const key = item.blockedBy ?? '未声明';
+  if (!byReason.has(key)) byReason.set(key, []);
+  byReason.get(key).push(item.id);
+}
 console.log(
   `Release gate: ${guardFiles.length} parity guards wired into both root test and parity chains; `
   + 'PASS-E conclusion reachability checked; CI gates armed (packages/engine unit, desktop build + bundle fingerprint, parity chain, cargo test); '
   + `release packaging gated by pre-build fingerprint verification. Release verdict: ${goNoGo}`
   + (noGo.length > 0 ? `\n  Unclosed: ${noGo.join(', ')}` : '')
+  + (byReason.size > 0
+    ? `\n  Blocked by: ${[...byReason.entries()].map(([r, ids]) => `${r} → ${ids.join(', ')}`).join(' | ')}`
+    : '')
 );

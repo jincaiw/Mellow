@@ -133,6 +133,7 @@
       "mellowTarget": "Composition Guard 覆盖编辑节点，IME corruption = 0。 【2026-09-13 更正】本机/文档原称「Linux 真机 IME 已通」不成立：Runtime Qualification 的 Linux Xvfb+fcitx5 IME 矩阵自 run 58（2026-09-06）起连续失败（58/59/60/61），含早于本轮改动的 run 59 → 属既有失败，非本轮引入。同 run 的 macOS 与 Windows Runtime job 均 success。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】Linux Xvfb + fcitx5 IME 矩阵 **8/8 场景全部通过**（paragraph/heading/format/list/table/code/math/link：四音节各提交一汉字、无丢字重复、保存读回一致、Undo 后汉字归零），Windows Source Fidelity gate + runtime smoke（SendKeys 输入 + 保存读回）通过，macOS launch/CLI-open smoke 通过。此前「Linux IME 自 run 58 起连续失败」的结论已作废：两个根因都在 harness 侧（code 场景探针坐标与 caret 复位错误；Undo 验证被 Ctrl+A/C 读回动作污染观察窗口），已修复。状态仍不升 PASS-E：全局策略要求 PASS-E 必须带 ux-gate，而 ux-gate-recorder 按设计只接受人工计时记录。",
       "grade": "B",
       "status": "MAC",
+      "blockedBy": "ux-gate-policy",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "docs/specs/ime-test-plan.md",
@@ -637,6 +638,7 @@
       "mellowTarget": "性能不差于 Typora 规定阈值，大文件降级不破坏编辑。 【2026-09-12 本机原生基准】冷启动带文件 N=3：1MB open median 1289.2ms（Typora 1326.9ms，0.97×）、10MB open median 1109.7ms（Typora 428.1ms，2.59×）；scroll 两侧均约 57 FPS 无掉帧。10MB 打开为真实优化项，未擅自重写大文件架构，状态保持 MAC。 【2026-09-22 复测：原 2.59× 结论口径无效，已更正】按当前版本重建二进制后复测（runs=5 / warmup=2），原始样本显示 `open` 指标不能作为「大文件处理慢」的证据：① Mellow 10MB 样本为 `1300,236,1311,235,1299` —— **严格交替双峰**（~236ms / ~1300ms），交替意味着被测的是**上一次启动遗留的会话状态**而非文件成本；② Mellow 快态 ~236ms **快于** Typora 10MB 的 398ms，且低于 PRD 目标 1.0–1.5s；③ Typora 自身 1MB（1021.8ms）反而**慢于** 10MB（398.5ms），1MB 不可能比 10MB 慢 2.6×，说明该指标对 Typora 同样非单调。同时修复两个 harness 缺陷：**缺少预热轮**（新增 `--warmup`，默认 1；此前首个 fixture 吸收一次性启动成本，制造「越大越快」假象）与**夹具重建失败丢弃整批数据**（`execSync` 未捕获 → results JSON 不落盘，实测「Typora 测完、Mellow 一个未跑」）。结论：本项状态**维持 MAC**；原「10MB 打开 2.59×」不得再作为大文件处理缺口的证据；真实待办拆分为两条独立项 —— (a) Mellow 启动路径存在约 1.06s 的**间歇性**成本（成因未隔离：恢复快照/自动保存、WKWebView 内容进程 2 态、kill 后静默不足），(b) 需要 hot-open 口径（同进程内连续打开多文档）才能得到可比的「文档打开成本」。 【2026-09-22 分量分解：结论再更正】把 open 指标按分量拆开后找到决定性证据：(a) `loadMs` 是 **≈600ms 常量**（Mellow 1MB 603.8 / Mellow 10MB 604.0 / Typora 1MB 629.8 —— 跨应用、跨尺寸不变，真实加载不可能对 1MB 与 10MB 给同一个数）；(b) 样本总量完全由**探针成功率**决定：Typora 10MB 探针 0/5 成功 → 指标静默退化为「窗口出现」=398ms；Typora 1MB 探针 5/5 成功 → 额外加 ≈685ms =1022ms；Mellow 10MB 3/5 成功 → 1300ms。「Typora 10MB 比 1MB 快 2.6×」与「Mellow 2.59× 于 Typora」因此被完整解释为**探针成功率差异**，与文件尺寸无关。(c) 单独复测 Mellow 10MB（runs=8/warmup=1）：winMs 8/8 稳定 228–242ms，**无间歇成本**，远低于 PRD 1.0–1.5s；但本轮探针 8/8 失败，故该读数**不含首键回显**，不等于完整 open-to-editable 达标。真实待办收窄为两条纯 harness 工作：**修 startup-probe**（loadMs 常量 + 成功率漂移）+ **补 hot-open 口径**。状态**维持 MAC**。 【2026-09-22 源码级确证：loadMs 是 600ms 硬地板】`screen-timing.swift` 的 `waitStable(stableMs: Double = 600)` 要求 ROI **连续 600ms 无像素变化**才 break，循环结构上不可能早于 600ms 返回 → `loadMs` 不是「文档加载耗时」而是「等待画面静止」，天然带 600ms 地板（实测跨应用/尺寸 603.8–629.8，只反映 30ms 采样抖动）。叠加旧实现 `winMs + (probe.ok ? … : null)` 在 JS 里 `number + null === number` 的静默退化，两个不可比的量被一起求中位数 → 这才是「2.59×」与「10MB 比 1MB 快 2.6×」的共同成因。已修：失败样本记 null、响亮报失败率与有效样本数、报告新增「有效样本与探针失败率」节。修正后 Mellow 10MB 有效 open-to-editable ≈1356ms（3/4 有效，落在 PRD 1.0–1.5s 内，其中 ~610ms 为 waitStable 地板）；**Typora 10MB 有效读数为空（0/5）→ 目前不存在可比的 Mellow vs Typora 10MB 结论**。真实待办：改 waitStable 为真正的「内容就绪」信号 + 隔离探针 0/5 的根因 + 补 hot-open 口径。",
       "grade": "B",
       "status": "MAC",
+      "blockedBy": "metric-decisions + ux-gate-policy",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "docs/specs/performance-benchmark-spec.md",
@@ -690,6 +692,7 @@
       "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。 【2026-09-13 windows-ci 证据】ci.yml 新增的 windows-parity-guard（纯 Node parity 契约链）已在 windows-latest 常态通过（CI run 144，7/7 job 全绿）—— 契约层（菜单 schema / 键位表 / 设置 / 侧栏 / 排版 / 视觉 Golden / 台账 / 发布门禁）在 Windows 上成立。修复过程中暴露并根治了一个真实缺陷：Windows 的 actions/checkout 以 CRLF 检出源码，护栏注入与 canary 的 \\n 锚点全部失配（已全局归一化 + 元护栏守护）。仍缺：Windows Runtime 级证据（打包/启动/10MB/输入交互），需 runtime-qualification.yml 运行，故状态维持 IMPL。 【2026-09-13 Runtime 证据（Runtime Qualification run 60，v1.5.7 标签自动触发）】Windows：Source Fidelity gate ✅（真实原子保存管线、字节级一致）、runtime smoke（launch + SendKeys type + save 读回）✅；macOS：launch + CLI open smoke ✅。**Windows Runtime 级证据首次取得**。Linux：Xvfb + fcitx5 IME 矩阵 ❌（本轮失败，需排查）。另 Visual golden 采集步骤在 runner 上失败（各平台 dev server / 字体度量不同，首次无可比基线），已改为不阻断，仅作基线采集。 【2026-09-13 run 61】Windows Runtime job 整体 success（Source Fidelity gate + launch/SendKeys/save 读回）；macOS launch smoke success；仅 Linux IME 矩阵失败（既有问题）。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】三平台 Runtime 级证据**首次全部通过**：Linux IME 矩阵 8/8（含 undo）、Windows Source Fidelity gate + launch/SendKeys/save 读回、macOS launch + CLI open + 存活。本项 requiredEvidence（macos-native / windows-ci / linux-ci / linux-ime-matrix）至此**已全部取得**。状态仍维持 IMPL：PASS-E 全局策略额外要求 ux-gate，需人工计时会话（P0-QA-001）后才能宣称结论。",
       "grade": "E",
       "status": "IMPL",
+      "blockedBy": "ux-gate-policy",
       "ownerPackage": "apps/desktop",
       "evidence": [
         "docs/adr/ADR-0022-ci-runtime-qualification-evidence-policy.md",
@@ -716,12 +719,14 @@
       "mellowTarget": "UX Score ≥ 92，关键任务不慢于 Typora 门槛。",
       "grade": "E",
       "status": "NOT_TESTED",
+      "blockedBy": "human-ux-gate-session",
       "ownerPackage": "tests/benchmark",
       "evidence": [
         "docs/qualification/ux-score-gate-template.md",
         "tests/benchmark/golden-journeys.mjs",
         "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md"
+        "tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md",
+        "docs/qualification/release-blocker-audit-2026-09-25.md"
       ],
       "requiredEvidence": [
         "macos",
@@ -801,6 +806,7 @@
       "mellowTarget": "结构已对齐（Edit → Spelling and Grammar / Substitutions 子菜单，D-S）。【2026-09-12 本机实测收窄缺口】系统拼写检查**已真实接线并可调**：edit.spellcheck.toggle 实测把 contentDOM 的 spellcheck 属性从 true 翻到 false（CoreEditor modules/textChecker + 大文件模式自动关闭），红色下划线能力具备。因此本项缺口**比原描述更窄**：仅缺「词典与右键建议列表」（属平台能力，需 host-api 扩展后补齐），而非「拼写检查本身不工作」。证据：tests/e2e/feature-liveness-verify.mjs（拼写检查开关断言）。",
       "grade": "D",
       "status": "BLOCKED",
+      "blockedBy": "host-api-extension",
       "ownerPackage": "packages/host-api",
       "evidence": [
         "packages/commands/src/menuSchema.ts",
@@ -1035,6 +1041,7 @@
       "mellowTarget": "三平台 × 14 场景截图归档并比对（§9.3）；当前仅本机，三平台 chrome 截图未归档 = G7-QA-04。 【2026-09-12】基线已支持按平台分离（tests/visual/golden-path.mjs：macOS 主基线 / *-golden.linux.json / *-golden.windows.json），避免用 macOS 测量值比对跨平台产物；runtime-qualification.yml 的 Linux / Windows job 已加入 §9.3 14 场景 Golden 采集与产物上传。首次运行自动生成该平台基线，基线提交后即进入比对模式。 【2026-09-22 v1.5.14 run 35635085958】Linux 侧 `visual-golden.mjs` 成功产出 6 配置布局基线，逐项「实测 vs 期望」校验一致（fontSize 16 / lineHeight 25.6 / paddingTop 56 / writingWidth 860），基线 `layout-golden.linux.json` 已提交入库 → Linux 布局漂移自下次运行起受门禁保护。仍缺：① Windows 基线 —— 采集步骤此前静默产出 0 文件（根因 `spawn('npx')` 在 Windows 无法执行 `npx.cmd` → ENOENT，叠加 continue-on-error 与「步骤退出码取最后一条命令」），已新增跨平台启动器 `tests/visual/dev-server.mjs` + workflow 逐条记录退出码，**修复待 runner 验证**；② Linux sidebar / scenes 基线 —— `sidebar-golden.mjs` 在 Linux 报 `mock workspace 构建失败`，需 Linux 环境复现。另新增护栏：硬断言必须先于基线写入（防把真实缺陷固化成基准）、侧栏默认宽度与 App.tsx 单一真源交叉比对。 【2026-09-22 三平台比对模式全绿（run 35763137678）】**3 平台 × 3 类基线全部入库并进入比对模式**，三平台各 3 个脚本均报「match baseline (±1px)」：Linux `6 configs / 4 views / 7 场景`、Windows `6 configs / 4 views / 7 场景`、macOS 主基线。Windows 侧从「自加入起从未产出任何基线」到就位，剥出并修掉 **4 个互相掩盖的独立缺陷**：① `working-directory: mellow` 指向不存在的目录（Windows job 的 checkout 无 `path: mellow` → pwsh 无法启动 → 步骤**一步未跑**）；② `spawn('npx')` → Windows 上 `npx.cmd` ENOENT；③ `new URL(...).pathname` → `D:\\D:\\...` 重复盘符（tests/ 下 32 处，全量改 `fileURLToPath`）；④ `waitEditorFrame` 就绪判定弱于采样需求（只查 `window.editor`，未查采样真正读的 `.cm-content`）→ 慢 runner 上间歇性失败（同一提交两次运行结果互换）。另修 Linux 侧 `window.prompt` 残留消费者（G7-EDIT-10 迁移漏改 `sidebar-golden` 与 `drag-drop-verify`）。护栏新增：路径一致性（working-directory / 制品前缀 vs checkout 落点）、全目录禁止取 URL 对象的 pathname、就绪判定必须含 `.cm-content`、硬断言必须先于基线写入、跨平台 dev server 启动器 —— 各配 canary（均实测注入检出）。**状态仍维持 BLOCKED 不升 PASS-E**：本项自身 requiredEvidence 已齐备，但 PASS-E 全局策略要求 `ux-gate`，需人工计时会话（P0-QA-001）。",
       "grade": "E",
       "status": "BLOCKED",
+      "blockedBy": "ux-gate-policy",
       "ownerPackage": "tests/parity",
       "evidence": [
         "tests/parity/verify-visual-golden.mjs",
