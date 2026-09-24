@@ -50,7 +50,7 @@ Release verdict: NO-GO：6 项未闭环
 | 项 | 阻塞原因 | 还差什么 |
 |---|---|---|
 | `P0-QA-001` | `human-ux-gate-session` | **本项就是那个 UX Gate 会话本身**：30 任务 × 2 应用 × 2 轮 = 120 条人工计时观测，`ux-gate-recorder.mjs` 按设计只接受人工记录（明令禁止伪造计时） |
-| `P0-PERF-001` | `metric-decisions + ux-gate-policy` | ① 台账 `typoraBehavior` 对 >2MB 不成立；② UX Gate 任务 30 在 Typora 侧不可执行；③ >2MB 夹具对比口径；④ 大文件模式阈值 `>` vs `>=`；⑤ `5MB.md` 是否改为略大于 5 MiB。另有环境限制：屏幕锁定期间无法做视觉测量 |
+| `P0-PERF-001` | `metric-decisions + ux-gate-policy` | 原列 5 项口径中**两项已由 PRD §109 判定**（阈值 `>` 正确；`5MB.md` 是边界样本无需改，见 §3.1）；仍待处置：① 台账 `typoraBehavior` 对 >2MB 不成立；② UX Gate 任务 30 属 PRD-现实冲突（§3.2）；③ >2MB 夹具对比口径。另加环境限制：屏幕锁定期间无法做视觉测量 |
 | `P0-EDITOR-005` | `host-api-extension` | 台账自述已收窄：系统拼写检查**已真实接线并可调**，仅缺「词典与右键建议列表」（属平台能力，需 `packages/host-api` 扩展后补齐） |
 
 ## 三、最高杠杆的一项决策
@@ -66,6 +66,26 @@ Release verdict: NO-GO：6 项未闭环
 该策略是 `docs/plans/typora-parity-master-plan.md` §8 的明示设计
 （「任何 PASS-E 项的 requiredEvidence 必须含三平台真机 + ux-gate；硬失败」），
 **属方案级决策，本环境不擅自改动**；改与不改都需要你裁决。
+
+### 3.1 原「P0-PERF-001 的 5 项口径」中，两项已由 PRD 判定（无需裁决）
+
+回查 PRD（宪法）后发现两项并非开放问题：
+
+| 原列裁决项 | 结论 | 依据 |
+|---|---|---|
+| 大文件模式阈值用 `>` 还是 `>=` | **`>` 正确，实现无需改动** | PRD §109 Large File Mode 的触发原文即 `>5MB` / `>50,000 lines`（严格大于）。故 `5MB.md` 恰好压线而不降级**不是缺陷**，是宪法规定的结果 |
+| `5MB.md` 是否改为略大于 5 MiB | **无需改动**：它本来就是**边界样本** | `run-benchmark` 的 `modeMap` 早已把它标为「边界」；本轮补上的是「报告必须说明它落在阈值哪一侧」，已实现（§2d 新增「Mellow 大文件模式」列并标注「恰好压线」） |
+
+并新增**三方一致**护栏（PRD §109 ↔ `largeFile.ts` ↔ benchmark 复刻）：
+只锁实现与 benchmark 仍可能双双偏离 PRD，故三处同时锁。注入验证：
+把 PRD 的 `>5MB` 改成 `>=5MB` → 护栏报错；还原 → 通过。
+
+### 3.2 任务 30 属**PRD 与现实的冲突**（按 AGENTS.md 须报告、不擅自裁决）
+
+PRD §132 的任务清单（第 17 项「10 MB」）与 Journey **J18「10MB：Open → search → edit → save」**
+都把 10MB 定为必须执行的任务；而 **Typora 1.14.9 根本不渲染 >2,000,000 字符的文档**。
+即「PRD 要求的对照任务」在基线产品上**不可执行** —— 这属于 AGENTS.md
+「实现与 Spec 冲突 → **不要自行修改架构，先报告冲突**」的情形，故只登记、不处置。
 
 ## 四、⚠️ 追加发现：「6 项未闭环」是**门禁口径**，不等于「只差 6 项」
 
@@ -102,7 +122,11 @@ Release verdict: NO-GO：6 项未闭环
      列出「标 AUTO 却要求 ux-gate」的 4 项、保留 §5.7 的警示；
    - 各配 canary，注入验证：移除一处 `blockedBy` → 门禁抛错；改写 `Closure basis:` →
      护栏报错；均还原后通过。
-3. 未改动任何状态码、`requiredEvidence`、策略或产品代码。
+3. **新增三方一致护栏**（PRD §109 ↔ `packages/editor-engine/src/largeFile.ts` ↔
+   `run-benchmark` 的复刻）：大文件模式的「严格大于」语义必须三处同时成立。
+   只锁实现与 benchmark 仍可能双双偏离 PRD。注入验证：把 PRD 的 `>5MB` 改成 `>=5MB`
+   → 护栏报错；还原 → 通过。
+4. 未改动任何状态码、`requiredEvidence`、策略或产品代码。
 
 ## 六、结论
 

@@ -212,6 +212,26 @@ if (existsSync(benchmarkRunnerPath)) {
     'classifyLargeFile 必须是「严格大于」两阈值（>，不是 >=）：5MB.md 恰好压线，改成 >= 会翻转其归属');
   assert(/bytes\s*>\s*MELLOW_LARGE_FILE_BYTES_THRESHOLD\s*\|\|\s*lines\s*>\s*MELLOW_LARGE_FILE_LINES_THRESHOLD/.test(benchSrc),
     'benchmark 的 mellowLargeFileMode 必须与 classifyLargeFile 同为「严格大于」');
+  // ── 三方一致：PRD §109 ↔ largeFile.ts ↔ benchmark 复刻（2026-09-25）──────
+  // 「严格大于」不是实现者的口味，而是**宪法依据**：PRD §109 Large File Mode 的触发写的是
+  //   >5MB
+  //   or >50,000 lines
+  // 故这条不变量必须三方同锁 —— 只锁实现与 benchmark 仍可能双双偏离 PRD
+  // （例如有人把 PRD 改成 `>=5MB` 而没同步代码，或反之）。
+  // 这也正是「5MB.md 恰好压线却不降级」的原因，不是缺陷。
+  const prdPath = resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md');
+  assert(existsSync(prdPath), 'PRD 不存在，无法校验大文件模式阈值的宪法依据');
+  if (existsSync(prdPath)) {
+    const prdSrc = readFileSync(prdPath, 'utf8').replace(/\r\n/g, '\n');
+    assert(/# 109\. Large File Mode/.test(prdSrc), 'PRD 缺少 §109 Large File Mode（阈值语义的宪法依据）');
+    assert(/>5MB/.test(prdSrc), 'PRD §109 的字节触发条件应为「>5MB」（严格大于）');
+    assert(/>50,000 lines/.test(prdSrc), 'PRD §109 的行数触发条件应为「>50,000 lines」（严格大于）');
+    // canary：自检 PRD 锁
+    const PRD_SAMPLE = '# 109. Large File Mode\n\n```text\n>' + '5MB\nor >50,000 lines\n```';
+    if (!/>5MB/.test(PRD_SAMPLE) || !/>50,000 lines/.test(PRD_SAMPLE)) {
+      errors.push('PRD §109 阈值护栏 canary 失效：样本未被检出');
+    }
+  }
   // 报告必须把归属标注出来（否则反直觉结论会被误读）
   assert(/function largeModeLabel/.test(benchSrc), '报告必须实现 largeModeLabel（标注夹具落在阈值哪一侧）');
   assert(/恰好压线/.test(benchSrc), '报告必须显式标注「恰好压线」这种边界情形');
