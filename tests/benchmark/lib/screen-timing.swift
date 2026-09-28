@@ -117,6 +117,20 @@ func windowList() -> [[String: Any]] {
 
 // MARK: - 像素 diff
 
+/// 「首键回显 / 窗口出现」判据的最小变化**比例**（2026-09-28）。
+///
+/// 为什么不再用绝对点数：`calibrate()` 的判据是 `max(calibMax * 3, 60)`，
+/// 而实测「插入一个字符」在一个 576×96 的 ROI 上只产生 **59** 个变化采样点 ——
+/// **恰好比地板 60 小 1**。于是 Mellow 10MB 的四次 open 全部被判为「未回显」：
+///   `detectMaxDiff=59 threshold=60 calibMaxDiff=0`（底噪为 0，说明窗口完全静止）
+/// 结果是 PRD 对 10MB 的核心目标（1.0–1.5s）**一个有效读数都拿不到**，
+/// 而失败提示写的是「按键可能未落到编辑区」—— 又把人引向焦点问题。
+///
+/// 一个魔法常数压在真实信号（59）的量级上，是**判据设计问题**，不是产品问题。
+/// 改为比例：0.1% × 13824 ≈ 14 个采样点，比实测信号（0.43%）低约 4 倍；
+/// 校准底噪为 0 时不会误触发，底噪升高时由 `calibMax * 3` 自适应项兜住。
+let ECHO_MIN_FRAC = 0.001
+
 /// 按**实际帧对**统计变化采样点数，并返回该对的采样点总数。
 ///
 /// 为什么必须返回 total（2026-09-25）：`pixelDiff` 只取 `a` 的几何，且全仓假设
@@ -604,8 +618,12 @@ func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool =
   }
   let cal = probe.calibrateRetry()
   let t0 = nowMs()
+  // 回显判据改用**比例**（2026-09-28，见 ECHO_MIN_FRAC 注释）：
+  // 绝对地板 60 恰好压在真实信号（实测 59）之上，会把「已回显」误判为「未回显」。
+  probe.setFracOverride(ECHO_MIN_FRAC)
   postKey(0x00) // 'a'
   let r = probe.detectChange(timeoutMs: timeoutMs)
+  probe.setFracOverride(nil)
   let ds = probe.detectStats()
   // 失败时把 ROI 最后一帧落盘（2026-09-23）：`detectMaxDiff=0` 有两种完全不同的
   // 成因 —— ① ROI 压根没覆盖编辑区（几何错）② 覆盖了但按键没进去（焦点错）。
@@ -622,6 +640,10 @@ func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool =
     "threshold": cal.threshold,
     "detectMaxDiff": ds.maxDiff,
     "detectFrames": ds.frames,
+    // 比例判据的自证（2026-09-28）：只报绝对点数看不出「信号是否真的远高于判据」。
+    "detectMaxFrac": (round(ds.maxFrac * 100000) / 100000),
+    "echoMinFrac": ECHO_MIN_FRAC,
+    "detectDimMismatchFrames": ds.dimMismatch,
     "frontmostPid": Int(front),
     "expectPid": Int(pid),
     // effRoi 是**实际生效**的 ROI（按捕获窗口求得），不是调用方传入的那个 ——
@@ -645,7 +667,12 @@ func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool =
     } else if ds.maxDiff <= 2 {
       hint = "ROI 完全无变化（按键可能未落到编辑区：检查 frontmostPid 是否等于 expectPid）"
     } else {
-      hint = "有变化但未跨阈值（detectMaxDiff < threshold → 校准被动画噪声抬高）"
+      // 两种成因必须分开（2026-09-28）：判据是比例阈值时，「差一点没到」与
+      // 「校准被噪声抬高」是不同问题。实测过一次 `detectMaxDiff=59 / threshold=60`
+      // （信号与判据同量级）→ 那是**判据设计问题**，不是噪声问题，提示不该指向噪声。
+      hint = ds.maxFrac > 0 && ds.maxFrac < ECHO_MIN_FRAC * 3
+        ? "有变化但未跨比例阈值（detectMaxFrac 与判据同量级 → 判据可能压在信号量级上，需复核 ECHO_MIN_FRAC）"
+        : "有变化但未跨阈值（detectMaxDiff < threshold → 校准被动画噪声抬高）"
     }
     diag["error"] = "按键后 \(timeoutMs)ms 内 ROI 未跨阈值"
     diag["hint"] = hint
@@ -729,8 +756,10 @@ func cmdHotOpenProbe(pid: Int32, openApp: String, openFile: String, roi: Roi, ti
     if clickFocus { clickToFocus(win, roi: effRoi) }
     cal = probe.calibrateRetry()
     let t0 = nowMs()
+    probe.setFracOverride(ECHO_MIN_FRAC) // 同 startup-probe：绝对地板 60 压在信号量级上
     postKey(0x00) // 'a'
     let r = probe.detectChange(timeoutMs: timeoutMs)
+    probe.setFracOverride(nil)
     echoStats = probe.detectStats()
     if r.changed { echoMs = r.latencyMs - t0 }
   }
@@ -760,6 +789,9 @@ func cmdHotOpenProbe(pid: Int32, openApp: String, openFile: String, roi: Roi, ti
     "frameW": sc.w,
     "frameH": sc.h,
     "echoDetectMaxDiff": echoStats.maxDiff,
+    "echoDetectMaxFrac": (round(echoStats.maxFrac * 100000) / 100000),
+    "echoMinFrac": ECHO_MIN_FRAC,
+    "echoDimMismatchFrames": echoStats.dimMismatch,
     "echoDetectFrames": echoStats.frames,
     "calibMaxDiff": cal.max,
     "threshold": cal.threshold,

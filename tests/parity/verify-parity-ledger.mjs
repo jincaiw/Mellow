@@ -390,6 +390,20 @@ if (existsSync(benchmarkRunnerPath)) {
       assert(/switchMinFrac/.test(hs), 'hot-open 必须支持按比例给出切换判据（--switch-min-frac）');
       assert(/switchDimMismatchFrames/.test(hs),
         'helper 必须报出 switchDimMismatchFrames（基准帧与比较帧几何不一致的帧数），使该假设失效可见而非静默');
+      // 回显判据也必须是**比例**（2026-09-28）。
+      // 立此条的原因：`calibrate()` 的判据是 `max(calibMax*3, 60)`，而实测「插入一个字符」
+      // 在 576×96 的 ROI 上只产生 **59** 个变化采样点 —— 恰好比地板 60 小 1。
+      // 于是 Mellow 10MB 的四次 open 全部被判为「未回显」，PRD 对 10MB 的核心目标
+      // （1.0–1.5s）**一个有效读数都拿不到**，而失败提示还写「按键可能未落到编辑区」。
+      // 一个魔法常数压在真实信号量级上，是判据设计问题。
+      assert(/let ECHO_MIN_FRAC\s*=\s*0\.\d+/.test(hs),
+        'helper 必须定义 ECHO_MIN_FRAC：回显判据须为比例，绝对地板 60 会压在信号量级上');
+      {
+        const hits = hs.match(/setFracOverride\(ECHO_MIN_FRAC\)/g) ?? [];
+        assert(hits.length >= 2,
+          `startup-probe 与 hot-open 的回显判定都必须用 ECHO_MIN_FRAC（实测只找到 ${hits.length} 处）`);
+      }
+      assert(/echoDetectMaxFrac/.test(hs), 'helper 必须报出 echoDetectMaxFrac（回显判据的自证字段）');
       {
         // 反例锁：detect 分支不得直接用 pixelDiff（会重新引入错误分母）
         const i = hs.indexOf('case .detect:');
