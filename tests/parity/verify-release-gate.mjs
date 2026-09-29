@@ -128,6 +128,7 @@ for (const item of ledger.items ?? []) {
 const PENDING_ADRS = [
   ['docs/adr/ADR-0024-release-closure-semantics.md', 'AUTO 是否阻断发布 / ux-gate 是否逐项前置'],
   ['docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md', '>2MB 无基线时的证据政策'],
+  ['docs/adr/ADR-0026-perf-target-measurement-scope.md', 'PRD §110 性能目标的测量口径（目标 ↔ 指标映射）'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {

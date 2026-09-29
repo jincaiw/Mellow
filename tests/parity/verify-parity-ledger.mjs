@@ -250,6 +250,31 @@ if (existsSync(benchmarkRunnerPath)) {
     errors.push('大文件模式跨层锁 canary 失效：样本阈值未被正确求值');
   }
 
+  // ── 报告不得把「推断的 PRD 口径」写成 PRD 的陈述（2026-09-29）──────────
+  // 立此条的原因：报告原写「PRD 目标（1MB ≤250ms / 10MB ≤1.0–1.5s）为『热打开』口径」——
+  // 但 PRD §110 原文**只写**「≤250ms to editable target」，**没有规定口径**。
+  // 「热打开」是本仓库的推断（论据强：否则 250ms 比 Startup 的 1.2s 更严、两产品必不达标），
+  // 但以「PRD 目标为 X 口径」的形式出现，就把**推断当成了需求** —— 读者会以为
+  // PRD 已经这样规定，从而不去质疑该口径本身。
+  // 现要求：必须写明「未在 PRD 中规定口径」+ 推断依据 + 指向承载裁决的 ADR。
+  assert(/未在 PRD 中规定口径|未规定口径/.test(benchCode),
+    '报告必须声明 PRD §110 的 1MB/10MB 目标「未在 PRD 中规定口径」，不得把推断写成 PRD 的陈述');
+  assert(/待 ADR-0026/.test(benchCode),
+    '报告必须指向承载口径裁决的 ADR-0026（推断不能自己当结论）');
+  {
+    const ASSERTED = 'PRD 目标（1MB ≤250ms / 10MB ≤1.0–1.5s）为「热打开」口径';
+    if (benchCode.includes(ASSERTED)) {
+      errors.push('报告仍在把「热打开」口径断言为 PRD 的陈述（应改为推断 + 依据 + 待裁决）');
+    }
+  }
+  // canary：自检上述反例锁
+  {
+    const SAMPLE = 'PRD 目标（1MB ≤250ms / 10MB ≤1.0–1.5s）为「' + '热打开」口径';
+    if (!/PRD 目标（1MB ≤250ms \/ 10MB ≤1\.0–1\.5s）为「热打开」口径/.test(SAMPLE)) {
+      errors.push('PRD 口径断言反例锁 canary 失效：样本未被检出');
+    }
+  }
+
   // ── results[].app 的键名大小写（2026-09-29）─────────────────────────────
   // 立此条的原因：`results[].app` 的取值是 `'Mellow'` / `'Typora'`（**首字母大写**）。
   // 用小写查询会**静默**返回 undefined —— 不报错、不输出，只是整段报告消失。

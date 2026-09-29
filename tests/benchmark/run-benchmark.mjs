@@ -729,7 +729,16 @@ function renderReport(env, results, opts) {
   L.push('');
   L.push('## 测量口径');
   L.push('- **startup**：冷启动（`_blank.md`）→ 窗口出现 → 首个合成按键屏幕回显，总耗时；');
-  L.push('- **open-to-editable**：冷启动带夹具文件 → 窗口出现 → 首键回显，总耗时；PRD 目标（1MB ≤250ms / 10MB ≤1.0–1.5s）为「热打开」口径，冷启动口径通常更高，判定仅供参考；');
+  // 口径说明（2026-09-29 修正）：PRD §110 **原文只写「≤250ms to editable target」，
+  // 未规定口径**。「热打开」是本仓库的**推断**，不是 PRD 的陈述 —— 故不能以
+  // 「PRD 目标为热打开口径」的断言形式出现（那会把推断当需求）。
+  // 推断的强论据：若 1MB 的 250ms 也含进程启动，它比 Startup 的 1.2s **严格更严**，
+  // 且实测两个产品都必然不达标（进程启动本身 300–500ms）→ 目标失去区分度。
+  // 口径待 ADR-0026 裁决。
+  L.push('- **open-to-editable**：冷启动带夹具文件 → 窗口出现 → 首键回显，总耗时。');
+  L.push('  ⚠️ PRD §110 的 1MB ≤250ms / 10MB ≤1.0–1.5s **未在 PRD 中规定口径**；');
+  L.push('  本仓库**推断**其为「热打开」口径（依据：否则 250ms 比 Startup 的 1.2s 更严、两产品必不达标），');
+  L.push('  该推断**待 ADR-0026 裁决**。本节为**冷启动**口径，绝对值不参与 PRD 判定，仅供同机对照。');
   L.push('- **typing P95**：按键→屏幕回显 P95；PRD 普通 <16ms / Large <32ms；');
   L.push('- **scroll**：合成滚动期间帧间隔 P95 / 平均 fps / 掉帧（>33.4ms 间隔）数；');
   L.push('- **save**：Cmd+S → mtime 变化耗时；');
@@ -801,7 +810,7 @@ function renderReport(env, results, opts) {
       L.push('');
     }
   }
-  L.push('| fixture | Mellow median | Mellow p95 | Typora median | Typora p95 | ratio med (M/T) | PRD 目标（热打开口径，参考） |');
+  L.push('| fixture | Mellow median | Mellow p95 | Typora median | Typora p95 | ratio med (M/T) | PRD 目标（口径待 ADR-0026） |');
   L.push('|---|---|---|---|---|---|---|');
   const targetMap = { '1MB.md': '≤250ms', '10MB.md': '1.0–1.5s', '5MB.md': '参考', '100k-lines.md': '参考', 'large-table.md': '参考', '100-mermaid.md': '参考', '1000-images.md': '参考' };
   for (const f of opts.fixtures) {
@@ -1087,7 +1096,9 @@ function renderReport(env, results, opts) {
   L.push('');
   L.push('- Mellow 文档内查找（Cmd+F）已实现（2026-08-16）；search 指标 ROI 口径待适配 CM 查找面板。');
   L.push('- 大文件模式（>5MB 或 >50,000 行触发）影响 10MB / 100k-lines 的打开与输入路径。');
-  L.push('- PRD「open-to-editable ≤250ms」为热打开口径；本 benchmark 采用冷启动口径（公平对比所需），绝对值解读需注意。');
+  L.push('- PRD「open-to-editable ≤250ms」的**口径未在 PRD 中规定**；本仓库推断为热打开口径'
+    + '（依据：否则 250ms 比 Startup 的 1.2s 更严、两产品必不达标），**待 ADR-0026 裁决**。'
+    + '本 benchmark 采用冷启动口径（公平对比所需），绝对值不参与 PRD 判定。');
   L.push('');
   L.push('## 原始数据');
   L.push('');
