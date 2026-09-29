@@ -567,7 +567,8 @@ for (const domain of ['editing', 'sidebar', 'desktop-ui', 'menu', 'acceptance'])
 }
 // V7-W0（2026-09-12）：台账从 32 项扩容到覆盖 §7 分域合同的 50 项。下限提到 45，
 // 防止未来「删条目瘦身」悄悄退回只覆盖少数域。
-assert(ids.size >= 45, `台账必须覆盖至少 45 个 P0 项（当前 ${ids.size}，V7-W0 扩容后基线 50）`);
+// 覆盖下限取**当前基线 50**（V7-W0 扩容目标）：此前写 45，意味着删掉 5 项也不会报错 —— 覆盖型下限一旦宽松，成员就会悄悄消失。
+assert(ids.size >= 50, `台账必须覆盖至少 50 个 P0 项（当前 ${ids.size}；V7-W0 扩容后基线即 50）`);
 for (const domain of ['file', 'layout', 'feature', 'build']) {
   assert(domains.has(domain), `台账缺少 V7-W0 新增域：${domain}`);
 }

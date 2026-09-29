@@ -209,6 +209,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     // （方案 §5 G7-EDIT-04，W5 补齐后在同一子菜单内追加，无需再改结构）。
     { kind: 'submenu', id: 'edit.spell', labelKey: 'menu.edit.spellMenu', entries: [
       { kind: 'command', id: 'edit.spellcheck.toggle', labelKey: 'menu.edit.spellcheck', checkedFrom: 'spellcheck' },
+      // P0-EDITOR-005：Typora 拼写子菜单的 Learn / Unlearn Spelling。
+      // 一级证据（`typora-menu-dump.txt`）：`Learn Spelling => 添加到字典`、
+      // `Unlearn Spelling => 忘记拼写`。二者作用于**光标所在词**（命令侧经
+      // 引擎动作 `wordAtCursor()` 解析），与 Typora 语义一致。
+      { kind: 'command', id: 'edit.spelling.learn', labelKey: 'menu.edit.learnSpelling' },
+      { kind: 'command', id: 'edit.spelling.unlearn', labelKey: 'menu.edit.unlearnSpelling' },
     ] },
     { kind: 'submenu', id: 'edit.replace', labelKey: 'menu.edit.replaceMenu', entries: [
       { kind: 'command', id: 'edit.smartPunctuation.toggle', labelKey: 'menu.edit.smartPunctuation', checkedFrom: 'smartPunct' },

@@ -754,6 +754,8 @@ const zhCN = {
   'menu.edit.moveLineDown': '下移该行',
   // V7-W1.4：子菜单标题文案对齐 Typora 真机 Menu.strings（拼写和语法检查 / 替换）
   'menu.edit.spellMenu': '拼写和语法检查',
+  'menu.edit.learnSpelling': '添加到字典',
+  'menu.edit.unlearnSpelling': '忘记拼写',
   'menu.edit.spellcheck': '键入时检查拼写',
   'menu.edit.replaceMenu': '替换',
   'menu.edit.smartPunctuation': '智能标点',
@@ -1609,6 +1611,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'menu.edit.moveLineUp': 'Move Line Up',
   'menu.edit.moveLineDown': 'Move Line Down',
   'menu.edit.spellMenu': 'Spelling and Grammar',
+  'menu.edit.learnSpelling': 'Learn Spelling',
+  'menu.edit.unlearnSpelling': 'Unlearn Spelling',
   'menu.edit.spellcheck': 'Check Spelling While Typing',
   'menu.edit.replaceMenu': 'Substitutions',
   'menu.edit.smartPunctuation': 'Smart Punctuation',
