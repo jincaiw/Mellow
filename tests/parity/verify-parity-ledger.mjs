@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -964,7 +964,10 @@ if (existsSync(benchmarkRunnerPath)) {
 for (const observation of ledger.patchObservations ?? []) {
   assert(observation.version !== '1.14.9', `补丁观察 ${observation.version} 不应重复规范基线`);
   assert(/不可替代规范验收基线/.test(observation.purpose ?? ''), `补丁观察 ${observation.version} 必须声明其非规范性`);
-  assert(typeof observation.evidence === 'string' && existsSync(resolve(root, observation.evidence)), `补丁观察 ${observation.version} 的证据不存在`);
+  const patchEvidenceAbs = resolve(root, observation.evidence ?? '');
+  assert(typeof observation.evidence === 'string' && existsSync(patchEvidenceAbs), `补丁观察 ${observation.version} 的证据不存在`);
+  assert(!statSync(patchEvidenceAbs).isDirectory(),
+    `补丁观察 ${observation.version} 的证据必须指向文件而非目录：${observation.evidence}`);
 }
 
 const ids = new Set();
@@ -982,7 +985,16 @@ for (const item of ledger.items ?? []) {
   assert(Array.isArray(item.evidence) && item.evidence.length > 0, `${item.id} 缺少证据`);
   assert(Array.isArray(item.requiredEvidence) && item.requiredEvidence.length > 0, `${item.id} 缺少验收证据要求`);
   for (const evidence of item.evidence ?? []) {
-    assert(existsSync(resolve(root, evidence)), `${item.id} 的证据不存在：${evidence}`);
+    const evidenceAbs = resolve(root, evidence);
+    assert(existsSync(evidenceAbs), `${item.id} 的证据不存在：${evidence}`);
+    // 证据必须是**文件**，不能是目录（2026-09-30 新增）。
+    // 立此条的原因：`existsSync` 对目录同样返回 true，于是「指向一个目录」也算通过 ——
+    // 而目录**不可核对**（你不知道里面哪一份、也不知道它是否还在）。
+    // 实测抓到两处：`P0-I18N-001 → packages/i18n`、`P0-PLATFORM-001 → tests/qualification/evidence`
+    // —— 与 2026-09-29 审计 §4.1 记录的是同一类「看起来像证据的弱引用」，
+    // 当时只补了具体文件、**没有把目录引用摘掉**，也没有护栏防复发。
+    assert(!statSync(evidenceAbs).isDirectory(),
+      `${item.id} 的证据必须指向文件而非目录：${evidence}（目录不可核对；请改引具体制品）`);
     // 证据必须能随仓库提交 —— `tests/benchmark/results/` 与 `reports/` 已在其
     // .gitignore 中被忽略，指向那里的证据在本机存在、在 CI 上必然缺失
     // （2026-09-13 实测：正是它让 parity 护栏在 CI 连续四轮失败，而本地全绿）。
@@ -1040,6 +1052,18 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
   const E2E_SAMPLE = 'tests/e2e/' + 'sidebar-verify.mjs';
   if (!isCIArtifact(CI_SAMPLE)) errors.push('AUTO 证据护栏 canary 失效：单测样本未被判为 CI 制品');
   if (isCIArtifact(E2E_SAMPLE)) errors.push('AUTO 证据护栏 canary 失效：e2e 样本被误判为 CI 制品');
+}
+
+// canary：自检「证据不得指向目录」的判定（2026-09-30；样本拼接构造，避免护栏检出自己）
+{
+  const DIR_SAMPLE = 'packages/' + 'i18n';
+  const FILE_SAMPLE = 'package' + '.json';
+  if (!existsSync(resolve(root, DIR_SAMPLE)) || !statSync(resolve(root, DIR_SAMPLE)).isDirectory()) {
+    errors.push('证据目录锁 canary 失效：目录样本未被识别为目录');
+  }
+  if (statSync(resolve(root, FILE_SAMPLE)).isDirectory()) {
+    errors.push('证据目录锁 canary 失效：文件样本被误判为目录');
+  }
 }
 
 if (errors.length) {
