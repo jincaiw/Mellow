@@ -364,6 +364,57 @@ expect(buffer.byteLength).toBeLessThan(3 * 1024 * 1024);
 而非被反引号包住、任务 17 的「可修正错误」直接**判定 Mermaid 围栏括号是否不平衡**。
 注入验证四个方向（删 `[TOC]` 指令 / 把 Mermaid 修好 / 删脚注定义 / 降级 H4）均报错。
 
+## 4.8 「步骤名不得内嵌数字」的护栏**只覆盖了一个 workflow**（2026-09-30）
+
+**事实**：`verify-release-gate.mjs` 的「CI 步骤名不得内嵌用例数」护栏**只读 `ci.yml`**
+（`const ci = read('.github/workflows/ci.yml')`）。仓库共有 **3 个** workflow。
+
+实跑枚举三个 workflow 的全部步骤名，抓到一个存活实例：
+
+```
+runtime-qualification.yml  27 个步骤名，含 2+ 位数字的 2 个（同一名字出现两次）
+  Visual golden (§9.3, 14 scenes)     ← Linux job 与 Windows job 各一处
+release.yml                24 个步骤名，含 2+ 位数字的 1 个
+  Fill release notes and mark prerelease (ADR-0020)   ← 这是**引用**，不是计数
+ci.yml                     22 个步骤名，0 个
+```
+
+**「14 scenes」对不上任何来源**（这正是它该被删的理由）：
+
+| 来源 | 数量 |
+|---|---|
+| `tests/visual/golden/scenes-golden.json` 键数 | **7** |
+| `tests/visual/golden/sidebar-golden.json` 键数 | **4** |
+| `tests/visual/golden/layout-golden.json` 键数 | **6** |
+| 三者合计（任何工具都能算出来） | **17** |
+| master plan §9.3 的场景清单条目数 | **13** |
+| 把 `Light / Dark` 拆成两项才得到 | **14** ← 就是被写进步骤名的那个数 |
+| `release-notes-v1.5.6.md` 自己的算术 | 写「**14 场景**」却又列「6 + 4 + 7」= **17** |
+
+即：它是**输出里一个没人校验、且依赖一个没有写明的约定**的数字 ——
+「14」只有在「`Light / Dark` 算两项」时成立，而这一点从未写在任何地方；
+发布说明里更是**同一句话内自相矛盾**（说 14，列 6+4+7）。与 ci.yml 里那批
+「Unit tests (host-api 43 / …)」同类（后者已全部漂移并被移除）。
+
+**处置**：
+1. 护栏扩展到**全部三个 workflow**；并引入**引用豁免** —— 先剥掉 `ADR-\d+`、`§\d+(\.\d+)*`、
+   `v\d+(\.\d+)*`、`G7-EDIT-\d+`、`P0-XXX-\d+`、`#\d+` 再看是否还剩 2+ 位数字
+   （否则 `release.yml` 的 `(ADR-0020)` 会被误报 —— 它是**引用**，不是计数）；
+2. 步骤名改为 `Visual golden (§9.3: visual + sidebar + scenes)` —— 直接写出脚本名，
+   **不再有任何数字**，因此不可能漂移；
+3. master plan §9.3 加**计数更正**块（保留清单，删掉无法派生的数字），
+   并同步清掉该文件内其余 6 处引用（契约表、W2.9 待办、交付物说明、§9.3 正文）；
+   `tests/visual/{scenes-golden,golden-path}.mjs` 与 `verify-visual-golden.mjs`
+   的注释同源数字一并更正（共 8 处）。**历史记录不改写**：
+   `release-notes-v1.5.6.md` 与 `macos-local-verification-2026-09-12.md`
+   保持原样（已发布的快照），其自相矛盾在本文记录；
+4. `verify-release-gate.mjs` 自身注释里那批**会继续漂移的当前值**（host-api 43→47 等）
+   也一并去掉，只保留一处**注明日期的实证**（「给 export 补一个测试，该包计数即从 83 变成 84」）——
+   它自己就是这条规则的反例。
+
+**注入验证**：往 `runtime-qualification.yml` 塞一个含计数的步骤名 → 护栏报错；
+还原 → 通过；`release.yml` 的 `ADR-0020` 不触发（豁免有效）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

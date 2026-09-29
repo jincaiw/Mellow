@@ -151,9 +151,9 @@ if (existsSync(resolve(root, scriptPath))) {
   }
 }
 
-// ── §9.3 14 场景覆盖（V7-W5：补 scenes-golden，使 macOS 侧全覆盖）────────
+// ── §9.3 视觉基线覆盖（V7-W5：补 scenes-golden，使 macOS 侧全覆盖）────────
 // visual-golden（6 配置）+ sidebar-golden（4 视图）+ scenes-golden（7 场景）合起来
-// 才覆盖 §9.3 的 14 场景：首次启动 / 单文档 Live / File Tree / File List / Outline /
+// 才覆盖 §9.3 的场景清单：首次启动 / 单文档 Live / File Tree / File List / Outline /
 // Search / Settings / Selection Toolbar / Table Toolbar / Reader / Light / Dark /
 // 900×600 / 200% Zoom。
 const scenesScript = 'tests/visual/scenes-golden.mjs';

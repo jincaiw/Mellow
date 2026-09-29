@@ -159,22 +159,50 @@ for (const anchor of [
 if (!/runs-on:\s*windows-latest/.test(ci)) {
   fail('ci.yml 没有任何 windows-latest job：ADR-0022 要求 Windows 证据以 CI 为来源，否则 windows-ci 类证据不可达');
 }
-// ── CI 步骤名不得内嵌用例数（2026-09-30）────────────────────────────────
+// ── CI 步骤名不得内嵌**无法派生**的数字（2026-09-30）──────────────────────
 // 立此条的原因：步骤名里曾写死「Unit tests (host-api 43 / app-core 217 / …)」这类数字，
-// 而**没有任何东西校验它们** → 随测试增长**静默失真**。实测已全部漂移：
-//   host-api 43→47、app-core 217→232、commands 30→33、export 72→83、engine 1135→1197。
+// 而**没有任何东西校验它们** → 随测试增长**静默失真**（实测各包全部漂移，
+// 且「当天就会变」—— 给 export 补一个测试，该包计数即从 83 变成 84）。
 // 这与「菜单护栏谎称读了本机 Typora」同类：**输出里的数字若无法派生，就不要写**。
-// 真实数字由 jest / cargo 自己打印（本身即派生），无需在步骤名里复述。
+// 真实数字由 jest / cargo / 脚本自己打印（本身即派生），无需在步骤名里复述。
+//
+// ⚠️ 2026-09-30 扩展：原实现**只读 ci.yml** → 同一缺陷族在另外两个 workflow 里存活。
+// 实测抓到 `runtime-qualification.yml` 的「Visual golden (§9.3, 14 scenes)」：
+// 该「14」**无法从任何东西派生** —— 三个基线文件共 7 + 4 + 6 = 17 个键，
+// 而 master plan §9.3 的场景清单列了 13 项。数字对不上任何来源，属"写了个没人校验的数"。
+//
+// 豁免：**引用类**数字不是「计数」，不应误报（如 `ADR-0020`、`§9.3`、`#123`、`v1.5.6`、
+// 缺陷号 `G7-EDIT-11` / `P0-EDITOR-005`）。做法是先剥掉引用记号，再看是否还剩 2+ 位数字。
 {
-  const ciStepNames = [...ci.matchAll(/^\s+- name: "?(.*?)"?$/gm)].map((m) => m[1]);
-  const withCounts = ciStepNames.filter((n) => /\d{2,}/.test(n));
-  if (withCounts.length > 0) {
-    fail(`ci.yml 步骤名不得内嵌用例数（无任何东西校验，会静默失真）：${withCounts.join(' / ')}`);
+  const WORKFLOWS = ['ci.yml', 'runtime-qualification.yml', 'release.yml'];
+  const stripRefs = (s) => s
+    .replace(/\bADR-\d+/g, '')       // ADR-0020
+    .replace(/§\s*\d+(?:\.\d+)*/g, '') // §9.3
+    .replace(/\bv\d+(?:\.\d+)*/g, '')  // v1.5.6
+    .replace(/\b[A-Z]\d+-[A-Z]+-\d+/g, '') // G7-EDIT-11
+    .replace(/\bP\d-[A-Z]+-\d+/g, '')  // P0-EDITOR-005
+    .replace(/#\d+/g, '');           // #123
+  const offenders = [];
+  for (const name of WORKFLOWS) {
+    let src = '';
+    try { src = read(`.github/workflows/${name}`); } catch { continue; }
+    for (const m of src.matchAll(/^\s+- name: "?(.*?)"?$/gm)) {
+      const stepName = m[1];
+      if (/\d{2,}/.test(stripRefs(stepName))) offenders.push(`${name}：${stepName}`);
+    }
   }
-  // canary：自检该判定（样本拼接构造）
+  if (offenders.length > 0) {
+    fail(`workflow 步骤名不得内嵌无法派生的数字（无任何东西校验，会静默失真）：${offenders.join(' / ')}`);
+  }
+  // canary：自检该判定 + 引用豁免（样本拼接构造）
   const COUNT_SAMPLE = 'Unit tests (host-api ' + '43' + ')';
-  if (!/\d{2,}/.test(COUNT_SAMPLE)) {
-    errors.push('CI 步骤名数字护栏 canary 失效：含数字的样本未被检出');
+  const REF_SAMPLE = 'Fill release notes and mark prerelease (ADR-' + '0020' + ')';
+  const SECTION_SAMPLE = 'Visual golden (§' + '9.3' + ')';
+  if (!/\d{2,}/.test(stripRefs(COUNT_SAMPLE))) {
+    errors.push('步骤名数字护栏 canary 失效：含计数的样本未被检出');
+  }
+  if (/\d{2,}/.test(stripRefs(REF_SAMPLE)) || /\d{2,}/.test(stripRefs(SECTION_SAMPLE))) {
+    errors.push('步骤名数字护栏 canary 失效：ADR / 章节引用被误报（豁免规则失效）');
   }
 }
 

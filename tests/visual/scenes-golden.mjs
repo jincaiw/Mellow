@@ -1,12 +1,13 @@
 /**
- * §9.3 视觉 Golden — 补齐 14 场景中尚未覆盖的 7 个（P0-LAYOUT-002 / W2.9）。
+ * §9.3 视觉 Golden — 补齐尚未覆盖的 7 个（P0-LAYOUT-002 / W2.9）。
  *
- * 背景：plan §9.3 定义每平台 14 场景：
+ * 背景：plan §9.3 定义每平台的场景清单（该节标题原写「14 场景」，已按计数更正删除 ——
+ * 基线实际键数 = visual 6 + sidebar 4 + scenes 7 = 17，而清单列 13 项）：
  *   首次启动 · 单文档 Live · File Tree · File List · Outline · Search · Settings ·
  *   Selection Toolbar · Table Toolbar · Reader · Light / Dark · 900×600 · 200% Zoom
  * `visual-golden.mjs`（6 配置）与 `sidebar-golden.mjs`（4 视图）合计只覆盖其中 7 个
  * （File Tree / Outline / Search / Light / Dark / 900×600 / 200% Zoom）。
- * 本文件补齐剩余 7 个，使 macOS 侧 14 场景全覆盖。
+ * 本文件补齐剩余 7 个，使 macOS 侧三脚本（共 17 个基线键）全覆盖。
  *
  * 覆盖（本文件）：
  *   1. first-run       首次启动（无 localStorage 覆写：侧栏 / 状态栏 / Tabbar 默认隐藏）

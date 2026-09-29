@@ -828,7 +828,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | 留白 | Top 56px；Bottom ≥30vh；跨主题一致 | E |
 | 侧栏宽度 | **160–480px 可拖，默认 270px**（2026-09-13 更正：原写「200–480，默认 260」无据 —— 注释引「D-J」实为「内置主题数量」、护栏引「P3.8」在现文档与台账均查无此编号。现取值与 Typora 1.14.9 实机一致：`--sidebar-width: 270px`、`setSidebarWidth` 的 `Math.max(e, 160)`）。**最大 480px 为 Mellow 有意加的保护**（Typora 无硬上限），登记 **D-AD** | E（除 480 上限为 D） |
 | 响应式 | 900×600 可用；<900 自动隐藏侧栏；200% Zoom 不截断 | E |
-| 视觉 Golden | 三平台 × 14 场景（见 §9.3） | E |
+| 视觉 Golden | 三平台各跑同一组视觉基线（`visual` + `sidebar` + `scenes` 三脚本，见 §9.3） | E |
 
 ### 7.7 域 G — 菜单与快捷键
 
@@ -898,7 +898,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | 2.6 | **macOS 字数可见性**：标题栏 hover 显示字数（或常显可配） | `App.tsx`、Rust window title | **DONE（实现「始终显示」选项）**：新增 `appearance.wordCount` 设置 + 标题并入字数（`{count} 字` / `{count} words`，口径 = CJK 字数 + 词数）。**hover 显隐登记为 D** —— macOS 原生标题栏在 webview 之外，hover 事件不进入 Web 层，需 tao 暴露原生 titlebar tracking；Typora 官方同时提供「始终显示」选项，故先交付该等价能力。 |
 | 2.7 | 状态栏字段补 lines / characters / reading time；字数面板（点击展开全统计） | `StatusBar.tsx:5-13` | **DONE**：① 状态栏字数串**早已**含「字 · 词 · 字符 · 行 + 阅读时间」（`formatWordCountStats`），原审计按 `StatusBar.tsx` 字段枚举判定「缺失」属**失真**，已在下方登记；② 字数项改为**按钮**（`.statusbar-stats`）点击展开统计面板，对齐 Typora「click on the word count button → popup panel」；③ 面板本身（cjk/words/chars/charsNoSpace/lines/paragraphs/readingTime）此前已存在。 |
 | 2.8 | 清理死 CSS `.sidebar-mode-menu` / `.sidebar-mode-item`；e2e 断言同步更新 | `styles.css:220-252`、`tests/e2e/sidebar-verify.mjs:231` | **DONE**：死 CSS 删除；e2e 的两条断言保留为「模式弹出菜单不得复活」的永久防线（侧栏模式切换现为内联按钮组）。 |
-| 2.9 | 视觉 Golden 扩到 §9.3 全部 14 场景，三平台归档 | `tests/visual/` | **部分 DONE**：① 修复一处**假护栏** —— `sidebarVisible` 采样查 `.sidebar`（应用中不存在该 class，侧栏节点是 `aside.file-tree`），恒为 false，永远抓不到「侧栏默认可见」回归；已改真实选择器并在护栏加反回归断言；② 「扩到 14 场景」需在具备 Playwright 的环境执行并重建基准（本机未安装 Playwright），登记为待办。 |
+| 2.9 | 视觉 Golden 扩到 §9.3 的场景清单（三脚本），三平台归档 | `tests/visual/` | **部分 DONE**：① 修复一处**假护栏** —— `sidebarVisible` 采样查 `.sidebar`（应用中不存在该 class，侧栏节点是 `aside.file-tree`），恒为 false，永远抓不到「侧栏默认可见」回归；已改真实选择器并在护栏加反回归断言；② 「扩到全部场景」需在具备 Playwright 的环境执行并重建基准（本机未安装 Playwright），登记为待办。 |
 
 **W2 交付物（W2.1–W2.8 完成；W2.9 部分完成）**：
 
@@ -939,11 +939,11 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 - **W2.8**（G7-SIDE-03 死代码）`styles.css` 删除 `.sidebar-mode-menu` / `.sidebar-mode-item` / `:hover` / `.active` 四条死规则；`tests/e2e/sidebar-verify.mjs` 两条断言保留并加注为「模式弹出菜单不得复活」永久防线。
 - **W2.9** 视觉 Golden：
   - **修复假护栏（重要）**：`sidebarVisible: document.querySelector('.sidebar') !== null` —— 应用中不存在 `.sidebar` class（侧栏节点是 `aside.file-tree`），该采样恒为 `false`，「侧栏默认可见」回归永远抓不到。已改为 `aside.file-tree`，并在 `verify-visual-golden.mjs` 加「必须查真实节点 + 不得再用 `.sidebar`」双向断言。
-  - **待办已闭环（2026-09-12）**：此前「扩到 §9.3 全部 14 场景需 Playwright（本机未安装）」的
+  - **待办已闭环（2026-09-12）**：此前「扩到 §9.3 全部场景需 Playwright（本机未安装）」的
     判断**不成立** —— Chromium 已在 `~/Library/Caches/ms-playwright/`，仅缺 npm 包，装到仓库外
     临时目录即可（`NODE_PATH=<dir>/node_modules`）。新增 `tests/visual/scenes-golden.mjs`
     补齐余下 7 场景（首次启动 / 单文档 Live / File List / Settings / Selection Toolbar /
-    Table Toolbar / Reader），**macOS 侧 §9.3 14 场景现已全覆盖**。
+    Table Toolbar / Reader），**macOS 侧 §9.3 三脚本现已全覆盖（共 17 个基线键）**。
   - **发现并修复真 bug（重要）**：`selection-toolbar` 场景首采 `{w:0,h:0,visible:false}`
     —— 元素在、10 个按钮在，但 `display` 恒为 `none`。根因：`position()` 在 CM6 的
     **update 周期内**调用 `view.coordsAtPos()`（CM6 禁止读布局）→ 抛错被 `getAnchor` 的
@@ -1243,9 +1243,22 @@ Typora 官方 CSS 语义 `p > img:only-child { display:block; margin:auto }`。C
 
 CI 只能在真实桌面输入链路、文件读回与 Undo 断言全部成立时计为通过；**单纯构建成功不得替代体验验收**。
 
-### 9.3 视觉 Golden（每平台 14 场景）
+### 9.3 视觉 Golden（每平台 3 个脚本 × 3 类基线）
 
 首次启动 · 单文档 Live · File Tree · **File List** · Outline · Search · Settings · Selection Toolbar（浮动编辑器工具栏）· Table Toolbar · Reader · Light / Dark · 900×600 · 200% Zoom
+
+> **计数更正（2026-09-30）**：本节标题原写「每平台 **14** 场景」。该数字**无法从任何制品派生**，
+> 且依赖一个**没有写明的约定** —— 三处数字互不相通：
+>
+> | 来源 | 数量 |
+> |---|---|
+> | 上面这行清单的条目数 | **13** |
+> | 把 `Light / Dark` 拆成两项才得到 | **14** ← 标题里的数（约定依赖） |
+> | 基线文件实际键数（`scenes-golden` 7 + `sidebar-golden` 4 + `layout-golden` 6） | **17** |
+>
+> 任何工具都**无法校验**「14」。故删掉该数字；CI 步骤名里同源的「14 scenes」一并删除（见下）。
+> 护栏已扩展到**全部三个 workflow**：步骤名不得内嵌无法派生的数字
+> （`verify-release-gate.mjs`，引用类数字如 `ADR-0020` / `§9.3` 豁免）。
 
 **基线按平台分离（2026-09-12，P0-LAYOUT-002）**：基线存的是布局**测量值**（写作宽度 / 行高 /
 aside 尺寸），而这些依赖平台的字体度量与 DPI —— 用 macOS 基线与 Linux / Windows 产物比对
@@ -1270,7 +1283,7 @@ aside 尺寸），而这些依赖平台的字体度量与 DPI —— 用 macOS �
   `linux-visual-golden` / `windows-visual-golden`；**首次 CI 运行后需人工把基线提交入库**，
   之后即成为真正的跨平台门禁。
 
-**macOS 侧 14 场景已全覆盖（2026-09-12）**：`visual-golden.mjs`(6) + `sidebar-golden.mjs`(4)
+**macOS 侧三脚本已全覆盖（2026-09-12）**：`visual-golden.mjs`(6) + `sidebar-golden.mjs`(4)
 + `scenes-golden.mjs`(7) —— 首次启动 / 单文档 Live / File List / Settings / Selection Toolbar /
 Table Toolbar / Reader，7/7 命中基准（±1px）。
 
