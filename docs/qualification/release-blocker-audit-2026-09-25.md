@@ -225,6 +225,9 @@ table / theme），**也没有任何安全相关条目**。
 **待裁决**：安全验收是否应进入台账（新增安全域与条目）？
 这属**治理结构变更**（台账的域与条目集合），本环境不擅自改动。
 
+> 18 项的**当前状态**已单独重新评估：`docs/qualification/v1.0-acceptance-reevaluation-2026-09-30.md`
+> （逐项给出可核对来源；无法验证的一律标 `NOT TESTED`，不推断）。
+
 ## 4.5 macOS 签名公证：job 名宣称了它**无法保证**的属性（2026-09-30）
 
 **事实**：`release.yml` 的 macOS job 名为 `macOS (Signed + Notarized + DMG)`，
