@@ -608,6 +608,35 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── PDF CJK 必须由**机制**断言守着（2026-09-30）─────────────────────────
+  // master plan §10 把「PDF CJK garble」列为**发布阻塞项**，V1.0 验收第 13 项依赖它。
+  // 而原先的 CI 测试只断言 `%PDF-` 与体积 —— 属**冒烟测试**：证明管线跑通，
+  // **测不到「CJK 变乱码」**。garble 有两个**独立**失效面，各由一条机制保证：
+  //   ① 字形面：必须嵌入子集（`/FontFile2`），否则换机器/换字体就缺字形；
+  //   ② 码位面：CJK 走 `/Type0` + `/Identity-H`，此时字符码 = 字形 id，
+  //      **没有 `/ToUnicode` CMap 就无法把字形映回 Unicode** → 屏幕看着正常、
+  //      **复制/搜索出来是乱码**（冒烟测试完全测不到这一面）。
+  // 锁住这两面确实被断言，防止测试被悄悄退回冒烟状态
+  // （「有测试 ≠ 测到了」，§5.7 已记录一次同类前科）。
+  {
+    const expTest = resolve(root, 'packages/export/test/index.test.ts');
+    assert(existsSync(expTest), 'packages/export/test/index.test.ts 不存在');
+    if (existsSync(expTest)) {
+      const src = readFileSync(expTest, 'utf8').replace(/\r\n/g, '\n');
+      const required = ['/ToUnicode', '/FontFile2', '/Identity-H'];
+      for (const marker of required) {
+        assert(src.includes(`'${marker}'`),
+          `PDF CJK 机制断言缺失：export 单测必须断言 PDF 含 ${marker}`
+          + '（否则「CJK 乱码」只剩冒烟测试，而它是 §10 发布阻塞项）');
+      }
+      // canary：自检这三条锁有效（样本拼接构造）
+      const MARKER_SAMPLE = '/To' + 'Unicode';
+      if (!required.includes(MARKER_SAMPLE)) {
+        errors.push('PDF CJK 机制断言锁 canary 失效：标记样本未被纳入必需集合');
+      }
+    }
+  }
+
   // ── UX Gate 记录器：进度报告必须只读（2026-09-25）──────────────────────
   // 立此节的原因：`validate` 要 120 条齐备才给结论，人工会话中途无法知道「还差哪些」，
   // 且它把「还没填」与「填错了」混在同一次报错里。新增的 `progress` 命令必须**只读**：

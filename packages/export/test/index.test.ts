@@ -138,6 +138,33 @@ describe('PDF export — buffer generation (subset fonts, CJK, 100 pages)', () =
     expect(buffer.byteLength).toBeLessThan(3 * 1024 * 1024);
   });
 
+  /**
+   * PDF CJK **机制**断言（2026-09-30 补）。
+   *
+   * 立此测试的原因：上面那条只断言 `%PDF-` 与体积 —— 属**冒烟测试**，
+   * 证明「管线跑通了」，**测不到「CJK 变乱码」**。而 master plan §10 把
+   * 「PDF CJK garble」列为**发布阻塞项**，V1.0 验收第 13 项也依赖它。
+   *
+   * 「garble」有两个独立的失效面，各由一条机制保证：
+   *   - **看得见**（字形）：必须**嵌入子集**（`/FontFile2`），否则换台机器/换字体就缺字形；
+   *   - **复制/搜索得到正确字符**（码位）：CJK 走 `/Type0` + `/Identity-H`，
+   *     此时字符码 = 字形 id，**没有 `/ToUnicode` CMap 就无法把字形映回 Unicode** →
+   *     屏幕上看着正常，**复制出来却是乱码**。这一面冒烟测试完全测不到。
+   *
+   * 实测（本机 macOS，pdfmake 0.3.11 + Noto Sans SC 子集）四个标记全部命中。
+   */
+  test('CJK 走 Type0/Identity-H + 嵌入子集 + ToUnicode CMap（冒烟测试测不到的两面）', async () => {
+    const buffer = await createPdfBuffer('# 中文标题\n\n这是中文段落测试。\n', DEFAULT_PDF_OPTIONS, env);
+    const raw = Buffer.from(buffer).toString('latin1');
+    // 面一：字形 —— 复合字体 + 嵌入子集
+    expect(raw).toContain('/Type0');
+    expect(raw).toContain('/Identity-H');
+    expect(raw).toContain('/CIDFontType2');
+    expect(raw).toContain('/FontFile2');
+    // 面二：码位 —— Identity-H 下字形 id 到 Unicode 的映射
+    expect(raw).toContain('/ToUnicode');
+  });
+
   test('100-page document renders without failure', async () => {
     const parts: string[] = [];
     for (let i = 1; i <= 100; i += 1) {

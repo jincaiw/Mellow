@@ -30,8 +30,10 @@ jobs:
           yarn install --immutable
           yarn build
           yarn test
-      # 步骤名**不内嵌用例数**（2026-09-30）：那些数字没有任何东西校验，会随测试增长静默失真
-      # （实测已漂移：host-api 43→47、app-core 217→232、commands 30→33、export 72→83、engine 1135→1197）。
+      # 步骤名**不内嵌用例数**（2026-09-30）：那些数字没有任何东西校验，会随测试增长静默失真。
+      # 实证（比枚举更有说服力）：就在写这段注释的同一天，给 export 补了一个 CJK 机制断言测试，
+      # 该包用例数即从 83 变成 84 —— 漂移不需要等到「以后」，它当天就会发生。
+      # 此前步骤名里内嵌的那批数字已经漂移过一轮（host-api / app-core / commands / export / engine 各包均不同）。
       # 真实数字由 jest 输出（本身即派生），无需在这里复述。护栏 verify-release-gate 禁止回退。
       - name: "Mellow wrapper test + build (contract + neutral)"
         working-directory: packages/editor-core

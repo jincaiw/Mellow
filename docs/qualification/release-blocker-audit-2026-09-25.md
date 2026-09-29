@@ -288,6 +288,41 @@ fi
 （即：把「macOS 签名公证」从纸面要求变成发布管线的强制前置。）
 这属**发布行为变更**，可能阻断 pre-release 打包，本环境不擅自改动。
 
+## 4.6 §10 的「PDF CJK garble」此前只有**冒烟测试**在守（2026-09-30）
+
+**事实**：master plan §10 把「PDF CJK garble」列为**发布阻塞项**，
+V1.0 验收 18 项的第 13 项也依赖它。而 `packages/export/test/index.test.ts` 里
+唯一涉及 CJK 的断言是：
+
+```ts
+const buffer = await createPdfBuffer('# 中文标题\n\n这是中文段落测试。\n\nEnglish paragraph.', ...);
+expect(String.fromCharCode(...buffer.slice(0, 5))).toBe('%PDF-');
+expect(buffer.byteLength).toBeLessThan(3 * 1024 * 1024);
+```
+
+即：**只证明「管线跑通了、产出了 PDF」**，**测不到「CJK 变乱码」**。
+
+**为什么这是「有测试 ≠ 测到了」**：garble 有两个**互相独立**的失效面，
+冒烟测试对两面都无感：
+
+| 失效面 | 机制要求 | 缺了会怎样 |
+|---|---|---|
+| **字形**（看得见） | 嵌入子集（`/FontFile2`） | 换机器/换字体环境 → 字形缺失或回退成方框 |
+| **码位**（复制/搜索对不对） | CJK 走 `/Type0` + `/Identity-H`，此时**字符码 = 字形 id** → 必须有 `/ToUnicode` CMap 才能映回 Unicode | **屏幕看着完全正常，复制出来却是乱码** —— 最典型的「屏幕上看不出异常」 |
+
+**本轮实跑（本机 macOS，pdfmake 0.3.11 + Noto Sans SC 子集）**：
+四个标记**全部命中**（`/Type0`、`/Identity-H`、`/CIDFontType2`、`/FontFile2`、`/ToUnicode`），
+且原始字节中**不含** UTF-8 明文中文（符合 Identity-H 的「码 = 字形 id」语义）。
+
+**处置**：
+1. 在 export 单测中新增**机制断言**测试（断言上述四个标记），保留原冒烟测试；
+2. 新增护栏：export 单测**必须**断言 `/ToUnicode`、`/FontFile2`、`/Identity-H` ——
+   防止测试被悄悄退回冒烟状态。注入验证：删掉 `/ToUnicode` 断言 → 护栏报错；还原 → 通过；
+3. V1.0 验收第 13 项由「⏳ 未复核」改为「✅ 已复核（有 CI 机器依据）」。
+
+**未做的事**：未改动导出实现、未改动 `%PDF-` 冒烟测试、未改动任何结论口径。
+本项**仍不是 PASS-E**（§8 要求三平台真机 + ux-gate），本轮只把「谁在守」从冒烟提升到机制。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
