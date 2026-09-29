@@ -2178,6 +2178,28 @@ export default function App() {
     );
   }, [engineContext, setStatusText, t]);
 
+  /**
+   * P0-EDITOR-005「Check Document Now」（Typora 拼写子菜单）。
+   *
+   * 流程：取整篇文本 → 系统拼写检查 → **选中第一处**问题并提示总数。
+   * 偏移全程按 **UTF-16 码元**（Rust 侧刻意不换算成字节），故可直接用作编辑器选区；
+   * 若改成字节偏移，CJK 之前的位置会整体错位 —— Rust 侧有测试锁住这一点。
+   */
+  const runCheckDocument = useCallback(async () => {
+    const text = await engineContext<string | null>('getDocumentText');
+    if (text === null || text === undefined) {
+      setStatusText(t('msg.spellingUnavailable'));
+      return;
+    }
+    const issues = await createDesktopSpellcheckService().checkDocument(text);
+    if (issues.length === 0) {
+      setStatusText(t('msg.spellingNoIssues'));
+      return;
+    }
+    await engineContext('selectRange', issues[0].from, issues[0].to);
+    setStatusText(`${t('msg.spellingIssuesFound')} ${issues.length}`);
+  }, [engineContext, setStatusText, t]);
+
   const engineContextRef = useRef(engineContext);
   engineContextRef.current = engineContext;
 
@@ -5132,6 +5154,7 @@ export default function App() {
       } },
       // P0-EDITOR-005：拼写词典（Typora 拼写子菜单的 Learn / Unlearn Spelling）。
       // 命令只带 id，故目标词在**派发时**从引擎取（光标处）—— 见 runSpellingDictionary。
+      { id: 'edit.spelling.checkDocument', localizedTitle: { zh: '立即检查文稿', en: 'Check Document Now' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runCheckDocument() },
       { id: 'edit.spelling.learn', localizedTitle: { zh: '添加到字典', en: 'Learn Spelling' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runSpellingDictionary('learn') },
       { id: 'edit.spelling.unlearn', localizedTitle: { zh: '忘记拼写', en: 'Unlearn Spelling' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runSpellingDictionary('unlearn') },
       // R2-1 编辑→替换「智能标点」（Typora parity；设置面板同一真源）

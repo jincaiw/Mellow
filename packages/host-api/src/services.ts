@@ -235,6 +235,13 @@ export interface KeychainService {
  * 另：系统拼写检查对**中日韩文字不提供建议**，故调用方只应传入拉丁词
  * （引擎侧 `wordAt()` 已保证这一点）。
  */
+export interface SpellIssue {
+  /** 起止偏移，**UTF-16 码元**（与 JS 字符串 / CM6 位置同一坐标系） */
+  from: number;
+  to: number;
+  word: string;
+}
+
 export interface SpellcheckService {
   /** 该平台是否具备词典能力 */
   available(): Promise<boolean>;
@@ -246,6 +253,13 @@ export interface SpellcheckService {
   unlearn(word: string): Promise<boolean>;
   /** 该词是否已在用户词典中（宿主据此在「添加到字典」与「忘记拼写」之间切换） */
   hasLearned(word: string): Promise<boolean>;
+  /**
+   * 整篇检查（Typora 拼写子菜单「Check Document Now」）；不可用时返回**空数组**（不抛错）。
+   *
+   * 偏移按 **UTF-16 码元**，调用方可直接用作编辑器选区 —— 不要自行换算成字节偏移，
+   * 否则 CJK 之前的位置会整体错位。
+   */
+  checkDocument(text: string): Promise<SpellIssue[]>;
 }
 
 // ─────────────────────────── process ───────────────────────────

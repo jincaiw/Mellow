@@ -16,6 +16,7 @@ import type {
   MessageDialogOptions,
   ChildProcessInfo,
   ImageUploadOptions,
+  SpellIssue,
 } from './services';
 
 export interface MockHostState {
@@ -518,6 +519,18 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
       hasLearned: async (word: string): Promise<boolean> => {
         const w = word.trim().toLowerCase();
         return w.length > 0 && state.dictionary.has(w);
+      },
+      // 整篇检查：mock 把「不在词典里、且长度 ≥ 4 的拉丁词」视为问题（确定性，便于断言）
+      checkDocument: async (text: string): Promise<SpellIssue[]> => {
+        const out: SpellIssue[] = [];
+        const re = /[A-Za-z][A-Za-z'-]*/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text)) !== null) {
+          const w = m[0].toLowerCase();
+          if (w.length < 4 || state.dictionary.has(w)) continue;
+          out.push({ from: m.index, to: m.index + m[0].length, word: m[0] });
+        }
+        return out;
       },
     },
 

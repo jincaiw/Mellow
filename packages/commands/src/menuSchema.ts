@@ -208,6 +208,11 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     // 当前仅装配 Mellow 已实现项；词典/语法/智能引号/智能破折号为已登记缺口
     // （方案 §5 G7-EDIT-04，W5 补齐后在同一子菜单内追加，无需再改结构）。
     { kind: 'submenu', id: 'edit.spell', labelKey: 'menu.edit.spellMenu', entries: [
+      // Typora 拼写子菜单的「Check Document Now」（一级证据：dump 中
+      // `Check Document Now => 立即检查文稿`）。顺序按 macOS 标准拼写子菜单：
+      // 「立即检查」在「键入时检查」**之前**（dump 是扁平清单，不含层级顺序）。
+      { kind: 'command', id: 'edit.spelling.checkDocument', labelKey: 'menu.edit.checkDocumentNow' },
+      { kind: 'separator' },
       { kind: 'command', id: 'edit.spellcheck.toggle', labelKey: 'menu.edit.spellcheck', checkedFrom: 'spellcheck' },
       // P0-EDITOR-005：Typora 拼写子菜单的 Learn / Unlearn Spelling。
       // 一级证据（`typora-menu-dump.txt`）：`Learn Spelling => 添加到字典`、

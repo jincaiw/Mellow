@@ -7,6 +7,7 @@
 
 import type { DesktopHost } from './host';
 import type { Result } from './types';
+import type { SpellIssue } from './services';
 import { err } from './types';
 
 function notImplemented<T>(name: string): () => Promise<Result<T>> {
@@ -86,6 +87,7 @@ export function createNullHost(): DesktopHost {
       learn: async (): Promise<boolean> => false,
       unlearn: async (): Promise<boolean> => false,
       hasLearned: async (): Promise<boolean> => false,
+      checkDocument: async (): Promise<SpellIssue[]> => [],
     },
     process: {
       spawn: notImplemented('process.spawn'),

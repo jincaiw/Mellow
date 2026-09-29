@@ -9,7 +9,7 @@
  */
 
 import { browserMockHost } from './browserMockHost';
-import type { SpellcheckService } from '../../../../packages/host-api/src/index';
+import type { SpellcheckService, SpellIssue } from '../../../../packages/host-api/src/index';
 import { isTauri } from './fileServices';
 
 /**
@@ -47,6 +47,10 @@ export const tauriSpellcheckService: SpellcheckService = {
   hasLearned: async (word: string) => {
     if (!isTauri()) return browserMockHost.spellcheck.hasLearned(word);
     return (await callSpellcheck<boolean>('spellcheck_has_learned', { word })) ?? false;
+  },
+  checkDocument: async (text: string) => {
+    if (!isTauri()) return browserMockHost.spellcheck.checkDocument(text);
+    return (await callSpellcheck<SpellIssue[]>('spellcheck_check_document', { text })) ?? [];
   },
 };
 

@@ -667,6 +667,10 @@ const TYPORA_MENU_LABELS = [
   // Mellow 该项确认框是「将图片移到回收站并移除引用？」= 会删磁盘文件，
   // 故文案必须对齐 `Delete Image File` —— 否则破坏性操作的标签比实际行为更轻。
   ['contextmenu.editorImageDelete', '删除图片文件', 'Delete Image File'],
+  // P0-EDITOR-005：拼写子菜单三条（一级证据：typora-menu-dump.txt）
+  ['menu.edit.checkDocumentNow', '立即检查文稿', 'Check Document Now'],
+  ['menu.edit.learnSpelling', '添加到字典', 'Learn Spelling'],
+  ['menu.edit.unlearnSpelling', '忘记拼写', 'Unlearn Spelling'],
 ];
 function checkTyporaMenuLabels(zhMap, enMap) {
   const bad = [];

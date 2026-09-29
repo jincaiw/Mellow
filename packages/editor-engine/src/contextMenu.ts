@@ -102,6 +102,16 @@ export interface EditorContextActions {
    * 而不依赖「上次右键的位置」（那样从命令面板触发时目标会是错的）。
    */
   wordAtCursor(): string | null;
+  /**
+   * P0-EDITOR-005「Check Document Now」：取整篇文本，供宿主交给系统拼写检查。
+   * 返回 null 表示当前无活动编辑器。
+   */
+  getDocumentText(): string | null;
+  /**
+   * 选中给定区间（**UTF-16 码元偏移**，与 CM6 位置同一坐标系），并滚动到可见处。
+   * 越界或空区间返回 false（不抛错）。
+   */
+  selectRange(from: number, to: number): boolean;
   /** C1：复制渲染结果为 PNG（math → MathML 转 PNG；mermaid → 渲染 SVG 转 PNG），写入剪贴板 */
   copyRendered(kind: 'math' | 'mermaid'): Promise<boolean>;
   /** C1：渲染导出（宿主「下载」用）：返回 PNG dataURL，无渲染结果时为 null */
@@ -826,6 +836,20 @@ export function installContextMenuApi(): void {
       const view = activeView;
       if (view === null) return null;
       return wordAt(view.state.doc.toString(), view.state.selection.main.head);
+    },
+    getDocumentText() {
+      const view = activeView;
+      if (view === null) return null;
+      return view.state.doc.toString();
+    },
+    selectRange(from, to) {
+      const view = activeView;
+      if (view === null) return false;
+      const len = view.state.doc.length;
+      if (!Number.isFinite(from) || !Number.isFinite(to)) return false;
+      if (from < 0 || to > len || from >= to) return false;
+      view.dispatch({ selection: EditorSelection.range(from, to), scrollIntoView: true });
+      return true;
     },
     tableOp(op) {
       const view = activeView;

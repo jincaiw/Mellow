@@ -224,6 +224,8 @@ interface ContextActions {
   copySource(kind: 'math' | 'mermaid'): boolean;
   /** P0-EDITOR-005 */
   wordAtCursor(): string | null;
+  getDocumentText(): string | null;
+  selectRange(from: number, to: number): boolean;
 }
 
 describe('动作 API（__MELLOW_CONTEXT_ACTIONS__）', () => {
@@ -489,6 +491,35 @@ describe('wordAtCursor（动作 API）', () => {
     expect(actions.wordAtCursor()).toBeNull();
     moveCaret(view, 5);
     expect(actions.wordAtCursor()).toBeNull();
+    view.destroy();
+  });
+});
+
+describe('P0-EDITOR-005：整篇检查所需动作', () => {
+  function setUpWith(doc: string): { view: EditorView; actions: ContextActions } {
+    const view = new EditorView({
+      doc,
+      parent: document.body,
+      extensions: [markdown({ base: markdownLanguage }), install(true)],
+    });
+    view.focus();
+    const actions = (window as unknown as Record<string, unknown>)[ACTIONS_KEY] as ContextActions;
+    return { view, actions };
+  }
+
+
+  test('getDocumentText / selectRange（Check Document Now 的两个前提）', () => {
+    const { view, actions } = setUpWith('alpha beta gamma');
+    expect(actions.getDocumentText()).toBe('alpha beta gamma');
+    // 合法区间：选中并滚动到可见处
+    expect(actions.selectRange(6, 10)).toBe(true);
+    expect(view.state.selection.main.from).toBe(6);
+    expect(view.state.selection.main.to).toBe(10);
+    // 越界 / 空区间 / 反区间一律 false（不抛错）
+    expect(actions.selectRange(-1, 3)).toBe(false);
+    expect(actions.selectRange(0, 999)).toBe(false);
+    expect(actions.selectRange(3, 3)).toBe(false);
+    expect(actions.selectRange(5, 2)).toBe(false);
     view.destroy();
   });
 });

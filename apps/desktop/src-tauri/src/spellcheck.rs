@@ -60,6 +60,34 @@ pub fn spellcheck_unlearn(word: String) -> bool {
     }
 }
 
+/// 整篇检查拼写，返回**未命中词典的区间**（Typora 拼写子菜单「Check Document Now」）。
+///
+/// 返回的 `from` / `to` 是 **UTF-16 码元偏移**，与 JS 字符串 / CM6 位置**同一坐标系**，
+/// 调用方可直接用作选区（**不要**在 Rust 侧换算成字节偏移 —— 那会把 CJK 之前的
+/// 位置整体算错）。
+#[derive(serde::Serialize)]
+pub struct SpellIssue {
+    pub from: usize,
+    pub to: usize,
+    pub word: String,
+}
+
+/// 上限：单次最多返回多少个问题（避免超大文档一次生成海量数据）
+const MAX_ISSUES: usize = 500;
+
+#[tauri::command]
+pub fn spellcheck_check_document(text: String) -> Vec<SpellIssue> {
+    #[cfg(target_os = "macos")]
+    {
+        mac::check_document(&text, MAX_ISSUES)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = text;
+        Vec::new()
+    }
+}
+
 /// 词是否已在用户词典中
 #[tauri::command]
 pub fn spellcheck_has_learned(word: String) -> bool {
@@ -123,6 +151,35 @@ mod mac {
         true
     }
 
+    /// 整篇检查：反复调用 `checkSpellingOfString:startingAt:` 收集未命中区间。
+    ///
+    /// 该 API 每次返回**下一个**拼写错误的 NSRange；返回 `NSNotFound`（此处表现为
+    /// 长度为 0）表示已到末尾。偏移全程按 **UTF-16 码元**，与 JS 侧一致。
+    pub fn check_document(text: &str, max_issues: usize) -> Vec<super::SpellIssue> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+        let checker = NSSpellChecker::sharedSpellChecker();
+        let ns_text = NSString::from_str(text);
+        let mut out: Vec<super::SpellIssue> = Vec::new();
+        let mut offset: usize = 0;
+        while out.len() < max_issues {
+            // `starting_offset` 是 NSInteger（isize），而我们的 offset 是 usize
+            let range = checker.checkSpellingOfString_startingAt(&ns_text, offset as isize);
+            // 零长度 → 已到末尾（NSNotFound 亦表现为零长度）；同时防死循环
+            if range.length == 0 {
+                break;
+            }
+            let from = range.location;
+            let to = range.location + range.length;
+            // 逐字符构造词（按 UTF-16 取子串交给 NSString 处理，避免字节偏移错位）
+            let sub = ns_text.substringWithRange(range);
+            out.push(super::SpellIssue { from, to, word: sub.to_string() });
+            offset = to;
+        }
+        out
+    }
+
     pub fn has_learned(word: &str) -> bool {
         let w = normalize(word);
         if w.is_empty() {
@@ -154,6 +211,31 @@ mod mac {
             assert!(has_learned(w), "learn 之后 has_learned 必须为真");
             assert!(unlearn(w));
             assert!(!has_learned(w), "unlearn 之后必须为假");
+        }
+
+        #[test]
+        fn check_document_offsets_are_utf16_not_bytes() {
+            // 前缀含 CJK：**若实现误用字节偏移，位置会整体偏移**
+            //   UTF-16 码元：中(1) 文(1) 空格(1) → 伪词从 **3** 开始
+            //   UTF-8 字节：中(3) 文(3) 空格(1) → 会是 7
+            let text = "中文 mellowzzzqqq end";
+            let issues = check_document(text, 100);
+            assert!(!issues.is_empty(), "含明显非词时应至少报一处");
+            assert_eq!(issues[0].from, 3, "偏移必须按 UTF-16 码元（3），不是字节（7）");
+            assert_eq!(issues[0].word.to_lowercase(), "mellowzzzqqq");
+        }
+
+        #[test]
+        fn check_document_is_empty_for_empty_text() {
+            assert!(check_document("", 100).is_empty());
+        }
+
+        #[test]
+        fn check_document_respects_max_issues() {
+            // 上限必须生效（防超大文档一次生成海量数据）
+            let text = "zzqqa zzqqb zzqqc zzqqd zzqqe";
+            let issues = check_document(text, 2);
+            assert!(issues.len() <= 2, "max_issues 必须生效，实际 {}", issues.len());
         }
 
         #[test]

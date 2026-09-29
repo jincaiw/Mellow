@@ -226,6 +226,7 @@ pub fn run() {
             spellcheck::spellcheck_learn,
             spellcheck::spellcheck_unlearn,
             spellcheck::spellcheck_has_learned,
+            spellcheck::spellcheck_check_document,
             recovery::recovery_save,
             recovery::recovery_list,
             recovery::recovery_get,
