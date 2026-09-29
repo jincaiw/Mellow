@@ -6,8 +6,8 @@
  * records each completed task; this tool only verifies that the evidence meets
  * PRD §132's two-round, same-machine comparison rules.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 const TASKS = [
   '启动、新建、标题、保存', '双击打开、编辑、保存', '文件夹与文件树切换', 'Quick Open 模糊打开', '全局搜索跳转',
@@ -47,6 +47,67 @@ const UX_THRESHOLDS = { total: 92, liveEditing: 24, caretImeUndo: 15, fileSafety
 
 function fail(message) { throw new Error(message); }
 function mean(values) { return values.reduce((sum, value) => sum + value, 0) / values.length; }
+
+/**
+ * 当前 HEAD 的短 sha（2026-09-30 新增）。
+ *
+ * 为什么需要：记录里的 `mellowCommit` 是**本次实际测试的修订**，是整个门禁
+ * 「证据对应哪个构建」的唯一线索。而它此前**只要求不是 `REPLACE_` 开头** ——
+ * 一个过期 sha 照样通过校验。实测踩到：仓库里那份预生成的草稿写的是 `c2ba524`，
+ * 两小时后 HEAD 已是别的提交，人工若照草稿填，记录就会指向**没被测过的修订**。
+ *
+ * 不 spawn 子进程：直接读 `.git` 引用（detached HEAD / packed-refs 都覆盖）。
+ * 读不到就返回 null —— 本函数只用于**提示**，不得成为门禁的失败原因。
+ */
+function currentHeadShort() {
+  try {
+    const gitDir = resolve(import.meta.dirname, '../../.git');
+    const head = readFileSync(resolve(gitDir, 'HEAD'), 'utf8').trim();
+    if (/^[0-9a-f]{40}$/.test(head)) return head.slice(0, 7); // detached HEAD
+    const ref = /^ref:\s*(.+)$/.exec(head)?.[1];
+    if (!ref) return null;
+    const refPath = resolve(gitDir, ref);
+    if (existsSync(refPath)) return readFileSync(refPath, 'utf8').trim().slice(0, 7);
+    const packedPath = resolve(gitDir, 'packed-refs');
+    if (existsSync(packedPath)) {
+      const line = readFileSync(packedPath, 'utf8').split('\n').find((l) => l.endsWith(` ${ref}`));
+      if (line) return line.split(' ')[0].slice(0, 7);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** 把 sha 归一化为短 sha，便于比对（人工可能填长 sha 或带前缀） */
+function shortSha(value) {
+  const m = /^([0-9a-f]{7,40})$/i.exec(String(value ?? '').trim());
+  return m ? m[1].slice(0, 7).toLowerCase() : null;
+}
+
+/**
+ * 记录里的 commit 是否对应本次实际测试的修订。
+ * 返回 `{ status: 'ok' | 'missing' | 'mismatch' | 'unknown', recorded, head, message }`。
+ */
+function commitCheck(record) {
+  const recordedRaw = typeof record?.mellowCommit === 'string' ? record.mellowCommit : '';
+  if (!recordedRaw || recordedRaw.startsWith('REPLACE_')) {
+    return { status: 'missing', recorded: recordedRaw, head: currentHeadShort(), message: '未填（必须填本次实际测试的修订）' };
+  }
+  const head = currentHeadShort();
+  const recorded = shortSha(recordedRaw);
+  if (!head) {
+    return { status: 'unknown', recorded: recordedRaw, head: null, message: `已填 ${recordedRaw}（读不到当前 HEAD，无法比对）` };
+  }
+  if (recorded && recorded !== head) {
+    return {
+      status: 'mismatch', recorded: recordedRaw, head,
+      message: `⚠️ 记录的 ${recordedRaw} ≠ 当前 HEAD ${head} —— 请确认你测的就是当前构建；`
+        + '若本次会话应固定在同一修订上，请先把工作区切到该修订再测，并更正 mellowCommit',
+    };
+  }
+  return { status: 'ok', recorded: recordedRaw, head, message: `已填 ${recordedRaw}，与当前 HEAD 一致` };
+}
 
 function blankRecord(platform, mellowCommit = 'REPLACE_WITH_COMMIT') {
   return {
@@ -156,6 +217,12 @@ function validate(record) {
       `File Safety 必须 = ${UX_THRESHOLDS.fileSafety}/5`);
   }
 
+  // ── 修订对应关系（仅提示，不参与判定）─────────────────────────────────
+  // 记录里的 mellowCommit 是「证据对应哪个构建」的唯一线索；但**校验可能晚于会话**，
+  // 期间会有新提交落地 —— 故此处**只报告、不失败**（失败会逼人改成「看起来对」的 sha，
+  // 那反而更糟）。真正的防线在 `progress`：会话进行中就提示不一致。
+  const commitNote = commitCheck(record);
+
   const taskResults = [];
   for (let task = 1; task <= TASKS.length; task++) {
     const rows = APPS.flatMap((app) => ROUNDS.map((round) => byKey.get(`${task}/${app}/${round}`)));
@@ -181,7 +248,7 @@ function validate(record) {
       typoraScore: mean(typoraRows.map((row) => row.subjectiveScore)),
     });
   }
-  if (errors.length) return { valid: false, errors, taskResults: [] };
+  if (errors.length) return { valid: false, errors, taskResults: [], commitNote };
 
   const withinFivePct = taskResults.filter((task) => task.deltaPct <= 5).length;
   const criticalSlow = taskResults.filter((task) => CRITICAL_TASKS.has(task.task) && task.deltaPct > 15).map((task) => task.task);
@@ -193,7 +260,7 @@ function validate(record) {
   if (criticalSlow.length) gateErrors.push(`关键任务慢于 Typora 15%：${criticalSlow.join(', ')}`);
   if (errorRegressions.length) gateErrors.push(`Mellow 错误率高于 Typora：${errorRegressions.join(', ')}`);
   if (mellowScore < typoraScore) gateErrors.push(`主观评分 Mellow ${mellowScore.toFixed(2)} < Typora ${typoraScore.toFixed(2)}`);
-  return { valid: gateErrors.length === 0, errors: gateErrors, taskResults, summary: { withinFivePct, criticalSlow, errorRegressions, mellowScore, typoraScore } };
+  return { valid: gateErrors.length === 0, errors: gateErrors, taskResults, commitNote, summary: { withinFivePct, criticalSlow, errorRegressions, mellowScore, typoraScore } };
 }
 
 function sampleObservation(task, app, round, appOrder) {
@@ -259,15 +326,17 @@ function progressReport(input) {
   }
 
   const filledOr = (v) => (typeof v === 'string' && v.length > 0 && !v.startsWith('REPLACE_')) ? '已填' : '未填';
+  const cc = commitCheck(record);
   return {
     total: TASKS.length * APPS.length * ROUNDS.length,
     filled,
     incompleteCount: incompleteList.length,
     missingCount: missingKeys.length,
+    commitCheck: cc,
     meta: {
       tester: filledOr(record?.tester),
       machine: filledOr(record?.machine),
-      mellowCommit: filledOr(record?.mellowCommit),
+      mellowCommit: cc.message,
       imeCorruption: record?.imeCorruption === false ? 'false ✓' : '未填（必须明确为 false）',
       dataLoss: record?.dataLoss === false ? 'false ✓' : '未填（必须明确为 false）',
       uxScore: (() => {
@@ -343,6 +412,31 @@ function selfTest() {
   lowTotal.uxScore.modules.desktopUi = 0;
   if (validate(lowTotal).valid) fail('self-test failed: UX Score 总分低于门槛时必须被拒绝');
 
+  // 修订核对（2026-09-30）：三种状态必须可区分 —— 它只提示、不参与判定。
+  // ⚠️ 必须放在 `record.observations.pop()` **之前**：本块要 clone 一份**完整**记录。
+  {
+    if (shortSha('ABC1234def') !== 'abc1234') fail('self-test failed: shortSha 未把长 sha 归一化为短 sha');
+    if (shortSha('REPLACE_WITH_COMMIT') !== null) fail('self-test failed: 占位符不应被当作 sha');
+    if (commitCheck({ mellowCommit: 'REPLACE_WITH_COMMIT' }).status !== 'missing') {
+      fail('self-test failed: 未填 commit 必须被识别为 missing');
+    }
+    const head = currentHeadShort();
+    if (head) {
+      if (commitCheck({ mellowCommit: head }).status !== 'ok') {
+        fail('self-test failed: 与 HEAD 相同的 commit 必须被识别为 ok');
+      }
+      if (commitCheck({ mellowCommit: '0000000' }).status !== 'mismatch') {
+        fail('self-test failed: 与 HEAD 不同的 commit 必须被识别为 mismatch');
+      }
+      // 关键：不一致**不得**让 validate 失败（否则会逼人改成「看起来对」的 sha，反而更糟）
+      const withStale = JSON.parse(JSON.stringify(record));
+      withStale.mellowCommit = '0000000';
+      const res = validate(withStale);
+      if (!res.valid) fail(`self-test failed: commit 与 HEAD 不一致不得使 validate 失败（实际：${res.errors.join('; ')}）`);
+      if (res.commitNote?.status !== 'mismatch') fail('self-test failed: validate 必须回传 commitNote 供人工核对');
+    }
+  }
+
   record.observations.pop();
   if (validate(record).valid) fail('self-test failed: incomplete record must be rejected');
   console.log('UX gate recorder self-test: PASS');
@@ -357,6 +451,10 @@ try {
     if (!output || !platform || !commit) fail('用法：init --output <file.json> --platform <macos|windows|linux> --commit <sha>');
     const path = resolve(output);
     if (existsSync(path)) fail(`拒绝覆盖已有记录：${path}`);
+    // 创建落点目录：此前 init 不建目录，只能靠「提交一份 DRAFT 占位文件」让 git 保留
+    // 空目录 —— 而那份占位文件里的 commit 会在下一个提交就过期（实测 2 小时后即失配）。
+    // 目录由 init 自建后，占位文件不再需要。
+    mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, `${JSON.stringify(blankRecord(platform, commit), null, 2)}\n`);
     console.log(`已创建 UX Gate 记录：${path}`);
   } else if (command === 'progress') {
@@ -377,8 +475,15 @@ try {
       console.log('顺序规则问题：');
       for (const x of r.orderIssues.slice(0, 20)) console.log(`  - ${x}`);
     }
+    // commit 对应关系单独提示：它不影响「填完了没有」，但影响「证据对应哪个构建」
+    if (r.commitCheck.status === 'mismatch') {
+      console.log(`修订核对：${r.commitCheck.message}`);
+    }
     if (r.filled === r.total && r.orderIssues.length === 0 && r.meta.imeCorruption.endsWith('✓') && r.meta.dataLoss.endsWith('✓')) {
       console.log('✓ 120 条齐备、顺序规则与两项安全声明均通过 → 可执行 validate');
+      if (r.commitCheck.status === 'mismatch') {
+        console.log('⚠️ 但 mellowCommit 与当前 HEAD 不一致 —— 校验前请先确认记录的是你实际测试的修订。');
+      }
     }
     // 进度报告**不是门禁**：未填完不失败，否则无法在会话中途查看进度
     process.exitCode = 0;

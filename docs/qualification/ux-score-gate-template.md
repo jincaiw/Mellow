@@ -67,30 +67,51 @@
 
 ### 记录与校验
 
-空白记录已生成（**含当前 commit**）：`docs/qualification/evidence/macos-ux-gate-DRAFT.json`。
-**该文件已预置 120 条观测骨架** —— `task` / `app` / `round` 已生成，`appOrder` 已按交替规则算好，
-**你只需补测量值**（`durationMs` / `error` / `steps` / `subjectiveScore` / `evidence` /
-`entryPoint` / `sourceDiff`），**不要改结构**。骨架里**不含任何数值**，故不可能把占位值误当读数；
-填完重命名为 `macos-ux-gate-<date>.json` 再校验。
-（`ux-gate-recorder.mjs init` 拒绝覆盖已存在文件，故不要重复 init。）
+> **⚠️ 会话开始前先把修订固定下来（2026-09-30 新增纪律）**：
+> 记录里的 `mellowCommit` 是「**这份证据对应哪个构建**」的唯一线索。
+> 请在会话开始前把工作区切到要验收的修订（标签或 commit），**整场会话不要换构建**。
+
+会话开始时**自己生成**记录（不要把草稿文件提交进仓库 —— 见下方说明）：
 
 ```bash
-# 中途随时查看进度（只读，不判定、不因未填完而失败）
-node tests/qualification/ux-gate-recorder.mjs progress \
-  --input docs/qualification/evidence/macos-ux-gate-DRAFT.json
+# ① 记下本次要验收的修订
+git rev-parse --short HEAD
 
-# 120 条填完并改名后校验（计算 PRD §132 的 +5% / 关键任务 +15% / 错误率 / 主观评分 Gate）
+# ② 生成记录：已预置 120 条观测骨架（task/app/round 已生成、appOrder 已按交替规则算好，
+#    且不含任何测量值），你只需补测量值（durationMs / error / steps / subjectiveScore /
+#    evidence / entryPoint / sourceDiff），不要改结构。
+#    落点目录由 init 自建，无需预先创建。
+node tests/qualification/ux-gate-recorder.mjs init \
+  --output docs/qualification/evidence/macos-ux-gate-<date>.json \
+  --platform macos --commit <①的 sha>
+```
+
+```bash
+# ③ 中途随时查看进度（只读，不判定、不因未填完而失败）
+node tests/qualification/ux-gate-recorder.mjs progress \
+  --input docs/qualification/evidence/macos-ux-gate-<date>.json
+
+# ④ 120 条填完后校验（计算 PRD §132 的 +5% / 关键任务 +15% / 错误率 / 主观评分 Gate）
 node tests/qualification/ux-gate-recorder.mjs validate \
   --input docs/qualification/evidence/macos-ux-gate-<date>.json
 ```
 
 `progress` 会报告：已填写完整条数、字段不完整的条目（指明缺哪个字段）、未填条目、
-以及 **appOrder 交替规则**（同一轮内 typora/mellow 顺序必须一致；两轮之间必须交换）。
+**appOrder 交替规则**（同一轮内 typora/mellow 顺序必须一致；两轮之间必须交换），
+以及 **`mellowCommit` 与当前 HEAD 是否一致**（不一致会明确警告 —— 这直接决定
+「这份证据对应哪个构建」）。
 `validate` 要求 30 × 2 app × 2 round 共 120 条记录、每任务两轮交换 app 顺序、
-截图/视频/日志证据、IME/data-loss 明确为零。
+截图/视频/日志证据、IME/data-loss 明确为零；并会回传 `commitNote` 供人工核对
+（**不一致不判失败**：校验可能晚于会话，期间有新提交落地；失败会逼人改成
+「看起来对」的 sha，反而更糟）。
 
-> ⚠️ **`DRAFT` 文件是未填写的草稿，不得作为证据登记**：它的 `tester`/`machine` 仍是
-> `REPLACE_WITH_*` 占位符，`validate` 会直接拒绝。登记进台账前必须由真人填写并改名。
+> **为什么不再提交一份预生成的 `DRAFT` 记录（2026-09-30）**：
+> 仓库里曾有一份 `docs/qualification/evidence/macos-ux-gate-DRAFT.json`，其真实作用是
+> **让 git 保留 `docs/qualification/evidence/` 这个空目录** —— 因为 `init` 当时不创建落点目录。
+> 但那份草稿里的 `mellowCommit` **在下一个提交就过期**（实测：草稿写 `c2ba524`，
+> 两小时后 HEAD 已是别的提交）。人工若照草稿填，记录就会指向**没被测过的修订**。
+> 现 `init` 自建目录，草稿不再需要 —— 且**不得**再提交带 commit 的草稿
+> （护栏已锁：`docs/qualification/evidence/` 下不得存在预生成的草稿记录）。
 
 ### 任务清单
 | # | 任务 | T-R1 | T-R2 | M-R1 | M-R2 | 误差% | 错误 | 评分 |
@@ -182,6 +203,12 @@ node tests/qualification/ux-gate-recorder.mjs validate \
 
 ## 五、更新记录
 - 2026-08-18：创建模板（待真机执行）。
+- 2026-09-30：**不再提交预生成的 `DRAFT` 记录**（已删除），改为会话开始时用 `init` 自生成；
+  `init` 现在**自建落点目录**（这才是那份草稿的真实作用 —— 让 git 保留空目录）。
+  并新增：会话前**固定修订**的纪律、`progress` 报告 `mellowCommit` 与当前 HEAD 是否一致、
+  `validate` 回传 `commitNote`（不一致**不判失败**）。
+  立此改动的实测依据：草稿里写的是 `c2ba524`，**两小时后 HEAD 已是别的提交** ——
+  人工照草稿填，记录会指向**没被测过的修订**，而校验只要求「不是 `REPLACE_` 开头」，照样通过。
 - 2026-09-30：补**清单归属说明** —— 30 项由**本模板**定义（PRD §132 只规定数量 30 与四条阈值，
   **不含逐项清单**，已回查原文）；并明确 10MB 在 PRD 侧的对应条款是 **§129 J18**，
   与效率 Gate 第 30 项**不是同一件事**。同时在 §3.1 区分「模板层（Q3a）」与「宪法层（Q3b）」。
@@ -193,7 +220,11 @@ node tests/qualification/ux-gate-recorder.mjs validate \
   原先 `observations: []` 要求人工手写 120 条 × 8 字段的 JSON，且草稿无结构示例 ——
   既是巨大时间成本，也是错填高发区。骨架自检（条数 / 顺序规则 / 不得含测量字段 /
   未填必须被 validate 拒绝）已随 `--self-test` 挂在 parity 与 test 两条链上。
+- 2026-09-30：**固化对照文档**为 `tests/fixtures/ux-gate/`（此前只写「同一份测试文档
+  （`tests/fixtures/`）」，**没有任何文档被指定** → 三场平台会话各用各的，任务内容不可比）。
 - 2026-09-25：① 记录与校验改为使用已生成的空白记录 `docs/qualification/evidence/macos-ux-gate-DRAFT.json`
   （含当前 commit），并新增 `progress` 中途进度报告（只读，不判定）；② 新增「执行前必读」
   一节，登记**任务 30 在 Typora 侧无法执行**（>2MB 拒渲染）与环境前置（输入源、锁屏）；
   ③ 修正 `init` 的落点目录此前不存在的问题（`docs/qualification/evidence/` 已创建）。
+  > ⚠️ 其中①已被 2026-09-30 的改动取代（见上）；③的根因也已在 2026-09-30 被真正修掉
+  > （`init` 自建目录），故草稿文件不再需要。

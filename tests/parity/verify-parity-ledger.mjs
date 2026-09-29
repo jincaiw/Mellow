@@ -722,6 +722,66 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── UX Gate 记录：不得提交「未填写的预生成草稿」（2026-09-30）──────────────
+  // 仓库里曾有一份 `docs/qualification/evidence/macos-ux-gate-DRAFT.json`，其真实作用
+  // 是**让 git 保留那个空目录** —— 因为 `init` 当时不创建落点目录（git 不跟踪空目录）。
+  // 但那份草稿的 `mellowCommit` **在下一个提交就过期**（实测：草稿写 `c2ba524`，
+  // 两小时后 HEAD 已是别的提交），而校验只要求「不是 REPLACE_ 开头」→ 人工照草稿填，
+  // 记录就会指向**没被测过的修订**，且**屏幕上看不出**。
+  // 现 `init` 自建目录 + 报告 HEAD 一致性，草稿不再需要，且**不得**再提交。
+  // ⚠️ 注意区分「草稿」与「已完成的记录」：会话结束后那份**真记录**就落在这个目录里，
+  // 它是证据、必须允许存在。判定草稿 = 「init 产出且从未填写」（tester 仍是占位符
+  // 且没有任何观测带数值）。
+  {
+    const evidDir = resolve(root, 'docs/qualification/evidence');
+    const drafts = [];
+    if (existsSync(evidDir)) {
+      for (const name of readdirSync(evidDir)) {
+        if (!/ux-gate.*\.json$/.test(name)) continue;
+        let rec = null;
+        try { rec = JSON.parse(readFileSync(resolve(evidDir, name), 'utf8')); } catch { continue; }
+        const testerUnset = typeof rec?.tester !== 'string' || rec.tester.startsWith('REPLACE_');
+        const observations = Array.isArray(rec?.observations) ? rec.observations : [];
+        const anyMeasured = observations.some((o) => Number.isFinite(o?.durationMs) && o.durationMs > 0);
+        if (testerUnset && !anyMeasured) drafts.push(name);
+      }
+    }
+    assert(drafts.length === 0,
+      'docs/qualification/evidence/ 不得存在**未填写的** UX Gate 草稿记录：' + drafts.join(', ')
+      + '（草稿里的 mellowCommit 在下一个提交就过期 → 照填会记录到没被测过的修订；'
+      + '会话开始时用 `ux-gate-recorder.mjs init` 自生成，落点目录由 init 自建）');
+
+    const recPath = resolve(root, 'tests/qualification/ux-gate-recorder.mjs');
+    assert(existsSync(recPath), 'ux-gate-recorder.mjs 不存在');
+    if (existsSync(recPath)) {
+      const rec = readFileSync(recPath, 'utf8').replace(/\r\n/g, '\n');
+      assert(/function currentHeadShort/.test(rec),
+        'ux-gate-recorder 必须实现 currentHeadShort（记录修订要与当前 HEAD 核对）');
+      assert(/function commitCheck/.test(rec), 'ux-gate-recorder 必须实现 commitCheck');
+      assert(/commitCheck:\s*cc/.test(rec), 'progress 必须把 commitCheck 报给人工（会话进行中就能发现不一致）');
+      assert(/commitNote/.test(rec), 'validate 必须回传 commitNote（不一致不判失败，但必须让人看见）');
+      assert(/mkdirSync\(dirname\(path\)/.test(rec),
+        'init 必须自建落点目录（否则又得靠提交一份草稿占位来让 git 保留空目录）');
+      const tpl = readFileSync(resolve(root, 'docs/qualification/ux-score-gate-template.md'), 'utf8').replace(/\r\n/g, '\n');
+      assert(/ux-gate-recorder\.mjs init/.test(tpl),
+        '模板必须写明会话开始时用 `init` 自生成记录（不得依赖已删除的草稿文件）');
+      assert(/固定|切到要验收的修订|rev-parse --short HEAD/.test(tpl),
+        '模板必须写明「会话前把修订固定下来」的纪律（否则记录的 commit 无意义）');
+    }
+    // canary：自检草稿判定（样本拼接构造）
+    const DRAFT_SAMPLE = { tester: 'REPLACE_WITH_' + 'TESTER', observations: [{ task: 1, app: 'typora', round: 1 }] };
+    const testerUnset = typeof DRAFT_SAMPLE.tester !== 'string' || DRAFT_SAMPLE.tester.startsWith('REPLACE_');
+    const anyMeasured = DRAFT_SAMPLE.observations.some((o) => Number.isFinite(o?.durationMs) && o.durationMs > 0);
+    if (!(testerUnset && !anyMeasured)) {
+      errors.push('UX Gate 草稿判定 canary 失效：未填写的样本未被识别为草稿');
+    }
+    const REAL_SAMPLE = { tester: '张三', observations: [{ durationMs: 1000 }] };
+    const realTesterUnset = typeof REAL_SAMPLE.tester !== 'string' || REAL_SAMPLE.tester.startsWith('REPLACE_');
+    if (realTesterUnset) {
+      errors.push('UX Gate 草稿判定 canary 失效：已填写的真记录被误判为草稿（会挡住合法证据）');
+    }
+  }
+
   // ── UX Gate 记录器：进度报告必须只读（2026-09-25）──────────────────────
   // 立此节的原因：`validate` 要 120 条齐备才给结论，人工会话中途无法知道「还差哪些」，
   // 且它把「还没填」与「填错了」混在同一次报错里。新增的 `progress` 命令必须**只读**：
