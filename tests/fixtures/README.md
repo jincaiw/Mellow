@@ -33,6 +33,7 @@
 | `alerts/github-alerts-corpus.md` | GitHub Alerts Corpus：NOTE/TIP/IMPORTANT/WARNING/CAUTION、普通引用、代码块跳过 |
 | `yaml/front-matter-corpus.md` | YAML Front Matter Corpus：顶部 front matter、列表、布尔/数字、正文分隔 |
 | `html/safe-html-corpus.html` | Safe HTML Corpus：common tags、video/audio、iframe、script/event/javascript URL 清洗 |
+| `ux-gate/` | **UX Gate 30 任务对照夹具**（PRD §132）：主文档 `ux-gate-30tasks.md` + 第二文档 `notes.md` + `assets/`。门禁要求「同机同文档」，此前**无文档被指定**（三平台会话会各用各的）→ 见 `ux-gate/README.md` |
 
 ## 用法示例（jest）
 

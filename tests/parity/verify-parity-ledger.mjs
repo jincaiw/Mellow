@@ -637,6 +637,91 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── UX Gate 对照文档必须存在且「能执行那 30 项任务」（2026-09-30）──────────
+  // 门禁要求「同一台机器、**同一份测试文档**」下对照 Typora 与 Mellow，
+  // 但此前**没有任何文档被指定**（模板只写「同一份测试文档（tests/fixtures/）」）。
+  // 而 30 项里一半以上依赖**特定内容** → 不指定则三场平台会话各用各的文档，
+  // 任务内容不可比；「修正 Mermaid 错误」「加一行」这类动作也无从复现。
+  // 本节的断言 = 「删掉某项内容会让某几项任务**无法执行**」的那些能力：
+  // 无法执行在人工会话里表现为「跳过」，最终是一条**静默缺失的观测**（屏幕上看不出）。
+  {
+    const gateDir = resolve(root, 'tests/fixtures/ux-gate');
+    const gateDoc = resolve(gateDir, 'ux-gate-30tasks.md');
+    const gateImg = resolve(gateDir, 'assets/gate-placeholder.png');
+    assert(existsSync(gateDoc), 'UX Gate 对照文档缺失：tests/fixtures/ux-gate/ux-gate-30tasks.md');
+    assert(existsSync(resolve(gateDir, 'notes.md')), 'UX Gate 第二文档缺失：tests/fixtures/ux-gate/notes.md（任务 03/04 需要）');
+    assert(existsSync(gateImg), 'UX Gate 图片载体缺失：tests/fixtures/ux-gate/assets/gate-placeholder.png（任务 12）');
+    // 模板必须**指定**这份文档，否则「同文档」仍然没有参照物
+    const gateTpl = readFileSync(resolve(root, 'docs/qualification/ux-score-gate-template.md'), 'utf8').replace(/\r\n/g, '\n');
+    assert(/tests\/fixtures\/ux-gate\//.test(gateTpl),
+      'UX Gate 模板必须指定对照文档为 tests/fixtures/ux-gate/（否则「同机同文档」无参照物）');
+    if (existsSync(gateDir)) {
+      const mdCount = readdirSync(gateDir).filter((n) => n.endsWith('.md')).length;
+      assert(mdCount >= 3, `UX Gate 目录至少需要 3 个 .md 文件（任务 03/04 切换文件与 Quick Open），实测 ${mdCount}`);
+    }
+    if (existsSync(gateImg)) {
+      const head = readFileSync(gateImg).subarray(0, 8);
+      const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      assert(PNG_MAGIC.every((b, i) => head[i] === b),
+        'UX Gate 图片载体必须是真正的 PNG（否则任务 12/25 的图片渲染与导出会失真）');
+    }
+    if (existsSync(gateDoc)) {
+      const doc = readFileSync(gateDoc, 'utf8').replace(/\r\n/g, '\n');
+      // 每一条都对应「少了它某项任务就无法执行」。
+      // ⚠️ 断言必须**结构**而非「文本出现过」：本文件里到处在**说明**这些构件
+      // （例：正文写着「点击文首的 `[TOC]` 生成的目录项」），
+      // 用裸子串判断会被**散文提及**满足 → 真构件删掉后护栏仍绿（假阴性）。
+      // 故：指令类用行锚点（`^…$`）、脚注引用要求紧贴正文而非被反引号包住、
+      // 「故意写错的 Mermaid」直接**结构性判定**该围栏的括号不平衡。
+      const checks = [
+        [/^\[TOC\]\s*$/m, '独立的 `[TOC]` 指令行（任务 19；被反引号包住的说明文字不算）'],
+        [/\$[^$\n]+\$/, '行内数学 `$…$`（任务 16）'],
+        [/^\$\$$/m, '独立的块级数学定界行 `$$`（任务 16 / 25）'],
+        [/^```mermaid$/m, 'Mermaid 围栏（任务 17 / 25）'],
+        [/^\[\^[^\]]+\]:/m, '脚注定义（任务 18）'],
+        [/[\u4e00-\u9fa5A-Za-z]\[\^[^\]]+\]/, '紧贴正文的脚注引用（任务 18；被反引号包住的说明文字不算）'],
+        [/:\s*-{2,}/, '表格左对齐标记 `:---`（任务 11）'],
+        [/-{2,}\s*:/, '表格右对齐标记 `---:`（任务 11）'],
+        [/^- \[ \]/m, '行首的未勾选任务列表项（任务 10）'],
+        [/^\s{2,}- /m, '嵌套列表（任务 09）'],
+        [/!\[[^\]]*\]\(assets\//, '相对路径图片 `assets/…`（任务 12）'],
+        [/^#### /m, 'H4 标题（任务 20 大纲层级）'],
+        [/UXGATEKEYWORD/, '搜索关键字标记（任务 05）'],
+      ];
+      for (const [re, label] of checks) {
+        assert(re.test(doc), `UX Gate 对照文档缺少 ${label} —— 对应任务将无法执行（人工会话里表现为「跳过」）`);
+      }
+      const replaceHits = (doc.match(/替换前/g) ?? []).length;
+      assert(replaceHits >= 3,
+        `UX Gate 对照文档需含 ≥3 处「替换前」（任务 06 查找与替换），实测 ${replaceHits}`);
+      // 任务 17 的「可修正错误」必须是**真的存在**：至少一个 mermaid 围栏括号不平衡。
+      // 用结构判定而非「含『故意』二字」——后者删掉真构件后仍可能被说明文字满足。
+      const mermaidBlocks = [...doc.matchAll(/^```mermaid\n([\s\S]*?)^```$/gm)].map((m) => m[1]);
+      assert(mermaidBlocks.length >= 2,
+        `UX Gate 对照文档需含 ≥2 个 Mermaid 围栏（一个含错误 + 一个正确参照，任务 17），实测 ${mermaidBlocks.length}`);
+      const unbalanced = mermaidBlocks.filter((b) => {
+        const open = (b.match(/\[/g) ?? []).length;
+        const close = (b.match(/\]/g) ?? []).length;
+        return open !== close;
+      });
+      assert(unbalanced.length >= 1,
+        'UX Gate 对照文档必须含**一处真正写错的 Mermaid**（括号不平衡）——'
+        + '任务 17 是「渲染 → 修正错误」，没有可修正的错误则该任务不可执行（只写「故意」二字不算）');
+    }
+    // canary：自检上述能力断言有效（样本拼接构造）
+    const SAMPLE_DOC = '[TOC]\n\n$E=mc^2$\n\n```mermaid\ngraph TD\n  A[开始 --> B[结束]\n```\n';
+    if (!/^\[TOC\]\s*$/m.test(SAMPLE_DOC) || !/\$[^$\n]+\$/.test(SAMPLE_DOC)) {
+      errors.push('UX Gate 对照文档能力锁 canary 失效：样本未被识别');
+    }
+    {
+      const blocks = [...SAMPLE_DOC.matchAll(/^```mermaid\n([\s\S]*?)^```$/gm)].map((m) => m[1]);
+      const broken = blocks.some((b) => (b.match(/\[/g) ?? []).length !== (b.match(/\]/g) ?? []).length);
+      if (blocks.length < 1 || !broken) {
+        errors.push('UX Gate「故意写错的 Mermaid」结构判定 canary 失效：不平衡样本未被识别');
+      }
+    }
+  }
+
   // ── UX Gate 记录器：进度报告必须只读（2026-09-25）──────────────────────
   // 立此节的原因：`validate` 要 120 条齐备才给结论，人工会话中途无法知道「还差哪些」，
   // 且它把「还没填」与「填错了」混在同一次报错里。新增的 `progress` 命令必须**只读**：
