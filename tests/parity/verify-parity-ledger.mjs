@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -514,6 +514,97 @@ if (existsSync(benchmarkRunnerPath)) {
       if (!/每任务附耗时记录与关键截图/.test(LOOSE)) {
         errors.push('UX Gate 模板一致性护栏 canary 失效：宽松措辞样本未被检出');
       }
+    }
+  }
+
+  // ── 30 任务清单：模板 ↔ 记录器 必须同源（2026-09-30）──────────────────────
+  // 立此节的原因：**同一份「30 任务清单」被维护了两遍** ——
+  // `ux-score-gate-template.md` §二的任务表（人读）与 `ux-gate-recorder.mjs` 的 `TASKS`（机读）。
+  // 而**真正驱动门禁的是记录器**，模板只是散文 → 两处此前**无任何交叉校验**：
+  // 改一处不会让另一处报错，人工照模板做、机器按另一份清单判分，**屏幕上看不出**。
+  // 另：PRD §132 **不含逐项清单**（只规定数量 30 与四条阈值，已回查原文），
+  // 故清单归属只能指向模板；末项「大文件」是 ADR-0025 / 模板 §3.1 的共同前提，单独锁死。
+  {
+    const tplForTasks = resolve(root, 'docs/qualification/ux-score-gate-template.md');
+    const recForTasks = resolve(root, 'tests/qualification/ux-gate-recorder.mjs');
+    assert(existsSync(tplForTasks) && existsSync(recForTasks), '30 任务清单护栏：模板或记录器不存在');
+    if (existsSync(tplForTasks) && existsSync(recForTasks)) {
+      const tplSrc = readFileSync(tplForTasks, 'utf8').replace(/\r\n/g, '\n');
+      const recSrc = readFileSync(recForTasks, 'utf8').replace(/\r\n/g, '\n');
+      const tplRows = [...tplSrc.matchAll(/^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|/gm)]
+        .map((m) => ({ n: Number(m[1]), text: m[2] }));
+      const arrStart = recSrc.indexOf('const TASKS = [');
+      const arrEnd = arrStart >= 0 ? recSrc.indexOf('];', arrStart) : -1;
+      const recTasks = (arrStart >= 0 && arrEnd > arrStart)
+        ? [...recSrc.slice(arrStart, arrEnd).matchAll(/'([^']*)'/g)].map((m) => m[1]) : [];
+      assert(tplRows.length > 0, '无法解析模板的 30 任务表（护栏需同步更新）');
+      assert(recTasks.length > 0, '无法解析记录器的 TASKS 数组（护栏需同步更新）');
+      if (tplRows.length && recTasks.length) {
+        assert(tplRows.length === recTasks.length,
+          `30 任务清单两处条数不一致：模板 ${tplRows.length} 行 vs 记录器 ${recTasks.length} 条`
+          + '（记录器才是门禁实际度量的那份，漂移后屏幕上看不出）');
+        const expectedNumbers = tplRows.map((_, i) => i + 1).join(',');
+        assert(tplRows.map((r) => r.n).join(',') === expectedNumbers,
+          '模板任务表编号必须为连续的 1..N（否则任务号与行数脱节，引用「任务 N」会指错）');
+        assert(/10\s?MB/i.test(tplRows[tplRows.length - 1].text),
+          '模板任务表末项必须是大文件（10MB）任务（ADR-0025 / 模板 §3.1 均以此为前提）');
+        assert(/10\s?MB/i.test(recTasks[recTasks.length - 1]),
+          '记录器 TASKS 末项必须是大文件（10MB）任务（否则门禁不再度量该场景）');
+        // canary：自检「条数一致性」这条锁本身有效（样本拼接构造）
+        const A = ['| 1 | x |', '| 2 | y |'];
+        const B = ['a'];
+        if (A.length === B.length) errors.push('30 任务清单条数锁 canary 失效：不等长样本未被识别');
+      }
+    }
+  }
+
+  // ── 反例锁：不得把「编号任务清单」归给 PRD §132（2026-09-30）────────────────
+  // PRD §132 原文只有「30 个核心 Typora 任务：」+ 四条阈值，**无逐项枚举**（已回查）。
+  // 审计与 ADR-0025 曾写成「PRD §132 的任务清单（第 17 项「10 MB」）」——
+  // 把**我们自己定义的清单**记成宪法条款，会让**可自行修正的方法论问题伪装成宪法级冲突**
+  // （也会让人不敢改本就该改的模板）。只锁这一种形态：
+  // 「§132 的阈值」「§132 的 Gate」等**合法引用不受影响**。
+  //
+  // ⚠️ 必须与「透明追加更正块」的约定兼容：更正块**必然要引用错误原文**
+  // （本仓库的更正惯例是「不改写历史、只追加更正」）→ 故按**段落块**判定
+  // （Markdown 里以空行分块；列表项的多行续行属同一块），
+  // 含更正/引用标记的**整块**豁免。豁免标记是显式白名单，不是模糊启发式。
+  {
+    const docDirs = ['docs/qualification', 'docs/adr', 'docs/plans', 'docs/specs', 'docs/product'];
+    const CITES_NUMBERED_TASKS = /§132\s*任务\s*\d+/;
+    // 只锁「§132（的）任务清单」这一**归属**形态；「§132 是否含任务清单」这类**提问**不匹配
+    const CITES_TASK_LIST = /§132\s*的?\s*任务清单/;
+    const CORRECTION_MARKER = /更正|原写|原文|写成|引用有误|曾把|不含逐项清单/;
+    const offenders = [];
+    for (const dir of docDirs) {
+      const abs = resolve(root, dir);
+      if (!existsSync(abs)) continue;
+      for (const name of readdirSync(abs)) {
+        if (!name.endsWith('.md')) continue;
+        const src = readFileSync(resolve(abs, name), 'utf8').replace(/\r\n/g, '\n');
+        for (const block of src.split(/\n[ \t]*\n/)) {
+          if (CORRECTION_MARKER.test(block)) continue; // 更正/引用块豁免
+          if (CITES_NUMBERED_TASKS.test(block) || CITES_TASK_LIST.test(block)) {
+            offenders.push(`${dir}/${name}：${block.trim().split('\n')[0].slice(0, 80)}`);
+            break;
+          }
+        }
+      }
+    }
+    assert(offenders.length === 0,
+      '不得把「编号任务清单」归给 PRD §132（§132 无逐项清单，清单由 ux-score-gate-template.md 定义）：'
+      + offenders.join(' | '));
+    // canary：自检该反例锁有效，且豁免标记不会把真正的误引也放过（样本拼接构造）
+    const BAD_SAMPLE = 'PRD §132' + ' 任务 17';
+    const GOOD_SAMPLE = '本节原写「PRD §132' + ' 的任务清单」，该引用不成立';
+    if (!CITES_NUMBERED_TASKS.test(BAD_SAMPLE)) {
+      errors.push('§132 清单归属反例锁 canary 失效：误引样本未被检出');
+    }
+    if (!CITES_TASK_LIST.test(GOOD_SAMPLE)) {
+      errors.push('§132 清单归属反例锁 canary 失效：清单误引样本未被检出');
+    }
+    if (!CORRECTION_MARKER.test(GOOD_SAMPLE)) {
+      errors.push('§132 清单归属反例锁 canary 失效：更正块未被豁免（会误报历史更正块）');
     }
   }
 
