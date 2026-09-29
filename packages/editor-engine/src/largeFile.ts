@@ -2,6 +2,15 @@
  * Large File Mode（PRD §109）。
  *
  * 触发：>5MB 或 >50,000 行（classifyLargeFile 纯函数）。
+ *
+ * ⚠️ **本文件的 `classifyLargeFile` 在生产代码里没有调用点**（只有测试调用）。
+ * 应用真正走的判定**内联在宿主包装层** `packages/editor-core/src/core.ts`：
+ *   `const large = bytes > 5 * 1024 * 1024 || lines > 50_000;`
+ * 之所以内联：包依赖方向是 `editor-engine → editor-core`，故 editor-core **不能**反向 import
+ * 本文件（会成环）。两份阈值**必须一致**，由护栏 `verify-parity-ledger` 四方同锁：
+ *   PRD §109 ↔ 本文件 ↔ `editor-core/src/core.ts` ↔ `run-benchmark` 的复刻。
+ * （2026-09-30 补：此前只锁三方，**漏了真正生效的 core.ts** —— 改它不会让任何护栏报错。）
+ *
  * 自动降级（各扩展在 build/update 时读 isLargeFileMode()）：
  * - offscreen Mermaid / Math：解析与 widget 生成裁剪到视口 ± 余量（largeFileViewportRange）；
  * - image lazy：图片 widget 加 loading="lazy"（image/widget.ts）；

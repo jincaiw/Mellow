@@ -243,6 +243,58 @@ if (existsSync(benchmarkRunnerPath)) {
   // 报告必须把归属标注出来（否则反直觉结论会被误读）
   assert(/function largeModeLabel/.test(benchSrc), '报告必须实现 largeModeLabel（标注夹具落在阈值哪一侧）');
   assert(/恰好压线/.test(benchSrc), '报告必须显式标注「恰好压线」这种边界情形');
+
+  // ── 第四处：**生产路径**上的内联实现（2026-09-30）────────────────────────
+  // 立此条的原因（实跑核对发现）：上面三方锁的是「宪法 / 引擎纯函数 / benchmark 复刻」，
+  // 但**真正决定应用行为的是宿主包装层**：
+  //   `packages/editor-core/src/core.ts` 把阈值**内联重复**了一份
+  //   （包依赖方向决定 editor-core 不能 import editor-engine，故内联是必要的）。
+  // 而 `classifyLargeFile` 在**生产代码里没有任何调用点** —— 只有测试调用它；
+  // 真实判定就是 core.ts 里那句 `bytes > 5 * 1024 * 1024 || lines > 50_000`。
+  // 这条路径此前**既无单测也无护栏**：把它改成 `>=` 或改小阈值，
+  // 应用行为就变了，而 PRD / largeFile.ts / benchmark **三者仍然自洽**、门禁全绿。
+  // （这正是「已实现 ≠ 有消费方」的镜像形态：**被测试的那个函数没人用，被用的那段没人测**。）
+  {
+    const corePath = resolve(root, 'packages/editor-core/src/core.ts');
+    assert(existsSync(corePath), 'editor-core/src/core.ts 不存在（大文件模式的生产路径缺失）');
+    if (existsSync(corePath)) {
+      const coreSrc = readFileSync(corePath, 'utf8').replace(/\r\n/g, '\n');
+      const coreBytes = evalArith((coreSrc.match(/bytes\s*>\s*([\d_*\s]+?)\s*\|\|/) ?? [])[1] ?? '');
+      const coreLines = evalArith((coreSrc.match(/lines\s*>\s*([\d_\s]+)/) ?? [])[1] ?? '');
+      assert(Number.isFinite(coreBytes),
+        '无法从 editor-core/src/core.ts 解析大文件模式字节阈值（生产路径必须可核对；'
+        + '若改了写法请同步更新护栏，不要让它静默漏检）');
+      assert(Number.isFinite(coreLines),
+        '无法从 editor-core/src/core.ts 解析大文件模式行数阈值（同上）');
+      if (Number.isFinite(coreBytes) && Number.isFinite(srcBytes)) {
+        assert(coreBytes === srcBytes,
+          `大文件模式字节阈值「生产路径 ↔ 引擎」不一致：core.ts=${coreBytes}，largeFile.ts=${srcBytes}`
+          + '（core.ts 才是应用真正走的判定）');
+      }
+      if (Number.isFinite(coreLines) && Number.isFinite(srcLines)) {
+        assert(coreLines === srcLines,
+          `大文件模式行数阈值「生产路径 ↔ 引擎」不一致：core.ts=${coreLines}，largeFile.ts=${srcLines}`);
+      }
+      // 方向同样必须是「严格大于」（不能是 >=）：`5MB.md` 恰好压线，改方向会翻转其归属
+      assert(/bytes\s*>\s*[\d_*\s]+?\s*\|\|\s*lines\s*>\s*[\d_\s]+/.test(coreSrc),
+        'core.ts 的大文件判定必须同为「严格大于」两阈值（>，不是 >=）');
+      // canary：自检这两条锁（样本拼接构造）
+      const DIR_RE = /bytes\s*>\s*[\d_*\s]+?\s*\|\|\s*lines\s*>\s*[\d_\s]+/;
+      const CORE_SAMPLE = 'const large = bytes > 5 * 1024 * 1024 || lines > ' + '50_000;';
+      const cBytes = evalArith((CORE_SAMPLE.match(/bytes\s*>\s*([\d_*\s]+?)\s*\|\|/) ?? [])[1] ?? '');
+      if (cBytes !== 5242880) {
+        errors.push('大文件模式生产路径锁 canary 失效：样本阈值未被正确求值');
+      }
+      if (!DIR_RE.test(CORE_SAMPLE)) {
+        errors.push('大文件模式生产路径锁 canary 失效：`>` 样本未被识别（方向锁失效）');
+      }
+      // 反例：`>=` 必须**不**被当作「严格大于」——否则方向锁形同虚设
+      const GE_SAMPLE = 'bytes >' + '= 5 || lines > 50_000';
+      if (DIR_RE.test(GE_SAMPLE)) {
+        errors.push('大文件模式生产路径锁 canary 失效：`>=` 样本被误判为「严格大于」');
+      }
+    }
+  }
   // canary：自检跨层锁
   const SRC_SAMPLE = 'LARGE_FILE_BYTES_THRESHOLD = ' + '5 * 1024 * 1024;';
   const m = SRC_SAMPLE.match(/LARGE_FILE_BYTES_THRESHOLD\s*=\s*([\d_*\s]+);/);
