@@ -398,6 +398,44 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
   if (!READY_RE.test(STRONG)) fail('就绪判定 canary 失效：合格写法未被检出');
 }
 
+// ── 三平台基线齐备（2026-09-29）────────────────────────────────────────────
+//
+// 立此条的原因：P0-LAYOUT-002 的结论是「**3 平台 × 3 类基线全部入库并进入比对模式**」，
+// 而此前本护栏**只校验 macOS 主基线** `layout-golden.json` —— 其余 6 个平台基线文件
+// （`.linux` / `.windows` 各 3 类）**被删除也不会有任何信号**，
+// 三平台视觉覆盖会**静默退化**为单平台，而台账仍显示 PASS-E 证据齐备。
+// 实测确认：9 个文件当前均存在（3 类 × 3 平台）。
+{
+  const PLATFORM_SUFFIXES = ['', '.linux', '.windows'];
+  const BASELINE_KINDS = [
+    ['layout-golden', ['win-900x600', 'win-1200x800', 'win-1440x900', 'zoom-200', 'dark-900x600', 'dark-1440x900']],
+    ['sidebar-golden', ['files-tree', 'outline']],
+    ['scenes-golden', ['first-run', 'single-doc-live']],
+  ];
+  for (const [kind, coreKeys] of BASELINE_KINDS) {
+    for (const suf of PLATFORM_SUFFIXES) {
+      const rel = `tests/visual/golden/${kind}${suf}.json`;
+      if (!existsSync(resolve(root, rel))) {
+        fail(`三平台基线缺失：${rel}（P0-LAYOUT-002 的「3 平台 × 3 类基线」结论依赖它；`
+          + '缺一个就会静默退化为单平台）');
+        continue;
+      }
+      let d;
+      try { d = JSON.parse(read(rel)); } catch { fail(`${rel} 不是合法 JSON`); continue; }
+      if (Object.keys(d).length === 0) { fail(`${rel} 为空（基线未采集）`); continue; }
+      const missing = coreKeys.filter((k) => d[k] === undefined);
+      if (missing.length > 0) fail(`${rel} 缺少核心条目：${missing.join(', ')}`);
+    }
+  }
+  // canary：自检「缺失即报错」这条规则本身（样本拼接构造，避免护栏检出自己）
+  {
+    const FAKE = `tests/visual/golden/layout-golden` + `.macos.json`;
+    if (existsSync(resolve(root, FAKE))) {
+      fail('三平台基线护栏 canary 失效：构造的不存在样本竟然存在');
+    }
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Visual golden contract violations:\n  ${errors.join('\n  ')}`);
 }
