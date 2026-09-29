@@ -63,6 +63,8 @@ export interface MockHostState {
   nextDirectoryPath: string | null;
   /** keychain */
   secrets: Map<string, string>;
+  /** 拼写检查内存词典（测试用；P0-EDITOR-005） */
+  dictionary: Set<string>;
   /** recovery 快照存储（内存，keyed by documentId） */
   recovery: Map<string, RecoveryPayload>;
   /** watcher 回调存储（测试可手动触发） */
@@ -98,6 +100,7 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     killed: initial?.killed ?? [],
     exported: initial?.exported ?? [],
     secrets: new Map(initial?.secrets ?? []),
+    dictionary: new Set<string>(),
     lastSaveMeta: initial?.lastSaveMeta ?? null,
     nextMtimeMs: initial?.nextMtimeMs ?? 1000,
     identityKey: initial?.identityKey ?? 'mock:1',
@@ -488,6 +491,33 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
       delete: async (key: string): Promise<Result<void>> => {
         state.secrets.delete(key);
         return ok(undefined);
+      },
+    },
+
+    // 拼写检查：内存词典（P0-EDITOR-005）。`available()` 恒为 true，
+    // 便于测试覆盖 UI 路径；建议列表是**确定性**的，便于断言。
+    spellcheck: {
+      available: async (): Promise<boolean> => true,
+      suggest: async (word: string): Promise<string[]> => {
+        const w = word.trim().toLowerCase();
+        if (w.length === 0 || state.dictionary.has(w)) return [];
+        return [`${w}s`, `${w}ed`, `${w}ing`];
+      },
+      learn: async (word: string): Promise<boolean> => {
+        const w = word.trim().toLowerCase();
+        if (w.length === 0) return false;
+        state.dictionary.add(w);
+        return true;
+      },
+      unlearn: async (word: string): Promise<boolean> => {
+        const w = word.trim().toLowerCase();
+        if (w.length === 0) return false;
+        state.dictionary.delete(w);
+        return true;
+      },
+      hasLearned: async (word: string): Promise<boolean> => {
+        const w = word.trim().toLowerCase();
+        return w.length > 0 && state.dictionary.has(w);
       },
     },
 

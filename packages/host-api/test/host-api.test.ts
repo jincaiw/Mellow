@@ -457,3 +457,45 @@ describe('文件操作（spec image-workflow §6/§7 + PRD §57）', () => {
     expect(await cancel.dialog.showDirectory()).toMatchObject({ ok: false, error: { code: 'canceled' } });
   });
 });
+
+// ── P0-EDITOR-005：拼写词典契约 ────────────────────────────────────────────
+describe('spellcheck（P0-EDITOR-005）', () => {
+  test('mock：learn → hasLearned → unlearn 往返；已学词不再给建议', async () => {
+    const host = createMockHost();
+    expect(await host.spellcheck.available()).toBe(true);
+    expect(await host.spellcheck.hasLearned('mellowword')).toBe(false);
+    expect((await host.spellcheck.suggest('mellowword')).length).toBeGreaterThan(0);
+
+    expect(await host.spellcheck.learn('mellowword')).toBe(true);
+    expect(await host.spellcheck.hasLearned('mellowword')).toBe(true);
+    // 已加入词典的词不应再被建议替换
+    expect(await host.spellcheck.suggest('mellowword')).toEqual([]);
+
+    expect(await host.spellcheck.unlearn('mellowword')).toBe(true);
+    expect(await host.spellcheck.hasLearned('mellowword')).toBe(false);
+  });
+
+  test('mock：大小写与空白归一（同一词不因大小写重复入典）', async () => {
+    const host = createMockHost();
+    await host.spellcheck.learn('  MellowWord  ');
+    expect(await host.spellcheck.hasLearned('mellowword')).toBe(true);
+  });
+
+  test('mock：空词不改变状态且返回 false', async () => {
+    const host = createMockHost();
+    expect(await host.spellcheck.learn('   ')).toBe(false);
+    expect(await host.spellcheck.unlearn('')).toBe(false);
+    expect(await host.spellcheck.hasLearned('')).toBe(false);
+  });
+
+  test('nullHost：**优雅降级不抛错**（宿主用 available() 决定是否显示拼写区）', async () => {
+    // 与 keychain 等 notImplemented 不同：这里必须能安全调用，
+    // 否则宿主只能在每次右键时 try/catch，漏一处就是「点了没反应」。
+    const nh = createNullHost();
+    expect(await nh.spellcheck.available()).toBe(false);
+    expect(await nh.spellcheck.suggest('word')).toEqual([]);
+    expect(await nh.spellcheck.learn('word')).toBe(false);
+    expect(await nh.spellcheck.unlearn('word')).toBe(false);
+    expect(await nh.spellcheck.hasLearned('word')).toBe(false);
+  });
+});

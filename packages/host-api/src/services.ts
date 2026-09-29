@@ -220,6 +220,34 @@ export interface KeychainService {
   delete(key: string): Promise<Result<void>>;
 }
 
+// ─────────────────────────── spellcheck ───────────────────────────
+
+/**
+ * 系统拼写检查 / 用户词典（P0-EDITOR-005）。
+ *
+ * 平台差异按 ADR-0016 只允许存在于 Adapter / Native Enhancement：
+ * macOS 走 `NSSpellChecker`；Windows / Linux 尚未接入。
+ *
+ * **降级语义（重要）**：`available()` 返回 `false` 时，宿主**不得显示**
+ * 「添加到字典 / 忘记拼写」与建议区 —— 显示一个点了没反应的菜单项
+ * 比不显示更糟（本项目「占位项可点击且点击无反应」母题）。
+ *
+ * 另：系统拼写检查对**中日韩文字不提供建议**，故调用方只应传入拉丁词
+ * （引擎侧 `wordAt()` 已保证这一点）。
+ */
+export interface SpellcheckService {
+  /** 该平台是否具备词典能力 */
+  available(): Promise<boolean>;
+  /** 建议列表；不可用或无建议时返回空数组（**不抛错**，便于 UI 直接渲染） */
+  suggest(word: string): Promise<string[]>;
+  /** 加入用户词典 */
+  learn(word: string): Promise<boolean>;
+  /** 从用户词典移除 */
+  unlearn(word: string): Promise<boolean>;
+  /** 该词是否已在用户词典中（宿主据此在「添加到字典」与「忘记拼写」之间切换） */
+  hasLearned(word: string): Promise<boolean>;
+}
+
 // ─────────────────────────── process ───────────────────────────
 
 export interface ChildProcessInfo {

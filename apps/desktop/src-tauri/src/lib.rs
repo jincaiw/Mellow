@@ -9,6 +9,7 @@ pub mod pandoc;
 pub mod print;
 pub mod recovery;
 pub mod search;
+pub mod spellcheck;
 pub mod updater;
 pub mod upload;
 pub mod watcher;
@@ -220,6 +221,11 @@ pub fn run() {
             fs::download_remote,
             search::search_start,
             search::search_cancel,
+            spellcheck::spellcheck_available,
+            spellcheck::spellcheck_suggest,
+            spellcheck::spellcheck_learn,
+            spellcheck::spellcheck_unlearn,
+            spellcheck::spellcheck_has_learned,
             recovery::recovery_save,
             recovery::recovery_list,
             recovery::recovery_get,

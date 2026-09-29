@@ -11,6 +11,7 @@ import type {
   SearchService,
   ExportService,
   KeychainService,
+  SpellcheckService,
   ProcessService,
   NotificationService,
   OpenerService,
@@ -28,6 +29,7 @@ export interface DesktopHost {
   search: SearchService;
   export: ExportService;
   keychain: KeychainService;
+  spellcheck: SpellcheckService;
   process: ProcessService;
   notification: NotificationService;
   opener: OpenerService;
@@ -44,6 +46,7 @@ export type {
   SearchService,
   ExportService,
   KeychainService,
+  SpellcheckService,
   ProcessService,
   NotificationService,
   OpenerService,

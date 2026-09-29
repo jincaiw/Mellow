@@ -27,6 +27,18 @@ export interface EditorContextMenuRequest {
   x: number;
   y: number;
   hasSelection: boolean;
+  /**
+   * kind=text：右键位置处的**拉丁词**（供宿主提供「添加到字典 / 忘记拼写」与拼写建议）。
+   *
+   * 为什么只给拉丁词（P0-EDITOR-005，2026-09-29）：
+   * 系统拼写检查（macOS NSSpellChecker / Windows ISpellChecker）对中日韩文字
+   * **不提供建议**。若把 CJK 也当作「单词」返回，宿主会为每个汉字段弹出无意义的建议区，
+   * 比不显示更糟。故只在命中 `[A-Za-z][A-Za-z'-]*` 且长度 ≥ 2 时给出。
+   *
+   * 宿主用它做两件事：① 调拼写服务取建议列表；② 调 learn/unlearn。
+   * 缺失（undefined）表示「点击处没有可用单词」→ 宿主不显示拼写区。
+   */
+  word?: string;
   /** kind=link：markdown 链接 href */
   url?: string;
   /** kind=wikilink：[[name]] */
@@ -35,6 +47,32 @@ export interface EditorContextMenuRequest {
   src?: string;
   /** kind=code/math/mermaid：围栏语言（math 块为 'math'） */
   lang?: string;
+}
+
+/**
+ * 取出 `pos` 处的拉丁词（P0-EDITOR-005）。
+ *
+ * `posAtCoords` 返回的是**字符之间**的位置，故需从 `pos` 与 `pos-1` 两侧尝试：
+ * 点在词的中间时命中 `pos`；点在词的末尾之后时命中 `pos-1`。
+ * 只接受以字母开头、由字母/撇号/连字符组成、长度 ≥ 2 的词
+ * （`don't`、`well-known` 允许；纯数字、纯标点、CJK 一律不返回）。
+ */
+export function wordAt(doc: string, pos: number): string | null {
+  if (pos < 0 || pos > doc.length) return null; // 越界：posAtCoords 不会给，但显式守卫避免「贴尾取值」
+  const isWordChar = (c: string): boolean => /[A-Za-z'-]/.test(c);
+  let anchor = pos;
+  if (!(anchor < doc.length && isWordChar(doc[anchor]))) {
+    anchor = pos - 1;
+    if (!(anchor >= 0 && isWordChar(doc[anchor]))) return null;
+  }
+  let start = anchor;
+  let end = anchor + 1;
+  while (start > 0 && isWordChar(doc[start - 1])) start -= 1;
+  while (end < doc.length && isWordChar(doc[end])) end += 1;
+  const word = doc.slice(start, end).replace(/^['-]+/, '').replace(/['-]+$/, '');
+  if (word.length < 2) return null;
+  if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) return null;
+  return word;
 }
 
 /** 表格右键操作（C1：Typora table 子菜单 + 对齐子菜单） */
@@ -360,7 +398,9 @@ function buildRequest(view: EditorView, pos: number | null, x: number, y: number
     if (mathBlockAt(doc, pos)) return { ...base, kind: 'math', lang: 'math' };
     if (mermaidBlockAt(doc, pos)) return { ...base, kind: 'mermaid', lang: 'mermaid' };
   }
-  return { ...base, kind: 'text' };
+  // kind=text：附带点击处的拉丁词（P0-EDITOR-005），宿主据此显示拼写区。
+  const word = pos === null ? null : wordAt(doc, pos);
+  return word === null ? { ...base, kind: 'text' } : { ...base, kind: 'text', word };
 }
 
 /** 剪切/复制/粘贴：优先 execCommand（CM6 默认输入管线），失败降级 navigator.clipboard */

@@ -15,6 +15,7 @@ import {
   dedentText,
   mathBlockAt,
   mermaidBlockAt,
+  wordAt,
 } from '../src/contextMenu';
 import type { EditorContextMenuRequest } from '../src/contextMenu';
 import { moveCaret, sleep } from './harness';
@@ -396,5 +397,52 @@ describe('C1 纯函数新增', () => {
     expect(dedentText('    a\n      b\n\n    c')).toBe('a\n  b\n\nc');
     expect(dedentText('a\nb')).toBe('a\nb');
     expect(dedentText('')).toBe('');
+  });
+
+  // ── P0-EDITOR-005：右键处拉丁词提取（词典 / 拼写建议的前提）──────────────
+  describe('wordAt', () => {
+    const doc = "hello world don't well-known 中文 tail.";
+
+    test('点在词内 / 词尾两侧都能命中（posAtCoords 给的是字符之间）', () => {
+      const at = doc.indexOf('world');
+      expect(wordAt(doc, at)).toBe('world');        // 点在词首（字符之间）
+      expect(wordAt(doc, at + 1)).toBe('world');    // 点在词中
+      expect(wordAt(doc, at + 5)).toBe('world');    // 点在词尾之后一位
+    });
+
+    test('允许词内撇号与连字符', () => {
+      expect(wordAt(doc, doc.indexOf("don't") + 2)).toBe("don't");
+      expect(wordAt(doc, doc.indexOf('well-known') + 3)).toBe('well-known');
+    });
+
+    test('首尾的撇号/连字符被剥离（引号与破折号不是词的一部分）', () => {
+      expect(wordAt("say 'quoted' now", 6)).toBe('quoted');
+      // 'a -- dash' 中 dash 从下标 5 开始
+      expect(wordAt('a -- dash', 5)).toBe('dash');
+    });
+
+    test('紧邻词尾的标点仍归属该词（用户常在词旁右键，不要求像素级命中）', () => {
+      const d = 'hello world tail.';
+      expect(wordAt(d, d.indexOf('.'))).toBe('tail');
+    });
+
+    test('CJK 必须返回 null：系统拼写检查对中日韩不给建议，返回词会让菜单弹出空建议区', () => {
+      expect(wordAt(doc, doc.indexOf('中文'))).toBeNull();
+      expect(wordAt('中文测试', 2)).toBeNull();
+    });
+
+    test('空白、标点、单字符、纯数字一律 null', () => {
+      expect(wordAt('a b', 1)).toBeNull();          // 空白
+      expect(wordAt('a, b', 1)).toBeNull();         // 逗号后是空格 → 两侧都不是词字符
+      expect(wordAt('I am', 0)).toBeNull();         // 单字符
+      expect(wordAt('v2 next', 1)).toBeNull();      // 以数字开头 → 不是拉丁词
+      expect(wordAt('', 0)).toBeNull();
+    });
+
+    test('词首/词尾边界不越界', () => {
+      expect(wordAt('alpha', 0)).toBe('alpha');
+      expect(wordAt('alpha', 5)).toBe('alpha');     // pos === doc.length
+      expect(wordAt('alpha', 6)).toBeNull();        // 越界
+    });
   });
 });

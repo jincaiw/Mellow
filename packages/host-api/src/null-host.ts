@@ -77,6 +77,16 @@ export function createNullHost(): DesktopHost {
       set: notImplemented('keychain.set'),
       delete: notImplemented('keychain.delete'),
     },
+    // 拼写检查：**优雅降级，不抛错**（与 keychain 等 notImplemented 不同）。
+    // 宿主用 available() 决定是否显示拼写区，故这里必须能被安全调用；
+    // 若这里抛错，宿主只能在每次右键时 try/catch，反而更容易漏。
+    spellcheck: {
+      available: async (): Promise<boolean> => false,
+      suggest: async (): Promise<string[]> => [],
+      learn: async (): Promise<boolean> => false,
+      unlearn: async (): Promise<boolean> => false,
+      hasLearned: async (): Promise<boolean> => false,
+    },
     process: {
       spawn: notImplemented('process.spawn'),
       kill: notImplemented('process.kill'),
