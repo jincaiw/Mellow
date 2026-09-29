@@ -21,6 +21,30 @@ const CRITICAL_TASKS = new Set([2, 11, 12, 25, 30]); // save / table / image / P
 const APPS = ['typora', 'mellow'];
 const ROUNDS = [1, 2];
 
+/**
+ * UX Score 模块与权重（PRD §131，满分 100）+ 发布门槛（PRD §131 / master-plan §8）。
+ *
+ * 立此常量的原因（2026-09-30）：UX Score 此前**只存在于文档**（模板的 Markdown 表），
+ * 记录器的 schema 里没有它 —— 于是**一份只含 120 条计时、完全没有 UX Score 的记录**
+ * 也能满足 `ux-gate` 证据标记，**PRD 的「总分 ≥92」门槛可被静默跳过**。
+ * 本工具是 `ux-gate` 证据的载体，故必须把两部分都纳入校验。
+ */
+const UX_MODULES = [
+  ['liveEditing', 25, 'Live Editing'],
+  ['caretImeUndo', 15, 'Caret / IME / Undo'],
+  ['markdown', 10, 'Markdown'],
+  ['tableImage', 10, 'Table / Image'],
+  ['filesSearchOutline', 10, 'Files / Search / Outline'],
+  ['desktopUi', 10, 'Desktop UI'],
+  ['clipboard', 5, 'Clipboard'],
+  ['exportScore', 5, 'Export'],
+  ['performance', 5, 'Performance'],
+  ['fileSafety', 5, 'File Safety'],
+];
+const UX_TOTAL_WEIGHT = UX_MODULES.reduce((a, [, w]) => a + w, 0);
+/** 门槛：总分 ≥92；Live Editing ≥24/25；Caret/IME/Undo = 15/15；File Safety = 5/5 */
+const UX_THRESHOLDS = { total: 92, liveEditing: 24, caretImeUndo: 15, fileSafety: 5 };
+
 function fail(message) { throw new Error(message); }
 function mean(values) { return values.reduce((sum, value) => sum + value, 0) / values.length; }
 
@@ -34,6 +58,7 @@ function blankRecord(platform, mellowCommit = 'REPLACE_WITH_COMMIT') {
     machine: 'REPLACE_WITH_MACHINE',
     imeCorruption: null,
     dataLoss: null,
+    uxScore: null, // 人工填写：见 UX_MODULES / UX_THRESHOLDS；null 会被 validate 拒绝
     observations: skeletonObservations(),
     notes:
       'observations 已预置 120 条**骨架**（task/app/round/appOrder 已按交替规则填好），'
@@ -102,6 +127,33 @@ function validate(record) {
     require(['typora-first', 'mellow-first'].includes(observation?.appOrder), `${key} 必须记录 appOrder`);
     require(typeof observation?.entryPoint === 'string' && observation.entryPoint.length > 0, `${key} 必须记录 entryPoint`);
     require(typeof observation?.sourceDiff === 'string' && observation.sourceDiff.length > 0, `${key} 必须记录 sourceDiff`);
+  }
+
+  // ── UX Score（PRD §131）──────────────────────────────────────────────
+  const ux = record?.uxScore;
+  if (ux === null || ux === undefined) {
+    require(false,
+      'uxScore 缺失：`ux-gate` 证据必须同时包含 **UX Score（PRD §131）** 与 30 任务计时 —— '
+      + '否则「总分 ≥92」门槛会被静默跳过');
+  } else {
+    const scores = ux.modules ?? {};
+    let total = 0;
+    for (const [key, weight, label] of UX_MODULES) {
+      const v = scores[key];
+      require(Number.isInteger(v) && v >= 0 && v <= weight,
+        `uxScore.modules.${key}（${label}）必须为 0–${weight} 的整数`);
+      if (Number.isInteger(v)) total += v;
+    }
+    require(Array.isArray(ux.evidence) && ux.evidence.length > 0,
+      'uxScore 必须附证据（截图/记录路径），否则分数无法复核');
+    require(total >= UX_THRESHOLDS.total,
+      `UX Score 总分必须 ≥ ${UX_THRESHOLDS.total}（实际 ${total}/${UX_TOTAL_WEIGHT}）`);
+    require(Number.isInteger(scores.liveEditing) && scores.liveEditing >= UX_THRESHOLDS.liveEditing,
+      `Live Editing 必须 ≥ ${UX_THRESHOLDS.liveEditing}/25`);
+    require(scores.caretImeUndo === UX_THRESHOLDS.caretImeUndo,
+      `Caret / IME / Undo 必须 = ${UX_THRESHOLDS.caretImeUndo}/15`);
+    require(scores.fileSafety === UX_THRESHOLDS.fileSafety,
+      `File Safety 必须 = ${UX_THRESHOLDS.fileSafety}/5`);
   }
 
   const taskResults = [];
@@ -218,6 +270,16 @@ function progressReport(input) {
       mellowCommit: filledOr(record?.mellowCommit),
       imeCorruption: record?.imeCorruption === false ? 'false ✓' : '未填（必须明确为 false）',
       dataLoss: record?.dataLoss === false ? 'false ✓' : '未填（必须明确为 false）',
+      uxScore: (() => {
+        const ux = record?.uxScore;
+        if (ux === null || ux === undefined) {
+          return `未填（PRD §131：总分 ≥${UX_THRESHOLDS.total} / Live Editing ≥${UX_THRESHOLDS.liveEditing}`
+            + ` / Caret-IME-Undo = ${UX_THRESHOLDS.caretImeUndo} / File Safety = ${UX_THRESHOLDS.fileSafety}）`;
+        }
+        const sc = ux.modules ?? {};
+        const total = UX_MODULES.reduce((a, [k, w]) => a + (Number.isInteger(sc[k]) ? Math.min(sc[k], w) : 0), 0);
+        return `总分 ${total}/${UX_TOTAL_WEIGHT}`;
+      })(),
     },
     missingKeys,
     incompleteList,
@@ -254,12 +316,33 @@ function selfTest() {
   }
   if (validate(record).valid) fail('self-test failed: 只有骨架、无测量值的记录必须被拒绝');
 
+  // UX Score（PRD §131）：缺失必须被拒绝 —— 这是「≥92 门槛可被静默跳过」的回归防线
+  const withoutUx = { ...record, uxScore: null };
+  if (validate(withoutUx).valid) fail('self-test failed: 缺 uxScore 的记录必须被拒绝（否则 ≥92 门槛会被跳过）');
+
   // 补测量值（与人工流程一致：只填数值，不改结构）
   for (const row of record.observations) {
     Object.assign(row, sampleObservation(row.task, row.app, row.round, row.appOrder));
   }
+  // UX Score：满分模块（门槛全部满足）
+  record.uxScore = {
+    modules: Object.fromEntries(UX_MODULES.map(([k, w]) => [k, w])),
+    evidence: ['evidence/ux-score-sheet.png'],
+  };
   const result = validate(record);
   if (!result.valid || result.summary.withinFivePct !== 30) fail(`self-test failed: ${result.errors.join('; ')}`);
+  // 门槛反例：Caret/IME/Undo 少 1 分 → 必须被拒绝（PRD §131 要求满分）
+  const caretShort = JSON.parse(JSON.stringify(record));
+  caretShort.uxScore.modules.caretImeUndo = UX_THRESHOLDS.caretImeUndo - 1;
+  if (validate(caretShort).valid) fail('self-test failed: Caret/IME/Undo 未满分时必须被拒绝');
+
+  // 门槛反例：总分不足 → 必须被拒绝
+  const lowTotal = JSON.parse(JSON.stringify(record));
+  lowTotal.uxScore.modules.markdown = 0;
+  lowTotal.uxScore.modules.tableImage = 0;
+  lowTotal.uxScore.modules.desktopUi = 0;
+  if (validate(lowTotal).valid) fail('self-test failed: UX Score 总分低于门槛时必须被拒绝');
+
   record.observations.pop();
   if (validate(record).valid) fail('self-test failed: incomplete record must be rejected');
   console.log('UX gate recorder self-test: PASS');

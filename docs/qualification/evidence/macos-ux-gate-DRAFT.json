@@ -6,11 +6,12 @@
     "build": "7785"
   },
   "platform": "macos",
-  "mellowCommit": "e5c6009",
+  "mellowCommit": "c2ba524",
   "tester": "REPLACE_WITH_TESTER",
   "machine": "REPLACE_WITH_MACHINE",
   "imeCorruption": null,
   "dataLoss": null,
+  "uxScore": null,
   "observations": [
     {
       "task": 1,

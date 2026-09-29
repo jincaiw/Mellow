@@ -28,6 +28,18 @@
 - Caret/IME/Undo = 15/15；
 - File Safety = 5/5。
 
+> ⚠️ **分数必须写进记录的 `uxScore` 字段，本表只是摘要**（2026-09-30 起）：
+> `ux-gate-recorder.mjs validate` 会**机器校验**上述四条门槛 ——
+> `uxScore` 缺失、模块分越界、或任一门槛不达标都会**拒绝该记录**。
+>
+> 立此校验的原因：此前 UX Score **只存在于本文档的 Markdown 表**，记录器 schema 里没有它
+> → 一份**只含 120 条计时、完全没有 UX Score** 的记录也能满足 `ux-gate` 证据标记，
+> **PRD §131 的「总分 ≥92」门槛可被静默跳过**。
+>
+> 字段形态：`uxScore: { modules: { liveEditing: 24, caretImeUndo: 15, markdown: 10,
+> tableImage: 10, filesSearchOutline: 10, desktopUi: 10, clipboard: 5, exportScore: 5,
+> performance: 5, fileSafety: 5 }, evidence: ["…"] }`（键名见记录器 `UX_MODULES`）。
+
 ## 二、30 个核心 Typora 任务效率 Gate（PRD §132）
 
 ### 执行方法
@@ -145,6 +157,8 @@ node tests/qualification/ux-gate-recorder.mjs validate \
 
 ## 五、更新记录
 - 2026-08-18：创建模板（待真机执行）。
+- 2026-09-30：UX Score 纳入记录器**机器校验**（缺 `uxScore`、模块越界、任一门槛不达标即拒绝）——
+  此前它只在 Markdown 表里，`ux-gate` 证据可**不含 UX Score** 而照常通过。
 - 2026-09-30：`init` 改为生成 **120 条观测骨架**（结构 + `appOrder` 已算好，**不含任何测量值**）。
   原先 `observations: []` 要求人工手写 120 条 × 8 字段的 JSON，且草稿无结构示例 ——
   既是巨大时间成本，也是错填高发区。骨架自检（条数 / 顺序规则 / 不得含测量字段 /

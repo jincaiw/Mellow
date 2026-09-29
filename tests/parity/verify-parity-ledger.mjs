@@ -370,6 +370,39 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── UX Score 门槛必须被机器校验（2026-09-30）────────────────────────────
+  // 立此条的原因：`UX Score`（PRD §131）此前**只存在于模板的 Markdown 表**，
+  // 记录器 schema 里没有它 → 一份**只含 120 条计时、完全没有 UX Score** 的记录
+  // 也能满足 `ux-gate` 证据标记 → **「总分 ≥92」门槛可被静默跳过**。
+  // 现把它纳入记录器校验；本节同时**交叉核对**工具阈值与模板文档，防两侧漂移。
+  {
+    const recPath = resolve(root, 'tests/qualification/ux-gate-recorder.mjs');
+    assert(existsSync(recPath), 'ux-gate-recorder.mjs 不存在');
+    if (existsSync(recPath)) {
+      const rec = readFileSync(recPath, 'utf8').replace(/\r\n/g, '\n');
+      assert(/const UX_MODULES\s*=\s*\[/.test(rec), '记录器必须定义 UX_MODULES（PRD §131 模块与权重）');
+      assert(/const UX_THRESHOLDS\s*=\s*\{/.test(rec), '记录器必须定义 UX_THRESHOLDS');
+      // 权重合计必须为 100（PRD §131 满分）
+      const weights = [...rec.matchAll(/\['\w+',\s*(\d+),\s*'[^']*'\]/g)].map((m) => Number(m[1]));
+      assert(weights.length >= 10, `UX_MODULES 条目数应 ≥10，实测 ${weights.length}`);
+      const sum = weights.reduce((a, b) => a + b, 0);
+      assert(sum === 100, `UX_MODULES 权重合计必须为 100（PRD §131），实测 ${sum}`);
+      // 门槛值必须与 PRD §131 一致
+      assert(/total:\s*92/.test(rec), 'UX_THRESHOLDS.total 必须为 92（PRD §131）');
+      assert(/liveEditing:\s*24/.test(rec), 'UX_THRESHOLDS.liveEditing 必须为 24（PRD §131）');
+      assert(/caretImeUndo:\s*15/.test(rec), 'UX_THRESHOLDS.caretImeUndo 必须为 15（PRD §131，要求满分）');
+      assert(/fileSafety:\s*5/.test(rec), 'UX_THRESHOLDS.fileSafety 必须为 5（PRD §131，要求满分）');
+      // 缺失 uxScore 必须被拒绝（否则门槛可被跳过）
+      assert(/uxScore 缺失/.test(rec), '记录器必须显式拒绝「缺 uxScore」的记录，否则 ≥92 门槛可被静默跳过');
+      // 模板侧必须写明分数要写进记录（文档不得比工具宽松）
+      const tpl = readFileSync(resolve(root, 'docs/qualification/ux-score-gate-template.md'), 'utf8').replace(/\r\n/g, '\n');
+      assert(/uxScore/.test(tpl), '模板必须写明分数写进记录的 uxScore 字段（否则只在 Markdown 表里填）');
+      // canary：自检权重合计锁（样本拼接构造）
+      const SUM_SAMPLE = [25, 15, 10, 10, 10, 10, 5, 5, 5, 5].reduce((a, b) => a + b, 0);
+      if (SUM_SAMPLE !== 100) errors.push('UX 权重合计护栏 canary 失效');
+    }
+  }
+
   // ── UX Gate 模板必须与记录器的要求一致（2026-09-30）────────────────────
   // 立此条的原因：模板原写「每**任务**附耗时记录与关键截图」（30 份），
   // 而 `validate` 要求**每一条观测**（30×2×2 = **120 条**）都带证据 →
