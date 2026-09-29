@@ -825,4 +825,9 @@ console.log(`Shortcut single source: ${schemaShortcuts.size} accelerators declar
 console.log(`Bilingual labels: ${usedLabelKeys.size} label keys resolved from i18n menu.* (zh-CN + en-US); Rust menu.rs is a pure materialization adapter`);
 console.log(`Check state: ${CHECK_STATE_CONTRACT.length} toggles from Settings Store, ${VIEW_GROUP_EXCEPTIONS.size} tracked view-group exceptions; themes derived from Theme Registry`);
 console.log(`Official shortcut table: ${OFFICIAL_SHORTCUTS.length} bindings match Typora Shortcut Keys (rev. 2026-09-06); ${OFFICIAL_SHORTCUT_EXCEPTIONS.size} registered D-exceptions (drift canary armed)`);
-console.log(`Official menu labels: ${TYPORA_MENU_LABELS.length} labels match Typora 1.14.9 Menu.strings (zh-Hans + en, read from the local install; drift canary armed)`);
+// ⚠️ 措辞必须如实（2026-09-30）：本护栏**不读**本机 Typora —— 它比对的是**内嵌**的
+// `TYPORA_MENU_LABELS`（因 CI runner 上不装 Typora）。原措辞写「read from the local install」
+// 会让读者以为每次运行都对着真 Typora 校验过，**而这正是 §12 注释自己警告过的
+// 「自己给自己盖章，永远绿」**。真实情况：内嵌值由**人工、非 CI** 的
+// `tests/parity/tools/audit-typora-menu-labels.mjs` 反查（需本机 Typora）。
+console.log(`Official menu labels: ${TYPORA_MENU_LABELS.length} labels compared against EMBEDDED official values (zh-Hans + en); NOT verified against a live Typora here — run tests/parity/tools/audit-typora-menu-labels.mjs (needs local Typora, not in CI) to re-check the embedded values`);

@@ -320,6 +320,30 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── 菜单护栏的输出不得谎称「读了本机 Typora」（2026-09-30）──────────────
+  // 立此条的原因：`verify-menu-contract.mjs` **不读**本机 Typora（无 existsSync / Typora.app），
+  // 它比对的是**内嵌**的 `TYPORA_MENU_LABELS`（CI runner 上不装 Typora）。
+  // 但其输出原写「read from the local install」→ 读者会以为每次运行都对着真 Typora 校验过，
+  // 而 §12 注释自己就警告过这种「自己给自己盖章，永远绿」。
+  // 真值反查靠**人工、非 CI** 的 `tests/parity/tools/audit-typora-menu-labels.mjs`。
+  const menuContractPath = resolve(root, 'tests/parity/verify-menu-contract.mjs');
+  assert(existsSync(menuContractPath), 'verify-menu-contract.mjs 不存在');
+  if (existsSync(menuContractPath)) {
+    // ⚠️ 必须**先 stripComments**：本护栏的否定断言（不得含旧措辞）会命中
+    // verify-menu-contract.mjs 里**说明该措辞为何被改**的注释 —— 实测首跑即踩。
+    // 这正是本文件另一处已有教训（静态契约断言先 stripComments）的同一形态。
+    const mcSrc = readFileSync(menuContractPath, 'utf8')
+      .replace(/\r\n/g, '\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    assert(/compared against EMBEDDED official values/.test(mcSrc),
+      '菜单护栏必须如实说明「比对的是内嵌官方值」，而不是让读者以为对着真 Typora 校验过');
+    assert(!/read from the local install/.test(mcSrc),
+      '菜单护栏不得再声称「read from the local install」（它并不读本机 Typora）');
+    assert(/audit-typora-menu-labels\.mjs/.test(mcSrc),
+      '菜单护栏必须指明真值反查工具（audit-typora-menu-labels.mjs，需本机 Typora、不进 CI）');
+  }
+
   // ── 发布门禁必须声明「闭环口径」（2026-09-25）──────────────────────────
   // 立此节的原因：`verify-release-gate` 把 `AUTO` 视为**不阻断**，而 master-plan §4.3
   // 定义 `AUTO` = 「自动化测试通过、**真机体验验收未完成**」，§8 的 V1.0 Exit Gate 又要求
