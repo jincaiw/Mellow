@@ -159,6 +159,25 @@ for (const anchor of [
 if (!/runs-on:\s*windows-latest/.test(ci)) {
   fail('ci.yml 没有任何 windows-latest job：ADR-0022 要求 Windows 证据以 CI 为来源，否则 windows-ci 类证据不可达');
 }
+// ── CI 步骤名不得内嵌用例数（2026-09-30）────────────────────────────────
+// 立此条的原因：步骤名里曾写死「Unit tests (host-api 43 / app-core 217 / …)」这类数字，
+// 而**没有任何东西校验它们** → 随测试增长**静默失真**。实测已全部漂移：
+//   host-api 43→47、app-core 217→232、commands 30→33、export 72→83、engine 1135→1197。
+// 这与「菜单护栏谎称读了本机 Typora」同类：**输出里的数字若无法派生，就不要写**。
+// 真实数字由 jest / cargo 自己打印（本身即派生），无需在步骤名里复述。
+{
+  const ciStepNames = [...ci.matchAll(/^\s+- name: "?(.*?)"?$/gm)].map((m) => m[1]);
+  const withCounts = ciStepNames.filter((n) => /\d{2,}/.test(n));
+  if (withCounts.length > 0) {
+    fail(`ci.yml 步骤名不得内嵌用例数（无任何东西校验，会静默失真）：${withCounts.join(' / ')}`);
+  }
+  // canary：自检该判定（样本拼接构造）
+  const COUNT_SAMPLE = 'Unit tests (host-api ' + '43' + ')';
+  if (!/\d{2,}/.test(COUNT_SAMPLE)) {
+    errors.push('CI 步骤名数字护栏 canary 失效：含数字的样本未被检出');
+  }
+}
+
 // 指纹校验必须排在桌面构建之后（顺序断言，防止「先校验后构建」的假门禁）
 const buildIdx = ci.indexOf('run: pnpm run build');
 const fpIdx = ci.indexOf('node scripts/verify-release-bundle.mjs');

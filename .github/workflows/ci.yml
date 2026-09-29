@@ -30,7 +30,10 @@ jobs:
           yarn install --immutable
           yarn build
           yarn test
-      - name: "Mellow wrapper test + build (14: contract + neutral)"
+      # 步骤名**不内嵌用例数**（2026-09-30）：那些数字没有任何东西校验，会随测试增长静默失真
+      # （实测已漂移：host-api 43→47、app-core 217→232、commands 30→33、export 72→83、engine 1135→1197）。
+      # 真实数字由 jest 输出（本身即派生），无需在这里复述。护栏 verify-release-gate 禁止回退。
+      - name: "Mellow wrapper test + build (contract + neutral)"
         working-directory: packages/editor-core
         run: |
           pnpm test
@@ -58,7 +61,7 @@ jobs:
       - name: Typecheck all packages
         run: pnpm -r --filter '!mellow-desktop' run build
       # V7-W5：括号内数字为各包用例数（2026-09-12 实跑），仅作可读性参考；数量变化不会使 Job 失败。
-      - name: "Unit tests (host-api 43 / document-model 26 / app-core 217 / i18n 15 / settings 13 / themes 12 / commands 30 / export 72)"
+      - name: "Unit tests (all workspace packages)"
         run: pnpm -r --filter '!mellow-desktop' run test
 
   editor-engine:
@@ -75,7 +78,7 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: "Test (1135: engine + IME Composition Guard / undo corruption)"
+      - name: "Test (engine + IME Composition Guard / undo corruption)"
         working-directory: packages/editor-engine
         run: pnpm test
       - name: Build
@@ -172,6 +175,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
-      - name: "Cargo check + test (37 + file-safety 16 + updater 4)"
+      - name: "Cargo check + test (system core + file-safety + updater)"
         working-directory: apps/desktop/src-tauri
         run: cargo test
