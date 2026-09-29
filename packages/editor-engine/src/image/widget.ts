@@ -255,7 +255,14 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     return el;
   }
 
-  /** V6-P1 1.2.6：远程图片默认自动加载（Typora 行为）；设置关闭（'0'）后回退手动确认 */
+  /**
+   * V6-P1 1.2.6：远程图片默认自动加载（**Typora 行为**）；设置关闭（'0'）后回退手动确认。
+   *
+   * 一级证据（本机 Typora 1.14.9，2026-09-30 复核）：`frame.js` 的 `DEFAULT_OPTIONS`
+   * 无「加载远程图片」开关；`Panel.strings`（498/500 条）的图片相关文案只涉及
+   * 上传/复制/移动/质量/格式/转义 URL。→ **Typora 始终加载且无退出选项**，
+   * 故本默认值对齐基线（AGENTS.md 规则 14）；Mellow 额外提供退出选项，比 Typora 更严。
+   */
   function remoteImagesEnabled(): boolean {
     try {
       return localStorage.getItem('mellow.image.loadRemote') !== '0';

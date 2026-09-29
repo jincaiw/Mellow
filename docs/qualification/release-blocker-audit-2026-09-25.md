@@ -190,12 +190,28 @@ CI 可执行的制品？**
 （经典 tracking-pixel 场景）。这**可能是**正确的 Typora parity 取舍，
 但它属于**安全相关默认值**，当前**只由一行代码注释记录**，未见 ADR / 方案 D 表登记。
 
-**PRD 依据（2026-09-30 补充）**：PRD **§124 Privacy** 的默认姿态是
-`Telemetry OFF / AI OFF / Cloud OFF / Document Upload NONE`，即**隐私优先**；
-而 Typora parity 倾向「默认加载」。**两条原则在此冲突**，故需裁决而非默认取舍。
+**✅ 已由证据判定，无需裁决（2026-09-30 同日补充）**：
 
-**待裁决**：`image.loadRemote` 默认应为 `true`（对齐 Typora）还是 `false`（隐私优先）？
-若维持 `true`，建议以 ADR 记录该取舍（与 M2 的原始处置相反，需说明取代关系）。
+两处**独立一级证据**（本机 Typora 1.14.9）表明 **Typora 始终加载远程图片、且没有退出选项**：
+1. `TypeMark/appsrc/window/frame.js` 的 `DEFAULT_OPTIONS` —— 6 个图片相关键
+   （`allowImageMove` / `allowImageUpload` / `defaultImageStorage` / `applyImageMoveForWeb` /
+   `applyImageMoveForLocal` / `autoEscapeImageURL`）**没有任何「加载远程图片」开关**；
+2. `Contents/Resources/{zh-Hans,Base}.lproj/Panel.strings`（498 / 500 条）—— 图片相关文案只涉及
+   **上传 / 复制 / 移动 / 质量 / 格式 / 转义 URL**，**没有「远程图片 / 联网」选项**。
+
+**结论**：Mellow 的 `image.loadRemote` **默认 `true` 与 Typora 行为一致**，
+符合 AGENTS.md 规则 14（Typora 1.14.9 为功能验收基线）；且 Mellow **额外提供退出选项**，
+在同等默认下比 Typora **更隐私友好**。PRD §124 的隐私默认（Telemetry / AI / Cloud OFF、
+Document Upload NONE）约束的是**Mellow 自身的服务**，不涉及「渲染用户内容里的远程资源」——
+Typora 对图片**上传**才要求显式确认（`Panel.strings`：「Typora 会调用第三方软件和服务…是否继续？」），
+Mellow 的图片上传同样是独立 opt-in 路径。
+
+→ **维持现状，无需改动。** 原 M2 处方（默认 Off）实为**偏离 parity 基线**的处置；
+后续改回 `true` 是对齐基线的正确方向，只是**当时只留了代码注释**（已在本轮补记于 §4.3）。
+
+**残余（属「超出 parity 的隐私偏好」，需显式裁决才可偏离基线）**：若产品希望**比 Typora 更严**
+（默认不加载、点击才加载），那是对基线的**有意偏离**，需在方案 D 表登记并说明取代关系 ——
+本环境不擅自偏离基线。
 
 **已加护栏**：设置侧 `defaultValue` 与引擎侧回退值**必须一致**
 （单侧改动会造出「设置显示关、实际仍加载」这类屏幕上看不出的错配）。
