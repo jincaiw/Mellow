@@ -424,6 +424,46 @@ if (dumpSource) {
   if (build !== '7785') fail(`typora-menu-dump.txt 基线版本漂移：SOURCE_BUILD=${build ?? '（无）'}，验收基线为 1.14.9 (7785)`);
 }
 
+// ── 10b. dump 生成器：既不得制造幻影 diff，也不得静默跳过真实变更（2026-09-30）──
+// 本 dump 是**入库证据**（§10 刚校验 STATUS / SOURCE_BUILD），而它每次运行都会生成新的
+// GENERATED_AT。原实现**无条件重写** → 有 Typora 的机器上每跑一次 `npm run pretest`
+// 就留下一处「只差时间戳」的幻影 diff，把真正的改动淹掉（噪声地板）。
+// 但反向的修法更危险：若「跳过写入」写成无条件，**基线会静默过期**，
+// 而本文件 §10 仍会对那份过期 dump 一路放行 —— 那才是真正的失真。
+// 故两侧同时锁：① 必须做「归一化时间戳后比较」；② 内容真的变了必须写。
+{
+  const genPath = resolve(root, 'tests/benchmark/generate-typora-menu-dump.mjs');
+  let genSource = '';
+  try {
+    genSource = readFileSync(genPath, 'utf8').replace(/\r\n/g, '\n');
+  } catch {
+    fail('generate-typora-menu-dump.mjs 不存在（dump 证据的生成器缺失）');
+  }
+  if (genSource) {
+    // ① 时间戳归一化：只允许抹掉 GENERATED_AT 一行，不得顺手抹掉别的行
+    const normMatch = /const stripStamp = \(s\) => s\.replace\((\/.*?\/[a-z]*),\s*'([^']*)'\)/.exec(genSource);
+    if (!normMatch) {
+      fail('dump 生成器必须实现 stripStamp（归一化 GENERATED_AT 后再比较），否则每跑一次测试都会产生幻影 diff');
+    } else {
+      const pattern = normMatch[1];
+      if (!pattern.includes('GENERATED_AT')) {
+        fail(`stripStamp 的归一化模式必须只针对 GENERATED_AT 行，实测为 ${pattern}`
+          + '（过度归一化会把真实变更也抹平 → 基线静默过期）');
+      }
+      if (!/m\s*$|\/m/.test(pattern)) {
+        fail(`stripStamp 的模式必须为多行模式（/m），否则匹配不到整行：${pattern}`);
+      }
+    }
+    // ② 真实变更必须落盘：writeFileSync 必须在，且与「内容一致则跳过」分支并存
+    if (!/writeFileSync\(OUT, next\)/.test(genSource)) {
+      fail('dump 生成器内容有变时必须 writeFileSync(OUT, next)（否则基线会静默过期，而 §10 仍会对过期 dump 放行）');
+    }
+    if (!/stripStamp\(existingRaw\)\s*===\s*stripStamp\(next\)/.test(genSource)) {
+      fail('dump 生成器必须以「归一化后比较」判定是否重写（内容一致 → 保留基线时间戳）');
+    }
+  }
+}
+
 // ── 11. 官方快捷键表真值合同 ─────────────────────────────────────────────
 // 规范依据：Typora 官方 Shortcut Keys 页（support.typora.io/Shortcut-Keys，
 // 页面最后更新 2026-09-06，规范基线 1.14.9 / build 7785）。

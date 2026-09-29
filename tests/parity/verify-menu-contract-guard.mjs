@@ -29,6 +29,10 @@ const FILES = {
   'packages/i18n/src/messages.ts': 'packages/i18n/src/messages.ts',
   'apps/desktop/src-tauri/src/menu.rs': 'apps/desktop/src-tauri/src/menu.rs',
   'tests/benchmark/fixtures/typora-menu-dump.txt': 'tests/benchmark/fixtures/typora-menu-dump.txt',
+  // §10b（2026-09-30）：菜单护栏现在还检查 dump 生成器（既不得制造幻影 diff、
+  // 也不得静默跳过真实变更），故沙箱必须一并复制它，否则每个用例都会因
+  // 「生成器不存在」而失败 —— 那不是被注入的缺陷，是沙箱缺文件（假阳性）。
+  'tests/benchmark/generate-typora-menu-dump.mjs': 'tests/benchmark/generate-typora-menu-dump.mjs',
 };
 
 let work = '';
@@ -100,6 +104,16 @@ const CASES = [
   ['Golden dump 退化为 UNVERIFIED 占位', () => patch(join(work, 'tests/benchmark/fixtures/typora-menu-dump.txt'), (s) => s.replace(
     'STATUS: EXTRACTED',
     'STATUS: UNVERIFIED'))],
+  // ── §10b dump 生成器：两个方向都要被拒（2026-09-30）────────────────────
+  ['dump 生成器退化为无条件重写（幻影 diff 回归）', () => patch(
+    join(work, 'tests/benchmark/generate-typora-menu-dump.mjs'),
+    (s) => s.replace('if (existingRaw && stripStamp(existingRaw) === stripStamp(next)) {', 'if (false) {'))],
+  ['dump 生成器跳过写入（基线静默过期）', () => patch(
+    join(work, 'tests/benchmark/generate-typora-menu-dump.mjs'),
+    (s) => s.replace('writeFileSync(OUT, next);', '/* removed */'))],
+  ['dump 生成器时间戳归一化过度（把真实变更也抹平）', () => patch(
+    join(work, 'tests/benchmark/generate-typora-menu-dump.mjs'),
+    (s) => s.replace('/^GENERATED_AT: .*$/m', '/^.*$/m'))],
   // ── messages.ts：双语契约 ─────────────────────────────────────────────
   ['菜单文案漏译（en 置空）', () => patch(messages(), (s) => s.replace(
     "'menu.file.new': 'New',",

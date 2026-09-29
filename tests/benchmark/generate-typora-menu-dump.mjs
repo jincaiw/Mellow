@@ -219,7 +219,24 @@ if (existsSync(nibPath)) {
 }
 
 mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, `${lines.join('\n')}\n`);
-console.log(
-  `typora-menu-dump.txt: EXTRACTED from Typora ${version} (${build}); ${lines.length} lines → ${OUT}`
-);
+const next = `${lines.join('\n')}\n`;
+
+// ── 消除「只有 GENERATED_AT 变了」的幻影 diff（2026-09-30）────────────────
+// 上面的「本机无 Typora」分支已刻意「不重写、不产生 GENERATED_AT 噪音」，
+// 但有 Typora 的机器（维护者本机）此前**每次 `npm run pretest` 都会重写时间戳** →
+// `git status` 永远挂着一处噪声改动，把真正的改动淹掉（噪声地板）。
+// 处置：内容（除 GENERATED_AT 外）与入库基线一致时**不重写**，
+// 保留基线**首次提取**的时间戳 —— 那才是这份证据的 provenance，
+// 「最后一次跑测试的时刻」不是。内容真的变了才写，并在此时刷新时间戳。
+const stripStamp = (s) => s.replace(/^GENERATED_AT: .*$/m, 'GENERATED_AT: <stamp>');
+const existingRaw = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
+if (existingRaw && stripStamp(existingRaw) === stripStamp(next)) {
+  console.log(
+    `typora-menu-dump.txt: 内容与入库基线一致（仅时间戳不同），保留基线 GENERATED_AT、不重写 → ${OUT}`
+  );
+} else {
+  writeFileSync(OUT, next);
+  console.log(
+    `typora-menu-dump.txt: EXTRACTED from Typora ${version} (${build}); ${lines.length} lines → ${OUT}`
+  );
+}
