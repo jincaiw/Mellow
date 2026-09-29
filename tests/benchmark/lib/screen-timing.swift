@@ -838,6 +838,14 @@ func cmdKeypressLatency(pid: Int32, roi: Roi, key: CGKeyCode, count: Int, interv
   // --no-click：与 startup-probe 同因（WKWebView 合成点击破坏 TextInput 焦点协议）。
   if clickFocus { clickToFocus(win, roi: effRoi) }
   let cal = probe.calibrateRetry()
+  // 逐键回显必须与 startup-probe / hot-open 用**同一个比例判据**（2026-09-28）。
+  //
+  // 这是同一母题的第三处：每次按键只插入**一个字符**，在 576×96 的 ROI 上约产生
+  // 59 个变化采样点，与绝对地板 60 **同量级** → 一部分按键被判为「未回显」，
+  // 于是 `latencies` 里混入 -1（超时），**P95 被污染**（PRD §110 的
+  // 「Input P95 update < 16ms / Large < 32ms」正是读这个 P95）。
+  // 前两处（startup-probe 的回显、hot-open 的回显）已修；这里不修就等于没修完。
+  probe.setFracOverride(ECHO_MIN_FRAC)
   var latencies: [Double] = []
   var consecutiveTimeout = 0
   for i in 0..<count {
@@ -859,8 +867,9 @@ func cmdKeypressLatency(pid: Int32, roi: Roi, key: CGKeyCode, count: Int, interv
       out(["ok": true, "phase": "progress", "i": i + 1, "count": count, "last": latencies.count > 0 ? latencies[latencies.count - 1] : 0])
     }
   }
+  probe.setFracOverride(nil)
   await probe.stop()
-  out(["ok": true, "truncated": consecutiveTimeout >= 8, "calibMaxDiff": cal.max, "threshold": cal.threshold, "latencies": latencies])
+  out(["ok": true, "truncated": consecutiveTimeout >= 8, "calibMaxDiff": cal.max, "threshold": cal.threshold, "echoMinFrac": ECHO_MIN_FRAC, "latencies": latencies])
 }
 
 func cmdScrollFrames(pid: Int32, roi: Roi, count: Int, delta: Int32, intervalMs: Double, timeoutMs: Double, roiFrac: [Double]? = nil) async {

@@ -399,9 +399,13 @@ if (existsSync(benchmarkRunnerPath)) {
       assert(/let ECHO_MIN_FRAC\s*=\s*0\.\d+/.test(hs),
         'helper 必须定义 ECHO_MIN_FRAC：回显判据须为比例，绝对地板 60 会压在信号量级上');
       {
+        // 三处都必须用比例判据（2026-09-28）。断言**出现次数**而不是「存在」——
+        // 「修了一处漏了另一处」正是这类缺陷的典型形态：实际发生过
+        // startup-probe 与 hot-open 修好后，cmdKeypressLatency 仍是绝对阈值，
+        // 而 typing 指标（PRD §110「Input P95 update < 16ms」）正是读它。
         const hits = hs.match(/setFracOverride\(ECHO_MIN_FRAC\)/g) ?? [];
-        assert(hits.length >= 2,
-          `startup-probe 与 hot-open 的回显判定都必须用 ECHO_MIN_FRAC（实测只找到 ${hits.length} 处）`);
+        assert(hits.length >= 3,
+          `startup-probe / hot-open / keypress-latency 三处回显判定都必须用 ECHO_MIN_FRAC（实测只找到 ${hits.length} 处）`);
       }
       assert(/echoDetectMaxFrac/.test(hs), 'helper 必须报出 echoDetectMaxFrac（回显判据的自证字段）');
       {
