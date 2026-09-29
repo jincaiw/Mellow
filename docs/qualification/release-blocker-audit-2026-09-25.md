@@ -496,6 +496,67 @@ editor-core **不能**反向 import 引擎（成环）。故内联是**必要的
 即：本项仍是**静态不变量**被守住，**不是**「10MB 可编辑」已被真机验证 ——
 后者属 PASS-E（三平台真机 + ux-gate），**不在本轮口径内**。
 
+## 4.10 菜单护栏**声称**覆盖 `menuContract.ts`，实际从未读取它（2026-09-30）
+
+**事实**：`tests/parity/verify-menu-contract.mjs` 的文件头把
+`packages/commands/src/menuContract.ts` 列为「覆盖的源码」之一，但**全文件从未读取该文件** ——
+第 1 节把顶层顺序**自己硬编码**了一份（`const TYPOGRAPHIC_MENU_ORDER = [...]`），只与 `menuSchema.ts` 比对。
+
+于是顶层顺序存在**三份**副本：`menuSchema.ts`（真值源）、`menuContract.ts`、**护栏自己**。
+护栏锁住了「真值源 ↔ 自己」，而 `menuContract.ts` 那份**无人核对**。
+
+**为什么这不是无害的**：`menuContract.ts` 是从包入口 `export *` 出去的**公开合同**，
+其 `MENU_COMMAND_CONTRACT` 还额外声明了 15 条高频命令的**归属**。
+把 schema 里 `format.bold` 挪到 paragraph，护栏（只比顺序）照样通过 —— 合同静默变假。
+这与「菜单护栏谎称读了本机 Typora」同类：**声称的覆盖 ≠ 实际的覆盖**。
+
+**实跑核对结果（真读它之后当场抓到 2 条陈旧条目）**：
+
+| 合同条目 | schema 实际 | 判定 |
+|---|---|---|
+| `{ id: 'settings.open', menu: 'help' }` | 在 **`app`**（macOS 应用菜单，`macOnly`） | **合同错**（`app` 是本合同按定义排除的平台 chrome） |
+| `{ id: 'insert.mermaid', menu: 'paragraph' }` | schema 里**没有该命令** | **合同错**（段落菜单有意不设 code/math/mermaid 分组，见 schema 该处注释） |
+| `{ id: 'edit.undo', menu: 'edit' }` | 是 `{ kind: 'predefined', predefined: 'undo' }` | 不是错 —— 但护栏需要**显式映射**「OS 预定义角色 ↔ 合同命令 id」才能核对 |
+
+**处置**：
+1. 护栏新增 §1b：**真的读取** `menuContract.ts`，逐条核对 ——
+   顶层顺序必须与产品合同一致；每条命令的归属必须等于它在 schema 里的**实际**顶层菜单；
+   引用 schema 中不存在的命令即失败。
+2. **动态派生 id 不盲目豁免**：schema 只声明占位（`recent-files` / `themes`），
+   具体 id 运行时展开 —— 改为校验它归属「**声明该占位的那一级**」
+   （`theme.apply.*` 必须落在含 `dynamic: 'themes'` 的那一级）。
+   前缀与所属级**从 schema 派生**；出现护栏不认识的动态类型即**响亮失败**。
+3. OS 预定义角色用**显式小映射**（`undo`/`redo` → `edit.undo`/`edit.redo`）+ canary。
+4. 修正合同的两条陈旧条目（保留说明注释）。
+5. mutation 沙箱补上 `menuContract.ts`（新依赖必须进沙箱，否则自检假失败 —— 上轮刚踩过），
+   并新增 3 个用例：归属漂移 / 顶层顺序漂移 / 引用不存在的命令。
+   自检由 29 → **32** 个注入缺陷全部被拒。
+
+> **护栏自己踩到的坑（同类，已修）**：我在合同里写的「已移除 `{ id: 'settings.open', … }`」
+> 说明注释，被护栏**当成真条目**解析出来并报成违规 —— 即 skill 里记的
+> 「**注释被计入**」。修法：**先 stripComments 再解析**（`//` 与 `/* */`）。
+
+### 4.10.1 顺带发现（**待裁决，本轮不擅自处置**）
+
+**`settings.open` 在 Windows / Linux 的菜单里没有入口。**
+
+| | macOS | Windows / Linux |
+|---|---|---|
+| Typora | 应用菜单 → Preferences（⌘,） | **File → Preferences**（Ctrl+,） |
+| Mellow | 应用菜单 → 设置（⌘,）✅ 对齐 | **菜单无此项**；仅 `Ctrl+,` 键盘 + 命令面板 |
+
+该设计**已实现且已被护栏锁住**（`verify-menu-contract.mjs` §11 平台互补键位专项，
+断言 `settings.open` 必须有 Win/Linux 的 `Ctrl+,` 键盘键位；`App.tsx` 内联补充该键位）。
+但它的理由**只写在代码注释里**（`verify-menu-contract.mjs:320/569/674-677`、`App.tsx:5249`），
+**未登记进 master plan 的 D 表** —— 而 D-AC 的教训正是：
+
+> 「该裁决此前**只写在护栏注释与断言里**，方案正文从未登记 …… 因发现 `view.readonly.toggle`
+> 『能力已实现但菜单不可达』而**误加了菜单项**，被该护栏当场拦下。
+> **教训：护栏注释不是决策登记处 —— 裁决必须进本 D 表，否则后续轮次无法发现。**」
+
+即：当前状态**正是 D-AC 描述的那类条件**。本环境**不擅自登记**（D 表是裁决登记处，
+「属有意差异 D 还是缺口」需要你判断），仅在此登记该观察。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

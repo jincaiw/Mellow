@@ -33,6 +33,9 @@ const FILES = {
   // 也不得静默跳过真实变更），故沙箱必须一并复制它，否则每个用例都会因
   // 「生成器不存在」而失败 —— 那不是被注入的缺陷，是沙箱缺文件（假阳性）。
   'tests/benchmark/generate-typora-menu-dump.mjs': 'tests/benchmark/generate-typora-menu-dump.mjs',
+  // §1b（2026-09-30）：菜单护栏现在还**真的读取并逐条比对**跨入口菜单合同，
+  // 故沙箱必须一并复制它，否则每个用例都会因「合同不存在」失败（沙箱缺文件 ≠ 被注入的缺陷）。
+  'packages/commands/src/menuContract.ts': 'packages/commands/src/menuContract.ts',
 };
 
 let work = '';
@@ -114,6 +117,16 @@ const CASES = [
   ['dump 生成器时间戳归一化过度（把真实变更也抹平）', () => patch(
     join(work, 'tests/benchmark/generate-typora-menu-dump.mjs'),
     (s) => s.replace('/^GENERATED_AT: .*$/m', '/^.*$/m'))],
+  // ── §1b 跨入口菜单合同：与 schema 脱节必须被拒（2026-09-30）──────────────
+  ['菜单合同：命令归属漂移（format.bold → paragraph）', () => patch(
+    join(work, 'packages/commands/src/menuContract.ts'),
+    (s) => s.replace("{ id: 'format.bold', menu: 'format' },", "{ id: 'format.bold', menu: 'paragraph' },"))],
+  ['菜单合同：顶层顺序漂移（file ↔ edit 互换）', () => patch(
+    join(work, 'packages/commands/src/menuContract.ts'),
+    (s) => s.replace("  'file',\n  'edit',", "  'edit',\n  'file',"))],
+  ['菜单合同：引用 schema 中不存在的命令', () => patch(
+    join(work, 'packages/commands/src/menuContract.ts'),
+    (s) => s.replace("{ id: 'file.new', menu: 'file' },", "{ id: 'file.ghostCommand', menu: 'file' },"))],
   // ── messages.ts：双语契约 ─────────────────────────────────────────────
   ['菜单文案漏译（en 置空）', () => patch(messages(), (s) => s.replace(
     "'menu.file.new': 'New',",

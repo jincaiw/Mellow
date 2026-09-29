@@ -17,7 +17,7 @@
  * - 历史论证见 docs/plans/archive/typora-parity-final-plan-v4.md §7.2 / §7.4
  * - packages/commands/src/menuContract.ts（顶层菜单产品合同）
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -133,6 +133,122 @@ if (JSON.stringify(macOnlyRoots) !== JSON.stringify(['app', 'window'])) {
   fail(`macOnly 顶层菜单集合漂移：应为 [app, window]，实际 ${macOnlyRoots.join(', ')}`);
 }
 if (!MENU_SCHEMA[0].macOnly) fail('应用菜单必须声明 macOnly（Windows/Linux 不得出现应用菜单）');
+
+// ── 1b. 跨入口菜单合同（packages/commands/src/menuContract.ts）必须与 schema 一致 ──
+// 立此节的原因（2026-09-30）：**本文件头声称覆盖 `menuContract.ts`，但实际从未读取它** ——
+// 上面第 1 节把顶层顺序**自己硬编码**了一份（`const TYPOGRAPHIC_MENU_ORDER = [...]`），
+// 只与 schema 比对。于是出现**三份**顶层顺序副本，其中 `menuContract.ts` 那份**无人核对**：
+// 它是从包入口 `export *` 出去的公开合同，且 `MENU_COMMAND_CONTRACT` 还额外声明了
+// 15 条高频命令的归属 —— 把 schema 里 `format.link` 挪到 paragraph，本护栏（只比顺序）照样通过。
+// 这是「声称的覆盖 ≠ 实际的覆盖」的又一实例（与「菜单护栏谎称读了本机 Typora」同类）。
+{
+  const contractPath = resolve(root, 'packages/commands/src/menuContract.ts');
+  if (!existsSync(contractPath)) {
+    fail('packages/commands/src/menuContract.ts 不存在（跨入口菜单合同缺失，本护栏头部声称覆盖它）');
+  } else {
+    const contractRaw = readFileSync(contractPath, 'utf8').replace(/\r\n/g, '\n');
+    // ⚠️ **先剥注释再解析**：本文件（以及 contract 自身）的注释里会**引用**条目文本
+    // （例如「已移除 `{ id: 'settings.open', menu: 'help' }`」），
+    // 不剥注释就会把注释当成真条目 —— 实测踩到：注释里的旧条目被解析出来并报成违规。
+    const stripComments = (code) => code
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    const contractSrc = stripComments(contractRaw);
+    const orderBlock = /TYPOGRAPHIC_MENU_ORDER\s*=\s*\[([\s\S]*?)\]\s*as const/.exec(contractSrc)?.[1] ?? '';
+    const contractOrder = [...orderBlock.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    if (contractOrder.length === 0) {
+      fail('无法从 menuContract.ts 解析 TYPOGRAPHIC_MENU_ORDER（护栏需同步更新，不要静默漏检）');
+    } else if (JSON.stringify(contractOrder) !== JSON.stringify(TYPOGRAPHIC_MENU_ORDER)) {
+      fail(`menuContract.ts 的 TYPOGRAPHIC_MENU_ORDER 与产品合同不一致：`
+        + `${contractOrder.join(' → ')}（应为 ${TYPOGRAPHIC_MENU_ORDER.join(' → ')}）`);
+    }
+    // 命令归属：contract 声明的 menu 必须等于它在 schema 里的**实际**顶层菜单。
+    // 动态派生 id（schema 只声明占位、id 运行时展开）**不盲目豁免** ——
+    // 改为校验它归属「**声明该动态占位的那一级**」，即 `theme.apply.*` 必须落在
+    // 含 `dynamic: 'themes'` 的那一级。前缀与所属级都**从 schema 派生**，不硬编码：
+    // 新增一种动态类型而护栏不认识时**响亮失败**（而不是把新形态静默放过）。
+    const DYNAMIC_PREFIX = { 'recent-files': 'recent.file::', themes: 'theme.apply.' };
+    const declaredDynamic = new Set(
+      [...schemaSource.matchAll(/kind:\s*'dynamic',\s*dynamic:\s*'([^']+)'/g)].map((m) => m[1]),
+    );
+    const unknownDynamic = [...declaredDynamic].filter((k) => !(k in DYNAMIC_PREFIX));
+    if (unknownDynamic.length > 0) {
+      fail(`schema 声明了护栏不认识的动态菜单类型：${unknownDynamic.join(', ')}`
+        + '（请在 DYNAMIC_PREFIX 中登记其 id 前缀与所属级，不要静默放过）');
+    }
+    // 动态类型 → 声明它的顶层菜单 id
+    const dynamicRootOf = new Map();
+    for (const rootEntry of MENU_SCHEMA) {
+      for (const e of rootEntry.entries) {
+        if (e.kind === 'dynamic' && e.dynamic) dynamicRootOf.set(e.dynamic, rootEntry.id);
+      }
+    }
+    const dynamicMatch = (id) => [...declaredDynamic]
+      .find((k) => DYNAMIC_PREFIX[k] && id.startsWith(DYNAMIC_PREFIX[k])) ?? null;
+
+    const rootOfCommand = new Map();
+    for (const rootEntry of MENU_SCHEMA) {
+      for (const e of walkEntries(rootEntry.entries)) {
+        if (e.kind === 'command') rootOfCommand.set(e.id, rootEntry.id);
+      }
+    }
+    // OS 预定义角色 ↔ 合同里的命令 id：`{ kind: 'predefined', predefined: 'undo' }`
+    // 没有 command id，但合同用 `edit.undo` 指代它（该 id 在 CommandRegistry 里存在，
+    // 菜单侧则由 OS 角色物化）。这是**少数几条显式映射**，登记在此并配 canary。
+    const PREDEFINED_ROLE_ID = { undo: 'edit.undo', redo: 'edit.redo' };
+    for (const rootEntry of MENU_SCHEMA) {
+      for (const e of walkEntries(rootEntry.entries)) {
+        if (e.kind === 'predefined' && e.predefined && PREDEFINED_ROLE_ID[e.predefined]) {
+          rootOfCommand.set(PREDEFINED_ROLE_ID[e.predefined], rootEntry.id);
+        }
+      }
+    }
+    const contractPairs = [...contractSrc.matchAll(/\{\s*id:\s*'([^']+)',\s*menu:\s*'([^']+)'\s*\}/g)]
+      .map((m) => ({ id: m[1], menu: m[2] }));
+    if (contractPairs.length === 0) {
+      fail('无法从 menuContract.ts 解析 MENU_COMMAND_CONTRACT（护栏需同步更新，不要静默漏检）');
+    }
+    for (const { id, menu } of contractPairs) {
+      const dynKind = dynamicMatch(id);
+      if (dynKind !== null) {
+        const expectedRoot = dynamicRootOf.get(dynKind);
+        if (expectedRoot === undefined) {
+          fail(`menuContract.ts 的动态 id ${id} 找不到对应的 dynamic 占位（${dynKind}）`);
+        } else if (expectedRoot !== menu) {
+          fail(`menuContract.ts 的动态 id 归属不一致：${id} 合同写 ${menu}，`
+            + `但声明 ${dynKind} 占位的是 ${expectedRoot}`);
+        }
+        continue;
+      }
+      const actual = rootOfCommand.get(id);
+      if (actual === undefined) {
+        fail(`menuContract.ts 声明了 schema 中不存在的命令：${id}（合同与真值源脱节）`);
+      } else if (actual !== menu) {
+        fail(`menuContract.ts 与 schema 的命令归属不一致：${id} 合同写 ${menu}，schema 实际在 ${actual}`);
+      }
+    }
+    // canary：自检这两条交叉锁（样本拼接构造，避免护栏检出自己）
+    const CONTRACT_SAMPLE = "export const TYPOGRAPHIC_MENU_ORDER = ['file', 'edit']" + " as const;";
+    const sampleOrder = [...(/TYPOGRAPHIC_MENU_ORDER\s*=\s*\[([\s\S]*?)\]\s*as const/.exec(CONTRACT_SAMPLE)?.[1] ?? '')
+      .matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    if (JSON.stringify(sampleOrder) !== JSON.stringify(['file', 'edit'])) {
+      errors.push('menuContract 顺序锁 canary 失效：样本顺序未被解析');
+    }
+    const PAIR_SAMPLE = "{ id: 'file.new', menu: 'file' }";
+    const samplePairs = [...PAIR_SAMPLE.matchAll(/\{\s*id:\s*'([^']+)',\s*menu:\s*'([^']+)'\s*\}/g)];
+    if (samplePairs.length !== 1 || samplePairs[0][1] !== 'file.new') {
+      errors.push('menuContract 归属锁 canary 失效：样本命令未被解析');
+    }
+    // canary：动态前缀豁免必须只放行动态 id
+    const DYN_SAMPLE = 'theme.apply.' + 'mellow-light';
+    if (dynamicMatch(DYN_SAMPLE) !== 'themes') {
+      errors.push('menuContract 动态归属 canary 失效：动态样本未被识别为 themes');
+    }
+    if (dynamicMatch('file.save') !== null) {
+      errors.push('menuContract 动态归属 canary 失效：静态命令被误判为动态');
+    }
+  }
+}
 
 // ── 2. 命令覆盖：schema 命令 id 必须能被前端 CommandRegistry 处理 ───────────
 const desktopCommandIds = new Set([...appSource.matchAll(/\{\s*\n?\s*id: '([^']+)'/g)].map((m) => m[1]));
