@@ -750,6 +750,25 @@ function renderReport(env, results, opts) {
   }
   L.push('');
   L.push('PRD 目标：P95 ≤ 1.2s to editable。');
+  // 判定与同机对照（2026-09-29）：PRD §110 要求「不能只用绝对指标，必须同机型与 Typora 对照」，
+  // 故本节既给比值也给双侧判定。
+  // 分辨率说明：该目标（1200ms）远高于本 harness 的量具分辨率（单帧 ≈17.4ms），
+  // 因此 ✅/❌ 判定成立 —— 与 typing 的 16ms 目标（低于分辨率、不可判定）不同。
+  {
+    // ⚠️ `results[].app` 的取值是 `'Mellow'` / `'Typora'`（**首字母大写**）。
+    // 用小写查询会静默返回 undefined —— 不报错、不输出，只是整段消失。
+    // 实测踩过：typing 的「逐样本诊断」与 startup 的判定段都因此静默不打印。
+    const st = (k) => results.find((x) => x.app === k)?.metrics?.startup?.stats;
+    const ms = st('Mellow'); const ts = st('Typora');
+    if (ms?.p95 && ts?.p95) {
+      L.push(`- 同机对照：Mellow/Typora P95 比值 = **${(ms.p95 / ts.p95).toFixed(2)}×**（<1 表示 Mellow 更快）。`);
+      L.push(`- PRD 判定：Mellow ${ms.p95 <= 1200 ? '✅ 达标' : '❌ 未达标'}（P95 ${ms.p95.toFixed(1)}ms）；`
+        + `Typora ${ts.p95 <= 1200 ? '✅ 达标' : '❌ 未达标'}（P95 ${ts.p95.toFixed(1)}ms）。`);
+      L.push('> 该目标（1200ms）远高于量具分辨率（单帧 ≈17.4ms），判定成立。');
+    } else {
+      L.push('- 缺少一侧读数，无法给出同机对照比值与判定。');
+    }
+  }
   L.push('');
 
   // open-to-editable per fixture
@@ -998,7 +1017,7 @@ function renderReport(env, results, opts) {
   // 但 `calibMax` 能到 112 也说明：**屏幕差分**区分「插入一个字符」与「其他重绘」的余量很薄，
   // 读数只可用于量级判断，不可用于精细判定。
   {
-    const r0 = results.find((x) => x.app === 'mellow');
+    const r0 = results.find((x) => x.app === 'Mellow');
     const diag = opts.fixtures
       .map((f) => [f, r0?.metrics[f]?.typing])
       .filter(([, t]) => t)

@@ -142,8 +142,16 @@ if (existsSync(benchmarkRunnerPath)) {
     'ratioOrNA 必须引用 TYPORA_MAX_FILE_SIZE（否则判定与阈值脱钩）');
   // 反例锁：不得出现「把 Typora 的 median/p95 直接当分母」的裸相除。
   // 命中即为「把提示页耗时当成打开耗时」，是台账那条错误结论的原写法。
+  //
+  // 例外（2026-09-29）：**startup 指标没有夹具** —— 它是 blank 冷启动，Typora 侧不存在
+  // 「提示页耗时」问题，故该节内的直接比值合法。扫描时把该节排除，并在注释里写明理由；
+  // **不靠改变量名绕开护栏**（改名绕开会腐蚀护栏本身，比误报更糟）。
   const RAW_RATIO_RE = /\.(?:median|p95|medianMB|peakMB)\s*\/\s*(?:tt|ts)\??\./;
-  assert(!RAW_RATIO_RE.test(benchCode),
+  const rawRatioScan = benchCode.replace(/## 1\. startup[\s\S]*?## 2\. open-to-editable/, '');
+  // 切片**会连锚点一起删掉**，故用后一个锚点验证切片确实生效（否则护栏静默失效）
+  assert(rawRatioScan.includes('## 3. typing'),
+    'raw-ratio 例外节的切片失败（## 1. startup 与 ## 2. open-to-editable 的锚点不匹配）→ 护栏已失效');
+  assert(!RAW_RATIO_RE.test(rawRatioScan),
     '不得直接把 Typora 的 median/p95 当分母（须经 ratioOrNA）：超过 Typora 渲染上限的夹具其 Typora 侧是提示页耗时，不是打开耗时');
   // canary：自检反例锁本身（样本用拼接构造）
   const RAW_RATIO_SAMPLE = 'const ratio = (mt' + '.median / ' + 'tt.median).toFixed(2);';
@@ -240,6 +248,28 @@ if (existsSync(benchmarkRunnerPath)) {
   const m = SRC_SAMPLE.match(/LARGE_FILE_BYTES_THRESHOLD\s*=\s*([\d_*\s]+);/);
   if (!m || evalArith(m[1]) !== 5242880) {
     errors.push('大文件模式跨层锁 canary 失效：样本阈值未被正确求值');
+  }
+
+  // ── results[].app 的键名大小写（2026-09-29）─────────────────────────────
+  // 立此条的原因：`results[].app` 的取值是 `'Mellow'` / `'Typora'`（**首字母大写**）。
+  // 用小写查询会**静默**返回 undefined —— 不报错、不输出，只是整段报告消失。
+  // 实测踩过两次：typing 的「逐样本诊断」段与 startup 的判定段都因此一行都没打印，
+  // 而报告看起来完全正常（表格在、只是少了那几行）。
+  {
+    const bad = benchCode.match(/x\.app === '(mellow|typora)'/g) ?? [];
+    assert(bad.length === 0,
+      `run-benchmark 不得用小写 app 键查询 results（会静默返回 undefined，整段报告消失）：${bad.join(', ')}`);
+    const good = benchCode.match(/x\.app === '(Mellow|Typora)'/g) ?? [];
+    assert(good.length >= 1,
+      `run-benchmark 应按 'Mellow' / 'Typora' 查询 results（实测只找到 ${good.length} 处）`);
+    // 经变量的查询（如 `st(k)`）绕不过这条：断言 helper 必须用大写字面量调用
+    assert(/st\('Mellow'\)|st\('Typora'\)|g\('Mellow'\)|g\('Typora'\)/.test(benchCode),
+      'run-benchmark 的 results 查询 helper 必须以大写字面量调用（小写会静默返回 undefined）');
+    // canary：自检大小写锁
+    const KEY_SAMPLE = "results.find((x) => x.app === '" + 'mellow' + "')";
+    if (!/x\.app === '(mellow|typora)'/.test(KEY_SAMPLE)) {
+      errors.push('app 键名大小写护栏 canary 失效：小写样本未被检出');
+    }
   }
 
   // ── typing 指标必须声明「分辨率限制」（2026-09-29）────────────────────
