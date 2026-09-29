@@ -4036,16 +4036,6 @@ export default function App() {
       { label: t('contextmenu.editorCopy'), enabled: req.hasSelection, onClick: run('edit.copy') },
       { label: t('contextmenu.editorPaste'), onClick: run('edit.paste') },
     ];
-    // P0-EDITOR-005：拼写词典项（**走 dispatchCommand**，满足 §7.4 规则 11）。
-    // 仅当平台具备词典能力时插入 —— 显示一个点了没反应的项比不显示更糟。
-    // 可用性取自启动时预取的缓存（同步可读），故无需异步弹菜单。
-    if (req.kind === 'text' && req.word !== undefined && spellcheckAvailableSync()) {
-      items.push(
-        { label: t('contextmenu.spellingLearn'), onClick: run('edit.spelling.learn') },
-        { label: t('contextmenu.spellingUnlearn'), onClick: run('edit.spelling.unlearn') },
-        { separator: true },
-      );
-    }
     // Typora 通用子菜单（code-tools：Copy Code Content / Auto Indent Whole / Auto Indent Selected）
     // 注意：codeTools / insertParagraph 条目在 code/math/mermaid 三个分支内各内联一份
     // （护栏 verify-context-menu-parity.mjs 按 kind 块内 run( 调用抽取序列）。
@@ -4105,6 +4095,22 @@ export default function App() {
       );
     }
     if (req.kind === 'text') {
+      // P0-EDITOR-005：拼写词典项（**走 dispatchCommand**，满足 §7.4 规则 11）。
+      // 仅当平台具备词典能力时插入 —— 显示一个点了没反应的项比不显示更糟。
+      // 可用性取自启动时预取的缓存（同步可读），故无需异步弹菜单。
+      //
+      // 注意：本段必须在**既有** `if (req.kind === 'text')` 块**内部**。
+      // verify-context-menu-parity 的块解析正则是
+      //   /if \(req\.kind === '(\w+)'(?:[^)]*?)\) \{([\s\S]*?)\n    \}/g
+      // —— 条件里一旦出现括号（如 `&& foo()`），该 `if` 就**匹配不上**，
+      // 整块对护栏**不可见**（既不参与条目序列比对，也不参与直连检查）。
+      if (req.word !== undefined && spellcheckAvailableSync()) {
+        items.push(
+          { label: t('contextmenu.spellingLearn'), onClick: run('edit.spelling.learn') },
+          { label: t('contextmenu.spellingUnlearn'), onClick: run('edit.spelling.unlearn') },
+          { separator: true },
+        );
+      }
       items.push(
         { separator: true },
         {

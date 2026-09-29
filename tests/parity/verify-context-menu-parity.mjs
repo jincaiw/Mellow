@@ -93,6 +93,20 @@ const EXCEPTION_KINDS = new Set(DIRECT_CALL_EXCEPTIONS.map((e) => e.kind));
 
 // ---------------------------------------------------------------- 解析
 
+/**
+ * 去注释（2026-09-30）。
+ *
+ * 必须**先 stripComments 再解析/计数**：块解析与「出现次数」都是纯文本匹配，
+ * 注释里的 `if (req.kind === 'text')` 会被当成真实分支计入 ——
+ * 实测踩过：新增拼写项时写的说明注释使「出现次数」多出 1，元护栏误报。
+ * 这正是本项目既有教训「静态契约断言必须先 stripComments」的同一形态。
+ */
+function stripComments(code) {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
 function extractHandler(source) {
   const start = source.indexOf('const handleEditorContextMenu = useCallback(');
   if (start < 0) return null;
@@ -131,7 +145,7 @@ function parseRegistryIds(source) {
 // ---------------------------------------------------------------- 校验
 
 const source = readFileSync(APP_TSX, 'utf8').replace(/\r\n/g, '\n');
-const handler = extractHandler(source);
+const handler = extractHandler(stripComments(source));
 
 if (handler === null) {
   fail('无法定位 handleEditorContextMenu；护栏失效（解析锚点变更，请同步更新本脚本）');
@@ -181,6 +195,33 @@ if (handler === null) {
   for (const kind of blocks.keys()) {
     if (!(kind in CTX_CONTRACT) && !EXCEPTION_KINDS.has(kind)) {
       fail(`出现未登记的 req.kind === '${kind}' 分支；Typora 1.14.9 无此块级右键条目，请先补证据或登记为 B 类增强`);
+    }
+  }
+
+  // 元护栏（2026-09-30）：**块解析必须不漏块**。
+  //
+  // 块解析正则是 `/if \(req\.kind === '(\w+)'(?:[^)]*?)\) \{…/` —— 其中 `[^)]*?`
+  // **不能含括号**。于是条件里一旦出现括号（如 `if (req.kind === 'text' && foo()) {`），
+  // 该 `if` 就**匹配不上**，整块对护栏**完全不可见**：既不参与条目序列比对，
+  // 也不参与「直连引擎」检查 —— 等于给该块开了一个静默后门。
+  //
+  // 实测踩过：新增的拼写菜单项因条件含 `spellcheckAvailableSync()` 而对护栏隐形，
+  // 而护栏仍显示全绿（它读的是另一个 `if (req.kind === 'text')` 块）。
+  // 故断言「解析到的块数 == 源码里 `req.kind === '<kind>'` 的出现次数」。
+  const kindOccurrences = (handler.match(/req\.kind === '\w+'/g) ?? []).length;
+  if (blocks.size !== kindOccurrences) {
+    fail(
+      `块解析数(${blocks.size}) 与源码中 req.kind === 出现次数(${kindOccurrences}) 不一致：`
+      + '有 `if` 条件含括号（如 `&& foo()`）导致整块对护栏**不可见**'
+      + '（既不比对条目序列，也不检查直连）。请把该条件拆到块内部，或先扩展本脚本的块解析。',
+    );
+  }
+  // canary：自检该元护栏（样本拼接构造，避免护栏检出自己）
+  {
+    const SAMPLE = "if (req.kind === 'text' && spellcheckAvailable" + 'Sync()) {';
+    const PARSER = /if \(req\.kind === '(\w+)'(?:[^)]*?)\) \{/;
+    if (PARSER.test(SAMPLE)) {
+      fail('块解析元护栏 canary 失效：含括号条件的样本竟被解析到（护栏已失效）');
     }
   }
 
