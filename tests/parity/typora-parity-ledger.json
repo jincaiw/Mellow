@@ -654,7 +654,8 @@
         "tests/qualification/evidence/2026-09-25-perf-hot-open-authoritative.md",
         "tests/qualification/evidence/2026-09-25-hotopen-criterion-and-large-file-cliff.md",
         "tests/qualification/evidence/2026-09-25-lockscreen-invalidates-visual-metrics.md",
-        "tests/qualification/evidence/2026-09-28-open-echo-criterion-and-fresh-comparison.md"
+        "tests/qualification/evidence/2026-09-28-open-echo-criterion-and-fresh-comparison.md",
+        "tests/qualification/evidence/2026-09-29-typing-metric-resolution-limit.md"
       ],
       "requiredEvidence": [
         "unit",

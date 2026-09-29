@@ -242,6 +242,29 @@ if (existsSync(benchmarkRunnerPath)) {
     errors.push('大文件模式跨层锁 canary 失效：样本阈值未被正确求值');
   }
 
+  // ── typing 指标必须声明「分辨率限制」（2026-09-29）────────────────────
+  // 立此条的原因：typing 的判据是**屏幕捕获的首帧变化**，采样率由 SCK 帧率决定
+  // （实测 detectFrames=459 / 8000ms → ≈57fps → 单帧 ≈17.4ms）。
+  // 而 PRD §110 对普通文档的目标是「P95 update < **16ms**」—— **低于量具分辨率**。
+  // 若不声明，一个 100ms 的观测会被读成「未达标 6 倍」，而实际它主要反映
+  // 「合成事件 → 渲染 → 捕获」的管线延迟，与编辑器更新耗时不是一回事。
+  // 故：目标低于分辨率时**不得**给出 ✅/❌，只能标「不可判定」。
+  assert(/SCK_FRAME_MS/.test(benchCode),
+    'run-benchmark 必须显式声明 SCK 单帧耗时（typing 的量具分辨率）');
+  assert(/分辨率限制/.test(benchCode),
+    'typing 报告段必须声明分辨率限制：PRD 的 16ms 目标低于量具分辨率');
+  assert(/不可判定（低于分辨率）/.test(benchCode),
+    '目标低于量具分辨率时必须输出「不可判定（低于分辨率）」，不得用 ✅/❌ 冒充结论');
+  assert(/const belowResolution\s*=/.test(benchCode),
+    'run-benchmark 必须实际计算 belowResolution 并在判定中使用');
+  {
+    // canary：自检分辨率判定逻辑
+    const RES_SAMPLE = { targetMs: 16, frameMs: 1000 / 57.4 };
+    if (!(RES_SAMPLE.targetMs < RES_SAMPLE.frameMs)) {
+      errors.push('typing 分辨率护栏 canary 失效：16ms 样本未被判为低于分辨率');
+    }
+  }
+
   // ── 发布门禁必须声明「闭环口径」（2026-09-25）──────────────────────────
   // 立此节的原因：`verify-release-gate` 把 `AUTO` 视为**不阻断**，而 master-plan §4.3
   // 定义 `AUTO` = 「自动化测试通过、**真机体验验收未完成**」，§8 的 V1.0 Exit Gate 又要求

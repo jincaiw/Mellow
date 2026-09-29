@@ -956,6 +956,21 @@ function renderReport(env, results, opts) {
   }
 
   L.push('');
+  L.push('## 3. typing（逐键回显延迟，ms）');
+  // ── 测量分辨率（2026-09-29）：本指标的判据是**屏幕捕获的首帧变化**，
+  // 采样率由 SCK 帧率决定。实测 detectFrames=459 / 8000ms → ≈57fps → **单帧 ≈17.4ms**。
+  // 而 PRD §110 对普通文档的目标是「P95 update < **16ms**」——
+  // **目标低于本 harness 的分辨率下限**，因此：
+  //   ① 观测到的 ~100ms 主要来自「合成事件 → 渲染 → 屏幕捕获」管线的固定延迟，
+  //      不是编辑器自身的更新耗时；
+  //   ② 「达标 / 未达标」在此口径下**不可判定** —— 不得据此宣称合规，也不得据此宣称不合规。
+  // 要判定 16ms 目标必须换测量方法（应用内 input→paint 埋点，或 CDP tracing）。
+  const SCK_FRAME_MS = 1000 / 57.4;
+  L.push(`> ⚠️ **分辨率限制**：本指标以屏幕捕获的首帧变化为准，单帧约 **${SCK_FRAME_MS.toFixed(1)}ms**（≈57fps）。`);
+  L.push(`> PRD §110 的普通文档目标是 **P95 update < 16ms**，**低于本量具的分辨率** → 该目标的`);
+  L.push('> 「达标/未达标」在此口径下**不可判定**；表中的 ✅/❌ 已改为「不可判定（低于分辨率）」。');
+  L.push('> 观测值主要反映「合成事件 → 渲染 → 捕获」的管线延迟，不是编辑器更新耗时。');
+  L.push('');
   L.push('| fixture | 模式 | Mellow P95 | Mellow median | Typora P95 | Typora median | ratio P95 (M/T) | PRD 目标 | 达标 |');
   L.push('|---|---|---|---|---|---|---|---|');
   const modeMap = { '1MB.md': '普通', '5MB.md': '边界', '10MB.md': 'Large', '100k-lines.md': 'Large', 'large-table.md': '参考', '100-mermaid.md': '参考', '1000-images.md': '参考' };
@@ -965,10 +980,35 @@ function renderReport(env, results, opts) {
     const mt = g('Mellow'); const tt = g('Typora');
     const ratio = ratioOrNA(mt?.p95, tt?.p95, f);
     const target = targetTyping[f];
-    const pass = mt?.p95 && target ? (f.includes('1MB') ? mt.p95 < 16 : mt.p95 < 32) : null;
-    L.push(`| ${f} | ${modeMap[f] ?? ''} | ${fmt(mt?.p95, 2)} | ${fmt(mt?.median, 2)} | ${cellOrRefused(tt?.p95, f, (v) => fmt(v, 2))} | ${cellOrRefused(tt?.median, f, (v) => fmt(v, 2))} | ${ratio} | ${target ?? '参考'} | ${pass === null ? '' : pass ? '✅' : '❌'} |`);
+    const targetMs = f.includes('1MB') ? 16 : 32;
+    // 目标低于量具分辨率 → 判定不成立（不得用「测不出来」冒充「达标」或「未达标」）
+    const belowResolution = target !== undefined && targetMs < SCK_FRAME_MS;
+    const pass = (mt?.p95 && target) ? (belowResolution ? null : mt.p95 < targetMs) : null;
+    const verdict = pass === null
+      ? (belowResolution ? '不可判定（低于分辨率）' : '')
+      : (pass ? '✅' : '❌');
+    L.push(`| ${f} | ${modeMap[f] ?? ''} | ${fmt(mt?.p95, 2)} | ${fmt(mt?.median, 2)} | ${cellOrRefused(tt?.p95, f, (v) => fmt(v, 2))} | ${cellOrRefused(tt?.median, f, (v) => fmt(v, 2))} | ${ratio} | ${target ?? '参考'} | ${verdict} |`);
   }
   L.push('');
+  // 逐样本诊断（2026-09-29）：`timeouts` 与 `calibMaxDiff` 必须一并报出。
+  // 实测出现过 `calibMaxDiff=112`（校准窗口抓到了非按键变化，如光标闪烁）→
+  // 旧判据 `max(calibMax*3, 60) = 336` **远高于**单字符信号（约 59 采样点）
+  // → **全部按键超时**（实测 `typing: p95=146.41ms median=146.41ms timeouts=9`），
+  // 该指标的 P95 因此被 -1 污染。改用比例判据后恢复为 12/12 有效。
+  // 但 `calibMax` 能到 112 也说明：**屏幕差分**区分「插入一个字符」与「其他重绘」的余量很薄，
+  // 读数只可用于量级判断，不可用于精细判定。
+  {
+    const r0 = results.find((x) => x.app === 'mellow');
+    const diag = opts.fixtures
+      .map((f) => [f, r0?.metrics[f]?.typing])
+      .filter(([, t]) => t)
+      .map(([f, t]) => `${f}: timeouts=${t.timeouts} calibMaxDiff=${t.calibMaxDiff} threshold=${t.threshold}`);
+    if (diag.length > 0) {
+      L.push(`逐样本诊断（Mellow）：${diag.join('；')}`);
+      L.push('> `timeouts` 非 0 时 P95 含 -1（超时）污染；`calibMaxDiff` 接近单字符信号（约 59）时判据余量薄。');
+      L.push('');
+    }
+  }
 
   // scroll
   L.push('## 4. scroll');
