@@ -34,9 +34,38 @@ function blankRecord(platform, mellowCommit = 'REPLACE_WITH_COMMIT') {
     machine: 'REPLACE_WITH_MACHINE',
     imeCorruption: null,
     dataLoss: null,
-    observations: [],
-    notes: '每个任务需记录 Typora/Mellow 各两轮；两轮 appOrder 必须相反。',
+    observations: skeletonObservations(),
+    notes:
+      'observations 已预置 120 条**骨架**（task/app/round/appOrder 已按交替规则填好），'
+      + '你只需补测量值：durationMs（秒→毫秒）、error(布尔)、steps(整数)、subjectiveScore(1-5)、'
+      + 'evidence(至少一项截图/视频/日志路径)、entryPoint、sourceDiff。'
+      + '**骨架不含任何数值**，故 validate 仍会拒绝未填项；随时用 progress 查进度。'
+      + '注意：同一轮内 typora/mellow 的 appOrder 必须一致，两轮之间必须相反（骨架已保证，勿改）。',
   };
+}
+
+/**
+ * 120 条观测骨架（2026-09-30）。
+ *
+ * 立此函数的必要性：原先 `observations: []` —— 人工需**手写 120 条、每条 8 个字段**的 JSON，
+ * 且草稿里没有任何结构示例。这既是巨大的时间成本，也是错填的高发区。
+ * 现预置**只含结构**的骨架：
+ *   - `task` / `app` / `round` 由 30 × 2 × 2 生成；
+ *   - `appOrder` **按规则算好**（同一轮内两 app 一致；两轮之间交换），
+ *     避免人工在 120 条里手工维护这个易错约束；
+ *   - **测量字段一律不填**（不写占位数值）—— 这样 validate 仍会拒绝，progress 会如实报「未填」，
+ *     不可能把占位值误当成真实读数。
+ */
+function skeletonObservations() {
+  const rows = [];
+  for (let task = 1; task <= TASKS.length; task++) {
+    for (let round = 1; round <= ROUNDS.length; round++) {
+      // 第一轮 typora 先做，第二轮交换 —— 与 validate 的顺序规则同源
+      const appOrder = round === 1 ? 'typora-first' : 'mellow-first';
+      for (const app of APPS) rows.push({ task, app, round, appOrder });
+    }
+  }
+  return rows;
 }
 
 function validate(record) {
@@ -199,8 +228,35 @@ function progressReport(input) {
 function selfTest() {
   const record = blankRecord('macos', 'deadbeef');
   record.tester = 'test'; record.machine = 'test-machine'; record.imeCorruption = false; record.dataLoss = false;
-  for (let task = 1; task <= TASKS.length; task++) for (const round of ROUNDS) for (const app of APPS) {
-    record.observations.push(sampleObservation(task, app, round, round === 1 ? 'typora-first' : 'mellow-first'));
+
+  // 骨架自检（2026-09-30）：条数正确，且 appOrder 规则**由构造保证**
+  const expected = TASKS.length * APPS.length * ROUNDS.length;
+  if (record.observations.length !== expected) {
+    fail(`self-test failed: 骨架应 ${expected} 条，实际 ${record.observations.length}`);
+  }
+  const orderOf = (task, app, round) => record.observations
+    .find((o) => o.task === task && o.app === app && o.round === round)?.appOrder;
+  for (let task = 1; task <= TASKS.length; task++) {
+    for (const round of ROUNDS) {
+      if (orderOf(task, 'typora', round) !== orderOf(task, 'mellow', round)) {
+        fail(`self-test failed: task ${task} round ${round} 同轮 appOrder 不一致（骨架破坏了顺序规则）`);
+      }
+    }
+    if (orderOf(task, 'typora', 1) === orderOf(task, 'typora', 2)) {
+      fail(`self-test failed: task ${task} 两轮 appOrder 未交换（骨架破坏了顺序规则）`);
+    }
+  }
+  // 骨架**不得含测量值**（否则占位值可能被误当成真实读数）
+  for (const o of record.observations) {
+    if ('durationMs' in o || 'error' in o || 'steps' in o || 'subjectiveScore' in o || 'evidence' in o) {
+      fail(`self-test failed: 骨架不应含测量字段（发现于 task ${o.task}/${o.app}/${o.round}）`);
+    }
+  }
+  if (validate(record).valid) fail('self-test failed: 只有骨架、无测量值的记录必须被拒绝');
+
+  // 补测量值（与人工流程一致：只填数值，不改结构）
+  for (const row of record.observations) {
+    Object.assign(row, sampleObservation(row.task, row.app, row.round, row.appOrder));
   }
   const result = validate(record);
   if (!result.valid || result.summary.withinFivePct !== 30) fail(`self-test failed: ${result.errors.join('; ')}`);

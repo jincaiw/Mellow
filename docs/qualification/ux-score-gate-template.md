@@ -39,7 +39,10 @@
 ### 记录与校验
 
 空白记录已生成（**含当前 commit**）：`docs/qualification/evidence/macos-ux-gate-DRAFT.json`。
-直接填写该文件即可；填完后重命名为 `macos-ux-gate-<date>.json` 再校验。
+**该文件已预置 120 条观测骨架** —— `task` / `app` / `round` 已生成，`appOrder` 已按交替规则算好，
+**你只需补测量值**（`durationMs` / `error` / `steps` / `subjectiveScore` / `evidence` /
+`entryPoint` / `sourceDiff`），**不要改结构**。骨架里**不含任何数值**，故不可能把占位值误当读数；
+填完重命名为 `macos-ux-gate-<date>.json` 再校验。
 （`ux-gate-recorder.mjs init` 拒绝覆盖已存在文件，故不要重复 init。）
 
 ```bash
@@ -135,6 +138,10 @@ node tests/qualification/ux-gate-recorder.mjs validate \
 
 ## 五、更新记录
 - 2026-08-18：创建模板（待真机执行）。
+- 2026-09-30：`init` 改为生成 **120 条观测骨架**（结构 + `appOrder` 已算好，**不含任何测量值**）。
+  原先 `observations: []` 要求人工手写 120 条 × 8 字段的 JSON，且草稿无结构示例 ——
+  既是巨大时间成本，也是错填高发区。骨架自检（条数 / 顺序规则 / 不得含测量字段 /
+  未填必须被 validate 拒绝）已随 `--self-test` 挂在 parity 与 test 两条链上。
 - 2026-09-25：① 记录与校验改为使用已生成的空白记录 `docs/qualification/evidence/macos-ux-gate-DRAFT.json`
   （含当前 commit），并新增 `progress` 中途进度报告（只读，不判定）；② 新增「执行前必读」
   一节，登记**任务 30 在 Typora 侧无法执行**（>2MB 拒渲染）与环境前置（输入源、锁屏）；
