@@ -181,7 +181,11 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
         appendActions();
         return;
       }
-      // Security M2：远程图片默认不加载（默认无需联网）；设置开启或显式点击后才加载。
+      // Security M2：远程图片的默认行为见下方 `remoteImagesEnabled()` ——
+      // **当前默认是「加载」**（对齐 Typora；`localStorage` 键不存在时返回 true）。
+      // ⚠️ 本条原写「默认不加载」，与实现相反（2026-09-30 更正）。
+      // 该默认值属**安全相关行为**（默认联网会暴露「已打开该文档」与来源 IP），
+      // 却只由代码注释记录 —— 见 `docs/qualification/release-blocker-audit-2026-09-25.md` 的待裁决项。
       if (isRemoteSrc(this.spec.src) && !this.remoteLoaded && !remoteImagesEnabled()) {
         this.container.appendChild(buildRemotePlaceholder(this.spec.src, () => {
           this.remoteLoaded = true;

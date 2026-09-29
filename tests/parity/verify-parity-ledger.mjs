@@ -370,6 +370,41 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── 远程图片默认值：设置侧与引擎侧必须一致（2026-09-30）────────────────
+  // 立此条的原因：这是**安全相关默认值**（默认联网会暴露「已打开该文档」与来源 IP），
+  // 而它散落在两处 —— 设置 `image.loadRemote` 的 `defaultValue`，与引擎
+  // `remoteImagesEnabled()` 在 localStorage 键缺失时的回退值。
+  // 实测发现二者当前**一致（都是 true）**，但：
+  //   ① 引擎同文件另有一条注释写「默认不加载」，**与实现相反**（已更正）；
+  //   ② `v1.0-final-release-review-2026-08-16.md` 把 M2 标为「✅ 已修：默认 Off」——
+  //      **结论已被后续改动推翻**，而该改动只由代码注释记录（已在该文档加更正块）。
+  // 单侧改动会让「设置显示关、实际仍加载」（或反之），屏幕上看不出来 → 必须两端同锁。
+  {
+    const setPath = resolve(root, 'packages/settings/src/index.ts');
+    const engPath = resolve(root, 'packages/editor-engine/src/image/widget.ts');
+    assert(existsSync(setPath) && existsSync(engPath), '设置或引擎源文件缺失');
+    if (existsSync(setPath) && existsSync(engPath)) {
+      const setSrc = readFileSync(setPath, 'utf8').replace(/\r\n/g, '\n');
+      const engSrc = readFileSync(engPath, 'utf8').replace(/\r\n/g, '\n');
+      const setDef = (setSrc.match(/id: 'image\.loadRemote'[^}]*defaultValue:\s*(true|false)/) ?? [])[1];
+      // 引擎回退：localStorage 键缺失时 `!== '0'` 为 true、`=== '1'` 为 false
+      const engFallback = /localStorage\.getItem\('mellow\.image\.loadRemote'\)\s*!==\s*'0'/.test(engSrc) ? 'true'
+        : (/localStorage\.getItem\('mellow\.image\.loadRemote'\)\s*===\s*'1'/.test(engSrc) ? 'false' : null);
+      assert(setDef !== undefined, '设置 image.loadRemote 必须显式声明 defaultValue（否则默认值不可判定）');
+      assert(engFallback !== null, '引擎 remoteImagesEnabled() 的回退形态无法识别（护栏需同步更新）');
+      if (setDef !== undefined && engFallback !== null) {
+        assert(setDef === engFallback,
+          `远程图片默认值两端不一致：设置 defaultValue=${setDef}，引擎回退=${engFallback}`
+          + '（会出现「设置显示关、实际仍加载」这类屏幕上看不出的错配）');
+      }
+      // canary：自检回退形态识别（样本拼接构造）
+      const FB_SAMPLE = "localStorage.getItem('mellow.image.loadRemote') !== '" + "0" + "'";
+      if (!/localStorage\.getItem\('mellow\.image\.loadRemote'\)\s*!==\s*'0'/.test(FB_SAMPLE)) {
+        errors.push('远程图片默认值护栏 canary 失效：回退样本未被识别');
+      }
+    }
+  }
+
   // ── UX Score 门槛必须被机器校验（2026-09-30）────────────────────────────
   // 立此条的原因：`UX Score`（PRD §131）此前**只存在于模板的 Markdown 表**，
   // 记录器 schema 里没有它 → 一份**只含 120 条计时、完全没有 UX Score** 的记录
