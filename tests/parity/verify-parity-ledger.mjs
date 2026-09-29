@@ -370,6 +370,30 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── UX Gate 模板必须与记录器的要求一致（2026-09-30）────────────────────
+  // 立此条的原因：模板原写「每**任务**附耗时记录与关键截图」（30 份），
+  // 而 `validate` 要求**每一条观测**（30×2×2 = **120 条**）都带证据 →
+  // 照模板做的人会在**几小时后**校验时才撞墙。**文档比工具宽松 = 把失败推到最贵的时间点。**
+  // 同理，任务表原只有一列时间，而记录器要**每个 app 两轮**。
+  {
+    const tplPath = resolve(root, 'docs/qualification/ux-score-gate-template.md');
+    assert(existsSync(tplPath), 'UX Gate 模板不存在');
+    if (existsSync(tplPath)) {
+      const tpl = readFileSync(tplPath, 'utf8').replace(/\r\n/g, '\n');
+      assert(/每条观测|每一条观测/.test(tpl),
+        '模板必须写明证据要求是**每条观测**（与 validate 一致），否则会比工具宽松');
+      assert(!/每任务附耗时记录与关键截图/.test(tpl),
+        '模板不得再写「每任务附耗时记录与关键截图」——validate 实际要求每条观测都有证据');
+      assert(/\| # \| 任务 \| T-R1 \| T-R2 \| M-R1 \| M-R2 \|/.test(tpl),
+        '任务表必须含「两轮 × 两应用」的时间列（T-R1/T-R2/M-R1/M-R2），与记录器的 2 round 对齐');
+      // canary：自检这两条文本锁（样本拼接构造）
+      const LOOSE = '每任务附耗时记录与关键' + '截图';
+      if (!/每任务附耗时记录与关键截图/.test(LOOSE)) {
+        errors.push('UX Gate 模板一致性护栏 canary 失效：宽松措辞样本未被检出');
+      }
+    }
+  }
+
   // ── UX Gate 记录器：进度报告必须只读（2026-09-25）──────────────────────
   // 立此节的原因：`validate` 要 120 条齐备才给结论，人工会话中途无法知道「还差哪些」，
   // 且它把「还没填」与「填错了」混在同一次报错里。新增的 `progress` 命令必须**只读**：
