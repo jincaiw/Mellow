@@ -219,10 +219,20 @@ describe('toNativeMenuSpec 物化', () => {
     const spec = toNativeMenuSpec({ ...base, platform: 'mac', themeMode: 'system', spellcheck: false, smartPunct: true, statusbar: false, toolbar: false });
     const editItems = spec.menus.find((m) => m.id === 'edit')!.items
       .filter((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu');
-    const spellToggle = editItems.find((i) => i.label === '#menu.edit.spellMenu')!.items[0] as Extract<NativeMenuItem, { type: 'command' }>;
-    const punctToggle = editItems.find((i) => i.label === '#menu.edit.replaceMenu')!.items[0] as Extract<NativeMenuItem, { type: 'command' }>;
+    // 按 **id 查找**，不按下标 —— 下标耦合会在「子菜单里插入新项」时无故失败
+    // （本测试曾因 P0-EDITOR-005 在拼写子菜单首位插入条目而失败）。
+    const spellMenu = editItems.find((i) => i.label === '#menu.edit.spellMenu')!;
+    const spellToggle = spellMenu.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'edit.spellcheck.toggle');
+    const punctToggle = editItems.find((i) => i.label === '#menu.edit.replaceMenu')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'edit.smartPunctuation.toggle');
     expect(spellToggle).toMatchObject({ id: 'edit.spellcheck.toggle', checked: false });
     expect(punctToggle).toMatchObject({ id: 'edit.smartPunctuation.toggle', checked: true });
+    // P0-EDITOR-005：新增的拼写条目必须**真的出现在物化结果里**
+    // （防「只加了 schema、物化时被丢弃」——那会变成点了没反应的占位项）
+    for (const id of ['edit.spelling.checkDocument', 'edit.spelling.learn', 'edit.spelling.unlearn']) {
+      expect(spellMenu.items.some((i) => i.type === 'command' && i.id === id)).toBe(true);
+    }
     const themeSystem = spec.menus.find((m) => m.id === 'theme')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'theme.mode.system');
     expect(themeSystem?.checked).toBe(true);
