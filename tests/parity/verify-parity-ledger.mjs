@@ -629,10 +629,23 @@ if (existsSync(benchmarkRunnerPath)) {
           `PDF CJK 机制断言缺失：export 单测必须断言 PDF 含 ${marker}`
           + '（否则「CJK 乱码」只剩冒烟测试，而它是 §10 发布阻塞项）');
       }
+      // 加强（2026-09-30）：**存在 ≠ 正确**。`/ToUnicode` 在、但映射错，
+      // 后果与「不在」完全一样 —— 屏幕正常、复制/搜索出来是错字。
+      // 故要求真的解析 CMap 并核对映射覆盖（断言的是**实现**与**覆盖断言**，不是注释里的词）。
+      assert(/function extractToUnicodeCMaps/.test(src),
+        'PDF CJK 断言必须提取 ToUnicode CMap（否则只证明「存在」）');
+      assert(/function parseToUnicodeCmap/.test(src),
+        'PDF CJK 断言必须解析 CMap 的 bfchar/bfrange（存在 ≠ 正确）');
+      assert(/expect\(cjk\.filter\(/.test(src),
+        'PDF CJK 断言必须核对「输入里每个 CJK 字符都在映射目标里」'
+        + '（只断言 CMap 存在无法发现映射错误）');
       // canary：自检这三条锁有效（样本拼接构造）
       const MARKER_SAMPLE = '/To' + 'Unicode';
       if (!required.includes(MARKER_SAMPLE)) {
         errors.push('PDF CJK 机制断言锁 canary 失效：标记样本未被纳入必需集合');
+      }
+      if (!/function parseToUnicodeCmap/.test('function parseTo' + 'UnicodeCmap(t) {}')) {
+        errors.push('PDF CJK CMap 解析锁 canary 失效：实现样本未被识别');
       }
     }
   }

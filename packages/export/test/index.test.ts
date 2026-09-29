@@ -1,11 +1,63 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as zlib from 'zlib';
 import {
   DEFAULT_PDF_OPTIONS,
   buildPdfDocument,
   createPdfBuffer,
   parseBlocks,
 } from '../src/index';
+
+/**
+ * 提取 PDF 中所有 ToUnicode CMap 的明文（Flate 解压）。
+ * 一份文档可能有多个子集字体（如正文 + 粗体标题），故返回**数组**，取并集。
+ */
+function extractToUnicodeCMaps(raw: string): string[] {
+  const out: string[] = [];
+  const re = /stream\r?\n/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    const start = m.index + m[0].length;
+    const end = raw.indexOf('endstream', start);
+    if (end < 0) continue;
+    const body = Buffer.from(raw.slice(start, end), 'latin1');
+    try {
+      const text = zlib.inflateSync(body).toString('latin1');
+      if (text.includes('begincmap')) out.push(text);
+    } catch { /* 非 Flate 流（图片等）：跳过 */ }
+  }
+  return out;
+}
+
+/** 解析 CMap：字形 id → Unicode 码位。支持 bfchar 与 bfrange 的两种形态。 */
+function parseToUnicodeCmap(text: string): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const sec of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+    for (const p of sec[1].matchAll(/<([0-9a-fA-F]{1,4})>\s*<([0-9a-fA-F]{1,4})>/g)) {
+      map.set(parseInt(p[1], 16), parseInt(p[2], 16));
+    }
+  }
+  for (const sec of text.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+    // 单条交替正则**一次吃掉整个条目**：`<lo> <hi> [<u>…]`（数组）或 `<lo> <hi> <dst0>`（递增）。
+    // ⚠️ 若拆成两条正则，递增形式会匹配到**数组内部的元素**（`<0000> <4e2d> <6587>`），
+    // 造出 lo=0..0x4e2d 的伪区间 —— 实测污染出 3 万多个假映射，把「映射缺失」掩盖掉。
+    for (const a of sec[1].matchAll(
+      /<([0-9a-fA-F]{1,4})>\s*<([0-9a-fA-F]{1,4})>\s*(?:\[([^\]]*)\]|<([0-9a-fA-F]{1,4})>)/g,
+    )) {
+      const lo = parseInt(a[1], 16);
+      if (a[3] !== undefined) {
+        [...a[3].matchAll(/<([0-9a-fA-F]{1,4})>/g)]
+          .map((x) => parseInt(x[1], 16))
+          .forEach((cp, i) => map.set(lo + i, cp));
+      } else {
+        const hi = parseInt(a[2], 16);
+        const dst = parseInt(a[4], 16);
+        for (let g = lo; g <= hi; g += 1) map.set(g, dst + (g - lo));
+      }
+    }
+  }
+  return map;
+}
 
 function fonts(): { normal: Uint8Array; bold: Uint8Array } {
   const dir = path.resolve(__dirname, '../../../apps/desktop/public/fonts');
@@ -163,6 +215,30 @@ describe('PDF export — buffer generation (subset fonts, CJK, 100 pages)', () =
     expect(raw).toContain('/FontFile2');
     // 面二：码位 —— Identity-H 下字形 id 到 Unicode 的映射
     expect(raw).toContain('/ToUnicode');
+  });
+
+  /**
+   * **映射正确性**断言（2026-09-30 加强）。
+   *
+   * 上一条只证明 `/ToUnicode` **存在** —— 而「存在但映射错」的后果与「不存在」完全一样：
+   * 屏幕正常、复制/搜索出来是错字。故这里**真的解析 CMap**，
+   * 断言「输入里的每个 CJK 字符都能在映射的目标码位里找到」。
+   *
+   * 实测（Noto Sans SC 子集，两份 CMap = 正文 + 粗体标题）：15 个目标码位，
+   * 输入里 10 个 CJK 字符全部命中。
+   */
+  test('ToUnicode CMap 的映射覆盖输入里的每个 CJK 字符（存在 ≠ 正确）', async () => {
+    const md = '# 中文标题\n\n这是中文段落测试。\n';
+    const buffer = Buffer.from(await createPdfBuffer(md, DEFAULT_PDF_OPTIONS, env));
+    const raw = buffer.toString('latin1');
+    const cmaps = extractToUnicodeCMaps(raw);
+    expect(cmaps.length).toBeGreaterThan(0);
+    const mappedCodePoints = new Set(cmaps.flatMap((t) => [...parseToUnicodeCmap(t).values()]));
+    expect(mappedCodePoints.size).toBeGreaterThan(5);
+    const cjk = [...new Set([...md].filter((c) => /[\u3400-\u9fff]/.test(c)))];
+    expect(cjk.length).toBeGreaterThanOrEqual(8);
+    // 一个都不能少：缺失的字符在 PDF 里就是「看得见、复制错」
+    expect(cjk.filter((c) => !mappedCodePoints.has(c.codePointAt(0) as number))).toEqual([]);
   });
 
   test('100-page document renders without failure', async () => {
