@@ -190,12 +190,40 @@ CI 可执行的制品？**
 （经典 tracking-pixel 场景）。这**可能是**正确的 Typora parity 取舍，
 但它属于**安全相关默认值**，当前**只由一行代码注释记录**，未见 ADR / 方案 D 表登记。
 
+**PRD 依据（2026-09-30 补充）**：PRD **§124 Privacy** 的默认姿态是
+`Telemetry OFF / AI OFF / Cloud OFF / Document Upload NONE`，即**隐私优先**；
+而 Typora parity 倾向「默认加载」。**两条原则在此冲突**，故需裁决而非默认取舍。
+
 **待裁决**：`image.loadRemote` 默认应为 `true`（对齐 Typora）还是 `false`（隐私优先）？
 若维持 `true`，建议以 ADR 记录该取舍（与 M2 的原始处置相反，需说明取代关系）。
 
 **已加护栏**：设置侧 `defaultValue` 与引擎侧回退值**必须一致**
 （单侧改动会造出「设置显示关、实际仍加载」这类屏幕上看不出的错配）。
 注入验证：把设置默认改成 `false` → 护栏报错；还原 → 通过。
+
+## 4.4 「Security」是 18 项验收之一，但**台账里没有安全域**（2026-09-30）
+
+**事实**：`v1.0-final-release-review-2026-08-16.md` 的 18 项验收里，第 **17 项是 Security**
+（当时判 FAIL，blocker 为 M1 CSP 缺失、M2 远程图片默认加载）。
+但台账 `tests/parity/typora-parity-ledger.json` 的 **19 个域里没有安全域**
+（acceptance / baseline / build / clipboard / desktop-ui / editing / export / feature /
+file / i18n / image / layout / markdown / menu / performance / platform / sidebar /
+table / theme），**也没有任何安全相关条目**。
+
+**后果**：安全验收的状态**只存在于 2026-08-16 的快照里**（该快照判 FAIL），
+而发布门禁（`verify-release-gate`）读的是台账 —— **它看不见安全这一项**。
+即：18 项验收里的第 17 项**不在任何可跟踪的看板上**。
+
+**本轮的处置（只做不改变治理的部分）**：
+- **M1（CSP）**：核实**已修复**（`tauri.conf.json` 现配有完整 CSP），并新增护栏锁住
+  修复的核心不变量（CSP 非空 + 含 `default-src 'self'` + `object-src 'none'`）；
+  **不锁** `unsafe-inline`/`unsafe-eval` —— PRD §48 的「no script / no inline events」
+  针对**渲染出的 HTML**（sanitize 路径），不构成对 app shell CSP 的要求，
+  不在此发明更严约束。注入验证：`csp: null` → 护栏报错；还原 → 通过。
+- **M2（远程图片默认值）**：见 §4.3，属待裁决项。
+
+**待裁决**：安全验收是否应进入台账（新增安全域与条目）？
+这属**治理结构变更**（台账的域与条目集合），本环境不擅自改动。
 
 ## 五、本次审计做的改动（非策略性）
 

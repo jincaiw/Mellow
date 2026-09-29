@@ -370,6 +370,34 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── CSP 是 M1 修复，必须保持存在（2026-09-30）──────────────────────────
+  // 立此条的原因：`v1.0-final-release-review-2026-08-16.md` 把 **Security M1（CSP 缺失，
+  // `csp: null`）** 列为**发布阻断级**缺陷，其后已修复（`tauri.conf.json` 现配有完整 CSP）。
+  // 但**没有任何东西守着它** —— CSP 被清空/删掉不会有任何信号，而这曾是 blocker。
+  // 本护栏只锁「修复的核心不变量」：CSP 必须存在、必须含 `default-src 'self'` 与
+  // `object-src 'none'`。**不锁 `unsafe-inline`/`unsafe-eval`** —— PRD §48 的
+  // 「no script / no inline events」针对**渲染出的 HTML**（sanitize 路径），
+  // 不构成对 app shell CSP 的要求，故不在此发明更严的约束（那会误伤且非宪法要求）。
+  {
+    const confPath = resolve(root, 'apps/desktop/src-tauri/tauri.conf.json');
+    assert(existsSync(confPath), 'tauri.conf.json 不存在');
+    if (existsSync(confPath)) {
+      const conf = readFileSync(confPath, 'utf8').replace(/\r\n/g, '\n');
+      const csp = (conf.match(/"csp"\s*:\s*"([^"]*)"/) ?? [])[1];
+      assert(csp !== undefined && csp !== null && csp.trim() !== '' && csp !== 'null',
+        'Security M1 回归：tauri.conf.json 的 csp 必须存在且非空（曾是发布阻断级缺陷）');
+      if (typeof csp === 'string' && csp !== '') {
+        assert(/default-src 'self'/.test(csp), "CSP 必须含 `default-src 'self'`（M1 修复的核心不变量）");
+        assert(/object-src 'none'/.test(csp), "CSP 必须含 `object-src 'none'`（M1 修复的核心不变量）");
+      }
+      // canary：自检这两条核心不变量锁（样本拼接构造）
+      const CSP_SAMPLE = "default-src 'self'; object-src '" + "none'";
+      if (!/default-src 'self'/.test(CSP_SAMPLE) || !/object-src 'none'/.test(CSP_SAMPLE)) {
+        errors.push('CSP 护栏 canary 失效：核心不变量样本未被检出');
+      }
+    }
+  }
+
   // ── 远程图片默认值：设置侧与引擎侧必须一致（2026-09-30）────────────────
   // 立此条的原因：这是**安全相关默认值**（默认联网会暴露「已打开该文档」与来源 IP），
   // 而它散落在两处 —— 设置 `image.loadRemote` 的 `defaultValue`，与引擎
