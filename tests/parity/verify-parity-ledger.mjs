@@ -370,6 +370,33 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── release.yml 的 job 名不得宣称无法保证的属性（2026-09-30）──────────
+  // 立此条的原因：macOS job 原名 `macOS (Signed + Notarized + DMG)`，但 Apple 凭据缺失时
+  // 其签名配置步骤只 `echo "…产出未签名 DMG"` 然后**继续** → job 仍 success。
+  // 即**名称宣称了它无法保证的属性**，而 ADR-0020 §2 要求 V1.0 必须「macOS 签名公证」。
+  // 不变量：**要么保证签名（凭据缺失即硬失败），要么名称不宣称签名**。
+  {
+    const relPath = resolve(root, '.github/workflows/release.yml');
+    assert(existsSync(relPath), 'release.yml 不存在');
+    if (existsSync(relPath)) {
+      const rel = readFileSync(relPath, 'utf8').replace(/\r\n/g, '\n');
+      const macJob = (rel.match(/\n  macos:\n[\s\S]*?(?=\n  \w+:\n|\n\n  \w+)/) ?? [])[0] ?? rel;
+      const jobName = (macJob.match(/\n    name: (.+)/) ?? [])[1] ?? '';
+      const claimsSigning = /Signed/i.test(jobName);
+      // 凭据缺失分支是否硬失败（`exit 1` 或 `set -e` 下必然失败）
+      const hasHardFail = /凭据未配置[\s\S]{0,120}?exit 1/.test(macJob) || /未配置[\s\S]{0,80}?exit 1/.test(macJob);
+      if (claimsSigning && !hasHardFail) {
+        fail('release.yml 的 macOS job 名宣称「Signed」，但 Apple 凭据缺失时只 echo 一句就继续'
+          + '（job 仍 success）→ 名称在骗人。要么把凭据缺失改为硬失败，要么名称不宣称签名。');
+      }
+      // canary：自检该判定（样本拼接构造）
+      const CLAIM_SAMPLE = 'macOS (Signed + Notarized' + ' + DMG)';
+      if (!/Signed/i.test(CLAIM_SAMPLE)) {
+        errors.push('job 名宣称护栏 canary 失效：宣称样本未被检出');
+      }
+    }
+  }
+
   // ── CSP 是 M1 修复，必须保持存在（2026-09-30）──────────────────────────
   // 立此条的原因：`v1.0-final-release-review-2026-08-16.md` 把 **Security M1（CSP 缺失，
   // `csp: null`）** 列为**发布阻断级**缺陷，其后已修复（`tauri.conf.json` 现配有完整 CSP）。

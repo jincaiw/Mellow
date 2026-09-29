@@ -161,7 +161,13 @@ jobs:
           if-no-files-found: error
 
   macos:
-    name: macOS (Signed + Notarized + DMG)
+    # ⚠️ 名称**不得宣称无法保证的属性**（2026-09-30）：Apple 凭据缺失时，下面
+    # 「Configure Apple signing env」步骤只 echo 一句「产出未签名 DMG」然后**继续**
+    # → job 仍会 success。原名称写「Signed + Notarized」在该情形下是**假的**，
+    # 而 ADR-0020 §2 要求 V1.0 必须「macOS 签名公证」。
+    # 故此处改为如实描述；若要恢复「Signed + Notarized」的名称，
+    # 必须同时把凭据缺失改为**硬失败**（护栏 verify-parity-ledger 会检查这一点）。
+    name: macOS (DMG；有 Apple 凭据时签名 + 公证)
     runs-on: macos-latest
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
