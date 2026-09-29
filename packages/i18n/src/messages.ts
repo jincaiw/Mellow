@@ -155,6 +155,12 @@ const zhCN = {
 
   // Editor context menu（Typora 深度对标：编辑器右键）
   'contextmenu.editorCut': '剪切',
+  'contextmenu.spellingLearn': '添加到字典',
+  'contextmenu.spellingUnlearn': '忘记拼写',
+  'msg.spellingLearned': '已添加到字典',
+  'msg.spellingUnlearned': '已从字典移除',
+  'msg.spellingNoWord': '光标处没有可加入词典的单词',
+  'msg.spellingUnavailable': '当前平台不支持系统拼写词典',
   'contextmenu.editorCopy': '复制',
   'contextmenu.editorPaste': '粘贴',
   'contextmenu.editorOpenLink': '打开链接',
@@ -1026,6 +1032,12 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'search.jumpToMatch': 'Jump to Match',
 
   'contextmenu.editorCut': 'Cut',
+  'contextmenu.spellingLearn': 'Learn Spelling',
+  'contextmenu.spellingUnlearn': 'Unlearn Spelling',
+  'msg.spellingLearned': 'Added to dictionary',
+  'msg.spellingUnlearned': 'Removed from dictionary',
+  'msg.spellingNoWord': 'No word at the cursor to add to the dictionary',
+  'msg.spellingUnavailable': 'System spelling dictionary is unavailable on this platform',
   'contextmenu.editorCopy': 'Copy',
   'contextmenu.editorPaste': 'Paste',
   'contextmenu.editorOpenLink': 'Open Link',

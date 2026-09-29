@@ -93,6 +93,15 @@ export interface EditorContextActions {
   codeTool(op: 'copyContent' | 'autoIndentAll' | 'autoIndentSelected' | 'deleteFences' | 'insertParagraphBefore' | 'insertParagraphAfter'): boolean;
   /** G7-EDIT-08：请求全部数学 widget 重新解析/渲染（不修改 Markdown 文本） */
   refreshMath(): boolean;
+  /**
+   * P0-EDITOR-005：**光标处的拉丁词**（无则 null）。
+   *
+   * 为什么需要它：右键菜单项按 §7.4 规则 11 必须走 `dispatchCommand`，而命令只带 id
+   * —— 词典操作需要知道「哪个词」。故由命令处理器在**派发时**向引擎询问光标处的词。
+   * 这也正是 Typora 的语义：菜单里的「Learn Spelling」作用于**光标所在词**，
+   * 而不依赖「上次右键的位置」（那样从命令面板触发时目标会是错的）。
+   */
+  wordAtCursor(): string | null;
   /** C1：复制渲染结果为 PNG（math → MathML 转 PNG；mermaid → 渲染 SVG 转 PNG），写入剪贴板 */
   copyRendered(kind: 'math' | 'mermaid'): Promise<boolean>;
   /** C1：渲染导出（宿主「下载」用）：返回 PNG dataURL，无渲染结果时为 null */
@@ -812,6 +821,11 @@ export function installContextMenuApi(): void {
       if (hit === null) return false;
       view.dispatch({ changes: { from: hit.from, to: hit.to, insert: hit.label } });
       return true;
+    },
+    wordAtCursor() {
+      const view = activeView;
+      if (view === null) return null;
+      return wordAt(view.state.doc.toString(), view.state.selection.main.head);
     },
     tableOp(op) {
       const view = activeView;

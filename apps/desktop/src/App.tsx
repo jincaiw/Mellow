@@ -75,6 +75,7 @@ import { createDesktopOpenerService } from './host/openers';
 import { createDesktopWindowService } from './host/windowService';
 import { createDesktopSearchService } from './host/searchServices';
 import { createDesktopImageUploadService } from './host/uploadService';
+import { createDesktopSpellcheckService, primeSpellcheckAvailability, spellcheckAvailableSync } from './host/spellcheck';
 import { openThemesFolder, refreshUserThemes } from './host/userThemes';
 import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
@@ -807,6 +808,11 @@ export default function App() {
     void refreshUserThemes().then((themes) => {
       setUserThemeList(themes);
     }).catch(() => undefined);
+  }, []);
+  // P0-EDITOR-005：启动时预取拼写词典可用性（同步缓存）。
+  // 右键菜单需要在**同步**构造 items 时决定是否显示拼写区，故不能等异步。
+  useEffect(() => {
+    void primeSpellcheckAvailability();
   }, []);
   useEffect(() => {
     refreshUserThemeList();
@@ -2150,6 +2156,28 @@ export default function App() {
     hostRef.current?.focus();
     return Promise.resolve((result ?? null) as T | null);
   }, []);
+
+  /**
+   * P0-EDITOR-005：拼写词典（Typora 拼写子菜单的 Learn / Unlearn Spelling）。
+   *
+   * 目标词在**派发时**向引擎取（`wordAtCursor()`），而不是记「上次右键的位置」——
+   * 后者从命令面板 / 菜单触发时会指向错误的词。这也正是 Typora 的语义。
+   */
+  const runSpellingDictionary = useCallback(async (op: 'learn' | 'unlearn') => {
+    const word = await engineContext<string | null>('wordAtCursor');
+    if (word === null || word === undefined) {
+      setStatusText(t('msg.spellingNoWord'));
+      return;
+    }
+    const svc = createDesktopSpellcheckService();
+    const done = await (op === 'learn' ? svc.learn(word) : svc.unlearn(word));
+    setStatusText(
+      done
+        ? t(op === 'learn' ? 'msg.spellingLearned' : 'msg.spellingUnlearned')
+        : t('msg.spellingUnavailable'),
+    );
+  }, [engineContext, setStatusText, t]);
+
   const engineContextRef = useRef(engineContext);
   engineContextRef.current = engineContext;
 
@@ -4008,6 +4036,16 @@ export default function App() {
       { label: t('contextmenu.editorCopy'), enabled: req.hasSelection, onClick: run('edit.copy') },
       { label: t('contextmenu.editorPaste'), onClick: run('edit.paste') },
     ];
+    // P0-EDITOR-005：拼写词典项（**走 dispatchCommand**，满足 §7.4 规则 11）。
+    // 仅当平台具备词典能力时插入 —— 显示一个点了没反应的项比不显示更糟。
+    // 可用性取自启动时预取的缓存（同步可读），故无需异步弹菜单。
+    if (req.kind === 'text' && req.word !== undefined && spellcheckAvailableSync()) {
+      items.push(
+        { label: t('contextmenu.spellingLearn'), onClick: run('edit.spelling.learn') },
+        { label: t('contextmenu.spellingUnlearn'), onClick: run('edit.spelling.unlearn') },
+        { separator: true },
+      );
+    }
     // Typora 通用子菜单（code-tools：Copy Code Content / Auto Indent Whole / Auto Indent Selected）
     // 注意：codeTools / insertParagraph 条目在 code/math/mermaid 三个分支内各内联一份
     // （护栏 verify-context-menu-parity.mjs 按 kind 块内 run( 调用抽取序列）。
@@ -5086,6 +5124,10 @@ export default function App() {
         setMenuCheckTick((v) => v + 1); // P1-1.3：菜单 CheckMenuItem 选中态随 syncNativeMenu 重建
         setStatusText(t(next ? 'msg.spellcheckOn' : 'msg.spellcheckOff'));
       } },
+      // P0-EDITOR-005：拼写词典（Typora 拼写子菜单的 Learn / Unlearn Spelling）。
+      // 命令只带 id，故目标词在**派发时**从引擎取（光标处）—— 见 runSpellingDictionary。
+      { id: 'edit.spelling.learn', localizedTitle: { zh: '添加到字典', en: 'Learn Spelling' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runSpellingDictionary('learn') },
+      { id: 'edit.spelling.unlearn', localizedTitle: { zh: '忘记拼写', en: 'Unlearn Spelling' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runSpellingDictionary('unlearn') },
       // R2-1 编辑→替换「智能标点」（Typora parity；设置面板同一真源）
       { id: 'edit.smartPunctuation.toggle', localizedTitle: { zh: '智能标点', en: 'Smart Punctuation' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
         const def = settingById('editor.smartPunctuation');

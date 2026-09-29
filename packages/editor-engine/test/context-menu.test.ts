@@ -222,6 +222,8 @@ interface ContextActions {
   paste(): void;
   tableOp(op: string): void;
   copySource(kind: 'math' | 'mermaid'): boolean;
+  /** P0-EDITOR-005 */
+  wordAtCursor(): string | null;
 }
 
 describe('动作 API（__MELLOW_CONTEXT_ACTIONS__）', () => {
@@ -444,5 +446,49 @@ describe('C1 纯函数新增', () => {
       expect(wordAt('alpha', 5)).toBe('alpha');     // pos === doc.length
       expect(wordAt('alpha', 6)).toBeNull();        // 越界
     });
+  });
+});
+
+// ── P0-EDITOR-005：命令处理器在**派发时**向引擎询问光标处的词 ──────────────
+describe('wordAtCursor（动作 API）', () => {
+  function setUpWith(doc: string): { view: EditorView; actions: ContextActions } {
+    const view = new EditorView({
+      doc,
+      parent: document.body,
+      extensions: [markdown({ base: markdownLanguage }), install(true)],
+    });
+    view.focus();
+    const actions = (window as unknown as Record<string, unknown>)[ACTIONS_KEY] as ContextActions;
+    return { view, actions };
+  }
+
+  test('光标在拉丁词内 / 词尾返回该词', () => {
+    const { view, actions } = setUpWith('hello world');
+    moveCaret(view, 2);
+    expect(actions.wordAtCursor()).toBe('hello');
+    moveCaret(view, 5);
+    expect(actions.wordAtCursor()).toBe('hello');
+    moveCaret(view, 8);
+    expect(actions.wordAtCursor()).toBe('world');
+    view.destroy();
+  });
+
+  test('紧邻词尾的空格仍归属该词（用户常在词旁右键，不要求像素级命中）', () => {
+    const { view, actions } = setUpWith('hi 中文');
+    moveCaret(view, 2); // 'hi' 之后的空格
+    expect(actions.wordAtCursor()).toBe('hi');
+    view.destroy();
+  });
+
+  test('两侧都不是词字符处返回 null；CJK 一律 null（系统拼写检查对中日韩不给建议）', () => {
+    // 连续两个空格：pos 落在「两侧皆非词字符」的位置
+    const { view, actions } = setUpWith('hi  中文');
+    moveCaret(view, 3);
+    expect(actions.wordAtCursor()).toBeNull();
+    moveCaret(view, 4); // 中文区
+    expect(actions.wordAtCursor()).toBeNull();
+    moveCaret(view, 5);
+    expect(actions.wordAtCursor()).toBeNull();
+    view.destroy();
   });
 });
