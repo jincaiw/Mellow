@@ -119,6 +119,27 @@ for (const item of ledger.items ?? []) {
   }
 }
 
+// ── 待裁决项必须指向承载它们的 Proposed ADR（2026-09-29）──────────────────
+//
+// 立此节的原因：审计发现「需要裁决」的事项此前只散落在会话消息与散文里 ——
+// 下一次接手的人不知道该改哪份文档、也不知道哪些是「已定」哪些是「待定」。
+// 按 AGENTS.md「决策变更：正确做法是新增 ADR」，待裁决项必须有 ADR 载体，
+// 且**未裁决前状态必须是 Proposed**（不得被悄悄标成 Accepted 当作已决）。
+const PENDING_ADRS = [
+  ['docs/adr/ADR-0024-release-closure-semantics.md', 'AUTO 是否阻断发布 / ux-gate 是否逐项前置'],
+  ['docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md', '>2MB 无基线时的证据政策'],
+];
+for (const [p, what] of PENDING_ADRS) {
+  if (!existsSync(resolve(root, p))) {
+    fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决事项必须有 ADR 载体，不能只写在散文里`);
+    continue;
+  }
+  const src = read(p);
+  if (!/\*\*Status:\*\*\s*Proposed/.test(src)) {
+    fail(`${p} 必须显式标注 **Status:** Proposed（未裁决前不得标 Accepted 当作已决）`);
+  }
+}
+
 // ── ③ CI 门禁完整性 ─────────────────────────────────────────────────────
 const ci = read('.github/workflows/ci.yml');
 for (const anchor of [
@@ -246,4 +267,8 @@ console.log(
       + `（${autoWithUxGate.map((i) => i.id).join(', ')}）：按 §8 的 V1.0 Exit Gate（三平台全 PASS-E）它们尚未闭环。`
     : '')
   + '\n  ⚠️ §5.7 已记录一次「AUTO 把一个完全不可用的功能当作已闭环」（P0-SHELL-003 浮动工具栏）—— 不要把 AUTO 读作「已完成」。'
+  + (noGo.length > 0
+    ? `\n  Pending decisions: ${PENDING_ADRS.map(([p]) => p.replace('docs/adr/', '')).join(', ')}`
+      + '（状态 Proposed，裁决前不生效）'
+    : '')
 );

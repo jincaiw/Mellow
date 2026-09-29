@@ -67,6 +67,17 @@ Release verdict: NO-GO：6 项未闭环
 （「任何 PASS-E 项的 requiredEvidence 必须含三平台真机 + ux-gate；硬失败」），
 **属方案级决策，本环境不擅自改动**；改与不改都需要你裁决。
 
+> **2026-09-29 更新：已收敛为 ADR，待裁决。**
+> 本节的两项（`AUTO` 是否阻断、`ux-gate` 是否逐项前置）连同 §3.2 的 PRD-现实冲突，
+> 已按 AGENTS.md「决策变更以新增 ADR 记录」起草为：
+> - `docs/adr/ADR-0024-release-closure-semantics.md`（状态 **Proposed**）
+> - `docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md`（状态 **Proposed**）
+>
+> 两份 ADR 各含背景（含实跑数字与一级证据）、待决问题、选项与后果、以及供参考的建议。
+> 门禁输出已新增 `Pending decisions:` 行指向它们；护栏锁定「待裁决 ADR 必须存在且状态为
+> Proposed」（注入验证：改成 Accepted → 门禁抛错）。
+> **在状态变为 Accepted 之前，现有实现保持不动。**
+
 ### 3.1 原「P0-PERF-001 的 5 项口径」中，两项已由 PRD 判定（无需裁决）
 
 回查 PRD（宪法）后发现两项并非开放问题：
