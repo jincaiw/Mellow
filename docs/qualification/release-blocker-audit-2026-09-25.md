@@ -123,6 +123,54 @@ PRD §132 的任务清单（第 17 项「10 MB」）与 Journey **J18「10MB：O
 （`AUTO` 是否应阻断属口径决策，不在本轮擅自变更）。护栏锁住这四行不得被删除（含 canary，
 注入验证：改写 `Closure basis:` → 护栏报错；还原 → 通过）。
 
+### 4.1 `AUTO` 项的**证据引用**审计（2026-09-29）
+
+`AUTO` 的定义是「**自动化测试通过**」，且门禁把它视为**不阻断** ——
+即 `AUTO` 是「靠自动化撑着」的闭环状态。故本轮逐项核对：**44 个 `AUTO` 项是否真的引用了
+CI 可执行的制品？**
+
+**发现：7 项没有任何 CI 可执行证据**（只引 docs / qualification 记录），
+其中 5 项引的是 `tests/e2e/*.mjs` —— 而 **e2e 不进 CI**（会悄悄腐烂）：
+
+| 项 | 原 evidence | 实际情况 |
+|---|---|---|
+| `P0-I18N-001` | PRD + `packages/i18n`（目录） | `packages/i18n/test/index.test.ts` **存在** |
+| `P0-EXPORT-001` | 仅 docs | `packages/export/test/` 有 7 个单测 |
+| `P0-THEME-001` | `packages/themes/src/index.ts` + spec | `packages/themes/test/index.test.ts` **存在** |
+| `P0-SHELL-004` | `StatusBar.tsx` + menuSchema | `packages/desktop-ui/test/statusbar-defaults.test.ts` **存在** |
+| `P0-SIDEBAR-001/002` | docs + `tests/e2e/sidebar-verify.mjs` | `packages/app-core/test/{fileTree,fileList}.test.ts` **存在** |
+| `P0-SHELL-001` | docs + e2e | `tests/parity/verify-visual-golden.mjs` **存在** |
+| `P0-EDITOR-002` | docs + e2e | `packages/editor-engine/test/source-mode-api.test.ts` **存在** |
+| `P0-FILE-003` | `App.tsx` + `menuSchema.ts`（实现） | `packages/app-core/test/fileOpHistory.test.ts` **存在** |
+| `P0-BASELINE-001` | 仅文档 | 其 `requiredEvidence` 含 `ledger-validation` → 应引 `verify-parity-ledger.mjs` |
+
+**即：这些项其实有 CI 执行的单测，只是台账没引用** ——
+引用缺位让证据看起来比实际弱，更糟的是**把读者指向最弱、会腐烂的那份制品**（e2e）。
+
+**处置**：补齐 10 处引用（`P0-*` 各 1–2 处），并新增护栏
+**「`AUTO` 项的 evidence 必须至少引用一份 CI 可执行制品」**
+（parity 护栏 / 单测文件（含 Rust 的 `tests/`）/ CI workflow）。
+非 AUTO 项不约束 —— `P0-QA-001` 是人工 UX Gate，本就无可执行证据，属正确状态。
+注入验证：把 `P0-I18N-001` 的单测引用换回 e2e → 护栏报错；还原 → 通过。
+
+**审计后状态**：44 个 `AUTO` 项**全部**至少引用一份 CI 可执行证据（0 违规）。
+
+### 4.2 「证据已齐备」必须实跑核对（同日，针对 P0-LAYOUT-002）
+
+台账自述 `P0-LAYOUT-002` 的「3 平台 × 3 类基线全部入库并进入比对模式」。
+实跑核对：`ls tests/visual/golden/*.json | wc -l` → **9**（3 类 × 3 平台），**结论成立**。
+但核对同时发现另外两种失效模式（结论对 ≠ 一切正常）：
+
+1. **守它的不变量不存在**：`verify-visual-golden.mjs` 此前**只校验 macOS 主基线**，
+   其余 6 个平台基线文件被删除也无任何信号 → 三平台覆盖会**静默退化**为单平台。
+   已补断言（9 文件齐备 + 非空 + 含核心条目）+ canary；注入验证：移走
+   `layout-golden.windows.json` → 护栏抛错。
+2. **承载它的文档自相矛盾**：`2026-09-22-v1.5.14-three-platform-runtime-qualification.md`
+   的 §4.1/§4.3 已记录 Windows 基线修复完成，而 §4.4 / §五 仍写「待 runner 确认」；
+   §五 还留着**已作废**的「10MB 打开 2.59× 于 Typora」（该 Typora 侧数字实为画提示页的耗时）。
+   已**透明追加更正块**（不改写历史记录）。
+
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

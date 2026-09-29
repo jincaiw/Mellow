@@ -572,6 +572,39 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
   assert(domains.has(domain), `台账缺少 V7-W0 新增域：${domain}`);
 }
 
+// ── `AUTO` 项必须引用 CI 可执行证据（2026-09-29）─────────────────────────
+//
+// 立此条的原因：master-plan §4.3 定义 `AUTO` = 「**自动化测试通过**，未完成真机体验验收」，
+// 且发布门禁把 `AUTO` 视为**不阻断** —— 即 `AUTO` 是「靠自动化撑着」的闭环状态。
+// 实测审计发现 **7 项 AUTO 的 evidence 数组里没有任何 CI 可执行制品**：
+// 只引 docs / qualification 记录，其中 5 项引的是 `tests/e2e/*.mjs`
+// —— 而 e2e **不进 CI**（会悄悄腐烂）。即「标了 AUTO，却没有自动化证据」。
+//
+// 其中 6 项其实**有** CI 执行的单测（i18n / export / themes / desktop-ui /
+// app-core 的 fileTree·fileList·fileOpHistory / editor-engine 的 source-mode-api），
+// 只是台账没引用 —— 引用缺位会让证据看起来比实际弱，且把读者指向**最弱、会腐烂**的制品。
+//
+// 本护栏要求：**AUTO 项的 evidence 必须至少引用一份 CI 可执行制品**
+// （parity 护栏 / 单测文件（含 Rust 的 `tests/`）/ CI workflow）。
+// 非 AUTO 项不约束 —— 例如 P0-QA-001 是人工 UX Gate，本就无可执行证据，属正确状态。
+{
+  const isCIArtifact = (p) => p.startsWith('tests/parity/')
+    || p.startsWith('.github/workflows/')
+    || /\/tests?\//.test(p)
+    || /\.test\.|\.spec\./.test(p);
+  const offenders = (ledger.items ?? []).filter(
+    (i) => i.status === 'AUTO' && !(i.evidence ?? []).some(isCIArtifact),
+  );
+  assert(offenders.length === 0,
+    `AUTO 项必须引用至少一份 CI 可执行证据（AUTO 的定义是「自动化测试通过」，`
+    + `而门禁把它视为不阻断）。违规项：${offenders.map((i) => i.id).join(', ')}`);
+  // canary：自检该判定（样本拼接构造，避免护栏检出自己）
+  const CI_SAMPLE = 'packages/i18n/test/' + 'index.test.ts';
+  const E2E_SAMPLE = 'tests/e2e/' + 'sidebar-verify.mjs';
+  if (!isCIArtifact(CI_SAMPLE)) errors.push('AUTO 证据护栏 canary 失效：单测样本未被判为 CI 制品');
+  if (isCIArtifact(E2E_SAMPLE)) errors.push('AUTO 证据护栏 canary 失效：e2e 样本被误判为 CI 制品');
+}
+
 if (errors.length) {
   console.error('Typora parity ledger validation failed:');
   for (const error of errors) console.error(`- ${error}`);

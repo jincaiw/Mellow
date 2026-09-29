@@ -35,6 +35,8 @@
         "docs/product/Mellow-PRD-V1.2-FINAL.md",
         "docs/plans/typora-parity-master-plan.md",
         "tests/qualification/macos-local-verification-2026-09-12.md"
+      ,
+        "tests/parity/verify-parity-ledger.mjs"
       ],
       "requiredEvidence": [
         "document-review",
@@ -94,6 +96,8 @@
         "docs/specs/desktop-ui-design-spec.md",
         "docs/plans/typora-parity-master-plan.md",
         "tests/e2e/sidebar-verify.mjs"
+      ,
+        "packages/editor-engine/test/source-mode-api.test.ts"
       ],
       "requiredEvidence": [
         "integration",
@@ -449,6 +453,8 @@
         "docs/specs/desktop-ui-design-spec.md",
         "docs/plans/typora-parity-master-plan.md",
         "tests/e2e/sidebar-verify.mjs"
+      ,
+        "packages/app-core/test/fileTree.test.ts"
       ],
       "requiredEvidence": [
         "integration",
@@ -471,6 +477,9 @@
         "docs/specs/desktop-ui-design-spec.md",
         "docs/plans/typora-parity-master-plan.md",
         "tests/e2e/sidebar-verify.mjs"
+      ,
+        "packages/app-core/test/fileTree.test.ts",
+        "packages/app-core/test/fileList.test.ts"
       ],
       "requiredEvidence": [
         "integration",
@@ -514,6 +523,8 @@
         "docs/specs/desktop-ui-design-spec.md",
         "docs/plans/typora-parity-master-plan.md",
         "tests/e2e/sidebar-verify.mjs"
+      ,
+        "tests/parity/verify-visual-golden.mjs"
       ],
       "requiredEvidence": [
         "macos",
@@ -600,6 +611,8 @@
       "evidence": [
         "packages/themes/src/index.ts",
         "docs/specs/desktop-ui-design-spec.md"
+      ,
+        "packages/themes/test/index.test.ts"
       ],
       "requiredEvidence": [
         "unit",
@@ -621,6 +634,8 @@
       "evidence": [
         "docs/specs/document-file-safety-spec.md",
         "docs/plans/typora-parity-master-plan.md"
+      ,
+        "packages/export/test/index.test.ts"
       ],
       "requiredEvidence": [
         "unit",
@@ -677,6 +692,8 @@
       "evidence": [
         "docs/product/Mellow-PRD-V1.2-FINAL.md",
         "packages/i18n"
+      ,
+        "packages/i18n/test/index.test.ts"
       ],
       "requiredEvidence": [
         "unit",
@@ -749,6 +766,8 @@
       "evidence": [
         "apps/desktop/src/App.tsx",
         "packages/commands/src/menuSchema.ts"
+      ,
+        "packages/app-core/test/fileOpHistory.test.ts"
       ],
       "requiredEvidence": [
         "unit",
@@ -1003,6 +1022,8 @@
       "evidence": [
         "packages/desktop-ui/src/StatusBar.tsx",
         "packages/commands/src/menuSchema.ts"
+      ,
+        "packages/desktop-ui/test/statusbar-defaults.test.ts"
       ],
       "requiredEvidence": [
         "unit",
