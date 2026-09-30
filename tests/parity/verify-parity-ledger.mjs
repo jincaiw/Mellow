@@ -314,6 +314,38 @@ if (existsSync(benchmarkRunnerPath)) {
   assert(/ADR-0026/.test(benchCode),
     '报告必须指向承载口径裁决的 ADR-0026（推断不能自己当结论）');
 
+  // ── 生成器必须产出 spec §4 列出的**全部**夹具（2026-09-30）──────────────
+  // spec §4 是一张夹具表（1MB / 5MB / 10MB / 100k-lines / large-table /
+  // 100-mermaid / 1000-images），而只有 generate-fixtures.mjs 能产出它们。
+  // 此前护栏只提到 generate-fixtures 与 100k-lines，**没有断言「清单全覆盖」** ——
+  // 从生成器删掉某个夹具不会有任何信号，spec §4 会**静默变成假话**
+  //（「spec 要求了、机器上没人守」，与本轮前两条同类）。
+  {
+    const specPath = resolve(root, 'docs/specs/performance-benchmark-spec.md');
+    const genPath = resolve(root, 'tests/benchmark/generate-fixtures.mjs');
+    const specSrc = readFileSync(specPath, 'utf8').replace(/\r\n/g, '\n');
+    const genSrc = readFileSync(genPath, 'utf8').replace(/\r\n/g, '\n');
+    const sec4Start = specSrc.indexOf('## 4. 夹具规格');
+    const sec4End = specSrc.indexOf('## 5.', sec4Start);
+    const sec4 = sec4End > sec4Start ? specSrc.slice(sec4Start, sec4End) : specSrc.slice(sec4Start);
+    const specFixtures = [...sec4.matchAll(/^\|\s*`([^`]+\.md)`\s*\|/gm)].map((m) => m[1]);
+    const genNames = [...genSrc.matchAll(/name:\s*'([^']+)'/g)].map((m) => m[1]);
+    assert(specFixtures.length > 0, '无法从 spec §4 解析夹具清单（护栏需同步更新，不要静默漏检）');
+    assert(genNames.length > 0, '无法从 generate-fixtures.mjs 解析夹具名（护栏需同步更新）');
+    for (const fx of specFixtures) {
+      assert(
+        genNames.includes(fx),
+        `spec §4 列出了夹具 ${fx}，但 generate-fixtures.mjs 不产出它（spec 会静默变成假话；要么补产出、要么同步删 spec 行）`,
+      );
+    }
+    // canary：自检该锁（样本拼接构造，避免护栏检出自己）
+    const SAMPLE_SPEC = '| `1MB.md` | x |' + String.fromCharCode(10) + '| `5MB.md` | y |';
+    const parsed = [...SAMPLE_SPEC.matchAll(/^\|\s*`([^`]+\.md)`\s*\|/gm)].map((m) => m[1]);
+    if (parsed.join(',') !== '1MB.md,5MB.md') {
+      errors.push('夹具清单锁 canary 失效：spec 表行未被正确解析');
+    }
+  }
+
   // ── 报告必须有「环境头」，且不得被静默裁掉（spec §8，2026-09-30）─────────
   // spec §8 要求环境头含：机器规格 / macOS 版本 / Mellow commit + 脏树 /
   // Typora 实际版本 / 构建类型 / 权限状态。实测**这些都已实现**，
