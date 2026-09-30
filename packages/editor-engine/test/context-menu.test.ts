@@ -226,6 +226,8 @@ interface ContextActions {
   wordAtCursor(): string | null;
   getDocumentText(): string | null;
   selectRange(from: number, to: number): boolean;
+  /** P0-EDITOR-005 建议列表：替换光标处的拉丁词 */
+  replaceWordAtCursor(replacement: string): boolean;
 }
 
 describe('动作 API（__MELLOW_CONTEXT_ACTIONS__）', () => {
@@ -523,3 +525,45 @@ describe('P0-EDITOR-005：整篇检查所需动作', () => {
     view.destroy();
   });
 });
+
+describe(
+  'replaceWordAtCursor（P0-EDITOR-005 建议列表）',
+  () => {
+    function setUpWith(doc: string): { view: EditorView; actions: ContextActions } {
+      const view = new EditorView({
+        doc,
+        parent: document.body,
+        extensions: [markdown({ base: markdownLanguage }), install(true)],
+      });
+      view.focus();
+      const actions = (window as unknown as Record<string, unknown>)[ACTIONS_KEY] as ContextActions;
+      return { view, actions };
+    }
+
+    test('把光标处的词替换为建议文本', () => {
+      const { view, actions } = setUpWith('teh cat sat');
+      moveCaret(view, 2);
+      expect(actions.replaceWordAtCursor('the')).toBe(true);
+      expect(view.state.doc.toString()).toBe('the cat sat');
+      view.destroy();
+    });
+
+    test('只替换词本身：两侧的引号不计入区间', () => {
+      const { view, actions } = setUpWith("a 'teh' b");
+      moveCaret(view, 4); // 落在 teh 内
+      expect(actions.replaceWordAtCursor('the')).toBe(true);
+      expect(view.state.doc.toString()).toBe("a 'the' b");
+      view.destroy();
+    });
+
+    test('无词 / CJK / 空替换文本 → false 且不改动文档', () => {
+      const { view, actions } = setUpWith('中文 测试');
+      moveCaret(view, 1);
+      expect(actions.replaceWordAtCursor('x')).toBe(false);
+      expect(view.state.doc.toString()).toBe('中文 测试');
+      expect(actions.replaceWordAtCursor('')).toBe(false);
+      expect(view.state.doc.toString()).toBe('中文 测试');
+      view.destroy();
+    });
+  },
+);

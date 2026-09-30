@@ -88,6 +88,30 @@ const DIRECT_CALL_EXCEPTIONS = [
   { kind: 'image', why: '图片仍有若干动作走 handleImageAction（打开/显示/复制路径/重命名等）；本轮「在浏览器中打开」已迁入 edit.openImageInBrowser command，但图片上下文仍保留直连例外，待整体迁移（G7-EDIT-08）' },
 ];
 
+/**
+ * ── 契约扩展：**携带值的菜单条目**（P0-EDITOR-005，2026-09-30 裁决并实施）────────
+ *
+ * **问题**：Typora 的文本右键菜单在**顶部**列出拼写建议，点某条建议就把该词替换成它。
+ * 这类条目的语义是「id + **值**」——只带 id 的命令表达不了「点的是哪条建议」。
+ *
+ * **曾考虑的方案（已否决）**：给 `DIRECT_CALL_EXCEPTIONS` 登记 `text`。
+ * 否决理由：该例外**按 kind 生效**，登记 `text` 会**豁免整个文本菜单**（几十个条目），
+ * 而实际只需要豁免 1 类条目 —— 豁免面远大于改动面（skill 记的「例外按维度放大」）。
+ *
+ * **采用的方案**：允许条目**经 `dispatchCommand` 携带 payload**，写法为
+ * `onClick: run('<id>', <expr>)`。基础设施**本就支持**（`dispatchCommand(id, source, payload)`
+ * → `createCommandContext({…, payload})` → `CommandContext.payload`，插件已在使用该通道），
+ * 缺的只是「菜单条目约定」与「本护栏的解析」。
+ *
+ * **为什么这比直连更好**：`§7.4 硬规则 11` 要求右键条目走 `dispatchCommand`，
+ * 携带 payload 的条目**仍然**走同一条入口（同一 `enabledWhen`、同一 `rememberCommandRecent`、
+ * 同一命令注册表）—— 即该扩展**强化**而非削弱这条硬规则。
+ *
+ * **约束**：payload 条目的 id **同样**必须在 `CommandRegistry` 中存在（见第 5 项校验），
+ * 且**不参与** Typora 固定序列比对（其条数由数据决定，见下 `DYNAMIC_ITEM_KINDS`）。
+ */
+const DYNAMIC_ITEM_KINDS = new Set(['text']); // 文本菜单含数据驱动的建议列表，条数不定
+
 /** 直连例外的 kind 不参与命令序列比对（因为条目不经过 dispatchCommand），但仍受「例外过期」检测约束。 */
 const EXCEPTION_KINDS = new Set(DIRECT_CALL_EXCEPTIONS.map((e) => e.kind));
 
@@ -122,7 +146,9 @@ function parseKindBlocks(handler) {
   let m;
   while ((m = re.exec(handler)) !== null) {
     const [, kind, body] = m;
-    const ids = [...body.matchAll(/run\('([^']+)'\)/g)].map((x) => x[1]);
+    // 契约扩展（P0-EDITOR-005）：条目可以是 `run('id')` **或** `run('id', payload)`。
+    // 只捕获 id —— payload 是数据（如选中的拼写建议），不参与 Typora 固定序列比对。
+    const ids = [...body.matchAll(/run\('([^']+)'/g)].map((x) => x[1]);
     // 直连条目 = 所有 onClick: 减去经 run( 派发的（C1：image 分支用 img('op') 帮助函数）
     const allOnClick = (body.match(/onClick:/g) ?? []).length;
     const viaRun = (body.match(/onClick: run\(/g) ?? []).length;
@@ -135,7 +161,7 @@ function parseBaseItems(handler) {
   const start = handler.indexOf('const items: ContextMenuEntry[] = [');
   const end = handler.indexOf('];', start);
   const body = handler.slice(start, end);
-  return [...body.matchAll(/run\('([^']+)'\)/g)].map((x) => x[1]);
+  return [...body.matchAll(/run\('([^']+)'/g)].map((x) => x[1]);
 }
 
 function parseRegistryIds(source) {
@@ -247,6 +273,21 @@ if (handler === null) {
   for (const id of allIds) {
     if (!registryIds.has(id)) {
       fail(`右键菜单 dispatch 的命令 '${id}' 在 CommandRegistry 中不存在`);
+    }
+  }
+  // canary：自检「携带 payload 的条目」被正确解析（2026-09-30 契约扩展）
+  // 样本拼接构造，避免护栏检出自己。
+  {
+    const SAMPLE_BLOCK = "if (req.kind === 'text') {\n"
+      + "  items.push({ label: 's', onClick: run('edit.spelling.applySuggestion', "
+      + "'" + 'sugg' + "') });\n"
+      + "  items.push({ label: 't', onClick: run('edit.cut') });\n"
+      + '}';
+    const re = /if \(req\.kind === '(\w+)'(?:[^)]*?)\) \{([\s\S]*?)\n\}/;
+    const mm = re.exec(SAMPLE_BLOCK);
+    const ids = mm ? [...mm[2].matchAll(/run\('([^']+)'/g)].map((x) => x[1]) : [];
+    if (ids.join(',') !== 'edit.spelling.applySuggestion,edit.cut') {
+      fail('契约扩展 canary 失效：带 payload 的条目未被解析出 id（应为 applySuggestion, edit.cut）');
     }
   }
 }

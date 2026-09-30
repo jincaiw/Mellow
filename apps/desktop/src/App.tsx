@@ -164,6 +164,12 @@ function applyContentFontSize(px: number): void {
   document.documentElement.style.setProperty('--mellow-content-font-size', `${px}px`);
 }
 // 帮助菜单外链（Typora 帮助菜单补全：快速上手 / Markdown 参考 / 反馈）
+/**
+ * P0-EDITOR-005：文本右键菜单里最多列出的拼写建议条数。
+ * Typora 的 NSSpellChecker 建议通常 ≤ 5 条；上限用于防止极端情况下菜单被撑长。
+ */
+const MAX_SPELLING_SUGGESTIONS = 5;
+
 const HELP_URL_QUICK_START = 'https://github.com/jincaiw/Mellow#readme';
 const HELP_URL_WEBSITE = 'https://github.com/jincaiw/Mellow';
 const HELP_URL_MARKDOWN_REFERENCE = 'https://commonmark.cn/help/';
@@ -725,6 +731,9 @@ export default function App() {
     }
   });
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  /** P0-EDITOR-005：菜单代次。异步建议返回时若代次已变（菜单已关/已换），丢弃结果 ——
+   *  否则会把 A 词的建议贴进 B 词的菜单里（与「用上次右键位置」同类的陈旧目标问题）。 */
+  const contextMenuTokenRef = useRef(0);
   // Cheatsheet（帮助菜单 / 命令面板 help.cheatsheet）
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   // Open With（PRD §79）：检测本机编辑器 → 用其打开当前文件
@@ -2176,6 +2185,18 @@ export default function App() {
         ? t(op === 'learn' ? 'msg.spellingLearned' : 'msg.spellingUnlearned')
         : t('msg.spellingUnavailable'),
     );
+  }, [engineContext, setStatusText, t]);
+
+  /**
+   * P0-EDITOR-005 建议列表：把**光标处的词**替换为选中的建议。
+   *
+   * 为什么由引擎执行替换：命令只带 id + payload（建议文本），
+   * 而「词在文档里的哪个区间」只有引擎知道 —— 与 `wordAtCursor()` 同一套边界规则，
+   * 宿主不猜位置（避免「用上次右键位置」那类陈旧目标问题）。
+   */
+  const applySpellingSuggestion = useCallback(async (replacement: string) => {
+    const ok = await engineContext<boolean>('replaceWordAtCursor', replacement);
+    if (ok !== true) setStatusText(t('msg.spellingNoWord'));
   }, [engineContext, setStatusText, t]);
 
   /**
@@ -4052,7 +4073,14 @@ export default function App() {
     // 所有条目走 dispatchCommand，与菜单 / 快捷键 / 命令面板共用同一入口与同一 enabledWhen。
     // C1：ContextMenu 升级支持分隔线与一层子菜单，Typora 子菜单结构（code-tools / table / Alignment /
     // copyMathBlock）按原层级呈现，不再扁平化。
-    const run = (id: string) => () => { void dispatchCommand(id, 'context-menu'); };
+    // P0-EDITOR-005 契约扩展（2026-09-30）：条目可携带 **payload**（如选中的拼写建议）。
+    // 仍走 dispatchCommand —— 与只带 id 的条目同一条入口（同一 enabledWhen / 同一命令注册表），
+    // 故这是对 §7.4 硬规则 11 的**强化**，不是例外（无需登记 DIRECT_CALL_EXCEPTIONS）。
+    const run = (id: string, payload?: unknown) => () => { void dispatchCommand(id, 'context-menu', payload); };
+    // P0-EDITOR-005：菜单代次。异步建议返回时若代次已变（菜单已关/已换），丢弃结果 ——
+    // 否则会把 A 词的建议贴进 B 词的菜单里（与「用上次右键位置」同类的陈旧目标问题）。
+    contextMenuTokenRef.current += 1;
+    const menuToken = contextMenuTokenRef.current;
     const items: ContextMenuEntry[] = [
       { label: t('contextmenu.editorCut'), enabled: req.hasSelection, onClick: run('edit.cut') },
       { label: t('contextmenu.editorCopy'), enabled: req.hasSelection, onClick: run('edit.copy') },
@@ -4132,6 +4160,32 @@ export default function App() {
           { label: t('contextmenu.spellingUnlearn'), onClick: run('edit.spelling.unlearn') },
           { separator: true },
         );
+      }
+      // P0-EDITOR-005 建议列表：系统建议是**异步**取的，而菜单必须同步弹出 ——
+      // 故先弹菜单，取到后**补入顶部**（菜单是 React 状态，可更新）。
+      // Typora 亦把建议列在文本右键菜单顶部。
+      // 注意：本段同样必须在既有 text 块**内部**（块解析正则不允许块条件含括号）。
+      if (req.word !== undefined && spellcheckAvailableSync()) {
+        const targetWord = req.word;
+        void createDesktopSpellcheckService()
+          .suggest(targetWord)
+          .then((list) => {
+            if (contextMenuTokenRef.current !== menuToken) return; // 菜单已关/已换：丢弃
+            const sugg = (list ?? []).filter((x) => typeof x === 'string' && x.length > 0 && x !== targetWord).slice(0, MAX_SPELLING_SUGGESTIONS);
+            if (sugg.length === 0) return;
+            setContextMenu((prev) => {
+              if (prev === null || contextMenuTokenRef.current !== menuToken) return prev;
+              return {
+                ...prev,
+                items: [
+                  ...sugg.map((x) => ({ label: x, onClick: run('edit.spelling.applySuggestion', x) })),
+                  { separator: true },
+                  ...prev.items,
+                ],
+              };
+            });
+          })
+          .catch(() => undefined);
       }
       items.push(
         { separator: true },
@@ -5157,6 +5211,9 @@ export default function App() {
       { id: 'edit.spelling.checkDocument', localizedTitle: { zh: '立即检查文稿', en: 'Check Document Now' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runCheckDocument() },
       { id: 'edit.spelling.learn', localizedTitle: { zh: '添加到字典', en: 'Learn Spelling' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runSpellingDictionary('learn') },
       { id: 'edit.spelling.unlearn', localizedTitle: { zh: '忘记拼写', en: 'Unlearn Spelling' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => void runSpellingDictionary('unlearn') },
+      // P0-EDITOR-005 建议列表：本条**携带 payload**（选中的建议文本）—— 契约扩展的第一个使用者。
+      // 目标词区间由引擎按「光标处词」解析（与 wordAtCursor 同一规则），宿主不猜位置。
+      { id: 'edit.spelling.applySuggestion', localizedTitle: { zh: '替换为建议', en: 'Replace with Suggestion' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: (ctx) => { const v = ctx?.payload; if (typeof v !== 'string' || v.length === 0) return; void applySpellingSuggestion(v); } },
       // R2-1 编辑→替换「智能标点」（Typora parity；设置面板同一真源）
       { id: 'edit.smartPunctuation.toggle', localizedTitle: { zh: '智能标点', en: 'Smart Punctuation' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
         const def = settingById('editor.smartPunctuation');

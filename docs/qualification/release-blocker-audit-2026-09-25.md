@@ -591,6 +591,44 @@ editor-core **不能**反向 import 引擎（成环）。故内联是**必要的
 41 份文档中仅 3 处属该形态 —— **覆盖率低是形态罕见，不是文档干净**。
 其它写法（「见 `文件:行号` 的 `符号`」、散文里提行号、表格裸行号）**不在覆盖内**。
 
+## 4.12 右键菜单契约扩展：允许「携带值的条目」（P0-EDITOR-005，2026-09-30）
+
+**被挡住的缺口**：Typora 的文本右键菜单在**顶部**列出拼写建议，点某条就把该词替换成它。
+这类条目的语义是「id + **值**」，而 `verify-context-menu-parity` 的模型是
+「一条目 = 一个 `onClick: run('id')`」—— 只带 id 的命令表达不了「点的是哪条建议」。
+
+**曾考虑的方案（已否决）**：给 `DIRECT_CALL_EXCEPTIONS` 登记 `text`。
+否决理由：该例外**按 kind 生效**，登记 `text` 会**豁免整个文本菜单**（几十个条目），
+而实际只需豁免 1 类条目 —— 正是 skill 记的「**例外按维度放大**」。
+
+**采用的方案**：允许条目**经 `dispatchCommand` 携带 payload**（`onClick: run('id', <expr>)`）。
+- 基础设施**本就支持**：`dispatchCommand(id, source, payload)` → `createCommandContext({…, payload})`
+  → `CommandContext.payload`，**插件已在用这条通道**；缺的只是「菜单条目约定」与「护栏解析」。
+- 该扩展**强化**而非削弱 §7.4 硬规则 11：携带 payload 的条目仍走同一条入口
+  （同一 `enabledWhen`、同一 `rememberCommandRecent`、同一命令注册表），**无需**登记例外。
+
+**落地（四件）**：
+
+| # | 改动 | 验证 |
+|---|---|---|
+| ① | 引擎 `wordSpanAt()`（`wordAt` 改由它派生，边界规则永不漂移）+ 动作 `replaceWordAtCursor(replacement)`（含 Composition Guard；无词/无编辑器/CJK → false **且不改文档**） | 引擎单测 48 → 51 例；全量 75 套件 **1200 例通过** |
+| ② | 桌面 `run(id, payload?)` + 命令 `edit.spelling.applySuggestion`（目标词区间由引擎按「光标处词」解析，宿主不猜位置） | 桌面 `tsc` 干净 |
+| ③ | 文本右键**顶部**补入建议：系统建议异步取 → 先弹菜单、取到后**补入**；用**菜单代次 token** 丢弃「慢响应落到后开菜单」的陈旧结果 | 护栏（见④） |
+| ④ | 护栏接受 payload 写法 + canary；`DYNAMIC_ITEM_KINDS` 声明文本菜单条数不定 | 注入「未注册 id」→ 护栏报错；注入「直连条目」→ 仍报 §7.4 违规 |
+
+**⚠️ 实施中又被护栏抓住一次（这是好事）**：我最初把建议段写成
+`if (req.kind === 'text' && req.word !== undefined && spellcheckAvailableSync()) {` ——
+条件含括号 → **整块对护栏隐形**，护栏的**元护栏**当场报
+「块解析数(9) ≠ 出现次数(10)」。按它文档化的指引把条件**移入块内部**后恢复。
+即：那条元护栏在真实改动中第二次发挥了作用（第一次是它被加入时）。
+
+**状态（如实）**：契约阻塞（`host-api-extension`）**已解除**；
+但建议的**端到端运行时行为**（右键真的弹出建议、点击真的替换）**没有自动化测试覆盖** ——
+它依赖 macOS `NSSpellChecker` 与真实右键交互。故本项**不标 `AUTO`**
+（避免重演 §5.7「AUTO 把不可用功能当闭环」），而是显式保持未闭环，
+`blockedBy` 由 `host-api-extension` 改为 **`runtime-verification-pending`**。
+台账状态 `BLOCKED` → `IMPL`（`BLOCKED` 计数 2 → 1），未闭环总数仍 10。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

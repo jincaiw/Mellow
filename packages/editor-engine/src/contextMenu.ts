@@ -50,14 +50,14 @@ export interface EditorContextMenuRequest {
 }
 
 /**
- * 取出 `pos` 处的拉丁词（P0-EDITOR-005）。
+ * 取出 `pos` 处的拉丁词的**区间**（P0-EDITOR-005，2026-09-30）。
  *
- * `posAtCoords` 返回的是**字符之间**的位置，故需从 `pos` 与 `pos-1` 两侧尝试：
- * 点在词的中间时命中 `pos`；点在词的末尾之后时命中 `pos-1`。
- * 只接受以字母开头、由字母/撇号/连字符组成、长度 ≥ 2 的词
- * （`don't`、`well-known` 允许；纯数字、纯标点、CJK 一律不返回）。
+ * 与 `wordAt` 同规则、同边界（`wordAt` 现由本函数派生，保证二者永不漂移）：
+ * `posAtCoords` 返回的是**字符之间**的位置，故需从 `pos` 与 `pos-1` 两侧尝试；
+ * 只接受以字母开头、由字母/撇号/连字符组成、长度 ≥ 2 的词；
+ * **首尾的撇号/连字符不计入词**（`'hello'` 的「词」是 `hello`，替换时也只替换 `hello`）。
  */
-export function wordAt(doc: string, pos: number): string | null {
+export function wordSpanAt(doc: string, pos: number): { from: number; to: number } | null {
   if (pos < 0 || pos > doc.length) return null; // 越界：posAtCoords 不会给，但显式守卫避免「贴尾取值」
   const isWordChar = (c: string): boolean => /[A-Za-z'-]/.test(c);
   let anchor = pos;
@@ -69,10 +69,27 @@ export function wordAt(doc: string, pos: number): string | null {
   let end = anchor + 1;
   while (start > 0 && isWordChar(doc[start - 1])) start -= 1;
   while (end < doc.length && isWordChar(doc[end])) end += 1;
-  const word = doc.slice(start, end).replace(/^['-]+/, '').replace(/['-]+$/, '');
+  let from = start;
+  let to = end;
+  while (from < to && (doc[from] === "'" || doc[from] === '-')) from += 1;
+  while (to > from && (doc[to - 1] === "'" || doc[to - 1] === '-')) to -= 1;
+  const word = doc.slice(from, to);
   if (word.length < 2) return null;
   if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) return null;
-  return word;
+  return { from, to };
+}
+
+/**
+ * 取出 `pos` 处的拉丁词（P0-EDITOR-005）。
+ *
+ * `posAtCoords` 返回的是**字符之间**的位置，故需从 `pos` 与 `pos-1` 两侧尝试：
+ * 点在词的中间时命中 `pos`；点在词的末尾之后时命中 `pos-1`。
+ * 只接受以字母开头、由字母/撇号/连字符组成、长度 ≥ 2 的词
+ * （`don't`、`well-known` 允许；纯数字、纯标点、CJK 一律不返回）。
+ */
+export function wordAt(doc: string, pos: number): string | null {
+  const span = wordSpanAt(doc, pos);
+  return span === null ? null : doc.slice(span.from, span.to);
 }
 
 /** 表格右键操作（C1：Typora table 子菜单 + 对齐子菜单） */
@@ -102,6 +119,14 @@ export interface EditorContextActions {
    * 而不依赖「上次右键的位置」（那样从命令面板触发时目标会是错的）。
    */
   wordAtCursor(): string | null;
+  /**
+   * P0-EDITOR-005「右键建议列表」：把**光标处的拉丁词**替换为 `replacement`。
+   *
+   * 为什么由引擎执行替换而不是宿主：命令只带 id + payload（选中的建议文本），
+   * 而「词在文档里的哪个区间」只有引擎知道 —— 与 `wordAtCursor()` 同一套边界规则。
+   * 无活动编辑器 / 光标处不是拉丁词 / 合成期间 → 返回 false（不抛错、不改文档）。
+   */
+  replaceWordAtCursor(replacement: string): boolean;
   /**
    * P0-EDITOR-005「Check Document Now」：取整篇文本，供宿主交给系统拼写检查。
    * 返回 null 表示当前无活动编辑器。
@@ -836,6 +861,18 @@ export function installContextMenuApi(): void {
       const view = activeView;
       if (view === null) return null;
       return wordAt(view.state.doc.toString(), view.state.selection.main.head);
+    },
+    replaceWordAtCursor(replacement) {
+      const view = activeView;
+      if (view === null) return false;
+      if (typeof replacement !== 'string' || replacement.length === 0) return false;
+      // Composition Guard：合成期间不接受外部事务（与 applyChanges 同规则）
+      if (isComposing(view)) return false;
+      const doc = view.state.doc.toString();
+      const span = wordSpanAt(doc, view.state.selection.main.head);
+      if (span === null) return false;
+      view.dispatch({ changes: { from: span.from, to: span.to, insert: replacement } });
+      return true;
     },
     getDocumentText() {
       const view = activeView;
