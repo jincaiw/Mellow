@@ -1005,7 +1005,7 @@ CM6 的 history 存在 **EditorState** 里，状态全新即历史全新 →
 |---|---|---|
 | **10** `Insert Final New Line On Save` | 无实现 | ✅ **已实装** `files.finalNewline`（`packages/settings/src/index.ts:209`，默认 false 对齐 Typora `preferFinalNewline:false`）+ `packages/app-core/src/finalNewline.ts` + 护栏 `verify-settings-contract.mjs` ⑨ |
 | **10** `Preserve single line break` | 无实现 | ✅ **已实装**（三段齐备：编辑器软换行 G7-EDIT-07 / 导出 `settings.export.preserveLineBreaks` 由 `packages/export/src/index.ts` 消费 / Reader 段内软换行 `packages/app-core/test/reader.test.ts`） |
-| **10** `Allow Magnification`（双指缩放） | 无实现 | ❌ **仍未实现**（全仓无 pinch/magnification；只有 `editor.cmdWheelZoom`，语义不同） |
+| **10** `Allow Magnification`（双指缩放） | 无实现 | ⚠️ **该结论已被 §4.27 更正**：机制**已存在**（`enablePinchZoom`，仅 Quick Look 启用 + 有单测），主编辑器未接线 |
 | **11** `Open Image in Browser` | 无命令/入口 | ✅ **已实装** `edit.openImageInBrowser`（`App.tsx:5137` + 图片右键入口 `App.tsx:4118` + 护栏 `verify-shell-widgets.mjs`） |
 | **11** `Refresh All Math Expressions` | 无命令/入口 | ✅ **已实装** engine `refreshMath()`（`contextMenu.ts:669`） |
 | **11** `Task Status` | 无命令/入口 | ✅ **已实装** engine `setTaskStatus()`（`contextMenu.ts:783`） |
@@ -1285,6 +1285,51 @@ schema（含 6 个选项与默认值）→ `applySetting` 分支写 state → `b
 —— 实参里有 `host.getText()`，`[^)]*` **被那个右括号截断**。改成直接数
 `maxLevel: outlineMaxLevel` 的出现次数（应为 2）。这与 §4.25 的「切窗用固定长度」同族：
 **静态切窗/正则边界必须按语义结构，不要按字符类的直觉**。
+
+## 4.27 我上一轮把「settings 包内搜不到」写成了「全仓无实现」（2026-09-30）
+
+**起因**：§4.21 复核 §15.3 行 10 时，我把 ③ `Allow Magnification` 的结论写成
+「**全仓无 pinch / magnification 相关实现**，只有 `editor.cmdWheelZoom`」。
+本轮去查它的**可行性**（准备做 E/D 裁决）时发现：**这句话是错的**。
+
+**错在哪**：我当时的检索命令是
+
+```
+grep -rn "finalNewline|preLinebreakOnExport|Magnification|magnification" packages/settings/src/index.ts
+```
+
+—— **扫描面只有 settings 包**。因为该包内确实搜不到，我就把结论**过度推广**成「全仓无」。
+这与 §4.18 / §4.24 记录过的「关键词/名字只能定位候选，不能下结论」同源，
+但这次的具体形态是：**把「某处没有」写成了「哪里都没有」**，而措辞里带上了「全仓」。
+
+**实际状态**：
+- `packages/editor-core/CoreEditor/src/@quicklook/zoom.ts` **已实现** `enablePinchZoom`：
+  禁用原生放大（原生放大会让内容可滚动），改用 `inner.style.zoom` 的 **re-layout** 缩放（1.0–2.5），
+  并处理 `gesturestart` / `gesturechange` / `gestureend`；`CoreEditor/test/zoom.test.ts` 有单测。
+- 但它**只在 `setUpQuickLook` 里被调用**（`@quicklook/index.ts`），即**仅 macOS Quick Look 预览**；
+  主编辑器走 `setUpMainApp`（`CoreEditor/index.ts`），**没有接线**。
+- 另：该键在 Typora 是**原生菜单项**（`toggleAllowMagnification:`，`MainMenu.nib`；
+  本机 dump 作「Allow Magnification => 双指缩放」，SF Symbol `hand.raised.fingers.spread`），
+  **不是偏好面板项** —— §15.3 行 10 原称「三项均为偏好设置项」对此项也不准确。
+
+**裁决：E（补齐）**，但**本轮只登记不实施**（**scope 决策，不是可行性判断**）。已查路径：
+1. **不存在「启动前注入 config」的通道**：`buildBundleHtml` **只在构建期**被调用
+   （`apps/desktop/scripts/build-editor-bundle.mjs` 写 `apps/desktop/public/editor/index.html`），
+   iframe 的 config 是**构建期烘焙**的；宿主只能在加载后经 `setEditorConfig` 覆盖。
+2. 故实施需四步：① 给 `enablePinchZoom` 加 **disposer**（现有实现**装上监听器就撤不掉** ——
+   只做 enable 不做 disable 会给出「关了没生效」的控件，正是本项目反复记录的那类缺陷）；
+   ② `CoreEditor/src/bridge/web/config.ts` 新消息 + `packages/editor-core/src/core.ts` 的
+   `setEditorConfig` **白名单**（漏加 → 调用被静默丢弃）；③ Mellow 设置项 + `applySetting` 分支；
+   ④ **渲染层重建**（`vite build` → `build-editor-bundle` → `verify-release-bundle`）+ 单测 + 护栏。
+3. **且本环境无法验证手势行为**（需触控板 + GUI）；Typora 该键的**默认态也未能从一手证据确认**
+   （用户 plist 无该键；`MainMenu.nib` / 二进制未暴露初始 state）→ 实施时默认取 `false`（保守）。
+
+**为什么写这一段**：§4.23 记过我上一类错误（**把「没想到」写成「不可行」**）。
+这次是**同一族但不同形态**：**把「一处没有」写成「处处没有」**。
+两者的共同危害是**用确定的措辞掩盖了未验证的范围** —— 下一个读到的人（包括未来的我）
+不会再去查，因为它「已经被确认过」。
+→ 规则：写「**全仓无 X**」这类**范围性否定**时，必须写明**检索面**（哪些目录/文件类型）；
+只搜了一个包就写「全仓」，是把范围当结论。
 
 ## 五、本次审计做的改动（非策略性）
 
