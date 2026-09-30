@@ -1931,6 +1931,38 @@ widget 永远停在加载态：用户看到**空白**，且因为没进 broken �
 §7 的 P1 两项 —— `unused image cleanup`（未引用图片清理）与 `image manager`（图片管理器）—— 未见实现。
 属 P1（不阻塞），**如实登记**。
 
+## 4.41 `auto-update-spec` 逐节复核（**正向确认**）+ `image-workflow-spec` §7 P1 两项**无一手依据**（2026-10-01）
+
+### A. `auto-update-spec` §1–§8：**全部核实通过**
+
+安全类 spec 的声明**逐条可静态核验**，本轮全部核过（不靠「写了就是有」）：
+
+| spec 节 | 声明 | 核实结果 |
+|---|---|---|
+| §1.1 signed update | 内嵌公钥校验（`tauri.conf.json → plugins.updater.pubkey`） | ✅ `pubkey` 存在且是**合法 minisign 公钥**（base64 解码以 `untrusted comment: minisign pu…` 开头）；`bundle.createUpdaterArtifacts: true` |
+| §1.2 verify package | 下载后、安装前校验签名，失败拒绝安装 | ✅ `updater_safety.rs` 有 `signed_update_fixture_verifies` + **`tampered_package_is_rejected`**（篡改必拒） |
+| §1.3 不得自动上传用户数据 | 只发版本/平台/架构 + `X-Mellow-Channel` + UA | ✅ 端点是无模板变量的静态 URL（GitHub Releases `latest.json`）；头只有 channel（`updater.ts`）；**全仓检索 `telemetry / analytics / sentry / posthog` 零命中** |
+| §1.4 release channel | 默认 stable，设置可切 beta | ✅ `DEFAULT_UPDATE_CHANNEL = 'stable'`，`updateChannelFromSettings()` 非 beta 一律回落 stable |
+| §1.5 / §5 rollback | 备份 → 计数 → 健康确认 → 可回滚 | ✅ Rust 5 例（`marker_roundtrip_and_launch_count` / `copy_and_restore_app_dir` / `restore_missing_backup_errors` / `restore_single_file_app` / `commit_cleans_backup_and_marker`） |
+| §2 流程时序 | 启动后 **4s** check；首次启动 **15s** 健康窗口后 commit | ✅ `setTimeout(runUpdateCheck, 4000)`；`setTimeout(rollbackCommit, 15000)`（且实现**多做了**两条守卫：dev serve 跳过、Windows Portable 跳过，均带注释说明理由） |
+| §3 测试 | fixture 可校验 / 篡改拒绝 / 生产 key 合法 / mock 端到端 | ✅ `updater_safety.rs` 四例**逐条对应** |
+| §7 验收 | `cargo test --test updater_safety` + `--lib updater` + `npm run build` | ✅ CI 的 `cargo test` 步骤覆盖（`ci.yml` job 名含 updater） |
+
+> **结论**：本节**没有发现缺口**。记下来是为了**避免未来重复审计**（同 §4.18 / §4.34 的做法）。
+
+### B. `image-workflow-spec` §7 的 P1 两项**无一手 Typora 依据**
+
+- `Upload All` ✓ **是 Typora 的**（`Menu.strings` 的 `Upload All Local Images = 上传所有本地图片`；
+  自带文档 `Docs/Use Images in Typora.md` 亦引用）。
+- **`unused image cleanup` / `image manager` 在 Typora 里找不到对应物**：
+  `Menu.strings` 的**全部 25 条**图片相关项已逐条列出，**没有任何**「删除未引用图片 / 清理」或
+  「图片管理器」条目；Typora 自带 `Docs/` 全目录检索 `unused` **零命中**。
+- → 这两项**不是 parity**，是 Mellow 自定增强或规格失真 → 已在 spec §7 内**保留原文 + 追加更正块**，
+  并**登记为待裁决**（任务 4.16 由「未实现」改为「待裁决」）。
+- **为什么不当场实现**：与 §4.39 的 `optional alignment` 同一逻辑 —— **照 spec 实现会做出一个
+  「照 spec 正确、照 Typora 多余」的功能**。且这是**产品范围**决策（要不要有非 parity 的增强），
+  按 AGENTS.md「先报告冲突，不擅自裁决」。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

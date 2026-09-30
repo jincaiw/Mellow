@@ -91,6 +91,25 @@ P1：
 - unused image cleanup
 - image manager
 
+> **⚠️ 2026-10-01 一手证据复核：P1 后两项**无一手依据**，登记为待裁决**
+>
+> 取本机 Typora 1.14.9 逐字核对：
+> - **`Upload All` ✓ 是 Typora 的**（`Menu.strings`：`Upload All Local Images = 上传所有本地图片`；
+>   自带文档 `Docs/Use Images in Typora.md` 亦引用 `Upload All Local Images`）。
+> - **`unused image cleanup` 与 `image manager` 在 Typora 里找不到对应物**：
+>   `Menu.strings` 的**全部 25 条**图片相关项已逐条列出（`Insert Local Images` / `Move All Images to` /
+>   `Copy All Images to` / `Upload All Local Images` / `Image Tools` / `Reload All Images` /
+>   `Global Image Settings` / `Zoom Image` / `Rename or Move Image to` / `Use Image Root Path` …），
+>   **没有任何**「删除未引用图片 / 清理」或「图片管理器」条目；
+>   Typora 自带 `Docs/` 全目录检索 `unused` **零命中**。
+> - 故这两项**不是 Typora parity**，而是 **Mellow 自定增强**（或本 spec 的规格失真）。
+>
+> **处置**：按「先报告冲突、不擅自裁决」——**登记为待裁决**（任务 4.16），三种走向：
+> ① 作为 **Mellow 自定增强**实施（需先明确产品理由，不宣称 parity）；
+> ② 从本 spec 移除（保持本 spec = Typora 对标口径）；
+> ③ 与已登记的 **D**（`Image Tools` 子菜单：Mellow 已由图片右键扁平入口覆盖）合并评估。
+> **在裁决前不实现** —— 否则会做出一个「照 spec 正确、照 Typora 多余」的功能。
+
 ---
 
 ## 8. Broken Image
