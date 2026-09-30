@@ -1570,6 +1570,105 @@ docs/plans/typora-parity-master-plan.md：引用「insertLocalImage」（App.tsx
 
 **判定：矩阵不是覆盖不足，而是「按 §21 少一态」＋「判据用错」两件事叠在一起。**
 
+## 4.34 `live-markdown-engine-spec` §4–§20 逐节复核（2026-10-01）
+
+§21（测试矩阵）已在 §4.33 处理；本轮把 §4–§20 的**每一条具体声明**逐条对到守护它的测试。
+方法：**先 `ls` 测试目录把候选文件列全**，再逐个读用例名/断言本体（§4.22 的机械做法），
+**不用关键词命中判定**（§4.18 的教训）。
+
+| spec 节 | 声明的具体条目 | 守护它的测试 | 结论 |
+|---|---|---|---|
+| §4 Node State | `source` / `rendered` / `mixed` / `invalid` 四值 | `packages/editor-engine/src/types.ts` 的联合类型与 spec **逐字一致**；`state.test.ts` + `invalid-fallback.test.ts` | ✅ |
+| §5 Reveal Policy | 6 条进入 source/mixed 的条件 | `state.test.ts` 的 rule 1 / 2 / 3 / 5·6；rule 4（invalid/partial）→ `invalid-fallback.test.ts` | ✅ |
+| §6 Composition Guard | 8 条禁止 | `ime-guards.test.ts`（8 个功能各一条「合成期冻结 → 结束恢复」）+ `ime.test.ts`；逐条核对见 §4.18 | ✅ |
+| §7 Undo Contract | ① 一个动作 = 一个 undo group ② doc switch 不进上一文档历史 ③ recovery restore 不混入普通 undo | ① `undo.test.ts` / `undoGrouping`（21 例）+ `task-checkbox.test.ts`「点击后一次 undo 还原」；② `document-isolation.test.ts`（见 §4.20）；③ **无专测** —— 但与 ② **同机制**：`handleRecover → host.open → resetEditor`，而 `resetEditor` 是 `destroy()` + 新 `EditorState.create`（历史存在 StateField 里，状态不复用即历史不复用） | ⚠️ ③ 无专测（机制已被 ② 的行为断言覆盖；**如实记录，不假装有**） |
+| §8 Caret Stability | document position / selection anchor·head / scroll anchor 三条 | §4.17：前两条已进状态矩阵（`caret-*` / `mouse-click` / `selection-*` / `keyboard` 各断言 doc 与选区不变）；第三条需真实布局 → **如实降级为「本 harness 不判定」** | ⚠️ 降级（按 §4.17 后续项 2） |
+| §9 Heading | instant reveal / **无宽度跳变导致滚动位移** / 空标题安全 / setext | `heading.test.ts`（H1–H6 idle·caret、空标题安全、Backspace 退化、Typora Parity 对照）+ `invalid-fallback.test.ts`；**宽度跳变需布局** → 归 e2e/真机 | ✅（宽度项降级） |
+| §10 Strong/Emphasis/Strike | 嵌套标记独立 | `nested-inline-formatting.test.ts` 的「P4.6 嵌套 reveal —— 层级独立性（spec §10）」13 例 | ✅ |
+| §11 Inline Code | monospace / background / backticks hidden；caret inside 时 **no autocorrect/spellcheck** | monospace 与 backticks：`format-inline-code.test.ts`；**autocorrect**：原先**无守卫**（已修，见 §4.35）；**spellcheck**：**未实现**（见下） | ⚠️ 两处 |
+| §12 Links | rendered / caret in text / caret in URL / broken indicator（subtle + source 不变） | `md-link.test.ts` + §4.32；broken 指示的「非颜色线索」见 §4.19 | ✅ |
+| §13 Images | widget / caret 进入 reveal / 失败占位 + path / **无静默路径改写** | `image-widget.test.ts` / `image-ops.test.ts` / `image-path.test.ts` / `image-size.test.ts` / `image-insert.test.ts` | ✅ |
+| §14 Lists/Quotes | idle 视觉归一 / caret 行显示 / Enter 续行 / 空行终止 / **嵌套缩进原样** | `format-list.test.ts`（「Enter continuation」「Empty item terminate」「multiline item：续行不新增 marker」）+ 嵌套缩进断言（`'- item\n  - second'` 原样） | ✅ |
+| §15 Task List | checkbox widget / patch `[ ]`·`[x]` / 一个 undo / **不重写整行** | `task-checkbox.test.ts`（「不重写整行（其他内容原样）」「点击后一次 undo 还原（单 transaction）」） | ✅ |
+| §16 Code Fence | code 恒 source / 围栏可见 / 语言 UI / mermaid·math 围栏 | `codeFence.test.ts` + `format-code-fence.test.ts` + 状态矩阵 FencedCode 专述 | ✅ |
+| §17 Table | 不转富文本 / 文本 patch / 最小改动行 / 大表不全量重解析 | `table-engine` / `table-live-view` / `table-undo-diff` / `table-large` / `table-parser` / `table-keyboard` / `table-toolbar` / `table-column-width`（8 个文件） | ✅ |
+| §18 Math | idle 渲染 / caret inside source / error | `math.test.ts` + 状态矩阵 widget 家族 | ✅ |
+| §19 Mermaid | idle widget / caret source / debounce / cancellation token / viewport lazy / security | `mermaid.test.ts` + `widget-state-matrix` | ✅ |
+| §20 Performance Budgets | 输入 P95 < 16 ms 等 | **无机器断言** —— ADR-0026 Q3 已裁决「16 ms 目标在屏幕捕获上原理性不可判定」→ 改为应用内埋点（`inputLatency.ts`） | ⚠️ 按裁决降级 |
+
+**§11 的第二个缺口（spellcheck）**：全仓只有 `packages/editor-core/CoreEditor/src/styling/nodes/code.ts` 的
+`codeBlockStyle` 给 **FencedCode / CodeBlock** 设 `spellcheck=false` / `autocorrect=off` /
+`autocomplete=off` / `autocapitalize=off`；**`inlineCodeStyle` 只加 class，不带任何属性**。
+→ 行内代码内**浏览器拼写检查仍会画红波浪线**，与 §11 的「no spellcheck」不符。
+
+**为何本轮不顺手改**：修它有两条路 —— 落在 `CoreEditor/`（`inlineCodeStyle`）或**引擎侧新增一个属性装饰**；
+前者与 `UPSTREAM.md` 的取向冲突（见 §4.36），后者是**渲染管线的新增责任**（不是「补一个属性」那么小）。
+**路径已查明、登记待实施**，不在本轮擅自扩大改动面。
+（**注意不要写成「不可行」** —— 见 §4.10：把「没想到」写成「不可行」会永久关闭一个可做的项。）
+
+## 4.35 智能标点**没有代码上下文守卫**，且既有用例是**空壳**（2026-10-01，已修）
+
+**缺陷**：`packages/editor-engine/src/smartPunctuation.ts` 的 `handleSmartPunctuation` 是**全局 inputHandler**，
+**没有任何代码感知** —— 开启智能标点后，在 `` `code` `` 或代码围栏内键入 `"` 会被改写成弯引号，
+即**静默改写代码文本**（违反 spec §2「Markdown Text 唯一真源」/ §11 / §16）。
+
+**为什么长期没被发现**：`format-code-fence.test.ts` 有一条名为
+「code 内编辑保留源码（无 smart punctuation 改写）」的用例 —— 但它用**程序化 `view.dispatch(...)`**。
+`inputHandler` 只对**用户输入**触发，程序化 dispatch **永远绕过它** → 该断言**恒真**。
+再加该功能**默认关闭**（`smartPunctuationEnabled = false`），这条用例是**双重空壳**。
+
+**修复**：新增 `isInsideCodeContext(state, pos)`（语法树父链，`resolveInner(pos, -1)` 命中
+`InlineCode` / `FencedCode` / `CodeBlock` / `CodeText` / `CodeInfo` / `CodeMark` 即判定为代码上下文；
+**O(树深)，不是全文扫描**），并在 handler 的两条分支**之前**早退。
+
+**测试改为走真实的 handler 链**（`state.facet(EditorView.inputHandler)`，与 CodeMirror 的调用方式一致）：
+- 行内代码内 / 代码围栏内键入 `"` → handler **不接管**、doc 一字未改；
+- **反向对照**（防「一律不转」）：普通文本中键入 `"` → 接管并转成弯引号；行内代码**之后**的文本仍可转换；
+- 另加 `isInsideCodeContext` 的两条单元断言（代码内 true / 代码外 false）。
+
+**非恒绿验证**：注释掉那行守卫 → **3 条用例失败**（行内代码、代码围栏、以及上面那条原空壳用例的替代版）；
+两条反向对照仍通过。还原 → 全绿。
+
+**教训（与 §4.7「测试名 / 注释不是守护」同族，但更强）**：
+**「程序化 dispatch」不能用来断言 inputHandler 行为**。凡是「按键 → handler」的契约，
+必须走 handler 链（或真机），否则得到的是**恒真断言**——它比「没有测试」更危险，因为它会让人以为已经守住了。
+
+## 4.36 `packages/editor-core/UPSTREAM.md` 与现状矛盾：re-vendor 会**静默丢弃** Mellow 的改动（2026-10-01，已修）
+
+**发现**：`packages/editor-core/UPSTREAM.md` 写
+
+> DO NOT modify files under CoreEditor/ directly.
+> Changes belong in apps/desktop/src/host or Mellow-specific packages.
+
+**但仓库里 `CoreEditor/` 已有 18 个改动文件 + 3 个新增测试**（下表）。更危险的是它的 re-vendor 步骤是
+`cp -R /tmp/MarkEdit-src/CoreEditor ./CoreEditor` —— 这会**静默覆盖/删除**全部 Mellow 改动，
+而**没有任何测试会因此变红**（丢的是行为与回归，不是编译错误）。
+
+**取证方式（不靠回忆、不靠人工枚举）**：取**本文件钉住的 commit** 的官方 tarball，逐文件 diff：
+
+```sh
+curl -sL https://codeload.github.com/MarkEdit-app/MarkEdit/tar.gz/<COMMIT> -o /tmp/markedit.tar.gz
+diff -rq /tmp/markedit-up/MarkEdit-<COMMIT>/CoreEditor packages/editor-core/CoreEditor \
+  --exclude=node_modules --exclude=dist --exclude=.yarn --exclude=yarn.lock --exclude='*.tsbuildinfo'
+```
+
+结果：**修改 18 个**（`src/@quicklook/zoom.ts`、`src/bridge/web/config.ts`、`src/config.ts`、
+`src/extensions.ts`、`src/languages.ts`、`src/modules/config/index.ts`、`src/modules/indentation/index.ts`、
+`src/modules/input/index.ts`、`src/modules/input/insertCodeBlock.ts`、`src/styling/builder.ts`、
+`src/styling/config.ts`、`src/styling/markdown.ts`、`src/styling/nodes/heading.ts`、
+`src/styling/nodes/indent.ts`、`src/styling/themes/github-{dark,light}.ts`、`test/zoom.test.ts`、`.gitignore`）
+＋ **新增 3 个测试**（`document-isolation.test.ts` / `allow-magnification.test.ts` / `codeBlockFence.test.ts`）。
+
+**处置**：改写 `UPSTREAM.md` ——
+① 保留「优先落在 Mellow 自己的包」的取向，但**如实承认规则事实上已被打破**；
+② 列出**逐文件改动清单**（含规模与要点）；
+③ 给出**现算清单的命令**，要求 re-vendor 后重跑；
+④ 修掉上游示例里 `git rev-parse HEAD > UPSTREAM.md` 这一行 —— 它会把整份文档**覆盖成一行 hash**，
+   连带删掉清单（同一个「静默丢内容」隐患）。
+
+**为什么没有 CI 护栏**：生成/校验清单需要**下载上游源码**（网络 + 钉住 commit），CI 不可用 ——
+与 `audit-typora-menu-labels.mjs` 需本机 Typora 同类。**如实记录为人工工具**，不用一个恒真的假护栏冒充。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

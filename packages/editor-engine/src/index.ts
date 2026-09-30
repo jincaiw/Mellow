@@ -127,6 +127,7 @@ export {
   isSmartPunctuationEnabled,
   smartQuoteFor,
   shouldEmDash,
+  isInsideCodeContext,
 } from './smartPunctuation';
 export type { SmartPunctuationApi } from './smartPunctuation';
 export { buildCodeFenceAutocompleteExtension, fenceLangSource, FENCE_LANGUAGES } from './codeFence';

@@ -8,7 +8,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { LanguageDescription, foldGutter, foldCode, unfoldCode, defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { lineNumbers } from '@codemirror/view';
 import { javascript } from '@codemirror/lang-javascript';
-import { install, MARKER_CLASS } from '../src/index';
+import { install, MARKER_CLASS, setSmartPunctuation } from '../src/index';
 import { applyCodeBlock, applyMathBlock, sanitizeCodeLang } from '../src/selectionToolbar';
 import { setUpEditor, moveCaret, sleep } from './harness';
 
@@ -140,16 +140,30 @@ describe('Code Fence — 禁用拼写 / smart punctuation（CoreEditor codeBlock
     expect(codeStyle).toContain("'autocomplete': 'off'");
   });
 
-  test('code 内编辑保留源码（无 smart punctuation 改写）', async () => {
+  test('code 内键入引号不被智能标点改写（spec §11/§16）', async () => {
     const view = setUpEditor('```\nconst x = \"abc\"\n```');
-    await sleep();
-    // 行尾追加（动态定位，避免硬编码偏移）
-    const text = view.state.doc.toString();
-    const end = text.indexOf('"abc"') + 5;
-    view.dispatch({ changes: { from: end, insert: ' + "def"' } });
-    await sleep();
-    // 引号原样保留（无智能引号转换）
-    expect(view.state.doc.toString()).toContain('"abc" + "def"');
+    setSmartPunctuation(true);
+    try {
+      await sleep();
+      // ⚠️ 本条原先用**程序化 `view.dispatch(...)`** 来「证明」无智能标点改写 ——
+      // 但 `inputHandler` 只对**用户输入**触发，程序化 dispatch 永远绕过它，
+      // 故那条断言**恒真、覆盖为零**（2026-10-01 审计 §4.35）。
+      // 现改为走**真实的 inputHandler facet 链**，并显式打开该功能（其默认关闭）。
+      const before = view.state.doc.toString();
+      const pos = before.indexOf('"abc"') + 5; // 代码文本内
+      let handled = false;
+      // 第 5 个参数是惰性事务工厂（`() => Transaction`），与 CodeMirror 的调用方式一致
+      const insert = () => view.state.update({ changes: { from: pos, insert: '"' } });
+      for (const handler of view.state.facet(EditorView.inputHandler)) {
+        if (handler(view, pos, pos, '"', insert)) { handled = true; break; }
+      }
+      expect(handled).toBe(false);                    // 智能标点**不得**接管
+      expect(view.state.doc.toString()).toBe(before);  // 代码文本一字未改（唯一真源）
+      expect(view.state.doc.toString()).toContain('"abc"');
+    } finally {
+      setSmartPunctuation(false);
+      view.destroy();
+    }
   });
 });
 

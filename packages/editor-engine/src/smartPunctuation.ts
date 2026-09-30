@@ -45,6 +45,63 @@ function isWordStart(prev: string): boolean {
   return /[\s([{‘“（《〈【]/.test(prev);
 }
 
+/** 语法树节点的最小结构形状（避免顶层裸导入 @lezer/common） */
+interface SyntaxNodeLike {
+  name: string;
+  parent: SyntaxNodeLike | null;
+}
+
+interface LanguageModuleLike {
+  syntaxTree(state: import('@codemirror/state').EditorState): {
+    resolveInner(pos: number, side: number): SyntaxNodeLike;
+  };
+}
+
+let languageModule: LanguageModuleLike | null = null;
+
+/** 延迟解析 @codemirror/language（同 EditorView：iframe 内不能裸导入 CM6 模块） */
+function resolveLanguage(): LanguageModuleLike {
+  if (languageModule === null) {
+    languageModule = (window as unknown as { require: (id: string) => LanguageModuleLike })
+      .require('@codemirror/language');
+  }
+  return languageModule;
+}
+
+/**
+ * 代码上下文节点名（spec §11 行内代码 / §16 代码围栏）：其内**不得**应用智能标点。
+ */
+const CODE_CONTEXT_NODES: ReadonlySet<string> = new Set([
+  'InlineCode', 'FencedCode', 'CodeBlock', 'CodeText', 'CodeInfo', 'CodeMark',
+]);
+
+/**
+ * `pos` 是否处于**代码上下文**内（spec §11「inline code … no autocorrect」/ §16「code text always source」）。
+ *
+ * **为什么必须显式判定**：本 inputHandler 是全局的、没有代码感知。开启智能标点后，
+ * 在 `` `code` `` 或代码围栏内键入 `"` 会被改写成弯引号 —— 那是对**代码文本**的静默改写，
+ * 违反 spec §2「Markdown Text 唯一真源」与 §16。此前的用例
+ * （`format-code-fence.test.ts`「code 内编辑保留源码（无 smart punctuation 改写）」）
+ * 用**程序化 `dispatch`**，而 inputHandler 只对**用户输入**触发 → 该断言恒真、覆盖为零
+ *（2026-10-01 审计 §4.35）。
+ *
+ * **判定方式**：走语法树父链（O(树深)，**不是**全文扫描，故大文档下按键代价可忽略）。
+ * `resolveInner(pos, -1)` 偏好「在 pos 处结束的节点」，因此 `pos` 落在代码节点
+ * **闭区间**内即判定为代码上下文（含紧邻右边界 —— 偏保守：宁可少转一个弯引号，
+ * 也不改写代码）。
+ */
+export function isInsideCodeContext(
+  state: import('@codemirror/state').EditorState,
+  pos: number,
+): boolean {
+  let node: SyntaxNodeLike | null = resolveLanguage().syntaxTree(state).resolveInner(pos, -1);
+  while (node !== null) {
+    if (CODE_CONTEXT_NODES.has(node.name)) return true;
+    node = node.parent;
+  }
+  return false;
+}
+
 /** 弯引号转换：`"` → “/”，`'` → ‘/’；其他字符原样返回 */
 export function smartQuoteFor(input: string, prev: string): string {
   const opening = isWordStart(prev);
@@ -84,6 +141,9 @@ function handleSmartPunctuation(view: {
   dispatch: (spec: import('@codemirror/state').TransactionSpec) => void;
 }, from: number, to: number, text: string): boolean {
   if (!smartPunctuationEnabled) return false;
+  // spec §11 / §16：代码上下文（行内代码 / 代码围栏）内**不得**改写 ——
+  // 否则代码里的 `"` 会被换成弯引号（静默改写代码文本）。见 isInsideCodeContext。
+  if (isInsideCodeContext(view.state, from)) return false;
   if (text === '"' || text === "'") {
     const prev = from > 0 ? view.state.doc.sliceString(from - 1, from) : '';
     view.dispatch({
