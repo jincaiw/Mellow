@@ -327,6 +327,16 @@ if (existsSync(benchmarkRunnerPath)) {
     'open 指标定义不得包含 probe.loadMs（它是 waitStable 的返回，含 600ms 地板，不是加载耗时）');
   assert(!/vals\.push\([^\n]*loadMs/.test(benchCode),
     'hotopen 指标定义不得包含 probe.loadMs（同上）');
+  // ── PRD 目标必须与**判定口径同表**（ADR-0026 A1，2026-09-30）─────────────
+  // 背景：PRD §110 的 1MB/10MB 目标原被列在 §2 **冷启动** open-to-editable 表里，
+  // 而 ADR-0026 A1 裁决判定量取 **热打开 hotopen.switchMs** —— 目标与口径错位，
+  // 读者会拿冷启动读数去对目标（正是 ADR-0026 要消灭的误读）。
+  assert(!/L\.push\('\| fixture \| Mellow median[^']*PRD 目标/.test(benchCode),
+    '冷启动（open-to-editable）表不得列 PRD 目标 —— 目标必须与判定口径同表（ADR-0026 A1）');
+  assert(/L\.push\('\| app \| 目标夹具[^']*PRD 目标[^']*达标/.test(benchCode),
+    '热打开（hot-open）表必须列出 PRD 目标与达标判定（ADR-0026 A1 的判定处）');
+  assert(/hotVerdict\(t, swMedian\)/.test(benchCode) && /stats\(g\.sw\)\.median/.test(benchCode),
+    '热打开的达标判定必须由 **switchMs** 计算（判定量取 switchMs，不是 total）');
   assert(/等待画面静止/.test(benchCode) && /不是文档加载耗时/.test(benchCode),
     '报告打印 loadMs 处必须标注「等待画面静止 / 不是文档加载耗时」（且必须是字符串字面量，'
     + '不能只写在注释里）—— 否则读者会把它当业务指标，历史错误结论「2.59×」正是这样产生的');

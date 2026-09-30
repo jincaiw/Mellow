@@ -810,14 +810,17 @@ function renderReport(env, results, opts) {
       L.push('');
     }
   }
-  L.push('| fixture | Mellow median | Mellow p95 | Typora median | Typora p95 | ratio med (M/T) | PRD 目标（口径见 ADR-0026） |');
-  L.push('|---|---|---|---|---|---|---|');
-  const targetMap = { '1MB.md': '≤250ms', '10MB.md': '1.0–1.5s', '5MB.md': '参考', '100k-lines.md': '参考', 'large-table.md': '参考', '100-mermaid.md': '参考', '1000-images.md': '参考' };
+  L.push('| fixture | Mellow median | Mellow p95 | Typora median | Typora p95 | ratio med (M/T) |');
+  L.push('|---|---|---|---|---|---|');
+  // ⚠️ 本节**不列 PRD 目标**（2026-09-30）：ADR-0026 Q1/Q2 = A1 已裁决 PRD §110 的
+  // 1MB/10MB 目标以**热打开**口径判定（判定量 `hotopen.switchMs`，见 §2d）。
+  // 把目标列摆在冷启动表旁会让读者拿冷启动读数去对目标 —— 那正是 ADR-0026 要消灭的误读。
+  L.push('> PRD §110 的 1MB / 10MB 目标按 **ADR-0026** 以**热打开**口径判定 —— 见 §2d；本节是**冷启动**读数，**不参与** PRD 判定。');
   for (const f of opts.fixtures) {
     const g = (appKey) => { const r = results.find((x) => x.app === appKey); return r?.metrics[f]?.openToEditable?.stats; };
     const mt = g('Mellow'); const tt = g('Typora');
     const ratio = ratioOrNA(mt?.median, tt?.median, f);
-    L.push(`| ${f} | ${fmt(mt?.median)} | ${fmt(mt?.p95)} | ${cellOrRefused(tt?.median, f, fmt)} | ${cellOrRefused(tt?.p95, f, fmt)} | ${ratio} | ${targetMap[f] ?? ''} |`);
+    L.push(`| ${f} | ${fmt(mt?.median)} | ${fmt(mt?.p95)} | ${cellOrRefused(tt?.median, f, fmt)} | ${cellOrRefused(tt?.p95, f, fmt)} | ${ratio} |`);
   }
   L.push('');
 
@@ -871,8 +874,17 @@ function renderReport(env, results, opts) {
         L.push('本段读数来自**旧构建**，**不得作为当前提交的结论**。请先重建包（`bash apps/desktop/scripts/build-local.sh`）再复测。');
         L.push('');
       }
-      L.push('| app | 目标夹具 | Mellow 大文件模式 | 有效样本 | median | p95 | switchMs(中位) | echoMs(中位) |');
-      L.push('|---|---|---|---|---|---|---|---|');
+      L.push('| app | 目标夹具 | Mellow 大文件模式 | 有效样本 | median | p95 | switchMs(中位) | echoMs(中位) | PRD 目标 | 达标（按 switchMs） |');
+      L.push('|---|---|---|---|---|---|---|---|---|---|');
+      // ADR-0026 Q1/Q2 = A1：PRD §110 的 1MB/10MB 目标以**热打开**口径判定，**判定量取 switchMs**。
+      // 10MB 的 PRD 表述是「1.0–1.5s」—— 判定取**上界**（下限不是通过条件）。
+      const HOT_TARGET = { '1MB.md': { label: '≤250ms', ms: 250 }, '10MB.md': { label: '≤1.5s（PRD 1.0–1.5s 取上界）', ms: 1500 } };
+      const hotVerdict = (t, swMedian) => {
+        const spec = HOT_TARGET[t];
+        if (spec === undefined) return ['参考', '—'];
+        if (!Number.isFinite(swMedian)) return [spec.label, 'N/A（无有效样本）'];
+        return [spec.label, swMedian <= spec.ms ? '✅' : '❌'];
+      };
       // **按目标夹具分组**：每次投递的目标是交替的，不同尺寸的切换成本差一个数量级，
       // 混进同一个中位数会让读数失去意义。
       for (const { app: appName, h } of rows) {
@@ -894,8 +906,10 @@ function renderReport(env, results, opts) {
         }
         for (const [t, g] of byTarget) {
           const lm = mellowLargeFileMode(t);
+          const swMedian = stats(g.sw).median;
+          const [hotTarget, hotPass] = hotVerdict(t, swMedian);
           L.push(`| ${appName} | ${t} | ${largeModeLabel(lm)} | ${g.total.length} / ${g.n} | ${fmt(stats(g.total).median)} | ${fmt(stats(g.total).p95)}`
-            + ` | ${fmt(stats(g.sw).median)} | ${fmt(stats(g.echo).median)} |`);
+            + ` | ${fmt(swMedian)} | ${fmt(stats(g.echo).median)} | ${hotTarget} | ${hotPass} |`);
         }
       }
       L.push('');
