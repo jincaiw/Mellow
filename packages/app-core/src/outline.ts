@@ -12,6 +12,8 @@ export interface OutlineHeading {
 
 export interface BuildOutlineOptions {
   autoNumber?: boolean;
+  /** 目录显示的标题层数（1–6，缺省 6 = 全部层级）；超过者不进大纲 */
+  maxLevel?: number;
 }
 
 function stripInlineMarkdown(value: string): string {
@@ -68,7 +70,11 @@ export function buildOutline(markdown: string, options: BuildOutlineOptions = {}
   const roots: OutlineHeading[] = [];
   const stack: OutlineHeading[] = [];
   const counters = [0, 0, 0, 0, 0, 0];
+  // 2026-09-30：Typora「目录显示的标题层数」—— 超过 maxLevel 的标题**不进大纲**
+  // （层级判定仍用原始 level，故截断后父子关系与编号与未截断时一致）。
+  const maxLevel = options.maxLevel ?? 6;
   for (const heading of parseHeadings(markdown)) {
+    if (heading.level > maxLevel) continue;
     while (stack.length > 0 && stack[stack.length - 1].level >= heading.level) stack.pop();
     if (options.autoNumber) {
       counters[heading.level - 1] += 1;

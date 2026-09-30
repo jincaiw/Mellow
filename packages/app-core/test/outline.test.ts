@@ -89,3 +89,40 @@ describe('headingOffsetForAnchor（Typora `文件.md#标题` 锚点跳转）', (
     expect(headingOffsetForAnchor(md, '   ')).toBeNull();
   });
 });
+
+// 2026-09-30：Typora「目录显示的标题层数」（Panel 偏好）—— buildOutline 的 maxLevel。
+describe('buildOutline maxLevel（目录显示的标题层数）', () => {
+  const doc = ['# H1', '## H2', '### H3', '#### H4', '##### H5', '###### H6'].join('\n\n');
+
+  test('缺省 = 6：全部层级都进大纲', () => {
+    const flat = flattenOutline(buildOutline(doc));
+    expect(flat.map((h) => h.level)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  test('maxLevel=2：只保留 H1/H2，H3+ 不进大纲', () => {
+    const flat = flattenOutline(buildOutline(doc, { maxLevel: 2 }));
+    expect(flat.map((h) => h.level)).toEqual([1, 2]);
+    expect(flat.map((h) => h.title)).toEqual(['H1', 'H2']);
+  });
+
+  test('截断后父子关系仍然正确（H2 仍是 H1 的子节点）', () => {
+    const tree = buildOutline(doc, { maxLevel: 2 });
+    expect(tree).toHaveLength(1);
+    expect(tree[0].title).toBe('H1');
+    expect(tree[0].children.map((c) => c.title)).toEqual(['H2']);
+  });
+
+  test('autoNumber 与 maxLevel 可同时生效，且编号与未截断时一致', () => {
+    const full = flattenOutline(buildOutline(doc, { autoNumber: true }));
+    const cut = flattenOutline(buildOutline(doc, { autoNumber: true, maxLevel: 3 }));
+    // 截断不改变保留项的编号（编号按原始层级计算）
+    for (const item of cut) {
+      expect(item.number).toBe(full.find((f) => f.title === item.title)?.number);
+    }
+  });
+
+  test('maxLevel=1 只留 H1；正文里的 # 不算标题（围栏/非行首）', () => {
+    const flat = flattenOutline(buildOutline(`# A\n\nnot # heading\n\n\`\`\`\n# fenced\n\`\`\`\n`, { maxLevel: 1 }));
+    expect(flat.map((h) => h.title)).toEqual(['A']);
+  });
+});

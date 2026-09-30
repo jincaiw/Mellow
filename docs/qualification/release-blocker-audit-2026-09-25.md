@@ -1250,6 +1250,42 @@ Rust 侧复活它**。但前端仍在调用，并用 `.catch(() => undefined)` �
 菜单**是否真的重建成功**（`set_menu_spec` 的 IPC 结果）在非 Tauri 环境下不判定，
 需真机/运行时证据（e2e 或人工）—— 与 §4.19 同类的边界。
 
+## 4.26 §15.3 行 14b 逐项复核：1 项已实装、1 项由不同机制覆盖、1 项本轮实装、2 项 P2、1 项 D（2026-09-30）
+
+**背景**：行 14b 声称「`Panel.strings` 偏好项比对发现的 **6 项无实现**」，并写「经代码检索确认」。
+它是 2026-09-13 的快照 —— 与 §4.21 同型（**过期**）。本轮**回到代码逐项复核**：
+
+| 项 | 复核结果 | 证据 / 处置 |
+|---|---|---|
+| `默认的代码块语言` | ✅ **已实装** | `markdown.defaultCodeLang`（`packages/settings/src/index.ts` 的 markdown 段；V7-W6 / G7-EDIT-16）—— 该轮实装后**表未同步** |
+| `PicList 路径` | 🟰 **由不同机制覆盖 → D-AL** | Mellow 用**本机 HTTP 端点**（`image.uploadService` 的 `picgo-http`，默认 36677，`src-tauri/src/upload.rs`）而非「可执行文件路径」；**能力等价**，且还支持 PicGo / 自定义 HTTP |
+| `目录显示的标题层数` | ✅ **本轮实装** | 见下 |
+| `使用主题的字体大小` | ❌ **仍未实现 → P2** | 需改动排版**单一真源**（`TYPOGRAPHY_DEFAULTS` 有专门护栏），成本/收益不划算 |
+| `插入文件夹链接` | ❌ **仍未实现 → P2** | 边缘功能 |
+| `导出后运行命令`（After Export） | 🚫 **不实现 → D-AM** | 允许「导出后执行任意 shell 命令」；Mellow 的安全基调是**不提供任意命令执行入口**，新增一条「用户配置即可任意执行」的攻击面，收益与风险不成比例 |
+
+**本轮实装：`markdown.outlineMaxLevel`（目录显示的标题层数）**
+1. `packages/settings/src/index.ts`：`markdown.outlineMaxLevel`（select 1–6，默认 `'6'` = 全部层级）。
+2. `packages/app-core/src/outline.ts`：`BuildOutlineOptions.maxLevel`；`buildOutline` 跳过 `level > maxLevel`
+   的标题（**层级判定仍用原始 level**，故截断后父子关系与编号与未截断时一致）。
+3. `apps/desktop/src/App.tsx`：`outlineMaxLevel` state（初值读 settings schema）+ `applySetting` 的
+   `case 'settings.outlineMaxLevel'` 写入 state + `refreshOutline` 的两处 `buildOutline` 传 `maxLevel`
+   **并把该 state 列进依赖数组**。
+4. i18n zh/en：标签 + 描述 + 6 个层级选项文案（各 8 条键）。
+5. 单测 5 例（app-core）：缺省=6 全量 / maxLevel=2 截断 / **截断后父子关系仍正确** /
+   autoNumber 与 maxLevel 同生效且编号不变 / maxLevel=1 且正文里的 `#` 不算标题。
+
+**护栏（`verify-settings-contract.mjs` 新增一节）**：把整条链**一次锁死** ——
+schema（含 6 个选项与默认值）→ `applySetting` 分支写 state → `buildOutline` 收到 `maxLevel`
+（**tree + all 两处**）→ **该 state 必须进 `refreshOutline` 依赖数组**。
+最后一条直接照搬 §4.25 的教训：**有设置项 ≠ 真的生效**，缺依赖数组就是「改了没反应」。
+注入 **6 个 mutation，6/6 被检出** —— 其中 M5 专门验「依赖数组漏掉」这一条。
+
+**⚠️ 本轮我自己的一个错**：护栏首跑误报，因为我把正则写成 `buildOutline\([^)]*maxLevel:`
+—— 实参里有 `host.getText()`，`[^)]*` **被那个右括号截断**。改成直接数
+`maxLevel: outlineMaxLevel` 的出现次数（应为 2）。这与 §4.25 的「切窗用固定长度」同族：
+**静态切窗/正则边界必须按语义结构，不要按字符类的直觉**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

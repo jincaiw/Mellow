@@ -187,6 +187,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 只在**输入 Markdown 反引号**展开代码块时套用（菜单插入通道对应 Menu 位 = 2，未实装，见方案）。
       { id: 'markdown.defaultCodeLang', labelKey: 'settings.markdown.defaultCodeLang', type: 'text', storageKey: 'mellow.editor.defaultCodeLang', defaultValue: '', applyCommand: 'settings.editorConfig', descriptionKey: 'settings.markdown.defaultCodeLangDesc' },
       { id: 'markdown.yaml', labelKey: 'settings.markdown.yaml', type: 'toggle', storageKey: 'mellow.engine.features.yaml', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      // 2026-09-30：Typora「目录显示的标题层数」（Panel.strings；默认 6 = 全部层级）。
+      // 对齐「大纲里最多显示到第 N 级标题」；值经 applySetting 写入 React state 后，
+      // buildOutline 的 maxLevel 选项生效并重算大纲（改设置**必须**能触发重算，见审计 §4.25 的反例）。
+      { id: 'markdown.outlineMaxLevel', labelKey: 'settings.markdown.outlineMaxLevel', type: 'select', storageKey: 'mellow.outline.maxLevel', defaultValue: '6',
+        options: [
+          { value: '1', labelKey: 'settings.outlineLevel.1' },
+          { value: '2', labelKey: 'settings.outlineLevel.2' },
+          { value: '3', labelKey: 'settings.outlineLevel.3' },
+          { value: '4', labelKey: 'settings.outlineLevel.4' },
+          { value: '5', labelKey: 'settings.outlineLevel.5' },
+          { value: '6', labelKey: 'settings.outlineLevel.6' },
+        ], applyCommand: 'settings.outlineMaxLevel', descriptionKey: 'settings.markdown.outlineMaxLevelDesc' },
     ],
   },
   {

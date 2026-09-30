@@ -674,6 +674,14 @@ export default function App() {
     }
   });
   const [currentOutlineId, setCurrentOutlineId] = useState<string | null>(null);
+  // 2026-09-30：Typora「目录显示的标题层数」（Panel 偏好）—— 值来自 settings schema
+  // （`markdown.outlineMaxLevel`），改设置经 applySetting 写入本 state → `refreshOutline` 重算。
+  // ⚠️ 必须**同时**进 refreshOutline 的依赖数组，否则改设置不会重算（审计 §4.25 的反例）。
+  const [outlineMaxLevel, setOutlineMaxLevel] = useState(() => {
+    const def = settingById('markdown.outlineMaxLevel');
+    const n = def ? Number(readSetting(def)) : 6;
+    return Number.isFinite(n) && n >= 1 && n <= 6 ? n : 6;
+  });
   // P3.3 Outline 键盘选中（与 caret 驱动的 currentOutlineId 分离，避免互相打架）
   const [outlineSelectedId, setOutlineSelectedId] = useState<string | null>(null);
   // V7-W3.7：强制滚动计数（右键 Highlight Current Header）—— 当前项已是选中项时 state 不变、
@@ -2595,14 +2603,14 @@ export default function App() {
   const refreshOutline = useCallback((head?: number | null) => {
     const host = hostRef.current;
     if (!host) return;
-    const tree = filterOutline(buildOutline(host.getText(), { autoNumber: outlineAutoNumber }), outlineFilter);
+    const tree = filterOutline(buildOutline(host.getText(), { autoNumber: outlineAutoNumber, maxLevel: outlineMaxLevel }), outlineFilter);
     const visible = outlineModelRef.current.visibleItems(tree, outlineFlat);
-    const all = outlineModelRef.current.visibleItems(buildOutline(host.getText(), { autoNumber: outlineAutoNumber }), true);
+    const all = outlineModelRef.current.visibleItems(buildOutline(host.getText(), { autoNumber: outlineAutoNumber, maxLevel: outlineMaxLevel }), true);
     const current = currentHeadingId(all, head ?? host.getSelectionHead() ?? 0);
     outlineActiveRef.current = current;
     setOutlineItems(visible);
     setCurrentOutlineId(current);
-  }, [outlineAutoNumber, outlineFilter, outlineFlat]);
+  }, [outlineAutoNumber, outlineMaxLevel, outlineFilter, outlineFlat]);
 
   refreshOutlineRef.current = refreshOutline;
 
@@ -4771,6 +4779,12 @@ export default function App() {
         // 代码块行号 live apply（Typora 偏好→Markdown；引擎行号 widget 开关）
         hostRef.current?.setCodeLineNumbersEnabled(Boolean(value));
         break;
+      case 'settings.outlineMaxLevel': {
+        // 2026-09-30：Typora「目录显示的标题层数」—— 写入 state → refreshOutline 重算大纲
+        const n = Number(value);
+        setOutlineMaxLevel(Number.isFinite(n) && n >= 1 && n <= 6 ? n : 6);
+        break;
+      }
       case 'settings.statusbar':
         setStatusbarVisible(Boolean(value));
         break;

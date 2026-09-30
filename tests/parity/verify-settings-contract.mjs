@@ -1050,9 +1050,53 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 「目录显示的标题层数」端到端接线（2026-09-30）───────────────────────────
+// 教训来源（审计 §4.25）：**有设置项 ≠ 真的生效** —— 勾选态那个 bug 正是
+// 「设置面板改了值，但没有任何东西触发重算」。故此处把整条链一次锁死：
+// schema（含选项集与默认值）→ applySetting 分支写 state → buildOutline 收 maxLevel
+// → **该 state 必须进 refreshOutline 的依赖数组**（否则改设置不重算）。
+{
+  if (!/id: 'markdown\.outlineMaxLevel'[^}]*type: 'select'[^}]*defaultValue: '6'/.test(settingsSource)) {
+    fail('settings 缺少 markdown.outlineMaxLevel（select / 默认 6 = 全部层级）');
+  }
+  for (const level of [1, 2, 3, 4, 5, 6]) {
+    if (!settingsSource.includes(`{ value: '${level}', labelKey: 'settings.outlineLevel.${level}' }`)) {
+      fail(`markdown.outlineMaxLevel 缺少 ${level} 级选项`);
+    }
+  }
+  if (!/case 'settings\.outlineMaxLevel':[\s\S]{0,300}?setOutlineMaxLevel\(/.test(appSource)) {
+    fail('App.tsx 的 applySetting 缺少 settings.outlineMaxLevel 分支（或未写入 state）');
+  }
+  const outlineSrc = read('packages/app-core/src/outline.ts');
+  if (!/maxLevel\?: number;/.test(outlineSrc) || !/heading\.level > maxLevel/.test(outlineSrc)) {
+    fail('app-core outline 的 buildOutline 未实现 maxLevel 截断');
+  }
+  // refreshOutline：必须把 maxLevel 传进 buildOutline **且**把 state 列进依赖数组
+  const refreshMatch = appSource.match(/const refreshOutline = useCallback\([\s\S]*?\n  \}, \[([^\]]*)\]\);/);
+  if (refreshMatch === null) {
+    fail('无法定位 refreshOutline（或切片失败）→ 请同步更新本护栏，不要让它静默漏检');
+  } else {
+    const [full, deps] = refreshMatch;
+    // ⚠️ 不要用 `buildOutline\([^)]*maxLevel` —— 实参里有 `host.getText()`，
+    // `[^)]*` 会被那个右括号截断（护栏首跑即踩到）。直接数「传了 maxLevel」的出现次数。
+    const buildCalls = (full.match(/maxLevel: outlineMaxLevel/g) ?? []).length;
+    if (buildCalls < 2) {
+      fail(`refreshOutline 有 ${buildCalls} 处 buildOutline 传了 maxLevel（应为 2：tree + all）`);
+    }
+    if (!/\boutlineMaxLevel\b/.test(deps)) {
+      fail('refreshOutline 的依赖数组缺少 outlineMaxLevel → 改设置不会重算大纲（审计 §4.25 的同型缺陷）');
+    }
+  }
+  // canary：把依赖数组里的 outlineMaxLevel 去掉必须被检出
+  const depDrift = refreshMatch === null ? '' : refreshMatch[0].replace(/outlineMaxLevel, /, '');
+  if (refreshMatch !== null && depDrift === refreshMatch[0]) {
+    fail('outline 依赖 canary 未武装：注入点未命中');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框; outline max-level (2026-09-30): markdown.outlineMaxLevel 端到端 —— schema(select 1..6 / 默认 6) → applySetting 写 state → buildOutline 收 maxLevel（tree + all 两处）→ 该 state 必须进 refreshOutline 依赖数组（否则改设置不重算，§4.25 同型）');
