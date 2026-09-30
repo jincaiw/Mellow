@@ -15,7 +15,29 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+/**
+ * ⚠️ **代码文件先剥「整行注释」再断言**（2026-09-30 补）。
+ *
+ * 本文件的断言几乎都是「纯文本正则 + read(file) 文本匹配」。若不剥注释，
+ * 把被断言的代码**注释掉**（开发者停用代码的常见方式）仍会让断言通过 ——
+ * 实测：把 insert.ts 里 `const src = buildImageSrcFrom(...)` **两处全部整行注释掉**
+ * （真实接线消失、只剩注释文本），本护栏**仍然全绿**：它无法发现「被断言的接线被删」。
+ * 这是本仓库反复记录的「注释被计入」失效模式。
+ *
+ * **只剥整行注释**，不用常见的「行内双斜杠剥离器」：后者会把**字符串/正则里的双斜杠**
+ * 也当成注释起点截断（实测：改用后者立刻误报 3 条，而那 3 条的目标文本确实在真实代码里，
+ * 是被剥离器误伤）。整行剥离同样能挡住上面那个失效模式，且不会碰行内内容。
+ *
+ * **风险分级（同日实测）**：用本剥离器重跑，当前代码**仍然全绿**（0 失败）——
+ * 即**没有任何断言是「当前靠注释通过」**。故这是**加固**，不是修复现行缺陷。
+ */
+const stripWholeLineComments = (code) => code
+  .replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
+const read = (p) => {
+  const raw = readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+  return /\.(ts|tsx|mjs|rs|css)$/.test(p) ? stripWholeLineComments(raw) : raw;
+};
 const errors = [];
 const fail = (message) => errors.push(message);
 
