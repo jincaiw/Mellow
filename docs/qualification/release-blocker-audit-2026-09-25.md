@@ -1416,6 +1416,46 @@ Typora 的面板有**分区专属**的子选项（本项只在图片导出分区
 **记一项待办时，要连同它的作用域（哪个分区、和谁配对、默认值）一起记**，
 否则下一个执行者会去改错的地方（比如去动编辑器的排版真源）。
 
+## 4.30 实施图片导出正文字号（§4.29 的 E）—— 刻意**不对齐** Typora 的默认值（2026-09-30）
+
+**范围**：只做 `useThemeFontSize` 那个 radio 组的**「自定义字号」一半**（`imageFontSize`）。
+另一半（`Use theme font size`）**不做** —— Mellow 的图片导出是 **canvas 渲染**（显式 `fontFamily`），
+**没有主题 CSS 通道**，其等价物（「跟随编辑器字号」？）需单独裁决。
+
+**实现（端到端）**：
+1. `packages/export/src/image/index.ts`：`ImageExportOptions.bodyFontSize?: number`；
+   `MIN_IMAGE_FONT_SIZE=8` / `MAX_IMAGE_FONT_SIZE=48`；
+   `resolveImageBodyFontSize(options)`（缺省/非法 → `BODY_SIZE`，越界 → clamp）；
+   `layoutImageDocument` 里 `const body = resolveImageBodyFontSize(options)` +
+   `rel(absolute) = (absolute / BODY_SIZE) * body` —— 标题/代码/脚注**等比缩放**，视觉层级不变。
+2. `packages/settings`：`export.image.fontSize`（number / 8–48 / **默认 16**）。
+3. `apps/desktop`：`handleExportImage` 读取该键并传入 `bodyFontSize`；i18n zh/en 各 2 条。
+4. 单测 4 例（`packages/export/test/image.test.ts`）：默认不变 / 回落与 clamp /
+   自定义生效且层级比不变、图高增加 / **★ `rel` 未退化成「不缩放」**（body=32 时 H1 必须恰为 56px）。
+
+**⚠️ 刻意不对齐 Typora 的默认值（24）**：对齐会**改变所有既有图片导出的输出**
+—— 面积按 1.5× 放大、更易触及 `MAX_IMAGE_HEIGHT` / `MAX_IMAGE_PIXELS` 长图保护，
+需视觉 / 真机确认后再定。故本轮只**提供可配置能力**（用户可自行调到 24 对齐 Typora），
+并把 `BODY_SIZE` **锁进护栏**（`verify-settings-contract.mjs` 断言它必须仍为 16）——
+防止将来有人「顺手对齐 Typora」而静默改变既有输出。
+→ 护栏只锁**接线**；`rel()` 的**正确性**由单测的**行为断言**锁
+（**不要把表达式形态也锁进护栏**：那是形状锁，既拦合法重构、又保护不了行为）。
+
+**⚠️ 本轮我自己的三个错，都值得记**：
+1. **整段替换改到了自己刚插入的代码**：我用「按函数切片 + `replaceAll('BODY_SIZE', 'body')`」
+   做机械替换，而 `rel` 的定义是我**同一步刚插入**的 —— 于是它被改成
+   `(absolute / body) * body` ≡ `absolute`，**等比缩放被静默禁用**（标题保持 28px、正文变 32px，
+   层级被压平）。靠**逐行读回**才发现。→ 教训：**机械替换的范围里若含你自己刚写入的内容，
+   要么把它放在替换之后写，要么替换后逐行复核**。已补单测锁死该行为（H1 必须恰为 56px）。
+2. **子串断言放过了「键改名」**：护栏里写 `!/mellow\.export\.image\.fontSize/.test(appSource)` ——
+   而 `mellow.export.image.fontSize` 仍是 `...fontSizeX` 的**子串**，故「把键改名」这种漂移
+   **不会被检出**（实测是靠 canary 意外发现的）。→ 改为带引号的精确键 `/'mellow\.export\.image\.fontSize'/`。
+3. **我的改动打断了一个护栏自己的 canary**：`verify-doc-code-refs.mjs` 的 canary **硬编码了行号范围**
+   （`inRange(1719, 1741)` 必须含 `insertLocalImage`）；我改 App.tsx 使该符号从 1721 挪到 1743 →
+   canary **误报「判据失效」**（判据其实好好的）。→ 改为**从文件现算**符号所在行做正样本、
+   用文件第 1 行（`/**`）做负样本。**这恰是该护栏自己要防的那种脆弱性，不该出现在它自己的 canary 里。**
+   同批还修正了两处 `insertLocalImage`（`App.tsx:1721-1739`）的行号引用漂移 → 改为**符号引用**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

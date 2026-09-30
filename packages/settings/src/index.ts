@@ -289,6 +289,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'jpeg', labelKey: 'settings.export.image.jpeg' },
         ], descriptionKey: 'settings.export.image.formatDesc' },
       { id: 'export.image.width', labelKey: 'settings.export.image.width', type: 'number', storageKey: 'mellow.export.image.width', defaultValue: 800, min: 200, max: 4096, step: 10, descriptionKey: 'settings.export.image.widthDesc' },
+      // 2026-09-30：Typora 图片导出的 `imageFontSize`（**Typora 默认 24px**）。
+      // ⚠️ Mellow 既有默认是 16（`BODY_SIZE`）—— **本项刻意保持 16 不动**：
+      // 改成 24 会改变所有既有图片导出的输出（面积 1.5× 放大，更易触及长图保护上限），
+      // 需视觉/真机确认后再定；此处只**提供可配置能力**，让用户可自行对齐 Typora。
+      { id: 'export.image.fontSize', labelKey: 'settings.export.image.fontSize', type: 'number', storageKey: 'mellow.export.image.fontSize', defaultValue: 16, min: 8, max: 48, step: 1, descriptionKey: 'settings.export.image.fontSizeDesc' },
       { id: 'export.image.quality', labelKey: 'settings.export.image.quality', type: 'number', storageKey: 'mellow.export.image.quality', defaultValue: 0.92, min: 0.1, max: 1, step: 0.02, descriptionKey: 'settings.export.image.qualityDesc' },
       // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（配置键 `preLinebreakOnExport`，默认 false）。
       // 背景：Mellow 的 Enter 产**单个 `\n`**（G7-EDIT-07），而 CommonMark 把段内单换行渲染为空格

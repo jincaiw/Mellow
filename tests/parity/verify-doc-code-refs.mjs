@@ -142,7 +142,14 @@ for (const doc of docs) {
   } else {
     const appLines = readFileSync(appPath, 'utf8').split('\n');
     const inRange = (a, b) => appLines.slice(a - 1, b).join('\n').includes('insertLocalImage');
-    if (!inRange(1719, 1741) || inRange(1528, 1538)) {
+    // ⚠️ **不要在这里硬编码行号**：2026-09-30 实测 —— App.tsx 的一次正常改动把该符号
+    // 从 1721 挪到 1743，本 canary 立刻**误报「判据失效」**（而判据其实好好的）。
+    // 这恰是本护栏要防的那种脆弱性，不该出现在它自己的 canary 里。
+    // 改为**从文件现算**：正样本 = 符号所在行附近；负样本 = 文件第 1 行（`/**`，恒不含该符号）。
+    const symLine = appLines.findIndex((l) => l.includes('insertLocalImage')) + 1;
+    if (symLine <= 0) {
+      fail('文档代码引用护栏 canary 失效：真实文件中找不到 insertLocalImage（判据无从校验）');
+    } else if (!inRange(symLine, symLine + 18) || inRange(1, 1)) {
       fail('文档代码引用护栏 canary 失效：正/负样本在真实文件中未呈现预期差异');
     }
   }

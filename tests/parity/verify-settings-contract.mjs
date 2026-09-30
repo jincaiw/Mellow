@@ -1138,9 +1138,45 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 图片导出正文字号端到端接线（2026-09-30，Typora `imageFontSize` 对标）──────
+// 只锁**接线**；`rel()` 等比缩放的**正确性**由单测的行为断言锁住
+// （`packages/export/test/image.test.ts`：body=32 时 H1 必须恰为 56px —— 若 rel 退化成
+//  `(absolute / body) * body` ≡ absolute，该断言即失败。**不要把表达式形态也锁进护栏**，
+//  那是形状锁：既会拦住合法重构，也保护不了行为。）
+{
+  if (!/id: 'export\.image\.fontSize'[^}]*type: 'number'[^}]*defaultValue: 16[^}]*min: 8[^}]*max: 48/.test(settingsSource)) {
+    fail('settings 缺少 export.image.fontSize（number / 默认 16 / 范围 8–48）');
+  }
+  const imgSrc = read('packages/export/src/image/index.ts');
+  if (!/bodyFontSize\?: number;/.test(imgSrc)) fail('ImageExportOptions 缺少 bodyFontSize');
+  if (!/export function resolveImageBodyFontSize\(options: ImageExportOptions\): number/.test(imgSrc)) {
+    fail('缺少 resolveImageBodyFontSize（字号回落 + clamp 的单一入口）');
+  }
+  if (!/const body = resolveImageBodyFontSize\(options\);/.test(imgSrc)) {
+    fail('layoutImageDocument 未调用 resolveImageBodyFontSize（字号不会生效）');
+  }
+  if (!/bodyFontSize: BODY_SIZE,/.test(imgSrc)) {
+    fail('DEFAULT_IMAGE_OPTIONS 必须显式声明 bodyFontSize（且默认 = BODY_SIZE，保持既有输出不变）');
+  }
+  if (!/const BODY_SIZE = 16;/.test(imgSrc)) {
+    fail('BODY_SIZE 必须仍为 16 —— 对齐 Typora 的 24 会改变所有既有图片导出输出，需单独裁决（方案 §15.3 行 14b）');
+  }
+  // ⚠️ 必须带引号匹配：裸子串 `mellow.export.image.fontSize` 仍是 `...fontSizeX` 的**子串**，
+  // 用子串断言时「把键改名」这种漂移**不会被检出**（实测：靠 canary 才意外发现）。
+  if (!/'mellow\.export\.image\.fontSize'/.test(appSource)) {
+    fail('App.tsx 未读取 mellow.export.image.fontSize → 设置不会生效');
+  }
+  if (!/bodyFontSize: Number\.isFinite\(fontSizeRaw\)/.test(appSource)) {
+    fail('App.tsx 未把字号传入图片导出 options');
+  }
+  // canary：去掉 App 的读取必须被检出
+  const appDrift = appSource.replace("localStorage.getItem('mellow.export.image.fontSize')", "localStorage.getItem('mellow.export.image.fontSizeX')");
+  if (appDrift === appSource) fail('图片字号 canary 未武装：注入点未命中');
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框; outline max-level (2026-09-30): markdown.outlineMaxLevel 端到端 —— schema(select 1..6 / 默认 6) → applySetting 写 state → buildOutline 收 maxLevel（tree + all 两处）→ 该 state 必须进 refreshOutline 依赖数组（否则改设置不重算，§4.25 同型）; allow-magnification (2026-09-30): editor.allowMagnification 端到端（settings → bridge 声明+实现 → setEditorConfig 白名单 → App live+启动）+ **核心断言：enablePinchZoom 必须返回 disposer**（否则做成开关后「关不掉」= 假控件）');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框; outline max-level (2026-09-30): markdown.outlineMaxLevel 端到端 —— schema(select 1..6 / 默认 6) → applySetting 写 state → buildOutline 收 maxLevel（tree + all 两处）→ 该 state 必须进 refreshOutline 依赖数组（否则改设置不重算，§4.25 同型）; allow-magnification (2026-09-30): editor.allowMagnification 端到端（settings → bridge 声明+实现 → setEditorConfig 白名单 → App live+启动）+ **核心断言：enablePinchZoom 必须返回 disposer**（否则做成开关后「关不掉」= 假控件）; image font size (2026-09-30): export.image.fontSize 端到端（settings number 8–48 / 默认 16 → ImageExportOptions.bodyFontSize → resolveImageBodyFontSize → layout）+ **BODY_SIZE 必须仍为 16**（对齐 Typora 的 24 需单独裁决）；rel() 等比缩放的正确性由单测行为断言锁（非护栏形状锁）');

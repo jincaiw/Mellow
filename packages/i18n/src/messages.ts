@@ -667,6 +667,8 @@ const zhCN = {
   'settings.export.image.formatDesc': '文件 → 导出 → 图片（PNG/JPEG）；保存对话框中改扩展名可临时切换。',
   'settings.export.image.width': '图片导出宽度（px）',
   'settings.export.image.widthDesc': '导出长图的整体宽度（200–4096，默认 800）。',
+  'settings.export.image.fontSize': '图片导出字号（px）',
+  'settings.export.image.fontSizeDesc': '导出长图的正文基础字号（8–48，默认 16）；标题、代码、脚注按同一比例缩放。',
   'settings.export.image.quality': 'JPEG 质量',
   'settings.export.image.qualityDesc': '0.1–1，仅 JPEG 生效；PNG 无损。',
   // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」官方文案
@@ -1544,6 +1546,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.export.image.formatDesc': 'File → Export → Image (PNG/JPEG); change extension in save dialog to switch temporarily.',
   'settings.export.image.width': 'Image export width (px)',
   'settings.export.image.widthDesc': 'Overall width of exported long image (200–4096, default 800).',
+  'settings.export.image.fontSize': 'Image export font size (px)',
+  'settings.export.image.fontSizeDesc': 'Base body font size of the exported long image (8–48, default 16); headings, code, and footnotes scale proportionally.',
   'settings.export.image.quality': 'JPEG quality',
   'settings.export.image.qualityDesc': '0.1–1, only for JPEG; PNG is lossless.',
   'settings.export.preserveLineBreaks': 'Preserve single line breaks on export',

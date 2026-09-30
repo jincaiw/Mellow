@@ -11,6 +11,9 @@ import {
   MIN_IMAGE_WIDTH,
   MAX_IMAGE_WIDTH,
   layoutImageDocument,
+  resolveImageBodyFontSize,
+  MIN_IMAGE_FONT_SIZE,
+  MAX_IMAGE_FONT_SIZE,
   drawLayout,
   exportImageBytes,
   type ImageExportEnv,
@@ -258,5 +261,56 @@ describe('Image Export — 绘制与编码', () => {
       }),
     ).rejects.toBeInstanceOf(ImageExportError);
     expect(created).toBe(0);
+  });
+});
+
+// 2026-09-30：Typora 图片导出 `imageFontSize` 的对标 —— 正文字号可配置。
+// ⚠️ Mellow 既有默认是 16（Typora 默认 24）—— 本组测试**锁定「默认不变」**，
+// 以免将来有人「顺手对齐 Typora」而静默改变所有既有图片导出的输出。
+describe('Image Export — 正文字号（imageFontSize）', () => {
+  const sizeOf = (font: string): number => Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1]);
+
+  test('默认不变：DEFAULT_IMAGE_OPTIONS.bodyFontSize === 16（刻意不对齐 Typora 的 24）', () => {
+    expect(DEFAULT_IMAGE_OPTIONS.bodyFontSize).toBe(16);
+    expect(resolveImageBodyFontSize(DEFAULT_IMAGE_OPTIONS)).toBe(16);
+  });
+
+  test('缺省 / 非法值 → 回落 16；越界 → clamp 到 [MIN, MAX]', () => {
+    expect(resolveImageBodyFontSize(opts({ bodyFontSize: undefined }))).toBe(16);
+    expect(resolveImageBodyFontSize(opts({ bodyFontSize: Number.NaN }))).toBe(16);
+    expect(resolveImageBodyFontSize(opts({ bodyFontSize: 0 }))).toBe(MIN_IMAGE_FONT_SIZE);
+    expect(resolveImageBodyFontSize(opts({ bodyFontSize: 999 }))).toBe(MAX_IMAGE_FONT_SIZE);
+    expect(resolveImageBodyFontSize(opts({ bodyFontSize: 24 }))).toBe(24); // Typora 默认值可用
+  });
+
+  test('自定义字号真的生效：正文/标题字号按比例变化，且图高增加', async () => {
+    const md = '# Hi\n\nHello world';
+    const at16 = await layoutImageDocument(md, opts(), env);
+    const at32 = await layoutImageDocument(md, opts({ bodyFontSize: 32 }), env);
+
+    // ⚠️ 段内文本按 inline chunk 分别出 op（`Hello` / ` ` / `world`），
+    // 故取首个正文字块断言，不要找 'Hello world' 整串。
+    const body16 = textOps(at16.ops).find((o) => o.text === 'Hello');
+    const body32 = textOps(at32.ops).find((o) => o.text === 'Hello');
+    expect(sizeOf(body16?.font as string)).toBe(16);
+    expect(sizeOf(body32?.font as string)).toBe(32);
+
+    // 标题按**同一比例**缩放（H1 = 28/16 倍），视觉层级不变
+    const h16 = textOps(at16.ops).find((o) => o.text === 'Hi');
+    const h32 = textOps(at32.ops).find((o) => o.text === 'Hi');
+    const ratio16 = sizeOf(h16?.font as string) / sizeOf(body16?.font as string);
+    const ratio32 = sizeOf(h32?.font as string) / sizeOf(body32?.font as string);
+    expect(ratio32).toBeCloseTo(ratio16, 5);
+
+    // 图高随之增加（前提断言，防空壳）
+    expect(at32.height).toBeGreaterThan(at16.height);
+  });
+
+  test('★ 等比缩放没有退化成「不缩放」（rel 必须是 (absolute / 16) * body）', async () => {
+    // 回归：曾出现 `rel = (absolute / body) * body` ≡ absolute 的静默 bug ——
+    // 那样标题会保持 28px 而正文变 32px，层级被压平。此处直接锁住 H1 的绝对值。
+    const at32 = await layoutImageDocument('# Hi', opts({ bodyFontSize: 32 }), env);
+    const h = textOps(at32.ops).find((o) => o.text === 'Hi');
+    expect(sizeOf(h?.font as string)).toBe(56); // 28 / 16 * 32
   });
 });

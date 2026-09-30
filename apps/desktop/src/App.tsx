@@ -1404,6 +1404,8 @@ export default function App() {
       const settingsFormat = localStorage.getItem('mellow.export.image.format') === 'jpeg' ? 'jpeg' : 'png';
       const widthRaw = Number(localStorage.getItem('mellow.export.image.width'));
       const qualityRaw = Number(localStorage.getItem('mellow.export.image.quality'));
+      // 2026-09-30：图片导出正文字号（Typora `imageFontSize` 的对标；缺省回落 16 = 既有默认）
+      const fontSizeRaw = Number(localStorage.getItem('mellow.export.image.fontSize'));
       const [{ exportImageBytes, DEFAULT_IMAGE_OPTIONS }, savePath] = await Promise.all([
         import('../../../packages/export/src/image/index'),
         invoke<string | null>('pick_save_path', {
@@ -1419,6 +1421,8 @@ export default function App() {
         format: extFormat,
         width: Number.isFinite(widthRaw) && widthRaw >= 200 ? widthRaw : DEFAULT_IMAGE_OPTIONS.width,
         quality: Number.isFinite(qualityRaw) && qualityRaw > 0 ? Math.min(qualityRaw, 1) : DEFAULT_IMAGE_OPTIONS.quality,
+        // 非法/未设置 → 回退既有默认（16）；范围由 resolveImageBodyFontSize 再 clamp
+        bodyFontSize: Number.isFinite(fontSizeRaw) && fontSizeRaw > 0 ? fontSizeRaw : DEFAULT_IMAGE_OPTIONS.bodyFontSize,
         theme: themeSettings.mode === 'dark' ? 'dark' : 'light',
       };
       // canvas 装配（浏览器/webview Adapter）

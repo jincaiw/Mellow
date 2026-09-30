@@ -20,6 +20,13 @@ import { PDF_THEME_COLORS } from '../typography';
 
 export type ImageExportFormat = 'png' | 'jpeg';
 
+/** 默认正文字号（px）。声明在 `DEFAULT_IMAGE_OPTIONS` **之前** —— 后者要引用它，
+ * 而模块级 const 在初始化前引用会 TDZ。 */
+const BODY_SIZE = 16;
+/** 正文字号可配置范围（Typora `imageFontSize` 的合理区间） */
+export const MIN_IMAGE_FONT_SIZE = 8;
+export const MAX_IMAGE_FONT_SIZE = 48;
+
 export interface ImageExportOptions {
   format: ImageExportFormat;
   /** 画布宽度（px），clamp 到 [MIN_IMAGE_WIDTH, MAX_IMAGE_WIDTH] */
@@ -33,6 +40,12 @@ export interface ImageExportOptions {
   fontFamily: string;
   /** 等宽字体族 */
   monoFamily: string;
+  /**
+   * 正文字号（px）。对齐 Typora 图片导出的 `imageFontSize`（**默认 24px**）。
+   * 缺省 → `BODY_SIZE`（16，Mellow 既有默认）；非法值回落；clamp 到 [MIN, MAX]。
+   * ⚠️ 标题/代码/脚注按**同一比例**缩放（见 `rel()`），保持视觉层级。
+   */
+  bodyFontSize?: number;
 }
 
 export const MIN_IMAGE_WIDTH = 200;
@@ -50,6 +63,9 @@ export const DEFAULT_IMAGE_OPTIONS: ImageExportOptions = {
   margin: 32,
   fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
   monoFamily: '"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
+  // 保持 Mellow 既有默认（16）；Typora 的 imageFontSize 默认是 24 ——
+  // **是否对齐 24 待视觉/真机确认**（会改变所有既有图片导出的输出，见方案 §15.3 行 14b）。
+  bodyFontSize: BODY_SIZE,
 };
 
 /** 长图保护 / 宽度非法错误（App 层映射为可读 toast） */
@@ -120,12 +136,18 @@ export interface ImageLayout {
 // ── 排版常量（px） ──────────────────────────────────────────
 
 const HEADING_SCALE: Record<number, number> = { 1: 28, 2: 24, 3: 20, 4: 18, 5: 17, 6: 16 };
-const BODY_SIZE = 16;
 const CODE_SIZE = 13;
 const SMALL_SIZE = 13;
 const LINE_HEIGHT = 1.65;
 const CODE_LINE_HEIGHT = 1.5;
 const BLOCK_GAP = 12;
+
+/** 正文字号：缺省 `BODY_SIZE`；非法值回落；clamp 到 [MIN, MAX]（导出：纯函数，可测） */
+export function resolveImageBodyFontSize(options: ImageExportOptions): number {
+  const raw = options.bodyFontSize;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return BODY_SIZE;
+  return Math.min(Math.max(Math.round(raw), MIN_IMAGE_FONT_SIZE), MAX_IMAGE_FONT_SIZE);
+}
 
 interface Chunk {
   text: string;
@@ -167,7 +189,8 @@ function wrapChunks(chunks: Chunk[], maxWidth: number, env: ImageExportEnv, opti
   let line: Chunk[] = [];
   let lineW = 0;
   for (const unit of units) {
-    const spec = fontSpec(unit.code === true ? BODY_SIZE * 0.9 : BODY_SIZE, unit, options);
+    const base = resolveImageBodyFontSize(options);
+    const spec = fontSpec(unit.code === true ? base * 0.9 : base, unit, options);
     const w = env.measureText(unit.text, spec);
     if (lineW + w > maxWidth && line.length > 0) {
       // 去掉行首空白
@@ -199,7 +222,11 @@ class Layout {
     private readonly fg: string,
   ) {
     this.y = margin;
+    this.body = resolveImageBodyFontSize(options);
   }
+
+  /** 正文字号（由 options 解析；标题/代码等按 `rel()` 等比缩放） */
+  private readonly body: number;
 
   get contentWidth(): number {
     return this.width - this.margin * 2;
@@ -215,12 +242,12 @@ class Layout {
 
   /** 渲染一組行内块（wrap 后逐行绘制，返回占用高度） */
   renderInlines(chunks: Chunk[], opts: { size?: number; bold?: boolean; italic?: boolean; indent?: number; color?: string } = {}): number {
-    const size = opts.size ?? BODY_SIZE;
+    const size = opts.size ?? this.body;
     const indent = opts.indent ?? 0;
     const color = opts.color ?? this.fg;
     const maxWidth = this.contentWidth - indent;
-    // wrapChunks 以 BODY_SIZE 断行；此处块级统一尺寸（标题/脚注）按比例换算阈值
-    const scale = size / BODY_SIZE;
+    // wrapChunks 以正文字号断行；此处块级统一尺寸（标题/脚注）按比例换算阈值
+    const scale = size / this.body;
     const lines = wrapChunks(chunks.map((c) => ({ ...c, bold: c.bold === true || opts.bold === true, italic: c.italic === true || opts.italic === true })), maxWidth / scale, this.env, this.options);
     const advance = size * LINE_HEIGHT;
     for (const line of lines) {
@@ -241,7 +268,7 @@ class Layout {
   }
 
   text(text: string, opts: { x?: number; size?: number; bold?: boolean; italic?: boolean; mono?: boolean; color?: string }): void {
-    const size = opts.size ?? BODY_SIZE;
+    const size = opts.size ?? this.body;
     const spec = fontSpec(size, { bold: opts.bold, italic: opts.italic, mono: opts.mono }, this.options);
     this.ops.push({ op: 'text', x: opts.x ?? this.margin, y: this.y + size * 1.1, text, font: spec.css, color: opts.color ?? this.fg });
     this.y += size * LINE_HEIGHT;
@@ -279,6 +306,9 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
     throw new ImageExportError('invalid-width', `图片宽度非法: ${rawOptions.width}`);
   }
   const options: ImageExportOptions = { ...rawOptions, width: Math.min(Math.max(Math.round(rawOptions.width), MIN_IMAGE_WIDTH), MAX_IMAGE_WIDTH) };
+  // 正文字号（可配置）；`rel()` 把排版常量（相对 body 的绝对值）等比换算到当前字号
+  const body = resolveImageBodyFontSize(options);
+  const rel = (absolute: number): number => (absolute / BODY_SIZE) * body;
   const colors = PDF_THEME_COLORS[options.theme];
   const blocks = parseBlocks(markdown);
   const L = new Layout(options.width, options.margin, env, options, colors.fg);
@@ -288,7 +318,7 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
   const renderBlock = async (block: PdfBlock): Promise<void> => {
     switch (block.type) {
       case 'heading': {
-        const size = HEADING_SCALE[Math.min(Math.max(block.level, 1), 6)] ?? BODY_SIZE;
+        const size = rel(HEADING_SCALE[Math.min(Math.max(block.level, 1), 6)] ?? body);
         L.advance(block.level === 1 ? 20 : 14);
         L.renderInlines(inlineToChunks(block.content), { size, bold: true });
         L.advance(6);
@@ -306,16 +336,16 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
         const indent = 24;
         block.items.forEach((item, idx) => {
           const prefix = item.task ? (item.checked ? '[x] ' : '[ ] ') : block.ordered ? `${idx + 1}. ` : '• ';
-          const prefixSpec = fontSpec(BODY_SIZE, { mono: item.task }, options);
-          L.ops.push({ op: 'text', x: L.margin + indent - 20, y: L.cursor + BODY_SIZE * 1.1, text: prefix, font: prefixSpec.css, color: colors.fg });
+          const prefixSpec = fontSpec(body, { mono: item.task }, options);
+          L.ops.push({ op: 'text', x: L.margin + indent - 20, y: L.cursor + body * 1.1, text: prefix, font: prefixSpec.css, color: colors.fg });
           const prefixW = Math.max(env.measureText(prefix, prefixSpec), 14);
           const lines = wrapChunks(inlineToChunks(item.content), L.contentWidth - indent - prefixW, env, options);
-          const advance = BODY_SIZE * LINE_HEIGHT;
+          const advance = body * LINE_HEIGHT;
           for (const line of lines) {
             let x = L.margin + indent + prefixW;
-            const baseline = L.cursor + BODY_SIZE * 1.1;
+            const baseline = L.cursor + body * 1.1;
             for (const chunk of line) {
-              const spec = fontSpec(chunk.code === true ? BODY_SIZE * 0.9 : BODY_SIZE, chunk, options);
+              const spec = fontSpec(chunk.code === true ? body * 0.9 : body, chunk, options);
               L.ops.push({ op: 'text', x, y: baseline, text: chunk.text, font: spec.css, color: colors.fg });
               x += env.measureText(chunk.text, spec);
             }
@@ -338,13 +368,13 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
       case 'code': {
         const padding = 12;
         const lines = block.text.split('\n');
-        const advance = CODE_SIZE * CODE_LINE_HEIGHT;
+        const advance = rel(CODE_SIZE) * CODE_LINE_HEIGHT;
         const height = lines.length * advance + padding * 2;
         L.rect(L.margin, L.cursor, L.contentWidth, height, colors.codeBg);
         L.advance(padding);
         for (const lineText of lines) {
-          const spec = fontSpec(CODE_SIZE, { mono: true }, options);
-          L.ops.push({ op: 'text', x: L.margin + padding, y: L.cursor + CODE_SIZE * 1.1, text: lineText, font: spec.css, color: colors.fg });
+          const spec = fontSpec(rel(CODE_SIZE), { mono: true }, options);
+          L.ops.push({ op: 'text', x: L.margin + padding, y: L.cursor + rel(CODE_SIZE) * 1.1, text: lineText, font: spec.css, color: colors.fg });
           L.advance(advance);
         }
         L.advance(padding + BLOCK_GAP);
@@ -354,8 +384,8 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
         const cols = block.header.length;
         const colW = L.contentWidth / cols;
         const rowH = 32;
-        const cellSpec = fontSpec(BODY_SIZE, {}, options);
-        const headSpec = fontSpec(BODY_SIZE, { bold: true }, options);
+        const cellSpec = fontSpec(body, {}, options);
+        const headSpec = fontSpec(body, { bold: true }, options);
         const rows = [block.header, ...block.rows];
         rows.forEach((row, r) => {
           const y = L.cursor;
@@ -364,7 +394,7 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
             const x = L.margin + c * colW;
             const spec = r === 0 ? headSpec : cellSpec;
             const text = truncateCell(cell, colW - 16, env, spec);
-            L.ops.push({ op: 'text', x: x + 8, y: y + rowH / 2 + BODY_SIZE * 0.35, text, font: spec.css, color: colors.fg });
+            L.ops.push({ op: 'text', x: x + 8, y: y + rowH / 2 + body * 0.35, text, font: spec.css, color: colors.fg });
           });
           L.advance(rowH);
           L.line(L.margin, L.cursor, L.margin + L.contentWidth, L.cursor, colors.border, 1);
@@ -383,7 +413,7 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
       case 'image': {
         const loaded = env.loadImage !== undefined ? await env.loadImage(block.src) : null;
         if (loaded === null || loaded.width <= 0 || loaded.height <= 0) {
-          L.text(`[${block.alt}](${block.src})`, { mono: true, size: CODE_SIZE });
+          L.text(`[${block.alt}](${block.src})`, { mono: true, size: rel(CODE_SIZE) });
         } else {
           const w = Math.min(L.contentWidth, loaded.width);
           const h = (w * loaded.height) / loaded.width;
@@ -394,15 +424,15 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
       }
       case 'math':
         // 宿主未注入渲染器 → 回退源码（与 PDF 回退一致）
-        L.text(block.tex, { italic: true, mono: true, size: CODE_SIZE });
+        L.text(block.tex, { italic: true, mono: true, size: rel(CODE_SIZE) });
         L.advance(BLOCK_GAP);
         break;
       case 'mermaid':
-        L.text(block.code, { mono: true, size: CODE_SIZE });
+        L.text(block.code, { mono: true, size: rel(CODE_SIZE) });
         L.advance(BLOCK_GAP);
         break;
       case 'alert':
-        L.text(`${block.kind}: `, { bold: true, size: BODY_SIZE });
+        L.text(`${block.kind}: `, { bold: true, size: body });
         L.renderInlines(inlineToChunks(block.content), { indent: 0 });
         L.advance(BLOCK_GAP);
         break;
@@ -411,7 +441,7 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
         L.advance(4);
         for (const h of headings) {
           const text = h.content.map((t) => t.text).join('');
-          L.text(`${'  '.repeat(Math.min(h.level - 1, 3))}${text}`, { size: SMALL_SIZE });
+          L.text(`${'  '.repeat(Math.min(h.level - 1, 3))}${text}`, { size: rel(SMALL_SIZE) });
         }
         L.advance(BLOCK_GAP);
         break;
@@ -420,7 +450,7 @@ export async function layoutImageDocument(markdown: string, rawOptions: ImageExp
         // 长图导出无分页 → 忽略
         break;
       case 'footnote':
-        L.text(`[${block.id}] ${block.content}`, { size: SMALL_SIZE, color: colors.fg });
+        L.text(`[${block.id}] ${block.content}`, { size: rel(SMALL_SIZE), color: colors.fg });
         break;
       default:
         break;
