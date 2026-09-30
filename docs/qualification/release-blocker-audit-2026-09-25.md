@@ -716,6 +716,30 @@ editor-core **不能**反向 import 引擎（成环）。故内联是**必要的
 与 `imageFileOps.test.ts` 的现有模式）；或若实现上「另存为」与「重命名」走同一路径，
 则在 spec §12 里合并该类别并注明 —— **两者必居其一**，不要让声明与实现长期脱节。
 
+## 4.16 `table-editing-spec` §10 声明的 `external update` 场景**零覆盖**（2026-09-30）
+
+**方法**：同 §4.15 —— spec §10「Tests」声明 11 个必覆盖类别，逐条映射到实际测试
+（表格测试共 8 个文件：`table-column-width` / `table-engine` / `table-keyboard` /
+`table-large` / `table-live-view` / `table-parser` / `table-toolbar` / `table-undo-diff`）。
+
+**结果**：**10/11 有覆盖**，唯独 **`external update` 零覆盖**。
+
+**核实过程**（避免误报）：把范围放宽到**全仓所有 `*.test.ts/tsx` 与 Rust `_corpus.rs`**，
+查「`external`/`外部`/`reload`/`重载`」×「`table`/`表格`」的**共现** → 6 处命中，
+**全部无关**：`menu-schema.test.ts` 的菜单顺序里列了 `file.reloadFromDisk` 这个 id；
+`export/html.test.ts` 讲的是「无外部脚本引用」（自包含）；`ime-guards.test.ts` 的注释说
+「宿主外部事务」。
+
+**⚠️ 不过度声称**：**文件安全侧**的外部变更**已被覆盖** ——
+`file_safety_corpus.rs` 有 `external_editor_in_place_edit_never_overwrites` /
+`git_checkout_external_replace_never_overwrites` / `external_delete_save_conflicts` 等
+（保证**不静默覆盖**）。缺的是**另一面**：**表格的 live-view / decoration 状态在
+「外部重载」之后是否正确重建** —— 文件安全测试只断言磁盘内容不被破坏，
+不断言编辑器里的表格控件状态。
+
+**后续项**：补一条「文档被外部修改 → 重载 → 表格 live-view 与对齐/列宽状态正确重建」
+的测试（可参照 `table-live-view.test.ts` 与 `table-column-width.test.ts` 的现有模式）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
