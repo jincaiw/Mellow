@@ -1601,10 +1601,26 @@ docs/plans/typora-parity-master-plan.md：引用「insertLocalImage」（App.tsx
 `autocomplete=off` / `autocapitalize=off`；**`inlineCodeStyle` 只加 class，不带任何属性**。
 → 行内代码内**浏览器拼写检查仍会画红波浪线**，与 §11 的「no spellcheck」不符。
 
-**为何本轮不顺手改**：修它有两条路 —— 落在 `CoreEditor/`（`inlineCodeStyle`）或**引擎侧新增一个属性装饰**；
-前者与 `UPSTREAM.md` 的取向冲突（见 §4.36），后者是**渲染管线的新增责任**（不是「补一个属性」那么小）。
-**路径已查明、登记待实施**，不在本轮擅自扩大改动面。
-（**注意不要写成「不可行」** —— 见 §4.10：把「没想到」写成「不可行」会永久关闭一个可做的项。）
+**处置（2026-10-01 当日已实施）**：按 `UPSTREAM.md` 的取向落在**引擎侧** ——
+新增 `packages/editor-engine/src/inlineCodeAttrs.ts`（`buildInlineCodeAttrsExtension`）：
+对每个 `InlineCode` 节点加一个**只带属性、不改视觉**的 mark decoration
+（`spellcheck=false` / `autocorrect=off` / `autocomplete=off` / `autocapitalize=off`，
+与块级 `codeBlockStyle` 逐字对齐），视口裁剪 + composition 期间只映射不重算（与 `plugin.ts` 同序）。
+测试 6 例（含「无行内代码 → 0 个」「围栏代码**不**被本扩展标记，块级不重复」「caret 进入后属性仍在且 doc 不变」）；
+**非恒绿验证**：关掉该扩展的产出 → 4 例失败、2 例对照仍绿。
+
+**同时补一条护栏**：这两处表达的是**同一件事**（「这段不是自然语言」），
+分叉的表现是「围栏内不画红波浪线、行内代码内画」——屏幕上看不出原因。
+故在 `verify-parity-ledger.mjs` 新增「**行内 / 块级代码属性必须一致**」
+（解析两处的 `'key': 'value'` 对并逐项比对 + canary）。
+**非恒绿验证**：把引擎侧 `autocapitalize` 改成 `on` → 护栏报出分叉；还原 → 通过。
+
+> ⚠️ **本段先前的成本判断是错的，记下来**：我原写「路径已查明、登记待实施」，理由是
+> 「引擎侧新增属性装饰是**渲染管线的新增责任**（不是『补一个属性』那么小）」。
+> 实际改动面是**一个约 100 行的独立模块 + 6 条测试**（不触碰既有管线），当天就做完了。
+> → §4.10 的风险不止「写成『不可行』」，也包括「**把它写成看起来需要大工程的待办**」；
+> 定「待实施」之前应先把**改动面算清**（哪怕只是列出要碰的文件），而不是凭印象定规模。
+> （**注意不要写成「不可行」** —— 见 §4.10：把「没想到」写成「不可行」会永久关闭一个可做的项。）
 
 ## 4.35 智能标点**没有代码上下文守卫**，且既有用例是**空壳**（2026-10-01，已修）
 
@@ -1668,6 +1684,26 @@ diff -rq /tmp/markedit-up/MarkEdit-<COMMIT>/CoreEditor packages/editor-core/Core
 
 **为什么没有 CI 护栏**：生成/校验清单需要**下载上游源码**（网络 + 钉住 commit），CI 不可用 ——
 与 `audit-typora-menu-labels.mjs` 需本机 Typora 同类。**如实记录为人工工具**，不用一个恒真的假护栏冒充。
+
+## 4.37 一条**依赖固定时长的时序用例**在全量套件下偶发假红（2026-10-01，已修）
+
+**现象**：`packages/editor-engine` 整包（77 suites）跑出 **1 failed** —— `test/math.test.ts` 的
+「heavy render is scheduled async and stale render is ignored while typing」；
+而**单独跑该文件 9/9 全绿**。
+
+**判因（量化，不停在「大概是抖动」）**：该用例在 `view.dispatch` 后用固定 `await sleep(60)` 等异步渲染完成
+（`debounceMs: 20` + renderer 内 `await sleep(10)` + 调度）。实测该用例**总耗时 59 ms** ——
+原来的余量只有约 **1 ms**，套件级负载一高就「还没渲染完就断言」。
+
+**为什么必须修而不是「重跑一次」**：这类假红的代价不是一次重跑，而是**训练人忽略红灯**；
+更糟的是它**掩盖真断** —— 同一位置若真回归，也会被当成抖动放过。
+
+**处置**：改用 harness 里为此提供的等待原语
+`waitFor(() => view.dom.querySelector('.custom-math') !== null)`。
+`waitFor` 超时仍返回 `false` → 断言照旧会红（**不会**退化成恒绿）；断言本体（`calls` 与 `textContent`）不变。
+
+**判据沉淀**：**「单跑绿、整包红」先怀疑时序，但必须给出量化依据**（本例：实测 59 ms vs 预算 60 ms）
+—— 没有量化的「大概是抖动」就是猜。
 
 ## 五、本次审计做的改动（非策略性）
 

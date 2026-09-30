@@ -672,6 +672,46 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── 行内 / 块级代码的「代码属性」必须一致（2026-10-01）────────────────────
+  // 立此条的原因：spec §11 要求行内代码 **no autocorrect / spellcheck**；块级代码的等价物在
+  // `CoreEditor/src/styling/nodes/code.ts` 的 `codeBlockStyle`，行内代码的等价物在
+  // `editor-engine/src/inlineCodeAttrs.ts`（放引擎侧是为了不被 re-vendor 覆盖，见 UPSTREAM.md）。
+  // 两处表达的是**同一件事**（「这段不是自然语言，别做拼写/自动更正」），分叉会让维护者
+  // 不知道该改哪一处；而表现是「围栏内不画红波浪线、行内代码内画」——屏幕上看不出原因。
+  {
+    const readSrc = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+    /** 从对象字面量里取 `'key': 'value'` 对（排序后返回，便于比对） */
+    const pairsOf = (src, anchor) => {
+      const m = anchor.exec(src);
+      if (m === null) return null;
+      return [...m[1].matchAll(/'([a-zA-Z]+)':\s*'([a-z]+)'/g)]
+        .map((x) => `${x[1]}=${x[2]}`)
+        .sort();
+    };
+    const blockPairs = pairsOf(
+      readSrc('packages/editor-core/CoreEditor/src/styling/nodes/code.ts'),
+      /cm-md-codeBlockWrapper',\s*\{([^}]*)\}/,
+    );
+    const inlinePairs = pairsOf(
+      readSrc('packages/editor-engine/src/inlineCodeAttrs.ts'),
+      /INLINE_CODE_ATTRIBUTES[^=]*=\s*\{([^}]*)\}/,
+    );
+    assert(blockPairs !== null && inlinePairs !== null,
+      '无法解析行内/块级代码属性（护栏需同步更新，不要静默漏检）');
+    if (blockPairs !== null && inlinePairs !== null) {
+      assert(blockPairs.length >= 4,
+        `块级代码属性数量异常（${blockPairs.length}）：至少应含 spellcheck / autocorrect / autocomplete / autocapitalize`);
+      assert(blockPairs.join(',') === inlinePairs.join(','),
+        `行内 / 块级代码属性不一致：块级 [${blockPairs}] vs 行内 [${inlinePairs}]`
+        + ' —— 同一意图的两处实现分叉（spec §11：行内代码不得被拼写检查/自动更正）');
+      // canary：从行内样本删掉一项必须被检出
+      const drift = inlinePairs.slice(1);
+      if (drift.join(',') === blockPairs.join(',')) {
+        errors.push('代码属性一致性 canary 失效：样本未被改动');
+      }
+    }
+  }
+
   // ── 远程图片默认值：设置侧与引擎侧必须一致（2026-09-30）────────────────
   // 立此条的原因：这是**安全相关默认值**（默认联网会暴露「已打开该文档」与来源 IP），
   // 而它散落在两处 —— 设置 `image.loadRemote` 的 `defaultValue`，与引擎

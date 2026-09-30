@@ -58,6 +58,7 @@ import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } from './largeFile';
 import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
 import { buildSmartPunctuationExtension, installSmartPunctuationApi } from './smartPunctuation';
+import { buildInlineCodeAttrsExtension } from './inlineCodeAttrs';
 import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
 import { buildWysiwygBlocksExtension } from './wysiwygBlocks';
 import { installMdTokensBridge } from './mdTokens';
@@ -130,6 +131,8 @@ export {
   isInsideCodeContext,
 } from './smartPunctuation';
 export type { SmartPunctuationApi } from './smartPunctuation';
+// spec §11：行内代码的 spellcheck/autocorrect 属性（块级代码由 CoreEditor codeBlockStyle 承担）
+export { buildInlineCodeAttrsExtension, INLINE_CODE_ATTR_CLASS } from './inlineCodeAttrs';
 export { buildCodeFenceAutocompleteExtension, fenceLangSource, FENCE_LANGUAGES } from './codeFence';
 export { buildCodeBlockLabelExtension, parseFenceBlocks, CODEBLOCK_LANG_CLASS, EDITING_OUTLINE_CLASS, CODEBLOCK_LANG_OPTIONS } from './codeBlockLabel';
 export { emojiSource } from './emoji';
@@ -270,6 +273,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildInputLatencyExtension(),
     buildSelectionCommandsExtension(),
     buildSmartPunctuationExtension(),
+    // spec §11：行内代码的 spellcheck/autocorrect 属性（块级代码由 CoreEditor codeBlockStyle 承担）
+    buildInlineCodeAttrsExtension(),
     buildCodeLineNumbersExtension(),
     // V5：非聚焦块渲染（Typora WYSIWYG 对齐：引用/标题/代码块/HR 源码标记隐藏 + Github 排版）
     buildWysiwygBlocksExtension(),

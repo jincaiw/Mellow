@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { EditorView } from '@codemirror/view';
 import { buildMathExtension, copyMathSourceAt, createMathJaxCompatibleRenderer, extractMathMacros, parseMathSpans, renderMathSource, rendererPathFor } from '../src/math';
-import { selectRange, setUpEditor, sleep } from './harness';
+import { selectRange, setUpEditor, sleep, waitFor } from './harness';
 
 const fixture = (name: string): string => readFileSync(resolve(__dirname, '../../../tests/fixtures/math', name), 'utf8');
 
@@ -78,7 +78,11 @@ describe('Math Typora Corpus（PRD §42 / ADR-0010）', () => {
     });
     expect(calls).toEqual([]);
     view.dispatch({ changes: { from: 4, insert: '+1' } });
-    await sleep(60);
+    // ⚠️ 用 `waitFor` 而**不是**固定 `sleep(60)`：本用例的完成时刻 = debounce(20ms) + async render(10ms)
+    // + 调度，取决于机器负载 —— 固定时长在**全量套件**（77 suites）下会偶发「还没渲染完就断言」的
+    // 抖动（2026-10-01 实测：单跑 9/9 绿、整包偶发 1 红，失败点正是下一行）。`waitFor` 是 harness
+    // 里为此提供的等待原语（超时仍返回 false → 断言照旧会红，不会变成恒绿）。
+    expect(await waitFor(() => view.dom.querySelector('.custom-math') !== null)).toBe(true);
     expect(calls).toEqual(['x+1']);
     expect(view.dom.querySelector('.custom-math')?.textContent).toBe('x+1');
   });
