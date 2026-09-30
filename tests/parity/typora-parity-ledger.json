@@ -407,7 +407,8 @@
       "evidence": [
         "docs/specs/document-file-safety-spec.md",
         "tests/qualification/source-fidelity-corpus.md",
-        "apps/desktop/src-tauri/tests/file_safety_corpus.rs"
+        "apps/desktop/src-tauri/tests/file_safety_corpus.rs",
+        "packages/editor-core/CoreEditor/test/document-isolation.test.ts"
       ],
       "requiredEvidence": [
         "integration",

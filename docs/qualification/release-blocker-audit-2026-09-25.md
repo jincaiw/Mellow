@@ -923,6 +923,74 @@ reduced motion），矩阵是 6 列（Keyboard / Focus ring / Semantic / Contras
 它只在**有人重跑人工走查**时才有意义，而人工走查恰恰是当前最稀缺的资源
 （见 §4.19 起因：两处清单各自维护、差集永远不被发现）。
 
+## 4.20 `document-file-safety-spec` §12 的 Release Blocker「document history crossing tabs」**无人守**（2026-09-30）
+
+**背景**：按「谁在守」审计法扫 `document-file-safety-spec`。这份 spec 的覆盖总体**很好**：
+`tests/qualification/file-safety-corpus.md` 是一份 16 用例的对照表（含「模拟手段」列，
+如实标注了 OneDrive/SMB/NFS/disk-full 是模拟而非真实挂载），`§3 Source Fidelity` 有
+独立语料门禁与 `tools/source-fidelity` 工具，`§6 Recovery` 由
+`packages/app-core/test/recovery.test.ts`（debounce / flush / 保存后清理 / 多文档独立 /
+启动恢复流程）覆盖。**唯一落空的是 §12 的一条 Release Blocker。**
+
+**现象（典型的「看起来有人守」）**：
+`packages/document-model/src/index.ts` 头部注释声明：
+
+> **文档切换不共享 Undo History**：每个文档一个独立 DocumentModel 实例；
+> 编辑器侧由 resetEditor（重建 EditorView）保证历史隔离（**CoreEditor 已实现**，
+> 对应 spec §12 Release Blocker「document history crossing tabs」）
+
+而 `packages/document-model/test/document-model.test.ts` 里**确实有一条同名测试**：
+`test('Editor 层历史隔离由 resetEditor 保证（文档级约束记录）')`。
+但读它的**断言本体**，只有：
+
+```ts
+expect(a.id).not.toBe(b.id);
+expect(a.revision).toBe(0);
+expect(b.revision).toBe(0);
+```
+
+—— 断言的是「两个实例 id 不同、revision 都是 0」，**与 Undo 历史毫无关系**，
+而且**上一条测试已经覆盖了同样的东西**。于是：
+**一个 Release Blocker 的守护状态，完全由「测试名 + 代码注释」支撑，没有任何断言。**
+
+**为什么这条特别要紧**（严重级判断，不是形式主义）：
+spec §12 列它为 Release Blocker，失效后果是「在 A 文档按 Undo 改掉 B 文档的内容」——
+**数据损坏级**，且**屏幕上看不出**（用户只看到「撤销没反应 / 撤销了别的东西」）。
+按失效模式 10（冒烟被当成机制断言）：**屏幕上看不出的那一面正是必然漏检的一面**。
+
+**核实「实现到底有没有问题」（不把「无人守」写成「不合规」）**：
+读 `packages/editor-core/CoreEditor/src/core.ts` 的 `resetEditor` ——
+`tryGetEditor()?.destroy()` 后 `new EditorView({ state: EditorState.create({…}) })`。
+CM6 的 history 存在 **EditorState** 里，状态全新即历史全新 →
+**隔离在结构上成立，声明是真的**。本节判定仍是「**无人守**」，不是「实现有缺陷」。
+
+**处置（2026-09-30）**：
+1. **补真断言**：新增 `packages/editor-core/CoreEditor/test/document-isolation.test.ts`
+   （3 例，走真实 EditorView + 真实 `undo`/`undoDepth`）。断言的是**行为**
+   （切换后 `undoDepth === 0` 且 `undo()` 返回 false 且 doc 不变），
+   而不是实现形态（「有没有 destroy()」）—— 将来换成别的隔离手法仍成立。
+   含一条**反向断言**「同一文档内 Undo 必须仍可用」，防止把「隔离」做成「历史全废」。
+   ⚠️ 该测试**先断言文档 A 的 Undo 历史确实可用**（`undoDepth === 1`）——
+   否则「切换后 undo 无效」会因为「undo 本来就无效」而**恒绿**（空壳）。
+2. **去掉虚假声明**：把 `document-model.test.ts` 那条测试改名为
+   「模型层：每文档独立实例 + 独立 id/revision（历史隔离的真断言在 CoreEditor）」，
+   并在正文写明它**不**验证历史隔离、真断言在哪。这不是「改名绕开护栏」——
+   护栏原本就不存在；这里去掉的是一个**假前提**，同时补上了真断言。
+3. **更新声明出处**：`document-model/src/index.ts` 的注释改为**指名断言文件**，
+   让「已实现」这句话变成**可核对**的（原写法只断言了「CoreEditor 已实现」，无从查证）。
+4. **登记进台账**：`P0-FILE-001` 的 `evidence` 增列该测试文件
+   （CoreEditor 的 jest 由 `tools/check-vendored-editor.mjs` 接入 `npm test` / `npm run parity`，
+   属 **CI 可执行制品**，符合 `AUTO` 项的证据要求）。
+
+**验证（做过「能失败」）**：注入一个**真实可能的回归** —— 把 `resetEditor` 从
+「重建 EditorView」改成「往现有 view 里 dispatch 新内容」（正是有人会做的「省一次重建」优化）
+→ **新测试失败**（历史跨文档被检出）；还原 → 通过。同时 `document-model` 包测试仍全绿。
+
+**方法教训（已并入 skill）**：
+> **测试名与代码注释都是「声称」，不是「守护」。** 判定「谁在守」必须**读断言本体** ——
+> 本例中测试名逐字写着「由 resetEditor 保证历史隔离」，而断言里连 `undo` 都没出现。
+> 这与 §4.18 的「关键词命中 ≠ 有断言在守」是同一条：**名字/关键词只能定位候选**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

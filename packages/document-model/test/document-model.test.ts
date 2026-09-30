@@ -138,9 +138,12 @@ describe('文档切换历史隔离（要求 1）', () => {
     expect(a.revision).toBe(1); // 各自独立计数
   });
 
-  test('Editor 层历史隔离由 resetEditor 保证（文档级约束记录）', () => {
-    // CoreEditor.resetEditor 每次销毁并重建 EditorView → CM history 不跨文档。
-    // 模型层保证：每文档独立实例 + 独立 revision/id。
+  // ⚠️ 本测试**不**验证「Undo 历史不跨文档」——那需要真实 EditorView，
+  // 断言在 `packages/editor-core/CoreEditor/test/document-isolation.test.ts`。
+  // 此前本测试名为「Editor 层历史隔离由 resetEditor 保证」，但实际只断言 id 不同
+  // （与历史隔离无关，且上一条测试已覆盖）→ 一个 spec §12 **Release Blocker**
+  // 被「看起来有人守」掩盖了（2026-09-30 审计发现）。真断言已补在上址。
+  test('模型层：每文档独立实例 + 独立 id/revision（历史隔离的真断言在 CoreEditor）', () => {
     const a = DocumentModel.open('/a.md', 'x');
     const b = DocumentModel.open('/b.md', 'y');
     expect(a.id).not.toBe(b.id);

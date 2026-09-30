@@ -10,8 +10,10 @@
  *   避免 keystroke 级全文拷贝（10MB gate 性能要求）；
  * - **React 不持有副本**：模型是权威状态，UI 只读 `snapshot`（不可变对象）；
  * - **文档切换不共享 Undo History**：每个文档一个独立 DocumentModel 实例；
- *   编辑器侧由 resetEditor（重建 EditorView）保证历史隔离（CoreEditor 已实现，
- *   对应 spec §12 Release Blocker「document history crossing tabs」）；
+ *   编辑器侧由 resetEditor 重建 EditorView（含**全新 EditorState**）保证历史隔离 ——
+ *   对应 spec §12 Release Blocker「document history crossing tabs」。
+ *   **断言位置**：`packages/editor-core/CoreEditor/test/document-isolation.test.ts`
+ *   （2026-09-30 补 —— 此前该声明只在注释里，同名测试并未断言它）；
  * - **unsaved / rename / move**：path 可空可变更，id 稳定不随 rename 变化；
  * - **Recovery / Conflict 准备**：recoveryId + recovery snapshot + 外部变更检测。
  */
