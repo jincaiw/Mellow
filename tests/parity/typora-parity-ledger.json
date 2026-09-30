@@ -683,13 +683,14 @@
       "domain": "i18n",
       "capability": "简体中文默认与 English 完整性",
       "typoraBehavior": "桌面文案、菜单和快捷键提示可本地化。",
-      "mellowTarget": "中文默认、English 完整，命令 ID 不依赖显示语言。",
+      "mellowTarget": "中文默认、English 完整，命令 ID 不依赖显示语言。\n【2026-10-01 更正：「English 完整」在**引擎侧**不成立 —— 状态由 AUTO 降为 IMPL】\n**实测（e2e 探针 `tests/e2e/i18n-engine-probe.mjs`）**：把 `mellow.locale` 设为 `en-US` 后，\nSettings 面板显示**英文**（前提成立：`Settings / General / … / Language / 简体中文 / English`），\n而**引擎（iframe 内）渲染的 UI 文案仍是中文** ——\n· 表格工具栏：`调整 / ↑行 / ↓行 / 删行 / ←列 / →列 / 删列 / 左 / 中 / 右 / 整理 / 删除表`；\n· 查找面板：placeholder `查找` / `替换`，按钮 `替换` / `全部`；\n· DOM 里 title：`一级标题 / 二级标题 / 三级标题 / 粗体 / 斜体 / 删除线 / 行内代码 / 链接 / 引用 / 列表 / 区分大小写 / 正则表达式`；\n· `setAttribute('aria-label', …)`：`查找` / `替换` / `格式工具栏`。\n**范围**：引擎侧共 **43 处**硬编码中文 UI 文案，分布在 5 个文件\n（`image/widget.ts` 10 / `table/toolbar.ts` 13 / `selectionToolbar.ts` 11 / `documentSearch.ts` 8 / `codeBlockLabel.ts` 1）。\n**为什么此前没有被发现**：本项的证据只有 `packages/i18n/test/index.test.ts`（zh/en **目录键一致性**），\n而 CI 护栏 `verify-i18n-contract.mjs` 只覆盖 `t('<字面量>')` 与 schema 的 labelKey/descriptionKey ——\n**硬编码字符串对二者都不可见**（该护栏的范围声明此前只写「不覆盖 Rust 侧 / HTML 模板」，未提引擎侧）。\n**处置**：① 状态 `AUTO` → `IMPL`（`AUTO` 的含义是「自动化测试通过」；而本项的关键主张\n「English 完整」在引擎侧**经实测不成立**，继续标 `AUTO` 会让门禁把它当不阻断 —— 与 §5.7 同型）；\n② `blockedBy: engine-i18n-plumbing-pending`（修复需先定「引擎侧文案的真值源与注入方式」——\n属设计决策，非纯工作量）；③ `verify-i18n-contract.mjs` 新增**登记表 + 双向核对**：\n现状已登记为清单（新增硬编码中文 UI 文案即失败、删掉须注销），清单同时充当修复的工作清单；\n④ 证据补入本探针与清单所在护栏。\n**未处置（仅记录，属另一方向）**：`table/liveView.ts` 的 aria-label 是**硬编码英文**\n（`Empty table cell` / `Edit table cell: …` / `Markdown table`）—— 在**默认的中文界面**下同样未本地化。\n该方向不在本次登记表内（英文串里混有刻意语言中立的按钮文本如 `Aa` / `.*`，静态判定噪声大）。",
       "grade": "B",
-      "status": "AUTO",
+      "status": "IMPL",
       "ownerPackage": "packages/i18n",
       "evidence": [
         "docs/product/Mellow-PRD-V1.2-FINAL.md",
-        "packages/i18n/test/index.test.ts"
+        "packages/i18n/test/index.test.ts",
+        "tests/e2e/i18n-engine-probe.mjs"
       ],
       "requiredEvidence": [
         "unit",
@@ -697,7 +698,8 @@
         "macos",
         "windows-ci",
         "linux-ci"
-      ]
+      ],
+      "blockedBy": "engine-i18n-plumbing-pending"
     },
     {
       "id": "P0-PLATFORM-001",
