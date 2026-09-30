@@ -54,6 +54,13 @@ import {
   // 审计 §4.38：文档路径变更（rename / move / 撤销 / 删除）与 recent 的同步共用同一纯函数
   replaceRecentFilePath,
   removeRecentFilePath,
+  // 任务 4.10：表格创建对话框的模板生成（spec §3；默认值与兜底均为一手证据）
+  buildGfmTable,
+  parseTableCount,
+  TABLE_TEMPLATE_DEFAULT_ROWS,
+  TABLE_TEMPLATE_DEFAULT_COLUMNS,
+  TABLE_TEMPLATE_EMPTY_ROWS,
+  TABLE_TEMPLATE_EMPTY_COLUMNS,
   pushRecentFolder,
   serializeRecentFolders,
   filterFileTree,
@@ -998,22 +1005,38 @@ export default function App() {
     message: string;
     /** 输入型对话框（G7-EDIT-10）：存在则渲染输入框 */
     input?: { initialValue: string; placeholder?: string };
+    /**
+     * **多字段**输入型对话框（任务 4.10：表格创建对话框 Rows/Columns）。
+     *
+     * 与 `input` 共用**同一状态机**（同一视觉、同一 Esc / 点遮罩 = 取消、同一 resolver）——
+     * 项目已把「同一操作两套实现」记为结构性缺陷，故这里是**扩展**而不是第二套对话框。
+     * 两者不会同时出现（`input` 单字段，`inputs` 多字段）。
+     */
+    inputs?: Array<{ id: string; label: string; initialValue: string; placeholder?: string; numeric?: boolean }>;
     buttons: Array<{ label: string; value: string; primary?: boolean }>;
   } | null>(null);
   const [askInputDraft, setAskInputDraft] = useState('');
+  /** 多字段草稿（与 `askInputDraft` 并列；`.then` 里读 state 会拿到过期闭包值，故另有镜像 ref） */
+  const [askFormDraft, setAskFormDraft] = useState<Record<string, string>>({});
   /** 输入框当前值的**镜像 ref**：`.then` 里读 state 会拿到过期闭包值 */
   const askInputValueRef = useRef('');
+  const askFormDraftRef = useRef<Record<string, string>>({});
   const askResolverRef = useRef<((value: string) => void) | null>(null);
   const askUser = useCallback((options: {
     title: string;
     message: string;
     input?: { initialValue: string; placeholder?: string };
+    inputs?: Array<{ id: string; label: string; initialValue: string; placeholder?: string; numeric?: boolean }>;
     buttons: Array<{ label: string; value: string; primary?: boolean }>;
   }): Promise<string> => new Promise<string>((resolve) => {
     const previous = askResolverRef.current;
     askResolverRef.current = resolve;
     askInputValueRef.current = options.input?.initialValue ?? '';
     setAskInputDraft(options.input?.initialValue ?? '');
+    const formDraft: Record<string, string> = {};
+    for (const field of options.inputs ?? []) formDraft[field.id] = field.initialValue;
+    askFormDraftRef.current = formDraft;
+    setAskFormDraft(formDraft);
     setAskDialog(options);
     // 已有未决对话框（理论不可达）→ 以「取消」结束旧的，避免旧 await 永久悬空
     previous?.(options.buttons[options.buttons.length - 1]?.value ?? 'cancel');
@@ -1039,6 +1062,26 @@ export default function App() {
       { label: t('dialog.cancel'), value: 'cancel' },
     ],
   }).then((button) => (button === 'ok' ? askInputValueRef.current : null)), [askUser, t]);
+  /**
+   * **多字段**输入型应用内对话框（任务 4.10：表格创建 Rows / Columns）。
+   *
+   * 语义与 `askInput` 完全对齐：**确定 → 返回各字段值**；**取消 / Esc / 点遮罩 → `null`**。
+   * 复用 `askUser` 的同一状态机（只多渲染若干输入框），故 Esc / 遮罩 / 焦点语义自动一致。
+   */
+  const askForm = useCallback((options: {
+    title: string;
+    message?: string;
+    inputs: Array<{ id: string; label: string; initialValue: string; placeholder?: string; numeric?: boolean }>;
+    confirmLabel?: string;
+  }): Promise<Record<string, string> | null> => askUser({
+    title: options.title,
+    message: options.message ?? '',
+    inputs: options.inputs,
+    buttons: [
+      { label: options.confirmLabel ?? t('dialog.ok'), value: 'ok', primary: true },
+      { label: t('dialog.cancel'), value: 'cancel' },
+    ],
+  }).then((button) => (button === 'ok' ? { ...askFormDraftRef.current } : null)), [askUser, t]);
   const answerAsk = useCallback((value: string) => {
     const resolve = askResolverRef.current;
     askResolverRef.current = null;
@@ -1740,6 +1783,32 @@ export default function App() {
       host.insertText(text, head, head);
     }
   }, []);
+
+  /**
+   * 表格创建对话框（`table-editing-spec` §3 Create Dialog；任务 4.10）。
+   *
+   * **一手证据（本机 Typora 1.14.9）**：对话框只有 **Columns（默认 3）/ Rows（默认 4）**
+   * 两个数字输入 + Cancel/OK，**没有对齐字段**（spec §3 原写的「optional alignment」是规格失真，
+   * 已在 spec 内更正）；`Rows` **含表头行**（`verify` 补到恰好 row 行、resize 精确保留 l 行，
+   * 两条独立路径互证）。空值兜底：列 → 2、行 → 1。
+   *
+   * 菜单（`paragraph.table` 子项）与 Slash（`/table`）**共用 `insert.table` 一个命令** →
+   * 两条入口都经此对话框，不各写一套。
+   */
+  const insertTableWithDialog = useCallback(async () => {
+    const values = await askForm({
+      title: t('dialog.tableInsert'),
+      inputs: [
+        { id: 'columns', label: t('dialog.tableColumns'), initialValue: String(TABLE_TEMPLATE_DEFAULT_COLUMNS), numeric: true },
+        { id: 'rows', label: t('dialog.tableRows'), initialValue: String(TABLE_TEMPLATE_DEFAULT_ROWS), numeric: true },
+      ],
+    });
+    if (values === null) return; // 取消 / Esc / 点遮罩 → 不插入（不留 `/` 残字）
+    replaceSlashTrigger(buildGfmTable(
+      parseTableCount(values.rows, TABLE_TEMPLATE_EMPTY_ROWS),
+      parseTableCount(values.columns, TABLE_TEMPLATE_EMPTY_COLUMNS),
+    ));
+  }, [askForm, replaceSlashTrigger, t]);
 
   /** V7-W1.7：格式 → 图像 → 插入本地图片…（Typora「Insert Local Images」）。
    *  文件选择器选图 → 光标处插入 Markdown 图片语法；同根路径下优先相对路径（Typora 行为）。 */
@@ -5161,7 +5230,7 @@ export default function App() {
       { id: 'insert.list', localizedTitle: { zh: '列表', en: 'List' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['ul', 'lb'] } }, enabled: always, execute: () => replaceSlashTrigger('- ') },
       { id: 'insert.task', localizedTitle: { zh: '任务', en: 'Task' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['todo', 'rw'] } }, enabled: always, execute: () => replaceSlashTrigger('- [ ] ') },
       { id: 'insert.quote', localizedTitle: { zh: '引用', en: 'Quote' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['blockquote', 'yy'] } }, enabled: always, execute: () => replaceSlashTrigger('> ') },
-      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, enabled: always, execute: () => replaceSlashTrigger('\n|  |  |\n|---|---|\n|  |  |') },
+      { id: 'insert.table', localizedTitle: { zh: '表格', en: 'Table' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['bg'] } }, enabled: always, execute: () => void insertTableWithDialog() },
       { id: 'insert.code', localizedTitle: { zh: '代码块', en: 'Code Block' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['fence', 'dm'] } }, enabled: always, execute: () => replaceSlashTrigger('```\n\n```') },
       { id: 'insert.math', localizedTitle: { zh: '数学公式', en: 'Math' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['formula', 'sx'] } }, enabled: always, execute: () => replaceSlashTrigger('$$\n\n$$') },
       { id: 'insert.mermaid', localizedTitle: { zh: 'Mermaid 图表', en: 'Mermaid Diagram' }, category: 'insert', context: { scope: 'document' }, presentation: { slash: { aliases: ['diagram', 'tt'] } }, enabled: always, execute: () => replaceSlashTrigger('```mermaid\ngraph TD\n  A --> B\n```') },
@@ -6226,12 +6295,42 @@ export default function App() {
                 }}
               />
             )}
+            {askDialog.inputs !== undefined && (
+              <div className="confirm-modal-fields">
+                {askDialog.inputs.map((field, index) => (
+                  <label key={field.id} className="confirm-modal-field">
+                    <span className="confirm-modal-field-label">{field.label}</span>
+                    <input
+                      className="confirm-modal-input"
+                      type={field.numeric === true ? 'number' : 'text'}
+                      min={field.numeric === true ? 1 : undefined}
+                      value={askFormDraft[field.id] ?? ''}
+                      placeholder={field.placeholder ?? ''}
+                      // 焦点给第一个字段（键盘用户可直接输入；Tab 在字段间移动）
+                      autoFocus={index === 0}
+                      onChange={(event) => {
+                        const next = { ...askFormDraftRef.current, [field.id]: event.target.value };
+                        setAskFormDraft(next);
+                        askFormDraftRef.current = next;
+                      }}
+                      onKeyDown={(event) => {
+                        // Enter = 主按钮（确定）；Esc 由全局 handler 处理（= 取消）
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          answerAsk('ok');
+                        }
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="confirm-modal-actions">
               {askDialog.buttons.map((button) => (
                 <button
                   key={button.value}
                   className={button.primary === true ? 'confirm-modal-primary' : undefined}
-                  autoFocus={askDialog.input === undefined && button.primary === true}
+                  autoFocus={askDialog.input === undefined && askDialog.inputs === undefined && button.primary === true}
                   onClick={() => answerAsk(button.value)}
                 >
                   {button.label}

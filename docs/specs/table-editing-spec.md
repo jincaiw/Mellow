@@ -46,8 +46,10 @@ Create Dialog：
 > 对齐的正确位置在 §4 Toolbar / §6（只 patch delimiter row）——创建对话框**不得**加对齐字段，
 > 否则会做出一个 Typora 没有的界面。
 >
-> **实现现状（2026-10-01）**：Mellow **尚未实现**该对话框 —— `insert.table`
->（菜单 `paragraph.table` 子项 / Slash `/table`）直接插入固定 2×2。属**已登记缺口**（见审计 §4.39）。
+> **实现现状（2026-10-01）**：Mellow **已实现**该对话框 —— 菜单 `paragraph.table` 子项与 Slash `/table`
+> 共用的 `insert.table` 会打开应用内对话框（复用既有 `askUser` 状态机，见 `App.tsx` 的 `askForm`），
+> 生成逻辑在 `packages/app-core/src/tableTemplate.ts`（默认 4 行 × 3 列；`Rows` 含表头行；
+> 空值兜底列 2 / 行 1 —— 均为一手证据）。上限（30 列 / 100 行）是 **Mellow 自定**，见该文件头。
 
 ---
 

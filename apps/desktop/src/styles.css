@@ -1210,6 +1210,33 @@ html, body, #root {
   outline: none;
 }
 
+/* 多字段对话框（任务 4.10：表格创建 Rows/Columns）——
+   与单输入同视觉，只多一行「标签 + 输入框」。 */
+.confirm-modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.confirm-modal-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confirm-modal-field-label {
+  flex: 0 0 auto;
+  min-width: 3.5em;
+  font-size: 12px;
+  color: var(--mellow-fg-muted);
+}
+
+.confirm-modal-field .confirm-modal-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .confirm-modal-input:focus {
   border-color: var(--mellow-accent);
 }

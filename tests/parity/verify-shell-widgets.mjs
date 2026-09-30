@@ -389,6 +389,60 @@ if (showElBody !== '') {
   if (!/\.confirm-modal-input \{/.test(read('apps/desktop/src/styles.css'))) {
     fail('styles.css 缺少 .confirm-modal-input 样式');
   }
+  // ── 多字段对话框 + 表格创建必须经对话框（任务 4.10 / spec §3，2026-10-01）──────
+  // 立节原因：spec §3 要求表格创建走 Create Dialog（一手证据：Typora `#table-insert-dialog`
+  // 的 Columns 默认 3 / Rows 默认 4，且 `Rows` **含表头行**）。此前 `insert.table`
+  // **直接插固定 2×2** —— 菜单与 Slash 两条入口都没有对话框。
+  // 两条断言：① 表格创建必须走对话框（execute 不得再含硬编码表格字面量）；
+  // ② 多字段必须**复用同一状态机**（`askForm` 经 `askUser`，不得自己 setAskDialog）——
+  // 项目已把「同一操作两套实现」记为结构性缺陷（见 App.tsx 的 applyDocumentRename 注释）。
+  {
+    const code = stripComments(desktopSrc);
+    if (!/const insertTableWithDialog = useCallback\(/.test(code)) {
+      fail('缺少 insertTableWithDialog（表格创建必须经 spec §3 的 Create Dialog）');
+    }
+    // ⚠️ 必须**按行**取命令（该行内含 `{ slash: { aliases: ['bg'] } },`，
+    // 用 `[\s\S]{0,N}?\},` 这类「匹配到第一个 `},`」的写法会被它提前截断 —— 首版即栽在此处）。
+    const insertTableCmd = /id: 'insert\.table'[^\n]*/.exec(code)?.[0] ?? '';
+    if (insertTableCmd === '') {
+      fail('无法定位 insert.table 命令（锚点漂移，请更新护栏 —— 不要静默漏检）');
+    } else if (!/insertTableWithDialog\(\)/.test(insertTableCmd)) {
+      fail('insert.table 未走创建对话框 —— spec §3 要求 Rows/Columns 对话框（菜单与 Slash 共用此命令）');
+    } else if (/\|\s{2}\|/.test(insertTableCmd)) {
+      fail('insert.table 仍在硬编码表格字面量 —— 应改为经对话框生成');
+    }
+    // 多字段必须复用 askUser 的同一状态机（切到下一个顶层 const 为止，不用固定长度窗口）
+    const askFormStart = code.indexOf('const askForm = useCallback(');
+    const askFormBody = askFormStart === -1 ? '' : (() => {
+      const rest = code.slice(askFormStart);
+      const nextIdx = rest.search(/\n  const [a-zA-Z]/);
+      return nextIdx === -1 ? rest : rest.slice(0, nextIdx);
+    })();
+    if (askFormBody === '') {
+      fail('缺少 askForm（多字段输入型对话框）');
+    } else if (!/askUser\(\{/.test(askFormBody)) {
+      fail('askForm 未复用 askUser 的同一状态机 —— 不得新起第二套对话框（「同一操作两套实现」是已登记的结构性缺陷）');
+    } else if (/setAskDialog\(/.test(askFormBody)) {
+      fail('askForm 直接 setAskDialog —— 绕过了共享状态机（Esc / 点遮罩 / 焦点语义会分叉）');
+    }
+    if (!/className="confirm-modal-fields"/.test(code)
+      || !/\.confirm-modal-fields \{/.test(read('apps/desktop/src/styles.css'))) {
+      fail('多字段对话框未渲染 / 缺少 .confirm-modal-fields 样式');
+    }
+    // canary：把 insert.table 改回硬编码表格必须被检出
+    const drift = code.replace(
+      'execute: () => void insertTableWithDialog()',
+      "execute: () => replaceSlashTrigger('\\n|  |  |\\n|---|---|\\n|  |  |')",
+    );
+    if (drift === code) {
+      fail('表格创建对话框 canary 未武装：无法注入「改回硬编码插入」漂移（锚点漂移，请更新护栏）');
+    } else {
+      const driftCmd = /id: 'insert\.table'[^\n]*/.exec(drift)?.[0] ?? '';
+      if (/insertTableWithDialog\(\)/.test(driftCmd)) {
+        fail('表格创建对话框 canary 失效：改回硬编码后仍判定为走对话框');
+      }
+    }
+  }
   // G7-EDIT-10 收尾（2026-09-22 补漏）：迁移到应用内输入框后，**消费者**必须同步。
   // commit 5cb37df 把 9 处 window.prompt 迁走并加了新测试，却漏改两个既有消费者
   // （tests/visual/sidebar-golden.mjs、tests/e2e/drag-drop-verify.mjs）——

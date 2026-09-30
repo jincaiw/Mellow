@@ -452,6 +452,11 @@ const zhCN = {
   'dialog.clearRecentTitle': '清除最近项目',
   // 2026-09-30：Typora 偏好面板「重置高级设置」的对标
   'dialog.restoreSettingsTitle': '恢复默认设置',
+  // 2026-10-01（任务 4.10）：表格创建对话框（spec §3 Create Dialog）
+  // 文案对齐 Typora 官方 Front.strings（zh-Hans）：Insert Table=插入表格 / Columns=列 / Rows=行
+  'dialog.tableInsert': '插入表格',
+  'dialog.tableColumns': '列',
+  'dialog.tableRows': '行',
   'dialog.restoreSettingsMessage': '将所有设置项恢复为默认值。此操作会丢弃你对设置的全部自定义（快捷键自定义不受影响），且无法撤销。',
   'dialog.restoreSettingsConfirm': '恢复默认',
   'dialog.clearRecentMessage': '请选择要清除的历史范围。',
@@ -1338,6 +1343,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'dialog.ok': 'OK',
   'dialog.clearRecentTitle': 'Clear Recent Items',
   'dialog.restoreSettingsTitle': 'Restore Default Settings',
+  'dialog.tableInsert': 'Insert Table',
+  'dialog.tableColumns': 'Columns',
+  'dialog.tableRows': 'Rows',
   'dialog.restoreSettingsMessage': 'Restore every setting to its default value. This discards all your setting customizations (keyboard shortcut overrides are not affected) and cannot be undone.',
   'dialog.restoreSettingsConfirm': 'Restore Defaults',
   'dialog.clearRecentMessage': 'Choose which recent items to clear.',

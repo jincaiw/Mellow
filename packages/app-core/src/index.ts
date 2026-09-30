@@ -36,3 +36,14 @@ export { ExtensionRegistry, buildExtensionContext, createNullExtensionHost } fro
 export type { ExtensionHost, ExtensionDocumentHost } from './extensions';
 // V7-W5（G7-FEAT-03）：定时自动保存策略（Typora Win/Linux 默认 5 分钟）
 export { DEFAULT_AUTOSAVE_MINUTES, MIN_AUTOSAVE_MINUTES, MAX_AUTOSAVE_MINUTES, parseAutosaveMinutes, isAutosaveEnabled, autosaveIntervalMs } from './autosave';
+// 2026-10-01（审计 §4.39 / 任务 4.10）：表格创建对话框的模板生成（spec §3 Create Dialog）
+export {
+  buildGfmTable,
+  parseTableCount,
+  TABLE_TEMPLATE_DEFAULT_ROWS,
+  TABLE_TEMPLATE_DEFAULT_COLUMNS,
+  TABLE_TEMPLATE_EMPTY_ROWS,
+  TABLE_TEMPLATE_EMPTY_COLUMNS,
+  TABLE_TEMPLATE_MAX_ROWS,
+  TABLE_TEMPLATE_MAX_COLUMNS,
+} from './tableTemplate';
