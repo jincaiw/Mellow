@@ -1376,6 +1376,46 @@ grep -rn "finalNewline|preLinebreakOnExport|Magnification|magnification" package
    这一层（jsdom + 单测），**真实捏合行为需真机会话补验** —— 与 §4.19 同类的边界。
    **不得**把本节读成「双指缩放已在真机上验证通过」。
 
+## 4.29 §15.3 行 14b 剩项复核：「使用主题的字体大小」的作用域被写错了（2026-09-30）
+
+**方法**：不靠回忆，直接读**本机 Typora 的一手资源** —— `Panel.strings`（`plutil -convert json`）
+与偏好面板的编译产物 `TypeMark/page-dist/static/js/Preferences.*.js`。
+
+**发现**：`useThemeFontSize`（面板标签「Use theme font size / 使用主题的字体大小」）
+**不是通用偏好**，而是 **图片导出**分区里 `fontSize` 组的一个 **radio**：
+
+```js
+fontSize: { label: "Font Size", type: "group", content: [
+  { key: "useThemeFontSize", type: "radio", options: {
+      0: "Use custom font size", 1: "Use theme font size" }, default: 0 },
+  { key: "imageFontSize", type: "number", unit: "px", default: 24,
+    visible: e => !e.useThemeFontSize },
+] }
+```
+
+消费点也在导出路径：`exportToImage` 里 `o.useThemeFontSize && (o.fontSize = void 0)`
+—— 即**让主题 CSS 的字号生效**（而不是用一个自定义的 24px）。
+
+**Mellow 侧对照**：图片导出只有 `format` / `width` / `quality` 三个选项，
+**没有字号**；正文字号是**硬编码常量** `BODY_SIZE = 16`（`packages/export/src/image/index.ts`）。
+→ 真实状态是「**缺选项 ＋ 默认值偏离**」：Mellow 固定 16px vs Typora 默认 24px。
+**这处默认值偏离此前从未被记录过**（原条目只写「该项无实现」，看不出是导出子选项，
+更看不出默认值不同）。
+
+**裁决**：**E（补齐图片导出的字号选项）**，但**登记待实施**（**scope 决策，路径已查明**）：
+- 需给 `ImageExportOptions` 加 `bodyFontSize`，把 `BODY_SIZE` 的约 10 处读取改为读该选项
+  （该文件已有 `scale = size / BODY_SIZE` 的换算结构，可循此线程化）；
+- ＋ 两个设置项（自定义字号 / 是否用主题字号）＋ 护栏。
+- **⚠️ 关键风险（故不在本轮擅自实施）**：对齐 Typora 默认（24px）会**改变所有既有图片导出的输出**
+  —— 面积按 1.5× 放大，更易触及 `MAX_IMAGE_HEIGHT` / `MAX_IMAGE_PIXELS` 长图保护。
+  故「是否对齐默认值」需**视觉 / 真机确认**后再改，不能凭「对齐 Typora」一句话改。
+
+**教训**：**「偏好面板里的一项」不等于「一项通用偏好」**。
+Typora 的面板有**分区专属**的子选项（本项只在图片导出分区、且是 radio 的一半）。
+把它的作用域写宽或写窄，都会让「缺口」看起来比实际大或小 ——
+**记一项待办时，要连同它的作用域（哪个分区、和谁配对、默认值）一起记**，
+否则下一个执行者会去改错的地方（比如去动编辑器的排版真源）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
