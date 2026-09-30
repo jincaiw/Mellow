@@ -1192,6 +1192,64 @@ settings 17/17、i18n 15/15、desktop `tsc` 0 错误、完整 parity 链全绿�
   （`formatMessage` 对缺失变量返回空串 → 屏幕上是「缺一块」而非报错，静态判定需解析 ICU 子集）；
 - Rust 侧 / HTML 模板文案不在覆盖内。
 
+## 4.25 原生菜单勾选态：**设置面板这条入口漏了重建** → 「设置里改了、菜单上没变」（2026-09-30）
+
+**发现路径**：继续按「跨层声明」的母题找其它实例。这次查**命令 id 引用 ↔ 注册表**与
+**`invoke('x')` ↔ Rust 命令**。前者出现 9 个 `export.*` 的「未注册」是**我的解析器假阳性**
+（它们在 App.tsx 里由**格式表驱动动态注册**，不是字面量 `id: …, localizedTitle:` 相邻形态）
+—— 记下来是为了下次别再当成缺陷。后者抓到 2 个 `invoke('set_spellcheck_state')`，
+顺藤摸出了本节的真缺陷。
+
+**缺陷 1（用户可见）：设置面板改「拼写检查 / 智能标点 / 首行缩进」时，原生菜单的勾选态不跟随。**
+
+- `menuSchema` 用 `checkedFrom` 声明勾选值来源；其中 **`spellcheck` / `smartPunct` /
+  `firstLineIndent` 三项的值存在 localStorage**（不是 React state），
+  所以它们**必须**靠 `menuCheckTick` 自增来触发菜单 effect 重建；
+  另三项（`statusbar` / `toolbar` / `themeMode`+`activeTheme`）走 React state，天然在依赖数组里。
+- **菜单入口**（`edit.spellcheck.toggle` / `edit.smartPunctuation.toggle` /
+  `edit.firstLineIndent.toggle` 三条命令）都自增了 tick ✓；
+- **设置面板入口**（`applySetting` 的对应分支）**漏了 tick** ✗ →
+  在设置里关掉「键入时检查拼写」，Edit 菜单里**仍然是勾选状态**。
+- 而 `App.tsx` 里 `edit.firstLineIndent.toggle` 的注释恰好警告过同一问题的**反方向**：
+  「两处入口必须走同一条写入路径，否则会出现『菜单勾上了、设置里没变』」——
+  **反方向（设置里改了、菜单上没变）当时没有对应检查**。
+
+**缺陷 2：设置路径里两处 `invoke('set_spellcheck_state')` 是注定失败的死调用。**
+
+该命令是**旧的状态同步机制**，已被「整体 `set_menu_spec` 重建」取代（`App.tsx` 注释明确写了
+「取代旧 set_menu_locale / set_recent_files / set_theme_selection / set_spellcheck_state /
+set_smart_punct_state 五条状态同步命令」），且 **`verify-menu-contract.mjs` §4 明令禁止
+Rust 侧复活它**。但前端仍在调用，并用 `.catch(() => undefined)` 吞掉失败 →
+**看着像在同步原生菜单，其实什么也没发生**。这也解释了缺陷 1 为何长期没被发现：
+**有一个「看起来在处理这件事」的调用占着位置**。
+
+**处置（2026-09-30）**：
+1. `applySetting` 的三处分支补 `setMenuCheckTick((n) => n + 1)`（与菜单入口同进同退）。
+2. 删除两处死调用（设置路径 + 启动初始化路径）。
+3. `menuCheckTick` 的声明**上移到 `applySetting` 之前**，并在注释里写明原因：
+   目前只在回调体内引用（调用时求值，不会 TDZ），但**若将来有人把它放进依赖数组，
+   依赖数组是 render 期求值的 → 会 TDZ**（本项目已记录过这个坑）。
+4. **护栏**（`verify-menu-contract.mjs` 新增 §4b）：对三项逐一断言
+   「**设置面板入口**自增 tick」＋「**菜单入口**自增 tick」（两条入口同进同退）；
+   并断言**前端不得调用**那 5 条已移除的 legacy 命令 —— 与 §4 的 Rust 侧禁令构成
+   **两端同时锁**。注入 **5 个 mutation，5/5 被检出**。
+
+**⚠️ 本轮我自己的两个错，都值得记**：
+- **① 大小写滑手导致错误结论**：我先用 `menuCheckTick` 搜「谁在调用」，
+  而调用点是 `setMenuCheckTick`（**大写 M**）→ **匹配不到** → 我一度得出
+  「`setMenuCheckTick` 从未被调用」的结论，并已写进代码注释。
+  读到三处真实调用后才更正为「**只有设置面板这条入口漏了**」。
+  → 教训：**搜「某标识符有没有被用」时要搜它的所有形态（含 setter / 包装名），别只搜裸名**；
+  JS 区分大小写，`grep` 默认也区分。
+- **② 护栏首跑误报，原因是我给切窗取了固定长度**：`applyBody.slice(idx, idx + 400)`
+  —— 而那个 case 里有 ~350 字符的中文注释，**窗口够不到断言目标** → 报「未自增」。
+  改成「切到该 case 的 `break;`」并对单行分支按行切后通过。
+  → 教训：**静态切窗不要用固定长度**，用「到下一个结构标记」的语义边界。
+
+**⚠️ 不过度声称**：本节的判据是「**有没有触发重建**」。
+菜单**是否真的重建成功**（`set_menu_spec` 的 IPC 结果）在非 Tauri 环境下不判定，
+需真机/运行时证据（e2e 或人工）—— 与 §4.19 同类的边界。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

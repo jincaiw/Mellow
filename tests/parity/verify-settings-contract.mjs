@@ -555,7 +555,10 @@ if (cssLayerAnchor === undefined) {
   if (!/id: 'editor\.firstLineIndent'.*defaultValue: false.*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
     fail('settings 缺少 editor.firstLineIndent（或默认值/applyCommand 不符）：Typora indentFirstLine 默认 false');
   }
-  if (!/def\.id === 'editor\.firstLineIndent'\) host\?\.setEditorConfig\('setFirstLineIndent', \{ enabled: Boolean\(value\) \}\)/.test(appSource)) {
+  // ⚠️ 2026-09-30：此断言原为 `...firstLineIndent'\) host\?\.` —— **锁死了「无大括号单语句」形态**，
+  // 于是给它加一条语句（补 setMenuCheckTick）就会被拦。形状锁既会固化缺陷、也会拦住合法改动。
+  // 现放宽为：分支体内**确实**下发 setFirstLineIndent(Boolean(value))（允许 `{ … }` 块形态）。
+  if (!/def\.id === 'editor\.firstLineIndent'\)\s*\{?\s*host\?\.setEditorConfig\('setFirstLineIndent', \{ enabled: Boolean\(value\) \}\)/.test(appSource)) {
     fail("App.tsx 缺少 firstLineIndent 的 live apply（setEditorConfig('setFirstLineIndent')）");
   }
   if (!/settingById\('editor\.firstLineIndent'\)[\s\S]{0,260}?setEditorConfig\('setFirstLineIndent', \{ enabled: true \}\)/.test(appSource)) {

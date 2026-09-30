@@ -3681,10 +3681,6 @@ export default function App() {
           if (spellDef && readSetting(spellDef) === false) {
             host.setSpellcheckEnabled(false);
           }
-          if ('__TAURI_INTERNALS__' in window) {
-            const spellInit = spellDef ? readSetting(spellDef) !== false : true;
-            void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: spellInit })).catch(() => undefined);
-          }
           // R2-1 智能标点启动恢复（默认 false；Typora parity）
           const smartPunctDef = settingById('editor.smartPunctuation');
           if (smartPunctDef && readSetting(smartPunctDef) === true) {
@@ -4656,6 +4652,20 @@ export default function App() {
   }, [t]);
 
   /** Settings live apply（不要求重启；安全项立即生效） */
+  // P1-1.3：菜单 checkState 变更 tick —— spellcheck / smartPunct / firstLineIndent 的勾选值
+  // 存在 localStorage（非 React state），**任何入口**改动它们后都必须自增本 tick，
+  // 菜单 effect 才会重建原生菜单、勾选态才跟随。
+  // ⚠️ 2026-09-30 审计修复：**菜单入口**（`edit.spellcheck.toggle` / `edit.smartPunctuation.toggle`
+  // / `edit.firstLineIndent.toggle` 三条命令）都自增了 tick ✓，但**设置面板入口**没有 ——
+  // `applySetting` 的对应分支只写了 localStorage 与引擎开关，**漏了 tick** →
+  // 结果是「**在设置里改了，Edit 菜单的勾选态不变**」（菜单入口则正常）。
+  // 这与 5274 行注释警告的「两处入口必须走同一条写入路径」是同一个问题的**反方向**。
+  // 另：旧机制 `invoke('set_spellcheck_state')`（设置路径里那两处）**必然失败** ——
+  // 该命令已被架构移除（菜单改为整体 `set_menu_spec` 重建）且被护栏**明令禁止** Rust 侧复活，
+  // 而调用点用 `.catch(() => undefined)` 吞掉失败 → 看着像在同步，其实没有。已删除。
+  // 声明位置**刻意放在 applySetting 之前**：虽然只在回调体内引用（调用时求值，不会 TDZ），
+  // 但若将来有人把它放进 applySetting 的**依赖数组**，依赖数组是 render 期求值的 → 会 TDZ。
+  const [menuCheckTick, setMenuCheckTick] = useState(0);
   const applySetting = useCallback((def: SettingDefinition, value: string | number | boolean) => {
     switch (def.applyCommand) {
       case 'locale.set.system': {
@@ -4682,7 +4692,7 @@ export default function App() {
         else if (def.id === 'markdown.defaultCodeLang') host?.setEditorConfig('setDefaultCodeLang', { lang: String(value) });
         else if (def.id === 'editor.tabBehavior') host?.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(value) });
         else if (def.id === 'editor.codeIndentSize') host?.setEditorConfig('setCodeIndentSize', { indentWidth: Number(value) });
-        else if (def.id === 'editor.firstLineIndent') host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) });
+        else if (def.id === 'editor.firstLineIndent') { host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) }); setMenuCheckTick((n) => n + 1); }
         break;
       }
       case 'view.typewriter.on':
@@ -4743,17 +4753,19 @@ export default function App() {
         void dispatchCommand('updater.check');
         break;
       case 'settings.spellcheck': {
-        // D1-1 拼写检查 live apply：引擎偏好 + 原生菜单 CheckMenuItem 状态同步
-        const on = Boolean(value);
-        hostRef.current?.setSpellcheckEnabled(on);
-        if ('__TAURI_INTERNALS__' in window) {
-          void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_spellcheck_state', { checked: on })).catch(() => undefined);
-        }
+        // D1-1 拼写检查 live apply：引擎偏好 + 原生菜单勾选态重建。
+        // 2026-09-30 审计：原先这里 `invoke('set_spellcheck_state')` —— 该命令已被架构移除
+        // （菜单改为整体 `set_menu_spec` 重建，且护栏**明令禁止** Rust 侧复活它），
+        // 于是那次调用**必然失败**又被 `.catch(() => undefined)` 吞掉 → 看着像在同步，其实没有。
+        // 正确路径 = 自增 menuCheckTick 触发菜单 effect 重建（勾选值由 spec 里的 checkedFrom 派生）。
+        hostRef.current?.setSpellcheckEnabled(Boolean(value));
+        setMenuCheckTick((n) => n + 1);
         break;
       }
       case 'settings.smartPunctuation':
-        // R2-1 智能标点 live apply（引擎 inputHandler 开关）
+        // R2-1 智能标点 live apply（引擎 inputHandler 开关）+ 原生菜单勾选态重建
         hostRef.current?.setSmartPunctuationEnabled(Boolean(value));
+        setMenuCheckTick((n) => n + 1);
         break;
       case 'settings.codeLineNumbers':
         // 代码块行号 live apply（Typora 偏好→Markdown；引擎行号 widget 开关）
@@ -4930,9 +4942,6 @@ export default function App() {
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
   }, []);
-  // P1-1.3：菜单 checkState 变更 tick —— spellcheck/smartPunct 写入 localStorage 设置
-  // （非 React state），toggle 后自增以触发 syncNativeMenu 重建原生菜单。
-  const [menuCheckTick, setMenuCheckTick] = useState(0);
   useEffect(() => {
     const registry = new CommandRegistry();
     const always = () => true;

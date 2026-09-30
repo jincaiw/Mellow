@@ -281,6 +281,84 @@ if (/#\[cfg\(target_os/.test(menuRsSource)) {
   fail('Rust menu.rs 菜单结构不得使用 #[cfg(target_os)] 分支（平台差异在 spec 侧完成）');
 }
 
+// ── 4b. 勾选态必须「任一入口改动后都重建菜单」+ 前端不得调用已移除的 legacy 命令 ──
+// 缺陷族（2026-09-30 实测）：`checkedFrom` 的勾选值来源分两类 ——
+//   · React state（statusbar / toolbar / themeMode / activeThemeId）→ 在 effect 依赖数组里，天然重建；
+//   · **localStorage**（spellcheck / smartPunct / firstLineIndent）→ 依赖 `menuCheckTick` 自增。
+// 实测：**菜单入口**的三条命令都自增了 tick ✓，但**设置面板入口**（`applySetting` 的对应分支）
+// **漏了 tick** → 「在设置里改了，Edit 菜单的勾选态不变」（反方向则正常）。
+// 同时，旧机制 `invoke('set_spellcheck_state')` 仍在设置路径里被调用 —— 该命令已被架构移除
+// （菜单改为整体 `set_menu_spec` 重建）且**上一节明令禁止 Rust 侧复活**，调用点还用
+// `.catch(() => undefined)` 吞掉失败 → 看着像在同步，其实没有。
+// 故本节把「两端」同时锁上：**Rust 不得复活旧命令**（§4）＋ **前端不得调用旧命令**（本节）。
+{
+  const LS_CHECKED_SETTINGS = [
+    // [设置项 id, applySetting 里的定位标记, 菜单命令 id, 标记类型]
+    // ⚠️ 切窗**不能**用固定长度：case 内可能有大段中文注释（实测 ~350 字符），
+    // 固定窗口会够不到断言目标 → 误报「未自增」（护栏首跑即踩到）。
+    // 故：case 型切到该 case 的 `break;`；单行分支型只切该行。
+    ['editor.spellcheck', "case 'settings.spellcheck':", 'edit.spellcheck.toggle', 'case'],
+    ['editor.smartPunctuation', "case 'settings.smartPunctuation':", 'edit.smartPunctuation.toggle', 'case'],
+    ['editor.firstLineIndent', "def.id === 'editor.firstLineIndent'", 'edit.firstLineIndent.toggle', 'line'],
+  ];
+  const applyStart = appSource.indexOf('const applySetting = useCallback');
+  const applyEnd = applyStart < 0 ? -1 : appSource.indexOf('\n  }, [', applyStart);
+  const applyBody = (applyStart < 0 || applyEnd < 0) ? '' : appSource.slice(applyStart, applyEnd);
+  if (applyBody === '') {
+    fail('无法定位 App.tsx 的 applySetting（切片失败）→ 请同步更新本护栏，不要让它静默漏检');
+  } else {
+    for (const [settingId, caseMarker, commandId, scope] of LS_CHECKED_SETTINGS) {
+      // ① 设置面板入口：applySetting 的对应分支必须自增 tick
+      const idx = applyBody.indexOf(caseMarker);
+      if (idx < 0) {
+        fail(`applySetting 找不到 ${settingId} 的分支（标记 ${caseMarker}）→ 护栏需同步更新`);
+        continue;
+      }
+      const slice = scope === 'case'
+        ? (() => {
+          const brk = applyBody.indexOf('break;', idx);
+          return applyBody.slice(idx, brk < 0 ? idx + 1200 : brk);
+        })()
+        : applyBody.slice(idx, applyBody.indexOf('\n', idx) < 0 ? idx + 300 : applyBody.indexOf('\n', idx));
+      if (!/setMenuCheckTick\(/.test(slice)) {
+        fail(
+          `${settingId} 的**设置面板入口**未自增 menuCheckTick → `
+          + '「在设置里改了，Edit 菜单的勾选态不变」（菜单入口正常，故屏幕上看不出问题出在设置侧）',
+        );
+      }
+      // ② 菜单入口：命令体也必须自增 tick（两条入口同进同退）
+      const cmdIdx = appSource.indexOf(`id: '${commandId}'`);
+      if (cmdIdx < 0) {
+        fail(`App.tsx 找不到命令 ${commandId}（菜单勾选态入口）→ 护栏需同步更新`);
+        continue;
+      }
+      if (!/setMenuCheckTick\(/.test(appSource.slice(cmdIdx, cmdIdx + 500))) {
+        fail(`${commandId} 的菜单入口未自增 menuCheckTick → 勾选态不跟随`);
+      }
+    }
+  }
+  // 前端不得调用已移除的 legacy 状态同步命令（与 §4 的 Rust 侧禁令互补）
+  const legacyCalls = ['set_menu_locale', 'set_recent_files', 'set_theme_selection', 'set_spellcheck_state', 'set_smart_punct_state'];
+  const appCode = appSource.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  for (const legacy of legacyCalls) {
+    if (new RegExp(`invoke(?:\\(|<[^>]*>\\()\\s*'${legacy}'`).test(appCode)) {
+      fail(`App.tsx 仍在调用已移除的状态同步命令 ${legacy}（架构已改为整体 set_menu_spec；该调用必然失败且被 catch 吞掉）`);
+    }
+  }
+  // canary：① 去掉 tick 必须被检出；② legacy 调用必须被检出
+  const tickDrift = applyBody.replace(/setMenuCheckTick\(/g, 'noopCheckTick(');
+  if (tickDrift === applyBody || /setMenuCheckTick\(/.test(tickDrift)) {
+    fail('勾选态重建 canary 失效：无法模拟「去掉 tick」的漂移');
+  }
+  const legacySample = "invoke('set_spellcheck_state', { checked: true })";
+  if (!/invoke(?:\(|<[^>]*>\()\s*'set_spellcheck_state'/.test(legacySample)) {
+    fail('legacy 调用 canary 失效：样本未被检出');
+  }
+  if (/invoke(?:\(|<[^>]*>\()\s*'set_spellcheck_state'/.test("invoke('set_something_else')")) {
+    fail('legacy 调用 canary 失效：无关命令被误判为 legacy');
+  }
+}
+
 // ── 5. 文件菜单条目顺序（§7.2，separator 一并纳入 diff）────────────────────
 const SEP = { kind: 'separator' };
 const FILE_MENU_CONTRACT = [
