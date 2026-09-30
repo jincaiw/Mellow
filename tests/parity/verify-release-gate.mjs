@@ -30,8 +30,8 @@ const guardFiles = readdirSync(parityDir)
 const pkg = JSON.parse(read('package.json'));
 const testChain = pkg.scripts?.test ?? '';
 const parityChain = pkg.scripts?.parity ?? '';
-if (guardFiles.length < 13) {
-  fail(`parity 护栏数量异常（${guardFiles.length}），V7-W5 基线为 13，W8 起 14`);
+if (guardFiles.length < 17) {
+  fail(`parity 护栏数量异常（${guardFiles.length}），2026-10-01 基线为 17`);
 }
 const missingInTest = guardFiles.filter((name) => !testChain.includes(name));
 const missingInParity = guardFiles.filter((name) => !parityChain.includes(name));
@@ -289,6 +289,37 @@ if (driftedMissing.length === 0) {
     errors.push('CRLF canary 未武装：无法模拟「去掉归一化」的漂移，护栏已失效');
   } else if (/\\r\\n/.test(drifted)) {
     errors.push('CRLF canary 失效：注入后仍未检出缺失归一化');
+  }
+}
+
+// ── qualification README 的门禁表数字必须与实际一致（2026-10-01）────────────
+// 立此节的必要性：`tests/qualification/README.md` 是 **ADR-0019 §3 Gate 条款**指定的
+// 「三平台 Pass/Fail 表」载体，而它的**护栏数量**长期未刷新 —— 实测：写「14 个」而实际 **17 个**
+//（同段的包用例数也过期：写 editor-engine 1135 而实际 1277）。**数字过期会误导覆盖度判断**，
+// 且这类「自述与现实不符」在本项目已出现多次。
+//
+// ⚠️ **本节的落位本身就是一次教训**：首版把它写在 `if (errors.length > 0)` **之后** ——
+// 那里已经没有检查点了，`fail()` 只是往数组里塞字符串，**永远不会被判定**（= 护栏卫生里的
+// 「护栏看不见我」）。是 canary（注入漂移后**应当**失败却 exit 0）当场暴露的。
+// **新增断言必须落在错误检查点之前**；且**只做注入验证不够，必须验证「能翻转」**。
+//
+// ⚠️ 覆盖边界：只锁**护栏数量**（可静态算）；**包用例数需实跑**，无法在此校验 —— 如实声明。
+{
+  const readme = read('tests/qualification/README.md');
+  const STATED_RE = /Parity 契约护栏 \*\*(\d+) 个\*\*/;
+  const stated = STATED_RE.exec(readme)?.[1];
+  if (stated === undefined) {
+    fail('qualification README 缺少「Parity 契约护栏 N 个」声明（护栏需同步更新，不要静默漏检）');
+  } else if (Number(stated) !== guardFiles.length) {
+    fail(`qualification README 的护栏数量过期：写 ${stated} 个，实际 ${guardFiles.length} 个`
+      + ' —— 该文件是 ADR-0019 §3 Gate 条款的 Pass/Fail 表载体，数字过期会误导覆盖度判断');
+  }
+  // canary：改掉那个数字必须被检出
+  const drift = readme.replace(STATED_RE, 'Parity 契约护栏 **1 个**');
+  if (drift === readme) {
+    errors.push('qualification README 数字一致性 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+  } else if (Number(STATED_RE.exec(drift)?.[1]) === guardFiles.length) {
+    errors.push('qualification README 数字一致性 canary 失效：注入漂移后仍判定一致');
   }
 }
 

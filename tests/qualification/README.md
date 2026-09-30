@@ -117,7 +117,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 ## 自动化检查（本仓库可执行）
 
 ```sh
-# 1. 全仓测试（12 包 jest 1419 例 + parity 契约护栏 + qualification self-test）
+# 1. 全仓测试（12 包 jest 1824 例 + parity 契约护栏 + qualification self-test）
 pnpm test
 
 # 2. 构建 editor-core dist（bundle 构建模块）
@@ -131,17 +131,29 @@ cd apps/desktop && npm run build
 cd src-tauri && cargo check
 ```
 
-各包规模（jest，**2026-09-12 按包定向实跑，合计 1615 例全绿**）：editor-engine **1135** / app-core **219** / export **72** / host-api **43** / commands **30** / document-model **26** / editor-core **19**（另有 vendored CoreEditor 185）/ desktop-ui **17** / i18n **15** / extension-api **14** / settings **13** / themes **12**。
+各包规模（jest，**2026-10-01 按包定向实跑，合计 1824 例全绿**）：editor-engine **1277** / app-core **258** / export **89** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor 185）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
 
-> 数字按当日**按包定向**调用 `node_modules/.bin/jest` 的实跑结果刷新（app-core 217 → 219，
-> 合计 1613 → 1615）；全仓 `pnpm -r run test` 在本机会被 corepack 交互提示阻塞（要下载
-> pnpm 11.7.0），故不以此为度量口径。
+> **数字刷新纪律**：数字按当日**按包定向**调用 `node_modules/.bin/jest` 的实跑结果刷新；
+> 全仓 `pnpm -r run test` 在本机会被 corepack 交互提示阻塞（要下载 pnpm 11.7.0），故不以此为度量口径。
+>
+> ⚠️ **本表曾长期过期（2026-10-01 复核发现）**：上一版（2026-09-12）写「editor-engine 1135 /
+> app-core 219，合计 1615」，而当日实跑为 **1277 / 258，合计 1824**；同段的护栏数量也写 14 而实际 **17**。
+> → 现已改为**当日实跑值**，且**护栏数量**由 `tests/parity/verify-release-gate.mjs` 的
+> 「qualification README 数字一致性」断言 + canary 锁住（数量不符即硬失败）。
+> **包用例数无法静态校验**（需实跑），故只锁护栏数量 —— **如实声明这条覆盖边界**。
 
 > **注**：`extension-api` 自身无本地 jest 二进制，按其 package.json 的 `test` 脚本用
 > `../settings/node_modules/.bin/jest --rootDir .` 执行。全仓 `pnpm -r run test` 曾挂起
 > （9.5 小时无输出），改用**按包定向调用 `node_modules/.bin/jest`** 即可稳定跑完。
 
-Parity 契约护栏 **14 个**（2026-09-12 全 PASS）：parity-ledger / menu-contract / menu-contract-guard / shell-typography / shell-widgets / settings-contract / visual-golden / sidebar-contract / context-menu-parity / context-menu-guard / adapter-contract / runtime-qualification-workflow / build-pipeline（V7-W5 新增）/ **release-gate（V7-W8 新增）**，外加 `tests/qualification/ux-gate-recorder.mjs --self-test`。
+Parity 契约护栏 **17 个**（2026-10-01 全 PASS）：parity-ledger / menu-contract / menu-contract-guard / shell-typography / shell-widgets / settings-contract / **i18n-contract** / visual-golden / sidebar-contract / context-menu-parity / context-menu-guard / adapter-contract / runtime-qualification-workflow / build-pipeline（V7-W5 新增）/ **doc-code-refs** / **no-color-only-status** / **release-gate（V7-W8 新增）**，外加 `tests/qualification/ux-gate-recorder.mjs --self-test`。
+
+> **数量与清单由护栏锁定**：`tests/parity/verify-release-gate.mjs` 会列出 `tests/parity/` 下全部
+> `verify-*.mjs` 并要求它们**同时**接入根 `test` 与 `parity` 两条链；同文件另有一条断言要求
+> **本行的数量与实际一致**（不符即硬失败 + canary）。故新增/删除护栏时**必须同步改本行**。
+>
+> ⚠️ 上一版（2026-09-12）写 **14 个**且清单里缺 `i18n-contract` / `doc-code-refs` /
+> `no-color-only-status` 三条 —— **数量与清单都已过期**（2026-10-01 更正）。
 
 ### e2e 与视觉 Golden（需 Playwright，不依赖 GUI 授权）
 

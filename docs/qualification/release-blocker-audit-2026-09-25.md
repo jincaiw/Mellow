@@ -1963,6 +1963,54 @@ widget 永远停在加载态：用户看到**空白**，且因为没进 broken �
   「照 spec 正确、照 Typora 多余」的功能**。且这是**产品范围**决策（要不要有非 parity 的增强），
   按 AGENTS.md「先报告冲突，不擅自裁决」。
 
+## 4.42 `runtime-qualification-plan` 复核：矩阵未与 ADR-0022 同步 + §9 缺一个输出物 + **qualification README 数字长期过期**（2026-10-01）
+
+### 发现 1：§4 平台矩阵与 §5 必测项目**未与 ADR-0022 同步**
+
+本节的写法是 **V0.0 期**（决定 Tauri vs Electron）口径。其后 **ADR-0022（Accepted）** 明确
+取代 ADR-0019 §3 的「Windows／Linux 必须以人工真机回填」，并写明「CI 的无交互桌面限制必须如实记录……
+**不再要求**以人工 Windows／Linux 机器补齐」—— **但本节与 §5 一直没改**，读起来仍像
+Fedora / ibus / Windows 10·11 区分 / Sogou·Microsoft Pinyin / dead keys 等都是要求。
+
+**处置**：在 §4 后**追加更正块 + 差集表**（逐项列出「CI 实际覆盖 vs 要求」与**没有任何证据**的项：
+Fedora、ibus、Windows 10/11 区分、第三方输入法面板、dead keys、跨应用剪贴板矩阵、100k lines）。
+**保留原文、不删条目** —— 差集表本身就是「如实记录未覆盖项」的载体，删掉会让缺口从视野里消失。
+
+### 发现 2：§9 的四个输出物里 **1 个从未产出**
+
+| 输出物 | 现状 |
+|---|---|
+| benchmark report | ✅（`tests/qualification/evidence/` 的 perf 证据族） |
+| **platform issue list** | ❌ **不存在**（全仓无此文件） |
+| pass/fail table | ✅ `tests/qualification/README.md`（但数字过期，见发现 3） |
+| 「ADR-0002 final decision」 | ⚠️ **引用过期** —— 最终决策实际落在 **ADR-0019**（Accepted，取代 ADR-0002） |
+
+### 发现 3（本轮修复）：`tests/qualification/README.md` 的数字**长期过期**
+
+该文件是 **ADR-0019 §3 Gate 条款**指定的「三平台 Pass/Fail 表」载体，而实测：
+
+- 写「Parity 契约护栏 **14 个**」→ 实际 **17 个**（且清单里缺 `i18n-contract` / `doc-code-refs` /
+  `no-color-only-status` 三条）；
+- 写「editor-engine **1135** / app-core **219**，合计 **1615**」→ 当日实跑 **1277 / 258，合计 1824**。
+
+**为什么值得修而不只是「改个数字」**：该表是**判断覆盖度的基线**。数字偏低会让人以为
+「还有很多没测」；清单缺条目会让人以为「这三条不存在」。**读数的人不会去核对**。
+
+**处置（两件）**：
+1. **刷新为当日实跑值**（12 包逐包 `node_modules/.bin/jest` 实跑：editor-engine 1277 / app-core 258 /
+   export 89 / host-api 47 / commands 33 / document-model 26 / editor-core 19 / desktop-ui 17 /
+   settings 17 / i18n 15 / extension-api 14 / themes 12 = **1824**），并补全护栏清单（17 条）。
+2. **加护栏防复发**（`verify-release-gate.mjs` 新增一节）：断言 README 声明的护栏数量
+   **等于**实际 `tests/parity/verify-*.mjs` 全集；**canary**：改掉那个数字必须被检出。
+   ⚠️ **覆盖边界（如实声明）**：只锁**护栏数量**（可静态算）；**包用例数需实跑**，无法在此校验。
+   该文件里已把这条边界写清，避免读者以为「数字都被守住了」。
+
+> **本轮我自己的一个错（被 canary 当场抓到）**：这条断言首版被我写在
+> `if (errors.length > 0)` 的**后面** —— 那里已经没有检查点了，`fail()` 只是往数组里塞字符串，
+> **永远不会被判定**（正是护栏卫生里的「**护栏看不见我**」）。canary 注入漂移后**应当失败却 exit 0**
+> 才暴露。→ 已移到检查点之前，并把这个教训写进该节注释。
+> **若只做「注入验证」而不验证「能翻转」，这条空壳护栏会一路绿灯地留在 CI 里。**
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
