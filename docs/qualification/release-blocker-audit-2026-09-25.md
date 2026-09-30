@@ -830,6 +830,37 @@ scroll anchor preserved
 它只适合用来**定位候选**，判定必须读用例名/断言本体。
 （本会话已因此自伤两次：一次把 `.md` 引用源漏掉报了假孤儿，一次就是本条。）
 
+## 4.19 `desktop-ui-design-spec` §19 的「no color-only status」**无人守**（2026-09-30）
+
+**spec §19 Accessibility 声明 6 条**：keyboard complete / focus visible / 200% zoom /
+reduced motion / screen reader baseline / **no color-only status**。
+
+**实测**：仓库里唯一的无障碍审计文档 `docs/accessibility/accessibility-phase-2026-08-13.md`，
+其基准也是 6 项（keyboard navigation / focus ring / semantic labels / 200% zoom / contrast /
+reduced motion），矩阵是 6 列（Keyboard / Focus ring / Semantic / Contrast / Zoom / Motion）。
+**两个 6 项的集合不同** —— spec 的第 6 条 `no color-only status`
+**不在审计基准里、不在矩阵里、也不在任何测试里**
+（全仓 828 个源文件（含 `.md`/`.ts`/`.tsx`/`.mjs`/`.rs`/`.json`）搜
+`color-only|仅颜色|不只用颜色|颜色.*唯一|color alone` → **0 命中**）。
+
+**⚠️ 不过度声称**：这条要求**可能被结构性满足**（例如状态项总是带文本、不只靠色块）——
+**但没有任何地方检查过**。本节的判定是「**无人守**」，不是「实现不合规」。
+这正是 §4.18 记录的同一区分：「某属性没有断言」≠「该属性不成立」，
+但**「没人检查过」本身就是一个缺口** —— 它意味着将来改坏了不会有信号。
+
+**为什么容易漏**：无障碍审计的 6 项基准是**当时自己定的**，
+而 spec §19 的 6 条是**另一处独立写的** —— 两处**没有交叉校验**，
+于是集合差集（这里是 1 项）**永远不会被发现**。
+这与 §4.17 的形态同源：**两处各自维护同一件事的部分清单，谁都不负责核对全集**。
+
+**后续项**：
+1. 在 `accessibility-phase-*.md` 的审计矩阵里补该维度（如新增 `Color-independence` 列），
+   逐区域核对「状态是否只靠颜色表达」；
+2. 加一条可判定的断言：状态类元素（如侧栏 badge、连接状态、dirty 标记）必须有
+   **可读文本或 `aria-label`**，不得仅有颜色差异；
+3. 或在 spec §19 里注明该条属**人工走查**（并写进审计文档的 §4「验证项（需人工/GUI 确认）」）——
+   **三者必居其一**，不要让一条已声明的要求长期无人认领。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
