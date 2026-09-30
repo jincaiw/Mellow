@@ -1877,6 +1877,60 @@ Typora 自带官方文档 `TypeMark/Docs/Table Editing.md` 有 `## Resize Table`
 但**名称会让读者以为创建路径已被完整覆盖**。→ 已在该项 `mellowTarget` 内**写明创建对话框未实现**
 （口径与 §4.36 同类：**证据面必须与 capability 名称对齐**）。
 
+## 4.40 `image-workflow-spec` §1–§12 逐节复核：一处**未实现**、一处**规格与实现冲突（安全）**、一处**代码注释过期**（2026-10-01）
+
+方法同前：**先把 11 个图片测试文件的用例名全部列出逐条读**（`image-asset-config` / `image-engine-api` /
+`image-input` / `image-insert` / `image-ops` / `image-path` / `image-root-url` / `image-scan` /
+`image-size` / `image-widget` / `app-core/imageFileOps`，共 167 例），再逐节对到实现。
+
+| spec 节 | 声明 | 守护它的测试 / 现状 | 结论 |
+|---|---|---|---|
+| §2 输入渠道（7 条） | Markdown typing / file picker / drag single / drag multiple / paste bitmap / paste copied file / paste URL | `image-input.test.ts` 14 例（bitmap / copied file / URL / drag 单张·多张 / 侧栏拖拽建链 / file picker / caret 位置） | ✅ |
+| §3 Insert Strategy | Keep original / relative / copy to assets / Upload；默认 local→relative、bitmap→asset dir | `image-insert.test.ts` 26 例 + `image-ops` 的 `uploadAll` | ✅ |
+| §4 Asset Directory | `./assets/` / `./images/` / `./${filename}.assets/` / custom | `image-path`（`assetDirName` 四模式）+ `image-asset-config` 13 例 + `imageFileOps`（front matter docname / global images） | ✅ |
+| §5 Path Rules | 中文 / 空格 / `#` / `%` / 括号 / Windows drive / UNC / macOS·Linux 绝对 / **symlink**；ensure `./` / URL escape / root URL | `image-path` 27 例 + `image-root-url` 18 例；**symlink 未单列测试** —— 但 `atomic_save` 侧有 symlink 覆盖（`file_safety_corpus`），图片路径侧依赖 `canonicalize` 语义 | ⚠️ 见下 |
+| §6 Rename / Move | 单图 rename·move + 更新引用；文档 rename：探测 `${filename}.assets` / 询问 / 原子 patch | `image-ops` 21 例 + `documentRename.test.ts` 9 例 + `imageFileOps` | ✅ |
+| §7 Batch | P0 Move All / Copy All / Download Remote；P1 Upload All / unused cleanup / image manager | P0 全覆盖 + **P1 的 Upload All 也已实现**；`unused cleanup` / `image manager` 未见实现 | ⚠️ P1 两项未实现 |
+| §8 Broken Image | compact placeholder / 文件名·路径 / retry / reveal source；禁止自动删除 broken reference | `image-widget.test.ts` 的「Broken Image」3 例；「引用保留」见 `imageFileOps`「缺失文件跳过（exists=false），引用保留」 | ✅ |
+| §9 Remote Image | lazy load / **timeout** / no silent download / user command to localize | lazy ✓、no-silent-download ✓、localize ✓；**timeout 原先未实现 → 本轮补**（见下） | ⚠️ 本轮补齐 |
+| §10 Security | 远程图无任意本地协议 / 尊重网络设置；**Upload key: OS keychain** | 前两条 ✓；**upload key 这条与实现冲突**（见下） | ❌ |
+| §11 Undo | source patch 可撤销；文件系统 move/delete 单独 undo | 多处「单 Undo 还原」+ `FileOpHistory` 7 例 | ✅ |
+| §12 Tests（24+ 场景） | paste / drag / multi / relative / **save as** / rename / missing / remote / Chinese path / Windows·macOS·Linux | 全部有覆盖（`save as` 为 2026-09-30 补；跨平台见 `image-path` 的 drive/UNC/POSIX 三组） | ✅ |
+
+### 发现 1（未实现 → 本轮补）：§9 的 **timeout**
+
+`packages/editor-engine/src/image/widget.ts` 只给 `<img>` 挂了 `error` 监听、**没有任何超时**。
+**后果**：连接被静默丢弃 / 对端不响应时，浏览器**既不触发 `load` 也不触发 `error`** ——
+widget 永远停在加载态：用户看到**空白**，且因为没进 broken 分支，**连 retry 入口都没有**。
+
+**处置（已实施）**：新增 `REMOTE_IMAGE_TIMEOUT_MS`（**15s，Mellow 自定** —— spec 只写「timeout」未给数值，
+**不冒充一手值**），**仅对远程 src** 生效（本地文件秒开，加超时只会在慢盘上误判）。
+超时后走**同一条 broken 路径**（compact placeholder + filename/path + retry），
+并 `removeAttribute('src')` **中止仍在挂起的请求**（否则它稍后成功会把已替换掉的 DOM 写回来）。
+定时器在 `load` / `error` / 任何重渲染 / `destroy` 时清理（**不留悬挂回调**）。
+新增 4 例测试（超时进 broken + 中止请求 / 超时前 load 不误判 / **本地图不加超时** / destroy 清理定时器）。
+**非恒绿验证**：把超时分支改成 `if (false)` → 第 1 例失败；还原 → 17/17 通过。
+
+### 发现 2（规格与实现冲突，**安全相关**）：§10 的「Upload key: OS keychain」
+
+- Mellow 的上传通道是 **picgo-http / picgo-cli / custom-command**，`ImageUploadOptions` 只有
+  `channel` / `httpUrl` / `command` —— **设计上没有密钥字段**，故「存 keychain」没有落点。
+- `packages/extension-api` 明确把 `keychain` 列为**高危权限、V1 运行时一律拒绝**（注释：desktop 无实现）。
+- **但存在真实隐患**：`image.uploadHttpUrl` 是 **text 字段**、存 **localStorage 明文**
+  （`mellow.image.uploadHttpUrl`）→ 用户把**带凭据的 URL**（`…?token=…`）粘进去即明文落盘。
+- **处置：登记为待裁决**（安全设计 + 平台能力），已在 spec §10 内写下三种走向（UI 提示禁止 / 引入 keychain / 改写为「不适用」+ 保留风险说明）。**不擅自实现。**
+
+### 发现 3（代码注释过期）：`image/index.ts` 头部
+
+原文写「上传：暂不实现（spec §7 Upload / §9 remote localize 属后续阶段）」——
+**但 `uploadAll` / `downloadRemote` 均已实现**（`imageFileOps.ts` + `apps/desktop/src/host/uploadService.ts`
++ `src-tauri/src/upload.rs` + e2e `image-upload-verify.mjs`）。已更正。
+→ **代码注释也是声明**：过期即失真，与文档同级（本轮第 N 次遇到「自述与现实不符」）。
+
+### 发现 4（P1 未实现，登记）
+§7 的 P1 两项 —— `unused image cleanup`（未引用图片清理）与 `image manager`（图片管理器）—— 未见实现。
+属 P1（不阻塞），**如实登记**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

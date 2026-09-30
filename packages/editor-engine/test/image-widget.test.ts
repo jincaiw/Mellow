@@ -5,7 +5,7 @@
 import { EditorView } from '@codemirror/view';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { setSourceMode } from '../src/index';
-import { buildImageWidgetExtension, IMG_WRAPPER_CLASS, IMG_BROKEN_CLASS, IMG_CENTERED_CLASS } from '../src/image/widget';
+import { buildImageWidgetExtension, IMG_WRAPPER_CLASS, IMG_BROKEN_CLASS, IMG_CENTERED_CLASS, REMOTE_IMAGE_TIMEOUT_MS } from '../src/image/widget';
 import type { ImageHost } from '../src/image/host';
 import { moveCaret, sleep } from './harness';
 
@@ -209,5 +209,81 @@ describe('Broken Image（spec §8）', () => {
     revealBtn?.click();
     await sleep();
     // 断言不崩（resolveAbsolutePath 返回 src 原样时 reveal 被调）
+  });
+});
+
+/**
+ * 远程图加载超时（spec §9「timeout」）。
+ *
+ * 为什么必须有：只监听 `error` 不够 —— 连接被静默丢弃 / 对端不响应时，浏览器
+ * **既不触发 load 也不触发 error**，widget 会永远停在加载态（空白且无 retry 入口）。
+ * jsdom 不会真的取图 → 正好可以稳定复现「挂起」。
+ */
+describe('Remote image timeout（spec §9）', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    localStorage.removeItem('mellow.image.loadRemote');
+  });
+
+  test('远程图既不 load 也不 error → 超时后进入 broken placeholder（含重试）', async () => {
+    jest.useFakeTimers();
+    const view = setUp('![alt](https://example.com/a.png)\n', makeHost((s) => s));
+    try {
+      await jest.advanceTimersByTimeAsync(0);
+      moveCaret(view, view.state.doc.length);
+      await jest.advanceTimersByTimeAsync(0);
+
+      // 前提：确实渲染了 <img>（否则下面的断言会变成空壳）
+      expect(view.dom.querySelector('img.mellow-md-image-img')).not.toBeNull();
+      expect(brokenElements(view).length).toBe(0);
+
+      await jest.advanceTimersByTimeAsync(REMOTE_IMAGE_TIMEOUT_MS);
+      expect(brokenElements(view).length).toBe(1);
+      expect(view.dom.textContent).toContain('重试');
+      // 挂起的请求必须被中止（否则它稍后成功会把已替换的 DOM 写回来）
+      expect(view.dom.querySelector('img.mellow-md-image-img')).toBeNull();
+    } finally { view.destroy(); }
+  });
+
+  test('超时前 load → 不进入 broken（不误判）', async () => {
+    jest.useFakeTimers();
+    const view = setUp('![alt](https://example.com/b.png)\n', makeHost((s) => s));
+    try {
+      await jest.advanceTimersByTimeAsync(0);
+      moveCaret(view, view.state.doc.length);
+      await jest.advanceTimersByTimeAsync(0);
+      const img = view.dom.querySelector('img.mellow-md-image-img');
+      expect(img).not.toBeNull();
+      img?.dispatchEvent(new Event('load'));
+
+      await jest.advanceTimersByTimeAsync(REMOTE_IMAGE_TIMEOUT_MS * 2);
+      expect(brokenElements(view).length).toBe(0);
+      expect(view.dom.querySelector('img.mellow-md-image-img')).not.toBeNull();
+    } finally { view.destroy(); }
+  });
+
+  test('本地图不加超时（慢盘不误判）', async () => {
+    jest.useFakeTimers();
+    const view = setUp('![alt](local.png)\n', makeHost((s) => `mock://${s}`));
+    try {
+      await jest.advanceTimersByTimeAsync(0);
+      moveCaret(view, view.state.doc.length);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(view.dom.querySelector('img.mellow-md-image-img')).not.toBeNull();
+
+      await jest.advanceTimersByTimeAsync(REMOTE_IMAGE_TIMEOUT_MS * 2);
+      expect(brokenElements(view).length).toBe(0);
+    } finally { view.destroy(); }
+  });
+
+  test('destroy 清理超时定时器（不留悬挂回调）', async () => {
+    jest.useFakeTimers();
+    const view = setUp('![alt](https://example.com/c.png)\n', makeHost((s) => s));
+    await jest.advanceTimersByTimeAsync(0);
+    moveCaret(view, view.state.doc.length);
+    await jest.advanceTimersByTimeAsync(0);
+    const withTimer = jest.getTimerCount();
+    view.destroy();
+    expect(jest.getTimerCount()).toBeLessThan(withTimer);
   });
 });

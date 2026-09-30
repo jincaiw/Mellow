@@ -22,6 +22,17 @@ import type { ImageSize } from './path';
 const IMG_WRAPPER_CLASS = 'mellow-md-image';
 /** V7-W4.3：单图独占段落 → 居中（Typora `p > img:only-child`） */
 export const IMG_CENTERED_CLASS = 'mellow-md-image-centered';
+
+/**
+ * 远程图加载超时（spec §9「timeout」）。
+ *
+ * **为什么必须有**：只监听 `error` 不够 —— 连接被静默丢弃 / 对端不响应时，
+ * 浏览器既不触发 `load` 也不触发 `error`，widget 会**永远停在加载态**（空白且无 retry 入口）。
+ *
+ * ⚠️ **15s 是 Mellow 自定**：spec §9 只写「timeout」，未给数值（不冒充一手值）。
+ * 只对**远程** src 生效（本地文件秒开，给它加超时只会在慢盘上误判）。
+ */
+export const REMOTE_IMAGE_TIMEOUT_MS = 15000;
 const IMG_BROKEN_CLASS = 'mellow-md-image-broken';
 const IMG_ACTIONS_CLASS = 'mellow-md-image-actions';
 
@@ -125,6 +136,8 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     private broken = false;
     private remoteLoaded = false;
     private untrack: (() => void) | null = null;
+    /** 远程图加载超时定时器（spec §9「timeout」）；null = 无待决请求 */
+    private loadTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(
       readonly spec: ImageSpec,
@@ -135,8 +148,16 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     }
 
     override destroy(): void {
+      this.clearLoadTimer();
       this.untrack?.();
       this.untrack = null;
+    }
+
+    private clearLoadTimer(): void {
+      if (this.loadTimer !== null) {
+        clearTimeout(this.loadTimer);
+        this.loadTimer = null;
+      }
     }
 
     override eq(other: ImageWidget): boolean {
@@ -168,6 +189,8 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       if (this.container === null) {
         return;
       }
+      // 任何重渲染都会丢弃旧 <img> → 其待决超时必须一并作废（否则会误标 broken）
+      this.clearLoadTimer();
       this.container.textContent = '';
       // 悬停操作条（宿主注入 handler 时显示；spec §6 单图操作入口，各分支均保留）
       const appendActions = (): void => {
@@ -207,9 +230,25 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
       if (isLargeFileMode()) img.loading = 'lazy';
       // img error → broken placeholder（网络失败/文件消失）
       img.addEventListener('error', () => {
+        this.clearLoadTimer();
         this.broken = true;
         this.render();
       });
+      img.addEventListener('load', () => this.clearLoadTimer());
+      // spec §9「timeout」：**只监听 error 不够** —— 连接被静默丢弃 / 对端不响应时，
+      // 浏览器**既不触发 load 也不触发 error**，widget 会永远停在加载态
+      //（用户看到空白，且因为没进 broken 分支，连 retry 入口都没有）。
+      // 超时后走**同一条 broken 路径**（compact placeholder + filename/path + retry）。
+      // ⚠️ 15s 是 **Mellow 自定**（spec §9 只写「timeout」，未给数值）。
+      if (isRemoteSrc(this.spec.src)) {
+        this.loadTimer = setTimeout(() => {
+          this.loadTimer = null;
+          this.broken = true;
+          // 中止仍在挂起的请求：否则它稍后成功会把已替换掉的 <img> 写回来
+          img.removeAttribute('src');
+          this.render();
+        }, REMOTE_IMAGE_TIMEOUT_MS);
+      }
       this.container.appendChild(img);
       appendActions();
     }
