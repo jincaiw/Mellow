@@ -1475,6 +1475,77 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
   }
 }
 
+// ── 夹具尺寸必须**恰好**落在阈值两侧（2026-10-01）────────────────────────────
+// 立此条的原因：报告里有一条**反直觉结论** —— 「5MB.md 恰好压线却不降级，反而比 10MB 慢」，
+// 而它成立**完全依赖**「5MB.md 的字节数恰好等于阈值」这一事实。此前护栏只锁了
+// **阈值语义**（PRD §109 ↔ largeFile.ts ↔ benchmark 复刻 三方一致 + core.ts 内联第四处），
+// **没有锁夹具尺寸与阈值的关系** —— 若有人把生成器改成 `5 * 1024 * 1024 + 1`，
+// 或把夹具换成「约 5MB 不必精确」，那条结论会**静默变成假话**，而所有护栏仍绿。
+// 这正是「数字无人校验」：spec §4 逐行写了尺寸，却没人把它与生成器对上。
+// 本块**自包含**（不依赖上文块作用域里的 srcBytes / evalArith）。
+{
+  const lfSrc = readFileSync(resolve(root, 'packages/editor-engine/src/largeFile.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const arith = (expr) => {
+    const cleaned = String(expr).replace(/_/g, '');
+    if (!/^[\d*\s]+$/.test(cleaned)) return null; // 只接受纯算术，不做 eval
+    return cleaned.split('*').map((s) => Number(s.trim())).reduce((a, b) => a * b, 1);
+  };
+  const thrBytes = arith((lfSrc.match(/LARGE_FILE_BYTES_THRESHOLD\s*=\s*([\d_*\s]+);/) ?? [])[1] ?? '');
+  const thrLines = arith((lfSrc.match(/LARGE_FILE_LINES_THRESHOLD\s*=\s*([\d_*\s]+);/) ?? [])[1] ?? '');
+  assert(Number.isFinite(thrBytes) && Number.isFinite(thrLines), '无法从 largeFile.ts 解析两阈值（夹具尺寸锁的前提）');
+
+  const genSrc = readFileSync(resolve(root, 'tests/benchmark/generate-fixtures.mjs'), 'utf8').replace(/\r\n/g, '\n');
+  const targetOf = (name) => {
+    const m = genSrc.match(new RegExp(`name:\\s*'${name.replace('.', '\\.')}'[^\\n]*genMixed\\(([^)]*)\\)`));
+    return m === null ? null : arith(m[1]);
+  };
+  const b1 = targetOf('1MB.md');
+  const b5 = targetOf('5MB.md');
+  const b10 = targetOf('10MB.md');
+  assert(Number.isFinite(b1) && Number.isFinite(b5) && Number.isFinite(b10),
+    '无法从 generate-fixtures.mjs 解析 1MB/5MB/10MB 的字节目标（生成器形态变了，护栏需同步更新）');
+  if (Number.isFinite(thrBytes) && Number.isFinite(b5)) {
+    assert(b5 === thrBytes,
+      `5MB.md 的字节目标（${b5}）必须**恰好等于** LARGE_FILE_BYTES_THRESHOLD（${thrBytes}）——`
+      + '「恰好压线却不降级」这条结论的唯一依据；不等则报告的反直觉结论会静默失真');
+  }
+  if (Number.isFinite(thrBytes) && Number.isFinite(b10)) {
+    assert(b10 > thrBytes, `10MB.md 的字节目标（${b10}）必须**严格大于**字节阈值（${thrBytes}）才能触发大文件模式`);
+  }
+  if (Number.isFinite(thrBytes) && Number.isFinite(b1)) {
+    assert(b1 < thrBytes, `1MB.md 的字节目标（${b1}）必须**小于**字节阈值（${thrBytes}）`);
+  }
+  // 「恰好」是靠机制保证的，不是靠运气：`genMixed` 必须收口到 `padToExact`
+  // （只断言「存在 padToExact 函数」会被定义处满足 —— 必须断言**调用**）
+  assert(/return padToExact\(out, targetBytes\)/.test(genSrc),
+    'genMixed 必须收口到 padToExact(out, targetBytes)：否则夹具只是「约等于」，'
+    + '「恰好压线」不成立（断言调用而非函数存在）');
+  // 行数阈值侧：100k-lines.md 必须严格大于行数阈值才能触发大文件模式
+  // 该夹具走**具名函数**（`make: genLines100k`），故先取函数名、再进函数体找循环上界
+  // —— 不依赖「表项与循环相邻」这个会随重构失效的假设。
+  const fnM = genSrc.match(/name:\s*'100k-lines\.md'[^\n]*make:\s*([A-Za-z_$][\w$]*)/);
+  const fnName = fnM === null ? null : fnM[1];
+  const bodyM = fnName === null
+    ? null
+    : genSrc.match(new RegExp(`function\\s+${fnName}\\s*\\([^)]*\\)\\s*\\{([\\s\\S]*?)\\n\\}`));
+  assert(bodyM !== null,
+    `无法从 generate-fixtures.mjs 解析 100k-lines.md 的生成函数（${fnName ?? '未解析到函数名'}）—— 生成器形态变了，护栏需同步更新`);
+  const loopM = bodyM === null ? null : bodyM[1].match(/i\s*<\s*([\d_]+)/);
+  const genLines = loopM === null ? null : Number(loopM[1].replace(/_/g, ''));
+  assert(Number.isFinite(genLines), '无法从 100k-lines.md 的生成函数里解析循环上界（行数目标）');
+  if (Number.isFinite(genLines) && Number.isFinite(thrLines)) {
+    assert(genLines > thrLines,
+      `100k-lines.md 的行数目标（${genLines}）必须**严格大于**行数阈值（${thrLines}）才能触发大文件模式`);
+  }
+  // canary：用**同一套比较语义**跑合成输入（直接测逻辑，不测字符串替换）
+  const isExactlyBoundary = (fixtureBytes, threshold) => fixtureBytes === threshold;
+  const triggersLargeMode = (fixtureBytes, threshold) => fixtureBytes > threshold;
+  if (!isExactlyBoundary(5242880, 5242880)) errors.push('夹具尺寸锁 canary 失效：相等的样本未被判为「恰好压线」');
+  if (isExactlyBoundary(5242881, 5242880)) errors.push('夹具尺寸锁 canary 失效：压线偏大的样本被误判为「恰好压线」');
+  if (!triggersLargeMode(10485760, 5242880)) errors.push('夹具尺寸锁 canary 失效：超阈值样本未被判为「触发」');
+  if (triggersLargeMode(5242880, 5242880)) errors.push('夹具尺寸锁 canary 失效：压线样本被误判为「触发」');
+}
+
 if (errors.length) {
   console.error('Typora parity ledger validation failed:');
   for (const error of errors) console.error(`- ${error}`);
