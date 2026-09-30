@@ -7,6 +7,8 @@
  *   4. 视觉对照截图（mellow-light / paper / newsprint）
  */
 import { spawn } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -16,6 +18,23 @@ const { chromium } = require('playwright');
 const PORT = 1423;
 const BASE = `http://localhost:${PORT}`;
 const DESKTOP_DIR = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
+
+/**
+ * 截图落点（2026-10-01 更正）。
+ *
+ * ⚠️ **不要**写进 `tests/benchmark/screenshots/` —— 那是**归档证据目录**
+ * （同目录的 `tests/visual/capture-window-chrome.mjs` 是**带 manifest 的正式归档工具**，
+ * 且 `p2-8-window-chrome-macos.png` 被台账 `P0-LAYOUT-002` 引用为证据）。
+ * 实测：本脚本原先往那里写 3 张 `b3-2-*.png`，于是**每跑一次就覆盖被 git 跟踪的证据文件**，
+ * 而**全仓没有任何地方读它们**（无 manifest、无引用）。
+ * 后果：跑一次 e2e 就产生一个二进制 diff，极易被 `git add -A` 误提交（本人已踩一次）。
+ * → 改落到本目录下**被忽略**的 `.artifacts/`：仍可人工查看，但不再改写证据。
+ */
+const ARTIFACTS_DIR = 'tests/e2e/.artifacts';
+const shot = (name) => {
+  mkdirSync(ARTIFACTS_DIR, { recursive: true });
+  return join(ARTIFACTS_DIR, name);
+};
 
 async function waitForServer(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -83,7 +102,7 @@ async function main() {
     let ef = await editorFontFamily(frame);
     check('theme-level editor font (Georgia) applied', ef.startsWith('Georgia') || ef.includes('Georgia'), `computed=${ef}`);
 
-    await page.screenshot({ path: 'tests/benchmark/screenshots/b3-2-newsprint.png' });
+    await page.screenshot({ path: shot('b3-2-newsprint.png') });
 
     // 2. Paper 主题（Pixyll 衬线方向）
     frame = await applyTheme('paper');
@@ -93,7 +112,7 @@ async function main() {
     ef = await editorFontFamily(frame);
     check('paper theme-level editor font (Georgia)', ef.includes('Georgia'), `computed=${ef}`);
 
-    await page.screenshot({ path: 'tests/benchmark/screenshots/b3-2-paper.png' });
+    await page.screenshot({ path: shot('b3-2-paper.png') });
 
     // 3. 切回 Mellow Light：编辑器字体还原 CoreEditor 默认（ui-monospace）
     frame = await applyTheme('mellow-light');
@@ -108,7 +127,7 @@ async function main() {
     ef = await editorFontFamily(frame);
     check('user fontFamily overrides theme font', ef.includes('PingFang SC'), `computed=${ef}`);
 
-    await page.screenshot({ path: 'tests/benchmark/screenshots/b3-2-newsprint-user-font.png' });
+    await page.screenshot({ path: shot('b3-2-newsprint-user-font.png') });
 
     // 清理
     await page.evaluate(() => {

@@ -129,9 +129,16 @@ async function main() {
     });
 
     await setDoc('hello world', 11, 11);
-    await press('Meta+Alt+F');
+    // ⚠️ 2026-10-01 更正（e2e 全量扫描发现本行**长期陈旧**）：
+    // 替换面板的 mac 键位已从 `⌥⌘F` 改为 **`⌥⌘H`** —— 因为 `⌥⌘F` 与 `window.fullscreen`
+    // 撞车（W1.9 按官方表把全屏改为 `⌘⌥F` 时，未发现该键已被 replace 占用）。
+    // 取舍见 `packages/commands/src/menuSchema.ts` 的 `edit.find` 子菜单注释：
+    // **全屏保留官方键（有据），replace 改用 `Cmd+Alt+H`**（取官方 `Cmd+H` 的同一字母 + Alt，
+    // 规避 macOS 系统「隐藏应用」）。键位唯一性由 CI 护栏 `verify-menu-contract.mjs` §13 锁住。
+    // 本行此前只断言旧键位，故行为变更后一直失败却无人发现（e2e 不进 CI）。
+    await press('Meta+Alt+H');
     let ps = await panelState();
-    check('⌥⌘F opens replace panel focused on replace field', ps.open && ps.replaceFocused, JSON.stringify(ps));
+    check('⌥⌘H opens replace panel focused on replace field', ps.open && ps.replaceFocused, JSON.stringify(ps));
 
     await press('Escape');
     await press('Meta+H');

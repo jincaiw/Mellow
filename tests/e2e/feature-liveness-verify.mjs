@@ -10,7 +10,8 @@
  * 判定纪律（重要）：失败时先查「是断言写错还是功能真死」，
  * 不得直接改断言让它变绿 —— 本轮首跑 2 处失败均需逐个取证。
  *
- * 覆盖：Focus / Typewriter / 表格 / 任务勾选 / 代码语言标签 / Mermaid / 数学 /
+ * 覆盖：Focus / Typewriter / **表格（创建对话框：默认值 + 确认插入 + Esc 取消）** / 任务勾选 /
+ *      代码语言标签 / Mermaid / 数学 /
  *      脚注 / TOC / 水平线 / 高亮 / 注释 / 引用链接 / YAML / 智能标点 /
  *      拼写检查开关 / 引用块 / 列表 / 标题升降 / 行移动。
  *
@@ -19,6 +20,10 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+// 应用内对话框的**唯一正确驱动**（G7-EDIT-10 迁移后的约定）——
+// 不要用 `page.on('dialog')` 应答：那是原生面板的事件，应用内对话框**永不触发**它
+//（仓库曾因此静默腐烂数天，见 tests/shared/in-app-dialog.mjs 的说明）。
+import { INPUT_DIALOG_SELECTORS } from '../shared/in-app-dialog.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -95,7 +100,8 @@ async function main() {
     const cases = [
       ['paragraph.horizontalRule', '', '---', '水平线'],
       ['insert.toc', '', 'toc', 'TOC（大小写不敏感）'],
-      ['insert.table', '', '|', '插入表格（宽松匹配：含表格分隔符）'],
+      // ⚠️ `insert.table` **不在本表**：它已改为**弹创建对话框**（table-editing-spec §3），
+      //    文档不会立刻变化 —— 见下方「1b」专门块（含对话框默认值与取消路径）。
       ['paragraph.footnote', 'text', '[^', '脚注'],
       ['format.highlight', 'hello', '==', '高亮（宽松匹配：== 出现）'],
       ['format.comment', 'hello', '<!--', '注释'],
@@ -112,6 +118,52 @@ async function main() {
       await dispatch(id);
       const text = await getText();
       check(`${label}（${id}）`, text.includes(expect), `got=${JSON.stringify(text.slice(0, 40))}`);
+    }
+
+    // ── 1b. 表格创建对话框（`insert.table` 已改为**弹对话框**，不是直接插入）──────
+    // 为什么单独写：实施 `table-editing-spec` §3 的 Create Dialog 后，`insert.table`
+    // 的行为从「命令 → 文档立刻出现 `|`」变成「弹对话框 → 确认后才插入」，
+    // 而本脚本原先仍断言前者 → **长期陈旧**（2026-10-01 全量 e2e 扫描发现）。
+    // 注意定性：**行为是有意改变的，不是功能坏了**（`App.tsx` 的 `insert.table`
+    // 已改为 `insertTableWithDialog`）——「失败先查断言写错还是实现真缺」。
+    // 顺带补上**对话框本身的端到端覆盖**（此前只有静态护栏 + `tableTemplate` 单测）。
+    {
+      await setDoc('', 0, 0);
+      await dispatch('insert.table');
+      const inputs = page.locator(INPUT_DIALOG_SELECTORS.input);
+      const n = await inputs.count();
+      check('表格对话框弹出且有 2 个输入（列 / 行）', n === 2, `inputs=${n}`);
+      if (n === 2) {
+        // 默认值来自**一手证据**（Typora `#table-insert-col` value="3" / `#table-insert-row` value="4"）；
+        // 输入顺序 = `askForm({ inputs: [columns, rows] })`
+        const colVal = await inputs.nth(0).inputValue();
+        const rowVal = await inputs.nth(1).inputValue();
+        check('表格对话框默认值 = 3 列 / 4 行（一手：Typora 对话框）',
+          colVal === '3' && rowVal === '4', `columns=${colVal} rows=${rowVal}`);
+        // 确认 → 插入 GFM 表格。Rows **含表头行**（一手口径）→ 4 行 = 1 表头 + 1 分隔 + 3 正文
+        await page.locator(INPUT_DIALOG_SELECTORS.primary).click();
+        await page.locator(INPUT_DIALOG_SELECTORS.backdrop)
+          .waitFor({ state: 'detached', timeout: 8000 }).catch(() => undefined);
+        await sleep(400);
+        const text = await getText();
+        const lines = text.trimEnd().split('\n');
+        check('确认后真的插入 GFM 表格（5 行 = 表头 + 分隔 + 3 正文）',
+          lines.length === 5 && lines[1] === '|---|---|---|',
+          `lines=${lines.length} got=${JSON.stringify(text.slice(0, 60))}`);
+      } else {
+        check('表格对话框默认值 = 3 列 / 4 行（一手：Typora 对话框）', false, '（前置：输入框数不为 2）');
+        check('确认后真的插入 GFM 表格（5 行 = 表头 + 分隔 + 3 正文）', false, '（前置：输入框数不为 2）');
+      }
+      // 取消路径：Esc → **不插入**（实现注释承诺「不留 `/` 残字」）
+      await setDoc('', 0, 0);
+      await dispatch('insert.table');
+      await page.keyboard.press('Escape');
+      await page.locator(INPUT_DIALOG_SELECTORS.backdrop)
+        .waitFor({ state: 'detached', timeout: 8000 }).catch(() => undefined);
+      await sleep(400);
+      const afterCancel = await getText();
+      check('表格对话框 Esc 取消 → 文档保持为空（不留残字）',
+        afterCancel.trim() === '', `got=${JSON.stringify(afterCancel)}`);
     }
 
     // 任务勾选：⌃X 语义（paragraph.taskToggle）

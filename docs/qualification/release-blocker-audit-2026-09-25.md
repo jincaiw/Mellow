@@ -2426,6 +2426,14 @@ fn suggest_returns_guesses_for_misspelling() {
 修法：补 `moveCaret` + ① 自证按钮存在 ② 断言宿主真的收到 `revealFile('missing.png')`；
 并把 mock 里**只写不读**的 `revealed` 数组改为 `onReveal` 回调（**录制了却没人读 = 断言无从写起**）。
 
+> ⚠️ **这个陷阱是「已记录但未被应用」的**：`tests/e2e/README.md` 第 6 条**已经写明**
+> 「断言 widget / 装饰存在前，先确认光标是否抑制其渲染……光标压在图片上时
+> `.mellow-md-image-*` 根本不存在」。即**知识在仓库里，但只写在 e2e 的 README 里**，
+> 而这条是**单测**（`packages/editor-engine/test/`）—— 踩坑者不会去读 e2e 的 README。
+> **教训**：把跨目录通用的陷阱只写在某一个子目录的 README 里，等于**只对该目录生效**；
+> 这类陷阱应当写进**模块自身**的注释（本例：`widget.ts` 的 `buildBrokenPlaceholder` 处）
+> 或项目级 `PITFALLS`，而不是散落在测试目录的说明里。
+
 ### 发现 6：类别级护栏 + **canary 自己写窄了**
 
 按「修一处必须加**类别级**护栏」的纪律，新增「整个 Rust crate 不得出现『函数体只有
@@ -2438,6 +2446,88 @@ fn suggest_returns_guesses_for_misspelling() {
 
 > **通则**：**canary 没翻转时，先怀疑 canary 本身**。变异必须真的产生目标形态；
 > 加一句自检（`变异后形态 == 预期形态`）比事后排查便宜得多。
+
+## 4.50 e2e 腐烂检测：28 个脚本跑一遍 → **3 处真陈旧**，并把它们的契约值**绑进 CI**（2026-10-01）
+
+**为什么做**：`tests/e2e/` 有 28 个脚本且**不进 CI**（其 README 明说「是人工/本地复核通道，不是门禁」）。
+README 自己也记着「正因如此，凡是必须永远成立的不变量，不要只写在这里」—— 并列出**两次真实腐烂先例**。
+本轮把这条从「提醒」变成「**实测**」：逐个跑一遍。
+
+### 结果与逐条定性（关键词只用于定位，定性必须读断言本体）
+
+| 结果 | 脚本 | 定性 |
+|---|---|---|
+| ❌ | `block-shortcuts-verify.mjs` | **真陈旧**：仍按 `⌥⌘F` 找替换面板 |
+| ❌ | `context-menu-verify.mjs` | **真陈旧**：仍找「格式」子菜单 |
+| ❌ | `feature-liveness-verify.mjs` | **真陈旧**：仍断言 `insert.table` 直接插入 |
+| ❌ | `zoom-verify.mjs` | **假失败**（环境）：单独复跑即通过 |
+| ✅ | 其余 24 个 | 通过 |
+
+### 三处真陈旧的根因（都是「行为/契约有意改变，消费者没跟上」）
+
+1. **`⌥⌘F` → `⌥⌘H`**：`⌥⌘F` 与 `window.fullscreen` 撞车（W1.9 按官方表把全屏改为 `⌘⌥F` 时，
+   未发现该键已被 replace 占用）。取舍写在 `menuSchema.ts`：**全屏保留官方键（有据），
+   replace 改用 `Cmd+Alt+H`**（取官方 `Cmd+H` 的同一字母 + Alt，规避 macOS「隐藏应用」）。
+   → e2e 长期按已失效的键位断言，**一直失败却无人发现**。
+2. **「格式」→「块样式 / 内联样式 / 列表样式」**：文本右键的三个样式子菜单被拆分
+   （`contextmenu.textBlockStyles` / `textInlineStyles` / `textListStyles`），加粗现在在**内联样式**下。
+   契约侧由 `verify-context-menu-parity` 锁定（它比对 Typora 官方条目序列）→ e2e 只是**没跟上**。
+3. **`insert.table` → 弹创建对话框**：实施 `table-editing-spec` §3 的 Create Dialog 后，
+   该命令从「直接插入」变为「弹对话框 → 确认后插入」。e2e 断言的是前者。
+
+**处置**：
+- ① 改为 `⌥⌘H` 并在注释里写明**键位变更的取舍依据与出处**；
+- ② 改为查找「内联样式」子菜单，并在其下点「加粗」；
+- ③ **不只是改断言**：新增「表格创建对话框」专项块 —— 断言对话框弹出（2 个输入）、
+  默认值 = **3 列 / 4 行**（与 `tableTemplate` 的一手证据一致）、确认后真的插入 **5 行** GFM 表格
+  （1 表头 + 1 分隔 + 3 正文，Rows **含表头行**）、以及 **Esc 取消不留残字**。
+  即把「命令行为变了」这件事**从陈旧断言变成新覆盖**（该对话框此前无 e2e 覆盖）。
+
+### 结构性修法：把 e2e 的**硬编码契约值**与真值源绑进 CI
+
+e2e 不进 CI 这件事改不了（它需要浏览器），但**它硬编码的期望可以借真值源在 CI 里被交叉核对**。
+新增 `verify-parity-ledger.mjs` 一节（含 canary）：
+
+| 检查 | 真值源 |
+|---|---|
+| `block-shortcuts-verify.mjs` 按下的键 == `menuSchema` 的 `search.replace` mac 键（`Cmd`→`Meta`） | `packages/commands/src/menuSchema.ts` |
+| `context-menu-verify.mjs` **按查找形态**匹配的标签 == `contextmenu.textInlineStyles` 的 i18n 值；且加粗确实在该子菜单里 | `packages/i18n/src/messages.ts` + `App.tsx` |
+| `insert.table` 必须走 `insertTableWithDialog`（行为契约）；e2e 必须覆盖该对话框且用应用内选择器 | `App.tsx` |
+
+### canary 连抓我两次「判据被散文/无关代码满足」
+
+- **第一次**：①的判据写成 `.includes(label)` —— 而脚本的**失败消息字符串**里也有该标签
+  （`check('菜单含「内联样式」子菜单入口', …)`）→ 把查找改回陈旧的「格式」后**护栏仍通过**（skill §8 的形态）。
+- **第二次**：改成「行里含 `findIndex|.includes(|===`」后，`check(…, clicked && text === '**hello**', …)`
+  这一行也命中 —— `===` 出现在**断言参数**里，与查找无关。
+- **定稿**：按**精确查找形态**判定（`.includes('…')` / `=== '…'`），并在失败消息里说明
+  「若改了查找写法请同步本护栏」。三处 canary 现全部双向翻转。
+
+> **教训**：**「文件里出现过 X」是最弱的判据**。判据要落在**语法位置**上
+> （哪个调用、哪个参数位），否则会被注释、消息字符串、甚至无关的 `===` 满足。
+
+### 环境坑（顺带确认 README 第 1 条）
+
+批量跑时 `zoom-verify.mjs` 出现**假失败**：`pkill` 后端口尚未释放，下一个脚本连上了**上一个的 vite**。
+→ 运行器改为「pkill 后**等 3 秒**」；单独复跑该脚本即通过。**这不是产品问题，也不是测试问题。**
+
+### 顺带抓到：**e2e 会覆盖归档证据文件**（差点被误提交）
+
+跑完全量套件后，工作区出现一处**我没打算改**的改动：`tests/benchmark/screenshots/b3-2-paper.png`。
+
+- **根因**：`theme-verify.mjs` 把 3 张截图写进 `tests/benchmark/screenshots/` ——
+  那是**归档证据目录**（同目录的 `tests/visual/capture-window-chrome.mjs` 是**带 manifest 的正式归档工具**，
+  且 `p2-8-window-chrome-macos.png` 被台账 `P0-LAYOUT-002` 引用为证据）。
+  而 `theme-verify` 写的那 3 张 `b3-2-*.png` **全仓没有任何地方读**（无 manifest、无引用）。
+- **危害**：**每跑一次 e2e 就覆盖被 git 跟踪的证据文件** → 产生一个**二进制 diff**，
+  极易被 `git add -A` 误提交（**本轮本人已踩，靠 `git status` 复核才发现**）。
+  即：**一次「本地复核」动作静默改写了归档证据** —— 与「证据必须是有意产生的」直接冲突。
+- **处置**：`theme-verify.mjs` 的落点改为**被忽略**的 `tests/e2e/.artifacts/`（仍可人工查看，
+  但不再改写证据）；`.gitignore` 加该目录；**新增护栏**：`tests/e2e/*.mjs` 不得出现
+  「向 `tests/benchmark/screenshots/` 写截图」的调用（含双向 canary）。
+  验证：跑一次 `theme-verify.mjs` → 8 ✅，且 `git status tests/benchmark/screenshots/` **为空**。
+- **未处置（仅记录）**：那 3 张 `b3-2-*.png` 现在**永远不会被再生**（成为无读者的冻结证据）。
+  删除属破坏性操作且未被要求，故只报告不动手。
 
 ## 五、本次审计做的改动（非策略性）
 

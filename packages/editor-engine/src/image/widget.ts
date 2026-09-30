@@ -411,6 +411,15 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
           return;
         }
         // caret/selection 碰节点 → 源码（可编辑，同 link mixed 语义）
+        //
+        // ⚠️ **写给测试作者（2026-10-01）**：这条判定意味着「**光标压在图片行上时，
+        // `.mellow-md-image-*` 一个都不会存在**」—— widget 根本没被构造，不是「构造了但不可见」。
+        // 因此任何「断言 widget / 断图占位符 / 操作栏按钮存在」的测试，**必须先把光标移出该行**
+        // （`moveCaret(view, view.doc.length)` 或设到别处），否则断言会因「读不到东西」而恒真或误判。
+        // 实测代价：`test/image-widget.test.ts` 的 reveal 用例**长期零断言**且**连前提都没建立**
+        // （`revealBtn?.click()` 的 `?.` 把「按钮不存在」静默吞掉），存活很久无人发现。
+        // 本陷阱此前只写在 `tests/e2e/README.md` 第 6 条 —— 而踩坑的是**单测**，
+        // 不会去读 e2e 的 README（审计 §4.49 发现 5）。故在此就地记录。
         if (node.from <= caret.head && node.to >= caret.anchor) {
           return;
         }

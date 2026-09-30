@@ -26,3 +26,5 @@ apps/desktop/quicklook/Resources/quicklook.html
 # 2026-09-30：此前只忽略了 `.workbuddy/`，于是 `git add -A` 会把 memory 日志一并提交
 # （实测一次提交里混进 16 个文件）；按约定排除，故显式忽略以防复发。
 .workbuddy-ai/
+# e2e 运行期截图（2026-10-01）：**不要**落到 tests/benchmark/screenshots/（那是归档证据目录）。
+tests/e2e/.artifacts/

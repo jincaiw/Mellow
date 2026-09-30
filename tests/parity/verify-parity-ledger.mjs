@@ -1693,6 +1693,105 @@ const walkRustFiles = (dir) => readdirSync(resolve(root, dir), { withFileTypes: 
   }
 }
 
+// ── e2e 里**硬编码的契约值**必须与真值源一致（2026-10-01）──────────────────
+// 立此条的原因：`tests/e2e/` **不进 CI**（其 README 明说），因此它们硬编码的快捷键 /
+// 菜单标签 / 默认值会**静默陈旧**。实测（全量跑 28 个脚本）抓到 **3 处真陈旧**：
+//   ① `block-shortcuts-verify.mjs` 仍按 `⌥⌘F` 找替换面板 —— 该键已归 `window.fullscreen`，
+//      replace 改成了 `Cmd+Alt+H`（2026-09-13 键位冲突修复，schema 里有取舍说明）；
+//   ② `context-menu-verify.mjs` 仍找「格式」子菜单 —— 文本右键已拆为「块样式/内联样式/列表样式」；
+//   ③ `feature-liveness-verify.mjs` 断言 `insert.table` 直接插入 —— 该命令已改为**弹创建对话框**。
+// 这三处的真值分别由 CI 护栏（menu-contract §11/§13、context-menu-parity）与源码常量承载，
+// 故可**在 CI 里交叉核对** —— 把 e2e 的硬编码期望与真值源绑起来，腐烂即报错。
+// 判据刻意保持宽松（只断言「该字面量/该结构存在」），避免退化成形状锁。
+{
+  const readE2e = (n) => {
+    const p = `tests/e2e/${n}`;
+    assert(existsSync(resolve(root, p)), `e2e 脚本缺失：${p}（护栏依赖它存在）`);
+    return existsSync(resolve(root, p)) ? readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n') : '';
+  };
+  const schemaSrc = readFileSync(resolve(root, 'packages/commands/src/menuSchema.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const appSrc = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+  const i18nSrc = readFileSync(resolve(root, 'packages/i18n/src/messages.ts'), 'utf8').replace(/\r\n/g, '\n');
+
+  // ① 替换面板的 mac 键位：e2e 按下的键必须等于 menuSchema 里 search.replace 的 mac 键
+  //    （Playwright 写 `Meta`，schema 写 `Cmd`）
+  const replaceKey = /id:\s*'search\.replace'[^\n]*mac:\s*'([^']+)'/.exec(schemaSrc)?.[1];
+  assert(replaceKey !== undefined, '无法从 menuSchema.ts 解析 search.replace 的 mac 键位（护栏需同步）');
+  if (replaceKey !== undefined) {
+    const pwKey = replaceKey.replace('Cmd', 'Meta');
+    const bs = readE2e('block-shortcuts-verify.mjs');
+    assert(bs.includes(`'${pwKey}'`),
+      `block-shortcuts-verify.mjs 必须用 ${pwKey} 触发替换面板（menuSchema 的 search.replace mac 键 = ${replaceKey}）`
+      + ' —— e2e 不进 CI，硬编码键位会静默陈旧（实测曾长期按已改归全屏的 ⌥⌘F）');
+  }
+  // ② 文本右键的「内联样式」子菜单：e2e 找的标签必须等于 i18n 真值，且加粗确实在该子菜单里
+  const inlineLabel = /'contextmenu\.textInlineStyles':\s*'([^']+)'/.exec(i18nSrc)?.[1];
+  assert(inlineLabel !== undefined, '无法从 i18n 解析 contextmenu.textInlineStyles 的中文标签');
+  if (inlineLabel !== undefined) {
+    // ⚠️ 判据必须落在**查找形态**上，不能只判「文件里含该标签」，也不能只判「行里有 ===」——
+    // 两次实测自伤：① 首版 `.includes(label)` 被**失败消息字符串**满足（`check('菜单含「内联样式」…')`）；
+    // ② 改成「行里含 findIndex|.includes(|===」后，`check(…, clicked && text === '**hello**', …)`
+    //    这一行也命中（`===` 出现在**断言参数**里，与查找无关）。
+    // 现按**精确查找形态**判定：`.includes('<label>')` 或 `=== '<label>'`。
+    // 若日后改了查找写法，本护栏会响亮失败并提示同步（不是静默放过）。
+    const cmSrc = readE2e('context-menu-verify.mjs');
+    const usesLabel = new RegExp(`\\.includes\\(\\s*['"]${inlineLabel}['"]|===\\s*['"]${inlineLabel}['"]`);
+    assert(usesLabel.test(cmSrc),
+      `context-menu-verify.mjs 必须**按查找形态**匹配当前子菜单标签「${inlineLabel}」`
+      + '（形如 `.includes(\'…\')` 或 `=== \'…\'`；文本右键已拆为 块样式/内联样式/列表样式）——'
+      + '只出现在消息字符串里不算');
+    assert(/contextmenu\.textInlineStyles[\s\S]{0,400}?menu\.format\.bold/.test(appSrc),
+      'App.tsx 的「内联样式」子菜单必须含加粗（contextmenu.textInlineStyles → menu.format.bold）');
+  }
+  // ③ `insert.table` 的行为契约：必须走创建对话框（e2e 的表格块据此断言对话框）
+  assert(/id:\s*'insert\.table'[^\n]*insertTableWithDialog/.test(appSrc),
+    "insert.table 必须走创建对话框（insertTableWithDialog）—— 若改回直接插入，"
+    + 'e2e 的表格对话框块会失效（该行为由 table-editing-spec §3 规定）');
+  {
+    const fl = readE2e('feature-liveness-verify.mjs');
+    assert(/insert\.table/.test(fl) && /INPUT_DIALOG_SELECTORS\.input/.test(fl),
+      'feature-liveness-verify.mjs 必须覆盖表格创建对话框（dispatch insert.table + 应用内对话框选择器）——'
+      + ' 不要用 page.on(\'dialog\')（应用内对话框不触发原生事件）');
+  }
+  // ④ e2e 不得写入**归档证据目录**（2026-10-01）
+  // 立此条的原因：`theme-verify.mjs` 原先把 3 张截图写进 `tests/benchmark/screenshots/`
+  // —— 那是**归档证据目录**（同目录的 `capture-window-chrome.mjs` 是**带 manifest 的正式归档工具**，
+  // 且 `p2-8-window-chrome-macos.png` 被台账 `P0-LAYOUT-002` 引用为证据）。
+  // 于是**每跑一次 e2e 就覆盖被 git 跟踪的证据文件**，而全仓没有任何地方读那 3 张图 ——
+  // 跑一次就产生一个二进制 diff，极易被 `git add -A` 误提交（实测本人已踩一次）。
+  // 判据：`tests/e2e/*.mjs` 不得出现「向该目录写截图」的调用；
+  // 运行期产物应落到被忽略的 `tests/e2e/.artifacts/`。
+  {
+    const e2eFiles = readdirSync(resolve(root, 'tests/e2e')).filter((f) => f.endsWith('.mjs'));
+    const writeRe = /screenshot\(\s*\{\s*path:\s*['"`]tests\/benchmark\/screenshots/;
+    const offenders = e2eFiles
+      .filter((f) => writeRe.test(readFileSync(resolve(root, `tests/e2e/${f}`), 'utf8')))
+      .sort();
+    assert(offenders.length === 0,
+      `e2e 脚本不得把截图写进归档证据目录 tests/benchmark/screenshots/：${offenders.join(', ')}`
+      + ' —— 该目录是证据归档（带 manifest，且被台账引用）；e2e 的运行期产物请落到被忽略的 tests/e2e/.artifacts/');
+    // canary：合成违规样本必须被检出
+    const SAMPLE = "await page.screenshot({ path: 'tests/benchmark/screenshots/x.png' });";
+    if (!writeRe.test(SAMPLE)) {
+      errors.push('归档目录写入护栏 canary 失效：违规样本未被检出');
+    }
+    if (writeRe.test("await page.screenshot({ path: shot('x.png') });")) {
+      errors.push('归档目录写入护栏 canary 失效：合规样本被误判为违规');
+    }
+  }
+
+  // canary：把真值源里的键位换掉，上面的判定必须翻红（用同一套比较逻辑跑合成输入）
+  {
+    const synth = (schemaKey, e2eKey) => schemaKey.replace('Cmd', 'Meta') === e2eKey;
+    if (!synth('Cmd+Alt+H', 'Meta+Alt+H')) {
+      errors.push('e2e 契约值交叉锁 canary 失效：一致的样本未被判为一致');
+    }
+    if (synth('Cmd+Alt+F', 'Meta+Alt+H')) {
+      errors.push('e2e 契约值交叉锁 canary 失效：不一致的样本未被检出（护栏已失效）');
+    }
+  }
+}
+
 if (errors.length) {
   console.error('Typora parity ledger validation failed:');
   for (const error of errors) console.error(`- ${error}`);

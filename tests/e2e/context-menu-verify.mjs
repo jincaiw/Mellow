@@ -112,10 +112,14 @@ async function main() {
       `items=${m1.items.length}`);
     if (m1.items.length > 0) console.log(`   [info] 菜单项: ${m1.items.slice(0, 12).join(' / ')}`);
 
-    // 「加粗」不在一级菜单，而在 **格式** 子菜单内（一级为：剪切/复制/粘贴/段落/格式/复制为 Markdown/复制为纯文本）
-    const formatIdx = m1.items.findIndex((l) => l.includes('格式') || /^format$/i.test(l));
-    if (formatIdx === -1) {
-      check('菜单含「格式」子菜单入口', false, `实际项=${JSON.stringify(m1.items)}`);
+    // ⚠️ 2026-10-01 更正（e2e 全量扫描发现本段**长期陈旧**）：
+    // 文本右键的三个样式子菜单已从单个「格式」拆为 **「块样式」/「内联样式」/「列表样式」**
+    // （见 `App.tsx` 的 `contextmenu.textBlockStyles` / `textInlineStyles` / `textListStyles`；
+    //  「加粗」现在位于 **内联样式** 下）。契约侧由 CI 护栏
+    //  `verify-context-menu-parity` 锁定（它比对的是 Typora 的官方条目序列），故本段只是**跟随**它。
+    const inlineIdx = m1.items.findIndex((l) => l.includes('内联样式') || /^inline styles$/i.test(l));
+    if (inlineIdx === -1) {
+      check('菜单含「内联样式」子菜单入口', false, `实际项=${JSON.stringify(m1.items)}`);
     } else {
       // 展开子菜单：Hover（ContextMenu 用 hover 打开子菜单）
       await page.evaluate((idx) => {
@@ -125,7 +129,7 @@ async function main() {
         for (const type of ['mouseover', 'mouseenter', 'mousemove']) {
           target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
         }
-      }, formatIdx);
+      }, inlineIdx);
       await sleep(700);
 
       const sub = await page.evaluate(() => {
@@ -136,8 +140,8 @@ async function main() {
           items: Array.from(menu.querySelectorAll('.context-menu-item-label')).map((el) => el.textContent?.trim() ?? ''),
         };
       });
-      check('「格式」子菜单可展开', sub.open && sub.items.length > 0, `items=${JSON.stringify(sub.items)}`);
-      if (sub.items.length > 0) console.log(`   [info] 格式子菜单: ${sub.items.join(' / ')}`);
+      check('「内联样式」子菜单可展开', sub.open && sub.items.length > 0, `items=${JSON.stringify(sub.items)}`);
+      if (sub.items.length > 0) console.log(`   [info] 内联样式子菜单: ${sub.items.join(' / ')}`);
 
       const boldIdx = sub.items.findIndex((l) => l.includes('加粗') || /^bold$/i.test(l));
       if (boldIdx === -1) {
@@ -153,7 +157,7 @@ async function main() {
         }, boldIdx);
         await sleep(600);
         const text = await getText();
-        check('右键菜单「格式 → 加粗」真的加粗文档', clicked && text === '**hello**', `got=${JSON.stringify(text)}`);
+        check('右键菜单「内联样式 → 加粗」真的加粗文档', clicked && text === '**hello**', `got=${JSON.stringify(text)}`);
 
         const m2 = await menuState();
         check('执行后菜单关闭', !m2.open, `open=${m2.open}`);
