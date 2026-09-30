@@ -216,7 +216,6 @@ const COMMAND_PALETTE_RECENT_KEY = 'mellow.commandPalette.recent';
 const SLASH_ENABLED_KEY = 'mellow.slashCommands.enabled';
 const THEME_SETTINGS_KEY = 'mellow.theme.settings';
 const LOCALE_SETTING_KEY = 'mellow.locale';
-const AI_ENABLED_KEY = 'mellow.ai.enabled';
 const READER_ZOOM_KEY = 'mellow.reader.zoom';
 const SIDEBAR_WIDTH_KEY = 'mellow.sidebar.width';
 const WINDOW_BOUNDS_KEY = 'mellow.window.bounds';
@@ -794,7 +793,9 @@ export default function App() {
   const shortcutOverridesRef = useRef(shortcutOverrides);
   shortcutOverridesRef.current = shortcutOverrides;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [aiEnabled] = useState(() => { try { return localStorage.getItem(AI_ENABLED_KEY) === '1'; } catch { return false; } });
+  // 2026-09-30 审计：原 `aiEnabled` state（读 `mellow.ai.enabled`）唯一用途是给 SettingsPanel
+  // 追加一个「AI」分类，而该分类的唯一控件无消费者。分类已移除，state 随之删除
+  // （PRD §122：不持久化任何 AI 状态；AI 入口由 extensions 分类的 action 承载）。
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(THEME_SETTINGS_KEY) ?? 'null') as ThemeSettings | null;
@@ -4726,6 +4727,17 @@ export default function App() {
         // P2-2.6：Settings 快捷键列表入口 → 快捷键速查表
         void dispatchCommand('help.cheatsheet');
         break;
+      // 2026-09-30 审计：`extensions.ai` / `extensions.plugins` 此前**没有 applyCommand**，
+      // 渲染出的「打开」按钮调用 applySetting(def, true) 落 default → 静默 no-op（死按钮）。
+      // 二者语义不同，故分别转发到各自真正存在的命令：
+      //   · extensions.ai     → extensions.list（扩展列表，可看到 AI 扩展是否已注册）
+      //   · extensions.plugins→ commandPalette.open（其描述即「插件注册的命令统一进入 Command Palette」）
+      case 'extensions.list':
+        void dispatchCommand('extensions.list');
+        break;
+      case 'commandPalette.open':
+        void dispatchCommand('commandPalette.open');
+        break;
       case 'updater.check':
         // P2-2.6：Settings「检查更新」→ 既有 updater.check 命令
         void dispatchCommand('updater.check');
@@ -6317,7 +6329,6 @@ export default function App() {
           applySetting={applySetting}
           currentLanguage={localeSetting === 'system' ? 'system' : localeSetting}
           themeSettings={themeSettings}
-          aiEnabled={aiEnabled}
           shortcuts={commandRegistryRef.current.all().filter((c) => c.shortcut !== undefined).map((c) => ({
             id: c.id,
             title: titleFor(c, locale === 'zh-CN' ? 'zh' : 'en'),

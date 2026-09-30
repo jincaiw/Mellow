@@ -4,7 +4,10 @@
  * - 共享 schema：desktop UI 与 extension 共用同一份设置定义；
  * - live apply where safe：requiresRestart 默认 false，App 层负责 apply（命令或宿主 handler）；
  * - searchable P1：schema 已含 labelKey（可检索），UI 搜索 P1；
- * - AI 页面：默认不存在，AI extension 启用后出现（见 extensions 分类 / App 检测）。
+ * - AI 页面：**不提供**（2026-09-30 审计移除）。此前 SettingsPanel 会在 aiEnabled 时追加
+ *   一个「AI」分类，其唯一控件 `ai.panel` 既无消费者（applyCommand 无对应 case）
+ *   又持久化 `mellow.ai.panel` —— 与 PRD §122「无任何持久化 AI 状态」相悖，且是个
+ *   点了没反应的开关。AI 相关入口现由 `extensions` 分类的 action 承载（storageKey 为空）。
  *
  * 平台约束：纯数据 + 纯函数（localStorage 读写），零 OS 依赖。
  */
@@ -233,7 +236,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     settings: [
       { id: 'appearance.theme', labelKey: 'settings.appearance.theme', type: 'select', storageKey: 'mellow.theme.settings', defaultValue: 'mellow-light', applyCommand: 'theme.apply.mellow-light' },
       // 主题文件夹入口（Typora 偏好→外观→打开主题文件夹；复用 file.openUserCss 命令）
-      { id: 'appearance.openThemeFolder', labelKey: 'settings.appearance.openThemeFolder', type: 'action', storageKey: 'mellow.appearance.openThemeFolder', defaultValue: '', applyCommand: 'file.openUserCss' },
+      { id: 'appearance.openThemeFolder', labelKey: 'settings.appearance.openThemeFolder', type: 'action', storageKey: '', defaultValue: '', applyCommand: 'file.openUserCss' },
       { id: 'appearance.statusbar', labelKey: 'settings.appearance.statusbar', type: 'toggle', storageKey: 'mellow.statusbar.visible', defaultValue: false, applyCommand: 'settings.statusbar' },
       // V7-W2.4（D-B = ①）：浮动编辑器工具栏开关。
       // Typora 1.14 What's New 原文：「You can now enable the float toolbar from menubar
@@ -290,16 +293,25 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'extensions',
     labelKey: 'settings.extensions',
     settings: [
-      { id: 'extensions.ai', labelKey: 'settings.extensions.ai', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.extensions.aiDesc' },
-      { id: 'extensions.plugins', labelKey: 'settings.extensions.plugins', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.extensions.pluginsDesc' },
+      // action 型**必须绑定命令**（否则渲染出的「打开」按钮点了没反应）——
+      // 2026-09-30 审计：此二项此前无 applyCommand，是**死按钮**，已补。
+      // 仍满足 PRD §122：storageKey 为空 = 不持久化任何 AI / 插件状态。
+      { id: 'extensions.ai', labelKey: 'settings.extensions.ai', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.extensions.aiDesc', applyCommand: 'extensions.list' },
+      { id: 'extensions.plugins', labelKey: 'settings.extensions.plugins', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.extensions.pluginsDesc', applyCommand: 'commandPalette.open' },
     ],
   },
   {
     id: 'advanced',
     labelKey: 'settings.advanced',
     settings: [
-      { id: 'advanced.windowBounds', labelKey: 'settings.advanced.windowBounds', type: 'toggle', storageKey: 'mellow.advanced.windowBounds', defaultValue: true, applyCommand: 'settings.windowBounds' },
-      { id: 'advanced.userCss', labelKey: 'settings.advanced.userCss', type: 'text', storageKey: '', defaultValue: '', descriptionKey: 'settings.advanced.userCssDesc' },
+      // 启动期设置：值由 App 在启动时**直接读 storageKey**（App.tsx 的 windowBounds 判定），
+      // 没有 live-apply 分支 —— 故**不声明 applyCommand**（声明了却无 case 是死引用，
+      // 会让人以为「改了立刻生效」）。2026-09-30 审计删除该死引用。
+      { id: 'advanced.windowBounds', labelKey: 'settings.advanced.windowBounds', type: 'toggle', storageKey: 'mellow.advanced.windowBounds', defaultValue: true },
+      // 入口型 action（与 appearance.openThemeFolder 同范式）：打开 appData/user.css。
+      // 2026-09-30 审计：原为 `type: 'text'` 且 storageKey 为空 —— 输入的值写进 localStorage
+      // 的空键、无人消费，是个「打了字没处去」的死输入框，已改为 action。
+      { id: 'advanced.userCss', labelKey: 'settings.advanced.userCss', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.advanced.userCssDesc', applyCommand: 'file.openUserCss' },
     ],
   },
 ];

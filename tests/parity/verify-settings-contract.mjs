@@ -912,9 +912,101 @@ if (cssLayerAnchor === undefined) {
   else if (/kind === 'posix-absolute' && rootDir !== null/.test(drift)) fail('typora-root-url canary 失效');
 }
 
+// ── 设置项「两端同时锁」：声明了 applyCommand 就必须真的有接线（2026-09-30）──────
+// 缺陷族（实测 6 处，全部已修）：SettingsPanel 渲染 action 型设置时只调用
+// `applySetting(def, true)`；而 App 的 applySetting 是按 `def.applyCommand` 分派的 switch，
+// 落 `default: break` 即**静默 no-op**。于是「可点击但点了没反应」的控件可以长期存在，
+// 而两侧各自的检查都看不到：schema 侧只锁**形状**（storageKey 为空），App 侧不锁枚举。
+// 这正是本项目记录过的母题「**跨层字段必须两端同时锁** —— 只在一端加、另一端忽略
+// → 占位项可点击且点击无反应」。
+//
+// 四条不变量（A/B 管「有消费者」，C/D 管「值与存储键匹配」）：
+//   A. action 型必须有 applyCommand（否则按钮点了没反应）
+//   B. 任何出现的 applyCommand 必须在 App 的 applySetting 里有对应 case
+//   C. action 型不得带 storageKey（否则写下一个无人读的值）
+//   D. 值型（toggle/select/number/text）必须有 storageKey（否则值无处安放）
+// 扫描面**必须同时含 package schema 与 SettingsPanel** —— App 层可动态追加设置项
+// （`ai.panel` 就是这样一个：它在 SettingsPanel 里，只扫 package 的检查看不到它）。
+{
+  /** 解析设置项字面量（id / type / storageKey / applyCommand）。 */
+  const parseDefs = (src, where) => {
+    const out = [];
+    for (const m of src.matchAll(/\{\s*id:\s*'([^']+)'[^{}]*?type:\s*'([^']+)'[^{}]*?\}/g)) {
+      const blob = m[0];
+      out.push({
+        where,
+        id: m[1],
+        type: m[2],
+        storageKey: blob.match(/storageKey:\s*'([^']*)'/)?.[1],
+        applyCommand: blob.match(/applyCommand:\s*'([^']+)'/)?.[1],
+      });
+    }
+    return out;
+  };
+
+  /** applySetting 的 switch 体（**必须切片**：从函数起一路读到文件尾会混入其它 switch 的 case）。 */
+  const sliceApplySetting = (src) => {
+    const start = src.indexOf('const applySetting = useCallback');
+    if (start < 0) return '';
+    const end = src.indexOf('\n  }, [', start);
+    return end < 0 ? '' : src.slice(start, end);
+  };
+
+  const checkDefs = (defs, cases) => {
+    const problems = [];
+    for (const d of defs) {
+      const at = `[${d.where}] ${d.id}`;
+      if (d.type === 'action') {
+        if (d.applyCommand === undefined) problems.push(`${at}：action 型缺 applyCommand → 按钮点了没反应`);
+        else if (!cases.has(d.applyCommand)) problems.push(`${at}：applyCommand '${d.applyCommand}' 在 App 的 applySetting 里没有对应 case → 静默 no-op`);
+        if (d.storageKey !== '') problems.push(`${at}：action 型不得带 storageKey（当前 '${d.storageKey}'）`);
+      } else {
+        if (d.storageKey === undefined || d.storageKey === '') problems.push(`${at}：${d.type} 型缺 storageKey → 值无处安放`);
+        if (d.applyCommand !== undefined && !cases.has(d.applyCommand)) problems.push(`${at}：applyCommand '${d.applyCommand}' 无对应 case → 死引用`);
+      }
+    }
+    return problems;
+  };
+
+  const applySettingBody = sliceApplySetting(appSource);
+  const cases = new Set([...applySettingBody.matchAll(/case '([^']+)':/g)].map((x) => x[1]));
+  if (applySettingBody === '' || cases.size === 0) {
+    fail('无法定位 App 的 applySetting switch（切片失败）→ 请同步更新本护栏，不要让它静默漏检');
+  }
+
+  const allDefs = [...parseDefs(settingsSource, 'package'), ...parseDefs(panelSource, 'panel')];
+  if (allDefs.length < 50) {
+    fail(`解析到的设置项过少（${allDefs.length}）→ 解析器可能漏成员，请同步更新本护栏`);
+  }
+  for (const p of checkDefs(allDefs, cases)) fail(`设置项跨层不变量：${p}`);
+
+  // canary：checkDefs 本身必须两个方向都能判（违例被检出 / 合规不被拦）
+  const badAction = [{ where: 'canary', id: 'canary.action', type: 'action', storageKey: '', applyCommand: undefined }];
+  const badRef = [{ where: 'canary', id: 'canary.ref', type: 'action', storageKey: '', applyCommand: 'canary.notWired' }];
+  const badStore = [{ where: 'canary', id: 'canary.store', type: 'action', storageKey: 'canary.key', applyCommand: 'canary.wired' }];
+  const badValue = [{ where: 'canary', id: 'canary.value', type: 'text', storageKey: '' }];
+  const goodAction = [{ where: 'canary', id: 'canary.good', type: 'action', storageKey: '', applyCommand: 'canary.wired' }];
+  const goodValue = [{ where: 'canary', id: 'canary.goodValue', type: 'toggle', storageKey: 'canary.value.key' }];
+  const casesCanary = new Set(['canary.wired']);
+  const expectBad = [
+    ['action 缺 applyCommand', badAction],
+    ['applyCommand 未接线', badRef],
+    ['action 带 storageKey', badStore],
+    ['值型缺 storageKey', badValue],
+  ];
+  for (const [name, sample] of expectBad) {
+    if (checkDefs(sample, casesCanary).length === 0) fail(`设置项不变量 canary 失效：${name} 的样本未被检出`);
+  }
+  // 防误报：合规样本**不得**被拦（否则护栏会吃掉正确行为）
+  for (const [name, sample] of [['action 合规', goodAction], ['值型合规', goodValue]]) {
+    const got = checkDefs(sample, casesCanary);
+    if (got.length > 0) fail(`设置项不变量 canary 失效（误报）：${name} 的合法样本被拦下（${got[0]}）`);
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15)');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section');

@@ -112,18 +112,39 @@ describe('Settings persistence helpers', () => {
 
 describe('P6 — Settings / Theme / Export / Better 契约', () => {
   test('PRD §122 / V4 P6: AI 默认关闭——无持久化开关、无默认开启项、无独立 section', () => {
-    // extensions.ai 是纯入口 action：不持久化任何状态、不绑定命令。
+    // extensions.ai 是入口 action：**不持久化任何状态**（这才是 PRD §122 的不变量）。
     const ai = settingById('extensions.ai');
     expect(ai).toBeDefined();
     expect(ai?.type).toBe('action');
     expect(ai?.storageKey).toBe('');
     expect(ai?.defaultValue).toBe('');
-    expect(ai?.applyCommand).toBeUndefined();
+    // ⚠️ 2026-09-30 审计修正：此处原为 `expect(ai?.applyCommand).toBeUndefined()`
+    // （注释「不绑定命令」）。那条断言**把「点了没反应的按钮」写成了契约** ——
+    // SettingsPanel 对 action 型一律渲染「打开」按钮且只调用 applySetting(def, true)，
+    // 无 applyCommand 即静默 no-op（applySetting 的 switch 落 default）。
+    // PRD §122 要的是「不持久化 AI 状态」（上一条），不是「按钮不许做事」。
+    // 现改为断言**必须绑定命令**，跨层「命令真的有对应 case」由 parity 护栏守。
+    expect(ai?.applyCommand).toBe('extensions.list');
     // 全 schema 无 mellow.ai.* 持久化键（disabled / no model / no document upload 天然成立且可回归）。
     const aiKeys = SETTINGS_SECTIONS.flatMap((s) => s.settings).filter((x) => x.storageKey.startsWith('mellow.ai'));
     expect(aiKeys).toEqual([]);
     // AI 页面默认不存在（AI extension 启用后出现），top-level 无独立 ai section。
     expect(SETTINGS_SECTIONS.map((s) => s.id)).not.toContain('ai');
+  });
+
+  // 2026-09-30 审计新增：action 型**必须绑定命令**，且**不得持久化**。
+  // 渲染层对 action 只调用 applySetting → 无命令 = 死按钮；有 storageKey = 写了无人读的值。
+  test('action 型设置：必须绑定 applyCommand 且不得带 storageKey', () => {
+    const actions = SETTINGS_SECTIONS.flatMap((s) => s.settings).filter((x) => x.type === 'action');
+    expect(actions.length).toBeGreaterThan(0);
+    for (const def of actions) {
+      expect({ id: def.id, applyCommand: def.applyCommand }).toEqual({ id: def.id, applyCommand: expect.any(String) });
+      expect({ id: def.id, storageKey: def.storageKey }).toEqual({ id: def.id, storageKey: '' });
+    }
+    // 反向：值型设置必须有存储键，否则值无处安放（曾出现 storageKey 为空的 text 输入框）。
+    for (const def of SETTINGS_SECTIONS.flatMap((s) => s.settings).filter((x) => x.type !== 'action')) {
+      expect({ id: def.id, storageKey: def.storageKey === '' }).toEqual({ id: def.id, storageKey: false });
+    }
   });
 
   test('V4 P6.3: Slash Commands 可发现且与 Typora 对齐（默认启用 + settings toggle）', () => {

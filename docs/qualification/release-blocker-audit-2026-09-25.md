@@ -1031,6 +1031,70 @@ CM6 的 history 存在 **EditorState** 里，状态全新即历史全新 →
 **⚠️ 不过度声称**：本节只更正**已由代码证实**的条目。§15.3 其余 11 行**未逐项复核**
 （它们多为真机/人工/裁决阻塞，代码核实不适用或代价高）——**不读成「剩余工作只剩两项」**。
 
+## 4.22 Settings 面板里成簇存在「可点击但点了没反应」的设置项（2026-09-30）
+
+**怎么发现的**：在核实 §15.3 行 14 ③「Typora 有『确认重置高级设置？』而 Mellow 无入口」时去读
+Settings 的渲染路径，发现渲染层对 `type: 'action'` **一律**渲染「打开」按钮并只调用
+`applySetting(def, true)`，而 `applySetting` 是按 `def.applyCommand` 分派的 switch，
+**落 `default: break` 即静默 no-op**。于是「有按钮、无消费者」可以长期存在。
+
+**程序化枚举**（不靠肉眼，避免只修碰巧看到的几个）：解析 `packages/settings/src/index.ts`
+＋ `SettingsPanel.tsx` 的设置项字面量，与 App 的 `applySetting` switch case 集合比对 → **6 处**：
+
+| # | 项 | 现象 | 处置 |
+|---|---|---|---|
+| A1 | `extensions.ai` | action 但**无 applyCommand** → 「打开」按钮点了没反应 | 补 `applyCommand: 'extensions.list'` |
+| A2 | `extensions.plugins` | 同上 | 补 `applyCommand: 'commandPalette.open'`（其描述即「插件注册的命令统一进入 Command Palette」） |
+| B1 | `advanced.windowBounds` | `applyCommand: 'settings.windowBounds'` **无对应 case** → 死引用 | **删掉该死引用**（该设置是**启动期**读取，App 直接读 storageKey，本就没有 live-apply） |
+| B2 | `ai.panel`（**在 SettingsPanel 里**） | `applyCommand: 'settings.aiPanel'` 无对应 case | 整段移除（见处置 4） |
+| C1 | `appearance.openThemeFolder` | action 却带**非空 storageKey** → 写下一个无人读的值 | 改为 `storageKey: ''` |
+| D1 | `advanced.userCss` | `type: 'text'` 却 `storageKey: ''` → 输入的值写进 localStorage 的**空键**、无人消费 | 改为 `type: 'action'` + `applyCommand: 'file.openUserCss'`（与 `appearance.openThemeFolder` 同范式） |
+
+**⚠️ 一次「防误报」救回的假阳性（值得单记）**：初版判据是「applyCommand 必须有 case」，
+它会把 `advanced.windowBounds` 判成缺陷。但核实后发现该 toggle **有消费方** ——
+App 在启动时**直接读** `mellow.advanced.windowBounds`（windowBounds 判定），
+根本不经过 `applySetting`。**「无 case」≠「无消费方」**：对**值型**设置，值本身是持久化的，
+消费者可以在任何地方直接读。故判据按类型分岔 —— action 型（按钮是唯一入口）必须有 case；
+值型只需有 storageKey。这正是「**禁止型护栏必须做防误报验证**」的实例：
+只验证「违例被拦」会造出一个**会吃掉正确行为**的护栏。
+
+**另一个只有「把扫描面枚举全」才能看到的点**：`ai.panel` **不在** `packages/settings` 的 schema 里，
+而在 `SettingsPanel.tsx` 里按 `aiEnabled` **动态追加**。已有的两处检查
+（`verify-settings-contract.mjs` 与 `packages/settings/test`）**都只扫 package schema**
+→ 它从未被任何不变量覆盖。这与 §4.19 的「两处各自维护清单」、§4.17 的「只查相邻面」同源：
+**检查的范围没有覆盖缺陷能出现的全部位置**。
+
+**处置（2026-09-30）**：
+1. **修上表 6 处**。
+2. **新增跨层不变量**（`verify-settings-contract.mjs` 新节）：A. action 型必有 applyCommand；
+   B. 任何出现的 applyCommand 必有对应 case；C. action 型不得带 storageKey；
+   D. 值型必有 storageKey。**扫描面同时含 package schema 与 SettingsPanel**（防 App 层追加的项绕过）。
+   含**双向 canary**（四类违例必被检出 ＋ 两类合规样本不得被拦）。
+3. **包级测试**（`packages/settings/test/index.test.ts`）：新增「action 型必须绑定 applyCommand
+   且不得带 storageKey」。
+4. **移除 AI 死分区**：`SettingsPanel` 的 `ai` 分类唯一控件 `ai.panel` 无消费者且持久化
+   `mellow.ai.panel`（与 PRD §122「无任何持久化 AI 状态」相悖）→ 移除该分类 ＋ App 的
+   `aiEnabled` state ＋ `mellow.ai.enabled` 键 ＋ 三条 i18n 文案。AI 入口由 `extensions`
+   分类的 action 承载。
+5. **修正一条「把缺陷写成契约」的断言**：`packages/settings/test` 原断言
+   `expect(ai?.applyCommand).toBeUndefined()`（注释「不绑定命令」）—— 它把**死按钮**
+   固化成了契约。PRD §122 要的是「不持久化 AI 状态」（同测试上一行已断言），
+   不是「按钮不许做事」。改为断言必须绑定命令。
+
+**验证（能失败）**：注入 6 个 mutation，**6/6 被检出**：① action 去 applyCommand；
+② applyCommand 改成一个不存在的值；③ action 带 storageKey；④ 值型去掉 storageKey；
+⑤ **在 SettingsPanel 动态追加一个死设置项**（证明扫描面真的含面板）；
+⑥ 删掉 applySetting 的接线 case（只锁一端的形态）。
+
+**⚠️ 不过度声称**：
+- 本节的判据是「**有没有接线 / 消费者**」，**不是**「行为是否正确」。`extensions.ai` 现转发到
+  `extensions.list`，是**语义最近且真实存在**的命令；它是否正是产品想要的那个入口，属产品判断。
+- `extensions.ai` / `extensions.plugins` 所在分类**始终可见** → 这两处是**用户可见**的缺陷；
+  而 `ai.panel` 所在分区需 `mellow.ai.enabled === '1'` 才出现，而**全仓无任何地方写这个键**
+  → 它实际**不可达**（已随之移除）。
+- **未复核**：值型设置的 storageKey 是否都真的**有消费者**（本节的 D 只断言「有 storageKey」，
+  不断言「有人读」）—— 静态判定「某键有消费者」代价高且易误报，**如实留为未覆盖**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

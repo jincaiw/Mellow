@@ -5,7 +5,7 @@
  * - settings schema shared（packages/settings）：UI 只按 schema 渲染，不复制定义；
  * - live apply where safe：值修改即持久化并调用 apply 回调（不要求重启）；
  * - searchable：搜索跨分类按 labelKey 过滤（P1，desktop-ui-design-spec §12）；
- * - AI 页面默认不存在：仅当 aiEnabled（AI extension 启用）时追加「AI」分类。
+ * - **不提供 AI 分类**（2026-09-30 审计移除，见下方 sections 处注释）。
  */
 
 import { useEffect, useState } from 'react';
@@ -21,8 +21,6 @@ export interface SettingsPanelProps {
   currentLanguage: string;
   /** 当前主题（用于 select 高亮） */
   themeSettings: ThemeSettings;
-  /** AI extension 是否启用（默认 false → AI 分类不出现） */
-  aiEnabled: boolean;
   /** 快捷键列表（分类「快捷键」；P2-2.6 起支持点击录制自定义键位） */
   shortcuts: Array<{ id: string; title: string; shortcut?: string }>;
   /** P2-2.6 录制回调：accelerator = null 表示恢复 schema 默认键位 */
@@ -88,19 +86,15 @@ function ShortcutList({ t, shortcuts, onShortcutChange }: {
 }
 
 export default function SettingsPanel(props: SettingsPanelProps) {
-  const { t, onClose, applySetting, currentLanguage, themeSettings, aiEnabled, shortcuts, onShortcutChange } = props;
+  const { t, onClose, applySetting, currentLanguage, themeSettings, shortcuts, onShortcutChange } = props;
   const [active, setActive] = useState<SettingsSection['id']>('general');
   const [query, setQuery] = useState('');
 
-  const sections: SettingsSection[] = aiEnabled
-    ? [...SETTINGS_SECTIONS, {
-        id: 'ai' as SettingsSection['id'],
-        labelKey: 'settings.ai',
-        settings: [
-          { id: 'ai.panel', labelKey: 'settings.ai.panel', type: 'toggle', storageKey: 'mellow.ai.panel', defaultValue: true, applyCommand: 'settings.aiPanel' },
-        ],
-      }]
-    : SETTINGS_SECTIONS;
+  // 2026-09-30 审计：此前在此按 aiEnabled 追加一个「AI」分类，其唯一控件 `ai.panel`
+  // 无消费者（applyCommand 无对应 case）且持久化 `mellow.ai.panel` —— 与 PRD §122
+  // 「无任何持久化 AI 状态」相悖，且渲染成一个点了没反应的开关。已移除；
+  // AI 入口由 `extensions` 分类的 action 承载。
+  const sections: SettingsSection[] = SETTINGS_SECTIONS;
 
   const section = sections.find((s) => s.id === active) ?? sections[0];
 
