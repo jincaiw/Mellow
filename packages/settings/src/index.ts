@@ -357,6 +357,44 @@ export function writeSetting(def: SettingDefinition, value: string | number | bo
   localStorage.setItem(def.storageKey, raw);
 }
 
+/**
+ * 恢复默认（Typora 偏好面板「重置高级设置」的对标，2026-09-30）。
+ *
+ * 语义：
+ * - **删除键**而非写入 `defaultValue` —— 未设置的键读时自然回落 `defaultValue`；
+ *   删除还能顺带清掉「将来默认值变更后残留的旧值」（写入会把旧默认值**固化**下来）；
+ * - **跳过 `storageKey === ''` 的入口型 action** —— 它们没有值，且 `apply` 会触发
+ *   副作用（打开主题文件夹 / 速查表 / 检查更新 / 扩展列表 / 命令面板）；
+ * - `apply` 由宿主提供，且宿主**必须复用与控件 onChange 完全相同的路径** ——
+ *   这样「恢复默认后行为正确」与「手动逐项改回默认值行为正确」是同一件事，
+ *   无需另建一条 live-apply 路径（**少一条路径就少一处将来会漂移的地方**）；
+ * - 对**没有 live-apply** 的设置（启动期读取项，如 `advanced.windowBounds`），
+ *   删除键同样正确 —— 下次读取即回落默认值。
+ *
+ * **不覆盖**快捷键自定义（`SHORTCUT_OVERRIDES_KEY`）：那是独立的 override 层，
+ * 且已有**逐项**恢复（录制态按 Backspace/Delete）。调用方应在文案里说明这一点。
+ *
+ * 返回被重置的设置项数（供状态栏反馈与测试断言）。
+ */
+export function restoreAllSettingsDefaults(
+  apply: (def: SettingDefinition, value: string | number | boolean) => void,
+): number {
+  let n = 0;
+  for (const section of SETTINGS_SECTIONS) {
+    for (const def of section.settings) {
+      if (def.storageKey === '') continue;
+      try {
+        localStorage.removeItem(def.storageKey);
+      } catch {
+        /* 隐私模式等：忽略，仍继续 apply（读时会回落默认值） */
+      }
+      apply(def, def.defaultValue);
+      n += 1;
+    }
+  }
+  return n;
+}
+
 // ── P2-2.6 快捷键自定义 override 层 ─────────────────────────────────
 // 单一真源不变：menuSchema 仍是键位默认值唯一来源（§7.4 硬规则 2）；用户在 Settings
 // 录制的自定义键位存为 override，仅在装配边界生效（App registry 注入 / native menu spec）。

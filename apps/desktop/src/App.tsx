@@ -92,7 +92,7 @@ import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
 import { buildNativeMenuSpec } from './nativeMenu';
 import type { Locale, LocaleSetting } from '../../../packages/i18n/src';
-import { readShortcutOverrides, readSetting, settingById, writeShortcutOverrides, writeSetting, TYPOGRAPHY_DEFAULTS } from '../../../packages/settings/src';
+import { readShortcutOverrides, readSetting, restoreAllSettingsDefaults, settingById, writeShortcutOverrides, writeSetting, TYPOGRAPHY_DEFAULTS } from '../../../packages/settings/src';
 import type { SettingDefinition, ShortcutOverrideMap } from '../../../packages/settings/src';
 import SettingsPanel from './SettingsPanel';
 import { StatusBar, OutlineList, SearchResultsList, FileTree, FileList, SidebarHeader, SidebarFooter, fieldVisible } from '../../../packages/desktop-ui/src';
@@ -4820,6 +4820,32 @@ export default function App() {
         break;
     }
   }, [applyLineNumberPrefs, applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
+
+  /**
+   * 恢复默认设置（Typora 偏好面板「重置高级设置」的对标，2026-09-30 / §15.3 行 14a ③）。
+   *
+   * 关键设计：**复用 `applySetting`** —— 它与设置面板控件 onChange 走的是同一条路径，
+   * 所以「恢复默认后行为正确」与「手动逐项改回默认值行为正确」是同一件事，
+   * 无需另建 live-apply 路径（少一条路径就少一处将来会漂移的地方）。
+   * `restoreAllSettingsDefaults` 负责「删存储键 + 逐项 apply 默认值」，
+   * 并**跳过入口型 action**（storageKey 为空，apply 会触发副作用）。
+   *
+   * 破坏性：会丢掉用户全部设置自定义 → 必须走应用内确认对话框（`window.confirm` 已全仓禁用）。
+   * 范围：不含快捷键自定义（独立 override 层，且已有逐项恢复）—— 文案里已说明。
+   */
+  const handleRestoreSettingsDefaults = useCallback(async (): Promise<void> => {
+    const answer = await askUser({
+      title: t('dialog.restoreSettingsTitle'),
+      message: t('dialog.restoreSettingsMessage'),
+      buttons: [
+        { label: t('dialog.restoreSettingsConfirm'), value: 'restore', primary: true },
+        { label: t('dialog.cancel'), value: 'cancel' },
+      ],
+    });
+    if (answer !== 'restore') return;
+    const n = restoreAllSettingsDefaults(applySetting);
+    setStatusText(t('msg.settingsRestored', { n }));
+  }, [applySetting, askUser, setStatusText, t]);
   // PRD §101 Auto Save：窗口失焦时保存 dirty 文档（默认开启，设置可关闭）
   useEffect(() => {
     const onBlur = () => { void maybeAutoSaveRef.current?.(); };
@@ -5064,6 +5090,9 @@ export default function App() {
       { id: 'file.revealInFinder', localizedTitle: { zh: '在 Finder 中显示', en: 'Reveal in Finder' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => { if (filePathRef.current !== null) void handleTreeReveal(filePathRef.current); } },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
       { id: 'settings.open', localizedTitle: { zh: '设置…', en: 'Settings…' }, category: 'system', shortcut: { mac: 'Cmd+,', winLinux: 'Ctrl+,' }, context: { scope: 'global' }, enabled: always, execute: () => setSettingsOpen(true) },
+      // 2026-09-30：Typora 偏好面板「重置高级设置」的对标（§15.3 行 14a ③）。
+      // 破坏性 → 内部走 askUser 确认；不含快捷键自定义（文案已说明）。
+      { id: 'settings.restoreDefaults', localizedTitle: { zh: '恢复默认设置', en: 'Restore Default Settings' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void handleRestoreSettingsDefaults(); } },
       { id: 'theme.system', localizedTitle: { zh: '主题：跟随系统', en: 'Theme: System' }, category: 'view', context: { scope: 'global' }, enabled: () => themeSettings.mode !== 'system', execute: () => setThemeSettingsAndPersist({ ...themeSettings, mode: 'system' }) },
       { id: 'theme.cycle', localizedTitle: { zh: '主题：下一个', en: 'Theme: Next' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => { const all = allThemes(); const next = all[(all.findIndex((t) => t.id === activeTheme.id) + 1) % all.length]; applyThemeById(next.id); } },
       // Typora 主题机制对标（V4 §7.3）：打开主题文件夹（appData/themes，投放 *.css 即成为主题）

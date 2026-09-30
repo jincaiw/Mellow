@@ -2,6 +2,7 @@ import {
   SETTINGS_SECTIONS,
   readShortcutOverrides,
   readSetting,
+  restoreAllSettingsDefaults,
   settingById,
   writeShortcutOverrides,
   writeSetting,
@@ -163,5 +164,51 @@ describe('P6 — Settings / Theme / Export / Better 契约', () => {
     expect(userCss?.descriptionKey).toBe('settings.advanced.userCssDesc');
     expect(userCss?.labelKey.trim()).not.toBe('');
     expect(userCss?.descriptionKey?.trim()).not.toBe('');
+  });
+});
+
+// 2026-09-30：Typora 偏好面板「重置高级设置」的对标 —— 全量恢复默认。
+describe('restoreAllSettingsDefaults', () => {
+  const NON_ACTION = SETTINGS_SECTIONS.flatMap((s) => s.settings).filter((d) => d.storageKey !== '');
+
+  test('清掉所有值型设置项的存储键，且逐项 apply 默认值', () => {
+    const fontSize = settingById('editor.fontSize');
+    const lineNumbers = settingById('editor.lineNumbers');
+    expect(fontSize).toBeDefined();
+    expect(lineNumbers).toBeDefined();
+    writeSetting(fontSize as never, 20);
+    writeSetting(lineNumbers as never, true);
+    expect(readSetting(fontSize as never)).toBe(20);
+
+    const applied: Array<[string, unknown]> = [];
+    const n = restoreAllSettingsDefaults((def, value) => applied.push([def.id, value]));
+
+    // ① 存储键被清除 → 读时回落默认值（不是「写入 defaultValue」，是**删除**）
+    expect(localStorage.getItem(fontSize?.storageKey as string)).toBeNull();
+    expect(readSetting(fontSize as never)).toBe(fontSize?.defaultValue);
+    expect(readSetting(lineNumbers as never)).toBe(lineNumbers?.defaultValue);
+    // ② 每一项都被 apply 了默认值，且数量 == 值型设置项数（不漏项）
+    expect(n).toBe(NON_ACTION.length);
+    expect(applied).toHaveLength(NON_ACTION.length);
+    for (const [id, value] of applied) {
+      expect(value).toBe(settingById(id)?.defaultValue);
+    }
+  });
+
+  test('跳过入口型 action（storageKey 为空）—— apply 会触发副作用，不得被调用', () => {
+    const actions = SETTINGS_SECTIONS.flatMap((s) => s.settings).filter((d) => d.type === 'action');
+    expect(actions.length).toBeGreaterThan(0); // 前提：确实存在 action 型（否则本测试是空壳）
+    const seen: string[] = [];
+    restoreAllSettingsDefaults((def) => seen.push(def.id));
+    for (const def of actions) {
+      expect(seen).not.toContain(def.id);
+    }
+  });
+
+  test('不触碰快捷键 override 层（那是独立 override，且已有逐项恢复）', () => {
+    writeShortcutOverrides({ 'file.save': { mac: 'Cmd+Shift+S' } });
+    restoreAllSettingsDefaults(() => { /* noop */ });
+    expect(readShortcutOverrides()['file.save']?.mac).toBe('Cmd+Shift+S');
+    localStorage.removeItem('mellow.shortcuts.overrides');
   });
 });

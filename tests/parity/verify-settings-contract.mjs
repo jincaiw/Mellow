@@ -1004,9 +1004,52 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 「恢复默认」不得只重置一部分（2026-09-30，§15.3 行 14a ③）─────────────────
+// 缺陷族：① 硬编码一份清单 → 新增设置项后**静默漏掉**（「只重置一部分」比没有更糟）；
+// ② 去掉「跳过入口型 action」→ 恢复默认会**触发副作用**（打开主题文件夹 / 检查更新 / 命令面板）；
+// ③ 改成「写入 defaultValue」而非删除键 → 把**当前默认值固化**下来，
+//    将来默认值变更时用户那份旧值会顽固留存；
+// ④ 去掉确认对话框 → 破坏性操作静默执行。
+{
+  const marker = 'export function restoreAllSettingsDefaults(';
+  const start = settingsSource.indexOf(marker);
+  const end = start < 0 ? -1 : settingsSource.indexOf('\n}', start);
+  const body = (start < 0 || end < 0) ? '' : settingsSource.slice(start, end);
+  if (body === '') {
+    fail('找不到 restoreAllSettingsDefaults（或切片失败）→ 请同步更新本护栏，不要让它静默漏检');
+  } else {
+    const checks = [
+      ['必须遍历 SETTINGS_SECTIONS（不得硬编码清单，否则会「只重置一部分」）',
+        /for \(const section of SETTINGS_SECTIONS\)/.test(body)],
+      ['必须跳过入口型 action（storageKey 为空），否则会触发打开文件夹 / 检查更新等副作用',
+        /if \(def\.storageKey === ''\) continue;/.test(body)],
+      ['必须删除存储键而非写入 defaultValue（写入会把旧默认值固化）',
+        /localStorage\.removeItem\(def\.storageKey\)/.test(body)],
+      ['必须逐项 apply 默认值（复用宿主与控件 onChange 同一条路径）',
+        /apply\(def, def\.defaultValue\)/.test(body)],
+    ];
+    for (const [name, ok] of checks) if (!ok) fail(`恢复默认契约：${name}`);
+    // canary：把「遍历 SETTINGS_SECTIONS」改成空数组必须被检出
+    const drifted = body.replace('for (const section of SETTINGS_SECTIONS)', 'for (const section of [])');
+    if (drifted === body) fail('恢复默认 canary 未武装：注入点未命中');
+    else if (/for \(const section of SETTINGS_SECTIONS\)/.test(drifted)) fail('恢复默认 canary 失效');
+  }
+  if (!/id: 'settings\.restoreDefaults'/.test(appSource)) fail('缺少 settings.restoreDefaults 命令入口');
+  if (!/restoreAllSettingsDefaults\(applySetting\)/.test(appSource)) {
+    fail('恢复默认必须复用 applySetting（与控件 onChange 同一条路径，避免另建一条会漂移的 live-apply）');
+  }
+  const hStart = appSource.indexOf('const handleRestoreSettingsDefaults = useCallback');
+  const hEnd = hStart < 0 ? -1 : appSource.indexOf('\n  }, [', hStart);
+  const handler = (hStart < 0 || hEnd < 0) ? '' : appSource.slice(hStart, hEnd);
+  if (handler === '') fail('找不到 handleRestoreSettingsDefaults（或切片失败）→ 请同步更新本护栏');
+  else if (!/await askUser\(/.test(handler)) {
+    fail('恢复默认是破坏性操作，必须走应用内确认对话框（不得直接执行）');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框');

@@ -1095,6 +1095,56 @@ App 在启动时**直接读** `mellow.advanced.windowBounds`（windowBounds 判�
 - **未复核**：值型设置的 storageKey 是否都真的**有消费者**（本节的 D 只断言「有 storageKey」，
   不断言「有人读」）—— 静态判定「某键有消费者」代价高且易误报，**如实留为未覆盖**。
 
+## 4.23 §15.3 行 14a ③「设置无恢复默认入口」—— 实施，并更正我上一轮的**不可行**判断（2026-09-30）
+
+**背景**：上一轮（§4.21）我把该项的「未实现原因」写成：
+
+> 一次正确的「全量恢复默认」要覆盖 64 个设置项各自的 live-apply 路径（主题/语言/侧栏/
+> 编辑器 config/…）与启动期读取项，涉及多个子系统，**半量生效比没有更糟**。
+
+**这个理由站不住。** 做完 §4.22 后回头看，**正确的路径一直存在且可复用**：
+设置面板的每个控件 onChange 走的就是
+
+```ts
+localStorage.setItem(def.storageKey, …); applySetting(def, next);
+```
+
+—— 也就是说，「把某一项设回默认值」这件事**早就有一条被证明可用的路径**，
+只要对它**循环**即可。不需要为「全量恢复」另建一条 live-apply。
+
+**处置（2026-09-30）**：
+1. `packages/settings/src`：新增 `restoreAllSettingsDefaults(apply)` ——
+   **删除**存储键（而非写入 `defaultValue`：写入会把**当前**默认值固化下来，
+   将来默认值变更时用户那份旧值会顽固留存）；**跳过 `storageKey === ''` 的入口型 action**
+   （它们没有值，且 `apply` 会触发副作用：打开主题文件夹 / 速查表 / 检查更新 / 扩展列表 /
+   命令面板）；逐项 `apply(def, def.defaultValue)`；返回重置项数。
+2. `apps/desktop/src`：`settings.restoreDefaults` 命令 + `handleRestoreSettingsDefaults`
+   —— **必须走应用内确认对话框**（破坏性；`window.confirm` 全仓禁用），
+   并把 `restoreAllSettingsDefaults(applySetting)` 的返回值写进状态栏。
+3. i18n zh/en 四条（命令名 + 对话框标题/正文/确认按钮 + 状态栏消息）；
+   正文**明确说明**「快捷键自定义不受影响」——范围诚实。
+4. **包级测试**（3 例）：清键 + 逐项 apply 默认值 + 数量等于值型项数（**不漏项**）；
+   **跳过入口型 action**（先断言「确实存在 action 型」以防断言空壳）；
+   不触碰快捷键 override 层。
+5. **护栏**（`verify-settings-contract.mjs`）：锁「必须遍历 `SETTINGS_SECTIONS`（不得硬编码
+   清单，否则会**只重置一部分**）」「必须跳过入口型 action」「必须删除键而非写入默认值」
+   「必须逐项 apply」+ 命令入口存在 + 必须复用 `applySetting` + 处理函数必须 `await askUser`。
+   注入 **7 个 mutation，7/7 被检出**。
+
+**⚠️ 这次最该记的不是功能，而是我上一轮的错误**：我把**「我没想到那条路径」**写成了
+**「不可行」**，并给出了听起来很具体的技术理由（「涉及多个子系统」）。
+危害是：这条**看似有据的不可行结论**会**永久关闭**一个其实很便宜的项 ——
+下一个读到它的人（包括未来的我）不会再去看。
+→ 规则：写「不可行 / 代价过高」时，必须同时写**「我查过哪些路径、为什么它们不行」**；
+只写结论不写查证过程，就是**用具体性伪装的无证据判断**。
+
+**验证（能失败）**：7 个 mutation 全部被检出（硬编码清单 / 去掉 action 跳过 / 改成写入默认值 /
+去掉逐项 apply / 去掉命令入口 / 去掉确认对话框 / 不再复用 `applySetting`）。
+settings 17/17、i18n 15/15、desktop `tsc` 0 错误、完整 parity 链全绿。
+⚠️ **过程中我自己的 mutation 脚本踩了 skill 记录的失效模式 5**（`String.replace` 只替换首处，
+而 `for (const section of SETTINGS_SECTIONS)` 在文件里出现两次 → 我改的是模块级建 map 的循环，
+于是「M1 未被检出」是脚本 bug 而非护栏缺陷）——**判定「护栏空壳」前要先确认注入真的生效**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
