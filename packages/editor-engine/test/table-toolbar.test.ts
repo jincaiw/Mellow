@@ -6,7 +6,7 @@ import { EditorView } from '@codemirror/view';
 import { history, undo } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { keymap } from '@codemirror/view';
-import { install, setSourceMode, resetModeState, TOOLBAR_CLASS, BTN_CLASS } from '../src/index';
+import { install, setSourceMode, resetModeState, TOOLBAR_CLASS, BTN_CLASS, RESIZE_POPOVER_CLASS, RESIZE_CELL_CLASS, RESIZE_CELL_ACTIVE_CLASS, RESIZE_GRID_COLS, RESIZE_GRID_ROWS } from '../src/index';
 import { tableKeymap } from '../src/table/keymap';
 import { hideTableToolbar, resetTableToolbarVisibility } from '../src/table/toolbar';
 import { parseTable } from '../src/table/parser';
@@ -363,5 +363,141 @@ describe('Keyboard / Source-Live', () => {
     view.dispatch({ selection: view.state.selection });
     await sleep();
     expect(isVisible(view)).toBe(true);
+  });
+});
+
+// ─────────────────── Resize Table（spec table-editing §3b，2026-10-01）───────────────────
+//
+// 一手证据（本机 Typora 1.14.9）：
+// - 入口是表格 tooltip 的**最左**图标（官方文档 `Docs/Table Editing.md` 的 `## Resize Table`：
+//   「Click the most left icon」）→ 故断言「工具栏第一个按钮」而不是「某个按钮存在」；
+// - 网格 6 列（`html/content.html` 的 `md-grid-board` 单元格为 `col="1".."col="6"`）；
+// - 「larger than 6 columns or 10 rows … click the row/column number input」→ 网格 6×10 + 两个数字输入；
+// - 网格行数**含表头行**（Typora 的 AST 里 delimiter 不是行，它是 `align` 元数据）。
+
+function resizePopover(view: EditorView): HTMLElement | null {
+  return view.dom.querySelector(`.${RESIZE_POPOVER_CLASS}`);
+}
+
+function resizeInput(view: EditorView, label: string): HTMLInputElement {
+  const fields = Array.from(view.dom.querySelectorAll(`.${RESIZE_POPOVER_CLASS}-field`));
+  const field = fields.find((f) => f.querySelector('span')?.textContent === label);
+  const input = field?.querySelector('input');
+  if (input === null || input === undefined) {
+    throw new Error(`resize input not found: ${label}`);
+  }
+  return input as HTMLInputElement;
+}
+
+describe('Table Toolbar — Resize Table（spec §3b）', () => {
+  test('最左按钮是「调整」（一手：Typora 的最左图标）', async () => {
+    const view = setUp(TABLE);
+    try {
+      await sleep();
+      moveCaret(view, 2);
+      await sleep();
+      const first = view.dom.querySelector(`.${TOOLBAR_CLASS} .${BTN_CLASS}`);
+      expect(first?.getAttribute('title')).toBe('Resize Table');
+    } finally { view.destroy(); }
+  });
+
+  test('点击 → 弹层出现；网格 6×10；输入框预填当前尺寸（2 列 / 2 正文行）', async () => {
+    const view = setUp(TABLE);
+    try {
+      await sleep();
+      moveCaret(view, 2);
+      await sleep();
+      // 弹层是**懒建**的：首次点击前根本不存在（不在 DOM 里空占位）
+      expect(resizePopover(view)).toBeNull();
+
+      clickBtn(view, 'Resize Table');
+      await sleep();
+      expect(resizePopover(view)?.style.display).toBe('block');
+      expect(view.dom.querySelectorAll(`.${RESIZE_CELL_CLASS}`)).toHaveLength(RESIZE_GRID_COLS * RESIZE_GRID_ROWS);
+      expect(resizeInput(view, '列').value).toBe('2');
+      expect(resizeInput(view, '行').value).toBe('2');
+    } finally { view.destroy(); }
+  });
+
+  test('hover 网格 (行 3, 列 4) → 输入框跟随，且左上 4×3 区域高亮', async () => {
+    const view = setUp(TABLE);
+    try {
+      await sleep();
+      moveCaret(view, 2);
+      await sleep();
+      clickBtn(view, 'Resize Table');
+      await sleep();
+      const cells = Array.from(view.dom.querySelectorAll(`.${RESIZE_CELL_CLASS}`)) as HTMLElement[];
+      const target = cells.find((c) => c.dataset.row === '3' && c.dataset.col === '4');
+      expect(target).toBeDefined();
+      target?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      expect(resizeInput(view, '列').value).toBe('4');
+      expect(resizeInput(view, '行').value).toBe('3');
+      expect(view.dom.querySelectorAll(`.${RESIZE_CELL_ACTIVE_CLASS}`)).toHaveLength(12); // 4 × 3
+    } finally { view.destroy(); }
+  });
+
+  test('点网格 (行 3, 列 4) → 立即应用（4 列 / 3 正文行）并关闭弹层', async () => {
+    const view = setUp(TABLE);
+    try {
+      await sleep();
+      moveCaret(view, 2);
+      await sleep();
+      clickBtn(view, 'Resize Table');
+      await sleep();
+      const cells = Array.from(view.dom.querySelectorAll(`.${RESIZE_CELL_CLASS}`)) as HTMLElement[];
+      cells.find((c) => c.dataset.row === '3' && c.dataset.col === '4')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await sleep();
+
+      const lines = view.state.doc.toString().split('\n');
+      expect(lines).toHaveLength(4); // 3 正文行（含表头）+ delimiter
+      for (const line of lines) {
+        expect(line.split('|').filter((s) => s.length > 0)).toHaveLength(4);
+      }
+      expect(resizePopover(view)?.style.display).toBe('none');
+    } finally { view.destroy(); }
+  });
+
+  test('数字输入 + 应用 → 支持超出网格的尺寸（>6 列 / >10 行 的一手路径）', async () => {
+    const view = setUp(TABLE);
+    try {
+      await sleep();
+      moveCaret(view, 2);
+      await sleep();
+      clickBtn(view, 'Resize Table');
+      await sleep();
+      resizeInput(view, '列').value = '8';
+      resizeInput(view, '行').value = '12';
+      clickBtn(view, 'Apply');
+      await sleep();
+
+      const lines = view.state.doc.toString().split('\n');
+      expect(lines).toHaveLength(13); // 12 正文行 + delimiter
+      expect(lines[0].split('|').filter((s) => s.length > 0)).toHaveLength(8);
+    } finally { view.destroy(); }
+  });
+
+  test('再次点击按钮 → 弹层关闭；caret 移出表格 → 弹层随工具栏一起隐藏', async () => {
+    const view = setUp(`${TABLE}\n\n正文`);
+    try {
+      await sleep();
+      moveCaret(view, 2);
+      await sleep();
+      clickBtn(view, 'Resize Table');
+      await sleep();
+      expect(resizePopover(view)?.style.display).toBe('block');
+
+      clickBtn(view, 'Resize Table'); // 再点一次 = 关闭
+      await sleep();
+      expect(resizePopover(view)?.style.display).toBe('none');
+
+      clickBtn(view, 'Resize Table');
+      await sleep();
+      moveCaret(view, view.state.doc.length); // 移出表格
+      await sleep();
+      expect(isVisible(view)).toBe(false);
+      expect(resizePopover(view)?.style.display).toBe('none');
+    } finally { view.destroy(); }
   });
 });

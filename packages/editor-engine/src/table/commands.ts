@@ -299,3 +299,115 @@ export function copyTable(view: EditorView, model: TableModel): void {
   const source = view.state.sliceDoc(model.from, model.to);
   void navigator.clipboard?.writeText?.(source);
 }
+
+// ─────────────────────── Resize（spec table-editing §3b）───────────────────────
+
+/**
+ * 尺寸上限（**必须与 `packages/app-core/src/tableTemplate.ts` 的 `TABLE_TEMPLATE_MAX_*` 一致**）。
+ *
+ * 为什么两处都有：两个包**互不依赖**（各自 `dependencies` 为空），无法共享常量。
+ * 因此这里内联，并由 `tests/parity/verify-parity-ledger.mjs` 的「表格尺寸上限两端一致」
+ * 断言 + canary 锁住 —— 只在一端改会被检出。
+ */
+/** resize 计划里的单条变更（比 CM 的 `ChangeSpec` 更窄：本计划只产出这种形状） */
+export interface ResizeChange {
+  from: number;
+  to?: number;
+  insert?: string;
+}
+
+export const TABLE_RESIZE_MAX_ROWS = 100;
+export const TABLE_RESIZE_MAX_COLS = 30;
+
+function clampSize(value: number, max: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(max, Math.max(1, Math.trunc(value)));
+}
+
+/**
+ * 调整表格尺寸的**变更计划**（纯函数，可单测）。
+ *
+ * **口径（一手证据，Typora 1.14.9）**：`#md-resize-grid` 的 height/width 即**最终**行/列数；
+ * 且 Typora 的 AST 里 delimiter **不是行**（它是 `align` 元数据）→ 故 `rows` = **含表头的正文行数，
+ * 不含 delimiter 行**（与创建对话框的 `Rows` 同口径，见 `tableTemplate.ts` 文件头）。
+ *
+ * **约束**：
+ * - `rows` 最小 1（只剩表头）—— **delimiter 行必须保留**，否则表格失效（本函数永不删它）；
+ * - **列变更跳过将被删除的行**：否则列变更范围会落在行删除范围内 → CM 拒绝重叠 change；
+ * - 返回 `null` = 尺寸未变（no-op，不产生事务）。
+ */
+export function planResizeTable(
+  model: TableModel,
+  targetRows: number,
+  targetCols: number,
+): ResizeChange[] | null {
+  const cols = clampSize(targetCols, TABLE_RESIZE_MAX_COLS);
+  const contentRows = clampSize(targetRows, TABLE_RESIZE_MAX_ROWS);
+
+  const currentCols = model.columnCount;
+  const currentContentRows = model.rows.filter((r) => !r.isDelimiter).length;
+  if (cols === currentCols && contentRows === currentContentRows) {
+    return null;
+  }
+
+  const hasDelimiter = model.rows.some((r) => r.isDelimiter);
+  const keepLength = contentRows + (hasDelimiter ? 1 : 0);
+  const keep = model.rows.slice(0, Math.min(keepLength, model.rows.length));
+
+  const changes: ResizeChange[] = [];
+
+  // 1) 列：逐行增删（**只处理保留的行**，避免与行删除范围重叠）
+  for (const row of keep) {
+    if (cols > row.cells.length) {
+      const delta = cols - row.cells.length;
+      const cellText = row.isDelimiter ? emptyCellText() : dataCellText();
+      const last = row.cells[row.cells.length - 1];
+      changes.push({
+        from: last === undefined ? row.to : last.to,
+        insert: ('|' + cellText).repeat(delta),
+      });
+    } else if (cols < row.cells.length) {
+      const firstRemoved = row.cells[cols];
+      const lastCell = row.cells[row.cells.length - 1];
+      if (firstRemoved !== undefined && lastCell !== undefined) {
+        // 与 deleteColumn 同口径：非首列删除 = 删前导 `|` + 被删单元格
+        changes.push({ from: firstRemoved.from - 1, to: lastCell.to, insert: '' });
+      }
+    }
+  }
+
+  // 2) 行：只增删**尾部数据行**（永不动表头与 delimiter）
+  const lastRow = model.rows[model.rows.length - 1];
+  if (contentRows > currentContentRows) {
+    if (lastRow !== undefined) {
+      const line = `|${Array.from({ length: cols }, () => dataCellText()).join('|')}|`;
+      changes.push({
+        from: lastRow.to,
+        insert: ('\n' + line).repeat(contentRows - currentContentRows),
+      });
+    }
+  } else if (contentRows < currentContentRows) {
+    const lastKept = keep[keep.length - 1];
+    if (lastKept !== undefined && lastRow !== undefined && lastKept.to < lastRow.to) {
+      changes.push({ from: lastKept.to, to: lastRow.to, insert: '' });
+    }
+  }
+
+  if (changes.length === 0) {
+    return null;
+  }
+  // CM 要求 changes 按 from 升序（上面的构造已是升序，显式排序以防未来改动破坏）
+  return changes.sort((a, b) => a.from - b.from);
+}
+
+/**
+ * 调整表格尺寸（spec §3b Resize Table）。
+ *
+ * **单次 dispatch** → 最小 patch（spec §2/§6，绝不整表 serialize）+ **一次 undo**（spec §7）。
+ */
+export function resizeTable(view: EditorView, model: TableModel, rows: number, cols: number): void {
+  if (frozenDuringComposition(view)) return;
+  const changes = planResizeTable(model, rows, cols);
+  if (changes === null) return;
+  view.dispatch({ changes });
+}

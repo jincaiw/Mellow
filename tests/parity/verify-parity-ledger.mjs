@@ -712,6 +712,38 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── 表格尺寸上限必须两端一致（2026-10-01，任务 4.11）──────────────────────
+  // 立此条的原因：`packages/editor-engine` 与 `packages/app-core` **互不依赖**
+  //（两者 `dependencies` 均为空），无法共享常量 → 上限在两处各写一份：
+  // 创建对话框用 `TABLE_TEMPLATE_MAX_*`，resize 用 `TABLE_RESIZE_MAX_*`。
+  // 只改一端 → 同一产品内出现两套尺寸约束（「创建能给 30 列、调整只能到 X 列」）。
+  {
+    const readSrc = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+    const readNum = (src, name) => {
+      const m = new RegExp(`${name}\\s*=\\s*(\\d+)`).exec(src);
+      return m === null ? null : Number(m[1]);
+    };
+    const engineSrc = readSrc('packages/editor-engine/src/table/commands.ts');
+    const appCoreSrc = readSrc('packages/app-core/src/tableTemplate.ts');
+    const pairs = [
+      ['行上限', readNum(engineSrc, 'TABLE_RESIZE_MAX_ROWS'), readNum(appCoreSrc, 'TABLE_TEMPLATE_MAX_ROWS')],
+      ['列上限', readNum(engineSrc, 'TABLE_RESIZE_MAX_COLS'), readNum(appCoreSrc, 'TABLE_TEMPLATE_MAX_COLUMNS')],
+    ];
+    for (const [label, a, b] of pairs) {
+      assert(a !== null && b !== null, `无法解析表格${label}（护栏需同步更新，不要静默漏检）`);
+      assert(a === b,
+        `表格${label}两端不一致：engine ${a} vs app-core ${b}`
+        + ' —— 两个包互不依赖、常量各写一份，只改一端会造成同一产品内两套尺寸约束');
+    }
+    // canary：只改一端必须被检出
+    const drift = engineSrc.replace(/TABLE_RESIZE_MAX_ROWS\s*=\s*\d+/, 'TABLE_RESIZE_MAX_ROWS = 7');
+    if (drift === engineSrc) {
+      errors.push('表格尺寸上限一致性 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+    } else if (readNum(drift, 'TABLE_RESIZE_MAX_ROWS') === readNum(appCoreSrc, 'TABLE_TEMPLATE_MAX_ROWS')) {
+      errors.push('表格尺寸上限一致性 canary 失效：注入漂移后仍判定一致');
+    }
+  }
+
   // ── 远程图片默认值：设置侧与引擎侧必须一致（2026-09-30）────────────────
   // 立此条的原因：这是**安全相关默认值**（默认联网会暴露「已打开该文档」与来源 IP），
   // 而它散落在两处 —— 设置 `image.loadRemote` 的 `defaultValue`，与引擎

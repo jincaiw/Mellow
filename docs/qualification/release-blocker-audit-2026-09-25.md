@@ -1834,6 +1834,22 @@ Typora 自带官方文档 `TypeMark/Docs/Table Editing.md` 有 `## Resize Table`
 **本 spec 原先完全没有这一节**，Mellow 也未实现（工具栏无该入口、无网格调整 UI）。
 → 已**补入 spec §3b**（含一手引文）+ 登记为待实施项。
 
+> **✅ 已于当日实施（2026-10-01，任务 4.11）**：
+> 引擎侧新增 `resizeTable` / `planResizeTable`（`packages/editor-engine/src/table/commands.ts`）——
+> **单次 dispatch**（最小 patch + 一次 undo；**delimiter 行永不删**；`rows` 口径与创建对话框一致 =
+> 含表头的正文行数、不含 delimiter 行）；工具栏**最左**新增「调整」按钮（一手：Typora 的入口是
+> tooltip 最左图标），弹层含 **6×10 网格**（hover 预选 + 点击立即应用）与**两个数字输入**（列 / 行 + 应用），
+> 覆盖文档所述的「超过 6 列或 10 行时用数字输入」路径。网格尺寸 6×10 亦为一手
+>（`md-grid-board` 的单元格为 `col="1".."col="6"`；文档写「larger than 6 columns or 10 rows」）。
+> 测试 19 例（引擎 13：增/减行、增/减列、行列同时变化、上限夹取、一次 undo、no-op 不产生事务、
+> 保留单元格逐字不变；工具栏 6：最左按钮、弹层与预填、hover 高亮、点网格应用、数字输入应用、关闭语义）。
+> **新增跨包一致性护栏**：两个包**互不依赖**（`dependencies` 均为空）→ 上限各写一份，
+> 故在 `verify-parity-ledger.mjs` 加「表格尺寸上限两端一致」+ canary
+> （**非恒绿验证**：只改引擎侧 `TABLE_RESIZE_MAX_ROWS = 7` → 报「engine 7 vs app-core 100」）。
+>
+> ⚠️ **覆盖边界（如实声明）**：与任务 4.10 相同 —— **运行时未验证**（本环境无 e2e 通道）。
+> 弹层的**视觉与真机交互**（网格高亮观感、弹层定位、触屏）没有实测证据。
+
 ### 发现 4（无一手依据）：§7 的「提示『表格语法不完整』」
 
 在 Typora 的 `Front.strings`（zh-Hans，全量）里检索 `不完整 / 无效 / 语法` 与 `incomplete / invalid / syntax`：

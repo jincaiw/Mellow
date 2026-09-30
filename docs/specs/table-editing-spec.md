@@ -65,7 +65,13 @@ Create Dialog：
 要点：**表格 tooltip 最左图标**进入「调整表格」态（网格拖选行列），**超过 6 列 / 10 行时用数字输入**。
 对应文案 `Resize Table=调整表格`（`Front.strings`）。
 
-**实现现状（2026-10-01）**：Mellow **未实现**（工具栏无该入口，无网格调整 UI）。属**已登记缺口**（审计 §4.39）。
+**实现现状（2026-10-01）**：Mellow **已实现** —— 表格工具栏的**最左按钮**「调整」打开弹层，
+内含 **6×10 网格**（hover 预选 + 点击立即应用）与**两个数字输入**（列 / 行 + 应用），
+覆盖文档所述的「超过 6 列或 10 行时用数字输入」路径。
+引擎侧为 `packages/editor-engine/src/table/commands.ts` 的 `resizeTable` / `planResizeTable`
+（**单次 dispatch** = 最小 patch + 一次 undo；**delimiter 行永不删**）；
+工具栏弹层在 `table/toolbar.ts`。尺寸上限（30 列 / 100 行）与创建对话框**共用同一组值**，
+由 `verify-parity-ledger.mjs` 的「表格尺寸上限两端一致」护栏锁定。
 
 ---
 
