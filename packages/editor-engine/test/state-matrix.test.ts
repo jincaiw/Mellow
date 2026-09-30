@@ -162,6 +162,12 @@ function runStateMatrix(cfg: FamilyCfg): void {
               moveCaret(view, state === 'caret-before' ? start : state === 'caret-inside' ? inside : cfg.afterPos ?? end);
               await sleep();
               expect(cfg.revealedWhenTouched(view)).toBe(true);
+              // spec §8 Caret Stability（审计 §4.17 补）：decoration 更新**不得改变文档**。
+              // 本矩阵此前只断言 marker 可见性（「什么变得可见」），不检查「别的东西没变」——
+              // 而 §8 正是关于后者（「任何 decoration 更新必须满足 document position unchanged」）。
+              // 本断言覆盖所有「只移动 caret / 选区 / 点击」而不改文本的状态 × 全部家族。
+              // 另两条（selection anchor/head、scroll anchor preserved）见审计 §4.17 的后续项。
+              expect(view.state.doc.toString()).toBe(cfg.doc);
             } finally { view.destroy(); }
             break;
           }
@@ -173,6 +179,12 @@ function runStateMatrix(cfg: FamilyCfg): void {
               selectRange(view, state === 'selection-partial' ? start + 1 : start, state === 'selection-partial' ? start + 2 : end);
               await sleep();
               expect(cfg.revealedWhenTouched(view)).toBe(true);
+              // spec §8 Caret Stability（审计 §4.17 补）：decoration 更新**不得改变文档**。
+              // 本矩阵此前只断言 marker 可见性（「什么变得可见」），不检查「别的东西没变」——
+              // 而 §8 正是关于后者（「任何 decoration 更新必须满足 document position unchanged」）。
+              // 本断言覆盖所有「只移动 caret / 选区 / 点击」而不改文本的状态 × 全部家族。
+              // 另两条（selection anchor/head、scroll anchor preserved）见审计 §4.17 的后续项。
+              expect(view.state.doc.toString()).toBe(cfg.doc);
             } finally { view.destroy(); }
             break;
           }
@@ -185,6 +197,12 @@ function runStateMatrix(cfg: FamilyCfg): void {
               moveCaret(view, inside); // click 语义 = caret 落点（jsdom 无布局代理）
               await sleep();
               expect(cfg.revealedWhenTouched(view)).toBe(true);
+              // spec §8 Caret Stability（审计 §4.17 补）：decoration 更新**不得改变文档**。
+              // 本矩阵此前只断言 marker 可见性（「什么变得可见」），不检查「别的东西没变」——
+              // 而 §8 正是关于后者（「任何 decoration 更新必须满足 document position unchanged」）。
+              // 本断言覆盖所有「只移动 caret / 选区 / 点击」而不改文本的状态 × 全部家族。
+              // 另两条（selection anchor/head、scroll anchor preserved）见审计 §4.17 的后续项。
+              expect(view.state.doc.toString()).toBe(cfg.doc);
             } finally { view.destroy(); }
             break;
           }
