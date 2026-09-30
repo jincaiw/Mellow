@@ -223,14 +223,25 @@ jobs:
           npm i playwright --no-save
           npx playwright install --with-deps chromium
       - name: "Visual golden (§9.3: visual + sidebar + scenes)"
-        # 同 Windows 侧：本步骤用于采集基线，不作为门禁（详见 Windows job 注释）。
+        # ⚠️ 2026-10-01：**移除了 `continue-on-error: true`** —— 改为真门禁。
         #
-        # 2026-09-22：原先三条 `node …` 串行执行且不检查退出码 —— bash 下步骤退出码取
-        # **最后一条**命令，于是「visual-golden 失败、scenes-golden 成功」会被判为成功，
-        # 采集静默产出 0 个基线文件而屏幕上看不出异常（P0-LAYOUT-002 因此长期无制品）。
-        # 现在逐条记录退出码、失败即非零退出，让 continue-on-error 只降级「job 结论」
-        # 而不隐藏「哪条脚本失败」。
-        continue-on-error: true
+        # 原注释的处置是「本步骤用于采集基线，不作为门禁」，并写明
+        # 「**基线提交后即进入比对模式**」。而三个平台的基线**都已提交**
+        # （`tests/visual/golden/{layout,scenes,sidebar}-golden.{json,linux.json,windows.json}` 均在库），
+        # 故「采集模式」的理由**已失效**。
+        #
+        # 代价（实测）：`v1.5.16` 的 Runtime Qualification **job 报 success**，
+        # 而日志里 Linux 与 Windows 的 `scenes-golden` **都 FAILED**
+        # （`table-toolbar.bar.w: 436 → 478`）—— 因为 `continue-on-error` 把步骤失败
+        # 降级成了 job 的「成功」。即：**一个真实可见的排版回归随版本发布，而门禁看不见它**
+        # （本项目「假门禁」母题；同 §5.7 的 AUTO 误读）。
+        # 注：本 workflow 与 release.yml 是**两条独立流水线**，故这里变红**不会**阻断打包，
+        # 但会让失败在 Actions 列表里**可见**。
+        #
+        # 2026-09-22 的第二处修复保留：原先三条 `node …` 串行执行且不检查退出码 ——
+        # bash 下步骤退出码取**最后一条**命令，于是「visual-golden 失败、scenes-golden 成功」
+        # 会被判为成功，采集静默产出 0 个基线文件而屏幕上看不出异常（P0-LAYOUT-002 因此长期无制品）。
+        # 现在逐条记录退出码、失败即非零退出。
         working-directory: mellow
         run: |
           export NODE_PATH=/tmp/pw/node_modules
@@ -357,27 +368,17 @@ jobs:
           npm i playwright --no-save
           npx playwright install chromium
       - name: "Visual golden (§9.3: visual + sidebar + scenes)"
-        # 2026-09-13：此步骤用于**采集**该平台基线（产物上传后由人工提交入库）。
-        # 各平台的 dev server / 字体度量不同，首次运行不具备可比基线，
-        # 让它阻断 job 会掩盖真正的 Runtime 证据（实测 v1.5.7 run 60 中
-        # 「Windows Source Fidelity gate」「runtime smoke」均已通过，
-        # 却因本步骤失败而被判为 failure）。故设为不阻断；
-        # 基线入库后如需作为门禁，再改为严格比对。
+        # ⚠️ 2026-10-01：**移除了 `continue-on-error: true`**（与 Linux 侧同批，理由见该处注释）。
+        # 原注释写「此步骤用于**采集**该平台基线（产物上传后由人工提交入库）……
+        # 基线入库后如需作为门禁，再改为严格比对」—— 而基线**已入库**
+        # （`tests/visual/golden/*-golden.windows.json` 在库），
+        # 故按原注释自身的条件，**现在就该是严格比对**。
+        # 实测代价：v1.5.16 的 Windows 侧 `scenes-golden` 同样 FAILED 而 job 报 success。
         #
-        # 2026-09-22：原先三条 `node …` 串行执行且不检查退出码 —— pwsh 下步骤退出码取
-        # **最后一条**命令，于是「visual-golden 失败、scenes-golden 成功」会被判为成功。
-        # 叠加 Windows 上 `spawn('npx')` 的 ENOENT（已由 tests/visual/dev-server.mjs 根治），
-        # 结果就是采集静默产出 0 个基线文件：upload-artifact 报 "No files were found"，
-        # 制品缺失，屏幕上看不出任何异常。现在逐条记录退出码并让失败可见。
-        #
-        # ⚠️ 2026-09-22 第二处根因：本 job 的 actions/checkout **没有** `path: mellow`
-        # （与 Linux job 不同，仓库直接落在工作区根），但本步骤原先写了
-        # `working-directory: mellow` —— 该目录不存在，pwsh 根本无法启动：
-        #   ##[error]An error occurred trying to start process '…pwsh.EXE'
-        #            with working directory 'D:\a\Mellow\Mellow\mellow'. The directory name is invalid.
-        # 步骤因此**一步都没执行**（连脚本都没跑），continue-on-error 又把错误吞掉。
-        # 现已移除该 working-directory（与同 job 其它步骤一致，使用仓库根）。
-        continue-on-error: true
+        # 2026-09-22 的两处修复保留：
+        #   ① 逐条记录退出码（原先 pwsh 下取最后一条 → 「前一条失败、后一条成功」被判成功）；
+        #   ② 移除不存在的 `working-directory: mellow`（本 job 的 checkout 无 `path: mellow`，
+        #      pwsh 无法启动该目录 → 步骤一步都没执行，而 continue-on-error 又把错误吞掉）。
         shell: pwsh
         run: |
           $env:NODE_PATH = 'C:/pw/node_modules'

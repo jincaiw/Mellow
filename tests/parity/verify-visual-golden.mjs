@@ -436,6 +436,34 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
   }
 }
 
+// ── scenes-golden 的容差语义：只适用于**像素**字段（2026-10-01）──────────────
+// 立此条的原因（实测）：`scenes-golden.mjs` 原把 ±1px 容差套在**所有**数值字段上，
+// 于是 `table-toolbar.buttonCount 11 → 12`（新增「调整」按钮）被 `|Δ| = 1 ≤ 容差`
+// **静默放过** —— 「加/删一个按钮」对计数检查**不可见**，而它本是唯一能抓住该变更的判据。
+// （该漂移最终只由 `bar.w` 暴露，而 `bar.w` 的失败又被 workflow 的 `continue-on-error` 吞掉 ——
+//  两个缺陷叠加才让回归一路发布；两者本轮均已修。）
+// 判据：容差必须由**字段名**选择 —— 像素字段 ±TOLERANCE_PX，其余（计数/设计常量）精确为 0。
+{
+  const scenesPath = 'tests/visual/scenes-golden.mjs';
+  if (existsSync(resolve(root, scenesPath))) {
+    const scenes = read(scenesPath);
+    if (!/PX_FIELD\.test\(key\)\s*\?\s*TOLERANCE_PX\s*:\s*0/.test(scenes)) {
+      fail('scenes-golden 的容差必须由 PX_FIELD 选择（像素 ±TOLERANCE_PX；计数/常量精确 0）—— '
+        + '实测「容差套在所有数值字段」会让 buttonCount 11→12 被静默放过');
+    }
+    // canary：两个方向
+    const OK_SAMPLE = 'const tol = PX_FIELD.test(key) ? TOLERANCE_PX : 0;';
+    const BAD_SAMPLE = 'if (Math.abs(bv - av) > TOLERANCE_PX) drift.push(key);';
+    const re = /PX_FIELD\.test\(key\)\s*\?\s*TOLERANCE_PX\s*:\s*0/;
+    if (!re.test(OK_SAMPLE)) {
+      errors.push('容差语义护栏 canary 失效：合规样本未被检出');
+    }
+    if (re.test(BAD_SAMPLE)) {
+      errors.push('容差语义护栏 canary 失效：违规样本被误判为合规');
+    }
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Visual golden contract violations:\n  ${errors.join('\n  ')}`);
 }

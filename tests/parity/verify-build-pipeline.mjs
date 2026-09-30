@@ -215,6 +215,35 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
 }
 
+// ── ⑨ 视觉 Golden 步骤必须是**真门禁**（2026-10-01）─────────────────────────
+// 立此条的原因（实测）：`runtime-qualification.yml` 的视觉步骤原带 `continue-on-error: true`，
+// 于是 **`scenes-golden` 失败而 job 报 success** —— v1.5.16 的 Linux 与 Windows **都是如此**
+// （日志原文 `VISUAL_GOLDEN scenes-golden: FAILED (exit 1)`，漂移
+// `table-toolbar.bar.w: 436 → 478`）：一个**真实可见的排版回归**随版本发布，而门禁看不见。
+// 该步骤自己的注释写「基线提交后即进入比对模式」，而三平台基线**都已入库** →
+// 「采集模式」的理由已失效，故按注释自身的条件恢复为严格比对。
+{
+  const rqRaw = read('.github/workflows/runtime-qualification.yml');
+  // ⚠️ **先剥 YAML 注释再断言**：上面的说明注释里就写着 `continue-on-error: true`
+  // （「移除了它」这句话本身包含该串）→ 不剥注释会**首跑即误报**。
+  // 这是本会话第四次踩「护栏匹配到散文」。
+  const rq = rqRaw.split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+  if (/continue-on-error:\s*true/.test(rq)) {
+    fail('runtime-qualification 的视觉 Golden 步骤不得是 continue-on-error —— 那会把「golden 失败」'
+      + '降级成 job 成功（实测 v1.5.16 就这样放过了表格工具栏 436→478 的排版回归）');
+  }
+  // canary：两个方向
+  const BAD = '      - name: x\n        continue-on-error: true';
+  if (!/continue-on-error:\s*true/.test(BAD)) {
+    errors.push('视觉门禁护栏 canary 失效：违规样本未被检出');
+  }
+  const COMMENT_ONLY = '# 我们移除了 continue-on-error: true';
+  const stripped = COMMENT_ONLY.split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+  if (/continue-on-error:\s*true/.test(stripped)) {
+    errors.push('视觉门禁护栏 canary 失效：纯注释样本被误判为违规');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }

@@ -2529,6 +2529,85 @@ e2e 不进 CI 这件事改不了（它需要浏览器），但**它硬编码的�
 - **未处置（仅记录）**：那 3 张 `b3-2-*.png` 现在**永远不会被再生**（成为无读者的冻结证据）。
   删除属破坏性操作且未被要求，故只报告不动手。
 
+## 4.51 视觉 Golden 三重缺陷：**回归已随 v1.5.16 发布，而门禁报绿**（2026-10-01）
+
+顺着 §4.50「不进 CI 的测试会腐烂」这条线，对另一批同样不在主 CI 里的脚本（`tests/visual/` 的三个
+Golden）做同样的实跑。抓到**三个叠加的缺陷**，其中两个是**门禁自身的缺陷**。
+
+### 发现 1：`scenes-golden` 失败 —— 表格工具栏宽度漂移（我自己的改动，基线未更新）
+
+```
+Scenes golden: 2 项偏离基准（像素 ±1px；计数/常量精确）
+  ✗ table-toolbar.bar.w: 436 → 478
+  ✗ table-toolbar.buttonCount: 11 → 12（计数/常量必须精确）
+```
+
+归因（git 历史）：基线最后更新 **2026-09-13**，而 `toolbar.ts` 最后改动是
+**2026-10-01 `eb3acd7`「实施 Resize Table」**——即**新增「调整」按钮**。
+加一个按钮 → 计数 11→12、宽度 +42px，两者都是**预期内的**，但**基线从未更新**。
+（`buttonCount` 只在修掉发现 3 之后才被报出来，见下。）
+
+### 发现 2（**最严重**）：视觉步骤是 `continue-on-error: true` —— 失败被降级成 job 成功
+
+`runtime-qualification.yml` 的两个视觉步骤原带 `continue-on-error: true`
+（理由写的是「本步骤用于**采集**基线……**基线入库后**如需作为门禁，再改为严格比对」）。
+而三平台基线**都已入库**（`tests/visual/golden/*-golden.{json,linux.json,windows.json}` 在库）→
+**该理由按它自己的条件已失效**。
+
+**实测代价（取 v1.5.16 那次运行的日志原文）**：
+
+```
+Linux:  Xvfb + fcitx5 IME matrix   VISUAL_GOLDEN scenes-golden: FAILED (exit 1)
+Windows: launch + SendKeys smoke   VISUAL_GOLDEN scenes-golden: FAILED (exit 1)
+```
+
+而**两个 job 的结论都是 `success`**（步骤级也报 `success` —— `continue-on-error` 会把失败吞掉）。
+即：**一个真实可见的排版回归（表格工具栏 436→478）随 v1.5.16 发布，而门禁完全看不见**。
+这与 §5.7「`AUTO` 把完全不可用的功能当闭环」是同型：**「绿」不代表「通过」**。
+
+> ⚠️ **我自己的推断也差点出错**：最初我看到 v1.5.16 的 Runtime Qualification 是 success，
+> 就写下「说明视觉 golden 在那次运行里通过了」——**这是错的**。job 成功 ≠ 该步骤成功。
+> 取到**日志原文**后才看到 `FAILED`。**教训：`continue-on-error` 让步骤结论不可信，
+> 只能读日志里脚本自己打印的那一行。**
+
+### 发现 3：容差被套在**计数字段**上 —— 加/删一个按钮对检查不可见
+
+`scenes-golden.mjs` 原实现：
+
+```js
+if (Math.abs(bv - av) > TOLERANCE_PX) drift.push(...)   // TOLERANCE_PX = 1，对**所有**数值字段
+```
+
+于是 `buttonCount 11 → 12` 被 `|Δ| = 1 ≤ 容差` **静默放过**。字段清单已核实：非像素数值全是
+**计数**（buttonCount / itemCount / categoryCount / groupCount / lineCount / tableCount /
+codeBlockCount）或**设计常量**（fontSize / lineHeight / writingWidth / boldMarkerWidth）——
+**都不是测量值**，套像素容差是**语义不匹配**。
+**后果**：`buttonCount` 本是唯一能抓住「增删按钮」的判据，却形同虚设；该漂移最终只由
+`bar.w` 暴露，而 `bar.w` 的失败又被发现 2 吞掉 —— **两个缺陷叠加才让回归一路发布**。
+
+### 发现 4（次要）：`tests/visual/actual/*.png` 被跟踪但**不可复现**
+
+跑一次本地套件 → 11 个被跟踪 PNG 变脏。逐个体积对比：**Δ ≤ 151 字节**（文件 5–79 KB）→
+是 AA/字体渲染噪声，不是内容变化（连 `scene-table-toolbar.png` 也只 Δ=9 字节）。
+即：提交它们是**纯噪声**；而 CI 已把同一批图作为 artifact 上传（`path: tests/visual/actual/*.png`），
+跟踪副本与之**重复**。
+**处置**：本轮**回退这些 PNG**（只提交基线 JSON）。**未处置**（仅记录）：是否取消跟踪 `actual/`
+—— 那与 `tests/visual/README.md` 的「截图归档……人工评审素材」表述冲突，属需裁决项，不擅自改。
+
+### 处置（全部实测）
+
+| 项 | 动作 | 验证 |
+|---|---|---|
+| 基线 | macOS 由 `--update` 重建；Linux/Windows 的这两个字段按 **CI 日志实测值**（`436 → 478`）同步 | 三文件各只改 2 行；`scenes-golden` 本地 exit 0 |
+| 容差语义 | 容差由**字段名**选择：像素 ±`TOLERANCE_PX`，其余精确 0 | 修前只报 1 项、修后报 2 项（多出 `buttonCount`） |
+| 门禁 | **移除两个视觉步骤的 `continue-on-error`**（实现该步骤注释自身的条件） | YAML 可解析；两个步骤均无该属性 |
+| 护栏 | ① `verify-build-pipeline` §⑨：视觉步骤不得 `continue-on-error`；② `verify-visual-golden`：容差必须由 `PX_FIELD` 选择 | 各配双向 canary，注入 → 报错 → 还原 → 通过 |
+
+> **护栏又踩一次「匹配到散文」**：§⑨ 的说明注释里写着「**移除了** `continue-on-error: true`」
+> ——该串本身会被判据命中 → **首跑即误报**。按 §4「先剥注释」修（YAML 去 `#` 行）并补 canary。
+> 这是本会话**第四次**同一形态（前三次：shell 注释里的 `${TMPDIR}`、台账文本里的反引号、
+> 单测消息字符串里的标签）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

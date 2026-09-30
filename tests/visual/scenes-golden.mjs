@@ -339,6 +339,14 @@ async function main() {
   }
   const baseline = JSON.parse(readFileSync(GOLDEN, 'utf8'));
   const drift = [];
+  // ⚠️ 容差只适用于**像素测量**字段（`.x/.y/.w/.h`）。
+  // 立此条的原因（2026-10-01 实测）：原实现把 ±1px 容差套在**所有**数值字段上，
+  // 于是 `table-toolbar.buttonCount 11 → 12`（新增「调整」按钮）被 `|Δ|=1 ≤ 容差`
+  // **静默放过** —— 「加/删一个按钮」对计数检查**不可见**，而它本来是唯一能抓住该变更的判据。
+  // 字段清单已核实：非像素数值全是**计数**（buttonCount / itemCount / categoryCount /
+  // groupCount / lineCount / tableCount / codeBlockCount）或**设计常量**
+  // （fontSize / lineHeight / writingWidth / boldMarkerWidth）—— 都不是测量值，必须精确相等。
+  const PX_FIELD = /\.(x|y|w|h)$/;
   const flat = (obj, prefix = '') => Object.entries(obj).flatMap(([k, v]) => (
     v !== null && typeof v === 'object'
       ? flat(v, `${prefix}${k}.`)
@@ -352,14 +360,17 @@ async function main() {
       if (!(key in a)) { drift.push(`${name}.${key}: 采样缺失`); continue; }
       const bv = b[key]; const av = a[key];
       if (typeof bv === 'number' && typeof av === 'number') {
-        if (Math.abs(bv - av) > TOLERANCE_PX) drift.push(`${name}.${key}: ${bv} → ${av}`);
+        const tol = PX_FIELD.test(key) ? TOLERANCE_PX : 0;
+        if (Math.abs(bv - av) > tol) {
+          drift.push(`${name}.${key}: ${bv} → ${av}${tol === 0 ? '（计数/常量必须精确）' : ''}`);
+        }
       } else if (bv !== av) {
         drift.push(`${name}.${key}: ${JSON.stringify(bv)} → ${JSON.stringify(av)}`);
       }
     }
   }
   if (drift.length > 0) {
-    console.error(`Scenes golden: ${drift.length} 项偏离基准（±${TOLERANCE_PX}px）`);
+    console.error(`Scenes golden: ${drift.length} 项偏离基准（像素 ±${TOLERANCE_PX}px；计数/常量精确）`);
     for (const d of drift) console.error(`  ✗ ${d}`);
     process.exit(1);
   }
