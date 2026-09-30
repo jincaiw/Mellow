@@ -441,6 +441,60 @@ if (existsSync(benchmarkRunnerPath)) {
     'run-benchmark 必须逐样本落盘 waitStable 窗口内的显著变化帧数（loadMs 的常量成因需可核对）');
   assert(/该窗口内观察到的显著变化帧数/.test(benchCode),
     '报告打印 loadMs 处必须伴随「该窗口内观察到的显著变化帧数」诊断行（字符串字面量）');
+  // ── W-PERF-1：应用内延迟读数必须有**出口**，且出口必须**环境变量门控**（2026-10-01）──
+  // 立此条的原因：16ms Input 目标在屏幕捕获上原理性不可判定（16ms < 单帧），
+  // 应用内埋点是**唯一可判定来源**；而埋点若没有出口（或出口无条件常开），
+  // 就会重演本项目反复出现的「已实现 ≠ 有消费方 / 空开关」。
+  {
+    const readText = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+    const appSrc = readText('apps/desktop/src/App.tsx');
+    const rustSrc = readText('apps/desktop/src-tauri/src/lib.rs');
+    assert(/fn input_latency_dump_path/.test(rustSrc),
+      'Rust 侧缺少 input_latency_dump_path 命令（应用内延迟读数的出口；环境变量 MELLOW_INPUT_LATENCY_DUMP）');
+    assert(/input_latency_dump_path,/.test(rustSrc),
+      'input_latency_dump_path 未注册进 invoke_handler（命令存在但前端调不到 = 空开关）');
+    assert(/input_latency_dump_path/.test(appSrc),
+      'App 侧未查询 input_latency_dump_path —— 应用内延迟读数没有出口');
+    assert(/getInputLatencyReport/.test(appSrc),
+      'App 侧未读取 iframe 埋点报告（getInputLatencyReport）');
+    // 门控：未拿到路径时**不得**建定时器（否则正常运行会白跑一个 2s 定时器）
+    assert(/path === null \|\| path === ''\) return;/.test(appSrc),
+      'App 侧诊断通道必须「未拿到路径即早退」—— 不得无条件启动定时器（对正常运行零成本是硬约束）');
+    // harness 侧：typing 必须真的把环境变量传下去，否则出口形同不存在
+    assert(/MELLOW_INPUT_LATENCY_DUMP/.test(benchCode),
+      'run-benchmark 未向被测 app 传 MELLOW_INPUT_LATENCY_DUMP —— 出口永远不生效');
+    // 交叉验证：只报应用内读数**不足以**宣称「16ms 可判」（W-PERF-1 的验收条件）
+    assert(/crossCheck/.test(benchCode),
+      'run-benchmark 缺少应用内读数与屏幕捕获的**交叉验证**（W-PERF-1 验收条件）');
+    assert(/交叉验证：屏幕捕获侧无有效样本/.test(benchCode),
+      '交叉验证在「屏幕捕获侧无有效样本」时必须**明确标注未做**（不得据应用内读数单独宣称可判）');
+    // 可达性（2026-10-01 实测修正）：初版判据是 `timeouts === 0`，而本机三轮实测的超时数
+    // 是 3 / 8 / 7（屏幕捕获固有噪声）→ 该分支**从未执行** = 空开关。
+    // 故锁死：不得再用「零超时」这种不可达判据；必须有显式的有效样本率阈值。
+    assert(!/m\.typing\.timeouts === 0/.test(benchCode),
+      '交叉验证不得以 `m.typing.timeouts === 0` 为判据 —— 实测超时恒 >0，该分支永不执行（空开关）');
+    assert(/CROSSCHECK_MIN_VALID_RATE/.test(benchCode),
+      '交叉验证必须用显式的「有效样本率」阈值（否则又退回不可达判据）');
+    assert(/bias:/.test(benchCode),
+      '交叉验证必须把**偏差方向**落盘（超时剔除使屏幕捕获 p95 偏低 ⇒ 下界检验偏严），不得只报 pass/fail');
+    {
+      const UNREACHABLE = 'if (screen?.p95 !== undefined && screen?.p95 !== null && m.typing.' + 'timeouts === 0) {';
+      if (!/m\.typing\.timeouts === 0/.test(UNREACHABLE)) {
+        errors.push('交叉验证可达性 canary 未武装：不可达判据样本未被检出');
+      }
+      const REACHABLE = 'if (screenValidRate >= CROSSCHECK_MIN_VALID_RATE) {';
+      if (/m\.typing\.timeouts === 0/.test(REACHABLE)) {
+        errors.push('交叉验证可达性 canary 失效：可达判据被误判为不可达');
+      }
+    }
+    // canary：抹掉「早退门控」必须被检出
+    const appDrift = appSrc.replace(/path === null \|\| path === ''\) return;/, 'return;');
+    if (appDrift === appSrc) {
+      errors.push('W-PERF-1 门控 canary 未武装：无法注入「去掉早退」漂移（锚点漂移，请更新护栏）');
+    } else if (/path === null \|\| path === ''\) return;/.test(appDrift)) {
+      errors.push('W-PERF-1 门控 canary 失效：注入漂移后仍判定为已门控');
+    }
+  }
   // canary：自检这三条锁（样本拼接构造，避免护栏检出自己）
   {
     const BAD_PUSH = 'opens.push((win.wallMs - t0Ms) + probe.' + 'loadMs);';

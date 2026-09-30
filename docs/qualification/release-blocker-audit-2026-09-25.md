@@ -2112,6 +2112,93 @@ loadMs（= waitStable 的返回：等待画面静止，含 600ms 稳定判定地
 **vendored 文件处置**：该文件属 `CoreEditor/`（re-vendor 会被 `cp -R` 覆盖）→
 已**同步更新 `packages/editor-core/UPSTREAM.md` 的改动清单**（修改文件 **18 → 19**）。
 
+## 4.45 **交付产物里的引擎不是这一版源码**：`editor-engine/dist` 陈旧 6 天（2026-10-01，W-PERF-1 端到端失败的真因）
+
+**现象**：W-PERF-1（应用内按键回显延迟读数）接线全部完成后，端到端验证失败 ——
+
+```
+typing: p95=110.46ms median=92.33ms timeouts=3
+inputLatency（应用内）: 不可用 —— 埋点未产出样本（不代表「快」，也不代表「慢」）
+=== 内容 === {}          # dump 文件只有哨兵
+```
+
+**排除过程（逐条实测，不靠猜）**：
+
+| 假设 | 判据 | 结论 |
+|---|---|---|
+| 前端接线没进产物 | `apps/desktop/dist/assets/index-*.js` 含 `getInputLatencyReport` / `input_latency_dump_path` / `__MELLOW_INPUT_LATENCY__` | ✅ 在 |
+| Rust 命令没编进去 | 二进制含 `MELLOW_INPUT_LATENCY_DUMP` | ✅ 在 |
+| 命令名不对 | `lib.rs` 里是 `fs::write_text`，注册名 `write_text`，与 App 侧一致 | ✅ 对 |
+| 环境变量没传 | `perf-common.launch()` 用 `spawn(bin, args, { env })` | ✅ 能传 |
+| `isTauri()` 为假 | release 二进制下 `__TAURI_INTERNALS__` 存在 | ✅ 为真 |
+| **iframe 里的引擎没装埋点** | `apps/desktop/public/editor/engine-v1.5.15/` 里**没有 `inputLatency.js`**，全文搜不到 `inputLatencyReport` | ❌ **真因** |
+
+**根因（时间线，硬证据）**：
+
+| 项 | mtime |
+|---|---|
+| `packages/editor-engine/dist/index.js` | **2026-09-25 00:22** |
+| `packages/editor-engine/src/inputLatency.ts` | 2026-09-30 13:55 |
+| `packages/editor-engine/src/index.ts`（接入埋点） | 2026-10-01 00:36 |
+
+`build-editor-bundle.mjs` 的引擎来源是 `packages/editor-engine/dist/`（第 25 行），
+而它是 **gitignore 的 tsc 产物** —— 只有 `pnpm --filter @mellow/editor-engine run build`
+会生成。`apps/desktop` 的 `build` script 是
+`build-editor-bundle.mjs && tsc --noEmit && vite build`，**不构建引擎 dist**。
+于是「本地只跑 desktop build + `tauri build`」把**旧引擎**打进了 iframe bundle。
+
+**为什么此前没有任何信号**：
+- `ci.yml`（`editor-engine` job + desktop 构建前）与 `release.yml` **都先跑各包构建** →
+  **只有本地临时构建路径会漏**；
+- `build-local.sh` 步骤 1/6 本会按 mtime 重建（`find src -newer dist`，本例必然命中）
+  → 说明那次构建**没走这个脚本**；
+- `verify-release-bundle.mjs` 只检查 **4 个固定文件名**（`wysiwygBlocks.js` 等）存在
+  —— 能证明「产物非空」，**证明不了「产物是这一版源码」**。
+
+**影响面（远大于 W-PERF-1）**：**09-30 之后全部引擎改动都没进任何交付产物** ——
+`inputLatency.ts`（W-PERF-1 埋点）、`inlineCodeAttrs.ts`（spec §11 行内代码属性）、
+智能标点代码上下文守卫、表格 `resizeTable` / 工具栏。此前各条「已实施」的结论
+**在源码层面成立、在交付层面不成立**。
+
+**顺带发现（同一目录卫生问题）**：`tsc` **不清 `outDir`**，被删除的源文件会留下孤儿产物 ——
+`dist/markers.js`（源 `markers.ts` 08-24 删除）、`dist/scrollBridge.js`（08-11 删除）
+连同 `.d.ts` 共 4 个文件，**自 8 月起随包发布**（未被引用故不加载，但确实是死代码进包）。
+
+**处置（全部实测验证）**：
+
+1. **修产物**：`packages/editor-engine` 重新 `tsc -p tsconfig.json` → `dist/index.js`
+   含 `inputLatency`；重跑 `build-editor-bundle.mjs` → `engine-v1.5.15/` 出现
+   `inputLatency.js` / `inlineCodeAttrs.js`；`verify-release-bundle.mjs` 通过。
+2. **加确定性闸门**（`build-editor-bundle.mjs`，三条构建路径的公共入口）：
+   `assertPkgDistFresh(name, pkgDir)` —— 判据 `src/**/*.ts`（去 `.d.ts`）集合
+   **必须 ==** `dist/**/*.js` 集合。
+   - **缺失 → 硬失败**（报出缺哪些模块 + 修法命令）；**不依赖 mtime**（checkout 顺序下不可靠）；
+   - **孤儿 → 不复制进产物**（死代码不进包）+ 警告；
+   - 覆盖 `@mellow/editor-engine` 与 `@mellow/editor-core`（后者是 2026-09-15
+     「改了 config 字段却静默用旧 dist」的同型事故）。
+   - **翻转验证**：移开 `dist/inputLatency.js` → `exit=1` 且报出该模块名；移开
+     `editor-core/dist/contract.js` → `exit=1` 且报出 `@mellow/editor-core`；还原后 `exit=0`。
+3. **产物级复核**（`verify-release-bundle.mjs`）：交付包的引擎模块集合
+   **必须 == 源码模块集合**（`notShipped` / `deadCode` 双向）。
+   **翻转验证**：移开 `engine-v1.5.15/inputLatency.js` → FAIL；放一个无源文件的
+   `zzz-orphan.js` → FAIL；还原 → OK。
+4. **CI 可见护栏**（`tests/parity/verify-build-pipeline.mjs` §⑦）：锁住闸门存在、
+   两个包都被覆盖、「缺失必须硬失败」、产物级比对存在；各配 canary。
+   **护栏级真 canary**：把闸门函数改名 → 护栏 `exit=1`；还原 → `exit=0`。
+5. **修 `build-local.sh` 两处**（都是「脚本本身在拦自己」）：
+   - 步骤 4/6 的旧 `dist` 落点原为 `${TMPDIR}` —— 仓库在 `/Volumes/My-Data`（disk8s1），
+     `${TMPDIR}` 在 `/System/Volumes/Data`（disk3s5），**跨卷 `mv` 退化为复制+递归删除**，
+     删除那步照样撞 safe-delete 守卫 → 改落 `node_modules/.cache`（同卷，真 rename）；
+   - 步骤 0/6 缺同型处置：`CoreEditor/dist` 的 `emptyDir` 撞守卫
+     （`count=2011 threshold=50`，**看上去像构建失败**）→ 补「先移开再 build」。
+   护栏新增 §⑥b 锁「落点必须同卷」——**只看代码行**（注释里也会提到 `${TMPDIR}`，
+   扫全文会误报；「护栏匹配到散文」是静态护栏的经典失效模式）。
+
+> ⚠️ **教训（与 §4.43 同族）**：§4.43 是「『需环境』这个归类本身就是一次未验证的推断」，
+> 本条是「**『已实现』的判据必须是『在交付产物里』，不是『源码里有』**」。
+> 两条都指向同一件事：**结论的载体选错了，结论就会错得很干净**。
+> 本次能定位，靠的是**逐条排除 + 对产物本身取证**（而不是继续读源码）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

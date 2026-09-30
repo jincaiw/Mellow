@@ -193,8 +193,72 @@ window.__MELLOW_BUNDLE_VERSION__ = '${assetVersion}';
 })();
 </script>`;
 
+/** 递归列出目录下的相对路径，`keep(name)` 决定是否收录。 */
+function listFiles(dir, keep, rel = '') {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      out.push(...listFiles(resolve(dir, entry.name), keep, `${rel}${entry.name}/`));
+      continue;
+    }
+    if (keep(entry.name)) out.push(`${rel}${entry.name}`);
+  }
+  return out;
+}
+
+/**
+ * 包 dist 新鲜度闸门（2026-10-01）。
+ *
+ * 立此条的原因（实测踩到，代价是 6 天）：`packages/<pkg>/dist/` 是 **gitignore 的 tsc
+ * 产物**，只有各包的 `pnpm --filter <pkg> run build` 会生成它；而 `apps/desktop`
+ * 的 `build` script（`build-editor-bundle.mjs && tsc --noEmit && vite build`）
+ * **不构建它们**。于是「本地只跑 desktop build + tauri build」会静默把**旧产物**
+ * 打进交付包：
+ *   - 09-30 新增的 `editor-engine/src/inputLatency.ts`（W-PERF-1 埋点）从未进入
+ *     任何交付产物 → 应用内延迟读数永远是 `null`，benchmark 报「埋点未产出样本」；
+ *   - 同期 `inlineCodeAttrs.ts`、智能标点守卫、表格 resize 同样没进包；
+ *   - 更早的同类事故（2026-09-15）：改了 `editor-core` 的 `bundle.ts` config 字段，
+ *     构建静默用旧 dist → 新设置项在应用里完全不生效。
+ * 屏幕上看不出原因，CI 也不会红（CI 与 release.yml 都先跑各包构建）。
+ *
+ * 判据**确定性**（不比 mtime —— mtime 在 checkout 顺序下不可靠）：
+ *   src/**\/*.ts（去掉 .d.ts） 的模块集合 必须 ==  dist/**\/*.js 的模块集合。
+ *   - 缺失（源有、产物无）= dist 陈旧 → **硬失败**，否则新模块静默丢失；
+ *   - 多余（产物有、源无）= tsc 不清 outDir 留下的孤儿 → 警告（死代码会随包发布）。
+ */
+function assertPkgDistFresh(name, pkgDir) {
+  const srcDir = resolve(pkgDir, 'src');
+  const distDir = resolve(pkgDir, 'dist');
+  if (!existsSync(srcDir) || !existsSync(distDir)) return new Set(); // 非常规布局时不判断
+  const expected = new Set(
+    listFiles(srcDir, (n) => n.endsWith('.ts') && !n.endsWith('.d.ts')).map((f) => `${f.slice(0, -3)}.js`),
+  );
+  const actual = new Set(listFiles(distDir, (n) => n.endsWith('.js')));
+  const missing = [...expected].filter((f) => !actual.has(f)).sort();
+  const orphan = [...actual].filter((f) => !expected.has(f)).sort();
+
+  if (missing.length > 0) {
+    throw new Error(
+      `${name} dist 陈旧：${missing.length} 个源模块未编译 —— ${missing.join(', ')}\n`
+      + '  后果：新模块不会进入 iframe bundle，应用里「改了完全没效果」且无任何报错。\n'
+      + `  修法：pnpm --filter ${name} run build\n`
+      + '        （或 bash apps/desktop/scripts/build-local.sh —— 其 1/6 步会按 mtime 自动重建）',
+    );
+  }
+  if (orphan.length > 0) {
+    console.warn(
+      `⚠️ ${name} dist 含 ${orphan.length} 个无源文件的陈旧产物（tsc 不清 outDir）—— 不复制进产物（死代码）：`
+      + `${orphan.join(', ')}`,
+    );
+  }
+  return new Set(orphan);
+}
+
 /** 复制引擎 dist → public/editor/engine-<version>/（递归，保留子目录；浏览器 ESM 要求显式 .js 扩展名） */
 function copyEngine() {
+  // 孤儿（dist 有、src 无）不进产物：交付包里的引擎模块集合必须 == 源码模块集合
+  const orphan = assertPkgDistFresh('@mellow/editor-engine', resolve(root, '../../packages/editor-engine'));
+  assertPkgDistFresh('@mellow/editor-core', resolve(root, '../../packages/editor-core'));
   const engineTargetDir = resolve(targetDir, engineDirName);
   mkdirSync(engineTargetDir, { recursive: true });
 
@@ -210,6 +274,7 @@ function copyEngine() {
         continue;
       }
       const relPath = `${rel}${entry.name}`;
+      if (orphan.has(relPath)) continue; // 无源文件的陈旧产物
       const targetFile = resolve(engineTargetDir, relPath);
       mkdirSync(dirname(targetFile), { recursive: true });
       let content = readFileSync(srcPath, 'utf8');

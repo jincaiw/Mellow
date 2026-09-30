@@ -1519,6 +1519,35 @@ export default function App() {
     }
   }, [t, themeSettings.mode, readerResolveImageSrc, refreshImageRootUrl]);
 
+  /**
+   * W-PERF-1 诊断通道（2026-10-01）：把 iframe 内的**按键回显延迟报告**定期写到宿主指定路径。
+   *
+   * **只在 Rust 侧读到环境变量 `MELLOW_INPUT_LATENCY_DUMP` 时才启动**（未设置 → 不建定时器，
+   * 对正常运行零成本；命令见 `src-tauri/src/lib.rs`）。
+   *
+   * 用途：benchmark 需要在**同一次 typing 跑动**里拿到应用内读数，与屏幕捕获读数**交叉验证** ——
+   * PRD §110 的 16ms Input 目标在屏幕捕获上**原理性不可判定**（16ms < 单帧 16.7ms），
+   * 应用内埋点（`editor-engine/src/inputLatency.ts`）是唯一可判定来源。
+   */
+  useEffect(() => {
+    if (!isTauri()) return;
+    let timer: number | null = null;
+    let cancelled = false;
+    void (async () => {
+      const path = await invoke<string | null>('input_latency_dump_path').catch(() => null);
+      if (cancelled || path === null || path === '') return;
+      timer = window.setInterval(() => {
+        const report = hostRef.current?.getInputLatencyReport?.();
+        if (report === undefined || report === null) return;
+        void invoke('write_text', { path, content: JSON.stringify(report) }).catch(() => undefined);
+      }, 2000);
+    })();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, []);
+
   /** 启动：更新健康确认（rollback 策略）+ 启动后定时检查更新 */
   useEffect(() => {
     if (!isTauri()) return;

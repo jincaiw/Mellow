@@ -73,6 +73,33 @@ if (!existsSync(editorDir)) {
       const content = readFileSync(resolve(engineDir, rel), 'utf8');
       if (!content.includes(marker)) fail(`engine ${file} 缺少${label}特征串（${marker}）——渲染真值未进产物`);
     }
+
+    // ── 引擎模块集合 == 源码模块集合（2026-10-01）──────────────────────────
+    // 上面那 4 个固定文件名只能证明「产物非空」，证明不了「产物是这一版源码」。
+    // 实测事故：`packages/editor-engine/dist/` 停留在 2026-09-25，而 09-30 新增的
+    // `inputLatency.ts`（W-PERF-1 埋点）从未编译 → 埋点不在任何交付产物里，应用内
+    // 延迟读数恒为 null，屏幕上看不出原因、CI 也不会红（CI 先跑引擎构建）。
+    // 判据确定性（不比 mtime）：src/**/*.ts（去掉 .d.ts）↔ engine-v*/**/*.js 严格相等。
+    const engineSrcDir = resolve(root, '../../packages/editor-engine/src');
+    if (existsSync(engineSrcDir)) {
+      const walk = (dir, keep, rel = '') => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(resolve(dir, e.name), keep, `${rel}${e.name}/`)
+          : keep(e.name) ? [`${rel}${e.name}`] : []);
+      const expected = new Set(
+        walk(engineSrcDir, (n) => n.endsWith('.ts') && !n.endsWith('.d.ts')).map((f) => `${f.slice(0, -3)}.js`),
+      );
+      const shipped = new Set(walk(engineDir, (n) => n.endsWith('.js')));
+      const notShipped = [...expected].filter((f) => !shipped.has(f)).sort();
+      const deadCode = [...shipped].filter((f) => !expected.has(f)).sort();
+      if (notShipped.length > 0) {
+        fail(`engine-v${appVersion}/ 缺少 ${notShipped.length} 个源码模块：${notShipped.join(', ')}`
+          + '（editor-engine dist 陈旧 —— 交付包里的引擎不是这一版源码；先重建 engine）');
+      }
+      if (deadCode.length > 0) {
+        fail(`engine-v${appVersion}/ 含 ${deadCode.length} 个无源文件的产物：${deadCode.join(', ')}`
+          + '（tsc 不清 outDir 的孤儿 —— copyEngine 应已跳过，此处说明产物目录有旧残留）');
+      }
+    }
   }
 
   // 旧版无指纹资产残留（会进 frontendDist 打包且证明清理未执行）

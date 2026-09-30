@@ -24,6 +24,13 @@ const args = process.argv.slice(2);
 const argVal = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const has = (k) => args.includes(k);
 
+/**
+ * W-PERF-1（2026-10-01）：应用内按键延迟报告的落盘路径。
+ * 通过环境变量交给被测 app（`lib.rs` 的 `input_latency_dump_path` 读取），
+ * App 侧每 2s 把 iframe 埋点报告写到这里；**未设置时 app 不启动任何定时器**。
+ */
+const INPUT_LATENCY_DUMP = join(tmpdir(), 'mellow-input-latency.json');
+
 const APPS = {
   typora: {
     name: 'Typora',
@@ -281,7 +288,7 @@ async function measureApp(appKey, opts) {
 
   const blank = join(FIXTURES_DIR, '_blank.md');
   if (!existsSync(blank)) writeFileSync(blank, '# Mellow Benchmark\n\nblank document\n');
-  const launchApp = (file) => launch(app.bin, [...(app.launchArgs || []), ...(file ? [file] : [])]);
+  const launchApp = (file, extraEnv) => launch(app.bin, [...(app.launchArgs || []), ...(file ? [file] : [])], extraEnv);
 
   // startup：无业务文件（blank）冷启动 → 窗口出现 → 首键回显
   if (opts.metrics.includes('startup')) {
@@ -485,7 +492,11 @@ async function measureApp(appKey, opts) {
     if (['typing', 'scroll', 'memory', 'search'].some((k) => opts.metrics.includes(k))) {
       killApp(app.killPattern);
       sleep(600);
-      const l = launchApp(fpath);
+      // W-PERF-1：先写哨兵，避免上一轮的残留文件被当成本轮读数（本轮 app 未产出时可区分）
+      if (app.name === 'Mellow') {
+        try { writeFileSync(INPUT_LATENCY_DUMP, '{}'); } catch { /* noop */ }
+      }
+      const l = launchApp(fpath, app.name === 'Mellow' ? { MELLOW_INPUT_LATENCY_DUMP: INPUT_LATENCY_DUMP } : undefined);
       pid = l.pid;
       const mSafe = (key, fn) => {
         try { fn(); } catch (e) {
@@ -504,6 +515,71 @@ async function measureApp(appKey, opts) {
           const lats = r.latencies || [];
           m.typing = { stats: stats(lats), samples: lats, timeouts: lats.filter((x) => x < 0).length, calibMaxDiff: r.calibMaxDiff, threshold: r.threshold };
           console.log(`typing: p95=${m.typing.stats.p95?.toFixed(2)}ms median=${m.typing.stats.median?.toFixed(2)}ms timeouts=${m.typing.timeouts}`);
+        });
+
+        mSafe('inputLatency', () => {
+          // W-PERF-1（2026-10-01）：应用内埋点读数 + 与屏幕捕获的**交叉验证**。
+          // 为什么必须有：PRD §110 的 16ms Input 目标**在屏幕捕获上原理性不可判定**
+          // （16ms < 单帧 16.7ms），应用内埋点是唯一可判定来源；但**只报应用内读数不足以
+          // 宣称「16ms 可判」** —— 必须同时证明它与屏幕捕获读数在同一量纲上一致
+          //（in-app 不含合成器提交与呈现，故应是**下界**）。
+          if (!opts.metrics.includes('typing')) return;
+          if (app.name !== 'Mellow') return; // 只有 Mellow 有该埋点（Typora 不可插桩）
+          let parsed = null;
+          try { parsed = JSON.parse(readFileSync(INPUT_LATENCY_DUMP, 'utf8')); } catch { parsed = null; }
+          const frame = parsed?.frameMs;
+          if (frame === undefined || frame === null || frame.count === 0) {
+            m.inputLatency = { available: false, reason: '应用内埋点未产出样本（dump 缺失或 count=0）', path: INPUT_LATENCY_DUMP };
+            console.log('inputLatency（应用内）: 不可用 —— 埋点未产出样本（不代表「快」，也不代表「慢」）');
+            return;
+          }
+          m.inputLatency = {
+            available: true,
+            source: 'in-app（iframe 埋点；16ms 目标的唯一可判定来源）',
+            dispatchMs: parsed.dispatchMs,
+            frameMs: frame,
+            path: INPUT_LATENCY_DUMP,
+          };
+          console.log(`inputLatency（应用内）: frameMs p95=${frame.p95?.toFixed(2)}ms median=${frame.median?.toFixed(2)}ms n=${frame.count}`
+            + ` / dispatchMs p95=${parsed.dispatchMs?.p95?.toFixed(2)}ms（frameMs 与 16ms 目标同量纲；dispatchMs 是应用自身可控成本）`);
+          const screen = m.typing?.stats;
+          // W-PERF-1（2026-10-01 实测修正）：交叉验证的**可达性**判据。
+          //
+          // 初版写的是 `m.typing.timeouts === 0` —— 本机实测三轮的屏幕捕获超时数分别是
+          // 3 / 8 / 7（超时 = 5s 内没捕捉到显著像素变化，是屏幕捕获的固有噪声），
+          // 于是这条交叉验证**从未执行过**，每次都走「未做」分支 —— 正是本项目反复
+          // 出现的「空开关」（已实现 ≠ 有消费方）。
+          //
+          // 改为「有效样本率 ≥ 80% 即执行」，并把**偏差方向**一并落盘：
+          // 超时样本被剔除 ⇒ 屏幕捕获 p95 偏低 ⇒ 「in-app ≤ screen」这个下界检验**偏严**。
+          // 故：通过 ⇒ 结论成立；不通过 ⇒ 可能是该偏差所致，不得直接判「违背下界关系」。
+          const screenTotal = (m.typing?.samples ?? []).length;
+          const screenValid = screenTotal - (m.typing?.timeouts ?? 0);
+          const screenValidRate = screenTotal > 0 ? screenValid / screenTotal : 0;
+          const CROSSCHECK_MIN_VALID_RATE = 0.8;
+          if (screen?.p95 !== undefined && screen?.p95 !== null && screenValidRate >= CROSSCHECK_MIN_VALID_RATE) {
+            const pass = frame.p95 <= screen.p95;
+            m.inputLatency.crossCheck = {
+              inAppFrameP95: frame.p95,
+              screenCaptureP95: screen.p95,
+              screenValidSamples: screenValid,
+              screenTimeouts: m.typing.timeouts,
+              screenValidRate: round3(screenValidRate),
+              bias: '超时样本被剔除 ⇒ 屏幕捕获 p95 偏低 ⇒ 「in-app ≤ screen」偏严（通过即成立；不通过可能是该偏差）',
+              pass,
+            };
+            console.log(`  ↳ 交叉验证：in-app frameMs p95=${frame.p95.toFixed(2)}ms ${pass ? '≤' : '>'} 屏幕捕获 p95=${screen.p95.toFixed(2)}ms`
+              + `（屏幕捕获有效样本 ${screenValid}/${screenTotal}，超时 ${m.typing.timeouts}）`
+              + ` → ${pass ? '✅ 一致（in-app 是下界，符合预期）' : '⚠️ 不满足下界关系（超时剔除使屏幕捕获 p95 偏低，该偏差方向对本检验偏严；需人工判断）'}`);
+          } else {
+            m.inputLatency.crossCheck = {
+              pass: null,
+              reason: `屏幕捕获侧有效样本不足（有效 ${screenValid}/${screenTotal}，阈值 ${CROSSCHECK_MIN_VALID_RATE * 100}% 或 p95 缺失）`,
+              screenValidSamples: screenValid,
+              screenTimeouts: m.typing?.timeouts ?? null,
+            };
+            console.log(`  ↳ 交叉验证：屏幕捕获侧无有效样本（有效 ${screenValid}/${screenTotal}）→ **未做**（不得据应用内读数单独宣称「16ms 可判」）`);
+          }
         });
 
         mSafe('scroll', () => {

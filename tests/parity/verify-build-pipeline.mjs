@@ -101,8 +101,78 @@ if (!/node\/versions\/\d+\.\d+\.\d+-\d+/.test('NODE_BIN="$ROOT/.workbuddy-ai/bin
   fail('受管 Node 版本硬编码护栏自检失败：硬编码样本未被检出（V7-W5 追加）');
 }
 
+// ── ⑥b 旧 dist 的移开落点必须在同卷（2026-10-01）──────────────────────────
+// 立此条的原因：仓库在 /Volumes/My-Data（disk8s1），而 ${TMPDIR} 在
+// /System/Volumes/Data（disk3s5）—— 跨卷 `mv` 退化为「复制 + 递归删除」，
+// 删除那一步会撞上 safe-delete 守卫，失败点看起来像构建错误（与代码无关）。
+// node_modules/.cache 与仓库同卷 → rename(2)，瞬时且不触发守卫。
+// 只看代码行：注释里也会提到 ${TMPDIR}（说明为什么不能用它），
+// 直接扫全文会误报 —— 「护栏匹配到散文」是静态护栏的经典失效模式。
+const buildLocalCode = buildLocal.split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+if (/\$\{TMPDIR/.test(buildLocalCode)) {
+  fail('build-local.sh 把旧 dist 移到 ${TMPDIR}（跨卷 → mv 退化为复制+删除 → 撞 safe-delete 守卫，'
+    + '报错看起来像构建失败）。落点请用同卷的 node_modules/.cache（2026-10-01）');
+}
+if (!/node_modules\/\.cache/.test(buildLocalCode)) {
+  fail('build-local.sh 的旧 dist 落点必须是与仓库同卷的 node_modules/.cache（2026-10-01）');
+}
+// canary：反例样本（代码行）必须被上面第一条命中
+if (!/\$\{TMPDIR/.test('STALE_DIR="${TMPDIR:-/tmp}/mellow-dist-stale-$(date +%s)"')) {
+  fail('同卷落点护栏自检失败：跨卷样本未被检出（2026-10-01）');
+}
+// canary：纯注释里的 ${TMPDIR} 不得被误判
+if (/\$\{TMPDIR/.test('# 不能用 ${TMPDIR}：跨卷'.split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n'))) {
+  fail('同卷落点护栏自检失败：注释被误判为代码（2026-10-01）');
+}
+
+// ── ⑦ 包 dist 新鲜度闸门（2026-10-01）──────────────────────────────────────
+// 立此条的原因（实测事故，代价 6 天）：`packages/<pkg>/dist/` 是 gitignore 的 tsc
+// 产物，只有各包的 `pnpm --filter <pkg> run build` 会生成；而 `apps/desktop` 的
+// `build` script 只跑 bundle 抽取 + tsc --noEmit + vite build，**不构建这些 dist**。
+// 于是「本地只跑 desktop build + tauri build」会把旧引擎打进交付包：
+// `editor-engine/src/inputLatency.ts`（W-PERF-1 埋点，09-30 新增）从未编译 →
+// 埋点不在任何交付产物里、应用内延迟读数恒为 null，而屏幕上看不出原因、CI 也不会红
+// （CI 与 release.yml 都先跑各包构建，只有本地临时路径会漏）。
+// 故在三条构建路径的公共入口 `build-editor-bundle.mjs` 装确定性闸门，并在此锁死。
+const bundleScript = read('apps/desktop/scripts/build-editor-bundle.mjs');
+if (!/function assertPkgDistFresh\s*\(/.test(bundleScript)) {
+  fail('build-editor-bundle.mjs 缺少 assertPkgDistFresh 新鲜度闸门（2026-10-01：dist 陈旧会静默进包）');
+}
+for (const pkg of ['@mellow/editor-engine', '@mellow/editor-core']) {
+  if (!bundleScript.includes(`assertPkgDistFresh('${pkg}'`)) {
+    fail(`build-editor-bundle.mjs 未对 ${pkg} 做新鲜度闸门（该包 dist 陈旧会静默进包）`);
+  }
+}
+if (!/throw new Error\(\s*\n?\s*`\$\{name\} dist 陈旧/.test(bundleScript)) {
+  fail('build-editor-bundle.mjs 的新鲜度闸门未在「源模块缺失」时硬失败（只警告 = 静默丢失新模块）');
+}
+// 产物级复核：verify-release-bundle.mjs 必须比对「交付包引擎模块集合 == 源码模块集合」
+const releaseVerify = read('apps/desktop/scripts/verify-release-bundle.mjs');
+if (!/notShipped/.test(releaseVerify) || !/deadCode/.test(releaseVerify)) {
+  fail('verify-release-bundle.mjs 未比对交付包与源码的引擎模块集合'
+    + '（固定文件名清单只能证明产物非空，证明不了产物是这一版源码）');
+}
+
+// canary：闸门被删掉时，上面的断言必须能翻红
+const gateRemoved = bundleScript.replace(/function assertPkgDistFresh\s*\(/, 'function removedGate(');
+if (/function assertPkgDistFresh\s*\(/.test(gateRemoved)) {
+  fail('dist 新鲜度闸门护栏自检失败：无法模拟闸门被删除（2026-10-01），护栏已失效');
+}
+const pairRemoved = bundleScript.replace("assertPkgDistFresh('@mellow/editor-core'", 'noopGate(');
+if (pairRemoved.includes("assertPkgDistFresh('@mellow/editor-core'")) {
+  fail('dist 新鲜度闸门护栏自检失败：无法模拟 editor-core 分支被删除，护栏已失效');
+}
+const softFail = bundleScript.replace(/throw new Error\(\s*\n?\s*`\$\{name\} dist 陈旧/, 'console.warn(`');
+if (/throw new Error\(\s*\n?\s*`\$\{name\} dist 陈旧/.test(softFail)) {
+  fail('dist 新鲜度闸门护栏自检失败：无法模拟「硬失败退化为警告」，护栏已失效');
+}
+const verifySoftened = releaseVerify.replace(/notShipped/g, 'noopA').replace(/deadCode/g, 'noopB');
+if (/notShipped|deadCode/.test(verifySoftened)) {
+  fail('产物模块集合护栏自检失败：无法模拟比对被删除，护栏已失效');
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Build pipeline: one-shot build chain complete (CoreEditor yarn build → editor-core wrapper → editor-engine → build-editor-bundle → verify-release-bundle fingerprint); CI runs the fingerprint lock after desktop build (was never executed before V7-W5 — local/CI divergence had no signal); desktop build script extracts the bundle before vite build; script comments no longer falsely claim CI orchestration; build-local.sh resolves the managed Node via the versions/current pointer instead of a hardcoded version (a stale pin made the failure surface as a bogus tsc error)');
+console.log('Build pipeline: one-shot build chain complete (CoreEditor yarn build → editor-core wrapper → editor-engine → build-editor-bundle → verify-release-bundle fingerprint); CI runs the fingerprint lock after desktop build (was never executed before V7-W5 — local/CI divergence had no signal); desktop build script extracts the bundle before vite build; script comments no longer falsely claim CI orchestration; build-local.sh resolves the managed Node via the versions/current pointer instead of a hardcoded version (a stale pin made the failure surface as a bogus tsc error); package dist freshness is gated at the common build entry point (a stale editor-engine dist silently shipped an unbuilt inputLatency.ts for 6 days — the app-side latency probe was absent from every artifact with no error anywhere) and verify-release-bundle compares the shipped engine module set against the source module set');

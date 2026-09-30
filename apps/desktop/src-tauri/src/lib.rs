@@ -94,6 +94,26 @@ fn jump_list_add_recent(path: String) {
     jumplist::add_recent(&path);
 }
 
+/// W-PERF-1 诊断通道（2026-10-01）：应用内按键回显延迟报告的落盘路径。
+///
+/// 返回 `Some(path)` 时，前端才会启动「定期把 iframe 埋点报告写到该路径」的定时器；
+/// **未设置环境变量时返回 `None` → 前端不启动任何定时器**（对正常运行零成本）。
+///
+/// **为什么用环境变量而不是 CLI 参数**：benchmark harness 用 `spawn(bin, [file])`
+/// 启动（`tests/benchmark/perf-common.mjs`），环境变量可在**不改动 CLI 契约**
+/// （「打开这个文件」）的前提下传入；CLI 参数会与文件路径混淆。
+///
+/// 背景（`performance-benchmark-spec` §9/§10 W-PERF-1）：PRD §110 的 Input 目标
+/// （普通键 < 16ms）**在屏幕捕获上原理性不可判定**（16ms < 单帧），故必须改用
+/// **应用内埋点**（`packages/editor-engine/src/inputLatency.ts`）——本命令是该埋点
+/// 通向 benchmark 的**唯一出口**。
+#[tauri::command]
+fn input_latency_dump_path() -> Option<String> {
+    std::env::var("MELLOW_INPUT_LATENCY_DUMP")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
 /// 前端就绪后拉取待打开请求（benchmark open-to-editable / open-with / CLI）
 #[tauri::command]
 fn pending_open_path(window: tauri::WebviewWindow, state: tauri::State<PendingOpen>) -> Option<OpenRequest> {
@@ -195,6 +215,7 @@ pub fn run() {
             pending_open_path,
             is_portable,
             is_release_build,
+            input_latency_dump_path,
             jump_list_add_recent,
             print::open_devtools,
             menu::set_menu_spec,

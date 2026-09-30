@@ -37,8 +37,11 @@ export function killApp(pattern) {
 }
 
 /** 启动 app，返回 { pid, t0Ms } */
-export function launch(bin, args) {
-  const proc = spawn(bin, args, { stdio: 'ignore', detached: false });
+export function launch(bin, args, extraEnv) {
+  // extraEnv（W-PERF-1，2026-10-01）：诊断通道靠**环境变量**传递（不改 CLI 契约）——
+  // 见 `apps/desktop/src-tauri/src/lib.rs` 的 `input_latency_dump_path`。
+  const env = extraEnv === undefined ? process.env : { ...process.env, ...extraEnv };
+  const proc = spawn(bin, args, { stdio: 'ignore', detached: false, env });
   return { pid: proc.pid, t0Ms: Date.now(), proc };
 }
 

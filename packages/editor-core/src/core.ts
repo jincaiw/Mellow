@@ -251,6 +251,19 @@ export class EditorCore {
     win?.webModules?.config?.[method]?.(params);
   }
 
+  /**
+   * W-PERF-1（2026-10-01）：读取 iframe 内的**按键回显延迟报告**（埋点见
+   * `editor-engine/src/inputLatency.ts`）。未就绪 / 桥未装配 → `null`。
+   *
+   * 该读数是 PRD §110 Input 目标（普通键 < 16ms）**唯一可判定的来源** ——
+   * 16ms < 单帧，屏幕捕获原理上测不出（见 `performance-benchmark-spec` §9）。
+   */
+  getInputLatencyReport(): unknown | null {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_INPUT_LATENCY__?: { report?: () => unknown } }) | null;
+    const report = win?.__MELLOW_INPUT_LATENCY__?.report?.();
+    return report === undefined ? null : report;
+  }
+
   /** 当前主光标 offset（Outline 高亮使用；engine bridge 不可用时返回 null） */
   getSelectionHead(): number | null {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_OUTLINE_API__?: { getSelectionHead?: () => number | null } }) | null;
