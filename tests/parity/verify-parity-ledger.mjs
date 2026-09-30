@@ -311,8 +311,12 @@ if (existsSync(benchmarkRunnerPath)) {
   // 现要求：必须写明「未在 PRD 中规定口径」+ 推断依据 + 指向承载裁决的 ADR。
   assert(/未在 PRD 中规定口径|未规定口径/.test(benchCode),
     '报告必须声明 PRD §110 的 1MB/10MB 目标「未在 PRD 中规定口径」，不得把推断写成 PRD 的陈述');
-  assert(/待 ADR-0026/.test(benchCode),
+  assert(/ADR-0026/.test(benchCode),
     '报告必须指向承载口径裁决的 ADR-0026（推断不能自己当结论）');
+  // ADR-0026 已于 2026-09-30 裁决为 Accepted（Q1/Q2=A1）：报告须写明**裁决结论**，
+  // 不能停在「待裁决」——否则读者不知道当前该按哪个口径读数字。
+  assert(/ADR-0026[^。]*Accepted/.test(benchCode) || /Accepted 2026-09-30/.test(benchCode),
+    '报告必须写明 ADR-0026 的裁决状态与结论（Q1/Q2=A1 热打开口径），不得停留在「待裁决」');
   {
     const ASSERTED = 'PRD 目标（1MB ≤250ms / 10MB ≤1.0–1.5s）为「热打开」口径';
     if (benchCode.includes(ASSERTED)) {
@@ -411,8 +415,17 @@ if (existsSync(benchmarkRunnerPath)) {
       'release gate 必须显式声明「不阻断口径」（PASS-E/PASS-B/AUTO）：否则「N 项未闭环」会被误读成「只有 N 项没做完」');
     assert(/实际 PASS-E = \$\{passECount\}\/\$\{totalItems\}/.test(gateSrc),
       'release gate 必须报出 PASS-E 实际数量与总项数（AUTO 不等于 PASS-E）');
-    assert(/标 AUTO 但 requiredEvidence 含 ux-gate/.test(gateSrc),
-      'release gate 必须暴露「标 AUTO 却要求 ux-gate」的项（它们按 §8 Exit Gate 尚未闭环）');
+    assert(/标 AUTO 且 requiredEvidence 含 ux-gate/.test(gateSrc),
+      'release gate 必须暴露「标 AUTO 却要求 ux-gate」的项（ADR-0024 A3 下它们已计入未闭环）');
+    // ADR-0024 Q1=A3（Accepted 2026-09-30）：规则本身必须可核对 ——
+    // 断言门禁**实现了**「AUTO 且 requiredEvidence 不含 ux-gate 才算不阻断」，
+    // 而不是只在输出里打印一句警示（警示可以被忽略，结构规则不能）。
+    // ⚠️ 括号必须转义：`/includes('ux-gate')/` 里的 `( )` 会被当成**捕获组**，
+    // 于是实际匹配的是 `includes'ux-gate'`（无括号）→ 恒不命中（本轮实测踩到）。
+    assert(/closedViaAuto/.test(gateSrc) && /includes\('ux-gate'\)/.test(gateSrc),
+      'release gate 必须实现 ADR-0024 A3：含 ux-gate 的 AUTO 项不得以 AUTO 收口');
+    assert(/Closure basis: 本门禁的「不阻断」口径 = PASS-E \/ PASS-B \/ AUTO（\*\*且 requiredEvidence 不含 ux-gate\*\*）/.test(gateSrc),
+      'release gate 的 Closure basis 必须写明 A3 收紧后的口径（口径不得与实现脱节）');
     assert(/不要把 AUTO 读作/.test(gateSrc),
       'release gate 必须保留 §5.7 的警示（AUTO 曾把一个完全不可用的功能当作已闭环）');
     // canary：自检这几条字符串锁
@@ -598,10 +611,24 @@ if (existsSync(benchmarkRunnerPath)) {
         const expectedNumbers = tplRows.map((_, i) => i + 1).join(',');
         assert(tplRows.map((r) => r.n).join(',') === expectedNumbers,
           '模板任务表编号必须为连续的 1..N（否则任务号与行数脱节，引用「任务 N」会指错）');
-        assert(/10\s?MB/i.test(tplRows[tplRows.length - 1].text),
-          '模板任务表末项必须是大文件（10MB）任务（ADR-0025 / 模板 §3.1 均以此为前提）');
-        assert(/10\s?MB/i.test(recTasks[recTasks.length - 1]),
-          '记录器 TASKS 末项必须是大文件（10MB）任务（否则门禁不再度量该场景）');
+        // ADR-0025 Q3a = C1（Accepted 2026-09-30）：末项是**大文档**任务，
+        // 且**对照尺寸必须写明 ≈2 MB**（Typora 可渲染上限内）。
+        // 若有人把对照尺寸改回 10 MB，Typora 侧将无法执行，而门禁要求「两轮对照记录」→
+        // 结果是**逼人编造数据**（本门禁明令禁止伪造计时）。故尺寸与「非对照」分栏两处同锁。
+        const lastTplTask = tplRows[tplRows.length - 1].text;
+        assert(/大文档|大文件/.test(lastTplTask),
+          '模板任务表末项必须是大文档任务（ADR-0025 / 模板 §3.1 均以此为前提）');
+        assert(/2\s?MB/i.test(lastTplTask),
+          '模板任务表末项必须写明 **≈2 MB** 对照尺寸（Typora 可渲染上限内；'
+          + 'ADR-0025 Q3a=C1：10 MB 已改为非对照能力观察）');
+        const lastRecTask = recTasks[recTasks.length - 1];
+        assert(/大文档|大文件/.test(lastRecTask),
+          '记录器 TASKS 末项必须是大文档任务（否则门禁不再度量该场景）');
+        assert(/2\s?MB/i.test(lastRecTask),
+          '记录器 TASKS 末项必须写明 ≈2 MB 对照尺寸（与模板同源，否则两处语义漂移）');
+        // >2 MB 能力观察不得随对照尺寸调整而丢失（PRD §129 J18 的承接处）
+        assert(/非对照/.test(tplSrc) && /(10\s?MB|>\s?2\s?MB)/.test(tplSrc),
+          '模板必须保留「>2 MB 非对照能力观察」一节（否则 PRD §129 J18 的能力要求会静默消失）');
         // canary：自检「条数一致性」这条锁本身有效（样本拼接构造）
         const A = ['| 1 | x |', '| 2 | y |'];
         const B = ['a'];

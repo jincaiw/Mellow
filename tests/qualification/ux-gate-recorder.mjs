@@ -15,7 +15,7 @@ const TASKS = [
   '表格、Tab、加行与对齐', '截图粘贴与相对路径', '浏览器富文本智能粘贴', '复制到 Word', '复制到 VS Code',
   '内联数学', 'Mermaid 修正', '脚注跳转', 'TOC 跳转', '大纲跳转',
   'Focus Mode 连续写作', 'Typewriter Mode 连续写作', '源码模式往返', '主题切换', '导出 PDF',
-  '导出 HTML', '打印', '干净文件外部修改重载', 'dirty 文件冲突处理', '10 MB 打开、搜索、编辑、保存',
+  '导出 HTML', '打印', '干净文件外部修改重载', 'dirty 文件冲突处理', '大文档（≈2 MB）打开、搜索、编辑、保存',
 ];
 const CRITICAL_TASKS = new Set([2, 11, 12, 25, 30]); // save / table / image / PDF / large-file save
 const APPS = ['typora', 'mellow'];

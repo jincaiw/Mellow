@@ -63,6 +63,15 @@ const BANNED_EVIDENCE = ['windows', 'linux', 'win', 'mac'];
 // 三平台证据必须齐备：macOS 走本机，Win/Linux 走 CI（各自只需其中之一即可满足该平台）
 const PLATFORM_EVIDENCE_GROUPS = [['macos', 'macos-native'], ['windows-ci'], ['linux-ci']];
 const noGo = [];
+// ── 「闭环」口径（ADR-0024 Q1 = A3，Accepted 2026-09-30）──────────────────
+// `AUTO` 不得为「**自身声明需要人工门禁**」的项收口：master-plan §4.3 定义
+// `AUTO` =「自动化测试通过，**真机体验验收未完成**」—— 一个把 `ux-gate` 写进
+// `requiredEvidence` 的项，其声明本身就承认「人工验收未完成」。
+// 依据：§5.7 前科（P0-SHELL-003 浮动工具栏永不显示，却因 AUTO 被当闭环）。
+// **本规则只可能让项变严**（移入未闭环），不可能放宽任何一项。
+const closedViaAuto = (item) => item.status === 'AUTO'
+  && !(item.requiredEvidence ?? []).includes('ux-gate');
+const isClosed = (item) => item.status === 'PASS-E' || item.status === 'PASS-B' || closedViaAuto(item);
 /** 未闭环项的阻塞原因集合（用于在输出里按原因归类，而不是只列状态码） */
 const blockers = new Set();
 for (const item of ledger.items ?? []) {
@@ -91,8 +100,8 @@ for (const item of ledger.items ?? []) {
   // （P0-EDITOR-004 / P0-PLATFORM-001 / P0-LAYOUT-002）**自身 requiredEvidence 已全部取得**，
   // 仅因「PASS-E 必须含 ux-gate」的全局策略而未升，状态码 `MAC 仅单平台` 反而**误导**
   // （读者会以为缺平台证据）。阻塞原因必须成为**机器可读的字段**，否则每次审计都要重读散文。
-  const isClosed = item.status === 'PASS-E' || item.status === 'PASS-B' || item.status === 'AUTO';
-  if (!isClosed) {
+  const closed = isClosed(item);
+  if (!closed) {
     if (typeof item.blockedBy !== 'string' || item.blockedBy.trim() === '') {
       fail(`${item.id} 未闭环但未声明 blockedBy（阻塞原因必须机器可读，不能只写在散文里）`);
     } else {
@@ -104,13 +113,16 @@ for (const item of ledger.items ?? []) {
   } else if (['MAC', 'WIN', 'LINUX'].includes(item.status)) {
     // 仅单一平台证据：三平台未闭环，同样不得作为发布结论
     noGo.push(`${item.id}(${item.status} — ${item.blockedBy ?? '未声明阻塞原因'})`);
+  } else if (item.status === 'AUTO' && !closed) {
+    // ADR-0024 A3：自身声明需要 ux-gate 的 AUTO 项，不得以 AUTO 收口
+    noGo.push(`${item.id}(${item.status} — ${item.blockedBy ?? '未声明阻塞原因'}；ADR-0024 A3：含 ux-gate 的项不得以 AUTO 收口)`);
   }
 }
 // canary：自检「未闭环项必须声明阻塞原因」这条规则本身（样本拼接构造）
 {
   const SAMPLE_BAD = { id: 'P0-X', status: 'BLOCKED' };
   const SAMPLE_GOOD = { id: 'P0-X', status: 'BLOCKED', blockedBy: 'reason' };
-  const closedOk = (it) => it.status === 'PASS-E' || it.status === 'PASS-B' || it.status === 'AUTO';
+  const closedOk = isClosed;
   if (closedOk(SAMPLE_BAD) || typeof SAMPLE_BAD.blockedBy === 'string') {
     fail('阻塞原因门禁 canary 失效：缺 blockedBy 的样本未被判为不合规');
   }
@@ -125,19 +137,27 @@ for (const item of ledger.items ?? []) {
 // 下一次接手的人不知道该改哪份文档、也不知道哪些是「已定」哪些是「待定」。
 // 按 AGENTS.md「决策变更：正确做法是新增 ADR」，待裁决项必须有 ADR 载体，
 // 且**未裁决前状态必须是 Proposed**（不得被悄悄标成 Accepted 当作已决）。
-const PENDING_ADRS = [
-  ['docs/adr/ADR-0024-release-closure-semantics.md', 'AUTO 是否阻断发布 / ux-gate 是否逐项前置'],
-  ['docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md', '>2MB 无基线时的证据政策'],
-  ['docs/adr/ADR-0026-perf-target-measurement-scope.md', 'PRD §110 性能目标的测量口径（目标 ↔ 指标映射）'],
+// ── 已裁决 ADR（2026-09-30）─────────────────────────────────────────────
+// ADR-0024 / 0025 / 0026 原为 Proposed；用户在 2026-09-30 授权「自行评估、决策、实施」，
+// 三份均已按各自 ADR 内的选项与证据裁决为 **Accepted**（裁决内容见各 ADR 的「裁决」节）。
+// 断言仍保留，但方向反转：**已裁决的 ADR 不得被删除、也不得退回 Proposed** ——
+// 防止「把裁决记录删掉当作问题不存在」（那会让本门禁的结论失去依据）。
+const DECIDED_ADRS = [
+  ['docs/adr/ADR-0024-release-closure-semantics.md', 'AUTO 是否阻断发布 / ux-gate 是否逐项前置', 'A3 / B1'],
+  ['docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md', '>2MB 无基线时的证据政策', 'A1 / B1 / C1'],
+  ['docs/adr/ADR-0026-perf-target-measurement-scope.md', 'PRD §110 性能目标的测量口径', 'A1 / B1 / C1'],
 ];
-for (const [p, what] of PENDING_ADRS) {
+const PENDING_ADRS = []; // 当前无待裁决 ADR（上一批已于 2026-09-30 裁决）
+for (const [p, what, decision] of DECIDED_ADRS) {
   if (!existsSync(resolve(root, p))) {
-    fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决事项必须有 ADR 载体，不能只写在散文里`);
+    fail(`已裁决 ADR 缺失：${p}（${what}）—— 裁决记录不得删除，否则门禁结论失去依据`);
     continue;
   }
   const src = read(p);
-  if (!/\*\*Status:\*\*\s*Proposed/.test(src)) {
-    fail(`${p} 必须显式标注 **Status:** Proposed（未裁决前不得标 Accepted 当作已决）`);
+  // 状态行的 Accepted 可能被加粗（`**Status:** **Accepted**`），故用 [^\n]* 容错，
+  // 但**不得**放宽到「行内任意位置出现 Accepted」（那会被正文里的字样满足）。
+  if (!/\*\*Status:\*\*[^\n]*Accepted/.test(src)) {
+    fail(`${p} 已于 2026-09-30 裁决为 Accepted（${decision}），不得退回 Proposed 或删除`);
   }
 }
 
@@ -281,11 +301,25 @@ const goNoGo = noGo.length === 0 ? 'GO（全部 P0 已闭环）' : `NO-GO：${no
 // ux-gate 策略挡住」这种关键事实淹没在 `MAC 仅单平台` 里（该状态码本身还会误导）。
 const byReason = new Map();
 for (const item of ledger.items ?? []) {
-  const closed = item.status === 'PASS-E' || item.status === 'PASS-B' || item.status === 'AUTO';
-  if (closed) continue;
+  if (isClosed(item)) continue;
   const key = item.blockedBy ?? '未声明';
   if (!byReason.has(key)) byReason.set(key, []);
   byReason.get(key).push(item.id);
+}
+// ── A3 规则自检（canary，2026-09-30）─────────────────────────────────────
+// 防止本规则被静默退回「AUTO 一律不阻断」：样本拼接构造，避免护栏检出自己。
+{
+  const AUTO = 'AUTO';
+  const UX = 'ux-' + 'gate';
+  if (isClosed({ status: AUTO, requiredEvidence: ['unit'] }) !== true) {
+    errors.push('ADR-0024 A3 canary 失效：不含 ux-gate 的 AUTO 项应视为不阻断');
+  }
+  if (isClosed({ status: AUTO, requiredEvidence: ['unit', UX] }) !== false) {
+    errors.push('ADR-0024 A3 canary 失效：含 ux-gate 的 AUTO 项**不得**视为已闭环');
+  }
+  if (isClosed({ status: 'PASS-E', requiredEvidence: [UX] }) !== true) {
+    errors.push('ADR-0024 A3 canary 失效：PASS-E 项应视为已闭环');
+  }
 }
 // ── 「闭环」口径必须显式声明（2026-09-25）────────────────────────────────
 // 立此节的必要性：本门禁把 `AUTO` 视为**不阻断**，而 master-plan §4.3 定义
@@ -307,16 +341,19 @@ console.log(
   + (byReason.size > 0
     ? `\n  Blocked by: ${[...byReason.entries()].map(([r, ids]) => `${r} → ${ids.join(', ')}`).join(' | ')}`
     : '')
-  + `\n  Closure basis: 本门禁的「不阻断」口径 = PASS-E / PASS-B / AUTO；`
+  + `\n  Closure basis: 本门禁的「不阻断」口径 = PASS-E / PASS-B / AUTO（**且 requiredEvidence 不含 ux-gate**）；`
+  + `按 ADR-0024 Q1=A3（Accepted 2026-09-30），自身声明需要人工门禁的 AUTO 项不得以 AUTO 收口。`
   + `按 master-plan §4.3，AUTO 的含义是「自动化测试通过、**真机体验验收未完成**」。`
   + `实际 PASS-E = ${passECount}/${totalItems}。`
   + (autoWithUxGate.length > 0
-    ? `\n  ⚠️ ${autoWithUxGate.length} 项标 AUTO 但 requiredEvidence 含 ux-gate`
-      + `（${autoWithUxGate.map((i) => i.id).join(', ')}）：按 §8 的 V1.0 Exit Gate（三平台全 PASS-E）它们尚未闭环。`
+    ? `\n  ℹ️ ${autoWithUxGate.length} 项标 AUTO 且 requiredEvidence 含 ux-gate`
+      + `（${autoWithUxGate.map((i) => i.id).join(', ')}）：按 ADR-0024 A3 已计入未闭环（不得以 AUTO 收口）。`
     : '')
   + '\n  ⚠️ §5.7 已记录一次「AUTO 把一个完全不可用的功能当作已闭环」（P0-SHELL-003 浮动工具栏）—— 不要把 AUTO 读作「已完成」。'
   + (noGo.length > 0
-    ? `\n  Pending decisions: ${PENDING_ADRS.map(([p]) => p.replace('docs/adr/', '')).join(', ')}`
-      + '（状态 Proposed，裁决前不生效）'
+    ? (PENDING_ADRS.length > 0
+      ? `\n  Pending decisions: ${PENDING_ADRS.map(([p]) => p.replace('docs/adr/', '')).join(', ')}`
+        + '（状态 Proposed，裁决前不生效）'
+      : '\n  Pending decisions: 无 —— ADR-0024 / 0025 / 0026 已于 2026-09-30 裁决为 Accepted（见各自 ADR 的「裁决」节）')
     : '')
 );

@@ -112,15 +112,25 @@ graph LR
 - 任务 29：现在在 Mellow 里改一个字（制造 dirty），再用外部编辑器改同一文件 →
   应弹出冲突对话框，按 Save / Discard / Cancel 处理。
 
-# 任务 30 · 10 MB 大文件
+# 任务 30 · 大文档（**≈2 MB** 对照）+ >2 MB 非对照观察
 
-不在本文件内。使用确定性生成的基准夹具（**不入库**，需先生成）：
+**对照尺寸 = ≈2 MB**（Typora 可渲染上限内）。该文档不在本目录内，请用确定性生成的基准夹具
+（**不入库**，需先生成）：
 
 ```bash
 cd tests/benchmark && node generate-fixtures.mjs
-# 产出 tests/benchmark/fixtures/10MB.md（10 MiB）
+# 产出 1MB.md / 5MB.md / 10MB.md / 100k-lines.md 等
+# 任务 30 的对照用 1MB.md（≈1 MiB）或 5MB.md 之前的尺寸；**不要用 10MB.md 做对照**
 ```
 
-⚠️ 已知障碍：**Typora 1.14.9 不渲染 > 2,000,000 字符的文档**，任务 30 在 Typora 侧
-无法产生有意义的对照记录。处置待裁决，见 `docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md`
-（Q3a 模板层 / Q3b 宪法层）。**在裁决前不要为该任务编造 Typora 侧数据。**
+## >2 MB：非对照能力观察（**不计时、不做对照**）
+
+⚠️ **Typora 1.14.9 不渲染 > 2,000,000 字符的文档**（一级证据见
+`tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md`），
+故 >2 MB 在 Typora 侧**无法产生有意义的对照记录**。
+
+按 **ADR-0025 Q3a = C1（Accepted 2026-09-30）**：>2 MB（含 10 MB）改为
+**非对照能力观察** —— 只记 Mellow 侧四项动作（打开 / 搜索 / 编辑 / 保存）是否完成，
+Typora 侧记「不适用」+ 原因。**不进 120 条计时记录。**
+
+**禁止**为 Typora 侧编造该尺寸的数据（本门禁明令禁止伪造计时）。
