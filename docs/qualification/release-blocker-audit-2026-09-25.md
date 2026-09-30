@@ -1705,6 +1705,69 @@ diff -rq /tmp/markedit-up/MarkEdit-<COMMIT>/CoreEditor packages/editor-core/Core
 **判据沉淀**：**「单跑绿、整包红」先怀疑时序，但必须给出量化依据**（本例：实测 59 ms vs 预算 60 ms）
 —— 没有量化的「大概是抖动」就是猜。
 
+## 4.38 `document-file-safety-spec` §1–§12 逐节复核 + 抓到「撤销重命名不同步最近文件」（2026-10-01）
+
+方法同 §4.34：**先 `ls` 候选目录/文件，再逐个读用例名与断言本体**，不用关键词命中判定。
+
+| spec 节 | 声明的具体条目 | 守护它的测试 / 证据 | 结论 |
+|---|---|---|---|
+| §1 最高原则 | 用户数据安全优先于一切体验优化 | 由以下各节 + corpus 的硬指标（**data loss = 0 / silent overwrite = 0**）体现 | ✅ |
+| §2 Document Identity | path / file identity / encoding / EOL / mtime / dirty / revision / recovery id | `packages/app-core/src/documentState.ts` 的 `DocumentTab` 八个字段齐备（`documentId` 即 recovery id、`diskState.identityKey` 即 file identity）+ `documentState.test.ts` | ✅ |
+| §3 Source Fidelity | Open→No Edit→Save = **byte identical** | `apps/desktop/src-tauri/tests/file_safety_corpus.rs` 的 `source_fidelity_open_no_edit_save_byte_identical`；CI 的 `cargo test` 步骤（`ci.yml` 名含 file-safety）会跑 | ✅ |
+| §4 Save Pipeline | validate → encode → temp → flush → **fsync** → replace → verify → revision → clear recovery | `src-tauri/src/fs.rs` 的 `atomic_save` 逐条对应，且**多做了**三件：symlink 解析、原权限保留、替换后**读回 verify**；`fs.rs` 单测 15 条 + corpus | ✅ |
+| §5 External Change | clean → 自动重载 + **preserve cursor**；dirty → **never overwrite** + Compare/Reload/KeepLocal | `externalChange.test.ts` 9 例；「preserve cursor」的**机制**由 `CoreEditor/test/core.test.ts` 的 `resetEditor documentChanged=false` 5 例断言（App 的 `handleCleanChange` 传 `false`） | ✅ |
+| §6 Recovery | 与 autosave **分离** / 仅 AppData / 按 document id 键 | `recovery.test.ts` 5 例（含「模拟重启 → listPending → recover → ignore」）；「分离」由代码结构坐实：`scheduleRecoverySnapshot` 位于 `contentEdited` 分支内、**不受 autosave 开关门控**（关掉自动保存不会关掉崩溃恢复） | ✅ |
+| §7 Crash Safety | kill during typing / during temp write / before replace / after replace before commit | corpus 的 `crash_during_save_never_partial_or_loss`（SIGKILL，断言「只可能是完整旧内容或完整新内容」）+ `crash_residue_temp_cleaned_on_next_save` + `fs.rs` 的 `rename_failure_original_intact_temp_cleaned` | ✅ |
+| §8 File Operation | Delete: trash first；Rename/move: watcher aware / update tab path / update recent / image refs **only if explicit rule** | `documentRename.test.ts` 9 例（含「有 assets + **拒绝**同步 → 引用保持有效」「asset 目录重命名失败 → **回滚**文档重命名」「目标已存在 → conflict 零改动」）；watcher 重挂与 recent 同步在 App 层 → 见下方新增护栏 | ✅（+ 本轮补护栏） |
+| §9 Encoding | UTF-8 / UTF-8 BOM / UTF-16 read / 默认 UTF-8 无 BOM / 保存保留原编码 | `fs.rs` 的 `roundtrip_all_encodings` + `detect_eol_and_encoding` | ✅ |
+| §10 EOL | LF / CRLF，默认保留原样 | `fs.rs` 的 `detect_eol_and_encoding` + CoreEditor `lineEndings.test.ts` + `app-core/finalNewline.test.ts` | ✅ |
+| §11 Special Storage | iCloud / OneDrive / Dropbox / SMB / NFS / removable / symlink / read-only / permission denied / disk full | corpus 逐项覆盖：只读目录、权限拒绝（目录 0555）、**disk full 用 `RLIMIT_FSIZE` 让子进程写中途失败（EFBIG，与 ENOSPC 同路径）**、symlink（保存保留 symlink 并更新目标）、云同步（外部替换语义）、网络共享只读、外部 rename / delete、杀毒锁（rename 被拒）。**无挂载点的项用等价语义并写明理由**（不假装测过真挂载点） | ✅ |
+| §12 Release Blockers | silent overwrite / partial save corruption / lost recovery / wrong encoding / wrong EOL / history crossing tabs / rename path mismatch | 依次：corpus 4 例（git checkout / VS Code / 云同步 / rename / delete）· corpus + `fs.rs` · `recovery.test.ts` · `fs.rs` roundtrip · 同上 + `lineEndings.test.ts` · **§4.20** · `documentRename.test.ts` + **本轮新增护栏** | ✅ |
+
+### 本轮抓到的真缺陷：**撤销重命名不同步「最近文件」**
+
+`apps/desktop/src/App.tsx` 的 `undo()` 里，撤销重命名分支此前只做三件事
+（`filePathRef` / `setDocumentPath` / `watchDocument`），**漏了 recent**。
+
+**后果**：`重命名 → 撤销` 之后，`File → 打开最近文件` 仍指向**已不存在的**新路径
+（点击必然失败），且列表里长期残留一条 `missing` 条目。
+
+**为什么这是「同型缺陷的第二次」**：`applyDocumentRename` 里有一段注释记录了**正向**版本 ——
+「此前只有 `applyDocumentMove` 做了这一步，rename 漏了 —— 重命名后 File → 打开最近文件
+仍指向**已不存在的旧路径**，点击必然失败，且列表里长期残留一条 missing 条目」。
+同一个不变量、同一个后果，只是**方向相反**。根因不是「忘了写」，而是
+**同一件事在 4 个地方各内联一份**（`applyDocumentRename` / `applyDocumentMove` /
+`handleTrashDocument` / `undo`）—— 只要有一处没跟上就会复发。
+
+**修复（两件）**：
+1. **提取共享纯函数**（`packages/app-core/src/recentFiles.ts`）：
+   `replaceRecentFilePath(list, from, to)` 与 `removeRecentFilePath(list, path)`；
+   4 处调用点全部改走它们（语义与原先的内联实现**逐字一致**，故对既有 3 处是**行为保持**的重构，
+   本轮唯一的行为变更是补上撤销侧）。新增 6 条单测（含「撤销 = 反向调用同一函数」「幂等」「纯函数不改入参」）。
+2. **扩展既有的最近文件护栏**（`verify-sidebar-contract.mjs` ⑳b 节 —— **不是**新写一条，
+   避免同一不变量两处守）：
+   ① `RECENT_CONTRACT` 补 `undo` 一行（本缺陷的直接防线）；
+   ② 判定前 **`stripComments`**；
+   ③ 新增「不得再出现**内联**的 recent 路径改写」断言（内联多份正是「漏掉一处」的成因）。
+   **非恒绿验证**：A. 把撤销分支的同步整段移除 → exit 1 并报「undo 未同步最近文件」；
+   B. 把某处还原成 `prev.map((e) => (e.path === …))` → exit 1 并报「仍有 1 处内联」；均还原后 exit 0。
+
+> **两次「护栏自己出问题」的记录（都靠 canary 抓到）**：
+> ① **重构打断既有 canary**：⑳b 原有的 canary 靠替换**内联**形态 `prev.map((e) => (e.path === path`
+> 来注入漂移；我把 4 处改成共享纯函数后，该锚点不复存在 → 护栏**响亮失败**
+> （「最近文件 canary 未武装」）而不是静默放过。这正是护栏该有的行为 —— 顺带说明
+> **canary 的注入锚点也是一种契约**：改实现形态时必须同步更新它。
+> ② **注释里的标识符让判定恒真**：我新加的 `undo` 契约首版用 `body.includes('setRecentFiles')`
+> 判定，而 `undo` 分支里**一行解释性注释**恰好写着 `setRecentFiles` → 「同步整段移除」的漂移
+> 仍被判为已同步（canary 未报错）。→ 判定前必须 `stripComments`（本项目已记过的坑，这次是
+> **在我新写的护栏上复发**）。这两条都说明：**护栏必须配 canary，且 canary 必须验证「能翻转」**，
+> 只验证「注入成功」是不够的。
+
+> **为什么这次值得加静态护栏**：§7③ 与 §5 的接线（`handleRecover → host.open`、
+> `handleCleanChange` 传 `false`）我判定为**不加护栏**，因为护栏无法表达「是否走了正确路径」；
+> 而**本条可以**——不变量是「这个分支里必须出现这个调用」，是可机械判定的。
+> **判据：护栏要能真正拦住被测的那类缺陷，否则不加**（不加一个恒真的假护栏）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

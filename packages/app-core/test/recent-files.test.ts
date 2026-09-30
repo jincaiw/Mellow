@@ -1,7 +1,7 @@
 /**
  * Recent Files（Typora 深度对标 ⑫）—— 最近打开列表模型测试。
  */
-import { markRecentMissing, parseRecentFiles, pushRecentFile, serializeRecentFiles, RECENT_FILES_LIMIT } from '../src/recentFiles';
+import { markRecentMissing, parseRecentFiles, pushRecentFile, removeRecentFilePath, replaceRecentFilePath, serializeRecentFiles, RECENT_FILES_LIMIT } from '../src/recentFiles';
 
 describe('pushRecentFile', () => {
   test('追加置顶 + 时间戳', () => {
@@ -41,6 +41,50 @@ describe('markRecentMissing', () => {
     const marked = markRecentMissing(list, (p) => p === '/a.md');
     expect(marked[0]).toEqual({ path: '/a.md', lastOpenedAt: 1, missing: false });
     expect(marked[1]).toEqual({ path: '/b.md', lastOpenedAt: 2, missing: true });
+  });
+});
+
+describe('replaceRecentFilePath（路径变更同步；审计 §4.38）', () => {
+  const list = [
+    { path: '/old/a.md', lastOpenedAt: 2 },
+    { path: '/keep.md', lastOpenedAt: 1 },
+  ];
+
+  test('rename / move：旧路径条目换成新路径，其余不动', () => {
+    const next = replaceRecentFilePath(list, '/old/a.md', '/new/a.md');
+    expect(next.map((e) => e.path)).toEqual(['/new/a.md', '/keep.md']);
+    expect(next[0].lastOpenedAt).toBe(2); // 时间戳保留（顺序不变）
+  });
+
+  test('撤销重命名（反向）：新路径换回旧路径 —— 与正向同一实现', () => {
+    const renamed = replaceRecentFilePath(list, '/old/a.md', '/new/a.md');
+    const undone = replaceRecentFilePath(renamed, '/new/a.md', '/old/a.md');
+    expect(undone.map((e) => e.path)).toEqual(['/old/a.md', '/keep.md']);
+  });
+
+  test('路径不存在于列表 → 原样返回（幂等，不新增条目）', () => {
+    const next = replaceRecentFilePath(list, '/not-there.md', '/x.md');
+    expect(next.map((e) => e.path)).toEqual(['/old/a.md', '/keep.md']);
+  });
+
+  test('纯函数：不改动入参', () => {
+    replaceRecentFilePath(list, '/old/a.md', '/new/a.md');
+    expect(list[0].path).toBe('/old/a.md');
+  });
+});
+
+describe('removeRecentFilePath（删除后移除；审计 §4.38）', () => {
+  test('移除命中条目，保留其余', () => {
+    const list = [
+      { path: '/a.md', lastOpenedAt: 2 },
+      { path: '/b.md', lastOpenedAt: 1 },
+    ];
+    expect(removeRecentFilePath(list, '/a.md').map((e) => e.path)).toEqual(['/b.md']);
+  });
+
+  test('不命中 → 原样返回', () => {
+    const list = [{ path: '/a.md', lastOpenedAt: 1 }];
+    expect(removeRecentFilePath(list, '/zz.md')).toEqual(list);
   });
 });
 

@@ -25,6 +25,30 @@ export function markRecentMissing(list: RecentFileEntry[], exists: (path: string
   return list.map((entry) => ({ ...entry, missing: !exists(entry.path) }));
 }
 
+/**
+ * 文档磁盘路径变更（rename / move / **撤销 rename**）后同步最近文件：把 `from` 条目换成 `to`。
+ *
+ * **为什么提取成纯函数**（2026-10-01 审计 §4.38）：App 层有 **4 处**「文档路径变了 →
+ * recent 必须跟着变」的处理（`applyDocumentRename` / `applyDocumentMove` /
+ * `handleTrashDocument` / `undo` 的撤销重命名分支），此前**各自内联一份** `prev.map(...)`。
+ * 内联多份的代价已经出现过一次：**撤销重命名那一处漏了** —— 于是「重命名 → 撤销」之后，
+ * File → 打开最近文件 仍指向**已不存在的**新路径（点击必然失败），且列表里长期残留
+ * 一条 missing 条目；这与 `applyDocumentRename` 注释里描述的正向缺陷**同型，只是方向相反**。
+ * 提取后，那一处也能被单测覆盖。
+ *
+ * ⚠️ 语义刻意与原先的内联实现**逐字一致**（只改 `path`、**不动** `missing`）——
+ * 这样对既有的 3 处是**行为保持**的重构，本次唯一的**行为变更**是补上撤销侧。
+ * （`missing` 由 `markRecentMissing` 在打开欢迎屏/启动时统一刷新。）
+ */
+export function replaceRecentFilePath(list: RecentFileEntry[], from: string, to: string): RecentFileEntry[] {
+  return list.map((entry) => (entry.path === from ? { ...entry, path: to } : entry));
+}
+
+/** 文件被删除（移到废纸篓）后移除该条目（与 `replaceRecentFilePath` 同族） */
+export function removeRecentFilePath(list: RecentFileEntry[], path: string): RecentFileEntry[] {
+  return list.filter((entry) => entry.path !== path);
+}
+
 /** 解析持久化载荷（损坏/异常输入回退空列表） */
 export function parseRecentFiles(raw: string | null): RecentFileEntry[] {
   if (raw === null) return [];

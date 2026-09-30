@@ -51,6 +51,9 @@ import {
   pushRecentFile,
   parseRecentFiles,
   serializeRecentFiles,
+  // 审计 §4.38：文档路径变更（rename / move / 撤销 / 删除）与 recent 的同步共用同一纯函数
+  replaceRecentFilePath,
+  removeRecentFilePath,
   pushRecentFolder,
   serializeRecentFolders,
   filterFileTree,
@@ -1974,10 +1977,25 @@ export default function App() {
       setStatusText(t('msg.undone', { value: r.value }));
       // 撤销文档重命名后：同步编辑器路径 + watcher（rename 反向）
       if (top?.op.kind === 'rename' && top.op.to === filePathRef.current) {
-        filePathRef.current = top.op.from;
-        host.setDocumentPath(top.op.from);
+        // 先把收窄后的字段取成局部量：`FileOp` 是判别联合，进 `setRecentFiles` 闭包后
+        // TS 不再保留 `kind === 'rename'` 的收窄（tsc 报 TS2339）。
+        const fromPath = top.op.from;
+        const toPath = top.op.to;
+        filePathRef.current = fromPath;
+        host.setDocumentPath(fromPath);
         host.refreshImages();
-        await watchDocument(top.op.from);
+        await watchDocument(fromPath);
+        // 2026-10-01 修复（审计 §4.38）：撤销重命名后**最近文件也必须换回旧路径**。
+        // 正向 rename（applyDocumentRename）做了这一步，撤销侧此前漏了 —— 于是
+        // 「重命名 → 撤销」之后 File → 打开最近文件 仍指向**已不存在的**新路径
+        // （点击必然失败），且列表里长期残留一条 missing 条目；
+        // 与 applyDocumentRename 注释里描述的正向缺陷同型，只是方向相反。
+        // 现与正向共用同一纯函数 `replaceRecentFilePath`（参数反向）。
+        setRecentFiles((prev) => {
+          const next = replaceRecentFilePath(prev, toPath, fromPath);
+          try { localStorage.setItem(RECENT_FILES_KEY, serializeRecentFiles(next) ?? '[]'); } catch { /* noop */ }
+          return next;
+        });
       }
     } else {
       setStatusText(r.error.message);
@@ -2429,7 +2447,7 @@ export default function App() {
     // File → 打开最近文件 仍指向**已不存在的旧路径**，点击必然失败，
     // 且列表里长期残留一条 missing 条目（与 move 的行为不一致）。
     setRecentFiles((prev) => {
-      const next = prev.map((e) => (e.path === path ? { ...e, path: r.value.newPath } : e));
+      const next = replaceRecentFilePath(prev, path, r.value.newPath);
       try { localStorage.setItem(RECENT_FILES_KEY, serializeRecentFiles(next) ?? '[]'); } catch { /* noop */ }
       return next;
     });
@@ -4583,7 +4601,7 @@ export default function App() {
     await watchDocument(newPath);
     // 最近文件：旧路径条目替换为新路径（避免残留 missing 条目）
     setRecentFiles((prev) => {
-      const next = prev.map((e) => (e.path === path ? { ...e, path: newPath } : e));
+      const next = replaceRecentFilePath(prev, path, newPath);
       try { localStorage.setItem(RECENT_FILES_KEY, serializeRecentFiles(next) ?? '[]'); } catch { /* noop */ }
       return next;
     });
@@ -4630,7 +4648,7 @@ export default function App() {
     // 否则 File → 打开最近文件 长期残留一条指向已删文件的条目，点击必然失败
     // （与 applyDocumentMove 的「替换旧路径」同属保持 recent 与磁盘一致的处理）。
     setRecentFiles((prev) => {
-      const next = prev.filter((e) => e.path !== path);
+      const next = removeRecentFilePath(prev, path);
       try { localStorage.setItem(RECENT_FILES_KEY, serializeRecentFiles(next) ?? '[]'); } catch { /* noop */ }
       return next;
     });

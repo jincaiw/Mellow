@@ -566,12 +566,18 @@ const bodyOfUseCallback = (name, src = appSource) => {
   return nextIdx === -1 ? rest : rest.slice(0, nextIdx);
 };
 
-// ── ⑳b 最近文件必须与磁盘保持一致（改路径 / 删文件 / 新增路径都要同步）──────
+// ── ⑳b 最近文件必须与磁盘保持一致（改路径 / 删文件 / 新增路径 / **撤销**都要同步）──
 //
 // 2026-09-13 修复的同类缺陷：只有 applyDocumentMove 维护了 recent，
 // rename 漏了（残留旧路径）、trash 漏了（残留已删文件）、save/saveAs 漏了
 // （新路径不记录）—— 后果是 File → 打开最近文件 里出现点不开的条目，
 // 或刚保存的文件不出现。此处把「四个改动路径的操作都要同步 recent」固化为契约。
+//
+// 2026-10-01（审计 §4.38）补第二处同型缺陷：**undo 的撤销重命名分支**也改文档路径，
+// 但只同步了 filePathRef / setDocumentPath / watchDocument，**漏了 recent** ——
+// 「重命名 → 撤销」之后 File → 打开最近文件 仍指向**已不存在的**新路径。
+// 根因是同一件事在 5 处各写一遍 → 现提取为 app-core 的纯函数
+//（replaceRecentFilePath / removeRecentFilePath）并加「不得再内联」的断言。
 {
   const RECENT = ['RECENT_FILES_KEY', 'setRecentFiles', 'recordRecentFile'];
   const RECENT_CONTRACT = [
@@ -580,18 +586,40 @@ const bodyOfUseCallback = (name, src = appSource) => {
     ['handleTrashDocument', '删除后最近文件残留已删文件条目'],
     ['handleSave', '首次保存/保存后新路径未记入最近文件'],
     ['handleSaveAs', '另存为的新路径未记入最近文件'],
+    ['undo', '撤销重命名后最近文件仍指向已不存在的新路径（点击必然失败 + 残留 missing 条目）'],
   ];
+  // ⚠️ 判定前**必须剥注释**：解释性注释会合法提到 `setRecentFiles` 等标识符，
+  // 只查标识符会让「调用被删掉」漏检（2026-10-01 canary 当场抓到：undo 分支的
+  // 一行注释里写着 `setRecentFiles`，于是「同步整段移除」的漂移仍被判定为已同步）。
+  const syncsRecent = (src, fn) => {
+    const body = stripComments(bodyOfUseCallback(fn, src));
+    return body !== '' && RECENT.some((token) => body.includes(token));
+  };
   for (const [fn, why] of RECENT_CONTRACT) {
-    const body = bodyOfUseCallback(fn);
-    if (body === '') { fail(`${fn} 不存在（最近文件契约无法校验）`); continue; }
-    if (!RECENT.some((token) => body.includes(token))) {
+    if (bodyOfUseCallback(fn) === '') { fail(`${fn} 不存在（最近文件契约无法校验）`); continue; }
+    if (!syncsRecent(appSource, fn)) {
       fail(`${fn} 未同步最近文件 —— ${why}`);
     }
   }
-  // canary：抽掉 applyDocumentRename 的 recent 处理必须被检出
-  const recentDrift = appSource.replace(/setRecentFiles\(\(prev\) => \{\s*\n\s*const next = prev\.map\(\(e\) => \(e\.path === path/g, 'setRecentFiles((prev) => { const next = prev.map((e) => (e.path === "__none__"');
+  // canary：抹掉三个同步 token → 契约必须转为失败（证明判定不是恒真）
+  const recentDrift = appSource
+    .replace(/setRecentFiles/g, 'xRenamed')
+    .replace(/RECENT_FILES_KEY/g, 'xRenamed')
+    .replace(/recordRecentFile/g, 'xRenamed');
   if (recentDrift === appSource) {
-    fail('最近文件 canary 未武装：无法注入 rename 的 recent 漂移');
+    fail('最近文件 canary 未武装：无法注入 recent 同步漂移');
+  } else {
+    const stillPassing = RECENT_CONTRACT.filter(([fn]) => syncsRecent(recentDrift, fn));
+    if (stillPassing.length > 0) {
+      fail(`最近文件 canary 失效：抹掉同步 token 后仍有 ${stillPassing.length} 个函数被判定为已同步`);
+    }
+  }
+  // 单一实现：不得再出现**内联**的 recent 路径改写（内联多份正是「漏掉一处」的成因）。
+  // 判定前先剥注释 —— 解释性注释里会合法提到这些形态。
+  const inlineRewrites = [...stripComments(appSource).matchAll(/prev\.(?:map|filter)\(\s*\(?e\)?\s*=>\s*\(?e\.path/g)];
+  if (inlineRewrites.length > 0) {
+    fail(`App 层仍有 ${inlineRewrites.length} 处**内联**的最近文件路径改写 —— 必须走 app-core 的`
+      + ' replaceRecentFilePath / removeRecentFilePath（内联多份正是「撤销侧漏掉」的成因）');
   }
 }
 
