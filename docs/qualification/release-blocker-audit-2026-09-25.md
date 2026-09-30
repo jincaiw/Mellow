@@ -991,6 +991,46 @@ CM6 的 history 存在 **EditorState** 里，状态全新即历史全新 →
 > 本例中测试名逐字写着「由 resetEditor 保证历史隔离」，而断言里连 `undo` 都没出现。
 > 这与 §4.18 的「关键词命中 ≠ 有断言在守」是同一条：**名字/关键词只能定位候选**。
 
+## 4.21 方案自己的「未完成」表**已过期**，且过期方向是**高估剩余工作**（2026-09-30）
+
+**背景**：按「检查所有工作任务」的口径，方案 §15.3 是权威的**剩余工作清单**
+（12 项 + 1 项，全部标「需先裁决 / 环境阻塞」）。它是 **2026-09-13** 的快照，
+此后方案自身仍有 09-14 ~ 09-22 的多轮实装 —— **表未同步**。
+
+**核实方法**：不采信表自述，逐项**回到代码**查（`grep` 设置 id / command id / i18n key）。
+
+**结果（两行，共 9 个子项中 6 个已实装）**：
+
+| §15.3 行 | 表中说法 | 代码核实结果 |
+|---|---|---|
+| **10** `Insert Final New Line On Save` | 无实现 | ✅ **已实装** `files.finalNewline`（`packages/settings/src/index.ts:209`，默认 false 对齐 Typora `preferFinalNewline:false`）+ `packages/app-core/src/finalNewline.ts` + 护栏 `verify-settings-contract.mjs` ⑨ |
+| **10** `Preserve single line break` | 无实现 | ✅ **已实装**（三段齐备：编辑器软换行 G7-EDIT-07 / 导出 `settings.export.preserveLineBreaks` 由 `packages/export/src/index.ts` 消费 / Reader 段内软换行 `packages/app-core/test/reader.test.ts`） |
+| **10** `Allow Magnification`（双指缩放） | 无实现 | ❌ **仍未实现**（全仓无 pinch/magnification；只有 `editor.cmdWheelZoom`，语义不同） |
+| **11** `Open Image in Browser` | 无命令/入口 | ✅ **已实装** `edit.openImageInBrowser`（`App.tsx:5137` + 图片右键入口 `App.tsx:4118` + 护栏 `verify-shell-widgets.mjs`） |
+| **11** `Refresh All Math Expressions` | 无命令/入口 | ✅ **已实装** engine `refreshMath()`（`contextMenu.ts:669`） |
+| **11** `Task Status` | 无命令/入口 | ✅ **已实装** engine `setTaskStatus()`（`contextMenu.ts:783`） |
+| **11** `Block/Inline/List Styles` | 无命令/入口 | ✅ **已实装** i18n `contextmenu.textBlockStyles` / `textInlineStyles` / `textListStyles`（zh + en，`messages.ts:192-194` / `1074-1076`） |
+| **11** `Learn More` / `Image Tools` | 无命令/入口 | ❌ **仍未实现**（全仓仅出现在 Typora dump 夹具与本文档中） |
+
+**为什么这条值得记**：我们一直在防「把**没做**的说成**做了**」（§4.13 / §4.18 / §4.19 / §4.20）。
+本条是**反向**的：把**做了**的说成**没做**。两种都会造成实际损失 ——
+反向的那种会让下一轮**重复劳动**（去实现已经存在的东西），
+或让「剩余工作」的评估系统性偏悲观，进而影响是否值得继续投入的判断。
+
+**处置（2026-09-30）**：
+1. §15.3 第 10 / 11 行按代码核实**逐项更正**（标明哪些已实装、证据在哪、仅剩什么）；
+   并把「仍需裁决」收窄到**真实剩余的两项**（`Allow Magnification` / `Learn More`+`Image Tools`）。
+2. §3.8b 的 Typora 偏好对照表同样过期两处，一并更正：
+   `preLinebreakOnExport` 原写「Mellow 无对应设置项」→ 已实装；
+   `enable_inline_math` 补注「无**设置项**但**行为已判为 matches-default**（偏好矩阵）」——
+   防止把「无设置项」误读成「有缺口」。
+3. §15.1 的「未完成 **9 类**」：§15.3 实为 **13 行**（编号 1–12 + 14），**「类」的归组口径从未写明**
+   → 如实标注为「**无法从制品派生，不得引用**」，行数以 §15.3 表为准（不擅自改成 13，
+   因为原作者的「类」可能确有归组意图，只是没写下来）。
+
+**⚠️ 不过度声称**：本节只更正**已由代码证实**的条目。§15.3 其余 11 行**未逐项复核**
+（它们多为真机/人工/裁决阻塞，代码核实不适用或代价高）——**不读成「剩余工作只剩两项」**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
