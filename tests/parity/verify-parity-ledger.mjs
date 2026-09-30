@@ -320,7 +320,7 @@ if (existsSync(benchmarkRunnerPath)) {
   {
     const ASSERTED = 'PRD 目标（1MB ≤250ms / 10MB ≤1.0–1.5s）为「热打开」口径';
     if (benchCode.includes(ASSERTED)) {
-      errors.push('报告仍在把「热打开」口径断言为 PRD 的陈述（应改为推断 + 依据 + 待裁决）');
+      errors.push('报告仍在把「热打开」口径断言为 PRD 的陈述（应改为「未在 PRD 中规定口径」+ 推断依据 + 指向 ADR-0026 的裁决）');
     }
   }
   // canary：自检上述反例锁

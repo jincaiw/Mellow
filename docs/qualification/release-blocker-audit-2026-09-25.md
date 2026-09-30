@@ -70,13 +70,17 @@ Release verdict: NO-GO：6 项未闭环
 > **2026-09-29 更新：已收敛为 ADR，待裁决。**
 > 本节的两项（`AUTO` 是否阻断、`ux-gate` 是否逐项前置）连同 §3.2 的 PRD-现实冲突，
 > 已按 AGENTS.md「决策变更以新增 ADR 记录」起草为：
-> - `docs/adr/ADR-0024-release-closure-semantics.md`（状态 **Proposed**）
-> - `docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md`（状态 **Proposed**）
+> - `docs/adr/ADR-0024-release-closure-semantics.md`
+> - `docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md`
 >
 > 两份 ADR 各含背景（含实跑数字与一级证据）、待决问题、选项与后果、以及供参考的建议。
-> 门禁输出已新增 `Pending decisions:` 行指向它们；护栏锁定「待裁决 ADR 必须存在且状态为
-> Proposed」（注入验证：改成 Accepted → 门禁抛错）。
-> **在状态变为 Accepted 之前，现有实现保持不动。**
+
+> **2026-09-30 更新：三份 ADR 均已裁决为 Accepted（含 ADR-0026），护栏断言已反转。**
+> 用户在 2026-09-30 授权「全部自行评估、决策、实施」；裁决内容与理由见各 ADR 的「裁决」节
+> （其中 ADR-0024 Q2 **偏离**起草建议 B2 → 取 B1，理由见该节）。
+> 门禁输出：`Pending decisions:` 改为「无 —— 已于 2026-09-30 裁决」；
+> 护栏断言由「**待裁决 ADR 必须存在且状态为 Proposed**」反转为
+> 「**已裁决 ADR 不得删除、不得退回 Proposed**」（注入验证方向随之反转）。
 
 ### 3.1 原「P0-PERF-001 的 5 项口径」中，两项已由 PRD 判定（无需裁决）
 
@@ -628,6 +632,23 @@ editor-core **不能**反向 import 引擎（成环）。故内联是**必要的
 （避免重演 §5.7「AUTO 把不可用功能当闭环」），而是显式保持未闭环，
 `blockedBy` 由 `host-api-extension` 改为 **`runtime-verification-pending`**。
 台账状态 `BLOCKED` → `IMPL`（`BLOCKED` 计数 2 → 1），未闭环总数仍 10。
+
+## 4.13 复核（负结果）：44 项 `requiredEvidence` 不含 `ux-gate` **不是缺陷**（2026-09-30）
+
+**现象**：`verify-parity-ledger.mjs` 断言「标记 `PASS-E` 前，`requiredEvidence` 必须含三平台证据 + `ux-gate`」；
+而实测 **50 项里只有 6 项含 `ux-gate`**，另 44 项不含 —— 直觉上像「44 项结构上永远无法闭环」。
+
+**复核结论：不是缺陷，是设计。** 该断言的作用是「**声明了才能声称**」——
+`requiredEvidence` 列的是**该项当前被要求**的证据，而不是「要成为 PASS-E 所需的全部」。
+任何一项在**声称 PASS-E 的那一刻**都必须先补齐 `ux-gate` 声明，断言在此把关。
+即：44 项不是「无法闭环」，而是「尚未声明那一项要求」——声明与声称同时发生才可核对。
+
+**顺带明确**：因此**不**给这 44 项补 `ux-gate`。补了会让门禁变成
+「约 54 项未闭环」，等价于 ADR-0024 的 A2 选项 —— 而 A2 已被裁决否决
+（理由：门禁失去 pre-release 通道的区分度）。当前 A3 + `Closure basis` 里的
+`实际 PASS-E = 0/50` 已把「真相」显式报出，无需靠堆高未闭环数来表达。
+
+> 记录本条的目的：**避免下一轮把同一现象重新当作缺陷**（「负结果也是结论」）。
 
 ## 五、本次审计做的改动（非策略性）
 
