@@ -1808,6 +1808,14 @@ diff -rq /tmp/markedit-up/MarkEdit-<COMMIT>/CoreEditor packages/editor-core/Core
 > 不得再硬编码表格字面量；② `askForm` 必须复用 `askUser`（不得自己 `setAskDialog`）。
 > **非恒绿验证**：把 `insert.table` 改回硬编码 → exit 1 报「未走创建对话框」；
 > 把 `askForm` 里的 `askUser({` 换名 → exit 1 报「未复用同一状态机」；均还原后 exit 0。
+>
+> ⚠️ **覆盖边界（如实声明，不得读作「已验证」）**：
+> 1. **运行时未验证** —— 本环境无 e2e 通道（`tests/e2e/*.mjs` 需 Playwright + 起 dev server，
+>    且 **e2e 不进 CI**）。因此「对话框真的弹出、两个输入框真的可用、确定后真的插入正确表格」
+>    这一层**没有实测证据**，只有：纯函数单测（生成逻辑）+ 静态护栏（接线与状态机复用）。
+>    既有的 `tests/e2e/in-app-input-dialog-verify.mjs` + `tests/shared/in-app-dialog.mjs`
+>    已是「应用内输入框」的共享驱动 —— 扩展它覆盖 `askForm`（两个字段）是明确的下一步。
+> 2. **上限 30 列 / 100 行是 Mellow 自定**（非一手值，见上）。
 
 ### 发现 2（规格失真，已更正）：§3 的「optional alignment」
 
