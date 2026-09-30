@@ -146,7 +146,7 @@ cd src-tauri && cargo check
 > `../settings/node_modules/.bin/jest --rootDir .` 执行。全仓 `pnpm -r run test` 曾挂起
 > （9.5 小时无输出），改用**按包定向调用 `node_modules/.bin/jest`** 即可稳定跑完。
 
-Parity 契约护栏 **17 个**（2026-10-01 全 PASS）：parity-ledger / menu-contract / menu-contract-guard / shell-typography / shell-widgets / settings-contract / **i18n-contract** / visual-golden / sidebar-contract / context-menu-parity / context-menu-guard / adapter-contract / runtime-qualification-workflow / build-pipeline（V7-W5 新增）/ **doc-code-refs** / **no-color-only-status** / **release-gate（V7-W8 新增）**，外加 `tests/qualification/ux-gate-recorder.mjs --self-test`。
+Parity 契约护栏 **18 个**（2026-10-01 全 PASS）：parity-ledger / menu-contract / menu-contract-guard / shell-typography / shell-widgets / settings-contract / **i18n-contract** / visual-golden / sidebar-contract / context-menu-parity / context-menu-guard / adapter-contract / runtime-qualification-workflow / build-pipeline（V7-W5 新增）/ **upstream-manifest**（2026-10-01 新增，离线校验 `UPSTREAM.md` 的 CoreEditor 改动清单）/ **doc-code-refs** / **no-color-only-status** / **release-gate（V7-W8 新增）**，外加 `tests/qualification/ux-gate-recorder.mjs --self-test`。
 
 > **数量与清单由护栏锁定**：`tests/parity/verify-release-gate.mjs` 会列出 `tests/parity/` 下全部
 > `verify-*.mjs` 并要求它们**同时**接入根 `test` 与 `parity` 两条链；同文件另有一条断言要求

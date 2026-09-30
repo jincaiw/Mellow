@@ -72,7 +72,26 @@ cp -R /tmp/MarkEdit-src/CoreEditor ./CoreEditor
 
 ## 生成 / 校验清单
 
-改动清单不靠人工维护，靠下面这条命令**现算**（与钉住 commit 的官方源码比对）：
+### ① 离线校验（**每次 `npm run parity` 自动跑**，2026-10-01 起）
+
+上面两张表由 `tests/parity/verify-upstream-manifest.mjs` **离线**校验（不进 CI 之外的东西、不联网）：
+
+- 真值源：`upstream-manifest.json` —— 钉住 commit 的上游 CoreEditor 树哈希（`sha256` 前 16 位，199 个文件）；
+- 判据：对仓库内每个文件 —— 哈希一致 ⇒ **不得**出现在「修改的文件」表；哈希不同 ⇒ **必须**出现；
+  清单里没有 ⇒ **必须**出现在「新增的文件」表。另校验两张表的**声明条数**与**实际行数**与**推导结果**三者一致；
+- 清单本身与本文的 `Commit:` 行必须描述**同一个上游快照**（不一致即报错）。
+
+重新生成清单（改了 `CoreEditor/` 或 re-vendor 之后）：
+
+```sh
+node tools/gen-upstream-manifest.mjs                      # 按本文 Commit: 行联网取上游
+node tools/gen-upstream-manifest.mjs --tarball /tmp/markedit.tar.gz   # 离线（用已下载的 tarball）
+```
+
+> ⚠️ **生成器不会替你更新表格**：它只刷新哈希清单。哈希变了 = 事实变了，**必须手工核对并更新上面两张表**
+> （否则护栏会报「事实是但文档里没有」）。这正是设计意图 —— 让「改了 vendored 文件却没登记」**必然变红**。
+
+### ② 人工现算（需要逐文件 diff 细节时）
 
 ```sh
 # 1) 取钉住 commit 的上游源码
@@ -85,5 +104,5 @@ diff -rq "$UP" packages/editor-core/CoreEditor \
   --exclude=node_modules --exclude=dist --exclude=.yarn --exclude=yarn.lock --exclude='*.tsbuildinfo'
 ```
 
-**re-vendor 后必须重跑此命令**：若输出与上表不一致，说明清单已过期（或重放不完整），
-**先补齐再提交** —— 静默丢掉 Mellow 改动不会让任何测试变红。
+**re-vendor 后必须**：先重跑上面的 `diff -rq` 确认改动面，再重跑生成器刷新清单，最后按实际改动更新两张表 ——
+**静默丢掉 Mellow 改动不会让任何测试变红**，所以这条链是唯一的防线。

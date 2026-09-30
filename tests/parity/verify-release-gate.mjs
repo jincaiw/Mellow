@@ -30,8 +30,8 @@ const guardFiles = readdirSync(parityDir)
 const pkg = JSON.parse(read('package.json'));
 const testChain = pkg.scripts?.test ?? '';
 const parityChain = pkg.scripts?.parity ?? '';
-if (guardFiles.length < 17) {
-  fail(`parity 护栏数量异常（${guardFiles.length}），2026-10-01 基线为 17`);
+if (guardFiles.length < 18) {
+  fail(`parity 护栏数量异常（${guardFiles.length}），2026-10-01 基线为 18`);
 }
 const missingInTest = guardFiles.filter((name) => !testChain.includes(name));
 const missingInParity = guardFiles.filter((name) => !parityChain.includes(name));
