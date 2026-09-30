@@ -314,6 +314,35 @@ if (existsSync(benchmarkRunnerPath)) {
   assert(/ADR-0026/.test(benchCode),
     '报告必须指向承载口径裁决的 ADR-0026（推断不能自己当结论）');
 
+  // ── 报告必须有「环境头」，且不得被静默裁掉（spec §8，2026-09-30）─────────
+  // spec §8 要求环境头含：机器规格 / macOS 版本 / Mellow commit + 脏树 /
+  // Typora 实际版本 / 构建类型 / 权限状态。实测**这些都已实现**，
+  // 但**没有任何断言在守** —— 头部被裁掉不会有任何信号，
+  // 而「同机型对照」的结论正依赖这些字段（缺了就无法判断两次读数是否可比）。
+  // 断言跑在 stripComments 之后的代码上，故必须落在**字符串字面量**里（只写注释不算）。
+  {
+    const headerFields = [
+      [/机器：/, '机器规格 + macOS 版本'],
+      [/Mellow commit：/, 'Mellow commit + 脏树'],
+      [/Mellow 构建：/, '构建类型'],
+      [/Typora 版本：/, 'Typora 实际版本'],
+      [/权限：/, '权限状态'],
+    ];
+    for (const [pat, label] of headerFields) {
+      assert(pat.test(benchCode),
+        `报告环境头缺少「${label}」（spec §8 要求；缺了无法判断两次读数是否可比）`);
+    }
+    // canary：自检这几条锁（样本拼接构造，避免护栏检出自己）
+    const SAMPLE_HEADER = '机器：' + 'Mellow commit：' + 'Mellow 构建：' + 'Typora 版本：' + '权限：';
+    if (!headerFields.every(([pat]) => pat.test(SAMPLE_HEADER))) {
+      errors.push('环境头锁 canary 失效：完整样本未被全部识别');
+    }
+    const SAMPLE_MISSING = '机器：' + 'Mellow commit：' + 'Mellow 构建：' + 'Typora 版本：';
+    if (headerFields.every(([pat]) => pat.test(SAMPLE_MISSING))) {
+      errors.push('环境头锁 canary 失效：缺「权限：」的样本竟被判为完整');
+    }
+  }
+
   // ── ADR-0026 的映射表必须覆盖 PRD §110 的**全部**目标（2026-09-30）─────────
   // PRD §110 有五个绝对目标：Startup ≤1.2s / 1MB ≤250ms / 10MB 1.0–1.5s /
   // Input <16ms / Input Large <32ms。ADR-0026 Q4=C1 已把「目标 ↔ 指标映射」
