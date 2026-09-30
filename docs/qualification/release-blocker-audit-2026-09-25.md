@@ -2392,6 +2392,53 @@ fn suggest_returns_guesses_for_misspelling() {
 **规则**：对**编译型**目标做变异验证时，还原**不要用 `cp -p`**（用 `cp` 让 mtime 前进，
 或显式 `touch` / 强制重建）。对解释型目标（Node 脚本运行时读文件）无此问题。
 
+### 发现 5：把这一形态**推广成一次全仓扫描**（1591 个用例 → 5 个候选 → 2 个真问题）
+
+既然「测试名声称 X、断言本体不检查任何东西」能存活很久，就值得扫一遍全仓：
+
+| 步骤 | 结果 |
+|---|---|
+| 扫描面 | 212 个测试相关文件，识别 **1591 个用例**（JS/TS 的 `it/test` + Rust 的 `#[test]`） |
+| 无断言候选 | **5 个** |
+
+**逐条读断言本体后定性**（关键词只用于**定位候选**，不用于下结论）：
+
+| 候选 | 定性 | 依据 |
+|---|---|---|
+| `fs.rs::roundtrip_all_encodings` | **误报** | 委托给 `roundtrip()` helper，helper 内有 `assert_eq!(saved, original)` |
+| `pandoc.rs::pandoc_availability_detection` | **真问题** | 函数体只有 `let _ = pandoc_available();`；注释声称「存在性由真实 CI 验证」**不成立**（见下） |
+| `jumplist.rs::add_recent_smoke` | **可接受** | 命名即 `_smoke`，注释显式写明「真实聚合与任务栏展示由 CI Windows runner / 真机验证（P7 真机项）」——边界是**声明过**的 |
+| `image-widget.test.ts::reveal：…` | **真问题（更糟）** | 见下 |
+| `print-style.test.ts::canary：…` | **误报** | 我扫描器的**花括号计数被正则字面量干扰**（`\{` / `[^}]*` / `\}` 净计一个 `}`）→ 提前截断，`expect` 其实在 |
+
+**`pandoc.rs` 的那条**：注释写「存在性由真实 CI 验证」，但核实后 ——
+`runtime-qualification.yml` 的 Linux runner 确实 `apt install pandoc`，**然而那个 job 只跑定向的
+`file_safety_corpus` 用例、不跑 lib 单测**；`ci.yml` 的 rust-check（ubuntu）**根本不装 pandoc**。
+故「装了 pandoc 必须返回可用」**没有任何机器在守**（后果形态：`pandoc_available()` 被改成常量
+→ 导出功能**假死**，全部测试仍绿）。已改为「与独立探针一致」的断言（环境无关），
+并在注释里**如实声明残留边界**（仍未断言「装了 pandoc 的环境必须为 true」）。
+
+**`image-widget.test.ts` 的那条更糟**：测试名声称「调宿主 `revealFile`」，而函数体只有
+`revealBtn?.click(); await sleep(); // 断言不崩` —— **零断言**；
+且 `?.` 会把「定位按钮根本没渲染」**静默吞掉**。实测 DEBUG 显示该用例连 widget 都没渲染
+（`wrappers = 0`，DOM 里是裸源码 `![alt](missing.png)`）—— 因为**光标停在该行时按 Typora 语义显示源码**，
+而原用例漏了 `moveCaret(view, doc.length)`。即：**它连「按钮存在」这个前提都没建立**。
+修法：补 `moveCaret` + ① 自证按钮存在 ② 断言宿主真的收到 `revealFile('missing.png')`；
+并把 mock 里**只写不读**的 `revealed` 数组改为 `onReveal` 回调（**录制了却没人读 = 断言无从写起**）。
+
+### 发现 6：类别级护栏 + **canary 自己写窄了**
+
+按「修一处必须加**类别级**护栏」的纪律，新增「整个 Rust crate 不得出现『函数体只有
+`let _ = f(...);`』的恒真空壳」的检查（含扫描面下限 = 当前基线 74，防解析失效）。
+
+**canary 首版失败，但问题在 canary 而非护栏**：我的变异只替换了 `assert_eq!(...)` 块，
+**却留下 `let probe = …` 那一行** → 函数体不是「纯空壳」→ 护栏**正确地**没报错，
+而 canary 却判「护栏失效」。修法：替换**整个函数体**，并加一条自检
+——「变异后函数体必须真的是目标形态，否则 canary 无效」。
+
+> **通则**：**canary 没翻转时，先怀疑 canary 本身**。变异必须真的产生目标形态；
+> 加一句自检（`变异后形态 == 预期形态`）比事后排查便宜得多。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

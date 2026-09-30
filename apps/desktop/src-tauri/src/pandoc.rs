@@ -147,10 +147,32 @@ mod tests {
         let _ = fs::remove_file(&output);
     }
 
+    /// ⚠️ 本测试此前是**恒真空壳**（2026-10-01 修复）：函数体只有 `let _ = pandoc_available();`
+    /// —— 「不 panic 即通过」，**断言本体不检查任何东西**；而注释还声称
+    /// 「存在性由真实 CI 验证」——**该说法不成立**：`runtime-qualification.yml` 的 Linux runner
+    /// 确实 `apt install pandoc`，但那个 job 只跑**定向**的 `file_safety_corpus` 用例、**不跑 lib 单测**；
+    /// `ci.yml` 的 rust-check（ubuntu）根本不装 pandoc。
+    /// 故「装了 pandoc 必须返回可用」**没有任何机器在守**（核实于 2026-10-01）。
+    /// 后果形态：`pandoc_available()` 若被改成常量，导出功能会**假死**（装了 pandoc 却显示不可用），
+    /// 而全部测试仍绿 —— 这正是本项目「占位项可点击且点击无反应」母题的同型。
+    ///
+    /// 修法：断言**与独立探针一致** —— 环境无关（两边都反映同一台机器），
+    /// 但能抓住「实现被改成常量 / 写错机制」这一类。
+    /// **残留边界（如实声明）**：仍未断言「装了 pandoc 的环境里必须为 true」——
+    /// 那需要把本测试接进装了 pandoc 的 job（当前 `runtime-qualification` 只跑定向用例）。
     #[test]
     fn pandoc_availability_detection() {
-        // 无论是否安装都不崩溃；存在性由真实 CI 验证
-        let _ = pandoc_available();
+        // 独立探针（与实现同机制，但**独立写一遍**）
+        let probe = std::process::Command::new("pandoc")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        assert_eq!(
+            pandoc_available(),
+            probe,
+            "pandoc_available() 必须与独立探针一致（环境无 pandoc 时两者都应为 false）"
+        );
     }
 
     #[test]

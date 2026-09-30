@@ -1546,6 +1546,80 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
   if (triggersLargeMode(5242880, 5242880)) errors.push('夹具尺寸锁 canary 失效：压线样本被误判为「触发」');
 }
 
+// ── Rust 单测「空壳」检查的共用工具（2026-10-01）──────────────────────────────
+// ⚠️ **必须先剥注释再断言**（skill §4）—— 实测自伤：文件里那条「解释空壳形态」的
+// doc comment 原样引用了被禁止的写法，于是反例锁**首跑即误报**。
+// 这是本会话第三次踩「护栏匹配到散文」（前两次：shell 注释里的 `${TMPDIR}`、
+// 台账文本里被 shell 展开的反引号）。
+// 限制（如实声明）：剥离器不区分字符串/正则里的 `//`；被扫文件目前不含这类字面量。
+const stripRustComments = (s) => s
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+// 抽取 `#[test] fn name() { … }` 的函数体 —— 用**花括号计数**而不是固定缩进的收尾锚点。
+// 为什么：首版写成 `…\{([\s\S]*?)\n        \}`（锚死 8 空格），而新增的 `mod platform_contract`
+// 在 4 空格缩进下 → **漏解析**。元护栏当场报出「源码有 9 处、只解析出 7 个」——
+// 这正是元护栏存在的意义（skill 铁律 3）。
+// 限制：花括号计数不区分字符串里的 `{`；Rust 格式占位符（如 `{guesses:?}`）成对出现故净零。
+const extractRustTests = (src) => {
+  const out = [];
+  const re = /#\[test\]\s*\n\s*fn\s+(\w+)\s*\(\)\s*\{/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const start = m.index + m[0].length;
+    let depth = 1;
+    let i = start;
+    while (i < src.length && depth > 0) {
+      if (src[i] === '{') depth += 1;
+      else if (src[i] === '}') depth -= 1;
+      i += 1;
+    }
+    out.push({ name: m[1], body: src.slice(start, i - 1) });
+  }
+  return out;
+};
+
+const walkRustFiles = (dir) => readdirSync(resolve(root, dir), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? walkRustFiles(`${dir}/${e.name}`) : e.name.endsWith('.rs') ? [`${dir}/${e.name}`] : []);
+
+// ── 类别级：整个 Rust crate 不得出现「函数体只有 `let _ = f(...);`」的恒真空壳（2026-10-01）──
+// 立此条的原因：这一形态在 `spellcheck.rs`（`let _ = suggest("recieve");`）与
+// `pandoc.rs`（`let _ = pandoc_available();`）**各出现一次** —— 而台账/文档都会写
+// 「Rust 侧有测试」并且**这句话为真**，于是没有人再去核对「那条测试到底验了什么」。
+// 按「修一处必须加类别级护栏」的纪律，这里锁**整个 crate**，而不只是出问题的那两个文件。
+{
+  const shells = [];
+  let scanned = 0;
+  for (const f of walkRustFiles('apps/desktop/src-tauri/src')) {
+    const src = stripRustComments(readFileSync(resolve(root, f), 'utf8').replace(/\r\n/g, '\n'));
+    for (const t of extractRustTests(src)) {
+      scanned += 1;
+      // 只匹配「整个函数体就是一次把结果丢掉的调用」这一**精确**形态（避免误报委托 helper 的测试）
+      if (/^let _ = \w+\([^;]*\);$/.test(t.body.replace(/\s+/g, ' ').trim())) {
+        shells.push(`${f.replace('apps/desktop/src-tauri/src/', '')}::${t.name}`);
+      }
+    }
+  }
+  // 覆盖型下限**等于当前基线**（skill：下限比基线小就会留下「悄悄消失」的空位）。
+  // 2026-10-01 实测基线：`apps/desktop/src-tauri/src` 下 74 个 #[test]。
+  assert(scanned >= 74, `Rust 单测扫描面异常（只扫到 ${scanned} 个用例，基线 74）—— 解析可能失效，护栏需同步`);
+  assert(shells.length === 0,
+    `Rust 单测出现「函数体只有 let _ = f(...)」的恒真空壳（不 panic 即通过，断言本体不检查任何东西）：`
+    + `${shells.join(', ')} —— 请改为真断言（先自证「读到了东西」+ 断言用户可见不变量）`);
+  // canary：用同一套判定跑合成样本，两个方向都要正确
+  const SHELL = '#[test]\n        fn x() {\n            let _ = f(1);\n        }';
+  const REAL = '#[test]\n        fn y() {\n            let _ = f(1);\n            assert!(true);\n        }';
+  const isShell = (body) => /^let _ = \w+\([^;]*\);$/.test(body.replace(/\s+/g, ' ').trim());
+  const s1 = extractRustTests(SHELL);
+  const s2 = extractRustTests(REAL);
+  if (s1.length !== 1 || !isShell(s1[0].body)) {
+    errors.push('Rust 空壳测试护栏 canary 失效：空壳样本未被判为恒真空壳');
+  }
+  if (s2.length !== 1 || isShell(s2[0].body)) {
+    errors.push('Rust 空壳测试护栏 canary 失效：带断言的真测试被误判为空壳');
+  }
+}
+
 // ── P0-EDITOR-005：拼写建议的测试**不得是空壳**（2026-10-01）──────────────────
 // 立此条的原因：`spellcheck.rs` 里那条 `suggest_returns_guesses_for_misspelling`
 // **长期是恒真空壳** —— 函数体只有 `let _ = suggest("recieve");`（「不 panic 即通过」），
@@ -1556,44 +1630,12 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
 {
   const spellPath = 'apps/desktop/src-tauri/src/spellcheck.rs';
   if (existsSync(resolve(root, spellPath))) {
-    const spellRaw = readFileSync(resolve(root, spellPath), 'utf8').replace(/\r\n/g, '\n');
-    // ⚠️ **必须先剥注释再断言**（skill §4）—— 实测自伤：本文件里那条「解释空壳形态」的
-    // doc comment 原样引用了 `let _ = suggest("recieve");`，于是反例锁**首跑即误报**。
-    // 这是本会话第三次踩「护栏匹配到散文」。
-    // 限制（如实声明）：剥离器不区分字符串/正则里的 `//`；本文件不含这类字面量，
-    // 若将来引入，需改用更保守的剥离（只剥整行注释）。
-    const stripRustComments = (s) => s
-      .replace(/\/\*[\s\S]*?\*\//g, ' ')
-      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-    const spell = stripRustComments(spellRaw);
+    const spell = stripRustComments(readFileSync(resolve(root, spellPath), 'utf8').replace(/\r\n/g, '\n'));
     // ① 该文件不得再出现「把调用结果丢掉」的空壳形态
     assert(!/let\s+_\s*=\s*suggest\s*\(/.test(spell),
       'spellcheck.rs 出现 `let _ = suggest(...)` 空壳形态（只验「不 panic」，不验行为）—— 请改为真断言');
-    // ② 抽取每个 #[test] 的函数体 —— 用**花括号计数**而不是固定缩进的收尾锚点。
-    //    为什么：首版写成 `…\{([\s\S]*?)\n        \}`（锚死 8 空格），而新加的
-    //    `mod platform_contract` 在 4 空格缩进下 → **漏解析**。元护栏当场报出
-    //    「源码有 9 处、只解析出 7 个」—— 这正是元护栏存在的意义。
-    //    限制（如实声明）：花括号计数不区分字符串里的 `{`；本文件的格式占位符
-    //    （如 `{guesses:?}`）成对出现故净零，不影响计数。
-    //    提为具名函数是为了让下面的 canary 能跑**同一套逻辑**（而不是拼字符串给正则）。
-    const extractTests = (src) => {
-      const out = [];
-      const re = /#\[test\]\s*\n\s*fn\s+(\w+)\s*\(\)\s*\{/g;
-      let m;
-      while ((m = re.exec(src)) !== null) {
-        const start = m.index + m[0].length;
-        let depth = 1;
-        let i = start;
-        while (i < src.length && depth > 0) {
-          if (src[i] === '{') depth += 1;
-          else if (src[i] === '}') depth -= 1;
-          i += 1;
-        }
-        out.push({ name: m[1], body: src.slice(start, i - 1) });
-      }
-      return out;
-    };
-    const testBodies = extractTests(spell);
+    // ② 抽取每个 #[test] 的函数体
+    const testBodies = extractRustTests(spell);
     // 元护栏（铁律 3）：解析到的数量必须等于源码里 #[test] 的出现次数 —— 漏解析即响亮失败
     const declaredTests = (spell.match(/#\[test\]/g) ?? []).length;
     assert(testBodies.length === declaredTests,
@@ -1634,8 +1676,8 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
     //   —— 后者正是首版固定缩进锚点漏掉的那一类。
     const SHELL8 = '#[test]\n        fn x() {\n            let _ = suggest("recieve");\n        }';
     const REAL4 = '#[test]\n    fn y() {\n        assert!(true);\n    }';
-    const shell8 = extractTests(SHELL8);
-    const real4 = extractTests(REAL4);
+    const shell8 = extractRustTests(SHELL8);
+    const real4 = extractRustTests(REAL4);
     if (shell8.length !== 1 || /assert/.test(shell8[0].body)) {
       errors.push('拼写测试空壳护栏 canary 失效：空壳样本未被判为「无断言」');
     }
@@ -1644,7 +1686,7 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
     }
     // canary：花括号计数必须能跨过多行断言体（含成对格式占位符）
     const MULTI = '#[test]\n        fn z() {\n            assert!(\n                !v.is_empty(),\n                "实际：{v:?}"\n            );\n        }';
-    const multi = extractTests(MULTI);
+    const multi = extractRustTests(MULTI);
     if (multi.length !== 1 || !/is_empty/.test(multi[0].body)) {
       errors.push('拼写测试空壳护栏 canary 失效：多行断言体（含格式占位符）未被正确抽取');
     }

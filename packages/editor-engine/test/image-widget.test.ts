@@ -31,8 +31,18 @@ function brokenElements(view: EditorView): HTMLElement[] {
   return Array.from(view.dom.querySelectorAll(`.${IMG_BROKEN_CLASS}`)) as HTMLElement[];
 }
 
-function makeHost(resolve: (src: string) => string | null = (s) => `mock://${s}`): ImageHost {
-  const revealed: string[] = [];
+/**
+ * host mock。
+ *
+ * `onReveal`（2026-10-01 新增）：暴露 `revealFile` 的调用，供测试断言。
+ * 为什么需要：原先 `revealed` 数组只**写入**、**从不被读** —— 于是那条
+ * 「reveal：resolveAbsolutePath 后调宿主 revealFile」的测试**根本没有断言**
+ * （见下方该用例的注释）。**录制了却没人读** = 断言无从写起。
+ */
+function makeHost(
+  resolve: (src: string) => string | null = (s) => `mock://${s}`,
+  onReveal?: (path: string) => void,
+): ImageHost {
   return {
     getDocumentPath: () => '/docs/note.md',
     pickImageFiles: async () => [],
@@ -44,7 +54,7 @@ function makeHost(resolve: (src: string) => string | null = (s) => `mock://${s}`
     resolveWebUrl: async (src) => resolve(src),
     resolveAbsolutePath: (src) => (src.startsWith('mock') ? null : src),
     exists: async () => true,
-    revealFile: async (path) => { revealed.push(path); },
+    revealFile: async (path) => { onReveal?.(path); },
   };
 }
 
@@ -199,16 +209,35 @@ describe('Broken Image（spec §8）', () => {
     expect(brokenElements(view).length).toBe(0);
   });
 
+  /**
+   * ⚠️ 本用例此前是**恒真空壳**（2026-10-01 修复）：它只做 `revealBtn?.click()` 然后
+   * `// 断言不崩`，**没有任何断言** —— 而测试名声称「调宿主 revealFile」。
+   * 更糟的是 `?.`：**若「定位」按钮根本没渲染，`?.click()` 静默什么都不做，测试照样通过**
+   * —— 于是「断图不显示定位入口」这种回归**永远不会被发现**（同 `spellcheck.rs` 那条
+   * `let _ = suggest(...)` 的形态；见审计 §4.49）。
+   * 修法：① **先自证「读到了东西」**（按钮必须存在）；② 断言**用户可见后果**
+   *（宿主真的收到 revealFile，且路径是 resolveAbsolutePath 的结果）。
+   */
   test('reveal：resolveAbsolutePath 后调宿主 revealFile', async () => {
-    const host = makeHost(() => null);
+    const revealed: string[] = [];
+    const host = makeHost(() => null, (p) => revealed.push(p));
     const view = setUp('![alt](missing.png)\n', host);
+    await sleep();
+    // ⚠️ 必须先把光标移出图片行：光标在该行时按 Typora 语义显示**源码**而非 widget
+    // （原用例漏了这一步 —— 于是 widget 根本没渲染，`revealBtn?.click()` 一直是空操作，
+    //  这也是它「看起来通过」的原因之一；实测 DEBUG 显示 wrappers=0、DOM 里是裸源码）
+    moveCaret(view, view.state.doc.length);
     await sleep();
     const revealBtn = Array.from(view.dom.querySelectorAll('.mellow-md-image-broken button')).find(
       (b) => (b as HTMLButtonElement).textContent === '定位',
-    ) as HTMLButtonElement;
-    revealBtn?.click();
+    ) as HTMLButtonElement | undefined;
+    // ① 自证读到了东西：断图的「定位」按钮必须真的渲染出来（`?.` 会把缺失吞掉）
+    expect(revealBtn).toBeDefined();
+    if (revealBtn === undefined) return;
+    revealBtn.click();
     await sleep();
-    // 断言不崩（resolveAbsolutePath 返回 src 原样时 reveal 被调）
+    // ② 用户可见后果：宿主收到 revealFile，路径 = resolveAbsolutePath('missing.png') = 'missing.png'
+    expect(revealed).toEqual(['missing.png']);
   });
 });
 
