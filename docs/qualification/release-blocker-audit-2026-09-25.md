@@ -752,6 +752,20 @@ editor-core **不能**反向 import 引擎（成环）。故内联是**必要的
 **后续项**：补一条「文档被外部修改 → 重载 → 表格 live-view 与对齐/列宽状态正确重建」
 的测试（可参照 `table-live-view.test.ts` 与 `table-column-width.test.ts` 的现有模式）。
 
+**✅ 已部分闭环（2026-09-30 同日）**：在 `table-live-view.test.ts` 新增
+`describe('表格 live-view · 外部更新（spec §10 的「external update」场景）')`，2 个用例
+模拟外部重载的**实质 —— 整文档被替换**：
+① 整文档替换后 live-view 反映**新内容**（李四）且**不残留旧状态**（不再含张三）；
+② 外部重载把表格整体删掉后，live-view **不再存在**（不残留旧 widget）。
+**注入验证**：把 live-view 的 `docChanged` 分支从 `buildDecorations(transaction.state)`
+改为复用 `value.decorations`（模拟「重载后残留旧 widget」）→ 该文件**全部 7 个用例失败**
+（含新增 2 个），证明断言确实在检验真实行为；还原 → 7 例全过。
+
+> ⚠️ **覆盖边界（如实声明）**：这是**单元级**模拟（整文档 `dispatch`），
+> **不是端到端**「文件被外部修改 → 自动重载」流程（需真实文件系统 + watcher）。
+> 故本节的缺口**只被部分闭环**：编辑器侧语义已有人守，
+> 「文件真被外部改了以后自动重载是否正确」仍需 e2e/真机覆盖。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
