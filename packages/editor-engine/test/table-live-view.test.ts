@@ -149,3 +149,56 @@ describe('GFM Table Live View', () => {
     view.destroy();
   });
 });
+
+describe('表格 live-view · 外部更新（spec §10 的「external update」场景，2026-09-30 补）', () => {
+  /**
+   * 为什么补这一组：审计 §4.16 发现 spec §10 把 `external update` 列为必覆盖类别，
+   * 而**表格测试零覆盖**（放宽到全仓查「external/外部/reload/重载」×「table/表格」
+   * 共现 → 6 处命中全部无关：菜单 id、导出自包含、IME 注释）。
+   *
+   * 外部重载的**实质**是「整文档被替换」—— 故这里模拟一次整文档替换，
+   * 断言 live-view **反映新内容、不残留旧状态**。
+   *
+   * ⚠️ **覆盖边界（如实声明）**：这是**单元级**模拟（整文档 dispatch），
+   * 不是端到端「文件被外部修改 → 自动重载」流程（那需要真实文件系统与 watcher）。
+   * 它覆盖的是外部重载**依赖的编辑器侧语义**。
+   */
+  afterEach(() => {
+    setSourceMode(false);
+    document.body.innerHTML = '';
+  });
+
+  const NEW_TABLE = '| 姓名 | 年龄 |\n| --- | ---: |\n| 李四 | 31 |';
+
+  test('整文档替换（模拟外部重载）后 live-view 反映新内容且不残留旧状态', async () => {
+    const view = setUpEditor(`${TABLE}\n\n正文`);
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+    expect(view.dom.querySelector(`.${TABLE_LIVE_CLASS}`)?.textContent).toContain('张三');
+
+    // 外部重载 = 整文档替换
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: `${NEW_TABLE}\n\n正文` } });
+    // 重载后光标位置由实现决定；显式移到表外以保证 live-view 处于渲染态
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+
+    const after = view.dom.querySelector(`.${TABLE_LIVE_CLASS}`);
+    expect(after).not.toBeNull();
+    expect(after?.textContent).toContain('李四');
+    expect(after?.textContent).not.toContain('张三'); // 不残留旧状态
+    expect(view.state.doc.toString()).toContain('李四');
+    view.destroy();
+  });
+
+  test('外部重载把表格整体删掉后，live-view 不再存在（不残留旧 widget）', async () => {
+    const view = setUpEditor(`${TABLE}\n\n正文`);
+    moveCaret(view, view.state.doc.length);
+    await sleep();
+    expect(view.dom.querySelector(`.${TABLE_LIVE_CLASS}`)).not.toBeNull();
+
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '只有正文，没有表格' } });
+    await sleep();
+    expect(view.dom.querySelector(`.${TABLE_LIVE_CLASS}`)).toBeNull();
+    view.destroy();
+  });
+});
