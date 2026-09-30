@@ -283,6 +283,11 @@ const zhCN = {
   'openWith.customPlaceholder': '自定义命令，如 code / sublime',
   'openWith.open': '打开',
   'fileInfo.path': '路径',
+  // 2026-09-30：`t('file.info')` / `t('file.openWith')` 此前**键不存在** —— `t()` 对缺失键
+  // 返回键名本身，故「文件信息」「打开方式」两个面板的标题与 aria-label 显示的是裸键。
+  // 值对齐 App.tsx 里同概念命令的内联 localizedTitle（`file.info` / `file.openWith`）。
+  'file.info': '文件信息',
+  'file.openWith': '打开方式',
   'fileInfo.size': '大小',
   'fileInfo.modified': '修改时间',
   'fileInfo.encoding': '编码',
@@ -1164,6 +1169,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'openWith.customPlaceholder': 'Custom command, e.g. code / subl',
   'openWith.open': 'Open',
   'fileInfo.path': 'Path',
+  'file.info': 'File Info',
+  'file.openWith': 'Open With',
   'fileInfo.size': 'Size',
   'fileInfo.modified': 'Modified',
   'fileInfo.encoding': 'Encoding',
