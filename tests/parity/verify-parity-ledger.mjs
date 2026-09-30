@@ -314,6 +314,37 @@ if (existsSync(benchmarkRunnerPath)) {
   assert(/ADR-0026/.test(benchCode),
     '报告必须指向承载口径裁决的 ADR-0026（推断不能自己当结论）');
 
+  // ── ADR-0026 的映射表必须覆盖 PRD §110 的**全部**目标（2026-09-30）─────────
+  // PRD §110 有五个绝对目标：Startup ≤1.2s / 1MB ≤250ms / 10MB 1.0–1.5s /
+  // Input <16ms / Input Large <32ms。ADR-0026 Q4=C1 已把「目标 ↔ 指标映射」
+  // 定为**唯一声明处** —— 声明处漏掉任何一个目标，等于该目标**无人守**。
+  // 实测（本轮）：`Input Large <32ms` 此前只出现在 spec 一处，没有任何断言在守；
+  // 其余四个在护栏里也只是散文提及（不是断言）。故立此条把「五个都要声明」变成机器可核对。
+  {
+    const adr0026 = readFileSync(resolve(root, 'docs/adr/ADR-0026-perf-target-measurement-scope.md'), 'utf8').replace(/\r\n/g, '\n');
+    const targets = [
+      [/1\.2\s*s|1200\s*ms/, 'Startup ≤1.2s'],
+      [/250\s*ms/, '1MB ≤250ms'],
+      [/1\.0\s*[–-]\s*1\.5\s*s/, '10MB 1.0–1.5s'],
+      [/16\s*ms/, 'Input <16ms'],
+      [/32\s*ms/, 'Input Large <32ms'],
+    ];
+    for (const [pat, label] of targets) {
+      assert(pat.test(adr0026),
+        `ADR-0026 的映射表缺少 PRD §110 的目标：${label}`
+        + '（该表是「目标 ↔ 指标」的唯一声明处，漏项 = 该目标无人守）');
+    }
+    // canary：自检这五条锁有效（样本拼接构造，避免护栏检出自己）
+    const SAMPLE_OK = '1.2s 250ms 1.0–1.5s 16ms ' + '32ms';
+    if (!targets.every(([pat]) => pat.test(SAMPLE_OK))) {
+      errors.push('ADR-0026 目标覆盖锁 canary 失效：完整样本未被全部识别');
+    }
+    const SAMPLE_MISSING = '1.2s 250ms 1.0–1.5s 16ms';
+    if (targets.every(([pat]) => pat.test(SAMPLE_MISSING))) {
+      errors.push('ADR-0026 目标覆盖锁 canary 失效：缺 32ms 的样本竟被判为完整');
+    }
+  }
+
   // ── 量具读数不得被当作业务指标（2026-09-30）────────────────────────────
   // 背景：历史上的错误结论「Mellow 10MB open 2.59× 于 Typora」正源于把 `loadMs`
   // （= `waitStable` 的返回：**等待画面静止**，含 600ms 稳定判定地板）当成了
