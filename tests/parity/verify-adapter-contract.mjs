@@ -120,9 +120,109 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
   fail('Adapter contract 护栏误报：注释性/普通对象提及被当作运行时平台分支');
 }
 
+// ── ③ 宿主 ↔ 引擎 桥的**完整性**：每个 `__MELLOW_*` 全局必须「有声明处 + 有读取处」（2026-10-01）──
+// 立此条的原因：本会话抓到两处「宿主上下文到不了引擎」（locale §4.52 / 非 md 主题变量 §4.53），
+// 共同形态是「**桥逐项加**，没加的那部分静默失效」。故把全部桥列全，并锁住**两侧都在**：
+//   · 只有声明、没人读 → **死桥**（装了开关没人用 —— §4.1「≠ 有消费方」）；
+//   · 只有人读、没人声明 → **断桥**（宿主调了一个不存在的全局 → 静默失效）。
+// ⚠️ 判定必须看全局名**之后**的文本：首版看的是**之前** → 把声明全判成读取，
+//    产出 **20 个假的「断桥」候选**（工具伪影，不是代码问题）。
+// ⚠️ 扫描面必须含 `apps/desktop/scripts/`：Tauri 适配器在那里注入 `__MELLOW_ASSET_RESOLVER__` 等；
+//    漏了它会把该桥误判成「只在引擎侧出现（死桥）」。
+{
+  const BRIDGE_DIRS = [
+    'packages/editor-engine/src', 'packages/editor-core/src',
+    'apps/desktop/src', 'apps/desktop/scripts',
+  ];
+  const SKIP_DIR = new Set(['node_modules', 'dist']);
+  const walkAll = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.isDirectory()) return SKIP_DIR.has(e.name) ? [] : walkAll(resolve(dir, e.name));
+    return /\.(ts|tsx|mjs|js)$/.test(e.name) ? [resolve(dir, e.name)] : [];
+  });
+  const stripJsComments = (s) => s
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  /**
+   * 判定某次出现是「声明」还是「读取」——**声明** = 全局名之后紧跟 `=`（且不是 `==`）。
+   * ⚠️ 抽成具名函数的原因（实测自伤）：首版在扫描处写成 `after.startsWith('=')`（**漏了前导空格**，
+   * ` = {` 不以 `=` 开头）→ 36 个桥**全被判成断桥**；而 canary 用的是另一份**正确的**正则
+   * → **canary 测的是副本，没覆盖真实代码路径**，故没抓到。
+   * 现在扫描与 canary 共用本函数，canary 才能真正守住它。
+   */
+  const isDeclAt = (line, index, len) => /^\s*=(?!=)/.test(line.slice(index + len));
+  // 例外：**扩展点** —— 由用户 / 主题 / 外部脚本注入，仓库内**本就没有声明处**（属设计，不是断桥）。
+  // 实测：`__MELLOW_MERMAID_LOADER__` —— 引擎注释写「Inject window.mermaid or __MELLOW_MERMAID_LOADER__」。
+  const BRIDGE_EXTENSION_POINTS = new Set(['__MELLOW_MERMAID_LOADER__']);
+  // 形态二：**常量间接**（实测覆盖 2/3 误报）——
+  //   `const GLOBAL_KEY = '__MELLOW_ENGINE_API__' as const;` 之后 `win[GLOBAL_KEY] = api;`
+  //   首版只认「全局名之后紧跟 `=`」→ 把这种声明判成读取 → 报假断桥。
+  const KEY_CONST_RE = /const\s+(\w+)\s*=\s*'(__MELLOW_[A-Z_]+__)'/g;
+  const bridges = new Map(); // name → { decl:Set, read:Set }
+  for (const dir of BRIDGE_DIRS) {
+    for (const file of walkAll(resolve(root, dir))) {
+      const src = stripJsComments(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'));
+      const keyConsts = [...src.matchAll(KEY_CONST_RE)].map((m) => [m[1], m[2]]);
+      const rel = relative(root, file);
+      const mark = (name, isDecl) => {
+        const rec = bridges.get(name) ?? { decl: new Set(), read: new Set() };
+        (isDecl ? rec.decl : rec.read).add(rel);
+        bridges.set(name, rec);
+      };
+      for (const line of src.split('\n')) {
+        for (const m of line.matchAll(/__MELLOW_([A-Z_]+)__/g)) {
+          mark(`__MELLOW_${m[1]}__`, isDeclAt(line, m.index, m[0].length));
+        }
+        for (const [constName, globalName] of keyConsts) {
+          const idx = line.indexOf(`[${constName}]`);
+          if (idx === -1) continue;
+          mark(globalName, isDeclAt(line, idx, `[${constName}]`.length));
+        }
+      }
+    }
+  }
+  if (bridges.size < 15) {
+    fail(`桥扫描面异常：只找到 ${bridges.size} 个 __MELLOW_* 全局（基线 18）—— 解析可能失效，护栏需同步`);
+  }
+  const dead = [];
+  const broken = [];
+  for (const [name, rec] of bridges) {
+    if (BRIDGE_EXTENSION_POINTS.has(name)) continue; // 扩展点：仓库内无声明处属设计
+    if (rec.decl.size === 0) broken.push(name);
+    if (rec.read.size === 0) dead.push(name);
+  }
+  if (dead.length > 0) {
+    fail(`**死桥**（有声明但没人读）：${dead.join(', ')} —— 装了开关没人用，属「≠ 有消费方」母题`);
+  }
+  if (broken.length > 0) {
+    fail(`**断桥**（有人读但没人声明）：${broken.join(', ')} —— 调用了一个不存在的全局，运行时静默失效`);
+  }
+  // canary：**用同一个 isDeclAt** 验两个方向（首版 canary 用的是另一份副本 → 没覆盖真实路径）
+  const declSample = 'window.__MELLOW_X__ = { set: () => {} };';
+  const readSample = 'window.__MELLOW_X__?.set?.(1);';
+  const declIdx = declSample.indexOf('__MELLOW_X__');
+  const readIdx = readSample.indexOf('__MELLOW_X__');
+  if (!isDeclAt(declSample, declIdx, '__MELLOW_X__'.length)) {
+    errors.push('桥完整性护栏 canary 失效：声明样本未被判为声明');
+  }
+  if (isDeclAt(readSample, readIdx, '__MELLOW_X__'.length)) {
+    errors.push('桥完整性护栏 canary 失效：读取样本被误判为声明');
+  }
+  // canary：**常量间接**路径（`const K = '__MELLOW_X__'` → `win[K] = …`）必须被识别为声明
+  const INDIRECT = "const K = '__MELLOW_Y__' as const;\nwin[K] = { ok: true };";
+  const indirectConst = [...INDIRECT.matchAll(KEY_CONST_RE)].map((m) => [m[1], m[2]]);
+  const indirectDecl = indirectConst.some(([constName, globalName]) =>
+    INDIRECT.split('\n').some((line) => {
+      const idx = line.indexOf(`[${constName}]`);
+      return idx !== -1 && globalName === '__MELLOW_Y__' && isDeclAt(line, idx, `[${constName}]`.length);
+    }));
+  if (!indirectDecl) {
+    errors.push('桥完整性护栏 canary 失效：常量间接的声明未被识别（会报假断桥）');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Adapter contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Adapter contract: core packages platform-neutral (0 runtime Tauri tokens, 0 platform APIs); bridge chain anchored (editor-core contract → desktop adapter → Rust bridge_call); 3-platform bundle matrix + .md file association + updater artifacts; drift canary armed');
+console.log('Adapter contract: core packages platform-neutral (0 runtime Tauri tokens, 0 platform APIs); bridge chain anchored (editor-core contract → desktop adapter → Rust bridge_call); 3-platform bundle matrix + .md file association + updater artifacts; every __MELLOW_* bridge has both a declaration site and a reader (no dead/broken bridge); drift canary armed');
