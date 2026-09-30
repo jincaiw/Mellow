@@ -66,3 +66,35 @@ describe('Reader sanitizeHtml — Security Review H1', () => {
     expect(out).not.toContain('<script');
   });
 });
+
+// 2026-09-30 追加：既有 7 例已覆盖「实体编码 / data: / 事件属性 / 危险协议 / 嵌套 / 允许标签保留」。
+// 本组只补**当时未覆盖的变体** + 一条**与编辑器白名单一致性**的回归。
+describe('Reader sanitizeHtml — 追加变体（2026-09-30）', () => {
+  test('实体编码的另两种写法：十六进制 与 无分号（仅十进制 &#115; 曾被覆盖）', () => {
+    for (const raw of ['java&#x73;cript:alert(1)', 'javascript&#58;alert(1)']) {
+      const out = blockHtml(`<a href="${raw}">x</a>`);
+      expect(out).not.toMatch(/<a[^>]*href=/);
+      expect(out).toContain('>x</a>');
+    }
+  });
+
+  test('非白名单标签 form / input 被移除（既有用例只覆盖 script/style/object/embed）', () => {
+    expect(blockHtml('<form><input value="x"></form>')).not.toContain('<form');
+    expect(blockHtml('<form><input value="x"></form>')).not.toContain('<input');
+  });
+
+  test('mailto: 属合法协议，必须保留（正向对照，防「一律剥光」也算过）', () => {
+    expect(blockHtml('<a href="mailto:a@b.c">m</a>')).toContain('href="mailto:a@b.c"');
+  });
+
+  test('IFRAME 的 sandbox 是**空串**（既有用例只断言「含 sandbox」）', () => {
+    expect(blockHtml('<iframe src="https://evil.test"></iframe>')).toContain('sandbox=""');
+  });
+
+  // ★ 与 editor-engine 的 ALLOWED_TAGS 一致性：两侧曾差一个 KBD →
+  // 同一段 <kbd> 在编辑器里保留、在 Reader 里被剥掉（屏幕上看不出原因）。
+  // 白名单**逐项一致**另由 tests/parity/verify-parity-ledger.mjs 锁。
+  test('★ <kbd> 必须保留（与 editor-engine 的 ALLOWED_TAGS 一致；曾差一个 KBD）', () => {
+    expect(blockHtml('<p>按 <kbd>Cmd</kbd> 保存</p>')).toContain('<kbd>Cmd</kbd>');
+  });
+});

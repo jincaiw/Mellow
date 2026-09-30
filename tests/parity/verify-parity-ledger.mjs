@@ -624,6 +624,54 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── 两处 HTML 净化器必须一致（2026-09-30）────────────────────────────────
+  // 立此条的原因：`docs/security/security-review-2026-08-13.md` H1 的建议原文是
+  // 「提取 `editor-engine/src/safeHtml.ts` 的 sanitize 为共享实现，**或复制同一逻辑**」——
+  // 修复走了「复制」路线，于是**两处净化器各自维护**（该文件当时警告的正是这个不一致）。
+  // 而**没有任何东西守着「两处一致」**：任一侧的白名单被改动都不会有信号，
+  // 表现是「同一段原始 HTML 在编辑器里保留、在 Reader 里被剥掉」（或反之）——屏幕上看不出原因。
+  // 本护栏只锁**可机械比对的三件事**：标签白名单集合、URL 协议白名单、IFRAME 强制 sandbox。
+  {
+    const readSrc = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+    const appCore = readSrc('packages/app-core/src/reader.ts');
+    const engine = readSrc('packages/editor-engine/src/safeHtml.ts');
+
+    const tagsOf = (src, name) => {
+      const body = (src.match(new RegExp(`const ${name} = new Set\\(\\[([^\\]]*)\\]\\)`)) ?? [])[1];
+      if (body === undefined) return null;
+      return new Set([...body.matchAll(/'([A-Z0-9]+)'/g)].map((m) => m[1]));
+    };
+    const tagsA = tagsOf(appCore, 'SANITIZE_ALLOWED_TAGS');
+    const tagsB = tagsOf(engine, 'ALLOWED_TAGS');
+    assert(tagsA !== null && tagsB !== null, '无法解析两处净化器的标签白名单（护栏需同步更新，不要静默漏检）');
+    if (tagsA !== null && tagsB !== null) {
+      const onlyAppCore = [...tagsA].filter((t) => !tagsB.has(t)).sort();
+      const onlyEngine = [...tagsB].filter((t) => !tagsA.has(t)).sort();
+      assert(onlyAppCore.length === 0 && onlyEngine.length === 0,
+        `两处 HTML 净化器的标签白名单不一致：仅 app-core 有 [${onlyAppCore}]，仅 engine 有 [${onlyEngine}]`
+        + ' —— 同一段原始 HTML 会在两处得到不同结果（security-review H1 警告的正是这个分叉）');
+      // canary：删掉一个标签必须被检出
+      const drift = new Set(tagsB);
+      drift.delete([...drift][0]);
+      const driftOnly = [...drift].filter((t) => !tagsA.has(t));
+      if (driftOnly.length === 0 && drift.size === tagsB.size) {
+        errors.push('净化器一致性 canary 失效：样本未被改动');
+      }
+    }
+
+    const protocolsOf = (src) => new Set([...src.matchAll(/url\.protocol === '([a-z]+:)'/g)].map((m) => m[1]));
+    const protoA = protocolsOf(appCore);
+    const protoB = protocolsOf(engine);
+    assert(protoA.size > 0 && protoB.size > 0, '无法解析两处净化器的 URL 协议白名单（护栏需同步更新）');
+    assert([...protoA].sort().join(',') === [...protoB].sort().join(','),
+      `两处 HTML 净化器的 URL 协议白名单不一致：app-core [${[...protoA]}] vs engine [${[...protoB]}]`);
+
+    for (const [label, src] of [['app-core', appCore], ['engine', engine]]) {
+      assert(/element\.tagName === 'IFRAME'\) element\.setAttribute\('sandbox', ''\)/.test(src),
+        `${label} 的净化器必须强制 IFRAME sandbox（两处都要，缺一处即分叉）`);
+    }
+  }
+
   // ── 远程图片默认值：设置侧与引擎侧必须一致（2026-09-30）────────────────
   // 立此条的原因：这是**安全相关默认值**（默认联网会暴露「已打开该文档」与来源 IP），
   // 而它散落在两处 —— 设置 `image.loadRemote` 的 `defaultValue`，与引擎

@@ -114,3 +114,35 @@
 | P2 | L1：download_remote scheme/大小校验 | XS |
 
 > 说明：H1/H2 为真实可利用路径（H1 的实体编码绕过已用模拟输入验证）；其余为纵深防御与默认隐私对齐项。按 AGENTS.md 冲突处理原则，本报告不修改代码，修复建议待确认后实施。
+
+---
+
+## 更正块（2026-09-30）—— H1 / H2 / M1 的状态复核
+
+> 本文件按仓库惯例**不改写历史**，只追加更正块。以下为**回到代码**逐项复核的结果
+> （不是推断，也不是采信其它文档的自述）。
+
+| 项 | 本文件原判定 | **2026-09-30 复核（代码为准）** |
+|---|---|---|
+| **H1** `reader.ts` 正则净化可被实体编码绕过 | 🔴 高危（P0） | ✅ **已修**：`packages/app-core/src/reader.ts` 的 `sanitizeHtml` 现为 **DOMParser + 白名单**（`SANITIZE_ALLOWED_TAGS` / `sanitizeUrlSafe` 基于 `new URL()` 协议白名单 / IFRAME 强制 `sandbox=""`），**不再是正则替换**。**回归测试本已存在**（`packages/app-core/test/reader-sanitize.test.ts`，7 例，文件头即写「Security Review H1 回归」，覆盖实体编码 / data: / 事件属性 / 危险协议 / 嵌套 / 允许标签保留）；本轮**只补当时未覆盖的 4 个变体**（十六进制与无分号实体、`mailto:` 正向对照、非白名单标签 `form/input`、IFRAME `sandbox=""` 的精确值）＋ 1 条 **KBD 一致性**回归，并新增**「两处净化器必须一致」护栏**（见下）。注入验证 **5/5 被检出**（含「关掉协议白名单」这一 H1 确切机制）。 |
+| **H2** Reader/SplitPreview 链接点击 → webview 导航 | 🔴 高危（P0） | ✅ **已修**：`apps/desktop/src/Reader.tsx` 的 `handleContentClick` 对 `<a>` 做 `preventDefault()` + 走 `plugin-opener` 的 `openUrl`（系统浏览器）。**SplitPreview 已随 Split Mode 一并移除**（该文件不存在），故原第二处落点已消失。 |
+| **M1** CSP 缺失（`csp: null`） | 🟠 中危 | ✅ **已修**：`apps/desktop/src-tauri/tauri.conf.json` 的 `csp` 现为完整策略（`default-src 'self'` / `object-src 'none'` / `base-uri 'self'` 等），并由 `tests/parity/verify-parity-ledger.mjs` 锁「CSP 必须存在且含 `default-src 'self'`」。 |
+| **M2** 远程图片打开即隐式加载 | 🟠 中危 | ⚠️ **已改回「默认加载」并已记录**：`editor-engine/src/image/widget.ts` 的 `remoteImagesEnabled()` 缺键返回 `true`，`image.loadRemote` 默认也是 `true` —— 这是**后续有意对齐 Typora** 的改动（Typora 始终加载且无退出选项）；Mellow 额外提供**退出选项**（比 Typora 更严）。三处文档矛盾已在 `docs/qualification/release-blocker-audit-2026-09-25.md` §4.3 记录并更正。 |
+| **M3** invoke 面大无 ACL | ⚠️ 部分 | 维持：**设计使然**（与 Typora 同类，用户显式选文件模型）；H1/H2 修复后按本文件原意降为信息级。 |
+
+**⚠️ 一处如实说明（并且本轮已处置）**：H1 的修复**没有**按本文件建议「提取 `editor-engine/src/safeHtml.ts`
+为共享实现」，而是在 `app-core` 内**复制同一套逻辑**（白名单集合 + 协议校验 + IFRAME sandbox）
+→ 两处净化器**各自维护**，正是本文件想消除的那种不一致。
+
+**本轮复核证实这不是理论风险**：两侧的标签白名单**实际已经分叉** ——
+`editor-engine` 的 `ALLOWED_TAGS` 含 `KBD`，`app-core` 的 `SANITIZE_ALLOWED_TAGS` **不含**，
+于是同一段 `<kbd>` 在编辑器里保留、在 Reader 里被**静默剥掉**（屏幕上看不出原因）。
+
+**处置**：① 补齐 `KBD`（两侧一致）；② 新增护栏 `tests/parity/verify-parity-ledger.mjs` 的
+「**两处 HTML 净化器必须一致**」——逐项比对**标签白名单集合**、**URL 协议白名单**、
+**IFRAME 强制 sandbox**；该护栏**首跑即报出 `KBD` 这一真实分叉**（非空壳）；
+③ 补 1 条行为回归（`reader-sanitize.test.ts`：`<kbd>` 必须保留）。
+
+**⚠️ 仍然未覆盖的**：两处实现是**两份代码**，护栏只能锁「可机械比对的三件事」
+（标签集 / 协议集 / sandbox）。**结构差异**（例如一侧新增了某种属性处理而另一侧没有）
+仍不会被发现。彻底消除需按本文件原建议**提取共享实现** —— 如实留为未做。

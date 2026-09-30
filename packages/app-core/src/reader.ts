@@ -60,7 +60,11 @@ export function slugifyHeading(title: string): string {
  * 规则：仅保留白名单标签；剥离事件属性 / style / srcdoc；URL 属性经协议白名单校验；
  * IFRAME 强制 sandbox。DOMParser 在浏览器可用；测试用 jsdom（jest-environment jsdom）。
  */
-const SANITIZE_ALLOWED_TAGS = new Set(['A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'S', 'SPAN', 'STRONG', 'SUB', 'SUMMARY', 'SUP', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL', 'VIDEO', 'AUDIO', 'SOURCE', 'IFRAME']);
+// ⚠️ 本集合必须与 `packages/editor-engine/src/safeHtml.ts` 的 `ALLOWED_TAGS` **逐项一致**
+// （由 `tests/parity/verify-parity-ledger.mjs` 的「两处 HTML 净化器必须一致」锁定）。
+// 2026-09-30 实测：两侧曾差一个 `KBD` → 同一段 `<kbd>` 在编辑器里保留、在 Reader 里被剥掉，
+// 屏幕上看不出原因。加/减标签时**两处同时改**。
+const SANITIZE_ALLOWED_TAGS = new Set(['A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'KBD', 'LI', 'OL', 'P', 'PRE', 'S', 'SPAN', 'STRONG', 'SUB', 'SUMMARY', 'SUP', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL', 'VIDEO', 'AUDIO', 'SOURCE', 'IFRAME']);
 const SANITIZE_URL_ATTRS = new Set(['href', 'src', 'poster']);
 const SANITIZE_GLOBAL_ATTRS = new Set(['title', 'alt', 'width', 'height', 'controls', 'colspan', 'rowspan']);
 
