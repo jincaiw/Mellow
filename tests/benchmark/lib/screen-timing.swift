@@ -256,6 +256,10 @@ final class Probe: NSObject, SCStreamOutput {
   private var detectMaxDiff = 0
   private var detectFrames = 0
   private var frameTimesArr: [Double] = []
+  /// W-PERF-3 诊断：`waitStable` 期间的观察统计（framesSeen / changedFrames / firstChangeMs）
+  private var stableFramesSeen = 0
+  private var stableChangedFrames = 0
+  private var stableFirstChangeMs = -1.0
   private var ready = false
   private let readySema = DispatchSemaphore(value: 0)
 
@@ -403,12 +407,27 @@ final class Probe: NSObject, SCStreamOutput {
   }
 
   /// 等待渲染稳定：连续 stableMs 无帧间显著变化（文档加载 / 动画完成后返回），返回等待耗时 ms
+  ///
+  /// ⚠️ **W-PERF-3（2026-10-01 实测结论）**：本函数的返回值**不是文档加载耗时** ——
+  /// 判据是「连续 stableMs（600ms）无显著变化」，故循环**结构上不可能早于 600ms 返回**，
+  /// 实测跨应用/跨尺寸恒为 603.8–631ms。
+  ///
+  /// 曾尝试的「一行级修法」（改返回 `lastChange - start`）**经本机实测不可行**：
+  /// 本函数是在**窗口已被绘制之后**才被调用的，此时窗口内**没有后续变化可观察** →
+  /// 8 个样本的 `changedFrames` **全为 0** → 读数**恒为 0**（把「恒 600ms 地板」
+  /// 换成「恒 0」，后者更糟：0 读起来像「瞬时加载」）。
+  ///
+  /// 故**保留原返回值**（它是「等待画面静止」的忠实读数），改为把
+  /// **观察到的显著变化帧数与首次变化时刻**一并报出 —— 让「本窗口内到底有没有东西可观察」
+  /// 成为**每样本可见的事实**，而不是只写在注释里的约定。
   func waitStable(stableMs: Double = 600, timeoutMs: Double = 15000) -> Double {
     lock.lock(); mode = .collect; lock.unlock()
     let start = nowMs()
     var lastChange = start
+    var firstChange = -1.0
     var prev: CVPixelBuffer?
     var framesSeen = 0
+    var changedFrames = 0
     while nowMs() - start < timeoutMs {
       var stable = false
       var changed = false
@@ -416,7 +435,13 @@ final class Probe: NSObject, SCStreamOutput {
       if let cur = latest {
         framesSeen += 1
         if let p = prev {
-          if pixelDiffSampled(p, cur) < 24 { stable = true } else { changed = true; lastChange = nowMs() }
+          if pixelDiffSampled(p, cur) < 24 { stable = true } else {
+            changed = true
+            let t = nowMs()
+            if firstChange < 0 { firstChange = t - start }
+            lastChange = t
+            changedFrames += 1
+          }
         }
         prev = cur
       }
@@ -424,8 +449,16 @@ final class Probe: NSObject, SCStreamOutput {
       if stable && nowMs() - lastChange >= stableMs { break }
       Thread.sleep(forTimeInterval: 0.03)
     }
-    FileHandle.standardError.write(Data("waitStable: \(framesSeen) frames, \(nowMs() - start)ms\n".utf8))
+    stableChangedFrames = changedFrames
+    stableFirstChangeMs = firstChange < 0 ? -1 : firstChange
+    stableFramesSeen = framesSeen
+    FileHandle.standardError.write(Data("waitStable: \(framesSeen) frames, \(changedFrames) changed, firstChange \(stableFirstChangeMs)ms, total \(nowMs() - start)ms\n".utf8))
     return nowMs() - start
+  }
+
+  /// `waitStable` 期间的观察统计（W-PERF-3 诊断字段）
+  func stableStats() -> (framesSeen: Int, changedFrames: Int, firstChangeMs: Double) {
+    return (stableFramesSeen, stableChangedFrames, stableFirstChangeMs)
   }
 }
 
@@ -609,6 +642,11 @@ func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool =
   }
   do { try await probe.start(window: win, roi: effRoi) } catch { fail("SCK 捕获启动失败: \(error)") }
   let loadMs = probe.waitStable()
+  // W-PERF-3 诊断字段（2026-10-01）：`loadMs` 恒为「等待画面静止」的 600ms 地板，
+  // **不是加载耗时**；把本窗口内的观察统计一并报出，让「有没有东西可观察」成为可见事实。
+  // 实测（1MB 双应用 + 10MB 共 8 样本）changedFrames **全为 0** —— 即窗口在 `waitStable`
+  // 开始前就已绘制完成；这解释了为什么「改返回 lastChange」会退化成恒 0。
+  let stableStats = probe.stableStats()
   // 强制聚焦编辑器（点击后光标闪烁被 calibrate 吸收）。
   // --no-click：WKWebView（Mellow）下合成点击会破坏 WebView 焦点协议，导致后续
   // 键盘事件全部丢失（2026-08-19 诊断）；WebView 启动自动持有焦点，无需点击。
@@ -651,6 +689,10 @@ func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool =
     "roi": "\(Int(effRoi.x)),\(Int(effRoi.y)),\(Int(effRoi.w)),\(Int(effRoi.h))",
     "winFrame": "\(Int(win.frame.origin.x)),\(Int(win.frame.origin.y)),\(Int(win.frame.width)),\(Int(win.frame.height))",
     "roiSource": roiFrac == nil ? "absolute" : "frac",
+    // W-PERF-3 诊断（2026-10-01）：这三个值让「loadMs 为什么是常量」可被逐样本核对。
+    "stableFramesSeen": stableStats.framesSeen,
+    "stableChangedFrames": stableStats.changedFrames,
+    "stableFirstChangeMs": round(stableStats.firstChangeMs * 10) / 10,
   ]
   if r.changed {
     diag["ok"] = true

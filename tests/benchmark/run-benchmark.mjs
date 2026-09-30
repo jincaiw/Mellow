@@ -382,6 +382,13 @@ async function measureApp(appKey, opts) {
       const opens = [];
       const probes = [];
       const loads = [];
+      // W-PERF-3 诊断（2026-10-01）：`loadMs` 恒为「等待画面静止」的 600ms 地板，
+      // **不是**加载耗时。逐样本记下「waitStable 窗口内观察到的显著变化帧数」——
+      // 它让「为什么 loadMs 是常量」成为**每样本可见的事实**：实测 1MB/10MB 共 8 个样本
+      // 全为 0，即窗口在 waitStable 开始前就已绘制完成（这解释了「改返回 lastChange
+      // 会退化成恒 0」）。firstChangeMs = -1 表示本窗口内一次显著变化都没观察到。
+      const stableChangedFrames = [];
+      const stableFirstChangeMs = [];
       const winMs = [];
       const probeOk = [];
       const failureHints = [];
@@ -415,6 +422,8 @@ async function measureApp(appKey, opts) {
           }
           probes.push(probe.ok ? probe.latencyMs : null);
           loads.push(probe.ok ? probe.loadMs : null);
+          stableChangedFrames.push(probe.stableChangedFrames ?? null);
+          stableFirstChangeMs.push(probe.stableFirstChangeMs ?? null);
           // 失败样本保留探针自报的**失败形态**与关键实测值（2026-09-22）：
           // hint 区分「未收到帧 / 完全无变化（焦点问题）/ 有变化未跨阈值（校准问题）」，
           // 三者修法完全不同；不记下来就只能反复跑 runner 猜。
@@ -431,6 +440,8 @@ async function measureApp(appKey, opts) {
           opens.push(null);
           probes.push(null);
           loads.push(null);
+          stableChangedFrames.push(null);
+          stableFirstChangeMs.push(null);
           console.warn(`[${app.name}/${fixture}] open run ${i + 1} failed: ${e.message}`);
         }
         killApp(app.killPattern);
@@ -445,6 +456,11 @@ async function measureApp(appKey, opts) {
         samplesWinMs: winMs,
         samplesLoadMs: loads.slice(),
         samplesLatencyMs: probes.slice(),
+        // W-PERF-3 诊断（2026-10-01）：loadMs 窗口内的观察统计。
+        // `changedFrames` 全为 0 ⇒ 该窗口**没有东西可观察** ⇒ `loadMs` 只是 600ms 稳定窗口，
+        // 且「改返回 lastChange」必然退化成恒 0（已实测）。
+        samplesStableChangedFrames: stableChangedFrames.slice(),
+        samplesStableFirstChangeMs: stableFirstChangeMs.slice(),
         samplesProbeOk: probeOk.slice(),
         failureHints: failureHints.slice(),
         probeFailures,
@@ -458,6 +474,9 @@ async function measureApp(appKey, opts) {
       }
       console.log(`  分量 winMs=${JSON.stringify(winMs.map((x) => (x === null ? null : Math.round(x))))}`);
       console.log(`       loadMs（= waitStable 的返回：**等待画面静止**，含 600ms 稳定判定地板；**不是文档加载耗时**，不参与任何 PRD 判定）=${JSON.stringify(loads.map((x) => (x === null ? null : Math.round(x))))}`);
+      // W-PERF-3 诊断：把「这个窗口内有没有东西可观察」直接打出来 —— 全是 0 就说明
+      // loadMs 只是稳定窗口，且任何「取最后一次变化」的修法都会退化成恒 0。
+      console.log(`       ↳ 该窗口内观察到的显著变化帧数=${JSON.stringify(stableChangedFrames)}（全 0 ⇒ 窗口在 waitStable 开始前已绘制完成，loadMs 不是加载耗时）`);
       console.log(`    latencyMs=${JSON.stringify(probes.map((x) => (x === null ? null : Math.round(x))))}`);
     }
 

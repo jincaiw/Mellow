@@ -432,6 +432,15 @@ if (existsSync(benchmarkRunnerPath)) {
   assert(/等待画面静止/.test(benchCode) && /不是文档加载耗时/.test(benchCode),
     '报告打印 loadMs 处必须标注「等待画面静止 / 不是文档加载耗时」（且必须是字符串字面量，'
     + '不能只写在注释里）—— 否则读者会把它当业务指标，历史错误结论「2.59×」正是这样产生的');
+  // W-PERF-3（2026-10-01 实测后新增）：`loadMs` 的打印**必须伴随「该窗口内观察到的显著变化帧数」**。
+  // 立此条的原因：`loadMs` 恒为 600ms 稳定窗口（不是加载耗时），而实测 8 个样本的
+  // `changedFrames` **全为 0** —— 说明该窗口里**没有东西可观察**。若只留 `loadMs` 一行，
+  // 读者看到一个常量无从解释；带上帧数才能自证「为什么它是常量」。
+  // 同时锁住「不得改用取最后一次变化的返回值」（那会退化成恒 0，实测已证）。
+  assert(/samplesStableChangedFrames/.test(benchCode),
+    'run-benchmark 必须逐样本落盘 waitStable 窗口内的显著变化帧数（loadMs 的常量成因需可核对）');
+  assert(/该窗口内观察到的显著变化帧数/.test(benchCode),
+    '报告打印 loadMs 处必须伴随「该窗口内观察到的显著变化帧数」诊断行（字符串字面量）');
   // canary：自检这三条锁（样本拼接构造，避免护栏检出自己）
   {
     const BAD_PUSH = 'opens.push((win.wallMs - t0Ms) + probe.' + 'loadMs);';
