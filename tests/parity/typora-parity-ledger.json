@@ -604,7 +604,7 @@
       "domain": "theme",
       "capability": "主题、字体与缩放",
       "typoraBehavior": "主题和字体改变阅读外观，不改变 Markdown 内容。",
-      "mellowTarget": "主题注册、菜单、设置和 UI 实际可用主题完全同步。",
+      "mellowTarget": "主题注册、菜单、设置和 UI 实际可用主题完全同步。\n【2026-10-01 追加记录：引擎侧主题跟随缺口（审计 §4.53）—— **不影响本项主张，故状态不变**】\n实测：宿主（`App.tsx` applyTheme）把主题变量设在 **app 根**上，而编辑器 iframe 只经\n`setMdTokens()` 拿到 **`--mellow-md-*`**（`mdTokens.ts` 的 `setTokenProperties` 显式过滤，\n文件头亦自述「宿主的 `--mellow-*` 变量不会自动继承」）。\n**后果**：引擎里 **6 个非 md 主题变量**（`--mellow-accent` / `--mellow-bg-hover` / `--mellow-border` /\n`--mellow-danger` / `--mellow-toolbar-bg` / `--mellow-toolbar-fg`，分布在 8 个文件）**永远取 fallback**；\n而 `table/toolbar.ts` 更是 15 处硬编码色、一个主题变量都没用 → **暗色主题下表格工具栏仍是白底**\n（探针 `tests/e2e/theme-follow-probe.mjs` 实测：app 侧 `data-theme=mellow-dark`、\n`--mellow-toolbar-bg=rgba(40,40,42,.95)`，而表格工具栏 `bg=rgba(255,255,255,0.92)`、\n选区工具栏 `bg=rgba(30,30,30,0.92)`＝fallback）。\n\n**为什么不改本项状态**：本项主张是「主题和字体改变**阅读外观**」+「主题**注册/菜单/设置/UI 同步**」，\n**都没有**声称「引擎侧每个表面都跟随主题」→ 本缺口属它**未覆盖**的部分，不构成对其主张的反驳。\n（与 §4.52 的 `P0-I18N-001` 不同：那条的能力名就是「English **完整性**」，故必须降级。）\n\n**处置**：护栏 `verify-parity-ledger.mjs` 新增「引擎不得出现新的非 md 主题变量」（登记上述 6 个，新增即失败）；\n**未**改动那 6 个 `var()` —— 它们承载「这些表面**想**跟随主题」的意图，正解是**拓宽 token 桥**（设计决策）。",
       "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/themes",

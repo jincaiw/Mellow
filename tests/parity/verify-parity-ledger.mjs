@@ -1792,6 +1792,66 @@ const walkRustFiles = (dir) => readdirSync(resolve(root, dir), { withFileTypes: 
   }
 }
 
+// ── 引擎侧主题变量：**只有 `--mellow-md-*` 能跨进 iframe**（2026-10-01）──────────
+// 立此条的原因（实测）：`packages/editor-engine/src/mdTokens.ts` 的 `setTokenProperties`
+// **显式过滤** `if (key.startsWith('--mellow-md-'))`，其文件头也写着
+// 「编辑器运行在独立 iframe（独立 document），**宿主的 `--mellow-*` 变量不会自动继承**」。
+// 即：宿主（App.tsx applyTheme）把主题变量设在 **app 根**上，而 iframe 只拿到 **md** 那一批。
+// **后果**：引擎里所有**非 md** 的 `var(--mellow-*, <fallback>)` **永远取 fallback**。
+//
+// 实测证据（探针 `tests/e2e/theme-follow-probe.mjs`，app 侧 `data-theme=mellow-dark`、
+// `--mellow-toolbar-bg=rgba(40,40,42,.95)`）：
+//   · iframe 根上非 md 变量**全为空**；
+//   · 选区浮动工具栏的计算背景 = `rgba(30,30,30,0.92)` = **fallback**（≠ app 的 `rgba(40,40,42,.95)`）；
+//   · 表格工具栏 `bg = rgba(255,255,255,0.92)` → **暗色主题下是白底**（`table/toolbar.ts` 15 处硬编码色、
+//     一个主题变量都没用）。
+//
+// 本护栏**不**要求删除这些 `var()` —— 它们承载「这些表面**想**跟随主题」的意图，
+// 正解是**拓宽桥**（让更多 `--mellow-*` 跨进 iframe），属**设计决策**，不在本护栏内。
+// 这里只做**登记 + 防新增**：新增非 md 主题变量即失败（否则又多一处「写了却永不生效」的开关）。
+const ENGINE_THEME_VARS_INERT = [
+  '--mellow-accent', '--mellow-bg-hover', '--mellow-border', '--mellow-danger',
+  '--mellow-toolbar-bg', '--mellow-toolbar-fg',
+];
+{
+  const ENGINE_SRC2 = 'packages/editor-engine/src';
+  const walkEngine = (dir, rel = '') => readdirSync(resolve(root, dir, rel), { withFileTypes: true }).flatMap((e) =>
+    (e.isDirectory() ? walkEngine(dir, `${rel}${e.name}/`) : [`${rel}${e.name}`]));
+  const collectInert = (files, reader) => {
+    const out = new Set();
+    for (const f of files) {
+      if (!f.endsWith('.ts')) continue;
+      // 先剥注释：说明这些变量的注释里也写着变量名（否则误报）
+      const src = stripRustComments(reader(f));
+      for (const m of src.matchAll(/var\((--mellow-[a-z0-9-]+)/g)) {
+        if (!m[1].startsWith('--mellow-md-')) out.add(m[1]);
+      }
+    }
+    return [...out].sort();
+  };
+  const engineFiles2 = walkEngine(ENGINE_SRC2);
+  const actual = collectInert(engineFiles2, (f) => readFileSync(resolve(root, ENGINE_SRC2, f), 'utf8').replace(/\r\n/g, '\n'));
+  const added = actual.filter((v) => !ENGINE_THEME_VARS_INERT.includes(v));
+  const gone = ENGINE_THEME_VARS_INERT.filter((v) => !actual.includes(v));
+  assert(added.length === 0,
+    `引擎里出现**新的非 md 主题变量**：${added.join(', ')} —— 它们**永远取 fallback**`
+    + '（iframe 只接收 --mellow-md-*，见 mdTokens.ts 的过滤）→ 等于写了一个永不生效的开关；'
+    + '若确需主题跟随，应先拓宽 token 桥（设计决策），或在登记表里说明原因');
+  assert(gone.length === 0,
+    `引擎主题变量登记表里的项已不存在：${gone.join(', ')} —— 若已改用 md token 或去掉，请从登记表删除`);
+  // canary：两个方向
+  const SAMPLE_ADD = "el.style.color = 'var(--mellow-brand, #f00)';";
+  const found = [...SAMPLE_ADD.matchAll(/var\((--mellow-[a-z0-9-]+)/g)].map((m) => m[1]).filter((v) => !v.startsWith('--mellow-md-'));
+  if (found.length !== 1 || found[0] !== '--mellow-brand') {
+    errors.push('引擎主题变量护栏 canary 失效：新增的非 md 变量未被检出');
+  }
+  const SAMPLE_MD = "el.style.color = 'var(--mellow-md-link, #0969da)';";
+  const mdFound = [...SAMPLE_MD.matchAll(/var\((--mellow-[a-z0-9-]+)/g)].map((m) => m[1]).filter((v) => !v.startsWith('--mellow-md-'));
+  if (mdFound.length !== 0) {
+    errors.push('引擎主题变量护栏 canary 失效：md 变量被误判为非 md');
+  }
+}
+
 if (errors.length) {
   console.error('Typora parity ledger validation failed:');
   for (const error of errors) console.error(`- ${error}`);

@@ -2684,6 +2684,85 @@ Linux:   VISUAL_GOLDEN visual-golden: OK / sidebar-golden: OK / Scenes golden: 7
 未纳入登记表的原因：英文串里混有**刻意语言中立**的按钮文本（如查找面板的 `Aa` / `.*`），
 静态判定噪声大；需先定「哪些英文串属于 UI 文案」才可守。
 
+## 4.53 引擎侧「主题跟随」：宿主变量**跨不进 iframe** → 非 md 的 `var(--mellow-*)` 永远取 fallback（2026-10-01）
+
+顺着 §4.52 的同一条线（**「必须走某个中央机制」的约束，护栏只看机制本身、不看有没有绕过**）
+把「主题」也查了一遍。
+
+### 机制（读码确认，且有注释自述）
+
+`packages/editor-engine/src/mdTokens.ts`：
+
+```js
+function setTokenProperties(tokens) {
+  for (const [key, value] of Object.entries(tokens)) {
+    if (key.startsWith('--mellow-md-')) root.style.setProperty(key, value);   // ← 显式过滤
+  }
+}
+```
+
+文件头自述：「编辑器运行在独立 iframe（独立 document），**宿主的 `--mellow-*` 变量不会自动继承**。
+宿主（`App.tsx` applyTheme）经 `EditorCore.setMdTokens()` → 本桥把 **`--mellow-md-*`** token 批量写入」。
+
+而 `App.tsx` 的 applyTheme 把变量设在 **app 根**上（`root.style.setProperty(key, value)`），
+给 iframe 的只有 `setMdTokens(activeTheme.variables)` 这一条通道。
+
+**即：iframe 只拿得到 `--mellow-md-*`；其余 `--mellow-*` 一律到不了。**
+
+### 实测（探针 `tests/e2e/theme-follow-probe.mjs`）
+
+app 侧：`data-theme = mellow-dark`、`--mellow-bg = #1e1e1e`、`--mellow-toolbar-bg = rgba(40,40,42,0.95)`
+（**主题确实生效**）。iframe 侧：
+
+| 观察项 | 读数 | 含义 |
+|---|---|---|
+| iframe 根上的 `--mellow-bg` / `--mellow-toolbar-bg` / `--mellow-accent` | **全为空** | 非 md 变量确实没跨过去 |
+| 选区浮动工具栏计算背景 | `rgba(30,30,30,0.92)` = **fallback**（≠ app 的 `rgba(40,40,42,.95)`） | `var(--mellow-toolbar-bg, …)` 取的是 fallback |
+| 表格工具栏计算背景 | `rgba(255,255,255,0.92)`（**白底**）+ 深色文字 | `table/toolbar.ts` 15 处硬编码色、**一个主题变量都没用** → 暗色下仍是白底 |
+
+### 范围（枚举）
+
+引擎里使用的**非 md** 主题变量共 **6 个**（8 个文件）：
+
+| 变量 | 使用处 |
+|---|---|
+| `--mellow-accent` | `mdLink.ts` / `table/columnWidth.ts` / `table/liveView.ts` / `taskCheckbox.ts` / `wikilink.ts` |
+| `--mellow-bg-hover` | `wysiwygBlocks.ts` |
+| `--mellow-border` | `kbdCaps.ts` |
+| `--mellow-danger` | `mdLink.ts` |
+| `--mellow-toolbar-bg` / `--mellow-toolbar-fg` | `selectionToolbar.ts` |
+
+**即：这 6 个变量全部永远取 fallback** —— 主题文件里为它们定义的值，对引擎是**死值**。
+
+### 处置（**不擅自改设计**）
+
+| 项 | 动作 |
+|---|---|
+| 护栏 | `verify-parity-ledger.mjs` 新增：引擎**不得出现新的非 md 主题变量**（登记上述 6 个；新增即失败）。理由：新增即等于**又写一个永不生效的开关**。 |
+| 探针 | `tests/e2e/theme-follow-probe.mjs`：**只断言「量具就位」**（app 侧主题生效、两个工具栏渲染出来），把 iframe 变量与工具栏计算样式**打印**出来 |
+| 台账 | `P0-THEME-001` 追加本节记录，**并明确标注不影响其主张**（见下） |
+
+**为什么不动那 6 个 `var()`**：它们承载「这些表面**想**跟随主题」的意图。正解是**拓宽 token 桥**
+（让更多 `--mellow-*` 跨进 iframe）——那会改变引擎多个表面的外观，属**设计决策**，不擅自定。
+若确要走「就地内联字面量」的路线（行为等价，因为现在恒取 fallback），应连同**桥的语义**一起决定。
+
+**为什么不降级 `P0-THEME-001`**（与 §4.52 的处置**不同**，此处刻意不照搬）：
+该条目的主张是「主题和字体改变**阅读外观**」+「主题**注册/菜单/设置/UI 同步**」——
+**都没有**声称「引擎侧每个表面都跟随主题」。故本节**不构成**对它主张的反驳，
+只是它**未覆盖**的一个缺口。**「同一个模式」不等于「同一个处置」**：先读条目到底主张了什么。
+
+### 三处「引擎拿不到宿主状态」的同族缺口（值得一起看）
+
+| # | 缺口 | 通道 | 现状 |
+|---|---|---|---|
+| 1 | **locale** | 无（引擎文案硬编码） | §4.52，43 处，已登记 |
+| 2 | **非 md 主题变量** | `setMdTokens` 只传 `--mellow-md-*` | 本节，6 个变量恒取 fallback |
+| 3 | **文档/主题元信息** | 无 | —— |
+
+三者形态相同：**引擎在独立 document 里，宿主的上下文需要显式桥接**，而桥是**逐项加**的。
+→ 值得记的设计观察：与其继续逐项加桥（每加一个就多一处「没加的那部分静默失效」），
+不如定一个**统一的 UI 上下文桥**（locale + 主题 token + 其它宿主状态），一次说清边界。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
