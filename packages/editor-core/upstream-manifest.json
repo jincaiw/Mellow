@@ -1,8 +1,8 @@
 {
-  "_comment": "由 tools/gen-upstream-manifest.mjs 生成，勿手改。钉住 commit 的上游 CoreEditor 树哈希（sha256 前 16 位）。护栏 tests/parity/verify-upstream-manifest.mjs 用它离线校验 UPSTREAM.md 的改动清单。",
+  "_comment": "由 tools/gen-upstream-manifest.mjs 生成，勿手改。钉住 commit 的上游 CoreEditor 树哈希（sha256 前 16 位，**换行符归一化为 LF** 后计算 —— 否则 Windows checkout 的 CRLF 会让每个文件都判为「已改动」）。护栏 tests/parity/verify-upstream-manifest.mjs 用它离线校验 UPSTREAM.md 的改动清单。",
   "repository": "https://github.com/MarkEdit-app/MarkEdit",
   "commit": "81da2a20122a5a43a0cf45d85f8877e18230ab66",
-  "algorithm": "sha256-16",
+  "algorithm": "sha256-16-lf",
   "fileCount": 199,
   "files": {
     ".gitignore": "887ddf10c818a2a4",

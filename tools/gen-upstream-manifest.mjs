@@ -85,15 +85,32 @@ if (!existsSync(upstreamCore)) {
 }
 
 // ── 哈希（sha256 前 16 位十六进制；足够防「静默改动」，且清单可读）──────────
-const hashOf = (p) => createHash('sha256').update(readFileSync(p)).digest('hex').slice(0, 16);
+// ⚠️ **跨平台：哈希前必须把 CRLF 归一化为 LF**（字节级）。
+// 实测（2026-10-01 CI）：仓库**没有 `.gitattributes`**，Windows runner 的
+// `core.autocrlf=true` 会把文本文件检出为 CRLF —— 于是**全部 199 个文件**的
+// 内容哈希都与上游 tarball（LF）不符，护栏在 Windows 上把每个文件都报成「已改动」。
+// 归一化对二进制文件无影响（两边施加同一变换，相等性保持）。
+// 该归一化是哈希语义的一部分 → 写进 `algorithm` 字段，改了它必须重新生成清单。
+function normalizeEol(buf) {
+  const out = Buffer.allocUnsafe(buf.length);
+  let n = 0;
+  for (let i = 0; i < buf.length; i += 1) {
+    if (buf[i] === 0x0d && buf[i + 1] === 0x0a) continue; // 丢掉 CR，保留 LF
+    out[n] = buf[i];
+    n += 1;
+  }
+  return out.subarray(0, n);
+}
+
+const hashOf = (p) => createHash('sha256').update(normalizeEol(readFileSync(p))).digest('hex').slice(0, 16);
 const files = {};
 for (const f of walk(upstreamCore).sort()) files[f] = hashOf(join(upstreamCore, f));
 
 writeFileSync(OUT, `${JSON.stringify({
-  _comment: '由 tools/gen-upstream-manifest.mjs 生成，勿手改。钉住 commit 的上游 CoreEditor 树哈希（sha256 前 16 位）。护栏 tests/parity/verify-upstream-manifest.mjs 用它离线校验 UPSTREAM.md 的改动清单。',
+  _comment: '由 tools/gen-upstream-manifest.mjs 生成，勿手改。钉住 commit 的上游 CoreEditor 树哈希（sha256 前 16 位，**换行符归一化为 LF** 后计算 —— 否则 Windows checkout 的 CRLF 会让每个文件都判为「已改动」）。护栏 tests/parity/verify-upstream-manifest.mjs 用它离线校验 UPSTREAM.md 的改动清单。',
   repository: repoUrl,
   commit,
-  algorithm: 'sha256-16',
+  algorithm: 'sha256-16-lf',
   fileCount: Object.keys(files).length,
   files,
 }, null, 2)}\n`, 'utf8');

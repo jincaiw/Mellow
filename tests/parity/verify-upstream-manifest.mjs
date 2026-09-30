@@ -36,7 +36,10 @@ const fail = (m) => errors.push(m);
 const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.yarn']);
 const EXCLUDE_FILE = (n) => n.endsWith('.tsbuildinfo') || n === 'yarn.lock';
 
-/** 递归列出相对路径（与 diff 命令同排除面）。 */
+/**
+ * 递归列出相对路径（与 diff 命令同排除面）。**路径一律用 `/` 拼接**（不用 `join` 的产物），
+ * 否则 Windows 上会得到 `src\config.ts`，与清单里的 `src/config.ts` 对不上。
+ */
 function listFiles(dir, rel = '') {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -51,7 +54,26 @@ function listFiles(dir, rel = '') {
   return out;
 }
 
-const hashOf = (p) => createHash('sha256').update(readFileSync(p)).digest('hex').slice(0, 16);
+/**
+ * ⚠️ **跨平台：哈希前必须把 CRLF 归一化为 LF**（字节级）。
+ * 实测（2026-10-01 CI，Windows job 打红）：仓库**没有 `.gitattributes`**，
+ * Windows runner 的 `core.autocrlf=true` 会把文本文件检出为 CRLF →
+ * **全部 199 个文件**的内容哈希都与上游 tarball（LF）不符 → 护栏把每个文件都报成「已改动」。
+ * 归一化对二进制文件无影响（两侧施加同一变换，相等性保持）。
+ * 该归一化是哈希语义的一部分，与清单的 `algorithm` 字段（`sha256-16-lf`）绑定。
+ */
+function normalizeEol(buf) {
+  const out = Buffer.allocUnsafe(buf.length);
+  let n = 0;
+  for (let i = 0; i < buf.length; i += 1) {
+    if (buf[i] === 0x0d && buf[i + 1] === 0x0a) continue; // 丢掉 CR，保留 LF
+    out[n] = buf[i];
+    n += 1;
+  }
+  return out.subarray(0, n);
+}
+
+const hashOf = (p) => createHash('sha256').update(normalizeEol(readFileSync(p))).digest('hex').slice(0, 16);
 
 /**
  * 纯函数：按清单与仓库实际哈希推导三个集合（导出给 canary 复用）。
@@ -128,8 +150,9 @@ if (!existsSync(resolve(root, MANIFEST))) {
     fail(`${MANIFEST} 的 commit=${manifest.commit} 与 ${UPSTREAM_MD} 的 Commit=${docCommit} 不一致 —— `
       + '两者必须描述同一个上游快照（用 `node tools/gen-upstream-manifest.mjs` 重新生成）');
   }
-  if (manifest.algorithm !== 'sha256-16') {
-    fail(`${MANIFEST} 的 algorithm=${manifest.algorithm} 不是预期值 sha256-16`);
+  if (manifest.algorithm !== 'sha256-16-lf') {
+    fail(`${MANIFEST} 的 algorithm=${manifest.algorithm} 不是预期值 sha256-16-lf`
+      + '（该值声明「哈希前已把换行符归一化为 LF」—— 改了归一化必须重新生成清单，否则 Windows 上会全量误报）');
   }
   if (manifest.fileCount !== Object.keys(manifest.files).length) {
     fail(`${MANIFEST} 的 fileCount=${manifest.fileCount} 与 files 实际条数 ${Object.keys(manifest.files).length} 不符`);
