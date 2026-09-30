@@ -151,6 +151,39 @@ describe('resolveImageSrc（spec §5 resolve）', () => {
   });
 });
 
+describe('另存为（spec §12 的「save as」场景，2026-09-30 补）', () => {
+  /**
+   * 为什么补这一组：审计 §4.15 发现 spec §12 把 `save as` 列为必覆盖场景，
+   * 而**全仓零覆盖**（放宽到所有 *.test.ts/tsx 查「saveAs/另存为」×「image/图片/src」
+   * 共现，唯一命中是菜单顺序断言里的 `file.saveAs` 字样，与行为无关）。
+   *
+   * 另存为的**实质**是「文档目录基准发生变化」——`handleSaveAs` 把
+   * `host.setDocumentPath(newPath)`，而**引用文本不变**。
+   * 故这里钉住「同一相对引用在不同文档目录下解析到不同位置」这一语义。
+   *
+   * ⚠️ **覆盖边界（如实声明）**：这是**单元级**断言（`resolveImageSrc` 的契约），
+   * 不是端到端的「另存为流程」测试 —— 后者需要真实应用（对话框 + 磁盘）。
+   * 它覆盖的是另存为**依赖的路径基准语义**。
+   */
+  test('同一相对引用：文档目录变化（另存为到别处）后解析基准随之变化', () => {
+    const src = 'assets/a.png';
+    expect(resolveImageSrc(src, '/docs')).toBe('/docs/assets/a.png');
+    // 另存到 /other 之后：引用文本没变，但基准变了 → 解析结果随之改变
+    expect(resolveImageSrc(src, '/other')).toBe('/other/assets/a.png');
+  });
+
+  test('未命名文档首次保存（docDir 由 null 变为有值）后相对引用才开始可解析', () => {
+    expect(resolveImageSrc('assets/a.png', null)).toBe(null);
+    expect(resolveImageSrc('assets/a.png', '/saved')).toBe('/saved/assets/a.png');
+  });
+
+  test('绝对路径与 URL 不受另存为影响（只有相对引用会换基准）', () => {
+    expect(resolveImageSrc('/abs/a.png', '/docs')).toBe('/abs/a.png');
+    expect(resolveImageSrc('/abs/a.png', '/other')).toBe('/abs/a.png');
+    expect(resolveImageSrc('https://a.com/x.png', '/other')).toBe('https://a.com/x.png');
+  });
+});
+
 describe('asset 目录 / markdown 生成', () => {
   test('assetDirName 四模式（spec §4）', () => {
     expect(assetDirName('note', 'assets')).toBe('./assets/');
