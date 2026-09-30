@@ -179,11 +179,12 @@ function runStateMatrix(cfg: FamilyCfg): void {
               selectRange(view, state === 'selection-partial' ? start + 1 : start, state === 'selection-partial' ? start + 2 : end);
               await sleep();
               expect(cfg.revealedWhenTouched(view)).toBe(true);
-              // spec §8 Caret Stability（审计 §4.17 补）：decoration 更新**不得改变文档**。
-              // 本矩阵此前只断言 marker 可见性（「什么变得可见」），不检查「别的东西没变」——
-              // 而 §8 正是关于后者（「任何 decoration 更新必须满足 document position unchanged」）。
-              // 本断言覆盖所有「只移动 caret / 选区 / 点击」而不改文本的状态 × 全部家族。
-              // 另两条（selection anchor/head、scroll anchor preserved）见审计 §4.17 的后续项。
+              // spec §8 第二条不变量（审计 §4.17 补）：decoration 更新**不得改变
+              // selection 的 anchor/head** —— 即选区必须仍是用户设定的那个，不能被
+              // 重算 decoration 时顺手挪动。此前矩阵完全不检查这一条。
+              const sel = view.state.selection.main;
+              expect(sel.from).toBe(state === 'selection-partial' ? start + 1 : start);
+              expect(sel.to).toBe(state === 'selection-partial' ? start + 2 : end);
               expect(view.state.doc.toString()).toBe(cfg.doc);
             } finally { view.destroy(); }
             break;
