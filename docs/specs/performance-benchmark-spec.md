@@ -118,7 +118,49 @@ PRD §110 明确要求：
 |---|---|---|---|
 | W-PERF-1 | **应用内埋点**：在编辑器 input 路径埋点，直接测按键 → 回显的端到端延迟 | 能在 1MB / Large 夹具上给出 P95，且与屏幕捕获读数在**可判定区间**内一致（交叉验证）；16ms 级目标由此可判 | 待排期 |
 | W-PERF-2 | **`hotopen` 口径落地**：按 ADR-0026 Q1/Q2=A1，报告以 `hotopen.switchMs` 作为 1MB/10MB 目标的判定量 | 报告明确标注「判定量 = switchMs」，并说明它只测「顶部带首次实质变化」 | 待排期 |
-| W-PERF-3 | **startup-probe 修复**：`loadMs` 的 600ms `waitStable` 地板 + 探针成功率漂移 | 改为真正的「内容就绪」信号；报告给出有效样本数与探针失败率（已有部分实现） | 部分完成 |
+| W-PERF-3 | **startup-probe 修复**：`loadMs` 的 600ms `waitStable` 地板 + 探针成功率漂移 | 改为真正的「内容就绪」信号；报告给出有效样本数与探针失败率（已有部分实现） | **诊断已完成（2026-09-30），实现待做** |
 
 > **口径唯一声明处**：PRD §110 目标 ↔ benchmark 指标的映射以 **ADR-0026** 为唯一声明处，
 > 本 spec 与报告各节**引用**之，不各自推断。
+
+### W-PERF-3 诊断（2026-09-30，代码级）
+
+**结论先说：600ms 地板不是 bug，是「等待画面静止」语义的固有成分。**
+`lib/screen-timing.swift` 的 `waitStable(stableMs: 600)`：
+
+```swift
+let start = nowMs(); var lastChange = start; var prev: CVPixelBuffer?
+while nowMs() - start < timeoutMs {
+  if let cur = latest { if let p = prev {
+    if pixelDiffSampled(p, cur) < 24 { stable = true } else { changed = true; lastChange = nowMs() }
+  }; prev = cur }
+  if stable && nowMs() - lastChange >= stableMs { break }
+  Thread.sleep(forTimeInterval: 0.03)
+}
+return nowMs() - start          // ← 返回「总等待」，不是「内容就绪时刻」
+```
+
+若应用在 100ms 内就画完，之后屏幕静止 → `lastChange` **停在 `start`** →
+循环必然等满 600ms 才退出。这解释了实测跨应用/跨尺寸取值带仅 **603.8–629.8ms**：
+它测的是「等待画面静止」，**不是文档加载耗时**。
+
+**最小修法（一行级，改返回量而非改判据）**：`return lastChange - start`
+—— 即返回「**最后一次内容变化**的时刻」。判据（连续 600ms 无变化）不变，
+只是不再把 600ms 的确认窗口计入读数。
+
+> ⚠️ **为什么本轮没有直接改**：改的是**量具**，而验证它必须真机跑屏幕捕获
+> （Screen Recording 权限 + Typora/Mellow 双应用）。**盲改量具**正是
+> 「量具骗过自己」的典型风险，且它产出的是 P0 项（`P0-PERF-001`）的证据。
+> 故本轮只做**可验证**的部分（见下），实现与验证留给能跑真机的环境。
+
+**验收标准（改完后必须同时满足）**：
+1. 同一夹具重复跑，`loadMs` 不再出现 ~600ms 的常量下限；
+2. 与 `openToEditable`（= 窗口出现 + 首键回显，**不含** `loadMs`）的差值不再恒为 ~600ms；
+3. 报告里 `loadMs` 仍**不得**进入任何 PRD 判定（见下）。
+
+**已做（本轮，可验证）**：把「`loadMs` 不得被当作业务指标」从**注释约定**升级为**护栏**——
+`verify-parity-ledger` 现断言：① `opens.push(` 语句不得含 `loadMs`；② `vals.push(` 语句不得含 `loadMs`；
+③ 报告打印 `loadMs` 处必须带「等待画面静止 / **不是文档加载耗时**」标注，
+且该标注必须在**字符串字面量**里（断言跑在 stripComments 之后的代码上，只写注释不算）。
+注入验证：删标注 → 报错；把 `loadMs` 加回 open 指标 → 报错。
+

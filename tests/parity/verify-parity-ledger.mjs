@@ -313,6 +313,38 @@ if (existsSync(benchmarkRunnerPath)) {
     '报告必须声明 PRD §110 的 1MB/10MB 目标「未在 PRD 中规定口径」，不得把推断写成 PRD 的陈述');
   assert(/ADR-0026/.test(benchCode),
     '报告必须指向承载口径裁决的 ADR-0026（推断不能自己当结论）');
+
+  // ── 量具读数不得被当作业务指标（2026-09-30）────────────────────────────
+  // 背景：历史上的错误结论「Mellow 10MB open 2.59× 于 Typora」正源于把 `loadMs`
+  // （= `waitStable` 的返回：**等待画面静止**，含 600ms 稳定判定地板）当成了
+  // 「文档加载耗时」。代码里已有注释说明该契约，但**没有护栏** ——
+  // 删掉注释与排除逻辑不会有任何信号（「注释不是契约」）。故锁三件事：
+  //   ① open 指标定义不得含 loadMs；② hotopen 指标定义不得含 loadMs；
+  //   ③ 报告打印 loadMs 处必须带「等待画面静止 / 不是文档加载耗时」标注。
+  // 注意：断言跑在 **stripComments 后**的代码上，故 ③ 必须落在**字符串字面量**里
+  // （只写在注释里不算 —— 这正是本条的要点）。
+  assert(!/opens\.push\([^\n]*loadMs/.test(benchCode),
+    'open 指标定义不得包含 probe.loadMs（它是 waitStable 的返回，含 600ms 地板，不是加载耗时）');
+  assert(!/vals\.push\([^\n]*loadMs/.test(benchCode),
+    'hotopen 指标定义不得包含 probe.loadMs（同上）');
+  assert(/等待画面静止/.test(benchCode) && /不是文档加载耗时/.test(benchCode),
+    '报告打印 loadMs 处必须标注「等待画面静止 / 不是文档加载耗时」（且必须是字符串字面量，'
+    + '不能只写在注释里）—— 否则读者会把它当业务指标，历史错误结论「2.59×」正是这样产生的');
+  // canary：自检这三条锁（样本拼接构造，避免护栏检出自己）
+  {
+    const BAD_PUSH = 'opens.push((win.wallMs - t0Ms) + probe.' + 'loadMs);';
+    const GOOD_PUSH = 'opens.push((win.wallMs - t0Ms) + probe.' + 'latencyMs);';
+    if (!/opens\.push\([^\n]*loadMs/.test(BAD_PUSH)) {
+      errors.push('量具读数锁 canary 失效：含 loadMs 的样本未被检出');
+    }
+    if (/opens\.push\([^\n]*loadMs/.test(GOOD_PUSH)) {
+      errors.push('量具读数锁 canary 失效：不含 loadMs 的样本被误判');
+    }
+    const LABEL_SAMPLE = '等待画面静止' + '，不是文档加载耗时';
+    if (!(/等待画面静止/.test(LABEL_SAMPLE) && /不是文档加载耗时/.test(LABEL_SAMPLE))) {
+      errors.push('量具读数锁 canary 失效：标注样本未被检出');
+    }
+  }
   // ADR-0026 已于 2026-09-30 裁决为 Accepted（Q1/Q2=A1）：报告须写明**裁决结论**，
   // 不能停在「待裁决」——否则读者不知道当前该按哪个口径读数字。
   assert(/ADR-0026[^。]*Accepted/.test(benchCode) || /Accepted 2026-09-30/.test(benchCode),

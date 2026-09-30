@@ -457,7 +457,7 @@ async function measureApp(appKey, opts) {
         console.warn(`⚠️ [${app.name}/${fixture}] ${probeFailures}/${opts.runs} 个样本的 startup-probe 失败（首键回显未测到）→ 这些样本记 null 不计入中位数。失败率高说明该行数字不可用于「谁快谁慢」。`);
       }
       console.log(`  分量 winMs=${JSON.stringify(winMs.map((x) => (x === null ? null : Math.round(x))))}`);
-      console.log(`       loadMs=${JSON.stringify(loads.map((x) => (x === null ? null : Math.round(x))))}`);
+      console.log(`       loadMs（= waitStable 的返回：**等待画面静止**，含 600ms 稳定判定地板；**不是文档加载耗时**，不参与任何 PRD 判定）=${JSON.stringify(loads.map((x) => (x === null ? null : Math.round(x))))}`);
       console.log(`    latencyMs=${JSON.stringify(probes.map((x) => (x === null ? null : Math.round(x))))}`);
     }
 
