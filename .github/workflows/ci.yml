@@ -180,3 +180,25 @@ jobs:
       - name: "Cargo check + test (system core + file-safety + updater)"
         working-directory: apps/desktop/src-tauri
         run: cargo test
+
+  # 立此 job 的原因（2026-10-01）：上面 rust-check 跑在 **ubuntu** —— 于是
+  # `#[cfg(target_os = "macos")]` 的平台增强单测**在 CI 里根本不执行**；
+  # runtime-qualification 也只跑定向的 `file_safety_corpus` 用例。
+  # 结果：「真实系统词典（NSSpellChecker）是否真的给出建议」这类不变量
+  # **没有任何机器在守** —— 实测代价：`spellcheck.rs` 那条
+  # `suggest_returns_guesses_for_misspelling` 长期是 `let _ = suggest("recieve");`
+  # 的**恒真空壳**（测试名声称 returns guesses，断言本体什么都没检查），无人发现。
+  # 本仓判据：**不变量只存在于「本地才会跑」的测试里 = 没守护**（同「e2e 不进 CI」母题）。
+  # 成本：仓库为 public → macOS runner 免费，代价仅为排队时间。
+  rust-check-macos:
+    name: Rust macOS-native test (NSSpellChecker + 平台增强)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Cargo test（含 target_os = macos 的平台增强单测）
+        working-directory: apps/desktop/src-tauri
+        run: cargo test

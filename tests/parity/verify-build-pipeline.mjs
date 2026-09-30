@@ -189,6 +189,32 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   fail('产物模块集合护栏自检失败：无法模拟比对被删除，护栏已失效');
 }
 
+// ── ⑧ macOS 平台增强单测必须有 CI job（2026-10-01）─────────────────────────
+// 立此条的原因：`spellcheck.rs` 的 `#[cfg(target_os = "macos")]` 单测**只在本地跑** ——
+// ci.yml 的 rust-check 在 ubuntu（macOS-only 测试被 cfg 掉），runtime-qualification
+// 只跑定向的 `file_safety_corpus` 用例。于是「真实系统词典（NSSpellChecker）是否真的给建议」
+// **没有任何机器在守**；代价是那条测试长期是 `let _ = suggest("recieve");` 的**恒真空壳**
+// 而无人发现。判据：**不变量只存在于「本地才会跑」的测试里 = 没守护**。
+{
+  const macJob = /\n  rust-check-macos:([\s\S]*?)(?=\n  \S|\s*$)/.exec(ciYml);
+  if (macJob === null) {
+    fail('ci.yml 缺少 rust-check-macos job —— #[cfg(target_os = "macos")] 的平台增强单测'
+      + '在 CI 中不执行（本地才跑 = 没守护；实测代价：拼写建议测试曾是恒真空壳）');
+  } else {
+    if (!/runs-on:\s*macos-latest/.test(macJob[1])) {
+      fail('rust-check-macos job 必须跑在 macos-latest（否则 macOS-only 测试仍不会执行）');
+    }
+    if (!/cargo test/.test(macJob[1])) {
+      fail('rust-check-macos job 必须执行 cargo test（否则该 job 不覆盖平台增强单测）');
+    }
+  }
+  // canary：把 macos job 从样本里删掉，上面的判定必须翻红
+  const noMac = ciYml.replace(/\n  rust-check-macos:[\s\S]*$/, '');
+  if (/\n  rust-check-macos:/.test(noMac)) {
+    fail('macOS job 护栏自检失败：无法模拟该 job 被删除（2026-10-01），护栏已失效');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }

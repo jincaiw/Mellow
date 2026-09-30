@@ -1546,6 +1546,111 @@ for (const domain of ['file', 'layout', 'feature', 'build']) {
   if (triggersLargeMode(5242880, 5242880)) errors.push('夹具尺寸锁 canary 失效：压线样本被误判为「触发」');
 }
 
+// ── P0-EDITOR-005：拼写建议的测试**不得是空壳**（2026-10-01）──────────────────
+// 立此条的原因：`spellcheck.rs` 里那条 `suggest_returns_guesses_for_misspelling`
+// **长期是恒真空壳** —— 函数体只有 `let _ = suggest("recieve");`（「不 panic 即通过」），
+// 而测试名声称「returns guesses」。于是「**真实** NSSpellChecker 是否真的给建议」
+// 从未被任何机器验证过（台账 P0-EDITOR-005 的 `runtime-verification-pending` 缺口有一半在此；
+// 另一半是应用侧 e2e `tests/e2e/spellcheck-suggestions-verify.mjs`）。
+// 判据沿用本仓反复出现的形态：**测试名与注释是「声称」，断言本体才是「守护」**。
+{
+  const spellPath = 'apps/desktop/src-tauri/src/spellcheck.rs';
+  if (existsSync(resolve(root, spellPath))) {
+    const spellRaw = readFileSync(resolve(root, spellPath), 'utf8').replace(/\r\n/g, '\n');
+    // ⚠️ **必须先剥注释再断言**（skill §4）—— 实测自伤：本文件里那条「解释空壳形态」的
+    // doc comment 原样引用了 `let _ = suggest("recieve");`，于是反例锁**首跑即误报**。
+    // 这是本会话第三次踩「护栏匹配到散文」。
+    // 限制（如实声明）：剥离器不区分字符串/正则里的 `//`；本文件不含这类字面量，
+    // 若将来引入，需改用更保守的剥离（只剥整行注释）。
+    const stripRustComments = (s) => s
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    const spell = stripRustComments(spellRaw);
+    // ① 该文件不得再出现「把调用结果丢掉」的空壳形态
+    assert(!/let\s+_\s*=\s*suggest\s*\(/.test(spell),
+      'spellcheck.rs 出现 `let _ = suggest(...)` 空壳形态（只验「不 panic」，不验行为）—— 请改为真断言');
+    // ② 抽取每个 #[test] 的函数体 —— 用**花括号计数**而不是固定缩进的收尾锚点。
+    //    为什么：首版写成 `…\{([\s\S]*?)\n        \}`（锚死 8 空格），而新加的
+    //    `mod platform_contract` 在 4 空格缩进下 → **漏解析**。元护栏当场报出
+    //    「源码有 9 处、只解析出 7 个」—— 这正是元护栏存在的意义。
+    //    限制（如实声明）：花括号计数不区分字符串里的 `{`；本文件的格式占位符
+    //    （如 `{guesses:?}`）成对出现故净零，不影响计数。
+    //    提为具名函数是为了让下面的 canary 能跑**同一套逻辑**（而不是拼字符串给正则）。
+    const extractTests = (src) => {
+      const out = [];
+      const re = /#\[test\]\s*\n\s*fn\s+(\w+)\s*\(\)\s*\{/g;
+      let m;
+      while ((m = re.exec(src)) !== null) {
+        const start = m.index + m[0].length;
+        let depth = 1;
+        let i = start;
+        while (i < src.length && depth > 0) {
+          if (src[i] === '{') depth += 1;
+          else if (src[i] === '}') depth -= 1;
+          i += 1;
+        }
+        out.push({ name: m[1], body: src.slice(start, i - 1) });
+      }
+      return out;
+    };
+    const testBodies = extractTests(spell);
+    // 元护栏（铁律 3）：解析到的数量必须等于源码里 #[test] 的出现次数 —— 漏解析即响亮失败
+    const declaredTests = (spell.match(/#\[test\]/g) ?? []).length;
+    assert(testBodies.length === declaredTests,
+      `spellcheck.rs 的 #[test] 解析不完整：源码有 ${declaredTests} 处，只解析出 ${testBodies.length} 个 —— 形态变了，护栏需同步`);
+    assert(testBodies.length >= 8, `spellcheck.rs 的 #[test] 过少（${testBodies.length}）—— 是否被误删？`);
+    // ③ 每个测试都必须至少含一个断言（防「不 panic 即通过」）
+    for (const t of testBodies) {
+      assert(/assert/.test(t.body), `spellcheck.rs 的测试 ${t.name} 不含任何断言（空壳：不 panic 即通过）`);
+    }
+    // ④ 建议测试必须**先自证读到了东西**（skill §12：空输入上的断言恒真）+ 断言用户可见不变量
+    const sugg = testBodies.find((t) => t.name === 'suggest_returns_guesses_for_misspelling');
+    assert(sugg !== undefined, 'spellcheck.rs 缺少 suggest_returns_guesses_for_misspelling 测试');
+    if (sugg !== undefined) {
+      assert(/assert!\s*\(\s*!guesses\.is_empty\(\)/.test(sugg.body),
+        '建议测试必须**先自证「读到了东西」**（assert!(!guesses.is_empty())）—— 否则系统词典缺失时该测试恒绿');
+      assert(/eq_ignore_ascii_case\("receive"\)/.test(sugg.body),
+        '建议测试必须断言建议里含正确拼写 receive（用户可见不变量），只断言「非空」仍可能被无关词满足');
+    }
+    // ⑤ 平台判定必须是**可两端测试的纯函数**（2026-10-01）
+    // 立此条的原因：`spellcheck_available()` 的返回值决定宿主**是否显示拼写区**（用户可见行为），
+    // 而若直接写成 `cfg!(target_os = "macos")`，这条分支**只能在非 macOS 上被测** ——
+    // macOS 单测全在 `cfg(target_os = "macos")` 里 → **两端各自只有一半平台能验**
+    // （本地永远验不到 false，ubuntu CI 永远验不到 true）。
+    assert(/const fn spellcheck_supported_on\(is_macos: bool\) -> bool/.test(spell),
+      'spellcheck.rs 必须把平台判定抽成纯函数 spellcheck_supported_on(is_macos) —— '
+      + '否则「非 macOS 不显示拼写区」这条用户可见行为在本地（macOS）永远无法断言');
+    assert(/spellcheck_supported_on\(cfg!\(target_os = "macos"\)\)/.test(spell),
+      'spellcheck_available() 必须委托给 spellcheck_supported_on(...)，不得内联 cfg!（否则纯函数与真实命令可各自漂移）');
+    assert(/assert!\(\s*!spellcheck_supported_on\(false\)/.test(spell)
+      && /assert!\(spellcheck_supported_on\(true\)/.test(spell),
+      '平台判定纯函数必须**两个取值都被断言**（false → 无词典能力；true → 有）—— 只锁一侧等于没锁');
+    // ⑥ 必须有端到端一致性断言（纯函数 ↔ 真实命令），否则两边可各自漂移而纯函数测试仍全绿
+    assert(/super::spellcheck_available\(\)[\s\S]{0,120}?cfg!\(target_os = "macos"\)/.test(spell),
+      '必须有断言把 spellcheck_available() 与 cfg!(target_os = "macos") 绑在一起（端到端一致性）');
+
+    // canary：用**同一套抽取逻辑**跑合成输入（直接测逻辑，不测字符串替换）
+    //   ① 8 空格缩进（`mod tests` 内）② 4 空格缩进（`mod platform_contract` 内）
+    //   —— 后者正是首版固定缩进锚点漏掉的那一类。
+    const SHELL8 = '#[test]\n        fn x() {\n            let _ = suggest("recieve");\n        }';
+    const REAL4 = '#[test]\n    fn y() {\n        assert!(true);\n    }';
+    const shell8 = extractTests(SHELL8);
+    const real4 = extractTests(REAL4);
+    if (shell8.length !== 1 || /assert/.test(shell8[0].body)) {
+      errors.push('拼写测试空壳护栏 canary 失效：空壳样本未被判为「无断言」');
+    }
+    if (real4.length !== 1 || !/assert/.test(real4[0].body)) {
+      errors.push('拼写测试空壳护栏 canary 失效：4 空格缩进的真测试未被正确解析/被误判为无断言');
+    }
+    // canary：花括号计数必须能跨过多行断言体（含成对格式占位符）
+    const MULTI = '#[test]\n        fn z() {\n            assert!(\n                !v.is_empty(),\n                "实际：{v:?}"\n            );\n        }';
+    const multi = extractTests(MULTI);
+    if (multi.length !== 1 || !/is_empty/.test(multi[0].body)) {
+      errors.push('拼写测试空壳护栏 canary 失效：多行断言体（含格式占位符）未被正确抽取');
+    }
+  }
+}
+
 if (errors.length) {
   console.error('Typora parity ledger validation failed:');
   for (const error of errors) console.error(`- ${error}`);

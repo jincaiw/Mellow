@@ -12,10 +12,23 @@
 //! 2. 本模块的命令**不抛错**：不可用或无建议时返回空数组 / `false`，
 //!    便于前端直接渲染，无需逐处 try/catch。
 
+/// **纯函数**：给定「本平台是否 macOS」，是否具备词典能力。
+///
+/// 为什么要抽成纯函数（2026-10-01）：宿主用 `spellcheck_available()` 决定**是否显示拼写区** ——
+/// 「显示一个点了没反应的项」比不显示更糟（本项目「占位项可点击且点击无反应」母题），
+/// 故「非 macOS → false」是**用户可见行为**的依据，必须有断言守。
+/// 而若把它直接写成 `cfg!(target_os = "macos")`，这条分支就**只能在非 macOS 上被测**：
+/// macOS 单测全在 `cfg(target_os = "macos")` 里，于是**两端各自只有一半平台能验**
+/// （本地 macOS 永远验不到 false 那一侧，ubuntu CI 永远验不到 true 那一侧）。
+/// 抽成纯函数后，**两端都能在任意平台断言**。
+const fn spellcheck_supported_on(is_macos: bool) -> bool {
+    is_macos
+}
+
 /// 该平台是否具备词典能力（宿主据此决定是否显示拼写区）
 #[tauri::command]
 pub fn spellcheck_available() -> bool {
-    cfg!(target_os = "macos")
+    spellcheck_supported_on(cfg!(target_os = "macos"))
 }
 
 /// 建议列表；不可用或无建议时返回**空数组**（不报错）
@@ -99,6 +112,44 @@ pub fn spellcheck_has_learned(word: String) -> bool {
     {
         let _ = word;
         false
+    }
+}
+
+/// **平台判定契约**（2026-10-01）。
+///
+/// 立此测试的原因：`spellcheck_available()` 的返回值直接决定宿主**是否显示拼写区**
+/// —— 而「非 macOS → false」这条分支此前**没有任何测试**：
+/// macOS 单测全在 `cfg(target_os = "macos")` 里，ubuntu CI 只跑非 macOS 分支，
+/// 于是**两端各自只有一半平台能验**（本地永远验不到 false，CI 永远验不到 true）。
+/// 把判定抽成 `spellcheck_supported_on(is_macos)` 纯函数后，**两端都能在任意平台断言** ——
+/// 这是「跨层字段两端必须同时锁」在**平台分支**上的形态。
+#[cfg(test)]
+mod platform_contract {
+    use super::spellcheck_supported_on;
+
+    #[test]
+    fn non_macos_has_no_dictionary() {
+        // 用户可见后果：宿主**不显示**拼写区（显示一个点了没反应的项比不显示更糟）
+        assert!(
+            !spellcheck_supported_on(false),
+            "非 macOS 必须无词典能力 —— 否则宿主会显示点了没反应的拼写区"
+        );
+    }
+
+    #[test]
+    fn macos_has_dictionary() {
+        assert!(spellcheck_supported_on(true), "macOS 必须具备词典能力（NSSpellChecker）");
+    }
+
+    #[test]
+    fn available_matches_current_platform() {
+        // 端到端一致性：`spellcheck_available()` 必须等于「本平台是否 macOS」。
+        // 这条把纯函数与真实命令绑在一起 —— 否则两边可以各自漂移而纯函数测试仍全绿。
+        assert_eq!(
+            super::spellcheck_available(),
+            cfg!(target_os = "macos"),
+            "spellcheck_available() 必须与 cfg!(target_os = \"macos\") 一致"
+        );
     }
 }
 
@@ -238,10 +289,49 @@ mod mac {
             assert!(issues.len() <= 2, "max_issues 必须生效，实际 {}", issues.len());
         }
 
+        /// **真实系统词典**是否真的给出建议（P0-EDITOR-005 的关键一条）。
+        ///
+        /// ⚠️ 本测试此前是**恒真空壳**：原实现只写 `let _ = suggest("recieve");`
+        /// —— 「不 panic 即通过」，**什么都没断言**。测试名声称 "returns guesses"，
+        /// 而断言本体不检查任何东西 → 于是「真实 NSSpellChecker 的建议内容」
+        /// **从未被任何机器验证过**（台账 P0-EDITOR-005 的 `runtime-verification-pending`
+        /// 缺口有一半就在这里；另一半是应用侧 e2e，见
+        /// `tests/e2e/spellcheck-suggestions-verify.mjs`）。
+        /// 这与本仓反复出现的形态同源：**测试名与注释是「声称」，断言本体才是「守护」**。
+        ///
+        /// 本机实测（macOS 27.0 / arm64，2026-10-01 探针）：
+        /// `suggest("recieve") == ["receive", "relieve"]`、`suggest("teh")[0] == "the"`、
+        /// `suggest("mellowzzrecieve") == []`、`has_learned("recieve") == false`。
+        /// 断言只锁**跨 macOS 版本稳定的部分**（正确拼写出现在建议里），
+        /// 不锁条数与顺序 —— 那是系统词典的实现细节，锁死会变成「形状锁」。
         #[test]
         fn suggest_returns_guesses_for_misspelling() {
-            // 系统词典存在性依赖运行环境；只断言「不 panic 且返回 Vec」
-            let _ = suggest("recieve");
+            let guesses = suggest("recieve");
+            // ① **先自证「读到了东西」**：空输入上的断言恒真，故必须先断言非空。
+            //    若这里失败，要区分两种原因（这正是它要区分的）：
+            //    a) 系统词典缺失/被禁用（环境问题）；b) 该词曾被 learn 进用户词典。
+            assert!(
+                !guesses.is_empty(),
+                "NSSpellChecker 未对经典拼写错误给出任何建议 —— \
+                 若本机系统词典缺失/被禁用，或 'recieve' 曾被 learn 进用户词典，本断言会失败。\
+                 实际返回：{guesses:?}"
+            );
+            // ② 建议里必须含**正确拼写**（这是「建议真的有用」的用户可见不变量）
+            assert!(
+                guesses.iter().any(|g| g.eq_ignore_ascii_case("receive")),
+                "建议列表应包含正确拼写 receive，实际：{guesses:?}"
+            );
+            // ③ 建议不得**原样回吐输入** —— 那会让「建议」变成点了没反应的项
+            assert!(
+                !guesses.iter().any(|g| g.eq_ignore_ascii_case("recieve")),
+                "建议列表不得包含原拼写本身，实际：{guesses:?}"
+            );
+            // ④ 规范化是**本模块自己的契约**（trim + 小写），与系统词典无关 → 可确定性断言
+            assert_eq!(
+                suggest("  RECIEVE  "),
+                guesses,
+                "suggest 必须对输入做 trim + 小写规范化（大小写/空白不应改变结果）"
+            );
         }
     }
 }
