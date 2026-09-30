@@ -13,7 +13,7 @@
  *   4. 复制引擎到 public/editor/engine/ 并补 .js 扩展名（浏览器 ESM 要求）；
  *   5. 注入引擎 loader（MarkEdit.addExtension）。
  */
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // editor-core 平台无关 bundle 构建模块（tsc 产物，CJS）
@@ -254,8 +254,49 @@ function assertPkgDistFresh(name, pkgDir) {
   return new Set(orphan);
 }
 
+/**
+ * CoreEditor 上游产物新鲜度闸门（2026-10-01）。
+ *
+ * `packages/editor-core/CoreEditor/dist/index.html` 是**本脚本第 24 行的读取来源**，
+ * 而它是 `CoreEditor/.gitignore` 里的构建产物（`yarn build` 生成，不入库）——
+ * 与 `packages/<pkg>/dist` 是同一类「gitignore 的构建前置」。
+ * 改了 `CoreEditor/src` 却没重建 → 交付包里的渲染层是旧的，**屏幕上看不出原因**。
+ *
+ * 判据用 **mtime**（vite 产物是单文件 bundle，没有 src↔dist 的 1:1 模块映射，
+ * 无法做集合相等）。此处 mtime 的方向是**保守**的：
+ *   - 误报（src 看着更新但产物其实已最新）→ 只是多跑一次重建，安全；
+ *   - 漏报（产物其实陈旧但 mtime 更晚）→ 只在「checkout 顺序把 src 的 mtime 压到
+ *     产物之后」这类情况下可能发生。**该残余风险由 CI 兜底**：`ci.yml` 与 `release.yml`
+ *     都先跑 CoreEditor 的 `yarn build`，只有本地临时构建路径依赖本闸门。
+ */
+function assertCoreEditorFresh() {
+  if (!existsSync(source)) {
+    throw new Error(
+      'CoreEditor/dist/index.html 缺失 —— 渲染层上游产物是 gitignore 的构建前置，必须先构建。\n'
+      + '  修法：cd packages/editor-core/CoreEditor && ./node_modules/.bin/vite build\n'
+      + '        （或 bash apps/desktop/scripts/build-local.sh —— 其 0/6 步会自动重建）',
+    );
+  }
+  const coreSrcDir = resolve(root, '../../packages/editor-core/CoreEditor/src');
+  if (!existsSync(coreSrcDir)) return;
+  const distMs = statSync(source).mtimeMs;
+  const newer = listFiles(coreSrcDir, (n) => n.endsWith('.ts'))
+    .filter((f) => statSync(resolve(coreSrcDir, f)).mtimeMs > distMs)
+    .sort();
+  if (newer.length > 0) {
+    throw new Error(
+      `CoreEditor/dist 陈旧：${newer.length} 个源文件比它新 —— ${newer.slice(0, 5).join(', ')}`
+      + `${newer.length > 5 ? ` 等 ${newer.length} 个` : ''}\n`
+      + '  后果：交付包里的渲染层不是这一版源码（改了 CoreEditor/src 却「没有任何效果」，且无报错）。\n'
+      + '  修法：cd packages/editor-core/CoreEditor && ./node_modules/.bin/vite build\n'
+      + '        （或 bash apps/desktop/scripts/build-local.sh —— 其 0/6 步会自动重建）',
+    );
+  }
+}
+
 /** 复制引擎 dist → public/editor/engine-<version>/（递归，保留子目录；浏览器 ESM 要求显式 .js 扩展名） */
 function copyEngine() {
+  assertCoreEditorFresh();
   // 孤儿（dist 有、src 无）不进产物：交付包里的引擎模块集合必须 == 源码模块集合
   const orphan = assertPkgDistFresh('@mellow/editor-engine', resolve(root, '../../packages/editor-engine'));
   assertPkgDistFresh('@mellow/editor-core', resolve(root, '../../packages/editor-core'));

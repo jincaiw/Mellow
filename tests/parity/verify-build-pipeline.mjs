@@ -152,6 +152,24 @@ if (!/notShipped/.test(releaseVerify) || !/deadCode/.test(releaseVerify)) {
   fail('verify-release-bundle.mjs 未比对交付包与源码的引擎模块集合'
     + '（固定文件名清单只能证明产物非空，证明不了产物是这一版源码）');
 }
+// CoreEditor 上游产物（同为 gitignore 的构建前置，是本脚本第 24 行的读取来源）
+if (!/function assertCoreEditorFresh\s*\(/.test(bundleScript)) {
+  fail('build-editor-bundle.mjs 缺少 assertCoreEditorFresh —— CoreEditor/dist 陈旧会让'
+    + '交付包里的渲染层不是这一版源码（改了 CoreEditor/src 却「没有任何效果」，且无报错）');
+}
+if (!/assertCoreEditorFresh\(\);/.test(bundleScript)) {
+  fail('build-editor-bundle.mjs 定义了 assertCoreEditorFresh 但**没有调用**（空开关）');
+}
+if (!/CoreEditor\/dist 陈旧/.test(bundleScript) || !/CoreEditor\/dist\/index\.html 缺失/.test(bundleScript)) {
+  fail('CoreEditor 新鲜度闸门必须同时覆盖「缺失」与「陈旧」两种情形，并给出可执行的修法');
+}
+// canary：闸门被删掉 / 不再被调用时必须能翻红
+if (/function assertCoreEditorFresh\s*\(/.test(bundleScript.replace(/function assertCoreEditorFresh\s*\(/, 'function removedCore('))) {
+  fail('CoreEditor 新鲜度闸门护栏自检失败：无法模拟闸门被删除（2026-10-01），护栏已失效');
+}
+if (/assertCoreEditorFresh\(\);/.test(bundleScript.replace(/assertCoreEditorFresh\(\);/, 'noopCore();'))) {
+  fail('CoreEditor 新鲜度闸门护栏自检失败：无法模拟调用被删除（空开关），护栏已失效');
+}
 
 // canary：闸门被删掉时，上面的断言必须能翻红
 const gateRemoved = bundleScript.replace(/function assertPkgDistFresh\s*\(/, 'function removedGate(');
