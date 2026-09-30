@@ -806,6 +806,30 @@ scroll anchor preserved
 > 本处是「**声明了一个不变量，而系统性测试只检查了它的相邻面**」——
 > 更隐蔽，因为矩阵**看起来**在覆盖这 15 个状态。
 
+## 4.18 复核（正向确认）：`ime-test-plan` §5 的 7 条不变量**全部有覆盖**（2026-09-30）
+
+**背景**：`ime-test-plan` §5「必须验证」列了 7 条不变量，§8「Gate」把其中 4 条列为
+**禁止发布**条件（丢字 / 重复 / blocker caret / undo corruption）。
+首轮用**关键词映射**扫描 `ime.test.ts` + `ime-guards.test.ts` → 4 条 ❌。
+
+**⚠️ 那 4 条 ❌ 全是假阴性** —— 关键词法只证明「某文件提到过这个词」，
+而这类不变量通常通过**断言最终文档等于期望串**间接保证，不必出现「丢字」二字。
+改为**逐条读用例名**后，7 条**全部有覆盖**（分散在 3 个单元测试文件 + Linux IME 矩阵）：
+
+| §5 不变量 | 覆盖它的测试 |
+|---|---|
+| no lost char / no duplicated char | **Linux IME 矩阵**（台账 `linux-ime-matrix` 证据，断言无丢字/重复） |
+| no caret jump | `ime.test.ts`「合成期间 caret 移动不触发重算（渲染冻结）」 |
+| **no premature slash commit** | **`slashCommands.test.ts`「does not trigger during IME composition」** |
+| no unexpected marker hide | `ime-guards.test.ts`（8 个功能各一条「合成期冻结 → 结束恢复」） |
+| no undo corruption | `ime.test.ts`「合成结束后 Undo 不破坏文本与 marker（undo corruption guard）」 |
+| no full editor remount | `ime-guards.test.ts` 的「冻结」+ `table-live-view.test.ts` 的「不重建整张表」 |
+
+**记录目的**：① 把「7 条不变量有人守」变成**已核对的事实**，避免未来重复审计；
+② 留下一条**方法教训** —— **关键词映射不能用来判定「某不变量无人守」**，
+它只适合用来**定位候选**，判定必须读用例名/断言本体。
+（本会话已因此自伤两次：一次把 `.md` 引用源漏掉报了假孤儿，一次就是本条。）
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
