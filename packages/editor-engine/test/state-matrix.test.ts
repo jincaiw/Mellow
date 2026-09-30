@@ -1,11 +1,19 @@
 /**
- * P4.1 —— §6.2 节点统一 15 状态矩阵（typora-parity-master-plan §6.2）。
+ * P4.1 —— 节点统一 **16** 状态矩阵。
  *
- * 15 状态：
+ * 真值源：`docs/specs/live-markdown-engine-spec.md` **§21 Required Test Matrix**
+ *（该节逐项列出 16 个状态）。**此前本文件头部把它写成「§6.2」**——`typora-parity-master-plan.md`
+ * §6.2 实为「布局不变量」，与状态矩阵无关；这是引用失真，已于 2026-09-30 更正。
+ *
+ * 16 状态（spec §21 逐项，命名对照见下）：
  *   idle / caret-before / caret-inside / caret-after
- *   selection-partial / selection-full / mouse-click
+ *   selection-partial / selection-full / **mouse**（本文件记作 `mouse-click`，jsdom 代理）
  *   IME / undo / redo / copy / paste
- *   delete-start / delete-end / source-live-roundtrip
+ *   delete-start / delete-end / **keyboard** / **source-live switch**（本文件记作 `source-live-roundtrip`）
+ *
+ * `mouse` / `keyboard` 两项此前**缺席**（矩阵只跑了 15 态），2026-09-30 补齐 ——
+ * 其中 `keyboard` 的意义是补上「真实 keydown → CM keymap → selection → reveal」这一**组合**，
+ * 而既有 caret-* 只证明「选区位置 → reveal」（程序化 `moveCaret` 直接改选区）。
  *
  * 覆盖家族（marker-reveal 引擎可表达的 §6.2 节点）：
  *   ATX Heading / Setext Heading / Strong / Emphasis / Strikethrough /
@@ -23,8 +31,8 @@
  * - copy / paste 用 FakeClipboardData 事件代理（clipboard-copy / smart-paste 同款）。
  */
 
-import { EditorView } from '@codemirror/view';
-import { history, undo, redo } from '@codemirror/commands';
+import { EditorView, keymap } from '@codemirror/view';
+import { history, undo, redo, defaultKeymap } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { install, setSourceMode, resetModeState } from '../src/index';
 import { resetCompositionState } from '../src/composition';
@@ -135,9 +143,13 @@ function runStateMatrix(cfg: FamilyCfg): void {
     ['delete-start', '删除节点首字符 → doc 精确 + invalid 落 source'],
     ['delete-end', '删除节点末字符 → doc 精确 + 状态一致'],
     ['source-live-roundtrip', 'Source ↔ Live 往返策略恢复'],
+    // 2026-09-30：补 spec §21 的**第 16 个场景** —— 矩阵此前只有 15 个（`keyboard` 缺席）。
+    // 既有 caret-* 用程序化 `moveCaret` 只证明「选区位置 → reveal」；本场景补的是**组合**：
+    // keymap 层（真实 keydown）真的移动了选区，且 reveal 随之生效。
+    ['keyboard', '键盘导航（真实 ArrowLeft keydown → keymap → selection → reveal）'],
   ];
 
-  describe(`${cfg.label} — 15 状态矩阵`, () => {
+  describe(`${cfg.label} — 16 状态矩阵`, () => {
     for (const [state, desc] of states) {
       const skip = cfg.skipStates?.[state];
       const body = skip === undefined ? test : test.skip;
@@ -323,6 +335,54 @@ function runStateMatrix(cfg: FamilyCfg): void {
             } finally { view.destroy(); }
             break;
           }
+          // spec §21 的第 16 个场景：**键盘导航**（此前矩阵只有 15 个，`keyboard` 缺席）。
+          // 与 caret-* 的区别：那三个用程序化 `moveCaret`（直接改选区）只证明「选区位置 → reveal」；
+          // 本场景走**真实 keydown → CM keymap → selection**，补上「组合」这一层。
+          // `defaultKeymap` 在产品里由 CoreEditor 的 `extensions()` 装配（本 harness 不含），
+          // 故此处显式加上 —— 与真实产品路径一致。
+          case 'keyboard': {
+            const view = new EditorView({
+              doc: cfg.doc,
+              parent: document.body,
+              extensions: [markdown({ base: markdownLanguage }), history(), keymap.of(defaultKeymap), install(false)],
+            });
+            try {
+              view.focus();
+              await sleep();
+              // 起点：节点**之后**一个字符（确保起点在节点外，与 idle 同侧）
+              moveCaret(view, Math.min(end + 1, cfg.doc.length));
+              await sleep();
+              // 非恒绿前提：起点处节点仍为 idle/rendered（touched 判据应为 false）。
+              // 否则「按键后为 true」可能只是因为该家族**一开始**就为 true（假阳性）。
+              expect(cfg.revealedWhenTouched(view)).toBe(false);
+              const before = view.state.selection.main.head;
+              // 真实按键两次 → 光标左移进入节点（不是 setSelection）
+              for (let i = 0; i < 2; i += 1) {
+                view.contentDOM.dispatchEvent(
+                  new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+                );
+                await sleep();
+              }
+              // 前提断言（防恒绿）：键盘**确实**把光标移进了节点
+              expect(view.state.selection.main.head).toBeLessThan(before);
+              expect(view.state.selection.main.head).toBeGreaterThanOrEqual(start);
+              // 光标已在节点内 → 与 caret-before/inside/after 同路径：必须 reveal。
+              //
+              // 这里用 `revealedWhenTouched` 而**不是** `hiddenWhenIdle`：后者是各家族的
+              // **idle 探针**，对 mixed 模型的 Link 家族并不等价于「节点已 exit idle」——
+              // Link 的 `hiddenWhenIdle` 探的是 **URL 是否隐藏**，而两次左移的落点
+              // `end - 1` 恰是 `)`（= `node.from + close`）→ 按 spec §12 落在 **text 区**
+              // （`inUrl` 为开区间 `(open, close)`，不含 `)`），此时 URL **仍应隐藏**、
+              // 只显示 `[`/`]` —— 故 `hiddenWhenIdle` 为 true 属**正确**的 mixed 行为，
+              // 不是缺陷。（首跑即因误用该判据而红，见 release-blocker-audit §4.33。）
+              // `revealedWhenTouched` 才是各家族统一的「caret/selection 触及节点 → 显示」
+              // 判据（caret-* / mouse-click / IME / undo / redo / paste 同用它）。
+              expect(cfg.revealedWhenTouched(view)).toBe(true);
+              // spec §8：键盘驱动的 decoration 重算同样**不得改写文档**。
+              expect(view.state.doc.toString()).toBe(cfg.doc);
+            } finally { view.destroy(); }
+            break;
+          }
         }
       });
     }
@@ -448,7 +508,7 @@ runStateMatrix({
 
 // ─────────────────────────── FencedCode（always source） ───────────────────────────
 
-describe('FencedCode — 15 状态矩阵（source-oriented，引擎永不隐藏）', () => {
+describe('FencedCode — 16 状态矩阵（source-oriented，引擎永不隐藏）', () => {
   const DOC = '```ts\nconst a = 1;\n```\n\nplain';
   const fenceStart = 0;
   const fenceEnd = DOC.indexOf('\n\nplain');
@@ -567,6 +627,34 @@ describe('FencedCode — 15 状态矩阵（source-oriented，引擎永不隐藏�
       view.dispatch({ selection: view.state.selection });
       await sleep();
       expect(hiddenCount(view)).toBe(0);
+    } finally { view.destroy(); }
+  });
+
+  // spec §21 第 16 态 `keyboard` 的 **source-oriented 对照**：即使按键把光标移进代码区，
+  // 引擎也**永不**隐藏任何 marker（hiddenCount 恒 0）。与 marker-reveal 家族的 keyboard 态
+  // 相反 —— 那些家族按键后应 reveal，本家族按键后**什么都不该发生**。
+  test('keyboard：真实 ArrowLeft 在代码内移动，仍无隐藏 marker', async () => {
+    const view = new EditorView({
+      doc: DOC, parent: document.body,
+      extensions: [markdown({ base: markdownLanguage }), history(), keymap.of(defaultKeymap), install(false)],
+    });
+    try {
+      view.focus();
+      await sleep();
+      moveCaret(view, outside);
+      await sleep();
+      const before = view.state.selection.main.head;
+      for (let i = 0; i < 3; i += 1) {
+        view.contentDOM.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+        );
+        await sleep();
+      }
+      // 前提断言（防恒绿）：按键**确实**移动了光标
+      expect(view.state.selection.main.head).toBeLessThan(before);
+      // source-oriented：无论光标在哪，都无 marker 被隐藏；且 doc 不被改写
+      expect(hiddenCount(view)).toBe(0);
+      expect(view.state.doc.toString()).toBe(DOC);
     } finally { view.destroy(); }
   });
 });

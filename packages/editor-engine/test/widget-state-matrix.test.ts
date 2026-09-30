@@ -1,9 +1,11 @@
 /**
- * C5（G4-EDIT-01 收口）—— widget 型节点的 15 状态矩阵（marker 家族见 state-matrix.test.ts）。
+ * C5（G4-EDIT-01 收口）—— widget 型节点的 **16** 状态矩阵（marker 家族见 state-matrix.test.ts）。
  *
- * 15 状态与 state-matrix 相同：idle / caret-before / caret-inside / caret-after /
- * selection-partial / selection-full / mouse-click / IME / undo / redo / copy / paste /
- * delete-start / delete-end / source-live-roundtrip。
+ * 16 状态（真值源 `docs/specs/live-markdown-engine-spec.md` §21 Required Test Matrix；
+ * 本文件命名与 state-matrix 一致）：idle / caret-before / caret-inside / caret-after /
+ * selection-partial / selection-full / mouse-click（spec `mouse`）/ IME / undo / redo / copy /
+ * paste / delete-start / delete-end / **keyboard** / source-live-roundtrip（spec `source-live switch`）。
+ * `keyboard` 于 2026-09-30 补齐（此前只有 15 态）。
  *
  * widget 家族（显隐契约不走 markerTexts，走 replace/mark widget 探针）：
  *   MathBlock（严格内 reveal）/ Mermaid（严格内）/ Image（含边界，inclusive）/
@@ -18,8 +20,8 @@
  *   - wikilink.ts: head >= from && head <= to → 定界符隐藏（含边界）
  */
 
-import { EditorView } from '@codemirror/view';
-import { history, undo, redo } from '@codemirror/commands';
+import { EditorView, keymap } from '@codemirror/view';
+import { history, undo, redo, defaultKeymap } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { install, setSourceMode, resetModeState } from '../src/index';
 import { resetCompositionState } from '../src/composition';
@@ -99,7 +101,7 @@ function runWidgetStateMatrix(cfg: WidgetFamilyCfg): void {
   const inside = start + cfg.insideOffset;
   const outside = cfg.doc.length;
 
-  describe(`${cfg.label} — widget 15 状态矩阵`, () => {
+  describe(`${cfg.label} — widget 16 状态矩阵`, () => {
     test('idle — 节点外 → rendered（widget 在场）', async () => {
       const view = await makeView(cfg, 'plain');
       try {
@@ -293,6 +295,38 @@ function runWidgetStateMatrix(cfg: WidgetFamilyCfg): void {
         } else {
           expect(cfg.rendered(view)).toBe(false);
         }
+      } finally { view.destroy(); }
+    });
+
+    // spec §21 第 16 态 `keyboard`：真实 ArrowLeft keydown → CM keymap → selection →
+    // widget 语义随之重算。与 caret-inside 的差别同 marker 家族：后者用程序化
+    // `moveCaret` 只证明「选区位置 → 重算」，本态补「真实按键真的移动了选区」这一层。
+    // `defaultKeymap` 在产品里由 CoreEditor 装配（本 harness 不含）→ 此处显式加上。
+    test('keyboard — 真实 ArrowLeft 进入节点 → 按家族 caret 语义重算', async () => {
+      const view = new EditorView({
+        doc: cfg.doc, parent: document.body,
+        extensions: [markdown({ base: markdownLanguage }), history(), keymap.of(defaultKeymap), install(false)],
+      });
+      try {
+        view.focus();
+        await sleep();
+        moveCaret(view, Math.min(end + 1, cfg.doc.length));
+        await sleep();
+        // 非恒绿前提：起点在节点外 → rendered（常驻家族此处天然为 true）
+        expect(cfg.rendered(view)).toBe(true);
+        const before = view.state.selection.main.head;
+        for (let i = 0; i < 2; i += 1) {
+          view.contentDOM.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+          );
+          await sleep();
+        }
+        // 前提断言（防恒绿）：键盘**确实**把光标移进了节点（对常驻家族同样有效）
+        expect(view.state.selection.main.head).toBeLessThan(before);
+        expect(view.state.selection.main.head).toBeGreaterThanOrEqual(start);
+        // 与 caret-inside 同路径：常驻家族（YAML / TaskCheckbox）保持 rendered，其余 → source
+        expect(cfg.alwaysRendered === true ? cfg.rendered(view) : cfg.sourced(view)).toBe(true);
+        expect(view.state.doc.toString()).toBe(cfg.doc);
       } finally { view.destroy(); }
     });
 

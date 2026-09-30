@@ -1523,6 +1523,53 @@ docs/plans/typora-parity-master-plan.md：引用「insertLocalImage」（App.tsx
 ③ 本轮**真正的新发现**保留：**两处净化器实际已分叉**（engine 有 `KBD`、app-core 没有）→ 已修，
 并新增「两处净化器必须一致」护栏（首跑即报出该分叉）。
 
+## 4.33 状态矩阵缺 spec §21 的第 16 态 `keyboard`，且**出处引用写错**（2026-09-30）
+
+**动因**：逐条比对 `docs/specs/live-markdown-engine-spec.md` **§21 Required Test Matrix**
+（该节明确列出 **16** 项）与 `packages/editor-engine/test/state-matrix.test.ts`。
+
+**发现 1 —— 缺一态**：§21 列 `… delete-start / delete-end / **mouse** / **keyboard** / source-live switch`。
+矩阵只有 15 态：`mouse` 以 `mouse-click` 之名存在，**`keyboard` 完全没有**。
+`mouse-click` / `caret-*` 都走**程序化 `moveCaret`**（直接改选区），因此此前**没有任何用例**覆盖
+「**真实 `keydown` → CM keymap → selection → reveal**」这条**组合**链路 ——
+即「按键没生效」或「keymap 装配漏了」这类故障，在旧矩阵里**不会红**。
+
+**发现 2 —— 出处失真**：`state-matrix.test.ts` 头部写「§6.2 节点统一 15 状态矩阵（typora-parity-master-plan §6.2）」。
+但 `typora-parity-master-plan.md` **§6.2 实为「布局不变量（不得违反）」**，与状态矩阵无关。
+真值源是 **engine spec §21**。这类「引用到一个存在但不相干的章节」比「引用不存在的章节」更隐蔽 ——
+链接能点开、章节号看着合理，于是没人回头核。
+
+**处置**：
+1. 补 `keyboard` 态（11 个 marker 家族参数化 + FencedCode 专述各 1 例）。
+   `defaultKeymap` 在产品里由 CoreEditor 装配、本 harness 不含 → 用例内**显式加**，与真实路径一致。
+   断言分三段：**前提**（按键确实把 head 左移且落进节点）、**效果**（该家族的 reveal 判据成立）、
+   **无副作用**（spec §8：doc 未被改写）。
+2. **非恒绿验证**：把 `keymap.of(defaultKeymap)` 换成空绑定 → **12 个 `keyboard` 用例全部失败**（11 家族 + FencedCode）。
+3. 同步 `widget-state-matrix.test.ts`（9 家族，补 `keyboard`）→ 该文件头部「15 状态与 state-matrix 相同」也随之更正为 16。
+4. 更正出处引用（`§6.2` → engine spec `§21`），并更正 master plan / ledger 中 8 处「15 状态矩阵」自述。
+
+**判定陷阱（本轮真正的教训）**：`keyboard` 态最初用 `hiddenWhenIdle(view)).toBe(false)` 作 reveal 判据，
+**首跑 11 个家族里 Link 家族红**。这不是缺陷 —— 对 mixed 模型的 Link，`hiddenWhenIdle` 探的是
+**URL 是否隐藏**（`markerTexts.includes('https://example.com')`）；而 `hiddenMarkers` 里
+`inUrl` 是**开区间** `(node.from+open, node.from+close)`，两次左移的落点 `end-1` 恰是 `)`（= `close`）
+→ 按 spec §12 判为 **text 区**，此时 **URL 仍应隐藏、只显示 `[`/`]`**，
+故 `hiddenWhenIdle === true` 是**正确**的 mixed 行为。
+
+> **差点踩的坑**：一个「红」的用例、一条「把断言放宽一点就绿了」的捷径。
+> 若当时把 Link 塞进 `skipStates` 或改判据方向，就会把**误用判据**这件事**永久掩盖**。
+> 正确做法是回到 spec §12 读规则、确认行为正确、然后换用**各家族统一**的 reveal 判据
+> `revealedWhenTouched`（`caret-*` / `mouse-click` / IME / undo / redo / paste 同用），
+> 并补一条「起点处该判据必须为 false」的非恒绿前提，使「false → true」的翻转成为被断言的事实。
+> **本轮我自己的一个错（记下，同族错误第二次）**：做非恒绿验证时，我用 `replace_all` 把
+`history(), keymap.of(defaultKeymap), install(false)]` ↔ `history(), install(false)]` 来回替换，
+**第二次替换的方向是「加」**，于是它把 `keymap.of(defaultKeymap)` 也加到了**另外两处本来没有它的构造点**
+（`makeView` 的 history 分支、FencedCode 的 undo/redo 用例）。这三处**测试全绿**（keymap 对它们无副作用），
+所以**绿不会报警**；是靠 `git diff` 逐行读回发现的。→ 与 2026-09-30 图片字号那轮的
+`replaceAll('BODY_SIZE','body')` 是**同一母题**：**`replace_all` 的作用域是全文件，不是「我刚写的那一处」**。
+机械做法：**替换前先数出现次数**，或改用带上下文的单点替换（`old_string` 里带上前后行）。
+
+**判定：矩阵不是覆盖不足，而是「按 §21 少一态」＋「判据用错」两件事叠在一起。**
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

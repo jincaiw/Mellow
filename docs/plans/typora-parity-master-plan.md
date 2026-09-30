@@ -31,7 +31,7 @@ Mellow 的目标不是「具备与 Typora 类似的功能」，而是：
 | 快捷键 | FAIL（9 处偏离） | **PASS-B** | 9 处已纠偏；剩 6 处偏离 + 2 处缺失（见 §5.2） |
 | 桌面 UI / 布局 | 未 PASS-E | **PASS-B** | 默认克制已达标；存在 1 个真实缺陷 + 3 处裁决项 |
 | 侧边栏 | 能力缺口明确 | **PASS-B** | watcher/虚拟化/键盘已补齐；**File List 模式整体缺失** |
-| 编辑体验 | macOS 部分证据 | **AUTO / MAC** | 15 状态矩阵与 IME guard 已大面积补齐；跨应用真机未闭环 |
+| 编辑体验 | macOS 部分证据 | **AUTO / MAC** | spec §21 的 16 状态矩阵与 IME guard 已补齐；跨应用真机未闭环 |
 | 排版与渲染 | 未评估 | **PASS-B** | 渲染真值已到位（v1.5.0 指纹治理后）；**默认值三处自相矛盾** |
 | 三平台 | 构建/启动通过 | **IMPL** | **原「Linux 真机 IME 已通」为失真，已更正** —— CI 历史（Runtime Qualification run 58–61）证明 Linux IME 矩阵持续失败；**Windows Runtime 证据已取得**（run 60/61 success，含 Source Fidelity 与 launch+type+save），原「仅诊断级」已过时。详见 §5.8 G7-QA-03。 |
 | Release Gate | 空白 | **NOT_TESTED** | UX Score 与 30 任务仍空白 |
@@ -646,11 +646,11 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 
 ### 5.5 编辑体验（G7-EDIT）
 
-**已达标**：Live Preview marker reveal（Decoration.mark，从不 replace 文本）；Composition Guard 覆盖 21 处调用点 + `ime-guards.test.ts`；Undo 分组 `undoGrouping.ts`（21 用例）；Table 100×30 测试；Source↔Live 往返 8 用例；widget 15 状态矩阵 9 家族 × 15 态 = 126 用例；文档内查找替换自建面板。
+**已达标**：Live Preview marker reveal（Decoration.mark，从不 replace 文本）；Composition Guard 覆盖 21 处调用点 + `ime-guards.test.ts`；Undo 分组 `undoGrouping.ts`（21 用例）；Table 100×30 测试；Source↔Live 往返 8 用例；widget 16 状态矩阵 9 家族 × 16 态（15 个用例函数，`undo/redo` 合并）= 135 用例；文档内查找替换自建面板。
 
 | ID | 差距 | 判定 |
 |---|---|---|
-| **G7-EDIT-01** | 15 状态矩阵未覆盖全部节点（Heading / Strong 较完整，widget 家族已做，其余块级节点仍偏 Happy Path） | **原判定失真，已更正（V7-W4.1 复核）**：`state-matrix.test.ts` 实为 **11 个 marker 家族 × 15 态**参数化（ATX / Setext Heading、Strong、Emphasis、Strikethrough、InlineCode、Link、Autolink、ListItem、Blockquote、Highlight）+ FencedCode 专述；widget 家族另有 9 个专属 suite。原判定按「文件行数」而非「参数化用例数」推断。真实剩余缺口 = 无。 |
+| **G7-EDIT-01** | 状态矩阵未覆盖全部节点（Heading / Strong 较完整，widget 家族已做，其余块级节点仍偏 Happy Path） | **原判定失真，已更正（V7-W4.1 复核 + 2026-09-30 补 16 态）**：`state-matrix.test.ts` 实为 **11 个 marker 家族 × 16 态**参数化（ATX / Setext Heading、Strong、Emphasis、Strikethrough、InlineCode、Link、Autolink、ListItem、Blockquote、Highlight）+ FencedCode 专述；widget 家族另有 9 家族 × 16 态。原判定按「文件行数」而非「参数化用例数」推断。真实剩余缺口 = 无。 |
 | **G7-EDIT-02** | 跨应用剪贴板自动化仅手动模板（`tests/qualification/clipboard-copy-cross-app.md`） | NOT_TESTED（需真机，W7） |
 | **G7-EDIT-03** | 图片上传真实链路（PicGo / PicList / Custom Adapter）仅 mock | NOT_TESTED（W5） |
 | **G7-EDIT-04** | 拼写检查仅切 `spellcheck` 属性，无词典与替换建议；跨平台行为不一致 | FAIL（W5：词典与替换建议属平台能力，需 `host-api` 扩展）。<br/>**2026-09-13 实机对照细化（范围比原判定更大）**：读 Typora 的 `Front.strings` 发现其拼写检查是一整套**语言包管理 UI**，而不仅是「词典与建议」：<br/>`选择拼写检查语言` · `不使用拼写检查` · `安装该语言的拼写检查支持` · `安装仅适用于 Typora 的拼写检查支持` · `下载针对 %@ 的拼写检查支持包` · `拼写检查 (%@ 下载中)` · `拼写检查 (%@ 不可用)` · `拼写检查加载失败` · `拼写检查: 缺少对于 %@ 的字典文件。` · `(默认的拼写检查选项)`。<br/>即 Typora 可按语言**下载/安装/切换**词典，缺词典时有明确的状态提示。Mellow 侧 `P0-EDITOR-005` 应据此**扩大范围**（不止「有词典与建议」，还要有语言选择与缺失态提示），仍属 `host-api` 扩展依赖。 |
@@ -771,7 +771,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 
 | 能力 | 合同 | 等级 |
 |---|---|---|
-| Live Markdown | 15 状态矩阵覆盖全部块级与行内节点；marker reveal 不改变 document position | E |
+| Live Markdown | spec §21 的 16 状态矩阵覆盖全部块级与行内节点；marker reveal 不改变 document position | E |
 | Caret / Selection | 单击/双击/三击/拖拽选择平台化；Home/End/词移动平台化 | E |
 | IME | Composition Guard 覆盖全部节点；三平台连续 20 分钟写作 0 丢字 | B |
 | Undo / Redo | 一次用户动作 = 一次撤销（含 GUI 操作、表格、图片尺寸） | E |
@@ -1033,12 +1033,12 @@ Flat / Collapsible 切换此前已在右键菜单（`outline.switchFlat` / `swit
 
 | # | 任务 | 定位 | 状态 |
 |---|---|---|---|
-| 4.1 | 15 状态矩阵补齐至全部块级 / 行内节点 | `packages/editor-engine/test/` | ✅ **已完成（复核后确认原判定失真）** —— `state-matrix.test.ts` 为 **11 家族 × 15 态**参数化（约 171 例）+ FencedCode 专述 + widget 9 个专属 suite；矩阵无空洞 |
+| 4.1 | 状态矩阵补齐至全部块级 / 行内节点（spec §21 全 16 态） | `packages/editor-engine/test/` | ✅ **已完成（复核后确认原判定失真；2026-09-30 补 `keyboard` 态）** —— `state-matrix.test.ts` 为 **11 家族 × 16 态**参数化 = 176 例 + FencedCode 专述 7 例（合 183）；`widget-state-matrix.test.ts` 9 家族 × 16 态（15 个用例函数，`undo/redo` 合并）= 135 例；矩阵无空洞 |
 | 4.2 | 拼写检查：接入词典与替换建议，代码区 / URL 排除，三平台一致 | `editor-engine` | ⛔ **BLOCKED（W5）** —— 需 `host-api` 暴露平台拼写服务（`NSSpellChecker` / Hunspell / ISpell），非引擎层可解 |
 | 4.3 | 单图独占段落居中（Typora 官方 CSS 语义） | `image/widget.ts` | ✅ **完成**（原定位 `wysiwygBlocks.ts` 有误 —— 图片是 widget，不在块级装饰里） |
 | 4.4 | Undo 语义全量核对：GUI 动作（表格、图片尺寸、格式命令）各一个 Undo | `undo.test.ts` / `table-undo-diff.test.ts` | ✅ **完成** —— 37 例（21 + 16）+ 本轮新增 3 例锁定「格式命令 / 图片尺寸改写各一个 Undo」 |
 | 4.5 | Enter / Backspace / Delete / Home / End / 词移动平台化；鼠标选择矩阵 | `editor-engine` / CoreEditor | ✅ **完成（2026-09-12）** —— `platformNav.ts` 存在；鼠标选择矩阵新增 `tests/e2e/mouse-selection-verify.mjs`，**7/7 运行时验证通过**：单击定位（选区为空）、双击选词（hello / world）、三击选整行、拖拽连续选区（2→6）、Shift+单击扩展选区（2→7）、列表行三击含 marker 整行。<br/>**三击语义固化为「整行 + 行尾换行」**（`"first line\n"`），属 CodeMirror 默认语义；Typora 同为该引擎族（见 typora-menu-dump 的 keymap 段），逐字对照仍需真机取样。<br/>**踩坑记录**：`view.coordsAtPos()` 返回 **iframe 视口内**坐标，而 `page.mouse.*` 用**主页面视口**坐标，必须叠加 iframe 偏移，否则所有点击都会落到偏移 0 |
-| 4.6 | Source ↔ Live 往返保持 scroll / caret / selection | `source-mode-api.test.ts` | ✅ **完成** —— 10 例；15 状态矩阵的 `source-live-roundtrip` 态亦逐家族覆盖 |
+| 4.6 | Source ↔ Live 往返保持 scroll / caret / selection | `source-mode-api.test.ts` | ✅ **完成** —— 10 例；16 状态矩阵的 `source-live-roundtrip` 态亦逐家族覆盖 |
 | 4.7 | Focus / Typewriter 与 marker reveal 联合；Floating Toolbar 与 IME / Selection 联合 | `focusMode` / `typewriterMode` / `selectionToolbar` | ✅ **完成** —— `focus-typewriter-reveal.test.ts` 9 例 + `selectionToolbar.test.ts` |
 | 4.8 | 主题注释失真修正（6 → 实际数量） | `packages/themes/src/index.ts` | ✅ **完成** —— 改为 8 并列全名单；护栏加「注释声明数 vs 实际 id 数」交叉比对 |
 | 4.9 | **表格列对齐分隔符连字符被侵蚀（真 bug）** | `editor-engine/src/table/commands.ts` | ✅ **修复（2026-09-12）** —— `setColumnAlignment` 用固定 2 连字符的 `mark` 再 `slice` 拼装，丢弃原始连字符长度：每切换一次对齐少一个（`---` → `:--:` → `:-:` → `::` 非法）。<br/>**为何长期未被发现**：既有单测只断言 **解析后的对齐语义**，而 `:--:` 与 `:-:` 解析结果相同 —— 又一次「有测试但不工作」。<br/>修复：保留原连字符数（`---` → `:---:` → `:---`）。回归测试 `table-toolbar.test.ts` 11b，**已 canary 验证**（注入旧实现即失败）。<br/>另新增 `tests/e2e/widget-buttons-verify.mjs`（4/4）：验证工具栏按钮**真的产生编辑效果**（Bold 加粗、Align Center 改写分隔符、Row Below 插行），而非仅渲染存在 |
@@ -1047,9 +1047,11 @@ Flat / Collapsible 切换此前已在右键菜单（`outline.switchFlat` / `swit
 
 ### W4 交付物详述
 
-**W4.1 —— 15 状态矩阵（复核结论：原审计失真）**
+**W4.1 —— 16 状态矩阵（复核结论：原审计失真；2026-09-30 补第 16 态 `keyboard`）**
 
-`state-matrix.test.ts` 的结构是「家族配置数组 × 15 个状态」的**双层循环**，因此从「文件里只有 6 个 `test(`」会误判为覆盖不足 —— 实际是 11 家族 × 15 态 + FencedCode 专述。教训同 G7-SHELL-07：**按代码行数/用例函数名计数判断覆盖率不可靠，必须看参数化展开后的实际用例数**。
+`state-matrix.test.ts` 的结构是「家族配置数组 × 16 个状态」的**双层循环**，因此从「文件里只有 6 个 `test(`」会误判为覆盖不足 —— 实际是 11 家族 × 16 态 + FencedCode 专述。教训同 G7-SHELL-07：**按代码行数/用例函数名计数判断覆盖率不可靠，必须看参数化展开后的实际用例数**。
+
+**2026-09-30 更正（spec §21 口径 + 出处失真）**：真值源 `docs/specs/live-markdown-engine-spec.md` **§21 Required Test Matrix** 逐项列出 **16** 个状态，其中 **`mouse` 与 `keyboard` 两项**此前在矩阵中**缺席**（矩阵只跑了 15 态；`mouse` 以 `mouse-click` 名存在，`keyboard` 完全没有）。同时发现**本文件头部把出处写成「§6.2」**——`typora-parity-master-plan.md` §6.2 实为「布局不变量」，与状态矩阵无关；已改为引用 spec §21。`keyboard` 态补的**不是**「又一个 caret 位置」（那由 `caret-*` 覆盖），而是**组合**：真实 `keydown → CM keymap → selection → reveal`（`caret-*` 用程序化 `moveCaret` 只证明「选区位置 → reveal」）。已做非恒绿验证：把 `keymap.of(defaultKeymap)` 换成空绑定后，12 个 `keyboard` 用例（11 marker 家族 + FencedCode）**全部失败**。**判定陷阱记录**：`keyboard` 态**不能**用 `hiddenWhenIdle` 作 reveal 判据 —— 对 mixed 模型的 Link 家族，`hiddenWhenIdle` 探的是 URL 是否隐藏，而两次左移落点 `end-1` 恰是 `)`（`inUrl` 为开区间 `(open, close)`）→ 按 spec §12 落 **text 区**、URL **仍应隐藏**，此时 `hiddenWhenIdle` 为 true 是**正确**行为。统一判据应为 `revealedWhenTouched`（`caret-*` / `mouse-click` / IME / undo / redo / paste 同用）。
 
 **W4.3 —— 单图独占段落居中**
 
@@ -1459,6 +1461,7 @@ Functional
 | **2026-09-30（十续）** | **行 14b 剩项复核：「使用主题的字体大小」的作用域被写错了**（审计 §4.29） | ① 方法：直接读本机 Typora 一手资源（`Panel.strings` + 偏好面板编译产物 `Preferences.*.js`），不靠回忆；② **发现**：`useThemeFontSize` **不是通用偏好**，而是**图片导出**分区 `fontSize` 组的一个 **radio**（`0: Use custom font size`（**默认**）/ `1: Use theme font size`），配套 `imageFontSize`（**默认 24px**，`visible: !useThemeFontSize`）；消费点在导出路径 `exportToImage`（`o.useThemeFontSize && (o.fontSize = void 0)` = 让主题 CSS 字号生效）；③ **Mellow 侧对照**：图片导出只有 `format`/`width`/`quality`，**无字号**，正文是**硬编码** `BODY_SIZE = 16`（`packages/export/src/image/index.ts`）→ 真实状态是「**缺选项 ＋ 默认值偏离**」（Mellow 16px vs Typora 默认 24px），**这处偏离此前从未被记录**；④ **裁决**：`插入文件夹链接` 判 **P2**；`使用主题的字体大小` 判 **E（补齐图片导出字号选项）** 但**登记待实施**（scope 决策，路径已查明：`ImageExportOptions` 加 `bodyFontSize` + 把 `BODY_SIZE` 约 10 处读取线程化 + 两个设置项 + 护栏）；**⚠️ 关键风险**：对齐 Typora 默认 24px 会改变所有既有图片导出输出（面积 1.5× 放大，更易触及 `MAX_IMAGE_HEIGHT`/`MAX_IMAGE_PIXELS` 长图保护）→ 默认值是否对齐需**视觉/真机确认**；⑤ **教训**：**「偏好面板里的一项」≠「一项通用偏好」**—— 记待办时要连同**作用域**（哪个分区、和谁配对、默认值）一起记，否则执行者会去改错的地方（例如去动编辑器排版真源）。 |
 | **2026-09-30（十一续）** | **实施图片导出正文字号（§4.29 的 E）—— 刻意不对齐 Typora 的默认值**（审计 §4.30） | ① 范围：只做 `useThemeFontSize` 那个 radio 组的**「自定义字号」一半**（`imageFontSize`）；另一半（`Use theme font size`）不做 —— Mellow 图片导出是 **canvas 渲染**（显式 `fontFamily`），**没有主题 CSS 通道**，其等价物需单独裁决；② 实现端到端：`ImageExportOptions.bodyFontSize` + `MIN/MAX_IMAGE_FONT_SIZE` + `resolveImageBodyFontSize()`（缺省/非法回落、越界 clamp）+ `layoutImageDocument` 的 `rel()` **等比缩放**标题/代码/脚注 → `export.image.fontSize`（number 8–48 / **默认 16**）→ App 读取并传入 + i18n zh/en 各 2 条；③ 单测 4 例（默认不变 / 回落与 clamp / 自定义生效且层级比不变 + 图高增加 / **★ `rel` 未退化成「不缩放」**：body=32 时 H1 必须恰为 56px）；④ **刻意不对齐 Typora 默认 24**：对齐会改变所有既有图片导出输出（面积 1.5× 放大、更易触及长图保护），需视觉/真机确认；故只提供**可配置能力**，并把 `BODY_SIZE` **锁进护栏**（必须仍为 16，防「顺手对齐」）；⑤ 护栏只锁**接线**，`rel()` 的**正确性**交给单测的**行为断言**（**不锁表达式形态** —— 形状锁既拦合法重构又保护不了行为），注入 8 个 mutation **8/8 被检出**；⑥ **我自己的三个错**：(a) **机械替换改到了自己刚插入的 `rel` 定义** → `(absolute / body) * body` ≡ 不缩放，**等比缩放被静默禁用**（靠逐行读回才发现）→ 补单测锁死行为；(b) **子串断言放过「键改名」**（`...fontSize` 是 `...fontSizeX` 的子串）→ 改带引号的精确键；(c) **我的改动打断了 `verify-doc-code-refs.mjs` 自己的 canary**（它**硬编码了行号范围** `inRange(1719,1741)`）→ 改为**从文件现算**符号所在行；同批修正两处 `insertLocalImage` 的行号引用（原写 `App.tsx:1721-1739`，已随改动漂移）→ 改为**符号引用**。 |
 | **2026-09-30（十二续）** | **审计 `clipboard-smart-paste-spec` §10 安全 + 更正两份过期安全审计**（审计 §4.32） | ① 复核结论：该 spec §2 的五条 Copy 命令**齐全**；§10 的四条安全约束**已实现且早有回归测试**（`packages/app-core/test/reader-sanitize.test.ts`，7 例，文件头即写「Security Review H1 回归」）；② **真正的新发现**：`security-review-2026-08-13.md` H1 的修复走了「复制逻辑」而非「提取共享实现」，于是**两处净化器实际已分叉** —— `editor-engine` 的 `ALLOWED_TAGS` 含 `KBD`，`app-core` 的 `SANITIZE_ALLOWED_TAGS` **不含** → 同一段 `<kbd>` 在编辑器保留、在 Reader **静默剥掉**；已补齐并新增护栏「**两处 HTML 净化器必须一致**」（逐项比对标签白名单 / URL 协议白名单 / IFRAME 强制 sandbox；**首跑即报出该分叉**，非空壳）；③ **更正两份过期审计**：`rc-audit-2026-08-16.md` §5 的 H1/H2/M1 三项仍标 `FAIL（高危，P0）` 而**代码早已修好**（H1 = DOM 白名单净化；H2 = Reader 链接 `preventDefault` + `openUrl`，且 `SplitPreview` 随 Split Mode 移除；M1 = CSP 已配且被护栏锁）→ 追加更正块 + **在表旁留指针**；`security-review-2026-08-13.md` 追加更正块（含 M2 已改回默认加载、M3 维持）；④ 补 4 个当时未覆盖的变体 + 1 条 KBD 一致性回归（注入验证 5/5 被检出）；⑤ **我第四次犯同一错**：只 grep 了 `reader.test.ts` 就断言「H1 的实体编码绕过从未被测过」，而同一目录下**有专门的** `reader-sanitize.test.ts` —— 已把白补的用例**归位**、撤回重复、并更正刚写下的审计措辞；机械做法已写进 skill：**判定「有没有人守」之前先 `ls` 那个目录把候选文件列全**。 |
+| **2026-09-30（十三续）** | **补 spec §21 的第 16 态 `keyboard`（矩阵此前只有 15 态）+ 更正矩阵出处**（审计 §4.33） | ① 动因：逐条比对 engine spec **§21 Required Test Matrix**（列 **16** 项）与矩阵，发现 **`keyboard` 完全缺席**（`mouse` 以 `mouse-click` 之名存在）—— 而 `caret-*`/`mouse-click` 都用**程序化 `moveCaret`**（直接改选区），故此前**没有任何用例**覆盖「**真实 `keydown` → CM keymap → selection → reveal**」这条**组合**链路（「按键没生效」「keymap 漏装配」在旧矩阵里**不会红**）；② **出处失真**：`state-matrix.test.ts` 头部原写「§6.2 节点统一 15 状态矩阵（typora-parity-master-plan §6.2）」，而本计划 **§6.2 实为「布局不变量」** —— 真值源是 engine spec §21；已更正（这类「引到存在但不相干的章节」比引不存在的章节更隐蔽：链接能点开、章节号看着合理）；③ 覆盖：marker 矩阵 **11 家族 × 16 态 = 176 例** + FencedCode 专述 7 例 = **183**；`widget-state-matrix.test.ts` 补 `keyboard` 后 9 家族 × 16 态 = **135 例**（15 个用例函数，`undo/redo` 合并）；④ **非恒绿验证**：把 `keymap.of(defaultKeymap)` 换成空绑定 → **12 个 `keyboard` 用例（11 marker 家族 + FencedCode）全部失败**；⑤ **判定陷阱（差点踩）**：`keyboard` 态最初用 `hiddenWhenIdle` 当 reveal 判据，**首跑 Link 家族红** —— 但这不是缺陷：对 mixed 模型的 Link，`hiddenWhenIdle` 探的是 **URL 是否隐藏**，而 `inUrl` 是**开区间** `(node.from+open, node.from+close)`，两次左移落点 `end-1` 恰是 `)` → 按 spec §12 落 **text 区**、URL **仍应隐藏**，`hiddenWhenIdle=true` 是**正确**的 mixed 行为；**若当时把 Link 塞进 `skipStates` 或放宽断言，就会把「判据用错」永久掩盖** → 改为各家族统一的 `revealedWhenTouched`（`caret-*`/`mouse-click`/IME/undo/redo/paste 同用）+ 补「起点处该判据必须为 false」的非恒绿前提；⑥ 同步更正 ledger 两处 `mellowTarget`、master plan 6 处过期自述、§15.4 累计失真 7 → **8 处**；⑦ **我自己的一个错（同族第二次）**：canary 往返用 `replace_all` 做「加/减」替换，把 `keymap.of(defaultKeymap)` 也加到了**另外两处本没有它的构造点**（`makeView` 的 history 分支、FencedCode 的 undo/redo 用例）——三处测试**全绿**故不报警，靠 `git diff` 逐行读回才发现并还原；**`replace_all` 的作用域是全文件、不是「我刚写的那一处」**，替换前须先数出现次数（与图片字号那轮的 `replaceAll('BODY_SIZE','body')` 同母题）。 |
 
 ---
 
@@ -1532,15 +1535,16 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 
 > **注意**：表格 5、6 两项（UX Score / 30 任务）**不可能由 Agent 代填** —— 不是「没做」，而是工具契约明确禁止伪造计时。
 
-### 15.4 本轮更正的文档失真（累计 7 处）
+### 15.4 本轮更正的文档失真（累计 8 处）
 
 1. **§0.2 / §11.2 台账数字**：仍写「32 项 AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1」，实为 50 项（AUTO 44 / MAC 2 / IMPL 1 / BLOCKED 2 / NOT_TESTED 1）。
 2. **「Linux 真机 IME 已通」**：CI run 58（2026-09-06）起持续失败，从未通过（§5.8 G7-QA-03）。
 3. **「Windows 仅诊断级」已过时**：run 60/61 的 Source Fidelity 与 launch/type/save 均 success。
-4. **G7-EDIT-01「矩阵覆盖不足」**：实为 11 家族 × 15 态参数化，无缺口。
+4. **G7-EDIT-01「矩阵覆盖不足」**：实为 11 家族 × 16 态参数化，无缺口。
 5. **G7-SHELL-07「状态栏缺字段」**：`formatWordCountStats` 早已输出，真实缺口是字数项不可点击。
 6. **G7-FEAT-01「缺打印预览」**：Typora 本身无预览窗口，非差距。
 7. **D-E 与 D-Q 重复登记**：同一决策（macOS Replace 键位）结论不一致，已收敛为 D-Q = ②。
+8. **状态矩阵的 spec 出处**：`state-matrix.test.ts` 头部原写「§6.2 节点统一 15 状态矩阵（typora-parity-master-plan §6.2）」，而本计划 §6.2 实为「**布局不变量**」；真值源是 `docs/specs/live-markdown-engine-spec.md` **§21 Required Test Matrix**（列 **16** 态，含 `mouse`/`keyboard`）。已更正引用，并补齐此前**完全缺席**的 `keyboard` 态（审计 §4.33）。
 
 ### 15.5 一句话结论
 
