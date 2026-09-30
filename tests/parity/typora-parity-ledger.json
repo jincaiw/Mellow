@@ -265,7 +265,7 @@
       "domain": "table",
       "capability": "表格创建与键盘导航",
       "typoraBehavior": "Tab 在单元格间移动、末格加行，表格仍是标准 Markdown。",
-      "mellowTarget": "表格编辑、Undo、IME 与最小 patch 均可验。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。",
+      "mellowTarget": "表格编辑、Undo、IME 与最小 patch 均可验。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。 【2026-10-01 口径更正（审计 §4.39）】本项 capability 为「表格创建与键盘导航」，但下方 evidence 覆盖的是**键盘导航 / 最小 patch / IME / Undo**，**不含创建路径的对话框**。Mellow 能建表（固定 2×2 插入 / TSV 粘贴 / 手写 `| a | b |`），但 **spec §3 的 Create Dialog（Rows 默认 4 / Columns 默认 3）尚未实现**；同批还发现 spec §3 的「optional alignment」为规格失真（Typora 对话框无对齐字段，已在 spec 内更正）、以及 spec 原先**漏收** Typora 的 `Resize Table`（已补入 spec §3b）。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",

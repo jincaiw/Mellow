@@ -1768,6 +1768,79 @@ diff -rq /tmp/markedit-up/MarkEdit-<COMMIT>/CoreEditor packages/editor-core/Core
 > 而**本条可以**——不变量是「这个分支里必须出现这个调用」，是可机械判定的。
 > **判据：护栏要能真正拦住被测的那类缺陷，否则不加**（不加一个恒真的假护栏）。
 
+## 4.39 `table-editing-spec` §1–§10 逐节复核：两处**未实现**、一处**规格失真**、一处**规格漏收**、一处**无一手依据**、一处**零测试**（2026-10-01）
+
+方法：**先把 8 个表格测试文件的 102 个用例名全部列出来逐条读**（`table-parser` / `table-engine` /
+`table-keyboard` / `table-toolbar` / `table-undo-diff` / `table-live-view` / `table-large` / `table-column-width`），
+再逐节对到实现；**一手证据取本机 Typora 1.14.9 的资源**（不靠回忆）。
+
+| spec 节 | 声明 | 守护 / 现状 | 结论 |
+|---|---|---|---|
+| §2 数据原则 | source 唯一真源 / 禁止完整 serialize | `table-engine` 全篇断言「1 处 insert / 只 patch delimiter 行」；`table-large` 的 100×30 断言「其他 101 行逐字不变」 | ✅ |
+| §4 Toolbar | 9 个动作 | `table/toolbar.ts` 有 **11** 个（多出 move 相关）；`table-toolbar.test.ts` + e2e `widget-buttons-verify.mjs` | ✅ |
+| §5 Keyboard | Tab / Shift+Tab / last+Tab / Mod+Enter / arrows / Esc | `table-keyboard.test.ts` 14 例（含真实 keydown 管道、Esc 关 toolbar、表格外交回默认）；`table-engine` 亦有 | ✅ |
+| §6 Minimal Patch | add row 一行 / alignment 只改 delimiter / tidy 唯一重排入口 | `table-engine`（1 处 insert）+ `table-undo-diff` + `table-column-width`（`delimiterPatch` 只替换目标单元格） | ✅ |
+| §8 IME | 合成期不重排 / 不规范化 / 提交后更新 | `table-keyboard` 的「composition 期间 Tab 不移动 caret」「Mod+Enter 不 add row」+ `table-live-view` 的「compositionend 后一次性提交且不重建整张表」+ e2e IME 8/8 | ✅ |
+| §9 Large Table | 100×30 可用 / 不每键重建 / viewport | `table-large.test.ts` 15 例 | ✅ |
+| §10 Tests（11 类） | Chinese / emoji / links / inline code / escaped pipe / alignment / empty cell / **multiline incompatibility** / undo / external update / source-live switch | 前 7 类见 `table-parser`；undo 见 `table-undo-diff`；external update 见 `table-live-view`（2026-09-30 补，审计 §4.16）；source-live switch 见 `table-live-view` 的 `setSourceMode` 用例；**multiline incompatibility 原先零覆盖 → 本轮补** | ⚠️ 本轮补齐 |
+| §3 创建 | source / Paragraph→Table / Slash `/table` / TSV Paste / **Create Dialog（rows·columns·alignment）** | 前四项都有（`insert.table` / `slashCommands` 的 `/` 触发 + 宿主 `insert.table` / `smartPaste.ts` 的 `tsvToGfmTable`）；**Create Dialog 未实现**（见下） | ❌ |
+| §7 Invalid Table | 不强制修复 / fallback source-like / **提示「表格语法不完整」** / 显式 Tidy·Fix | 前两项**结构上成立但零测试**（本轮补）；**第三项未实现且无一手依据**（见下） | ⚠️ / ❌ |
+
+### 发现 1（未实现）：§3 的 **Create Table 对话框**
+
+一手证据（本机 Typora 1.14.9）：
+- `TypeMark/html/content.html` 有 `id="table-insert-dialog"` 的 modal，标题 `data-localize="Insert Table"`，
+  字段只有两个：`#table-insert-col`（`Columns`，**默认 3**）与 `#table-insert-row`（`Rows`，**默认 4**），
+  按钮 `Cancel` / `OK`。
+- 文案在 `zh-Hans.lproj/Front.strings`：`Insert Table=插入表格`、`Columns=列`、`Rows=行`。
+
+**Mellow 现状**：`insert.table`（菜单 `paragraph.table` 子项 / Slash `/table`）**直接插入固定 2×2**，
+没有对话框。→ **已登记为待实施项**（见 master-plan 的 W4 表）。
+
+### 发现 2（规格失真，已更正）：§3 的「optional alignment」
+
+Typora 的创建对话框里**没有任何 alignment 控件**（见上：只有 Rows / Columns）。本 spec §3 把
+「表格**有**对齐能力」错记成「**创建时**可设对齐」。→ 已在 spec §3 内**保留原文并追加更正块**：
+创建对话框**不得**加对齐字段，否则会做出一个 Typora 没有的界面；对齐的正确位置是 §4 Toolbar / §6。
+
+> 这条的价值在于：**若不先更正 spec 就照它实现，会做出一个「照 spec 正确、照 Typora 错误」的功能。**
+
+### 发现 3（规格漏收 + 未实现）：**Resize Table**
+
+Typora 自带官方文档 `TypeMark/Docs/Table Editing.md` 有 `## Resize Table` 一节：
+「光标在表格内时表头上方出现 tooltip，点**最左图标**即可像多数富文本编辑器那样调整表格；
+要超过 **6 列或 10 行**，点行列数字输入框直接填数」。文案 `Resize Table=调整表格`。
+
+**本 spec 原先完全没有这一节**，Mellow 也未实现（工具栏无该入口、无网格调整 UI）。
+→ 已**补入 spec §3b**（含一手引文）+ 登记为待实施项。
+
+### 发现 4（无一手依据）：§7 的「提示『表格语法不完整』」
+
+在 Typora 的 `Front.strings`（zh-Hans，全量）里检索 `不完整 / 无效 / 语法` 与 `incomplete / invalid / syntax`：
+命中的**只有引用链接 / 图片 / 脚注**三条（「请按语法 … 定义 …」），**没有任何表格相关提示**。
+
+→ 该条是 **Mellow 自定要求**，不是 Typora parity；且**未实现**（全仓仅出现在 spec 里）。
+按「先报告冲突、不擅自裁决」：**登记为待裁决项**（实现为 Mellow 自有提示，或从 spec 移除），
+本轮**不擅自实现**。
+
+### 发现 5（零测试 → 本轮补）：§7 的 fallback 与 §10 的 multiline
+
+本轮在 `table-live-view.test.ts` 新增 4 例（`表格 live-view · invalid / 多行不兼容`）：
+- 缺分隔行 / 分隔行列数与表头不一致 / 分隔行被换行拆断 → **不渲染 live view、源码逐字不变、不崩**；
+- **显式修好语法后 live view 恢复** —— 「不强制修复」≠「修好了也不渲染」。
+
+**判别性（防恒真）**：同一文件里既有 `toBeNull()`（非法）也有 `not.toBeNull()`（合法，含修好后），
+故「不渲染」不是恒真断言。**如实声明覆盖边界**：本组只覆盖「解析层判定为非表格 → 不渲染」这条路径，
+不含 §7 第三项（未实现）。
+
+### 发现 6（台账口径）：`P0-TABLE-001` 的 capability 与证据面不匹配
+
+台账 `P0-TABLE-001` 的 capability 是「**表格创建**与键盘导航」，但 `evidence` 是
+`table-keyboard` / `table-engine` / e2e IME / widget-buttons —— **没有一条覆盖「创建对话框」**。
+它**不是虚假声明**（Mellow 确能建表：固定插入 / TSV 粘贴 / 手写 `| a | b |`），
+但**名称会让读者以为创建路径已被完整覆盖**。→ 已在该项 `mellowTarget` 内**写明创建对话框未实现**
+（口径与 §4.36 同类：**证据面必须与 capability 名称对齐**）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

@@ -33,6 +33,38 @@ Create Dialog：
 - columns
 - optional alignment
 
+> **⚠️ 2026-10-01 一手证据更正（本节的「optional alignment」不成立）**
+>
+> 取本机 Typora 1.14.9 的资源逐字核对：
+> - `TypeMark/html/content.html` 里确有创建对话框 —— `id="table-insert-dialog"` 的 modal，
+>   标题 `data-localize="Insert Table"`，字段**只有两个**：
+>   `#table-insert-col`（label `Columns`，`value="3"`）与 `#table-insert-row`（label `Rows`，`value="4"`），
+>   按钮 `Cancel` / `OK`。**没有任何 alignment 控件**。
+> - 对应文案在 `zh-Hans.lproj/Front.strings`：`Insert Table=插入表格`、`Columns=列`、`Rows=行`。
+>
+> 故本节的「**optional alignment**」是**规格失真**（把「表格有对齐能力」错记成「创建时可设对齐」）。
+> 对齐的正确位置在 §4 Toolbar / §6（只 patch delimiter row）——创建对话框**不得**加对齐字段，
+> 否则会做出一个 Typora 没有的界面。
+>
+> **实现现状（2026-10-01）**：Mellow **尚未实现**该对话框 —— `insert.table`
+>（菜单 `paragraph.table` 子项 / Slash `/table`）直接插入固定 2×2。属**已登记缺口**（见审计 §4.39）。
+
+---
+
+## 3b. Resize Table（Typora 官方文档有、本 spec 原先漏收）
+
+一手证据：本机 Typora 自带文档 `TypeMark/Docs/Table Editing.md` 的 `## Resize Table` 一节：
+
+> Put the cursor inside a table and a table tooltip will show above the table header.
+> Click the most left icon, and you will be able to resize the table like most rich editors.
+> If you want to make the table larger than **6 columns or 10 rows**, you could click the
+> row/column number input and input a proper number.
+
+要点：**表格 tooltip 最左图标**进入「调整表格」态（网格拖选行列），**超过 6 列 / 10 行时用数字输入**。
+对应文案 `Resize Table=调整表格`（`Front.strings`）。
+
+**实现现状（2026-10-01）**：Mellow **未实现**（工具栏无该入口，无网格调整 UI）。属**已登记缺口**（审计 §4.39）。
+
 ---
 
 ## 4. Toolbar

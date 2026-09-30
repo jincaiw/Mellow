@@ -202,3 +202,71 @@ describe('表格 live-view · 外部更新（spec §10 的「external update」�
     view.destroy();
   });
 });
+
+describe('表格 live-view · invalid / 多行不兼容（spec §7 + §10，2026-10-01 补）', () => {
+  /**
+   * 为什么补这一组：审计 §4.39 —— spec §7（Invalid Table：**不强制修复** / fallback
+   * source-like display）与 §10 的「**multiline incompatibility handling**」在表格测试里
+   * **零覆盖**（8 个表格测试文件、102 个用例逐条读完确认）。
+   *
+   * 这里断言的是**行为**：语法不完整 → 不渲染 live view（回落源码）、**源码逐字不变**
+   *（不强制修复）、不崩；且**修好语法后必须恢复渲染**（「不强制修复」≠「修好了也不渲染」）。
+   *
+   * ⚠️ 覆盖边界（如实声明）：本组只覆盖「**解析层判定为非表格** → 不渲染」这条路径。
+   * spec §7 的第三项「提示『表格语法不完整』」**未实现**，且**没有一手 Typora 对应物**
+   *（Typora 的同类提示只针对引用链接 / 图片 / 脚注），故属**待裁决项**，不在本组断言内。
+   */
+  afterEach(() => {
+    setSourceMode(false);
+    document.body.innerHTML = '';
+  });
+
+  /** 两例都**明确不是** GFM 表格：① 缺分隔行；② 分隔行列数与表头不一致 */
+  const INVALID_CASES: Array<[string, string]> = [
+    ['缺分隔行', '| a | b |\n| c | d |\n\n正文'],
+    ['分隔行列数与表头不一致', '| a | b |\n| --- |\n| c | d |\n\n正文'],
+  ];
+
+  for (const [label, source] of INVALID_CASES) {
+    test(`${label} → 不渲染 live view、源码逐字不变、不崩`, async () => {
+      const view = setUpEditor(source);
+      try {
+        moveCaret(view, view.state.doc.length);
+        await sleep();
+        expect(view.dom.querySelector(`.${TABLE_LIVE_CLASS}`)).toBeNull();
+        // 「不强制修复」：源码必须逐字不变（唯一真源，spec §2）
+        expect(view.state.doc.toString()).toBe(source);
+      } finally { view.destroy(); }
+    });
+  }
+
+  test('多行不兼容：行被换行拆断时按非表格处理（不崩、不误渲染）', async () => {
+    // 分隔行被换行拆断 —— 任何一行都不是合法分隔行
+    const source = '| a | b |\n| --- |\n --- |\n| c | d |\n\n正文';
+    const view = setUpEditor(source);
+    try {
+      moveCaret(view, view.state.doc.length);
+      await sleep();
+      expect(view.dom.querySelector(`.${TABLE_LIVE_CLASS}`)).toBeNull();
+      expect(view.state.doc.toString()).toBe(source);
+    } finally { view.destroy(); }
+  });
+
+  test('显式修好语法后 live view 恢复（不强制修复 ≠ 修好也不渲染）', async () => {
+    const source = '| a | b |\n| c | d |\n\n正文';
+    const view = setUpEditor(source);
+    try {
+      moveCaret(view, view.state.doc.length);
+      await sleep();
+      expect(view.dom.querySelector(`.${TABLE_LIVE_CLASS}`)).toBeNull();
+
+      // 用户显式补上分隔行（模拟「Tidy/Fix explicitly」的最小形式）
+      const insertAt = source.indexOf('| c | d |');
+      view.dispatch({ changes: { from: insertAt, insert: '| --- | --- |\n' } });
+      await sleep();
+
+      expect(view.state.doc.toString()).toBe('| a | b |\n| --- | --- |\n| c | d |\n\n正文');
+      expect(view.dom.querySelector(`.${TABLE_LIVE_CLASS}`)).not.toBeNull();
+    } finally { view.destroy(); }
+  });
+});
