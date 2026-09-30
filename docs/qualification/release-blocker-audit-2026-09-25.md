@@ -683,6 +683,39 @@ editor-core **不能**反向 import 引擎（成环）。故内联是**必要的
 > 而该示例含字面量 `*/` → **提前终止块注释** → 护栏文件 SyntaxError。
 > 教训：**注释里不要写字面量 `*/`**（哪怕是在举例）；改护栏本身时，先确认能一键还原再动手。
 
+## 4.15 `image-workflow-spec` §12 声明的 `save as` 场景**零覆盖**（2026-09-30）
+
+**扫描方法**：spec §12「Tests」声明「24+ scenarios」并列出 10 个类别；
+把每个类别**逐条映射到实际测试**（不用关键词 grep 下结论 —— 上一轮刚证明那会骗自己）。
+
+**结果**：image 测试共 **12 个文件 / ≈199 个用例**（「24+」满足 ✓），10 个类别里 **9 个有覆盖**：
+
+| 类别 | 覆盖 |
+|---|---|
+| paste / drag / multi | `image-input.test.ts`、`image-insert.test.ts` ✓ |
+| relative | 8 个文件（`imageFileOps` / `image-asset-config` / `image-input` …）✓ |
+| rename | `imageFileOps` / `image-engine-api` / `image-ops` ✓ |
+| missing | 5 个文件 ✓ |
+| remote | 5 个文件 ✓ |
+| Chinese path | `image-insert` / `image-ops` / `image-path` ✓ |
+| Windows/macOS/Linux | `image-engine-api` / `image-insert` / `image-path` ✓ |
+| **save as** | ❌ **零覆盖** |
+
+**`save as` 的核实过程**：先在 `image*.test.ts` 里查 → 0 命中；
+再放宽到**全仓所有 `*.test.ts/tsx`** 并查「`saveAs`/另存为」与「image/图片/src/assets」的**共现** →
+**只有 1 处命中，且是 `menu-schema.test.ts` 里的菜单顺序断言**（列 `file.saveAs` 这个 id），
+与「另存为后的图片引用行为」**无关**。
+
+**为什么这是真实缺口而非命名差异**：spec §12 把它与 `rename`、`missing`、`relative` 并列，
+语义应是「**另存为后文档路径变化，图片引用是否仍然正确**」——
+而 `rename`（改名/移动）**有**覆盖、`relative`（相对路径解析）**有**覆盖，
+唯独「另存为导致路径基准变化」这一条没有。二者风险同源（路径基准变了、引用可能失效），
+却没有对应的回归防线。
+
+**后续项**：为「另存为 → 图片引用仍可解析」补一条测试（可参照 `documentRename.test.ts`
+与 `imageFileOps.test.ts` 的现有模式）；或若实现上「另存为」与「重命名」走同一路径，
+则在 spec §12 里合并该类别并注明 —— **两者必居其一**，不要让声明与实现长期脱节。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
