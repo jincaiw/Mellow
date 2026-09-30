@@ -124,7 +124,7 @@ describe('点击打开（__MELLOW_MD_LINK_OPEN__）', () => {
   });
 });
 
-describe('broken local link indicator（spec §12：subtle error indicator）', () => {
+describe('broken local link indicator（spec §12：subtle error indicator ＋ §19：no color-only status）', () => {
   const EXISTS_KEY = '__MELLOW_MD_LINK_EXISTS__' as keyof Window;
   const REFRESH_KEY = '__MELLOW_MD_LINK_REFRESH__' as keyof Window;
 
@@ -166,5 +166,28 @@ describe('broken local link indicator（spec §12：subtle error indicator）', 
     mockExists = () => false; // 预取结果：不存在
     (window as unknown as { __MELLOW_MD_LINK_REFRESH__?: () => void }).__MELLOW_MD_LINK_REFRESH__?.(); // 宿主通知 → bump + dispatch
     expect(labelEls(view)[0].classList.contains('mellow-mdlink-broken')).toBe(true);
+  });
+
+  // spec §19「no color-only status」：断链若只改颜色，灰度/色盲用户无法与正常链接区分。
+  // 本断言读**实际注入到 DOM 的样式规则**（而非源码文本），确认存在非颜色的形态线索。
+  test('断链指示不得仅靠颜色：注入的样式必须含非颜色线索（wavy）', () => {
+    (window as unknown as Record<string, unknown>)[EXISTS_KEY] = () => false;
+    const view = setUp('[断链](missing.md)');
+    expect(labelEls(view)[0].classList.contains('mellow-mdlink-broken')).toBe(true);
+
+    // style-mod 优先用构造式样式表（adoptedStyleSheets），回落 <style> 文本 —— 两条路都读。
+    const fromTags = Array.from(document.querySelectorAll('style'))
+      .map((s) => s.textContent ?? '')
+      .join('\n');
+    const sheets = (document as unknown as { adoptedStyleSheets?: CSSStyleSheet[] }).adoptedStyleSheets ?? [];
+    const fromSheets = sheets
+      .flatMap((sheet) => Array.from(sheet.cssRules).map((r) => r.cssText))
+      .join('\n');
+    const css = `${fromTags}\n${fromSheets}`;
+
+    const rule = css.match(/\.mellow-mdlink-broken[^{]*\{([^}]*)\}/)?.[1] ?? '';
+    // 先证明「读到了规则」——否则本断言会因读不到样式而**恒绿**（空壳）。
+    expect(rule).not.toBe('');
+    expect(rule).toMatch(/wavy/);
   });
 });

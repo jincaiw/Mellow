@@ -1442,6 +1442,7 @@ Functional
 | **2026-09-21（第四十五轮）** | G7-EDIT-08：Task Status 实装 | ① Typora main.js 真值：Task Status 有 Mark as Complete / Mark as Incomplete 两项；② engine buildRequest 只在当前行有 task marker 时进入 task kind；③ `setTaskStatus(complete)` 只替换 `[ ]`/`[x]` 中的单字符；④ Command Registry 两命令 + 右键子菜单 + zh/en 文案；⑤ shell 护栏锁单字符 patch + canary；context-menu parity 扩至 6 类并通过。 |
 | **2026-09-21（第四十六轮）** | G7-EDIT-08：Block/Inline/List Styles 右键分组实装 | ① Typora 官方文案核对：Block Styles / Inline Styles / List Styles / Remove Block；② Mellow 将已有 Paragraph/Format 组改为对应官方分组；③ 新增 List Styles 组，复用 `format.list` / `format.orderedList` / `format.taskList` / `paragraph.normal`，不新增空命令；④ context-menu parity 文本类契约扩展并通过。 |
 | **2026-09-22（第四十七轮）** | v1.5.14 三平台 Runtime 全绿 + 视觉采集静默失败根治 | ① Linux IME 矩阵 8/8（两个根因均在 harness 侧：code 场景探针坐标/caret 复位错误、Undo 验证被 Ctrl+A/C 读回污染观察窗口）；② 新增 `tests/visual/dev-server.mjs` 跨平台启动器，根治 Windows `spawn('npx')` → `npx.cmd` ENOENT 导致的「采集静默产出 0 文件」；③ Runtime Qualification 的视觉步骤改为逐条记录退出码（原先「步骤退出码取最后一条命令」会掩盖前面的失败）；④ 三处视觉脚本的「实测 vs 期望」硬断言提到基线写入之前（原先首跑不校验 → 会把真实缺陷固化成基准）；⑤ 侧栏默认宽度与 App.tsx `SIDEBAR_DEFAULT_WIDTH` 交叉比对；⑥ Linux 布局基线 `layout-golden.linux.json` 校验后入库；⑦ 新增三平台 Runtime 证据文档并登记进台账。 |
+| **2026-09-30** | **状态颜色独立性（spec §19 `no color-only status`）** | ① 动因：审计 §4.19 —— spec §19 声明的 6 条里，第 6 条 `no color-only status` **全仓无人守**（搜 `color-only|仅颜色|颜色.*唯一|color alone` 命中 0），因为无障碍审计文档的 6 项基准与 spec §19 的 6 条是**两处独立维护的清单**，差集永远不会被发现；② **选了「加可判定断言」而非「补审计矩阵列」**（矩阵是散文表格，加列不产生信号）；③ 新增**第 16 个护栏** `tests/parity/verify-no-color-only-status.mjs`（已接入 `test` / `parity` 双链）：锁「语义状态色使用点清单」（`styles.css` 规则选择器 **＋ 内联 `var(--mellow-…)` 的样式键**，双向核对登记表）+ 每个使用点必须声明**可核实**的非颜色线索（`text` 锚点须落在 JSX 表达式容器内 / `pattern` 锚点须是非颜色形态）+ `StatusBar` 的 `.status` 必须渲染 `statusText` 且宿主 `setStatus('<非idle>')` 必须紧接 `setStatusText`；④ **断言首跑即抓到真实缺陷**：`mdLink.ts` 的**断链指示只改颜色**（无 attributes/title/aria，下划线形态与正常链接相同）→ 灰度/色盲下不可辨，违 spec §19 → **已修**（加 `textDecoration: 'underline wavy'` 作为非颜色线索），并补 `md-link.test.ts` 的**运行时**断言（读实际注入 DOM 的样式规则，且先断言「规则读得到」以防恒绿）；⑤ 顺带修正一处「把推断写成宪法陈述」：该处旧注释把「不改动下划线形态」记为 spec §12 的约束，回查 `live-markdown-engine-spec.md` §12 原文只有 `subtle error indicator` / `source unchanged` 两条；⑥ 注入验证：护栏 6 个 mutation **6/6 被检出**，运行时断言去掉 `wavy` 即失败；`editor-engine` 1217 例 / `desktop-ui` 17 例全绿；⑦ 护栏文件头**如实声明范围限制**（只覆盖语义状态色路径；「有无文本」是静态代理指标，不等于 WCAG 1.4.1 合规；spec §19 其余 5 条不在此护栏）。 |
 
 ---
 
@@ -1483,7 +1484,7 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 | 排版（§5.6） | G7-TYPO-01~04 已修复 / 记录 |
 | 功能域（§5.7） | G7-FEAT-01 关闭（非差距）、02/03/05 已修；04 按 PRD P1 维持 |
 | 质量治理（§5.8） | G7-QA-05 / 06 已修；01~04 见未完成 |
-| 基建 | 14 个 parity 护栏全绿并接入双链；CI 三平台 job 全绿；Windows / macOS Runtime 证据已取得；Golden 采集流水线就绪 |
+| 基建 | 14 个 parity 护栏全绿并接入双链（**2026-09-30 更正：已增至 16 个** —— 新增 `verify-doc-code-refs.mjs` 与 `verify-no-color-only-status.mjs`；门禁自报当前值，勿信本节静态数字）；CI 三平台 job 全绿；Windows / macOS Runtime 证据已取得；Golden 采集流水线就绪 |
 
 ### 15.3 未完成（9 类，含阻塞原因与解除条件）
 

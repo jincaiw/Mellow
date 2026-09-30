@@ -861,6 +861,68 @@ reduced motion），矩阵是 6 列（Keyboard / Focus ring / Semantic / Contras
 3. 或在 spec §19 里注明该条属**人工走查**（并写进审计文档的 §4「验证项（需人工/GUI 确认）」）——
    **三者必居其一**，不要让一条已声明的要求长期无人认领。
 
+### 处置（2026-09-30，选②）
+
+**选了修法 ②（加可判定断言）**，因为它同时回答「谁在守」与「有没有坏」。
+② 立刻**抓到一个真实缺陷**——这正是它优于 ①/③ 的地方（①③ 都只是「把要求挪个地方」）。
+
+**新增护栏**：`tests/parity/verify-no-color-only-status.mjs`（第 16 个护栏，已接入
+`test` 与 `parity` 两条链；`verify-release-gate.mjs` 现报 `16 parity guards`）。三条断言：
+
+- **① 使用点清单锁**：扫出所有「用**语义状态色**（`--mellow-danger|warning|success`）
+  表达状态」的位置——`styles.css` 的规则选择器 **＋ 内联 `var(--mellow-…)` 的样式键**
+  （CM 主题里写作 ``[`.${CONST}`]: {…}``）——断言集合**恰好等于**护栏内的 `REGISTRY`。
+  新增未登记 → 失败（逼登记）；登记了但源码已消失 → 也失败（防登记表退化成化石）。
+- **② 每个使用点必须声明非颜色线索且可核实**：`nonColor: 'text'` 要求锚点落在真正的
+  JSX 表达式容器里（`{…}`），`'pattern'` 要求指向非颜色的形态差异。锚点消失 → 失败。
+- **③ `status` 状态两端配对**：`StatusBar` 的 `.status` 元素必须渲染 `statusText`；
+  宿主每次 `setStatus('<非 idle>')` 必须**紧接着** `setStatusText(...)`。
+  （前端靠 `className` 换色，语义全在文本——只锁一端等于没锁。）
+
+**抓到的缺陷**：`packages/editor-engine/src/mdLink.ts` 的**断链指示只改颜色**
+（`.mellow-mdlink-broken { color: var(--mellow-danger) }`，无 `attributes`/`title`/aria，
+下划线形态与正常链接完全相同）→ 灰度或色盲下**断链与正常链接不可区分**，即 spec §19
+`no color-only status` 违规。**已修**：加 `textDecoration: 'underline wavy'` 作为非颜色线索
+（WCAG 1.4.1 认可的「additional visual means」）。
+
+**顺带修正一处「把推断写成宪法陈述」**：该处旧注释写「subtle error indicator（spec §12）：
+暗红文字，**不改动下划线形态**与文档源码」。回查 `live-markdown-engine-spec.md` §12 原文，
+只有 `subtle error indicator` / `source unchanged` 两条 —— **「不改动下划线形态」是
+实现选择，不是 spec 约束**。故修形态不违反 §12；注释已改写并标明来由。
+
+**验证（全部做过「能失败」）**：
+- 护栏注入 8 个 mutation，**8/8 被检出**：① 去掉 `StatusBar` 的 `statusText`；
+  ② 新增一处未登记的语义色使用点；③ `setStatus('error')` 后删掉 `setStatusText`；
+  ④ 去掉断链的 `wavy`；⑤ 从 `REGISTRY` 删掉一个真实存在的使用点；
+  ⑥ 改名真实使用点的选择器；⑦ 把文本锚点挪进**属性值**（不再是 JSX 表达式容器）；
+  ⑧ 内联语义色**失去归属键**。
+- **mutation ⑦⑧ 各暴露了护栏自身的一个缺陷，均已修**（这两条是「加固」而非「装饰」的证据）：
+  - ⑦ 最初的「JSX 容器」判据只查「锚点之后有个 `}`」——**属性值里同样成立**，
+    等于没判。改为：锚点须以 `{` 开头 **且** 其前一个非空白字符不是 `=` / `"` / `'`。
+  - ⑧ 归属键只取「向前最近的 `${CONST}`」→ 当某条规则被改成字面量键时，
+    护栏会把该用法**错误归属到上一条规则的常量**；若那个常量已登记，
+    **新用法被静默吞掉**（正是「护栏看不见我」）。改为：`${CONST}` 之后若还有 `}`，
+    说明那条规则已闭合 → **响亮失败**。
+    ⚠️ 边界必须按 token 的**结束位置**算 —— `${CONST}` 自身就含一个 `}`，
+    用起始位置比较会把「占位符自己的右花括号」当成规则闭合（首跑即误报，已修）。
+- 另在 `packages/editor-engine/test/md-link.test.ts` 补一条**运行时**断言（读**实际注入
+  DOM 的样式规则**，而非源码文本），并先断言「规则读得到」以防断言因读不到样式而**恒绿**；
+  注入验证：删掉 `wavy` → 该断言失败。
+- `packages/editor-engine`（16/16，全量 1217 例）与 `packages/desktop-ui`（17/17）单测全绿；
+  完整 `npm run parity` 链（16 护栏 + UX 自检 + vendored CoreEditor lint/jest 191 例）全绿。
+
+**如实声明的范围限制**（写在护栏文件头，避免被读成「无障碍已达标」）：
+- 只覆盖**语义状态色**这条路径；用非语义色/渐变/背景图表达状态的元素**不在覆盖内**。
+- 「有无文本」是**静态可判定**的代理指标，**不等于** WCAG 1.4.1 合规：对比度、
+  色盲可辨识度、屏幕阅读器语义（`role`/`aria-label`）**均不判定**。
+  （断链目前仍无 SR 语义——引擎侧无 i18n 通道，需宿主注入文案，属独立议题。）
+- spec §19 其余 5 条（keyboard complete / focus visible / 200% zoom / reduced motion /
+  screen reader baseline）**不在此护栏**，仍属 §4.19 的「无人守」范围。
+
+**为什么不用 ①（补审计矩阵列）**：矩阵是**散文表格**，加一列不会产生任何信号；
+它只在**有人重跑人工走查**时才有意义，而人工走查恰恰是当前最稀缺的资源
+（见 §4.19 起因：两处清单各自维护、差集永远不被发现）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
@@ -876,6 +938,9 @@ reduced motion），矩阵是 6 列（Keyboard / Focus ring / Semantic / Contras
    只锁实现与 benchmark 仍可能双双偏离 PRD。注入验证：把 PRD 的 `>5MB` 改成 `>=5MB`
    → 护栏报错；还原 → 通过。
 4. 未改动任何状态码、`requiredEvidence`、策略或产品代码。
+   （**注（2026-09-30）**：§4.19 的「处置」子节**改了产品代码**
+   —— `mdLink.ts` 断链指示补非颜色线索。那是**本节之后的独立跟进**，
+   不在「本次审计」的改动范围内，故此条仍成立。）
 
 ## 六、结论
 

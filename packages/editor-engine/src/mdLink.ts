@@ -235,9 +235,14 @@ export function buildMdLinkExtension(): Extension {
       textDecoration: 'underline',
       cursor: 'pointer',
     },
-    // subtle error indicator（spec §12）：暗红文字，不改动下划线形态与文档源码
+    // subtle error indicator（spec §12：subtle + source unchanged）。
+    // spec §19「no color-only status」：**颜色不得是唯一线索** —— 故除暗红文字外，
+    // 同时改下划线**形态**（wavy）作为非颜色差异，灰度/色盲下仍可辨。
+    // 旧注释写的「不改动下划线形态」是把实现选择误写成 spec §12 的约束 ——
+    // spec §12 只要求 subtle error indicator + source unchanged，并未要求形态不变。
     [`.${LINK_BROKEN_CLASS}`]: {
       color: 'var(--mellow-danger, #b3261e)',
+      textDecoration: 'underline wavy',
     },
     [`.${DELIM_CLASS}`]: { fontSize: '0', userSelect: 'text' },
   });
