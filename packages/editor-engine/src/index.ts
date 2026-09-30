@@ -19,6 +19,7 @@ import { Prec } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { buildTaskCheckboxExtension } from './taskCheckbox';
+import { buildInputLatencyExtension, installInputLatencyApi } from './inputLatency';
 import { buildTableToolbarExtension } from './table/toolbar';
 import { buildColumnWidthExtension } from './table/columnWidth';
 import { buildTableLiveViewExtension } from './table/liveView';
@@ -72,6 +73,18 @@ export type { MellowPlatform } from './platformNav';
 export { DEFAULT_ENGINE_FEATURES, mergeEngineFeatures, readEngineFeaturesFromStorage } from './config';
 export type { EngineFeatureConfig } from './config';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
+export {
+  buildInputLatencyExtension,
+  installInputLatencyApi,
+  inputLatencyReport,
+  resetInputLatency,
+  noteKeydown,
+  noteDocChanged,
+  noteFrame,
+  hasPendingKey,
+  INPUT_LATENCY_CAPACITY,
+} from './inputLatency';
+export type { InputLatencyReport, LatencyStats, InputLatencyApi } from './inputLatency';
 export * from './table';
 export * from './image';
 export * from './smartPaste';
@@ -218,6 +231,7 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installCodeLineNumbersApi();
   // V5：md 排版 token 桥（宿主经 EditorCore.setMdTokens 注入 --mellow-md-*）
   installMdTokensBridge();
+  installInputLatencyApi();
   const f = mergeEngineFeatures(features);
   const ext: Extension[] = [
     // Source-state tables do not have a Live View cell DOM to own Tab. Register
@@ -251,6 +265,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildPagingExtension(),
     buildImageExtensions(),
     buildLargeFileExtension(),
+    // W-PERF-1：按键回显延迟埋点（16ms 目标在屏幕捕获上原理性不可判定，故改为应用内埋点）
+    buildInputLatencyExtension(),
     buildSelectionCommandsExtension(),
     buildSmartPunctuationExtension(),
     buildCodeLineNumbersExtension(),
