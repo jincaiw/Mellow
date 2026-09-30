@@ -766,6 +766,46 @@ editor-core **不能**反向 import 引擎（成环）。故内联是**必要的
 > 故本节的缺口**只被部分闭环**：编辑器侧语义已有人守，
 > 「文件真被外部改了以后自动重载是否正确」仍需 e2e/真机覆盖。
 
+## 4.17 spec §8「Caret Stability」的不变量在**状态矩阵里没有断言**（2026-09-30）
+
+**spec 原文**（`live-markdown-engine-spec.md` §8）：
+
+```text
+任何 decoration 更新必须满足：
+document position unchanged
+selection anchor/head unchanged
+scroll anchor preserved
+除非用户动作本身改变文本。
+```
+
+**实测**：`state-matrix.test.ts`（15 个节点族 × 15 个状态的系统矩阵）逐状态的断言是
+**marker 可见性** —— `expect(cfg.hiddenWhenIdle(view)).toBe(true)` /
+`expect(cfg.revealedWhenTouched(view)).toBe(true)`。
+**全文件没有 `doc.toString()` 断言，也没有 selection 断言**
+（grep `doc\.toString\(\)|position|不变|unchanged` 在该文件只命中 import 与 describe 标签）。
+
+即：矩阵系统性地检查「**什么变得可见**」，但**不检查「别的东西没变」** ——
+而 §8 正是关于「别的东西没变」。散落的其他测试（如 `table-live-view.test.ts`）
+确实有 `expect(view.state.doc.toString()).toBe(source)`，
+但那是**逐点抽查**，不是对「任何 decoration 更新」的系统性保证。
+
+**为什么这是缺口**：§8 的不变量是**跨所有 decoration 更新**的（spec 用的是「任何」），
+而系统矩阵恰是唯一能覆盖「所有状态」的地方；它漏了这条，等于
+**「marker reveal 不改变文档位置」只有零散抽查、没有系统防线**。
+
+**后续项**（建议做法，成本可控）：
+1. 在矩阵的每个 case 里，动作前后各取 `view.state.doc.toString()` 与
+   `view.state.selection.main`，断言二者不变（spec §8 前两条）；
+2. `scroll anchor preserved` 需真实布局，jsdom 下不可判定 —— **如实降级为
+   「本 harness 不判定」**（与 ADR-0026 Q3 对 16ms 目标的处置同一原则），
+   不要用一个恒真的假断言冒充；
+3. 改完后**逐状态注入验证**：让某个 decoration 更新顺带改一次文档 →
+   矩阵必须报错。
+
+> **与 §4.15/§4.16 的区别**：那两处是「声明了某个测试场景但零覆盖」；
+> 本处是「**声明了一个不变量，而系统性测试只检查了它的相邻面**」——
+> 更隐蔽，因为矩阵**看起来**在覆盖这 15 个状态。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
