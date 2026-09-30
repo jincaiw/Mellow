@@ -2603,6 +2603,18 @@ codeBlockCount）或**设计常量**（fontSize / lineHeight / writingWidth / bo
 | 门禁 | **移除两个视觉步骤的 `continue-on-error`**（实现该步骤注释自身的条件） | YAML 可解析；两个步骤均无该属性 |
 | 护栏 | ① `verify-build-pipeline` §⑨：视觉步骤不得 `continue-on-error`；② `verify-visual-golden`：容差必须由 `PX_FIELD` 选择 | 各配双向 canary，注入 → 报错 → 还原 → 通过 |
 
+**真实平台验证（不是本地推断）**：改完后**手动触发** `Runtime Qualification`（run `36790078304`，
+`gh workflow run … -f target=all`），三平台全部通过；日志里脚本自己打印的结论：
+
+```
+Windows: VISUAL_GOLDEN visual-golden: OK / sidebar-golden: OK / Scenes golden: 7 场景命中基准（±1px）/ scenes-golden: OK
+Linux:   VISUAL_GOLDEN visual-golden: OK / sidebar-golden: OK / Scenes golden: 7 场景命中基准（±1px）/ scenes-golden: OK
+```
+
+两个要点：① `Scenes golden` 由「**1 项偏离基准**」变为「**7 场景命中基准**」→
+**我按 CI 日志同步的 Linux/Windows 基线是正确的**（该值当时是推断的，现已实测）；
+② 视觉步骤**已是阻断的**，所以 `job = success` 这次是**真的通过**，不再是 `continue-on-error` 吞出来的。
+
 > **护栏又踩一次「匹配到散文」**：§⑨ 的说明注释里写着「**移除了** `continue-on-error: true`」
 > ——该串本身会被判据命中 → **首跑即误报**。按 §4「先剥注释」修（YAML 去 `#` 行）并补 canary。
 > 这是本会话**第四次**同一形态（前三次：shell 注释里的 `${TMPDIR}`、台账文本里的反引号、
