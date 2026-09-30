@@ -2011,6 +2011,84 @@ Fedora、ibus、Windows 10/11 区分、第三方输入法面板、dead keys、�
 > 才暴露。→ 已移到检查点之前，并把这个教训写进该节注释。
 > **若只做「注入验证」而不验证「能翻转」，这条空壳护栏会一路绿灯地留在 CI 里。**
 
+## 4.43 `performance-benchmark-spec` 复核（结构全部核实）+ **实测推翻其 W-PERF-3 的「一行级修法」**（2026-10-01）
+
+### A. 结构性声明：**全部核实通过**
+
+| spec 节 | 声明 | 核实结果 |
+|---|---|---|
+| §4 夹具（7 个） | `1MB` / `5MB` / `10MB` / `100k-lines` / `large-table` / `100-mermaid` / `1000-images` + `manifest.json`（sha256/字节/行数） | ✅ 7 个夹具与 manifest **都在**；`tests/benchmark/fixtures/` **确为 gitignore**（产物不入库） |
+| §6 组件 | `lib/screen-timing.swift` / `perf-common.mjs` / `run-benchmark.mjs` | ✅ 三件都在；helper 已编译为 `bin/screen-timing` |
+| §10 W-PERF-1 | 「引擎侧已落地」`inputLatency.ts` + `__MELLOW_INPUT_LATENCY__` | ✅ 文件与全局出口都在 |
+| §10 W-PERF-2 | 「已完成」报告 §2d hot-open 表 + 护栏三条 | ✅ `verify-parity-ledger.mjs` 确有 `switchMs` 判定量与「目标与口径必须同表」断言 |
+| §10 W-PERF-3 | 「已做」`loadMs` 不得进 PRD 判定的三条护栏 | ✅ 三条断言 + canary 都在（`opens.push`/`vals.push` 不得含 `loadMs`；打印处必须带标注且**在字符串字面量里**） |
+| §9 | 16ms 目标「原理性不可判定」 | ✅ 与 ADR-0026 Q3 一致 |
+
+### B. **实测推翻 W-PERF-3 的修法**（本节重点）
+
+spec §10 给的「最小修法（一行级）」是 `return lastChange - start`。本轮**本机实测**（权限齐备：
+`screen-timing check` → `accessibility:true, screenRecording:true`；helper 与 release 构建都在）：
+
+| 版本 | 夹具 / 应用 | `loadMs` |
+|---|---|---|
+| 改前 | 1MB / Typora | **[631, 631]** |
+| 改前 | 1MB / Mellow | **[633, 629]** |
+| **改后** | 1MB / Typora | **[0, 0]** |
+| **改后** | 1MB / Mellow | **[0, 0]** |
+| **改后** | **10MB / Mellow** | **[0, 0]** |
+
+**改后每个样本的 stderr 都是 `0 changed`** —— 整个 600ms 窗口内**一次显著变化都没观察到**，
+`lastChange` 停在 `start` → **恒为 0**。
+
+**判定：该修法把「恒 ~600ms 的地板」换成「恒 0」，后者更糟**（0 读起来像「瞬时加载」，
+而它同样不是在测加载）。**根因比 spec 的诊断更锐利**：`waitStable` 在**窗口已被绘制之后**
+才被调用（调用序：窗口检测 → `waitStable`），此时**没有后续变化可观察**。
+**真实修法 = 把观测窗口前移到打开之前**（harness 时序重排），不是改返回值。
+
+**附加证据**：10MB 的真实代价体现在 **`latencyMs ≈ 1.4s`**（首键回显 `[1418, 1339]`），
+**不是** `loadMs` —— 说明「加载代价」在当前 harness 里实际由 `latencyMs` 承载。
+
+**处置**：**回退**（源码 + **已授权二进制**；回退后复测读数恢复 **613–629ms**，环境复原），
+并把上述记录写进 spec §10。**不发布一个读数为 0 的量具。**
+
+> **本条的元价值**：spec 把 W-PERF-3 标为「实现待做，留给能跑真机的环境」——
+> 读起来像「缺环境」。实测表明**环境是齐备的**，真实情况是
+> **「验证后发现修法本身不成立」**。两者对读者与排序的含义完全不同：
+> 前者是「等资源」，后者是「换方案」。**「需环境」这个归类本身就是一次未验证的推断。**
+
+## 4.44 vendored CoreEditor 的 `lezer.test.ts` 偶发假红：**在增量解析完成前读语法树**（2026-10-01，已修）
+
+**现象**：`npm run parity` 的 vendored jest 步骤报错 ——
+
+```
+● Lezer parser › test ATXHeading
+  Expected value: "ATXHeading2"
+  Received array: ["Document", "Body"]
+```
+
+**复跑即通过**（`tools/check-vendored-editor.mjs` → 23 suites / 200 tests 全绿）→ **偶发假红**。
+
+**判因（读码，机制明确，非猜测）**：`test/lezer.test.ts` 的 `parseTypes()` **同步**读
+`syntaxTree(editor.state)` —— 而 CM6 的 Lezer 解析是**增量**的，`syntaxTree` 返回的是
+「已解析到哪算哪」的树。`editor.setUp(doc)` 刚建好视图就断言，此时树可能**只有
+`Document` / `Body`**（正是失败输出）。机器负载高时必现、空闲时通常不现。
+
+**影响面**：这是 **CI 可见**的测试（`ci.yml` 的 editor-core job 跑同一套 vendored jest）
+→ 假红会**打红整条 CI**，且这类假红的代价不是一次重跑，而是**训练人忽略红灯**
+（同 §4.37 的判据）。
+
+**修法**：`parseTypes` 改用 `ensureSyntaxTree(state, doc.length)` —— **同步强制完成解析**后
+再遍历（保留 `?? syntaxTree(...)` 兜底）。用**确定性 API** 取代对时序的隐含依赖。
+
+> ⚠️ **覆盖边界（如实声明，与 §4.37 不同）**：**无法构造确定性 canary** ——
+> 该危害是**时序依赖**的（负载高才现），不能靠一次注入稳定复现。
+> 因此本条的**证据是实测失败输出本身**（不是模拟），修法的价值在于
+> **用确定性 API 消除了对时序的依赖**，故**无论是否复发都严格更安全**。
+> **不得**把它写成「已 canary 验证」。
+
+**vendored 文件处置**：该文件属 `CoreEditor/`（re-vendor 会被 `cp -R` 覆盖）→
+已**同步更新 `packages/editor-core/UPSTREAM.md` 的改动清单**（修改文件 **18 → 19**）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

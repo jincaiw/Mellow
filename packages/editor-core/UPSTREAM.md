@@ -34,7 +34,7 @@ cp -R /tmp/MarkEdit-src/CoreEditor ./CoreEditor
 
 清单来源：与**本文件钉住的 commit** 的官方 tarball 逐文件 diff（非回忆、非人工枚举）。
 
-### 修改的文件（18）
+### 修改的文件（19）
 
 | 文件 | 规模 | 改动要点 |
 |---|---|---|
@@ -56,6 +56,7 @@ cp -R /tmp/MarkEdit-src/CoreEditor ./CoreEditor
 | `src/styling/themes/github-dark.ts` | +5/-2 | 主题微调 |
 | `src/styling/themes/github-light.ts` | +5/-2 | 主题微调 |
 | `test/zoom.test.ts` | +29 | 手势 disposer 回归 |
+| `test/lezer.test.ts` | +10/-3 | **测试时序修复（2026-10-01）**：`parseTypes` 原先直接读 `syntaxTree(state)` —— 它是**增量树**，视图刚建好时可能只有 `Document`/`Body`，导致偶发假红（实测 `npm run parity` 的 vendored jest 步骤报 `Received array: ["Document","Body"]`）。改用 `ensureSyntaxTree(state, doc.length)` **强制完成解析**后再遍历（保留 `?? syntaxTree(...)` 兜底） |
 
 ### 新增的文件（3，全在 `test/`）
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
 import { EditorView } from '@codemirror/view';
-import { syntaxTree } from '@codemirror/language';
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import { getNodesNamed, getReadableContent } from '../src/modules/lezer';
 import * as editor from './utils/editor';
 
@@ -223,7 +223,15 @@ describe('Lezer parser', () => {
 
 function parseTypes(editor: EditorView) {
   const types: string[] = [];
-  syntaxTree(editor.state).iterate({
+  // ⚠️ **Mellow 增补（2026-10-01）**：必须先**强制完成解析**再遍历。
+  // `syntaxTree(state)` 返回的是「已解析到哪算哪」的**增量树** —— 视图刚建好时它可能只有
+  // `Document` / `Body` 两个节点。实测（`npm run parity` 的 vendored jest 步骤）出现过：
+  //   Expected value: "ATXHeading2" / Received array: ["Document", "Body"]
+  // 即断言**在解析完成之前**跑掉了 —— 机器负载高时必现、空闲时通常不现 = 偶发假红。
+  // `ensureSyntaxTree(state, upto)` 会**同步**把树补到指定位置（本文件文档都很小）。
+  // 用 `?? syntaxTree(...)` 兜底（极端情况下 ensureSyntaxTree 可能返回 null）。
+  const tree = ensureSyntaxTree(editor.state, editor.state.doc.length) ?? syntaxTree(editor.state);
+  tree.iterate({
     enter: node => {
       types.push(node.type.name);
     },
