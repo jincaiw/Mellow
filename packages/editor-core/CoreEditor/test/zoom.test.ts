@@ -168,4 +168,33 @@ describe('Pinch-zoom test suite', () => {
     dispatchGesture('gesturechange', { scale: 100 });
     expect(Number(overrideInner.style.zoom)).toBe(2.5);
   });
+
+  // 2026-09-30（Mellow）：本函数此前**没有返回值**（装上监听器就撤不掉），
+  // 只能「开」不能「关」。做成了用户可切换的设置（Typora allowMagnification）后，
+  // 没有 disposer 就会给出「关了但没生效」的假控件 —— 故补测两个方向。
+  test('disposer 移除手势监听器并把内联 zoom 复位（关得掉）', () => {
+    const { inner } = setUpTarget();
+    const dispose = enablePinchZoom({});
+    expect(typeof dispose).toBe('function');
+
+    dispatchGesture('gesturestart', { scale: 1 });
+    dispatchGesture('gesturechange', { scale: 2 });
+    expect(inner.style.zoom).not.toBe(''); // 手势确实改过 zoom（前提，防空壳）
+
+    dispose();
+    // ① 内联 zoom 复位到 CSS 定义值
+    expect(inner.style.zoom).toBe('');
+    // ② 监听器已移除：再派发手势不再改动 zoom
+    inner.style.zoom = '1.4';
+    dispatchGesture('gesturestart', { scale: 1 });
+    dispatchGesture('gesturechange', { scale: 2 });
+    expect(inner.style.zoom).toBe('1.4');
+  });
+
+  test('disposer 幂等：重复调用不抛错', () => {
+    setUpTarget();
+    const dispose = enablePinchZoom({});
+    dispose();
+    expect(() => dispose()).not.toThrow();
+  });
 });

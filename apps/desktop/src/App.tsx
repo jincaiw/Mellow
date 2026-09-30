@@ -3670,6 +3670,12 @@ export default function App() {
           if (firstLineDef && readSetting(firstLineDef) === true) {
             host.setEditorConfig('setFirstLineIndent', { enabled: true });
           }
+          // 2026-09-30 双指缩放启动恢复（Typora `allowMagnification` 默认 false）。
+          // 只在**开启**时下发：默认关 → 不发消息（CoreEditor 侧初始就没有监听器）。
+          const allowMagDef = settingById('editor.allowMagnification');
+          if (allowMagDef && readSetting(allowMagDef) === true) {
+            host.setEditorConfig('setAllowMagnification', { enabled: true });
+          }
           // P2-2.1 行高启动恢复：CoreEditor 默认 1.5 ≠ Mellow 默认（TYPOGRAPHY_DEFAULTS.lineHeight），
           // 必须无条件 apply 对齐（读不到设置时回落同一真源），不能沿用「非默认才 apply」模式。
           const lineHeightDef = settingById('editor.lineHeight');
@@ -4701,6 +4707,8 @@ export default function App() {
         else if (def.id === 'editor.tabBehavior') host?.setEditorConfig('setTabKeyBehavior', { behavior: tabBehaviorFor(value) });
         else if (def.id === 'editor.codeIndentSize') host?.setEditorConfig('setCodeIndentSize', { indentWidth: Number(value) });
         else if (def.id === 'editor.firstLineIndent') { host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) }); setMenuCheckTick((n) => n + 1); }
+        // 2026-09-30：Typora「双指缩放」—— 开关两个方向都生效（CoreEditor 侧持 disposer）
+        else if (def.id === 'editor.allowMagnification') host?.setEditorConfig('setAllowMagnification', { enabled: Boolean(value) });
         break;
       }
       case 'view.typewriter.on':

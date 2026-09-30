@@ -1331,6 +1331,51 @@ grep -rn "finalNewline|preLinebreakOnExport|Magnification|magnification" package
 → 规则：写「**全仓无 X**」这类**范围性否定**时，必须写明**检索面**（哪些目录/文件类型）；
 只搜了一个包就写「全仓」，是把范围当结论。
 
+## 4.28 实施 §15.3 行 10 ③「双指缩放」—— 核心是给 `enablePinchZoom` 补 disposer（2026-09-30）
+
+**承接 §4.27 的裁决 E**，本轮完成完整闭环。
+
+**改动的核心不是「加一个设置项」，而是「让开关关得掉」**：
+`enablePinchZoom` 原实现**装上三个手势监听器就撤不掉**（无返回值）。
+它此前只服务 Quick Look（一次性只读预览），撤不掉无所谓；但一旦做成**用户可切换的设置**，
+没有 disposer 就只能「只能开、关不掉」→ 给出一个**假控件**（关了但没生效），
+正是本项目反复记录的那类缺陷。故本轮先给它补 disposer（移除监听器 **并复位内联 `zoom`**），
+再谈接线。
+
+**端到端七环**（照 `setFirstLineIndent` 的既有形态）：
+1. `packages/settings/src/index.ts`：`editor.allowMagnification`（toggle / 默认 `false` /
+   `applyCommand: 'settings.editorConfig'`）。
+2. `CoreEditor/src/@quicklook/zoom.ts`：`enablePinchZoom` **返回 disposer**。
+3. `CoreEditor/src/modules/config/index.ts`：`setAllowMagnification(enabled)` ——
+   持有 `pinchZoomDispose`，开启时装、关闭时撤，**幂等**（重复开启不叠加监听器）。
+4. `CoreEditor/src/config.ts`：`allowMagnification?: boolean`。
+5. `CoreEditor/src/bridge/web/config.ts`：**声明并实现** `setAllowMagnification`。
+6. `packages/editor-core/src/core.ts`：`setEditorConfig` **白名单**加 `'setAllowMagnification'`
+   （漏加 → 调用被静默丢弃）。
+7. `apps/desktop/src/App.tsx`：`applySetting` 的 live-apply 分支 + **启动恢复**下发。
+   i18n zh/en 各 2 条。
+
+**测试**：
+- `CoreEditor/test/zoom.test.ts` +2 例：disposer 移除监听器**且复位内联 zoom**；disposer 幂等。
+- 新增 `CoreEditor/test/allow-magnification.test.ts` 4 例：默认关不改动 / 开启后生效且 config 标志同步 /
+  **★ 关闭后失效且复位** / 连续开启两次后关一次即完全失效（不叠加监听器）。
+- ⚠️ 过程中踩到 jsdom 细节：**从未被赋值**的 `style.zoom` 读回 `undefined`（而 TS 类型是 `string`），
+  直接写 `style.zoom ?? ''` 会被 eslint 判 `no-unnecessary-condition` → 改为带 cast 的
+  `inlineZoom(el)` 辅助函数（既 lint 干净、又把该 jsdom 行为写进注释）。
+
+**护栏**（`verify-settings-contract.mjs` 新节）：端到端七环逐环断言 +
+**核心断言「`enablePinchZoom` 必须返回 disposer」** + 「disposer 必须移除 `gesturestart`」+
+「关闭分支必须调用 disposer 并清空」。注入 **8 个 mutation，8/8 被检出**
+（含「去掉 disposer 返回类型」「disposer 不移除监听器」「白名单漏加」）。
+
+**⚠️ 如实声明两处边界**：
+1. **默认取 `false`（保守）**：Typora 该键的默认态**未能从一手证据确认**
+   （用户 plist 无该键；`MainMenu.nib` / 二进制未暴露初始 state），故**不改变现有行为**；
+   若将来确认 Typora 默认开启，改一行 `defaultValue` 即可（护栏会同步要求更新）。
+2. **真机手势未验证**：本环境无触控板 + GUI。已验证到「监听器装上 / 撤下、内联 zoom 写入 / 复位」
+   这一层（jsdom + 单测），**真实捏合行为需真机会话补验** —— 与 §4.19 同类的边界。
+   **不得**把本节读成「双指缩放已在真机上验证通过」。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

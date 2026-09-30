@@ -137,6 +137,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // V7-W6（G7-EDIT-15）：Typora「首行缩进」（`indentFirstLine`，默认 false）。
       // CoreEditor 的 Markdown 文档结构已能区分 Paragraph；设置通过 CSS class 注入首行 text-indent。
       { id: 'editor.firstLineIndent', labelKey: 'settings.editor.firstLineIndent', type: 'toggle', storageKey: 'mellow.editor.firstLineIndent', defaultValue: false, descriptionKey: 'settings.editor.firstLineIndentDesc', applyCommand: 'settings.editorConfig' },
+      // 2026-09-30：Typora「双指缩放」（原生菜单项 `toggleAllowMagnification:`，配置键 `allowMagnification`）。
+      // 默认 **false**（保守：不改变现有行为）—— Typora 该键的默认态**未能从一手证据确认**
+      // （用户 plist 无该键；MainMenu.nib / 二进制未暴露初始 state），故取关闭。
+      { id: 'editor.allowMagnification', labelKey: 'settings.editor.allowMagnification', type: 'toggle', storageKey: 'mellow.editor.allowMagnification', defaultValue: false, descriptionKey: 'settings.editor.allowMagnificationDesc', applyCommand: 'settings.editorConfig' },
       // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
       // 智能标点（master-plan R2-1：Typora 编辑→替换「智能引号/破折号」；默认关闭）

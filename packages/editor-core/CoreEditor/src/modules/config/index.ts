@@ -12,6 +12,7 @@ import { loadTheme } from '../../styling/themes';
 
 import * as styling from '../../styling/config';
 import * as completion from '../completion';
+import { enablePinchZoom } from '../../@quicklook/zoom';
 
 export function setTheme(name: string) {
   window.config.theme = name;
@@ -134,6 +135,27 @@ export function setCodeIndentSize(width: number) {
 /** 首行缩进开关（V7-W6，G7-EDIT-15）。 */
 export function setFirstLineIndent(enabled: boolean) {
   styling.setFirstLineIndent(enabled);
+}
+
+/**
+ * 双指缩放开关（Typora `allowMagnification` /「双指缩放」，菜单项；默认 **false**）。
+ *
+ * 2026-09-30（Mellow）：手势实现早已存在（`@quicklook/zoom.ts` 的 `enablePinchZoom`），
+ * 但此前**只在 Quick Look 启用**。本函数把它接到主编辑器，并持有 disposer ——
+ * **两个方向都真实生效**（否则「关了没生效」就是一个假控件）。
+ * 幂等：重复开启不会叠加监听器。
+ */
+let pinchZoomDispose: (() => void) | null = null;
+export function setAllowMagnification(enabled: boolean) {
+  window.config.allowMagnification = enabled;
+  if (enabled) {
+    if (pinchZoomDispose === null) {
+      pinchZoomDispose = enablePinchZoom({});
+    }
+  } else if (pinchZoomDispose !== null) {
+    pinchZoomDispose();
+    pinchZoomDispose = null;
+  }
 }
 
 export function setLineHeight(lineHeight: number) {

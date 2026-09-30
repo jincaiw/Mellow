@@ -24,6 +24,7 @@ import {
   setDefaultCodeLang,
   setCodeIndentSize,
   setFirstLineIndent,
+  setAllowMagnification,
 } from '../../modules/config';
 
 /**
@@ -53,6 +54,7 @@ export interface WebModuleConfig extends WebModule {
   setDefaultCodeLang({ lang }: { lang: string }): void;
   setCodeIndentSize({ width }: { width: number }): void;
   setFirstLineIndent({ enabled }: { enabled: boolean }): void;
+  setAllowMagnification({ enabled }: { enabled: boolean }): void;
 }
 
 export class WebModuleConfigImpl implements WebModuleConfig {
@@ -138,5 +140,9 @@ export class WebModuleConfigImpl implements WebModuleConfig {
 
   setFirstLineIndent({ enabled }: { enabled: boolean }): void {
     setFirstLineIndent(enabled);
+  }
+
+  setAllowMagnification({ enabled }: { enabled: boolean }): void {
+    setAllowMagnification(enabled);
   }
 }

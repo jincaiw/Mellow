@@ -98,6 +98,14 @@ export interface Config {
   codeIndentSize?: number;
   /** 首行缩进（V7-W6，G7-EDIT-15），默认 false。 */
   firstLineIndent?: boolean;
+  /**
+   * 双指缩放（Typora `allowMagnification` 菜单项 /「双指缩放」），默认 **false**。
+   *
+   * 2026-09-30（Mellow）：手势实现（`@quicklook/zoom.ts` 的 `enablePinchZoom`）此前
+   * **只在 Quick Look 启用**；本字段把它接到主编辑器，由宿主经
+   * `setEditorConfig('setAllowMagnification')` 下发（开关两个方向都生效）。
+   */
+  allowMagnification?: boolean;
   indentBehavior: IndentBehavior;
   undoGroupingInterval?: number;
   headerFontSizeDiffs?: number[];

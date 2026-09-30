@@ -1094,9 +1094,53 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 「双指缩放」端到端接线 + 「开关必须关得掉」（2026-09-30）─────────────────
+// 背景：手势实现（`enablePinchZoom`）早已存在，但**只在 Quick Look 启用**，
+// 且**原先没有返回值**（装上监听器就撤不掉）。做成用户可切换的设置后，
+// 「关不掉」会给出**假控件**（关了但没生效）—— 故本节的**核心断言**是
+// 「`enablePinchZoom` 必须返回 disposer」，而不只是「有设置项」。
+{
+  if (!/id: 'editor\.allowMagnification'[^}]*type: 'toggle'[^}]*defaultValue: false[^}]*applyCommand: 'settings\.editorConfig'/.test(settingsSource)) {
+    fail('settings 缺少 editor.allowMagnification（toggle / 默认 false / applyCommand=settings.editorConfig）');
+  }
+  const zoomSrc = read('packages/editor-core/CoreEditor/src/@quicklook/zoom.ts');
+  if (!/export function enablePinchZoom\(bridge: PinchZoomBridge\): \(\) => void/.test(zoomSrc)) {
+    fail('enablePinchZoom 必须**返回 disposer**（否则做成开关后「关不掉」= 假控件）');
+  }
+  if (!/return \(\) => \{[\s\S]{0,600}?removeEventListener\('gesturestart'/.test(zoomSrc)) {
+    fail('enablePinchZoom 的 disposer 必须移除 gesturestart 监听器');
+  }
+  const moduleSrc = read('packages/editor-core/CoreEditor/src/modules/config/index.ts');
+  if (!/export function setAllowMagnification\(enabled: boolean\)/.test(moduleSrc)) {
+    fail('CoreEditor 缺少 setAllowMagnification（modules/config）');
+  }
+  if (!/pinchZoomDispose\(\);\s*\n\s*pinchZoomDispose = null;/.test(moduleSrc)) {
+    fail('setAllowMagnification 关闭分支必须调用 disposer 并清空（否则关不掉）');
+  }
+  const bridgeSrc = read('packages/editor-core/CoreEditor/src/bridge/web/config.ts');
+  if (!/setAllowMagnification\(\{ enabled \}: \{ enabled: boolean \}\): void;/.test(bridgeSrc)
+    || !/setAllowMagnification\(\{ enabled \}: \{ enabled: boolean \}\): void \{/.test(bridgeSrc)) {
+    fail('bridge/web/config.ts 必须**声明并实现** setAllowMagnification');
+  }
+  if (!/'setAllowMagnification'/.test(read('packages/editor-core/src/core.ts'))) {
+    fail("editor-core 的 setEditorConfig 白名单缺少 'setAllowMagnification'（漏加 → 调用被静默丢弃）");
+  }
+  if (!/def\.id === 'editor\.allowMagnification'\) host\?\.setEditorConfig\('setAllowMagnification'/.test(appSource)) {
+    fail('App.tsx 的 applySetting 缺少 editor.allowMagnification → setAllowMagnification 接线');
+  }
+  if (!/allowMagDef && readSetting\(allowMagDef\) === true[\s\S]{0,120}?setAllowMagnification', \{ enabled: true \}/.test(appSource)) {
+    fail('App.tsx 缺少双指缩放的**启动恢复**下发');
+  }
+  // canary：去掉 disposer 的返回类型必须被检出
+  const zoomDrift = zoomSrc.replace('export function enablePinchZoom(bridge: PinchZoomBridge): () => void', 'export function enablePinchZoom(bridge: PinchZoomBridge)');
+  if (zoomDrift === zoomSrc || /enablePinchZoom\(bridge: PinchZoomBridge\): \(\) => void/.test(zoomDrift)) {
+    fail('双指缩放 canary 失效：无法模拟「去掉 disposer」的漂移');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框; outline max-level (2026-09-30): markdown.outlineMaxLevel 端到端 —— schema(select 1..6 / 默认 6) → applySetting 写 state → buildOutline 收 maxLevel（tree + all 两处）→ 该 state 必须进 refreshOutline 依赖数组（否则改设置不重算，§4.25 同型）');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框; outline max-level (2026-09-30): markdown.outlineMaxLevel 端到端 —— schema(select 1..6 / 默认 6) → applySetting 写 state → buildOutline 收 maxLevel（tree + all 两处）→ 该 state 必须进 refreshOutline 依赖数组（否则改设置不重算，§4.25 同型）; allow-magnification (2026-09-30): editor.allowMagnification 端到端（settings → bridge 声明+实现 → setEditorConfig 白名单 → App live+启动）+ **核心断言：enablePinchZoom 必须返回 disposer**（否则做成开关后「关不掉」= 假控件）');
