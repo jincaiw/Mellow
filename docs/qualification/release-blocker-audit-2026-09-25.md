@@ -3319,6 +3319,41 @@ capture-window-chrome.mjs / scenes-golden.mjs / sidebar-golden.mjs / visual-gold
 > 若不剥 YAML 注释，判据会被**自己的说明**触发。已按本仓既有约定先剥注释，并配 canary
 > （「注释里的字样不算」+「真实违规必须被检出」两个方向）。
 
+### ⚠️ **派发实跑**抓到探针自己的跨平台缺陷（这是「接上线 ≠ 能跑」的实证）
+
+只把步骤接上是不够的 —— 我**派发了一次 Runtime Qualification（`target=all`）实跑**，结果：
+
+| job | 结果 |
+|---|---|
+| macOS / Windows | ✅ |
+| **Linux** | ❌ —— 视觉 Golden ✅，但**新增的探针步骤 ❌** |
+
+探针步骤内部逐条读数：
+
+```
+✅ 主题探针（暗色）：表格工具栏 bg = rgba(37,37,38,0.95) / fg = rgb(230,230,230)
+✅ 启动探针：appearance.toolbar=false → display:"none"；对照 → "flex"
+❌ i18n 探针：=== 查找面板 === {"found":false}
+   ❌ 前置：查找面板出现且能读到输入框（引擎侧渲染） — inputs=0
+ENTRY_PROBE i18n-engine-probe: FAILED (exit 1)
+```
+
+**根因：探针自己写死了 macOS 专有按键** —— `page.keyboard.press('Meta+f')`。
+Linux 上没有 Meta 键 → 查找面板根本没打开。**这是探针缺陷，不是产品缺陷。**
+
+**为什么一直没被发现**：该探针**只在 macOS 上跑过** —— 又一次「非默认入口无人走」
+（这次的非默认入口是**非 macOS**）。
+
+**修**：改用 Playwright 的 `ControlOrMeta`（macOS→Cmd / 其它→Ctrl；本仓既有约定见
+`sidebar-golden.mjs` 的 `ControlOrMeta+f`）。
+
+**并加固**：`verify-runtime-qualification-workflow.mjs` 新增 —— **凡挂进该 CI 步骤的探针，
+源码里不得出现 macOS 专有按键**（`'Meta+…'` / `'Cmd+…'`，先剥注释再判），配双向 canary。
+注入验证：把探针改回 `Meta+f` → 报错；基线通过。
+
+> **教训**：「**把测试接进 CI**」与「**测试在 CI 上能跑**」是两件事。
+> 前者是配置改动，后者**只能靠实跑证明** —— 本次若不派发，下一个版本会在 Linux 上静默红。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
