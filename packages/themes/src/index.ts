@@ -124,6 +124,15 @@ const LIGHT_BASE: Record<string, string> = {
   // 列表圆点色（引擎 `plugin.ts` 消费；2026-10-01 补入 —— 此前引擎写了 var() 但两端都没定义）。
   // Typora 无独立真值（圆点继承正文色），故为 **Mellow 自选灰阶（参数原创）**。
   '--mellow-md-list-bullet': '#8b949e',
+  // V8（ADR-0027 Q1=A1）：引擎**浮动面板**表面 token —— 表格工具栏 / 其 Resize 弹层。
+  // 一手基线：Typora 的 `.ty-table-edit` **每个主题显式上色**（`base-control.css` 基线透明；
+  // `themes/night.css` = `#363B40`＝该主题 `--bg-color`；gothic/pixyll/whitey = `#ededed`；
+  // newsprint = `transparent`）→「跟随主题」是既定行为，此前引擎的硬编码白底属缺口。
+  // 亮色取值**沿用原硬编码值**以做到零视觉变化（暗色为对应档）。
+  '--mellow-md-panel-bg': 'rgba(255, 255, 255, 0.92)',
+  '--mellow-md-panel-fg': '#333333',
+  '--mellow-md-panel-border': '#dddddd',
+  '--mellow-md-panel-active': '#cfe3ff',
   // V5-A：侧栏 Typora 对齐（#fafafa 底 / #eee 选中条，github.css sidebar 真值）
   '--mellow-sidebar-bg': '#fafafa',
   '--mellow-sidebar-active': '#eeeeee',
@@ -193,6 +202,12 @@ const DARK_BASE: Record<string, string> = {
   // 列表圆点色（暗色）：与同组 muted 灰同阶（`--mellow-md-quote-fg` / `--mellow-md-metablock-fg`
   // 暗色均为 #a0a0a0），避免 #8b949e 在 #1e1e1e 底上偏暗。
   '--mellow-md-list-bullet': '#a0a0a0',
+  // V8（ADR-0027）：浮动面板（暗色）—— 面板底取 `--bg-elevated` 档（`#252526`），
+  // 与 Typora night 的 `.ty-table-edit` 取该主题 `--bg-color` 同构；边框/激活色复用暗色基础档。
+  '--mellow-md-panel-bg': 'rgba(37, 37, 38, 0.95)',
+  '--mellow-md-panel-fg': '#e6e6e6',
+  '--mellow-md-panel-border': '#3a3a3a',
+  '--mellow-md-panel-active': '#3a4a6b',
   // V5-A：侧栏（暗色）
   '--mellow-sidebar-bg': '#252526',
   '--mellow-sidebar-active': '#3a3a3d',

@@ -42,6 +42,27 @@ const check = (name, ok, detail = '') => {
   if (!ok) exitCode = 1;
 };
 
+/**
+ * 解析 `rgb()/rgba()` 并算感知亮度（0–255）。
+ *
+ * ⚠️ **必须先处理透明**：`rgba(0,0,0,0)` 的 RGB 是**黑**，直接算亮度会把「透明」判成「深色」——
+ * 本文件早期就踩过这个坑（首版读 `.cm-content` 的透明底，得到「暗色下文字为深色」的假结论）。
+ * 故 alpha = 0 时返回 `null`（不可判定），由调用方决定怎么处理。
+ */
+function colorLuminance(css) {
+  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,/\s]+([\d.]+))?\s*\)/.exec(css ?? '');
+  if (m === null) return null;
+  const alpha = m[4] === undefined ? 1 : Number(m[4]);
+  if (alpha === 0) return null;
+  return 0.2126 * Number(m[1]) + 0.7152 * Number(m[2]) + 0.0722 * Number(m[3]);
+}
+
+/** 是否「暗」——不可判定（透明/无法解析）返回 false，由调用方另行断言前置。 */
+const isDarkColor = (css) => {
+  const l = colorLuminance(css);
+  return l !== null && l < 128;
+};
+
 async function main() {
   const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
     cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
@@ -120,9 +141,21 @@ async function main() {
         btnBg: btn === null ? null : getComputedStyle(btn).backgroundColor,
       };
     });
-    console.log('\n=== 表格工具栏（table/toolbar.ts：硬编码色）===');
+    console.log('\n=== 表格工具栏（table/toolbar.ts：走 --mellow-md-panel-*）===');
     console.log(JSON.stringify(tableBar));
     check('前置：表格工具栏出现', tableBar.found === true);
+    // ADR-0027 落地后的**正面断言**：暗色主题下浮动面板必须是**暗**的。
+    // 一手基线：Typora 的 `.ty-table-edit` 每个主题显式上色（night = `#363B40` = 该主题 `--bg-color`）。
+    // 修复前此处恒为 `rgba(255,255,255,0.92)`（**白底**）—— 那是缺口，不是有意差异。
+    check('表格工具栏**面板底**在暗色下为暗（ADR-0027：跟随主题）',
+      tableBar.found === true && isDarkColor(tableBar.bg),
+      `bg=${JSON.stringify(tableBar.bg)} 亮度=${colorLuminance(tableBar.bg)}`);
+    check('表格工具栏**按钮底**在暗色下为暗（同 token）',
+      tableBar.found === true && isDarkColor(tableBar.btnBg),
+      `btnBg=${JSON.stringify(tableBar.btnBg)}`);
+    check('表格工具栏**文字**在暗色下为浅色（可读）',
+      tableBar.found === true && !isDarkColor(tableBar.fg),
+      `fg=${JSON.stringify(tableBar.fg)}`);
 
     // ③ 选区浮动工具栏（selectionToolbar.ts：走 --mellow-toolbar-bg）
     await frame.evaluate(() => {

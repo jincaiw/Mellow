@@ -830,6 +830,18 @@ export default function App() {
   });
   const [systemDark, setSystemDark] = useState(false);
   const activeTheme: MellowTheme = resolveActiveTheme(themeSettings, systemDark);
+  // 供「引擎就绪」回调读取当前主题（同 localeRef 的写法，避免闭包过期）。
+  //
+  // 为什么需要（ADR-0027 附带修复，2026-10-01 实测）：**主题相关状态**（编辑器主题名 / md 排版 token /
+  // 编辑器字体）此前**只在**「主题变化」的 effect 里下发，而该 effect **早于编辑器就绪** →
+  // 启动时若已是暗色，那三次调用**静默 no-op**：编辑器以**默认（亮）主题**渲染，
+  // 引擎的 `--mellow-md-*` **全为空**（走 fallback = 亮色值）。
+  // 实测证据：`tests/e2e/theme-follow-probe.mjs` 读 iframe 根 —— md 变量全空、
+  // 表格工具栏 `bg = rgba(255,255,255,0.92)`、正文 `color = rgb(36,41,47)`（暗色主题下是深色文字）。
+  // 字号 / 行高 / 写作宽度等**其它**启动设置早已在就绪回调里补下发，**只有主题这一族漏了** ——
+  // 故按同一模式补齐（幂等，主题变化时仍由 effect 负责）。
+  const activeThemeRef = useRef<MellowTheme>(activeTheme);
+  activeThemeRef.current = activeTheme;
 
   // 用户主题（Typora themes 文件夹语义）：appData/themes/*.css → 主题菜单 / theme.apply.*
   // 加载 + 注册（registerUserThemes 使 resolveActiveTheme/themeById 可见）；
@@ -3857,6 +3869,15 @@ export default function App() {
         // 是引擎**自己渲染**的文案，宿主 i18n 到不了 iframe。引擎侧默认 zh-CN，
         // 故本调用是「en 界面下引擎文案也变英文」的唯一来源。
         host.setEngineLocale(localeRef.current);
+        // ADR-0027 附带修复：**主题这一族**在就绪时补下发（此前只在「主题变化」的 effect 里，
+        // 而它早于编辑器就绪 → 启动即暗色时编辑器会以默认亮色渲染、md token 全空）。
+        // 见 activeThemeRef 的说明；与字号/行高/写作宽度等启动设置同一模式。
+        {
+          const theme = activeThemeRef.current;
+          host.setTheme(theme.editorTheme);
+          host.setMdTokens(theme.variables);
+          host.setEditorConfig('setFontFace', { family: readEditorFontFamilyPreference(theme) ?? 'ui-monospace' });
+        }
 
         // 注入图片操作 handler（widget 悬停操作条 → app-core 编排；spec §6）
         const frame = containerRef.current?.querySelector('iframe');

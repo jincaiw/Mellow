@@ -347,7 +347,20 @@ export function buildTableToolbarExtension(): Extension {
   return [plugin, toolbarStyle(cmView.EditorView), escapeKeymap];
 }
 
+/**
+ * 浮动面板样式（ADR-0027 Q1=A1）。
+ *
+ * **一手基线**：Typora 的 `.ty-table-edit` **每个主题显式上色** —— `base-control.css` 基线
+ * `background:0 0`（透明，继承正文底）；`themes/night.css` = `#363B40`（**恰等于该主题
+ * `--bg-color`**）；gothic / pixyll / whitey = `#ededed`；newsprint = `transparent`。
+ * 即「跟随主题」是**既定行为**；此前本文件的 15 处硬编码色（暗色下仍是白底）属**缺口**。
+ *
+ * 取色一律走 `var(--mellow-md-panel-*, <原硬编码值>)` —— 桥未就绪时**观感与修复前完全一致**。
+ */
 function toolbarStyle(EditorView: typeof import('@codemirror/view').EditorView): Extension {
+  const PANEL_BG = 'var(--mellow-md-panel-bg, rgba(255, 255, 255, 0.92))';
+  const PANEL_FG = 'var(--mellow-md-panel-fg, #333333)';
+  const PANEL_BORDER = 'var(--mellow-md-panel-border, #dddddd)';
   return EditorView.theme({
     [`.${TOOLBAR_CLASS}`]: {
       position: 'absolute',
@@ -355,8 +368,9 @@ function toolbarStyle(EditorView: typeof import('@codemirror/view').EditorView):
       display: 'flex',
       gap: '4px',
       padding: '4px 6px',
-      background: 'rgba(255,255,255,0.92)',
-      border: '1px solid #ddd',
+      background: PANEL_BG,
+      color: PANEL_FG,
+      border: `1px solid ${PANEL_BORDER}`,
       borderRadius: '6px',
       boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
       fontSize: '12px',
@@ -364,13 +378,16 @@ function toolbarStyle(EditorView: typeof import('@codemirror/view').EditorView):
     },
     [`.${BTN_CLASS}`]: {
       padding: '2px 6px',
-      border: '1px solid #ccc',
+      border: `1px solid ${PANEL_BORDER}`,
       borderRadius: '4px',
-      background: '#fff',
+      background: PANEL_BG,
+      color: PANEL_FG,
       cursor: 'pointer',
       fontSize: '12px',
-      '&:hover': { background: '#f0f0f0' },
-      '&:focus-visible': { outline: '2px solid #0a69da', outlineOffset: '1px' },
+      // 悬停底：复用**边框色**作浅色填充（亮色 `#ddd` / 暗色 `#3a3a3a` 都成立），
+      // 从而不必再引入第 5 个 token。
+      '&:hover': { background: PANEL_BORDER },
+      '&:focus-visible': { outline: '2px solid var(--mellow-accent, #0a69da)', outlineOffset: '1px' },
     },
     // Resize 弹层（spec §3b）：网格 + 数字输入。定位在工具栏下方，不遮挡表格。
     [`.${RESIZE_POPOVER_CLASS}`]: {
@@ -379,8 +396,9 @@ function toolbarStyle(EditorView: typeof import('@codemirror/view').EditorView):
       left: '0',
       marginTop: '4px',
       padding: '6px',
-      background: '#fff',
-      border: '1px solid #ddd',
+      background: PANEL_BG,
+      color: PANEL_FG,
+      border: `1px solid ${PANEL_BORDER}`,
       borderRadius: '6px',
       boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
       zIndex: '11',
@@ -391,12 +409,15 @@ function toolbarStyle(EditorView: typeof import('@codemirror/view').EditorView):
       height: '12px',
       padding: '0',
       margin: '1px',
-      border: '1px solid #ddd',
+      border: `1px solid ${PANEL_BORDER}`,
       borderRadius: '2px',
-      background: '#fff',
+      background: PANEL_BG,
       cursor: 'pointer',
     },
-    [`.${RESIZE_CELL_ACTIVE_CLASS}`]: { background: '#cfe3ff', borderColor: '#0a69da' },
+    [`.${RESIZE_CELL_ACTIVE_CLASS}`]: {
+      background: 'var(--mellow-md-panel-active, #cfe3ff)',
+      borderColor: 'var(--mellow-accent, #0a69da)',
+    },
     [`.${RESIZE_POPOVER_CLASS}-form`]: {
       display: 'flex',
       alignItems: 'center',
@@ -408,8 +429,10 @@ function toolbarStyle(EditorView: typeof import('@codemirror/view').EditorView):
     [`.${RESIZE_POPOVER_CLASS}-input`]: {
       width: '3.5em',
       padding: '1px 4px',
-      border: '1px solid #ccc',
+      border: `1px solid ${PANEL_BORDER}`,
       borderRadius: '4px',
+      background: PANEL_BG,
+      color: PANEL_FG,
       fontSize: '12px',
     },
   });

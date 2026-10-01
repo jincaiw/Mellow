@@ -32,6 +32,11 @@ export const MD_TOKEN_DEFAULTS: Record<string, string> = {
   // 均无 `::marker` 规则，圆点继承正文 `color`）→ 本值为 **Mellow 自选灰阶（参数原创）**，
   // 取 GitHub 系 muted 灰；亮色沿用原 fallback 值以做到**零视觉变化**。
   '--mellow-md-list-bullet': '#8b949e',
+  // V8（ADR-0027 Q1=A1）：浮动面板表面（表格工具栏 / Resize 弹层）—— 亮色沿用原硬编码值。
+  '--mellow-md-panel-bg': 'rgba(255, 255, 255, 0.92)',
+  '--mellow-md-panel-fg': '#333333',
+  '--mellow-md-panel-border': '#dddddd',
+  '--mellow-md-panel-active': '#cfe3ff',
 };
 
 export interface MdTokensBridge {
