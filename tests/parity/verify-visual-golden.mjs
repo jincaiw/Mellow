@@ -486,15 +486,22 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
   // 新增一个采样脚本时它会自动进入判据（见 isSampler），而不是悄悄溜过去。
   const NON_SAMPLERS = ['dev-server.mjs', 'golden-path.mjs', 'wait-rendered.mjs'];
   // 采样脚本的覆盖下限 = 当前基线（防止某次重构把脚本挪走/改名后判据静默变空）。
-  const MIN_SAMPLERS = 3;
+  const MIN_SAMPLERS = 4;
 
   // 剥注释（**具名函数**，判定与 canary 共用同一份 —— 否则 canary 测的是副本）。
   // 沿用本文件既有约定：整行注释 / 块注释起始行一律剔除。
   // 保守做法（只剔整行）——行内双斜杠剥离器会截断字符串/正则里的 `//`（本仓已实测的坑）。
   const codeOnlyOf = (s) => s.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n');
-  // 「是不是采样脚本」的**具名判据**：读过几何（getBoundingClientRect）。
+  // 「是不是采样脚本」的**具名判据**：**读过几何** 或 **截过图** —— 两者都会被「入场动画」影响：
+  //   · `getBoundingClientRect()` 直接读坐标；
+  //   · `screenshot()` 把画面冻结下来（动画中间帧会被**归档成证据**）。
+  // 只按前者判定会漏掉纯截图脚本（实测 `capture-window-chrome.mjs` 就是这种：它在
+  // `waitForTimeout(600)` 后截图并写入 P2-2.8 归档证据）。
   // 范围**按目录派生**而不是硬编码文件名 —— 硬编码清单会在新增脚本时漏守（本仓 skill §9 的形态）。
-  const isSampler = (source) => codeOnlyOf(source).includes('getBoundingClientRect');
+  const isSampler = (source) => {
+    const code = codeOnlyOf(source);
+    return code.includes('getBoundingClientRect') || /\.screenshot\(/.test(code);
+  };
 
   const reImport = /from\s+'\.\/wait-rendered\.mjs'/;
   const reCalled = /await\s+waitForAnimationsSettled\(/;
@@ -589,15 +596,21 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
       }
     }
 
-    // canary：**范围派生**（isSampler）两个方向 —— 保证「新增采样脚本会被自动纳入」
+    // canary：**范围派生**（isSampler）逐分支验证 —— 保证「新增采样脚本会被自动纳入」
     if (!isSampler('const r = document.querySelector(".x").getBoundingClientRect();')) {
       errors.push('渲染稳定护栏 canary 失效：读过几何的脚本未被判为采样脚本（新增脚本会溜过判据）');
     }
-    if (isSampler('await page.screenshot({ path: "x.png" });')) {
-      errors.push('渲染稳定护栏 canary 过宽：仅截图的脚本被误判为采样脚本');
+    if (!isSampler('await page.screenshot({ path: "x.png" });')) {
+      errors.push('渲染稳定护栏 canary 失效：纯截图脚本未被判为采样脚本 —— 动画中间帧会被归档成证据');
+    }
+    if (isSampler('await page.goto("http://x/");')) {
+      errors.push('渲染稳定护栏 canary 过宽：既不读几何也不截图的脚本被误判为采样脚本');
     }
     if (isSampler('// const r = el.getBoundingClientRect();')) {
       errors.push('渲染稳定护栏 canary 失效：被注释掉的几何读取被当成采样（剥注释失效）');
+    }
+    if (isSampler('// await page.screenshot({ path: "x.png" });')) {
+      errors.push('渲染稳定护栏 canary 失效：被注释掉的截图被当成采样（剥注释失效）');
     }
   }
 }

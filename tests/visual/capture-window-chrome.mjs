@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
+import { waitForAnimationsSettled } from './wait-rendered.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -71,6 +72,12 @@ async function main() {
       await new Promise((r) => setTimeout(r, 300));
     }
     await page.waitForTimeout(600);
+    // 截图前必须等**渲染稳定**（不是等时间）：入场动画的中间帧会被**冻结进归档证据**
+    // （P2-2.8 的产物是人工评审素材，一张半透明的截图会让人误判窗口 chrome）。
+    // `waitForTimeout(600)` 只覆盖「非动画的挂载成本」，不构成「动画已结束」的保证。
+    if (!(await waitForAnimationsSettled(page))) {
+      throw new Error('主文档入场动画未在 3s 内结束 —— 此时截图会把动画中间帧归档（禁止静默继续）');
+    }
 
     const platformClass = await page.evaluate(() => document.querySelector('.shell')?.className ?? '');
     const titlebarPaddingLeft = await page.evaluate(() => {
