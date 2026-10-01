@@ -138,6 +138,25 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   if (!/continue-on-error/.test(stripYamlComments('      continue-on-error: true'))) {
     throw new Error('非默认入口探针护栏 canary 失效：真实违规未被检出');
   }
+  // ── 探针必须**跨平台**（2026-10-01 实测）：它们在 Linux job 上跑，
+  // 写死 macOS 专有的 `Meta+…` 会在 Linux 上开不出面板（实测 `i18n-engine-probe` 因此失败）。
+  // 统一用 Playwright 的 `ControlOrMeta`（macOS→Cmd / 其它→Ctrl）。
+  for (const probe of ENTRY_PROBES) {
+    const src = readFileSync(resolve(root, `tests/e2e/${probe}.mjs`), 'utf8')
+      .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');   // 先剥注释（本仓已实测 5 次同型坑）
+    const bad = /['"`](Meta|Cmd)\+/.exec(src);
+    if (bad !== null) {
+      throw new Error(`非默认入口探针 ${probe} 用了 macOS 专有的按键 ${bad[0]} —— `
+        + '它在 Linux job 上跑，必须用 `ControlOrMeta`（否则该探针在 Linux 恒失败）');
+    }
+  }
+  // canary：两个方向
+  if (/['"`](Meta|Cmd)\+/.exec("await page.keyboard.press('Meta+f');") === null) {
+    throw new Error('探针跨平台护栏 canary 失效：macOS 专有按键未被检出');
+  }
+  if (/['"`](Meta|Cmd)\+/.exec("await page.keyboard.press('ControlOrMeta+f');") !== null) {
+    throw new Error('探针跨平台护栏 canary 过宽：ControlOrMeta 被误判为 macOS 专有');
+  }
 }
 
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');

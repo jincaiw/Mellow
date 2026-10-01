@@ -135,7 +135,10 @@ async function main() {
       `buttons=${JSON.stringify(toolbar.buttons)}`);
 
     // ③ 查找面板占位符（engine documentSearch 设的）
-    await page.keyboard.press('Meta+f');
+    // ⚠️ 必须用 `ControlOrMeta`（macOS→Cmd / 其它平台→Ctrl）—— 本探针现在**挂进 Linux CI**，
+    // 写死 `Meta+f` 在 Linux 上开不出查找面板（实测：Runtime Qualification Linux job 失败于
+    // 「前置：查找面板出现」）。本仓既有约定见 `sidebar-golden.mjs` 的 `ControlOrMeta+f`。
+    await page.keyboard.press('ControlOrMeta+f');
     await sleep(700);
     const find = await frame.evaluate(() => {
       const panel = document.querySelector('.cm-search');
