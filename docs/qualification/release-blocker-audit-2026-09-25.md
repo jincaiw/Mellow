@@ -47,13 +47,13 @@ Release verdict: NO-GO：6 项未闭环
 | 1 | §3（2026-09-29） | `AUTO` 是否阻断发布 / `ux-gate` 是否逐项前置 | **已裁决**（A3 / B1） | `docs/adr/ADR-0024-release-closure-semantics.md` |
 | 2 | §3.1 | `P0-PERF-001` 的 5 项口径中有两项是否开放 | **已由 PRD 判定**（宪法已判，无需裁决） | `已处置`（§3.1 记录依据） |
 | 3 | §4.3 | 远程图片默认值（安全相关默认值） | **已由两处独立一手证据判定**（Typora 始终加载远程图片且无退出选项） | `已处置`（§4.3 记录 `frame.js` 的 `DEFAULT_OPTIONS`） |
-| 4 | §4.4 | **安全验收是否应进入台账**（新增安全域与条目） | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q2） |
-| 5 | §4.5 | **V1.0 发布时是否把「Apple 凭据缺失」改为硬失败** | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q3） |
-| 6 | §4.10.1 | **`settings.open` 在 Win/Linux 的菜单入口**（D 还是缺口） | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q1） |
+| 4 | §4.4 | **安全验收是否应进入台账**（新增安全域与条目） | **已裁决**（B2：不新增，改在验收文档单列） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q2） |
+| 5 | §4.5 | **V1.0 发布时是否把「Apple 凭据缺失」改为硬失败** | **已裁决**（C2：保持警告 + 现状护栏） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q3） |
+| 6 | §4.10.1 | **`settings.open` 在 Win/Linux 的菜单入口**（D 还是缺口） | **已裁决**（A3：维持现状 + 理由进 D 表；**证据缺口已注明**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q1） |
 | 7 | §4.14 / §4.29–§4.30 | `Allow Magnification` / 「使用主题的字体大小」 | **已处置**（前者已实装；后者「自定义字号」已实装、刻意不对齐 Typora 的 24，已登记 D） | `已处置`（§4.28 / §4.30） |
-| 8 | §4.39 | **表格 `invalid` 提示**：Mellow 自有提示 or 从 spec 移除 | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q4） |
-| 9 | §4.40 | **上传「密钥」的 spec 表述**（不适用 / keychain / UI 禁止） | 待裁决（**前提已复核：本仓上传不持有凭据**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q5） |
-| 10 | §4.51 | **`tests/visual/actual/*.png` 是否取消 git 跟踪** | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q6） |
+| 8 | §4.39 | **表格 `invalid` 提示**：Mellow 自有提示 or 从 spec 移除 | **未裁决（留在 ADR-0029）** —— 需产品判断且缺 Typora 对应行为的一手证据 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q4） |
+| 9 | §4.40 | **上传「密钥」的 spec 表述**（不适用 / keychain / UI 禁止） | **已裁决**（E1：改写为「不适用」+ **保留明文残余风险说明**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q5） |
+| 10 | §4.51 | **`tests/visual/actual/*.png` 是否取消 git 跟踪** | **已裁决**（F1：取消跟踪 + 改护栏 + README 同步） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q6） |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 

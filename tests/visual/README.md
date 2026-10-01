@@ -14,7 +14,10 @@
   - 外层 shell：titlebar、editor-container、editor-frame 通栏（A1 写作宽度内部化，max-width none）、sidebar / statusbar / mode-indicators **默认不可见**；
   - iframe 编辑器：`.cm-content` paddingTop **56px**（P2-2.2）、`.cm-line` lineHeight = **fontSize × 1.6**（`TYPOGRAPHY_DEFAULTS.lineHeight`，setLineHeight stylesheet 作用域在 .cm-line）、fontSize 16 / 32、写作宽度 max-width **860px** + 内容居中。
   - **实测 vs 期望硬断言**（`assertEditorContract`）：字号 / 行高 / 写作宽度三项都会与单一真源比对，期望字段不再「只记录不比对」。
-- **截图归档**：`actual/<config>.png`（人工评审素材）。
+- **截图产出**：`actual/<config>.png`（跑一次采集脚本即生成，**人工评审素材**）。
+  **该目录不纳入 git 跟踪**（ADR-0029 Q6 = F1）：每次跑都会产生 `Δ≤289 字节` 的 AA/字体噪声 diff，
+  且**无任何判据消费其内容**（护栏只断言「采集脚本会写出该路径」）。**证据归档另有其处** ——
+  `tests/benchmark/screenshots/`（带 manifest、被台账 `P0-LAYOUT-002` 引用），**那一处仍被跟踪** ✓。
 - 布局回退时退出码 1；基准漂移（有意变更）用 `--update` 重建并随 PR 提交评审。
 
 ```bash

@@ -150,9 +150,9 @@ Remote image:
 - respect network settings
 
 Upload key:
-- OS keychain
+- **不适用（本仓无密钥通道）** —— 见下方 2026-10-01 的复核与裁决（ADR-0029 Q5 = E1）
 
-> **⚠️ 2026-10-01 复核：本条与实现不一致，登记为待裁决项**
+> **⚠️ 2026-10-01 复核：本条与实现不一致**
 >
 > Mellow 的上传通道是 **picgo-http（本机端点 URL）/ picgo-cli（本机 CLI）/ custom-command（本机命令）**，
 > **设计上没有「密钥」字段**（`ImageUploadOptions` 只有 `channel` / `httpUrl` / `command`）。
@@ -163,9 +163,17 @@ Upload key:
 >（`mellow.image.uploadHttpUrl`）。用户完全可能把**带凭据的 URL**（如 `https://host/upload?token=…`）
 > 粘进去 → 密钥以明文落在 WebView 的 localStorage 里。
 >
-> **处置**：属**安全设计 + 平台能力**决策，**不擅自实现**。三种走向待裁决：
-> ① UI 明确提示/禁止在 URL 内放凭据；② 引入 OS keychain 存储（需先解 `extension-api` 的 V1 拒绝）；
-> ③ 把本条改写为「不适用（无密钥通道）」并保留上面的明文风险说明。
+> **处置（2026-10-01 已裁决，ADR-0029 Q5 = E1）**：本条改写为「**不适用（无密钥通道）**」，
+> 并**保留上面的明文风险说明**。
+>
+> 裁决依据：① 本仓上传通道**没有「密钥」字段**（`ImageUploadOptions` 只有
+> `channel` / `httpUrl` / `command`）⇒ 走向②（OS keychain）**没有落点**，
+> 且 `extension-api` 的 `keychain` 在 V1 **一律拒绝**；
+> ② 走向①（UI 禁止在 URL 内放凭据）**做不到可靠**（无法判定一个 URL 是否含凭据），
+> 且会**误伤**合法的带签名参数的端点；
+> ③ 但**残余风险真实存在**（用户可能把带 token 的 URL 粘进明文 localStorage 字段）
+> ⇒ 故**保留风险说明**，不以「不适用」把问题删掉。
+> 若将来引入托管式上传（服务端持有凭据），需**重新裁决**并回到 keychain 方案。
 
 ---
 

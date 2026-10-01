@@ -151,19 +151,15 @@ const DECIDED_ADRS = [
     '引擎侧浮动面板表面取色（表格工具栏 / 选区工具栏）', 'A1 / B1 / C1'],
   ['docs/adr/ADR-0028-engine-host-context-channel.md',
     '引擎侧宿主上下文通道（统一 UI 上下文桥 vs 逐项加桥）', 'A2 / B1 / C1'],
+  ['docs/adr/ADR-0029-audit-pending-decisions-registry.md',
+    '审计中的未登记裁决项（6 项）', 'A3 / B2 / C2 / Q4 留待 / E1 / F1'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
 // 它承载一个**真实取舍**（新增 md 面板 token / 拓宽 token 桥 / 维持现状），
 // 故必须是 Proposed，且**不得**被悄悄标成 Accepted。
-// ADR-0029（2026-10-01）：审计里 **6 处「待裁决」此前没有 ADR 载体** ——
-// 违反项目规则「待裁决项必须有 ADR 载体」。本 ADR 集中承载它们，并把审计里的
-// 「待裁决项登记表」定为**唯一声明处**。**未裁决前状态必须是 Proposed**。
-const PENDING_ADRS = [
-  ['docs/adr/ADR-0029-audit-pending-decisions-registry.md',
-    '审计中的未登记裁决项（settings.open 的 Win/Linux 菜单入口 / 安全验收是否入台账 / Apple 凭据是否硬失败 / 表格 invalid 提示 / 上传密钥 spec 表述 / actual PNG 跟踪策略）',
-    '待裁决'],
-];
+// ADR-0029 已于 2026-10-01 裁决为 Accepted（Q1=A3 / Q2=B2 / Q3=C2 / Q4 留待 / Q5=E1 / Q6=F1）
+const PENDING_ADRS = []; // 当前无待裁决 ADR
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);
@@ -526,6 +522,6 @@ console.log(
     ? (PENDING_ADRS.length > 0
       ? `\n  Pending decisions: ${PENDING_ADRS.map(([p]) => p.replace('docs/adr/', '')).join(', ')}`
         + '（状态 Proposed，裁决前不生效）'
-      : '\n  Pending decisions: 无 —— ADR-0024 / 0025 / 0026（2026-09-30）与 ADR-0027 / 0028（2026-10-01）均已裁决为 Accepted（见各自 ADR 的「裁决」节）')
+      : '\n  Pending decisions: 无 —— 已裁决为 Accepted：' + DECIDED_ADRS.map(([p]) => p.replace('docs/adr/', '').replace(/\.md$/, '')).join(' / ') + '（见各自 ADR 的「裁决」节）')
     : '')
 );

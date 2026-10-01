@@ -117,9 +117,46 @@ if (!existsSync(goldenPath)) {
   }
 }
 
-for (const png of ['win-900x600', 'win-1200x800', 'win-1440x900', 'zoom-200']) {
-  if (!existsSync(resolve(root, `tests/visual/actual/${png}.png`))) {
-    fail(`tests/visual/actual/${png}.png 缺失（跑 visual-golden.mjs 归档）`);
+// ── 采集脚本必须**写出**这些截图（2026-10-01，ADR-0029 Q6 = F1）──────────────
+// **判据变更**：原判据是「`tests/visual/actual/<png>` **文件存在**」—— 而该目录已**取消 git 跟踪**
+// （每次本地跑视觉套件都会产生 Δ≤289 字节的 AA/字体噪声 diff，无判据消费其内容；
+// 详见 ADR-0029 Q6）。取消跟踪后，「文件存在」在**干净检出**上必然失败 → 判据必须改为
+// **静态可判**的形式：**采集脚本里必须出现该输出路径**。
+//
+// ⚠️ **这是判据的削弱，如实声明**：新判据只能证「脚本会写这个文件」，
+// **不能**证「跑出来的截图是对的」（后者需要跑起来 + 人看）。这是取消跟踪的**已知代价**；
+// 「截图归档/人工评审」这一属性由 `tests/benchmark/screenshots/`（带 manifest、
+// 被台账 `P0-LAYOUT-002` 引用为证据）承担，**那一处仍被跟踪** ✓。
+{
+  const VISUAL_SCRIPT = 'tests/visual/visual-golden.mjs';
+  const CAPTURE_PNGS = ['win-900x600', 'win-1200x800', 'win-1440x900', 'zoom-200'];
+  if (!existsSync(resolve(root, VISUAL_SCRIPT))) {
+    fail(`缺少 ${VISUAL_SCRIPT}（视觉采集脚本）`);
+  } else {
+    // 具名判据：采集脚本是否把截图写到 actual/<config>.png
+    const writesActualPng = (s) => /ACTUAL_DIR|tests\/visual\/actual/.test(s) && /\$\{config\.name\}\.png/.test(s);
+    // 具名判据：.gitignore 是否忽略该目录
+    const ignoresActualDir = (s) => /^tests\/visual\/actual\/\s*$/m.test(s);
+
+    if (!writesActualPng(read(VISUAL_SCRIPT))) {
+      fail(`${VISUAL_SCRIPT} 必须把截图写到 tests/visual/actual/<config>.png（找不到该输出路径）`);
+    }
+    if (!ignoresActualDir(read('.gitignore'))) {
+      fail('.gitignore 必须忽略 tests/visual/actual/（ADR-0029 Q6 = F1：该目录不得再被跟踪）');
+    }
+    // canary：**逐方向验证判据会翻转**（判定与 canary 共用同一份谓词）
+    if (!writesActualPng("await page.screenshot({ path: resolve(ACTUAL_DIR, `${config.name}.png`) });")) {
+      errors.push('视觉采集路径护栏 canary 失效：合规样本未被判为「会写出」');
+    }
+    if (writesActualPng("await page.screenshot({ path: '/tmp/x.png' });")) {
+      errors.push('视觉采集路径护栏 canary 过宽：不含 actual/ 的样本被误判');
+    }
+    if (!ignoresActualDir('tests/e2e/.artifacts/\ntests/visual/actual/\n')) {
+      errors.push('视觉采集路径护栏 canary 失效：合规的 .gitignore 行未被检出');
+    }
+    if (ignoresActualDir('tests/visual/golden/')) {
+      errors.push('视觉采集路径护栏 canary 过宽：别的目录被误判为 actual/');
+    }
   }
 }
 

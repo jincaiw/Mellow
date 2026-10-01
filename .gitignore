@@ -28,3 +28,9 @@ apps/desktop/quicklook/Resources/quicklook.html
 .workbuddy-ai/
 # e2e 运行期截图（2026-10-01）：**不要**落到 tests/benchmark/screenshots/（那是归档证据目录）。
 tests/e2e/.artifacts/
+
+# 视觉采集的临时截图：非证据（证据归档在 tests/benchmark/screenshots/，带 manifest 且被台账引用）。
+# 取消跟踪的原因（ADR-0029 Q6 = F1）：每次本地跑视觉套件都会产生 Δ≤289 字节的 AA/字体噪声 diff，
+# 无任何判据消费其内容（护栏只查存在性），本会话已四次手动回退、两次「差点误提交」。
+# 采集脚本仍会写出这些文件（供人工查看），只是不再入库。
+tests/visual/actual/
