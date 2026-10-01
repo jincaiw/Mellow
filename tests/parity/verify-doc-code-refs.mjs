@@ -22,8 +22,15 @@
  * 只覆盖**紧邻形态**「`符号`（`文件:行号`）」；文档里其它写法
  * （如「见 `文件:行号` 的 `符号`」、散文里提到行号、表格里的裸行号）**不在覆盖内**。
  * 实测 41 份权威文档中仅 3 处属该形态 —— 覆盖率低是**形态罕见**，不是文档干净。
- * 另：同名文件不唯一时（如 `index.ts` 有 20 个）**无法判定**，会计入汇总里的
- * 「未判定」数（可见，不静默）。
+ *
+ * **路径解析（2026-10-01 增补）**：文档里大量把路径写成 `settings/src/index.ts`
+ * （**省掉 `packages/` 前缀**），此时 `basename` 往往不唯一（`index.ts` 有 20 个）
+ * ⇒ 旧实现把它归入「未判定」**静默跳过** —— 实测 `settings/src/index.ts:182-193`
+ * 就是这样一处**已漂移**的引用（该处现为 `markdown.html` 等引擎开关），
+ * 它**在护栏眼里根本不存在**（审计 §4.67）。
+ * 现改为：`basename` 不唯一时，按**路径后缀**再匹配一次，**唯一命中才判定**
+ * （仍不唯一 ⇒ 继续计入「未判定」，**不静默通过**）。
+ * 全仓实测：该增补只新暴露 **1 处**失败（即上面那处，已修）。
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
@@ -62,12 +69,25 @@ for (const f of codeFiles) {
   const b = basename(f);
   byBase.set(b, byBase.has(b) ? null : f); // null = 同名不唯一，无法判定
 }
+/** 路径后缀唯一匹配（2026-10-01）：文档常省掉 `packages/` 前缀，`basename` 因此不唯一。
+ * 唯一命中才返回该文件；0 个或多个命中都返回 null（后者**不计入判定**，仍是「未判定」）。
+ * ⚠️ 路径分隔符要归一化 —— Windows 上 `join` 产出 `\`，直接 `endsWith('/'+file)` 会**恒不命中**
+ * （那会让本分支在 Windows 上静默退化成「永远未判定」，属「护栏看不见我」）。 */
+const normPath = (p) => p.replace(/\\/g, '/');
+function byPathSuffix(file) {
+  const hits = codeFiles.filter((f) => normPath(f).endsWith(`/${file}`));
+  return hits.length === 1 ? hits[0] : null;
+}
+
 function resolveTarget(file) {
   const direct = resolve(root, file);
   if (existsSync(direct)) return { path: direct };
   const byName = byBase.get(basename(file));
   if (byName === undefined) return { notFound: true };
-  if (byName === null) return { ambiguous: true };
+  if (byName === null) {
+    const bySuffix = byPathSuffix(file);
+    return bySuffix === null ? { ambiguous: true } : { path: bySuffix, viaSuffix: true };
+  }
   return { path: byName };
 }
 
@@ -165,6 +185,20 @@ for (const doc of docs) {
       fail('文档代码引用护栏 canary 失效：正/负样本在真实文件中未呈现预期差异');
     }
   }
+  // 后缀匹配分支必须真的能用 —— 否则它是一条**空开关**：本次修掉的那处引用已改成符号引用，
+  // 于是这条新分支**没有任何真实用例走它**，只能靠 canary 自证（用真实文件树，确定性）。
+  const suffixHit = byPathSuffix('settings/src/index.ts');
+  if (suffixHit === null
+    || normPath(suffixHit) !== normPath(resolve(root, 'packages/settings/src/index.ts'))) {
+    fail('文档代码引用护栏 canary 失效：路径后缀唯一匹配未能解析 `settings/src/index.ts`'
+      + `（得到 ${suffixHit ?? 'null'}）`);
+  }
+  if (byPathSuffix('src/index.ts') !== null) {
+    fail('文档代码引用护栏 canary 过宽：后缀仍不唯一时不应判定（应继续计入「未判定」，不得静默通过）');
+  }
+  if (byPathSuffix('no/such/file.ts') !== null) {
+    fail('文档代码引用护栏 canary 过宽：后缀无命中时不应判定');
+  }
 }
 
 if (errors.length > 0) {
@@ -174,5 +208,6 @@ if (errors.length > 0) {
 }
 console.log(
   `Doc code refs: ${judged} 处「符号（文件:行号）」引用全部仍指向该符号`
-  + `（扫描 ${docs.length} 份权威文档；另有 ${ambiguous} 处因同名文件不唯一未判定；行号越界会单独报错）`,
+  + `（扫描 ${docs.length} 份权威文档；另有 ${ambiguous} 处因同名文件不唯一且后缀仍不唯一而未判定；`
+  + '行号越界会单独报错）',
 );

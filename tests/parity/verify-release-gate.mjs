@@ -268,6 +268,118 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   }
 }
 
+// ── master-plan §12 D 表必须自洽：被引用的 D 编号必须有声明行（2026-10-01，审计 §4.67）──
+// 立此条的原因（实测）：`D-AB` 被 §5.1 `G7-MENU-07` 与 §15.2 引用（写着「登记 D-AB」），
+// 而 §12 D 表里**根本没有这一行** —— 它的前 3 格在 2026-09-13 的一次编辑中丢失，
+// 残余的「依据」格被并进了 **D-AC** 行（D-AC 因此有 5 格）。后果两条：
+//   ① GFM 渲染**丢弃超出表宽的第 5 格** ⇒ **D-AB 整条在渲染视图中不可见**（只有读源码才看得到）；
+//   ② §12 自称「唯一可发现处」，而条目**实际不在**其中 ⇒ 与 D-AC 行自己记的教训**同型**
+//      （「护栏注释不是决策登记处 —— 裁决必须进本 D 表，否则后续轮次无法发现」）。
+// **教训：「登记表声称自己是唯一可发现处」≠「条目真的在表里」。**
+// 这与 ADR-0029 记的「护栏只做单向」**同源**：凡自称自洽的登记处，必须有一条机器可读的核对。
+//
+// 判据：① master-plan 里凡出现的 D 编号，必须在 master-plan 中有**声明行**（表格首格形如 `| **D-A`…）
+//          —— 声明行扫**全文**而非只扫 §12：`D-N` / `D-O` / `D-P` 声明在 §5.4；
+//      ② 声明行必须**恰好 4 格**（锁住「5 格 ⇒ 渲染时静默丢格」这一破损形态）；
+//      ③ 覆盖下限（防表被削空 ⇒ 判据退化成空真）；
+//      ④ 例外表**双向**（见 `D_TABLE_NOT_DECLARED`）。
+//
+// ⚠️ **范围限制（如实声明，不要读成「D 表已全部核对」）**：
+// 只覆盖**可静态判定**的这一半 ——「编号被引用但表里没有」。
+// 另一半（「审计里新出现一个『待裁决』标记但没登记」）**需要理解自然语言**，
+// 不在本护栏内 —— 同 ADR-0029 对自己那条登记表护栏的声明。
+{
+  const PLAN = 'docs/plans/typora-parity-master-plan.md';
+  // 引用源：D 表（master-plan）+ 两个会引用 D 编号的文档类。ADR 目录为平铺 .md。
+  const REF_SOURCES = [
+    PLAN,
+    'docs/qualification/release-blocker-audit-2026-09-25.md',
+    ...readdirSync(resolve(root, 'docs/adr'))
+      .filter((f) => f.endsWith('.md'))
+      .map((f) => `docs/adr/${f}`),
+  ];
+
+  // 确实要「提到一个没有声明行的编号」时在此登记**理由**（本仓既有 idiom，同 OFFICIAL_SHORTCUT_EXCEPTIONS）。
+  // 两类合法用途：① 记下「经复核**不**创建某编号」这个决定；② 泛指占位（非具体条目）。
+  const D_TABLE_NOT_DECLARED = new Map([
+    ['D-AN', 'ADR-0029 Q1=A3 经 2026-10-01 复核判定为 D-AF 的**重复登记** ⇒ 显式「不创建」该编号（见 master-plan §12 的 D-AF 行 / 审计 §4.67）'],
+  ]);
+
+  const planSrc = read(PLAN);
+  const DECL_ROW = /^\|\s*\*\*(D-[A-Z]{1,2})\b/;
+  const ID = /\bD-[A-Z]{1,2}\b/g;
+
+  // ① 声明行（扫全文：D-N / D-O / D-P 在 §5.4）+ ② 每行恰好 4 格
+  const declared = new Set();
+  let declRows = 0;
+  for (const line of planSrc.split('\n')) {
+    const m = DECL_ROW.exec(line);
+    if (m === null) continue;
+    declRows += 1;
+    declared.add(m[1]);
+    const cells = line.split('|').slice(1, -1);
+    if (cells.length !== 4) {
+      fail(`master-plan D 表声明行「${m[1]}」有 ${cells.length} 格（应为 4）：${line.slice(0, 60)}…`
+        + ' —— 超出的格在 GFM 渲染时被**静默丢弃**（D-AB 就是这样整条从渲染视图里消失的）');
+    }
+  }
+  if (declRows < 37) {
+    fail(`master-plan 只解析出 ${declRows} 个 D 表声明行（下限 37 = 立此判据时的基线）—— `
+      + '表被削空会让「凡被引用的编号都有声明行」退化成**空真**；'
+      + '若确实删过条目，请同步下调下限并说明（解析器漏成员必须响亮失败）');
+  }
+
+  // ① 引用集（来自所有 REF_SOURCES）
+  const referenced = new Set();
+  for (const rel of REF_SOURCES) {
+    if (!existsSync(resolve(root, rel))) { fail(`D 表护栏的引用源不存在：${rel}`); continue; }
+    for (const m of read(rel).matchAll(ID)) referenced.add(m[0]);
+  }
+  for (const id of [...referenced].sort()) {
+    if (declared.has(id) || D_TABLE_NOT_DECLARED.has(id)) continue;
+    fail(`D 编号 ${id} 被引用，但 master-plan 里没有它的**声明行**（表格首格形如 \`| **${id}\`）—— `
+      + '§12 D 表自称「唯一可发现处」，条目不在表里 = 后续轮次无法发现该裁决；'
+      + '若该引用是「**不**创建此编号」或泛指占位，请登记进 D_TABLE_NOT_DECLARED 并写明理由');
+  }
+
+  // ④ 例外表双向：必须仍被引用（否则是过期例外）；不得同时又有了声明行（自相矛盾）
+  for (const [id, why] of D_TABLE_NOT_DECLARED) {
+    if (!referenced.has(id)) {
+      fail(`D 表例外 ${id} 已过期：文档里已不再引用它（原登记理由：${why}）`);
+    }
+    if (declared.has(id)) {
+      fail(`D 表例外 ${id} 自相矛盾：它既被登记为「无声明行」，又确实有了声明行 —— 请删除该例外`);
+    }
+  }
+
+  // canary：四个方向（拼接构造样本，避免护栏检出自己）
+  {
+    const declOf = (s) => [...s.matchAll(/^\|\s*\*\*(D-[A-Z]{1,2})\b/gm)].map((m) => m[1]);
+    const refsOf = (s) => [...s.matchAll(/\bD-[A-Z]{1,2}\b/g)].map((m) => m[0]);
+    if (!declOf('| **D-ZZ**（2026-01-01） | a | b | c |').includes('D-ZZ')) {
+      errors.push('D 表自洽护栏 canary 失效：声明行未被解析');
+    }
+    if (declOf('| **D-A**（x） | a | b | c |').includes('D-AA')) {
+      errors.push('D 表自洽护栏 canary 过宽：`D-A` 被误认成 `D-AA`');
+    }
+    const refs = refsOf('见 **D-QQ** 行与 `D-RR`');
+    if (!refs.includes('D-QQ') || !refs.includes('D-RR')) {
+      errors.push('D 表自洽护栏 canary 失效：引用未被解析（加粗 / 反引号两种写法）');
+    }
+    if (declOf('| **D-A** | a | b | c |').includes('D-QQ')) {
+      errors.push('D 表自洽护栏 canary 失效：声明集与引用集未区分');
+    }
+    if ('| **D-ZZ** | a | b | c | d |'.split('|').slice(1, -1).length !== 5) {
+      errors.push('D 表自洽护栏 canary 失效：5 格行未被数出 5 格');
+    }
+    // 判据本身必须能区分「有声明 / 无声明」—— 用真实数据验一次
+    if (!declared.has('D-AB') || declared.has('D-AN')) {
+      errors.push('D 表自洽护栏 canary 失效：真实数据里 `D-AB` 应有声明行、`D-AN` 不应有'
+        + '（若 D-AN 已被正式创建，请把它从 D_TABLE_NOT_DECLARED 移除）');
+    }
+  }
+}
+
 // ── 状态词与阻塞原因必须**语义一致**（2026-10-01，审计 §4.64）────────────────
 // 立此条的原因（实测）：`P0-PLATFORM-001` 状态写着 `IMPL`，而其阻塞原因写的是
 // 「PASS-E 全局策略额外要求 ux-gate，需人工计时会话后才能**宣称结论**」——
