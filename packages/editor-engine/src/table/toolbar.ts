@@ -15,6 +15,7 @@ import { isSourceMode } from '../mode';
 import { tableContext } from './keymap';
 import type { TableModel, TableCell } from './parser';
 import { addRow, deleteRow, addColumn, deleteColumn, setColumnAlignment, tidyTable, resizeTable } from './commands';
+import { getEngineLocale, tEngine } from '../engineI18n';
 
 const TOOLBAR_CLASS = 'mellow-table-toolbar';
 const BTN_CLASS = 'mellow-table-toolbar-btn';
@@ -67,6 +68,10 @@ export function buildTableToolbarExtension(): Extension {
       private resizeColsInput: HTMLInputElement | null = null;
       private resizeRowsInput: HTMLInputElement | null = null;
       private resizeCells: HTMLElement[] = [];
+      /** 已渲染的按钮元素（语言切换时按此清理重建） */
+      private buttonEls: HTMLElement[] = [];
+      /** 上次渲染时的 locale —— 与当前不同则重建（ADR-0028：标签必须在显示时求值） */
+      private renderedLocale: string | null = null;
 
       constructor(view: EditorView) {
         this.view = view;
@@ -74,7 +79,7 @@ export function buildTableToolbarExtension(): Extension {
         this.dom.className = TOOLBAR_CLASS;
         this.dom.style.display = 'none';
         view.dom.appendChild(this.dom);
-        this.renderButtons();
+        // 刻意**不**在此渲染按钮 —— 见 renderButtons() 的说明（构造早于 locale 注入）
         this.updateToolbar(view);
       }
 
@@ -109,6 +114,8 @@ export function buildTableToolbarExtension(): Extension {
         this.model = ctx.model;
         this.cell = ctx.cell;
         this.tableFrom = ctx.model.from;
+        // ADR-0028：标签在**显示时**求值；locale 变了就重建（构造期求值会把语言烘死）
+        if (this.renderedLocale !== getEngineLocale()) this.renderButtons();
         this.show();
         this.position(view);
       }
@@ -137,29 +144,40 @@ export function buildTableToolbarExtension(): Extension {
         });
       }
 
+      /**
+       * 渲染按钮。**必须在「显示时」调用，不能在构造时**（ADR-0028 实测）：
+       * 引擎 `install()` 早于宿主注入 locale 的桥，构造期求值会把标签**烘死**成默认语言
+       * —— 实测 `en` 界面下表格工具栏仍显示 `调整 / ↑行 / …`（静态护栏查不出，只有 e2e 探针能抓到）。
+       */
       private renderButtons(): void {
+        // 清掉上一次渲染的按钮（语言切换时重建）；popover 是懒建的，不在此列
+        for (const el of this.buttonEls) el.remove();
+        this.buttonEls = [];
+        this.renderedLocale = getEngineLocale();
+
         // 一手：Typora 的 Resize Table 入口是表格 tooltip 的**最左**图标
         //（`Docs/Table Editing.md` 的 `## Resize Table`：Click the most left icon）。
         const resizeBtn = document.createElement('button');
         resizeBtn.type = 'button';
         resizeBtn.className = BTN_CLASS;
-        resizeBtn.textContent = '调整';
+        resizeBtn.textContent = tEngine('engine.table.resize');
         resizeBtn.title = 'Resize Table';
         resizeBtn.addEventListener('click', () => this.toggleResizePopover());
         this.dom.appendChild(resizeBtn);
+        this.buttonEls.push(resizeBtn);
 
         const actions: Array<{ label: string; title: string; run: () => void }> = [
-          { label: '↑行', title: 'Row Above', run: () => this.withModel((m, c) => addRow(this.view, m, Math.max(0, c.row - 1))) },
-          { label: '↓行', title: 'Row Below', run: () => this.withModel((m, c) => addRow(this.view, m, c.row)) },
-          { label: '删行', title: 'Delete Row', run: () => this.withModel((m, c) => deleteRow(this.view, m, c.row)) },
-          { label: '←列', title: 'Column Left', run: () => this.withModel((m, c) => addColumn(this.view, m, Math.max(0, c.col - 1))) },
-          { label: '→列', title: 'Column Right', run: () => this.withModel((m, c) => addColumn(this.view, m, c.col)) },
-          { label: '删列', title: 'Delete Column', run: () => this.withModel((m, c) => deleteColumn(this.view, m, c.col)) },
-          { label: '左', title: 'Align Left', run: () => this.withModel((m, c) => setColumnAlignment(this.view, m, c.col, 'left')) },
-          { label: '中', title: 'Align Center', run: () => this.withModel((m, c) => setColumnAlignment(this.view, m, c.col, 'center')) },
-          { label: '右', title: 'Align Right', run: () => this.withModel((m, c) => setColumnAlignment(this.view, m, c.col, 'right')) },
-          { label: '整理', title: 'Tidy Table', run: () => this.withModel((m) => tidyTable(this.view, m)) },
-          { label: '删除表', title: 'Delete Table', run: () => this.deleteTable() },
+          { label: tEngine('engine.table.rowAbove'), title: 'Row Above', run: () => this.withModel((m, c) => addRow(this.view, m, Math.max(0, c.row - 1))) },
+          { label: tEngine('engine.table.rowBelow'), title: 'Row Below', run: () => this.withModel((m, c) => addRow(this.view, m, c.row)) },
+          { label: tEngine('engine.table.deleteRow'), title: 'Delete Row', run: () => this.withModel((m, c) => deleteRow(this.view, m, c.row)) },
+          { label: tEngine('engine.table.colLeft'), title: 'Column Left', run: () => this.withModel((m, c) => addColumn(this.view, m, Math.max(0, c.col - 1))) },
+          { label: tEngine('engine.table.colRight'), title: 'Column Right', run: () => this.withModel((m, c) => addColumn(this.view, m, c.col)) },
+          { label: tEngine('engine.table.deleteCol'), title: 'Delete Column', run: () => this.withModel((m, c) => deleteColumn(this.view, m, c.col)) },
+          { label: tEngine('engine.table.alignLeft'), title: 'Align Left', run: () => this.withModel((m, c) => setColumnAlignment(this.view, m, c.col, 'left')) },
+          { label: tEngine('engine.table.alignCenter'), title: 'Align Center', run: () => this.withModel((m, c) => setColumnAlignment(this.view, m, c.col, 'center')) },
+          { label: tEngine('engine.table.alignRight'), title: 'Align Right', run: () => this.withModel((m, c) => setColumnAlignment(this.view, m, c.col, 'right')) },
+          { label: tEngine('engine.table.tidy'), title: 'Tidy Table', run: () => this.withModel((m) => tidyTable(this.view, m)) },
+          { label: tEngine('engine.table.delete'), title: 'Delete Table', run: () => this.deleteTable() },
         ];
 
         for (const action of actions) {
@@ -170,6 +188,7 @@ export function buildTableToolbarExtension(): Extension {
           btn.title = action.title;
           btn.addEventListener('click', () => action.run());
           this.dom.appendChild(btn);
+          this.buttonEls.push(btn);
         }
       }
 
@@ -242,12 +261,12 @@ export function buildTableToolbarExtension(): Extension {
 
         const form = document.createElement('div');
         form.className = `${RESIZE_POPOVER_CLASS}-form`;
-        form.appendChild(this.buildResizeField('列', (input) => { this.resizeColsInput = input; }));
-        form.appendChild(this.buildResizeField('行', (input) => { this.resizeRowsInput = input; }));
+        form.appendChild(this.buildResizeField(tEngine('engine.table.cols'), (input) => { this.resizeColsInput = input; }));
+        form.appendChild(this.buildResizeField(tEngine('engine.table.rows'), (input) => { this.resizeRowsInput = input; }));
         const apply = document.createElement('button');
         apply.type = 'button';
         apply.className = BTN_CLASS;
-        apply.textContent = '应用';
+        apply.textContent = tEngine('engine.table.apply');
         apply.title = 'Apply';
         apply.addEventListener('click', () => {
           const cols = Number.parseInt(this.resizeColsInput?.value ?? '', 10);

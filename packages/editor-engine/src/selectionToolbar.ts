@@ -8,6 +8,7 @@
 import type { EditorView, ViewUpdate } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { isComposing } from './composition';
+import { tEngine } from './engineI18n';
 
 export const SELECTION_TOOLBAR_CLASS = 'mellow-selection-toolbar';
 const STORAGE_KEY = 'mellow.selectionToolbar.enabled';
@@ -107,7 +108,7 @@ export function applyInlineWrap(doc: string, range: TextRange, open: string, clo
 }
 
 export function applyLink(doc: string, range: TextRange): ApplyResult {
-  const selected = doc.slice(range.from, range.to) || '链接';
+  const selected = doc.slice(range.from, range.to) || tEngine('engine.format.link');
   const insert = `[${selected}]()`;
   const urlPos = range.from + insert.length - 1;
   return {
@@ -610,18 +611,26 @@ const PAIR_WRAPS: Partial<Record<ToolbarAction, { open: string; close: string }>
 };
 const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'referenceLink', 'underline', 'comment', 'indentMore', 'indentLess', 'insertParagraphAbove', 'insertParagraphBelow', 'newParagraph', 'newLine']);
 
-const ACTION_DEFS: Array<{ id: ToolbarAction; label: string; title: string }> = [
-  { id: 'h1', label: 'H1', title: '一级标题' },
-  { id: 'h2', label: 'H2', title: '二级标题' },
-  { id: 'h3', label: 'H3', title: '三级标题' },
-  { id: 'bold', label: 'B', title: '粗体' },
-  { id: 'italic', label: 'I', title: '斜体' },
-  { id: 'strike', label: 'S', title: '删除线' },
-  { id: 'code', label: '</>', title: '行内代码' },
-  { id: 'link', label: '🔗', title: '链接' },
-  { id: 'quote', label: '❝', title: '引用' },
-  { id: 'list', label: '•', title: '列表' },
-];
+/**
+ * 工具栏按钮定义。**必须是函数、不能是模块级常量**（ADR-0028 实测）：
+ * 模块级常量在**模块加载时**求值，而引擎 `install()` 早于宿主注入 locale 的桥
+ * → 标题会被**烘死**成默认语言（实测 `en` 界面下选区工具栏仍显示「一级标题 / 粗体 / …」）。
+ * 静态护栏查不出这种「求值时机」错误，只有 e2e 探针能抓到 —— 故这里保持函数形态。
+ */
+function actionDefs(): Array<{ id: ToolbarAction; label: string; title: string }> {
+  return [
+    { id: 'h1', label: 'H1', title: tEngine('engine.format.heading1') },
+    { id: 'h2', label: 'H2', title: tEngine('engine.format.heading2') },
+    { id: 'h3', label: 'H3', title: tEngine('engine.format.heading3') },
+    { id: 'bold', label: 'B', title: tEngine('engine.format.bold') },
+    { id: 'italic', label: 'I', title: tEngine('engine.format.italic') },
+    { id: 'strike', label: 'S', title: tEngine('engine.format.strike') },
+    { id: 'code', label: '</>', title: tEngine('engine.format.inlineCode') },
+    { id: 'link', label: '🔗', title: tEngine('engine.format.link') },
+    { id: 'quote', label: '❝', title: tEngine('engine.format.quote') },
+    { id: 'list', label: '•', title: tEngine('engine.format.list') },
+  ];
+}
 
 function applyAction(action: ToolbarAction, doc: string, range: TextRange, defaultCodeLang = ''): ApplyResult {
   switch (action) {
@@ -824,7 +833,7 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
       this.el = document.createElement('div');
       this.el.className = SELECTION_TOOLBAR_CLASS;
       this.el.setAttribute('role', 'toolbar');
-      this.el.setAttribute('aria-label', '格式工具栏');
+      this.el.setAttribute('aria-label', tEngine('engine.format.toolbar'));
       this.el.style.position = 'fixed';
       this.el.style.display = 'none';
       this.el.style.zIndex = '1000';
@@ -833,7 +842,7 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
       this.el.addEventListener('keydown', (e) => this.onKeydown(e));
       this.el.addEventListener('focusin', () => this.syncRoving());
 
-      for (const def of ACTION_DEFS) {
+      for (const def of actionDefs()) {
         const button = document.createElement('button');
         button.type = 'button';
         button.dataset.action = def.id;
@@ -878,9 +887,25 @@ export function buildSelectionToolbarExtension(options: SelectionToolbarOptions 
       applyToView(action);
     }
 
+    /**
+     * ADR-0028：把按钮标题同步到**当前** locale。
+     * 构造期求值会把语言**烘死**（引擎 `install()` 早于宿主注入 locale 的桥）——
+     * 实测 `en` 界面下选区工具栏仍显示「一级标题 / 粗体 / …」。
+     * 故标题在**显示时**同步（工具栏是瞬态浮层，显示即用户可见的那一刻）。
+     */
+    private syncLabels(): void {
+      const titles = new Map(actionDefs().map((d) => [d.id, d.title]));
+      for (const b of this.buttons) {
+        const t = titles.get(b.dataset.action as ToolbarAction);
+        if (t !== undefined) b.title = t;
+      }
+      this.el.setAttribute('aria-label', tEngine('engine.format.toolbar'));
+    }
+
     private showEl(): void {
       this.visible = true;
       this.focusIndex = 0;
+      this.syncLabels();
       this.buttons.forEach((b, i) => { b.tabIndex = i === 0 ? 0 : -1; });
       this.el.style.display = '';
       this.schedulePosition();

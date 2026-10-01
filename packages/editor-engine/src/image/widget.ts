@@ -18,6 +18,7 @@ import { attachEngineView, trackImageWidget, registerEngineImageApi } from './en
 import { isRemoteSrc } from './scan';
 import { stripImageSize } from './path';
 import type { ImageSize } from './path';
+import { tEngine } from '../engineI18n';
 
 const IMG_WRAPPER_CLASS = 'mellow-md-image';
 /** V7-W4.3：单图独占段落 → 居中（Typora `p > img:only-child`） */
@@ -272,7 +273,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
 
     const retryBtn = document.createElement('button');
     retryBtn.type = 'button';
-    retryBtn.textContent = '重试';
+    retryBtn.textContent = tEngine('engine.image.retry');
     retryBtn.addEventListener('click', (e) => {
       e.preventDefault();
       retry();
@@ -281,7 +282,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
 
     const revealBtn = document.createElement('button');
     revealBtn.type = 'button';
-    revealBtn.textContent = '定位';
+    revealBtn.textContent = tEngine('engine.image.reveal');
     revealBtn.addEventListener('click', (e) => {
       e.preventDefault();
       const abs = host.resolveAbsolutePath(spec.src);
@@ -322,7 +323,7 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = '加载远程图片';
+    btn.textContent = tEngine('engine.image.loadRemote');
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       load();
@@ -345,19 +346,19 @@ export function buildImageWidgetExtension(host: ImageHost): Extension {
     const remote = isRemoteSrc(spec.src);
     const items: Array<{ action: ImageWidgetAction; label: string; title: string }> = remote
       ? [
-          { action: 'setSize', label: '尺寸', title: '设置显示尺寸（宽×高）' },
-          { action: 'downloadRemote', label: '下载', title: '下载到本地 asset 目录并更新引用' },
-          { action: 'open', label: '打开', title: '在浏览器中打开' },
-          { action: 'copyPath', label: '复制路径', title: '复制图片 URL' },
+          { action: 'setSize', label: tEngine('engine.image.size'), title: tEngine('engine.image.sizeHint') },
+          { action: 'downloadRemote', label: tEngine('engine.image.download'), title: tEngine('engine.image.downloadHint') },
+          { action: 'open', label: tEngine('engine.image.open'), title: tEngine('engine.image.openInBrowserHint') },
+          { action: 'copyPath', label: tEngine('engine.image.copyPath'), title: tEngine('engine.image.copyUrlHint') },
         ]
       : [
-          { action: 'setSize', label: '尺寸', title: '设置显示尺寸（宽×高）' },
-          { action: 'reveal', label: '定位', title: '在文件管理器中定位' },
-          { action: 'open', label: '打开', title: '用系统默认应用打开' },
-          { action: 'rename', label: '重命名', title: '重命名文件并更新引用' },
-          { action: 'move', label: '移动', title: '移动到其他目录并更新引用' },
-          { action: 'copy', label: '复制', title: '复制到 asset 目录并更新引用' },
-          { action: 'copyPath', label: '复制路径', title: '复制图片绝对路径' },
+          { action: 'setSize', label: tEngine('engine.image.size'), title: tEngine('engine.image.sizeHint') },
+          { action: 'reveal', label: tEngine('engine.image.reveal'), title: tEngine('engine.image.revealHint') },
+          { action: 'open', label: tEngine('engine.image.open'), title: tEngine('engine.image.openHint') },
+          { action: 'rename', label: tEngine('engine.image.rename'), title: tEngine('engine.image.renameHint') },
+          { action: 'move', label: tEngine('engine.image.move'), title: tEngine('engine.image.moveHint') },
+          { action: 'copy', label: tEngine('engine.image.copy'), title: tEngine('engine.image.copyHint') },
+          { action: 'copyPath', label: tEngine('engine.image.copyPath'), title: tEngine('engine.image.copyPathHint') },
         ];
     const bar = document.createElement('span');
     bar.className = IMG_ACTIONS_CLASS;

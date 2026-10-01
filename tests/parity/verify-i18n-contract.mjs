@@ -28,7 +28,7 @@
  *     返回空串 → 屏幕上是「缺一块」而非报错）—— 静态判定需解析 ICU 子集，代价高，留为未覆盖。
  *   - 不覆盖 Rust 侧 / HTML 模板里的文案。
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -176,79 +176,55 @@ if (schemaRefs < 300) {
   if (resolvesFake(emptyKey)) fail('canary 失效：zh 为空白值的键被判为可解析');
 }
 
-// ── 引擎侧硬编码中文 UI 文案：**登记表 + 双向核对**（2026-10-01）──────────────
-// 立此条的原因（实测）：`general.language` 支持 zh-CN / en-US / system，即 **en 界面是受支持的**；
-// 而本护栏此前的范围声明只写「不覆盖 Rust 侧 / HTML 模板」—— **引擎侧（iframe 内的 TS）文案**
-// 既不在覆盖内，也**没有任何地方记录**。
+// ── 引擎侧 UI 文案：**目录 + locale 桥 + 无硬编码中文**（2026-10-01，ADR-0028 落地）────
 //
-// 实测证据（e2e 探针 `tests/e2e/i18n-engine-probe.mjs`，把 `mellow.locale` 设为 `en-US`）：
-//   · 前提成立：Settings 面板显示**英文**（`Settings / General / … / Language / 简体中文 / English`）；
-//   · 而引擎渲染的表格工具栏仍是 `["调整","↑行","↓行","删行","←列","→列","删列","左","中","右","整理","删除表"]`；
-//   · 查找面板 placeholder 仍是「查找 / 替换」；DOM 里 title 仍是「一级标题 / 粗体 / 链接 / …」。
-// 即 **`P0-I18N-001`「English 完整性」在引擎侧不成立** —— 该条目的证据只有
-// `packages/i18n/test/index.test.ts`（目录键一致性），**结构上看不到引擎文案**。
+// 【历史】本节原为「硬编码中文登记表」。首版记 43 条 / 5 文件，本会话更正为 **79 条 / 8 文件**
+// （判据只认「属性赋值」一种写法 → 漏掉三元 / 函数实参 / 模板串 / 整个文件；见审计 §4.57）。
+// 登记表是**待修清单**，目标是**缩到 0**（故**不得**给它设条目下限 —— 那会阻止修复）。
 //
-// 本护栏**不做**「已修」的假声明，而是把现状**登记为清单**并**双向核对**：
-//   · 新增硬编码中文 UI 文案 → 失败（缺口不得扩大）；
-//   · 删掉却未注销 → 也失败（登记表不得变成化石）。
-// 修复（把引擎文案接进 i18n）需先定「引擎侧文案的真值源在哪、由谁注入」——属**设计决策**，
-// 不在本护栏内；本清单同时充当修复的**工作清单**。
-// ⚠️ **2026-10-01 更正：本清单此前严重少计（43 处 / 5 文件 → 实测 79 处 / 8 文件）**
+// 【ADR-0028 裁决后】Q1=A2（逐项加桥 `__MELLOW_ENGINE_LOCALE__`）/ Q2=B1（引擎**自带**目录）/
+// Q3=C1（默认 zh-CN ⇒ 未接桥 = 原行为）。79 条已全部改为 `tEngine('…')`，登记表**清空**。
 //
-// 根因是**判据只认「UI 属性赋值」这一种写法**（`x.textContent = '…'` / `{ title: '…' }` /
-// `setAttribute('<UI 属性>', '…')`）—— 于是下面这些**同语义的写法全部漏检**：
-//   · **三元 / 表达式位置**：`label.textContent = lang === '' ? '语言' : …`（`=` 后面不是引号）；
-//   · **函数实参**：`new Option('(无语言)', '')`、`copyCodeText(code, btn, '复制')`；
-//   · **模板串**：`` fail(`mkdir(${path}) 未实现`) ``；
-//   · **整个文件**：`wysiwygBlocks.ts` / `image/ops.ts` / `image/host.ts` 三个文件**从未被扫到**。
-// 这与 §4.52 的结论同型：**只核对一半 = 没核对**。
-//
-// 现判据改为**「按事实枚举」**：逐行扫描，**任意位置**的单/双/反引号字面量，
-// 只要含汉字即登记 —— 不再猜「哪个位置算 UI」。唯一豁免是**已本地化的调用**
-// （`tEngine('…')` / `t('…')`，即修复的目标状态）。
-//
-// 登记的 4 条 `image/host.ts` 是**错误路径 / 开发者消息**（`fail()` 与 io 兜底）：
-// 本护栏**照收不误**——「宁可多登记，不可漏登记」；是否真属 UI 由接入 i18n 时逐条判定。
-const ENGINE_I18N_REGISTERED = {
-  'codeBlockLabel.ts': ['(无语言)', '点击修改代码块语言', '语言'],
-  'documentSearch.ts': ['上一个 (Shift+Enter)', '下一个 (Enter)', '全部', '关闭 (Esc)', '区分大小写', '替换', '查找', '正则表达式'],
-  'image/host.ts': ['copyFile(${from} → ${to}) 未实现', 'fs 操作失败', 'mkdir(${path}) 未实现', 'writeBinary(${path}) 未实现'],
-  'image/ops.ts': [
-    '上传失败', '协议不可下载（data/mailto 等）', '已在 asset 目录', '已在目标目录', '文件不存在（保留引用）',
-    '文件名未变化', '新文件名为空', '无法解析路径', '未上传（不在本次批次）',
-    '本地图片跳过（Download Remote 仅远程）', '目标与源相同', '远程图片不支持重命名', '远程图片不适用',
-    '远程图片跳过（Move/Copy All 仅本地）', '非本地可上传图片（远程/缺失/无法解析）',
-  ],
-  'image/widget.ts': [
-    '下载', '下载到本地 asset 目录并更新引用', '加载远程图片', '在文件管理器中定位', '在浏览器中打开',
-    '复制', '复制到 asset 目录并更新引用', '复制图片 URL', '复制图片绝对路径', '复制路径',
-    '定位', '尺寸', '打开', '用系统默认应用打开', '移动', '移动到其他目录并更新引用',
-    '设置显示尺寸（宽×高）', '重命名', '重命名文件并更新引用', '重试',
-  ],
-  'selectionToolbar.ts': ['一级标题', '三级标题', '二级标题', '列表', '删除线', '引用', '斜体', '格式工具栏', '粗体', '行内代码', '链接'],
-  'table/toolbar.ts': ['←列', '↑行', '→列', '↓行', '中', '列', '删列', '删行', '删除表', '右', '左', '应用', '整理', '行', '调整'],
-  'wysiwygBlocks.ts': ['复制', '复制代码', '已复制'],
-};
+// 【现判据四条】
+//   E1 **无硬编码中文**：引擎源码里除「文案目录」与「豁免表」外，不得出现含汉字的字面量。
+//   E2 **键可解析**：每个 `tEngine('key')` 的 key 必须在 `ENGINE_MESSAGES` 中存在
+//      —— 否则界面显示**裸键**（与 packages/i18n 的 t() 同语义，但更隐蔽：引擎侧没人盯着）。
+//   E3 **两 locale 齐备 + 不重叠**：每个键的 zh / en 都非空；键一律 `engine.` 前缀，
+//      且**不得与 `packages/i18n` 的键重叠**（两套目录各自漂移的防线）。
+//   E4 **接线链完整**：目录存在 ≠ 界面会变 —— 必须
+//      `engine/index.ts 装桥` → `editor-core 暴露 setEngineLocale` → `App.tsx 调用` 三段齐全；
+//      否则就是「登记表全绿但界面仍是中文」的半成品（本节存在的意义正是防这个形态）。
 {
+  const ENGINE_SRC = 'packages/editor-engine/src';
+  const I18N_MODULE = `${ENGINE_SRC}/engineI18n.ts`;
+  // 扫描回调里的 `f` 是**相对 ENGINE_SRC 的路径**（walkDir 的产物），故目录文件用其相对名判定
+  const I18N_REL = 'engineI18n.ts';
+  // 允许保留中文的**豁免**（开发者/错误路径消息，非 UI 文案）——逐条给原因，不得扩大。
+  const ENGINE_I18N_EXEMPT = {
+    'image/host.ts': [
+      'copyFile(${from} → ${to}) 未实现',
+      'mkdir(${path}) 未实现',
+      'writeBinary(${path}) 未实现',
+    ],
+  };
+  const EXEMPT_REASON = '`fail()` 抛出的**开发者错误**（null host 的未实现占位），不面向用户；'
+    + 'localize 它们只会让开发者看不懂栈';
+
   const stripComments = (s) => s
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-  const ENGINE_SRC = 'packages/editor-engine/src';
   const walkDir = (dir, rel = '') => readdirSync(resolve(root, dir, rel), { withFileTypes: true }).flatMap((e) =>
     (e.isDirectory() ? walkDir(dir, `${rel}${e.name}/`) : [`${rel}${e.name}`]));
   const HAN = /[\u4e00-\u9fa5]/;
-  // 已本地化的调用（修复的目标状态）：`tEngine('…')` / `t('…')`（可带后续实参）
+  // 已本地化的调用（目标状态）：`tEngine('…')` / `t('…')`（可带后续实参）
   const LOCALIZED_CALL = /\b(?:tEngine|t)\(\s*(['"`])(?:\\.|(?!\1)[^\\])*\1[^)]*\)/g;
-  /**
-   * 扫描「含汉字的字面量」——**逐行、任意位置、三种引号**。
-   * `reader(f)` 给出文件内容（便于 canary 注入合成样本）。
-   */
+  /** 扫描「含汉字的字面量」——逐行、任意位置、三种引号；`reader(f)` 便于 canary 注入合成样本 */
   const scanHardcodedZh = (files, reader) => {
     const out = {};
     for (const f of files) {
-      if (!f.endsWith('.ts')) continue;
+      if (!f.endsWith('.ts') || f === I18N_REL) continue;   // 文案目录本身即真值源，跳过
       for (const rawLine of stripComments(reader(f)).split('\n')) {
-        const line = rawLine.replace(LOCALIZED_CALL, ' ');   // 走 i18n 的不算
+        const line = rawLine.replace(LOCALIZED_CALL, ' ');
         if (!HAN.test(line)) continue;
         for (const m of line.matchAll(/'([^']*)'|"([^"]*)"|`([^`]*)`/g)) {
           const text = m[1] ?? m[2] ?? m[3] ?? '';
@@ -260,42 +236,102 @@ const ENGINE_I18N_REGISTERED = {
     for (const k of Object.keys(out)) out[k] = [...new Set(out[k])].sort();
     return out;
   };
+
   const engineFiles = walkDir(ENGINE_SRC);
   const actual = scanHardcodedZh(engineFiles, (f) => readFileSync(resolve(root, ENGINE_SRC, f), 'utf8'));
-  // 用**集合**比较（与排序无关）——登记表的书写顺序不得成为判据的一部分
-  const asSet = (list) => new Set(list);
+
+  // ── E1 无硬编码中文（豁免表之外一律失败）──────────────────────────────
   for (const [file, list] of Object.entries(actual)) {
-    const reg = ENGINE_I18N_REGISTERED[file];
-    if (reg === undefined) {
-      fail(`引擎侧新增了未登记的硬编码中文文案文件：${file}（${list.join(' / ')}）—— `
-        + 'en 界面下这些文案不会本地化；请接入 i18n，或（若确属暂缓）登记到本护栏并说明原因');
+    const exempt = ENGINE_I18N_EXEMPT[file];
+    if (exempt === undefined) {
+      fail(`引擎侧出现未接入 i18n 的硬编码中文文案：${file}（${list.join(' / ')}）—— `
+        + 'en 界面下这些文案不会本地化。请改为 tEngine(\'<key>\')（文案目录 engineI18n.ts）；'
+        + `若确属**非 UI**（开发者/错误路径）才登记进 ENGINE_I18N_EXEMPT 并写明原因。`
+        + `\n    豁免表现有条目的原因示例：${EXEMPT_REASON}`);
       continue;
     }
-    const regSet = asSet(reg);
-    const actualSet = asSet(list);
-    const added = list.filter((x) => !regSet.has(x));
+    const added = list.filter((x) => !exempt.includes(x));
     if (added.length > 0) {
-      fail(`引擎侧 ${file} 新增未登记的硬编码中文文案：${added.join(' / ')}`
-        + '（en 界面下不会本地化；登记表在本文件顶部 ENGINE_I18N_REGISTERED）');
+      fail(`引擎侧 ${file} 新增未豁免的硬编码中文：${added.join(' / ')}`);
     }
-    const gone = reg.filter((x) => !actualSet.has(x));
+    const gone = exempt.filter((x) => !list.includes(x));
     if (gone.length > 0) {
-      fail(`引擎侧 ${file} 的登记项已不存在：${gone.join(' / ')}`
-        + ' —— 若已接入 i18n，请从登记表删除（登记表不得变成化石）');
+      fail(`引擎侧 ${file} 的豁免项已不存在：${gone.join(' / ')} —— 请从 ENGINE_I18N_EXEMPT 删除`);
     }
   }
-  for (const file of Object.keys(ENGINE_I18N_REGISTERED)) {
-    if (!(file in actual)) {
-      fail(`引擎侧登记表里的文件已无硬编码中文文案：${file} —— 请从登记表删除`);
+  for (const file of Object.keys(ENGINE_I18N_EXEMPT)) {
+    if (!(file in actual)) fail(`引擎侧豁免表里的文件已无中文文案：${file} —— 请从豁免表删除`);
+  }
+
+  // ── E2 键可解析 + E3 两 locale 齐备 / 不重叠 ────────────────────────
+  if (!existsSync(resolve(root, I18N_MODULE))) {
+    fail(`缺少 ${I18N_MODULE}（引擎文案目录 + locale 桥，ADR-0028）`);
+  } else {
+    const mod = read(I18N_MODULE);
+    // 目录条目：`'engine.x': { 'zh-CN': '…', 'en-US': '…' }`
+    const entries = [...mod.matchAll(/'((?:engine)\.[A-Za-z0-9.]+)'\s*:\s*\{([^}]*)\}/g)]
+      .map((m) => ({ key: m[1], body: m[2] }));
+    const catalog = new Map(entries.map((e) => [e.key, e.body]));
+    if (catalog.size < 76) {
+      fail(`引擎文案目录只有 ${catalog.size} 个键（下限 76 = ADR-0028 落地时的实测基线）—— `
+        + '目录被删空会让「无硬编码中文」变成假绿');
+    }
+    // 两 locale 齐备
+    for (const { key, body } of entries) {
+      for (const loc of ['zh-CN', 'en-US']) {
+        const m = new RegExp(`'${loc}'\\s*:\\s*'((?:\\\\.|[^'\\\\])*)'`).exec(body);
+        if (m === null || m[1].trim() === '') {
+          fail(`引擎文案目录 ${key} 缺 ${loc} 译文（引擎侧 en 界面会显示裸键或空串）`);
+        }
+      }
+    }
+    // E2：每个 tEngine('key') 的 key 必须在目录中
+    const usedKeys = new Set();
+    for (const f of engineFiles) {
+      if (!f.endsWith('.ts')) continue;
+      for (const m of stripComments(readFileSync(resolve(root, ENGINE_SRC, f), 'utf8'))
+        .matchAll(/tEngine\(\s*'([^']+)'/g)) usedKeys.add(m[1]);
+    }
+    const missing = [...usedKeys].filter((k) => !catalog.has(k)).sort();
+    if (missing.length > 0) {
+      fail(`引擎里 tEngine 引用了**目录中不存在**的键：${missing.join(' / ')} —— 界面会显示**裸键**`);
+    }
+    const unused = [...catalog.keys()].filter((k) => !usedKeys.has(k)).sort();
+    if (unused.length > 0) {
+      fail(`引擎文案目录里有**从未被使用**的键：${unused.join(' / ')} —— 目录不得变成化石`);
+    }
+    // E3：前缀 + 命名空间不重叠
+    //
+    // ⚠️ 首版写的是「求 catalog 与 app 目录的**键交集**」—— 但 `catalog` 只收集
+    // `engine.` 前缀的键，而 app 目录里没有这种键 ⇒ **交集恒为空、该判据永不触发**
+    // （skill §15「不可达判据」的形态；实测：把键改名成 `sidebar.files` 后它没报，
+    //  只有前缀判据与下限报了）。改为**可达**的等价表述：直接断言两套命名空间互不侵占。
+    const badPrefix = [...catalog.keys()].filter((k) => !k.startsWith('engine.'));
+    if (badPrefix.length > 0) {
+      fail(`引擎文案键必须以 engine. 前缀：${badPrefix.join(' / ')}`);
+    }
+    const appCatalog = read('packages/i18n/src/messages.ts');
+    const appEngineKeys = [...appCatalog.matchAll(/'(engine\.[A-Za-z0-9_.]+)'\s*:/g)].map((m) => m[1]);
+    if (appEngineKeys.length > 0) {
+      fail(`packages/i18n 目录里出现 engine.* 键：${appEngineKeys.join(' / ')} —— `
+        + '引擎文案归 engineI18n.ts，两套目录不得互相侵占（否则同键两处各自漂移）');
     }
   }
-  // ⚠️ **刻意不设「登记表条目下限」**（2026-10-01，由注入验证抓到我的设计错误）：
-  // 本登记表是**待修清单**，其目标是**缩到 0**（全部接入 i18n）。设硬下限会**阻止修复**
-  // （实测：把 1 条改成 `tEngine(...)` 并同步删登记项 → 被下限拦下）。
-  // 「清空登记表即全绿」这个担忧由**别的判据**覆盖：清空后扫描仍会报出 79 条「新增未登记」→ 照样红。
-  // 真正需要防的是「扫描器本身失效」，那由下面逐形态的 canary 守（含历史上漏检的三种写法）。
-  // 保留一条**可派生的自检**：登记表与扫描结果必须**完全一致**（上面已双向核对），故此处不再加数字。
-  // canary：逐形态验证「能翻转」——重点是**历史上被漏检的那几种写法**
+
+  // ── E4 接线链完整（三段）────────────────────────────────────────────
+  const CHAIN = [
+    ['packages/editor-engine/src/index.ts', /installEngineLocaleBridge\(\)/, '引擎 index.ts 未安装 locale 桥'],
+    ['packages/editor-core/src/core.ts', /setEngineLocale\(/, 'editor-core 未暴露 setEngineLocale'],
+    ['apps/desktop/src/App.tsx', /setEngineLocale\(/, 'App.tsx 未调用 setEngineLocale（引擎永远拿不到 locale）'],
+  ];
+  for (const [file, re, why] of CHAIN) {
+    if (!existsSync(resolve(root, file))) { fail(`接线链缺文件：${file}`); continue; }
+    if (!re.test(read(file))) {
+      fail(`${why} —— 「目录存在」不等于「界面会变」；缺这段就是「登记表全绿但界面仍是中文」的半成品`);
+    }
+  }
+
+  // canary：逐形态验证「能翻转」——重点是历史上漏检的那几种写法
   const canaryCount = (sample) => (scanHardcodedZh(['x.ts'], () => sample)['x.ts'] ?? []).length;
   const canaryCases = [
     ["const a = { label: '新增中文' };", 1, '属性字面量形态'],
@@ -310,15 +346,18 @@ const ENGINE_I18N_REGISTERED = {
   for (const [sample, expect, why] of canaryCases) {
     const got = canaryCount(sample);
     if (got !== expect) {
-      errors.push(`引擎文案登记表 canary 失效：${why}（期望 ${expect} 条、实得 ${got}）`);
+      errors.push(`引擎文案护栏 canary 失效：${why}（期望 ${expect} 条、实得 ${got}）`);
     }
   }
-  // canary：集合比较与顺序无关（防「登记表排序变了就报错」）
-  if (JSON.stringify([...asSet(['b', 'a'])].sort()) !== JSON.stringify([...asSet(['a', 'b'])].sort())) {
-    errors.push('引擎文案登记表 canary 失效：集合比较与顺序相关');
+  // canary：E1 必须**排除**文案目录（否则目录里的 zh 真值会被自己判成硬编码）
+  if (scanHardcodedZh([I18N_REL], () => "const a = '中文';")[I18N_REL] !== undefined) {
+    errors.push('引擎文案护栏 canary 失效：文案目录未被排除（目录里的 zh 真值会被误判）');
+  }
+  // canary：E2 方向 —— 一个目录里没有的键必须被判为缺失
+  if (['engine.not.exists'].filter((k) => !new Set(['engine.real']).has(k)).length !== 1) {
+    errors.push('引擎文案护栏 canary 失效：目录中不存在的键未被判为缺失');
   }
 }
-
 if (errors.length > 0) {
   throw new Error(`i18n contract violations:\n  ${errors.join('\n  ')}`);
 }
@@ -330,8 +369,7 @@ console.log(
   + '缺失键会让 t() 返回键名本身（界面显示裸键），故此处硬失败。'
   + `（范围限制：只覆盖字面量键；t(变量) / 模板插值 / Rust 侧文案不在覆盖内，`
   + `占位符与传参是否匹配亦未覆盖）`
-  + `；另：**引擎侧硬编码中文文案**已登记 ${Object.keys(ENGINE_I18N_REGISTERED).length} 个文件 / `
-  + `${Object.values(ENGINE_I18N_REGISTERED).reduce((n, l) => n + l.length, 0)} 条`
-  + `（判据按**事实**枚举：逐行、任意位置、三种引号；仅豁免 tEngine()/t() 调用）`
-  + `（双向核对：新增即失败、删掉须注销）—— 但**尚未接入 i18n**，见 P0-I18N-001`,
+  + `；另（ADR-0028）：**引擎侧 UI 文案**已接入 \`tEngine()\` + locale 桥 —— `
+  + `判据 E1 无硬编码中文（仅豁免开发者错误消息）/ E2 键可解析（防裸键）/ `
+  + `E3 两 locale 齐备且与 packages/i18n 键不重叠 / E4 接线链完整（引擎装桥 → editor-core → App.tsx）`,
 );

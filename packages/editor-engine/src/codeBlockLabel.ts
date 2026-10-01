@@ -20,6 +20,7 @@ import type { Extension } from '@codemirror/state';
 import { isComposing } from './composition';
 import { parseMathSpans } from './math';
 import { FENCE_LANGUAGES } from './codeFence';
+import { tEngine } from './engineI18n';
 
 interface CmRuntime {
   ViewPlugin: typeof import('@codemirror/view').ViewPlugin;
@@ -176,16 +177,16 @@ export function buildCodeBlockLabelExtension(): Extension {
     toDOM(): HTMLElement {
       const label = document.createElement('span');
       label.className = CODEBLOCK_LANG_CLASS;
-      label.textContent = this.lang === '' ? '语言' : this.lang.toUpperCase();
+      label.textContent = this.lang === '' ? tEngine('engine.codeBlock.lang') : this.lang.toUpperCase();
       label.setAttribute('role', 'button');
-      label.title = '点击修改代码块语言';
+      label.title = tEngine('engine.codeBlock.editLang');
       label.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         if (label.querySelector('select') !== null) return;
         const select = document.createElement('select');
         select.className = 'mellow-codeblock-lang-select';
-        select.appendChild(new Option('(无语言)', ''));
+        select.appendChild(new Option(tEngine('engine.codeBlock.noLang'), ''));
         for (const l of CODEBLOCK_LANG_OPTIONS) select.appendChild(new Option(l, l));
         select.value = this.lang;
         label.textContent = '';

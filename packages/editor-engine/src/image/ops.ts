@@ -12,6 +12,7 @@
 
 import type { ImageRef } from './scan';
 import { buildImageSrcFrom, buildImageMarkdown, joinPaths, basename, dirname } from './path';
+import { tEngine } from '../engineI18n';
 
 export type FsOpKind = 'mkdir' | 'move' | 'copy' | 'download';
 
@@ -120,11 +121,11 @@ export function planCopyImage(ref: ImageRef, ctx: PlanContext): ImageOpPlan {
 function planSingleFileOp(kind: 'move' | 'copy', ref: ImageRef, ctx: PlanContext): ImageOpPlan {
   const plan = emptyPlan();
   if (ref.kind !== 'local' || ref.absolutePath === null) {
-    plan.report.skipped.push({ src: ref.src, reason: ref.kind === 'remote' ? '远程图片不适用' : '无法解析路径' });
+    plan.report.skipped.push({ src: ref.src, reason: ref.kind === 'remote' ? tEngine('engine.imageOp.remoteNotApplicable') : tEngine('engine.imageOp.unresolvedPath') });
     return plan;
   }
   if (dirname(ref.absolutePath) === ctx.targetDirAbs) {
-    plan.report.skipped.push({ src: ref.src, reason: '已在目标目录' });
+    plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.alreadyInTarget') });
     return plan;
   }
   const name = allocateUniqueName(ctx.existingNames, basename(ref.absolutePath));
@@ -144,14 +145,14 @@ function planSingleFileOp(kind: 'move' | 'copy', ref: ImageRef, ctx: PlanContext
 export function planRenameImage(ref: ImageRef, newName: string, ctx: PlanContext): ImageOpPlan {
   const plan = emptyPlan();
   if (ref.kind !== 'local' || ref.absolutePath === null) {
-    plan.report.skipped.push({ src: ref.src, reason: '远程图片不支持重命名' });
+    plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.renameRemoteUnsupported') });
     return plan;
   }
   const dir = dirname(ref.absolutePath);
   const current = basename(ref.absolutePath);
   let name = newName.trim();
   if (name === '') {
-    plan.report.skipped.push({ src: ref.src, reason: '新文件名为空' });
+    plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.emptyName') });
     return plan;
   }
   const dot = current.lastIndexOf('.');
@@ -160,12 +161,12 @@ export function planRenameImage(ref: ImageRef, newName: string, ctx: PlanContext
     name += currentExt; // 补扩展名
   }
   if (name === current) {
-    plan.report.skipped.push({ src: ref.src, reason: '文件名未变化' });
+    plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.nameUnchanged') });
     return plan;
   }
   const target = joinPaths(dir, name);
   if (target === ref.absolutePath) {
-    plan.report.skipped.push({ src: ref.src, reason: '目标与源相同' });
+    plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.sameAsSource') });
     return plan;
   }
   plan.fsOps.push({ kind: 'move', from: ref.absolutePath, to: target });
@@ -190,19 +191,19 @@ function planBatch(kind: 'move' | 'copy', refs: ImageRef[], ctx: PlanContext): I
   const plan = emptyPlan();
   for (const ref of refs) {
     if (ref.kind !== 'local') {
-      plan.report.skipped.push({ src: ref.src, reason: '远程图片跳过（Move/Copy All 仅本地）' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.batchRemoteSkipped') });
       continue;
     }
     if (ref.absolutePath === null) {
-      plan.report.skipped.push({ src: ref.src, reason: '无法解析路径' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.unresolvedPath') });
       continue;
     }
     if (ref.inAssetDir) {
-      plan.report.skipped.push({ src: ref.src, reason: '已在 asset 目录' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.alreadyInAsset') });
       continue;
     }
     if (ref.exists === false) {
-      plan.report.skipped.push({ src: ref.src, reason: '文件不存在（保留引用）' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.fileMissing') });
       continue;
     }
     const name = allocateUniqueName(ctx.existingNames, basename(ref.absolutePath));
@@ -226,11 +227,11 @@ export function planDownloadRemote(refs: ImageRef[], ctx: PlanContext): ImageOpP
   const plan = emptyPlan();
   for (const ref of refs) {
     if (ref.kind !== 'remote') {
-      plan.report.skipped.push({ src: ref.src, reason: '本地图片跳过（Download Remote 仅远程）' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.downloadLocalSkipped') });
       continue;
     }
     if (!ref.downloadable) {
-      plan.report.skipped.push({ src: ref.src, reason: '协议不可下载（data/mailto 等）' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.protocolNotDownloadable') });
       continue;
     }
     const name = allocateUniqueName(ctx.existingNames, remoteTargetName(ref.src));
@@ -293,16 +294,16 @@ export function planUploadAll(refs: ImageRef[], outcomes: Map<string, UploadOutc
   const plan = emptyPlan();
   for (const ref of refs) {
     if (ref.kind !== 'local' || ref.absolutePath === null || ref.exists !== true) {
-      plan.report.skipped.push({ src: ref.src, reason: '非本地可上传图片（远程/缺失/无法解析）' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.notLocalUploadable') });
       continue;
     }
     const outcome = outcomes.get(ref.absolutePath);
     if (outcome === undefined) {
-      plan.report.skipped.push({ src: ref.src, reason: '未上传（不在本次批次）' });
+      plan.report.skipped.push({ src: ref.src, reason: tEngine('engine.imageOp.notInBatch') });
       continue;
     }
     if (outcome.url === null) {
-      plan.report.failed.push({ src: ref.src, error: outcome.error ?? '上传失败' });
+      plan.report.failed.push({ src: ref.src, error: outcome.error ?? tEngine('engine.imageOp.uploadFailed') });
       continue;
     }
     plan.patches.push(patchFor(ref, outcome.url));

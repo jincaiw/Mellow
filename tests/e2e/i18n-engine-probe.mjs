@@ -1,12 +1,16 @@
 /**
- * 探针：**en-US 界面下，引擎侧 UI 文案是否仍为中文**（2026-10-01）。
+ * 探针：**en-US 界面下，引擎侧 UI 文案是否已本地化**（2026-10-01；ADR-0028 落地后改为正面断言）。
  *
- * 背景：扫描发现 `packages/editor-engine/src` 有 47 处**硬编码中文 UI 文案**
- * （`image/widget.ts` 14 / `table/toolbar.ts` 13 / `selectionToolbar.ts` 10 / `documentSearch.ts` 9 …），
- * 而 `general.language` 支持 zh-CN / en-US / system，CI 的 i18n 护栏只覆盖 `t('字面量')` 与 schema 声明。
- * 本探针把界面切到 en-US，然后**读引擎渲染出来的真实文案** —— 是「读代码推断」还是「实测」的分界。
+ * 背景：`general.language` 支持 zh-CN / en-US / system，但引擎运行在**独立 iframe** ——
+ * 宿主的 i18n 目录与 `t()` 都到不了，引擎自己渲染的文案（表格工具栏 / 查找面板 / 选区工具栏 /
+ * 图片操作提示）曾是**硬编码中文**（实测 79 条 / 8 文件，见审计 §4.52 / §4.57）。
+ * ADR-0028 裁决为「逐项加桥 + 引擎自带目录 + 默认 zh-CN」，现已接入 `tEngine()` + `__MELLOW_ENGINE_LOCALE__`。
+ *
+ * 本探针把界面切到 en-US，然后**读引擎渲染出来的真实文案**并**断言是英文** ——
+ * 这是「读代码推断」与「实测」的分界；也是 `P0-I18N-001` 从 `IMPL` 升回 `AUTO` 的 integration 证据。
  *
  * 运行：NODE_PATH=<playwright>/node_modules node <此文件>
+ * 前置：编辑器 bundle 已构建（node apps/desktop/scripts/build-editor-bundle.mjs）
  */
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -120,12 +124,15 @@ async function main() {
     });
     console.log('\n=== 表格工具栏（引擎侧渲染）===');
     console.log(JSON.stringify(toolbar));
-    // 前置断言（**不断言「缺口存在」** —— 那会把缺陷写成契约，skill §14）：
-    // 只断言「读到了引擎渲染的按钮」，缺口本身只**记录**，清单由 verify-i18n-contract 的登记表守。
     check('前置：表格工具栏出现且能读到按钮（引擎侧渲染）',
       toolbar.found && (toolbar.buttons ?? []).length > 0,
       `buttons=${(toolbar.buttons ?? []).length}`);
-    console.log('   [观察] en 界面下表格工具栏文案 =', JSON.stringify(toolbar.buttons));
+    // ADR-0028 落地后的**正面断言**：en 界面下引擎文案必须是英文。
+    // 注意：这里断言的是「读到的真实 DOM 文案」，不是「代码里没有中文」（那是静态护栏 E1 的活）。
+    const barText = (toolbar.buttons ?? []).join(' ');
+    check('表格工具栏文案已本地化为英文（ADR-0028）',
+      !/[\u4e00-\u9fa5]/.test(barText) && /Row|Col|Align|Delete|Tidy|Resize|Apply/.test(barText),
+      `buttons=${JSON.stringify(toolbar.buttons)}`);
 
     // ③ 查找面板占位符（engine documentSearch 设的）
     await page.keyboard.press('Meta+f');
@@ -142,18 +149,63 @@ async function main() {
     check('前置：查找面板出现且能读到输入框（引擎侧渲染）',
       find.found && (find.inputs ?? []).length > 0,
       `inputs=${(find.inputs ?? []).length}`);
+    // 正面断言：占位符取自 `tEngine('engine.search.find'/'engine.search.replace')`（Typora 真值 Find / Replace）
+    const phs = (find.inputs ?? []).map((i) => i.ph).filter((x) => x !== undefined && x !== '');
+    check('查找面板占位符已本地化为英文（Find / Replace）',
+      phs.includes('Find') && phs.includes('Replace'),
+      `placeholders=${JSON.stringify(phs)}`);
 
-    // ④ 选区浮动工具栏标题（selectionToolbar 硬编码）
+    // ④ 选区浮动工具栏标题（selectionToolbar）
+    // 先**关掉查找面板并全选**，让选区工具栏真正显示 —— 它的标题在 `showEl()` 时同步
+    // （构造期求值早于 locale 桥，故**未显示**的工具栏会留着默认语言；用户看不到它，
+    //  但探针若直接扫全 DOM 会把「隐藏的陈旧 title」误报成缺陷 —— 断言应落在**可见态**）。
+    await frame.evaluate(() => {
+      const btn = document.querySelector('.cm-search button[name="close"]')
+        ?? Array.from(document.querySelectorAll('.cm-search button')).find((b) => /✕/.test(b.textContent ?? ''));
+      btn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await sleep(300);
+    await frame.click('.cm-content');
+    await frame.evaluate(() => {
+      const v = window.editor?.dispatch ? window.editor : window.editor?.view;
+      v.dispatch({ selection: { anchor: 0, head: v.state.doc.length } });
+      v.focus();
+    });
+    await sleep(700);
+    const selBar = await frame.evaluate(() => {
+      const bar = document.querySelector('.mellow-selection-toolbar');
+      const visible = bar !== null && getComputedStyle(bar).display !== 'none';
+      const titles = bar === null ? [] : Array.from(bar.querySelectorAll('button[title]')).map((b) => b.getAttribute('title'));
+      return { found: bar !== null, visible, titles, ariaLabel: bar?.getAttribute('aria-label') ?? null };
+    });
+    console.log('\n=== 选区浮动工具栏（引擎侧渲染，显示态）===');
+    console.log(JSON.stringify(selBar));
+    check('前置：选区工具栏已显示且能读到按钮标题', selBar.visible && (selBar.titles ?? []).length > 0,
+      `visible=${selBar.visible} titles=${(selBar.titles ?? []).length}`);
+    const barTitles = (selBar.titles ?? []).join(' ');
+    check('选区工具栏标题已本地化为英文（ADR-0028）',
+      !/[\u4e00-\u9fa5]/.test(barTitles) && /Heading|Strong|Emphasis|Strike|Inline Code|Hyperlink|Quote|List/.test(barTitles),
+      `titles=${JSON.stringify(selBar.titles)}`);
+    check('选区工具栏 aria-label 已本地化为英文', selBar.ariaLabel === 'Format toolbar',
+      `aria-label=${JSON.stringify(selBar.ariaLabel)}`);
+
+    // ⑤ 全 DOM 兜底：可见区域不应残留中文 title
     const sel = await frame.evaluate(() => {
       const els = Array.from(document.querySelectorAll('[title]'))
+        .filter((e) => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;   // 只算**可见**元素
+        })
         .map((e) => e.getAttribute('title'))
         .filter((x) => x !== null && /[\u4e00-\u9fa5]/.test(x));
       return els.slice(0, 12);
     });
-    console.log('\n=== 引擎 DOM 里 title 含中文的元素（前 12）===');
+    console.log('\n=== 引擎 DOM 里**可见**元素中 title 含中文的（前 12）===');
     console.log(JSON.stringify(sel));
-    console.log('\n[结论] 前置成立（界面为 en）而引擎文案为中文 → 见审计 §4.52 与 P0-I18N-001；'
-      + '清单在 tests/parity/verify-i18n-contract.mjs 的 ENGINE_I18N_REGISTERED');
+    // 正面断言：en 界面下引擎**可见**元素不应再有中文 title
+    check('引擎可见元素无残留中文 title（ADR-0028 落地）', sel.length === 0, `含中文 title 的可见元素=${sel.length}`);
+    console.log('\n[结论] en 界面下引擎侧文案已本地化（ADR-0028）；'
+      + '静态侧由 tests/parity/verify-i18n-contract.mjs 的 E1–E4 四条判据守');
     process.exitCode = exitCode;
   } finally {
     await browser.close();

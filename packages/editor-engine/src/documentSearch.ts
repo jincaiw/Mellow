@@ -20,6 +20,7 @@
 import type { Extension } from '@codemirror/state';
 import type { ViewUpdate } from '@codemirror/view';
 import { isComposing } from './composition';
+import { tEngine } from './engineI18n';
 
 interface EditorViewLike {
   state: unknown;
@@ -133,29 +134,29 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
   const findRow = makeRow();
   const findInput = document.createElement('input');
   findInput.name = 'search';
-  findInput.placeholder = '查找';
-  findInput.setAttribute('aria-label', '查找');
+  findInput.placeholder = tEngine('engine.search.find');
+  findInput.setAttribute('aria-label', tEngine('engine.search.find'));
   const prevBtn = document.createElement('button');
   prevBtn.name = 'prev';
   prevBtn.textContent = '↑';
-  prevBtn.title = '上一个 (Shift+Enter)';
+  prevBtn.title = tEngine('engine.search.previous');
   const nextBtn = document.createElement('button');
   nextBtn.name = 'next';
   nextBtn.textContent = '↓';
-  nextBtn.title = '下一个 (Enter)';
+  nextBtn.title = tEngine('engine.search.next');
 
   // 查找选项 toggle（Typora parity：区分大小写 / 正则表达式）
   const caseBtn = document.createElement('button');
   caseBtn.className = 'cm-search-toggle';
   caseBtn.name = 'caseSensitive';
   caseBtn.textContent = 'Aa';
-  caseBtn.title = '区分大小写';
+  caseBtn.title = tEngine('engine.search.caseSensitive');
   caseBtn.setAttribute('aria-pressed', 'false');
   const regexBtn = document.createElement('button');
   regexBtn.className = 'cm-search-toggle';
   regexBtn.name = 'regexp';
   regexBtn.textContent = '.*';
-  regexBtn.title = '正则表达式';
+  regexBtn.title = tEngine('engine.search.regex');
   regexBtn.setAttribute('aria-pressed', 'false');
 
   findRow.append(findInput, caseBtn, regexBtn, prevBtn, nextBtn);
@@ -164,21 +165,21 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
   const replaceRow = makeRow();
   const replaceInput = document.createElement('input');
   replaceInput.name = 'replace';
-  replaceInput.placeholder = '替换';
-  replaceInput.setAttribute('aria-label', '替换');
+  replaceInput.placeholder = tEngine('engine.search.replace');
+  replaceInput.setAttribute('aria-label', tEngine('engine.search.replace'));
   const replaceBtn = document.createElement('button');
   replaceBtn.name = 'replaceNext';
-  replaceBtn.textContent = '替换';
+  replaceBtn.textContent = tEngine('engine.search.replace');
   const replaceAllBtn = document.createElement('button');
   replaceAllBtn.name = 'replaceAll';
-  replaceAllBtn.textContent = '全部';
+  replaceAllBtn.textContent = tEngine('engine.search.all');
   replaceRow.append(replaceInput, replaceBtn, replaceAllBtn);
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'cm-search-close';
   closeBtn.name = 'close';
   closeBtn.textContent = '✕';
-  closeBtn.title = '关闭 (Esc)';
+  closeBtn.title = tEngine('engine.search.close');
   findRow.append(closeBtn);
 
   dom.append(findRow, replaceRow);

@@ -19,6 +19,7 @@ import type { EditorState, Extension } from '@codemirror/state';
 import type { DecorationSet } from '@codemirror/view';
 import { isSourceMode } from './mode';
 import { isLargeFileMode, largeFileVersion } from './largeFile';
+import { tEngine } from './engineI18n';
 
 interface CmRuntime {
   EditorView: typeof import('@codemirror/view').EditorView;
@@ -69,8 +70,8 @@ function createCodeLangLabel(cm: CmRuntime) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'mellow-code-copy-btn';
-      btn.textContent = zh ? '复制' : 'Copy';
-      btn.title = zh ? '复制代码' : 'Copy code';
+      btn.textContent = zh ? tEngine('engine.code.copy') : 'Copy';
+      btn.title = zh ? tEngine('engine.code.copyCode') : 'Copy code';
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -90,7 +91,7 @@ function createCodeLangLabel(cm: CmRuntime) {
 function copyCodeText(text: string, btn: HTMLButtonElement, zh: boolean): void {
   const original = btn.textContent;
   const done = (): void => {
-    btn.textContent = zh ? '已复制' : 'Copied';
+    btn.textContent = zh ? tEngine('engine.code.copied') : 'Copied';
     window.setTimeout(() => { btn.textContent = original; }, 1200);
   };
   const fallback = (): boolean => {

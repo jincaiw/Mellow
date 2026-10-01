@@ -6,6 +6,7 @@
  * - 测试：createMockImageHost
  * - 无宿主：createNullImageHost
  */
+import { tEngine } from '../engineI18n';
 
 type ImageHostErrorCode = 'not-implemented' | 'io' | 'unknown';
 
@@ -136,7 +137,7 @@ export function createBridgeImageHost(): ImageHost {
       if (parsed && parsed.ok === true) {
         return { ok: true } as Result<void>;
       }
-      return { ok: false, error: { code: 'io', message: parsed?.error ?? 'fs 操作失败' } };
+      return { ok: false, error: { code: 'io', message: parsed?.error ?? tEngine('engine.imageOp.fsFailed') } };
     } catch (e) {
       return { ok: false, error: { code: 'io', message: String(e) } };
     }

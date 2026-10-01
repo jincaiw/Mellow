@@ -62,9 +62,16 @@ import { buildInlineCodeAttrsExtension } from './inlineCodeAttrs';
 import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
 import { buildWysiwygBlocksExtension } from './wysiwygBlocks';
 import { installMdTokensBridge } from './mdTokens';
+import { installEngineLocaleBridge } from './engineI18n';
 export { buildCodeLineNumbersExtension, installCodeLineNumbersApi, setCodeLineNumbers, isCodeLineNumbersEnabled, codeLineNumbersVersion, fenceContentRange } from './codeLineNumbers';
 export { buildWysiwygBlocksExtension, bumpHeadingFont } from './wysiwygBlocks';
 export { installMdTokensBridge, applyMdTokens, MD_TOKEN_DEFAULTS } from './mdTokens';
+// ADR-0028（Q1=A2 / Q2=B1 / Q3=C1）：引擎 UI 文案 + locale 桥
+export {
+  installEngineLocaleBridge, setEngineLocale, getEngineLocale, tEngine,
+  ENGINE_MESSAGES, ENGINE_DEFAULT_LOCALE, ENGINE_LOCALE_STORAGE_KEY,
+} from './engineI18n';
+export type { EngineLocale, EngineLocaleBridge } from './engineI18n';
 export { buildReadonlyExtension, installReadonlyApi, setReadonlyMode, isReadonlyMode } from './readonly';
 export type { CodeLineNumbersApi } from './codeLineNumbers';
 export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './plugin';
@@ -235,6 +242,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installCodeLineNumbersApi();
   // V5：md 排版 token 桥（宿主经 EditorCore.setMdTokens 注入 --mellow-md-*）
   installMdTokensBridge();
+  // ADR-0028：引擎 UI 文案的 locale 桥（宿主经 EditorCore.setEngineLocale 注入）
+  installEngineLocaleBridge();
   installInputLatencyApi();
   const f = mergeEngineFeatures(features);
   const ext: Extension[] = [

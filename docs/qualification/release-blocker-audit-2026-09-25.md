@@ -3103,6 +3103,80 @@ capture-window-chrome.mjs / scenes-golden.mjs / sidebar-golden.mjs / visual-gold
 > 该建议至今**没有 ADR 载体**，而 locale 接线会**替它做选择**（再加一条独立桥）。
 > 故本轮**不擅自接线**，把这一项留给 ADR。
 
+## 4.58 引擎侧 i18n 接线（ADR-0028 落地）：静态护栏全绿之后，探针抓到**求值时机**缺陷（2026-10-01）
+
+### 裁决
+
+依据用户 2026-09-30 授权「全部自行评估、决策、实施，不叫我人工参与」（ADR-0024/25/26 裁决节同引）：
+
+- **ADR-0028**（引擎宿主上下文通道）：**Q1=A2**（逐项加桥）/ **Q2=B1**（引擎自带目录）/ **Q3=C1**（默认 zh-CN）。
+  A1（统一桥）被否的**关键理由**：它原本的主要论据是「逐项加桥 → 没加的那部分静默失效」，
+  而本会话已把这条风险**变成会红的判据**（`verify-parity-ledger.mjs` 的 R1 可达性、
+  `verify-i18n-contract.mjs` 的引擎文案判据）→ 边际收益下降，而改动面（36 个桥 + 视觉基线）不变。
+- **ADR-0027**（引擎浮动面板取色）：**Q1=A1 / Q2=B1 / Q3=C1**；**决策已定、实现未做**（排在 P0 缺陷之后）。
+  它与 0028 的 A2 **解耦**（面板 token 复用既有 md 桥，不新增桥），故原「应一并裁决」的顾虑消解。
+
+### 实施
+
+- `engineI18n.ts`：76 键 × zh/en + `tEngine()` + `__MELLOW_ENGINE_LOCALE__` 桥（localStorage 时序兜底）。
+- 引擎侧 **79 处 / 8 文件**硬编码中文 → `tEngine('…')`；登记表**清空**（待修清单的目标即缩到 0）。
+- 宿主链：`engine/index.ts` 装桥 → `editor-core.setEngineLocale()` → `App.tsx`（引擎就绪回调 + locale 变化）。
+- 英文真值取自 Typora 一手资源（`.strings` 的**键即英文源串**、`main.js`）：`Find` / `Replace` / `All` /
+  `Case Sensitive` / `Regular Expression` / `Download` / `Open` / `Rename` / `Heading 1..3` / `Strike` /
+  `Quote` / `Emphasis` / **`Strong`** / `Align Left|Center|Right` / `Delete Table`；
+  其余标注 **Mellow 自译（参数原创）**。
+
+### ⚠️ 差点以「半成品」收口 —— 本节最重要的一条
+
+**静态护栏 E1–E4 全绿之后，e2e 探针仍然报错**：
+
+```
+{"buttons":["调整","↑行","↓行","删行","←列","→列","删列","左","中","右","整理","删除表"]}
+["一级标题","二级标题","三级标题","粗体","斜体","删除线","行内代码","链接","引用","列表"]
+```
+
+**根因是求值时机**：`selectionToolbar.ts` 的按钮定义是**模块级常量**（模块加载即求值）、
+`table/toolbar.ts` 在**构造时**渲染 —— 而引擎 `install()` 早于宿主注入 locale 的桥
+→ 标签被**烘死**成默认语言。
+
+**为什么静态护栏查不出**：源码里确实**没有硬编码中文**（都走 `tEngine`）、键也都在目录里、
+接线链也完整 —— E1–E4 **全部为真**。**「求值时机」不在静态判据的可表达范围内。**
+
+**修**：标签改为**显示时求值**（`ACTION_DEFS` 模块常量 → `actionDefs()` 函数 + `syncLabels()` 在
+`showEl()` 调用；`renderButtons()` 从构造移到 `updateToolbar` 的显示路径）。
+
+> **教训（与 §4.55「按声明 vs 按事实」同族，但更深一层）**：
+> 静态护栏能证「代码里写对了」，**不能证「运行时会走对」**。
+> 凡是「求值时机 / 生命周期」类的缺陷，**必须由能真跑的东西来证** —— 本例是 e2e 探针。
+> **「护栏全绿」不是收口的充分条件。**
+
+### 实测证据（`tests/e2e/i18n-engine-probe.mjs`，en-US 界面下读引擎真实 DOM）
+
+| 表面 | 读数 |
+|---|---|
+| 表格工具栏 | `Resize / ↑ Row / ↓ Row / Delete Row / ← Col / → Col / Delete Col / Align Left / Align Center / Align Right / Tidy / Delete Table` |
+| 查找面板 | 占位符 `Find` / `Replace`；按钮 `Replace` / `All` |
+| 选区浮动工具栏 | `Heading 1\|2\|3 / Strong / Emphasis / Strike / Inline Code / Hyperlink / Quote / List`；`aria-label = Format toolbar` |
+| 引擎 DOM **可见**元素中 title 含中文 | **0** |
+
+探针同时由「只断言前置 + 记录缺口」改为**正面断言英文**，并只扫**可见**元素 ——
+未显示的工具栏保留默认语言属正常（`showEl()` 时才同步），断言应落在**用户看得见的状态**。
+
+### 附带抓到的两处自身缺陷（都被护栏当场拦下）
+
+1. **注入验证的还原有漏**：`documentSearch.ts` 残留 2 处 `engine.search.notExist`、目录少 1 个键
+   → **E2 报「目录中不存在」、目录下限报「只有 75 个键」**。两处都被抓到。
+   **教训：注入 harness 必须自带「还原后比对」的自检** —— 否则「验证用的变异」会变成「提交的内容」。
+2. **E3 的「键重叠」是死判据**：`catalog` 只收集 `engine.*` 键，而 app 目录无此类键 ⇒ **交集恒空、永不触发**
+   （skill §15「不可达判据」）。已改为**可达**的等价表述「`packages/i18n` 不得出现 `engine.*` 键」，
+   并注入验证其**确实会报**。
+
+### 门禁
+
+`NO-GO：**10** 项未闭环`（原 11）；`P0-I18N-001` 由 `IMPL` 升 **AUTO**（`blockedBy` 移除）。
+**`AUTO` ≠ 完成**：自动化证据（引擎单测 79 套件 / 1288 用例 + E1–E4 护栏 + e2e 实测）齐备，
+**真机三平台体验验收仍未做**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

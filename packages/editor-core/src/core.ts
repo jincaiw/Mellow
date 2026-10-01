@@ -240,6 +240,18 @@ export class EditorCore {
     win?.__MELLOW_THEME_TOKENS__?.set?.(tokens);
   }
 
+  /**
+   * ADR-0028：注入**引擎 UI 文案的 locale**（engine `__MELLOW_ENGINE_LOCALE__` 桥）。
+   *
+   * 编辑器在独立 iframe 里，宿主的 i18n 目录与 `t()` 都到不了 —— 引擎的查找面板 /
+   * 格式工具栏 / 表格工具栏 / 图片操作提示是引擎**自己渲染**的文案，必须显式桥接。
+   * 桥未就绪时静默跳过（engine 侧从 localStorage 兜底，默认 zh-CN ⇒ 未接桥 = 原行为）。
+   */
+  setEngineLocale(locale: string): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_ENGINE_LOCALE__?: { set?: (locale: string) => void } }) | null;
+    win?.__MELLOW_ENGINE_LOCALE__?.set?.(locale);
+  }
+
   /** 编辑器 config live apply（CoreEditor webModules.config.<method>；Settings live apply where safe） */
   setEditorConfig(method: 'setFontSize' | 'setFontFace' | 'setLineHeight' | 'setShowLineNumbers' | 'setLineWrapping' | 'setContentMaxWidth' | 'setAutoPair' | 'setMarkdownSyntaxPairs' | 'setDefaultCodeLang' | 'setCodeIndentSize' | 'setTabKeyBehavior' | 'setFirstLineIndent' | 'setAllowMagnification', params: { fontSize?: number; family?: string; lineHeight?: number; enabled?: boolean; width?: number | null; behavior?: number; lang?: string; indentWidth?: number }): void {
     const win = this.iframe?.contentWindow as (Window & { webModules?: { config?: Record<string, (p: unknown) => void> } }) | null;

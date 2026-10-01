@@ -541,6 +541,9 @@ export default function App() {
     }
   });
   const locale: Locale = resolveLocale(localeSetting);
+  // ADR-0028：引擎 UI 文案 locale —— 供「引擎就绪」回调读取当前值（同 fileTreeRootRef 的写法，避免闭包过期）
+  const localeRef = useRef<Locale>(locale);
+  localeRef.current = locale;
   const i18n = useMemo(() => createI18n(MESSAGES, locale), [locale]);
   const t = i18n.t;
 
@@ -890,6 +893,12 @@ export default function App() {
     const family = readEditorFontFamilyPreference(activeTheme);
     hostRef.current?.setEditorConfig('setFontFace', { family: family ?? 'ui-monospace' });
   }, [activeTheme]);
+
+  // ADR-0028：locale 变化时同步给引擎（引擎 UI 文案按需构建 → 下次打开面板即用新语言；
+  // 引擎侧默认 zh-CN，故本效应是「切到 English 后引擎文案也变英文」的唯一来源）
+  useEffect(() => {
+    hostRef.current?.setEngineLocale(locale);
+  }, [locale]);
 
   const setThemeSettingsAndPersist = useCallback((next: ThemeSettings) => {
     setThemeSettings(next);
@@ -3843,6 +3852,11 @@ export default function App() {
         setStatus('ready');
         setStatusText(t('msg.editorReady'));
         refreshStats(host);
+
+        // ADR-0028：把当前 locale 注入引擎 —— 查找面板 / 格式工具栏 / 表格工具栏 / 图片操作提示
+        // 是引擎**自己渲染**的文案，宿主 i18n 到不了 iframe。引擎侧默认 zh-CN，
+        // 故本调用是「en 界面下引擎文案也变英文」的唯一来源。
+        host.setEngineLocale(localeRef.current);
 
         // 注入图片操作 handler（widget 悬停操作条 → app-core 编排；spec §6）
         const frame = containerRef.current?.querySelector('iframe');

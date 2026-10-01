@@ -146,17 +146,17 @@ const DECIDED_ADRS = [
   ['docs/adr/ADR-0024-release-closure-semantics.md', 'AUTO 是否阻断发布 / ux-gate 是否逐项前置', 'A3 / B1'],
   ['docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md', '>2MB 无基线时的证据政策', 'A1 / B1 / C1'],
   ['docs/adr/ADR-0026-perf-target-measurement-scope.md', 'PRD §110 性能目标的测量口径', 'A1 / B1 / C1'],
+  // 2026-10-01 裁决（依据用户 2026-09-30 授权「全部自行评估、决策、实施，不叫我人工参与」）
+  ['docs/adr/ADR-0027-engine-theme-token-reachability-and-panel-surfaces.md',
+    '引擎侧浮动面板表面取色（表格工具栏 / 选区工具栏）', 'A1 / B1 / C1'],
+  ['docs/adr/ADR-0028-engine-host-context-channel.md',
+    '引擎侧宿主上下文通道（统一 UI 上下文桥 vs 逐项加桥）', 'A2 / B1 / C1'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
 // 它承载一个**真实取舍**（新增 md 面板 token / 拓宽 token 桥 / 维持现状），
 // 故必须是 Proposed，且**不得**被悄悄标成 Accepted。
-const PENDING_ADRS = [
-  ['docs/adr/ADR-0027-engine-theme-token-reachability-and-panel-surfaces.md',
-    '引擎侧浮动面板表面取色（表格工具栏 / 选区工具栏）', '待裁决'],
-  ['docs/adr/ADR-0028-engine-host-context-channel.md',
-    '引擎侧宿主上下文通道（统一 UI 上下文桥 vs 逐项加桥）', '待裁决'],
-];
+const PENDING_ADRS = []; // 当前无待裁决 ADR（ADR-0027 / 0028 已于 2026-10-01 裁决）
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);
@@ -422,6 +422,6 @@ console.log(
     ? (PENDING_ADRS.length > 0
       ? `\n  Pending decisions: ${PENDING_ADRS.map(([p]) => p.replace('docs/adr/', '')).join(', ')}`
         + '（状态 Proposed，裁决前不生效）'
-      : '\n  Pending decisions: 无 —— ADR-0024 / 0025 / 0026 已于 2026-09-30 裁决为 Accepted（见各自 ADR 的「裁决」节）')
+      : '\n  Pending decisions: 无 —— ADR-0024 / 0025 / 0026（2026-09-30）与 ADR-0027 / 0028（2026-10-01）均已裁决为 Accepted（见各自 ADR 的「裁决」节）')
     : '')
 );
