@@ -47,7 +47,6 @@ export const ENGINE_MESSAGES: Record<string, Pair> = {
   'engine.codeBlock.noLang': { 'zh-CN': '(无语言)', 'en-US': '(no language)' },        // Mellow
 
   // ── 查找 / 替换面板 ──────────────────────────────────────────────
-  'sidebar.files': { 'zh-CN': '查找', 'en-US': '' },                          // Typora: Menu.strings
   'engine.search.find': { 'zh-CN': '查找', 'en-US': 'Find' },                          // Typora: Menu.strings
   'engine.search.replace': { 'zh-CN': '替换', 'en-US': 'Replace' },                    // Typora: Front.strings
   'engine.search.all': { 'zh-CN': '全部', 'en-US': 'All' },                            // Typora: Front.strings

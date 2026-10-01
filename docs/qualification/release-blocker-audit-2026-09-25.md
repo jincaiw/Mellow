@@ -3171,6 +3171,27 @@ capture-window-chrome.mjs / scenes-golden.mjs / sidebar-golden.mjs / visual-gold
    （skill §15「不可达判据」）。已改为**可达**的等价表述「`packages/i18n` 不得出现 `engine.*` 键」，
    并注入验证其**确实会报**。
 
+### 第三次「自伤」：护栏的目录正则**预过滤** → 前缀判据不可达（由 CI 抓出）
+
+提交后 **CI 红**（`editor-engine test + build` → 单测），报：
+
+```
+● engine i18n — 目录 › 每个键的 zh-CN 与 en-US 都非空，且键一律 engine. 前缀
+  > 28 |       expect(k.startsWith('engine.')).toBe(true);
+```
+
+**根因**：目录里残留了一行**注入变异产物** `'sidebar.files': { 'zh-CN': '查找', 'en-US': '' },`
+（我在补回 `engine.search.find` 时没删掉它）。而**静态护栏全绿** —— 因为它的目录正则写成
+`'((?:engine)\.[…])'`：**非 engine 键对整节判据全部不可见**，前缀判据因此**永不触发**
+（又一个 skill §15「不可达判据」；与本节前面那个「键重叠」是同一个错）。
+
+**修**：目录正则改为取**全部**条目（再让前缀判据去判定），并注入验证「把键改成 `sidebar.files`」
+**确实会报**。清理残留键 → 76 键、无杂键。
+
+> **另一条值得记的**：修好前我在本地跑过一次全量 jest，**它是通过的** ——
+> 因为 **jest 缓存**给了假绿；加 `--no-cache` 立刻复现失败。
+> **「本地通过」必须问一句：跑的是当前源码吗？**
+
 ### 门禁
 
 `NO-GO：**10** 项未闭环`（原 11）；`P0-I18N-001` 由 `IMPL` 升 **AUTO**（`blockedBy` 移除）。

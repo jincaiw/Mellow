@@ -268,8 +268,14 @@ if (schemaRefs < 300) {
     fail(`缺少 ${I18N_MODULE}（引擎文案目录 + locale 桥，ADR-0028）`);
   } else {
     const mod = read(I18N_MODULE);
-    // 目录条目：`'engine.x': { 'zh-CN': '…', 'en-US': '…' }`
-    const entries = [...mod.matchAll(/'((?:engine)\.[A-Za-z0-9.]+)'\s*:\s*\{([^}]*)\}/g)]
+    // 目录条目：`'<key>': { 'zh-CN': '…', 'en-US': '…' }`
+    //
+    // ⚠️ **不得在此按 `engine.` 前缀预过滤**（2026-10-01 实测踩过）：首版写成
+    // `'((?:engine)\.[…])'` → 非 engine 键**对整节判据全部不可见**（前缀检查因此**永不触发**），
+    // 实测残留在目录里的 `'sidebar.files': …` 一路绿灯，直到 **CI 的单测**才把它抓出来。
+    // 正确做法：先取**全部**条目，再让前缀判据去判定（判据必须落在它能看见的集合上）。
+    const entries = [...mod.matchAll(/'([A-Za-z0-9_.-]+)'\s*:\s*\{([^}]*)\}/g)]
+      .filter((m) => /'zh-CN'\s*:/.test(m[2]) || /'en-US'\s*:/.test(m[2]))   // 只取「双 locale 条目」
       .map((m) => ({ key: m[1], body: m[2] }));
     const catalog = new Map(entries.map((e) => [e.key, e.body]));
     if (catalog.size < 76) {
