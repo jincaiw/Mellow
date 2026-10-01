@@ -2967,8 +2967,23 @@ useEffect(() => { if (!treeFilterOpen) return; /* … 1200ms 内每 60ms el.focu
 |---|---|
 | 新原语 | `tests/visual/wait-rendered.mjs`：`waitForAnimationsSettled(page)`（先推 2 帧确保动画已启动，再轮询 `document.getAnimations()` 到无 running）+ `waitForFocusSettled(page, sel)` |
 | 接入 | `scenes-golden.mjs`（设置场景）与 `sidebar-golden.mjs`（过滤框场景）改为 `if (!(await …)) throw` —— **未收敛即响亮失败，禁止静默继续采样**（静默继续正是读数漂移的成因） |
-| 基线 | 三平台 `sidebar-golden*.json` 的 `files-tree-filter.focused`：`false → true`。**依据**：macOS 本地实测 `true`；Windows 该次 CI 的 actual 也是 `true`；Linux 为**推断**（同一平台无关代码路径），由 CI 复核 |
+| 基线 | 三平台 `sidebar-golden*.json` 的 `files-tree-filter.focused`：`false → true`。**依据**：macOS 本地实测 `true`；Windows 该次 CI 的 actual 也是 `true`；Linux 为**推断**（同一平台无关代码路径），**已由 CI 证实**（见下） |
 | 护栏 | `verify-visual-golden.mjs` 新增：采样脚本必须从该共享模块引入、**至少调用一次**、且对返回值做 `!(await …)` 判定；判定与 canary **共用**剥注释函数（`codeOnlyOf`）；注入验证 **8 例**全部符合预期（含「注释掉调用」这一形态） |
+
+### 修后复核（三平台实测，v1.5.17）
+
+把 `v1.5.17` 标签**移到含修复的提交**（`git tag -f` + 强推，因为原标签里是**偶发版测试代码**），
+重跑两条流水线 —— **全绿**：
+
+| 流水线 | 结论 | 关键读数 |
+|---|---|---|
+| Runtime Qualification | ✅（Linux / Windows / macOS） | Windows 视觉步骤：`visual-golden: OK` / `sidebar-golden: OK`（4 views）/ `scenes-golden: OK`（7 场景） |
+| Release Packaging | ✅（三平台 + Finalize） | 15 制品；draft 且 `prerelease=true` |
+
+即：**`focused = true` 在 Linux 上的推断被 CI 证实**（无需再猜），且 `settings.panel.y` 回到稳态 150。
+
+> **为什么移标签而不是接受重跑的绿**：原标签里的**测试代码本身**是偶发版 ——
+> 它的绿可能只是这一次调度赢了。把修复提交纳入标签，标签的绿才是**可复现的绿**。
 
 ### 教训
 
