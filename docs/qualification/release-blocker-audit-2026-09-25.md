@@ -31,6 +31,30 @@ Release verdict: NO-GO：6 项未闭环
 | `NOT_TESTED` | 1 | 否 |
 | `BLOCKED` | 2 | 否 |
 
+### 待裁决项登记表（**唯一声明处**）
+
+> **立此表的原因（2026-10-01）**：项目规则是「**待裁决项必须有 ADR 载体**」，
+> 而逐项复核发现**本文档里有 6 处「待裁决」标记，门禁的 `Pending decisions:` 却是「无」**
+> —— 即这些裁决项**长期没有载体**。根因是护栏**只做了单向**：它核对「ADR → 门禁」，
+> 没核对「本文档的待裁决项 → 是否有 ADR」。
+> **本文档此后不得新增未登记的裁决项**；「载体」列要么指向存在的 ADR，要么写 `已处置`（并给证据）。
+> 护栏 `verify-release-gate.mjs` 会断言本表存在且每行的载体**可解析**。
+> （范围限制：护栏**不能**自动发现「新加了 `待裁决` 字样却没登记」—— 那需要理解自然语言；
+> 要补上这一半需给标记定机器可读写法，属后续工作。见 **ADR-0029**。）
+
+| # | 出处 | 裁决问题 | 处置 | 载体 |
+|---|---|---|---|---|
+| 1 | §3（2026-09-29） | `AUTO` 是否阻断发布 / `ux-gate` 是否逐项前置 | **已裁决**（A3 / B1） | `docs/adr/ADR-0024-release-closure-semantics.md` |
+| 2 | §3.1 | `P0-PERF-001` 的 5 项口径中有两项是否开放 | **已由 PRD 判定**（宪法已判，无需裁决） | `已处置`（§3.1 记录依据） |
+| 3 | §4.3 | 远程图片默认值（安全相关默认值） | **已由两处独立一手证据判定**（Typora 始终加载远程图片且无退出选项） | `已处置`（§4.3 记录 `frame.js` 的 `DEFAULT_OPTIONS`） |
+| 4 | §4.4 | **安全验收是否应进入台账**（新增安全域与条目） | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q2） |
+| 5 | §4.5 | **V1.0 发布时是否把「Apple 凭据缺失」改为硬失败** | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q3） |
+| 6 | §4.10.1 | **`settings.open` 在 Win/Linux 的菜单入口**（D 还是缺口） | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q1） |
+| 7 | §4.14 / §4.29–§4.30 | `Allow Magnification` / 「使用主题的字体大小」 | **已处置**（前者已实装；后者「自定义字号」已实装、刻意不对齐 Typora 的 24，已登记 D） | `已处置`（§4.28 / §4.30） |
+| 8 | §4.39 | **表格 `invalid` 提示**：Mellow 自有提示 or 从 spec 移除 | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q4） |
+| 9 | §4.40 | **上传「密钥」的 spec 表述**（不适用 / keychain / UI 禁止） | 待裁决（**前提已复核：本仓上传不持有凭据**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q5） |
+| 10 | §4.51 | **`tests/visual/actual/*.png` 是否取消 git 跟踪** | 待裁决 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q6） |
+
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
 ### 2.1 三项**自身证据已齐备**，只被全局策略挡住
@@ -1044,7 +1068,7 @@ Settings 的渲染路径，发现渲染层对 `type: 'action'` **一律**渲染�
 | # | 项 | 现象 | 处置 |
 |---|---|---|---|
 | A1 | `extensions.ai` | action 但**无 applyCommand** → 「打开」按钮点了没反应 | 补 `applyCommand: 'extensions.list'` |
-| A2 | `extensions.plugins` | 同上 | 补 `applyCommand: 'commandPalette.open'`（其描述即「插件注册的命令统一进入 Command Palette」） |
+| A2 | `extensions.plugins` | `docs/adr/ADR-0029-audit-pending-decisions-registry.md` | 补 `applyCommand: 'commandPalette.open'`（其描述即「插件注册的命令统一进入 Command Palette」） |
 | B1 | `advanced.windowBounds` | `applyCommand: 'settings.windowBounds'` **无对应 case** → 死引用 | **删掉该死引用**（该设置是**启动期**读取，App 直接读 storageKey，本就没有 live-apply） |
 | B2 | `ai.panel`（**在 SettingsPanel 里**） | `applyCommand: 'settings.aiPanel'` 无对应 case | 整段移除（见处置 4） |
 | C1 | `appearance.openThemeFolder` | action 却带**非空 storageKey** → 写下一个无人读的值 | 改为 `storageKey: ''` |
@@ -1162,7 +1186,7 @@ settings 17/17、i18n 15/15、desktop `tsc` 0 错误、完整 parity 链全绿�
 | 键 | 使用处 | 后果 |
 |---|---|---|
 | `file.info` | `App.tsx` 的「文件信息」面板 **`aria-label` + 标题** | 面板标题在 zh/en 下都显示字面量 **`file.info`**；`aria-label` 同理（屏幕阅读器读裸键） |
-| `file.openWith` | `App.tsx` 的「打开方式」面板 **`aria-label` + 标题** | 同上 |
+| `file.openWith` | `App.tsx` 的「打开方式」面板 **`aria-label` + 标题** | `docs/adr/ADR-0029-audit-pending-decisions-registry.md` |
 
 **为什么它不报错**：`createI18n` 的 `t()` 是 `table[key] ?? catalog['en-US'][key] ?? key` ——
 **缺失键返回键名本身**。所以「键写错 / 忘了加」在界面上表现为**一段看起来像标识符的文本**，
@@ -3490,6 +3514,54 @@ macOS launch + CLI open）⇒ 上列四项证据**确实取得**。
 —— `IMPL` 必须配一个**实现类**的阻塞原因。配双向 canary（`IMPL`+`ux-gate-policy` 必须被检出；
 `AUTO`+`ux-gate-policy` 与 `IMPL`+实现类原因必须**不被**误判）。
 **注入验证**：把 `P0-PLATFORM-001` 改回 `IMPL`+`ux-gate-policy` → 报错；基线通过。
+
+## 4.65 治理缺口：**6 处「待裁决」长期没有 ADR 载体**（2026-10-01）
+
+### 怎么发现的
+
+顺着 §4.64（状态词误用）的同一条线复核「待裁决项是否都有载体」。
+项目规则明确：**待裁决项必须有 ADR 载体**（AGENTS.md「决策变更」+ 门禁的 `PENDING_ADRS`）。
+而实测：**本文档里有 6 处 `待裁决` 标记，门禁的 `Pending decisions:` 却是「无」**。
+
+**根因是护栏只做了单向**：
+- 已有：核对「**ADR → 门禁**」（已裁决的不得退回 Proposed）✓；
+- 缺失：核对「**本文档的待裁决项 → 是否有 ADR**」✗。
+
+> 与 §4.10 的教训同源：**两处各自维护同一件事的部分清单，谁都不负责核对全集。**
+> 也与 §4.18/§4.19 同族：**「有规则」≠「有人守规则」**。
+
+### 处置
+
+1. **立 `ADR-0029`（Proposed）** 集中承载这 6 项（`settings.open` 的 Win/Linux 菜单入口 /
+   安全验收是否入台账 / Apple 凭据是否硬失败 / 表格 `invalid` 提示 / 上传密钥 spec 表述 /
+   `actual/*.png` 跟踪策略），并纳入门禁 `PENDING_ADRS` → `Pending decisions:` 随之可见。
+2. **本文档新增「待裁决项登记表（唯一声明处）」**：10 行（含已处置的），
+   每行含「出处 / 问题 / 处置 / **载体**」；载体要么指向存在的 ADR，要么写 `已处置`（附证据）。
+3. **新增护栏**（`verify-release-gate.mjs`）：
+   - 登记表**必须存在**；
+   - 表中**每行的载体必须可解析**（指向存在的 `.md`，或 `已处置`）；
+   - **双向**：`PENDING_ADRS` 的每个 ADR 都必须被登记表引用。
+   **注入验证 3 例**：载体改成不存在的 `.md` → 报错；删掉「已处置」字样 → 报错；删掉登记表标题 → 报错。
+
+### 顺带的一手复核：Q5（上传密钥）的**前提不成立**
+
+ADR-0029 的 Q5 源于 `image-workflow-spec` §10 的「密钥」表述。**读实现后**：
+上传注入点（`App.tsx` 的 `__MELLOW_IMAGE_UPLOAD__`）只传 **`httpUrl`**（默认
+`http://127.0.0.1:36677/upload`，PicGo 式**本地端点**）与 **`command`**（本地 CLI）——
+**不持有任何凭据**；扩展的 `keychain`/`process` 在 V1 **一律拒绝**。
+故该裁决的**前提不成立**，已写进 ADR-0029 供裁决时据实重新表述。
+
+### 顺带复核：Q1（`settings.open` 的 Win/Linux 菜单入口）**不是产品缺陷**
+
+它**设计如此**（Win/Linux 走 `Ctrl+,` + 命令面板，且 `verify-menu-contract.mjs` §11 已锁住该键位），
+问题在于**理由只写在代码注释里、未进 master-plan 的 D 表** —— 而项目自己的教训正是
+「**护栏注释不是决策登记处**」。故它属 ADR-0029 的 Q1（D 还是缺口），**不是** bug。
+**未擅自补菜单项**：Typora 的 Win/Linux 菜单结构**无法在本机核实**（只有 macOS 的 dump），
+按「不得把推断写成真值」先取证再动。
+
+> **护栏的范围限制（如实声明）**：新护栏**不能**自动发现「本文档新加了一个 `待裁决` 字样却没登记」
+> —— 那需要理解自然语言。它只能保证**已登记的**部分自洽。要补上另一半，需给标记定
+> 机器可读写法（如统一 `<!-- PENDING: id -->`），已记入 ADR-0029 的「范围限制」。
 
 ## 五、本次审计做的改动（非策略性）
 

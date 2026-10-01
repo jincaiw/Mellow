@@ -156,7 +156,14 @@ const DECIDED_ADRS = [
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
 // 它承载一个**真实取舍**（新增 md 面板 token / 拓宽 token 桥 / 维持现状），
 // 故必须是 Proposed，且**不得**被悄悄标成 Accepted。
-const PENDING_ADRS = []; // 当前无待裁决 ADR（ADR-0027 / 0028 已于 2026-10-01 裁决）
+// ADR-0029（2026-10-01）：审计里 **6 处「待裁决」此前没有 ADR 载体** ——
+// 违反项目规则「待裁决项必须有 ADR 载体」。本 ADR 集中承载它们，并把审计里的
+// 「待裁决项登记表」定为**唯一声明处**。**未裁决前状态必须是 Proposed**。
+const PENDING_ADRS = [
+  ['docs/adr/ADR-0029-audit-pending-decisions-registry.md',
+    '审计中的未登记裁决项（settings.open 的 Win/Linux 菜单入口 / 安全验收是否入台账 / Apple 凭据是否硬失败 / 表格 invalid 提示 / 上传密钥 spec 表述 / actual PNG 跟踪策略）',
+    '待裁决'],
+];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);
@@ -195,6 +202,73 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   // 但**不得**放宽到「行内任意位置出现 Accepted」（那会被正文里的字样满足）。
   if (!/\*\*Status:\*\*[^\n]*Accepted/.test(src)) {
     fail(`${p} 已于 2026-09-30 裁决为 Accepted（${decision}），不得退回 Proposed 或删除`);
+  }
+}
+
+// ── 待裁决项必须登记（唯一声明处）+ 载体必须可解析（2026-10-01，ADR-0029）──────
+// 立此条的原因：项目规则是「待裁决项必须有 ADR 载体」，而审计文档里曾有 **6 处「待裁决」标记
+// 而门禁 `Pending decisions:` 是「无」** —— 护栏**只做了单向**（核对「ADR → 门禁」），
+// 没核对「审计的待裁决项 → 是否有 ADR」。与 §4.10 的教训同源：
+// **两处各自维护同一件事的部分清单，谁都不负责核对全集。**
+//
+// 判据：① 审计文档必须有「待裁决项登记表（唯一声明处）」；
+//      ② 表中**每行的载体**必须可解析（指向存在的 `.md` 文件，或字面量 `已处置`）；
+//      ③ **双向**：`PENDING_ADRS` 里的每个 ADR 都必须被登记表引用（否则「有载体但没登记」）。
+{
+  const AUDIT = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const MARK = '### 待裁决项登记表';
+  if (!existsSync(resolve(root, AUDIT))) {
+    fail(`缺少 ${AUDIT}（待裁决项的登记处）`);
+  } else {
+    const doc = read(AUDIT);
+    const at = doc.indexOf(MARK);
+    if (at < 0) {
+      fail(`${AUDIT} 缺少「${MARK}」—— 待裁决项必须有登记处（ADR-0029）；`
+        + '删掉它会让「待裁决项必须有 ADR 载体」这条规则重新变成无人守');
+    } else {
+      const end = doc.indexOf('\n## ', at);
+      const body = doc.slice(at, end < 0 ? doc.length : end);
+      const rows = body.split('\n').filter((l) => /^\|\s*\d+\s*\|/.test(l));
+      if (rows.length < 10) {
+        fail(`待裁决项登记表只有 ${rows.length} 行（下限 10 = 立表时的基线）—— `
+          + '行被删掉会让登记表退化成空表（下限在此**适用**：登记表是「不该缩小的集合」）');
+      }
+      for (const row of rows) {
+        const cols = row.split('|').map((c) => c.trim());
+        // 归一化：表里可能写成 `` `已处置`（证据） `` —— 先去掉反引号再判定，
+        // 否则「带反引号的已处置」会被判成「载体不含 .md」（本判据首跑即踩到）。
+        const carrier = (cols[cols.length - 2] ?? '').replace(/`/g, '');
+        if (carrier.startsWith('已处置')) continue;
+        const m = /([^\s（(]+\.md)/.exec(carrier);
+        if (m === null) {
+          fail(`登记表某行的载体既不是「已处置」也不含 .md 路径：${row.slice(0, 70)}`);
+          continue;
+        }
+        if (!existsSync(resolve(root, m[1]))) {
+          fail(`登记表引用了**不存在**的载体文件：${m[1]} —— 待裁决项指向空气等于没登记`);
+        }
+      }
+      // ③ 双向：PENDING_ADRS 必须都被登记表引用
+      for (const [p] of PENDING_ADRS) {
+        if (!body.includes(p)) {
+          fail(`待裁决 ADR ${p} 未被登记表引用 —— 有载体但没登记，读者从审计文档看不到它`);
+        }
+      }
+      // canary：三个方向
+      const carrierOf = (row) => {
+        const cols = row.split('|').map((c) => c.trim());
+        return cols[cols.length - 2] ?? '';
+      };
+      if (!carrierOf('| 1 | x | y | 待裁决 | `docs/adr/ADR-9999-nope.md` |').includes('ADR-9999')) {
+        errors.push('待裁决登记表护栏 canary 失效：载体列未被取到');
+      }
+      if (!carrierOf('| 1 | x | y | 已处置 | `已处置`（证据） |').replace(/`/g, '').startsWith('已处置')) {
+        errors.push('待裁决登记表护栏 canary 失效：「已处置」（含反引号写法）未被识别');
+      }
+      if (/^\|\s*\d+\s*\|/.test('| 表头 | a | b |')) {
+        errors.push('待裁决登记表护栏 canary 过宽：表头行被当成数据行');
+      }
+    }
   }
 }
 
