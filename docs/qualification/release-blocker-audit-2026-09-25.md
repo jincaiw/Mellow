@@ -3237,6 +3237,55 @@ capture-window-chrome.mjs / scenes-golden.mjs / sidebar-golden.mjs / visual-gold
 `verify-parity-ledger.mjs` 的 **R1/R2** 自动校验新 token **两端齐备**（这是 ADR-0027 起草时立下的护栏，
 本轮第一次真正用上）。
 
+## 4.60 把 §4.59 的教训**系统化**：宿主→引擎的「启动状态下发」逐条核对 → 又抓到一处（2026-10-01）
+
+§4.59 发现「主题这一族没在启动时下发」。既然它是**一族**，就把**全部**宿主→引擎的 `set*` 列全，
+逐条判定「冷启动时是否生效」。方法：以 `editor-core` 的宿主契约（`packages/editor-core/src/core.ts`
+的 `set*` 方法）为**完备清单**，逐个回查它在 `App.tsx` 里的下发点。
+
+### 结果
+
+| `set*` | 下发点 | 冷启动生效？ |
+|---|---|---|
+| `setTheme` / `setMdTokens` / `setEngineLocale` | 主题/locale effect | ❌ → **§4.59 已修** |
+| `setEditorConfig('setFontSize' / 'setLineHeight' / 'setContentMaxWidth' / 'setShowLineNumbers' / ` `'setLineWrapping' / 'setAutoPair' / 'setMarkdownSyntaxPairs' / 'setDefaultCodeLang' / ` `'setCodeIndentSize' / 'setTabKeyBehavior' / 'setFirstLineIndent' / 'setAllowMagnification')` | 就绪回调 | ✅ |
+| `setSpellcheckEnabled` / `setSmartPunctuationEnabled` / `setCodeLineNumbersEnabled` / `setTypewriterMode` / `setFocusMode` | 就绪回调 | ✅ |
+| **`setSelectionToolbarEnabled`** | **只在菜单/设置的回调里**（`setSelectionToolbarEnabled` callback） | ❌ **本轮抓到并修复** |
+| `setDocumentPath` / `setLargeFileMode` | 按文档 / 按文件大小驱动 | ✅（非持久设置） |
+
+### 缺陷：`appearance.toolbar` 关掉后**重启又出现**
+
+`selectionToolbarEnabled` 的 state **确实**从持久化值初始化了（源码注释还记着上一轮修过
+「菜单勾选态 = 开、实际工具栏 = 关」的分裂）—— 但**引擎从未在启动时被告知**。
+即剩下的那一半分裂：「**菜单勾选态 = 关，实际工具栏 = 开**」。
+
+**实测取证**（新探针 `tests/e2e/startup-state-probe.mjs`）：
+
+```
+=== 用例 1：appearance.toolbar=false（非默认）→ 选中文本 ===
+{"found":true,"display":"flex"}          ← 关掉了却仍显示
+=== 用例 2：对照（默认开）→ 选中文本 ===
+{"found":true,"display":"flex"}
+```
+
+**修**：在「引擎就绪」回调里下发（照 `spellcheck` / `smartPunctuation` 等邻居的模式；
+但**无论取值都下发**，不依赖「引擎默认 = 开」这一隐式耦合）。修复后用例 1 → `display:"none"` ✓、
+用例 2 仍 `flex` ✓（对照证明判据有效）。
+
+### 固化为护栏（否则下次还会漏）
+
+`verify-adapter-contract.mjs` 新增第 ⑥ 节：**宿主→引擎的每个状态 `set*` 都必须出现在
+`App.tsx` 的 `STARTUP_STATE_APPLY_BEGIN/END` 区间内**（该区间即「引擎就绪」回调里的下发段）。
+
+**注入验证 3 例**：移出 `setMdTokens` → 报错；移出 `setSelectionToolbarEnabled` → 报错；
+删掉区间结束标记 → 报错；基线通过。
+
+> **护栏自身也踩了一个坑（值得记）**：首版判据写 `slice.includes(name)` —— 抽掉
+> `host.setSelectionToolbarEnabled(on)` 后，**同名的状态 setter** `setSelectionToolbarEnabledState(on)`
+> 仍让子串匹配成立 → **护栏没翻转**。已改为判**调用形态**（`host.<name>(` 或 `'<name>'`），
+> 并补一条反例锁：「只有同名 setter、没有 `host.` 前缀」必须算**缺失**。
+> （skill §7「断言匹配调用而非标识符」的同型。）
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

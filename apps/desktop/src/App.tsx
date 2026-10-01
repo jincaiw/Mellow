@@ -3746,6 +3746,9 @@ export default function App() {
           // 并非 Mellow 默认（TYPOGRAPHY_DEFAULTS.fontSize = 16）。后果：用户保持默认
           // 16px 时该分支被跳过，编辑器实际停在 iframe 的 17px —— 设置显示 16 而正文
           // 渲染 17。现改为无条件写入设置值（读不到设置时回落同一真源）。
+          // >>> STARTUP_STATE_APPLY_BEGIN（护栏 verify-adapter-contract 会切片断言：
+          //     宿主→引擎的**每个**状态 set* 都必须出现在本区间 —— 否则「冷启动用默认值」，
+          //     而默认值路径有测试覆盖、非默认路径没有 → 缺陷只在用户改过设置后出现。见审计 §4.60）
           const sizeDef = settingById('editor.fontSize');
           const size = sizeDef ? readSetting(sizeDef) : TYPOGRAPHY_DEFAULTS.fontSize;
           const fontSize = typeof size === 'number' && size > 0 ? size : TYPOGRAPHY_DEFAULTS.fontSize;
@@ -3846,6 +3849,19 @@ export default function App() {
           if (codeLnDef && readSetting(codeLnDef) === true) {
             host.setCodeLineNumbersEnabled(true);
           }
+          // V7-W2.4：浮动格式工具栏开关（`appearance.toolbar` / storageKey
+          // `mellow.selectionToolbar.enabled`，默认 true）。
+          //
+          // **必须显式下发**（2026-10-01 修）：该设置此前**只在菜单/设置的回调里**下发
+          // （`setSelectionToolbarEnabled` callback），启动时从不下发 → 用户关掉工具栏后
+          // **重启它又出现**（实测 `tests/e2e/startup-state-probe.mjs` 用例 1）。
+          // 与其它启动设置不同，这里**无论取值都下发**（不依赖「引擎默认 = 开」这一隐式耦合）。
+          {
+            const toolbarDef = settingById('appearance.toolbar');
+            const on = toolbarDef === undefined ? true : readSetting(toolbarDef) !== false;
+            host.setSelectionToolbarEnabled(on);
+            setSelectionToolbarEnabledState(on);
+          }
           // 专注/打字机「默认开启状态」启动恢复（Typora 偏好→通用：重启后按偏好进入）
           const typewriterDef = settingById('editor.typewriter');
           if (typewriterDef && readSetting(typewriterDef) === true) {
@@ -3878,6 +3894,7 @@ export default function App() {
           host.setMdTokens(theme.variables);
           host.setEditorConfig('setFontFace', { family: readEditorFontFamilyPreference(theme) ?? 'ui-monospace' });
         }
+        // <<< STARTUP_STATE_APPLY_END
 
         // 注入图片操作 handler（widget 悬停操作条 → app-core 编排；spec §6）
         const frame = containerRef.current?.querySelector('iframe');

@@ -220,6 +220,68 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
   }
 }
 
+// ── ⑥ 宿主→引擎的**启动状态下发**必须完整（2026-10-01，审计 §4.60）────────────
+// 立此条的原因（两次实测）：
+//   · **主题这一族**（编辑器主题 / md 排版 token / 编辑器字体）只在「主题变化」的 effect 里下发，
+//     而该 effect **早于引擎就绪** → 冷启动即暗色时三次调用**静默 no-op**：编辑器用**默认（亮）主题**
+//     渲染、`--mellow-md-*` **全空**；
+//   · **`appearance.toolbar`**（格式工具栏开关）**只在菜单/设置回调里**下发 → 用户关掉后**重启又出现**。
+// 共同形态：**「把持久化设置应用到运行时」是按「族」发生的**；补了一族 ≠ 补了全部。
+// **为什么长期没发现**：已有的 e2e 与视觉 Golden **都在默认值下采样** ——
+// 「默认能跑」被当成了「能跑」。
+//
+// 判据：宿主→引擎的**每个**状态 `set*` 都必须出现在 App.tsx 的
+// `STARTUP_STATE_APPLY_BEGIN/END` 区间内（该区间位于「引擎就绪」回调里）。
+// 新增一个 set* 却忘了在就绪时下发 → 本护栏失败。
+{
+  const APP = 'apps/desktop/src/App.tsx';
+  const BEGIN = '>>> STARTUP_STATE_APPLY_BEGIN';
+  const END = '<<< STARTUP_STATE_APPLY_END';
+  // 宿主→引擎的**状态类** set*（editor-core 契约；不含按文档/按交互驱动的 setDocumentPath / setLargeFileMode）
+  const STARTUP_STATE_SETTERS = [
+    'setFontSize', 'setFontFace', 'setLineHeight', 'setShowLineNumbers', 'setLineWrapping',
+    'setContentMaxWidth', 'setAutoPair', 'setMarkdownSyntaxPairs', 'setDefaultCodeLang',
+    'setCodeIndentSize', 'setTabKeyBehavior', 'setFirstLineIndent', 'setAllowMagnification',
+    'setSpellcheckEnabled', 'setSmartPunctuationEnabled', 'setCodeLineNumbersEnabled',
+    'setTypewriterMode', 'setFocusMode', 'setSelectionToolbarEnabled',
+    'setTheme', 'setMdTokens', 'setEngineLocale',
+  ];
+  const app = readFileSync(resolve(root, APP), 'utf8');
+  const b = app.indexOf(BEGIN);
+  const e = app.indexOf(END);
+  if (b < 0 || e < 0 || e < b) {
+    fail(`${APP} 缺少 STARTUP_STATE_APPLY 区间标记（${BEGIN} / ${END}）—— `
+      + '本护栏靠它切片；标记被删/改名会让判据静默失效');
+  } else {
+    const slice = app.slice(b, e);
+    // ⚠️ 判据必须落在**调用形态**上，不能只查「名字出现过」—— 实测：抽掉
+    // `host.setSelectionToolbarEnabled(on)` 后，**同名的状态 setter** `setSelectionToolbarEnabledState(on)`
+    // 仍让子串匹配成立 → 护栏没翻转（「判据被相似标识符满足」，skill §7 的形态）。
+    // 两种合法形态：`host.<name>(`（直接方法）或 `'<name>'`（setEditorConfig 的子方法名字面量）。
+    const calledInStartup = (m) => slice.includes(`host.${m}(`) || slice.includes(`'${m}'`);
+    const missing = STARTUP_STATE_SETTERS.filter((m) => !calledInStartup(m));
+    if (missing.length > 0) {
+      fail(`宿主→引擎的启动状态下发不完整 —— 以下 set* **不在**「引擎就绪」区间内：${missing.join(' / ')}`
+        + '（冷启动时会用**默认值**，用户改过设置后才会暴露；见审计 §4.60）');
+    }
+    // canary：逐方向 —— ① 合规样本通过；② 抽掉一个**直接方法**必须被检出；
+    // ③ 只剩同名 setter（无 host. 前缀）必须被检出为**缺失**。
+    const synthMissing = (src) => STARTUP_STATE_SETTERS.filter((m) => !(src.includes(`host.${m}(`) || src.includes(`'${m}'`)));
+    const allOk = STARTUP_STATE_SETTERS.map((m) => `host.${m}();`).join('\n');
+    if (synthMissing(allOk).length !== 0) {
+      errors.push('启动状态下发护栏 canary 失效：全部 set* 都在的样本被判为缺失');
+    }
+    const dropped = STARTUP_STATE_SETTERS.filter((m) => m !== 'setSelectionToolbarEnabled').map((m) => `host.${m}();`).join('\n');
+    if (synthMissing(dropped).length !== 1 || synthMissing(dropped)[0] !== 'setSelectionToolbarEnabled') {
+      errors.push('启动状态下发护栏 canary 失效：抽掉一个 set* 未被检出');
+    }
+    // 反例锁：**只有同名状态 setter**（无 host. 前缀、无字面量）不得算作已下发
+    if (synthMissing('setSelectionToolbarEnabledState(true);').length !== STARTUP_STATE_SETTERS.length) {
+      errors.push('启动状态下发护栏 canary 失效：同名状态 setter 被误判为「已下发」');
+    }
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Adapter contract violations:\n  ${errors.join('\n  ')}`);
