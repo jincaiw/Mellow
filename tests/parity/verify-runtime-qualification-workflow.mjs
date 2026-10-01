@@ -113,23 +113,33 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   // 剥 YAML 注释行 —— 否则本步骤的**说明注释**里写的「不得用 continue-on-error」会触发判据
   // （本仓已实测过 4 次的同型坑：注释满足/触发判据）。
   const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-  const stepMatch = /- name: "Non-default entry probes[\s\S]*?(?=\n      - name:)/.exec(workflow);
-  if (stepMatch === null) {
-    throw new Error('Runtime Qualification 缺少「非默认入口探针」步骤 —— '
-      + '暗色 / English / 关掉的开关这三条非默认路径会重新变成**无人走**（审计 §4.59/§4.60）');
+  // 该步骤必须在**每个带 Playwright 的平台 job** 里都存在（Linux + Windows）——
+  // 只挂一个平台，另一个平台的非默认入口仍无人走；而本仓平台专有代码集中在 Adapter
+  // （ADR-0016/0022），Windows 侧尤其值得跑（上一轮在 Linux 抓到的正是**按键处理**类问题）。
+  const steps = [...workflow.matchAll(/- name: "Non-default entry probes[\s\S]*?(?=\n      - name:)/g)]
+    .map((m) => stripYamlComments(m[0]));
+  if (steps.length < 2) {
+    throw new Error(`Runtime Qualification 里「非默认入口探针」步骤只有 ${steps.length} 处（下限 2：Linux + Windows）—— `
+      + '暗色 / English / 关掉的开关这三条非默认路径会在缺的那个平台上**无人走**（审计 §4.59/§4.60/§4.62）');
   }
-  const body = stripYamlComments(stepMatch[0]);
-  for (const probe of ENTRY_PROBES) {
-    if (!body.includes(probe)) {
-      throw new Error(`非默认入口探针步骤缺少 ${probe}（该探针覆盖一条非默认路径）`);
+  for (const [i, body] of steps.entries()) {
+    for (const probe of ENTRY_PROBES) {
+      if (!body.includes(probe)) {
+        throw new Error(`非默认入口探针步骤 #${i + 1} 缺少 ${probe}（该探针覆盖一条非默认路径）`);
+      }
+    }
+    if (/continue-on-error/.test(body)) {
+      throw new Error('非默认入口探针步骤不得带 continue-on-error —— 那是 §4.51 修过的**假门禁**');
+    }
+    // bash 与 pwsh 两种写法都要认：`status=1` / `$status = 1`，且都以 `exit $status` 收口
+    if (!/status\s*=\s*1/.test(body) || !/exit \$status/.test(body)) {
+      throw new Error(`非默认入口探针步骤 #${i + 1} 必须逐条记录退出码并 \`exit $status\``
+        + '（步骤退出码只取**最后一条**命令，否则失败会被静默吞掉）');
     }
   }
-  if (/continue-on-error/.test(body)) {
-    throw new Error('非默认入口探针步骤不得带 continue-on-error —— 那是 §4.51 修过的**假门禁**');
-  }
-  if (!/status=1/.test(body) || !/exit \$status/.test(body)) {
-    throw new Error('非默认入口探针步骤必须逐条记录退出码并 `exit $status`'
-      + '（bash 的步骤退出码只取**最后一条**命令，否则失败会被静默吞掉）');
+  // canary：步骤计数必须能翻转（否则「只有 1 处」会被漏判）
+  if (steps.length !== 2) {
+    throw new Error(`非默认入口探针步骤数异常（${steps.length}）—— 若确实增减了平台 job，请同步更新本判据与下限`);
   }
   // canary：注释剥离必须生效（否则上面的 continue-on-error 判据会被本步骤的说明注释触发）
   if (/continue-on-error/.test(stripYamlComments('      # 不得用 continue-on-error\n      run: x'))) {
