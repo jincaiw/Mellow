@@ -154,6 +154,8 @@ const DECIDED_ADRS = [
 const PENDING_ADRS = [
   ['docs/adr/ADR-0027-engine-theme-token-reachability-and-panel-surfaces.md',
     '引擎侧浮动面板表面取色（表格工具栏 / 选区工具栏）', '待裁决'],
+  ['docs/adr/ADR-0028-engine-host-context-channel.md',
+    '引擎侧宿主上下文通道（统一 UI 上下文桥 vs 逐项加桥）', '待裁决'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {

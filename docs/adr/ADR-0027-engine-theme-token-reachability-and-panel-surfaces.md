@@ -138,6 +138,11 @@ if (key.startsWith('--mellow-md-')) { root.style.setProperty(key, value); }
 并逐方向验证**能翻转**（清空 inert 名单 ⇒ 非 md 变量判未登记；清空主题表 / token 表 ⇒ md 变量判不可达）。
 已按「注入 → 报错 → 还原 → 通过」验证 9 个用例（含「清空登记表即全绿」的反例锁）。
 
+> **⚠️ 与 ADR-0028 应一并裁决**：本 ADR 的 Q1（面板 token 走哪条通道）与
+> ADR-0028 的 Q1（是否建**统一的 UI 上下文桥**）是**同一个决定的两面** ——
+> 若 ADR-0028 选 A1（统一桥），本 ADR 的 A1/A2 就应改为「经统一桥下发面板 token」。
+> 分开裁决可能落地**两套互不兼容的通道**。
+
 ## 关联
 
 - `docs/qualification/release-blocker-audit-2026-09-25.md` §4.53 / §4.55

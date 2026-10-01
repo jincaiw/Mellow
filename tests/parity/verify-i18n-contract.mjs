@@ -193,39 +193,68 @@ if (schemaRefs < 300) {
 //   · 删掉却未注销 → 也失败（登记表不得变成化石）。
 // 修复（把引擎文案接进 i18n）需先定「引擎侧文案的真值源在哪、由谁注入」——属**设计决策**，
 // 不在本护栏内；本清单同时充当修复的**工作清单**。
+// ⚠️ **2026-10-01 更正：本清单此前严重少计（43 处 / 5 文件 → 实测 79 处 / 8 文件）**
+//
+// 根因是**判据只认「UI 属性赋值」这一种写法**（`x.textContent = '…'` / `{ title: '…' }` /
+// `setAttribute('<UI 属性>', '…')`）—— 于是下面这些**同语义的写法全部漏检**：
+//   · **三元 / 表达式位置**：`label.textContent = lang === '' ? '语言' : …`（`=` 后面不是引号）；
+//   · **函数实参**：`new Option('(无语言)', '')`、`copyCodeText(code, btn, '复制')`；
+//   · **模板串**：`` fail(`mkdir(${path}) 未实现`) ``；
+//   · **整个文件**：`wysiwygBlocks.ts` / `image/ops.ts` / `image/host.ts` 三个文件**从未被扫到**。
+// 这与 §4.52 的结论同型：**只核对一半 = 没核对**。
+//
+// 现判据改为**「按事实枚举」**：逐行扫描，**任意位置**的单/双/反引号字面量，
+// 只要含汉字即登记 —— 不再猜「哪个位置算 UI」。唯一豁免是**已本地化的调用**
+// （`tEngine('…')` / `t('…')`，即修复的目标状态）。
+//
+// 登记的 4 条 `image/host.ts` 是**错误路径 / 开发者消息**（`fail()` 与 io 兜底）：
+// 本护栏**照收不误**——「宁可多登记，不可漏登记」；是否真属 UI 由接入 i18n 时逐条判定。
 const ENGINE_I18N_REGISTERED = {
-  'codeBlockLabel.ts': ['点击修改代码块语言'],
+  'codeBlockLabel.ts': ['(无语言)', '点击修改代码块语言', '语言'],
   'documentSearch.ts': ['上一个 (Shift+Enter)', '下一个 (Enter)', '全部', '关闭 (Esc)', '区分大小写', '替换', '查找', '正则表达式'],
-  'image/widget.ts': ['下载', '加载远程图片', '复制', '复制路径', '定位', '尺寸', '打开', '移动', '重命名', '重试'],
-  'selectionToolbar.ts': ['一级标题', '三级标题', '二级标题', '格式工具栏', '列表', '删除线', '引用', '斜体', '粗体', '行内代码', '链接'],
-  'table/toolbar.ts': ['←列', '↑行', '→列', '↓行', '中', '删列', '删行', '删除表', '右', '左', '应用', '整理', '调整'],
+  'image/host.ts': ['copyFile(${from} → ${to}) 未实现', 'fs 操作失败', 'mkdir(${path}) 未实现', 'writeBinary(${path}) 未实现'],
+  'image/ops.ts': [
+    '上传失败', '协议不可下载（data/mailto 等）', '已在 asset 目录', '已在目标目录', '文件不存在（保留引用）',
+    '文件名未变化', '新文件名为空', '无法解析路径', '未上传（不在本次批次）',
+    '本地图片跳过（Download Remote 仅远程）', '目标与源相同', '远程图片不支持重命名', '远程图片不适用',
+    '远程图片跳过（Move/Copy All 仅本地）', '非本地可上传图片（远程/缺失/无法解析）',
+  ],
+  'image/widget.ts': [
+    '下载', '下载到本地 asset 目录并更新引用', '加载远程图片', '在文件管理器中定位', '在浏览器中打开',
+    '复制', '复制到 asset 目录并更新引用', '复制图片 URL', '复制图片绝对路径', '复制路径',
+    '定位', '尺寸', '打开', '用系统默认应用打开', '移动', '移动到其他目录并更新引用',
+    '设置显示尺寸（宽×高）', '重命名', '重命名文件并更新引用', '重试',
+  ],
+  'selectionToolbar.ts': ['一级标题', '三级标题', '二级标题', '列表', '删除线', '引用', '斜体', '格式工具栏', '粗体', '行内代码', '链接'],
+  'table/toolbar.ts': ['←列', '↑行', '→列', '↓行', '中', '列', '删列', '删行', '删除表', '右', '左', '应用', '整理', '行', '调整'],
+  'wysiwygBlocks.ts': ['复制', '复制代码', '已复制'],
 };
 {
-  const UI_PROP = /(textContent|innerHTML|title|placeholder|aria-label|label|message|text)\s*[:=]\s*$/;
-  // ⚠️ 形态二：`setAttribute('<UI 属性>', '<中文>')` —— **实测遗漏过**：
-  // 引擎用 `setAttribute('aria-label', …)` 设了「查找」「替换」「格式工具栏」三处，
-  // 而首版只认「属性赋值」形态（`x = '…'` / `x: '…'`）→ 漏检（canary 注入该形态时没翻转才发现）。
-  // 这是 skill §9「护栏范围没枚举」的形态：**同一语义的多种写法要一起枚举**。
-  const UI_ATTR_CALL = /setAttribute\(\s*['"](title|aria-label|placeholder|alt)['"]\s*,\s*(['"`])([^'"`]*[\u4e00-\u9fa5][^'"`]*)\2/;
   const stripComments = (s) => s
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   const ENGINE_SRC = 'packages/editor-engine/src';
   const walkDir = (dir, rel = '') => readdirSync(resolve(root, dir, rel), { withFileTypes: true }).flatMap((e) =>
     (e.isDirectory() ? walkDir(dir, `${rel}${e.name}/`) : [`${rel}${e.name}`]));
-  /** 扫描「UI 文案位置上的中文字面量」；`reader(f)` 给出文件内容（便于 canary 注入合成样本） */
+  const HAN = /[\u4e00-\u9fa5]/;
+  // 已本地化的调用（修复的目标状态）：`tEngine('…')` / `t('…')`（可带后续实参）
+  const LOCALIZED_CALL = /\b(?:tEngine|t)\(\s*(['"`])(?:\\.|(?!\1)[^\\])*\1[^)]*\)/g;
+  /**
+   * 扫描「含汉字的字面量」——**逐行、任意位置、三种引号**。
+   * `reader(f)` 给出文件内容（便于 canary 注入合成样本）。
+   */
   const scanHardcodedZh = (files, reader) => {
     const out = {};
     for (const f of files) {
       if (!f.endsWith('.ts')) continue;
-      for (const line of stripComments(reader(f)).split('\n')) {
-        if (/\bt\(/.test(line)) continue;             // 走 i18n 的不算
-        const assign = /([A-Za-z-]+)\s*[:=]\s*(['"`])([^'"`]*[\u4e00-\u9fa5][^'"`]*)\2/.exec(line);
-        const call = UI_ATTR_CALL.exec(line);
-        const text = call !== null ? call[3]
-          : (assign !== null && UI_PROP.test(`${assign[1]} =`) ? assign[2 + 1] : null);
-        if (text === null) continue;                  // 只报 UI 位置（不报日志 / 错误消息）
-        (out[f] = out[f] ?? []).push(text);
+      for (const rawLine of stripComments(reader(f)).split('\n')) {
+        const line = rawLine.replace(LOCALIZED_CALL, ' ');   // 走 i18n 的不算
+        if (!HAN.test(line)) continue;
+        for (const m of line.matchAll(/'([^']*)'|"([^"]*)"|`([^`]*)`/g)) {
+          const text = m[1] ?? m[2] ?? m[3] ?? '';
+          if (!HAN.test(text)) continue;
+          (out[f] = out[f] ?? []).push(text);
+        }
       }
     }
     for (const k of Object.keys(out)) out[k] = [...new Set(out[k])].sort();
@@ -233,19 +262,23 @@ const ENGINE_I18N_REGISTERED = {
   };
   const engineFiles = walkDir(ENGINE_SRC);
   const actual = scanHardcodedZh(engineFiles, (f) => readFileSync(resolve(root, ENGINE_SRC, f), 'utf8'));
+  // 用**集合**比较（与排序无关）——登记表的书写顺序不得成为判据的一部分
+  const asSet = (list) => new Set(list);
   for (const [file, list] of Object.entries(actual)) {
     const reg = ENGINE_I18N_REGISTERED[file];
     if (reg === undefined) {
-      fail(`引擎侧新增了未登记的硬编码中文 UI 文案文件：${file}（${list.join(' / ')}）—— `
+      fail(`引擎侧新增了未登记的硬编码中文文案文件：${file}（${list.join(' / ')}）—— `
         + 'en 界面下这些文案不会本地化；请接入 i18n，或（若确属暂缓）登记到本护栏并说明原因');
       continue;
     }
-    const added = list.filter((x) => !reg.includes(x));
+    const regSet = asSet(reg);
+    const actualSet = asSet(list);
+    const added = list.filter((x) => !regSet.has(x));
     if (added.length > 0) {
-      fail(`引擎侧 ${file} 新增未登记的硬编码中文 UI 文案：${added.join(' / ')}`
+      fail(`引擎侧 ${file} 新增未登记的硬编码中文文案：${added.join(' / ')}`
         + '（en 界面下不会本地化；登记表在本文件顶部 ENGINE_I18N_REGISTERED）');
     }
-    const gone = reg.filter((x) => !list.includes(x));
+    const gone = reg.filter((x) => !actualSet.has(x));
     if (gone.length > 0) {
       fail(`引擎侧 ${file} 的登记项已不存在：${gone.join(' / ')}`
         + ' —— 若已接入 i18n，请从登记表删除（登记表不得变成化石）');
@@ -253,28 +286,36 @@ const ENGINE_I18N_REGISTERED = {
   }
   for (const file of Object.keys(ENGINE_I18N_REGISTERED)) {
     if (!(file in actual)) {
-      fail(`引擎侧登记表里的文件已无硬编码中文 UI 文案：${file} —— 请从登记表删除`);
+      fail(`引擎侧登记表里的文件已无硬编码中文文案：${file} —— 请从登记表删除`);
     }
   }
-  // canary：四个方向 —— ① 属性赋值形态的新增样本被检出；② `setAttribute` 形态被检出；
-  // ③ 注释里的中文不误判（先剥注释）；④ 走 t() 的不误判。
-  // ⚠️ 首版 canary 用了 `setAttribute` 形态去测「属性赋值」的判据 → **没翻转**，
-  // 顺着查才发现判据漏了 `setAttribute`（canary 没翻转时先怀疑 canary，再怀疑判据）。
-  const SYNTH_ASSIGN = "const a = { label: '新增中文' };\nconst b = { label: 'ok' };";
-  if ((scanHardcodedZh(['x.ts'], () => SYNTH_ASSIGN)['x.ts'] ?? []).length !== 1) {
-    errors.push('引擎文案登记表 canary 失效：属性赋值形态的新增样本未被检出');
+  // ⚠️ **刻意不设「登记表条目下限」**（2026-10-01，由注入验证抓到我的设计错误）：
+  // 本登记表是**待修清单**，其目标是**缩到 0**（全部接入 i18n）。设硬下限会**阻止修复**
+  // （实测：把 1 条改成 `tEngine(...)` 并同步删登记项 → 被下限拦下）。
+  // 「清空登记表即全绿」这个担忧由**别的判据**覆盖：清空后扫描仍会报出 79 条「新增未登记」→ 照样红。
+  // 真正需要防的是「扫描器本身失效」，那由下面逐形态的 canary 守（含历史上漏检的三种写法）。
+  // 保留一条**可派生的自检**：登记表与扫描结果必须**完全一致**（上面已双向核对），故此处不再加数字。
+  // canary：逐形态验证「能翻转」——重点是**历史上被漏检的那几种写法**
+  const canaryCount = (sample) => (scanHardcodedZh(['x.ts'], () => sample)['x.ts'] ?? []).length;
+  const canaryCases = [
+    ["const a = { label: '新增中文' };", 1, '属性字面量形态'],
+    ["el.setAttribute('aria-label', '新增中文');", 1, 'setAttribute 形态'],
+    ["x.textContent = flag ? '新增中文' : '';", 1, '**三元/表达式位置**（历史漏检）'],
+    ["new Option('(无语言)', '');", 1, '**函数实参**（历史漏检）'],
+    ['fail(`mkdir(${p}) 未实现`);', 1, '**模板串**（历史漏检）'],
+    ["el.title = tEngine('engine.x');", 0, '已本地化的调用不误判'],
+    ["el.title = t('a.b');", 0, '走 t() 的调用不误判'],
+    ["// el.title = '注释里的中文';", 0, '整行注释不误判'],
+  ];
+  for (const [sample, expect, why] of canaryCases) {
+    const got = canaryCount(sample);
+    if (got !== expect) {
+      errors.push(`引擎文案登记表 canary 失效：${why}（期望 ${expect} 条、实得 ${got}）`);
+    }
   }
-  const SYNTH_ATTR = "el.setAttribute('aria-label', '新增中文');";
-  if ((scanHardcodedZh(['x.ts'], () => SYNTH_ATTR)['x.ts'] ?? []).length !== 1) {
-    errors.push('引擎文案登记表 canary 失效：setAttribute 形态的新增样本未被检出');
-  }
-  const SYNTH_COMMENT = "// 注释里的中文 label = '中文'\nconst a = 1;";
-  if (scanHardcodedZh(['x.ts'], () => SYNTH_COMMENT)['x.ts'] !== undefined) {
-    errors.push('引擎文案登记表 canary 失效：注释里的中文被误判（应先剥注释）');
-  }
-  const SYNTH_T = "el.textContent = t('some.key');";
-  if (scanHardcodedZh(['x.ts'], () => SYNTH_T)['x.ts'] !== undefined) {
-    errors.push('引擎文案登记表 canary 失效：走 t() 的文案被误判为硬编码');
+  // canary：集合比较与顺序无关（防「登记表排序变了就报错」）
+  if (JSON.stringify([...asSet(['b', 'a'])].sort()) !== JSON.stringify([...asSet(['a', 'b'])].sort())) {
+    errors.push('引擎文案登记表 canary 失效：集合比较与顺序相关');
   }
 }
 
@@ -289,6 +330,8 @@ console.log(
   + '缺失键会让 t() 返回键名本身（界面显示裸键），故此处硬失败。'
   + `（范围限制：只覆盖字面量键；t(变量) / 模板插值 / Rust 侧文案不在覆盖内，`
   + `占位符与传参是否匹配亦未覆盖）`
-  + `；另：**引擎侧硬编码中文 UI 文案**已登记 ${Object.keys(ENGINE_I18N_REGISTERED).length} 个文件`
+  + `；另：**引擎侧硬编码中文文案**已登记 ${Object.keys(ENGINE_I18N_REGISTERED).length} 个文件 / `
+  + `${Object.values(ENGINE_I18N_REGISTERED).reduce((n, l) => n + l.length, 0)} 条`
+  + `（判据按**事实**枚举：逐行、任意位置、三种引号；仅豁免 tEngine()/t() 调用）`
   + `（双向核对：新增即失败、删掉须注销）—— 但**尚未接入 i18n**，见 P0-I18N-001`,
 );
