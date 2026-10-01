@@ -731,9 +731,29 @@ if (!existsSync(sidebarGoldenJsonPath)) {
     fail(`sidebar golden search 应为 1 组 2 匹配（DOC_CONTENT 契约，实际 ${sgGolden.search?.groupCount} 组 ${sgGolden.search?.matchCount} 匹配）`);
   }
 }
-for (const view of ['files-tree', 'files-tree-filter', 'outline', 'search']) {
-  if (!existsSync(`tests/visual/actual/sidebar-${view}.png`)) {
-    fail(`tests/visual/actual/sidebar-${view}.png 缺失（跑 sidebar-golden.mjs 归档）`);
+// ── 侧栏截图：判据由「文件存在」改为「**采集脚本会写出该路径**」（2026-10-01）──────
+// **为什么改**（ADR-0029 Q6 = F1）：`tests/visual/actual/` 已**取消 git 跟踪**
+// （每次本地跑视觉套件都会产生 Δ≤289 字节的 AA/字体噪声 diff，无判据消费其内容）。
+// 取消跟踪后，「文件存在」在**干净检出**上必然失败 —— **本改动首次提交时正是这样被 CI 抓到的**：
+// 本地跑 parity 通过（文件还在磁盘上），而 CI 是干净检出 → 4 个 sidebar PNG 全部「缺失」。
+//
+// ⚠️ **这是判据的削弱，如实声明**：新判据只证「脚本会写这个文件」，**不能**证「截出来的图是对的」。
+// ⚠️ **验证方式的教训**：验证「取消跟踪」类改动时，**必须模拟干净检出**
+// （把文件临时移开再跑），否则本地磁盘上的残留文件会让判据**假通过**。
+{
+  const SIDEBAR_SCRIPT = 'tests/visual/sidebar-golden.mjs';
+  const writesSidebarPng = (s) => /tests\/visual\/actual/.test(s) && /sidebar-\$\{view\}\.png/.test(s);
+  if (!existsSync(resolve(root, SIDEBAR_SCRIPT))) {
+    fail(`缺少 ${SIDEBAR_SCRIPT}（侧栏视觉采集脚本）`);
+  } else if (!writesSidebarPng(read(SIDEBAR_SCRIPT))) {
+    fail(`${SIDEBAR_SCRIPT} 必须把截图写到 tests/visual/actual/sidebar-<view>.png（找不到该输出路径）`);
+  }
+  // canary：两个方向（判定与 canary 共用同一份谓词）
+  if (!writesSidebarPng("console.log(`  📸 sidebar-${view} → tests/visual/actual/sidebar-${view}.png`);")) {
+    errors.push('侧栏截图护栏 canary 失效：合规样本未被判为「会写出」');
+  }
+  if (writesSidebarPng("await page.screenshot({ path: '/tmp/x.png' });")) {
+    errors.push('侧栏截图护栏 canary 过宽：不含 actual/ 的样本被误判');
   }
 }
 
