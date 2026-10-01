@@ -188,4 +188,62 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   }
 }
 
+// ── IME 矩阵的覆盖清单必须与 spec 双向一致（2026-10-01，审计 §4.70）──────────────
+// 立节原因：`docs/specs/ime-test-plan.md` §4 列了 **21 个节点**，而自动化矩阵只覆盖其中 **8 个** ——
+// 而「覆盖了哪 8 个」此前**只存在于矩阵源码**（`SCENARIOS`），spec 里完全没记。
+// 于是「矩阵增删场景」与「spec 的覆盖声明」会**各自漂移**（本仓已多次踩到「多处副本只改一处」）。
+// 更糟的是同一件事还有**第三个副本**：`runtime-qualification.yml` 的注释里写着「（8 场景 IME 矩阵）」。
+// 修法：在 spec §4 加一行**机器可读**的覆盖清单，本护栏把三处**双向锁死**。
+{
+  const spec = readFileSync(resolve(root, 'docs/specs/ime-test-plan.md'), 'utf8').replace(/\r\n/g, '\n');
+  const matrix = readFileSync(resolve(root, 'tests/benchmark/ime-matrix-linux.mjs'), 'utf8').replace(/\r\n/g, '\n');
+
+  const MARK = '矩阵覆盖节点（机器可读）';
+  const parseDeclared = (text) => {
+    const line = text.split('\n').find((l) => l.includes(MARK));
+    return line === undefined ? null : [...line.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]);
+  };
+  const declared = parseDeclared(spec);
+  if (declared === null) {
+    throw new Error(`ime-test-plan 缺少「${MARK}」行 —— 判据锚点漂移，别静默跳过`);
+  }
+  if (declared.length < 4) {
+    throw new Error(`「${MARK}」行只解析出 ${declared.length} 个 id（下限 4）—— 解析器漏成员必须响亮失败`);
+  }
+  const scenariosBlock = /const SCENARIOS = \[([\s\S]*?)\n\];/.exec(matrix)?.[1] ?? '';
+  if (scenariosBlock === '') {
+    throw new Error('ime-matrix-linux.mjs 找不到 SCENARIOS 数组（判据无从比对，不得静默通过）');
+  }
+  const actual = [...scenariosBlock.matchAll(/\{\s*id:\s*'([a-z][a-z0-9-]*)'/g)].map((m) => m[1]);
+
+  const missInSpec = actual.filter((id) => !declared.includes(id));
+  const missInMatrix = declared.filter((id) => !actual.includes(id));
+  if (missInSpec.length > 0) {
+    throw new Error(`ime-matrix-linux.mjs 的场景 ${missInSpec.join(', ')} 未登记进 ime-test-plan 的「${MARK}」行`
+      + ' —— 矩阵覆盖变了，spec 必须同步（否则覆盖声明静默失真）');
+  }
+  if (missInMatrix.length > 0) {
+    throw new Error(`ime-test-plan 声明覆盖 ${missInMatrix.join(', ')}，而 SCENARIOS 里没有这些场景`
+      + ' —— 覆盖声明**不得超出实际**（双向一致，不是单向）');
+  }
+  // 同一件事的第三个副本：RQ 注释里的「N 场景 IME 矩阵」
+  const stepCount = /(\d+)\s*场景\s*IME 矩阵/.exec(workflow)?.[1];
+  if (stepCount === undefined) {
+    throw new Error('runtime-qualification.yml 找不到「N 场景 IME 矩阵」字样 —— 锚点漂移，别静默跳过');
+  }
+  if (Number(stepCount) !== actual.length) {
+    throw new Error(`runtime-qualification.yml 写「${stepCount} 场景」，而 SCENARIOS 实际 ${actual.length} 个`);
+  }
+  // canary：三个方向
+  if (parseDeclared('> **矩阵覆盖节点（机器可读）**：`a` `b` `c` `d`')?.length !== 4) {
+    throw new Error('IME 覆盖护栏 canary 失效：声明行未被解析');
+  }
+  if (parseDeclared('> 没有锚点的一行 `a` `b` `c` `d`') !== null) {
+    throw new Error('IME 覆盖护栏 canary 过宽：缺少锚点却仍被解析');
+  }
+  if (parseDeclared('> **矩阵覆盖节点（机器可读）**：`a` `b` `c` `d`').length === 0) {
+    throw new Error('IME 覆盖护栏 canary 失效：解析结果为空');
+  }
+}
+
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');

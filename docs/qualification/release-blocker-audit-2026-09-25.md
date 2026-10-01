@@ -3860,6 +3860,83 @@ SDI 是已确认的产品决策（B1），「New Tab 与 Switch Between Opened D
 差点得出「F2 未实现」的错误结论 —— 实际 `App.tsx:3415` 就有 `event.key === 'F2'`。
 **本会话第三次**踩同一个坑（BSD grep 不支持 BRE 的 `\|`）。⇒ 一律改用 Grep 工具或 `node` 扫描。
 
+## 4.70 `ime-test-plan` 逐节审计：§2 / §3 的验证矩阵**没有载体**（2026-10-01）
+
+### 为什么审它
+
+§4.69 结尾记了一句：`ime-test-plan` **8 节只审过 §5 / §8**。本节把剩下 6 节（§1–§4、§6、§7）过一遍。
+
+### 逐节结论
+
+| 节 | 声明 | 载体 | 判定 |
+|---|---|---|---|
+| §1 目的 | 「中文 IME 是 V1 Release Gate」 | 台账 **`P0-EDITOR-004`**（capability = **IME 与 Undo / Redo**），`requiredEvidence` **含 `ux-gate`** ⇒ 不得以 AUTO 收口 | ✅ **有载体**（当前确实计入未闭环） |
+| §2 平台 | 6 个输入法（Win 2 / mac 2 / Linux 2） | 见下表 | ⚠️ **矩阵无载体** |
+| §3 基础输入 | 8 类 | 见下 | ⚠️ **6 类零覆盖** |
+| §4 Node Matrix | 21 个节点 | Linux 矩阵 8 场景 | 🟡 **8 / 21**；且覆盖清单此前**只在源码里** |
+| §6 组合事件日志 | debug **可**记录；release 不收集文本 | `composition.ts` 存在；**无**专门日志设施 | ✅ 平凡成立，但**隐私条款无护栏** |
+| §7 Automated + Manual | 「IME 不允许只靠自动化」 | `ux-gate-recorder` 的 `caretImeUndo`（15 分）+ 强制 `imeCorruption === false` | ✅ **有载体**；但**任务清单不含输入法** |
+| §8 Gate | 4 条禁令 ⇒ 禁止发布 | 由 `P0-EDITOR-004` 的证据覆盖 | ✅ |
+
+### §2：6 个输入法，只有 1 个在 CI 内常态覆盖
+
+| 平台 | 输入法 | 载体 | 在流水线里跑吗 |
+|---|---|---|---|
+| Windows | Microsoft Pinyin | **无** | — |
+| Windows | Sogou Pinyin | **无** | — |
+| macOS | 系统简体拼音 | `tests/benchmark/ime-matrix.mjs` | **否**（本地工具，需 System Events 权限） |
+| macOS | 五笔 Wubi | **无** | — |
+| Linux | fcitx5 | `tests/benchmark/ime-matrix-linux.mjs` | **是**（每次发版） |
+| Linux | ibus | runner **支持** `--im=ibus`，**从未跑过** | 否 |
+
+⇒ **4 个输入法零覆盖**。
+
+### §3：8 类基础输入，自动化只覆盖 2 类
+
+- **已覆盖**：`continuous sentence` / `candidate selection`（矩阵按「四音节 → 逐音节空格提交候选 1」施加）。
+- **零覆盖 6 类**：`punctuation` / `mixed Chinese/English` / `emoji` / **`backspace during composition`** /
+  **`arrow during composition`** / **`cancel composition`**。
+- ⚠️ 后 3 类（组合中退格 / 方向键 / 取消组合）恰是 **IME 缺陷高发路径**。
+
+### 真正的缺口：§2 / §3 的验证范围**只写在 spec 里**
+
+两处载体都不枚举它：
+
+- **自动化**：Linux 矩阵的 8 个场景是 **§4 的「节点」维度**，**不是 §3 的「基础输入」维度**；
+- **人工**：`ux-gate-recorder` 的 **30 个任务里没有任何一项提到输入法**（最接近的是
+  「Focus Mode / Typewriter Mode 连续写作」），它只提供 `caretImeUndo` 的**评分**与一个 `imeCorruption` 布尔字段。
+
+⇒ 「**用什么输入法、测哪几类基础输入**」这件事**只写在散文里** ——
+与 ADR-0029 Q1（`settings.open` 的理由只写在代码注释里）**同型**。
+
+### 处置（本次做了什么 / 明确没做什么）
+
+**做了**：
+
+1. spec §1–§7 逐节补上**如实的覆盖实测**（含上面两张表），使权威层不再暗示不存在的覆盖；
+2. **把「矩阵覆盖了 §4 的哪 8 个节点」变成机器可读**（spec §4 一行 + 护栏双向锁）——
+   此前它只存在于矩阵源码的 `SCENARIOS`，而**同一件事的第三个副本**还在 RQ 的注释里（「8 场景 IME 矩阵」）；
+3. 新护栏（`verify-runtime-qualification-workflow.mjs`）：**spec 的覆盖清单 ⇄ 矩阵 `SCENARIOS` ⇄ RQ 注释的场景数，三处双向一致**。
+   **注入验证 7/7**（矩阵增删场景 / spec 多声明 / spec 漏声明 / RQ 数字漂移 / 锚点消失 / 无变异对照）。
+
+**没做（明确登记为缺口，不假装已做）**：
+
+- **未**给 §3 的 6 类基础输入补自动化场景。理由：它们要跑在 `mellow-linux-ime` 容器 / GitHub runner 上，
+  本机（macOS）**无法验证**；而「写进 YAML 就算接上了」正是本仓反复踩过的坑（`probe-to-gate-hygiene` §0）。
+  正确做法是**单独一轮**：加场景 → **派发实跑** RQ → 逐场景读日志确认。
+- **未**扩张人工 Gate 的任务清单（加输入法项会改变人工会话的负担）—— 属**产品 / 流程裁决**，需单独决定。
+
+### 教训
+
+> **「覆盖了没有」必须有载体，不能只在 spec 里声称。**
+> 本次两处缺口都不是「实现错了」，而是**验证范围没有落到任何可执行 / 可记录的载体上** ——
+> 于是它会一直「看起来有要求」，直到有人真的去数。
+>
+> 附带纠正一个**我差点写错的结论**：我一度以为「§7 不允许只靠自动化」没有载体
+> （`P0-PLATFORM-001` 的 `requiredEvidence` 确实不含 `ux-gate`），回查后发现**真正的 IME 条目是
+> `P0-EDITOR-004`**，它含 `ux-gate` ⇒ **有载体**。
+> **「同一主题可能有多个台账条目，别只看第一个命中的」。**
+
 ## 五、本次审计做的改动（非策略性）
 
 
