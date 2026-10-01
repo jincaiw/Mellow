@@ -2965,10 +2965,37 @@ useEffect(() => { if (!treeFilterOpen) return; /* … 1200ms 内每 60ms el.focu
 
 | 项 | 动作 |
 |---|---|
-| 新原语 | `tests/visual/wait-rendered.mjs`：`waitForAnimationsSettled(page)`（先推 2 帧确保动画已启动，再轮询 `document.getAnimations()` 到无 running）+ `waitForFocusSettled(page, sel)` |
-| 接入 | `scenes-golden.mjs`（设置场景）与 `sidebar-golden.mjs`（过滤框场景）改为 `if (!(await …)) throw` —— **未收敛即响亮失败，禁止静默继续采样**（静默继续正是读数漂移的成因） |
+| 新原语 | `tests/visual/wait-rendered.mjs`：`waitForAnimationsSettled(target)`（先推 2 帧确保动画已启动，再轮询 `document.getAnimations()`；**跳过无限迭代的常驻动画**，见下「跟进」）+ `waitForFocusSettled(page, sel)` |
+| 接入 | `scenes-golden.mjs`（设置场景）、`sidebar-golden.mjs`（过滤框场景）、`visual-golden.mjs`（6 配置布局）改为 `if (!(await …)) throw` —— **未收敛即响亮失败，禁止静默继续采样**（静默继续正是读数漂移的成因） |
 | 基线 | 三平台 `sidebar-golden*.json` 的 `files-tree-filter.focused`：`false → true`。**依据**：macOS 本地实测 `true`；Windows 该次 CI 的 actual 也是 `true`；Linux 为**推断**（同一平台无关代码路径），**已由 CI 证实**（见下） |
-| 护栏 | `verify-visual-golden.mjs` 新增：采样脚本必须从该共享模块引入、**至少调用一次**、且对返回值做 `!(await …)` 判定；判定与 canary **共用**剥注释函数（`codeOnlyOf`）；注入验证 **8 例**全部符合预期（含「注释掉调用」这一形态） |
+| 护栏 | `verify-visual-golden.mjs` 新增：**范围按目录派生**（凡读 `getBoundingClientRect` 的 `tests/visual/*.mjs` 自动纳入，另有覆盖下限防「判据静默变空」）；每个采样脚本必须从共享模块引入、**至少调用一次**、且对返回值做 `!(await …)` 判定；**功能性**验证纯谓词（`await import` 真实模块，四个方向含常驻动画）；判定与 canary **共用**剥注释函数（`codeOnlyOf`）；注入验证 **13 例**全部符合预期（含「注释掉调用」「新增采样脚本自动纳入」「去掉常驻动画排除」三种形态） |
+
+### 跟进：「等所有动画结束」是**错的**判据 —— 页面里有合法的**常驻动画**（同日实测）
+
+把原语推广到第三个采样脚本 `visual-golden.mjs`（它用 `page.waitForTimeout(600)`，同一类「等时间」）时，
+**立刻炸出原语自身的一个错误假设**：
+
+```
+Error: 编辑器 iframe 入场动画未在 3s 内结束 —— 此时采样布局会读到动画中间值
+```
+
+探针（dump `document.getAnimations()`）：
+
+| 文档 | 动画数 | 明细 |
+|---|---|---|
+| 主文档（app） | **0** | —— |
+| 编辑器 iframe | **1** | `cm-blink2`（target `div.cm-cursorLayer`、`duration: 1000`、**`iterations: Infinity`**）= **CodeMirror 6 的光标闪烁** |
+
+即：**「等所有动画结束」在 iframe 上永远等不到**。若照此实现，等于**把一个假失败引进来** ——
+比原来的时序漂移更糟（原来的问题至少偶尔能过）。
+
+**修正**：原语必须区分「**入场**动画」（有限迭代）与「**常驻**动画」（无限迭代）。
+判据抽成**纯函数** `isPendingSettlable(animation)`：`iterations === Infinity` ⇒ 不等；
+其余非 `finished` ⇒ 等。并以**源码字符串**送进浏览器（`new Function` 重建），
+使「浏览器里真正跑的谓词」与「护栏验证的谓词」是**同一份**（避免「canary 测的是副本」）。
+
+> **教训**：把一条判据**推广到新场景**时，它原本隐藏的假设会暴露。
+> 本例的假设是「所有动画都会结束」—— 在设置面板上成立，在编辑器里不成立。
 
 ### 修后复核（三平台实测，v1.5.17）
 

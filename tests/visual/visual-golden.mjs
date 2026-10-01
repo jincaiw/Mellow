@@ -31,6 +31,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { goldenFile, platformLabel } from './golden-path.mjs';
 import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
+import { waitForAnimationsSettled } from './wait-rendered.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -263,6 +264,16 @@ async function main() {
       const frame = await waitEditorFrame(page);
       // B1（SDI）：单文档采样（无 Tabbar，无需再建双 tab；file.new 在浏览器回落 = 替换当前文档）
       await page.waitForTimeout(600);
+      // 采样前必须等**渲染稳定**（不是等时间）：主文档与编辑器 iframe **各自**的入场动画
+      // 都会改变 `getBoundingClientRect()` 读数（实测同族：`.settings-backdrop` 的
+      // `mellow-fade` 起始帧 `translateY(-4px)` 让 y 读到 146、稳态 150）。
+      // `waitForTimeout(600)` 只覆盖「非动画的挂载成本」，**不构成**「动画已结束」的保证。
+      if (!(await waitForAnimationsSettled(page))) {
+        throw new Error('主文档入场动画未在 3s 内结束 —— 此时采样布局会读到动画中间值（禁止静默继续）');
+      }
+      if (!(await waitForAnimationsSettled(frame))) {
+        throw new Error('编辑器 iframe 入场动画未在 3s 内结束 —— 此时采样布局会读到动画中间值（禁止静默继续）');
+      }
       const sample = await sampleLayout(page, frame, config);
       samples[config.name] = sample;
       await page.screenshot({ path: resolve(ACTUAL_DIR, `${config.name}.png`), fullPage: false });

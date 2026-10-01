@@ -33,12 +33,38 @@
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * 等待页面上的 CSS 动画全部结束。
+ * 这个动画是否**值得等**（即：它是否会自己结束）。
+ *
+ * ⚠️ **不能简单地「等所有动画结束」** —— 页面里可能有**合法的常驻动画**，
+ * 它们永远不会 `finished`，等它等于永远等下去。
+ *
+ * 实测（`/tmp` 探针，2026-10-01）：编辑器 iframe 里**只有一个**动画 ——
+ * CodeMirror 6 的光标闪烁 `cm-blink2`（target `div.cm-cursorLayer`、
+ * `duration: 1000`、`iterations: Infinity`）。主文档侧为 0 个动画。
+ * 若不做区分，对 iframe 调用本函数会**必然超时** —— 那是「把假失败引进来」，
+ * 比原来的时序漂移更糟。
+ *
+ * 判据：**无限迭代（`iterations === Infinity`）⇒ 不等**；其余非 finished ⇒ 等。
+ *
+ * 抽成**纯函数**（不依赖浏览器）是为了能被测试/护栏直接调用 ——
+ * 否则这段判定只能在真实浏览器里验证，护栏拿不到它。
+ *
+ * @param {{ playState?: string, effect?: { getTiming?: () => { iterations?: number } } }} animation
+ * @returns {boolean}
+ */
+export function isPendingSettlable(animation) {
+  const timing = animation?.effect?.getTiming?.();
+  if (timing !== undefined && timing !== null && timing.iterations === Infinity) return false;
+  return animation?.playState !== 'finished';
+}
+
+/**
+ * 等待页面上的**入场**动画全部结束（常驻动画被跳过，见 `isPendingSettlable`）。
  *
  * 步骤：① 推 2 帧（确保动画对象已创建并进入 running，避免「动画还没开始」的窗口）；
- * ② 轮询 `document.getAnimations()`，直到没有 `playState !== 'finished'` 的动画。
+ * ② 轮询 `document.getAnimations()`，直到没有「值得等且未结束」的动画。
  *
- * @param {import('playwright').Page} page
+ * @param {{ evaluate: Function }} page Playwright `Page` **或** `Frame`（两者都有 `evaluate`）
  * @param {{ timeoutMs?: number, stepMs?: number }} [opts]
  * @returns {Promise<boolean>} 是否在超时内全部结束（false ⇒ 调用方应报错，不得继续采样）
  */
@@ -51,13 +77,20 @@ export async function waitForAnimationsSettled(page, opts = {}) {
     requestAnimationFrame(() => requestAnimationFrame(() => r(null)));
   }));
 
-  // ② 等状态：没有非 finished 的动画才算稳定。
+  // ② 等状态：没有「值得等且未结束」的动画才算稳定。
+  //
+  // 判定谓词以**源码字符串**送进浏览器（而非在 evaluate 里另写一份）——
+  // 否则「护栏测的谓词」与「浏览器里真正跑的谓词」是两份，会漂移
+  // （本仓已实测过的失效模式：canary 测的是副本）。送进去的是**同一个** `isPendingSettlable`。
+  const predicateSource = isPendingSettlable.toString();
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const pending = await page.evaluate(() => {
+    const pending = await page.evaluate((src) => {
       if (typeof document.getAnimations !== 'function') return 0;
-      return document.getAnimations().filter((a) => a.playState !== 'finished').length;
-    });
+      // eslint-disable-next-line no-new-func -- 源码来自本模块自身的函数，非外部输入
+      const predicate = new Function(`return (${src})`)();
+      return document.getAnimations().filter(predicate).length;
+    }, predicateSource);
     if (pending === 0) return true;
     if (Date.now() > deadline) return false;
     await sleep(stepMs);

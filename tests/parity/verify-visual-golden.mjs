@@ -12,6 +12,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
@@ -480,12 +481,20 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
 {
   const WAIT_MODULE = 'tests/visual/wait-rendered.mjs';
   const WAIT_FNS = ['waitForAnimationsSettled', 'waitForFocusSettled'];
-  const SAMPLERS = ['tests/visual/scenes-golden.mjs', 'tests/visual/sidebar-golden.mjs'];
+  const VISUAL_DIR = 'tests/visual';
+  // 非采样脚本（共享模块 / 仅截图）：**显式登记**，不是「默认排除」——
+  // 新增一个采样脚本时它会自动进入判据（见 isSampler），而不是悄悄溜过去。
+  const NON_SAMPLERS = ['dev-server.mjs', 'golden-path.mjs', 'wait-rendered.mjs'];
+  // 采样脚本的覆盖下限 = 当前基线（防止某次重构把脚本挪走/改名后判据静默变空）。
+  const MIN_SAMPLERS = 3;
 
   // 剥注释（**具名函数**，判定与 canary 共用同一份 —— 否则 canary 测的是副本）。
   // 沿用本文件既有约定：整行注释 / 块注释起始行一律剔除。
   // 保守做法（只剔整行）——行内双斜杠剥离器会截断字符串/正则里的 `//`（本仓已实测的坑）。
   const codeOnlyOf = (s) => s.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n');
+  // 「是不是采样脚本」的**具名判据**：读过几何（getBoundingClientRect）。
+  // 范围**按目录派生**而不是硬编码文件名 —— 硬编码清单会在新增脚本时漏守（本仓 skill §9 的形态）。
+  const isSampler = (source) => codeOnlyOf(source).includes('getBoundingClientRect');
 
   const reImport = /from\s+'\.\/wait-rendered\.mjs'/;
   const reCalled = /await\s+waitForAnimationsSettled\(/;
@@ -501,11 +510,19 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
         fail(`${WAIT_MODULE} 必须导出 ${fn}（采样前的确定性等待）`);
       }
     }
+
+    // 派生采样脚本集合
+    const SAMPLERS = readdirSync(resolve(root, VISUAL_DIR), { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.mjs') && !NON_SAMPLERS.includes(e.name))
+      .map((e) => `${VISUAL_DIR}/${e.name}`)
+      .filter((p) => isSampler(read(p)))
+      .sort();
+    if (SAMPLERS.length < MIN_SAMPLERS) {
+      fail(`${VISUAL_DIR} 下只派生到 ${SAMPLERS.length} 个采样脚本（下限 ${MIN_SAMPLERS}）—— `
+        + '脚本可能被改名/挪走后判据静默变空，请核对 NON_SAMPLERS 与目录内容');
+    }
+
     for (const p of SAMPLERS) {
-      if (!existsSync(resolve(root, p))) {
-        fail(`缺少视觉采样脚本 ${p}`);
-        continue;
-      }
       const codeOnly = codeOnlyOf(read(p));
       // ① 必须从该模块引入
       if (!reImport.test(codeOnly)) {
@@ -535,6 +552,53 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
     canary('// await waitForAnimationsSettled(page);', reCalled, false, '被注释掉的调用被当成合规（剥注释失效）');
     canary('if (!(await waitForFocusSettled(page, ".x"))) { throw new Error("y"); }', reGuard, true, '合规的 !(await …) 判定未被检出');
     canary('await waitForFocusSettled(page, ".x");', reGuard, false, '无判定的裸调用被当成合规（静默继续采样未被拦住）');
+
+    // canary：**纯谓词的功能性验证**（不依赖浏览器）——
+    // 「等所有动画结束」在存在**常驻动画**时必然超时；实测编辑器 iframe 里只有
+    // CM6 光标闪烁 `cm-blink2`（`iterations: Infinity`）。若谓词不排除它，
+    // 对 iframe 调用会**永远等不到**（把假失败引进来，比原问题更糟）。
+    // 这里直接 import 真实模块调用它（不是读源码猜语义）。
+    {
+      const modUrl = pathToFileURL(resolve(root, WAIT_MODULE)).href;
+      let mod;
+      try {
+        mod = await import(modUrl);
+      } catch (e) {
+        fail(`${WAIT_MODULE} 无法被 import（护栏需要直接调用它的纯谓词）：${e?.message ?? e}`);
+      }
+      const predicate = mod?.isPendingSettlable;
+      if (typeof predicate !== 'function') {
+        fail(`${WAIT_MODULE} 必须导出纯函数 isPendingSettlable(animation) —— `
+          + '抽成纯函数才能在没有浏览器的护栏里验证它');
+      } else {
+        const infinite = { playState: 'running', effect: { getTiming: () => ({ iterations: Infinity, duration: 1000 }) } };
+        const runningFinite = { playState: 'running', effect: { getTiming: () => ({ iterations: 1, duration: 140 }) } };
+        const finished = { playState: 'finished', effect: { getTiming: () => ({ iterations: 1, duration: 140 }) } };
+        const cases = [
+          [infinite, false, '无限迭代的常驻动画（CM6 光标闪烁）必须被跳过 —— 否则永远等不到'],
+          [runningFinite, true, '有限迭代且未结束的入场动画必须被等'],
+          [finished, false, '已结束的动画不算待等'],
+          [{ playState: 'running' }, true, '缺 effect（拿不到 timing）时保守地等'],
+        ];
+        for (const [sample, expect, why] of cases) {
+          const got = predicate(sample);
+          if (got !== expect) {
+            errors.push(`渲染稳定谓词 canary 失效：${why}（期望 ${expect}、实得 ${got}）`);
+          }
+        }
+      }
+    }
+
+    // canary：**范围派生**（isSampler）两个方向 —— 保证「新增采样脚本会被自动纳入」
+    if (!isSampler('const r = document.querySelector(".x").getBoundingClientRect();')) {
+      errors.push('渲染稳定护栏 canary 失效：读过几何的脚本未被判为采样脚本（新增脚本会溜过判据）');
+    }
+    if (isSampler('await page.screenshot({ path: "x.png" });')) {
+      errors.push('渲染稳定护栏 canary 过宽：仅截图的脚本被误判为采样脚本');
+    }
+    if (isSampler('// const r = el.getBoundingClientRect();')) {
+      errors.push('渲染稳定护栏 canary 失效：被注释掉的几何读取被当成采样（剥注释失效）');
+    }
   }
 }
 
