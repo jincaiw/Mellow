@@ -50,40 +50,63 @@ Mellow UI 必须做到：
 - maximized
 - full screen
 - sidebar
-- tabs
+- ~~tabs~~（见 §4：SDI 无 tabs）
 - active document
+
+> **⚠️ 2026-10-01 更正（本节的数字与实现不符）**：
+> - **初始尺寸**：实现为**三平台统一 `1200 × 800`**（`apps/desktop/src-tauri/src/window.rs` 的 `inner_size`）。
+>   原写的 macOS `1180 × 780` **未实现** —— 且没有证据表明 macOS 需要差异 ⇒ 登记为
+>   **未实现的建议值**（**不是**有意差异，别读成 D）。
+> - **最小尺寸**：`900 × 600` ✅ 已实现（同文件 `min_inner_size`）。
+> - **记忆项**：`size` / `position` / `maximized` / `full screen` / `sidebar` / `active document` 均已实现
+>   （`geometry.rs`）；**`tabs` 在 SDI 下无对象**（见 §4）。
 
 ---
 
 ## 4. Tabs
 
-高度：
-- 32–36 px
+> **⚠️ 2026-10-01：本节整节在 SDI 架构下不适用（登记为有意差异，非缺口）。**
+>
+> Mellow 是 **SDI（单文档窗口）**：一个窗口一个文档。仓库内**不存在任何 Tab UI** ——
+> `packages/desktop-ui/src/` 无 Tab 组件、`apps/desktop/src/styles.css` 里 `.tab*` / `tab-bar`
+> 规则**命中 0 条**。故下文的 Tab 高度 / 状态 / 单文件自动隐藏 / `Cmd+T` 均**无实现对象**。
+>
+> **依据**：SDI 是已确认的产品决策（`B1`）；「New Tab 与 Switch Between Opened Documents」
+> 已在 master-plan **§12 D 表**登记为有意差异（见 **D-Y**，与 D-D 同源）。
+> **本节此前从未与 SDI 决策对账** —— 即「权威 spec 里有一整节不可满足，而没人发现」。
+> 保留原文（只作废，不删除），以免丢失「曾经考虑过 tabs」这一信息。
 
-状态：
-- active
-- inactive
-- hover
-- dirty
-- drag
-- pinned P1
+~~高度：~~
+~~- 32–36 px~~
 
-单文件：
-- 可配置自动隐藏 Tab Bar
+~~状态：~~
+~~- active~~
+~~- inactive~~
+~~- hover~~
+~~- dirty~~
+~~- drag~~
+~~- pinned P1~~
 
-Windows/Linux：
-- 不抢占 Typora `Ctrl+T` Table 默认快捷键
+~~单文件：~~
+~~- 可配置自动隐藏 Tab Bar~~
 
-macOS：
-- `Cmd+T` New Tab 可保留
+~~Windows/Linux：~~
+~~- 不抢占 Typora `Ctrl+T` Table 默认快捷键~~
+
+~~macOS：~~
+~~- `Cmd+T` New Tab 可保留~~
+
+> 其中「**Windows/Linux 不得抢占 `Ctrl+T`（Typora 的 Table 快捷键）**」这一条**仍然有效**，
+> 且已被 `verify-menu-contract.mjs` **§11 官方快捷键表**锁住 —— 该表要求
+> `insert.table` 的 Win/Linux 键位必须是 `Ctrl+T`（它不依赖 Tab UI，故不受本节作废影响）。
 
 ---
 
 ## 5. Sidebar
 
 宽度：
-- default 260 px
-- min 200
+- default **270** px
+- min **160**
 - max 480
 
 顶部：
@@ -92,6 +115,13 @@ macOS：
 - 搜索
 
 不要 VS Code Activity Bar。
+
+> **⚠️ 2026-10-01 更正**：本节原写 `default 260 / min 200` —— **与实现不符**。
+> 实现（单一真源 `apps/desktop/src/App.tsx` 的 `SIDEBAR_MIN_WIDTH` / `SIDEBAR_DEFAULT_WIDTH`）
+> 为 **160 / 270**，是**按 Typora 实机真值对齐**的结果（Typora `setSidebarWidth` 只做 `Math.max(e, 160)`，
+> 默认 270）。**护栏 `verify-sidebar-contract.mjs` 当时已更正，但本节没同步** ——
+> 即「同一组数值两处维护，只改了一处」。
+> `max 480` 是 Mellow 另加的**保护上限**（Typora 无硬上限），已在 D 表登记（**D-AD**）。
 
 ---
 
@@ -134,15 +164,24 @@ macOS：
 
 Writing width：
 - 680
-- 820 default
+- **860** default
 - 980
 - auto
 
 默认：
 - body 16 px
-- line-height 1.65
+- line-height **1.6**
 - top padding 56 px
 - bottom breathing >= 30vh
+
+> **⚠️ 2026-10-01 更正**：本节原写 `820 default` 与 `line-height 1.65` —— **与实现不符**。
+> 单一真源是 `packages/settings/src/index.ts` 的 **`TYPOGRAPHY_DEFAULTS`**
+> （`writingWidth: 860` / `lineHeight: 1.6` / `fontSize: 16`），依据是 **Typora 真机 html font-size = 16px
+> 与 github 主题 max-width 860px / line-height 1.6**。
+> 该常量存在的**原因**就是历史上这组默认值散落三处且互相矛盾（settings / App 回落 / Reader CSS）——
+> 那次修复把三处统一了，**但 spec 这份「第四处」被漏掉了**（同 §5）。
+> `top padding 56px` / `bottom breathing >= 30vh` 已实现且有护栏
+> （`verify-shell-typography.mjs`；实际底部留白 50vh ≥ 30vh）。
 
 ---
 
@@ -172,17 +211,27 @@ Writing width：
 ## 10. Status Bar
 
 高度：
-- 22–26 px
+- 22–26 px（实现 `min-height: 24px` ✅ 落在区间内）
 
-默认：
+**默认可见**：
 - 字数
 - 行:列
+
+**默认可开启（默认隐藏）**：
 - Markdown
 - UTF-8
 - LF
 - Zoom
+- 保存状态
 
 可完全隐藏。
+
+> **⚠️ 2026-10-01 更正**：本节原把上面 6 项**全列为「默认」** —— **与实现不符**。
+> 实现里 `STATUSBAR_DEFAULT_HIDDEN`（`packages/desktop-ui/src/StatusBar.tsx`）默认隐藏
+> `dirty / markdown / encoding / eol / zoom / status` ⇒ **默认只显示「字数」与「行:列」两项**。
+> 这是 **E7（Typora 观感收敛）** 的有意结果（Typora 状态栏默认极简），
+> 且有单测 `packages/desktop-ui/test/statusbar-defaults.test.ts` 锁住默认集。
+> 单项可见性经右键菜单逐项切换（`fields` 持久化）。
 
 ---
 

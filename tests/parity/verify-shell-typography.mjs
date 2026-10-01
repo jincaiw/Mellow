@@ -211,6 +211,88 @@ if (Number(/内置 (\d+) 主题/.exec(themeCountDrift)?.[1] ?? NaN) === declared
   fail('排版护栏自检失败：无法模拟主题数量注释漂移（V7-W4.8），护栏已失效');
 }
 
+// ── 权威 spec 的硬数字必须等于代码单一真源（2026-10-01，审计 §4.69）──────────
+// 立节原因（实测）：`desktop-ui-design-spec` 是**权威层**（优先级高于 ADR / plan），
+// 但它的一组硬数字在实现按 Typora 真值对齐后**没同步**：
+//   §5 侧栏 default 260 / min 200（实为 270 / 160）
+//   §8 writing width default 820 / line-height 1.65（实为 860 / 1.6）
+//   §3 macOS 1180×780（实为三平台统一 1200×800）
+// 即「同一组数值两处维护，只改了一处」—— 与 `TYPOGRAPHY_DEFAULTS` 那次修复**同型**：
+// 那次把 settings 默认 / App 回落 / Reader CSS **三处**统一了，**spec 这「第四处」被漏掉**。
+//
+// 判据：从**单一真源**读数值，断言 spec 的**声明行**与之相等
+// （**不是**从 spec 取值再断言它等于自己 —— 那是恒真）。
+// ⚠️ 只认「列表项」形态（行首 `-`）⇒ spec 里用 `>` 引用块写下的**更正说明**不会自我命中
+// （本条首版的设计要点；同 §4.51「护栏检出自己写的注释」的处置）。
+// ⚠️ **范围限制**：只覆盖**能解析出单一数值**的硬数字。§4（Tabs 整节作废）与 §10（默认可见字段集，
+// 已由 `packages/desktop-ui/test/statusbar-defaults.test.ts` 单测锁住）**不在**本条内。
+{
+  const specSrc = read('docs/specs/desktop-ui-design-spec.md');
+  const specSection = (title) => {
+    const at = specSrc.indexOf(title);
+    if (at < 0) return '';
+    const next = specSrc.indexOf('\n## ', at + 1);
+    return specSrc.slice(at, next < 0 ? specSrc.length : next);
+  };
+  const listValue = (text, re) => {
+    for (const line of text.split('\n')) {
+      const m = re.exec(line);
+      if (m !== null) return Number(m[1]);
+    }
+    return null;
+  };
+  const check = (what, specValue, truthValue, where) => {
+    if (specValue === null) {
+      fail(`desktop-ui-design-spec ${where} 找不到「${what}」的**声明行**（行首 \`- \`）`
+        + ' —— 判据锚点漂移，别静默跳过');
+    } else if (truthValue === null) {
+      fail(`${where}「${what}」的单一真源解析失败（护栏取不到真值，判据会变成空壳）`);
+    } else if (specValue !== truthValue) {
+      fail(`desktop-ui-design-spec ${where} 声明「${what}」= ${specValue}，而单一真源是 ${truthValue}`
+        + ' —— 权威层与代码不一致（改了一处没改另一处）');
+    }
+  };
+
+  // §5 Sidebar：单一真源 = App.tsx 的 SIDEBAR_* 常量
+  const side = specSection('## 5. Sidebar');
+  const sidebarConst = (name) => {
+    const n = Number(new RegExp(`const ${name} = (\\d+);`).exec(appSource)?.[1] ?? NaN);
+    return Number.isNaN(n) ? null : n;
+  };
+  check('default 宽度', listValue(side, /^-\s*default\s*\*{0,2}(\d+)\*{0,2}\s*px/), sidebarConst('SIDEBAR_DEFAULT_WIDTH'), '§5');
+  check('min 宽度', listValue(side, /^-\s*min\s*\*{0,2}(\d+)/), sidebarConst('SIDEBAR_MIN_WIDTH'), '§5');
+
+  // §8 Editor Surface：单一真源 = TYPOGRAPHY_DEFAULTS（本节上方已解析出 defWritingWidth / defLineHeight）
+  const editor = specSection('## 8. Editor Surface');
+  check('writing width 默认值', listValue(editor, /^-\s*\*{0,2}(\d+)\*{0,2}\s*default/), defWritingWidth, '§8');
+  check('line-height', listValue(editor, /^-\s*line-height\s*\*{0,2}([0-9.]+)/), defLineHeight, '§8');
+
+  // §3 Window：单一真源 = src-tauri/src/window.rs 的 inner_size
+  const win = specSection('## 3. Window');
+  const innerSize = /inner_size\((\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)\)/.exec(read('apps/desktop/src-tauri/src/window.rs'));
+  check('初始宽度（Windows/Linux）',
+    listValue(win, /^-\s*Windows\/Linux：\s*(\d+)\s*×/),
+    innerSize === null ? null : Number(innerSize[1]),
+    '§3');
+  // 注：§3 的 macOS `1180 × 780` **不纳入**本判据 —— 它未实现，已在 spec 内如实标注为
+  // 「未实现的建议值」（非有意差异）；断言它等于真值会得到一个必然失败的门禁。
+
+  // canary：四个方向（判据与 canary 共用 listValue）
+  {
+    const parseDefault = (t) => listValue(t, /^-\s*default\s*\*{0,2}(\d+)\*{0,2}\s*px/);
+    if (parseDefault('## 5. Sidebar\n\n- default **270** px\n') !== 270
+      || parseDefault('## 5. Sidebar\n\n- default **260** px\n') !== 260) {
+      errors.push('spec 数值一致性护栏 canary 失效：default 宽度解析不能区分正/负样本');
+    }
+    if (parseDefault('## 5. Sidebar\n\n> 本节原写 `- default 260 px`（更正说明）\n\n- default **270** px\n') !== 270) {
+      errors.push('spec 数值一致性护栏 canary 失效：**引用块里的更正说明**被当成了声明行（会自我命中）');
+    }
+    if (parseDefault('## 5. Sidebar\n\n宽度：\n') !== null) {
+      errors.push('spec 数值一致性护栏 canary 过宽：没有声明行时不应返回数值');
+    }
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 // ── Reader 段内单换行必须保留（V7-W6，G7-EDIT-14）──────────────────────────
 //
