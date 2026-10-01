@@ -32,6 +32,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { goldenFile, platformLabel } from './golden-path.mjs';
 import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
+import { waitForAnimationsSettled } from './wait-rendered.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -215,7 +216,14 @@ async function main() {
     await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('settings.open'));
     const settingsReady = await waitFor(async () => page.evaluate(() => document.querySelector('.settings-panel') !== null));
     if (!settingsReady) throw new Error('Settings 场景建立失败（.settings-panel 未出现）');
-    await sleep(400);
+    // 采样前必须等**入场动画结束**（不是 sleep 一个够大的常量）：
+    // `.settings-backdrop` 的 `mellow-fade` 起始帧是 `transform: translateY(-4px)`
+    // → 动画未完成时 `.settings-panel` 的 y 读到 146、稳态 150。
+    // 原实现 `sleep(400)` 在负载高的 runner 上不成立（渲染进程尚未出首帧，动画「还没开始」）
+    // → 实测同一提交一次 150 一次 146。见 `wait-rendered.mjs` 的说明。
+    if (!(await waitForAnimationsSettled(page))) {
+      throw new Error('Settings 入场动画未在 3s 内结束 —— 此时采样 y 会读到动画中间值（禁止静默继续）');
+    }
     samples.settings = await page.evaluate(() => {
       const round = (n) => Math.round(n * 10) / 10;
       const panel = document.querySelector('.settings-panel');

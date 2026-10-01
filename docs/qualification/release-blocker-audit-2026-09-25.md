@@ -2880,6 +2880,90 @@ app 侧：`data-theme = mellow-dark`、`--mellow-bg = #1e1e1e`、`--mellow-toolb
 本次补上断言：待裁决 ADR 必须存在且**状态为 Proposed**（只认 `**Status:**` 那一行，
 防止正文里的字样蒙混），并配 3 条 canary（合法 Proposed 被检出 / Accepted 不被误判 / 正文里的字样不算状态行）。
 
+## 4.56 把视觉门禁改成**真门禁**之后，它第一次真跑就抓到**两处测试自身的时序缺陷**（2026-10-01）
+
+§4.51 移除了 `runtime-qualification.yml` 两个视觉步骤的 `continue-on-error`（假门禁 → 真门禁）。
+本节是它**第一次以真门禁跑 `v*` 标签**的结果 —— 也是「假门禁代价」的量化。
+
+### 现象（run 36797746845，v1.5.17 标签）
+
+Runtime Qualification：**Windows job 红**，macOS / Linux 绿。失败步骤正是被改真的那一个
+（`Visual golden (§9.3: visual + sidebar + scenes)`）：
+
+```
+Visual golden:  6 configs match baseline (±1px)   → OK
+Sidebar golden regressions:
+  ❌ files-tree-filter.focused: golden false vs actual true
+VISUAL_GOLDEN sidebar-golden: FAILED (exit 1)
+Scenes golden: 1 项偏离基准（像素 ±1px；计数/常量精确）
+  ✗ settings.panel.y: 150 → 146
+VISUAL_GOLDEN scenes-golden: FAILED (exit 1)
+```
+
+### 关键排除：先怀疑量具，而不是产品
+
+- `cb4fbcc`（约 1 小时前，`workflow_dispatch`）三平台**全绿**（含 Windows）；
+- `cb4fbcc..HEAD` 之间**唯一**影响渲染的改动是「往主题基表与 token 表各加一个 CSS 变量」
+  （`--mellow-md-list-bullet`），其余全是护栏/文档/版本号；
+- 两个读数（布尔焦点、4px 偏移）都**不是**「加一个未消费的 CSS 变量」能造成的形态。
+
+→ 结论：**是量具的问题**。
+
+### 定性 1：`settings.panel.y 150 → 146` = **入场动画未结束**
+
+`apps/desktop/src/styles.css`：
+
+```css
+@keyframes mellow-fade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.settings-backdrop { animation: mellow-fade 140ms ease; }
+```
+
+`translateY(-4px)` 与读数差 **完全一致**。`.settings-panel` 的 `y` 在动画结束时是
+`(900 - 600) / 2 = 150`，动画起点是 **146**。
+
+**直接佐证**：取该次运行的 Windows 视觉产物，`actual/scene-settings.png` 里面板**半透明**
+（正文透过面板可见）—— 动画确实还在跑；而本地 macOS 的同一张是**不透明**的。
+
+**原实现的缺陷**：用 `sleep(400)` 兜底一个 140ms 的动画。**在负载高的 runner 上这不成立** ——
+渲染进程可能尚未产出首帧（动画「还没开始」），墙钟却已走完。
+→ 同一个提交、同一个 runner 镜像，一次 150、一次 146。
+
+### 定性 2：`files-tree-filter.focused false → true` = 采到了**焦点争夺的中间态**
+
+`apps/desktop/src/App.tsx` 的 ⌘F effect：
+
+```js
+// 编辑器 iframe 会在挂载后抢焦点（mellow-editor-frame 成为 activeElement）→
+// 挂载后短窗内反复夺回焦点，保证键入直接落在过滤框
+useEffect(() => { if (!treeFilterOpen) return; /* … 1200ms 内每 60ms el.focus() … */ }, [treeFilterOpen]);
+```
+
+而 `sidebar-golden.mjs` 在「输入框**刚出现**」的瞬间就采样 `document.activeElement === el`
+→ 读到的是**编辑器 iframe 抢焦点 vs effect 夺回** 的中间态，谁赢取决于这一瞬间的调度。
+基线里的 `false` 正是「**被抢走**」的那个瞬态 —— **把竞态中间态当成了契约**。
+
+**本地实跑验证**（macOS，修复后）：`focused = true`，且**只有这一个字段漂移**（几何全部命中）。
+
+> **两处同型**：都拿**墙钟**去猜一个**状态**（动画是否结束 / 焦点是否收敛）。
+> **`sleep(N)` 是「等时间」，不是「等状态」。**
+
+### 处置
+
+| 项 | 动作 |
+|---|---|
+| 新原语 | `tests/visual/wait-rendered.mjs`：`waitForAnimationsSettled(page)`（先推 2 帧确保动画已启动，再轮询 `document.getAnimations()` 到无 running）+ `waitForFocusSettled(page, sel)` |
+| 接入 | `scenes-golden.mjs`（设置场景）与 `sidebar-golden.mjs`（过滤框场景）改为 `if (!(await …)) throw` —— **未收敛即响亮失败，禁止静默继续采样**（静默继续正是读数漂移的成因） |
+| 基线 | 三平台 `sidebar-golden*.json` 的 `files-tree-filter.focused`：`false → true`。**依据**：macOS 本地实测 `true`；Windows 该次 CI 的 actual 也是 `true`；Linux 为**推断**（同一平台无关代码路径），由 CI 复核 |
+| 护栏 | `verify-visual-golden.mjs` 新增：采样脚本必须从该共享模块引入、**至少调用一次**、且对返回值做 `!(await …)` 判定；判定与 canary **共用**剥注释函数（`codeOnlyOf`）；注入验证 **8 例**全部符合预期（含「注释掉调用」这一形态） |
+
+### 教训
+
+- **假门禁的代价是可以量化的**：移除 `continue-on-error` 的**第一次真跑**就红 ——
+  说明在此之前，这两个漂移已经（或将会）无声通过。
+- **「绿」要被质疑时，先质疑量具**：本例的三条排除（1 小时前同镜像全绿 / 改动面不含渲染 /
+  读数形态与改动不符）比任何猜测都省时间。
+- **采样值若会被动画或焦点竞争影响，就必须等「状态」，不能等「时间」。**
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

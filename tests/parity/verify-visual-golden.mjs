@@ -464,6 +464,80 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
   }
 }
 
+// ── 采样前必须等「渲染稳定」：`sleep(N)` 是等时间，不是等状态（2026-10-01）────────
+// 立此条的原因（实测，Windows runner）：`.settings-backdrop` 带
+// `animation: mellow-fade 140ms ease`，其 `from` 帧是 `transform: translateY(-4px)`
+// → 动画未完成时 `.settings-panel` 的 `getBoundingClientRect().y` 读到 **146**、
+// 稳态 **150**（视口 900 / 面板高 600）。原实现用 `sleep(400)` 兜底 140ms 的动画 ——
+// **在负载高的 runner 上不成立**：渲染进程可能尚未产出首帧（动画「还没开始」），
+// 墙钟却已走完 → 同一提交一次 150、一次 146。
+// 另一同型：侧栏过滤框的 `focused` 在「输入框刚出现」时采样，读到的是
+// **编辑器 iframe 抢焦点 vs effect 每 60ms 夺回** 的争夺中间态 → 同一提交一次 false 一次 true。
+//
+// 判据：两个采样脚本都必须从共享模块 `tests/visual/wait-rendered.mjs` 引入
+// 「等渲染稳定」原语，且**至少调用一次**。原语返回 false 时调用方必须**响亮失败**，
+// 不得静默继续采样（静默继续正是「读数随 runner 负载漂移」的成因）。
+{
+  const WAIT_MODULE = 'tests/visual/wait-rendered.mjs';
+  const WAIT_FNS = ['waitForAnimationsSettled', 'waitForFocusSettled'];
+  const SAMPLERS = ['tests/visual/scenes-golden.mjs', 'tests/visual/sidebar-golden.mjs'];
+
+  // 剥注释（**具名函数**，判定与 canary 共用同一份 —— 否则 canary 测的是副本）。
+  // 沿用本文件既有约定：整行注释 / 块注释起始行一律剔除。
+  // 保守做法（只剔整行）——行内双斜杠剥离器会截断字符串/正则里的 `//`（本仓已实测的坑）。
+  const codeOnlyOf = (s) => s.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n');
+
+  const reImport = /from\s+'\.\/wait-rendered\.mjs'/;
+  const reCalled = /await\s+waitForAnimationsSettled\(/;
+  const reGuard = /if\s*\(\s*!\s*\(\s*await\s+waitFor(Animations|Focus)Settled\(/;
+
+  if (!existsSync(resolve(root, WAIT_MODULE))) {
+    fail(`缺少 ${WAIT_MODULE}（视觉采样的「等渲染稳定」原语）—— `
+      + '缺它时脚本只能用 sleep(N) 猜动画是否结束，读数会随 runner 负载漂移');
+  } else {
+    const mod = read(WAIT_MODULE);
+    for (const fn of WAIT_FNS) {
+      if (!new RegExp(`export\\s+async\\s+function\\s+${fn}\\b`).test(mod)) {
+        fail(`${WAIT_MODULE} 必须导出 ${fn}（采样前的确定性等待）`);
+      }
+    }
+    for (const p of SAMPLERS) {
+      if (!existsSync(resolve(root, p))) {
+        fail(`缺少视觉采样脚本 ${p}`);
+        continue;
+      }
+      const codeOnly = codeOnlyOf(read(p));
+      // ① 必须从该模块引入
+      if (!reImport.test(codeOnly)) {
+        fail(`${p} 必须从 ./wait-rendered.mjs 引入「等渲染稳定」原语（不得自带一份 sleep 兜底）`);
+        continue;
+      }
+      // ② 必须**至少调用一次**（引入却不调用 = 死引用，与「写了却不生效」同型）
+      const called = WAIT_FNS.filter((fn) => new RegExp(`await\\s+${fn}\\(`).test(codeOnly));
+      if (called.length === 0) {
+        fail(`${p} 引入了 wait-rendered.mjs 却一次都没调用 —— 采样仍可能读到动画/焦点争夺的中间值`);
+      }
+      // ③ 返回 false 必须响亮失败（不得静默继续采样）
+      if (!reGuard.test(codeOnly)) {
+        fail(`${p} 必须对「等渲染稳定」的返回值做 !(await …) 判定并报错 —— `
+          + '静默继续采样会让读数随 runner 负载漂移（实测同一提交一次 150 一次 146）');
+      }
+    }
+
+    // canary：逐方向验证「能翻转」，且**与判定共用 codeOnlyOf**（同一份逻辑）
+    const canary = (sample, re, expect, label) => {
+      const got = re.test(codeOnlyOf(sample));
+      if (got !== expect) errors.push(`渲染稳定护栏 canary 失效：${label}（期望 ${expect}、实得 ${got}）`);
+    };
+    canary("import { waitForAnimationsSettled } from './wait-rendered.mjs';", reImport, true, '合规 import 未被检出');
+    canary("import { waitForAnimationsSettled } from './dev-server.mjs';", reImport, false, '从别的模块引入被误判为合规');
+    canary('if (!(await waitForAnimationsSettled(page))) { throw new Error("x"); }', reCalled, true, '合规调用未被检出');
+    canary('// await waitForAnimationsSettled(page);', reCalled, false, '被注释掉的调用被当成合规（剥注释失效）');
+    canary('if (!(await waitForFocusSettled(page, ".x"))) { throw new Error("y"); }', reGuard, true, '合规的 !(await …) 判定未被检出');
+    canary('await waitForFocusSettled(page, ".x");', reGuard, false, '无判定的裸调用被当成合规（静默继续采样未被拦住）');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Visual golden contract violations:\n  ${errors.join('\n  ')}`);
 }

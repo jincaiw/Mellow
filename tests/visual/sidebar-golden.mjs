@@ -24,6 +24,7 @@ import { resolve } from 'node:path';
 import { goldenFile, platformLabel } from './golden-path.mjs';
 import { startViteDevServer, describeSpawnFailure } from './dev-server.mjs';
 import { createWorkspaceEntry } from '../shared/in-app-dialog.mjs';
+import { waitForAnimationsSettled, waitForFocusSettled } from './wait-rendered.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -262,6 +263,17 @@ async function main() {
     await page.keyboard.press('ControlOrMeta+f');
     const transientReady = await waitFor(async () => (await page.evaluate(() => document.querySelector('.file-filter-input'))) !== null);
     if (!transientReady) throw new Error('⌘F 临时过滤框未出现');
+    // `focused` 必须等**焦点争夺收敛**后再采：编辑器 iframe 会在挂载后抢焦点，
+    // 而 ⌘F 的 effect 在挂载后 1200ms 内每 60ms 夺回一次（见 App.tsx 的 treeFilterRef effect）。
+    // 原实现在输入框「刚出现」时立刻采样 → 读到争夺中间态，读数取决于这一瞬间谁赢
+    // （实测：同一提交在 Windows 上一次 false、一次 true）。
+    // 稳态（用户真正可键入）才是本字段要表达的契约；收敛失败则响亮报错，不静默采到 false。
+    if (!(await waitForFocusSettled(page, '.file-filter-input'))) {
+      throw new Error('⌘F 过滤框未获得焦点（编辑器 iframe 抢焦点后未被夺回）—— 拒绝采样争夺中间态');
+    }
+    if (!(await waitForAnimationsSettled(page))) {
+      throw new Error('过滤框入场动画未在 3s 内结束 —— 此时采样 input 几何会读到动画中间值');
+    }
     samples['files-tree-filter'] = await page.evaluate(() => {
       const round = (n) => Math.round(n * 10) / 10;
       const el = document.querySelector('.file-filter-input');
