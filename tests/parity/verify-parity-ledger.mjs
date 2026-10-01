@@ -1792,64 +1792,130 @@ const walkRustFiles = (dir) => readdirSync(resolve(root, dir), { withFileTypes: 
   }
 }
 
-// ── 引擎侧主题变量：**只有 `--mellow-md-*` 能跨进 iframe**（2026-10-01）──────────
-// 立此条的原因（实测）：`packages/editor-engine/src/mdTokens.ts` 的 `setTokenProperties`
-// **显式过滤** `if (key.startsWith('--mellow-md-'))`，其文件头也写着
-// 「编辑器运行在独立 iframe（独立 document），**宿主的 `--mellow-*` 变量不会自动继承**」。
-// 即：宿主（App.tsx applyTheme）把主题变量设在 **app 根**上，而 iframe 只拿到 **md** 那一批。
-// **后果**：引擎里所有**非 md** 的 `var(--mellow-*, <fallback>)` **永远取 fallback**。
+// ── 引擎侧主题 token：按**可达性**判定（2026-10-01 升级；原版按**前缀**）──────────
 //
-// 实测证据（探针 `tests/e2e/theme-follow-probe.mjs`，app 侧 `data-theme=mellow-dark`、
+// 【为什么升级】原版判据是前缀（`--mellow-md-*` ⇒ 会跨 iframe）。盲区：
+// `var(--mellow-md-X, fallback)` 若 X **既不在 `MD_TOKEN_DEFAULTS`、也不在主题基表**，
+// 同样**恒取 fallback**，但前缀是 md → 原护栏**看不见**。
+// 实测即抓到 `--mellow-md-list-bullet`（`plugin.ts` 消费；两端都没定义）——已补入两端。
+//
+// 【不变的前提】`mdTokens.ts` 的 `setTokenProperties` 显式过滤 `if (key.startsWith('--mellow-md-'))`，
+// 其文件头亦自述「编辑器运行在独立 iframe（独立 document），宿主的 `--mellow-*` 变量不会自动继承」。
+// 即：宿主（`App.tsx` applyTheme）把主题变量设在 **app 根**上，而 iframe 只拿到 **md** 那一批。
+//
+// 【实测证据】探针 `tests/e2e/theme-follow-probe.mjs`（app 侧 `data-theme=mellow-dark`、
 // `--mellow-toolbar-bg=rgba(40,40,42,.95)`）：
 //   · iframe 根上非 md 变量**全为空**；
-//   · 选区浮动工具栏的计算背景 = `rgba(30,30,30,0.92)` = **fallback**（≠ app 的 `rgba(40,40,42,.95)`）；
-//   · 表格工具栏 `bg = rgba(255,255,255,0.92)` → **暗色主题下是白底**（`table/toolbar.ts` 15 处硬编码色、
-//     一个主题变量都没用）。
+//   · 选区浮动工具栏计算背景 = `rgba(30,30,30,0.92)` = **fallback**（≠ app 的 `rgba(40,40,42,.95)`）；
+//   · 表格工具栏 `bg = rgba(255,255,255,0.92)` → **暗色主题下是白底**
+//     （`table/toolbar.ts` 15 处硬编码色、一个主题变量都没用）。
+// 【一手基线】Typora 的 `.ty-table-edit` **每个主题显式上色**（`base-control.css` 基线 `background:0 0`
+// 透明；`themes/night.css` = `background-color:#363B40`，恰等于该主题 `--bg-color`；gothic/pixyll/whitey
+// = `#ededed`；newsprint = `transparent`）→ 「表格工具栏跟随主题」是**既定行为**，Mellow 的暗色白底属缺口。
 //
-// 本护栏**不**要求删除这些 `var()` —— 它们承载「这些表面**想**跟随主题」的意图，
-// 正解是**拓宽桥**（让更多 `--mellow-*` 跨进 iframe），属**设计决策**，不在本护栏内。
-// 这里只做**登记 + 防新增**：新增非 md 主题变量即失败（否则又多一处「写了却永不生效」的开关）。
+// 【判据（三条，全部双向）】
+//   R1 可达性：引擎里每个 `var(--mellow-X, …)` 必须可达 ——
+//      · X 为 md 前缀 → 必须**同时**出现在 `MD_TOKEN_DEFAULTS` 与主题基表（`packages/themes/src/index.ts`）；
+//      · X 为非 md → 必须在 `ENGINE_THEME_VARS_INERT` 登记（它们承载「想跟随主题」的意图，
+//        正解是**拓宽 token 桥**，属**设计决策** → 见 ADR-0027）。
+//   R2 两端同锁：`MD_TOKEN_DEFAULTS` 的 md 键集合 ≡ 主题基表的 md 键集合（防一端加了、另一端忘）。
+//   R3 防死 token：`MD_TOKEN_DEFAULTS` 里**引擎从不消费**的键必须在 `MD_TOKENS_UNUSED` 登记。
 const ENGINE_THEME_VARS_INERT = [
   '--mellow-accent', '--mellow-bg-hover', '--mellow-border', '--mellow-danger',
   '--mellow-toolbar-bg', '--mellow-toolbar-fg',
 ];
+// 在 token 表里、但引擎源码从不消费的 md token（登记 + 原因；新增即失败，防死 token 静默堆积）。
+const MD_TOKENS_UNUSED = [
+  // 正文色：`MD_TOKEN_DEFAULTS` 与主题基表都有，但**引擎源码从不读它**（扫描确认）。
+  // 文档化用途是 Typora 的 `body{color:rgb(51,51,51)}`（master-plan §3 真值表）；
+  // 实际正文色由 CoreEditor 主题（`App.tsx` 的 `setTheme(activeTheme.editorTheme)`）提供。
+  // 保留而非删除：删除属**主题面**变更，且它可能是后续「引擎自持正文色」的预留接线点。
+  '--mellow-md-fg',
+];
 {
   const ENGINE_SRC2 = 'packages/editor-engine/src';
+  const MD_TOKENS_SRC = 'packages/editor-engine/src/mdTokens.ts';
+  const THEMES_SRC = 'packages/themes/src/index.ts';
+  const MD_PREFIX = '--mellow-md-';
   const walkEngine = (dir, rel = '') => readdirSync(resolve(root, dir, rel), { withFileTypes: true }).flatMap((e) =>
     (e.isDirectory() ? walkEngine(dir, `${rel}${e.name}/`) : [`${rel}${e.name}`]));
-  const collectInert = (files, reader) => {
-    const out = new Set();
-    for (const f of files) {
-      if (!f.endsWith('.ts')) continue;
-      // 先剥注释：说明这些变量的注释里也写着变量名（否则误报）
-      const src = stripRustComments(reader(f));
-      for (const m of src.matchAll(/var\((--mellow-[a-z0-9-]+)/g)) {
-        if (!m[1].startsWith('--mellow-md-')) out.add(m[1]);
-      }
-    }
-    return [...out].sort();
-  };
   const engineFiles2 = walkEngine(ENGINE_SRC2);
-  const actual = collectInert(engineFiles2, (f) => readFileSync(resolve(root, ENGINE_SRC2, f), 'utf8').replace(/\r\n/g, '\n'));
-  const added = actual.filter((v) => !ENGINE_THEME_VARS_INERT.includes(v));
-  const gone = ENGINE_THEME_VARS_INERT.filter((v) => !actual.includes(v));
-  assert(added.length === 0,
-    `引擎里出现**新的非 md 主题变量**：${added.join(', ')} —— 它们**永远取 fallback**`
+  const readNorm = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+  const collectVarKeys = (src) => new Set([...src.matchAll(/'(--mellow-[a-z0-9-]+)'\s*:/g)].map((m) => m[1]));
+
+  const mdKeys = collectVarKeys(readNorm(MD_TOKENS_SRC));
+  const themeKeys = collectVarKeys(readNorm(THEMES_SRC));
+
+  // 引擎消费的变量（先剥注释：说明这些变量的注释里也写着变量名）
+  const used = new Set();
+  for (const f of engineFiles2) {
+    if (!f.endsWith('.ts')) continue;
+    for (const m of stripRustComments(readNorm(`${ENGINE_SRC2}/${f}`)).matchAll(/var\((--mellow-[a-z0-9-]+)/g)) {
+      used.add(m[1]);
+    }
+  }
+
+  // 判定函数**具名且参数化**，canary 复用同一份（避免「canary 测的是副本」——本仓已实测过的失效模式；
+  // 参数化才能让 canary 真正验证「登记表清空 ⇒ 判定翻转」，而不是靠另写一份逻辑自证）。
+  const classify = (name, ctx = { md: mdKeys, theme: themeKeys, inert: ENGINE_THEME_VARS_INERT }) => {
+    if (name.startsWith(MD_PREFIX)) {
+      return ctx.md.has(name) && ctx.theme.has(name) ? 'reachable-md' : 'inert-md';
+    }
+    return ctx.inert.includes(name) ? 'registered-inert' : 'unregistered-non-md';
+  };
+
+  const inertMd = [...used].filter((v) => classify(v) === 'inert-md').sort();
+  assert(inertMd.length === 0,
+    `引擎里有**不可达的 md token**：${inertMd.join(', ')} —— 前缀是 md 能过 setTokenProperties 的过滤，`
+    + '但 `MD_TOKEN_DEFAULTS` / 主题基表里没有它 → 仍**恒取 fallback**（等于写了永不生效的开关）。'
+    + '修法：补进 `packages/editor-engine/src/mdTokens.ts` 与 `packages/themes/src/index.ts`（亮/暗各一）');
+  const unregisteredNonMd = [...used].filter((v) => classify(v) === 'unregistered-non-md').sort();
+  assert(unregisteredNonMd.length === 0,
+    `引擎里出现**新的非 md 主题变量**：${unregisteredNonMd.join(', ')} —— 它们**永远取 fallback**`
     + '（iframe 只接收 --mellow-md-*，见 mdTokens.ts 的过滤）→ 等于写了一个永不生效的开关；'
-    + '若确需主题跟随，应先拓宽 token 桥（设计决策），或在登记表里说明原因');
-  assert(gone.length === 0,
-    `引擎主题变量登记表里的项已不存在：${gone.join(', ')} —— 若已改用 md token 或去掉，请从登记表删除`);
-  // canary：两个方向
-  const SAMPLE_ADD = "el.style.color = 'var(--mellow-brand, #f00)';";
-  const found = [...SAMPLE_ADD.matchAll(/var\((--mellow-[a-z0-9-]+)/g)].map((m) => m[1]).filter((v) => !v.startsWith('--mellow-md-'));
-  if (found.length !== 1 || found[0] !== '--mellow-brand') {
-    errors.push('引擎主题变量护栏 canary 失效：新增的非 md 变量未被检出');
-  }
-  const SAMPLE_MD = "el.style.color = 'var(--mellow-md-link, #0969da)';";
-  const mdFound = [...SAMPLE_MD.matchAll(/var\((--mellow-[a-z0-9-]+)/g)].map((m) => m[1]).filter((v) => !v.startsWith('--mellow-md-'));
-  if (mdFound.length !== 0) {
-    errors.push('引擎主题变量护栏 canary 失效：md 变量被误判为非 md');
-  }
+    + '若确需主题跟随，应先拓宽 token 桥（设计决策，见 ADR-0027），或在登记表里说明原因');
+
+  // R2：两端同锁（双向）
+  const mdOnlyInDefaults = [...mdKeys].filter((k) => !themeKeys.has(k)).sort();
+  const mdOnlyInThemes = [...themeKeys].filter((k) => k.startsWith(MD_PREFIX) && !mdKeys.has(k)).sort();
+  assert(mdOnlyInDefaults.length === 0,
+    `md token 只在 MD_TOKEN_DEFAULTS、不在主题基表：${mdOnlyInDefaults.join(', ')}`
+    + ' → 宿主 `setMdTokens(activeTheme.variables)` 传不到它，`applyMdTokens` 会回落默认值，主题改不动它');
+  assert(mdOnlyInThemes.length === 0,
+    `md token 只在主题基表、不在 MD_TOKEN_DEFAULTS：${mdOnlyInThemes.join(', ')}`
+    + ' → 未注入时（桥未就绪 / localStorage 兜底缺失）无 fallback，观感不确定');
+
+  // R3：防死 token
+  const dead = [...mdKeys].filter((k) => !used.has(k)).sort();
+  const deadAdded = dead.filter((k) => !MD_TOKENS_UNUSED.includes(k));
+  const deadGone = MD_TOKENS_UNUSED.filter((k) => !dead.includes(k));
+  assert(deadAdded.length === 0,
+    `MD_TOKEN_DEFAULTS 里出现**引擎从不消费**的 md token：${deadAdded.join(', ')}`
+    + ' → 注入到 iframe 但无人读取（死 token）；要么接线消费，要么在 MD_TOKENS_UNUSED 登记原因');
+  assert(deadGone.length === 0,
+    `MD_TOKENS_UNUSED 登记表里的项已不再「未使用」：${deadGone.join(', ')} —— 已接线消费，请从登记表删除`);
+
+  // 登记表自身必须非空且无重复（防「清空登记表即全绿」）
+  assert(ENGINE_THEME_VARS_INERT.length > 0, 'ENGINE_THEME_VARS_INERT 不得为空（清空即等于放弃该判据）');
+  assert(new Set(ENGINE_THEME_VARS_INERT).size === ENGINE_THEME_VARS_INERT.length, 'ENGINE_THEME_VARS_INERT 有重复项');
+  assert(new Set(MD_TOKENS_UNUSED).size === MD_TOKENS_UNUSED.length, 'MD_TOKENS_UNUSED 有重复项');
+
+  // canary：复用 classify（同一份判定），逐方向验证「能翻转」
+  const canary = (name, expect, ctx) => {
+    const got = classify(name, ctx);
+    if (got !== expect) errors.push(`引擎主题 token 护栏 canary 失效：${name} 期望 ${expect}、实得 ${got}`);
+  };
+  canary('--mellow-md-link', 'reachable-md');            // 正常 md token
+  canary('--mellow-md-list-bullet', 'reachable-md');     // 本次补入的（回归锚：证明修法真的可被判可达）
+  canary('--mellow-md-brand-new', 'inert-md');           // 未定义的 md token → 必须判不可达
+  canary('--mellow-brand', 'unregistered-non-md');       // 未登记的非 md → 必须判未登记
+  canary('--mellow-accent', 'registered-inert');         // 已登记的非 md
+  // 「登记表清空 ⇒ 判定必须翻转」：只清 inert 名单，--mellow-accent 必须变成未登记
+  canary('--mellow-accent', 'unregistered-non-md', { md: mdKeys, theme: themeKeys, inert: [] });
+  // 「主题表清空 ⇒ md token 必须翻转」：证明 R1 的 theme 那一半真的在起作用
+  canary('--mellow-md-link', 'inert-md', { md: mdKeys, theme: new Set(), inert: ENGINE_THEME_VARS_INERT });
+  // 「token 表清空 ⇒ md token 必须翻转」：证明 R1 的 defaults 那一半真的在起作用
+  canary('--mellow-md-link', 'inert-md', { md: new Set(), theme: themeKeys, inert: ENGINE_THEME_VARS_INERT });
 }
 
 if (errors.length) {

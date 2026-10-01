@@ -2806,6 +2806,80 @@ app 侧：`data-theme = mellow-dark`、`--mellow-bg = #1e1e1e`、`--mellow-toolb
 > 都会产出「看起来很具体」的假结论**。本轮的三次误报分别产出 20 / 36 / 3 个假候选 ——
 > **数量级本身就是信号**：一个「36 个全坏」的结论，先怀疑工具。
 
+## 4.55 表格工具栏的 Typora 一手基线核实 + 护栏**按前缀分类**的盲区（2026-10-01）
+
+§4.53 把「表格工具栏暗色下是白底」记为**真实产品缺陷**，但当时只凭探针读数与「Typora 无命中」推断，
+**没有拿到 Typora 的正面基线**（只在 `style/themes/github.css` 里搜 `md-grid` / `tooltip` 无命中）。
+本节补齐一手证据，并顺手抓到护栏自身的一个盲区。
+
+### 一手证据（本机 Typora 1.14.9）
+
+先纠正**找错了类名**：`md-grid-board` 是**插入表格时的行列网格选择器**，不是表格工具栏；
+真正的工具栏类名是 **`.ty-table-edit`**（`appsrc/main.js` 中 15 处）。其取色**逐主题显式声明**：
+
+| 文件 | 规则（逐字） |
+|---|---|
+| `style/base-control.css`（基线） | `.ty-table-edit{width:100%;margin-left:-4px;position:absolute;background:0 0}` |
+| 同上（按钮） | `.ty-table-edit button{border:1px solid transparent;background:0 0;padding:1px 5px;font-size:12px;line-height:1.5}` |
+| **`style/themes/night.css`（暗色）** | `.ty-table-edit{border-top: 1px solid gray; background-color: #363B40;}` |
+| `style/themes/gothic.css` / `pixyll.css` | `.ty-table-edit{background: #ededed;}` |
+| `style/themes/whitey.css` | `.ty-table-edit{background: #ededed; padding-top: 4px;}` |
+| `style/themes/newsprint.css` | `.ty-table-edit{background-color: transparent;}` |
+| `style/themes/github.css` | 无覆盖 → 沿用基线「透明」（继承表格/正文底色） |
+
+**关键对照**：`night.css` 的 `#363B40` **恰等于该主题自己的 `--bg-color: #363B40`**。
+
+> **结论**：「表格工具栏**跟随主题**」是 Typora 的**既定行为**，由主题作者逐主题声明。
+> 故 Mellow 暗色下的白底（`table/toolbar.ts` 15 处硬编码色、**一个主题变量都没用**）
+> **是缺口，不是「有意差异」** —— §4.53 的推断由此升级为**有一手基线支撑的结论**。
+
+### 顺带抓到：护栏的**按前缀分类**盲区
+
+原护栏把「会不会跨进 iframe」判定为**前缀**（`--mellow-md-*` ⇒ 会）。
+盲区：`var(--mellow-md-X, fallback)` 若 X **两端都没定义**，同样恒取 fallback，
+**但前缀是 md → 护栏看不见**。
+
+实测扫全引擎（13 个 md 变量 / 6 个非 md 变量）抓到一例：
+
+| 变量 | 消费处 | `MD_TOKEN_DEFAULTS` | 主题基表 | 实际行为 |
+|---|---|---|---|---|
+| `--mellow-md-list-bullet` | `plugin.ts`（`MARKER_BULLET_CLASS::before` 的 `content:'•'` 颜色） | **无** | **无** | **恒取 fallback `#8b949e`** |
+
+另抓到一例**反向**问题（死 token）：`--mellow-md-fg` 在 `MD_TOKEN_DEFAULTS` 与主题基表**两端都有**，
+但**引擎源码从不消费**（全仓扫描确认）—— 其文档化用途是 Typora 的 `body{color:rgb(51,51,51)}`，
+而正文色实际由 CoreEditor 主题（`App.tsx` 的 `setTheme(activeTheme.editorTheme)`）提供。
+
+> **教训（与 §4.10 / §4.54 同族）**：**分类维度选错，护栏就会在自己宣称覆盖的范围内留盲区**。
+> 前缀是**声明式**的（作者写了 `md-` 就认为它可达），可达性是**事实式**的（真的有人注入、真的有人读）。
+> 护栏应当断事实，不断声明。
+
+### 处置
+
+| 项 | 动作 |
+|---|---|
+| `--mellow-md-list-bullet` | **修**：补入 `MD_TOKEN_DEFAULTS` + 主题亮/暗基表。亮色沿用原 fallback `#8b949e` ⇒ **零视觉变化**；暗色 `#a0a0a0`（与同组 `--mellow-md-quote-fg` / `-metablock-fg` 暗色同阶）。真值说明：Typora **没有**独立列表圆点色（`themes/*.css` 与 `style/base.css` 均无 `::marker` 规则，圆点继承正文色）→ 属 **Mellow 自选灰阶（参数原创）** |
+| 护栏判据 | **升级为可达性**：**R1** 引擎里每个 `var(--mellow-X, …)` 必须可达（md ⇒ 同时在 token 表与主题基表；非 md ⇒ 必须在 `ENGINE_THEME_VARS_INERT` 登记）；**R2** 两端 md 键集合**双向**相等；**R3** token 表里引擎从不消费的键必须在 `MD_TOKENS_UNUSED` 登记（`--mellow-md-fg` 已登记并写明原因） |
+| `--mellow-md-fg` | **登记为「未接线」**（不删、不接线）。接线会覆盖 CoreEditor 主题色 ⇒ 属外观变更，交 ADR-0027 Q3 裁决 |
+| 表格工具栏 | **不动**（15 处硬编码色保持）。取色方案有三种取舍（新增 md 面板 token / 拓宽 token 桥 / 维持现状并登记为 D 类），属**设计决策** → 已立 **ADR-0027（Proposed）**，并登记进门禁的 `Pending decisions:` 行 |
+
+### 注入验证（9 例，全部符合预期）
+
+`verify-parity-ledger.mjs` 的判定函数 `classify(name, ctx)` **具名且参数化**，canary 复用同一份
+（避免「canary 测的是副本」）。逐例「注入 → 报错 → 还原 → 通过」：
+
+① 引擎里注入未定义的 md token → 报「不可达的 md token」；② 注入未登记的非 md → 报「新的非 md 主题变量」；
+③ 从主题基表删掉该 token → 报不可达；④ 从 token 表删掉 → 报不可达；
+⑤ 只加 token 表一端 → 报「只在 `MD_TOKEN_DEFAULTS`、不在主题基表」；
+⑥ 只加主题表一端 → 报「只在主题基表、不在 `MD_TOKEN_DEFAULTS`」；
+⑦ 塞入引擎从不消费的死 token → 报「引擎从不消费」；⑧ 清空 `ENGINE_THEME_VARS_INERT` → 报未登记（反例锁）；
+⑨ 还原后通过。另配三条**翻转** canary：清空 inert 名单 ⇒ 非 md 变量判未登记；清空主题表 / token 表 ⇒ md 变量判不可达。
+
+### 门禁加固（顺带）
+
+`verify-release-gate.mjs` 的 `PENDING_ADRS` 此前**只有报告行、没有任何断言**（自身即「写了却无消费方」）。
+本次补上断言：待裁决 ADR 必须存在且**状态为 Proposed**（只认 `**Status:**` 那一行，
+防止正文里的字样蒙混），并配 3 条 canary（合法 Proposed 被检出 / Accepted 不被误判 / 正文里的字样不算状态行）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

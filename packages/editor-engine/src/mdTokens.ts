@@ -24,6 +24,14 @@ export const MD_TOKEN_DEFAULTS: Record<string, string> = {
   '--mellow-md-link': '#0969da',
   '--mellow-md-table-border': '#dfe2e5',
   '--mellow-md-table-head-bg': '#f8f8f8',
+  // 列表圆点色（`plugin.ts` 的 `MARKER_BULLET_CLASS::before` 消费）。
+  // 2026-10-01 补入：此前 `plugin.ts` 写了 `var(--mellow-md-list-bullet, #8b949e)`，
+  // 但本表与主题基表**都没有这个键** → 恒取 fallback，且因为前缀是 `md-`
+  // 能过 `setTokenProperties` 的过滤，护栏按**前缀**分类时看不见它（登记后消除该盲区）。
+  // 真值说明：Typora **没有**独立的列表圆点色（`themes/*.css` 与 `style/base.css`
+  // 均无 `::marker` 规则，圆点继承正文 `color`）→ 本值为 **Mellow 自选灰阶（参数原创）**，
+  // 取 GitHub 系 muted 灰；亮色沿用原 fallback 值以做到**零视觉变化**。
+  '--mellow-md-list-bullet': '#8b949e',
 };
 
 export interface MdTokensBridge {

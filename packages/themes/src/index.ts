@@ -121,6 +121,9 @@ const LIGHT_BASE: Record<string, string> = {
   '--mellow-md-link': '#0969da',
   '--mellow-md-table-border': '#dfe2e5',
   '--mellow-md-table-head-bg': '#f8f8f8',
+  // 列表圆点色（引擎 `plugin.ts` 消费；2026-10-01 补入 —— 此前引擎写了 var() 但两端都没定义）。
+  // Typora 无独立真值（圆点继承正文色），故为 **Mellow 自选灰阶（参数原创）**。
+  '--mellow-md-list-bullet': '#8b949e',
   // V5-A：侧栏 Typora 对齐（#fafafa 底 / #eee 选中条，github.css sidebar 真值）
   '--mellow-sidebar-bg': '#fafafa',
   '--mellow-sidebar-active': '#eeeeee',
@@ -187,6 +190,9 @@ const DARK_BASE: Record<string, string> = {
   '--mellow-md-link': '#4493f8',
   '--mellow-md-table-border': '#3a3a3a',
   '--mellow-md-table-head-bg': '#2d2d2f',
+  // 列表圆点色（暗色）：与同组 muted 灰同阶（`--mellow-md-quote-fg` / `--mellow-md-metablock-fg`
+  // 暗色均为 #a0a0a0），避免 #8b949e 在 #1e1e1e 底上偏暗。
+  '--mellow-md-list-bullet': '#a0a0a0',
   // V5-A：侧栏（暗色）
   '--mellow-sidebar-bg': '#252526',
   '--mellow-sidebar-active': '#3a3a3d',

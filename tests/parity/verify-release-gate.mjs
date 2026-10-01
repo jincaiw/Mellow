@@ -147,7 +147,42 @@ const DECIDED_ADRS = [
   ['docs/adr/ADR-0025-evidence-policy-when-baseline-refuses.md', '>2MB 无基线时的证据政策', 'A1 / B1 / C1'],
   ['docs/adr/ADR-0026-perf-target-measurement-scope.md', 'PRD §110 性能目标的测量口径', 'A1 / B1 / C1'],
 ];
-const PENDING_ADRS = []; // 当前无待裁决 ADR（上一批已于 2026-09-30 裁决）
+// ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
+// ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
+// 它承载一个**真实取舍**（新增 md 面板 token / 拓宽 token 桥 / 维持现状），
+// 故必须是 Proposed，且**不得**被悄悄标成 Accepted。
+const PENDING_ADRS = [
+  ['docs/adr/ADR-0027-engine-theme-token-reachability-and-panel-surfaces.md',
+    '引擎侧浮动面板表面取色（表格工具栏 / 选区工具栏）', '待裁决'],
+];
+for (const [p, what] of PENDING_ADRS) {
+  if (!existsSync(resolve(root, p))) {
+    fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);
+    continue;
+  }
+  const src = read(p);
+  // 未裁决前**必须**是 Proposed：放宽到「行内任意位置出现 Accepted」会被正文里的字样满足，
+  // 故沿用 DECIDED 那侧的写法（只认 **Status:** 那一行）。
+  if (!/\*\*Status:\*\*[^\n]*Proposed/.test(src)) {
+    fail(`${p}（${what}）尚未裁决，状态必须是 Proposed；若已裁决，请移入 DECIDED_ADRS 并写明结论`);
+  }
+}
+// canary：自检上面这条规则本身（样本拼接构造，不依赖真实文件）
+{
+  const PROPOSED_LINE = '**Status:** **Proposed**（2026-10-01）—— 待裁决；裁决前不生效';
+  const ACCEPTED_LINE = '**Status:** **Accepted**（2026-10-01）—— 已裁决';
+  if (!/\*\*Status:\*\*[^\n]*Proposed/.test(PROPOSED_LINE)) {
+    fail('待裁决 ADR 状态护栏 canary 失效：合法的 Proposed 状态行未被检出');
+  }
+  if (/\*\*Status:\*\*[^\n]*Proposed/.test(ACCEPTED_LINE)) {
+    fail('待裁决 ADR 状态护栏 canary 失效：Accepted 状态行被误判为 Proposed');
+  }
+  // 反例锁：正文里出现「Proposed」字样不得让一个没有 Status 行的文件过关
+  const BODY_ONLY = '本 ADR 原为 Proposed，现已裁决。';
+  if (/\*\*Status:\*\*[^\n]*Proposed/.test(BODY_ONLY)) {
+    fail('待裁决 ADR 状态护栏过宽：正文里的 Proposed 字样被当成了状态行');
+  }
+}
 for (const [p, what, decision] of DECIDED_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`已裁决 ADR 缺失：${p}（${what}）—— 裁决记录不得删除，否则门禁结论失去依据`);
