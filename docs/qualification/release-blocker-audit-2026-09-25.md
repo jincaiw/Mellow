@@ -3440,6 +3440,57 @@ iframe 偏移会**不同尺度** → 选区工具栏 / 表格工具栏会错位�
 > **方法备注**：这两条都是**读实现即可否证**的 —— 比写测试便宜得多。
 > **负结果同样值得落盘**：否则下一个接手的人会重新怀疑同一件事（本审计 §4.13 / §4.18 同例）。
 
+## 4.64 状态词误用：`IMPL` 被用来表达「不能宣称 PASS-E」（2026-10-01）
+
+### 怎么发现的
+
+逐项复核未闭环 10 项的 `blockedBy` 时，`P0-PLATFORM-001` 的**状态与原因自相矛盾**：
+
+- 状态 = **`IMPL`**；
+- 而其记录**自己**早已写明「本项 requiredEvidence（macos-native / windows-ci / linux-ci /
+  linux-ime-matrix）至此**已全部取得**」；
+- 维持 `IMPL` 的理由写的是「PASS-E 全局策略额外要求 ux-gate，需人工计时会话后才能**宣称结论**」。
+
+**「能否宣称 PASS-E」≠「本项是否实现」** —— 用 `IMPL`（= 未实现/未完成）表达前者属**状态词误用**：
+它让读者以为还有实现工作，同时**掩盖**该条其实已达 `AUTO`。
+
+### 处置：`IMPL` → `AUTO`（按规则，不是 judgement）
+
+门禁 `verify-release-gate.mjs` 的闭环口径（**ADR-0024 Q1=A3**）：
+**`AUTO` 且 `requiredEvidence` 不含 `ux-gate` ⇒ 视为已闭环** —— 因为 `AUTO` 的含义正是
+「自动化测试通过、**真机体验验收未完成**」，与「本项证据齐备、仅差全局 ux-gate 策略」**完全对应**。
+
+且 **requiredEvidence 不含 `ux-gate`** ⇒ 本项**不适用** ADR-0024 A3 的「含 ux-gate 的 AUTO 不得收口」限制。
+
+**独立复核（实跑，非仅凭自述）**：派发 Runtime Qualification（run **36825957958**）→
+**macOS / Windows / Linux 三平台全绿**（Linux IME 矩阵、Windows Source Fidelity + runtime smoke、
+macOS launch + CLI open）⇒ 上列四项证据**确实取得**。
+
+**故状态改为 `AUTO` 并移除 `blockedBy`**（已闭环项不得再挂「阻塞」）。
+**这不改变任何结论**：门禁仍报 `PASS-E = 0/50`，且 `AUTO` **不等于**「真机体验验收已完成」——
+全局人工 UX Gate 会话（`P0-QA-001`）仍是发布转正的前提。
+
+### 逐项核对：为什么**只**改这一项
+
+| 项 | `requiredEvidence` | 台账自述 | 判定 |
+|---|---|---|---|
+| **`P0-PLATFORM-001`** | 不含 `ux-gate` | 「requiredEvidence 至此**已全部取得**」 | **改 AUTO** ✓ |
+| `P0-EDITOR-004` | **含 `ux-gate`** | —— | 不动（AUTO 也收不了口） |
+| `P0-PERF-001` | 含 `windows-ci` / `linux-ci` | 仅 macOS 基准 | 不动（**证据未齐**；`AUTO` 会变成未挣得的闭环） |
+| `P0-EDITOR-005` | 含 `windows-ci` / `linux-ci` | 「剩余仅为真机三平台证据」 | 不动（Rust 平台契约测试**没有 Windows job** ⇒ `windows-ci` 未取得） |
+| `P0-LAYOUT-002` | 不含 `ux-gate` | 「requiredEvidence 已齐备」 | **不动** —— 它写的是 `BLOCKED`（= 被阻塞），而它**确实**被人工会话阻塞 ⇒ **词义正确**。与 `IMPL` 不同：`IMPL` 说「没做」，`BLOCKED` 说「做完了在等」——前者是事实错误，后者是事实正确 |
+
+> **判据（本节的要点）**：**状态词是事实陈述，不是表达策略立场的工具。**
+> 「能不能宣称 PASS-E」属**全局策略**，不应写进单项的状态词里；
+> 单项状态只回答「**这一项**做到哪了」。
+
+### 固化为护栏
+
+`verify-release-gate.mjs` 新增：**`status === 'IMPL'` 的项，其 `blockedBy` 不得只有 `ux-gate-policy`**
+—— `IMPL` 必须配一个**实现类**的阻塞原因。配双向 canary（`IMPL`+`ux-gate-policy` 必须被检出；
+`AUTO`+`ux-gate-policy` 与 `IMPL`+实现类原因必须**不被**误判）。
+**注入验证**：把 `P0-PLATFORM-001` 改回 `IMPL`+`ux-gate-policy` → 报错；基线通过。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

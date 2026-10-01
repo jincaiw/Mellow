@@ -198,6 +198,36 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   }
 }
 
+// ── 状态词与阻塞原因必须**语义一致**（2026-10-01，审计 §4.64）────────────────
+// 立此条的原因（实测）：`P0-PLATFORM-001` 状态写着 `IMPL`，而其阻塞原因写的是
+// 「PASS-E 全局策略额外要求 ux-gate，需人工计时会话后才能**宣称结论**」——
+// 那说的是**能否宣称 PASS-E**，不是「本项证据是否齐备」。而该条记录自己早已写明
+// 「本项 requiredEvidence 至此**已全部取得**」。
+//
+// **`IMPL` 的词义是「未实现/未完成」**，而 `ux-gate-policy` 是**人工门禁策略**（不是实现缺口）。
+// 把「不能宣称 PASS-E」写成 `IMPL` = **状态词误用**：它会让读者以为还有实现工作，
+// 同时**掩盖**该条其实已达 `AUTO`（=「自动化通过、真机体验验收未完成」，ADR-0024 的规则下即闭环）。
+//
+// 判据：**`status === 'IMPL'` 的项，其 `blockedBy` 不得**是 `ux-gate-policy`
+// —— 若确实只是「差人工门禁」，状态应为 `AUTO`（或 `BLOCKED`，若强调「被阻塞」）。
+// 反过来说：`IMPL` 必须配一个**实现类**的阻塞原因。
+{
+  const uxPolicy = 'ux-' + 'gate-policy';   // 拼接构造，避免本文件自身的注释/字符串被自己的判据命中
+  const bad = (ledger.items ?? []).filter((it) => it.status === 'IMPL' && it.blockedBy === uxPolicy);
+  if (bad.length > 0) {
+    fail(`以下项状态为 IMPL 但阻塞原因只有 '${uxPolicy}'：${bad.map((i) => i.id).join(', ')}`
+      + ' —— `IMPL` 表示「未实现」，而 ux-gate 策略是**人工门禁**、不是实现缺口；'
+      + '若本项证据已齐备，状态应为 `AUTO`（ADR-0024 下即闭环），或 `BLOCKED`（强调被阻塞）');
+  }
+  // canary：两个方向
+  const synthBad = [{ id: 'X', status: 'IMPL', blockedBy: uxPolicy }].filter((it) => it.status === 'IMPL' && it.blockedBy === uxPolicy);
+  if (synthBad.length !== 1) errors.push('状态词一致性护栏 canary 失效：IMPL + ux-gate-policy 未被检出');
+  const synthOk = [{ id: 'X', status: 'AUTO', blockedBy: uxPolicy }].filter((it) => it.status === 'IMPL' && it.blockedBy === uxPolicy);
+  if (synthOk.length !== 0) errors.push('状态词一致性护栏 canary 过宽：AUTO + ux-gate-policy 被误判');
+  const synthImpl = [{ id: 'X', status: 'IMPL', blockedBy: 'engine-i18n-plumbing-pending' }].filter((it) => it.status === 'IMPL' && it.blockedBy === uxPolicy);
+  if (synthImpl.length !== 0) errors.push('状态词一致性护栏 canary 过宽：IMPL + 实现类原因被误判');
+}
+
 // ── ③ CI 门禁完整性 ─────────────────────────────────────────────────────
 const ci = read('.github/workflows/ci.yml');
 for (const anchor of [
