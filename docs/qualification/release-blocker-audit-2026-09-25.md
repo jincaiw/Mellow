@@ -3286,6 +3286,39 @@ capture-window-chrome.mjs / scenes-golden.mjs / sidebar-golden.mjs / visual-gold
 > 并补一条反例锁：「只有同名 setter、没有 `host.` 前缀」必须算**缺失**。
 > （skill §7「断言匹配调用而非标识符」的同型。）
 
+## 4.61 把「非默认入口探针」挂进**发布门禁**（2026-10-01）
+
+### 问题：连续几轮的发现都靠**手工跑探针**，而探针不进 CI
+
+§4.59（暗色启动用亮主题）与 §4.60（关掉的开关重启又出现）都是**探针**抓出来的。
+而 `tests/e2e/` **不进主 CI**（需要 Playwright + 构建产物）—— 按 §4.50 的教训
+「**不进 CI 的测试会腐烂**」，这些断言若不挂到某处，下一次没人跑就等于没有。
+
+### 处置：挂到 Runtime Qualification 的 Linux job（**每次发布都会跑**）
+
+该 job 已经装了 Playwright、构建了 bundle、并且已经在跑视觉 Golden —— 是现成的落点。
+新增步骤 **「Non-default entry probes (dark / English / 关掉的开关)」**，跑三个探针：
+
+| 探针 | 覆盖的**非默认入口** | 对应发现 |
+|---|---|---|
+| `theme-follow-probe` | **暗色主题** | §4.53 / §4.59 |
+| `i18n-engine-probe` | **English 界面** | §4.52 / §4.58 |
+| `startup-state-probe` | **关掉的开关**（`appearance.toolbar=false`） | §4.60 |
+
+**与视觉步骤同规**：逐条记录退出码、失败即非零退出；**不得** `continue-on-error`
+（那正是 §4.51 修过的假门禁）。
+
+### 护栏
+
+`verify-runtime-qualification-workflow.mjs` 新增断言：该步骤**必须存在**、三个探针**必须都在**、
+**不得**带 `continue-on-error`、**必须**逐条记录退出码并 `exit $status`。
+
+**注入验证 3 例**：删掉步骤 → 报错；加 `continue-on-error: true` → 报错；去掉 `status=1`/`exit $status` → 报错；基线通过。
+
+> **连带（同轮第 5 次）**：该步骤的**说明注释**里写着「不得用 `continue-on-error`」——
+> 若不剥 YAML 注释，判据会被**自己的说明**触发。已按本仓既有约定先剥注释，并配 canary
+> （「注释里的字样不算」+「真实违规必须被检出」两个方向）。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

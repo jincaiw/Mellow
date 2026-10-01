@@ -101,4 +101,43 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   }
 }
 
+// ── 非默认入口探针必须挂在发布门禁上（2026-10-01，审计 §4.59 / §4.60）──────────
+// 立此条的原因：本仓的 e2e 与视觉 Golden **长期只在「默认值」下采样**（亮色 / 工具栏默认开 / 中文），
+// 于是**非默认入口整条路径无人走** —— 「默认能跑」被当成了「能跑」。实测代价：
+//   ① 冷启动即暗色时编辑器用**默认亮主题**渲染、`--mellow-md-*` 全空；
+//   ② 关掉格式工具栏后**重启又出现**。
+// 这些探针需要 Playwright + 构建产物（进不了主 CI），故挂在 Runtime Qualification 的 Linux job ——
+// **每次发布都会跑**。本断言防「被静默摘掉」。
+{
+  const ENTRY_PROBES = ['theme-follow-probe', 'i18n-engine-probe', 'startup-state-probe'];
+  // 剥 YAML 注释行 —— 否则本步骤的**说明注释**里写的「不得用 continue-on-error」会触发判据
+  // （本仓已实测过 4 次的同型坑：注释满足/触发判据）。
+  const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const stepMatch = /- name: "Non-default entry probes[\s\S]*?(?=\n      - name:)/.exec(workflow);
+  if (stepMatch === null) {
+    throw new Error('Runtime Qualification 缺少「非默认入口探针」步骤 —— '
+      + '暗色 / English / 关掉的开关这三条非默认路径会重新变成**无人走**（审计 §4.59/§4.60）');
+  }
+  const body = stripYamlComments(stepMatch[0]);
+  for (const probe of ENTRY_PROBES) {
+    if (!body.includes(probe)) {
+      throw new Error(`非默认入口探针步骤缺少 ${probe}（该探针覆盖一条非默认路径）`);
+    }
+  }
+  if (/continue-on-error/.test(body)) {
+    throw new Error('非默认入口探针步骤不得带 continue-on-error —— 那是 §4.51 修过的**假门禁**');
+  }
+  if (!/status=1/.test(body) || !/exit \$status/.test(body)) {
+    throw new Error('非默认入口探针步骤必须逐条记录退出码并 `exit $status`'
+      + '（bash 的步骤退出码只取**最后一条**命令，否则失败会被静默吞掉）');
+  }
+  // canary：注释剥离必须生效（否则上面的 continue-on-error 判据会被本步骤的说明注释触发）
+  if (/continue-on-error/.test(stripYamlComments('      # 不得用 continue-on-error\n      run: x'))) {
+    throw new Error('非默认入口探针护栏 canary 失效：YAML 注释未被剥离');
+  }
+  if (!/continue-on-error/.test(stripYamlComments('      continue-on-error: true'))) {
+    throw new Error('非默认入口探针护栏 canary 失效：真实违规未被检出');
+  }
+}
+
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');

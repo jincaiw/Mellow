@@ -257,6 +257,30 @@ jobs:
           echo "VISUAL_GOLDEN baseline files:"
           ls -l tests/visual/golden/ 2>/dev/null || echo "(golden dir missing)"
           exit $status
+      - name: "Non-default entry probes (dark / English / 关掉的开关)"
+        # 立此步骤的原因（2026-10-01，审计 §4.59 / §4.60）：
+        # 本仓的 e2e 与视觉 Golden **长期只在「默认值」下采样**（亮色主题 / 工具栏默认开 / 中文），
+        # 于是**非默认入口整条路径无人走** —— 「默认能跑」被当成了「能跑」。
+        # 实测代价：① 冷启动即暗色时编辑器用**默认亮主题**渲染、`--mellow-md-*` 全空；
+        #          ② 关掉格式工具栏后**重启又出现**。两处都是这些探针抓出来的。
+        # 探针**不进主 CI**（要 Playwright + 构建产物），故挂在这里：**每次发布都会跑**。
+        #
+        # ⚠️ 与视觉步骤同规：逐条记录退出码、失败即非零退出（bash 的步骤退出码只取最后一条命令）。
+        # **不得**用 `continue-on-error` 掩盖 —— 那正是 §4.51 修过的假门禁。
+        # 若某条探针偶发不稳，**修探针**，不要降级门禁。
+        working-directory: mellow
+        run: |
+          export NODE_PATH=/tmp/pw/node_modules
+          status=0
+          for probe in theme-follow-probe i18n-engine-probe startup-state-probe; do
+            if node "tests/e2e/${probe}.mjs"; then
+              echo "ENTRY_PROBE ${probe}: OK"
+            else
+              echo "ENTRY_PROBE ${probe}: FAILED (exit $?)"
+              status=1
+            fi
+          done
+          exit $status
       - name: Upload Linux visual golden
         if: always()
         uses: actions/upload-artifact@v4
