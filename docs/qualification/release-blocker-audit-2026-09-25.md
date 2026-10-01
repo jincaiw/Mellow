@@ -3380,6 +3380,39 @@ Linux 上没有 Meta 键 → 查找面板根本没打开。**这是探针缺陷�
 > **「挂了一个平台」≠「挂了所有平台」**。凡平台专有代码所在之处，验证也要**逐平台落地** ——
 > 否则「有测试」这句话在每个平台上都为真，而**每条路径上都不完整**。
 
+### ⚠️ 派发实跑：Windows 侧**三个探针全挂** —— 又是「裸 spawn('npx')」
+
+只把步骤接上仍不够 —— 派发 RQ 实跑后 **Windows job ❌**（视觉 Golden ✅、探针 ❌），
+且三个探针**各在 ~0.5 秒内瞬间失败**：
+
+```
+ENTRY_PROBE theme-follow-probe: FAILED (exit 1)
+ENTRY_PROBE i18n-engine-probe: FAILED (exit 1)
+ENTRY_PROBE startup-state-probe: FAILED (exit 1)
+
+Error: spawn npx ENOENT
+```
+
+**根因**：三个探针都写了 `spawn('npx', ['vite', …])` —— 而 **Windows 上 `npx` 实际是 `npx.cmd`**，
+无 shell 时 spawn 抛 `ENOENT`。**这正是本仓已经修过一次的坑**
+（`tests/visual/dev-server.mjs` 的文件头就记着它：P0-LAYOUT-002 的 Windows 采集长期「静默产出 0 文件」）。
+
+**为什么这次又漏了 —— 护栏的「范围缺口」**：
+`verify-visual-golden.mjs` 里**已有**一条「不得裸 spawn('npx')」的判据，
+但它的 `visualScripts` 列表**只列 `tests/visual/` 的 4 个脚本** ——
+**覆盖不到 `tests/e2e/` 的探针**。即：判据存在，**范围不达**。
+
+### 处置
+
+- 三个探针改用既有的跨平台启动器 `startViteDevServer`（`tests/visual/dev-server.mjs`），
+  并把「未就绪」的错误信息接上 `describeSpawnFailure`（否则只剩无法定位的超时）。
+- 护栏**补范围**：`verify-runtime-qualification-workflow.mjs` 在「挂进 CI 的探针」这一清单上
+  断言「**不得裸 `spawn('npx')`** 且**必须用 `startViteDevServer`**」，配双向 canary。
+
+> **教训（第三条，与上两条并列）**：**判据的范围必须覆盖它想保护的对象。**
+> 「已经有一条同型判据」不等于「这条判据管得到我」——
+> 见到同型判据时，**先读它的扫描面**，别假定它覆盖了你的新文件。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。
