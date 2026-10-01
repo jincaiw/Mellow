@@ -3354,6 +3354,32 @@ Linux 上没有 Meta 键 → 查找面板根本没打开。**这是探针缺陷�
 > **教训**：「**把测试接进 CI**」与「**测试在 CI 上能跑**」是两件事。
 > 前者是配置改动，后者**只能靠实跑证明** —— 本次若不派发，下一个版本会在 Linux 上静默红。
 
+## 4.62 非默认入口探针**两侧都挂**（Linux + Windows）—— 只挂一个平台 = 另一个平台仍无人走（2026-10-01）
+
+§4.61 把探针挂到了 Linux job。但本仓的**平台专有代码集中在 Adapter**（ADR-0016 / ADR-0022），
+而 §4.61 在 Linux 上抓到的**恰恰是按键处理类**问题（探针写死 macOS 的 `Meta+f`）——
+**同一类风险在 Windows 上同源存在**，只挂 Linux 等于把另一半留在无人区。
+
+### 处置
+
+在 **Windows job** 加同一步骤（该 job 已装 Playwright 于 `C:/pw/node_modules`、已跑视觉 Golden）：
+「Non-default entry probes (dark / English / 关掉的开关)」，pwsh 写法，**逐条记录退出码 + `exit $status`**、
+**不得** `continue-on-error`。
+
+### 护栏升级
+
+`verify-runtime-qualification-workflow.mjs` 由「找到一处」改为「**必须有两处**」：
+- 用 `matchAll` 取**全部**同名步骤，断言 **≥2**（Linux + Windows）；
+- 逐个检查：三探针齐全 / 无 `continue-on-error` / 逐条记录退出码并 `exit $status`；
+- **bash 与 pwsh 两种写法都认**（`status=1` 与 `$status = 1`）。
+
+**注入验证**：删掉 Windows 那一处 → 报错
+「非默认入口探针步骤只有 1 处（下限 2：Linux + Windows）」；基线通过。
+
+> **教训（与 §4.61 的「接上线 ≠ 能跑」互补）**：
+> **「挂了一个平台」≠「挂了所有平台」**。凡平台专有代码所在之处，验证也要**逐平台落地** ——
+> 否则「有测试」这句话在每个平台上都为真，而**每条路径上都不完整**。
+
 ## 五、本次审计做的改动（非策略性）
 
 1. 台账 6 个未闭环项新增 `blockedBy` 字段（机器可读的阻塞原因）。

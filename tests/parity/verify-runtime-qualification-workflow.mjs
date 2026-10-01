@@ -159,6 +159,25 @@ if (!/Windows Source Fidelity gate/.test(workflow)
       throw new Error(`非默认入口探针 ${probe} 用了 macOS 专有的按键 ${bad[0]} —— `
         + '它在 Linux job 上跑，必须用 `ControlOrMeta`（否则该探针在 Linux 恒失败）');
     }
+    // ── 也不得**裸 spawn('npx')**（2026-10-01 实测）：Windows 上 `npx` 实际是 `npx.cmd`，
+    // 无 shell 时 spawn 抛 ENOENT —— 该探针在 Windows 上**三个全挂**（实测 RQ Windows job）。
+    // 本仓既有约定：共用 `tests/visual/dev-server.mjs` 的平台感知启动器。
+    // ⚠️ 注意 `verify-visual-golden.mjs` 里已有一条同型判据，但它的 `visualScripts` **只列
+    // `tests/visual/` 的 4 个脚本** → 覆盖不到 `tests/e2e/` 的探针（范围缺口，实测踩到）。
+    if (/spawn\(\s*['"`]npx['"`]/.test(src)) {
+      throw new Error(`非默认入口探针 ${probe} 裸 spawn('npx') —— Windows 上是 npx.cmd，会 ENOENT；`
+        + '必须改用 `tests/visual/dev-server.mjs` 的 `startViteDevServer`');
+    }
+    if (!/startViteDevServer/.test(src)) {
+      throw new Error(`非默认入口探针 ${probe} 必须使用跨平台启动器 startViteDevServer（dev-server.mjs）`);
+    }
+  }
+  // canary：裸 spawn 判据两个方向
+  if (!/spawn\(\s*['"`]npx['"`]/.test("const v = spawn('npx', ['vite']);")) {
+    throw new Error('探针跨平台护栏 canary 失效：裸 spawn(\'npx\') 未被检出');
+  }
+  if (/spawn\(\s*['"`]npx['"`]/.test("const server = startViteDevServer({ cwd, port });")) {
+    throw new Error('探针跨平台护栏 canary 过宽：合规写法被误判为裸 spawn');
   }
   // canary：两个方向
   if (/['"`](Meta|Cmd)\+/.exec("await page.keyboard.press('Meta+f');") === null) {

@@ -10,7 +10,7 @@
  *
  * 运行：NODE_PATH=<playwright>/node_modules node <此文件>
  */
-import { spawn } from 'node:child_process';
+import { startViteDevServer, describeSpawnFailure } from '../visual/dev-server.mjs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -64,12 +64,10 @@ const isDarkColor = (css) => {
 };
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
   const browser = await chromium.launch();
   try {
-    if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
+    if (!(await waitForServer(30000))) throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.addInitScript(() => {
       try {
@@ -198,7 +196,7 @@ async function main() {
     process.exitCode = exitCode;
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

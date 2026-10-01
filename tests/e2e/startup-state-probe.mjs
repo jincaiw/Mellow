@@ -19,7 +19,7 @@
  * 运行：NODE_PATH=<playwright>/node_modules node <此文件>
  * 前置：编辑器 bundle 已构建（node apps/desktop/scripts/build-editor-bundle.mjs）
  */
-import { spawn } from 'node:child_process';
+import { startViteDevServer, describeSpawnFailure } from '../visual/dev-server.mjs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -76,12 +76,10 @@ async function coldStart(browser, preset) {
 const DOC = 'hello world\n\n可选中的正文文字\n';
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
   const browser = await chromium.launch();
   try {
-    if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
+    if (!(await waitForServer(30000))) throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
 
     // ── 用例 1：`appearance.toolbar` = **false**（非默认）────────────────
     // 期望：冷启动后选中文本**不出现**格式工具栏。
@@ -136,7 +134,7 @@ async function main() {
     process.exitCode = exitCode;
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 
