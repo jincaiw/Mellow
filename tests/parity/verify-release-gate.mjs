@@ -501,6 +501,102 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
       fail('release.yml 的 verify-release-bundle 必须排在打包之前');
     }
   }
+
+  // ── ④b 发布收口必须**机器化**：先断言制品、再自动解除 Draft（2026-10-01，审计 §4.68）──
+  // 立此条的原因（实测）：finalize 原先只 `-F prerelease=true`、**不设 `draft=false`**，
+  // 靠人记着执行 `gh release edit vX --draft=false`（workflow 头部注释当时就是这么写的）。
+  // 代价已实测：**12 个 tag 里有 6 个从未解除 Draft**（v1.5.6/7/8/11/12/13），
+  // 其中一个（v1.5.12）还只有 **12/15 个制品**（三平台有一个没传全）。
+  // ⇒ **人工门禁没有机器记录时，两个方向都会漏**：漏发布、漏一个不完整构建。
+  // 修法 = 把「人眼扫资产表」变成断言（关键制品存在性 + 数量下限），断言通过才解除 Draft。
+  // **注意本条的判据方向**：它锁的是「**发布步骤里必须存在这些机器判据**」，
+  // 而不是「release.yml 长什么样」—— 顺序也要锁（先断言、后发布），否则断言拦不住发布。
+  const FINALIZE = '  finalize:';
+  const PUBLISH = '-F draft=false';
+  const PRERELEASE = '-F prerelease=true';
+  const ASSET_ASSERT = '缺少关键制品';
+  const UNPUBLISH = '-F draft=true';
+  // ⚠️ **判据必须先剥注释**：finalize 的注释里写着「**不要**在这里写 `-F draft=true`」——
+  // 不剥注释的话，`/-F draft=true/` 会命中**那句说明**（本仓已踩过同型坑：护栏检出自己写的注释）。
+  const stripComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  // ⚠️ 判据要按**实际写法**取（首版写成 /"-lt 15"/ 就匹配不到 `"$COUNT" -lt 15` ——
+  // 「判据的形态假设」错一次就是一条恒真的护栏）。
+  const COUNT_FLOOR = /-lt\s+15/;
+  // 「先发布、后断言」= 顺序违规。**判定与 canary 共用这一个函数**（否则 canary 只是复述代码）。
+  const publishBeforeAssert = (s) => {
+    const p = s.indexOf(PUBLISH);
+    const a = s.indexOf(ASSET_ASSERT);
+    return p !== -1 && a !== -1 && p < a;
+  };
+  const finAt = release.indexOf(FINALIZE);
+  if (finAt < 0) {
+    fail('release.yml 缺少 finalize job —— 发布收口（解除 Draft）无人负责');
+  } else {
+    const finalizeJob = stripComments(release.slice(finAt));
+    if (!finalizeJob.includes(PUBLISH)) {
+      fail('release.yml 的 finalize 未解除 Draft（缺 `' + PUBLISH + '`）—— '
+        + '「靠人工执行 gh release edit --draft=false」已被实测证伪：12 个 tag 里 6 个从未发布（审计 §4.68）');
+    }
+    if (!finalizeJob.includes(PRERELEASE)) {
+      fail('release.yml 的 finalize 未标记 prerelease=true（ADR-0020 / ADR-0024 Q2=B1）');
+    }
+    if (!finalizeJob.includes(ASSET_ASSERT)) {
+      fail('release.yml 的 finalize 未断言**关键制品**（`.dmg`/`.msi`/`x64-setup.exe`/`.AppImage`/`.deb`/`.rpm`/`latest.json`）'
+        + ' —— 解除 Draft 前必须机器确认三平台制品齐全（实测 v1.5.12 只有 12 个制品却照样跑完了 finalize）');
+    }
+    if (!COUNT_FLOOR.test(finalizeJob)) {
+      fail('release.yml 的 finalize 未设**制品数量下限** —— 只做存在性断言会漏掉「数量不足」这类不完整构建');
+    }
+    // 两种失败（缺关键制品 / 数量不足）都必须**响亮报错**（`::error::`），不能只是 echo 一句就过。
+    const loudFails = (finalizeJob.match(/::error::/g) ?? []).length;
+    if (loudFails < 2) {
+      fail(`release.yml 的 finalize 只有 ${loudFails} 处 ::error::（下限 2：缺关键制品 / 数量不足）`
+        + ' —— 断言必须让 job 红，而不是打一行日志继续发布');
+    }
+    if (publishBeforeAssert(finalizeJob)) {
+      fail('release.yml 的 finalize 必须**先断言制品、后解除 Draft**（顺序反了 = 断言拦不住发布）');
+    }
+    // 反向陷阱：**不得**显式 `-F draft=true` —— 那会让「重跑 finalize」把
+    // **已发布**的 release 降级回 Draft（一次失败的重跑就能把线上发布撤下来）。
+    // 正确做法是「不动 draft 字段」：新 tag 时它本来就是 draft（失败安全），已发布时也不会被降级。
+    if (finalizeJob.includes(UNPUBLISH)) {
+      fail('release.yml 的 finalize 不得设置 `' + UNPUBLISH + '`'
+        + '（断言失败时会把已发布的 release 降级回 Draft）—— 正确做法是**不动 draft 字段**');
+    }
+    if (!/test\s+"\$\(gh release view[^)]*isDraft/.test(finalizeJob)) {
+      fail('release.yml 的 finalize 未在收尾断言「已不是 Draft」—— 该步跑完必须已是已发布状态');
+    }
+  }
+  // canary：四个方向（样本拼接构造，避免护栏检出自己）
+  {
+    const on = `  finalize:\n      - run: -F prerelease=true -F draft=false`;
+    const off = `  finalize:\n      - run: -F prerelease=true`;
+    if (!on.includes(PUBLISH) || off.includes(PUBLISH)) {
+      errors.push('发布收口护栏 canary 失效：`draft=false` 的存在性判据不能区分正/负样本');
+    }
+    if (off.includes(PRERELEASE) === false) {
+      errors.push('发布收口护栏 canary 失效：`prerelease=true` 的存在性判据不能区分正样本');
+    }
+    const orderBad = `  finalize:\n      - run: -F draft=false\n      - run: echo 缺少关键制品`;
+    const orderOk = `  finalize:\n      - run: echo 缺少关键制品\n      - run: -F draft=false`;
+    if (!publishBeforeAssert(orderBad) || publishBeforeAssert(orderOk)) {
+      errors.push('发布收口护栏 canary 失效：顺序判据不能区分「先发布」与「先断言」');
+    }
+    if (publishBeforeAssert(`  finalize:\n      - run: -F draft=false`)) {
+      errors.push('发布收口护栏 canary 过宽：没有断言时不应判为顺序违规');
+    }
+    if (!/-F draft=true/.test('  finalize:\n      - run: -F draft=true')
+      || /-F draft=true/.test('  finalize:\n      - run: -F draft=false')) {
+      errors.push('发布收口护栏 canary 失效：「不得 draft=true」的判据不能区分正/负样本');
+    }
+    // **剥注释**的 canary（本条首跑就被自己的注释打红）：注释里的字样不算。
+    if (stripComments('  finalize:\n    # 不要写 -F draft=true\n    - run: -F draft=false').includes(UNPUBLISH)) {
+      errors.push('发布收口护栏 canary 失效：剥注释后仍被**注释里**的字样命中');
+    }
+    if (!stripComments('  finalize:\n    - run: -F draft=true').includes(UNPUBLISH)) {
+      errors.push('发布收口护栏 canary 失效：剥注释把**真实违规**也剥掉了（判据会被架空）');
+    }
+  }
 }
 
 // ── drift canary：移除一个护栏后，① 必须转为失败态 ──────────────────────

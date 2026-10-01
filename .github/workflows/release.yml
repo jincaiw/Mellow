@@ -6,8 +6,13 @@
 #
 # 触发：手动（workflow_dispatch）或推送 v* 标签（标签推送会创建 Draft Release）。
 # 收尾：三平台构建成功后由 finalize 作业写入 Release Notes（.github/release-template.md +
-#       git log 生成的提交清单）并标记 prerelease=true（ADR-0020）——此后仅需人工执行
-#       `gh release edit vX --draft=false` 即可发布。
+#       git log 生成的提交清单）、**断言三平台制品齐全**，然后自动
+#       `draft=false` + `prerelease=true` 发布（ADR-0020 / ADR-0024 Q2=B1）。
+#       ⚠️ 2026-10-01 前这里是**人工**的（注释写着「此后仅需人工执行
+#       `gh release edit vX --draft=false`」）—— 已被实测证伪：**12 个 tag 里 6 个
+#       （v1.5.6/7/8/11/12/13）从未解除 Draft**，其中一个（v1.5.12）还只有 **12/15 个制品**
+#       ⇒ 人工门禁没有机器记录时，**两个方向都会漏**（漏发布、漏不完整构建）。
+#       故改为：**先把「人眼扫资产表」变成断言**（关键制品 + 数量下限），断言通过才解除 Draft。
 #       注：generate_release_notes 对 Draft Release 不生效，且 PATCH draft 不带 tag_name
 #       会把 tag 关联重置为 untagged-…（v1.4.2 首发实证），故 finalize 自行生成清单。
 # 工具链：pnpm workspace（根 package.json + pnpm-workspace.yaml，阶段 0 迁移）；
@@ -306,7 +311,7 @@ jobs:
           if-no-files-found: error
 
   finalize:
-    name: Finalize Draft Release (notes + prerelease)
+    name: Finalize Draft Release (notes + asset assertions + publish)
     needs: [windows, macos, linux]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -314,7 +319,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Fill release notes and mark prerelease (ADR-0020)
+      - name: Fill notes, assert assets, publish as pre-release (ADR-0020 / ADR-0024)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -329,11 +334,47 @@ jobs:
             echo
             echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${GITHUB_REF_NAME}"
           } > /tmp/release-body.md
-          # PATCH draft 必须显式带 tag_name，否则 tag 关联会被重置为 untagged-…。
+
+          # ① 先只填 body + 标 pre-release，**不动 draft 字段**：
+          #    - 新 tag 推送时该 release 本来就是 draft（tauri-action 建的）⇒ 失败安全：
+          #      即使下面②的断言失败，发布也停在「未公开」状态；
+          #    - ⚠️ **不要在这里写 `-F draft=true`** —— 那样「重跑 finalize」会把**已发布**的
+          #      release **降级回 Draft**（一次失败的重跑就能把线上发布撤下来）。
+          #    PATCH draft 必须显式带 tag_name，否则 tag 关联会被重置为 untagged-…。
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             -X PATCH \
             -f tag_name="$GITHUB_REF_NAME" \
             -f body="$(cat /tmp/release-body.md)" \
             -F prerelease=true
+
+          # ② 资产断言 = 把「人眼扫一遍资产表」机器化。解除 Draft 的前置条件。
+          #    为什么需要：**人工门禁没有机器记录** —— 实测 12 个 tag 里有 6 个跑完 finalize 后
+          #    从未解除 Draft，其中一个（v1.5.12）只有 **12/15 个制品**（三平台有一个没传全）。
+          #    即：既漏了发布、又漏了一个不完整构建 —— 两个方向都要机器兜住。
+          ASSETS=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
+          COUNT=$(printf '%s\n' "$ASSETS" | grep -c . || true)
+          MISSING=""
+          for pat in '\.dmg$' '\.msi$' 'x64-setup\.exe$' '\.AppImage$' '\.deb$' '\.rpm$' 'latest\.json$'; do
+            printf '%s\n' "$ASSETS" | grep -Eq "$pat" || MISSING="$MISSING $pat"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::${GITHUB_REF_NAME} 缺少关键制品:${MISSING} —— 保持 Draft、不发布"
+            exit 1
+          fi
+          if [ "$COUNT" -lt 15 ]; then
+            echo "::error::${GITHUB_REF_NAME} 只有 ${COUNT} 个制品（下限 15）—— 保持 Draft、不发布"
+            exit 1
+          fi
+
+          # ③ 断言通过才解除 Draft。prerelease=true 保持 ADR-0020 / ADR-0024 Q2=B1 语义
+          #    （不宣称正式发布，releases/latest 不动）。
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -X PATCH \
+            -f tag_name="$GITHUB_REF_NAME" \
+            -F prerelease=true \
+            -F draft=false
+
           gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,assets \
             --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease) assets=\(.assets | length)"'
+          # 收口断言：本步跑完必须已是「已发布」—— 否则这一步的意义就没了。
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = "false"
