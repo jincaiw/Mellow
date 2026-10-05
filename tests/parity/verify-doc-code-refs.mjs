@@ -770,7 +770,12 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
 //   ③ **更正/引用块** —— 「原写 `[x](old.md)`」这类行必然引用旧路径。
 {
   const MD_SKIP_DIRS = new Set(['node_modules', '.git', 'target', 'CoreEditor', 'dist', '.workbuddy-ai', '.trae', 'archive']);
-  const FIXTURE_RE = /^tests\/(?:fixtures\/|benchmark\/.*\/(?:work|fixtures)\/)/;
+  // ⚠️ **必须豁免生成型夹具目录** —— 实测踩过：`tests/benchmark/fixtures/` 自带 `.gitignore`（`*`），
+  // 是**本地生成、不入库**的夹具；其中 `1000-images.md` **一个文件就含 1000 条相对链接**。
+  // 首版只豁免了 `tests/fixtures/**` 与 `benchmark/**/{work,fixtures}/`（正则漏了
+  // `benchmark/fixtures/` 这一形态）⇒ **本地计数被这一个文件灌到 1037**，而 **CI 里该文件不存在
+  // ⇒ 只剩 25** ⇒ 撞穿当时按污染值设的下限 500（**CI 当场变红**）。
+  const FIXTURE_RE = /^tests\/(?:fixtures\/|benchmark\/fixtures\/|benchmark\/.*\/(?:work|fixtures)\/)/;
   const mdFiles = walk(root).filter((f) => f.endsWith('.md'));
   const LINK_RE = /\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
   // ⚠️ 过滤谓词**必须是共用函数**（主循环与 canary 同一对象）—— 否则放宽它不会被抓到。
@@ -802,9 +807,14 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
     fail(`这些 markdown **相对链接不可达**：${broken.slice(0, 5).join(' / ')}`
       + `（共 ${broken.length} 处）—— 读者点它会 404；请改为正确路径，或登记豁免（测试夹具已整体豁免）`);
   }
-  // 覆盖下限：全仓相对链接数不得低于立此判据时的基线（实测 1037）
-  if (linkCount < 500) {
-    fail(`markdown 链接可达性普查只解析出 ${linkCount} 条相对链接（下限 500 = 立此判据时的基线）`
+  // 把计数打出来（本地与 CI 可对照；首版没打，导致「下限按污染值校准」没被发现）
+  console.log(`Doc code refs: markdown 相对链接 ${linkCount} 条（已排除生成型夹具）；不可达 ${broken.length} 处`);
+  // 覆盖下限：**必须排除生成型夹具后再校准**（实测真实基线 = **25**）。
+  // ⚠️ 首版把下限设成 500 —— 那是拿**被本地生成夹具污染**的计数（1037，其中 1000 条来自
+  // 一个 gitignored 的 `1000-images.md`）校准的 ⇒ **CI 里必然变红**。
+  // ⇒ **校准基线前先问「这个计数在干净检出里还成立吗」**（判据的输入里有生成物吗？）。
+  if (linkCount < 15) {
+    fail(`markdown 链接可达性普查只解析出 ${linkCount} 条相对链接（下限 15；**排除生成型夹具后的实测基线 = 25**）`
       + ' —— 解析或扫描面漂移会让本判据空转');
   }
   // canary：四向 —— ①相对路径必须被识别 ②绝对 URL/锚点必须被跳过
