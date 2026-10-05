@@ -5908,6 +5908,84 @@ master-plan §4.3 的状态表列了 **10 个状态**，其中 **`PASS-BETTER`�
 - 同步 `tests/qualification/README.md` 的护栏数量 19 → **20**（该数字由 `verify-release-gate.mjs` 锁定）；
 - **未改动任何产品代码**（现状即健康；本节只加判据）。
 
+## 4.97 审 **Tauri capability 权限表 ↔ 前端实际调用的 API**：**4 个写操作未授权**（2026-10-06）
+
+**动机**：`capabilities/default.json` 是**手工列举**的权限白名单，而**没有任何东西保证它覆盖了
+前端实际调用的 API**。漏授一个权限 = 该 API 在真机上**运行时被拒**（Tauri 2 ACL），
+而前端普遍写成 `void win?.setTitle(...)`（fire-and-forget）⇒ **静默失败**：
+无弹窗、无日志，**测试也看不见**（浏览器 dev 走 mock，不走 ACL）。
+
+### ⚠️ 实测：4 个写操作未授权
+
+| 前端调用 | 需要的权限 | capability | 后果 |
+|---|---|---|---|
+| `win.setTitle()`（`App.tsx` ×3：标题栏脏标记 `●` / 字数） | `core:window:allow-set-title` | ❌ **缺** | 窗口标题不更新 |
+| `win.setSize()`（`App.tsx` 窗口尺寸恢复 + `windowService`） | `core:window:allow-set-size` | ❌ **缺** | 窗口尺寸不恢复 |
+| `win.setPosition()`（`App.tsx` 窗口位置恢复） | `core:window:allow-set-position` | ❌ **缺** | 窗口位置不恢复 |
+| `win.setAlwaysOnTop()`（菜单「保持窗口在最前端」） | `core:window:allow-set-always-on-top` | ❌ **缺** | 菜单项点了没反应 |
+
+**旁证 —— 这份清单是「人工列举且不完整」，不是「刻意最小化」**：
+清单**授了** `core:window:allow-set-fullscreen`、`allow-minimize`、`allow-maximize`、
+`allow-close`、`allow-toggle-maximize`，却漏了上面 4 个写操作。
+⇒ 是**列举时没想到**，不是有意的权限收缩。
+
+**为什么以前没被发现**：`docs/security/security-review-2026-08-13.md` 只按**面**审过 ——
+原话「权限面窄（core:default + window + dialog + opener ✅）」。
+**「面窄」与「覆盖了实际调用」是两个不同的命题**，而后者从未被核对。
+（同族：§4.96 的「Rust 命令三方可达性」也是同类边界。）
+
+### ⚠️ 证据等级（如实声明，勿当已确认缺陷）
+
+- **静态、高置信**：所需权限未在 capability 中授予 + 调用点可达 + 命令↔权限映射已核实
+  （`allow-set-title → set_title` 等，取自 `gen/schemas/acl-manifests.json`）。
+- **未验证**：**未在真机观察过失败**（本环境无法运行 Tauri 应用、无法做真机 UX Gate）。
+  按 Tauri 2 ACL 语义未授予即拒绝，但**修复后的行为也未验证**。
+- ⇒ 因此**本轮不擅自放宽 capability**：放宽安全面属**策略决定**（且是安全评审明确称赞过的面），
+  按 `AGENTS.md`「不要自行修改架构，先报告冲突」—— **只登记，待裁决**。
+
+**一行修法（供裁决后执行）**：在 `apps/desktop/src-tauri/capabilities/default.json` 的
+`permissions` 里补上那 4 个标识符（`core:window:allow-set-title` / `allow-set-size` /
+`allow-set-position` / `allow-set-always-on-top`），然后**重新生成** `gen/schemas/`
+（本护栏会断言源与生成快照一致，防「改了源忘了重新生成」）。
+
+### 新增护栏 `tests/parity/verify-tauri-capability-contract.mjs`（第 **21** 个）
+
+- **① 生成快照必须与 capability 源一致**（`gen/schemas/capabilities.json` ⇄ `capabilities/*.json`）——
+  否则护栏读的是过期快照，判据失真；
+- **② 前端调用的每个 window API，其所需权限必须已授予**，否则必须进
+  `CAPABILITY_GAP_EXEMPT`（4 条，理由里**逐字**写明「待裁决」与「未在真机验证」）；
+- **③ 例外表双向**（一旦授权 / 一旦不再被使用，登记项必须删除）；
+- **④ 扫描面下限 + canary 6 项**。
+
+**权限集是「展开」出来的，不是硬编码的**：`core:default` → `core:window:default` →
+逐条权限，全部从已入库的 `acl-manifests.json` 派生；
+**命令↔权限映射也是派生的**（`set_title` → `core:window:allow-set-title`，camelCase↔snake_case）。
+⇒ 新增 API 时不需要改护栏表。
+
+### 口径踩坑（两次，都是「过宽 ⇒ 假阳性」）
+
+1. **manifest 的键是 `core:window` 而不是 `window`** —— 首版按插件名取键 ⇒ 展开出 0 项、
+   映射表空 ⇒ **16 个 API 一个都没识别**、4 个例外全被判「前端没用」。
+   ⇒ 由 canary（`core:window:default` 必须展开出 `allow-is-maximized`）当场暴露。
+2. **「凡 `标识符.方法(` 都算」过宽** ⇒ 把**编辑器 host** 的方法误报成 Tauri 命令
+   （`host.setTheme(...)` / `host.destroy()`，`host` 是 editor-core 的宿主适配器）。
+   ⇒ 改为**从 `getCurrentWindow()` 派生接收者**（含包装它的本地函数 `windowHandle()`，
+   再找 `const win = await windowHandle()` 这类绑定）。
+
+**注入验证 5/5**：① 给 `allow-set-title` 授权 ⇒ 例外表双向报错；② 撤 `allow-close` ⇒ 报未授予；
+③ 让生成快照与源分叉 ⇒ 报不一致；④ 撤 `allow-set-fullscreen` ⇒ 报未授予；
+⑥ **源与快照同时**撤掉 `allow-is-maximized`（它仍在 `core:window:default` 里）⇒ **仍绿**
+（证明权限集展开真的生效）。还原后全绿且文件与快照逐字节一致。
+
+> ⑥ 的**设计本身**是个教训：只改源会先撞上「快照与源不一致」，**测不到**展开逻辑 ——
+> 验证一条判据时，要先确认**没有别的判据先把它拦住**。
+
+### 本次改动
+
+- **新增** `tests/parity/verify-tauri-capability-contract.mjs`，接入根 `test` + `parity` 两条链；
+- 同步 `tests/qualification/README.md` 的护栏数量 20 → **21**；
+- **未改动 `capabilities/*.json`**（只登记，待裁决）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
