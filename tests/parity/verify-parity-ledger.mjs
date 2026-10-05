@@ -967,6 +967,86 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── widget 的「caret 是否在节点内」边界语义必须**按家族**保持（2026-10-06，审计 §4.86）──
+  // 背景：同一件事（caret 是否落在节点内 ⇒ 是否显示源码）在本包里有**两种有意不同**的边界语义：
+  //   含边界（`>= && <=`）：inlineExtras / kbdCaps / mdLink / wikilink —— caret 紧贴定界符 ⇒ **显示源码**
+  //   严格内（`> && <`）  ：math / mermaid / toc / githubAlerts / footnote —— caret 紧贴定界符 ⇒ **不显示**
+  // 该约定**已文档化**（`packages/editor-engine/test/widget-state-matrix.test.ts` 的 `boundaryReveals`
+  // 字段 + 各家族 caret 语义注释）**且有测试**。但**没有任何东西阻止有人把某一处改成另一种**。
+  //
+  // ⚠️ 立此条的直接起因：审计 §4.86 本来打算把 math/mermaid 的 `caretInside` 与
+  // mdLink/wikilink 的手写判断**合并成单一 helper**（「看起来是重复代码」）——
+  // **回查后确认那是两种语义**，合并会**静默改掉 math/mermaid 的边界行为**。
+  // ⇒ 故本判据锁「每个文件用**哪一种**」，而**不是**锁「只有一种」。
+  // ⚠️ 也**不**断言「一个文件只能有一种形态」：`githubAlerts` / `footnote` 同时含
+  // 「`ranges.some` 跳过检查（含边界）」与「`inside` reveal 判定（严格内）」两件事，
+  // 断言互斥会误伤。
+  {
+    const REVEAL_INCLUSIVE = /(?:head|pos)\s*>=\s*[\w.]*from\s*&&\s*(?:head|pos)\s*<=\s*[\w.]*to/;
+    const REVEAL_STRICT = /(?:head|pos)\s*>\s*[\w.]*from\s*&&\s*(?:head|pos)\s*<\s*[\w.]*to/;
+    const CARET_FAMILY = [
+      ['packages/editor-engine/src/inlineExtras.ts', 'inclusive', 'highlight / sup / sub 定界符'],
+      ['packages/editor-engine/src/kbdCaps.ts', 'inclusive', 'kbd 标签'],
+      ['packages/editor-engine/src/mdLink.ts', 'inclusive', 'Markdown 文件链接定界符'],
+      ['packages/editor-engine/src/wikilink.ts', 'inclusive', 'wikilink 定界符'],
+      ['packages/editor-engine/src/math.ts', 'strict', 'Math（block / inline）'],
+      ['packages/editor-engine/src/mermaid.ts', 'strict', 'Mermaid'],
+      ['packages/editor-engine/src/toc.ts', 'strict', 'TOC'],
+      ['packages/editor-engine/src/githubAlerts.ts', 'strict', 'GitHub Alerts'],
+      ['packages/editor-engine/src/footnote.ts', 'strict', 'Footnote'],
+    ];
+    let checked = 0;
+    for (const [file, expected, label] of CARET_FAMILY) {
+      const abs = resolve(root, file);
+      assert(existsSync(abs), `caret 边界家族文件不存在：${file}`);
+      if (!existsSync(abs)) continue;
+      const src = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
+      const hasInclusive = REVEAL_INCLUSIVE.test(src);
+      const hasStrict = REVEAL_STRICT.test(src);
+      checked += 1;
+      if (!hasInclusive && !hasStrict) {
+        fail(`${file} 找不到「caret 是否在节点内」谓词（${label}）—— 护栏需同步更新，不要静默漏检`);
+      } else if (expected === 'inclusive' && !hasInclusive) {
+        fail(`${file}（${label}）的 caret 边界语义应为**含边界**（\`head >= X.from && head <= X.to\`）—— `
+          + '改为「严格内」会让 caret 紧贴定界符时**不再显示源码**（与同族其它元素不一致）');
+      } else if (expected === 'strict' && !hasStrict) {
+        fail(`${file}（${label}）的 caret 边界语义应为**严格内**（\`head > X.from && head < X.to\`）—— `
+          + '改为「含边界」会让 caret 紧贴定界符时**改为显示源码**（与同族其它元素不一致）');
+      }
+    }
+    // 覆盖下限：家族成员不得被删空（防空转）
+    if (checked < 9) {
+      fail(`caret 边界家族只解析到 ${checked} 个文件（下限 9 = 立此判据时的基线）—— 判据可能已空转`);
+    }
+    // 与「文档化来源」挂钩：测试矩阵必须仍声明 boundaryReveals（否则约定失去成文依据）
+    const matrixPath = resolve(root, 'packages/editor-engine/test/widget-state-matrix.test.ts');
+    assert(existsSync(matrixPath), '缺少 widget-state-matrix.test.ts（caret 边界约定的文档化来源）');
+    if (existsSync(matrixPath)) {
+      const matrix = readFileSync(matrixPath, 'utf8').replace(/\r\n/g, '\n');
+      // ⚠️ 不能只断「出现过 `boundaryReveals`」—— 那是 §26 的「出现过 ≠ 有人用」，
+      // 只声明字段却不再读它（或反之）都会被判为通过。**声明与使用必须分别断言**。
+      assert(/boundaryReveals\s*:/.test(matrix),
+        'widget-state-matrix.test.ts 必须仍**声明** `boundaryReveals` 字段（caret 边界语义的成文依据）');
+      assert(/\.boundaryReveals\b/.test(matrix),
+        'widget-state-matrix.test.ts 必须仍**实际使用** `boundaryReveals`（只声明不读 = 化石字段，约定失去守护）');
+      assert(/caretInside/.test(matrix),
+        'widget-state-matrix.test.ts 必须仍记录 `caretInside` 的严格内语义（源码证据注释）');
+    }
+    // canary：谓词是**同一个对象**（断言与 canary 共用），双向
+    if (!REVEAL_INCLUSIVE.test('head >= e.from && head <= e.to')) {
+      errors.push('caret 边界家族护栏 canary 失效：含边界样本未被识别');
+    }
+    if (!REVEAL_STRICT.test('head > span.from && head < span.to')) {
+      errors.push('caret 边界家族护栏 canary 失效：严格内样本未被识别');
+    }
+    if (REVEAL_STRICT.test('head >= e.from && head <= e.to')) {
+      errors.push('caret 边界家族护栏 canary 失效：含边界样本被误判为严格内');
+    }
+    if (REVEAL_INCLUSIVE.test('head > span.from && head < span.to')) {
+      errors.push('caret 边界家族护栏 canary 失效：严格内样本被误判为含边界');
+    }
+  }
+
   // ── 表格尺寸上限必须两端一致（2026-10-01，任务 4.11）──────────────────────
   // 立此条的原因：`packages/editor-engine` 与 `packages/app-core` **互不依赖**
   //（两者 `dependencies` 均为空），无法共享常量 → 上限在两处各写一份：

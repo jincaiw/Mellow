@@ -5024,6 +5024,95 @@ export \ engine = ANNOTATION INPUT KATEX … NAV SECTION SEMANTICS（导出自�
 - 「其他（未归类）」那 **82 条**尚未逐条归类。
 - 上面 3 个「看起来像设置」的键**待裁决**（见上）。
 
+## 4.86 一次**差点做成的静默回归**：把「两种有意不同的语义」当成重复代码去合并（2026-10-06）
+
+### 怎么走到这一步的
+
+继续归类「其他 82 条」时，注意到**一组可疑的重复**：8 个引擎扩展的注释都写着
+「与 X 一致」，而实际代码里：
+
+| 形态 | 出现处 |
+|---|---|
+| 含边界 `head >= X.from && head <= X.to` | `inlineExtras.ts` / `kbdCaps.ts` / `mdLink.ts` ×2 / `wikilink.ts` ×2 |
+| 严格内 `head > X.from && head < X.to` | `math.ts`（`caretInside`）/ `mermaid.ts`（`caretInside`） |
+| 严格内 `pos > from && pos < to` | `toc.ts` / `githubAlerts.ts` / `footnote.ts`（`inside`，**逐字相同地定义了 3 遍**） |
+
+**当时的判断**：「这是重复代码 ⇒ 抽一个共享 helper，把 8 处收拢成 1 处」。
+这个判断**看起来很自然**，而且本仓的文档里恰好有一句支持它的话
+（`restoreAllSettingsDefaults`：「少一条路径就少一处将来会漂移的地方」）。
+
+### ⚠️ 回查后否掉：那**不是**重复代码，是**两种语义**
+
+`packages/editor-engine/test/widget-state-matrix.test.ts` 的文件头**已经文档化**了这件事：
+
+```text
+各家族 caret 语义（源码证据）：
+  - math.ts caretInside: head > from && head < to（严格）
+  - mermaid.ts caretInside: 同上（严格）
+  - toc/yaml/githubAlerts/footnote inside(): pos > from && pos < to（严格）
+  - image/widget.ts: node.from <= head && node.to >= anchor → 隐藏（含边界）
+  - wikilink.ts: head >= from && head <= to → 定界符隐藏（含边界）
+```
+
+而且有**成文的字段与断言**：`WidgetFamilyCfg.boundaryReveals`（「边界（head = from/to）是否显示源码」）
++ `caret-before` / `caret-after` / `selection-full` 三条测试按该字段分支。
+
+⇒ **两种语义是有意的**：
+
+- **含边界**家族（链接 / 双链 / kbd / 高亮）：caret 紧贴定界符 ⇒ **显示源码**（用户正要编辑它）；
+- **严格内**家族（Math / Mermaid / TOC / Alerts / Footnote）：caret 紧贴定界符 ⇒ **不显示源码**。
+
+**若按原计划合并**：`math.ts` / `mermaid.ts` 的边界行为会**从「不显示源码」变成「显示源码」**
+—— 一次**静默的编辑器行为回归**，而且**现有测试很可能仍然全绿**
+（`widget-state-matrix` 按 `boundaryReveals` 分支断言，若我把两个家族都改成同一个谓词，
+测试会按**新的** `boundaryReveals` 取值去断言 —— 除非有人同时改字段，否则**测试不会报**）。
+
+⇒ **本轮不做这个重构**，改为**把「按家族保持哪种语义」变成判据**。
+
+> 这是本会话**第 4 次**「回查来源后否掉一个看似合理的结论」
+> （前三次：`T-0602` 主题数 / `T-0702` journeys 数 / PRD 的 `1.14.6` 基线）。
+> **每一次否掉，都避免了一次真实的错误改动。**
+
+### 修复：新增「caret 边界语义按家族锁定」判据（`verify-parity-ledger.mjs`）
+
+- 声明 **9 个家族文件**各自的期望形态（含边界 4 个 / 严格内 5 个）；
+- 逐文件断言该形态**存在**（找不到任何形态 ⇒ 响亮失败，不静默漏检）；
+- **不断言「一个文件只能有一种形态」** —— `githubAlerts` / `footnote` 同时含
+  「`ranges.some` 跳过检查（含边界）」与「`inside` reveal 判定（严格内）」两件事，
+  断言互斥会**误伤**；
+- **覆盖下限**（`checked < 9` ⇒ 报错，防空转）；
+- **与文档化来源挂钩**：`widget-state-matrix.test.ts` 必须仍**声明** `boundaryReveals`
+  且**实际使用**它（`.boundaryReveals`）。
+  ⚠️ 初版只断「出现过 `boundaryReveals`」—— 那是 §26 的「**出现过 ≠ 有人用**」：
+  只声明字段却不再读它，判据仍会通过。已拆成**声明**与**使用**两条断言。
+
+### 注入验证 9/9
+
+| 注入 | 结果 |
+|---|---|
+| `wikilink` / `mdLink` / `kbdCaps`：含边界 → 严格内 | ✅ 红（3/3） |
+| `math` / `mermaid` / `toc`：严格内 → 含边界 | ✅ 红（3/3） |
+| 谓词放宽：`REVEAL_STRICT` 恒真 | ✅ 红（canary：含边界样本被误判为严格内） |
+| **全局重命名** `boundaryReveals`（字段消失） | ✅ 红（声明断言） |
+| **只保留声明、删掉全部使用** | ✅ 红（使用断言 —— 化石字段） |
+
+无变异对照绿、复原后绿；本机 **19 个护栏 + ux-gate-recorder 自测全绿**。
+
+> ⚠️ **注入脚本本身踩过一次坑**：第一版用 `String.replace(a, b)` —— 它**只替换首处**，
+> 于是 `wikilink` / `mdLink`（各 2 处）的注入**只改了一半** ⇒ 判据看到另一种形态仍在 ⇒
+> 误判为「护栏无效」。改成 `split(a).join(b)`（全局）后 3/3 全红。
+> ⇒ **注入必须全局替换**，否则「注入失败」会被误读成「护栏失效」。
+
+### 教训
+
+> **「看起来像重复代码」不等于「重复代码」。** 合并之前必须回答：
+> **这两处的语义**（边界 / 空值 / 顺序 / 错误处理）**是否真的相同？**
+> —— 名字相同**不是**证据（本例两个 `caretInside` 同名不同义）；
+> 名字不同也**不是**反证。
+>
+> ⇒ **去重是一次行为变更，不是一次格式整理。** 去重前必须能说出
+> 「合并后**哪些输入**的结果会变」，答不上来就**先别合并**。
+
 ## 五、本次审计做的改动（非策略性）
 
 
