@@ -372,6 +372,39 @@ for (const doc of docs) {
   }
 }
 
+// ── PRD 的标题层级必须与编号一致（2026-10-06，审计 §4.78）──
+// 立此条的原因（实测）：宪法（PRD）里 **8 处子节**（`113.1`–`113.5` / `117.1`–`117.3`）被写成了
+// **一级标题**（`# N.M`），而同文件里另 **20 处**子节正确用 `## N.M`。
+// 后果：**生成的目录会把这 8 个子节列成与 `# 113.` 平级** —— 而全仓有大量文档按「PRD §113.4」引用，
+// 读者按目录去找会定位到错误层级。（引用本身靠文本匹配，不受影响；受影响的是**结构视图**。）
+// ⚠️ 注意**不要**把 `# 109.` 这类**顶级**小节判成违规 —— 本判据只抓 `# N.M`（带小数点的）。
+{
+  const PRD = 'docs/product/Mellow-PRD-V1.2-FINAL.md';
+  const prdLines = readFileSync(resolve(root, PRD), 'utf8').replace(/\r\n/g, '\n').split('\n');
+  const isSubAsH1 = (line) => /^# \d+\.\d/.test(line);
+  const misplaced = prdLines.map((l, i) => ({ l, i })).filter(({ l }) => isSubAsH1(l));
+  if (misplaced.length > 0) {
+    fail(`${PRD} 有 ${misplaced.length} 处**子节**写成了**一级标题**（\`# N.M\` 应为 \`## N.M\`）：`
+      + misplaced.slice(0, 3).map(({ l, i }) => `L${i + 1} ${l.slice(0, 26)}`).join(' / ')
+      + ' —— 生成的目录会把这些子节列成顶级，而全仓按「PRD §N.M」引用它们');
+  }
+  const prdTopCount = prdLines.filter((l) => /^# \d+\./.test(l)).length;
+  if (prdTopCount < 100) {
+    fail(`${PRD} 只解析出 ${prdTopCount} 个一级小节标题（\`# N.\`）（下限 100 = 立此判据时的基线）`
+      + ' —— 结构漂移会让本判据**空转**；若确实改过结构，请同步下调下限并说明');
+  }
+  // canary：三个方向（判定与 canary 共用 isSubAsH1）
+  if (!isSubAsH1('# 113.1 五层边界')) {
+    errors.push('PRD 标题层级护栏 canary 失效：子节写成一级的违规形态未被检出');
+  }
+  if (isSubAsH1('## 113.1 五层边界')) {
+    errors.push('PRD 标题层级护栏 canary 过宽：合规的 `## N.M` 被误判为违规');
+  }
+  if (isSubAsH1('# 113. 推荐技术架构')) {
+    errors.push('PRD 标题层级护栏 canary 过宽：**顶级**小节（`# N.`）被误判为违规');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
