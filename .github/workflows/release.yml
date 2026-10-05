@@ -7,7 +7,12 @@
 # 触发：手动（workflow_dispatch）或推送 v* 标签（标签推送会创建 Draft Release）。
 # 收尾：三平台构建成功后由 finalize 作业写入 Release Notes（.github/release-template.md +
 #       git log 生成的提交清单）、**断言三平台制品齐全**，然后自动
-#       `draft=false` + `prerelease=true` 发布（ADR-0020 / ADR-0024 Q2=B1）。
+#       `draft=false` + `prerelease=false` + `make_latest=true` **正式发布**
+#       （**ADR-0031**，2026-10-05 用户裁决；**取代 ADR-0024 Q2=B1 的「保持 pre-release」**）。
+#       ⚠️ 2026-10-05 起**不再以「真机 Gate 回填」为发布前置**：发布由「CI 全绿 + 制品断言通过」决定
+#       （ADR-0022 的证据政策不变；ADR-0024 **Q1=A3 的闭环口径也不变** —— 正式发布 ≠ 未闭环项已闭环）。
+#       ⚠️ **macOS 产物未签名、未公证**（本仓无 Apple 凭据）⇒ 用户首次打开会遇 Gatekeeper 警告；
+#       job 名与文案**不得**暗示已签名（ADR-0029 Q3 的护栏继续生效）。
 #       ⚠️ 2026-10-01 前这里是**人工**的（注释写着「此后仅需人工执行
 #       `gh release edit vX --draft=false`」）—— 已被实测证伪：**12 个 tag 里 6 个
 #       （v1.5.6/7/8/11/12/13）从未解除 Draft**，其中一个（v1.5.12）还只有 **12/15 个制品**
@@ -319,7 +324,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Fill notes, assert assets, publish as pre-release (ADR-0020 / ADR-0024)
+      - name: Fill notes, assert assets, publish as official release (ADR-0031)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -335,17 +340,18 @@ jobs:
             echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${GITHUB_REF_NAME}"
           } > /tmp/release-body.md
 
-          # ① 先只填 body + 标 pre-release，**不动 draft 字段**：
+          # ① 先只填 body + 标发布状态，**不动 draft 字段**：
           #    - 新 tag 推送时该 release 本来就是 draft（tauri-action 建的）⇒ 失败安全：
           #      即使下面②的断言失败，发布也停在「未公开」状态；
           #    - ⚠️ **不要在这里写 `-F draft=true`** —— 那样「重跑 finalize」会把**已发布**的
           #      release **降级回 Draft**（一次失败的重跑就能把线上发布撤下来）。
           #    PATCH draft 必须显式带 tag_name，否则 tag 关联会被重置为 untagged-…。
+          #    ADR-0031：prerelease=false（正式发布）。
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             -X PATCH \
             -f tag_name="$GITHUB_REF_NAME" \
             -f body="$(cat /tmp/release-body.md)" \
-            -F prerelease=true
+            -F prerelease=false
 
           # ② 资产断言 = 把「人眼扫一遍资产表」机器化。解除 Draft 的前置条件。
           #    为什么需要：**人工门禁没有机器记录** —— 实测 12 个 tag 里有 6 个跑完 finalize 后
@@ -366,12 +372,13 @@ jobs:
             exit 1
           fi
 
-          # ③ 断言通过才解除 Draft。prerelease=true 保持 ADR-0020 / ADR-0024 Q2=B1 语义
-          #    （不宣称正式发布，releases/latest 不动）。
+          # ③ 断言通过才解除 Draft。`prerelease=false` + `make_latest=true` = **正式发布**
+          #    （ADR-0031，2026-10-05 用户裁决）；`releases/latest` 随之指向本版本。
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             -X PATCH \
             -f tag_name="$GITHUB_REF_NAME" \
-            -F prerelease=true \
+            -F prerelease=false \
+            -f make_latest=true \
             -F draft=false
 
           gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,assets \

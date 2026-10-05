@@ -519,7 +519,10 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
   // 而不是「release.yml 长什么样」—— 顺序也要锁（先断言、后发布），否则断言拦不住发布。
   const FINALIZE = '  finalize:';
   const PUBLISH = '-F draft=false';
-  const PRERELEASE = '-F prerelease=true';
+  // ADR-0031（2026-10-05 用户裁决）**取代** ADR-0024 Q2=B1：发布状态由 pre-release 转为**正式发布**。
+  // 故本判据锁的是 `prerelease=false` + `make_latest=true`；改回 pre-release 必须走新 ADR，不得静默回退。
+  const RELEASE_STATE = '-F prerelease=false';
+  const MAKE_LATEST = '-f make_latest=true';
   const ASSET_ASSERT = '缺少关键制品';
   const UNPUBLISH = '-F draft=true';
   // ⚠️ **判据必须先剥注释**：finalize 的注释里写着「**不要**在这里写 `-F draft=true`」——
@@ -543,8 +546,12 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
       fail('release.yml 的 finalize 未解除 Draft（缺 `' + PUBLISH + '`）—— '
         + '「靠人工执行 gh release edit --draft=false」已被实测证伪：12 个 tag 里 6 个从未发布（审计 §4.68）');
     }
-    if (!finalizeJob.includes(PRERELEASE)) {
-      fail('release.yml 的 finalize 未标记 prerelease=true（ADR-0020 / ADR-0024 Q2=B1）');
+    if (!finalizeJob.includes(RELEASE_STATE)) {
+      fail('release.yml 的 finalize 未按 **ADR-0031** 正式发布（缺 `' + RELEASE_STATE + '`）—— '
+        + '发布状态是已裁决项，回退到 pre-release 必须走新 ADR，不得静默改回');
+    }
+    if (!finalizeJob.includes(MAKE_LATEST)) {
+      fail('release.yml 的 finalize 未显式 `' + MAKE_LATEST + '`（ADR-0031：`releases/latest` 须指向本次正式发布）');
     }
     if (!finalizeJob.includes(ASSET_ASSERT)) {
       fail('release.yml 的 finalize 未断言**关键制品**（`.dmg`/`.msi`/`x64-setup.exe`/`.AppImage`/`.deb`/`.rpm`/`latest.json`）'
@@ -575,13 +582,16 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
   }
   // canary：四个方向（样本拼接构造，避免护栏检出自己）
   {
-    const on = `  finalize:\n      - run: -F prerelease=true -F draft=false`;
-    const off = `  finalize:\n      - run: -F prerelease=true`;
+    const on = `  finalize:\n      - run: -F prerelease=false -F draft=false -f make_latest=true`;
+    const off = `  finalize:\n      - run: -F prerelease=false`;
     if (!on.includes(PUBLISH) || off.includes(PUBLISH)) {
       errors.push('发布收口护栏 canary 失效：`draft=false` 的存在性判据不能区分正/负样本');
     }
-    if (off.includes(PRERELEASE) === false) {
-      errors.push('发布收口护栏 canary 失效：`prerelease=true` 的存在性判据不能区分正样本');
+    if (off.includes(RELEASE_STATE) === false) {
+      errors.push('发布收口护栏 canary 失效：`' + RELEASE_STATE + '` 的存在性判据不能区分正样本');
+    }
+    if (!on.includes(MAKE_LATEST) || off.includes(MAKE_LATEST)) {
+      errors.push('发布收口护栏 canary 失效：`make_latest=true` 的存在性判据不能区分正/负样本');
     }
     const orderBad = `  finalize:\n      - run: -F draft=false\n      - run: echo 缺少关键制品`;
     const orderOk = `  finalize:\n      - run: echo 缺少关键制品\n      - run: -F draft=false`;
