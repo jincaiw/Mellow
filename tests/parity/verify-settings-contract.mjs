@@ -215,6 +215,56 @@ if (/id: 'ai',/.test(settingsSource)) {
     fail('§122 宪法侧护栏 canary 失效：P1 样本竟被当作 P2');
   }
 }
+
+// ── 「清除最近项」的 状态 ↔ localStorage 必须**成对清理**（2026-10-06，审计 §4.84）──
+// 立此条的原因：`App.tsx` 的 `clearRecentItems` 自己声明「**状态与 localStorage 必须同步清理**」
+// （G7-MENU-14，Typora 的三档作用域），但**没有任何判据核对这句话** ——
+// 全仓对该函数的唯一引用是一处 `useCallback` 依赖数组的正则（只是容忍它出现）。
+// ⇒ 只清 state 不清 storage（或反之）时：**界面上已清空、重启后条目又回来**，屏幕上看不出原因。
+// 判据（可机械判定）：函数体内 `set*([])` 与 `localStorage.removeItem(...)` **数量必须相等**，
+// 且每个被删的键**必须在该文件里真的被写过**（`setItem(KEY`）—— 防「删了一个不存在的键名」的假清理。
+{
+  const appCode = stripWholeLineComments(appSource);
+  const clearBody = /const clearRecentItems = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/.exec(appCode)?.[0] ?? '';
+  // ⚠️ 判据是**同一个函数对象**（断言与 canary 共用），否则「放宽谓词」抓不到。
+  // ⚠️ 键名模式要含**数字**（`[A-Z_][A-Z0-9_]*`）—— 初版写 `[A-Z_]+`，
+  // canary 样本 `K1` 因此匹配不上，**canary 当场报错**（正是它该做的事）。
+  const clearPairing = (body) => ({
+    states: [...body.matchAll(/set[A-Za-z]+\(\[\]\)/g)].length,
+    keys: [...body.matchAll(/localStorage\.removeItem\(([A-Z_][A-Z0-9_]*)\)/g)].map((m) => m[1]),
+  });
+  if (clearBody === '') {
+    fail('App.tsx 缺少 clearRecentItems（G7-MENU-14 清除最近项）—— 护栏需同步更新，不要静默漏检');
+  } else {
+    const { states, keys } = clearPairing(clearBody);
+    // 下限：三档作用域（documents / locations / all）⇒ 至少 3 组；低于此值说明解析或实现漂移
+    if (states < 3 || keys.length < 3) {
+      fail(`clearRecentItems 只解析出 ${states} 个状态清理 / ${keys.length} 个 storage 清理（下限 3 = 三档作用域）—— 判据可能已空转`);
+    }
+    if (states !== keys.length) {
+      fail(`clearRecentItems 的「状态清理」${states} 处与「localStorage 清理」${keys.length} 处**不成对** —— `
+        + '只清一侧会让「界面已清空、重启后条目又回来」（G7-MENU-14 声明「必须同步清理」）');
+    }
+    for (const k of keys) {
+      if (!new RegExp(`localStorage\\.setItem\\(${k}`).test(appCode)) {
+        fail(`clearRecentItems 删除了 ${k}，但全文件没有 \`localStorage.setItem(${k}\` —— 可能删的是一个写错的键名（假清理）`);
+      }
+    }
+    // canary：三向 —— ①成对样本必须通过 ②去掉一处 removeItem 必须被抓到 ③**放宽谓词**必须被抓到
+    const PAIRED = 'setA([]); localStorage.removeItem(K1); setB([]); localStorage.removeItem(K2);';
+    const UNPAIRED = 'setA([]); setB([]); localStorage.removeItem(K2);';
+    if (clearPairing(PAIRED).states !== clearPairing(PAIRED).keys.length) {
+      fail('clearRecentItems 成对护栏 canary 失效：合法成对样本被误判为不成对');
+    }
+    if (clearPairing(UNPAIRED).states === clearPairing(UNPAIRED).keys.length) {
+      fail('clearRecentItems 成对护栏 canary 失效：缺一处 removeItem 的样本竟被判为成对');
+    }
+    if (clearPairing('setA([]);').keys.length !== 0) {
+      fail('clearRecentItems 成对护栏 canary 失效：无 removeItem 的样本竟解析出键');
+    }
+  }
+}
+
 // V4 P6.3：Reader / Palette / Slash 默认隐藏（App 侧 UI 初始态均为 false），入口可发现。
 if (!/const \[readerOpen, setReaderOpen\] = useState\(false\);/.test(appSource)) {
   fail('App.tsx readerOpen 初始态必须为 false（V4 P6.3 Reader 默认隐藏）');
