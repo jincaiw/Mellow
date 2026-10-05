@@ -9,7 +9,11 @@
    - **屏幕录制**（Screen Recording）：ScreenCaptureKit 帧捕获需要。
    若重新编译了 `bin/screen-timing`，macOS 可能要求重新授权。
 2. **输入法**：切换为英文（ABC）。typing 测试依赖 keycode 直出字符。
-3. **Typora**：`/Applications/Typora.app`（版本经 `TYPORA_APP` 环境变量可覆盖）。
+3. **Typora**：默认 `/Applications/Typora.app`（**`.app` 路径经 CLI 参数 `--typora <path>` 覆盖**）。
+   > ⚠️ **2026-10-05 更正**：原写「版本经 **`TYPORA_APP`** 环境变量可覆盖」—— **该环境变量不存在**
+   > （全仓无代码读它）。实际是 `run-benchmark.mjs` 的 **CLI 参数 `--typora`**（默认
+   > `/Applications/Typora.app/Contents/MacOS/Typora`）。报告会记录实际版本并与
+   > `TYPORA_NORMATIVE_VERSION` 比对。同源失真见 `docs/specs/performance-benchmark-spec.md` §2。
 4. **Mellow**：`apps/desktop` release 构建（含 CLI 打开支持）：
 
    ```bash

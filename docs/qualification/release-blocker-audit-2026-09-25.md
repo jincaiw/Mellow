@@ -4080,6 +4080,90 @@ Clipboard 域此前**没有任何护栏**。本护栏**不裁定冲突**（裁�
 > 于是 spec 与实现可以长期相反而无人发现。
 > **可测的判据是「把顺序现算出来、与声明双向比对」**；把它写死进护栏等于没判。
 
+## 4.73 `performance-benchmark-spec` 逐节审计：§2 声称的开关**不存在** + §6 与 §10 字面矛盾（2026-10-05）
+
+### 为什么审它
+
+这是 `docs/specs/` **最后一份**未逐节审的 spec（10 节）。§10（待办工作项 W-PERF-1/2/3）此前已深审
+（§4.43 / §4.44），故本轮补 **§1–§9**。
+
+### 发现 1（主）：§2 声称的环境变量 `TYPORA_APP` **全仓无人读**
+
+§2 原文：「实测版本通过**环境变量 `TYPORA_APP`** 指定 `.app` 路径」。
+**实测：全仓没有任何代码读它** —— 实际的覆盖方式是 **CLI 参数 `--typora <path>`**
+（`run-benchmark.mjs` 的 `APPS.typora.bin`，默认 `/Applications/Typora.app/Contents/MacOS/Typora`）。
+版本**确实**被记录（`typoraVersion(bin)` → 报告环境头 + 与 `TYPORA_NORMATIVE_VERSION` 比对）✓。
+
+**同源失真**：`tests/benchmark/README.md` 也写「版本经 `TYPORA_APP` 环境变量可覆盖」——
+**两处都错**（同 §4.54 的「多处副本」形态）。
+
+**已修**：两处都改为 CLI 参数，并加**更正块**（保留原文，注明依据）。
+
+### 发现 2：§6「不做 in-app 插桩」与 §10 的 W-PERF-1 **字面矛盾**
+
+§6 核心原则写「**不做 in-app 插桩**（Typora 不可插桩，插桩会破坏可比性）」——
+而 §10 的 **W-PERF-1 正是应用内埋点**（`packages/editor-engine/src/inputLatency.ts`，**已落地**）。
+两者**并不真矛盾**，但原文的**绝对措辞**会让人以为 W-PERF-1 违规。
+
+**已修**：在 §6 加更正块，把口径拆成三条 ——
+① 外部屏幕捕获**仍是主路径**（也是唯一可比路径）；② in-app 埋点**只在屏幕捕获原理性不可判定的那一个指标**上启用
+（`typing` 的 16ms）；③ 它**不得单独作为判定依据**（W-PERF-1 的验收条件要求与屏幕捕获**交叉验证**）。
+
+### 发现 3：§8 的报告文件名与实现不符
+
+§8 写 `reports/<YYYY-MM-DD>-<mellow-commit>-<typora-version>.md`；实际是
+`reports/<ts>-mellow-vs-typora.md`（如 `2026-09-30T19-39-23-mellow-vs-typora.md`）——
+**commit / 脏树 / Typora 版本记在报告**内部**（环境头），不在文件名里**。
+⇒ 信息**等价**，差别只在「能否靠 `ls` 一眼定位」。且 `reports/` 与 `results/` **均已 gitignore**
+（本机产物、不随仓库分发）。**本轮只更正 spec 描述，未改代码**（改名属行为变更，收益仅「本地更好找」）。
+
+### 正向确认
+
+| 节 | 判定 |
+|---|---|
+| §4 夹具规格 | ✅ **7 个夹具**与 `generate-fixtures.mjs` 的 `GENERATED` 列表一致；`manifest.json` 记 **sha256 / bytes / lines** ✓；产物目录 gitignore ✓；固定 seed 确定性 ✓ |
+| §5 指标定义 | ✅ 与 `run-benchmark.mjs` 的 `ALL_METRICS = ['startup','open','hotopen','typing','scroll','search','save','memory']` **一一对应**（§5 表 7 项 + §10 的 `hotopen` = 8） |
+| §6 组件清单 | ✅ `screen-timing.swift`（CGEventPost / ScreenCaptureKit / ROI diff / CGWindowList）、`perf-common.mjs`、`run-benchmark.mjs` 三者职责与实现一致 |
+| §2 记录项 | ✅ commit hash + **脏树状态**确实被记录（`git rev-parse --short HEAD` + `git status --porcelain`）；Typora 版本 + 规范性标注 ✓ |
+| §9 已知限制 | ✅（含「16ms 原理性不可判定」） |
+| §10 待办 | ✅ 已深审（§4.43 / §4.44） |
+
+### 固化为护栏（`verify-doc-code-refs.mjs` 新增一节）
+
+**文档里声明的 `MELLOW_*` / `TYPORA_*` 开关，必须在代码里真的「被读取」。**
+**注入验证 4/4**（新增不存在的开关 / 豁免失效两种形态 / 无变异对照）。
+
+**这条判据的谓词经过三次收窄（都有实测数字，写进注释）**：
+
+| 谓词 | 结果 |
+|---|---|
+| 所有反引号 UPPER_SNAKE | 91 个 token，4 个「不在代码中」—— **3 个是噪声**（`PITFALLS` 是文档名；`ACTION_DEFS` / `ENGINE_I18N_REGISTERED` 是审计内部标签） |
+| 「同一行提到『环境变量』」 | 收窄后只剩 1 个（真缺陷），但**修完变成 0 个** ⇒ **判据空转** |
+| **命名族 `(MELLOW\|TYPORA)_*` + 「被读取」** | **4 个 token、零误报，修完仍有 3 个可查 ⇒ 非空转** ✅ 采用 |
+
+**⚠️ 施工中自己踩到的两个坑（都写进注释与 canary）**：
+
+1. **判据被自己打死（两次）**：首版用「代码里**出现过**这个字符串」⇒ 本护栏**注释里的 `TYPORA_APP` 字样**
+   就满足了它；改判据为「**被读取**」后，**canary 里的合成样本 `process.env.TYPORA_APP`** 又落在护栏源码里
+   ⇒ 仍然恒不报错。**最终修法：把护栏自身排除出扫描面**，并加一条「自排除生效」的自检。
+2. **我自己的测量脚本有边界 bug**：`process\.env\.TYPORA_APP` **前缀匹配**了 `process.env.TYPORA_APPSRC`
+   ⇒ 一度得出「`TYPORA_APP` 有人读」的**假结论**（差点把真发现丢掉）。
+   加 `(?![A-Za-z0-9_])` 边界后结论反转 —— 这正是 **PITFALLS §4.40「边界字符写错 = 假结论」**的同型。
+   ⇒ 已把该边界做成 **canary**（`TYPORA_APP` 不得匹配 `TYPORA_APPSRC`）。
+
+**⚠️ 作用域（首跑就被自己的审计文本命中 4 行 ⇒ 据此收窄）**：文档集 = **权威文档**
+（`docs/plans` / `docs/adr` / `docs/specs`，与既有 PAIR 判据同范围）+ **各 README**；
+**故意不含 `docs/qualification`** —— 审计/验收记录的职责就是**引用旧值**
+（「原写 `TYPORA_APP`」「该开关不存在」），纳入会把**如实记录**误判成**声明错误**。
+这是**如实声明的范围限制**，不是漏了。（实测：本节正文首跑即被命中 4 行，全部是「在描述旧值」而非「在声明」。）
+
+### 教训
+
+> **「代码里出现过」≠「代码里有人用」** —— 判据若用前者，会被**文档、注释、报错文案、canary 样本**满足；
+> 而护栏**自己**就是最容易满足它的那个文件。**凡「存在性」判据，先问一句：我自己的源码会不会满足它？**
+>
+> 附带：**测量脚本的边界字符**要单独当判据来验（本轮我的脚本在这里错了，而它差点推翻一个真发现）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

@@ -201,6 +201,106 @@ for (const doc of docs) {
   }
 }
 
+// ── 文档里声明的 `MELLOW_*` / `TYPORA_*` 开关必须在代码里真的存在（2026-10-05，审计 §4.73）──
+// 立此条的原因（实测）：`performance-benchmark-spec` §2 与 `tests/benchmark/README.md` 都写着
+// 「版本经 **`TYPORA_APP`** 环境变量可覆盖」—— 而**全仓没有任何代码读它**：
+// 实际的覆盖方式是 CLI 参数 `--typora <path>`（默认 /Applications/Typora.app/…）。
+// 与 §4.54（多处副本漏 docs）同族：**文档声称的开关，代码里不存在**。
+//
+// ⚠️ **谓词必须收窄到「命名族」且必须是「被读取」而不是「被提及」**（三条实测教训）：
+//   ① 所有反引号 UPPER_SNAKE：91 个 token 里 4 个「不在代码中」，其中 **3 个是噪声**
+//      （`PITFALLS` 是文档名；`ACTION_DEFS` / `ENGINE_I18N_REGISTERED` 是审计内部标签）；
+//   ② 「同一行提到『环境变量』」：修完**变成 0 个** ⇒ **判据空转**；
+//   ③ **命名族 `(MELLOW|TYPORA)_*`：4 个 token、零误报，修完仍有 3 个可查 ⇒ 非空转**。← 采用
+//   ⚠️ 且判据必须是「**代码里有人读它**」（`process.env.X` / `env::var("X")` / `$X` / yml 的 `X:`），
+//      **不是「代码里出现过这个字符串」** —— 后者会被**本护栏自己的注释与报错文案**满足
+//      （首版就踩了：护栏里写了 `TYPORA_APP` 字样 ⇒ 主判据被自己打死，恒不报错）。
+//   ⚠️ 名字后**必须加边界** `(?![A-Za-z0-9_])` —— 否则 `process.env.TYPORA_APP` 会**前缀匹配**
+//      `process.env.TYPORA_APPSRC`（实测踩到，差点得出「TYPORA_APP 有人读」的假结论）。
+// ⚠️ **更正说明必然引用旧名** ⇒ 与上文 PAIR 的处理同源，对「原写 / 更正 / 也写 / 漂移」类行**豁免**。
+{
+  const FAMILY = /`((?:MELLOW|TYPORA)_[A-Z0-9_]+)`/g;
+  const LOOKS_LIKE_QUOTE = /原写|原文|更正|漂移|已改为|也写/;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /** 「代码里有人**读**这个开关」的判据（判定与 canary 共用）。 */
+  const readPattern = (name) => {
+    const N = `${esc(name)}(?![A-Za-z0-9_])`;
+    return new RegExp(
+      `process\\.env\\.${N}`
+      + `|process\\.env\\[\\s*["']${esc(name)}["']`
+      + `|env::var\\(\\s*"${esc(name)}"`
+      + `|getenv\\(\\s*"${esc(name)}"`
+      + `|\\$\\{?${N}`
+      + `|^\\s*${esc(name)}\\s*:`,
+      'm',
+    );
+  };
+  // ⚠️ **必须把本护栏自身排除出扫描面**：它内部含**合成样本**（如 canary 里的
+  // `process.env.TYPORA_APP`），不排除 ⇒ 主判据被自己的样本满足 ⇒ **恒不报错**。
+  // （首版踩了两次：先是注释里的 `TYPORA_APP` 字样，再是 canary 里的 `process.env.TYPORA_APP`。）
+  const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
+  const scanFiles = [...codeFiles, ...walk(root).filter((f) => f.endsWith('.sh'))]
+    .filter((f) => resolve(f) !== resolve(SELF));
+  if (scanFiles.some((f) => resolve(f) === resolve(SELF))) {
+    errors.push('文档开关护栏自检失败：本护栏自身的源码未被排除 —— 它含合成样本，会让判据恒真');
+  }
+  const readSources = scanFiles.map((f) => ({ f, text: readFileSync(f, 'utf8') }));
+  const isRead = (name) => {
+    const re = readPattern(name);
+    return readSources.some(({ text }) => re.test(text));
+  };
+  const allDocs = [
+    // 权威文档（与上方 PAIR 同一范围：docs/plans | docs/adr | docs/specs）——
+    // 这里是**声明**开关的地方。
+    ...docs,
+    // 操作型 README（实测：`tests/benchmark/README.md` 也声明过 `TYPORA_APP`，必须纳入）。
+    ...walk(root).filter((f) => /(^|\/)README\.md$/.test(f)),
+  ];
+  // ⚠️ **故意不含 `docs/qualification`**：审计 / 验收记录的职责就是**引用旧值**
+  // （「原写 `TYPORA_APP`」「该开关不存在」），纳入会把**如实记录**误判成**声明错误**
+  // —— 实测：本轮审计 §4.73 的正文立刻被本判据命中 4 行，全部是「在描述旧值」而非「在声明」。
+  // 这是**如实声明的范围限制**，不是「漏了」。
+  let checked = 0;
+  for (const doc of allDocs) {
+    const rel = relative(root, doc);
+    const text = readFileSync(doc, 'utf8').replace(/\r\n/g, '\n');
+    text.split('\n').forEach((line, i) => {
+      if (LOOKS_LIKE_QUOTE.test(line)) return;   // 更正说明会引用旧名，豁免
+      for (const m of line.matchAll(FAMILY)) {
+        checked += 1;
+        if (!isRead(m[1])) {
+          fail(`${rel}:${i + 1} 声明了 \`${m[1]}\`，但**代码里没有任何地方读它**`
+            + ' —— 文档声称的开关必须真的存在（实测：`TYPORA_APP` 就是这么一条）');
+        }
+      }
+    });
+  }
+  if (checked < 3) {
+    fail(`文档里只解析出 ${checked} 个 \`MELLOW_*\`/\`TYPORA_*\` token（下限 3 = 立此判据时的基线）`
+      + ' —— 谓词或文档集漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
+  }
+  // canary：四个方向（判定与 canary 共用 readPattern / isRead）
+  // ⚠️ 样本必须**拼接构造**，否则本护栏自己的字面量会混进扫描面（首跑即被自己的 canary 抓出）。
+  const NOPE = 'MELLOW' + '_NOPE_XYZ';
+  if (!isRead('MELLOW_INPUT_LATENCY_DUMP')) {
+    errors.push('文档开关护栏 canary 失效：真实被读取的环境变量未被识别');
+  }
+  if (isRead(NOPE)) {
+    errors.push('文档开关护栏 canary 过宽：不存在的 token 被判为「有人读」');
+  }
+  // **结构性 canary**：只被「提及」（注释/文档文案）不算「被读取」—— 这是本条判据的立身之本。
+  if (readPattern(NOPE).test(`// 环境变量 \`${NOPE}\` 可覆盖`)) {
+    errors.push('文档开关护栏 canary 失效：**仅被提及**的 token 被误判为「有人读」（判据会被自己的文案满足）');
+  }
+  // 边界 canary：`TYPORA_APP` 不得前缀匹配 `TYPORA_APPSRC`（实测踩过的假结论）。
+  if (readPattern('TYPORA_APP').test('const b = process.env.TYPORA_APPSRC ?? "/Applications";')) {
+    errors.push('文档开关护栏 canary 失效：名字缺少边界 ⇒ `TYPORA_APP` 前缀匹配了 `TYPORA_APPSRC`');
+  }
+  if (!readPattern('TYPORA_APP').test('const b = process.env.TYPORA_APP ?? "/Applications";')) {
+    errors.push('文档开关护栏 canary 失效：真实读取写法未被识别');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

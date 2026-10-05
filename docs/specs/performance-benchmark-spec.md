@@ -16,7 +16,15 @@ PRD §110 明确要求：
 
 ## 2. 参照基线
 
-- **主基线**：Typora 1.14.9（build 7785）。实测版本通过环境变量 `TYPORA_APP` 指定 `.app` 路径，报告必须记录实际版本；1.14.6 仅可作为历史对照记录，不改变当前结论判定逻辑。
+- **主基线**：Typora 1.14.9（build 7785）。实际 `.app` 路径经 **CLI 参数 `--typora <path>`** 指定
+  （默认 `/Applications/Typora.app/Contents/MacOS/Typora`）；报告**必须**记录实际版本，
+  并与 `TYPORA_NORMATIVE_VERSION` 比对后标注「是否可作 P0 对标证据」。1.14.6 仅可作为历史对照记录，不改变当前结论判定逻辑。
+
+> **⚠️ 2026-10-05 更正**：本节原写「实测版本通过**环境变量 `TYPORA_APP`** 指定 `.app` 路径」——
+> **该环境变量不存在**（全仓无任何代码读它）。实际的覆盖方式是 **CLI 参数 `--typora`**。
+> `tests/benchmark/README.md` 有**同源失真**（也写 `TYPORA_APP`），已一并更正。
+> ⇒ 教训：**文档里声称的环境变量名必须在代码里真的存在** —— 现已由护栏
+> `tests/parity/verify-doc-code-refs.mjs` 锁定（收窄到「提到『环境变量』的那一行」，全仓零误报）。
 - **被测对象**：Mellow `apps/desktop` release 构建（`cargo build --release`），报告记录被测 commit hash 与工作区脏树状态。
 - **公平性**：两个应用均以 release 形态、冷启动方式、相同窗口尺寸测量；所有指标走完全相同的测量路径（见 §6）。
 
@@ -60,6 +68,19 @@ PRD §110 明确要求：
 
 核心原则：**对 Mellow 与 Typora 使用完全相同的测量路径**，不做 in-app 插桩（Typora 不可插桩，插桩会破坏可比性）。
 
+> **⚠️ 2026-10-05 更正（本节与 §10 的 W-PERF-1 曾**字面矛盾**）**：
+> 本节原文的「**不做 in-app 插桩**」是**对「主测量路径」的约束**，**不是全仓禁令** ——
+> 而 §10 的 **W-PERF-1 正是应用内埋点**（`packages/editor-engine/src/inputLatency.ts`，**已落地**）。
+> 两者**并不矛盾**，但原文的绝对措辞会让人以为 W-PERF-1 违规。准确表述是三条：
+>
+> 1. **外部屏幕捕获仍是主路径**，也是**唯一对 Mellow / Typora 可比**的路径（Typora 不可插桩）；
+> 2. **in-app 埋点只在「屏幕捕获原理性不可判定」的那一个指标上启用** ——
+>    即 `typing` 的 16ms 目标（16ms < 单帧 17.4ms，见 §9）；
+> 3. 它**不得**单独作为判定依据 —— §10 的 W-PERF-1 **验收条件**要求它与屏幕捕获
+>    **交叉验证**（`in-app frameMs P95 ≤ 屏幕捕获 P95`，差值落在可解释范围）。
+>
+> ⇒ 一句话：**主路径不变；in-app 是给「量具够不着的那一格」补的一把尺，且必须与主尺互校。**
+
 组件（`tests/benchmark/`）：
 
 - `screen-timing.swift` → 编译为 `ScreenTiming` helper：
@@ -92,7 +113,16 @@ PRD §110 明确要求：
 
 ## 8. 报告格式
 
-`tests/benchmark/reports/<YYYY-MM-DD>-<mellow-commit>-<typora-version>.md`：
+`tests/benchmark/reports/<时间戳>-mellow-vs-typora.md`：
+
+> **⚠️ 2026-10-05 更正**：本节原写文件名形如 `<YYYY-MM-DD>-<mellow-commit>-<typora-version>.md` ——
+> **与实现不符**。实际是 `reports/<ts>-mellow-vs-typora.md`（如 `2026-09-30T19-39-23-mellow-vs-typora.md`），
+> **commit / 脏树 / Typora 版本记在报告**内部**（环境头，见下第 1 项），不在文件名里**。
+> 两者**信息等价**（可追溯性不丢），差别只在「能否靠 `ls` 一眼定位」。
+> ⚠️ 另注：`reports/` 与 `results/` 均**已 gitignore**（见 `verify-parity-ledger.mjs` 的说明），
+> 故这些报告是**本机产物**、不随仓库分发 —— 文件名只是本地便利。
+> **本轮未改代码**（改文件名属行为变更，且收益仅「本地更好找」）；如确需，应作为独立工作项。
+
 
 1. 环境头：机器规格、macOS 版本、Mellow commit + 脏树、Typora 实际版本、构建类型、权限状态；
 2. 每指标对照表：夹具 ×（Mellow、Typora、比值 M/T、PRD 目标、达标判定）；
