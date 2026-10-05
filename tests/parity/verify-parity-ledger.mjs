@@ -840,6 +840,82 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── 标题锚点规则：导出那份自称「与 editor-engine 一致」，必须真的**行为一致**（2026-10-06，审计 §4.87）──
+  // 立此条的原因：`packages/export/src/html/markdown.ts` 的 `slugifyHeading` 注释写着
+  // 「保留字母/数字/中日韩/Emoji，其余转连字符（**与 editor-engine 一致**）」——
+  // 而「自称与 X 一致」正是本审计反复抓到的失效形态（§4.79–§4.85）。
+  // 实测（抽函数体后原样求值，12 个样本）：**engine 与 export 行为完全一致** ⇒ 声明**成立**。
+  // ⇒ 本判据把这条声明**锁成不变量**（防它将来漂散），**不**去统一第三份
+  //（统一会改掉 Reader 的 heading id —— 那是一次行为变更，见 §4.86 的教训）。
+  //
+  // ⚠️ **判据用「行为比对」而不是「逐字比对」**：两份函数的排版不同
+  //（一份 `return title\n .trim()…`，另一份 `return (\n title\n .trim()… )`），
+  // 逐字比会**误报**；而真正要守的是「同一输入 → 同一锚点」。
+  //
+  // ⚠️ 与 `app-core/reader.ts` 的差异**已如实登记**（审计 §4.87，待裁决）：
+  //   `a_b` → engine/export `a-b` vs Reader `ab`；`日本_語` → `日本-語` vs `日本語`；
+  //   `What's new?` → `what-s-new` vs `whats-new`；`Hello 世界 😀` → `hello-世界-😀` vs `hello-世界`；
+  //   `!!!` / `---` → engine/export `heading` vs Reader `section` / **`-`**
+  //（Reader 产出 `id="-"` 是**退化锚点**，且不同标题会撞成同一 id —— 已登记，本轮未擅自改。）
+  {
+    /** 抽取 `export function <name>(title: string): string { … }` 并求值成真函数 */
+    const buildSlugFn = (file, name) => {
+      const abs = resolve(root, file);
+      if (!existsSync(abs)) return null;
+      const src = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
+      const at = src.indexOf(`export function ${name}(`);
+      if (at < 0) return null;
+      const braceAt = src.indexOf('{', at);
+      if (braceAt < 0) return null;
+      let depth = 0;
+      let endAt = braceAt;
+      for (; endAt < src.length; endAt += 1) {
+        if (src[endAt] === '{') depth += 1;
+        else if (src[endAt] === '}') { depth -= 1; if (depth === 0) { endAt += 1; break; } }
+      }
+      const js = src.slice(at, endAt)
+        .replace(new RegExp(`^export function ${name}\\([^)]*\\)(?:\\s*:\\s*[^{]+)?\\{`), `function ${name}(title) {`);
+      try {
+        // eslint-disable-next-line no-new-func
+        return new Function(`return (${js});`)();
+      } catch {
+        return null;
+      }
+    };
+    const fnEngine = buildSlugFn('packages/editor-engine/src/toc.ts', 'slugifyHeading');
+    const fnExport = buildSlugFn('packages/export/src/html/markdown.ts', 'slugifyHeading');
+    assert(typeof fnEngine === 'function' && typeof fnExport === 'function',
+      '无法解析两处 `slugifyHeading` 为可调用函数（护栏需同步更新，不要静默漏检）');
+    if (typeof fnEngine === 'function' && typeof fnExport === 'function') {
+      // 语料覆盖：中日韩 / Emoji / 下划线 / 标点 / 纯符号 / 空白 / 连字符 / 大小写 / 空串
+      const SLUG_CASES = [
+        'Hello 世界 😀', 'a_b', "What's new?", 'C++ 入门', '中文标题', '  Trim Me  ', '!!!', '---',
+        'A  B', 'x--y', 'Ünïcode', '日本_語', '', '   ', 'a-b', 'a--b', 'a.b', 'A/B', '#hash', 'tag_1',
+      ];
+      let compared = 0;
+      const mismatched = [];
+      for (const c of SLUG_CASES) {
+        compared += 1;
+        const a = fnEngine(c);
+        const b = fnExport(c);
+        if (a !== b) mismatched.push(`${JSON.stringify(c)}: engine ${JSON.stringify(a)} vs export ${JSON.stringify(b)}`);
+      }
+      assert(mismatched.length === 0,
+        `导出与引擎的 \`slugifyHeading\` **行为不一致**（${mismatched.length}/${compared} 个样本）：`
+        + `${mismatched.slice(0, 3).join('；')} —— \`export/html/markdown.ts\` 自称「与 editor-engine 一致」，`
+        + '不一致会让**同一标题在编辑器 TOC 与导出 HTML 里得到不同锚点**（点 TOC 跳不到该标题）');
+      if (compared < 20) {
+        errors.push(`slugifyHeading 行为比对只跑了 ${compared} 个样本（下限 20）—— 语料被删会让本判据空转`);
+      }
+      // canary：把 export 的连字符规则改掉，**必须**在语料上产生差异（否则比对是恒真的）
+      const drifted = ((c) => fnExport(c) + '-drift');
+      const driftDetected = SLUG_CASES.some((c) => fnEngine(c) !== drifted(c));
+      if (!driftDetected) {
+        errors.push('slugifyHeading 行为比对 canary 失效：注入漂移后仍判定一致');
+      }
+    }
+  }
+
   // ── 两处 HTML 净化器必须一致（2026-09-30）────────────────────────────────
   // 立此条的原因：`docs/security/security-review-2026-08-13.md` H1 的建议原文是
   // 「提取 `editor-engine/src/safeHtml.ts` 的 sanitize 为共享实现，**或复制同一逻辑**」——
