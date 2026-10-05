@@ -44,13 +44,21 @@
 | P0 | `docs/product/Mellow-PRD-V1.2-FINAL.md` | 宪法：产品需求，功能定义最终依据 |
 | P1 | `docs/specs/*.md` | 法律：各领域功能对标与规范 |
 | P2 | `docs/adr/ADR-*.md` | 判决：已定技术决策，不允许随意推翻 |
-| P3 | `docs/plans/codex-implementation-plan.md` | 施工图：实施顺序与验收节奏 |
+| P3 | `docs/plans/typora-parity-master-plan.md` | 施工图：**唯一权威实施方案**（实施顺序与验收节奏） |
 
 关键入口：
 
 - 产品需求：`docs/product/Mellow-PRD-V1.2-FINAL.md`
-- 功能对标：`docs/plans/typora-parity-master-plan.md`（唯一权威对标方案，2026-08-22 起取代旧 checklist/audit/review/deep-parity-plan 四文档）
-- 实施顺序：`docs/plans/codex-implementation-plan.md`
+- 功能对标 / 施工依据：`docs/plans/typora-parity-master-plan.md`
+  （自称「Typora 对标工作的**唯一权威实施方案**」，2026-08-22 起取代旧 checklist/audit/review/deep-parity-plan 四文档）
+- 任务编号脚手架：`docs/plans/codex-implementation-plan.md`
+  （**从属**：自称「任务编号脚手架，**不是状态台账**」—— 只给任务编号与一句话，
+  **权威完成记录**在 master-plan 的完成度审计节 + 台账 `tests/parity/typora-parity-ledger.json`）
+
+> ⚠️ **2026-10-06 更正（审计 §4.93）**：本表原把 **P3 施工图**指向
+> `codex-implementation-plan.md`，与 master-plan 的自述「**唯一权威实施方案**」**冲突**
+> （同一角色两个文件）。现按两个文件的**自述**调和：**施工依据 = master-plan**，
+> codex 计划降为**从属的编号脚手架**。此处**未发明新层级**，只是把已有的自述写清楚。
 
 ## 修改规则
 
@@ -93,23 +101,32 @@ docs/product/   # 宪法：PRD（只应有一个 FINAL 版本）
 docs/specs/     # 法律：领域规范，一个领域一个文件
 docs/adr/       # 判决：ADR-XXXX-描述性slug.md，只追加不修改
 docs/plans/     # 施工图：实施计划
-docs/architecture/  # 实现架构（overview/editor-core/host-adapter/monorepo/migration）
+docs/architecture/  # 实现架构（文件清单见该目录 README.md）
 
 apps/desktop/   # Tauri 2 + React 桌面壳（Adapter 装配层，平台代码只允许在此）
 
 packages/
-  editor-core/     # vendored MarkEdit CoreEditor（只读，见 UPSTREAM.md）
+  editor-core/     # vendored MarkEdit CoreEditor（**注入式扩展、不 fork**；改动清单见其 UPSTREAM.md）
   editor-engine/   # Mellow Live Markdown 引擎（注入式扩展）
   editor-react/    # 编辑器 React 封装（EditorHost + 桥契约）
   app-core/        # 应用核心逻辑（经 host-api 依赖注入）
   host-api/        # 系统能力契约（PRD §116，纯类型）
   document-model/  # 文档模型（ADR-0008）
+  desktop-ui/      # 桌面 UI 组件（Sidebar / StatusBar / 应用内对话框等）
+  settings/        # 设置 schema（SETTINGS_SECTIONS，跨层单一真源）
+  export/          # 导出管线（PDF / HTML / Image / Print）
   workspace/  commands/  i18n/  themes/  extension-api/  shared/
 
 tests/
   qualification/  # V0.0 运行时门禁记录
   fixtures/       # Markdown 测试素材库
 ```
+
+> ⚠️ **2026-10-06 更正（审计 §4.93）**：上面这份 `packages/` 清单原**漏了 3 个实际存在的包**
+> （`desktop-ui` / `export` / `settings`）—— `packages/` 实际有 **15** 个目录。
+> 本清单**自称穷举**，故已补全；并由护栏 `verify-doc-code-refs.mjs` **双向**锁定
+> （「列出的必须存在」+「存在的必须被列出」），防止再次漂移。
+> 同理 `docs/architecture/` 一行的括号内清单也**已改为指向该目录 README**（原列 5 个、实际 7 个）。
 
 ## 包依赖规则
 

@@ -1,12 +1,18 @@
 # editor-core
 
-**vendored MarkEdit CoreEditor**（TypeScript，CodeMirror 6 + Lezer）。只读，不修改源码。
+**vendored MarkEdit CoreEditor**（TypeScript，CodeMirror 6 + Lezer）。**注入式扩展、不 fork 上游**；
+对上游树的改动**必须登记**在 [`UPSTREAM.md`](./UPSTREAM.md)（清单与仓库实际哈希由护栏
+`tests/parity/verify-upstream-manifest.mjs` 双向锁定）。
+
+> ⚠️ **2026-10-06 更正（审计 §4.93）**：本行原写「**只读，不修改源码**」—— **不成立**：
+> `UPSTREAM.md` 记录本仓**修改 19 个上游文件 / 新增 3 个**。准确表述是
+> 「**不 fork**（改动以最小注入为主）+ **改动必须登记**」。
 
 ## 结构
 
 ```
 editor-core/
-├── CoreEditor/          # MarkEdit 上游 CoreEditor（固定 commit 81da2a20，只读）
+├── CoreEditor/          # MarkEdit 上游 CoreEditor（固定 commit 81da2a20；改动登记见 UPSTREAM.md）
 │   ├── src/             # modules/styling/api/bridge（13,625 行）
 │   ├── test/            # jest 185 用例（jsdom，可运行）
 │   └── package.json     # yarn 4.17.1（corepack）

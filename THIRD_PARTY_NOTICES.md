@@ -10,7 +10,8 @@ Mellow 是基于开源项目构建的。以下第三方组件与许可信息供�
 - Vendored: `packages/editor-core/`（CoreEditor 目录，固定 commit `81da2a20`）
 - License: MIT（`packages/editor-core/LICENSE`，Copyright (c) 2023 MarkEdit.app）
 - 用途：Markdown 编辑器核心（CodeMirror 6 + Lezer），Mellow 的基础项目
-- 说明：vendored 目录保持只读，同步方式见 `packages/editor-core/UPSTREAM.md`
+- 说明：vendored 目录**不 fork 上游**（改动以最小注入为主）；**对上游树的改动必须登记**在
+  `packages/editor-core/UPSTREAM.md`（清单与仓库实际哈希由护栏双向锁定）
 
 ## 运行时依赖（npm / Cargo）
 

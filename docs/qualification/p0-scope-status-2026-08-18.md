@@ -29,8 +29,12 @@
 > - **#39「6 内置原创主题」** —— **「6」是 PRD 的要求数**，实际 **8** 个
 >   （`mellow-light` / `mellow-dark` / `paper` / `git-light` / `git-dark` / `newsprint` / `whitey` / `gothic`）
 >   ⇒ 这是**超额**，**不是失真**（勿「修正」回 6）。
-> - **「参考」里的 `docs/plans/typora-deep-parity-plan.md` 不存在**（**幽灵引用**，全仓仅 3 处提及该名，
->   且从未入库）⇒ 当前施工文件是 **`docs/plans/typora-parity-master-plan.md`**（V7.0），历史方案在 `docs/plans/archive/`。
+> - **「参考」里的 `docs/plans/typora-deep-parity-plan.md` 不存在**（**幽灵引用**）——
+>   ⚠️ 更精确地说：它**不是「从未存在」**，而是**已被取代并删除、且未归档**
+>   （`AGENTS.md` 记录「2026-08-22 起由 `typora-parity-master-plan.md` 取代旧
+>   checklist / audit / review / deep-parity-plan 四文档」；PRD §148 曾把 `typora-parity-checklist.md`
+>   列入「PRD 定稿后按顺序生成」的文档清单）⇒ 该名在仓库与 `docs/plans/archive/` 里都**已不存在**。
+>   ⇒ 当前施工文件是 **`docs/plans/typora-parity-master-plan.md`**（V7.0），历史方案在 `docs/plans/archive/`。
 >
 > **保留**：本文其余内容（逐项状态表）为 2026-08-18 的**历史快照**，如实保留。
 

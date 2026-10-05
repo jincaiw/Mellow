@@ -39,7 +39,7 @@ mellow/
 ├── apps/
 │   └── desktop/      # Tauri 2 + React 桌面壳（Adapter 装配层，平台代码只允许在此）
 ├── packages/
-│   ├── editor-core/      # vendored MarkEdit CoreEditor（只读，见 UPSTREAM.md）+ 平台无关 EditorCore 契约
+│   ├── editor-core/      # vendored MarkEdit CoreEditor（**注入式扩展、不 fork**；改动清单见 UPSTREAM.md）+ 平台无关 EditorCore 契约
 │   ├── editor-engine/    # Mellow Live Markdown 引擎（注入式扩展，marker reveal/表格/数学/Mermaid/脚注/TOC/图片…）
 │   ├── editor-react/     # 编辑器 React 绑定层（契约 re-export；组件化 UI 见阶段 2 计划）
 │   ├── desktop-ui/       # 桌面 UI 组件（Tabbar/StatusBar/Welcome/OutlineList/SearchResultsList/FileList/FileTree）

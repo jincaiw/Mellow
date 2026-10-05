@@ -569,17 +569,21 @@ const PACKAGING_VERSION_ALLOW = new Map([
   }
 }
 
-// ── 文档里引用的 `docs/**/*.md` 路径必须存在（2026-10-06，审计 §4.90）──
+// ── 文档里引用的 `docs/**/*.md` 路径必须存在（2026-10-06，审计 §4.90 / §4.93）──
 // 立此条的原因：`docs/qualification/` 里两份文档引用 `docs/plans/typora-deep-parity-plan.md`
-// —— 该文件**从未入库**（**幽灵引用**）：读者按它去找「阶段 1/阶段 0-4」会找不到，
-// 而全仓对它的 3 处引用里 2 处在 `docs/`（第 3 处在 gitignore 的 `.trae/`）。
+// —— 该文件**不存在**（**幽灵引用**）：读者按它去找「阶段 1/阶段 0-4」会找不到。
+// ⚠️ **§4.93 更正**：初版说它「**从未入库**」—— **不准确**。它**存在过**，后被
+// **取代并删除、未归档**（`AGENTS.md`：2026-08-22 起由 master-plan 取代旧
+// checklist / audit / review / deep-parity-plan 四文档；PRD §148 列过 `typora-parity-checklist.md`）。
+// ⇒ 判据（引用必须可达）不变，但**归因要准确**：「引用了已删除的文档」≠「引用了从未存在的文档」。
 // ⇒ 与 §4.76 的「架构文档反引号路径必须存在」同族，但**扫描面扩到整个 `docs/`** 且
 // **不要求反引号**（幽灵引用常常是裸路径）。
 // ⚠️ 例外必须**显式登记 + 双向**：更正块**必然要引用错误原名**（本仓惯例是「不改写历史、只追加更正」），
 // 故幽灵名会合法地出现在「说明它不存在」的句子里。
 const DOC_PATH_EXEMPT = new Map([
   ['docs/plans/typora-deep-parity-plan.md',
-    '**幽灵名**：从未入库；保留在**更正块**里正是为了说明「该文件不存在、当前施工文件是 master-plan」'],
+    '**已删除且未归档**（2026-08-22 起被 master-plan 取代）：保留在**更正块**里正是为了说明'
+    + '「该文件不存在、当前施工文件是 master-plan」'],
 ]);
 {
   const SKIP_DIRS = new Set(['archive']); // archive 是历史目录，其内部引用不要求可达
@@ -687,6 +691,67 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
   }
   if (SNAPSHOT_MARKER.test('# 某次审计（2026-08-16）\n\n全部通过，可以发布。')) {
     errors.push('快照声明护栏 canary 过宽：无标记的样本被误判为有标记');
+  }
+}
+
+// ── `AGENTS.md`（治理文件）的路径与包清单必须与实际一致（2026-10-06，审计 §4.93）──
+// 立此条的原因：`AGENTS.md` 是**治理文件**（规定文档层级、目录约定、包依赖），
+// 但它的**扫描面不在任何护栏里** —— `DOC_GLOBS` 只含 `docs/plans|adr|specs`，
+// §4.76 的架构护栏只扫 `docs/architecture`。**实测审出 3 处失真**：
+//   ① `editor-core/` 标「**只读**」—— 与其 `UPSTREAM.md`（**修改 19 / 新增 3**）冲突
+//      （**同一处失真我在 §4.76 于 `docs/architecture/editor-core.md` 修过，AGENTS.md 被漏掉**
+//       ⇒ 「更正没扫全文」，同 §4.91 的教训）；
+//   ② `docs/architecture/` 的括号清单**列 5 个、实际 7 个**；
+//   ③ `packages/` 清单**列 12 个、实际 15 个**（漏 `desktop-ui` / `export` / `settings`）。
+// 本判据覆盖**可机械判定的那一半**（①「只读」是语义判断，**不在本判据范围**，已人工更正）：
+//   · AGENTS.md 里以反引号给出的仓库相对路径**必须存在**；
+//   · 「目录约定」里列出的 `packages/<name>` **双向**等于实际的 `packages/*`。
+{
+  const agentsPath = resolve(root, 'AGENTS.md');
+  if (!existsSync(agentsPath)) fail('AGENTS.md 不存在');
+  if (existsSync(agentsPath)) {
+    const agents = readFileSync(agentsPath, 'utf8').replace(/\r\n/g, '\n');
+    // ① 反引号仓库相对路径必须存在（跳过含 `*` 的 glob 与 `packages/*` 这类通配）
+    const AG_PATH_RE = /`([\w.-]+\/[\w./-]*\.(?:md|json|ts|tsx|mjs|rs|yml|yaml|toml|sh))`/g;
+    const missingPaths = [];
+    for (const m of agents.matchAll(AG_PATH_RE)) {
+      const p = m[1];
+      if (p.includes('*')) continue;
+      if (!existsSync(resolve(root, p))) missingPaths.push(p);
+    }
+    if (missingPaths.length > 0) {
+      fail(`AGENTS.md 引用了**不存在**的仓库相对路径：${missingPaths.join(', ')} —— `
+        + '治理文件的路径断言必须可达（它是所有任务的入口）');
+    }
+    // ② 「目录约定」的 packages 清单 ⇄ 实际 packages/* **双向**
+    const lines = agents.split('\n');
+    const pkgStart = lines.findIndex((l) => /^packages\/\s*$/.test(l));
+    if (pkgStart < 0) fail('AGENTS.md 的「目录约定」里找不到 `packages/` 段 —— 解析漂移会让本判据空转');
+    if (pkgStart >= 0) {
+      const listed = new Set();
+      for (let i = pkgStart + 1; i < lines.length; i += 1) {
+        const l = lines[i];
+        if (/^[^\s]/.test(l)) break; // 回到顶格 ⇒ 该段结束
+        for (const m of l.matchAll(/(?:^|\s)([a-z][a-z0-9-]*)\//g)) listed.add(m[1]);
+      }
+      const actual = readdirSync(resolve(root, 'packages'), { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+        .map((e) => e.name);
+      if (listed.size < 10) fail(`AGENTS.md 的 packages 清单只解析出 ${listed.size} 个（下限 10）—— 解析漂移会让本判据空转`);
+      const notListed = actual.filter((p) => !listed.has(p)).sort();
+      const notExist = [...listed].filter((p) => !actual.includes(p)).sort();
+      if (notListed.length > 0) {
+        fail(`这些包**实际存在但 AGENTS.md 的目录约定未列出**：${notListed.join(', ')} —— `
+          + '该清单自称穷举；清单不全 = 新包「不存在于治理文件里」（同 §4.28「护栏范围没枚举」）');
+      }
+      if (notExist.length > 0) {
+        fail(`AGENTS.md 的目录约定列出了**不存在**的包：${notExist.join(', ')} —— 治理文件不得指向不存在的目录`);
+      }
+      // canary：谓词是**同一组集合运算**，双向
+      const diff = (a, b) => a.filter((x) => !b.includes(x)).sort();
+      if (diff(['a', 'b'], ['a', 'b']).length !== 0) errors.push('AGENTS.md 包清单护栏 canary 失效：相等集合被判为有差异');
+      if (diff(['a', 'c'], ['a', 'b']).join(',') !== 'c') errors.push('AGENTS.md 包清单护栏 canary 失效：多出的项未被识别');
+    }
   }
 }
 

@@ -6,9 +6,11 @@
 
 
 > 对应 `docs/plans/typora-deep-parity-plan.md` 阶段 1（真实功能验收）。
-> ⚠️ **2026-10-06 更正（审计 §4.90）**：`docs/plans/typora-deep-parity-plan.md` **不存在**
->（**幽灵引用**，从未入库）—— 当前施工文件是 **`docs/plans/typora-parity-master-plan.md`**（V7.0），
-> 历史方案在 `docs/plans/archive/`。本行的「阶段 1」表述按**当时**的施工计划读。
+> ⚠️ **2026-10-06 更正（审计 §4.90 / §4.93）**：`docs/plans/typora-deep-parity-plan.md` **不存在**
+>（**幽灵引用**）—— 精确地说它**已被取代并删除、未归档**（`AGENTS.md`：2026-08-22 起由 master-plan
+> 取代旧 checklist/audit/review/deep-parity-plan 四文档）—— 当前施工文件是
+> **`docs/plans/typora-parity-master-plan.md`**（V7.0），历史方案在 `docs/plans/archive/`。
+> 本行的「阶段 1」表述按**当时**的施工计划读。
 > 基线：2026-08-13 首轮报告（18 项 PASS/PASS-E、j18/j19 FAIL、j3 NOT TESTED）。
 > 本轮：9 条自动化 journey 真机复跑全 PASS + PASS-E 代码级证据复核 + 回归门禁全绿。
 

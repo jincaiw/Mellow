@@ -61,6 +61,6 @@
 
 ## 现状（2026-08 基线）
 
-- CoreEditor vendored（只读）✅；editor-engine（marker reveal Phase 1）✅
+- CoreEditor vendored（**注入式扩展、不 fork**；改动清单见 `packages/editor-core/UPSTREAM.md`）✅；editor-engine（marker reveal Phase 1）✅
 - Tauri 2 + React 最小壳 ✅；Host Adapter 仅 fs/bridge（其余服务缺口见 host-adapter.md）
 - Swift 层（28,781 行）为迁移对象，未开始 Desktop Runtime 迁移
