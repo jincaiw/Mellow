@@ -33,7 +33,7 @@
  * 全仓实测：该增补只新暴露 **1 处**失败（即上面那处，已修）。
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const errors = [];
@@ -834,6 +834,113 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
   }
   if (/```[\s\S]*?```/.test('```\n[x](src)\n```'.replace(/```[\s\S]*?```/g, ''))) {
     errors.push('markdown 链接护栏 canary 失效：围栏代码块未被剥离（示例会被误报）');
+  }
+}
+
+// ── 每个 `packages/*` 必须有**跨包消费者**，否则显式登记（2026-10-06，审计 §4.95）──
+// 立此条的原因：本仓的跨包导入走**相对路径**（如 `../../../packages/settings/src`），
+// 因此**没有任何东西保证一个包被用到** —— 实测 **4 个包零消费者**：
+//   · **`document-model`** —— 317 行 src + 270 行测试，按 **ADR-0008** 实现完整文档模型
+//     （id/path/revision/dirty/encoding/EOL/diskState…），**但无任何跨包导入**；
+//     而 `app-core/src/documentState.ts` 有**同一套字段**且**不 import 它**
+//     ⇒ **ADR-0008 的实现未被采用**（**架构性**，待裁决）。
+//   · `editor-react` / `shared` / `workspace` —— 均为薄包（42/70/72 行），零消费者。
+// ⇒ 判据：**无消费者 = 必须显式登记理由**，让「新死包」无法静默累积。
+//
+// ⚠️ **测量口径（实测踩过 4 次才定准）**：
+//   ① 只认**模块说明符**（`from '…'` / `import('…')`，单双引号均可）——
+//      按「文件里出现过包名」判会把**注释/局部变量/同名测试目录**都算进来（全是假阳性）；
+//   ② `ownerOf` **只排除 vendored 上游**（`packages/editor-core/CoreEditor/`），
+//      **不排除整个 `packages/editor-core/`** —— 否则它作为**目标**也被判 null（假阴性）；
+//   ③ 解析要**试 4 种落点**（`base` / `base.ts` / `base.tsx` / `base/index.ts`）。
+const PKG_NO_CONSUMER_EXEMPT = new Map([
+  ['document-model',
+    '⚠️ **已知缺口，待裁决**：按 **ADR-0008** 实现的完整文档模型，但**当前无任何跨包导入**；'
+    + '`app-core/src/documentState.ts` 有同一套字段且不 import 它 ⇒ **ADR 的实现未被采用**。'
+    + '本轮**未擅自改架构**（接线 / 删包 / 新增 ADR 三条路都需裁决）'],
+  ['editor-react',
+    '**预留包**：README 与 AGENTS.md 均注明「契约 re-export；组件化 UI 见**阶段 2 计划**」⇒ 有意未接线'],
+  ['shared',
+    '⚠️ **待裁决**：通用工具（debounce / Emitter / assert），**当前无消费者** —— 删或接线需决定'],
+  ['workspace',
+    '⚠️ **待裁决**：`WorkspaceModel` 等，**当前无消费者** —— 删或接线需决定'],
+]);
+{
+  const PKG_ROOT = resolve(root, 'packages');
+  const SRC_SKIP = new Set(['node_modules', '.git', 'dist', 'target', '.workbuddy-ai', '.trae']);
+  const collectTs = (dir, out = []) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+      if (SRC_SKIP.has(e.name)) continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) collectTs(p, out);
+      else if (/\.(ts|tsx)$/.test(e.name)) out.push(p);
+    }
+    return out;
+  };
+  const ownerOf = (abs) => {
+    const rel = relative(root, abs).replace(/\\/g, '/');
+    if (rel.startsWith('packages/editor-core/CoreEditor/')) return null; // 只排 vendored 上游
+    if (rel.startsWith('packages/')) return `packages/${rel.split('/')[1]}`;
+    if (rel.startsWith('apps/')) return `apps/${rel.split('/')[1]}`;
+    return null;
+  };
+  const tsFiles = [...collectTs(PKG_ROOT), ...collectTs(resolve(root, 'apps'))];
+  const consumers = new Map();
+  const SPEC_RE = /(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
+  for (const f of tsFiles) {
+    const from = ownerOf(f);
+    if (from === null) continue;
+    const src = readFileSync(f, 'utf8').replace(/\r\n/g, '\n');
+    for (const m of src.matchAll(SPEC_RE)) {
+      if (!m[1].startsWith('.')) continue;
+      const base = resolve(dirname(f), m[1]);
+      for (const cand of [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts')]) {
+        const to = ownerOf(cand);
+        if (to !== null && to !== from) {
+          if (!consumers.has(to)) consumers.set(to, new Set());
+          consumers.get(to).add(from);
+        }
+      }
+    }
+  }
+  const pkgs = readdirSync(PKG_ROOT, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+    .map((e) => e.name);
+  if (pkgs.length < 10) {
+    fail(`packages 只解析出 ${pkgs.length} 个目录（下限 10）—— 扫描面漂移会让本判据空转`);
+  }
+  const withConsumer = new Set();
+  const noConsumer = [];
+  for (const p of pkgs) {
+    const c = consumers.get(`packages/${p}`);
+    if (c !== undefined && c.size > 0) withConsumer.add(p);
+    else noConsumer.push(p);
+  }
+  const unregistered = noConsumer.filter((p) => !PKG_NO_CONSUMER_EXEMPT.has(p)).sort();
+  if (unregistered.length > 0) {
+    fail(`这些包**无任何跨包消费者**且未登记理由：${unregistered.join(', ')} —— `
+      + '本仓跨包导入走相对路径，没有任何东西保证一个包被用到；'
+      + '请接线（让某处 import 它）或登记进 PKG_NO_CONSUMER_EXEMPT（带理由）');
+  }
+  // 例外表**双向**：登记了但**已有消费者** ⇒ 报错（说明已接线，例外应删）
+  for (const [p, reason] of PKG_NO_CONSUMER_EXEMPT) {
+    if (!pkgs.includes(p)) {
+      fail(`PKG_NO_CONSUMER_EXEMPT 登记了 ${p}，但该包不存在 —— 请删除该例外条目`);
+    } else if (withConsumer.has(p)) {
+      fail(`PKG_NO_CONSUMER_EXEMPT 登记了 ${p}，但它**已有跨包消费者** —— 请删除该例外条目`);
+    }
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      fail(`PKG_NO_CONSUMER_EXEMPT 的 ${p} 缺理由`);
+    }
+  }
+  // canary：判据是**同一个 ownerOf / 同一组落点**，双向
+  if (ownerOf(resolve(root, 'packages/editor-core/CoreEditor/src/config.ts')) !== null) {
+    fail('包消费者护栏 canary 失效：vendored 上游未被排除（会把自己算成消费者）');
+  }
+  if (ownerOf(resolve(root, 'packages/settings/src/index.ts')) !== 'packages/settings') {
+    fail('包消费者护栏 canary 失效：普通包未被识别（会把所有人算成无消费者）');
   }
 }
 
