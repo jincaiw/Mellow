@@ -51,7 +51,7 @@ Release verdict: NO-GO：6 项未闭环
 | 5 | §4.5 | **V1.0 发布时是否把「Apple 凭据缺失」改为硬失败** | **已裁决**（C2：保持警告 + 现状护栏） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q3） |
 | 6 | §4.10.1 | **`settings.open` 在 Win/Linux 的菜单入口**（D 还是缺口） | **已裁决**（A3：维持现状 + 理由进 D 表；**证据缺口已注明**）—— D 表载体 = master-plan §12 的 **`D-AF`**，**2026-09-30 已落地**（2026-10-01 复核确认，见 §4.67） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q1） |
 | 7 | §4.14 / §4.29–§4.30 | `Allow Magnification` / 「使用主题的字体大小」 | **已处置**（前者已实装；后者「自定义字号」已实装、刻意不对齐 Typora 的 24，已登记 D） | `已处置`（§4.28 / §4.30） |
-| 8 | §4.39 | **表格 `invalid` 提示**：Mellow 自有提示 or 从 spec 移除 | **未裁决（留在 ADR-0029）** —— 需产品判断且缺 Typora 对应行为的一手证据 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q4） |
+| 8 | §4.39 | **表格 `invalid` 提示**：Mellow 自有提示 or 从 spec 移除 | **已裁决（2026-10-05）= D2：从 spec 移除** —— 补足一手证据后裁定：Typora 对损坏表格**既不提示也不校验**（两条独立通道：全部 8 份 `.strings` + `main.js`）⇒ 该项非 parity 且从未实现 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q4） |
 | 9 | §4.40 | **上传「密钥」的 spec 表述**（不适用 / keychain / UI 禁止） | **已裁决**（E1：改写为「不适用」+ **保留明文残余风险说明**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q5） |
 | 10 | §4.51 | **`tests/visual/actual/*.png` 是否取消 git 跟踪** | **已裁决**（F1：取消跟踪 + 改护栏 + README 同步） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q6） |
 | 11 | §4.72 | **clipboard paste 优先级：`image payload`（§3 优先级 2）与 `rich HTML`（4）分处两个 eventHandler，而注册顺序把 2 排在 3/4 之后 ⇒ 与 spec §3 相反** | **未裁决（需一手证据）** —— 裁决前需实测真实剪贴板在「从浏览器复制图片」时带哪些 MIME；本轮只记录 + 立载体，**不擅自改行为**（`AGENTS.md`「冲突处理」） | `docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md` |
@@ -1892,6 +1892,16 @@ Typora 自带官方文档 `TypeMark/Docs/Table Editing.md` 有 `## Resize Table`
 → 该条是 **Mellow 自定要求**，不是 Typora parity；且**未实现**（全仓仅出现在 spec 里）。
 按「先报告冲突、不擅自裁决」：**登记为待裁决项**（实现为 Mellow 自有提示，或从 spec 移除），
 本轮**不擅自实现**。
+
+> **✅ 2026-10-05 已裁决（ADR-0029 Q4 = D2：从 spec 移除）** —— 本轮把证据补足到**两条独立通道**：
+> ① **全部 4 个 `.strings` × 2 语言**（Base + zh-Hans 的 Front/Menu/Panel/Welcome，经 `plutil` 转 JSON）：
+> 与表格**不相交**的语法类词命中 20 条，**与表格相关 0 条**；
+> ② **行为真值 `main.js`**：`表格+无效/不完整`、`table+invalid|incomplete|malform`、
+> `(invalid|malform)+table`、`*Valid*Table` 标识符 **全部 0 命中** —— Typora 只有**显式**的
+> `reformatTable`（菜单「Prettify Source Code」）。
+> ⇒ **Typora 对损坏表格既不提示也不校验**（只是不按表格渲染 + 提供显式修复动作），
+> 故该项**非 parity 且从未实现** ⇒ 移除。**§7 的第 1/2/4 项不变**。
+> 证据与理由见 `ADR-0029` 的「Q4 裁决」节。
 
 ### 发现 5（零测试 → 本轮补）：§7 的 fallback 与 §10 的 multiline
 
@@ -4163,6 +4173,44 @@ Clipboard 域此前**没有任何护栏**。本护栏**不裁定冲突**（裁�
 > 而护栏**自己**就是最容易满足它的那个文件。**凡「存在性」判据，先问一句：我自己的源码会不会满足它？**
 >
 > 附带：**测量脚本的边界字符**要单独当判据来验（本轮我的脚本在这里错了，而它差点推翻一个真发现）。
+
+## 4.74 ADR-0029 Q4 裁决：表格 `invalid` 提示**从 spec 移除**（2026-10-05）
+
+### 背景
+
+§4.39 的发现 4 把 `table-editing-spec` §7 的第 3 项（提示「表格语法不完整」）登记为待裁决：
+「实现 Mellow 自有提示，或从 spec 移除」——当时**证据不足**（只在 `Front.strings` 单文件里查过），故不判。
+
+### 本轮补足的一手证据（**两条独立通道**，均在本机 Typora 1.14.9 / build 7785）
+
+| 通道 | 检索面 | 结果 |
+|---|---|---|
+| **文案** | Typora 的**全部 4 个 `.strings` × 2 语言**（Base + zh-Hans 的 Front / Menu / Panel / Welcome），`plutil -convert json` 后检索 | 与表格**不相交**的语法类词（`不完整\|无效\|语法\|非法\|incomplete\|invalid\|syntax\|malform\|broken`）命中 **20** 条，**其中与表格相关 0 条**；唯一「提示」形态是三条 `请按语法 … 定义 {链接\|图片\|脚注}` |
+| **行为真值** | `TypeMark/appsrc/main.js`（1.6 MB） | `表格+无效/不完整`、`table+invalid\|incomplete\|malform`、`(invalid\|malform)+table`、`*Valid*Table` 标识符 —— **全部 0 命中**。表格函数族只有 `insertTable` / `deleteTable` / `copyTable` / **`reformatTable`**（= 菜单「Prettify Source Code / 格式化表格源码」）/ `tryResetTable` / `isTableEmpty` / `moveTableRow·Col` / `resizeTableEdit` |
+
+⇒ **Typora 对损坏表格既不提示、也不校验**：只是**不按表格渲染**（source-like），
+并提供**显式**的 `reformatTable` 动作 —— 恰好对应 §7 的**第 1/2/4 项**（已实现且有 4 例单测）。
+
+### 裁决 **D2：从 spec 移除**
+
+理由：本 spec 是 **Typora parity spec**；该项**非 parity** 且**从未实现**（全仓仅出现在该 spec 里）。
+保留「非 parity + 未实现」的要求会让读者误读成**差距**（同 §4.70 形态）。
+**不选 D1**（实现 Mellow 自有提示）—— 那属**产品新增**，须单独提出并登记为 **D** + 定文案。
+
+**落地**：spec §7 第 3 项标记为**移除**（保留原文划除 + 注明依据）；**第 1/2/4 项不变**；
+`ADR-0029` 追加「Q4 裁决」节并同步其顶部状态；审计「待裁决项登记表」第 8 行改为**已裁决**；
+门禁 `DECIDED_ADRS` 的 ADR-0029 描述串同步（**Q4 留待 → Q4=D2**）。
+
+### 施工中又踩了一次「判定退化成恒真」（同 §4.40 族）
+
+我第一版的检索用的是**一个词集**同时判「含语法类词」与「含表格」——
+而 `TABLE`（表格）是 `TERMS` 的**子集** ⇒ 合取条件**退化成「只要含表格」**，
+于是把 `插入表格` / `删除表格` 这类**纯菜单标签**全报成了「表格语法提示」。
+改用**不相交**词集（`SYNTAX` 与 `TABLE` 无交集）后重测，结论才成立（20 条里 0 条与表格相关）。
+
+> **教训**：**合取判据的两个词集必须验证「不相交」** —— 否则 `A ∧ B` 会静默退化成 `A`。
+> 这与 §4.40（边界字符）、§4.73（`TYPORA_APP` 前缀匹配 `TYPORA_APPSRC`）是**同一族**：
+> **判据的形态假设错一次，就是一条恒真（或恒假）的判据。**
 
 ## 五、本次审计做的改动（非策略性）
 

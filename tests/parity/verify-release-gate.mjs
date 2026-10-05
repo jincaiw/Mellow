@@ -152,7 +152,7 @@ const DECIDED_ADRS = [
   ['docs/adr/ADR-0028-engine-host-context-channel.md',
     '引擎侧宿主上下文通道（统一 UI 上下文桥 vs 逐项加桥）', 'A2 / B1 / C1'],
   ['docs/adr/ADR-0029-audit-pending-decisions-registry.md',
-    '审计中的未登记裁决项（6 项）', 'A3 / B2 / C2 / Q4 留待 / E1 / F1'],
+    '审计中的未登记裁决项（6 项）', 'A3 / B2 / C2 / Q4=D2（2026-10-05 补证据后裁决：从 spec 移除）/ E1 / F1'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。

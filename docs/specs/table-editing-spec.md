@@ -124,8 +124,29 @@ Tidy：
 
 - 不强制修复
 - fallback source-like display
-- 提示“表格语法不完整”
+- ~~提示“表格语法不完整”~~
 - user can Tidy/Fix explicitly
+
+> **⚠️ 2026-10-05：第 3 项「提示『表格语法不完整』」已**从本 spec 移除**（ADR-0029 **Q4 裁决**）。**
+>
+> **一手证据（本轮补足，两条独立通道）**：
+>
+> | 通道 | 检索 | 结果 |
+> |---|---|---|
+> | **文案**（Typora 1.14.9 的**全部 4 个 `.strings` × 2 语言**：Base + zh-Hans 的 Front / Menu / Panel / Welcome） | 与表格**不相交**的语法类词（`不完整\|无效\|语法\|非法\|incomplete\|invalid\|syntax\|malform\|broken`） | 命中 **20** 条，**其中与表格相关 0 条**；唯一「提示」形态的是三条 `请按语法 … 定义 {链接\|图片\|脚注}` |
+> | **行为真值**（`TypeMark/appsrc/main.js`） | `表格+无效/不完整` / `table+invalid\|incomplete\|malform` / `(invalid\|malform)+table` / `*Valid*Table` 标识符 | **全部 0 命中**；表格函数族只有 `insertTable` / `deleteTable` / `copyTable` / **`reformatTable`**（= 菜单「Prettify Source Code / 格式化表格源码」）/ `tryResetTable` / `isTableEmpty` / `moveTableRow·Col` / `resizeTableEdit` 等 |
+>
+> ⇒ **Typora 对损坏表格既不提示、也不校验**：它只是**不按表格渲染**（source-like），
+> 并提供**显式**的 `reformatTable` 动作 —— 这正好对应本节**已实现且有测试**的第 1/2/4 项
+> （`table-live-view.test.ts` 的 4 例：缺分隔行 / 列数不一致 / 分隔行被换行拆断 ⇒ 不渲染 live view、
+> 源码逐字不变、修好后恢复）。
+>
+> **裁决理由**：本 spec 是 **Typora parity spec**；该项**不是 parity**（Typora 无此行为），
+> 且**从未实现**（全仓仅出现在本 spec 里）。保留一个「非 parity + 未实现」的要求会让读者以为它是差距。
+> ⇒ **移除**，而不是「实现一个 Mellow 自有提示」—— 后者属**产品新增**，
+> 若将来要做，须**单独提出**并登记为 **D（有意差异）**+ 定文案（因为文案与 Typora 不同）。
+>
+> ⚠️ **移除 ≠ 禁止**：本节第 1/2/4 项**不变**；将来若确有需要，走「新 ADR + D 登记」的正式路径。
 
 ---
 
