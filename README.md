@@ -22,7 +22,7 @@ Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编
 | **宪法** | `docs/product/Mellow-PRD-V1.2-FINAL.md` | 产品需求文档 V1.2 FINAL，一切需求的最终依据 |
 | **法律** | `docs/specs/` | 各领域具体规范（引擎、UI、表格、图片、剪贴板、文件安全、IME、运行时、Typora parity） |
 | **判决** | `docs/adr/ADR-*.md` | 已做技术决策，**不允许随意推翻**；如需变更，追加新 ADR |
-| **施工图** | `docs/plans/codex-implementation-plan.md`、`docs/plans/typora-parity-master-plan.md` | 实施顺序与验收节奏 |
+| **施工图** | `docs/plans/typora-parity-master-plan.md`（**唯一权威实施方案**）；`docs/plans/codex-implementation-plan.md`（**从属**：任务编号脚手架，不是状态台账） | 实施顺序与验收节奏 |
 
 ## 目录结构
 
@@ -32,9 +32,9 @@ mellow/
 ├── docs/
 │   ├── product/      # 宪法：PRD V1.2 FINAL
 │   ├── specs/        # 法律：各领域规范
-│   ├── adr/          # 判决：ADR-0001 ~ ADR-0021
-│   ├── plans/        # 施工图：codex 实施计划 / Typora 深度对标计划
-│   ├── architecture/ # 实现架构（overview / editor-core / host-adapter / monorepo / extension-api）
+│   ├── adr/          # 判决：ADR-0001 起，**只追加不修改**（最新编号见该目录）
+│   ├── plans/        # 施工图：typora-parity-master-plan.md（唯一权威）+ codex-implementation-plan.md（从属脚手架）
+│   ├── architecture/ # 实现架构（文件清单见该目录 README.md）
 │   └── qualification/# 验证记录（评审、IME 矩阵、golden journeys、benchmark）
 ├── apps/
 │   └── desktop/      # Tauri 2 + React 桌面壳（Adapter 装配层，平台代码只允许在此）
@@ -42,8 +42,8 @@ mellow/
 │   ├── editor-core/      # vendored MarkEdit CoreEditor（**注入式扩展、不 fork**；改动清单见 UPSTREAM.md）+ 平台无关 EditorCore 契约
 │   ├── editor-engine/    # Mellow Live Markdown 引擎（注入式扩展，marker reveal/表格/数学/Mermaid/脚注/TOC/图片…）
 │   ├── editor-react/     # 编辑器 React 绑定层（契约 re-export；组件化 UI 见阶段 2 计划）
-│   ├── desktop-ui/       # 桌面 UI 组件（Tabbar/StatusBar/Welcome/OutlineList/SearchResultsList/FileList/FileTree）
-│   ├── app-core/         # 应用核心逻辑（Document/Recovery/ExternalChange/Tabs/FileTree/Outline/QuickOpen/Search…）
+│   ├── desktop-ui/       # 桌面 UI 组件（导出清单见该包 `src/index.ts`：StatusBar/OutlineList/SearchResultsList/FileList/FileTree/侧栏头尾）
+│   ├── app-core/         # 应用核心逻辑（Document/Recovery/ExternalChange/FileTree/Outline/QuickOpen/Search…）
 │   ├── host-api/         # 系统能力契约（PRD §116，纯类型 + mock/null）
 │   ├── document-model/   # 文档模型（ADR-0008）
 │   ├── workspace/ commands/ i18n/ themes/ extension-api/ export/ settings/ shared/
@@ -53,8 +53,18 @@ mellow/
     └── qualification/ # V0.0 门禁记录 + 可执行脚本（source-fidelity / packaging smoke）
 ```
 
-## 文档索引
+> ⚠️ **2026-10-06 更正（审计 §4.94）**：上面「目录结构」段原有 **5 处失真**，已修：
+> ① `adr/` 写「ADR-0001 ~ **ADR-0021**」—— 实际已到 **ADR-0031**（且与本文档索引段的
+> 「~ ADR-0031」**自相矛盾**）；② `plans/` 写「Typora **深度对标计划**」——
+> 该文档已于 **2026-08-22 被 master-plan 取代并删除**；③ `architecture/` 括号清单列 5 个、
+> 实际 **7** 个；④ `desktop-ui/` 列了**已移除**的 `Tabbar`（B1 SDI）与 `Welcome`（B2 第四轮），
+> 且漏了 `SidebarHeader`/`SidebarFooter`；⑤ `app-core/` 列了 **SDI 已否决**的 `Tabs`。
+> ⇒ 修法：**易漂的清单改为指向真值源**（`adr/` 指向目录、`architecture/` 指向其 README、
+> `desktop-ui/` 指向该包 `src/index.ts`）。
+> 另：本文档体系表原把「施工图」写成两个并列文件 —— 已按两者**自述**调和为
+> 「master-plan = 唯一权威；codex 计划 = 从属脚手架」。
 
+## 文档索引
 ### 宪法
 
 - [Mellow-PRD-V1.2-FINAL.md](docs/product/Mellow-PRD-V1.2-FINAL.md) — 产品需求文档（最终冻结版）

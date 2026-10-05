@@ -755,6 +755,78 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
   }
 }
 
+// ── markdown **相对链接**必须可达（2026-10-06，审计 §4.94）──
+// 立此条的原因：本文件已有两条「路径可达性」判据，但形态不同 ——
+//   ① §4.76：`docs/architecture` 里**反引号**包住的路径；
+//   ② §4.90：整个 `docs/` 里**裸** `docs/**/*.md` 路径。
+// 而**最常被点的**是第三种形态：**markdown 链接** `[文字](相对路径)` —— 例如 `README.md`
+// 的「文档索引」整段。本轮审 `README.md`（仓库门面）时发现它**只被部分护栏覆盖**。
+//
+// ⚠️ **必须跳过三种「合法的不可达」**（实测逐条踩过，否则假阳性 29 处 → 真断链 0 处）：
+//   ① **围栏代码块与行内代码** —— 那里常写 `[label](src)`、`[text](URL)` 这类**示例**
+//      （首版只跳行内代码，漏了围栏 ⇒ `clipboard-smart-paste-spec` 的示例被误报）；
+//   ② **测试夹具**（`tests/fixtures/**`、`tests/benchmark/**/{work,fixtures}/**`）——
+//      它们是**链接渲染语料**，**故意**含不存在的相对路径；
+//   ③ **更正/引用块** —— 「原写 `[x](old.md)`」这类行必然引用旧路径。
+{
+  const MD_SKIP_DIRS = new Set(['node_modules', '.git', 'target', 'CoreEditor', 'dist', '.workbuddy-ai', '.trae', 'archive']);
+  const FIXTURE_RE = /^tests\/(?:fixtures\/|benchmark\/.*\/(?:work|fixtures)\/)/;
+  const mdFiles = walk(root).filter((f) => f.endsWith('.md'));
+  const LINK_RE = /\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
+  // ⚠️ 过滤谓词**必须是共用函数**（主循环与 canary 同一对象）—— 否则放宽它不会被抓到。
+  const isExternalLink = (t) => t === '' || /^(?:https?:|mailto:|#|[a-z][a-z0-9+.-]*:)/i.test(t);
+  /** 取一条行内所有 markdown 链接的目标（含标题属性的行也只取路径） */
+  const linkTargets = (line) => [...line.matchAll(LINK_RE)].map((m) => m[1].split('#')[0].trim());
+  let linkCount = 0;
+  const broken = [];
+  for (const abs of mdFiles) {
+    const rel = relative(root, abs).replace(/\\/g, '/');
+    if (FIXTURE_RE.test(rel)) continue;
+    if (MD_SKIP_DIRS.has(rel.split('/').slice(0, -1).find((seg) => MD_SKIP_DIRS.has(seg)) ?? '')) continue;
+    const raw = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
+    const noFences = raw.replace(/```[\s\S]*?```/g, '');
+    const dir = resolve(abs, '..');
+    noFences.split('\n').forEach((line, i) => {
+      if (/原写|原文|更正|不存在|审计 §4\.(?:90|93|94)/.test(line)) return;
+      const clean = line.replace(/`[^`]*`/g, '');
+      for (const target of linkTargets(clean)) {
+        if (isExternalLink(target)) continue;
+        linkCount += 1;
+        let decoded;
+        try { decoded = decodeURIComponent(target); } catch { decoded = target; }
+        if (!existsSync(resolve(dir, decoded))) broken.push(`${rel}:${i + 1} → ${target}`);
+      }
+    });
+  }
+  if (broken.length > 0) {
+    fail(`这些 markdown **相对链接不可达**：${broken.slice(0, 5).join(' / ')}`
+      + `（共 ${broken.length} 处）—— 读者点它会 404；请改为正确路径，或登记豁免（测试夹具已整体豁免）`);
+  }
+  // 覆盖下限：全仓相对链接数不得低于立此判据时的基线（实测 1037）
+  if (linkCount < 500) {
+    fail(`markdown 链接可达性普查只解析出 ${linkCount} 条相对链接（下限 500 = 立此判据时的基线）`
+      + ' —— 解析或扫描面漂移会让本判据空转');
+  }
+  // canary：四向 —— ①相对路径必须被识别 ②绝对 URL/锚点必须被跳过
+  // ③**带标题属性的链接只能取到路径**（正则放宽成 `([^)]*)` 会把 `"标题"` 并进目标 ⇒ 假阳性）
+  // ④围栏代码块必须真的被剥离
+  if (linkTargets('[a](docs/x.md)').join(',') !== 'docs/x.md') {
+    errors.push('markdown 链接护栏 canary 失效：相对路径样本未被正确解析');
+  }
+  if (linkTargets('[a](https://x.com)').some((t) => !isExternalLink(t))) {
+    errors.push('markdown 链接护栏 canary 过宽：绝对 URL 未被跳过');
+  }
+  if (linkTargets('[a](#section)').some((t) => !isExternalLink(t))) {
+    errors.push('markdown 链接护栏 canary 过宽：纯锚点未被跳过');
+  }
+  if (linkTargets('[a](docs/x.md "标题")').join(',') !== 'docs/x.md') {
+    errors.push('markdown 链接护栏 canary 失效：带标题属性的链接未只取路径（放宽正则会引入假阳性）');
+  }
+  if (/```[\s\S]*?```/.test('```\n[x](src)\n```'.replace(/```[\s\S]*?```/g, ''))) {
+    errors.push('markdown 链接护栏 canary 失效：围栏代码块未被剥离（示例会被误报）');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
