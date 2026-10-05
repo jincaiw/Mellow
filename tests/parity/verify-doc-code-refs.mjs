@@ -569,6 +569,78 @@ const PACKAGING_VERSION_ALLOW = new Map([
   }
 }
 
+// ── 文档里引用的 `docs/**/*.md` 路径必须存在（2026-10-06，审计 §4.90）──
+// 立此条的原因：`docs/qualification/` 里两份文档引用 `docs/plans/typora-deep-parity-plan.md`
+// —— 该文件**从未入库**（**幽灵引用**）：读者按它去找「阶段 1/阶段 0-4」会找不到，
+// 而全仓对它的 3 处引用里 2 处在 `docs/`（第 3 处在 gitignore 的 `.trae/`）。
+// ⇒ 与 §4.76 的「架构文档反引号路径必须存在」同族，但**扫描面扩到整个 `docs/`** 且
+// **不要求反引号**（幽灵引用常常是裸路径）。
+// ⚠️ 例外必须**显式登记 + 双向**：更正块**必然要引用错误原名**（本仓惯例是「不改写历史、只追加更正」），
+// 故幽灵名会合法地出现在「说明它不存在」的句子里。
+const DOC_PATH_EXEMPT = new Map([
+  ['docs/plans/typora-deep-parity-plan.md',
+    '**幽灵名**：从未入库；保留在**更正块**里正是为了说明「该文件不存在、当前施工文件是 master-plan」'],
+]);
+{
+  const SKIP_DIRS = new Set(['archive']); // archive 是历史目录，其内部引用不要求可达
+  const mdFiles = [];
+  const collectMd = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (SKIP_DIRS.has(e.name)) continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) collectMd(p);
+      else if (e.name.endsWith('.md')) mdFiles.push(p);
+    }
+  };
+  collectMd(resolve(root, 'docs'));
+  const DOC_PATH_RE = /docs\/[\w./-]+\.md/g;
+  const missing = [];
+  const seenPaths = new Set();
+  for (const abs of mdFiles) {
+    const rel = relative(root, abs).replace(/\\/g, '/');
+    const lines = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n').split('\n');
+    lines.forEach((line, i) => {
+      for (const m of line.matchAll(DOC_PATH_RE)) {
+        const ref = m[0];
+        seenPaths.add(ref);
+        if (DOC_PATH_EXEMPT.has(ref)) continue;
+        // 三种解析：仓库相对 / 相对 docs / 相对 docs/plans（历史文档常省略前缀）
+        const candidates = [resolve(root, ref), resolve(root, 'docs', ref), resolve(root, 'docs/plans', ref)];
+        if (candidates.some((c) => existsSync(c))) continue;
+        missing.push(`${rel}:${i + 1} → ${ref}`);
+      }
+    });
+  }
+  if (missing.length > 0) {
+    fail(`这些文档引用了**不存在的** \`docs/**/*.md\` 路径（**幽灵引用**）：${missing.slice(0, 5).join(' / ')}`
+      + ' —— 读者按它去找会找不到；请改为指向真实文件，或登记进 DOC_PATH_EXEMPT（带理由）');
+  }
+  // 例外表**双向**：登记了但已不再被引用 ⇒ 报错（化石例外会掩盖未来回归）
+  for (const [ref, reason] of DOC_PATH_EXEMPT) {
+    if (!seenPaths.has(ref)) {
+      fail(`DOC_PATH_EXEMPT 登记了 ${ref}，但已不再有文档引用它 —— 请删除该例外条目`);
+    }
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      fail(`DOC_PATH_EXEMPT 的 ${ref} 缺理由（例外必须带可复核的理由）`);
+    }
+  }
+  // 覆盖下限：`docs/**` 的 md 份数不得低于立此判据时的基线
+  if (mdFiles.length < 50) {
+    fail(`幽灵引用普查只扫到 ${mdFiles.length} 份 md（下限 50 = 立此判据时的基线）—— 扫描面漂移会让本判据空转`);
+  }
+  // canary：判据是**同一个解析函数**，双向
+  const resolves = (ref) => [resolve(root, ref), resolve(root, 'docs', ref), resolve(root, 'docs/plans', ref)]
+    .some((c) => existsSync(c));
+  if (!resolves('docs/plans/typora-parity-master-plan.md')) {
+    errors.push('幽灵引用护栏 canary 失效：真实存在的样本被判为不存在');
+  }
+  if (resolves('docs/plans/__definitely_absent__.md')) {
+    errors.push('幽灵引用护栏 canary 失效：不存在的样本被判为存在');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

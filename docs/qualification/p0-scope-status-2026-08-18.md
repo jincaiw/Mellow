@@ -9,6 +9,31 @@
 > 判定口径：功能 + 行为 + 快捷键 + i18n + 测试（PRD §146）；真机项以「构建级 ✅ / 真机 ⏳」标注。
 > **历史状态修订（2026-08-24）**：本报告中 Split Mode 的已完成记录仅表示当时实现历史，已不属于 V1 范围；当前验收基线为 Typora 1.14.9（build 7785）。
 
+> **⚠️ 2026-10-06 更正（审计 §4.90）—— 头条结论已不能按「当前」读**：
+> 本报告的结论句「**P0 60 项中 58 项代码侧完成；2 项需真机执行**」是 **2026-08-18 的条目集与口径**，
+> 与**当前门禁**不一致：
+>
+> | 项 | 本报告（2026-08-18） | 当前真值源 |
+> |---|---|---|
+> | 条目集 | **60 项** | **50 项**（`tests/parity/typora-parity-ledger.json`，门禁自报「50 P0 items」） |
+> | 未闭环 | 2 项（待真机） | **9 项**（含 4 项「标 AUTO 但 `requiredEvidence` 含 `ux-gate`」，ADR-0024 A3 不得以 AUTO 收口） |
+> | 达 `PASS-E` | — | **0/50** |
+>
+> ⇒ **「58/60 完成」不得当作当前就绪度引用**；当前就绪度以 `verify-release-gate.mjs` 的输出为准。
+>
+> **逐条更正**（其余行如实保留为当时快照）：
+> - **#13 Tabs「✅」** —— **Tabs 已被 SDI 否决**（D-D / D-Y；`desktop-ui-design-spec` §4 整节作废），
+>   **不属于 V1 范围** ⇒ 该行按**当时**读（护栏 `verify-shell-widgets.mjs` 确认
+>   `Tabbar` / `tab-overview` / `autoHideTabBar` **已全量移除**）。
+> - **#3「editor-engine 491 测试」** —— 实测现为 **1293**（`packages/editor-engine` jest：79 suites）。
+> - **#39「6 内置原创主题」** —— **「6」是 PRD 的要求数**，实际 **8** 个
+>   （`mellow-light` / `mellow-dark` / `paper` / `git-light` / `git-dark` / `newsprint` / `whitey` / `gothic`）
+>   ⇒ 这是**超额**，**不是失真**（勿「修正」回 6）。
+> - **「参考」里的 `docs/plans/typora-deep-parity-plan.md` 不存在**（**幽灵引用**，全仓仅 3 处提及该名，
+>   且从未入库）⇒ 当前施工文件是 **`docs/plans/typora-parity-master-plan.md`**（V7.0），历史方案在 `docs/plans/archive/`。
+>
+> **保留**：本文其余内容（逐项状态表）为 2026-08-18 的**历史快照**，如实保留。
+
 | # | P0 项 | 状态 | 证据 |
 |---|---|---|---|
 | 1 | MarkEdit CoreEditor cross-platform | ✅ | CoreEditor vendored 原样（git diff 空）+ wrapper 519 行契约，neutral 测试 16 |
@@ -76,4 +101,5 @@
 ## 参考
 - docs/qualification/phase1-runtime-qualification-manual.md、ux-score-gate-template.md
 - docs/adr/ADR-0020、ADR-0021
-- docs/plans/typora-deep-parity-plan.md（阶段 0-4 进度记录）
+- **当前施工文件**：`docs/plans/typora-parity-master-plan.md`（V7.0）；历史方案在 `docs/plans/archive/`
+  （原写 `typora-deep-parity-plan.md` —— 该文件**不存在**，见上方 2026-10-06 更正）
