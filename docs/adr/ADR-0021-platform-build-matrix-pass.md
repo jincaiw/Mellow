@@ -31,10 +31,16 @@
 **结论更新**：三平台「构建 + 启动」级 Runtime 证据已获得；IME 组词/Caret/Clipboard 的「输入交互」级验证仍需真机桌面（Windows/Linux）——ADR-0019 §2 无 FAIL，Tauri 维持锁定。
 
 ### 真机 Runtime 矩阵（待执行）
-### 真机 Runtime 矩阵（待执行）
 - Windows/Linux 真机（或 VM）的 IME（微软拼音/搜狗/fcitx5/ibus）、Caret/Selection、Clipboard（plain/HTML/TSV/image）、拖放、Undo、外部变更、10MB、Print/PDF、焦点——**尚未执行**（需用户提供机器，执行手册见 docs/qualification/phase1-runtime-qualification-manual.md）。
 - macOS 已验部分：简体拼音 8/8（历史矩阵）；日文输入源与 typing P95（ABC）待补。
 - 结论：ADR-0019 §2 触发条款在构建层面**无 FAIL 记录**；Tauri 维持锁定。真机矩阵回填后本 ADR 更新为最终确认，或触发 §2 切换流程。
+
+> **更正（2026-10-06 审计 §4.89 追加）**：
+> ① 本节标题原文**连续重复两遍**（行 33/34），已去重（**零语义变更**）；
+> ② 下方「后果 2」写「真机矩阵…**阻塞「V1.0 正式发布」结论**」——
+> 该结论已被 **ADR-0031**（2026-10-05，**用户裁决**「忽略真机 Gate 回填，正式发布」）**超越**：
+> 正式发布已按用户裁决推进，而**真机矩阵仍未回填**（`PASS-E = 0/50`、未闭环 9 项）。
+> ⇒ **发布状态已变，完成度未变**；本 ADR 的「阻塞发布」表述按**当时**读。
 
 ## 后果
 1. 三平台安装包可由 release.yml 一键产出（workflow_dispatch 或 v* 标签）。

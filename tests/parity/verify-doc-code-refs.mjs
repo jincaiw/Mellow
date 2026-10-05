@@ -523,6 +523,52 @@ const PACKAGING_VERSION_ALLOW = new Map([
   }
 }
 
+// ── 同一文档内**标题不得重复**（2026-10-06，审计 §4.89）──
+// 立此条的原因：`docs/adr/ADR-0021-platform-build-matrix-pass.md` 曾**连续两行**写着同一个
+// `### 真机 Runtime 矩阵（待执行）`（复制粘贴残留）。这类**结构缺陷**：
+//   · 不会被任何「内容核对」发现（两边文字都对）；
+//   · 渲染出来只多一行同样的标题，**看起来像排版风格**；
+//   · 但会让**按标题定位**的引用/锚点**指向第一个**，而作者可能想的是第二个。
+// ⇒ 与 §4.78 的「PRD 子节被写成一级标题」同族：**宪法/spec 也会有结构缺陷，只有结构判据能发现**。
+{
+  const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t]*$/;
+  const DUPLICATE_HEADING_DOCS = ['docs/adr', 'docs/specs'];
+  let scanned = 0;
+  for (const dir of DUPLICATE_HEADING_DOCS) {
+    const abs = resolve(root, dir);
+    if (!existsSync(abs)) continue;
+    for (const name of readdirSync(abs)) {
+      if (!name.endsWith('.md')) continue;
+      scanned += 1;
+      const lines = readFileSync(resolve(abs, name), 'utf8').replace(/\r\n/g, '\n').split('\n');
+      const seen = new Map();
+      const dups = [];
+      lines.forEach((line, i) => {
+        const m = HEADING_RE.exec(line.trim());
+        if (m === null) return;
+        const key = `${m[1]} ${m[2]}`; // 层级 + 文本一起比：不同层级同名标题是合法的
+        if (seen.has(key)) dups.push(`「${key}」行 ${seen.get(key) + 1} 与 ${i + 1}`);
+        else seen.set(key, i);
+      });
+      if (dups.length > 0) {
+        fail(`${dir}/${name} 出现**重复标题**：${dups.join(' / ')} —— `
+          + '复制粘贴残留；按标题定位的引用/锚点会指向**第一个**，而作者可能想的是第二个');
+      }
+    }
+  }
+  if (scanned < 20) {
+    fail(`重复标题普查只扫到 ${scanned} 份文档（下限 20 = 立此判据时的基线）—— 扫描面漂移会让本判据空转`);
+  }
+  // canary：判据是**同一个正则**，双向
+  const headingKey = (line) => { const m = HEADING_RE.exec(line.trim()); return m === null ? null : `${m[1]} ${m[2]}`; };
+  if (headingKey('### 真机 Runtime 矩阵（待执行）') !== headingKey('### 真机 Runtime 矩阵（待执行）')) {
+    errors.push('重复标题护栏 canary 失效：同一标题样本未被识别为相同 key');
+  }
+  if (headingKey('## A') === headingKey('### A')) {
+    errors.push('重复标题护栏 canary 过宽：不同层级的同名标题被误判为重复');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

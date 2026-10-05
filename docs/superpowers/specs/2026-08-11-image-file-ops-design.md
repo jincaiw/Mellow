@@ -5,6 +5,12 @@
 **宪法依据**：PRD §53/§54/§56-§58；spec image-workflow §4/§6/§7/§9/§11；spec document-file-safety §8
 **计划映射**：T-0205（asset strategy 完成）、T-0405（image batch ops）、T-0508（file op undo 前置）
 
+> **⚠️ 快照声明（2026-10-06 审计 §4.89 补）**：本文是 **2026-08-11 的实现设计快照**，
+> **不是现状真值源** —— 现状以**代码**为准。
+> 另：本文件位于 `docs/superpowers/specs/`，**不在任何护栏的扫描面内**
+> （`verify-doc-code-refs.mjs` 的 `DOC_GLOBS` 只含 `docs/plans` / `docs/adr` / `docs/specs`）
+> ⇒ 其中的路径/契约断言**没有机器守护**，改动时须人工核对。
+
 ---
 
 ## 1. 目标
@@ -115,3 +121,21 @@ desktop          Adapter 层（唯一平台代码）
 - **文本输入对话框**：Rename 输入用 `window.prompt`（Tauri 无原生文本输入对话框；V0.0 可接受）；确认对话框用 tauri-plugin-dialog 原生 `confirm`
 - **既有缺陷修复**：`build-editor-bundle.mjs` copyEngine 只复制顶层 .js，`dist/image/`、`dist/table/` 子模块从未部署到 public（desktop 运行时引擎子模块 404）——本次改为递归复制，同时修复了此旧缺陷
 - **delete 契约保留**：`FileService.delete` 保留（PRD §57 语义 = 回收站），新增 `trash`/`remove` 分工：trash = 用户删除；remove = 内部清理（撤销副本）
+
+---
+
+## 12. 更正块（2026-10-06 审计 §4.89 追加；**不改写上文，只追加**）
+
+逐条对代码取证后的结果（**取证为成立的不列**）：
+
+- **§11「文本输入对话框：Rename 输入用 `window.prompt`」—— 已不成立。**
+  实测：全仓 `window.prompt` 的**非注释用法 = 0 处**；已由**应用内输入对话框 `askInput`** 取代
+  （commit `5cb37df` 迁移 9 处），且 `verify-shell-widgets.mjs` **有护栏**锁「不得再用 `window.prompt`」。
+  ⇒ 本行是**当时的实现偏差记录**，现已被后续工作取代。
+- **§5 的 `showConfirm` —— 仍成立**：`packages/app-core/src/documentRename.ts` 仍调用
+  `this.deps.dialog.showConfirm(...)` ✓。
+
+**取证为成立的部分（不逐条改，供复核者省事）**：
+§7 分层里列出的 **8 个文件全部存在**（`editor-engine/src/image/{scan,assetConfig,ops,engineApi,widget}.ts`、
+`app-core/src/{imageFileOps,documentRename,fileOpHistory}.ts`）；
+§8 的两个 Rust 依赖**都在 `Cargo.toml`**（`trash = "5"`、`ureq = "2"`）。
