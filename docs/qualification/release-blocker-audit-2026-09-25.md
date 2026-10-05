@@ -4268,6 +4268,70 @@ A3 把决策放进**唯一相关的那一处**，且**可读、可测**。
 该量对「smartPaste 拦了」与「CM 默认拦了」**都是 true**。
 ⇒ 可靠判据是**文档内容**（转换发生了吗）。已写进测试注释，避免下一个人重踩。
 
+## 4.76 `docs/architecture/` 逐节审计：**从未被审计、也不在任何护栏的扫描面里**（2026-10-06）
+
+### 为什么审它
+
+盘点「哪些文档从未被审计」时发现：`docs/architecture/`（**7 份**）**从未被审过**，
+而且**不在任何护栏的扫描面里** —— `verify-doc-code-refs.mjs` 的 `DOC_GLOBS` 只有
+`docs/plans` / `docs/adr` / `docs/specs`，**不含 architecture**；`docs/architecture` 里
+「紧邻形态」的 `符号（文件:行号）` 引用为 **0**（已实测）⇒ 把它加进那个护栏是**空转**。
+
+**但**：该目录含大量「**路径 + 状态 + 规模**」的断言 ⇒ 属于**可核对**的内容。
+本节逐份过一遍（`README` / `overview` / `editor-core` / `host-adapter` / `monorepo` / `migration` / `extension-api`）。
+
+### 结论：本目录是 **2026-08 快照**，其中**不带日期**的断言按「当前」读 ⇒ 8 处与现状不符
+
+| # | 位置 | 声明 | 实测 | 性质 |
+|---|---|---|---|---|
+| 1 | `README.md` | 约束层级 =「PRD（宪法）> **本文档（实现架构）** > ADR」 | `AGENTS.md` 的表是「PRD > **specs** > ADR > plans」 | **两套优先级冲突**（且 architecture 把自己排在 ADR 之上、**完全没提 specs**） |
+| 2 | `README.md` | CoreEditor（TS）：**201 文件**（行数 13,625） | 真值源 `upstream-manifest.json` 的 `fileCount` = **199**；13,625 行**全仓无出处**、口径未声明 | 数字失真 |
+| 3 | `editor-core.md` | 「（vendored，**只读**）」「注入式扩展…**0 修改 CoreEditor**」 | `UPSTREAM.md` 记录**修改 19 / 新增 3**（共 22 处） | **政策级声明失实**（读者会以为该目录是原样上游） |
+| 4 | `host-adapter.md` | 实现状态矩阵：`window` / `clipboard` / `watcher` / `search` / `export` **全为 ⛔** | **五项均已实现** —— 宿主侧 `apps/desktop/src/host/` **12 个** Adapter 文件 + `src-tauri/src/` **18 个** Rust 源文件可证（含 `clipboard.rs` / `print.rs` / `watcher.rs` / `search.rs` / `window.rs`） | **矩阵整体是 V0.0 期状态** |
+| 5 | `host-adapter.md` | 「前端桥接」列 4 个文件（`editorHost.ts` / `fs.ts` / `bridge.ts` / `types.ts`） | **一个都不存在**；实际是 **12 个**按服务拆分的文件 | 文件表全错 |
+| 6 | `monorepo.md` | 「现状与差距」把 `editor-react` / `desktop-ui` / `document-model` 标为「**未建**」 | **三者都已建**；`packages/` 实际 **15 个包** | 快照过期（表已标 2026-08，但**不带日期的树注释**仍按当前读） |
+| 7 | `monorepo.md` | 「每个 package **必须**包含 `README.md`/`CONTRACT.md`/`src/`/`tests/`/`fixtures/`」（PRD §117.1） | 15 个包里：`src/` **15/15**、`test(s)/` 12/15、**`README.md` 2/15**、**`CONTRACT.md` 1/15**、**`fixtures/` 0/15** | **宪法级规范基本未执行，且无护栏** |
+| 8 | `extension-api.md` | `examples/hello-command.ts` | 实际是 **`helloCommand.ts`**（**大小写**不同） | ⚠️ **macOS 大小写不敏感 ⇒ 本地看着是通的**；Linux/Windows 上**断链** |
+
+**另有一处顺带**：`host-adapter.md` 的 `src-tauri/src/bridge.rs` **少了 `apps/desktop/` 前缀**
+（同表其它行都带前缀）⇒ 路径不自洽。
+
+**已核对为正确**：`editor-core.md` 的「`styling/themes/` **16 个主题**」✓（实测 16）。
+
+### 处置
+
+1. **`README.md`**：约束层级**改以 `AGENTS.md` 为准**（本目录是**实现架构说明**，不参与优先级仲裁）；
+   快照数字**改为引用真值源**（`upstream-manifest.json` 的 199），并**如实声明** 13,625 / 28,781 两行**无真值源**；
+   新增「本目录整体是 2026-08 快照」的**显式声明**（区分「带日期的表」与「不带日期的断言」）。
+2. **`editor-core.md`**：`0 修改 CoreEditor` → **如实写成「修改 19 / 新增 3」**，
+   并说明**准确表述是「注入式扩展不 fork CoreEditor」**（注入是主路径，但 vendored 树**确实被改过**且受校验）。
+3. **`host-adapter.md`**：**按实际代码重写**状态矩阵（**每格给出可打开的路径**）与桥接文件表；
+   `keychain` 标为**有意不实现**（ADR-0029 Q5 = E1）；`process` 标为**无统一服务**（如要统一须新增 ADR）。
+4. **`monorepo.md`**：加**2026-10-06 复核块**（列出实际 15 个包、指出「未建」已不成立）；
+   包规范加**实测合规表**（2/15 / 1/15 / 0/15），并写明两种正当处置（补齐 + 护栏 / 走 ADR），**本轮不擅自选择**。
+5. **`extension-api.md`**：路径改为 `helloCommand.ts` + 注明**大小写差异在 macOS 上不可见**。
+
+### 固化为护栏（`verify-doc-code-refs.mjs` 新增一节）
+
+**`docs/architecture` 里以反引号给出的「仓库相对路径」必须存在。**
+**注入验证 5/5**（正文假路径 → 拦下；**围栏代码块** / **更正说明行** / **Windows 分隔符** → 三个**防误报**方向全过；无变异对照）。
+
+**范围与豁免（如实声明）**：① 只查**含 `/`** 的路径，**裸文件名**（`CONTRACT.md` 这类基址不明）**跳过但计数**；
+② **跳过围栏代码块**（那里的路径常是相对某个根的示意）；③ **更正说明行豁免**（它必然引用已不存在的旧路径）；
+④ 路径**按 `/` 归一化**后判定（Windows 上 `walk` 产出 `\` —— 本项目已因此红过一次 CI）。
+
+### 教训
+
+> **「快照」这个标注只保护「带日期的表」。** 同一个文件里**不带日期**的断言（规模 / 实现状态 / 修改数）
+> 会被读者**按「当前」读** —— 于是「2026-08 快照」里混着的**当下的错误声明**就长期无人发现。
+> ⇒ 要么给每条断言标日期，要么**把不可核对的数字换成对真值源的引用**。
+>
+> 附带两条：
+> - **大小写错误在 macOS 上不可见**（大小写不敏感的文件系统）⇒ 文档里的路径必须**由护栏在 CI 上判**，
+>   否则 Linux/Windows 用户会先撞上它。
+> - **「0 修改 X」这类绝对措辞**必须与事实一致：实际有 22 处改动，且其中任一处丢失都会被
+>   `verify-upstream-manifest` 抓到（同 §4.56「门禁声称满足 vs 实际未闭环」）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

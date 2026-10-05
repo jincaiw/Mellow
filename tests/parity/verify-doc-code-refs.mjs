@@ -312,6 +312,66 @@ for (const doc of docs) {
   }
 }
 
+// ── `docs/architecture` 里以反引号给出的**仓库相对路径**必须存在（2026-10-06，审计 §4.76）──
+// 立此条的原因（实测）：这个目录**从未被任何护栏覆盖**（本文件的 DOC_GLOBS 不含它），
+// 而它含大量「路径 + 状态」的断言。首轮扫描 9 个反引号路径里 **6 个不存在**，其中：
+//   · `apps/desktop/src/host/types.ts` —— 该文件不存在（宿主层实际是 12 个按服务拆分的文件）
+//   · `apps/desktop/src/extensions/examples/hello-command.ts` —— 实际是 **`helloCommand.ts`**
+//     （**大小写**不同：macOS 大小写不敏感 ⇒ 本地看着是通的，Linux/Windows 上就是断链）
+//   · `src-tauri/src/bridge.rs` —— 少了 `apps/desktop/` 前缀（同表里其它行都带前缀）
+//
+// ⚠️ **范围与豁免（如实声明）**：
+//   ① 只查**含 `/` 的路径** —— **裸文件名**（如 `CONTRACT.md`）基址不明，**跳过但计数**；
+//   ② **跳过围栏代码块** —— 那里的路径常是**相对某个根的示意**（如 `src/config.ts` 相对 CoreEditor）；
+//   ③ 「原写 / 更正」类行**豁免** —— 更正说明必然引用**已不存在的旧路径**；
+//   ④ 路径**按 `/` 归一化**后再判（Windows 上 `walk` 产出 `\`；本项目已因此红过一次 CI）。
+{
+  const ARCH_DIR = 'docs/architecture';
+  const EXT = '(?:ts|tsx|js|mjs|cjs|rs|css|json|yml|yaml|md|sh|toml)';
+  const TOK = new RegExp('`([\\w./-]+\\.' + EXT + ')`', 'g');
+  const LOOKS_LIKE_QUOTE = /原写|原文|更正|漂移|已改为|也写/;
+  /** 去掉围栏代码块（```…```）—— 那里的路径是示意，基址不明。判定与 canary 共用。 */
+  const stripFences = (src) => src.replace(/```[\s\S]*?```/g, '');
+  /** 归一化分隔符后判存在。判定与 canary 共用。 */
+  const exists = (p) => existsSync(resolve(root, p.replace(/\\/g, '/')));
+  let checked = 0;
+  let bare = 0;
+  for (const file of readdirSync(resolve(root, ARCH_DIR)).filter((f) => f.endsWith('.md'))) {
+    const rel = `${ARCH_DIR}/${file}`;
+    stripFences(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'))
+      .split('\n')
+      .forEach((line, i) => {
+        if (LOOKS_LIKE_QUOTE.test(line)) return;   // 更正说明会引用旧路径，豁免
+        for (const m of line.matchAll(TOK)) {
+          const p = m[1];
+          if (!p.includes('/')) { bare += 1; continue; }   // 裸文件名：基址不明，跳过但计数
+          checked += 1;
+          if (!exists(p)) {
+            fail(`${rel}:${i + 1} 写了路径 \`${p}\`，但**仓库里不存在**`
+              + ' —— 架构文档里的路径必须可打开（实测：宿主层文件名与大小写都曾写错）');
+          }
+        }
+      });
+  }
+  if (checked < 20) {
+    fail(`docs/architecture 只解析出 ${checked} 个含 \`/\` 的路径（下限 20 = 立此判据时的基线）`
+      + ' —— 谓词或目录内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
+  }
+  // canary：四个方向（判定与 canary 共用 stripFences / exists）
+  if (stripFences('a\n```\n`x/y.ts`\n```\n`z/w.ts`').includes('x/y.ts')) {
+    errors.push('架构路径护栏 canary 失效：围栏代码块未被剥离');
+  }
+  if (!exists('README.md') || exists('no/such/file.ts')) {
+    errors.push('架构路径护栏 canary 失效：存在性判定不能区分正/负样本');
+  }
+  if (!exists('apps\\desktop\\src\\host\\fileServices.ts')) {
+    errors.push('架构路径护栏 canary 失效：Windows 分隔符写法未被归一化（本项目已因此红过一次 CI）');
+  }
+  if (bare === 0) {
+    errors.push('架构路径护栏 canary 失效：裸文件名的计数为 0（谓词可能已失效）');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

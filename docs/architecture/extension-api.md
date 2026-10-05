@@ -82,7 +82,12 @@ setSafeMode(on)                    # PRD §121：Safe Mode 下 enable 拒绝
 
 ## 7. 示例
 
-`apps/desktop/src/extensions/examples/hello-command.ts`：
+`apps/desktop/src/extensions/examples/helloCommand.ts`：
+
+> **⚠️ 2026-10-06 更正**：原写 `examples/hello-command.ts`（**kebab-case**）——
+> 实际文件名是 **`helloCommand.ts`（camelCase）**。macOS 文件系统**大小写不敏感**，
+> 所以这条错误路径在本地**看起来是通的**；在 Linux / Windows 上就是**断链**。
+> ⇒ 已由 `tests/parity/verify-doc-code-refs.mjs` 的「架构文档路径必须存在」判据常态断言。
 
 - manifest 声明 `document.read + document.write`（最小权限）；
 - setup 填充 `contributions.commands`（一条命令）；

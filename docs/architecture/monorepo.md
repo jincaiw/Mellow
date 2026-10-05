@@ -34,6 +34,15 @@ app-core     不允许直接调用 Swift / Win32 / DBus。
 
 ## 现状与差距（2026-08 基线）
 
+> **⚠️ 2026-10-06 复核：下表是 2026-08 的**历史快照**，其中「未建」已全部不成立。**
+>
+> 实测（`ls packages/`）当前共 **15 个包**：
+> `app-core` / `commands` / `desktop-ui` / `document-model` / `editor-core` / `editor-engine` /
+> `editor-react` / `export` / `extension-api` / `host-api` / `i18n` / `settings` / `shared` / `themes` / `workspace`。
+> ⇒ 下表原标「**未建**」的 `editor-react` / `desktop-ui` / `document-model` **都已建成**；
+> 另新增了 `app-core` / `export` / `host-api` / `settings` / `themes` 等。
+> 快照**如实保留**（它记录了当时的差距），但**不要再把它当现状**。
+
 | 项 | 现状 | 差距 |
 |---|---|---|
 | CoreEditor 独立 | `packages/editor-core/CoreEditor/`（vendored 原样） | T-0003 未完成：未按 Mellow 契约封装（入口/类型导出/平台假设清理） |
@@ -44,3 +53,18 @@ app-core     不允许直接调用 Swift / Win32 / DBus。
 ## package 规范（PRD §117.1）
 
 每个 package 必须包含：`README.md`、`CONTRACT.md`、`src/`、`tests/`、`fixtures/`。
+
+> **⚠️ 2026-10-06 实测（如实登记：这条**宪法级规范目前基本未执行**）**
+>
+> | 要求 | 实际（15 个包） |
+> |---|---|
+> | `src/` | **15 / 15** ✅ |
+> | `test(s)/` | 12 / 15 |
+> | `README.md` | **2 / 15** |
+> | `CONTRACT.md` | **1 / 15** |
+> | `fixtures/` | **0 / 15** |
+>
+> ⇒ 本行是**如实引用 PRD §117.1**（宪法），但**现状与它差距很大**，且**没有任何护栏在守**。
+> 两种正当处置：① **补齐**（并加护栏）；② 走 **ADR** 说明为何在本仓不适用/需改写。
+> **本轮不擅自选择** —— 它改的是「包结构规范」，属方案级；此处只把**差距变成可见的事实**
+> （否则读者会把「PRD 写了必须」误读成「仓库已经这样」）。
