@@ -4934,6 +4934,96 @@ export \ engine = ANNOTATION INPUT KATEX … NAV SECTION SEMANTICS（导出自�
 （本轮只处理了「高风险」12 条）。⇒ 下轮入口：按上表把 174 条**逐条归类**，
 再决定中风险那批是否值得建判据。
 
+## 4.85 「自称对齐」普查（二）：174 条逐条归类 → 中风险那一类落到「持久化键」上（2026-10-06）
+
+### 方法：先把 174 条归类，再看中风险那类能不能变成判据
+
+| 类别 | 条数 | 处置 |
+|---|---|---|
+| 高风险（两处具体代码产物必须一致） | 17 | §4.83/§4.84 已处理 |
+| **中风险（同一设置/键在两处被读）** | **10** | **本轮** |
+| 低风险（设计意图 / 测试名 / 官方文案） | 15 | 不是缺陷 |
+| 其他（未归类） | 82 | 待逐条归类 |
+
+中风险那类的共同形态是「**同一个 storageKey 在两处被读**」。⇒ 把它变成一条**可机械判定**的判据：
+**持久化键必须「在设置 schema，或显式登记为有意非设置」**。
+
+理由：`restoreAllSettingsDefaults` **只遍历 `SETTINGS_SECTIONS`** ⇒ 不在 schema 里的键
+**既不出现在设置页、也不会被「恢复默认」清理** —— 而这一点此前**没有任何东西在守**。
+
+### ⚠️ 扫描面：只扫一半的形态 = 漏检一半的对象
+
+**实测（本轮自己踩到并当场纠正）**：
+
+| 扫描面 | 命中的非 schema 键 |
+|---|---|
+| 只扫「存储 API 的**字面量**键」（`localStorage.getItem('mellow.x')`） | **6** |
+| 再加上「**`const X = 'mellow.*'` 声明**」 | **21** |
+
+差别来自**声明为 const 后间接使用**的形态（`SHORTCUT_OVERRIDES_KEY` / `RECENT_FILES_KEY` …）。
+**只扫字面量会把 15 个键整个漏掉** —— 同 §4.79 的「只核对一半的列 = 没核对」。
+⇒ 已把**两种形态都写进判据**，并为「const 形态」单独加了一条 canary
+（若有人把该形态从扫描面里砍掉，canary 立刻报错）。
+
+> **另一侧的过度扫描同样要防**：若宽松地扫所有 `'mellow.*'` 字面量，会把 **CSS 类名**
+>（`mellow-md-image` / `mellow-toc`）也算进来 —— 实测噪声从 **21 涨到 90+**。
+> 用 `mellow.`（**带点**）即可天然排除连字符类名，并已加 canary 锁住这条边界。
+
+### 21 个非 schema 持久化键（已逐条登记理由）
+
+| 组 | 键 |
+|---|---|
+| 视图 / 会话状态 | `tabs.session` / `closedFiles` / `window.bounds` / `sidebar.width` / `sidebar.visible` / `reader.zoom` |
+| 「最近使用」记忆 | `recent.files` / `recent.folders` / `recent.folders.pinned` / `quickOpen.recent` / `commandPalette.recent` / `fileTree.root` / `export.last` |
+| **面板/视图选项** ⚠️ | `fileTree.options` / `outline.options` / `statusbar.fields` |
+| 通道 / 兜底键 | `engine.features` / `engine.locale` / `md.tokens` / `shortcuts.overrides` |
+| 版本级记忆 | `updater.skippedVersion` |
+
+**`mellow.shortcuts.overrides` 已有成文决定**：`restoreAllSettingsDefaults` 的文档**明确**写了
+「不覆盖快捷键自定义」并给出理由（独立 override 层 + 已有逐项恢复，调用方需在文案里说明）——
+登记时**引用该决定**，不是重新发明。
+
+### ⚠️ 如实报告（**不擅自改**）：3 个「看起来像设置、但不在 schema」的键
+
+`mellow.fileTree.options` / `mellow.outline.options` / `mellow.statusbar.fields` 都是
+**用户可配置项**（面板右键 / 状态栏右键），但**不在 schema** ⇒
+**点「恢复默认设置」不会重置它们**，而用户在设置页里也**找不到**它们。
+
+⇒ 本轮**登记为「已知且非 schema」，不等于「已裁决为正确」**（例外表的理由里逐字写明这一点），
+并在本节登记为**待裁决**。按 `AGENTS.md`「不要自行修改架构，先报告冲突」，
+**未擅自把它们搬进 schema**（那会牵动设置页结构、i18n 文案、applyCommand 与 restore-defaults 语义）。
+
+**裁决入口**：若判为「应进 schema」⇒ 走正常设置项流程（schema + i18n + applyCommand + 单测）；
+若判为「有意留在 schema 外」⇒ 需明确**用户如何重置它们**（否则「恢复默认」的名义与行为不符）。
+
+### 判据形态
+
+- 集合关系：**持久化键 ⊆ (schema ∪ 例外表)**；
+- **例外表双向**：登记了但已进 schema / 已不再被持久化 ⇒ 报错（**防化石例外**）；
+- **覆盖下限**（`schema < 50` 或 `持久化键 < 40` ⇒ 报错）：扫描面漂移会让判据**空转**；
+- **canary 与断言共用同一函数对象**（`unregisteredOf`），**三向**（在 schema 的 / 已登记的 / 未登记的）；
+- 另加两条**形态 canary**（const 形态必须被识别、CSS 类名必须不被识别）。
+
+### 注入验证 6/6
+
+| 注入 | 结果 |
+|---|---|
+| 新加一个字面量持久化键（未登记） | ✅ 红 |
+| 新加一个 **const 声明**的持久化键（未登记） | ✅ 红 |
+| 例外表**化石**：把已登记的键写进 schema | ✅ 红 |
+| 例外表**化石**：删掉一个已登记键的使用 | ✅ 红 |
+| 谓词放宽：`unregisteredOf` 恒空 | ✅ 红（canary） |
+| **扫描面砍掉「const 声明」形态** | ✅ 红（下限 45→24 + 形态 canary） |
+
+无变异对照绿、复原后绿；本机 **19 个护栏 + ux-gate-recorder 自测全绿**。
+
+**本轮无产品改动** ⇒ 不发新版本。
+
+### 遗留
+
+- 「其他（未归类）」那 **82 条**尚未逐条归类。
+- 上面 3 个「看起来像设置」的键**待裁决**（见上）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

@@ -11,7 +11,7 @@
  *    capture-phase keydown 抢先消费、无修饰键不生效。
  * ④ i18n：录制相关文案 zh/en 双语。
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -262,6 +262,125 @@ if (/id: 'ai',/.test(settingsSource)) {
     if (clearPairing('setA([]);').keys.length !== 0) {
       fail('clearRecentItems 成对护栏 canary 失效：无 removeItem 的样本竟解析出键');
     }
+  }
+}
+
+// ── 持久化键必须「在设置 schema，或**显式登记**为有意非设置」（2026-10-06，审计 §4.85）──
+// 立此条的原因（§4.84「自称对齐」普查收窄到中风险那一类后的直接产物）：
+// 实测有 **21 个 `mellow.*` 键被持久化但不在设置 schema 里** ——
+// 它们既不出现在设置页，**也不会被「恢复默认」遍历到**（`restoreAllSettingsDefaults` 只遍历
+// `SETTINGS_SECTIONS`）。其中多数是**有意的非设置**（视图/会话状态、最近使用记忆、兜底通道、
+// 版本级记忆），但**没有任何东西阻止将来再悄悄加一个** —— 而那正是
+// 「设置页里找不到、恢复默认也清不掉」的来源。
+//
+// 判据：持久化键（存储 API 的字面量键 ∪ `const X = 'mellow.*'` 声明）⊆
+// (schema 声明的 `storageKey` ∪ 显式例外表)；例外表**双向**核对（进 schema 或不再使用 ⇒ 报错）。
+//
+// ⚠️ **扫描面必须同时含两种形态**（2026-10-06 实测踩过）：只扫「存储 API 的字面量键」会漏掉
+// **声明为 const 后间接使用**的键（如 `SHORTCUT_OVERRIDES_KEY`）—— 实测只扫前者得 6 个，
+// 加上 const 声明得 **21 个**。**「只扫一半的形态 = 漏检一半的对象」**（同 §4.79 的「只核对一半的列」）。
+// ⚠️ 范围如实声明：只扫 `apps/desktop/src`、`apps/desktop/scripts`、`packages/**` 的
+// `.ts/.tsx/.mjs/.cjs`（**排除 `test/`、`tests/`、`dist/`、`CoreEditor/`**）。
+// ⚠️ 不得宽松地扫所有 `'mellow.*'` 字面量：那会把 **CSS 类名**（`mellow-md-image` / `mellow-toc`）
+// 也算进来 —— 实测噪声从 21 涨到 90+。用 `mellow.`（**带点**）即可天然排除连字符类名。
+const NON_SCHEMA_STORAGE_KEYS = new Map([
+  // ── 视图 / 会话状态（Typora 同样不把它们作为偏好）──
+  ['mellow.tabs.session', '会话恢复：当前打开的标签列表（app 级，跨窗口共享）'],
+  ['mellow.closedFiles', '已关闭文件栈（File → Reopen Closed File ⇧⌘T；有 CLOSED_FILES_LIMIT 上限）'],
+  ['mellow.window.bounds', '窗口几何（启动期读取项；**是否记住**由设置 advanced.windowBounds 控制）'],
+  ['mellow.sidebar.width', '侧栏宽度（拖拽产生的几何，不是偏好）'],
+  ['mellow.sidebar.visible', '侧栏可见性（Cmd+Shift+L / 标题栏按钮；Typora 亦作视图状态）'],
+  ['mellow.reader.zoom', 'Reader 缩放倍率（视图状态）'],
+  // ── 「最近使用」记忆 ──
+  ['mellow.recent.files', '最近打开的文件（G7-MENU-14 清除最近项会清它）'],
+  ['mellow.recent.folders', '最近打开的文件夹（同上）'],
+  ['mellow.recent.folders.pinned', 'Recent Locations 的固定集合（独立键，避免改动既有 string[] 载荷）'],
+  ['mellow.quickOpen.recent', 'Quick Open 的最近项'],
+  ['mellow.commandPalette.recent', '命令面板的最近项'],
+  ['mellow.fileTree.root', '文件树当前根目录（工作区状态，不是偏好）'],
+  ['mellow.export.last', '⌃E「使用上一次设置导出」的**文档级记忆**（按 docPath 绑定；Typora 的 Export Previous 亦非偏好）'],
+  // ── 面板/视图选项 ⚠️ **不被「恢复默认」覆盖**（见审计 §4.85 的待裁决登记）──
+  ['mellow.fileTree.options', '文件树显示选项（V7-W3.6 自定义显示/隐藏规则）。⚠️ 登记为「已知且非 schema」，'
+    + '**不等于已裁决为正确**：它不会被「恢复默认设置」重置 —— 审计 §4.85 已如实登记为待裁决'],
+  ['mellow.outline.options', '大纲视图选项。⚠️ 同上：不被「恢复默认」重置，审计 §4.85 登记为待裁决'],
+  ['mellow.statusbar.fields', '状态栏**单项可见性**（右键 StatusBar 切换；默认集由 STATUSBAR_DEFAULT_HIDDEN 决定）。'
+    + '⚠️ 同上：不被「恢复默认」重置，审计 §4.85 登记为待裁决'],
+  // ── 通道 / 兜底键（不是用户设置）──
+  ['mellow.engine.features', '引擎特性开关**通道**（构建期注入 + 运行时读）'],
+  ['mellow.engine.locale', '引擎 locale 的 **localStorage 兜底键**（桥未就绪时引擎自读，覆盖宿主先于引擎注入的时序）'],
+  ['mellow.md.tokens', 'md token 的 **localStorage 兜底键**（同上；桥未就绪时 engine 安装时自读）'],
+  ['mellow.shortcuts.overrides', '快捷键 **override 层**（menuSchema 仍是默认值唯一真源）。'
+    + '⚠️ `restoreAllSettingsDefaults` 的文档**已明确**「不覆盖快捷键自定义」并给出理由'
+    + '（独立 override 层 + 已有逐项恢复），调用方需在文案里说明'],
+  // ── 版本级记忆 ──
+  ['mellow.updater.skippedVersion', '「跳过此版本」记忆（版本级，不是用户偏好）'],
+]);
+{
+  const SCAN_ROOTS = ['apps/desktop/src', 'apps/desktop/scripts', 'packages'];
+  const SKIP_DIRS = new Set(['node_modules', 'dist', 'target', 'CoreEditor', 'build', 'test', 'tests', '__tests__']);
+  const EXTS = ['.ts', '.tsx', '.mjs', '.cjs'];
+  // 形态一：存储 API 调用点的**字面量**键
+  const STORAGE_CALL = /(?:localStorage\.(?:getItem|setItem|removeItem)|readStored|readEngineFeaturesFromStorage)\s*\(\s*'([^']+)'/g;
+  // 形态二：**声明为 const** 后间接使用的键（只扫形态一会漏掉一半，见上方注释）
+  const CONST_DECL = /(?:export\s+)?const\s+\w+\s*=\s*'(mellow\.[^']+)'/g;
+  const collect = (dir, out) => {
+    let entries;
+    try { entries = readdirSync(resolve(root, dir), { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+      if (SKIP_DIRS.has(e.name)) continue;
+      const rel = `${dir}/${e.name}`;
+      if (e.isDirectory()) collect(rel, out);
+      else if (EXTS.includes(e.name.slice(e.name.lastIndexOf('.')))) {
+        const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+        for (const m of src.matchAll(STORAGE_CALL)) out.add(m[1]);
+        for (const m of src.matchAll(CONST_DECL)) out.add(m[1]);
+      }
+    }
+    return out;
+  };
+  const usedKeys = new Set();
+  for (const d of SCAN_ROOTS) collect(d, usedKeys);
+  const schemaKeys = new Set([...settingsSource.matchAll(/storageKey: '([^']+)'/g)].map((m) => m[1]).filter((k) => k !== ''));
+  // 下限：实测基线 = schema 61 / 持久化键 45（2026-10-06）。低于此值说明解析或扫描面漂移。
+  if (schemaKeys.size < 50 || usedKeys.size < 40) {
+    fail(`持久化键普查解析出 schema ${schemaKeys.size} / 持久化键 ${usedKeys.size}（下限 50 / 40）—— `
+      + '扫描面或解析漂移会让本判据**空转**；若确实改过，请同步下调下限并说明');
+  }
+  // ⚠️ 判据是**同一个函数对象**（断言与 canary 共用），否则「放宽谓词」抓不到。
+  const unregisteredOf = (used, schema, exempt) => [...used].filter((k) => !schema.has(k) && !exempt.has(k)).sort();
+  const unregistered = unregisteredOf(usedKeys, schemaKeys, NON_SCHEMA_STORAGE_KEYS);
+  if (unregistered.length > 0) {
+    fail(`这些持久化键**既不在设置 schema、也未登记**：${unregistered.join(', ')} —— `
+      + '它们不会出现在设置页，也不会被「恢复默认」清理（restoreAllSettingsDefaults 只遍历 SETTINGS_SECTIONS）。'
+      + '要么加进 `packages/settings/src/index.ts`，要么登记进 NON_SCHEMA_STORAGE_KEYS（带理由）');
+  }
+  // 例外表**双向**：登记了但已进 schema / 已不再被持久化 ⇒ 报错（化石例外会掩盖未来回归）
+  for (const [k, reason] of NON_SCHEMA_STORAGE_KEYS) {
+    if (schemaKeys.has(k)) {
+      fail(`NON_SCHEMA_STORAGE_KEYS 登记了 ${k}，但它**已在设置 schema 里** —— 请删除该例外条目`);
+    } else if (!usedKeys.has(k)) {
+      fail(`NON_SCHEMA_STORAGE_KEYS 登记了 ${k}，但它**已不再被持久化** —— 请删除该例外条目`);
+    }
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      fail(`NON_SCHEMA_STORAGE_KEYS 的 ${k} 缺理由（例外必须带可复核的理由）`);
+    }
+  }
+  // canary：三向 —— ①在 schema 的样本必须通过 ②已登记的样本必须通过 ③**未登记样本必须被识别**
+  if (unregisteredOf(new Set(['a.b']), new Set(['a.b']), new Map()).length !== 0) {
+    fail('持久化键登记护栏 canary 失效：已在 schema 的样本被误判为未登记');
+  }
+  if (unregisteredOf(new Set(['a.b']), new Set(), new Map([['a.b', 'r']])).length !== 0) {
+    fail('持久化键登记护栏 canary 失效：已登记的样本被误判为未登记');
+  }
+  if (unregisteredOf(new Set(['a.b']), new Set(), new Map()).join(',') !== 'a.b') {
+    fail('持久化键登记护栏 canary 失效：未登记样本未被识别');
+  }
+  // canary：**形态二**必须真的被扫到（否则「只扫一半的形态」会静默回来）
+  if (!CONST_DECL.test("const X_KEY = 'mellow.a.b';")) {
+    fail('持久化键登记护栏 canary 失效：const 声明形态未被识别（扫描面只覆盖了一半）');
+  }
+  if (CONST_DECL.test("const CLS = 'mellow-md-image';")) {
+    fail('持久化键登记护栏 canary 过宽：连字符 CSS 类名被误判为持久化键');
   }
 }
 
