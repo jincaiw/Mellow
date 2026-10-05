@@ -214,6 +214,122 @@ for (const [perm, reason] of CAPABILITY_GAP_EXEMPT) {
   if (typeof reason !== 'string' || reason.trim() === '') fail(`CAPABILITY_GAP_EXEMPT 的 ${perm} 缺理由`);
 }
 
+// ── ⑤ 窗口 label 覆盖：Rust 创建的每个窗口都必须被某个 capability 的 `windows` 匹配 ─────
+// 立此条的原因（2026-10-06 审计 §4.98，**实测缺陷**）：
+// 官方文档原话 —— 「**If a webview or its window is not matching any capability then it has
+// no access to the IPC layer at all**」；`windows` 字段「Can be a **glob pattern**」。
+// 而本仓 capability 写的是 `["main"]`（精确名），新窗口的 label 却是 `format!("main-{stamp}")`
+// ⇒ **新窗口（⌘N / ⇧⌘N / 「在新窗口中打开」）对 IPC 层毫无访问权限**：
+// 它照样加载 index.html、照样启动前端，然后**每一次 invoke / listen 都被拒**。
+// 已修：capability 改为 `["main", "main-*"]`。
+//
+// 判据：**凡 Rust 侧创建的窗口 label，必须被某个 capability 的 `windows` 模式覆盖**；
+// 有意「无权限」的窗口必须进 `UNPRIVILEGED_WINDOWS`（带理由）—— 这样将来新增窗口时，
+// 「它该不该有权限」必须被**显式决定**，而不是静默掉进「无权限」的坑。
+const UNPRIVILEGED_WINDOWS = new Map([]);
+
+// Rust 源码遍历（窗口创建点在这里）
+const RUST_SRC = resolve(root, 'apps/desktop/src-tauri/src');
+const RS_SKIP = new Set(['target', 'node_modules']);
+function* walkRs(dir) {
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    const full = resolve(dir, e.name);
+    if (e.isDirectory()) { if (!RS_SKIP.has(e.name)) yield* walkRs(full); }
+    else if (e.name.endsWith('.rs')) yield full;
+  }
+}
+
+/** 把 glob（只支持 `*`）编译成正则 —— 与 Tauri 的 `windows` 字段语义一致 */
+const globToRe = (p) => new RegExp(`^${p.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
+const matchesAny = (label, patterns) => patterns.some((p) => globToRe(p).test(label));
+
+/** 从 capability 源收集 `windows` 模式（缺 `windows` 字段视为「覆盖全部」，如实记录） */
+const capWindowPatterns = [];
+let capWithoutWindows = 0;
+for (const f of capFiles) {
+  let j; try { j = JSON.parse(read(`${CAP_DIR}/${f}`)); } catch { continue; }
+  if (Array.isArray(j.windows) && j.windows.length > 0) capWindowPatterns.push(...j.windows);
+  else capWithoutWindows += 1;
+}
+const coversAll = capWindowPatterns.length === 0 && capWithoutWindows > 0;
+
+/** 从 Rust 源码解析「创建的窗口 label」（字面量 / `format!("前缀{...}")`） */
+function parseWindowLabels(rsText, file) {
+  const out = [];
+  const callRe = /WebviewWindowBuilder::new\s*\(/g;
+  for (const m of rsText.matchAll(callRe)) {
+    const start = m.index + m[0].length;
+    // 取到 `WebviewUrl`（label 之后的参数）或最多 400 字符
+    const tail = rsText.slice(start, start + 400);
+    const cut = tail.indexOf('WebviewUrl');
+    const argText = cut === -1 ? tail : tail.slice(0, cut);
+    // 按顶层逗号切分，取第 2 个参数（label）
+    const args = [];
+    let depth = 0, cur = '';
+    for (const ch of argText) {
+      if ('([{'.includes(ch)) depth++;
+      else if (')]}'.includes(ch)) { if (depth === 0) break; depth--; }
+      if (ch === ',' && depth === 0) { args.push(cur.trim()); cur = ''; continue; }
+      cur += ch;
+    }
+    if (cur.trim()) args.push(cur.trim());
+    const labelArg = args[1];
+    if (labelArg === undefined) continue;
+    const lit = /^"([^"]*)"$/.exec(labelArg);
+    if (lit) { out.push({ label: lit[1], file, src: labelArg }); continue; }
+    // 标识符：回溯它的赋值 —— ⚠️ 必须取**调用点之前最近**的那一处赋值。
+    // 实测：`let label` 在同文件出现两次（`install_close_gate` 里的 `window.label()` 在前，
+    // `new_window` 里的 `format!("main-{stamp}")` 在后），取第一处会解析成 `window.label()` ⇒ 判据失效。
+    const idRe = new RegExp(`let\\s+${labelArg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*([^;]{0,200});`, 'g');
+    let asg = null;
+    for (const a of rsText.matchAll(idRe)) {
+      if (a.index < m.index) asg = a; else break;
+    }
+    if (asg) {
+      const fmt = /format!\s*\(\s*"([^"]*)\{/.exec(asg[1]);
+      if (fmt) { out.push({ label: `${fmt[1]}*`, file, src: `format!("${fmt[1]}{…}")` }); continue; }
+      const lit2 = /"([^"]*)"/.exec(asg[1]);
+      if (lit2) { out.push({ label: lit2[1], file, src: asg[1].trim() }); continue; }
+    }
+    out.push({ label: null, file, src: labelArg, unresolved: true });
+  }
+  return out;
+}
+
+const createdWindows = [];
+for (const f of walkRs(RUST_SRC)) {
+  const rel = relative(root, f).split('\\').join('/');
+  createdWindows.push(...parseWindowLabels(read(rel), rel));
+}
+if (createdWindows.length < 2) {
+  fail(`只解析出 ${createdWindows.length} 个窗口创建点（下限 2：主窗口 + new_window）—— 扫描面漂移会让本判据空转`);
+}
+for (const w of createdWindows) {
+  if (w.unresolved) {
+    fail(`${w.file}: 无法解析窗口 label（${w.src}）—— 请同步更新本护栏，不要让它静默漏检`);
+    continue;
+  }
+  if (UNPRIVILEGED_WINDOWS.has(w.label)) continue;
+  if (!coversAll && !matchesAny(w.label, capWindowPatterns)) {
+    fail(`Rust 创建了窗口 label「${w.label}」（${w.file}，${w.src}），但**没有任何 capability 覆盖它**`
+      + `（现有 windows 模式：${capWindowPatterns.join(', ') || '无'}）—— `
+      + '按 Tauri ACL 语义该窗口对 IPC 层**完全没有访问权限**（invoke / listen 全部被拒）；'
+      + '请把它加进 capability 的 `windows`（支持 glob，如 `main-*`），'
+      + '或登记进 UNPRIVILEGED_WINDOWS（若确实应当无权限）');
+  }
+}
+// 例外表双向：登记了却仍被覆盖 ⇒ 报错（防化石）
+for (const [label, reason] of UNPRIVILEGED_WINDOWS) {
+  if (!createdWindows.some((w) => w.label === label)) {
+    fail(`UNPRIVILEGED_WINDOWS 登记了 ${label}，但**没有任何 Rust 代码创建该 label** —— 请删除该例外条目`);
+  } else if (!coversAll && matchesAny(label, capWindowPatterns)) {
+    fail(`UNPRIVILEGED_WINDOWS 登记了 ${label}，但它**已被 capability 覆盖** —— 请删除该例外条目`);
+  }
+  if (typeof reason !== 'string' || reason.trim() === '') fail(`UNPRIVILEGED_WINDOWS 的 ${label} 缺理由`);
+}
+
 // ── ④ canary：三向 + 共用同一展开/映射逻辑 ─────────────────────────────────
 {
   // 正样本：`core:window:default` 必须被展开出 `allow-is-maximized`（default 集里的成员）
@@ -241,6 +357,32 @@ for (const [perm, reason] of CAPABILITY_GAP_EXEMPT) {
   if (snake('setAlwaysOnTop') !== 'set_always_on_top') {
     errors.push('canary 失效：camelCase → snake_case 映射不正确');
   }
+  // 窗口 label 匹配：**精确名不得匹配带后缀的 label**（这是 §4.98 缺陷能成立的根因）
+  if (matchesAny('main-1728192000000', ['main'])) {
+    errors.push('canary 失效：精确模式 `main` 竟然匹配了 `main-1728192000000` —— 本护栏的前提不成立，'
+      + '必须重新核实 §4.98 的判定');
+  }
+  // glob：`main-*` 必须匹配，且不得匹配别的家族
+  if (!matchesAny('main-1728192000000', ['main-*'])) {
+    errors.push('canary 失效：glob 模式 `main-*` 未匹配 `main-1728192000000`');
+  }
+  if (matchesAny('other-1', ['main-*'])) {
+    errors.push('canary 失效：glob 模式 `main-*` 误匹配了 `other-1`');
+  }
+  // 窗口 label 解析：`format!("main-{stamp}")` 必须被解析成 `main-*`
+  const parsed = parseWindowLabels(
+    'let label = format!("main-{stamp}");\n'
+    + 'let builder = tauri::webview::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App("index.html".into()));',
+    'canary.rs');
+  if (parsed.length !== 1 || parsed[0].label !== 'main-*') {
+    errors.push(`canary 失效：format! 形式的窗口 label 未被解析成 glob（得到 ${JSON.stringify(parsed)}）`);
+  }
+  const parsed2 = parseWindowLabels(
+    'let builder = tauri::webview::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()));',
+    'canary.rs');
+  if (parsed2.length !== 1 || parsed2[0].label !== 'main') {
+    errors.push(`canary 失效：字面量窗口 label 未被解析（得到 ${JSON.stringify(parsed2)}）`);
+  }
 }
 
 if (errors.length > 0) {
@@ -248,7 +390,10 @@ if (errors.length > 0) {
 }
 
 const gapList = [...CAPABILITY_GAP_EXEMPT.keys()].sort();
+const winList = createdWindows.map((w) => w.label).join(', ');
 console.log(`Tauri capability contract: 声明权限 ${declaredPerms.size} 项 → 展开 ${granted.size} 项；`
   + `前端用到 window API ${usedApis.size} 个 / 需要权限 ${neededPerms.size} 个；`
+  + `Rust 创建窗口 label ${createdWindows.length} 个（${winList}）全部被 capability windows 覆盖 `
+  + `[${capWindowPatterns.join(', ')}]；`
   + `生成快照与源一致 ✅；**未授予且已登记 ${gapList.length} 项**（待裁决）：${gapList.join(', ')}；`
-  + 'canary 6 项全绿。');
+  + 'canary 11 项全绿。');

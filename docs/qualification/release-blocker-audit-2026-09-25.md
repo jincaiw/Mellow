@@ -5986,6 +5986,90 @@ master-plan §4.3 的状态表列了 **10 个状态**，其中 **`PASS-BETTER`�
 - 同步 `tests/qualification/README.md` 的护栏数量 20 → **21**；
 - **未改动 `capabilities/*.json`**（只登记，待裁决）。
 
+## 4.98 审 **capability 的 `windows` 绑定**：新窗口不匹配任何 capability ⇒ **对 IPC 层毫无访问权限**（实测缺陷，已修）（2026-10-06）
+
+**这是 §4.97 的同族、但更严重的一条：不是「少授一个权限」，而是「整个窗口一个权限都没有」。**
+
+### 缺陷
+
+`apps/desktop/src-tauri/capabilities/default.json` 写的是：
+
+```json
+"windows": ["main"]
+```
+
+而 `window.rs:67`（`new_window`，即 ⌘N / ⇧⌘N / 「在新窗口中打开」）创建的窗口 label 是：
+
+```rust
+let label = format!("main-{stamp}");   // ⇒ 形如 main-1728192000000
+```
+
+**`main-1728192000000` 不匹配精确模式 `main`** —— 而 Tauri 官方文档对 `windows` 字段的原话是：
+
+> 「**If a webview or its window is not matching any capability then it has no access to the IPC layer at all.**」
+> 「Windows can be added to a capability by exact name (e.g. `main-window`) or **glob patterns** like `*` or `admin-*`.」
+
+⇒ **新窗口照样加载 `index.html`、照样启动前端，然后每一次 `invoke` / `listen` 都被拒**。
+受影响的功能：⌘N（新建窗口空白文档）、⇧⌘N（新建窗口）、文件树右键「在新窗口中打开」、
+以及 `Reopen Closed File` 的「新窗口打开」路径 —— **全部落到一个 IPC 全禁的窗口里**。
+
+### 为什么长期没被发现
+
+1. **已有护栏只查了「接线」，没查「权限」**：`verify-shell-widgets.mjs` 断言
+   `new_window` 接受 `path`/`mode`、把路径挂到本窗口 label、前端把 path 传给它 ——
+   **全都成立**。缺的是「这个窗口有没有权限用 IPC」。
+2. **UX Gate 从未跑过**（`PASS-E = 0/50`，`P0-QA-001` 是 `NOT_TESTED / human-ux-gate-session`）
+   ⇒ 多窗口从没有人类验收过。
+3. 本项目**已有同型前科**：§5.7 记录过「`AUTO` 把一个完全不可用的功能当作已闭环」（浮动工具栏）。
+
+### 修复
+
+```json
+"windows": ["main", "main-*"]
+```
+
+并同步 `gen/schemas/capabilities.json`（该文件入库，本护栏会断言它与源一致）。
+
+**安全性说明（为什么这不等于放宽攻击面）**：`main-*` 窗口是**应用自己**用 `new_window` 创建的，
+与主窗口**同一 URL、同一 `on_navigation` 白名单、同一关闭保护**，
+本就是「同一个应用窗口」——`main-{stamp}` 这个命名方案正是为了表明它属于 main 家族。
+它不是给「不可信内容」的窗口（本应用目前不存在这种窗口）。
+**若将来出现应当无权限的窗口**（例如承载远程内容），必须登记进护栏的 `UNPRIVILEGED_WINDOWS`
+并写明理由 —— 这样「该不该有权限」会被**显式决定**，而不是静默掉进「无权限」的坑。
+
+### 新增判据（并入 `verify-tauri-capability-contract.mjs`，护栏数仍为 21）
+
+**凡 Rust 侧创建的窗口 label，必须被某个 capability 的 `windows` 模式覆盖**（glob 语义）。
+- 从 Rust 解析窗口 label：字面量 `"main"`，以及 `format!("main-{stamp}")` → `main-*`；
+- capability 缺 `windows` 字段视为「覆盖全部」（如实记录，避免误报）；
+- `UNPRIVILEGED_WINDOWS` 例外表**双向**；
+- 扫描面下限（窗口创建点 ≥ 2）+ canary。
+
+**canary 11 项**（原 6 项 + 新增 5 项）：`main` **不得**匹配 `main-1728192000000`（这正是缺陷能成立的根因）、
+`main-*` 必须匹配且不得匹配 `other-1`、`format!` 形式与字面量形式都要能解析出 label。
+
+**注入验证 4/4**：① capability 退回 `["main"]`（**修前状态**）⇒ 报「`main-*` 无覆盖」；
+② 移除 `windows` 字段 ⇒ 仍绿（不误报）；③ Rust 把 label 改成 `panel-{stamp}` ⇒ 报「`panel-*` 无覆盖」；
+④ `windows` 变成过宽的 `["*"]` ⇒ 仍绿（不误报）。还原后全绿且文件与快照逐字节一致。
+
+> ① 是本节的关键证据：它证明**这条护栏确实能抓到修前的缺陷**，而不是事后诸葛亮。
+
+### 口径坑（1 次）
+
+`let label` 在同一文件出现**两次** —— `install_close_gate` 里的 `let label = window.label().to_string();`
+在前，`new_window` 里的 `let label = format!("main-{stamp}");` 在后。
+首版用「第一个匹配的赋值」⇒ 解析成 `window.label()` ⇒ 判据失效（报「无法解析」）。
+⇒ 改为取**调用点之前最近**的那一处赋值。
+
+### ⚠️ 证据等级
+
+- **静态、高置信**：官方文档明示「不匹配即无 IPC 访问」+ 代码中的 label 构造 + 修复前的 capability 内容。
+- **未验证**：**未在真机确认新窗口此前确实不可用、也未确认修复后可用**（本环境无法运行 Tauri 应用）。
+
+### 影响面：本次是**产品改动** ⇒ 需要发版
+
+capability 会被编译进二进制 ⇒ **制品发生变化** ⇒ 按发版规则**需要出新版本**（v1.5.29）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

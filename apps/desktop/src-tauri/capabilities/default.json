@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "Mellow default capabilities",
   "windows": [
-    "main"
+    "main",
+    "main-*"
   ],
   "permissions": [
     "core:default",
