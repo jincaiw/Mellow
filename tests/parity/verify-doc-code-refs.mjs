@@ -221,6 +221,8 @@ for (const doc of docs) {
 {
   const FAMILY = /`((?:MELLOW|TYPORA)_[A-Z0-9_]+)`/g;
   const LOOKS_LIKE_QUOTE = /原写|原文|更正|漂移|已改为|也写/;
+  // 路径归一化：**判定与 canary 共用**（见下方跨平台 canary）。
+  const isReadme = (p) => basename(p.replace(/\\/g, '/')) === 'README.md';
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   /** 「代码里有人**读**这个开关」的判据（判定与 canary 共用）。 */
   const readPattern = (name) => {
@@ -254,7 +256,10 @@ for (const doc of docs) {
     // 这里是**声明**开关的地方。
     ...docs,
     // 操作型 README（实测：`tests/benchmark/README.md` 也声明过 `TYPORA_APP`，必须纳入）。
-    ...walk(root).filter((f) => /(^|\/)README\.md$/.test(f)),
+    // ⚠️ **必须与路径分隔符无关，不要写 `/(^|\/)README\.md$/`** ——
+    // Windows 上 `walk()` 产出的是 `\` 分隔符 ⇒ 那种写法会**静默漏掉**全部 README，
+    // 于是 `checked` 掉到下限以下、**CI 在 Windows 上红而本地绿**（2026-10-05 实测踩到）。
+    ...walk(root).filter(isReadme),
   ];
   // ⚠️ **故意不含 `docs/qualification`**：审计 / 验收记录的职责就是**引用旧值**
   // （「原写 `TYPORA_APP`」「该开关不存在」），纳入会把**如实记录**误判成**声明错误**
@@ -279,9 +284,15 @@ for (const doc of docs) {
     fail(`文档里只解析出 ${checked} 个 \`MELLOW_*\`/\`TYPORA_*\` token（下限 3 = 立此判据时的基线）`
       + ' —— 谓词或文档集漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
   }
-  // canary：四个方向（判定与 canary 共用 readPattern / isRead）
+  // canary：三个方向（判定与 canary 共用 readPattern / isRead）
   // ⚠️ 样本必须**拼接构造**，否则本护栏自己的字面量会混进扫描面（首跑即被自己的 canary 抓出）。
   const NOPE = 'MELLOW' + '_NOPE_XYZ';
+  // **跨平台 canary**：文档集过滤必须与分隔符无关 ——
+  // 「本地（`/`）绿、Windows（`\`）红」是 2026-10-05 实测踩到的形态（本判据首版就是这么红的）。
+  if (!isReadme('tests/benchmark/README.md') || !isReadme('tests\\benchmark\\README.md')
+    || isReadme('tests/benchmark/README.txt')) {
+    errors.push('文档开关护栏 canary 失效：README 过滤对路径分隔符敏感（Windows 会静默漏掉全部 README）');
+  }
   if (!isRead('MELLOW_INPUT_LATENCY_DUMP')) {
     errors.push('文档开关护栏 canary 失效：真实被读取的环境变量未被识别');
   }
