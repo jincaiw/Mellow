@@ -50,21 +50,12 @@ const CAP_DIR = 'apps/desktop/src-tauri/capabilities';
 const MANIFEST = 'apps/desktop/src-tauri/gen/schemas/acl-manifests.json';
 const RESOLVED = 'apps/desktop/src-tauri/gen/schemas/capabilities.json';
 
-// ── 已知缺口（**待裁决**，不是「已评估通过」）─────────────────────────────────
-// 理由必须逐字写明是「有意为之」还是「待裁决」—— 否则例外表会被读成「已通过」。
-const CAPABILITY_GAP_EXEMPT = new Map([
-  ['core:window:allow-set-title',
-    '⚠️ **已知缺口，待裁决**：`win.setTitle()` 被 App.tsx 三处调用（标题栏脏标记 / 字数），'
-    + '未授权 ⇒ 按 ACL 语义窗口标题不会更新。**未在真机验证**。'
-    + '放宽 capability 安全面属策略决定 ⇒ 本轮只登记，不改权限表'],
-  ['core:window:allow-set-size',
-    '⚠️ **已知缺口，待裁决**：`win.setSize()` 用于窗口尺寸恢复，未授权 ⇒ 尺寸不恢复。**未在真机验证**'],
-  ['core:window:allow-set-position',
-    '⚠️ **已知缺口，待裁决**：`win.setPosition()` 用于窗口位置恢复，未授权 ⇒ 位置不恢复。**未在真机验证**'],
-  ['core:window:allow-set-always-on-top',
-    '⚠️ **已知缺口，待裁决**：菜单「保持窗口在最前端」调 `setAlwaysOnTop()`，未授权 ⇒ 该菜单项无效。'
-    + '**未在真机验证**'],
-]);
+// ── 已知缺口（**刻意为空**）────────────────────────────────────────────────────
+// 2026-10-06 §4.97 曾登记 4 条「写操作未授权」；**同日已修**（补进 capability）⇒ 表清空。
+// 表清空不是「没有判据」：下面的断言是「未授予且未登记 ⇒ 失败」+ 例外表**双向**
+// （一旦授权 / 一旦不再被使用，登记项必须删除）。将来若真出现需要登记的情况，
+// 理由里必须**逐字**区分是「有意为之」还是「待裁决」—— 否则例外表会被读成「已评估通过」。
+const CAPABILITY_GAP_EXEMPT = new Map([]);
 
 // 扫描面下限（防扫描面漂移 ⇒ 判据空转）
 const MIN_WINDOW_APIS = 10;
@@ -440,8 +431,8 @@ if (errors.length > 0) {
 const gapList = [...CAPABILITY_GAP_EXEMPT.keys()].sort();
 const winList = createdWindows.map((w) => w.label).join(', ');
 console.log(`Tauri capability contract: 声明权限 ${declaredPerms.size} 项 → 展开 ${granted.size} 项；`
-  + `前端用到 window API ${usedApis.size} 个 / 需要权限 ${neededPerms.size} 个；`
+  + `前端用到 window API ${usedApis.size} 个 / 需要权限 ${neededPerms.size} 个（**全部已授予**）；`
   + `Rust 创建窗口 label ${createdWindows.length} 个（${winList}）全部被 capability windows 覆盖 `
   + `[${capWindowPatterns.join(', ')}]；`
-  + `生成快照与源一致 ✅；**未授予且已登记 ${gapList.length} 项**（待裁决）：${gapList.join(', ')}；`
-  + 'canary 13 项全绿。');
+  + `插件注册 ${registeredPlugins.size} 个 ⇄ 授权命名空间 ${grantedNamespaces.size} 个全部成对；`
+  + `生成快照与源一致 ✅；例外表 ${gapList.length} 项（刻意为空）；canary 13 项全绿。`);
