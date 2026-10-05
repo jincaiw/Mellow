@@ -704,6 +704,142 @@ if (existsSync(benchmarkRunnerPath)) {
     }
   }
 
+  // ── PRD §48（HTML 安全策略）：宪法侧 + 三处净化器的安全不变量（2026-10-06，审计 §4.81）──
+  // 立此条的原因：上面那条 CSP 护栏**只在注释里引用 §48**（「§48 的 no script / no inline events
+  // 针对渲染出的 HTML」）—— 即 §48 的 8 条要求**从未被读**（同 §4.79/§4.80 的「引用宪法 ≠ 读宪法」）。
+  // 而 §48 是**安全条款**，实现散在**三处**（编辑器 / Reader / 导出），
+  // 且紧邻的「两处净化器必须一致」那条**只比对彼此** ——
+  // 若两处**同时**删掉 `on*` 剥离，一致性判据仍然成立 ⇒ 行内事件处理器会执行，**没有任何信号**。
+  // 本块只锁 §48 **明文列出**且可机械判定的不变量（不发明更严的约束）：
+  //   no script（白名单不含 SCRIPT）/ no inline events（`on*` 剥离）/
+  //   no JavaScript URL（协议是 allow-list 且不含 `javascript`）/ iframe sandbox（强制置空）。
+  {
+    const readDoc = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+    const strip = (s) => s
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+
+    // ⚠️ 判据必须是**同一个谓词对象**（断言与 canary 共用），否则「放宽谓词」抓不到：
+    // 若 canary 里另写一份正则，改掉断言那份时 canary 仍用旧的那份 → 双向自检形同虚设。
+    const protoOk = (list) => [...list].sort().join(',') === 'http:,https:,mailto:';
+    const onKeysOf = (block) => [...block.matchAll(/^\s*([a-zA-Z*][\w*-]*)\s*:/gm)]
+      .map((m) => m[1]).filter((k) => k.startsWith('on'));
+
+    // ① 宪法侧：§48 的 8 条要求必须仍在原文里
+    //    每条带一个「该条在原文里的字面行」，用于逐条**双向** canary（见下）。
+    const ITEMS48 = [
+      [/common inline tags/, 'common inline tags', 'common inline tags；'],
+      [/block tags/, 'block tags', 'block tags；'],
+      [/^\s*-\s*video[;；]/m, 'video', 'video；'],
+      [/^\s*-\s*audio[;；]/m, 'audio', 'audio；'],
+      [/iframe sandbox/, 'iframe sandbox', 'iframe sandbox；'],
+      [/no script/, 'no script', 'no script；'],
+      [/no inline events/, 'no inline events', 'no inline events；'],
+      [/no JavaScript URL/i, 'no JavaScript URL', 'no JavaScript URL。'],
+    ];
+    const prd48 = readDoc('docs/product/Mellow-PRD-V1.2-FINAL.md');
+    const at48 = prd48.indexOf('# 48. HTML');
+    assert(at48 >= 0, 'PRD 缺少 §48 HTML（HTML 安全策略的宪法依据）');
+    if (at48 >= 0) {
+      const nextH1 = prd48.indexOf('\n# ', at48 + 1);
+      const sec48 = prd48.slice(at48, nextH1 < 0 ? prd48.length : nextH1);
+      const missing = ITEMS48.filter(([re]) => !re.test(sec48)).map(([, l]) => l);
+      assert(missing.length === 0,
+        `PRD §48 原文里找不到这些安全要求：${missing.join(' / ')} —— §48 是宪法级安全策略，`
+        + '删条目必须同步三处净化器与本护栏');
+    }
+    // canary：逐条**双向**自检 —— 正向（完整样本里该条必须命中）+ 负向（删掉该条后该条必须不命中）。
+    // ⚠️ 只做「整体正向样本」抓不到「单条谓词被放宽」（把 /no script/ 改成 /./ 时正向仍通过）。
+    // ⚠️ 负向样本用 `replace('- ' + line, '')`（**不带尾随换行**）—— 首条/末条没有「前后换行」，
+    //    带 `\n` 的替换对末条会**静默不生效**，于是正常态也被判成「谓词过宽」（2026-10-06 实测踩过）。
+    const S48_FULL = ITEMS48.map(([, , line]) => `- ${line}`).join('\n');
+    for (const [re, label, line] of ITEMS48) {
+      if (!re.test(S48_FULL)) {
+        errors.push(`§48 条目护栏 canary 失效：「${label}」谓词过窄 —— 完整样本里未被识别`);
+      }
+      if (re.test(S48_FULL.replace(`- ${line}`, ''))) {
+        errors.push(`§48 条目护栏 canary 失效：「${label}」谓词过宽 —— 删掉该条后仍被识别`);
+      }
+    }
+
+    // ② 实现侧（DOM 净化器，白名单是 `Set`）
+    const DOM_SANITIZERS = [
+      ['编辑器', 'packages/editor-engine/src/safeHtml.ts', 'ALLOWED_TAGS'],
+      ['Reader', 'packages/app-core/src/reader.ts', 'SANITIZE_ALLOWED_TAGS'],
+    ];
+    for (const [label, path, tagsConst] of DOM_SANITIZERS) {
+      assert(existsSync(resolve(root, path)), `${label}净化器不存在：${path}`);
+      if (!existsSync(resolve(root, path))) continue;
+      const code = strip(readDoc(path));
+      // no script：白名单是 allow-list，且不含 SCRIPT
+      const tags = (code.match(new RegExp(`const ${tagsConst} = new Set\\(\\[([^\\]]*)\\]\\)`)) ?? [])[1];
+      assert(tags !== undefined, `${label}净化器：无法解析 ${tagsConst}（护栏需同步更新，不要静默漏检）`);
+      if (tags !== undefined) {
+        assert(!/'SCRIPT'/.test(tags), `${label}净化器：白名单含 SCRIPT（违反 PRD §48「no script」）`);
+      }
+      // no inline events
+      assert(/name\.startsWith\('on'\)/.test(code),
+        `${label}净化器：必须剥离 on* 事件属性（PRD §48「no inline events」）—— 缺失时行内处理器会执行`);
+      // no JavaScript URL：协议是 allow-list，且不含 javascript
+      const protos = new Set([...code.matchAll(/url\.protocol === '([a-z]+:)'/g)].map((m) => m[1]));
+      assert(protos.size > 0, `${label}净化器：无法解析 URL 协议白名单（护栏需同步更新）`);
+      assert(protoOk(protos),
+        `${label}净化器的 URL 协议白名单应为 http:/https:/mailto:（PRD §48「no JavaScript URL」），`
+        + `实测 [${[...protos].join(', ')}]`);
+      // iframe sandbox
+      assert(/element\.setAttribute\('sandbox', ''\)/.test(code),
+        `${label}净化器：IFRAME 必须强制 sandbox（PRD §48「iframe sandbox」）`);
+    }
+
+    // ③ 实现侧（导出净化器走 sanitize-html 配置：白名单是数组而非 Set）
+    {
+      const path = 'packages/export/src/html/sanitize.ts';
+      assert(existsSync(resolve(root, path)), `导出净化器不存在：${path}`);
+      if (existsSync(resolve(root, path))) {
+        const src = readDoc(path);
+        const allowedTags = (src.match(/const ALLOWED_TAGS = \[([\s\S]*?)\];/) ?? [])[1];
+        assert(allowedTags !== undefined, '导出净化器：无法解析 ALLOWED_TAGS（护栏需同步更新，不要静默漏检）');
+        if (allowedTags !== undefined) {
+          assert(!/'script'/.test(allowedTags), '导出净化器：白名单含 script（违反 PRD §48「no script」）');
+        }
+        const schemes = (src.match(/const ALLOWED_SCHEMES = \[([^\]]*)\]/) ?? [])[1];
+        assert(schemes !== undefined && schemes.trim() !== '',
+          '导出净化器：无法解析 ALLOWED_SCHEMES（护栏需同步更新，不要静默漏检）');
+        if (schemes !== undefined) {
+          assert(!/'javascript'/.test(schemes),
+            `导出净化器的 ALLOWED_SCHEMES 不得含 javascript（PRD §48「no JavaScript URL」），实测 [${schemes.trim()}]`);
+        }
+        // no inline events：sanitize-html 只放行 ALLOWED_ATTRS 里的属性 ⇒ 事件属性天然被丢弃，
+        // 故锁「属性白名单里不存在 on* 键」这条等价不变量。
+        const attrBlock = (src.match(/const ALLOWED_ATTRS[\s\S]*?\n\};/) ?? [])[0];
+        assert(attrBlock !== undefined, '导出净化器：无法解析 ALLOWED_ATTRS（护栏需同步更新）');
+        if (attrBlock !== undefined) {
+          const onKeys = onKeysOf(attrBlock);
+          assert(onKeys.length === 0,
+            `导出净化器的属性白名单含事件属性 [${onKeys.join(', ')}]（违反 PRD §48「no inline events」）`);
+        }
+        // iframe sandbox：导出侧靠 transformTags 强制
+        assert(/attribs\.sandbox = 'sandbox'/.test(src),
+          '导出净化器：IFRAME 必须强制 sandbox（PRD §48「iframe sandbox」）');
+      }
+    }
+
+    // canary：自检「协议 allow-list」与「on* 键」两条谓词有效（样本拼接构造，避免护栏检出自己）
+    if (!protoOk(['mailto:', 'http:', 'https:'])) {
+      errors.push('§48 协议 allow-list 护栏 canary 失效：合法样本未被识别');
+    }
+    if (protoOk(['http:', 'https:', 'mailto:', 'javascript:'])) {
+      errors.push('§48 协议 allow-list 护栏 canary 失效：含 javascript 的样本竟被判为合法');
+    }
+    if (onKeysOf('*: [class]\nonclick: [x]').length === 0) {
+      errors.push('§48 on* 属性护栏 canary 失效：onclick 样本未被识别');
+    }
+    if (onKeysOf('*: [class]\nhref: [x]').length !== 0) {
+      errors.push('§48 on* 属性护栏 canary 失效：非事件键样本被误判');
+    }
+  }
+
   // ── 两处 HTML 净化器必须一致（2026-09-30）────────────────────────────────
   // 立此条的原因：`docs/security/security-review-2026-08-13.md` H1 的建议原文是
   // 「提取 `editor-engine/src/safeHtml.ts` 的 sanitize 为共享实现，**或复制同一逻辑**」——
@@ -1044,6 +1180,59 @@ if (existsSync(benchmarkRunnerPath)) {
         const B = ['a'];
         if (A.length === B.length) errors.push('30 任务清单条数锁 canary 失效：不等长样本未被识别');
       }
+    }
+  }
+
+  // ── 宪法侧：PRD §129 J18 必须仍在原文里（2026-10-06，审计 §4.81）──────────────
+  // 立此条的原因：上面那条「模板必须保留 >2 MB 非对照能力观察」**在注释里引用 §129 J18**，
+  // 但**从未读 PRD**（「引用宪法 ≠ 读宪法」，同 §4.79/§4.80）。若有人把 §129 J18 的尺寸
+  // 从 10MB 改成 2MB，ADR-0025「Typora 无法渲染 >2MB ⇒ 单列为非对照观察」的**全部理由随之消失**，
+  // 而模板里的「非对照能力观察」节会变成**没有宪法依据的孤儿**，且**不会有任何信号**。
+  // 本块**不依赖模板/记录器能否解析**（否则解析失败会把它静默跳过）。
+  {
+    // ⚠️ 判据必须是**同一个谓词对象**（断言与 canary 共用），否则「放宽谓词」抓不到。
+    const RE_J18_HEAD = /^##\s*J18\s*([^\n]*)/m;
+    const RE_TEN_MB = /10\s?MB/i;
+    const prd129 = readFileSync(resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md'), 'utf8').replace(/\r\n/g, '\n');
+    const at129 = prd129.indexOf('# 129.');
+    assert(at129 >= 0, 'PRD 缺少 §129 Typora 体验黄金任务');
+    if (at129 >= 0) {
+      const nextH1 = prd129.indexOf('\n# ', at129 + 1);
+      const sec129 = prd129.slice(at129, nextH1 < 0 ? prd129.length : nextH1);
+      assert(/必须全部通过/.test(sec129),
+        'PRD §129 必须声明「必须全部通过」—— 否则黄金任务降级为建议，ADR-0025 的前提不再成立');
+      const j18 = RE_J18_HEAD.exec(sec129);
+      assert(j18 !== null,
+        'PRD §129 缺少 J18（大文档黄金任务）—— ADR-0025 的「非对照能力观察」以其为宪法依据');
+      if (j18 !== null) {
+        assert(RE_TEN_MB.test(String(j18[1] ?? '')),
+          `PRD §129 J18 的尺寸变为「${String(j18[1] ?? '').trim()}」（原为 10MB）—— ADR-0025 之所以把 >2MB `
+          + '单列为「非对照能力观察」，前提正是 J18 要求 10MB 而 Typora 渲染上限约 2MB；'
+          + '改宪法必须同步 ADR-0025 与 UX Gate 模板，不要只改一侧');
+      }
+      // 18 条黄金任务必须齐全且编号连续（§129「必须全部通过」的对象）
+      const jIds = [...sec129.matchAll(/^##\s*J(\d\d)\b/gm)].map((m) => Number(m[1]));
+      assert(jIds.length === 18, `PRD §129 的黄金任务应为 18 条，实测 ${jIds.length}`);
+      assert(jIds.every((n, i) => n === i + 1),
+        `PRD §129 的 J 编号必须为连续 J01..J18，实测 [${jIds.join(', ')}]`);
+    }
+    // canary：自检 §129 的两条谓词（样本拼接构造，避免护栏检出自己）—— **双向**
+    // ⚠️ 只做正向样本抓不到「谓词被放宽」（把 RE_TEN_MB 改成 /./ 仍会通过正向样本）。
+    if (!RE_J18_HEAD.test('## J' + '18 10MB')) {
+      errors.push('§129 J18 定位护栏 canary 失效：合法样本未被识别');
+    }
+    if (RE_J18_HEAD.test('## J' + '17 10MB')) {
+      errors.push('§129 J18 定位护栏 canary 失效：J17 样本被误判为 J18');
+    }
+    // 负向样本二：含 J18 但**不是标题行** —— 抓「把 /^##\s*J18/ 放宽成 /J18/」这类收窄丢失
+    if (RE_J18_HEAD.test('J' + '18 不是标题')) {
+      errors.push('§129 J18 定位护栏 canary 失效：非标题行样本被误判为 J18 标题');
+    }
+    if (!RE_TEN_MB.test('10' + 'MB')) {
+      errors.push('§129 J18 尺寸护栏 canary 失效：10MB 样本未被识别');
+    }
+    if (RE_TEN_MB.test('2' + 'MB')) {
+      errors.push('§129 J18 尺寸护栏 canary 失效：2MB 样本竟被当作 10MB');
     }
   }
 
