@@ -1,5 +1,10 @@
 # Golden Journeys 验收报告（2026-08-19，阶段 1 真实功能验收）
 
+> **⚠️ 快照声明（2026-10-06 审计 §4.91 补）**：本文是 **2026-08-19 的历史记录**，**不是当前就绪度**。
+> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（实测 **9 项未闭环 / `PASS-E = 0/50`**，
+> 全部阻塞于人工 UX Gate / 真机证据）；发布状态为**正式发布**（ADR-0031）。
+
+
 > 对应 `docs/plans/typora-deep-parity-plan.md` 阶段 1（真实功能验收）。
 > ⚠️ **2026-10-06 更正（审计 §4.90）**：`docs/plans/typora-deep-parity-plan.md` **不存在**
 >（**幽灵引用**，从未入库）—— 当前施工文件是 **`docs/plans/typora-parity-master-plan.md`**（V7.0），

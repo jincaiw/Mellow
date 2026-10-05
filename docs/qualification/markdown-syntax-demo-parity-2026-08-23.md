@@ -1,5 +1,10 @@
 # Markdown 全语法样例 Typora 1.14.9 对标验收报告
 
+> **⚠️ 快照声明（2026-10-06 审计 §4.91 补）**：本文是 **2026-08-23 的历史记录**，**不是当前就绪度**。
+> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（实测 **9 项未闭环 / `PASS-E = 0/50`**，
+> 全部阻塞于人工 UX Gate / 真机证据）；发布状态为**正式发布**（ADR-0031）。
+
+
 > 日期：2026-08-23
 > 输入：`/Volumes/My-Data/jason.wa/Downloads/markdown-syntax-demo.md`
 > 样例 SHA-256：`23d01902be09eb4abe7902c2d2a4d234396022922423a9bac033e0d0c4bf35db`

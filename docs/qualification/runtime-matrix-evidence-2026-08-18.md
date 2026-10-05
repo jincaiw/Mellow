@@ -1,5 +1,10 @@
 # Runtime 矩阵证据（CI runner 作为测试机，2026-08-18）
 
+> **⚠️ 快照声明（2026-10-06 审计 §4.91 补）**：本文是 **2026-08-18 的历史记录**，**不是当前就绪度**。
+> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（实测 **9 项未闭环 / `PASS-E = 0/50`**，
+> 全部阻塞于人工 UX Gate / 真机证据）；发布状态为**正式发布**（ADR-0031）。
+
+
 > 方法：GitHub Actions windows-latest / ubuntu-latest / macos-latest 作为真实 Windows/Linux/macOS 测试机。
 > 证据来源：run 32048030837 / 32051604276 / 32052920275（Runtime Qualification workflow）。
 > 判定口径：构建级 + 启动级已获真机证据；Linux IME 组词注入在无头环境受 WebKitGTK 输入限制（详见下）。

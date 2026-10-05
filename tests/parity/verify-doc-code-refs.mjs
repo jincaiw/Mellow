@@ -641,6 +641,55 @@ const DOC_PATH_EXEMPT = new Map([
   }
 }
 
+// ── `docs/qualification/` 的每份记录必须带「快照声明」（2026-10-06，审计 §4.91）──
+// 立此条的原因（本会话实测）：三份记录**互相矛盾**，而它们都**没有快照声明头** ——
+//   · `rc-audit-2026-08-16.md`     结论「存在 FAIL → **V1.0 禁止标记**」
+//   · `v1.0-release-notes.md`      称已发布 **1.0.0**
+//   · `release-candidate-audit-2026-08-18.md` 称「**待**生成 V1.0 Release Notes」（日期却更晚）
+// ⇒ 读者会把**当时**的裁决读成**当前**就绪度。**日期是唯一的过期信号，但只写在标题里不够** ——
+// 需要一句话说清「这不是当前、当前在哪儿」。
+// 判据：非豁免的 `docs/qualification/*.md`，其**前 14 行**必须含快照标记之一。
+const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
+  ['ux-score-gate-template.md', '**模板/工具**（不是记录）：定义「怎么做」，不含某次执行的结论'],
+  ['release-blocker-audit-2026-09-25.md', '**现状真值源本身**：滚动审计日志（§4.NN 递增），不是某次快照'],
+]);
+{
+  const SNAPSHOT_MARKER = /快照声明|不是当前|已过期|历史记录|历史快照|按当时读/;
+  const dir = resolve(root, 'docs/qualification');
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : [];
+  let checked = 0;
+  for (const name of files) {
+    if (QUALIFICATION_SNAPSHOT_EXEMPT.has(name)) continue;
+    checked += 1;
+    const head = readFileSync(resolve(dir, name), 'utf8').replace(/\r\n/g, '\n').split('\n').slice(0, 14).join('\n');
+    if (!SNAPSHOT_MARKER.test(head)) {
+      fail(`docs/qualification/${name} 的前 14 行缺少**快照声明** —— `
+        + '本目录是**验收记录**，读者会把「当时」的裁决读成「当前」就绪度；'
+        + '请加一句「本文是 <日期> 的历史记录，当前状态以 verify-release-gate.mjs 为准」，'
+        + '或登记进 QUALIFICATION_SNAPSHOT_EXEMPT（带理由）');
+    }
+  }
+  if (checked < 8) {
+    fail(`快照声明普查只检查了 ${checked} 份（下限 8 = 立此判据时的基线）—— 扫描面漂移会让本判据空转`);
+  }
+  // 例外表**双向**：登记了但文件不存在 / 已不再需要豁免 ⇒ 报错
+  for (const [name, reason] of QUALIFICATION_SNAPSHOT_EXEMPT) {
+    if (!files.includes(name)) {
+      fail(`QUALIFICATION_SNAPSHOT_EXEMPT 登记了 ${name}，但该文件不存在 —— 请删除该例外条目`);
+    }
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      fail(`QUALIFICATION_SNAPSHOT_EXEMPT 的 ${name} 缺理由`);
+    }
+  }
+  // canary：判据是**同一个正则**，双向
+  if (!SNAPSHOT_MARKER.test('> **⚠️ 快照声明（2026-10-06）**：本文是历史记录')) {
+    errors.push('快照声明护栏 canary 失效：合法样本未被识别');
+  }
+  if (SNAPSHOT_MARKER.test('# 某次审计（2026-08-16）\n\n全部通过，可以发布。')) {
+    errors.push('快照声明护栏 canary 过宽：无标记的样本被误判为有标记');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

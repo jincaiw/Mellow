@@ -1,5 +1,10 @@
 # Golden Journeys 执行报告（2026-08-13）
 
+> **⚠️ 快照声明（2026-10-06 审计 §4.91 补）**：本文是 **2026-08-13 的历史记录**，**不是当前就绪度**。
+> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（实测 **9 项未闭环 / `PASS-E = 0/50`**，
+> 全部阻塞于人工 UX Gate / 真机证据）；发布状态为**正式发布**（ADR-0031）。
+
+
 对应：PRD §111 Runtime Qualification 20 项（T-0702 的 18 golden journeys 未展开定义，以 §111 为准）。
 执行：Mellow（release build bd01cee）vs Typora 1.14.9，同机同路径。
 自动化：`tests/benchmark/golden-journeys.mjs`（SE keystroke / CGEvent / 保存读回；Mellow 字母输入走 SE 管道——CGEvent 字母被 WKWebView 过滤；Typora 走 CGEvent + 空格提交）。
