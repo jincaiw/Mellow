@@ -49,6 +49,19 @@ v1.4.4 转正（`gh release edit v1.4.4 --latest=true --prerelease=false`），
 - 发布收口护栏（`verify-release-gate.mjs`）的判据随之更新：
   断言 `prerelease=false` + `make_latest=true`（**取代**原先的 `prerelease=true`）。
 
+## 落地与验证（2026-10-05 本轮实做）
+
+- **v1.5.26 已转正**：`gh release edit v1.5.26 --prerelease=false --latest=true --notes-file <新模板渲染>`
+  → 现状 `draft=false` / `prerelease=false` / **`assets=15`** / **`Latest = v1.5.26`**。
+- **工作流改动已被实证**：`finalize` 里那条 API 调用（`-F prerelease=false -f make_latest=true -F draft=false`）
+  以**完全相同的形态**对 v1.5.26 **幂等重放**一次 → `PATCH ok → draft=false prerelease=false`，
+  状态不变 ⇒ 该调用的**参数与语义在真实 API 上成立**（不是「写进 YAML 就算接上了」）。
+- **护栏判据已同步**：`verify-release-gate.mjs` 锁 `prerelease=false` + `make_latest=true`；
+  **回退到 pre-release 必须走新 ADR**，不得静默改回。
+- **未做（如实声明）**：**未**为本次改动单独切新版本 —— 按既有规则「diff 里无 `apps/`/`packages/` 改动
+  ⇒ 新版本产出逐字节相同的制品，属过度声称」。故工作流的**完整**收口链路
+  （断言 → 发布）将在**下一次含产品改动的发布**上首次整体执行。
+
 ## 关联
 
 - ADR-0020（发布状态修正；其「2026-09-05 更新」为同类先例）
