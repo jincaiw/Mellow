@@ -5838,6 +5838,76 @@ master-plan §4.3 的状态表列了 **10 个状态**，其中 **`PASS-BETTER`�
 > 第 3 次口径错时**15 个包全报无消费者**，正是因为结果**荒谬到不可能**才被发现。
 > ⇒ **看到「全中」或「全不中」时先怀疑口径**（同 §4.88「数字与已知结论矛盾时先验口径」）。
 
+## 4.96 审 **Rust ↔ 前端命令边界**：最硬的一层跨层契约此前无护栏，且**同类事故已真实发生过**（2026-10-06）
+
+**动机**：「跨层字段必须两端同时锁」已覆盖三处（菜单 `dispatchCommand`、设置 `applyCommand` ↔ `applySetting`、
+文案 `t()` ↔ i18n），但**最硬的一层边界没有任何护栏** ——
+前端 `invoke('name')` ↔ Rust `#[tauri::command]` ↔ `generate_handler![…]` 注册表。
+三者任一错位**都不会在编译期报错**，只在**运行时 reject**。
+
+**⚠️ 这不是假想的风险，本仓真实发生过**：`apps/desktop/src/App.tsx:4849` 的注释记录了
+旧机制 `invoke('set_spellcheck_state')`「**必然失败**」—— 该命令已被架构移除（同文件 4945 行亦有说明）。
+当时是**靠人读代码**发现的；本护栏把这条边界变成机器判据。
+
+**实测（2026-10-06）**：声明 **D = 59**、注册 **R = 59**、前端调用 **F = 59**，
+`D∖R = F∖R = R∖D = R∖F = ∅` —— 现状**健康**。本节的价值在于**把它锁住**，而不是修一个当前不存在的缺陷。
+
+### 口径：6 次踩坑，每次都由一次「荒谬结果」暴露
+
+| # | 错法 | 后果 |
+|---|---|---|
+| 1 | 把**成员调用**也算成 Tauri 命令 | `bridge.invoke({…})` / `imageHost.invoke(…)` 是 **bridge 协议 / host 对象** ⇒ 误报 `copyFile` / `writeBinary` 为「调用了未注册命令」 |
+| 2 | 为了排除 #1 而**一律排除成员调用** | `window.__TAURI__.core.invoke('bridge_call', …)` 是**真** Tauri 调用 ⇒ 误排除（`bridge_call` 从 F 里消失） |
+| 3 | 泛型用 `<[^>]*>` | 嵌套泛型 `invoke<Array<{ path: string }>>('read_dir', …)` 在第一个 `>` 处收尾 ⇒ **漏检** `read_dir` / `detect_open_with` |
+| 4 | **自动发现** invoke 包装器（「函数体后 4000 字符里出现 `invoke(`」） | 发现 **40 个**「包装器」，含 `fail` / `doc` / `onChange` / `hasSelection` ⇒ 假阳性 `H1` |
+| 5 | 用**块注释正则**剥注释（斜杠星号 … 星号斜杠，非贪婪） | **在 TSX 上不安全**：JSX 的注释包裹写法与正则字面量里的斜杠星号会让匹配**跨越大段代码** —— 实测 `App.tsx` **351734 → 297769** 字符，把真实调用 `invoke('set_menu_spec', …)` 一起删掉 ⇒ **假阴性** |
+| 6 | 干脆**不剥注释** | `packages/editor-engine/src/image/host.ts` 的文档注释里有 `invoke('fs', …)`、`App.tsx` 注释里有 `invoke('set_spellcheck_state')` ⇒ **把已经修好的问题重新报成缺陷**（比漏报更糟） |
+
+⇒ 最终口径：**按行前缀判定注释**（`inComment`）+ **非成员 `invoke`** + **`__TAURI__` 全局桥** +
+**显式包装器清单**（`INVOKE_WRAPPERS`，双向自检防化石）。
+
+### 新增护栏 `tests/parity/verify-tauri-command-contract.mjs`（第 **20** 个）
+
+四条「必须为空」的判据：
+- **① `D∖R`** —— 声明了 `#[tauri::command]` 但未注册 ⇒ **命令不可达**（前端调用必失败）；
+- **② `F∖R`** —— 前端在调未注册的命令 ⇒ **运行时 reject**；
+- **③ `R∖D`** —— 注册了但找不到声明（编译期应报，留作扫描面自检）；
+- **④ `R∖F`** —— 注册了但前端**一个字面量调用都没有** ⇒ 必须显式登记理由。
+
+> **④ 同时是「扫描面收窄」的 canary**：若解析器悄悄漏掉一类调用形态
+> （例如去掉 `__TAURI__.core.invoke` 这条），`bridge_call` 会从 F 里消失、`R∖F` 立刻非空 ⇒ 护栏变红。
+> **单靠 F 的下限（≥45）抓不到这种「少了一类形态」的漂移** —— 这是本节的另一条方法学。
+
+另有：扫描面下限（D ≥ 50 / R ≥ 50 / F ≥ 45）；`INVOKE_WRAPPERS` 双向自检（清单项必须真转发到 invoke）；
+**canary 10 项**（正样本 / 负样本-缺条 / 负样本-放宽 / 注释行 / 成员调用 / `__TAURI__` 全局桥 /
+嵌套泛型 / 包装器 / 缺 `generate_handler` 返回 null）；**共用同一解析函数**（canary 不另写正则）。
+
+**注入验证 6/6**：① 从 `generate_handler` 移除 `fs::trash` ⇒ 报 `D∖R` + `F∖R`；
+② 注册不存在的命令 ⇒ 报 `R∖D`；③ 前端调 `ghost_front_cmd` ⇒ 报 `F∖R`；
+④ 去掉 `__TAURI__` 形态 ⇒ `R∖F` 抓到 `bridge_call`；⑤ 放宽 invoke 谓词 ⇒ 非静默通过；
+⑥ 让 `inComment` 恒 false ⇒ 注释里的命令被误报。还原后全绿且**文件与快照逐字节一致**。
+
+### 附带的两条工具教训（都不是护栏本身的问题）
+
+1. **注入脚本的还原不能依赖 `git checkout --`** —— 新增的护栏文件是**未跟踪**的，
+   git 报 `did not match any file(s) known to git` 且**注入留在磁盘上**污染后续用例
+   （首版 6 项只过 2 项，且报告的是被污染后的状态）。⇒ 注入与还原**都以启动时的内存快照为基准**，
+   还原放 `finally`，结束时**逐字节比对**。
+2. **注入验证里的「期望文案」正则本身也是判据** —— 首版把 `**未注册**进` 写成 `未**注册**进`
+   （星号位置写错）⇒ 护栏**确实变红了**却被判为「未检出」。⇒ 报「护栏无效」前先确认期望式与实现文案逐字对齐。
+
+### 环境噪声（如实记录，勿误判为真红）
+
+本地 `npm run parity` 偶发 `vendored CoreEditor 检查失败：eslint .`，根因是
+`Error: write EPIPE ... broker-ipc-client.cjs`（本机沙箱 IPC broker），**不是 eslint 真失败**；
+单独重跑 `node tools/check-vendored-editor.mjs` 即通过。⇒ 见到 `EPIPE` + `broker-ipc-client` 先重跑再判断。
+
+### 本次改动
+
+- **新增** `tests/parity/verify-tauri-command-contract.mjs`，并接入根 `test` + `parity` 两条链；
+- 同步 `tests/qualification/README.md` 的护栏数量 19 → **20**（该数字由 `verify-release-gate.mjs` 锁定）；
+- **未改动任何产品代码**（现状即健康；本节只加判据）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
