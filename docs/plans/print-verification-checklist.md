@@ -27,8 +27,12 @@ Print 实现：桌面端注入打印样式表（与 PDF 共享排版常量），
 | Windows | WebView2 | `window.print()`（Chromium 打印预览 → 系统打印） | wry 0.55 `webview2/mod.rs print` |
 | Linux | WebKitGTK | `webkit2gtk::PrintOperation::run_dialog` 打印对话框 | wry 0.55 `webkitgtk/mod.rs print` |
 
-Tauri 2.11 暴露 `WebviewWindow::print()`（tauri 2.11.2 `webview/webview_window.rs:2294`），
-前端统一 `invoke('print_window')`；非 Tauri 环境（纯 Web 调试）fallback `window.print()`。
+Tauri 暴露 `WebviewWindow::print()`，前端统一 `invoke('print_window')`；非 Tauri 环境（纯 Web 调试）fallback `window.print()`。
+
+> **⚠️ 2026-10-06 更正**：原文写「Tauri **2.11.2** `webview/webview_window.rs:2294`」——
+> ① **版本已漂移**（本仓 `Cargo.lock` 实为 **`tauri 2.11.5`**；`wry 0.55.1` 与原文的「wry 0.55」一致 ✓）；
+> ② **指向第三方源码的行号不可核对**（该文件不在本仓，且会随依赖升级漂移）——
+> 按 §4.11 的既定处置：**引符号/方法名，不引行号**。
 
 ## 手动验证（需三平台真机 + GUI 会话）
 
@@ -63,8 +67,14 @@ Tauri 2.11 暴露 `WebviewWindow::print()`（tauri 2.11.2 `webview/webview_windo
 - **Linux**：GTK 打印对话框；若无打印服务（CUPS），对话框仍可打开并预览。
 
 ## 已确认的已知限制
-1. 打印入口当前为 Reader 场景（`reader.print` 命令 `enabled: readerOpen`），
-   编辑态直接打印未实现（后续可基于 `buildPrintHtml` 做独立打印视图）；
+
+1. ~~打印入口当前为 Reader 场景（`reader.print` 命令 `enabled: readerOpen`），编辑态直接打印未实现~~
+   > **✅ 2026-10-06 更正：该限制已不成立 —— 编辑态打印已实现。**
+   > `file.print` 命令**已存在**（`packages/commands/src/menuSchema.ts`，`Cmd+P` / `Ctrl+Alt+P`），
+   > 且 `apps/desktop/src/App.tsx` 中注册为 **`enabled: always`**（不依赖 Reader）。
+   > 该修复对应 **golden journey #18（print）**「基线 FAIL → 接线修复」。
+   > ⇒ 本清单原先的「编辑态直接打印未实现」是 **2026-08-13 的状态**，已过期。
+   > （`reader.print` 仍在，作为「打印 Reader 渲染结果」的独立入口 —— 两者语义不同，不是重复。）
 2. 页眉/页脚/页码由系统打印对话框提供（WebView 打印不注入 HTML 页眉页脚），
    与 PDF 导出的 pdfmake 页眉页脚选项（PRD §72）为不同机制；
 3. 暗色主题打印默认使用 light 配色（与 PDF 默认一致）；`printStylesheet({ theme: 'dark' })`

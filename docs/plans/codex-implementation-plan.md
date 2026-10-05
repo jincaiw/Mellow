@@ -1,5 +1,20 @@
 # Codex Implementation Plan
 
+> **2026-10-06 复核（本文件是**任务编号脚手架**，不是状态台账）**
+>
+> - **本文档不记录完成状态** —— 每个任务只有编号与一句话。**权威完成记录**是
+>   `docs/plans/typora-parity-master-plan.md` 的 **§15 完成度审计**（+ 台账 `tests/parity/typora-parity-ledger.json`）。
+>   ⇒ 读「某个任务做没做」时**去那里查**，不要从本文件推断。
+> - **本次逐条核对抓到 1 处过期任务**：**`T-0301 Tabs`** —— Tabs 已被 **SDI 决策否决**
+>   （见 master-plan §12 的 **D-D / D-Y**；`docs/specs/desktop-ui-design-spec.md` §4 已**作废**）。
+>   本文件**自己提供了正确的标注范式**（`T-0410 已移除（Split Mode 不属于 V1 范围）`），
+>   故按同一范式标注 T-0301（**同一文件里两处同类情况处理不一致**，是这次能发现它的原因）。
+> - **另记一处「不是缺陷」**（避免下轮重复怀疑）：`T-0602 6 built-in themes` 的「6」是
+>   **PRD 的要求数**，而实际内置 **8** 个主题（`packages/themes/src/index.ts`，且 `verify-shell-typography.mjs`
+>   断言「内置 8 主题」）⇒ **要求已超额满足**，不是过期计数。
+> - `T-0702 18 golden journeys` 的「18」是**初版条数**；当前矩阵为 **20 项终态**
+>   （`docs/qualification/golden-journeys-2026-08-19.md`）⇒ 同为**超额**，非失真。
+
 ## 1. 总原则
 
 Codex 不按“做一个类似 Typora 的应用”大任务工作。
@@ -97,7 +112,7 @@ Runtime Qualification harness。
 
 ## 5. Phase 3 — Desktop Workflow
 
-### T-0301 Tabs
+### T-0301 已移除（**Tabs 不属于 V1 范围** —— SDI 单文档窗口，见 D-D / D-Y；`desktop-ui-design-spec` §4 已作废）
 ### T-0302 File Tree
 ### T-0303 File List
 ### T-0304 Outline

@@ -4332,6 +4332,75 @@ A3 把决策放进**唯一相关的那一处**，且**可读、可测**。
 > - **「0 修改 X」这类绝对措辞**必须与事实一致：实际有 22 处改动，且其中任一处丢失都会被
 >   `verify-upstream-manifest` 抓到（同 §4.56「门禁声称满足 vs 实际未闭环」）。
 
+## 4.77 清点「从未被审计的文档」：三份 `docs/plans` 逐份复核（2026-10-06）
+
+### 清点方法
+
+按「审计文档里是否出现过该文件名」逐份数，`docs/` 下**从未被审**的是：
+
+| 文档 | 行数 | 结论 |
+|---|---|---|
+| `docs/plans/codex-implementation-plan.md` | 234 | **1 处过期任务**（+ 2 处「不是缺陷」已记明） |
+| `docs/plans/print-verification-checklist.md` | 81 | **2 处失真** |
+| `docs/plans/markdown-syntax-demo-parity-validation-plan.md` | 457 | ✅ **零缺陷**（正向确认，见下） |
+
+（`docs/architecture/` 7 份已在 §4.76 处理；`docs/product/` 的 PRD 是 5514 行的宪法，**仍未逐节审**，见「遗留」。）
+
+### ① `codex-implementation-plan.md`：1 处过期任务
+
+它是**任务编号脚手架**（T-0001…T-0710），**无状态列** —— 因此**本次先给它加了「权威状态在哪」的指针**
+（master-plan §15 + 台账），否则读者只能从编号推断进度。
+
+**过期任务**：**`T-0301 Tabs`** 仍作为 Phase 3 任务列出，而 Tabs 已被 **SDI 决策否决**
+（master-plan §12 的 **D-D / D-Y**；`desktop-ui-design-spec` §4 已**作废**）。
+**发现它的方式值得记**：**同一份文件里已有正确的标注范式** ——
+`T-0410 已移除（Split Mode 不属于 V1 范围）` ⇒ **同类情况一处标了、一处没标**。
+已按同一范式标注 T-0301。
+
+**两处「不是缺陷」（已写进文档的复核块，避免下轮重复怀疑）**：
+
+- `T-0602 6 built-in themes` 的「6」是 **PRD 的要求数**，实际内置 **8** 个主题
+  （`packages/themes/src/index.ts`；`verify-shell-typography.mjs` 断言「内置 8 主题」）⇒ **超额满足**。
+- `T-0702 18 golden journeys` 的「18」是**初版条数**；当前矩阵 **20 项终态**
+  （`docs/qualification/golden-journeys-2026-08-19.md`）⇒ 同为**超额**。
+
+> **教训**：**「数字与现状不一致」有两种** ——「过期的计数」与「已超额的要求」。
+> 判据：**先回查该数字的来源（PRD 要求？初版计数？）**，再决定它是不是缺陷。
+> 本轮两处都**先查了来源**，避免了两次误报。
+
+### ② `print-verification-checklist.md`：2 处失真
+
+| # | 声明 | 实测 |
+|---|---|---|
+| 1 | 「已确认的已知限制 1：打印入口当前为 **Reader 场景**（`reader.print`，`enabled: readerOpen`），**编辑态直接打印未实现**」 | **已不成立** —— `file.print` 命令**已存在**（`menuSchema.ts`，`Cmd+P` / `Ctrl+Alt+P`），且 `App.tsx` 注册为 **`enabled: always`**（不依赖 Reader）；对应 **golden journey #18「基线 FAIL → 接线修复」** |
+| 2 | 「Tauri **2.11.2** `webview/webview_window.rs:2294`」 | ① 版本已漂移（`Cargo.lock` 实为 **`tauri 2.11.5`**；`wry 0.55.1` 与原文一致 ✓）；② **指向第三方源码的行号不可核对**（文件不在本仓、且随依赖升级漂移）⇒ 按 §4.11 改为**只引符号** |
+
+**已核对为正确**：该清单「相关代码」列的 **6 个路径全部存在** ✓。
+
+### ③ `markdown-syntax-demo-parity-validation-plan.md`：**零缺陷**（正向确认）
+
+**逐项实测**（这是本轮唯一一份**没有任何失真**的文档）：
+
+| 声明 | 实测 |
+|---|---|
+| 输入样例 `/Volumes/My-Data/jason.wa/Downloads/markdown-syntax-demo.md` + SHA-256 `23d01902…` | 文件**仍在**，SHA-256 **逐字符一致** ✓ |
+| 三份夹具落在 `tests/fixtures/typora-parity/markdown-syntax-demo/` | **就在该路径** ✓（`original.md` / `local-assets.md` / `interaction.md` / `assets/`） |
+| 「每份夹具记录 SHA-256」 | 夹具 README 的 SHA 表与**实测逐条一致** ✓（`original` `23d01902…` / `local-assets` `7d2e718c…` / `interaction` `80a9dd33…`） |
+| 基线（Mellow `74c454b` / Desktop `1.3.4` / Typora 1.14.9）+ 制定日期 2026-08-23 | **已声明为带日期的专项报告** ✓ |
+
+> **方法学结论（值得记）**：**同样是 6 周前的文档** ——
+> `docs/architecture/`（§4.76）**不带日期**的断言漂移了 **8 处**；
+> 而这份 plan **带日期 + 带证据锚点（SHA-256 / 夹具路径 / 基线）**，**零漂移**。
+> ⇒ **「证据锚点」不只是为了说服读者，它是文档抗漂移的机制** ——
+> 锚点会**逼着**作者在写下时把事实固定住，而读者/护栏能**逐条复核**它。
+> 反过来：**没有锚点的数字与状态**（「201 文件」「⛔ 未实现」「0 修改」）**没有任何东西在守**。
+
+### 遗留
+
+- **PRD（`docs/product/Mellow-PRD-V1.2-FINAL.md`，5514 行）仍未逐节审** ——
+  它是**宪法**（P0），目前只被**按需引用**（§109/§110/§116/§117.1/§133 等）。
+  逐节审它是一次**独立的、量级更大**的工作（需按「声明 → 载体」的方式过一遍），**本轮不做**，如实登记。
+
 ## 五、本次审计做的改动（非策略性）
 
 
