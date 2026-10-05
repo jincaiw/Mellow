@@ -17,9 +17,17 @@ function setUp(doc = ''): EditorView {
   });
 }
 
-function firePaste(view: EditorView, formats: Record<string, string>): Event {
+function firePaste(
+  view: EditorView,
+  formats: Record<string, string>,
+  payload: { files?: { type: string }[]; itemTypes?: string[] } = {},
+): Event {
   const event = new Event('paste', { bubbles: true, cancelable: true });
-  Object.defineProperty(event, 'clipboardData', { value: { getData: (type: string) => formats[type] ?? '' } });
+  const files = payload.files ?? [];
+  const items = (payload.itemTypes ?? []).map((type) => ({ kind: 'file', type }));
+  Object.defineProperty(event, 'clipboardData', {
+    value: { getData: (type: string) => formats[type] ?? '', files, items },
+  });
   view.contentDOM.dispatchEvent(event);
   return event;
 }
@@ -175,6 +183,67 @@ describe('P5.3 Clipboard — paste priority 链 / IME guard / 边界', () => {
     view.dispatch({ selection: { anchor: 2 } });
     firePaste(view, { 'text/plain': 'https://example.com/x' });
     expect(view.state.doc.toString()).toBe('正文https://example.com/x'); // 纯文本，无 [链接](url) 包裹
+    view.destroy();
+  });
+
+  // ── spec §3 优先级 2（image/file payload）—— ADR-0030 裁决 A3 ──────────────────────
+  // 该优先级**不得依赖扩展注册顺序**（那会让规则藏在 index.ts 的行号里且无判据）：
+  // 实测 `buildSmartPasteExtension()` 注册在 `buildImageExtensions()` **之前** ⇒ 两者都命中时 HTML 先赢。
+  // A3 = 在 `handleSmartPaste` 内**显式让位**，使 §3 的「2 高于 3/4」在任何注册顺序下都成立。
+  // ⚠️ 断言**不得**用 `event.defaultPrevented` 判定「smartPaste 是否拦截」——
+  // **CM 自带的 paste 处理也会 preventDefault**（它自己插入剪贴板内容）⇒ 该量对两者都为 true。
+  // 可靠判据是**文档内容**：转换发生了吗？（下面每个「让位」用例都配一条「防过宽」反向用例。）
+  test('spec §3 优先级 2：`files` 带图片 payload → 让位（不把 HTML 转成 Markdown）', () => {
+    const view = setUp('');
+    firePaste(
+      view,
+      { 'text/html': '<p><strong>不该赢的富文本</strong></p>' },
+      { files: [{ type: 'image/png' }] },
+    );
+    // 让位后由 CM 默认粘贴接管：本用例只给 HTML、无 text/plain ⇒ 文档保持为空
+    expect(view.state.doc.toString()).toBe('');
+    view.destroy();
+  });
+
+  test('spec §3 优先级 2：`items` 里的 image/* 同样让位（Chromium paste image 路径）', () => {
+    const view = setUp('');
+    firePaste(
+      view,
+      { 'text/html': '<p><strong>不该赢的富文本</strong></p>' },
+      { itemTypes: ['image/png'] },
+    );
+    expect(view.state.doc.toString()).toBe('');
+    view.destroy();
+  });
+
+  test('spec §3 优先级 2 高于 3：带图片 payload 时 TSV 也让位（不转成 GFM 表格）', () => {
+    const view = setUp('');
+    firePaste(
+      view,
+      { 'text/plain': '名称\t数量\n苹果\t2' },
+      { files: [{ type: 'image/png' }] },
+    );
+    const doc = view.state.doc.toString();
+    expect(doc).not.toContain('| --- |');      // **未**转成表格
+    expect(doc).toContain('名称\t数量');        // 仍是原始纯文本（CM 默认粘贴）
+    view.destroy();
+  });
+
+  test('防过宽：**没有**图片 payload 时 HTML 仍照常转换（让位只对 payload 生效）', () => {
+    const view = setUp('');
+    firePaste(view, { 'text/html': '<p><strong>富</strong></p>' });
+    expect(view.state.doc.toString()).toBe('**富**');
+    view.destroy();
+  });
+
+  test('防过宽：**非图片** file payload 不让位（无处理器消费它，让位会让粘贴什么都不发生）', () => {
+    const view = setUp('');
+    firePaste(
+      view,
+      { 'text/html': '<p><strong>富</strong></p>' },
+      { files: [{ type: 'text/csv' }] },
+    );
+    expect(view.state.doc.toString()).toBe('**富**'); // 仍按 §3 优先级 4 转换
     view.destroy();
   });
 

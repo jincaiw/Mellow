@@ -153,19 +153,20 @@ const DECIDED_ADRS = [
     '引擎侧宿主上下文通道（统一 UI 上下文桥 vs 逐项加桥）', 'A2 / B1 / C1'],
   ['docs/adr/ADR-0029-audit-pending-decisions-registry.md',
     '审计中的未登记裁决项（6 项）', 'A3 / B2 / C2 / Q4=D2（2026-10-05 补证据后裁决：从 spec 移除）/ E1 / F1'],
+  // 2026-10-05 裁决：clipboard paste 优先级（image payload vs rich HTML 的处理器顺序）
+  ['docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md',
+    'clipboard paste 优先级：image payload 与 rich HTML 的处理器顺序', 'A3（收敛到一处显式判断）'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
 // 它承载一个**真实取舍**（新增 md 面板 token / 拓宽 token 桥 / 维持现状），
 // 故必须是 Proposed，且**不得**被悄悄标成 Accepted。
 // ADR-0029 已于 2026-10-01 裁决为 Accepted（Q1=A3 / Q2=B2 / Q3=C2 / Q4 留待 / Q5=E1 / Q6=F1）
-// ADR-0030（2026-10-05 立）：clipboard paste 优先级 —— `image payload` 与 `rich HTML`
+// ADR-0030（2026-10-05 立、**同日裁决为 A3**）：clipboard paste 优先级 —— `image payload` 与 `rich HTML`
 // **分处两个 eventHandler**，而 `index.ts` 的注册顺序把优先级 2 排在 3/4 之后 ⇒ 与 spec §3 相反。
-// 它承载一个**真实取舍**（前置 image / 修订 spec / 收敛到一处显式判断），且**裁决前需要一手证据**
-// （真实剪贴板在「复制图片」时带哪些 MIME），故必须是 Proposed。
-const PENDING_ADRS = [
-  ['docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md', 'clipboard paste 处理器顺序 vs spec §3 优先级'],
-];
+// 裁决 A3 = 在 `handleSmartPaste` 内**显式让位**（有图片 payload 则 return false）⇒ 不再依赖注册顺序。
+// 故它**不再**是待裁决项（已移入 DECIDED_ADRS）。
+const PENDING_ADRS = [];   // 当前无待裁决 ADR
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);

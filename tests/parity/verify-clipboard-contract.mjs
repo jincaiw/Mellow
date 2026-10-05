@@ -1,25 +1,28 @@
 /**
- * Clipboard 契约护栏（2026-10-05，审计 §4.72）。
+ * Clipboard 契约护栏（2026-10-05 建立；同日按 ADR-0030 裁决改写）。
  *
- * 立此条的原因（实测）：
+ * ## 背景（为什么要有这条）
+ *
  * `clipboard-smart-paste-spec` §3 声明了 6 级粘贴优先级 —— 其中
- * **2 = image/file payload**、**3 = TSV**、**4 = HTML rich content**。
- * 而实现把优先级 **2** 放在 `image/input.ts` 的**独立** `paste` eventHandler 里，
- * 3 / 4 / 5 放在 `smartPaste.ts` 的**另一个**处理器里 ——
- * ⇒ **两者谁赢，完全由 `packages/editor-engine/src/index.ts` 的扩展注册顺序决定**。
+ * **2 = image/file payload** 高于 **3 = TSV** / **4 = HTML rich content**。
+ * 而实现把它拆到了**两个独立**的 `paste` eventHandler 里：
+ * 优先级 2 在 `image/input.ts`，3/4/5 在 `smartPaste.ts`。
+ * CodeMirror 按**扩展注册顺序**调用、**首个返回 `true` 者胜** ——
+ * 而 `packages/editor-engine/src/index.ts` 把 `buildSmartPasteExtension()`（行 272）
+ * 排在 `buildImageExtensions()`（行 279）**之前**
+ * ⇒ **两者都命中时 HTML 先赢，与 §3 相反**（剪贴板同时含富文本与图片时，图片被转成远程 `![](src)`）。
  *
- * 实测该顺序是 `buildSmartPasteExtension()`（行 272）**先于** `buildImageExtensions()`（行 279）
- * ⇒ **与 §3 的「2 高于 3 / 4」相反**：剪贴板同时含富文本与图片时（典型：从浏览器「复制图片」），
- * `handleSmartPaste()` 的 HTML 分支先命中并返回 `true` ⇒ 图片被转成远程 `![](src)`，
- * **不走**「复制到资源目录 / 上传」的图片管线。
+ * ## 前提变更（2026-10-05，ADR-0030 裁决 = A3）
  *
- * 为什么别的东西没发现它：`smart-paste.test.ts` 的「paste priority 链」测试**只覆盖链内**
- * （已钉住 3 > 4、4 > 5），**没有任何判据覆盖「两个处理器之间」的顺序**。
+ * 本条护栏**首版**锁的是「spec 声明的**有效顺序** ⇄ `index.ts` 现算的注册顺序」——
+ * 它让冲突**不会静默漂移**，但**不裁定**冲突。
+ * ADR-0030 裁决为 **A3：把顺序决策收敛到 `handleSmartPaste` 内的一处显式判断**
+ * （有图片 payload 则**让位**），于是「谁优先」**不再依赖注册顺序** ⇒ 首版的前提消失。
  *
- * ⚠️ **本护栏不裁定该冲突**（裁决在 `ADR-0030`，且需一手证据：真实剪贴板在「复制图片」时带哪些 MIME）。
- * 它的作用是**让冲突不会静默漂移**：把「有效顺序」从 `index.ts` **现算**出来，
- * 与 spec §3 的「**有效顺序（机器可读）**」行**双向**比对 ——
- * 改注册顺序而不改 spec ⇒ 失败；改 spec 而不改代码 ⇒ 同样失败。
+ * 故本条护栏现在锁的是**更强的不变量**：
+ * **§3 优先级 2 必须在代码里被显式落实**（`hasImagePayload(data)` → `return false`），
+ * 且 spec 的「落实方式（机器可读）」行必须与之**双向一致**：
+ * 去掉显式让位 ⇒ 现算值变回 `order-dependent` ⇒ 与声明不符 ⇒ 失败。
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -30,64 +33,70 @@ const errors = [];
 const fail = (message) => errors.push(message);
 
 const SPEC = 'docs/specs/clipboard-smart-paste-spec.md';
+const SMART_PASTE = 'packages/editor-engine/src/smartPaste.ts';
 const ENGINE_INDEX = 'packages/editor-engine/src/index.ts';
-const MARK = '有效顺序（机器可读）';
+const MARK = '优先级 2 的落实方式（机器可读）';
 
 /**
- * 从引擎扩展注册表**现算**两个 paste 处理器的先后（不硬编码顺序 —— 硬编码就等于没判）。
+ * 从 `smartPaste.ts` **现算**优先级 2 的落实方式（不硬编码结论）。
  * 判定与 canary **共用**本函数。
  */
-function effectiveOrder(src) {
-  const smart = src.indexOf('buildSmartPasteExtension()');
-  const image = src.indexOf('buildImageExtensions()');
-  if (smart < 0 || image < 0) return null;
-  return smart < image ? 'smartPaste-before-image' : 'image-before-smartPaste';
+function enforcementFromSource(src) {
+  // 显式让位：读到「有图片 payload」后立刻 `return false`（交给图片处理器）。
+  return /hasImagePayload\(data\)[\s\S]{0,120}?return false;/.test(src)
+    ? 'payload-yield-explicit'
+    : 'order-dependent';
 }
 
-/** 从 spec 的机器可读行取声明顺序。判定与 canary **共用**本函数。 */
-function declaredOrder(src) {
+/** 从 spec 的机器可读行取声明值。判定与 canary **共用**本函数。 */
+function enforcementFromSpec(src) {
   const line = src.split('\n').find((l) => l.includes(MARK));
   if (line === undefined) return null;
-  const m = /`([a-zA-Z-]+)`/.exec(line);
+  const m = /`([a-z-]+)`/.exec(line);
   return m === null ? null : m[1];
 }
 
-const indexSrc = read(ENGINE_INDEX);
+const smartSrc = read(SMART_PASTE);
 const specSrc = read(SPEC);
-const actual = effectiveOrder(indexSrc);
-const declared = declaredOrder(specSrc);
+const computed = enforcementFromSource(smartSrc);
+const declared = enforcementFromSpec(specSrc);
 
-if (actual === null) {
-  fail(`无法从 ${ENGINE_INDEX} 现算 paste 处理器顺序（找不到 buildSmartPasteExtension() / `
-    + 'buildImageExtensions()）—— 判据锚点漂移，别静默跳过');
-}
 if (declared === null) {
-  fail(`${SPEC} 缺少「${MARK}」行（或该行没有反引号包裹的顺序值）—— `
-    + 'paste 优先级的**有效顺序**必须有声明处，否则 spec §3 与实现的冲突会静默漂移');
+  fail(`${SPEC} 缺少「${MARK}」行（或该行没有反引号包裹的值）—— `
+    + '§3 优先级 2 的**落实方式**必须有声明处，否则「它靠注册顺序还是靠显式判断」会静默漂移');
 }
-if (actual !== null && declared !== null && actual !== declared) {
-  fail(`${SPEC} 声明「有效顺序」= ${declared}，而 ${ENGINE_INDEX} 现算为 ${actual}`
-    + ' —— spec §3 的优先级与实现的注册顺序不一致（见 ADR-0030）；'
-    + '改了一处必须改另一处，**不得**让该冲突静默漂移');
+if (computed !== declared) {
+  fail(`${SPEC} 声明 §3 优先级 2 的落实方式 = ${declared}，而 ${SMART_PASTE} 现算为 ${computed}`
+    + ' —— 显式让位若被移除，优先级就会退回「由扩展注册顺序决定」（ADR-0030 已裁决不采用该形态）');
 }
 
-// canary：四个方向（判定与 canary 共用 effectiveOrder / declaredOrder）
+// 附加事实（不作判据，只做可见性）：注册顺序仍是 3/4/5 的处理器在前 ——
+// A3 之后它**不再承载语义**，但读者需要知道这件事，否则会误以为顺序无关紧要。
+const engineSrc = read(ENGINE_INDEX);
+const lineOf = (needle) => {
+  const at = engineSrc.indexOf(needle);
+  return at < 0 ? null : engineSrc.slice(0, at).split('\n').length;
+};
+const smartLine = lineOf('buildSmartPasteExtension()');
+const imageLine = lineOf('buildImageExtensions()');
+if (smartLine === null || imageLine === null) {
+  fail(`${ENGINE_INDEX} 找不到 buildSmartPasteExtension() / buildImageExtensions() —— 锚点漂移`);
+}
+
+// canary：四个方向（判定与 canary 共用两个解析函数）
 {
-  const smartFirst = 'a\n    buildSmartPasteExtension(),\n    buildImageExtensions(),\n';
-  const imageFirst = 'a\n    buildImageExtensions(),\n    buildSmartPasteExtension(),\n';
-  if (effectiveOrder(smartFirst) !== 'smartPaste-before-image') {
-    errors.push('clipboard 契约护栏 canary 失效：smartPaste 在前未被识别');
+  const withYield = 'if (hasImagePayload(data)) {\n    return false;\n  }';
+  const withoutYield = 'if (data === null) {\n    return false;\n  }';
+  if (enforcementFromSource(withYield) !== 'payload-yield-explicit') {
+    errors.push('clipboard 契约护栏 canary 失效：显式让位未被识别');
   }
-  if (effectiveOrder(imageFirst) !== 'image-before-smartPaste') {
-    errors.push('clipboard 契约护栏 canary 失效：image 在前未被识别');
+  if (enforcementFromSource(withoutYield) !== 'order-dependent') {
+    errors.push('clipboard 契约护栏 canary 失效：缺少显式让位时未判为 order-dependent');
   }
-  if (effectiveOrder('a\n') !== null) {
-    errors.push('clipboard 契约护栏 canary 过宽：两个锚点都缺失时不应返回顺序');
-  }
-  if (declaredOrder(`> **${MARK}**：\`image-before-smartPaste\``) !== 'image-before-smartPaste') {
+  if (enforcementFromSpec(`> **${MARK}**：\`payload-yield-explicit\``) !== 'payload-yield-explicit') {
     errors.push('clipboard 契约护栏 canary 失效：spec 的机器可读行未被解析');
   }
-  if (declaredOrder('> 没有锚点的一行 `x`') !== null) {
+  if (enforcementFromSpec('> 没有锚点的一行 `payload-yield-explicit`') !== null) {
     errors.push('clipboard 契约护栏 canary 过宽：缺少锚点却仍被解析');
   }
 }
@@ -96,6 +105,7 @@ if (errors.length > 0) {
   throw new Error(`Clipboard contract violations:\n  ${errors.join('\n  ')}`);
 }
 console.log(
-  `Clipboard contract: paste 处理器的**有效顺序**与 spec §3 的声明一致（现算 = ${actual}）；`
-  + '该顺序决定 §3 优先级 2 与 3/4 的胜负（冲突本身待 ADR-0030 裁决）',
+  `Clipboard contract: §3 优先级 2（image payload）的落实方式 = ${computed}`
+  + `（与 spec 声明一致）；显式让位使该优先级**不依赖扩展注册顺序**`
+  + `（注册顺序现为 smartPaste@L${smartLine} / image@L${imageLine}，已不承载语义）`,
 );

@@ -210,8 +210,42 @@ export function pastePlain(view: EditorView, plainText: string): boolean {
   return true;
 }
 
+/**
+ * spec §3 的优先级 **2 = 「image/file payload」高于 3（TSV）/ 4（HTML）**。
+ *
+ * ⚠️ 该优先级**不得依赖扩展注册顺序** —— 那会让规则藏在 `apps/.../index.ts` 的行号里，
+ * 且**没有任何判据**（实测：`buildSmartPasteExtension()` 排在 `buildImageExtensions()` **之前**，
+ * 于是两者都命中时 HTML 分支先赢，**与 §3 相反**；见 ADR-0030）。
+ * 故在此**显式**检查剪贴板是否带**图片 payload**：有则**让位**（返回 false），
+ * 交给 `image/input.ts` 的 paste 处理器（ADR-0030 裁决 **A3**：把顺序决策收敛到一处显式判断）。
+ *
+ * ⚠️ **只认 `image/*`**：那是 `image/input.ts` 唯一会消费的类型。
+ * 非图片的 file payload（如从 Finder 复制 `.csv`）**不在此让位** —— 因为没有任何处理器会消费它，
+ * 让位只会让这次粘贴变成「什么都不发生」。这是**如实的范围声明**，不是漏写。
+ */
+function hasImagePayload(data: DataTransfer): boolean {
+  const items = data.items;
+  if (items !== undefined) {
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        return true;
+      }
+    }
+  }
+  for (const file of Array.from(data.files ?? [])) {
+    if (file.type.startsWith('image/')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function handleSmartPaste(data: DataTransfer | null, view: EditorView): boolean {
   if (data === null || isInsideCodeBlock(view.state.doc.toString(), view.state.selection.main.head)) {
+    return false;
+  }
+  // §3 优先级 2：图片 payload 让位给图片处理器（**不依赖注册顺序**，见 ADR-0030）。
+  if (hasImagePayload(data)) {
     return false;
   }
   const plain = normaliseText(data.getData('text/plain') ?? '');

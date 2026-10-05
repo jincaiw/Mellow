@@ -54,34 +54,30 @@ Normal Copy 尽可能写：
 5. URL-on-selection
 6. plain text
 
-> **有效顺序（机器可读）**：`smartPaste-before-image`
+> **优先级 2 的落实方式（机器可读）**：`payload-yield-explicit`
 >
-> **⚠️ 2026-10-05 逐节审计：本节声明的优先级与实现的有效顺序**不一致** —— 已立 ADR 承载（**ADR-0030**，Proposed）。**
+> **✅ 2026-10-05 已裁决并落地（ADR-0030 裁决 = A3）** —— 本节与实现的冲突**已消除**。
 >
-> **事实**：优先级 **1**（Paste Plain）与 **3–5**（TSV / HTML / URL）在
-> `packages/editor-engine/src/smartPaste.ts` 的**同一个** paste 处理器里（链内顺序正确：
-> 测试 `smart-paste.test.ts` 的「P5.3 Clipboard — paste priority 链」已钉住 **3 > 4**、**4 > 5**）；
-> 而优先级 **2**（image / file payload）在**另一个**处理器里 ——
-> `packages/editor-engine/src/image/input.ts`（`paste` eventHandler 读 `items` 的 `image/*` 与 `data.files`）。
+> **原冲突**：优先级 **1**（Paste Plain）与 **3–5**（TSV / HTML / URL）在
+> `smartPaste.ts` 的**同一个**处理器里（链内顺序正确：测试已钉住 **3 > 4**、**4 > 5**）；
+> 而优先级 **2**（image / file payload）在**另一个**处理器里（`image/input.ts`）。
+> 两者是**独立注册的 `eventHandlers.paste`**，CM 按扩展顺序调用、**首个返回 `true` 者胜**，
+> 而 `index.ts` 把 `buildSmartPasteExtension()` 排在 `buildImageExtensions()` **之前**
+> ⇒ 剪贴板**同时**含富文本与图片时 HTML 分支先赢 ⇒ **与本节「2 高于 3 / 4」相反**
+> （图片会被转成远程 `![](src)`，不走图片管线）。
 >
-> **冲突点**：两者是**独立注册的 `eventHandlers.paste`**，CM 按扩展顺序调用、**首个返回 `true` 者胜**。
-> 而 `packages/editor-engine/src/index.ts` 的注册顺序是
-> **`buildSmartPasteExtension()`（行 272）在前、`buildImageExtensions()`（行 279）在后**
-> ⇒ 当剪贴板**同时**含富文本与图片时（典型：从浏览器「复制图片」，剪贴板带
-> `text/html` 的 `<img>` + 图片数据），**HTML 分支先命中** ⇒ 图片会被转成 `![](src)` 的**远程链接**，
-> 而不是走「复制到资源目录 / 上传」的图片管线 ⇒ **与本节「2 高于 3 / 4」相反**。
+> **裁决 A3（把顺序决策收敛到一处显式判断）**：在 `handleSmartPaste()` 里
+> **显式**检查剪贴板是否带**图片 payload**（`items` 的 `image/*` 或 `files` 的 `image/*`），
+> 有则**让位**（`return false`）交给图片处理器。
+> ⇒ ① 与本节优先级一致；② **不再依赖扩展注册顺序**（消除「顺序即语义」这一隐性耦合）；
+> ③ **只认 `image/*`** —— 那是图片处理器唯一会消费的类型；非图片的 file payload 不让位
+> （没有处理器消费它，让位只会让这次粘贴「什么都不发生」）。
 >
-> **为什么没有判据发现它**：`smart-paste.test.ts` 的优先级测试**只覆盖 `handleSmartPaste` 链内**
-> （3 > 4、4 > 5、无选区 URL 不误建链接），**没有任何测试覆盖「两个处理器之间」的顺序**。
->
-> **处置（本环境不擅自改行为）**：按 `AGENTS.md`「如果实现与 Spec 冲突：**不要自行修改架构，先报告冲突**」，
-> 本轮**只记录 + 立载体**，**不**调整注册顺序、**不**改本节口径。
-> 裁决需先取一手证据（真实剪贴板在「复制图片」时到底带哪些 MIME），
-> 见 **ADR-0030**（Proposed，登记于审计「待裁决项登记表」）。
->
-> **上面那行「有效顺序」由护栏锁定**（`tests/parity/verify-clipboard-contract.mjs`）：
-> 它从 `index.ts` **现算**注册顺序，与本节声明**双向**比对 ——
-> 顺序被改动而本节未更新 ⇒ 护栏失败（**冲突不会静默漂移**）。
+> **测试**：`smart-paste.test.ts` 新增 **5 例** —— 三类「让位」（`files` / `items` / TSV 也让位）
+> + 两类**防过宽**（无 payload 时 HTML 照常转换；非图片 payload 不让位）。
+> **护栏**：`verify-clipboard-contract.mjs` 锁「**落实方式**」这一机器可读声明 ⇄ 源码现算，
+> 去掉显式让位即失败。
+
 
 ---
 
