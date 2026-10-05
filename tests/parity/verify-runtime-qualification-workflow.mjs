@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -243,6 +243,63 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   }
   if (parseDeclared('> **矩阵覆盖节点（机器可读）**：`a` `b` `c` `d`').length === 0) {
     throw new Error('IME 覆盖护栏 canary 失效：解析结果为空');
+  }
+}
+
+// ── §6 Tauri Pass Conditions 的每条必须挂**可解析的载体**（2026-10-01，审计 §4.71）────────
+// 立节原因：`runtime-qualification-plan` §6 是一条**门禁**（「全部满足」才锁定 Tauri），
+// 而它的 9 条条件此前**只是散文** —— 没有任何地方能核对「这条挂在哪个台账条目 / 哪个护栏上」。
+// 实测（同一轮）：ADR-0019 是在这些条件**未满足**时锁定 Tauri 的（该 ADR 自述「真机体验矩阵
+// 在决策时点未取得完整实测数据」），而 §6 从未更新 ⇒ **权威层（P1 spec）与判决层（P2 ADR）
+// 长期不一致，且无人发现** —— 与 §4.70 的「验证范围只写在散文里」同型。
+// 修法：给每条挂**可解析的载体**（台账条目 id，或护栏文件路径），并在此断言可解析。
+{
+  const spec = readFileSync(resolve(root, 'docs/specs/runtime-qualification-plan.md'), 'utf8').replace(/\r\n/g, '\n');
+  const at = spec.indexOf('## 6. Tauri Pass Conditions');
+  if (at < 0) {
+    throw new Error('runtime-qualification-plan 缺少 §6「Tauri Pass Conditions」—— 锚点漂移，别静默跳过');
+  }
+  const next = spec.indexOf('\n## ', at + 1);
+  const body = spec.slice(at, next < 0 ? spec.length : next);
+  const items = body.split('\n').filter((l) => /^- /.test(l));
+  if (items.length < 9) {
+    throw new Error(`§6 只解析出 ${items.length} 条 pass condition（下限 9）—— 解析器漏成员必须响亮失败`);
+  }
+  // 载体形态：`（\`<台账 id>\`）` 或 `（护栏：\`<路径>\`）`。判定与 canary 共用这一个函数。
+  const carrierOf = (line) => {
+    const m = /（(护栏：)?`([^`]+)`）\s*$/.exec(line.trim());
+    return m === null ? null : { isGuard: m[1] !== undefined, ref: m[2] };
+  };
+  const ledger = JSON.parse(readFileSync(resolve(root, 'tests/parity/typora-parity-ledger.json'), 'utf8'));
+  const ids = new Set((ledger.items ?? []).map((i) => i.id));
+  const resolveCarrier = (c) => (c.isGuard ? existsSync(resolve(root, c.ref)) : ids.has(c.ref));
+
+  for (const line of items) {
+    const c = carrierOf(line);
+    if (c === null) {
+      throw new Error(`§6 的这条 pass condition 没有挂载体：${line.slice(0, 64)}`
+        + ' —— 门禁条件必须可核对（挂台账 id 或护栏路径）');
+    }
+    if (!resolveCarrier(c)) {
+      throw new Error(`§6 挂了**解析不到**的载体 ${c.isGuard ? `护栏 ${c.ref}` : `台账条目 ${c.ref}`}`
+        + `（条件：${line.slice(2, 50)}）—— 条件指向空气等于没挂`);
+    }
+  }
+  // canary：四个方向（判定与 canary 共用 carrierOf / resolveCarrier）
+  if (carrierOf('- x（`P0-EDITOR-004`）') === null) {
+    throw new Error('§6 载体护栏 canary 失效：台账 id 形态未被解析');
+  }
+  if (carrierOf('- x（护栏：`tests/parity/verify-adapter-contract.mjs`）') === null) {
+    throw new Error('§6 载体护栏 canary 失效：护栏路径形态未被解析');
+  }
+  if (carrierOf('- x') !== null) {
+    throw new Error('§6 载体护栏 canary 过宽：无载体的一行被当成了有载体');
+  }
+  if (resolveCarrier({ isGuard: false, ref: 'P0-NOPE-999' })) {
+    throw new Error('§6 载体护栏 canary 过宽：不存在的台账 id 被判为可解析');
+  }
+  if (!resolveCarrier(carrierOf('- x（`P0-EDITOR-004`）'))) {
+    throw new Error('§6 载体护栏 canary 失效：真实存在的台账 id 未被判定为可解析');
   }
 }
 

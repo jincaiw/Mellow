@@ -8,6 +8,10 @@
 
 > 体验优先于安装包体积。
 
+> **2026-10-01 状态**：本节的问题**已回答** —— `ADR-0019`（Accepted，取代 ADR-0002）**锁定 Tauri 2**，
+> 并保留 Electron 作为**预案**（该 ADR 标题即「Tauri 2 锁定 + Electron 预案」）。
+> ⚠️ 但**决策依据与本 spec §6 的门禁不一致** —— 那是本节唯一的「未如实之处」，详见 §6 的更正块。
+
 ---
 
 ## 2. 候选
@@ -19,6 +23,10 @@ A. Tauri 2
 
 B. Electron/Chromium
 - fallback
+
+> **2026-10-01 状态**：**A（Tauri 2）已锁定**；**B 作为预案保留**，其可行性由架构约束守护 ——
+> `AGENTS.md` 架构细则「**不允许 Editor Core 直接依赖 Tauri**（经 Host Adapter 隔离，保 Electron fallback 可行）」
+> + 护栏 `tests/parity/verify-adapter-contract.mjs`（core 包平台中立 / 桥链路锚定 / 漂移 canary）。
 
 ---
 
@@ -37,6 +45,11 @@ B. Electron/Chromium
 - file open/save
 
 不要先做完整 UI。
+
+> **2026-10-01 状态：本节是 V0.0 期的阶段要求，已完成、不再有效。**
+> 「只做最小 Editor Shell、不要先做完整 UI」描述的是 **Runtime Qualification 原型阶段**；
+> 该阶段早已结束（三平台矩阵执行完毕，决策落在 ADR-0019），此后项目进入完整 UI 开发。
+> 保留原文仅为追溯 —— **不要**把本节当成当前的工作约束。
 
 ---
 
@@ -150,17 +163,52 @@ B. Electron/Chromium
 
 ## 6. Tauri Pass Conditions
 
-全部满足：
+全部满足（**每条必须挂一个可解析的载体**，由护栏 `verify-runtime-qualification-workflow.mjs` 断言）：
 
-- IME corruption = 0
-- no blocking caret bug
-- no selection loss
-- clipboard P0 complete
-- PDF/print viable
-- 10 MB editable
-- typing P95 target met
-- Linux P0 journeys pass
-- no platform requires editor fork
+- IME corruption = 0（`P0-EDITOR-004`）
+- no blocking caret bug（`P0-EDITOR-003`）
+- no selection loss（`P0-EDITOR-003`）
+- clipboard P0 complete（`P0-CLIPBOARD-001`）
+- PDF/print viable（`P0-EXPORT-001`）
+- 10 MB editable（`P0-PERF-001`）
+- typing P95 target met（`P0-PERF-001`）
+- Linux P0 journeys pass（`P0-PLATFORM-001`）
+- no platform requires editor fork（护栏：`tests/parity/verify-adapter-contract.mjs`）
+
+> **⚠️ 2026-10-01 逐节复核（本节是一条「门禁」，而它从未被满足过）**
+>
+> **① 事实：ADR-0019 是在本节条件「未满足」时锁定 Tauri 的 —— 且它如实写了这一点。**
+> `ADR-0019`（Accepted，取代 ADR-0002）的背景原文：
+>
+> > **真机体验矩阵（IME / Caret / Clipboard / Print / 10MB）在决策时点未取得完整实测数据**
+> > （Windows / Linux 无真机环境，macOS 无 GUI 会话）。
+> > 决策依据 = 架构证据（构建全绿、平台解耦证明、逻辑层 254 测试）+ 已知技术事实比较。
+> > **无任何 FAIL 记录。**
+>
+> 而本节的措辞是「**全部满足**」才锁定 ⇒ **两者不一致**。
+> **注意优先级**：按 `AGENTS.md`，spec 是 **P1**、ADR 是 **P2** —— 即**按本节，Tauri 本不该被锁定**。
+> ADR-0019 的实际路径是「**架构证据 + 无 FAIL**」，**不是**本节的 9 条实测。
+>
+> **② 今天的逐条状态**（2026-10-01 实跑门禁；`AUTO` 且 `requiredEvidence` 不含 `ux-gate` 才算闭环，ADR-0024 Q3=A3）：
+>
+> | 条件 | 载体 | 状态 |
+> |---|---|---|
+> | IME corruption = 0 | `P0-EDITOR-004` | **未闭环**（`MAC`，等人工 `ux-gate`） |
+> | no blocking caret bug / no selection loss | `P0-EDITOR-003` | **未闭环**（`AUTO` 但 `requiredEvidence` 含 `ux-gate`） |
+> | clipboard P0 complete | `P0-CLIPBOARD-001` | ✅ 闭环 |
+> | PDF/print viable | `P0-EXPORT-001` | ✅ 闭环 |
+> | 10 MB editable / typing P95 target met | `P0-PERF-001` | **未闭环**（`MAC`，`ux-gate` + `perf-harness-pending`） |
+> | Linux P0 journeys pass | `P0-PLATFORM-001` | ✅ 闭环 |
+> | no platform requires editor fork | `verify-adapter-contract.mjs` | ✅ 护栏常态守护 |
+>
+> ⇒ **本节的「全部满足」至今仍未达成**（4 条未闭环），这与全仓 `PASS-E = 0/50` 的结论一致。
+> **但这不推翻 Tauri 锁定** —— 锁定的依据是 ADR-0019 的架构证据路径，本节只是**当时写的、从未满足的门禁**。
+>
+> **③ 处置**：**保留原文 + 挂载体 + 本更正块**。
+> **不**把本节改成「已满足」（那是假的）；**也不**删除它（它记录了当时的判据）。
+> 若要**收窄或重写**本节（例如改为「架构证据 + 无 FAIL」以对齐 ADR-0019 的实际路径），
+> 属**方案级裁决** —— 需**新增 ADR** 说明，并同步 `ADR-0022` 的后果节与 ledger 的 `requiredEvidence`。
+> **不在文档层擅自改**（`AGENTS.md`「冲突处理」：不要自行修改架构，先报告冲突）。
 
 ---
 
@@ -179,6 +227,20 @@ B. Electron/Chromium
 
 > 切 Electron/Chromium。
 
+> **2026-10-01 逐条对账：6 条 fail condition 目前无一触发。**
+>
+> | fail condition | 现状 |
+> |---|---|
+> | Linux IME unstable | ⚠️ **曾是真实风险** —— Linux IME 矩阵自 run 58（2026-09-06）起**连续失败 4 次**；根因**全在 harness 侧**（code 场景探针坐标错误、Undo 验证被 Ctrl+A/C 读回污染观察窗口），修复后自 v1.5.14 起 **8/8** |
+> | WKWebView composition regression | 无记录（macOS IME 矩阵断言无 corruption） |
+> | WebView2 clipboard blocker | 无记录（Windows 为 launch + SendKeys smoke，**无交互桌面**；跨应用剪贴板矩阵未跑） |
+> | platform-specific editor logic proliferates | ✅ 由 `verify-adapter-contract.mjs` 常态守护（core 包平台中立） |
+> | PDF/print impossible to unify | 无记录（`P0-EXPORT-001` 已闭环） |
+> | CodeMirror behavior diverges materially | 无记录 |
+>
+> ⚠️ **本节是「决策时点的判据」，不是持续门禁** —— 它**没有载体**，也没有任何机制在持续监视这 6 条。
+> 尤其第 2 / 3 / 5 / 6 条：**「无记录」≠「已排除」** —— 那是**未被观测**，不是**已观测为否**。
+
 ---
 
 ## 8. Decision Deadline
@@ -191,6 +253,16 @@ B. Electron/Chromium
 
 禁止：
 - V0.3 后才决定换 Runtime
+
+> **2026-10-01 复核：截止条件已满足，但**无法被机器核对**。**
+>
+> - **时序上合规**：决策落在 **V0.0 结束时**（ADR-0019 背景自述「V0.0 Runtime Qualification 三平台矩阵执行完毕」），
+>   远早于「V0.3 后才换 Runtime」的禁止线。
+> - ⚠️ **不可核对**：「V0.0 结束」「V0.1 完整 UI 开发开始」这两个**里程碑没有定义处** ——
+>   台账**无 milestone 字段**、仓库内**无对应标签**、**无登记**；且 **ADR-0019 自身没有日期**
+>   （只有 `Status: Accepted`）。⇒ 这条截止条件**只能靠自述判断**，任何护栏都核对不了。
+> - **处置**：如实登记；**不**补一个「看起来能核对」的假载体 —— 那只会制造新的失真。
+>   （若要可核对，应先定义里程碑的机器可读形式，属流程裁决。）
 
 ---
 

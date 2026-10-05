@@ -3937,6 +3937,75 @@ SDI 是已确认的产品决策（B1），「New Tab 与 Switch Between Opened D
 > `P0-EDITOR-004`**，它含 `ux-gate` ⇒ **有载体**。
 > **「同一主题可能有多个台账条目，别只看第一个命中的」。**
 
+## 4.71 `runtime-qualification-plan` 逐节审计：§6 是一条**从未满足过的门禁**（2026-10-01）
+
+### 为什么审它
+
+§4.70 记下「还有 3 份 spec 未逐节」。本节审 `runtime-qualification-plan`（9 节）——
+其中 **§4 / §5 / §9 已在 2026-10-01 审过**（带差集表与逐项对账），故本轮补 **§1 / §2 / §3 / §6 / §7 / §8**。
+
+### 最重的一处：§6「全部满足」与 ADR-0019 的实际决策依据**不一致**
+
+§6「Tauri Pass Conditions」写的是「**全部满足**」才锁定 Tauri，列了 9 条
+（IME corruption = 0 / no blocking caret bug / no selection loss / clipboard P0 complete /
+PDF·print viable / 10 MB editable / typing P95 target met / Linux P0 journeys pass /
+no platform requires editor fork）。
+
+而 **`ADR-0019`**（Accepted，取代 ADR-0002）的**背景原文**是：
+
+> **真机体验矩阵（IME / Caret / Clipboard / Print / 10MB）在决策时点未取得完整实测数据**
+> （Windows / Linux 无真机环境，macOS 无 GUI 会话）。
+> 决策依据 = 架构证据（构建全绿、平台解耦证明、逻辑层 254 测试）+ 已知技术事实比较。
+> **无任何 FAIL 记录。**
+
+⇒ **ADR-0019 是在 §6 的条件未满足时锁定 Tauri 的**，依据是「架构证据 + 无 FAIL」。
+**注意优先级**（`AGENTS.md`）：spec 是 **P1**、ADR 是 **P2** ⇒ **按 §6，Tauri 本不该被锁定**。
+而 §6 **从未更新** —— 权威层与判决层长期不一致，且**无人发现**（同 §4.70 的形态）。
+
+### 今天的逐条状态（实跑门禁）
+
+| 条件 | 载体 | 状态 |
+|---|---|---|
+| IME corruption = 0 | `P0-EDITOR-004` | **未闭环**（`MAC`） |
+| no blocking caret bug / no selection loss | `P0-EDITOR-003` | **未闭环**（`AUTO` 但 `requiredEvidence` 含 `ux-gate`） |
+| clipboard P0 complete | `P0-CLIPBOARD-001` | ✅ 闭环 |
+| PDF/print viable | `P0-EXPORT-001` | ✅ 闭环 |
+| 10 MB editable / typing P95 target met | `P0-PERF-001` | **未闭环**（`MAC`） |
+| Linux P0 journeys pass | `P0-PLATFORM-001` | ✅ 闭环 |
+| no platform requires editor fork | `verify-adapter-contract.mjs` | ✅ 护栏常态守护 |
+
+⇒ **§6 的「全部满足」至今仍未达成**（4 条未闭环）—— 与全仓 `PASS-E = 0/50` 一致。
+**但这不推翻 Tauri 锁定**：锁定依据是 ADR-0019 的架构证据路径，§6 只是「**当时写的、从未满足的门禁**」。
+
+**处置**：保留原文 + **逐条挂载体** + 更正块。
+**不**把它改成「已满足」（那是假的），**也不**删除（它记录了当时的判据）。
+**收窄 / 重写 §6 属方案级裁决**（需**新增 ADR**，并同步 ADR-0022 后果节与 ledger 的 `requiredEvidence`）——
+按 `AGENTS.md`「冲突处理」，**文档层不擅自改**。
+
+### 其余各节
+
+| 节 | 判定 |
+|---|---|
+| §1 目的 | ✅ 问题已回答（ADR-0019 锁定 Tauri）；已注明与 §6 的不一致 |
+| §2 候选 | ✅ A 已锁定；B（Electron）作为**预案**保留，由 `AGENTS.md` 架构细则 + `verify-adapter-contract.mjs` 守护 |
+| §3 测试原型 | 🟡 **V0.0 阶段要求，已完成、不再有效**（已注明「不要当当前约束」） |
+| §7 Fail Conditions | ⚠️ **6 条无一触发，但「无记录」≠「已排除」**：其中 4 条**根本没有观测机制**；Linux IME 曾**连续失败 4 次**（根因在 harness 侧，已修 ⇒ 8/8）。已注明它是**决策时点判据，不是持续门禁** |
+| §8 Decision Deadline | ⚠️ **时序上合规，但无法被机器核对** —— 「V0.0 结束」「V0.1 完整 UI 开发开始」**没有定义处**（台账无 milestone 字段、无标签、无登记），**ADR-0019 自身也没有日期**（只有 `Status: Accepted`） |
+
+### 固化为护栏（`verify-runtime-qualification-workflow.mjs` 新增一节）
+
+**§6 的每条 pass condition 必须挂可解析的载体**：`` （`<台账 id>`） `` 或 `` （护栏：`<路径>`） ``；
+台账 id 必须在台账里存在、护栏路径必须在仓库里存在。
+**注入验证 6/6**（去载体 / 假 id / 假护栏路径 / 低于下限 / 锚点消失 / 无变异对照）。
+
+> **范围限制（如实声明）**：它锁的是「**条件挂得上载体**」，**不是**「载体所报的状态为真」——
+> 后者由台账与 `verify-release-gate.mjs` 负责。两条判据分工不同，别混读。
+
+### 教训
+
+> **一条写在 spec 里、却从未被满足的门禁，比没有门禁更危险** —— 因为它**看起来**已经把关过了。
+> 发现它的唯一入口仍是**逐条挂载体**：**挂不上的那一条，就是没人管的那一条**。
+
 ## 五、本次审计做的改动（非策略性）
 
 
