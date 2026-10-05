@@ -859,7 +859,63 @@ if (existsSync(benchmarkRunnerPath)) {
       assert(weights.length >= 10, `UX_MODULES 条目数应 ≥10，实测 ${weights.length}`);
       const sum = weights.reduce((a, b) => a + b, 0);
       assert(sum === 100, `UX_MODULES 权重合计必须为 100（PRD §131），实测 ${sum}`);
-      // 门槛值必须与 PRD §131 一致
+      // ── 宪法侧交叉核对（2026-10-06，审计 §4.79）──────────────────────────
+      // 立此条的原因：上面这些门槛值此前**只锁了「记录器」一侧**，且把 `92 / 24 / 15 / 5`
+      // **复述进护栏** ⇒ 同一组数字有**三份副本**（宪法 / 记录器 / 护栏），而**宪法那份没人核对** ——
+      // 改 PRD §131 不会让任何东西变红（「只锁一侧」的同型，同 §4.9）。
+      // 现改为**从宪法读值**：解析 PRD §131 的模块表与 Release 块，与记录器**双向**比对。
+      // ⚠️ 解析必须**响亮失败**（漏行/漏项即报错），否则「解析不到」会静默变成「无需核对」。
+      {
+        const prdFull = readFileSync(resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md'), 'utf8').replace(/\r\n/g, '\n');
+        const at131 = prdFull.indexOf('# 131.');
+        assert(at131 >= 0, 'PRD 缺少 §131 UX Parity Score（UX 门槛的宪法依据）');
+        const nextH1 = prdFull.indexOf('\n# ', at131 + 1);
+        const sec131 = prdFull.slice(at131, nextH1 < 0 ? prdFull.length : nextH1);
+        // ① 模块权重表：`| <label> | <score> |`（表头与分隔行第二格非数字 ⇒ 天然被排除）
+        const prdRows = [...sec131.matchAll(/^\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|\s*$/gm)]
+          .map((m) => ({ label: m[1], score: Number(m[2]) }));
+        assert(prdRows.length === 10, `PRD §131 的模块表应解析出 10 行，实测 ${prdRows.length} —— 解析漏成员必须响亮失败`);
+        // ② Release 门槛块
+        const rel = /Total >= (\d+)[\s\S]*?Live Editing >= (\d+)\/(\d+)[\s\S]*?Caret\/IME\/Undo = (\d+)\/(\d+)[\s\S]*?File Safety = (\d+)\/(\d+)/.exec(sec131);
+        assert(rel !== null, 'PRD §131 的 Release 门槛块未能解析（Total / Live Editing / Caret-IME-Undo / File Safety）—— 解析漏项必须响亮失败');
+        if (rel !== null) {
+          const [, total, leNum, leDen, ciNum, ciDen, fsNum, fsDen] = rel.map(Number);
+          const recThresholds = {
+            total: Number(/total:\s*(\d+)/.exec(rec)?.[1] ?? NaN),
+            liveEditing: Number(/liveEditing:\s*(\d+)/.exec(rec)?.[1] ?? NaN),
+            caretImeUndo: Number(/caretImeUndo:\s*(\d+)/.exec(rec)?.[1] ?? NaN),
+            fileSafety: Number(/fileSafety:\s*(\d+)/.exec(rec)?.[1] ?? NaN),
+          };
+          const pairs = [
+            ['total', recThresholds.total, total],
+            ['liveEditing', recThresholds.liveEditing, leNum],
+            ['caretImeUndo', recThresholds.caretImeUndo, ciNum],
+            ['fileSafety', recThresholds.fileSafety, fsNum],
+          ];
+          for (const [name, recVal, prdVal] of pairs) {
+            assert(recVal === prdVal,
+              `UX 门槛 ${name} 不一致：记录器 ${recVal} vs **PRD §131 原文** ${prdVal} —— `
+              + '宪法是唯一真值源；改一侧必须改另一侧（护栏不再复述这些数字）');
+          }
+          // 满分分母也必须与宪法一致（Live Editing /25、Caret-IME-Undo /15、File Safety /5）
+          const recModules = [...rec.matchAll(/\['(\w+)',\s*(\d+),\s*'([^']*)'\]/g)]
+            .map((m) => ({ key: m[1], score: Number(m[2]), label: m[3] }));
+          const prdByLabel = new Map(prdRows.map((r) => [r.label, r.score]));
+          assert(prdByLabel.size === 10, `PRD §131 的模块标签应唯一且为 10 个，实测 ${prdByLabel.size}`);
+          for (const m of recModules) {
+            const prdScore = prdByLabel.get(m.label);
+            assert(prdScore !== undefined,
+              `记录器的 UX 模块「${m.label}」在 PRD §131 的模块表里找不到 —— 两侧模块集必须一致`);
+            assert(prdScore === m.score,
+              `UX 模块「${m.label}」权重不一致：记录器 ${m.score} vs PRD §131 ${prdScore}`);
+          }
+          assert(recModules.length === prdRows.length,
+            `UX 模块条目数不一致：记录器 ${recModules.length} vs PRD §131 ${prdRows.length}`);
+          void [leDen, ciDen, fsDen];
+        }
+      }
+      // 门槛值必须与 PRD §131 一致（宪法侧已在上方交叉核对；此处保留记录器侧的字面锁，
+      // 二者**同源**：`92 / 24 / 15 / 5` 由上面那条「从宪法读值」的断言保证与宪法一致）
       assert(/total:\s*92/.test(rec), 'UX_THRESHOLDS.total 必须为 92（PRD §131）');
       assert(/liveEditing:\s*24/.test(rec), 'UX_THRESHOLDS.liveEditing 必须为 24（PRD §131）');
       assert(/caretImeUndo:\s*15/.test(rec), 'UX_THRESHOLDS.caretImeUndo 必须为 15（PRD §131，要求满分）');
@@ -921,6 +977,26 @@ if (existsSync(benchmarkRunnerPath)) {
         ? [...recSrc.slice(arrStart, arrEnd).matchAll(/'([^']*)'/g)].map((m) => m[1]) : [];
       assert(tplRows.length > 0, '无法解析模板的 30 任务表（护栏需同步更新）');
       assert(recTasks.length > 0, '无法解析记录器的 TASKS 数组（护栏需同步更新）');
+      // ── 宪法侧：任务**条数**必须等于 PRD §132 写的那个数（2026-10-06，审计 §4.79）──
+      // 立此条的原因：模板与记录器**互相**核对过条数，但**两侧都没有与宪法核对** ——
+      // 改 PRD §132 的「30 个核心 Typora 任务」不会让任何东西变红（「只锁一侧」，同 §4.9）。
+      {
+        const prdFull = readFileSync(resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md'), 'utf8').replace(/\r\n/g, '\n');
+        const at132 = prdFull.indexOf('# 132.');
+        assert(at132 >= 0, 'PRD 缺少 §132 任务效率 Gate（任务条数的宪法依据）');
+        const nextH1 = prdFull.indexOf('\n# ', at132 + 1);
+        const sec132 = prdFull.slice(at132, nextH1 < 0 ? prdFull.length : nextH1);
+        const declared = /(\d+)\s*个核心\s*Typora\s*任务/.exec(sec132);
+        assert(declared !== null,
+          'PRD §132 未能解析出「N 个核心 Typora 任务」—— 解析漏项必须响亮失败（不得静默跳过）');
+        if (declared !== null) {
+          const want = Number(declared[1]);
+          assert(want === 30, `PRD §132 声明的任务数变为 ${want}（原为 30）—— 宪法改动必须同步模板与记录器`);
+          assert(recTasks.length === want,
+            `记录器 TASKS 有 ${recTasks.length} 条，而**PRD §132 原文**写的是 ${want} 个核心任务 —— `
+            + '宪法是唯一真值源，改一侧必须改另一侧');
+        }
+      }
       if (tplRows.length && recTasks.length) {
         assert(tplRows.length === recTasks.length,
           `30 任务清单两处条数不一致：模板 ${tplRows.length} 行 vs 记录器 ${recTasks.length} 条`
