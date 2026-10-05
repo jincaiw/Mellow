@@ -339,6 +339,49 @@ if (showElBody !== '') {
       fail('静默保存失败必须中止离开（否则静默丢内容）');
     }
   }
+
+  // ── 宪法侧：PRD §101 的四种模式与默认值必须仍在原文里（2026-10-06，审计 §4.82）──
+  // 立此条的原因：上面那条**在注释里引用 §101**（「PRD §101 规定自动保存默认含 Document Switch」），
+  // 但**从未读 PRD**（同 §4.79/§4.80/§4.81 的「引用宪法 ≠ 读宪法」）。
+  // 若 §101 的默认值被改掉（例如去掉 Document Switch），上面那条
+  // 「guardSingleDocument 必须含静默保存后离开分支」就变成**没有宪法依据的要求**，且不会有任何信号。
+  {
+    const prdPath = resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md');
+    const prdSrc = existsSync(prdPath) ? readFileSync(prdPath, 'utf8').replace(/\r\n/g, '\n') : '';
+    // ⚠️ 判据是**同一个函数对象**（断言与 canary 共用），否则「放宽谓词」抓不到。
+    const MODES101 = ['关闭', '窗口失焦', '切换文档', '延迟保存'];
+    const check101 = (sec) => ({
+      missingModes: MODES101.filter((m) => !sec.includes(m)),
+      defaultOk: /Window Blur \+ Document Switch/.test(sec),
+    });
+    const at101 = prdSrc.indexOf('# 101.');
+    if (at101 < 0) {
+      fail('PRD 缺少 §101 Auto Save（自动保存默认值的宪法依据）');
+    } else {
+      const next101 = prdSrc.indexOf('\n# ', at101 + 1);
+      const r = check101(prdSrc.slice(at101, next101 < 0 ? prdSrc.length : next101));
+      if (r.missingModes.length > 0) {
+        fail(`PRD §101 原文里找不到自动保存模式 ${r.missingModes.join(' / ')} —— 宪法改动必须同步本护栏与实现`);
+      }
+      if (!r.defaultOk) {
+        fail('PRD §101 的默认值应为「Window Blur + Document Switch」—— 本护栏的「静默保存后离开」分支以 Document Switch 为前提');
+      }
+    }
+    // canary：**双向**（正样本必须全识别 + 缺一条必须被判为不完整 + 放宽谓词必须被抓到）
+    // ⚠️ 只做「正样本 + 缺条样本」抓不到「defaultOk 被放宽成 /./」—— 必须有**负样本-放宽**。
+    const S101_OK = '关闭 窗口失焦 切换文档 延迟保存\n默认：Window Blur + Document Switch';
+    const ok101 = check101(S101_OK);
+    if (ok101.missingModes.length > 0 || !ok101.defaultOk) {
+      fail('§101 宪法侧护栏 canary 失效：完整样本未被全部识别');
+    }
+    if (check101(S101_OK.replace('延迟保存', '')).missingModes.length === 0) {
+      fail('§101 宪法侧护栏 canary 失效：缺「延迟保存」的样本竟被判为完整');
+    }
+    if (check101(S101_OK.replace('Window Blur + Document Switch', 'Window Blur')).defaultOk) {
+      fail('§101 宪法侧护栏 canary 失效：默认值不含 Document Switch 的样本竟被判为合格');
+    }
+  }
+
   const applyTabBody = /const applyTab = useCallback\(async \(tab: DocumentTab\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/m.exec(appCode)?.[0] ?? '';
   if (applyTabBody === '') {
     fail('App.tsx 缺少 applyTab');

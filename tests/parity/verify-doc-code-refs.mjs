@@ -405,6 +405,63 @@ for (const doc of docs) {
   }
 }
 
+// ── 护栏「引用宪法」必须真的**读宪法**（2026-10-06，审计 §4.82）──
+// 立此条的原因：承重集审计（§4.79–§4.82）实测 —— 有 4 个护栏文件在注释里引用 `PRD §N`
+// 作为断言的**依据**，却**从未打开 PRD** ⇒ 宪法被改动时这些断言**不会红**
+// （「引用宪法 ≠ 读宪法」）。那 4 处已逐个补上宪法侧判据（§48/§129/§101/§122/§134）。
+// 本判据把那次「清零」变成**可重跑的不变量** —— 否则下一轮只能靠记忆说「我记得都改过了」。
+//
+// 判据（可机械判定）：`tests/parity/verify-*.mjs` 里若出现 `PRD §N`，
+// 则该文件必须**同时出现 PRD 文件名**（即真的打开它）。
+// **例外必须显式登记并带理由**，且**双向**核对：登记了但已不再引用也报错（防化石例外）。
+// ⚠️ 范围如实声明：只扫 `tests/parity/verify-*.mjs`（发布门禁自动发现的那一族），
+// 不含 `tests/qualification/*`（人工记录器）与其他目录。
+const PRD_CITE_EXEMPT = new Map([
+  ['verify-release-gate.mjs',
+    '该处只是 ADR 登记表里的一行**描述**（ADR-0026 = PRD §110 的测量口径）；'
+    + '§110 的五个数值已由 verify-parity-ledger.mjs 从 PRD 原文读值（审计 §4.80），'
+    + '此处再读一遍会制造**第三份副本**'],
+]);
+{
+  const guardsDir = resolve(root, 'tests/parity');
+  const guardFiles = readdirSync(guardsDir).filter((f) => /^verify-.*\.mjs$/.test(f));
+  const PRD_FILE = 'Mellow-PRD-V1.2-FINAL.md';
+  const CITES_PRD = /PRD\s*§\s*\d+/;
+  const cited = [];
+  for (const f of guardFiles) {
+    const src = readFileSync(join(guardsDir, f), 'utf8').replace(/\r\n/g, '\n');
+    if (!CITES_PRD.test(src)) continue;
+    cited.push(f);
+    if (src.includes(PRD_FILE)) continue; // 真的打开了 PRD
+    if (PRD_CITE_EXEMPT.has(f)) continue; // 显式例外（带理由）
+    fail(`tests/parity/${f} 在注释里引用 \`PRD §N\` 但**从未读 PRD** —— `
+      + '「引用宪法 ≠ 读宪法」：宪法被改时该断言不会红。'
+      + '要么补一条「从 PRD 原文读值」的判据，要么登记进 PRD_CITE_EXEMPT（带理由）');
+  }
+  // 例外表**双向**：登记了但已不再引用 ⇒ 报错（化石例外会掩盖未来的回归）
+  for (const [f, reason] of PRD_CITE_EXEMPT) {
+    if (!cited.includes(f)) {
+      fail(`PRD_CITE_EXEMPT 登记了 ${f}，但它已不再引用 \`PRD §N\`（或文件已删除）—— `
+        + '请删除该例外条目');
+    }
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      fail(`PRD_CITE_EXEMPT 的 ${f} 缺理由（例外必须带可复核的理由）`);
+    }
+  }
+  // 覆盖下限：引用了 PRD 的护栏文件不应少于 2 个（否则判据可能已空转）
+  if (cited.length < 2) {
+    fail(`只有 ${cited.length} 个护栏文件引用 \`PRD §N\`（下限 2 = 立此判据时的基线）—— `
+      + '结构漂移会让本判据**空转**；若确实改过结构，请同步下调下限并说明');
+  }
+  // canary：谓词**共用**（同一条 CITES_PRD）且**双向**
+  if (!CITES_PRD.test('PRD §110 性能目标')) {
+    errors.push('PRD 引用判据 canary 失效：合法样本未被识别');
+  }
+  if (CITES_PRD.test('PRD 110 性能目标')) {
+    errors.push('PRD 引用判据 canary 过宽：无 `§` 的样本被误判为引用');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

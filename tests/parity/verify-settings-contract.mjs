@@ -11,7 +11,7 @@
  *    capture-phase keydown 抢先消费、无修饰键不生效。
  * ④ i18n：录制相关文案 zh/en 双语。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -173,6 +173,47 @@ if (/storageKey: 'mellow\.ai/.test(settingsSource)) {
 }
 if (/id: 'ai',/.test(settingsSource)) {
   fail('Settings schema 不应存在独立 ai section（AI 页面默认不存在，AI extension 启用后出现）');
+}
+
+// ── 宪法侧：PRD §122 的 AI 默认值必须仍在原文里（2026-10-06，审计 §4.82）──────
+// 立此条的原因：上面三条断言**在注释里引用 §122**（「PRD §122：AI 默认 disabled /
+// no model / no document upload」），但**从未读 PRD**（同 §4.79/§4.80/§4.81 的
+// 「引用宪法 ≠ 读宪法」）。若 §122 的默认值被改（例如允许默认启用某个模型），
+// 上面那三条就变成**没有宪法依据的要求**，且不会有任何信号。
+{
+  const prdPath = resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md');
+  const prdSrc = existsSync(prdPath) ? readFileSync(prdPath, 'utf8').replace(/\r\n/g, '\n') : '';
+  // ⚠️ 判据是**同一个函数对象**（断言与 canary 共用），否则「放宽谓词」抓不到。
+  const AI_DEFAULTS122 = ['disabled', 'no model', 'no document upload'];
+  const check122 = (sec) => ({
+    isP2: /^P2。\s*$/m.test(sec),
+    missingDefaults: AI_DEFAULTS122.filter((d) => !sec.includes(d)),
+  });
+  const at122 = prdSrc.indexOf('# 122.');
+  if (at122 < 0) {
+    fail('PRD 缺少 §122 AI（AI 默认值的宪法依据）');
+  } else {
+    const next122 = prdSrc.indexOf('\n# ', at122 + 1);
+    const r = check122(prdSrc.slice(at122, next122 < 0 ? prdSrc.length : next122));
+    if (!r.isP2) {
+      fail('PRD §122 必须声明 AI 为 P2（否则「V1 不交付 AI / 默认关闭」的前提不成立）');
+    }
+    if (r.missingDefaults.length > 0) {
+      fail(`PRD §122 原文里找不到 AI 默认项 ${r.missingDefaults.join(' / ')} —— 宪法改动必须同步本护栏与实现`);
+    }
+  }
+  // canary：**双向**（正样本必须全识别 + 缺一条必须被判为不完整）
+  const S122_OK = 'P2。\n\n默认：\n\n- disabled；\n- no model；\n- no document upload。';
+  const ok122 = check122(S122_OK);
+  if (!ok122.isP2 || ok122.missingDefaults.length > 0) {
+    fail('§122 宪法侧护栏 canary 失效：完整样本未被全部识别');
+  }
+  if (check122(S122_OK.replace('- no model；', '')).missingDefaults.length === 0) {
+    fail('§122 宪法侧护栏 canary 失效：缺「no model」的样本竟被判为完整');
+  }
+  if (check122(S122_OK.replace('P2。', 'P1。')).isP2) {
+    fail('§122 宪法侧护栏 canary 失效：P1 样本竟被当作 P2');
+  }
 }
 // V4 P6.3：Reader / Palette / Slash 默认隐藏（App 侧 UI 初始态均为 false），入口可发现。
 if (!/const \[readerOpen, setReaderOpen\] = useState\(false\);/.test(appSource)) {

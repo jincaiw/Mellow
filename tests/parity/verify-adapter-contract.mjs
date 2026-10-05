@@ -12,7 +12,7 @@
  *
  * 真机/CI 项（不在本护栏范围）：安装/卸载/更新矩阵、IME 真实交互矩阵、签名公证。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, relative, sep } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -89,6 +89,35 @@ if (!/"createUpdaterArtifacts": true/.test(tauriConf)) {
 
 // ── ③-b Windows JumpList（2026-09-03 用户裁决纳入实施；PRD §134 P1 Recent integration）──
 //    三方锚点：前端 recordRecentFile（用户打开文档语义）→ Rust 命令 → Shell API 模块。
+// ── 宪法侧：PRD §134 必须仍把 Windows JumpList 列为 P1（2026-10-06，审计 §4.82）──
+// 立此条的原因：上面那行**在注释里引用 §134**，但**从未读 PRD**（同 §4.79/§4.80/§4.81 的
+// 「引用宪法 ≠ 读宪法」）。若 §134 的 P1 清单里删掉 Windows JumpList，
+// 下面这几条断言就变成**没有宪法依据的要求**，且不会有任何信号。
+{
+  const prdPath = resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md');
+  const prdSrc = existsSync(prdPath) ? readFileSync(prdPath, 'utf8').replace(/\r\n/g, '\n') : '';
+  // ⚠️ 判据是**同一个函数对象**（断言与 canary 共用），否则「放宽谓词」抓不到。
+  const hasJumpListP1 = (sec) => /^\s*-\s*Windows JumpList[；;]\s*$/m.test(sec);
+  const at134 = prdSrc.indexOf('# 134.');
+  if (at134 < 0) {
+    fail('PRD 缺少 §134 P1（Windows JumpList 的宪法依据）');
+  } else {
+    const next134 = prdSrc.indexOf('\n# ', at134 + 1);
+    if (!hasJumpListP1(prdSrc.slice(at134, next134 < 0 ? prdSrc.length : next134))) {
+      fail('PRD §134 的 P1 清单里找不到「Windows JumpList」—— 宪法改动必须同步本护栏与实现');
+    }
+  }
+  // canary：**双向**（正样本必须命中 + 相邻项 / 已删项必须不命中）
+  if (!hasJumpListP1('- Windows JumpList；')) {
+    fail('§134 宪法侧护栏 canary 失效：合法样本未被识别');
+  }
+  if (hasJumpListP1('- macOS Quick Look；')) {
+    fail('§134 宪法侧护栏 canary 失效：相邻的 Quick Look 项被误判为 JumpList');
+  }
+  if (hasJumpListP1('- Windows JumpList（暂缓）')) {
+    fail('§134 宪法侧护栏 canary 失效：带后缀的样本被误判为独立条目');
+  }
+}
 const jumplistRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/jumplist.rs'), 'utf8').replace(/\r\n/g, '\n');
 // 词边界正则（\b）：add_recent_renamed 之类超集子串不得假绿（canary 实证过 includes 缺陷）
 if (!/\bpub fn add_recent\b/.test(jumplistRust) || !jumplistRust.includes('SHAddToRecentDocs')) {
