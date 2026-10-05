@@ -159,7 +159,13 @@ const DECIDED_ADRS = [
 // 它承载一个**真实取舍**（新增 md 面板 token / 拓宽 token 桥 / 维持现状），
 // 故必须是 Proposed，且**不得**被悄悄标成 Accepted。
 // ADR-0029 已于 2026-10-01 裁决为 Accepted（Q1=A3 / Q2=B2 / Q3=C2 / Q4 留待 / Q5=E1 / Q6=F1）
-const PENDING_ADRS = []; // 当前无待裁决 ADR
+// ADR-0030（2026-10-05 立）：clipboard paste 优先级 —— `image payload` 与 `rich HTML`
+// **分处两个 eventHandler**，而 `index.ts` 的注册顺序把优先级 2 排在 3/4 之后 ⇒ 与 spec §3 相反。
+// 它承载一个**真实取舍**（前置 image / 修订 spec / 收敛到一处显式判断），且**裁决前需要一手证据**
+// （真实剪贴板在「复制图片」时带哪些 MIME），故必须是 Proposed。
+const PENDING_ADRS = [
+  ['docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md', 'clipboard paste 处理器顺序 vs spec §3 优先级'],
+];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);

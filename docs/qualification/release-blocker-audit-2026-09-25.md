@@ -54,6 +54,7 @@ Release verdict: NO-GO：6 项未闭环
 | 8 | §4.39 | **表格 `invalid` 提示**：Mellow 自有提示 or 从 spec 移除 | **未裁决（留在 ADR-0029）** —— 需产品判断且缺 Typora 对应行为的一手证据 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q4） |
 | 9 | §4.40 | **上传「密钥」的 spec 表述**（不适用 / keychain / UI 禁止） | **已裁决**（E1：改写为「不适用」+ **保留明文残余风险说明**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q5） |
 | 10 | §4.51 | **`tests/visual/actual/*.png` 是否取消 git 跟踪** | **已裁决**（F1：取消跟踪 + 改护栏 + README 同步） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q6） |
+| 11 | §4.72 | **clipboard paste 优先级：`image payload`（§3 优先级 2）与 `rich HTML`（4）分处两个 eventHandler，而注册顺序把 2 排在 3/4 之后 ⇒ 与 spec §3 相反** | **未裁决（需一手证据）** —— 裁决前需实测真实剪贴板在「从浏览器复制图片」时带哪些 MIME；本轮只记录 + 立载体，**不擅自改行为**（`AGENTS.md`「冲突处理」） | `docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md` |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -4005,6 +4006,72 @@ no platform requires editor fork）。
 
 > **一条写在 spec 里、却从未被满足的门禁，比没有门禁更危险** —— 因为它**看起来**已经把关过了。
 > 发现它的唯一入口仍是**逐条挂载体**：**挂不上的那一条，就是没人管的那一条**。
+
+## 4.72 `clipboard-smart-paste-spec` 逐节审计：§3 的优先级与实现**顺序相反**（2026-10-05）
+
+### 为什么审它
+
+§4.70 记下「还有 3 份 spec 未逐节」。`clipboard-smart-paste-spec`（10 节）此前**只审过 §10 安全**（§4.32），
+本节把 §1–§9 过一遍。
+
+### 最重的一处：§3「Paste Priority」的 **2 与 3/4 分处两个处理器**，而注册顺序与声明相反
+
+§3 声明 6 级优先级：`1 Paste Plain → 2 image/file payload → 3 TSV → 4 HTML → 5 URL-on-selection → 6 plain`。
+
+**实现是分散的**：
+
+| 优先级 | 位置 | 形态 |
+|---|---|---|
+| 1 | `smartPaste.ts` 的 `Mod-Shift-v` → `pastePlain()` | 键位命令 |
+| **2** | **`image/input.ts`**（`paste` handler：`items` 的 `image/*` + `data.files`） | **独立扩展** |
+| 3 / 4 / 5 | `smartPaste.ts` 的 `handleSmartPaste()`（**链内顺序正确**） | 同一个处理器 |
+
+**冲突点**：CM 的 `eventHandlers.paste` 按**扩展注册顺序**调用、**首个返回 `true` 者胜**。
+而 `packages/editor-engine/src/index.ts` 里 `buildSmartPasteExtension()`（**行 272**）
+**先于** `buildImageExtensions()`（**行 279**）⇒ **优先级 2 排在 3/4 之后**。
+⇒ 剪贴板**同时**含富文本与图片时（典型：从浏览器「复制图片」，带 `text/html` 的 `<img>` + 图片数据），
+HTML 分支先命中 ⇒ 图片被转成远程 `![](src)`，**不走**「复制到资源目录 / 上传」的图片管线。
+
+**为什么长期没被发现**：`smart-paste.test.ts` 的「P5.3 Clipboard — paste priority 链」**只覆盖链内**
+（已钉住 **3 > 4**、**4 > 5**、无选区 URL 不误建链接）——
+**没有任何测试覆盖「两个处理器之间」的顺序**，而这一层的胜负**完全由注册顺序决定**。
+
+**处置（本环境不擅自改行为）**：按 `AGENTS.md`「如果实现与 Spec 冲突：**不要自行修改架构，先报告冲突**」，
+本轮**只记录 + 立载体**，**不**调整注册顺序、**不**改 §3 口径。
+已立 **`ADR-0030`（Proposed）** 承载裁决，并登记进「待裁决项登记表」（第 11 行）+ 门禁 `PENDING_ADRS`。
+裁决前需**一手证据**：真实剪贴板在「从浏览器复制图片 / 从 Word 复制图文 / 从 Finder 复制图片」时
+到底带哪些 MIME —— **只有 `text/html` 与图片数据同时存在时**本冲突才实际发生（影响面待实测）。
+
+### 其余各节（均**正向确认**）
+
+| 节 | 判定 |
+|---|---|
+| §1 目标 | ✅（本节为原则性陈述） |
+| §2 Copy | ✅ 5 个用户命令**全部存在**（`edit.copyMarkdown` / `copyPlain` / `copyHtmlSource` / `copyWithoutTheme` + 原生 `copy`）；**RTF 确实实现**（`clipboardCopy.ts` 写 `text/rtf`） |
+| §4 HTML → Markdown | ✅ 7 项「必须」全实现；**「sanitize before conversion」成立** —— `htmlToMarkdown()` 第一步就是 `sanitizeHtml()`，之后**重新 parse**（两阶段，不是就地改 DOM） |
+| §5 URL on Selection | ✅ `linkedTargetRange()` 命中标签区间时**只替换 target**；无选区**不**误建链接（有测试） |
+| §6 TSV → Table | ✅ 且**比本节更严** —— 要求**完全矩形**（不一致的行数**拒绝转换**而非猜）；Undo = **一次** transaction（`pasteText` 单次 dispatch） |
+| §7 Paste Plain | ✅ rich formats 在**类型层面**不可达（`pastePlain` 只收纯文本，不接触 `DataTransfer`） |
+| §8 Cross-app Matrix | ⚠️ **7 个应用只自动化 1 个**（TextEdit）；人工矩阵模板 `clipboard-copy-cross-app.md` **7 行 × 6 列全部「未测」** ⇒ **载体存在但为空** |
+| §9 IME / Clipboard | ✅ `isComposing(view)` 首句守卫；测试还钉住「**compositionend 后同一格式生效**」（证明是时序行为而非永久失效） |
+| §10 Security | ✅（§4.32 已审，本轮复核仍成立） |
+
+### 固化为护栏（**新增** `tests/parity/verify-clipboard-contract.mjs`，第 19 个护栏）
+
+Clipboard 域此前**没有任何护栏**。本护栏**不裁定冲突**（裁决在 ADR-0030），
+而是**让冲突不会静默漂移**：从 `index.ts` **现算**注册顺序，与 spec §3 的
+「**有效顺序（机器可读）**」行**双向**比对 —— 改代码不改 spec ⇒ 失败；改 spec 不改代码 ⇒ 同样失败。
+**注入验证 5/5**（改代码顺序 / 改 spec 声明 / 删 spec 锚点行 / 删代码锚点 / 无变异对照）。
+
+> **范围限制（如实声明）**：它锁的是「**声明与实现的有效顺序一致**」，
+> **不是**「该顺序符合 §3 的理想优先级」—— 后者正是 ADR-0030 要裁的事。
+
+### 教训
+
+> **当「谁优先」由扩展的注册顺序决定时，这条规则就藏在 `index.ts` 的行号里，而不是在代码里。**
+> 优先级链被拆到两个处理器之后，**测试能覆盖的只有链内**，跨处理器的那一层**没有任何判据** ——
+> 于是 spec 与实现可以长期相反而无人发现。
+> **可测的判据是「把顺序现算出来、与声明双向比对」**；把它写死进护栏等于没判。
 
 ## 五、本次审计做的改动（非策略性）
 

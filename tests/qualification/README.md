@@ -14,7 +14,8 @@
 > （与 ADR-0022 一致：Win/Linux 以 GitHub Actions 为正式 Runtime 证据来源）。
 > macOS 本机证据见 **[`macos-local-verification-2026-09-12.md`](./macos-local-verification-2026-09-12.md)**：
 > 本机 Typora 1.14.9（7785）与规范基线一致、基线 dump 可复现、Rust 83 + jest 1613、前端/release
-> 构建 + 渲染层指纹 + 启动冒烟、14 个 parity 护栏全绿、`tsc --noEmit` **0 错误**。
+> 构建 + 渲染层指纹 + 启动冒烟、parity 护栏全绿（**数量见下文「Parity 契约护栏」行** —— 该处由护栏锁定，
+> 本行不重复写数字以免二次漂移）、`tsc --noEmit` **0 错误**。
 > **受阻项**：依赖**原生 App 界面操控**的验证（原生 IME 面板 / 20 分钟连续写作 /
 > Golden Journeys / 30 计时 / UX Score / 跨应用剪贴板 C3 / 盲测）仍因 **System Events 被 TCC
 > 拒绝（-609 / -10004）**无法完整执行。注意：`screen-timing check` 已显示
@@ -146,14 +147,15 @@ cd src-tauri && cargo check
 > `../settings/node_modules/.bin/jest --rootDir .` 执行。全仓 `pnpm -r run test` 曾挂起
 > （9.5 小时无输出），改用**按包定向调用 `node_modules/.bin/jest`** 即可稳定跑完。
 
-Parity 契约护栏 **18 个**（2026-10-01 全 PASS）：parity-ledger / menu-contract / menu-contract-guard / shell-typography / shell-widgets / settings-contract / **i18n-contract** / visual-golden / sidebar-contract / context-menu-parity / context-menu-guard / adapter-contract / runtime-qualification-workflow / build-pipeline（V7-W5 新增）/ **upstream-manifest**（2026-10-01 新增，离线校验 `UPSTREAM.md` 的 CoreEditor 改动清单）/ **doc-code-refs** / **no-color-only-status** / **release-gate（V7-W8 新增）**，外加 `tests/qualification/ux-gate-recorder.mjs --self-test`。
+Parity 契约护栏 **19 个**（2026-10-05 全 PASS）：parity-ledger / menu-contract / menu-contract-guard / shell-typography / shell-widgets / settings-contract / **i18n-contract** / visual-golden / sidebar-contract / context-menu-parity / context-menu-guard / adapter-contract / **clipboard-contract**（2026-10-05 新增，锁 paste 处理器的**有效顺序** ⇄ spec §3 声明）/ runtime-qualification-workflow / build-pipeline（V7-W5 新增）/ **upstream-manifest**（2026-10-01 新增，离线校验 `UPSTREAM.md` 的 CoreEditor 改动清单）/ **doc-code-refs** / **no-color-only-status** / **release-gate（V7-W8 新增）**，外加 `tests/qualification/ux-gate-recorder.mjs --self-test`。
 
 > **数量与清单由护栏锁定**：`tests/parity/verify-release-gate.mjs` 会列出 `tests/parity/` 下全部
 > `verify-*.mjs` 并要求它们**同时**接入根 `test` 与 `parity` 两条链；同文件另有一条断言要求
 > **本行的数量与实际一致**（不符即硬失败 + canary）。故新增/删除护栏时**必须同步改本行**。
 >
 > ⚠️ 上一版（2026-09-12）写 **14 个**且清单里缺 `i18n-contract` / `doc-code-refs` /
-> `no-color-only-status` 三条 —— **数量与清单都已过期**（2026-10-01 更正）。
+> `no-color-only-status` 三条 —— **数量与清单都已过期**（2026-10-01 更正）；
+> 2026-10-05 新增 `clipboard-contract`（**18 → 19**）。
 
 ### e2e 与视觉 Golden（需 Playwright，不依赖 GUI 授权）
 
