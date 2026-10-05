@@ -386,7 +386,9 @@ if (existsSync(benchmarkRunnerPath)) {
     const targets = [
       [/1\.2\s*s|1200\s*ms/, 'Startup ≤1.2s'],
       [/250\s*ms/, '1MB ≤250ms'],
-      [/1\.0\s*[–-]\s*1\.5\s*s/, '10MB 1.0–1.5s'],
+      // ⚠️ 记法差异（2026-10-06 实测）：**PRD §110 写 `1.0s–1.5s`**，而 **ADR-0026 写 `1.0–1.5s`**。
+      // 故模式必须同时接受两种（`1.0` 后可有可无 `s`）—— 否则「宪法侧」判据会误报。
+      [/1\.0\s*s?\s*[–-]\s*1\.5\s*s/, '10MB 1.0–1.5s'],
       [/16\s*ms/, 'Input <16ms'],
       [/32\s*ms/, 'Input Large <32ms'],
     ];
@@ -394,6 +396,21 @@ if (existsSync(benchmarkRunnerPath)) {
       assert(pat.test(adr0026),
         `ADR-0026 的映射表缺少 PRD §110 的目标：${label}`
         + '（该表是「目标 ↔ 指标」的唯一声明处，漏项 = 该目标无人守）');
+    }
+    // ── 宪法侧：同一组目标必须在 **PRD §110 原文**里也成立（2026-10-06，审计 §4.80）──
+    // 立此条的原因：上面这 5 个模式此前**只对 ADR 断言**，而「PRD §110 有五个绝对目标」
+    // 是**硬编码在本护栏注释里**的 —— **PRD 从未被读** ⇒ 改宪法的数值（如 250ms → 200ms）
+    // 不会让任何东西变红，而 ADR 那份「唯一声明处」会与宪法脱钩（「只锁一侧」，同 §4.9/§4.79）。
+    {
+      const prdFull = readFileSync(resolve(root, 'docs/product/Mellow-PRD-V1.2-FINAL.md'), 'utf8').replace(/\r\n/g, '\n');
+      const at110 = prdFull.indexOf('# 110.');
+      assert(at110 >= 0, 'PRD 缺少 §110 性能目标（绝对目标的宪法依据）');
+      const nextH1 = prdFull.indexOf('\n# ', at110 + 1);
+      const sec110 = prdFull.slice(at110, nextH1 < 0 ? prdFull.length : nextH1);
+      const missingInPrd = targets.filter(([pat]) => !pat.test(sec110)).map(([, label]) => label);
+      assert(missingInPrd.length === 0,
+        `PRD §110 原文里找不到这些绝对目标：${missingInPrd.join(' / ')} —— `
+        + '宪法是唯一真值源；改宪法必须同步 ADR-0026 的映射表与 benchmark 口径');
     }
     // canary：自检这五条锁有效（样本拼接构造，避免护栏检出自己）
     const SAMPLE_OK = '1.2s 250ms 1.0–1.5s 16ms ' + '32ms';
