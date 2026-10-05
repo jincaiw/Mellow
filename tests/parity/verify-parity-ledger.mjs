@@ -20,6 +20,130 @@ assert(ledger.schemaVersion === 1, 'schemaVersion 必须为 1');
 assert(ledger.normativeBaseline?.product === 'Typora', '规范产品必须为 Typora');
 assert(ledger.normativeBaseline?.version === '1.14.9', '规范验收基线必须为 Typora 1.14.9');
 assert(Array.isArray(ledger.patchObservations), 'patchObservations 必须为数组');
+
+// ── 状态词表必须「护栏 ⇄ 台账 ⇄ master-plan §4.3」三方一致（2026-10-06，审计 §4.92）──
+// 立此条的原因（实测）：`allowedStatuses`（本护栏，**硬编码 10 项**）与
+// 台账的 `statusDefinitions`（**声明 10 项**）此前**互不核对** —— 本护栏**完全不读**
+// `statusDefinitions`（实测 `includes('statusDefinitions') === false`）⇒
+// 在任一侧加/删一个状态都**不会有任何信号**。
+//
+// 而**状态词表的语义是有后果的**：门禁的「不阻断口径」= `PASS-E` / `PASS-B` /
+// **`AUTO` 且 `requiredEvidence` 不含 `ux-gate`**（ADR-0024 Q1=A3）——
+// 它**依赖 `AUTO` 的含义**（master-plan §4.3：`自动化测试通过，未完成真机体验验收`）。
+// 若有人把台账里的 `AUTO` 释义改成「已完成」，门禁**仍会通过**，而语义已变。
+//
+// ⚠️ **实测还发现一处真缺口**：master-plan §4.3 定义了 **`PASS-BETTER`**
+// （「Better 项通过对照或盲测」），且 §4.3 结尾写明「**最终「Done」只能是 `PASS-E` 或 `PASS-BETTER`**」——
+// 而**台账的 `statusDefinitions` 与本护栏的 `allowedStatuses` 都没有它**
+// ⇒ **有 Better 项通过盲测时，按宪法无法标记 Done**（只能标 `PASS-E`，与 §4.3 的区分丢失）。
+// 注意它**不是** `grade: B` 的重复：§4.2 的 `grade`（E/B/D）说的是「**该项是不是 Better 项**」，
+// §4.3 的 `PASS-BETTER` 说的是「**那个 Better 项的验收级别**」。
+// ⇒ **本轮不擅自补**（加一个状态会牵动本护栏、门禁口径与 50 项既有数据），
+//   改为**显式例外表 + 理由**，让「要么补状态、要么改 §4.3」这件事**无法被静默忽略**。
+const STATUS_VOCAB_EXEMPT = new Map([
+  ['PASS-BETTER',
+    '⚠️ **已知缺口，待裁决**：master-plan §4.3 把它定义为「最终 Done」之一，但台账/护栏均无此状态。'
+    + '本轮**未擅自补**（加状态会牵动护栏、门禁口径与 50 项既有数据）——'
+    + '裁决入口：要么给台账 + 护栏补 `PASS-BETTER`，要么把 §4.3 的该行与「Done 只能是…」一句改掉'],
+]);
+{
+  const declared = Object.keys(ledger.statusDefinitions ?? {});
+  assert(declared.length > 0, '台账必须声明 statusDefinitions（状态词表的单一真值源）');
+  // ① 护栏 ⇄ 台账：**双向**集合相等（本护栏此前完全不读它）
+  const guardOnly = [...allowedStatuses].filter((s) => !declared.includes(s)).sort();
+  const ledgerOnly = declared.filter((s) => !allowedStatuses.has(s)).sort();
+  assert(guardOnly.length === 0 && ledgerOnly.length === 0,
+    `状态词表不一致（护栏 ⇄ 台账）：仅护栏有 [${guardOnly}]，仅台账有 [${ledgerOnly}]`
+    + ' —— 两侧加/删状态必须同时改（本护栏此前**完全不读** statusDefinitions）');
+  // ② 台账 ⇄ master-plan §4.3（**扫 §4.3 原文**，不采信台账自述）
+  const planPath = resolve(root, 'docs/plans/typora-parity-master-plan.md');
+  assert(existsSync(planPath), '缺少 master-plan（状态码的宪法依据）');
+  if (existsSync(planPath)) {
+    const plan = readFileSync(planPath, 'utf8').replace(/\r\n/g, '\n');
+    const at43 = plan.indexOf('### 4.3 状态码');
+    assert(at43 >= 0, 'master-plan 缺少 §4.3 状态码（状态词表的宪法依据）');
+    if (at43 >= 0) {
+      const nextHead = plan.indexOf('\n### ', at43 + 1);
+      const sec43 = plan.slice(at43, nextHead < 0 ? plan.length : nextHead);
+      // §4.3 用 `| MAC / WIN / LINUX | … |` 一行合写三个状态 ⇒ 展开后比对
+      // ⚠️ 两个已实测的解析坑：
+      //   ① 表里有的行是**加粗**（`| **PASS-E** | … |`）；
+      //   ② 状态名可含下划线（`NOT_TESTED`）；
+      //   ③ **`/` 不能写进正则的字符类** —— 在 JS 里它会**提前结束正则字面量**
+      //      （首版写 `[A-Z0-9 _/-]`，当场误报 `PASS-B`/`PASS-E` 缺失）；
+      //   ④ token 校验必须**允许 `-`**（`PASS-B` / `PASS-E` / `PASS-BETTER`）——
+      //      重写时漏掉 `-` 会让**所有 `PASS-*` 状态**被判为「宪法未定义」（**当场误报**）。
+      // ⇒ 改为「抓**整格**（`[^|]*?`）再按 `/` 拆分并逐 token 校验」。
+      const planStatuses = new Set();
+      for (const m of sec43.matchAll(/^\|\s*([^|]*?)\s*\|/gm)) {
+        for (const tok of m[1].split('/')) {
+          const s = tok.replace(/\*/g, '').trim();
+          if (/^[A-Z][A-Z0-9_-]*$/.test(s) && s !== '状态') planStatuses.add(s);
+        }
+      }
+      assert(planStatuses.size >= 8, `master-plan §4.3 只解析出 ${planStatuses.size} 个状态（下限 8）—— 解析漂移会让本判据空转`);
+      const missingInLedger = [...planStatuses].filter((s) => !declared.includes(s) && !STATUS_VOCAB_EXEMPT.has(s)).sort();
+      const extraInLedger = declared.filter((s) => !planStatuses.has(s)).sort();
+      assert(missingInLedger.length === 0,
+        `master-plan §4.3 定义了但台账**无法表达**的状态：${missingInLedger.join(', ')} —— `
+        + '要么给台账 + 护栏补上，要么登记进 STATUS_VOCAB_EXEMPT（带理由）');
+      assert(extraInLedger.length === 0,
+        `台账有但 master-plan §4.3 **未定义**的状态：${extraInLedger.join(', ')} —— 状态的语义必须可追溯到宪法`);
+      // ③ `AUTO` 的释义必须仍表达「自动化通过 + 真机体验验收未完成」
+      //    （门禁的「不阻断口径」依赖它；改掉释义不会让门禁变红，但语义已变）
+      const autoDef = String(ledger.statusDefinitions?.AUTO ?? '');
+      assert(/自动化/.test(autoDef) && /真机/.test(autoDef) && /未完成|尚未完成/.test(autoDef),
+        `台账 statusDefinitions.AUTO 的释义变了：「${autoDef}」—— 门禁的「不阻断口径」依赖`
+        + '「自动化通过 + **真机体验验收未完成**」这一含义（master-plan §4.3 / ADR-0024 A1）');
+      assert(!/已完成|已验收/.test(autoDef),
+        `台账 statusDefinitions.AUTO 的释义含「已完成/已验收」：「${autoDef}」—— 与 §4.3 的 AUTO 含义相反`);
+    }
+  }
+  // 例外表**双向**：登记了但已不再缺失（说明已补齐）⇒ 报错
+  for (const [s, reason] of STATUS_VOCAB_EXEMPT) {
+    if (declared.includes(s)) {
+      fail(`${s} 已在台账 statusDefinitions 里 —— 请删除 STATUS_VOCAB_EXEMPT 的该例外条目`);
+    }
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      fail(`STATUS_VOCAB_EXEMPT 的 ${s} 缺理由`);
+    }
+  }
+  // canary：判据是**同一组集合运算**，双向
+  const setDiff = (a, b) => [...a].filter((x) => !b.has(x)).sort();
+  if (setDiff(new Set(['A', 'B']), new Set(['A', 'B'])).length !== 0) {
+    errors.push('状态词表护栏 canary 失效：相等集合被判为有差异');
+  }
+  if (setDiff(new Set(['A', 'C']), new Set(['A', 'B'])).join(',') !== 'C') {
+    errors.push('状态词表护栏 canary 失效：多出的状态未被识别');
+  }
+}
+
+// ── 台账 `updatedAt` 必须是一个**合理的人工维护值**（2026-10-06，审计 §4.92）──
+// 实测：`updatedAt` 全仓**只出现在它自己的声明里**（从未被任何代码/文档读），
+// 且值为 `2026-09-12` —— 而台账此后被改过多次 ⇒ **字段过期且无消费者**。
+// 本判据只做「合理值」下限（合法日期 + 不早于声明下限 + 不在未来），
+// ⚠️ **不假装能自动检测「陈旧」** —— 它是**人工维护字段**，无自动推导来源。
+{
+  const UPDATED_AT_FLOOR = '2026-09-12'; // 声明下限 = 立此判据时的实测值
+  const u = String(ledger.updatedAt ?? '');
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(u), `台账 updatedAt 必须是 YYYY-MM-DD（实测「${u}」）`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(u)) {
+    assert(u >= UPDATED_AT_FLOOR, `台账 updatedAt（${u}）早于声明下限 ${UPDATED_AT_FLOOR} —— 请勿回退该字段`);
+    // 不在未来：⚠️ **必须同时接受 UTC 与本地两种「今天」**
+    // 实测踩过：CI/沙箱的 `toISOString()` 给 **UTC** 日期，而本地（GMT+8）已是**次日**
+    // ⇒ 只比 UTC 会把「本地今天」误判为未来（**本判据首版就是这样误报自己的**）。
+    const utcToday = new Date().toISOString().slice(0, 10);
+    const d = new Date();
+    const localToday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const latestToday = utcToday > localToday ? utcToday : localToday;
+    assert(u <= latestToday, `台账 updatedAt（${u}）晚于今天（UTC ${utcToday} / 本地 ${localToday}）—— 请勿填写未来日期`);
+  }
+  // canary：日期谓词双向
+  const validDate = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x);
+  if (!validDate('2026-10-06')) errors.push('updatedAt 护栏 canary 失效：合法日期样本未被识别');
+  if (validDate('2026-10')) errors.push('updatedAt 护栏 canary 过宽：不完整日期被误判为合法');
+}
+
 assert(existsSync(benchmarkRunnerPath), '性能 benchmark runner 不存在');
 if (existsSync(benchmarkRunnerPath)) {
   const benchmarkRunner = readFileSync(benchmarkRunnerPath, 'utf8').replace(/\r\n/g, '\n');
