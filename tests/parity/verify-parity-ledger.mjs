@@ -886,6 +886,45 @@ if (existsSync(benchmarkRunnerPath)) {
       assert(/element\.tagName === 'IFRAME'\) element\.setAttribute\('sandbox', ''\)/.test(src),
         `${label} 的净化器必须强制 IFRAME sandbox（两处都要，缺一处即分叉）`);
     }
+
+    // ── 第三处净化器（导出）自称「与编辑器白名单对齐」，此前**无人核对**（2026-10-06，审计 §4.83）──
+    // 立此条的原因：`packages/export/src/html/sanitize.ts` 文件头写「与编辑器 safeHtml 白名单对齐，
+    // PRD §48」，但上面那条「两处一致」**只比对编辑器与 Reader** —— 导出那处**不在扫描面里**
+    // （它的白名单是 `sanitize-html` 配置数组，形态不同）。
+    // 实测**当时就已漂移**：编辑器的 41 个标签里 **`kbd` 不在导出白名单里**
+    // ⇒ `<kbd>` 在编辑器/Reader 渲染成按键样式，导出时被 `disallowedTagsMode: 'discard'` 剥成纯文本
+    //（`discard` 的语义是**去标签保文本**，已实测确认）—— 屏幕上看不出原因。
+    // 本判据锁**集合关系**（不是相等）：编辑器/Reader 的白名单必须是导出白名单的**子集**
+    //（导出有意多放行 TOC/footnote/task list/KaTeX 等自身产物）。
+    {
+      const exportSrc = readSrc('packages/export/src/html/sanitize.ts');
+      const exportBody = (exportSrc.match(/const ALLOWED_TAGS = \[([\s\S]*?)\];/) ?? [])[1];
+      const exportTags = exportBody === undefined ? null
+        : new Set([...exportBody.matchAll(/'([a-z0-9]+)'/g)].map((m) => m[1].toUpperCase()));
+      assert(exportTags !== null, '无法解析导出净化器的 ALLOWED_TAGS（护栏需同步更新，不要静默漏检）');
+      // ⚠️ 判据是**同一个函数对象**（断言与 canary 共用），否则「放宽谓词」抓不到。
+      const missingInExport = (editorTags, exTags) => [...editorTags].filter((t) => !exTags.has(t)).sort();
+      if (exportTags !== null && tagsA !== null && tagsB !== null) {
+        for (const [label, tags] of [['app-core', tagsA], ['engine', tagsB]]) {
+          const missing = missingInExport(tags, exportTags);
+          assert(missing.length === 0,
+            `导出净化器的 ALLOWED_TAGS 缺少 ${label} 白名单里的 [${missing.join(', ')}] —— `
+            + '同一段原始 HTML 在编辑器/Reader 里保留、在导出里被剥掉（`discard` = 去标签保文本）');
+        }
+        // canary：三向 —— ①子集样本必须通过 ②缺一个标签必须被抓到 ③**放宽谓词**必须被抓到
+        const SUPERSET = new Set(['A', 'IMG', 'KBD']);
+        const SUBSET = new Set(['A', 'IMG']);
+        if (missingInExport(SUBSET, SUPERSET).length !== 0) {
+          errors.push('导出净化器对齐护栏 canary 失效：合法子集样本被误判为缺失');
+        }
+        if (missingInExport(new Set(['A', 'KBD']), SUBSET).join(',') !== 'KBD') {
+          errors.push('导出净化器对齐护栏 canary 失效：缺失的 KBD 未被识别');
+        }
+        if (missingInExport(new Set(['A', 'KBD']), new Set()).length === 0) {
+          errors.push('导出净化器对齐护栏 canary 失效：空白名单样本竟被判为无缺失');
+        }
+      }
+    }
   }
 
   // ── 行内 / 块级代码的「代码属性」必须一致（2026-10-01）────────────────────

@@ -12,9 +12,12 @@
 import sanitizeHtml from 'sanitize-html';
 
 const ALLOWED_TAGS = [
-  // 编辑器 safeHtml 白名单
+  // 编辑器 safeHtml 白名单（**必须逐字包含** `packages/editor-engine/src/safeHtml.ts` 的
+  // `ALLOWED_TAGS`；本组与编辑器/Reader 的集合关系由 `tests/parity/verify-parity-ledger.mjs`
+  // 双向锁定。2026-10-06 实测此处曾漏掉 `kbd` —— 表现是 `<kbd>` 在编辑器/Reader 渲染成按键、
+  // 导出时被 `discard` 剥成纯文本，屏幕上看不出原因）
   'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'del', 'details', 'div', 'em',
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'kbd', 'li', 'ol', 'p', 'pre', 's',
   'span', 'strong', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'th', 'thead',
   'tr', 'ul', 'video', 'audio', 'source', 'iframe',
   // 导出产物
