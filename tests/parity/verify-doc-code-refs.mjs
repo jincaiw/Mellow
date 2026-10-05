@@ -462,6 +462,67 @@ const PRD_CITE_EXEMPT = new Map([
   }
 }
 
+// ── 发布手册里的版本字面量必须与真值源一致（2026-10-06，审计 §4.88）──
+// 立此条的原因：`docs/plans/packaging-release.md` 是一份**人手跟着做的发版手册**，
+// 而它原文写「当前版本：**0.1.0**（三处一致）」—— 实际已到 1.5.x，且**升版是 4 处**（漏了 Cargo.lock）。
+// 这正是本仓反复出现的形态：**不带日期的数字会被按「当前」读**（§4.62），
+// 而**没有人守**（§4.64）。⇒ 把「版本字面量」绑到真值源。
+// 处置分两层：① **首选是不写死**（正文已改为指向真值源与 `v<版本>` 占位符）；
+// ② 对**确实需要**出现的字面量（更正块引用的旧值 / 历史起点），必须**显式登记理由**，且**双向**核对。
+const PACKAGING_DOC = 'docs/plans/packaging-release.md';
+// 允许出现的**非当前版本**字面量：登记 → 理由（双向：不再出现即报错，防化石）
+const PACKAGING_VERSION_ALLOW = new Map([
+  ['0.1.0', '**更正块引用的旧值**（原文曾写「当前版本 0.1.0」）—— 更正惯例是引用错误原文，故必须保留'],
+  ['v1.5.2', '**历史起点**（「v1.5.2 起替换占位域名」），不是当前版本'],
+]);
+{
+  const docPath = resolve(root, PACKAGING_DOC);
+  const confPath = resolve(root, 'apps/desktop/src-tauri/tauri.conf.json');
+  if (!existsSync(docPath) || !existsSync(confPath)) {
+    fail(`缺少 ${PACKAGING_DOC} 或 tauri.conf.json`);
+  } else {
+    const doc = readFileSync(docPath, 'utf8').replace(/\r\n/g, '\n');
+    const current = JSON.parse(readFileSync(confPath, 'utf8')).version;
+    const VERSION_TOKEN = /\bv?(\d+\.\d+\.\d+)\b/g;
+    const seen = new Set();
+    const offenders = [];
+    for (const line of doc.split('\n')) {
+      for (const m of line.matchAll(VERSION_TOKEN)) {
+        const raw = m[0];
+        const num = m[1];
+        seen.add(raw);
+        seen.add(num);
+        if (num === current) continue; // 与真值源一致 ⇒ 放行
+        if (PACKAGING_VERSION_ALLOW.has(raw) || PACKAGING_VERSION_ALLOW.has(num)) continue;
+        offenders.push(`${raw}（…${line.trim().slice(0, 60)}…）`);
+      }
+    }
+    if (offenders.length > 0) fail(
+      `${PACKAGING_DOC} 出现**既不是当前版本（${current}）也未登记理由**的版本字面量：`
+      + `${offenders.join(' / ')} —— 发版手册里的版本号会被按「当前」读；`
+      + '首选**不要写死**（改为指向真值源或 `v<版本>` 占位符），确需出现则登记进 PACKAGING_VERSION_ALLOW（带理由）');
+    // 例外表**双向**：登记了但已不再出现 ⇒ 报错（化石例外会掩盖未来回归）
+    for (const [tok, reason] of PACKAGING_VERSION_ALLOW) {
+      if (!seen.has(tok)) {
+        fail(`PACKAGING_VERSION_ALLOW 登记了 ${tok}，但它已不再出现在 ${PACKAGING_DOC} —— 请删除该例外条目`);
+      }
+      if (typeof reason !== 'string' || reason.trim() === '') {
+        fail(`PACKAGING_VERSION_ALLOW 的 ${tok} 缺理由（例外必须带可复核的理由）`);
+      }
+    }
+    // canary：谓词是**同一个对象**，双向（当前版本必须放行；未登记的异值必须被抓到）
+    const scanVersions = (text, cur) => [...text.matchAll(VERSION_TOKEN)]
+      .map((m) => m[0])
+      .filter((t) => t.replace(/^v/, '') !== cur && !PACKAGING_VERSION_ALLOW.has(t) && !PACKAGING_VERSION_ALLOW.has(t.replace(/^v/, '')));
+    if (scanVersions(`当前 ${current}`, current).length !== 0) {
+      errors.push('发版手册版本字面量护栏 canary 失效：当前版本样本被误判为违规');
+    }
+    if (scanVersions('tag v9.9.9', current).join(',') !== 'v9.9.9') {
+      errors.push('发版手册版本字面量护栏 canary 失效：未登记的异值样本未被识别');
+    }
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
