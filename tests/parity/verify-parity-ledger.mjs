@@ -129,14 +129,24 @@ const STATUS_VOCAB_EXEMPT = new Map([
   assert(/^\d{4}-\d{2}-\d{2}$/.test(u), `台账 updatedAt 必须是 YYYY-MM-DD（实测「${u}」）`);
   if (/^\d{4}-\d{2}-\d{2}$/.test(u)) {
     assert(u >= UPDATED_AT_FLOOR, `台账 updatedAt（${u}）早于声明下限 ${UPDATED_AT_FLOOR} —— 请勿回退该字段`);
-    // 不在未来：⚠️ **必须同时接受 UTC 与本地两种「今天」**
-    // 实测踩过：CI/沙箱的 `toISOString()` 给 **UTC** 日期，而本地（GMT+8）已是**次日**
-    // ⇒ 只比 UTC 会把「本地今天」误判为未来（**本判据首版就是这样误报自己的**）。
+    // 不在未来：⚠️ **必须带容差** —— 这是一个「**日期**字段」，由人**在本地时区**写，
+    // 却在**校验环境**（CI runner，通常是 UTC）被判。
+    // **写入环境与校验环境可能不同时区** ⇒ 只对齐「校验环境内部的 UTC/本地」不够（实测踩过两次）：
+    //   · 首次：只比 UTC 今天 ⇒ 本地（GMT+8）已是次日时**误报合法值**；
+    //   · 第二次（CI 实测）：CI 在 UTC（2026-10-05），而值按本地写成 2026-10-06 ⇒ **CI 红、本地绿**。
+    // ⇒ **容差推导**：时区偏移 ∈ [-12h, +14h]，故「写入方的本地日期」最多比「UTC 日期」**超前 1 天**
+    //   （`date(T+14h) − date(T) ≤ 1`）。取 `max(utcToday, localToday)` 已 ≥ utcToday，再加 1 天即**充分**。
+    // ⚠️ 容差只放宽「未来」一侧；「不早于下限」一侧仍严格（防回退）。
     const utcToday = new Date().toISOString().slice(0, 10);
     const d = new Date();
     const localToday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const latestToday = utcToday > localToday ? utcToday : localToday;
-    assert(u <= latestToday, `台账 updatedAt（${u}）晚于今天（UTC ${utcToday} / 本地 ${localToday}）—— 请勿填写未来日期`);
+    const baseToday = utcToday > localToday ? utcToday : localToday;
+    const latestAllowed = new Date(`${baseToday}T00:00:00Z`);
+    latestAllowed.setUTCDate(latestAllowed.getUTCDate() + 1); // 容差 +1 天（见上方推导）
+    const latestAllowedStr = latestAllowed.toISOString().slice(0, 10);
+    assert(u <= latestAllowedStr,
+      `台账 updatedAt（${u}）晚于允许上限 ${latestAllowedStr}（今天 UTC ${utcToday} / 本地 ${localToday} + 1 天时区容差）`
+      + ' —— 请勿填写未来日期');
   }
   // canary：日期谓词双向
   const validDate = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x);
