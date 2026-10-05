@@ -4,7 +4,14 @@
 
 Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编辑内核、以 **Typora 1.14.9（build 7785）** 为功能与 UX 规范验收基线重新构建的跨平台 Markdown 桌面编辑器：Live Preview、文件树/大纲/搜索、表格/图片/数学/Mermaid、Focus/Typewriter、主题、导出，并吸收 **Paperling**（Tauri/React、Command Palette、Slash、Smart Paste、Visual Table）与 **markdown-preview**（Reader-first、Outline、Zoom）的优点。Typora 1.14.6 仅保留历史参考。
 
-**状态：pre-release（ADR-0020）**。真实 V1.0 发布门槛 = PRD P0 范围 + 发布评审 18 项验收全部通过（三平台真机矩阵、UX Score≥92 实测、30 任务效率 Gate、签名公证等）。当前 macOS 本地构建可用；Windows/Linux 构建与真机验证按优化方案阶段 1 推进中。
+**状态：正式发布**（[ADR-0031](docs/adr/ADR-0031-release-status-promotion.md)，2026-10-05 用户裁决：忽略真机 Gate 回填转正；**取代 ADR-0024 Q2=B1**）。
+
+> ⚠️ **正式发布是「发布状态」，不是「完成度」**：`PASS-E = 0/50`、未闭环 **9 项**依然成立。
+> ⚠️ **macOS 产物未签名、未公证**（本仓无 Apple 凭据）⇒ 首次打开会遇到 **Gatekeeper 警告**。
+> **「V1.0 正式发布」的门槛未变**（ADR-0020 §2 未被取代）= PRD P0 范围 + 发布评审 18 项验收全部通过
+> （三平台真机矩阵、UX Score ≥ 92 实测、30 任务效率 Gate、签名公证等）；
+> 在满足前**不得宣称「与 Typora 1.14.9 核心体验一致或更优」**。
+> 本行与 `release.yml` 的 `prerelease=` 取值由护栏**双向**锁定（`tests/parity/verify-release-gate.mjs`）。
 
 ## 文档体系
 
@@ -68,7 +75,9 @@ mellow/
 
 ### 判决（ADR）
 
-见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ ADR-0019（Tauri 2 运行时锁定 + Electron 预案）、ADR-0020（发布状态修正：pre-release）。
+见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ **ADR-0031（发布状态转正：正式发布）**。
+其中 **ADR-0020 §1 与 ADR-0024 Q2=B1 的「pre-release」结论已被 [ADR-0031](docs/adr/ADR-0031-release-status-promotion.md) 取代** ——
+旧 ADR 原文**保留为历史记录**（ADR 只追加、不改写结论）；**引用发布状态时以 ADR-0031 为准**。
 
 ### 施工图
 

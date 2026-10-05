@@ -20,7 +20,7 @@ node scripts/sync-version.mjs
 | 平台 | 产物 | 打包目标 | 生成环境 |
 |---|---|---|---|
 | Windows | MSI（WiX）、NSIS EXE | `msi, nsis` | windows-latest（CI） |
-| macOS | .app + DMG（Signed + Notarized） | `app, dmg` | macos-latest（CI，需 Apple 凭据） |
+| macOS | .app + DMG（**有 Apple 凭据时**签名 + 公证；**当前无凭据 ⇒ 未签名、未公证**） | `app, dmg` | macos-latest（CI，需 Apple 凭据） |
 | Linux | AppImage、deb、rpm | `appimage, deb, rpm` | ubuntu-latest（CI） |
 
 ## 3. 构建方式
@@ -28,10 +28,14 @@ node scripts/sync-version.mjs
 ### 3.1 CI（正式发布，推荐）
 
 ```sh
-# 推送标签触发（自动建 Draft Release）：
+# 推送标签触发（自动建 Release；finalize 在**断言三平台制品齐全**后**自动发布**为正式发布，ADR-0031）：
 git tag v0.1.0 && git push origin v0.1.0
 # 或手动触发：GitHub Actions → Release Packaging → Run workflow
 ```
+
+> **2026-10-05 更正**：原文写「自动建 **Draft** Release」—— 那是 finalize 只标 `prerelease` 时代的描述。
+> 自 **ADR-0031** 起，finalize 会 `prerelease=false` + `make_latest=true` + `draft=false` **一步发布到位**；
+> 制品断言不通过则**保持 Draft**（失败安全）。**不再需要人工 `gh release edit --draft=false`。**
 
 见 `.github/workflows/release.yml`。
 

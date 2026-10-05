@@ -579,6 +579,51 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
     if (!/test\s+"\$\(gh release view[^)]*isDraft/.test(finalizeJob)) {
       fail('release.yml 的 finalize 未在收尾断言「已不是 Draft」—— 该步跑完必须已是已发布状态');
     }
+
+    // ── 发布状态是「多处副本」：README 的状态行必须与 release.yml 的 `prerelease=` 一致 ──
+    // 立此条的原因（实测，2026-10-05）：ADR-0031 把发布状态从 pre-release 改为正式发布后，
+    // **README.md 仍写着「状态：pre-release（ADR-0020）」** —— 即「改了一处没改另一处」的第 N 次重演
+    // （本仓已有 §4.54 多处副本漏 docs / §4.69 spec 数字未同步 两次同型）。
+    // README 是**用户第一眼看到的**那份，过期代价最高。
+    const readmeSrc = read('README.md');
+    // 判定与 canary **共用**这两个函数。
+    const statusFromWorkflow = (src) => {
+      const m = /-F\s+prerelease=(true|false)/.exec(src);
+      return m === null ? null : (m[1] === 'true' ? 'pre-release' : '正式发布');
+    };
+    const statusFromReadme = (src) => {
+      if (src.includes('状态：正式发布')) return '正式发布';
+      if (src.includes('状态：pre-release')) return 'pre-release';
+      return null;
+    };
+    const wfStatus = statusFromWorkflow(finalizeJob);
+    const readmeStatus = statusFromReadme(readmeSrc);
+    if (wfStatus === null) {
+      fail('无法从 release.yml 的 finalize 现算发布状态（找不到 `-F prerelease=`）—— 判据锚点漂移');
+    }
+    if (readmeStatus === null) {
+      fail('README.md 缺少机器可读的状态行（`状态：正式发布` / `状态：pre-release`）—— '
+        + '发布状态必须有单一可核对处，否则 README 会与流水线各自漂移');
+    }
+    if (wfStatus !== null && readmeStatus !== null && wfStatus !== readmeStatus) {
+      fail(`README.md 声明「状态：${readmeStatus}」，而 release.yml 现算为「${wfStatus}」`
+        + ' —— 发布状态是用户第一眼看到的那份，改了一处必须改另一处（ADR-0031）');
+    }
+    // canary：四个方向
+    if (statusFromWorkflow('x -F prerelease=false y') !== '正式发布'
+      || statusFromWorkflow('x -F prerelease=true y') !== 'pre-release') {
+      errors.push('README 状态护栏 canary 失效：从流水线现算状态的判据不能区分正/负样本');
+    }
+    if (statusFromWorkflow('x -F draft=false y') !== null) {
+      errors.push('README 状态护栏 canary 过宽：没有 prerelease= 时不应返回状态');
+    }
+    if (statusFromReadme('**状态：正式发布**') !== '正式发布'
+      || statusFromReadme('**状态：pre-release**') !== 'pre-release') {
+      errors.push('README 状态护栏 canary 失效：README 状态行未被正确解析');
+    }
+    if (statusFromReadme('没有状态行') !== null) {
+      errors.push('README 状态护栏 canary 过宽：缺少状态行却仍返回了状态');
+    }
   }
   // canary：四个方向（样本拼接构造，避免护栏检出自己）
   {

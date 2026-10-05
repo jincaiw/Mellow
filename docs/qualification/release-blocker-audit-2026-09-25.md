@@ -3728,6 +3728,13 @@ sidebar PNG **文件存在**（我只改了 `verify-visual-golden.mjs` 那一处
 
 `prerelease=true` 保持 **ADR-0020 / ADR-0024 Q2=B1** 语义（不宣称正式发布、`releases/latest` 不动）。
 
+> **⚠️ 2026-10-05 更正（本节的发布状态描述已过期）**：**ADR-0031**（Accepted，用户裁决：
+> 忽略真机 Gate 回填，正式发布）**取代 ADR-0024 Q2=B1** ⇒ finalize 现为
+> `prerelease=false` + `make_latest=true`（**正式发布**，`releases/latest` 指向本版本）。
+> 本节其余内容（「人工门禁没有机器记录 ⇒ 6/12 漏检」「资产断言」「先断言后发布」）**仍然成立** ——
+> 它们与发布状态正交。发布收口护栏的判据已随之更新（锁 `prerelease=false` + `make_latest=true`），
+> 且新增「**README 状态行 ⇄ 流水线 `prerelease=`**」双向锁。
+
 ### 验证（两层，缺一不可）
 
 **① 静态护栏**（`verify-release-gate.mjs` 新增 §④b）：锁「finalize 里**必须存在**这些机器判据」——
