@@ -6061,6 +6061,18 @@ let label = format!("main-{stamp}");   // ⇒ 形如 main-1728192000000
 首版用「第一个匹配的赋值」⇒ 解析成 `window.label()` ⇒ 判据失效（报「无法解析」）。
 ⇒ 改为取**调用点之前最近**的那一处赋值。
 
+### 附带补齐：**插件注册 ↔ capability 授权必须成对**（同族失效模式）
+
+同一个护栏里补了一条同族判据：**Rust 注册的每个 `tauri_plugin_X` 必须有对应命名空间的授权**
+（否则该插件的 JS API 在真机被拒）；**反向**，capability 里每个非 `core` 命名空间必须有对应插件注册
+（否则是**死权限项**，会让人以为某能力可用）。
+2026-10-06 实测 **4 : 4 完全一致**（dialog / opener / process / updater ↔ 各自的 `X:default`）——
+本节同样是把「现状健康」锁住，而不是修缺陷。
+`PLUGIN_PAIR_EXEMPT` 例外表**双向**；canary 13 项（新增「插件名解析」：
+`init()` 与 `Builder::new().build()` 两种形态都要认出来）。
+注入验证 **3/3**：撤 `dialog:default` ⇒ 报「注册了插件但无权限」；加未注册的 `shell:default` ⇒ 报死权限项；
+撤 `.plugin(tauri_plugin_process::init())` ⇒ 报死权限项。
+
 ### ⚠️ 证据等级
 
 - **静态、高置信**：官方文档明示「不匹配即无 IPC 访问」+ 代码中的 label 构造 + 修复前的 capability 内容。

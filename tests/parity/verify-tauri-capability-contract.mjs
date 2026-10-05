@@ -330,6 +330,48 @@ for (const [label, reason] of UNPRIVILEGED_WINDOWS) {
   if (typeof reason !== 'string' || reason.trim() === '') fail(`UNPRIVILEGED_WINDOWS 的 ${label} 缺理由`);
 }
 
+// ── ⑥ 插件注册 ↔ capability 授权，必须成对 ──────────────────────────────────
+// 同 §4.97 的失效模式：注册了插件却没授权 ⇒ 该插件的 JS API 在真机运行时被拒；
+// 授权了却没注册 ⇒ 死权限项（会让人以为某能力可用）。
+// 2026-10-06 实测：4 个插件（dialog / opener / process / updater）与 4 条 `X:default` 完全一致。
+const PLUGIN_PAIR_EXEMPT = new Map([]);
+
+const pluginRe = /\.plugin\(\s*tauri_plugin_([a-z0-9_]+)\s*::/g;
+const registeredPlugins = new Set();
+for (const f of walkRs(RUST_SRC)) {
+  const t = read(relative(root, f).split('\\').join('/'));
+  for (const m of t.matchAll(pluginRe)) registeredPlugins.add(m[1].replace(/_/g, '-'));
+}
+if (registeredPlugins.size < 3) {
+  fail(`只解析出 ${registeredPlugins.size} 个已注册插件（下限 3）—— 扫描面漂移会让本判据空转`);
+}
+/** capability 里出现的**非 core** 权限命名空间（如 `dialog:default` → `dialog`） */
+const grantedNamespaces = new Set();
+for (const p of declaredPerms) {
+  const ns = p.split(':')[0];
+  if (ns === 'core') continue;
+  grantedNamespaces.add(ns);
+}
+for (const ns of [...registeredPlugins].sort()) {
+  if (!grantedNamespaces.has(ns) && !PLUGIN_PAIR_EXEMPT.has(`plugin:${ns}`)) {
+    fail(`Rust 注册了插件 \`tauri_plugin_${ns.replace(/-/g, '_')}\`，但 capability 里**没有该命名空间的任何权限**`
+      + `（现有：${[...grantedNamespaces].sort().join(', ') || '无'}）—— 该插件的 JS API 在真机运行时会被拒；`
+      + '请补 `' + ns + ':default`（或按需的更细权限），或登记进 PLUGIN_PAIR_EXEMPT');
+  }
+}
+for (const ns of [...grantedNamespaces].sort()) {
+  if (!registeredPlugins.has(ns) && !PLUGIN_PAIR_EXEMPT.has(`perm:${ns}`)) {
+    fail(`capability 授予了命名空间 \`${ns}\` 的权限，但 Rust **没有注册** \`tauri_plugin_${ns.replace(/-/g, '_')}\``
+      + ' —— 这是死权限项（会让人以为该能力可用），请删除或补注册');
+  }
+}
+for (const [key, reason] of PLUGIN_PAIR_EXEMPT) {
+  const [kind, ns] = key.split(':');
+  const stillNeeded = kind === 'plugin' ? !grantedNamespaces.has(ns) : !registeredPlugins.has(ns);
+  if (!stillNeeded) fail(`PLUGIN_PAIR_EXEMPT 登记了 ${key}，但该缺口已不存在 —— 请删除该例外条目`);
+  if (typeof reason !== 'string' || reason.trim() === '') fail(`PLUGIN_PAIR_EXEMPT 的 ${key} 缺理由`);
+}
+
 // ── ④ canary：三向 + 共用同一展开/映射逻辑 ─────────────────────────────────
 {
   // 正样本：`core:window:default` 必须被展开出 `allow-is-maximized`（default 集里的成员）
@@ -383,6 +425,12 @@ for (const [label, reason] of UNPRIVILEGED_WINDOWS) {
   if (parsed2.length !== 1 || parsed2[0].label !== 'main') {
     errors.push(`canary 失效：字面量窗口 label 未被解析（得到 ${JSON.stringify(parsed2)}）`);
   }
+  // 插件名解析：`init()` 与 `Builder::new().build()` 两种形态都要认出来
+  const plug = [...'  .plugin(tauri_plugin_dialog::init())\n  .plugin(tauri_plugin_updater::Builder::new().build())'
+    .matchAll(pluginRe)].map((m) => m[1].replace(/_/g, '-'));
+  if (plug.length !== 2 || !plug.includes('dialog') || !plug.includes('updater')) {
+    errors.push(`canary 失效：插件名未被正确解析（得到 ${JSON.stringify(plug)}）`);
+  }
 }
 
 if (errors.length > 0) {
@@ -396,4 +444,4 @@ console.log(`Tauri capability contract: 声明权限 ${declaredPerms.size} 项 �
   + `Rust 创建窗口 label ${createdWindows.length} 个（${winList}）全部被 capability windows 覆盖 `
   + `[${capWindowPatterns.join(', ')}]；`
   + `生成快照与源一致 ✅；**未授予且已登记 ${gapList.length} 项**（待裁决）：${gapList.join(', ')}；`
-  + 'canary 11 项全绿。');
+  + 'canary 13 项全绿。');
