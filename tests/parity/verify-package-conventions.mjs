@@ -56,23 +56,9 @@ const PRD_117_1_DEVIATIONS = [
 ];
 
 // ── 已存在的缺口（逐包登记 + 原因；新增缺口即失败）──────────────────────────
-// ⚠️ 这两张表记录的是「**宪法要求但尚未执行**」，不是「已评估通过的偏离」。
-const PKG_CONTRACT_GAPS = new Map([
-  ['app-core', '未执行：需逐包写输入/输出类型、不变量、错误语义、性能边界、禁止行为、parity reference'],
-  ['commands', '未执行：同上'],
-  ['desktop-ui', '未执行：同上'],
-  ['document-model', '未执行：同上'],
-  ['editor-engine', '未执行：同上（该包最大，契约内容最多）'],
-  ['editor-react', '未执行：同上'],
-  ['export', '未执行：同上'],
-  ['extension-api', '未执行：同上'],
-  ['host-api', '未执行：同上'],
-  ['i18n', '未执行：同上'],
-  ['settings', '未执行：同上'],
-  ['shared', '未执行：同上'],
-  ['themes', '未执行：同上'],
-  ['workspace', '未执行：同上'],
-]);
+// ⚠️ 本表记录的是「**宪法要求但尚未执行**」，不是「已评估通过的偏离」。
+// ⚠️ `CONTRACT.md` **已不在本表**：2026-10-06 已为全部 14 个包补齐（审计 §4.103）
+//    ⇒ 它是**硬判据**（无例外），与 `src/` / `README.md` 同级。
 const PKG_TEST_GAPS = new Map([
   ['editor-react', '未执行 + 待裁决：该包 42 行且**零跨包消费者**（审计 §4.95），'
     + '是否补测取决于它是接线还是删除'],
@@ -117,14 +103,12 @@ for (const pkg of pkgNames) {
     fail(`${pkg}: 缺 \`README.md\`（PRD §117.1 硬要求）—— 它是「这个包是什么」的唯一入口；`
       + '本护栏落地时已补齐全部缺口，新增包必须自带');
   }
-  // C3 / C4 —— 可登记
+  // C3 / C4 —— C3（CONTRACT.md）为硬判据；C4（测试目录）可登记
   const hasContract = hasFile(p, 'CONTRACT.md');
   const hasTests = hasDir(p, 'test') || hasDir(p, 'tests');
-  if (!hasContract && !PKG_CONTRACT_GAPS.has(pkg)) {
-    fail(`${pkg}: 缺 \`CONTRACT.md\`（PRD §117.1）且未登记 —— 请补齐，或登记进 PKG_CONTRACT_GAPS 并写明原因`);
-  }
-  if (hasContract && PKG_CONTRACT_GAPS.has(pkg)) {
-    fail(`${pkg}: PKG_CONTRACT_GAPS 登记了它，但 \`CONTRACT.md\` **已存在** —— 请删除该登记项`);
+  if (!hasContract) {
+    fail(`${pkg}: 缺 \`CONTRACT.md\`（PRD §117.1 硬要求）—— 本护栏落地时已补齐全部 14 个包，新增包必须自带；`
+      + '内容清单见 §117.1：输入/输出类型、不变量、错误语义、性能边界、禁止行为、Typora parity reference、golden fixtures');
   }
   if (!hasTests && !PKG_TEST_GAPS.has(pkg)) {
     fail(`${pkg}: 既无 \`test/\` 也无 \`tests/\`（PRD §117.1）且未登记 —— 请补齐，或登记进 PKG_TEST_GAPS`);
@@ -142,7 +126,7 @@ for (const pkg of pkgNames) {
 }
 
 // 登记表自身：非空 + 无「登记了不存在的包」
-for (const [tbl, name] of [[PKG_CONTRACT_GAPS, 'PKG_CONTRACT_GAPS'], [PKG_TEST_GAPS, 'PKG_TEST_GAPS']]) {
+for (const [tbl, name] of [[PKG_TEST_GAPS, 'PKG_TEST_GAPS']]) {
   if (tbl.size === 0) fail(`${name} 不得为空（清空即等于放弃该判据）`);
   for (const [pkg, reason] of tbl) {
     if (!pkgNames.includes(pkg)) fail(`${name} 登记了不存在的包：${pkg} —— 请删除该登记项`);
@@ -178,7 +162,6 @@ if (errors.length > 0) {
 }
 
 console.log(`Package conventions (§117.1): ${pkgNames.length} 个包；`
-  + '`src/` 与 `README.md` 全合规（硬判据）；'
-  + `\`CONTRACT.md\` 已登记缺口 ${PKG_CONTRACT_GAPS.size} 个、\`test(s)/\` 已登记缺口 ${PKG_TEST_GAPS.size} 个`
-  + '（**均为「宪法要求但尚未执行」**，非「已评估通过的偏离」）；'
+  + '`src/` / `README.md` / `CONTRACT.md` 全合规（**硬判据**）；'
+  + `\`test(s)/\` 已登记缺口 ${PKG_TEST_GAPS.size} 个（**「宪法要求但尚未执行」**，非「已评估通过的偏离」）；`
   + `\`fixtures/\` 按意图判（偏离已显式声明 ${PRD_117_1_DEVIATIONS.length} 条）；canary 5 项全绿。`);

@@ -1,5 +1,7 @@
 # @mellow/editor-engine — Mellow Live Markdown Engine
 
+> PRD §117.1 包规范：本文件是「这个包是什么」的入口；**契约（不变量 / 错误语义 / 性能边界 / 禁止行为 / parity reference / 夹具）见同目录 `CONTRACT.md`**。
+
 第一阶段（Phase 1）：**Marker Reveal**（Heading / Bold / Italic / Strike / Inline Code）。
 
 严格遵循 `docs/specs/live-markdown-engine-spec.md`。

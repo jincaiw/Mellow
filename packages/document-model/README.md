@@ -2,7 +2,7 @@
 
 文档模型（ADR-0008 / ADR-0009：identity / revision / dirty / encoding / EOL / disk / file-identity / recovery）。
 
-> PRD §117.1 包规范：本文件是「这个包是什么」的入口。契约细节见 `CONTRACT.md`（**尚未编写**，见审计 §4.100）。
+> PRD §117.1 包规范：本文件是「这个包是什么」的入口；**契约（不变量 / 错误语义 / 性能边界 / 禁止行为 / parity reference / 夹具）见同目录 `CONTRACT.md`**。
 
 ## 职责
 
