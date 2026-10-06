@@ -50,7 +50,7 @@ Release verdict: NO-GO：6 项未闭环
 | 4 | §4.4 | **安全验收是否应进入台账**（新增安全域与条目） | **已裁决**（B2：不新增，改在验收文档单列） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q2） |
 | 5 | §4.5 | **V1.0 发布时是否把「Apple 凭据缺失」改为硬失败** | **已裁决**（C2：保持警告 + 现状护栏） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q3） |
 | 6 | §4.10.1 | **`settings.open` 在 Win/Linux 的菜单入口**（D 还是缺口） | **已裁决**（A3：维持现状 + 理由进 D 表；**证据缺口已注明**）—— D 表载体 = master-plan §12 的 **`D-AF`**，**2026-09-30 已落地**（2026-10-01 复核确认，见 §4.67） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q1） |
-| 7 | §4.14 / §4.29–§4.30 | `Allow Magnification` / 「使用主题的字体大小」 | **已处置**（前者已实装；后者「自定义字号」已实装、刻意不对齐 Typora 的 24，已登记 D） | `已处置`（§4.28 / §4.30） |
+| 7 | §4.14 / §4.29–§4.30 | `Allow Magnification` / 「使用主题的字体大小」的**前半**（自定义字号） | **已处置**（前者已实装；后者「自定义字号」已实装 = `export.image.fontSize` 默认 16，刻意不对齐 Typora 的 24，已登记 D）⚠️ **2026-10-06 更正**：原写「已处置」**过度声称** —— 该项的**另一半**（「用主题字号」）**未实施**，见**第 16 行** | `已处置`（§4.28 / §4.30） |
 | 8 | §4.39 | **表格 `invalid` 提示**：Mellow 自有提示 or 从 spec 移除 | **已裁决（2026-10-05）= D2：从 spec 移除** —— 补足一手证据后裁定：Typora 对损坏表格**既不提示也不校验**（两条独立通道：全部 8 份 `.strings` + `main.js`）⇒ 该项非 parity 且从未实现 | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q4） |
 | 9 | §4.40 | **上传「密钥」的 spec 表述**（不适用 / keychain / UI 禁止） | **已裁决**（E1：改写为「不适用」+ **保留明文残余风险说明**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q5） |
 | 10 | §4.51 | **`tests/visual/actual/*.png` 是否取消 git 跟踪** | **已裁决**（F1：取消跟踪 + 改护栏 + README 同步） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q6） |
@@ -59,6 +59,7 @@ Release verdict: NO-GO：6 项未闭环
 | 13 | §4.99 | **3 个「声明了但无人消费」的主题 token**（`--mellow-tab-underline` / `--mellow-warning-fg` / `--mellow-mermaid-border`） | **已裁决（2026-10-06）= B3：维持登记**（与 ADR-0027 Q3 对 `--mellow-md-fg` 的既有口径一致：删除属主题面变更、接线属外观变更） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q2） |
 | 14 | §4.95 | **3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）去留 —— 其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
+| 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **待裁决**（**未实施**；canvas 渲染**无主题 CSS 通道** ⇒ 等价物形态需裁决；⚠️ **改默认值会改变所有既有导出输出**，须先经视觉确认） | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -6899,6 +6900,50 @@ concurrency:
 
 - **只改护栏**（`verify-adapter-contract.mjs` 两处正则 + 2 条 canary），**无产品代码改动**
   ⇒ 制品不变 ⇒ **不发新版本**。
+
+## 4.113 登记表第 7 行的「**已处置**」是过度声称 ⇒ 补载体 ADR-0033（2026-10-06）
+
+### 缺陷（两个，且第二个是 §4.106 的同型复发）
+
+「待裁决项登记表」**第 7 行**写着 `Allow Magnification` / 「使用主题的字体大小」**已处置**。
+实测（2026-10-06）：
+
+| 事实 | 证据 |
+|---|---|
+| `export.image.fontSize`（**自定义字号**）**已实施** | `packages/settings/src/index.ts`（number / 8–48 / 默认 16）✓ |
+| 「**用主题字号**」这一半**未实施** | 设置里只有 `export.image.{format,width,fontSize,quality}`；全仓 `fontSizeMode` / `useThemeFont` / `themeFontSize` **实测 0 命中** |
+| 它**明写着「需单独裁决」** | `master-plan` 行 14b：「❌ **仍缺**：Typora 该组的**另一半**（radio 的 `Use theme font size`）……**需单独裁决**，故本轮不做」 |
+
+⇒ ① **「已处置」过度声称**（只覆盖了一半）；
+② **该待裁决项没有 ADR 载体** —— 违反 `AGENTS.md`「待裁决项必须有 ADR 载体」
+与登记表头的「本文档此后不得新增未登记的裁决项」，**与 §4.106 修过的形态同型**。
+
+### 处置
+
+1. **更正第 7 行**：拆清「前半（自定义字号）= 已处置」，并**指认第 16 行**为另一半的载体；
+2. **新增第 16 行**（出处 §4.113）：图片导出的「用主题字号」—— **待裁决**；
+3. **新立 `ADR-0033`（Proposed）** 承载它，并加入门禁 `PENDING_ADRS`。
+   （**不塞进 ADR-0032**：它已 `Accepted`，而门禁要求「已裁决必须 Accepted」与「待裁决必须 Proposed」
+   同时成立 ⇒ 新的未裁决项**必须新立** —— 同 §4.106 的结论。）
+
+**门禁输出随之变化（如实声明）**：`Pending decisions:` 由 **「无」** 变为
+`ADR-0033-image-export-theme-font-size.md（状态 Proposed，裁决前不生效）`。
+**发布结论不变**（本就 `NO-GO`）。
+
+### ADR-0033 记录的关键风险（**裁决时必须先解决**）
+
+Typora 默认 **24px** vs Mellow **16px**；**对齐默认值会改变所有既有图片导出的输出**
+（面积按 **1.5×** 放大，更易触及 `MAX_IMAGE_HEIGHT` / `MAX_IMAGE_PIXELS` 的**长图保护**）
+⇒ 默认值是否对齐**必须经视觉 / 真机确认**，不能凭「对齐 Typora」一句话改。
+另：Mellow 的图片导出是 **canvas 渲染**（显式 `fontFamily`），**没有主题 CSS 通道**
+⇒ Typora 的 `fontSize = void 0` 交给 CSS **不可直接照搬**，等价物形态（A1 不做 / A2 跟随编辑器字号 /
+A3 跟随主题定义字号）需裁决。
+
+### 本次改动
+
+- 更正登记表第 7 行 + 新增第 16 行；新增 `docs/adr/ADR-0033-…md`（**Proposed**）；
+  门禁 `PENDING_ADRS` 增列。
+- **无产品代码改动** ⇒ 制品不变 ⇒ **不发新版本**。
 
 ## 五、本次审计做的改动（非策略性）
 

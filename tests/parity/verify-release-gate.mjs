@@ -177,7 +177,14 @@ const DECIDED_ADRS = [
 // **分处两个 eventHandler**，而 `index.ts` 的注册顺序把优先级 2 排在 3/4 之后 ⇒ 与 spec §3 相反。
 // 裁决 A3 = 在 `handleSmartPaste` 内**显式让位**（有图片 payload 则 return false）⇒ 不再依赖注册顺序。
 // 故它**不再**是待裁决项（已移入 DECIDED_ADRS）。
-const PENDING_ADRS = [];   // 当前无待裁决 ADR（ADR-0032 已于 2026-10-06 同日裁决为 Accepted）
+const PENDING_ADRS = [
+  // 2026-10-06 立（**Proposed，待裁决**）：图片导出的「用主题字号」——
+  // 登记表第 7 行原写「已处置」，**过度声称**（只覆盖了「自定义字号」那一半）；
+  // 另一半（Typora `useThemeFontSize` radio）**未实施**且计划里明写「需单独裁决」，
+  // 却**没有载体** ⇒ 按「新的未裁决项必须新立 Proposed ADR」补上。
+  ['docs/adr/ADR-0033-image-export-theme-font-size.md',
+    '图片导出的「用主题字号」等价物（canvas 无主题 CSS 通道；改默认值会改变所有既有导出输出）'],
+];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);
