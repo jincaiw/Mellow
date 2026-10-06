@@ -6855,6 +6855,51 @@ concurrency:
 - **只改测试**（`tests/e2e/ux-flows-verify.mjs` 修 id；`verify-menu-contract.mjs` 增判据 + 补两个 import），
   **无产品代码改动** ⇒ 制品不变 ⇒ **不发新版本**。
 
+## 4.112 审 e2e 的**选择器**与**「防线」声明** + 桥名正则的宽度（2026-10-06）
+
+延续 §4.111（e2e 静默腐化）的两条同族线，**三条都实测干净**，只有一处值得加固。
+
+### (a) e2e 的 CSS 选择器 ↔ 真实类名：**15 个候选，全部合法**
+
+412 处选择器字面量里，15 个类名不在「CSS 规则 ∪ TSX `className`」集合中。逐条核实后**全是合法的**：
+
+| 形态 | 例子 | 为什么不是缺陷 |
+|---|---|---|
+| **故意的负断言** | `.tabbar`（「B1 SDI：`.tabbar` 已从 DOM 删除 —— 断言恒为 null」）、`.sidebar-mode-menu` / `.sidebar-file-view-mode` / `.file-tree-filters-toggle` | 脚本**断言这些已删除的 UI 不得复活** |
+| **多锚点探测** | `.wordcount-panel, .word-count-panel, .stats-panel` + **文本回退**（`阅读时间\|reading time`） | 注释写明「常见的两个锚点任一命中即可」 |
+| **vendored / 引擎类名** | `.cm-searchMatch`（CodeMirror）、`.mellow-table-toolbar` / `.mellow-codeblock-lang`（引擎以**不带点**的字符串赋值 ⇒ 我的集合取不到） | 存在，只是我的「已知类名」集合口径偏窄 |
+
+⇒ **该轴不加护栏**：负断言与「死引用」在静态上**长得一样**，加判据只会产生噪声。
+
+### (b) e2e 里自称「防线 / 永久防线 / 回归门禁」的 7 处：**基本都有真正的执行者**
+
+抽查结果：
+- 「模式弹出菜单不得复活」 ⇒ **有护栏**（`verify-shell-widgets.mjs:166` 遍历 `.sidebar-mode-menu` / `.sidebar-mode-item`）✓
+- 「dragend 清空 `draggedRef`」 ⇒ **有护栏**（`verify-sidebar-contract.mjs:437`）✓
+- 「⇧⌘= 不向文档插入字面字符」 ⇒ **实现已就位且写明原因**（`App.tsx:5618`：「命中命令返回 true，**iframe 侧立即 preventDefault**（WKWebView 未拦截的 ⌘ 组合会明文插入字符）」），
+  且该桥 `__MELLOW_SHORTCUT_API__` 已被 `verify-adapter-contract.mjs` 的「桥完整性」判据覆盖（**声明在 App.tsx、读取在 build-editor-bundle.mjs，两侧都在扫描面内**）✓
+
+⇒ **e2e 的措辞偏强**（它自己不是防线），但**不变量没有裸奔** ⇒ **不改判据、只记结论**（避免将来重复劳动）。
+
+### (c) 桥名正则**比语言标识符窄** ⇒ 加固（本次唯一改动）
+
+`verify-adapter-contract.mjs` 的桥判据自述是「**把全部桥列全**」，
+但正则写的是 `/__MELLOW_([A-Z_]+)__/` —— **比 JS 标识符规则窄**。
+⇒ 将来若出现小写桥名（如 `__MELLOW_shortcutApi__`）会被**静默跳过**（不报死桥/断桥）。
+
+**实测**：当前 **37 个** `__MELLOW_*__` 形态**全部**匹配 `[A-Z_]+` ⇒ **补宽今日零行为变化**（零风险）。
+**改动**：两处正则（桥名 + 常量间接路径）改为 `[A-Za-z0-9_]+`，**并加 2 条 canary**
+（「小写桥名必须被识别」× 两条路径）。
+**注入验证**：把正则退回 `[A-Z_]+` ⇒ **2 条 canary 全部变红** ✓（证明加固真的被守住）。
+
+> 依据：这不是「无证据地加东西」，而是**让实现与本节自述一致** ——
+> 判据的用途是「列全」，而窄正则会**静默漏检**，属 §4.4「未判定是静默通过」的同一母题。
+
+### 本次改动
+
+- **只改护栏**（`verify-adapter-contract.mjs` 两处正则 + 2 条 canary），**无产品代码改动**
+  ⇒ 制品不变 ⇒ **不发新版本**。
+
 ## 五、本次审计做的改动（非策略性）
 
 

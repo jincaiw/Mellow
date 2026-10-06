@@ -185,7 +185,13 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
   // 形态二：**常量间接**（实测覆盖 2/3 误报）——
   //   `const GLOBAL_KEY = '__MELLOW_ENGINE_API__' as const;` 之后 `win[GLOBAL_KEY] = api;`
   //   首版只认「全局名之后紧跟 `=`」→ 把这种声明判成读取 → 报假断桥。
-  const KEY_CONST_RE = /const\s+(\w+)\s*=\s*'(__MELLOW_[A-Z_]+__)'/g;
+  // ⚠️ 桥名正则**必须与语言标识符同宽**（2026-10-06，审计 §4.112）：
+  // 原为 `[A-Z_]+` —— 比 JS 标识符规则**窄**，与本节自述「**把全部桥列全**」矛盾，
+  // 且将来若出现小写桥名（如 `__MELLOW_shortcutApi__`）会被**静默跳过**（不报死桥/断桥）。
+  // 实测：当前 37 个桥名**全部**是大写形态 ⇒ 补宽**今日零行为变化**（零风险）；
+  // canary 增一条「小写桥名必须被识别」，防将来静默漏检。
+  const BRIDGE_NAME_RE = /__MELLOW_([A-Za-z0-9_]+)__/g;
+  const KEY_CONST_RE = /const\s+(\w+)\s*=\s*'(__MELLOW_[A-Za-z0-9_]+__)'/g;
   const bridges = new Map(); // name → { decl:Set, read:Set }
   for (const dir of BRIDGE_DIRS) {
     for (const file of walkAll(resolve(root, dir))) {
@@ -198,7 +204,7 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
         bridges.set(name, rec);
       };
       for (const line of src.split('\n')) {
-        for (const m of line.matchAll(/__MELLOW_([A-Z_]+)__/g)) {
+        for (const m of line.matchAll(BRIDGE_NAME_RE)) {
           mark(`__MELLOW_${m[1]}__`, isDeclAt(line, m.index, m[0].length));
         }
         for (const [constName, globalName] of keyConsts) {
@@ -246,6 +252,13 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
     }));
   if (!indirectDecl) {
     errors.push('桥完整性护栏 canary 失效：常量间接的声明未被识别（会报假断桥）');
+  }
+  // canary：**小写桥名必须被识别**（防「正则比标识符窄 ⇒ 静默漏检」；见上方 BRIDGE_NAME_RE 的注释）
+  if (![...'window.__MELLOW_shortcutApi__ = {};'.matchAll(BRIDGE_NAME_RE)].length) {
+    errors.push('桥完整性护栏 canary 失效：小写桥名未被识别（正则比语言标识符窄 ⇒ 会静默漏检）');
+  }
+  if (![..."const K = '__MELLOW_mixedCase__';".matchAll(KEY_CONST_RE)].length) {
+    errors.push('桥完整性护栏 canary 失效：常量间接路径下的小写桥名未被识别');
   }
 }
 
