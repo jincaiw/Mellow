@@ -7075,41 +7075,51 @@ Linux / Windows / macOS / Finalize → skipped
 > 与 MEMORY 的既有口径一致：「**标签里含偶发测试时必须移标签**（`git tag -f` + `git push -f`），
 > **不接受「重跑变绿」**」。本次是**流水线缺陷**（非偶发），修好后移标签是唯一正确路径。
 
-## 4.117 复核最后一处 P2：「插入文件夹链接」**不是 Typora 的功能**（2026-10-06）
+## 4.117 【自我更正】上一条「插入文件夹链接不是 Typora 的功能」**是错的** —— 根因是用 `grep` 下结论（2026-10-06）
 
-### 动机与方法
+**本节原记录**：「插入文件夹链接」是 Typora 自身的残留文案（有翻译、代码无人引用）⇒ 从 parity 待办移除。
+**⚠️ 该结论错误，已全部回退。** 记录于此，因为**根因本身值得留档**。
 
-方案 §15.3 相关行 14b 记着「❌ **仍未实现**：`插入文件夹链接`（Insert Folder Link，**P2**）」——
-是 §15.3「未完成」之外的**最后一处 P2**。按仓规**先回一手证据**（本机 Typora 1.14.9），不靠回忆。
+### 错误是怎么发生的（**根因：本机 `grep` 是 toybox，不是 GNU grep**）
 
-### 一手证据（**两条独立通道**）
+| 步骤 | 当时的做法 | 结果 |
+|---|---|---|
+| ① 文案面 | 读 `TypeMark/locales/*/Panel.json` | 有 `Insert Folder Link` ✓ |
+| ② 行为面 | `grep -rl "Insert Folder Link" .`（在 `Contents/Resources` 递归） | **只列出 40 个 locale 文件** ⇒ 据此判「代码无人引用」 |
+| ③ 键名面 | 搜 `insertFolderLink` / `folderLink` / `folder link` | 0 命中 ⇒ 「佐证」了错误结论 |
 
-| 通道 | 结果 |
-|---|---|
-| 文案表 `Panel.strings`（Base / zh-Hans） | `Insert Folder Link = 插入文件夹链接` **存在** ✓ —— 且相邻字符串给出了**它的校验规则**（「请输入相对路径（以 './' 或 '../' 开头）或绝对路径。（其中 `${filename}` 表示当前文件名）」） |
-| **行为真值源** `TypeMark/appsrc/main.js` | `insertFolderLink` / `Insert Folder Link` / `folderLink` / `insertFolder` —— **全部 0 命中** |
-| **全资源搜**（`Contents/Resources` 整树） | 「Insert Folder Link」**只出现在 40 个 `TypeMark/locales/*.lproj/Panel.json`**（**纯翻译文案**）；`insertFolderLink` / `folderLink` / `folder link` **0 命中** |
+**真相**（本轮改用 **node 逐文件读** 复核）：`grep --version` ⇒ **`toybox 0.8.13 (is not GNU grep 9.0)`** ——
+**toybox 的递归 grep 静默跳过了那个 300 KB 的 minified bundle**
+（`page-dist/static/js/Preferences.*.js`），而**该文件里确实有**该字符串：
 
-### 结论：**它是 Typora 自身的残留文案，不是它的功能**
+```js
+element(w.r, { keyName: "actionWhenDropFolder", …,
+  options: { "": "Open in Typora", link: "Insert Folder Link" } })
+```
 
-⇒ **Mellow 无缺口** ⇒ 该项**从 parity 待办中移除**（**非「未实现」，是「无此功能」**）。
-**若将来 Typora 真的提供该功能，需重新取证后再登记。**
+⇒ 它是**「当拖入文件夹时」这个偏好的一项动作选项**（`Open in Typora` / `Insert Folder Link`）✓
+⇒ **Typora 确有该功能** ⇒ **本项是真实的 parity 缺口**，**P2 判定不变** ✓。
 
-> **同型先例**：ADR-0029 **Q4 = D2** ——「表格 invalid 提示」经两条独立通道核实
-> Typora **既不提示也不校验** ⇒ **从 spec 移除**，而不是新增一个**非 parity** 的行为。
-> 本次同法：**先证「Typora 有没有」，再决定「Mellow 要不要做」**。
+### 处置
 
-### ⚠️ 一处方法论提醒（本次差点反过来做）
+1. **回退**方案行 14b 的该片段（恢复「❌ 仍未实现（P2）」+ 写明这次的错误与证据）；
+2. **回退**长期记忆里「它不是 Typora 的功能」的表述；
+3. **新建工具** `tests/parity/tools/audit-typora-orphan-strings.mjs`（**node 实现，不依赖 `grep`**）：
+   - `--check "<串>"`（**决定性用法**）：该串在 **文案面 / 代码面** 各出现在哪 ⇒ 直接回答「Typora 有没有在用它」；
+   - `--list`：列出全部「locale 有、代码无」的串（**线索清单**，需人工分诊 —— 含**原生侧**假阳性）；
+   - ⚠️ 工具**自己**也踩过一次扫描面缺口：首版只扫 `appsrc` + `page-dist` ⇒ 把 `TypeMark/index.html`
+     里的文案全判成孤立（**279/1014 = 27% 假阳性**）⇒ 改为扫**整个 `TypeMark/`（排除 `locales/`）**（降到 213）。
+     这正是本仓「**扫描面缺口 = 尚未检查的样本**」的又一次复现。
 
-「文案表里有这条字符串」**不等于**「Typora 有这个功能」——
-**必须再去行为真值源（`main.js`）确认有人引用它**。
-否则会把 **Typora 自己的残留文案**当成 **Mellow 的 parity 缺口**，
-去实现一个**连 Typora 都没有**的功能（那会引入一个**新的、无依据的**差异）。
+### 教训（比原结论更重要）
 
-### 本次改动
-
-- 更正方案行 14b 的该片段（**由「仍未实现」改为「无此功能，已移除」** + 证据）；
-- **无产品代码改动** ⇒ 制品不变 ⇒ **不发新版本**。
+1. **不要用 `grep` 下结论**：本机 `grep` 是 **toybox**，会**静默漏匹配**。
+   本仓早已有「BSD `grep` 的 `\|` 静默返回空」的记载 ⇒ **同一族**，但这次是**递归搜索整体漏文件**。
+   ⇒ **凡「某串在不在某处」的结论，必须用 node / 结构化读取复核**（本会话已因此踩过一次）。
+2. **「0 命中」必须先证明量具可靠**：我先用 `grep` 得到「0 命中」，又用**同一种**量具（`grep`）
+   去「佐证」⇒ **两个错读数互相印证**。**换量具才算交叉验证**（本轮改用 node ✓）。
+3. **工具的价值**：本次是**新写的 node 工具**当场推翻了我的错误结论 ⇒
+   **把手工判据工具化，比再写一遍结论更有价值**。
 
 ## 五、本次审计做的改动（非策略性）
 

@@ -202,3 +202,10 @@ cd <repo> && NODE_PATH=/tmp/pw/node_modules node tests/e2e/smoke.mjs
 cd apps/desktop && npm run tauri dev
 # 最小界面：新建 / 打开… / 保存 / 另存为… + 编辑器（Heading/Bold/List/Table/中文输入）
 ```
+
+> **需本机 Typora 的手工审计工具**（**不进 CI**，同 `ux-gate-recorder.mjs` 的人工口径）：
+> - `tests/parity/tools/audit-typora-menu-labels.mjs` —— 核对内嵌的官方菜单文案（防止把 Mellow 自己的英文填进官方列）。
+> - `tests/parity/tools/audit-typora-orphan-strings.mjs` —— 查「Typora 到底有没有在用某个字符串」：
+>   `--check "<串>"`（**决定性用法**：同时报**文案面**与**代码面**命中）/ `--list`（线索清单，含原生侧假阳性）。
+>   ⚠️ **用 node 实现，不依赖 `grep`** —— 本机 `grep` 是 `toybox`，会**静默漏匹配**
+>   （曾据此误判「某功能不存在」，见审计 §4.117）。
