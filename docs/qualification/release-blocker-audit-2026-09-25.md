@@ -7149,6 +7149,148 @@ element(w.r, { keyName: "actionWhenDropFolder", …,
 （顺带覆盖 `tests/e2e/**` 的 31 个不进 CI 的脚本。）
 
 
+## 4.118 补审 `desktop-ui-design-spec` 的 §6/§7/§9/§11/§12/§17/§18：**§11 整节失效**、**§6 数字不符**、**轮次表静默停止**；并**精确化**「`grep \|`」的根因（2026-10-06）
+
+### 动因与范围
+
+§4.69 记下「`desktop-ui-design-spec` **20 节只审过 §19**」并就地修了 §3/§4/§5/§8（§10 由单测覆盖）。
+本轮补审**其余 7 节**：**§6 File Tree / §7 Outline / §9 Floating Toolbar / §11 Welcome /
+§12 Settings / §17 Empty States / §18 Animation**。方法仍是「**谁在守**」：先把该节的**每一条**列出来，
+再逐条找**可核实**的载体（断言本体 / 单测 / 现读的 CSS 值），**不用关键词命中判「已覆盖」**。
+
+### 一、正向确认（5 节）
+
+| 节 | 该节要求 | 载体（实测） |
+|---|---|---|
+| **§7 Outline** | heading tree / current highlight / click jump / **filter** / collapse / flat·tree；「当前 heading 变化不得导致侧栏剧烈滚动」 | 六项**全在**：`OutlineList.tsx`（层级 `item.level`、`currentId`、`onJump`、`collapse`、`flat`）+ `App.tsx` 的 `outlineFilter` state 与 `.outline-filter` 输入框（`filterOutline`）+ 键盘选中滚动跟随用 `scrollIntoView({ block: 'nearest' })`（**不扰动用户视口**，正是该节末句的要求） |
+| **§9 Floating Toolbar** | 只在 selection 时出现；内容 H1/H2/H3·Bold·Italic·Strike·Code·Link·Quote·List；规则 **IME hidden** / **Escape closes** / keyboard accessible / **never cover selected line center** / **user can disable** | 载体是**引擎级** `selectionToolbar.ts`（不是壳层）：`shouldShowToolbar({enabled, composing, hasSelection, hidden})` 一条表达式同时承载「仅选区」「IME 隐藏」「可禁用」；`ACTION_IDS` 是**超集**（h1–h6 等 38 个）；`role="toolbar"` + aria-label + roving tabindex；Escape 由 keymap 归还焦点。`selectionToolbar.test.ts` **40+ 例**覆盖五条规则（含「shows above selection」与「Escape 后同一选区再 selectionSet 恢复」） |
+| **§12 Settings** | 10 个分区；左栏 180–220 px；右内容 max 720 px | `SETTINGS_SECTIONS` 的 10 个 id（general/editor/markdown/files/image/appearance/export/shortcuts/extensions/advanced）**与本节列出的 10 个逐一对应**；`styles.css` 的 `.settings-nav` = `width: 200px` + `min 180` + `max 220`（**落在区间内**），`.settings-content` = `max-width: 720px`（**精确相符**） |
+| **§17 Empty States** | File「打开文件夹以浏览文件」/ Outline「当前文档没有标题」/ Search「输入关键词搜索当前文件夹」；禁止插画占满空白区 | 三条文案在 `packages/i18n` 里**逐字相符**（`sidebar.emptyFiles` / `outline.empty` / `search.empty`），由 `.sidebar-empty` 渲染（**纯文字，无插画**）。Mellow 另多出两态（`sidebar.emptyFolder` / `sidebar.noFilterMatch`）—— 是**超集**，不违「禁止插画」 |
+| **§18 Animation** | 允许 panel fade/slide **120–180ms**、menu native、toolbar fade；禁止 caret animation / spring editor layout / marker movement animation / table resize animation | 全仓 `animation`/`@keyframes`/`transition` 只有 **3 处**（`.context-menu` 120ms、`.quick-open-backdrop` 140ms、`.settings-backdrop` 140ms）—— **全部落在 120–180ms**；引擎侧另有 `focusMode.ts` 的 `opacity 120ms`（属「panel fade」允许项）与 `largeFile.ts` 的 `transition/animation: none !important`（大文件模式**主动关闭**动画，与该节同向）。**未发现**任何 caret / 编辑器布局 / marker / 表格尺寸的动画 |
+
+### 二、真实发现 A：**§11 Welcome 整节失效**，且**从未与 B2 对账**（+ 81 行死 CSS）
+
+**该节要求**：欢迎页「只包含 `Mellow` / 新建文档 / 打开文件 / 打开文件夹 / 最近使用」，且不含 news / login / AI prompt / mascot / marketing。
+
+**实测**：欢迎页**已经不存在了** —— 它按 **B2** 决策「**停用并移除 —— 启动即文档，对齐 Typora**」被删掉，
+而**这句话只写在 `packages/desktop-ui/src/index.ts` 的头部注释里**。三条独立取证：
+
+1. `apps/desktop/src/App.tsx` 内 `welcome` 命中 **0**；
+2. `packages/*/src` 与 `tests/` 内命中 **0**；
+3. `styles.css` 里**仍有 81 行** `.welcome*` 规则（1617–1697），但**没有任何引用方** ⇒ **死代码**。
+
+**为什么这是缺陷（三层）**：
+
+- **权威层与产品不一致**：spec 是**权威层**（优先级高于 ADR / plan），它描述了一个**不会存在**的界面。
+  与 **§4（Tabs 整节）** 同型 —— 区别只在 §4 由**架构**决策（SDI）导致、本节由**产品**决策（B2）导致；
+  **§4 已登记 D-Y，本节什么都没登记**。
+- **D 表无登记**：`grep -i "welcome\|欢迎页" docs/` 命中 **0** ⇒ §12 自称「唯一可发现处」而此处**没有任何条目**
+  （正是 D-AC 记下的那条教训：「护栏注释**不是**决策登记处」）。
+- **误导性死代码**：那 81 行原注释写着「Welcome（§11：只含三个入口）」—— 一个读者**只看 `styles.css`**
+  会以为 §11 **已实现**。死代码本身不报错，但它让「这一节还有人管」看起来成立。
+
+**处置**：① spec §11 加更正块（**作废但保留原文**，依据 = B2 的代码注释原文 + 三条取证，并**明确写下**
+「`typora-menu-dump.txt` 里的 `welcomePanelItem` **不是反证**」—— 那是 Typora 自己的 Help → `Welcome Guide`，
+Mellow 由 `help.quickStart`「快速上手」承载）；② **D 表新增 `D-AJ`**（与 §4 的 D-Y 并列）；
+③ **删除那 81 行死 CSS**，在原位置留一段说明（谁删的、为什么、依据在哪）。
+
+**⚠️ 一处必须写清楚的边界**：B2 是**已实施的产品决策**，不是待裁决项 ⇒ 本条**不新增 ADR**
+（ADR 是**待裁决项**的载体；已决定且已实现的有意差异，载体是 **D 表**——同 D-AH/D-AG 的做法）。
+
+### 三、真实发现 B：§6 的「行高 **26–30 px**」与实现不符 —— 这是**第三例**同型漂移
+
+**实测**：`.tree-row` 的 `min-height: 24px`（`styles.css`），且**是有意对齐 Typora 真机**的结果 ——
+同文件注释写明依据（Typora 文件行 `line-height: 22px` + `#777` 字色 + `14px` 字号），
+Mellow 取 `padding: 1px` ⇒ `22 + 2 = 24`。**24 落在 [26, 30] 之外**。
+
+**为什么值得单列**：§4.69 已经记了**两例**（§5 侧栏 260/200 → 270/160、§8 820/1.65 → 860/1.6），
+并给了根因「`TYPOGRAPHY_DEFAULTS` 那次统一只覆盖了**代码侧三处**，**spec 这第四处被漏掉**」。
+本节是**同一根因的第三例** —— 说明那次修复的**扫描面**（「哪几处副本」）没有系统性枚举，
+只修了**当时发现的那几处**。**这正是「同一类缺陷必须靠判据拦，而不是靠再找一遍」的理由。**
+
+**处置**：① spec §6 的声明行改为 `- **24** px`（并加更正块写明依据与「这是第三例」）；
+② **扩 `verify-shell-typography.mjs` 的「spec 硬数字 = 代码单一真源」判据到 §6** ——
+从 `.tree-row` 规则**现读** `min-height`（**不写死 24**，写死会在实现改动后仍然通过 = 恒真），
+与 spec 的**声明行**交叉比对；**注入验证 2/2**（改 spec ⇒ 红；改 CSS 而不改 spec ⇒ 红）。
+
+### 四、真实发现 C：施工计划的**轮次表在 §4.80 静默停止**，且**没有指针**
+
+**实测**：`docs/plans/typora-parity-master-plan.md` 的轮次表最后一行是「**四十一续（审计 §4.80）**」，
+而**审计文档已写到 §4.117** ⇒ **本表少记了 37 轮**，且**全文没有任何指针**说明「后面记在别处」。
+（分工本身没问题：审计文档从 §4.81 起就是逐轮日志，`MEMORY.md` 也是这么记的；
+问题在**没有指针** ⇒ 读者会把本表读成「**完整的轮次记录**」。）
+
+**处置**：在轮次表末尾补**指针行**（指名审计文档 + 声明起始编号），
+并在 `verify-doc-code-refs.mjs` 加**三条判据**：① 指针**必须存在**；
+② 指针声明的起始编号必须**紧接**表中最后一个编号（防「停止点悄悄前移」）；
+③ 审计文档里**必须真的有** `## 4.(M+1)` 小节（防指针指向**空承诺**）。
+**注入验证 2/2**（抹掉指针里的编号 ⇒ 红；把 §4.81 写成 §4.82 ⇒ 红）。
+⚠️ 编号**只从轮次表行**里取 —— 首版扫全文，被 D 表里我自己刚写的「审计 §4.118」抬到 118（**当场抓到**）。
+
+### 五、⚠️ 本轮**差点写出一条假结论** —— 并把「`grep \|`」的根因**精确化**
+
+**过程**：查 §16「不得强制捆绑超大 CJK font」时，先扫到
+`apps/desktop/public/fonts/NotoSansSC-{Regular,Bold}.ttf` **各 10 MB**（共 **20 MB**，**git 已跟踪**，
+Vite 会原样复制进 `dist/` 与安装包），而我用
+`grep -rn "NotoSansSC\|Noto Sans SC\|noto-sans-sc" . --exclude-dir=node_modules …` 得到 **0 命中**，
+据此**已经准备写下**「20 MB 字体无任何引用 ⇒ 违反 §16」。
+**改用 Grep 工具复核，结论完全反转**：`packages/export/src/index.ts` 的 **PDF 导出**正在用它们
+（`fetch(\`${baseUrl}/fonts/NotoSansSC-Regular.ttf\`)` → 内嵌进 PDF）。
+⇒ **§16 没有被违反；这是一条我差点写进审计的假发现。**
+
+**根因（本轮用最小 A/B 复现，不再是推测）**：本机 PATH 上的 `grep` 是 WorkBuddy 的垫片
+（`grep --version` → `toybox 0.8.13 (is not GNU grep 9.0)`）。同一目录、同一意图：
+
+| 写法 | 命中 |
+|---|---|
+| `grep -rn "A\|B" dir` | **0** ← 静默，**不报错** |
+| `grep -rn -e A -e B dir` | **8** ✓ |
+| `grep -rnE "A\|B"`（ERE） | **8** ✓ |
+
+⇒ **toybox 的 BRE 不支持 `\|` 交替，且不报错。**
+
+**与 §4.117 的关系（必须分清，否则会把两次结论搞混）**：
+§4.117 的漏检**不是** `grep` 造成的（那次是「`| head -10` 之后把前 10 条当全部」+「用搜错形态的 0 命中当佐证」）；
+**但 `grep \|` 确实会静默返回 0** —— 两条都成立，是本轮**用 A/B 把它坐实**了。
+**共同的可复用判据只有一条：`0 命中` 必须先用一次「已知应当命中的对照」证明量具是好的。**
+
+**处置（把这条从「纪律」变成「机器判据」）**：新增**判据 ⑪**（并入 `verify-build-pipeline.mjs`，
+护栏数仍 **23**）—— **`.sh` 文件与 `.github/workflows/*.yml` 里不得出现依赖 BRE `\|` 交替的 `grep`**。
+- **危害面正是本仓最在意的那一类**：这种写法在 **CI（GNU/BSD grep）能过**，而在本机**静默 0 命中**
+  ⇒ 用它支撑的「命中 0 / 全仓无 / 无人引用」类结论**是假的**；
+- **如实声明：本判据是预防性的** —— 立此条时仓库内**违规 0 处**（6 个 `.sh` + 3 个 workflow 实测）；
+- **如实声明范围**：**不扫 `.mjs`**（那里 `\|` 大量是**JS 正则字面量**的合法转义，实测数十处，
+  机械扫描会制造成片假阳性 —— **与其做一个会误报的判据，不如明确不做**）；
+  明确**放行** `-E` / `-F`（两种情况下 `\|` 都是**字面竖线**，行为确定，不属本判据要防的形态）；
+  跳过行首 `#` 的注释行；
+- **canary 5 个方向**（双引号形态 / 单引号形态 / `-E` 不误报 / `-e -e` 不误报 / 注释行不误报），
+  **与判据共用同一个纯函数**；**注入验证 2/2**（`.sh` 与 workflow 两种载体各一次，报错含 `文件:行号`）。
+
+### 六、我自己的错（被自己的 canary 当场抓到）
+
+写轮次表指针判据的 canary 时，我把「**过宽**」那一条的断言**写反了** ——
+`if (!hasSection('## 4.8 x\n', 81))` 应为 `if (hasSection(...))`。
+⇒ 结果不是「判据没抓到漂移」，而是**判据对正确行为报错**（首次运行即红）。
+**可复用的点**：canary 的两个方向**语义相反**（「漏报」用 `!`、「误报」不用 `!`），
+写反了会**立刻红**（这次是幸运），但也可能写成一个**恒不触发**的表达式而静默通过 ——
+**每个 canary 都必须至少被实跑触发过一次**（本仓既定纪律）。
+
+### 七、教训
+
+1. **「权威 spec 有一整节不可满足」已经发生两次**（§4 Tabs、§11 Welcome），两次都**没有**任何东西在守
+   —— 因为**「这一节还适用吗」无法自动判定**。能机械化的只有**它的下游**：
+   一旦某节被声明为「不适用」，**必须**在 D 表里留下编号（本轮 D-AJ），
+   否则「作废」这个动作本身**没有可发现处**。
+2. **修「多处副本不一致」时，扫描面必须按「副本的类别」枚举，而不是按「这次发现的几处」**
+   —— §5/§8 修完之后 §6 又冒出来，就是只修了「当时看到的」。
+   这也是为什么**修完必须立刻加判据**：判据才是枚举。
+3. **`0 命中` 的先决条件永远是「量具是好的」**。本轮把它从纪律升级成了判据 ⑪。
+4. **死代码的注释也会「声称」**：`/* Welcome（§11：只含三个入口） */` 读起来像功能存在。
+   删除死代码时**要留一段说明**（谁删、为什么、依据在哪），否则下一个人会以为是漏删。
+5. **本轮所有新判据都做了注入验证**（§6 两向 / 轮次表指针两向 / 判据 ⑪ 两载体），
+   且**每条 canary 都被实跑触发过一次**（第六条那个错就是这么抓到的）。
+
+
 
 ## 五、本次审计做的改动（非策略性）
 

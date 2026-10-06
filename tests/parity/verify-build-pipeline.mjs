@@ -296,6 +296,93 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
 }
 
+// ── ⑪ shell `grep` 不得依赖 BRE 的 `\|` 交替（2026-10-06，审计 §4.118）──────────
+// 立此条的原因（**实测，最小 A/B 复现**）：本机 PATH 上的 `grep` 是 WorkBuddy 的垫片
+// （`grep --version` → `toybox 0.8.13 (is not GNU grep 9.0)`），它**不支持 BRE 的 `\|` 交替**
+// 且**不报错**。同一目录、同一意图，三种写法实测：
+//     grep -rn "A\|B"  dir  → 0 命中   ← **静默**（就是这一条）
+//     grep -rn -e A -e B dir → 8 命中  ✓
+//     grep -rnE "A|B"  dir  → 8 命中   ✓
+// ⇒ 凡把 `grep "a\|b"` 写进**脚本或 CI 步骤**的检索，在 CI（GNU/BSD grep）**会通过**，
+//   而在本机**静默返回 0** ⇒ 用它支撑的「**命中 0 / 全仓无 / 无人引用**」类结论**是假的**。
+// 本轮就差点据此写出「20 MB CJK 字体无任何引用」的假结论 —— 实际 PDF 导出正在用它们
+// （`packages/export/src/index.ts` 的 `fetch(.../fonts/NotoSansSC-*.ttf)`）。
+//
+// ⚠️ **本判据是预防性的**：立此条时仓库内**违规 0 处**。它防的是**将来**加入的写法 ——
+//    「CI 绿而本机静默错」是本仓反复踩的一类（同 ⑩ 的「不进 CI 的脚本坏了没人知道」）。
+// ⚠️ **范围限制（如实声明）**：
+//   ① 只扫 **`.sh` 文件** 与 **`.github/workflows/*.yml`** —— 即「CI / 脚本会执行」的两种载体；
+//   ② **不扫 `.mjs`**：那里 `\|` 常是 **JS 正则字面量**里的转义交替（合法且大量存在，实测数十处），
+//      机械扫描会制造成片**假阳性** ⇒ 与其做一个会误报的判据，不如明确不做；
+//   ③ 明确**放行** `-E`（ERE，`|` 无需转义）与 `-F`（固定串）—— 两种情况下 `\|` 都是**字面竖线**，
+//      行为确定，不属本判据要防的「静默 0 命中」；
+//   ④ `egrep` / `fgrep` 未纳入（本仓 0 处）；行首为 `#` 的**注释行**跳过。
+{
+  const SKIP = new Set(['node_modules', 'dist', 'target', '.git', '.workbuddy-ai', 'public', '.next', 'build']);
+  const walkByExt = (dir, ext, out = []) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+      if (SKIP.has(e.name)) continue;
+      const p = resolve(dir, e.name);
+      if (e.isDirectory()) walkByExt(p, ext, out);
+      else if (e.name.endsWith(ext)) out.push(p);
+    }
+    return out;
+  };
+  const shFiles = walkByExt(root, '.sh');
+  const wfDir = resolve(root, '.github/workflows');
+  const wfFiles = existsSync(wfDir) ? walkByExt(wfDir, '.yml') : [];
+  if (shFiles.length < 6 || wfFiles.length < 3) {
+    fail(`shell 检索卫生判据的扫描面只有 ${shFiles.length} 个 .sh / ${wfFiles.length} 个 workflow`
+      + '（下限 6 / 3）—— 扫描面漂移会让本判据**空转**');
+  }
+  // 谓词抽成**纯函数**，canary 复用同一份（避免「canary 测的是副本」）
+  const quotedSegments = (line) => {
+    const out = [];
+    for (const m of line.matchAll(/"([^"]*)"|'([^']*)'/g)) out.push(m[1] ?? m[2]);
+    return out;
+  };
+  const grepUsesBreAlternation = (line) => {
+    if (!/\bgrep\b/.test(line)) return false;
+    if (/^\s*#/.test(line)) return false;                      // 注释行
+    if (/\bgrep\b[^\n]*\s-[A-Za-z]*[EF][A-Za-z]*(\s|$)/.test(line)) return false; // -E / -F
+    return quotedSegments(line).some((q) => q.includes('\\|'));
+  };
+  const offenders = [];
+  for (const f of [...shFiles, ...wfFiles]) {
+    const rel = relative(root, f).split('\\').join('/');
+    for (const [i, line] of readFileSync(f, 'utf8').replace(/\r\n/g, '\n').split('\n').entries()) {
+      if (grepUsesBreAlternation(line)) offenders.push(`${rel}:${i + 1}  ${line.trim().slice(0, 100)}`);
+    }
+  }
+  if (offenders.length > 0) {
+    fail(`以下位置用 shell \`grep\` 做 **BRE 的 \`\\|\` 交替**（在本机 toybox grep 下**静默返回 0 命中**，`
+      + '而 CI 上能过 ⇒ 用它支撑的「命中 0 / 全仓无」结论是假的）：\n    '
+      + offenders.join('\n    ')
+      + '\n    改用 `grep -E "a|b"` 或 `grep -e a -e b`（两者实测都能正确匹配）');
+  }
+  // canary：三个方向（正 / 负-E / 负-无交替），共用上面的谓词
+  {
+    const A = grepUsesBreAlternation;
+    if (!A('  X=$(grep -rn "foo\\|bar" src || true)')) {
+      errors.push('shell 检索卫生护栏 canary 失效：`grep "a\\|b"` 未被检出');
+    }
+    if (!A("grep -c 'alpha\\|beta' file.txt")) {
+      errors.push('shell 检索卫生护栏 canary 失效：单引号形态未被检出');
+    }
+    if (A('grep -rnE "foo|bar" src')) {
+      errors.push('shell 检索卫生护栏 canary 过宽：`-E` 的 ERE 交替被误判');
+    }
+    if (A('grep -rn -e foo -e bar src')) {
+      errors.push('shell 检索卫生护栏 canary 过宽：`-e -e` 形态被误判');
+    }
+    if (A('# grep "foo\\|bar" 是历史写法，勿照抄')) {
+      errors.push('shell 检索卫生护栏 canary 过宽：注释行被当成违规');
+    }
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }

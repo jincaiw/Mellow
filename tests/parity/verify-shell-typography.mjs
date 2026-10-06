@@ -211,12 +211,13 @@ if (Number(/内置 (\d+) 主题/.exec(themeCountDrift)?.[1] ?? NaN) === declared
   fail('排版护栏自检失败：无法模拟主题数量注释漂移（V7-W4.8），护栏已失效');
 }
 
-// ── 权威 spec 的硬数字必须等于代码单一真源（2026-10-01，审计 §4.69）──────────
+// ── 权威 spec 的硬数字必须等于代码单一真源（2026-10-01，审计 §4.69；2026-10-06 §4.118 扩 §6）──
 // 立节原因（实测）：`desktop-ui-design-spec` 是**权威层**（优先级高于 ADR / plan），
 // 但它的一组硬数字在实现按 Typora 真值对齐后**没同步**：
 //   §5 侧栏 default 260 / min 200（实为 270 / 160）
 //   §8 writing width default 820 / line-height 1.65（实为 860 / 1.6）
 //   §3 macOS 1180×780（实为三平台统一 1200×800）
+//   §6 文件树行高 26–30 px（实为 24，2026-10-06 补）
 // 即「同一组数值两处维护，只改了一处」—— 与 `TYPOGRAPHY_DEFAULTS` 那次修复**同型**：
 // 那次把 settings 默认 / App 回落 / Reader CSS **三处**统一了，**spec 这「第四处」被漏掉**。
 //
@@ -276,6 +277,42 @@ if (Number(/内置 (\d+) 主题/.exec(themeCountDrift)?.[1] ?? NaN) === declared
     '§3');
   // 注：§3 的 macOS `1180 × 780` **不纳入**本判据 —— 它未实现，已在 spec 内如实标注为
   // 「未实现的建议值」（非有意差异）；断言它等于真值会得到一个必然失败的门禁。
+
+  // §6 File Tree 行高（2026-10-06 补，审计 §4.118）：单一真源 = styles.css 的 `.tree-row` 规则。
+  // 立此条的原因：本节原写 `26–30 px`，而实现是 `min-height: 24px`（有意对齐 Typora 的
+  // `line-height: 22px` + 上下各 1px padding）⇒ **同一组数值两处维护、只改了一处**，
+  // 与 §5（260/200 → 270/160）、§8（820/1.65 → 860/1.6）**同型**。
+  // ⚠️ 取值方式：**从 `.tree-row` 规则本体现读** `min-height`，不写死 24 ——
+  //    写死会让本判据在实现改动后**仍然通过**（恒真）。
+  // ⚠️ 不锁选择器形状（`.tree-row,` 与 `.file-tree .tree-row {` 是同一规则的两行写法）；
+  //    只要求「首个 `.tree-row` 规则块里能读到 min-height」。
+  {
+    const firstRuleBlock = (src, selector) => {
+      const at = src.indexOf(`\n${selector}`);
+      if (at < 0) return null;
+      const open = src.indexOf('{', at);
+      const close = src.indexOf('}', open);
+      if (open < 0 || close < 0) return null;
+      return src.slice(open + 1, close);
+    };
+    const treeRowBlock = firstRuleBlock(stylesSource, '.tree-row');
+    const treeRowMinHeight = treeRowBlock === null
+      ? null
+      : Number(/min-height:\s*(\d+)px/.exec(treeRowBlock)?.[1] ?? NaN);
+    check('行高',
+      listValue(specSection('## 6. File Tree'), /^-\s*\*{0,2}(\d+)\*{0,2}\s*px/),
+      Number.isNaN(treeRowMinHeight) ? null : treeRowMinHeight,
+      '§6');
+    // canary：判据必须能区分「一致 / 不一致」两个方向（且不能因为找不到规则块而静默放过）
+    const driftedStyles = stylesSource.replace('min-height: 24px;\n  display: flex;', 'min-height: 30px;\n  display: flex;');
+    const driftedBlock = firstRuleBlock(driftedStyles, '.tree-row');
+    if (driftedStyles === stylesSource || driftedBlock === null
+      || Number(/min-height:\s*(\d+)px/.exec(driftedBlock)?.[1] ?? NaN) !== 30) {
+      errors.push('§6 行高判据 canary 未武装：无法从 `.tree-row` 规则现读出漂移后的值（锚点已漂移）');
+    } else if (!/^-\s*\*{0,2}(\d+)\*{0,2}\s*px/.test('- **24** px')) {
+      errors.push('§6 行高判据 canary 失效：声明行形态（`- **24** px`）未被识别');
+    }
+  }
 
   // canary：四个方向（判据与 canary 共用 listValue）
   {

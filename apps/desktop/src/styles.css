@@ -1614,87 +1614,11 @@ html, body, #root {
 
 /* ── 正式 Shell（desktop-ui-design-spec）──────────────────── */
 
-/* Welcome（§11：只含三个入口） */
-.welcome {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 26px;
-  background: var(--mellow-bg-elevated);
-  z-index: 5;
-}
-.welcome-title {
-  font-size: 40px;
-  font-weight: 300;
-  color: var(--mellow-fg);
-  letter-spacing: 2px;
-}
-.welcome-actions {
-  display: flex;
-  gap: 12px;
-}
-.welcome-actions button {
-  padding: 9px 22px;
-  font-size: 14px;
-  border: 1px solid var(--mellow-border-strong);
-  border-radius: 8px;
-  background: var(--mellow-bg-subtle);
-  color: var(--mellow-fg);
-  cursor: pointer;
-}
-.welcome-actions button:hover {
-  background: var(--mellow-bg-hover);
-}
-
-/* Recent Files（Typora 深度对标：欢迎屏最近打开 + 缺失标记） */
-.welcome-recent {
-  width: min(460px, calc(100vw - 64px));
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.welcome-recent-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--mellow-fg-subtle);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-.welcome-recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.welcome-recent-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  border: 0;
-  background: transparent;
-  padding: 6px 10px;
-  border-radius: 6px;
-  text-align: left;
-  cursor: pointer;
-}
-.welcome-recent-item:hover:not(:disabled) {
-  background: var(--mellow-bg-hover);
-}
-.welcome-recent-item.missing {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.welcome-recent-name {
-  font-size: 13px;
-  color: var(--mellow-fg);
-}
-.welcome-recent-dir {
-  font-size: 11px;
-  color: var(--mellow-fg-subtle);
-}
+/* ⚠️ 2026-10-06（审计 §4.118）：此处原有 81 行 `.welcome*` 规则（`.welcome` / `-title` /
+   `-actions` / `-recent*`），随 **B2「Welcome 欢迎页停用并移除 —— 启动即文档」** 一并删除。
+   删除前的实测：`App.tsx` 与 `packages/*/src`、`tests/` 内**都没有**引用它们（除本说明文字外，
+   全仓已无该标识符）；而原注释写着「Welcome（§11：只含三个入口）」—— 读起来像 spec §11 已实现，
+   属**误导性死代码**。spec §11 已就地标注整节不适用，D 表登记为 **D-AJ**。 */
 
 /* Context Menu（§6） */
 .context-menu {

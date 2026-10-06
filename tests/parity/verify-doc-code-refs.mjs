@@ -944,6 +944,86 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── 轮次表必须指向它的**续篇**（2026-10-06，审计 §4.118）──────────────────────
+// 立此条的原因（实测）：`docs/plans/typora-parity-master-plan.md` 的**轮次表**
+// 在「四十一续（审计 §4.80）」处**停止逐轮登记**，而审计文档已经写到 §4.117 ——
+// 也就是**本表少记了 37 轮**，且**此前没有任何指针**说明「后面记在别处」
+// ⇒ 读者会把本表读成「**完整的轮次记录**」。
+//
+// 分工本身没问题（审计文档从 §4.81 起就是逐轮日志，且 MEMORY.md 也是这么写的）；
+// 问题在**没有指针** —— 与 §4.69「同一组数值两处维护、只改了一处」同型，
+// 只是这次漂移的是「**记录的完整性**」而不是数值。
+//
+// 判据（三条，任一不成立即失败；三条**共用同一组谓词**，canary 复用之）：
+//   ① 轮次表里必须有一行**指针**，指名审计文档；
+//   ② 指针声明的**起始编号**必须**紧接**表中最后一个编号（M + 1）—— 防「停止点悄悄前移」；
+//   ③ 审计文档里必须**真的有** `## 4.(M+1)` 小节 —— 防指针指向一个**空承诺**。
+// ⚠️ 编号只从**轮次表行**里取（`| **YYYY-MM-DD（…）** |`）——
+//    不能扫全文：D 表里也写着「审计 §4.118」这类编号（D-AJ 行），会把 M 抬高到 118。
+{
+  const PLAN = 'docs/plans/typora-parity-master-plan.md';
+  const AUDIT_REL = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const AUDIT_NAME = 'release-blocker-audit-2026-09-25.md';
+  // 谓词（canary 与判据共用同一份）
+  const lastRoundOf = (src) => {
+    const rows = src.split('\n').filter((l) => /^\|\s*\*\*20\d\d-\d\d-\d\d（/.test(l));
+    const nums = [];
+    for (const l of rows) for (const m of l.matchAll(/§4\.(\d+)/g)) nums.push(Number(m[1]));
+    return { rows: rows.length, nums: nums.length, last: nums.length === 0 ? null : Math.max(...nums) };
+  };
+  const pointerOf = (src, next) => src.split('\n')
+    .find((l) => l.includes(AUDIT_NAME) && next !== null && l.includes(`§4.${next}`));
+  const hasSection = (src, n) => n !== null && new RegExp(`^## 4\\.${n}[ \\t]`, 'm').test(src);
+
+  const planSrc = readFileSync(resolve(root, PLAN), 'utf8').replace(/\r\n/g, '\n');
+  const auditSrc = existsSync(resolve(root, AUDIT_REL))
+    ? readFileSync(resolve(root, AUDIT_REL), 'utf8').replace(/\r\n/g, '\n')
+    : '';
+  const { rows, nums, last } = lastRoundOf(planSrc);
+  if (rows < 40 || nums < 30) {
+    fail(`master-plan 轮次表只解析出 ${rows} 行 / ${nums} 个审计编号（下限 40 / 30）—— `
+      + '解析面漂移会让「轮次表必须指向续篇」退化成**空真**');
+  }
+  if (!existsSync(resolve(root, AUDIT_REL))) {
+    fail(`审计文档 ${AUDIT_REL} 不存在 —— 轮次表的续篇无处可指`);
+  }
+  const next = last === null ? null : last + 1;
+  if (last === null) {
+    fail('master-plan 轮次表里解析不到任何「审计 §4.N」编号 —— 锚点漂移，本判据会空转');
+  } else {
+    const pointer = pointerOf(planSrc, next);
+    if (pointer === undefined) {
+      fail(`master-plan 的轮次表在 §4.${last} 处停止，但**没有任何指针**指向 `
+        + `${AUDIT_NAME} 的 §4.${next} —— 读者会把本表读成「完整的轮次记录」`);
+    }
+    if (!hasSection(auditSrc, next)) {
+      fail(`轮次表的指针声称「§4.${next} 起记在 ${AUDIT_NAME}」，但该文档里**没有** `
+        + `\`## 4.${next}\` 小节 —— 指针指向一个空承诺`);
+    }
+  }
+  // canary：三个方向（正 / 缺指针 / 指针指向空承诺），共用上面的谓词
+  {
+    const P_OK = '| **2026-10-06（四十一续）** | x（审计 §4.80） | y |\n'
+      + `> §4.81 起只在 \`${AUDIT_NAME}\`（§4.NN 递增）。\n`;
+    const P_NOPOINTER = '| **2026-10-06（四十一续）** | x（审计 §4.80） | y |\n';
+    if (lastRoundOf(P_OK).last !== 80) {
+      errors.push('轮次表指针护栏 canary 失效：轮次行里的编号未被解析');
+    }
+    if (pointerOf(P_OK, 81) === undefined || pointerOf(P_NOPOINTER, 81) !== undefined) {
+      errors.push('轮次表指针护栏 canary 失效：指针的有/无两个方向不能区分');
+    }
+    if (pointerOf(P_OK, 82) !== undefined) {
+      errors.push('轮次表指针护栏 canary 过宽：起始编号不匹配的指针也被当成指针');
+    }
+    if (!hasSection('## 4.81 x\n', 81) || hasSection('## 4.81 x\n', 82)) {
+      errors.push('轮次表指针护栏 canary 失效：审计小节的「有/无」两个方向不能区分');
+    }
+    if (hasSection('## 4.8 x\n', 81)) {
+      errors.push('轮次表指针护栏 canary 过宽：`## 4.8` 被当成了 `## 4.81`');
+    }
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

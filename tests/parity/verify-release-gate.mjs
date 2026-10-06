@@ -395,8 +395,8 @@ for (const [p, what, decision] of DECIDED_ADRS) {
         + ' —— 超出的格在 GFM 渲染时被**静默丢弃**（D-AB 就是这样整条从渲染视图里消失的）');
     }
   }
-  if (declRows < 37) {
-    fail(`master-plan 只解析出 ${declRows} 个 D 表声明行（下限 37 = 立此判据时的基线）—— `
+  if (declRows < 38) {
+    fail(`master-plan 只解析出 ${declRows} 个 D 表声明行（下限 38 = 立此判据时的基线 + 2026-10-06 新增的 D-AJ）—— `
       + '表被削空会让「凡被引用的编号都有声明行」退化成**空真**；'
       + '若确实删过条目，请同步下调下限并说明（解析器漏成员必须响亮失败）');
   }

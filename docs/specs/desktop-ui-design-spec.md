@@ -128,7 +128,17 @@ Mellow UI 必须做到：
 ## 6. File Tree
 
 行高：
-- 26–30 px
+- **24** px
+
+> **⚠️ 2026-10-06 更正**：本节原写 `26–30 px` —— **与实现不符**。
+> 实现是 `.tree-row` 的 `min-height: 24px`（`apps/desktop/src/styles.css`），
+> 且是**有意按 Typora 真机对齐**的结果 —— 同文件注释写明依据：Typora 文件行
+> `line-height: 22px` + `#777` 字色 + `14px` 字号，Mellow 取 `padding: 1px`（上下各 1px）
+> ⇒ `22 + 2 = 24`。故原区间是**未经实现的建议值**，**不是**有意差异（别读成 D）。
+> 这是「同一组数值两处维护、只改了一处」的**第三例**（前两例是 §5 侧栏宽度、§8 排版默认值；
+> 三者根因相同：`TYPOGRAPHY_DEFAULTS` 那次统一只覆盖了代码侧，**spec 这份副本被漏掉**）。
+> 本条已纳入 `verify-shell-typography.mjs` 的「spec 硬数字必须等于代码单一真源」判据
+> （§5 / §8 / §3 之外的第四个数字）—— 从 `.tree-row` 规则现读 `min-height` 与本节声明行交叉比对。
 
 交互：
 - single click select/open
@@ -236,6 +246,28 @@ Writing width：
 ---
 
 ## 11. Welcome
+
+> **⚠️ 2026-10-06：本节整节在现行产品形态下不适用（登记为有意差异，非缺口）。**
+>
+> Welcome 欢迎页已按 **B2** 决策**停用并移除** —— Mellow 改为「**启动即文档**」（对齐 Typora）。
+> 依据（一手）：`packages/desktop-ui/src/index.ts` 头部注释原文
+> 「B2，第四轮：Welcome 欢迎页停用并移除 —— 启动即文档，对齐 Typora」。
+>
+> **机器可读取证（2026-10-06）**：
+> · `apps/desktop/src/App.tsx` 内 `welcome` 命中 **0**；
+> · `packages/*/src` 与 `tests/` 内命中 **0**；
+> · `apps/desktop/src/styles.css` 里**曾有** 81 行**无引用**的 `.welcome*` 死样式（**已删**，
+>   原处留了说明）—— 注意：本节这段说明文字本身也含该词，故「全仓命中 0」只在**排除说明文字**后成立；
+> · ⚠️ **不要**把 `tests/benchmark/fixtures/typora-menu-dump.txt` 里的 `welcomePanelItem` /
+>   `Welcome Guide` 当成反证 —— 那是 **Typora 自己**的 Help 菜单项，在 Mellow 由
+>   `help.quickStart`（「快速上手」/「Quick Start」）承载，**不是**本节的欢迎页。
+>
+> **登记**：master-plan §12 D 表 **D-AJ**。
+>
+> **本节此前从未与 B2 决策对账** ⇒ 与 **§4（Tabs 整节）** 同型：
+> 「**权威 spec 里有一整节不可满足，而没人发现**」。差别只在于 §4 是架构决策（SDI）所致、
+> 本节是产品决策（B2）所致；两者都已登记为 D。
+> 保留原文（只作废，不删除），以免丢失「曾经考虑过欢迎页」这一信息。
 
 只包含：
 
