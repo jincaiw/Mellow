@@ -6216,6 +6216,95 @@ mermaid 容器也有边框（只是不跟随这个 token）。**它们是「死�
 - **静态、可复核**：合规矩阵由本护栏每次运行重算；README 内容来自实测数据。
 - **本护栏不改变任何产品行为**（只加文档 + 判据）⇒ 制品不变 ⇒ **不发新版本**。
 
+## 4.101 审 **`invoke` 的实参字段 ↔ Rust 形参**：一处 snake_case 键 ⇒ 「另存为」的建议文件名永远丢失（2026-10-06）
+
+**动机**：§4.96 只锁了**命令名**（`invoke('x')` ↔ `#[tauri::command] fn x`）。
+命令**内部**的字段名同样是一条跨层契约 —— 而它此前**没有任何判据**。
+（同 §4.97/§4.98/§4.99 的「**只锁了一半**」。）
+
+### 缺陷
+
+`apps/desktop/src/host/fileServices.ts` 的 `save()`：
+
+```ts
+await invoke<TauriSaveResponse>('save_document', {
+  path, content,
+  encoding: …, eol: …,
+  default_name: options?.suggestedName ?? null,   // ← 键名写成了 snake_case
+  expected: …,
+});
+```
+
+而 Rust 侧：
+
+```rust
+pub async fn save_document(
+    app: tauri::AppHandle,
+    path: Option<String>, content: String, encoding: Option<String>, eol: Option<String>,
+    default_name: Option<String>,          // ← 形参
+    expected: Option<DiskState>,
+) -> SaveDocumentResult {
+    ...
+    let suggested = default_name
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| if n.ends_with(".md") { n } else { format!("{n}.md") })
+        .unwrap_or_else(|| "untitled.md".to_string());   // ← 永远走这一支
+```
+
+**Tauri 的实参键规则（读宏源码确定，不是凭印象）**：
+`tauri-macros/src/command/wrapper.rs` 的 `WrapperAttributes` 默认
+**`argument_case: ArgumentCase::Camel`**（:51），且 `key = key.to_lower_camel_case()`（:505-507）。
+⇒ **实参键 = `to_lower_camel_case(形参标识符)`** = **`defaultName`**。
+前端传的是 `default_name` ⇒ **查不到该键**。
+
+**为什么没报错**：`default_name` 是 `Option<String>`，而 Tauri 的缺键处理是
+「**目标类型不是 `Option` 才报错**」（`tauri/src/ipc/command.rs:110-112` 原话）
+⇒ 缺键 ⇒ **静默 `None`**。
+
+**后果（用户可见）**：对**未命名文档**执行保存时，系统「另存为」对话框的建议文件名
+**永远是 `untitled.md`**，而不是按注释里写明的 Typora parity
+「建议文件名来自文档首行/首个标题」（Rust 注释「C1（第四轮）」）——
+**该功能自始至终没有生效过，且没有任何报错**。
+
+### 修复
+
+前端键 `default_name` → **`defaultName`**（与其余 58 处调用的约定一致），并在该行上方写明
+「键名必须 camelCase + 宏源码出处 + 本次事故」，防回归。
+
+**为什么不用 `#[tauri::command(rename_all = "snake_case")]`**：那会与全仓 58 处调用的约定相反，
+且该命令的其余形参都是单词（`path`/`content`/…）⇒ 改前端键是最小且一致的做法。
+
+### ⚠️ 差点做出一个**假阳性**（值得记录）
+
+初版判据用「`snake(jsKey) === 形参名`」比对 ⇒ 把 `_search_id`（`search_cancel` 的形参，
+带前导下划线表示「有意未使用」）判成不匹配，**误报一处缺陷**。
+回查宏源码才发现：`heck` 的 `to_lower_camel_case` 会**丢掉下划线切出的空段** ⇒
+`_search_id` → **`searchId`**，**与前端一致**（宏源码里还有一句注释专门说明这点）。
+⇒ 判据必须**复刻框架的真实变换**，不能自己发明一种「看起来等价」的变换。
+
+### 新增判据（并入 `verify-tauri-command-contract.mjs`，护栏数仍为 22）
+
+**前端 `invoke(cmd, {…})` 的每个顶层键必须等于 `toArgKey(形参)`**（Tauri 的真实变换），
+且**必填形参（非 `Option`）必须被传**；例外表 `ARG_FIELD_EXEMPT`（**刻意为空**）+ 双向。
+
+**canary 21 项**（新增 11 项）：`toArgKey('default_name')==='defaultName'`、
+**`toArgKey('_search_id')==='searchId'`**（防我自己的假阳性）、注入型参数（`State`/`WebviewWindow`）
+不得被算作实参、**形参文本必须只取括号内部**（首版把 `pub fn name` 也吞进来 ⇒ 第一个形参永远解析不到）、
+简写属性 / spread / 大小写敏感。
+
+**注入验证 5/5**：① 把前端键退回 `default_name`（**修前状态**）⇒ 报「没有的实参键」；
+② 反向把 Rust 形参改名 ⇒ 同样报；③ 删掉必填键 ⇒ 报「未传必填形参」；
+④ 删掉 `Option` 键 ⇒ **仍绿**（证明可选判定生效）；⑤ 例外表登记不存在的缺口 ⇒ 报「已不存在」。
+
+> ⚠️ **注入验证当场抓到我自己的一个空转判据**：首版给 `defaultName:` 上方加了一段注释，
+> 而对象解析把「注释行 + 键」当成同一个顶层逗号段 ⇒ **该键根本没被提取** ⇒
+> 判据对这个键是**空的**（把键改回 snake_case 竟然不报）。
+> 修法是**先丢掉整行注释**再切分。**如果没做注入验证，这条护栏会带着一个空洞上线。**
+
+### 影响面
+
+`apps/desktop/src/host/fileServices.ts` 是**产品代码** ⇒ 制品变化 ⇒ **发 v1.5.31**。
+
 ## 五、本次审计做的改动（非策略性）
 
 

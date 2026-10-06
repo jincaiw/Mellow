@@ -118,6 +118,121 @@ export function parseInvoked(text, wrappers = INVOKE_WRAPPERS) {
   return out;
 }
 
+// ── 实参字段契约（2026-10-06 审计 §4.101）────────────────────────────────────
+// 【为什么补】上面只锁了**命令名**；命令**内部**的字段名同样是一条跨层契约，
+// 而它此前**没有任何判据**（同 §4.97/§4.98 的「只锁了一半」）。
+//
+// 【Tauri 的真实规则（读宏源码确定，不要凭印象）】
+//   `tauri-macros/src/command/wrapper.rs`：`WrapperAttributes` 的默认值是
+//   **`argument_case: ArgumentCase::Camel`**（:51），且 `key = key.to_lower_camel_case()`（:505-507）。
+//   即 **实参键 = `to_lower_camel_case(形参标识符)`**。
+//   ⚠️ 因为用的是 `heck` 的 lowerCamelCase，**下划线切出的空段会被丢掉** ——
+//   `_search_id` → `searchId`（**不是** `_searchId`）。曾据此差点误判一个不存在的缺陷。
+//
+// 【为什么危险】缺键时：**目标类型不是 `Option` 才报错**（`tauri/src/ipc/command.rs:110-112`）。
+//   ⇒ 对 `Option<T>` 形参，**键名写错 = 静默取 `None`**，没有任何报错。
+//   实测即抓到：`save_document(default_name: Option<String>)` 而前端传 `default_name`
+//   ⇒ 键应为 `defaultName` ⇒ **「另存为」永远建议 `untitled.md`**，而不是按 Typora parity
+//   从文档首行/首个标题推导（v1.5.31 修复）。
+/** Tauri 的实参键变换：形参标识符 → lowerCamelCase（下划线空段丢弃） */
+export function toArgKey(param) {
+  return param.split('_').filter(Boolean)
+    .map((w, i) => (i === 0 ? w : w[0].toUpperCase() + w.slice(1))).join('');
+}
+
+/** Rust 侧：命令 → 形参（名 → 是否 `Option`）；注入型参数（State/AppHandle/窗口）不计 */
+export function parseCommandParams(rsText) {
+  const out = new Map();
+  const lines = rsText.split('\n');
+  const INJECTED_NAME = new Set(['app', 'app_handle', 'window', 'webview_window', 'webview', 'state']);
+  const INJECTED_TYPE = /\b(State|AppHandle|WebviewWindow|Window|Webview|Channel|Resource)\b/;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trimStart();
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) continue;
+    if (!lines[i].includes('#[tauri::command]')) continue;
+    let name = null, start = -1;
+    for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+      const m = lines[j].match(/\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+      if (m) { name = m[1]; start = j; break; }
+    }
+    if (!name) continue;
+    // 只取括号**内部**（首版把 `pub fn name` 也吞进来 ⇒ 第一个形参永远解析不到）
+    let depth = 0, text = '', done = false, started = false;
+    for (let j = start; j < lines.length && !done; j++) {
+      for (const ch of lines[j]) {
+        if (!started) { if (ch === '(') { started = true; depth = 1; } continue; }
+        if (ch === '(') depth++;
+        else if (ch === ')') { depth--; if (depth === 0) { done = true; break; } }
+        text += ch;
+      }
+      if (!done) text += '\n';
+    }
+    // 顶层逗号切分（对 `<>` `()` `[]` 深度感知 —— 泛型里的逗号不算分隔符）
+    const segs = [];
+    { let d2 = 0, cur = '';
+      for (const ch of text) {
+        if ('<(['.includes(ch)) d2++;
+        else if ('>)]'.includes(ch)) d2--;
+        if (ch === ',' && d2 === 0) { segs.push(cur); cur = ''; continue; }
+        cur += ch;
+      }
+      if (cur.trim()) segs.push(cur);
+    }
+    const params = new Map();
+    for (const seg of segs) {
+      const m = seg.match(/^\s*(?:mut\s+)?([a-z_][a-z0-9_]*)\s*:\s*([\s\S]+)$/);
+      if (!m) continue;
+      const pname = m[1];
+      if (INJECTED_NAME.has(pname.replace(/^_/, ''))) continue;
+      if (INJECTED_TYPE.test(m[2])) continue;
+      params.set(pname, { optional: /Option\s*</.test(m[2]) });
+    }
+    out.set(name, params);
+  }
+  return out;
+}
+
+/** 前端侧：`invoke('cmd', { … })` 的**顶层**字段名（支持简写属性；跳过 spread） */
+export function parseInvokeArgs(text) {
+  const out = [];
+  const RE = /(?<![.\w])invoke\s*(?:<[^()]*>)?\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*,\s*\{/g;
+  for (const m of text.matchAll(RE)) {
+    if (inComment(text, m.index)) continue;
+    let depth = 0, obj = '';
+    for (let k = m.index + m[0].length - 1; k < text.length; k++) {
+      const ch = text[k];
+      if (ch === '{') depth++;
+      if (ch === '}') depth--;
+      obj += ch;
+      if (depth === 0) break;
+    }
+    // ⚠️ 必须先丢掉**整行注释** —— 实测踩过：给某个键上方加了一段注释后，
+    //    该键与注释落在同一个「顶层逗号段」里，键名正则匹配不到 ⇒ **该键根本没被提取**
+    //    ⇒ 判据对这个键是空的（注入验证当场暴露：把键改回 snake_case 竟然不报）。
+    obj = obj.split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
+    const segs = [];
+    let d = 0, cur = '';
+    for (let k = 1; k < obj.length - 1; k++) {
+      const ch = obj[k];
+      if ('{(['.includes(ch)) d++;
+      else if ('})]'.includes(ch)) d--;
+      if (ch === ',' && d === 0) { segs.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    if (cur.trim()) segs.push(cur);
+    const keys = [];
+    for (const seg of segs) {
+      const s = seg.trim();
+      if (!s || s.startsWith('...')) continue; // spread：静态判不了，跳过
+      const kv = s.match(/^([A-Za-z_$][\w$]*)\s*:/);
+      const sh = s.match(/^([A-Za-z_$][\w$]*)$/);
+      if (kv) keys.push(kv[1]); else if (sh) keys.push(sh[1]);
+    }
+    out.push({ cmd: m[1], keys });
+  }
+  return out;
+}
+
 // ── 真实扫描 ────────────────────────────────────────────────────────────────
 const RUST_SRC = resolve(root, 'apps/desktop/src-tauri/src');
 const RS_SKIP = new Set(['target', 'node_modules']);
@@ -220,6 +335,62 @@ for (const [name, reason] of R_NOT_FRONTEND_INVOKED) {
   }
 }
 
+// ── ⑤ 实参字段契约：前端 `invoke(cmd, {…})` 的键 ↔ Rust 形参（按 Tauri 的真实键变换）──
+// 判据：**键必须等于 `toArgKey(形参)`**；必填形参（非 `Option`）必须被传。
+const ARG_FIELD_EXEMPT = new Map([]); // 刻意为空（现状 0 不匹配）；新增缺口须登记理由
+
+const cmdParams = new Map();
+for (const f of walkRs(RUST_SRC)) {
+  for (const [cmd, params] of parseCommandParams(read(relative(root, f).split('\\').join('/')))) {
+    cmdParams.set(cmd, params);
+  }
+}
+if (cmdParams.size < MIN_DECLARED) {
+  fail(`只解析出 ${cmdParams.size} 个命令的形参（下限 ${MIN_DECLARED}）—— 扫描面漂移会让本判据空转`);
+}
+const argCalls = [];
+for (const f of walkFe(resolve(root, 'apps/desktop/src'))) {
+  const rel = relative(root, f).split('\\').join('/');
+  for (const c of parseInvokeArgs(read(rel))) argCalls.push({ ...c, file: rel });
+}
+for (const f of walkFe(resolve(root, 'apps/desktop/scripts'))) {
+  const rel = relative(root, f).split('\\').join('/');
+  for (const c of parseInvokeArgs(read(rel))) argCalls.push({ ...c, file: rel });
+}
+if (argCalls.length < 30) {
+  fail(`只解析出 ${argCalls.length} 处带参 invoke（下限 30）—— 扫描面漂移会让本判据空转`);
+}
+for (const c of argCalls) {
+  const params = cmdParams.get(c.cmd);
+  if (params === undefined) continue; // 命令名本身由 ② 负责
+  const byKey = new Map([...params.keys()].map((p) => [toArgKey(p), p]));
+  const unknown = c.keys.filter((k) => !byKey.has(k));
+  const missing = [...params.entries()].filter(([p, v]) => !v.optional && !c.keys.includes(toArgKey(p)))
+    .map(([p]) => p);
+  for (const bad of [...unknown.map((k) => `key:${k}`), ...missing.map((p) => `param:${p}`)]) {
+    if (ARG_FIELD_EXEMPT.has(`${c.cmd}.${bad}`)) continue;
+    if (bad.startsWith('key:')) {
+      fail(`${c.cmd}（← ${c.file}）前端传了 Rust **没有**的实参键 \`${bad.slice(4)}\``
+        + `（Rust 形参：${[...params.keys()].join(', ') || '(无)'}；Tauri 期望的键：`
+        + `${[...byKey.keys()].join(', ') || '(无)'}）—— 键名不匹配时 **Option 形参会静默取 None**`
+        + '（`tauri/src/ipc/command.rs`：只有非 optional 才报错）');
+    } else {
+      fail(`${c.cmd}（← ${c.file}）前端**未传** Rust 必填形参 \`${bad.slice(6)}\``
+        + `（期望的键：\`${toArgKey(bad.slice(6))}\`）`);
+    }
+  }
+}
+for (const [key, reason] of ARG_FIELD_EXEMPT) {
+  if (typeof reason !== 'string' || reason.trim() === '') fail(`ARG_FIELD_EXEMPT 的 ${key} 缺理由`);
+  const [cmd, spec] = key.split('.');
+  const params = cmdParams.get(cmd);
+  if (params === undefined) { fail(`ARG_FIELD_EXEMPT 登记了不存在的命令：${cmd}`); continue; }
+  const stillBad = spec.startsWith('key:')
+    ? argCalls.some((c) => c.cmd === cmd && c.keys.includes(spec.slice(4)))
+    : argCalls.some((c) => c.cmd === cmd && !c.keys.includes(toArgKey(spec.slice(6))));
+  if (!stillBad) fail(`ARG_FIELD_EXEMPT 登记了 ${key}，但该缺口已不存在 —— 请删除该例外条目`);
+}
+
 // ── 包装器清单双向自检（防化石 / 防清单里混进不转发 invoke 的函数）──────────
 {
   const allFe = [...walkFe(resolve(root, 'apps/desktop/src'))]
@@ -287,6 +458,34 @@ for (const [name, reason] of R_NOT_FRONTEND_INVOKED) {
   if (parseRegistered('pub fn run() {}\n') !== null) {
     errors.push('canary 失效：缺少 generate_handler 时 parseRegistered 未返回 null');
   }
+  // ── 实参字段契约（⑤）的 canary：**用合成夹具**（不绑现实数据）──
+  const eq = (got, want, what) => {
+    if (got !== want) errors.push(`实参键 canary 失效：${what} 期望 ${JSON.stringify(want)}、实得 ${JSON.stringify(got)}`);
+  };
+  eq(toArgKey('path'), 'path', 'toArgKey(path)');
+  eq(toArgKey('default_name'), 'defaultName', 'toArgKey(default_name)');
+  // ⚠️ 这条是「防我自己的假阳性」：heck 的 lowerCamelCase 会丢掉下划线空段
+  eq(toArgKey('_search_id'), 'searchId', 'toArgKey(_search_id)（前导下划线必须被丢掉）');
+  eq(toArgKey('target_path'), 'targetPath', 'toArgKey(target_path)');
+
+  const rsSample = '#[tauri::command]\n'
+    + 'pub async fn f(a: String, b: Option<String>, state: tauri::State<X>, window: tauri::WebviewWindow) -> R {\n';
+  const p = parseCommandParams(rsSample).get('f');
+  if (!p || p.size !== 2 || !p.get('a') || p.get('a').optional !== false || p.get('b').optional !== true) {
+    errors.push(`canary 失效：parseCommandParams 结果不对（得到 ${JSON.stringify(p && [...p])}）`);
+  }
+  // 负样本-放宽：注入型参数（State / WebviewWindow）不得被算作实参
+  if (p && (p.has('state') || p.has('window'))) errors.push('canary 失效：注入型参数被算作实参');
+  // 首版踩过：不剥 `pub fn f` 前缀 ⇒ 第一个形参永远解析不到
+  if (!p || !p.has('a')) errors.push('canary 失效：第一个形参未被解析（形参文本必须只取括号内部）');
+
+  const keys1 = parseInvokeArgs("await invoke('f', { a, b: 1, c: x.y });\n")[0]?.keys;
+  eq((keys1 ?? []).join(','), 'a,b,c', 'parseInvokeArgs 简写 + 具名键');
+  const keys2 = parseInvokeArgs("await invoke('f', { ...rest, a });\n")[0]?.keys;
+  eq((keys2 ?? []).join(','), 'a', 'parseInvokeArgs 必须跳过 spread');
+  // 负样本-放宽：大小写必须敏感（`A` 不是 `a`）
+  const keys3 = parseInvokeArgs("await invoke('f', { A });\n")[0]?.keys;
+  eq((keys3 ?? []).join(','), 'A', 'parseInvokeArgs 大小写敏感');
 }
 
 if (errors.length > 0) {
@@ -295,5 +494,8 @@ if (errors.length > 0) {
 
 console.log(`Tauri command contract: 声明 D=${D.size} / 注册 R=${R.size} / 前端调用 F=${F.size}；`
   + 'D∖R = ∅（无不可达命令）、F∖R = ∅（无调用不存在命令）、R∖D = ∅、R∖F = ∅（无死注册）；'
-  + `包装器清单 ${INVOKE_WRAPPERS.length} 项已双向自检；canary 10 项`
-  + '（含注释行 / 成员调用 bridge.invoke / __TAURI__ 全局桥 / 嵌套泛型 / 包装器 / 缺 generate_handler）全绿。');
+  + `**实参字段契约**：${argCalls.length} 处带参 invoke 全部与 Rust 形参匹配`
+  + `（按 Tauri 的真实键变换 to_lower_camel_case；例外表 ${ARG_FIELD_EXEMPT.size} 项，刻意为空）；`
+  + `包装器清单 ${INVOKE_WRAPPERS.length} 项已双向自检；canary 21 项`
+  + '（含注释行 / 成员调用 bridge.invoke / __TAURI__ 全局桥 / 嵌套泛型 / 包装器 / 缺 generate_handler /'
+  + ' 实参键变换含前导下划线 / 注入型参数 / spread / 大小写敏感）全绿。');

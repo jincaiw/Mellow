@@ -82,7 +82,12 @@ export const tauriFileService: FileService = {
       content,
       encoding: options?.encoding ?? null,
       eol: options?.eol ?? null,
-      default_name: options?.suggestedName ?? null,
+      // ⚠️ 键名必须是 **camelCase**：Tauri 的 `#[tauri::command]` 默认 `rename_all = "camelCase"`，
+      // 实参键 = `to_lower_camel_case(形参标识符)`（`tauri-macros/src/command/wrapper.rs:51/505-507`）。
+      // Rust 形参是 `default_name: Option<String>` ⇒ 键必须是 `defaultName`。
+      // 曾误写成 `default_name` ⇒ 缺键 + `Option` ⇒ 静默取 `None`
+      // ⇒ 「另存为」永远建议 `untitled.md`（审计 §4.101，v1.5.31 修复）。
+      defaultName: options?.suggestedName ?? null,
       expected: options?.expectedDisk
         ? { mtime_ms: options.expectedDisk.mtimeMs, identity_key: options.expectedDisk.identityKey }
         : null,
