@@ -1472,7 +1472,16 @@ export default function App() {
       const widthRaw = Number(localStorage.getItem('mellow.export.image.width'));
       const qualityRaw = Number(localStorage.getItem('mellow.export.image.quality'));
       // 2026-09-30：图片导出正文字号（Typora `imageFontSize` 的对标；缺省回落 16 = 既有默认）
-      const fontSizeRaw = Number(localStorage.getItem('mellow.export.image.fontSize'));
+      // 2026-10-06（ADR-0033 Q=A2）：新增「字号来源」—— `custom`（默认，走 `export.image.fontSize`）
+      // 或 `followEditor`（跟随**编辑器字号** `editor.fontSize`）。
+      // ⚠️ canvas 无主题 CSS 通道 ⇒ 「跟随编辑器字号」是**有意的近似**（非 Typora 等价，已登记 D）。
+      // **默认 `custom` ⇒ 既有行为不变。**
+      const fontSizeMode = localStorage.getItem('mellow.export.image.fontSizeMode') === 'followEditor' ? 'followEditor' : 'custom';
+      const editorFontSizeDef = settingById('editor.fontSize');
+      const editorFontSizeRaw = editorFontSizeDef === undefined ? NaN : Number(readSetting(editorFontSizeDef));
+      const fontSizeRaw = fontSizeMode === 'followEditor' && Number.isFinite(editorFontSizeRaw) && editorFontSizeRaw > 0
+        ? editorFontSizeRaw
+        : Number(localStorage.getItem('mellow.export.image.fontSize'));
       const [{ exportImageBytes, DEFAULT_IMAGE_OPTIONS }, savePath] = await Promise.all([
         import('../../../packages/export/src/image/index'),
         invoke<string | null>('pick_save_path', {

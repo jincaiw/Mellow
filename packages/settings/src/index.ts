@@ -294,6 +294,17 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 改成 24 会改变所有既有图片导出的输出（面积 1.5× 放大，更易触及长图保护上限），
       // 需视觉/真机确认后再定；此处只**提供可配置能力**，让用户可自行对齐 Typora。
       { id: 'export.image.fontSize', labelKey: 'settings.export.image.fontSize', type: 'number', storageKey: 'mellow.export.image.fontSize', defaultValue: 16, min: 8, max: 48, step: 1, descriptionKey: 'settings.export.image.fontSizeDesc' },
+      // 2026-10-06（ADR-0033 **Q = A2**）：Typora 该组的**另一半** —— radio `Use theme font size`。
+      // ⚠️ Mellow 的图片导出是 **canvas 渲染（显式 fontFamily）**，**没有主题 CSS 通道**
+      // ⇒ Typora 的 `fontSize = void 0`（交给主题 CSS）**不可直接照搬**。
+      // 取**最接近且可控**的等价物 = 跟随**编辑器字号**（`editor.fontSize`）。
+      // ⚠️ 这是**有意的差异**（非 Typora 等价）⇒ 已在 ADR-0033 写明，须登记 D。
+      // **默认 `custom` ⇒ 既有行为不变**（仍走 `export.image.fontSize`，缺省 16）。
+      { id: 'export.image.fontSizeMode', labelKey: 'settings.export.image.fontSizeMode', type: 'select', storageKey: 'mellow.export.image.fontSizeMode', defaultValue: 'custom',
+        options: [
+          { value: 'custom', labelKey: 'settings.export.image.fontSizeMode.custom' },
+          { value: 'followEditor', labelKey: 'settings.export.image.fontSizeMode.followEditor' },
+        ], descriptionKey: 'settings.export.image.fontSizeModeDesc' },
       { id: 'export.image.quality', labelKey: 'settings.export.image.quality', type: 'number', storageKey: 'mellow.export.image.quality', defaultValue: 0.92, min: 0.1, max: 1, step: 0.02, descriptionKey: 'settings.export.image.qualityDesc' },
       // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（配置键 `preLinebreakOnExport`，默认 false）。
       // 背景：Mellow 的 Enter 产**单个 `\n`**（G7-EDIT-07），而 CommonMark 把段内单换行渲染为空格

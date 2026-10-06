@@ -59,7 +59,7 @@ Release verdict: NO-GO：6 项未闭环
 | 13 | §4.99 | **3 个「声明了但无人消费」的主题 token**（`--mellow-tab-underline` / `--mellow-warning-fg` / `--mellow-mermaid-border`） | **已裁决（2026-10-06）= B3：维持登记**（与 ADR-0027 Q3 对 `--mellow-md-fg` 的既有口径一致：删除属主题面变更、接线属外观变更） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q2） |
 | 14 | §4.95 | **3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）去留 —— 其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
-| 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **待裁决**（**未实施**；canvas 渲染**无主题 CSS 通道** ⇒ 等价物形态需裁决；⚠️ **改默认值会改变所有既有导出输出**，须先经视觉确认） | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
+| 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -6997,6 +6997,43 @@ A3 跟随主题定义字号）需裁决。
 
 - 更正登记表第 1 行；`verify-release-gate.mjs` 增「取代关系」判据 + canary；
 - **无产品代码改动** ⇒ 制品不变 ⇒ **不发新版本**。
+
+## 4.115 裁决并实施 ADR-0033：图片导出补上「字号来源」（**默认不变**）（2026-10-06）
+
+**依据**：用户 2026-09-30 的常设授权（同 ADR-0032 的引法）。
+
+### 裁决 = **A2（提供「跟随编辑器字号」开关）**，理由（**先证伪了 A3**）
+
+| 选项 | 判定 |
+|---|---|
+| **A3 跟随主题定义的字号** | ❌ **实测等于空操作** —— Mellow 的主题**没有 per-theme 字号**，排版字号是常量 `TYPOGRAPHY_DEFAULTS.fontSize = 16`（与 `BODY_SIZE` 同值）⇒ 永远解析成 16 ⇒ **选项永不产生可观察差异**（**假控件**） |
+| **A1 不做** | 会把这个 parity 缺口**永久留着**（Typora 确实有这一半） |
+| **A2 跟随编辑器字号** | ✅ `editor.fontSize` 是**用户可改**的真实设置 ⇒ 语义明确、可解释 |
+
+**⚠️ 有意的差异**：Typora 的 radio 是「让**主题 CSS** 的字号生效」；Mellow 的图片导出是
+**canvas 渲染**（显式 `fontFamily`）、**没有主题 CSS 通道** ⇒ 取「跟随**编辑器**字号」作近似。
+**该差异须登记 D**。
+
+### 实施（**默认 `custom` ⇒ 既有输出逐字节不变**）
+
+- 设置项 `export.image.fontSizeMode`（select / **默认 `custom`**）；
+- App 接线：`followEditor` ⇒ `settingById('editor.fontSize')` 的值作为 `bodyFontSize`（非法/缺失回落既有路径）；
+- i18n zh/en 各 **4** 条键（目录 811 → **815**）；
+- 护栏：`verify-settings-contract.mjs` 的图片字号段扩展（schema 形态 + **默认必须是 `custom`**
+  + App 两处读取 + **「跟随编辑器字号」必须读 `editor.fontSize`**（否则选项静默无效）+ 2 条 canary）；
+- **`BODY_SIZE` 与既有护栏断言未动** ⇒ 既有导出输出不变 ✓。
+
+### 状态变化（如实声明）
+
+- 门禁 `Pending decisions:` 由 `ADR-0033` **回到「无」**（ADR-0033 移入 `DECIDED_ADRS`）；
+- 登记表第 16 行 → **已裁决**；
+- **产品代码改动**（设置 schema + App + i18n）⇒ 制品变化 ⇒ **发 v1.5.33**。
+
+### ⚠️ 仍未裁的部分（**不要顺手改**）
+
+**默认值是否对齐 Typora 的 24** —— 会改变**所有**既有图片导出输出（面积 **1.5×** 放大，
+更易触及 `MAX_IMAGE_HEIGHT` / `MAX_IMAGE_PIXELS` 长图保护）⇒ **须经视觉 / 真机确认后另裁**
+（ADR-0033「关键风险」节；`BODY_SIZE = 16` 的护栏断言**故意保留**）。
 
 ## 五、本次审计做的改动（非策略性）
 

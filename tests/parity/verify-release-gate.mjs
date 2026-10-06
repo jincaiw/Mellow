@@ -167,6 +167,13 @@ const DECIDED_ADRS = [
   ['docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md',
     '审计新增四问：死 i18n 键 / 死主题 token / 零消费者包 / schema 外持久化键（§4.95–§4.105）',
     'Q1=A1 / Q2=B3 / Q3=C3 / Q4=D2'],
+  // 2026-10-06 立、**同日裁决为 Accepted**：图片导出的「用主题字号」等价物 ——
+  // 登记表第 7 行原写「已处置」是**过度声称**（只覆盖「自定义字号」那一半），
+  // 另一半（Typora `useThemeFontSize` radio）未实施且计划写着「需单独裁决」却**没有载体**。
+  // 裁决 **A2**：提供「跟随编辑器字号」开关（A3 实测等于空操作：主题无 per-theme 字号；
+  // A1 会把 parity 缺口永久留着）。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变。**
+  ['docs/adr/ADR-0033-image-export-theme-font-size.md',
+    '图片导出的「用主题字号」等价物（canvas 无主题 CSS 通道）', 'A2（跟随编辑器字号；默认 custom 不变）'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
@@ -177,14 +184,7 @@ const DECIDED_ADRS = [
 // **分处两个 eventHandler**，而 `index.ts` 的注册顺序把优先级 2 排在 3/4 之后 ⇒ 与 spec §3 相反。
 // 裁决 A3 = 在 `handleSmartPaste` 内**显式让位**（有图片 payload 则 return false）⇒ 不再依赖注册顺序。
 // 故它**不再**是待裁决项（已移入 DECIDED_ADRS）。
-const PENDING_ADRS = [
-  // 2026-10-06 立（**Proposed，待裁决**）：图片导出的「用主题字号」——
-  // 登记表第 7 行原写「已处置」，**过度声称**（只覆盖了「自定义字号」那一半）；
-  // 另一半（Typora `useThemeFontSize` radio）**未实施**且计划里明写「需单独裁决」，
-  // 却**没有载体** ⇒ 按「新的未裁决项必须新立 Proposed ADR」补上。
-  ['docs/adr/ADR-0033-image-export-theme-font-size.md',
-    '图片导出的「用主题字号」等价物（canvas 无主题 CSS 通道；改默认值会改变所有既有导出输出）'],
-];
+const PENDING_ADRS = [];   // 当前无待裁决 ADR（ADR-0033 已于 2026-10-06 同日裁决为 Accepted）
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);

@@ -1,6 +1,9 @@
 # ADR-0033 — 图片导出的「用主题字号」等价物（Typora `useThemeFontSize` 的另一半）
 
-**Status:** **Proposed**（2026-10-06）—— 待裁决；**裁决前不生效**（保持现状）
+**Status:** **Accepted**（2026-10-06）—— 已裁决并生效（原 Proposed 同日裁决）
+
+> **裁决依据**：用户于 2026-09-30 的常设授权「**全部自行评估、决策、实施，不叫我人工参与**」
+> （ADR-0024/25/26/29/32 同引）。
 
 ## 背景：本 ADR 为什么存在（**又一次「已处置」的过度声称**）
 
@@ -57,15 +60,37 @@ Typora 那种「`fontSize = void 0` 交给 CSS」的做法**不可直接照搬**
 ⇒ **默认值是否对齐，必须经视觉 / 真机确认后才能改**，不能凭「对齐 Typora」一句话改。
 （本 ADR 只裁决「等价物形态」；**默认值另需一次视觉确认**。）
 
-## 裁决（待填）
+## 裁决（2026-10-06）= **A2（提供「跟随编辑器字号」开关）** ✅ 已实施
 
-> **状态：Proposed。** 未裁决 ⇒ **保持现状**（不加选项、不改默认值）。
-> 裁决时请给出编号（A1/A2/A3），并把本 ADR 顶部状态改为 `Accepted`、
-> 同步登记表**第 7 行**（拆成「自定义字号 = 已处置」+「用主题字号 = 已裁决」）、
-> 把本文件从门禁 `PENDING_ADRS` 移入 `DECIDED_ADRS`。
+**为什么选 A2 而不是 A1 / A3**：
+
+- **A3（跟随主题定义的字号）实测等于空操作**：Mellow 的主题**没有** per-theme 字号 ——
+  排版字号是常量 `TYPOGRAPHY_DEFAULTS.fontSize = 16`（与 `BODY_SIZE` 同值）
+  ⇒ 「跟随主题字号」永远解析成 16 ⇒ **选项永不产生可观察差异**（假控件）。
+- **A1（不做）** 会把这个 parity 缺口**永久留着**，而 Typora 确实有这一半；
+- **A2** 是**最接近且可控**的等价物：`editor.fontSize` 是**用户可改**的真实设置
+  ⇒ 「导出跟随编辑器字号」有明确、可解释的语义。
+
+**⚠️ 这是有意的差异（非 Typora 等价）**：Typora 的 radio 是「让**主题 CSS** 的字号生效」，
+而 Mellow 的图片导出是 **canvas 渲染**（显式 `fontFamily`），**没有主题 CSS 通道**
+⇒ 取「跟随**编辑器**字号」作为近似。**该差异须登记 D**（属「与 Typora 不同但有意」的一类）。
+
+### 实施（默认 `custom` ⇒ **既有行为不变**）
+
+| 项 | 内容 |
+|---|---|
+| 设置项 | `export.image.fontSizeMode`（select：`custom` / `followEditor`，**默认 `custom`**） |
+| App 接线 | `followEditor` ⇒ 取 `settingById('editor.fontSize')` 的值作为 `bodyFontSize`；非法/缺失回落既有路径 |
+| i18n | zh/en 各 **4** 条键（label / 两个选项 / description） |
+| 护栏 | `verify-settings-contract.mjs` 的图片字号段**扩展**：锁 schema 形态 + **默认必须是 `custom`** + App 两处读取 + `editor.fontSize` 读取 + 2 条 canary |
+| 单测 | **无需新增**：纯函数部分（`resolveImageBodyFontSize` 的回落 + clamp）已由 `packages/export/test/image.test.ts` 锁住；本次新增的只是 App 侧的取值分支（由护栏锁接线） |
+
+**⚠️ 默认值仍为 16 且仍走 `custom`** ⇒ **所有既有图片导出的输出逐字节不变** ✓
+（`BODY_SIZE = 16` 与既有护栏断言**保持原样**）。**默认值是否对齐 Typora 的 24，
+仍按本 ADR 的「关键风险」节 —— 需视觉 / 真机确认后另裁。**
 
 ## 影响
 
-- **现状下无任何行为变更**（本 ADR 只登记）。
-- 若裁决为 A2/A3：涉及 `ImageExportOptions`、`resolveImageBodyFontSize()`、设置 schema（+1 项）、
-  App 接线、i18n（zh/en）、护栏，以及**一次视觉 Golden 复核**。
+- 现状：新增一个**默认不生效**的选项 ⇒ 既有行为不变。
+- 制品变化（设置 schema + App 接线 + i18n）⇒ 随下一版本发布。
+

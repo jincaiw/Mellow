@@ -1382,6 +1382,25 @@ if (cssLayerAnchor === undefined) {
   // canary：去掉 App 的读取必须被检出
   const appDrift = appSource.replace("localStorage.getItem('mellow.export.image.fontSize')", "localStorage.getItem('mellow.export.image.fontSizeX')");
   if (appDrift === appSource) fail('图片字号 canary 未武装：注入点未命中');
+
+  // ── 2026-10-06（ADR-0033 **Q = A2**）：字号来源 `custom`（默认）| `followEditor` ──
+  // 只锁**接线**与**默认值**：默认必须是 `custom` —— 若默认改成 `followEditor`，
+  // **所有既有图片导出的输出会随编辑器字号变化**（属外观变更，须单独裁决）。
+  if (!/id: 'export\.image\.fontSizeMode'[^}]*type: 'select'[^}]*defaultValue: 'custom'/.test(settingsSource)) {
+    fail('settings 缺少 export.image.fontSizeMode（select / **默认 custom**）—— 默认必须是 custom，否则既有导出输出会变');
+  }
+  if (/id: 'export\.image\.fontSizeMode'[^}]*defaultValue: 'followEditor'/.test(settingsSource)) {
+    fail('export.image.fontSizeMode 的默认值不得是 followEditor —— 会改变所有既有图片导出输出（ADR-0033 关键风险）');
+  }
+  if (!/'mellow\.export\.image\.fontSizeMode'/.test(appSource)) {
+    fail('App.tsx 未读取 mellow.export.image.fontSizeMode → 该设置不会生效');
+  }
+  if (!/settingById\('editor\.fontSize'\)/.test(appSource)) {
+    fail("App.tsx 的「跟随编辑器字号」未读取 editor.fontSize → 该选项会**静默无效**");
+  }
+  // canary：去掉 App 对 fontSizeMode 的读取必须被检出
+  const appDrift2 = appSource.replace("localStorage.getItem('mellow.export.image.fontSizeMode')", "localStorage.getItem('mellow.export.image.fontSizeModeX')");
+  if (appDrift2 === appSource) fail('字号来源 canary 未武装：注入点未命中');
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────
