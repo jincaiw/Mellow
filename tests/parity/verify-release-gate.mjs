@@ -660,10 +660,23 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
           + '（v1.5.32 实测：macOS 的 dmg 与 Windows/Linux 的制品分落到两个 release ⇒ finalize 断言失败、卡 Draft）');
       }
       const ownerName = owners.length === 1 ? owners[0].name : null;
+      // 谓词抽成**纯函数**，canary 复用同一份（避免「canary 测的是副本」）。
+      const ownerGuardsNonTag = (text) => text.includes('GITHUB_REF_TYPE') && text.includes('!= "tag"');
+      const ownerAssertsNoDuplicate = (text) => text.includes('::error::') && text.includes('-gt 1');
       if (ownerName !== null) {
-        if (!owners[0].text.includes('::error::') || !owners[0].text.includes('-gt 1')) {
+        if (!ownerAssertsNoDuplicate(owners[0].text)) {
           fail(`release.yml 的 ${ownerName} 未**断言没有重复 release** —— `
             + '把「同 tag 多个 release」从静默怪状变成**响亮失败**的那条检查不得删除');
+        }
+        // owner 必须**只在 tag 触发时**创建 release。两个锚点缺一不可：
+        // ① 不加守卫 ⇒ `workflow_dispatch`（本 workflow 也支持）会为**分支名**建 release；
+        // ② 但**不能**写成 job 级 `if: startsWith(github.ref,'refs/tags/')` ——
+        //    三平台 job `needs: [create-release]` ⇒ owner 被跳过会**连带全被跳过**（把「仅构建」路径弄没）。
+        //    ⚠️ 这正是本轮修竞态时**我自己踩过**的坑（初版就是 job 级 `if:`）。
+        if (!ownerGuardsNonTag(owners[0].text)) {
+          fail(`release.yml 的 ${ownerName} 未按 \`GITHUB_REF_TYPE\` **只在 tag 触发时**创建 release —— `
+            + '本 workflow 也支持 `workflow_dispatch`，不加守卫会为**分支名**建 release；'
+            + '而写成 job 级 `if:` 又会因三平台 `needs:` 而**连带跳过构建**（实测踩过）');
         }
         for (const j of tauriJobs) {
           const needs = /needs:\s*\[([^\]]*)\]/.exec(j.text);
@@ -695,6 +708,64 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
       if (!jobsOf('jobs:\n  create-release:\n    steps: []\n')?.some((j) => j.name === 'create-release')) {
         errors.push('单一 owner 护栏 canary 失效：带连字符的 job 名未被解析');
       }
+      // canary：owner 的两个谓词（正 / 负样本）
+      if (!ownerAssertsNoDuplicate('run: echo "::error::x"; if [ "$C" -gt 1 ]; then')) {
+        errors.push('单一 owner 护栏 canary 失效：「断言没有重复」的正样本未被识别');
+      }
+      if (ownerAssertsNoDuplicate('run: echo ok')) {
+        errors.push('单一 owner 护栏 canary 失效：「断言没有重复」的负样本被判成有断言');
+      }
+      if (!ownerGuardsNonTag('if [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then')) {
+        errors.push('单一 owner 护栏 canary 失效：`GITHUB_REF_TYPE != tag` 守卫未被识别');
+      }
+      if (ownerGuardsNonTag('run: gh release create x --draft')) {
+        errors.push('单一 owner 护栏 canary 失效：没有 tag 守卫的 owner 被判成有守卫（负样本）');
+      }
+    }
+
+    // ── 同一 tag 的运行必须**串行**（2026-10-06，审计 §4.110）────────────────────
+    // v1.5.32 的竞态本质是「**并发操作同一个 release**」：那次是三个 job 之间；
+    // 而**两次运行之间**的并发是同一形态（重跑 / 重推标签 ⇒ 两次运行同时上传同一个 release），
+    // 症状同样是「制品分落 / 断言失败」，且**更难复现**。
+    // 判定与 canary **共用**同一份解析函数。
+    const concurrencyOf = (src) => {
+      const m = /^concurrency:[ \t]*\n((?:[ \t]+.*\n)*)/m.exec(src);
+      if (m === null) return null;
+      return {
+        group: /group:[ \t]*(.+)/.exec(m[1])?.[1].trim() ?? null,
+        cancelInProgress: /cancel-in-progress:[ \t]*(\S+)/.exec(m[1])?.[1] ?? null,
+      };
+    };
+    const conc = concurrencyOf(release);
+    if (conc === null) {
+      fail('release.yml 缺少 `concurrency:` —— 同一 tag 的两次运行会**并发操作同一个 release**'
+        + '（与 v1.5.32 竞态同型：制品分落 / 断言失败，且更难复现）');
+    } else {
+      if (conc.group === null || !conc.group.includes('github.ref')) {
+        fail('release.yml 的 `concurrency.group` 必须按 `github.ref` 分组 —— '
+          + '否则**不同 tag 之间**会互相阻塞（前一个版本的发布没跑完，后一个就得排队）');
+      }
+      if (conc.cancelInProgress !== 'false') {
+        fail('release.yml 的 `concurrency.cancel-in-progress` 必须是 `false` —— '
+          + '**不能取消**正在跑的发布：取消会留下半成品 release，而 release 是**对外**的');
+      }
+    }
+    // canary：三向（正样本 / 缺 group / cancel 为 true）
+    const C_OK = 'concurrency:\n  group: release-${{ github.ref }}\n  cancel-in-progress: false\njobs:\n';
+    const C_NOGROUP = 'concurrency:\n  cancel-in-progress: false\n';
+    const C_CANCEL = 'concurrency:\n  group: release-${{ github.ref }}\n  cancel-in-progress: true\n';
+    if (concurrencyOf(C_OK)?.group !== 'release-${{ github.ref }}'
+      || concurrencyOf(C_OK)?.cancelInProgress !== 'false') {
+      errors.push('串行发布护栏 canary 失效：正样本未被正确解析');
+    }
+    if (concurrencyOf(C_NOGROUP)?.group !== null) {
+      errors.push('串行发布护栏 canary 失效：缺 group 时未判为 null');
+    }
+    if (concurrencyOf(C_CANCEL)?.cancelInProgress !== 'true') {
+      errors.push('串行发布护栏 canary 失效：`cancel-in-progress: true` 未被解析（会漏掉「不得取消」这条）');
+    }
+    if (concurrencyOf('jobs:\n  a:\n') !== null) {
+      errors.push('串行发布护栏 canary 失效：没有 concurrency 时未判为 null');
     }
     // canary：四个方向
     if (statusFromWorkflow('x -F prerelease=false y') !== '正式发布'

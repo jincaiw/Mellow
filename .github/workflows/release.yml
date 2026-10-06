@@ -39,6 +39,17 @@ on:
 permissions:
   contents: write
 
+# 同一个 tag 的多次运行必须**串行**（2026-10-06，审计 §4.110）。
+# 【为什么需要】v1.5.32 的竞态本质是「**并发操作同一个 release**」—— 那次是三个 job 之间的并发；
+# 而**两次运行之间**的并发是同一形态：重跑/重推标签时，两次运行会同时上传到同一个 release
+# （症状同样是「制品分落 / 断言失败」，且更难复现）。
+# `cancel-in-progress: false` ⇒ 后来的运行**排队**而不是取消前者
+# —— **不能取消**：取消会留下半成品 release，而 release 是**对外**的。
+# group 按 `github.ref` ⇒ 不同 tag 之间互不影响。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # ── 单一 owner 创建 draft release（2026-10-06，审计 §4.108）──────────────────
   # 【为什么需要】三个平台 job **并发**跑 `tauri-action`，而它的行为是「**找不到 draft 就创建**」。

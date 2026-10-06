@@ -6742,6 +6742,65 @@ gh release delete v1.5.32 --yes   # ⚠️ tag 有歧义时请按 release id 指
 - **只改护栏**（`verify-release-gate.mjs` 增「单一 owner」判据 + canary），**无产品代码改动**
   ⇒ 制品不变 ⇒ **不发新版本**。
 
+## 4.110 发版流水线的**同类第二处**：两次运行之间的并发 + owner 的 tag 守卫（2026-10-06）
+
+§4.108 的竞态本质是「**并发操作同一个 release**」。顺着这条线复核，发现**同一形态还有两处没被覆盖**。
+
+### (a) **两次运行之间**的并发（同一形态，且更难复现）
+
+`release.yml` **没有 `concurrency:`**（三个 workflow 都没有）⇒ 重跑 / 重推标签时，
+**两次运行会同时上传到同一个 release** —— 症状与 §4.108 相同（制品分落 / 断言失败），
+但**更难复现**（不是每次都撞上）。
+
+**修复**（`release.yml`）：
+
+```yaml
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+```
+
+- **group 按 `github.ref`** ⇒ 不同 tag 之间互不影响（否则前一个版本的发布没跑完，后一个就得排队）；
+- **`cancel-in-progress: false`（**不能取消**）** —— 取消正在跑的发布会**留下半成品 release**，
+  而 release 是**对外**的 ⇒ 让后来的运行**排队**，而不是取消前者。
+
+### (b) **owner 的 tag 守卫**（⚠️ 本轮我**自己踩过**的坑）
+
+`create-release` **必须只在 tag 触发时**创建 release —— 否则 `workflow_dispatch`
+（本 workflow 也支持）会为**分支名**建一个 release。
+
+**⚠️ 但守卫的写法有陷阱**：本轮修竞态时，我初版给 owner 加了
+**job 级** `if: startsWith(github.ref, 'refs/tags/')` ⇒ 手动触发时 owner 被**跳过**，
+而三平台 job `needs: [create-release]` ⇒ **连带三个平台构建全被跳过**（把「仅构建」路径弄没了）。
+⇒ 正确形态是「**job 总是运行、在步骤内按 `GITHUB_REF_TYPE` 判断**」。
+
+### 新增判据（并入 `verify-release-gate.mjs` 的 ④ 发布门禁，护栏数仍 22）
+
+| 判据 | 说明 |
+|---|---|
+| owner 必须含 `GITHUB_REF_TYPE` + `!= "tag"` | 只在 tag 触发时创建 release（谓词抽成**纯函数**供 canary 复用） |
+| `concurrency` 必须存在 | 否则两次运行会并发操作同一个 release |
+| `concurrency.group` 必须含 `github.ref` | 否则**不同 tag 之间**会互相阻塞 |
+| `concurrency.cancel-in-progress` 必须是 `false` | **不能取消**发布（会留下半成品 release） |
+
+**canary 新增 7 项**（合成夹具）：owner 两个谓词的正 / 负样本、`concurrency` 解析器的
+正样本 / 缺 group / `cancel-in-progress: true` / 无 `concurrency` 四种。
+
+**注入验证 4/4**：① 摘掉 owner 的 `GITHUB_REF_TYPE` 守卫 ⇒ 报；
+② 删掉 `concurrency:` 块 ⇒ 报「缺少」；③ `cancel-in-progress: true` ⇒ 报「必须是 false」；
+④ `group` 改成固定串 ⇒ 报「必须按 github.ref 分组」。
+
+### 复核过但**未动**的两处（无证据 ⇒ 不加）
+
+- `retryAttempts`（`tauri-action` 的构建/上传重试）：**未观测到**上传抖动 ⇒ 不加；
+- `timeout-minutes`：12+ 次发版**未观测到**挂起 ⇒ 不加。
+> 不凭猜加配置 —— 加了就多一份无人核对的设置。
+
+### 本次改动
+
+- `.github/workflows/release.yml` 增 `concurrency`；`verify-release-gate.mjs` 增 4 条判据 + canary。
+- **无产品代码改动**（workflow 是 CI 配置，不进制品）⇒ **不发新版本**。
+
 ## 五、本次审计做的改动（非策略性）
 
 
