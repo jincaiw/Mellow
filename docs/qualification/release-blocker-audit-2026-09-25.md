@@ -7035,6 +7035,46 @@ A3 跟随主题定义字号）需裁决。
 更易触及 `MAX_IMAGE_HEIGHT` / `MAX_IMAGE_PIXELS` 长图保护）⇒ **须经视觉 / 真机确认后另裁**
 （ADR-0033「关键风险」节；`BODY_SIZE = 16` 的护栏断言**故意保留**）。
 
+## 4.116 `create-release` job 缺 `actions/checkout` ⇒ v1.5.33 发布**首次运行即失败**（2026-10-06）
+
+**现象**：推 `v1.5.33` 后 `Release Packaging` **10 秒即 failure**，三平台 job **全部 skipped**：
+
+```
+Create draft release (single owner; prevents concurrent find-or-create race) → failure
+Linux / Windows / macOS / Finalize → skipped
+```
+
+日志：`failed to run git: fatal: not a git repository (or any of the parent directories): .git`
+
+### 根因：**是 §4.108 那次修复引入的**
+
+`gh release create` 需要**git 仓库上下文**，而新增的 `create-release` job **没有 `actions/checkout`**
+⇒ exit 1。又因为三平台 job `needs: [create-release]` ⇒ **连带全部跳过** ⇒ 整个发布没跑。
+**这是该 job 第一次运行**（v1.5.32 的 run 早于修复），所以此前没暴露。
+
+### ⚠️ 两点「好消息」（都值得记）
+
+1. **新守卫的「重复断言」本身工作正常** —— 日志里有 `现有同 tag release 数：0` ✓；
+2. **失败是响亮的** —— job 直接 `failure`，而**不是**产出一个残缺的正式发布。
+   这正是 §4.108 想达到的效果：**把「不完整」从静默变成响亮**。
+
+### 修法
+
+- 补 `actions/checkout@v4`（提供 git 上下文）；
+- **顺带加固** `gh release create`：
+  - **`--verify-tag`** —— tag 不存在就**中止**（否则 gh 会「自动从默认分支建 tag」，
+    那会造出一个**与本次构建无关**的 tag）；
+  - **`--generate-notes`** 取代 `--notes ""` —— 避免在**无 TTY** 的 CI 里因缺 notes 而卡住；
+    正文随后由 `finalize` 覆盖（**它才是 notes 的真值源**）。
+
+### 恢复：**移动标签**（产品代码不变 ⇒ 制品等价）
+
+`Release Packaging` 用的是**标签所指提交**的 workflow 定义 ⇒ `gh run rerun` 仍会用**旧定义**（仍失败）
+⇒ 必须把标签移到修复提交，重新触发。
+
+> 与 MEMORY 的既有口径一致：「**标签里含偶发测试时必须移标签**（`git tag -f` + `git push -f`），
+> **不接受「重跑变绿」**」。本次是**流水线缺陷**（非偶发），修好后移标签是唯一正确路径。
+
 ## 五、本次审计做的改动（非策略性）
 
 
