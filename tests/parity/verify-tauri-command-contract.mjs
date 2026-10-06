@@ -233,6 +233,56 @@ export function parseInvokeArgs(text) {
   return out;
 }
 
+// ── 事件名契约（2026-10-06 审计 §4.104）──────────────────────────────────────
+// 【为什么补】命令名（①–⑤）与实参字段（⑤）都锁了，**事件名**同样是一条 Rust↔JS 边界：
+// Rust `emit`/`emit_to` 与前端 `listen` 若只在一端改名 ⇒ **静默死通道**
+// （前端一直等一个永不发生的事件，或 Rust 发的事件无人接收）。
+//
+// 【口径坑（本次实测踩到）】`emit_to` 的**第一个实参是窗口 label，可能是字符串字面量**：
+//   `app.emit_to("main", "mellow://open-file", req)` ——
+// 首版用「抓调用里第一个字符串」⇒ 把 **label `main` 当成事件名**，并**漏掉真正的事件**
+// ⇒ 误报「前端在听但 Rust 不 emit: mellow://open-file」。
+// ⇒ 必须**按参数位**取：`.emit(ev, payload)` 取 args[0]；`.emit_to(label, ev, payload)` 取 args[1]。
+/** Rust 侧：`.emit(...)` / `.emit_to(...)` 的**事件名**（按参数位；label 可为字面量或标识符） */
+export function parseEmittedEvents(rsText) {
+  const out = new Set();
+  for (const m of rsText.matchAll(/\.emit(_to)?\s*\(/g)) {
+    // 平衡扫描取实参文本
+    let depth = 0, text = '', started = false;
+    for (let i = m.index + m[0].length - 1; i < rsText.length; i++) {
+      const c = rsText[i];
+      if (!started) { if (c === '(') { started = true; depth = 1; } continue; }
+      if (c === '(') depth++;
+      else if (c === ')') { depth--; if (depth === 0) break; }
+      text += c;
+    }
+    // 顶层逗号切分
+    const args = [];
+    let d = 0, cur = '';
+    for (const c of text) {
+      if ('([{'.includes(c)) d++;
+      else if ('})]'.includes(c)) d--;
+      if (c === ',' && d === 0) { args.push(cur.trim()); cur = ''; continue; }
+      cur += c;
+    }
+    if (cur.trim()) args.push(cur.trim());
+    const ev = m[1] === '_to' ? args[1] : args[0];
+    const lit = ev === undefined ? null : /^"([^"]+)"$/.exec(ev);
+    if (lit) out.add(lit[1]);
+  }
+  return out;
+}
+
+/** 前端侧：`listen('<name>')` 的事件名 */
+export function parseListenedEvents(tsText) {
+  const out = new Set();
+  for (const m of tsText.matchAll(/(?<![.\w])listen\s*(?:<[^()]*>)?\s*\(\s*['"]([^'"]+)['"]/g)) {
+    if (inComment(tsText, m.index)) continue;
+    out.add(m[1]);
+  }
+  return out;
+}
+
 // ── 真实扫描 ────────────────────────────────────────────────────────────────
 const RUST_SRC = resolve(root, 'apps/desktop/src-tauri/src');
 const RS_SKIP = new Set(['target', 'node_modules']);
@@ -391,6 +441,49 @@ for (const [key, reason] of ARG_FIELD_EXEMPT) {
   if (!stillBad) fail(`ARG_FIELD_EXEMPT 登记了 ${key}，但该缺口已不存在 —— 请删除该例外条目`);
 }
 
+// ── ⑥ 事件名契约：Rust emit ⇄ 前端 listen（双向）──────────────────────────────
+const EVENT_EXEMPT = new Map([]); // 刻意为空（现状 7:7 双向一致）
+
+const emittedEvents = new Set();
+for (const f of walkRs(RUST_SRC)) {
+  for (const e of parseEmittedEvents(read(relative(root, f).split('\\').join('/')))) emittedEvents.add(e);
+}
+const listenedEvents = new Set();
+for (const f of walkFe(resolve(root, 'apps/desktop/src'))) {
+  const rel = relative(root, f).split('\\').join('/');
+  for (const e of parseListenedEvents(read(rel))) listenedEvents.add(e);
+}
+if (emittedEvents.size < 5 || listenedEvents.size < 5) {
+  fail(`事件扫描面过窄（Rust emit=${emittedEvents.size} / 前端 listen=${listenedEvents.size}，下限各 5）`
+    + ' —— 扫描面漂移会让本判据空转');
+}
+for (const e of [...listenedEvents].filter((x) => !emittedEvents.has(x)).sort()) {
+  if (EVENT_EXEMPT.has(`listen:${e}`)) continue;
+  fail(`前端在 \`listen('${e}')\`，但 Rust **从不 emit 该事件** —— 静默死通道`
+    + '（前端会一直等一个永不发生的事件）。请改一端，或登记进 EVENT_EXEMPT');
+}
+for (const e of [...emittedEvents].filter((x) => !listenedEvents.has(x)).sort()) {
+  if (EVENT_EXEMPT.has(`emit:${e}`)) continue;
+  fail(`Rust emit 了 \`${e}\`，但前端**从不 listen** —— 事件无人接收`
+    + '（除非由插件/原生侧消费）。请改一端，或登记进 EVENT_EXEMPT');
+}
+for (const [key, reason] of EVENT_EXEMPT) {
+  if (typeof reason !== 'string' || reason.trim() === '') fail(`EVENT_EXEMPT 的 ${key} 缺理由`);
+  const idx = key.indexOf(':');
+  const kind = key.slice(0, idx);
+  const ev = key.slice(idx + 1);
+  if (kind !== 'listen' && kind !== 'emit') {
+    fail(`EVENT_EXEMPT 的 ${key} 前缀非法（只允许 \`listen:\` / \`emit:\`）`);
+    continue;
+  }
+  // ⚠️ 双向：缺口必须**仍然存在**。首版只查了「后半条件」⇒ `emit:不存在的键` 被误判为「仍在」
+  //    （实测：注入 `emit:ghost.event` 时护栏仍绿）。两个条件都要查。
+  const still = kind === 'listen'
+    ? (listenedEvents.has(ev) && !emittedEvents.has(ev))   // 前端在听、Rust 不 emit
+    : (emittedEvents.has(ev) && !listenedEvents.has(ev));  // Rust emit、前端不听
+  if (!still) fail(`EVENT_EXEMPT 登记了 ${key}，但该缺口已不存在 —— 请删除该例外条目`);
+}
+
 // ── 包装器清单双向自检（防化石 / 防清单里混进不转发 invoke 的函数）──────────
 {
   const allFe = [...walkFe(resolve(root, 'apps/desktop/src'))]
@@ -486,6 +579,24 @@ for (const [key, reason] of ARG_FIELD_EXEMPT) {
   // 负样本-放宽：大小写必须敏感（`A` 不是 `a`）
   const keys3 = parseInvokeArgs("await invoke('f', { A });\n")[0]?.keys;
   eq((keys3 ?? []).join(','), 'A', 'parseInvokeArgs 大小写敏感');
+
+  // ── 事件名（⑥）的 canary：**含我踩过的那个口径坑** ──
+  const ev1 = parseEmittedEvents('let _ = app.emit("a://x", p);\n');
+  eq([...ev1].join(','), 'a://x', 'parseEmittedEvents(.emit)');
+  // ⚠️ 这条是「防我自己的假阳性」：`emit_to` 的第一个实参是 **label**（可能是字符串字面量），
+  //    不得被当成事件名；真正的事件在第二个位置。
+  const ev2 = parseEmittedEvents('let _ = app.emit_to("main", "a://y", req);\n');
+  eq([...ev2].join(','), 'a://y', 'parseEmittedEvents(.emit_to) 必须取第二个实参（label 可能是字面量）');
+  const ev3 = parseEmittedEvents('let _ = app_handle.emit_to(&label, "a://z", ());\n');
+  eq([...ev3].join(','), 'a://z', 'parseEmittedEvents(.emit_to) 标识符 label 也要跳过');
+  // 负样本-放宽：只 emit 不 listen / 只 listen 不 emit 必须能被判出（用合成集合直接验谓词）
+  const A = new Set(['only.emit']); const B = new Set(['only.listen']);
+  if ([...B].filter((x) => !A.has(x)).length !== 1) errors.push('事件契约 canary 失效：只 listen 不 emit 未被判出');
+  if ([...A].filter((x) => !B.has(x)).length !== 1) errors.push('事件契约 canary 失效：只 emit 不 listen 未被判出');
+  const ev4 = parseListenedEvents("import('@tauri-apps/api/event').then(({ listen }) => listen('a://q', () => {}));\n");
+  eq([...ev4].join(','), 'a://q', 'parseListenedEvents');
+  // 注释里的 listen 不得被算作监听
+  eq([...parseListenedEvents("// listen('a://ghost', () => {})\n")].join(','), '', 'parseListenedEvents 必须跳过注释行');
 }
 
 if (errors.length > 0) {
@@ -496,6 +607,8 @@ console.log(`Tauri command contract: 声明 D=${D.size} / 注册 R=${R.size} / �
   + 'D∖R = ∅（无不可达命令）、F∖R = ∅（无调用不存在命令）、R∖D = ∅、R∖F = ∅（无死注册）；'
   + `**实参字段契约**：${argCalls.length} 处带参 invoke 全部与 Rust 形参匹配`
   + `（按 Tauri 的真实键变换 to_lower_camel_case；例外表 ${ARG_FIELD_EXEMPT.size} 项，刻意为空）；`
-  + `包装器清单 ${INVOKE_WRAPPERS.length} 项已双向自检；canary 21 项`
+  + `**事件名契约**：Rust emit ${emittedEvents.size} 个 ⇄ 前端 listen ${listenedEvents.size} 个，双向一致`
+  + `（例外表 ${EVENT_EXEMPT.size} 项，刻意为空）；`
+  + `包装器清单 ${INVOKE_WRAPPERS.length} 项已双向自检；canary 29 项`
   + '（含注释行 / 成员调用 bridge.invoke / __TAURI__ 全局桥 / 嵌套泛型 / 包装器 / 缺 generate_handler /'
-  + ' 实参键变换含前导下划线 / 注入型参数 / spread / 大小写敏感）全绿。');
+  + ' 实参键变换含前导下划线 / 注入型参数 / spread / 大小写敏感 / emit_to 的 label 位置 / 事件双向）全绿。');

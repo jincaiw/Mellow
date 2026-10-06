@@ -6407,6 +6407,73 @@ pub async fn save_document(
 - 护栏 C3 升级为硬要求；
 - **只改文档与护栏，无产品代码改动** ⇒ 制品不变 ⇒ **不发新版本**。
 
+## 4.104 审 **Tauri 事件名契约**（Rust `emit` ⇄ 前端 `listen`）：双向 7:7 一致，补上判据（2026-10-06）
+
+**动机**：命令名（§4.96）与实参字段（§4.101）都锁了，**事件名**同样是一条 Rust↔JS 边界 ——
+若只在一端改名 ⇒ **静默死通道**（前端一直等一个永不发生的事件，或 Rust 发的事件无人接收）。
+此前**没有任何判据**。
+
+### 实测：**双向 7:7 完全一致**（无缺陷）
+
+Rust `emit` / `emit_to`：`mellow-menu-command` / `mellow://bridge` / `mellow://dir-changed` /
+`mellow://file-changed` / `mellow://open-file` / `mellow://search-result` / `mellow://window-close-requested`
+前端 `listen`：**同一组 7 个**（无「只听不发」、无「只发不听」）。
+
+### ⚠️ 口径坑（本次实测踩到，**差点误报一处不存在的缺陷**）
+
+`emit_to` 的**第一个实参是窗口 label，而它可能是字符串字面量**：
+
+```rust
+app.emit_to("main", "mellow://open-file", req);   // ← label 是字面量
+```
+
+首版判据用「抓调用里**第一个字符串**」⇒ 把 **label `main` 当成事件名**，
+并**漏掉真正的事件** `mellow://open-file` ⇒ 误报「前端在听但 Rust 从不 emit」。
+⇒ 必须**按参数位**取：`.emit(ev, payload)` 取 `args[0]`；`.emit_to(label, ev, payload)` 取 `args[1]`，
+且 label 既可能是字面量也可能是标识符（`&label`）—— 两种都要能跳过。
+
+> 同族教训（§4.99）：**判据必须复刻框架/语言的真实形态**，不能按「看起来差不多」猜。
+
+### 新增判据（并入 `verify-tauri-command-contract.mjs`，护栏数仍为 22）
+
+**⑥ 事件名契约**：Rust `emit`/`emit_to` 的事件集合 ⇄ 前端 `listen` 的事件集合，**双向相等**；
+`EVENT_EXEMPT`（**刻意为空**）+ 双向；扫描面下限（各 ≥ 5）。
+**canary 21 → 29 项**（新增：`.emit` / `.emit_to` 两种形态、**label 为字面量与标识符两种都要跳过**、
+只 listen 不 emit / 只 emit 不 listen 两个方向的谓词、注释行里的 `listen` 不算）。
+
+**注入验证 4/4**：① Rust 改名 ⇒ 报「前端在 listen 但 Rust 不 emit」；
+② 前端改名 ⇒ 报「Rust emit 但前端不 listen」；③ 例外表登记不存在的缺口 ⇒ 报「已不存在」；
+④ **把 `emit_to` 的实参位退回 `args[0]`（我踩过的假阳性）⇒ canary 拦下**。
+
+> ④ 是本节最有价值的一条：它证明**这条 canary 真的能拦住「我犯过的那个错」**。
+
+### ⚠️ 注入验证同时抓到判据自身的**双向校验写反**
+
+例外表的双向校验首版写成「只查后半条件」：
+
+```js
+const still = kind === 'listen' ? !emittedEvents.has(ev) : !listenedEvents.has(ev);  // ❌
+```
+
+⇒ 注入 `emit:ghost.event`（一个**不存在**的缺口）时护栏**仍绿** —— 因为 `!listenedEvents.has('ghost.event')`
+恒为 true。修法：**两个条件都要查**（`kind === 'listen'` ⇒ `listened && !emitted`；
+否则 ⇒ `emitted && !listened`），并校验前缀只能是 `listen:` / `emit:`。
+
+### 另：一条**实测干净**的轴（记下来避免重复劳动）
+
+**CSS 类名「用了但没有定义」**：扫 290 个源文件里 `className` 的 200 个类名 ⇄
+定义面 291 个文件的 2520 个类名 token，**只剩 6 个候选**，逐条核实后**全部无害**：
+`tree-icon-` 是动态前缀（`.tree-icon` / `-folder` / `-file` 都有定义）；
+其余 5 个（`confirm-modal-line` / `settings-row-value` / `statusbar-wrap` / `toast-message` /
+`virtual-rows`）是**无样式的 hook 类** —— 父类已提供 `display:flex`（`confirm-modal-message` /
+`toast-bar`）或由**内联样式**承担（`virtual-rows` 的 padding），**都不是缺陷**。
+⇒ 该轴**未加护栏**（加只会产生噪声）。
+
+### 本次改动
+
+- **只改护栏**（`verify-tauri-command-contract.mjs` 增 ⑥ + canary），**无产品代码改动**
+  ⇒ 制品不变 ⇒ **不发新版本**。
+
 ## 五、本次审计做的改动（非策略性）
 
 
