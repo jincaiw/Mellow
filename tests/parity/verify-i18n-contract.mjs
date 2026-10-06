@@ -386,41 +386,12 @@ if (schemaRefs < 300) {
 // 实测收紧后正好多出 4 个：`contextmenu.open` / `contextmenu.revealInTree`（右键菜单实际用
 // `contextmenu.newFile`/`rename`/`reveal` 等）与 `files.newFile` / `files.newFolder`
 // （命令用**内联** `localizedTitle: { zh, en }`）—— 四个都只被 `verify-sidebar-contract.mjs` 断言存在。
-const MESSAGES_UNUSED = new Map([
-  ['titlebar.palette.title', '未使用：命令面板按钮的 title 走了别的键（或直接用 aria-label）'],
-  ['sidebar.filesSwitchLabel', '未使用：侧栏模式切换改用 `sidebar.*Aria` 系列'],
-  ['sidebar.tree', '未使用：侧栏模式切换改用 `sidebar.*Aria` 系列（同 sidebar.list / sidebar.summary）'],
-  ['sidebar.list', '未使用：同上'],
-  ['sidebar.summary', '未使用：同上'],
-  ['sidebar.showHidden', '未使用：侧栏过滤面板 → 设置页选项（现为 `settings.file.showHidden`）'],
-  ['sidebar.showNonMarkdown', '未使用：同上（现为 `settings.file.showNonMarkdown`）'],
-  ['sidebar.filtersTitle', '未使用：同上（侧栏过滤面板已不存在）'],
-  ['sidebar.pinnedLabel', '未使用：最近文件夹置顶分组改用别的方式呈现'],
-  ['sidebar.recentFoldersLabel', '未使用：同上'],
-  ['sidebar.removeRecentFolder', '未使用：移除按钮的文案走别处（或仅用图标 + aria）'],
-  ['tree.includeGlob', '未使用：改版为设置页的 `settings.file.includeGlobs`'],
-  ['tree.excludeGlob', '未使用：改版为设置页的 `settings.file.excludeGlobs`'],
-  ['tree.rootEmpty', '未使用：空目录提示走了别的键（或未实现该提示）'],
-  ['quickopen.hint', '未使用：快速打开的提示未接线'],
-  ['reader.copy', '未使用：Reader 的复制按钮文案未接线（按钮可能只用图标）'],
-  ['reader.math.render.error', '未使用：公式渲染失败提示未接线'],
-  ['status.words', '未使用：状态栏字数格式未接线（字数并入窗口标题，见 windowService.setTitle）'],
-  ['msg.openFileFailed', '未使用：打开失败提示走了别的键'],
-  ['updater.rollbackInProgress', '未使用：回滚进行中的提示未接线'],
-  ['edit.replaceMenu', '未使用：替换菜单项未装配（命令可能已并入查找）'],
-  ['edit.smartPunctuation', '未使用：智能标点菜单项未装配'],
-  ['settings.writingWidth.820', '未使用：写作宽度从**选项列表**改为**数值设置**（`settings.editor.writingWidth`）后留下的'],
-  ['settings.liveHint', '未使用：设置页的实时生效提示未接线'],
-  ['contextmenu.textParagraph', '未使用：右键项文案在命令对象里内联（`localizedTitle: { zh, en }`），未走 i18n 目录'],
-  ['contextmenu.textFormat', '未使用：同上'],
-  // ↓ 以下 4 个是**收紧口径**（2026-10-06 审计 §4.105）后才暴露的：它们在产品代码里从未被使用，
-  //   只被 `verify-sidebar-contract.mjs` 的「双语文案」断言提到过 ⇒ **护栏在维护死键**。
-  //   （该断言已同步移除这 4 项 —— 断言一个死键的「双语齐备」没有意义。）
-  ['contextmenu.open', '未使用：右键菜单实际用 `contextmenu.newFile`/`rename`/`reveal` 等；本键仅被侧栏护栏断言存在'],
-  ['contextmenu.revealInTree', '未使用：同上（实际用 `contextmenu.reveal`）'],
-  ['files.newFile', '未使用：新建文件的命令用**内联** `localizedTitle: { zh: 新文件, en: New File }`；本键仅被侧栏护栏断言存在'],
-  ['files.newFolder', '未使用：同上（`fileTree.newFolder` 命令 + 内联标题）'],
-]);
+// ⚠️ 2026-10-06（**ADR-0032 Q1 = A1，已裁决**）：**本表已清空** —— 30 个死键**已从两个 locale 删除**
+// （841 → 811）⇒ 判据 D 现在是**硬判据**（「目录里不得有无人使用的键」），与 `src/` / `README.md` 同级。
+// 删除前已取证三项：① 无产品/工具链引用（判据 D 自身）；② **无 `tests/` 功能引用**
+// （实测：仅本文件的表与 `verify-sidebar-contract.mjs` 的说明注释提到，均非断言）；
+// ③ **无动态构造**（全仓无 `t(` + 反引号 + `前缀${…}` + 反引号 + `)` 形态，实测 0 处）。
+const MESSAGES_UNUSED = new Map([]);
 const MESSAGES_UNUSED_SCOPE_NOTE = '口径 = **产品 + 工具链**（`apps`/`packages`/`tools`），'
   + '**刻意不含 `tests/`** —— 否则「只被某个护栏断言存在」的键会被当成活键（审计 §4.105）；'
   + '`menu.*` 也不在此表内：其孤儿判据在 `verify-menu-contract.mjs` 的 `ORPHAN_ALLOWED`（遍历全部 menu.* 键）';
@@ -457,7 +428,8 @@ function keyReferenced(key, blob) {
     fail(`MESSAGES_UNUSED 里的键已不再「无人使用」或本不该在此表：${registeredButAlive.join(', ')}`
       + `（${MESSAGES_UNUSED_SCOPE_NOTE}）—— 请删除该登记项`);
   }
-  if (MESSAGES_UNUSED.size === 0) fail('MESSAGES_UNUSED 不得为空（清空即等于放弃该判据）');
+  // 注意：**不再断言「登记表非空」** —— 真实死集合已为空（ADR-0032 Q1=A1）。
+  // 反空转改由「双向核对 + 扫描面下限 + canary」承担，而不是靠要求登记表非空。
   for (const [k, reason] of MESSAGES_UNUSED) {
     if (typeof reason !== 'string' || reason.trim() === '') fail(`MESSAGES_UNUSED 的 ${k} 缺原因`);
     if (!zh.has(k)) fail(`MESSAGES_UNUSED 登记了目录里不存在的键：${k}`);
@@ -494,5 +466,5 @@ console.log(
   + `；另（审计 §4.102）**目录 → 使用**方向：除 \`menu.*\`（由 verify-menu-contract 的 ORPHAN_ALLOWED 负责）外，`
   + `目录里每个键必须在**产品 / 工具链**（不含 tests —— 否则「只被护栏断言存在」的键会被当成活键）`
   + `中以任一种引号形式出现，否则登记 —— `
-  + `当前登记 ${MESSAGES_UNUSED.size} 项死键（改版遗留 + 4 个「只被护栏维护」的，见审计 §4.105）`,
+  + `当前登记 ${MESSAGES_UNUSED.size} 项死键（**0 = 硬判据**；30 个死键已按 ADR-0032 Q1=A1 删除，目录 841 → 811）`,
 );

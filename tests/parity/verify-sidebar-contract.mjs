@@ -320,8 +320,8 @@ if (!/onContextMenu\?: \(e: React\.MouseEvent, match: SearchGroup\['matches'\]\[
 // 双语文案
 // ⚠️ 2026-10-06（审计 §4.105）：原列表含 `contextmenu.open` / `contextmenu.revealInTree` ——
 //    这两个键**在产品代码里从未被使用**（右键菜单实际用 `contextmenu.newFile`/`rename`/`reveal` 等），
-//    本护栏却断言它们「双语齐备」⇒ **护栏在维护死键**。已移除；两个键改登记进
-//    `verify-i18n-contract.mjs` 的 `MESSAGES_UNUSED`。
+//    本护栏却断言它们「双语齐备」⇒ **护栏在维护死键**。已移除；
+//    两个键最终按 **ADR-0032 Q1=A1 删除**（目录 841 → 811）。
 const messagesTs = read('packages/i18n/src/messages.ts');
 for (const key of ['outline.jumpToHeading', 'outline.collapseAll', 'outline.expandAll', 'search.jumpToMatch']) {
   const occurrences = messagesTs.split(`'${key}':`).length - 1;
@@ -399,8 +399,8 @@ if (!/nodes=\{filteredFileTreeNodes\}/.test(appSource)) {
 // 双语文案（2 组 × zh/en ≥ 2 处）
 // ⚠️ 2026-10-06（审计 §4.105）：原列表含 `files.newFile` / `files.newFolder` ——
 //    这两个键**在产品代码里从未被使用**（新建文件的命令用**内联** `localizedTitle: { zh, en }`），
-//    本护栏却断言它们「双语齐备」⇒ **护栏在维护死键**。已移除；两个键改登记进
-//    `verify-i18n-contract.mjs` 的 `MESSAGES_UNUSED`。
+//    本护栏却断言它们「双语齐备」⇒ **护栏在维护死键**。已移除；
+//    两个键最终按 **ADR-0032 Q1=A1 删除**（目录 841 → 811）。
 for (const key of ['files.filterPlaceholder', 'sidebar.noFilterMatch']) {
   const occurrences = messagesTs.split(`'${key}':`).length - 1;
   if (occurrences < 2) {

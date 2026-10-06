@@ -55,10 +55,10 @@ Release verdict: NO-GO：6 项未闭环
 | 9 | §4.40 | **上传「密钥」的 spec 表述**（不适用 / keychain / UI 禁止） | **已裁决**（E1：改写为「不适用」+ **保留明文残余风险说明**） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q5） |
 | 10 | §4.51 | **`tests/visual/actual/*.png` 是否取消 git 跟踪** | **已裁决**（F1：取消跟踪 + 改护栏 + README 同步） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q6） |
 | 11 | §4.72 | **clipboard paste 优先级：`image payload`（§3 优先级 2）与 `rich HTML`（4）分处两个 eventHandler，而注册顺序把 2 排在 3/4 之后 ⇒ 与 spec §3 相反** | **已裁决（2026-10-05）= A3：把顺序决策收敛到一处显式判断**（`handleSmartPaste` 内显式检查图片 payload 并让位）—— 关键推理：**该裁决不需要 MIME 证据**，因为 §3 的优先级 2 指的是 **payload**，不是「含 `<img>` 的 HTML」；已实现 + 5 例单测 + 护栏改写 | `docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md` |
-| 12 | §4.102 / §4.105 | **30 个「无人使用」的 i18n 键**（侧栏过滤面板→设置页的化石、只被护栏维护的 4 个、未接线的一批） | **待裁决**（建议 A1 删除；**现状：维持登记，不擅自删**） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q1） |
-| 13 | §4.99 | **3 个「声明了但无人消费」的主题 token**（`--mellow-tab-underline` / `--mellow-warning-fg` / `--mellow-mermaid-border`） | **待裁决**（建议 B3 维持登记，与 ADR-0027 Q3 口径一致） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q2） |
-| 14 | §4.95 | **3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）去留 —— 其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **待裁决**（建议 C3 先明确计划；`shared`/`workspace` 倾向删包，`document-model` 需替代设计） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
-| 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **待裁决**（建议 D2 维持登记 + 文档写明「不受恢复默认影响」） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
+| 12 | §4.102 / §4.105 | **30 个「无人使用」的 i18n 键**（侧栏过滤面板→设置页的化石、只被护栏维护的 4 个、未接线的一批） | **已裁决（2026-10-06）= A1：删除** —— 删除前取证三项（无产品/工具链引用、无 `tests/` 功能引用、无动态构造）；两 locale 各删 30 键（**841 → 811**）；`MESSAGES_UNUSED` 清空 ⇒ 判据 D 升级为**硬判据** | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q1） |
+| 13 | §4.99 | **3 个「声明了但无人消费」的主题 token**（`--mellow-tab-underline` / `--mellow-warning-fg` / `--mellow-mermaid-border`） | **已裁决（2026-10-06）= B3：维持登记**（与 ADR-0027 Q3 对 `--mellow-md-fg` 的既有口径一致：删除属主题面变更、接线属外观变更） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q2） |
+| 14 | §4.95 | **3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）去留 —— 其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
+| 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -6164,8 +6164,8 @@ mermaid 容器也有边框（只是不跟随这个 token）。**它们是「死�
   ⇒ 制品不变 ⇒ **不发新版本**。
 - 未改 `packages/themes/src/index.ts`、未改 `styles.css`（那两项都属外观/主题面，需裁决）。
 
-> **载体（2026-10-06 补）**：本节的 3 个死 token 已登记进「待裁决项登记表」**第 13 行**，
-> 载体 = `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（**Proposed**，Q2）。
+> **载体与裁决（2026-10-06）**：本节的 3 个死 token 登记进「待裁决项登记表」**第 13 行**，
+> 载体 = `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（**已裁决 = Q2/B3：维持登记**，与 ADR-0027 Q3 口径一致 ⇒ **无代码改动**）。
 
 ## 4.100 审 **PRD §117.1 包规范**：宪法级要求**基本未执行**，且此前**无护栏**（2026-10-06）
 
@@ -6370,8 +6370,9 @@ pub async fn save_document(
 - **未删任何键**：删除属产品面变更（且会改变两个 locale 的目录）⇒ 按「有删/收紧 ⇒ 只登记 + 报冲突」
   的口径**登记待裁决**。
 
-> **载体（2026-10-06 补）**：这 26（后为 30）个死键已登记进「待裁决项登记表」**第 12 行**，
-> 载体 = `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（**Proposed**，Q1）。
+> **载体与裁决（2026-10-06）**：这 26（后为 30）个死键登记进「待裁决项登记表」**第 12 行**，
+> 载体 = `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（**已裁决 = Q1/A1：删除**）—— 30 键已从两个 locale 删除（**841 → 811**），
+> `MESSAGES_UNUSED` 清空、判据 D 升级为**硬判据**（审计 §4.107）。
 
 ## 4.103 执行 §117.1 的 `CONTRACT.md`：14 个包全部补齐，判据升级为**硬要求**（2026-10-06）
 
@@ -6538,8 +6539,8 @@ const still = kind === 'listen' ? !emittedEvents.has(ev) : !listenedEvents.has(e
 - **只改护栏**（`verify-i18n-contract.mjs` 收紧口径 + 登记 4 项；`verify-sidebar-contract.mjs` 移除 4 项断言），
   **无产品代码改动、未删任何键** ⇒ 制品不变 ⇒ **不发新版本**。
 
-> **载体（2026-10-06 补）**：本节与 §4.102 的死键已登记进「待裁决项登记表」**第 12 行**，
-> 载体 = `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（**Proposed**，Q1）。
+> **载体与裁决（2026-10-06）**：本节与 §4.102 的死键登记进「待裁决项登记表」**第 12 行**，
+> 载体 = `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（**已裁决 = Q1/A1：删除**，见审计 §4.107）。
 
 ## 4.106 自我纠错：本审计在 §4.99–§4.105 里**新增了未登记的裁决项** ⇒ 补载体 ADR-0032（2026-10-06）
 
@@ -6597,6 +6598,46 @@ const still = kind === 'listen' ? !emittedEvents.has(ev) : !listenedEvents.has(e
 - 审计登记表 **+4 行**（第 12–15 行）；§4.99 / §4.102 / §4.105 补载体指针；
 - 门禁 `PENDING_ADRS` 增列（`tests/` 改动）；
 - **无产品代码改动** ⇒ 制品不变 ⇒ **不发新版本**。
+
+## 4.107 裁决并实施 ADR-0032 四问：删除 30 个死 i18n 键（目录 841 → 811）（2026-10-06）
+
+**依据**：用户 **2026-09-30 的常设授权**「全部自行评估、决策、实施，不叫我人工参与」
+（ADR-0024/25/26/29 同引）。
+**⚠️ 一处按授权**不**执行的地方**：**Q3 不改架构** —— `AGENTS.md` 明写
+「**不要自行修改架构，先报告冲突**」；该条**比常设授权更具体，因而优先**。
+
+### 裁决与实施
+
+| 问 | 裁决 | 实施 |
+|---|---|---|
+| **Q1** 30 个死 i18n 键 | **A1 删除** | ✅ 两 locale 各删 30 键（**841 → 811**）；`MESSAGES_UNUSED` **清空** ⇒ 判据 D 升级为**硬判据** |
+| **Q2** 3 个死主题 token | **B3 维持登记** | 无代码改动（与 ADR-0027 Q3 口径一致） |
+| **Q3** 3 个零消费者包 | **C3 保留 + 记录理由与触发条件** | 无代码改动（按 `AGENTS.md` 不自行改架构） |
+| **Q4** 3 个 schema 外持久化键 | **D2 维持登记 + 补文档** | ✅ 在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 |
+
+### Q1 的**删除前三项取证**（缺一不可 —— 删除不可逆）
+
+1. **无产品 / 工具链引用** —— 判据 D 自身（口径 = 产品 + 工具链，**不含 `tests`**，见 §4.105）；
+2. **无 `tests/` 功能引用** —— 实测：仅 `verify-i18n-contract.mjs` 的表与
+   `verify-sidebar-contract.mjs` 的**说明注释**提到（**均非断言**）；
+3. **无动态构造** —— 全仓 `` t(`前缀${…}`) `` 形态**实测 0 处**。
+
+**回退方式**：git 历史（`packages/i18n/src/messages.ts` 单文件）。
+
+### 判据随之升级：D 从「可登记」变为**硬判据**
+
+`MESSAGES_UNUSED` 清空后，「目录里不得有无人使用的键」**不再有例外**，与 `src/` / `README.md` 同级。
+**并去掉「登记表不得为空」这条断言** —— 真实死集合为空时它必然失败；
+反空转改由「**双向核对 + 扫描面下限（≥100 文件）+ canary**」承担，
+而不是靠「要求登记表非空」（那是**用错误的约束去防空转**）。
+
+### 状态变化（如实声明）
+
+- i18n 目录 **841 → 811**（两个 locale）；
+- 门禁 `Pending decisions:` 由 ADR-0032 **回到「无」**（ADR-0032 移入 `DECIDED_ADRS`）；
+- 登记表第 **12–15 行**全部改为**已裁决**；
+- §4.99 / §4.102 / §4.105 的**载体指针**已同步为「已裁决 + 结论」；
+- **`messages.ts` 是产品代码** ⇒ 制品变化 ⇒ **发 v1.5.32**。
 
 ## 五、本次审计做的改动（非策略性）
 

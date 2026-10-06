@@ -8,14 +8,13 @@ import type { MessageCatalog } from './index';
 const zhCN = {
   // 应用 / Titlebar
   'app.name': 'Mellow',
-  'titlebar.palette.title': '命令面板（Ctrl/Cmd+Shift+P）',
+
   'doc.untitled': '未命名',
-  'sidebar.filesSwitchLabel': '侧栏切换',
+
   'sidebar.switchToOutline': '切换到大纲视图',
   'sidebar.switchToFiles': '切换到文件视图',
   'sidebar.openFolderTitle': '打开文件夹',
-  'tree.includeGlob': 'include glob（逗号分隔）',
-  'tree.excludeGlob': 'exclude glob（逗号分隔）',
+
   'outline.listLabel': '文档大纲',
   'search.resultsLabel': '全局搜索结果',
 
@@ -31,18 +30,13 @@ const zhCN = {
   'sidebar.search': '搜索',
   'sidebar.openFolder': '打开…',
   'sidebar.refresh': '刷新',
-  'sidebar.tree': '树',
-  'sidebar.list': '列表',
-  'sidebar.showHidden': '隐藏文件',
-  'sidebar.showNonMarkdown': '非 Markdown',
+
   'sidebar.recursive': '递归',
-  'sidebar.summary': '摘要',
+
   'sidebar.pin': '固定此文件夹',
   'sidebar.unpin': '取消固定',
-  'sidebar.pinnedLabel': '固定文件夹',
+
   'sidebar.recentFolders': '最近文件夹',
-  'sidebar.recentFoldersLabel': '最近打开的文件夹',
-  'sidebar.removeRecentFolder': '从最近文件夹中移除',
 
   'sidebar.sort': '排序',
   'sidebar.sortNatural': '自然',
@@ -69,10 +63,9 @@ const zhCN = {
   'settings.markdown.defaultCodeLang': '默认的代码块语言',
   'settings.markdown.defaultCodeLangDesc': '输入 Markdown 反引号展开代码块时自动添加该语言；留空则不添加。',
   'sidebar.emptyFiles': '打开文件夹以浏览文件',
-  'sidebar.filtersTitle': '过滤与排序选项',
+
   'files.filterPlaceholder': '按名称过滤…',
-  'files.newFile': '新建文件',
-  'files.newFolder': '新建文件夹',
+
   // V7-W3.5 展开全部 / 折叠全部
   'files.expandAll': '展开全部',
   'files.collapseAll': '折叠全部',
@@ -112,7 +105,6 @@ const zhCN = {
   'file.pageSetup.unavailable': '当前平台不支持页面设置',
   // V7-W5（G7-FEAT-02）：非 macOS 无系统页面设置面板时的**可操作**提示（替代「不支持」空转）
   'file.pageSetup.unsupportedHint': 'Windows / Linux 没有系统页面设置面板，请在「打印…」对话框中设置纸张大小与页边距',
-  'quickopen.hint': '↑↓ · Enter · Esc',
 
   // Reader
   'reader.search.placeholder': '在文档中查找…',
@@ -125,9 +117,8 @@ const zhCN = {
   'reader.openInEditor': '用编辑器打开',
   'reader.close': '关闭',
   'reader.close.title': '关闭 Reader',
-  'reader.copy': '复制',
+
   'reader.copied': '已复制',
-  'reader.math.render.error': '公式渲染失败（已保留源码）',
 
   // Context menu
   'contextmenu.newFile': '新文件',
@@ -142,8 +133,7 @@ const zhCN = {
   'contextmenu.reveal': '在文件管理器中显示',
   // Typora Menu.strings 官方原文：New Window / Open in New Window
   'contextmenu.openInNewWindow': '在新窗口中打开',
-  'contextmenu.open': '打开',
-  'contextmenu.revealInTree': '在文件树中显示',
+
   'outline.jumpToHeading': '跳转到标题',
   'outline.collapseAll': '全部折叠',
   'outline.expandAll': '全部展开',
@@ -188,11 +178,11 @@ const zhCN = {
   'contextmenu.codeCopyContent': '复制代码块内容',
   'contextmenu.mathCopyAsTex': '复制为 Tex 代码',
   // C1 右键菜单全面对标（Typora 1.14.9 getMenuItemsForMac 文案）
-  'contextmenu.textParagraph': '段落',
+
   'contextmenu.textBlockStyles': '块样式',
   'contextmenu.textInlineStyles': '内联样式',
   'contextmenu.textListStyles': '列表样式 / 删除块',
-  'contextmenu.textFormat': '格式',
+
   'contextmenu.textCopyAsMarkdown': '复制为 Markdown',
   'contextmenu.textCopyAsPlain': '复制为纯文本',
   'contextmenu.linkEdit': '编辑链接…',
@@ -300,7 +290,7 @@ const zhCN = {
   // Status bar
   'status.saved': '○ 已保存',
   'status.unsaved': '● 未保存',
-  'status.words': '字符 {count} · 行 {lines}',
+
   'status.cursor': '行 {line} · 列 {col}',
   'status.markdown': 'Markdown',
   'status.utf8': 'UTF-8',
@@ -357,7 +347,7 @@ const zhCN = {
   'msg.renameNeedsSave': '未保存文档无法重命名（请先保存）',
   'msg.treeRefreshFailed': '文件树刷新失败: {error}',
   'msg.folderOpened': '已打开文件夹 {value}',
-  'msg.openFileFailed': '打开失败: {error}',
+
   'msg.quickOpenNeedsFolder': 'Quick Open 需要先打开文件夹',
   'msg.quickOpenScanFailed': 'Quick Open 扫描失败: {error}',
   'msg.searchNeedsFolder': 'Global Search 需要先打开文件夹',
@@ -403,7 +393,7 @@ const zhCN = {
   'msg.recoverFailed': '恢复失败: {error}',
   'msg.readSnapshotFailed': '读取快照失败: {error}',
   'palette.recent': '最近',
-  'tree.rootEmpty': '未打开文件夹（不会创建 .mellow）',
+
   'sidebar.treeAria': '文件树',
   'sidebar.outlineAria': '大纲',
   // V7-W1.5：Articles（文档列表）视图 aria
@@ -537,7 +527,7 @@ const zhCN = {
 
   'updater.rollback': '回滚',
   'updater.rollbackFailed': '回滚失败',
-  'updater.rollbackInProgress': '正在回滚…',
+
   'settings.general.reopenLast': '启动时恢复上次会话',
   'settings.general.language': '语言',
   'settings.language.zh': '简体中文',
@@ -574,8 +564,7 @@ const zhCN = {
   'settings.editor.spellcheckDesc': '系统拼写检查（红色下划线）；大文件模式下自动关闭。',
   'settings.editor.smartPunctuation': '智能标点',
   'settings.editor.smartPunctuationDesc': '输入时转换：直引号 " \' 自动成对转为 “” ‘’；行内 -- 加空格转为破折号 —（不干扰水平线与表格语法）。',
-  'edit.replaceMenu': '替换',
-  'edit.smartPunctuation': '智能标点',
+
   'msg.smartPunctOn': '智能标点已开启',
   'msg.firstLineIndentOn': '首行缩进已开启',
   'msg.firstLineIndentOff': '首行缩进已关闭',
@@ -596,7 +585,7 @@ const zhCN = {
   'settings.editor.writingWidth': '写作宽度',
   'settings.editor.lineHeight': '行高',
   'settings.writingWidth.680': '680px',
-  'settings.writingWidth.820': '820px',
+
   'settings.writingWidth.860': '860px（默认）',
   'settings.writingWidth.980': '980px',
   'settings.writingWidth.auto': '自适应',
@@ -691,7 +680,6 @@ const zhCN = {
   'settings.advanced.windowBounds': '记忆窗口大小与位置',
   'settings.advanced.userCss': '用户 CSS',
   'settings.advanced.userCssDesc': 'appData/user.css 自动加载（优先级最高）；themes 目录下 base.user.css（全局）与 <主题>.user.css（主题专属）按序叠加，与 Typora 机制一致',
-  'settings.liveHint': '更改立即生效，无需重启',
 
   // ── 原生菜单标签（P1-1.4：单一真源自 packages/commands/menuSchema.ts labelKey 引用）──
   'menu.top.mellow': 'Mellow',
@@ -929,14 +917,13 @@ const zhCN = {
 
 const enUS: Record<keyof typeof zhCN, string> = {
   'app.name': 'Mellow',
-  'titlebar.palette.title': 'Command Palette (Ctrl/Cmd+Shift+P)',
+
   'doc.untitled': 'Untitled',
-  'sidebar.filesSwitchLabel': 'Sidebar switch',
+
   'sidebar.switchToOutline': 'Switch to Outline View',
   'sidebar.switchToFiles': 'Switch to Files View',
   'sidebar.openFolderTitle': 'Open folder',
-  'tree.includeGlob': 'include glob (comma separated)',
-  'tree.excludeGlob': 'exclude glob (comma separated)',
+
   'outline.listLabel': 'Document outline',
   'search.resultsLabel': 'Global search results',
 
@@ -951,18 +938,13 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'sidebar.search': 'Search',
   'sidebar.openFolder': 'Open…',
   'sidebar.refresh': 'Refresh',
-  'sidebar.tree': 'Tree',
-  'sidebar.list': 'List',
-  'sidebar.showHidden': 'Hidden files',
-  'sidebar.showNonMarkdown': 'Non-Markdown',
+
   'sidebar.recursive': 'Recursive',
-  'sidebar.summary': 'Summary',
+
   'sidebar.pin': 'Pin this folder',
   'sidebar.unpin': 'Unpin',
-  'sidebar.pinnedLabel': 'Pinned folders',
+
   'sidebar.recentFolders': 'Recent Folders',
-  'sidebar.recentFoldersLabel': 'Recently opened folders',
-  'sidebar.removeRecentFolder': 'Remove from recent folders',
 
   'sidebar.sort': 'Sort',
   'sidebar.sortNatural': 'Natural',
@@ -986,10 +968,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.markdown.defaultCodeLang': 'Default code language',
   'settings.markdown.defaultCodeLangDesc': 'Automatically add this language when expanding a code block by typing Markdown backticks; leave empty to add none.',
   'sidebar.emptyFiles': 'Open a folder to browse files',
-  'sidebar.filtersTitle': 'Filter & sort options',
+
   'files.filterPlaceholder': 'Filter by name…',
-  'files.newFile': 'New File',
-  'files.newFolder': 'New Folder',
+
   'files.expandAll': 'Expand All',
   'files.collapseAll': 'Collapse All',
   'sidebar.noFilterMatch': 'No matches',
@@ -1024,7 +1005,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'window.newWindow.unavailable': 'New window is only available in the desktop app',
   'file.pageSetup.unavailable': 'Page setup is not supported on this platform',
   'file.pageSetup.unsupportedHint': 'Windows / Linux have no system page setup panel — set paper size and margins in the Print… dialog',
-  'quickopen.hint': '↑↓ · Enter · Esc',
 
   'reader.search.placeholder': 'Find in document…',
   'reader.prev': 'Previous match',
@@ -1036,9 +1016,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'reader.openInEditor': 'Open in Editor',
   'reader.close': 'Close',
   'reader.close.title': 'Close Reader',
-  'reader.copy': 'Copy',
+
   'reader.copied': 'Copied',
-  'reader.math.render.error': 'Math render failed (source kept)',
 
   'contextmenu.newFile': 'New File',
   'contextmenu.newFolder': 'New Folder',
@@ -1051,8 +1030,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'contextmenu.undo': 'Undo File Operation',
   'contextmenu.reveal': 'Reveal in File Manager',
   'contextmenu.openInNewWindow': 'Open in New Window',
-  'contextmenu.open': 'Open',
-  'contextmenu.revealInTree': 'Reveal in File Tree',
+
   'outline.jumpToHeading': 'Jump to Heading',
   'outline.collapseAll': 'Collapse All',
   'outline.expandAll': 'Expand All',
@@ -1095,11 +1073,11 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'contextmenu.codeCopyContent': 'Copy Code Content',
   'contextmenu.mathCopyAsTex': 'Copy as Tex',
   // C1 context menu full parity (Typora 1.14.9 getMenuItemsForMac labels)
-  'contextmenu.textParagraph': 'Paragraph',
+
   'contextmenu.textBlockStyles': 'Block Styles',
   'contextmenu.textInlineStyles': 'Inline Styles',
   'contextmenu.textListStyles': 'List Styles / Remove Block',
-  'contextmenu.textFormat': 'Format',
+
   'contextmenu.textCopyAsMarkdown': 'Copy as Markdown',
   'contextmenu.textCopyAsPlain': 'Copy as Plain Text',
   'contextmenu.linkEdit': 'Edit Link…',
@@ -1199,7 +1177,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
 
   'status.saved': '○ Saved',
   'status.unsaved': '● Unsaved',
-  'status.words': 'Chars {count} · Lines {lines}',
+
   'status.cursor': 'Line {line} · Col {col}',
   'status.markdown': 'Markdown',
   'status.utf8': 'UTF-8',
@@ -1254,7 +1232,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'msg.renameNeedsSave': 'Cannot rename an unsaved document (save first)',
   'msg.treeRefreshFailed': 'File tree refresh failed: {error}',
   'msg.folderOpened': 'Opened folder {value}',
-  'msg.openFileFailed': 'Open failed: {error}',
+
   'msg.quickOpenNeedsFolder': 'Quick Open requires an open folder',
   'msg.quickOpenScanFailed': 'Quick Open scan failed: {error}',
   'msg.searchNeedsFolder': 'Global Search requires an open folder',
@@ -1300,7 +1278,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'msg.recoverFailed': 'Recover failed: {error}',
   'msg.readSnapshotFailed': 'Failed to read snapshot: {error}',
   'palette.recent': 'Recent',
-  'tree.rootEmpty': 'No folder open (no .mellow file is created)',
+
   'sidebar.treeAria': 'File tree',
   'sidebar.outlineAria': 'Outline',
   // V7-W1.5：Articles（文档列表）视图 aria
@@ -1426,7 +1404,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
 
   'updater.rollback': 'Roll back',
   'updater.rollbackFailed': 'Rollback failed',
-  'updater.rollbackInProgress': 'Rolling back…',
+
   'settings.general.reopenLast': 'Restore last session on launch',
   'settings.general.language': 'Language',
   'settings.language.zh': '简体中文',
@@ -1461,8 +1439,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.editor.spellcheckDesc': 'System spell check (red underline); automatically off in large file mode.',
   'settings.editor.smartPunctuation': 'Smart punctuation',
   'settings.editor.smartPunctuationDesc': 'Convert while typing: straight quotes " \' become paired “” ‘’; inline -- plus space becomes em-dash — (never touches horizontal rules or tables).',
-  'edit.replaceMenu': 'Substitutions',
-  'edit.smartPunctuation': 'Smart Punctuation',
+
   'msg.smartPunctOn': 'Smart punctuation on',
   'msg.firstLineIndentOn': 'First-line indent on',
   'msg.firstLineIndentOff': 'First-line indent off',
@@ -1483,7 +1460,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.editor.writingWidth': 'Writing Width',
   'settings.editor.lineHeight': 'Line Height',
   'settings.writingWidth.680': '680px',
-  'settings.writingWidth.820': '820px',
+
   'settings.writingWidth.860': '860px (default)',
   'settings.writingWidth.980': '980px',
   'settings.writingWidth.auto': 'Auto',
@@ -1572,7 +1549,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.advanced.windowBounds': 'Remember window size and position',
   'settings.advanced.userCss': 'User CSS',
   'settings.advanced.userCssDesc': 'appData/user.css is loaded automatically (highest priority); base.user.css (all themes) and <theme>.user.css (theme-specific) under the themes folder are layered in order, matching Typora',
-  'settings.liveHint': 'Changes apply immediately, no restart required',
 
   // ── Native menu labels (P1-1.4 single source, referenced by menuSchema.ts labelKey) ──
   'menu.top.mellow': 'Mellow',

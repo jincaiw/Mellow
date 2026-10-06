@@ -1022,6 +1022,13 @@ Typora 官方 File Management：「At the bottom of the left side bar, users can
 
 偏好设置「文件」组补齐三项：显示隐藏文件 / 显示非 Markdown 文件 / **自定义显示·隐藏规则**（`includeGlobs` / `excludeGlobs`，glob 列表，逗号或换行分隔，由 `parseGlobList` 解析）。
 
+> **⚠️ 不在设置页的 3 个持久化键（2026-10-06，ADR-0032 Q4 = D2）**：
+> `mellow.fileTree.options` / `mellow.outline.options` / `mellow.statusbar.fields` **不在 `SETTINGS_SECTIONS`**
+> ⇒ 它们**既不出现在设置页、也不被「恢复默认」清理**（`restoreAllSettingsDefaults` 只遍历 schema）。
+> 这是**有意**的：这三者**已有自己的 UI 入口**（文件树 / 大纲 / 状态栏的**右键菜单**），
+> 再放进设置页会造成**双入口**。护栏 `verify-settings-contract.mjs` 已把它们登记为例外（双向）。
+> 读者不必去猜「为什么恢复默认没清掉它」—— 答案在这里。
+
 **W3.7 —— Outline 右键 `Highlight Current Header`**
 
 Flat / Collapsible 切换此前已在右键菜单（`outline.switchFlat` / `switchTree`）。本轮补齐 `Highlight Current Header`。**关键细节**：不能只靠 `setOutlineSelectedId(currentOutlineId)` —— 若当前项已是键盘选中项，state 未变、effect 不重跑、视口不动，用户会以为功能失效。故引入 `highlightNonce` 递增计数强制触发滚动跟随。

@@ -156,6 +156,17 @@ const DECIDED_ADRS = [
   // 2026-10-05 裁决：clipboard paste 优先级（image payload vs rich HTML 的处理器顺序）
   ['docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md',
     'clipboard paste 优先级：image payload 与 rich HTML 的处理器顺序', 'A3（收敛到一处显式判断）'],
+  // 2026-10-06 立、**同日裁决为 Accepted**（依据用户 2026-09-30 的常设授权）：
+  // 审计 §4.95–§4.105 新增的四组裁决项 —— 此前只在正文里写了「登记待裁决」却**没有载体**
+  // （违反 AGENTS.md「待裁决项必须有 ADR 载体」与登记表头「不得新增未登记的裁决项」），
+  // 本 ADR 是按先例（ADR-0029）补的载体，并已逐问裁决：
+  //   Q1=A1（删除 30 个死 i18n 键，目录 841→811，判据 D 升级为硬判据）；
+  //   Q2=B3（3 个死主题 token 维持登记，与 ADR-0027 Q3 口径一致）；
+  //   Q3=C3（3 个零消费者包**保留** —— AGENTS.md「不要自行修改架构」优先于常设授权）；
+  //   Q4=D2（3 个 schema 外持久化键维持登记 + 补文档说明）。
+  ['docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md',
+    '审计新增四问：死 i18n 键 / 死主题 token / 零消费者包 / schema 外持久化键（§4.95–§4.105）',
+    'Q1=A1 / Q2=B3 / Q3=C3 / Q4=D2'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
@@ -166,13 +177,7 @@ const DECIDED_ADRS = [
 // **分处两个 eventHandler**，而 `index.ts` 的注册顺序把优先级 2 排在 3/4 之后 ⇒ 与 spec §3 相反。
 // 裁决 A3 = 在 `handleSmartPaste` 内**显式让位**（有图片 payload 则 return false）⇒ 不再依赖注册顺序。
 // 故它**不再**是待裁决项（已移入 DECIDED_ADRS）。
-// 2026-10-06 立（**Proposed，待裁决**）：审计 §4.95–§4.105 新增的四组裁决项
-// —— 此前只在正文里写了「登记待裁决」却**没有载体**（违反 AGENTS.md 与登记表头两条规则），
-// 本 ADR 是按先例（ADR-0029）补的载体。裁决后请移入 DECIDED_ADRS。
-const PENDING_ADRS = [
-  ['docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md',
-    '审计新增四问：死 i18n 键 / 死主题 token / 零消费者包 / schema 外持久化键（§4.95–§4.105）'],
-];
+const PENDING_ADRS = [];   // 当前无待裁决 ADR（ADR-0032 已于 2026-10-06 同日裁决为 Accepted）
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);
