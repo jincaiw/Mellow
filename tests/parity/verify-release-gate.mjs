@@ -166,7 +166,13 @@ const DECIDED_ADRS = [
 // **分处两个 eventHandler**，而 `index.ts` 的注册顺序把优先级 2 排在 3/4 之后 ⇒ 与 spec §3 相反。
 // 裁决 A3 = 在 `handleSmartPaste` 内**显式让位**（有图片 payload 则 return false）⇒ 不再依赖注册顺序。
 // 故它**不再**是待裁决项（已移入 DECIDED_ADRS）。
-const PENDING_ADRS = [];   // 当前无待裁决 ADR
+// 2026-10-06 立（**Proposed，待裁决**）：审计 §4.95–§4.105 新增的四组裁决项
+// —— 此前只在正文里写了「登记待裁决」却**没有载体**（违反 AGENTS.md 与登记表头两条规则），
+// 本 ADR 是按先例（ADR-0029）补的载体。裁决后请移入 DECIDED_ADRS。
+const PENDING_ADRS = [
+  ['docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md',
+    '审计新增四问：死 i18n 键 / 死主题 token / 零消费者包 / schema 外持久化键（§4.95–§4.105）'],
+];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);
