@@ -69,6 +69,11 @@ jobs:
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
     steps:
+      # ⚠️ **必须 checkout**（2026-10-06 实测）：`gh release create` 需要一个 **git 仓库上下文**，
+      # 否则报 `failed to run git: fatal: not a git repository` 并 exit 1。
+      # （本 job 是 §4.108 修竞态时新增的 —— 它**第一次运行**（v1.5.33）就因此失败：
+      #   三平台 job `needs:` 它 ⇒ 连带被跳过 ⇒ **整个发布没跑**。修法 = 补这一步。）
+      - uses: actions/checkout@v4
       - name: Create draft release if absent (tags only; asserts no duplicate)
         id: create
         env:
@@ -90,8 +95,11 @@ jobs:
           ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
             --jq "[.[] | select(.tag_name == \"${GITHUB_REF_NAME}\")][0].id // empty")
           if [ -z "${ID}" ]; then
-            gh release create "${GITHUB_REF_NAME}" --draft \
-              --title "Mellow ${GITHUB_REF_NAME}" --notes ""
+            # `--verify-tag`：**tag 不存在就中止**（不得自动从默认分支建 tag —— 那会造出一个
+            #   与本次构建无关的 tag）。`--generate-notes`：避免在无 TTY 的 CI 里因缺 notes 而卡住；
+            #   正文随后由 `finalize` 步骤覆盖（它才是 notes 的真值源）。
+            gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
+              --title "Mellow ${GITHUB_REF_NAME}" --generate-notes
             ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
               --jq "[.[] | select(.tag_name == \"${GITHUB_REF_NAME}\")][0].id")
           fi
