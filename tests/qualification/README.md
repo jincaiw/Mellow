@@ -207,5 +207,5 @@ cd apps/desktop && npm run tauri dev
 > - `tests/parity/tools/audit-typora-menu-labels.mjs` —— 核对内嵌的官方菜单文案（防止把 Mellow 自己的英文填进官方列）。
 > - `tests/parity/tools/audit-typora-orphan-strings.mjs` —— 查「Typora 到底有没有在用某个字符串」：
 >   `--check "<串>"`（**决定性用法**：同时报**文案面**与**代码面**命中）/ `--list`（线索清单，含原生侧假阳性）。
->   ⚠️ **用 node 实现，不依赖 `grep`** —— 本机 `grep` 是 `toybox`，会**静默漏匹配**
->   （曾据此误判「某功能不存在」，见审计 §4.117）。
+>   ⚠️ **用 node 实现**（逐文件读，不经 shell）—— 结论要写进文档/裁决时，
+>   不要用 `head` 截断后的输出支撑「**只**出现在…」这类断言（审计 §4.117 的两次翻转即由此而来）。

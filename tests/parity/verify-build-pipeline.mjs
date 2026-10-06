@@ -13,8 +13,9 @@
  *   ③ 桌面 `build` script 必须先跑 bundle 抽取再 vite build（否则产物缺引擎）；
  *   ④ 脚本注释不得谎称「CI 已编排」（历史失真：原注释如此，实际两处 workflow 都没调用）。
  */
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { resolve, relative } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
@@ -241,6 +242,57 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   const stripped = COMMENT_ONLY.split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
   if (/continue-on-error:\s*true/.test(stripped)) {
     errors.push('视觉门禁护栏 canary 失效：纯注释样本被误判为违规');
+  }
+}
+
+// ── ⑩ 所有测试/工具脚本必须能 `node --check`（2026-10-06，审计 §4.117）──────────
+// 立此条的原因（实测）：给 `tests/parity/tools/audit-typora-orphan-strings.mjs` 改文件头时，
+// 在**块注释里写出了 glob**（星号紧跟斜杠）⇒ **提前闭合注释** ⇒ 语法错误。
+// 而该文件是**手工工具、不进 CI** ⇒ `npm run parity` **全绿**，坏掉的脚本会一直躺在仓库里，
+// **直到有人真去用它**。（同型：`tests/e2e/**` 的 31 个脚本也不进 CI。）
+// ⇒ 判据：`tests/**` 与 `tools/**` 下的每个 `.mjs` 都必须通过 `node --check`。
+{
+  const SCRIPT_ROOTS = ['tests', 'tools'];
+  const SKIP_DIR = new Set(['node_modules', 'dist', 'target', '.git', '.workbuddy-ai', 'public']);
+  const walkScripts = (dir, out = []) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+      if (SKIP_DIR.has(e.name)) continue;
+      const p = resolve(dir, e.name);
+      if (e.isDirectory()) walkScripts(p, out); else out.push(p);
+    }
+    return out;
+  };
+  const scripts = [];
+  for (const r of SCRIPT_ROOTS) {
+    for (const f of walkScripts(resolve(root, r))) if (f.endsWith('.mjs')) scripts.push(f);
+  }
+  if (scripts.length < 30) {
+    fail(`只解析出 ${scripts.length} 个 .mjs（下限 30）—— 扫描面漂移会让本判据空转`);
+  }
+  const broken = [];
+  for (const f of scripts) {
+    try { execFileSync(process.execPath, ['--check', f], { stdio: 'pipe' }); }
+    catch (e) {
+      const msg = String(e.stderr ?? '').split('\n').find((l) => /Error|error/.test(l)) ?? '(未知)';
+      broken.push(`${relative(root, f).split('\\').join('/')} :: ${msg.trim()}`);
+    }
+  }
+  if (broken.length > 0) {
+    fail(`以下脚本**语法不通**（不进 CI ⇒ 坏了也没人知道，直到有人真去用它）：\n    ${broken.join('\n    ')}`);
+  }
+  // canary：临时写一个**语法坏掉**的样本，检查器必须报出来（证明这条判据真的在看语法）
+  const canaryDir = resolve(root, 'node_modules/.cache');
+  const canary = resolve(canaryDir, 'syntax-canary.tmp.mjs');
+  try {
+    mkdirSync(canaryDir, { recursive: true });
+    writeFileSync(canary, 'const broken = ;\n');
+    let detected = false;
+    try { execFileSync(process.execPath, ['--check', canary], { stdio: 'pipe' }); } catch { detected = true; }
+    if (!detected) errors.push('脚本语法护栏 canary 失效：语法坏掉的样本未被检出（判据没在看语法）');
+  } finally {
+    try { rmSync(canary, { force: true }); } catch { /* noop */ }
   }
 }
 
