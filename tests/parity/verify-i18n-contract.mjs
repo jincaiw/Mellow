@@ -364,6 +364,105 @@ if (schemaRefs < 300) {
     errors.push('引擎文案护栏 canary 失效：目录中不存在的键未被判为缺失');
   }
 }
+// ── D. 目录 → 使用：**死键**（2026-10-06 审计 §4.102）────────────────────────
+// 【为什么补】A/B/C 全是「`t()` 用到的键必须存在」（**使用 → 目录**）。
+// **反方向（目录 → 使用）此前只有 `menu.*` 有判据** ——
+// `verify-menu-contract.mjs` 的 `ORPHAN_ALLOWED` **遍历全部 `menu.*` 键**；
+// 其余命名空间**零判据**（又一次「只锁了一半」）。
+//
+// 【实测】841 个键里 **34 个全仓任何引号形式都不出现**；其中 9 个属 `menu.*`
+// （已由上面那条判据负责）⇒ 本判据负责**其余 25 个**，并**刻意排除 `menu.*`**，
+// 避免同一缺口登记两处（会制造与 D-E/D-Q 同型的二义）。
+//
+// 【为什么死键值得管】它们不只是「占地方」，而是**改版遗留的物证**：
+//   · `sidebar.showHidden` / `showNonMarkdown` / `filtersTitle` / `tree.includeGlob` /
+//     `tree.excludeGlob` —— **侧栏过滤面板**改版为**设置页选项**（`settings.file.*`）后留下的；
+//   · `sidebar.tree` / `sidebar.list` / `sidebar.summary` —— 侧栏模式切换改用 `sidebar.*Aria` 后留下的；
+//   · `settings.writingWidth.680` / `.820` —— 写作宽度从**选项列表**改为**数值设置**后留下的。
+// 而且 `verify-sidebar-contract.mjs` 至今还在断言其中几个「双语存在」——
+// **护栏在维护一个死键**（这本身也是一种信号：断言了存在，却没人问「谁在用」）。
+const MESSAGES_UNUSED = new Map([
+  ['titlebar.palette.title', '未使用：命令面板按钮的 title 走了别的键（或直接用 aria-label）'],
+  ['sidebar.filesSwitchLabel', '未使用：侧栏模式切换改用 `sidebar.*Aria` 系列'],
+  ['sidebar.tree', '未使用：侧栏模式切换改用 `sidebar.*Aria` 系列（同 sidebar.list / sidebar.summary）'],
+  ['sidebar.list', '未使用：同上'],
+  ['sidebar.summary', '未使用：同上'],
+  ['sidebar.showHidden', '未使用：侧栏过滤面板 → 设置页选项（现为 `settings.file.showHidden`）'],
+  ['sidebar.showNonMarkdown', '未使用：同上（现为 `settings.file.showNonMarkdown`）'],
+  ['sidebar.filtersTitle', '未使用：同上（侧栏过滤面板已不存在）'],
+  ['sidebar.pinnedLabel', '未使用：最近文件夹置顶分组改用别的方式呈现'],
+  ['sidebar.recentFoldersLabel', '未使用：同上'],
+  ['sidebar.removeRecentFolder', '未使用：移除按钮的文案走别处（或仅用图标 + aria）'],
+  ['tree.includeGlob', '未使用：改版为设置页的 `settings.file.includeGlobs`'],
+  ['tree.excludeGlob', '未使用：改版为设置页的 `settings.file.excludeGlobs`'],
+  ['tree.rootEmpty', '未使用：空目录提示走了别的键（或未实现该提示）'],
+  ['quickopen.hint', '未使用：快速打开的提示未接线'],
+  ['reader.copy', '未使用：Reader 的复制按钮文案未接线（按钮可能只用图标）'],
+  ['reader.math.render.error', '未使用：公式渲染失败提示未接线'],
+  ['status.words', '未使用：状态栏字数格式未接线（字数并入窗口标题，见 windowService.setTitle）'],
+  ['msg.openFileFailed', '未使用：打开失败提示走了别的键'],
+  ['updater.rollbackInProgress', '未使用：回滚进行中的提示未接线'],
+  ['edit.replaceMenu', '未使用：替换菜单项未装配（命令可能已并入查找）'],
+  ['edit.smartPunctuation', '未使用：智能标点菜单项未装配'],
+  ['settings.writingWidth.820', '未使用：写作宽度从**选项列表**改为**数值设置**（`settings.editor.writingWidth`）后留下的'],
+  ['settings.liveHint', '未使用：设置页的实时生效提示未接线'],
+  ['contextmenu.textParagraph', '未使用：右键项文案在命令对象里内联（`localizedTitle: { zh, en }`），未走 i18n 目录'],
+  ['contextmenu.textFormat', '未使用：同上'],
+]);
+const MESSAGES_UNUSED_SCOPE_NOTE = '`menu.*` 不在此表内：其孤儿判据在 `verify-menu-contract.mjs` 的 `ORPHAN_ALLOWED`（遍历全部 menu.* 键）';
+
+/** 该键是否在**任一引号形式**下出现在产品 / 工具链 / 测试里 */
+function keyReferenced(key, blob) {
+  return blob.includes(`'${key}'`) || blob.includes(`"${key}"`) || blob.includes('`' + key + '`');
+}
+{
+  const SELF = 'tests/parity/verify-i18n-contract.mjs';
+  const DEAD_SCAN = allFiles.filter((f) =>
+    /^(?:apps|packages|tools|tests)\//.test(f)
+    && !f.includes('/public/')               // 生成型产物（可能残留旧键 ⇒ 会把死键误判成活键）
+    && f !== SELF                            // ⚠️ **护栏自己不算使用** —— 否则下方 MESSAGES_UNUSED 表里
+                                             //    的键字符串会让每个死键都「看起来被引用」（自指假阴性，实测踩到）
+    && f !== 'packages/i18n/src/messages.ts' // 目录自身不算使用（但该包的**测试**要算，见 app.name）
+    && /\.(ts|tsx|js|jsx|mjs|html|json)$/.test(f));
+  if (DEAD_SCAN.length < 100) {
+    fail(`死键判据的扫描面只解析出 ${DEAD_SCAN.length} 个文件（下限 100）—— 扫描面漂移会让本判据空转`);
+  }
+  const blob = DEAD_SCAN.map((f) => read(f)).join('\n');
+
+  const isMenuNs = (k) => k.startsWith('menu.');
+  const dead = [...zh.keys()].filter((k) => !isMenuNs(k) && !keyReferenced(k, blob)).sort();
+  const deadUnregistered = dead.filter((k) => !MESSAGES_UNUSED.has(k));
+  const registeredButAlive = [...MESSAGES_UNUSED.keys()].filter(
+    (k) => isMenuNs(k) || keyReferenced(k, blob) || !zh.has(k));
+  if (deadUnregistered.length > 0) {
+    fail(`i18n 目录里出现**无人使用**的键：${deadUnregistered.join(', ')}`
+      + ' —— 死键是**改版遗留**的物证（旧 UI 拆了、键没删），且会让「某功能存在吗」读错。'
+      + '请接线使用、删除，或在 MESSAGES_UNUSED 登记原因');
+  }
+  if (registeredButAlive.length > 0) {
+    fail(`MESSAGES_UNUSED 里的键已不再「无人使用」或本不该在此表：${registeredButAlive.join(', ')}`
+      + `（${MESSAGES_UNUSED_SCOPE_NOTE}）—— 请删除该登记项`);
+  }
+  if (MESSAGES_UNUSED.size === 0) fail('MESSAGES_UNUSED 不得为空（清空即等于放弃该判据）');
+  for (const [k, reason] of MESSAGES_UNUSED) {
+    if (typeof reason !== 'string' || reason.trim() === '') fail(`MESSAGES_UNUSED 的 ${k} 缺原因`);
+    if (!zh.has(k)) fail(`MESSAGES_UNUSED 登记了目录里不存在的键：${k}`);
+  }
+
+  // canary：**合成夹具**（不绑现实数据 —— 否则「将来把它接线」这个合法变更会把 canary 弄红）
+  const fixture = "const a = 'live.key'; const b = \"live2.key\";\n";
+  if (!keyReferenced('live.key', fixture) || !keyReferenced('live2.key', fixture)) {
+    errors.push('死键 canary 失效：单/双引号形式未被识别');
+  }
+  if (keyReferenced('ghost.key', fixture)) errors.push('死键 canary 失效：不存在的键被判为被引用（谓词过宽）');
+  // 负样本-放宽：前缀相似但不同名的键不得互相算作引用
+  if (keyReferenced('live', fixture)) errors.push('死键 canary 失效：前缀匹配把 `live` 判成被引用（必须整键匹配）');
+  // `menu.*` 必须被排除（否则会与 verify-menu-contract 的 ORPHAN_ALLOWED 双重登记）
+  if (!isMenuNs('menu.top.insert') || isMenuNs('sidebar.tree')) {
+    errors.push('死键 canary 失效：menu.* 命名空间的排除判定不正确');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`i18n contract violations:\n  ${errors.join('\n  ')}`);
 }
@@ -377,5 +476,8 @@ console.log(
   + `占位符与传参是否匹配亦未覆盖）`
   + `；另（ADR-0028）：**引擎侧 UI 文案**已接入 \`tEngine()\` + locale 桥 —— `
   + `判据 E1 无硬编码中文（仅豁免开发者错误消息）/ E2 键可解析（防裸键）/ `
-  + `E3 两 locale 齐备且与 packages/i18n 键不重叠 / E4 接线链完整（引擎装桥 → editor-core → App.tsx）`,
+  + `E3 两 locale 齐备且与 packages/i18n 键不重叠 / E4 接线链完整（引擎装桥 → editor-core → App.tsx）`
+  + `；另（审计 §4.102）**目录 → 使用**方向：除 \`menu.*\`（由 verify-menu-contract 的 ORPHAN_ALLOWED 负责）外，`
+  + `目录里每个键必须在产品/工具链/测试中以任一种引号形式出现，否则登记 —— `
+  + `当前登记 ${MESSAGES_UNUSED.size} 项死键（均为改版遗留：侧栏过滤面板 → 设置页、写作宽度选项 → 数值设置 等）`,
 );

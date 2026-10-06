@@ -6305,6 +6305,64 @@ pub async fn save_document(
 
 `apps/desktop/src/host/fileServices.ts` 是**产品代码** ⇒ 制品变化 ⇒ **发 v1.5.31**。
 
+## 4.102 审 **i18n 目录的反方向**：`menu.*` 有孤儿判据、**其余命名空间零判据** ⇒ 26 个死键（2026-10-06）
+
+**动机**：现有 i18n 护栏（A/B/C）全是「**`t()` 用到的键必须存在**」（**使用 → 目录**）。
+**反方向（目录 → 使用）此前只有 `menu.*` 有判据** ——
+`verify-menu-contract.mjs` 的 `ORPHAN_ALLOWED` **遍历全部 `menu.*` 键**；
+**其余命名空间零判据**（又一次「只锁了一半」，同 §4.97/§4.98/§4.99/§4.101）。
+
+### 实测
+
+841 个键里 **34 个全仓任何引号形式都不出现**；其中 8 个是 `menu.theme.*`（已在 `ORPHAN_ALLOWED` 里）
+⇒ **其余 26 个**没有任何判据。
+
+**它们不是「占地方」，而是改版遗留的物证**：
+
+| 死键 | 遗留自哪次改版 |
+|---|---|
+| `sidebar.showHidden` / `sidebar.showNonMarkdown` / `sidebar.filtersTitle` / `tree.includeGlob` / `tree.excludeGlob` | **侧栏过滤面板**改版为**设置页选项**（`settings.file.*`）—— 旧 UI 拆了，键没删 |
+| `sidebar.tree` / `sidebar.list` / `sidebar.summary` | 侧栏模式切换改用 `sidebar.*Aria` 系列 |
+| `settings.writingWidth.820` | 写作宽度从**选项列表**改为**数值设置**（`settings.editor.writingWidth`） |
+| `contextmenu.textParagraph` / `contextmenu.textFormat` | 右键项文案**在命令对象里内联**（`localizedTitle: { zh, en }`），未走 i18n 目录 |
+| 其余（`reader.copy` / `status.words` / `quickopen.hint` / `updater.rollbackInProgress` …） | 功能未接线或文案走了别处 |
+
+**顺带一处信号**：`verify-sidebar-contract.mjs` 至今还在断言其中几个键「zh/en 双语存在」
+（`:322` / `:396`）—— **护栏在维护一个死键**：它断言了「存在」，却没人问「谁在用」。
+
+### 新增判据（并入 `verify-i18n-contract.mjs`，护栏数仍为 22）
+
+**除 `menu.*` 外，目录里每个键必须在产品 / 工具链 / 测试中以任一种引号形式出现**，否则登记进
+`MESSAGES_UNUSED`（26 条，逐条写明遗留来源）；登记表**双向**（一旦接线 / 一旦不再无人使用 ⇒ 必须删除）。
+
+**为什么刻意排除 `menu.*`**：那部分已由 `verify-menu-contract.mjs` 的 `ORPHAN_ALLOWED` 穷尽覆盖；
+**同一缺口登记两处会制造与 D-E/D-Q 同型的二义**（本仓已有前科）。
+护栏输出里明写这条分工（`MESSAGES_UNUSED_SCOPE_NOTE`）。
+
+**canary 4 项**（合成夹具，不绑现实数据）：单/双引号形式识别、不存在的键不得被判为被引用、
+**前缀相似的键不得互相算作引用**（必须整键匹配）、`menu.*` 排除判定。
+
+**注入验证 5/5**：① 从登记表删一项 ⇒ 报「无人使用」；② 目录里新增无人使用的键 ⇒ 报「无人使用」；
+③ 在**被扫描的产品文件**里真正使用该键（登记项仍在）⇒ 报「已不再无人使用」；
+④ 把 `menu.theme.paper` 塞进表 ⇒ 报「本不该在此表」（防与 menu 护栏双重登记）；⑤ 清空表 ⇒ 报「不得为空」。
+
+### ⚠️ 本轮踩到的两个口径坑（都靠实跑暴露）
+
+1. **护栏扫到了自己**：`MESSAGES_UNUSED` 表里的键字符串就在**护栏自己的源码**里，
+   而护栏文件在扫描面内 ⇒ 每个死键都「看起来被引用」⇒ 判据全空转。
+   ⇒ 扫描面必须**显式排除护栏自身**（`f !== SELF`），并写明理由。
+2. **排除面过宽**：首版把整个 `packages/i18n/` 排除 ⇒ 把该包**测试**里出现的 `app.name`
+   误判成死键。⇒ 只排除**目录文件本身**（`packages/i18n/src/messages.ts`）。
+3. （工具侧）**注入脚本同一文件的多处编辑必须累积** —— 首版每处都从快照出发，后者覆盖前者，
+   于是「zh 与 en 各加一个键」只落了一处 ⇒ **假阴性**。⇒ 编辑先落到一份 staged 副本上再统一写盘。
+
+### 本次改动
+
+- **只改护栏**（`verify-i18n-contract.mjs` 增 D 段 + 登记表 + canary），**无产品代码改动**
+  ⇒ 制品不变 ⇒ **不发新版本**。
+- **未删任何键**：删除属产品面变更（且会改变两个 locale 的目录）⇒ 按「有删/收紧 ⇒ 只登记 + 报冲突」
+  的口径**登记待裁决**。
+
 ## 五、本次审计做的改动（非策略性）
 
 
