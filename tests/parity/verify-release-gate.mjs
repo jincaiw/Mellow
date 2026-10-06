@@ -621,6 +621,81 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
       fail(`README.md 声明「状态：${readmeStatus}」，而 release.yml 现算为「${wfStatus}」`
         + ' —— 发布状态是用户第一眼看到的那份，改了一处必须改另一处（ADR-0031）');
     }
+
+    // ── 单一 owner 创建 draft release（2026-10-06，审计 §4.108）────────────────
+    // 立此条的原因（**实测，v1.5.32**）：三个平台 job **并发**跑 `tauri-action`，
+    // 而它的语义是「**找不到 draft 就创建**」⇒ 它们**同一秒**启动、都没找到
+    // ⇒ **创建了两个同 tag 的 release**（macOS 的 `.dmg` 进了 A、Windows/Linux 的制品进了 B）
+    // ⇒ `finalize` 只看 A（**缺 `.dmg`**）⇒ 断言失败 ⇒ **保持 Draft、不发布**。
+    // 修法：先由一个 job 把 release 建好（并断言没有重复），三平台 job 依赖它
+    // ⇒ 它们只会「找到」而不会「创建」。**本判据锁住这个结构，防止修复被静默改回。**
+    // 解析：`jobs:` 之下 **2 空格缩进**的键 = job 名（job 内部键都是 4 空格）。
+    // ⚠️ `jobs:` 允许出现在**文件首行** ⇒ 不能用 `indexOf('\njobs:')`（那会让以 `jobs:` 开头的
+    // 合成夹具返回 null —— 实测被 canary 当场抓到）。
+    const jobsOf = (src) => {
+      const m0 = /(?:^|\n)jobs:[ \t]*\n/.exec(src);
+      if (m0 === null) return null;
+      const out = [];
+      let cur = null;
+      for (const line of src.slice(m0.index + m0[0].length).split('\n')) {
+        const m = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+        if (m) { if (cur) out.push(cur); cur = { name: m[1], text: '' }; continue; }
+        if (cur) cur.text += `${line}\n`;
+      }
+      if (cur) out.push(cur);
+      return out;
+    };
+    const jobBlocks = jobsOf(release);
+    if (jobBlocks === null || jobBlocks.length < 4) {
+      fail('无法从 release.yml 解析出 jobs（锚点漂移会让「单一 owner」判据空转）');
+    } else {
+      const owners = jobBlocks.filter((j) => j.text.includes('gh release create'));
+      const tauriJobs = jobBlocks.filter((j) => j.text.includes('tauri-apps/tauri-action'));
+      if (tauriJobs.length < 3) {
+        fail(`release.yml 只识别到 ${tauriJobs.length} 个 tauri-action 打包 job（下限 3）—— 扫描面漂移`);
+      }
+      if (owners.length !== 1) {
+        fail(`release.yml 里「创建 release」的 job 有 ${owners.length} 个，**必须恰好 1 个** —— `
+          + '多个 job 各自 find-or-create 会**并发创建同 tag 的多个 release**'
+          + '（v1.5.32 实测：macOS 的 dmg 与 Windows/Linux 的制品分落到两个 release ⇒ finalize 断言失败、卡 Draft）');
+      }
+      const ownerName = owners.length === 1 ? owners[0].name : null;
+      if (ownerName !== null) {
+        if (!owners[0].text.includes('::error::') || !owners[0].text.includes('-gt 1')) {
+          fail(`release.yml 的 ${ownerName} 未**断言没有重复 release** —— `
+            + '把「同 tag 多个 release」从静默怪状变成**响亮失败**的那条检查不得删除');
+        }
+        for (const j of tauriJobs) {
+          const needs = /needs:\s*\[([^\]]*)\]/.exec(j.text);
+          if (needs === null || !needs[1].includes(ownerName)) {
+            fail(`release.yml 的 ${j.name} 未 \`needs: [${ownerName}]\` —— `
+              + '打包 job 必须在单一 owner **建好 release 之后**才启动，否则 find-or-create 会再次并发创建');
+          }
+        }
+      }
+      // canary：合成夹具（解析器 + 「必须依赖 owner」的谓词各自验一次）
+      const YAML_OK = 'jobs:\n'
+        + '  owner:\n    steps:\n      - run: gh release create x --draft\n'
+        + '  build:\n    needs: [owner]\n    steps:\n      - uses: tauri-apps/tauri-action@v0\n';
+      const YAML_BAD = 'jobs:\n'
+        + '  owner:\n    steps:\n      - run: gh release create x --draft\n'
+        + '  build:\n    steps:\n      - uses: tauri-apps/tauri-action@v0\n';
+      const jOk = jobsOf(YAML_OK);
+      const jBad = jobsOf(YAML_BAD);
+      if (!jOk || jOk.length !== 2 || jOk[0].name !== 'owner' || jOk[1].name !== 'build') {
+        errors.push('单一 owner 护栏 canary 失效：jobs 解析器未取到正确的 job 名');
+      }
+      if (!jOk || !/needs:\s*\[([^\]]*)\]/.exec(jOk[1].text)?.[1].includes('owner')) {
+        errors.push('单一 owner 护栏 canary 失效：`needs: [owner]` 未被识别（正样本）');
+      }
+      if (!jBad || /needs:\s*\[([^\]]*)\]/.exec(jBad[1].text)) {
+        errors.push('单一 owner 护栏 canary 失效：缺少 needs 的 job 被判成「有依赖」（负样本）');
+      }
+      // canary：`create-release` 这种带连字符的 job 名必须被解析到
+      if (!jobsOf('jobs:\n  create-release:\n    steps: []\n')?.some((j) => j.name === 'create-release')) {
+        errors.push('单一 owner 护栏 canary 失效：带连字符的 job 名未被解析');
+      }
+    }
     // canary：四个方向
     if (statusFromWorkflow('x -F prerelease=false y') !== '正式发布'
       || statusFromWorkflow('x -F prerelease=true y') !== 'pre-release') {

@@ -6705,6 +6705,43 @@ gh release delete v1.5.32 --yes   # ⚠️ tag 有歧义时请按 release id 指
 - **「保持 Draft」不是失败**：它是门禁在**如实报告构建不完整** —— 本次它做对了。
 - **`gh release upload` 必须在 git 仓库目录下跑**（在 `/tmp` 里会 `fatal: not a git repository`）。
 
+## 4.109 给 §4.108 的修复加护栏：**单一 owner 创建 release**（2026-10-06）
+
+**动机**：§4.108 的竞态修复（`create-release` job + 三平台 `needs:`）**没有任何判据在守** ——
+谁把 `needs:` 删掉，竞态就**静默复发**，而症状要等到下一次发版才出现（且表现为「缺 `.dmg`」，
+与成因相隔很远）。
+
+### 判据（并入 `verify-release-gate.mjs` 的 ④ 发布门禁，护栏数仍 22）
+
+解析 `release.yml` 的 jobs（`jobs:` 之下 **2 空格缩进**的键 = job 名；job 内部键都是 4 空格），然后：
+
+| # | 判据 |
+|---|---|
+| ① | **「创建 release」的 job 必须恰好 1 个**（`gh release create` 只允许出现在一个 job 里） |
+| ② | **每个 `tauri-action` 打包 job 必须 `needs:` 那个 owner**（否则 find-or-create 会再次并发创建） |
+| ③ | **owner 必须断言「没有重复 release」**（`::error::` + `-gt 1`）—— 把「同 tag 多个 release」从静默怪状变成**响亮失败** |
+| ④ | 下限：解析出的 jobs ≥ 4、`tauri-action` job ≥ 3（防扫描面漂移） |
+
+**canary 4 项**（合成夹具）：jobs 解析器取到正确 job 名、`needs: [owner]` 被识别（正样本）、
+**缺少 `needs` 的 job 不得被判成「有依赖」**（负样本）、**带连字符的 job 名**（`create-release`）要被解析。
+
+**注入验证 4/4**：① 摘掉 `linux` 的 `needs` ⇒ 报「未 needs」；
+② 删掉 owner 的重复断言 ⇒ 报「未断言没有重复 release」；
+③ 新增第二个 `gh release create` 的 job ⇒ 报「有 2 个 / 必须恰好 1 个」；
+④ 去掉 owner 的 `gh release create` ⇒ 报「有 0 个」。
+
+### ⚠️ canary 当场抓到解析器的一处脆弱
+
+首版 `jobsOf()` 用 `indexOf('\njobs:')` ⇒ 对**以 `jobs:` 开头**的合成夹具返回 `null`
+（真实文件里 `jobs:` 前有换行，所以只有 canary 会暴露）。4 条 canary **全部失败** ⇒ 改为
+`/(?:^|\n)jobs:[ \t]*\n/`。**这正是 canary 的用途**：它测的是「判定逻辑能不能工作」，
+而不是「现实数据恰好长什么样」。
+
+### 本次改动
+
+- **只改护栏**（`verify-release-gate.mjs` 增「单一 owner」判据 + canary），**无产品代码改动**
+  ⇒ 制品不变 ⇒ **不发新版本**。
+
 ## 五、本次审计做的改动（非策略性）
 
 
