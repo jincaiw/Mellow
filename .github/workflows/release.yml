@@ -40,8 +40,56 @@ permissions:
   contents: write
 
 jobs:
+  # ── 单一 owner 创建 draft release（2026-10-06，审计 §4.108）──────────────────
+  # 【为什么需要】三个平台 job **并发**跑 `tauri-action`，而它的行为是「**找不到 draft 就创建**」。
+  # 实测（v1.5.32）：三个 job 同时启动 ⇒ **创建了两个同 tag 的 release** ——
+  # macOS 的 `.dmg` 进了其中一个、Windows/Linux 的制品进了另一个
+  # ⇒ `finalize` 只看其中一个（**缺 `.dmg`**）⇒ 断言失败 ⇒ **保持 Draft、不发布**。
+  # （**门禁工作正常**：它正是为此存在的 —— 只是这次「不完整」的成因是流水线竞态。）
+  # 【修法】先由一个 job 把 release 建好，并**断言没有重复**；三平台 job 依赖它 ⇒
+  # 它们只会「找到」而不会「创建」⇒ 竞态从根上消失（`tauri-action` 的 find-or-create 逻辑保持原样）。
+  create-release:
+    name: Create draft release (single owner; prevents concurrent find-or-create race)
+    # ⚠️ **不得**在这里加 `if: startsWith(github.ref, 'refs/tags/')` ——
+    # 本 workflow 也支持 `workflow_dispatch`，那样会让本 job **被跳过**，
+    # 而三个平台 job `needs: [create-release]` ⇒ **连带全被跳过**（把「仅构建」路径也弄没了）。
+    # 故：本 job 总是运行，**在步骤内**按 `GITHUB_REF_TYPE` 判断是否真的要创建 release。
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - name: Create draft release if absent (tags only; asserts no duplicate)
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
+            echo "非 tag 触发（GITHUB_REF_TYPE=${GITHUB_REF_TYPE:-未设置}）⇒ 跳过 release 创建，release_id 留空"
+            echo "release_id=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"${GITHUB_REF_NAME}\")] | length")
+          echo "现有同 tag release 数：${COUNT}"
+          if [ "${COUNT}" -gt 1 ]; then
+            echo "::error::${GITHUB_REF_NAME} 存在 ${COUNT} 个 release —— 并发 find-or-create 竞态的残留。必须先清理（保留资产最全的那个），否则后续上传会落到不同 release 上"
+            exit 1
+          fi
+          ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"${GITHUB_REF_NAME}\")][0].id // empty")
+          if [ -z "${ID}" ]; then
+            gh release create "${GITHUB_REF_NAME}" --draft \
+              --title "Mellow ${GITHUB_REF_NAME}" --notes ""
+            ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+              --jq "[.[] | select(.tag_name == \"${GITHUB_REF_NAME}\")][0].id")
+          fi
+          echo "release_id=${ID}" >> "${GITHUB_OUTPUT}"
+          echo "draft release id = ${ID}"
+
   windows:
     name: Windows (MSI + NSIS)
+    needs: [create-release]
     runs-on: windows-latest
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -178,6 +226,7 @@ jobs:
     # 故此处改为如实描述；若要恢复「Signed + Notarized」的名称，
     # 必须同时把凭据缺失改为**硬失败**（护栏 verify-parity-ledger 会检查这一点）。
     name: macOS (DMG；有 Apple 凭据时签名 + 公证)
+    needs: [create-release]
     runs-on: macos-latest
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -254,6 +303,7 @@ jobs:
 
   linux:
     name: Linux (AppImage + deb + rpm)
+    needs: [create-release]
     runs-on: ubuntu-latest
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

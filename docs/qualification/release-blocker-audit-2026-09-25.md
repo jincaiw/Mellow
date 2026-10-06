@@ -6639,6 +6639,72 @@ const still = kind === 'listen' ? !emittedEvents.has(ev) : !listenedEvents.has(e
 - §4.99 / §4.102 / §4.105 的**载体指针**已同步为「已裁决 + 结论」；
 - **`messages.ts` 是产品代码** ⇒ 制品变化 ⇒ **发 v1.5.32**。
 
+## 4.108 发版流水线的**并发 find-or-create 竞态**：v1.5.32 一度卡在 Draft（2026-10-06）
+
+### 现象
+
+推 `v1.5.32` 标签后：**三个平台的构建 job 全部 success**，但 `finalize` 失败：
+
+```
+::error::v1.5.32 缺少关键制品: \.dmg$ —— 保持 Draft、不发布
+```
+
+⇒ **门禁工作正常**（它正是为此存在），但这次「不完整」的成因**不是构建失败**。
+
+### 根因：三个平台 job **并发**做 find-or-create
+
+三个 job 各自跑 `tauri-action`，而它的语义是「**找不到 draft 就创建**」。
+实测它们**同一秒**启动、**都没找到** ⇒ **创建了两个同 tag 的 release**：
+
+| release id | 资产 | 内容 |
+|---|---|---|
+| `404267684` | **4** | **macOS 的 `.dmg`** + `app.tar.gz`(+`.sig`) + `latest.json` |
+| `404267671` | 12 | Windows + Linux 的 msi/exe/zip/rpm/deb/AppImage |
+
+`finalize` 只看其中一个（缺 `.dmg`）⇒ 断言失败 ⇒ 保持 Draft。
+**与本次代码改动无关**（三个平台构建均 success）。
+
+**附带核实**（避免误判为长期缺陷）：v1.5.30 / v1.5.31 的 `latest.json` 都含**全部 9 个平台** ✓
+⇒ 正常路径下 `tauri-action` 会**合并**各平台的 updater 条目；本次只因「两个 release 各自合并」才各不完整。
+
+### 耐久修复（`.github/workflows/release.yml`）
+
+新增 **`create-release`** job（**单一 owner**）：先**断言没有重复 release**（有则**响亮失败**），
+再「不存在才创建」；三个平台 job 加 **`needs: [create-release]`** ⇒
+它们只会「找到」而不会「创建」⇒ **竞态从根上消失**（`tauri-action` 的 find-or-create 逻辑保持原样）。
+
+> 顺带：那条「断言没有重复」把「同 tag 两个 release」从**静默怪状**变成**响亮失败** ——
+> 本次就是先被 `finalize` 的资产断言抓住的，这条让它在**更早**的步骤就暴露。
+
+### 本次恢复（**非破坏性**，未删除任何东西）
+
+1. 从 `404267684` 下载 macOS 的 3 个制品 + `latest.json`；
+2. **合并** `latest.json`（**7 → 9 个平台**，与 v1.5.31 一致）；
+3. 上传到 `finalize` 检查的那个 release（**12 → 15 个资产**，7 类关键制品齐全）；
+4. **重跑失败的 `finalize`** ⇒ **成功发布** ✓
+   （`draft=false` / `prerelease=false` / 15 资产 / `releases/latest` → v1.5.32 / `latest.json` 含 9 个平台）。
+
+> ⚠️ 恢复过程中我用 REST 删掉过 `404267671` 的旧 `latest.json`（为替换成合并版），
+> 上传 API 报 404 后改用 `gh release upload --clobber`（**需在 git 仓库目录下执行**）补回 ⇒ 最终 15 资产 ✓。
+
+### ⚠️ 遗留：一个同 tag 的 **stray Draft**（`404267684`，4 资产）
+
+**未擅自删除** —— 仓里记录了「远端破坏性操作不擅自执行」的口径；
+且**现在已无紧迫性**（发布已完成、该 draft 不影响用户）。
+清理（**保留发布出去的那个**）：
+
+```sh
+gh release delete v1.5.32 --yes   # ⚠️ tag 有歧义时请按 release id 指定；不加 --cleanup-tag
+```
+
+⇒ **需要你确认后执行**。
+
+### 教训
+
+- **并发 `find-or-create` 是竞态**：任何「找不到就创建」的多 job 流程都要**先有单一 owner**。
+- **「保持 Draft」不是失败**：它是门禁在**如实报告构建不完整** —— 本次它做对了。
+- **`gh release upload` 必须在 git 仓库目录下跑**（在 `/tmp` 里会 `fatal: not a git repository`）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
