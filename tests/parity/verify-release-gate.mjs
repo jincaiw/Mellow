@@ -289,6 +289,53 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       if (/^\|\s*\d+\s*\|/.test('| 表头 | a | b |')) {
         errors.push('待裁决登记表护栏 canary 过宽：表头行被当成数据行');
       }
+
+      // ── ADR 的「取代」关系必须反映到登记表（2026-10-06，审计 §4.114）──────────
+      // 立此条的原因（实测）：`ADR-0031` 明写「**取代：** ADR-0024 的 **Q2 = B1**」，
+      // 而登记表**第 1 行**仍写「已裁决（A3 / B1）」、载体只指 ADR-0024
+      // ⇒ 读者会以为 `B1` 仍然有效（**「已裁决」≠「仍有效」**）。
+      // 判据：凡某 ADR 声明「取代：ADR-NNNN」，则以**被取代 ADR** 为载体的登记表行
+      //       必须提到**取代者**的 ADR 编号 —— 否则「取代」这件事只存在于 ADR 内部，
+      //       而**登记表才是读者发现它的地方**（与 §4.67「唯一可发现处」母题同型）。
+      const supersessionsOf = (src) => [...src.matchAll(/^\*\*取代：\*\*[^\n]*?ADR-(\d{4})/gm)].map((m) => m[1]);
+      const adrDir = resolve(root, 'docs/adr');
+      const supersessions = []; // [取代者, 被取代者]
+      for (const f of readdirSync(adrDir).filter((n) => /^ADR-\d{4}-.*\.md$/.test(n))) {
+        const me = /^ADR-(\d{4})/.exec(f)[1];
+        // ⚠️ 用本文件自带的 `read()`（它已做换行归一化）——**不要**在这里另写一处归一化调用：
+        // 本文件第 ⑤ 节的换行归一化 canary 用 `selfSrc.replace(anchored, …)` 只替换**第一处**，
+        // 且随后检查「文件里是否还残留该转义序列」⇒ 新增第二处（**或哪怕只在注释里写出该转义序列**）
+        // 都会让它误报（实测踩到两次：一次是新增调用，一次是注释里写了该序列）。
+        for (const other of supersessionsOf(read(`docs/adr/${f}`))) {
+          if (other !== me) supersessions.push([me, other]);
+        }
+      }
+      if (supersessions.length === 0) {
+        fail('未解析到任何 ADR 取代关系（基线 ≥ 1：ADR-0031 取代 ADR-0024 Q2=B1）—— 解析漂移会让本判据空转');
+      }
+      for (const [superseder, superseded] of supersessions) {
+        const affected = rows.filter((row) => carrierOf(row).replace(/`/g, '').includes(`ADR-${superseded}-`));
+        if (affected.length === 0) {
+          fail(`ADR-${superseder} 声明取代 ADR-${superseded}，但登记表里**没有以 ADR-${superseded} 为载体**的行 —— 取代关系无处可查`);
+          continue;
+        }
+        for (const row of affected) {
+          if (!row.includes(`ADR-${superseder}`)) {
+            fail(`登记表某行的载体是 ADR-${superseded}，却**未提到取代它的 ADR-${superseder}** —— `
+              + '「已裁决」≠「仍有效」：读者会以为被取代的结论仍然生效（ADR-0031 取代 ADR-0024 Q2=B1 即此形态）');
+          }
+        }
+      }
+      // canary：三向（正样本 / 无取代声明 / 载体列取到取代者）
+      if (supersessionsOf('**取代：** ADR-0001 的 Q2 = B1（测试）\n').join(',') !== '0001') {
+        errors.push('ADR 取代关系护栏 canary 失效：`**取代：**` 行未被解析');
+      }
+      if (supersessionsOf('**Status:** Accepted\n').length !== 0) {
+        errors.push('ADR 取代关系护栏 canary 失效：没有取代声明时被判出取代关系');
+      }
+      if (!carrierOf('| 1 | a | b | 已裁决 | `docs/adr/ADR-0024-x.md`；**取代者** `docs/adr/ADR-0031-y.md` |').includes('ADR-0031')) {
+        errors.push('ADR 取代关系护栏 canary 失效：载体列里的取代者未被取到');
+      }
     }
   }
 }
