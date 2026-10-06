@@ -318,8 +318,12 @@ if (!/onContextMenu\?: \(e: React\.MouseEvent, match: SearchGroup\['matches'\]\[
   fail('SearchResultsList 组件缺 onContextMenu prop 透传（P3.5）');
 }
 // 双语文案
+// ⚠️ 2026-10-06（审计 §4.105）：原列表含 `contextmenu.open` / `contextmenu.revealInTree` ——
+//    这两个键**在产品代码里从未被使用**（右键菜单实际用 `contextmenu.newFile`/`rename`/`reveal` 等），
+//    本护栏却断言它们「双语齐备」⇒ **护栏在维护死键**。已移除；两个键改登记进
+//    `verify-i18n-contract.mjs` 的 `MESSAGES_UNUSED`。
 const messagesTs = read('packages/i18n/src/messages.ts');
-for (const key of ['contextmenu.open', 'contextmenu.revealInTree', 'outline.jumpToHeading', 'outline.collapseAll', 'outline.expandAll', 'search.jumpToMatch']) {
+for (const key of ['outline.jumpToHeading', 'outline.collapseAll', 'outline.expandAll', 'search.jumpToMatch']) {
   const occurrences = messagesTs.split(`'${key}':`).length - 1;
   if (occurrences < 2) {
     fail(`i18n 缺少 ${key} 的 zh/en 双语文案（P3.5，当前 ${occurrences} 处）`);
@@ -392,8 +396,12 @@ if (!/e\.key === 'Escape'/.test(appSource.split('file-filter-input')[1]?.split('
 if (!/nodes=\{filteredFileTreeNodes\}/.test(appSource)) {
   fail('App.tsx FileTree 未渲染过滤后数组（P3.6）');
 }
-// 双语文案（4 组 × zh/en ≥ 2 处）
-for (const key of ['files.filterPlaceholder', 'files.newFile', 'files.newFolder', 'sidebar.noFilterMatch']) {
+// 双语文案（2 组 × zh/en ≥ 2 处）
+// ⚠️ 2026-10-06（审计 §4.105）：原列表含 `files.newFile` / `files.newFolder` ——
+//    这两个键**在产品代码里从未被使用**（新建文件的命令用**内联** `localizedTitle: { zh, en }`），
+//    本护栏却断言它们「双语齐备」⇒ **护栏在维护死键**。已移除；两个键改登记进
+//    `verify-i18n-contract.mjs` 的 `MESSAGES_UNUSED`。
+for (const key of ['files.filterPlaceholder', 'sidebar.noFilterMatch']) {
   const occurrences = messagesTs.split(`'${key}':`).length - 1;
   if (occurrences < 2) {
     fail(`i18n 缺少 ${key} 的 zh/en 双语文案（P3.6，当前 ${occurrences} 处）`);

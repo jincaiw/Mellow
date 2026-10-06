@@ -379,8 +379,13 @@ if (schemaRefs < 300) {
 //     `tree.excludeGlob` —— **侧栏过滤面板**改版为**设置页选项**（`settings.file.*`）后留下的；
 //   · `sidebar.tree` / `sidebar.list` / `sidebar.summary` —— 侧栏模式切换改用 `sidebar.*Aria` 后留下的；
 //   · `settings.writingWidth.680` / `.820` —— 写作宽度从**选项列表**改为**数值设置**后留下的。
-// 而且 `verify-sidebar-contract.mjs` 至今还在断言其中几个「双语存在」——
-// **护栏在维护一个死键**（这本身也是一种信号：断言了存在，却没人问「谁在用」）。
+//
+// ⚠️ **口径必须是「产品 + 工具链」，不得把 `tests/` 算作使用**（2026-10-06 审计 §4.105 收紧）：
+// 首版把 `tests/` 也算进扫描面，于是**「只被某个护栏断言存在」的键被当成活键** ——
+// 而「护栏在维护一个死键」恰恰是最该暴露的一类（断言了存在，却没人问「谁在用」）。
+// 实测收紧后正好多出 4 个：`contextmenu.open` / `contextmenu.revealInTree`（右键菜单实际用
+// `contextmenu.newFile`/`rename`/`reveal` 等）与 `files.newFile` / `files.newFolder`
+// （命令用**内联** `localizedTitle: { zh, en }`）—— 四个都只被 `verify-sidebar-contract.mjs` 断言存在。
 const MESSAGES_UNUSED = new Map([
   ['titlebar.palette.title', '未使用：命令面板按钮的 title 走了别的键（或直接用 aria-label）'],
   ['sidebar.filesSwitchLabel', '未使用：侧栏模式切换改用 `sidebar.*Aria` 系列'],
@@ -408,8 +413,17 @@ const MESSAGES_UNUSED = new Map([
   ['settings.liveHint', '未使用：设置页的实时生效提示未接线'],
   ['contextmenu.textParagraph', '未使用：右键项文案在命令对象里内联（`localizedTitle: { zh, en }`），未走 i18n 目录'],
   ['contextmenu.textFormat', '未使用：同上'],
+  // ↓ 以下 4 个是**收紧口径**（2026-10-06 审计 §4.105）后才暴露的：它们在产品代码里从未被使用，
+  //   只被 `verify-sidebar-contract.mjs` 的「双语文案」断言提到过 ⇒ **护栏在维护死键**。
+  //   （该断言已同步移除这 4 项 —— 断言一个死键的「双语齐备」没有意义。）
+  ['contextmenu.open', '未使用：右键菜单实际用 `contextmenu.newFile`/`rename`/`reveal` 等；本键仅被侧栏护栏断言存在'],
+  ['contextmenu.revealInTree', '未使用：同上（实际用 `contextmenu.reveal`）'],
+  ['files.newFile', '未使用：新建文件的命令用**内联** `localizedTitle: { zh: 新文件, en: New File }`；本键仅被侧栏护栏断言存在'],
+  ['files.newFolder', '未使用：同上（`fileTree.newFolder` 命令 + 内联标题）'],
 ]);
-const MESSAGES_UNUSED_SCOPE_NOTE = '`menu.*` 不在此表内：其孤儿判据在 `verify-menu-contract.mjs` 的 `ORPHAN_ALLOWED`（遍历全部 menu.* 键）';
+const MESSAGES_UNUSED_SCOPE_NOTE = '口径 = **产品 + 工具链**（`apps`/`packages`/`tools`），'
+  + '**刻意不含 `tests/`** —— 否则「只被某个护栏断言存在」的键会被当成活键（审计 §4.105）；'
+  + '`menu.*` 也不在此表内：其孤儿判据在 `verify-menu-contract.mjs` 的 `ORPHAN_ALLOWED`（遍历全部 menu.* 键）';
 
 /** 该键是否在**任一引号形式**下出现在产品 / 工具链 / 测试里 */
 function keyReferenced(key, blob) {
@@ -418,7 +432,7 @@ function keyReferenced(key, blob) {
 {
   const SELF = 'tests/parity/verify-i18n-contract.mjs';
   const DEAD_SCAN = allFiles.filter((f) =>
-    /^(?:apps|packages|tools|tests)\//.test(f)
+    /^(?:apps|packages|tools)\//.test(f)     // ⚠️ **不含 tests/** —— 见上方 SCOPE_NOTE（审计 §4.105）
     && !f.includes('/public/')               // 生成型产物（可能残留旧键 ⇒ 会把死键误判成活键）
     && f !== SELF                            // ⚠️ **护栏自己不算使用** —— 否则下方 MESSAGES_UNUSED 表里
                                              //    的键字符串会让每个死键都「看起来被引用」（自指假阴性，实测踩到）
@@ -478,6 +492,7 @@ console.log(
   + `判据 E1 无硬编码中文（仅豁免开发者错误消息）/ E2 键可解析（防裸键）/ `
   + `E3 两 locale 齐备且与 packages/i18n 键不重叠 / E4 接线链完整（引擎装桥 → editor-core → App.tsx）`
   + `；另（审计 §4.102）**目录 → 使用**方向：除 \`menu.*\`（由 verify-menu-contract 的 ORPHAN_ALLOWED 负责）外，`
-  + `目录里每个键必须在产品/工具链/测试中以任一种引号形式出现，否则登记 —— `
-  + `当前登记 ${MESSAGES_UNUSED.size} 项死键（均为改版遗留：侧栏过滤面板 → 设置页、写作宽度选项 → 数值设置 等）`,
+  + `目录里每个键必须在**产品 / 工具链**（不含 tests —— 否则「只被护栏断言存在」的键会被当成活键）`
+  + `中以任一种引号形式出现，否则登记 —— `
+  + `当前登记 ${MESSAGES_UNUSED.size} 项死键（改版遗留 + 4 个「只被护栏维护」的，见审计 §4.105）`,
 );

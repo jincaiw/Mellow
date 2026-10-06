@@ -6474,6 +6474,60 @@ const still = kind === 'listen' ? !emittedEvents.has(ev) : !listenedEvents.has(e
 - **只改护栏**（`verify-tauri-command-contract.mjs` 增 ⑥ + canary），**无产品代码改动**
   ⇒ 制品不变 ⇒ **不发新版本**。
 
+## 4.105 死键判据的**口径漏洞**：把「测试/护栏的提及」当成了使用 ⇒ 4 个「只被护栏维护」的死键（2026-10-06）
+
+**背景**：§4.102 建的死键判据（目录 → 使用）把扫描面定为
+「`apps` + `packages` + `tools` + **`tests`**」⇒ **只被某个护栏断言存在**的键被当成**活键**。
+
+**而这恰恰是最该暴露的一类**：护栏断言了「这个键双语齐备」，却**没人问「谁在用」**。
+（§4.102 当时只把这一句写成了「顺带信号」，没有把它变成判据 —— 现在补上。）
+
+### 收紧口径后**正好多出 4 个**
+
+| 死键 | 产品侧实际用的是什么 |
+|---|---|
+| `contextmenu.open` | 右键菜单用 `contextmenu.newFile` / `contextmenu.rename` / **`contextmenu.reveal`** 等 |
+| `contextmenu.revealInTree` | 同上（实际是 `contextmenu.reveal`） |
+| `files.newFile` | 新建文件的命令用**内联** `localizedTitle: { zh: '新文件', en: 'New File' }` |
+| `files.newFolder` | 同上（`fileTree.newFolder` + 内联标题） |
+
+⇒ 登记项 **26 → 30**，且**原有登记无一失效**（说明收紧只暴露了新问题，没有误伤）。
+
+**这四个都只被 `verify-sidebar-contract.mjs` 的「双语文案」断言提到** ——
+「**护栏在维护死键**」从一句推测变成了**4 个实例**。
+
+### 动作
+
+1. **收紧口径**：`DEAD_SCAN` 去掉 `tests/`（只留 `apps` / `packages` / `tools`），
+   并在头部写明理由 + 更新 `MESSAGES_UNUSED_SCOPE_NOTE` + 输出文案。
+2. **登记这 4 个**（逐条写明「产品从未使用；仅被侧栏护栏断言存在」）。
+3. **移除侧栏护栏里的那 4 项断言**（`:322` 与 `:396`）——
+   断言一个**死键**的「双语齐备」没有意义；移除后该护栏仍检查其余 6 个键，
+   而**一旦将来有人接线**，`verify-i18n-contract.mjs` 判据 A（`t('字面量')` 必须可解析）会接管。
+
+### 顺带确认：那 5 个「侧栏过滤」死键**确为化石**（不是未完成功能）
+
+`docs/qualification/ui-review-2026-08-13.md` 记录 8 月的侧栏形态：
+「header files/outline/search 切换 + **4 个 checkbox（showHidden / showNonMarkdown / 递归 / 摘要）**
++ 排序 select + asc checkbox + **2 个 glob 输入框** + root 路径行」。
+而现在这些选项在**设置页**（`settings.file.*`，`App.tsx` 的 `setFileTreeOption`）——
+⇒ 侧栏过滤面板是**被有意识地改版**掉的，键没删。
+（另核实：`files.filterPlaceholder` / `sidebar.noFilterMatch` **仍在产品里用着**
+—— 侧栏保留了**按名称过滤**的输入框，被移除的只是「选项面板」。）
+
+**注入验证 6/6**：① 删登记项 ⇒ 报「无人使用」；
+**② 新增一个键且只在 `tests/` 里提到 ⇒ 仍报「无人使用」（证明口径不含 tests）**；
+**②b 同一个键改在产品代码里提到 ⇒ 不报**（②/②b 成对，证明差别确实来自扫描面）；
+③ 在产品代码里真正使用已登记的键 ⇒ 报「已不再无人使用」；④ 目录新增死键 ⇒ 报；⑤ 清空表 ⇒ 报「不得为空」。
+
+> ② 的**首版设计有误**：拿 `sidebar.tree` 当用例，但它**已在登记表里** ⇒ 什么都不该报。
+> 改用「新增一个未登记的键 + 只在测试里提到」才真正验到口径。
+
+### 本次改动
+
+- **只改护栏**（`verify-i18n-contract.mjs` 收紧口径 + 登记 4 项；`verify-sidebar-contract.mjs` 移除 4 项断言），
+  **无产品代码改动、未删任何键** ⇒ 制品不变 ⇒ **不发新版本**。
+
 ## 五、本次审计做的改动（非策略性）
 
 
