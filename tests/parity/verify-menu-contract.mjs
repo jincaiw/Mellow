@@ -476,6 +476,7 @@ for (const { id, block } of commandBlocks) {
 if (!appSource.includes('SCHEMA_SHORTCUTS.get(command.id)')) {
   fail('App.tsx 缺少 SCHEMA_SHORTCUTS 快捷键注入（§7.4 硬规则 2）');
 }
+
 // D1 决议：Win/Linux 9 处官方键位契约（对照 Typora 官方 Shortcut Keys，防回归漂移）
 const D1_OFFICIAL_KEYS = [
   ['file.new', 'Ctrl+N'],

@@ -6801,6 +6801,60 @@ concurrency:
 - `.github/workflows/release.yml` 增 `concurrency`；`verify-release-gate.mjs` 增 4 条判据 + canary。
 - **无产品代码改动**（workflow 是 CI 配置，不进制品）⇒ **不发新版本**。
 
+## 4.111 审 **e2e 的静默腐化**：`dispatch` 一个不存在的命令 id（2026-10-06）
+
+**动机**：`tests/e2e/**`（**31 个脚本**）**不进 CI** —— 没人跑就会悄悄烂掉。
+先做了两项体检：**31 个脚本全部 `node --check` 通过** ✓、引用的仓库内路径 **6 处 0 失效** ✓。
+再查「引用的**跨层契约**是否还在」：e2e 引用 Tauri 命令 **0 处**、i18n 键 **0 处**（它靠 Playwright 驱动 UI），
+但 **`dispatch('<字面量>')` 有 21 处** —— 这条值得查。
+
+### 缺陷：`view.sidebar.close` **全仓不存在**
+
+`tests/e2e/ux-flows-verify.mjs:157` 调 `dispatch('view.sidebar.close')`，
+而注册表里只有 `view.sidebar.toggle` / `fileTree` / `fileList` / `outline` —— **没有 `close`**。
+
+**为什么这是静默腐化**：`dispatch` 对**未知 id 不抛错** —— 它返回 `false` 并在状态栏显示
+「命令不可用」（`msg.commandUnavailable`）⇒ **脚本会「什么都没做却继续往下跑」**；
+而 e2e 不进 CI ⇒ **无人发现**。（症状与 §5.7 的「AUTO 把不可用功能当已闭环」同型：
+**失败被降级成了一条没人看的提示**。）
+
+**修复**：改用真实存在的 `view.sidebar.toggle`（上一步刚用 `view.sidebar.outline` 打开侧栏 ⇒ 此处即关闭），
+并在原处写明原因与该判据的存在。
+
+### 新增判据：**独立成第 23 个护栏** `verify-command-id-refs.mjs`
+
+**全仓 `dispatch('<字面量>')` 的 id 必须属于（App 命令定义 ∪ `menuSchema` 的 id）**；
+例外表 `DISPATCH_EXEMPT`（**刻意为空**）；下限：id 集合 ≥ 200、`dispatch` 调用 ≥ 15。
+**id 集合故意取宽**（两个文件里所有 `id: '...'`）—— 本判据只需保证「不误报」，
+收窄集合会制造假阳性，而假阳性会诱使后来者**加例外表**（那正是护栏退化的入口）。
+
+> ⚠️ **为什么独立成护栏，而不是塞进 `verify-menu-contract.mjs`**：
+> 首版就是塞进菜单护栏的 —— 而 `verify-menu-contract-guard.mjs` 会在**沙箱副本**里跑它，
+> 沙箱**不含 `tests/e2e`** ⇒ 本判据在沙箱里扫到 **0 处** ⇒ 触发下限 ⇒ **自检失败**。
+> ⇒ 判据归属应看**契约边界**：命令 id 的**跨仓引用完整性**是另一份契约，
+> 不该放进一个会被沙箱变异、且扫描面更窄的文件。**护栏数量 22 → 23**（同步 `tests/qualification/README.md`）。
+
+**canary 4 项**（合成夹具）：id 集合解析器覆盖 `{ id: 'x' }` 与 `id: 'x',` 两种形态；
+`dispatch` 字面量解析器；**变量 / 模板 / 双引号参数不得被判成字面量**（防假阳性）；
+**非 `.dispatch(` 的调用不得被误匹配**（`xxxdispatch(`）。
+
+**注入验证 4/4**：① 把 e2e 改回 `view.sidebar.close`（**修前状态**）⇒ 报；
+② 在产品代码里 dispatch 不存在的 id ⇒ 报；③ `dispatch(变量)` ⇒ **仍绿**（不误判）；
+④ `dispatch('file.new')`（真实存在）⇒ **仍绿**。
+
+### ⚠️ 过程中我自己的一个错误（被下限判据抓住）
+
+首版遍历器用了该护栏**未导入**的 `readdirSync` ⇒ 抛错 ⇒ 被我的 `try { } catch { return out; }`
+**吞成了「0 个文件」** ⇒ 扫描面为空。**是「`dispatch` 调用 ≥ 15」这条下限把它抓住的**
+（若只写「有失效才报」，空扫描面会**永远绿**）。
+⇒ 两条教训：① **`try/catch` 吞掉的错误会变成「空集合」**，必须配**下限**；
+② 新写的遍历器要先确认依赖已导入。
+
+### 本次改动
+
+- **只改测试**（`tests/e2e/ux-flows-verify.mjs` 修 id；`verify-menu-contract.mjs` 增判据 + 补两个 import），
+  **无产品代码改动** ⇒ 制品不变 ⇒ **不发新版本**。
+
 ## 五、本次审计做的改动（非策略性）
 
 

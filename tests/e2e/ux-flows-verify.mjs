@@ -154,7 +154,13 @@ async function main() {
     console.log(`   [info] outline（无已打开文件，仅供观测）: ${JSON.stringify(sidebarDiag)}`);
 
     // ── 5. Slash 菜单（输入 `/` 触发）───────────────────────────────────
-    await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('view.sidebar.close'));
+    // ⚠️ 2026-10-06（审计 §4.111）：此处原为 `view.sidebar.close` —— **该命令全仓不存在**
+    // （注册表只有 `view.sidebar.toggle` / `fileTree` / `fileList` / `outline`）。
+    // `dispatch` 对未知 id **不抛错**（返回 false + 状态栏提示「命令不可用」）⇒
+    // 本脚本会「**什么都没做却继续往下跑**」，而 e2e 不进 CI ⇒ 无人发现。
+    // 改为真实存在的 `toggle`（上一步刚用 `view.sidebar.outline` 打开侧栏 ⇒ 此处即关闭）。
+    // 该引用现已由 `verify-menu-contract.mjs` 的「命令 id 字面量必须存在」判据守住。
+    await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('view.sidebar.toggle'));
     await sleep(300);
     await frame.click('.cm-content');
     await setDoc('');
