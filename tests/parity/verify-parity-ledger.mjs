@@ -2443,6 +2443,22 @@ const MD_TOKENS_UNUSED = [
   // 保留而非删除：删除属**主题面**变更，且它可能是后续「引擎自持正文色」的预留接线点。
   '--mellow-md-fg',
 ];
+// R4：**宿主侧**（非 md）token 里「宿主与引擎都不消费」的（登记 + 原因；新增即失败）。
+// 与 MD_TOKENS_UNUSED 同一处置逻辑（ADR-0027 Q3=C1）：**删除属主题面变更、接线属外观变更**
+// ⇒ 一律**登记**而不是自行删/接。
+const HOST_TOKENS_UNUSED = [
+  // SDI 迁移删掉标签栏后的**化石**：基表 + 5 个具名主题共 7 处声明，全仓零 `var()` 消费。
+  // 保留而非删除：删除属主题面变更；且它是「若将来恢复多标签」的现成接线点。
+  '--mellow-tab-underline',
+  // 警告家族里**唯一没接线**的成员：`warning-bg` / `warning-border` / `warning-btn` 都在
+  // `apps/desktop/src/styles.css` 的 `.recovery-bar` / 提示条里被消费，只有 `-fg` 没有。
+  // 现状不算缺陷：`.recovery-bar` 未设 `color` ⇒ 继承 `--mellow-fg`，在警告底色上可读。
+  // 接线会**改变文字颜色**（属外观变更）⇒ 登记待裁决，不自行改。
+  '--mellow-warning-fg',
+  // 同理：`.mellow-reader-mermaid` 用 `--mellow-mermaid-bg` 作底色，但边框用的是
+  // `--mellow-border-strong` 而非本 token ⇒ 主题里这个边框色**改不动**。
+  '--mellow-mermaid-border',
+];
 {
   const ENGINE_SRC2 = 'packages/editor-engine/src';
   const MD_TOKENS_SRC = 'packages/editor-engine/src/mdTokens.ts';
@@ -2511,6 +2527,58 @@ const MD_TOKENS_UNUSED = [
   assert(new Set(ENGINE_THEME_VARS_INERT).size === ENGINE_THEME_VARS_INERT.length, 'ENGINE_THEME_VARS_INERT 有重复项');
   assert(new Set(MD_TOKENS_UNUSED).size === MD_TOKENS_UNUSED.length, 'MD_TOKENS_UNUSED 有重复项');
 
+  // ── R4：**宿主侧** token 防死旋钮（2026-10-06 审计 §4.99）────────────────────
+  // 【为什么补】R1~R3 只覆盖**引擎**（`--mellow-md-*` + 引擎里的非 md 变量）。
+  // 而主题基表里还有一大批**宿主** token（`--mellow-bg` / `--mellow-warning-fg` …）——
+  // **「宿主从不读它们」这一半没有任何判据**（典型的「只锁一半」）。
+  // 【实测】3 个非 md token 全仓零消费：
+  //   · `--mellow-tab-underline` —— **SDI 迁移删掉标签栏后的化石**（基表 + 5 个具名主题共 7 处声明）；
+  //   · `--mellow-warning-fg` / `--mellow-mermaid-border` —— 家族里**其余成员都已接线**
+  //     （`warning-bg/-border/-btn` 在 `styles.css` 消费；`mermaid-bg` 亦消费），只差这两个。
+  // 【为什么不直接删/接线】与 `--mellow-md-fg` 同一理由（ADR-0027 Q3=C1）：
+  //   删除属**主题面变更**；接线会**改变外观** ⇒ 属裁决范围。⇒ 登记 + 写明原因。
+  // 【判据】主题基表里**每个非 md token** 必须至少在**某处**被消费（宿主或引擎），否则登记；
+  //   登记表**双向**（已接线即失败）。
+  const HOST_SKIP_DIRS = new Set(['node_modules', 'dist', 'target', '.git', '.workbuddy-ai', 'CoreEditor']);
+  const walkSkip = (dir, rel = '') => {
+    let entries;
+    try { entries = readdirSync(resolve(root, dir, rel), { withFileTypes: true }); } catch { return []; }
+    return entries.flatMap((e) => {
+      if (e.isDirectory()) {
+        if (HOST_SKIP_DIRS.has(e.name)) return [];
+        return walkSkip(dir, `${rel}${e.name}/`);
+      }
+      return [`${rel}${e.name}`];
+    });
+  };
+  const hostUsed = new Set();
+  for (const d of ['apps/desktop/src', 'packages']) {
+    for (const f of walkSkip(d)) {
+      if (!/\.(css|ts|tsx)$/.test(f)) continue;
+      const p = `${d}/${f}`;
+      if (p.includes('packages/themes/src/index.ts')) continue; // 声明处本身不算消费
+      if (p.includes('/test/')) continue;
+      const src = readNorm(p);
+      for (const m of src.matchAll(/var\(\s*(--mellow-[a-z0-9-]+)/g)) hostUsed.add(m[1]);
+      for (const m of src.matchAll(/setProperty\(\s*'(--mellow-[a-z0-9-]+)'/g)) hostUsed.add(m[1]);
+    }
+  }
+  const classifyHost = (name, ctx = { host: hostUsed, reg: HOST_TOKENS_UNUSED }) => {
+    if (name.startsWith(MD_PREFIX)) return 'md-skip'; // md 归 R3 管，避免双重登记
+    if (ctx.host.has(name)) return 'host-consumed';
+    return ctx.reg.includes(name) ? 'registered-dead' : 'unregistered-dead';
+  };
+  const deadHost = [...themeKeys].filter((k) => classifyHost(k) === 'unregistered-dead').sort();
+  assert(deadHost.length === 0,
+    `主题基表里出现**宿主与引擎都不消费**的 token：${deadHost.join(', ')}`
+    + ' —— 主题作者会以为设了生效，实际是个死旋钮。'
+    + '要么接线消费，要么在 HOST_TOKENS_UNUSED 登记原因');
+  const deadHostGone = HOST_TOKENS_UNUSED.filter((k) => classifyHost(k) !== 'registered-dead');
+  assert(deadHostGone.length === 0,
+    `HOST_TOKENS_UNUSED 登记表里的项已不再「未消费」：${deadHostGone.join(', ')} —— 请从登记表删除`);
+  assert(HOST_TOKENS_UNUSED.length > 0, 'HOST_TOKENS_UNUSED 不得为空（清空即等于放弃该判据）');
+  assert(new Set(HOST_TOKENS_UNUSED).size === HOST_TOKENS_UNUSED.length, 'HOST_TOKENS_UNUSED 有重复项');
+
   // canary：复用 classify（同一份判定），逐方向验证「能翻转」
   const canary = (name, expect, ctx) => {
     const got = classify(name, ctx);
@@ -2527,6 +2595,20 @@ const MD_TOKENS_UNUSED = [
   canary('--mellow-md-link', 'inert-md', { md: mdKeys, theme: new Set(), inert: ENGINE_THEME_VARS_INERT });
   // 「token 表清空 ⇒ md token 必须翻转」：证明 R1 的 defaults 那一半真的在起作用
   canary('--mellow-md-link', 'inert-md', { md: new Set(), theme: themeKeys, inert: ENGINE_THEME_VARS_INERT });
+
+  // canary（R4）：**合成夹具**，只验证分类器本身。
+  // ⚠️ 不用真实 token 当夹具 —— 实测教训：首版写 `canaryHost('--mellow-tab-underline', 'registered-dead')`，
+  // 于是「将来把它接线并脱表」这个**合法变更**会把 canary 弄红（假警报）。
+  // canary 要测的是「判定逻辑能不能翻转」，不是「现实数据恰好长这样」。
+  const canaryHost = (name, expect, ctx) => {
+    const got = classifyHost(name, ctx);
+    if (got !== expect) errors.push(`宿主 token 护栏 canary 失效：${name} 期望 ${expect}、实得 ${got}`);
+  };
+  canaryHost('--mellow-x', 'host-consumed', { host: new Set(['--mellow-x']), reg: [] });
+  canaryHost('--mellow-x', 'registered-dead', { host: new Set(), reg: ['--mellow-x'] });
+  canaryHost('--mellow-x', 'unregistered-dead', { host: new Set(), reg: [] });
+  canaryHost('--mellow-md-x', 'md-skip', { host: new Set(), reg: [] });   // md 必须交给 R3，不得双重登记
+  canaryHost('--mellow-md-x', 'md-skip', { host: new Set(['--mellow-md-x']), reg: ['--mellow-md-x'] });
 }
 
 if (errors.length) {
