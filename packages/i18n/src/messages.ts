@@ -672,6 +672,8 @@ const zhCN = {
   // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」官方文案
   'settings.export.preserveLineBreaks': '导出时保留单换行符',
   'settings.export.preserveLineBreaksDesc': '把段落内的单个换行也导出为换行（默认按 Markdown 规则渲染为空格）。适用于写诗、歌词、地址等依赖软换行的内容。',
+  'settings.export.pandocPath': 'Pandoc 路径',
+  'settings.export.pandocPathDesc': '留空即自动检测（依次查 PATH、常见安装位置，如 /opt/homebrew/bin、/usr/local/bin）。macOS 上从访达启动的应用不继承终端 PATH，装了 Homebrew 版 Pandoc 仍提示「需要安装」时，在此填可执行文件的绝对路径。',
   'settings.shortcuts.list': '快捷键列表',
   'settings.shortcuts.listDesc': '点击键位录制新快捷键；Esc 取消；Delete 恢复默认',
   'settings.shortcuts.recording': '按下新快捷键…',
@@ -1545,6 +1547,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.export.image.qualityDesc': '0.1–1, only for JPEG; PNG is lossless.',
   'settings.export.preserveLineBreaks': 'Preserve single line breaks on export',
   'settings.export.preserveLineBreaksDesc': 'Export single line breaks inside a paragraph as real line breaks (by default Markdown renders them as spaces). Useful for poetry, lyrics, or addresses that rely on soft line breaks.',
+  'settings.export.pandocPath': 'Pandoc Path',
+  'settings.export.pandocPathDesc': 'Leave empty to auto-detect (PATH first, then common install locations such as /opt/homebrew/bin and /usr/local/bin). On macOS, apps launched from Finder do not inherit the shell PATH — enter the absolute path to the executable if Mellow reports Pandoc as missing although Homebrew pandoc is installed.',
   'settings.shortcuts.list': 'Shortcut list',
   'settings.shortcuts.listDesc': 'Click a shortcut to record a new one; Esc cancels; Delete restores the default',
   'settings.shortcuts.recording': 'Press new shortcut…',

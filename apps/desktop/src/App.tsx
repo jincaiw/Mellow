@@ -1290,6 +1290,15 @@ export default function App() {
 
   // ── RC F6：导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize）──
   // Pandoc 导出（PRD §75 P1 / deep-parity A9 / D2 格式扩展）：
+  /** pandoc 可执行文件路径（设置 `export.pandocPath`；空串 = 自动查找）。
+   *  见审计 §4.127：Rust 侧做「显式路径 → PATH → 常见安装位置」三级解析，
+   *  以覆盖 **macOS GUI 应用不继承 shell PATH** 的情况。 */
+  const pandocPathSetting = useCallback((): string => {
+    const def = settingById('export.pandocPath');
+    if (def === undefined) return '';
+    const v = readSetting(def);
+    return typeof v === 'string' ? v : '';
+  }, []);
   // 检测 pandoc → 选路径 → 导出（docx/odt/rtf/epub/latex/mediawiki/rst/textile/opml）
   // pandoc 以磁盘文件为输入，未保存文档先提示保存（Typora 导出前隐式落盘的差异点）
   const handleExportPandoc = useCallback(async (format: string, ext: string) => {
@@ -1301,7 +1310,7 @@ export default function App() {
       return;
     }
     try {
-      const available = await invoke<boolean>('pandoc_available');
+      const available = await invoke<boolean>('pandoc_available', { pandocPath: pandocPathSetting() });
       if (!available) {
         setToast({ message: t('export.pandoc.needPandoc') });
         return;
@@ -1311,7 +1320,7 @@ export default function App() {
         filters: [ext],
       });
       if (savePath === null) return;
-      await invoke('pandoc_export', { input: tab.path, output: savePath, format });
+      await invoke('pandoc_export', { input: tab.path, output: savePath, format, pandocPath: pandocPathSetting() });
       // 记录上次导出（Typora「使用上一次设置导出」⌃E；按文档路径绑定）
       try {
         localStorage.setItem('mellow.export.last', JSON.stringify({ docPath: tab.path, format, output: savePath }));
@@ -1353,12 +1362,12 @@ export default function App() {
       return;
     }
     try {
-      const available = await invoke<boolean>('pandoc_available');
+      const available = await invoke<boolean>('pandoc_available', { pandocPath: pandocPathSetting() });
       if (!available) {
         setToast({ message: t('export.pandoc.needPandoc') });
         return;
       }
-      await invoke('pandoc_export', { input: tab.path, output: last.output, format: last.format });
+      await invoke('pandoc_export', { input: tab.path, output: last.output, format: last.format, pandocPath: pandocPathSetting() });
       setToast({ message: t('export.repeat.done', { path: last.output }) });
     } catch (err) {
       setToast({ message: `${t('export.pandoc.failed', { format: last.format })}: ${err instanceof Error ? err.message : String(err)}` });
@@ -4145,7 +4154,7 @@ export default function App() {
   const handleImportDocument = useCallback(async () => {
     if (!isTauri()) return;
     try {
-      const available = await invoke<boolean>('pandoc_available');
+      const available = await invoke<boolean>('pandoc_available', { pandocPath: pandocPathSetting() });
       if (!available) {
         setToast({ message: t('import.needPandoc') });
         return;
@@ -4160,7 +4169,7 @@ export default function App() {
         filters: ['md'],
       });
       if (output === null) return;
-      await invoke('pandoc_import', { input, output });
+      await invoke('pandoc_import', { input, output, pandocPath: pandocPathSetting() });
       await openPathInTab(output);
       setToast({ message: t('import.done', { path: output }) });
     } catch (err) {

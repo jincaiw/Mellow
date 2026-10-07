@@ -26,7 +26,7 @@
     { "key": "no_mid_caret", "consumer": "native", "status": "equivalent", "mellow": ["editor.typewriter"], "note": "「打字机模式下光标保持在屏幕中央」= Mellow 的 Typewriter Mode" },
     { "key": "openExportFile", "consumer": "js", "status": "unverified", "note": "「导出后打开文件」；需核 Mellow 导出完成后是否自动打开（`export.repeat` 是另一件事）" },
     { "key": "openExportLocation", "consumer": "js", "status": "unverified", "note": "「导出后打开所在目录」；需核 Mellow 是否有该入口" },
-    { "key": "pandocPath", "consumer": "js", "status": "unverified", "note": "需核：Mellow 的 Pandoc 路径是设置项、环境变量还是 PATH 查找（设置清单里未见 pandoc 项）" },
+    { "key": "pandocPath", "consumer": "js", "status": "equivalent", "mellow": ["export.pandocPath"], "note": "审计 §4.127 已核实并落地。Typora：面板文本输入 + 文件选择器，`title:\"Pandoc Path\"`、`placeholder:\"(Auto Detect)\"`、`defaultPath: window.isWin ? \"C:\\\\Program Files\\\\Pandoc\\\\pandoc.exe\" : \"\"`；消费端 `main.js`：`d = () => File.option.pandocPath || \"pandoc\"` ⇒ 默认**PATH 查找**。Mellow 现等价：设置 `export.pandocPath`（空 = 自动检测，语义与 `(Auto Detect)` 一致），Rust `pandoc_candidates()` 在 PATH 之外**另加常见安装位置**兜底（含 Typora 认定的 `C:\\Program Files\\Pandoc\\pandoc.exe`）" },
     { "key": "picgo_app_path", "consumer": "native", "status": "equivalent", "mellow": ["image.uploadService"], "note": "由 **D-AL** 承载：Mellow 用**本机 HTTP 端点**（picgo-http，默认 36677）代替「可执行文件路径」" },
     { "key": "piclistAppPath", "consumer": "js", "status": "equivalent", "mellow": ["image.uploadService"], "note": "同上（D-AL）" },
     { "key": "pinFolder", "consumer": "js", "status": "equivalent", "note": "Mellow 支持置顶文件夹（`.file-tree-pin` 样式 + 文件夹菜单）" },

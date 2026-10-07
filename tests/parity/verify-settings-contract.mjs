@@ -1551,6 +1551,81 @@ if (cssLayerAnchor === undefined) {
   if (appDrift2 === appSource) fail('字号来源 canary 未武装：注入点未命中');
 }
 
+// ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
+// 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，
+//   但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**：
+//   消费端常见的写法是 `const def = settingById('x'); if (def === undefined) return '';`
+//   ⇒ **该设置静默失效** —— 界面照常渲染、值照常持久化进 localStorage、**没有任何报错**。
+//   这与 i18n 的 `t('a.b')` 缺键是**同一类**陷阱（`t()` 返回键名本身、界面显示裸键、不报错）。
+// 【实测（本次）】24 个被引用的不同 id **全部存在** —— 本判据是**加固**，不是修复现行缺陷；
+//   这也是它值得写下来的理由：现行代码干净，所以判据一落地就是绿的、可长期拦回归。
+// 【口径】`declaredIds` 取**同一行同时含 `type:`** 的 `id:`（69 个）——
+//   刻意**排除** section id（`id: 'export'` 等 10 个）：section id 与设置 id 同形，
+//   若把 section id 也算作「已声明」，则 `settingById('export')` 这种**真 bug**
+//   会被误判为合法（运行时仍返回 `undefined`）。canary 直接锁住这个边界。
+//   ⇒ 代价：设置项若被改成**多行**声明，本判据会把它当未声明（**偏严**，会响不会静默放行），
+//     且 `declaredIds.size` 的下限断言会把「大规模重排」当场拦住。
+{
+  const declaredIds = new Set(
+    [...settingsSource.matchAll(/\bid:\s*'([^']+)'[^\n]*?\btype:\s*'([^']+)'/g)].map((m) => m[1]),
+  );
+  if (declaredIds.size < 60) {
+    fail(`只解析出 ${declaredIds.size} 个设置项 id（下限 60）—— 扫描面漂移会让本判据空转`
+      + '（若确实把设置项改成了多行声明，请同步更新本判据的解析方式）');
+  }
+  // 扫描面：apps/desktop/src 下**所有** .ts/.tsx（不止 App.tsx —— 消费端可能已拆包）
+  const consumerFiles = [];
+  const walkConsumers = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = resolve(dir, e.name);
+      if (e.isDirectory()) walkConsumers(p);
+      else if (/\.(ts|tsx)$/.test(e.name)) consumerFiles.push(p);
+    }
+  };
+  walkConsumers(resolve(root, 'apps/desktop/src'));
+  const referenced = new Map();
+  for (const abs of consumerFiles) {
+    const rel = abs.slice(root.length + 1).split('\\').join('/');
+    const src = read(rel);
+    for (const m of src.matchAll(/settingById\(\s*'([^']+)'\s*\)/g)) {
+      if (!referenced.has(m[1])) referenced.set(m[1], []);
+      // ⚠️ 行号是**剥掉整行注释之后**的位置 ⇒ 会比编辑器里的小（`read()` 会删行）。
+      //    标 `≈` 以免被当成精确坐标去找（实测：真实第 1296 行被报成 1210）。
+      referenced.get(m[1]).push(`${rel}:≈${src.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  if (referenced.size < 20) {
+    fail(`只解析出 ${referenced.size} 个被消费端引用的设置 id（下限 20）`
+      + ' —— 扫描面漂移会让本判据空转');
+  }
+  // **共用同一谓词**（canary 与判据用同一个函数，避免「放宽谓词后 canary 仍用旧的那份」）
+  const danglingIds = (ids) => ids.filter((id) => !declaredIds.has(id));
+  for (const id of danglingIds([...referenced.keys()]).sort()) {
+    fail(`消费端引用了**不存在**的设置 id \`${id}\`（${referenced.get(id).join('、')}）`
+      + ' —— `settingById` 对不存在的 id 返回 `undefined` ⇒ **该设置静默失效**'
+      + '（界面照常渲染、无任何报错）');
+  }
+  // canary：三向 + 边界（防「一律报错」/「一律通过」/「section id 混入」）
+  if (danglingIds([...declaredIds]).length !== 0) {
+    fail('消费端 id canary 失效：schema 里**已声明**的 id 被判为悬空（正样本方向反了）');
+  }
+  if (danglingIds(['__ghost__.setting']).length !== 1) {
+    fail('消费端 id canary 失效：不存在的 id 未被判定为悬空（判据已失去鉴别力）');
+  }
+  if (danglingIds([]).length !== 0) {
+    fail('消费端 id canary 失效：空输入被判为悬空（谓词写成了「一律报错」）');
+  }
+  for (const sectionId of ['export', 'editor', 'files']) {
+    if (declaredIds.has(sectionId)) {
+      fail(`消费端 id canary 失效：section id \`${sectionId}\` 被算作「已声明的设置 id」`
+        + ' —— 那会让 `settingById(\'' + sectionId + '\')` 这类真 bug 静默通过');
+    }
+  }
+  if (danglingIds([...referenced.keys()]).length !== 0) {
+    fail('消费端 id canary 失效：对**真实引用集**的判定与逐条报错的结果不一致');
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);

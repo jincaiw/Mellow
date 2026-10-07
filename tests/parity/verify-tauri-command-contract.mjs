@@ -441,6 +441,100 @@ for (const [key, reason] of ARG_FIELD_EXEMPT) {
   if (!stillBad) fail(`ARG_FIELD_EXEMPT 登记了 ${key}，但该缺口已不存在 —— 请删除该例外条目`);
 }
 
+// ── ⑤b 承载**用户设置**的 `Option<T>` 形参：必须在**每一处调用**都传 ──────────────
+// 【为什么单独立一条】⑤ 只保证两件事：① 传了的键名与 `toArgKey(形参)` 一致；
+//   ② **必填**形参被传了。而 `Option<T>` **不传是合法的** —— Tauri 只在「非 optional」才报错
+//   （`tauri/src/ipc/command.rs:110-112`）⇒ 漏传一处**静默取 `None`**，没有任何信号。
+//   当这个 `Option` 承载的是**用户设置**时，「不传」≠「用默认值」，而是
+//   **「忽略用户刚设的值」**：设置页里改得好好的，实际被丢掉，且不报错。
+// 【实测（审计 §4.127）】`export.pandocPath` 经 3 个命令 × 6 处调用传下去；
+//   漏掉任意一处 ⇒ 用户填的 pandoc 绝对路径**在该入口被静默忽略**，
+//   而其余入口仍正常 ⇒ 表现为「有时生效有时不生效」，是最难查的一类。
+// 【扫描面】与 ⑤ 一致（`apps/desktop/src` + `apps/desktop/scripts`）。
+//   实测 2026-10-07：`packages/` 下**真实 invoke 0 处**（仅有 2 处文档注释里的示例文本，
+//   已被 `inComment()` 排除）⇒ 该目录暂不在扫描面内不影响本判据；若将来把 invoke 下移到包内，
+//   需同时扩 ⑤ 与 ⑤b（否则两处一起变空）。
+const OPTION_ARG_REQUIRED_AT_CALLSITE = new Map([
+  ['pandoc_available.pandoc_path', '承载设置 `export.pandocPath`（审计 §4.127）：漏传 ⇒ 用户填的路径被静默忽略'],
+  ['pandoc_export.pandoc_path', '同上（导出入口）'],
+  ['pandoc_import.pandoc_path', '同上（导入入口）'],
+]);
+const ARG_SCAN_DIRS = ['apps/desktop/src', 'apps/desktop/scripts'];
+
+for (const [key, reason] of OPTION_ARG_REQUIRED_AT_CALLSITE) {
+  const dot = key.indexOf('.');
+  const cmd = key.slice(0, dot);
+  const param = key.slice(dot + 1);
+  if (typeof reason !== 'string' || reason.trim() === '') {
+    fail(`OPTION_ARG_REQUIRED_AT_CALLSITE 的 ${key} 缺理由`);
+    continue;
+  }
+  const params = cmdParams.get(cmd);
+  if (params === undefined) {
+    fail(`OPTION_ARG_REQUIRED_AT_CALLSITE 登记了不存在的命令：${cmd}`);
+    continue;
+  }
+  if (!params.has(param)) {
+    fail(`OPTION_ARG_REQUIRED_AT_CALLSITE 的 ${key}：${cmd} 没有形参 \`${param}\` —— 登记已过期`);
+    continue;
+  }
+  if (!params.get(param).optional) {
+    fail(`OPTION_ARG_REQUIRED_AT_CALLSITE 的 ${key}：\`${param}\` **不是 \`Option\`**`
+      + ' —— 那已被 ⑤ 的必填判据覆盖，不该登记在这里（登记了会让人以为 ⑤ 不管它）');
+    continue;
+  }
+  const keyName = toArgKey(param);
+  const calls = argCalls.filter((c) => c.cmd === cmd);
+  if (calls.length === 0) {
+    fail(`OPTION_ARG_REQUIRED_AT_CALLSITE 的 ${key}：${cmd} **没有任何带实参调用** —— 判据空转`);
+    continue;
+  }
+  for (const c of calls) {
+    if (c.keys.includes(keyName)) continue;
+    fail(`${cmd}（← ${c.file}）**未传** \`${keyName}\`：该形参是 \`Option\`（漏传不报错），`
+      + `但承载用户设置 —— 不传 = **静默忽略用户设置**。理由：${reason}`);
+  }
+  // 空转补充：若某处把**整个实参对象**都去掉了，⑤/⑤b 都看不到它（它不在 argCalls 里）
+  //   ⇒ 另用一条**窄**正则（只锚定本表里的命令）确认「该命令的每次 invoke 都带实参对象」。
+  //   ⚠️ 这不是「另写一份 ⑤ 的谓词」：⑤ 判的是**键名与必填**，这里判的是**有没有实参对象**。
+  const bareRe = new RegExp(`(?<![.\\w])invoke\\s*(?:<[^()]*>)?\\s*\\(\\s*['"]${cmd}['"]\\s*\\)`, 'g');
+  for (const dir of ARG_SCAN_DIRS) {
+    for (const f of walkFe(resolve(root, dir))) {
+      const rel = relative(root, f).split('\\').join('/');
+      const src = read(rel);
+      for (const m of src.matchAll(bareRe)) {
+        if (inComment(src, m.index)) continue;
+        fail(`${cmd}（← ${rel}:${src.slice(0, m.index).split('\n').length}）以**无实参**形式调用 —— `
+          + `\`${keyName}\` 必然缺失。${reason}`);
+      }
+    }
+  }
+}
+// canary：三向（正样本命中真实表 / 负样本-放宽能被 ⑤ 的解析器看见 / 空表）
+{
+  const probe = parseCommandParams(
+    '#[tauri::command]\npub fn zeta_cmd(a: String, b: Option<String>) -> R { x }\n',
+  ).get('zeta_cmd');
+  if (!probe || probe.get('b')?.optional !== true || probe.get('a')?.optional !== false) {
+    errors.push('⑤b canary 失效：`Option<T>` 形参未被判为 optional —— 整条判据会失去靶子');
+  }
+  // 负样本-放宽：`Option` 参数**漏传**必须能被本判据的谓词识别
+  const sample = parseInvokeArgs("await invoke('zeta_cmd', { a });\n")[0];
+  if (!sample || sample.cmd !== 'zeta_cmd' || sample.keys.includes('b')) {
+    errors.push('⑤b canary 失效：漏传 `b` 的调用样本未被解析成「缺 b」');
+  }
+  if (OPTION_ARG_REQUIRED_AT_CALLSITE.size === 0) {
+    errors.push('⑤b canary 失效：登记表为空 —— 判据会空转');
+  }
+  // 负样本-空表方向：表里每一项都必须能在真实 `cmdParams` 里找到，否则登记是化石
+  for (const k of OPTION_ARG_REQUIRED_AT_CALLSITE.keys()) {
+    const [c, p] = [k.slice(0, k.indexOf('.')), k.slice(k.indexOf('.') + 1)];
+    if (!cmdParams.get(c)?.has(p)) {
+      errors.push(`⑤b canary 失效：登记项 ${k} 在真实 Rust 形参里找不到（化石条目）`);
+    }
+  }
+}
+
 // ── ⑥ 事件名契约：Rust emit ⇄ 前端 listen（双向）──────────────────────────────
 const EVENT_EXEMPT = new Map([]); // 刻意为空（现状 7:7 双向一致）
 

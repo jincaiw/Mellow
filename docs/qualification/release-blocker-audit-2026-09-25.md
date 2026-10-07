@@ -8039,6 +8039,142 @@ if (isDirectory(path)) {
 
 
 
+## 4.127 从 §4.126 的欠债清单里取 `pandocPath`：**本机复现了「GUI 应用找不到 pandoc」** + 两条跨层护栏（2026-10-07）
+
+### 一、动因
+
+§4.126 留下 **14 项 `unverified`**（明确写成「下一轮的入口清单」）。本轮从**清单里的第一项**开始：
+`pandocPath` —— 该条当时的 note 是「需核：Mellow 的 Pandoc 路径是设置项、环境变量还是 PATH 查找
+（设置清单里未见 pandoc 项）」。
+
+### 二、一手证据（全部本机实测）
+
+| 项 | 实测结果 |
+|---|---|
+| `which pandoc` | `/opt/homebrew/bin/pandoc`（→ `../Cellar/pandoc/3.11/bin/pandoc`） |
+| `/usr/bin/pandoc` | **不存在** |
+| `launchctl getenv PATH` | **空**（launchd 层**没有** PATH 覆盖 ⇒ 子进程拿系统默认） |
+| `/etc/paths` | `/usr/local/bin` · `/System/Cryptexes/App/usr/bin` · `/usr/bin` · `/bin` · `/usr/sbin` · `/sbin` —— **不含** `/opt/homebrew/bin` |
+| `/etc/paths.d/homebrew` | 内容是 `/opt/homebrew/bin` —— 但**只有 `path_helper`（登录 shell）读它** |
+| Mellow 旧实现 | `Command::new("pandoc")` ⇒ **只查 PATH** |
+
+**上游（Typora）侧的一手证据**：
+- `appsrc/main.js`：`d = () => File.option.pandocPath || "pandoc"` ⇒ 默认**就是 PATH 查找**；
+  找不到时弹「Pandoc Path」对话框（`placeholder='(auto detect)'`、选择按钮走
+  `selectFile(…, [{name:"Executable", extensions:[isWin?"exe":""]}])`、另有 `#ty-pandoc-path-reset`）；
+- `Preferences.*.js`：`title:"Pandoc Path"` · `keyName:"pandocPath"` ·
+  `placeholder:"(Auto Detect)"` · **`defaultPath: window.isWin ? "C:\Program Files\Pandoc\pandoc.exe" : ""`** ·
+  `hintLink:"https://support.typora.io/Install-and-Use-Pandoc/"`；
+- `zh-Hans.lproj/Panel.strings`：`"Pandoc Path" => "Pandoc 路径"` · `"(Auto Detect)" => "(自动检测)"` ·
+  `"Executable" => "可执行文件"`；
+- ⚠️ `main.js` 里**没有** `/usr/local/bin/pandoc` 或 `/opt/homebrew` 字面量
+  ⇒ **上游不做常见位置兜底**，只靠 PATH + 用户手填。
+
+⇒ 两条结论：① **Typora 有 `pandocPath` 这个偏好本身，就是「PATH 查找不够用」的旁证**；
+② 但上游的补救只有「弹框让用户填」，**Mellow 可以做得更完整**（自动兜底 + 持久化偏好）。
+
+### 三、缺陷复现（**决定性，且完全本机**）
+
+把 `PATH` 限制成 `/usr/bin:/bin`（= macOS **GUI 应用**（Finder/Dock 经 launchd 启动）的 PATH）：
+
+```
+$ env PATH=/usr/bin:/bin sh -c 'command -v pandoc || echo NOT_VISIBLE'
+NOT_VISIBLE                     ← 旧实现 Command::new("pandoc") 即在此失败
+```
+
+对**已编译的测试二进制**在同样受限的 PATH 下运行：
+
+```
+$ env PATH=/usr/bin:/bin <lib test bin> pandoc_availability_detection
+# 旧断言（assert_eq!(pandoc_available(None), probe)）：
+thread panicked: assertion `left == right` failed
+  left: true        ← 新实现（常见位置兜底）找到了
+ right: false       ← 裸 PATH 探针找不到
+```
+
+⇒ **一个 `env PATH=…` 就复现了「装了 pandoc 却被告知需要安装」**。
+⚠️ **该缺陷在 dev 里测不出来**：`npm run desktop:dev` 从终端启动 ⇒ 继承 shell 的 PATH
+（含 `/opt/homebrew/bin`）⇒ 一切正常；**只有打包后从访达/Dock 启动才会暴露**。
+
+### 四、处置
+
+1. **Rust 侧三级解析**（`apps/desktop/src-tauri/src/pandoc.rs`）：
+   `pandoc_candidates(explicit)` = **显式路径 → 裸名 `pandoc`（PATH，= Typora 默认）→ 常见安装位置**；
+   `resolve_from(candidates, usable)` 抽成**接受谓词的纯函数**（单测不依赖本机装没装 pandoc）；
+   `resolve_pandoc()` 用 `is_file()` 作谓词；**全部候选都不可用时回落裸名** ——
+   让 spawn 报出**真实的 PATH 错误**，而不是把错误提前吞成一句「未安装」（那会误导用户去重装）。
+   常见位置含 macOS（`/opt/homebrew/bin`、`/usr/local/bin`、`/opt/local/bin`）、
+   Linux（`/usr/bin`、`/snap/bin`）、`~/.local/bin`，以及 **Windows 的
+   `C:\Program Files\Pandoc\pandoc.exe`（**取自 Typora 的 `defaultPath`**，不是猜的）+ `(x86)` + `%LOCALAPPDATA%`**。
+2. **偏好**：新增设置项 `export.pandocPath`（`type:'text'`、默认 `''`、无 `applyCommand`、导出/导入时读取）。
+   **空串 = 自动检测** —— 与 Typora 的 `(Auto Detect)` 语义一致 ⇒ **默认行为不变**。
+   文案取 Typora 官方译法：`settings.export.pandocPath` = **「Pandoc 路径」**（原稿「Pandoc 可执行文件路径」已改）。
+3. **6 处调用全部传参**：`pandoc_available` ×3、`pandoc_export` ×2、`pandoc_import` ×1
+   （`App.tsx` 新增 `pandocPathSetting()` 单点读取）。
+4. **登记表更新**：`tests/parity/fixtures/typora-panel-only-keys.json` 的 `pandocPath`
+   由 `unverified` → **`equivalent`**（`mellow: ["export.pandocPath"]`，note 记下上游三条一手证据）。
+   ⇒ 分布从 `equivalent 25 / unverified 14` 变为 **`equivalent 26 / unverified 13`**；
+   **`unverified` 从 14 降到 13** —— 这正是 §4.126 把欠债清单写成「入口」的用处。
+
+### 五、两条新护栏（都带注入验证）
+
+**护栏 A（`verify-tauri-command-contract.mjs` §⑤b）：「承载用户设置的 `Option<T>` 形参必须在每一处调用都传」。**
+- 【为什么必须单立】§⑤ 只保证 ① 传了的键名与 `toArgKey(形参)` 一致、② **必填**形参被传了。
+  而 **`Option<T>` 不传是合法的** —— Tauri 只在「非 optional」才报错
+  （`tauri/src/ipc/command.rs:110-112`）⇒ 漏传一处**静默取 `None`**，没有任何信号。
+  当这个 `Option` 承载**用户设置**时，「不传」≠「用默认值」，而是 **「忽略用户刚设的值」**。
+- 判据：登记表 `OPTION_ARG_REQUIRED_AT_CALLSITE`（3 条，各带理由）中的每一项，
+  其命令的**每一处**带实参调用都必须含该键；另用一条**窄**正则捕捉「**整个实参对象被去掉**」的形态
+  （那种调用不在 `argCalls` 里 ⇒ ⑤/⑤b 都看不见）。canary 三向 + 化石条目检查。
+- **注入验证 3/3**：① `pandoc_import` 漏传 ⇒ 红（`未传 pandocPath`）；
+  ② `pandoc_available` 改成无实参 ⇒ 红（`以无实参形式调用`）；
+  ③ 登记表加一条化石 `pandoc_export.ghost_path` ⇒ 红（既报「登记已过期」又被 canary 抓）。
+- 【如实声明的扫描面】本判据与 ⑤ 一致，只扫 `apps/desktop/src` + `apps/desktop/scripts`。
+  **实测：`packages/` 下真实 invoke 0 处**（只有 2 处文档注释里的示例文本，已被 `inComment()` 排除）
+  ⇒ 现状无缺口；**若将来把 invoke 下移到包内，⑤ 与 ⑤b 必须同时扩**（否则两处一起变空）。
+
+**护栏 B（`verify-settings-contract.mjs`）：「消费端引用的设置 id 必须存在」。**
+- 【为什么必须单立】本护栏此前锁了 schema↔`applyCommand`（action 型）与 schema↔i18n，
+  但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**，
+  消费端常见写法 `const def = settingById('x'); if (def === undefined) return '';`
+  ⇒ **该设置静默失效**（界面照常渲染、值照常持久化、**没有任何报错**）。
+  这与 i18n 的 `t('a.b')` 缺键是**同一类**陷阱（`t()` 返回键名本身、界面显示裸键、不报错）。
+- 口径：`declaredIds` 取**同一行同时含 `type:`** 的 `id:`（69 个），**刻意排除** section id
+  （`id: 'export'` 等 10 个）—— 否则 `settingById('export')` 这种**真 bug**（运行时返回 `undefined`）
+  会被误判为合法；canary 直接锁住这个边界（断言 `export`/`editor`/`files` **不在** `declaredIds` 里）。
+  代价如实声明：设置项若改成**多行**声明，本判据会把它当未声明（**偏严**，会响不会静默放行），
+  且 `declaredIds.size ≥ 60` 的下限断言会把「大规模重排」当场拦住。
+- **实测：24 个被引用的不同 id 全部存在** ⇒ 本判据是**加固**，不是修复现行缺陷
+  （正因为现行干净，它落地即绿、可长期拦回归）。
+- **注入验证 1/1**：把 `settingById('export.pandocPath')` 改成 `'export.pandocpathX'` ⇒ 红并指名到文件。
+  诊断信息里行号标 `≈` 并注明原因：**行号是剥掉整行注释之后的位置**（`read()` 会删行）——
+  实测真实第 1296 行被报成 1210，不标就会被当成精确坐标去找。
+
+### 六、教训
+
+1. **环境类缺陷的判据是「启动路径」，不是「代码逻辑」** —— 同一份代码，从终端启动正常、
+   从访达启动失败。⇒ 凡「调用外部可执行文件 / 读环境变量 / 依赖 PATH」的接线，
+   都必须问一句「**打包后由 launchd 启动时，这条路径还在吗？**」。
+   **判据：把 PATH 限制成 `/usr/bin:/bin` 再跑一遍**（本轮就是这样复现的，一行命令）。
+2. **「与独立探针一致」这类断言，在能力被有意放宽后会变成「把修复判成缺陷」** ——
+   本轮实测：`assert_eq!(pandoc_available(None), probe)` 在受限 PATH 下 **FAILED**
+   （`left:true right:false`），而那个 `true` 正是修复的目的。
+   ⇒ **正确的关系是「包含」而不是「相等」**：改为断言「PATH 能找到 ⇒ 我们必须也能找到」
+   +「常见位置有 ⇒ 我们必须报可用」+「都没有 ⇒ 不许报可用」。
+   **放宽能力时必须回头检查有没有 `==` 型断言会因此变红**（否则会出现
+   「修好了功能、测试却红了 ⇒ 把测试删掉」的坏路径）。
+3. **「可选」≠「可以不传」** —— `Option<T>` 的默认值语义是「`None`」，不是「用户的设置」。
+   承载用户设置的可选形参必须**在每一处调用都传**；这条以前没有任何机器在守。
+4. **上游有同名偏好，不等于上游解决了同一问题** —— Typora 的补救是「失败时弹框让用户填」，
+   不做自动兜底（`main.js` 里没有 Homebrew/MacPorts 字面量）。
+   ⇒ 对标时要把「**它有这个开关**」与「**它怎么解决**」分开记，前者是 parity 目标，
+   后者是**可选的设计参考**；Mellow 这轮取「自动兜底 + 持久化偏好」两者兼有。
+5. **欠债清单要真的被消费** —— §4.126 的 14 项 `unverified` 写成「下一轮的入口」，
+   本轮就从第一项开工，并把状态改到 `equivalent`（14 → 13）。
+   ⇒ **清单的计数变化本身就是进度证据**；只在散文里写「已核实」不算。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

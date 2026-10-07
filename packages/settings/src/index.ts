@@ -311,6 +311,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // → 不开启时「编辑器里看到的换行在导出件里消失」。同时作用于 HTML 与 PDF 两条导出管线。
       // 无 applyCommand —— 导出时读取。
       { id: 'export.preserveLineBreaks', labelKey: 'settings.export.preserveLineBreaks', type: 'toggle', storageKey: 'mellow.export.preserveLineBreaks', defaultValue: false, descriptionKey: 'settings.export.preserveLineBreaksDesc' },
+      // 2026-10-07（审计 §4.127）：Typora 的 `pandocPath`（`File.option.pandocPath || "pandoc"`）。
+      // 【为什么需要它】Rust 侧此前只做**裸 PATH 查找**（`Command::new("pandoc")`），而
+      // **macOS 的 GUI 应用不继承 shell 的 PATH** —— Finder/Dock 启动时进程 PATH 只有
+      // `/usr/bin:/bin:/usr/sbin:/sbin`（实测 `launchctl getenv PATH` 为空），而 Homebrew 装在
+      // `/opt/homebrew/bin` ⇒ **用户明明装了 pandoc，却被告知「需要安装 Pandoc 才能导出该格式」**。
+      // ⚠️ 该缺陷**在 dev 里测不出来**（从终端启动会继承 shell 的 PATH）。
+      // 本项提供 Typora 同款的**显式指定**；Rust 侧另有**常见安装位置兜底**（见 `pandoc_candidates`）。
+      // 空串 = 不指定（走 PATH + 兜底），与 Typora 默认一致 ⇒ **默认行为不变**。
+      // 无 applyCommand —— 导出/导入时读取（同 `export.preserveLineBreaks`）。
+      { id: 'export.pandocPath', labelKey: 'settings.export.pandocPath', type: 'text', storageKey: 'mellow.export.pandocPath', defaultValue: '', descriptionKey: 'settings.export.pandocPathDesc' },
     ],
   },
   {
