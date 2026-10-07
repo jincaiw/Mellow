@@ -375,6 +375,16 @@ export default function App() {
   const revisionRef = useRef(0);
   // preserve metadata：打开时记录编码/EOL，保存时原样传回
   const docMetaRef = useRef<DocMeta>({ encoding: 'utf-8', eol: '\n' });
+  /** 新建文档的默认行尾（设置 `files.newFileLineEnding`；Typora 的 `line_ending_crlf`，仅非 macOS 显示）。
+   *  默认 `'lf'` ⇒ 与 Mellow 此前硬编码的 `'\n'` **完全一致** ⇒ **默认行为不变**。
+   *  ⚠️ 只影响**新建**文档；打开已有文件时行尾来自文件自身（`detectEol`），不经过本函数。
+   *  ⚠️ **每一处**新建文档都必须用它 —— 硬编码 `eol: '\n'` 会让本设置在该入口静默失效
+   *  （护栏 `verify-settings-contract.mjs` 锁「`newDocEol()` 出现次数 ≥ 3」且「硬编码仅 1 处 = 本 ref 初始值」）。 */
+  const newDocEol = useCallback((): LineEnding => {
+    const def = settingById('files.newFileLineEnding');
+    if (def === undefined) return '\n';
+    return readSetting(def) === 'crlf' ? '\r\n' : '\n';
+  }, []);
   // validate disk revision：打开时记录的磁盘状态，保存时校验外部变更（spec §5）
   const diskStateRef = useRef<{ mtimeMs: number; identityKey: string } | null>(null);
 
@@ -3746,7 +3756,7 @@ export default function App() {
             dirty: false,
             documentId: docIdRef.current,
             encoding: 'utf-8',
-            eol: '\n',
+            eol: newDocEol(),
           });
         }
         refreshTabsState();
@@ -4058,7 +4068,7 @@ export default function App() {
       dirty: false,
       documentId: crypto.randomUUID(),
       encoding: 'utf-8',
-      eol: '\n',
+      eol: newDocEol(),
       diskState: null,
     });
     refreshTabsState();
@@ -4685,7 +4695,7 @@ export default function App() {
   const ensureBlankDoc = useCallback(async (): Promise<DocumentTab> => {
     const current = docStateRef.current.doc;
     if (current !== null) return current;
-    const tab = docStateRef.current.open({ path: null, title: t('doc.untitled'), content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: '\n', diskState: null });
+    const tab = docStateRef.current.open({ path: null, title: t('doc.untitled'), content: '', dirty: false, documentId: crypto.randomUUID(), encoding: 'utf-8', eol: newDocEol(), diskState: null });
     refreshTabsState();
     await applyTab(tab);
     return tab;

@@ -35,8 +35,8 @@
     {
       "key": "allowPhysicsConflict",
       "consumer": "js",
-      "status": "unverified",
-      "note": "面板 label =「Enable physics package」（数学）；需核 Mellow 的 math 是否支持 physics 包（`unsupportedKatexPatterns` 里有 `\\require` ⇒ 会回落 MathJax，但未实测）",
+      "status": "gap",
+      "note": "面板 label **\"Enable physics package\"**、hint **\"Physics package will redefine some latex macros, such as \\div, \\Re, etc.\"**（数学）。消费点（main.js）：`var t = (window._options||{}).allowPhysicsConflict` 传进 MathJax 的 tex 配置。**默认关**（`checked: !!this.getValue(...)` ⇒ 未设即 false）。Mellow 侧：数学有 `mathjax-compatible` 路径 + `unsupportedKatexPatterns` 回落（`packages/editor-engine/src/math.ts`），但**未配置 physics 包**（实测 `packages/` + `apps/desktop/src/` + `apps/desktop/public/` 全树 **0 处** `physics` 命中）。⇒ **默认行为一致**（两边默认都不用 physics），缺的是**该开关与物理宏支持** ⇒ 记为 gap（能力缺失），不是默认偏离。",
       "anchor": "window._options.allowPhysicsConflict"
     },
     {
@@ -76,8 +76,8 @@
     {
       "key": "customExportPath",
       "consumer": "native",
-      "status": "unverified",
-      "note": "需核：Mellow 导出是否可指定输出路径（设置里只见 `export.image.*` / `export.preserveLineBreaks`）",
+      "status": "gap",
+      "note": "**是 `exportFolder` 的从属字段**：仅在 `\"custom\" === exportFolder` 时渲染（`… : \"custom\"===n.exportFolder ? <ee keyName:\"customExportPath\"> : null`），文本输入 + 文件夹选择器（`defaultValue: window.Setting.documentPath()`，hint \"Select custom folder\"）。⇒ 与 `exportFolder` 同一件事 ⇒ 同状态 gap（Mellow 无导出目录偏好）。",
       "anchor": "customExportPath"
     },
     {
@@ -103,15 +103,15 @@
     {
       "key": "exportFolder",
       "consumer": "native",
-      "status": "unverified",
-      "note": "与 `customExportPath` 同族；需核 Mellow 的导出落点是否有设置",
+      "status": "gap",
+      "note": "面板组标题 **\"Default Folder for Exported File\"**、`options:{\"\":\"Auto\", same:\"Same folder with current file\", custom:\"Custom location\"}`、`value: n.exportFolder || \"\"` ⇒ **默认 `\"\"` = Auto**。消费点（main.js 导出路径计算）：`\"same\"===t.exportFolder ? <当前文件所在目录> : \"custom\"===t.exportFolder ? <customExportPath> : File.mountFolder_ ? … : …`⇒ **Auto 的语义 = 当前文件所在目录**（`u()` = `File.isMac ? File.bundle.currentFolderPath : …`）。Mellow 侧：**无该偏好**（导出走保存对话框，只给 `defaultName`，不给 `defaultPath`）⇒ 既缺「默认目录」选项，**Auto 的默认落点也不同**（Typora 建议当前文件目录 / Mellow 由系统对话框决定）。记为 gap。",
       "anchor": "exportFolder"
     },
     {
       "key": "framelessWindow",
       "consumer": "js",
-      "status": "unverified",
-      "note": "Typora 的窗口外观档位；需核 Mellow 的 titlebar 形态是否有对应项（Mellow 自绘 titlebar，macOS 隐藏原生条）",
+      "status": "not-applicable",
+      "note": "面板组标题 **\"Window Style\"**、radio `{false:\"Classic\", true:\"Unibody\"}`、hint **\"(applied after restart)\"**，且**仅 Windows** 显示（`w.d forWin visible: window.isMacNode`）。消费点：`frame.js` 按它切 `document.body` 的 `native-window`/`unibody-window` class。**Mellow 有意不做**：外壳是 Tauri 原生装饰窗口（实测 `tauri.conf.json` 未设 `decorations` ⇒ 用系统标题栏），不提供「无边框 Unibody」外观切换 ⇒ 该 Windows 专属外观档在 Mellow 语义下 n/a。",
       "anchor": "File.option.framelessWindow"
     },
     {
@@ -137,9 +137,12 @@
     {
       "key": "line_ending_crlf",
       "consumer": "native",
-      "status": "unverified",
-      "note": "需核：Mellow 的换行符（状态栏显示 LF/CRLF）是否有**设置项**，还是只能按文档自动识别",
-      "anchor": "line_ending_crlf"
+      "status": "equivalent",
+      "note": "面板组标题 **\"Default Line Ending\"**、hint **\"Line ending for new file\"**、选项 `{false:\"LF (Unix Style)\", true:\"CRLF (Windows Style)\"}`，且**仅非 macOS 显示**（`window.isMac ? null : …`）。【跨层链路】面板键 → **原生侧**（实测 `strings -a Contents/MacOS/Typora` **含** `line_ending_crlf`、**不含** `preferCRLF`）→ 字符串设置 `end-of-line`（`\"crlf\"`/`\"lf\"`）→ JS `preferCRLF()` 读取并**回落** `File.option.preferCRLF`（`var e = this.getSetting(\"end-of-line\") || \"\"; return e.length ? \"crlf\" == e.toLowerCase() : File.option.preferCRLF`）⇒ 它与矩阵里的 `preferCRLF` 是**同一件事的两层**，不是重复计数。【默认 LF】`preferCRLF:!1` + 面板未设时 `!!getValue(...) === false`。**Mellow 已等价实现**：设置 `files.newFileLineEnding`（select lf/crlf，**默认 lf**），在**每一处**新建文档处读取（`App.tsx` 的 `newDocEol()`，3 处）⇒ 默认与既有硬编码 `'\n'` **完全一致**（默认行为不变）。作用域也一致：只影响新建文档，打开已有文件时行尾来自文件自身（`detectEol`）。⚠️ 差异（如实声明）：Typora **仅在 Windows/Linux** 暴露该选择器，Mellow 在三平台都暴露 —— 这是 Mellow 的有意放宽（macOS 上同样可用），不是缺陷。",
+      "anchor": "line_ending_crlf",
+      "mellow": [
+        "files.newFileLineEnding"
+      ]
     },
     {
       "key": "match_pari_markdown",
@@ -161,8 +164,8 @@
     {
       "key": "no_image_move_for_local",
       "consumer": "native",
-      "status": "unverified",
-      "note": "反向键；属 Typora 的图片移动规则组（Mellow 有 `allowImageMove` 一族）⇒ 需核 Mellow 是否区分本地/网络图片的移动规则",
+      "status": "gap",
+      "note": "面板 label **\"Apply above rules to local images\"**，**反向语义**：`reverse:!0` + `checked: !this.getValue(\"no_image_move_for_local\")`（键名为「对本地图片**不**应用规则」，勾选框展示的是正向「应用」）⇒ 未设时 `checked = true` ⇒ 键值为 **false** ⇒ **规则适用于本地图片**（与矩阵 `applyImageMoveForLocal: true` 一致）。⇒ 它与矩阵里的 `applyImageMoveForLocal` 是**同一事实的反向面板键**（不是两件事）⇒ 状态与矩阵条目一致：**gap**（矩阵 note：「本地图片移动应用范围未作为设置暴露」）。",
       "anchor": "no_image_move_for_local"
     },
     {
@@ -179,7 +182,7 @@
       "key": "openExportFile",
       "consumer": "unknown",
       "status": "unverified",
-      "note": "「导出后打开文件」；需核 Mellow 导出完成后是否自动打开（`export.repeat` 是另一件事）",
+      "note": "面板 label **\"Open exported file\"**，属 **\"After Export\"** 组；消费点（main.js）：`n.openExportFile && (JSBridge.openFile(t), …)`。⚠️ **默认值未确定**：面板用「首个已定义者优先」（`ae(r.openExportFile, a.openExportFile, l.openExportFile)`，分别来自导出组配置 / schema / 内置默认），其内置默认不在 `DEFAULT_OPTIONS` 里 ⇒ **本机现有资源判不了默认**。**要核实**：内置导出 schema 里 `openExportFile` 的默认，以及 Mellow 导出完成后是否有「打开文件」入口。",
       "anchor": "—",
       "consumerNote": "消费方**未确定**。JS 树里只有 `n.openExportFile`（导出**配置对象**字段，与偏好键同名但**不能证明**来自偏好存储）；原生二进制无该字符串（实测 `strings -a Contents/MacOS/Typora` 精确行未命中）。"
     },
@@ -187,7 +190,7 @@
       "key": "openExportLocation",
       "consumer": "unknown",
       "status": "unverified",
-      "note": "「导出后打开所在目录」；需核 Mellow 是否有该入口",
+      "note": "面板 label **\"Open exported file location\"**，属 **\"After Export\"** 组；消费点（main.js）：`n.openExportLocation && (JSBridge.showInFinder(t), …)`。⚠️ **默认值未确定**（同 `openExportFile`，走「首个已定义者优先」）。Mellow 侧**有底层能力**：命令 `file.revealInFinder`（`App.tsx`）。**要核实**：内置导出 schema 的默认，以及 Mellow 导出完成后是否调用 `revealInFinder`（当前导出完成只弹 toast + 记录 `mellow.export.last`）。",
       "anchor": "—",
       "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.openExportLocation` 是导出配置对象字段）。"
     },
@@ -233,7 +236,7 @@
       "key": "quitAfterWindowClose",
       "consumer": "native",
       "status": "unverified",
-      "note": "需核：Mellow 关闭最后一个窗口时是否退出（macOS 惯例是不退出；Windows/Linux 通常退出）",
+      "note": "面板组 **\"Quit\"**（**仅 macOS**）、label **\"Quit Typora when last window is closed\"**，默认 **false**（`!!getValue(...)` ⇒ 未设即 false）⇒ Typora 在 macOS 的默认是**关掉最后一个窗口不退出**（符合 macOS 惯例）。⚠️ **本轮已排除的部分**：Mellow 的 Rust 侧**没有** `prevent_exit` / `exit_on_last_window_closed`（实测全 `src-tauri` 扫过，仅 `lib.rs:371` 在 `RunEvent::ExitRequested` 里 flush 窗口几何）⇒ 走的是 Tauri 默认策略。**仍需实机核实**：关掉最后一个窗口后进程是否仍在（Tauri 默认在 macOS 是否退出，属运行时行为，代码级判不了）。",
       "anchor": "quitAfterWindowClose"
     },
     {
@@ -349,8 +352,8 @@
     {
       "key": "use_seamless_window",
       "consumer": "native",
-      "status": "unverified",
-      "note": "Typora 的窗口外观档位；需核 Mellow 是否有对应项（与 `framelessWindow` 同族）",
+      "status": "not-applicable",
+      "note": "面板组标题 **\"Window Style\"**、radio `{false:\"Classic\", true:\"Seamless\"}`，且**仅 macOS 且系统版本 < 26** 显示（`w.d visible: window.isMac && (window._options.osVersion||10) < 26`）⇒ 上游自己在 macOS 26+ 已**弃用**该档。**Mellow 有意不做**：同 `framelessWindow`，外壳为 Tauri 原生装饰窗口，无该外观档。",
       "anchor": "use_seamless_window"
     },
     {

@@ -1146,12 +1146,13 @@ if (cssLayerAnchor === undefined) {
         if (bad.length > 0) {
           fail(`面板独有键登记表不合法（${bad.length}）：${bad.join(', ')}`);
         }
-        // **棘轮**（存量欠债只能下降）：本轮基线 = §4.128 之后的实测值。
+        // **棘轮**（存量欠债只能下降）：基线 = 每轮结清后的实测值。
         // 防的是「把没查的项改标成 unverified / unknown 来绕开工作」——那会让欠债**回升**。
+        // 收紧记录：`status=unverified` 14(§4.126) → 13(§4.127) → 10(§4.128) → **3**(§4.129)。
         const statusUnverified = regEntries.filter((e) => e.status === 'unverified');
         const consumerUnknown = regEntries.filter((e) => e.consumer === 'unknown');
-        if (statusUnverified.length > 10) {
-          fail(`面板独有键 status=unverified 回升到 ${statusUnverified.length}（棘轮上限 10，2026-10-07 基线）`
+        if (statusUnverified.length > 3) {
+          fail(`面板独有键 status=unverified 回升到 ${statusUnverified.length}（棘轮上限 3，2026-10-07 §4.129 基线）`
             + `：${statusUnverified.map((e) => e.key).join(', ')} —— 存量欠债只能下降`);
         }
         if (consumerUnknown.length > 7) {
@@ -1614,6 +1615,61 @@ if (cssLayerAnchor === undefined) {
   // canary：去掉 App 对 fontSizeMode 的读取必须被检出
   const appDrift2 = appSource.replace("localStorage.getItem('mellow.export.image.fontSizeMode')", "localStorage.getItem('mellow.export.image.fontSizeModeX')");
   if (appDrift2 === appSource) fail('字号来源 canary 未武装：注入点未命中');
+}
+
+// ── 新建文档的默认行尾（2026-10-07，审计 §4.129；Typora「Default Line Ending」）─────────
+// Typora 真值（一手证据）：面板键 `line_ending_crlf`（**仅非 macOS 显示**）→ 原生侧 →
+// 字符串设置 `end-of-line` → JS `preferCRLF()` 回落 `File.option.preferCRLF`（默认 false ⇒ **LF**）。
+// Mellow 此前在**新建文档**处硬编码 `eol: '\n'` ⇒ 本项**默认必须仍是 LF**，否则默认行为会变。
+// 只锁**接线**与**默认值**；「新建的文档真的用 CRLF 保存」由单测/行为断言负责。
+{
+  if (!/id: 'files\.newFileLineEnding'[^}]*type: 'select'[^}]*defaultValue: 'lf'/.test(settingsSource)) {
+    fail('settings 缺少 files.newFileLineEnding（select / **默认 lf**）—— 默认必须是 lf，否则新建文档的默认行尾会变');
+  }
+  if (/id: 'files\.newFileLineEnding'[^}]*defaultValue: 'crlf'/.test(settingsSource)) {
+    fail('files.newFileLineEnding 的默认值不得是 crlf —— 会改变所有新建文档的默认行尾');
+  }
+  for (const v of ['lf', 'crlf']) {
+    if (!new RegExp(`\\{ value: '${v}', labelKey: 'settings\\.file\\.newFileLineEnding\\.${v}' \\}`).test(settingsSource)) {
+      fail(`files.newFileLineEnding 缺少选项 ${v}（Typora 面板的两档：LF (Unix Style) / CRLF (Windows Style)）`);
+    }
+  }
+  if (!/settingById\('files\.newFileLineEnding'\)/.test(appSource)) {
+    fail('App.tsx 未读取 files.newFileLineEnding → 该设置不会生效');
+  }
+  if (!/readSetting\(def\) === 'crlf' \? '\\r\\n' : '\\n'/.test(appSource)) {
+    fail("App.tsx 的 newDocEol 未把 'crlf' 映射成 '\\r\\n'（映射写错会让设置静默无效）");
+  }
+  // **每一处**新建文档都必须用 newDocEol()（只修一处 = 该入口静默失效，§4.141 同型）
+  const newDocUses = [...appSource.matchAll(/eol: newDocEol\(\)/g)].length;
+  if (newDocUses < 3) {
+    fail(`App.tsx 只有 ${newDocUses} 处新建文档使用 newDocEol()（下限 3：handleNew / ensureBlankDoc / 启动空 tab）`
+      + ' —— 漏掉任意一处 ⇒ 用户在该入口设置的行尾被静默忽略');
+  }
+  // ⚠️ **不能用朴素计数**：`eol: '\n'` 在 App.tsx 里还会命中
+  //   ① **类型注解** `(eol: '\n' | '\r\n')`；② **注释里提到它**（包括 newDocEol 的 JSDoc）。
+  //   实测：朴素计数 3，精确计数（要求后接 `,` 或 `}`）1 ⇒ 唯一允许处 = docMetaRef 初始值。
+  // ⚠️ **正则里必须写 `'\\n'`**：写成 `'\n'` 匹配的是**真换行符**，而源码里是**反斜杠 + n**
+  //   —— 实测踩过：写成 `'\n'` 时计数恒为 0（判据静默失效）。
+  const EOL_RE = /eol: '\\n'\s*[,}]/g;
+  const eolHardcode = [...appSource.matchAll(EOL_RE)].length;
+  if (eolHardcode !== 1) {
+    fail(`App.tsx 里「新建文档的 eol 硬编码」出现 ${eolHardcode} 次（只允许 1 次 = docMetaRef 初始值）`
+      + ' —— 新增的硬编码会让 files.newFileLineEnding 在该入口失效');
+  }
+  // canary：正/负样本（用**同一份**正则，不另写）
+  if ([...("x({ eol: '\\n', })").matchAll(EOL_RE)].length !== 1) {
+    fail('eol 硬编码 canary 失效：正样本（对象属性）未被计入');
+  }
+  if ([...("(eol: '\\n' | '\\r\\n')").matchAll(EOL_RE)].length !== 0) {
+    fail("eol 硬编码 canary 失效：**类型注解** (eol: '\\n' | '\\r\\n') 被误计");
+  }
+  if ([...("// 硬编码 eol: '\\n' 会让设置失效").matchAll(EOL_RE)].length !== 0) {
+    fail('eol 硬编码 canary 失效：注释里提到的字面量被误计');
+  }
+  if ([...("x({ eol: '\\n' })").matchAll(EOL_RE)].length !== 1) {
+    fail('eol 硬编码 canary 失效：对象**最后一个属性**（后接 }）未被计入');
+  }
 }
 
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────

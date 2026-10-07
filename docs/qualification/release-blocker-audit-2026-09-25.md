@@ -8292,6 +8292,94 @@ thread panicked: assertion `left == right` failed
 
 
 
+## 4.129 结清「面板独有面」6 项：实装「默认行尾符」+ 用**面板文案**定性其余 5 项（2026-10-07）
+
+### 一、动因
+
+§4.128 把 `unverified` 从 13 压到 10，并留下 7 项 `consumer: unknown`。
+本轮继续从这份欠债清单开工，优先选**能一手定性**的项。
+
+### 二、一手证据（面板文案 = 用户可见语义的唯一来源）
+
+§4.126 已声明「面板**标签**抽取不可靠（压缩 React 产物，控件有两种形态 ⇒ 取最近标签会取到邻居）」。
+本轮改用**同一个 `createElement` 调用内**的 `label` / `title` / `hint` / `options`（与 `keyName` **同窗**）
+⇒ 可靠。取到：
+
+| 键 | 面板可见文案（一手） |
+|---|---|
+| `line_ending_crlf` | 组标题 **"Default Line Ending"** · hint **"Line ending for new file"** · `{false:"LF (Unix Style)", true:"CRLF (Windows Style)"}` · **仅非 macOS 显示** |
+| `framelessWindow` | 组 **"Window Style"** · `{false:"Classic", true:"Unibody"}` · hint **"(applied after restart)"** · **仅 Windows** |
+| `use_seamless_window` | 组 **"Window Style"** · `{false:"Classic", true:"Seamless"}` · **仅 macOS 且系统 < 26**（上游自己在 macOS 26+ 弃用） |
+| `allowPhysicsConflict` | label **"Enable physics package"** · hint **"Physics package will redefine some latex macros, such as `\div`, `\Re`, etc."** |
+| `no_image_move_for_local` | label **"Apply above rules to local images"** · **反向语义**（`reverse:!0` + `checked: !getValue(…)`） |
+| `exportFolder` | 组 **"Default Folder for Exported File"** · `{"":"Auto", same:"Same folder with current file", custom:"Custom location"}` · `value: n.exportFolder \|\| ""` ⇒ **默认 Auto** |
+| `customExportPath` | 是 `exportFolder` 的**从属字段**（仅 `"custom" === exportFolder` 时渲染）+ 文件夹选择器 |
+| `quitAfterWindowClose` | 组 **"Quit"**（仅 macOS） · label **"Quit Typora when last window is closed"** · 默认 **false** |
+| `openExportFile` / `openExportLocation` | 组 **"After Export"** · label **"Open exported file"** / **"Open exported file location"** · ⚠️ 默认值走「首个已定义者优先」（`ae(r.X, a.X, l.X)`）⇒ **本机资源判不了** |
+
+### 三、处置 1：实装「默认行尾符」（`line_ending_crlf`）
+
+**跨层链路（本轮查清）**：面板键 `line_ending_crlf` → **原生侧**
+（实测 `strings -a Contents/MacOS/Typora` **含** `line_ending_crlf`、**不含** `preferCRLF`）
+→ 字符串设置 `end-of-line`（`"crlf"`/`"lf"`）→ JS 侧 `preferCRLF()`
+（`var e = this.getSetting("end-of-line") || ""; return e.length ? "crlf" == e.toLowerCase() : File.option.preferCRLF`）
+→ 回落 `File.option.preferCRLF`。⇒ 它与矩阵里的 `preferCRLF` 是**同一件事的两层**，不是重复计数。
+
+- 新增设置 `files.newFileLineEnding`（select `lf`/`crlf`，**默认 `lf`**，无 `applyCommand` —— 新建文档时读取）。
+- `App.tsx` 新增 `newDocEol()`，**每一处**新建文档都改用它（3 处：`handleNew` / `ensureBlankDoc` / 启动空 tab）。
+- **默认行为不变**：Mellow 此前硬编码 `eol: '\n'`，新默认 `'lf'` 映射到同一个 `'\n'`。
+- 作用域一致：只影响**新建**文档；打开已有文件时行尾来自文件自身（`detectEol`），与 Typora 的 `decideLineEnding` 同向。
+- ⚠️ **如实声明的差异**：Typora **仅在 Windows/Linux** 暴露该选择器，Mellow 三平台都暴露（有意放宽）。
+- 文案取 Typora 面板原文：`默认行尾符` / `LF（Unix 风格）` / `CRLF（Windows 风格）`。
+
+### 四、处置 2：其余 5 项的定性
+
+| 键 | 新状态 | 依据（要点） |
+|---|---|---|
+| `line_ending_crlf` | `equivalent` | 见上（已实装） |
+| `framelessWindow` | `not-applicable` | Windows 专属外观档；Mellow 外壳是 Tauri 原生装饰窗口（实测 `tauri.conf.json` 未设 `decorations`），无该切换 |
+| `use_seamless_window` | `not-applicable` | macOS 专属且仅系统 < 26（上游已弃用）；同上一行 |
+| `allowPhysicsConflict` | `gap` | 默认**关**（`!!getValue(…)` ⇒ false）⇒ **默认行为一致**；Mellow 未配置 physics 包（实测 `packages/` + `apps/desktop/src/` + `apps/desktop/public/` **0 处** `physics`）⇒ 缺能力 |
+| `no_image_move_for_local` | `gap` | 与矩阵 `applyImageMoveForLocal` 是**同一事实的反向面板键**（不是两件事）⇒ 与矩阵同状态 |
+| `exportFolder` | `gap` | 默认 `""` = **Auto = 当前文件所在目录**（`u()` = `File.bundle.currentFolderPath`）；Mellow 无该偏好，导出只给 `defaultName`、不给 `defaultPath` ⇒ **默认落点也不同** |
+| `customExportPath` | `gap` | `exportFolder` 的从属字段 ⇒ 同一件事 |
+| `quitAfterWindowClose` | `unverified`（note 收窄） | **已排除**：Mellow 的 Rust 侧**没有** `prevent_exit` / `exit_on_last_window_closed`（全 `src-tauri` 扫过）⇒ 走 Tauri 默认。**仍需实机**：关掉最后一个窗口后进程是否仍在 |
+| `openExportFile` / `openExportLocation` | `unverified`（note 收窄） | 默认值走「首个已定义者优先」，其内置 schema 默认**不在** `DEFAULT_OPTIONS` 里 ⇒ 判不了。Mellow 侧**有底层能力**：命令 `file.revealInFinder` |
+
+⇒ 分布：`equivalent 29 / gap 8 / not-applicable 7 / unverified **3**`（上轮 10）。
+⚠️ **`gap` 从 4 升到 8 不是退步**：那是**从「不知道」变成「知道且登记」**——
+`unverified` 降 7、`gap` 升 4、`not-applicable` 升 2、`equivalent` 升 1。**欠债的方向是「变清楚」，不是「变多」。**
+
+### 五、护栏
+
+1. **新增接线判据**（`verify-settings-contract.mjs`）：`files.newFileLineEnding` 必须是 `select` 且**默认 `lf`**、
+   两个选项都在、`App.tsx` 必须读取它、`newDocEol` 必须把 `'crlf'` 映射成 `'\r\n'`；
+   **`eol: newDocEol()` 出现次数 ≥ 3**（漏一处 ⇒ 该入口静默忽略用户设置）；
+   **`eol: '\n'` 的硬编码必须恰好 1 次**（唯一允许处 = `docMetaRef` 初始值）。
+   ⚠️ 这条判据踩了一个**新的字面量坑**：`eol: '\n'` 在 `App.tsx` 里还会命中
+   ① **类型注解** `(eol: '\n' | '\r\n')`；② **注释里提到它**（含 `newDocEol` 的 JSDoc）
+   ⇒ 朴素计数 3、精确计数（要求后接 `,` 或 `}`）1。
+   更隐蔽的是：**正则里必须写 `'\\n'`** —— 写成 `'\n'` 匹配的是**真换行符**，而源码里是**反斜杠 + n**；
+   实测写成 `'\n'` 时计数**恒为 0**（判据静默失效）。
+2. **棘轮收紧**：`status=unverified ≤ 10` → **≤ 3**（记录 14 → 13 → 10 → 3 的收敛轨迹）。
+3. **注入验证**：① 把一处 `newDocEol()` 改回硬编码 ⇒ 红（且报「只有 2 处使用」+「硬编码 2 次」）；
+   ② 默认值改成 `crlf` ⇒ 红；③ 映射写错（`=== 'lf'`）⇒ 红；④ 把 1 条改回 `unverified`（4 > 3）⇒ 棘轮红。全部还原后通过。
+
+### 六、教训
+
+1. **面板文案要在「同一个 `createElement` 调用内」取** —— §4.126 记录的「取最近标签会取到邻居」是真的；
+   与 `keyName` 同窗取 `label`/`title`/`hint`/`options` 才可靠。本轮 9 个键**一次取全**，且每条都能引用原文。
+2. **「默认值一致」与「能力缺失」是两件事，必须分开写** ——
+   `allowPhysicsConflict` / `SmartyPantsOnRendering` 都是「**默认行为一致**、缺一个开关/一档」；
+   若只写 `gap` 会让人以为默认行为也偏离，若只写 `equivalent` 又会掩盖能力缺口。⇒ 状态取 `gap`，note 首句写明默认一致。
+3. **`gap` 数量上升不一定是退步** —— 判据是**欠债的方向**：本轮 `unverified` 降 7、`gap` 升 4。
+   把「不知道」变成「知道且登记」是进展；**只有当 `unverified` 上升时才是退步**（故棘轮只锁 `unverified` 与 `unknown`）。
+4. **源码里的转义字面量，在判据里要再转义一层** —— 断言源码中出现 `'\n'`（反斜杠 + n）时，
+   正则/字符串里必须写 `'\\n'`；写成 `'\n'` 会匹配**真换行符** ⇒ 计数恒 0、判据静默失效。
+   **新写这类判据后必须看一次实际计数**（本轮就是靠「计数为 0」发现的）。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

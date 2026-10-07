@@ -226,6 +226,26 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 语义 = **缺失时追加**（跟随文档当前 EOL），**从不删除**已有换行；故默认关闭时对既有行为零影响。
       // 无 applyCommand：它在**保存时**读取（handleSave / handleSaveAs），无需 live apply。
       { id: 'files.finalNewline', labelKey: 'settings.file.finalNewline', type: 'toggle', storageKey: 'mellow.file.finalNewline', defaultValue: false, descriptionKey: 'settings.file.finalNewlineDesc' },
+      // 2026-10-07（审计 §4.129）：Typora「Default Line Ending」。
+      // 【一手证据】面板键 `line_ending_crlf`（**仅非 macOS 显示**：`window.isMac ? null : …`），
+      //   标题 `title:"Default Line Ending"`、hint `"Line ending for new file"`、
+      //   选项 `{false:"LF (Unix Style)", true:"CRLF (Windows Style)"}`。
+      // 【跨层链路（本轮查清）】面板键 `line_ending_crlf` → **原生侧**
+      //   （实测：`strings -a Contents/MacOS/Typora` **含** `line_ending_crlf`、**不含** `preferCRLF`）
+      //   → 持久化成**字符串设置** `end-of-line`（`"crlf"` / `"lf"`）
+      //   → JS 侧 `preferCRLF()` 读取（`var e = this.getSetting("end-of-line") || ""; return e.length ? "crlf" == e.toLowerCase() : File.option.preferCRLF`）
+      //   → 回落 `File.option.preferCRLF`（`DEFAULT_OPTIONS` 里的布尔）。
+      //   ⇒ 它与矩阵里的 `preferCRLF` 是**同一件事的两层**，不是重复计数。
+      // 【默认】`preferCRLF:!1`（LF）+ 面板未设时 `!!getValue(...) === false` ⇒ **默认 LF**。
+      //   Mellow 此前在新建文档处硬编码 `eol: '\n'` ⇒ 本项**默认行为不变**。
+      // 【作用域】只影响**新建**文档；打开已有文件时行尾来自文件自身（`detectEol`），不受本项影响
+      //   —— 与 Typora 的 `decideLineEnding`（文档含 `\r\n` 即 CRLF，否则用偏好）同向。
+      // 无 applyCommand —— 在**新建文档时**读取（同 `files.finalNewline` 的「读时生效」模式）。
+      { id: 'files.newFileLineEnding', labelKey: 'settings.file.newFileLineEnding', type: 'select', storageKey: 'mellow.file.newFileLineEnding', defaultValue: 'lf',
+        options: [
+          { value: 'lf', labelKey: 'settings.file.newFileLineEnding.lf' },
+          { value: 'crlf', labelKey: 'settings.file.newFileLineEnding.crlf' },
+        ], descriptionKey: 'settings.file.newFileLineEndingDesc' },
     ],
   },
   {
