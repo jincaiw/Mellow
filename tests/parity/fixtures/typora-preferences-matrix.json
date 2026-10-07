@@ -58,7 +58,7 @@
       "mellow": [],
       "note": "Mellow 恒做 %XX 转义（空格 / 括号 / [] / # / %）；Typora 默认不转义（可读性优先）。差异登记：Mellow 取互操作性",
       "behavior": "differs",
-      "behaviorNote": "实测（G7-QA-05 前一轮）：Mellow 恒做 %XX 转义；Typora 默认不转义 → 行为不同（Mellow 取互操作性）",
+      "behaviorNote": "实测（G7-QA-05 前一轮）：Mellow 恒做 %XX 转义；Typora 默认不转义 → 行为不同（Mellow 取互操作性）【代码落点（2026-10-07，审计 §4.137）】`packages/editor-engine/src/image/path.ts` 的 `escapeImageSrc()` —— 恒把 `%`/空格/`#`/`[`/`]`/`(`/`)` 转成 `%XX`（保留中文与已有 `%XX`）⇒ Mellow 插入图片时**恒转义**。",
       "disposition": {
         "kind": "undecided",
         "ref": "ADR-0034"
@@ -435,7 +435,7 @@
       "mellow": [],
       "note": "复制公式的格式（SVG / LaTeX）未作为设置暴露",
       "behavior": "differs",
-      "behaviorNote": "代码（clipboardCopy.ts）：复制路径**无 math/SVG 处理** —— 复制公式得到 LaTeX 源码而非渲染图；而 Mellow 的公式渲染用 MathJax `tex2svgPromise`（**异步**），复制必须在 copy 事件里**同步**写剪贴板 → 需预渲染缓存等设计，属独立功能，暂不实装",
+      "behaviorNote": "代码（clipboardCopy.ts）：复制路径**无 math/SVG 处理** —— 复制公式得到 LaTeX 源码而非渲染图；而 Mellow 的公式渲染用 MathJax `tex2svgPromise`（**异步**），复制必须在 copy 事件里**同步**写剪贴板 → 需预渲染缓存等设计，属独立功能，暂不实装【代码落点（2026-10-07，审计 §4.137）】`packages/editor-engine/src/clipboardCopy.ts` —— 全文**无 math/SVG 分支**（0 处 `math`/`svg`/`tex2`）⇒ 复制公式得到 **LaTeX 源码**，而 Typora 的 `mathFormatOnCopy` 默认 `\"svg\"`（复制渲染图）。",
       "disposition": {
         "kind": "undecided",
         "ref": "ADR-0034"
@@ -550,7 +550,7 @@
       "mellow": [],
       "note": "预置拼写检查（词典/语言）未实装 —— 依赖 host-api 的拼写词典能力（P0-EDITOR-005）",
       "behavior": "differs",
-      "behaviorNote": "Typora 默认 `auto`（预置拼写检查自动选择）；Mellow 无 spellcheck 消费方/词典能力（P0-EDITOR-005）→ 默认能力不同，属于真实 gap，依赖 host-api 词典设计",
+      "behaviorNote": "Typora 默认 `auto`（预置拼写检查自动选择）；Mellow 无 spellcheck 消费方/词典能力（P0-EDITOR-005）→ 默认能力不同，属于真实 gap，依赖 host-api 词典设计【证据落点（2026-10-07，审计 §4.137）】`tests/parity/typora-parity-ledger.json` 的 `P0-EDITOR-005`（拼写检查的**词典/消费方**未实现）⇒ Mellow 无「预置拼写检查」能力。",
       "disposition": {
         "kind": "gap",
         "ref": "P0-EDITOR-005"
@@ -753,7 +753,7 @@
       "mellow": [],
       "note": "Mellow 恒写**相对**路径；Typora 默认写**绝对**路径（useRelativePathForImg=false）。差异登记：Mellow 取可移植性",
       "behavior": "differs",
-      "behaviorNote": "实测（G7-QA-05 前一轮）：Mellow 恒写**相对**路径；Typora 默认写**绝对**路径 → 行为不同（Mellow 取可移植性）",
+      "behaviorNote": "实测（G7-QA-05 前一轮）：Mellow 恒写**相对**路径；Typora 默认写**绝对**路径 → 行为不同（Mellow 取可移植性）【代码落点（2026-10-07，审计 §4.137）】`packages/editor-engine/src/image/insert.ts` 的默认分支（`strategy === 'keep-original' || strategy === 'auto'`）用 `computeRelativePath(docDir, abs)` 写**相对**路径⇒ Mellow 恒写相对，而 Typora 默认写**绝对**路径。",
       "disposition": {
         "kind": "undecided",
         "ref": "ADR-0034"
@@ -775,7 +775,7 @@
       "mellow": [],
       "note": "文件树样式（树形 / 平铺）未实装",
       "behavior": "differs",
-      "behaviorNote": "一手证据（Typora main.js）：默认 useTreeStyle=false，默认委托 fileList（列表呈现）；Mellow sidebarMode 无持久化时默认 `files`，渲染 FileTree 目录树 → 整体默认呈现不同（Mellow 选择文件树作为产品默认），属有意差异而非单一缺失开关。",
+      "behaviorNote": "一手证据（Typora main.js）：默认 useTreeStyle=false，默认委托 fileList（列表呈现）；Mellow sidebarMode 无持久化时默认 `files`，渲染 FileTree 目录树 → 整体默认呈现不同（Mellow 选择文件树作为产品默认），属有意差异而非单一缺失开关。【代码落点（2026-10-07，审计 §4.137）】`apps/desktop/src/App.tsx` 的 `sidebarMode` 初值回落 `'files'`（目录树 FileTree）⇒ Mellow 默认呈现**目录树**，而 Typora 默认 `useTreeStyle=false`（列表）。",
       "disposition": {
         "kind": "deliberate",
         "ref": "D-AK"
@@ -795,7 +795,7 @@
       "mellow": [],
       "note": "字数统计分隔符设置未实装",
       "behavior": "differs",
-      "behaviorNote": "一手证据（Typora main.js）：`wordCountDelimiter=0` 对应 WORD，WordCount 面板按 WORD/CHAR/LINE/TIME 四种模式切换；Mellow wordCount.ts 固定同时计算并展示 words/chars/lines/readingTime，无 delimiter 模式切换 → 默认呈现/计算口径不同，需单独裁决，不能把现有 CJK-aware 统计冒充完全对齐。",
+      "behaviorNote": "一手证据（Typora main.js）：`wordCountDelimiter=0` 对应 WORD，WordCount 面板按 WORD/CHAR/LINE/TIME 四种模式切换；Mellow wordCount.ts 固定同时计算并展示 words/chars/lines/readingTime，无 delimiter 模式切换 → 默认呈现/计算口径不同，需单独裁决，不能把现有 CJK-aware 统计冒充完全对齐。【代码落点（2026-10-07，审计 §4.137）】`packages/app-core/src/wordCount.ts` 的 `countWords()` 一次返回`{cjkChars, words, chars, lines, readingTimeMinutes, …}` ⇒ **固定同时计算并展示**，无 WORD/CHAR/LINE/TIME 模式切换。",
       "disposition": {
         "kind": "undecided",
         "ref": "ADR-0034"
@@ -808,7 +808,7 @@
       "mellow": [],
       "note": "阅读速度估算（用于显示阅读时长）未实装",
       "behavior": "differs",
-      "behaviorNote": "Mellow **有**阅读时长（app-core/wordCount.ts：中文 300 字/分 + 英文 200 词/分，**CJK-aware 有意设计**）；Typora 默认单一 382 词/分 → 英文文本的估算值不同（Mellow 约为 Typora 的 2 倍时长）。属为中文场景做的有意取舍，非缺陷，但数值确实不同",
+      "behaviorNote": "Mellow **有**阅读时长（app-core/wordCount.ts：中文 300 字/分 + 英文 200 词/分，**CJK-aware 有意设计**）；Typora 默认单一 382 词/分 → 英文文本的估算值不同（Mellow 约为 Typora 的 2 倍时长）。属为中文场景做的有意取舍，非缺陷，但数值确实不同【代码落点（2026-10-07，审计 §4.137）】`packages/app-core/src/wordCount.ts`：`readingTimeMinutes = Math.max(1, Math.ceil(cjkChars / 300 + words / 200))` ⇒ **CJK-aware**（中文 300 字/分 + 英文 200 词/分），与 Typora 单一 382 词/分不同。",
       "disposition": {
         "kind": "deliberate",
         "ref": "D-AO"

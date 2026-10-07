@@ -1769,6 +1769,108 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 偏好矩阵的 `behaviorNote`：**可核对落点**（2026-10-07，审计 §4.137）────────────────
+// 【为什么补】矩阵里 **45 条**在断言「与 Typora 一致（37）/ 不同（8）」，但**几乎都没有可核对的落点**
+//   （`differs` 8 条里只有 1 条引用了代码文件）⇒ 它们是**自述**，机器与下一个读者都核不了。
+//   这正是 §4.136 那类错误（`behavior` 判定与代码相反）能长期存活的**结构性原因**。
+// 判据分两层：
+//   A（硬）：反引号包裹的**仓库侧**文件路径必须能解析到真实文件 —— 杀「死引用」（文件改名/搬走后留下的化石）；
+//     ⚠️ **必须排除 Typora 侧名字**（`main.js` / `frame.js` / `Preferences.*.js`）—— 那是**上游**的文件，
+//     不在本仓，把它们算成死引用是**假阳性**（实测：`noLegacyMath` 就引用了上游的 `main.js`）。
+//   B（棘轮）：`behavior === 'differs'` 的条目**应当**有可核对落点；当前 8 条里 7 条没有
+//     ⇒ 先立棘轮（`≤ 7`，只能下降），并**打印清单**（可见的欠债），下一轮逐条补齐后收紧。
+{
+  const TYPORA_SIDE = /^(main\.js|frame\.js|Preferences\.[A-Za-z0-9.]+\.js|index\.html|content\.html|Panel\.strings)$/;
+  const FILE_TOKEN = /`([^`]*\.(?:ts|tsx|rs|js|mjs|css|json|html))`/g;
+  // 矩阵在别的块作用域里 ⇒ 这里**自己读一份**（块之间不共享局部变量）
+  let mxEntries = [];
+  try {
+    mxEntries = (JSON.parse(read('tests/parity/fixtures/typora-preferences-matrix.json')).entries) ?? [];
+  } catch {
+    fail('偏好矩阵无法读取 —— behaviorNote 落点判据无法运行');
+  }
+  // 建一个「basename → 相对路径」索引（只扫代码根，避免全仓遍历）
+  const index = new Map();
+  const CODE_ROOTS = ['packages', 'apps/desktop/src', 'apps/desktop/src-tauri/src', 'tests/parity'];
+  const walkIdx = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (['node_modules', 'dist', 'target', '.git'].includes(e.name)) continue;
+        walkIdx(resolve(dir, e.name));
+      } else {
+        const b = e.name;
+        if (!index.has(b)) index.set(b, []);
+        index.get(b).push(dir);
+      }
+    }
+  };
+  for (const r of CODE_ROOTS) walkIdx(resolve(root, r));
+  if (index.size < 200) {
+    fail(`落点索引只建出 ${index.size} 个文件（下限 200）—— 扫描面漂移会让本判据空转`);
+  }
+  const resolveCitation = (token) => {
+    if (TYPORA_SIDE.test(token)) return 'upstream';   // 上游文件：不核对（本仓没有）
+    const base = token.split('/').pop();
+    return index.has(base) ? 'ok' : 'dead';
+  };
+  const deadCitations = [];
+  const differsNoAnchor = [];
+  for (const e of mxEntries) {
+    const text = `${e.behaviorNote ?? ''} ${e.note ?? ''}`;
+    for (const m of text.matchAll(FILE_TOKEN)) {
+      if (resolveCitation(m[1]) === 'dead') deadCitations.push(`${e.typora} → \`${m[1]}\``);
+    }
+    if (e.behavior === 'differs') {
+      const hasRepoAnchor = [...text.matchAll(FILE_TOKEN)]
+        .some((m) => resolveCitation(m[1]) === 'ok');
+      if (!hasRepoAnchor) differsNoAnchor.push(e.typora);
+    }
+  }
+  if (deadCitations.length > 0) {
+    fail(`偏好矩阵的 behaviorNote/note 里有**死引用**（${deadCitations.length}）：${deadCitations.join('、')}`
+      + ' —— 引用的文件已改名/搬走或拼错（上游文件如 `main.js`/`frame.js` 不在核对范围内）');
+  }
+  if (differsNoAnchor.length > 0) {
+    fail(`偏好矩阵里 behavior=differs 且**无可核对落点**的条目回升到 ${differsNoAnchor.length}（棘轮上限 **0**，`
+      + `2026-10-07 §4.137 已清零）：${differsNoAnchor.join(', ')} —— 断言「有差异」是最需要证据的一类，只能下降`);
+  }
+  // 第二把棘轮（2026-10-07 §4.137）：`matches-default` 也在断言「与 Typora 一致」，同样需要落点。
+  // 当前 37 条里 34 条没有 ⇒ 先立棘轮（`≤ 34`，只能下降），并**打印清单**（存量欠债必须可见）。
+  // ⚠️ 与 `differs` 不同：`matches-default` 的条数多（37），一次性补完不现实 ⇒ 用棘轮推动，不硬卡。
+  const defaultNoAnchor = [];
+  for (const e of mxEntries) {
+    if (e.behavior !== 'matches-default') continue;
+    const text = `${e.behaviorNote ?? ''} ${e.note ?? ''}`;
+    if (![...text.matchAll(FILE_TOKEN)].some((m) => resolveCitation(m[1]) === 'ok')) defaultNoAnchor.push(e.typora);
+  }
+  if (defaultNoAnchor.length > 34) {
+    fail(`偏好矩阵里 behavior=matches-default 且**无可核对落点**的条目回升到 ${defaultNoAnchor.length}`
+      + `（棘轮上限 34，2026-10-07 §4.137 基线）：${defaultNoAnchor.join(', ')} —— 只能下降`);
+  }
+  if (defaultNoAnchor.length > 0) {
+    console.log(`ℹ️ behavior=matches-default 但**尚无代码落点** ${defaultNoAnchor.length} 项（存量欠债，棘轮上限 34）`);
+  }
+  // canary：三向 + **边界**（上游文件名必须被判为 upstream 而不是 dead）
+  if (resolveCitation('image/ops.ts') !== 'ok') fail('落点 canary 失效：真实存在的文件被判为 dead');
+  if (resolveCitation('image/__ghost__.ts') !== 'dead') fail('落点 canary 失效：不存在的文件未被判为 dead');
+  if (resolveCitation('main.js') !== 'upstream') {
+    fail('落点 canary 失效：**上游文件** `main.js` 未走 upstream 分支（会误报死引用）');
+  }
+  if (resolveCitation('frame.js') !== 'upstream' || resolveCitation('Preferences.abc123.js') !== 'upstream') {
+    fail('落点 canary 失效：上游的 frame.js / Preferences.*.js 未走 upstream 分支');
+  }
+  const DIFF_RE = (list) => list.filter((e) => e.behavior === 'differs'
+    && ![...`${e.behaviorNote ?? ''} ${e.note ?? ''}`.matchAll(FILE_TOKEN)].some((m) => resolveCitation(m[1]) === 'ok'));
+  if (DIFF_RE([{ typora: 'a', behavior: 'differs', behaviorNote: '代码（`image/ops.ts`）' }]).length !== 0) {
+    fail('differs 落点 canary 过宽：有落点的条目被误报');
+  }
+  if (DIFF_RE([{ typora: 'a', behavior: 'differs', behaviorNote: '代码：某处' }]).length !== 1) {
+    fail('differs 落点 canary 失效：无落点的 differs 未被检出');
+  }
+}
+
 // ── 拖入文件/文件夹的三档（2026-10-07，审计 §4.134；Typora「When drop file / folder into Typora」）──
 // Typora 真值（一手证据）：面板组 `title:"When drop file / folder into Typora"` 的三行（`w.v rows`）：
 //   `["When drop folder", options:{"":"Open in Typora", link:"Insert Folder Link"}]`

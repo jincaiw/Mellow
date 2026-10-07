@@ -8944,6 +8944,75 @@ if (strategy === 'keep-original' || strategy === 'auto') {   // ← 默认 auto 
 
 
 
+## 4.137 把 §4.136 的教训**系统化**：给偏好矩阵的 `behavior` 断言补「可核对落点」（2026-10-07）
+
+### 一、动因
+
+§4.136 的错误形态是「**只核了一个调用支就下结论**」。要防它**复发**，得先问：
+**这类错误为什么能长期存活？** 本轮量了一下：矩阵里 **45 条**在断言行为
+（`matches-default` **37** / `differs` **8**），而其中**几乎都没有可核对的落点** ——
+`differs` 8 条里只有 **1** 条引用了代码文件。
+⇒ 它们是**自述**：机器核不了、下一个读者也核不了 ⇒ **判错了也没人会发现**。这就是结构性原因。
+
+### 二、量出来的数（一手）
+
+| 指标 | 值 |
+|---|---|
+| 矩阵条目 | 84 |
+| 有 `note`/`behaviorNote` 的 | 78 |
+| **其中引用了文件路径的** | **5** |
+| `behavior` 分布 | `matches-default 37` / `differs 8` / `(无) 37` / `n/a 2` |
+| `differs` 8 条里**有代码落点**的 | **1**（`applyImageMoveForLocal`，§4.136 补的） |
+
+### 三、处置：两条判据 + 一次整改
+
+**判据 A（硬）：`behaviorNote`/`note` 里的**仓库侧**文件引用必须能解析到真实文件。**
+- 杀「死引用」（文件改名/搬走后留下的化石）。
+- ⚠️ **必须排除 Typora 侧名字**（`main.js` / `frame.js` / `Preferences.*.js` / `index.html` / `content.html` / `Panel.strings`）——
+  那是**上游**的文件，不在本仓；把它们算成死引用是**假阳性**
+  （实测：`noLegacyMath` 就引用了上游的 `main.js`）。
+  ⇒ canary 里**专门断言**这些名字走 `upstream` 分支而不是 `dead`（把边界假设钉住，§4.167 同法）。
+- **注入验证**：把 `useTreeStyle` 的 `App.tsx` 改成 `AppRenamed.tsx` ⇒ 红（报「死引用」）。
+
+**判据 B（棘轮）：`behavior === 'differs'` 的每一条都必须有**可核对落点**。**
+- 当前 8 条里 7 条没有 ⇒ 本轮**逐条补上**（见下），棘轮直接收到 **`≤ 0`（清零）**。
+- **注入验证**：去掉 `wordsPerMinute` 的落点 ⇒ 红。
+
+**判据 C（棘轮）：`matches-default` 同样需要落点**（37 条里 34 条没有）⇒
+一次性补完不现实 ⇒ 立棘轮 **`≤ 34`** 并**打印清单**（存量欠债必须可见）。
+- **注入验证**：把 `allowImageMove` 的落点去掉 ⇒ 红（35 > 34）。
+
+### 四、逐条补上的 7 个落点（每条都**读了代码**再写）
+
+| 键 | 落点 | 代码事实 |
+|---|---|---|
+| `autoEscapeImageURL` | `packages/editor-engine/src/image/path.ts` | `escapeImageSrc()` 恒把 `%`/空格/`#`/`[]`/`()` 转 `%XX`（保留中文）⇒ **恒转义** |
+| `mathFormatOnCopy` | `packages/editor-engine/src/clipboardCopy.ts` | 全文**无 math/SVG 分支** ⇒ 复制得到 LaTeX 源码 |
+| `presetSpellCheck` | `tests/parity/typora-parity-ledger.json`（`P0-EDITOR-005`） | 词典/消费方未实现 ⇒ 无「预置拼写检查」能力 |
+| `useRelativePathForImg` | `packages/editor-engine/src/image/insert.ts` | 默认分支（`keep-original`/`auto`）用 `computeRelativePath` ⇒ 恒写**相对**路径 |
+| `useTreeStyle` | `apps/desktop/src/App.tsx` | `sidebarMode` 初值回落 `'files'`（目录树）⇒ 默认呈现**目录树** |
+| `wordCountDelimiter` | `packages/app-core/src/wordCount.ts` | `countWords()` 一次返回多项 ⇒ **固定同时计算**，无四模式切换 |
+| `wordsPerMinute` | `packages/app-core/src/wordCount.ts` | `Math.ceil(cjkChars / 300 + words / 200)` ⇒ **CJK-aware**（300 字/分 + 200 词/分） |
+
+⇒ 这 7 条**结论本身都被复核为成立**（没有发现第二处 §4.136 式的错误）——
+但**在此之前它们是不可核对的**；现在每一条都能被机器（引用可解析）与下一个人（按落点读代码）核对。
+
+### 五、教训
+
+1. **「判错了也没人发现」是结构性缺陷，要单独治** ——
+   §4.136 抓到一处错判后，本轮问的是「**为什么它能长期存活**」，答案 = **断言没有可核对的落点**。
+   ⇒ 修一处错判 ≠ 修这一类；**把「不可核对」本身变成判据**才算修了一类。
+2. **棘轮要按「条数多少」分档** —— `differs` 只有 8 条 ⇒ **一次性补完并清零**；
+   `matches-default` 有 37 条 ⇒ 立棘轮 + 打印清单。**同一条规则在不同规模下处置不同**，
+   硬卡 37 条会让人绕过判据（而不是去补落点）。
+3. **「上游文件」必须从死引用判据里排除** —— 否则 `main.js` 这类**合法引用**会被报成死引用
+   （实测就报了）。⇒ 排除规则要**写进 canary**（断言它走 `upstream` 分支），
+   否则下次有人「顺手收紧」就会把假阳性放回来。
+4. **补落点时必须读代码** —— 7 条里每条都是先读实现再写落点；
+   若只是「按印象补一个文件名」，那就是把**不可核对**换成了**看起来可核对**（更危险）。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 
