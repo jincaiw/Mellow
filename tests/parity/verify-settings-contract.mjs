@@ -2071,6 +2071,73 @@ if (cssLayerAnchor === undefined) {
       }
     }
 
+    // ── D 表**点名**了某个矩阵键 ⇒ 该键必须 `implemented` 且 `dCarrier` 指向该 D（2026-10-07，审计 §4.141）──
+    // 【为什么补】§4.140 用**显式字段** `dCarrier` 表达了「被某 D 覆盖」，但那只保证**声明之后**的自洽；
+    //   **「该声明哪些」仍需人逐条对照**。本轮做了**反向对照**（D → 矩阵）：24 条 D 逐条核对，
+    //   **没有新的 status 矛盾**；其中**可机械化**的那一类是「**D 表正文点名了某个矩阵键**」——
+    //   D-AK 点名 `useTreeStyle`、D-AO 点名 `wordsPerMinute` ⇒ 这两条必须 `implemented` + `dCarrier` 指向它。
+    // ⚠️ **边界（如实声明）**：本判据只覆盖**点名**的 D；像 `D-AG`（主题是「侧栏排序菜单的形态」、不点键名）
+    //   那样的**覆盖不了** ⇒ 它仍需人对照。**不得**把本判据读作「D 表与矩阵已完全一致」。
+    {
+      let mxEntries2 = [];
+      try {
+        mxEntries2 = (JSON.parse(read('tests/parity/fixtures/typora-preferences-matrix.json')).entries) ?? [];
+      } catch { /* 上游已有判据报错 */ }
+      const keySet = new Set(mxEntries2.map((e) => e.typora));
+      const planLines = (() => {
+        try { return read('docs/plans/typora-parity-master-plan.md').split('\n'); } catch { return []; }
+      })();
+      const named = [];   // { d, key }
+      for (const line of planLines) {
+        const row = line.match(/^\|\s*\*\*(D-[A-Z]{1,2})[^*]*\*\*\s*\|([^|]*)\|([^|]*)\|/);
+        if (row === null) continue;
+        const body = `${row[2]} ${row[3]}`;
+        // 只认**驼峰标识符**且**恰好是矩阵键**的 token（避免把普通英文单词当键名）
+        for (const t of new Set([...body.matchAll(/\b([a-z][A-Za-z]{3,})\b/g)].map((m) => m[1]))) {
+          if (keySet.has(t)) named.push({ d: row[1], key: t });
+        }
+      }
+      const namedBad = [];
+      for (const { d, key } of named) {
+        const e = mxEntries2.find((x) => x.typora === key);
+        if (e === undefined) continue;
+        if (e.status !== 'implemented') namedBad.push(`${d}→${key}(status=${e.status}，D 是已裁决的有意差异 ⇒ 应为 implemented)`);
+        else if (e.dCarrier !== d) namedBad.push(`${d}→${key}(dCarrier=${JSON.stringify(e.dCarrier)}，应指向 ${d})`);
+      }
+      if (namedBad.length > 0) {
+        fail(`D 表点名的矩阵键与矩阵状态不一致（${namedBad.length}）：${namedBad.join('、')}`);
+      }
+      if (named.length < 2) {
+        fail(`D 表点名的矩阵键只有 ${named.length} 条（下限 2，2026-10-07 基线）—— 判据会空转`
+          + '（若确实减少，请先确认 D 表是否改了措辞）');
+      }
+      console.log(`ℹ️ D 表**点名**的矩阵键 ${named.length} 条：`
+        + `${named.map((n) => `${n.d}→${n.key}`).join(', ')}`
+        + '（⚠️ 只覆盖「点名」的情形；不点名的 D 仍需人对照）');
+      // canary：三向（正样本 / status 不符 / dCarrier 不符）
+      const judgeNamed = (list, entries, keys) => {
+        const out = [];
+        for (const { d, key } of list) {
+          if (!keys.has(key)) continue;
+          const e = entries.find((x) => x.typora === key);
+          if (e === undefined) continue;
+          if (e.status !== 'implemented') out.push('status');
+          else if (e.dCarrier !== d) out.push('carrier');
+        }
+        return out;
+      };
+      const E = [{ typora: 'k', status: 'implemented', dCarrier: 'D-AG' }];
+      if (judgeNamed([{ d: 'D-AG', key: 'k' }], E, new Set(['k'])).length !== 0) {
+        fail('D 点名 canary 过宽：合法条目被误报');
+      }
+      if (!judgeNamed([{ d: 'D-AG', key: 'k' }], [{ typora: 'k', status: 'gap' }], new Set(['k'])).includes('status')) {
+        fail('D 点名 canary 失效：status≠implemented 未被检出');
+      }
+      if (!judgeNamed([{ d: 'D-AK', key: 'k' }], E, new Set(['k'])).includes('carrier')) {
+        fail('D 点名 canary 失效：dCarrier 不指向该 D 未被检出');
+      }
+    }
+
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
 // 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，
 //   但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**：
