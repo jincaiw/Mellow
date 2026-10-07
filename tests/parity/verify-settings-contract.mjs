@@ -1956,6 +1956,51 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 图片「允许移动 / 允许自动上传」（2026-10-07，审计 §4.139；Typora `allowImageMove` / `allow_image_upload`）──
+// Typora 真值：`allowImageMove` 默认 **true**（`DEFAULT_OPTIONS`，非面板键，由菜单/原生消费）；
+// `allow_image_upload` 默认 **true**（面板 label "Allow upload images automatically based on YAML settings"，
+// `checked: !!getValue(...)` ⇒ 未设即 false？—— **注意**：面板是 `!!getValue` ⇒ 未设 false，
+// 但 `DEFAULT_OPTIONS` 里没有该键 ⇒ **面板默认关**；而 `allowImageMove` 在 `DEFAULT_OPTIONS` 里默认 **true**。
+// ⇒ Mellow 两项都取 **true**（= 现状行为）⇒ **默认行为不变**；这是**有意**与「面板未设即关」不同的取法，
+//   理由：Mellow 的这两条路径**本来就在工作**，默认取 false 会**改变现状**。已在审计 §4.139 声明。
+{
+  for (const [id, label] of [['image.allowMove', '允许移动图片'], ['image.allowUpload', '允许自动上传图片']]) {
+    const esc = id.replace('.', '\\.');
+    if (!new RegExp(`id: '${esc}'[^}]*type: 'toggle'[^}]*defaultValue: true`).test(settingsSource)) {
+      fail(`settings 缺少 ${id}（toggle / **默认 true**）—— 默认必须是 true，否则会改变现状行为（${label}）`);
+    }
+    if (!new RegExp(`readBoolSetting\\('${esc}', true\\)`).test(appSource)) {
+      fail(`App.tsx 未用 readBoolSetting('${id}', true) 读取 → 该设置不会生效`);
+    }
+  }
+  // 两个门控点必须真的存在（缺一处 ⇒ 该入口静默无视设置）
+  if (!/action === 'move' && readBoolSetting\('image\.allowMove', true\) === false/.test(appSource)) {
+    fail('App.tsx 的单图「移动」入口未门控 image.allowMove');
+  }
+  if (!/kind === 'moveAll' && readBoolSetting\('image\.allowMove', true\) === false/.test(appSource)) {
+    fail('App.tsx 的「移动全部」批量入口未门控 image.allowMove');
+  }
+  if (!/readBoolSetting\('image\.allowUpload', true\) === false\) return paths\.map\(\(\) => null\)/.test(appSource)) {
+    fail('App.tsx 的 `__MELLOW_IMAGE_UPLOAD__` 注入未门控 image.allowUpload（关掉后仍会上传）');
+  }
+  // 关闭时必须有**可见反馈**（否则就是「命令可点击且点击无反应」）
+  if (!/'msg\.imageMoveDisabled'/.test(appSource)) {
+    fail('App.tsx 关闭移动时未给出状态提示（msg.imageMoveDisabled）—— 会变成静默无反应');
+  }
+  // canary：正/负样本（同一份正则）
+  const MOVE_RE = /action === 'move' && readBoolSetting\('image\.allowMove', true\) === false/;
+  if (!MOVE_RE.test("if (action === 'move' && readBoolSetting('image.allowMove', true) === false) {")) {
+    fail('图片移动门控 canary 失效：正样本未命中');
+  }
+  if (MOVE_RE.test("if (action === 'move' && readBoolSetting('image.allowMoveX', true) === false) {")) {
+    fail('图片移动门控 canary 失效：负样本（改名的设置 id）被判为命中');
+  }
+  const UPLOAD_RE = /readBoolSetting\('image\.allowUpload', true\) === false\) return paths\.map\(\(\) => null\)/;
+  if (!UPLOAD_RE.test("if (readBoolSetting('image.allowUpload', true) === false) return paths.map(() => null);")) {
+    fail('图片上传门控 canary 失效：正样本未命中');
+  }
+}
+
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
 // 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，
 //   但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**：

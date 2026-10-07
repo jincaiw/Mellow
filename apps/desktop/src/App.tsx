@@ -2202,6 +2202,12 @@ export default function App() {
     const ops = fileOpsRef.current;
     const history = historyRef.current;
     if (!ops || !history) return;
+    // 2026-10-07（审计 §4.139）：`image.allowMove`（Typora `allowImageMove`，默认 true）
+    // 门控**移动**类批量命令；`copyAll` / `downloadRemote` / `uploadAll` 不受影响。
+    if (kind === 'moveAll' && readBoolSetting('image.allowMove', true) === false) {
+      setStatusText(t('msg.imageMoveDisabled'));
+      return;
+    }
     const before = history.length;
     const r = await ops[kind]();
     if (!r.ok) {
@@ -2277,6 +2283,12 @@ export default function App() {
       return;
     }
     if (action === 'move' || action === 'copy') {
+      // 2026-10-07（审计 §4.139）：`image.allowMove` = Typora 的 `allowImageMove`（默认 true）。
+      // 关闭时**禁用**移动（`copy` 不受影响 —— Typora 只门控「移动」）并给出状态提示，不静默无反应。
+      if (action === 'move' && readBoolSetting('image.allowMove', true) === false) {
+        setStatusText(t('msg.imageMoveDisabled'));
+        return;
+      }
       const dir = await dialog.showDirectory();
       if (!dir.ok || dir.value === null) return;
       const r = action === 'move'
@@ -3994,6 +4006,9 @@ export default function App() {
         const uploadWin = frame?.contentWindow as (Window & { __MELLOW_IMAGE_UPLOAD__?: (paths: string[]) => Promise<Array<string | null>> }) | null;
         if (uploadWin) {
           uploadWin.__MELLOW_IMAGE_UPLOAD__ = async (paths: string[]): Promise<Array<string | null>> => {
+            // 2026-10-07（审计 §4.139）：`image.allowUpload` = Typora 的 `allow_image_upload`（默认 true）。
+            // 关闭 ⇒ 全 null ⇒ engine 回退本地插入（等价于 `upload: 'never'`）。
+            if (readBoolSetting('image.allowUpload', true) === false) return paths.map(() => null);
             const channel = (localStorage.getItem('mellow.image.uploadService') || 'none') as ImageUploadOptions['channel'];
             if (channel === 'none') return paths.map(() => null);
             const service = imageUploadServiceRef.current;

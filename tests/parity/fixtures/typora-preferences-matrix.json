@@ -5,20 +5,20 @@
     {
       "typora": "allowImageMove",
       "default": true,
-      "status": "gap",
-      "mellow": [],
-      "note": "图片拖动移动的开关未作为设置暴露",
-      "behavior": "matches-default",
-      "behaviorNote": "代码（`image/ops.ts`：`planMoveImage` / `planMoveAll`）：Mellow 的拖动移动**无门控**（恒允许）→ 与 Typora 默认 true（允许移动）一致。⚠️ 该键在 JS 树里**无消费点**（main.js/frame.js 各 1 处，均为默认值表）⇒ Typora 侧由**原生/菜单**消费（已复核 2026-10-07 §4.136）。"
+      "status": "implemented",
+      "mellow": [
+        "image.allowMove"
+      ],
+      "note": "图片拖动移动的开关（**非面板键**，由菜单/原生消费）；Mellow 已暴露为设置 `image.allowMove` ✅ **已实现（2026-10-07，审计 §4.139）**：设置 `image.allowMove`（toggle，**默认 true** = 现状 ⇒ 默认行为不变），门控**两个移动入口**（`App.tsx` 的 `runBatch('moveAll')` 与单图 `action === 'move'`）；关闭时给状态提示（`msg.imageMoveDisabled`），不静默无反应。⚠️ Mellow 的图片 widget **不参与拖拽**（`image/widget.ts` 里 `img.draggable = false`）⇒ 无「未门控的拖拽路径」。"
     },
     {
       "typora": "allowImageUpload",
       "default": true,
-      "status": "gap",
-      "mellow": [],
-      "note": "图片自动上传的开关未作为设置暴露（Mellow 经 image.uploadService 装配即启用）",
-      "behavior": "matches-default",
-      "behaviorNote": "代码（image/host.ts 惰性读宿主注入的 __MELLOW_IMAGE_UPLOAD__）：装配上传服务即上传 → 与 Typora 默认 true 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/image/host.ts` —— 该模块的 `uploadImages` **惰性读**宿主注入的 `__MELLOW_IMAGE_UPLOAD__`；未注入时返回全 `null` ⇒ 回退本地插入 ⇒ 「装配上传服务即上传」与 Typora 默认 true 一致。"
+      "status": "implemented",
+      "mellow": [
+        "image.allowUpload"
+      ],
+      "note": "图片自动上传开关（面板 label \"Allow upload images automatically based on YAML settings\"）；Mellow 已暴露为设置 `image.allowUpload` ✅ **已实现（2026-10-07，审计 §4.139）**：设置 `image.allowUpload`（toggle，**默认 true**），门控 `App.tsx` 里 `__MELLOW_IMAGE_UPLOAD__` 的**注入**（关闭 ⇒ 不注入 ⇒ engine 的 `uploadImages` 全 null ⇒ 回退本地插入，等价 `upload: 'never'`）。⚠️ **有效默认与 Typora 一致**：Typora 面板 `checked: !!getValue(...)`（未设 ⇒ 关），而真正决定行为的是**是否配置了上传服务** —— Mellow 的 `image.uploadService` 默认 `none` ⇒ **两边有效默认都是「不上传」**。"
     },
     {
       "typora": "applyImageMoveForLocal",
@@ -38,9 +38,9 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "网络图片移动应用范围未作为设置暴露",
+      "note": "网络图片移动应用范围未作为设置暴露；**但底层能力已在**（`packages/app-core/src/imageFileOps.ts` 的 `downloadRemoteImage` / `planDownloadRemote`）",
       "behavior": "matches-default",
-      "behaviorNote": "代码：网络图片（`kind:'url'`）**直插、无 fsOps**（`insert.ts:62`）⇒ **不移动** → 与 Typora 默认 false 一致（已复核 2026-10-07 §4.136）。【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/image/insert.ts` —— `kind:'url'` 分支**直插、`fsOps: []`** ⇒ 网络图**不移动**。"
+      "behaviorNote": "代码：网络图片（`kind:'url'`）**直插、无 fsOps**（`insert.ts:62`）⇒ **不移动** → 与 Typora 默认 false 一致（已复核 2026-10-07 §4.136）。【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/image/insert.ts` —— `kind:'url'` 分支**直插、`fsOps: []`** ⇒ 网络图**不移动**。⚠️ **更正 §4.139 的分类（原写「缺设置」，实际是「能力已在、缺自动触发接线」）**：Mellow **已有下载远端图并落盘**的能力（`imageFileOps.ts` 的 `downloadRemoteImage` → `planDownloadRemote`），但**只在用户显式执行「图片：下载远程到 asset 目录」时**触发；**插入**远端图时不会自动下载。⇒ 缺的是「插入时按 `applyImageMoveForWeb` 自动下载」的接线（Typora 的 `shouldTriggerMove` 对 web src 返回该偏好）。默认 false ⇒ **默认行为一致**（都不自动下载）⇒ 该项**可自主实施**（列为下一轮候选）。"
     },
     {
       "typora": "autoCorrectMisspell",

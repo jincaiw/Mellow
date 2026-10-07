@@ -275,6 +275,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.image',
     settings: [
       { id: 'image.assetDir', labelKey: 'settings.image.assetDir', type: 'text', storageKey: 'mellow.assetDir', defaultValue: 'assets', applyCommand: 'settings.image.assetDir' },
+      // 2026-10-07（审计 §4.139）：Typora 的 `allowImageMove`（`DEFAULT_OPTIONS`，**默认 true**，非面板键）。
+      // 语义 = 「允许移动图片」（Typora 侧由**菜单/原生**消费：实测 JS 树里只有默认值表那一处）。
+      // Mellow 的对应物 = 两个命令入口 `image.move`（移动到…）/ `image.moveAll`（全部移到 asset 目录）
+      // ⇒ 关闭时**禁用这两个命令并给出状态提示**（不静默无反应）。
+      // ⚠️ Mellow 的图片 widget **不参与拖拽**（`image/widget.ts` 里 `img.draggable = false`）⇒ 无「未门控的拖拽路径」。
+      // 默认 true ⇒ **默认行为不变**。
+      { id: 'image.allowMove', labelKey: 'settings.image.allowMove', type: 'toggle', storageKey: 'mellow.image.allowMove', defaultValue: true, descriptionKey: 'settings.image.allowMoveDesc' },
+      // 2026-10-07（审计 §4.139）：Typora 的 `allow_image_upload`（面板 label
+      // **"Allow upload images automatically based on YAML settings"**，zh **「允许根据 YAML 设置自动上传图片」**）。
+      // Mellow 的对应物 = `__MELLOW_IMAGE_UPLOAD__` 注入（`App.tsx` 的图床上传服务）
+      // ⇒ 关闭时**不注入** ⇒ engine 的 `uploadImages` 返回全 null ⇒ 回退本地插入（等价 `upload: 'never'`）。
+      // 默认 true ⇒ **默认行为不变**。
+      { id: 'image.allowUpload', labelKey: 'settings.image.allowUpload', type: 'toggle', storageKey: 'mellow.image.allowUpload', defaultValue: true, descriptionKey: 'settings.image.allowUploadDesc' },
       // V6-P1 1.2.6：默认自动加载远程图片（Typora 行为）；引擎读 '0' 为关（默认开）
       { id: 'image.loadRemote', labelKey: 'settings.image.loadRemote', type: 'toggle', storageKey: 'mellow.image.loadRemote', defaultValue: true, descriptionKey: 'settings.image.loadRemoteDesc' },
       { id: 'image.uploadService', labelKey: 'settings.image.uploadService', type: 'select', storageKey: 'mellow.image.uploadService', defaultValue: 'none',

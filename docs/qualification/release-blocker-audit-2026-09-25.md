@@ -9080,6 +9080,73 @@ if (strategy === 'keep-original' || strategy === 'auto') {   // ← 默认 auto 
 
 
 
+## 4.139 差距评估：矩阵 47 条 `gap` 按「缺设置 / 缺能力」分档 + 实装图片两条（2026-10-07）
+
+### 一、评估方法（把「还缺 47 条」拆成可判断的两类）
+
+对矩阵的 **47 条 `gap`** 逐条读 note/behaviorNote 并分档：
+
+| 档 | 条数 | 含义 |
+|---|---|---|
+| **A. 缺设置（能力已在）** | **9** | 底层行为已实现，只差暴露开关 ⇒ **最便宜** |
+| **B. 缺能力/实现** | 14 | 需要新实现 |
+| **C. 其它（含「默认一致但无设置」等）** | 24 | 需逐条细看 |
+
+A 档 9 条：`allowImageMove` / `allowImageUpload` / `applyImageMoveForLocal` / `applyImageMoveForWeb` /
+`defaultExtension` / `fileSearchCaseSensitive` / `mathFormatOnCopy` / `sidebarWidth` / `sortType`。
+
+⚠️ **分档不能只看措辞** —— 本轮对 A 档逐条**读代码**后发现两类偏差：
+- `applyImageMoveForLocal` ⇒ 其实**默认行为偏离**（§4.136）⇒ 应归「待裁决」，**不是**可自主做；
+- `applyImageMoveForWeb` ⇒ note 写「未作为设置暴露」，但实测**底层能力已在**
+  （`packages/app-core/src/imageFileOps.ts` 的 `downloadRemoteImage` / `planDownloadRemote`）
+  ⇒ 真正缺的是「**插入远端图时按偏好自动下载**」的**接线** ⇒ 仍是「可自主做」，但**性质不同**。
+
+⇒ 结论：A 档 9 条里，**2 条待裁决**（`applyImageMoveForLocal` 见 Q13、`mathFormatOnCopy` 见 Q8）、
+**7 条可自主做**；其中本轮挑**同族且最干净的两条**先做。
+
+### 二、实装：`allowImageMove` + `allowImageUpload`（同族「图片」，都是**单点门控**）
+
+| 项 | Typora 真值 | Mellow 的对应物 | 改动 |
+|---|---|---|---|
+| `allowImageMove` | `DEFAULT_OPTIONS` 里默认 **true**（**非面板键**，由菜单/原生消费） | 两个移动入口：`runBatch('moveAll')` 与单图 `action === 'move'` | 新增 `image.allowMove`（toggle，**默认 true**）⇒ 关闭时**禁用并给状态提示**（`msg.imageMoveDisabled`），不静默无反应 |
+| `allowImageUpload` | 面板 label **"Allow upload images automatically based on YAML settings"**，`checked: !!getValue(...)`（未设 ⇒ 关） | `App.tsx` 里 `__MELLOW_IMAGE_UPLOAD__` 的**注入** | 新增 `image.allowUpload`（toggle，**默认 true**）⇒ 关闭 ⇒ **不注入** ⇒ engine 的 `uploadImages` 全 null ⇒ 回退本地插入（等价 `upload: 'never'`） |
+
+⚠️ **「默认 true」是否改变了默认行为？** —— **没有**：
+- `image.allowMove`：默认 true = 现状（移动命令本来可用）；
+- `image.allowUpload`：它只是**门控**，真正决定行为的是 `image.uploadService`（默认 `none`）
+  ⇒ **有效默认 = 不上传**，与 Typora 的默认（面板未设即关）**一致**。
+
+⇒ 矩阵：`implemented 31 → **33**`、`gap 47 → **45**`。
+
+### 三、⚠️ 本轮自己踩的坑（被既有判据当场抓住）
+
+把这两条的 `status` 写成 **`equivalent`** ⇒ **判据立刻报错**：
+「偏好项矩阵非法条目（2）：… status=equivalent」+「非 gap 条目不应带 behavior」。
+**错因**：把**面板独有面登记表**的词表（`equivalent` / `gap` / `not-applicable` / `unverified`）
+用到了**偏好矩阵**的词表（`implemented` / `gap` / `not-applicable`）上 —— **两个登记处的词表不同**。
+⇒ 已改回 `implemented`，并把证据挪进 `note`（`behavior` 只属于 `gap` 条目）。
+⇒ **这是「两个登记处」这一设计本身的第一个摩擦点**，如实记录。
+
+### 四、护栏（注入验证 3/3）
+
+`verify-settings-contract.mjs` 新增：两项必须 `toggle` 且**默认 true**、`App.tsx` 必须用
+`readBoolSetting('<id>', true)` 读取、**三个门控点必须真的存在**（单图移动 / 批量移动 / 上传注入）、
+关闭时必须有**可见反馈**（`msg.imageMoveDisabled`）；canary 用同一份正则做正/负样本。
+
+**注入验证 3/3**：① 默认值改 `false` ⇒ 红；② 去掉「移动全部」的门控 ⇒ 红；③ 去掉上传门控 ⇒ 红。全部还原后通过。
+
+### 五、教训
+
+1. **差距评估要先分档再动手** —— 「还缺 47 条」是不可执行的；拆成「缺设置 9 / 缺能力 14 / 其它 24」
+   才看得出**哪一档最便宜**。但**分档不能只看措辞**：9 条里有 2 条经读代码后**改判**。
+2. **「有效默认」≠「开关的默认值」** —— `image.allowUpload` 取 `true` 看着像「改变了默认」，
+   但**真正决定行为的是另一个设置**（`image.uploadService`，默认 `none`）
+   ⇒ 判「默认行为是否改变」必须看**整条取值链**（§4.173 的同一教训，这里是它的第二次应用）。
+3. **两个登记处有不同的词表，这是设计摩擦点** —— 本轮被既有判据当场抓住；
+   ⇒ 跨登记处搬条目时，**先查目标登记处的词表**（判据会拦，但别依赖它拦）。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 
