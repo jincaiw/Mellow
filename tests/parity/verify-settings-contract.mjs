@@ -1028,7 +1028,7 @@ if (cssLayerAnchor === undefined) {
     // 这正是 ADR-0029 登记表头部自陈的那半句：「要补上这一半**需给标记定机器可读写法**」。
     const badPending = [];
     // 行为轴：`behavior === 'differs'` ⇒ 必须有 `disposition: { kind, ref }`，且形态与 kind 匹配
-    // ⚠️ `gap` 的形态必须**排除 `D-XX`** —— 首版写成「`[A-Z0-9]+(-[A-Z0-9]+)+`」（通用「大写连字符」形态），
+    // ⚠️ `gap` 的形态必须**排除 D- 编号形态** —— 首版写成「`[A-Z0-9]+(-[A-Z0-9]+)+`」（通用「大写连字符」形态），
     //    结果 `D-AK` **也匹配** ⇒ canary 当场抓到「gap 判定不能区分正/负样本」。
     //    台账 id 的实际形态是 `P0-<WORD 或含数字的词>-<三位数>`（如 `P0-I18N-001`）。
     const REF_SHAPE = { deliberate: /^D-[A-Z]{1,2}$/, gap: /^P0-[A-Z0-9]+-\d{3}$/, undecided: /^ADR-\d{4}$/ };
@@ -1073,7 +1073,7 @@ if (cssLayerAnchor === undefined) {
       const shapeOk = (kind, ref) => ['deliberate', 'gap', 'undecided'].includes(kind)
         && typeof ref === 'string' && ref.trim() !== '' && REF_SHAPE[kind].test(ref.trim());
       if (shapeOk('deliberate', 'D-AK') !== true || shapeOk('deliberate', 'ADR-0034') !== false) {
-        errors.push('偏好项载体形状 canary 失效：deliberate 的 D-XX 判定不能区分正/负样本');
+        errors.push('偏好项载体形状 canary 失效：deliberate 的 D 编号判定不能区分正/负样本');
       }
       if (shapeOk('gap', 'P0-EDITOR-005') !== true || shapeOk('gap', 'D-AK') !== false) {
         errors.push('偏好项载体形状 canary 失效：gap 的台账 id 判定不能区分正/负样本');
@@ -2000,6 +2000,76 @@ if (cssLayerAnchor === undefined) {
     fail('图片上传门控 canary 失效：正样本未命中');
   }
 }
+
+    // ── 矩阵条目与 **D 表**的一致性（2026-10-07，审计 §4.140）──────────────────────
+    // 【为什么补】D 表（master-plan §12）是**裁决的唯一可发现处**。实测发现 **3 条**矩阵条目
+    //   与 D 表**矛盾**：`sortType`（D-AG 明言「功能已等价」）· `useTreeStyle`（D-AK 明言「不是缺一个开关」）·
+    //   `wordsPerMinute`（D-AO 说 Mellow **有**估算）—— 三条都被矩阵误记为 `gap`（缺口）
+    //   ⇒ **差距评估因此虚高 3 条**。这类矛盾**没有任何判据**，且机械地「引用 D ⇒ 必须 implemented」
+    //   会误报（`sidebarWidth` 的 note 提到 D-AD，但 D-AD 只裁决**上限**、不裁决「要不要设置项」）。
+    // ⇒ 用**显式载体字段** `dCarrier` 表达「该键的行为由某条 D 承载」：一旦声明，`status` 必须是 `implemented`。
+    {
+      // 矩阵在别的块作用域里 ⇒ 自己读一份
+      let mxEntries = [];
+      try {
+        mxEntries = (JSON.parse(read('tests/parity/fixtures/typora-preferences-matrix.json')).entries) ?? [];
+      } catch {
+        fail('偏好矩阵无法读取 —— dCarrier 判据无法运行');
+      }
+      const planSrc = (() => {
+        try { return read('docs/plans/typora-parity-master-plan.md'); } catch { return ''; }
+      })();
+      if (planSrc === '') fail('读不到 master-plan —— dCarrier 判据无法核对 D 编号声明行');
+      const carrierBad = [];
+      for (const e of mxEntries) {
+        if (e.dCarrier === undefined) continue;
+        if (!/^D-[A-Z]{1,2}$/.test(String(e.dCarrier))) {
+          carrierBad.push(`${e.typora}(dCarrier=${e.dCarrier} 形态非法)`);
+          continue;
+        }
+        // D = 「已裁决的有意差异」，**不是**缺口 ⇒ status 必须是 implemented
+        if (e.status !== 'implemented') {
+          carrierBad.push(`${e.typora}(dCarrier=${e.dCarrier} 但 status=${e.status} —— D 是已裁决的有意差异，不是缺口)`);
+        }
+        // 该编号必须在 master-plan 里有**首格声明行**（表格首格形如「竖线 + 两个星号 + 编号」）
+        if (!new RegExp(`\\|\\s*\\*\\*${e.dCarrier}[^*]*\\*\\*`).test(planSrc)) {
+          carrierBad.push(`${e.typora}(dCarrier=${e.dCarrier} 在 master-plan 里没有首格声明行)`);
+        }
+      }
+      if (carrierBad.length > 0) {
+        fail(`偏好矩阵的 dCarrier 不合法（${carrierBad.length}）：${carrierBad.join('、')}`);
+      }
+      const carrierCount = mxEntries.filter((e) => e.dCarrier !== undefined).length;
+      if (carrierCount < 3) {
+        fail(`带 dCarrier 的矩阵条目只有 ${carrierCount} 条（下限 3，2026-10-07 基线）—— 判据会空转`);
+      }
+      console.log(`ℹ️ 矩阵里带 **D 载体**（dCarrier）的条目 ${carrierCount} 条：`
+        + `${mxEntries.filter((e) => e.dCarrier).map((e) => `${e.typora}→${e.dCarrier}`).join(', ')}`);
+      // canary：三向 + 边界（非法形态 / status 不是 implemented / 编号无声明行）
+      const judgeCarrier = (list, plan) => {
+        const out = [];
+        for (const e of list) {
+          if (e.dCarrier === undefined) continue;
+          if (!/^D-[A-Z]{1,2}$/.test(String(e.dCarrier))) { out.push('shape'); continue; }
+          if (e.status !== 'implemented') out.push('status');
+          if (!new RegExp(`\\|\\s*\\*\\*${e.dCarrier}[^*]*\\*\\*`).test(plan)) out.push('nodecl');
+        }
+        return out;
+      };
+      const PLAN = '| **D-AG（x）** | a | b | c |';
+      if (judgeCarrier([{ typora: 'a', status: 'implemented', dCarrier: 'D-AG' }], PLAN).length !== 0) {
+        fail('dCarrier canary 过宽：合法条目被误报');
+      }
+      if (!judgeCarrier([{ typora: 'a', status: 'implemented', dCarrier: 'D-ag' }], PLAN).includes('shape')) {
+        fail('dCarrier canary 失效：非法形态未被检出');
+      }
+      if (!judgeCarrier([{ typora: 'a', status: 'gap', dCarrier: 'D-AG' }], PLAN).includes('status')) {
+        fail('dCarrier canary 失效：status=gap 未被检出');
+      }
+      if (!judgeCarrier([{ typora: 'a', status: 'implemented', dCarrier: 'D-ZZ' }], PLAN).includes('nodecl')) {
+        fail('dCarrier canary 失效：无声明行的编号未被检出');
+      }
+    }
 
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
 // 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，

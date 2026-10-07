@@ -663,11 +663,10 @@
     {
       "typora": "sortType",
       "default": 0,
-      "status": "gap",
+      "status": "implemented",
       "mellow": [],
-      "note": "侧栏排序方式未作为设置暴露",
-      "behavior": "matches-default",
-      "behaviorNote": "Typora 默认 sortType=0 = Natural 升序；Mellow DEFAULT_FILE_TREE_OPTIONS 为 sortBy=natural、sortAsc=true、folderFirst=true → 默认排序行为一致，matches-default【代码落点（2026-10-07，审计 §4.138）】`packages/app-core/src/fileTree.ts` —— `DEFAULT_FILE_TREE_OPTIONS` 为 `sortBy: 'natural'`、`sortAsc: true`、`folderFirst: true` ⇒ 与 Typora `sortType: 0`（Natural 升序）一致。"
+      "note": "侧栏排序**形态**由 **D-AG**（2026-09-30 裁决）承载：保留 Mellow 的菜单形态（4 个可勾选键 × 升/降序 = Typora 8 条的**同一组合集**），D-AG 明言「**功能已等价且有护栏**」（`verify-sidebar-contract.mjs` 锁 4 个排序键）。⚠️ **本条此前误记 `gap`**（「未作为设置暴露」）—— 与 D-AG 的裁决矛盾：形态差异**已被裁决为有意**，不是缺口。",
+      "dCarrier": "D-AG"
     },
     {
       "typora": "spellcheckForCodeAndLink",
@@ -771,15 +770,14 @@
     {
       "typora": "useTreeStyle",
       "default": false,
-      "status": "gap",
+      "status": "implemented",
       "mellow": [],
-      "note": "文件树样式（树形 / 平铺）未实装",
-      "behavior": "differs",
-      "behaviorNote": "一手证据（Typora main.js）：默认 useTreeStyle=false，默认委托 fileList（列表呈现）；Mellow sidebarMode 无持久化时默认 `files`，渲染 FileTree 目录树 → 整体默认呈现不同（Mellow 选择文件树作为产品默认），属有意差异而非单一缺失开关。【代码落点（2026-10-07，审计 §4.137）】`apps/desktop/src/App.tsx` 的 `sidebarMode` 初值回落 `'files'`（目录树 FileTree）⇒ Mellow 默认呈现**目录树**，而 Typora 默认 `useTreeStyle=false`（列表）。",
+      "note": "文件树样式的**默认呈现**由 **D-AK**（2026-10-07 补登记）承载：Typora 默认 `useTreeStyle=false`（列表），Mellow 默认 FileTree（目录树）⇒ **整体呈现差异**，D-AK 明言「**不是「缺一个开关」**；Mellow 的「侧栏默认视图」设置项提供等价的可配置性」。⚠️ **本条此前误记 `gap`**（「未实装」）—— 与 D-AK 矛盾。",
       "disposition": {
         "kind": "deliberate",
         "ref": "D-AK"
-      }
+      },
+      "dCarrier": "D-AK"
     },
     {
       "typora": "wholeWord",
@@ -804,15 +802,14 @@
     {
       "typora": "wordsPerMinute",
       "default": 382,
-      "status": "gap",
+      "status": "implemented",
       "mellow": [],
-      "note": "阅读速度估算（用于显示阅读时长）未实装",
-      "behavior": "differs",
-      "behaviorNote": "Mellow **有**阅读时长（app-core/wordCount.ts：中文 300 字/分 + 英文 200 词/分，**CJK-aware 有意设计**）；Typora 默认单一 382 词/分 → 英文文本的估算值不同（Mellow 约为 Typora 的 2 倍时长）。属为中文场景做的有意取舍，非缺陷，但数值确实不同【代码落点（2026-10-07，审计 §4.137）】`packages/app-core/src/wordCount.ts`：`readingTimeMinutes = Math.max(1, Math.ceil(cjkChars / 300 + words / 200))` ⇒ **CJK-aware**（中文 300 字/分 + 英文 200 词/分），与 Typora 单一 382 词/分不同。",
+      "note": "阅读速度的**数值**由 **D-AO**（2026-10-07 补登记）承载：Mellow **有**阅读时长估算（`packages/app-core/src/wordCount.ts`，CJK-aware：中文 300 字/分 + 英文 200 词/分），只是数值与 Typora 的单一 382 词/分不同 ⇒ 属**有意的 CJK 取舍**。⚠️ **本条此前误记 `gap`**（「未实装」）—— 与 D-AO 矛盾（D-AO 说 Mellow **有**估算）。",
       "disposition": {
         "kind": "deliberate",
         "ref": "D-AO"
-      }
+      },
+      "dCarrier": "D-AO"
     },
     {
       "typora": "zoomByMouse",
