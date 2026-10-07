@@ -383,6 +383,69 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
 }
 
+// ── ⑫ e2e 探针的**启动器卫生**：棘轮（2026-10-07，审计 §4.122 连带）──────────────
+// 立此条的原因（实测）：`verify-visual-golden.mjs` 对**四个视觉脚本**锁了
+// 「必须用 `tests/visual/dev-server.mjs` 的**平台感知**启动器、不得裸 `spawn('npx')`」——
+// 而**同一类缺陷在 `tests/e2e/**` 里原样存在**，且**那一面没有任何判据覆盖**：
+// 实测 32 个 e2e 脚本里 **28 个**是裸 `spawn('npx')`
+// （Windows 上 `npx` 实际是 `npx.cmd`，无 shell 时 spawn 抛 ENOENT ⇒ 探针以「**超时**」静默失败），
+// **22 个**用固定端口（`tests/e2e/README.md` 已记：残留 vite 会让测试**假红**且换任何等待时长都无效）。
+//
+// ⚠️ **这是「存量欠债」，不是「已评估通过」**（本仓要求例外表理由**逐字区分**）：
+//    本轮**不**批量改那 28 个脚本 —— 它们大多需要特定条件才能跑，**盲改 = 改一堆跑不起来的探针**。
+//    故本判据是**棘轮**：只保证「**不变得更差**」+「共享启动器的用法**不被删掉**」。
+//    目标是把 28 降下来；**降到 0 时应把本判据换成硬判据**（「不得出现裸 `spawn('npx')`」）。
+{
+  const E2E_DIR = resolve(root, 'tests/e2e');
+  const e2eFiles = existsSync(E2E_DIR)
+    ? readdirSync(E2E_DIR).filter((f) => f.endsWith('.mjs')).map((f) => resolve(E2E_DIR, f))
+    : [];
+  if (e2eFiles.length < 30) {
+    fail(`tests/e2e 只解析出 ${e2eFiles.length} 个脚本（下限 30）—— 扫描面漂移会让本判据空转`);
+  }
+  // ⚠️ 判据前**必须剥注释**：本文件自己的注释里就写着 `spawn('npx')`，
+  //    而**实测踩过**：新写的探针只在**注释里**提到该模式，却被计成「裸用法」。
+  const stripCommentsOf = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+  const isBareNpx = (src) => /spawn\(\s*'npx'/.test(stripCommentsOf(src));
+  const usesSharedLauncher = (src) => stripCommentsOf(src).includes('dev-server.mjs');
+  const bare = [];
+  let shared = 0;
+  for (const f of e2eFiles) {
+    const src = readFileSync(f, 'utf8').replace(/\r\n/g, '\n');
+    if (isBareNpx(src)) bare.push(relative(root, f).split('\\').join('/'));
+    if (usesSharedLauncher(src)) shared += 1;
+  }
+  // 棘轮（两个方向）：共享用法不得减少；裸用法不得增加
+  if (shared < 4) {
+    fail(`tests/e2e 里只有 ${shared} 个脚本使用平台感知启动器（下限 4 = 立此判据时的基线）—— `
+      + '这条下限是**棘轮**：共享用法被删掉会让「Windows 上探针全跑不起来」重新变成无人守的现状');
+  }
+  if (bare.length > 28) {
+    fail(`tests/e2e 里有 ${bare.length} 个脚本是裸 \`spawn('npx')\`（上限 28 = 立此判据时的**存量欠债**）—— `
+      + '**不得新增**这种写法（Windows 上 `npx` 是 `npx.cmd` ⇒ spawn ENOENT ⇒ 探针以超时静默失败）。'
+      + '新脚本请用 `tests/visual/dev-server.mjs` 的 `startViteDevServer()` + `describeSpawnFailure()`；'
+      + `\n    新增者：${bare.slice(-3).join(', ')}`);
+  }
+  // canary：① 注释里的写法**不得**被计成裸用法（实测踩过）；② 真实模式必须被检出
+  if (isBareNpx("// 裸 spawn('npx') 在 Windows 上会 ENOENT\nconst a = 1;\n")) {
+    errors.push('e2e 启动器卫生护栏 canary 过宽：**注释里**提到的 `spawn(\'npx\')` 被当成了裸用法');
+  }
+  if (!isBareNpx("const vite = spawn('npx', ['vite']);\n")) {
+    errors.push('e2e 启动器卫生护栏 canary 失效：真实的裸 spawn(\'npx\') 未被检出');
+  }
+  if (!usesSharedLauncher("import { startViteDevServer } from '../visual/dev-server.mjs';\n")) {
+    errors.push('e2e 启动器卫生护栏 canary 失效：共享启动器的 import 未被识别');
+  }
+  if (usesSharedLauncher("// 见 dev-server.mjs 的说明\nconst a = 1;\n")) {
+    errors.push('e2e 启动器卫生护栏 canary 过宽：**注释里**提到 dev-server.mjs 被算作「已使用」');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }

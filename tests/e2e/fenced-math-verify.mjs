@@ -20,10 +20,14 @@
  *
  * 运行：NODE_PATH=<playwright>/node_modules node tests/e2e/fenced-math-verify.mjs
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
+// ⚠️ dev server 必须用**跨平台**启动器（本仓既有约定，见 tests/visual/dev-server.mjs 的文件头）：
+// 裸 `spawn('npx')` 在 Windows 上会 ENOENT（`npx` 实际是 `npx.cmd`，无 shell 时无法执行）
+// ⇒ 探针会以「超时」的形式静默失败。`verify-visual-golden.mjs` 对**视觉脚本**锁了这条反例，
+// 而 e2e 不在它的扫描面里 —— 故此处**主动**沿用同一启动器，不给仓库新增一处已知缺陷。
+import { startViteDevServer, describeSpawnFailure } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -55,9 +59,7 @@ const DOLLAR_DOC = '前置段落\n\n$$\nE = mc^2\n$$\n\n后置段落';
 async function main() {
   const port = await pickFreePort();
   const base = `http://localhost:${port}`;
-  const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port });
   const browser = await chromium.launch();
   const consoleErrors = [];
   try {
@@ -69,7 +71,8 @@ async function main() {
       } catch { /* not ready */ }
       await sleep(300);
     }
-    if (!ready) throw new Error('vite dev server 未就绪');
+    // 失败时带上 spawn 原因（否则只剩一句无法定位的超时）
+    if (!ready) throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
 
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -192,7 +195,7 @@ async function main() {
     check('渲染期间无 console 错误 / 未捕获异常', relevant.length === 0, relevant.slice(0, 2).join(' | '));
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 
