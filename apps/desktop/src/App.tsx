@@ -149,6 +149,17 @@ function readBoolSetting(id: string, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 /**
+ * 写入布尔型设置项（真源 = settings schema 的 `storageKey`）。
+ * 供**设置页之外的面板控件**使用（如侧栏文件搜索的「区分大小写」复选框）——
+ * 面板不在设置页里、走不了 `applySetting`，但**必须与设置页写同一个 storageKey**，
+ * 否则两处会分叉（设置页显示 true、面板却按 false 搜索）。2026-10-07，审计 §4.145。
+ */
+function persistBoolSetting(id: string, value: boolean): void {
+  const def = settingById(id);
+  if (!def) return;
+  writeSetting(def, value);
+}
+/**
  * 「Tab 键缩进」设置值 → CoreEditor `TabKeyBehavior` 枚举值（V7-W6，G7-EDIT-13）。
  * 取值 `'twoSpaces' | 'fourSpaces' | 'tab'`；非法值回落 2 空格（= Typora `indentSize: 2` 默认）。
  *
@@ -726,8 +737,13 @@ export default function App() {
   const [quickOpenSelected, setQuickOpenSelected] = useState(0);
   const [quickOpenScanning, setQuickOpenScanning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchCase, setSearchCase] = useState(false);
-  const [searchWholeWord, setSearchWholeWord] = useState(false);
+  // 2026-10-07（审计 §4.145）：这两个是 Typora 的 `fileSearchCaseSensitive` / `fileSearchWholeWord`
+  // （**文件搜索面板**的选项；Typora 经 `JSBridge.putSetting` 持久化）。此前是 `useState(false)` 字面量
+  // ⇒ 重启即回默认。现从设置初始化（**默认 false ⇒ 默认行为不变**）。
+  // ⚠️ `searchRegex` / `searchContext` **仍不持久化**：Typora 的 `fileSearchUseRegexp` 被 `main.js` 消费
+  //   但**不在 `DEFAULT_OPTIONS`** 里（矩阵以 DEFAULT_OPTIONS 为面 ⇒ 结构上看不到它）；`context` 无对应键。
+  const [searchCase, setSearchCase] = useState(() => readBoolSetting('files.searchCaseSensitive', false));
+  const [searchWholeWord, setSearchWholeWord] = useState(() => readBoolSetting('files.searchWholeWord', false));
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchInclude, setSearchInclude] = useState('');
   const [searchExclude, setSearchExclude] = useState('');
@@ -5114,6 +5130,14 @@ export default function App() {
         // 代码块行号 live apply（Typora 偏好→Markdown；引擎行号 widget 开关）
         hostRef.current?.setCodeLineNumbersEnabled(Boolean(value));
         break;
+      case 'settings.searchOptions': {
+        // 2026-10-07（审计 §4.145）：侧栏文件搜索的两个选项（Typora `fileSearchCaseSensitive` /
+        // `fileSearchWholeWord`）。设置页与面板复选框写**同一个 storageKey**，但面板的 checkbox
+        // 由本 state 驱动 ⇒ 在设置页改完必须**同步 state**，否则两处显示会分叉。
+        setSearchCase(readBoolSetting('files.searchCaseSensitive', false));
+        setSearchWholeWord(readBoolSetting('files.searchWholeWord', false));
+        break;
+      }
       case 'settings.outlineMaxLevel': {
         // 2026-09-30：Typora「目录显示的标题层数」—— 写入 state → refreshOutline 重算大纲
         const n = Number(value);
@@ -6187,8 +6211,8 @@ export default function App() {
               <div className="search-panel">
                 <input className="search-input" autoFocus placeholder={t('search.placeholder')} aria-label={t('search.placeholder')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runGlobalSearch(); }} />
                 <div className="search-toggles">
-                  <label><input type="checkbox" checked={searchCase} onChange={(e) => setSearchCase(e.target.checked)} />{t('search.case')}</label>
-                  <label><input type="checkbox" checked={searchWholeWord} onChange={(e) => setSearchWholeWord(e.target.checked)} />{t('search.word')}</label>
+                  <label><input type="checkbox" checked={searchCase} onChange={(e) => { setSearchCase(e.target.checked); persistBoolSetting('files.searchCaseSensitive', e.target.checked); }} />{t('search.case')}</label>
+                  <label><input type="checkbox" checked={searchWholeWord} onChange={(e) => { setSearchWholeWord(e.target.checked); persistBoolSetting('files.searchWholeWord', e.target.checked); }} />{t('search.word')}</label>
                   <label><input type="checkbox" checked={searchRegex} onChange={(e) => setSearchRegex(e.target.checked)} />{t('search.regex')}</label>
                   <label>{t('search.ctx')} <input type="number" min="0" max="2" value={searchContext} onChange={(e) => setSearchContext(Math.max(0, Math.min(2, Number(e.target.value) || 0)))} /></label>
                 </div>

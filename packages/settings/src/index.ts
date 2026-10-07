@@ -268,6 +268,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'lf', labelKey: 'settings.file.newFileLineEnding.lf' },
           { value: 'crlf', labelKey: 'settings.file.newFileLineEnding.crlf' },
         ], descriptionKey: 'settings.file.newFileLineEndingDesc' },
+      // 2026-10-07（审计 §4.145）：Typora **文件搜索面板**的两个选项。
+      // 【一手证据】`main.js` 的文件搜索项类：
+      //   `this.caseSensitive=File.option.fileSearchCaseSensitive, this.wholeWord=File.option.fileSearchWholeWord,`
+      //   `this.useRegexp=File.option.fileSearchUseRegexp`；两个按钮的 `mousedown` 分别
+      //   `JSBridge.putSetting("fileSearchCaseSensitive", …)` / `putSetting("fileSearchWholeWord", …)`
+      //   ⇒ **Typora 会持久化**（`DEFAULT_OPTIONS` 里默认都是 `!1` = false）。
+      //   ⚠️ 这两个键**不在** Typora 偏好面板里（面板键抽取 0 命中）⇒ 是**面板状态**，不是 Preferences 项。
+      // 【Mellow 现状】侧栏搜索面板**已有**这两个复选框（`App.tsx` 的 `searchCase` / `searchWholeWord`），
+      //   但此前是 `useState(false)` **字面量** ⇒ 重启即回默认（矩阵原判「选项未暴露」是**错的**）。
+      //   本项把它们接到设置（**默认 false ⇒ 默认行为不变**）。
+      // ⚠️ 带 `applyCommand`（与「读时生效」的那些不同）：设置页与**侧栏面板复选框**是同一个值的
+      //   两个入口 ⇒ 在设置页改完必须**同步面板 state**，否则两处显示会分叉（面板的 checkbox 由 state 驱动）。
+      { id: 'files.searchCaseSensitive', labelKey: 'settings.file.searchCaseSensitive', type: 'toggle', storageKey: 'mellow.file.searchCaseSensitive', defaultValue: false, descriptionKey: 'settings.file.searchCaseSensitiveDesc', applyCommand: 'settings.searchOptions' },
+      { id: 'files.searchWholeWord', labelKey: 'settings.file.searchWholeWord', type: 'toggle', storageKey: 'mellow.file.searchWholeWord', defaultValue: false, descriptionKey: 'settings.file.searchWholeWordDesc', applyCommand: 'settings.searchOptions' },
     ],
   },
   {

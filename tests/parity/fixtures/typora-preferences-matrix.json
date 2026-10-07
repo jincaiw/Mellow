@@ -99,9 +99,11 @@
     {
       "typora": "caseSensitive",
       "default": false,
-      "status": "implemented",
+      "status": "gap",
       "mellow": [],
-      "note": "查找面板有「区分大小写」选项（App.tsx searchCase），但未作为持久化设置（Typora 会记住）"
+      "note": "**查找面板**（⌘F）的「区分大小写」选项：Mellow **有**该按钮（`packages/editor-engine/src/documentSearch.ts` 的 `caseBtn`），但**不持久化**（模块级 `lastQueryOptions`，重载即回 false）；Typora 经 `JSBridge.putSetting('caseSensitive', …)` 记住。⚠️ **2026-10-07 更正（审计 §4.145）**：原判 `implemented` 与**本条 note 自述的缺口**（「未作为持久化设置」）**直接矛盾**；且原 note 把落点写成 `App.tsx searchCase` —— 那是**文件搜索**面板的 state，**不是查找面板**。",
+      "behavior": "matches-default",
+      "behaviorNote": "代码：`packages/editor-engine/src/documentSearch.ts` 的 `lastQueryOptions = { caseSensitive: false, regexp: false }` 是**模块级内存态**（查找面板的 `caseBtn` 切换它，但不落存储）⇒ 默认 `false`，与 Typora `caseSensitive:!1` 一致 ⇒ 归 `matches-default`（缺的是**持久化**，不是默认值）。"
     },
     {
       "typora": "codeIndentSize",
@@ -282,20 +284,16 @@
     {
       "typora": "fileSearchCaseSensitive",
       "default": false,
-      "status": "gap",
-      "mellow": [],
-      "note": "文件搜索的大小写选项未持久化",
-      "behavior": "matches-default",
-      "behaviorNote": "代码（host/searchServices.ts）：文件搜索固定传 `caseSensitive: false` → 与 Typora 默认 false 一致（选项未暴露，但行为相同）【代码落点（2026-10-07，审计 §4.138）】`apps/desktop/src/host/searchServices.ts` —— 文件搜索固定传 `caseSensitive: false` ⇒ 与 Typora 默认 false 一致（选项未暴露、行为相同）。"
+      "status": "implemented",
+      "mellow": ["files.searchCaseSensitive"],
+      "note": "**文件搜索面板**（侧栏）的「区分大小写」选项。**已实装持久化**（2026-10-07，审计 §4.145）：新增设置 `files.searchCaseSensitive`（toggle，**默认 false ⇒ 默认行为不变**），侧栏复选框（`apps/desktop/src/App.tsx`）读写它；设置页改动经 `applyCommand: settings.searchOptions` 同步面板 state（两处同源，不会分叉）。⚠️ **更正原 `behaviorNote` 的两处错误**：① 「选项**未暴露**」是**假的** —— 侧栏早就有该复选框（`App.tsx` 的 `searchCase`）；② 落点引的是 `apps/desktop/src/host/searchServices.ts` 的 **`searchFiles()`（兼容旧 API）**，它硬编码 `false`，而**主路径** `searchFilesStreaming()` 是**透传**的（调用方给什么用什么，侧栏传的就是 `searchCase`）。"
     },
     {
       "typora": "fileSearchWholeWord",
       "default": false,
-      "status": "gap",
-      "mellow": [],
-      "note": "文件搜索的全词选项未持久化",
-      "behavior": "matches-default",
-      "behaviorNote": "代码（host/searchServices.ts）：固定传 `wholeWord: false` → 与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`apps/desktop/src/host/searchServices.ts` —— 文件搜索固定传 `wholeWord: false` ⇒ 与 Typora 默认 false 一致。"
+      "status": "implemented",
+      "mellow": ["files.searchWholeWord"],
+      "note": "**文件搜索面板**（侧栏）的「全词匹配」选项。**已实装持久化**（2026-10-07，审计 §4.145）：新增设置 `files.searchWholeWord`（toggle，**默认 false ⇒ 默认行为不变**），侧栏复选框（`apps/desktop/src/App.tsx`）读写它。⚠️ 同 `fileSearchCaseSensitive` 的两处更正：原断言「选项未暴露」为假；落点引的是**兼容旧 API** `apps/desktop/src/host/searchServices.ts` 的 `searchFiles()`（硬编码 `false`），不是主路径 `searchFilesStreaming()`（透传）。**残留（如实登记）**：同一面板的「正则」复选框（Typora `fileSearchUseRegexp`）**仍不持久化** —— 该键被 Typora `main.js` 消费但**不在 `DEFAULT_OPTIONS`** 里（矩阵以 `DEFAULT_OPTIONS` 为面 ⇒ 结构上看不到它）；`context` 无对应键。"
     },
     {
       "typora": "gitlabMath",
@@ -780,9 +778,11 @@
     {
       "typora": "wholeWord",
       "default": false,
-      "status": "implemented",
+      "status": "gap",
       "mellow": [],
-      "note": "查找面板有「全词匹配」选项（searchWholeWord），但未作为持久化设置（Typora 会记住）"
+      "note": "**查找面板**（⌘F）的「全词匹配」选项：Mellow 的查找面板**只有** `caseSensitive` 与 `regexp` 两个 toggle（`packages/editor-engine/src/documentSearch.ts`）⇒ **没有**全词选项 ⇒ 这是**能力缺口**（不只是持久化）。⚠️ **2026-10-07 更正（审计 §4.145）**：原判 `implemented` 且 note 引 `searchWholeWord` —— 那是**文件搜索**面板的 state，**不是查找面板**。",
+      "behavior": "matches-default",
+      "behaviorNote": "代码：`packages/editor-engine/src/documentSearch.ts` 的查找面板只创建 `caseBtn`（name='caseSensitive'）与 `regexBtn`（name='regexp'）两个 toggle，**无 wholeWord 按钮**；`lastQueryOptions` 也只有 `{ caseSensitive, regexp }` ⇒ 查找面板行为等价于「全词关」，与 Typora `wholeWord:!1` 默认一致 ⇒ 归 `matches-default`（缺的是**能力**）。"
     },
     {
       "typora": "wordCountDelimiter",

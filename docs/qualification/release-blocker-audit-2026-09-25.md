@@ -9490,6 +9490,116 @@ Rust 侧**复用既有实现**：`apps/desktop/src-tauri/src/fs.rs` 的 `downloa
 4. **核对要用被核对对象自己写的符号** —— 用自己猜的近义词去查，会把正确的条目判成错的。
 
 
+## 4.145 同一缺陷被分成**两种 status**（`caseSensitive` 判 `implemented`、`fileSearchCaseSensitive` 判 `gap`）+ 两个登记面之间的**缝隙**（2026-10-07）
+
+### 一、动因：从 §4.144 的「可自主候选」出发
+
+上一轮登记的候选里有 `fileSearchCaseSensitive` / `fileSearchWholeWord`（「把已有行为暴露为设置」）。
+按 PITFALLS §4.173 的规矩**先读条目、先取一手证据** —— 一读就读出一个**成对的矛盾**。
+
+### 二、一手证据（Typora `main.js`，逐字）
+
+```
+// 文件搜索项类
+this.caseSensitive = File.option.fileSearchCaseSensitive
+this.wholeWord    = File.option.fileSearchWholeWord
+this.useRegexp    = File.option.fileSearchUseRegexp
+JSBridge.putSetting("fileSearchCaseSensitive", e.caseSensitive)
+JSBridge.putSetting("fileSearchWholeWord",     e.wholeWord)
+// 查找 / 替换面板类
+this.caseSensitive = File.option.caseSensitive
+this.wholeWord     = File.option.wholeWord
+this.useRegexp     = File.option.useRegexp
+JSBridge.putSetting("caseSensitive", t.caseSensitive)
+```
+
+⇒ ① 两组是**两个不同面板**的选项（带 `fileSearch` 前缀 = 文件搜索面板；无前缀 = 查找/替换面板）；
+② **Typora 全都持久化**（`JSBridge.putSetting`）；③ `DEFAULT_OPTIONS` 里这四个都是 `!1`（默认 false）。
+
+### 三、读出的三处缺陷
+
+| # | 缺陷 | 证据 |
+|---|---|---|
+| 1 | `caseSensitive` / `wholeWord` 判 **`implemented`**，而**它们自己的 `note` 就写着**「未作为持久化设置（Typora 会记住）」 | **同一条目自相矛盾** |
+| 2 | 同一个「未持久化」事实，在 `fileSearchCaseSensitive` / `fileSearchWholeWord` 里判成 **`gap`** | **同一缺陷两种 status**（PITFALLS §4.143 的实例） |
+| 3 | `fileSearch*` 的 `behaviorNote` 断言「**选项未暴露**」—— **假的** | 侧栏**早就有**这两个复选框（`apps/desktop/src/App.tsx` 的 `searchCase` / `searchWholeWord`，`useState(false)` **字面量**）|
+
+**缺陷 3 的根因值得单独记**：落点引的是 `apps/desktop/src/host/searchServices.ts` 的 **`searchFiles()`** ——
+那是**兼容旧 API**（源码注释自述「streaming 是主路径」），它硬编码 `caseSensitive: false`；
+而**主路径** `searchFilesStreaming()` 是**透传**的（调用方给什么用什么），侧栏传的正是 `searchCase`。
+⇒ **文件对、符号对，但描述的是同一个文件里的另一条路径**（与 §4.144 的「断言为假」是**不同**的失效模式）。
+
+### 四、处置
+
+**A. 实装持久化**（关闭 2 个缺口）：新增 `files.searchCaseSensitive` / `files.searchWholeWord`
+（toggle，**默认 false ⇒ 默认行为不变**）；侧栏复选框读写它；设置页改动经
+`applyCommand: 'settings.searchOptions'` **同步面板 state**（两处同源，不会分叉）。
+⇒ 这两条 `gap` → **`implemented`**（`mellow` 填真实 id）。
+
+**B. 更正 2 条误标**：`caseSensitive` / `wholeWord` `implemented` → **`gap`**，
+落点改到**真正的查找面板**（`packages/editor-engine/src/documentSearch.ts` 的 `lastQueryOptions`），
+并**区分缺口性质**：`caseSensitive` = **未持久化**；`wholeWord` = **面板里根本没有该选项**（**能力缺口**）。
+
+**C. 矩阵净变化 = 0**（2 关 2 开）。**如实说明**：本轮产出是**准确性**，不是「缺口变少」——
+把 `implemented` 的**虚高**压掉 2 条，与关掉 2 条缺口**同等重要**；只报「净变化 0」会掩盖两件事同时发生。
+
+### 五、判据（两条，均带 canary）
+
+1. **`status: implemented` 却自述缺口**（措辞「未作为持久化设置」）⇒ 失败。canary **三向**
+   （正样本 / `gap` 说同样的话 / `implemented` 但无该措辞）。
+   ⚠️ **边界如实声明**：只覆盖**一种措辞**，**不能**取代人逐条核对（本轮另两条用的是别的措辞）。
+2. **搜索选项的接线三层**：① 设置存在且**默认 false**；② 面板复选框必须 `persistBoolSetting(<同一个 id>, …)`；
+   ③ `applySetting` 必须有 `settings.searchOptions` case —— 否则在设置页改完**已挂载的面板不同步**。
+   canary：正样本 / **改名**负样本（`…X` 不被命中）。
+**注入验证 4/4**（默认值改 true / 面板不再写盘 / `applySetting` 丢 case / 把条目改回原判定）⇒ 全红，还原后绿。
+
+### 六、⚠️ 顺带量到的**结构性**发现：两个登记面之间的缝隙
+
+`JSBridge.putSetting(...)` 是「**Typora 真的持久化哪些键**」的一手来源（机器可抽）。实测：
+
+| 面 | 覆盖 |
+|---|---|
+| 偏好矩阵（= `DEFAULT_OPTIONS`，84 键） | 84 |
+| 面板独有面（`keyName`，91 个去重） | 91（与矩阵有交集） |
+| **`putSetting` 的键（并集 38）** | **15 个不在上述两面中的任何一个** |
+
+那 15 个是：`useRegexp` · `fileSearchUseRegexp` · `listSortType` · `treeSortType` ·
+`noFileNonExistWarning` · `noHintForOpenLink` · `noWarnigForDeleteFile` · `noWarnigUploadDisabled` ·
+`noWarningForExportOverwrite` · `isDarkMode` · `isFocusMode` · `isTypeWriterMode` · `backgroundColor` ·
+`customZoom` · `sidebar_tab`。
+
+⇒ **`DEFAULT_OPTIONS` 与「面板 UI」都不是「全部被持久化的键」** —— 两个面之间**有缝**。
+本轮的 `fileSearchUseRegexp` 正是落在缝里的一个（这解释了为什么它既不在矩阵、也不在面板独有面）。
+
+⚠️ **为什么不落判据**：我试过「`putSetting` 的键 ⊆ 两个面」这条**看起来很强**的判据 ——
+**实测它不成立**：那 15 个里至少有 6 个是**视图/会话状态**（`isDarkMode` / `isFocusMode` /
+`isTypeWriterMode` / `backgroundColor` / `customZoom` / `sidebar_tab`），Typora 经同一通道持久化
+**模式与视图**，它们**不该**进偏好矩阵。⇒ **先要给「哪些算偏好」下定义**，在那之前**不落判据**
+（落一条宽判据只会制造一堆例外表）。**已如实登记为待办。**
+
+### 七、残留（如实登记）
+
+1. **同一面板的「正则」复选框仍不持久化** —— Typora `fileSearchUseRegexp` 落在上述**缝隙**里
+   （既不在 `DEFAULT_OPTIONS`、也不在面板）⇒ 它**不在矩阵的登记范围**内。
+2. **查找面板的 `caseSensitive` 持久化未做** —— `packages/editor-engine/src/documentSearch.ts` 在**引擎侧**，
+   而本仓约定「**engine 不读存储，只问宿主**」⇒ 需要一条宿主注入通道（同 `__MELLOW_IMAGE_UPLOAD__` 模式）。
+3. **`wholeWord`（查找面板）是能力缺口** —— 需要在查找面板加一个 toggle + 接线；未做。
+
+### 八、教训
+
+1. **「同一事实、两种 status」是本仓的结构性缺陷类** —— 它**跨条目**，**单看任一条都自洽**；
+   本轮能发现，是因为**两条并排读**。⇒ **凡成组的键（同名不同前缀 / 同一面板的多项），要成组核对。**
+2. **落点「文件对、符号对」仍可能描述错的路径** —— `searchFiles()` 与 `searchFilesStreaming()`
+   在**同一个文件**里，前者是兼容垫片、后者是主路径。⇒ 落点要精确到**函数**，
+   并在注释里写清**为什么是这条而不是旁边那条**（本例源码注释「streaming 是主路径」就是现成的判据）。
+3. **「可自主」的候选要先读条目再动手** —— 若直接照 `behaviorNote` 的「选项未暴露」去实装，
+   会**重复实现一个已存在的复选框**。
+4. **判据要「先量再落」** —— 本轮那条看起来很强的 `putSetting ⊆ 两面` 判据，**量完才知道不成立**
+   （15 个里 6 个是视图状态）。**没量就落，只会得到一张例外表。**
+5. **登记面本身也要被审计** —— 此前只审过「矩阵里有没有错」，**没审过「矩阵这个面够不够宽」**。
+   本轮第一次量化了两面之间的缝隙（15 个键）。
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

@@ -2067,6 +2067,36 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 侧栏**文件搜索**的两个选项：面板复选框必须**读写设置**（2026-10-07，审计 §4.145）──────────
+// Typora 的 `fileSearchCaseSensitive` / `fileSearchWholeWord` 经 `JSBridge.putSetting(...)` **持久化**
+// （`main.js` 实测）；Mellow 的侧栏复选框此前是 `useState(false)` **字面量** ⇒ 重启即回默认
+// （矩阵原判「选项未暴露」是**错的** —— 选项早就暴露了，缺的是持久化）。
+// 判据三层，缺任一即缺口未真正关闭：
+//   ① 设置存在且 **默认 false**（取 true 会改变现状）；② 面板复选框 `onChange` 写**同一个设置**；
+//   ③ `applySetting` 有对应 case —— 否则在设置页改完**已挂载的面板不会同步**（两处显示分叉）。
+{
+  for (const [id, label] of [['files.searchCaseSensitive', '区分大小写'], ['files.searchWholeWord', '全词匹配']]) {
+    const esc = id.replace(/\./g, '\\.');
+    if (!new RegExp(`id: '${esc}'[^}]*type: 'toggle'[^}]*defaultValue: false`).test(settingsSource)) {
+      fail(`settings 缺少 ${id}（toggle / **默认 false**）—— 默认必须 false，否则会改变现状（${label}）`);
+    }
+    if (!new RegExp(`persistBoolSetting\\('${esc}',`).test(appSource)) {
+      fail(`App.tsx 的侧栏「${label}」复选框未写设置 ${id} ⇒ 重启即回默认（缺口未关闭）`);
+    }
+  }
+  if (!/case 'settings\.searchOptions'/.test(appSource)) {
+    fail('App.tsx 的 applySetting 缺 `settings.searchOptions` case ⇒ 设置页改动不会同步到面板（两处显示分叉）');
+  }
+  // canary：正 / 负（改名）
+  const PANEL_WRITE_RE = /persistBoolSetting\('files\.searchCaseSensitive',/;
+  if (!PANEL_WRITE_RE.test("setSearchCase(v); persistBoolSetting('files.searchCaseSensitive', v);")) {
+    fail('搜索选项写盘 canary 失效：正样本未命中');
+  }
+  if (PANEL_WRITE_RE.test("setSearchCase(v); persistBoolSetting('files.searchCaseSensitiveX', v);")) {
+    fail('搜索选项写盘 canary 失效：负样本（改名）被判为命中');
+  }
+}
+
     // ── 矩阵条目与 **D 表**的一致性（2026-10-07，审计 §4.140）──────────────────────
     // 【为什么补】D 表（master-plan §12）是**裁决的唯一可发现处**。实测发现 **3 条**矩阵条目
     //   与 D 表**矛盾**：`sortType`（D-AG 明言「功能已等价」）· `useTreeStyle`（D-AK 明言「不是缺一个开关」）·
@@ -2263,6 +2293,42 @@ if (cssLayerAnchor === undefined) {
       if (emptyCount < 30) {
         fail(`矩阵里 \`mellow\` 为空的条目只有 ${emptyCount} 条（下限 30，2026-10-07 基线）`
           + ' —— 本判据的适用域萎缩，判据会空转');
+      }
+    }
+
+    // ── `status: implemented` 却**自述缺口**（2026-10-07，审计 §4.145）──────────────────────
+    // 【为什么补】`caseSensitive` / `wholeWord` 两条**自己写着**「未作为持久化设置（Typora 会记住）」，
+    //   而 `status` 却是 `implemented` —— 而**同一件事**在相邻两条（`fileSearchCaseSensitive` /
+    //   `fileSearchWholeWord`）里被判成 `gap`。⇒ **同一缺陷被分成两种 status**，且**没有任何判据发现**。
+    //   （PITFALLS §4.143「相邻条目互相矛盾可以长期存活」的实例。）
+    // 【取证】Typora `main.js`：查找面板与文件搜索面板的选项都走 `JSBridge.putSetting(...)`
+    //   ⇒ **Typora 会持久化** ⇒ 不持久化就是**缺口**，`implemented` 不成立。
+    // ⚠️ **边界（如实声明）**：本判据只覆盖**一种措辞**（「未作为持久化设置」）。
+    //   它**不能**取代人逐条核对 —— 同类矛盾可以用别的措辞表达（本轮另两条的措辞就不同）。
+    {
+      let mxEntries4 = [];
+      try {
+        mxEntries4 = (JSON.parse(read('tests/parity/fixtures/typora-preferences-matrix.json')).entries) ?? [];
+      } catch { /* 上游已有判据报错 */ }
+      const SELF_GAP_RE = /未作为持久化设置/;
+      const judgeSelfGap = (entries) => entries
+        .filter((e) => e.status === 'implemented')
+        .filter((e) => SELF_GAP_RE.test(`${e.behaviorNote ?? ''} ${e.note ?? ''}`))
+        .map((e) => e.typora);
+      const selfGapBad = judgeSelfGap(mxEntries4);
+      if (selfGapBad.length > 0) {
+        fail(`偏好矩阵里 \`status: implemented\` 却**自述缺口**（${selfGapBad.length}）：${selfGapBad.join('、')}`
+          + ' —— 条目自己说「未作为持久化设置」，而 Typora 会持久化 ⇒ 那是 `gap`，不是 `implemented`');
+      }
+      // canary：三向（正样本 / `gap` 说同样的话 / `implemented` 但无该措辞）
+      if (judgeSelfGap([{ typora: 'a', status: 'implemented', note: '但未作为持久化设置' }]).length !== 1) {
+        fail('自述缺口判据 canary 失效：正样本未命中');
+      }
+      if (judgeSelfGap([{ typora: 'a', status: 'gap', note: '但未作为持久化设置' }]).length !== 0) {
+        fail('自述缺口判据 canary 失效：`gap` 条目（合法）被误报');
+      }
+      if (judgeSelfGap([{ typora: 'a', status: 'implemented', note: '已持久化（设置 id 见 mellow）' }]).length !== 0) {
+        fail('自述缺口判据 canary 失效：无该措辞的 implemented 条目被误报');
       }
     }
 
