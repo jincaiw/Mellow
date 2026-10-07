@@ -188,7 +188,7 @@ const DECIDED_ADRS = [
 // 此前**只写在 master-plan 的轮次叙述里**，审计登记表一行都没有 ⇒ 本门禁报 `Pending decisions: 无`，
 // 即**项目在机器可读层面声称「没有待裁决项」**。ADR-0034 是它们的载体（**未擅自改任何默认值**）。
 const PENDING_ADRS = [
-  ['docs/adr/ADR-0034-preference-default-deviations-2026-10-07.md',
+  ['docs/adr/ADR-0034-preference-deviations-2026-10-07.md',
     '偏好默认值 5 项偏离 Typora（highlight / sub·sup / mermaid / zoomByMouse）'],
 ];
 for (const [p, what] of PENDING_ADRS) {
@@ -197,9 +197,12 @@ for (const [p, what] of PENDING_ADRS) {
     continue;
   }
   const src = read(p);
-  // 未裁决前**必须**是 Proposed：放宽到「行内任意位置出现 Accepted」会被正文里的字样满足，
-  // 故沿用 DECIDED 那侧的写法（只认 **Status:** 那一行）。
-  if (!/\*\*Status:\*\*[^\n]*Proposed/.test(src)) {
+  // 未裁决前**必须**是 Proposed。判据形态（2026-10-07 收紧，审计 §4.121）：
+  // **只认行首的** `**Status:**` 行 —— 原写法 `/\*\*Status:\*\*[^\n]*Proposed/` 无锚点，
+  // 会被**正文里的一句引用**满足（实测：ADR-0034 的「机器可读化」节里写着
+  // 「…其 `**Status:**` 行仍为 `Proposed`…」，于是**把 Status 改成 Accepted 后判据仍然通过**）。
+  // 这是本仓反复记过的「**护栏被自己写的说明文字满足**」，这次是**我写判据时踩进去的**。
+  if (!/^\*\*Status:\*\*[^\n]*Proposed/m.test(src)) {
     fail(`${p}（${what}）尚未裁决，状态必须是 Proposed；若已裁决，请移入 DECIDED_ADRS 并写明结论`);
   }
 }
@@ -207,16 +210,33 @@ for (const [p, what] of PENDING_ADRS) {
 {
   const PROPOSED_LINE = '**Status:** **Proposed**（2026-10-01）—— 待裁决；裁决前不生效';
   const ACCEPTED_LINE = '**Status:** **Accepted**（2026-10-01）—— 已裁决';
-  if (!/\*\*Status:\*\*[^\n]*Proposed/.test(PROPOSED_LINE)) {
+  const RE = /^\*\*Status:\*\*[^\n]*Proposed/m;
+  if (!RE.test(PROPOSED_LINE)) {
     fail('待裁决 ADR 状态护栏 canary 失效：合法的 Proposed 状态行未被检出');
   }
-  if (/\*\*Status:\*\*[^\n]*Proposed/.test(ACCEPTED_LINE)) {
+  if (RE.test(ACCEPTED_LINE)) {
     fail('待裁决 ADR 状态护栏 canary 失效：Accepted 状态行被误判为 Proposed');
   }
   // 反例锁：正文里出现「Proposed」字样不得让一个没有 Status 行的文件过关
   const BODY_ONLY = '本 ADR 原为 Proposed，现已裁决。';
-  if (/\*\*Status:\*\*[^\n]*Proposed/.test(BODY_ONLY)) {
+  if (RE.test(BODY_ONLY)) {
     fail('待裁决 ADR 状态护栏过宽：正文里的 Proposed 字样被当成了状态行');
+  }
+  // ⚠️ 2026-10-07 新增反例（**本轮实测踩到的形态**）：正文里**引用** `**Status:**` 这一写法
+  // —— 无锚点正则会把它当成状态行；加了 `^` 锚点后不会（该行以 `>` 或中文开头）。
+  const ACCEPTED_WITH_QUOTED_STATUS = [
+    '**Status:** **Accepted**（2026-10-01）—— 已裁决',
+    '',
+    '> 判据只认 `**Status:**` 那一行；裁决后必须保持 `Proposed` 直到有人拍板。',
+  ].join('\n');
+  if (RE.test(ACCEPTED_WITH_QUOTED_STATUS)) {
+    fail('待裁决 ADR 状态护栏过宽：**正文里引用的 `**Status:**`** 被当成了状态行'
+      + '（这正是 2026-10-07 实测踩到的形态 —— 判据必须锚定行首）');
+  }
+  // 反向：状态行**不在文件首行**时仍要能检出（锚点是行首，不是文件首）
+  const LATE_STATUS = ['# ADR-9999 — x', '', '正文', '', '**Status:** **Proposed**（2026-10-01）'].join('\n');
+  if (!RE.test(LATE_STATUS)) {
+    fail('待裁决 ADR 状态护栏 canary 失效：非首行的 Proposed 状态行未被检出');
   }
 }
 for (const [p, what, decision] of DECIDED_ADRS) {
@@ -226,8 +246,8 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   }
   const src = read(p);
   // 状态行的 Accepted 可能被加粗（`**Status:** **Accepted**`），故用 [^\n]* 容错，
-  // 但**不得**放宽到「行内任意位置出现 Accepted」（那会被正文里的字样满足）。
-  if (!/\*\*Status:\*\*[^\n]*Accepted/.test(src)) {
+  // 但**必须锚定行首**（2026-10-07 收紧，审计 §4.121）：无锚点会被**正文里引用的 `**Status:**`** 满足。
+  if (!/^\*\*Status:\*\*[^\n]*Accepted/m.test(src)) {
     fail(`${p} 已于 2026-09-30 裁决为 Accepted（${decision}），不得退回 Proposed 或删除`);
   }
 }
@@ -401,8 +421,8 @@ for (const [p, what, decision] of DECIDED_ADRS) {
         + ' —— 超出的格在 GFM 渲染时被**静默丢弃**（D-AB 就是这样整条从渲染视图里消失的）');
     }
   }
-  if (declRows < 38) {
-    fail(`master-plan 只解析出 ${declRows} 个 D 表声明行（下限 38 = 立此判据时的基线 + 2026-10-06 新增的 D-AJ）—— `
+  if (declRows < 40) {
+    fail(`master-plan 只解析出 ${declRows} 个 D 表声明行（下限 40 = 立此判据时的基线 + 2026-10-06 的 D-AJ + 2026-10-07 的 D-AK/D-AO）—— `
       + '表被削空会让「凡被引用的编号都有声明行」退化成**空真**；'
       + '若确实删过条目，请同步下调下限并说明（解析器漏成员必须响亮失败）');
   }
@@ -427,6 +447,96 @@ for (const [p, what, decision] of DECIDED_ADRS) {
     }
     if (declared.has(id)) {
       fail(`D 表例外 ${id} 自相矛盾：它既被登记为「无声明行」，又确实有了声明行 —— 请删除该例外`);
+    }
+  }
+
+  // ── 偏好矩阵的载体引用必须**解析得到**（2026-10-07，审计 §4.121）──────────────
+  // 分工：**形状**（字段齐不齐、kind 与 ref 形态是否匹配）在 `verify-settings-contract.mjs` ⑭ 节；
+  // **解析**放这里 —— 因为本文件已经持有三份数据：**D 表声明行**（`declared`，上面刚算好）、
+  // **台账**（模块级的 `ledger`）与 **ADR 目录**。放到那边会**把同一个 D 表解析器写第二份**。
+  //
+  // 立此条的原因（实测）：矩阵里有 **5 条 `deviation.kind === 'undecided'`**
+  // （`enableHighlight` / `enableSubscript` / `enableSuperscript` / `enableDiagram` / `zoomByMouse`）
+  // 与 **5 条行为轴的 `behavior: differs`**（`autoEscapeImageURL` / `useRelativePathForImg` /
+  // `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter`）—— 它们此前**只写在 master-plan 的轮次叙述里**，
+  // 审计的「待裁决项登记表（**唯一声明处**）」**一行都没有** ⇒ 本门禁据此报 `Pending decisions: 无`：
+  // **项目在机器可读层面声称「没有任何待裁决项」**，而实际有 10 项。
+  {
+    const MX_PATH = 'tests/parity/fixtures/typora-preferences-matrix.json';
+    let mx = null;
+    try { mx = JSON.parse(read(MX_PATH)); } catch { fail(`偏好矩阵缺失或不是合法 JSON：${MX_PATH}`); }
+    if (mx !== null) {
+      const mxEntries = mx.entries ?? [];
+      if (mxEntries.length < 80) {
+        fail(`偏好矩阵只解析出 ${mxEntries.length} 条（下限 80）—— 解析面漂移会让本判据空转`);
+      }
+      const ledgerIds = new Set((ledger.items ?? ledger).map((it) => it.id));
+      const adrDir = resolve(root, 'docs/adr');
+      const adrFileOf = (id) => (existsSync(adrDir)
+        ? readdirSync(adrDir).find((f) => f.startsWith(`${id}-`) && f.endsWith('.md'))
+        : undefined);
+      const isProposed = (id) => {
+        const f = adrFileOf(id);
+        // ⚠️ 必须锚定**行首**：无锚点会被 ADR 正文里引用的 `**Status:**` 满足
+        // （2026-10-07 实测：本判据首版就是这样，注入「ADR 改 Accepted」后**仍然通过**）。
+        return f !== undefined && /^\*\*Status:\*\*[^\n]*Proposed/m.test(read(`docs/adr/${f}`));
+      };
+      // 谓词（判据与 canary 共用同一份）
+      const resolvesRef = (kind, ref) => {
+        if (kind === 'deliberate') return declared.has(ref);
+        if (kind === 'gap') return ledgerIds.has(ref);
+        if (kind === 'undecided') return isProposed(ref);
+        return false;
+      };
+      const unresolved = [];
+      let checkedRefs = 0;
+      for (const e of mxEntries) {
+        const dev = e.deviation;
+        if (dev?.kind === 'undecided' && typeof dev.pendingRef === 'string' && dev.pendingRef.trim() !== '') {
+          checkedRefs += 1;
+          if (!isProposed(dev.pendingRef.trim())) {
+            unresolved.push(`${e.typora}(deviation.pendingRef ${dev.pendingRef} 解析不到：ADR 不存在或已不是 Proposed)`);
+          }
+        }
+        const d = e.disposition;
+        if (d !== undefined && typeof d?.ref === 'string' && d.ref.trim() !== '' && typeof d?.kind === 'string') {
+          checkedRefs += 1;
+          if (!resolvesRef(d.kind, d.ref.trim())) {
+            const what = d.kind === 'deliberate' ? 'D 表里没有该声明行'
+              : d.kind === 'gap' ? '台账里没有该 id'
+                : 'ADR 不存在或已不是 Proposed';
+            unresolved.push(`${e.typora}(disposition ${d.kind} → ${d.ref}：${what})`);
+          }
+        }
+      }
+      if (unresolved.length > 0) {
+        fail(`偏好矩阵的载体引用解析失败（${unresolved.length}）：${unresolved.join(', ')} —— `
+          + '载体必须是**真的解析得到**的（`deliberate`⇒D 表声明行 / `gap`⇒台账 id / `undecided`⇒仍为 Proposed 的 ADR）；'
+          + '解析不到 = 这条「已登记」是空的');
+      }
+      // 防空转：真实数据必须真的**解析过**引用（否则本判据是空壳）
+      if (checkedRefs < 8) {
+        fail(`偏好矩阵只解析出 ${checkedRefs} 个载体引用（下限 8）—— 判据会空转（字段被改名/删除时不会报）`);
+      }
+      // canary：三向（每种 kind 的「解析得到 / 解析不到」都要能区分）
+      if (!resolvesRef('deliberate', 'D-AK') || resolvesRef('deliberate', 'D-ZZ')) {
+        errors.push('偏好矩阵载体解析 canary 失效：deliberate 的 D 声明行判定不能区分正/负样本');
+      }
+      if (!resolvesRef('gap', 'P0-EDITOR-005') || resolvesRef('gap', 'P0-NO-SUCH-ITEM')) {
+        errors.push('偏好矩阵载体解析 canary 失效：gap 的台账 id 判定不能区分正/负样本');
+      }
+      if (!resolvesRef('undecided', 'ADR-0034') || resolvesRef('undecided', 'ADR-9999')) {
+        errors.push('偏好矩阵载体解析 canary 失效：undecided 的 ADR 判定不能区分正/负样本');
+      }
+      if (resolvesRef('', 'D-AK')) {
+        errors.push('偏好矩阵载体解析 canary 失效：非法 kind 被判成可解析');
+      }
+      // 本判据**不得**与上面那条「凡被引用的 D 编号必须有声明行」互相冒充：
+      // 后者的引用源是**文档**（plan/audit/ADR），本条的引用源是**矩阵**。用真实数据各验一次。
+      if (!declared.has('D-AK') || !declared.has('D-AO') || !isProposed('ADR-0034')) {
+        errors.push('偏好矩阵载体解析 canary 失效：真实数据里 D-AK/D-AO 应有声明行、ADR-0034 应为 Proposed'
+          + '（若 ADR-0034 已裁决，请把矩阵里的 undecided 一并改掉）');
+      }
     }
   }
 

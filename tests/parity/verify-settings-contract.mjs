@@ -1011,41 +1011,31 @@ if (cssLayerAnchor === undefined) {
       fail('偏好项矩阵没有任何 deviation 条目 —— 与 Typora 的默认值不可能全部一致，疑为登记缺失');
     }
 
-    // ── 「待裁决」必须真的有人管（2026-10-07，审计 §4.120）──────────────────
-    // 立此条的原因（实测）：矩阵里有 5 条 `deviation.kind === 'undecided'`
-    // （`enableHighlight` / `enableSubscript` / `enableSuperscript` / `enableDiagram` / `zoomByMouse`），
-    // 而它们**只出现在 master-plan 的轮次叙述里**（「5 项待裁决（方案与 PRD 均未见表述）」），
-    // 审计的「待裁决项登记表（**唯一声明处**）」**一行都没有** ⇒ 发布门禁据此报
-    // `Pending decisions: 无` —— **项目在机器可读层面声称「没有待裁决项」**，而实际有 5 项。
+    // ── 载体字段的**形状**（2026-10-07，审计 §4.120 / §4.121）────────────────
+    // ⚠️ 分工：**形状**在本节（矩阵自己的字段是否齐、kind 与 ref 的形态是否匹配）；
+    //    **引用是否真的解析得到**（D 声明行 / 台账 id / ADR 且为 Proposed）在
+    //    `verify-release-gate.mjs` —— 那里已持有 D 表解析器、台账与 ADR 三份数据，
+    //    放这里会**把同一个 D 表解析器写第二份**（本仓明令避免）。
+    //
+    // 立此条的原因（实测）：矩阵里 5 条 `deviation.kind === 'undecided'`
+    // （`enableHighlight` / `enableSubscript` / `enableSuperscript` / `enableDiagram` / `zoomByMouse`）
+    // 与 5 条行为轴的 `behavior: differs`（`autoEscapeImageURL` / `useRelativePathForImg` /
+    // `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter`）
+    // 此前**只出现在 master-plan 的轮次叙述里**，审计的「待裁决项登记表（**唯一声明处**）」**一行都没有**
+    // ⇒ 发布门禁据此报 `Pending decisions: 无` —— **项目在机器可读层面声称「没有待裁决项」**。
     // 这正是 ADR-0029 登记表头部自陈的那半句：「要补上这一半**需给标记定机器可读写法**」。
-    // ⇒ 本判据就是那条写法：**`undecided` 必须带 `pendingRef`，且它指向的 ADR 必须真的存在且仍为 Proposed**。
     const badPending = [];
+    // 行为轴：`behavior === 'differs'` ⇒ 必须有 `disposition: { kind, ref }`，且形态与 kind 匹配
+    // ⚠️ `gap` 的形态必须**排除 `D-XX`** —— 首版写成「`[A-Z0-9]+(-[A-Z0-9]+)+`」（通用「大写连字符」形态），
+    //    结果 `D-AK` **也匹配** ⇒ canary 当场抓到「gap 判定不能区分正/负样本」。
+    //    台账 id 的实际形态是 `P0-<WORD 或含数字的词>-<三位数>`（如 `P0-I18N-001`）。
+    const REF_SHAPE = { deliberate: /^D-[A-Z]{1,2}$/, gap: /^P0-[A-Z0-9]+-\d{3}$/, undecided: /^ADR-\d{4}$/ };
     for (const e of entries) {
       const kind = e.deviation?.kind;
       if (kind === 'undecided') {
         const ref = e.deviation?.pendingRef;
-        if (typeof ref !== 'string' || ref.trim() === '') {
-          badPending.push(`${e.typora}(undecided 未写 pendingRef)`);
-          continue;
-        }
-        const m = /^ADR-(\d{4})$/.exec(ref.trim());
-        if (m === null) {
-          badPending.push(`${e.typora}(pendingRef 形态非法：${ref})`);
-          continue;
-        }
-        const dir = resolve(root, 'docs/adr');
-        const file = existsSync(dir)
-          ? readdirSync(dir).find((f) => f.startsWith(`ADR-${m[1]}-`) && f.endsWith('.md'))
-          : undefined;
-        if (file === undefined) {
-          badPending.push(`${e.typora}(pendingRef ${ref} 没有对应的 ADR 文件)`);
-          continue;
-        }
-        const src = readFileSync(resolve(dir, file), 'utf8').replace(/\r\n/g, '\n');
-        // 与发布门禁同一写法：只认 `**Status:**` 那一行（放宽到全文会被正文里的字样满足）
-        if (!/\*\*Status:\*\*[^\n]*Proposed/.test(src)) {
-          badPending.push(`${e.typora}(pendingRef ${ref} 已不是 Proposed —— 裁决后应把 kind 改为 deliberate 并去掉 pendingRef)`);
-        }
+        if (typeof ref !== 'string' || ref.trim() === '') badPending.push(`${e.typora}(undecided 未写 pendingRef)`);
+        else if (!/^ADR-\d{4}$/.test(ref.trim())) badPending.push(`${e.typora}(pendingRef 形态非法：${ref})`);
       }
       if (kind === 'deliberate') {
         const carrier = e.deviation?.carrier;
@@ -1053,28 +1043,52 @@ if (cssLayerAnchor === undefined) {
           badPending.push(`${e.typora}(deliberate 未写 carrier：依据在哪)`);
         }
       }
+      if (e.behavior === 'differs') {
+        const d = e.disposition;
+        if (d === undefined || typeof d !== 'object') {
+          badPending.push(`${e.typora}(behavior=differs 未写 disposition)`);
+          continue;
+        }
+        if (!['deliberate', 'gap', 'undecided'].includes(d.kind)) {
+          badPending.push(`${e.typora}(disposition.kind=${d.kind})`);
+          continue;
+        }
+        if (typeof d.ref !== 'string' || d.ref.trim() === '') {
+          badPending.push(`${e.typora}(disposition 未写 ref)`);
+          continue;
+        }
+        if (!REF_SHAPE[d.kind].test(d.ref.trim())) {
+          badPending.push(`${e.typora}(disposition.kind=${d.kind} 的 ref「${d.ref}」形态不匹配：`
+            + 'deliberate⇒`D-`+编号 / gap⇒台账 id / undecided⇒`ADR-`+四位编号）');
+        }
+      }
     }
     if (badPending.length > 0) {
       fail(`偏好项矩阵的「待裁决 / 有意差异」缺机器可读载体（${badPending.length}）：${badPending.join(', ')}`);
     }
-    // canary：三向（undecided 缺 pendingRef / deliberate 缺 carrier / 合法形态不误报）
+    // canary：六向（各字段的「缺 / 形态不匹配 / 合法不误报」），与判据**共用同一份 REF_SHAPE**
     {
-      const kindOf = (e) => e?.deviation?.kind;
-      const hasRef = (e) => typeof e?.deviation?.pendingRef === 'string' && e.deviation.pendingRef.trim() !== '';
-      if (kindOf({ deviation: { kind: 'undecided', reason: 'x' } }) !== 'undecided' || hasRef({ deviation: { kind: 'undecided' } })) {
-        errors.push('偏好项待裁决载体 canary 失效：缺 pendingRef 的 undecided 未被判为缺失');
+      const shapeOk = (kind, ref) => ['deliberate', 'gap', 'undecided'].includes(kind)
+        && typeof ref === 'string' && ref.trim() !== '' && REF_SHAPE[kind].test(ref.trim());
+      if (shapeOk('deliberate', 'D-AK') !== true || shapeOk('deliberate', 'ADR-0034') !== false) {
+        errors.push('偏好项载体形状 canary 失效：deliberate 的 D-XX 判定不能区分正/负样本');
       }
-      if (!hasRef({ deviation: { kind: 'undecided', pendingRef: 'ADR-0034' } })) {
-        errors.push('偏好项待裁决载体 canary 失效：合法 pendingRef 未被识别');
+      if (shapeOk('gap', 'P0-EDITOR-005') !== true || shapeOk('gap', 'D-AK') !== false) {
+        errors.push('偏好项载体形状 canary 失效：gap 的台账 id 判定不能区分正/负样本');
       }
-      if (typeof { deviation: { kind: 'deliberate', carrier: '' } }.deviation.carrier === 'string'
-        && { deviation: { kind: 'deliberate', carrier: '' } }.deviation.carrier.trim() !== '') {
-        errors.push('偏好项待裁决载体 canary 失效：空 carrier 未被判为缺失');
+      if (shapeOk('undecided', 'ADR-0034') !== true || shapeOk('undecided', 'D-AO') !== false) {
+        errors.push('偏好项载体形状 canary 失效：undecided 的 ADR 判定不能区分正/负样本');
       }
-      // 真实数据必须至少有一条 undecided（否则本判据会**空转**）
+      if (shapeOk('', 'D-AK') !== false) {
+        errors.push('偏好项载体形状 canary 失效：非法 kind 未被拒');
+      }
+      // 真实数据必须两条轴都还有 undecided（否则本判据会**空转**）
       if (!entries.some((e) => e.deviation?.kind === 'undecided')) {
-        errors.push('偏好项待裁决载体判据**空转**：矩阵里已无 undecided 条目 —— '
+        errors.push('偏好项载体判据**空转**：矩阵里已无 deviation.undecided —— '
           + '若确实全部裁决完，请把本条判据连同 pendingRef 约定一并收掉，而不是留一个恒真的判据');
+      }
+      if (!entries.some((e) => e.behavior === 'differs' && e.disposition?.kind === 'undecided')) {
+        errors.push('偏好项载体判据**空转**：矩阵里已无 behavior=differs 且 undecided 的条目 —— 同上，请收掉本判据');
       }
     }
 

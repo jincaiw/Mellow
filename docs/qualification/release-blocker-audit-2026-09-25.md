@@ -60,7 +60,7 @@ Release verdict: NO-GO：6 项未闭环
 | 14 | §4.95 | **3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）去留 —— 其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
-| 17 | §4.120 | **偏好默认值 5 项「未登记的待裁决偏离」**：`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` 的默认值均与 Typora 默认相反（Mellow 开、Typora 关） | **待裁决** —— ⚠️ 这 5 项此前**只在 master-plan 的轮次叙述里**（「5 项待裁决（方案与 PRD 均未见表述）」），**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值**（改默认会改变既有文档的渲染结果，属产品决策） | `docs/adr/ADR-0034-preference-default-deviations-2026-10-07.md` |
+| 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **待裁决（10 问）** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`） | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -7500,6 +7500,105 @@ canary 6 向、与判据**共用同一组谓词**；**注入验证 3/3**（放�
    否则门禁会**替项目声称「没有待裁决项」**。
 4. **canary 的方向语义要写在判据旁边**（§4.130 的补充）：写反了会「对正确行为报错」，
    而**写在旁边**能让下一个人不必重新推导。
+
+
+
+## 4.121 把「**行为轴**」也纳入机器可读纪律 + 抓到一处**既有的判据缺陷**（「状态行」判据可被正文引用满足）（2026-10-07）
+
+### 一、动因：上一轮只补了**一条轴**
+
+§4.120 把「偏好默认值」那条轴的 5 项 `undecided` 补上了机器可读载体（`pendingRef`），
+但**另一条轴没管**：`behavior: differs`（**Mellow 没有该选项、且行为与 Typora 默认不同**）共 **8 项**，
+它们同样**只写在 master-plan 的轮次叙述里**，**没有任何载体**。
+
+⇒ 本轮把两条轴**统一**：`behavior: differs` 的条目**必须**带
+`disposition: { kind, ref }`，`kind ∈ {deliberate, gap, undecided}`，且 `ref` 的**形态决定它要解析成什么**：
+
+| `kind` | `ref` 形态 | 必须解析到 |
+|---|---|---|
+| `deliberate` | `D-`+编号 | master-plan §12 的 **D 表声明行** |
+| `gap` | 台账 id（`P0-<…>-<NNN>`） | `typora-parity-ledger.json` 里**存在** |
+| `undecided` | `ADR-`+四位编号 | ADR 文件存在**且 `**Status:**` 行仍为 `Proposed`** |
+
+### 二、8 项的处置分配（**依据是既有判定，不是本轮新造的判断**）
+
+| 项 | 处置 | 依据（可回查） |
+|---|---|---|
+| `useTreeStyle` | **deliberate → `D-AK`** | 轮次表**第四十二轮**：「Typora 默认 fileList vs Mellow 默认 FileTree，判为**有意 differs**」 |
+| `wordsPerMinute` | **deliberate → `D-AO`** | 轮次表**第二十九轮**：「Mellow 阅读时长是 CJK-aware…属**有意取舍**非缺陷」 |
+| `presetSpellCheck` | **gap → `P0-EDITOR-005`** | 台账项「拼写检查词典与替换建议」（`IMPL`，未闭环）—— **依赖它，所以载体就是它** |
+| `autoEscapeImageURL` | **undecided → ADR-0034 Q6** | 轮次表**第二十七轮**曾判「**2 项 differs（真缺陷：图片相对/绝对路径、URL 转义）**」，而**第二十九轮只把「真缺陷」这个措辞改成「未必是缺陷但需登记理由」，从未重判** ⇒ **必须重新裁决** |
+| `useRelativePathForImg` | **undecided → ADR-0034 Q7** | 同上（同一条判定里的两项） |
+| `mathFormatOnCopy` | **undecided → ADR-0034 Q8** | 需设计（同步复制 vs 异步渲染） |
+| `noLegacyMath` | **undecided → ADR-0034 Q9** | **需先定义 legacy 数学语法的边界**（本轮未取到该集合，故不能判） |
+| `wordCountDelimiter` | **undecided → ADR-0034 Q10** | 需裁决（是否提供 WORD/CHAR/LINE/TIME 四模式） |
+
+⇒ 新增 **D-AK / D-AO** 两行（D 表声明行 38 → **40**）；ADR-0034 从 5 问扩到 **10 问**（并改名为 `…-preference-deviations-…`，因为它现在覆盖两条轴）。
+
+### 三、⚠️ 连带更正：**D-AA 的一句「一致」站不住**
+
+D-AA 行原文写「`insertLocalImage` 在同根时已默认输出相对路径，**与 Typora 该选项默认态一致**」。
+本轮取一手证据（本机 Typora 1.14.9 的 `frame.js` / `main.js`）：
+
+- `DEFAULT_OPTIONS.useRelativePathForImg = false`；
+- `getLocalRootUrlForInsert()` 的取值链是「per-doc root → （`useRelativePathForImg` 时）当前文件目录 → 空串」
+  ⇒ 默认态 root 为空；
+- `resolveImagePath` 走「`!useRelativePathForImg` 或 root 不匹配 ⇒ **原样返回**」分支
+  ⇒ **Typora 默认写「绝对」路径**。
+
+而 Mellow 同根时写**相对**路径 ⇒ **两者默认行为不同**，与偏好矩阵的 `useRelativePathForImg: differs` **一致**，
+与 D-AA 那句「一致」**矛盾**。⇒ 已**就地更正为如实表述**（**D-AA 的裁决「不加菜单开关」不受影响**，
+改的是那句**未经一手核实的依据**）。是否改行为见 **ADR-0034 Q7**。
+
+> **教训**：D 表条目里的**依据**也会过期/失真 —— 「某处一致」这种**未经核实**的断言
+> 会和偏好矩阵这种**有实测**的登记处**互相矛盾**，而**两者都在「唯一可发现处」附近**。
+
+### 四、⚠️ 本轮抓到的**既有判据缺陷**：「状态行」判据可被**正文里的一句引用**满足
+
+**怎么发现的**：给「矩阵载体解析」写注入验证时，**注入「把 ADR-0034 改成 Accepted」⇒ 门禁仍然通过**。
+追下去发现 `isProposed()` 用的是**无锚点**正则 `/\*\*Status:\*\*[^\n]*Proposed/`，
+而 ADR-0034 的「机器可读化」节里**我自己写了一句话**：
+
+> 「…`disposition.ref` 必须真的解析得到…其 `` `**Status:**` `` 行仍为 `Proposed`（裁决后必须改 `kind`，否则红）；」
+
+⇒ 这句话**满足**了那个正则 ⇒ **把真 Status 行改成 Accepted 之后，判据照样通过**。
+
+**影响面（普查结果）**：**34 份 ADR 里只有 ADR-0034 有 2 处 `**Status:**`**（因为是我写的这句），
+⇒ 该缺陷**此前是潜伏的**，本轮被我自己的说明文字**触发**。
+但它同时存在于 `PENDING_ADRS` 与 `DECIDED_ADRS` **两处既有判据**（同一写法）。
+
+**修复**：三处一律**锚定行首** `/^\*\*Status:\*\*…/m`（正文里的引用行以 `>` 或中文开头，故不会被匹配）；
+并给 canary **补一条本轮实测的负样本**（「状态行 + 正文里引用 `**Status:**`」的拼接样本必须**不被匹配**）
++ 一条「状态行不在文件首行时仍要检出」的正样本（锚点是**行首**，不是**文件首**）。
+**注入验证**：改 ADR-0034 为 Accepted ⇒ 门禁报 **10 处解析失败**（5 个 `pendingRef` + 5 个 `undecided` 处置）✓。
+
+> **教训（本仓第 N 次）**：**护栏会被自己写的说明文字满足** ——
+> 而这次是**在写护栏的同一轮里**踩进去的。**凡对文本做判据，先问「我自己的解释性文字会不会满足它」。**
+> 另一个可复用的点：**注入验证的价值不只是「证明判据能红」，更是「证明它红的理由是对的」** ——
+> 本轮第一次注入时判据**没红**，我一度以为「注入没生效」，实际是**判据本身有洞**。
+
+### 五、护栏分工（**形状 vs 解析**，避免同一个解析器写两份）
+
+| 判据 | 位置 | 管什么 |
+|---|---|---|
+| 字段齐不齐、`kind` 与 `ref` 的**形态**是否匹配 | `verify-settings-contract.mjs` ⑭ | **形状**（矩阵自己的字段） |
+| `ref` 是否**真的解析得到**（D 声明行 / 台账 id / Proposed ADR） | `verify-release-gate.mjs` | **解析**（那里已持有 D 表解析器、台账、ADR 三份数据） |
+
+⇒ 上一轮写在 settings-contract 的 `pendingRef → ADR` 解析**已移到门禁**，避免把同一个 D 表解析器写第二份。
+两处各带 canary，且**都带防空转断言**（`checkedRefs < 8` 即失败；矩阵里若已无 `undecided` 则要求把判据**收掉**）。
+
+**注入验证（6 向，全部通过）**：`deliberate` 的 ref 指向不存在的 `D-`+两位占位字母 / `gap` 的 ref 指向不存在的台账 id /
+`pendingRef` 指向不存在的 ADR / ADR 改成 `Accepted` / 删掉一条 `disposition` / `kind` 与 `ref` 形态不匹配。
+
+### 六、施工中我自己的三个错（都当场被自己的判据/护栏抓到）
+
+1. **`gap` 的形态正则写宽了**：首版 `^[A-Z0-9]+(-[A-Z0-9]+)+$` **把 `D-AK` 也匹配** ⇒ canary 当场报
+   「gap 判定不能区分正/负样本」。改用台账 id 的真实形态 `^P0-[A-Z0-9]+-\d{3}$`（实测 50 个 id 全中，
+   ⚠️ 注意 `P0-I18N-001` 中间**含数字**，故不能用 `[A-Z]+`）。
+2. **在 D 表单元格里写了转义竖线 `\|`** ⇒ `split('|')` 照样切 ⇒ D-AA 行变成 **10 格** ⇒
+   **D 表判据当场报出来**（正是它存在的理由：多余格在 GFM 渲染时会被静默丢弃）。改用无竖线的措辞。
+3. **解释性文字写进了 `D-`+两位占位字母 这种占位编号** ⇒ 被 D 编号**引用扫描器**当成真引用（`D-[A-Z]{1,2}` 匹配）
+   ⇒ 门禁报「`D-`+两位占位字母 被引用但没有声明行」。改为 `D-`+编号 的写法。
 
 
 
