@@ -9918,6 +9918,90 @@ JSBridge.putSetting("caseSensitive", t.caseSensitive)
    不能因为「试过了」就当作已核实。
 
 
+## 4.150 实装**渲染期智能标点**（Typora `convertSmartOnRender`）—— §4.149 认定的「唯一可自主项」（2026-10-08）
+
+### 一、动因
+
+§4.149 的全量评估结论是「**可自主面已耗尽**，只剩 `SmartyPantsOnRendering` 一项」。
+本轮把它做掉。
+
+### 二、一手证据（Typora `main.js` / `DEFAULT_OPTIONS`）
+
+```
+// DEFAULT_OPTIONS（三个键，默认都是 !1）
+smartQuote:!1, smartDash:!1, convertSmartOnRender:!1
+// 输入分支（引号）
+File.isMac && File.option.smartQuote && !File.option.convertSmartOnRender && /["']$/.exec(l) && …
+    l = l.replace(/["']$/, e => u.userQuote(…))
+// 渲染分支
+File.option.convertSmartOnRender && !document.body.contains(t[0])
+    && t.find("[md-inline='pants']").text(function(){ return this.getAttribute("data-text") || this.textContent })
+```
+
+⇒ **关键结构**：`smartQuote` / `smartDash` 是**功能开关**（默认 `false` ⇒ **默认不转换**）；
+`convertSmartOnRender` 只决定**何时**转换；且输入分支带 `!convertSmartOnRender` ⇒ **两档互斥**。
+`[md-inline='pants']` 的 `data-text` 存 ASCII、渲染显示弯引号 ⇒ **文档保持 ASCII**。
+
+### 三、实现（跨 4 层；**文档文本永不改写**）
+
+| 层 | 落点 | 内容 |
+|---|---|---|
+| 设置 | `packages/settings/src/index.ts` | `editor.smartPunctuationOnRender`（toggle，**默认 false**）|
+| 宿主 | `apps/desktop/src/App.tsx` | 启动恢复 + `applySetting` 分支**从存储重读两个设置** |
+| 桥 | `packages/editor-core/src/core.ts` | `setSmartPunctuationOnRenderEnabled(on)` → `__MELLOW_SMART_PUNCTUATION__.setOnRender` |
+| 引擎 | `packages/editor-engine/src/smartPunctuation.ts` | `buildSmartPunctuationRenderExtension()`：`ViewPlugin` + `Decoration.replace` + 文本 widget |
+
+**三条约束**（都复用输入期同一套规则，保证两档结果一致）：
+① **跳过代码上下文**（复用 `isInsideCodeContext`）；
+② **光标所在行揭示源码**（与 Live Preview 的 marker reveal 同精神）；
+③ **绝不改写文档**（只用 `Decoration.replace`；Mellow 已有 12 处同类用法）。
+
+**为什么加 `applySetting` 时必须「从存储重读两个设置」**：两个设置**共用**同一个 `applyCommand`
+（`settings.smartPunctuation`）⇒ 若用回调给的 `value` 去猜是哪一个，**会把另一个冲掉**。
+判据已锁这一条。
+
+### 四、⚠️ 施工中踩到的两个坑（如实记录）
+
+1. **判据块的括号没闭合** ⇒ 把**后面**那段（用 `ds` 的）吸进了本块 ⇒ `ds is not defined`；
+   修的过程中又把块**移错了位置**（移到 `ds` 作用域之外）。最终**回退该文件重做**。
+   ⇒ **教训**：往一个「块作用域密集」的护栏文件里插块时，**插入点必须在块边界之外**，
+   且**先 `node --check` 再跑判据**（语法错会把「判据失效」伪装成「判据报错」）。
+2. **矩阵 JSON 多了一个 `},`** —— 我的 `new_string` 重复了对象闭合符。
+   ⇒ **教训**：改 JSON fixture 后**先 `JSON.parse` 再跑护栏**；否则护栏会报一堆
+   「矩阵无法读取 / 判据空转」，**看起来像判据坏了**，其实是数据坏了。
+
+### 五、⚠️ 上一轮刚落的判据**当场抓到了旧数据**
+
+§4.149 新增的「`equivalent` 的 note 里带目录的路径落点必须存在」判据，
+**立刻**抓到 `SmartyPantsOnRendering` 的 note 里写了**不完整路径** `styling/nodes/invisible.ts`
+（真实位置是 `packages/editor-core/CoreEditor/src/styling/nodes/invisible.ts`）⇒ 已补全。
+⇒ 这是**新判据的第一笔收益**，且它抓的是**旧数据**（不是我本轮写的）。
+
+### 六、登记面更新
+
+- 矩阵 `convertSmartOnRender`：`gap` → **`implemented`**（`mellow: ["editor.smartPunctuationOnRender"]`）
+- 面板独有面 `SmartyPantsOnRendering`：`gap`（`blockedBy: not-implemented`）→ **`equivalent`**
+- 矩阵分布：`implemented 39 → 40` / `gap 39 → 38`；面板面 `gap 5 → 4`
+
+### 七、测试与判据
+
+- `packages/editor-engine/test/smart-punctuation.test.ts`：**18 → 25 例**（新增 7 例：
+  默认不装饰 / 功能开但渲染期关不装饰 / 渲染期开 ⇒ 弯引号 + **文档仍 ASCII** /
+  **光标行揭示** / 代码上下文跳过 / `-- ` → em dash + 文档不变 / **渲染期开时输入期停用**）。
+- 新判据（`verify-settings-contract.mjs`）**五层**：设置默认 false · 引擎有渲染期扩展且真的用
+  `Decoration.replace` · **两档互斥** · 注入通道暴露 `setOnRender`/`getOnRender` ·
+  宿主侧 setter 存在 + applySetting **从存储重读** + **启动恢复**。canary 正/负（改名）。
+- `verify-adapter-contract.mjs` 的启动状态下发清单 **+1**（`setSmartPunctuationOnRenderEnabled`）。
+- **注入验证 3/3**（去互斥门控 / 改回用 `value` 猜 / 去启动恢复）⇒ 全红，还原后绿。
+
+### 八、教训
+
+1. **「先量再落」的判据会**立刻**回本** —— §4.149 落的路径判据在第一轮就抓到一条旧数据。
+2. **往块作用域密集的文件里插块，先 `node --check`** —— 语法错会让「判据没生效」伪装成「判据报错」。
+3. **改 JSON fixture 后先 `JSON.parse`** —— 否则护栏报的是「矩阵读不到」，看起来像判据坏了。
+4. **共用 `applyCommand` 的设置必须「从存储重读」**，不能用回调的 `value` 猜 —— 否则互相冲掉。
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

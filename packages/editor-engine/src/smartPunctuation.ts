@@ -25,10 +25,34 @@ export function isSmartPunctuationEnabled(): boolean {
   return smartPunctuationEnabled;
 }
 
-/** 宿主 → iframe 智能标点通道（R2-1） */
+/**
+ * **转换时机**开关（Typora `convertSmartOnRender`，2026-10-08 审计 §4.150）。
+ *
+ * - `false`（**默认**）= **输入时**转换：与 Typora 的 `"Convert on Input"` 档一致（现状）。
+ * - `true` = **渲染时**转换：**输入与落盘保持 ASCII**，只在**显示**上呈现弯引号 / em dash
+ *   （Typora 的 `"Convert on Rendering"` 档，对 git 友好）。
+ *
+ * ⚠️ 与 Typora 同构：**两个档都要求功能开关本身为开**（Typora 侧是 `smartQuote` / `smartDash`，
+ *   二者默认 `false` ⇒ 默认不转换；Mellow 侧是 `smartPunctuationEnabled`）。
+ *   渲染期档开启时，**输入期改写必须停用** —— Typora 的输入分支写作
+ *   `File.option.smartQuote && !File.option.convertSmartOnRender && …`（`!` 是同一语义）。
+ */
+let smartPunctuationOnRender = false;
+
+export function setSmartPunctuationOnRender(enabled: boolean): void {
+  smartPunctuationOnRender = enabled;
+}
+
+export function isSmartPunctuationOnRender(): boolean {
+  return smartPunctuationOnRender;
+}
+
+/** 宿主 → iframe 智能标点通道（R2-1；`setOnRender` 于 2026-10-08 审计 §4.150 增补） */
 export interface SmartPunctuationApi {
   set(v: boolean): void;
   get(): boolean;
+  setOnRender(v: boolean): void;
+  getOnRender(): boolean;
 }
 
 /** 挂到 iframe window，宿主（EditorCore）经 contentWindow 调用 */
@@ -36,6 +60,8 @@ export function installSmartPunctuationApi(): void {
   (window as unknown as { __MELLOW_SMART_PUNCTUATION__?: SmartPunctuationApi }).__MELLOW_SMART_PUNCTUATION__ = {
     set: setSmartPunctuation,
     get: isSmartPunctuationEnabled,
+    setOnRender: setSmartPunctuationOnRender,
+    getOnRender: isSmartPunctuationOnRender,
   };
 }
 
@@ -141,6 +167,9 @@ function handleSmartPunctuation(view: {
   dispatch: (spec: import('@codemirror/state').TransactionSpec) => void;
 }, from: number, to: number, text: string): boolean {
   if (!smartPunctuationEnabled) return false;
+  // 渲染期档（Typora `convertSmartOnRender`）开启时**不在输入期改写** ——
+  // 与 Typora 的输入分支 `… && !File.option.convertSmartOnRender && …` 同语义。
+  if (smartPunctuationOnRender) return false;
   // spec §11 / §16：代码上下文（行内代码 / 代码围栏）内**不得**改写 ——
   // 否则代码里的 `"` 会被换成弯引号（静默改写代码文本）。见 isInsideCodeContext。
   if (isInsideCodeContext(view.state, from)) return false;
@@ -171,4 +200,99 @@ export function buildSmartPunctuationExtension() {
   // 引擎约定：经 window.require 解析（install 时 MarkEdit 已注册模块表）
   const { EditorView } = (window as unknown as { require: (id: string) => typeof import('@codemirror/view') }).require('@codemirror/view');
   return EditorView.inputHandler.of(handleSmartPunctuation);
+}
+
+// ───────────────────── 渲染期转换（Typora `convertSmartOnRender`） ─────────────────────
+/**
+ * **渲染期**智能标点（Typora 的 `"Convert on Rendering"` 档，2026-10-08 审计 §4.150）。
+ *
+ * 语义：**文档文本保持 ASCII**（输入什么就是什么、落盘也是 ASCII），只在**显示**上把
+ * `"` / `'` / `--␠` 呈现为弯引号 / em dash —— 与 Typora 的 `[md-inline='pants']`
+ * （`data-text` 存 ASCII、渲染显示弯引号）同构。
+ *
+ * 三条约束（**复用输入期那套规则**，保证两档的转换结果一致）：
+ *  ① **跳过代码上下文** —— 复用 `isInsideCodeContext`（spec §11 / §16）；
+ *  ② **光标所在行揭示源码** —— 与 Live Preview 的 marker reveal 同精神（编辑处看到真文本）；
+ *  ③ **绝不改写文档** —— 只用 `Decoration.replace`（Mellow 已有 12 处同类用法，
+ *     master-plan 的「从不 replace 文本」指的是**不改写文档文本**）。
+ *
+ * ⚠️ **刻意不注册进 `widget-state-matrix.test.ts` 的家族表**：那 16 态契约描述的是
+ * **块级 / 节点级 widget**（caret 进入 → 显示源码、复制剥语法、删除边界…）；
+ * 本项是**行内单字符替换**、没有节点语义 ⇒ 套那 16 态会把语义不同的东西混进同一张表。
+ */
+export function buildSmartPunctuationRenderExtension(): import('@codemirror/state').Extension {
+  // 与 `buildSmartPunctuationExtension` 同约定：运行时经 window.require 取模块，
+  // **类型**用 `typeof import(...)`（纯类型、会被擦除 ⇒ 不引入裸 ESM 导入）。
+  const { ViewPlugin, Decoration, WidgetType } = (window as unknown as {
+    require: (id: string) => typeof import('@codemirror/view');
+  }).require('@codemirror/view');
+
+  class SmartPantsWidget extends WidgetType {
+    constructor(private readonly ch: string) { super(); }
+    eq(other: import('@codemirror/view').WidgetType): boolean { return (other as SmartPantsWidget).ch === this.ch; }
+    toDOM(): HTMLElement {
+      const span = document.createElement('span');
+      span.className = 'cm-smart-pants';
+      span.textContent = this.ch;
+      return span;
+    }
+  }
+
+  const compute = (view: import('@codemirror/view').EditorView): import('@codemirror/state').RangeSet<import('@codemirror/view').Decoration> => {
+    if (!smartPunctuationEnabled || !smartPunctuationOnRender) return Decoration.none;
+    const { doc, selection } = view.state;
+    const cursorLine = doc.lineAt(selection.main.head).number;
+    const ranges = view.visibleRanges;
+    const deco: import('@codemirror/state').Range<import('@codemirror/view').Decoration>[] = [];
+    for (const r of ranges) {
+      const first = doc.lineAt(r.from).number;
+      const last = doc.lineAt(r.to).number;
+      for (let n = first; n <= last; n += 1) {
+        const line = doc.line(n);
+        // ② 光标所在行**揭示源码**（编辑处显示真文本）
+        if (n === cursorLine) continue;
+        const text = line.text;
+        for (let i = 0; i < text.length; i += 1) {
+          const ch = text[i];
+          if (ch === '"' || ch === "'") {
+            const prev = i > 0
+              ? text[i - 1]
+              : (line.from > 0 ? doc.sliceString(line.from - 1, line.from) : '');
+            const mapped = smartQuoteFor(ch, prev);
+            // ① 跳过代码上下文
+            if (mapped !== ch && !isInsideCodeContext(view.state, line.from + i)) {
+              deco.push(Decoration.replace({ widget: new SmartPantsWidget(mapped) }).range(line.from + i, line.from + i + 1));
+            }
+            continue;
+          }
+          // `--` 后接空格 ⇒ 显示为 em dash（与输入期 `shouldEmDash` 同规则、同守卫）
+          if (ch === '-' && text[i + 1] === '-' && text[i + 2] === ' '
+            && shouldEmDash(text.slice(0, i + 2)) && !isInsideCodeContext(view.state, line.from + i)) {
+            deco.push(Decoration.replace({ widget: new SmartPantsWidget('—') }).range(line.from + i, line.from + i + 2));
+            i += 1;
+          }
+        }
+      }
+    }
+    return Decoration.set(deco, true);
+  };
+
+  return ViewPlugin.fromClass(
+    class SmartPunctuationRenderPlugin {
+      decorations: import('@codemirror/state').RangeSet<import('@codemirror/view').Decoration>;
+
+      constructor(view: import('@codemirror/view').EditorView) {
+        this.decorations = compute(view);
+      }
+
+      update(u: import('@codemirror/view').ViewUpdate): void {
+        if (u.docChanged || u.viewportChanged || u.selectionSet) {
+          this.decorations = compute(u.view);
+        } else {
+          this.decorations = this.decorations.map(u.changes);
+        }
+      }
+    },
+    { decorations: (v: { decorations: import('@codemirror/state').RangeSet<import('@codemirror/view').Decoration> }) => v.decorations },
+  );
 }

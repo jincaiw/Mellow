@@ -9,6 +9,7 @@ import {
   isInsideCodeContext,
   isSmartPunctuationEnabled,
   setSmartPunctuation,
+  setSmartPunctuationOnRender,
   shouldEmDash,
   smartQuoteFor,
 } from '../src/smartPunctuation';
@@ -182,6 +183,80 @@ describe('代码上下文守卫（spec §11 inline code / §16 code fence）', (
       const handled = typeThroughInputHandler(view, afterCode, '"');
       expect(handled).toBe(true);
       expect(view.state.doc.toString()).toBe('a `code` b”');
+    } finally { view.destroy(); }
+  });
+});
+
+// ─────────────────── 渲染期转换（Typora `convertSmartOnRender`，2026-10-08 审计 §4.150） ───────────────────
+//
+// 语义：**文档文本保持 ASCII**，只在**显示**上呈现弯引号 / em dash。
+// ⚠️ 被测内容一律放在**第 2 行**：本实现与 Live Preview 的 marker reveal 同精神 ——
+//    **光标所在行揭示源码**，而 `setUpEditor` 后光标在 0（第 1 行）⇒ 第 1 行永远不装饰。
+describe('渲染期转换（convertSmartOnRender）', () => {
+  const CURSOR_LINE = 'cursor line\n';
+
+  beforeEach(() => { resetModeState(); });
+  afterEach(() => {
+    setSmartPunctuation(false);
+    setSmartPunctuationOnRender(false);
+  });
+
+  const pants = (view: EditorView): string[] => Array.from(view.dom.querySelectorAll('.cm-smart-pants'))
+    .map((e) => e.textContent ?? '');
+
+  it('默认（功能关）⇒ 不装饰', () => {
+    const view = setUpEditor(`${CURSOR_LINE}say "hi" here`);
+    try { expect(pants(view)).toEqual([]); } finally { view.destroy(); }
+  });
+
+  it('功能开但**渲染期关** ⇒ 仍不装饰（那是输入期档）', () => {
+    setSmartPunctuation(true);
+    const view = setUpEditor(`${CURSOR_LINE}say "hi" here`);
+    try { expect(pants(view)).toEqual([]); } finally { view.destroy(); }
+  });
+
+  it('功能开 + 渲染期开 ⇒ 直引号渲染为弯引号，且**文档文本保持 ASCII**', () => {
+    setSmartPunctuation(true);
+    setSmartPunctuationOnRender(true);
+    const view = setUpEditor(`${CURSOR_LINE}say "hi" here`);
+    try {
+      expect(pants(view)).toEqual(['“', '”']);
+      expect(view.state.doc.toString()).toBe(`${CURSOR_LINE}say "hi" here`); // 源文本未变
+    } finally { view.destroy(); }
+  });
+
+  it('**光标所在行揭示源码**（该行不装饰）', () => {
+    setSmartPunctuation(true);
+    setSmartPunctuationOnRender(true);
+    // 光标在第 1 行 ⇒ 第 1 行的引号不装饰、第 2 行装饰
+    const view = setUpEditor('say "hi"\nand "x"');
+    try { expect(pants(view)).toEqual(['“', '”']); } finally { view.destroy(); }
+  });
+
+  it('代码上下文跳过（行内代码内的直引号不装饰）', () => {
+    setSmartPunctuation(true);
+    setSmartPunctuationOnRender(true);
+    const view = setUpEditor(`${CURSOR_LINE}a \`x = "1"\` b`);
+    try { expect(pants(view)).toEqual([]); } finally { view.destroy(); }
+  });
+
+  it('`-- ` 渲染为 em dash，文档仍是 `--`', () => {
+    setSmartPunctuation(true);
+    setSmartPunctuationOnRender(true);
+    const view = setUpEditor(`${CURSOR_LINE}word -- end`);
+    try {
+      expect(pants(view)).toEqual(['—']);
+      expect(view.state.doc.toString()).toBe(`${CURSOR_LINE}word -- end`);
+    } finally { view.destroy(); }
+  });
+
+  it('渲染期开时**输入期改写停用**（inputHandler 不接管 —— 与 Typora 的 `!convertSmartOnRender` 同语义）', () => {
+    setSmartPunctuation(true);
+    setSmartPunctuationOnRender(true);
+    const view = setUpEditor(`${CURSOR_LINE}say `);
+    try {
+      expect(typeThroughInputHandler(view, CURSOR_LINE.length + 4, '"')).toBe(false);
+      expect(view.state.doc.toString()).toBe(`${CURSOR_LINE}say `); // 未被改写
     } finally { view.destroy(); }
   });
 });

@@ -3945,6 +3945,11 @@ export default function App() {
           if (smartPunctDef && readSetting(smartPunctDef) === true) {
             host.setSmartPunctuationEnabled(true);
           }
+          // 2026-10-08（审计 §4.150）：转换时机（Typora `convertSmartOnRender`；默认 false = 输入时）
+          const smartPunctOnRenderDef = settingById('editor.smartPunctuationOnRender');
+          if (smartPunctOnRenderDef && readSetting(smartPunctOnRenderDef) === true) {
+            host.setSmartPunctuationOnRenderEnabled(true);
+          }
           // 代码块行号启动恢复（默认 false；Typora 偏好→Markdown）
           const codeLnDef = settingById('markdown.codeLineNumbers');
           if (codeLnDef && readSetting(codeLnDef) === true) {
@@ -5148,7 +5153,11 @@ export default function App() {
       }
       case 'settings.smartPunctuation':
         // R2-1 智能标点 live apply（引擎 inputHandler 开关）+ 原生菜单勾选态重建
-        hostRef.current?.setSmartPunctuationEnabled(Boolean(value));
+        // ⚠️ 2026-10-08（审计 §4.150）：同一 `applyCommand` 现在覆盖**两个**设置
+        //   （功能开关 `editor.smartPunctuation` + 转换时机 `editor.smartPunctuationOnRender`）
+        //   ⇒ 两者都**从存储重读**（不能用 `value` 猜是哪一个 —— 那会把另一个冲掉）。
+        hostRef.current?.setSmartPunctuationEnabled(readBoolSetting('editor.smartPunctuation', false));
+        hostRef.current?.setSmartPunctuationOnRenderEnabled(readBoolSetting('editor.smartPunctuationOnRender', false));
         setMenuCheckTick((n) => n + 1);
         break;
       case 'settings.codeLineNumbers':

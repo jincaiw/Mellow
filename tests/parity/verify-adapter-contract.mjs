@@ -284,7 +284,7 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
     'setFontSize', 'setFontFace', 'setLineHeight', 'setShowLineNumbers', 'setLineWrapping',
     'setContentMaxWidth', 'setAutoPair', 'setMarkdownSyntaxPairs', 'setDefaultCodeLang',
     'setCodeIndentSize', 'setTabKeyBehavior', 'setFirstLineIndent', 'setAllowMagnification',
-    'setSpellcheckEnabled', 'setSmartPunctuationEnabled', 'setCodeLineNumbersEnabled',
+    'setSpellcheckEnabled', 'setSmartPunctuationEnabled', 'setSmartPunctuationOnRenderEnabled', 'setCodeLineNumbersEnabled',
     'setTypewriterMode', 'setFocusMode', 'setSelectionToolbarEnabled',
     'setTheme', 'setMdTokens', 'setEngineLocale',
   ];

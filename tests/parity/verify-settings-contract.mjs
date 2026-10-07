@@ -2229,6 +2229,50 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 智能标点的**转换时机**（Typora `convertSmartOnRender`）：跨 4 层接线（2026-10-08，审计 §4.150）──
+// Typora：功能开关是 `smartQuote` / `smartDash`（默认都 false ⇒ 默认不转换），
+// `convertSmartOnRender` 只决定**何时**转换；且输入分支写作 `… && !File.option.convertSmartOnRender && …`
+// ⇒ **两档互斥**。Mellow 对应物 = 设置 `editor.smartPunctuationOnRender` + 引擎的渲染期扩展。
+// 判据五层（缺任一即功能不存在，或两档互相打架）：
+//   ① 设置存在且 **默认 false**；② 引擎有渲染期扩展且真的用 `Decoration.replace`；
+//   ③ **渲染期档开启时输入期改写必须停用**（互斥）；④ 注入通道暴露 `setOnRender` / `getOnRender`；
+//   ⑤ 宿主侧：editor-core 的 setter 存在、App 的 applySetting 分支**从存储重读**（不能用 `value` 猜，
+//      否则会把另一个设置冲掉）、且**启动时恢复**（否则冷启动丢设置）。
+{
+  const sp = read('packages/editor-engine/src/smartPunctuation.ts');
+  const core = read('packages/editor-core/src/core.ts');
+  if (!/id: 'editor\.smartPunctuationOnRender'[^}]*type: 'toggle'[^}]*defaultValue: false/.test(settingsSource)) {
+    fail('settings 缺少 editor.smartPunctuationOnRender（toggle / **默认 false**）—— 默认必须 false，否则会改变现状');
+  }
+  if (!/export function buildSmartPunctuationRenderExtension/.test(sp) || !/Decoration\.replace\(/.test(sp)) {
+    fail('引擎未实现渲染期转换（`buildSmartPunctuationRenderExtension` / `Decoration.replace`）');
+  }
+  if (!/if \(smartPunctuationOnRender\) return false;/.test(sp)) {
+    fail('渲染期档开启时**输入期改写未停用** —— 两档会同时生效（Typora 是 `!convertSmartOnRender` 互斥）');
+  }
+  if (!/setOnRender: setSmartPunctuationOnRender/.test(sp) || !/getOnRender: isSmartPunctuationOnRender/.test(sp)) {
+    fail('引擎的 `__MELLOW_SMART_PUNCTUATION__` 通道未暴露 `setOnRender` / `getOnRender`');
+  }
+  if (!/setSmartPunctuationOnRenderEnabled\(on: boolean\)/.test(core)
+    || !/__MELLOW_SMART_PUNCTUATION__\?\.setOnRender\?\.\(on\)/.test(core)) {
+    fail('editor-core 未实现 `setSmartPunctuationOnRenderEnabled`（宿主→引擎通道断）');
+  }
+  if (!/hostRef\.current\?\.setSmartPunctuationOnRenderEnabled\(readBoolSetting\('editor\.smartPunctuationOnRender', false\)\)/.test(appSource)) {
+    fail('App.tsx 的 `settings.smartPunctuation` 分支未**从存储重读**渲染期设置 —— 用 `value` 猜会把另一个设置冲掉');
+  }
+  if (!/host\.setSmartPunctuationOnRenderEnabled\(true\);/.test(appSource)) {
+    fail('App.tsx 未在**启动时**恢复 `editor.smartPunctuationOnRender`（冷启动会丢）');
+  }
+  // canary：正 / 负（改名）
+  const GATE_RE = /if \(smartPunctuationOnRender\) return false;/;
+  if (!GATE_RE.test('  if (smartPunctuationOnRender) return false;')) {
+    fail('互斥门控 canary 失效：正样本未命中');
+  }
+  if (GATE_RE.test('  if (smartPunctuationOnRenderX) return false;')) {
+    fail('互斥门控 canary 失效：负样本（改名）被判为命中');
+  }
+}
+
     // ── 矩阵条目与 **D 表**的一致性（2026-10-07，审计 §4.140）──────────────────────
     // 【为什么补】D 表（master-plan §12）是**裁决的唯一可发现处**。实测发现 **3 条**矩阵条目
     //   与 D 表**矛盾**：`sortType`（D-AG 明言「功能已等价」）· `useTreeStyle`（D-AK 明言「不是缺一个开关」）·

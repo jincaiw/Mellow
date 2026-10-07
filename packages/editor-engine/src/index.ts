@@ -57,7 +57,7 @@ import { buildPlatformNavKeymap } from './platformNav';
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } from './largeFile';
 import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
-import { buildSmartPunctuationExtension, installSmartPunctuationApi } from './smartPunctuation';
+import { buildSmartPunctuationExtension, buildSmartPunctuationRenderExtension, installSmartPunctuationApi } from './smartPunctuation';
 import { buildInlineCodeAttrsExtension } from './inlineCodeAttrs';
 import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
 import { buildWysiwygBlocksExtension } from './wysiwygBlocks';
@@ -130,9 +130,12 @@ export { buildSelectionCommandsExtension, installSelectionCommandsApi } from './
 export type { SelectionCommandsApi } from './selectionCommands';
 export {
   buildSmartPunctuationExtension,
+  buildSmartPunctuationRenderExtension,
   installSmartPunctuationApi,
   setSmartPunctuation,
   isSmartPunctuationEnabled,
+  setSmartPunctuationOnRender,
+  isSmartPunctuationOnRender,
   smartQuoteFor,
   shouldEmDash,
   isInsideCodeContext,
@@ -282,6 +285,9 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildInputLatencyExtension(),
     buildSelectionCommandsExtension(),
     buildSmartPunctuationExtension(),
+    // 渲染期智能标点（Typora `convertSmartOnRender`，2026-10-08 审计 §4.150）：
+    // 默认关；开关与功能开关都在 plugin 内判定 ⇒ 无需 reconfigure。
+    buildSmartPunctuationRenderExtension(),
     // spec §11：行内代码的 spellcheck/autocorrect 属性（块级代码由 CoreEditor codeBlockStyle 承担）
     buildInlineCodeAttrsExtension(),
     buildCodeLineNumbersExtension(),

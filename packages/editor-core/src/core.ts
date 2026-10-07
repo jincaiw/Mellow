@@ -357,6 +357,20 @@ export class EditorCore {
     return win?.__MELLOW_SMART_PUNCTUATION__?.get?.() ?? false;
   }
 
+  /**
+   * 智能标点的**转换时机**（Typora `convertSmartOnRender`，2026-10-08 审计 §4.150）。
+   * `false`（默认）= 输入时转换；`true` = 渲染时转换（文档保持 ASCII，只改显示）。
+   */
+  setSmartPunctuationOnRenderEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { setOnRender?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_SMART_PUNCTUATION__?.setOnRender?.(on);
+  }
+
+  isSmartPunctuationOnRender(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { getOnRender?: () => boolean } }) | null;
+    return win?.__MELLOW_SMART_PUNCTUATION__?.getOnRender?.() ?? false;
+  }
+
   /** 代码块行号开关（Typora 偏好→Markdown；默认关闭） */
   setCodeLineNumbersEnabled(on: boolean): void {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_CODE_LINE_NUMBERS__?: { set?: (v: boolean) => void } }) | null;

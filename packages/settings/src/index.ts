@@ -145,6 +145,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
       // 智能标点（master-plan R2-1：Typora 编辑→替换「智能引号/破折号」；默认关闭）
       { id: 'editor.smartPunctuation', labelKey: 'settings.editor.smartPunctuation', type: 'toggle', storageKey: 'mellow.editor.smartPunctuation', defaultValue: false, descriptionKey: 'settings.editor.smartPunctuationDesc', applyCommand: 'settings.smartPunctuation' },
+      // 2026-10-08（审计 §4.150）：Typora `convertSmartOnRender`（面板 radio
+      // 「Convert on Input」/「Convert on Rendering」，**默认 Convert on Input**）。
+      // ⚠️ **只在 `editor.smartPunctuation` 开启时有意义** —— 与 Typora 同构：
+      //   Typora 的功能开关是 `smartQuote` / `smartDash`（二者默认 `false` ⇒ 默认不转换），
+      //   `convertSmartOnRender` 只决定**何时**转换。
+      // 语义：开启 ⇒ **输入与落盘保持 ASCII**，只在**显示**上呈现弯引号 / em dash（对 git 友好）。
+      // **默认 false ⇒ 默认行为不变**（仍是输入时转换）。
+      { id: 'editor.smartPunctuationOnRender', labelKey: 'settings.editor.smartPunctuationOnRender', type: 'toggle', storageKey: 'mellow.editor.smartPunctuationOnRender', defaultValue: false, descriptionKey: 'settings.editor.smartPunctuationOnRenderDesc', applyCommand: 'settings.smartPunctuation' },
       // Cmd/Ctrl+滚轮缩放（Typora 偏好→通用；实际字号仍走 editor.fontSize 单一真源）
       { id: 'editor.cmdWheelZoom', labelKey: 'settings.editor.cmdWheelZoom', type: 'toggle', storageKey: 'mellow.editor.cmdWheelZoom', defaultValue: true, descriptionKey: 'settings.editor.cmdWheelZoomDesc' },
       { id: 'editor.typewriter', labelKey: 'settings.editor.typewriter', type: 'toggle', storageKey: 'mellow.editor.typewriter', defaultValue: false, applyCommand: 'view.typewriter.on' },

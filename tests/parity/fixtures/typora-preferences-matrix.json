@@ -115,11 +115,9 @@
     {
       "typora": "convertSmartOnRender",
       "default": false,
-      "status": "gap",
-      "mellow": [],
-      "note": "「转换时应用智能标点」未实装",
-      "behavior": "matches-default",
-      "behaviorNote": "检索：智能标点仅在**输入时**应用（engine smartPunctuation.ts），无「渲染时转换」开关 → 与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/smartPunctuation.ts` —— 智能标点只在 `EditorView.inputHandler`（**输入时**）改写；无「渲染时转换」分支。"
+      "status": "implemented",
+      "mellow": ["editor.smartPunctuationOnRender"],
+      "note": "**「转换时机」**（Typora 面板 radio `Convert on Input` / `Convert on Rendering`，**默认 Input**）。**已实装**（2026-10-08，审计 §4.150）：新增设置 `editor.smartPunctuationOnRender`（toggle，**默认 false ⇒ 默认行为不变**）。语义：开启 ⇒ **输入与落盘保持 ASCII**，只在**显示**上呈现弯引号 / em dash（`packages/editor-engine/src/smartPunctuation.ts` 的 `buildSmartPunctuationRenderExtension`，用 `Decoration.replace` + widget；**不改写文档**）。三条约束：跳过代码上下文（复用 `isInsideCodeContext`）、**光标所在行揭示源码**、复用输入期同一套规则（`smartQuoteFor` / `shouldEmDash`）保证两档结果一致。⚠️ **与 Typora 同构**：功能开关是 `smartQuote` / `smartDash`（Typora 默认都 `false` ⇒ 默认不转换），本键只决定**何时**转换；且渲染期档开启时**输入期改写停用**（对应 Typora 输入分支的 `!convertSmartOnRender`）。"
     },
     {
       "typora": "copyMarkdownByDefault",

@@ -6,11 +6,13 @@
     {
       "key": "SmartyPantsOnRendering",
       "consumer": "js",
-      "status": "gap",
-      "note": "**面板键 ≠ 内部选项名**：`SmartyPantsOnRendering` → `File.option.convertSmartOnRender`（frame.js：`JSBridge.putSetting(\"SmartyPantsOnRendering\",e||!1),File.option.convertSmartOnRender=e||!1`）。面板可见形态是 **radio**：`options:{false:\"Convert on Input\",true:\"Convert on Rendering\"}`，hint 原文：`Convert on Input: Input ASCII dashes or quotes, converted and saved as curly quotes or unicode dashes.` / `Convert on Rendering: Input and saved as ASCII dashes or quotes, render as curly quotes or unicode dashes.` **默认 false ⇒ \"Convert on Input\"**。Mellow `editor.smartPunctuation`（默认 false）的语义 = **输入时**改写弯引号 + `--␠`→`—`（`packages/editor-engine/src/smartPunctuation.ts`）⇒ **默认档已被复现 ⇒ 默认体验一致**。缺的是 **\"Convert on Rendering\" 档**（输入与落盘保持 ASCII、只在渲染时显示为弯引号 —— 对 git 友好）⇒ 按「能力」口径记为 gap，但**默认档不构成偏离**。【阻塞原因（2026-10-07，审计 §4.135）】**`not-implemented`：缺「渲染期转换」这一层**，可自主推进但属**新的显示层**。Mellow 的 `editor.smartPunctuation` 只在**输入期**改写（`EditorView.inputHandler`）⇒ 落盘即弯引号；而「Convert on Rendering」要求**输入与落盘保持 ASCII**、只在**显示**上呈现弯引号/em dash。⇒ 需在**显示层**做（CM6 decoration / view plugin），且必须：跳过代码上下文（引擎已有 `isInsideCodeContext`）、与「光标行揭示」交互（`styling/nodes/invisible.ts` 的既有机制）、**绝不改写文档**。⇒ 可自主实施，但要新增一个渲染层 —— 规模大于本轮其它项，列为**独立工作项**。",
+      "status": "equivalent",
+      "mellow": [
+        "editor.smartPunctuationOnRender"
+      ],
+      "note": "**面板键 ≠ 内部选项名**：`SmartyPantsOnRendering` → `File.option.convertSmartOnRender`（frame.js：`JSBridge.putSetting(\"SmartyPantsOnRendering\",e||!1),File.option.convertSmartOnRender=e||!1`）。面板可见形态是 **radio**：`options:{false:\"Convert on Input\",true:\"Convert on Rendering\"}`，hint 原文：`Convert on Input: Input ASCII dashes or quotes, converted and saved as curly quotes or unicode dashes.` / `Convert on Rendering: Input and saved as ASCII dashes or quotes, render as curly quotes or unicode dashes.` **默认 false ⇒ \"Convert on Input\"**。Mellow `editor.smartPunctuation`（默认 false）的语义 = **输入时**改写弯引号 + `--␠`→`—`（`packages/editor-engine/src/smartPunctuation.ts`）⇒ **默认档已被复现 ⇒ 默认体验一致**。缺的是 **\"Convert on Rendering\" 档**（输入与落盘保持 ASCII、只在渲染时显示为弯引号 —— 对 git 友好）⇒ 按「能力」口径记为 gap，但**默认档不构成偏离**。【阻塞原因（2026-10-07，审计 §4.135）】**`not-implemented`：缺「渲染期转换」这一层**，可自主推进但属**新的显示层**。Mellow 的 `editor.smartPunctuation` 只在**输入期**改写（`EditorView.inputHandler`）⇒ 落盘即弯引号；而「Convert on Rendering」要求**输入与落盘保持 ASCII**、只在**显示**上呈现弯引号/em dash。⇒ 需在**显示层**做（CM6 decoration / view plugin），且必须：跳过代码上下文（引擎已有 `isInsideCodeContext`）、与「光标行揭示」交互（`packages/editor-core/CoreEditor/src/styling/nodes/invisible.ts` 的既有机制）、**绝不改写文档**。⇒ 可自主实施，但要新增一个渲染层 —— 规模大于本轮其它项，列为**独立工作项**。 ✅ **已实装（2026-10-08，审计 §4.150）**：设置 `editor.smartPunctuationOnRender`（toggle，**默认 false ⇒ 默认行为不变**）+ 引擎的 `buildSmartPunctuationRenderExtension()`（`packages/editor-engine/src/smartPunctuation.ts`，`Decoration.replace` + widget，**不改写文档**）；三条约束：跳过代码上下文、**光标所在行揭示源码**、复用输入期同一套规则（`smartQuoteFor` / `shouldEmDash`）。⇒ 两个档（Input / Rendering）都已可复现 ⇒ 由 `gap` 转 **`equivalent`**。",
       "anchor": "File.option.convertSmartOnRender",
-      "internal": "convertSmartOnRender",
-      "blockedBy": "not-implemented"
+      "internal": "convertSmartOnRender"
     },
     {
       "key": "actionWhenDropFile",
