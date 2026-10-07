@@ -1094,6 +1094,71 @@ if (cssLayerAnchor === undefined) {
       }
     }
 
+    // ── 「面板独有键」登记表的**自洽性**（2026-10-07，审计 §4.126）────────────────
+    // 分工与矩阵一致：**覆盖面板集合**需要本机 Typora ⇒ 在
+    // `tests/parity/tools/audit-typora-preferences.mjs`（不进 CI）；
+    // 这里只锁 **CI 可判定的那一半**：状态合法、引用的 Mellow 设置 id 真实存在、note 非空、条目下限。
+    // ⚠️ `unverified` 是**允许**的状态（存量欠债），但**必须**是显式取值 —— 不得用空值糊过去。
+    {
+      const REG = 'tests/parity/fixtures/typora-panel-only-keys.json';
+      let reg = null;
+      try { reg = JSON.parse(read(REG)); } catch { fail(`面板独有键登记表缺失或不是合法 JSON：${REG}`); }
+      if (reg !== null) {
+        const regEntries = reg.entries ?? [];
+        if (regEntries.length < 40) {
+          fail(`面板独有键登记表只有 ${regEntries.length} 条（下限 40）—— 表被削空会让本判据空转`);
+        }
+        const VALID_STATUS = new Set(['equivalent', 'gap', 'not-applicable', 'unverified']);
+        const knownSettingIds = new Set([...settingsSource.matchAll(/id: '([^']+)'/g)].map((m) => m[1]));
+        const seenKeys = new Set();
+        const bad = [];
+        for (const e of regEntries) {
+          if (seenKeys.has(e.key)) bad.push(`${e.key}(重复)`);
+          seenKeys.add(e.key);
+          if (!VALID_STATUS.has(e.status)) bad.push(`${e.key}(status=${e.status})`);
+          if (typeof e.note !== 'string' || e.note.trim() === '') bad.push(`${e.key}(note 为空)`);
+          if (e.consumer !== 'js' && e.consumer !== 'native') bad.push(`${e.key}(consumer=${e.consumer})`);
+          for (const id of e.mellow ?? []) {
+            if (!knownSettingIds.has(id)) bad.push(`${e.key}→${id}(设置 id 不存在)`);
+          }
+          // 判据形状：`equivalent` 必须给出**至少一处**可核对的落点（设置 id 或 note 里的符号/路径）
+          if (e.status === 'equivalent' && (e.mellow ?? []).length === 0
+            && !/`[^`]+`/.test(String(e.note))) {
+            bad.push(`${e.key}(equivalent 但既无 mellow 设置 id、note 里也没有反引号落点)`);
+          }
+        }
+        if (bad.length > 0) {
+          fail(`面板独有键登记表不合法（${bad.length}）：${bad.join(', ')}`);
+        }
+        // canary：四向（重复键 / 非法状态 / 不存在的设置 id / equivalent 无落点）
+        {
+          const judge = (list) => {
+            const s = new Set();
+            const out = [];
+            for (const e of list) {
+              if (s.has(e.key)) out.push('dup');
+              s.add(e.key);
+              if (!VALID_STATUS.has(e.status)) out.push('status');
+              if ((e.status === 'equivalent') && (e.mellow ?? []).length === 0 && !/`[^`]+`/.test(String(e.note))) out.push('noloc');
+            }
+            return out;
+          };
+          if (judge([{ key: 'a', status: 'equivalent', note: '`x`' }]).length !== 0) {
+            errors.push('面板独有键自洽判据 canary 过宽：合法条目被误报');
+          }
+          if (!judge([{ key: 'a', status: 'equivalent', note: '`x`' }, { key: 'a', status: 'equivalent', note: '`x`' }]).includes('dup')) {
+            errors.push('面板独有键自洽判据 canary 失效：重复键未被检出');
+          }
+          if (!judge([{ key: 'a', status: 'nope', note: '`x`' }]).includes('status')) {
+            errors.push('面板独有键自洽判据 canary 失效：非法状态未被检出');
+          }
+          if (!judge([{ key: 'a', status: 'equivalent', note: '没有反引号落点' }]).includes('noloc')) {
+            errors.push('面板独有键自洽判据 canary 失效：equivalent 无落点未被检出');
+          }
+        }
+      }
+    }
+
     // 审计工具必须存在（否则「与 Typora 的完备性比对」会随工具丢失而静默消失）
     try {
       read('tests/parity/tools/audit-typora-preferences.mjs');

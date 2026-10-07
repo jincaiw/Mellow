@@ -283,6 +283,76 @@ if (badIds.length > 0) {
   }
 }
 
+// ── 「面板独有键」登记表必须与面板**双向**一致（2026-10-07，审计 §4.126）──────────
+// 立此条的原因：偏好矩阵的范围是 `DEFAULT_OPTIONS`（84 键），而面板 UI 另有约 47 个
+// **不在**该范围的 keyName ⇒ 那一面此前**没有任何登记处**。§4.124 在那一面取样一次
+// 就找到了一个**默认行为缺口**（拖入文件/文件夹整组未实现）⇒ 它是真会藏东西的地方。
+// 判据：`typora-panel-only-keys.json` 的 key 集合必须**双向**等于「面板 keyName − 矩阵键（归一化）」；
+// 状态合法；引用的 Mellow 设置 id 必须真实存在；note 非空。
+// ⚠️ **`unverified` 是存量欠债、会被打印计数**，不得读作「已确认无差异」。
+{
+  const REG_PATH = resolve(root, 'tests/parity/fixtures/typora-panel-only-keys.json');
+  const VALID = new Set(['equivalent', 'gap', 'not-applicable', 'unverified']);
+  const norm = (k) => k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  let reg = null;
+  try { reg = JSON.parse(readFileSync(REG_PATH, 'utf8')); } catch {
+    errors.push(`面板独有键登记表缺失或不是合法 JSON：tests/parity/fixtures/typora-panel-only-keys.json`);
+  }
+  const panelPathForReg = panelJsPath();
+  if (reg !== null && panelPathForReg !== null) {
+    const panel = readFileSync(panelPathForReg, 'utf8');
+    const panelKeys = [...new Set([...panel.matchAll(/keyName:\s*"([A-Za-z0-9_]+)"/g)].map((x) => x[1]))];
+    const matrixKeys = new Set(entries.map((e) => norm(e.typora)));
+    const only = panelKeys.filter((k) => !matrixKeys.has(norm(k)));
+    const regKeys = (reg.entries ?? []).map((e) => e.key);
+    const missing = only.filter((k) => !regKeys.includes(k));
+    const extra = regKeys.filter((k) => !only.includes(k));
+    if (only.length < 40) {
+      errors.push(`面板独有键只有 ${only.length} 个（下限 40）—— 面板解析或矩阵范围漂移，本判据会空转`);
+    }
+    if (missing.length > 0) {
+      errors.push(`面板独有键未登记（${missing.length}）：${missing.join(', ')} —— `
+        + '那一面是**真会藏缺口**的地方（§4.124 在那里找到过整组默认行为未实现）');
+    }
+    if (extra.length > 0) {
+      errors.push(`登记表有但面板已无（${extra.length}）：${extra.join(', ')} —— 可能改版或拼错`);
+    }
+    const badStatus = [];
+    const badIds = [];
+    const knownIds = new Set([...settingsSource.matchAll(/id: '([^']+)'/g)].map((m) => m[1]));
+    for (const e of reg.entries ?? []) {
+      if (!VALID.has(e.status)) badStatus.push(`${e.key}(status=${e.status})`);
+      if (typeof e.note !== 'string' || e.note.trim() === '') badStatus.push(`${e.key}(note 为空)`);
+      for (const id of e.mellow ?? []) if (!knownIds.has(id)) badIds.push(`${e.key}→${id}`);
+    }
+    if (badStatus.length > 0) errors.push(`面板独有键登记表元数据不合法（${badStatus.length}）：${badStatus.join(', ')}`);
+    if (badIds.length > 0) {
+      errors.push(`面板独有键登记表引用了**不存在**的 Mellow 设置 id（${badIds.length}）：${badIds.join(', ')}`);
+    }
+    // 存量欠债**可见**（不判失败，但必须打印计数与清单）
+    const unverified = (reg.entries ?? []).filter((e) => e.status === 'unverified');
+    console.log(`\n面板独有键：${regKeys.length} 个 —— `
+      + ['equivalent', 'gap', 'not-applicable', 'unverified']
+        .map((s) => `${s} ${(reg.entries ?? []).filter((e) => e.status === s).length}`).join(' / '));
+    if (unverified.length > 0) {
+      console.log(`⚠️ 尚未核实 ${unverified.length} 项（**存量欠债**，不得读作「已确认无差异」）：`
+        + `${unverified.map((e) => e.key).join(', ')}`);
+    }
+    const gaps = (reg.entries ?? []).filter((e) => e.status === 'gap');
+    if (gaps.length > 0) {
+      console.log(`❌ 真实缺口 ${gaps.length} 项：${gaps.map((e) => e.key).join(', ')}`);
+    }
+    // canary：双向判据必须能区分（拼接构造，不依赖真实数据）
+    const diffOf = (a, b) => a.filter((x) => !b.includes(x));
+    if (diffOf(['a', 'b'], ['a', 'b']).length !== 0 || diffOf(['a', 'c'], ['a']).join(',') !== 'c') {
+      errors.push('面板独有键双向判据 canary 失效：集合差集不能区分正/负样本');
+    }
+    if (!VALID.has('equivalent') || VALID.has('nope')) {
+      errors.push('面板独有键状态集合 canary 失效');
+    }
+  }
+}
+
 if (errors.length > 0) {
   console.error('\n❌ 偏好项审计未通过：');
   for (const e of errors) console.error(`  - ${e}`);

@@ -7954,6 +7954,91 @@ Typora 拖入 `.md` 或文件夹会**打开**它；「插入链接」是**非默
 
 
 
+## 4.126 给「面板独有面」建立登记处（47 键）+ 逐项分诊（2026-10-07）
+
+### 一、动因：把 §4.123 的范围声明**变成有主**
+
+§4.123 把「矩阵只覆盖 `DEFAULT_OPTIONS`，不覆盖面板 UI」写进了声明；
+§4.124 在那一面**取样一次**就找到了一个**默认行为缺口**（拖入文件/文件夹整组未实现）。
+⇒ 本轮把那一面**建立登记处并逐项分诊**，否则那份声明只是免责条款。
+
+### 二、方法（三条，都写清各自的**可靠性**）
+
+1. **键集合**：从 `page-dist/static/js/Preferences.*.js` 抽 `keyName:"…"` 去重 ⇒ 91 个；
+   减去矩阵已覆盖的（**归一化命名后**）⇒ **47 个面板独有键**。**这一步可靠**（`keyName` 形态无歧义）。
+2. **默认值**：面板独有键**不在** `DEFAULT_OPTIONS` 里 ⇒ 没有现成的默认值表。
+   本轮改用 **§4.142 的方法**：**从代码的比较里读** —— 例如拖入组的判据是
+   `'link' === File.option.actionWhenDropFolder ? … : …` ⇒ **缺省即走 else 分支** ⇒ 默认是「打开」。
+3. **Mellow 侧对照**：以 `packages/settings/src/index.ts` 的 **74 个设置项 id** 为对照面，
+   逐项判「Mellow 有没有等价能力」。
+   ⚠️ **如实声明一处不可靠**：面板**标签**的抽取**不可靠** —— 面板是压缩后的 React 产物，
+   控件有两种形态（`label:"X",keyName:"Y"` 与 `["X", createElement(…{keyName:"Y"})]`），
+   向后找最近标签会取到**邻居控件**的标签（实测 `zoomLevel` 取到 "Reset to Default"、
+   `SmartyPantsOnRendering` 取到 "Diagram Options"）⇒ **键可靠、标签仅供参考**；
+   故登记表的 `note` 以**代码证据**为准，不依赖标签。
+
+### 三、分诊结果（47 项）
+
+| status | 数量 | 含义 |
+|---|---|---|
+| `equivalent` | **25** | Mellow 有等价能力（**通常命名不同**），note 给出可核对的落点（设置 id 或代码符号） |
+| **`gap`** | **3** | **真实缺口** —— 即拖入组（`actionWhenDropFile` / `actionWhenDropFolder` / `actionWhenDropImport`） |
+| `not-applicable` | **5** | Typora 特有或 Mellow 有意不做（`runCommand` / `runCommandStr` / `showOutput` = **D-AM**；`useMirrorInCN`；`send_usage_info` = Mellow 无遥测） |
+| **`unverified`** | **14** | **尚未核实（存量欠债）** —— 本机资源不足以判定 |
+
+**14 项 `unverified`（下一轮的入口清单）**：`SmartyPantsOnRendering` · `allowPhysicsConflict` ·
+`customExportPath` · `exportFolder` · `framelessWindow` · `line_ending_crlf` ·
+`no_image_move_for_local` · `openExportFile` · `openExportLocation` · `pandocPath` ·
+`quitAfterWindowClose` · `remapPunctuation` · `twoHyphensToEm` · `use_seamless_window`。
+
+### 四、关键取证：拖入组的**决策表**（`main.js` 与 `frame.js` 两份一致）
+
+```
+if (isDirectory(path)) {
+  if (supportTextBundle && /\.textbundle$/i) return actionWhenDropFile === 'link' ? insertLink : open;
+  if (actionWhenDropFolder === 'link') return insertLink(path);
+  return openFolder / switchFolder;                       // ← 默认
+} else {
+  const ext = …;
+  if (IMPORTABLE.includes(ext)) return actionWhenDropImport === 'link' ? insertLink : importFile;
+  if (File.SupportedFiles.includes(ext)) return (isKeyWindow || actionWhenDropFile === 'link') ? insertLink : open;
+  if (!isKeyWindow()) return false;
+  insert as markdown (image/link)                          // ← 不支持的文件
+}
+// insertLink(p) = 在文档里插入该路径的链接（source mode 下不插）
+```
+
+⇒ 缺的不止「插入文件夹链接」一个选项，而是**四类落点的默认行为**（打开文件夹 / 打开文档 / 导入 / 插成 markdown），
+且该偏好**确实被消费**（在 `main.js` + `frame.js` 都有命中，非仅面板）。
+
+### 五、处置
+
+1. **新增登记处** `tests/parity/fixtures/typora-panel-only-keys.json`（47 条，含
+   `key` / `consumer`（js / native）/ `status` / `mellow`（可核对落点）/ `note`）；
+2. **本机工具**（`audit-typora-preferences.mjs`）新增判据：登记表 key 集合必须与
+   「面板 keyName − 矩阵键」**双向**一致；状态合法；`mellow` 引用的设置 id **必须真实存在**；
+   note 非空；并**打印** status 分布与 `unverified` 清单（**存量欠债必须可见**）。
+   **注入验证 2/2**（删一条 ⇒ 「未登记」；加一条面板没有的 ⇒ 「登记表有但面板已无」）；
+3. **CI 护栏**（`verify-settings-contract.mjs` ⑭）新增**自洽性**判据（覆盖面板集合需要本机 Typora，
+   故留本机工具）：状态合法 / 引用的设置 id 存在 / note 非空 / 条目下限 40 /
+   **`equivalent` 必须给出至少一处可核对落点**（设置 id 或 note 里的反引号符号）。
+   ⇒ **该判据当场抓到 2 条**（`auto_expand_block` / `zoomLevel` 只有「同上」式说明）⇒ 已补真实落点。
+   **注入验证 2/2**（引用不存在的设置 id ⇒ 红；条数低于下限 ⇒ 红），canary 四向。
+
+### 六、教训
+
+1. **「范围声明」之后必须**立刻**给那一面建登记处** —— 本轮把 47 个键落成 47 条，
+   其中 **3 条是真缺口、14 条是明确的待核实**；不建表的话，那 17 条会继续「不存在于任何地方」。
+2. **没有默认值表时，默认值要从代码的比较里读**（`=== 'link'` ⇒ 缺省即 else）——
+   这正是 §4.142 那条教训的可复用形态。
+3. **同一份产物里，不同字段的抽取可靠性可以差很多** —— 键可靠、标签不可靠。
+   ⇒ **登记表的结论必须挂在可靠的证据上**（本轮挂在代码比较与设置清单上，不挂在标签上），
+   并把「哪一步不可靠」**写进声明**。
+4. **`unverified` 要允许存在，但必须可见**（打印计数 + 清单）——
+   否则它会退化成「看起来都核过了」。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 
