@@ -2204,6 +2204,68 @@ if (cssLayerAnchor === undefined) {
       }
     }
 
+    // ── `mellow` 为空却声称「存在一个带默认值的 Mellow 设置」（2026-10-07，审计 §4.144）──────
+    // 【为什么补】§4.138 批量给 31 条 `matches-default` 补了「可核对落点」，而**落点判据只查文件是否存在**
+    //   ⇒ **断言本身可以为假而护栏全绿**。实测抓到 1 条：`sidebarWidth` 的落点写
+    //   「`packages/settings/src/index.ts` —— 侧栏宽度设置默认 **270**」，而设置 schema 里**没有**侧栏宽度项
+    //   （`mellow.sidebar.width` 是显式登记的**非 schema** 键），270 这个常量在 `App.tsx` 里
+    //   ⇒ 该断言**为假**，且与**同一条目的 `note`**（「它不是偏好项」）**自相矛盾**。
+    //
+    // 【判据形态】`mellow` 是机器可读的声明：「该键对应这些 Mellow 设置 id」⇒ 为空意味着**不存在**该设置。
+    //   故：**`mellow` 为空 ⇒ 条目文本不得出现「设置默认 <数字>」形态**
+    //   （「有默认值的设置」蕴含「存在该设置」）。
+    //
+    // ⚠️ **已实测并否决的两条更严判据**（记在这里，避免下轮重做）：
+    //   ① 「落点里**所有**反引号标识符都要能在落点文件里找到」—— 22 条受检 / **4 条违规 / 全部误报**
+    //      （Typora 侧符号；以及「该文件里**没有** X」这种**否定式**断言里的 X）；
+    //   ② 「落点里**至少一个**反引号标识符能在落点文件里找到」—— 49 条受检 / **18 条零命中**
+    //      （大量条目的落点断言本就不含反引号标识符）⇒ 例外表会大到失去意义。
+    //   ⇒ **「落点是否支持断言」在当前形态下无法机械化**，只能逐条人工核对
+    //      （本轮人工核了带 §4.138 落点标记的 **31 条**：30 条正确、1 条为假）。
+    //   ⇒ 本判据**只覆盖其中一条可精确表达的形态**，**不得**读作「落点已全部核对」。
+    //
+    // ⚠️ **本判据的已知局限（实测踩到）**：它**也会命中「引用该假断言的更正文字」** ——
+    //   我修 `sidebarWidth` 时在更正里**原样复现**了那句措辞 ⇒ 判据当场红。
+    //   ⇒ **写更正时不要复现原措辞**（这是本仓**第 4 次**踩「自己的说明文字满足自己的判据」，
+    //      见 PITFALLS §4.190/§4.195）。**不要**为此加「更正块豁免」—— 那会让判据可被措辞绕过。
+    {
+      let mxEntries3 = [];
+      try {
+        mxEntries3 = (JSON.parse(read('tests/parity/fixtures/typora-preferences-matrix.json')).entries) ?? [];
+      } catch { /* 上游已有判据报错 */ }
+      const CLAIM_RE = /设置(?:项)?默认\s*\**\s*\d/;
+      const judgeEmptyMellowClaim = (entries) => entries
+        .filter((e) => Array.isArray(e.mellow) && e.mellow.length === 0)
+        .filter((e) => CLAIM_RE.test(`${e.behaviorNote ?? ''} ${e.note ?? ''}`))
+        .map((e) => e.typora);
+      const emptyClaimBad = judgeEmptyMellowClaim(mxEntries3);
+      if (emptyClaimBad.length > 0) {
+        fail(`偏好矩阵里 \`mellow\` 为空却声称「设置默认 <数字>」（${emptyClaimBad.length}）：`
+          + `${emptyClaimBad.join('、')} —— \`mellow: []\` 意味着**不存在**该设置；`
+          + '要么补上真实设置 id，要么把断言改成如实表述');
+      }
+      // canary：三向（正样本 / **否定式**断言 / 有 mellow 的条目）
+      if (judgeEmptyMellowClaim([{ typora: 'a', mellow: [], note: 'x 侧栏宽度设置默认 **270** y' }]).length !== 1) {
+        fail('空 mellow 判据 canary 失效：正样本未命中');
+      }
+      if (judgeEmptyMellowClaim([{
+        typora: 'a',
+        mellow: [],
+        note: '`packages/settings/src/index.ts` —— 图片相关设置只有 `image.assetDir` 等，**无「默认存储位置」**项',
+      }]).length !== 0) {
+        fail('空 mellow 判据 canary 失效：**否定式**断言（合法）被误报');
+      }
+      if (judgeEmptyMellowClaim([{ typora: 'a', mellow: ['image.assetDir'], note: 'x 设置默认 **270** y' }]).length !== 0) {
+        fail('空 mellow 判据 canary 失效：**有 mellow** 的条目（合法）被误报');
+      }
+      // 适用域下限：`mellow` 为空的条目必须仍有足够多，否则本判据空转
+      const emptyCount = mxEntries3.filter((e) => Array.isArray(e.mellow) && e.mellow.length === 0).length;
+      if (emptyCount < 30) {
+        fail(`矩阵里 \`mellow\` 为空的条目只有 ${emptyCount} 条（下限 30，2026-10-07 基线）`
+          + ' —— 本判据的适用域萎缩，判据会空转');
+      }
+    }
+
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
 // 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，
 //   但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**：

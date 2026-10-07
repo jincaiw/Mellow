@@ -636,9 +636,9 @@
       "default": null,
       "status": "gap",
       "mellow": [],
-      "note": "侧栏宽度可拖拽（D-AD 有意 480 上限），但未作为设置项持久化；Typora 以 sidebarWidth 记录",
+      "note": "侧栏宽度可拖拽（D-AD 有意 480 上限）；**它不是偏好项** —— 持久化键 `mellow.sidebar.width` 属**视图几何**，已登记在 `tests/parity/verify-settings-contract.mjs` 的 `NON_SCHEMA_STORAGE_KEYS` 例外表里（不进设置页、也不被「恢复默认」清理）；Typora 以 `sidebarWidth` 记录",
       "behavior": "matches-default",
-      "behaviorNote": "实测/真值（Typora 实机默认 270px；Mellow 默认亦 270px，D-AD 有意 480 上限）→ 与 Typora 默认 null（取默认宽度）一致【代码落点（2026-10-07，审计 §4.138）】`packages/settings/src/index.ts` —— 侧栏宽度设置默认 **270**（与 Typora 实机默认一致；`D-AD` 有意设 480 上限）⇒ 与 Typora 默认 `null`（取默认宽度）一致。"
+      "behaviorNote": "实测/真值（Typora 实机默认 270px；Mellow 默认亦 270px，D-AD 有意 480 上限）→ 与 Typora 默认 null（取默认宽度）一致【代码落点（2026-10-07，审计 §4.138；**落点更正于 §4.144**）】`apps/desktop/src/App.tsx` —— `SIDEBAR_DEFAULT_WIDTH = 270`（配 `SIDEBAR_MIN_WIDTH = 160` / `SIDEBAR_MAX_WIDTH = 480` 范围校验，越界或非数则回落 270；拖拽经 `setSidebarWidth` 夹取后写 `localStorage`）⇒ 与 Typora 默认 `null`（取默认宽度）一致。⚠️ **更正（审计 §4.144）**：原落点声称「设置 schema 里**有**侧栏宽度项、其默认值为 270」，**该断言为假** —— schema 里没有这一项（`mellow.sidebar.width` 是显式登记的**非 schema** 键），270 这个常量在 `App.tsx` 里。原判据只查「引用的文件是否存在」⇒ 假断言也能通过。**注**：本条更正刻意**不复现**原措辞（复现会再次满足新增判据 —— 见 `verify-settings-contract.mjs` 的「空 mellow 却声称存在带默认值的设置」）。"
     },
     {
       "typora": "smartDash",
