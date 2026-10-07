@@ -311,10 +311,7 @@
       "key": "shiftTabAutoIndent",
       "consumer": "js",
       "status": "equivalent",
-      "mellow": [
-        "editor.tabBehavior"
-      ],
-      "note": "对应 Mellow 的 Tab 键行为（`insertTab` / 两空格 / 四空格）",
+      "note": "面板 label **\"Use Shift+Tab to auto indent selected code\"**、hint **\"When disabled, Shift+Tab will outdent selected code or current line. When enabled, Shift+Tab will auto apply indentation for selected code\"** ⇒ 该键管的是 **Shift+Tab**（缩进 vs 反缩进），**不是 Tab**。消费点（`main.js`）：`\"shift+tab\"===File.option.autoIndentKey || File.option.shiftTabAutoIndent || (i.keyMap.default[\"Shift-Tab\"]=\"indentLess\")` ⇒ **默认（false）下把 Shift-Tab 覆盖成 `indentLess`**。Mellow **没有全局 Shift-Tab 映射**（只有表格内的 `packages/editor-engine/src/table/keymap.ts`）⇒ 走 CM 默认 `indentLess` ⇒ **行为与 Typora 默认一致**；缺的只是**该开关**。⚠️ **2026-10-08 更正（审计 §4.149）**：原 note 写「对应 Mellow 的 Tab 键行为（`insertTab` / 两空格 / 四空格）」并挂 `mellow: [\"editor.tabBehavior\"]` —— **落点指错了**：`editor.tabBehavior` 管 **Tab 插入什么**，本键管 **Shift+Tab 是缩进还是反缩进**，**两者不是同一个键**。结论（`equivalent`）恰好仍成立（行为一致），但**落点必须换**。",
       "anchor": "File.option.shiftTabAutoIndent"
     },
     {

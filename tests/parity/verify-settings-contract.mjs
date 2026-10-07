@@ -1168,6 +1168,50 @@ if (cssLayerAnchor === undefined) {
             bad.push(`${e.key}(equivalent 但既无 mellow 设置 id、note 里也没有反引号落点)`);
           }
         }
+        // ── `equivalent` 的 note 里**路径类落点**必须真实存在（2026-10-08，审计 §4.149）──────
+        // 【为什么补】§4.144 已证明「落点**存在**」≠「落点**支持**断言」—— 但那是**语义**判断。
+        //   这里补的是更弱、却**完全可机械判**的一半：**note 里以反引号给出的、带目录的仓库路径必须存在**。
+        // ⚠️ **边界（如实声明）**：① 只查**带 `/` 的路径**（裸 basename 需要全仓索引，且同名文件会误报）；
+        //   ② **符号名不查** —— §4.144 实测「符号必须出现在落点文件里」= 22 受检 / 4 违规 / **全部误报**，不可用；
+        //   ③ 因此本判据**不得**读作「equivalent 的落点已全部核对」。
+        {
+          const PATH_TOKEN = /`([A-Za-z0-9_./-]+\.(?:ts|tsx|mjs|cjs|json|css|rs))`/g;
+          const judgePaths = (list) => {
+            const out = [];
+            for (const e of list) {
+              if (e.status !== 'equivalent') continue;
+              for (const m of String(e.note ?? '').matchAll(PATH_TOKEN)) {
+                const tok = m[1].replace(/^\.\//, '');
+                if (!tok.includes('/')) continue;              // 裸 basename：见上方边界①
+                if (!existsSync(resolve(root, tok))) out.push(`${e.key}→\`${tok}\``);
+              }
+            }
+            return out;
+          };
+          const badPaths = judgePaths(regEntries);
+          if (badPaths.length > 0) {
+            fail(`面板独有键的 \`equivalent\` note 里有**不存在的路径落点**（${badPaths.length}）：${badPaths.join('、')}`
+              + ' —— 引用的文件已改名/搬走或拼错');
+          }
+          // 适用域下限：受检路径 token 必须仍有足够多，否则本判据空转
+          const pathTokens = regEntries.filter((e) => e.status === 'equivalent')
+            .flatMap((e) => [...String(e.note ?? '').matchAll(PATH_TOKEN)].map((m) => m[1]))
+            .filter((t) => t.replace(/^\.\//, '').includes('/'));
+          if (pathTokens.length < 5) {
+            fail(`面板 \`equivalent\` 的 note 里只解析出 ${pathTokens.length} 个**带目录**的路径落点`
+              + '（下限 5，2026-10-08 基线 10）—— 适用域萎缩会让本判据空转');
+          }
+          // canary：正 / 负（不存在的路径）/ 负（非 equivalent 条目）
+          if (judgePaths([{ key: 'k', status: 'equivalent', note: '见 `packages/editor-engine/src/documentSearch.ts`' }]).length !== 0) {
+            fail('equivalent 路径落点 canary 过宽：真实存在的路径被误报');
+          }
+          if (judgePaths([{ key: 'k', status: 'equivalent', note: '见 `packages/nope/nope.ts`' }]).length !== 1) {
+            fail('equivalent 路径落点 canary 失效：不存在的路径未被检出');
+          }
+          if (judgePaths([{ key: 'k', status: 'gap', note: '见 `packages/nope/nope.ts`' }]).length !== 0) {
+            fail('equivalent 路径落点 canary 过宽：非 `equivalent` 条目被误报');
+          }
+        }
         if (bad.length > 0) {
           fail(`面板独有键登记表不合法（${bad.length}）：${bad.join(', ')}`);
         }

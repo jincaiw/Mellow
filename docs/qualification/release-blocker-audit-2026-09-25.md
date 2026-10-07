@@ -9835,6 +9835,89 @@ JSBridge.putSetting("caseSensitive", t.caseSensitive)
 4. **量化能把「感觉有点乱」变成「605 里 407」** —— 有了数才知道该不该动、能动多少。
 
 
+## 4.149 与 Typora 差距的**全量再评估**（2026-10-08）+ 一处落点更正 + 一条判据
+
+### 一、四个登记面 + 门禁的**当前**状态（全部实跑）
+
+| 面 | 状态 |
+|---|---|
+| ① 台账（发布门禁） | **NO-GO**：**9 项未闭环**；`PASS-E = 0/50`（门禁口径） |
+| ② 偏好矩阵（`DEFAULT_OPTIONS`，84 键） | `implemented 39` / `gap 39` / `n/a 6` |
+| ③ 面板独有面（`keyName`，47 键） | `equivalent 35` / `gap 5` / `n/a 7` / `unverified 0`；`consumer unknown 1` |
+| ④ 第三面（缝隙，15 键） | `preference-like 4` / `warning-suppression 5` / `view-state 6` |
+| ⑤ D 表 | **40** 条声明行 |
+| ⑥ 默认值偏离（矩阵轴） | **7** 项 = `deliberate 2` / **`undecided 5`** |
+| ⑦ 待裁决 | ADR-0034（**Proposed**） |
+
+### 二、**可自主面**的量化（本轮的核心结论）
+
+逐项问「**这一项能不能由本环境自主推进**」：
+
+| 面 | 可自主 | 阻塞于什么 |
+|---|---|---|
+| 台账 9 未闭环 | **0** | `ux-gate-policy` 6 项（人工 UX Gate 会话）· `human-ux-gate-session` 1 · `perf-harness-pending` 1（ADR-0026 Q3）· `runtime-verification-pending` 1（拼写检查词典） |
+| 矩阵 `gap` 39 | **0（有价值的）** | 31 条是 `matches-default`（**无害**：Typora 有开关、Mellow 硬编码**同一个**默认）⇒ 实现它们 = 加**没人要的开关**；6 条 `differs` 里 **5 条待裁决**、1 条阻塞于词典 |
+| 面板 `gap` 5 | **1** | `SmartyPantsOnRendering`（**唯一**）；其余 1 precondition + 3 adr-pending |
+| 第三面 15 | **0** | 登记性质；`preference-like` 4 条是否进矩阵**待裁决** |
+| 默认值偏离 7 | **0** | 2 deliberate + **5 undecided（待裁决）** |
+
+⇒ **结论：可自主面基本耗尽** —— 除 `SmartyPantsOnRendering` 外，**其余全部**阻塞于
+**用户裁决**（ADR-0034 的 12 问 + ADR-0026 Q3）或**人工 UX Gate 会话**。
+这与 §4.120 对台账的结论一致，但本轮把它**扩展到了四个面**。
+
+### 三、⚠️ 一次**被自己否掉的假设**（如实记录）
+
+我一度判定 `SmartyPantsOnRendering` 的 `blockedBy: not-implemented`（= 可自主）**是错的** ——
+理由：master-plan 的架构原则写「Live Markdown 走 Decoration / Widget（**从不 replace 文本**）」，
+而「渲染期转换」需要 `Decoration.replace` ⇒ 像是**架构冲突** ⇒ 应改 `precondition`。
+
+**动手前取证**：全仓搜 `Decoration.replace` ⇒ **Mellow 已在 8 个文件里用了 12 处**
+（`wysiwygBlocks.ts` 3 · `math.ts` 2 · `table/liveView.ts` 2 · `safeHtml` / `toc` / `taskCheckbox` / `image/widget` 各 1）。
+⇒ 该原则指的是「**不改写文档文本**」（源文本是唯一真源），**不是**禁用 `Decoration.replace`。
+⇒ **假设被否**：`blockedBy: not-implemented` **是对的**，该条**不改**。
+（**「看起来冲突」要先取证再判** —— 本轮省下了一次错误更正。）
+
+### 四、一处**落点更正**：`shiftTabAutoIndent`
+
+面板 label 实测为 **"Use Shift+Tab to auto indent selected code"**，hint：
+**"When disabled, Shift+Tab will outdent selected code or current line. When enabled, Shift+Tab will auto apply indentation for selected code"**
+⇒ 该键管的是 **Shift+Tab**（缩进 vs 反缩进）。
+
+而原 note 写「对应 Mellow 的 Tab 键行为（`insertTab` / 两空格 / 四空格）」并挂 `mellow: ["editor.tabBehavior"]`
+⇒ **落点指错了**：`editor.tabBehavior` 管 **Tab 插入什么**，本键管 **Shift+Tab 是缩进还是反缩进**。
+
+**真实证据**（已写进 note）：`main.js` 的
+`"shift+tab"===File.option.autoIndentKey || File.option.shiftTabAutoIndent || (i.keyMap.default["Shift-Tab"]="indentLess")`
+⇒ 默认（false）下**把 Shift-Tab 覆盖成 `indentLess`**；Mellow **没有全局 Shift+Tab 映射**
+（只有表格内的 `packages/editor-engine/src/table/keymap.ts`）⇒ 走 CM 默认 `indentLess` ⇒ **行为一致**。
+⇒ 结论（`equivalent`）**恰好仍成立**，但**落点必须换** —— 这正是 §4.144 那一类（**结论对、证据错**）。
+
+### 五、一条判据（+ 一次**无结论**的取证尝试）
+
+1. **判据**：面板 `equivalent` 的 note 里**带目录的路径落点必须真实存在**
+   （`verify-settings-contract.mjs`）。实测基线 **10 个 token / 0 违规** ⇒ **硬判据**。
+   ⚠️ **边界如实声明**：① 只查**带 `/`** 的路径（裸 basename 需全仓索引，且同名文件会误报）；
+   ② **符号名不查**（§4.144 实测「符号必须出现在落点文件里」= 22 受检 / 4 违规 / **全部误报**）；
+   ③ **不得**读作「`equivalent` 的落点已全部核对」。canary 三向；**注入验证 1/1**。
+2. **`zoomLevel`（最后一处 `consumer: unknown`）的新通道尝试 —— 无结论**：
+   原 note 列出的核实路径是「真机改一次缩放并重启，看是否恢复」。本轮改走**配置文件通道**：
+   查 `~/Library/Application Support/abnerworks.Typora/`（**无 `conf*.json`**）与
+   `~/Library/Preferences/abnerworks.Typora.plist`（文件在，但 `plutil -convert json` **输出为空**，读不出键）。
+   ⇒ **本机没有可读的 Typora 偏好文件**（可能从未改过偏好，或该版本不落该路径）⇒ **无结论，欠债保留**。
+   ⚠️ 如实登记：**「试过一条新通道但读不到」≠「已核实」**。
+
+### 六、教训
+
+1. **「可自主面耗尽」本身是一个**结论**，要能量化并写下来** —— 否则每一轮都要重新问一遍
+   「还能做什么」，而答案分散在四个面里。
+2. **「看起来冲突」必须先取证再判** —— 本轮差点把一条**正确**的 `blockedBy` 改成错的
+   （架构原则的**字面**与**意图**不同）。**判「冲突」的判据是「现有代码里有没有先例」。**
+3. **结论对 ≠ 证据对** —— `shiftTabAutoIndent` 的 `equivalent` 恰好成立，但落点指的是**另一个键**。
+   这类「恰好对」最难发现：**判据全绿、结论也全绿**。
+4. **取证失败要如实登记** —— `zoomLevel` 的新通道读不到文件，只能说「无结论」，
+   不能因为「试过了」就当作已核实。
+
+
 ## 五、本次审计做的改动（非策略性）
 
 
