@@ -210,14 +210,14 @@
     },
     {
       "key": "picgo_app_path",
-      "consumer": "unknown",
+      "consumer": "native",
       "status": "equivalent",
       "mellow": [
         "image.uploadService"
       ],
       "note": "由 **D-AL** 承载：Mellow 用**本机 HTTP 端点**（picgo-http，默认 36677）代替「可执行文件路径」",
-      "anchor": "—",
-      "consumerNote": "消费方**未确定**。JS 树里只有面板自身的 `putSetting`（写），原生二进制无该字符串（PicGo 相关设置可能由外部插件/子进程消费）。"
+      "anchor": "doUploadUsingPicgoAfterLaunch:callback:isRetry:",
+      "consumerNote": "【为什么 anchor 不是键名】该键**不作为原生字面量**出现（实测 `strings` 未命中），但**消费方确在原生侧**：① 面板 label **\"PicGo Path\"**（`\"picgo-app\" == g && window.isNodeHtml` 时才显示），`defaultPath: window.isWin ? \"C:\\\\Program Files\\\\PicGo\\\\PicGo.exe\" : \"\"`、placeholder `/usr/bin/picgo`；② 面板把它的**值作为参数**传给原生桥：`window.Setting.testImageUploader(C, o, t.getValue(\"picgo_app_path\"), t.getValue(\"piclistAppPath\"))`；③ 原生侧确有 PicGo 上传实现（`strings` 命中 `doUploadUsingPicgoAfterLaunch:callback:isRetry:`、`doUploadUsingPicgoLike:images:callback:`、`com.molunerfinn.picgo`、`Using picgo/piclist server http://127.0.0.1:36677/upload`）⇒ anchor 取**原生符号**（证明消费方存在），而不是键名。⚠️ 状态保持 `equivalent`（Mellow 用本机 HTTP 端点 picgo-http，见 **D-AL**；`piclistAppPath` 同族，其消费点在 JS：`File.option.piclistAppPath`）。"
     },
     {
       "key": "piclistAppPath",
@@ -239,9 +239,10 @@
     {
       "key": "quitAfterWindowClose",
       "consumer": "native",
-      "status": "unverified",
-      "note": "面板组 **\"Quit\"**（**仅 macOS**）、label **\"Quit Typora when last window is closed\"**，默认 **false**（`!!getValue(...)` ⇒ 未设即 false）⇒ Typora 在 macOS 的默认是**关掉最后一个窗口不退出**（符合 macOS 惯例）。⚠️ **本轮已排除的部分**：Mellow 的 Rust 侧**没有** `prevent_exit` / `exit_on_last_window_closed`（实测全 `src-tauri` 扫过，仅 `lib.rs:371` 在 `RunEvent::ExitRequested` 里 flush 窗口几何）⇒ 走的是 Tauri 默认策略。**仍需实机核实**：关掉最后一个窗口后进程是否仍在（Tauri 默认在 macOS 是否退出，属运行时行为，代码级判不了）。",
-      "anchor": "quitAfterWindowClose"
+      "status": "gap",
+      "note": "面板组 **\"Quit\"**（**仅 macOS**）、label **\"Quit Typora when last window is closed\"**，默认 **false**（`checked: !!this.getValue(...)` ⇒ 未设即 false）⇒ **Typora 在 macOS 的默认是「关掉最后一个窗口不退出」**（符合 macOS 惯例）。【Mellow 侧已定案 = **会退出**，源码级证据】① 本仓 `apps/desktop/src-tauri/src/lib.rs` 的 `RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app)` —— 模式里用 `{ .. }` **丢弃了 `api`** ⇒ **从不调用 `prevent_exit()`**；② vendored 依赖 `tauri-runtime-wry-2.11.4/src/lib.rs`（**本地 cargo registry 源码，Tauri 2.11.5**）：`TaoWindowEvent::Destroyed => { … let is_empty = windows.0.borrow().is_empty(); if is_empty { callback(RunEvent::ExitRequested{…}); let should_prevent = matches!(recv, Ok(ExitRequestedEventAction::Prevent)); if !should_prevent { *control_flow = ControlFlow::Exit; } } }` ⇒ **最后一个窗口被销毁且未阻止 ⇒ 进程退出**；③ `src-tauri/src/window.rs` 的关闭门是 `api.prevent_close()` + 前端确认后**再次 close ⇒ 窗口被销毁**（不是隐藏）⇒ 上述路径可达。⇒ **Mellow 关掉最后一个窗口会退出，而 Typora 的 macOS 默认是不退出 ⇒ 行为偏离** ⇒ 记 gap。⚠️ **证据级别如实声明**：这是**源码级**结论（本仓 handler + vendored 依赖源码），**非真机观察**；若将来做真机验收，请以「关掉最后一个窗口后进程是否仍在」为准。⇒ **已登记待裁决：ADR-0034 Q12**（A1 对齐 macOS 惯例：不退出 / A2 新增开关+默认不退出 / A3 维持退出+登记 D）。",
+      "anchor": "quitAfterWindowClose",
+      "pendingRef": "ADR-0034 Q12"
     },
     {
       "key": "relativePathWithDot",
@@ -402,7 +403,7 @@
       "status": "equivalent",
       "note": "同上；命令 = `view.zoomIn` / `view.zoomOut` / `view.zoomReset`（`packages/commands/src/menuSchema.ts`）",
       "anchor": "—",
-      "consumerNote": "消费方**未确定**。读点在 **Electron `webFrame`**（`setZoomLevel` / `getZoomLevel`）—— 不在 Typora 树内，故本工具核对不到；原生二进制也无该字符串。"
+      "consumerNote": "**仍未确定，但范围已收窄**（如实记录已排除什么）：① JS 行为侧（main.js/frame.js）里 `zoomLevel` **只有 `JSBridge.putSetting(\"zoomLevel\", …)`（写）**，无 `getSetting`/`File.option` 读点；`customZoom` 同样只写；② 原生二进制**无** `zoomLevel` / `customZoom` 精确行（但 **`zoomFactor` 有** ⇒ 原生确实读 `zoomFactor`）；③ 面板**有**读点但那是**面板自身的回显**（`value: this.getValue(\"zoomLevel\")||0`，一个 `forWin/forLinux` 的档位选择器）—— ⚠️ 面板读点**不能**作为「被消费」的证据（§4.128：面板含每一个键，零鉴别力）；④ 真正的缩放由 **Electron `webFrame.setZoomLevel(n)`** 施加。⇒ 剩余两种可能：(a) 原生按**整体设置字典**泛化读取（键名不作字面量，同 `export.general` 那类）；(b) 上游**遗留的只写键**（无实际读取方）。**要核实**：真机改一次缩放并重启，看是否恢复；或反查原生设置字典的读取路径。"
     }
   ]
 }

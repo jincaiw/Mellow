@@ -8465,6 +8465,88 @@ Mellow 导出完成只弹 toast + 记录 `mellow.export.last`，**不做任何�
 
 
 
+## 4.131 「面板独有面」的**未知量清零**：最后 1 项 `unverified` 定案（`quitAfterWindowClose`）（2026-10-07）
+
+### 一、动因
+
+§4.130 之后欠债剩：`status=unverified` **1 项**（`quitAfterWindowClose`）、`consumer=unknown` **2 项**（`picgo_app_path` / `zoomLevel`）。
+本轮把它们逐一定案。
+
+### 二、`quitAfterWindowClose` → `gap`（**源码级**证据，非真机观察）
+
+Typora：面板组 **"Quit"**（仅 macOS）、label **"Quit Typora when last window is closed"**、默认 **false**
+⇒ **macOS 默认「关掉最后一个窗口不退出」**（符合平台惯例）。
+
+Mellow **会退出**，三段源码构成完整链路：
+1. 本仓 `apps/desktop/src-tauri/src/lib.rs`：
+   `RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app)`
+   —— 模式里用 `{ .. }` **丢弃了 `api`** ⇒ **从不调用 `prevent_exit()`**；
+2. vendored 依赖 `tauri-runtime-wry-2.11.4/src/lib.rs`（**本地 cargo registry 源码**，Tauri 2.11.5 为 Cargo.lock 解析版本）：
+   ```rust
+   TaoWindowEvent::Destroyed => {
+     let removed = windows.0.borrow_mut().remove(&window_id).is_some();
+     if removed {
+       let is_empty = windows.0.borrow().is_empty();
+       if is_empty {
+         let (tx, rx) = channel();
+         callback(RunEvent::ExitRequested { code: None, tx });
+         let recv = rx.try_recv();
+         let should_prevent = matches!(recv, Ok(ExitRequestedEventAction::Prevent));
+         if !should_prevent { *control_flow = ControlFlow::Exit; }
+       }
+     }
+   }
+   ```
+   ⇒ **最后一个窗口被销毁且未阻止 ⇒ 进程退出**；
+3. `apps/desktop/src-tauri/src/window.rs` 的关闭门是 `api.prevent_close()` + 前端 dirty 确认后
+   `allow_close_window` 登记再 `window.close()` ⇒ 窗口被**销毁**（不是隐藏）⇒ 上述路径**可达**。
+
+⇒ **行为偏离** ⇒ 记 `gap` + **登记待裁决 `ADR-0034 Q12`**（A1 对齐不退出 / A2 新增开关+默认不退出 / A3 维持+登记 `D-`，**建议 A2**）。
+⚠️ **证据级别如实声明**：这是**源码级**结论（本仓 handler + vendored 依赖源码），**非真机观察**；
+将来真机验收请以「关掉最后一个窗口后进程是否仍在」为准。
+
+### 三、`picgo_app_path` → `consumer: native`（**anchor 用原生符号**）
+
+该键**不作为原生字面量**出现（`strings` 未命中），但消费方确在原生侧：
+1. 面板 label **"PicGo Path"**（`"picgo-app" == g && window.isNodeHtml` 时才显示），
+   `defaultPath: window.isWin ? "C:\Program Files\PicGo\PicGo.exe" : ""`、placeholder `/usr/bin/picgo`；
+2. 面板把它的**值作为参数**传给原生桥：`window.Setting.testImageUploader(C, o, t.getValue("picgo_app_path"), t.getValue("piclistAppPath"))`；
+3. 原生侧确有 PicGo 上传实现 —— `strings` 命中 `doUploadUsingPicgoAfterLaunch:callback:isRetry:`、
+   `doUploadUsingPicgoLike:images:callback:`、`com.molunerfinn.picgo`、`Using picgo/piclist server http://127.0.0.1:36677/upload`。
+
+⇒ `consumer: native`，**`anchor` 取原生符号**（`doUploadUsingPicgoAfterLaunch:callback:isRetry:`）而非键名 ——
+anchor 的定义是「**可核对落点**」，当键名跨边界时是**参数**而非字面量时，用「证明消费方存在」的原生符号更可核对。
+
+### 四、`zoomLevel` 仍 `unknown`，但范围已收窄
+
+已排除：① JS 行为侧只有 `putSetting("zoomLevel", …)`（**写**），无读点（`customZoom` 同样只写）；
+② 原生二进制**无** `zoomLevel`/`customZoom` 精确行（但 **`zoomFactor` 有** ⇒ 原生确实读 `zoomFactor`）；
+③ 面板**有**读点，但那是**面板自身回显**（`value: this.getValue("zoomLevel")||0`）——
+⚠️ **面板读点不能作为「被消费」的证据**（§4.128：面板含每一个键，零鉴别力）；④ 真正缩放由 **Electron `webFrame.setZoomLevel(n)`** 施加。
+剩余两种可能：(a) 原生按**整体设置字典**泛化读取（键名不作字面量）；(b) 上游**遗留的只写键**。
+⇒ 保持 `unknown` 并**收窄 note**（写明已排除什么、要核实什么）。
+
+### 五、分布（两条轴分开报）
+
+`equivalent 30 / gap 10 / not-applicable 7 / **unverified 0**`；`consumer`：`js 24 / native 22 / **unknown 1**`。
+⇒ **`unverified` 清零**（轨迹 **14 → 13 → 10 → 3 → 1 → 0**），CI 棘轮收到 **`≤ 0`**（必须为空）。
+⚠️ 棘轮到 0 后判据退化为「必须为空」，**保留它**（欠债一旦回升就会红），并保留打印清单的代码（机制还在，当前为空）。
+
+### 六、教训
+
+1. **依赖的行为也可以有「一手证据」——读 vendored 依赖的源码** ——
+   本轮「关窗是否退出」本是**运行时**问题，靠读 `tauri-runtime-wry` 的源码定案（比查文档强：源码是**本机这一版**的）。
+   ⚠️ 但必须**如实标注证据级别**（源码级 ≠ 真机观察），否则将来真机结果不同时会变成「曾声称已验」。
+2. **`anchor` 不必是键名** —— 当键名跨边界时是**参数**而非字面量（`testImageUploader(…, t.getValue("picgo_app_path"), …)`），
+   用「**证明消费方存在**」的原生符号作 anchor 更可核对。⇒ 判据要允许「落点」与「键名」不同。
+3. **「无读取方」也是合法结论**，但必须写明**已排除什么**与**剩余假设** ——
+   `zoomLevel` 可能是**只写键**（上游遗留）。⇒ 不许为了清零而硬填一个 `native`：
+   **清零的是「未核实」，不是「未确定」**；两者是不同的轴，可以一个到 0、另一个留 1。
+4. **面板读点不能当「被消费」的证据** —— 这是 §4.128 的教训在 `zoomLevel` 上的再次应用：
+   面板对每个键都有 `getValue`（回显），零鉴别力。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

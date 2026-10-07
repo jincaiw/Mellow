@@ -272,6 +272,51 @@ Mellow 当前：导出完成只弹 toast + 记录 `mellow.export.last`，**不�
 
 ---
 
+## Q12 — 关掉**最后一个窗口**时是否退出应用？（`quitAfterWindowClose`；默认行为偏离）
+
+**事实**（一手证据，2026-10-07 审计 §4.131）：
+Typora 的面板键 `quitAfterWindowClose`（组 **"Quit"**，**仅 macOS 显示**，label
+**"Quit Typora when last window is closed"**）默认 **`false`**（`checked: !!this.getValue(...)` ⇒ 未设即 false）
+⇒ **Typora 在 macOS 的默认是「关掉最后一个窗口**不**退出」**（符合 macOS 惯例：应用留在 Dock 里）。
+
+**Mellow 侧（源码级证据，非真机观察）**：**会退出** ——
+① 本仓 `apps/desktop/src-tauri/src/lib.rs`：
+   `RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app)`
+   —— 模式里用 `{ .. }` **丢弃了 `api`** ⇒ **从不调用 `prevent_exit()`**；
+② vendored 依赖 `tauri-runtime-wry-2.11.4/src/lib.rs`（本地 cargo registry 源码，Tauri 2.11.5）：
+   ```rust
+   TaoWindowEvent::Destroyed => {
+     let removed = windows.0.borrow_mut().remove(&window_id).is_some();
+     if removed {
+       let is_empty = windows.0.borrow().is_empty();
+       if is_empty {
+         let (tx, rx) = channel();
+         callback(RunEvent::ExitRequested { code: None, tx });
+         let recv = rx.try_recv();
+         let should_prevent = matches!(recv, Ok(ExitRequestedEventAction::Prevent));
+         if !should_prevent { *control_flow = ControlFlow::Exit; }
+       }
+     }
+   }
+   ```
+   ⇒ **最后一个窗口被销毁且未阻止 ⇒ 进程退出**；
+③ `apps/desktop/src-tauri/src/window.rs` 的关闭门是 `api.prevent_close()` + 前端 dirty 确认后
+   `allow_close_window` 登记再 `window.close()` ⇒ 窗口被**销毁**（不是隐藏）⇒ 上述路径可达。
+
+⇒ **Mellow 关掉最后一个窗口会退出，而 Typora 的 macOS 默认是不退出 ⇒ 行为偏离。**
+
+**选项**
+- **A1 对齐 macOS 惯例：不退出**（`ExitRequested` 里 `api.prevent_exit()`；点 Dock 图标再开窗）—— 但改变现有行为。
+- **A2 新增开关 + 默认「不退出」**（对齐 Typora）—— 能力与默认都对齐，代价是多一个设置项。
+- **A3 维持「退出」+ 登记 `D-`** —— 与 Mellow 的 SDI 定位一致（一窗一文档，关窗即结束），但**偏离 macOS 惯例**。
+
+**建议：A2** —— 理由：这是 **macOS 平台惯例**问题（不是纯口味），对齐代价很低；
+且 Mellow 是 SDI（一窗一文档）⇒ 「关窗即退出」在某些用户眼里是**数据丢失的错觉**（其实已保存）。
+⚠️ 若采纳 A1/A2，**注意 `window.rs` 的关闭门与 `ExitRequested` 的交互**（关闭门是异步确认的，`prevent_exit` 不能破坏 dirty 确认流程）。
+⇒ 采纳 A2 需**同时**登记一条默认值偏离（`D-`+编号）。
+
+---
+
 ## 机器可读化（**本 ADR 顺带补上的那一半**）
 
 判据分两处（**形状** vs **解析**，各自只做一件事）：
@@ -293,12 +338,14 @@ Mellow 当前：导出完成只弹 toast + 记录 `mellow.export.last`，**不�
 
 ## 裁决
 
-**待裁决（10 问：Q1–Q8、Q10、Q11；Q9 已由取证排除）。** 裁决后请：
+**待裁决（11 问：Q1–Q8、Q10、Q11、Q12；Q9 已由取证排除）。** 裁决后请：
 
-> ⚠️ **Q11 的登记面不同**：Q1–Q10 来自**偏好矩阵**（`typora-preferences-matrix.json`，范围 = `frame.js` 的 `DEFAULT_OPTIONS`）；
-> **Q11 来自「面板独有面」登记处**（`typora-panel-only-keys.json`，范围 = 面板 `keyName` − 矩阵键）。
-> ⇒ 若采纳 Q11 的 A2（新增开关 + 默认关），需**同时**登记一条默认值偏离（`D-`+编号），
-> 并更新该登记表里 `openExportLocation` 的 `status`/`pendingRef`（当前 `gap` + `pendingRef: ADR-0034 Q11`）。
+> ⚠️ **Q11 / Q12 的登记面与 Q1–Q10 不同**：Q1–Q10 来自**偏好矩阵**
+> （`typora-preferences-matrix.json`，范围 = `frame.js` 的 `DEFAULT_OPTIONS`）；
+> **Q11 / Q12 来自「面板独有面」登记处**（`typora-panel-only-keys.json`，范围 = 面板 `keyName` − 矩阵键），
+> 二者都带 `pendingRef`。
+> ⇒ 若采纳 Q11 的 A2 / Q12 的 A2（都是「新增开关 + 默认关/不退出」），需**同时**登记默认值偏离（`D-`+编号），
+> 并更新该登记表里对应条目的 `status` / `pendingRef`（当前：`openExportLocation` = `gap` + `Q11`；`quitAfterWindowClose` = `gap` + `Q12`）。
 
 ① 更新本 ADR 的 `Status` 为 `Accepted` 并**逐问**写入结论；
 ② 按结论更新矩阵：`deviation.kind` 改 `deliberate`（并去掉 `pendingRef`）/ 或改默认值；

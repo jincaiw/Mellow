@@ -1160,16 +1160,18 @@ if (cssLayerAnchor === undefined) {
         }
         // **棘轮**（存量欠债只能下降）：基线 = 每轮结清后的实测值。
         // 防的是「把没查的项改标成 unverified / unknown 来绕开工作」——那会让欠债**回升**。
-        // 收紧记录：`status=unverified` 14(§4.126) → 13(§4.127) → 10(§4.128) → 3(§4.129) → **1**(§4.130)；
-        //          `consumer=unknown` 7(§4.128) → **2**(§4.130)。
+        // 收紧记录：`status=unverified` 14(§4.126) → 13(§4.127) → 10(§4.128) → 3(§4.129) → 1(§4.130) → **0**(§4.131，**清零**)；
+        //          `consumer=unknown` 7(§4.128) → 2(§4.130) → **1**(§4.131)。
+        // ⚠️ `unverified` 到 0 后本判据退化为「必须为空」——**保留它**（欠债一旦回升就会红），
+        //    并保留下面「打印清单」的代码（机制还在，只是当前为空）。
         const statusUnverified = regEntries.filter((e) => e.status === 'unverified');
         const consumerUnknown = regEntries.filter((e) => e.consumer === 'unknown');
-        if (statusUnverified.length > 1) {
-          fail(`面板独有键 status=unverified 回升到 ${statusUnverified.length}（棘轮上限 1，2026-10-07 §4.130 基线）`
-            + `：${statusUnverified.map((e) => e.key).join(', ')} —— 存量欠债只能下降`);
+        if (statusUnverified.length > 0) {
+          fail(`面板独有键 status=unverified 回升到 ${statusUnverified.length}（棘轮上限 **0**，2026-10-07 §4.131 已清零）`
+            + `：${statusUnverified.map((e) => e.key).join(', ')} —— 存量欠债只能下降；若确有新项未核实，请先把它查完再登记`);
         }
-        if (consumerUnknown.length > 2) {
-          fail(`面板独有键 consumer=unknown 回升到 ${consumerUnknown.length}（棘轮上限 2，2026-10-07 §4.130 基线）`
+        if (consumerUnknown.length > 1) {
+          fail(`面板独有键 consumer=unknown 回升到 ${consumerUnknown.length}（棘轮上限 1，2026-10-07 §4.131 基线）`
             + `：${consumerUnknown.map((e) => e.key).join(', ')} —— 存量欠债只能下降`);
         }
         // canary：四向（重复键 / 非法状态 / 不存在的设置 id / equivalent 无落点）
