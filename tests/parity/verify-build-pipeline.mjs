@@ -447,6 +447,46 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
 }
 
+// ── ⑬ CI 也必须**串行并取消被取代的运行**（2026-10-07，审计 §4.125）──────────────
+// 立此条的原因（实测）：一次 push 产生**两个** CI run（同一 SHA、同为 `push` 事件 —— GitHub 侧重复投递）；
+// 而 `ci.yml` **没有 `concurrency`** ⇒ 被取代的提交仍会跑完整个 CI（8 个 job）：
+// 既白烧 runner 分钟数，又制造「同一 SHA 两个 run、其中一个是旧的」这种混淆。
+// ⚠️ **与 `release.yml` 方向相反**：那边 `cancel-in-progress: false`（release 是**对外**的，
+//    取消会留下半成品）；这里 `true`。**两条判据不要互相抄期望值** —— canary 专门锁这一点。
+{
+  const concurrencyOf = (src) => {
+    const m = /^concurrency:[ \t]*\n((?:[ \t]+.*\n)*)/m.exec(src);
+    if (m === null) return null;
+    return {
+      group: /group:[ \t]*(.+)/.exec(m[1])?.[1].trim() ?? null,
+      cancelInProgress: /cancel-in-progress:[ \t]*(\S+)/.exec(m[1])?.[1].trim() ?? null,
+    };
+  };
+  const conc = concurrencyOf(ciYml);
+  if (conc === null) {
+    fail('ci.yml 缺少 `concurrency:` —— 被取代的推送会跑完整个 CI（8 个 job），白烧 runner 分钟数；'
+      + '重复投递时也会各跑一遍（实测：一次 push 产生两个 run）');
+  } else {
+    if (conc.group !== 'ci-${{ github.ref }}') {
+      fail(`ci.yml 的 concurrency.group 应为 \`ci-\${{ github.ref }}\`（按 ref 分组），实际 ${conc.group}`);
+    }
+    if (conc.cancelInProgress !== 'true') {
+      fail('ci.yml 的 `cancel-in-progress` 必须是 `true` —— 被取代的提交的 CI 结论**没有任何价值**；'
+        + '（与 release.yml 的 `false` **方向相反**，理由见 ci.yml 内的注释）');
+    }
+  }
+  // canary：与 release.yml 那条共用**同一解析形状**，但期望值**相反**（防互相抄）
+  if (concurrencyOf('concurrency:\n  group: ci-${{ github.ref }}\n  cancel-in-progress: true\n')?.cancelInProgress !== 'true') {
+    errors.push('CI 串行判据 canary 失效：`true` 未被识别');
+  }
+  if (concurrencyOf('concurrency:\n  group: x\n  cancel-in-progress: false\n')?.cancelInProgress !== 'false') {
+    errors.push('CI 串行判据 canary 失效：`false` 未被识别（无法与 release.yml 的方向区分）');
+  }
+  if (concurrencyOf('jobs:\n  a:\n') !== null) {
+    errors.push('CI 串行判据 canary 失效：没有 concurrency 时未判为 null');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }

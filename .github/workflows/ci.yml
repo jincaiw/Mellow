@@ -5,6 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+# 同一个 ref 的多次运行必须**串行**，且后来的**取消**先前的（2026-10-07，审计 §4.125）。
+# 【为什么与 `release.yml` 相反】那边 `cancel-in-progress: false`（release 是**对外**的，
+#   取消会留下半成品）；这里 `true` —— **被取代的提交的 CI 结论没有任何价值**，
+#   留着它只会白烧 runner 分钟数、并制造「同一个 SHA 两个 run、其中一个是旧的」这种混淆。
+# 【实测触发】一次 push 曾产生 **两个** CI run（同一 SHA、同为 `push` 事件、GitHub 侧重复投递）；
+#   有了本组，重复/被取代的运行会互相取消，而不是各跑一遍。
+# ⚠️ PR 的 `github.ref` 是 `refs/pull/N/merge`，与 `refs/heads/main` **不同组** ⇒ 互不干扰。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 # 统一 pnpm workspace 工具链（根 package.json + pnpm-workspace.yaml，阶段 0 迁移）。
 # 特例：packages/editor-core/CoreEditor（vendored MarkEdit）排除出 workspace，保留上游 yarn。
 
