@@ -24,6 +24,8 @@ function makeHost(overrides: Partial<MockHost> = {}): MockHost {
     pickImageFiles: async () => overrides.picked ?? [],
     readClipboardFiles: async () => overrides.clipFiles ?? [],
     consumeDroppedFilePaths: () => overrides.dropped ?? [],
+    shouldDownloadRemoteImages: () => false,
+    downloadFile: async () => ({ ok: true, value: undefined }),
     copyFile: async (from, to) => {
       base.copies.push({ from, to });
       return { ok: true, value: undefined };

@@ -205,6 +205,9 @@ if (schemaRefs < 300) {
       'copyFile(${from} → ${to}) 未实现',
       'mkdir(${path}) 未实现',
       'writeBinary(${path}) 未实现',
+      // 2026-10-07（审计 §4.142）：远端图自动本地化新增的 null-host 占位，
+      // 与上面三条**同族同因**（`fail()` 的开发者错误，不面向用户）。
+      'downloadFile(${url} → ${to}) 未实现',
     ],
   };
   const EXEMPT_REASON = '`fail()` 抛出的**开发者错误**（null host 的未实现占位），不面向用户；'

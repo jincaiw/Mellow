@@ -4000,6 +4000,12 @@ export default function App() {
           wikilinkWin.__MELLOW_WIKILINK_OPEN__ = (name) => { void openWikilinkRef.current(name); };
         }
 
+        // 远端图自动本地化（2026-10-07，审计 §4.142）：Typora `applyImageMoveForWeb`（默认 false）。
+        // 注入一个**函数**（惰性读设置 ⇒ 改设置即时生效）；engine 不读存储，只问宿主。
+        const dlWin = frame?.contentWindow as (Window & { __MELLOW_IMAGE_DOWNLOAD_REMOTE__?: () => boolean }) | null;
+        if (dlWin) {
+          dlWin.__MELLOW_IMAGE_DOWNLOAD_REMOTE__ = () => readBoolSetting('image.downloadRemote', false);
+        }
         // 图床上传（Typora §55 / 清单 1.3）：插入图片（拖拽/粘贴）自动上传替换 URL。
         // 惰性读 localStorage（live 设置：偏好→图片→上传服务切换即生效）；
         // 'none'/未装配 → 全 null → engine 回退本地插入策略（keep-original / copy-to-assets）。

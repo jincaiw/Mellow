@@ -246,8 +246,8 @@ export function planDownloadRemote(refs: ImageRef[], ctx: PlanContext): ImageOpP
   return plan;
 }
 
-/** 远程 URL → 目标文件名（去 query/hash；含扩展名校验） */
-function remoteTargetName(url: string): string {
+/** 远程 URL → 目标文件名（去 query/hash；含扩展名校验）。导出供 `insert.ts` 复用（审计 §4.142）。 */
+export function remoteTargetName(url: string): string {
   let pathname: string;
   try {
     pathname = new URL(url).pathname;

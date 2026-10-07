@@ -48,6 +48,8 @@ function makeHost(
     pickImageFiles: async () => [],
     readClipboardFiles: async () => [],
     consumeDroppedFilePaths: () => [],
+    shouldDownloadRemoteImages: () => false,
+    downloadFile: async () => ({ ok: true, value: undefined }),
     copyFile: async () => ({ ok: true, value: undefined }),
     mkdir: async () => ({ ok: true, value: undefined }),
     writeBinary: async () => ({ ok: true, value: undefined }),

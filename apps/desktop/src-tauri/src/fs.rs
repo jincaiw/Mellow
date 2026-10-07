@@ -940,8 +940,9 @@ pub async fn download_remote(url: String, target_path: String) -> Result<(), Str
     download_remote_impl(&url, Path::new(&target_path))
 }
 
-/// 下载核心实现（命令与测试共用）
-fn download_remote_impl(url: &str, target: &Path) -> Result<(), String> {
+/// 下载核心实现（命令、**bridge** 与测试共用；2026-10-07 审计 §4.142 起 `pub(crate)` ——
+/// 桥接层的 `download` 方法复用同一实现，避免两套 HTTP 逻辑分叉）
+pub(crate) fn download_remote_impl(url: &str, target: &Path) -> Result<(), String> {
     let dir = target.parent().unwrap_or_else(|| Path::new("."));
     if !dir.as_os_str().is_empty() && !dir.exists() {
         fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;

@@ -53,6 +53,18 @@ fn bridge_fs(message: &BridgeMessage) -> Result<Option<serde_json::Value>, Strin
                 .map_err(|e| format!("copy {} → {}: {}", p.from, p.to, e))?;
             Ok(Some(serde_json::json!({ "ok": true })))
         }
+        // 2026-10-07（审计 §4.142）：远端图下载 —— 供 engine 的「插入远端图时按偏好自动本地化」使用。
+        // 复用 `fs::download_remote_impl`（与「图片：下载远程到 asset 目录」命令**同一实现**，避免两套 HTTP 逻辑）。
+        "download" => {
+            #[derive(serde::Deserialize)]
+            struct Params {
+                url: String,
+                to: String,
+            }
+            let p: Params = serde_json::from_str(&message.parameters).map_err(|e| e.to_string())?;
+            crate::fs::download_remote_impl(&p.url, std::path::Path::new(&p.to))?;
+            Ok(Some(serde_json::json!({ "ok": true })))
+        }
         "mkdir" => {
             #[derive(serde::Deserialize)]
             struct Params {

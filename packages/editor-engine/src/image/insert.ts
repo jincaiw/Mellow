@@ -14,6 +14,7 @@
 
 import type { ImageHost, ImageCandidate, ImagePlan } from './host';
 import { buildFileLinkMarkdown, buildImageMarkdown, buildImageSrcFrom, computeRelativePath, dirname, joinPaths, pathKind, normalizeSlashes, assetDirName, basename } from './path';
+import { remoteTargetName } from './ops';
 import type { AssetDirConfig } from './path';
 
 export interface InsertOptions {
@@ -58,9 +59,37 @@ export async function planImageCandidate(
   const strategy = opts.strategy ?? 'auto';
   const rootDir = opts.rootDir ?? null;
 
-  // url：直插，无 fs 操作
+  // url：**默认**直插、无 fs 操作；但宿主开启「远端图自动本地化」时**下载到 asset 目录**并改写 src
+  // （Typora `applyImageMoveForWeb`，默认 false ⇒ 默认行为不变。2026-10-07，审计 §4.142）
   if (candidate.kind === 'url') {
     const src = candidate.url ?? '';
+    const docPathForUrl = host.getDocumentPath();
+    const docDirForUrl = docPathForUrl === null ? null : dirname(docPathForUrl);
+    if (src !== '' && docDirForUrl !== null && host.shouldDownloadRemoteImages()) {
+      const assetRelative = assetDirName(docPathForUrl === null ? null : docStem(docPathForUrl), opts.assetDir ?? 'assets');
+      const assetAbs = joinPaths(docDirForUrl, assetRelative.replace(/^\.\//, ''));
+      // ⚠️ **避免覆盖用户已有文件**：`download_remote_impl` 是「写临时文件再 rename」⇒ 会**覆盖**同名目标。
+      // 故先问宿主该名字是否已存在，冲突则依次试 `-1`/`-2`…（与 ops.ts 的 `allocateUniqueName` 同精神，
+      // 但这里只对**文件系统**去重 —— 同一批多个同源 URL 的边界情形仍可能重名，已登记为残留）。
+      const baseName = remoteTargetName(src);
+      let target = joinPaths(assetAbs, baseName);
+      if (await host.exists(target)) {
+        const dot = baseName.lastIndexOf('.');
+        const stem = dot === -1 ? baseName : baseName.slice(0, dot);
+        const ext = dot === -1 ? '' : baseName.slice(dot);
+        for (let i = 1; i < 100; i += 1) {
+          const candidateName = joinPaths(assetAbs, `${stem}-${i}${ext}`);
+          if (!(await host.exists(candidateName))) { target = candidateName; break; }
+        }
+      }
+      return {
+        markdown: buildImageMarkdown(buildImageSrcFrom(target, docDirForUrl, rootDir), candidate.alt),
+        fsOps: [
+          { kind: 'mkdir', to: assetAbs },
+          { kind: 'download', url: src, to: target },
+        ],
+      };
+    }
     return { markdown: buildImageMarkdown(src, candidate.alt), fsOps: [] };
   }
 
@@ -247,6 +276,9 @@ export async function executeFsOps(host: ImageHost, ops: ImagePlan['fsOps']): Pr
     } else if (op.kind === 'copy') {
       const r = await host.copyFile(op.from!, op.to);
       if (!r.ok) return `copy ${op.from} → ${op.to}: ${r.error.message}`;
+    } else if (op.kind === 'download') {
+      const r = await host.downloadFile(op.url!, op.to);
+      if (!r.ok) return `download ${op.url} → ${op.to}: ${r.error.message}`;
     } else {
       const r = await host.writeBinary(op.to, op.data!);
       if (!r.ok) return `write ${op.to}: ${r.error.message}`;

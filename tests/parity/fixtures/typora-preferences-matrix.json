@@ -36,11 +36,9 @@
     {
       "typora": "applyImageMoveForWeb",
       "default": false,
-      "status": "gap",
-      "mellow": [],
-      "note": "网络图片移动应用范围未作为设置暴露；**但底层能力已在**（`packages/app-core/src/imageFileOps.ts` 的 `downloadRemoteImage` / `planDownloadRemote`）",
-      "behavior": "matches-default",
-      "behaviorNote": "代码：网络图片（`kind:'url'`）**直插、无 fsOps**（`insert.ts:62`）⇒ **不移动** → 与 Typora 默认 false 一致（已复核 2026-10-07 §4.136）。【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/image/insert.ts` —— `kind:'url'` 分支**直插、`fsOps: []`** ⇒ 网络图**不移动**。⚠️ **更正 §4.139 的分类（原写「缺设置」，实际是「能力已在、缺自动触发接线」）**：Mellow **已有下载远端图并落盘**的能力（`imageFileOps.ts` 的 `downloadRemoteImage` → `planDownloadRemote`），但**只在用户显式执行「图片：下载远程到 asset 目录」时**触发；**插入**远端图时不会自动下载。⇒ 缺的是「插入时按 `applyImageMoveForWeb` 自动下载」的接线（Typora 的 `shouldTriggerMove` 对 web src 返回该偏好）。默认 false ⇒ **默认行为一致**（都不自动下载）⇒ 该项**可自主实施**（列为下一轮候选）。"
+      "status": "implemented",
+      "mellow": ["image.downloadRemote"],
+      "note": "**已实装**（2026-10-07，审计 §4.142）：新增设置 `image.downloadRemote`（toggle，**默认 false** ⇒ 默认行为与 Typora 一致：插入远端图**不**自动下载）+ 宿主注入 `__MELLOW_IMAGE_DOWNLOAD_REMOTE__`（`apps/desktop/src/App.tsx`）+ engine 的 `shouldDownloadRemoteImages()`（`packages/editor-engine/src/image/host.ts`）+ `packages/editor-engine/src/image/insert.ts` 的 `kind:'url'` 分支产出 `download` fsOp 并把 src 改写为本地相对路径（含 `host.exists()` 防覆盖去重）。⚠️ **与 Typora 的两点差异**（均为有意）：① Mellow 额外要求**文档已保存**（无 `docDir` 时算不出相对路径 ⇒ 回退直插）；② Typora 的 `shouldTriggerMove` 对 web src 直接返回该偏好，Mellow 另保留一条**独立的手动通道** —— `packages/app-core/src/imageFileOps.ts` 的 `downloadRemoteImage` / `planDownloadRemote`（用户显式执行「图片：下载远程到 asset 目录」），两者并存、互不干扰。"
     },
     {
       "typora": "autoCorrectMisspell",

@@ -7,8 +7,12 @@ import type { ImageHost, ImageCandidate } from '../src/image/host';
 import { unescapeImageSrc } from '../src/image/path';
 
 /** 内存 mock ImageHost（记录 fs 操作，不落盘） */
-function makeHost(docPath: string | null = '/docs/note.md'): ImageHost & { ops: string[] } {
+function makeHost(
+  docPath: string | null = '/docs/note.md',
+  opts: { downloadRemote?: boolean; existing?: string[] } = {},
+): ImageHost & { ops: string[] } {
   const ops: string[] = [];
+  const existing = new Set(opts.existing ?? []);
   return {
     getDocumentPath: () => docPath,
     pickImageFiles: async () => [],
@@ -19,7 +23,9 @@ function makeHost(docPath: string | null = '/docs/note.md'): ImageHost & { ops: 
     writeBinary: async (path) => { ops.push(`write:${path}`); return { ok: true, value: undefined }; },
     resolveWebUrl: async (src) => `mock://${src}`,
     resolveAbsolutePath: () => null,
-    exists: async () => true,
+    exists: async (path) => existing.has(path) || true,   // 默认「都存在」（既有用例依赖）；传 existing 时按集合判
+    shouldDownloadRemoteImages: () => opts.downloadRemote === true,
+    downloadFile: async (url, to) => { ops.push(`download:${url}→${to}`); return { ok: true, value: undefined }; },
     revealFile: async () => {},
     ops,
   };
@@ -125,6 +131,52 @@ describe('URL / 多图 / 执行', () => {
     const plan = await planImageCandidate(host, { kind: 'url', url: 'https://a.com/x.png' });
     expect(plan.fsOps).toHaveLength(0);
     expect(srcOf(plan)).toBe('https://a.com/x.png');
+  });
+
+  // ── 远端图自动本地化（Typora `applyImageMoveForWeb`，默认 false；2026-10-07 审计 §4.142）──
+  test('宿主未开启（默认）⇒ 仍直插 URL、无 fs 操作', async () => {
+    const host = makeHost('/docs/note.md', { downloadRemote: false });
+    const plan = await planImageCandidate(host, { kind: 'url', url: 'https://a.com/x.png' });
+    expect(plan.fsOps).toHaveLength(0);
+    expect(srcOf(plan)).toBe('https://a.com/x.png');
+    expect(host.ops).toEqual([]);
+  });
+
+  test('宿主开启 + 文档已保存 ⇒ mkdir + download，src 为**本地相对路径**', async () => {
+    const host = makeHost('/docs/note.md', { downloadRemote: true, existing: [] });
+    const plan = await planImageCandidate(host, { kind: 'url', url: 'https://a.com/img/x.png?raw=1' });
+    expect(plan.fsOps.map((o) => o.kind)).toEqual(['mkdir', 'download']);
+    const dl = plan.fsOps.find((o) => o.kind === 'download');
+    expect(dl?.url).toBe('https://a.com/img/x.png?raw=1');
+    expect(dl?.to).toBe('/docs/assets/x.png');   // 去 query ⇒ 文件名 x.png
+    expect(srcOf(plan)).toBe('assets/x.png');      // 相对文档目录
+  });
+
+  test('宿主开启但**文档未保存** ⇒ 回退直插（无目标目录语义）', async () => {
+    const host = makeHost(null, { downloadRemote: true });
+    const plan = await planImageCandidate(host, { kind: 'url', url: 'https://a.com/x.png' });
+    expect(plan.fsOps).toHaveLength(0);
+    expect(srcOf(plan)).toBe('https://a.com/x.png');
+  });
+
+  test('目标已存在 ⇒ 名字加 -1（**不覆盖用户文件**）', async () => {
+    const host = makeHost('/docs/note.md', { downloadRemote: true });
+    // 只让 `/docs/assets/x.png` 存在 ⇒ 应选 `/docs/assets/x-1.png`
+    const onlyExisting = makeHost('/docs/note.md', { downloadRemote: true });
+    onlyExisting.exists = async (p: string) => p === '/docs/assets/x.png';
+    const plan = await planImageCandidate(onlyExisting, { kind: 'url', url: 'https://a.com/x.png' });
+    const dl = plan.fsOps.find((o) => o.kind === 'download');
+    expect(dl?.to).toBe('/docs/assets/x-1.png');
+    expect(srcOf(plan)).toBe('assets/x-1.png');
+    void host;
+  });
+
+  test('executeFsOps 会调用 host.downloadFile', async () => {
+    const host = makeHost('/docs/note.md', { downloadRemote: true, existing: [] });
+    const plan = await planImageCandidate(host, { kind: 'url', url: 'https://a.com/x.png' });
+    const err = await executeFsOps(host, plan.fsOps);
+    expect(err).toBeNull();
+    expect(host.ops.some((o) => o.startsWith('download:'))).toBe(true);
   });
 
   test('多张合并：fsOps mkdir 去重，markdown 按空行分隔', async () => {

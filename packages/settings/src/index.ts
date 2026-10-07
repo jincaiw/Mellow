@@ -287,6 +287,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // Mellow 的对应物 = `__MELLOW_IMAGE_UPLOAD__` 注入（`App.tsx` 的图床上传服务）
       // ⇒ 关闭时**不注入** ⇒ engine 的 `uploadImages` 返回全 null ⇒ 回退本地插入（等价 `upload: 'never'`）。
       // 默认 true ⇒ **默认行为不变**。
+      // 2026-10-07（审计 §4.142）：Typora 的 `applyImageMoveForWeb`（**默认 false**）。
+      // 语义：插入**远端图**时，是否把它**下载到 asset 目录**并改写 src 为本地相对路径。
+      // Mellow 的对应物 = `ImageHost.shouldDownloadRemoteImages()`（宿主读本设置，engine 不读存储）
+      // + bridge 的 `download` 方法（复用 `fs::download_remote_impl`，与「下载远程到 asset 目录」命令同一实现）。
+      // **默认 false ⇒ 默认行为不变**（仍是直插 URL）。
+      { id: 'image.downloadRemote', labelKey: 'settings.image.downloadRemote', type: 'toggle', storageKey: 'mellow.image.downloadRemote', defaultValue: false, descriptionKey: 'settings.image.downloadRemoteDesc' },
       { id: 'image.allowUpload', labelKey: 'settings.image.allowUpload', type: 'toggle', storageKey: 'mellow.image.allowUpload', defaultValue: true, descriptionKey: 'settings.image.allowUploadDesc' },
       // V6-P1 1.2.6：默认自动加载远程图片（Typora 行为）；引擎读 '0' 为关（默认开）
       { id: 'image.loadRemote', labelKey: 'settings.image.loadRemote', type: 'toggle', storageKey: 'mellow.image.loadRemote', defaultValue: true, descriptionKey: 'settings.image.loadRemoteDesc' },

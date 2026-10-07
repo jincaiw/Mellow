@@ -2001,6 +2001,72 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 远端图自动本地化（2026-10-07，审计 §4.142；Typora `applyImageMoveForWeb`）──────────────
+// Typora 真值：`applyImageMoveForWeb` 在 `DEFAULT_OPTIONS` 里 **默认 false**（与 `applyImageMoveForLocal`
+//   不同）⇒ **默认行为必须与现状一致（url 直插、不做 fs 操作）**。
+// Mellow 对应物 = `image.downloadRemote`（toggle，默认 **false**）+ 宿主注入 `__MELLOW_IMAGE_DOWNLOAD_REMOTE__`。
+// 【为什么判据必须**跨 4 层**】只锁一处 ⇒ 会出现三种**静默失效**，且**没有任何报错**：
+//   ① 设置存在但没人读（空开关）；② engine 问了但宿主没注入（偏好永远 false）；③ 注入但无人消费（死注入）。
+//   ⇒ 四层（settings / App 注入 / engine host / insert 门控）缺任一 ⇒ **功能不存在**。
+{
+  // ① 设置定义：toggle + **默认 false**（取 true 会**改变现状** —— 每个网络图插入都被下载）
+  if (!/id: 'image\.downloadRemote'[^}]*type: 'toggle'[^}]*defaultValue: false/.test(settingsSource)) {
+    fail('settings 缺少 image.downloadRemote（toggle / **默认 false**）—— 默认必须 false，否则会改变现状行为（Typora applyImageMoveForWeb 默认关）');
+  }
+  // ② 宿主注入：必须用 readBoolSetting('image.downloadRemote', false) **惰性**读（改设置即时生效）
+  if (!/__MELLOW_IMAGE_DOWNLOAD_REMOTE__ = \(\) => readBoolSetting\('image\.downloadRemote', false\)/.test(appSource)) {
+    fail('App.tsx 未注入 __MELLOW_IMAGE_DOWNLOAD_REMOTE__（engine 永远拿不到宿主偏好 ⇒ 功能不可达）');
+  }
+  // ③ engine host 消费注入点（缺 ⇒ 注入是死的）
+  // ⚠️ **不许用裸标识符**：`/shouldDownloadRemoteImages/` 会被 `shouldDownloadRemoteImagesX` 满足
+  //    （注入验证实测：把桥接实现的属性改名，旧判据**仍绿** ⇒ 假护栏）。
+  //    ⇒ 必须锚定**定义形态**（`name: () => {`）**且**该函数体内**真的读到**注入探针（同一段正则内）。
+  const hostSrc = read('packages/editor-engine/src/image/host.ts');
+  if (!/shouldDownloadRemoteImages\(\): boolean;/.test(hostSrc)) {
+    fail('ImageHost 接口未声明 shouldDownloadRemoteImages() —— 实现方无从对齐');
+  }
+  if (!/shouldDownloadRemoteImages:\s*\(\)\s*=>\s*\{[^}]*__MELLOW_IMAGE_DOWNLOAD_REMOTE__/.test(hostSrc)) {
+    fail('engine 桥接 host 的 shouldDownloadRemoteImages 未读 __MELLOW_IMAGE_DOWNLOAD_REMOTE__ —— 宿主注入无人消费（功能永远关）');
+  }
+  // ④ insert.ts 的 url 分支必须**真的**被该开关门控 + 产出 download 操作 + executeFsOps 处理它
+  const insertSrc = read('packages/editor-engine/src/image/insert.ts');
+  if (!/docDirForUrl !== null && host\.shouldDownloadRemoteImages\(\)/.test(insertSrc)) {
+    fail('insert.ts 的 url 分支未被 shouldDownloadRemoteImages() 门控 —— 开关是**空开关**');
+  }
+  if (!/kind: 'download', url: src, to: target/.test(insertSrc)) {
+    fail('insert.ts 的 url 分支未产出 download 操作（下载不会发生）');
+  }
+  if (!/op\.kind === 'download'/.test(insertSrc) || !/host\.downloadFile\(op\.url!, op\.to\)/.test(insertSrc)) {
+    fail('executeFsOps 未处理 download 操作 —— fsOps 会被**静默丢弃**（引用改写为本地路径但文件不存在）');
+  }
+  // canary：正/负样本（同一份正则）
+  const DL_SET_RE = /id: 'image\.downloadRemote'[^}]*type: 'toggle'[^}]*defaultValue: false/;
+  if (!DL_SET_RE.test("{ id: 'image.downloadRemote', labelKey: 'x', type: 'toggle', storageKey: 's', defaultValue: false }")) {
+    fail('downloadRemote 设置 canary 失效：正样本未命中');
+  }
+  if (DL_SET_RE.test("{ id: 'image.downloadRemote', labelKey: 'x', type: 'toggle', storageKey: 's', defaultValue: true }")) {
+    fail('downloadRemote 设置 canary 失效：负样本（默认 true）被判为命中');
+  }
+  const DL_GATE_RE = /docDirForUrl !== null && host\.shouldDownloadRemoteImages\(\)/;
+  if (!DL_GATE_RE.test("if (src !== '' && docDirForUrl !== null && host.shouldDownloadRemoteImages()) {")) {
+    fail('downloadRemote 门控 canary 失效：正样本未命中');
+  }
+  if (DL_GATE_RE.test("if (src !== '' && docDirForUrl !== null && host.shouldDownloadRemoteImagesX()) {")) {
+    fail('downloadRemote 门控 canary 失效：负样本（改名的方法）被判为命中');
+  }
+  // host 消费点 canary：**负样本必须是「改名」**（这正是旧裸标识符判据漏掉的情形）
+  const DL_HOST_RE = /shouldDownloadRemoteImages:\s*\(\)\s*=>\s*\{[^}]*__MELLOW_IMAGE_DOWNLOAD_REMOTE__/;
+  if (!DL_HOST_RE.test('shouldDownloadRemoteImages: () => {\n  const p = (window as unknown as { __MELLOW_IMAGE_DOWNLOAD_REMOTE__?: () => boolean }).__MELLOW_IMAGE_DOWNLOAD_REMOTE__;\n},')) {
+    fail('host 消费点 canary 失效：正样本未命中');
+  }
+  if (DL_HOST_RE.test('shouldDownloadRemoteImagesX: () => {\n  const p = (window as unknown as { __MELLOW_IMAGE_DOWNLOAD_REMOTE__?: () => boolean }).__MELLOW_IMAGE_DOWNLOAD_REMOTE__;\n},')) {
+    fail('host 消费点 canary 失效：负样本（属性改名）被判为命中 —— 判据会漏掉「实现改名」');
+  }
+  if (DL_HOST_RE.test('shouldDownloadRemoteImages: () => false,')) {
+    fail('host 消费点 canary 失效：负样本（空实现 `() => false`）被判为命中');
+  }
+}
+
     // ── 矩阵条目与 **D 表**的一致性（2026-10-07，审计 §4.140）──────────────────────
     // 【为什么补】D 表（master-plan §12）是**裁决的唯一可发现处**。实测发现 **3 条**矩阵条目
     //   与 D 表**矛盾**：`sortType`（D-AG 明言「功能已等价」）· `useTreeStyle`（D-AK 明言「不是缺一个开关」）·

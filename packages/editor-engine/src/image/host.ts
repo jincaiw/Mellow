@@ -31,8 +31,11 @@ export type ImageInsertStrategy =
 
 /** 单张图片插入计划（fs 操作与 markdown 分离，方便 undo 与失败处理） */
 export interface ImageFsOp {
-  kind: 'copy' | 'write' | 'mkdir';
+  /** `download` = 从 `url` 下载到 `to`（2026-10-07，审计 §4.142；远端图本地化用） */
+  kind: 'copy' | 'write' | 'mkdir' | 'download';
   from?: string;
+  /** download 的源 URL */
+  url?: string;
   to: string;
   data?: ArrayBuffer;
 }
@@ -87,6 +90,13 @@ export interface ImageHost {
   resolveAbsolutePath(src: string): string | null;
   /** 文件是否存在（broken 检测） */
   exists(path: string): Promise<boolean>;
+  /**
+   * 插入**远端图**时是否自动下载到 asset 目录（Typora `applyImageMoveForWeb`，默认 false）。
+   * 由**宿主**决定（读设置）—— engine 不读存储。2026-10-07，审计 §4.142。
+   */
+  shouldDownloadRemoteImages(): boolean;
+  /** 下载远端图到 `to`（绝对路径）。宿主不支持时返回失败 ⇒ engine 回退「直插 URL」。 */
+  downloadFile(url: string, to: string): Promise<Result<void>>;
   /** 在文件管理器中定位（broken placeholder reveal） */
   revealFile(path: string): Promise<void>;
 }
@@ -106,6 +116,8 @@ export function createNullImageHost(): ImageHost {
     resolveWebUrl: async () => null,
     resolveAbsolutePath: () => null,
     exists: async () => false,
+    shouldDownloadRemoteImages: () => false,
+    downloadFile: (url, to) => fail(`downloadFile(${url} → ${to}) 未实现`),
     revealFile: async () => {},
   };
 }
@@ -156,6 +168,13 @@ export function createBridgeImageHost(): ImageHost {
     copyFile: (from, to) => invokeFs('copyFile', { from, to }),
     mkdir: (path) => invokeFs('mkdir', { path }),
     writeBinary: (path, data) => invokeFs('writeBinary', { path, data: Array.from(new Uint8Array(data)) }),
+    // 远端图自动本地化（2026-10-07，审计 §4.142）：宿主注入一个**函数**（惰性读设置 ⇒ live 生效）。
+    // 与 `__MELLOW_IMAGE_UPLOAD__` 同一模式：engine 不读存储，只问宿主。
+    shouldDownloadRemoteImages: () => {
+      const probe = (window as unknown as { __MELLOW_IMAGE_DOWNLOAD_REMOTE__?: () => boolean }).__MELLOW_IMAGE_DOWNLOAD_REMOTE__;
+      return typeof probe === 'function' ? probe() === true : false;
+    },
+    downloadFile: (url, to) => invokeFs('download', { url, to }),
     // 图床上传（Typora §55）：惰性读宿主注入的 __MELLOW_IMAGE_UPLOAD__
     // （App 在 host.ready 后注入；构造时可能尚未就绪）。未注入 → 全 null → engine 回退本地插入。
     uploadImages: async (paths: string[]): Promise<Array<string | null>> => {
