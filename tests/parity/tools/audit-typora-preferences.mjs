@@ -12,13 +12,21 @@
  * `Panel.strings` 只有 UI 文案、无键名与默认值，只查它会漏或猜。
  * 另注意 `DEFAULT_OPTIONS.keys` 是**嵌套对象**（查找表），不是偏好项 → 已排除。
  *
+ * ⚠️ **范围（2026-10-07，审计 §4.123）**：本工具的完备性比对范围 = `DEFAULT_OPTIONS`（84 键），
+ * **不是**「Typora 的全部偏好」。偏好面板 UI（`page-dist/static/js/Preferences.*.js`）去重后
+ * 暴露 **91** 个 `keyName`，其中约 **47** 个**不在** `DEFAULT_OPTIONS` 里
+ * （`theme` / `userLanguage` / `zoomLevel` / `actionWhenDropFolder` / `pandocPath` …）
+ * ⇒ **那一面本工具不覆盖**，其默认值需另找来源；本工具会把「面板有、矩阵无」的部分**打印出来**。
+ * 面板也是**用户可见语义**（`label` / `hint` / `reverse`）的唯一来源 —— 本工具据此做
+ * 「`reverse: !0` 的键必须带 `polarity: 'inverted'`」的检查（漏标会让「照着键名判语义」重演）。
+ *
  * ── 用法 ──────────────────────────────────────────────────────────────────
  *   node tests/parity/tools/audit-typora-preferences.mjs            # 审计（❌ 时非零退出）
  *   node tests/parity/tools/audit-typora-preferences.mjs --write    # 把新键补进矩阵（status: TODO）
  *
  * 环境变量 `TYPORA_APPSRC` 可覆盖 TypeMark/appsrc 路径（默认取 /Applications/Typora.app）。
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
@@ -30,6 +38,24 @@ function frameJsPath() {
   const base = process.env.TYPORA_APPSRC
     ?? '/Applications/Typora.app/Contents/Resources/TypeMark/appsrc';
   return resolve(base, 'window/frame.js');
+}
+
+/**
+ * 定位 Typora 的**偏好面板 UI** 脚本（`page-dist/static/js/Preferences.*.js`）。
+ *
+ * ⚠️ 这是**与 `DEFAULT_OPTIONS` 不同的另一个面**（2026-10-07，审计 §4.123）：
+ * · `DEFAULT_OPTIONS`（frame.js）＝ **默认值**表，矩阵声明的范围就是它（84 键）；
+ * · 面板 UI ＝ **用户可见语义**（`label` / `hint` / `reverse`）。
+ * 两者**键集合不同**（面板去重后 91 个 `keyName`，其中约 47 个不在 `DEFAULT_OPTIONS` 里）——
+ * 故本工具**只**在「面板与 DEFAULT_OPTIONS 的交集」上做检查，并把范围外的那部分**打印出来**。
+ */
+function panelJsPath() {
+  const base = process.env.TYPORA_APPSRC
+    ?? '/Applications/Typora.app/Contents/Resources/TypeMark/appsrc';
+  const dir = resolve(base, '..', 'page-dist/static/js');
+  if (!existsSync(dir)) return null;
+  const found = readdirSync(dir).find((name) => /^Preferences\./.test(name));
+  return found === undefined ? null : resolve(dir, found);
 }
 
 /**
@@ -199,6 +225,62 @@ if (todo.length > 0) {
 }
 if (badIds.length > 0) {
   errors.push(`implemented 条目引用了不存在的 Mellow 设置 id（${badIds.length}）：${badIds.join(', ')}`);
+}
+
+// ── 面板的**反向语义**键（`reverse: !0`）必须带 `polarity: 'inverted'`（2026-10-07，审计 §4.123）──
+// 立此条的原因（实测）：`noLegacyMath` 被**照着键名**读成「不做 legacy 数学解析」并判为 `differs`，
+// 而它在 Typora 偏好面板里的 **label 是**「`LaTeX Math Delimiter \( \) \[ \]`」且带 `reverse: !0`
+// ⇒ **用户可见语义与键名相反**、默认是**启用**。而 Mellow **已支持**这四个定界符 ⇒ 该判定是错的。
+// ⇒ 把「这个键的 UI 语义是反的」变成**机器可读**：凡面板标了 `reverse: !0` 的键，
+//    矩阵条目**必须**带 `polarity: 'inverted'`（它正是「UI 默认 = 存储值取反」的写法，
+//    也是默认值比对里 `!e.default` 那一支的依据）。
+{
+  const panelPath = panelJsPath();
+  if (panelPath === null) {
+    console.log('\nℹ️ 未找到 Typora 偏好面板 JS（Preferences.*.js）⇒ 跳过「反向语义键」检查');
+  } else {
+    const panel = readFileSync(panelPath, 'utf8');
+    const reversed = [...new Set([...panel.matchAll(/\{[^{}]*keyName:\s*"([A-Za-z0-9_]+)"[^{}]*\}/g)]
+      .filter((m) => /reverse:\s*!0/.test(m[0]))
+      .map((m) => m[1]))].sort();
+    // 面板用 snake_case、DEFAULT_OPTIONS 多用 camelCase ⇒ 归一化后比对
+    const norm = (k) => k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+    const byNorm = new Map(entries.map((e) => [norm(e.typora), e]));
+    const missing = [];
+    let checked = 0;
+    for (const key of reversed) {
+      const e = byNorm.get(norm(key));
+      if (e === undefined) continue; // 面板有、DEFAULT_OPTIONS 无 ⇒ 在矩阵声明范围之外（见下）
+      checked += 1;
+      if (e.polarity !== 'inverted') missing.push(`${key}（矩阵键名 ${e.typora}）`);
+    }
+    if (checked === 0) {
+      errors.push('「反向语义键」检查**空转**：面板里的 reverse 键一个都没匹配到矩阵条目 —— '
+        + '归一化或解析可能已失效，请修判据而不是放任它恒真');
+    }
+    if (missing.length > 0) {
+      errors.push(`面板标了 reverse:!0（UI 语义与键名**相反**）但矩阵未标 polarity:'inverted'（${missing.length}）：`
+        + `${missing.join(', ')} —— 缺这个标记时，「照着键名判语义」的错误会再次发生（noLegacyMath 就是这么错的）`);
+    }
+    const outOfScope = reversed.filter((k) => byNorm.get(norm(k)) === undefined);
+    console.log(`\n偏好面板 reverse:!0 键：${reversed.length} 个（已检查 ${checked} 个在矩阵内）`);
+    if (outOfScope.length > 0) {
+      console.log(`ℹ️ 其中 ${outOfScope.length} 个**不在**矩阵声明范围（DEFAULT_OPTIONS）内，故未检查：`
+        + `${outOfScope.join(', ')}`);
+    }
+    // canary：谓词必须能区分（拼接构造，不依赖真实数据）
+    const revOf = (src) => [...src.matchAll(/\{[^{}]*keyName:\s*"([A-Za-z0-9_]+)"[^{}]*\}/g)]
+      .filter((m) => /reverse:\s*!0/.test(m[0])).map((m) => m[1]);
+    if (!revOf('{keyName:"x",reverse:!0}').includes('x')) {
+      errors.push('反向语义键 canary 失效：reverse:!0 未被识别');
+    }
+    if (revOf('{keyName:"y",reverse:!1}').length !== 0) {
+      errors.push('反向语义键 canary 过宽：reverse:!1 被当成了反向键');
+    }
+    if (norm('noLegacyMath') !== 'no_legacy_math' || norm('no_legacy_math') !== 'no_legacy_math') {
+      errors.push('反向语义键 canary 失效：命名归一化不能把 camelCase 与 snake_case 归一');
+    }
+  }
 }
 
 if (errors.length > 0) {

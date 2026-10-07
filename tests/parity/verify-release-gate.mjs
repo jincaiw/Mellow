@@ -457,8 +457,9 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   //
   // 立此条的原因（实测）：矩阵里有 **5 条 `deviation.kind === 'undecided'`**
   // （`enableHighlight` / `enableSubscript` / `enableSuperscript` / `enableDiagram` / `zoomByMouse`）
-  // 与 **5 条行为轴的 `behavior: differs`**（`autoEscapeImageURL` / `useRelativePathForImg` /
-  // `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter`）—— 它们此前**只写在 master-plan 的轮次叙述里**，
+  // 与 **4 条行为轴的 `behavior: differs`**（`autoEscapeImageURL` / `useRelativePathForImg` /
+  // `mathFormatOnCopy` / `wordCountDelimiter`；原为 5 条，`noLegacyMath` 已于 2026-10-07 取证后
+  // **改判为 `matches-default`**，见审计 §4.123）—— 它们此前**只写在 master-plan 的轮次叙述里**，
   // 审计的「待裁决项登记表（**唯一声明处**）」**一行都没有** ⇒ 本门禁据此报 `Pending decisions: 无`：
   // **项目在机器可读层面声称「没有任何待裁决项」**，而实际有 10 项。
   {

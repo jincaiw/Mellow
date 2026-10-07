@@ -7719,6 +7719,87 @@ CM6 文档说 BlockWrapper「affects any line or **block widget** that starts in
 
 
 
+## 4.123 偏好矩阵的一处**错误判定**（`noLegacyMath`）+ 范围声明 + 反向语义的机器可读化（2026-10-07）
+
+### 一、动因：把 ADR-0034 Q9 从「依赖一项未完成的取证」变成「可裁决」
+
+§4.121 把 `noLegacyMath` 登记为 `behavior: differs` + `undecided → ADR-0034 Q9`，并在 Q9 里写下
+「**本 Q 的第一步不是实现，而是定义范围**；本轮没有取证出 legacy 数学语法的确切集合」。
+本轮把那项取证做掉 —— 结果**推翻了问题赖以成立的前提**。
+
+### 二、取证（三条一手证据）
+
+1. **键名与用户可见语义相反**：Typora 偏好面板（`page-dist/static/js/Preferences.*.js`）里该键的
+   `label` 是 **`"LaTeX Math Delimiter \( \) \[ \]"`**，且带 **`reverse: !0`**
+   （勾选态 = `!getValue(key)`）⇒ 它的语义是「**`\(` `\)` `\[` `\]` 是否作为数学定界符**」，
+   **默认启用**。
+2. **在渲染路径上恒为 no-op**：`main.js` 的三处守卫都是
+   `File.option.enableInlineMath || !File.option.noLegacyMath`，而 **`enableInlineMath` 默认 `true`**
+   ⇒ 该键在渲染路径上**无论取何值都不改变结果**。
+3. **Mellow 本来就支持这四个定界符**：`parseMathSpans` 处理 `\(` `\)` `\[` `\]`；
+   且 `tests/fixtures/math/typora-math-corpus.md` 里的 `\(\alpha + \beta\)` 与 `\[ E = mc^2 \]`
+   **已被 `math.test.ts` 首条用例断言**（inline 断言 `tex === '\\alpha + \\beta'`，block 断言 `tex` 含 `E = mc^2`）。
+
+⇒ **两边行为一致** ⇒ 矩阵条目由 `behavior: differs` **改判为 `matches-default`**，
+`disposition`（`undecided → ADR-0034`）**一并移除** ⇒ **Q9 作废**（ADR 里保留编号并写明结论，以免破坏引用）。
+⇒ 行为轴 `differs` 由 **8 → 7**、其中 `undecided` 由 **5 → 4**；ADR-0034 由 **10 问 → 9 问**。
+
+> **为什么旧判定错了**：它是**照着键名**读出来的（`noLegacyMath` 读起来像「不做 legacy 数学解析」），
+> 而该键的**用户可见语义恰恰相反**。
+> **最刺眼的证据是：同文件里 `legacyInlineMathParse` 的注记早就写着**
+> 「Mellow parseMathSpans 仅实现现代 `$`/`\(`/`\[` 分隔符」—— **两个相邻条目互相矛盾**，
+> 而**没有任何判据发现它**。
+
+### 三、按「同一类还有几处」的纪律做的普查：面板的**反向语义键**共 8 个
+
+| 面板 `reverse:!0` 的键 | 面板 label | 矩阵状态 |
+|---|---|---|
+| `no_pairing_match` | Auto pair brackets and quotes | 在矩阵内（`noPairingMatch`，**已有** `polarity`） |
+| `noEmojiAutoComplete` | Enable autocomplete for Emojis | 在矩阵内，**漏标** `polarity` ⇒ 已补 |
+| `no_mid_caret` | Always keep caret in middle of screen… | **不在**矩阵范围（面板独有） |
+| `noAutoLink` | Auto Links | 在矩阵内，**漏标** ⇒ 已补 |
+| `no_line_wrapping` | Auto wrap long lines | 在矩阵内（`noLineWrapping`，**已有** `polarity`） |
+| `noLegacyMath` | **LaTeX Math Delimiter `\( \) \[ \]`** | 在矩阵内，**漏标** ⇒ 已补（并改判） |
+| `hideBrAndLineBreak` | Visible `<br/>` | 在矩阵内，**漏标** ⇒ 已补 |
+| `noRecentFiles` | Record recent files and folders | **不在**矩阵范围（面板独有） |
+
+**处置**：4 个漏标条目补 `polarity: 'inverted'`（它的语义正是「**UI 默认 = 存储值取反**」，
+也是默认值比对里 `!e.default` 那一支的依据）；并在
+`tests/parity/tools/audit-typora-preferences.mjs` 新增判据：
+**凡面板标 `reverse: !0` 的键，矩阵条目必须带 `polarity: 'inverted'`**，
+外加一条**防空转**断言（若一个都没匹配到 ⇒ 报「判据可能已失效，请修判据而不是放任它恒真」）。
+
+### 四、⚠️ 我差点报的一条**假发现**：面板与矩阵「差 47 个键」
+
+普查时我先比较了「面板的 `keyName` 集合」与「矩阵的键集合」，得到
+**面板 91 个 / 矩阵 84 个 / 面板独有 64 个 / 矩阵独有 57 个** ⇒ 看起来像「矩阵漏了 64 个真实偏好」。
+**归一化命名（camelCase ↔ snake_case）后**交集升到 44，但仍有 **47 个面板键不在矩阵里** ⇒ 假发现**仍像成立**。
+
+**定性靠的是跑既有工具**：`audit-typora-preferences.mjs` 报
+「Typora `DEFAULT_OPTIONS`：84 项 / 矩阵：84 项」⇒ **矩阵相对其声明来源是完备的**。
+⇒ 真相是：**矩阵的范围是 `DEFAULT_OPTIONS`（84），面板是另一个面（91）**，
+两者**键集合本来就不同**（面板含 `theme` / `userLanguage` / `zoomLevel` / `actionWhenDropFolder` /
+`pandocPath` 等**不在 `DEFAULT_OPTIONS` 里**的键）。
+⇒ 这**不是「漏登记」**，而是**范围边界**；**该修的是「范围声明」**，不是矩阵。
+
+**处置**：矩阵顶层 `note` 增补**范围声明**（84 = `DEFAULT_OPTIONS`，**不是**「Typora 的全部偏好」；
+面板去重后 91 个 keyName、其中约 47 个不在范围内 ⇒ **那一面本矩阵不覆盖**，默认值需另找来源）；
+工具新增打印「面板有、本矩阵无」的那部分；工具头部补 `panelJsPath()` 的说明。
+
+### 五、教训
+
+1. **判定必须落在「用户能看到什么」上，而不是「这个名字听起来像什么」** ——
+   `noLegacyMath` 的错误就是照键名读语义；而**同一个键在面板里就写着它的真实含义**。
+2. **「两个相邻条目互相矛盾」是可以在无判据的情况下长期存活的** ——
+   本轮发现的矛盾（`noLegacyMath` vs `legacyInlineMathParse`）**在同一份 JSON 里**，
+   且**两处都自称有一手证据**。⇒ **「引用了证据」不等于「证据支持这个结论」。**
+3. **比较两个集合前先归一化形态**（camelCase / snake_case），
+   **比较之后要问「它们是不是本来就该不同」**（来源不同 ⇒ 范围不同）。
+4. **既有工具是「定性」的最短路径**：我在抽取 `DEFAULT_OPTIONS` 时自己写坏了脚本（0 键），
+   而仓库里**早就有**一个做完备性比对的工具 —— **先跑既有工具，再考虑自己写**。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

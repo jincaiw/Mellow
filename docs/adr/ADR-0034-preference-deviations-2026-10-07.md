@@ -1,4 +1,4 @@
-# ADR-0034 — 偏好矩阵的 **10 项**「未登记的待裁决偏离」（**默认值轴 5 + 行为轴 5**）
+# ADR-0034 — 偏好矩阵的 **9 项**「未登记的待裁决偏离」（**默认值轴 5 + 行为轴 4**）
 
 **Status:** **Proposed**（2026-10-07）—— 待裁决。
 
@@ -50,7 +50,8 @@
 > | `wordsPerMinute` | **deliberate → `D-AO`** | 轮次表**第二十九轮**已判「有意取舍（CJK-aware）」 |
 > | `presetSpellCheck` | **gap → `P0-EDITOR-005`** | 台账项「拼写检查词典与替换建议」（`IMPL`，未闭环） |
 > | `autoEscapeImageURL` / `useRelativePathForImg` | **undecided → 本 ADR Q6/Q7** | 轮次表**第二十七轮**曾判「**真缺陷**」，**第二十九轮只改了措辞、从未重判** ⇒ 必须重新裁决 |
-> | `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` | **undecided → 本 ADR Q8/Q9/Q10** | 均需先定范围或先设计 |
+> | `mathFormatOnCopy` / `wordCountDelimiter` | **undecided → 本 ADR Q8/Q10** | 均需先设计或先裁决 |
+> | ~~`noLegacyMath`~~ | **已排除 → 不需要裁决** | 2026-10-07 取证推翻原前提（审计 §4.123）：该键的**用户可见语义**是「`\( \) \[ \]` 作数学定界符」、**默认启用**，而 Mellow **已支持** ⇒ 改判 `matches-default`，**Q9 作废** |
 
 ---
 
@@ -138,7 +139,7 @@ Mellow 只有**一个** `markdown.supSub`（`mellow.engine.features.supSub`）
 
 ---
 
-## 行为轴（`behavior: differs`）的 5 项
+## 行为轴（`behavior: differs`）的 4 项（原 5 项，`noLegacyMath` 已排除）
 
 > 这一轴的定义是「**Mellow 没有这个设置**，且**实际行为**与 Typora 的默认不同」。
 > 与默认值轴的区别：默认值轴**有**设置、只是默认值不同（用户可改）；行为轴**没有**设置（用户改不了）。
@@ -197,18 +198,35 @@ Mellow 的复制路径**无 math/SVG 处理** ⇒ 复制得到 **LaTeX 源码**�
 在裁决前**不应**把它记成「待实现的小项」（本仓 §4.10 的教训：别把「我没想到路径」写成「不可行」，
 但也别把**需要设计的项**写成「一个下午就能做完」）。
 
-## Q9 — `noLegacyMath`：Mellow 是否要支持 **legacy 数学语法**？
+## Q9 — ~~`noLegacyMath`：Mellow 是否要支持 legacy 数学语法？~~ ⇒ **已由取证排除，不需要裁决**（2026-10-07）
 
-**事实**：Typora `DEFAULT_OPTIONS.noLegacyMath = false` ⇒ **legacy 数学解析默认启用**；
-Mellow 没有 legacy 分支 ⇒ 实际等价于 `noLegacyMath = true`。
+**本问作废** —— 2026-10-07 的取证推翻了它赖以成立的前提（详见审计 §4.123）。
 
-⚠️ **本 Q 的第一步不是实现，而是定义范围** —— 本轮**没有**取证出「legacy 数学语法」的**确切集合**
-（Typora 的数学解析器里哪些分支属 legacy、哪些属现行，尚未从一手资源里提取）。
-**在没有该集合之前，任何「已对齐 / 未对齐」的结论都是空的。**
+**原前提（错）**：「Typora 默认 `noLegacyMath = false` ⇒ legacy 数学解析启用；Mellow 没有 legacy 分支
+⇒ 等价于 `noLegacyMath = true` ⇒ 行为不同。」
 
-**建议**：**先做一次取证**（从 Typora 的数学解析路径里提取 legacy 分支的语法集合），
-再据此决定 A1（实装）还是 A2（登记 D：Mellow 只支持现行语法）。
-⇒ 本 Q 的裁决**依赖一项尚未完成的取证**，故**保持 Proposed**。
+**取证（三条一手证据）**：
+
+1. **键名与语义相反**：Typora 偏好面板里该键的 `label` 是
+   **`"LaTeX Math Delimiter \( \) \[ \]"`**，且带 **`reverse: !0`**（勾选态 = `!getValue(key)`）
+   ⇒ 它的用户可见语义是「**`\(` `\)` `\[` `\]` 是否作为数学定界符**」，**默认启用**；
+2. **在渲染路径上恒为 no-op**：`main.js` 的三处守卫都是
+   `File.option.enableInlineMath || !File.option.noLegacyMath`，而 **`enableInlineMath` 默认 `true`**
+   ⇒ 该键在渲染路径上**无论取何值都不影响结果**；
+3. **Mellow 本来就支持这四个定界符**：`parseMathSpans` 处理 `\(` `\)` `\[` `\]`，
+   且 `tests/fixtures/math/typora-math-corpus.md` 的 `\(\alpha + \beta\)` 与 `\[ E = mc^2 \]`
+   **已被 `math.test.ts` 首条用例断言**。
+
+⇒ **两边行为一致** ⇒ 矩阵条目由 `behavior: differs` 改判为 **`matches-default`**，
+`disposition`（`undecided → ADR-0034`）**一并移除** ⇒ **本问不需要裁决**。
+
+> **教训**：这条判定是**照着键名读出来的**（`noLegacyMath` 读起来像「不做 legacy 数学解析」），
+> 而它的**用户可见语义**恰恰相反。⇒ 与 §4.121 的「状态行判据被正文满足」同族：
+> **判定必须落在「用户能看到什么」上，而不是「这个名字听起来像什么」。**
+>
+> ⚠️ 另一处佐证：**同文件**的 `legacyInlineMathParse` 条目早已写明
+> 「Mellow parseMathSpans 仅实现现代 `$`/`\(`/`\[` 分隔符」——
+> **两个相邻条目互相矛盾**，而没有任何判据发现它（见「机器可读化」一节的范围声明）。
 
 ## Q10 — `wordCountDelimiter`：字数统计是否要提供 **WORD / CHAR / LINE / TIME 四模式**？
 
@@ -247,7 +265,7 @@ Mellow 的 `app-core/wordCount.ts` **固定同时计算并展示** words / chars
 
 ## 裁决
 
-**待裁决（10 问）。** 裁决后请：
+**待裁决（9 问：Q1–Q8、Q10；**Q9 已由取证排除**）。** 裁决后请：
 
 ① 更新本 ADR 的 `Status` 为 `Accepted` 并**逐问**写入结论；
 ② 按结论更新矩阵：`deviation.kind` 改 `deliberate`（并去掉 `pendingRef`）/ 或改默认值；

@@ -1019,8 +1019,10 @@ if (cssLayerAnchor === undefined) {
     //
     // 立此条的原因（实测）：矩阵里 5 条 `deviation.kind === 'undecided'`
     // （`enableHighlight` / `enableSubscript` / `enableSuperscript` / `enableDiagram` / `zoomByMouse`）
-    // 与 5 条行为轴的 `behavior: differs`（`autoEscapeImageURL` / `useRelativePathForImg` /
-    // `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter`）
+    // 与 4 条行为轴的 `behavior: differs`（`autoEscapeImageURL` / `useRelativePathForImg` /
+    // `mathFormatOnCopy` / `wordCountDelimiter`）
+    // （原为 5 条；`noLegacyMath` 已于 2026-10-07 取证后**改判为 `matches-default`** 并移除 disposition，
+    //   见审计 §4.123 —— 该键的**用户可见语义**是「`\( \) \[ \]` 作数学定界符」且默认启用，而 Mellow 已支持）
     // 此前**只出现在 master-plan 的轮次叙述里**，审计的「待裁决项登记表（**唯一声明处**）」**一行都没有**
     // ⇒ 发布门禁据此报 `Pending decisions: 无` —— **项目在机器可读层面声称「没有待裁决项」**。
     // 这正是 ADR-0029 登记表头部自陈的那半句：「要补上这一半**需给标记定机器可读写法**」。
