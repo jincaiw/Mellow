@@ -8605,6 +8605,95 @@ Typora 的默认值 `""` = **Auto**，其语义是**当前文件所在目录**�
 
 
 
+### 六、⚠️ 更正（2026-10-07，§4.133）
+
+本节把 **Auto 的语义实现错了**：写成「**当前文件所在目录**」，而 Typora 的 Auto 是
+**`File.mountFolder_`（打开的工作区文件夹）**；「当前文件所在目录」对应的是 **`same`** 档（`u()`）。
+⇒ 已由 §4.133 更正（`export.folder` 三档 + `auto` = `fileTreeRoot`）。
+**错因**：只读了面板的**默认值**（`""` = Auto）就动手，**没有先把 `d()` 的优先级链逐字读出**。
+⇒ 教训见 §4.133 的「教训 1」。
+
+
+
+## 4.133 补上 `exportFolder` 的**选项本身**（三档）+ **更正 §4.132 的语义映射错误**（2026-10-07）
+
+### 一、更正：§4.132 把 **Auto** 实现成了 **same**
+
+本轮为了写「Same folder with current file」这一档，**逐字读出**了 `main.js` 的建议导出路径 `d()`：
+
+```js
+d = function (e, t, n) {                    // 建议导出路径
+  var sep = File.isWin ? "\\" : "/";
+  var name = e ? File.getSuggestedFileName() + "." + e : File.getSuggestedFileName();
+  return (t = t || {}).path
+    ? (!File.option.lastExport || File.option.lastExportNoOverwrite
+        ? pathByDeleteLastComponent(t.path) + sep + name : t.path)      // ① 显式 path
+    : File.option.lastSaveLocation
+      ? File.option.lastSaveLocation + sep + name                        // ② **上次保存位置（高于本项）**
+      : "same" === t.exportFolder
+        ? u() + sep + name                                               // ③ same ⇒ u() = **当前文件所在目录**
+        : "custom" === t.exportFolder
+          ? (t.customExportPath = t.customExportPath || window._options.documentsPath,
+             t.customExportPath + sep + name)                            // ④ custom
+          : File.mountFolder_                                            // ⑤ **Auto ⇒ 工作区文件夹**
+            ? File.mountFolder_ + sep + name
+            : (n && n(name), name);                                      // ⑥ 兜底：只给文件名
+};
+u = function () {                            // ③ 的 u()
+  return File.isMac ? File.bundle.currentFolderPath
+    : (File.isNode && File.bundle.filePath
+        ? reqnode("path").dirname(File.bundle.filePath || File.bundle.originalPath) : "");
+};
+```
+
+⇒ **Auto = `File.mountFolder_`（打开的工作区文件夹）**，而 **「当前文件所在目录」是 `same`**。
+§4.132 把 Auto 实现成了「当前文件所在目录」⇒ **映射错了**（在那个场景下两者的差别正是「打开了文件夹工作区」时）。
+**错因**：只读了面板的**默认值**（`value: n.exportFolder || ""` ⇒ Auto）就动手，
+**没有先把 `d()` 的优先级链逐字读出** —— 而「默认是哪一档」与「那一档取什么值」是两件事。
+
+### 二、处置
+
+1. **设置**（`packages/settings/src/index.ts`）：
+   - `export.folder`（select `auto`/`same`/`custom`，**默认 `auto`**）；
+   - `export.customPath`（text，默认空串；仅 `custom` 档生效，与 Typora 面板的渲染条件一致）。
+2. **`App.tsx` 的 `saveDialogDir()` 重写**（`dirOfPath()` 抽成纯函数）：
+   | 档 | 落点 | 对应 Typora |
+   |---|---|---|
+   | `auto`（默认） | **`fileTreeRoot`**（工作区文件夹）；无则**不指定** | `File.mountFolder_`（无则只给文件名） |
+   | `same` | **当前文件所在目录** | `u()` |
+   | `custom` | **`export.customPath`**；留空 ⇒ 不指定 | `customExportPath \|\| documentsPath` |
+   ⚠️ `custom` 留空时 Mellow **不指定**（Typora 回落系统「文档」目录）—— 属**有意差异**（不替用户猜目录），已写进登记表。
+3. **登记表**：`exportFolder` 与 `customExportPath` 均 **`gap` → `equivalent`**（`mellow` 分别指向 `export.folder` / `export.customPath`）。
+   ⇒ 分布 `equivalent 30 → **32**`、`gap 10 → **8**`。
+   ⚠️ 但 note 里**如实写出残留差异**：Typora 的 `File.option.lastSaveLocation`（记住上次保存位置）
+   **优先级高于本项**，Mellow 未实现该前置项 ⇒ 在「用户刚保存过文件」的场景下两边落点可能不同。
+
+### 三、护栏（注入验证 3/3）
+
+`verify-settings-contract.mjs` 新增：
+- `export.folder` 必须 `select` 且**默认 `auto`**、三档选项都在；`export.customPath` 必须 `text` 默认空串；
+- `App.tsx` 必须读取这两项；**三个分支各自接到正确的来源**（`custom` ⇒ `customPath`（含留空 ⇒ 不指定）、
+  `same` ⇒ `dirOfPath(path)`、`auto` ⇒ `fileTreeRoot`）—— 漏一支 = 该档静默退回系统默认；
+- canary 用**同一份正则**做正/负样本（正样本合规、负样本「默认 same」必须被判为不合规）。
+
+**注入验证 3/3**：① 默认值改成 `same` ⇒ 红；② 删掉 `custom` 选项 ⇒ 红；③ `auto` 档改成 `dirOfPath(path)` ⇒ 红。全部还原后通过。
+
+### 四、教训
+
+1. **「默认是哪一档」与「那一档取什么值」是两件事** —— 本轮 §4.132 的错就出在这里：
+   读到「默认 = Auto」就动手，没读 **Auto 取什么值**。⇒ **凡「默认值 + 取值路径」的结构，
+   必须把决定取值的优先级链逐字读出并抄进注释**（本轮 `d()` 的 5 级链）。
+   ⚠️ 同一链里还藏着**别的东西**：`lastSaveLocation` 优先级高于本项 —— 只读「默认值」永远看不到它。
+2. **自己的判定错了要「单独记一次更正」，并指出错在哪一步** ——
+   §4.132 已提交，本轮在它末尾加**更正块**指向 §4.133，而不是悄悄改掉。
+   读者若只看被改过的结论，就不知道原来错在哪、也就**无法判断是否还有同类错**。
+3. **「补了一半」要接着补完，并说明每半各是什么** —— §4.132 补的是 Auto 的**行为**（且映射错了），
+   本轮补的是**选项本身**（三档）。两半都做完，`exportFolder` 才配得上 `equivalent`。
+4. **有意差异要写进登记表，而不是留在代码注释里** —— `custom` 留空时 Mellow 不指定（Typora 回落 `documentsPath`），
+   这一条写在 note 里才能被下一个读者看见。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

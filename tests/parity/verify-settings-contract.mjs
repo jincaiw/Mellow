@@ -1687,6 +1687,49 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 导出默认文件夹（2026-10-07，审计 §4.133；Typora「Default Folder for Exported File」）────
+// Typora 真值（一手证据）：面板组 `title:"Default Folder for Exported File"`、
+// `options:{"":"Auto", same:"Same folder with current file", custom:"Custom location"}`、
+// `value: n.exportFolder || ""` ⇒ **默认 Auto**；`main.js` 的 `d()` 里 `"same"` ⇒ `u()`=当前文件所在目录、
+// `"custom"` ⇒ `customExportPath || documentsPath`、**Auto** ⇒ `File.mountFolder_`（工作区文件夹），无则只给文件名。
+// 只锁**接线**与**默认值**；「对话框真的落在那个目录」由 §⑤b（`pick_save_path.default_dir` 必须逐处传）+ 真机负责。
+{
+  if (!/id: 'export\.folder'[^}]*type: 'select'[^}]*defaultValue: 'auto'/.test(settingsSource)) {
+    fail('settings 缺少 export.folder（select / **默认 auto**）—— 默认必须是 auto，否则导出默认落点会变');
+  }
+  for (const v of ['auto', 'same', 'custom']) {
+    if (!new RegExp(`\\{ value: '${v}', labelKey: 'settings\\.export\\.folder\\.${v}' \\}`).test(settingsSource)) {
+      fail(`export.folder 缺少选项 ${v}（Typora 面板的三档：Auto / Same folder with current file / Custom location）`);
+    }
+  }
+  if (!/id: 'export\.customPath'[^}]*type: 'text'[^}]*defaultValue: ''/.test(settingsSource)) {
+    fail("settings 缺少 export.customPath（text / 默认空串）");
+  }
+  for (const id of ['export.folder', 'export.customPath']) {
+    if (!new RegExp(`settingById\\('${id.replace('.', '\\.')}'\\)`).test(appSource)) {
+      fail(`App.tsx 未读取 ${id} → 该设置不会生效`);
+    }
+  }
+  // 三个分支都必须真的用上对应的来源（漏一支 = 该档静默退回系统默认）
+  if (!/mode === 'custom'[\s\S]{0,400}?return custom === '' \? undefined : custom;/.test(appSource)) {
+    fail("App.tsx 的 saveDialogDir 未把 export.customPath 用作 custom 档的落点（或未处理留空 ⇒ 不指定）");
+  }
+  if (!/mode === 'same'\) return dirOfPath\(path\);/.test(appSource)) {
+    fail('App.tsx 的 saveDialogDir 未把 same 档接到「当前文件所在目录」');
+  }
+  if (!/return fileTreeRootRef\.current \?\? undefined;/.test(appSource)) {
+    fail('App.tsx 的 saveDialogDir 未把 auto 档接到 fileTreeRoot（Typora 的 Auto = mountFolder_）');
+  }
+  // canary：正/负样本（用**同一份**正则）
+  const AUTO_RE = /id: 'export\.folder'[^}]*type: 'select'[^}]*defaultValue: 'auto'/;
+  if (!AUTO_RE.test("id: 'export.folder', type: 'select', defaultValue: 'auto'")) {
+    fail('export.folder 默认值 canary 失效：正样本未被识别');
+  }
+  if (AUTO_RE.test("id: 'export.folder', type: 'select', defaultValue: 'same'")) {
+    fail('export.folder 默认值 canary 失效：负样本（默认 same）被判为合规');
+  }
+}
+
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
 // 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，
 //   但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**：

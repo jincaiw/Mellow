@@ -341,6 +341,27 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 空串 = 不指定（走 PATH + 兜底），与 Typora 默认一致 ⇒ **默认行为不变**。
       // 无 applyCommand —— 导出/导入时读取（同 `export.preserveLineBreaks`）。
       { id: 'export.pandocPath', labelKey: 'settings.export.pandocPath', type: 'text', storageKey: 'mellow.export.pandocPath', defaultValue: '', descriptionKey: 'settings.export.pandocPathDesc' },
+      // 2026-10-07（审计 §4.133）：Typora「Default Folder for Exported File」。
+      // 【一手证据】面板组 `title:"Default Folder for Exported File"`、
+      //   `options:{"":"Auto", same:"Same folder with current file", custom:"Custom location"}`、
+      //   `value: n.exportFolder || ""` ⇒ **默认 `""` = Auto**；仅当 `"custom"` 时才渲染 `customExportPath` 文本框。
+      // 【精确语义】`main.js` 建议导出路径 `d()` 的优先级（本轮逐字读出）：
+      //   ① 显式 `t.path` → ② `File.option.lastSaveLocation`（**高于本项**；Mellow 未实现「记住上次保存位置」，见审计）
+      //   → ③ `"same"` ⇒ `u()` = **当前文件所在目录**
+      //   → ④ `"custom"` ⇒ `customExportPath || window._options.documentsPath`
+      //   → ⑤ **Auto** ⇒ `File.mountFolder_`（**打开的工作区文件夹**），无则**只给文件名**（不指定目录）。
+      // ⚠️ **§4.132 的映射有误，本轮更正**：当时把 Auto 实现成「当前文件所在目录」——
+      //   那其实是 **`same`** 档；Auto 应当是**工作区根目录**（Mellow 的 `fileTreeRoot` 与之对应：
+      //   打开文件夹 = 该文件夹；打开单文件 = 其父目录，见 `autoLoadParentFolder`）。
+      // 【默认】`auto` ⇒ 落点 = `fileTreeRoot`；无则**不指定**（与 Typora 的兜底一致）。
+      { id: 'export.folder', labelKey: 'settings.export.folder', type: 'select', storageKey: 'mellow.export.folder', defaultValue: 'auto',
+        options: [
+          { value: 'auto', labelKey: 'settings.export.folder.auto' },
+          { value: 'same', labelKey: 'settings.export.folder.same' },
+          { value: 'custom', labelKey: 'settings.export.folder.custom' },
+        ], descriptionKey: 'settings.export.folderDesc' },
+      // 仅当 `export.folder === 'custom'` 时生效（与 Typora 面板的渲染条件一致）。
+      { id: 'export.customPath', labelKey: 'settings.export.customPath', type: 'text', storageKey: 'mellow.export.customPath', defaultValue: '', descriptionKey: 'settings.export.customPathDesc' },
     ],
   },
   {

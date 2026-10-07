@@ -1299,18 +1299,41 @@ export default function App() {
     }
   }, [t]);
 
-  /** 保存对话框的**初始目录**（2026-10-07，审计 §4.132）。
-   *  Typora 的「Default Folder for Exported File」默认 `""` = **Auto**，其语义（`main.js` 导出路径计算）
-   *  就是**当前文件所在目录**（`File.bundle.currentFolderPath`）⇒ 本函数给出同一个落点。
-   *  ⚠️ 返回 `undefined` = **不指定**（由系统对话框决定）：未命名/未保存文档、或路径里没有分隔符。
-   *  必须**每一处** `pick_save_path` 都传 —— 漏传会让该入口的初始目录退回系统默认
-   *  （护栏 `verify-tauri-command-contract.mjs` §⑤b 的 `OPTION_ARG_REQUIRED_AT_CALLSITE` 锁这一点）。 */
-  const saveDialogDir = useCallback((path: string | null | undefined): string | undefined => {
+  /** 某个路径所在目录（`undefined` = 不可用：未命名/未保存文档、或路径里没有分隔符）。
+   *  ⚠️ 不直接用 `fileTreeDirname()` 的结果 —— 它对**裸文件名**会返回 `'/'`（`idx <= 0 ? '/' : …`），
+   *  那会给出一个**看起来对、实际错**的落点。 */
+  const dirOfPath = useCallback((path: string | null | undefined): string | undefined => {
     if (path === null || path === undefined || path === '') return undefined;
-    if (!/[\\/]/.test(path)) return undefined; // 裸文件名（相对路径）⇒ 没有可用的目录
+    if (!/[\\/]/.test(path)) return undefined;
     const dir = fileTreeDirname(path);
     return dir === '' ? undefined : dir;
   }, []);
+
+  /** 保存对话框的**初始目录**（2026-10-07，审计 §4.132 / **§4.133 更正语义**）。
+   *
+   *  Typora 的「Default Folder for Exported File」默认 `""` = **Auto**，而 `main.js` 的
+   *  建议导出路径 `d()` 的**精确**语义（本轮逐字读出）是：
+   *    `"same"` ⇒ `u()` = **当前文件所在目录**；
+   *    `"custom"` ⇒ `customExportPath || documentsPath`；
+   *    **Auto** ⇒ `File.mountFolder_`（**打开的工作区文件夹**），无则**只给文件名**（不指定目录）。
+   *  ⚠️ **§4.132 曾把 Auto 实现成「当前文件所在目录」—— 那其实是 `same` 档**；本轮更正为
+   *    `auto` ⇒ `fileTreeRoot`（Mellow 与之对应：打开文件夹 = 该文件夹；打开单文件 = 其父目录）。
+   *
+   *  ⚠️ 必须**每一处** `pick_save_path` 都传 —— 漏传会让该入口的初始目录退回系统默认
+   *  （护栏 `verify-tauri-command-contract.mjs` §⑤b 的 `OPTION_ARG_REQUIRED_AT_CALLSITE` 锁这一点）。 */
+  const saveDialogDir = useCallback((path: string | null | undefined): string | undefined => {
+    const folderDef = settingById('export.folder');
+    const mode = folderDef === undefined ? 'auto' : String(readSetting(folderDef));
+    if (mode === 'custom') {
+      const customDef = settingById('export.customPath');
+      const custom = customDef === undefined ? '' : String(readSetting(customDef)).trim();
+      // 留空 ⇒ 不指定（Typora 回落 `documentsPath`；Mellow 不替用户猜目录）
+      return custom === '' ? undefined : custom;
+    }
+    if (mode === 'same') return dirOfPath(path);
+    // auto（默认）= 工作区文件夹；无工作区 ⇒ 不指定（与 Typora 的兜底一致）
+    return fileTreeRootRef.current ?? undefined;
+  }, [dirOfPath]);
 
   // ── RC F6：导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize）──
   // Pandoc 导出（PRD §75 P1 / deep-parity A9 / D2 格式扩展）：
