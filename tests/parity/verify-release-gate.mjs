@@ -184,7 +184,13 @@ const DECIDED_ADRS = [
 // **分处两个 eventHandler**，而 `index.ts` 的注册顺序把优先级 2 排在 3/4 之后 ⇒ 与 spec §3 相反。
 // 裁决 A3 = 在 `handleSmartPaste` 内**显式让位**（有图片 payload 则 return false）⇒ 不再依赖注册顺序。
 // 故它**不再**是待裁决项（已移入 DECIDED_ADRS）。
-const PENDING_ADRS = [];   // 当前无待裁决 ADR（ADR-0033 已于 2026-10-06 同日裁决为 Accepted）
+// 2026-10-07（审计 §4.120）：**重新非空** —— 偏好矩阵里 5 条 `deviation.kind === 'undecided'`
+// 此前**只写在 master-plan 的轮次叙述里**，审计登记表一行都没有 ⇒ 本门禁报 `Pending decisions: 无`，
+// 即**项目在机器可读层面声称「没有待裁决项」**。ADR-0034 是它们的载体（**未擅自改任何默认值**）。
+const PENDING_ADRS = [
+  ['docs/adr/ADR-0034-preference-default-deviations-2026-10-07.md',
+    '偏好默认值 5 项偏离 Typora（highlight / sub·sup / mermaid / zoomByMouse）'],
+];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
     fail(`待裁决 ADR 缺失：${p}（${what}）—— 待裁决项必须有 ADR 载体（AGENTS.md「决策变更」）`);

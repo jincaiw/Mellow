@@ -19,7 +19,7 @@ import { tableContext } from './table/keymap';
 import { addRow, addRowAbove, deleteRow, addColumn, addColumnLeft, deleteColumn, tidyTable, moveRow, moveColumn, deleteTable, copyTable, setColumnAlignment } from './table/commands';
 import type { CellAlignment } from './table/parser';
 import { copy } from './clipboardCopy';
-import { parseMathSpans } from './math';
+import { parseMathSpans, isMathFenceLang } from './math';
 import { parseMermaidBlocks } from './mermaid';
 
 export interface EditorContextMenuRequest {
@@ -201,8 +201,12 @@ export function imageSourceAt(doc: string, pos: number, codeRanges: Array<{ from
   return null;
 }
 
-/** 围栏语言视为数学块（Typora 数学块为 `$$`，代码块语言亦可为 math/latex/tex） */
-const MATH_FENCE_LANGS = new Set(['math', 'latex', 'tex', 'katex', 'texmath']);
+/** 围栏语言视为数学块 —— 判定与渲染器**同源**（`math.ts` 的 `isMathFenceLang`，即 Typora `gitlabMath` 的语义）。
+ *  ⚠️ 2026-10-07（审计 §4.120）：此处原有一份**更宽**的本地副本
+ *  `new Set(['math','latex','tex','katex','texmath'])`，而渲染器根本不认围栏数学
+ *  ⇒ 出现「右键菜单说它是数学块、屏幕上却是代码块」的自相矛盾。
+ *  一手证据见 `math.ts` 的 `MATH_FENCE_LANGS` 注释（Typora 只认 `lang === 'math'`；
+ *  `latex`/`tex` 在 Typora 是**按 TeX 高亮的代码块**，不是公式块）。 */
 
 /** 行内链接命中（C1：链接编辑/移除需要原文区间） */
 export interface InlineLinkRangeHit extends InlineLinkSpan {
@@ -349,14 +353,16 @@ export function codeFenceAt(doc: string, pos: number): CodeFenceHit | null {
   return null;
 }
 
-/** pos 是否落在 `$$ … $$` 数学块内（走 math.ts 的统一扫描，避免第二套解析） */
+/** pos 是否落在**块级**数学内（`$$…$$` / `\[…\]` / ` ```math ` 围栏）—— 走 math.ts 的统一扫描，避免第二套解析。
+ *  ⚠️ 2026-10-07：原判据是 `span.open === '$$'` —— 用「定界符」当「块级」的代理，会**静默漏掉 `\[…\]`**
+ *  与新支持的围栏数学。改用 `kind === 'block'`（`MathSpanKind` 的定义就是这件事）。 */
 export function mathBlockAt(doc: string, pos: number): boolean {
-  return parseMathSpans(doc).some((span) => span.open === '$$' && pos >= span.from && pos <= span.to);
+  return parseMathSpans(doc).some((span) => span.kind === 'block' && pos >= span.from && pos <= span.to);
 }
 
-/** `$$` 数学块命中区间（C1：deleteBlock / 渲染导出需要原文区间） */
+/** **块级**数学命中区间（C1：deleteBlock / 渲染导出需要原文区间） */
 export function mathBlockRangeAt(doc: string, pos: number): { from: number; to: number } | null {
-  const span = parseMathSpans(doc).find((s) => s.open === '$$' && pos >= s.from && pos <= s.to);
+  const span = parseMathSpans(doc).find((s) => s.kind === 'block' && pos >= s.from && pos <= s.to);
   return span !== undefined ? { from: span.from, to: span.to } : null;
 }
 
@@ -436,7 +442,7 @@ function buildRequest(view: EditorView, pos: number | null, x: number, y: number
     const fence = codeFenceAt(doc, pos);
     if (fence !== null) {
       if (fence.lang === 'mermaid') return { ...base, kind: 'mermaid', lang: fence.lang };
-      if (MATH_FENCE_LANGS.has(fence.lang)) return { ...base, kind: 'math', lang: fence.lang };
+      if (isMathFenceLang(fence.lang)) return { ...base, kind: 'math', lang: fence.lang };
       return { ...base, kind: 'code', lang: fence.lang };
     }
     if (mathBlockAt(doc, pos)) return { ...base, kind: 'math', lang: 'math' };
@@ -687,7 +693,7 @@ export function installContextMenuApi(): void {
           })()
         : await (async () => {
             const doc = view.state.doc.toString();
-            const span = parseMathSpans(doc).find((s) => s.open === '$$' && pos >= s.from && pos <= s.to);
+            const span = parseMathSpans(doc).find((s) => s.kind === 'block' && pos >= s.from && pos <= s.to);
             const tex = span?.tex ?? null;
             if (tex === null) return null;
             const katex = (window as unknown as { katex?: { renderToString: (tex: string, opts: Record<string, unknown>) => string } }).katex;
@@ -709,7 +715,7 @@ export function installContextMenuApi(): void {
         return await svgToPngDataUrl(svg);
       }
       const doc = view.state.doc.toString();
-      const span = parseMathSpans(doc).find((s) => s.open === '$$' && pos >= s.from && pos <= s.to);
+      const span = parseMathSpans(doc).find((s) => s.kind === 'block' && pos >= s.from && pos <= s.to);
       const tex = span?.tex ?? null;
       if (tex === null) return null;
       const katex = (window as unknown as { katex?: { renderToString: (tex: string, opts: Record<string, unknown>) => string } }).katex;
@@ -838,7 +844,7 @@ export function installContextMenuApi(): void {
       if (view === null) return false;
       const doc = view.state.doc.toString();
       const pos = view.state.selection.main.head;
-      const span = parseMathSpans(doc).find((s) => s.open === '$$' && pos >= s.from && pos <= s.to);
+      const span = parseMathSpans(doc).find((s) => s.kind === 'block' && pos >= s.from && pos <= s.to);
       const tex = span?.tex ?? null;
       if (tex === null) return false;
       const katex = (window as unknown as { katex?: { renderToString: (tex: string, opts: Record<string, unknown>) => string } }).katex;

@@ -195,6 +195,7 @@
       "note": "W5：另有 files.autosaveTimer（Typora 需手改 conf.user.json）",
       "deviation": {
         "kind": "deliberate",
+        "carrier": "PRD §101（宪法级：默认 Window Blur + Document Switch）",
         "reason": "PRD §101（宪法级）明文规定默认 = `Window Blur + Document Switch`；Typora 的 enableAutoSave 默认 false（切换前先问）→ Mellow 按 PRD 取「默认保存」。App.tsx 注释亦标明该映射（mellow.file.autosave 门控 Window Blur + Document Switch）"
       }
     },
@@ -208,6 +209,7 @@
       "note": "对应 Mellow「Mermaid 图表」",
       "deviation": {
         "kind": "undecided",
+        "pendingRef": "ADR-0034",
         "reason": "Typora 默认关（```mermaid 默认按普通代码块显示）；Mellow `markdown.mermaid` 默认开 → 同一份文档显示不同，需裁决"
       }
     },
@@ -221,6 +223,7 @@
       "note": "",
       "deviation": {
         "kind": "undecided",
+        "pendingRef": "ADR-0034",
         "reason": "Typora 默认关闭（`==高亮==` 是非标准 Markdown 扩展，默认不改变普通文本渲染）；Mellow `markdown.highlight` 默认开 —— 方案未见裁决，需用户确认是否改默认"
       }
     },
@@ -243,6 +246,7 @@
       "note": "Mellow 合并上标/下标为一个开关",
       "deviation": {
         "kind": "undecided",
+        "pendingRef": "ADR-0034",
         "reason": "同上（`~下标~` 非标准扩展）：Typora 默认关，Mellow `markdown.supSub` 默认开"
       }
     },
@@ -256,6 +260,7 @@
       "note": "同上",
       "deviation": {
         "kind": "undecided",
+        "pendingRef": "ADR-0034",
         "reason": "同上（`^上标^` 非标准扩展）：Typora 默认关，Mellow `markdown.supSub` 默认开"
       }
     },
@@ -291,9 +296,9 @@
       "default": true,
       "status": "gap",
       "mellow": [],
-      "note": "GitLab 数学语法兼容未实装",
-      "behavior": "differs",
-      "behaviorNote": "一手证据（Typora main.js）：默认 true，GitLab math fenced language 会被识别为数学类型（`isMathType`）；Mellow math.ts 未处理 `math` 代码围栏，仅处理 `$`/`\\(`/`\\[` 数学分隔符 → behavior differs，需单独实现/裁决"
+      "note": "GitLab 数学语法（```math 围栏）**已实装**（2026-10-07，审计 §4.120）；仍缺「可关闭」的开关（Typora 有该偏好项），但**默认行为已一致** ⇒ 归 matches-default",
+      "behavior": "matches-default",
+      "behaviorNote": "2026-10-07 实装并取证：一手证据（Typora 1.14.9 main.js）显示 `D.isMathType(e) = File.option.gitlabMath && typeof e==='string' && a.isType(e.toLowerCase(),'math')`，其中 `a` 是模块 `1b` 的 `o.Node`、`Node.isType` 是通用相等比较（`t == arguments[n]`）且第二实参是**字符串字面量** ⇒ 等价于 `lang.toLowerCase() === 'math'`（**只有 math**）。Mellow 已在 `math.ts` 的 `parseMathSpans` 里把信息串为 `math` 的围栏解析为 **block span**（覆盖整段含围栏行，光标进入时显示源码），并与右键菜单**同源**（原先菜单认 5 种语言、渲染器一种都不认）。单测 12 例 + 三向注入验证。"
     },
     {
       "typora": "headingStyle",
@@ -593,6 +598,7 @@
       "note": "对应浮动选择工具栏",
       "deviation": {
         "kind": "deliberate",
+        "carrier": "master-plan §5.1 / D-B（浮动选择工具栏默认开启，V7-W2.4）",
         "reason": "方案 §5.1 已登记「Editor Toolbar 浮动（Selection 锚定），**默认开启**；入口 = View → 工具栏 或 设置 → 外观」（V7-W2.4 D-B = ①）"
       }
     },
@@ -782,6 +788,7 @@
       "note": "",
       "deviation": {
         "kind": "undecided",
+        "pendingRef": "ADR-0034",
         "reason": "Typora `zoomByMouse` 默认 false；Mellow `editor.cmdWheelZoom` 默认开（Cmd/Ctrl+滚轮缩放）—— 方案未见裁决，需确认"
       }
     }

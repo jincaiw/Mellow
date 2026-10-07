@@ -42,7 +42,7 @@ function resolveCm(): CmRuntime {
 }
 
 export type MathSpanKind = 'inline' | 'block';
-export type MathDelimiter = '$' | '$$' | '\\(' | '\\)' | '\\[' | '\\]';
+export type MathDelimiter = '$' | '$$' | '\\(' | '\\)' | '\\[' | '\\]' | '```' | '~~~';
 export type RendererPath = 'mathjax-compatible' | 'katex-fast';
 export type MathErrorCode = 'unclosed-delimiter' | 'unbalanced-braces';
 
@@ -59,8 +59,8 @@ export interface MathSpan {
   texTo: number;
   source: string;
   tex: string;
-  open: '$' | '$$' | '\\(' | '\\[';
-  close: '$' | '$$' | '\\)' | '\\]';
+  open: '$' | '$$' | '\\(' | '\\[' | '```' | '~~~';
+  close: '$' | '$$' | '\\)' | '\\]' | '```' | '~~~';
   error?: MathError;
 }
 
@@ -108,6 +108,33 @@ const FENCE_MARKER_RE = /^ {0,3}(`{3,}|~{3,})/;
 /** 缩进代码行（4 空格 / Tab） */
 const INDENTED_CODE_RE = /^( {4}|\t)/;
 
+/**
+ * Typora `gitlabMath`（**默认开启**）认可的「数学围栏语言」—— 唯一真源。
+ *
+ * **一手证据（本机 Typora 1.14.9 build 7785，`TypeMark/appsrc/main.js`）**：
+ * ```
+ * D.isMathType = function (e) {
+ *   return File.option.gitlabMath && 'string' == typeof e && a.isType((e || '').toLowerCase(), 'math')
+ * }
+ * ```
+ * 其中 `a` 是模块 `1b` 里的 `o.Node`（`o = e('11')`），而 `Node.isType` 是**通用相等比较**
+ * （`var t = e.attributes ? e.attributes.type : e; … if (t == arguments[n]) return true`），
+ * 且第二个实参是**字符串字面量 `"math"`** ⇒ 该判定**等价于** `lang.toLowerCase() === 'math'`。
+ *
+ * ⚠️ **不是**「一组 TeX 方言」。`main.js` 里另有 `case"stex":case"tex":case"latex":case"math":
+ * return "text/x-stex"` —— 那是 **CodeMirror 语法高亮模式**的别名表（`latex`/`tex` 围栏在 Typora
+ * 里是**按 TeX 高亮的代码块**，**不是**公式块）。
+ *
+ * 历史上 `contextMenu.ts` 自己维护过一份更宽的集合（`math|latex|tex|katex|texmath`），
+ * 于是出现「右键菜单说它是数学块、渲染器说它是代码块」的自相矛盾 —— 现已收敛到本常量。
+ */
+export const MATH_FENCE_LANGS: ReadonlySet<string> = new Set(['math']);
+
+/** `info`（围栏信息串）是否为数学围栏。大小写不敏感，与 Typora 的 `.toLowerCase()` 一致。 */
+export function isMathFenceLang(info: string): boolean {
+  return MATH_FENCE_LANGS.has(info.trim().toLowerCase());
+}
+
 function braceError(tex: string): MathError | undefined {
   let depth = 0;
   for (let i = 0; i < tex.length; i += 1) {
@@ -142,6 +169,26 @@ function span(doc: string, from: number, to: number, texFrom: number, texTo: num
   };
 }
 
+/**
+ * 从数学围栏的**开栏行**起找闭合行（同 marker、≥3 个、行首 ≤3 空格、只允许尾随空白）。
+ * 未闭合时按本文件既有规则**延伸到文末**（与 `$$` 未闭合的处置一致）。
+ */
+function readFenceMathBlock(doc: string, openFrom: number, openTo: number, marker: '`' | '~') {
+  const closeRe = new RegExp(`^ {0,3}${marker === '`' ? '`{3,}' : '~{3,}'}[ \\t]*$`);
+  let cursor = openTo + 1;
+  while (cursor <= doc.length) {
+    const nl = doc.indexOf('\n', cursor);
+    const lineTo = nl === -1 ? doc.length : nl;
+    if (closeRe.test(doc.slice(cursor, lineTo))) {
+      // texTo 取闭合行起点 ⇒ 尾部那个换行由 span() 的 trim 去掉
+      return { from: openFrom, to: lineTo, texFrom: openTo + 1, texTo: cursor, after: lineTo + 1, unclosed: false };
+    }
+    if (nl === -1) break;
+    cursor = nl + 1;
+  }
+  return { from: openFrom, to: doc.length, texFrom: openTo + 1, texTo: doc.length, after: doc.length + 1, unclosed: true };
+}
+
 /** Parse Typora-compatible math delimiters from Markdown source.
  *  from/to 可选：只扫描 [from, to) 区间（Large File Mode 视口裁剪，PRD §109）。
  *  code-context 判定始终基于全文档（fence 状态不受裁剪影响）。
@@ -164,8 +211,23 @@ export function parseMathSpans(doc: string, from = 0, to = doc.length): MathSpan
     const fenceMatch = lineText.match(FENCE_MARKER_RE);
     if (fenceMatch !== null) {
       const marker = fenceMatch[1][0] as '`' | '~';
-      if (fence === null) fence = marker;
-      else if (fence === marker) fence = null;
+      if (fence === null) {
+        // Typora `gitlabMath`（默认开）：信息串恰为 `math` 的围栏是**块级数学** ——
+        // 整段（含开/闭栏行）作为一个 block span，由 blockField 渲染成公式；
+        // 光标进入时 caretInside 会跳过 ⇒ 显示源码（与 `$$` 块同一套语义）。
+        const info = lineText.slice(fenceMatch[0].length).trim();
+        if (isMathFenceLang(info)) {
+          const block = readFenceMathBlock(doc, lineFrom, lineTo, marker);
+          const fenceDelim = marker === '`' ? '```' : '~~~';
+          spans.push(span(doc, block.from, block.to, block.texFrom, block.texTo, fenceDelim, fenceDelim, 'block'));
+          if (block.unclosed) return spans;
+          lineFrom = block.after;
+          continue;
+        }
+        fence = marker;
+      } else if (fence === marker) {
+        fence = null;
+      }
       lineFrom = lineTo + 1;
       continue;
     }

@@ -121,3 +121,80 @@ describe('Math Typora Corpus（PRD §42 / ADR-0010）', () => {
     }
   });
 });
+
+// ── 围栏数学：Typora `gitlabMath`（**默认开**）────────────────────────────────
+// 立此组的依据（一手证据，本机 Typora 1.14.9 build 7785 的 `TypeMark/appsrc/main.js`）：
+//   `D.isMathType = function (e) { return File.option.gitlabMath && 'string' == typeof e
+//      && a.isType((e || '').toLowerCase(), 'math') }`
+// 其中 `a` 是模块 `1b` 的 `o.Node`，`Node.isType` 是**通用相等比较**（`t == arguments[n]`），
+// 第二个实参是**字符串字面量 `"math"`** ⇒ 等价于 `lang.toLowerCase() === 'math'`。
+// ⚠️ 因此**只有 `math`**：`latex`/`tex`/`katex`/`texmath` 在 Typora 是**按 TeX 高亮的代码块**
+// （`main.js` 的 `case"stex":case"tex":case"latex":case"math":return "text/x-stex"` 是 **CodeMirror 模式**别名表）。
+describe('围栏数学（Typora `gitlabMath`，默认开；审计 §4.120）', () => {
+  const FENCE = '```math\nE = mc^2\n```';
+
+  test('信息串为 math 的围栏 → 一个 block span，覆盖整段（含围栏行）', () => {
+    const doc = `前\n${FENCE}\n后`;
+    const spans = parseMathSpans(doc);
+    expect(spans).toHaveLength(1);
+    const s = spans[0];
+    expect(s.kind).toBe('block');
+    expect(s.tex).toBe('E = mc^2');
+    expect(s.source).toBe(FENCE);
+    expect(s.from).toBe(doc.indexOf('```'));
+    expect(s.to).toBe(doc.indexOf('```') + FENCE.length);
+    expect(s.open).toBe('```');
+    expect(s.close).toBe('```');
+  });
+
+  test('~~~ 围栏同样；大小写不敏感（与 Typora 的 toLowerCase 一致）', () => {
+    expect(parseMathSpans('~~~Math\nx\n~~~')[0]).toMatchObject({ kind: 'block', tex: 'x', open: '~~~' });
+    expect(parseMathSpans('```MATH\nx\n```')[0]).toMatchObject({ kind: 'block', tex: 'x' });
+  });
+
+  test('⚠️ 只有 math：latex / tex / katex / texmath 不是公式块（Typora 里是代码块）', () => {
+    for (const lang of ['latex', 'tex', 'katex', 'texmath', 'mermaid', 'js', '']) {
+      expect(parseMathSpans(`\`\`\`${lang}\nE = mc^2\n\`\`\``)).toHaveLength(0);
+    }
+  });
+
+  test('未闭合的 math 围栏延伸到文末（与未闭合 $$ 同处置）', () => {
+    const spans = parseMathSpans('```math\nx^2');
+    expect(spans).toHaveLength(1);
+    expect(spans[0]).toMatchObject({ kind: 'block', tex: 'x^2' });
+    expect(spans[0].to).toBe('```math\nx^2'.length);
+  });
+
+  test('围栏内的 $$ 与 $x$ 不再被当作公式（fence 状态优先）', () => {
+    const spans = parseMathSpans('```math\n$$ not a span $$\n$x$\n```');
+    expect(spans).toHaveLength(1);
+    expect(spans[0].kind).toBe('block');
+    expect(spans[0].tex).toContain('$$ not a span $$');
+  });
+
+  test('4 空格缩进的 ```math 是缩进代码、不是围栏（CommonMark）', () => {
+    expect(parseMathSpans('    ```math\nx\n    ```')).toHaveLength(0);
+  });
+
+  test('两个 math 围栏各自成块，且互不吞并', () => {
+    const spans = parseMathSpans('```math\na\n```\n\n```math\nb\n```');
+    expect(spans.map((s) => s.tex)).toEqual(['a', 'b']);
+  });
+
+  test('真实编辑器：光标在围栏外 → 整段替换为块级数学 widget；光标进入 → 显示源码', async () => {
+    const doc = 'A\n\n```math\nE = mc^2\n```\n\nB';
+    const view = setUpEditor(doc);
+    await sleep();
+    const widget = view.dom.querySelector('.mellow-math-widget.mellow-math-block');
+    expect(widget).not.toBeNull();
+    // 用 dataset.mellowMathSource（同步写入、渲染后不被覆盖）而非 textContent
+    expect(widget?.getAttribute('data-mellow-math-source')).toBe('```math\nE = mc^2\n```');
+    // 整段（含 ``` 行）被替换 ⇒ DOM 里不应再出现围栏行
+    expect(view.dom.textContent).not.toContain('```math');
+
+    view.dispatch({ selection: { anchor: doc.indexOf('E = mc^2') } });
+    await sleep();
+    expect(view.dom.querySelector('.mellow-math-widget.mellow-math-block')).toBeNull();
+    expect(view.dom.textContent).toContain('```math');
+  });
+});

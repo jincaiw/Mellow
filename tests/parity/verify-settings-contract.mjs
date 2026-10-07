@@ -1011,6 +1011,73 @@ if (cssLayerAnchor === undefined) {
       fail('偏好项矩阵没有任何 deviation 条目 —— 与 Typora 的默认值不可能全部一致，疑为登记缺失');
     }
 
+    // ── 「待裁决」必须真的有人管（2026-10-07，审计 §4.120）──────────────────
+    // 立此条的原因（实测）：矩阵里有 5 条 `deviation.kind === 'undecided'`
+    // （`enableHighlight` / `enableSubscript` / `enableSuperscript` / `enableDiagram` / `zoomByMouse`），
+    // 而它们**只出现在 master-plan 的轮次叙述里**（「5 项待裁决（方案与 PRD 均未见表述）」），
+    // 审计的「待裁决项登记表（**唯一声明处**）」**一行都没有** ⇒ 发布门禁据此报
+    // `Pending decisions: 无` —— **项目在机器可读层面声称「没有待裁决项」**，而实际有 5 项。
+    // 这正是 ADR-0029 登记表头部自陈的那半句：「要补上这一半**需给标记定机器可读写法**」。
+    // ⇒ 本判据就是那条写法：**`undecided` 必须带 `pendingRef`，且它指向的 ADR 必须真的存在且仍为 Proposed**。
+    const badPending = [];
+    for (const e of entries) {
+      const kind = e.deviation?.kind;
+      if (kind === 'undecided') {
+        const ref = e.deviation?.pendingRef;
+        if (typeof ref !== 'string' || ref.trim() === '') {
+          badPending.push(`${e.typora}(undecided 未写 pendingRef)`);
+          continue;
+        }
+        const m = /^ADR-(\d{4})$/.exec(ref.trim());
+        if (m === null) {
+          badPending.push(`${e.typora}(pendingRef 形态非法：${ref})`);
+          continue;
+        }
+        const dir = resolve(root, 'docs/adr');
+        const file = existsSync(dir)
+          ? readdirSync(dir).find((f) => f.startsWith(`ADR-${m[1]}-`) && f.endsWith('.md'))
+          : undefined;
+        if (file === undefined) {
+          badPending.push(`${e.typora}(pendingRef ${ref} 没有对应的 ADR 文件)`);
+          continue;
+        }
+        const src = readFileSync(resolve(dir, file), 'utf8').replace(/\r\n/g, '\n');
+        // 与发布门禁同一写法：只认 `**Status:**` 那一行（放宽到全文会被正文里的字样满足）
+        if (!/\*\*Status:\*\*[^\n]*Proposed/.test(src)) {
+          badPending.push(`${e.typora}(pendingRef ${ref} 已不是 Proposed —— 裁决后应把 kind 改为 deliberate 并去掉 pendingRef)`);
+        }
+      }
+      if (kind === 'deliberate') {
+        const carrier = e.deviation?.carrier;
+        if (typeof carrier !== 'string' || carrier.trim() === '') {
+          badPending.push(`${e.typora}(deliberate 未写 carrier：依据在哪)`);
+        }
+      }
+    }
+    if (badPending.length > 0) {
+      fail(`偏好项矩阵的「待裁决 / 有意差异」缺机器可读载体（${badPending.length}）：${badPending.join(', ')}`);
+    }
+    // canary：三向（undecided 缺 pendingRef / deliberate 缺 carrier / 合法形态不误报）
+    {
+      const kindOf = (e) => e?.deviation?.kind;
+      const hasRef = (e) => typeof e?.deviation?.pendingRef === 'string' && e.deviation.pendingRef.trim() !== '';
+      if (kindOf({ deviation: { kind: 'undecided', reason: 'x' } }) !== 'undecided' || hasRef({ deviation: { kind: 'undecided' } })) {
+        errors.push('偏好项待裁决载体 canary 失效：缺 pendingRef 的 undecided 未被判为缺失');
+      }
+      if (!hasRef({ deviation: { kind: 'undecided', pendingRef: 'ADR-0034' } })) {
+        errors.push('偏好项待裁决载体 canary 失效：合法 pendingRef 未被识别');
+      }
+      if (typeof { deviation: { kind: 'deliberate', carrier: '' } }.deviation.carrier === 'string'
+        && { deviation: { kind: 'deliberate', carrier: '' } }.deviation.carrier.trim() !== '') {
+        errors.push('偏好项待裁决载体 canary 失效：空 carrier 未被判为缺失');
+      }
+      // 真实数据必须至少有一条 undecided（否则本判据会**空转**）
+      if (!entries.some((e) => e.deviation?.kind === 'undecided')) {
+        errors.push('偏好项待裁决载体判据**空转**：矩阵里已无 undecided 条目 —— '
+          + '若确实全部裁决完，请把本条判据连同 pendingRef 约定一并收掉，而不是留一个恒真的判据');
+      }
+    }
+
     // 审计工具必须存在（否则「与 Typora 的完备性比对」会随工具丢失而静默消失）
     try {
       read('tests/parity/tools/audit-typora-preferences.mjs');

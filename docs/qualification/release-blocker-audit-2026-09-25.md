@@ -60,6 +60,7 @@ Release verdict: NO-GO：6 项未闭环
 | 14 | §4.95 | **3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）去留 —— 其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
+| 17 | §4.120 | **偏好默认值 5 项「未登记的待裁决偏离」**：`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` 的默认值均与 Typora 默认相反（Mellow 开、Typora 关） | **待裁决** —— ⚠️ 这 5 项此前**只在 master-plan 的轮次叙述里**（「5 项待裁决（方案与 PRD 均未见表述）」），**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值**（改默认会改变既有文档的渲染结果，属产品决策） | `docs/adr/ADR-0034-preference-default-deviations-2026-10-07.md` |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -7328,6 +7329,177 @@ Vite 会原样复制进 `dist/` 与安装包），而我用
 **教训**：**「遗留清单」本身也会失真** —— §4.68 只写了「6 个 Draft」和一个例子，
 读者（包括我自己）就会**默认它们都不完整**。凡记「遗留 N 项」，**必须带逐项的机器可读数字**，
 否则下一次会基于错的印象做决定（本轮差点把 5 个成品当垃圾一起清掉）。
+
+
+
+## 4.120 「与 Typora 的差距」全量盘点 + 实装围栏数学 + 补上「待裁决」的机器可读载体（2026-10-07）
+
+### 一、盘点口径（先定总量，再谈差距）
+
+| 层 | 载体 | 总量 | 说明 |
+|---|---|---|---|
+| 发布门禁 | `tests/parity/typora-parity-ledger.json` | **50** 项 P0 | 唯一「发布阻断」口径 |
+| 偏好逐键 | `tests/parity/fixtures/typora-preferences-matrix.json` | **84** 个 Typora 偏好键 | 一手来源 `frame.js` 的 `DEFAULT_OPTIONS` |
+| 有意差异 | master-plan §12 **D 表** | **38** 行 | 裁决的唯一可发现处 |
+| 静态护栏 | `tests/parity/verify-*.mjs` | **23** 个 | 以门禁自报为准 |
+| 权威 spec | `docs/specs/*.md` | **10** 份 | 优先级最高（高于 ADR / plan） |
+
+**方法**：三层各自独立清点，**不互相替代**（本仓反复踩过「拿 A 层的绿灯当 B 层已覆盖」）。
+
+### 二、门禁层：50 项里 **9 项未闭环，且全部是环境 / 人工阻塞**
+
+`P0-EDITOR-001` / `P0-EDITOR-003` / `P0-EDITOR-004` / `P0-SHELL-001` / `P0-MENU-001` / `P0-PERF-001` /
+`P0-QA-001` / `P0-EDITOR-005` / `P0-LAYOUT-002`。
+
+阻塞原因（门禁 `Blocked by:` 行现算）：`ux-gate-policy` 6 项（**按 ADR-0024 Q1=A3，含 `ux-gate` 的项不得以 `AUTO` 收口**）、
+`ux-gate-policy + perf-harness-pending` 1 项、`human-ux-gate-session` 1 项、`runtime-verification-pending` 1 项。
+⇒ **本环境（无 GUI / 无触控板 / 无人工会话）**能自主推进的部分**已经推完**；`PASS-E` 实测 **0/50** 依然成立。
+
+### 三、偏好层：**47 gap / 31 implemented / 6 n/a**，其中**真正需要动作的只有 13 项**
+
+84 键按 status 分：`gap` **47** / `implemented` **31** / `not-applicable` **6**。
+但 `gap` **不等于缺陷**（本仓既定判据：「要紧的是 Mellow 的实际行为是否等于 Typora 默认」）——
+47 个 gap 的行为判定是：**`matches-default` 37 / `differs` 8 / `n/a` 2**。
+
+**另有一条被长期混谈的轴**：`deviation`（Mellow **有**该设置但**默认值**不同）= **7 条**
+（`deliberate` 2 / `undecided` 5）。
+
+⇒ **需要动作的 = 8（behavior differs）+ 5（undecided 默认值）= 13 项**，逐项归类如下。
+
+#### 3.1 八项 `behavior: differs`（无该选项、且行为与 Typora 默认不同）
+
+| 键 | Typora 默认 | 归类 | 处置 |
+|---|---|---|---|
+| **`gitlabMath`** | **`true`** | **可实装** | **本轮已实装**（见第四节）⇒ 判定改为 `matches-default`（37） |
+| `mathFormatOnCopy` | `svg` | 需设计 | 复制公式要**同步**写剪贴板，而渲染是**异步** `tex2svgPromise` ⇒ 需预渲染缓存，属独立功能 |
+| `noLegacyMath` | `false` | 需先定范围 | Typora **默认启用** legacy 数学解析；Mellow 无 legacy 分支 ⇒ 等价于 `noLegacyMath=true`。**先要明确「legacy 语法」的边界**再谈实现 |
+| `presetSpellCheck` | `auto` | **⛔ 阻塞** | 依赖 `host-api` 的词典能力（`P0-EDITOR-005`，未闭环） |
+| `wordCountDelimiter` | `0`（WORD） | 需裁决 | Typora 有 WORD/CHAR/LINE/TIME 四种模式；Mellow 固定同时展示多项统计 ⇒ **默认呈现口径不同**，需裁决（不能拿 CJK-aware 统计冒充对齐） |
+| `autoEscapeImageURL` | `false` | **有意差异** | Mellow 恒做 `%XX` 转义（取互操作性）⇒ **应登记 D，但目前只在矩阵里** |
+| `useRelativePathForImg` | `false` | **有意差异** | Mellow 恒写相对路径（取可移植性）⇒ 同上 |
+| `useTreeStyle` | `false` | **有意差异** | Typora 默认列表、Mellow 默认树（产品默认）⇒ 同上 |
+| `wordsPerMinute` | `382` | **有意差异** | Mellow 是 CJK-aware（中文 300 字/分 + 英文 200 词/分）⇒ 同上 |
+
+> ⚠️ 上表最后四行（`autoEscapeImageURL` / `useRelativePathForImg` / `useTreeStyle` / `wordsPerMinute`）
+> 都是**有意差异**，但**只在矩阵的 `behaviorNote` 里**，**没有进 D 表**。
+> 与 §4.118 的 §11 Welcome、§4.67 的 `D-AB` **同型**：**「唯一可发现处」里没有它**。
+> 本轮**只如实记录，未擅自补 D 行**（补 D 行要先确认它们是「有意」而不是「待修」，见第七节遗留）。
+
+#### 3.2 五项 `deviation.kind === 'undecided'`（**本轮的主发现**，见第五节）
+
+`enableHighlight` / `enableSubscript` / `enableSuperscript` / `enableDiagram` / `zoomByMouse`
+—— Mellow 的默认值**全部与 Typora 相反**（Mellow 开、Typora 关），且**没有任何载体**。
+
+### 四、本轮实装：**围栏数学**（Typora `gitlabMath`，**默认开启**）
+
+#### 4.1 缺口是什么（**「半实现」而非「没实现」**）
+
+| 部件 | 对 ```` ```math ```` 的态度 |
+|---|---|
+| 右键菜单 `contextMenu.ts` | **当成数学块**（`kind: 'math'`，有**专门的单测** `context-menu.test.ts:182` 锁着） |
+| 代码围栏语言补全 `codeFence.ts` | **把 `math` 列进语言表**（`FENCE_LANGUAGES`），**主动引导用户去写它** |
+| **渲染器 `math.ts`** | **完全不认** —— `parseMathSpans` 只处理 `$`/`$$`/`\(`/`\[`，且**把围栏整段跳过** |
+| Typora（默认） | **渲染成公式块** |
+
+⇒ 用户从语言下拉里选了 `math`，右键菜单也告诉他「这是公式块」，
+**屏幕上却是一个代码块** —— 这是**Mellow 与自己矛盾**，不只是与 Typora 有差距。
+
+#### 4.2 一手证据：Typora 的判定**只有 `math` 一个词**
+
+```js
+D.isMathType = function (e) {
+  return File.option.gitlabMath && 'string' == typeof e && a.isType((e || '').toLowerCase(), 'math')
+}
+```
+- `DEFAULT_OPTIONS` 里 **`gitlabMath: !0`（默认 true）**；
+- `isMathType` 定义在模块 `1b`，其中 **`a = o.Node`（`o = e('11')`）**；
+- `Node.isType(e, …)` 是**通用相等比较**（`var t = e.attributes ? e.attributes.type : e; … if (t == arguments[n]) return true`），
+  且第二实参是**字符串字面量 `"math"`** ⇒ **等价于 `lang.toLowerCase() === 'math'`**。
+
+⚠️ **一个容易读错的陷阱**：`main.js` 里另有
+`case"stex":case"tex":case"latex":case"math": return "text/x-stex"` ——
+那是 **CodeMirror 语法高亮模式**的别名表，**不是**数学判定
+（`latex`/`tex` 围栏在 Typora 里是**按 TeX 高亮的代码块**）。
+
+#### 4.3 处置
+
+1. **`math.ts` 新增单源判定** `MATH_FENCE_LANGS = new Set(['math'])` + `isMathFenceLang(info)`（大小写不敏感），
+   并把一手证据写进常量注释；
+2. **`parseMathSpans` 认识围栏数学**：信息串为 `math` 的围栏 ⇒ 产出**一个 `kind: 'block'` 的 span**，
+   覆盖**整段（含开/闭栏行）**，`tex` = 栏内内容；未闭合时**延伸到文末**（与未闭合 `$$` 同处置）；
+3. **`contextMenu.ts` 收敛到同一真源**：删掉本地那份**更宽**的
+   `new Set(['math','latex','tex','katex','texmath'])`，改为 `import { isMathFenceLang }`。
+   ⇒ ```` ```latex ```` 等**改判为 `kind: 'code'`**（与 Typora 一致：它们是代码块）；
+4. **顺带修一处类型混淆**：`mathBlockAt` / `mathBlockRangeAt` 等 5 处原用
+   **`span.open === '$$'`** 当「块级数学」的**代理** ⇒ **静默漏掉 `\[…\]` 与新支持的围栏数学**。
+   改用 **`span.kind === 'block'`**（`MathSpanKind` 的定义本来就是这件事）。
+
+**测试**：新增 12 例（扫描器 7 + 真实编辑器 1 + 右键菜单 4），
+覆盖「只有 math」「`~~~` 围栏」「大小写」「未闭合延伸到文末」「围栏内的 `$$`/`$x$` 不再被解析」
+「4 空格缩进不算围栏」「两个围栏互不吞并」「光标在围栏外 ⇒ 整段替换为块级 widget、光标进入 ⇒ 显示源码」。
+**非恒绿验证（两向）**：集合置空 ⇒ **6 例失败**；放宽回旧的 5 语言集合 ⇒ **1 例失败**（正是那条「只有 math」）。
+
+**护栏**：`verify-shell-widgets.mjs` 新增判据（**单源**）—— `math.ts` 必须导出
+`MATH_FENCE_LANGS = new Set(['math'])` + `isMathFenceLang`；`contextMenu.ts` 必须**导入**它
+且**不得**再出现本地集合；**不得**再用 `open === '$$'` 当块级代理。
+canary 6 向、与判据**共用同一组谓词**；**注入验证 3/3**（放宽集合 / 加回本地集合 / 退回定界符代理）。
+
+### 五、本轮治理修复：**5 项「待裁决」没有载体，而门禁说「无」**
+
+**实测**：矩阵里 5 条 `deviation.kind === 'undecided'`（见 3.2），
+而它们在 `docs/` 里**只出现在 master-plan 的轮次叙述**（「**5 项待裁决**（方案与 PRD 均未见表述）」）
+—— **审计的「待裁决项登记表（唯一声明处）」一行都没有**。
+⇒ 门禁据此报 **`Pending decisions: 无`**：**项目在机器可读层面声称「没有任何待裁决项」**，而实际有 5 项。
+
+**这正是 ADR-0029 自己留下的那半句**：登记表头部写着
+「护栏**不能**自动发现『新加了 `待裁决` 字样却没登记』…… **要补上这一半需给标记定机器可读写法**」。
+本轮把那半句**在「偏好默认值偏离」这条轴上补上**：
+
+1. **`ADR-0034`（Proposed）** 承载这 5 项，逐项给出**一手证据 + 选项 + 建议**（见该 ADR）；
+2. **登记表新增第 17 行**；门禁 `PENDING_ADRS` **重新非空**（这是**更准确**的信号，不是退步）；
+3. **矩阵新增两个结构化字段**：`undecided` ⇒ **必须** `pendingRef`；`deliberate` ⇒ **必须** `carrier`；
+4. **`verify-settings-contract.mjs` ⑭ 节新增判据**：`pendingRef` 必须指向**存在的 ADR 文件**且其
+   **`**Status:**` 行仍为 `Proposed`**（裁决后必须把 `kind` 改为 `deliberate` 并去掉 `pendingRef`）。
+   **注入验证 3/3**（删 `pendingRef` / 删 `carrier` / 把 ADR 改成 `Accepted`）；canary 含一条**防空转**断言
+   （若矩阵已无 `undecided`，本判据必须被收掉，**不得留一个恒真的判据**）。
+
+⚠️ **本轮刻意不改任何默认值**：这 5 项改的是**用户可见的默认行为**
+（如 `==x==` 不再高亮、```` ```mermaid ```` 不再出图），属**产品决策**；
+方案自己也写着「改这些默认会改变既有用户行为，故**只登记不擅改**」。
+常设授权覆盖的是**审计程序**，不是**改变既有文档渲染结果**。
+⇒ **登记 + 给建议**，把裁决成本降到「看一眼就能定」。
+
+### 六、我自己的错（**同一坑 30 分钟内第二次**）
+
+写「单源」判据的 canary 时，`noDelimiterProxy` 的**两个方向我写反了**：
+该函数返回 **`true` = 没有代理（好）**，于是负样本（含代理）应当返回 `false` ——
+而我写成 `if (!noDelimiterProxy(负样本)) 报错`，等于**在判据正确工作时报错**（首次运行即红）。
+**这正是 §4.130 刚记下的那条**（「canary 两个方向语义相反」），**同一天第二次犯**。
+⇒ 已在该判据处**就地写下方向语义注释**（「返回 true = 好」+ 两个样本各自的期望），
+让下一个人不必再推一遍。
+
+### 七、遗留（如实登记，本轮**未做**）
+
+1. **4 项有意差异未进 D 表**（`autoEscapeImageURL` / `useRelativePathForImg` / `useTreeStyle` / `wordsPerMinute`）——
+   补 D 行前需先确认「有意」而非「待修」，本轮只记录；
+2. `noLegacyMath` 需先定义 **legacy 数学语法的边界**；
+3. `wordCountDelimiter` 需裁决（是否提供 WORD/CHAR/LINE/TIME 四模式）；
+4. `mathFormatOnCopy` 需设计（同步复制 + 异步渲染）；
+5. **引擎级已渲染围栏数学，但与 CoreEditor 代码块包装器的视觉叠加未在真机验证**
+   （`BlockWrapper` 与块级 replace 装饰**按 CM6 文档可嵌套**、且 `cm-md-codeBlockWrapper` **无样式**，
+   但本环境无 GUI ⇒ **不得声称已验收**）。
+
+### 八、教训
+
+1. **「半实现」比「没实现」更难发现**：菜单认、语言表认、渲染器不认 ——
+   **每一处单看都对**，只有**把三处摆在一起**才看出矛盾。
+   发现它的入口是**跨部件的「同一语义有几个副本」清点**，不是逐个读代码。
+2. **两条轴必须分开数**：`deviation`（有选项、默认值不同）与 `behavior: differs`（无选项、行为不同）
+   在矩阵里是**两个字段**，历史上被混谈 ⇒ 结论会算错（把 13 项说成 9 项或 7 项）。
+3. **「待裁决」写进散文就等于没写**：它必须能变成 `pendingRef` 这种**可判定的形态**，
+   否则门禁会**替项目声称「没有待裁决项」**。
+4. **canary 的方向语义要写在判据旁边**（§4.130 的补充）：写反了会「对正确行为报错」，
+   而**写在旁边**能让下一个人不必重新推导。
 
 
 

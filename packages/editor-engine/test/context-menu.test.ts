@@ -188,6 +188,30 @@ describe('右键上下文检测（contextmenu 事件）', () => {
     view.destroy();
   });
 
+  // 2026-10-07（审计 §4.120）：与渲染器**同源**后的行为边界。
+  // 一手证据（Typora main.js）：`isMathType(lang)` 等价于 `lang.toLowerCase() === 'math'` ——
+  // `latex`/`tex`/`katex`/`texmath` 在 Typora 是**代码块**（只是按 TeX 高亮），不是公式块。
+  // 改前 Mellow 的右键菜单把它们当数学块、渲染器却当代码块 ⇒ 自相矛盾。
+  test('```latex / ```tex 等**不是**公式块（Typora 只认 math）→ kind=code', async () => {
+    for (const lang of ['latex', 'tex', 'katex', 'texmath']) {
+      const doc = `\`\`\`${lang}\nX^2\n\`\`\``;
+      const { view, requests } = setUp(doc);
+      moveCaret(view, 0);
+      await rightClick(view, 10); // X^2 行内
+      expect(requests[0]).toMatchObject({ kind: 'code', lang });
+      view.destroy();
+    }
+  });
+
+  test('```MATH 大小写不敏感 → kind=math', async () => {
+    const doc = '```MATH\nX^2\n```';
+    const { view, requests } = setUp(doc);
+    moveCaret(view, 0);
+    await rightClick(view, 10);
+    expect(requests[0]).toMatchObject({ kind: 'math' });
+    view.destroy();
+  });
+
   test('公式块：$$ … $$ → kind=math', async () => {
     const doc = 'text\n$$\nX^2\n$$\nend';
     const { view, requests } = setUp(doc);

@@ -619,6 +619,73 @@ if (showElBody !== '') {
   if (taskDrift === contextSource) fail('Task Status canary 未武装：注入点未命中');
   else if (/to: from \+ 1, insert: complete \? 'x' : ' '/.test(taskDrift)) fail('Task Status canary 失效：整行替换漂移未检出');
 
+  // ── 围栏数学的语言集合必须**单源**（2026-10-07，审计 §4.120）────────────────
+  // 立此条的原因（实测）：`contextMenu.ts` 曾自己维护
+  // `new Set(['math','latex','tex','katex','texmath'])`，而渲染器（`math.ts`）**根本不认围栏数学**
+  // ⇒ 同一段 ```latex 在右键菜单里是「数学块」、在屏幕上却是代码块 ——
+  // **同一个语义两处各自维护，单看谁都没错、合起来是错的**。
+  //
+  // 一手证据（Typora 1.14.9 build 7785 的 `TypeMark/appsrc/main.js`）：
+  //   `D.isMathType = function (e) { return File.option.gitlabMath && 'string' == typeof e
+  //      && a.isType((e || '').toLowerCase(), 'math') }`，其中 `a` 是模块 `1b` 的 `o.Node`，
+  //   `Node.isType` 是**通用相等比较**（`t == arguments[n]`）、第二实参是**字符串字面量 `"math"`**
+  //   ⇒ 等价于 `lang.toLowerCase() === 'math'` ⇒ **只有 `math`**。
+  //   （`main.js` 的 `case"stex":case"tex":case"latex":case"math":return "text/x-stex"` 是
+  //    **CodeMirror 模式**别名表 —— `latex`/`tex` 在 Typora 是**按 TeX 高亮的代码块**。）
+  {
+    const mathCode = stripComments(read('packages/editor-engine/src/math.ts'));
+    const ctxCode = stripComments(contextSource);
+    // 谓词（判据与 canary **共用同一份**）
+    const singleSource = (s) => /export const MATH_FENCE_LANGS[^\n]*= new Set\(\['math'\]\)/.test(s)
+      && /export function isMathFenceLang\(/.test(s);
+    const ctxImports = (s) => /import\s*\{[^}]*\bisMathFenceLang\b[^}]*\}\s*from\s*'\.\/math'/.test(s);
+    const ctxLocalSet = (s) => /new Set\(\[[^\]]*['"]math['"][^\]]*\]\)/.test(s);
+    // 用「定界符」当「块级」的代理会**静默漏掉** `\[…\]` 与围栏数学
+    const noDelimiterProxy = (s) => !/\.open === '\$\$'/.test(s);
+
+    if (!singleSource(mathCode)) {
+      fail('math.ts 必须导出**单源**的 MATH_FENCE_LANGS（= `new Set([\'math\'])`）与 isMathFenceLang —— '
+        + 'Typora `gitlabMath` 只认 `lang === \'math\'`（一手证据见该常量注释）');
+    }
+    if (!ctxImports(ctxCode)) {
+      fail('contextMenu.ts 必须从 `./math` **导入** isMathFenceLang —— 围栏数学的判定只能有一个真源');
+    }
+    if (ctxLocalSet(ctxCode)) {
+      fail('contextMenu.ts 又出现了**本地的**数学围栏语言集合 —— '
+        + '这正是 2026-10-07 修掉的自相矛盾（菜单说数学块、渲染器说代码块）的形态');
+    }
+    if (!noDelimiterProxy(ctxCode)) {
+      fail("contextMenu.ts 用 `span.open === '$$'` 当「块级数学」的代理 —— "
+        + '会静默漏掉 `\\[…\\]` 与围栏数学，请改用 `span.kind === \'block\'`');
+    }
+    // canary：四个方向，与判据共用上面的谓词
+    if (!singleSource("export const MATH_FENCE_LANGS: ReadonlySet<string> = new Set(['math']);\nexport function isMathFenceLang(")) {
+      errors.push('围栏数学单源护栏 canary 失效：正样本未被识别');
+    }
+    if (singleSource("export const MATH_FENCE_LANGS: ReadonlySet<string> = new Set(['math','latex']);\nexport function isMathFenceLang(")) {
+      errors.push('围栏数学单源护栏 canary 过宽：放宽后的集合仍被判为单源');
+    }
+    if (!ctxLocalSet("const MATH_FENCE_LANGS = new Set(['math','latex']);")) {
+      errors.push('围栏数学单源护栏 canary 失效：本地集合未被检出');
+    }
+    if (ctxLocalSet("import { isMathFenceLang } from './math';")) {
+      errors.push('围栏数学单源护栏 canary 过宽：正常的 import 被判成本地集合');
+    }
+    if (!ctxImports("import { parseMathSpans, isMathFenceLang } from './math';")) {
+      errors.push('围栏数学单源护栏 canary 失效：多符号 import 形态未被识别');
+    }
+    // ⚠️ 方向语义（2026-10-07 又踩一次，见 PITFALLS §4.130）：
+    //   `noDelimiterProxy` 返回 **true = 没有代理**（好）。故：
+    //   · 负样本（**含**代理）应当返回 false ⇒ 返回 true 才是「未被检出」；
+    //   · 正样本（无代理）应当返回 true ⇒ 返回 false 才是「过宽」。
+    if (noDelimiterProxy("const s = parseMathSpans(doc).find((x) => x.open === '$$');")) {
+      errors.push('围栏数学单源护栏 canary 失效：定界符代理未被检出');
+    }
+    if (!noDelimiterProxy("const s = parseMathSpans(doc).find((x) => x.kind === 'block');")) {
+      errors.push('围栏数学单源护栏 canary 过宽：正确谓词被判成代理');
+    }
+  }
+
   // canary：注入一处 window.prompt，同一条检查必须检出
   const drift = desktopSrc.replace('const answer = await askUser({', "const answer = window.prompt('x') ?? ''; void (0, {");
   if (drift === desktopSrc) {
