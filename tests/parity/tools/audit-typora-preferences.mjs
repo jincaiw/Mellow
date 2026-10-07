@@ -483,6 +483,20 @@ if (badIds.length > 0) {
     const gaps = (reg.entries ?? []).filter((e) => e.status === 'gap');
     if (gaps.length > 0) {
       console.log(`❌ 真实缺口 ${gaps.length} 项：${gaps.map((e) => e.key).join(', ')}`);
+      // 阻塞原因必须**可见**（2026-10-07，审计 §4.135）—— 机器可读的字段不能只躺在 JSON 里
+      const byReason = new Map();
+      for (const e of gaps) {
+        const r = e.blockedBy ?? '(未登记 blockedBy)';
+        if (!byReason.has(r)) byReason.set(r, []);
+        byReason.get(r).push(e.key);
+      }
+      for (const [reason, keys] of byReason) {
+        console.log(`   · ${reason} ${keys.length} 项：${keys.join(', ')}`);
+      }
+      const autoDoable = gaps.filter((e) => e.blockedBy === 'not-implemented').length;
+      console.log(`   ⇒ **可自主推进**（not-implemented）${autoDoable} 项；`
+        + `**待裁决**（adr-pending）${gaps.filter((e) => e.blockedBy === 'adr-pending').length} 项；`
+        + `**前置缺失、现有架构下不可实施**（precondition）${gaps.filter((e) => e.blockedBy === 'precondition').length} 项`);
     }
     // canary：双向判据必须能区分（拼接构造，不依赖真实数据）
     const diffOf = (a, b) => a.filter((x) => !b.includes(x));

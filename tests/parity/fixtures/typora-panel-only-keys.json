@@ -1,15 +1,16 @@
 {
   "source": "Typora 1.14.9 (7785) — TypeMark/page-dist/static/js/Preferences.*.js 的 keyName（面板 UI）",
   "why": "偏好矩阵（typora-preferences-matrix.json）的范围是 frame.js 的 DEFAULT_OPTIONS（84 键）；面板 UI 去重后暴露 91 个 keyName，其中 47 个**不在** DEFAULT_OPTIONS 里 ⇒ 那一面此前**没有任何登记处**（审计 §4.123 的范围声明 / §4.124 的第一个实例）。本文件就是那一面的登记处。",
-  "note": "status: equivalent（Mellow 有等价能力，通常命名不同；evidence 写清在哪）/ gap（**真实缺口**，Mellow 缺该行为或能力）/ not-applicable（Typora 特有或 Mellow 有意不做，多附 D 编号或 PRD 条款）/ unverified（**尚未核实** —— 本机资源不足以判定，note 写明「要核实什么」）。⚠️ unverified 是**存量欠债**、会被打印计数，不得当作「已确认无差异」。consumer（**消费方**）: js（Typora 的 JS 树里有**显式偏好读点** —— `File.option.X` / `_options.X` / `i.option.X`；X 可能是**改名后的内部名**，此时必须同时给 `internal`）/ native（JS 树无显式读点，但**原生二进制含该字符串**）/ unknown（两者皆无 ⇒ **消费方未确定**，必须给 `consumerNote` 写明试过哪些形态）。anchor: 该判定的**可核对落点**（`consumer: js` 时是读点符号；`native` 时是键名本身；`unknown` 时是 `—`）。本机工具会核对它是否真实存在。⚠️ **口径纠正（2026-10-07 审计 §4.128）**：此前的定义是「在 main.js / frame.js 里被消费」，但实现时退化成「**字符串出现在哪个文件**」—— 而 **`frame.js` 是偏好面板脚本**，47 个键**全部**都在它里面出现 ⇒ 该判据对全体恒真、不携带信息。实测因此有 4 条自相矛盾（`SmartyPantsOnRendering` / `remapPunctuation` / `showStatusBar` / `zoomLevel`）。⚠️ **consumer 无法用机械搜索可靠判定**（实测三种判据都不成立）：① 偏好键可能**改名**（`remapPunctuation`→`remapUnicodePunctuation`、`SmartyPantsOnRendering`→`convertSmartOnRender`），按面板键搜必然 0 命中；② 可能经**通用选项包**读（`(window._options||{}).allowPhysicsConflict`），形态枚举不完备；③ 可能命中**同名异物**（`n.openExportFile` 是导出**配置对象**字段、`navigator.userLanguage` 是浏览器 API）⇒ **假阳性**。故 `consumer` 是**带引用的判断**，`anchor` 才是机器可核对的字段；**unknown 是允许且可见的欠债**。⚠️ 标签（label）抽取**不可靠**（面板是压缩 React 产物，控件有两种形态 ⇒ 向后找「最近标签」会取到邻居控件）；本表的 note 以**代码证据**为准，标签仅作参考。",
+  "note": "status: equivalent（Mellow 有等价能力，通常命名不同；evidence 写清在哪）/ gap（**真实缺口**，Mellow 缺该行为或能力）/ not-applicable（Typora 特有或 Mellow 有意不做，多附 D 编号或 PRD 条款）/ unverified（**尚未核实** —— 本机资源不足以判定，note 写明「要核实什么」）。⚠️ unverified 是**存量欠债**、会被打印计数，不得当作「已确认无差异」。consumer（**消费方**）: js（Typora 的 JS 树里有**显式偏好读点** —— `File.option.X` / `_options.X` / `i.option.X`；X 可能是**改名后的内部名**，此时必须同时给 `internal`）/ native（JS 树无显式读点，但**原生二进制含该字符串**）/ unknown（两者皆无 ⇒ **消费方未确定**，必须给 `consumerNote` 写明试过哪些形态）。anchor: 该判定的**可核对落点**（`consumer: js` 时是读点符号；`native` 时是键名本身；`unknown` 时是 `—`）。本机工具会核对它是否真实存在。⚠️ **口径纠正（2026-10-07 审计 §4.128）**：此前的定义是「在 main.js / frame.js 里被消费」，但实现时退化成「**字符串出现在哪个文件**」—— 而 **`frame.js` 是偏好面板脚本**，47 个键**全部**都在它里面出现 ⇒ 该判据对全体恒真、不携带信息。实测因此有 4 条自相矛盾（`SmartyPantsOnRendering` / `remapPunctuation` / `showStatusBar` / `zoomLevel`）。⚠️ **consumer 无法用机械搜索可靠判定**（实测三种判据都不成立）：① 偏好键可能**改名**（`remapPunctuation`→`remapUnicodePunctuation`、`SmartyPantsOnRendering`→`convertSmartOnRender`），按面板键搜必然 0 命中；② 可能经**通用选项包**读（`(window._options||{}).allowPhysicsConflict`），形态枚举不完备；③ 可能命中**同名异物**（`n.openExportFile` 是导出**配置对象**字段、`navigator.userLanguage` 是浏览器 API）⇒ **假阳性**。故 `consumer` 是**带引用的判断**，`anchor` 才是机器可核对的字段；**unknown 是允许且可见的欠债**。⚠️ 标签（label）抽取**不可靠**（面板是压缩 React 产物，控件有两种形态 ⇒ 向后找「最近标签」会取到邻居控件）；本表的 note 以**代码证据**为准，标签仅作参考。 blockedBy（**只对 gap 有意义**，机器可读的阻塞原因）：not-implemented（能力未实现，**可自主推进**）/ precondition（**前置能力缺失 ⇒ 现有架构下不可实施**）/ adr-pending（**待裁决**，必须同时给 pendingRef）。⚠️ 不许把「未确定/未核实」写进 blockedBy —— 那是 status 与 consumer 两条轴的事。",
   "entries": [
     {
       "key": "SmartyPantsOnRendering",
       "consumer": "js",
       "status": "gap",
-      "note": "**面板键 ≠ 内部选项名**：`SmartyPantsOnRendering` → `File.option.convertSmartOnRender`（frame.js：`JSBridge.putSetting(\"SmartyPantsOnRendering\",e||!1),File.option.convertSmartOnRender=e||!1`）。面板可见形态是 **radio**：`options:{false:\"Convert on Input\",true:\"Convert on Rendering\"}`，hint 原文：`Convert on Input: Input ASCII dashes or quotes, converted and saved as curly quotes or unicode dashes.` / `Convert on Rendering: Input and saved as ASCII dashes or quotes, render as curly quotes or unicode dashes.` **默认 false ⇒ \"Convert on Input\"**。Mellow `editor.smartPunctuation`（默认 false）的语义 = **输入时**改写弯引号 + `--␠`→`—`（`packages/editor-engine/src/smartPunctuation.ts`）⇒ **默认档已被复现 ⇒ 默认体验一致**。缺的是 **\"Convert on Rendering\" 档**（输入与落盘保持 ASCII、只在渲染时显示为弯引号 —— 对 git 友好）⇒ 按「能力」口径记为 gap，但**默认档不构成偏离**。",
+      "note": "**面板键 ≠ 内部选项名**：`SmartyPantsOnRendering` → `File.option.convertSmartOnRender`（frame.js：`JSBridge.putSetting(\"SmartyPantsOnRendering\",e||!1),File.option.convertSmartOnRender=e||!1`）。面板可见形态是 **radio**：`options:{false:\"Convert on Input\",true:\"Convert on Rendering\"}`，hint 原文：`Convert on Input: Input ASCII dashes or quotes, converted and saved as curly quotes or unicode dashes.` / `Convert on Rendering: Input and saved as ASCII dashes or quotes, render as curly quotes or unicode dashes.` **默认 false ⇒ \"Convert on Input\"**。Mellow `editor.smartPunctuation`（默认 false）的语义 = **输入时**改写弯引号 + `--␠`→`—`（`packages/editor-engine/src/smartPunctuation.ts`）⇒ **默认档已被复现 ⇒ 默认体验一致**。缺的是 **\"Convert on Rendering\" 档**（输入与落盘保持 ASCII、只在渲染时显示为弯引号 —— 对 git 友好）⇒ 按「能力」口径记为 gap，但**默认档不构成偏离**。【阻塞原因（2026-10-07，审计 §4.135）】**`not-implemented`：缺「渲染期转换」这一层**，可自主推进但属**新的显示层**。Mellow 的 `editor.smartPunctuation` 只在**输入期**改写（`EditorView.inputHandler`）⇒ 落盘即弯引号；而「Convert on Rendering」要求**输入与落盘保持 ASCII**、只在**显示**上呈现弯引号/em dash。⇒ 需在**显示层**做（CM6 decoration / view plugin），且必须：跳过代码上下文（引擎已有 `isInsideCodeContext`）、与「光标行揭示」交互（`styling/nodes/invisible.ts` 的既有机制）、**绝不改写文档**。⇒ 可自主实施，但要新增一个渲染层 —— 规模大于本轮其它项，列为**独立工作项**。",
       "anchor": "File.option.convertSmartOnRender",
-      "internal": "convertSmartOnRender"
+      "internal": "convertSmartOnRender",
+      "blockedBy": "not-implemented"
     },
     {
       "key": "actionWhenDropFile",
@@ -45,8 +46,9 @@
       "key": "allowPhysicsConflict",
       "consumer": "js",
       "status": "gap",
-      "note": "面板 label **\"Enable physics package\"**、hint **\"Physics package will redefine some latex macros, such as \\div, \\Re, etc.\"**（数学）。消费点（main.js）：`var t = (window._options||{}).allowPhysicsConflict` 传进 MathJax 的 tex 配置。**默认关**（`checked: !!this.getValue(...)` ⇒ 未设即 false）。Mellow 侧：数学有 `mathjax-compatible` 路径 + `unsupportedKatexPatterns` 回落（`packages/editor-engine/src/math.ts`），但**未配置 physics 包**（实测 `packages/` + `apps/desktop/src/` + `apps/desktop/public/` 全树 **0 处** `physics` 命中）。⇒ **默认行为一致**（两边默认都不用 physics），缺的是**该开关与物理宏支持** ⇒ 记为 gap（能力缺失），不是默认偏离。",
-      "anchor": "window._options.allowPhysicsConflict"
+      "note": "面板 label **\"Enable physics package\"**、hint **\"Physics package will redefine some latex macros, such as \\div, \\Re, etc.\"**（数学）。消费点（main.js）：`var t = (window._options||{}).allowPhysicsConflict` 传进 MathJax 的 tex 配置。**默认关**（`checked: !!this.getValue(...)` ⇒ 未设即 false）。Mellow 侧：数学有 `mathjax-compatible` 路径 + `unsupportedKatexPatterns` 回落（`packages/editor-engine/src/math.ts`），但**未配置 physics 包**（实测 `packages/` + `apps/desktop/src/` + `apps/desktop/public/` 全树 **0 处** `physics` 命中）。⇒ **默认行为一致**（两边默认都不用 physics），缺的是**该开关与物理宏支持** ⇒ 记为 gap（能力缺失），不是默认偏离。【阻塞原因（2026-10-07，审计 §4.135 取证）】**`precondition`：前置能力「数学渲染」未接通**。⚠️ **更正 §4.134 报告里的一句**：当时说「MathJax 配置在 vendored CoreEditor 里」——**不准确**。实测：**全仓（排除 `node_modules`）没有任何 MathJax 加载点/配置点**，`window.MathJax` 只在 `packages/editor-engine/src/math.ts` 被**消费**（`tex2chtmlPromise` / `tex2svgPromise`）；`packages/editor-core/CoreEditor` 源码里 `mathjax` **0 命中**，三个 `index.html` 也没有相应 `<script>`。⇒ 问题比「配置不归 Mellow 管」更靠前：**Mellow 根本没有提供 MathJax**（与既有记录一致：harness 下数学 widget 只显示原始 TeX）。⇒ 该开关**不可在现有架构下实施**，须先接通数学渲染（自持 MathJax 或上游提供）—— 属**方案级**事项。",
+      "anchor": "window._options.allowPhysicsConflict",
+      "blockedBy": "precondition"
     },
     {
       "key": "autoUpdateToDev",
@@ -183,8 +185,9 @@
       "key": "no_image_move_for_local",
       "consumer": "native",
       "status": "gap",
-      "note": "面板 label **\"Apply above rules to local images\"**，**反向语义**：`reverse:!0` + `checked: !this.getValue(\"no_image_move_for_local\")`（键名为「对本地图片**不**应用规则」，勾选框展示的是正向「应用」）⇒ 未设时 `checked = true` ⇒ 键值为 **false** ⇒ **规则适用于本地图片**（与矩阵 `applyImageMoveForLocal: true` 一致）。⇒ 它与矩阵里的 `applyImageMoveForLocal` 是**同一事实的反向面板键**（不是两件事）⇒ 状态与矩阵条目一致：**gap**（矩阵 note：「本地图片移动应用范围未作为设置暴露」）。",
-      "anchor": "no_image_move_for_local"
+      "note": "面板 label **\"Apply above rules to local images\"**，**反向语义**：`reverse:!0` + `checked: !this.getValue(\"no_image_move_for_local\")`（键名为「对本地图片**不**应用规则」，勾选框展示的是正向「应用」）⇒ 未设时 `checked = true` ⇒ 键值为 **false** ⇒ **规则适用于本地图片**（与矩阵 `applyImageMoveForLocal: true` 一致）。⇒ 它与矩阵里的 `applyImageMoveForLocal` 是**同一事实的反向面板键**（不是两件事）⇒ 状态与矩阵条目一致：**gap**（矩阵 note：「本地图片移动应用范围未作为设置暴露」）。【阻塞原因（2026-10-07，审计 §4.135）】**`not-implemented`：整族「图片移动规则」缺设置**，可自主推进。同族共 3 条（矩阵）：`allowImageMove`（总开关，Typora 默认 **true**）、`applyImageMoveForLocal`（= 本键的**正向**表述，默认 **true**）、`applyImageMoveForWeb`（默认 **false**）—— 三条在矩阵里**都是 `gap`**，note 均为「未作为设置暴露」。Mellow **有底层能力**（`packages/editor-engine/src/image/ops.ts`：`planMoveImage` / `planMoveAll` / `planMoveSingle`）⇒ 缺的是**开关与接线**（引擎需经桥读到这三项），不是能力。⇒ 列为**可自主实施**（下一轮候选）。",
+      "anchor": "no_image_move_for_local",
+      "blockedBy": "not-implemented"
     },
     {
       "key": "no_mid_caret",
@@ -211,7 +214,8 @@
       "note": "面板 label **\"Open exported file location\"**（\"After Export\" 组）。【消费方 = **js**】读点：`n.openExportLocation && (JSBridge.showInFinder(t), …)`（同导出完成处理函数）。⚠️ **默认 = 开**（与 `openExportFile` 相反）：面板勾选值 `!!ae(r.X, a.X, l.X)`，而 **schema 里该字段是 `!0`** ——实测 `L={…, allowPerFileSetting:{…}, openExportLocation:!0}`（HTML 导出的 schema 片段）⇒ `ae(…)` 取到 `true` ⇒ **复选框默认勾选**⇒ **Typora 默认在导出完成后于 Finder 中显示导出件**。（另一处「通用导出设置」页用 `checked: !!n.openExportLocation`，`export.general` 未设时默认**不**勾 —— 上游两处默认并不一致，如实记录。）**Mellow 默认不做**（导出完成只弹 toast + 记录 `mellow.export.last`）⇒ **默认行为偏离** ⇒ 记为 gap。⚠️ **需裁决**：补齐该行为会**改变用户可见的默认行为**（导出后多弹一个 Finder 窗口），按本项目纪律不得静默改默认 ⇒ 已登记待裁决（候选：新增开关 + 默认是否对齐 Typora 的「开」）。Mellow 侧**有底层能力**：命令 `file.revealInFinder`（`App.tsx`）。 ⇒ **已登记待裁决：ADR-0034 Q11**（选项 A1 默认对齐 / A2 新增开关+默认关 / A3 维持+登记 D）。",
       "anchor": "n.openExportLocation",
       "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.openExportLocation` 是导出配置对象字段）。",
-      "pendingRef": "ADR-0034 Q11"
+      "pendingRef": "ADR-0034 Q11",
+      "blockedBy": "adr-pending"
     },
     {
       "key": "pandocPath",
@@ -257,7 +261,8 @@
       "status": "gap",
       "note": "面板组 **\"Quit\"**（**仅 macOS**）、label **\"Quit Typora when last window is closed\"**，默认 **false**（`checked: !!this.getValue(...)` ⇒ 未设即 false）⇒ **Typora 在 macOS 的默认是「关掉最后一个窗口不退出」**（符合 macOS 惯例）。【Mellow 侧已定案 = **会退出**，源码级证据】① 本仓 `apps/desktop/src-tauri/src/lib.rs` 的 `RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app)` —— 模式里用 `{ .. }` **丢弃了 `api`** ⇒ **从不调用 `prevent_exit()`**；② vendored 依赖 `tauri-runtime-wry-2.11.4/src/lib.rs`（**本地 cargo registry 源码，Tauri 2.11.5**）：`TaoWindowEvent::Destroyed => { … let is_empty = windows.0.borrow().is_empty(); if is_empty { callback(RunEvent::ExitRequested{…}); let should_prevent = matches!(recv, Ok(ExitRequestedEventAction::Prevent)); if !should_prevent { *control_flow = ControlFlow::Exit; } } }` ⇒ **最后一个窗口被销毁且未阻止 ⇒ 进程退出**；③ `src-tauri/src/window.rs` 的关闭门是 `api.prevent_close()` + 前端确认后**再次 close ⇒ 窗口被销毁**（不是隐藏）⇒ 上述路径可达。⇒ **Mellow 关掉最后一个窗口会退出，而 Typora 的 macOS 默认是不退出 ⇒ 行为偏离** ⇒ 记 gap。⚠️ **证据级别如实声明**：这是**源码级**结论（本仓 handler + vendored 依赖源码），**非真机观察**；若将来做真机验收，请以「关掉最后一个窗口后进程是否仍在」为准。⇒ **已登记待裁决：ADR-0034 Q12**（A1 对齐 macOS 惯例：不退出 / A2 新增开关+默认不退出 / A3 维持退出+登记 D）。",
       "anchor": "quitAfterWindowClose",
-      "pendingRef": "ADR-0034 Q12"
+      "pendingRef": "ADR-0034 Q12",
+      "blockedBy": "adr-pending"
     },
     {
       "key": "relativePathWithDot",

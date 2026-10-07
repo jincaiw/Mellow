@@ -1111,6 +1111,8 @@ if (cssLayerAnchor === undefined) {
         const VALID_STATUS = new Set(['equivalent', 'gap', 'not-applicable', 'unverified']);
         // `unknown` = **消费方未确定**（2026-10-07，审计 §4.128）：允许存在、但必须可见且只能下降。
         const VALID_CONSUMER = new Set(['js', 'native', 'unknown']);
+        /** `blockedBy` 词表（2026-10-07，审计 §4.135）：只对 `gap` 有意义。 */
+        const BLOCKED_BY_VOCAB = new Set(['not-implemented', 'precondition', 'adr-pending']);
         const knownSettingIds = new Set([...settingsSource.matchAll(/id: '([^']+)'/g)].map((m) => m[1]));
         const seenKeys = new Set();
         const bad = [];
@@ -1131,6 +1133,17 @@ if (cssLayerAnchor === undefined) {
             }
           } else if (e.anchor.trim() === '—') {
             bad.push(`${e.key}(consumer=${e.consumer} 但 anchor 是 —)`);
+          }
+          // `blockedBy`（**只对 gap 有意义**的机器可读阻塞原因；2026-10-07，审计 §4.135）
+          // ⚠️ 不许把「未确定/未核实」写进这里 —— 那是 status 与 consumer 两条轴的事。
+          if (e.blockedBy !== undefined) {
+            if (!BLOCKED_BY_VOCAB.has(e.blockedBy)) {
+              bad.push(`${e.key}(blockedBy=${e.blockedBy} 不在词表内)`);
+            } else if (e.status !== 'gap') {
+              bad.push(`${e.key}(blockedBy 只对 gap 有意义，当前 status=${e.status})`);
+            } else if (e.blockedBy === 'adr-pending' && e.pendingRef === undefined) {
+              bad.push(`${e.key}(blockedBy=adr-pending 但缺 pendingRef —— 待裁决必须有机器可读载体)`);
+            }
           }
           // `internal` 只在**确实改名**时才有意义
           if (e.internal !== undefined && e.internal === e.key) bad.push(`${e.key}(internal 与 key 相同 ⇒ 不该写)`);
@@ -1235,6 +1248,32 @@ if (cssLayerAnchor === undefined) {
           }
           if (!judgeConsumer([{ key: 'a', consumer: 'native', anchor: 'a', internal: 'a' }]).includes('sameInternal')) {
             errors.push('consumer 形状 canary 失效：internal 等于 key 未被检出');
+          }
+          // canary：`blockedBy` 词表 + 「只对 gap 有意义」+「adr-pending 必须有 pendingRef」（**共用同一谓词**）
+          const judgeBlocked = (list) => {
+            const out = [];
+            for (const e of list) {
+              if (e.blockedBy === undefined) continue;
+              if (!BLOCKED_BY_VOCAB.has(e.blockedBy)) out.push('vocab');
+              else if (e.status !== 'gap') out.push('notGap');
+              else if (e.blockedBy === 'adr-pending' && e.pendingRef === undefined) out.push('noRef');
+            }
+            return out;
+          };
+          if (judgeBlocked([{ key: 'a', status: 'gap', blockedBy: 'not-implemented' }]).length !== 0) {
+            errors.push('blockedBy canary 过宽：合法条目被误报');
+          }
+          if (!judgeBlocked([{ key: 'a', status: 'gap', blockedBy: 'nope' }]).includes('vocab')) {
+            errors.push('blockedBy canary 失效：词表外的值未被检出');
+          }
+          if (!judgeBlocked([{ key: 'a', status: 'equivalent', blockedBy: 'not-implemented' }]).includes('notGap')) {
+            errors.push('blockedBy canary 失效：非 gap 项带 blockedBy 未被检出');
+          }
+          if (!judgeBlocked([{ key: 'a', status: 'gap', blockedBy: 'adr-pending' }]).includes('noRef')) {
+            errors.push('blockedBy canary 失效：adr-pending 缺 pendingRef 未被检出');
+          }
+          if (judgeBlocked([{ key: 'a', status: 'gap', blockedBy: 'adr-pending', pendingRef: 'ADR-0034 Q11' }]).length !== 0) {
+            errors.push('blockedBy canary 失效：adr-pending + pendingRef 的合法组合被误报');
           }
         }
       }

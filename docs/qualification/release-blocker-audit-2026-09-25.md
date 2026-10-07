@@ -8797,6 +8797,66 @@ onDropFile: async function (paths, ev) {
 
 
 
+## 4.135 逐条取证剩余 5 项 `gap` 的**阻塞原因** + 新增机器可读的 `blockedBy`（2026-10-07）
+
+### 一、动因
+
+§4.134 之后「面板独有面」剩 5 项 `gap`。本轮**不硬做**，而是逐条取证**为什么没做**，
+并把结论落成**机器可读**字段 —— 否则「这 5 项还缺」这句话只存在于散文里。
+
+### 二、逐条结论
+
+| 键 | `blockedBy` | 证据与理由 |
+|---|---|---|
+| `openExportLocation` | `adr-pending` | 默认**开**（schema 片段 `openExportLocation:!0`）⇒ **默认行为偏离**，补它会改变用户可见默认 ⇒ 已登记 **ADR-0034 Q11**（`pendingRef` 在场） |
+| `quitAfterWindowClose` | `adr-pending` | Typora macOS 默认**不退出**，Mellow **会退出**（源码级证据见 §4.131）⇒ 已登记 **ADR-0034 Q12** |
+| `allowPhysicsConflict` | **`precondition`** | **前置能力「数学渲染」未接通** —— 见下面的更正块。⇒ **现有架构下不可实施**，属方案级 |
+| `no_image_move_for_local` | `not-implemented` | 整族「图片移动规则」缺设置（矩阵里 `allowImageMove` / `applyImageMoveForLocal` / `applyImageMoveForWeb` **三条都是 `gap`**）；Mellow **有底层能力**（`image/ops.ts` 的 `planMove*`）⇒ 缺的是**开关与接线** ⇒ **可自主推进** |
+| `SmartyPantsOnRendering` | `not-implemented` | 缺「**渲染期**转换」这一层：Mellow 的 `editor.smartPunctuation` 只在**输入期**改写（落盘即弯引号），而该档要求**输入与落盘保持 ASCII、只在显示上呈现** ⇒ 需新增**显示层**（CM6 decoration / view plugin），且要跳过代码上下文、与「光标行揭示」交互、**绝不改写文档** ⇒ 可自主推进，但规模大于其它项 |
+
+⇒ **结论：5 项里只有 2 项可自主推进**（`not-implemented`），2 项待裁决、1 项前置缺失。
+⇒ **「面板独有面」的自主可做项已基本见底** —— 剩下的要么需裁决，要么需先补前置能力。
+
+### 三、⚠️ 更正（2026-10-07，更正 §4.134 报告里的一句）
+
+§4.134 的**对话报告**里写过「`allowPhysicsConflict` ⇒ **MathJax 配置在 vendored CoreEditor 里，Mellow 不拥有**」。
+本轮取证发现**这句不准确**：
+
+- 实测**全仓（排除 `node_modules`）没有任何 MathJax 加载点/配置点**；
+- `window.MathJax` **只被消费**（`packages/editor-engine/src/math.ts` 的 `tex2chtmlPromise` / `tex2svgPromise`）；
+- `packages/editor-core/CoreEditor` 源码里 `mathjax` **0 命中**；三个 `index.html` 也没有相应 `<script>`；
+- 全仓 79 处 `mathjax` 命中**全部**在 `dist/`、`public/`（构建产物）与引擎的消费点。
+
+⇒ 真正的问题是**更靠前的一层**：**Mellow 根本没有提供 MathJax**（与既有记录一致：harness 下数学 widget 只显示原始 TeX）。
+⇒ 错因：上一轮只看到「`window.MathJax` 被引擎消费」就推断「提供者在 vendored 里」，**没有搜「谁提供它」**。
+⇒ 教训见下面「教训 2」。
+
+### 四、`blockedBy`：机器可读的阻塞原因（新字段 + 判据 + 可见性）
+
+- **词表**（`gap` 专用）：`not-implemented`（能力未实现，**可自主推进**）/
+  `precondition`（**前置能力缺失 ⇒ 现有架构下不可实施**）/ `adr-pending`（**待裁决**，必须同时给 `pendingRef`）。
+- **CI 判据**（`verify-settings-contract.mjs` ⑭）：取值必须在词表内；**只对 `gap` 有意义**（非 `gap` 项带 `blockedBy` ⇒ 红）；
+  `adr-pending` 必须同时有 `pendingRef`（待裁决必须有机器可读载体）。canary 四向（含「合法组合不误报」）。
+  **注入验证 3/3**：① 词表外的值 ⇒ 红；② `adr-pending` 去掉 `pendingRef` ⇒ 红；③ 把 `blockedBy` 加到 `equivalent` 项上 ⇒ 红。
+- **可见性**：本机工具**按原因分组打印**，并给出三类的计数与「哪些可自主推进」——
+  ⇒ 机器可读字段不能只躺在 JSON 里。
+- ⚠️ **明确边界**：`blockedBy` **不是**「未确定/未核实」的存放处 —— 那是 `status` 与 `consumer` 两条轴的事；
+  三者互不替代（本轮在顶层 note 里写明）。
+
+### 五、教训
+
+1. **「还缺 N 项」这句话必须落成机器可读字段** —— 否则下一轮只能重新读散文、重新判断哪些能做。
+   ⇒ 有了 `blockedBy`，下一轮**一眼**就能看出「可自主推进 2 项 / 待裁决 2 项 / 前置缺失 1 项」。
+2. **搜「谁消费」之后要搜「谁提供」** —— 本轮更正的就是这类：
+   看到 `window.MathJax` 被消费，就推断「提供者在 vendored 里」；**实际全仓没有提供者**。
+   ⇒ 对**全局对象**（`window.X`）的依赖，判据必须**同时**回答「谁读」与「谁写」；只答一半会得出方向相反的错误结论。
+3. **「不可实施」也要有证据，而且要指出**卡在哪一层** —— 本项卡在「数学渲染」这一**前置能力**，
+   不是卡在「配置归属」。⇒ 结论要精确到**层级**，否则裁决者无法判断该补哪一层。
+4. **可自主推进的项要标出「缺的是开关还是能力」** —— `no_image_move_for_local` 缺的是**开关与接线**
+   （底层能力 `planMove*` 已有）⇒ 工作量小得多；若只写「未实现」，下一轮会把它与「要从零做一套规则引擎」混为一谈。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 
