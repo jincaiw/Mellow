@@ -81,3 +81,21 @@ NODE_PATH=/tmp/pw/node_modules node tests/e2e/<script>.mjs
 `SKIP` 并说明原因（同时仍断言「⌘N 在不脏时不被误拦」「全流程不出现 WebView 原生面板」），
 **不伪造通过**；完整断言已写好，harness 补齐事件通道后自动生效。
 详见方案 §5.8 **G7-QA-07**。
+
+### 8. **数学渲染（MathJax/KaTeX）在 dev harness 里未接通** —— 断言前必须先跑对照组（2026-10-07 实测）
+
+`fenced-math-verify.mjs` 首跑时看到数学 widget 的 `innerHTML` 就是**原始 TeX**（`E = mc^2`），
+看起来像「围栏数学没渲染」。**加一组对照才发现不是**：把文档换成**改动之前就存在**的 `$$` 块，
+它的 widget **同样**只显示原始 TeX ⇒ **本 harness 里数学渲染路径整体没接通**
+（引擎的 `renderMathSource` 兜底成源码文本），与围栏数学无关。
+
+**方法（可复用）**：**任何「新功能看起来没生效」的 e2e 结论，都要先用一条既有的等价路径做对照** ——
+对照组也坏 ⇒ 是 harness 的问题；对照组好 ⇒ 才是新功能的问题。
+（与 `dirty-leave-dialog` 的「能力探针」同一思路：**先证明能力在不在，再判对错**。）
+
+**连带（同一脚本）**：`getComputedStyle(widget).fontFamily` **不能**用来判「是否被代码块样式污染」——
+CoreEditor 的 `setFontFace` 把 `.cm-content` 的字族写成
+`<family>, ui-monospace, monospace, Menlo, …`，**任何**元素读出来都含 `mono`（首跑因此误报）。
+有判别力的量是 **`widget.closest('.cm-md-monospace') === null`**
+（等宽规则的真正作用面是 `.cm-md-monospace` / `.cm-md-codeBlock` 之内）。
+⇒ 教训：**断言要挑「有判别力」的量**，不要挑「读出来必然长这样」的量。
