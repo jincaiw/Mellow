@@ -679,14 +679,28 @@ pub async fn copy_file(from: String, to: String) -> Result<(), String> {
 }
 
 /// 保存对话框 → 返回用户选择的路径（取消 → None）。RC F1：PDF 导出等二进制落盘前置。
+///
+/// `default_dir`（2026-10-07，审计 §4.132）：对话框的**初始目录**。
+/// 【为什么需要它】Typora 的「Default Folder for Exported File」默认值是 `""` = **Auto**，
+/// 而 Auto 的语义（`main.js` 导出路径计算）是 **当前文件所在目录**；Mellow 此前只 `set_file_name`，
+/// 初始目录由系统决定 ⇒ **默认落点与 Typora 不同**（用户在别的目录里找导出件）。
+/// 【容错】只在**该目录确实存在**时才 `set_directory` —— 路径可能已失效（文档被移动/删除），
+/// 传一个不存在的目录给原生对话框会导致「初始目录空白」或平台相关的怪行为。
 #[tauri::command]
 pub async fn pick_save_path(
     app: tauri::AppHandle,
     default_name: String,
     filters: Option<Vec<String>>,
+    default_dir: Option<String>,
 ) -> Option<String> {
     use tauri_plugin_dialog::DialogExt;
     let mut file = app.dialog().file().set_file_name(&default_name);
+    if let Some(dir) = default_dir.as_deref() {
+        let p = std::path::Path::new(dir);
+        if p.is_dir() {
+            file = file.set_directory(p);
+        }
+    }
     if let Some(exts) = filters {
         if !exts.is_empty() {
             let names: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();

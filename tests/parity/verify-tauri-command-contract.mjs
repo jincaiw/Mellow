@@ -458,6 +458,9 @@ const OPTION_ARG_REQUIRED_AT_CALLSITE = new Map([
   ['pandoc_available.pandoc_path', '承载设置 `export.pandocPath`（审计 §4.127）：漏传 ⇒ 用户填的路径被静默忽略'],
   ['pandoc_export.pandoc_path', '同上（导出入口）'],
   ['pandoc_import.pandoc_path', '同上（导入入口）'],
+  // 2026-10-07（审计 §4.132）：`default_dir` 承载「Typora `exportFolder` 的 **Auto** 语义 = 当前文件所在目录」。
+  // 漏传 ⇒ 该入口的保存对话框退回**系统默认目录**（Typora 用户会在别处找导出件）—— 静默、且只在真机上看得出来。
+  ['pick_save_path.default_dir', '承载「导出默认目录」（Typora `exportFolder` 的 Auto 语义）：漏传 ⇒ 该入口退回系统默认目录'],
 ]);
 const ARG_SCAN_DIRS = ['apps/desktop/src', 'apps/desktop/scripts'];
 

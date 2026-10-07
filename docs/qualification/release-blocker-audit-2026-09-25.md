@@ -8547,6 +8547,64 @@ anchor 的定义是「**可核对落点**」，当键名跨边界时是**参数*
 
 
 
+## 4.132 补上 `exportFolder` 的「**Auto**」那一半：导出保存对话框默认落在**当前文件所在目录**（2026-10-07）
+
+### 一、动因
+
+§4.130 把 `exportFolder` 定为 `gap`，理由里有一条**不只是「缺选项」**：
+Typora 的默认值 `""` = **Auto**，其语义是**当前文件所在目录**；
+而 Mellow 只给对话框 `defaultName`、**不给目录** ⇒ **默认落点也不同**（用户在别的目录里找导出件）。
+
+### 二、一手证据
+
+- **Typora**（`main.js` 导出路径计算）：`"same" === t.exportFolder ? u() + r + o : "custom" === t.exportFolder ? …`，
+  而 `u = function(){ return File.isMac ? File.bundle.currentFolderPath : … }` ⇒ **Auto 的落点 = 当前文件所在目录**；
+  面板里该组的默认是 `value: n.exportFolder || ""` ⇒ `""` = Auto。
+- **Mellow**（`src-tauri/src/fs.rs` 的 `pick_save_path`）：只有
+  `app.dialog().file().set_file_name(&default_name)` —— **没有 `set_directory`** ⇒ 初始目录由系统决定。
+
+### 三、处置
+
+1. **Rust**（`pick_save_path`）：新增 `default_dir: Option<String>`；**仅在该目录确实存在时** `set_directory`
+   —— 路径可能已失效（文档被移动/删除），把失效路径交给原生对话框会产生**平台相关的怪行为**，而且**只在真机上看得出来**。
+2. **前端**（`App.tsx` 新增 `saveDialogDir()`）：**全部 6 处** `pick_save_path` 调用点都传：
+   | 入口 | 默认落点 |
+   |---|---|
+   | PDF / pandoc / HTML / 图片 导出（4 处） | **当前文件所在目录**（= Typora 的 Auto） |
+   | 渲染图（公式/图表）下载 | 当前文档目录 |
+   | **导入**（pandoc → .md） | **被导入文件所在目录** —— ⚠️ 语义**不同**，不能机械复制 |
+   `saveDialogDir()` 对「未命名/未保存文档」与「路径里没有分隔符」返回 `undefined` = **不指定**（由系统决定）。
+3. **登记表**：`exportFolder` 的 note 记下「Auto 那一半已补上」，但「Default Folder for Exported File」**选项本身**
+   （Same folder / Custom location 两档 + `customExportPath` 的持久化）仍缺 ⇒ 状态**保持 `gap`**。
+
+### 四、护栏：§4.127 建的那条表**第一次被复用**，当场证明价值
+
+新增形参**立刻**进 `verify-tauri-command-contract.mjs` §⑤b 的 `OPTION_ARG_REQUIRED_AT_CALLSITE`：
+
+```js
+['pick_save_path.default_dir', '承载「导出默认目录」（Typora `exportFolder` 的 Auto 语义）：漏传 ⇒ 该入口退回系统默认目录'],
+```
+
+⇒ 判据 = 「该命令的**每一处**调用都含该键」。**注入验证 1/1**：去掉 HTML 导出那处的 `defaultDir` ⇒ 红
+（`pick_save_path（← …/App.tsx）**未传** defaultDir：该形参是 Option（漏传不报错），但承载用户设置 —— 不传 = 静默忽略用户设置`）。
+
+⚠️ 这条护栏是 §4.127 为 `pandocPath` 建的，**本轮是它第一次服务于新改动** ——
+若当时没建，本轮新加的 `default_dir` 就会成为**下一个静默漏传点**（4 个导出入口任漏一个都只在真机上可见）。
+
+### 五、教训
+
+1. **新建的护栏要在下一次改动里立刻复用** —— 本轮护栏的收益在**同一轮**就兑现了：
+   它把一个「只在真机可见、静默」的缺陷变成一条**当场就红**的判据。
+   ⇒ 判据建好后，**下一次加同类字段时先问「它该进哪张表」**。
+2. **路径/外部资源类参数：只在「确实可用」时才用**（`is_dir()` 守卫）——
+   失效路径交给原生对话框的后果**平台相关且只在真机可见**，属于「本地测不出来」的缺陷（§4.154 同族）。
+3. **同族入口要全部覆盖，但语义不能机械复制** —— 6 处里 4 处是「当前文件所在目录」，
+   而**导入**是「被导入文件所在目录」；把导入也写成 `tab.path` 会给出一个**看起来对、实际错**的落点。
+4. **「补上了一半」要如实写** —— 本轮补的是 Auto 的**行为**，选项本身仍缺；
+   若把 `exportFolder` 直接改成 `equivalent`，就会掩盖「用户仍无法选 Same folder / Custom location」这一事实。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

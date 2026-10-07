@@ -1281,6 +1281,7 @@ export default function App() {
         invoke<string | null>('pick_save_path', {
           defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.pdf`,
           filters: ['pdf'],
+          defaultDir: saveDialogDir(tab.path),
         }),
       ]);
       if (savePath === null) return; // 用户取消
@@ -1297,6 +1298,19 @@ export default function App() {
       setToast({ message: `${t('export.pdf.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
   }, [t]);
+
+  /** 保存对话框的**初始目录**（2026-10-07，审计 §4.132）。
+   *  Typora 的「Default Folder for Exported File」默认 `""` = **Auto**，其语义（`main.js` 导出路径计算）
+   *  就是**当前文件所在目录**（`File.bundle.currentFolderPath`）⇒ 本函数给出同一个落点。
+   *  ⚠️ 返回 `undefined` = **不指定**（由系统对话框决定）：未命名/未保存文档、或路径里没有分隔符。
+   *  必须**每一处** `pick_save_path` 都传 —— 漏传会让该入口的初始目录退回系统默认
+   *  （护栏 `verify-tauri-command-contract.mjs` §⑤b 的 `OPTION_ARG_REQUIRED_AT_CALLSITE` 锁这一点）。 */
+  const saveDialogDir = useCallback((path: string | null | undefined): string | undefined => {
+    if (path === null || path === undefined || path === '') return undefined;
+    if (!/[\\/]/.test(path)) return undefined; // 裸文件名（相对路径）⇒ 没有可用的目录
+    const dir = fileTreeDirname(path);
+    return dir === '' ? undefined : dir;
+  }, []);
 
   // ── RC F6：导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize）──
   // Pandoc 导出（PRD §75 P1 / deep-parity A9 / D2 格式扩展）：
@@ -1328,6 +1342,7 @@ export default function App() {
       const savePath = await invoke<string | null>('pick_save_path', {
         defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.${ext}`,
         filters: [ext],
+        defaultDir: saveDialogDir(tab.path),
       });
       if (savePath === null) return;
       await invoke('pandoc_export', { input: tab.path, output: savePath, format, pandocPath: pandocPathSetting() });
@@ -1394,6 +1409,7 @@ export default function App() {
         invoke<string | null>('pick_save_path', {
           defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.html`,
           filters: ['html', 'htm'],
+          defaultDir: saveDialogDir(tab.path),
         }),
       ]);
       if (savePath === null) return; // 用户取消
@@ -1506,6 +1522,7 @@ export default function App() {
         invoke<string | null>('pick_save_path', {
           defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.${settingsFormat === 'jpeg' ? 'jpg' : 'png'}`,
           filters: ['png', 'jpg', 'jpeg'],
+          defaultDir: saveDialogDir(tab.path),
         }),
       ]);
       if (savePath === null) return; // 用户取消
@@ -2430,7 +2447,7 @@ export default function App() {
     }
     try {
       const defaultName = kind === 'math' ? 'formula.png' : 'diagram.png';
-      const savePath = await invoke<string | null>('pick_save_path', { defaultName, filters: ['png'] });
+      const savePath = await invoke<string | null>('pick_save_path', { defaultName, filters: ['png'], defaultDir: saveDialogDir(filePathRef.current) });
       if (savePath === null) return; // 用户取消
       const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
       const bin = atob(base64);
@@ -4177,6 +4194,8 @@ export default function App() {
       const output = await invoke<string | null>('pick_save_path', {
         defaultName: `${base.replace(/\.[^.]*$/, '')}.md`,
         filters: ['md'],
+        // 导入的默认落点 = **被导入文件所在目录**（与导出族的「当前文件所在目录」同理）
+        defaultDir: saveDialogDir(input),
       });
       if (output === null) return;
       await invoke('pandoc_import', { input, output, pandocPath: pandocPathSetting() });
