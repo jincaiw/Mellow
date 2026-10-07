@@ -8,10 +8,10 @@
  * 覆盖：默认关闭（设置值 false）输入 Markdown 字符不触发辅助；live 开启后选区包裹恢复；
  * 关闭后再次撤销（证明 live 值是动态读取，不是启动快照）。
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const cwd = fileURLToPath(new URL('../../apps/desktop/', import.meta.url));
@@ -25,7 +25,8 @@ function pickFreePort() {
 function check(name, ok, detail = '') { console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ` — ${detail}` : ''}`); if (!ok) process.exitCode = 1; }
 async function main() {
   const port = await pickFreePort(); const base = `http://localhost:${port}`;
-  const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { cwd, stdio: 'ignore' });
+  const server = startViteDevServer({ cwd, port });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     const deadline = Date.now() + 40000; let ready = false;
@@ -60,6 +61,6 @@ async function main() {
 
     await setPairs(false); await setDoc('abc', 0, 3); const backOff = await type('*');
     check('再次关闭：自动包裹撤销（live 值动态生效）', backOff !== '*abc*', JSON.stringify(backOff));
-  } finally { await browser.close(); vite.kill('SIGTERM'); }
+  } finally { await browser.close(); server.stop(); }
 }
 main().catch((error) => { console.error(error); process.exit(1); });

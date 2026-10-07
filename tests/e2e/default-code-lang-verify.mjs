@@ -13,10 +13,10 @@
  *
  * 运行：NODE_PATH=<playwright>/node_modules node tests/e2e/default-code-lang-verify.mjs
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -42,9 +42,8 @@ function check(name, ok, detail = '') {
 async function main() {
   const port = await pickFreePort();
   const base = `http://localhost:${port}`;
-  const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: port });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     const deadline = Date.now() + 40000;
@@ -130,7 +129,7 @@ async function main() {
     }
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

@@ -383,7 +383,7 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
 }
 
-// ── ⑫ e2e 探针的**启动器卫生**：棘轮（2026-10-07，审计 §4.122 连带）──────────────
+// ── ⑫ e2e 探针的**启动器卫生**：**硬判据**（2026-10-08 收口；2026-10-07 立棘轮）──────────────
 // 立此条的原因（实测）：`verify-visual-golden.mjs` 对**四个视觉脚本**锁了
 // 「必须用 `tests/visual/dev-server.mjs` 的**平台感知**启动器、不得裸 `spawn('npx')`」——
 // 而**同一类缺陷在 `tests/e2e/**` 里原样存在**，且**那一面没有任何判据覆盖**：
@@ -391,10 +391,16 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
 // （Windows 上 `npx` 实际是 `npx.cmd`，无 shell 时 spawn 抛 ENOENT ⇒ 探针以「**超时**」静默失败），
 // **22 个**用固定端口（`tests/e2e/README.md` 已记：残留 vite 会让测试**假红**且换任何等待时长都无效）。
 //
-// ⚠️ **这是「存量欠债」，不是「已评估通过」**（本仓要求例外表理由**逐字区分**）：
-//    本轮**不**批量改那 28 个脚本 —— 它们大多需要特定条件才能跑，**盲改 = 改一堆跑不起来的探针**。
-//    故本判据是**棘轮**：只保证「**不变得更差**」+「共享启动器的用法**不被删掉**」。
-//    目标是把 28 降下来；**降到 0 时应把本判据换成硬判据**（「不得出现裸 `spawn('npx')`」）。
+// **收紧轨迹**：28（立判据时的存量欠债）→ 27（2026-10-07 修 drag-drop）→ **0**（2026-10-08 批量迁移）
+// ⇒ 按当初注释里写下的约定（「降到 0 时应把本判据换成硬判据」）**换成硬判据**。
+//
+// ⚠️ 当初立棘轮的理由是「**不盲改**：那些脚本大多需要特定条件才能跑，盲改 = 改一堆跑不起来的探针」——
+//    2026-10-08 之所以能做，是因为**迁移是机械的且逐文件验过**：
+//    ① 27 处的 spawn 语句**形态统一**（只有 `PORT`/`port` 与 `cwd` 写法两种小差异）；
+//    ② 迁移后**逐个 `node --check`**（27/27 通过）；
+//    ③ 迁移**只换启动方式**（同样的 `vite --port <p> --strictPort`，同样的 cwd），**不碰任何测试逻辑**；
+//    ④ 顺手清掉随之未使用的 `spawn` 导入（27 个文件）。
+//    ⇒ **棘轮到 0 就必须换硬判据** —— 留一个「上限 0」的棘轮等于没判据。
 {
   const E2E_DIR = resolve(root, 'tests/e2e');
   const e2eFiles = existsSync(E2E_DIR)
@@ -420,17 +426,18 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
     if (isBareNpx(src)) bare.push(relative(root, f).split('\\').join('/'));
     if (usesSharedLauncher(src)) shared += 1;
   }
-  // 棘轮（两个方向）：共享用法不得减少；裸用法不得增加
-  if (shared < 5) {
-    fail(`tests/e2e 里只有 ${shared} 个脚本使用平台感知启动器（下限 5 = 立此判据时的基线 + 2026-10-07 修的 drag-drop）—— `
+  // **硬判据**（两个方向）：共享用法不得减少；裸用法必须为 0
+  // 下限抽成常量：否则改了判据、报错文案还写着旧数（「同一组数值两处维护」）
+  const SHARED_MIN = 32;
+  if (shared < SHARED_MIN) {
+    fail(`tests/e2e 里只有 ${shared} 个脚本使用平台感知启动器（下限 **${SHARED_MIN}** = 2026-10-08 迁移后的全量）—— `
       + '这条下限是**棘轮**：共享用法被删掉会让「Windows 上探针全跑不起来」重新变成无人守的现状');
   }
-  if (bare.length > 27) {
-    fail(`tests/e2e 里有 ${bare.length} 个脚本是裸 \`spawn('npx')\`（上限 27 = 立此判据时的**存量欠债**；`
-      + '2026-10-07 已从 28 修到 27）—— '
-      + '**不得新增**这种写法（Windows 上 `npx` 是 `npx.cmd` ⇒ spawn ENOENT ⇒ 探针以超时静默失败）。'
-      + '新脚本请用 `tests/visual/dev-server.mjs` 的 `startViteDevServer()` + `describeSpawnFailure()`；'
-      + `\n    新增者：${bare.slice(-3).join(', ')}`);
+  if (bare.length > 0) {
+    fail(`tests/e2e 里有 ${bare.length} 个脚本是裸 \`spawn('npx')\`（**硬判据：必须为 0**）：`
+      + `${bare.join(', ')} —— Windows 上 \`npx\` 是 \`npx.cmd\` ⇒ spawn ENOENT ⇒ 探针以**超时**静默失败。`
+      + '请改用 `tests/visual/dev-server.mjs` 的 `startViteDevServer()` + `describeSpawnFailure()`'
+      + '（并删掉不再使用的 `spawn` 导入）。');
   }
   // canary：① 注释里的写法**不得**被计成裸用法（实测踩过）；② 真实模式必须被检出
   if (isBareNpx("// 裸 spawn('npx') 在 Windows 上会 ENOENT\nconst a = 1;\n")) {

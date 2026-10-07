@@ -11,9 +11,9 @@
  * 锁定（55 条），本脚本只验证「键位能走到正确模式」，不再重复主张真值。
  *   4. 快捷键不向文档插入字面字符（回归防线）
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -40,9 +40,8 @@ function check(name, ok, detail = '') {
 }
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
@@ -313,7 +312,7 @@ async function main() {
     check('sidebar restores after window returns to supported width', restored.visible && restored.label === '大纲' && restored.sidebarFlag === '1', JSON.stringify(restored));
   } finally {
     await browser.close().catch(() => {});
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

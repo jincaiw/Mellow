@@ -5,9 +5,9 @@
  *   2. 设置面板 UI 全链路：Cmd+, → 编辑器分类 → 字体 select → localStorage 持久化 + live apply
  *   3. 重启恢复：reload 后启动路径重放 setFontFace（此前仅 live apply 无恢复的回归防线）
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -34,9 +34,8 @@ function check(name, ok, detail = '') {
 }
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
@@ -113,7 +112,7 @@ async function main() {
     await page.evaluate(() => localStorage.removeItem('mellow.editor.fontFamily'));
   } finally {
     await browser.close().catch(() => {});
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

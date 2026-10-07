@@ -16,9 +16,9 @@
  * 退出码：0 = 全部通过；1 = 存在失败项（防白屏回归的 CI 门禁）。
  */
 
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -73,11 +73,8 @@ async function main() {
   // 1. 启动 vite dev server（动态空闲端口，不干扰并行开发、也不受残留实例影响）
   PORT = await pickFreePort();
   BASE = `http://localhost:${PORT}`;
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR,
-    stdio: 'ignore',
-    detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   try {
     if (!(await waitForServer(30000))) {
       console.error('vite dev server 未能在 30s 内就绪');
@@ -160,7 +157,7 @@ async function main() {
 
     await browser.close();
   } finally {
-    vite.kill('SIGTERM');
+    server.stop();
   }
 
   // 汇总

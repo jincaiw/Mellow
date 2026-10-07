@@ -14,9 +14,9 @@
  * 长期呈现 1 项 ❌。键位真值现由 tests/parity/verify-menu-contract.mjs §11
  * 「官方快捷键表真值合同」锁定，本脚本只验证「键位能走到正确格式」。
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -43,9 +43,8 @@ function check(name, ok, detail = '') {
 }
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
@@ -222,7 +221,7 @@ async function main() {
     await setDoc('', 0, 0);
   } finally {
     await browser.close().catch(() => {});
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

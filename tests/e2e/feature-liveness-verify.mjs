@@ -17,13 +17,13 @@
  *
  * 运行：NODE_PATH=<playwright 目录>/node_modules node tests/e2e/feature-liveness-verify.mjs
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // 应用内对话框的**唯一正确驱动**（G7-EDIT-10 迁移后的约定）——
 // 不要用 `page.on('dialog')` 应答：那是原生面板的事件，应用内对话框**永不触发**它
 //（仓库曾因此静默腐烂数天，见 tests/shared/in-app-dialog.mjs 的说明）。
 import { INPUT_DIALOG_SELECTORS } from '../shared/in-app-dialog.mjs';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -51,9 +51,8 @@ function check(name, ok, detail = '') {
 }
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
@@ -244,7 +243,7 @@ async function main() {
     check('链接引用占位（format.referenceLink）', refText === '段落[][1]文本\n[1]: ', `got=${JSON.stringify(refText)}`);
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

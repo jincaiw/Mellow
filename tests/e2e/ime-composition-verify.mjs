@@ -22,9 +22,9 @@
  *   4. 行内 marker 边界合成不破坏结构
  *   5. 撤销后无中文残留（IME corruption = 0）
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -51,9 +51,8 @@ function check(name, ok, detail = '') {
 }
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
@@ -180,7 +179,7 @@ async function main() {
       (await getText()) === TABLE, `steps=${tableUndoSteps} got=${JSON.stringify(await getText())}`);
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

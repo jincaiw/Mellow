@@ -3,9 +3,9 @@
  * 通过 console 事件流式输出阶段进度（主线程阻塞时最后的 checkpoint 即卡点）。
  */
 
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -30,9 +30,8 @@ const MB = 1024 * 1024;
 
 async function main() {
   const sizeArg = Number(process.argv[2] ?? 1); // MB
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   try {
     if (!(await waitForServer(30000))) { console.error('vite 未就绪'); process.exitCode = 1; return; }
     const browser = await chromium.launch({ headless: true });
@@ -87,7 +86,7 @@ async function main() {
     console.log('RESULT:', JSON.stringify(r));
     await browser.close();
   } finally {
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

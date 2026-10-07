@@ -22,10 +22,10 @@
  *
  * 运行：NODE_PATH=<playwright 目录>/node_modules node tests/e2e/dirty-leave-dialog-verify.mjs
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -59,9 +59,8 @@ function skip(name, reason) {
 async function main() {
   const PORT = await pickFreePort();
   const BASE = `http://localhost:${PORT}`;
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
+  const vite = server.child;
   const browser = await chromium.launch();
   const nativeDialogs = [];
   try {
@@ -184,7 +183,7 @@ async function main() {
     );
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

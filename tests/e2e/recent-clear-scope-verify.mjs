@@ -10,10 +10,10 @@
  * Mellow 的命令执行必须先弹作用域选择，不能直接清空 `recentFiles`。
  * 运行：NODE_PATH=<playwright>/node_modules node tests/e2e/recent-clear-scope-verify.mjs
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
+import { startViteDevServer } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -39,7 +39,8 @@ function check(name, ok, detail = '') {
 async function main() {
   const port = await pickFreePort();
   const base = `http://localhost:${port}`;
-  const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: DESKTOP_DIR, stdio: 'ignore' });
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: port });
+  const vite = server.child;
   const browser = await chromium.launch();
   try {
     const deadline = Date.now() + 40000;
@@ -104,7 +105,7 @@ async function main() {
     check('选择「历史和固定」后固定文件夹清空', await local('mellow.recent.folders.pinned') === null, JSON.stringify(await local('mellow.recent.folders.pinned')));
   } finally {
     await browser.close();
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 
