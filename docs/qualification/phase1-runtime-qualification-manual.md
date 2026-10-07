@@ -98,6 +98,16 @@ node tests/benchmark/generate-fixtures.mjs
 | D1 | 拖入单个 .md | 打开文档 |
 | D2 | 拖入图片（单/多张） | 按图片策略插入 |
 
+> **⚠️ 2026-10-07 更正（审计 §4.124）：D1 的「通过标准」当前**不可能通过** —— 该行为未实现。**
+> 实测（读码，非推断）：Mellow 唯一的拖放处理在 `App.tsx` 的 Tauri `onDragDropEvent` 回调里，
+> 它**只**把路径写进 iframe 的 `window.__MELLOW_DROP_PATHS__`，而全仓该变量的**唯一消费方**是
+> `packages/editor-engine/src/image/host.ts` 的 `consumeDroppedFilePaths()`（**图片管线**）
+> ⇒ 拖入 `.md` / 文件夹**什么都不会发生**（Rust 侧无任何 drag-drop 处理）。
+>
+> ⇒ **D1 这一行必须按「未实现」读**，不要把它当作「已通过的真机项」。
+> 完整缺口与实现前置见 master-plan §15.3 行 14c 与审计 §4.124
+> （含：Typora 该组偏好的**默认值**就是「打开」；且实现要经过未保存文档守卫）。
+
 ### 2.5 Undo / 文件
 | # | 场景 | 通过标准 |
 |---|---|---|

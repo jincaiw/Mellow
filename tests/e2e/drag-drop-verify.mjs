@@ -10,16 +10,19 @@
  *     4. 外部 drop（Finder/Explorer 模拟：无内部 dragstart）不得误触发移动
  *        （dragend 清空 draggedRef 的防回归断言）
  *   - Tauri onDragDropEvent → iframe 注入（window.__MELLOW_DROP_PATHS__）：需真实桌面宿主，
- *     浏览器 dev 无 __TAURI_INTERNALS__，由 verify-sidebar-contract.mjs 静态契约 +
- *     真机手动项（D1「拖入单个 .md → 打开文档」）覆盖。
+ *     浏览器 dev 无 __TAURI_INTERNALS__，由 verify-sidebar-contract.mjs 静态契约覆盖。
+ *     ⚠️ **2026-10-07 更正（审计 §4.124）**：此处原写「由**真机手动项 D1**（拖入单个 .md → 打开文档）覆盖」——
+ *     **那句话是错的**：D1 声称的行为**未实现**（唯一消费 `__MELLOW_DROP_PATHS__` 的是
+ *     `image/host.ts` 的 `consumeDroppedFilePaths()`，**图片管线**；`.md` / 文件夹被忽略）。
+ *     手动清单里 D1 那一行已同步标注「当前不可能通过」。
  *   - Sidebar → Finder 拖出：Typora 1.14.9 基线无此语义，Mellow 不实现（不造语义）。
  *
  * 运行：node tests/e2e/drag-drop-verify.mjs
  */
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createWorkspaceEntry } from '../shared/in-app-dialog.mjs';
+import { startViteDevServer, describeSpawnFailure } from '../visual/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -91,12 +94,14 @@ async function dispatchDndSequence(page, sourceSel, targetSel, { withDragstart =
 }
 
 async function main() {
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: DESKTOP_DIR, stdio: 'ignore', detached: false,
-  });
+  // ⚠️ 用**跨平台**启动器（本仓既有约定）：裸 `spawn('npx')` 在 Windows 上会 ENOENT
+  //（`npx` 实际是 `npx.cmd`），脚本只会以「超时」静默失败。见 tests/visual/dev-server.mjs 文件头。
+  const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
   const browser = await chromium.launch();
   try {
-    if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
+    if (!(await waitForServer(30000))) {
+      throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
+    }
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 预置：侧栏可见 + files/tree 模式 + mock workspace 根（浏览器 dev 走 host-api mock fs，
     // nextDirectoryPath 默认 '/dir'；直接预置 root 键跳过目录选择对话框）
@@ -189,7 +194,7 @@ async function main() {
     check('final workspace shape consistent', finalShape.includes('/dir/a.md') && finalShape.includes('/dir/sub/b.md'), JSON.stringify(finalShape));
   } finally {
     await browser.close().catch(() => {});
-    vite.kill('SIGTERM');
+    server.stop();
   }
 }
 

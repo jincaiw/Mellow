@@ -7800,6 +7800,100 @@ CM6 文档说 BlockWrapper「affects any line or **block widget** that starts in
 
 
 
+## 4.124 「拖入文件 / 文件夹」整组偏好未实现 —— 而一处**手动验证项在声称它已通过**（2026-10-07）
+
+### 一、动因：从 §4.117 登记的 P2「插入文件夹链接」出发
+
+§4.117 把它登记为 **P2（边缘功能）**。本轮去核它的**作用域**（该选项属于哪个偏好、默认值是什么），
+结果发现它**不是一个孤立的 P2 选项**，而是**一整组偏好的默认行为缺口**。
+
+### 二、取证：Typora 有一整组「拖入时的行为」偏好，**默认是「打开」**
+
+面板（`page-dist/static/js/Preferences.*.js`）里的原文：
+
+```
+title:"When drop file / folder into Typora"
+  ["When drop folder",            { keyName:"actionWhenDropFolder", options:{"":"Open in Typora", link:"Insert Folder Link"} }]
+  ["When drop markdown file",     { keyName:"actionWhenDropFile",   options:{"":"Open in Typora", link:"Insert File Link"}   }]
+  ["When drop files that can be imported", { keyName:"actionWhenDropImport", options:{"":"Import File", link:"Insert File Link"} }]
+```
+
+⇒ **默认值都是第一项**（`""` = **Open in Typora** / Import File）⇒
+Typora 拖入 `.md` 或文件夹会**打开**它；「插入链接」是**非默认**选项。
+
+### 三、Mellow 的现状：**拖入 `.md` / 文件夹什么都不发生**
+
+实测（读码 + 全仓检索，非推断）：
+- 唯一的拖放处理在 `apps/desktop/src/App.tsx` 的 Tauri `onDragDropEvent` 回调里；
+- 它**只**把路径写进 iframe 的 `window.__MELLOW_DROP_PATHS__`；
+- 而全仓该变量的**唯一消费方**是 `packages/editor-engine/src/image/host.ts` 的
+  `consumeDroppedFilePaths()` —— **图片管线**；
+- **Rust 侧没有任何 drag-drop 处理**（`src-tauri/src/*.rs` 里搜不到 `DragDrop` / `on_drag`）。
+
+⇒ **缺的是「默认行为」，不是那个非默认选项** ⇒ §4.117 的 **P2 定级低估了它**
+（用户拖一个 `.md` 进来，期望是打开 —— 这是**默认路径**，不是边缘功能）。
+
+### 四、连带（更该记的一条）：一处**手动验证项在声称一个未实现的行为**
+
+`docs/qualification/phase1-runtime-qualification-manual.md` 的 2.4 拖放矩阵：
+
+```
+| D1 | 拖入单个 .md | 打开文档 |
+```
+
+而 `tests/e2e/drag-drop-verify.mjs` 的文件头还写着「由**真机手动项 D1**（拖入单个 .md → 打开文档）覆盖」——
+即这条链路是：**e2e 注释把覆盖责任推给手动项 → 手动项把「打开文档」写成通过标准 → 而代码里没有这个行为**。
+
+⇒ **一处「verification item」在 over-claim**：若真有人按它执行，**必然失败**；
+而它被引用为「覆盖依据」⇒ **等于这条行为谁都没守**。
+
+**处置**：手动清单 D1 那一行**就地标注「当前不可能通过」**（并写明依据）；
+`drag-drop-verify.mjs` 文件头那句**同步更正**（保留原文以便追溯，加 2026-10-07 更正块）。
+
+### 五、连带：这正是上一轮「范围声明」的**真实代价**
+
+这 3 个键（`actionWhenDropFolder` / `actionWhenDropFile` / `actionWhenDropImport`）
+**都是面板独有键**（不在 `DEFAULT_OPTIONS` 里）⇒ **§4.123 声明的「矩阵不覆盖那一面」不是文档洁癖，
+它直接掩盖了真实缺口**：矩阵（以及它背后的完备性工具）**结构上就看不到这 3 个键**。
+
+⇒ 上一轮把范围**写进声明**是对的，本轮补上它的**第一个实例**：
+面板独有面里确实有**默认行为的缺口**。⇒ **「面板面未覆盖」应从「范围声明」升级为「待办的审计面」。**
+
+### 六、本轮处置（**未做实现**，理由见第七节）
+
+1. **登记**：master-plan §15.3 行 14b 的「仍未实现：插入文件夹链接（P2）」**扩写**为
+   「整组偏好的默认行为缺口」+ 默认值证据 + 实现前置；
+2. **改正三处过度声称**：手动清单 D1（不可能通过）、`drag-drop-verify.mjs` 文件头（把覆盖责任推给 D1）；
+3. **顺手**：`drag-drop-verify.mjs` 的启动器由裸 `spawn('npx')` 换成共享的跨平台启动器
+   （**实跑 7 项全绿**验证替换无误），并把 §4.122 的**棘轮收紧**（裸用法上限 28 → **27**、共享下限 4 → **5**）；
+4. **未**新增设置项（若只加设置不接行为 = **空开关**，本仓明令禁止）。
+
+### 七、为什么本轮**不**实现（前置与风险，如实登记）
+
+1. **需要「判断路径是否为目录」的能力**：Rust 侧**没有 `stat` / `is_dir`**（只有 `read_dir(path)` 与
+   `path_exists(path)`）⇒ 要么新增一个 Rust 命令（要动 `verify-tauri-command-contract.mjs` 与 capability ACL），
+   要么用「试着 `read_dir`」当探针（会把**权限错误**与「不是目录」混为一谈）；
+2. **「打开」会经过未保存文档守卫**（`guardSingleDocument`）—— 这是**数据丢失相邻**的路径，
+   改动风险显著高于本轮其它项；
+3. **核心链路（Tauri drop 事件）在本环境不可验证**：浏览器 dev 无 `__TAURI_INTERNALS__`，
+   探针无法触发该事件 ⇒ 只能验「决策逻辑」（若提取成纯函数），**验不了接线**。
+   ⇒ 与 §4.122 的教训一致：**不要在没有验证手段时改一条数据丢失相邻的路径**。
+
+⇒ 结论：**登记 + 改正记录**是本轮的正确范围；实现应作为独立工作项，且**先补验证手段**
+（例如给决策逻辑提取纯函数 + 给 drop 事件留一个可被 e2e 调用的入口）。
+
+### 八、教训
+
+1. **「某个选项是 P2」不代表「它所属的那组行为也是 P2」** —— 定级要看**默认值**：
+   默认行为是「打开」时，缺它就不是边缘功能，而是**主路径缺失**。
+2. **「verification item」也会 over-claim**，而且比代码注释更危险 ——
+   它会被别的文档**当作覆盖依据**引用（本轮的 e2e 注释就是这么做的）。
+   ⇒ **凡「覆盖依据」指向人工项，就要问：那条人工项**当前**能通过吗？**
+3. **「范围声明」的价值取决于它后面有没有行动** —— §4.123 把「面板面未覆盖」写进声明，
+   本轮立刻在那一面找到第一个**真实缺口**。⇒ 声明要**升级成待办**，否则它只是免责条款。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

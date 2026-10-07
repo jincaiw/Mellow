@@ -421,12 +421,13 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
     if (usesSharedLauncher(src)) shared += 1;
   }
   // 棘轮（两个方向）：共享用法不得减少；裸用法不得增加
-  if (shared < 4) {
-    fail(`tests/e2e 里只有 ${shared} 个脚本使用平台感知启动器（下限 4 = 立此判据时的基线）—— `
+  if (shared < 5) {
+    fail(`tests/e2e 里只有 ${shared} 个脚本使用平台感知启动器（下限 5 = 立此判据时的基线 + 2026-10-07 修的 drag-drop）—— `
       + '这条下限是**棘轮**：共享用法被删掉会让「Windows 上探针全跑不起来」重新变成无人守的现状');
   }
-  if (bare.length > 28) {
-    fail(`tests/e2e 里有 ${bare.length} 个脚本是裸 \`spawn('npx')\`（上限 28 = 立此判据时的**存量欠债**）—— `
+  if (bare.length > 27) {
+    fail(`tests/e2e 里有 ${bare.length} 个脚本是裸 \`spawn('npx')\`（上限 27 = 立此判据时的**存量欠债**；`
+      + '2026-10-07 已从 28 修到 27）—— '
       + '**不得新增**这种写法（Windows 上 `npx` 是 `npx.cmd` ⇒ spawn ENOENT ⇒ 探针以超时静默失败）。'
       + '新脚本请用 `tests/visual/dev-server.mjs` 的 `startViteDevServer()` + `describeSpawnFailure()`；'
       + `\n    新增者：${bare.slice(-3).join(', ')}`);
