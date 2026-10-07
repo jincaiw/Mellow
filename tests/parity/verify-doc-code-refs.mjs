@@ -1024,6 +1024,56 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── 审计文档里**不可解析的裸 `§4.N`** 必须带文档限定词（2026-10-08，审计 §4.148）──────────────
+// 立此条的原因（实测）：审计文档全文 **605 处 `§` 引用里 407 处不带文档限定词**，
+//   其消歧靠**上下文**（表格标题 / 同段落的文档名）—— 人勉强能读，**判据读不了**。
+//   其中**真正坏掉**的是「**裸 `§4.N` 解析不到本文档的 `## 4.N`**」这一类（实测 2 处）：
+//   ① `§4.1` / `§4.2` —— 本文档的日志**从 `## 4.3` 起**（4.1/4.2 不存在）⇒ 解析不到；
+//   ② 更危险的是**假解析**：`master-plan §4.3` 被裸写成 `§4.3` ⇒ **会跳到本文档的 `## 4.3`**。
+//   ⇒ 判据**只覆盖可机械判的那一半**：不可解析的 `§4.N` **必须**带限定词。
+//   ⚠️ **边界（如实声明）**：**假解析**（能解析但指错文档）**无法机械判定** —— 只能靠人读；
+//      存量 407 处已登记为残量，**不做机械全改**（改 400 处而无法复核 = 制造噪声）。
+{
+  const AUDIT_REL = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  // 限定词：出现即认为该 `§4.N` 是**跨文档引用**（与「不可解析」合取后才是违规）
+  const QUALIFIER = /(PITFALLS|master[-\s]?plan|master plan|PRD|spec|ADR-?\d|台账|模板|审计|宪法|README|AGENTS|\.md|同文档|该文档)/;
+  const collect = (src) => {
+    const sections = new Set([...src.matchAll(/^## 4\.(\d+)[ \t]/gm)].map((m) => Number(m[1])));
+    const bad = [];
+    src.split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/§4\.(\d+)/g)) {
+        const n = Number(m[1]);
+        if (sections.has(n)) continue;                       // 解析得到 ⇒ 不是本判据的对象
+        const before = line.slice(Math.max(0, m.index - 30), m.index);
+        if (QUALIFIER.test(before)) continue;                // 已带限定词 ⇒ 合法（跨文档引用）
+        bad.push(`L${i + 1}→§4.${n}`);
+      }
+    });
+    return { sections, bad };
+  };
+  const auditSrc = existsSync(resolve(root, AUDIT_REL)) ? readFileSync(resolve(root, AUDIT_REL), 'utf8') : '';
+  if (auditSrc === '') {
+    errors.push(`读不到 ${AUDIT_REL} —— 「裸 §4.N 必须可解析」判据无法运行`);
+  } else {
+    const { sections, bad } = collect(auditSrc);
+    if (sections.size < 100) {
+      errors.push(`审计文档只解析出 ${sections.size} 个 \`## 4.N\` 小节（下限 100）—— 解析面漂移会让本判据空转`);
+    }
+    if (bad.length > 0) {
+      errors.push(`审计文档里有**不可解析且无限定词**的 \`§4.N\`（${bad.length}）：${bad.join('、')}`
+        + ' —— 要么指向本文档（则应能解析），要么加文档限定词（如 `master-plan §4.3` / `PITFALLS §4.143`）');
+    }
+    // canary：三向（可解析 ⇒ 放行 / 不可解析且无限定词 ⇒ 报 / 不可解析但有 限定词 ⇒ 放行）
+    const S_OK = '## 4.9 x\n见 §4.9\n';
+    const S_BAD = '## 4.9 x\n见 §4.77\n';
+    const S_QUAL = '## 4.9 x\n见 PITFALLS §4.77\n';
+    if (collect(S_OK).bad.length !== 0) errors.push('§4.N 可解析性 canary 失效：可解析的被报错');
+    if (collect(S_BAD).bad.length !== 1) errors.push('§4.N 可解析性 canary 失效：不可解析的未被检出');
+    if (collect(S_QUAL).bad.length !== 0) errors.push('§4.N 可解析性 canary 失效：带限定词的被误报');
+    if (collect(S_BAD).sections.size !== 1) errors.push('§4.N 可解析性 canary 失效：小节集合解析不对');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
