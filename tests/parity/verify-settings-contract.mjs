@@ -2097,6 +2097,94 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 查找 / 替换面板的三个选项：**引擎 ↔ 宿主** 的持久化接线（2026-10-08，审计 §4.147）──────
+// Typora 的 `caseSensitive` / `wholeWord` / `useRegexp` 经 `JSBridge.putSetting(...)` **持久化**；
+// Mellow 此前把开关存在引擎的**模块级会话记忆**里（`documentSearch.ts` 的 `lastQueryOptions`）
+// ⇒ 重启即回默认；且**没有「全词匹配」按钮**（Typora 的查找面板有三个 toggle，Mellow 只有两个）。
+// 判据四层（缺任一即缺口未真正关闭）：
+//   ① 三个设置存在且 **默认 false**（取 true 会改变现状）；
+//   ② 引擎**补上全词按钮**且 `SearchQuery` 真的传 `wholeWord`（否则按钮是空开关）；
+//   ③ 引擎**读**宿主注入（`__MELLOW_SEARCH_PREFS__`）+ 三个 toggle **都通知宿主**写回
+//      （`notifySearchPref`）—— 少了写回，面板里的切换会丢；
+//   ④ 宿主**注入**这两个函数，且 getter 读的设置 id 与 setter 的映射**一一对应**
+//      （读一个、写另一个 ⇒ 静默不一致）。
+{
+  const ds = read('packages/editor-engine/src/documentSearch.ts');
+  const TRIPLE = [
+    ['caseSensitive', 'editor.searchCaseSensitive', '区分大小写'],
+    ['wholeWord', 'editor.searchWholeWord', '全词匹配'],
+    ['regexp', 'editor.searchRegex', '正则表达式'],
+  ];
+  for (const [, id, label] of TRIPLE) {
+    const esc = id.replace(/\./g, '\\.');
+    if (!new RegExp(`id: '${esc}'[^}]*type: 'toggle'[^}]*defaultValue: false`).test(settingsSource)) {
+      fail(`settings 缺少 ${id}（toggle / **默认 false**）—— 默认必须 false，否则会改变现状（查找面板：${label}）`);
+    }
+  }
+  if (!/wholeWordBtn\.name = 'wholeWord'/.test(ds)) {
+    fail('查找面板未补「全词匹配」按钮（`wholeWordBtn`）—— Typora 的查找面板有三个 toggle，Mellow 只有两个');
+  }
+  if (!/wholeWord: lastQueryOptions\.wholeWord/.test(ds)) {
+    fail('查找面板构造 `SearchQuery` 时未传 `wholeWord` —— 那个按钮是**空开关**');
+  }
+  if (!/__MELLOW_SEARCH_PREFS__/.test(ds) || !/applyHostSearchPrefs\(\)/.test(ds)) {
+    fail('引擎未读宿主注入的查找偏好（`__MELLOW_SEARCH_PREFS__` / `applyHostSearchPrefs`）—— 设置不会生效');
+  }
+  for (const [k] of TRIPLE) {
+    if (!new RegExp(`notifySearchPref\\('${k}'`).test(ds)) {
+      fail(`查找面板的 \`${k}\` toggle 未**通知宿主**持久化（\`notifySearchPref('${k}', …)\`）—— 面板里的切换会丢`);
+    }
+  }
+  if (!/__MELLOW_SEARCH_PREFS__ = \(\) => \(\{/.test(appSource)
+    || !/__MELLOW_SEARCH_PREF_SET__ = \(key: string, value: boolean\)/.test(appSource)) {
+    fail('App.tsx 未注入 `__MELLOW_SEARCH_PREFS__` / `__MELLOW_SEARCH_PREF_SET__` —— 引擎读不到也写不回');
+  }
+  for (const [k, id] of TRIPLE) {
+    const esc = id.replace(/\./g, '\\.');
+    // getter 读它
+    if (!new RegExp(`readBoolSetting\\('${esc}', false\\)`).test(appSource)) {
+      fail(`App.tsx 的查找偏好 getter 未读设置 ${id} —— 引擎拿不到持久化值`);
+    }
+    // setter 把引擎键映射回**同一个** id（读一个写另一个 ⇒ 静默不一致）
+    if (!new RegExp(`key === '${k}' \\? '${esc}'`).test(appSource)) {
+      fail(`App.tsx 未把引擎的 \`${k}\` 映射到设置 ${id} —— 面板的切换会写错地方或丢失`);
+    }
+  }
+  // canary：正 / 负（改名）
+  const WW_RE = /wholeWordBtn\.name = 'wholeWord'/;
+  if (!WW_RE.test("wholeWordBtn.name = 'wholeWord';")) fail('全词按钮 canary 失效：正样本未命中');
+  if (WW_RE.test("wholeWordBtn.name = 'wholeWordX';")) fail('全词按钮 canary 失效：负样本（改名）被判为命中');
+  const NOTIFY_RE = /notifySearchPref\('wholeWord'/;
+  if (!NOTIFY_RE.test("notifySearchPref('wholeWord', v);")) fail('通知宿主 canary 失效：正样本未命中');
+  if (NOTIFY_RE.test("notifySearchPref('wholeWordX', v);")) fail('通知宿主 canary 失效：负样本（改名）被判为命中');
+  const MAP_RE = /key === 'wholeWord' \? 'editor\.searchWholeWord'/;
+  if (!MAP_RE.test("const id = key === 'wholeWord' ? 'editor.searchWholeWord' : null;")) {
+    fail('引擎键→设置 id 映射 canary 失效：正样本未命中');
+  }
+  if (MAP_RE.test("const id = key === 'wholeWord' ? 'editor.searchWholeWordX' : null;")) {
+    fail('引擎键→设置 id 映射 canary 失效：负样本（设置 id 改名）被判为命中');
+  }
+  // ⚠️ **在 update 周期内不得 dispatch**（2026-10-08，审计 §4.147 修掉的潜伏 bug）：
+  //    面板构建是从 `ViewPlugin.update` 里调用的 ⇒ 末尾那次「按会话记忆同步 query」若**同步**调用，
+  //    就是「在 update 内 `view.dispatch(...)`」⇒ CM 抛错 ⇒ 因为 `this.panel` 是**在构建函数返回后**
+  //    才赋值的，异常发生时面板已构造完但**还没 append** ⇒ 表现是「**面板再也不出现**」。
+  //    触发条件：会话记忆里有任一开关为真（用户开过「区分大小写」再关掉面板重开）。
+  if (!/queueMicrotask\(\(\) => \{ try \{ commitQuery\(\); \}/.test(ds)) {
+    fail('查找面板的「按会话记忆同步 query」未**推迟到微任务** —— 在 `ViewPlugin.update` 内 dispatch 会让**面板挂不上**');
+  }
+  if (/if \(lastQueryOptions\.caseSensitive \|\| lastQueryOptions\.wholeWord \|\| lastQueryOptions\.regexp\) commitQuery\(\);/.test(ds)) {
+    fail('查找面板仍存在**同步**的 `commitQuery()`（= 在 update 内 dispatch）—— 「面板挂不上」的潜伏 bug 回来了');
+  }
+  // canary：正 / 负（同步形态必须被判为命中）
+  const SYNC_RE = /if \(lastQueryOptions\.caseSensitive \|\| lastQueryOptions\.wholeWord \|\| lastQueryOptions\.regexp\) commitQuery\(\);/;
+  if (!SYNC_RE.test('  if (lastQueryOptions.caseSensitive || lastQueryOptions.wholeWord || lastQueryOptions.regexp) commitQuery();')) {
+    fail('同步 dispatch 判据 canary 失效：正样本（旧写法）未命中');
+  }
+  if (SYNC_RE.test('  if (x) { queueMicrotask(() => { try { commitQuery(); } catch {} }); }')) {
+    fail('同步 dispatch 判据 canary 失效：负样本（已推迟）被判为命中');
+  }
+}
+
     // ── 矩阵条目与 **D 表**的一致性（2026-10-07，审计 §4.140）──────────────────────
     // 【为什么补】D 表（master-plan §12）是**裁决的唯一可发现处**。实测发现 **3 条**矩阵条目
     //   与 D 表**矛盾**：`sortType`（D-AG 明言「功能已等价」）· `useTreeStyle`（D-AK 明言「不是缺一个开关」）·

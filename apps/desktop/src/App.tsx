@@ -4022,6 +4022,31 @@ export default function App() {
         if (dlWin) {
           dlWin.__MELLOW_IMAGE_DOWNLOAD_REMOTE__ = () => readBoolSetting('image.downloadRemote', false);
         }
+
+        // 查找 / 替换面板的三个选项（2026-10-08，审计 §4.147）：Typora 的 `caseSensitive` /
+        // `wholeWord` / `useRegexp` 都会记住（`main.js` 经 `JSBridge.putSetting` 持久化）。
+        // 与 `__MELLOW_IMAGE_*` 同一模式：**engine 不读存储，只问宿主**。
+        // ⚠️ 两个都是**函数**：getter 惰性读（改设置即时可见），setter 让引擎把面板里的切换写回设置
+        //    （面板不在设置页里，走不了 `applySetting`，但必须与设置页**同一个 storageKey**）。
+        const searchPrefsWin = frame?.contentWindow as (Window & {
+          __MELLOW_SEARCH_PREFS__?: () => { caseSensitive: boolean; wholeWord: boolean; regexp: boolean };
+          __MELLOW_SEARCH_PREF_SET__?: (key: string, value: boolean) => void;
+        }) | null;
+        if (searchPrefsWin) {
+          searchPrefsWin.__MELLOW_SEARCH_PREFS__ = () => ({
+            caseSensitive: readBoolSetting('editor.searchCaseSensitive', false),
+            wholeWord: readBoolSetting('editor.searchWholeWord', false),
+            regexp: readBoolSetting('editor.searchRegex', false),
+          });
+          searchPrefsWin.__MELLOW_SEARCH_PREF_SET__ = (key: string, value: boolean) => {
+            // 引擎给的 key 是 Typora 的键名（caseSensitive / wholeWord / regexp）⇒ 映射到 Mellow 设置 id
+            const id = key === 'caseSensitive' ? 'editor.searchCaseSensitive'
+              : key === 'wholeWord' ? 'editor.searchWholeWord'
+                : key === 'regexp' ? 'editor.searchRegex'
+                  : null;
+            if (id !== null) persistBoolSetting(id, value);
+          };
+        }
         // 图床上传（Typora §55 / 清单 1.3）：插入图片（拖拽/粘贴）自动上传替换 URL。
         // 惰性读 localStorage（live 设置：偏好→图片→上传服务切换即生效）；
         // 'none'/未装配 → 全 null → engine 回退本地插入策略（keep-original / copy-to-assets）。

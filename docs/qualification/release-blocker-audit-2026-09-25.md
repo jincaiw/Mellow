@@ -9668,6 +9668,80 @@ JSBridge.putSetting("caseSensitive", t.caseSensitive)
    否则「CI 绿」会被读成「上游也核过了」。
 
 
+## 4.147 实装「查找面板三个选项」的持久化 + 补「全词匹配」+ **修掉一个潜伏的面板挂载 bug**（2026-10-08）
+
+### 一、动因
+
+§4.145 把 `caseSensitive` / `wholeWord` 更正为 `gap`（并区分了「未持久化」与「面板根本没有该选项」两种缺口性质），
+§4.146 又把 `useRegexp` 登记进第三面。本轮把这三条一起收口。
+
+### 二、一手证据（Typora `main.js`）
+
+查找面板类读 `File.option.caseSensitive` / `wholeWord` / `useRegexp`；三个 toggle 的 `mousedown` 分别
+`JSBridge.putSetting("caseSensitive"|"useRegexp", …)` ⇒ **Typora 会记住**；`DEFAULT_OPTIONS` 里三者都是 `!1`。
+
+### 三、实现（跨 3 层；**engine 不读存储**）
+
+| 层 | 落点 | 内容 |
+|---|---|---|
+| 设置 | `packages/settings/src/index.ts` | `editor.searchCaseSensitive` / `editor.searchWholeWord` / `editor.searchRegex`（toggle，**默认 false**）|
+| 宿主注入 | `apps/desktop/src/App.tsx` | `__MELLOW_SEARCH_PREFS__`（getter，惰性读设置）+ `__MELLOW_SEARCH_PREF_SET__`（setter，把引擎键映射回**同一个**设置 id）|
+| 引擎 | `packages/editor-engine/src/documentSearch.ts` | **补 `wholeWordBtn`**；面板创建时 `applyHostSearchPrefs()`；三个 toggle 调 `notifySearchPref()` |
+
+**依赖已核**：`@codemirror/search` 的 `SearchQuery` **原生支持 `wholeWord`**
+（vendored dist：`this.wholeWord = !!config.wholeWord` + 匹配处 `if (spec.wholeWord)`）⇒ 不自己造轮子。
+
+### 四、⚠️ 顺带修掉一个**潜伏的面板挂载 bug**（本轮最有价值的产出）
+
+`buildMellowSearchPanelDom()` 末尾有一句
+`if (lastQueryOptions.caseSensitive || …) commitQuery();` —— 而该函数是**从 `ViewPlugin.update` 里**调用的
+⇒ 那就是「**在 update 周期内 `view.dispatch(...)`**」，CM 会抛
+`Calls to EditorView.update are not allowed while an update is in progress`。
+又因为 `sync()` 是**在构建函数返回之后**才赋 `this.panel` 的 ⇒ 异常发生时面板**已构造完但还没 append**
+⇒ 表现是「**面板再也不出现**」（而不是报错）。
+
+**触发条件**：会话记忆里有任一开关为真 —— 即**用户开过「区分大小写」再关掉面板重开**。
+⇒ 这是一条**此前没有任何测试覆盖**的真实路径（本轮补的用例才第一次走到它）。
+
+**修法**：把这次 query 同步**推迟到微任务**（面板挂载本身仍是同步的，不受影响）。
+**验证**：注入验证 ① 把「推迟」改回**同步** ⇒ 引擎测试**红**（面板找不到）⇒ **证实因果，不是猜测**。
+
+### 五、判据（四层 + 一条「不得同步 dispatch」）
+
+1. 三个设置存在且**默认 false**；
+2. 引擎**补上全词按钮**且 `SearchQuery` 真的传 `wholeWord`（否则按钮是空开关）；
+3. 引擎**读**注入 + 三个 toggle **都通知宿主**写回；
+4. 宿主**注入**两个函数，且 getter 读的设置 id 与 setter 的映射**一一对应**（读一个写另一个 ⇒ 静默不一致）；
+5. ⚠️ **不得同步 dispatch**：`queueMicrotask` 形态必须在、旧的同步形态必须**不在**（canary 双向）。
+**注入验证 5/5**（同步化 / 去按钮 / 去通知 / 不传 `wholeWord` / 映射改名）⇒ 全红，还原后 **CI + 引擎测试双绿**。
+
+### 六、矩阵与第三面
+
+- `caseSensitive`：`gap` → **`implemented`**（`mellow: ["editor.searchCaseSensitive"]`）
+- `wholeWord`：`gap` → **`implemented`**（`mellow: ["editor.searchWholeWord"]`）—— **能力缺口**已补
+- 第三面的 `useRegexp`：`reason` 更新为「已实装持久化（`editor.searchRegex`）」；
+  **仍留第三面** —— 本面登记的是「**不在矩阵与面板任一面**」这一事实，而**是否进矩阵仍需裁决**
+  （它不在 `DEFAULT_OPTIONS`，登记会改矩阵的声明来源）。
+
+矩阵净变化：`implemented 37 → 39` / `gap 41 → 39`。
+
+### 七、残留（如实登记）
+
+1. **改设置后需下次打开面板生效** —— 引擎在**面板创建时**读宿主偏好（本项**无** `applyCommand`）；
+   已打开的旧面板不实时刷新（Typora 亦然）。
+2. **`useRegexp` 是否进矩阵未裁决**（同 §4.146 的登记）。
+
+### 八、教训
+
+1. **补一个开关会走到从未被测试覆盖的路径** —— 那个潜伏 bug 需要「会话记忆里有开关为真」才触发，
+   而**此前没有任何用例制造过这个状态**（原测试只验「扩展装上了」）。⇒ **加状态就要加「状态非默认」的用例。**
+2. **「在 update 内 dispatch」是 CM 的硬约束，而它没有任何静态检查** —— 本轮把它落成判据（第 5 条）。
+   同类形态：凡「回调在框架的更新周期内被调用」，dispatch / setState 都必须推迟。
+3. **「构造」与「注册」分成两步时，中间抛错会留下半成品** —— `this.panel = build…()` 与
+   `appendChild(this.panel)` 之间抛错 ⇒ 构造了但没挂上 ⇒ **表现从「报错」变成「静默不出现」**。
+4. **注入验证能把「猜测」变成「因果」** —— 若没跑 ①，我只能说「**可能**是同步 dispatch 导致的」。
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

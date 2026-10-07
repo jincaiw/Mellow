@@ -162,6 +162,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'auto', labelKey: 'settings.writingWidth.auto' },
         ], applyCommand: 'settings.writingWidth' },
       { id: 'editor.lineHeight', labelKey: 'settings.editor.lineHeight', type: 'number', storageKey: 'mellow.editor.lineHeight', defaultValue: TYPOGRAPHY_DEFAULTS.lineHeight, min: 1.2, max: 2.2, step: 0.05, applyCommand: 'settings.lineHeight' },
+      // 2026-10-08（审计 §4.147）：**查找 / 替换面板**的三个选项（Typora 的 `caseSensitive` /
+      //   `wholeWord` / `useRegexp`）。
+      // 【一手证据】Typora `main.js` 的查找面板类读 `File.option.caseSensitive` / `wholeWord` /
+      //   `useRegexp`，三个 toggle 的 `mousedown` 分别 `JSBridge.putSetting("caseSensitive"|…)`
+      //   ⇒ **Typora 会记住**；`DEFAULT_OPTIONS` 里三者都是 `!1`（默认 false）。
+      // 【Mellow 现状】引擎的查找面板此前把开关存在**模块级会话记忆**（`documentSearch.ts` 的
+      //   `lastQueryOptions`）⇒ **重启即回默认**；且**没有「全词匹配」按钮**（Typora 有）。
+      //   本轮：① 补上全词按钮；② 三个都接上**宿主持久化**
+      //   （`__MELLOW_SEARCH_PREFS__` 读 / `__MELLOW_SEARCH_PREF_SET__` 写 —— engine 不读存储）。
+      // ⚠️ **无 `applyCommand`**：引擎在**面板创建时**惰性读宿主偏好 ⇒ 改设置后**下次打开面板**生效；
+      //   已打开的旧面板不实时刷新（Typora 亦然）。**默认全 false ⇒ 默认行为不变**。
+      { id: 'editor.searchCaseSensitive', labelKey: 'settings.editor.searchCaseSensitive', type: 'toggle', storageKey: 'mellow.editor.searchCaseSensitive', defaultValue: false, descriptionKey: 'settings.editor.searchCaseSensitiveDesc' },
+      { id: 'editor.searchWholeWord', labelKey: 'settings.editor.searchWholeWord', type: 'toggle', storageKey: 'mellow.editor.searchWholeWord', defaultValue: false, descriptionKey: 'settings.editor.searchWholeWordDesc' },
+      { id: 'editor.searchRegex', labelKey: 'settings.editor.searchRegex', type: 'toggle', storageKey: 'mellow.editor.searchRegex', defaultValue: false, descriptionKey: 'settings.editor.searchRegexDesc' },
     ],
   },
   {

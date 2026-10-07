@@ -11,7 +11,7 @@
     {
       "key": "useRegexp",
       "kind": "preference-like",
-      "reason": "**查找 / 替换面板**的正则选项。`main.js` 的查找面板类读 `File.option.useRegexp`，按钮 `mousedown` 调 `JSBridge.putSetting(\"useRegexp\", t.useRegexp)` ⇒ Typora 持久化。⚠️ 它**不在** `DEFAULT_OPTIONS`（矩阵面）也**不在**面板（`keyName` 面）⇒ 落在缝隙里。Mellow 对应物 = 查找面板的 `regexp` 按钮（`packages/editor-engine/src/documentSearch.ts` 的 `lastQueryOptions.regexp`，**内存态、不持久化**）。"
+      "reason": "**查找 / 替换面板**的正则选项。`main.js` 的查找面板类读 `File.option.useRegexp`，按钮 `mousedown` 调 `JSBridge.putSetting(\"useRegexp\", t.useRegexp)` ⇒ Typora 持久化。⚠️ 它**不在** `DEFAULT_OPTIONS`（矩阵面）也**不在**面板（`keyName` 面）⇒ 落在缝隙里。Mellow 对应物 = 查找面板的 `regexp` 按钮（`packages/editor-engine/src/documentSearch.ts` 的 `lastQueryOptions.regexp`）。✅ **已实装持久化**（2026-10-08，审计 §4.147）：设置 `editor.searchRegex`（toggle，默认 false）+ 宿主注入 `__MELLOW_SEARCH_PREFS__` / `__MELLOW_SEARCH_PREF_SET__`。⚠️ 它**仍留本面**（`kind: preference-like`）：本面登记的是「**不在矩阵与面板任一面**」这一事实，而**是否进矩阵**仍需裁决（它不在 `DEFAULT_OPTIONS` 里）。"
     },
     {
       "key": "fileSearchUseRegexp",

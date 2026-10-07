@@ -53,6 +53,7 @@ export const ENGINE_MESSAGES: Record<string, Pair> = {
   'engine.search.previous': { 'zh-CN': '上一个 (Shift+Enter)', 'en-US': 'Previous (Shift+Enter)' }, // Mellow
   'engine.search.next': { 'zh-CN': '下一个 (Enter)', 'en-US': 'Next (Enter)' },        // Mellow
   'engine.search.caseSensitive': { 'zh-CN': '区分大小写', 'en-US': 'Case Sensitive' },  // Typora: Front.strings
+  'engine.search.wholeWord': { 'zh-CN': '全词匹配', 'en-US': 'Whole Word' },            // Typora: Front.strings
   'engine.search.regex': { 'zh-CN': '正则表达式', 'en-US': 'Regular Expression' },      // Typora: Front.strings
   'engine.search.close': { 'zh-CN': '关闭 (Esc)', 'en-US': 'Close (Esc)' },            // Mellow（Close 有 Typora 真值，带快捷键后缀的组合为 Mellow）
 

@@ -111,10 +111,56 @@ function injectPanelStyle(): void {
 }
 
 // 查找选项会话记忆：面板每次打开重建 DOM，开关状态跨开合保留（Typora 行为）
-const lastQueryOptions: { caseSensitive: boolean; regexp: boolean } = {
+// 2026-10-08（审计 §4.147）：三个选项对齐 Typora 的 `caseSensitive` / `wholeWord` / `useRegexp`。
+// **Typora 会把它们持久化**（`main.js`：`JSBridge.putSetting("caseSensitive"|"useRegexp", …)`），
+// 故本轮把会话记忆接上**宿主持久化**（见下面两个注入函数）。
+const lastQueryOptions: { caseSensitive: boolean; wholeWord: boolean; regexp: boolean } = {
   caseSensitive: false,
+  wholeWord: false,
   regexp: false,
 };
+
+/**
+ * 宿主注入的**持久化查找选项**（Typora 的三个键都会记住）。
+ *
+ * 与 `__MELLOW_IMAGE_UPLOAD__` / `__MELLOW_IMAGE_DOWNLOAD_REMOTE__` 同一模式：
+ * **engine 不读存储，只问宿主**。
+ * ⚠️ **必须惰性读**（不能在模块加载时求值）—— 宿主在 `host.ready` 之后才注入，
+ *    而本模块在引擎启动时就已求值（同 `image/host.ts` 的注释）。
+ * 未注入 ⇒ `null` ⇒ 保持会话默认（全 `false`）。
+ */
+function hostSearchPrefs(): Partial<typeof lastQueryOptions> | null {
+  const get = (window as unknown as {
+    __MELLOW_SEARCH_PREFS__?: () => Partial<typeof lastQueryOptions>;
+  }).__MELLOW_SEARCH_PREFS__;
+  if (typeof get !== 'function') return null;
+  try {
+    const v = get();
+    return v !== null && typeof v === 'object' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 把用户在面板里的切换**通知宿主**去持久化（engine 不写存储）。未注入 ⇒ no-op。 */
+function notifySearchPref(key: keyof typeof lastQueryOptions, value: boolean): void {
+  const set = (window as unknown as {
+    __MELLOW_SEARCH_PREF_SET__?: (key: string, value: boolean) => void;
+  }).__MELLOW_SEARCH_PREF_SET__;
+  if (typeof set === 'function') set(key, value);
+}
+
+/** 用**宿主持久化**的值覆盖会话默认（在**面板创建时**调用 —— 那时注入已就绪）。 */
+function applyHostSearchPrefs(): void {
+  const prefs = hostSearchPrefs();
+  if (prefs === null) return;
+  const c = prefs.caseSensitive;
+  if (typeof c === 'boolean') lastQueryOptions.caseSensitive = c;
+  const w = prefs.wholeWord;
+  if (typeof w === 'boolean') lastQueryOptions.wholeWord = w;
+  const r = prefs.regexp;
+  if (typeof r === 'boolean') lastQueryOptions.regexp = r;
+}
 
 /** 自建查找/替换面板 DOM（挂载于 view.dom 顶部；状态由 ViewPlugin 管理）。 */
 function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
@@ -145,13 +191,22 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
   nextBtn.textContent = '↓';
   nextBtn.title = tEngine('engine.search.next');
 
-  // 查找选项 toggle（Typora parity：区分大小写 / 正则表达式）
+  // 查找选项 toggle（Typora parity：区分大小写 / 全词匹配 / 正则表达式 —— 三个都有）
+  // 2026-10-08（审计 §4.147）：**补上「全词匹配」** —— 此前 Mellow 的查找面板只有两个 toggle，
+  // 而 Typora 的查找面板有三个（`wholeWord` 在 Typora `DEFAULT_OPTIONS` 里默认 `!1`）。
+  // 依赖：`@codemirror/search` 的 `SearchQuery` **原生支持 `wholeWord`**（已核 vendored dist）。
   const caseBtn = document.createElement('button');
   caseBtn.className = 'cm-search-toggle';
   caseBtn.name = 'caseSensitive';
   caseBtn.textContent = 'Aa';
   caseBtn.title = tEngine('engine.search.caseSensitive');
   caseBtn.setAttribute('aria-pressed', 'false');
+  const wholeWordBtn = document.createElement('button');
+  wholeWordBtn.className = 'cm-search-toggle';
+  wholeWordBtn.name = 'wholeWord';
+  wholeWordBtn.textContent = 'ab';
+  wholeWordBtn.title = tEngine('engine.search.wholeWord');
+  wholeWordBtn.setAttribute('aria-pressed', 'false');
   const regexBtn = document.createElement('button');
   regexBtn.className = 'cm-search-toggle';
   regexBtn.name = 'regexp';
@@ -159,7 +214,7 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
   regexBtn.title = tEngine('engine.search.regex');
   regexBtn.setAttribute('aria-pressed', 'false');
 
-  findRow.append(findInput, caseBtn, regexBtn, prevBtn, nextBtn);
+  findRow.append(findInput, caseBtn, wholeWordBtn, regexBtn, prevBtn, nextBtn);
 
   // 替换行
   const replaceRow = makeRow();
@@ -191,7 +246,10 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
     findInput.value = spec.search;
     if (spec.replace !== undefined) replaceInput.value = spec.replace;
   } catch { /* state 未就绪时忽略 */ }
+  // 宿主持久化的选项覆盖会话默认（**惰性**：宿主在 host.ready 后注入，模块加载时还读不到）
+  applyHostSearchPrefs();
   caseBtn.setAttribute('aria-pressed', String(lastQueryOptions.caseSensitive));
+  wholeWordBtn.setAttribute('aria-pressed', String(lastQueryOptions.wholeWord));
   regexBtn.setAttribute('aria-pressed', String(lastQueryOptions.regexp));
 
   /** 正则合法性预检：非法模式不提交 query，输入框标红 */
@@ -221,6 +279,8 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
           search: findInput.value,
           replace: replaceInput.value,
           caseSensitive: lastQueryOptions.caseSensitive,
+          // `wholeWord` 由 `@codemirror/search` 的 SearchQuery 原生支持（包装成 \b(?:…)\b）
+          wholeWord: lastQueryOptions.wholeWord,
           regexp: lastQueryOptions.regexp,
         }),
       ),
@@ -229,19 +289,38 @@ function buildMellowSearchPanelDom(view: EditorViewLike): HTMLElement {
 
   findInput.addEventListener('input', commitQuery);
   replaceInput.addEventListener('input', commitQuery);
+  // 三个 toggle 都会**通知宿主持久化**（Typora 会记住；engine 不写存储）
   caseBtn.addEventListener('click', () => {
     lastQueryOptions.caseSensitive = !lastQueryOptions.caseSensitive;
     caseBtn.setAttribute('aria-pressed', String(lastQueryOptions.caseSensitive));
+    notifySearchPref('caseSensitive', lastQueryOptions.caseSensitive);
+    commitQuery();
+  });
+  wholeWordBtn.addEventListener('click', () => {
+    lastQueryOptions.wholeWord = !lastQueryOptions.wholeWord;
+    wholeWordBtn.setAttribute('aria-pressed', String(lastQueryOptions.wholeWord));
+    notifySearchPref('wholeWord', lastQueryOptions.wholeWord);
     commitQuery();
   });
   regexBtn.addEventListener('click', () => {
     lastQueryOptions.regexp = !lastQueryOptions.regexp;
     regexBtn.setAttribute('aria-pressed', String(lastQueryOptions.regexp));
+    notifySearchPref('regexp', lastQueryOptions.regexp);
     commitQuery();
     if (lastQueryOptions.regexp) findInput.focus();
   });
-  // 会话记忆含非默认开关时，打开即同步到 CM query（否则 toggle 前高亮按默认匹配）
-  if (lastQueryOptions.caseSensitive || lastQueryOptions.regexp) commitQuery();
+  // 会话记忆含非默认开关时，打开即同步到 CM query（否则 toggle 前高亮按默认匹配）。
+  // ⚠️ **必须推迟到微任务**（2026-10-08 修，审计 §4.147）：本函数是从 **ViewPlugin.update** 里调用的，
+  //    而在 update 周期内 `view.dispatch(...)` 是非法的（CM 会抛
+  //    "Calls to EditorView.update are not allowed while an update is in progress"）。
+  //    **此前的同步调用是一个潜伏 bug**：只要会话记忆里有任一开关为真
+  //    （例如用户开过「区分大小写」再关掉面板重开），面板就**挂不上** ——
+  //    而 `sync()` 是在 `buildMellowSearchPanelDom()` **返回之后**才赋 `this.panel` 的，
+  //    故异常发生时面板**已经构造完但还没 append**，表现就是「面板再也不出现」。
+  //    修法：面板挂载是同步的（不受影响），query 同步推迟到微任务即可。
+  if (lastQueryOptions.caseSensitive || lastQueryOptions.wholeWord || lastQueryOptions.regexp) {
+    queueMicrotask(() => { try { commitQuery(); } catch { /* 视图已销毁等 */ } });
+  }
   nextBtn.addEventListener('click', () => { searchMod.findNext(view); });
   prevBtn.addEventListener('click', () => { searchMod.findPrevious(view); });
   replaceBtn.addEventListener('click', () => { searchMod.replaceNext(view); });

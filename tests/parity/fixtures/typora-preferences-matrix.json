@@ -99,11 +99,9 @@
     {
       "typora": "caseSensitive",
       "default": false,
-      "status": "gap",
-      "mellow": [],
-      "note": "**查找面板**（⌘F）的「区分大小写」选项：Mellow **有**该按钮（`packages/editor-engine/src/documentSearch.ts` 的 `caseBtn`），但**不持久化**（模块级 `lastQueryOptions`，重载即回 false）；Typora 经 `JSBridge.putSetting('caseSensitive', …)` 记住。⚠️ **2026-10-07 更正（审计 §4.145）**：原判 `implemented` 与**本条 note 自述的缺口**（「未作为持久化设置」）**直接矛盾**；且原 note 把落点写成 `App.tsx searchCase` —— 那是**文件搜索**面板的 state，**不是查找面板**。",
-      "behavior": "matches-default",
-      "behaviorNote": "代码：`packages/editor-engine/src/documentSearch.ts` 的 `lastQueryOptions = { caseSensitive: false, regexp: false }` 是**模块级内存态**（查找面板的 `caseBtn` 切换它，但不落存储）⇒ 默认 `false`，与 Typora `caseSensitive:!1` 一致 ⇒ 归 `matches-default`（缺的是**持久化**，不是默认值）。"
+      "status": "implemented",
+      "mellow": ["editor.searchCaseSensitive"],
+      "note": "**查找面板**（⌘F）的「区分大小写」选项。**已实装持久化**（2026-10-08，审计 §4.147）：新增设置 `editor.searchCaseSensitive`（toggle，**默认 false ⇒ 默认行为不变**）；引擎在**面板创建时**惰性读宿主注入的 `__MELLOW_SEARCH_PREFS__`，用户切换时经 `__MELLOW_SEARCH_PREF_SET__` 通知宿主写回设置（engine 不读存储）。⚠️ **沿革**：§4.145 曾把它从 `implemented` 更正为 `gap`（当时确未持久化，且原 note 把落点写成了**文件搜索**面板的 `App.tsx searchCase`）；本轮实装后回到 `implemented`。**残留**：改设置后需**下次打开面板**生效（引擎在创建时读；Typora 亦然）。"
     },
     {
       "typora": "codeIndentSize",
@@ -778,11 +776,9 @@
     {
       "typora": "wholeWord",
       "default": false,
-      "status": "gap",
-      "mellow": [],
-      "note": "**查找面板**（⌘F）的「全词匹配」选项：Mellow 的查找面板**只有** `caseSensitive` 与 `regexp` 两个 toggle（`packages/editor-engine/src/documentSearch.ts`）⇒ **没有**全词选项 ⇒ 这是**能力缺口**（不只是持久化）。⚠️ **2026-10-07 更正（审计 §4.145）**：原判 `implemented` 且 note 引 `searchWholeWord` —— 那是**文件搜索**面板的 state，**不是查找面板**。",
-      "behavior": "matches-default",
-      "behaviorNote": "代码：`packages/editor-engine/src/documentSearch.ts` 的查找面板只创建 `caseBtn`（name='caseSensitive'）与 `regexBtn`（name='regexp'）两个 toggle，**无 wholeWord 按钮**；`lastQueryOptions` 也只有 `{ caseSensitive, regexp }` ⇒ 查找面板行为等价于「全词关」，与 Typora `wholeWord:!1` 默认一致 ⇒ 归 `matches-default`（缺的是**能力**）。"
+      "status": "implemented",
+      "mellow": ["editor.searchWholeWord"],
+      "note": "**查找面板**（⌘F）的「全词匹配」选项。**已实装**（2026-10-08，审计 §4.147）：① **补上按钮**（`wholeWordBtn`，文案 `engine.search.wholeWord` = Typora Front.strings 的 \"Whole Word\"）—— 此前 Mellow 的查找面板**只有** `caseSensitive` 与 `regexp` 两个 toggle（**能力缺口**）；② 接上持久化（设置 `editor.searchWholeWord`，**默认 false ⇒ 默认行为不变**）。依赖已核：`@codemirror/search` 的 `SearchQuery` **原生支持 `wholeWord`**（vendored dist 的 `this.wholeWord = !!config.wholeWord` + 匹配处 `if (spec.wholeWord)`）。⚠️ **沿革**：§4.145 曾把它从 `implemented` 更正为 `gap`（原 note 引的是**文件搜索**面板的 `searchWholeWord`，不是查找面板）。"
     },
     {
       "typora": "wordCountDelimiter",
