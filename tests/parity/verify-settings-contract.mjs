@@ -1789,7 +1789,9 @@ if (cssLayerAnchor === undefined) {
   } catch {
     fail('偏好矩阵无法读取 —— behaviorNote 落点判据无法运行');
   }
-  // 建一个「basename → 相对路径」索引（只扫代码根，避免全仓遍历）
+  // 建一个「basename → 相对路径列表」索引（只扫代码根，避免全仓遍历）
+  // ⚠️ **必须存相对路径而不是目录** —— 否则「同名文件」无法区分（实测：`host.ts` 在本仓有多个，
+  //    只按 basename 判会**把 `image/host.ts` 解析成 `app-core/src/extensions/host.ts`**）。
   const index = new Map();
   const CODE_ROOTS = ['packages', 'apps/desktop/src', 'apps/desktop/src-tauri/src', 'tests/parity'];
   const walkIdx = (dir) => {
@@ -1800,9 +1802,9 @@ if (cssLayerAnchor === undefined) {
         if (['node_modules', 'dist', 'target', '.git'].includes(e.name)) continue;
         walkIdx(resolve(dir, e.name));
       } else {
-        const b = e.name;
-        if (!index.has(b)) index.set(b, []);
-        index.get(b).push(dir);
+        const rel = `${dir.slice(root.length + 1).split('\\').join('/')}/${e.name}`;
+        if (!index.has(e.name)) index.set(e.name, []);
+        index.get(e.name).push(rel);
       }
     }
   };
@@ -1810,17 +1812,30 @@ if (cssLayerAnchor === undefined) {
   if (index.size < 200) {
     fail(`落点索引只建出 ${index.size} 个文件（下限 200）—— 扫描面漂移会让本判据空转`);
   }
+  /**
+   * 解析一条引用：`ok` / `dead`（不存在）/ `ambiguous`（同名文件不唯一 ⇒ 必须写带目录的路径）/ `upstream`。
+   * ⚠️ 带目录的引用用**后缀匹配**（`image/host.ts` ⇒ `packages/editor-engine/src/image/host.ts`）。
+   */
   const resolveCitation = (token) => {
-    if (TYPORA_SIDE.test(token)) return 'upstream';   // 上游文件：不核对（本仓没有）
-    const base = token.split('/').pop();
-    return index.has(base) ? 'ok' : 'dead';
+    if (TYPORA_SIDE.test(token)) return 'upstream';
+    const norm = token.replace(/^\.\//, '');
+    if (norm.includes('/')) {
+      const hit = [...index.values()].some((paths) => paths.some((p) => p === norm || p.endsWith(`/${norm}`)));
+      return hit ? 'ok' : 'dead';
+    }
+    const hits = index.get(norm) ?? [];
+    if (hits.length === 0) return 'dead';
+    return hits.length === 1 ? 'ok' : 'ambiguous';
   };
   const deadCitations = [];
+  const ambiguousCitations = [];
   const differsNoAnchor = [];
   for (const e of mxEntries) {
     const text = `${e.behaviorNote ?? ''} ${e.note ?? ''}`;
     for (const m of text.matchAll(FILE_TOKEN)) {
-      if (resolveCitation(m[1]) === 'dead') deadCitations.push(`${e.typora} → \`${m[1]}\``);
+      const verdict = resolveCitation(m[1]);
+      if (verdict === 'dead') deadCitations.push(`${e.typora} → \`${m[1]}\``);
+      if (verdict === 'ambiguous') ambiguousCitations.push(`${e.typora} → \`${m[1]}\``);
     }
     if (e.behavior === 'differs') {
       const hasRepoAnchor = [...text.matchAll(FILE_TOKEN)]
@@ -1832,29 +1847,35 @@ if (cssLayerAnchor === undefined) {
     fail(`偏好矩阵的 behaviorNote/note 里有**死引用**（${deadCitations.length}）：${deadCitations.join('、')}`
       + ' —— 引用的文件已改名/搬走或拼错（上游文件如 `main.js`/`frame.js` 不在核对范围内）');
   }
+  if (ambiguousCitations.length > 0) {
+    fail(`偏好矩阵的 behaviorNote/note 里有**歧义引用**（${ambiguousCitations.length}）：${ambiguousCitations.join('、')}`
+      + ' —— 本仓存在**同名文件**，只写 basename 无法定位 ⇒ 请写成带目录的路径（如 `image/host.ts`）');
+  }
   if (differsNoAnchor.length > 0) {
     fail(`偏好矩阵里 behavior=differs 且**无可核对落点**的条目回升到 ${differsNoAnchor.length}（棘轮上限 **0**，`
       + `2026-10-07 §4.137 已清零）：${differsNoAnchor.join(', ')} —— 断言「有差异」是最需要证据的一类，只能下降`);
   }
-  // 第二把棘轮（2026-10-07 §4.137）：`matches-default` 也在断言「与 Typora 一致」，同样需要落点。
-  // 当前 37 条里 34 条没有 ⇒ 先立棘轮（`≤ 34`，只能下降），并**打印清单**（存量欠债必须可见）。
-  // ⚠️ 与 `differs` 不同：`matches-default` 的条数多（37），一次性补完不现实 ⇒ 用棘轮推动，不硬卡。
+  // 第二把棘轮（2026-10-07 §4.137 立、§4.138 **清零**）：`matches-default` 也在断言「与 Typora 一致」，同样需要落点。
+  // 收紧轨迹：34（§4.137 基线）→ **0**（§4.138 逐条补齐）⇒ 现在是硬判据。
   const defaultNoAnchor = [];
   for (const e of mxEntries) {
     if (e.behavior !== 'matches-default') continue;
     const text = `${e.behaviorNote ?? ''} ${e.note ?? ''}`;
     if (![...text.matchAll(FILE_TOKEN)].some((m) => resolveCitation(m[1]) === 'ok')) defaultNoAnchor.push(e.typora);
   }
-  if (defaultNoAnchor.length > 34) {
+  if (defaultNoAnchor.length > 0) {
     fail(`偏好矩阵里 behavior=matches-default 且**无可核对落点**的条目回升到 ${defaultNoAnchor.length}`
-      + `（棘轮上限 34，2026-10-07 §4.137 基线）：${defaultNoAnchor.join(', ')} —— 只能下降`);
+      + `（棘轮上限 **0**，2026-10-07 §4.138 已清零）：${defaultNoAnchor.join(', ')} —— 只能下降`);
   }
   if (defaultNoAnchor.length > 0) {
-    console.log(`ℹ️ behavior=matches-default 但**尚无代码落点** ${defaultNoAnchor.length} 项（存量欠债，棘轮上限 34）`);
+    console.log(`ℹ️ behavior=matches-default 但**尚无代码落点** ${defaultNoAnchor.length} 项（棘轮上限 0 —— 已清零）`);
   }
   // canary：三向 + **边界**（上游文件名必须被判为 upstream 而不是 dead）
   if (resolveCitation('image/ops.ts') !== 'ok') fail('落点 canary 失效：真实存在的文件被判为 dead');
   if (resolveCitation('image/__ghost__.ts') !== 'dead') fail('落点 canary 失效：不存在的文件未被判为 dead');
+  // ⚠️ 这两条锁「同名文件」边界：裸 basename 若在本仓不唯一 ⇒ 必须判 ambiguous（否则会**解析到错的那个文件**）
+  if (resolveCitation('host.ts') !== 'ambiguous') fail('落点 canary 失效：同名文件（host.ts）未被判为 ambiguous —— 会解析到错的文件');
+  if (resolveCitation('image/host.ts') !== 'ok') fail('落点 canary 失效：带目录的引用未走后缀匹配');
   if (resolveCitation('main.js') !== 'upstream') {
     fail('落点 canary 失效：**上游文件** `main.js` 未走 upstream 分支（会误报死引用）');
   }

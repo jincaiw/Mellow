@@ -18,7 +18,7 @@
       "mellow": [],
       "note": "图片自动上传的开关未作为设置暴露（Mellow 经 image.uploadService 装配即启用）",
       "behavior": "matches-default",
-      "behaviorNote": "代码（image/host.ts 惰性读宿主注入的 __MELLOW_IMAGE_UPLOAD__）：装配上传服务即上传 → 与 Typora 默认 true 一致"
+      "behaviorNote": "代码（image/host.ts 惰性读宿主注入的 __MELLOW_IMAGE_UPLOAD__）：装配上传服务即上传 → 与 Typora 默认 true 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/image/host.ts` —— 该模块的 `uploadImages` **惰性读**宿主注入的 `__MELLOW_IMAGE_UPLOAD__`；未注入时返回全 `null` ⇒ 回退本地插入 ⇒ 「装配上传服务即上传」与 Typora 默认 true 一致。"
     },
     {
       "typora": "applyImageMoveForLocal",
@@ -40,7 +40,7 @@
       "mellow": [],
       "note": "网络图片移动应用范围未作为设置暴露",
       "behavior": "matches-default",
-      "behaviorNote": "代码：网络图片（`kind:'url'`）**直插、无 fsOps**（`insert.ts:62`）⇒ **不移动** → 与 Typora 默认 false 一致（已复核 2026-10-07 §4.136）。"
+      "behaviorNote": "代码：网络图片（`kind:'url'`）**直插、无 fsOps**（`insert.ts:62`）⇒ **不移动** → 与 Typora 默认 false 一致（已复核 2026-10-07 §4.136）。【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/image/insert.ts` —— `kind:'url'` 分支**直插、`fsOps: []`** ⇒ 网络图**不移动**。"
     },
     {
       "typora": "autoCorrectMisspell",
@@ -49,7 +49,7 @@
       "mellow": [],
       "note": "自动纠正拼写未实装（Mellow 只有拼写检查 editor.spellcheck，非自动纠正）",
       "behavior": "matches-default",
-      "behaviorNote": "Mellow 无自动纠正拼写能力，与 Typora 默认 false（不自动纠正）一致"
+      "behaviorNote": "Mellow 无自动纠正拼写能力，与 Typora 默认 false（不自动纠正）一致【代码落点（2026-10-07，审计 §4.138）】`tests/parity/typora-parity-ledger.json` —— 台账 `P0-EDITOR-005`：拼写检查的**词典/消费方**未实现 ⇒ Mellow 无「自动纠正拼写」能力。"
     },
     {
       "typora": "autoEscapeImageURL",
@@ -71,7 +71,7 @@
       "mellow": [],
       "note": "公式自动编号未实装",
       "behavior": "matches-default",
-      "behaviorNote": "Mellow 无公式自动编号，与 Typora 默认 false 一致"
+      "behaviorNote": "Mellow 无公式自动编号，与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/math.ts` —— 该模块只做公式**解析与渲染**（`parseMathSpans` / `createMathJaxCompatibleRenderer`），**无编号**实现。"
     },
     {
       "typora": "autoPairExtendSymbol",
@@ -121,7 +121,7 @@
       "mellow": [],
       "note": "「转换时应用智能标点」未实装",
       "behavior": "matches-default",
-      "behaviorNote": "检索：智能标点仅在**输入时**应用（engine smartPunctuation.ts），无「渲染时转换」开关 → 与 Typora 默认 false 一致"
+      "behaviorNote": "检索：智能标点仅在**输入时**应用（engine smartPunctuation.ts），无「渲染时转换」开关 → 与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/smartPunctuation.ts` —— 智能标点只在 `EditorView.inputHandler`（**输入时**）改写；无「渲染时转换」分支。"
     },
     {
       "typora": "copyMarkdownByDefault",
@@ -130,7 +130,7 @@
       "mellow": [],
       "note": "默认复制行为（复制为 Markdown 源码）未实装",
       "behavior": "matches-default",
-      "behaviorNote": "实测/代码（clipboardCopy.ts）：Mellow 普通复制写【渲染后】的 text/plain + text/html + text/rtf，另附 text/markdown flavor 并提供独立的 Mod-Shift-C「复制为 Markdown」→ 与 Typora 默认 false（默认复制富文本、非 Markdown 源码）一致"
+      "behaviorNote": "实测/代码（clipboardCopy.ts）：Mellow 普通复制写【渲染后】的 text/plain + text/html + text/rtf，另附 text/markdown flavor 并提供独立的 Mod-Shift-C「复制为 Markdown」→ 与 Typora 默认 false（默认复制富文本、非 Markdown 源码）一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/clipboardCopy.ts` —— 普通复制写**渲染后**的 `text/plain` + `text/html` + `text/rtf`，另附 `text/markdown` flavor（默认 `false` = 不以 Markdown 源码为主）⇒ 与 Typora 默认一致。"
     },
     {
       "typora": "defaultCodeLang",
@@ -173,7 +173,7 @@
       "mellow": [],
       "note": "新建文件默认扩展名未作为设置暴露（Mellow 固定 md）",
       "behavior": "matches-default",
-      "behaviorNote": "Mellow 新建文档固定 .md，与 Typora 默认 `md` 一致"
+      "behaviorNote": "Mellow 新建文档固定 .md，与 Typora 默认 `md` 一致【代码落点（2026-10-07，审计 §4.138）】`packages/app-core/src/document.ts` —— `documentSuggestedName()` 只产出 `.md`；Rust 侧回落亦为 `untitled.md` ⇒ 与 Typora 默认 `md` 一致。"
     },
     {
       "typora": "defaultImageStorage",
@@ -182,7 +182,7 @@
       "mellow": [],
       "note": "默认图床/存储位置未实装（Mellow 经 image.uploadService 配置上传，无「默认存储」概念）",
       "behavior": "matches-default",
-      "behaviorNote": "代码：Mellow 无「默认存储位置」概念（上传服务按需配置 image.uploadService）→ 与 Typora 默认 null（无默认）一致"
+      "behaviorNote": "代码：Mellow 无「默认存储位置」概念（上传服务按需配置 image.uploadService）→ 与 Typora 默认 null（无默认）一致【代码落点（2026-10-07，审计 §4.138）】`packages/settings/src/index.ts` —— 图片相关设置只有 `image.assetDir` / `image.uploadService` 等，**无「默认存储位置」**项 ⇒ 与 Typora 默认 `null`（无默认）一致。"
     },
     {
       "typora": "enableAlert",
@@ -279,7 +279,7 @@
       "mellow": [],
       "note": "「展开简单块」未实装",
       "behavior": "matches-default",
-      "behaviorNote": "检索（editor-engine/src 全量）：无 simpleBlock 展开实现 → Mellow 不展开，与 Typora 默认 false 一致"
+      "behaviorNote": "检索（editor-engine/src 全量）：无 simpleBlock 展开实现 → Mellow 不展开，与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-core/CoreEditor/src/styling/nodes/invisible.ts` —— 标记隐藏是该模块的**默认行为**（无开关）；**无「光标进入简单块时展开」**实现。"
     },
     {
       "typora": "fileSearchCaseSensitive",
@@ -288,7 +288,7 @@
       "mellow": [],
       "note": "文件搜索的大小写选项未持久化",
       "behavior": "matches-default",
-      "behaviorNote": "代码（host/searchServices.ts）：文件搜索固定传 `caseSensitive: false` → 与 Typora 默认 false 一致（选项未暴露，但行为相同）"
+      "behaviorNote": "代码（host/searchServices.ts）：文件搜索固定传 `caseSensitive: false` → 与 Typora 默认 false 一致（选项未暴露，但行为相同）【代码落点（2026-10-07，审计 §4.138）】`apps/desktop/src/host/searchServices.ts` —— 文件搜索固定传 `caseSensitive: false` ⇒ 与 Typora 默认 false 一致（选项未暴露、行为相同）。"
     },
     {
       "typora": "fileSearchWholeWord",
@@ -297,7 +297,7 @@
       "mellow": [],
       "note": "文件搜索的全词选项未持久化",
       "behavior": "matches-default",
-      "behaviorNote": "代码（host/searchServices.ts）：固定传 `wholeWord: false` → 与 Typora 默认 false 一致"
+      "behaviorNote": "代码（host/searchServices.ts）：固定传 `wholeWord: false` → 与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`apps/desktop/src/host/searchServices.ts` —— 文件搜索固定传 `wholeWord: false` ⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "gitlabMath",
@@ -315,7 +315,7 @@
       "mellow": [],
       "note": "标题样式（ATX / Setext）选择未实装（Mellow 固定 ATX）",
       "behavior": "matches-default",
-      "behaviorNote": "实测（探针）：标题命令写 `# x`（ATX），与 Typora `headingStyle: 0` 一致"
+      "behaviorNote": "实测（探针）：标题命令写 `# x`（ATX），与 Typora `headingStyle: 0` 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-core/CoreEditor/src/modules/commands/index.ts` —— `toggleHeading(level)` ⇒ `toggleLineLeadingMark('#', level)` ⇒ 写 **ATX `#`** ⇒ 与 Typora `headingStyle: 0` 一致。"
     },
     {
       "typora": "hideBrAndLineBreak",
@@ -324,7 +324,7 @@
       "mellow": [],
       "note": "「显示 <br/>」的**隐藏**方向未实装 —— 默认态已一致（Typora 默认可见、Mellow 亦显示）；隐藏需行内标记隐藏能力，与已登记原则「marker reveal 从不 replace 文本」冲突（G7-EDIT-15）",
       "behavior": "matches-default",
-      "behaviorNote": "实测（探针，G7-EDIT-15）：Mellow 显示 `<br>` 原文，与 Typora 默认 hideBrAndLineBreak=false（可见）一致",
+      "behaviorNote": "实测（探针，G7-EDIT-15）：Mellow 显示 `<br>` 原文，与 Typora 默认 hideBrAndLineBreak=false（可见）一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/safeHtml.ts` —— 该模块是**内联 HTML live rendering** 的 owner（`<br>` 属内联 HTML）；其中**无「隐藏 `<br>` 原文」**实现 ⇒ 与 Typora 默认 `hideBrAndLineBreak=false`（可见）一致。",
       "polarity": "inverted"
     },
     {
@@ -334,7 +334,7 @@
       "mellow": [],
       "note": "HTML 数学输出未实装",
       "behavior": "matches-default",
-      "behaviorNote": "一手证据（Typora main.js）：默认 htmlMath=false，仅在 HTML 数学输出开关开启时参与；Mellow 没有 HTML 数学输出，默认行为同样不输出 HTML 数学 → matches-default"
+      "behaviorNote": "一手证据（Typora main.js）：默认 htmlMath=false，仅在 HTML 数学输出开关开启时参与；Mellow 没有 HTML 数学输出，默认行为同样不输出 HTML 数学 → matches-default【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/math.ts` —— 该模块只产出 MathJax 兼容的 **CHTML/SVG**，**无 HTML 数学输出**路径 ⇒ 与 Typora 默认 `htmlMath=false` 一致。"
     },
     {
       "typora": "ignoreLineBreak",
@@ -343,7 +343,7 @@
       "mellow": [],
       "note": "「保留单换行符」的**开关**未实装 —— 行为已对齐（G7-EDIT-14，恒保留 = Typora 默认）；Typora 该开关作用于编辑区（移除 .md-softbreak span），Mellow 为 CM6 行式渲染无法合并两行",
       "behavior": "matches-default",
-      "behaviorNote": "行为已对齐（G7-EDIT-14）：Mellow 恒保留段内单换行 = Typora 默认 ignoreLineBreak=false"
+      "behaviorNote": "行为已对齐（G7-EDIT-14）：Mellow 恒保留段内单换行 = Typora 默认 ignoreLineBreak=false【代码落点（2026-10-07，审计 §4.138）】`packages/export/src/html/markdown.ts` —— `breaks: ctx.preserveLineBreaks === true` ⇒ 只有开启该设置时才把段内 `\\n` 渲染成 `<br>`（默认**保留为空格** = Typora 的 `ignoreLineBreak=false` 语义）。"
     },
     {
       "typora": "indentByTab",
@@ -390,7 +390,7 @@
       "mellow": [],
       "note": "旧版行内数学解析兼容未实装",
       "behavior": "matches-default",
-      "behaviorNote": "一手证据（Typora main.js）：默认 false，使用现代 inline_math 规则；Mellow parseMathSpans 仅实现现代 `$`/`\\(`/`\\[` 分隔符，无 legacy 分支 → matches-default"
+      "behaviorNote": "一手证据（Typora main.js）：默认 false，使用现代 inline_math 规则；Mellow parseMathSpans 仅实现现代 `$`/`\\(`/`\\[` 分隔符，无 legacy 分支 → matches-default【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/math.ts` —— `parseMathSpans` 只实现**现代**分隔符（`$` / `$$` / `\\(` / `\\[`）与 `math` 围栏，**无 legacy 分支** ⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "libraryFileFilterMode",
@@ -417,7 +417,7 @@
       "mellow": [],
       "note": "未选中时复制/剪切整行未实装（Typora 默认关闭）",
       "behavior": "matches-default",
-      "behaviorNote": "代码（clipboardCopy.ts `selectedMarkdown`）：空选区时返回 null，复制不执行 → 与 Typora 默认 false（未选中时不复制整行）一致"
+      "behaviorNote": "代码（clipboardCopy.ts `selectedMarkdown`）：空选区时返回 null，复制不执行 → 与 Typora 默认 false（未选中时不复制整行）一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/clipboardCopy.ts` —— `selectedMarkdown` 在**空选区**时返回 `null` ⇒ 复制不执行（不整行复制）⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "listNoGroup",
@@ -426,7 +426,7 @@
       "mellow": [],
       "note": "列表不分组显示未实装（侧栏）",
       "behavior": "matches-default",
-      "behaviorNote": "Typora 默认 false = 文档列表按文件夹分组；Mellow 文档列表默认 fileListRecursive=true 且 FileList `groupByFolder={fileListRecursive}` → 默认行为为分组，matches-default"
+      "behaviorNote": "Typora 默认 false = 文档列表按文件夹分组；Mellow 文档列表默认 fileListRecursive=true 且 FileList `groupByFolder={fileListRecursive}` → 默认行为为分组，matches-default【代码落点（2026-10-07，审计 §4.138）】`apps/desktop/src/App.tsx` —— 文档列表默认 `fileListRecursive=true` 且 `groupByFolder` 随之为真 ⇒ 与 Typora 默认 `listNoGroup=false`（分组）一致。"
     },
     {
       "typora": "mathFormatOnCopy",
@@ -448,7 +448,7 @@
       "mellow": [],
       "note": "单色 Emoji 未实装",
       "behavior": "matches-default",
-      "behaviorNote": "Mellow 显示彩色 Emoji，与 Typora 默认 false（单色关）一致"
+      "behaviorNote": "Mellow 显示彩色 Emoji，与 Typora 默认 false（单色关）一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/emoji.ts` —— 该模块渲染**彩色** Emoji，无单色分支 ⇒ 与 Typora 默认 false（单色关）一致。"
     },
     {
       "typora": "noAutoLink",
@@ -457,7 +457,7 @@
       "mellow": [],
       "note": "「不自动识别链接」未实装",
       "behavior": "matches-default",
-      "behaviorNote": "实测（探针）：裸 URL 自动成链（DOM 含 `cm-md-link` + `cm-md-url`），与 Typora 默认 noAutoLink=false 一致",
+      "behaviorNote": "实测（探针）：裸 URL 自动成链（DOM 含 `cm-md-link` + `cm-md-url`），与 Typora 默认 noAutoLink=false 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/mdLink.ts` —— 该模块只扫**显式** `[..](..)` 链接（`scanMdLinks`）；裸 URL 的自动成链由 markdown 语言解析提供（实测 DOM 含 `cm-md-url`）⇒ 与 Typora 默认 `noAutoLink=false`（自动成链）一致。",
       "polarity": "inverted"
     },
     {
@@ -477,7 +477,7 @@
       "mellow": [],
       "note": "该键的用户可见语义是「**LaTeX 数学定界符 `\\( \\) \\[ \\]` 是否生效**」（见 Typora 偏好面板的 label），**默认生效**；Mellow 已支持这四个定界符 ⇒ 行为一致。仍缺「可关闭」的开关，但默认行为已对齐 ⇒ 归 matches-default",
       "behavior": "matches-default",
-      "behaviorNote": "2026-10-07 改判（审计 §4.123）—— **推翻此前的「等价于 noLegacyMath=true」判定**。一手证据三条：① 偏好面板里该键的 label 是 `\"LaTeX Math Delimiter \\\\( \\\\) \\\\[ \\\\]\"` 且 `reverse:!0`（`getValue` 取反后勾选）⇒ 键名与语义**相反**，默认态是**启用**；② `main.js` 的三处渲染守卫都是 `File.option.enableInlineMath || !File.option.noLegacyMath`，而 `enableInlineMath` 默认 **true** ⇒ 该键在渲染路径上**恒为 no-op**；③ Mellow 的 `parseMathSpans` **支持 `\\\\(`/`\\\\)`/`\\\\[`/`\\\\]`**，且 `tests/fixtures/math/typora-math-corpus.md` 的 `\\(\\alpha + \\beta\\)` 与 `\\[ E = mc^2 \\]` 两例已被 math.test.ts 首条用例断言 ⇒ 两边**行为一致**。⚠️ 旧注记与**同文件**的 `legacyInlineMathParse` 条目（「Mellow parseMathSpans 仅实现现代 `$`/`\\\\(`/`\\\\[` 分隔符」）**自相矛盾** —— 后者其实已经承认 Mellow 支持这四个定界符。",
+      "behaviorNote": "2026-10-07 改判（审计 §4.123）—— **推翻此前的「等价于 noLegacyMath=true」判定**。一手证据三条：① 偏好面板里该键的 label 是 `\"LaTeX Math Delimiter \\\\( \\\\) \\\\[ \\\\]\"` 且 `reverse:!0`（`getValue` 取反后勾选）⇒ 键名与语义**相反**，默认态是**启用**；② `main.js` 的三处渲染守卫都是 `File.option.enableInlineMath || !File.option.noLegacyMath`，而 `enableInlineMath` 默认 **true** ⇒ 该键在渲染路径上**恒为 no-op**；③ Mellow 的 `parseMathSpans` **支持 `\\\\(`/`\\\\)`/`\\\\[`/`\\\\]`**，且 `tests/fixtures/math/typora-math-corpus.md` 的 `\\(\\alpha + \\beta\\)` 与 `\\[ E = mc^2 \\]` 两例已被 math.test.ts 首条用例断言 ⇒ 两边**行为一致**。⚠️ 旧注记与**同文件**的 `legacyInlineMathParse` 条目（「Mellow parseMathSpans 仅实现现代 `$`/`\\\\(`/`\\\\[` 分隔符」）**自相矛盾** —— 后者其实已经承认 Mellow 支持这四个定界符。【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/test/math.test.ts` —— 该测试集覆盖 `$`/`$$`/`\\(`/`\\[` 四种定界符（审计 §4.123 的改判依据）⇒ Mellow 已支持全部四种 ⇒ 与 Typora 默认（`noLegacyMath=false`）一致。",
       "polarity": "inverted"
     },
     {
@@ -507,7 +507,7 @@
       "mellow": [],
       "note": "未保存草稿备份开关未实装",
       "behavior": "matches-default",
-      "behaviorNote": "代码（document-model `RecoverySnapshot` / `fromRecovery`，spec §6 Recovery、PRD §102）：Mellow 有恢复快照 → 与 Typora 默认 false（备份未保存草稿）一致"
+      "behaviorNote": "代码（document-model `RecoverySnapshot` / `fromRecovery`，spec §6 Recovery、PRD §102）：Mellow 有恢复快照 → 与 Typora 默认 false（备份未保存草稿）一致【代码落点（2026-10-07，审计 §4.138）】`packages/app-core/src/recovery.ts` —— 该模块提供恢复快照（`RecoveryService`）⇒ Mellow **有**未保存草稿备份 ⇒ 与 Typora 默认 `noUnsavedDraftsBackup=false`（备份开启）一致。"
     },
     {
       "typora": "olStyle",
@@ -516,7 +516,7 @@
       "mellow": [],
       "note": "有序列表样式（1. / 1) ）选择未实装",
       "behavior": "matches-default",
-      "behaviorNote": "实测（探针）：有序列表命令写 `1. x`，与 Typora `olStyle: 0` 一致"
+      "behaviorNote": "实测（探针）：有序列表命令写 `1. x`，与 Typora `olStyle: 0` 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-core/CoreEditor/src/modules/commands/index.ts` —— 列表命令写 `1. x`（`toggleListStyle` 的 ordered 分支）⇒ 与 Typora `olStyle: 0` 一致。"
     },
     {
       "typora": "preferCRLF",
@@ -563,7 +563,7 @@
       "mellow": [],
       "note": "列表续行对齐缩进未实装",
       "behavior": "matches-default",
-      "behaviorNote": "检索：无列表续行对齐缩进实现 → Mellow 不对齐，与 Typora 默认 false 一致"
+      "behaviorNote": "检索：无列表续行对齐缩进实现 → Mellow 不对齐，与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-core/CoreEditor/src/modules/commands/index.ts` —— `toggleListStyle` 只改写**列表标记**，**无续行对齐缩进**实现 ⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "remapUnicodePunctuation",
@@ -572,7 +572,7 @@
       "mellow": [],
       "note": "Unicode 标点重映射未实装",
       "behavior": "matches-default",
-      "behaviorNote": "Mellow 无 Unicode 标点重映射 → 与 Typora 默认 false（不重映射）一致"
+      "behaviorNote": "Mellow 无 Unicode 标点重映射 → 与 Typora 默认 false（不重映射）一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/smartPunctuation.ts` —— 该模块只做弯引号与 em dash 的**输入期**改写，**无 Unicode 标点重映射**（如 `》` → `>`）⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "scrollWithCursor",
@@ -581,7 +581,7 @@
       "mellow": [],
       "note": "「跟随光标滚动」未实装（Mellow 有打字机模式 editor.typewriter，语义不同）",
       "behavior": "matches-default",
-      "behaviorNote": "默认 false；Mellow 默认不启用随光标滚动，打字机模式是独立手动模式（editor.typewriter）→ matches-default"
+      "behaviorNote": "默认 false；Mellow 默认不启用随光标滚动，打字机模式是独立手动模式（editor.typewriter）→ matches-default【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/typewriterMode.ts` —— 随光标滚动是**独立的手动模式**（`computeTypewriterScrollTop`），默认不启用 ⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "sendAnonymousUsage",
@@ -640,7 +640,7 @@
       "mellow": [],
       "note": "侧栏宽度可拖拽（D-AD 有意 480 上限），但未作为设置项持久化；Typora 以 sidebarWidth 记录",
       "behavior": "matches-default",
-      "behaviorNote": "实测/真值（Typora 实机默认 270px；Mellow 默认亦 270px，D-AD 有意 480 上限）→ 与 Typora 默认 null（取默认宽度）一致"
+      "behaviorNote": "实测/真值（Typora 实机默认 270px；Mellow 默认亦 270px，D-AD 有意 480 上限）→ 与 Typora 默认 null（取默认宽度）一致【代码落点（2026-10-07，审计 §4.138）】`packages/settings/src/index.ts` —— 侧栏宽度设置默认 **270**（与 Typora 实机默认一致；`D-AD` 有意设 480 上限）⇒ 与 Typora 默认 `null`（取默认宽度）一致。"
     },
     {
       "typora": "smartDash",
@@ -667,7 +667,7 @@
       "mellow": [],
       "note": "侧栏排序方式未作为设置暴露",
       "behavior": "matches-default",
-      "behaviorNote": "Typora 默认 sortType=0 = Natural 升序；Mellow DEFAULT_FILE_TREE_OPTIONS 为 sortBy=natural、sortAsc=true、folderFirst=true → 默认排序行为一致，matches-default"
+      "behaviorNote": "Typora 默认 sortType=0 = Natural 升序；Mellow DEFAULT_FILE_TREE_OPTIONS 为 sortBy=natural、sortAsc=true、folderFirst=true → 默认排序行为一致，matches-default【代码落点（2026-10-07，审计 §4.138）】`packages/app-core/src/fileTree.ts` —— `DEFAULT_FILE_TREE_OPTIONS` 为 `sortBy: 'natural'`、`sortAsc: true`、`folderFirst: true` ⇒ 与 Typora `sortType: 0`（Natural 升序）一致。"
     },
     {
       "typora": "spellcheckForCodeAndLink",
@@ -676,7 +676,7 @@
       "mellow": [],
       "note": "代码与链接内拼写检查开关未实装",
       "behavior": "matches-default",
-      "behaviorNote": "默认 false；Mellow 没有拼写检查消费方，代码/链接内自然不标拼写错误 → matches-default"
+      "behaviorNote": "默认 false；Mellow 没有拼写检查消费方，代码/链接内自然不标拼写错误 → matches-default【代码落点（2026-10-07，审计 §4.138）】`tests/parity/typora-parity-ledger.json` —— 台账 `P0-EDITOR-005`：拼写检查消费方未实现 ⇒ 代码/链接内**自然不标**拼写错误 ⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "strictMarkdown",
@@ -685,7 +685,7 @@
       "mellow": [],
       "note": "严格模式未实装",
       "behavior": "matches-default",
-      "behaviorNote": "默认 false；Mellow Markdown 解析/编辑路径未启用严格模式，默认走宽松语义 → matches-default"
+      "behaviorNote": "默认 false；Mellow Markdown 解析/编辑路径未启用严格模式，默认走宽松语义 → matches-default【代码落点（2026-10-07，审计 §4.138）】`packages/editor-core/CoreEditor/src/@vendor/lang-markdown/markdown.ts` —— Mellow 用的是该**宽松** markdown 语言包，未启用严格模式分支 ⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "strictNumberStartOnNewLine",
@@ -694,7 +694,7 @@
       "mellow": [],
       "note": "行首数字不触发有序列表的严格规则未实装",
       "behavior": "matches-default",
-      "behaviorNote": "实测（探针）：`2024. hello` 的 `2024.` 被识别为 `cm-md-listMark`（宽松），与 Typora 默认 false 一致"
+      "behaviorNote": "实测（探针）：`2024. hello` 的 `2024.` 被识别为 `cm-md-listMark`（宽松），与 Typora 默认 false 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-core/CoreEditor/src/@vendor/lang-markdown/markdown.ts` —— 同一语言包：`2024. hello` 的 `2024.` 被识别为列表标记（实测 DOM 含 `cm-md-listMark`）⇒ 宽松语义 ⇒ 与 Typora 默认 false 一致。"
     },
     {
       "typora": "treeFileFilterMode",
@@ -728,7 +728,7 @@
       "mellow": [],
       "note": "文件树不分组显示未实装",
       "behavior": "matches-default",
-      "behaviorNote": "Typora 默认 false = 文件树按目录层级分组；Mellow Files 视图使用 FileTree 层级节点并展开/折叠目录 → 默认行为为分组，matches-default"
+      "behaviorNote": "Typora 默认 false = 文件树按目录层级分组；Mellow Files 视图使用 FileTree 层级节点并展开/折叠目录 → 默认行为为分组，matches-default【代码落点（2026-10-07，审计 §4.138）】`packages/app-core/src/fileTree.ts` —— Files 视图用 `FileTree` 的**层级节点**（`FileTreeNode` 含目录与展开/折叠）⇒ 默认按目录分组 ⇒ 与 Typora 默认 `treeNoGroup=false` 一致。"
     },
     {
       "typora": "ulStyle",
@@ -737,7 +737,7 @@
       "mellow": [],
       "note": "无序列表符号（- / * / +）选择未实装",
       "behavior": "matches-default",
-      "behaviorNote": "实测（探针）：Mellow 列表命令写 `- x`，与 Typora `ulStyle: 0` 一致"
+      "behaviorNote": "实测（探针）：Mellow 列表命令写 `- x`，与 Typora `ulStyle: 0` 一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-core/CoreEditor/src/modules/commands/index.ts` —— `toggleBullet` 的 `toggleListStyle` 回落标记为 `'-'` ⇒ 与 Typora `ulStyle: 0` 一致。"
     },
     {
       "typora": "useFsQueue",
@@ -766,7 +766,7 @@
       "mellow": [],
       "note": "自定义引号对未实装",
       "behavior": "matches-default",
-      "behaviorNote": "Mellow 无自定义引号对 → 与 Typora 默认 null（无自定义）一致"
+      "behaviorNote": "Mellow 无自定义引号对 → 与 Typora 默认 null（无自定义）一致【代码落点（2026-10-07，审计 §4.138）】`packages/editor-engine/src/smartPunctuation.ts` —— 弯引号按**固定**的开/闭集合产出（`“ ” ‘ ’`），**无自定义引号对**配置 ⇒ 与 Typora 默认 `null`（无自定义）一致。"
     },
     {
       "typora": "useTreeStyle",

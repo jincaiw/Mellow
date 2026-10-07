@@ -9013,6 +9013,73 @@ if (strategy === 'keep-original' || strategy === 'auto') {   // ← 默认 auto 
 
 
 
+## 4.138 把 `matches-default` 的 34 条落点**补齐清零** + 修正落点判据的「同名文件」缺陷（2026-10-07）
+
+### 一、动因
+
+§4.137 立了两把棘轮：`differs ≤ 0`（已清零）、`matches-default ≤ 34`。本轮把后者**逐条补齐并清零**，
+同时**修正判据自身的一处缺陷**。
+
+### 二、⚠️ 先修判据：`basename` 解析会**解析到错的文件**
+
+§4.137 的判据用「basename → 存在与否」解析引用。本轮实测发现**同名文件会串**：
+某条的 `image/host.ts` 被解析成 `packages/app-core/src/extensions/host.ts`
+（本仓有两个 `host.ts`）⇒ 判据**会把引用"解析"到一个完全不相干的文件**，看起来还通过了。
+
+⇒ 改为**后缀匹配 + 歧义检测**：
+- 带目录的引用（`image/host.ts`）⇒ 要求某文件的**相对路径以它结尾**；
+- 裸 basename ⇒ 若本仓**唯一** ⇒ `ok`；若**不唯一** ⇒ **`ambiguous` ⇒ 报错并要求写全路径**。
+⇒ canary 补两条锁这个边界：`host.ts` 必须判 `ambiguous`、`image/host.ts` 必须判 `ok`。
+
+### 三、34 条逐条补齐（每条都**读了代码**再写）
+
+按模块归并（都是先确认该模块确实拥有/缺失所述行为）：
+
+| 落点模块 | 覆盖的键 | 核对到的事实 |
+|---|---|---|
+| `packages/editor-engine/src/image/host.ts` / `image/insert.ts` | `allowImageUpload` / `applyImageMoveForWeb` | `uploadImages` 惰性读 `__MELLOW_IMAGE_UPLOAD__`；`kind:'url'` 直插、无 `fsOps` |
+| `packages/editor-engine/src/smartPunctuation.ts` | `convertSmartOnRender` / `remapUnicodePunctuation` / `userQuotesArray` | 只在 `inputHandler` 改写；无 Unicode 重映射；引号对固定 |
+| `packages/editor-engine/src/clipboardCopy.ts` | `copyMarkdownByDefault` / `lineWiseCopyCut` | 渲染后 text/plain+html+rtf；空选区返回 `null` |
+| `packages/editor-engine/src/math.ts` | `autoNumberingForMath` / `htmlMath` / `legacyInlineMathParse` | 只解析+渲染 CHTML/SVG；无编号、无 HTML 数学、无 legacy 分支 |
+| `packages/editor-engine/src/typewriterMode.ts` | `scrollWithCursor` | `computeTypewriterScrollTop` 是**独立手动模式** |
+| `packages/editor-engine/src/mdLink.ts` | `noAutoLink` | `scanMdLinks` 只扫**显式** `[..](..)` |
+| `packages/editor-engine/src/safeHtml.ts` | `hideBrAndLineBreak` | 内联 HTML live rendering 的 owner，**无隐藏 `<br>` 原文** |
+| `packages/editor-engine/src/emoji.ts` | `monocolorEmoji` | 渲染**彩色** Emoji，无单色分支 |
+| `packages/export/src/html/markdown.ts` | `ignoreLineBreak` | `breaks: ctx.preserveLineBreaks === true` ⇒ 默认保留为空格 |
+| `packages/editor-core/CoreEditor/src/modules/commands/index.ts` | `headingStyle` / `olStyle` / `ulStyle` / `prettyIndent` | `toggleHeading` ⇒ `toggleLineLeadingMark('#', level)`；`toggleBullet` 回落 `'-'`；只改写列表标记 |
+| `packages/editor-core/CoreEditor/src/styling/nodes/invisible.ts` | `expandSimpleBlock` | 标记隐藏是**默认行为**，无「简单块展开」开关 |
+| `packages/editor-core/CoreEditor/src/@vendor/lang-markdown/markdown.ts` | `strictMarkdown` / `strictNumberStartOnNewLine` | 用的是**宽松** markdown 语言包 |
+| `packages/app-core/src/fileTree.ts` | `sortType` / `treeNoGroup` | `DEFAULT_FILE_TREE_OPTIONS` = natural/asc/folderFirst；层级节点 |
+| `packages/app-core/src/document.ts` | `defaultExtension` | `documentSuggestedName()` 只产出 `.md` |
+| `packages/app-core/src/recovery.ts` | `noUnsavedDraftsBackup` | `RecoveryService` 提供恢复快照 |
+| `packages/settings/src/index.ts` | `defaultImageStorage` / `sidebarWidth` | 无「默认存储位置」项；侧栏默认 270 |
+| `apps/desktop/src/App.tsx` | `listNoGroup` | `fileListRecursive=true` ⇒ 分组 |
+| `apps/desktop/src/host/searchServices.ts` | `fileSearchCaseSensitive` / `fileSearchWholeWord` | 固定传 `false` |
+| `tests/parity/typora-parity-ledger.json` | `autoCorrectMisspell` / `spellcheckForCodeAndLink` | 台账 `P0-EDITOR-005`（拼写能力未实现） |
+| `packages/editor-engine/test/math.test.ts` | `noLegacyMath` | 覆盖四种定界符（§4.123 改判依据） |
+
+⇒ 棘轮收到 **`≤ 0`（清零）** ⇒ 现在 **45 条行为断言全部有可核对落点**（`differs` 8 + `matches-default` 37）。
+
+### 四、⚠️ 如实声明：6 条「实测（探针）」类断言的**复现性有限**
+
+`headingStyle` / `olStyle` / `ulStyle` / `hideBrAndLineBreak` / `noAutoLink` / `strictNumberStartOnNewLine`
+的原始证据是**临时探针**（当时读了 DOM / 命令输出），**没有把探针脚本提交进仓库**（实测：`tests/` 下搜不到）。
+⇒ 本轮给它们补的落点是**产生该行为的模块**（可被下一个人按代码复核），
+但**「当时的实测」本身不可一键复现**。这一点已写进各自的 note，不当作「已验证」使用。
+
+### 五、教训
+
+1. **判据自己也会有「同名文件」这类缺陷** —— 本轮修的不是数据而是**判据**：
+   basename 解析在有两个 `host.ts` 的仓库里会**静默解析到错的文件**。
+   ⇒ 「按名字找文件」的判据，必须处理**重名**（唯一才可用 basename，否则要求全路径），并**用 canary 锁住**。
+2. **「补落点」不是格式整理，是一次复核** —— 34 条里每条都先读代码再写落点；
+   若只是把 prose 里的文件名加个反引号，就是把**不可核对**换成**看起来可核对**（§4.137 教训 4 的延续）。
+3. **「实测（探针）」类断言要标注复现性** —— 没有 committed 探针的实测，
+   其落点只能指向**模块**（供人复核），**不能**宣称「已可复现」。
+   ⇒ 凡「实测/探针」措辞，note 里必须写清**探针在不在仓库里**。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 
