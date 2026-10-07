@@ -2332,6 +2332,85 @@ if (cssLayerAnchor === undefined) {
       }
     }
 
+    // ── 「第三面」：Typora 会持久化、但**两个登记面都不覆盖**的键（2026-10-07，审计 §4.146）──
+    // 【为什么补】§4.145 量到：`JSBridge.putSetting` 的 38 个键里 **15 个**既不在偏好矩阵
+    //   （`DEFAULT_OPTIONS` 面）也不在面板独有面（`keyName` 面）—— 两个面之间**有缝**，
+    //   而此前**没有任何东西**在守这条缝。本轮把这 15 个落成**第三个登记面**
+    //   （`tests/parity/fixtures/typora-persisted-uncovered.json`），每个键给 `kind` + 理由。
+    //   ⚠️ 缝隙里的键**不是**都该进偏好矩阵：多数是**视图/会话状态**或**「不再提示」记忆**。
+    // 【判据（**不需要 Typora**）】
+    //   ① 每条必须有 `key` / `kind` / `reason`，且 `kind` 在词表内；
+    //   ② 每个键**不得**出现在偏好矩阵或面板独有面里（否则它是**过期的**登记 ⇒ 应删除）；
+    //   ③ 下限 + 每个 `kind` 桶非空（防词表退化致分类退化成「都一样」）。
+    // ⚠️ **本判据只做自洽性**；「有没有**漏登**」需要**本机 Typora** 重抽 `putSetting`，
+    //   那一步在 `tests/parity/tools/audit-typora-preferences.mjs` 里做（**双向**核对）。
+    {
+      let uncovered = null;
+      try {
+        uncovered = JSON.parse(read('tests/parity/fixtures/typora-persisted-uncovered.json'));
+      } catch { /* 下游报错 */ }
+      if (uncovered === null || !Array.isArray(uncovered.entries)) {
+        fail('第三登记面（typora-persisted-uncovered.json）无法读取 —— 缝隙键判据无法运行');
+      } else {
+        const KINDS = new Set(['view-state', 'warning-suppression', 'preference-like']);
+        // ⚠️ 矩阵条目在**别的块作用域**里（`let` 不跨块）⇒ 自己读一份（本文件的老陷阱）
+        let mxEntries5 = [];
+        try {
+          mxEntries5 = (JSON.parse(read('tests/parity/fixtures/typora-preferences-matrix.json')).entries) ?? [];
+        } catch { /* 上游报错 */ }
+        const mxKeys = new Set(mxEntries5.map((e) => e.typora));
+        let panelKeys = new Set();
+        try {
+          const p = JSON.parse(read('tests/parity/fixtures/typora-panel-only-keys.json'));
+          panelKeys = new Set((p.entries ?? []).map((e) => e.key ?? e.typora));
+        } catch { /* 上游报错 */ }
+        // 诊断串一律带**键名**（否则「哪一条坏了」要靠数行找）
+        const judgeFace3 = (list, mx, panel, kinds) => {
+          const out = [];
+          for (const e of list) {
+            if (typeof e.key !== 'string' || e.key.trim() === '') { out.push('(缺 key)'); continue; }
+            const k = e.key;
+            if (!kinds.has(e.kind)) out.push(`${k}:kind=${e.kind}`);
+            if (typeof e.reason !== 'string' || e.reason.trim() === '') out.push(`${k}:noreason`);
+            if (mx.has(k)) out.push(`${k}:stale-matrix`);
+            if (panel.has(k)) out.push(`${k}:stale-panel`);
+          }
+          return out;
+        };
+        const bad3 = judgeFace3(uncovered.entries, mxKeys, panelKeys, KINDS);
+        if (bad3.length > 0) {
+          fail(`第三登记面（缝隙键）非法条目（${bad3.length}）：${bad3.join('、')}`
+            + ' —— `stale-*` 表示该键已被另一个面覆盖，应从本面删除；`kind`/`reason` 缺失表示登记不完整');
+        }
+        if (uncovered.entries.length < 10) {
+          fail(`第三登记面只有 ${uncovered.entries.length} 条（下限 10，2026-10-07 基线 = 15）`
+            + ' —— 适用域萎缩会让本判据空转');
+        }
+        for (const k of KINDS) {
+          if (!uncovered.entries.some((e) => e.kind === k)) {
+            fail(`第三登记面的 \`kind\` 桶 \`${k}\` 为空 —— 词表退化会让分类退化成「都一样」`);
+          }
+        }
+        console.log(`ℹ️ 第三登记面（Typora 会持久化、但矩阵与面板都不覆盖的键）${uncovered.entries.length} 条：`
+          + `${[...KINDS].map((k) => `${k} ${uncovered.entries.filter((e) => e.kind === k).length}`).join(' / ')}`
+          + '（⚠️ 只做自洽性；漏登需本机工具重抽 putSetting）');
+        // canary：三向（正样本 / 已进矩阵 ⇒ 过期 / kind 非法）
+        const K3 = new Set(['view-state']);
+        if (judgeFace3([{ key: 'k', kind: 'view-state', reason: 'r' }], new Set(), new Set(), K3).length !== 0) {
+          fail('第三面 canary 过宽：合法条目被误报');
+        }
+        if (!judgeFace3([{ key: 'k', kind: 'view-state', reason: 'r' }], new Set(['k']), new Set(), K3).includes('k:stale-matrix')) {
+          fail('第三面 canary 失效：已进矩阵的键未被检出（过期登记）');
+        }
+        if (!judgeFace3([{ key: 'k', kind: 'bad', reason: 'r' }], new Set(), new Set(), K3).includes('k:kind=bad')) {
+          fail('第三面 canary 失效：非法 kind 未被检出');
+        }
+        if (!judgeFace3([{ key: 'k', kind: 'view-state', reason: '' }], new Set(), new Set(), K3).includes('k:noreason')) {
+          fail('第三面 canary 失效：空 reason 未被检出');
+        }
+      }
+    }
+
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
 // 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，
 //   但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**：

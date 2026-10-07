@@ -9600,6 +9600,74 @@ JSBridge.putSetting("caseSensitive", t.caseSensitive)
    本轮第一次量化了两面之间的缝隙（15 个键）。
 
 
+## 4.146 把 §4.145 量到的「**缝隙**」落成**第三个登记面** + 抓到 `sortType` 是 Typora 的**死键**（2026-10-07）
+
+### 一、动因
+
+§4.145 量到：`JSBridge.putSetting` 的 38 个键里 **15 个**既不在偏好矩阵（`DEFAULT_OPTIONS` 面）
+也不在面板独有面（`keyName` 面）—— 两个面之间**有缝**。当时**没落判据**，因为
+「`putSetting` ⊆ 两面」**实测不成立**（15 个里 ≥6 个是视图/会话状态）。
+⇒ 本轮把这 15 个**逐条取证分类**，落成第三个面，让那条判据**变得可落**。
+
+### 二、逐条分类（15 个，全部有一手证据）
+
+| kind | 数量 | 键 | 判据（要点） |
+|---|---|---|---|
+| `preference-like` | **4** | `useRegexp` · `fileSearchUseRegexp` · `listSortType` · `treeSortType` | 用户主动切换的选项，Typora 持久化 |
+| `warning-suppression` | **5** | `noFileNonExistWarning` · `noHintForOpenLink` · `noWarnigForDeleteFile` · `noWarnigUploadDisabled` · `noWarningForExportOverwrite` | 「不再提示」记忆（原生对话框的 checkbox / 一用就写死） |
+| `view-state` | **6** | `backgroundColor` · `customZoom` · `isDarkMode` · `isFocusMode` · `isTypeWriterMode` · `sidebar_tab` | 主题派生值 / 缩放 / 模式开关 / 侧栏页签 |
+
+⇒ **`preference-like` 只有 4 个**（其余 11 个**确实不该**进偏好矩阵）——
+这正好说明 §4.145 里「先定义再落判据」的克制是对的：**若当时直接落判据，会得到一张 11 条的例外表**。
+
+### 三、⚠️ 顺带抓到的**死键**：`sortType`
+
+查 `listSortType` / `treeSortType` 时发现矩阵里的 `sortType`（`dCarrier: D-AG`）有问题：
+
+| 量 | 结果 |
+|---|---|
+| `putSetting("sortType")` | **0 次**（**从不持久化**）|
+| `File.option.sortType` | 只出现在 `… = File.option.sortType \|\| 0` 的**归一化行**里，**之后从未被读** |
+| `main.js` 全文 20 处 `sortType` | 其余全是组件自身的 `this.sortType` / `.sortType()`（由 `listSortType`/`treeSortType` 初始化）|
+| `strings` 原生二进制 | 含 `listSortType` / `treeSortType`，**不含** `sortType` |
+
+⇒ **`sortType` 是 `DEFAULT_OPTIONS` 里的一个死默认**；**真正的持久化键是 `listSortType` / `treeSortType`**。
+矩阵那条的**结论**（D-AG 已裁决排序形态等价）**不受影响** —— 但它**不是**通过 `sortType` 实现的；
+已在条目里补证，并把活键登记进第三面。
+
+**方法学收获**：这是「**矩阵追踪的键名 ≠ Typora 实际用的键名**」的第一个实例，
+而**两个面都看不见它** —— 因为两个面一个按 `DEFAULT_OPTIONS` 抽、一个按面板 `keyName` 抽，
+**都不看「谁真的被写」**。`putSetting` 正是补上这一维的通道。
+
+### 四、落地
+
+1. **新第三面**：`tests/parity/fixtures/typora-persisted-uncovered.json` —— 15 条，每条 `key` + `kind` + `reason`；
+   含 `kindVocabulary` 与抽取命令（可复现）。
+2. **CI 判据**（`verify-settings-contract.mjs`，**不需要 Typora**）：① 每条必须有 `key`/`kind`/`reason`
+   且 `kind` 在词表内；② **每个键不得出现在另两个面里**（否则是**过期登记** ⇒ 应删除）；
+   ③ 下限 10 + **每个 `kind` 桶非空**（防词表退化致分类退化成「都一样」）。
+   canary 三向；诊断串**一律带键名**（否则「哪一条坏了」要靠数行找）。
+3. **本机工具**（`audit-typora-preferences.mjs`，**需要 Typora**）：重抽 `putSetting` 的键，
+   与第三面做**双向**核对 —— ① 漏登（实测 38 键 − 两面 − 登记表 == ∅）；② 失效登记
+   （登记表 − `putSetting` 键 == ∅）。canary 三向（含「完全一致被判为不一致」）。
+   ⇒ **分工**：CI 守**自洽**，本机守**完整**（与 §4.126 面板面的分工同型）。
+
+**注入验证 4/4**：① 从第三面删键 ⇒ 本机工具报「漏登」；② 把矩阵已有键塞进第三面 ⇒ CI 报 `stale-matrix`；
+③ `kind` 改非法值 ⇒ CI 红；④ `reason` 清空 ⇒ CI 红。还原后**双绿**（CI + 本机工具）。
+
+### 五、教训
+
+1. **「缝隙」本身要有一个登记处，否则它永远是「已知但不存在于任何地方」** ——
+   §4.145 量到了它却没地方放；本轮给了它第三面，那条判据才落地。
+2. **分类的价值在于「它让判据可落」** —— 不做分类，判据就是一张 11 条例外表；
+   做完分类，「11 个非偏好」变成**有理由的登记**，判据变成 3 条硬判据。
+3. **「追踪的键名 ≠ 实际用的键名」** —— 两个面都是按**声明**抽的（一个抽默认值表、一个抽面板 UI），
+   **都不看「谁真的被写」**。⇒ 要问「**这个键真的被读写吗**」，得找**另一条通道**（这里是 `putSetting`）。
+   **`sortType` 死键就是这么漏掉的。**
+4. **分工要写清楚**：CI 能做的（自洽、双向的面内一致）与只有本机能做的（重抽上游）**必须分开声明**，
+   否则「CI 绿」会被读成「上游也核过了」。
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

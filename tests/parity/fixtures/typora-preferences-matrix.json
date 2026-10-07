@@ -661,7 +661,7 @@
       "default": 0,
       "status": "implemented",
       "mellow": [],
-      "note": "侧栏排序**形态**由 **D-AG**（2026-09-30 裁决）承载：保留 Mellow 的菜单形态（4 个可勾选键 × 升/降序 = Typora 8 条的**同一组合集**），D-AG 明言「**功能已等价且有护栏**」（`verify-sidebar-contract.mjs` 锁 4 个排序键）。⚠️ **本条此前误记 `gap`**（「未作为设置暴露」）—— 与 D-AG 的裁决矛盾：形态差异**已被裁决为有意**，不是缺口。",
+      "note": "侧栏排序**形态**由 **D-AG**（2026-09-30 裁决）承载：保留 Mellow 的菜单形态（4 个可勾选键 × 升/降序 = Typora 8 条的**同一组合集**），D-AG 明言「**功能已等价且有护栏**」（`verify-sidebar-contract.mjs` 锁 4 个排序键）。⚠️ **本条此前误记 `gap`**（「未作为设置暴露」）—— 与 D-AG 的裁决矛盾：形态差异**已被裁决为有意**，不是缺口。⚠️ **2026-10-07 补证（审计 §4.146）：`sortType` 在 Typora 里是**死键** —— `putSetting(\"sortType\")` **0 次**、`File.option.sortType` 被 `|| 0` 归一化后**再没被读过**（`main.js` 全文 20 处 `sortType` 里，其余都是组件自身的 `this.sortType` / `.sortType()`）；**真正被持久化的是 `listSortType` / `treeSortType`**（`putSetting(\"listSortType\"/\"treeSortType\", …)`，且**出现在原生二进制里**）。⇒ 本条追踪的**键名**只是 `DEFAULT_OPTIONS` 里的一个死默认；**活键**已登记在第三面 `typora-persisted-uncovered.json`（`kind: preference-like`）。**本条的结论（D-AG 已裁决排序形态等价）不受影响** —— 但它**不是**通过 `sortType` 这个键实现的。",
       "dCarrier": "D-AG"
     },
     {

@@ -619,6 +619,74 @@ if (badIds.length > 0) {
   }
 }
 
+// ── 「第三面」双向核对：`JSBridge.putSetting` 的键 ↔ 缝隙登记表（2026-10-07，审计 §4.146）──
+// 立此条的原因：§4.145 量到两个登记面之间**有缝** —— `putSetting` 的 38 个键里 **15 个**
+// 既不在偏好矩阵（`DEFAULT_OPTIONS` 面）也不在面板独有面（`keyName` 面）。
+// CI 侧的 `verify-settings-contract.mjs` 只能做**自洽性**（键不在另两面、kind/reason 合法）；
+// **「有没有漏登」必须回到 Typora 重抽** —— 那正是本工具（需本机 Typora）的职责。
+// 判据**双向**：① `putSetting` 键 − 两面 − 登记表 == ∅（无漏登）；
+//              ② 登记表 − `putSetting` 键 == ∅（无已失效的登记，如上游改版后不再持久化）。
+{
+  // ⚠️ `appsrcBase()` 已经是 `…/TypeMark/appsrc` ⇒ 这里是**相对它**的路径（别再写 `appsrc/`）
+  const JS_FILES = ['main.js', 'window/frame.js'];
+  const extractPutSetting = () => {
+    const keys = new Set();
+    for (const rel of JS_FILES) {
+      const p = resolve(appsrcBase(), rel);
+      if (!existsSync(p)) continue;
+      const s = readFileSync(p, 'utf8');
+      for (const m of s.matchAll(/JSBridge\.putSetting\("([A-Za-z_][A-Za-z0-9_]*)"/g)) keys.add(m[1]);
+    }
+    return keys;
+  };
+  const putKeys = extractPutSetting();
+  if (putKeys.size < 20) {
+    errors.push(`\`putSetting\` 只抽到 ${putKeys.size} 个键（下限 20，基线 38）—— `
+      + '抽取面漂移会让本判据**空转**（上游改版请同步下调并说明）');
+  } else {
+    const FACE3 = resolve(root, 'tests/parity/fixtures/typora-persisted-uncovered.json');
+    let face3 = null;
+    try { face3 = JSON.parse(readFileSync(FACE3, 'utf8')); } catch {
+      errors.push('读不到 tests/parity/fixtures/typora-persisted-uncovered.json —— 第三面无法核对');
+    }
+    let panelKeys = new Set();
+    try {
+      const p = JSON.parse(readFileSync(resolve(root, 'tests/parity/fixtures/typora-panel-only-keys.json'), 'utf8'));
+      panelKeys = new Set((p.entries ?? []).map((e) => e.key ?? e.typora));
+    } catch { /* 上面的面板判据已会报错 */ }
+    if (face3 !== null && Array.isArray(face3.entries)) {
+      const registered = new Set(face3.entries.map((e) => e.key));
+      const uncovered = [...putKeys].filter((k) => !byKey.has(k) && !panelKeys.has(k));
+      const missing = uncovered.filter((k) => !registered.has(k)).sort();
+      const stale = [...registered].filter((k) => !putKeys.has(k)).sort();
+      console.log(`\n\`JSBridge.putSetting\` 键：${putKeys.size} 个（其中 ${uncovered.length} 个不在矩阵与面板任一面）`);
+      if (missing.length > 0) {
+        errors.push(`\`putSetting\` 的键既不在矩阵、也不在面板、**也不在第三面登记表**（漏登，${missing.length}）：`
+          + `${missing.join(', ')} —— 请在 typora-persisted-uncovered.json 登记（给 kind + reason）`);
+      }
+      if (stale.length > 0) {
+        errors.push(`第三面登记表里有**上游已不再持久化**的键（${stale.length}）：${stale.join(', ')}`
+          + ' —— 请删除（或说明为何仍要留）');
+      }
+      if (uncovered.length !== face3.entries.length) {
+        errors.push(`第三面条数（${face3.entries.length}）与实测缝隙（${uncovered.length}）不一致`);
+      }
+      // canary：谓词双向（拼接构造，不依赖真实数据）
+      const cmp = (put, mx, panel, reg) => {
+        const unc = [...put].filter((k) => !mx.has(k) && !panel.has(k));
+        return { missing: unc.filter((k) => !reg.has(k)).sort(), stale: [...reg].filter((k) => !put.has(k)).sort() };
+      };
+      const ok2 = cmp(new Set(['a']), new Set(), new Set(), new Set(['a']));
+      if (ok2.missing.length !== 0 || ok2.stale.length !== 0) errors.push('第三面双向 canary 失效：完全一致被判为不一致');
+      if (cmp(new Set(['a']), new Set(), new Set(), new Set()).missing.join() !== 'a') errors.push('第三面双向 canary 失效：漏登未被检出');
+      if (cmp(new Set(), new Set(), new Set(), new Set(['a'])).stale.join() !== 'a') errors.push('第三面双向 canary 失效：失效登记未被检出');
+      if (cmp(new Set(['a']), new Set(['a']), new Set(), new Set()).missing.length !== 0) {
+        errors.push('第三面双向 canary 失效：已在矩阵里的键被算成缝隙');
+      }
+    }
+  }
+}
+
 if (errors.length > 0) {
   console.error('\n❌ 偏好项审计未通过：');
   for (const e of errors) console.error(`  - ${e}`);

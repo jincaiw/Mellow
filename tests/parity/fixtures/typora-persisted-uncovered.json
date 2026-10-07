@@ -1,0 +1,87 @@
+{
+  "source": "Typora 1.14.9 (7785) — TypeMark/appsrc/main.js 与 TypeMark/appsrc/window/frame.js 里 JSBridge.putSetting(\"<key>\", …) 的实参集合（并集 38 键）",
+  "extract": "node -e \"const fs=require('fs');const k=new Set();for(const f of ['appsrc/main.js','appsrc/window/frame.js'])for(const m of fs.readFileSync('<TY>/'+f,'utf8').matchAll(/JSBridge\\.putSetting\\(\"([A-Za-z_][A-Za-z0-9_]*)\"/g))k.add(m[1]);console.log([...k].sort().join('\\n'))\"",
+  "note": "**第三个登记面**（2026-10-07，审计 §4.146）。它登记的是「**Typora 真的会持久化、但既不在偏好矩阵（`DEFAULT_OPTIONS` 面）也不在面板独有面（`keyName` 面）里**」的键 —— 也就是两个面之间的**缝隙**。⚠️ 缝隙里的键**不是**都该进偏好矩阵：其中多数是**视图/会话状态**或**「不再提示」记忆**（Typora 经同一通道持久化它们，但它们不是偏好）。`kind` 的三档正是为此而设；`preference-like` 的那几个是**待裁决**（要不要登记进矩阵）。本文件由 `tests/parity/tools/audit-typora-preferences.mjs`（需本机 Typora）做**双向**核对，并由 `verify-settings-contract.mjs` 做自洽性核对（不需要 Typora）。",
+  "kindVocabulary": {
+    "view-state": "视图 / 会话状态（主题派生、缩放、模式开关、侧栏页签）—— Typora 经同一通道持久化，但**不是偏好**",
+    "warning-suppression": "「不再提示」记忆（用户在原生对话框勾了 checkbox ⇒ 写死该标记）—— 是**记忆**，不是偏好",
+    "preference-like": "语义上**像偏好**（用户主动切换的选项），但既不在 `DEFAULT_OPTIONS`、也不在面板里 ⇒ **登记为待裁决**（要不要进矩阵）"
+  },
+  "entries": [
+    {
+      "key": "useRegexp",
+      "kind": "preference-like",
+      "reason": "**查找 / 替换面板**的正则选项。`main.js` 的查找面板类读 `File.option.useRegexp`，按钮 `mousedown` 调 `JSBridge.putSetting(\"useRegexp\", t.useRegexp)` ⇒ Typora 持久化。⚠️ 它**不在** `DEFAULT_OPTIONS`（矩阵面）也**不在**面板（`keyName` 面）⇒ 落在缝隙里。Mellow 对应物 = 查找面板的 `regexp` 按钮（`packages/editor-engine/src/documentSearch.ts` 的 `lastQueryOptions.regexp`，**内存态、不持久化**）。"
+    },
+    {
+      "key": "fileSearchUseRegexp",
+      "kind": "preference-like",
+      "reason": "**文件搜索面板**的正则选项（与 `fileSearchCaseSensitive` / `fileSearchWholeWord` 同族）。`main.js` 的文件搜索项类读 `File.option.fileSearchUseRegexp` 并 `putSetting(\"fileSearchUseRegexp\", …)`。⚠️ 同族的另两个键**在** `DEFAULT_OPTIONS` 里（故在矩阵内），**只有它不在** ⇒ 这是「同一族的键被两个面切开」的实例。Mellow 对应物 = 侧栏的「正则」复选框（`apps/desktop/src/App.tsx` 的 `searchRegex`，**仍不持久化**，见审计 §4.145 残留）。"
+    },
+    {
+      "key": "listSortType",
+      "kind": "preference-like",
+      "reason": "**文件列表**（sidebar file-list）的排序状态。`main.js`：`this.sortType = File.option.listSortType`（读）+ `setSortType(e){ … JSBridge.putSetting(\"listSortType\", e) }`（写）。⚠️ **它是矩阵里 `sortType` 的「活键」** —— 实测 `putSetting(\"sortType\")` **0 次**、`File.option.sortType` 被 `|| 0` 归一化后**再没被读过**（死键）；而 `listSortType` / `treeSortType` **出现在原生二进制里**（`strings` 可证）⇒ **真正的持久化键是这两个**。见审计 §4.146 对 `sortType` 条目的更正。"
+    },
+    {
+      "key": "treeSortType",
+      "kind": "preference-like",
+      "reason": "**文件树**（sidebar file-tree）的排序状态。同 `listSortType`：读 `File.option.treeSortType`、写 `putSetting(\"treeSortType\", e)`，且出现在原生二进制里。与 `listSortType` 一起构成矩阵 `sortType` 条目的**活键**。"
+    },
+    {
+      "key": "noFileNonExistWarning",
+      "kind": "warning-suppression",
+      "reason": "「打开的文件不存在」警告对话框的「不再显示」复选框。`main.js`：`if (!File.option.noFileNonExistWarning && !File.option.silentOpenFailure) { … }`，用户勾选后 `execForAll(… = true)` + `putSetting(\"noFileNonExistWarning\", !0)`。⇒ 是**记忆**，不是偏好。"
+    },
+    {
+      "key": "noHintForOpenLink",
+      "kind": "warning-suppression",
+      "reason": "「Ctrl+点击打开链接」的提示条。`main.js`：`if (t.ctrlKey || t.metaKey) return JSBridge.putSetting(\"noHintForOpenLink\", !0), e.tryOpenUrl(…)` ⇒ **用户一用就自动写死**（不弹对话框、无 checkbox）。⇒ 纯记忆。"
+    },
+    {
+      "key": "noWarnigForDeleteFile",
+      "kind": "warning-suppression",
+      "reason": "删除文件确认框的「不再提示」（⚠️ Typora 原键名拼写为 `Warnig`，**保留原样**以免与上游脱钩）。`main.js`：`if (File.option.noWarnigForDeleteFile) l(); else { … dialog.showMessageBox(… checkboxChecked …) }`。"
+    },
+    {
+      "key": "noWarnigUploadDisabled",
+      "kind": "warning-suppression",
+      "reason": "「上传服务未启用」提示的「不再提示」（同样保留上游拼写 `Warnig`）。`main.js`：`checkAutoUploadIsAllowed` 里 `if (t && File.option.noWarnigUploadDisabled) return !1;`，勾选后 `putSetting(\"noWarnigUploadDisabled\", !0)`。"
+    },
+    {
+      "key": "noWarningForExportOverwrite",
+      "kind": "warning-suppression",
+      "reason": "「导出并覆盖上一次导出」警告的「不再提示」。`main.js`：`if (File.option.noWarningForExportOverwrite) return t.path;` + 勾选后 `putSetting(\"noWarningForExportOverwrite\", !0)`。"
+    },
+    {
+      "key": "backgroundColor",
+      "kind": "view-state",
+      "reason": "**主题派生值**：`putSetting(\"backgroundColor\", <body 计算样式的 #RRGGBB>)` —— 从 `getComputedStyle(document.body).backgroundColor` 算出后回写，供原生侧画标题栏等。⇒ 不是用户设的。"
+    },
+    {
+      "key": "customZoom",
+      "kind": "view-state",
+      "reason": "**缩放状态**：`resetZoom()` 里 `putSetting(\"customZoom\", !1)`；`setZoomLevel()` 里 `putSetting(\"customZoom\", !0)`。它标记「用户是否手动改过缩放」，与 `zoomFactor` / `zoomLevel` 一起构成视图状态。"
+    },
+    {
+      "key": "isDarkMode",
+      "kind": "view-state",
+      "reason": "**主题派生值**：`putSetting(\"isDarkMode\", File.colorBrightness < .5)` —— 由主题亮度算出，供原生侧切换外观。⇒ 不是用户设的。"
+    },
+    {
+      "key": "isFocusMode",
+      "kind": "view-state",
+      "reason": "**模式开关**：焦点模式的当前状态（`File.isFocusMode = File.option.isFocusMode` 读、`putSetting(\"isFocusMode\", …)` 写）。与 `editor.focusMode` 这类「偏好」不同 —— 这里持久化的是**当前是否处于该模式**。"
+    },
+    {
+      "key": "isTypeWriterMode",
+      "kind": "view-state",
+      "reason": "**模式开关**：打字机模式的当前状态（同上）。"
+    },
+    {
+      "key": "sidebar_tab",
+      "kind": "view-state",
+      "reason": "**侧栏页签**：`putSetting(\"sidebar_tab\", e ? \"file-tree\" : \"file-list\")`，关闭侧栏时写 `\"\"`。⚠️ 注意它是 **snake_case**（与 `DEFAULT_OPTIONS` 的 camelCase 风格不同）⇒ 也提示它来自另一条写入路径。"
+    }
+  ]
+}
