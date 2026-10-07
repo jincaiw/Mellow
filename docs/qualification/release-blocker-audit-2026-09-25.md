@@ -8384,6 +8384,87 @@ thread panicked: assertion `left == right` failed
 
 
 
+## 4.130 导出后行为族：**5 项 `consumer: unknown` 结清**，并抓到一处**默认行为偏离**（`openExportLocation` 默认开）（2026-10-07）
+
+### 一、动因
+
+§4.129 的入口清单写着：「导出后行为族……若确认『配置对象来自偏好存储』，则 5 项 `consumer` 可从 `unknown` 改成 `js`」。
+本轮把它查到底。
+
+### 二、关键取证：**原生把整个对象不透明转发**
+
+| 事实 | 证据 |
+|---|---|
+| 面板把这些字段**持久化成偏好** | `te=function(e,t){return function(n,a){…o[n]=a; e.onChange("export."+t,o)}}` ⇒ 写 `export.general.<field>` / `export.<group>.<field>` |
+| **全部 JS 文件里只有面板含 `export.general`** | 实测全树：仅 `page-dist/static/js/Preferences.*.js` ×2；`main.js` **0 处**、`frame.js` **0 处** |
+| **原生二进制含 `export.general`** | `strings -a Contents/MacOS/Typora` 精确行命中 |
+| 行为侧读的是**配置对象**的同名字段 | `n.openExportFile` / `n.openExportLocation` / `n.runCommand` / `n.runCommandStr` / `n.showOutput`（导出完成处理函数，`w = async function(e,t,n,…)` 的第 3 个形参） |
+| 字段名**不在**原生二进制里 | `openExportFile` / `runCommand` / `showOutput` 实测 `strings` **未命中** |
+
+⇒ **结论**：原生读取 `export.general`（所以二进制里有这个**对象名**），并把整个对象**不透明转发**给 JS 导出流程
+（所以**字段名**不会作为原生字符串出现）。**这解释了「按字段名搜二进制搜不到」** ——
+也说明此前判 `unknown` 是**判据太窄**，而不是真的没有消费方。
+⇒ 这 5 项改判 **`consumer: js`**，anchor = 实际读点（`n.openExportFile` 等）。
+
+### 三、抓到一处**默认行为偏离**：`openExportLocation` 默认是**开**
+
+面板的勾选值是 `!!ae(r.X, a.X, l.X)`（**组配置 / `export.general` / schema**，**首个已定义者优先**）。
+逐字段查 schema：
+
+| 键 | 面板里 `<key>:` 形式的取值 | 全新安装下的默认 |
+|---|---|---|
+| `openExportLocation` | **`["!0"]`** —— 实测 `L={appendHead:{…}, appendBody:{…}, allowPerFileSetting:{…}, openExportLocation:!0}`（HTML 导出的 schema 片段） | **`true`（勾选）** |
+| `openExportFile` | `[]`（**不在任何 schema 里**） | `false`（`!!undefined`） |
+| `showOutput` / `runCommand` / `runCommandStr` | `[]` | `false` |
+
+⇒ **Typora 默认在导出完成后 `JSBridge.showInFinder(t)`（在文件管理器中显示导出件）**；
+Mellow 导出完成只弹 toast + 记录 `mellow.export.last`，**不做任何打开/定位** ⇒ **默认行为偏离**。
+⚠️ **上游两处默认并不一致**（如实记录）：「通用导出设置」页用 `checked: !!n.openExportLocation`
+（`export.general` 未设 ⇒ 默认**不**勾），而 HTML 导出的 schema 片段给的是 `!0`。
+
+⇒ 处置：`openExportLocation` 记 **`gap`**（行为偏离），并**登记待裁决**（`pendingRef: ADR-0034 Q11`）——
+选项 A1 默认对齐 / A2 新增开关+默认关 / A3 维持+登记 `D-`，**建议 A2**（Mellow 已有 `file.revealInFinder` 底层能力，
+但**默认对齐会改变所有用户的导出后体验**，按纪律不得静默改）。
+同族的 `openExportFile` **默认是关** ⇒ **默认行为一致**，只缺开关 ⇒ 记 **`equivalent`**，**不需要裁决**。
+
+### 四、新增护栏
+
+1. **本机工具**（`audit-typora-preferences.mjs`）：`consumer: native` **但键名出现在行为文件里** ⇒ **必须写 `consumerNote`**。
+   出现只可能是三类：① 只是 `putSetting`（**写**）；② 命中的是**同名异物**；③ 持久化由**原生不透明转发** ⇒ 必须写明是哪一类。
+   ⚠️ **扫描面必须排除面板** —— **面板含每一个键**，含它则本判据会对 **21 项全部**要求 note（那正是 §4.128 的「对全体恒真」）；
+   排除后实测只有 **5 项**（`can_collapse_outline_panel` / `customExportPath` / `exportFolder` / `restoreWhenLaunch` / `userLanguage`）。
+   canary 四向，其中一向**专门断言「扫描面含面板时会退化成全要求」**（把边界假设本身钉住）。
+   **注入验证**：去掉 `userLanguage` 的 `consumerNote` ⇒ 红。
+2. **CI 侧**（`verify-settings-contract.mjs` ⑭）：`pendingRef` 必须形态合法（`ADR-\d{4}` 或 `ADR-\d{4} Q\d+`）
+   且**指向的 ADR 文件真实存在**（ADR 状态由 `verify-release-gate.mjs` 负责，分工不重复）。
+   **注入验证 2/2**：指向 `ADR-9999` ⇒ 红；写成「见 ADR 0034」⇒ 红。
+3. **棘轮再收紧**：`status=unverified ≤ 3` → **≤ 1**；`consumer=unknown ≤ 7` → **≤ 2**。
+   收敛轨迹：`unverified` **14 → 13 → 10 → 3 → 1**；`unknown` **7 → 2**。
+
+### 五、分布（成对报）
+
+`equivalent 30 / gap 9 / not-applicable 7 / unverified **1**`；`consumer`：`js 24 / native 21 / unknown **2**`。
+本轮的 5 项全部来自 `consumer` 轴（`unknown` 7 → 2），`status` 轴只动 2 项
+（`openExportFile` → `equivalent`、`openExportLocation` → `gap`）。
+⇒ **两条轴要分开报** —— 只看 `gap` 4→8→9 会以为一直在「变差」，而实际上**未知量在快速收敛**。
+
+### 六、教训
+
+1. **「搜不到」要分三种情况**：① 真的没有；② **改名**（§4.128）；③ **被不透明转发**（本轮）。
+   第 ③ 类最隐蔽 —— 对象名在二进制里、**字段名不在**，只看字段名会得出「无消费方」的错结论。
+   ⇒ 判据要问「**这个字符串会以什么形态跨过边界**」，而不是只搜一次名字。
+2. **默认值必须从代码的比较里读，不能从「界面看起来」猜** ——
+   本轮差一点把 `openExportLocation` 判成「默认关」（因为「通用导出设置」页里默认不勾）；
+   真正决定行为的是 `ae(r.X, a.X, l.X)` 这个**首个已定义者优先**，而 schema 片段给的是 `!0`
+   ⇒ **默认是开**。若按「通用页看起来不勾」下结论，就会把一个**默认行为偏离**判成 `equivalent`（**漏报缺口**）。
+3. **「同一个键在上游的两处默认不一致」是合法发现** —— 不要为了给出一个干净结论而选一处当真相；
+   如实记录两处，并说明**哪一处决定行为**（本轮：schema 片段经 `ae()` 生效）。
+4. **扫描面的边界要作为 canary 钉住** —— 「`consumer: native` 但键名出现在行为文件里」这条判据，
+   一旦有人把面板加进扫描面，就会从「5 项」退化成「21 项全要求」而**看起来仍然在工作**。
+   ⇒ canary 里专门加一向：**扫描面含面板时必须是「全要求」** —— 断言退化本身，而不是假装它不会发生。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

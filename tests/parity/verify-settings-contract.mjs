@@ -1134,6 +1134,18 @@ if (cssLayerAnchor === undefined) {
           }
           // `internal` 只在**确实改名**时才有意义
           if (e.internal !== undefined && e.internal === e.key) bad.push(`${e.key}(internal 与 key 相同 ⇒ 不该写)`);
+          // `pendingRef`（待裁决载体）：形态 + **对应的 ADR 文件必须真实存在**
+          // （2026-10-07，§4.130：新增 `openExportLocation` 的默认行为偏离须有 ADR 载体）
+          // 分工：本处只做**存在性**（ADR 的状态是否为 Proposed 由 `verify-release-gate.mjs` 负责）。
+          if (e.pendingRef !== undefined) {
+            const m = /^(ADR-\d{4})(?:\s+Q\d+)?$/.exec(String(e.pendingRef).trim());
+            if (m === null) {
+              bad.push(`${e.key}(pendingRef=${e.pendingRef} 形态非法：应为 "ADR-0034" 或 "ADR-0034 Q11")`);
+            } else if (!existsSync(resolve(root, 'docs/adr')) || !readdirSync(resolve(root, 'docs/adr'))
+              .some((f) => f.startsWith(m[1] + '-'))) {
+              bad.push(`${e.key}(pendingRef=${e.pendingRef} 指向的 ADR 文件不存在：docs/adr/${m[1]}-*.md)`);
+            }
+          }
           for (const id of e.mellow ?? []) {
             if (!knownSettingIds.has(id)) bad.push(`${e.key}→${id}(设置 id 不存在)`);
           }
@@ -1148,15 +1160,16 @@ if (cssLayerAnchor === undefined) {
         }
         // **棘轮**（存量欠债只能下降）：基线 = 每轮结清后的实测值。
         // 防的是「把没查的项改标成 unverified / unknown 来绕开工作」——那会让欠债**回升**。
-        // 收紧记录：`status=unverified` 14(§4.126) → 13(§4.127) → 10(§4.128) → **3**(§4.129)。
+        // 收紧记录：`status=unverified` 14(§4.126) → 13(§4.127) → 10(§4.128) → 3(§4.129) → **1**(§4.130)；
+        //          `consumer=unknown` 7(§4.128) → **2**(§4.130)。
         const statusUnverified = regEntries.filter((e) => e.status === 'unverified');
         const consumerUnknown = regEntries.filter((e) => e.consumer === 'unknown');
-        if (statusUnverified.length > 3) {
-          fail(`面板独有键 status=unverified 回升到 ${statusUnverified.length}（棘轮上限 3，2026-10-07 §4.129 基线）`
+        if (statusUnverified.length > 1) {
+          fail(`面板独有键 status=unverified 回升到 ${statusUnverified.length}（棘轮上限 1，2026-10-07 §4.130 基线）`
             + `：${statusUnverified.map((e) => e.key).join(', ')} —— 存量欠债只能下降`);
         }
-        if (consumerUnknown.length > 7) {
-          fail(`面板独有键 consumer=unknown 回升到 ${consumerUnknown.length}（棘轮上限 7，2026-10-07 基线）`
+        if (consumerUnknown.length > 2) {
+          fail(`面板独有键 consumer=unknown 回升到 ${consumerUnknown.length}（棘轮上限 2，2026-10-07 §4.130 基线）`
             + `：${consumerUnknown.map((e) => e.key).join(', ')} —— 存量欠债只能下降`);
         }
         // canary：四向（重复键 / 非法状态 / 不存在的设置 id / equivalent 无落点）

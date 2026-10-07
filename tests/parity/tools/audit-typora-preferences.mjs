@@ -405,6 +405,42 @@ if (badIds.length > 0) {
         badAnchor.push(`${e.key}(internal 与 key 相同 ⇒ 不该写)`);
       }
     }
+    // ── `consumer: native` 但键名出现在**行为文件**里 ⇒ 必须解释「为什么不是 js」（2026-10-07，§4.130）──
+    // 【为什么】这正是 §4.128 那类错的**残留风险面**：键名在行为文件里出现，却登记为 native。
+    //   出现的原因只有三类：① 只是 **`putSetting`（写）**；② 命中的是**同名异物**（如 `navigator.userLanguage`）；
+    //   ③ 持久化由**原生不透明转发**（如 `export.general.*`）。三类都必须写下来，否则下一个人会重新判一遍。
+    // ⚠️ **扫描面必须排除面板**（`Preferences.*.js`）—— **面板含每一个键**，含它则本判据会对 21 项全要求 note
+    //   （那就是 §4.128 的「对全体恒真」）；排除后实测只有 **5 项**。
+    const behaviourSide = readFileSync(mainJsPath(), 'utf8') + '\n' + readFileSync(frameJsPath(), 'utf8');
+    const nativeWithoutNote = (reg.entries ?? [])
+      .filter((e) => e.consumer === 'native' && behaviourSide.includes(e.key)
+        && !(typeof e.consumerNote === 'string' && e.consumerNote.trim() !== ''))
+      .map((e) => e.key);
+    if (nativeWithoutNote.length > 0) {
+      errors.push(`consumer=native 但键名出现在行为文件（main.js/frame.js）且没写 consumerNote（${nativeWithoutNote.length}）：`
+        + `${nativeWithoutNote.join(', ')} —— 出现只能是「只写不读 / 同名异物 / 原生不透明转发」三类，必须写明是哪一类`);
+    }
+    // canary：三向 + **扫描面边界**（面板必须被排除）
+    {
+      const judgeNative = (list, side) => list
+        .filter((e) => e.consumer === 'native' && side.includes(e.key)
+          && !(typeof e.consumerNote === 'string' && e.consumerNote.trim() !== ''))
+        .map((e) => e.key);
+      if (judgeNative([{ key: 'a', consumer: 'native', consumerNote: 'x' }], 'a').length !== 0) {
+        errors.push('native-note canary 过宽：有 note 的项被误报');
+      }
+      if (judgeNative([{ key: 'a', consumer: 'native' }], 'a').join() !== 'a') {
+        errors.push('native-note canary 失效：缺 note 的 native 项未被检出');
+      }
+      if (judgeNative([{ key: 'a', consumer: 'js' }], 'a').length !== 0) {
+        errors.push('native-note canary 失效：js 项被误计');
+      }
+      // ⚠️ 边界：面板含每一个键 ⇒ 若扫描面含面板，**任何** native 项都会被要求 note（判据退化成噪声）
+      const panelOnlySide = 'keyName:"a"';
+      if (judgeNative([{ key: 'a', consumer: 'native' }], panelOnlySide).length !== 1) {
+        errors.push('native-note canary 失效：扫描面含面板时未退化为「全要求」—— 说明边界假设不成立，需重查');
+      }
+    }
     if (badConsumer.length > 0) {
       errors.push(`面板独有键 consumer 取值非法（${badConsumer.length}）：${badConsumer.join(', ')}`
         + ' —— 只允许 js / native / unknown');

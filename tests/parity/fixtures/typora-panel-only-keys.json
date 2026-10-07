@@ -71,14 +71,16 @@
       "consumer": "native",
       "status": "equivalent",
       "note": "Mellow 大纲支持折叠（`OutlineList` 的 `collapsed` / `onToggle`），**恒可用**、无开关",
-      "anchor": "can_collapse_outline_panel"
+      "anchor": "can_collapse_outline_panel",
+      "consumerNote": "键名确实出现在 `main.js`（×2）与 `frame.js`（×2），但**两处都是 `JSBridge.putSetting(\"can_collapse_outline_panel\", …)`（写）**，没有任何**读**点 ⇒ 判为 native 消费。**同名异物说明**：`main.js` 里那段是**面板的大纲代码被一并打包**（与 frame.js 同源），不是行为侧读取。另注：真正的行为开关是 `File.setCanCollapsePinnedOutline(bool)`（**改名**），它由该键驱动。"
     },
     {
       "key": "customExportPath",
       "consumer": "native",
       "status": "gap",
       "note": "**是 `exportFolder` 的从属字段**：仅在 `\"custom\" === exportFolder` 时渲染（`… : \"custom\"===n.exportFolder ? <ee keyName:\"customExportPath\"> : null`），文本输入 + 文件夹选择器（`defaultValue: window.Setting.documentPath()`，hint \"Select custom folder\"）。⇒ 与 `exportFolder` 同一件事 ⇒ 同状态 gap（Mellow 无导出目录偏好）。",
-      "anchor": "customExportPath"
+      "anchor": "customExportPath",
+      "consumerNote": "键名出现在 `main.js`（×3）/`frame.js`（×3），但读点是 **导出配置对象**的字段 `t.customExportPath`（`\"custom\"===t.exportFolder?(t.customExportPath=t.customExportPath||window._options.documentsPath, …)`），而该对象的持久化来源 `export.general` **只在面板出现**（原生不透明转发）⇒ 判为 native 消费。"
     },
     {
       "key": "darkTheme",
@@ -105,7 +107,8 @@
       "consumer": "native",
       "status": "gap",
       "note": "面板组标题 **\"Default Folder for Exported File\"**、`options:{\"\":\"Auto\", same:\"Same folder with current file\", custom:\"Custom location\"}`、`value: n.exportFolder || \"\"` ⇒ **默认 `\"\"` = Auto**。消费点（main.js 导出路径计算）：`\"same\"===t.exportFolder ? <当前文件所在目录> : \"custom\"===t.exportFolder ? <customExportPath> : File.mountFolder_ ? … : …`⇒ **Auto 的语义 = 当前文件所在目录**（`u()` = `File.isMac ? File.bundle.currentFolderPath : …`）。Mellow 侧：**无该偏好**（导出走保存对话框，只给 `defaultName`，不给 `defaultPath`）⇒ 既缺「默认目录」选项，**Auto 的默认落点也不同**（Typora 建议当前文件目录 / Mellow 由系统对话框决定）。记为 gap。",
-      "anchor": "exportFolder"
+      "anchor": "exportFolder",
+      "consumerNote": "同 `customExportPath`：读点是**导出配置对象**字段 `t.exportFolder`（`\"same\"===t.exportFolder ? … : \"custom\"===t.exportFolder ? …`），持久化来源 `export.general` 只在面板出现 ⇒ 判为 native 消费。"
     },
     {
       "key": "framelessWindow",
@@ -180,19 +183,20 @@
     },
     {
       "key": "openExportFile",
-      "consumer": "unknown",
-      "status": "unverified",
-      "note": "面板 label **\"Open exported file\"**，属 **\"After Export\"** 组；消费点（main.js）：`n.openExportFile && (JSBridge.openFile(t), …)`。⚠️ **默认值未确定**：面板用「首个已定义者优先」（`ae(r.openExportFile, a.openExportFile, l.openExportFile)`，分别来自导出组配置 / schema / 内置默认），其内置默认不在 `DEFAULT_OPTIONS` 里 ⇒ **本机现有资源判不了默认**。**要核实**：内置导出 schema 里 `openExportFile` 的默认，以及 Mellow 导出完成后是否有「打开文件」入口。",
-      "anchor": "—",
+      "consumer": "js",
+      "status": "equivalent",
+      "note": "面板 label **\"Open exported file\"**（\"After Export\" 组）。【消费方已确定 = **js**】读点：`n.openExportFile && (JSBridge.openFile(t), …)`（main.js + frame.js 的**导出完成处理**函数，`n` = 导出配置对象）。⚠️ **为什么此前判成 unknown**：持久化形式是 `export.general.<field>` / `export.<group>.<field>`（面板 `te()` 写），而 `export.general` 在**全部 JS 文件里只有面板出现**（实测：全树仅 `Preferences.*.js` ×2）、**原生二进制里有它**⇒ 原生把整个对象**不透明转发**给 JS 导出流程（所以字段名**不会**作为原生字符串出现）—— 这解释了「按字段名搜二进制搜不到」。【默认 = 关】面板的勾选值是 `!!ae(r.X, a.X, l.X)`（组配置 / `export.general` / schema，**首个已定义者优先**），而 `openExportFile` **不在任何 schema 里**（实测：面板里 `openExportFile:` 形式 0 处）⇒ 全新安装三处皆 undefined ⇒ `!!undefined` = false。Mellow 默认也不打开（导出完成只弹 toast + 记录 `mellow.export.last`）⇒ **默认行为一致**；缺的是该开关。",
+      "anchor": "n.openExportFile",
       "consumerNote": "消费方**未确定**。JS 树里只有 `n.openExportFile`（导出**配置对象**字段，与偏好键同名但**不能证明**来自偏好存储）；原生二进制无该字符串（实测 `strings -a Contents/MacOS/Typora` 精确行未命中）。"
     },
     {
       "key": "openExportLocation",
-      "consumer": "unknown",
-      "status": "unverified",
-      "note": "面板 label **\"Open exported file location\"**，属 **\"After Export\"** 组；消费点（main.js）：`n.openExportLocation && (JSBridge.showInFinder(t), …)`。⚠️ **默认值未确定**（同 `openExportFile`，走「首个已定义者优先」）。Mellow 侧**有底层能力**：命令 `file.revealInFinder`（`App.tsx`）。**要核实**：内置导出 schema 的默认，以及 Mellow 导出完成后是否调用 `revealInFinder`（当前导出完成只弹 toast + 记录 `mellow.export.last`）。",
-      "anchor": "—",
-      "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.openExportLocation` 是导出配置对象字段）。"
+      "consumer": "js",
+      "status": "gap",
+      "note": "面板 label **\"Open exported file location\"**（\"After Export\" 组）。【消费方 = **js**】读点：`n.openExportLocation && (JSBridge.showInFinder(t), …)`（同导出完成处理函数）。⚠️ **默认 = 开**（与 `openExportFile` 相反）：面板勾选值 `!!ae(r.X, a.X, l.X)`，而 **schema 里该字段是 `!0`** ——实测 `L={…, allowPerFileSetting:{…}, openExportLocation:!0}`（HTML 导出的 schema 片段）⇒ `ae(…)` 取到 `true` ⇒ **复选框默认勾选**⇒ **Typora 默认在导出完成后于 Finder 中显示导出件**。（另一处「通用导出设置」页用 `checked: !!n.openExportLocation`，`export.general` 未设时默认**不**勾 —— 上游两处默认并不一致，如实记录。）**Mellow 默认不做**（导出完成只弹 toast + 记录 `mellow.export.last`）⇒ **默认行为偏离** ⇒ 记为 gap。⚠️ **需裁决**：补齐该行为会**改变用户可见的默认行为**（导出后多弹一个 Finder 窗口），按本项目纪律不得静默改默认 ⇒ 已登记待裁决（候选：新增开关 + 默认是否对齐 Typora 的「开」）。Mellow 侧**有底层能力**：命令 `file.revealInFinder`（`App.tsx`）。 ⇒ **已登记待裁决：ADR-0034 Q11**（选项 A1 默认对齐 / A2 新增开关+默认关 / A3 维持+登记 D）。",
+      "anchor": "n.openExportLocation",
+      "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.openExportLocation` 是导出配置对象字段）。",
+      "pendingRef": "ADR-0034 Q11"
     },
     {
       "key": "pandocPath",
@@ -262,22 +266,23 @@
         "general.reopenLast"
       ],
       "note": "对应「启动时重新打开上次的文件」",
-      "anchor": "restoreWhenLaunch"
+      "anchor": "restoreWhenLaunch",
+      "consumerNote": "键名出现在 `main.js`（×2）/`frame.js`（×2），但**全部是 `JSBridge.putSetting(\"restoreWhenLaunch\", …)`（写）**，无读点 ⇒ 判为 native 消费。⚠️ 它与 `pinFolder` 是**成对写入**的（`putSetting(\"restoreWhenLaunch\",0), putSetting(\"pinFolder\",\"\")`），是「恢复上次文件夹」的持久化状态。"
     },
     {
       "key": "runCommand",
-      "consumer": "unknown",
+      "consumer": "js",
       "status": "not-applicable",
-      "note": "**D-AM**：Mellow 不提供任意命令执行入口（安全基调），有意不做",
-      "anchor": "—",
+      "note": "读点：`n.runCommand`（导出完成处理函数；`n.runCommandStr||\"\"`、`n.showOutput` 同族）。⚠️ **为什么此前判成 unknown**：同 `openExportFile` —— 持久化形式 `export.general.*` 由**原生不透明转发**，字段名不出现在二进制里。状态保持 `not-applicable`（**D-AM**：自定义导出命令属 Typora 特有，Mellow 有意不做）。",
+      "anchor": "n.runCommand",
       "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.runCommand` 是导出配置对象字段）。"
     },
     {
       "key": "runCommandStr",
-      "consumer": "unknown",
+      "consumer": "js",
       "status": "not-applicable",
-      "note": "同上（D-AM）",
-      "anchor": "—",
+      "note": "读点：`n.runCommandStr`（`F.processExportVariables(n.runCommandStr||\"\", {outputPath:t})` ⇒ 命令字符串模板）。同 `runCommand` 的消费方说明。状态保持 `not-applicable`（**D-AM**）。",
+      "anchor": "n.runCommandStr",
       "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.runCommandStr` 是导出配置对象字段）。"
     },
     {
@@ -292,10 +297,10 @@
     },
     {
       "key": "showOutput",
-      "consumer": "unknown",
+      "consumer": "js",
       "status": "not-applicable",
-      "note": "「显示命令输出」—— 依附于 `runCommand`（D-AM 不实现）",
-      "anchor": "—",
+      "note": "读点：`n.showOutput`（决定导出完成对话框是弹「Export Success!」还是「Show command output」的详细面板）。同 `runCommand` 的消费方说明。状态保持 `not-applicable`（**D-AM**）。",
+      "anchor": "n.showOutput",
       "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.showOutput` 是导出配置对象字段）。"
     },
     {
@@ -364,7 +369,8 @@
         "general.language"
       ],
       "note": "对应界面语言（zh-CN / en-US / system）",
-      "anchor": "userLanguage"
+      "anchor": "userLanguage",
+      "consumerNote": "键名出现在 `main.js`（×1）/`frame.js`（×1），但那是 **`navigator.userLanguage`（浏览器 API）**，与 Typora 的 `userLanguage` 偏好**同名异物** ⇒ 假阳性。该偏好的消费在原生侧（二进制含该字符串）。"
     },
     {
       "key": "save_file_on_switch",

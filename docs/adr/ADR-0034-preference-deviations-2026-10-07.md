@@ -244,6 +244,34 @@ Mellow 的 `app-core/wordCount.ts` **固定同时计算并展示** words / chars
 
 ---
 
+## Q11 — 导出完成后是否**默认在文件管理器中显示导出件**（`openExportLocation`；默认行为偏离）？
+
+**事实**（一手证据，2026-10-07 审计 §4.130）：Typora 面板键 `openExportLocation`
+（label **"Open exported file location"**，"After Export" 组）的勾选值是
+`!!ae(r.X, a.X, l.X)`（组配置 / `export.general` / **schema**，**首个已定义者优先**），
+而 **schema 里该字段是 `!0`** —— 实测
+`L={appendHead:{…}, appendBody:{…}, allowPerFileSetting:{…}, openExportLocation:!0}`（HTML 导出的 schema 片段）
+⇒ `ae(…)` 取到 `true` ⇒ **全新安装下该复选框默认勾选**
+⇒ **Typora 默认在导出完成后 `JSBridge.showInFinder(t)`（在 Finder/资源管理器中显示导出件）**。
+⚠️ **上游两处默认并不一致**，如实记录：「通用导出设置」页用 `checked: !!n.openExportLocation`
+（`export.general` 未设 ⇒ 默认**不**勾），而 HTML 导出的 schema 片段给的是 `!0`。
+Mellow 当前：导出完成只弹 toast + 记录 `mellow.export.last`，**不做任何打开 / 定位** ⇒ **默认行为偏离**。
+
+**选项**
+- **A1 对齐 Typora：默认「显示导出件」** —— 但会**改变用户可见的默认行为**（每次导出后多弹一个文件管理器窗口）。
+- **A2 新增开关 + 默认关**（= Mellow 现状）—— 补齐能力、默认不变；但默认值与 Typora 不同，需登记一条 `D-`。
+- **A3 维持现状 + 登记 `D-`** —— 只登记偏离，不补能力。
+
+**建议：A2** —— 理由：Mellow **已有底层能力**（命令 `file.revealInFinder`，`App.tsx`），补开关成本极低；
+而**默认对齐 Typora 会改变所有用户的导出后体验**（属行为变更，按本项目纪律不得静默改默认）。
+⇒ 若采纳 A2，需**同时**登记一条默认值偏离（`D-`+编号）。
+
+**关联**：同族的 `openExportFile`（label "Open exported file"）**默认是关**（它**不在任何 schema 里**，
+实测面板里 `openExportFile:` 形式 0 处 ⇒ 三处皆 undefined ⇒ `!!undefined` = false）⇒ 该项**默认行为一致**，
+只缺开关，**不需要裁决**（登记表已记 `equivalent`）。
+
+---
+
 ## 机器可读化（**本 ADR 顺带补上的那一半**）
 
 判据分两处（**形状** vs **解析**，各自只做一件事）：
@@ -265,7 +293,12 @@ Mellow 的 `app-core/wordCount.ts` **固定同时计算并展示** words / chars
 
 ## 裁决
 
-**待裁决（9 问：Q1–Q8、Q10；**Q9 已由取证排除**）。** 裁决后请：
+**待裁决（10 问：Q1–Q8、Q10、Q11；Q9 已由取证排除）。** 裁决后请：
+
+> ⚠️ **Q11 的登记面不同**：Q1–Q10 来自**偏好矩阵**（`typora-preferences-matrix.json`，范围 = `frame.js` 的 `DEFAULT_OPTIONS`）；
+> **Q11 来自「面板独有面」登记处**（`typora-panel-only-keys.json`，范围 = 面板 `keyName` − 矩阵键）。
+> ⇒ 若采纳 Q11 的 A2（新增开关 + 默认关），需**同时**登记一条默认值偏离（`D-`+编号），
+> 并更新该登记表里 `openExportLocation` 的 `status`/`pendingRef`（当前 `gap` + `pendingRef: ADR-0034 Q11`）。
 
 ① 更新本 ADR 的 `Status` 为 `Accepted` 并**逐问**写入结论；
 ② 按结论更新矩阵：`deviation.kind` 改 `deliberate`（并去掉 `pendingRef`）/ 或改默认值；
