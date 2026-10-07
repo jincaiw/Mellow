@@ -771,6 +771,23 @@ pub async fn path_exists(path: String) -> bool {
     Path::new(&path).exists()
 }
 
+/// 路径类型（2026-10-07，审计 §4.134）：拖入决策需要区分「目录 / 文件 / 不存在」。
+///
+/// Typora 的 `File.onDropFile` 用 `lstat(p).isDirectory()` 判第一层分支，而
+/// `path_exists()` 只回答「存在吗」—— **一个存在的目录与一个存在的文件在那里无法区分**。
+///
+/// 用 `symlink_metadata`（**不跟随符号链接**）与 Typora 的 `fs.lstat` 同语义；
+/// 出错一律归 `"missing"`（Typora 的 `lstat` 回调在出错时 `isDirectory` 为假 ⇒ 走文件分支，
+/// 调用方把 `missing` 也当文件分支即可 —— 见 `dropAction.ts`）。
+#[tauri::command]
+pub async fn path_kind(path: String) -> String {
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.is_dir() => "dir".to_string(),
+        Ok(_) => "file".to_string(),
+        Err(_) => "missing".to_string(),
+    }
+}
+
 // ─────────────────────────── Image 文件操作（spec image-workflow §6/§7 + PRD §57/§58） ───────────────────────────
 
 /// 目录选择器（单图 Move 目标 / 打开文件夹）；取消 → null

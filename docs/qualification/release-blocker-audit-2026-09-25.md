@@ -8694,6 +8694,109 @@ u = function () {                            // ③ 的 u()
 
 
 
+## 4.134 实装「拖入文件/文件夹」整组（3 项）：决策表**逐字转写成纯函数 + 39 例单测**（2026-10-07）
+
+### 一、动因
+
+§4.124 在那一面**取样一次**就找到了「拖入文件/文件夹」整组未实现，并留下决策表摘要；
+§4.126 把它登记成 3 条 `gap`（面板独有面里**唯一的一整组**）。
+本轮把它实装掉。
+
+### 二、一手证据：**逐字读出** `File.onDropFile`（不是摘要）
+
+```js
+onDropFile: async function (paths, ev) {
+  var isTyporaUrl = ev.types.indexOf("typora.url") > -1;      // 内部拖拽（大纲/标题）
+  var p = paths[0];                                            // ⚠️ 只看**第一个**判分支
+  function insertLink(path) { … if (!inSourceMode) insertURL(path); }   // source mode 下不插
+  function openInTypora(path) { … }
+  if (await isDirectory(p)) {                                  // ① 目录
+    if (supportTextBundle && /\.textbundle$/i.exec(p))
+      "link" === actionWhenDropFile ? insertLink(p) : openInTypora(p);       // ① textbundle 走**文件**开关
+    else if ("link" === actionWhenDropFolder) insertLink(p);                 // ②a
+    else if (File.bundle.filePath || File.getMountFolder()) openFolder(p);   // ②b
+    else switchFolder(p);                                                    // ②c
+  } else {
+    var ext = (p.match(/(?:^|\.)([^.]+)$/)[1] || "").toLowerCase();
+    if (~["latex","ltx","tex","wiki","dokuwiki","docx","rst","rest","org","textile","opml"].indexOf(ext))
+      return "link" === actionWhenDropImport ? insertLink(p) : doImportFile(p);   // ③
+    if (~File.SupportedFiles.indexOf(ext))
+      return isTyporaUrl ? insertLink(p)
+           : ("link" === actionWhenDropFile ? insertLink(p) : openInTypora(p));   // ④
+    if (!isKeyWindow()) return false;                                            // ⑤a
+    for (var i = 0; i < paths.length; i++) { i > 0 ? insertParagraph() : void 0; insertLink(paths[i]); }  // ⑤b
+  }
+}
+```
+
+面板侧（同一次取证，**同一个 `createElement` 内**）：
+组标题 **"When drop file / folder into Typora"**，三行是 `w.v rows` 表格：
+`["When drop folder", {"" :"Open in Typora", link:"Insert Folder Link"}]`、
+`["When drop markdown file", {"" :"Open in Typora", link:"Insert File Link"}]`、
+`["When drop files that can be imported", {"" :"Import File", link:"Insert File Link"}]`，
+`value: this.getValue(<key>)` ⇒ **默认都是 `""`** ⇒ **打开 / 打开 / 导入**。
+
+### 三、处置
+
+1. **决策表落成纯函数**（`packages/app-core/src/dropAction.ts`）：`decideDropAction(ctx, prefs)`
+   返回 `insert-link` / `open-document` / `open-folder` / `import-document` / `none`；
+   常量 `IMPORTABLE_DROP_EXTS`（逐字）、`SUPPORTED_DOC_DROP_EXTS`、`dropExtOf()`。
+   ⇒ **单测 39 例覆盖全部行**（`packages/app-core/test/dropAction.test.ts`），含
+   「目录分支不受 file/import 开关影响」「`isKeyWindow=false` **只**影响第 ⑤ 行」「第 ⑤ 行不受任何开关影响」等**边界**。
+2. **三档设置**：`files.dropFolderAction` / `files.dropFileAction` / `files.dropImportAction`
+   （**默认 `open` / `open` / `import`**，与 Typora 一致）；文案取 Typora 官方原文（zh/en 各 8 键）。
+3. **Rust 新增 `path_kind`**（`"dir"` / `"file"` / `"missing"`）：`path_exists()` 只回答「存在吗」，
+   **无法区分目录与文件**；用 `symlink_metadata`（**不跟随符号链接**）与 Typora 的 `fs.lstat` 同语义。
+4. **`App.tsx` 分派**（`handleDroppedPaths`）：`insert-link` ⇒ 注入 iframe（**沿用既有机制**：
+   引擎对图片走图片管线、其余插为文件链接）；`open-folder` ⇒ `loadFolderRoot`；
+   `open-document` ⇒ `openPathInTab`（自带未保存确认）；`import-document` ⇒ `importFromPath`。
+   - 为此把 `handleImportDocument` 的**核心抽成 `importFromPath(input)`** —— 菜单入口先弹选文件，
+     拖入入口**已经有路径** ⇒ 两者共用，避免两套逻辑分叉。
+   - ⚠️ 顺手修了一处**既有小瑕疵**：`importFromPath` 现在**先**做未保存确认（此前要等到末尾
+     `openPathInTab` 才确认 ⇒ 用户取消时导入的 `.md` **已经落盘**）。两个入口一起修好。
+   - Tauri 的 drag-drop 监听在**挂载 effect**里注册一次，而决策所需的函数在本文件**更靠后**才定义
+     ⇒ 用 `dropHandlerRef` 转一层（避免时序问题，也避免撑爆 effect 依赖数组）。
+
+### 四、护栏（注入验证 3/3）
+
+`verify-settings-contract.mjs` 新增：三档设置必须存在且**默认 open/open/import**、选项值正确、`App.tsx` 读取；
+决策表文件与其单测**必须存在**；分派器**必须接全 5 种动作**；**分派器必须真的挂到 `dropHandlerRef`**
+（否则它是一段**有单测但无人调用的死代码**），且 drag-drop 监听必须调用它。
+
+**注入验证 3/3**：① 默认值改成 `link` ⇒ 红；② 分派器漏掉 `open-folder` 分支 ⇒ 红；
+③ 把挂载那行注释掉 ⇒ 红（报「拖入分派器是死代码」）。全部还原后通过。
+
+### 五、如实声明的差异与未验证项
+
+| # | 差异 | 说明 |
+|---|---|---|
+| ① | **`.textbundle` 不生效** | Mellow 不支持 textbundle ⇒ 决策表第 ① 行不生效，`.textbundle` 目录按普通目录处理（`supportsTextBundle: false`） |
+| ② | **`openFolder`/`switchFolder` 合并** | Typora 是两个动作（打开 / 替换工作区）；Mellow 是 SDI、工作区只有一个 ⇒ 合并为 `open-folder` |
+| ③ | **「受支持文档」收窄** | Typora 用 `File.SupportedFiles`（含代码/纯文本）；Mellow 只把 **Markdown 家族**（`md/markdown/mdown/mkd`）当文档，其余文本文件落第 ⑤ 行 |
+| ④ | **`typora.url` / source mode 不建模** | 属调用方职责（Mellow 无内部拖拽；source mode 由引擎的插入路径处理） |
+| ⑤ | **多文件** | 与 Typora 一致：只用**第一个**判分支；`insert-link` 时把全部路径交给引擎 |
+
+⚠️ **接线未经真机验证**：拖放事件需要 GUI（本机不可验）⇒ 决策表由**单测**锁、分派器由**静态判据**锁，
+**「真机拖一次」仍待人工**。这一点已写进登记表，不得读作「已端到端验证」。
+
+### 六、教训
+
+1. **一整组「默认行为」比单个开关更值得优先做** —— §4.124 的判断在这里兑现：
+   拖入组是 3 条 `gap`、涉及**四类落点**（打开文件夹 / 打开文档 / 导入 / 插成 Markdown），
+   做成一条决策表 + 单测，一次覆盖 3 条。
+2. **把「事件回调里的分支链」抽成纯函数** —— 否则只能靠**真机拖拽**来验（本机不可验）。
+   抽出后 39 例单测把**每一行**都钉住，包括「`isKeyWindow=false` 只影响第 ⑤ 行」这类**反直觉边界**。
+3. **逐字转写要连「没写的部分」一起写下来** —— 本轮在文件头列了 5 条**刻意不覆盖**的 Typora 细节
+   （`typora.url` / source mode / 多文件展开 / openFolder 与 switchFolder / 只读态检查），
+   否则下一个人会以为「决策表 = Typora 的全部行为」。
+4. **canary 的样本必须与判据经过同一套预处理** —— 实测踩到：负样本写
+   `'// dropHandlerRef.current = …'` 会**命中**（子串匹配），从而误报「canary 失效」；
+   而真判据不会（`read()` 已剥整行注释）。⇒ **canary 不只是「共用谓词」，还要「共用输入管道」**。
+5. **抽出共用函数时顺手修掉它带来的既有瑕疵** —— `importFromPath` 的「先确认再落盘」顺带修好了**菜单入口**
+   的同一问题；只修拖入入口会让两个入口行为分叉。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

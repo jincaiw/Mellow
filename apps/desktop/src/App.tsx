@@ -46,6 +46,8 @@ import {
   renderReaderHtml,
   countWords,
   formatWordCountStats,
+  decideDropAction,
+  dropExtOf,
   // V7-W6（G7-FEAT-12）：Typora「保存时在文末添加空行」（preferFinalNewline，默认关）
   applyFinalNewline,
   pushRecentFile,
@@ -375,6 +377,11 @@ export default function App() {
   const revisionRef = useRef(0);
   // preserve metadata：打开时记录编码/EOL，保存时原样传回
   const docMetaRef = useRef<DocMeta>({ encoding: 'utf-8', eol: '\n' });
+  /** 拖入路径的分派入口（2026-10-07，审计 §4.134）。
+   *  Tauri 的 drag-drop 监听在**挂载 effect**里注册一次，而决策所需的
+   *  `openPathInTab` / `loadFolderRoot` / `importFromPath` 在本文件**更靠后**才定义
+   *  ⇒ 用 ref 转一层，避免「先注册、后定义」的时序问题（也避免把 effect 的依赖数组撑爆）。 */
+  const dropHandlerRef = useRef<((paths: string[]) => void) | null>(null);
   /** 新建文档的默认行尾（设置 `files.newFileLineEnding`；Typora 的 `line_ending_crlf`，仅非 macOS 显示）。
    *  默认 `'lf'` ⇒ 与 Mellow 此前硬编码的 `'\n'` **完全一致** ⇒ **默认行为不变**。
    *  ⚠️ 只影响**新建**文档；打开已有文件时行尾来自文件自身（`detectEol`），不经过本函数。
@@ -3737,18 +3744,16 @@ export default function App() {
       onRenamed: async (newPath) => { await watchDocument(newPath); },
     });
 
-    // Tauri drag-drop：桌面宿主把拖入文件路径注入 iframe（engine image input 消费）
+    // Tauri drag-drop：桌面宿主把拖入文件路径交给**决策分派**（`dropHandlerRef`，审计 §4.134）。
+    // 此前是把路径直接注入 iframe（= 恒走「插链接」），现改为先按 Typora 的决策表分派；
+    // `insert-link` 那一支仍然注入 iframe（引擎对图片走图片管线、其余插为文件链接）。
     let unlistenDragDrop: (() => void) | undefined;
     if ('__TAURI_INTERNALS__' in window) {
       import('@tauri-apps/api/webview')
         .then(({ getCurrentWebview }) => {
           getCurrentWebview().onDragDropEvent((event) => {
             if (event.payload.type === 'drop') {
-              const frame = containerRef.current?.querySelector('iframe');
-              const win = frame?.contentWindow as (Window & { __MELLOW_DROP_PATHS__?: string[] }) | null;
-              if (win) {
-                win.__MELLOW_DROP_PATHS__ = event.payload.paths;
-              }
+              dropHandlerRef.current?.(event.payload.paths);
             }
           }).then((unlisten) => { unlistenDragDrop = unlisten; });
         })
@@ -4201,18 +4206,20 @@ export default function App() {
   // D2：导入（Typora File→Import）：pandoc 将 docx/odt/rtf/epub/html/tex 等
   // 转为 Markdown 落盘，并经 openPathInTab 在当前窗口打开（B1 SDI：替换语义）。
   // 二进制输入不经文本读取，直接传路径给 pandoc。
-  const handleImportDocument = useCallback(async () => {
+  //
+  // `importFromPath(input)` 是**按路径导入**的核心（2026-10-07，审计 §4.134 抽出）：
+  // 菜单入口先弹「选择输入文件」，而**拖入**入口已经有路径了 ⇒ 两者共用本函数，避免两套逻辑分叉。
+  const importFromPath = useCallback(async (input: string) => {
     if (!isTauri()) return;
+    // 先做未保存确认 —— 导入会**落盘**一个新的 .md；若等到末尾 `openPathInTab` 才确认，
+    // 用户取消后文件已经写出来了（拖入入口与菜单入口都走这里 ⇒ 两处一起修好）。
+    if (!(await guardSingleDocument())) return;
     try {
       const available = await invoke<boolean>('pandoc_available', { pandocPath: pandocPathSetting() });
       if (!available) {
         setToast({ message: t('import.needPandoc') });
         return;
       }
-      const input = await invoke<string | null>('pick_open_path', {
-        filters: ['docx', 'odt', 'rtf', 'epub', 'html', 'htm', 'tex', 'latex', 'rst', 'textile', 'wiki', 'opml'],
-      });
-      if (input === null) return;
       const base = input.split(/[\\/]/).pop() ?? 'imported';
       const output = await invoke<string | null>('pick_save_path', {
         defaultName: `${base.replace(/\.[^.]*$/, '')}.md`,
@@ -4227,7 +4234,64 @@ export default function App() {
     } catch (err) {
       setToast({ message: `${t('import.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [openPathInTab, t]);
+  }, [openPathInTab, saveDialogDir, t]);
+
+  const handleImportDocument = useCallback(async () => {
+    if (!isTauri()) return;
+    const input = await invoke<string | null>('pick_open_path', {
+      filters: ['docx', 'odt', 'rtf', 'epub', 'html', 'htm', 'tex', 'latex', 'rst', 'textile', 'wiki', 'opml'],
+    });
+    if (input === null) return;
+    await importFromPath(input);
+  }, [importFromPath]);
+
+  /** 读「拖入」三档设置（值域见 `packages/app-core/src/dropAction.ts` 的 `DropPreferences`）。 */
+  const readDropMode = useCallback((id: string, fallback: string): string => {
+    const def = settingById(id);
+    if (def === undefined) return fallback;
+    const v = String(readSetting(def));
+    return v === '' ? fallback : v;
+  }, []);
+
+  /** 把路径交给引擎插入（图片 → 图片管线；其余 → 文件链接）。= Typora 第 ⑤ 行的落点。 */
+  const injectDropPaths = useCallback((paths: string[]) => {
+    const frame = containerRef.current?.querySelector('iframe');
+    const win = frame?.contentWindow as (Window & { __MELLOW_DROP_PATHS__?: string[] }) | null;
+    if (win) win.__MELLOW_DROP_PATHS__ = paths;
+  }, []);
+
+  /** 拖入文件/文件夹的**决策分派**（2026-10-07，审计 §4.134）。
+   *
+   *  决策表 = `decideDropAction()`（`packages/app-core/src/dropAction.ts`，**逐字转写**
+   *  Typora 的 `File.onDropFile`，单测覆盖全部行）；本函数只做**分派**与副作用。
+   *  ⚠️ 与 Typora 一致：只用**第一个**路径判分支；`insert-link` 时把**全部**路径交给引擎。
+   *  ⚠️ `path_kind` 返回 `missing` 时按**文件**分支处理 —— 与 Typora 的 `lstat` 失败同（`isDirectory()` 为假）。 */
+  const handleDroppedPaths = useCallback(async (paths: string[]) => {
+    const first = paths[0];
+    if (first === undefined) return;
+    const kind = await invoke<string>('path_kind', { path: first });
+    const action = decideDropAction(
+      {
+        kind: kind === 'dir' ? 'directory' : 'file',
+        ext: dropExtOf(first),
+        isKeyWindow: true,          // SDI：拖放必然落在当前（唯一）窗口
+        isTextBundle: /\.textbundle$/i.test(first),
+        supportsTextBundle: false,  // Mellow 不支持 textbundle ⇒ Typora 第 ① 行不生效（见登记表）
+      },
+      {
+        file: readDropMode('files.dropFileAction', 'open') as 'open' | 'link',
+        folder: readDropMode('files.dropFolderAction', 'open') as 'open' | 'link',
+        import: readDropMode('files.dropImportAction', 'import') as 'import' | 'link',
+      },
+    );
+    if (action === 'none') return;
+    if (action === 'insert-link') { injectDropPaths(paths); return; }
+    if (action === 'open-folder') { loadFolderRoot(first); return; }
+    // `openPathInTab` 自带未保存确认；`importFromPath` 亦然
+    if (action === 'open-document') { await openPathInTab(first); return; }
+    await importFromPath(first);
+  }, [importFromPath, injectDropPaths, loadFolderRoot, openPathInTab, readDropMode]);
+  dropHandlerRef.current = handleDroppedPaths;
 
   /** Wikilink [[name]] → 同目录 name.md（无当前路径时相对 name.md）；不存在则提示 */
   const openWikilink = useCallback(async (name: string) => {

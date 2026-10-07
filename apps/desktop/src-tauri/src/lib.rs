@@ -234,6 +234,7 @@ pub fn run() {
             fs::write_binary,
             fs::read_binary,
             fs::path_exists,
+    fs::path_kind,
             fs::move_file,
             fs::pick_folder,
             fs::trash,

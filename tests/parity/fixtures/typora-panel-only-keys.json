@@ -14,23 +14,32 @@
     {
       "key": "actionWhenDropFile",
       "consumer": "js",
-      "status": "gap",
-      "note": "**真实缺口**（审计 §4.124）：Typora 拖入受支持的文档 ⇒ 默认**打开**（`'link' === File.option.actionWhenDropFile ? 插链接 : 打开`，缺省即打开）；Mellow 拖放只把路径喂给图片管线 ⇒ 什么都不发生",
-      "anchor": "File.option.actionWhenDropFile"
+      "status": "equivalent",
+      "note": "面板 label（表格行）**\"When drop markdown file\"**、`options:{\"\":\"Open in Typora\", link:\"Insert File Link\"}`、**默认 `\"\"` = 在 Mellow 中打开**。 ✅ **已实现（2026-10-07，审计 §4.134）**：面板组 **\"When drop file / folder into Typora\"** 的三行（`[\"When drop folder\", options:{\"\":\"Open in Typora\", link:\"Insert Folder Link\"}]` 等）逐字转写成**纯函数** `packages/app-core/src/dropAction.ts` 的 `decideDropAction()`（单测 **39 例**覆盖全部行），并在 `App.tsx` 的 `handleDroppedPaths` 里分派（5 种动作全接）。三档设置 `files.dropFolderAction` / `files.dropFileAction` / `files.dropImportAction`（**默认 open / open / import**，与 Typora 一致）。⚠️ **与 Typora 的差异（如实声明）**：① Mellow **不支持 `.textbundle`** ⇒ 决策表第 ① 行（textbundle 走**文件**开关）**不生效**，`.textbundle` 目录按普通目录处理（`supportsTextBundle: false`）；② Typora 第 ② 行的 `openFolder` 与 `switchFolder` 是**两个动作**，Mellow 是 SDI、工作区只有一个 ⇒ 合并为 `open-folder`；③ 第 ④ 行的「受支持文档」Typora 用 `File.SupportedFiles`（含代码/纯文本），Mellow 只把 **Markdown 家族**（`md/markdown/mdown/mkd`）当文档、其余文本文件落第 ⑤ 行「插成链接」⇒ **有意收窄**；④ Typora 的 `typora.url`（内部拖拽）与 source mode 跳过插入属调用方职责，决策表不建模；⑤ **多文件**：与 Typora 一致，只用**第一个**路径判分支，`insert-link` 时把全部路径交给引擎。⚠️ **接线未经真机验证**：拖放事件需 GUI（本机不可验）⇒ 决策表由单测锁、分派器由静态判据锁，「真机拖一次」仍待人工（已如实登记）。",
+      "anchor": "File.option.actionWhenDropFile",
+      "mellow": [
+        "files.dropFileAction"
+      ]
     },
     {
       "key": "actionWhenDropFolder",
       "consumer": "js",
-      "status": "gap",
-      "note": "**真实缺口**：`'link' === actionWhenDropFolder ? insertURL(path) : 打开文件夹/切换文件夹`（main.js + frame.js 两份一致）",
-      "anchor": "File.option.actionWhenDropFolder"
+      "status": "equivalent",
+      "note": "面板 label（表格行）**\"When drop folder\"**、`options:{\"\":\"Open in Typora\", link:\"Insert Folder Link\"}`、**默认 `\"\"` = 打开文件夹**。 ✅ **已实现（2026-10-07，审计 §4.134）**：面板组 **\"When drop file / folder into Typora\"** 的三行（`[\"When drop folder\", options:{\"\":\"Open in Typora\", link:\"Insert Folder Link\"}]` 等）逐字转写成**纯函数** `packages/app-core/src/dropAction.ts` 的 `decideDropAction()`（单测 **39 例**覆盖全部行），并在 `App.tsx` 的 `handleDroppedPaths` 里分派（5 种动作全接）。三档设置 `files.dropFolderAction` / `files.dropFileAction` / `files.dropImportAction`（**默认 open / open / import**，与 Typora 一致）。⚠️ **与 Typora 的差异（如实声明）**：① Mellow **不支持 `.textbundle`** ⇒ 决策表第 ① 行（textbundle 走**文件**开关）**不生效**，`.textbundle` 目录按普通目录处理（`supportsTextBundle: false`）；② Typora 第 ② 行的 `openFolder` 与 `switchFolder` 是**两个动作**，Mellow 是 SDI、工作区只有一个 ⇒ 合并为 `open-folder`；③ 第 ④ 行的「受支持文档」Typora 用 `File.SupportedFiles`（含代码/纯文本），Mellow 只把 **Markdown 家族**（`md/markdown/mdown/mkd`）当文档、其余文本文件落第 ⑤ 行「插成链接」⇒ **有意收窄**；④ Typora 的 `typora.url`（内部拖拽）与 source mode 跳过插入属调用方职责，决策表不建模；⑤ **多文件**：与 Typora 一致，只用**第一个**路径判分支，`insert-link` 时把全部路径交给引擎。⚠️ **接线未经真机验证**：拖放事件需 GUI（本机不可验）⇒ 决策表由单测锁、分派器由静态判据锁，「真机拖一次」仍待人工（已如实登记）。",
+      "anchor": "File.option.actionWhenDropFolder",
+      "mellow": [
+        "files.dropFolderAction"
+      ]
     },
     {
       "key": "actionWhenDropImport",
       "consumer": "js",
-      "status": "gap",
-      "note": "**真实缺口**：可导入扩展名（latex/tex/wiki/dokuwiki/docx/rst/org/textile/opml）⇒ 默认**导入**，`link` 则插链接；Mellow 无导入管线（该选项在 Mellow 语义下 n/a，但「打开」那半仍缺）",
-      "anchor": "File.option.actionWhenDropImport"
+      "status": "equivalent",
+      "note": "面板 label（表格行）**\"When drop files that can be imported\"**、`options:{\"\":\"Import File\", link:\"Insert File Link\"}`、**默认 `\"\"` = 导入**。可导入扩展名（**逐字**取自 `onDropFile`）：`latex/ltx/tex/wiki/dokuwiki/docx/rst/rest/org/textile/opml`。 ✅ **已实现（2026-10-07，审计 §4.134）**：面板组 **\"When drop file / folder into Typora\"** 的三行（`[\"When drop folder\", options:{\"\":\"Open in Typora\", link:\"Insert Folder Link\"}]` 等）逐字转写成**纯函数** `packages/app-core/src/dropAction.ts` 的 `decideDropAction()`（单测 **39 例**覆盖全部行），并在 `App.tsx` 的 `handleDroppedPaths` 里分派（5 种动作全接）。三档设置 `files.dropFolderAction` / `files.dropFileAction` / `files.dropImportAction`（**默认 open / open / import**，与 Typora 一致）。⚠️ **与 Typora 的差异（如实声明）**：① Mellow **不支持 `.textbundle`** ⇒ 决策表第 ① 行（textbundle 走**文件**开关）**不生效**，`.textbundle` 目录按普通目录处理（`supportsTextBundle: false`）；② Typora 第 ② 行的 `openFolder` 与 `switchFolder` 是**两个动作**，Mellow 是 SDI、工作区只有一个 ⇒ 合并为 `open-folder`；③ 第 ④ 行的「受支持文档」Typora 用 `File.SupportedFiles`（含代码/纯文本），Mellow 只把 **Markdown 家族**（`md/markdown/mdown/mkd`）当文档、其余文本文件落第 ⑤ 行「插成链接」⇒ **有意收窄**；④ Typora 的 `typora.url`（内部拖拽）与 source mode 跳过插入属调用方职责，决策表不建模；⑤ **多文件**：与 Typora 一致，只用**第一个**路径判分支，`insert-link` 时把全部路径交给引擎。⚠️ **接线未经真机验证**：拖放事件需 GUI（本机不可验）⇒ 决策表由单测锁、分派器由静态判据锁，「真机拖一次」仍待人工（已如实登记）。",
+      "anchor": "File.option.actionWhenDropImport",
+      "mellow": [
+        "files.dropImportAction"
+      ]
     },
     {
       "key": "allowPhysicsConflict",

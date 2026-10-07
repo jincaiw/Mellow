@@ -1730,6 +1730,70 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 拖入文件/文件夹的三档（2026-10-07，审计 §4.134；Typora「When drop file / folder into Typora」）──
+// Typora 真值（一手证据）：面板组 `title:"When drop file / folder into Typora"` 的三行（`w.v rows`）：
+//   `["When drop folder", options:{"":"Open in Typora", link:"Insert Folder Link"}]`
+//   `["When drop markdown file", options:{"":"Open in Typora", link:"Insert File Link"}]`
+//   `["When drop files that can be imported", options:{"":"Import File", link:"Insert File Link"}]`
+//   `value: this.getValue(<key>)` 且**默认都是 `""`** ⇒ **打开 / 打开 / 导入**。
+// 决策表 = `packages/app-core/src/dropAction.ts`（`File.onDropFile` 的逐字转写，单测全行覆盖）。
+// 本处只锁**接线**：三档默认值 + `App.tsx` 读取 + **分派器接全 5 种动作** + **分派器真的被挂上**。
+{
+  const EXPECT = [
+    ['files.dropFolderAction', 'open', ['open', 'link']],
+    ['files.dropFileAction', 'open', ['open', 'link']],
+    ['files.dropImportAction', 'import', ['import', 'link']],
+  ];
+  for (const [id, def, opts] of EXPECT) {
+    const esc = id.replace('.', '\\.');
+    if (!new RegExp(`id: '${esc}'[^}]*type: 'select'[^}]*defaultValue: '${def}'`).test(settingsSource)) {
+      fail(`settings 缺少 ${id}（select / **默认 ${def}**）—— 默认必须与 Typora 一致，否则拖入行为会变`);
+    }
+    for (const v of opts) {
+      if (!new RegExp(`\\{ value: '${v}', labelKey: 'settings\\.file\\.drop\\.[a-zA-Z]+' \\}`).test(settingsSource)) {
+        fail(`${id} 缺少选项 ${v}`);
+      }
+    }
+    if (!new RegExp(`readDropMode\\('${esc}'`).test(appSource)) {
+      fail(`App.tsx 未读取 ${id} → 该设置不会生效`);
+    }
+  }
+  // 决策表文件与其单测必须存在（否则「逐字转写 + 全行覆盖」这句话没有载体）
+  for (const p of ['packages/app-core/src/dropAction.ts', 'packages/app-core/test/dropAction.test.ts']) {
+    try { read(p); } catch { fail(`缺少 ${p}（拖入决策表 / 其单测）`); }
+  }
+  // 分派器必须接全 5 种动作 —— 少一支 = 该动作静默变成「什么都不做」
+  for (const a of ['none', 'insert-link', 'open-folder', 'open-document']) {
+    if (!new RegExp(`action === '${a}'`).test(appSource)) {
+      fail(`App.tsx 的拖入分派器未处理动作 \`${a}\` —— 该分支会静默落到别的动作上`);
+    }
+  }
+  if (!/await importFromPath\(first\)/.test(appSource)) {
+    fail('App.tsx 的拖入分派器未处理 `import-document`（未调用 importFromPath）');
+  }
+  // ⚠️ 分派器必须**真的挂上** —— 否则它是一段有单测但无人调用的死代码
+  if (!/dropHandlerRef\.current = handleDroppedPaths;/.test(appSource)) {
+    fail('App.tsx 未把 handleDroppedPaths 挂到 dropHandlerRef → 拖入分派器是**死代码**');
+  }
+  if (!/dropHandlerRef\.current\?\.\(event\.payload\.paths\)/.test(appSource)) {
+    fail('App.tsx 的 drag-drop 监听未调用 dropHandlerRef → 拖入永远不会走决策表');
+  }
+  // canary：正/负样本（同一份正则 **且同一套预处理** —— `appSource` 来自 `read()`，已剥整行注释）
+  // ⚠️ 实测踩过：负样本直接写 `'// dropHandlerRef.current = …'` 会**命中**（子串匹配），
+  //    从而误报「canary 失效」—— 真判据不会（`read()` 已剥掉整行注释）。
+  //    ⇒ canary 的样本必须**与判据经过同一套预处理**，否则 canary 自己会误报。
+  const DISPATCH_RE = /action === 'open-folder'/;
+  if (!DISPATCH_RE.test("if (action === 'open-folder') { x(); }")) fail('拖入分派 canary 失效：正样本未命中');
+  if (DISPATCH_RE.test("if (action === 'openFolder') { x(); }")) fail('拖入分派 canary 失效：负样本被判为命中');
+  const HOOK_RE = /dropHandlerRef\.current = handleDroppedPaths;/;
+  if (!HOOK_RE.test(stripWholeLineComments('dropHandlerRef.current = handleDroppedPaths;'))) {
+    fail('拖入挂载 canary 失效：正样本（剥注释后）未命中');
+  }
+  if (HOOK_RE.test(stripWholeLineComments('// dropHandlerRef.current = handleDroppedPaths;'))) {
+    fail('拖入挂载 canary 失效：**注释行**在剥注释后仍被判为命中（判据会被注释满足）');
+  }
+}
+
 // ── 消费端引用的设置 id 必须存在（2026-10-07，审计 §4.127）──────────────────────
 // 【为什么补】本护栏此前锁了 schema↔applyCommand（action 型）与 schema↔i18n，
 //   但**没锁 schema ↔ 消费端**。而 `settingById('<id>')` 对不存在的 id **返回 `undefined`**：

@@ -27,6 +27,8 @@ export { QuickOpenModel, fuzzyScore, rankQuickOpen, scanQuickOpen, quickOpenShor
 export type { QuickOpenAction, QuickOpenEntry, QuickOpenKeyEvent, QuickOpenPlatform, QuickOpenRankedEntry, QuickOpenScanOptions } from './quickOpen';
 export { pushRecentFile, markRecentMissing, replaceRecentFilePath, removeRecentFilePath, parseRecentFiles, serializeRecentFiles, RECENT_FILES_LIMIT, pushRecentFolder, parseRecentFolders, serializeRecentFolders, RECENT_FOLDERS_LIMIT, removeRecentFolder, togglePinRecentFolder, sortRecentFolders } from './recentFiles';
 export { countWords, formatWordCountStats } from './wordCount';
+export { decideDropAction, dropExtOf, IMPORTABLE_DROP_EXTS, SUPPORTED_DOC_DROP_EXTS } from './dropAction';
+export type { DropAction, DropContext, DropPathKind, DropPreferences } from './dropAction';
 export type { WordCount } from './wordCount';
 export { applyFinalNewline } from './finalNewline';
 export type { RecentFileEntry } from './recentFiles';

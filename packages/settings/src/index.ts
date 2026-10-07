@@ -226,6 +226,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 语义 = **缺失时追加**（跟随文档当前 EOL），**从不删除**已有换行；故默认关闭时对既有行为零影响。
       // 无 applyCommand：它在**保存时**读取（handleSave / handleSaveAs），无需 live apply。
       { id: 'files.finalNewline', labelKey: 'settings.file.finalNewline', type: 'toggle', storageKey: 'mellow.file.finalNewline', defaultValue: false, descriptionKey: 'settings.file.finalNewlineDesc' },
+      // 2026-10-07（审计 §4.134）：Typora 面板组 **"When drop file / folder into Typora"** 的三行（`w.v rows` 表格）：
+      //   `["When drop folder",                options:{"":"Open in Typora",   link:"Insert Folder Link"}]`
+      //   `["When drop markdown file",         options:{"":"Open in Typora",   link:"Insert File Link"}]`
+      //   `["When drop files that can be imported", options:{"":"Import File", link:"Insert File Link"}]`
+      //   `value: this.getValue(<key>)` 且**默认都是 `""`**（未设 ⇒ 第一项）⇒ **打开 / 打开 / 导入**。
+      // 决策表（`File.onDropFile`）的逐字转写见 `packages/app-core/src/dropAction.ts`（含单测，全行覆盖）。
+      // 无 applyCommand —— 拖放时读取（同 `files.finalNewline` 的「读时生效」模式）。
+      { id: 'files.dropFolderAction', labelKey: 'settings.file.dropFolderAction', type: 'select', storageKey: 'mellow.drop.folderAction', defaultValue: 'open',
+        options: [
+          { value: 'open', labelKey: 'settings.file.drop.openInTypora' },
+          { value: 'link', labelKey: 'settings.file.drop.insertFolderLink' },
+        ], descriptionKey: 'settings.file.dropDesc' },
+      { id: 'files.dropFileAction', labelKey: 'settings.file.dropFileAction', type: 'select', storageKey: 'mellow.drop.fileAction', defaultValue: 'open',
+        options: [
+          { value: 'open', labelKey: 'settings.file.drop.openInTypora' },
+          { value: 'link', labelKey: 'settings.file.drop.insertFileLink' },
+        ], descriptionKey: 'settings.file.dropDesc' },
+      { id: 'files.dropImportAction', labelKey: 'settings.file.dropImportAction', type: 'select', storageKey: 'mellow.drop.importAction', defaultValue: 'import',
+        options: [
+          { value: 'import', labelKey: 'settings.file.drop.importFile' },
+          { value: 'link', labelKey: 'settings.file.drop.insertFileLink' },
+        ], descriptionKey: 'settings.file.dropDesc' },
       // 2026-10-07（审计 §4.129）：Typora「Default Line Ending」。
       // 【一手证据】面板键 `line_ending_crlf`（**仅非 macOS 显示**：`window.isMac ? null : …`），
       //   标题 `title:"Default Line Ending"`、hint `"Line ending for new file"`、
