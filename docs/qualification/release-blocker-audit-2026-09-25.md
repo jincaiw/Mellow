@@ -8857,6 +8857,93 @@ onDropFile: async function (paths, ev) {
 
 
 
+## 4.136 准备实装「图片移动」时抓到：矩阵的一处 `behavior` 判定**与代码相反**（2026-10-07）
+
+### 一、动因
+
+§4.135 把 `no_image_move_for_local` 判为 `not-implemented`（**可自主推进**），本轮准备实装。
+按 §4.173 的规矩，**动手前逐字读实现** —— 结果发现**默认行为本身就与 Typora 不同**，
+而不是「只缺一个设置」。
+
+### 二、一手证据
+
+**Typora**（`main.js` 的 `shouldTriggerMove`，逐字）：
+
+```js
+shouldTriggerMove(src, target) {
+  return !(("upload" === target && … ) || !src)
+    && (/^\s*(https?|ftp):\/\//.exec(src)                    // src 是网络图
+          ? (File.isTextBundle() || File.isTextPack() || File.option.applyImageMoveForWeb)
+          : !((File.isTextBundle() || File.isTextPack() || File.option.applyImageMoveForLocal)   // 本地图
+              || /^data:/.exec(src)                            // data: URI 不移动
+              || (0 === src.indexOf(target) && !src.substring(target.length + 1).match(/[\\/]/g)))); // 已在目标目录
+}
+```
+
+⇒ **本地图 ⇒ 看 `applyImageMoveForLocal`（默认 `true`）⇒ 复制/移动到目标目录**；
+网络图 ⇒ 看 `applyImageMoveForWeb`（默认 `false`）；`data:` 与「已在目标目录内」⇒ 不移动。
+
+**Mellow**（`packages/editor-engine/src/image/insert.ts`，逐字）：
+
+```js
+const strategy = opts.strategy ?? 'auto';
+…
+if (strategy === 'keep-original' || strategy === 'auto') {   // ← 默认 auto 走这里
+  …return { markdown: buildImageMarkdown(rel, …), fsOps: [] };   // 不复制
+}
+```
+
+⇒ **默认 `auto` 对 `kind:'file'` 走 keep-original（相对路径、不复制）**。
+调用点（`image/input.ts`）**分两支**：
+- **OS 级拖入**（`:199`）**不传 strategy** ⇒ keep-original（**不复制**）；
+- **粘贴复制的文件 / 位图**（`:231` / `:242`）传 `copy-to-assets` ⇒ 复制。
+
+⇒ **粘贴支一致；拖入支偏离**（Mellow 保持原路径、Typora 复制到目标目录）。
+
+### 三、⚠️ 更正：矩阵的 `behavior: matches-default` 是错的
+
+矩阵里 `applyImageMoveForLocal` 原为 `behavior: "matches-default"`，
+`behaviorNote` 写「代码（image/insert.ts 本地图片 → **copy-to-assets**）：本地图片插入会落到 asset 目录 → 与 Typora 默认 true 一致」。
+**逐字读代码后更正为 `behavior: "differs"`**：
+- 错因：`behaviorNote` 说的「本地图片 → copy-to-assets」**只在粘贴支成立**；
+  **拖入支**（`input.ts:199` 不传 strategy ⇒ `auto` ⇒ keep-original）**不复制** ⇒ 与 Typora 默认**相反**。
+  ⇒ 也就是说：这条判定**只核了其中一个调用支**。
+- 处置：`behavior` 改 `differs` + `disposition: { kind: 'undecided', ref: 'ADR-0034' }`，
+  note 补「**且默认行为在「拖入」这一支与 Typora 不同**」。
+
+### 四、处置
+
+1. **矩阵更正**（见上）：`applyImageMoveForLocal` → `behavior: differs` + `disposition.undecided → ADR-0034`；
+   另两条**复核后维持**（`applyImageMoveForWeb`：网络图直插、无 fsOps ⇒ 一致；
+   `allowImageMove`：`planMoveImage`/`planMoveAll` **无门控** ⇒ 恒允许 ⇒ 与默认 true 一致；
+   ⚠️ 该键在 JS 树里**无消费点** ⇒ Typora 侧由原生/菜单消费）。
+2. **登记表**：`no_image_move_for_local` 的 `blockedBy` **由 `not-implemented` 改为 `adr-pending`**
+   （`pendingRef: ADR-0034 Q13`）—— 补这个开关**必然要选一个默认值**：
+   对齐 Typora ⇒ **改默认行为**；保持 keep-original ⇒ **默认偏离** ⇒ 必须先裁决。
+3. **ADR-0034 新增 Q13**（A1 对齐 / A2 保持现状 + 登记 `D-` / A3 新增设置 + 默认对齐；**建议 A2**）：
+   理由 = **复制用户的文件是「有副作用」的行为**，用户没明确要求时不应默认执行；
+   且 Mellow 的 `spec §3` 已把「本地文件 → 相对路径」列为默认策略。
+   ⚠️ 若采纳 A1/A3，**必须同时**处理「已在目标目录内 ⇒ 不重复复制」（Typora 有此判据）。
+4. 待裁决计数 **11 问 → 12 问**。
+
+⇒ 分布：`gap 5` 不变，但 `blockedBy` 变为 **`not-implemented 1 / precondition 1 / adr-pending 3`**
+⇒ **可自主推进的只剩 1 项**（`SmartyPantsOnRendering`）。
+
+### 五、教训
+
+1. **「同一函数被多个调用点以不同参数调用」时，行为判定必须逐支核对** ——
+   本轮的错误就是把**粘贴支**的结论当成了整条键的结论。⇒ 凡「默认参数 + 显式传参」并存的结构，
+   要**按调用点列出每一支的取值**，再与上游逐支对比；只核一支会得出**方向相反**的结论。
+2. **「准备动手实装」这个动作本身会暴露判定错误** —— 本轮是**要去改代码**时才逐字读实现，
+   从而发现矩阵的 `behaviorNote` 与代码相反。⇒ **立项前先读实现**（不要只读文件头的注释/策略说明）。
+   ⚠️ 反面同样要防：`insert.ts` 的**文件头注释**写「keep-original：本地文件 → 相对路径」是对的，
+   而矩阵的 `behaviorNote` 却写成「copy-to-assets」—— **两处自述互相矛盾**，只有读代码才能判谁对。
+3. **「缺一个设置」与「默认行为偏离」必须分开判** —— 前者是 `not-implemented`（可自主推进），
+   后者是 `adr-pending`（**补设置时要选默认值 ⇒ 必然触碰默认行为**）。
+   把它们混为一谈会让「可自主推进」的清单**虚高**。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

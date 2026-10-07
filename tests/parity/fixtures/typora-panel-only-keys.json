@@ -185,9 +185,10 @@
       "key": "no_image_move_for_local",
       "consumer": "native",
       "status": "gap",
-      "note": "面板 label **\"Apply above rules to local images\"**，**反向语义**：`reverse:!0` + `checked: !this.getValue(\"no_image_move_for_local\")`（键名为「对本地图片**不**应用规则」，勾选框展示的是正向「应用」）⇒ 未设时 `checked = true` ⇒ 键值为 **false** ⇒ **规则适用于本地图片**（与矩阵 `applyImageMoveForLocal: true` 一致）。⇒ 它与矩阵里的 `applyImageMoveForLocal` 是**同一事实的反向面板键**（不是两件事）⇒ 状态与矩阵条目一致：**gap**（矩阵 note：「本地图片移动应用范围未作为设置暴露」）。【阻塞原因（2026-10-07，审计 §4.135）】**`not-implemented`：整族「图片移动规则」缺设置**，可自主推进。同族共 3 条（矩阵）：`allowImageMove`（总开关，Typora 默认 **true**）、`applyImageMoveForLocal`（= 本键的**正向**表述，默认 **true**）、`applyImageMoveForWeb`（默认 **false**）—— 三条在矩阵里**都是 `gap`**，note 均为「未作为设置暴露」。Mellow **有底层能力**（`packages/editor-engine/src/image/ops.ts`：`planMoveImage` / `planMoveAll` / `planMoveSingle`）⇒ 缺的是**开关与接线**（引擎需经桥读到这三项），不是能力。⇒ 列为**可自主实施**（下一轮候选）。",
+      "note": "面板 label **\"Apply above rules to local images\"**，**反向语义**：`reverse:!0` + `checked: !this.getValue(\"no_image_move_for_local\")`（键名为「对本地图片**不**应用规则」，勾选框展示的是正向「应用」）⇒ 未设时 `checked = true` ⇒ 键值为 **false** ⇒ **规则适用于本地图片**（与矩阵 `applyImageMoveForLocal: true` 一致）。⇒ 它与矩阵里的 `applyImageMoveForLocal` 是**同一事实的反向面板键**（不是两件事）⇒ 状态与矩阵条目一致：**gap**（矩阵 note：「本地图片移动应用范围未作为设置暴露」）。【阻塞原因（2026-10-07，审计 §4.135）】**`not-implemented`：整族「图片移动规则」缺设置**，可自主推进。同族共 3 条（矩阵）：`allowImageMove`（总开关，Typora 默认 **true**）、`applyImageMoveForLocal`（= 本键的**正向**表述，默认 **true**）、`applyImageMoveForWeb`（默认 **false**）—— 三条在矩阵里**都是 `gap`**，note 均为「未作为设置暴露」。Mellow **有底层能力**（`packages/editor-engine/src/image/ops.ts`：`planMoveImage` / `planMoveAll` / `planMoveSingle`）⇒ 缺的是**开关与接线**（引擎需经桥读到这三项），不是能力。⇒ 列为**可自主实施**（下一轮候选）。【阻塞原因变更（2026-10-07，审计 §4.136）】**由 `not-implemented` 改为 `adr-pending`**：复核时发现**默认行为本身就与 Typora 不同**（不只是「缺设置」）——Typora 的 `shouldTriggerMove(src,target)` 对**本地** src 返回 `applyImageMoveForLocal`（默认 **true**）⇒ **拖入本地图片会复制到目标目录**；而 Mellow 的 `planImageCandidate` 默认 `strategy='auto'` 对 `kind:'file'` 走 **keep-original（不复制）**（`insert.ts:97`）⇒ **拖入支偏离**（粘贴支一致：`input.ts:231/242` 显式传 `copy-to-assets`）。⇒ 补这个开关**必然要选一个默认值**（对齐 Typora = 改默认行为 / 保持 keep-original = 默认偏离）⇒ 必须先裁决。已登记 **ADR-0034 Q13**。",
       "anchor": "no_image_move_for_local",
-      "blockedBy": "not-implemented"
+      "blockedBy": "adr-pending",
+      "pendingRef": "ADR-0034 Q13"
     },
     {
       "key": "no_mid_caret",

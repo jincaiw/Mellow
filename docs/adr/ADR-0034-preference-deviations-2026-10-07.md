@@ -317,6 +317,37 @@ Typora 的面板键 `quitAfterWindowClose`（组 **"Quit"**，**仅 macOS 显示
 
 ---
 
+## Q13 — 拖入**本地图片**时，是否把它**复制到目标目录**（`applyImageMoveForLocal`；默认行为偏离）
+
+**事实**（一手证据，2026-10-07 审计 §4.136）：
+
+- **Typora**：`shouldTriggerMove(src, target)` 对**本地** src 返回
+  `!(File.isTextBundle() || File.isTextPack() || File.option.applyImageMoveForLocal) || /^data:/… || <已在目标目录>`
+  的取反 ⇒ **本地图片 ⇒ 看 `applyImageMoveForLocal`（默认 `true`）⇒ 复制/移动到目标目录**；
+  网络图（`http/https/ftp`）⇒ 看 `applyImageMoveForWeb`（默认 `false` ⇒ 不移动）。
+- **Mellow**：`planImageCandidate` 的 `strategy = opts.strategy ?? 'auto'`，而
+  `if (strategy === 'keep-original' || strategy === 'auto')` ⇒ **默认 `auto` 对 `kind:'file'` 走 keep-original（相对路径、不复制）**。
+  调用点分两支：**OS 级拖入**（`input.ts:199`）**不传 strategy ⇒ keep-original**；
+  **粘贴复制的文件 / 位图**（`:231`/`:242`）传 `copy-to-assets` ⇒ 复制。
+
+⇒ **粘贴支一致；拖入支偏离**（Mellow 保持原路径、Typora 复制到目标目录）。
+⚠️ 矩阵里该条的 `behavior` **原先误判为 `matches-default`**（behaviorNote 写「本地图片 → copy-to-assets」），
+本轮**逐字读代码后更正为 `differs`** —— 错因是只看了**其中一个调用支**。
+
+**选项**
+- **A1 对齐 Typora**：拖入本地图片时复制到目标目录（`strategy: 'copy-to-assets'`）——
+  与 Typora 一致，但会**改变用户可见的默认行为**（拖一张图会多出一份文件副本）。
+- **A2 保持 keep-original**（Mellow 现状）+ 登记一条 `D-` —— 理由：Mellow 的 `spec §3` 明确把
+  「本地文件 → 相对路径」列为默认策略；不改动用户的文件系统是更保守的选择。
+- **A3 新增设置 + 默认对齐 Typora**（= A1 + 开关）。
+
+**建议：A2（保持 + 登记 `D-`）** —— 理由：**复制用户的文件是「有副作用」的行为**，
+在用户没有明确要求时不应默认执行；Typora 的默认（复制）是它的历史选择。
+若采纳 A2，需登记一条默认值/行为偏离（`D-`+编号），并保留 `applyImageMoveForLocal` 的 `gap`（仍缺设置）。
+⚠️ 若采纳 A1/A3，**必须同时**处理「已在目标目录内 ⇒ 不重复复制」这一条（Typora 的 `shouldTriggerMove` 有此判据）。
+
+---
+
 ## 机器可读化（**本 ADR 顺带补上的那一半**）
 
 判据分两处（**形状** vs **解析**，各自只做一件事）：
@@ -338,14 +369,17 @@ Typora 的面板键 `quitAfterWindowClose`（组 **"Quit"**，**仅 macOS 显示
 
 ## 裁决
 
-**待裁决（11 问：Q1–Q8、Q10、Q11、Q12；Q9 已由取证排除）。** 裁决后请：
+**待裁决（12 问：Q1–Q8、Q10、Q11、Q12、Q13；Q9 已由取证排除）。** 裁决后请：
 
-> ⚠️ **Q11 / Q12 的登记面与 Q1–Q10 不同**：Q1–Q10 来自**偏好矩阵**
+> ⚠️ **Q11 / Q12 / Q13 的登记面与 Q1–Q10 不同**：Q1–Q10 来自**偏好矩阵**
 > （`typora-preferences-matrix.json`，范围 = `frame.js` 的 `DEFAULT_OPTIONS`）；
 > **Q11 / Q12 来自「面板独有面」登记处**（`typora-panel-only-keys.json`，范围 = 面板 `keyName` − 矩阵键），
-> 二者都带 `pendingRef`。
-> ⇒ 若采纳 Q11 的 A2 / Q12 的 A2（都是「新增开关 + 默认关/不退出」），需**同时**登记默认值偏离（`D-`+编号），
-> 并更新该登记表里对应条目的 `status` / `pendingRef`（当前：`openExportLocation` = `gap` + `Q11`；`quitAfterWindowClose` = `gap` + `Q12`）。
+> **Q13 来自偏好矩阵**（`applyImageMoveForLocal` 的 `behavior: differs`），其从属的面板键
+> `no_image_move_for_local` 在面板独有面登记表里也引用了它。
+> ⇒ 若采纳 Q11 的 A2 / Q12 的 A2 / Q13 的 A2（分别是「新增开关+默认关」「新增开关+默认不退出」「维持现状+登记 `D-`」），
+> 需**同时**登记默认值偏离（`D-`+编号），并更新登记表里对应条目的 `status` / `pendingRef` / `disposition`
+> （当前：`openExportLocation` = `gap` + `Q11`；`quitAfterWindowClose` = `gap` + `Q12`；
+> `applyImageMoveForLocal` = `behavior: differs` + `disposition.undecided → ADR-0034`；`no_image_move_for_local` = `gap` + `Q13`）。
 
 ① 更新本 ADR 的 `Status` 为 `Accepted` 并**逐问**写入结论；
 ② 按结论更新矩阵：`deviation.kind` 改 `deliberate`（并去掉 `pendingRef`）/ 或改默认值；

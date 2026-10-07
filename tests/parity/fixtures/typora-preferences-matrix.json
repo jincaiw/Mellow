@@ -9,7 +9,7 @@
       "mellow": [],
       "note": "图片拖动移动的开关未作为设置暴露",
       "behavior": "matches-default",
-      "behaviorNote": "代码（image/ops.ts：planMoveImage / planMoveAll / planMoveSingle）：Mellow 有图片移动能力 → 与 Typora 默认 true（允许移动）一致"
+      "behaviorNote": "代码（`image/ops.ts`：`planMoveImage` / `planMoveAll`）：Mellow 的拖动移动**无门控**（恒允许）→ 与 Typora 默认 true（允许移动）一致。⚠️ 该键在 JS 树里**无消费点**（main.js/frame.js 各 1 处，均为默认值表）⇒ Typora 侧由**原生/菜单**消费（已复核 2026-10-07 §4.136）。"
     },
     {
       "typora": "allowImageUpload",
@@ -25,9 +25,13 @@
       "default": true,
       "status": "gap",
       "mellow": [],
-      "note": "本地图片移动应用范围未作为设置暴露",
-      "behavior": "matches-default",
-      "behaviorNote": "代码（image/insert.ts 本地图片 → copy-to-assets）：本地图片插入会落到 asset 目录 → 与 Typora 默认 true 一致"
+      "note": "本地图片移动应用范围未作为设置暴露；**且默认行为在「拖入」这一支与 Typora 不同**（见 behaviorNote）",
+      "behavior": "differs",
+      "behaviorNote": "⚠️ **2026-10-07（审计 §4.136）更正：原判 `matches-default` 是错的** —— 原文写「代码（image/insert.ts 本地图片 → copy-to-assets）」，但**逐字读代码**（`insert.ts:97`）显示：`strategy = opts.strategy ?? 'auto'`，而 `if (strategy === 'keep-original' || strategy === 'auto')` ⇒ **默认 `auto` 对 `kind:'file'` 走 keep-original（相对路径、不复制）**；`copy-to-assets` 只在调用方**显式**传时才走。调用点（`input.ts`）分两支：**OS 级拖入**（`:199`）**不传 strategy ⇒ keep-original（不复制）**；**粘贴复制的文件 / 位图**（`:231`/`:242`）传 `copy-to-assets` ⇒ 复制。⇒ 与 Typora 对比：Typora 的 `shouldTriggerMove(src, target)` 对**本地 src** 返回 `applyImageMoveForLocal`（默认 **true**）⇒ **复制到目标目录** ⇒ **粘贴支一致、拖入支偏离**（Mellow 保持原路径、Typora 复制）。⚠️ 偏离的是**用户可见的默认行为**（拖入一张图，文件是否被复制到 assets）⇒ 需裁决。",
+      "disposition": {
+        "kind": "undecided",
+        "ref": "ADR-0034"
+      }
     },
     {
       "typora": "applyImageMoveForWeb",
@@ -36,7 +40,7 @@
       "mellow": [],
       "note": "网络图片移动应用范围未作为设置暴露",
       "behavior": "matches-default",
-      "behaviorNote": "代码：网络图片不移动（直接直插 URL）→ 与 Typora 默认 false 一致"
+      "behaviorNote": "代码：网络图片（`kind:'url'`）**直插、无 fsOps**（`insert.ts:62`）⇒ **不移动** → 与 Typora 默认 false 一致（已复核 2026-10-07 §4.136）。"
     },
     {
       "typora": "autoCorrectMisspell",
