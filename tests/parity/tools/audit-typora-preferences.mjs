@@ -27,17 +27,27 @@
  * 环境变量 `TYPORA_APPSRC` 可覆盖 TypeMark/appsrc 路径（默认取 /Applications/Typora.app）。
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { resolve, dirname } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const MATRIX_PATH = resolve(root, 'tests/parity/fixtures/typora-preferences-matrix.json');
 const SETTINGS_PATH = resolve(root, 'packages/settings/src/index.ts');
 
+/** Typora 的 TypeMark/appsrc 根（`TYPORA_APPSRC` 可覆盖） */
+function appsrcBase() {
+  return process.env.TYPORA_APPSRC
+    ?? '/Applications/Typora.app/Contents/Resources/TypeMark/appsrc';
+}
+
+/** 定位 Typora 的 `main.js`（**行为真值**：偏好在那里被真正消费） */
+function mainJsPath() {
+  return resolve(appsrcBase(), 'main.js');
+}
+
 /** 定位 Typora 的 window/frame.js */
 function frameJsPath() {
-  const base = process.env.TYPORA_APPSRC
-    ?? '/Applications/Typora.app/Contents/Resources/TypeMark/appsrc';
-  return resolve(base, 'window/frame.js');
+  return resolve(appsrcBase(), 'window/frame.js');
 }
 
 /**
@@ -50,9 +60,7 @@ function frameJsPath() {
  * 故本工具**只**在「面板与 DEFAULT_OPTIONS 的交集」上做检查，并把范围外的那部分**打印出来**。
  */
 function panelJsPath() {
-  const base = process.env.TYPORA_APPSRC
-    ?? '/Applications/Typora.app/Contents/Resources/TypeMark/appsrc';
-  const dir = resolve(base, '..', 'page-dist/static/js');
+  const dir = resolve(appsrcBase(), '..', 'page-dist/static/js');
   if (!existsSync(dir)) return null;
   const found = readdirSync(dir).find((name) => /^Preferences\./.test(name));
   return found === undefined ? null : resolve(dir, found);
@@ -329,6 +337,104 @@ if (badIds.length > 0) {
     if (badIds.length > 0) {
       errors.push(`面板独有键登记表引用了**不存在**的 Mellow 设置 id（${badIds.length}）：${badIds.join(', ')}`);
     }
+
+    // ── consumer / anchor 必须**可核对**（2026-10-07，审计 §4.128）────────────────
+    // 【为什么单立】此前 `consumer` 的口径写成「在 main.js / frame.js 里被消费」，
+    //   但实现退化成「**字符串出现在哪个文件**」—— 而 **`frame.js` 就是偏好面板脚本**，
+    //   47 个键**全部**都在它里面出现 ⇒ 该判据对全体恒真、不携带信息
+    //   （实测 4 条自相矛盾：`SmartyPantsOnRendering` / `remapPunctuation` / `showStatusBar` / `zoomLevel`）。
+    // 【为什么不能机械判定】实测三种判据都不成立：
+    //   ① 偏好键可能**改名**（`remapPunctuation`→`remapUnicodePunctuation`、`SmartyPantsOnRendering`→`convertSmartOnRender`）
+    //      ⇒ 按面板键搜必然 0 命中；
+    //   ② 可能经**通用选项包**读（`(window._options||{}).allowPhysicsConflict`）⇒ 形态枚举不完备；
+    //   ③ 可能命中**同名异物**（`n.openExportFile` 是导出**配置对象**字段、`navigator.userLanguage` 是浏览器 API）
+    //      ⇒ **假阳性**。
+    // ⇒ 故 `consumer` 是**带引用的判断**，而 `anchor` 才是机器可核对的字段。
+    // 判据：`js` ⇒ anchor 的末段标识符必须能在 Typora 的 **JS 侧**找到；
+    //       `native` ⇒ anchor 必须能在**原生二进制**里找到（精确行）；
+    //       `unknown` ⇒ anchor 必须是 `—` 且必须写 `consumerNote`（声明试过哪些形态）。
+    const VALID_CONSUMER = new Set(['js', 'native', 'unknown']);
+    const lastIdent = (s) => (String(s).match(/[A-Za-z0-9_]+/g) ?? []).pop() ?? '';
+    const jsSide = readFileSync(mainJsPath(), 'utf8') + '\n' + readFileSync(frameJsPath(), 'utf8') + '\n' + panel;
+    const nativeStrings = (() => {
+      // 需要 `strings`（macOS/Linux 自带；Windows 上没有 ⇒ 如实跳过，不假装核对过）
+      // ⚠️ 用**绝对路径**优先：本机 shell 的 PATH 是垫片目录，`strings` 不一定可见
+      //    （实测：`execFileSync('strings', …)` 直接 ENOENT ⇒ 会静默退化成「本轮未核对」）。
+      // ⚠️ 路径层级：`…/Contents/Resources/TypeMark/appsrc` → 上 3 级才是 `Contents`
+      //    （写成 2 级会指到 `Resources/MacOS/Typora` ⇒ existsSync 为假 ⇒ **静默跳过核对**）
+      const bin = resolve(appsrcBase(), '../../../MacOS/Typora');
+      if (!existsSync(bin)) return null;
+      for (const exe of ['/usr/bin/strings', 'strings']) {
+        try {
+          return execFileSync(exe, ['-a', bin], { maxBuffer: 512 * 1024 * 1024 })
+            .toString().split('\n');
+        } catch { /* 换下一个候选 */ }
+      }
+      return null;
+    })();
+    const badConsumer = [];
+    const badAnchor = [];
+    const missingConsumerNote = [];
+    for (const e of reg.entries ?? []) {
+      if (!VALID_CONSUMER.has(e.consumer)) {
+        badConsumer.push(`${e.key}(consumer=${JSON.stringify(e.consumer)})`);
+        continue;
+      }
+      if (typeof e.anchor !== 'string' || e.anchor.trim() === '') {
+        badAnchor.push(`${e.key}(anchor 缺失)`);
+        continue;
+      }
+      if (e.consumer === 'js') {
+        const last = lastIdent(e.anchor);
+        if (last === '' || !jsSide.includes(last)) {
+          badAnchor.push(`${e.key}(anchor=${e.anchor} ⇒ 末段 \`${last}\` 在 Typora 的 JS 侧找不到)`);
+        }
+      } else if (e.consumer === 'native') {
+        if (nativeStrings === null) continue; // 无法核对 ⇒ 跳过（不报假通过）
+        if (!nativeStrings.includes(e.anchor)) {
+          badAnchor.push(`${e.key}(anchor=${e.anchor} ⇒ 原生二进制里没有该字符串)`);
+        }
+      } else { // unknown
+        if (e.anchor.trim() !== '—') badAnchor.push(`${e.key}(consumer=unknown 时 anchor 必须是 —，当前 ${JSON.stringify(e.anchor)})`);
+        if (typeof e.consumerNote !== 'string' || e.consumerNote.trim() === '') {
+          missingConsumerNote.push(e.key);
+        }
+      }
+      // `internal` 只在**确实改名**时才有意义（写了等于没写就是噪声）
+      if (e.internal !== undefined && e.internal === e.key) {
+        badAnchor.push(`${e.key}(internal 与 key 相同 ⇒ 不该写)`);
+      }
+    }
+    if (badConsumer.length > 0) {
+      errors.push(`面板独有键 consumer 取值非法（${badConsumer.length}）：${badConsumer.join(', ')}`
+        + ' —— 只允许 js / native / unknown');
+    }
+    if (badAnchor.length > 0) {
+      errors.push(`面板独有键 anchor **核对不上**（${badAnchor.length}）：${badAnchor.join(', ')}`
+        + ' —— anchor 是「可核对落点」，它必须真实存在（否则它只是一句自述）');
+    }
+    if (missingConsumerNote.length > 0) {
+      errors.push(`consumer=unknown 但没写 consumerNote（${missingConsumerNote.length}）：`
+        + `${missingConsumerNote.join(', ')} —— 未确定是允许的，但必须写明「试过哪些形态」`);
+    }
+    const consumerDist = {};
+    for (const e of reg.entries ?? []) consumerDist[e.consumer] = (consumerDist[e.consumer] ?? 0) + 1;
+    console.log(`\n面板独有键的**消费方**：${regKeys.length} 个 —— `
+      + `js ${consumerDist.js ?? 0} / native ${consumerDist.native ?? 0} / unknown ${consumerDist.unknown ?? 0}`
+      + (nativeStrings === null ? '（⚠️ 本机无 `strings` ⇒ native 的 anchor 本轮**未核对**）' : ''));
+    const unknownList = (reg.entries ?? []).filter((e) => e.consumer === 'unknown').map((e) => e.key);
+    if (unknownList.length > 0) {
+      console.log(`⚠️ 消费方**未确定** ${unknownList.length} 项（**存量欠债**，只能下降）：${unknownList.join(', ')}`);
+    }
+    // canary：三向（正样本命中 / 负样本不命中 / 空输入不误报）
+    if (lastIdent('File.option.convertSmartOnRender') !== 'convertSmartOnRender') {
+      errors.push('anchor canary 失效：末段标识符抽取不对');
+    }
+    if (jsSide.includes('__ghost_symbol__')) errors.push('anchor canary 失效：负样本被判为存在');
+    if (lastIdent('—') !== '') errors.push('anchor canary 失效：`—` 的末段应为空');
+    if (!VALID_CONSUMER.has('js') || VALID_CONSUMER.has('nope')) {
+      errors.push('consumer 取值集合 canary 失效');
+    }
     // 存量欠债**可见**（不判失败，但必须打印计数与清单）
     const unverified = (reg.entries ?? []).filter((e) => e.status === 'unverified');
     console.log(`\n面板独有键：${regKeys.length} 个 —— `
@@ -349,6 +455,116 @@ if (badIds.length > 0) {
     }
     if (!VALID.has('equivalent') || VALID.has('nope')) {
       errors.push('面板独有键状态集合 canary 失效');
+    }
+  }
+}
+
+// ── 第二份默认值表：`main.js` 里的 `File.option` 默认值对象（2026-10-07，审计 §4.128）──
+// 【为什么补】矩阵的**声明源**是 `frame.js` 的 `DEFAULT_OPTIONS`（84 键）；而 Typora 的
+//   **行为真值** `main.js` 里**另有一份**默认值对象（同一批 84 键）。两份来自**不同文件、
+//   不同压缩产物** ⇒ 是默认值的**独立交叉验证**：键集必须双向一致，值必须逐条一致。
+//   ⇒ 本判据把矩阵的 `default` 从「自述」升级为「**两源互证**」。
+// 实测（2026-10-07）：键集 **84/84** 一致；值 **84/84** 一致。
+//   ⚠️ 修复前有 2 处「不一致」，原因是**矩阵把空数组编码成了字符串** `"[]"`
+//   （`treeFileFilterPatterns` / `libraryFileFilterPatterns`）—— 那是矩阵的类型错误，已改回 `[]`。
+// ⚠️ 这是**相对判据**（两源互比）⇒ 按「相对判据防不了『一起变松』」的规矩，另加**绝对判据**：
+//   锚点必须命中 + 解析出的键数下限 + 三条已知值的字面断言（见下）。
+{
+  const mainSrc = readFileSync(mainJsPath(), 'utf8');
+  const ANCHOR = 'convertSmartOnRender:!1,remapUnicodePunctuation:!1';
+  const at = mainSrc.indexOf(ANCHOR);
+  if (at === -1) {
+    errors.push(`main.js 的第二份默认值表锚点未命中（\`${ANCHOR}\`）—— 扫描面漂移，本判据会空转`);
+  } else {
+    let depth = 0;
+    let start = -1;
+    for (let k = at - 1; k >= 0; k--) {
+      if (mainSrc[k] === '}') depth++;
+      else if (mainSrc[k] === '{') { if (depth === 0) { start = k; break; } depth--; }
+    }
+    let d = 0;
+    let end = start;
+    for (; end < mainSrc.length; end++) {
+      if (mainSrc[end] === '{') d++;
+      else if (mainSrc[end] === '}') { d--; if (d === 0) break; }
+    }
+    const body = mainSrc.slice(start + 1, end);
+    // 顶层逗号切分（跟踪 `{}`/`[]`/`()`）
+    const segs = [];
+    let dd = 0;
+    let cur = '';
+    for (const ch of body) {
+      if ('{[('.includes(ch)) dd++;
+      else if ('}])'.includes(ch)) dd--;
+      if (ch === ',' && dd === 0) { segs.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    if (cur.trim() !== '') segs.push(cur);
+    const norm = (v) => {
+      const s = String(v).trim();
+      if (s === '!0') return { ok: true, v: true };
+      if (s === '!1') return { ok: true, v: false };
+      if (s === 'null') return { ok: true, v: null };
+      if (s === '[]') return { ok: true, v: [] };
+      if (/^-?\d+(\.\d+)?$/.test(s)) return { ok: true, v: Number(s) };
+      const m = s.match(/^"([\s\S]*)"$/);
+      if (m !== null) return { ok: true, v: m[1] };
+      return { ok: false, v: s };
+    };
+    const theirs = new Map();
+    const unparseable = [];
+    for (const seg of segs) {
+      const m = seg.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([\s\S]+)$/);
+      if (m === null) continue;
+      if (m[1] === 'keys') continue; // 嵌套查找表，非偏好项（同 extractDefaults 的口径）
+      const r = norm(m[2]);
+      if (!r.ok) { unparseable.push(`${m[1]}=${r.v}`); continue; }
+      theirs.set(m[1], r.v);
+    }
+    // 绝对判据①：键数下限
+    if (theirs.size < 80) {
+      errors.push(`main.js 第二份默认值表只解析出 ${theirs.size} 键（下限 80）—— 解析漂移，本判据会空转`);
+    }
+    // 绝对判据②：三条已知值的字面断言（对**原文**，防两源一起变松）
+    for (const [k, want] of [['enableAutoSave', false], ['wordsPerMinute', 382], ['gitlabMath', true]]) {
+      if (theirs.get(k) !== want) {
+        errors.push(`main.js 默认值 \`${k}\` 应为 ${JSON.stringify(want)}，实得 ${JSON.stringify(theirs.get(k))}`);
+      }
+    }
+    // 相对判据：键集双向 + 值逐条
+    const mxKeys = new Set(entries.map((e) => e.typora));
+    const onlyMain = [...theirs.keys()].filter((k) => !mxKeys.has(k));
+    const onlyMatrix = [...mxKeys].filter((k) => !theirs.has(k));
+    if (onlyMain.length > 0) {
+      errors.push(`main.js 默认值表有而矩阵无（${onlyMain.length}）：${onlyMain.join(', ')}`);
+    }
+    if (onlyMatrix.length > 0) {
+      errors.push(`矩阵有而 main.js 默认值表无（${onlyMatrix.length}）：${onlyMatrix.join(', ')}`);
+    }
+    const valueDiff = [];
+    for (const e of entries) {
+      if (!theirs.has(e.typora)) continue;
+      if (JSON.stringify(theirs.get(e.typora)) !== JSON.stringify(e.default)) {
+        valueDiff.push(`${e.typora}(矩阵 ${JSON.stringify(e.default)} / main.js ${JSON.stringify(theirs.get(e.typora))})`);
+      }
+    }
+    if (valueDiff.length > 0) {
+      errors.push(`矩阵 default 与 main.js 第二来源不一致（${valueDiff.length}）：${valueDiff.join(', ')}`
+        + ' —— 两源互相独立，不一致意味着**至少一处是错的**');
+    }
+    if (unparseable.length > 0) {
+      console.log(`ℹ️ main.js 默认值表里有 ${unparseable.length} 项无法归一化（未参与值比对）：${unparseable.join(', ')}`);
+    }
+    console.log(`第二份默认值表（main.js 的 File.option 默认值对象）：${theirs.size} 键 —— 键集与矩阵**双向一致**`
+      + `（0 差集）；默认值 **${entries.length - valueDiff.length}/${entries.length}** 逐条一致`);
+    // canary：三向（归一化正确 / 未命中锚点必须报错 / 空输入不误报）
+    if (JSON.stringify(norm('!1').v) !== 'false' || JSON.stringify(norm('382').v) !== '382'
+      || JSON.stringify(norm('"svg"').v) !== '"svg"' || JSON.stringify(norm('[]').v) !== '[]'
+      || norm('someExpr').ok !== false) {
+      errors.push('第二份默认值表 canary 失效：minified 值归一化不正确');
+    }
+    if (JSON.stringify([]) !== JSON.stringify([]) || [1].length === 0) {
+      errors.push('第二份默认值表 canary 失效：集合比较不可用');
     }
   }
 }

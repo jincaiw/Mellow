@@ -1109,6 +1109,8 @@ if (cssLayerAnchor === undefined) {
           fail(`面板独有键登记表只有 ${regEntries.length} 条（下限 40）—— 表被削空会让本判据空转`);
         }
         const VALID_STATUS = new Set(['equivalent', 'gap', 'not-applicable', 'unverified']);
+        // `unknown` = **消费方未确定**（2026-10-07，审计 §4.128）：允许存在、但必须可见且只能下降。
+        const VALID_CONSUMER = new Set(['js', 'native', 'unknown']);
         const knownSettingIds = new Set([...settingsSource.matchAll(/id: '([^']+)'/g)].map((m) => m[1]));
         const seenKeys = new Set();
         const bad = [];
@@ -1117,7 +1119,21 @@ if (cssLayerAnchor === undefined) {
           seenKeys.add(e.key);
           if (!VALID_STATUS.has(e.status)) bad.push(`${e.key}(status=${e.status})`);
           if (typeof e.note !== 'string' || e.note.trim() === '') bad.push(`${e.key}(note 为空)`);
-          if (e.consumer !== 'js' && e.consumer !== 'native') bad.push(`${e.key}(consumer=${e.consumer})`);
+          if (!VALID_CONSUMER.has(e.consumer)) bad.push(`${e.key}(consumer=${e.consumer})`);
+          // anchor 是「**可核对**落点」—— 它是本表里唯一能机器核对的字段（核对在本机工具里做，
+          // 因为需要 Typora 的 JS 树与原生二进制）。CI 只锁**形状**：必填、非空、与 consumer 相配。
+          if (typeof e.anchor !== 'string' || e.anchor.trim() === '') {
+            bad.push(`${e.key}(anchor 缺失)`);
+          } else if (e.consumer === 'unknown') {
+            if (e.anchor.trim() !== '—') bad.push(`${e.key}(consumer=unknown 时 anchor 必须为 —)`);
+            if (typeof e.consumerNote !== 'string' || e.consumerNote.trim() === '') {
+              bad.push(`${e.key}(consumer=unknown 但没有 consumerNote —— 未确定可以，但必须写明试过哪些形态)`);
+            }
+          } else if (e.anchor.trim() === '—') {
+            bad.push(`${e.key}(consumer=${e.consumer} 但 anchor 是 —)`);
+          }
+          // `internal` 只在**确实改名**时才有意义
+          if (e.internal !== undefined && e.internal === e.key) bad.push(`${e.key}(internal 与 key 相同 ⇒ 不该写)`);
           for (const id of e.mellow ?? []) {
             if (!knownSettingIds.has(id)) bad.push(`${e.key}→${id}(设置 id 不存在)`);
           }
@@ -1129,6 +1145,18 @@ if (cssLayerAnchor === undefined) {
         }
         if (bad.length > 0) {
           fail(`面板独有键登记表不合法（${bad.length}）：${bad.join(', ')}`);
+        }
+        // **棘轮**（存量欠债只能下降）：本轮基线 = §4.128 之后的实测值。
+        // 防的是「把没查的项改标成 unverified / unknown 来绕开工作」——那会让欠债**回升**。
+        const statusUnverified = regEntries.filter((e) => e.status === 'unverified');
+        const consumerUnknown = regEntries.filter((e) => e.consumer === 'unknown');
+        if (statusUnverified.length > 10) {
+          fail(`面板独有键 status=unverified 回升到 ${statusUnverified.length}（棘轮上限 10，2026-10-07 基线）`
+            + `：${statusUnverified.map((e) => e.key).join(', ')} —— 存量欠债只能下降`);
+        }
+        if (consumerUnknown.length > 7) {
+          fail(`面板独有键 consumer=unknown 回升到 ${consumerUnknown.length}（棘轮上限 7，2026-10-07 基线）`
+            + `：${consumerUnknown.map((e) => e.key).join(', ')} —— 存量欠债只能下降`);
         }
         // canary：四向（重复键 / 非法状态 / 不存在的设置 id / equivalent 无落点）
         {
@@ -1154,6 +1182,43 @@ if (cssLayerAnchor === undefined) {
           }
           if (!judge([{ key: 'a', status: 'equivalent', note: '没有反引号落点' }]).includes('noloc')) {
             errors.push('面板独有键自洽判据 canary 失效：equivalent 无落点未被检出');
+          }
+        }
+        // canary：consumer/anchor 形状判据（**共用同一个谓词**，不另写一份）
+        {
+          const judgeConsumer = (list) => {
+            const out = [];
+            for (const e of list) {
+              if (!VALID_CONSUMER.has(e.consumer)) { out.push('consumer'); continue; }
+              if (typeof e.anchor !== 'string' || e.anchor.trim() === '') { out.push('noanchor'); continue; }
+              if (e.consumer === 'unknown') {
+                if (e.anchor.trim() !== '—') out.push('anchorNotDash');
+                if (typeof e.consumerNote !== 'string' || e.consumerNote.trim() === '') out.push('noNote');
+              } else if (e.anchor.trim() === '—') out.push('anchorDash');
+              if (e.internal !== undefined && e.internal === e.key) out.push('sameInternal');
+            }
+            return out;
+          };
+          if (judgeConsumer([{ key: 'a', consumer: 'js', anchor: 'File.option.x' }]).length !== 0) {
+            errors.push('consumer 形状 canary 过宽：合法条目被误报');
+          }
+          if (!judgeConsumer([{ key: 'a', consumer: 'nope', anchor: 'x' }]).includes('consumer')) {
+            errors.push('consumer 形状 canary 失效：非法 consumer 未被检出');
+          }
+          if (!judgeConsumer([{ key: 'a', consumer: 'js' }]).includes('noanchor')) {
+            errors.push('consumer 形状 canary 失效：缺 anchor 未被检出');
+          }
+          if (!judgeConsumer([{ key: 'a', consumer: 'js', anchor: '—' }]).includes('anchorDash')) {
+            errors.push('consumer 形状 canary 失效：js 却用 — 未被检出');
+          }
+          if (!judgeConsumer([{ key: 'a', consumer: 'unknown', anchor: 'x', consumerNote: 'n' }]).includes('anchorNotDash')) {
+            errors.push('consumer 形状 canary 失效：unknown 的 anchor 非 — 未被检出');
+          }
+          if (!judgeConsumer([{ key: 'a', consumer: 'unknown', anchor: '—' }]).includes('noNote')) {
+            errors.push('consumer 形状 canary 失效：unknown 缺 consumerNote 未被检出');
+          }
+          if (!judgeConsumer([{ key: 'a', consumer: 'native', anchor: 'a', internal: 'a' }]).includes('sameInternal')) {
+            errors.push('consumer 形状 canary 失效：internal 等于 key 未被检出');
           }
         }
       }

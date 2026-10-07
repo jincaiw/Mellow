@@ -1,54 +1,399 @@
 {
   "source": "Typora 1.14.9 (7785) — TypeMark/page-dist/static/js/Preferences.*.js 的 keyName（面板 UI）",
   "why": "偏好矩阵（typora-preferences-matrix.json）的范围是 frame.js 的 DEFAULT_OPTIONS（84 键）；面板 UI 去重后暴露 91 个 keyName，其中 47 个**不在** DEFAULT_OPTIONS 里 ⇒ 那一面此前**没有任何登记处**（审计 §4.123 的范围声明 / §4.124 的第一个实例）。本文件就是那一面的登记处。",
-  "note": "status: equivalent（Mellow 有等价能力，通常命名不同；evidence 写清在哪）/ gap（**真实缺口**，Mellow 缺该行为或能力）/ not-applicable（Typora 特有或 Mellow 有意不做，多附 D 编号或 PRD 条款）/ unverified（**尚未核实** —— 本机资源不足以判定，note 写明「要核实什么」）。⚠️ unverified 是**存量欠债**、会被打印计数，不得当作「已确认无差异」。consumer: js（在 main.js / frame.js 里被消费 ⇒ 默认语义可从代码读出）/ native（只在面板出现 ⇒ 大概率由原生侧消费，JS 读不到默认值）。",
+  "note": "status: equivalent（Mellow 有等价能力，通常命名不同；evidence 写清在哪）/ gap（**真实缺口**，Mellow 缺该行为或能力）/ not-applicable（Typora 特有或 Mellow 有意不做，多附 D 编号或 PRD 条款）/ unverified（**尚未核实** —— 本机资源不足以判定，note 写明「要核实什么」）。⚠️ unverified 是**存量欠债**、会被打印计数，不得当作「已确认无差异」。consumer（**消费方**）: js（Typora 的 JS 树里有**显式偏好读点** —— `File.option.X` / `_options.X` / `i.option.X`；X 可能是**改名后的内部名**，此时必须同时给 `internal`）/ native（JS 树无显式读点，但**原生二进制含该字符串**）/ unknown（两者皆无 ⇒ **消费方未确定**，必须给 `consumerNote` 写明试过哪些形态）。anchor: 该判定的**可核对落点**（`consumer: js` 时是读点符号；`native` 时是键名本身；`unknown` 时是 `—`）。本机工具会核对它是否真实存在。⚠️ **口径纠正（2026-10-07 审计 §4.128）**：此前的定义是「在 main.js / frame.js 里被消费」，但实现时退化成「**字符串出现在哪个文件**」—— 而 **`frame.js` 是偏好面板脚本**，47 个键**全部**都在它里面出现 ⇒ 该判据对全体恒真、不携带信息。实测因此有 4 条自相矛盾（`SmartyPantsOnRendering` / `remapPunctuation` / `showStatusBar` / `zoomLevel`）。⚠️ **consumer 无法用机械搜索可靠判定**（实测三种判据都不成立）：① 偏好键可能**改名**（`remapPunctuation`→`remapUnicodePunctuation`、`SmartyPantsOnRendering`→`convertSmartOnRender`），按面板键搜必然 0 命中；② 可能经**通用选项包**读（`(window._options||{}).allowPhysicsConflict`），形态枚举不完备；③ 可能命中**同名异物**（`n.openExportFile` 是导出**配置对象**字段、`navigator.userLanguage` 是浏览器 API）⇒ **假阳性**。故 `consumer` 是**带引用的判断**，`anchor` 才是机器可核对的字段；**unknown 是允许且可见的欠债**。⚠️ 标签（label）抽取**不可靠**（面板是压缩 React 产物，控件有两种形态 ⇒ 向后找「最近标签」会取到邻居控件）；本表的 note 以**代码证据**为准，标签仅作参考。",
   "entries": [
-    { "key": "SmartyPantsOnRendering", "consumer": "js", "status": "unverified", "note": "面板 label 抽取不可靠（取到邻居）；需核：Typora「渲染时」应用智能标点 vs Mellow `editor.smartPunctuation`（引擎侧、何时生效？）" },
-    { "key": "actionWhenDropFile", "consumer": "js", "status": "gap", "note": "**真实缺口**（审计 §4.124）：Typora 拖入受支持的文档 ⇒ 默认**打开**（`'link' === File.option.actionWhenDropFile ? 插链接 : 打开`，缺省即打开）；Mellow 拖放只把路径喂给图片管线 ⇒ 什么都不发生" },
-    { "key": "actionWhenDropFolder", "consumer": "js", "status": "gap", "note": "**真实缺口**：`'link' === actionWhenDropFolder ? insertURL(path) : 打开文件夹/切换文件夹`（main.js + frame.js 两份一致）" },
-    { "key": "actionWhenDropImport", "consumer": "js", "status": "gap", "note": "**真实缺口**：可导入扩展名（latex/tex/wiki/dokuwiki/docx/rst/org/textile/opml）⇒ 默认**导入**，`link` 则插链接；Mellow 无导入管线（该选项在 Mellow 语义下 n/a，但「打开」那半仍缺）" },
-    { "key": "allowPhysicsConflict", "consumer": "js", "status": "unverified", "note": "面板 label =「Enable physics package」（数学）；需核 Mellow 的 math 是否支持 physics 包（`unsupportedKatexPatterns` 里有 `\\require` ⇒ 会回落 MathJax，但未实测）" },
-    { "key": "autoUpdateToDev", "consumer": "js", "status": "equivalent", "mellow": ["general.updater.channel"], "note": "Mellow 的更新通道是 select（stable/beta）；Typora 另有「dev 版本」档 ⇒ 通道集合不同（Mellow 无 dev），能力等价" },
-    { "key": "always_show_wordcount", "consumer": "native", "status": "equivalent", "mellow": ["appearance.wordCount"], "note": "Mellow 有「字数显示」开关（并另有状态栏字数项）" },
-    { "key": "auto_expand_block", "consumer": "native", "status": "equivalent", "note": "Typora：光标进入简单块（含标题）时显示源码。Mellow 的标记隐藏/揭示是**默认行为**（无开关）：实现见 `packages/editor-core/CoreEditor/src/styling/nodes/invisible.ts`（标记在光标不在该行时隐藏、聚焦该行时揭示）" },
-    { "key": "can_collapse_outline_panel", "consumer": "js", "status": "equivalent", "note": "Mellow 大纲支持折叠（`OutlineList` 的 `collapsed` / `onToggle`），**恒可用**、无开关" },
-    { "key": "customExportPath", "consumer": "js", "status": "unverified", "note": "需核：Mellow 导出是否可指定输出路径（设置里只见 `export.image.*` / `export.preserveLineBreaks`）" },
-    { "key": "darkTheme", "consumer": "native", "status": "equivalent", "mellow": ["appearance.theme"], "note": "Mellow 有主题选择与深色模式" },
-    { "key": "enableAutoUpdate", "consumer": "js", "status": "equivalent", "mellow": ["general.updater.checkOnStartup"], "note": "对应「启动时检查更新」" },
-    { "key": "exportFolder", "consumer": "js", "status": "unverified", "note": "与 `customExportPath` 同族；需核 Mellow 的导出落点是否有设置" },
-    { "key": "framelessWindow", "consumer": "js", "status": "unverified", "note": "Typora 的窗口外观档位；需核 Mellow 的 titlebar 形态是否有对应项（Mellow 自绘 titlebar，macOS 隐藏原生条）" },
-    { "key": "image_save_location", "consumer": "native", "status": "equivalent", "mellow": ["image.assetDir"], "note": "对应「图片资源目录」" },
-    { "key": "image_uploader", "consumer": "native", "status": "equivalent", "mellow": ["image.uploadService"], "note": "对应「图片上传服务」（picgo-http / PicGo / 自定义 HTTP）" },
-    { "key": "line_ending_crlf", "consumer": "native", "status": "unverified", "note": "需核：Mellow 的换行符（状态栏显示 LF/CRLF）是否有**设置项**，还是只能按文档自动识别" },
-    { "key": "match_pari_markdown", "consumer": "native", "status": "equivalent", "mellow": ["editor.markdownSyntaxPairs"], "note": "「自动配对常见 Markdown 语法」= `autoPairExtendSymbol`（Mellow 默认关，与 Typora 一致）" },
-    { "key": "noRecentFiles", "consumer": "native", "status": "equivalent", "note": "**反向键**（面板 `reverse:!0`）⇒ 默认**记录**；Mellow 恒记录最近文件并另有清除入口 ⇒ 默认行为一致" },
-    { "key": "no_image_move_for_local", "consumer": "native", "status": "unverified", "note": "反向键；属 Typora 的图片移动规则组（Mellow 有 `allowImageMove` 一族）⇒ 需核 Mellow 是否区分本地/网络图片的移动规则" },
-    { "key": "no_mid_caret", "consumer": "native", "status": "equivalent", "mellow": ["editor.typewriter"], "note": "「打字机模式下光标保持在屏幕中央」= Mellow 的 Typewriter Mode" },
-    { "key": "openExportFile", "consumer": "js", "status": "unverified", "note": "「导出后打开文件」；需核 Mellow 导出完成后是否自动打开（`export.repeat` 是另一件事）" },
-    { "key": "openExportLocation", "consumer": "js", "status": "unverified", "note": "「导出后打开所在目录」；需核 Mellow 是否有该入口" },
-    { "key": "pandocPath", "consumer": "js", "status": "equivalent", "mellow": ["export.pandocPath"], "note": "审计 §4.127 已核实并落地。Typora：面板文本输入 + 文件选择器，`title:\"Pandoc Path\"`、`placeholder:\"(Auto Detect)\"`、`defaultPath: window.isWin ? \"C:\\\\Program Files\\\\Pandoc\\\\pandoc.exe\" : \"\"`；消费端 `main.js`：`d = () => File.option.pandocPath || \"pandoc\"` ⇒ 默认**PATH 查找**。Mellow 现等价：设置 `export.pandocPath`（空 = 自动检测，语义与 `(Auto Detect)` 一致），Rust `pandoc_candidates()` 在 PATH 之外**另加常见安装位置**兜底（含 Typora 认定的 `C:\\Program Files\\Pandoc\\pandoc.exe`）" },
-    { "key": "picgo_app_path", "consumer": "native", "status": "equivalent", "mellow": ["image.uploadService"], "note": "由 **D-AL** 承载：Mellow 用**本机 HTTP 端点**（picgo-http，默认 36677）代替「可执行文件路径」" },
-    { "key": "piclistAppPath", "consumer": "js", "status": "equivalent", "mellow": ["image.uploadService"], "note": "同上（D-AL）" },
-    { "key": "pinFolder", "consumer": "js", "status": "equivalent", "note": "Mellow 支持置顶文件夹（`.file-tree-pin` 样式 + 文件夹菜单）" },
-    { "key": "quitAfterWindowClose", "consumer": "native", "status": "unverified", "note": "需核：Mellow 关闭最后一个窗口时是否退出（macOS 惯例是不退出；Windows/Linux 通常退出）" },
-    { "key": "relativePathWithDot", "consumer": "js", "status": "equivalent", "note": "`main.js`：`File.option.relativePathWithDot && (e = './' + e)` ⇒ 缺省**不加** `./`；Mellow 也不加 ⇒ **默认行为一致**" },
-    { "key": "remapPunctuation", "consumer": "js", "status": "unverified", "note": "「解析时重映射 Unicode 标点」；需核 Mellow 是否有对应行为（`editor.smartPunctuation` 是输入方向，可能不是同一件事）" },
-    { "key": "restoreWhenLaunch", "consumer": "js", "status": "equivalent", "mellow": ["general.reopenLast"], "note": "对应「启动时重新打开上次的文件」" },
-    { "key": "runCommand", "consumer": "js", "status": "not-applicable", "note": "**D-AM**：Mellow 不提供任意命令执行入口（安全基调），有意不做" },
-    { "key": "runCommandStr", "consumer": "js", "status": "not-applicable", "note": "同上（D-AM）" },
-    { "key": "shiftTabAutoIndent", "consumer": "js", "status": "equivalent", "mellow": ["editor.tabBehavior"], "note": "对应 Mellow 的 Tab 键行为（`insertTab` / 两空格 / 四空格）" },
-    { "key": "showOutput", "consumer": "js", "status": "not-applicable", "note": "「显示命令输出」—— 依附于 `runCommand`（D-AM 不实现）" },
-    { "key": "showStatusBar", "consumer": "js", "status": "equivalent", "mellow": ["appearance.statusbar"], "note": "对应状态栏开关" },
-    { "key": "strict_mode", "consumer": "native", "status": "equivalent", "note": "由偏好矩阵的 `strictMarkdown` 条目承载（判为 matches-default）" },
-    { "key": "theme", "consumer": "js", "status": "equivalent", "mellow": ["appearance.theme"], "note": "对应主题选择" },
-    { "key": "twoHyphensToEm", "consumer": "js", "status": "unverified", "note": "「Smart Dashes」；需核 Mellow 的 `editor.smartPunctuation` 是否覆盖 `--` → em dash（Typora 该键是**独立**开关）" },
-    { "key": "useMirrorInCN", "consumer": "js", "status": "not-applicable", "note": "「使用 Typora 中国服务器」—— Mellow 无该服务（更新走 GitHub Releases）" },
-    { "key": "useSeparateDarkTheme", "consumer": "native", "status": "equivalent", "mellow": ["appearance.theme"], "note": "Mellow 的深浅色主题各自可选 ⇒ 语义已覆盖" },
-    { "key": "use_seamless_window", "consumer": "native", "status": "unverified", "note": "Typora 的窗口外观档位；需核 Mellow 是否有对应项（与 `framelessWindow` 同族）" },
-    { "key": "userLanguage", "consumer": "js", "status": "equivalent", "mellow": ["general.language"], "note": "对应界面语言（zh-CN / en-US / system）" },
-    { "key": "save_file_on_switch", "consumer": "native", "status": "equivalent", "mellow": ["files.autosave"], "note": "「切换侧栏文件时不询问直接保存」= Mellow 按 **PRD §101** 的「离开时自动保存」（默认含 Document Switch）" },
-    { "key": "send_usage_info", "consumer": "native", "status": "not-applicable", "note": "「发送匿名使用信息」—— Mellow **无任何遥测通道**（全仓检索 telemetry/analytics/sentry 零命中，见 §4.41）" },
-    { "key": "zoomFactor", "consumer": "js", "status": "equivalent", "note": "Mellow 有缩放（`zoom.in/out/reset` 命令 + 状态栏 Zoom 项 + `editor.cmdWheelZoom`）" },
-    { "key": "zoomLevel", "consumer": "js", "status": "equivalent", "note": "同上；命令 = `view.zoomIn` / `view.zoomOut` / `view.zoomReset`（`packages/commands/src/menuSchema.ts`）" }
+    {
+      "key": "SmartyPantsOnRendering",
+      "consumer": "js",
+      "status": "gap",
+      "note": "**面板键 ≠ 内部选项名**：`SmartyPantsOnRendering` → `File.option.convertSmartOnRender`（frame.js：`JSBridge.putSetting(\"SmartyPantsOnRendering\",e||!1),File.option.convertSmartOnRender=e||!1`）。面板可见形态是 **radio**：`options:{false:\"Convert on Input\",true:\"Convert on Rendering\"}`，hint 原文：`Convert on Input: Input ASCII dashes or quotes, converted and saved as curly quotes or unicode dashes.` / `Convert on Rendering: Input and saved as ASCII dashes or quotes, render as curly quotes or unicode dashes.` **默认 false ⇒ \"Convert on Input\"**。Mellow `editor.smartPunctuation`（默认 false）的语义 = **输入时**改写弯引号 + `--␠`→`—`（`packages/editor-engine/src/smartPunctuation.ts`）⇒ **默认档已被复现 ⇒ 默认体验一致**。缺的是 **\"Convert on Rendering\" 档**（输入与落盘保持 ASCII、只在渲染时显示为弯引号 —— 对 git 友好）⇒ 按「能力」口径记为 gap，但**默认档不构成偏离**。",
+      "anchor": "File.option.convertSmartOnRender",
+      "internal": "convertSmartOnRender"
+    },
+    {
+      "key": "actionWhenDropFile",
+      "consumer": "js",
+      "status": "gap",
+      "note": "**真实缺口**（审计 §4.124）：Typora 拖入受支持的文档 ⇒ 默认**打开**（`'link' === File.option.actionWhenDropFile ? 插链接 : 打开`，缺省即打开）；Mellow 拖放只把路径喂给图片管线 ⇒ 什么都不发生",
+      "anchor": "File.option.actionWhenDropFile"
+    },
+    {
+      "key": "actionWhenDropFolder",
+      "consumer": "js",
+      "status": "gap",
+      "note": "**真实缺口**：`'link' === actionWhenDropFolder ? insertURL(path) : 打开文件夹/切换文件夹`（main.js + frame.js 两份一致）",
+      "anchor": "File.option.actionWhenDropFolder"
+    },
+    {
+      "key": "actionWhenDropImport",
+      "consumer": "js",
+      "status": "gap",
+      "note": "**真实缺口**：可导入扩展名（latex/tex/wiki/dokuwiki/docx/rst/org/textile/opml）⇒ 默认**导入**，`link` 则插链接；Mellow 无导入管线（该选项在 Mellow 语义下 n/a，但「打开」那半仍缺）",
+      "anchor": "File.option.actionWhenDropImport"
+    },
+    {
+      "key": "allowPhysicsConflict",
+      "consumer": "js",
+      "status": "unverified",
+      "note": "面板 label =「Enable physics package」（数学）；需核 Mellow 的 math 是否支持 physics 包（`unsupportedKatexPatterns` 里有 `\\require` ⇒ 会回落 MathJax，但未实测）",
+      "anchor": "window._options.allowPhysicsConflict"
+    },
+    {
+      "key": "autoUpdateToDev",
+      "consumer": "js",
+      "status": "equivalent",
+      "mellow": [
+        "general.updater.channel"
+      ],
+      "note": "Mellow 的更新通道是 select（stable/beta）；Typora 另有「dev 版本」档 ⇒ 通道集合不同（Mellow 无 dev），能力等价",
+      "anchor": "File.option.autoUpdateToDev"
+    },
+    {
+      "key": "always_show_wordcount",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "appearance.wordCount"
+      ],
+      "note": "Mellow 有「字数显示」开关（并另有状态栏字数项）",
+      "anchor": "always_show_wordcount"
+    },
+    {
+      "key": "auto_expand_block",
+      "consumer": "native",
+      "status": "equivalent",
+      "note": "Typora：光标进入简单块（含标题）时显示源码。Mellow 的标记隐藏/揭示是**默认行为**（无开关）：实现见 `packages/editor-core/CoreEditor/src/styling/nodes/invisible.ts`（标记在光标不在该行时隐藏、聚焦该行时揭示）",
+      "anchor": "auto_expand_block"
+    },
+    {
+      "key": "can_collapse_outline_panel",
+      "consumer": "native",
+      "status": "equivalent",
+      "note": "Mellow 大纲支持折叠（`OutlineList` 的 `collapsed` / `onToggle`），**恒可用**、无开关",
+      "anchor": "can_collapse_outline_panel"
+    },
+    {
+      "key": "customExportPath",
+      "consumer": "native",
+      "status": "unverified",
+      "note": "需核：Mellow 导出是否可指定输出路径（设置里只见 `export.image.*` / `export.preserveLineBreaks`）",
+      "anchor": "customExportPath"
+    },
+    {
+      "key": "darkTheme",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "appearance.theme"
+      ],
+      "note": "Mellow 有主题选择与深色模式",
+      "anchor": "darkTheme"
+    },
+    {
+      "key": "enableAutoUpdate",
+      "consumer": "js",
+      "status": "equivalent",
+      "mellow": [
+        "general.updater.checkOnStartup"
+      ],
+      "note": "对应「启动时检查更新」",
+      "anchor": "File.option.enableAutoUpdate"
+    },
+    {
+      "key": "exportFolder",
+      "consumer": "native",
+      "status": "unverified",
+      "note": "与 `customExportPath` 同族；需核 Mellow 的导出落点是否有设置",
+      "anchor": "exportFolder"
+    },
+    {
+      "key": "framelessWindow",
+      "consumer": "js",
+      "status": "unverified",
+      "note": "Typora 的窗口外观档位；需核 Mellow 的 titlebar 形态是否有对应项（Mellow 自绘 titlebar，macOS 隐藏原生条）",
+      "anchor": "File.option.framelessWindow"
+    },
+    {
+      "key": "image_save_location",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "image.assetDir"
+      ],
+      "note": "对应「图片资源目录」",
+      "anchor": "image_save_location"
+    },
+    {
+      "key": "image_uploader",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "image.uploadService"
+      ],
+      "note": "对应「图片上传服务」（picgo-http / PicGo / 自定义 HTTP）",
+      "anchor": "image_uploader"
+    },
+    {
+      "key": "line_ending_crlf",
+      "consumer": "native",
+      "status": "unverified",
+      "note": "需核：Mellow 的换行符（状态栏显示 LF/CRLF）是否有**设置项**，还是只能按文档自动识别",
+      "anchor": "line_ending_crlf"
+    },
+    {
+      "key": "match_pari_markdown",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "editor.markdownSyntaxPairs"
+      ],
+      "note": "「自动配对常见 Markdown 语法」= `autoPairExtendSymbol`（Mellow 默认关，与 Typora 一致）",
+      "anchor": "match_pari_markdown"
+    },
+    {
+      "key": "noRecentFiles",
+      "consumer": "native",
+      "status": "equivalent",
+      "note": "**反向键**（面板 `reverse:!0`）⇒ 默认**记录**；Mellow 恒记录最近文件并另有清除入口 ⇒ 默认行为一致",
+      "anchor": "noRecentFiles"
+    },
+    {
+      "key": "no_image_move_for_local",
+      "consumer": "native",
+      "status": "unverified",
+      "note": "反向键；属 Typora 的图片移动规则组（Mellow 有 `allowImageMove` 一族）⇒ 需核 Mellow 是否区分本地/网络图片的移动规则",
+      "anchor": "no_image_move_for_local"
+    },
+    {
+      "key": "no_mid_caret",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "editor.typewriter"
+      ],
+      "note": "「打字机模式下光标保持在屏幕中央」= Mellow 的 Typewriter Mode",
+      "anchor": "no_mid_caret"
+    },
+    {
+      "key": "openExportFile",
+      "consumer": "unknown",
+      "status": "unverified",
+      "note": "「导出后打开文件」；需核 Mellow 导出完成后是否自动打开（`export.repeat` 是另一件事）",
+      "anchor": "—",
+      "consumerNote": "消费方**未确定**。JS 树里只有 `n.openExportFile`（导出**配置对象**字段，与偏好键同名但**不能证明**来自偏好存储）；原生二进制无该字符串（实测 `strings -a Contents/MacOS/Typora` 精确行未命中）。"
+    },
+    {
+      "key": "openExportLocation",
+      "consumer": "unknown",
+      "status": "unverified",
+      "note": "「导出后打开所在目录」；需核 Mellow 是否有该入口",
+      "anchor": "—",
+      "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.openExportLocation` 是导出配置对象字段）。"
+    },
+    {
+      "key": "pandocPath",
+      "consumer": "js",
+      "status": "equivalent",
+      "mellow": [
+        "export.pandocPath"
+      ],
+      "note": "审计 §4.127 已核实并落地。Typora：面板文本输入 + 文件选择器，`title:\"Pandoc Path\"`、`placeholder:\"(Auto Detect)\"`、`defaultPath: window.isWin ? \"C:\\\\Program Files\\\\Pandoc\\\\pandoc.exe\" : \"\"`；消费端 `main.js`：`d = () => File.option.pandocPath || \"pandoc\"` ⇒ 默认**PATH 查找**。Mellow 现等价：设置 `export.pandocPath`（空 = 自动检测，语义与 `(Auto Detect)` 一致），Rust `pandoc_candidates()` 在 PATH 之外**另加常见安装位置**兜底（含 Typora 认定的 `C:\\Program Files\\Pandoc\\pandoc.exe`）",
+      "anchor": "File.option.pandocPath"
+    },
+    {
+      "key": "picgo_app_path",
+      "consumer": "unknown",
+      "status": "equivalent",
+      "mellow": [
+        "image.uploadService"
+      ],
+      "note": "由 **D-AL** 承载：Mellow 用**本机 HTTP 端点**（picgo-http，默认 36677）代替「可执行文件路径」",
+      "anchor": "—",
+      "consumerNote": "消费方**未确定**。JS 树里只有面板自身的 `putSetting`（写），原生二进制无该字符串（PicGo 相关设置可能由外部插件/子进程消费）。"
+    },
+    {
+      "key": "piclistAppPath",
+      "consumer": "js",
+      "status": "equivalent",
+      "mellow": [
+        "image.uploadService"
+      ],
+      "note": "同上（D-AL）",
+      "anchor": "File.option.piclistAppPath"
+    },
+    {
+      "key": "pinFolder",
+      "consumer": "js",
+      "status": "equivalent",
+      "note": "Mellow 支持置顶文件夹（`.file-tree-pin` 样式 + 文件夹菜单）",
+      "anchor": "File.option.pinFolder"
+    },
+    {
+      "key": "quitAfterWindowClose",
+      "consumer": "native",
+      "status": "unverified",
+      "note": "需核：Mellow 关闭最后一个窗口时是否退出（macOS 惯例是不退出；Windows/Linux 通常退出）",
+      "anchor": "quitAfterWindowClose"
+    },
+    {
+      "key": "relativePathWithDot",
+      "consumer": "js",
+      "status": "equivalent",
+      "note": "`main.js`：`File.option.relativePathWithDot && (e = './' + e)` ⇒ 缺省**不加** `./`；Mellow 也不加 ⇒ **默认行为一致**",
+      "anchor": "File.option.relativePathWithDot"
+    },
+    {
+      "key": "remapPunctuation",
+      "consumer": "js",
+      "status": "equivalent",
+      "note": "**面板键 ≠ 内部选项名**：面板键 `remapPunctuation` → `File.option.remapUnicodePunctuation`（frame.js：`File.option.remapUnicodePunctuation=e||!1,JSBridge.putSetting(\"remapPunctuation\",e||!1)`）。面板可见 label = **\"Remap Unicode Punctuation on Parse\"**（hint：`》 blockquote → > blockquote`、`[link](src ’title’) → [link](src 'title')`，并写明 \"It will be turned on automatically if smart quotes/dashes will be converted on input.\"）⇒ 语义 = **解析时把 Unicode/全角标点也当 ASCII 语法**。消费点（main.js）：`shouldRemapPunctuation(){ return File.option.remapUnicodePunctuation || !File.option.convertSmartOnRender && (File.option.smartQuote || File.option.smartDash) }` —— 该表达式与面板 hint 那句**逐字对应**，互为验证。**默认 false**（main.js 默认值表：`remapUnicodePunctuation:!1`）⇒ 默认**不做** remap。Mellow 亦不做 ⇒ **默认行为一致**；Mellow 无此开关 ⇒ 记为 equivalent。⚠️ **联动约束**（给将来实现智能标点时用）：Typora 在「智能引号/破折号 + 输入时转换」时会**自动**打开它 —— 不是独立开关。",
+      "anchor": "File.option.remapUnicodePunctuation",
+      "internal": "remapUnicodePunctuation"
+    },
+    {
+      "key": "restoreWhenLaunch",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "general.reopenLast"
+      ],
+      "note": "对应「启动时重新打开上次的文件」",
+      "anchor": "restoreWhenLaunch"
+    },
+    {
+      "key": "runCommand",
+      "consumer": "unknown",
+      "status": "not-applicable",
+      "note": "**D-AM**：Mellow 不提供任意命令执行入口（安全基调），有意不做",
+      "anchor": "—",
+      "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.runCommand` 是导出配置对象字段）。"
+    },
+    {
+      "key": "runCommandStr",
+      "consumer": "unknown",
+      "status": "not-applicable",
+      "note": "同上（D-AM）",
+      "anchor": "—",
+      "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.runCommandStr` 是导出配置对象字段）。"
+    },
+    {
+      "key": "shiftTabAutoIndent",
+      "consumer": "js",
+      "status": "equivalent",
+      "mellow": [
+        "editor.tabBehavior"
+      ],
+      "note": "对应 Mellow 的 Tab 键行为（`insertTab` / 两空格 / 四空格）",
+      "anchor": "File.option.shiftTabAutoIndent"
+    },
+    {
+      "key": "showOutput",
+      "consumer": "unknown",
+      "status": "not-applicable",
+      "note": "「显示命令输出」—— 依附于 `runCommand`（D-AM 不实现）",
+      "anchor": "—",
+      "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.showOutput` 是导出配置对象字段）。"
+    },
+    {
+      "key": "showStatusBar",
+      "consumer": "js",
+      "status": "equivalent",
+      "mellow": [
+        "appearance.statusbar"
+      ],
+      "note": "对应状态栏开关",
+      "anchor": "_options.showStatusBar"
+    },
+    {
+      "key": "strict_mode",
+      "consumer": "native",
+      "status": "equivalent",
+      "note": "由偏好矩阵的 `strictMarkdown` 条目承载（判为 matches-default）",
+      "anchor": "strict_mode"
+    },
+    {
+      "key": "theme",
+      "consumer": "js",
+      "status": "equivalent",
+      "mellow": [
+        "appearance.theme"
+      ],
+      "note": "对应主题选择",
+      "anchor": "File.option.theme"
+    },
+    {
+      "key": "twoHyphensToEm",
+      "consumer": "js",
+      "status": "equivalent",
+      "note": "面板里**仅非 macOS 且 `smartDash` 开启时**才出现（`!window.isMac && this.getValue(\"smartDash\") ? <radio> : null`），radio 文案：`false:\"Convert -- to – (en dash), and --- to — (em dash)\"` / `true:\"Convert -- and --- to — (em dash)\"`。消费点（main.js + frame.js）：`inner: File.option.twoHyphensToEm ? \"—\" : \"–\"`（`^--` 分支）⇒ **缺省即 else ⇒ 默认 false ⇒ `--`→`–`(en)、`---`→`—`(em)**。Mellow 的 `shouldEmDash`（`smartPunctuation.ts`）把 `--␠` 换成 `— `（**em**）⇒ 取的是 Typora 的 **true 档**。两边 `smartDash` 默认均为关 ⇒ 默认都不触发；**一旦开启，`--` 的落点不同**（Mellow em / Typora en）—— 记为 equivalent + 该偏离已写明（Mellow 的取舍：`--` 与 `---` 都指向 em，避开 hr）。",
+      "anchor": "File.option.twoHyphensToEm"
+    },
+    {
+      "key": "useMirrorInCN",
+      "consumer": "js",
+      "status": "not-applicable",
+      "note": "「使用 Typora 中国服务器」—— Mellow 无该服务（更新走 GitHub Releases）",
+      "anchor": "File.option.useMirrorInCN"
+    },
+    {
+      "key": "useSeparateDarkTheme",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "appearance.theme"
+      ],
+      "note": "Mellow 的深浅色主题各自可选 ⇒ 语义已覆盖",
+      "anchor": "useSeparateDarkTheme"
+    },
+    {
+      "key": "use_seamless_window",
+      "consumer": "native",
+      "status": "unverified",
+      "note": "Typora 的窗口外观档位；需核 Mellow 是否有对应项（与 `framelessWindow` 同族）",
+      "anchor": "use_seamless_window"
+    },
+    {
+      "key": "userLanguage",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "general.language"
+      ],
+      "note": "对应界面语言（zh-CN / en-US / system）",
+      "anchor": "userLanguage"
+    },
+    {
+      "key": "save_file_on_switch",
+      "consumer": "native",
+      "status": "equivalent",
+      "mellow": [
+        "files.autosave"
+      ],
+      "note": "「切换侧栏文件时不询问直接保存」= Mellow 按 **PRD §101** 的「离开时自动保存」（默认含 Document Switch）",
+      "anchor": "save_file_on_switch"
+    },
+    {
+      "key": "send_usage_info",
+      "consumer": "native",
+      "status": "not-applicable",
+      "note": "「发送匿名使用信息」—— Mellow **无任何遥测通道**（全仓检索 telemetry/analytics/sentry 零命中，见 §4.41）",
+      "anchor": "send_usage_info"
+    },
+    {
+      "key": "zoomFactor",
+      "consumer": "js",
+      "status": "equivalent",
+      "note": "Mellow 有缩放（`zoom.in/out/reset` 命令 + 状态栏 Zoom 项 + `editor.cmdWheelZoom`）",
+      "anchor": "File.option.zoomFactor"
+    },
+    {
+      "key": "zoomLevel",
+      "consumer": "unknown",
+      "status": "equivalent",
+      "note": "同上；命令 = `view.zoomIn` / `view.zoomOut` / `view.zoomReset`（`packages/commands/src/menuSchema.ts`）",
+      "anchor": "—",
+      "consumerNote": "消费方**未确定**。读点在 **Electron `webFrame`**（`setZoomLevel` / `getZoomLevel`）—— 不在 Typora 树内，故本工具核对不到；原生二进制也无该字符串。"
+    }
   ]
 }

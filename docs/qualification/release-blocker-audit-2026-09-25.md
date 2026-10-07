@@ -8175,6 +8175,123 @@ thread panicked: assertion `left == right` failed
 
 
 
+## 4.128 「面板键 ≠ 内部选项名」—— 登记表 `consumer` 口径错（4/47 自相矛盾）+ 第二份默认值表交叉验证（2026-10-07）
+
+### 一、动因
+
+§4.127 把 `pandocPath` 结清时，需要判断它「在 Typora 里被谁消费」。按登记表声明的口径
+（`consumer: js` = 「在 `main.js` / `frame.js` 里被消费」）去搜 `main.js` —— **0 处命中**，
+而登记表写的是 `js`。追下去发现**口径与实现不是一回事**。
+
+### 二、三个发现
+
+**① `frame.js` 是偏好面板脚本 ⇒ 「出现在哪个文件」这个判据对全体恒真。**
+登记表的 `consumer` 声明是「在 `main.js` / `frame.js` 里被消费」，但实现退化成
+「**字符串出现在哪个文件**」—— 而 **47 个面板键全部都在 `frame.js` 里出现**（面板自己的
+`getValue("K")` / `onChange` 代码）⇒ 该判据**不携带信息**。实测因此有 **4 条自相矛盾**：
+
+| 键 | 登记 | 实测（`main.js` 里 `File.option.<键>`） | 真因 |
+|---|---|---|---|
+| `SmartyPantsOnRendering` | `js` | **0 处** | **改名**：`File.option.convertSmartOnRender`（main.js 13 处） |
+| `remapPunctuation` | `js` | **0 处** | **改名**：`File.option.remapUnicodePunctuation`（main.js 1 处） |
+| `showStatusBar` | `js` | **0 处** | 读点是 **`_options.showStatusBar`**（frame.js，面板窗口切 body class） |
+| `zoomLevel` | `js` | **0 处** | 读点在 **Electron `webFrame`**（`setZoomLevel`/`getZoomLevel`），不在 Typora 树内 |
+
+**② `consumer` 无法用机械搜索可靠判定（三种判据实测都不成立）。**
+- **改名**：`remapPunctuation` → `File.option.remapUnicodePunctuation`；`SmartyPantsOnRendering` → `File.option.convertSmartOnRender`
+  （原文：`File.option.remapUnicodePunctuation=e||!1,JSBridge.putSetting("remapPunctuation",e||!1)`）
+  ⇒ 按面板键搜**必然 0 命中**，会把「被消费」误判成「无消费」。
+- **通用选项包**：`allowPhysicsConflict` 的读点是 `(window._options||{}).allowPhysicsConflict`（main.js，传进 MathJax 配置）
+  ⇒ 形态枚举不完备（我试了 `File.option.X` / `_options.X` / `window._options.X` / `i.option.X`，**都漏了**这一个）。
+- **同名异物（假阳性）**：`n.openExportFile` 里的 `n` 是**导出配置对象**、`navigator.userLanguage` 是**浏览器 API**
+  ⇒ 命中「同名」不等于命中「该偏好」。
+- 我还试了两种**自动化**方案，都**不成立**（如实记录）：
+  按窗口取最近邻 ⇒ 取到**邻居键**（`remapPunctuation` 被配成 `smartQuote`）；
+  按「`putSetting("K",V)` 与 `File.option.<name>=V` 用**同一个值表达式** V」配对 ⇒
+  `V` 常是 `e||!1` 这种通用表达式，**不具鉴别力**（`zoomFactor` 被配成 `showToolbar`）。
+
+⇒ 结论：**`consumer` 只能是「带引用的判断」，不能假装成机械结论。**
+
+**③ `main.js` 里还有一份**独立的**默认值表（同 84 键）。**
+矩阵的声明源是 `frame.js` 的 `DEFAULT_OPTIONS`；而 `main.js` 的 `File.option` 默认值对象
+（锚点 `convertSmartOnRender:!1,remapUnicodePunctuation:!1`）是**同一批 84 键**，
+来自**不同文件、不同压缩产物** ⇒ 天然是一次**独立交叉验证**。实测：
+- 键集 **84/84 双向一致**（0 差集）⇒ 矩阵的范围声明**被第二个来源证实**；
+- 默认值 **84/84 逐条一致** —— ⚠️ 修前有 2 处「不一致」，根因是**矩阵把空数组编码成字符串**：
+  `treeFileFilterPatterns` / `libraryFileFilterPatterns` 的 `default` 写成 `"[]"` 而 Typora 里是 `[]`。
+  ⇒ 那是**矩阵的类型错误**（`default` 是 JSON 值字段，不该把数组字符串化），已改回 `[]`。
+
+### 三、处置
+
+1. **登记表 `consumer` 改为三值 + 新增 `anchor`**（`tests/parity/fixtures/typora-panel-only-keys.json`）：
+   - `js` = Typora 的 JS 侧有**显式偏好读点**（`File.option.X` / `_options.X` / `i.option.X`，X 可为改名后的内部名）；
+   - `native` = JS 侧无显式读点，但**原生二进制含该字符串**；
+   - **`unknown`** = 两者皆无 ⇒ **消费方未确定**（必须写 `consumerNote` 声明试过哪些形态）；
+   - **`anchor`** = 该判断的**可核对落点**（`js` 时是读点符号，`native` 时是键名，`unknown` 时是 `—`）；
+   - **`internal`** = 面板键与内部名不同时的内部名（只在确实改名时写）。
+   ⇒ 结果：**js 19 / native 21 / unknown 7**（`unknown` = `openExportFile`、`openExportLocation`、
+   `picgo_app_path`、`runCommand`、`runCommandStr`、`showOutput`、`zoomLevel`）。
+   ⚠️ 顶层 `note` 里把上面三条**不可靠性**逐条写清（否则下一个人会再按「出现在哪个文件」判一次）。
+2. **结清智能标点家族 3 项 `unverified`**（`status` 轴，13 → **10**）：
+   - `remapPunctuation` → `equivalent`：面板 label = **"Remap Unicode Punctuation on Parse"**，
+     语义 = **解析时把 Unicode/全角标点也当 ASCII 语法**（hint：`》 blockquote → > blockquote`）；
+     消费点 `shouldRemapPunctuation(){ return File.option.remapUnicodePunctuation || !File.option.convertSmartOnRender && (File.option.smartQuote || File.option.smartDash) }`
+     —— 该表达式与面板 hint 的 **"It will be turned on automatically if smart quotes/dashes will be converted on input."** **逐字对应**，互为验证。
+     **默认 false** ⇒ 默认不做 remap；Mellow 亦不做 ⇒ **默认行为一致**。
+   - `SmartyPantsOnRendering` → `gap`：面板是 **radio**（`Convert on Input` / `Convert on Rendering`），**默认 false = Convert on Input**；
+     Mellow `editor.smartPunctuation`（默认 false）的语义 = **输入时**改写弯引号 + `--␠`→`—`
+     ⇒ **默认档已被复现 ⇒ 默认体验一致**；缺的是「**渲染时转换**」档（落盘保持 ASCII、只在渲染时显示）⇒ 按能力口径记 gap。
+   - `twoHyphensToEm` → `equivalent`：面板里**仅非 macOS 且 `smartDash` 开启时**才出现；Typora 默认 false ⇒ `--`→`–`(en)、`---`→`—`(em)；
+     Mellow 的 `shouldEmDash` 把 `--␠` 换成 `— `（**em**）⇒ 取的是 Typora 的 **true 档** ⇒ 记为 equivalent 并写明该偏离。
+3. **矩阵修 2 处类型编码**：`default: "[]"` → `[]`。
+4. **本机工具新增两条判据**（`tests/parity/tools/audit-typora-preferences.mjs`）：
+   - **`anchor` 必须核对得上**：`js` ⇒ anchor 末段标识符必须在 Typora 的 JS 侧存在；
+     `native` ⇒ anchor 必须**在原生二进制里精确行命中**（`strings -a Contents/MacOS/Typora`）；
+     `unknown` ⇒ anchor 必须是 `—` 且必须有 `consumerNote`；`internal === key` 视为噪声。
+     并**打印** consumer 分布与 `unknown` 清单（存量欠债必须可见）。
+   - **第二份默认值表交叉验证**：键集双向 + 值逐条 + 3 条**绝对判据**（锚点命中 / 键数下限 80 / 三条已知值字面断言）
+     —— 相对判据（两源互比）配绝对判据，防「一起变松」。
+5. **CI 侧只锁形状**（`verify-settings-contract.mjs` ⑭）：`consumer ∈ {js,native,unknown}`、`anchor` 必填且与 consumer 相配、
+   `unknown` 必须有 `consumerNote`、`internal ≠ key`；并加**两条棘轮**：`status=unverified ≤ 10`、`consumer=unknown ≤ 7`
+   —— 防「把没查的项改标成 `unverified`/`unknown` 来绕开工作」（那会让欠债**回升**）。
+   ⚠️ 事实核对（anchor 是否存在）**必须**在本机工具里做：CI 不装 Typora。
+
+### 四、注入验证（全部实跑，含还原）
+
+| # | 注入 | 期望 | 实得 |
+|---|---|---|---|
+| 1 | `pandocPath` 的 `anchor` 改成不存在的符号 | 本机工具报「anchor 核对不上」 | ✅ |
+| 2 | `darkTheme`（native）的 `anchor` 改成不存在的字符串 | 同上（原生二进制无该串） | ✅ |
+| 3 | `zoomLevel`（unknown）的 `anchor` 改成 `x` | 报「unknown 时 anchor 必须为 —」 | ✅ |
+| 4 | 删掉 `runCommand` 的 `consumerNote` | 报「未确定必须写明试过哪些形态」 | ✅ |
+| 5 | `remapPunctuation` 的 `internal` 写成等于 `key` | 报「internal 与 key 相同 ⇒ 不该写」 | ✅ |
+| 6 | 把矩阵 `wordsPerMinute` 默认值改成 400 | 报「两源不一致（矩阵 400 / main.js 382）」 | ✅ |
+| 7 | 删掉 `pandocPath` 的 `anchor` | CI 报「anchor 缺失」 | ✅ |
+| 8 | `zoomLevel` 的 `anchor` 改成 `x` | CI 报「consumer=unknown 时 anchor 必须为 —」 | ✅ |
+| 9 | 把 3 条已核实的改成 `unverified`（13 > 10） | CI 报棘轮回升 | ✅ |
+| 10 | `remapPunctuation` 的 `internal` 等于 `key` | CI 报「internal 与 key 相同」 | ✅ |
+
+### 五、教训
+
+1. **「字符串出现在哪个文件」不是「被消费」** —— 尤其是当那个文件**就是这个 UI 的脚本**时，
+   判据会对**全体**恒真。登记表里凡是「XX 有/没有」的字段，都要问一句
+   **「它的判据在这个文件集上有没有鉴别力？」**（本例：`frame.js` 含全部 47 个键 ⇒ 零鉴别力）。
+2. **跨层标识符可能被改名** —— 搜「某键有没有被消费」之前，先取**映射**。
+   而且**不要**用「最近邻」或「同值表达式」自动配对：前者会取到邻居键，后者在 `e||!1` 这种通用值上不具鉴别力
+   （两种我都试过，都被实测否掉）。⇒ 映射只能**逐条读原文确证**。
+3. **「命中同名」≠「命中该物」** —— `n.openExportFile`（导出配置对象字段）、`navigator.userLanguage`（浏览器 API）
+   都会让搜索**假阳性**。⇒ 判据要么能区分「同名异物」，要么就把不确定**显式登记**。
+4. **不确定要允许，但必须可见且只能下降** —— 本轮新增 `unknown` 这个**合法**取值（7 项），
+   并要求写清「试过哪些形态」+ 在 CI 里加**棘轮**。
+   若不许 `unknown`，结果只会是「用一个看起来确定的错值填上」——那比留空更危险。
+5. **相对判据必须配绝对判据** —— 两源互比（`frame.js` vs `main.js`）能防单边漂移，
+   但防不了「一起变松」⇒ 同时锁锚点、键数下限与三条**对原文**的字面断言。
+6. **字段的类型也是契约** —— 矩阵的 `default` 是 JSON 值字段，把空数组写成 `"[]"`（字符串）
+   在 84 条里只占 2 条、当下也没影响任何判据；但它**让「两源一致」这个结论变成假的**。
+   ⇒ 交叉验证的价值之一，正是把这种「无影响的类型错误」暴露出来。
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 
