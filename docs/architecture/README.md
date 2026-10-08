@@ -20,6 +20,13 @@ Mellow 架构文档。
 | [host-adapter.md](host-adapter.md) | Host Adapter：PRD §116 九服务契约与实现状态 |
 | [monorepo.md](monorepo.md) | Monorepo 结构、平台代码隔离规则 |
 | [migration.md](migration.md) | MarkEdit 迁移策略：Keep / Refactor / Replace、顺序、风险 |
+| [extension-api.md](extension-api.md) | Extension API：PRD §119-121（权限模型 / Safe Mode）、ADR-0013 |
+
+> **⚠️ 2026-10-08 更正（审计 §4.159）**：上表原**只有 5 行**，**漏了 `extension-api.md`**
+> （本目录实际 **7** 个 `.md` = 上表 6 行 + `README.md` 自身）。
+> ⚠️ **为什么以前没被发现**：本目录的护栏只查**反引号里的路径**，而这张索引用的是 **markdown 链接**
+> ⇒ **索引的完整性从来没有判据**。现已落判据（`tests/parity/verify-doc-code-refs.mjs`：
+> 本表的链接集合必须**双向等于**目录里的 `.md` 集合）。
 
 ## 快照
 

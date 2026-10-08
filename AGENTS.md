@@ -118,9 +118,20 @@ packages/
   workspace/  commands/  i18n/  themes/  extension-api/  shared/
 
 tests/
-  qualification/  # V0.0 运行时门禁记录
-  fixtures/       # Markdown 测试素材库
+  benchmark/      # macOS 对照 harness（golden journeys / IME 矩阵 / 性能，对照 Typora 1.14.9）
+  e2e/            # Playwright 端到端探针（不依赖 GUI 授权）
+  fixtures/       # Markdown / 导出 / 文件安全素材库
+  parity/         # Typora 对标台账（typora-parity-ledger.json）+ 契约护栏 verify-*.mjs
+  qualification/  # V0.0 运行时门禁记录 + 可执行脚本（source-fidelity / packaging smoke）
+  shared/         # 探针共享工具（如 in-app-dialog.mjs）
+  visual/         # 视觉 Golden（基线按平台分离）
 ```
+
+> **⚠️ 2026-10-08 更正（审计 §4.159）**：`tests/` 段原**只有 2 行**（`qualification/` + `fixtures/`），
+> **漏了 `benchmark/`**（而**本文件的规则 14 要求以 Typora 1.14.9 为验收基线** ——
+> 对照 harness 正在 `tests/benchmark/`），另 4 个（`e2e/` / `parity/` / `shared/` / `visual/`）也未列。
+> ⇒ 现**列全 7 个**。**声明**：本「目录约定」里 `packages/` 与 `tests/` **两段都自称穷举**，
+> 且**都由护栏双向锁定**（`tests/parity/verify-doc-code-refs.mjs`：列出的必须存在 + 存在的必须被列出）。
 
 > ⚠️ **2026-10-06 更正（审计 §4.93）**：上面这份 `packages/` 清单原**漏了 3 个实际存在的包**
 > （`desktop-ui` / `export` / `settings`）—— `packages/` 实际有 **15** 个目录。

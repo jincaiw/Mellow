@@ -356,6 +356,40 @@ for (const doc of docs) {
         }
       });
   }
+  // 2026-10-08（审计 §4.159）：本目录 README 的「## 文档」索引必须**穷举**该目录的 `.md`。
+  // ⚠️ 为什么以前没发现：上面的路径判据只查**反引号**，而这张索引用的是 **markdown 链接**
+  // ⇒ **索引的完整性从来没有判据**。实测漏了 `extension-api.md`（本目录 7 个 `.md` 里只列 5）。
+  {
+    const INDEX = 'docs/architecture/README.md';
+    const idxSrc = readFileSync(resolve(root, INDEX), 'utf8').replace(/\r\n/g, '\n');
+    /** 索引里的**目录内** markdown 链接目标（排除外链与锚点）。判定与 canary **共用**。 */
+    const indexTargets = (src) => [...new Set([...src.matchAll(/\]\((?!https?:|[#/])([a-z0-9-]+\.md)\)/g)]
+      .map((m) => m[1]))];
+    const listedIdx = indexTargets(idxSrc);
+    const actualMd = readdirSync(resolve(root, 'docs/architecture')).filter((f) => f.endsWith('.md'));
+    const missing = actualMd.filter((f) => f !== 'README.md' && !listedIdx.includes(f)).sort();
+    const extra = listedIdx.filter((f) => !actualMd.includes(f)).sort();
+    if (missing.length > 0) {
+      fail(`${INDEX} 的「## 文档」索引**漏了**本目录的 .md：${missing.join('、')}`
+        + ' —— 该表是目录索引，应穷举（实测：曾漏 `extension-api.md`）');
+    }
+    if (extra.length > 0) {
+      fail(`${INDEX} 的索引列出了**不存在**的 .md：${extra.join('、')}`);
+    }
+    if (listedIdx.length < 5) {
+      fail(`${INDEX} 的索引只解析出 ${listedIdx.length} 条（下限 5 = 立此判据时的基线）—— 判据会空转`);
+    }
+    // canary：三向
+    if (indexTargets('[a](a.md)\n[b](b.md)').length !== 2) {
+      errors.push('架构索引护栏 canary 失效：目录内链接未被解析');
+    }
+    if (indexTargets('[x](https://example.com/a.md)').length !== 0) {
+      errors.push('架构索引护栏 canary 过宽：**外链**被当成了目录内文件');
+    }
+    if (indexTargets('[x](#anchor)').length !== 0) {
+      errors.push('架构索引护栏 canary 过宽：**锚点**被当成了文件');
+    }
+  }
   if (checked < 20) {
     fail(`docs/architecture + docs/superpowers 只解析出 ${checked} 个含 \`/\` 的路径（下限 20 = 立此判据时的基线）`
       + ' —— 谓词或目录内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
@@ -726,35 +760,49 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
       fail(`AGENTS.md 引用了**不存在**的仓库相对路径：${missingPaths.join(', ')} —— `
         + '治理文件的路径断言必须可达（它是所有任务的入口）');
     }
-    // ② 「目录约定」的 packages 清单 ⇄ 实际 packages/* **双向**
+    // ② 「目录约定」的 `packages/` 与 `tests/` 清单 ⇄ 实际目录 **双向**
+    //    2026-10-08（审计 §4.159）：原只查 `packages/`；而**同一棵树**里的 `tests/` 段**只列 2/7**
+    //    （漏 `benchmark/` 等 5 个）⇒ 现**两段都查**（并声明两段都自称穷举）。
     const lines = agents.split('\n');
-    const pkgStart = lines.findIndex((l) => /^packages\/\s*$/.test(l));
-    if (pkgStart < 0) fail('AGENTS.md 的「目录约定」里找不到 `packages/` 段 —— 解析漂移会让本判据空转');
-    if (pkgStart >= 0) {
-      const listed = new Set();
-      for (let i = pkgStart + 1; i < lines.length; i += 1) {
+    /** 取「目录约定」里某个顶格段（如 `packages/`）下缩进行里出现的 `<name>/`。 */
+    const sectionListed = (header) => {
+      const start = lines.findIndex((l) => l.trim() === header);
+      if (start < 0) return null;
+      const out = new Set();
+      for (let i = start + 1; i < lines.length; i += 1) {
         const l = lines[i];
         if (/^[^\s]/.test(l)) break; // 回到顶格 ⇒ 该段结束
-        for (const m of l.matchAll(/(?:^|\s)([a-z][a-z0-9-]*)\//g)) listed.add(m[1]);
+        for (const m of l.matchAll(/(?:^|\s)([a-z][a-z0-9-]*)\//g)) out.add(m[1]);
       }
-      const actual = readdirSync(resolve(root, 'packages'), { withFileTypes: true })
-        .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-        .map((e) => e.name);
-      if (listed.size < 10) fail(`AGENTS.md 的 packages 清单只解析出 ${listed.size} 个（下限 10）—— 解析漂移会让本判据空转`);
+      return out;
+    };
+    const dirNames = (d) => readdirSync(resolve(root, d), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name);
+    for (const [header, dir, min] of [['packages/', 'packages', 10], ['tests/', 'tests', 6]]) {
+      const listed = sectionListed(header);
+      if (listed === null) {
+        fail(`AGENTS.md 的「目录约定」里找不到 \`${header}\` 段 —— 解析漂移会让本判据空转`);
+        continue;
+      }
+      const actual = dirNames(dir);
+      if (listed.size < min) {
+        fail(`AGENTS.md 的 ${header} 清单只解析出 ${listed.size} 个（下限 ${min} = 立此判据时的基线）`
+          + ' —— 解析漂移会让本判据空转');
+      }
       const notListed = actual.filter((p) => !listed.has(p)).sort();
       const notExist = [...listed].filter((p) => !actual.includes(p)).sort();
       if (notListed.length > 0) {
-        fail(`这些包**实际存在但 AGENTS.md 的目录约定未列出**：${notListed.join(', ')} —— `
-          + '该清单自称穷举；清单不全 = 新包「不存在于治理文件里」（同 §4.28「护栏范围没枚举」）');
+        fail(`这些目录**实际存在但 AGENTS.md 的「目录约定」未列出**：${notListed.map((x) => `${dir}/${x}`).join(', ')} —— `
+          + '该清单**自称穷举**；清单不全 = 新目录「不存在于治理文件里」（同 §4.28「护栏范围没枚举」）');
       }
       if (notExist.length > 0) {
-        fail(`AGENTS.md 的目录约定列出了**不存在**的包：${notExist.join(', ')} —— 治理文件不得指向不存在的目录`);
+        fail(`AGENTS.md 的「目录约定」列出了**不存在**的 ${dir}/ 子目录：${notExist.join(', ')} —— 治理文件不得指向不存在的目录`);
       }
-      // canary：谓词是**同一组集合运算**，双向
-      const diff = (a, b) => a.filter((x) => !b.includes(x)).sort();
-      if (diff(['a', 'b'], ['a', 'b']).length !== 0) errors.push('AGENTS.md 包清单护栏 canary 失效：相等集合被判为有差异');
-      if (diff(['a', 'c'], ['a', 'b']).join(',') !== 'c') errors.push('AGENTS.md 包清单护栏 canary 失效：多出的项未被识别');
     }
+    // canary：谓词是**同一组集合运算**，双向
+    const diff = (a, b) => a.filter((x) => !b.includes(x)).sort();
+    if (diff(['a', 'b'], ['a', 'b']).length !== 0) errors.push('AGENTS.md 清单护栏 canary 失效：相等集合被判为有差异');
+    if (diff(['a', 'c'], ['a', 'b']).join(',') !== 'c') errors.push('AGENTS.md 清单护栏 canary 失效：多出的项未被识别');
   }
 }
 
