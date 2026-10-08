@@ -1038,7 +1038,15 @@ if (driftedMissing.length === 0) {
 // 「护栏看不见我」）。是 canary（注入漂移后**应当**失败却 exit 0）当场暴露的。
 // **新增断言必须落在错误检查点之前**；且**只做注入验证不够，必须验证「能翻转」**。
 //
-// ⚠️ 覆盖边界：只锁**护栏数量**（可静态算）；**包用例数需实跑**，无法在此校验 —— 如实声明。
+// ⚠️ 覆盖边界（2026-10-08 审计 §4.153 **更正**）：
+// 旧声明写「只锁护栏数量；**包用例数需实跑，无法在此校验**」—— **太宽**，它把两件事混为一谈：
+//   ① 无法对**现实**校验（需实跑）—— 真的；
+//   ② 无法对**同文件内的真值源**校验 —— **假的**。实测：该文件里包用例数有**两处**写法
+//      （Pass/Fail 表内联 与 「各包规模」行），**4 处内联数字全部**与真值源矛盾
+//      （`editor-engine 971` / `export 72` / `settings 13` / `app-core 200`
+//       vs 真值源 `1277` / `89` / `17` / `258`）⇒ **这是可机械判的**。
+// ⇒ 判据：**单一真源 = 「各包规模」行**；文件其它位置出现的 `<包名> <数字>` 必须与之一致。
+//    （更正说明会**引用旧值** ⇒ 与 `verify-doc-code-refs.mjs` 的 `LOOKS_LIKE_QUOTE` 同源，逐行豁免。）
 {
   const readme = read('tests/qualification/README.md');
   const STATED_RE = /Parity 契约护栏 \*\*(\d+) 个\*\*/;
@@ -1055,6 +1063,126 @@ if (driftedMissing.length === 0) {
     errors.push('qualification README 数字一致性 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
   } else if (Number(STATED_RE.exec(drift)?.[1]) === guardFiles.length) {
     errors.push('qualification README 数字一致性 canary 失效：注入漂移后仍判定一致');
+  }
+
+  // ── 包用例数：**单一真源 = 「各包规模」行**；文件其它位置必须与之一致（2026-10-08）──────
+  // 判定与 canary **共用**本谓词（`pkgAudit`）：返回 `{truthSize,total,bad}`，真值源缺失返回 `null`。
+  const PKGS = ['editor-engine', 'app-core', 'export', 'host-api', 'commands',
+    'document-model', 'editor-core', 'desktop-ui', 'settings', 'i18n', 'extension-api', 'themes'];
+  const NOTE_LINE = /原写|上一版|更正|实跑为|而实际|过期|曾长期/;
+  // ⚠️ 真值源行必须**按内容选**，不能按「第一行含『各包规模』」选 ——
+  //    本轮实测踩到：我在表格标题下加了一条**引用**「各包规模」的说明 ⇒ `findIndex` 取到了那条说明
+  //    （含 0 个包）⇒ 判据报「只解析出 0 个包」。⇒ **在候选行里取「含包数最多」的那一行**。
+  const truthOf = (text) => {
+    const ls = text.split('\n');
+    let best = -1; let bestN = 0;
+    ls.forEach((l, i) => {
+      if (!/各包规模/.test(l)) return;
+      const n = [...l.matchAll(/([a-z][a-z0-9-]*) \*\*(\d+)\*\*/g)].filter((m) => PKGS.includes(m[1])).length;
+      if (n > bestN) { bestN = n; best = i; }
+    });
+    if (best === -1) return null;
+    const truth = new Map();
+    // ⚠️ 包名**含数字**（`i18n`）⇒ 字符类必须允许数字，否则 `i18n` 静默漏掉、合计少 15（实测踩到）。
+    for (const m of ls[best].matchAll(/([a-z][a-z0-9-]*) \*\*(\d+)\*\*/g)) {
+      if (PKGS.includes(m[1])) truth.set(m[1], Number(m[2]));
+    }
+    return { ls, si: best, truth };
+  };
+  const pkgAudit = (text) => {
+    // ⚠️ **不要再在这里做 CRLF 归一化**：入参已由 `read()` 归一化，
+    //    而本文件上方的 **CRLF canary** 断言「去掉 `read()` 的归一化后，文件里不再出现该转义序列」
+    //    ⇒ 多写一处（**哪怕写在注释里**）会让那条 canary **失去鉴别力**
+    //    （2026-10-08 实测踩到两次：先是代码、再是注释，已移除）。
+    const t = truthOf(text);
+    if (t === null) return null;
+    const { ls, si, truth } = t;
+    const bad = []; let total = 0;
+    ls.forEach((line, i) => {
+      if (i === si || NOTE_LINE.test(line)) return;
+      for (const m of line.matchAll(/([a-z][a-z0-9-]*) (\*\*)?(\d+)/g)) {
+        if (!truth.has(m[1])) continue;
+        total += 1;
+        if (Number(m[3]) !== truth.get(m[1])) {
+          bad.push(`L${i + 1} \`${m[1]} ${m[3]}\`≠\`${m[1]} ${truth.get(m[1])}\``);
+        }
+      }
+    });
+    return { truthSize: truth.size, total, bad };
+  };
+  const pkg = pkgAudit(readme);
+  if (pkg === null) {
+    fail('qualification README 缺少「各包规模」行（包用例数的**单一真值源**）—— 判据会空转');
+  } else {
+    if (pkg.truthSize < 10) {
+      fail(`qualification README 的「各包规模」行只解析出 ${pkg.truthSize} 个包（下限 10）—— 判据会空转`);
+    }
+    if (pkg.total < 3) {
+      fail(`qualification README 里只解析出 ${pkg.total} 处「包名 + 用例数」（下限 3 = 立此判据时的基线）`
+        + ' —— 谓词或文档漂移会让本判据**空转**');
+    }
+    if (pkg.bad.length > 0) {
+      fail(`qualification README 里包用例数与「各包规模」真值源不一致（${pkg.bad.length}）：${pkg.bad.join('、')}`
+        + ' —— 包用例数**只能有一个真值源**，刷新时必须两处一起改'
+        + '（实测：立此判据时 4 处内联数字**全部**是旧值）');
+    }
+  }
+  // canary：四向（一致 ⇒ 放行 / 漂移 ⇒ 报 / 更正说明 ⇒ 豁免 / 无真值源 ⇒ null）
+  const C_OK = '各包规模：settings **17**\n| x | ✅（settings 17） |';
+  const C_BAD = '各包规模：settings **17**\n| x | ✅（settings 13） |';
+  const C_NOTE = '各包规模：settings **17**\n> ⚠️ 上一版写「settings 13」\n';
+  if (pkgAudit(C_OK)?.bad.length !== 0) {
+    errors.push('qualification README 包用例数 canary 失效：一致样本被判为不一致');
+  }
+  if (pkgAudit(C_BAD)?.bad.length !== 1) {
+    errors.push('qualification README 包用例数 canary 失效：漂移样本未被检出');
+  }
+  if (pkgAudit(C_NOTE)?.bad.length !== 0 || pkgAudit(C_NOTE)?.total !== 0) {
+    errors.push('qualification README 包用例数 canary 失效：更正说明里引用的旧值未被豁免');
+  }
+  if (pkgAudit('没有真值源行') !== null) {
+    errors.push('qualification README 包用例数 canary 过宽：无真值源时不应返回结果');
+  }
+
+  // ── 「合计 N 例」必须 == 真值源各包之和（2026-10-08）────────────────────────────
+  // 立此条的原因：合计是**可从各包派生**的数，却在本文件里**写了两遍**
+  //（「12 包 jest 1824 例」与「各包规模」行的「合计 1824 例」）⇒ 典型的「可派生却手写」。
+  // ⚠️ 谓词必须**收窄**：文件里还有「联合矩阵 8 例」「md-link 15 例」「corpus 4 例」这类**子集**，
+  //    它们**不是**总数 ⇒ 只认 `jest N 例` / `合计 N 例` 两种写法。
+  const totalOf = (text) => {
+    const t = truthOf(text);
+    if (t === null) return null;
+    const { ls, truth } = t;
+    if (truth.size === 0) return null;
+    const sum = [...truth.values()].reduce((a, b) => a + b, 0);
+    const bad = [];
+    ls.forEach((line, i) => {
+      if (NOTE_LINE.test(line)) return;
+      for (const m of line.matchAll(/(?:jest|合计)\s*\*{0,2}(\d+)\s*例/g)) {
+        if (Number(m[1]) !== sum) bad.push(`L${i + 1} 写 ${m[1]}，各包之和是 ${sum}`);
+      }
+    });
+    return { sum, bad };
+  };
+  const tot = totalOf(readme);
+  if (tot === null) {
+    fail('qualification README：无法从「各包规模」行求合计（包解析为空）—— 判据会空转');
+  } else if (tot.bad.length > 0) {
+    fail(`qualification README 的「合计」与各包之和（${tot.sum}）不一致：${tot.bad.join('；')}`
+      + ' —— 合计是**可派生**的数，刷新时两处都要改');
+  }
+  // canary：三向（正确 ⇒ 放行 / 错误 ⇒ 报 / 更正说明 ⇒ 豁免）
+  if (totalOf('各包规模：settings **17** / i18n **15**\n合计 32 例')?.bad.length !== 0) {
+    errors.push('qualification README 合计 canary 失效：正确的合计被判为不一致');
+  }
+  if (totalOf('各包规模：settings **17** / i18n **15**\n合计 30 例')?.bad.length !== 1) {
+    errors.push('qualification README 合计 canary 失效：错误的合计未被检出');
+  }
+  if (totalOf('各包规模：settings **17**\n> 上一版合计 30 例')?.bad.length !== 0) {
+    errors.push('qualification README 合计 canary 失效：更正说明里引用的旧合计未被豁免');
+  }
+  if (totalOf('各包规模：settings **17**\n| 子集 8 例 |')?.bad.length !== 0) {
+    errors.push('qualification README 合计 canary 过宽：子集（「X N 例」）被当成了总数');
   }
 }
 

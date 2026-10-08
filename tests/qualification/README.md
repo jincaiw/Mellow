@@ -59,24 +59,29 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 
 图例：✅ 通过 / 🔶 部分（自动化或 CI 已过、仍有已记录缺口）/ ⛔ 未通过或未执行 / — 不适用。
 
+> **表中括号内的「包用例数」不是独立数字**（2026-10-08，审计 §4.153）：它们的**单一真值源**是下方的
+> 「**各包规模**」行（该行带日期）。刷新时必须**两处一起改** —— 已由 `verify-release-gate.mjs` 锁定
+> （**包用例数**逐项一致 + **合计** = 各包之和）。
+> ⚠️ 立此判据时实测 4 处内联数字**全部已过期**（`editor-engine 971` / `export 72` / `settings 13` / `app-core 200` —— 这些**过期**值比真值源行**还旧**），现已改为与真值源一致。
+
 | 项 | 本机（构建级自动化） | Windows（CI，ADR-0022） | macOS（实机） | Linux（CI，ADR-0022） |
 |---|---|---|---|---|
 | 最小壳构建（Tauri+Rust+React+editor-core） | ✅ | ✅（CI release 构建 gate） | ✅ | ✅（CI release 构建 gate） |
 | 打开 Markdown（dialog + fs read） | ✅（Rust 命令 + 类型适配） | ✅（CI 启动/打开 gate） | 🔶（实机 journey 待回填） | ✅（CI 冒烟） |
 | 编辑（CoreEditor 185 + 全仓 jest，2026-09-12 实跑见文末包规模） | ✅ | ✅（同构建） | 🔶 | ✅（同构建） |
 | 保存（atomic write + source fidelity corpus） | ✅（Windows byte-identical gate） | ✅（CI gate） | 🔶 | 🔶（corpus 待 CI 扩展） |
-| Live Markdown（marker reveal / nodes） | ✅（editor-engine 971，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
+| Live Markdown（marker reveal / nodes） | ✅（editor-engine 1277，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
 | File links（渲染/点击打开/broken indicator，spec engine §12） | ✅（md-link 15 例 + settings/adapter 护栏锚点；2026-09-03 用户裁决解冻实现） | — | 🔶（broken 视觉一致 Typora 对照待真机） | — |
 | Windows JumpList（系统最近文档，PRD §134 P1） | ✅（jumplist.rs + windows-sys 交叉 check EXIT=0 + Windows CI 编译 12m2s） | 🔶（任务栏 Recent 展示/点击打开待真机） | — | — |
 | Table 编辑（one-undo/minimal diff/100×30） | ✅（table-undo-diff 16 + table-large 7） | — | 🔶 | — |
 | 中文输入（composition guard + IME 冻结） | ✅（逻辑层全绿） | ✅（Xvfb+fcitx5 矩阵 gate，Linux 列；Windows IME 矩阵 CI 仅诊断级） | 🔶（20 分钟实机写作待 P4.11） | ✅（CI IME matrix） |
 | IME corruption = 0 | ✅（自动化层） | 🔶（SendKeys 保存读回为诊断，不入证据） | ⛔（实机待执行） | 🔶（CI 矩阵内断言） |
 | Clipboard P0（smart paste priority/IME guard） | ✅（smart-paste 17） | ⛔（cross-app 7 目标待执行） | ⛔ | ⛔ |
-| PDF / HTML Export | ✅（export 72，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
+| PDF / HTML Export | ✅（export 89，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
 | 10MB 可编辑 / P95 | ✅（large-file 自动化护栏） | ✅（CI 10MB 冒烟 gate） | ⛔（benchmark 待 P4.12） | 🔶 |
-| Settings / Theme / Export 契约 | ✅（settings 13 + verify-settings-contract） | — | — | — |
+| Settings / Theme / Export 契约 | ✅（settings 17 + verify-settings-contract） | — | — | — |
 | Extension permission / Safe Mode | ✅（permissions 14 + app-core extensions） | — | — | — |
-| File Safety（rename/trash/undo/recovery/conflict） | ✅（app-core 200 含 FileOpHistory 12） | — | 🔶（disk-full/network corpus 真机项） | 🔶 |
+| File Safety（rename/trash/undo/recovery/conflict） | ✅（app-core 258 含 FileOpHistory 12） | — | 🔶（disk-full/network corpus 真机项） | 🔶 |
 | Reader / Palette / Slash / User CSS / AI 默认关闭 | ✅（P6.3 契约护栏） | — | 🔶（manual golden journey） | 🔶 |
 | 三平台打包矩阵（dmg/nsis/msi/appimage/deb/rpm） | ✅（tauri.conf + adapter-contract 护栏） | ⛔（安装/卸载/更新矩阵待执行） | ⛔（签名公证 DMG 待执行） | ⛔ |
 | UX Score 100 分 / 30 计时任务 | ✅（工具链就绪：ux-score-gate-template.md + ux-gate-recorder.mjs self-test） | ⛔（记录为 0） | ⛔（记录为 0） | ⛔（记录为 0） |
