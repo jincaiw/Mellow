@@ -1517,6 +1517,41 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ㉑ 「零跨包消费者」的包，其分诊必须在**审计文档的待裁决登记表**里可发现 ───────────────
+// 立此条的原因（实测，2026-10-08 审计 §4.160）：`PKG_NO_CONSUMER_EXEMPT` 有 **4** 条
+// （`document-model` / **`editor-react`** / `shared` / `workspace`），而**登记表第 14 行与
+// ADR-0032 Q3 都写「3 个零跨包消费者的包」并只列三个** ⇒ `editor-react` **只在豁免表里，
+// 在治理文档里查不到它的分诊**（它是「有意预留」，与另三个的「待裁决」性质不同）。
+{
+  const AUDIT = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const auditSrc = readFileSync(resolve(root, AUDIT), 'utf8').replace(/\r\n/g, '\n');
+  /** 待裁决登记表的区间（从该标题到下一个二级标题）。判定与 canary **共用**本谓词。
+   *  ⚠️ 两个正则都必须带 `m` —— 否则 `^` 只在**串首**生效 ⇒ 区间解析为空（实测踩到）。 */
+  const registrySection = (src) => src.split(/^### 待裁决项登记表/m)[1]?.split(/\n## /)[0] ?? '';
+  const tableSec = registrySection(auditSrc);
+  const missing = [...PKG_NO_CONSUMER_EXEMPT.keys()].filter((p) => !tableSec.includes(p));
+  if (missing.length > 0) {
+    fail(`这些包**零跨包消费者**且已在 \`PKG_NO_CONSUMER_EXEMPT\` 登记，但**没有出现在 ${AUDIT} 的`
+      + `「待裁决项登记表」里**：${missing.join('、')}`
+      + ' —— 零消费者包的分诊（**待裁决** / **有意预留**）必须在登记表里**可发现**'
+      + '（实测：`editor-react` 曾只在豁免表里，登记表与 ADR-0032 Q3 都漏了它）');
+  }
+  if (PKG_NO_CONSUMER_EXEMPT.size < 3) {
+    fail(`PKG_NO_CONSUMER_EXEMPT 条目异常（${PKG_NO_CONSUMER_EXEMPT.size} < 3）—— 判据会空转`);
+  }
+  // canary：三向（判定与 canary 共用 registrySection + 「是否出现」这一谓词）
+  const inTable = (name, sec) => sec.includes(name);
+  if (!inTable('editor-react', registrySection('### 待裁决项登记表\n| 1 | §4.95 | `editor-react` |\n'))) {
+    errors.push('零消费者登记护栏 canary 失效：表区间内出现的包未被识别');
+  }
+  if (inTable('no-such-pkg', registrySection('### 待裁决项登记表\n| 1 | §4.95 | `editor-react` |\n'))) {
+    errors.push('零消费者登记护栏 canary 过宽：未出现的包被判为已登记');
+  }
+  if (registrySection(auditSrc).length < 500) {
+    errors.push('零消费者登记护栏 canary 失效：登记表区间解析过短（解析漂移 ⇒ 判据空转）');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

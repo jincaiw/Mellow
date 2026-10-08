@@ -73,7 +73,7 @@ Release verdict: NO-GO：6 项未闭环
 | 11 | §4.72 | **clipboard paste 优先级：`image payload`（§3 优先级 2）与 `rich HTML`（4）分处两个 eventHandler，而注册顺序把 2 排在 3/4 之后 ⇒ 与 spec §3 相反** | **已裁决（2026-10-05）= A3：把顺序决策收敛到一处显式判断**（`handleSmartPaste` 内显式检查图片 payload 并让位）—— 关键推理：**该裁决不需要 MIME 证据**，因为 §3 的优先级 2 指的是 **payload**，不是「含 `<img>` 的 HTML」；已实现 + 5 例单测 + 护栏改写 | `docs/adr/ADR-0030-clipboard-paste-priority-handler-order.md` |
 | 12 | §4.102 / §4.105 | **30 个「无人使用」的 i18n 键**（侧栏过滤面板→设置页的化石、只被护栏维护的 4 个、未接线的一批） | **已裁决（2026-10-06）= A1：删除** —— 删除前取证三项（无产品/工具链引用、无 `tests/` 功能引用、无动态构造）；两 locale 各删 30 键（**841 → 811**）；`MESSAGES_UNUSED` 清空 ⇒ 判据 D 升级为**硬判据** | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q1） |
 | 13 | §4.99 | **3 个「声明了但无人消费」的主题 token**（`--mellow-tab-underline` / `--mellow-warning-fg` / `--mellow-mermaid-border`） | **已裁决（2026-10-06）= B3：维持登记**（与 ADR-0027 Q3 对 `--mellow-md-fg` 的既有口径一致：删除属主题面变更、接线属外观变更） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q2） |
-| 14 | §4.95 | **3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）去留 —— 其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
+| 14 | §4.95 | **零跨包消费者的包**去留 —— ⚠️ **2026-10-08 更正（审计 §4.160）**：原文写「**3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）」，而实测是 **4 个**（`PKG_NO_CONSUMER_EXEMPT` 四条 = 上述三个 + **`editor-react`**）⇒ **原表述把「3 个待裁决的」写成了「3 个零消费者的」**（数量对、**对象错**）。**待裁决的仍是 3 个**；`editor-react` 是**有意预留**（契约 re-export；组件化 UI 见阶段 2 计划）⇒ **不待裁决**。其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
 | 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **待裁决（10 问）** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`） | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
@@ -6235,6 +6235,14 @@ mermaid 容器也有边框（只是不跟随这个 token）。**它们是「死�
    - `CONTRACT.md` 是**独立的文档工作包**（§117.1 要求含：输入/输出类型、不变量、错误语义、
      性能边界、禁止行为、Typora parity reference、golden fixtures），不在本次范围；
    - 3 个缺测试的包正是 §4.95 里**零跨包消费者**的那 3 个 ⇒ **是否补测取决于它们的去留**（待裁决）。
+     > **⚠️ 2026-10-08 更正（审计 §4.160）**：上句**原写**结尾「（**待裁决**）」—— 而**去留已在 §4.95 裁决**
+     > （登记表第 14 行 = **ADR-0032 Q3 的 C3：保留 + 触发条件**）⇒ **「待裁决」的前提已过期**。
+     > 补测的**触发条件**随之明确：**该包被真正接线时**（零消费者状态解除）。
+     > ⇒ 该缺口**由登记表第 14 行覆盖**，**不再是一条独立的待裁决项**（**登记表不新增行**）。
+     > ⚠️ 另：这 3 个里 **`editor-react` 是「有意预留（阶段 2）」**，与 `shared`/`workspace` 的
+     > 「零消费者」**性质不同**（见 §4.95 的表）—— 补测的理由也不同。
+     > ⚠️ 本条第 3 点提到的 **`PKG_CONTRACT_GAPS` 现已不存在**：`CONTRACT.md` 于本轮之后**已补齐 15/15**
+     > ⇒ 该表随之移除（`verify-package-conventions.mjs` 现在只保留 `PKG_TEST_GAPS`）。
 
 **注入验证 5/5**：① 删 `README.md` ⇒ 硬失败；② 从 `PKG_CONTRACT_GAPS` 删一项（文件仍缺）⇒ 报「缺且未登记」；
 ③ 反向：造出 `CONTRACT.md` 但登记项还在 ⇒ 报「已存在 ⇒ 请删除登记项」；
@@ -10583,6 +10591,70 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 `docs/architecture/README.md` · `AGENTS.md` · `tests/parity/verify-doc-code-refs.mjs`（+架构索引判据；AGENTS 块扩容）·
 审计 **§4.159** · PITFALLS **§4.224–§4.225** · skill **§149** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+
+---
+
+## 4.160 「零跨包消费者的包」**数量对、对象错**（3 写成 4 少一个）+ 一条「待裁决」的**前提已过期**（2026-10-08）
+
+### 一、动因
+
+前几轮查「清单不完整」。本轮从 `verify-package-conventions.mjs` 报的「`test(s)/` 已登记缺口 **3** 个」出发，
+**往上追它的依据**。
+
+### 二、实测两处
+
+**① 「零跨包消费者的包」：数量对、对象错**
+
+| 位置 | 写的 | 事实 |
+|---|---|---|
+| 本登记表**第 14 行** | 「**3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）」 | 零消费者的是 **4 个**（`PKG_NO_CONSUMER_EXEMPT` 四条 = 上述三个 + **`editor-react`**） |
+| `ADR-0032 Q3`（**Accepted**） | 同上（标题与正文都写「3 个」） | 同上 |
+| 审计 §4.95 | 「**4 个**包零跨包消费者」（表里 4 行，含 `editor-react`） | ✓ 与豁免表一致 |
+
+⇒ **「3 个待裁决的」被写成了「3 个零消费者的」**：**数量对、对象错**。
+后果：`editor-react` **只在豁免表里**（`PKG_NO_CONSUMER_EXEMPT`），
+**在治理文档里查不到它的分诊** —— 它是「**有意预留**（阶段 2）」，与另三个的「**待裁决**」**性质不同**。
+
+**② 一条「待裁决」的**前提已过期****
+
+审计 §4.100 的处置第 3 点写：3 个缺测试的包「**是否补测取决于它们的去留**（**待裁决**）」。
+而**去留已在 §4.95 裁决**（登记表第 14 行 = **ADR-0032 Q3 的 C3：保留 + 触发条件**）
+⇒ **「待裁决」的前提已过期**；补测的**触发条件**随之明确 = **该包被真正接线时**（零消费者状态解除）。
+
+⚠️ 且该标记**没有登记表行**（本表 17 行的「出处」列里**没有 §4.100**）——
+违反表头纪律「**本文档此后不得新增未登记的裁决项**」。
+
+### 三、处置
+
+1. 更正**登记表第 14 行**：写明「零消费者 **4** 个 / 待裁决 **3** 个」，并把 `editor-react` 纳入（注明「有意预留 ⇒ 不待裁决」）；
+2. **`ADR-0032 Q3` 追加更正块**（ADR **只追加、不改写**）；
+3. 更正**审计 §4.100** 的「待裁决」（去留已裁 ⇒ 触发条件明确；该缺口**由第 14 行覆盖**，**不新增行**）；
+4. 更正 `verify-package-conventions.mjs` 的注释（同 ① ②），并注明 **`PKG_CONTRACT_GAPS` 已随 `CONTRACT.md` 补齐而移除**；
+5. **判据 ㉑**：**`PKG_NO_CONSUMER_EXEMPT` 的每个包名，必须出现在本登记表的区间里**
+   （+ 条目数下限 3 + canary 三向）⇒ 零消费者包的分诊**必须在登记表里可发现**。
+
+### 四、验证
+
+**注入验证 2/2**：① 登记表第 14 行删掉 `editor-react` ⇒ 红；② 往豁免表加一个登记表里没有的包 ⇒ 红。
+
+⚠️ 我最初写的 ② 用例（「删掉 `shared`」）**没红** —— 因为 `shared` 在登记表区间**别处仍出现**（第 14 行的触发条件那句）
+⇒ **判据正确地没报**（它查的是「是否在区间里**出现**」，不是「在某一行」）。⇒ **是用例本身不对，不是判据不对**（已换用例）。
+
+### 五、教训
+
+1. **「数量对、对象错」是最难发现的一类** —— 「3 个」这个数字**没错**（确实 3 个**待裁决**），
+   错的是**它描述的对象**（零消费者的是 4 个）⇒ **凡写「N 个 X」时，要问「X 的定义与实测一致吗」**。
+2. **「待裁决」会随前提消失而过期** —— 前提（去留）已裁 ⇒ 标记应消失或改写为**触发条件**；
+   **只删标记不写触发条件 = 把「待裁决」变成「没人管」**。
+3. **纪律的价值在于「可发现」** —— 一条只写在散文里的处置，在登记表里**查不到** ⇒
+   下一个审计者会**重新发现它**。
+
+### 六、产物
+
+`docs/qualification/release-blocker-audit-2026-09-25.md`（第 14 行 + §4.100）·
+`docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（追加更正块）·
+`tests/parity/verify-package-conventions.mjs`（注释更正）· `tests/parity/verify-doc-code-refs.mjs`（+㉑）·
+审计 **§4.160** · PITFALLS **§4.226–§4.227** · skill **§150** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 

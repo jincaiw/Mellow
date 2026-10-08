@@ -85,6 +85,15 @@
 `document-model` 涉及 ADR-0008 的既有承诺，**不宜在没有替代设计时删除**。
 ⇒ **列为待裁决**（这是**架构级**决定，不是清理动作）。
 
+> **⚠️ 2026-10-08 更正（审计 §4.160；只追加，不改写上文）**：
+> 本 Q 的标题**原写**「**3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）」——
+> 而实测零跨包消费者的是 **4 个**：`verify-doc-code-refs.mjs` 的 `PKG_NO_CONSUMER_EXEMPT`
+> 有**四条** = 上述三个 + **`editor-react`**（其理由写的是「**预留包**……有意未接线」）。
+> ⇒ 原表述**把「3 个待裁决的」写成了「3 个零消费者的」**：**数量对、对象错**。
+> **待裁决的仍是 3 个**（`document-model` / `shared` / `workspace`）；**`editor-react` 不待裁决**
+> （有意预留，去留随阶段 2）。
+> ⚠️ 上文末句「三者都已在 `PKG_NO_CONSUMER_EXEMPT` **登记**（双向）」—— 该表实际有**四条**（同上）。
+
 ## Q4 — **3 个不在设置 schema 的持久化键**如何处置？
 
 **现状证据**（审计 §4.85）：`mellow.fileTree.options` / `mellow.outline.options` /
