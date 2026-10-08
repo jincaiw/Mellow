@@ -506,56 +506,88 @@ const PRD_CITE_EXEMPT = new Map([
 // 而**没有人守**（§4.64）。⇒ 把「版本字面量」绑到真值源。
 // 处置分两层：① **首选是不写死**（正文已改为指向真值源与 `v<版本>` 占位符）；
 // ② 对**确实需要**出现的字面量（更正块引用的旧值 / 历史起点），必须**显式登记理由**，且**双向**核对。
-const PACKAGING_DOC = 'docs/plans/packaging-release.md';
-// 允许出现的**非当前版本**字面量：登记 → 理由（双向：不再出现即报错，防化石）
+// ⚠️ 2026-10-09（审计 §4.171）：**扫描面从 1 份文档扩到 2 份** —— 新增
+//   `tests/qualification/packaging-gate.md`（三平台 Packaging Gate **记录**）：它写着
+//   「版本一致性：**0.1.0**（…四处一致）」而当时已是 1.5.x。该数字**作为历史事实是准确的**
+//   （文档末尾写着「推 `v0.1.0` 标签触发三平台 CI 打包」），缺陷是**缺时间上下文** ⇒
+//   读者会按「当前」读（本仓 §4.62 的老形态：「不带日期的数字会被按「当前」读」）。
+//   处置：① 文档顶部加**真值源指针**；② 该文档**纳入本判据的扫描面**。
+// ⚠️ **例外必须按文档分表** —— 否则 A 文档的例外会**悄悄覆盖** B 文档
+//   （本轮扩扫描面时实测到这一风险：`0.1.0` 在 packaging-release.md 是合法例外，
+//   若不按文档分表，它会让 packaging-gate.md 里的同一个字面量**静默通过**）。
+const PACKAGING_DOCS = ['docs/plans/packaging-release.md', 'tests/qualification/packaging-gate.md'];
+// 允许出现的**非当前版本**字面量：**按文档**登记 → 理由（双向：不再出现即报错，防化石）
 const PACKAGING_VERSION_ALLOW = new Map([
-  ['0.1.0', '**更正块引用的旧值**（原文曾写「当前版本 0.1.0」）—— 更正惯例是引用错误原文，故必须保留'],
-  ['v1.5.2', '**历史起点**（「v1.5.2 起替换占位域名」），不是当前版本'],
+  ['docs/plans/packaging-release.md', new Map([
+    ['0.1.0', '**更正块引用的旧值**（原文曾写「当前版本 0.1.0」）—— 更正惯例是引用错误原文，故必须保留'],
+    ['v1.5.2', '**历史起点**（「v1.5.2 起替换占位域名」），不是当前版本'],
+  ])],
+  ['tests/qualification/packaging-gate.md', new Map([
+    ['0.1.0', '**记录时的版本**（v0.1.0 时期的 Gate 记录）—— 文件顶部已加「当前版本以 tauri.conf.json 为准」指针，故保留为历史事实'],
+    ['v1.5.2', '**历史起点**（「updater endpoints…v1.5.2 起」）—— 与 packaging-release.md 的同名例外同源，不是当前版本'],
+  ])],
 ]);
 {
-  const docPath = resolve(root, PACKAGING_DOC);
   const confPath = resolve(root, 'apps/desktop/src-tauri/tauri.conf.json');
-  if (!existsSync(docPath) || !existsSync(confPath)) {
-    fail(`缺少 ${PACKAGING_DOC} 或 tauri.conf.json`);
+  if (!existsSync(confPath)) {
+    fail('缺少 apps/desktop/src-tauri/tauri.conf.json（版本真值源）');
   } else {
-    const doc = readFileSync(docPath, 'utf8').replace(/\r\n/g, '\n');
     const current = JSON.parse(readFileSync(confPath, 'utf8')).version;
     const VERSION_TOKEN = /\bv?(\d+\.\d+\.\d+)\b/g;
-    const seen = new Set();
-    const offenders = [];
-    for (const line of doc.split('\n')) {
-      for (const m of line.matchAll(VERSION_TOKEN)) {
-        const raw = m[0];
-        const num = m[1];
-        seen.add(raw);
-        seen.add(num);
-        if (num === current) continue; // 与真值源一致 ⇒ 放行
-        if (PACKAGING_VERSION_ALLOW.has(raw) || PACKAGING_VERSION_ALLOW.has(num)) continue;
-        offenders.push(`${raw}（…${line.trim().slice(0, 60)}…）`);
+    // 谓词**抽成一处**：判定与 canary 共用（本仓 idiom）
+    const isOffender = (tok, cur, allow) => tok.replace(/^v/, '') !== cur
+      && !allow.has(tok) && !allow.has(tok.replace(/^v/, ''));
+    let checkedDocs = 0;
+    for (const doc of PACKAGING_DOCS) {
+      const docPath = resolve(root, doc);
+      if (!existsSync(docPath)) { fail(`缺少 ${doc}`); continue; }
+      checkedDocs += 1;
+      const allow = PACKAGING_VERSION_ALLOW.get(doc) ?? new Map();
+      const text = readFileSync(docPath, 'utf8').replace(/\r\n/g, '\n');
+      const seen = new Set();
+      const offenders = [];
+      for (const line of text.split('\n')) {
+        for (const m of line.matchAll(VERSION_TOKEN)) {
+          seen.add(m[0]);
+          seen.add(m[1]);
+          if (isOffender(m[0], current, allow)) {
+            offenders.push(`${m[0]}（…${line.trim().slice(0, 60)}…）`);
+          }
+        }
+      }
+      if (offenders.length > 0) fail(
+        `${doc} 出现**既不是当前版本（${current}）也未登记理由**的版本字面量：`
+        + `${offenders.join(' / ')} —— 文档里的版本号会被按「当前」读；`
+        + '首选**不要写死**（改为指向真值源或 `v<版本>` 占位符），确需出现则登记进 '
+        + 'PACKAGING_VERSION_ALLOW（**按文档**分表、带理由）');
+      // 例外表**双向**：登记了但已不再出现 ⇒ 报错（化石例外会掩盖未来回归）
+      for (const [tok, reason] of allow) {
+        if (!seen.has(tok)) {
+          fail(`PACKAGING_VERSION_ALLOW 为 ${doc} 登记了 ${tok}，但它已不再出现在该文档 —— 请删除该例外条目`);
+        }
+        if (typeof reason !== 'string' || reason.trim() === '') {
+          fail(`PACKAGING_VERSION_ALLOW 的 ${doc} → ${tok} 缺理由（例外必须带可复核的理由）`);
+        }
       }
     }
-    if (offenders.length > 0) fail(
-      `${PACKAGING_DOC} 出现**既不是当前版本（${current}）也未登记理由**的版本字面量：`
-      + `${offenders.join(' / ')} —— 发版手册里的版本号会被按「当前」读；`
-      + '首选**不要写死**（改为指向真值源或 `v<版本>` 占位符），确需出现则登记进 PACKAGING_VERSION_ALLOW（带理由）');
-    // 例外表**双向**：登记了但已不再出现 ⇒ 报错（化石例外会掩盖未来回归）
-    for (const [tok, reason] of PACKAGING_VERSION_ALLOW) {
-      if (!seen.has(tok)) {
-        fail(`PACKAGING_VERSION_ALLOW 登记了 ${tok}，但它已不再出现在 ${PACKAGING_DOC} —— 请删除该例外条目`);
-      }
-      if (typeof reason !== 'string' || reason.trim() === '') {
-        fail(`PACKAGING_VERSION_ALLOW 的 ${tok} 缺理由（例外必须带可复核的理由）`);
-      }
+    // 防空转：扫描面必须**真的**覆盖到 2 份文档（少一份 ⇒ 判据范围萎缩）
+    if (checkedDocs !== PACKAGING_DOCS.length || PACKAGING_DOCS.length < 2) {
+      fail(`版本字面量判据只覆盖了 ${checkedDocs}/${PACKAGING_DOCS.length} 份文档 —— 扫描面萎缩会让本判据空转`);
     }
-    // canary：谓词是**同一个对象**，双向（当前版本必须放行；未登记的异值必须被抓到）
-    const scanVersions = (text, cur) => [...text.matchAll(VERSION_TOKEN)]
-      .map((m) => m[0])
-      .filter((t) => t.replace(/^v/, '') !== cur && !PACKAGING_VERSION_ALLOW.has(t) && !PACKAGING_VERSION_ALLOW.has(t.replace(/^v/, '')));
-    if (scanVersions(`当前 ${current}`, current).length !== 0) {
-      errors.push('发版手册版本字面量护栏 canary 失效：当前版本样本被误判为违规');
+    // canary ①：当前版本必须放行；② 未登记的异值必须被抓到（同一谓词 isOffender）
+    const EMPTY_ALLOW = new Map();
+    if (isOffender(current, current, EMPTY_ALLOW)) {
+      errors.push('版本字面量护栏 canary 失效：当前版本样本被误判为违规');
     }
-    if (scanVersions('tag v9.9.9', current).join(',') !== 'v9.9.9') {
-      errors.push('发版手册版本字面量护栏 canary 失效：未登记的异值样本未被识别');
+    if (!isOffender('v9.9.9', current, EMPTY_ALLOW)) {
+      errors.push('版本字面量护栏 canary 失效：未登记的异值样本未被识别');
+    }
+    // canary ③：**按文档**分表 —— 本表的例外生效；空表下同一字面量必须被抓到
+    if (isOffender('0.1.0', current, new Map([['0.1.0', 'x']]))) {
+      errors.push('版本字面量护栏 canary 失效：本表内的例外未生效');
+    }
+    if (!isOffender('0.1.0', current, EMPTY_ALLOW)) {
+      errors.push('版本字面量护栏 canary 失效：空例外表下异值未被识别（「按文档分表」的前提）');
     }
   }
 }

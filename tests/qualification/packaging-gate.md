@@ -2,6 +2,12 @@
 
 > 对应 PRD §125（Windows MSI/NSIS）/ §126（macOS Signed+Notarized+DMG）/ §127（Linux
 > AppImage/deb/rpm）、§81（File Association）。操作手册见 `docs/plans/packaging-release.md`。
+>
+> ⚠️ **本文是 v0.1.0 时期的记录**（文末「后续动作」即「推 `v0.1.0` 标签」）。
+> 文中出现的 `0.1.0` 是**记录时的版本**，**不是当前版本** —— **当前版本以
+> `apps/desktop/src-tauri/tauri.conf.json` 为准**（升版要同步 **4 处**，含需手改的 `Cargo.lock`）。
+> ⚠️ 本文件在 `verify-doc-code-refs.mjs` 的**版本字面量扫描面**内：新增任何版本字面量，
+> 要么与真值源一致，要么**按文档**登记进 `PACKAGING_VERSION_ALLOW`（带理由）。
 
 ## 结论
 
