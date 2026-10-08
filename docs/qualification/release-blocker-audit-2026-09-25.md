@@ -11277,7 +11277,7 @@ PITFALLS **§4.244–§4.248** · skill **§157** + 自查清单 +3 · `MEMORY.m
 `verify-parity-ledger.mjs`（2 处阈值同步 + 4 处标记）· `verify-doc-code-refs.mjs`（1 处阈值同步 + 标记）·
 `verify-release-gate.mjs`（2 处标记 + **判据 ⑥** + 4 canary）· `verify-visual-golden.mjs`（1 处标记）·
 `tools/audit-guard-bounds.mjs`（补认 `<=` / `>=` / `>`）· 审计 **§4.168** ·
-PITFALLS **§4.249–PITFALLS §4.252** · skill **§158** + 自查清单 +3 · `MEMORY.md` · `2026-10-09.md`。
+PITFALLS **§4.249–§4.252** · skill **§158** + 自查清单 +3 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
@@ -11356,7 +11356,7 @@ decoration 由插件**异步**施加；`sleep(200)` 只是**赌 200ms 够用**�
 
 `packages/editor-core/CoreEditor/test/utils/helpers.ts`（+`waitFor`）·
 `.../test/task.test.ts`（4 处改「等状态」）· `packages/editor-core/UPSTREAM.md`（19 → 21 + 2 行）·
-审计 **§4.169** · PITFALLS **§4.253–PITFALLS §4.256** · skill **§159** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+审计 **§4.169** · PITFALLS **§4.253–§4.256** · skill **§159** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
@@ -11430,7 +11430,7 @@ decoration 由插件**异步**施加；`sleep(200)` 只是**赌 200ms 够用**�
 ### 六、产物
 
 `tests/parity/verify-doc-code-refs.mjs`（新增「升版 4 处一致」判据 + 2 canary + 自报行）·
-审计 **§4.170** · PITFALLS **§4.257–PITFALLS §4.259** · skill **§160** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+审计 **§4.170** · PITFALLS **§4.257–§4.259** · skill **§160** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
@@ -11499,7 +11499,7 @@ decoration 由插件**异步**施加；`sleep(200)` 只是**赌 200ms 够用**�
 
 `tests/parity/verify-doc-code-refs.mjs`（扫描面 1 → 2 + 例外**按文档**分表 + 防空转 + 3 canary）·
 `tests/qualification/packaging-gate.md`（顶部加真值源指针）· 审计 **§4.171** ·
-PITFALLS **§4.260–PITFALLS §4.262** · skill **§161** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+PITFALLS **§4.260–§4.262** · skill **§161** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
@@ -11560,7 +11560,73 @@ PITFALLS **§4.260–PITFALLS §4.262** · skill **§161** + 自查清单 +2 · 
 
 `verify-command-id-refs.mjs` · `verify-tauri-capability-contract.mjs` · `verify-tauri-command-contract.mjs`
 （3 处改为派生计数；含一处循环改集合式）· `verify-release-gate.mjs`（**判据 ⑦** + 3 canary）·
-审计 **§4.172** · PITFALLS **§4.263–PITFALLS §4.266** · skill **§162** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+审计 **§4.172** · PITFALLS **§4.263–§4.266** · skill **§162** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
+## 4.173 护栏**自己的收口行**里还留着「**14-scene**」——**同一句话内自相矛盾**（6+4+7 = 17）；§4.8 的处置漏了它（2026-10-09）
+
+### 一、发现（沿 §4.172 的透镜扩到「收口行里的**其他**手写数字」）
+
+普查全部护栏 `console.log` 里**不在 `${...}` 内**的数字：绝大多数**合法**（描述性的「0 runtime Tauri
+tokens」、版本 / rev 日期、`§` 号、尺寸 `900x600`）。**可疑的只有 2 处**，都在 `verify-visual-golden.mjs`：
+
+- L660：`Visual golden: **4**-config layout contract armed (900x600 / 1200x800 / 1440x900 / 200% zoom); …`
+- L661：`Visual golden: §9.3 **14**-scene coverage — visual-golden(**6**) + sidebar-golden(**4**) + scenes-golden(**7**: …)`
+
+⚠️ **L661 同一句话内自相矛盾**：**6 + 4 + 7 = 17** ≠ **14** ——
+与审计 §4.8 点名的 `release-notes-v1.5.6.md`（「写『**14 场景**』却又列『6 + 4 + 7』」）**同型**。
+
+⚠️ **而 §4.8 的处置只覆盖了两处**：① workflow **步骤名**（改为不含数字）；② `master-plan` 与三个
+`.mjs` 的**注释**（共 8 处）。**护栏自己的收口行（`console.log`）从未被处置**
+⇒ 「**记过 + 修过一次 ≠ 系统化**」**第 4 次**（§4.170 / §4.171 / §4.172 / 本节）。
+
+**实测三份基线键数**（`Object.keys` 现读）：`layout-golden` **6** · `sidebar-golden` **4** · `scenes-golden` **7**
+⇒ 合计 **17** ⇒ 收口行的「14」**对不上**（与 §4.8 的判定一致：「只有在「`Light / Dark` 算两项」这个
+**从未写明的约定**下才成立」）。
+
+### 二、处置
+
+1. `verify-visual-golden.mjs` 的收口行：
+   - **配置列表去掉那个「4」**（列表本身已自描述，数字不带来信息、只会漂）；
+   - 三份基线的键数**从文件现读** ⇒ 输出 `layout-golden(6) + sidebar-golden(4) + scenes-golden(7) = 17 个基线键`
+     —— **数字不可能漂**，且「**分项之和 == 合计**」由构造保证；场景名同样改为从基线现读。
+2. **新增 CI 判据 ⑧**（`verify-release-gate.mjs`）：`console.log` 的字符串里**不得出现「N-单词」形式的
+   手写计数**（如 `4-config` / `14-scene`）。
+   ⚠️ 它**只扫 `console.log` 体** ⇒ **注释里的说明性引用天然豁免**（不必额外剥注释）——
+   「**只扫有意的子集**」比「扫全文件再剥注释」更稳（同 §4.172 的 canary ③）。
+3. ⚠️ **如实声明局限**：⑧ 只认「**数字紧跟连字符**」的字面量；`${4}-config` 这种
+   「**表达式里写死数字**」它**看不见**（`${4}` 与 `${count}` 同形，机械判据无法区分）
+   ⇒ 那一半**只能靠人**。
+
+### 三、⚠️ 立 ⑧ 时**被判据 ⑤（CRLF canary）当场抓到**
+
+我按习惯写了 CRLF 归一化，而 `read()` **已经归一化过** ⇒ 那个两字符转义序列让 **⑤ 的 CRLF canary**
+报「**注入后仍未检出缺失归一化**」；修掉后我又把那串**写进了注释** ⇒ **照样破坏**
+（本仓既有记录明说「**哪怕写在注释里**」）⇒ 再改。
+⇒ 这是本仓**已有记录**的坑，本轮**又踩一次**（同族第 N 次；memory 与 PITFALLS 均有条目）。
+
+### 四、注入验证（2/2）
+
+① 往某护栏收口行塞**纯字面量** `4-config` ⇒ **转红**；② 同样的串放进**注释** ⇒ **必须仍绿**
+（证明「只扫 `console.log`」的豁免面生效）。
+⚠️ 案例 ① 首版塞的是 `${4}-config` ⇒ 源码里 `4` 后面是 `}` 而非 `-` ⇒ **判据正确地没报**
+（**错的是用例**；本会话第 3 次，同 §4.160 / PITFALLS §4.252 / §4.172）。
+
+### 五、教训
+
+1. **「记过 + 修过一次」必须回头问「还有几处」** —— §4.8 的处置覆盖了**步骤名**与**注释**，
+   **漏了护栏自己的输出**。⇒ 处置一件事时要**枚举它的全部载体**（输出 / 注释 / 步骤名 / 文档）。
+2. **输出里的数字：要么派生，要么不写** —— 手写计数会漂，而**自相矛盾时读者会先怀疑整个护栏**
+   （「这个护栏自己都没对齐，它的判定还能信吗」）。
+3. **「只扫有意的子集」是更稳的豁免面**（⑧ 只扫 `console.log` ⇒ 注释天然豁免）。
+4. **局限要如实声明**（`${4}` 形态看不见）—— **不假装判据覆盖了它**（同 §4.162 的边界声明纪律）。
+
+### 六、产物
+
+`tests/parity/verify-visual-golden.mjs`（收口行改为**派生 + 自洽**，去掉「4」与「14」）·
+`tests/parity/verify-release-gate.mjs`（**判据 ⑧** + 2 canary + 局限声明）· 审计 **§4.173** ·
+PITFALLS **§4.267–§4.270** · skill **§163** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 

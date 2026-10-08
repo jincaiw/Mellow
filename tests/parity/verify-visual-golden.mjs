@@ -657,5 +657,29 @@ if (errors.length > 0) {
   throw new Error(`Visual golden contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Visual golden: 4-config layout contract armed (900x600 / 1200x800 / 1440x900 / 200% zoom); padding 56px + writing width + hidden-by-default asserted; screenshots archived; window-chrome manifest present');
-console.log('Visual golden: §9.3 14-scene coverage — visual-golden(6) + sidebar-golden(4) + scenes-golden(7: first-run / live / file-list / settings / selection-toolbar / table-toolbar / reader)');
+// ⚠️ 2026-10-09（审计 §4.173）：以下两行原**手写**「**4**-config …（900x600 / 1200x800 / 1440x900 / 200% zoom）」
+//   与「§9.3 **14**-scene coverage — visual-golden(**6**) + sidebar-golden(**4**) + scenes-golden(**7**: …)」。
+//   ⚠️ 后者**同一句话内自相矛盾**：6 + 4 + 7 = **17** ≠ **14** —— 与审计 §4.8 点名的
+//   `release-notes-v1.5.6.md`（「写『14 场景』却又列『6 + 4 + 7』」）**同型**。
+//   审计 §4.8 已判定那个「14」**对不上任何来源**（只有在「`Light / Dark` 算两项」这个**从未写明的约定**
+//   下才成立），并给出处置原则：**要么派生、要么不写数字**（「不再有任何数字，因此不可能漂移」）。
+//   ⇒ ① 配置列表**去掉那个「4」**（列表本身已自描述）；
+//     ② 三份基线的键数**从文件现读** ⇒ 数字不可能漂移，且「分项之和 == 合计」由构造保证。
+const goldenKeys = (rel) => {
+  try { return Object.keys(JSON.parse(read(rel))); } catch { return null; }
+};
+const GOLDEN_BASELINES = [
+  ['layout-golden', 'tests/visual/golden/layout-golden.json'],
+  ['sidebar-golden', 'tests/visual/golden/sidebar-golden.json'],
+  ['scenes-golden', 'tests/visual/golden/scenes-golden.json'],
+];
+const goldenParts = GOLDEN_BASELINES.map(([name, rel]) => [name, goldenKeys(rel)]);
+const goldenTotal = goldenParts.every(([, k]) => Array.isArray(k))
+  ? goldenParts.reduce((s, [, k]) => s + k.length, 0) : null;
+console.log('Visual golden: layout contract armed (900x600 / 1200x800 / 1440x900 / 200% zoom); '
+  + 'padding 56px + writing width + hidden-by-default asserted; screenshots archived; window-chrome manifest present');
+console.log('Visual golden: §9.3 coverage — '
+  + goldenParts.map(([n, k]) => `${n}(${Array.isArray(k) ? k.length : '?'})`).join(' + ')
+  + ` = ${goldenTotal} 个基线键（**从三份基线现读**）`
+  + (Array.isArray(goldenParts[2][1]) ? `；scenes: ${goldenParts[2][1].join(' / ')}` : '')
+  + ' —— **不写**「N-scene」这类**无法派生**的计数（审计 §4.8 / §4.173）');

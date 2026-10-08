@@ -1332,6 +1332,50 @@ if (driftedMissing.length === 0) {
   }
 }
 
+// ── ⑧ 护栏**输出**里不得出现手写的「N-单词」计数（2026-10-09，审计 §4.173）────
+// 【判据】`console.log` 的字符串里不得有形如「**N**-config」/「**N**-scene」的**手写计数**。
+// 【为什么】`verify-visual-golden.mjs` 的收口行原写「§9.3 **14**-scene coverage —
+//   visual-golden(**6**) + sidebar-golden(**4**) + scenes-golden(**7**)」——**6+4+7 = 17 ≠ 14**，
+//   **同一句话内自相矛盾**；而审计 §4.8 早已判定那个「14」**对不上任何来源**
+//   （只有在「`Light / Dark` 算两项」这个**从未写明的约定**下才成立），并给出处置原则
+//   「**不再有任何数字**，因此不可能漂移」。⇒ 落成判据（同族：§4.172 的「手写计数必然漂移」）。
+{
+  // ⚠️ 模式与**示例**都运行时拼接：本文件在扫描面内，且它会在注释/消息里**引用**坏形态（§4.237 的教训）
+  const N_WORD = new RegExp(`\\b${'\\d'}+-[a-z][a-z-]*`);
+  const guards8 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const offenders8 = [];
+  for (const f of guards8) {
+    // ⚠️ **不要再加 CRLF 归一化** —— `read()` 已经归一化过；而本文件里**任何地方**出现
+    //   那个两字符转义序列（**包括注释里**）都会**破坏本文件自己的 CRLF canary**（⑤ 会报
+    //   「注入后仍未检出缺失归一化」，本轮实测踩到）。
+    const src = read(`tests/parity/${f}`);
+    for (const m of src.matchAll(/console\.log\(([\s\S]{0,1200}?)\);/g)) {
+      const hit = N_WORD.exec(m[1]);
+      if (hit === null) continue;
+      offenders8.push(`${f}:${src.slice(0, m.index).split('\n').length}（${hit[0]}）`);
+    }
+  }
+  if (offenders8.length > 0) {
+    fail(`护栏**输出**里有**手写**的「N-单词」计数：${offenders8.join('、')} —— `
+      + '这类计数会漂（实测：某收口行写「14-scene」而同句列出 6+4+7 = 17，**自相矛盾**；'
+      + '审计 §4.8 已判定那个数**对不上任何来源**）⇒ **要么从制品派生，要么不写数字**'
+      + `（例：把「${4}${'-'}config」改为直接列配置、把「N-scene」改为从基线现读的分项之和）`);
+  }
+  // ⚠️ **已知局限（如实声明）**：本判据只认「**数字紧跟连字符**」的字面量形态；
+  //   `\${4}-config` 这种「**表达式里写死数字**」它**看不见** —— 那是「派生」与「写死」的边界模糊处，
+  //   机械判据无法区分（`\${4}` 与 `\${count}` 同形）。⇒ 这一半**只能靠人**（同 §4.162 的边界声明）。
+  // canary ①（正样本）：派生形态（`${...}` 拼出的数字）不得被判为手写
+  if (N_WORD.test('console.log(`Visual golden: layout contract armed (900x600)`)')) {
+    fail('⑧ canary 失效：无计数的样本被误判');
+  }
+  // canary ②（负样本）：手写形态必须能检出（拼接构造，避免自己命中自己）
+  if (!N_WORD.test(`x ${4}${'-'}config`)) {
+    fail('⑧ canary 失效：手写「N-单词」形态未被检出（判据已退化成空真）');
+  }
+}
+
 // ── qualification README 的门禁表数字必须与实际一致（2026-10-01）────────────
 // 立此节的必要性：`tests/qualification/README.md` 是 **ADR-0019 §3 Gate 条款**指定的
 // 「三平台 Pass/Fail 表」载体，而它的**护栏数量**长期未刷新 —— 实测：写「14 个」而实际 **17 个**
