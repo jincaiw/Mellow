@@ -303,4 +303,51 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   }
 }
 
+// ── 「30 个核心任务」的多处副本必须 == 记录器的 `TASKS` 长度（2026-10-09，审计 §4.183）────────
+// 【为什么】「30 个核心 Typora 任务」出现在 **4 处**，而**没有任何判据**：
+//   · `docs/qualification/ux-score-gate-template.md` §二 的任务表（**唯一来源**，master-plan §9.5 指定）
+//   · `docs/product/Mellow-PRD-V1.2-FINAL.md` §132（「30 个核心 Typora 任务」+ 四条阈值）
+//   · `tests/qualification/ux-gate-recorder.mjs` 的 `TASKS`（**机器可读**；记录器按它生成 30×2×2 条观测）
+//   · `README.md` / `ADR-0020 §2`（「30 任务效率 Gate」，由判据 ⑨c 锁）
+//   ⚠️ 记录器**已经**用 `TASKS.length` 算观测总数（`TASKS.length * APPS.length * ROUNDS.length`）
+//   ⇒ 若 `TASKS` 被误改成 31 项，**模板表 / PRD / README 都不会红**（只是观测数悄悄变了）。
+// 【判据】以 `TASKS.length` 为**真值源**：模板 §二 任务表行数、PRD §132 的数量声明都必须 == 它。
+{
+  const RECORDER = 'tests/qualification/ux-gate-recorder.mjs';
+  const countTasks = (s) => {
+    const b = (/const TASKS = \[([\s\S]*?)\n\];/.exec(s) ?? [])[1];
+    return b === undefined ? null : (b.match(/'[^']*'/g) ?? []).length;
+  };
+  const recSrc = readFileSync(resolve(root, RECORDER), 'utf8').replace(/\r\n/g, '\n');
+  const tasksLen = countTasks(recSrc);
+  if (tasksLen === null) throw new Error(`${RECORDER} 找不到 \`const TASKS = [\` —— 判据锚点漂移`);
+  if (tasksLen === 0) throw new Error(`${RECORDER} 的 TASKS 解析出 0 项 —— 解析器失效`);
+  // ① 模板 §二 的任务表行数
+  const TPL = 'docs/qualification/ux-score-gate-template.md';
+  const sec2 = readFileSync(resolve(root, TPL), 'utf8').replace(/\r\n/g, '\n')
+    .split(/^## /m).find((x) => x.startsWith('二'));
+  if (sec2 === undefined) throw new Error(`${TPL} 找不到 §二 —— 判据锚点漂移`);
+  const tplRows = sec2.split('\n').filter((l) => /^\|\s*\d+\s*\|/.test(l)).length;
+  if (tplRows !== tasksLen) {
+    throw new Error(`「核心任务」数不一致：${TPL} §二 有 ${tplRows} 行，而 ${RECORDER} 的 TASKS 有 ${tasksLen} 项`
+      + ' —— 模板是**唯一来源**（master-plan §9.5），必须与记录器一致');
+  }
+  // ② PRD §132 的数量声明
+  const PRD = 'docs/product/Mellow-PRD-V1.2-FINAL.md';
+  const pm = /(\d+)\s*个核心 Typora 任务/.exec(readFileSync(resolve(root, PRD), 'utf8').replace(/\r\n/g, '\n'));
+  if (pm === null) throw new Error(`${PRD} 找不到「N 个核心 Typora 任务」—— 判据锚点漂移`);
+  if (Number(pm[1]) !== tasksLen) {
+    throw new Error(`「核心任务」数不一致：${PRD} 写「${pm[1]} 个核心 Typora 任务」，`
+      + `而记录器 TASKS 有 ${tasksLen} 项`);
+  }
+  // canary：谓词与判定共用（拼接构造）
+  if (countTasks(`const TASKS = [\n  'a', 'b',\n];`) !== 2) {
+    throw new Error('「核心任务」护栏 canary 失效：TASKS 计数取不到');
+  }
+  if (countTasks('无此形态') !== null) {
+    throw new Error('「核心任务」护栏 canary 失效：无锚点的样本被误判');
+  }
+  console.log(`UX gate tasks: ${tasksLen} 项核心任务 —— 模板 §二 表（${tplRows} 行）· PRD §132（${pm[1]}）· 记录器 TASKS 三处一致`);
+}
+
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');

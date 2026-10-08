@@ -12113,6 +12113,50 @@ PITFALLS **§4.288–§4.289** · skill **§169** · `MEMORY.md` · `2026-10-09.
 
 ---
 
+## 4.183 「**30 个核心任务**」出现在 4 处，而**只有 1 处有判据**（「只锁了一半」同族**第 13 次**，2026-10-09）
+
+### 一、发现
+
+「30 个核心 Typora 任务」出现在 **4 处**：
+
+| 位置 | 形态 | 判据 |
+|---|---|---|
+| `docs/qualification/ux-score-gate-template.md` §二 的任务表 | **唯一来源**（master-plan §9.5 指定），**30 行** | ❌ |
+| `docs/product/Mellow-PRD-V1.2-FINAL.md` §132 | 「30 个核心 Typora 任务：」+ 四条阈值 | ❌ |
+| `tests/qualification/ux-gate-recorder.mjs` 的 `TASKS` | **机器可读**（30 项 = 6 行 × 5） | ❌ |
+| `README.md` / `ADR-0020 §2` | 「30 任务效率 Gate」 | ✅ 判据 ⑨c |
+
+⚠️ 记录器**已经**用 `TASKS.length` 算观测总数（`TASKS.length × APPS.length × ROUNDS.length`）
+⇒ 若 `TASKS` 被误改成 31 项，**模板表 / PRD 都不会红**（只是观测数**悄悄变了**）。
+
+**实测**：三处**当前一致**（30 / 30 / 30）⇒ 缺陷是「**没有判据**」。
+
+### 二、处置
+
+在 `verify-runtime-qualification-workflow.mjs` 新增判据（以 `TASKS.length` 为**真值源**）：
+① 模板 §二 任务表行数 == `TASKS.length`；② PRD §132 的「N 个核心 Typora 任务」== `TASKS.length`；
+③ 防空转（锚点必须能读到 + `TASKS` 必须解析出 > 0 项）+ 2 canary
++ 收口行（**三处数字都派生**，不写死 30）。
+
+### 三、注入验证（2/2）
+
+① PRD 的「30」→「31」⇒ **转红**（「PRD 写「31 个核心 Typora 任务」，而记录器 TASKS 有 30 项」）；
+② **改真值源那一侧**（`TASKS` 删一项）⇒ **转红**（「模板 §二 有 30 行，而 TASKS 有 29 项」）。
+
+### 四、教训
+
+1. **「4 处出现、只有 1 处有判据」** —— 与前两轮（§4.181 的 3 处、§4.182 的 3 处）**同一形态**
+   ⇒ 这是本仓**稳定的失效模式**（不是偶发）。
+2. ⚠️ **记录器「已经用了 `TASKS.length`」≠「它被守住了」** —— 它只是**消费**该长度，**不校验**它。
+3. ⇒ **同族第 13 次**（§4.170 / … / §4.182 / 本节）。
+
+### 五、产物
+
+`tests/parity/verify-runtime-qualification-workflow.mjs`（新判据 + 2 canary + 派生收口行）·
+审计 **§4.183** · PITFALLS **§4.296** · skill **§173** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 
