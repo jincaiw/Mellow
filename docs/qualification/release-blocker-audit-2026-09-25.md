@@ -10139,7 +10139,7 @@ Node 的 `spawn` 在无 shell 时**无法执行 `.cmd`**（抛 `ENOENT`）⇒ �
 
 `tests/benchmark/{ime-matrix-linux,ime-matrix,generate-fixtures}.mjs` · 手册（§0 素材路径 + §2.4 D1 注记）·
 `tests/parity/verify-doc-code-refs.mjs`（+⑮⑯ 两条判据与 canary）· 审计 **§4.152** ·
-PITFALLS **§4.210–§4.211** · skill（+1 节 + 自查清单 +2 条）· `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.210–PITFALLS §4.211** · skill（+1 节 + 自查清单 +2 条）· `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10224,7 +10224,7 @@ PITFALLS **§4.210–§4.211** · skill（+1 节 + 自查清单 +2 条）· `MEM
 
 `tests/qualification/README.md`（4 处数字 + 覆盖边界说明 + 表格标题下的真值源指针）·
 `tests/parity/verify-release-gate.mjs`（+两条判据与 canary；`truthOf` 共用谓词）· 审计 **§4.153** ·
-PITFALLS **§4.212–§4.213** · skill **§142–§143** + 自查清单 +2 条 · `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.212–PITFALLS §4.213** · skill **§142–§143** + 自查清单 +2 条 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10301,7 +10301,7 @@ PITFALLS **§4.212–§4.213** · skill **§142–§143** + 自查清单 +2 条 
 
 `docs/specs/runtime-qualification-plan.md`（§9 对账表 + 结论 + 刷新说明）·
 `tests/qualification/README.md`（刷新 + 边界更正）· `tests/parity/verify-doc-code-refs.mjs`（+⑰）·
-审计 **§4.154** · PITFALLS **§4.214–§4.215** · skill **§144** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.154** · PITFALLS **§4.214–PITFALLS §4.215** · skill **§144** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10352,14 +10352,14 @@ PITFALLS **§4.212–§4.213** · skill **§142–§143** + 自查清单 +2 条 
 3. **能机械化的编号就不要手写** —— ADR 范围端点可**从目录现读**；手写 = 每加一份 ADR 就漂一次。
 4. ✅ **新判据 ⑱ 上没再踩「自己的文字命中判据」** —— 因为这次**先**把豁免规则（`原写|实际已到`）写进判据、
    **再**写更正说明（前几轮是反过来，**连踩 13 次**）。
-   ⚠️ 但**老判据**（§4.N 必须带限定词）**又命中一次**：本节把 `PITFALLS §4.214` 裸写成了 `§4.214`
+   ⚠️ 但**老判据**（§4.N 必须带限定词）**又命中一次**：本节把 `PITFALLS §4.214` 裸写成了 `PITFALLS §4.214`
    ⇒ 这是同一族的**第 14 次** —— **说明该族的根因是「多命名空间共存」，不是「我忘了」**；
    每条新判据都只能防住它自己那一种。
 
 ### 七、产物
 
 `README.md` · `docs/plans/typora-parity-master-plan.md` · `tests/parity/verify-doc-code-refs.mjs`（+⑱）·
-审计 **§4.155** · PITFALLS **§4.216–§4.217** · skill **§145** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.155** · PITFALLS **§4.216–PITFALLS §4.217** · skill **§145** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10420,7 +10420,7 @@ PITFALLS **§4.212–§4.213** · skill **§142–§143** + 自查清单 +2 条 
 ### 七、产物
 
 `THIRD_PARTY_NOTICES.md`（重写）· `tests/parity/verify-doc-code-refs.mjs`（+⑲）· 审计 **§4.156** ·
-PITFALLS **§4.218–§4.219** · skill **§146** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.218–PITFALLS §4.219** · skill **§146** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10475,7 +10475,7 @@ PITFALLS **§4.218–§4.219** · skill **§146** + 自查清单 +2 · `MEMORY.m
 ### 七、产物
 
 `packages/settings/{README.md,package.json,src/index.ts}` · `tests/parity/verify-doc-code-refs.mjs`（+⑳）·
-审计 **§4.157** · PITFALLS **§4.220–§4.221** · skill **§147** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.157** · PITFALLS **§4.220–PITFALLS §4.221** · skill **§147** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10536,7 +10536,7 @@ PITFALLS **§4.218–§4.219** · skill **§146** + 自查清单 +2 · `MEMORY.m
 
 `docs/adr/ADR-0021-platform-build-matrix-pass.md`（追加更正块）·
 `docs/superpowers/specs/2026-08-11-image-file-ops-design.md`（更正声明）·
-`tests/parity/verify-doc-code-refs.mjs`（扫描面扩容）· 审计 **§4.158** · PITFALLS **§4.222–§4.223** ·
+`tests/parity/verify-doc-code-refs.mjs`（扫描面扩容）· 审计 **§4.158** · PITFALLS **§4.222–PITFALLS §4.223** ·
 skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
@@ -10590,7 +10590,7 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 ### 六、产物
 
 `docs/architecture/README.md` · `AGENTS.md` · `tests/parity/verify-doc-code-refs.mjs`（+架构索引判据；AGENTS 块扩容）·
-审计 **§4.159** · PITFALLS **§4.224–§4.225** · skill **§149** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.159** · PITFALLS **§4.224–PITFALLS §4.225** · skill **§149** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10654,7 +10654,7 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 `docs/qualification/release-blocker-audit-2026-09-25.md`（第 14 行 + §4.100）·
 `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（追加更正块）·
 `tests/parity/verify-package-conventions.mjs`（注释更正）· `tests/parity/verify-doc-code-refs.mjs`（+㉑）·
-审计 **§4.160** · PITFALLS **§4.226–§4.227** · skill **§150** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.160** · PITFALLS **§4.226–PITFALLS §4.227** · skill **§150** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10707,7 +10707,7 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 ### 六、产物
 
 `packages/app-core/README.md` · `tests/parity/verify-package-conventions.mjs`（+C6；收口行改为**派生计数**）·
-审计 **§4.161** · PITFALLS **§4.228–§4.229** · skill **§151** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.161** · PITFALLS **§4.228–PITFALLS §4.229** · skill **§151** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10859,7 +10859,7 @@ PITFALLS **§4.230** · skill **§152** + 自查清单 +1 · `MEMORY.md` · `202
 `packages/settings/src/index.ts`（+`files.searchRegex` + 注释改写）· `apps/desktop/src/App.tsx`（三处接线）·
 `packages/i18n/src/messages.ts`（zh/en 各 +2）· `tests/parity/fixtures/typora-persisted-uncovered.json`
 （`fileSearchUseRegexp` 的 `reason`）· `tests/parity/verify-sidebar-contract.mjs`（判据 ㉟ + 3 canary）·
-审计 **§4.163** · PITFALLS **§4.231–§4.233** · skill **§153** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.163** · PITFALLS **§4.231–PITFALLS §4.233** · skill **§153** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10945,7 +10945,7 @@ PITFALLS **§4.230** · skill **§152** + 自查清单 +1 · `MEMORY.md` · `202
 
 `tests/parity/fixtures/typora-persisted-uncovered.json`（2 条 `reason` 补 Mellow 对应物 + `D-AG`）·
 `tests/parity/verify-release-gate.mjs`（`REF_SOURCES` 纳入 parity 数据文件 + 纯函数化 + 3 canary + 防空转）·
-审计 **§4.164** · PITFALLS **§4.234–§4.237** · skill **§154** + 自查清单 +4 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.164** · PITFALLS **§4.234–PITFALLS §4.237** · skill **§154** + 自查清单 +4 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -11027,7 +11027,7 @@ canary **永远失败**。⇒ 改为**行首锚定正则** `/^\s*const CANARY_SY
 
 `tests/parity/verify-release-gate.mjs`（引用源扩到全仓 + 排除项写理由 + `CANARY_SYNTHETIC_IDS`
 第三类表 + `stripDeclBlocks` + 按类防空转 + 6 条 canary）· 审计 **§4.165** ·
-PITFALLS **§4.238–§4.240** · skill **§155** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.238–PITFALLS §4.240** · skill **§155** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -11094,7 +11094,7 @@ D 表引用源只枚举出 878 个文件（下限 1113 = 2026-10-08 实测全仓
 ### 六、产物
 
 `tests/parity/verify-release-gate.mjs`（枚举改 `git ls-files` + 去掉目录级排除 + 下限改 878）·
-审计 **§4.166** · PITFALLS **§4.241–§4.243** · skill **§156** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.166** · PITFALLS **§4.241–PITFALLS §4.243** · skill **§156** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 

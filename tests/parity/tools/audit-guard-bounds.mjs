@@ -17,8 +17,10 @@
  *   · **覆盖型**（防「成员悄悄消失」，集合是**人工维护的枚举**）⇒ **必须 == 当前基线**；
  *   · **健康度型**（防「解析器 / 扫描面失效」，集合由**内容**产生）⇒ **必须留余量**
  *     （否则每加一个文案键就红）。
- *   两者的区分**靠该判据自述的意图**（消息里的「解析面漂移」vs「悄悄消失」），
- *   工具会把它抽出来供人判断；**不要**机械地把所有「过松」都收紧。
+ *   ⚠️ **工具只做「机械」的那一半**（「抬 1 仍绿」= 客观事实）。它**附带**按关键词把附近
+ *   文本分成三桶，那**只是提示、不可靠** —— 同一段注释里往往两类措辞都有。实测反例：
+ *   `zh.size < 700` 的注释写的是「低于下限说明解析器漏了一大类」= **健康度型**，
+ *   却被关键词误分到「覆盖型」桶。⇒ **必须人工读原文判定**，**不要**照桶机械收紧。
  *
  * ⚠️ **安全前提（两条，缺一不可）**：
  *   ① **工作区必须干净** —— 本工具**就地突变**源码文件，靠 `git checkout --` 兜底还原；
@@ -91,7 +93,8 @@ for (const g of guards) {
     const stillGreen = withMutation(abs, mutated, () => runGuard(rel));
     if (!stillGreen) { tight += 1; continue; }
     const ctx = orig.slice(Math.max(0, m.index - 200), m.index + 240);
-    const kind = INTENT_COVERAGE.test(ctx) ? '覆盖型候选' : INTENT_HEALTH.test(ctx) ? '健康度型' : '未自述';
+    // ⚠️ 关键词分桶**只是提示**（不可靠 —— 同段注释常含两类措辞）⇒ 必须人工读原文
+    const kind = INTENT_COVERAGE.test(ctx) ? '命中覆盖型关键词' : INTENT_HEALTH.test(ctx) ? '命中健康度型关键词' : '两类关键词都未命中';
     candidates.push({ g, expr: `${lhs}.${prop} < ${n}`, kind });
   }
 }
@@ -99,7 +102,7 @@ for (const g of guards) {
 console.log(`贴着基线的下限：${tight} 处 · **过松（留了 ≥1 个空位）**：${candidates.length} 处 · 跳过（<3）：${skipped}`);
 if (candidates.length) {
   console.log('\n候选（⚠️ 候选 ≠ 缺陷：**覆盖型**必须 == 当前基线；**健康度型**留余量是正常的）：');
-  const order = ['覆盖型候选', '未自述', '健康度型'];
+  const order = ['命中覆盖型关键词', '两类关键词都未命中', '命中健康度型关键词'];
   for (const k of order) {
     const xs = candidates.filter((c) => c.kind === k);
     if (xs.length === 0) continue;
