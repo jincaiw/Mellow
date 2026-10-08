@@ -10355,6 +10355,67 @@ PITFALLS **§4.212–§4.213** · skill **§142–§143** + 自查清单 +2 条 
 
 ---
 
+## 4.156 `THIRD_PARTY_NOTICES.md`（**合规文档**）与实际依赖严重不符 —— npm 运行时依赖 28 漏 10、Rust 17 只列 2（2026-10-08）
+
+### 一、动因
+
+前几轮查的是「人照着做」的门禁文档。本轮换到**合规面**：`THIRD_PARTY_NOTICES.md` ——
+它是**唯一**声明第三方组件与许可的地方，而**没有任何护栏覆盖它**。
+
+### 二、实测
+
+| 面 | 实际 | notices 里 |
+|---|---|---|
+| npm 运行时依赖（`dependencies`，3 个包去重） | **28** | 18（靠 `@codemirror/*` + `@lezer/*` 两个 glob）⇒ **漏 10** |
+| Cargo 直接依赖（`[dependencies]` + target 段） | **17** | **2**（`tauri` / `tauri-plugin-dialog`）⇒ **漏 15** |
+
+漏掉的 npm 侧 10 个：`markdown-it` / `markdown-it-footnote` / `markdown-it-task-lists` / `sanitize-html` /
+`katex` / `mermaid` / `pdfmake` / `@tauri-apps/plugin-opener` / `plugin-process` / `plugin-updater`。
+
+⚠️ **且表里列的多是构建工具**（Vite / TypeScript / Jest）—— **优先级是反的**：
+把「不随产品分发」的工具列全了，却漏了「随产品分发」的运行时依赖。
+
+另有一处**已过期**声称：「Mellow 自身代码默认 MIT（**待正式 LICENSE 文件发布时对齐**）」——
+而根 `LICENSE` **早已存在**。
+
+### 三、处置
+
+重写 `THIRD_PARTY_NOTICES.md`：分五节（自身 / vendored / **npm 运行时** / **Cargo 运行时** / 构建工具），
+逐项列出**实际版本与许可**（npm 从安装包现读；Cargo 从 **`Cargo.lock` 锁定版本** + registry 现读）；
+修正过期声称；并**单列两个非 MIT 的运行时依赖**（`markdown-it-task-lists` = **ISC**、`notify` = **CC0-1.0**）。
+
+### 四、判据（⑲）
+
+**每个 workspace 包的 `dependencies` + `Cargo.toml` 各 `dependencies` 段的 crate 都必须在 notices 里出现**
+（**表格行第一格**的精确名，或该格声明的 scope 通配 `@scope/*`）；防空转（npm ≥10 / cargo ≥8）；canary **五向**。
+⚠️ **边界如实声明**：`devDependencies` / `[dev-dependencies]` **不在覆盖内**（不随产品分发）。
+
+### 五、⚠️ 首版判据是**假门禁**，被注入验证当场揭穿
+
+首版 `covered()` 用 `text.includes(name)` —— **裸子串**。而我在文件顶部写的**「重写原因」说明文字**里
+正好提到了 `mermaid` / `katex` / `@codemirror/*` ⇒ **散文提及满足了判据**。
+**注入验证 4 个只红了 1 个**（① `mermaid` ② `notify` ③ `@codemirror/*` **全部漏报**）。
+
+⇒ 改为**只认表格行第一格**，并补一条 canary 专锁这个形态（「散文里提到 ⇒ **不算**覆盖」）⇒ **4/4**。
+⚠️ 这正是本仓 `verify-parity-ledger.mjs` 早就写过的坑（「用裸子串判断会被**散文提及**满足」）—— **我又踩了一次**。
+
+### 六、教训
+
+1. **判据的谓词不能是「文本里出现过」** —— 文档里的**说明文字**会满足它；
+   必须收窄到**结构位置**（表格行第一格 / 代码符号 / 行锚点）。
+2. **「合规文档」是最该有护栏的** —— 它没有代码行为可对照，**漂了没人发现**；而它的读者是**外部审查者**。
+3. **反方向的清单也要查** —— notices 列了 `markedit-api` / `@tauri-apps/cli`（**devDeps**）却漏了运行时依赖
+   ⇒ 不是「漏了几个」，是**优先级反了**。
+4. **别臆造版本 / 许可** —— npm 从安装包现读、Cargo 从 `Cargo.lock` + registry 现读；
+   我第一版按 registry **目录名**猜版本，拿到的是**缓存里的任意版本**（如 `notify 7.0.0`，而锁定的是 `8.2.0`）。
+
+### 七、产物
+
+`THIRD_PARTY_NOTICES.md`（重写）· `tests/parity/verify-doc-code-refs.mjs`（+⑲）· 审计 **§4.156** ·
+PITFALLS **§4.218–§4.219** · skill **§146** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 

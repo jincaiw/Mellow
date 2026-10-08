@@ -1316,6 +1316,91 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ⑲ 第三方声明必须覆盖「随产品分发」的**全部**运行时依赖 ─────────────────────────
+// 立此条的原因（实测，2026-10-08 审计 §4.156）：`THIRD_PARTY_NOTICES.md` 只列 **10 行**、且多为
+// **构建工具**（Vite / TypeScript / Jest），而 **28 个 npm 运行时依赖里漏了 10 个** ——
+// 含 `mermaid` / `katex` / `pdfmake` / `markdown-it` / `sanitize-html` 与 **3 个 Tauri 插件**；
+// Rust 侧同样只列了 `tauri` 与 `tauri-plugin-dialog`（实际 17 个直接依赖）。
+// ⇒ 判据：**每个 workspace 包的 `dependencies` + `Cargo.toml` 各 `dependencies` 段的 crate
+//    都必须在本文件中出现**（精确名，或本文件显式声明的 scope 通配 `@scope/*`）。
+// ⚠️ **边界如实声明**：**devDependencies / `[dev-dependencies]` 不在覆盖内** —— 它们不随产品分发。
+{
+  const NOTICES = 'THIRD_PARTY_NOTICES.md';
+  const notices = readFileSync(resolve(root, NOTICES), 'utf8').replace(/\r\n/g, '\n');
+  /**
+   * 只认**表格行的第一格**里声明的名字 —— ⚠️ **不能用裸子串**：
+   * 本文件的**说明文字**（「重写原因」段）就会提到 `mermaid` / `katex` 等，
+   * 用 `text.includes(name)` 会被**散文提及**满足 ⇒ **真构件删掉后护栏仍绿**（假阴性）。
+   * 这正是 `verify-parity-ledger.mjs` 记过的同一个坑（2026-10-08 实测踩到：首版 4 个注入只红 1 个）。
+   */
+  const declared = (text) => {
+    const names = new Set();
+    const globs = new Set();
+    for (const line of text.split('\n')) {
+      const m = /^\|\s*`?([^`|]+?)`?\s*\|/.exec(line);
+      if (!m) continue;
+      const n = m[1].trim();
+      if (n.endsWith('/*')) globs.add(n.slice(0, -1));   // `@codemirror/*` → `@codemirror/`
+      else names.add(n);
+    }
+    return { names, globs };
+  };
+  /** 覆盖谓词：第一格**精确名**命中，或第一格声明了覆盖它的 scope 通配。判定与 canary **共用**。 */
+  const covered = (name, decl) => decl.names.has(name)
+    || [...decl.globs].some((g) => name.startsWith(g));
+  const decl = declared(notices);
+
+  // npm：所有 workspace 包的 `dependencies`（+ vendored CoreEditor 自带的 —— 它也会打进产物）
+  const pkgFiles = ['apps/desktop/package.json'];
+  for (const d of readdirSync(resolve(root, 'packages'))) {
+    const p = `packages/${d}/package.json`;
+    if (existsSync(resolve(root, p))) pkgFiles.push(p);
+  }
+  if (existsSync(resolve(root, 'packages/editor-core/CoreEditor/package.json'))) {
+    pkgFiles.push('packages/editor-core/CoreEditor/package.json');
+  }
+  const npmDeps = new Set();
+  for (const p of pkgFiles) {
+    const j = JSON.parse(readFileSync(resolve(root, p), 'utf8'));
+    for (const k of Object.keys(j.dependencies ?? {})) npmDeps.add(k);
+  }
+
+  // Cargo：`[dependencies]` 与各 `[target.'…'.dependencies]`（**不含** `[dev-dependencies]`）
+  const cargoSrc = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n');
+  const cargoDeps = new Set();
+  for (const sec of cargoSrc.split(/^(?=\[)/m)) {
+    const head = sec.split('\n')[0].trim();
+    if (!/^\[(?:target\.[^\]]+\.)?dependencies\]$/.test(head)) continue;
+    for (const d of sec.matchAll(/^([a-z0-9_-]+)\s*=/gm)) cargoDeps.add(d[1]);
+  }
+
+  const missingNpm = [...npmDeps].filter((d) => !covered(d, decl));
+  const missingCargo = [...cargoDeps].filter((d) => !covered(d, decl));
+  if (missingNpm.length > 0) {
+    fail(`${NOTICES} 漏了 npm 运行时依赖：${missingNpm.join('、')}`
+      + ' —— 「随产品分发」的依赖必须逐个列出（实测：曾漏 mermaid / katex / pdfmake / markdown-it /'
+      + ' sanitize-html 与 3 个 Tauri 插件）');
+  }
+  if (missingCargo.length > 0) {
+    fail(`${NOTICES} 漏了 Cargo 直接依赖：${missingCargo.join('、')}`
+      + ' —— 实测：曾只列 tauri 与 tauri-plugin-dialog，而实际有 17 个');
+  }
+  if (npmDeps.size < 10 || cargoDeps.size < 8) {
+    fail(`${NOTICES} 判据扫描面异常（npm ${npmDeps.size} / cargo ${cargoDeps.size}）—— 判据会空转`);
+  }
+  // canary：五向（判定与 canary 共用 declared / covered）
+  const SYN = '| `mermaid` | ^11 | MIT |\n| `@codemirror/*` | ^6 | MIT |\n';
+  const SYN_DECL = declared(SYN);
+  if (!covered('mermaid', SYN_DECL)) errors.push('第三方声明护栏 canary 失效：第一格的精确名未被识别');
+  if (!covered('@codemirror/view', SYN_DECL)) errors.push('第三方声明护栏 canary 失效：scope 通配未生效');
+  if (covered('not-listed-pkg', SYN_DECL)) errors.push('第三方声明护栏 canary 过宽：未列出的包被判为覆盖');
+  if (covered('@tauri-apps/plugin-x', SYN_DECL)) errors.push('第三方声明护栏 canary 过宽：通配越界覆盖了别的 scope');
+  // ⚠️ 最关键的一条：**散文里提到**的名字**不得**算覆盖（否则删掉表格行后护栏仍绿）
+  if (covered('mermaid', declared('> 说明文字提到 mermaid / katex，但表格里没有。\n'))) {
+    errors.push('第三方声明护栏 canary 失效：**散文提及**被判为已声明（真构件删掉后会假阴性）');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
