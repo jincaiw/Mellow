@@ -14,6 +14,7 @@
  * 「护栏断链」、「CI 缺门禁」都是硬失败。
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -395,29 +396,32 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   //   ③ §4.165 发现「按类枚举」这件事**永远会漏下一类**（源码注释、spec、发布说明、qualification 报告
   //      都在引用 `D-` 编号）⇒ 改为**遍历全仓**，只按「**生成物 / 不入库的目录**」排除。
   // ⚠️ 排除项必须写明理由（否则下一个人会以为漏了）：
-  //   · `node_modules` / `.git` / `target` / `dist` / `build` / `.cache` / `.workbuddy-ai` —— 依赖与构建产物；
-  //   · `.trae/` 与 `apps/desktop/public/editor/` —— **gitignore**（不在仓库里；memory 纪律：证据不得指向 gitignore 目录）；
+  //   · `node_modules` / `.git` / `target` / `dist` / `build` / `.cache` —— 依赖与构建产物；
+  //   · `.workbuddy-ai/`（本工具的 memory）与 `.workbuddy/`（**另一个** AI 工具的数据目录）—— 工具数据；
+  //   · `.trae/` · `apps/desktop/public/editor/` · `tests/benchmark/{fixtures,reports,results}` ——
+  //     **均在 `.gitignore` 里**（不入库；memory 纪律：证据不得指向 gitignore 目录）。
+  // ⚠️ 2026-10-08（审计 §4.166）：**防空转下限必须锚在「干净检出」上，不是「本地工作区」** ——
+  //   本地工作区 ⊃ 仓库（未跟踪 + 生成物）。首次立判据时把总数下限写成**本地**实测的 1113，
+  //   而 CI 干净检出只有 **878** ⇒ **CI 两个 parity job 双双失败**（本地却绿）。
+  // ⚠️ 2026-10-08（审计 §4.166·续）：**目录级排除会误伤「被强制跟踪的文件」** —— 实测
+  //   `tests/benchmark/fixtures/` 整体是生成物（`.gitignore` 里 `*`），但其中的 **`README.md`
+  //   是强制加入的跟踪文件** ⇒ 目录级排除把它漏掉（本地 877 ≠ 干净检出 878）。
+  //   ⇒ **改用权威真值源 `git ls-files`**：它就是「哪些文件在仓库里」的定义，
+  //   **天然排除 gitignore 的生成物、又天然包含强制跟踪的文件**，且**本地与 CI 看到同一集合**。
+  //   ⇒ 不再需要任何目录级排除（依赖/产物/工具数据目录**本来就不被跟踪**）。
+  const REF_EXT = /\.(md|mjs|cjs|js|ts|tsx|json|yml|yaml|rs|sh)$/;
   //   · **canary 合成编号**：见下方 `CANARY_SYNTHETIC_IDS` —— 它们**刻意不声明**，但**必须仍被引用**
   //     （防「canary 被删了却没人发现」）。⚠️ **不按文件排除** `verify-*.mjs`：那样会把护栏里
   //     **真实的** D 引用（如 `verify-sidebar-contract.mjs` 的 `D-C`/`D-J`）也一起豁免掉。
   // ⚠️ **本文件自己现在也是引用源** ⇒ 本文件里**任何位置**（含注释、举例）都不得写「不存在的编号」字面量
   //   （审计 §4.237：初稿在注释里写了那个不存在的编号，判据当场命中自己）。
-  const SKIP_DIRS = new Set([
-    'node_modules', '.git', 'dist', 'build', 'target', '.cache', '.workbuddy-ai', '.trae',
-  ]);
-  const SKIP_PATHS = ['apps/desktop/public/editor/'];
-  const REF_EXT = /\.(md|mjs|cjs|js|ts|tsx|json|yml|yaml|rs|sh)$/;
-  const REF_SOURCES = [];
-  (function walkRefSources(dir) {
-    for (const entry of readdirSync(resolve(root, dir), { withFileTypes: true })) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      const rel = dir === '' ? entry.name : `${dir}/${entry.name}`;
-      if (entry.isDirectory()) { walkRefSources(rel); continue; }
-      if (!REF_EXT.test(entry.name)) continue;
-      if (SKIP_PATHS.some((p) => rel.startsWith(p))) continue;
-      REF_SOURCES.push(rel);
-    }
-  })('');
+  let REF_SOURCES = [];
+  try {
+    REF_SOURCES = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
+      .toString().split('\0').filter(Boolean).filter((f) => REF_EXT.test(f));
+  } catch {
+    fail('D 表引用源无法枚举：`git ls-files` 执行失败 —— 本判据要求在有 git 的检出里运行');
+  }
 
   // 确实要「提到一个没有声明行的编号」时在此登记**理由**（本仓既有 idiom，同 OFFICIAL_SHORTCUT_EXCEPTIONS）。
   // 两类合法用途：① 记下「经复核**不**创建某编号」这个决定；② 泛指占位（非具体条目）。
@@ -491,10 +495,11 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       + '若该引用是「**不**创建此编号」或泛指占位，请登记进 D_TABLE_NOT_DECLARED 并写明理由');
   }
 
-  // 防空转（2026-10-08，审计 §4.164/§4.165）：扫描面**按类**断言 —— 全仓遍历若退化成「只读了几份文档」
-  // 就会让「凡引用必须有声明行」变成空真。⚠️ 下限**等于立判据时的实测基线**（本仓纪律：贴着基线取）。
-  if (REF_SOURCES.length < 1113) {
-    fail(`D 表引用源只枚举出 ${REF_SOURCES.length} 个文件（下限 1113 = 2026-10-08 实测全仓基线）`
+  // 防空转（2026-10-08，审计 §4.164/§4.165/§4.166）：扫描面**按类**断言 —— 全仓遍历若退化成「只读了几份文档」
+  // 就会让「凡引用必须有声明行」变成空真。⚠️ 下限**等于「干净检出」的实测基线**（本仓纪律：贴着基线取）。
+  // ⚠️ **不是本地工作区的计数** —— 本地工作区 ⊃ 仓库（未跟踪 + 生成物），照本地写会**在 CI 红**（§4.166 实测）。
+  if (REF_SOURCES.length < 878) {
+    fail(`D 表引用源只枚举出 ${REF_SOURCES.length} 个文件（下限 878 = 2026-10-08 **干净检出**基线）`
       + ' —— 遍历退化会让「凡引用必须有声明行」退化成空真');
   }
   for (const [cls, prefix, min] of [
