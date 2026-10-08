@@ -301,6 +301,36 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   if (!resolveCarrier(carrierOf('- x（`P0-EDITOR-004`）'))) {
     throw new Error('§6 载体护栏 canary 失效：真实存在的台账 id 未被判定为可解析');
   }
+  // ── §6 更正块里声明的「N 条未闭环」必须 == 表里标「未闭环」的行数（2026-10-09，审计 §4.184）──
+  // 【为什么】该表（§6 的「今天的逐条状态」）有 7 行，其中 **3 行**标「**未闭环**」，
+  //   而紧随其后的句子写「（**4 条未闭环**）」—— **活文档里的一处自相矛盾**；
+  //   且该句**不带日期**（写「**至今**仍未达成」）⇒ 它**声称当前**，必须与表一致。
+  //   ⚠️ 同族：§4.183（「4 处出现、只有 1 处有判据」）。
+  {
+    const RQ = 'docs/specs/runtime-qualification-plan.md';
+    const ROW = new RegExp('^>\\s*\\|\\s*[^|]+\\|\\s*`[^`]+`\\s*\\|\\s*\\**未闭环');
+    const lines = readFileSync(resolve(root, RQ), 'utf8').replace(/\r\n/g, '\n').split('\n');
+    const unclosedRows = lines.filter((l) => ROW.test(l)).length;
+    const declMatch = lines.map((l) => /（\**(\d+)\s*条未闭环\**）/.exec(l)).find((m) => m !== null);
+    if (declMatch === undefined) {
+      throw new Error(`${RQ} 找不到「（N 条未闭环）」—— 判据锚点漂移，别静默跳过`);
+    }
+    if (unclosedRows === 0) {
+      throw new Error(`${RQ} 的表里一行「未闭环」都解析不到 —— 解析器失效`);
+    }
+    if (Number(declMatch[1]) !== unclosedRows) {
+      throw new Error(`${RQ} 声明「${declMatch[1]} 条未闭环」，而表里标「未闭环」的只有 ${unclosedRows} 行`
+        + ' —— 该句不带日期（写「至今」）⇒ 必须与表一致');
+    }
+    // canary：谓词与判定共用（表格行**带 `> ` 前缀**）
+    if (!ROW.test('> | IME corruption = 0 | `P0-EDITOR-004` | **未闭环**（`MAC`） |')) {
+      throw new Error('§6 未闭环计数 canary 失效：表格行形态未被识别（`> ` 前缀）');
+    }
+    if (ROW.test('> | clipboard P0 complete | `P0-CLIPBOARD-001` | ✅ 闭环 |')) {
+      throw new Error('§6 未闭环计数 canary 过宽：闭环行被当成未闭环');
+    }
+    console.log(`RQ §6: 表里 ${unclosedRows} 行标「未闭环」== 声明「${declMatch[1]} 条未闭环」`);
+  }
 }
 
 // ── 「30 个核心任务」的多处副本必须 == 记录器的 `TASKS` 长度（2026-10-09，审计 §4.183）────────

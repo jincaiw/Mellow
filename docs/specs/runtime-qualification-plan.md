@@ -201,7 +201,7 @@ B. Electron/Chromium
 > | Linux P0 journeys pass | `P0-PLATFORM-001` | ✅ 闭环 |
 > | no platform requires editor fork | `verify-adapter-contract.mjs` | ✅ 护栏常态守护 |
 >
-> ⇒ **本节的「全部满足」至今仍未达成**（4 条未闭环），这与**当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出**（全仓 `PASS-E = 0/50`）的结论一致。
+> ⇒ **本节的「全部满足」至今仍未达成**（3 条未闭环），这与**当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出**（全仓 `PASS-E = 0/50`）的结论一致。
 > **但这不推翻 Tauri 锁定** —— 锁定的依据是 ADR-0019 的架构证据路径，本节只是**当时写的、从未满足的门禁**。
 >
 > **③ 处置**：**保留原文 + 挂载体 + 本更正块**。
