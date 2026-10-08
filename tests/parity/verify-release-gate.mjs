@@ -1535,21 +1535,120 @@ if (driftedMissing.length === 0) {
   }
 }
 
-if (errors.length > 0) {
-  throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
+// ── ⑨ README 的**状态快照**必须与门禁**现算**一致（2026-10-09，审计 §4.174）──────
+// 【为什么】`README.md` 第 9 行写着「`PASS-E = 0/50`、未闭环 **9 项**依然成立」——
+//   这是一句**无日期、会被按「当前」读**的快照（本仓老形态：「不带日期的数字会被按「当前」读」）。
+//   而**只有状态行**（`状态：正式发布`，见上文 ⑤ 族）被护栏锁，**这半句数字没有**
+//   ⇒ 台账一变，README 就**静默漂**（同族：「只锁了一半」）。
+//   同一句快照还散在约 12 份 `docs/qualification/*` 记录里 —— 那些是**带日期的记录**
+//   （且都带「当前状态真值源 = 门禁输出」的指针），**登记为残量、不做机械全改**。
+// 【判据】README 里出现的 `PASS-E = N/M` 与「未闭环 N 项」必须 == 门禁**现算**的值。
+//   ⚠️ 判据只读 `README.md`（不读本文件）⇒ **不会命中自己的消息文本**（self-hit 规避）。
+// ⚠️ **本节的落位**：必须在 `if (errors.length > 0)` **之前**。首版落在**之后** ⇒
+//   `fail()` 只是往数组塞字符串、**永不判定**（注入验证 3/3 全绿才发现 ——
+//   本文件早已记录过同型教训：「新增断言必须落在错误检查点之前」⇒ **第 2 次**）。
+const totalItems = (ledger.items ?? []).length;
+const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').length;
+{
+  const readmeSnapshot = read('README.md');
+  // 判定与 canary **共用同一份正则**（本仓 idiom）
+  const passEOf = (s) => {
+    const m = /PASS-E\s*=\s*(\d+)\s*\/\s*(\d+)/.exec(s);
+    return m === null ? null : [Number(m[1]), Number(m[2])];
+  };
+  const unclosedOf = (s) => {
+    const m = /未闭环\s*\**\s*(\d+)\s*项/.exec(s);
+    return m === null ? null : Number(m[1]);
+  };
+  const statedPassE = passEOf(readmeSnapshot);
+  const statedUnclosed = unclosedOf(readmeSnapshot);
+  if (statedPassE !== null && (statedPassE[0] !== passECount || statedPassE[1] !== totalItems)) {
+    fail(`README.md 写「PASS-E = ${statedPassE[0]}/${statedPassE[1]}」，而门禁**现算**为 `
+      + `${passECount}/${totalItems} —— 这是**无日期的快照**，会被按「当前」读；`
+      + '要么同步，要么改为指向门禁输出（`node tests/parity/verify-release-gate.mjs`）');
+  }
+  if (statedUnclosed !== null && statedUnclosed !== noGo.length) {
+    fail(`README.md 写「未闭环 ${statedUnclosed} 项」，而门禁**现算**为 ${noGo.length} 项 —— 同上：快照会漂`);
+  }
+  // 防空转：README 必须**真的**还带这类快照（否则本判据失去靶子）
+  if (statedPassE === null && statedUnclosed === null) {
+    fail('README.md 既没有 `PASS-E = N/M` 也没有「未闭环 N 项」—— 本判据失去靶子；'
+      + '若确属**有意删除**（不再披露完成度），请**同步删除本节**并说明');
+  }
+  // canary ①（正样本）：合法样本必须能取到
+  if (JSON.stringify(passEOf('PASS-E = 0/50')) !== JSON.stringify([0, 50])) {
+    fail('⑨ canary 失效：`PASS-E = N/M` 合法样本取不到');
+  }
+  // canary ②：带后缀 / 加粗形态也要能取到（README 里是「未闭环 **9 项**」）
+  if (unclosedOf('未闭环 **9 项**依然成立') !== 9) {
+    fail('⑨ canary 失效：加粗形态「未闭环 **N 项**」取不到');
+  }
+  // canary ③（负样本）：不一致必须能检出（谓词与判定共用 ⇒ 直接比对现算值）
+  if (passEOf('PASS-E = 1/50')[0] === passECount) {
+    fail('⑨ canary 失效：不一致的 PASS-E 未被识别（判据已退化成空真）');
+  }
 }
 
-const goNoGo = noGo.length === 0 ? 'GO（全部 P0 已闭环）' : `NO-GO：${noGo.length} 项未闭环`;
-// 按阻塞原因归类输出（2026-09-25）：只列状态码会让「三项自身证据已齐备、仅被全局
-// ux-gate 策略挡住」这种关键事实淹没在 `MAC 仅单平台` 里（该状态码本身还会误导）。
-const byReason = new Map();
-for (const item of ledger.items ?? []) {
-  if (isClosed(item)) continue;
-  const key = item.blockedBy ?? '未声明';
-  if (!byReason.has(key)) byReason.set(key, []);
-  byReason.get(key).push(item.id);
+// ── ⑩ 判据的「落位」：抛错点之后不得再有断言（2026-10-09，审计 §4.175）────────
+// 【判据】每个护栏的**最后一个抛错点**（`throw new Error(`）之后，**不得**出现行首的
+//   `fail(` / `errors.push(`（= 语句级断言）—— 那些断言**永不判定**。
+// 【为什么】本文件**同族已 3 次**：
+//   ① 文件自己的注释记过（「首版把它写在 `if (errors.length > 0)` 之后…永远不会被判定」）；
+//   ② §4.174 我新加的判据 ⑨（注入验证 3/3 全绿才发现）；
+//   ③ **「A3 规则自检」canary 块**（2026-09-30 立起就一直在检查点之后 ⇒ **3 条 canary 从未运行**）。
+//   ⇒ 静态阅读**看不出**（`fail` 在、`errors` 在、逻辑也对）⇒ 必须机械守。
+// ⚠️ 谓词用**行首锚定**（语句级）：非锚定的 `errors.push(` 会命中**消息字符串里**的
+//   「该怎么改」示例（实测 4 处 ⇒ 3 处是假阳性）。⚠️ 但示例**若整行开头**就会被误报 ⇒
+//   判据自己与所有护栏的示例都必须**避免让示例独占一行**（本判据的示例用拼接构造）。
+{
+  // ⚠️ **必须有 `m` 标志**：首版漏了它 ⇒ `^` 只匹配**整个字符串的开头** ⇒ 谓词**永不命中**
+  //   （而 canary ② 的样本**恰好从位置 0 开始**，所以没抓到 —— 注入验证才抓到）。
+  //   ⇒ canary ② 的样本**故意不放在开头**，让「缺 `m`」必然被抓。
+  const TAIL_ASSERT = new RegExp(`^[ \\t]*(${'fail'}\\(|errors\\.push\\()`, 'm');
+  const guards10 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const offenders10 = [];
+  let checked10 = 0;
+  for (const f of guards10) {
+    const src = read(`tests/parity/${f}`);
+    const throws = [...src.matchAll(/throw new Error\(/g)].map((m) => m.index);
+    if (throws.length === 0) continue;
+    checked10 += 1;
+    const last = throws[throws.length - 1];
+    const tail = src.slice(last);
+    const hit = TAIL_ASSERT.exec(tail);
+    if (hit !== null) {
+      offenders10.push(`${f}（抛错点之后第 ${tail.slice(0, hit.index).split('\n').length} 行起）`);
+    }
+  }
+  if (offenders10.length > 0) {
+    fail(`这些护栏在**抛错点之后**还有断言（**永不判定**）：${offenders10.join('、')} —— `
+      + '`fail()` / `errors.push()` 只是往数组塞字符串，而检查点已经过去；'
+      + '把断言**上移到 `if (errors.length > 0)` 之前**（本文件同族已 3 次）');
+  }
+  // 防空转：必须**真的**检查到了带 throw 的护栏（否则判据已不覆盖任何文件）
+  if (checked10 < 3) {
+    fail(`只检查到 ${checked10} 个带抛错点的护栏（下限 3）—— 判据范围萎缩会让本判据空转`);
+  }
+  // canary ①（正样本）：抛错点之后**没有**断言 ⇒ 不得报
+  if (TAIL_ASSERT.test('console.log("done");')) {
+    fail('⑩ canary 失效：无断言的尾部被误判');
+  }
+  // canary ②（负样本）：行首断言必须能检出（**拼接构造**，避免本判据命中自己）
+  //   ⚠️ 样本**故意不放在位置 0**（前面垫一行）—— 否则「谓词缺 `m` 标志」会被掩盖（实测踩到）。
+  if (!TAIL_ASSERT.test(`console.log('x');\n  ${'fail'}('y');`)) {
+    fail('⑩ canary 失效：抛错点之后的行首断言未被检出（判据已退化成空真；**检查是否漏了 `m` 标志**）');
+  }
+  // canary ③（前提自检）：**非行首**的示例（消息字符串里）不得被误判
+  if (TAIL_ASSERT.test(`  + '… if (!ok) ${'errors.push'}(msg); };'`)) {
+    fail('⑩ canary 失效：消息字符串里的示例被误判为断言（行首锚定失效）');
+  }
 }
-// ── A3 规则自检（canary，2026-09-30）─────────────────────────────────────
+
+// ⚠️ 它此前位于 `if (errors.length > 0)` **之后** ⇒ **3 条 canary 永不运行**
+//   （`errors.push` 只是往数组塞字符串，而检查点已经过去了）—— **既有缺陷**，
+//   现由**判据 ⑩**（「落位」判据）机械守住。
 // 防止本规则被静默退回「AUTO 一律不阻断」：样本拼接构造，避免护栏检出自己。
 {
   const AUTO = 'AUTO';
@@ -1564,6 +1663,26 @@ for (const item of ledger.items ?? []) {
     errors.push('ADR-0024 A3 canary 失效：PASS-E 项应视为已闭环');
   }
 }
+
+if (errors.length > 0) {
+  throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
+}
+
+const goNoGo = noGo.length === 0 ? 'GO（全部 P0 已闭环）' : `NO-GO：${noGo.length} 项未闭环`;
+// 按阻塞原因归类输出（2026-09-25）：只列状态码会让「三项自身证据已齐备、仅被全局
+// ux-gate 策略挡住」这种关键事实淹没在 `MAC 仅单平台` 里（该状态码本身还会误导）。
+const byReason = new Map();
+for (const item of ledger.items ?? []) {
+  if (isClosed(item)) continue;
+  const key = item.blockedBy ?? '未声明';
+  if (!byReason.has(key)) byReason.set(key, []);
+  byReason.get(key).push(item.id);
+}
+// ⚠️ 「**A3 规则自检**」canary 块**已上移到错误检查点之前**（2026-10-09，审计 §4.175）——
+//   它此前位于本检查点**之后** ⇒ **3 条 canary 永不运行**（`errors.push` 只是往数组塞字符串）。
+//   ⚠️ 这是本文件**同族第 3 次**：① L1385 注释记过的那次；② §4.174 我的判据 ⑨；
+//   ③ 本块（**既有缺陷**，2026-09-30 起一直没生效）⇒ 现由判据 ⑩ 机械守住。
+
 // ── 「闭环」口径必须显式声明（2026-09-25）────────────────────────────────
 // 立此节的必要性：本门禁把 `AUTO` 视为**不阻断**，而 master-plan §4.3 定义
 // `AUTO` = 「自动化测试通过，**真机体验验收未完成**」；§8 的 V1.0 Exit Gate 又要求
@@ -1571,8 +1690,10 @@ for (const item of ledger.items ?? []) {
 // 会被读成「只有 6 项没做完」，实际 PASS-E 为 **0**。
 // 更危险的是 §5.7 已记录过一次教训：`P0-SHELL-003` 的 `AUTO` 曾把一个**完全不可用**的
 // 功能（浮动工具栏永不显示）当作已闭环 —— 单测只覆盖纯函数，属「有测试但不工作」。
-const totalItems = (ledger.items ?? []).length;
-const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').length;
+// ⚠️ `totalItems` / `passECount` 与判据 ⑨（README 状态快照）**已上移到错误检查点之前**
+//   —— 见本文件上方「错误检查点之前」那段（2026-10-09 审计 §4.174：首版落在检查点**之后**
+//   ⇒ `fail()` 只是往数组塞字符串、**永不判定**；注入验证 3/3 全绿才发现）。
+
 const autoWithUxGate = (ledger.items ?? []).filter(
   (i) => i.status === 'AUTO' && (i.requiredEvidence ?? []).includes('ux-gate'),
 );
