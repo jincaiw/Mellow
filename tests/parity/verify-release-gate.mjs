@@ -929,6 +929,61 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
     if (publishBeforeAssert(finalizeJob)) {
       fail('release.yml 的 finalize 必须**先断言制品、后解除 Draft**（顺序反了 = 断言拦不住发布）');
     }
+    // ── ⑪ 发版手册的「关键制品数 / 总数下限」必须与 release.yml **现读**一致（2026-10-09，审计 §4.176）──
+    // 【为什么】`docs/plans/packaging-release.md` 是**人手跟着做的发版手册**，它写着
+    //   「断言 **7 个关键制品**齐全 + 总数 **≥ 15**」—— 这两个数是**无日期的快照**，
+    //   而 `release.yml` 才是真值源。此前**只有「版本字面量」被绑**（§4.88），**这两个计数没有**
+    //   （同族：§4.174「只锁了一半」· §4.171「扫描面只覆盖一份文档」）。
+    // 【判据】两份的「关键制品数」与「总数下限」必须相等（**各自从文件现读**）。
+    // ⚠️ 本块**必须在抛错点之前**（§4.175 的教训：落在之后 ⇒ 永不判定）。
+    {
+      const docSrc = read('docs/plans/packaging-release.md');
+      // 判定与 canary **共用同一份解析**（本仓 idiom）
+      const wfPatterns = (src) => [...src.matchAll(/for pat in ([^\n]*)/g)]
+        .flatMap((m) => [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+      const wfFloorOf = (src) => {
+        const m = /-lt\s+(\d+)/.exec(src);
+        return m === null ? null : Number(m[1]);
+      };
+      const docPatternsOf = (src) => {
+        const m = /(\d+)\s*个关键制品/.exec(src);
+        return m === null ? null : Number(m[1]);
+      };
+      const docFloorOf = (src) => {
+        const m = /总数\s*≥\s*(\d+)/.exec(src);
+        return m === null ? null : Number(m[1]);
+      };
+      const pats = wfPatterns(finalizeJob);
+      const wfFloorN = wfFloorOf(finalizeJob);
+      const docPatsN = docPatternsOf(docSrc);
+      const docFloorN = docFloorOf(docSrc);
+      if (pats.length === 0 || wfFloorN === null) {
+        fail('⑪ 无法从 release.yml 现读「关键制品数 / 总数下限」—— 锚点漂移会让本判据空转');
+      } else if (docPatsN === null || docFloorN === null) {
+        fail('⑪ 无法从 packaging-release.md 现读「N 个关键制品 / 总数 ≥ M」—— 锚点漂移会让本判据空转');
+      } else {
+        if (docPatsN !== pats.length) {
+          fail(`packaging-release.md 写「**${docPatsN}** 个关键制品」，而 release.yml 现有 **${pats.length}** 个 pattern`
+            + `（${pats.join(' / ')}）—— 发版手册里的计数会被按「当前」读；两处必须同步`);
+        }
+        if (docFloorN !== wfFloorN) {
+          fail(`packaging-release.md 写「总数 ≥ **${docFloorN}**」，而 release.yml 的下限是 **${wfFloorN}** —— 同上：两处必须同步`);
+        }
+      }
+      // canary ①（正样本）：合成样本必须解析出同一批数字
+      const SAMPLE_WF = "for pat in '\\.dmg$' '\\.msi$'; do\n  if [ \"$COUNT\" -lt 15 ]; then";
+      if (wfPatterns(SAMPLE_WF).length !== 2 || wfFloorOf(SAMPLE_WF) !== 15) {
+        fail('⑪ canary 失效：合成 workflow 样本解析不出「2 个 pattern / 下限 15」');
+      }
+      if (docPatternsOf('断言 2 个关键制品齐全 + 总数 ≥ 15') !== 2
+        || docFloorOf('断言 2 个关键制品齐全 + 总数 ≥ 15') !== 15) {
+        fail('⑪ canary 失效：合成文档样本解析不出「2 / 15」');
+      }
+      // canary ②（负样本）：不一致必须能检出（谓词与判定共用 ⇒ 直接比对）
+      if (docPatternsOf('断言 3 个关键制品齐全') === wfPatterns(SAMPLE_WF).length) {
+        fail('⑪ canary 失效：不一致的关键制品数未被识别（判据已退化成空真）');
+      }
+    }
     // 反向陷阱：**不得**显式 `-F draft=true` —— 那会让「重跑 finalize」把
     // **已发布**的 release 降级回 Draft（一次失败的重跑就能把线上发布撤下来）。
     // 正确做法是「不动 draft 字段」：新 tag 时它本来就是 draft（失败安全），已发布时也不会被降级。
