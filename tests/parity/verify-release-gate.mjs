@@ -1445,7 +1445,10 @@ if (driftedMissing.length === 0) {
 // 【处置】3 处全部改为 `canary(ok, msg)` 派生计数；本判据防新增。
 {
   // ⚠️ 模式**运行时拼接**（本文件自己也在扫描面里 ⇒ 写字面量会被自己命中，§4.237 的教训）
-  const CANARY_LITERAL = new RegExp(`canary\\s+${'\\d'}+\\s*项`);
+  // ⚠️ **两种形态都要覆盖**（2026-10-09，审计 §4.180）：`canary N 项`（canary 在**前**）
+  //   与 `N 项…canary`（canary 在**后**）。实测 `verify-upstream-manifest.mjs` 的收口行写
+  //   「含 **5 项**逻辑 canary」而当时已有 **7** 条 ⇒ **原谓词只覆盖前一种 ⇒ 静默漏检**。
+  const CANARY_LITERAL = new RegExp(`canary\\s+${'\\d'}+\\s*项|${'\\d'}+\\s*项[^。\\n]{0,12}canary`);
   // ⚠️ **先剥注释**：说明性文字里会**引用**这个坏形态（如「原手写「canary 5 项全绿」」），
   //   不剥会把**解释**当成**违规**（同 §4.156「散文提及满足了判据」的老坑）。
   const stripLineComments = (src) => src.split('\n')
@@ -1487,6 +1490,11 @@ if (driftedMissing.length === 0) {
   // canary ②（负样本）：手写形态必须能检出（用**拼接**构造，避免自己命中自己）
   if (!CANARY_LITERAL.test(`canary ${4} 项全绿`)) {
     fail('⑦ canary 失效：手写形态未被检出（判据已退化成空真）');
+  }
+  // canary ④（负样本）：**canary 在「后」**的形态也必须检出
+  //   （`${4}` 写法 ⇒ 源码里是 `$` 而非数字 ⇒ **不会自己命中自己**）
+  if (!CANARY_LITERAL.test(`含 ${4} 项逻辑 ${'canary'}`)) {
+    fail('⑦ canary 失效：canary 在**后**的手写形态未被检出');
   }
   // canary ③（前提自检）：**剥注释**必须真的生效 —— 否则说明性引用会被当成违规
   if (CANARY_LITERAL.test(stripLineComments(`// 原手写「canary ${5} 项全绿」`))) {

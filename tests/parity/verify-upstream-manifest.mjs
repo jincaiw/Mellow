@@ -31,6 +31,9 @@ const CORE_EDITOR = 'packages/editor-core/CoreEditor';
 
 const errors = [];
 const fail = (m) => errors.push(m);
+// canary 计数**派生**（模块级 —— 收口行在块外，需可见）：见 §4.180
+let canaryCount = 0;
+const canary = (ok, msg) => { canaryCount += 1; if (!ok) errors.push(msg); };
 
 // ── 与 UPSTREAM.md「生成 / 校验清单」一节的 diff 命令保持一致的排除面 ──────────
 const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.yarn']);
@@ -179,33 +182,74 @@ if (!existsSync(resolve(root, MANIFEST))) {
 
   // ── canary：用**同一套纯函数**跑合成输入，必须报出不一致 ────────────────
   // 直接测逻辑（不是测字符串替换）—— 清单里翻一个哈希 = 事实多一个「已改动」。
+  // ⚠️ 计数必须**派生**（§4.172/§4.173 的 idiom）：2026-10-09（审计 §4.180）实测该收口行
+  //   原写「含 **5 项**逻辑 canary」而当时已有 **7** 条 —— 而判据 ⑦/⑧ 的谓词分别是
+  //   `canary N 项`（canary 在**前**）与 `N-word`（英文连字符）⇒ **两个都没覆盖「N 项…canary」**。
+  //   `canary` / `canaryCount` 定义在**模块级**（收口行在块外，需可见）。
   const base = { 'src/untouched.ts': 'aaaaaaaaaaaaaaaa', 'src/edited.ts': 'bbbbbbbbbbbbbbbb' };
   const repo = new Map([['src/untouched.ts', 'aaaaaaaaaaaaaaaa'], ['src/edited.ts', 'cccccccccccccccc'], ['test/new.test.ts', 'dddddddddddddddd']]);
   const synthetic = derive(base, repo);
-  if (synthetic.modified.length !== 1 || synthetic.modified[0] !== 'src/edited.ts') {
-    fail(`上游清单护栏 canary 失效：哈希不一致的文件未被判为「已改动」（得到 ${JSON.stringify(synthetic.modified)}）`);
-  }
-  if (synthetic.added.length !== 1 || synthetic.added[0] !== 'test/new.test.ts') {
-    fail(`上游清单护栏 canary 失效：清单里没有的文件未被判为「新增」（得到 ${JSON.stringify(synthetic.added)}）`);
-  }
-  if (diffDoc({ modified: ['src/edited.ts'], added: ['test/new.test.ts'] }, synthetic).length !== 0) {
-    fail('上游清单护栏 canary 失效：一致的文档被误报为不一致');
-  }
+  canary(synthetic.modified.length === 1 && synthetic.modified[0] === 'src/edited.ts',
+    `上游清单护栏 canary 失效：哈希不一致的文件未被判为「已改动」（得到 ${JSON.stringify(synthetic.modified)}）`);
+  canary(synthetic.added.length === 1 && synthetic.added[0] === 'test/new.test.ts',
+    `上游清单护栏 canary 失效：清单里没有的文件未被判为「新增」（得到 ${JSON.stringify(synthetic.added)}）`);
+  canary(diffDoc({ modified: ['src/edited.ts'], added: ['test/new.test.ts'] }, synthetic).length === 0,
+    '上游清单护栏 canary 失效：一致的文档被误报为不一致');
   const drift = diffDoc({ modified: ['src/untouched.ts'], added: [] }, synthetic);
-  if (drift.length === 0) {
-    fail('上游清单护栏 canary 失效：文档与事实不一致时未报错（护栏已失效）');
-  }
+  canary(drift.length > 0, '上游清单护栏 canary 失效：文档与事实不一致时未报错（护栏已失效）');
   // 漏登记：事实是「已改动」但文档没写
-  if (diffDoc({ modified: [], added: ['test/new.test.ts'] }, synthetic).length === 0) {
-    fail('上游清单护栏 canary 失效：漏登记「已改动」文件时未报错');
-  }
+  canary(diffDoc({ modified: [], added: ['test/new.test.ts'] }, synthetic).length > 0,
+    '上游清单护栏 canary 失效：漏登记「已改动」文件时未报错');
   // 幽灵条目：文档写了但事实不是
-  if (diffDoc({ modified: ['src/edited.ts', 'src/ghost.ts'], added: ['test/new.test.ts'] }, synthetic).length === 0) {
-    fail('上游清单护栏 canary 失效：文档里的幽灵条目未被报出');
-  }
+  canary(diffDoc({ modified: ['src/edited.ts', 'src/ghost.ts'], added: ['test/new.test.ts'] }, synthetic).length > 0,
+    '上游清单护栏 canary 失效：文档里的幽灵条目未被报出');
   // 丢文件：上游有而仓库无
-  if (diffDoc({ modified: ['src/edited.ts'], added: ['test/new.test.ts'] }, derive(base, new Map([['src/edited.ts', 'cccccccccccccccc'], ['test/new.test.ts', 'dddddddddddddddd']]))).length === 0) {
-    fail('上游清单护栏 canary 失效：仓库缺失上游文件时未报错');
+  canary(diffDoc({ modified: ['src/edited.ts'], added: ['test/new.test.ts'] }, derive(base, new Map([['src/edited.ts', 'cccccccccccccccc'], ['test/new.test.ts', 'dddddddddddddddd']]))).length > 0,
+    '上游清单护栏 canary 失效：仓库缺失上游文件时未报错');
+}
+
+// ── 文档里**复述**的「上游文件数」必须 == manifest 的 `fileCount`（2026-10-09，审计 §4.180）────
+// 【为什么】`docs/architecture/README.md` 与 `docs/architecture/editor-core.md` 都写着
+//   「以 `upstream-manifest.json` 为真值源 —— **199 个文件**」：它们**声明了真值源**，
+//   却**又复述了数字**，而**没有任何判据** ⇒ manifest 一变（re-vendor 到新 commit），
+//   两处文档**静默漂**（同族「只锁了一半」**第 9 次**）。
+//   ⚠️ **有前科**：`docs/architecture/README.md` 的更正块自己写着「**201 与真值源（199）不符**」
+//   —— 这类复述数字**确实漂过**。
+// 【判据】凡在 `docs/architecture/*.md` 里**同时**出现 `upstream-manifest.json` 与「N 个文件」的
+//   **窗口**（标记行 + 紧邻下一行 —— 这两份文档都是**跨行**写法），其 N 必须 == `fileCount`。
+{
+  const archManifest = JSON.parse(readFileSync(resolve(root, MANIFEST), 'utf8'));
+  const ARCH_DOCS = ['docs/architecture/README.md', 'docs/architecture/editor-core.md'];
+  const numOfFiles = (w) => {
+    const m = /(\d+)\s*个文件/.exec(w);
+    return m === null ? null : Number(m[1]);
+  };
+  let counted = 0;
+  for (const d of ARCH_DOCS) {
+    if (!existsSync(resolve(root, d))) { fail(`上游文件数：${d} 不存在 —— 判据锚点漂移`); continue; }
+    const lines = readFileSync(resolve(root, d), 'utf8').replace(/\r\n/g, '\n').split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      const win = lines[i] + '\n' + (lines[i + 1] ?? '');
+      if (!/upstream-manifest\.json/.test(win)) continue;
+      const n = numOfFiles(win);
+      if (n === null) continue;
+      counted += 1;
+      if (n !== archManifest.fileCount) {
+        fail(`${d}:${i + 1} 复述上游文件数 ${n}，而 \`${MANIFEST}\` 的 fileCount = ${archManifest.fileCount}`
+          + ' —— 既然声明了真值源，就不要复述数字（或让它与真值源一致）');
+      }
+    }
+  }
+  if (counted < 2) {
+    fail(`上游文件数：只找到 ${counted} 处「upstream-manifest.json + N 个文件」（下限 2 = 2026-10-09 实测）—— 判据范围萎缩`);
+  }
+  // canary ①（正样本）：**跨行**形态必须能取到
+  if (numOfFiles('以 `upstream-manifest.json` 为真值源 ——\n  共 **199 个文件**（该文件的 `fileCount`）。') !== 199) {
+    fail('上游文件数 canary 失效：跨行形态取不到');
+  }
+  // canary ②（负样本）：不一致必须能检出（谓词与判定共用）
+  if (numOfFiles('upstream-manifest.json 共 42 个文件') === archManifest.fileCount) {
+    fail('上游文件数 canary 失效：不一致的数字未被识别（判据已退化成空真）');
   }
 }
 
@@ -216,4 +260,4 @@ if (errors.length > 0) {
 const docMod = parseTable('修改的文件');
 const docAdd = parseTable('新增的文件');
 console.log(`Upstream manifest: UPSTREAM.md 的改动清单与钉住 commit ${docCommit?.slice(0, 12)} 的上游树哈希一致`
-  + `（修改 ${docMod.files.length} / 新增 ${docAdd.files.length}，离线校验，含 5 项逻辑 canary）`);
+  + `（修改 ${docMod.files.length} / 新增 ${docAdd.files.length}，离线校验，含 ${canaryCount} 项逻辑 canary）`);
