@@ -16,7 +16,7 @@
     {
       "key": "fileSearchUseRegexp",
       "kind": "preference-like",
-      "reason": "**文件搜索面板**的正则选项（与 `fileSearchCaseSensitive` / `fileSearchWholeWord` 同族）。`main.js` 的文件搜索项类读 `File.option.fileSearchUseRegexp` 并 `putSetting(\"fileSearchUseRegexp\", …)`。⚠️ 同族的另两个键**在** `DEFAULT_OPTIONS` 里（故在矩阵内），**只有它不在** ⇒ 这是「同一族的键被两个面切开」的实例。Mellow 对应物 = 侧栏的「正则」复选框（`apps/desktop/src/App.tsx` 的 `searchRegex`，**仍不持久化**，见审计 §4.145 残留）。"
+      "reason": "**文件搜索面板**的正则选项（与 `fileSearchCaseSensitive` / `fileSearchWholeWord` 同族）。`main.js` 的文件搜索项类读 `File.option.fileSearchUseRegexp` 并 `putSetting(\"fileSearchUseRegexp\", …)`（实测 1 次）。⚠️ 同族的另两个键**在** `DEFAULT_OPTIONS` 里（故在矩阵内），**只有它不在** ⇒ 这是「同一族的键被两个面切开」的实例。Mellow 对应物 = 侧栏的「正则」复选框（`apps/desktop/src/App.tsx` 的 `searchRegex`）。✅ **已实装持久化**（2026-10-08，审计 §4.163）：设置 `files.searchRegex`（toggle，默认 false）+ `applyCommand: settings.searchOptions`；有效默认 false 由消费点 `File.option.fileSearchUseRegexp` 未设时为 `undefined` 推出（它不在 `DEFAULT_OPTIONS`，默认值不可从该表读）。⚠️ 它**仍留本面**：本面登记的是「**不在矩阵与面板任一面**」这一事实，而**是否进矩阵**仍需裁决（`kind: preference-like`）。"
     },
     {
       "key": "listSortType",

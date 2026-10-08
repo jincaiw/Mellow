@@ -293,20 +293,26 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           { value: 'lf', labelKey: 'settings.file.newFileLineEnding.lf' },
           { value: 'crlf', labelKey: 'settings.file.newFileLineEnding.crlf' },
         ], descriptionKey: 'settings.file.newFileLineEndingDesc' },
-      // 2026-10-07（审计 §4.145）：Typora **文件搜索面板**的两个选项。
+      // 2026-10-07（审计 §4.145）/ 2026-10-08（§4.163）：Typora **文件搜索面板**的三个选项。
       // 【一手证据】`main.js` 的文件搜索项类：
       //   `this.caseSensitive=File.option.fileSearchCaseSensitive, this.wholeWord=File.option.fileSearchWholeWord,`
-      //   `this.useRegexp=File.option.fileSearchUseRegexp`；两个按钮的 `mousedown` 分别
-      //   `JSBridge.putSetting("fileSearchCaseSensitive", …)` / `putSetting("fileSearchWholeWord", …)`
-      //   ⇒ **Typora 会持久化**（`DEFAULT_OPTIONS` 里默认都是 `!1` = false）。
-      //   ⚠️ 这两个键**不在** Typora 偏好面板里（面板键抽取 0 命中）⇒ 是**面板状态**，不是 Preferences 项。
-      // 【Mellow 现状】侧栏搜索面板**已有**这两个复选框（`App.tsx` 的 `searchCase` / `searchWholeWord`），
-      //   但此前是 `useState(false)` **字面量** ⇒ 重启即回默认（矩阵原判「选项未暴露」是**错的**）。
-      //   本项把它们接到设置（**默认 false ⇒ 默认行为不变**）。
+      //   `this.useRegexp=File.option.fileSearchUseRegexp`；三个按钮的 `mousedown` 分别
+      //   `JSBridge.putSetting("fileSearchCaseSensitive", …)` / `("fileSearchWholeWord", …)` / `("fileSearchUseRegexp", …)`
+      //   ⇒ **Typora 三个都持久化**（实测各 1 次 `putSetting`）。
+      //   ⚠️ 三个键**都不在** Typora 偏好面板里（`Preferences*.js` 抽取 0 命中）⇒ 是**面板状态**，不是 Preferences 项。
+      //   ⚠️ 但 `fileSearchCaseSensitive` / `fileSearchWholeWord` **在** `DEFAULT_OPTIONS` 里（故在偏好矩阵内），
+      //      **`fileSearchUseRegexp` 不在** ⇒ 它落在「矩阵面 ∩ 面板面」的**缝隙**里，登记在第三面
+      //      （`tests/parity/fixtures/typora-persisted-uncovered.json`，`kind: preference-like`）。
+      //      ⇒ 它的默认值**不能**从 `DEFAULT_OPTIONS` 读；从消费点读：`File.option.fileSearchUseRegexp`
+      //      未设时为 `undefined` ⇒ 复选框未勾选 ⇒ **有效默认 false**（与另两个的 `!1` 同向）。
+      // 【Mellow 现状】侧栏搜索面板**已有**这三个复选框（`App.tsx` 的 `searchCase` / `searchWholeWord` / `searchRegex`），
+      //   但此前都是 `useState(false)` **字面量** ⇒ 重启即回默认（矩阵原判「选项未暴露」是**错的**）。
+      //   本组把它们接到设置（**默认 false ⇒ 默认行为不变**）。
       // ⚠️ 带 `applyCommand`（与「读时生效」的那些不同）：设置页与**侧栏面板复选框**是同一个值的
       //   两个入口 ⇒ 在设置页改完必须**同步面板 state**，否则两处显示会分叉（面板的 checkbox 由 state 驱动）。
       { id: 'files.searchCaseSensitive', labelKey: 'settings.file.searchCaseSensitive', type: 'toggle', storageKey: 'mellow.file.searchCaseSensitive', defaultValue: false, descriptionKey: 'settings.file.searchCaseSensitiveDesc', applyCommand: 'settings.searchOptions' },
       { id: 'files.searchWholeWord', labelKey: 'settings.file.searchWholeWord', type: 'toggle', storageKey: 'mellow.file.searchWholeWord', defaultValue: false, descriptionKey: 'settings.file.searchWholeWordDesc', applyCommand: 'settings.searchOptions' },
+      { id: 'files.searchRegex', labelKey: 'settings.file.searchRegex', type: 'toggle', storageKey: 'mellow.file.searchRegex', defaultValue: false, descriptionKey: 'settings.file.searchRegexDesc', applyCommand: 'settings.searchOptions' },
     ],
   },
   {

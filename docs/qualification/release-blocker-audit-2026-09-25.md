@@ -10777,6 +10777,92 @@ PITFALLS **§4.230** · skill **§152** + 自查清单 +1 · `MEMORY.md` · `202
 
 ---
 
+## 4.163 「文件搜索」这一族的**第三个键**遗留未闭环 —— 实装 `files.searchRegex`（2026-10-08）
+
+### 一、发现
+
+第三面（`tests/parity/fixtures/typora-persisted-uncovered.json`）的 `fileSearchUseRegexp` 条目里，
+`§4.145` 当时自己写着一句：
+
+> Mellow 对应物 = 侧栏的「正则」复选框（`apps/desktop/src/App.tsx` 的 `searchRegex`，**仍不持久化**，见审计 §4.145 残留）。
+
+而**同族的另两个键**（`fileSearchCaseSensitive` / `fileSearchWholeWord`）在 §4.145 就已经实装持久化
+（`files.searchCaseSensitive` / `files.searchWholeWord`）。⇒ 这是「**同一族的三个键，两条已闭环、第三条被写进注释却没进处置清单**」的残量形态。
+
+### 二、取证（一手，本机 Typora 1.14.9 / 7785）
+
+在 `TypeMark/appsrc/main.js` 上实测：
+
+| 键 | `putSetting` 次数 | 在 `DEFAULT_OPTIONS` | 在 `Preferences*.js`（面板） |
+|---|---|---|---|
+| `fileSearchCaseSensitive` | 1 | **在** | 0 命中 |
+| `fileSearchWholeWord` | 1 | **在** | 0 命中 |
+| `fileSearchUseRegexp` | 1 | **不在** | 0 命中 |
+
+① 三个键**都**被 `JSBridge.putSetting(…)` 写入 ⇒ Typora **都持久化**（这解释了为什么三个复选框的行为在 Typora 侧一致）；
+② 三个键**都不在**偏好面板 ⇒ 都是**面板状态**，不是 Preferences 项（与 §4.145 的判定一致）；
+③ **只有 `fileSearchUseRegexp` 不在 `DEFAULT_OPTIONS`** ⇒ 它的默认值**不能**从该表读。
+   从消费点读：`this.useRegexp = File.option.fileSearchUseRegexp`，而
+   `File.option = i.extend(File.option, e || window._options)` ⇒ 从未设过时该值为 `undefined`
+   ⇒ 复选框未勾选 ⇒ **有效默认 false**（与另两个的 `!1` 同向）。
+
+⚠️ **量具纠错（本轮实测）**：首次用**非贪婪**正则
+`/DEFAULT_OPTIONS\s*=\s*\{[\s\S]{0,20000}?\n\s*\}/` 提取默认值表，它在**第一个嵌套 `}`** 处就截断
+（提取到的 body 仅约 400 字符），于是得出「**三个键都不在** `DEFAULT_OPTIONS`」的**假结论** ——
+若照此下判断，会把 `fileSearchCaseSensitive` / `fileSearchWholeWord` 也误判成「缝隙里的键」。
+改用**括号配平**提取后（body **1682** 字符 / 约 **84** 键）真相是「**两个在、一个不在**」。
+⇒ 教训：**量具的「截断」比量具的「缺失」更危险** —— 缺失会报错，截断会给出一个看起来正常的假值。
+
+### 三、处置
+
+1. `packages/settings/src/index.ts`：新增 `files.searchRegex`（`toggle` / `storageKey: mellow.file.searchRegex` /
+   `defaultValue: false` / `applyCommand: 'settings.searchOptions'`），并把该组注释从「两个选项」改写成
+   「三个选项」，补上「哪个键在/不在 `DEFAULT_OPTIONS`」与「有效默认 false 的推导」；
+2. `apps/desktop/src/App.tsx` 三处接线：
+   - `useState(false)` 字面量 → `useState(() => readBoolSetting('files.searchRegex', false))`；
+   - `case 'settings.searchOptions'` 的 state 同步补 `setSearchRegex(…)`（设置页与面板复选框是两个入口）；
+   - 复选框 `onChange` 补 `persistBoolSetting('files.searchRegex', …)`；
+3. `packages/i18n/src/messages.ts`：zh / en 各 +2 键（`settings.file.searchRegex` + `…Desc`）⇒ 目录 **855 → 857**；
+4. 第三面夹具 `fileSearchUseRegexp` 的 `reason` 更新为「✅ 已实装持久化（`files.searchRegex`）」，
+   并**保留它在本面**（本面登记的是「不在矩阵与面板任一面」这一事实；**是否进矩阵**仍是待裁决项）。
+5. **默认行为不变**：此前是字面量 `false`，现默认 `false`。
+
+### 四、判据（`verify-sidebar-contract.mjs` ㉟）
+
+判据**从设置声明派生**，不写死 id 清单（写死的话新增第四个键时判据够不着）：
+
+- 凡 `id: 'files.search*'` 的设置，必须 ①被侧栏 `persistBoolSetting('<id>', …)` 回写
+  ②被 `readBoolSetting('<id>', …)` 读入面板 state；
+- 防空转下限：派生出的 id 数 **≥3**；
+- 字面量回退不得复活：`const [search(Regex|Case|WholeWord)…] = useState(false)` 不得再出现；
+- 三条 canary：① 抹掉 `files.searchRegex` 的回写 ② 初始化退回字面量 ③ 整行删掉声明使派生面收缩。
+
+⚠️ **首版判据是假门禁（靠 canary ② 当场抓到）**：字面量判据最初写成
+`/const \[searchRegex\]\s*=\s*useState\(false\)/` —— 而**真实形态**是
+`const [searchRegex, setSearchRegex] = useState(false);`（**有解构的第二位**）⇒ 该判据**永远匹配不到**，
+即使把修复整个回退掉也照样绿。已改为容许解构位（`[^\]]*`）并由 canary ② 锁住这个形态。
+
+**注入验证**：三处破坏（① 回写改 `noop()` ② 初始化退回 `useState(false)` ③ 删掉设置声明）
+**全部转红**，还原后**转绿**（3/3）。
+
+### 五、教训
+
+1. **「同族项只做了一半」是最隐蔽的残量形态** —— §4.145 把 `searchRegex` 写进了代码注释，
+   却没写进处置清单，于是它在两个面上都「看起来已被提到」，实际从未闭环。凡「同族的 N 个键」
+   的处置，**必须逐键给出闭环证据**，不能以「已处理该族」收口（同 PITFALLS「已处置」那条）。
+2. **量具截断 → 假结论**：非贪婪正则配嵌套结构会静默取到前缀。提取带嵌套的对象字面量必须**括号配平**。
+3. **判据要容许解构位**：`const [a] = …` 与 `const [a, setA] = …` 是同一件事的两种写法，
+   只按前者写的判据是**静默假门禁**（本仓第 N 次同型）。
+
+### 六、产物
+
+`packages/settings/src/index.ts`（+`files.searchRegex` + 注释改写）· `apps/desktop/src/App.tsx`（三处接线）·
+`packages/i18n/src/messages.ts`（zh/en 各 +2）· `tests/parity/fixtures/typora-persisted-uncovered.json`
+（`fileSearchUseRegexp` 的 `reason`）· `tests/parity/verify-sidebar-contract.mjs`（判据 ㉟ + 3 canary）·
+审计 **§4.163** · PITFALLS **§4.231–§4.233** · skill **§153** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 

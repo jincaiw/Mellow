@@ -975,6 +975,49 @@ if (/if \(!options\.regex \|\| !options\.query\) return true;/.test(w5RegexDrift
   fail('Sidebar 护栏自检失败：无法模拟 isSearchRegexValid 豁免分支漂移（V7-W5），护栏已失效');
 }
 
+// ── ㉟ 侧栏文件搜索的选项必须**可持久化**（审计 §4.163）──────────────────────
+// Typora 经 `JSBridge.putSetting("fileSearchCaseSensitive" / "fileSearchWholeWord" /
+// "fileSearchUseRegexp", …)` 持久化**文件搜索面板**的三个选项（`main.js` 的文件搜索项类；
+// 实测各 1 次 `putSetting`）。Mellow 的侧栏复选框曾长期是 `useState(false)` 字面量 ⇒ 重启即回默认。
+// 判据**从设置声明派生**（不写死 id 清单 —— 写死的话新增第四个键时判据够不着）：
+// 凡 `files.search*` 的设置都必须 ①被侧栏 `persistBoolSetting` 回写 ②被 `readBoolSetting` 读入面板 state。
+// （`settingsSrc` 在本文件顶部已读入，此处复用，不重复声明。）
+const fileSearchIds = [...settingsSrc.matchAll(/id:\s*'(files\.search[A-Za-z0-9]*)'/g)].map((m) => m[1]);
+if (fileSearchIds.length < 3) {
+  fail(`设置里 files.search* 只有 ${fileSearchIds.length} 项（应 ≥3：caseSensitive / wholeWord / regex）—— 判据范围够不着新增面`);
+}
+for (const id of fileSearchIds) {
+  if (!appCode.includes(`persistBoolSetting('${id}'`)) {
+    fail(`侧栏未持久化设置 ${id}（App.tsx 缺 persistBoolSetting('${id}', …)）—— 该选项重启即回默认（审计 §4.163）`);
+  }
+  if (!appCode.includes(`readBoolSetting('${id}'`)) {
+    fail(`侧栏未从设置初始化 ${id}（App.tsx 缺 readBoolSetting('${id}', …)）—— 面板与设置页会分叉（审计 §4.163）`);
+  }
+}
+// 字面量回退不得复活：三个复选框的 state 不得再是裸 `useState(false)`
+// ⚠️ 必须容许 `, setXxx` 解构位 —— 只写 `[searchRegex]` 的判据**永远匹配不到**（真实形态是
+//   `const [searchRegex, setSearchRegex] = useState(false);`）⇒ 那会是个假门禁。
+const literalFallback = /const \[search(Regex|Case|WholeWord)[^\]]*\]\s*=\s*useState\(false\)/;
+if (literalFallback.test(appCode)) {
+  fail('侧栏搜索选项的 state 退回 useState(false) 字面量（审计 §4.163 已修复，不得回退）');
+}
+// canary ①：抹掉 files.searchRegex 的回写后，护栏必须转为失败
+const fsPersistDrift = appCode.replace(/persistBoolSetting\('files\.searchRegex'/, 'noop(');
+if (fsPersistDrift.includes("persistBoolSetting('files.searchRegex'")) {
+  fail('Sidebar 护栏自检失败：无法模拟 files.searchRegex 持久化漂移（审计 §4.163），护栏已失效');
+}
+// canary ②：把初始化退回字面量后，上面的字面量判据必须转为命中
+const fsLiteralDrift = appCode.replace("useState(() => readBoolSetting('files.searchRegex', false))", 'useState(false)');
+if (!literalFallback.test(fsLiteralDrift)) {
+  fail('Sidebar 护栏自检失败：无法模拟 searchRegex 字面量回退（审计 §4.163），护栏已失效');
+}
+// canary ③：派生面收缩（整行删掉 files.searchRegex 的声明）时，防空转下限必须转为失败
+const fsDeriveDrift = settingsSrc.replace(/[^\n]*id: 'files\.searchRegex'[^\n]*\n/, '');
+const driftIds = [...fsDeriveDrift.matchAll(/id:\s*'(files\.search[A-Za-z0-9]*)'/g)].map((m) => m[1]);
+if (driftIds.length >= 3 || driftIds.length !== fileSearchIds.length - 1) {
+  fail(`Sidebar 护栏自检失败：无法模拟 files.search* 派生面收缩（得到 ${driftIds.length} 项，期望 ${fileSearchIds.length - 1}），护栏已失效`);
+}
+
 // ── drift canary：护栏必须能抓住契约漂移 ─────────────────────────────────
 const drifted = watcherRs.replace('RecursiveMode::Recursive', 'RecursiveMode::NonRecursive');
 if (!/RecursiveMode::NonRecursive/.test(drifted)) {

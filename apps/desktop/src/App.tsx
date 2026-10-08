@@ -737,14 +737,17 @@ export default function App() {
   const [quickOpenSelected, setQuickOpenSelected] = useState(0);
   const [quickOpenScanning, setQuickOpenScanning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  // 2026-10-07（审计 §4.145）：这两个是 Typora 的 `fileSearchCaseSensitive` / `fileSearchWholeWord`
-  // （**文件搜索面板**的选项；Typora 经 `JSBridge.putSetting` 持久化）。此前是 `useState(false)` 字面量
-  // ⇒ 重启即回默认。现从设置初始化（**默认 false ⇒ 默认行为不变**）。
-  // ⚠️ `searchRegex` / `searchContext` **仍不持久化**：Typora 的 `fileSearchUseRegexp` 被 `main.js` 消费
-  //   但**不在 `DEFAULT_OPTIONS`** 里（矩阵以 DEFAULT_OPTIONS 为面 ⇒ 结构上看不到它）；`context` 无对应键。
+  // 2026-10-07（审计 §4.145）/ 2026-10-08（§4.163）：这三个是 Typora 的 `fileSearchCaseSensitive` /
+  // `fileSearchWholeWord` / `fileSearchUseRegexp`（**文件搜索面板**的选项；Typora 经 `JSBridge.putSetting`
+  // 持久化，实测各 1 次）。此前都是 `useState(false)` 字面量 ⇒ 重启即回默认。
+  // 现从设置初始化（**默认 false ⇒ 默认行为不变**）。
+  // ⚠️ `fileSearchUseRegexp` **不在** Typora 的 `DEFAULT_OPTIONS` 里（另两个在）⇒ 它登记在**第三面**
+  //   （`tests/parity/fixtures/typora-persisted-uncovered.json`，`kind: preference-like`）；
+  //   有效默认 false 由消费点 `File.option.fileSearchUseRegexp` 未设时为 `undefined` 推出。
+  // ⚠️ `searchContext` **仍不持久化** —— 它在 Typora 侧**没有对应键**（不是缺口，是 Mellow 自有能力）。
   const [searchCase, setSearchCase] = useState(() => readBoolSetting('files.searchCaseSensitive', false));
   const [searchWholeWord, setSearchWholeWord] = useState(() => readBoolSetting('files.searchWholeWord', false));
-  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchRegex, setSearchRegex] = useState(() => readBoolSetting('files.searchRegex', false));
   const [searchInclude, setSearchInclude] = useState('');
   const [searchExclude, setSearchExclude] = useState('');
   const [searchContext, setSearchContext] = useState(1);
@@ -5165,11 +5168,13 @@ export default function App() {
         hostRef.current?.setCodeLineNumbersEnabled(Boolean(value));
         break;
       case 'settings.searchOptions': {
-        // 2026-10-07（审计 §4.145）：侧栏文件搜索的两个选项（Typora `fileSearchCaseSensitive` /
-        // `fileSearchWholeWord`）。设置页与面板复选框写**同一个 storageKey**，但面板的 checkbox
-        // 由本 state 驱动 ⇒ 在设置页改完必须**同步 state**，否则两处显示会分叉。
+        // 2026-10-07（审计 §4.145）/ 2026-10-08（§4.163）：侧栏文件搜索的三个选项（Typora
+        // `fileSearchCaseSensitive` / `fileSearchWholeWord` / `fileSearchUseRegexp`）。设置页与面板
+        // 复选框写**同一个 storageKey**，但面板的 checkbox 由本 state 驱动 ⇒ 在设置页改完必须**同步
+        // state**，否则两处显示会分叉。
         setSearchCase(readBoolSetting('files.searchCaseSensitive', false));
         setSearchWholeWord(readBoolSetting('files.searchWholeWord', false));
+        setSearchRegex(readBoolSetting('files.searchRegex', false));
         break;
       }
       case 'settings.outlineMaxLevel': {
@@ -6247,7 +6252,7 @@ export default function App() {
                 <div className="search-toggles">
                   <label><input type="checkbox" checked={searchCase} onChange={(e) => { setSearchCase(e.target.checked); persistBoolSetting('files.searchCaseSensitive', e.target.checked); }} />{t('search.case')}</label>
                   <label><input type="checkbox" checked={searchWholeWord} onChange={(e) => { setSearchWholeWord(e.target.checked); persistBoolSetting('files.searchWholeWord', e.target.checked); }} />{t('search.word')}</label>
-                  <label><input type="checkbox" checked={searchRegex} onChange={(e) => setSearchRegex(e.target.checked)} />{t('search.regex')}</label>
+                  <label><input type="checkbox" checked={searchRegex} onChange={(e) => { setSearchRegex(e.target.checked); persistBoolSetting('files.searchRegex', e.target.checked); }} />{t('search.regex')}</label>
                   <label>{t('search.ctx')} <input type="number" min="0" max="2" value={searchContext} onChange={(e) => setSearchContext(Math.max(0, Math.min(2, Number(e.target.value) || 0)))} /></label>
                 </div>
                 {/* §7.3：invalid regex 就地提示 —— 非法正则此前被静默吞成「无结果」 */}
