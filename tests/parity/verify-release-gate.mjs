@@ -303,6 +303,103 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   }
 }
 
+// ── ⑫ ADR 的**状态取值**必须从目录**派生**，且与清单**双向**一致（2026-10-09，审计 §4.177）──
+// 【为什么】`PENDING_ADRS` / `DECIDED_ADRS` 是**硬编码清单** ⇒
+//   **新增一份 `Proposed` ADR（或把某份 ADR 悄悄改回 Proposed）时，门禁完全看不到它** ——
+//   而门禁的 `Pending decisions:` 行会**照样报「无」**，即「项目在机器可读层面声称没有待裁决项」。
+//   ⚠️ 这正是 **ADR-0029 / §4.120** 记过的形态（当时是偏好矩阵的 `undecided` 没被登记），
+//   而**当时的修法是「手工把 ADR-0034 加进清单」—— 清单本身仍是硬编码**（同族：扫描面写成常量）。
+//   实测：**34 份 ADR 里 24 份不在任何清单里**（门禁完全看不到它们）。
+// 【判据】① 每份 `docs/adr/ADR-*.md` 的状态行必须解析出**词表内**的取值；
+//   ② **派生**的 `Proposed` 集合必须 == `PENDING_ADRS`（**双向**）；
+//   ③ `DECIDED_ADRS` 的每一份都必须在**派生**的 `Accepted` 集合里；
+//   ④ `Conditional` 必须**显式登记**（否则它是无人守的第三种状态）。
+// ⚠️ 本块**必须在抛错点之前**（§4.175 的教训）。
+{
+  const ADR_DIR = 'docs/adr';
+  // 词表：取值 = 状态行里**第一个英文词**（容忍 `Accepted（2026-09-03）` 这种带日期的写法）
+  const ADR_STATUS_VOCAB = new Set(['Accepted', 'Proposed', 'Conditional']);
+  // `Conditional` 是**真有条件的第三种状态**（ADR-0002：V0.0 三平台 Gate 通过后转 Accepted）
+  //   ⇒ **不是「待裁决」**，但**必须登记**（否则它会成为无人守的第三种状态）。
+  const CONDITIONAL_REGISTERED = new Map([
+    ['ADR-0002-desktop-runtime-qualification.md',
+      '「V0.0 三平台通过 IME/Caret/Clipboard/Print/10MB Gate 后转 Accepted」—— **有条件的状态**，不是待裁决'],
+  ]);
+  const statusWordOf = (src) => {
+    const m = /^\*\*Status:\*\*\s*([^\n]*)$/m.exec(src);
+    if (m === null) return null;
+    const w = m[1].replace(/\*/g, '').match(/[A-Za-z]+/);
+    return w === null ? null : w[0];
+  };
+  // 逐文件检查用**工作区枚举**（本地 ⊇ 仓库 ⇒ 方向安全，且给 WIP 即时反馈；同 `guardFiles`）；
+  // 但**数量下限**必须锚在**仓库**（`git ls-files`）—— 同 `repoGuardFiles`（§4.166/§4.167）。
+  const adrFiles = readdirSync(resolve(root, ADR_DIR)).filter((f) => /^ADR-\d{4}.*\.md$/.test(f)).sort();
+  const repoAdrCount = (trackedFiles ?? [])
+    .filter((f) => f.startsWith(`${ADR_DIR}/ADR-`) && f.endsWith('.md')).length;
+  if (repoAdrCount < 30) {
+    fail(`⑫ 仓库里只跟踪到 ${repoAdrCount} 份 ADR（下限 30 = 2026-10-09 实测 34）—— 判据范围萎缩`);
+  }
+  const derived = new Map();
+  const unparsed = [];
+  for (const f of adrFiles) {
+    const w = statusWordOf(read(`${ADR_DIR}/${f}`));
+    if (w === null || !ADR_STATUS_VOCAB.has(w)) { unparsed.push(`${f}（取值 ${JSON.stringify(w)}）`); continue; }
+    derived.set(f, w);
+  }
+  if (unparsed.length > 0) {
+    fail(`⑫ 这些 ADR 的状态取值无法解析或不在词表 {${[...ADR_STATUS_VOCAB].join(' / ')}} 内：${unparsed.join('、')}`
+      + ' —— 状态词表的语义有后果（门禁的 `Pending decisions:` 靠它）；新增状态值必须显式登记并说明含义');
+  }
+  const derivedProposed = new Set([...derived].filter(([, v]) => v === 'Proposed').map(([f]) => `${ADR_DIR}/${f}`));
+  const declaredProposed = new Set(PENDING_ADRS.map(([p]) => p));
+  for (const p of declaredProposed) {
+    if (!derivedProposed.has(p)) {
+      fail(`⑫ PENDING_ADRS 声明 ${p} 为待裁决，但它**派生**出来的状态不是 Proposed —— 两侧必须一致`);
+    }
+  }
+  for (const p of derivedProposed) {
+    if (!declaredProposed.has(p)) {
+      fail(`⑫ ${p} 的状态是 **Proposed**，但**不在** PENDING_ADRS 里 ⇒ 门禁的 \`Pending decisions:\` 会**漏报**它`
+        + '（这正是 ADR-0029 记过的形态）—— 要么裁决它，要么加进 PENDING_ADRS');
+    }
+  }
+  const derivedAccepted = new Set([...derived].filter(([, v]) => v === 'Accepted').map(([f]) => `${ADR_DIR}/${f}`));
+  for (const [p] of DECIDED_ADRS) {
+    if (!derivedAccepted.has(p)) fail(`⑫ DECIDED_ADRS 声明 ${p} 已裁决，但它**派生**出来的状态不是 Accepted`);
+  }
+  for (const [f, v] of derived) {
+    if (v === 'Conditional' && !CONDITIONAL_REGISTERED.has(f)) {
+      fail(`⑫ ${ADR_DIR}/${f} 的状态是 \`Conditional\`（词表内但**必须登记**）—— `
+        + '请加进 CONDITIONAL_REGISTERED 并写明条件');
+    }
+  }
+  for (const [f, why] of CONDITIONAL_REGISTERED) {
+    if (derived.get(f) !== 'Conditional') {
+      fail(`⑫ CONDITIONAL_REGISTERED 的 ${f} 已不再是 Conditional（原理由：${why}）—— 请删除该登记`);
+    }
+  }
+  // canary ①（正样本）：带日期的 `Accepted（…）` 必须解析成 `Accepted`
+  if (statusWordOf('**Status:** Accepted（2026-09-03）') !== 'Accepted') {
+    fail('⑫ canary 失效：带日期的 `Accepted（…）` 未解析成 Accepted');
+  }
+  // canary ②（正样本）：加粗形态同样能解析
+  if (statusWordOf('**Status:** **Proposed**（2026-10-01）—— 待裁决') !== 'Proposed') {
+    fail('⑫ canary 失效：加粗的 `**Proposed**` 未解析成 Proposed');
+  }
+  // canary ③（负样本）：词表外的取值必须能被识别（谓词与判定共用同一函数）
+  if (ADR_STATUS_VOCAB.has(statusWordOf('**Status:** Maybe'))) {
+    fail('⑫ canary 失效：词表外的取值未被识别（判据已退化成空真）');
+  }
+  // canary ④：**双向**检查本身（合成集合）—— 一致的不得报，未登记的必须报
+  const missingFromDeclared = (der, dec) => [...der].filter((p) => !dec.has(p));
+  if (missingFromDeclared(new Set(['a']), new Set(['a'])).length !== 0) {
+    fail('⑫ canary 失效：一致的 Proposed 集合被误报');
+  }
+  if (missingFromDeclared(new Set(['a']), new Set()).length !== 1) {
+    fail('⑫ canary 失效：**未登记**的 Proposed 未被检出（这正是本条要防的漏报）');
+  }
+}
+
 // ── 待裁决项必须登记（唯一声明处）+ 载体必须可解析（2026-10-01，ADR-0029）──────
 // 立此条的原因：项目规则是「待裁决项必须有 ADR 载体」，而审计文档里曾有 **6 处「待裁决」标记
 // 而门禁 `Pending decisions:` 是「无」** —— 护栏**只做了单向**（核对「ADR → 门禁」），
