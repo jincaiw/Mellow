@@ -651,7 +651,7 @@ const VERSION_SOURCES = [
     fail('升版一致性 canary 失效：一处不同未被检出（判据已退化成空真）');
   }
   if (got.length === VERSION_SOURCES.length) {
-    console.log(`Doc code refs: 升版 4 处一致 = ${got[0].v}（真值源 ${VERSION_SOURCES[0].path}）`);
+    console.log(`Doc code refs: 升版 ${VERSION_SOURCES.length} 处一致 = ${got[0].v}（真值源 ${VERSION_SOURCES[0].path}）`);
   }
 }
 

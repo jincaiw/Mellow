@@ -1512,6 +1512,25 @@ if (driftedMissing.length === 0) {
 {
   // ⚠️ 模式与**示例**都运行时拼接：本文件在扫描面内，且它会在注释/消息里**引用**坏形态（§4.237 的教训）
   const N_WORD = new RegExp(`\\b${'\\d'}+-[a-z][a-z-]*`);
+  // ⚠️ **中文量词形态**（2026-10-09，审计 §4.181）：`N-word` 只覆盖**英文连字符**写法。
+  //   实测 `verify-doc-code-refs.mjs` 的输出写「升版 **4 处**一致」，而真值源
+  //   `VERSION_SOURCES.length` 也恰好是 4 ⇒ 加第 5 个版本源就会**静默漂**（同族「只锁了一半」）。
+  //   判定法：先**剥掉 `${...}`**（含嵌套）—— 剩下的**字面**部分里不得出现「数字 + 中文量词」。
+  const stripInterp = (s) => {
+    let out = ''; let depth = 0;
+    for (let i = 0; i < s.length; i += 1) {
+      if (s[i] === '$' && s[i + 1] === '{') { depth += 1; i += 1; continue; }
+      if (depth > 0 && s[i] === '}') { depth -= 1; continue; }
+      if (depth === 0) out += s[i];
+    }
+    return out;
+  };
+  const CJK_COUNT = new RegExp(`${'\\d'}+\\s*(项|个|条|处|类|份|种)`);
+  // 豁免：**历史叙述**（记录**已发生**的事实，本就不该变）—— 必须登记 + 给理由（双向核对）。
+  const CJK_COUNT_EXEMPT = new Map([
+    ['verify-i18n-contract.mjs|30 个', '「30 个死键已按 ADR-0032 Q1=A1 删除，目录 841 → 811」'
+      + ' = **已发生的历史**（裁决记录），不是可漂的计数'],
+  ]);
   const guards8 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
     : [];
@@ -1522,16 +1541,39 @@ if (driftedMissing.length === 0) {
     //   「注入后仍未检出缺失归一化」，本轮实测踩到）。
     const src = read(`tests/parity/${f}`);
     for (const m of src.matchAll(/console\.log\(([\s\S]{0,1200}?)\);/g)) {
-      const hit = N_WORD.exec(m[1]);
-      if (hit === null) continue;
-      offenders8.push(`${f}:${src.slice(0, m.index).split('\n').length}（${hit[0]}）`);
+      const at = src.slice(0, m.index).split('\n').length;
+      // ⚠️ **必须剥掉语句内的注释行**：多行 `console.log(...)` 里可以插注释（实测
+      //   `verify-package-conventions.mjs` 就插了「本行原**手写**『canary 5 项全绿』」），
+      //   那是**说明**不是**输出** ⇒ 不剥会把解释当成违规（§4.156 的老坑）。
+      const body = m[1].split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+      const hit = N_WORD.exec(body);
+      if (hit !== null) offenders8.push(`${f}:${at}（${hit[0]}）`);
+      // 中文量词形态：**剥掉 `${...}`** 后仍含「数字 + 量词」⇒ 是**字面**计数（会漂）
+      const cjk = CJK_COUNT.exec(stripInterp(body));
+      if (cjk !== null && !CJK_COUNT_EXEMPT.has(`${f}|${cjk[0]}`)) {
+        offenders8.push(`${f}:${at}（${cjk[0]}）`);
+      }
     }
   }
   if (offenders8.length > 0) {
-    fail(`护栏**输出**里有**手写**的「N-单词」计数：${offenders8.join('、')} —— `
-      + '这类计数会漂（实测：某收口行写「14-scene」而同句列出 6+4+7 = 17，**自相矛盾**；'
-      + '审计 §4.8 已判定那个数**对不上任何来源**）⇒ **要么从制品派生，要么不写数字**'
-      + `（例：把「${4}${'-'}config」改为直接列配置、把「N-scene」改为从基线现读的分项之和）`);
+    fail(`护栏**输出**里有**手写**的计数：${offenders8.join('、')} —— `
+      + '这类计数会漂（实测：① 某收口行写「14-scene」而同句列出 6+4+7 = 17，**自相矛盾**；'
+      + '② 某收口行写「升版 4 处一致」，而该数应来自 `VERSION_SOURCES.length`）'
+      + '⇒ **要么从制品派生，要么不写数字**'
+      + `（例：把「${4}${'-'}config」改为直接列配置、「N-scene」改为从基线现读的分项之和、`
+      + '「4 处」改为 `${VERSION_SOURCES.length} 处`）'
+      + '；若确属**历史叙述**（记录已发生的事实、本就不该变），登记进 `CJK_COUNT_EXEMPT` 并给理由');
+  }
+  // 豁免表**双向**：登记了却不再命中 ⇒ 请删除（否则例外表会永久留在那里，同 §4.60）
+  for (const key of CJK_COUNT_EXEMPT.keys()) {
+    const [ef, ehit] = key.split('|');
+    let seen = false;
+    for (const m of read(`tests/parity/${ef}`).matchAll(/console\.log\(([\s\S]{0,1200}?)\);/g)) {
+      const body = m[1].split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+      const c = CJK_COUNT.exec(stripInterp(body));
+      if (c !== null && c[0] === ehit) { seen = true; break; }
+    }
+    if (!seen) fail(`⑧ 的 CJK_COUNT_EXEMPT 登记了 ${key}，但它已不再命中 —— 请删除该例外条目`);
   }
   // ⚠️ **已知局限（如实声明）**：本判据只认「**数字紧跟连字符**」的字面量形态；
   //   `\${4}-config` 这种「**表达式里写死数字**」它**看不见** —— 那是「派生」与「写死」的边界模糊处，
@@ -1543,6 +1585,15 @@ if (driftedMissing.length === 0) {
   // canary ②（负样本）：手写形态必须能检出（拼接构造，避免自己命中自己）
   if (!N_WORD.test(`x ${4}${'-'}config`)) {
     fail('⑧ canary 失效：手写「N-单词」形态未被检出（判据已退化成空真）');
+  }
+  // canary ③（正样本）：**派生**的中文量词（`${n} 项`）不得被判为手写
+  //   （样本**不含** `console.log(` 字样 ⇒ 不会被本判据的扫描面误当成语句）
+  if (CJK_COUNT.test(stripInterp('共 ${n} 项'))) {
+    fail('⑧ canary 失效：派生的中文量词被误判为手写');
+  }
+  // canary ④（负样本）：**字面**的中文量词必须检出
+  if (!CJK_COUNT.test('升版 4 处一致')) {
+    fail('⑧ canary 失效：字面中文量词未被检出（判据已退化成空真）');
   }
 }
 
