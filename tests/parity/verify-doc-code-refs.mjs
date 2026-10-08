@@ -560,6 +560,69 @@ const PACKAGING_VERSION_ALLOW = new Map([
   }
 }
 
+// ── 「升版 4 处」必须彼此一致（2026-10-09，审计 §4.170）──────────────────────
+// 【为什么需要】升版要同步 **4 处**：`apps/desktop/package.json` · `src-tauri/tauri.conf.json`（**真值源**）·
+//   `src-tauri/Cargo.toml` · **`src-tauri/Cargo.lock`**（前 3 处有 `scripts/sync-version.mjs`，
+//   **Cargo.lock 要手工改** ⇒ **最容易漏**）。而护栏此前**只**查「发版手册的字面量 ↔ `tauri.conf.json`」
+//   —— **4 处代码位置之间是否一致，没有任何判据**（本文件 §「发布手册」一节的注释里
+//   恰好写着「**升版是 4 处（漏了 Cargo.lock）**」，说明这形态被记录过，但**没落成判据**）。
+// 【为什么值得守】版本不一致 ⇒ 制品名 / updater 元数据 / 关于面板互相矛盾，
+//   而这类「同一数值多处维护」在本仓已出现 4 次（§4.40 族的 spec 硬数字、§4.161 的导出数、§4.169 的标记数）。
+// 【锚点】`tauri.conf.json` 是**真值源**（memory / 发版手册均如此声明）；其余 3 处必须 == 它。
+const VERSION_SOURCES = [
+  { path: 'apps/desktop/src-tauri/tauri.conf.json', label: 'tauri.conf.json（**真值源**）',
+    pick: (s) => JSON.parse(s).version },
+  { path: 'apps/desktop/package.json', label: 'apps/desktop/package.json',
+    pick: (s) => JSON.parse(s).version },
+  { path: 'apps/desktop/src-tauri/Cargo.toml', label: 'src-tauri/Cargo.toml',
+    pick: (s) => (s.match(/^version\s*=\s*"([^"]+)"/m) ?? [])[1] },
+  { path: 'apps/desktop/src-tauri/Cargo.lock', label: 'src-tauri/Cargo.lock（**手工改，最易漏**）',
+    pick: (s) => {
+      // 本包的 lock 条目：`[[package]]\nname = "<crate>"\nversion = "<v>"`
+      const crate = (readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8')
+        .match(/^name\s*=\s*"([^"]+)"/m) ?? [])[1];
+      if (crate === undefined) return undefined;
+      const re = new RegExp(`\\[\\[package\\]\\]\\nname = "${crate}"\\nversion = "([^"]+)"`);
+      return (s.match(re) ?? [])[1];
+    } },
+];
+{
+  const read0 = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+  const SEMVER = /^\d+\.\d+\.\d+$/;
+  const got = [];
+  for (const src of VERSION_SOURCES) {
+    if (!existsSync(resolve(root, src.path))) { fail(`升版一致性：缺少 ${src.path}`); continue; }
+    let v;
+    try { v = src.pick(read0(src.path)); } catch (e) { fail(`升版一致性：解析 ${src.path} 失败（${e.message}）`); continue; }
+    if (typeof v !== 'string' || !SEMVER.test(v)) {
+      fail(`升版一致性：从 ${src.path} 取到的版本不是 semver（得到 ${JSON.stringify(v)}）—— 解析器漂移`);
+      continue;
+    }
+    got.push({ ...src, v });
+  }
+  // 防空转：**4 处**必须都被解析到（少一处 ⇒ 判据范围萎缩）
+  if (got.length !== VERSION_SOURCES.length || VERSION_SOURCES.length !== 4) {
+    fail(`升版一致性只解析到 ${got.length}/${VERSION_SOURCES.length} 处（应为 4）—— 判据会空转`);
+  }
+  const uniq = new Set(got.map((g) => g.v));
+  if (uniq.size > 1) {
+    fail('升版 4 处**彼此不一致**：'
+      + got.map((g) => `${g.label} = ${g.v}`).join(' · ')
+      + ' —— 以 tauri.conf.json 为真值源；Cargo.lock 需**手工**同步（`scripts/sync-version.mjs` 不管它）');
+  }
+  // canary：① 合法样本（全一致）不报；② 负样本（一处不同）必须能检出
+  const judge = (vs) => new Set(vs).size > 1;
+  if (judge(['1.5.33', '1.5.33', '1.5.33', '1.5.33'])) {
+    fail('升版一致性 canary 失效：全一致样本被误判为不一致');
+  }
+  if (!judge(['1.5.33', '1.5.33', '1.5.33', '1.5.32'])) {
+    fail('升版一致性 canary 失效：一处不同未被检出（判据已退化成空真）');
+  }
+  if (got.length === VERSION_SOURCES.length) {
+    console.log(`Doc code refs: 升版 4 处一致 = ${got[0].v}（真值源 ${VERSION_SOURCES[0].path}）`);
+  }
+}
+
 // ── 同一文档内**标题不得重复**（2026-10-06，审计 §4.89）──
 // 立此条的原因：`docs/adr/ADR-0021-platform-build-matrix-pass.md` 曾**连续两行**写着同一个
 // `### 真机 Runtime 矩阵（待执行）`（复制粘贴残留）。这类**结构缺陷**：
