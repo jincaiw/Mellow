@@ -12,7 +12,7 @@ Reader 渲染、自动保存、外部变更、扩展注册。**不含任何平�
 
 ## 公开接口
 
-`src/index.ts` 导出 **124** 个符号，按模块分组：
+`src/index.ts` 导出 **130** 个符号，按模块分组（下表列的是**代表**导出，**非全部**）：
 
 | 模块 | 代表导出 |
 |---|---|
@@ -36,6 +36,13 @@ Reader 渲染、自动保存、外部变更、扩展注册。**不含任何平�
 | 表格模板 | `buildGfmTable`、`TABLE_TEMPLATE_DEFAULT_ROWS`、`TABLE_TEMPLATE_MAX_COLUMNS` |
 
 ## 依赖关系（实测）
+
+> **⚠️ 2026-10-08 更正（审计 §4.161）**：上行的**数字原写 124**，实测 `src/index.ts` 是
+> **36 条 `export {}` 语句、共 130 个唯一名字** ⇒ **已改为 130**。
+> ⚠️ 本包是 13 个带「导出 N 个符号」声明的 README 里**唯一**数字过期的一个（其余 12 个实测**全部正确**）。
+> ⇒ 已落判据（`tests/parity/verify-package-conventions.mjs`：**凡 README 写「导出 N 个符号」，
+> N 必须 == 该包 `src/index.ts` 的具名导出数**）—— 数字漂移会**硬失败**。
+> 另：下表表头本就写着「**代表**导出」⇒ 它是**选摘**（57 个名字），**不是**全部 130 个（如实保留该措辞）。
 
 - **依赖**：`editor-engine`、`extension-api`、`host-api`
 - **被消费**：`apps/desktop`、`desktop-ui`

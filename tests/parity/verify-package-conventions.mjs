@@ -46,12 +46,22 @@
  *      ⚠️ 这 3 个里 **`editor-react` 是「有意预留（阶段 2）」**，与 `shared`/`workspace` 的「零消费者」**性质不同**。
  *   ④ `fixtures/` —— 按意图判（见上）。
  */
-import { readdirSync, existsSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const errors = [];
 const fail = (message) => errors.push(message);
+
+/**
+ * canary 计数 —— **从代码派生，不手写**（2026-10-08，审计 §4.161）。
+ *
+ * ⚠️ 立此条的原因（实测）：收口行原**手写**「canary 5 项全绿」，而实际只有 **4** 条断言
+ * （新增 C6 的 4 条后应为 **8**）⇒ **手写的计数必然漂移**，且**没有任何判据守它**。
+ * ⇒ 改为：每条 canary 断言都经本函数上报，收口行打印 `canaryCount`。
+ */
+let canaryCount = 0;
+const canary = (ok, message) => { canaryCount += 1; if (!ok) errors.push(message); };
 
 // ── 与宪法字面的偏离（显式声明；本判据不按字面要求 `fixtures/` 存在）───────────
 const PRD_117_1_DEVIATIONS = [
@@ -129,6 +139,58 @@ for (const pkg of pkgNames) {
   }
 }
 
+// ── C6 README 的「导出 N 个符号」必须 == 该包 `src/index.ts` 的**具名导出数** ──────────────
+// （2026-10-08，审计 §4.161）
+// 立此条的原因（实测）：`app-core/README.md` 写「导出 **124** 个符号」，而实测是 **130**
+// （36 条 `export {}` 语句、130 个**唯一**名字）—— 其余 **12** 个带该声明的 README **全部正确**。
+// ⚠️ **计数口径**（判定与 canary **共用** `namedExports`）：
+//   · **计入**：`export {…}` / `export type {…}` 里的名字 + `export <decl>`（含 `async` / `declare`）的名字；
+//   · **不计入**：`export * from '…'`（它是**转发**，名字来自别的文件，本文件里没有显式出现）。
+//   ⚠️ 该口径与 13 个 README 的**现状全部吻合**（逐包实测过）。
+{
+  const EXPORT_COUNT_RE = /导出\s*\*{0,2}(\d+)\*{0,2}\s*个符号/;
+  /** 枚举 `src/index.ts` 的**具名**导出（判定与 canary 共用）。 */
+  const namedExports = (src) => {
+    const out = new Set();
+    for (const m of src.matchAll(/^export\s+(?:declare\s+)?(?:async\s+)?(?:type\s+|interface\s+|const\s+|function\s+|class\s+|enum\s+)([A-Za-z0-9_]+)/gm)) {
+      out.add(m[1]);
+    }
+    for (const m of src.matchAll(/^export\s+(?:type\s+)?\{([\s\S]*?)\}\s*from/gm)) {
+      for (const t of m[1].split(',')) {
+        const n = t.trim().split(/\s+as\s+/).pop().trim();
+        if (n) out.add(n);
+      }
+    }
+    return out;
+  };
+  let checkedCounts = 0;
+  for (const pkg of pkgNames) {
+    const readmePath = join(PKG_ROOT, pkg, 'README.md');
+    const srcPath = join(PKG_ROOT, pkg, 'src', 'index.ts');
+    if (!existsSync(readmePath) || !existsSync(srcPath)) continue;
+    const m = EXPORT_COUNT_RE.exec(readFileSync(readmePath, 'utf8').replace(/\r\n/g, '\n'));
+    if (m === null) continue;
+    checkedCounts += 1;
+    const actual = namedExports(readFileSync(srcPath, 'utf8').replace(/\r\n/g, '\n')).size;
+    if (Number(m[1]) !== actual) {
+      fail(`${pkg}/README.md 声明「导出 ${m[1]} 个符号」，而 \`src/index.ts\` 实测 **${actual}** 个具名导出`
+        + ' —— 该数字会随代码漂移，必须与代码一致（实测：`app-core` 曾写 124 而实际 130）');
+    }
+  }
+  if (checkedCounts < 8) {
+    fail(`只有 ${checkedCounts} 个包的 README 带「导出 N 个符号」声明（下限 8 = 立此判据时的基线）`
+      + ' —— 谓词或文档漂移会让本判据**空转**');
+  }
+  // canary：四向（判定与 canary 共用 namedExports）
+  canary(namedExports("export { a, b } from './x';\n").size === 2, '导出数护栏 canary 失效：`export {}` 未被识别');
+  canary(namedExports('export async function f() {}\nexport declare const g: number;\n').size === 2,
+    '导出数护栏 canary 失效：`async` / `declare` 形态未被识别');
+  canary(namedExports("export * from './x';\n").size === 0,
+    '导出数护栏 canary 过宽：`export *` 被当成了具名导出（口径应为「只数显式名字」）');
+  canary(namedExports("export type {\n  A,\n  B,\n} from './x';\n").size === 2,
+    '导出数护栏 canary 失效：多行 `export type {}` 未被识别');
+}
+
 // 登记表自身：非空 + 无「登记了不存在的包」
 for (const [tbl, name] of [[PKG_TEST_GAPS, 'PKG_TEST_GAPS']]) {
   if (tbl.size === 0) fail(`${name} 不得为空（清空即等于放弃该判据）`);
@@ -145,20 +207,19 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
 {
   const OK_FILES = (p, n) => n === 'README.md' || n === 'CONTRACT.md';
   const g = gapsOf('x', { hasDir: (p, n) => new Set(['src', 'test']).has(n), hasFile: OK_FILES });
-  if (g.length !== 0) errors.push(`canary 失效：全合规的合成包被判有缺口（得到 ${JSON.stringify(g)}）`);
+  canary(g.length === 0, `canary 失效：全合规的合成包被判有缺口（得到 ${JSON.stringify(g)}）`);
   const g2 = gapsOf('x', { hasDir: () => false, hasFile: () => false });
-  if (g2.join(',') !== 'src,README.md,CONTRACT.md,test') {
-    errors.push(`canary 失效：全缺失的合成包缺口集合不对（得到 ${JSON.stringify(g2)}）`);
-  }
+  canary(g2.join(',') === 'src,README.md,CONTRACT.md,test',
+    `canary 失效：全缺失的合成包缺口集合不对（得到 ${JSON.stringify(g2)}）`);
   // 负样本-放宽：只缺 test 时必须能判出来（否则「只查了 src」也会全绿）
   const g4 = gapsOf('x', { hasDir: (p, n) => n === 'src', hasFile: OK_FILES });
-  if (g4.join(',') !== 'test') errors.push(`canary 失效：只缺 test 时未判出（得到 ${JSON.stringify(g4)}）`);
+  canary(g4.join(',') === 'test', `canary 失效：只缺 test 时未判出（得到 ${JSON.stringify(g4)}）`);
   // 负样本-放宽：只缺 CONTRACT.md 时必须能判出来
   const g5 = gapsOf('x', {
     hasDir: (p, n) => n === 'src' || n === 'test',
     hasFile: (p, n) => n === 'README.md',
   });
-  if (g5.join(',') !== 'CONTRACT.md') errors.push(`canary 失效：只缺 CONTRACT.md 时未判出（得到 ${JSON.stringify(g5)}）`);
+  canary(g5.join(',') === 'CONTRACT.md', `canary 失效：只缺 CONTRACT.md 时未判出（得到 ${JSON.stringify(g5)}）`);
 }
 
 if (errors.length > 0) {
@@ -168,4 +229,7 @@ if (errors.length > 0) {
 console.log(`Package conventions (§117.1): ${pkgNames.length} 个包；`
   + '`src/` / `README.md` / `CONTRACT.md` 全合规（**硬判据**）；'
   + `\`test(s)/\` 已登记缺口 ${PKG_TEST_GAPS.size} 个（**「宪法要求但尚未执行」**，非「已评估通过的偏离」）；`
-  + `\`fixtures/\` 按意图判（偏离已显式声明 ${PRD_117_1_DEVIATIONS.length} 条）；canary 5 项全绿。`);
+  + `\`fixtures/\` 按意图判（偏离已显式声明 ${PRD_117_1_DEVIATIONS.length} 条）；`
+  // ⚠️ 2026-10-08（审计 §4.161）：本行原**手写**「canary 5 项全绿」—— 而实际只有 **4** 条断言。
+  //    ⇒ 改为**从代码派生**（`canary()` 计数），手写的计数不再存在（本行自己也**不再是一个漂移源**）。
+  + `canary ${canaryCount} 项全绿。`);
