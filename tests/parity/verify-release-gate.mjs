@@ -22,17 +22,52 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n'
 const errors = [];
 const fail = (message) => errors.push(message);
 
+// ── 仓库跟踪集（`git ls-files`，含已 `git add` 的**暂存**文件）────────────────
+// ⚠️ 2026-10-08（审计 §4.166/§4.167）：**判据的锚点是「仓库」，不是「工作区」**。
+//   本地工作区 ⊃ 仓库（未跟踪 + 生成物）⇒ 用 `readdirSync` 会让**同一份代码在本地与干净检出
+//   得到不同结论**（§4.166 实测：1113 vs 878）。凡「**仓库里有哪些文件**」都用本函数。
+//   ⚠️ `git ls-files` 读的是**索引** ⇒ 新增文件只要 `git add` 就会被看见（不必等提交）。
+const trackedFiles = (() => {
+  try {
+    return execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
+      .toString().split('\0').filter(Boolean);
+  } catch {
+    return null; // 调用方负责 fail（此处 errors 已定义，但让它集中在各自的判据里报错）
+  }
+})();
+if (trackedFiles === null) {
+  fail('无法枚举仓库跟踪集：`git ls-files` 执行失败 —— 多条判据要求在有 git 的检出里运行');
+}
+
 const parityDir = resolve(root, 'tests/parity');
+// ⚠️ 逐文件检查（接线 / CRLF / PRD 引用）用**工作区枚举**：本地 ⊇ CI ⇒ 本地**至少一样严**，
+//   方向**安全**（只会「本地红、CI 绿」，不会反过来），且给 WIP 护栏即时反馈。
 const guardFiles = readdirSync(parityDir)
   .filter((name) => name.startsWith('verify-') && name.endsWith('.mjs'))
+  .sort();
+// ⚠️ **数量下限**必须锚在**仓库**（`git ls-files`）—— 见 §4.167：用工作区计数会把未跟踪的
+//   WIP 护栏算进来，使「本地」与「干净检出」对同一条下限给出不同结论。
+const repoGuardFiles = (trackedFiles ?? [])
+  .filter((f) => f.startsWith('tests/parity/verify-') && f.endsWith('.mjs'))
+  .map((f) => f.slice('tests/parity/'.length))
   .sort();
 
 // ── ① 护栏全集必须接入根脚本链 ──────────────────────────────────────────
 const pkg = JSON.parse(read('package.json'));
 const testChain = pkg.scripts?.test ?? '';
 const parityChain = pkg.scripts?.parity ?? '';
-if (guardFiles.length < 18) {
-  fail(`parity 护栏数量异常（${guardFiles.length}），2026-10-01 基线为 18`);
+// ⚠️ 2026-10-08（审计 §4.167）：下限原写 `18`（2026-10-01 基线），而实际已是 **23** ⇒
+//   本条自己声明的意图「**防某人悄悄删掉一条**」**根本没有实现**（连删 5 条都不会红）。
+//   现按本仓纪律「**下限 == 当前基线**」改为 **23**。
+if (repoGuardFiles.length < 23) {
+  fail(`**仓库里**的 parity 护栏只有 ${repoGuardFiles.length} 条（下限 23 = 2026-10-08 基线）—— `
+    + '本条的目的正是「防某人悄悄删掉一条」；数量退化会让它退化成**空真**');
+}
+// 两个锚点必须一致：逐文件检查不能漏掉任何**已跟踪**的护栏（否则「接线检查」会静默漏检）
+const missingFromWorkspace = repoGuardFiles.filter((f) => !guardFiles.includes(f));
+if (missingFromWorkspace.length > 0) {
+  fail(`已跟踪的护栏在工作区枚举里缺失：${missingFromWorkspace.join(', ')}`
+    + ' —— 逐文件检查（接线/CRLF/PRD 引用）会漏掉它们');
 }
 const missingInTest = guardFiles.filter((name) => !testChain.includes(name));
 const missingInParity = guardFiles.filter((name) => !parityChain.includes(name));
@@ -40,6 +75,20 @@ if (missingInTest.length > 0) fail(`根 package.json 的 test 链缺少护栏：
 if (missingInParity.length > 0) fail(`根 package.json 的 parity 链缺少护栏：${missingInParity.join(', ')}`);
 if (!testChain.includes('ux-gate-recorder.mjs --self-test')) {
   fail('根 test 链缺少 ux-gate-recorder --self-test（UX Gate 自检）');
+}
+// canary（数量下限的锚点）：把跟踪集里的一条护栏摘掉 ⇒ 仓库枚举必须少一条
+//   （证明下限算的是**仓库**，不是工作区；工作区枚举不受影响）
+{
+  const probe = (trackedFiles ?? []).filter((f) => f !== `tests/parity/${repoGuardFiles[0]}`);
+  const probeRepo = probe
+    .filter((f) => f.startsWith('tests/parity/verify-') && f.endsWith('.mjs')).length;
+  if (probeRepo !== repoGuardFiles.length - 1) {
+    fail('① canary 失效：仓库护栏枚举不随跟踪集变化（下限的锚点已失效）');
+  }
+  if (repoGuardFiles.length > guardFiles.length) {
+    fail(`仓库护栏数（${repoGuardFiles.length}）不得多于工作区护栏数（${guardFiles.length}）`
+      + ' —— 工作区 ⊇ 仓库是本条的前提');
+  }
 }
 
 // ── ② 台账结论可达性 + NO-GO 清单 ───────────────────────────────────────
@@ -416,11 +465,10 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   // ⚠️ **本文件自己现在也是引用源** ⇒ 本文件里**任何位置**（含注释、举例）都不得写「不存在的编号」字面量
   //   （审计 §4.237：初稿在注释里写了那个不存在的编号，判据当场命中自己）。
   let REF_SOURCES = [];
-  try {
-    REF_SOURCES = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
-      .toString().split('\0').filter(Boolean).filter((f) => REF_EXT.test(f));
-  } catch {
+  if (trackedFiles === null) {
     fail('D 表引用源无法枚举：`git ls-files` 执行失败 —— 本判据要求在有 git 的检出里运行');
+  } else {
+    REF_SOURCES = trackedFiles.filter((f) => REF_EXT.test(f));
   }
 
   // 确实要「提到一个没有声明行的编号」时在此登记**理由**（本仓既有 idiom，同 OFFICIAL_SHORTCUT_EXCEPTIONS）。
