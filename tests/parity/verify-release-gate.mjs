@@ -388,29 +388,52 @@ for (const [p, what, decision] of DECIDED_ADRS) {
 // 不在本护栏内 —— 同 ADR-0029 对自己那条登记表护栏的声明。
 {
   const PLAN = 'docs/plans/typora-parity-master-plan.md';
-  // 引用源：D 表（master-plan）+ 两个会引用 D 编号的文档类。ADR 目录为平铺 .md。
-  // ⚠️ 2026-10-08（审计 §4.164）：**parity 数据夹具**此前**不在**引用源里 —— 而它们是
-  //   承载「有意差异」的主要地方（矩阵 / 面板独有键 / 第三面 / 台账 都用 `D-` 编号指裁决）。
-  //   夹具里写一个**不存在**的 `D-XX` 此前**没有任何东西核对**（读者会顺着它去找一个不存在的裁决）。
-  //   ✅ 实测纳入时**全部已声明**（`D-AD`/`D-AG`/`D-AK`/`D-AO`/`D-B`/`D-AL`/`D-AM`/`D-C`/`D-D`/`D-H`/`D-N`/`D-R`/`D-S`）。
-  //   ⚠️ **刻意不含 `tests/parity/verify-*.mjs`**：它们的 `D-ZZ` / `D-QQ` / `D-RR` 是 **canary 合成样本**，
-  //     本就**不该**被声明（纳入会把负样本判成缺陷）。
-  const REF_SOURCES = [
-    PLAN,
-    'docs/qualification/release-blocker-audit-2026-09-25.md',
-    'tests/parity/typora-parity-ledger.json',
-    ...readdirSync(resolve(root, 'tests/parity/fixtures'))
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => `tests/parity/fixtures/${f}`),
-    ...readdirSync(resolve(root, 'docs/adr'))
-      .filter((f) => f.endsWith('.md'))
-      .map((f) => `docs/adr/${f}`),
-  ];
+  // 引用源（2026-10-08，审计 §4.164 + §4.165）：**扩到全仓**。
+  // 沿革：① 起初只有 master-plan / 审计文档 / `docs/adr/*.md`；
+  //   ② §4.164 纳入 **parity 数据夹具**（矩阵 / 面板独有键 / 第三面 / 台账 都用 `D-` 编号指裁决，
+  //      而此前**没有任何东西核对** —— 夹具里写一个不存在的编号，读者会顺着它去找一个不存在的裁决）；
+  //   ③ §4.165 发现「按类枚举」这件事**永远会漏下一类**（源码注释、spec、发布说明、qualification 报告
+  //      都在引用 `D-` 编号）⇒ 改为**遍历全仓**，只按「**生成物 / 不入库的目录**」排除。
+  // ⚠️ 排除项必须写明理由（否则下一个人会以为漏了）：
+  //   · `node_modules` / `.git` / `target` / `dist` / `build` / `.cache` / `.workbuddy-ai` —— 依赖与构建产物；
+  //   · `.trae/` 与 `apps/desktop/public/editor/` —— **gitignore**（不在仓库里；memory 纪律：证据不得指向 gitignore 目录）；
+  //   · **canary 合成编号**：见下方 `CANARY_SYNTHETIC_IDS` —— 它们**刻意不声明**，但**必须仍被引用**
+  //     （防「canary 被删了却没人发现」）。⚠️ **不按文件排除** `verify-*.mjs`：那样会把护栏里
+  //     **真实的** D 引用（如 `verify-sidebar-contract.mjs` 的 `D-C`/`D-J`）也一起豁免掉。
+  // ⚠️ **本文件自己现在也是引用源** ⇒ 本文件里**任何位置**（含注释、举例）都不得写「不存在的编号」字面量
+  //   （审计 §4.237：初稿在注释里写了那个不存在的编号，判据当场命中自己）。
+  const SKIP_DIRS = new Set([
+    'node_modules', '.git', 'dist', 'build', 'target', '.cache', '.workbuddy-ai', '.trae',
+  ]);
+  const SKIP_PATHS = ['apps/desktop/public/editor/'];
+  const REF_EXT = /\.(md|mjs|cjs|js|ts|tsx|json|yml|yaml|rs|sh)$/;
+  const REF_SOURCES = [];
+  (function walkRefSources(dir) {
+    for (const entry of readdirSync(resolve(root, dir), { withFileTypes: true })) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const rel = dir === '' ? entry.name : `${dir}/${entry.name}`;
+      if (entry.isDirectory()) { walkRefSources(rel); continue; }
+      if (!REF_EXT.test(entry.name)) continue;
+      if (SKIP_PATHS.some((p) => rel.startsWith(p))) continue;
+      REF_SOURCES.push(rel);
+    }
+  })('');
 
   // 确实要「提到一个没有声明行的编号」时在此登记**理由**（本仓既有 idiom，同 OFFICIAL_SHORTCUT_EXCEPTIONS）。
   // 两类合法用途：① 记下「经复核**不**创建某编号」这个决定；② 泛指占位（非具体条目）。
   const D_TABLE_NOT_DECLARED = new Map([
     ['D-AN', 'ADR-0029 Q1=A3 经 2026-10-01 复核判定为 D-AF 的**重复登记** ⇒ 显式「不创建」该编号（见 master-plan §12 的 D-AF 行 / 审计 §4.67）'],
+  ]);
+  // ③ 护栏**自身**的 canary 负样本（合成编号，刻意不存在）。
+  // ⚠️ 这是**第三类**：既不是「决定不创建」，也不是「泛指占位」，而是「判据的测试数据」。
+  // 它们**必须仍被引用**（否则是过期条目）；也**不得**被声明（否则 canary 失去意义）。
+  // ⚠️ 2026-10-08（审计 §4.165）：初版把**第四个**编号也列了进来 —— 但它其实**只是 §4.164 注释里的举例**
+  //   （HEAD 版本实测：全仓仅 1 处，且那处是散文），**没有任何真实使用** ⇒ 是**过期条目**，已删除。
+  //   （本注释**刻意不写出那个编号的字面量** —— 本文件是引用源，写了就会被判据命中，见 §4.237。）
+  const CANARY_SYNTHETIC_IDS = new Map([
+    ['D-ZZ', '`verify-release-gate.mjs` 的 D 引用判据负样本（合成编号）'],
+    ['D-QQ', '同上（`verify-release-gate.mjs`）'],
+    ['D-RR', '同上（`verify-release-gate.mjs`）'],
   ]);
 
   const planSrc = read(PLAN);
@@ -439,16 +462,28 @@ for (const [p, what, decision] of DECIDED_ADRS) {
 
   // ① 引用集（来自所有 REF_SOURCES）
   // ⚠️ 抽成**纯函数**：canary 必须能对**同一谓词**做正/负样本（本仓 idiom）。
-  const collectRefs = (sources) => {
+  // ⚠️ 2026-10-08（审计 §4.165）：**两个例外表的声明块本身不算「使用」** —— 否则「过期检测」是
+  //   **循环判据**：编号写在表里 ⇒ 表所在文件是引用源 ⇒ 它**永远「被引用」**（注入验证第 ④ 项当场抓到）。
+  const SELF_SOURCE = 'tests/parity/verify-release-gate.mjs';
+  const DECL_BLOCKS = [
+    /const D_TABLE_NOT_DECLARED = new Map\(\[[\s\S]*?\]\);/,
+    /const CANARY_SYNTHETIC_IDS = new Map\(\[[\s\S]*?\]\);/,
+  ];
+  const stripDeclBlocks = (text) => DECL_BLOCKS.reduce((acc, re) => acc.replace(re, ''), text);
+  const collectRefs = (sources, { stripSelfDeclBlocks = false } = {}) => {
     const set = new Set();
     for (const rel of sources) {
       if (!existsSync(resolve(root, rel))) { fail(`D 表护栏的引用源不存在：${rel}`); continue; }
-      for (const m of read(rel).matchAll(ID)) set.add(m[0]);
+      const raw = read(rel);
+      const text = stripSelfDeclBlocks && rel === SELF_SOURCE ? stripDeclBlocks(raw) : raw;
+      for (const m of text.matchAll(ID)) set.add(m[0]);
     }
     return set;
   };
-  const isDangling = (id) => !declared.has(id) && !D_TABLE_NOT_DECLARED.has(id);
+  const isDangling = (id) => !declared.has(id)
+    && !D_TABLE_NOT_DECLARED.has(id) && !CANARY_SYNTHETIC_IDS.has(id);
   const referenced = collectRefs(REF_SOURCES);
+  const usedOutsideDecl = collectRefs(REF_SOURCES, { stripSelfDeclBlocks: true });
   for (const id of [...referenced].sort()) {
     if (!isDangling(id)) continue;
     fail(`D 编号 ${id} 被引用，但 master-plan 里没有它的**声明行**（表格首格形如 \`| **${id}\`）—— `
@@ -456,19 +491,37 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       + '若该引用是「**不**创建此编号」或泛指占位，请登记进 D_TABLE_NOT_DECLARED 并写明理由');
   }
 
-  // 防空转（2026-10-08，审计 §4.164）：**夹具这一类必须真的被读到** —— 否则「夹具里的 D 引用也被核对」
-  // 只是写在注释里。下限 4 = 台账 + 3 个夹具。
-  const FIXTURE_SOURCES = REF_SOURCES.filter((s) => s.startsWith('tests/parity/'));
-  if (FIXTURE_SOURCES.length < 4) {
-    fail(`D 表引用源里的 parity 数据文件只有 ${FIXTURE_SOURCES.length} 个（下限 4 = 台账 + 3 个夹具）`
-      + ' —— 适用域萎缩会让「夹具里的 D 引用也被核对」退化成空真');
+  // 防空转（2026-10-08，审计 §4.164/§4.165）：扫描面**按类**断言 —— 全仓遍历若退化成「只读了几份文档」
+  // 就会让「凡引用必须有声明行」变成空真。⚠️ 下限**等于立判据时的实测基线**（本仓纪律：贴着基线取）。
+  if (REF_SOURCES.length < 1113) {
+    fail(`D 表引用源只枚举出 ${REF_SOURCES.length} 个文件（下限 1113 = 2026-10-08 实测全仓基线）`
+      + ' —— 遍历退化会让「凡引用必须有声明行」退化成空真');
+  }
+  for (const [cls, prefix, min] of [
+    ['parity 数据', 'tests/parity/', 31],
+    ['docs/', 'docs/', 84],
+    ['packages/', 'packages/', 532],
+    ['apps/', 'apps/', 64],
+  ]) {
+    const n = REF_SOURCES.filter((s) => s.startsWith(prefix)).length;
+    if (n < min) {
+      fail(`D 表引用源里 \`${cls}\` 只有 ${n} 个文件（下限 ${min} = 2026-10-08 基线）`
+        + ' —— 这一类被漏掉 = 静默豁免一整类');
+    }
   }
   // canary ①（正样本）：夹具确实进了引用集 —— `D-AL` 只在面板独有键夹具里出现
   if (!collectRefs(['tests/parity/fixtures/typora-panel-only-keys.json']).has('D-AL')) {
     fail('D 表 canary 失效：parity 夹具没有被读进引用集（新纳入的引用源是空的）');
   }
-  // canary ②（负样本）：未声明的编号必须落进「悬空」这一支
-  if (!isDangling('D-ZZ')) {
+  // canary ①b（正样本）：**源码注释**这一类也真的进了引用集 —— `D-V` 只在 `selectionToolbar.ts` 出现
+  if (!collectRefs(['packages/editor-engine/src/selectionToolbar.ts']).has('D-V')) {
+    fail('D 表 canary 失效：源码这一类没有被读进引用集（「全仓」是写在注释里的）');
+  }
+  // canary ②（负样本）：未声明的编号必须落进「悬空」这一支。
+  // ⚠️ 探针编号**必须运行时拼出来** —— 本文件现在**自己也在引用源里**，写字面量就会被上面的判据命中
+  //   （审计 §4.237 的教训：在引用源里写不存在的编号字面量 ⇒ 判据命中自己）。
+  const DANGLING_PROBE = `D-${String.fromCharCode(81)}${String.fromCharCode(90)}`;
+  if (!isDangling(DANGLING_PROBE)) {
     fail('D 表 canary 失效：未声明编号未被判为悬空（判据已退化成空真）');
   }
   // canary ③（反向）：已声明的编号不得被误判
@@ -477,13 +530,41 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   }
 
   // ④ 例外表双向：必须仍被引用（否则是过期例外）；不得同时又有了声明行（自相矛盾）
+  // ⚠️ 用 `usedOutsideDecl`（**已剥离声明块**）—— 见上面的循环判据说明。
   for (const [id, why] of D_TABLE_NOT_DECLARED) {
-    if (!referenced.has(id)) {
-      fail(`D 表例外 ${id} 已过期：文档里已不再引用它（原登记理由：${why}）`);
+    if (!usedOutsideDecl.has(id)) {
+      fail(`D 表例外 ${id} 已过期：**声明块之外**已不再引用它（原登记理由：${why}）—— 请从表中删除`);
     }
     if (declared.has(id)) {
       fail(`D 表例外 ${id} 自相矛盾：它既被登记为「无声明行」，又确实有了声明行 —— 请删除该例外`);
     }
+  }
+  // ⑤ canary 合成编号表双向（2026-10-08，审计 §4.165）：必须仍被引用；不得被声明
+  for (const [id, why] of CANARY_SYNTHETIC_IDS) {
+    if (!usedOutsideDecl.has(id)) {
+      fail(`canary 合成编号 ${id} 已过期：**声明块之外**已不再引用它（原登记理由：${why}）—— 请从表中删除`);
+    }
+    if (declared.has(id)) {
+      fail(`canary 合成编号 ${id} 自相矛盾：它既被登记为「合成负样本」，又确实有了声明行 —— canary 已失去意义`);
+    }
+  }
+  // canary ④（机制自检）：声明块剥离**必须真的生效** —— 否则上面两条「过期检测」退化成**循环判据**
+  //   （编号写在表里 ⇒ 表所在文件是引用源 ⇒ 永远「被引用」）。
+  //   ⚠️ 这里**必须用行首锚定的正则**，不能用 `.includes('…= new Map')` —— 那个字符串**也出现在
+  //     `DECL_BLOCKS` 自己的定义里**（剥离器的定义含有它要匹配的文本）⇒ `.includes()` 恒真、
+  //     canary **永远失败**（本轮实测：第 4 次「判据命中自己」）。
+  const selfRaw = read(SELF_SOURCE);
+  const strippedSelf = stripDeclBlocks(selfRaw);
+  if (strippedSelf === selfRaw) {
+    fail('D 表 canary 失效：声明块剥离没有生效（过期检测已退化成循环判据）');
+  }
+  if (/^\s*const CANARY_SYNTHETIC_IDS = new Map\(\[/m.test(strippedSelf)
+    || /^\s*const D_TABLE_NOT_DECLARED = new Map\(\[/m.test(strippedSelf)) {
+    fail('D 表 canary 失效：例外表声明块未被剥离干净（过期检测已退化成循环判据）');
+  }
+  // canary ⑤（机制自检·反向）：剥离后，表里的编号**仍应能在别处找到真实使用**
+  if (![...CANARY_SYNTHETIC_IDS.keys()].every((id) => usedOutsideDecl.has(id))) {
+    fail('D 表 canary 失效：剥离声明块后，canary 合成编号在别处找不到使用（剥离过度）');
   }
 
   // ── 偏好矩阵的载体引用必须**解析得到**（2026-10-07，审计 §4.121）──────────────
