@@ -12241,6 +12241,64 @@ PITFALLS **§4.297** · skill **§174** · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
+## 4.186 UX Gate 的「**观测规模**」（30 × 2 app × 2 round = 120）也是人工侧 vs 机器侧的两处副本（「只锁了一半」同族**第 16 次**，2026-10-09）
+
+### 一、背景：先**实测**与 Typora 的差距（不采信自述）
+
+| 面 | 实测 |
+|---|---|
+| 台账 | **NO-GO / 未闭环 9 / `PASS-E = 0/50`**；阻塞源 = `ux-gate-policy`(6) · `perf-harness-pending`(1) · `human-ux-gate-session`(1) · `runtime-verification-pending`(1) |
+| 偏好矩阵 | 84 行 = `implemented 40 / gap 38 / not-applicable 6` |
+| 面板独有键 | 47 行 = `equivalent 36 / gap 4 / not-applicable 7` |
+| 第三面 | 15 行 = `preference-like 4` / `warning-suppression 5` / `view-state 6` |
+
+**逐项判「可自主」**：
+
+- **9 项未闭环**：4 项 `AUTO`（`requiredEvidence` 含 `ux-gate`）· 2 项 `MAC` · 1 项 `NOT_TESTED`
+  · 1 项 `IMPL`（**dev 模式的词典是内存 mock** ⇒ 需真机 `NSSpellChecker`，审计 §4.47 已如实声明）
+  · 1 项 `BLOCKED`（需 Windows/Linux 真机）⇒ **全部不可自主**；
+- `perf-harness-pending` 的**剩余范围 = 1 项**（冷启动 `loadMs` 的「内容就绪」读数），但它是**诊断量**
+  —— `run-benchmark.mjs` 已声明「**不是文档加载耗时，不参与任何 PRD 判定**」，且有替代判定量
+  `hotopen.switchMs`（ADR-0026 Q1/Q2=A1）⇒ **修它收益低**；
+- 矩阵 `gap 38`（其中 `matches-default 30` 无害）· 面板 `gap 4`（全阻塞）· 第三面 4 条（待裁决）
+  ⇒ **不可自主**。
+
+⇒ **结论：「与 Typora 的完成度差距」可自主面 = 0**（与前几次快照一致）。
+**可自主的是「护栏守备面」** —— 故本轮继续用 §4.185 的可复用方法。
+
+### 二、发现
+
+模板第 108 行写「`validate` 要求 **30 × 2 app × 2 round 共 120 条记录**」—— **四个具体数字**；
+而记录器用 `TASKS.length × APPS.length × ROUNDS.length`（**派生**），其中 `APPS` / `ROUNDS` 是**硬编码数组**。
+
+⇒ 若加第 3 轮或第 3 个应用，**模板的 120 会静默漂** ⇒ **无判据**（同 §4.185 的形态）。
+
+### 三、处置
+
+新增判据（`verify-runtime-qualification-workflow.mjs`，**两侧都现读**）：
+① 模板的「N × M app × K round」三数 == `TASKS.length` / `APPS.length` / `ROUNDS.length`；
+② 「共 P 条」== 乘积；③ 模板里**其他**「共 N 条」（正文另有两处）也须一致；+ 2 canary + 收口行。
+
+### 四、注入验证（2/2）
+
+① 模板「共 120 条」→「121 条」⇒ **转红**（「写「共 121 条」，而 30×2×2 = 120」）；
+② **改记录器那一侧**（`ROUNDS` `[1,2]` → `[1,2,3]`）⇒ **转红**（「模板写 2 round，而记录器 = 3 round」）。
+
+### 五、教训
+
+1. **§4.185 的「人工侧 vs 机器侧」不是孤例** —— 本轮用**同一方法**（拿机器侧常量名去 `grep` 文档）
+   **又找到一处** ⇒ **方法可复用**（这是把教训落成「固定动作」的第二次收益）。
+2. ⚠️ **`APPS` / `ROUNDS` 这类「硬编码数组」也是真值源**（虽然它们不是「数字常量」）
+   —— 文档复述其**长度**时同样要判据。
+3. ⇒ **同族第 16 次**（§4.170 / … / §4.185 / 本节）。
+
+### 六、产物
+
+`tests/parity/verify-runtime-qualification-workflow.mjs`（新判据 + 2 canary + 收口行）·
+审计 **§4.186** · PITFALLS **§4.299** · skill **§176** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 

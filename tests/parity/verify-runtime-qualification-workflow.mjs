@@ -444,4 +444,58 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   console.log(`UX Score: ${mods.length} 模块 / 合计 ${totalWeight} · 门槛 ${JSON.stringify(th)} —— 模板与记录器一致`);
 }
 
+// ── 观测规模（TASKS × APPS × ROUNDS）在模板与记录器两处必须一致（2026-10-09，审计 §4.186）──────
+// 【为什么】模板第 108 行写「`validate` 要求 **30 × 2 app × 2 round 共 120 条记录**」——
+//   **四个具体数字**；而记录器用的是 `TASKS.length * APPS.length * ROUNDS.length`（**派生**）。
+//   `APPS` / `ROUNDS` 是记录器里的**硬编码数组**（`['typora','mellow']` / `[1,2]`）
+//   ⇒ 若加第 3 轮或第 3 个应用，**模板的 120 会静默漂**（同族：§4.185 的「人工侧 vs 机器侧」）。
+// 【判据】模板的「N × M app × K round 共 P 条」四处数字必须 == 记录器的
+//   `TASKS.length` / `APPS.length` / `ROUNDS.length` / 乘积；模板里其他「共 N 条」也须一致。
+{
+  const REC = 'tests/qualification/ux-gate-recorder.mjs';
+  const TPL = 'docs/qualification/ux-score-gate-template.md';
+  const rec = readFileSync(resolve(root, REC), 'utf8').replace(/\r\n/g, '\n');
+  const countTasks = (s) => {
+    const b = (/const TASKS = \[([\s\S]*?)\n\];/.exec(s) ?? [])[1];
+    return b === undefined ? null : (b.match(/'[^']*'/g) ?? []).length;
+  };
+  const arrLen = (name) => {
+    const b = (new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`).exec(rec) ?? [])[1];
+    return b === undefined ? null : (b.match(/'[^']*'|\b\d+\b/g) ?? []).length;
+  };
+  const nTasks = countTasks(rec);
+  const nApps = arrLen('APPS');
+  const nRounds = arrLen('ROUNDS');
+  if (nTasks === null || nApps === null || nRounds === null) {
+    throw new Error(`${REC} 解析不到 TASKS / APPS / ROUNDS —— 判据锚点漂移`);
+  }
+  const total = nTasks * nApps * nRounds;
+  const tpl = readFileSync(resolve(root, TPL), 'utf8').replace(/\r\n/g, '\n');
+  const scaleRe = /(\d+)\s*×\s*(\d+)\s*app\s*×\s*(\d+)\s*round\s*共\s*(\d+)\s*条/;
+  const m = scaleRe.exec(tpl);
+  if (m === null) throw new Error(`${TPL} 找不到「N × M app × K round 共 P 条」—— 判据锚点漂移`);
+  const [dTasks, dApps, dRounds, dTotal] = [m[1], m[2], m[3], m[4]].map(Number);
+  if (dTasks !== nTasks || dApps !== nApps || dRounds !== nRounds) {
+    throw new Error(`观测规模不一致：${TPL} 写 ${dTasks} × ${dApps} app × ${dRounds} round，`
+      + `而记录器 = ${nTasks} 任务 × ${nApps} app × ${nRounds} round`);
+  }
+  if (dTotal !== total) {
+    throw new Error(`观测总数不一致：${TPL} 写「共 ${dTotal} 条」，而 ${nTasks}×${nApps}×${nRounds} = ${total}`);
+  }
+  // 模板里其他「共 N 条」（正文另有两处）
+  for (const t of [...tpl.matchAll(/共\s*(\d+)\s*条/g)].map((x) => Number(x[1]))) {
+    if (t !== total) {
+      throw new Error(`观测总数不一致：${TPL} 有「共 ${t} 条」，而记录器乘积 = ${total}`);
+    }
+  }
+  // canary：谓词与判定共用
+  if ((scaleRe.exec('30 × 2 app × 2 round 共 120 条记录') ?? []).slice(1).map(Number).join(',') !== '30,2,2,120') {
+    throw new Error('观测规模 canary 失效：模板形态取不到');
+  }
+  if (scaleRe.exec('无此形态') !== null) {
+    throw new Error('观测规模 canary 过宽：无锚点的样本被误判');
+  }
+  console.log(`UX gate scale: ${nTasks} 任务 × ${nApps} app × ${nRounds} round = ${total} 条 —— 模板与记录器一致`);
+}
+
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
