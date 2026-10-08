@@ -1385,8 +1385,11 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail(`${NOTICES} 漏了 Cargo 直接依赖：${missingCargo.join('、')}`
       + ' —— 实测：曾只列 tauri 与 tauri-plugin-dialog，而实际有 17 个');
   }
-  if (npmDeps.size < 10 || cargoDeps.size < 8) {
-    fail(`${NOTICES} 判据扫描面异常（npm ${npmDeps.size} / cargo ${cargoDeps.size}）—— 判据会空转`);
+  // ⚠️ 下限**贴着基线取**（实测 npm 28 / cargo 17）—— 取太松会失去鉴别力：
+  //    若只剩 1 个 `package.json` 被找到（≈15），松下限（10）**不会**报警。
+  if (npmDeps.size < 24 || cargoDeps.size < 14) {
+    fail(`${NOTICES} 判据扫描面异常（npm ${npmDeps.size} / cargo ${cargoDeps.size}，基线 28 / 17）`
+      + ' —— 判据会空转；若确实删过依赖，请同步下调下限并说明');
   }
   // canary：五向（判定与 canary 共用 declared / covered）
   const SYN = '| `mermaid` | ^11 | MIT |\n| `@codemirror/*` | ^6 | MIT |\n';
