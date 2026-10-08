@@ -27,6 +27,14 @@ import { relative, resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 const errors = [];
 const fail = (message) => errors.push(message);
+/**
+ * canary 计数 —— **从代码派生，不手写**（2026-10-09，审计 §4.172）。
+ * ⚠️ 立此条的原因：收口行原**手写**「canary 4 项全绿」。同型已在 `verify-package-conventions.mjs`
+ * 上被修过一次（那里手写「5 项」而实际 4 条）⇒ 本仓把「**手写的计数必然漂移**」记过，
+ * 但**没有系统化**。现改为每条 canary 断言都经本函数上报。
+ */
+let canaryCount = 0;
+const canary = (ok, message) => { canaryCount += 1; if (!ok) errors.push(message); };
 // Windows CI 以 CRLF 检出源码：不归一化会让下方锚点断言全部失配（假绿）。
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
@@ -101,20 +109,16 @@ for (const id of DISPATCH_EXEMPT) {
 // ── canary：合成夹具（谓词与解析器各验一次；不绑现实数据）────────────────────
 {
   const K = knownCommandIdsOf("{ id: 'a.b' }, { id: 'c.d' }", "id: 'e.f',");
-  if (!K.has('a.b') || !K.has('c.d') || !K.has('e.f')) {
-    errors.push('canary 失效：命令 id 集合解析器漏掉了某些形态');
-  }
-  if (dispatchedIdsOf("x.dispatch('p.q'); y.dispatch('r.s');").join(',') !== 'p.q,r.s') {
-    errors.push('canary 失效：`dispatch` 字面量解析器不正确');
-  }
+  canary(K.has('a.b') && K.has('c.d') && K.has('e.f'),
+    'canary 失效：命令 id 集合解析器漏掉了某些形态');
+  canary(dispatchedIdsOf("x.dispatch('p.q'); y.dispatch('r.s');").join(',') === 'p.q,r.s',
+    'canary 失效：`dispatch` 字面量解析器不正确');
   // 负样本-放宽：变量 / 模板参数**不得**被判成字面量（否则会制造假阳性）
-  if (dispatchedIdsOf('x.dispatch(variable); y.dispatch(`tpl`); z.dispatch("dq");').length !== 0) {
-    errors.push('canary 失效：变量 / 模板 / 双引号参数被判成了字面量（会制造假阳性）');
-  }
+  canary(dispatchedIdsOf('x.dispatch(variable); y.dispatch(`tpl`); z.dispatch("dq");').length === 0,
+    'canary 失效：变量 / 模板 / 双引号参数被判成了字面量（会制造假阳性）');
   // 负样本-放宽：`dispatch` 前缀不得误匹配（如 `xxxdispatch(`）
-  if (dispatchedIdsOf("xxxdispatch('nope')").length !== 0) {
-    errors.push('canary 失效：非 `.dispatch(` 的调用被误判');
-  }
+  canary(dispatchedIdsOf("xxxdispatch('nope')").length === 0,
+    'canary 失效：非 `.dispatch(` 的调用被误判');
 }
 
 if (errors.length > 0) {
@@ -123,5 +127,5 @@ if (errors.length > 0) {
 
 console.log(`Command id refs: ${KNOWN.size} 个已知命令 id；`
   + `扫到 ${calls} 处 \`dispatch('<字面量>')\`，**全部存在**`
-  + `（例外表 ${DISPATCH_EXEMPT.size} 项，刻意为空）；canary 4 项全绿。`
+  + `（例外表 ${DISPATCH_EXEMPT.size} 项，刻意为空）；canary ${canaryCount} 项全绿。`
   + '（范围限制：只覆盖字面量；`dispatch(变量)` / 模板插值不在覆盖内）');

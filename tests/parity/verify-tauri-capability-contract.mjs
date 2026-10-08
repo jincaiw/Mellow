@@ -43,6 +43,14 @@ import { resolve, relative } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 const errors = [];
 const fail = (message) => errors.push(message);
+/**
+ * canary 计数 —— **从代码派生，不手写**（2026-10-09，审计 §4.172）。
+ * ⚠️ 实测：收口行原**手写**「canary 13 项全绿」，而实际只有 **12** 条断言 ⇒ **已经漂了 1**。
+ * 同型先在 `verify-package-conventions.mjs` 上被修过一次（手写 5 而实际 4）
+ * ⇒ 「手写的计数必然漂移」被记过，但**没有系统化**。现每条 canary 断言都经本函数上报。
+ */
+let canaryCount = 0;
+const canary = (ok, message) => { canaryCount += 1; if (!ok) errors.push(message); };
 
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
@@ -366,62 +374,50 @@ for (const [key, reason] of PLUGIN_PAIR_EXEMPT) {
 // ── ④ canary：三向 + 共用同一展开/映射逻辑 ─────────────────────────────────
 {
   // 正样本：`core:window:default` 必须被展开出 `allow-is-maximized`（default 集里的成员）
-  if (!expandPerms(new Set(['core:window:default'])).has('core:window:allow-is-maximized')) {
-    errors.push('canary 失效：core:window:default 未被展开（展开逻辑坏了 ⇒ 会把已授予的判成未授予）');
-  }
+  canary(expandPerms(new Set(['core:window:default'])).has('core:window:allow-is-maximized'),
+    'canary 失效：core:window:default 未被展开（展开逻辑坏了 ⇒ 会把已授予的判成未授予）');
   // 正样本：`core:default` 必须能**嵌套**展开出 window 的 default（否则漏判一大片）
-  if (!expandPerms(new Set(['core:default'])).has('core:window:allow-inner-size')) {
-    errors.push('canary 失效：core:default 未嵌套展开 core:window:default');
-  }
+  canary(expandPerms(new Set(['core:default'])).has('core:window:allow-inner-size'),
+    'canary 失效：core:default 未嵌套展开 core:window:default');
   // 正样本：命令名 → 权限的映射必须成立
-  if (cmdToPerm.get('set_title') !== 'core:window:allow-set-title') {
-    errors.push('canary 失效：set_title → 权限的映射不正确');
-  }
+  canary(cmdToPerm.get('set_title') === 'core:window:allow-set-title',
+    'canary 失效：set_title → 权限的映射不正确');
   // 负样本-缺条：写操作**不在** default 里（这是本护栏能成立的前提）
-  if (expandPerms(new Set(['core:window:default'])).has('core:window:allow-set-title')) {
-    errors.push('canary 失效：allow-set-title 竟然在 default 集里 —— 本护栏的前提（写操作需显式授权）不成立，'
+  canary(!expandPerms(new Set(['core:window:default'])).has('core:window:allow-set-title'),
+    'canary 失效：allow-set-title 竟然在 default 集里 —— 本护栏的前提（写操作需显式授权）不成立，'
       + '必须重新核实判定');
-  }
   // 负样本-放宽：一个**不存在**的权限不得被判为已授予
-  if (expandPerms(new Set(['core:window:default'])).has('core:window:allow-__ghost__')) {
-    errors.push('canary 失效：不存在的权限被判为已授予（谓词过宽）');
-  }
+  canary(!expandPerms(new Set(['core:window:default'])).has('core:window:allow-__ghost__'),
+    'canary 失效：不存在的权限被判为已授予（谓词过宽）');
   // camelCase → snake_case 映射
-  if (snake('setAlwaysOnTop') !== 'set_always_on_top') {
-    errors.push('canary 失效：camelCase → snake_case 映射不正确');
-  }
+  canary(snake('setAlwaysOnTop') === 'set_always_on_top',
+    'canary 失效：camelCase → snake_case 映射不正确');
   // 窗口 label 匹配：**精确名不得匹配带后缀的 label**（这是 §4.98 缺陷能成立的根因）
-  if (matchesAny('main-1728192000000', ['main'])) {
-    errors.push('canary 失效：精确模式 `main` 竟然匹配了 `main-1728192000000` —— 本护栏的前提不成立，'
+  canary(!matchesAny('main-1728192000000', ['main']),
+    'canary 失效：精确模式 `main` 竟然匹配了 `main-1728192000000` —— 本护栏的前提不成立，'
       + '必须重新核实 §4.98 的判定');
-  }
   // glob：`main-*` 必须匹配，且不得匹配别的家族
-  if (!matchesAny('main-1728192000000', ['main-*'])) {
-    errors.push('canary 失效：glob 模式 `main-*` 未匹配 `main-1728192000000`');
-  }
-  if (matchesAny('other-1', ['main-*'])) {
-    errors.push('canary 失效：glob 模式 `main-*` 误匹配了 `other-1`');
-  }
+  canary(matchesAny('main-1728192000000', ['main-*']),
+    'canary 失效：glob 模式 `main-*` 未匹配 `main-1728192000000`');
+  canary(!matchesAny('other-1', ['main-*']),
+    'canary 失效：glob 模式 `main-*` 误匹配了 `other-1`');
   // 窗口 label 解析：`format!("main-{stamp}")` 必须被解析成 `main-*`
   const parsed = parseWindowLabels(
     'let label = format!("main-{stamp}");\n'
     + 'let builder = tauri::webview::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App("index.html".into()));',
     'canary.rs');
-  if (parsed.length !== 1 || parsed[0].label !== 'main-*') {
-    errors.push(`canary 失效：format! 形式的窗口 label 未被解析成 glob（得到 ${JSON.stringify(parsed)}）`);
-  }
+  canary(parsed.length === 1 && parsed[0].label === 'main-*',
+    `canary 失效：format! 形式的窗口 label 未被解析成 glob（得到 ${JSON.stringify(parsed)}）`);
   const parsed2 = parseWindowLabels(
     'let builder = tauri::webview::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()));',
     'canary.rs');
-  if (parsed2.length !== 1 || parsed2[0].label !== 'main') {
-    errors.push(`canary 失效：字面量窗口 label 未被解析（得到 ${JSON.stringify(parsed2)}）`);
-  }
+  canary(parsed2.length === 1 && parsed2[0].label === 'main',
+    `canary 失效：字面量窗口 label 未被解析（得到 ${JSON.stringify(parsed2)}）`);
   // 插件名解析：`init()` 与 `Builder::new().build()` 两种形态都要认出来
   const plug = [...'  .plugin(tauri_plugin_dialog::init())\n  .plugin(tauri_plugin_updater::Builder::new().build())'
     .matchAll(pluginRe)].map((m) => m[1].replace(/_/g, '-'));
-  if (plug.length !== 2 || !plug.includes('dialog') || !plug.includes('updater')) {
-    errors.push(`canary 失效：插件名未被正确解析（得到 ${JSON.stringify(plug)}）`);
-  }
+  canary(plug.length === 2 && plug.includes('dialog') && plug.includes('updater'),
+    `canary 失效：插件名未被正确解析（得到 ${JSON.stringify(plug)}）`);
 }
 
 if (errors.length > 0) {
@@ -435,4 +431,4 @@ console.log(`Tauri capability contract: 声明权限 ${declaredPerms.size} 项 �
   + `Rust 创建窗口 label ${createdWindows.length} 个（${winList}）全部被 capability windows 覆盖 `
   + `[${capWindowPatterns.join(', ')}]；`
   + `插件注册 ${registeredPlugins.size} 个 ⇄ 授权命名空间 ${grantedNamespaces.size} 个全部成对；`
-  + `生成快照与源一致 ✅；例外表 ${gapList.length} 项（刻意为空）；canary 13 项全绿。`);
+  + `生成快照与源一致 ✅；例外表 ${gapList.length} 项（刻意为空）；canary ${canaryCount} 项全绿。`);

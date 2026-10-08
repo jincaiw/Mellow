@@ -11277,7 +11277,7 @@ PITFALLS **§4.244–§4.248** · skill **§157** + 自查清单 +3 · `MEMORY.m
 `verify-parity-ledger.mjs`（2 处阈值同步 + 4 处标记）· `verify-doc-code-refs.mjs`（1 处阈值同步 + 标记）·
 `verify-release-gate.mjs`（2 处标记 + **判据 ⑥** + 4 canary）· `verify-visual-golden.mjs`（1 处标记）·
 `tools/audit-guard-bounds.mjs`（补认 `<=` / `>=` / `>`）· 审计 **§4.168** ·
-PITFALLS **§4.249–§4.252** · skill **§158** + 自查清单 +3 · `MEMORY.md` · `2026-10-09.md`。
+PITFALLS **§4.249–PITFALLS §4.252** · skill **§158** + 自查清单 +3 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
@@ -11356,7 +11356,7 @@ decoration 由插件**异步**施加；`sleep(200)` 只是**赌 200ms 够用**�
 
 `packages/editor-core/CoreEditor/test/utils/helpers.ts`（+`waitFor`）·
 `.../test/task.test.ts`（4 处改「等状态」）· `packages/editor-core/UPSTREAM.md`（19 → 21 + 2 行）·
-审计 **§4.169** · PITFALLS **§4.253–§4.256** · skill **§159** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+审计 **§4.169** · PITFALLS **§4.253–PITFALLS §4.256** · skill **§159** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
@@ -11430,7 +11430,7 @@ decoration 由插件**异步**施加；`sleep(200)` 只是**赌 200ms 够用**�
 ### 六、产物
 
 `tests/parity/verify-doc-code-refs.mjs`（新增「升版 4 处一致」判据 + 2 canary + 自报行）·
-审计 **§4.170** · PITFALLS **§4.257–§4.259** · skill **§160** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+审计 **§4.170** · PITFALLS **§4.257–PITFALLS §4.259** · skill **§160** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
@@ -11499,7 +11499,68 @@ decoration 由插件**异步**施加；`sleep(200)` 只是**赌 200ms 够用**�
 
 `tests/parity/verify-doc-code-refs.mjs`（扫描面 1 → 2 + 例外**按文档**分表 + 防空转 + 3 canary）·
 `tests/qualification/packaging-gate.md`（顶部加真值源指针）· 审计 **§4.171** ·
-PITFALLS **§4.260–§4.262** · skill **§161** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+PITFALLS **§4.260–PITFALLS §4.262** · skill **§161** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
+## 4.172 护栏收口行的「canary 计数」**3 处里 2 处已漂**（13→12、29→31）—— 全部改为**派生**并落判据 ⑦（2026-10-09）
+
+### 一、发现（普查「手写计数」）
+
+本仓**已有先例**：`verify-package-conventions.mjs` 的收口行原**手写**「canary 5 项全绿」，
+而实际只有 **4** 条断言（§4.161 已修，并留下注释「**手写的计数必然漂移**」）。
+⇒ 普查其余护栏，找到 **3 处**手写 canary 计数。**把每处改为「派生」后跑一遍，实测**：
+
+| 护栏 | 手写 | **派生实测** | 判定 |
+|---|---|---|---|
+| `verify-command-id-refs.mjs` | 4 | **4** | ✅ |
+| `verify-tauri-capability-contract.mjs` | **13** | **12** | ❌ **漂 1** |
+| `verify-tauri-command-contract.mjs` | **29** | **31** | ❌ **漂 2** |
+
+⇒ **3 处里 2 处是错的**。**「手写的计数必然漂移」被记过、也被修过一次，但从未系统化**
+（同 §4.170「形态被记录过 ≠ 有判据」、§4.171「只修了一个对象」）。
+
+### 二、处置
+
+1. **3 处全部改为派生**：`let canaryCount = 0; const canary = (ok, message) => { canaryCount += 1; if (!ok) errors.push(message); };`
+   + 每条 canary 断言经它上报 + 收口行打印 `${canaryCount}`。
+2. ⚠️ `verify-tauri-command-contract.mjs` 里**循环内**的那条 canary 改为**集合式断言**
+   （先算出违规集合再断言一次）—— 否则收口行的数字会**随登记表大小变化**，
+   失去「护栏健康度读数」的价值。
+3. **新增 CI 判据 ⑦**（`verify-release-gate.mjs`）：**收口行里的 canary 计数不得是字面数字**
+   （必须先**剥注释**）；+ **防空转**（≥ **3** 个派生）+ **3 条 canary**。
+
+### 三、⚠️ 立 ⑦ 时**又三次被自己抓到**
+
+1. **第 6 次「判据命中自己」**：`derived7` 首版只测 `` ${canaryCount} `` ⇒ **本文件**（它的 fail 消息里
+   含该字样，作为「该怎么改」的示例）**也被数了进去** ⇒ 计数虚高 1 ⇒ **防空转下限永远满足**。
+   改成「必须**定义了** `canary` 助手」仍不行 —— fail 消息里**也**写着 `const canary = (ok,`
+   ⇒ **必须显式排除自身**（`SELF7`）。⚠️ 「收紧谓词」在这里不成立（参数名 `msg` vs `message` 属实现细节）。
+2. **「剥注释」这个前提本身被 canary 锁住**：说明性文字会**引用**坏形态
+   （如「原手写「canary 5 项全绿」」）⇒ 不剥注释会把**解释**当成**违规**
+   （同 §4.156「散文提及满足了判据」）⇒ 加 canary ③ 专锁「剥注释生效」。
+3. **注入验证的用例错**（本会话第 2 次，同 §4.160/PITFALLS §4.252）：首版只去掉 **1** 处派生 ⇒ 4 → 3
+   仍 ≥ 下限 3 ⇒ **判据正确地没报**；改成同时去掉 **2** 处才转红。
+
+### 四、注入验证（3/3）
+
+① 把派生计数改回字面量 ⇒ **转红**；② 加**注释**引用坏形态 ⇒ **必须仍绿**（证明剥注释生效、防假阳性）；
+③ 同时去掉两处派生（4 → 2 < 下限 3）⇒ **防空转转红**；还原后**转绿**。
+
+### 五、教训
+
+1. **「手写的计数必然漂移」已被记过、也被修过一次 ⇒ 必须系统化**（本轮 3 处里 2 处错）。
+   ⇒ 凡「某个数字在多处手写」，**要么派生，要么落判据**。
+2. **判据的谓词要精确到「定义」而不是「出现」** —— 否则会命中**自己的消息文本**
+   （self-hit 第 6 次）。⚠️ 当「收紧谓词」依赖实现细节（参数名）时，**显式排除自身**才稳。
+3. **「解释坏形态」的文字会被判据命中** ⇒ **先剥注释**，并**给「剥注释」本身配 canary**。
+4. **循环里的 canary 要改成集合式断言** —— 让收口行的数字**稳定**，它才是「健康度读数」。
+
+### 六、产物
+
+`verify-command-id-refs.mjs` · `verify-tauri-capability-contract.mjs` · `verify-tauri-command-contract.mjs`
+（3 处改为派生计数；含一处循环改集合式）· `verify-release-gate.mjs`（**判据 ⑦** + 3 canary）·
+审计 **§4.172** · PITFALLS **§4.263–PITFALLS §4.266** · skill **§162** + 自查清单 +2 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 

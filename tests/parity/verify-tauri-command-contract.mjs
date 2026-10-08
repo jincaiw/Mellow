@@ -43,6 +43,15 @@ import { resolve, relative } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 const errors = [];
 const fail = (message) => errors.push(message);
+/**
+ * canary 计数 —— **从代码派生，不手写**（2026-10-09，审计 §4.172）。
+ * ⚠️ 立此条的原因：收口行原**手写**「canary 29 项」。同型先在 `verify-package-conventions.mjs`
+ * 上被修过一次（手写「5 项」而实际 4 条），并在 `verify-tauri-capability-contract.mjs` 上
+ * 实测到**已经漂了 1**（手写 13 而实际 12）⇒ **手写的计数必然漂移**，且此前**没有系统化**。
+ * ⇒ 每条 canary 断言都经本函数上报，收口行打印 `canaryCount`。
+ */
+let canaryCount = 0;
+const canary = (ok, message) => { canaryCount += 1; if (!ok) errors.push(message); };
 
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
@@ -518,24 +527,22 @@ for (const [key, reason] of OPTION_ARG_REQUIRED_AT_CALLSITE) {
   const probe = parseCommandParams(
     '#[tauri::command]\npub fn zeta_cmd(a: String, b: Option<String>) -> R { x }\n',
   ).get('zeta_cmd');
-  if (!probe || probe.get('b')?.optional !== true || probe.get('a')?.optional !== false) {
-    errors.push('⑤b canary 失效：`Option<T>` 形参未被判为 optional —— 整条判据会失去靶子');
-  }
+  canary(Boolean(probe) && probe.get('b')?.optional === true && probe.get('a')?.optional === false,
+    '⑤b canary 失效：`Option<T>` 形参未被判为 optional —— 整条判据会失去靶子');
   // 负样本-放宽：`Option` 参数**漏传**必须能被本判据的谓词识别
   const sample = parseInvokeArgs("await invoke('zeta_cmd', { a });\n")[0];
-  if (!sample || sample.cmd !== 'zeta_cmd' || sample.keys.includes('b')) {
-    errors.push('⑤b canary 失效：漏传 `b` 的调用样本未被解析成「缺 b」');
-  }
-  if (OPTION_ARG_REQUIRED_AT_CALLSITE.size === 0) {
-    errors.push('⑤b canary 失效：登记表为空 —— 判据会空转');
-  }
+  canary(Boolean(sample) && sample.cmd === 'zeta_cmd' && !sample.keys.includes('b'),
+    '⑤b canary 失效：漏传 `b` 的调用样本未被解析成「缺 b」');
+  canary(OPTION_ARG_REQUIRED_AT_CALLSITE.size > 0,
+    '⑤b canary 失效：登记表为空 —— 判据会空转');
   // 负样本-空表方向：表里每一项都必须能在真实 `cmdParams` 里找到，否则登记是化石
-  for (const k of OPTION_ARG_REQUIRED_AT_CALLSITE.keys()) {
+  // ⚠️ 用**集合式**断言（而不是在循环里逐条 push）：让「canary 计数」保持**稳定**
+  //    —— 逐条计数会让收口行的数字随登记表大小变化，失去「护栏健康度」的读数价值。
+  const fossils = [...OPTION_ARG_REQUIRED_AT_CALLSITE.keys()].filter((k) => {
     const [c, p] = [k.slice(0, k.indexOf('.')), k.slice(k.indexOf('.') + 1)];
-    if (!cmdParams.get(c)?.has(p)) {
-      errors.push(`⑤b canary 失效：登记项 ${k} 在真实 Rust 形参里找不到（化石条目）`);
-    }
-  }
+    return !cmdParams.get(c)?.has(p);
+  });
+  canary(fossils.length === 0, `⑤b canary 失效：登记项 ${fossils.join(', ')} 在真实 Rust 形参里找不到（化石条目）`);
 }
 
 // ── ⑥ 事件名契约：Rust emit ⇄ 前端 listen（双向）──────────────────────────────
@@ -609,49 +616,41 @@ for (const [key, reason] of EVENT_EXEMPT) {
   const Dp = parseDeclared(rsPos);
   const Rp = parseRegistered(libPos);
   const Fp = parseInvoked(tsPos);
-  if (!Dp.has('alpha_cmd')) errors.push('canary 失效：正样本 #[tauri::command] 未被解析');
-  if (!(Rp ?? []).includes('alpha_cmd')) errors.push('canary 失效：正样本 generate_handler 未被解析');
-  if (!Fp.has('alpha_cmd')) errors.push('canary 失效：正样本 invoke（含嵌套泛型）未被解析');
+  canary(Dp.has('alpha_cmd'), 'canary 失效：正样本 #[tauri::command] 未被解析');
+  canary((Rp ?? []).includes('alpha_cmd'), 'canary 失效：正样本 generate_handler 未被解析');
+  canary(Fp.has('alpha_cmd'), 'canary 失效：正样本 invoke（含嵌套泛型）未被解析');
 
   // 负样本-缺条：声明了但没注册 ⇒ D∖R 必须非空
   const rsNeg = '#[tauri::command]\npub fn beta_cmd() {}\n';
   const Dn = parseDeclared(rsNeg);
   const dNotR = [...Dn.keys()].filter((x) => !new Set(Rp ?? []).has(x));
-  if (dNotR.length !== 1 || dNotR[0] !== 'beta_cmd') {
-    errors.push('canary 失效：负样本「声明未注册」未被判定为 D∖R');
-  }
+  canary(dNotR.length === 1 && dNotR[0] === 'beta_cmd',
+    'canary 失效：负样本「声明未注册」未被判定为 D∖R');
 
   // 负样本-放宽：调一个不存在的命令 ⇒ F∖R 必须非空
   const Fn = parseInvoked("await invoke('ghost_cmd');\n");
   const fNotR = [...Fn].filter((x) => !new Set(Rp ?? []).has(x));
-  if (fNotR.length !== 1 || fNotR[0] !== 'ghost_cmd') {
-    errors.push('canary 失效：负样本「调用未注册命令」未被判定为 F∖R');
-  }
+  canary(fNotR.length === 1 && fNotR[0] === 'ghost_cmd',
+    'canary 失效：负样本「调用未注册命令」未被判定为 F∖R');
 
   // 负样本-注释：注释里的 invoke 必须**不**被算作调用（否则会把已修好的问题报成缺陷）
-  if (parseInvoked("// invoke('ghost_cmd')\n * invoke('ghost_cmd')\n").size !== 0) {
-    errors.push('canary 失效：注释行里的 invoke 被误算为真实调用');
-  }
+  canary(parseInvoked("// invoke('ghost_cmd')\n * invoke('ghost_cmd')\n").size === 0,
+    'canary 失效：注释行里的 invoke 被误算为真实调用');
   // 负样本-成员调用：bridge.invoke / imageHost.invoke 是 bridge 协议，**不**是 Tauri 命令
-  if (parseInvoked("bridge.invoke('copyFile', { x });\nimageHost.invoke('writeBinary');\n").size !== 0) {
-    errors.push('canary 失效：成员调用（bridge.invoke / imageHost.invoke）被误算为 Tauri 命令');
-  }
+  canary(parseInvoked("bridge.invoke('copyFile', { x });\nimageHost.invoke('writeBinary');\n").size === 0,
+    'canary 失效：成员调用（bridge.invoke / imageHost.invoke）被误算为 Tauri 命令');
   // 正样本-成员调用：真 Tauri 全局桥必须被认出来
-  if (!parseInvoked("window.__TAURI__.core.invoke('bridge_call', { message });\n").has('bridge_call')) {
-    errors.push('canary 失效：__TAURI__.core.invoke 未被认作 Tauri 调用');
-  }
+  canary(parseInvoked("window.__TAURI__.core.invoke('bridge_call', { message });\n").has('bridge_call'),
+    'canary 失效：__TAURI__.core.invoke 未被认作 Tauri 调用');
   // 包装器：显式清单里的名字必须被当作 invoke 同义词
-  if (!parseInvoked("await callSpellcheck<boolean>('spellcheck_available');\n").has('spellcheck_available')) {
-    errors.push('canary 失效：包装器清单未生效（callSpellcheck 的参数未被算作命令）');
-  }
+  canary(parseInvoked("await callSpellcheck<boolean>('spellcheck_available');\n").has('spellcheck_available'),
+    'canary 失效：包装器清单未生效（callSpellcheck 的参数未被算作命令）');
   // 找不到 generate_handler 必须返回 null（而不是空数组 ⇒ 静默把 R 变空 ⇒ 全部误报）
-  if (parseRegistered('pub fn run() {}\n') !== null) {
-    errors.push('canary 失效：缺少 generate_handler 时 parseRegistered 未返回 null');
-  }
+  canary(parseRegistered('pub fn run() {}\n') === null,
+    'canary 失效：缺少 generate_handler 时 parseRegistered 未返回 null');
   // ── 实参字段契约（⑤）的 canary：**用合成夹具**（不绑现实数据）──
-  const eq = (got, want, what) => {
-    if (got !== want) errors.push(`实参键 canary 失效：${what} 期望 ${JSON.stringify(want)}、实得 ${JSON.stringify(got)}`);
-  };
+  const eq = (got, want, what) => canary(got === want,
+    `实参键 canary 失效：${what} 期望 ${JSON.stringify(want)}、实得 ${JSON.stringify(got)}`);
   eq(toArgKey('path'), 'path', 'toArgKey(path)');
   eq(toArgKey('default_name'), 'defaultName', 'toArgKey(default_name)');
   // ⚠️ 这条是「防我自己的假阳性」：heck 的 lowerCamelCase 会丢掉下划线空段
@@ -661,13 +660,12 @@ for (const [key, reason] of EVENT_EXEMPT) {
   const rsSample = '#[tauri::command]\n'
     + 'pub async fn f(a: String, b: Option<String>, state: tauri::State<X>, window: tauri::WebviewWindow) -> R {\n';
   const p = parseCommandParams(rsSample).get('f');
-  if (!p || p.size !== 2 || !p.get('a') || p.get('a').optional !== false || p.get('b').optional !== true) {
-    errors.push(`canary 失效：parseCommandParams 结果不对（得到 ${JSON.stringify(p && [...p])}）`);
-  }
+  canary(Boolean(p) && p.size === 2 && p.get('a') && p.get('a').optional === false && p.get('b').optional === true,
+    `canary 失效：parseCommandParams 结果不对（得到 ${JSON.stringify(p && [...p])}）`);
   // 负样本-放宽：注入型参数（State / WebviewWindow）不得被算作实参
-  if (p && (p.has('state') || p.has('window'))) errors.push('canary 失效：注入型参数被算作实参');
+  canary(!(p && (p.has('state') || p.has('window'))), 'canary 失效：注入型参数被算作实参');
   // 首版踩过：不剥 `pub fn f` 前缀 ⇒ 第一个形参永远解析不到
-  if (!p || !p.has('a')) errors.push('canary 失效：第一个形参未被解析（形参文本必须只取括号内部）');
+  canary(Boolean(p) && p.has('a'), 'canary 失效：第一个形参未被解析（形参文本必须只取括号内部）');
 
   const keys1 = parseInvokeArgs("await invoke('f', { a, b: 1, c: x.y });\n")[0]?.keys;
   eq((keys1 ?? []).join(','), 'a,b,c', 'parseInvokeArgs 简写 + 具名键');
@@ -688,8 +686,8 @@ for (const [key, reason] of EVENT_EXEMPT) {
   eq([...ev3].join(','), 'a://z', 'parseEmittedEvents(.emit_to) 标识符 label 也要跳过');
   // 负样本-放宽：只 emit 不 listen / 只 listen 不 emit 必须能被判出（用合成集合直接验谓词）
   const A = new Set(['only.emit']); const B = new Set(['only.listen']);
-  if ([...B].filter((x) => !A.has(x)).length !== 1) errors.push('事件契约 canary 失效：只 listen 不 emit 未被判出');
-  if ([...A].filter((x) => !B.has(x)).length !== 1) errors.push('事件契约 canary 失效：只 emit 不 listen 未被判出');
+  canary([...B].filter((x) => !A.has(x)).length === 1, '事件契约 canary 失效：只 listen 不 emit 未被判出');
+  canary([...A].filter((x) => !B.has(x)).length === 1, '事件契约 canary 失效：只 emit 不 listen 未被判出');
   const ev4 = parseListenedEvents("import('@tauri-apps/api/event').then(({ listen }) => listen('a://q', () => {}));\n");
   eq([...ev4].join(','), 'a://q', 'parseListenedEvents');
   // 注释里的 listen 不得被算作监听
@@ -706,6 +704,6 @@ console.log(`Tauri command contract: 声明 D=${D.size} / 注册 R=${R.size} / �
   + `（按 Tauri 的真实键变换 to_lower_camel_case；例外表 ${ARG_FIELD_EXEMPT.size} 项，刻意为空）；`
   + `**事件名契约**：Rust emit ${emittedEvents.size} 个 ⇄ 前端 listen ${listenedEvents.size} 个，双向一致`
   + `（例外表 ${EVENT_EXEMPT.size} 项，刻意为空）；`
-  + `包装器清单 ${INVOKE_WRAPPERS.length} 项已双向自检；canary 29 项`
+  + `包装器清单 ${INVOKE_WRAPPERS.length} 项已双向自检；canary ${canaryCount} 项`
   + '（含注释行 / 成员调用 bridge.invoke / __TAURI__ 全局桥 / 嵌套泛型 / 包装器 / 缺 generate_handler /'
   + ' 实参键变换含前导下划线 / 注入型参数 / spread / 大小写敏感 / emit_to 的 label 位置 / 事件双向）全绿。');

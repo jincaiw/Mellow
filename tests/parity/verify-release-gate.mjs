@@ -1274,6 +1274,64 @@ if (driftedMissing.length === 0) {
   }
 }
 
+// ── ⑦ 护栏收口行的「canary 计数」不得手写（2026-10-09，审计 §4.172）────────
+// 【判据】护栏收口行里的 canary 计数必须是**派生**的（`${canaryCount}`），**不得是字面数字**。
+// 【为什么】「手写的计数必然漂移」本仓**已记过**、且**已修过一次**
+//   （`verify-package-conventions.mjs`：收口行原手写「canary 5 项」而实际 **4** 条）；
+//   本轮普查**其余 3 处**手写计数，实测到 `verify-tauri-capability-contract.mjs` **已经漂了 1**
+//   （手写 13 而实际 **12**）⇒ **形态记过 ≠ 系统化**（同 §4.170/§4.171）。
+// 【处置】3 处全部改为 `canary(ok, msg)` 派生计数；本判据防新增。
+{
+  // ⚠️ 模式**运行时拼接**（本文件自己也在扫描面里 ⇒ 写字面量会被自己命中，§4.237 的教训）
+  const CANARY_LITERAL = new RegExp(`canary\\s+${'\\d'}+\\s*项`);
+  // ⚠️ **先剥注释**：说明性文字里会**引用**这个坏形态（如「原手写「canary 5 项全绿」」），
+  //   不剥会把**解释**当成**违规**（同 §4.156「散文提及满足了判据」的老坑）。
+  const stripLineComments = (src) => src.split('\n')
+    .map((l) => l.replace(/(^|[^:'"`])\/\/.*$/, '$1'))
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    .join('\n');
+  const guards7 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const offenders7 = [];
+  let derived7 = 0;
+  // ⚠️ **显式排除自身**：本文件在**它的 fail 消息里**同时写着 `const canary = (ok,` 与 `${canaryCount}`
+  //   （作为「该怎么改」的示例）⇒ 两个谓词都会命中自己 ⇒ 计数虚高 1 ⇒ 防空转下限**永远满足**
+  //   （本会话第 6 次「判据命中自己」：§4.156 / §4.157 / §4.237 / §4.240 / §4.168 / 本节）。
+  //   ⚠️ 换成「收紧谓词」不成立（参数名 `msg` vs `message` 属实现细节）⇒ **显式排除**才是稳的。
+  const SELF7 = 'verify-release-gate.mjs';
+  for (const f of guards7) {
+    const src = stripLineComments(read(`tests/parity/${f}`));
+    if (f !== SELF7 && /const canary = \(ok,/.test(src) && /\$\{canaryCount\}/.test(src)) derived7 += 1;
+    src.split('\n').forEach((l, i) => {
+      if (CANARY_LITERAL.test(l)) offenders7.push(`${f}:${i + 1}`);
+    });
+  }
+  if (offenders7.length > 0) {
+    fail(`收口行里的 canary 计数是**手写**的：${offenders7.join('、')} —— 手写的计数**必然漂移**`
+      + '（实测两次：一次手写 5 而实际 4、一次手写 13 而实际 12）⇒ 改为**派生**：'
+      + '`let canaryCount = 0; const canary = (ok, msg) => { canaryCount += 1; if (!ok) errors.push(msg); };`'
+      + ' + 收口行打印 `${canaryCount}`');
+  }
+  // 防空转：必须**至少**扫到 3 个「派生」的收口行（否则判据已不覆盖任何护栏）
+  if (derived7 < 3) {
+    fail(`只有 ${derived7} 个护栏的收口行用了**派生**的 canary 计数（下限 3 = 2026-10-09 实测）`
+      + ' —— 判据范围萎缩会让本判据空转');
+  }
+  // canary ①（正样本）：派生形态不得被判为手写
+  if (CANARY_LITERAL.test(`canary ${'${canaryCount}'} 项全绿`)) {
+    fail('⑦ canary 失效：派生形态被误判为手写');
+  }
+  // canary ②（负样本）：手写形态必须能检出（用**拼接**构造，避免自己命中自己）
+  if (!CANARY_LITERAL.test(`canary ${4} 项全绿`)) {
+    fail('⑦ canary 失效：手写形态未被检出（判据已退化成空真）');
+  }
+  // canary ③（前提自检）：**剥注释**必须真的生效 —— 否则说明性引用会被当成违规
+  if (CANARY_LITERAL.test(stripLineComments(`// 原手写「canary ${5} 项全绿」`))) {
+    fail('⑦ canary 失效：剥注释未生效（说明性引用会被误判为违规）');
+  }
+}
+
 // ── qualification README 的门禁表数字必须与实际一致（2026-10-01）────────────
 // 立此节的必要性：`tests/qualification/README.md` 是 **ADR-0019 §3 Gate 条款**指定的
 // 「三平台 Pass/Fail 表」载体，而它的**护栏数量**长期未刷新 —— 实测：写「14 个」而实际 **17 个**
