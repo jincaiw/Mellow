@@ -10139,7 +10139,7 @@ Node 的 `spawn` 在无 shell 时**无法执行 `.cmd`**（抛 `ENOENT`）⇒ �
 
 `tests/benchmark/{ime-matrix-linux,ime-matrix,generate-fixtures}.mjs` · 手册（§0 素材路径 + §2.4 D1 注记）·
 `tests/parity/verify-doc-code-refs.mjs`（+⑮⑯ 两条判据与 canary）· 审计 **§4.152** ·
-PITFALLS **§4.210–PITFALLS §4.211** · skill（+1 节 + 自查清单 +2 条）· `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.210–§4.211** · skill（+1 节 + 自查清单 +2 条）· `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10224,7 +10224,7 @@ PITFALLS **§4.210–PITFALLS §4.211** · skill（+1 节 + 自查清单 +2 条�
 
 `tests/qualification/README.md`（4 处数字 + 覆盖边界说明 + 表格标题下的真值源指针）·
 `tests/parity/verify-release-gate.mjs`（+两条判据与 canary；`truthOf` 共用谓词）· 审计 **§4.153** ·
-PITFALLS **§4.212–PITFALLS §4.213** · skill **§142–§143** + 自查清单 +2 条 · `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.212–§4.213** · skill **§142–§143** + 自查清单 +2 条 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10301,7 +10301,7 @@ PITFALLS **§4.212–PITFALLS §4.213** · skill **§142–§143** + 自查清�
 
 `docs/specs/runtime-qualification-plan.md`（§9 对账表 + 结论 + 刷新说明）·
 `tests/qualification/README.md`（刷新 + 边界更正）· `tests/parity/verify-doc-code-refs.mjs`（+⑰）·
-审计 **§4.154** · PITFALLS **§4.214–PITFALLS §4.215** · skill **§144** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.154** · PITFALLS **§4.214–§4.215** · skill **§144** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10359,7 +10359,7 @@ PITFALLS **§4.212–PITFALLS §4.213** · skill **§142–§143** + 自查清�
 ### 七、产物
 
 `README.md` · `docs/plans/typora-parity-master-plan.md` · `tests/parity/verify-doc-code-refs.mjs`（+⑱）·
-审计 **§4.155** · PITFALLS **§4.216–PITFALLS §4.217** · skill **§145** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.155** · PITFALLS **§4.216–§4.217** · skill **§145** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10420,7 +10420,7 @@ PITFALLS **§4.212–PITFALLS §4.213** · skill **§142–§143** + 自查清�
 ### 七、产物
 
 `THIRD_PARTY_NOTICES.md`（重写）· `tests/parity/verify-doc-code-refs.mjs`（+⑲）· 审计 **§4.156** ·
-PITFALLS **§4.218–PITFALLS §4.219** · skill **§146** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.218–§4.219** · skill **§146** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10475,7 +10475,7 @@ PITFALLS **§4.218–PITFALLS §4.219** · skill **§146** + 自查清单 +2 · 
 ### 七、产物
 
 `packages/settings/{README.md,package.json,src/index.ts}` · `tests/parity/verify-doc-code-refs.mjs`（+⑳）·
-审计 **§4.157** · PITFALLS **§4.220–PITFALLS §4.221** · skill **§147** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.157** · PITFALLS **§4.220–§4.221** · skill **§147** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10536,7 +10536,7 @@ PITFALLS **§4.218–PITFALLS §4.219** · skill **§146** + 自查清单 +2 · 
 
 `docs/adr/ADR-0021-platform-build-matrix-pass.md`（追加更正块）·
 `docs/superpowers/specs/2026-08-11-image-file-ops-design.md`（更正声明）·
-`tests/parity/verify-doc-code-refs.mjs`（扫描面扩容）· 审计 **§4.158** · PITFALLS **§4.222–PITFALLS §4.223** ·
+`tests/parity/verify-doc-code-refs.mjs`（扫描面扩容）· 审计 **§4.158** · PITFALLS **§4.222–§4.223** ·
 skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
@@ -10590,7 +10590,7 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 ### 六、产物
 
 `docs/architecture/README.md` · `AGENTS.md` · `tests/parity/verify-doc-code-refs.mjs`（+架构索引判据；AGENTS 块扩容）·
-审计 **§4.159** · PITFALLS **§4.224–PITFALLS §4.225** · skill **§149** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.159** · PITFALLS **§4.224–§4.225** · skill **§149** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10654,7 +10654,7 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 `docs/qualification/release-blocker-audit-2026-09-25.md`（第 14 行 + §4.100）·
 `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（追加更正块）·
 `tests/parity/verify-package-conventions.mjs`（注释更正）· `tests/parity/verify-doc-code-refs.mjs`（+㉑）·
-审计 **§4.160** · PITFALLS **§4.226–PITFALLS §4.227** · skill **§150** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.160** · PITFALLS **§4.226–§4.227** · skill **§150** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10707,7 +10707,7 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 ### 六、产物
 
 `packages/app-core/README.md` · `tests/parity/verify-package-conventions.mjs`（+C6；收口行改为**派生计数**）·
-审计 **§4.161** · PITFALLS **§4.228–PITFALLS §4.229** · skill **§151** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.161** · PITFALLS **§4.228–§4.229** · skill **§151** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10859,7 +10859,7 @@ PITFALLS **§4.230** · skill **§152** + 自查清单 +1 · `MEMORY.md` · `202
 `packages/settings/src/index.ts`（+`files.searchRegex` + 注释改写）· `apps/desktop/src/App.tsx`（三处接线）·
 `packages/i18n/src/messages.ts`（zh/en 各 +2）· `tests/parity/fixtures/typora-persisted-uncovered.json`
 （`fileSearchUseRegexp` 的 `reason`）· `tests/parity/verify-sidebar-contract.mjs`（判据 ㉟ + 3 canary）·
-审计 **§4.163** · PITFALLS **§4.231–PITFALLS §4.233** · skill **§153** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.163** · PITFALLS **§4.231–§4.233** · skill **§153** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -10945,7 +10945,7 @@ PITFALLS **§4.230** · skill **§152** + 自查清单 +1 · `MEMORY.md` · `202
 
 `tests/parity/fixtures/typora-persisted-uncovered.json`（2 条 `reason` 补 Mellow 对应物 + `D-AG`）·
 `tests/parity/verify-release-gate.mjs`（`REF_SOURCES` 纳入 parity 数据文件 + 纯函数化 + 3 canary + 防空转）·
-审计 **§4.164** · PITFALLS **§4.234–PITFALLS §4.237** · skill **§154** + 自查清单 +4 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.164** · PITFALLS **§4.234–§4.237** · skill **§154** + 自查清单 +4 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -11027,7 +11027,7 @@ canary **永远失败**。⇒ 改为**行首锚定正则** `/^\s*const CANARY_SY
 
 `tests/parity/verify-release-gate.mjs`（引用源扩到全仓 + 排除项写理由 + `CANARY_SYNTHETIC_IDS`
 第三类表 + `stripDeclBlocks` + 按类防空转 + 6 条 canary）· 审计 **§4.165** ·
-PITFALLS **§4.238–PITFALLS §4.240** · skill **§155** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+PITFALLS **§4.238–§4.240** · skill **§155** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
@@ -11094,7 +11094,104 @@ D 表引用源只枚举出 878 个文件（下限 1113 = 2026-10-08 实测全仓
 ### 六、产物
 
 `tests/parity/verify-release-gate.mjs`（枚举改 `git ls-files` + 去掉目录级排除 + 下限改 878）·
-审计 **§4.166** · PITFALLS **§4.241–PITFALLS §4.243** · skill **§156** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+审计 **§4.166** · PITFALLS **§4.241–§4.243** · skill **§156** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
+
+---
+
+## 4.167 两条**已记录的教训各自复发第 2 次**：覆盖型下限过时（`18` vs `23`）+ 锚点在工作区（2026-10-08）
+
+### 一、决定性实验（先做的）
+
+沿 §4.166 的「本地 ⊇ 仓库」继续普查「**还有哪些护栏的锚点/下限有问题**」，做了一次**决定性实验**：
+用 `git worktree` 造一个**干净检出**，把 23 条护栏在**两个环境**各跑一遍，比较**退出码与输出**
+（含**量具自检**：放一个未跟踪的 `verify-*.mjs` 进工作区，确认实验能看见差异）。
+⇒ **23/23 退出码与输出全部一致**（§4.166 修的是唯一一处锚点缺陷，**有价值的负结果**）。
+
+但同一轮里在 `verify-release-gate.mjs` **check ①** 上找到**两处真缺陷**：
+
+1. **覆盖型下限过时**：`if (guardFiles.length < 18)`，注释写「2026-10-01 基线为 18」——
+   而**实际已是 23**。⇒ 本条**自己声明的意图**（文件头写着「**防某人悄悄删掉一条**」）
+   **根本没有实现**：**连删 5 条都不会红**。
+2. **锚点是工作区**：`guardFiles` 由 `readdirSync` 枚举 ⇒ 未跟踪的 WIP 护栏会被算进来，
+   使「本地」与「干净检出」对**同一条下限**给出不同结论（§4.166 同源）。
+
+### 二、取证：**两条教训 skill 里都已经记过，而且都已修过一次同型缺陷**
+
+| 教训 | skill 已有条目 | 上一次的实例 |
+|---|---|---|
+| 覆盖型下限必须 == 当前基线 | **§2「覆盖下限宽松 —— 成员悄悄消失」**（原文举例：`assert(items.size >= 45)` 而基线 50） | `verify-parity-ledger.mjs` 的 **45 → 50**（注释原文：「此前写 45，意味着**删掉 5 项也不会报错**」） |
+| 下限必须在**干净检出**下校准 | **§39**（2026-10-06，原文举例：`linkCount` 本地 1037 ⇒ 设下限 500 ⇒ CI 只解析出 25） | **同一条判据**（markdown 链接可达性） |
+
+⇒ **两处都是「第 2 次」**。**结论：教训「已记录」不等于「不会再犯」——只有落成可执行的手段才算真的学到。**
+
+### 三、处置
+
+1. **数量下限改用 `git ls-files`（仓库跟踪集，含已 `git add` 的暂存文件）**，值改 **23**（== 当前基线）；
+   新增模块级 `trackedFiles`，**D 表引用源复用同一份**（不再重复调用 git）；
+   并断言 **`repoGuardFiles ⊆ guardFiles`**（逐文件检查不得漏掉已跟踪的护栏）。
+2. ⚠️ **逐文件检查（接线 / CRLF / PRD 引用）刻意保留工作区枚举** —— 本地 ⊇ CI ⇒ 本地**至少一样严**，
+   方向**安全**（只会「本地红、CI 绿」，不会反过来），且给 WIP 护栏**即时反馈**。
+   这个取舍**写进了注释**（否则下一个人会「顺手统一」成另一个方向）。
+3. **新增本机工具 `tests/parity/tools/audit-guard-bounds.mjs`（不进 CI）**：
+   机械普查「防空转下限是否过松」—— 把 `X.length < N` 抬到 `N+1` 再跑该护栏：
+   **仍绿 ⇒ 实际值 ≥ N+1 ⇒ 留了空位**；转红 ⇒ 贴着基线。
+   ✅ **阳性对照成立**：修完 `18 → 23` 后，该条**已不再出现在过松清单里**。
+
+### 四、机械普查结果：**38 处过松 —— 但「候选 ≠ 缺陷」**
+
+工具在 23 条护栏上扫出 **38 处「抬 1 仍绿」**（贴着基线的只有 **7** 处）。
+
+⚠️ **一个被我自己否掉的假设**：我最初把「**阈值 ≠ 消息里写的实测值**」当成缺陷，找到 5 处
+（如 `bridges.size < 15` 而消息写「基线 18」、`linkCount < 15` 而消息写「实测基线 = 25」）。
+**复核后否定** —— 这些是**余量型下限如实声明了余量**（同时给出阈值与实测值），**不是自相矛盾**。
+⇒ 同 `PITFALLS §4.229`「判据报『不一致』时**先验量具**」—— 这次错的是**我的判据**（把「余量」读成「不一致」）。
+
+⇒ **下限有两类，取法不同**：
+
+| 类型 | 用途 | 取法 |
+|---|---|---|
+| **覆盖型** | 防「**成员悄悄消失**」（集合是**人工维护的枚举**） | **必须 == 当前基线**（skill §2） |
+| **健康度型** | 防「**解析器 / 扫描面失效**」（集合由**内容**产生） | **必须留余量**（否则每加一个文案键就红） |
+
+⚠️ 工具的**关键词分桶不可靠**（同一段注释常含两类措辞）—— 实测反例：`zh.size < 700`
+的注释写的是「低于下限说明**解析器漏了一大类**」= **健康度型**，却被关键词误分到「覆盖型」桶。
+⇒ 工具已把标签改成「**命中某类关键词**」并**显式声明不可靠**；**判定必须人工读原文**。
+
+⇒ **38 处不做机械全改**（同 §4.162「不做会假阳性的判据」；同 §4.161 的教训：
+「若当时直接去『修』那 5 个包，会**改坏 4 个本来正确的 README**」）。**登记为已知残量**。
+
+### 五、⚠️ 本轮两起施工事故（**都被自己抓到**）
+
+**事故 A（工具）**：第一次跑过松普查脚本时进程被 **SIGTERM**，而脚本的还原方式是
+「**写回内存里的副本**」⇒ **有一处突变留在了盘上**（干净检出的 `uncovered.entries.length < 10`
+变成了 `< 11`）。⇒ 后续所有读数都建立在**被污染的检出**上，我**差点**据此把「实际值」判错。
+**处置**：`git checkout --` 复原；并把两条安全前提**写进工具**：
+① **工作区必须干净**（否则拒绝运行）；② **还原用 `git checkout --`**（而非内存副本）。
+
+**事故 B（本节的审计章节差点丢失）**：为撤销一次**过宽的正则替换**，我用了
+**`git checkout -- <整份文件>`** —— 而当时**本节尚未提交** ⇒ **整节被一起回退掉了**
+（第一次推送的提交里只有那 30 行替换，本节是补提交的）。
+⇒ **破坏的粒度与还原的粒度必须匹配**：定向破坏要用**定向还原**；`git checkout --` 是
+**整文件粒度**，会连带丢弃同文件里**所有未提交的改动**。
+
+### 六、教训
+
+1. **「已记录的教训」≠「不会再犯」** —— 本节两条教训 skill 里都有、且都修过一次同型缺陷，
+   仍然复发。⇒ **教训要落成可执行的手段**（判据 / canary / 工具），**文档记录本身不产生约束**。
+2. **「候选 ≠ 缺陷」**：机械检测给出的是**事实**（「抬 1 仍绿」），把它读成「缺陷」需要**语义判断**
+   （该下限属哪一类）。**把事实当结论**正是本轮被否掉的那个假设。
+3. **就地突变的工具必须有还原兜底**，且**兜底不能依赖进程存活** —— 用版本控制（`git checkout --`），
+   不用内存副本。
+4. **破坏的粒度与还原的粒度必须匹配** —— 定向改动要用定向回退；**不要**用整文件级命令
+   （`git checkout -- <file>`）去撤销一处局部改动（事故 B）。
+5. **锚点的取舍要写进注释** —— 本节「数量下限锚仓库 / 逐文件检查锚工作区」是有意的不对称，
+   不写下来就会被下一个人「顺手统一」。
+
+### 七、产物
+
+`tests/parity/verify-release-gate.mjs`（`trackedFiles` + 下限 23 + `repoGuardFiles ⊆ guardFiles` + canary）·
+**新增** `tests/parity/tools/audit-guard-bounds.mjs`（本机工具）· 审计 **§4.167** ·
+PITFALLS **§4.244–§4.248** · skill **§157** + 自查清单 +3 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
