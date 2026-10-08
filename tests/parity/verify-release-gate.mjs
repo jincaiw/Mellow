@@ -326,9 +326,14 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       const end = doc.indexOf('\n## ', at);
       const body = doc.slice(at, end < 0 ? doc.length : end);
       const rows = body.split('\n').filter((l) => /^\|\s*\d+\s*\|/.test(l));
-      if (rows.length < 10) {
-        fail(`待裁决项登记表只有 ${rows.length} 行（下限 10 = 立表时的基线）—— `
-          + '行被删掉会让登记表退化成空表（下限在此**适用**：登记表是「不该缩小的集合」）');
+      // ⚠️ 2026-10-09（审计 §4.168）：本条**自述为覆盖型**（「下限在此**适用**：登记表是
+      //   「不该缩小的集合」」）⇒ 按本仓纪律「**覆盖型下限 == 当前基线**」（skill §2），
+      //   阈值必须是**当前行数**。原写 `10`（立表时的基线），而实际已是 **17** ⇒ 留了 7 个空位，
+      //   「行被删掉会让登记表退化成空表」这个意图**被削弱了 7 行**。现改为 **17**。
+      if (rows.length < 17) {
+        fail(`待裁决项登记表只有 ${rows.length} 行（下限 17 = 2026-10-09 实测基线）—— `
+          + '行被删掉会让登记表退化成空表（**覆盖型下限**：登记表是「不该缩小的集合」，'
+          + '故阈值必须 == 当前行数；若确实删过行，请同步下调本阈值并说明）');
       }
       for (const row of rows) {
         const cols = row.split('|').map((c) => c.trim());

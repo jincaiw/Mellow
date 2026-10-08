@@ -9,9 +9,10 @@
  *   —— 它自己声明的意图「防某人悄悄删掉一条」**连删 5 条都不会红**。
  *   ⇒ 教训「已记录」不等于「不会再犯」；**只有落成可执行的手段才算真的学到**。
  *
- * 原理（**机械**）：把某处 `X.length < N` 的 N 抬到 N+1 再跑该护栏 ——
- *   · **仍绿** ⇒ 实际值 ≥ N+1 ⇒ 该下限**过松**（留了 ≥1 个空位）
- *   · 转红     ⇒ 实际值 == N ⇒ 该下限**贴着基线**
+ * 原理（**机械**）：把某处下限的阈值抬 1 再跑该护栏 —— 对 `<` / `<=` / `>=` / `>` **都是同一方向**
+ * （抬 1 = 更严）：
+ *   · **仍绿** ⇒ 实际值比阈值更松 ⇒ 该下限**过松**（留了 ≥1 个空位）
+ *   · 转红     ⇒ 实际值 == 阈值 ⇒ 该下限**贴着基线**
  *
  * ⚠️ **本工具的输出是「候选」，不是「缺陷」** —— 下限有两类，取法不同：
  *   · **覆盖型**（防「成员悄悄消失」，集合是**人工维护的枚举**）⇒ **必须 == 当前基线**；
@@ -55,11 +56,13 @@ const runGuard = (rel) => {
   } catch { return false; }
 };
 
-// 只认「下限」形态：X.length < N / X.size < N（N 为纯数字）
-const BOUND = /([A-Za-z_$][\w$.]*(?:\(\))?)\.(length|size)\s*<\s*(\d+)/g;
+// 只认「下限」形态：`X.length < N` 与 `X.size >= N`（两种写法都要认 ——
+// ⚠️ 2026-10-09 实测：首版**只认 `< N`**，于是台账里两处用 `>= N` 写的覆盖型下限
+//    （`ids.size >= 50` / `scanned >= 74`）**被漏检** ⇒ 「38 处」是**低估**。
+const BOUND = /([A-Za-z_$][\w$.]*(?:\(\))?)\.(length|size)\s*(<=|<|>=|>)\s*(\d+)/g;
 // 自述意图的抽取（供人判断该下限属哪一类）
-const INTENT_COVERAGE = /悄悄|消失|删掉|删条目|成员|萎缩/;
-const INTENT_HEALTH = /解析|扫描面|漂移|空转|失效|过窄/;
+const INTENT_COVERAGE = /悄悄|消失|删掉|删条目|成员|萎缩|不该缩小|不得被删空|不得缩小/;
+const INTENT_HEALTH = /解析|扫描面|漂移|空转|失效|过窄|漏成员/;
 
 /** 就地突变 → 跑 → **用 git 兜底还原**（不依赖内存副本：进程被杀时内存副本救不了盘） */
 const withMutation = (abs, text, fn) => {
@@ -86,16 +89,17 @@ for (const g of guards) {
   if (!runGuard(rel)) { console.error(`⚠️ ${g} 基线就红 ⇒ 跳过（先修基线）`); continue; }
 
   for (const m of hits) {
-    const [full, lhs, prop, numStr] = m;
+    const [full, lhs, prop, op, numStr] = m;
     const n = Number(numStr);
     if (n < 3) { skipped += 1; continue; }
-    const mutated = orig.slice(0, m.index) + `${lhs}.${prop} < ${n + 1}` + orig.slice(m.index + full.length);
+    // 把阈值抬 1（对 `<` / `<=` / `>=` / `>` 都是**同一个方向**：抬 1 = 更严）
+    const mutated = orig.slice(0, m.index) + `${lhs}.${prop} ${op} ${n + 1}` + orig.slice(m.index + full.length);
     const stillGreen = withMutation(abs, mutated, () => runGuard(rel));
     if (!stillGreen) { tight += 1; continue; }
     const ctx = orig.slice(Math.max(0, m.index - 200), m.index + 240);
     // ⚠️ 关键词分桶**只是提示**（不可靠 —— 同段注释常含两类措辞）⇒ 必须人工读原文
     const kind = INTENT_COVERAGE.test(ctx) ? '命中覆盖型关键词' : INTENT_HEALTH.test(ctx) ? '命中健康度型关键词' : '两类关键词都未命中';
-    candidates.push({ g, expr: `${lhs}.${prop} < ${n}`, kind });
+    candidates.push({ g, expr: `${lhs}.${prop} ${op} ${n}`, kind });
   }
 }
 
