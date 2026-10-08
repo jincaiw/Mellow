@@ -7,9 +7,13 @@
 
 > **⚠️ 快照声明（2026-10-06 审计 §4.89 补）**：本文是 **2026-08-11 的实现设计快照**，
 > **不是现状真值源** —— 现状以**代码**为准。
-> 另：本文件位于 `docs/superpowers/specs/`，**不在任何护栏的扫描面内**
-> （`verify-doc-code-refs.mjs` 的 `DOC_GLOBS` 只含 `docs/plans` / `docs/adr` / `docs/specs`）
-> ⇒ 其中的路径/契约断言**没有机器守护**，改动时须人工核对。
+> 另：本文件位于 `docs/superpowers/specs/`。**⚠️ 2026-10-08 更正（审计 §4.158）**：
+> 原文写「**不在任何护栏的扫描面内**……其中的路径/契约断言**没有机器守护**」—— 该缺口**已闭合**：
+> `verify-doc-code-refs.mjs` 的「**反引号路径必须存在**」判据，**扫描面已从 `docs/architecture`
+> 扩到 `docs/superpowers`**（实测本文件的路径 token **全部有效**）。
+> ⚠️ **仍未覆盖**的边界（如实声明）：`DOC_GLOBS`（`docs/plans` / `docs/adr` / `docs/specs`）
+> 下的另两项判据 ——「符号（文件:行号）」与 `MELLOW_*`/`TYPORA_*` —— **仍不含本目录**。
+> 若本文件日后出现这两类形态，需**同时**把它加入 `DOC_GLOBS`。
 
 ---
 

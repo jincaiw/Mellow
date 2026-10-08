@@ -326,7 +326,10 @@ for (const doc of docs) {
 //   ③ 「原写 / 更正」类行**豁免** —— 更正说明必然引用**已不存在的旧路径**；
 //   ④ 路径**按 `/` 归一化**后再判（Windows 上 `walk` 产出 `\`；本项目已因此红过一次 CI）。
 {
-  const ARCH_DIR = 'docs/architecture';
+  // 2026-10-08（审计 §4.158）：扫描面从 `docs/architecture` **扩到 `docs/superpowers`** ——
+  // 后者自己的快照声明写着「**不在任何护栏的扫描面内**」（`DOC_GLOBS` 只含 plans/adr/specs）
+  // ⇒ 它里面的路径断言**没有机器守护**。本轮把该缺口**闭合**（实测 6 个路径 token 全部有效）。
+  const ARCH_DIRS = ['docs/architecture', 'docs/superpowers'];
   const EXT = '(?:ts|tsx|js|mjs|cjs|rs|css|json|yml|yaml|md|sh|toml)';
   const TOK = new RegExp('`([\\w./-]+\\.' + EXT + ')`', 'g');
   const LOOKS_LIKE_QUOTE = /原写|原文|更正|漂移|已改为|也写/;
@@ -336,9 +339,9 @@ for (const doc of docs) {
   const exists = (p) => existsSync(resolve(root, p.replace(/\\/g, '/')));
   let checked = 0;
   let bare = 0;
-  for (const file of readdirSync(resolve(root, ARCH_DIR)).filter((f) => f.endsWith('.md'))) {
-    const rel = `${ARCH_DIR}/${file}`;
-    stripFences(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'))
+  for (const abs of ARCH_DIRS.flatMap((d) => walk(resolve(root, d))).filter((f) => f.endsWith('.md'))) {
+    const rel = relative(root, abs);
+    stripFences(readFileSync(abs, 'utf8').replace(/\r\n/g, '\n'))
       .split('\n')
       .forEach((line, i) => {
         if (LOOKS_LIKE_QUOTE.test(line)) return;   // 更正说明会引用旧路径，豁免
@@ -354,7 +357,7 @@ for (const doc of docs) {
       });
   }
   if (checked < 20) {
-    fail(`docs/architecture 只解析出 ${checked} 个含 \`/\` 的路径（下限 20 = 立此判据时的基线）`
+    fail(`docs/architecture + docs/superpowers 只解析出 ${checked} 个含 \`/\` 的路径（下限 20 = 立此判据时的基线）`
       + ' —— 谓词或目录内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
   }
   // canary：四个方向（判定与 canary 共用 stripFences / exists）

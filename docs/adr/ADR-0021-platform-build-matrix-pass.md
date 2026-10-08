@@ -18,6 +18,17 @@
 - 工具链：pnpm workspace 全流程（含 vendored CoreEditor yarn 特例）在三平台验证通过。
 - CI（ci.yml，ubuntu）5 job 全绿：editor-core（vendored 185+wrapper 14）、editor-engine（486）、mellow-packages（typecheck+unit）、desktop-frontend（bundle+tsc+vite）、rust-check（cargo test 37+16+4）。
 
+> **⚠️ 2026-10-08 更正（审计 §4.158；**只追加，不改写原文**）**：上行是 **2026-08-17 的快照**，其中 **3 个数字已过期**
+> （实测按当前仓库现读）：
+> | 上行写的 | 现状 |
+> |---|---|
+> | 「**5 job** 全绿」 | **8 job**（新增 `parity-guard` / `windows-parity-guard` / `rust-check-macos`） |
+> | 「wrapper **14**」 | **19** |
+> | 「editor-engine（**486**）」 | **1318** |
+> ⇒ 上行的**结论**（「CI 在三平台全绿」）**仍成立**；变的是**规模**。
+> ⚠️ **本 ADR 里的数字是「当时快照」，不是当前值** —— 引用 CI 规模时请**现读** `ci.yml` 与各包实跑，
+> **不要**引用本 ADR（这正是 §4.153/§4.156 记过的「同一组数值多处维护」）。
+
 
 ### 启动级 Runtime 验证（2026-08-18，CI runner 作为测试机）
 用 GitHub Actions windows-latest / ubuntu-latest / macos-latest 作为真实测试机执行 Runtime Qualification 流水线（`.github/workflows/runtime-qualification.yml`）：
