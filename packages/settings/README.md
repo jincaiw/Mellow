@@ -1,6 +1,11 @@
 # @mellow/settings
 
-设置共享 schema（**One Settings Model**，PRD §531）。
+设置共享 schema（**One Settings Model**，PRD §4.7）。
+
+> ⚠️ **2026-10-08 更正（审计 §4.157）**：本行原写 `PRD §531` —— **PRD 只有 0–150 节，`§531` 不存在**。
+> 真实出处是 **PRD §4.7**（「Mellow 正式采用」清单里的 `One Settings Model`）。同一错误见
+> 本包 `package.json` 的 `description` 与 `src/index.ts` 的头部注释，均已一并更正；
+> 并已落判据（`tests/parity/verify-doc-code-refs.mjs` ⑳：`PRD §N` 必须指向 PRD 里存在的节）。
 
 > PRD §117.1 包规范：本文件是「这个包是什么」的入口；**契约（不变量 / 错误语义 / 性能边界 / 禁止行为 / parity reference / 夹具）见同目录 `CONTRACT.md`**。
 

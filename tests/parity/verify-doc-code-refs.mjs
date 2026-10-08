@@ -1404,6 +1404,68 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ⑳ `PRD §N` / `master-plan §N` 的引用必须指向**存在的节** ─────────────────────
+// 立此条的原因（实测，2026-10-08 审计 §4.157）：`packages/settings` 的 **3 个文件**都写着
+// 「One Settings Model，**PRD §531**」—— 而 PRD 只有 **0–150** 节，**`§531` 不存在**。
+// 真实出处是 **PRD §4.7**（「Mellow 正式采用」清单里的 `One Settings Model`）。
+// ⚠️ 与 §4.148 的 `§4.N` 同族（不可解析 / 假解析），但**命名空间不同**（这里是 PRD / master-plan）。
+{
+  const secsOf = (p, re) => new Set([...readFileSync(resolve(root, p), 'utf8')
+    .replace(/\r\n/g, '\n').matchAll(re)].map((m) => Number(m[1])));
+  const PRD_SECS = secsOf('docs/product/Mellow-PRD-V1.2-FINAL.md', /^# (\d+)[. ]/gm);
+  const MP_SECS = secsOf('docs/plans/typora-parity-master-plan.md', /^## (\d+)[. ]/gm);
+  if (PRD_SECS.size < 100 || MP_SECS.size < 10) {
+    fail(`PRD/master-plan 的节号集合异常（${PRD_SECS.size} / ${MP_SECS.size}）—— 判据会空转`);
+  }
+  // ⚠️ 更正说明会**引用旧编号** ⇒ 逐行豁免 —— **先配好豁免再动笔写说明**（见 skill §145 / PITFALLS §4.217）。
+  const NOTE = /原写|原文|更正|漂移|已改为|也写|不存在/;
+  /** 返回本文件里「引用不存在的节」的清单（判定与 canary **共用**本谓词）。 */
+  const badRefs = (text) => {
+    const out = [];
+    text.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      if (NOTE.test(line)) return;
+      for (const m of line.matchAll(/PRD\s*§+\s*(\d+)/g)) {
+        if (!PRD_SECS.has(Number(m[1]))) out.push(`L${i + 1} PRD §${m[1]}`);
+      }
+      for (const m of line.matchAll(/(?:master[-\s]?plan|施工计划|本计划)\s*§+\s*(\d+)/gi)) {
+        if (!MP_SECS.has(Number(m[1]))) out.push(`L${i + 1} master-plan §${m[1]}`);
+      }
+    });
+    return out;
+  };
+  const SCAN_EXTS = ['md', 'mjs', 'cjs', 'ts', 'tsx', 'rs', 'json', 'yml', 'yaml'];
+  // ⚠️ **必须把本护栏自身排除出扫描面**：它含**合成样本**（canary 里的 `PRD §531` / `master-plan §99`）
+  //    与**说明文字**，不排除 ⇒ 主判据被自己的样本满足 ⇒ **恒报错**。
+  //    （本仓在 `MELLOW_*`/`TYPORA_*` 那节踩过同一坑；本轮实测也踩了一次。）
+  const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
+  let prdRefs = 0; let mpRefs = 0;
+  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+    if (resolve(f) === resolve(SELF)) continue;
+    const text = readFileSync(f, 'utf8');
+    prdRefs += [...text.matchAll(/PRD\s*§+\s*\d+/g)].length;
+    mpRefs += [...text.matchAll(/(?:master[-\s]?plan|施工计划|本计划)\s*§+\s*\d+/gi)].length;
+    const bad = badRefs(text);
+    if (bad.length > 0) {
+      fail(`${relative(root, f)} 引用了**不存在**的节：${bad.join('、')}`
+        + ' —— `PRD §N` 的 N 必须在 PRD 的顶层节号里'
+        + '（实测：`packages/settings` 的 3 个文件都写 `PRD §531`，而 PRD 只有 0–150；真实出处是 §4.7）');
+    }
+  }
+  // 防空转：下限**贴着基线取**（实测 PRD 638 / master-plan 79）
+  if (prdRefs < 500 || mpRefs < 60) {
+    fail(`PRD / master-plan 的 §N 引用只解析出 ${prdRefs} / ${mpRefs}（基线 638 / 79）—— 判据会空转`);
+  }
+  // canary：四向（判定与 canary 共用 badRefs）
+  if (badRefs('见 PRD §531。').length !== 1) errors.push('PRD 节号护栏 canary 失效：不存在的节未被检出');
+  if (badRefs('见 PRD §109。').length !== 0) errors.push('PRD 节号护栏 canary 过宽：存在的节被判为不存在');
+  if (badRefs('> 原写 `PRD §531`，已更正。').length !== 0) {
+    errors.push('PRD 节号护栏 canary 失效：更正说明里**引用**的旧节号未被豁免');
+  }
+  if (badRefs('见 master-plan §99。').length !== 1) {
+    errors.push('PRD 节号护栏 canary 失效：master-plan 的不存在节未被检出');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

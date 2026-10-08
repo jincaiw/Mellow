@@ -1,5 +1,8 @@
 /**
- * Settings schema（One Settings Model，PRD §531；T-0605 Settings）。
+ * Settings schema（One Settings Model，PRD §4.7；T-0605 Settings）。
+ *
+ * ⚠️ 2026-10-08（审计 §4.157）：原写 `PRD §531` —— 该节号**不存在**（PRD 只有 0–150），
+ *    真实出处是 **PRD §4.7**（「Mellow 正式采用」清单里的 `One Settings Model`）。
  *
  * - 共享 schema：desktop UI 与 extension 共用同一份设置定义；
  * - live apply where safe：requiresRestart 默认 false，App 层负责 apply（命令或宿主 handler）；
