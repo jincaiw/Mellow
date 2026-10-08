@@ -380,4 +380,68 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   console.log(`UX gate tasks: ${tasksLen} 项核心任务 —— 模板 §二 表（${tplRows} 行）· PRD §132（${pm[1]}）· 记录器 TASKS 三处一致`);
 }
 
+// ── UX Score 的「权重表 / 门槛」在模板与记录器两处必须一致（2026-10-09，审计 §4.185）────────────
+// 【为什么】`docs/qualification/ux-score-gate-template.md` 的**评分表**（10 模块 + 合计 100）与
+//   「**Release 门槛**」（总分 ≥92 / Live Editing ≥24 / Caret-IME-Undo =15 / File Safety =5）
+//   是**人工评分时看的**；而 `ux-gate-recorder.mjs` 的 `UX_MODULES` / `UX_THRESHOLDS`
+//   是**机器校验时用的**。两者是**同一套发布门槛的两处副本**，而**没有任何判据**守着它们一致
+//   ⇒ 若只改一处，会出现「按模板算过、被记录器拒绝」（或反之）—— **发布门槛的口径分歧**。
+//   ⚠️ 同族：§4.183（模板表 ⇄ TASKS）· §4.184（表 ⇄ 汇总数字）—— 本轮是**第 15 次**。
+// 【判据】**两侧都现读**：模板评分表的每行（标签 + 权重）必须与 `UX_MODULES` 一一对应；
+//   「合计」必须 == `UX_MODULES` 权重和；四条门槛必须 == `UX_THRESHOLDS`。
+{
+  const REC = 'tests/qualification/ux-gate-recorder.mjs';
+  const TPL = 'docs/qualification/ux-score-gate-template.md';
+  const rec = readFileSync(resolve(root, REC), 'utf8').replace(/\r\n/g, '\n');
+  const modBody = (/const UX_MODULES = \[([\s\S]*?)\n\];/.exec(rec) ?? [])[1];
+  if (modBody === undefined) throw new Error(`${REC} 找不到 \`const UX_MODULES = [\` —— 判据锚点漂移`);
+  const mods = [...modBody.matchAll(/\['([a-zA-Z]+)',\s*(\d+),\s*'([^']+)'\]/g)]
+    .map((m) => ({ key: m[1], weight: Number(m[2]), label: m[3] }));
+  if (mods.length === 0) throw new Error(`${REC} 的 UX_MODULES 解析出 0 项 —— 解析器失效`);
+  const totalWeight = mods.reduce((a, m) => a + m.weight, 0);
+  const thBody = (/const UX_THRESHOLDS = \{([^}]*)\}/.exec(rec) ?? [])[1];
+  if (thBody === undefined) throw new Error(`${REC} 找不到 \`const UX_THRESHOLDS = {\` —— 判据锚点漂移`);
+  const th = Object.fromEntries([...thBody.matchAll(/(\w+):\s*(\d+)/g)].map((m) => [m[1], Number(m[2])]));
+  const tpl = readFileSync(resolve(root, TPL), 'utf8').replace(/\r\n/g, '\n');
+  const tplRows = [...tpl.matchAll(/^\|\s*([^|*]+?)\s*\|\s*(\d+)\s*\|/gm)]
+    .map((m) => ({ label: m[1].trim(), weight: Number(m[2]) }));
+  if (tplRows.length === 0) throw new Error(`${TPL} 的评分表解析出 0 行 —— 解析器失效`);
+  const tplByLabel = new Map(tplRows.map((r) => [r.label, r.weight]));
+  for (const m of mods) {
+    if (!tplByLabel.has(m.label)) {
+      throw new Error(`UX Score 权重表不一致：记录器有模块「${m.label}」（${m.weight}），而 ${TPL} 的表里没有`);
+    }
+    if (tplByLabel.get(m.label) !== m.weight) {
+      throw new Error(`UX Score 权重不一致：「${m.label}」记录器 = ${m.weight}，${TPL} = ${tplByLabel.get(m.label)}`);
+    }
+  }
+  const tplTotal = (/^\|\s*\**合计\**\s*\|\s*\**(\d+)\**\s*\|/m.exec(tpl) ?? [])[1];
+  if (tplTotal === undefined) throw new Error(`${TPL} 找不到「合计」行 —— 判据锚点漂移`);
+  if (Number(tplTotal) !== totalWeight) {
+    throw new Error(`UX Score 合计不一致：${TPL} 写 ${tplTotal}，而记录器权重和 = ${totalWeight}`);
+  }
+  const gateChecks = [
+    ['total', /总分\s*≥\s*(\d+)/, '总分 ≥'],
+    ['liveEditing', /Live Editing\s*≥\s*(\d+)/, 'Live Editing ≥'],
+    ['caretImeUndo', /Caret\s*\/\s*IME\s*\/\s*Undo\s*=\s*(\d+)/, 'Caret/IME/Undo ='],
+    ['fileSafety', /File Safety\s*=\s*(\d+)/, 'File Safety ='],
+  ];
+  for (const [key, re, label] of gateChecks) {
+    const m = re.exec(tpl);
+    if (m === null) throw new Error(`${TPL} 找不到门槛「${label}」—— 判据锚点漂移`);
+    if (Number(m[1]) !== th[key]) {
+      throw new Error(`UX Score 门槛不一致：「${label}」${TPL} 写 ${m[1]}，记录器 UX_THRESHOLDS = ${th[key]}`);
+    }
+  }
+  // canary：谓词与判定共用（拼接构造）
+  const rowsOf = (s) => [...s.matchAll(/^\|\s*([^|*]+?)\s*\|\s*(\d+)\s*\|/gm)].length;
+  if (rowsOf('| Live Editing | 25 |\n| Markdown | 10 |') !== 2) {
+    throw new Error('UX Score 权重表 canary 失效：表行未被解析');
+  }
+  if (rowsOf('无表格的行') !== 0) {
+    throw new Error('UX Score 权重表 canary 过宽：非表行被当成表行');
+  }
+  console.log(`UX Score: ${mods.length} 模块 / 合计 ${totalWeight} · 门槛 ${JSON.stringify(th)} —— 模板与记录器一致`);
+}
+
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
