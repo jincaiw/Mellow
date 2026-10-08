@@ -339,6 +339,16 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   if (repoAdrCount < 30) {
     fail(`⑫ 仓库里只跟踪到 ${repoAdrCount} 份 ADR（下限 30 = 2026-10-09 实测 34）—— 判据范围萎缩`);
   }
+  // ⚠️ **过滤正则本身就是「静默豁免面」**：`/^ADR-\d{4}/` 之外的 .md 会被无声跳过
+  //   ⇒ 断言「目录里的 .md 集合 == 匹配命名规范的集合」（当前实测 34 == 34，无豁免）。
+  //   若将来确实要放非 ADR 的 .md 进本目录，必须**显式登记**（并说明为何不是静默豁免）。
+  //   （同族：§4.152 按目录豁免 / §4.153 按文件 / §4.167 目录级排除误伤 —— 「粒度/位置当代理」。）
+  const adrDirMd = readdirSync(resolve(root, ADR_DIR)).filter((f) => f.endsWith('.md')).sort();
+  const adrUnmatched = adrDirMd.filter((f) => !/^ADR-\d{4}.*\.md$/.test(f));
+  if (adrUnmatched.length > 0) {
+    fail(`⑫ ${ADR_DIR}/ 下有不符合 ADR 命名规范（ADR-NNNN-*.md）的 .md 文件：${adrUnmatched.join('、')}`
+      + ' —— 它们会被状态判据**静默跳过**（过滤正则 = 豁免面）；要么改名，要么显式登记');
+  }
   const derived = new Map();
   const unparsed = [];
   for (const f of adrFiles) {
