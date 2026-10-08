@@ -1178,6 +1178,71 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ⑰ 「全仓无此**文件**」推不出「**从未产出**」—— 输出物核对必须同时看「文件名」与「章节标题」──
+// 立此条的原因（实测，2026-10-08 审计 §4.154）：
+// `docs/specs/runtime-qualification-plan.md` §9 有一张「输出物」表 + 一张 2026-10-01 的**逐项对账**表，
+// 其中一行判定 `platform issue list` 为 **❌ 不存在 —— 全仓无此文件**，结论据此写「**1 个从未产出**」。
+// **实测：`tests/qualification/README.md` 就有「Platform Issue 记录」节**
+// （列名 `日期 / 平台 / 现象 / 影响 / 状态`，正是**按平台聚合的问题清单**），自 **2026-08-10**（commit `80603cc`）起就在
+// ⇒ **那条判定是错的**。根因：核对用的是**文件**粒度，而产物是**章节**粒度。
+// ⇒ 判据：**凡输出物表里标「不存在 / 从未产出」的行，其输出物名不得与 README 的章节标题同义。**
+{
+  const SPEC = 'docs/specs/runtime-qualification-plan.md';
+  const QUAL_README = 'tests/qualification/README.md';
+  const rd = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+  const WORDS = (s) => new Set(s.toLowerCase().replace(/[`*|]/g, ' ')
+    .split(/[^0-9a-z\u4e00-\u9fff]+/).filter((w) => w.length >= 3));
+  // ⚠️ **更正说明会引用原判定**（「原判定写『❌ 不存在』」）⇒ 逐行豁免（与文件头部 `LOOKS_LIKE_QUOTE` 同源）。
+  //    实测：不加这一条，本判据会命中**修好之后**的那一行（第 12 次踩「自己的文字命中自己的判据」）。
+  const NOTE_ROW = /更正|原判定|原写|上一版|已过期/;
+  /** README 的二级章节标题 = qualification 的「输出物」登记处。 */
+  const sectionTitles = (text) => [...text.matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
+  /**
+   * 返回「**判为不存在、但 README 里有同义章节**」的输出物名（判定与 canary **共用**本谓词）。
+   * 同义 = 名字与某章节标题的**共同词 ≥ 2**（启发式；取 2 是为了避开 `表` / `report` 这类单词噪声）。
+   */
+  const falseNegatives = (specText, readmeText) => {
+    const titles = sectionTitles(readmeText).map((t) => ({ t, words: WORDS(t) }));
+    const out = [];
+    for (const line of specText.split('\n')) {
+      // ⚠️ 表格在**引用块**里（行首是 `> |`）⇒ 不能写 `^\|`（实测踩到：那样一行都取不到）。
+      if (!/^\s*>?\s*\|/.test(line) || !/不存在|从未产出/.test(line) || NOTE_ROW.test(line)) continue;
+      const name = (line.replace(/^\s*>?\s*\|/, '').split('|')[0] ?? '').replace(/[`*「」]/g, '').trim();
+      if (!name) continue;
+      const nw = WORDS(name);
+      const hit = titles.find(({ words }) => [...nw].filter((w) => words.has(w)).length >= 2);
+      if (hit) out.push(`${name}（README 有章节「${hit.t}」）`);
+    }
+    return out;
+  };
+  const specSrc = rd(SPEC);
+  const falseNeg = falseNegatives(specSrc, rd(QUAL_README));
+  if (falseNeg.length > 0) {
+    fail(`${SPEC} 把**已产出**的输出物判为不存在：${falseNeg.join('、')}`
+      + ' —— 「全仓无此**文件**」推不出「**从未产出**」：产物可以是**章节 / 表格 / 代码符号**'
+      + '（实测：`platform issue list` 就在 `tests/qualification/README.md` 的「Platform Issue 记录」节）');
+  }
+  // 防空转：该表必须有可判的行，否则谓词漂移后本判据什么都不看
+  const specRows = specSrc.split('\n').filter((l) => /^\s*>?\s*\|/.test(l) && /不存在|从未产出|✅|⚠️/.test(l)).length;
+  if (specRows < 3) {
+    fail(`${SPEC} 的输出物表只解析出 ${specRows} 行（下限 3）—— 谓词或文档漂移会让本判据**空转**`);
+  }
+  // canary：三向（同义且标「不存在」⇒ 报 / 同义但不标 ⇒ 放行 / 无同义关系 ⇒ 放行）
+  const RM = '## Platform Issue 记录\n| 日期 | 平台 |\n';
+  if (falseNegatives('| platform issue list | ❌ 不存在 —— 全仓无此文件 |\n', RM).length !== 1) {
+    errors.push('输出物核对 canary 失效：同义章节存在却标「不存在」的行未被检出');
+  }
+  if (falseNegatives('| platform issue list | ✅ 有（README 的「Platform Issue 记录」节） |\n', RM).length !== 0) {
+    errors.push('输出物核对 canary 过宽：已更正的行被判为「不存在」');
+  }
+  if (falseNegatives('| totally unrelated artifact | ❌ 不存在 |\n', RM).length !== 0) {
+    errors.push('输出物核对 canary 过宽：与 README 章节无同义关系的行被误报');
+  }
+  if (falseNegatives('| platform issue list | ✅ 有 —— 原判定写「❌ 不存在 —— 全仓无此文件」 |\n', RM).length !== 0) {
+    errors.push('输出物核对 canary 失效：更正说明里**引用**的原判定未被豁免');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);

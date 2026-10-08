@@ -70,18 +70,18 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 | 打开 Markdown（dialog + fs read） | ✅（Rust 命令 + 类型适配） | ✅（CI 启动/打开 gate） | 🔶（实机 journey 待回填） | ✅（CI 冒烟） |
 | 编辑（CoreEditor 185 + 全仓 jest，2026-09-12 实跑见文末包规模） | ✅ | ✅（同构建） | 🔶 | ✅（同构建） |
 | 保存（atomic write + source fidelity corpus） | ✅（Windows byte-identical gate） | ✅（CI gate） | 🔶 | 🔶（corpus 待 CI 扩展） |
-| Live Markdown（marker reveal / nodes） | ✅（editor-engine 1277，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
+| Live Markdown（marker reveal / nodes） | ✅（editor-engine 1318，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
 | File links（渲染/点击打开/broken indicator，spec engine §12） | ✅（md-link 15 例 + settings/adapter 护栏锚点；2026-09-03 用户裁决解冻实现） | — | 🔶（broken 视觉一致 Typora 对照待真机） | — |
 | Windows JumpList（系统最近文档，PRD §134 P1） | ✅（jumplist.rs + windows-sys 交叉 check EXIT=0 + Windows CI 编译 12m2s） | 🔶（任务栏 Recent 展示/点击打开待真机） | — | — |
 | Table 编辑（one-undo/minimal diff/100×30） | ✅（table-undo-diff 16 + table-large 7） | — | 🔶 | — |
 | 中文输入（composition guard + IME 冻结） | ✅（逻辑层全绿） | ✅（Xvfb+fcitx5 矩阵 gate，Linux 列；Windows IME 矩阵 CI 仅诊断级） | 🔶（20 分钟实机写作待 P4.11） | ✅（CI IME matrix） |
 | IME corruption = 0 | ✅（自动化层） | 🔶（SendKeys 保存读回为诊断，不入证据） | ⛔（实机待执行） | 🔶（CI 矩阵内断言） |
 | Clipboard P0（smart paste priority/IME guard） | ✅（smart-paste 17） | ⛔（cross-app 7 目标待执行） | ⛔ | ⛔ |
-| PDF / HTML Export | ✅（export 89，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
+| PDF / HTML Export | ✅（export 100，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
 | 10MB 可编辑 / P95 | ✅（large-file 自动化护栏） | ✅（CI 10MB 冒烟 gate） | ⛔（benchmark 待 P4.12） | 🔶 |
 | Settings / Theme / Export 契约 | ✅（settings 17 + verify-settings-contract） | — | — | — |
 | Extension permission / Safe Mode | ✅（permissions 14 + app-core extensions） | — | — | — |
-| File Safety（rename/trash/undo/recovery/conflict） | ✅（app-core 258 含 FileOpHistory 12） | — | 🔶（disk-full/network corpus 真机项） | 🔶 |
+| File Safety（rename/trash/undo/recovery/conflict） | ✅（app-core 297 含 FileOpHistory 12） | — | 🔶（disk-full/network corpus 真机项） | 🔶 |
 | Reader / Palette / Slash / User CSS / AI 默认关闭 | ✅（P6.3 契约护栏） | — | 🔶（manual golden journey） | 🔶 |
 | 三平台打包矩阵（dmg/nsis/msi/appimage/deb/rpm） | ✅（tauri.conf + adapter-contract 护栏） | ⛔（安装/卸载/更新矩阵待执行） | ⛔（签名公证 DMG 待执行） | ⛔ |
 | UX Score 100 分 / 30 计时任务 | ✅（工具链就绪：ux-score-gate-template.md + ux-gate-recorder.mjs self-test） | ⛔（记录为 0） | ⛔（记录为 0） | ⛔（记录为 0） |
@@ -123,7 +123,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 ## 自动化检查（本仓库可执行）
 
 ```sh
-# 1. 全仓测试（12 包 jest 1824 例 + parity 契约护栏 + qualification self-test）
+# 1. 全仓测试（12 包 jest 1915 例 + parity 契约护栏 + qualification self-test）
 pnpm test
 
 # 2. 构建 editor-core dist（bundle 构建模块）
@@ -137,16 +137,24 @@ cd apps/desktop && npm run build
 cd src-tauri && cargo check
 ```
 
-各包规模（jest，**2026-10-01 按包定向实跑，合计 1824 例全绿**）：editor-engine **1277** / app-core **258** / export **89** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor 185）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
+各包规模（jest，**2026-10-08 按包定向实跑，合计 1915 例全绿**）：editor-engine **1318** / app-core **297** / export **100** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor 185）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
 
 > **数字刷新纪律**：数字按当日**按包定向**调用 `node_modules/.bin/jest` 的实跑结果刷新；
 > 全仓 `pnpm -r run test` 在本机会被 corepack 交互提示阻塞（要下载 pnpm 11.7.0），故不以此为度量口径。
 >
 > ⚠️ **本表曾长期过期（2026-10-01 复核发现）**：上一版（2026-09-12）写「editor-engine 1135 /
 > app-core 219，合计 1615」，而当日实跑为 **1277 / 258，合计 1824**；同段的护栏数量也写 14 而实际 **17**。
-> → 现已改为**当日实跑值**，且**护栏数量**由 `tests/parity/verify-release-gate.mjs` 的
-> 「qualification README 数字一致性」断言 + canary 锁住（数量不符即硬失败）。
-> **包用例数无法静态校验**（需实跑），故只锁护栏数量 —— **如实声明这条覆盖边界**。
+> → 现已改为**当日实跑值**。
+>
+> **覆盖边界（2026-10-08 更正，审计 §4.153）**：本行是包用例数的**单一真值源**。
+> - **护栏数量**：由 `verify-release-gate.mjs` 直接对账（不符即硬失败）；
+> - **包用例数与合计**：**可静态核对「文件内自洽」** —— 文件其它位置出现的 `<包名> <数字>` 与
+>   `jest N 例` / `合计 N 例` 必须与本行一致（判据已落）。
+>   ⚠️ 原写「**包用例数无法静态校验**（需实跑），故只锁护栏数量」—— 那句**把两件事混为一谈**：
+>   「无法对**现实**校验」成立，「无法对**同文件真值源**校验」**不成立**（实测 4 处内联数字**全部**是旧值）。
+> - ⚠️ **仍未覆盖**：本行**自身与现实是否一致**（需实跑）—— 这条边界如实声明。
+>
+> **刷新记录**：2026-10-01（首次）· **2026-10-08**（本轮：上一版 `editor-engine 1277` → **1318** · `app-core 258` → **297** · `export 89` → **100**；其余 9 包与上次一致；合计 `1824` → **1915**）。
 
 > **注**：`extension-api` 自身无本地 jest 二进制，按其 package.json 的 `test` 脚本用
 > `../settings/node_modules/.bin/jest --rootDir .` 执行。全仓 `pnpm -r run test` 曾挂起
