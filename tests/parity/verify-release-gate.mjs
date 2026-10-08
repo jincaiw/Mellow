@@ -1751,6 +1751,87 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
 }
 
+// ── ⑨b 凡**声称「当前状态」**的 `PASS-E` / 「未闭环 N 项」必须 == 门禁现算（2026-10-09，审计 §4.178）
+// 【为什么】⑨ 只锁了 `README.md` **一份** —— 而「**当前状态真值源 = 门禁输出（… `PASS-E = M/K`、未闭环 N 项）**」
+//   是一句**显式声称「当前」**的标记句，实测散在 **11 份 `docs/qualification/*`** 记录里
+//   + **3 份活文档**（`packaging-release.md` / `master-plan` / `runtime-qualification-plan.md`），共 **14 处**。
+//   ⚠️ ⑨ 的注释把它们笼统记作「**带日期的记录**」而豁免 —— 但「当前状态真值源」行**本身不带日期**
+//   （带日期的是**紧邻上一行**的「快照声明」）⇒ 它**声称的是当前**，必须与门禁一致。
+//   ⇒ 同族「只锁了一半」**第 7 次**（§4.170/§4.171/§4.172/§4.173/§4.176/§4.177/本节）。
+// 【判据】凡含「当前状态真值源」**且能解析出** `PASS-E = M/K` 的行：M/K 必须 == 现算；
+//   若同行含「N 项未闭环」或「未闭环 N 项」，N 也必须 == 现算。
+//   ⚠️ 谓词用**显式标记**（不是「含 `PASS-E` 的行」）⇒ **不误伤带日期的历史**（轮次表 / 历史审计 / ADR）。
+//   ⚠️ **排除审计日志本身**（`docs/qualification/release-blocker-audit-*.md`）：它的**职责是记录历史**，
+//      与「声明当前」语义相反（§4.152：豁免**按职责**写、不按位置写）；且它是本判据的说明载体
+//      （在它里面写出标记短语 ⇒ 会 self-hit）。
+// ⚠️ 落位：必须在 `if (errors.length > 0)` **之前**（§4.175）。
+{
+  const CURRENT_MARK = '当前状态真值源';
+  const AUDIT_LOG = /^docs\/qualification\/release-blocker-audit-.*\.md$/;
+  const passEOfB = (s) => {
+    const m = /PASS-E\s*=\s*(\d+)\s*\/\s*(\d+)/.exec(s);
+    return m === null ? null : [Number(m[1]), Number(m[2])];
+  };
+  // 两种形态都要认：「未闭环 N 项」（README / 手册）与「N 项未闭环」（qualification 模板）
+  const unclosedOfB = (s) => {
+    let m = /未闭环\s*\**\s*(\d+)\s*项/.exec(s);
+    if (m !== null) return Number(m[1]);
+    m = /(\d+)\s*\**\s*项\s*未闭环/.exec(s);
+    return m === null ? null : Number(m[1]);
+  };
+  const mdFilesB = (trackedFiles ?? []).filter((f) => f.endsWith('.md')
+    && !f.startsWith('archive/') && !f.startsWith('docs/adr/') && !AUDIT_LOG.test(f));
+  let claimedB = 0;
+  const badB = [];
+  for (const f of mdFilesB) {
+    const lines = read(f).split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!lines[i].includes(CURRENT_MARK)) continue;
+      // ⚠️ 声明可能**跨行**（标记在上一行、数字在续行）—— 首版按**单行**取 ⇒ `packaging-release.md`
+      //   （标记与数字分居两行）被**静默漏检**（注入验证 ② 未转红才抓到）。⇒ 窗口 = 标记行 + 紧邻下一行。
+      const win = lines[i] + '\n' + (lines[i + 1] ?? '');
+      const stated = passEOfB(win);
+      if (stated === null) continue; // 只是**引用**该短语（说明文字）⇒ 不是声明
+      claimedB += 1;
+      if (stated[0] !== passECount || stated[1] !== totalItems) {
+        badB.push(`${f}:${i + 1} 写「PASS-E = ${stated[0]}/${stated[1]}」，现算 ${passECount}/${totalItems}`);
+      }
+      const u = unclosedOfB(win);
+      if (u !== null && u !== noGo.length) {
+        badB.push(`${f}:${i + 1} 写「未闭环 ${u} 项」，现算 ${noGo.length} 项`);
+      }
+    }
+  }
+  if (claimedB < 10) {
+    fail(`⑨b 只找到 ${claimedB} 处「${CURRENT_MARK}」声明（下限 10 = 2026-10-09 实测 14）—— 判据范围萎缩`);
+  }
+  if (badB.length > 0) {
+    fail('⑨b 声称「当前状态」却与门禁**现算**不一致（无日期的数字会被按「当前」读）：' + badB.join('；'));
+  }
+  // canary ①（正样本）：标记行里的 `PASS-E = M/K` 必须能取到
+  if (JSON.stringify(passEOfB(`${CURRENT_MARK} = 门禁（PASS-E = 0/50）`)) !== JSON.stringify([0, 50])) {
+    fail('⑨b canary 失效：标记行里的 `PASS-E = M/K` 取不到');
+  }
+  // canary ②（正样本）：**两种**「未闭环」形态都要认
+  if (unclosedOfB('未闭环 **9 项**') !== 9) fail('⑨b canary 失效：「未闭环 N 项」取不到');
+  if (unclosedOfB('实测 **9 项未闭环** / PASS-E') !== 9) fail('⑨b canary 失效：「N 项未闭环」取不到');
+  // canary ③（负样本）：不一致必须能检出（谓词与判定共用 ⇒ 直接比对现算值）
+  if (passEOfB('PASS-E = 1/50')[0] === passECount) {
+    fail('⑨b canary 失效：不一致的 PASS-E 未被识别（判据已退化成空真）');
+  }
+  // canary ④（负样本）：**不带标记**的历史行不得被纳入（否则会误伤轮次表 / 历史审计）
+  if (AUDIT_LOG.test('docs/qualification/release-blocker-audit-2026-09-25.md') !== true
+    || AUDIT_LOG.test('docs/qualification/real-desktop-execution-bundle.md') !== false) {
+    fail('⑨b canary 失效：审计日志的排除谓词不精确（会误伤/漏掉）');
+  }
+  // canary ⑤（正样本）：**跨行**声明（标记行 + 续行）必须能取到
+  //   —— 首版按**单行**取 ⇒ `packaging-release.md`（标记与数字分居两行）**静默漏检**（注入验证 ② 抓到）。
+  if (JSON.stringify(passEOfB(`${CURRENT_MARK} = 门禁的输出**\n> （**PASS-E = 0/50**、未闭环 9 项）`))
+    !== JSON.stringify([0, 50])) {
+    fail('⑨b canary 失效：跨行声明取不到（窗口必须含紧邻下一行）');
+  }
+}
+
 // ── ⑩ 判据的「落位」：抛错点之后不得再有断言（2026-10-09，审计 §4.175）────────
 // 【判据】每个护栏的**最后一个抛错点**（`throw new Error(`）之后，**不得**出现行首的
 //   `fail(` / `errors.push(`（= 语句级断言）—— 那些断言**永不判定**。

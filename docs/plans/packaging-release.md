@@ -156,5 +156,6 @@ Windows/Linux 在 CI 对应 runner 或真机执行）。
    若 `finalize` 停在 Draft，说明**构建真的不齐**，先查制品，**不要**手工改 draft 状态掩盖它。
 
 > **如实声明（每次发版都要对外说明）**：**macOS 产物未签名未公证**（无 Apple 凭据）⇒
-> 首开遇 Gatekeeper 警告；且 **`PASS-E = 0/50`、未闭环 9 项**（全部阻塞于人工 UX Gate / 真机证据）
+> 首开遇 Gatekeeper 警告；且**当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出**
+> （**`PASS-E = 0/50`、未闭环 9 项**，全部阻塞于人工 UX Gate / 真机证据）
 > —— **发布状态的变更 ≠ 完成度的变更**。

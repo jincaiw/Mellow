@@ -11853,6 +11853,70 @@ PITFALLS **§4.282–§4.284** · skill **§167** + 自查清单 +1 · `MEMORY.m
 
 ---
 
+## 4.178 「**当前状态真值源**」标记句散在 **14 处**，而 ⑨ 只锁了 `README.md` **一份**（「只锁了一半」同族**第 7 次**，2026-10-09）
+
+### 一、发现
+
+⑨ 的注释把散在 `docs/qualification/*` 的同族快照笼统记为「**带日期的记录**」而豁免 —— 但实测：
+
+「**当前状态真值源 = `verify-release-gate.mjs` 的输出（… `PASS-E = M/K`、未闭环 N 项）**」是一句
+**显式声称「当前」**的标记句，实测 **14 处**：
+
+- **11 份 `docs/qualification/*`**：`golden-journeys-2026-08-13` · `golden-journeys-2026-08-19` ·
+  `macos-ime-matrix-2026-08-13` · `markdown-syntax-demo-parity-2026-08-23` ·
+  `phase1-runtime-qualification-manual` · `rc-audit-2026-08-16` · `real-desktop-execution-bundle` ·
+  `runtime-matrix-evidence-2026-08-18` · `ui-review-2026-08-13` · `v1.0-final-release-review-2026-08-16` ·
+  `windows-ime-matrix-2026-08-13`
+- **3 份活文档**：`docs/plans/packaging-release.md` · `docs/plans/typora-parity-master-plan.md` ·
+  `docs/specs/runtime-qualification-plan.md`
+
+⚠️ 「**带日期的是紧邻上一行的「快照声明」**」（如「本文是 2026-08-13 的历史记录，不是当前就绪度」），
+而**标记行本身不带日期** ⇒ 它**声称的是当前**。⇒ 台账一变，这 14 处**全部静默漂**，而读者按「当前」读。
+
+⚠️ **区分「声称当前」与「历史记录」是机械化的前提**：`master-plan` 的**轮次表**里也有 `PASS-E = 0/50`
+（带日期、历史）；`docs/qualification/*` 的历史审计也有。⇒ 谓词**必须用显式标记**，
+**不能**用「含 `PASS-E` 的行」（否则会误伤历史，且 `v1.0-acceptance-reevaluation` 里那句
+「6 项未闭环」会造出**必然失败**的假门禁）。
+
+### 二、处置
+
+1. **统一 3 份活文档的措辞**为同一标记（`packaging-release.md` / `master-plan` /
+   `runtime-qualification-plan.md`）—— 加「当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出」
+   前缀，**语义不变、只加指针**。
+2. 新增 **CI 判据 ⑨b**（`verify-release-gate.mjs`，**放在抛错点之前**）：凡含「当前状态真值源」
+   **且能解析** `PASS-E = M/K` 的行 ⇒ M/K 必须 == 现算；同行含「未闭环 N 项」**或**「N 项未闭环」
+   ⇒ N 也必须 == 现算。
+   - **谓词 = 显式标记** ⇒ 不误伤轮次表 / 历史审计 / ADR；
+   - **扫描面排除审计日志本身**（`docs/qualification/release-blocker-audit-*.md`）—— 它的**职责是记录历史**，
+     与「声明当前」语义相反（§4.152：豁免**按职责**写、不按位置写）；且它是本判据的说明载体；
+   - 防空转（声明数 ≥ 10，实测 14）+ **5 条 canary**。
+
+### 三、注入验证（5/5）
+
+① `real-desktop-execution-bundle.md` 的「9 项未闭环」→「8 项」⇒ **转红**；
+② `packaging-release.md` 的 `PASS-E = 0/50` → `1/50` ⇒ **转红**；
+③ `master-plan:1563` 的「未闭环 9 项」→「8 项」⇒ **转红**；
+④ `runtime-qualification-plan.md` 的 `PASS-E = 0/50` → `1/50` ⇒ **转红**；
+⑤ **负样本**：改 `master-plan` **轮次表**（不带标记）的历史行 ⇒ **不转红** ✅（证明谓词不误伤历史）。
+
+### 四、教训
+
+1. ⚠️ **判据首版只按「单行」取 ⇒ 漏了跨行声明**：`packaging-release.md` 的标记与数字**分居两行**
+   ⇒ 注入 ② 首测 **exit 0（未转红）** 才抓到 ⇒ 改为「标记行 + 紧邻下一行」的窗口 + canary ⑤。
+   ⇒ 同族「只锁了一半」**第 7 次**（§4.170/§4.171/§4.172/§4.173/§4.176/§4.177/本节）。
+2. ⚠️ **「破坏的粒度必须与还原的粒度匹配」（§4.171 教训，本轮再踩）**：注入 ② 后用
+   `git checkout -- <整份文件>` 还原 ⇒ **把未提交的标记改动一起回退掉了**（该文件当时的未提交改动 ≠ 仅注入）
+   ⇒ 改用**精确还原**（Edit 回原值）。
+3. ⚠️ **注释里的「豁免理由」也会失真**：⑨ 的注释把 14 处笼统写成「带日期的记录」⇒ 一次**实测**就推翻它
+   （真正的日期在**上一行**）。**「登记为已知」≠「已裁决为正确」**。
+
+### 五、产物
+
+`tests/parity/verify-release-gate.mjs`（**判据 ⑨b** + 5 canary + 防空转）· 3 份文档加标记 ·
+审计 **§4.178** · PITFALLS **§4.285–§4.287** · skill **§168** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 
