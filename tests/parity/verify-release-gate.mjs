@@ -389,9 +389,19 @@ for (const [p, what, decision] of DECIDED_ADRS) {
 {
   const PLAN = 'docs/plans/typora-parity-master-plan.md';
   // 引用源：D 表（master-plan）+ 两个会引用 D 编号的文档类。ADR 目录为平铺 .md。
+  // ⚠️ 2026-10-08（审计 §4.164）：**parity 数据夹具**此前**不在**引用源里 —— 而它们是
+  //   承载「有意差异」的主要地方（矩阵 / 面板独有键 / 第三面 / 台账 都用 `D-` 编号指裁决）。
+  //   夹具里写一个**不存在**的 `D-XX` 此前**没有任何东西核对**（读者会顺着它去找一个不存在的裁决）。
+  //   ✅ 实测纳入时**全部已声明**（`D-AD`/`D-AG`/`D-AK`/`D-AO`/`D-B`/`D-AL`/`D-AM`/`D-C`/`D-D`/`D-H`/`D-N`/`D-R`/`D-S`）。
+  //   ⚠️ **刻意不含 `tests/parity/verify-*.mjs`**：它们的 `D-ZZ` / `D-QQ` / `D-RR` 是 **canary 合成样本**，
+  //     本就**不该**被声明（纳入会把负样本判成缺陷）。
   const REF_SOURCES = [
     PLAN,
     'docs/qualification/release-blocker-audit-2026-09-25.md',
+    'tests/parity/typora-parity-ledger.json',
+    ...readdirSync(resolve(root, 'tests/parity/fixtures'))
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => `tests/parity/fixtures/${f}`),
     ...readdirSync(resolve(root, 'docs/adr'))
       .filter((f) => f.endsWith('.md'))
       .map((f) => `docs/adr/${f}`),
@@ -428,16 +438,42 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   }
 
   // ① 引用集（来自所有 REF_SOURCES）
-  const referenced = new Set();
-  for (const rel of REF_SOURCES) {
-    if (!existsSync(resolve(root, rel))) { fail(`D 表护栏的引用源不存在：${rel}`); continue; }
-    for (const m of read(rel).matchAll(ID)) referenced.add(m[0]);
-  }
+  // ⚠️ 抽成**纯函数**：canary 必须能对**同一谓词**做正/负样本（本仓 idiom）。
+  const collectRefs = (sources) => {
+    const set = new Set();
+    for (const rel of sources) {
+      if (!existsSync(resolve(root, rel))) { fail(`D 表护栏的引用源不存在：${rel}`); continue; }
+      for (const m of read(rel).matchAll(ID)) set.add(m[0]);
+    }
+    return set;
+  };
+  const isDangling = (id) => !declared.has(id) && !D_TABLE_NOT_DECLARED.has(id);
+  const referenced = collectRefs(REF_SOURCES);
   for (const id of [...referenced].sort()) {
-    if (declared.has(id) || D_TABLE_NOT_DECLARED.has(id)) continue;
+    if (!isDangling(id)) continue;
     fail(`D 编号 ${id} 被引用，但 master-plan 里没有它的**声明行**（表格首格形如 \`| **${id}\`）—— `
       + '§12 D 表自称「唯一可发现处」，条目不在表里 = 后续轮次无法发现该裁决；'
       + '若该引用是「**不**创建此编号」或泛指占位，请登记进 D_TABLE_NOT_DECLARED 并写明理由');
+  }
+
+  // 防空转（2026-10-08，审计 §4.164）：**夹具这一类必须真的被读到** —— 否则「夹具里的 D 引用也被核对」
+  // 只是写在注释里。下限 4 = 台账 + 3 个夹具。
+  const FIXTURE_SOURCES = REF_SOURCES.filter((s) => s.startsWith('tests/parity/'));
+  if (FIXTURE_SOURCES.length < 4) {
+    fail(`D 表引用源里的 parity 数据文件只有 ${FIXTURE_SOURCES.length} 个（下限 4 = 台账 + 3 个夹具）`
+      + ' —— 适用域萎缩会让「夹具里的 D 引用也被核对」退化成空真');
+  }
+  // canary ①（正样本）：夹具确实进了引用集 —— `D-AL` 只在面板独有键夹具里出现
+  if (!collectRefs(['tests/parity/fixtures/typora-panel-only-keys.json']).has('D-AL')) {
+    fail('D 表 canary 失效：parity 夹具没有被读进引用集（新纳入的引用源是空的）');
+  }
+  // canary ②（负样本）：未声明的编号必须落进「悬空」这一支
+  if (!isDangling('D-ZZ')) {
+    fail('D 表 canary 失效：未声明编号未被判为悬空（判据已退化成空真）');
+  }
+  // canary ③（反向）：已声明的编号不得被误判
+  if (isDangling([...declared][0])) {
+    fail(`D 表 canary 过宽：已声明编号 ${[...declared][0]} 被误判为悬空`);
   }
 
   // ④ 例外表双向：必须仍被引用（否则是过期例外）；不得同时又有了声明行（自相矛盾）

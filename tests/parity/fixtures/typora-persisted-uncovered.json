@@ -21,12 +21,12 @@
     {
       "key": "listSortType",
       "kind": "preference-like",
-      "reason": "**文件列表**（sidebar file-list）的排序状态。`main.js`：`this.sortType = File.option.listSortType`（读）+ `setSortType(e){ … JSBridge.putSetting(\"listSortType\", e) }`（写）。⚠️ **它是矩阵里 `sortType` 的「活键」** —— 实测 `putSetting(\"sortType\")` **0 次**、`File.option.sortType` 被 `|| 0` 归一化后**再没被读过**（死键）；而 `listSortType` / `treeSortType` **出现在原生二进制里**（`strings` 可证）⇒ **真正的持久化键是这两个**。见审计 §4.146 对 `sortType` 条目的更正。"
+      "reason": "**文件列表**（sidebar file-list）的排序状态。`main.js`：`this.sortType = File.option.listSortType`（读）+ `setSortType(e){ … JSBridge.putSetting(\"listSortType\", e) }`（写）。⚠️ **它是矩阵里 `sortType` 的「活键」** —— 实测 `putSetting(\"sortType\")` **0 次**、`File.option.sortType` 被 `|| 0` 归一化后**再没被读过**（死键）；而 `listSortType` / `treeSortType` **出现在原生二进制里**（`strings` 可证）⇒ **真正的持久化键是这两个**。见审计 §4.146 对 `sortType` 条目的更正。⚠️ **Mellow 对应物 = `FileTreeOptions.sortBy` / `sortAsc`**（持久化在 `mellow.fileTree.options`）。实测 `packages/app-core/src/fileList.ts` 用 `sortEntries(entries.value, { ...treeOptions, folderFirst: false })` ⇒ **列表与树共用同一份排序设置**，而 Typora 分 `listSortType` / `treeSortType` **两份**。⇒ 该差异**已被 `D-AG`（2026-09-30 裁决）判为有意**（D-AG 明言「保留 Mellow 形态」「功能已等价且有护栏」）—— **不是缺口**；本条留在本面只因「**不在矩阵与面板任一面**」这一登记事实。"
     },
     {
       "key": "treeSortType",
       "kind": "preference-like",
-      "reason": "**文件树**（sidebar file-tree）的排序状态。同 `listSortType`：读 `File.option.treeSortType`、写 `putSetting(\"treeSortType\", e)`，且出现在原生二进制里。与 `listSortType` 一起构成矩阵 `sortType` 条目的**活键**。"
+      "reason": "**文件树**（sidebar file-tree）的排序状态。同 `listSortType`：读 `File.option.treeSortType`、写 `putSetting(\"treeSortType\", e)`，且出现在原生二进制里。与 `listSortType` 一起构成矩阵 `sortType` 条目的**活键**。⚠️ **Mellow 对应物同上**（`FileTreeOptions` 一份设置覆盖两种模式）；该**形态差异由 `D-AG` 裁决为有意**，**不是缺口**。"
     },
     {
       "key": "noFileNonExistWarning",
