@@ -76,6 +76,7 @@ mellow/
 | [live-markdown-engine-spec.md](docs/specs/live-markdown-engine-spec.md) | 实时 Markdown 引擎 |
 | [desktop-ui-design-spec.md](docs/specs/desktop-ui-design-spec.md) | 桌面 UI 设计 |
 | [runtime-qualification-plan.md](docs/specs/runtime-qualification-plan.md) | 运行时（Tauri 2）资格认定 |
+| [performance-benchmark-spec.md](docs/specs/performance-benchmark-spec.md) | 性能基准（同机对照口径 / 大文件阈值 / 夹具） |
 | [table-editing-spec.md](docs/specs/table-editing-spec.md) | 表格编辑 |
 | [image-workflow-spec.md](docs/specs/image-workflow-spec.md) | 图片工作流 |
 | [clipboard-smart-paste-spec.md](docs/specs/clipboard-smart-paste-spec.md) | 剪贴板与智能粘贴 |
@@ -85,9 +86,18 @@ mellow/
 
 ### 判决（ADR）
 
-见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ **ADR-0031（发布状态转正：正式发布）**。
-其中 **ADR-0020 §1 与 ADR-0024 Q2=B1 的「pre-release」结论已被 [ADR-0031](docs/adr/ADR-0031-release-status-promotion.md) 取代** ——
+见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ **ADR-0034**（**最新编号以该目录为准**）。
+其中 **ADR-0020 §1 与 ADR-0024 Q2=B1 的「pre-release」结论已被 [ADR-0031](docs/adr/ADR-0031-release-status-promotion.md)（发布状态转正：正式发布）取代** ——
 旧 ADR 原文**保留为历史记录**（ADR 只追加、不改写结论）；**引用发布状态时以 ADR-0031 为准**。
+
+> ⚠️ **2026-10-08 更正（审计 §4.155）**：本页「文档索引」有两处**清单漂移**，已修：
+> ① **法律（Specs）** 表漏了 `performance-benchmark-spec.md`（**9/10**）—— 索引应**穷举** `docs/specs/`；
+> ② **判决（ADR）** 段原写「~ **ADR-0031**」，而该目录里已到 **ADR-0034**（**漂了 3 个版本**）。
+> ⚠️ ②的根因是 §4.94 那次**只修了一半**：`docs/` 目录结构段的 `adr/` 已改为「最新编号见该目录」，
+> 而**本索引段仍硬编码** ⇒ 之后**每加一份 ADR 就漂一次**。
+> ⇒ 两处均已落判据（`tests/parity/verify-doc-code-refs.mjs`：spec 索引**双向**核对 + ADR 范围端点**从目录现读**）。
+> **边界如实声明**：`docs/plans/typora-parity-master-plan.md` §2.1 也有一张文档表，但那是
+> 「**本方案使用的**文档」的**优先级表**（**有意子集**，它别处也不引用未列入者）⇒ **不是** spec 索引，**不**在本判据覆盖内。
 
 ### 施工图
 

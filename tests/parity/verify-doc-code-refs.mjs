@@ -1243,6 +1243,79 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ⑱ 根 README 的两张清单必须与**目录**一致（spec 索引双向 + ADR 范围端点现读）──────
+// 立此条的原因（实测，2026-10-08 审计 §4.155）：`README.md` 是**用户第一眼看到的**那份，
+// 但此前**只有状态行**被护栏锁。实测两处清单漂移：
+//   ① 「### 法律（Specs）」索引列 **9** 条，而 `docs/specs/` 有 **10** 个
+//      （漏 `performance-benchmark-spec.md`）—— 该表是**索引**，应穷举；
+//   ② 「### 判决（ADR）」段写「~ **ADR-0031**」，而目录里已到 **ADR-0034**（**漂了 3 个版本**）。
+//      ⚠️ 根因是 §4.94 那次**只修了一半**：`docs/` 目录结构段的 `adr/` 已改为「最新编号见该目录」，
+//      而**索引段仍硬编码** ⇒ 之后每加一份 ADR 就漂一次。
+// ⇒ 判据：**列出的必须存在 + 存在的必须被列出**（spec）；**范围端点必须从目录现读**（ADR）。
+{
+  const README = 'README.md';
+  const readmeSrc = readFileSync(resolve(root, README), 'utf8').replace(/\r\n/g, '\n');
+  // ⚠️ 更正说明会**引用旧编号** ⇒ 逐行豁免（与文件头部 `LOOKS_LIKE_QUOTE` 同源）。
+  const NOTE_LINE = /原写|原文|更正|漂移|已改为|也写|实际已到|自相矛盾/;
+
+  // ① spec 索引：README「### 法律（Specs）」段里的 `docs/specs/*.md` 链接（判定与 canary 共用）
+  const specListed = (src) => {
+    const sec = src.match(/### 法律（Specs）([\s\S]*?)(?=\n### |\n## |$)/)?.[1] ?? '';
+    return [...new Set([...sec.matchAll(/\]\(docs\/specs\/([^)]+\.md)\)/g)].map((m) => m[1]))];
+  };
+  const specActual = readdirSync(resolve(root, 'docs/specs')).filter((f) => f.endsWith('.md'));
+  const listed = specListed(readmeSrc);
+  const notExist = listed.filter((f) => !specActual.includes(f));
+  const notListed = specActual.filter((f) => !listed.includes(f));
+  if (notExist.length > 0) {
+    fail(`${README} 的「法律（Specs）」索引列了**不存在**的 spec：${notExist.join('、')}`);
+  }
+  if (notListed.length > 0) {
+    fail(`${README} 的「法律（Specs）」索引**漏了** spec：${notListed.join('、')}`
+      + ' —— 该表是 `docs/specs/` 的**索引**，必须穷举（实测：曾漏 `performance-benchmark-spec.md`）');
+  }
+  if (listed.length < 8) {
+    fail(`${README} 的 spec 索引只解析出 ${listed.length} 条（下限 8）—— 谓词或文档漂移会让本判据**空转**`);
+  }
+
+  // ② ADR 范围端点：README 里「~ **ADR-NNNN**」必须 == `docs/adr/` 里的最大编号
+  const adrMax = Math.max(...readdirSync(resolve(root, 'docs/adr'))
+    .map((f) => Number(/^ADR-(\d{4})/.exec(f)?.[1] ?? NaN)).filter((n) => Number.isFinite(n)));
+  const statedOf = (src) => src.split('\n')
+    .filter((l) => !NOTE_LINE.test(l))
+    .map((l) => /~ \*\*ADR-(\d{4})/.exec(l)?.[1]).filter(Boolean).map(Number);
+  const stated = statedOf(readmeSrc);
+  if (stated.length === 0) {
+    fail(`${README} 解析不到「~ **ADR-NNNN**」范围端点 —— 判据会空转`);
+  }
+  for (const n of stated) {
+    if (n !== adrMax) {
+      fail(`${README} 声明 ADR 范围到 **ADR-${String(n).padStart(4, '0')}**，而 docs/adr/ 里最大是 `
+        + `**ADR-${String(adrMax).padStart(4, '0')}** —— 范围端点必须**从目录现读**`
+        + '（实测：曾硬编码 `ADR-0031` 而实际已到 `ADR-0034`，漂了 3 个版本）');
+    }
+  }
+  // canary：四向（判定与 canary 共用 specListed / NOTE_LINE）
+  if (specListed('### 法律（Specs）\n| [a](docs/specs/a.md) |\n| [b](docs/specs/b.md) |\n### x').length !== 2) {
+    errors.push('README 清单护栏 canary 失效：spec 链接解析不正确');
+  }
+  if (specListed('### 判决（ADR）\n| [a](docs/specs/a.md) |\n### x').length !== 0) {
+    errors.push('README 清单护栏 canary 过宽：其它小节的链接被当成了 spec 索引');
+  }
+  if (adrMax < 30) {
+    errors.push('README 清单护栏 canary 失效：ADR 最大编号解析异常（docs/adr/ 应远多于 30 份）');
+  }
+  if (statedOf('见 [docs/adr/](docs/adr/)：ADR-0001 ~ **ADR-0034**。').join() !== '34') {
+    errors.push('README 清单护栏 canary 失效：ADR 范围端点样本未被识别');
+  }
+  if (statedOf('> ② 段原写「~ **ADR-0031**」，实际已到 ADR-0034').length !== 0) {
+    errors.push('README 清单护栏 canary 失效：更正说明里**引用**的旧端点未被豁免');
+  }
+  if (statedOf('见 docs/adr/：ADR-0001 ~ ADR-0034（无粗体）').length !== 0) {
+    errors.push('README 清单护栏 canary 过宽：非粗体写法被当成了范围端点');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
