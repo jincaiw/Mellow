@@ -650,6 +650,26 @@ const VERSION_SOURCES = [
   if (!judge(['1.5.33', '1.5.33', '1.5.33', '1.5.32'])) {
     fail('升版一致性 canary 失效：一处不同未被检出（判据已退化成空真）');
   }
+  // ── **手册里复述的「升版 N 处」也必须 == `VERSION_SOURCES.length`**（2026-10-09，审计 §4.182）──
+  // 【为什么】`docs/plans/packaging-release.md` 的发版顺序写着「① **升版 4 处** → ② `npm run parity`…」
+  //   —— 字面 **4**。若将来加第 5 个版本源（如新增一个含版本号的配置），**手册会静默漂**。
+  //   ⚠️ **同族**：§4.180（`docs/architecture/*` 复述上游文件数）、§4.181（护栏输出里的字面「4 处」）
+  //   —— **同一个数字在三处出现，而此前只有「代码位置之间的一致性」被守过**。
+  {
+    const PKG_DOC = 'docs/plans/packaging-release.md';
+    const probe = (s) => { const r = /升版\s*\**\s*(\d+)\s*处/.exec(s); return r === null ? null : Number(r[1]); };
+    const docSrc = readFileSync(resolve(root, PKG_DOC), 'utf8').replace(/\r\n/g, '\n');
+    const declared = probe(docSrc);
+    if (declared === null) {
+      fail(`升版一致性：${PKG_DOC} 里读不到「升版 N 处」（发版顺序的锚点漂移）—— 判据不得静默跳过`);
+    } else if (declared !== VERSION_SOURCES.length) {
+      fail(`升版一致性：${PKG_DOC} 写「升版 ${declared} 处」，而代码里实际有 ${VERSION_SOURCES.length} 处`
+        + ' —— 手册是**副本**，必须与代码一致（加/删版本源时同步改手册）');
+    }
+    // canary：谓词与判定共用（拼接构造）
+    if (probe(`升版 ${4} 处`) !== 4) fail('升版一致性 canary 失效：手册形态「升版 N 处」取不到');
+    if (probe('无此形态的句子') !== null) fail('升版一致性 canary 失效：无锚点的样本被误判');
+  }
   if (got.length === VERSION_SOURCES.length) {
     console.log(`Doc code refs: 升版 ${VERSION_SOURCES.length} 处一致 = ${got[0].v}（真值源 ${VERSION_SOURCES[0].path}）`);
   }
