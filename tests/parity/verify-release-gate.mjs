@@ -59,6 +59,7 @@ const parityChain = pkg.scripts?.parity ?? '';
 // ⚠️ 2026-10-08（审计 §4.167）：下限原写 `18`（2026-10-01 基线），而实际已是 **23** ⇒
 //   本条自己声明的意图「**防某人悄悄删掉一条**」**根本没有实现**（连删 5 条都不会红）。
 //   现按本仓纪律「**下限 == 当前基线**」改为 **23**。
+// [覆盖型] 基线 23 —— 阈值必须 == 当前值（skill §2）
 if (repoGuardFiles.length < 23) {
   fail(`**仓库里**的 parity 护栏只有 ${repoGuardFiles.length} 条（下限 23 = 2026-10-08 基线）—— `
     + '本条的目的正是「防某人悄悄删掉一条」；数量退化会让它退化成**空真**');
@@ -330,6 +331,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       //   「不该缩小的集合」」）⇒ 按本仓纪律「**覆盖型下限 == 当前基线**」（skill §2），
       //   阈值必须是**当前行数**。原写 `10`（立表时的基线），而实际已是 **17** ⇒ 留了 7 个空位，
       //   「行被删掉会让登记表退化成空表」这个意图**被削弱了 7 行**。现改为 **17**。
+      // [覆盖型] 基线 17 —— 阈值必须 == 当前值（skill §2）
       if (rows.length < 17) {
         fail(`待裁决项登记表只有 ${rows.length} 行（下限 17 = 2026-10-09 实测基线）—— `
           + '行被删掉会让登记表退化成空表（**覆盖型下限**：登记表是「不该缩小的集合」，'
@@ -1199,6 +1201,76 @@ if (driftedMissing.length === 0) {
     errors.push('CRLF canary 未武装：无法模拟「去掉归一化」的漂移，护栏已失效');
   } else if (/\\r\\n/.test(drifted)) {
     errors.push('CRLF canary 失效：注入后仍未检出缺失归一化');
+  }
+}
+
+// ── ⑥ 覆盖型下限的「标记 ↔ 阈值」自洽（2026-10-09，审计 §4.168）────────────
+// 分工（本仓 idiom）：**CI 守自洽**（标记里的基线与阈值一致），**本机工具守完整**
+//   （`tests/parity/tools/audit-guard-bounds.mjs` 用「抬 1 仍绿」二分实测真实值，判定是否过时）。
+// 【为什么需要标记】下限有**两类**，取法相反：
+//   · **覆盖型**（防「成员悄悄消失」，集合是**人工维护的枚举**）⇒ **必须 == 当前基线**（skill §2）；
+//   · **健康度型**（防「解析器 / 扫描面失效」，集合由**内容**产生）⇒ **必须留余量**。
+//   不标出来，下一个审计者**无法判断该紧还是该松** —— §4.167 实测：38 处「过松」里 **37 处**
+//   自述为健康度型（留余量是设计意图），只有 1 处是覆盖型。故约定：**覆盖型下限必须带
+//   `[覆盖型] 基线 N` 标记**，且 N == 阈值。
+{
+  const MARKER = /\[覆盖型\]\s*基线\s*(\d+)/;
+  // 阈值形态：**窗口内第一个比较运算**（`<` / `<=` / `>=` / `>` 后跟数字），或 `const NAME = N`。
+  // ⚠️ 不能只认 `X.length/size <op> N` —— 实测有 `if (linkCount < 27)`（**变量**，无 `.length`）。
+  const BOUND_EXPR = /(?:<=|<|>=|>)\s*(\d+)/;
+  const BOUND_CONST = /const\s+[A-Z][A-Z0-9_]*\s*=\s*(\d+)/;
+  const guards6 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  let marked = 0;
+  for (const f of guards6) {
+    const lines = read(`tests/parity/${f}`).split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      const m = MARKER.exec(lines[i]);
+      if (m === null) continue;
+      marked += 1;
+      const baseline = Number(m[1]);
+      // 阈值必须出现在**同一行或紧随其后 3 行内**（允许中间夹注释）
+      const window = lines.slice(i, i + 4).join('\n');
+      const hit = BOUND_EXPR.exec(window) ?? BOUND_CONST.exec(window);
+      if (hit === null) {
+        fail(`${f}:${i + 1} 有「[覆盖型] 基线 ${baseline}」标记，但**紧随其后找不到阈值**`
+          + ' —— 标记必须贴在它所描述的那条下限旁（`X.length/size <op> N` 或 `const NAME = N`）');
+        continue;
+      }
+      if (Number(hit[1]) !== baseline) {
+        fail(`${f}:${i + 1} 覆盖型下限**自相矛盾**：标记写「基线 ${baseline}」，而阈值是 ${hit[1]}`
+          + ' —— 覆盖型下限必须 == 当前基线（skill §2）；若基线确实变了，请**同时**改标记与阈值');
+      }
+    }
+  }
+  if (marked < 5) {
+    fail(`全仓只找到 ${marked} 处「[覆盖型] 基线 N」标记（下限 5）—— `
+      + '标记被删空会让「覆盖型下限必须 == 当前基线」这条纪律重新变成**无人守**（§4.168 实测 8 处）');
+  }
+  // ⚠️ canary 样本**必须用拼接构造** —— 本文件**自己也在扫描面里**（它的真实标记要被本判据检查），
+  //   若把 `[覆盖型] 基线 <数字>` 写成字面量，样本本身会被当成一条标记（本轮实测：2 处真标记
+  //   变成 5 处 ⇒ 样本被判「找不到阈值」）⇒ 本会话第 5 次「判据命中自己」。
+  const mark = (n) => `[覆盖型] 基线 ${n}`; // 运行时拼出；源码里不出现「…基线 <数字>」整串
+  // canary ①（正样本）：标记与阈值一致 ⇒ 不得报错
+  const okSample = `// ${mark(9)}\nif (checked.length < 9) {`;
+  if (Number(BOUND_EXPR.exec(okSample)[1]) !== Number(MARKER.exec(okSample)[1])) {
+    fail('⑥ canary 失效：合法样本被判为不一致');
+  }
+  // canary ②（负样本）：标记与阈值不一致 ⇒ 必须能检出
+  const badSample = `// ${mark(9)}\nif (checked.length < 8) {`;
+  if (Number(BOUND_EXPR.exec(badSample)[1]) === Number(MARKER.exec(badSample)[1])) {
+    fail('⑥ canary 失效：不一致的样本未被检出（判据已退化成空真）');
+  }
+  // canary ③：`const NAME = N` 形态也必须能被取到阈值
+  const constSample = `// ${mark(4)}\nconst MIN_SAMPLERS = 4;`;
+  if (Number(BOUND_CONST.exec(constSample)[1]) !== 4) {
+    fail('⑥ canary 失效：`const NAME = N` 形态的阈值取不到');
+  }
+  // canary ④：**变量**形态（无 `.length`，如 `if (linkCount < 27)`）也必须能取到阈值
+  const varSample = `// ${mark(27)}\nif (linkCount < 27) {`;
+  if (Number(BOUND_EXPR.exec(varSample)[1]) !== 27) {
+    fail('⑥ canary 失效：变量形态（无 `.length`）的阈值取不到');
   }
 }
 

@@ -523,6 +523,7 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
   // 新增一个采样脚本时它会自动进入判据（见 isSampler），而不是悄悄溜过去。
   const NON_SAMPLERS = ['dev-server.mjs', 'golden-path.mjs', 'wait-rendered.mjs'];
   // 采样脚本的覆盖下限 = 当前基线（防止某次重构把脚本挪走/改名后判据静默变空）。
+  // [覆盖型] 基线 4 —— 阈值必须 == 当前值（skill §2；2026-10-09 二分实测 == 4 ✅）
   const MIN_SAMPLERS = 4;
 
   // 剥注释（**具名函数**，判定与 canary 共用同一份 —— 否则 canary 测的是副本）。

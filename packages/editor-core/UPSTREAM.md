@@ -34,7 +34,7 @@ cp -R /tmp/MarkEdit-src/CoreEditor ./CoreEditor
 
 清单来源：与**本文件钉住的 commit** 的官方 tarball 逐文件 diff（非回忆、非人工枚举）。
 
-### 修改的文件（19）
+### 修改的文件（21）
 
 | 文件 | 规模 | 改动要点 |
 |---|---|---|
@@ -57,6 +57,8 @@ cp -R /tmp/MarkEdit-src/CoreEditor ./CoreEditor
 | `src/styling/themes/github-light.ts` | +5/-2 | 主题微调 |
 | `test/zoom.test.ts` | +29 | 手势 disposer 回归 |
 | `test/lezer.test.ts` | +10/-3 | **测试时序修复（2026-10-01）**：`parseTypes` 原先直接读 `syntaxTree(state)` —— 它是**增量树**，视图刚建好时可能只有 `Document`/`Body`，导致偶发假红（实测 `npm run parity` 的 vendored jest 步骤报 `Received array: ["Document","Body"]`）。改用 `ensureSyntaxTree(state, doc.length)` **强制完成解析**后再遍历（保留 `?? syntaxTree(...)` 兜底） |
+| `test/utils/helpers.ts` | +25 | **新增 `waitFor`（等状态，不等时间）**：`while (!predicate())` + 超时抛错，间隔 `sleep(interval)`。**测试时序修复（2026-10-09）**：本仓多处用 `await sleep(N)` 等异步 decoration —— 那是**等时间**，CPU 竞争下 N 毫秒可能不够（见下一行实测） |
+| `test/task.test.ts` | +5/-4 | **测试时序修复（2026-10-09）**：4 处 `await sleep(200)` 改为 `await waitFor(...)`。实测：`decorates unchecked tasks with cm-md-taskMarker-unchecked` 在 `npm run parity` 的 vendored jest 步骤**偶发**报 `Received: null`（`querySelector('.cm-md-taskMarker')` 未等到 decoration；同一提交两次直跑均通过）⇒ 与 `test/lezer.test.ts` 同源：**等时间 ≠ 等状态** |
 
 ### 新增的文件（3，全在 `test/`）
 
