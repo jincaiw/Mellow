@@ -10711,6 +10711,72 @@ skill **§148** + 自查清单 +2 · `MEMORY.md` · `2026-10-08.md`。
 
 ---
 
+## 4.162 与 Typora 差距的**全量再评估**（2026-10-08）—— 附**三条被否的假设**与一处**再收窄**
+
+### 一、四层 + 门禁的当前状态（全部**实跑**）
+
+| 面 | 现状 |
+|---|---|
+| ① 台账（发布门禁） | **NO-GO**：**9 项未闭环**；`PASS-E = 0/50` |
+| ② 偏好矩阵（`DEFAULT_OPTIONS`，84 键） | `implemented **40** / gap **38** / n/a **6**`；gap 的 behavior = **`matches-default` 30** / **`differs` 6** / **`n/a` 2**；`deviation` = `deliberate 2` / **`undecided 5`** |
+| ③ 面板独有面（47 键） | `equivalent **36** / gap **4** / n/a **7**`；gap 的 `blockedBy` = `precondition 1` / `adr-pending 3` |
+| ④ 第三面（缝隙，15 键） | `preference-like 4` / `warning-suppression 5` / `view-state 6` |
+| ⑤ D 表 | **40** 条声明行 |
+| ⑥ ADR-0034 | **Proposed**，**12 问**（Q1–Q13，Q9 已排除） |
+
+### 二、结论：**可自主面 = 0**（与前几轮一致；本轮把「**有动作的**」逐条点清）
+
+- ② 的 38 条 gap：**30 条 `matches-default`**（Mellow 硬编码的正是 Typora 默认 ⇒ 实现 = 加**没人要的开关**）；
+  **6 条 `differs`** = **5 条 ADR-0034 待裁决** + **1 条 `presetSpellCheck`**（→ 台账 `P0-EDITOR-005`，`runtime-verification-pending`）；
+  **2 条 `n/a`** = 「文件库」（见第三节 ①）。
+- ③ 的 4 条 gap = **1 precondition + 3 adr-pending**（**全阻塞**）。
+- ⑥ 的 12 问 = **待用户裁决**。
+
+⇒ **能自主推进的：0**。剩余全部是 **ADR-0034 的 12 问** / **ADR-0026 Q3** / **第三面 `preference-like` 4 键** / **6 项 `ux-gate` 人工会话**。
+
+### 三、⚠️ 三条**被否的假设**（如实记录 —— 免得下一个人重做）
+
+① **「File Library」是不是一个「只在矩阵里」的隐形缺口？** —— **否**。
+   Typora 1.14.9 **确有**「File Library」功能（面板里一整节：`libraryFileFilterMode` = supported/custom +
+   `libraryFileFilterPatterns`），Mellow 完全没有；**但 master-plan 2026-10-07 已明写处置**：
+   「Mellow 整体无「文件库」功能 → 行为不可比，**不进工作清单**」⇒ **不是「未登记」，是「已决定不做」**；
+   且 **PRD §133 的 P0 范围不含它**（本轮复核）。
+   ⇒ **完善**：把该**决定出处**补进矩阵那 2 条的 `note`（此前只有「Mellow 无对应实现」，读者找不到「谁决定不做」）。
+
+② **`gap` + `behavior: n/a` 是不是词表错误？** —— **否**。`verify-settings-contract.mjs` **显式允许**该组合
+   （`['matches-default','differs','unverified','n/a']`）⇒ **有意**。
+   ⚠️ 但**报「gap 38」时必须知道其中 2 条属此类**，否则**虚高**（已写进 ① 的 note）。
+
+③ **PRD §133 的 60 条 P0 是否都有台账项？** —— **不能机械判**（master-plan §7 的合同表**形态不一**，多数无「等级」列；
+   机械对账会产生大量假阳性）。⇒ **如实声明该核对的边界**，**不做**。
+
+### 四、一处**再收窄**（`zoomLevel`）
+
+面板面最后 1 条 `consumer: unknown` 的 `consumerNote` 补了三条新证据（2026-10-08 实测）：
+
+⑤ **`main.js`（编辑器窗口）里 `zoomLevel` 出现 0 次**（**连写点都没有**）；
+⑥ 写入路径来自**面板**（`execCommand('File.option["zoomLevel"] = …')`，`Preferences.*.js` 的 case 151）
+   ⇒ 与原有的 `putSetting` 是**同一个写**的两条通道；
+⑦ `setZoomLevel(` **只在 `page-dist/static/js/` 出现，`main.js` 里没有** ⇒
+   「Electron `webFrame.setZoomLevel` 施加缩放」这条**只解释了面板页自身**，**不能**解释编辑器窗口的缩放。
+
+⇒ **(b)「上游遗留的只写键」证据更强**，但**仍未排除 (a)**（原生按整体设置字典泛化读）；**判定要真机**（本环境无）。
+
+### 五、教训
+
+1. **「看起来像缺口」的东西，先找「谁决定不做」** —— 本节 ① 的假设若直接动手「登记缺口」，
+   会**凭空造出一条待裁决**（而它**已经被决定不做**）；
+2. **词表的组合要读判据** —— ② 的假设若直接改 `status`，会**违反一条有意允许的判据**；
+3. **「能不能机械对账」本身要如实声明** —— ③ **不做**，比**做一个会假阳性的判据**更好（同 PITFALLS §4.229「先验量具」）。
+
+### 六、产物
+
+`tests/parity/fixtures/typora-preferences-matrix.json`（2 条 `note` 补决定出处）·
+`tests/parity/fixtures/typora-panel-only-keys.json`（`zoomLevel` 补 3 条证据）· 审计 **§4.162** ·
+PITFALLS **§4.230** · skill **§152** + 自查清单 +1 · `MEMORY.md` · `2026-10-08.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 
