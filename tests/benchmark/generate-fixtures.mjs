@@ -2,7 +2,12 @@
 /**
  * Mellow Performance Benchmark — 夹具确定性生成器（performance-benchmark-spec §4）。
  *
- * 用法：node generate-fixtures.mjs [--seed 42] [--out fixtures]
+ * 用法：node generate-fixtures.mjs
+ *      —— **无参数**。seed 固定 `42`、输出固定 `<本目录>/fixtures`（见下两处常量），
+ *      与 spec §4「确定性生成（固定 seed，内容可复现）」一致。
+ *      ⚠️ 2026-10-08（审计 §4.152）：本行原写 `[--seed 42] [--out fixtures]`，
+ *      而本脚本**从不读 `process.argv`** ⇒ 那两个 flag **从来不存在**，
+ *      照那份**已作废**的注释执行 `--seed 7` 会**静默按 42 生成**（同 §4.73「文档声称的接口代码里没有」）。
  * 产物：fixtures/ 下 7 个夹具 + assets/ 1000 个 1×1 PNG + manifest.json（sha256 / bytes / lines）
  * 确定性：固定 seed → 固定内容；manifest 记录实际字节数（UTF-8）。
  */

@@ -139,7 +139,22 @@ async function runDocumentScenario(sc) {
 }
 
 const args = process.argv.slice(2);
-const only = args.find((a) => a.startsWith('--scenario='))?.split('=')[1];
+
+/**
+ * 支持 `--x=v` 与 `--x v` **两种**格式（与 `golden-journeys.mjs` 同一惯用法）。
+ * ⚠️ 立此条的原因（2026-10-08，审计 §4.152）：本脚本头部用法注释写的是
+ * `[--scenario paragraph,heading]`（空格形式），而旧实现只认 `=` ⇒ 照注释执行会
+ * **静默跑全部场景**（`only` 为 `undefined` 时不筛）。
+ */
+function flagArg(name) {
+  const eq = args.find((a) => a.startsWith(`--${name}=`));
+  if (eq !== undefined) return eq.split('=')[1];
+  const i = args.indexOf(`--${name}`);
+  if (i !== -1 && i + 1 < args.length) return args[i + 1];
+  return undefined;
+}
+
+const only = flagArg('scenario');
 
 const results = [];
 for (const sc of SCENARIOS) {

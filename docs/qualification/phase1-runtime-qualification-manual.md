@@ -13,7 +13,13 @@
 - 从 CI Release Packaging 产物下载安装包：Windows（MSI + NSIS）、Linux（AppImage + deb + rpm）、macOS（DMG）。
 - 每台测试机记录：OS 版本（Win10/11、Ubuntu LTS/Fedora、macOS 版本）、CPU 架构、IME 输入法版本（微软拼音/搜狗/简体拼音/五笔/fcitx5/ibus）、WebView 版本（WebView2 / WebKitGTK / WKWebView）。
 - 对照基线：Typora 1.14.9（build 7785，安装于同一机器，用于行为对照）。
-- 测试素材：tests/fixtures/（1MB.md、5MB.md、100k-lines.md、large-table.md、100-mermaid.md、1000-images.md 等）。
+- 测试素材：`tests/benchmark/fixtures/`（`1MB.md`、`5MB.md`、`10MB.md`、`100k-lines.md`、`large-table.md`、`100-mermaid.md`、`1000-images.md`、`manifest.json`）。
+  > **⚠️ 2026-10-08 更正（审计 §4.152）**：本行原写 `tests/fixtures/` —— 那是**另一个目录**
+  > （`tests/fixtures/` 是 Markdown 素材库，含 `math/` / `mermaid/` / `typora-parity/` / `ux-gate/` 等**子目录**，
+  > **不含**上面这些大文件）⇒ 照原路径找**一个也找不到**。
+  > 真实位置由 `tests/benchmark/generate-fixtures.mjs` 的 `outDir` 决定，且这些文件是**生成产物、不入库**
+  > （`tests/benchmark/fixtures/.gitignore`）⇒ **先跑 §0.5 的 `node tests/benchmark/generate-fixtures.mjs`**。
+  > 另：原清单漏了 `10MB.md`，而 §2.5 的 U5 与 §3 的 benchmark 模板都要用它。
 
 
 ## 0.5 一键执行命令速查（自动化 runner）
@@ -98,15 +104,18 @@ node tests/benchmark/generate-fixtures.mjs
 | D1 | 拖入单个 .md | 打开文档 |
 | D2 | 拖入图片（单/多张） | 按图片策略插入 |
 
-> **⚠️ 2026-10-07 更正（审计 §4.124）：D1 的「通过标准」当前**不可能通过** —— 该行为未实现。**
-> 实测（读码，非推断）：Mellow 唯一的拖放处理在 `App.tsx` 的 Tauri `onDragDropEvent` 回调里，
-> 它**只**把路径写进 iframe 的 `window.__MELLOW_DROP_PATHS__`，而全仓该变量的**唯一消费方**是
-> `packages/editor-engine/src/image/host.ts` 的 `consumeDroppedFilePaths()`（**图片管线**）
-> ⇒ 拖入 `.md` / 文件夹**什么都不会发生**（Rust 侧无任何 drag-drop 处理）。
+> **⚠️ 2026-10-08 更新（审计 §4.152；**取代** §4.124 的「未实现」判断）：D1 的行为**已实装**（§4.134），
+> 但仍**未做真机验证** ⇒ 本行应读作「**待人工真机执行**」，既不是「已通过」、也不是「不可能通过」。**
+> 实装内容（审计 §4.134）：决策表逐字转写为纯函数 `packages/app-core/src/dropAction.ts` 的
+> `decideDropAction()`（39 例单测全行覆盖）+ 三档设置 `files.dropFolderAction` / `files.dropFileAction` /
+> `files.dropImportAction`（默认 **open / open / import**，与 Typora 一致）+ Rust `path_kind`
+> （`dir`/`file`/`missing`）+ `App.tsx` 的 `handleDroppedPaths` 分派。
 >
-> ⇒ **D1 这一行必须按「未实现」读**，不要把它当作「已通过的真机项」。
-> 完整缺口与实现前置见 master-plan §15.3 行 14c 与审计 §4.124
-> （含：Typora 该组偏好的**默认值**就是「打开」；且实现要经过未保存文档守卫）。
+> ⚠️ **本条 §4.124 原文（「Rust 侧无任何 drag-drop 处理」）已过期** —— 现在 Rust 有 `path_kind`。
+> ⚠️ 如实声明的差异（§4.134）：**不支持 `.textbundle`**、`openFolder`/`switchFolder` 合并、
+> 「受支持文档」**收窄到 Markdown 家族**。
+> ⚠️ **真机拖拽仍待人工**（拖放事件需 GUI，本机不可验）⇒ 决策表由**单测**锁、分派器由**静态判据**锁，
+> 「真机拖一次」这一步**没有机器证据**，不得据此把 D1 记为已通过。
 
 ### 2.5 Undo / 文件
 | # | 场景 | 通过标准 |

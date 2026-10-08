@@ -10063,6 +10063,78 @@ Node 的 `spawn` 在无 shell 时**无法执行 `.cmd`**（抛 `ENOENT`）⇒ �
 4. **判据里的数字要抽成常量** —— 否则「改了判据、文案还写旧数」；本轮顺手改掉。
 
 
+## 4.152 人工门禁的「**执行依据**」从未被核对 —— 五处失真 + 两条判据（2026-10-08）
+
+### 一、动因：换一条**从未审过**的轴
+
+前几轮把「可自主面」逐面量化并推完（§4.149 → §4.150 → §4.151）。本轮换对象：
+`docs/qualification/phase1-runtime-qualification-manual.md` —— **人工门禁的执行依据**。
+台账里 **7 项**阻塞于「人工 UX Gate 会话」，而人做这些会话时**照着这份手册执行**
+⇒ 手册里每一条引用 / 注记**都是门禁链的一部分**，却**从未被核对过**（原因见第三节）。
+
+### 二、实测五处失真
+
+| # | 失真 | 一手证据 |
+|---|---|---|
+| ① | `tests/benchmark/ime-matrix-linux.mjs` 的 `--im` / `--scenario` / `--driver` **只认 `=` 形式** | 脚本**头部注释**与手册 §0.5 **都写空格形式** ⇒ 照文档跑 `--im ibus` **静默回落 `fcitx5`**；而 `im` 决定 `GTK_IM_MODULE` / `XMODIFIERS` ⇒ **测的根本不是 ibus**（结果抬头虽打印实际 `im`，但「照文档执行 = 测到的东西」这条链已断） |
+| ② | `tests/benchmark/ime-matrix.mjs` 的 `--scenario` 同病 | 头部注释写 `[--scenario paragraph,heading]`；旧实现只认 `=` ⇒ 静默 `only=undefined` ⇒ **跑全部场景** |
+| ③ | `tests/benchmark/generate-fixtures.mjs` 的 `[--seed 42] [--out fixtures]` **不存在** | 全文件**无 `process.argv`** ⇒ `SEED = 42` / `outDir` 是硬编码常量。spec §4 明写「**固定 seed**，内容可复现」⇒ 那两个 flag **本就不该存在**；照旧注释执行 `--seed 7` 会**静默按 42 生成**（同 §4.73「文档声称的接口，代码里没有」） |
+| ④ | 手册 §0 的夹具路径 `tests/fixtures/` **错** | 那 7 个夹具由 `generate-fixtures.mjs` 写到 **`tests/benchmark/fixtures/`**（生成产物、gitignore）。`tests/fixtures/` 是**另一个目录**（Markdown 素材库：`math/` / `mermaid/` / `typora-parity/` / `ux-gate/` …），**一个也不含** ⇒ 照手册找素材**全找不到**。⚠️ 同仓的 `ux-score-gate-template.md` 写的是**正确路径**（`tests/benchmark/fixtures/10MB.md`）⇒ 这是手册**单方面漂移** |
+| ⑤ | 手册 §2.4 的 D1 更正注记**已过期** | §4.124（2026-10-07）写「该行为**未实现** / Rust 侧无任何 drag-drop 处理」；而 **§4.134 当天就实装**了（`dropAction.ts` + Rust `path_kind` + `handleDroppedPaths`）⇒ 注记**从未回改**。⚠️ 方向是**保守**的（说「不可能通过」而实际已实装）⇒ 人做门禁时会**跳过**这一项 |
+
+### 三、为什么五处都没被发现：**判据按「目录」当角色代理**
+
+`verify-doc-code-refs.mjs` 有一条**明确的豁免**（写得很清楚、理由也成立）：
+
+> ⚠️ **故意不含 `docs/qualification`**：审计 / 验收记录的职责就是**引用旧值**
+
+这条理由对**审计记录**成立（§4.73 实测：审计正文被自己的判据命中 4 行，全是「在描述旧值」）。
+但 **`phase1-runtime-qualification-manual.md` 不是审计记录** —— 它是**活的手册**，
+是人**照着做**的执行依据 ⇒ 它的引用**必须**可核对。
+⇒ **「用目录当角色代理」把两类不同职责的文件混在了一起**（该目录里既有历史快照，也有活文档）。
+
+### 四、处置
+
+| # | 处置 | 为什么选这一侧 |
+|---|---|---|
+| ① ② | **改代码**（接受两种形式） | 复用仓库**既有的** `flagArg()` 惯用法（`golden-journeys.mjs` 已有）；另给 `im` **补显式校验**（旧实现里非 `ibus` 的值一律按 fcitx 处理 ⇒ 拼错会静默跑成 fcitx5） |
+| ③ | **改文档**（如实声明「无参数」） | 两个 flag **本就不该存在**（spec 要求固定 seed）；另 3 份文档（手册 §0.5 / ux 模板 / `tests/benchmark/README.md`）也都**无参数**调用 ⇒ 改文档是**唯一**正确的方向 |
+| ④ | **改文档**（路径 + 注明生成方式 + 补漏掉的 `10MB.md`） | 并注明「生成产物、不入库 ⇒ 先跑生成器」 |
+| ⑤ | **改文档**（注记改为「已实装 + 真机待验」） | 明确「既不是已通过、也不是不可能通过」 |
+
+### 五、判据（两条）+ 行为探针 + 注入验证
+
+- **⑮ 活文档声明的夹具目录 == 生成器的输出目录**（`generate-fixtures.mjs` 的 `outDir` 是**单一真源**）。canary 三向。
+- **⑯ benchmark runner 头部用法注释里的 `--flag value`（空格形式）必须被解析接受**。谓词与 canary **共用**；
+  「更正说明」逐行豁免（与文件头部 `LOOKS_LIKE_QUOTE` 同源）；下限 `checked ≥ 8`（实测 **10**）防空转。canary 三向。
+
+**行为探针 4/4**（不靠静态判据，**真跑**）：
+
+```text
+--im bogus                   ⇒ Error: Unsupported input method: bogus   （空格形式**被解析**）
+--im=bogus                   ⇒ Error: Unsupported input method: bogus   （等号形式未破）
+--im ibus --driver bogus     ⇒ Error: Unsupported input driver: bogus   （空格形式下 im 已正确取到 ibus）
+--im fcitx5 --scenario bogus ⇒ 解析通过、进入执行                        （合法参数不误报）
+```
+
+**注入验证 3/3**：① `--im` 改回「只认 `=`」⇒ 红；② `--scenario` 同 ⇒ 红；③ 夹具目录改回 `tests/fixtures/` ⇒ 红。还原后绿。
+
+### 六、教训
+
+1. **「按目录豁免」会把不同职责的文件混在一起** —— 豁免的依据应当是**职责**（审计记录），不是**位置**（`docs/qualification/`）。同一目录里既有「引用旧值是对的」的历史快照，也有「引用必须可核对」的活手册。
+2. **「更正注记」会过期，且过期方向可以是保守的** —— 说「不可能通过」而实际已实装 ⇒ 人**跳过**这一项。**修完功能要回头改注记**。
+3. **文档写的命令 = 契约** —— 照文档执行必须**得到文档说的事**；静默取默认值比报错更坏（报错会被发现）。
+4. **单方面漂移的检测靠「同仓对照」** —— 手册写 `tests/fixtures/`、模板写 `tests/benchmark/fixtures/`，两者**只能有一个对**；「同一事实的另一处写法」是最省力的取证入口。
+5. ⚠️ **我又一次被自己的新注释命中判据**（⑯ 的「更正说明豁免」）：`generate-fixtures.mjs` 的新注释里写了 `--seed 7`，而**那一行没有豁免关键词** ⇒ 判据当场报红。⇒ **写「举例 / 引用旧写法」时必须让它落在豁免规则内**（同 PITFALLS §4.195 与 PITFALLS §4.202 家族，**第 7 次**）。
+
+### 七、产物
+
+`tests/benchmark/{ime-matrix-linux,ime-matrix,generate-fixtures}.mjs` · 手册（§0 素材路径 + §2.4 D1 注记）·
+`tests/parity/verify-doc-code-refs.mjs`（+⑮⑯ 两条判据与 canary）· 审计 **§4.152** ·
+PITFALLS **§4.210–§4.211** · skill（+1 节 + 自查清单 +2 条）· `MEMORY.md` · `2026-10-08.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 

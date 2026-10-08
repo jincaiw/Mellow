@@ -21,11 +21,31 @@ function sh(cmd, timeout = 20000) {
 function sleep(ms) { const at = Date.now() + ms; while (Date.now() < at) { /* busy */ } }
 
 const args = process.argv.slice(2);
-const im = args.find((a) => a.startsWith('--im='))?.split('=')[1] ?? 'fcitx5';
-const only = args.find((a) => a.startsWith('--scenario='))?.split('=')[1];
-const driver = args.find((a) => a.startsWith('--driver='))?.split('=')[1] ?? 'xdotool';
+
+/**
+ * 支持 `--x=v` 与 `--x v` **两种**格式（与 `golden-journeys.mjs` 同一惯用法）。
+ *
+ * ⚠️ 立此条的原因（2026-10-08，审计 §4.152）：本脚本头部用法注释与
+ * `docs/qualification/phase1-runtime-qualification-manual.md` §0.5 **都写空格形式**，
+ * 而旧实现只认 `=` ⇒ 照文档跑 `--im ibus` 会**静默回落 fcitx5**：
+ * `im` 决定 `GTK_IM_MODULE` / `XMODIFIERS`（见下方 `launch()`）⇒ **测的根本不是 ibus**，
+ * 而结果抬头虽会打印实际 `im`，但「照文档执行 = 测到的东西」这条链已经断了。
+ */
+function flagArg(name) {
+  const eq = args.find((a) => a.startsWith(`--${name}=`));
+  if (eq !== undefined) return eq.split('=')[1];
+  const i = args.indexOf(`--${name}`);
+  if (i !== -1 && i + 1 < args.length) return args[i + 1];
+  return undefined;
+}
+
+const im = flagArg('im') ?? 'fcitx5';
+const only = flagArg('scenario');
+const driver = flagArg('driver') ?? 'xdotool';
 
 if (!['xdotool', 'ydotool'].includes(driver)) throw new Error(`Unsupported input driver: ${driver}`);
+// ⚠️ 输入法也要**显式校验**：旧实现里非 `ibus` 的值一律按 fcitx 处理 ⇒ 拼错会静默跑成 fcitx5。
+if (!['fcitx5', 'ibus'].includes(im)) throw new Error(`Unsupported input method: ${im}（支持 fcitx5 / ibus）`);
 
 function xdo(args) { sh(`xdotool ${args}`); }
 function ydo(args) { sh(`ydotool ${args}`); }

@@ -1074,6 +1074,110 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ⑮ 活文档（人工门禁的**执行依据**）声明的夹具目录必须等于生成器的输出目录 ────────
+// 立此条的原因（实测，2026-10-08 审计 §4.152）：
+// `docs/qualification/phase1-runtime-qualification-manual.md` §0 写
+// 「测试素材：`tests/fixtures/`（1MB.md、5MB.md、…）」，而**那些文件根本不在那里** ——
+// 它们由 `tests/benchmark/generate-fixtures.mjs` 生成到 `tests/benchmark/fixtures/`
+// （**生成产物、gitignore**）⇒ 照手册找素材**一个也找不到**。
+//
+// ⚠️ **为什么以前没人发现**：本文件其它判据**按目录**排除 `docs/qualification`
+//    （理由「审计 / 验收记录的职责就是**引用旧值**」）。那条理由对**审计记录**成立，
+//    但**执行手册不是审计记录** —— 它是人要照着做的**活文档**，其引用**必须**可核对。
+//    ⇒ **「用目录当角色代理」把两类不同职责的文件混在了一起**。
+{
+  const GEN = 'tests/benchmark/generate-fixtures.mjs';
+  const MANUAL = 'docs/qualification/phase1-runtime-qualification-manual.md';
+  /** 单一真源：生成器实际写到哪个目录。 */
+  const genFixtureDir = (src) => {
+    const m = src.replace(/\r\n/g, '\n').match(/const outDir = join\(__dirname, '([^']+)'\)/);
+    return m ? `tests/benchmark/${m[1]}` : null;
+  };
+  /** 手册里「测试素材：`<dir>/`」的声明。 */
+  const declFixtureDir = (src) => {
+    const m = src.replace(/\r\n/g, '\n').match(/测试素材：`?([^\s`（(]+?)\/?`?[\s（(]/);
+    return m ? m[1] : null;
+  };
+  const actual = genFixtureDir(readFileSync(resolve(root, GEN), 'utf8'));
+  const declared = declFixtureDir(readFileSync(resolve(root, MANUAL), 'utf8'));
+  if (actual === null) fail(`${GEN}：解析不到夹具输出目录（\`const outDir = join(__dirname, …)\`）—— 判据会空转`);
+  if (declared === null) fail(`${MANUAL}：解析不到「测试素材：」声明 —— 判据会空转`);
+  if (actual !== null && declared !== null && declared !== actual) {
+    fail(`${MANUAL} 声明夹具在 \`${declared}\`，而 ${GEN} 写到 \`${actual}\` —— `
+      + '**人工门禁的素材位置必须以生成器为单一真源**（实测：曾写成 `tests/fixtures/`，那些文件不在那里，'
+      + '而 `tests/fixtures/` 是另一个目录 —— Markdown 素材库，含 `math/` / `mermaid/` 等子目录）');
+  }
+  // canary：三向（一致 ⇒ 放行 / 漂移 ⇒ 报 / 解析不到 ⇒ 报「空转」）
+  const SYN_OK = '测试素材：`tests/benchmark/fixtures/`（x.md）';
+  const SYN_BAD = '测试素材：`tests/fixtures/`（x.md）';
+  const SYN_NONE = '（本节没有素材声明）';
+  if (declFixtureDir(SYN_OK) !== actual) errors.push('夹具目录判据 canary 失效：正样本被判为漂移');
+  if (declFixtureDir(SYN_BAD) === actual) errors.push('夹具目录判据 canary 失效：负样本（漂移）被判为一致');
+  if (declFixtureDir(SYN_NONE) !== null) errors.push('夹具目录判据 canary 失效：无声明时不应解析出目录');
+  if (genFixtureDir('const outDir = join(__dirname, "nope");') !== null) {
+    errors.push('夹具目录判据 canary 失效：生成器锚点应只认单引号形态（否则会静默取到别的东西）');
+  }
+}
+
+// ── ⑯ benchmark runner 头部用法注释给出的 `--flag value` 必须**真的被接受** ────────
+// 立此条的原因（实测，2026-10-08 审计 §4.152）：两个 runner 的头部注释（以及手册 §0.5）
+// 都写**空格形式**，而解析只认 `=` ⇒ 照注释执行会**静默取默认值**：
+//   - `ime-matrix-linux.mjs` 的 `--im ibus` ⇒ 静默回落 `fcitx5`（`im` 决定 `GTK_IM_MODULE`，
+//     ⇒ **测的根本不是 ibus**）；`--scenario` / `--driver` 同病；
+//   - `ime-matrix.mjs` 的 `--scenario paragraph,heading` ⇒ 静默**跑全部场景**。
+// 同族：`generate-fixtures.mjs` 的头部曾写 `[--seed 42] [--out fixtures]`，而它**从不读
+// `process.argv`** ⇒ 两个 flag **从来不存在**（同 §4.73「文档声称的接口，代码里没有」）。
+// ⚠️ 该脚本本轮改为**如实声明「无参数」**，故它现在**不再贡献**被检查的 flag（0 个）。
+{
+  const BENCH = 'tests/benchmark';
+  /** 文件头部的文档注释（shebang 之后的第一个 `/** … *​/`）。 */
+  const headerOf = (src) => {
+    const m = src.replace(/\r\n/g, '\n').match(/^#![\s\S]*?\n\s*\/\*\*([\s\S]*?)\*\//);
+    return m ? m[1] : '';
+  };
+  // 「更正说明」会**引用**已废弃的写法 ⇒ 与上文 `LOOKS_LIKE_QUOTE` 同源，**逐行**豁免。
+  const NOTE_LINE = /原写|原文|更正|已过期|过期|旧实现|曾写|漂移|作废|不再/;
+  /** 头部注释里以 `--flag value`（空格）形式给出的 flag。 */
+  const spaceFormFlags = (src) => {
+    const head = headerOf(src).split('\n').filter((l) => !NOTE_LINE.test(l)).join('\n');
+    return [...new Set([...head.matchAll(/--([a-z][a-z0-9-]*) (\S+)/g)].map((x) => x[1]))];
+  };
+  /** 「该 flag 接受空格形式」的谓词（判定与 canary **共用**）。 */
+  const acceptsSpaceForm = (src, name) => new RegExp(`flagArg\\(\\s*'${name}'`).test(src)
+    || new RegExp(`argVal\\(\\s*'--${name}'`).test(src)
+    || new RegExp(`indexOf\\(\\s*'--${name}'`).test(src)
+    || new RegExp(`includes\\(\\s*'--${name}'`).test(src);
+  let checked = 0;
+  for (const f of readdirSync(resolve(root, BENCH)).filter((x) => x.endsWith('.mjs'))) {
+    const src = readFileSync(resolve(root, BENCH, f), 'utf8');
+    for (const name of spaceFormFlags(src)) {
+      checked += 1;
+      if (!acceptsSpaceForm(src, name)) {
+        fail(`${BENCH}/${f}：头部用法注释给出 \`--${name} <value>\`（空格形式），但解析**不接受**该形式`
+          + ' —— 照注释执行会**静默取默认值**。请用 `flagArg()`（见 `golden-journeys.mjs`）'
+          + `或 \`indexOf('--${name}')\``);
+      }
+    }
+  }
+  if (checked < 8) {
+    fail(`benchmark runner 里只解析出 ${checked} 个「头部注释的空格形式 flag」（下限 8 = 立此判据时的基线）`
+      + ' —— 谓词或文件集漂移会让本判据**空转**');
+  }
+  // canary：三向（接受 ⇒ 放行 / 只认 `=` ⇒ 报 / 更正说明 ⇒ 豁免）
+  const SYN_OK = "#!/usr/bin/env node\n/**\n * 用法：node x.mjs --foo bar\n */\nconst a = flagArg('foo');\n";
+  const SYN_BAD = "#!/usr/bin/env node\n/**\n * 用法：node x.mjs --foo bar\n */\nconst a = args.find((a) => a.startsWith('--foo='));\n";
+  const SYN_NOTE = "#!/usr/bin/env node\n/**\n * 用法：node x.mjs\n * ⚠️ 原写 `--foo bar`，已作废\n */\n";
+  if (!spaceFormFlags(SYN_OK).includes('foo') || !acceptsSpaceForm(SYN_OK, 'foo')) {
+    errors.push('runner 参数形式 canary 失效：正样本（两种形式都接受）被判为违规');
+  }
+  if (!spaceFormFlags(SYN_BAD).includes('foo') || acceptsSpaceForm(SYN_BAD, 'foo')) {
+    errors.push('runner 参数形式 canary 失效：负样本（只认 `=`）未被检出');
+  }
+  if (spaceFormFlags(SYN_NOTE).length !== 0) {
+    errors.push('runner 参数形式 canary 失效：更正说明里引用的旧写法未被豁免');
+  }
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
