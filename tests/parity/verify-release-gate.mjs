@@ -1832,6 +1832,53 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
 }
 
+// ── ⑨c README 的「V1.0 门槛」数字必须 == `ADR-0020 §2` **现读**（2026-10-09，审计 §4.179）
+// 【为什么】`README.md` 写着「「V1.0 正式发布」的门槛未变（ADR-0020 §2 未被取代）
+//   = PRD P0 范围 + 发布评审 18 项验收全部通过（… UX Score ≥ 92 实测、30 任务效率 Gate …）」
+//   （⚠️ 这两处**都没有加粗** —— 引用原文时如实引用。）
+//   —— 这三个数字是**逐字抄自 `ADR-0020 §2`** 的**副本**，且**没有任何判据**：
+//   · 判据 ⑨ / ⑨b 锁的是 `PASS-E` / 「未闭环 N 项」= **当前状态**；
+//   · 状态行 ⇄ `release.yml` 的 `prerelease=` 锁的是**发布状态**；
+//   · 而**门槛**（18 / 92 / 30）**无人守** ⇒ 若将来**新 ADR 取代 `ADR-0020 §2`**（ADR 只追加 ⇒
+//     门槛变更必须新 ADR），README 会**静默漂**（同族「只锁了一半」**第 8 次**）。
+// 【判据】**两侧都从文件现读**（任一侧写成常量 ⇒ 改那一侧不会红）：`ADR-0020 §2` 的三个门槛数字
+//   必须 == `README.md` 里对应位置的数字；两侧都必须能现读（否则报「锚点漂移」）。
+{
+  const stripBold = (s) => s.replace(/\*\*/g, '');
+  const gateOf = (s) => ({
+    review: (/发布评审\s*(\d+)\s*项验收/.exec(s) ?? [])[1] ?? null,
+    ux: (/UX Score\s*≥\s*(\d+)/.exec(s) ?? [])[1] ?? null,
+    tasks: (/(\d+)\s*任务效率 Gate/.exec(s) ?? [])[1] ?? null,
+  });
+  const adrGate = gateOf(stripBold(read('docs/adr/ADR-0020-release-state-correction.md')));
+  const readmeGate = gateOf(stripBold(read('README.md')));
+  const GATE_KEYS = [['review', '发布评审 N 项验收'], ['ux', 'UX Score ≥ N'], ['tasks', 'N 任务效率 Gate']];
+  for (const [side, g] of [['ADR-0020', adrGate], ['README.md', readmeGate]]) {
+    for (const [k, label] of GATE_KEYS) {
+      if (g[k] === null) {
+        fail(`⑨c ${side} 的「V1.0 门槛」里读不到「${label}」—— 锚点漂移（判据不得静默跳过）`);
+      }
+    }
+  }
+  for (const [k, label] of GATE_KEYS) {
+    if (adrGate[k] !== null && readmeGate[k] !== null && adrGate[k] !== readmeGate[k]) {
+      fail(`⑨c 「${label}」两侧不一致：ADR-0020 §2 = ${adrGate[k]}，README.md = ${readmeGate[k]}`
+        + ' —— README 是**副本**，必须与真值源一致（改门槛请走新 ADR 并同步 README）');
+    }
+  }
+  // canary ①（正样本）：**加粗**形态经 stripBold 后必须能解析（**防御性** —— 两侧当前都无加粗，
+  //   但有人给门槛加粗时判据不应失效）
+  if (gateOf(stripBold('发布评审 **18 项**验收 + UX Score ≥ **92** + **30 任务**效率 Gate')).review !== '18') {
+    fail('⑨c canary 失效：加粗形态「发布评审 **N 项**验收」取不到');
+  }
+  // canary ②（负样本）：不一致必须能检出（谓词与判定共用）
+  if (gateOf('发布评审 20 项验收').review === gateOf('发布评审 18 项验收').review) {
+    fail('⑨c canary 失效：不一致的门槛未被识别（判据已退化成空真）');
+  }
+  // canary ③（正样本）：**无空格**形态（ADR 写的是 `UX Score≥92`）也要能取到
+  if (gateOf('UX Score≥92').ux !== '92') fail('⑨c canary 失效：`UX Score≥N`（无空格）取不到');
+}
+
 // ── ⑩ 判据的「落位」：抛错点之后不得再有断言（2026-10-09，审计 §4.175）────────
 // 【判据】每个护栏的**最后一个抛错点**（`throw new Error(`）之后，**不得**出现行首的
 //   `fail(` / `errors.push(`（= 语句级断言）—— 那些断言**永不判定**。
