@@ -2439,14 +2439,22 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //     · `tests/fixtures/README.md` 的「## 目录」表**漏了 2 个顶层目录**（`typora-parity/`、`updater/`）
 //     · `tests/parity/README.md` 的「## 工具」段**只列 1/3** 个「需本机 Typora」的工具
 //       （漏 `audit-typora-orphan-strings.mjs`、`audit-typora-preferences.mjs`）
-// ⚠️ **表驱动**（**不**自动识别「哪些章节是索引」—— 那不可机械判）。每条给 `cover` 模式：
-//   `entries` = 必须覆盖目录的**每个顶层条目**（排除 README.md 自身）；
-//   `typora-tools` = 只覆盖**头部自述「需本机 Typora」**的工具（该章节的标题就是这么写的）。
+// ⚠️ **表驱动**（**不**自动识别「哪些章节是索引」—— 那不可机械判）。每条给 `sections`（**可多个**：
+//   同一份 README 里可能**分几个小节**索引同一个目录）+ `cover` 模式：
+//   `entries` = 必须覆盖目录的**每个顶层条目**（排除 README.md 自身）。
+//   ⚠️ 2026-10-09（审计 §4.232）：`tests/parity/README.md` 原先**只**用「## 工具（需本机装有 Typora）」一节
+//      + `typora-tools` 模式（只覆盖头部自述「需本机 Typora」的工具）；本轮补了「## 其它本机工具」一节
+//      ⇒ 两节**合起来**覆盖 `tools/` 的**全部**工具 ⇒ 改回 `entries` 模式，并**删掉**不再需要的
+//      `typora-tools` 模式与它的 `needsLocalTypora` 谓词（**死代码要删**）。
 {
   const INDEXES = [
-    { readme: 'tests/fixtures/README.md', section: '## 目录', dir: 'tests/fixtures', cover: 'entries' },
-    { readme: 'tests/fixtures/ux-gate/README.md', section: '## 文件', dir: 'tests/fixtures/ux-gate', cover: 'entries' },
-    { readme: 'tests/parity/README.md', section: '## 工具（需本机装有 Typora，**不进 CI**）', dir: 'tests/parity/tools', cover: 'typora-tools' },
+    { readme: 'tests/fixtures/README.md', sections: ['## 目录'], dir: 'tests/fixtures' },
+    { readme: 'tests/fixtures/ux-gate/README.md', sections: ['## 文件'], dir: 'tests/fixtures/ux-gate' },
+    {
+      readme: 'tests/parity/README.md',
+      sections: ['## 工具（需本机装有 Typora，**不进 CI**）', '## 其它本机工具（**不进 CI**，**不依赖 Typora**）'],
+      dir: 'tests/parity/tools',
+    },
   ];
   /** 章节正文（到下一个 `## ` 为止）；找不到标题 ⇒ null。判定与 canary **共用**。 */
   const sectionBody = (src, heading) => {
@@ -2461,36 +2469,33 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     ...[...body.matchAll(/^\|\s*`([^`]+)`\s*\|/gm)].map((m) => m[1]),
     ...[...body.matchAll(/^-\s+`([a-z0-9-]+\.mjs)`/gm)].map((m) => m[1]),
   ])];
-  /** 工具**头部自述**「需本机 Typora」⇒ 属于该章节索引的集合。判定与 canary **共用**。 */
-  const needsLocalTypora = (abs) => /需本机(?:装有)?\s*Typora/.test(
-    readFileSync(abs, 'utf8').split('\n').slice(0, 10).join('\n'),
-  );
   let idxChecked = 0;
-  for (const { readme, section, dir, cover } of INDEXES) {
+  for (const { readme, sections, dir } of INDEXES) {
     const src = readFileSync(resolve(root, readme), 'utf8').replace(/\r\n/g, '\n');
-    const body = sectionBody(src, section);
-    if (body === null) {
-      fail(`${readme} 找不到章节「${section}」—— 判据锚点漂移，别静默跳过`);
+    const bodies = sections.map((s) => sectionBody(src, s));
+    const missingSections = sections.filter((_, i) => bodies[i] === null);
+    if (missingSections.length > 0) {
+      fail(`${readme} 找不到章节「${missingSections.join('」「')}」—— 判据锚点漂移，别静默跳过`);
       continue;
     }
+    const body = bodies.join('\n');
     const listed = listedEntries(body);
     if (listed.length === 0) {
-      fail(`${readme} 的「${section}」没解析出任何条目 —— 谓词漂移（本判据会空转）`);
+      fail(`${readme} 的索引章节没解析出任何条目 —— 谓词漂移（本判据会空转）`);
       continue;
     }
     idxChecked += listed.length;
     for (const p of listed) {
       if (!existsSync(resolve(root, dir, p))) {
-        fail(`${readme} 的「${section}」列了 \`${p}\`，但 \`${dir}/\` 下**不存在**`);
+        fail(`${readme} 的索引章节列了 \`${p}\`，但 \`${dir}/\` 下**不存在**`);
       }
     }
     const dirAbs = resolve(root, dir);
     const entries = readdirSync(dirAbs).filter((e) => e !== 'README.md');
     const covered = (e) => listed.some((p) => p === e || p.startsWith(e + '/'));
-    const inScope = (e) => (cover === 'entries' ? true : (e.endsWith('.mjs') && needsLocalTypora(resolve(dirAbs, e))));
-    const missing = entries.filter((e) => inScope(e) && !covered(e));
+    const missing = entries.filter((e) => !covered(e));
     if (missing.length > 0) {
-      fail(`${readme} 的「${section}」**漏了** \`${dir}/\` 的条目：${missing.join('、')}`
+      fail(`${readme} 的索引章节**漏了** \`${dir}/\` 的条目：${missing.join('、')}`
         + ' —— 该章节是**索引**，必须覆盖（实测：漏 2 个顶层目录 / 漏 2 个「需本机 Typora」的工具）');
     }
   }
@@ -2499,7 +2504,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail(`索引章节只解析出 ${idxChecked} 个条目（下限 25 = 立此判据时的基线 31 − 余量）`
       + ' —— 谓词或文档内容漂移会让本判据**空转**');
   }
-  // canary：五向（判定与 canary **共用** sectionBody / listedEntries / needsLocalTypora）
+  // canary：四向（判定与 canary **共用** sectionBody / listedEntries）
   if (sectionBody('## A\nbody\n## B\nx', '## A') !== '\nbody') {
     errors.push('索引护栏 canary 失效：章节切分错（会把下一个章节的内容算进来）');
   }
@@ -2514,10 +2519,6 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   if (listedEntries('正文提到 `b.mjs` 但不在列表项里\n').length !== 0) {
     errors.push('索引护栏 canary 过宽：**正文里提到的**工具名被当成了列表项（会误报）');
-  }
-  if (!needsLocalTypora(resolve(root, 'tests/parity/tools/audit-typora-preferences.mjs'))
-    || needsLocalTypora(resolve(root, 'tests/parity/tools/audit-doc-counts.mjs'))) {
-    errors.push('索引护栏 canary 失效：「需本机 Typora」谓词不能区分正 / 负样本');
   }
   console.log(`Doc code refs: README 索引章节 ${INDEXES.length} 个 / 条目 ${idxChecked} 条，均已覆盖其目录`);
 }
