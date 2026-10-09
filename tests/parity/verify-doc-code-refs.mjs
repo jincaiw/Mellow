@@ -804,25 +804,36 @@ const DOC_PATH_EXEMPT = new Map([
 //   · `release-candidate-audit-2026-08-18.md` 称「**待**生成 V1.0 Release Notes」（日期却更晚）
 // ⇒ 读者会把**当时**的裁决读成**当前**就绪度。**日期是唯一的过期信号，但只写在标题里不够** ——
 // 需要一句话说清「这不是当前、当前在哪儿」。
-// 判据：非豁免的 `docs/qualification/*.md`，其**前 14 行**必须含快照标记之一。
+// 判据：非豁免的 `docs/qualification/*.md` **与** `tests/qualification/*.md`，
+//   其**前 14 行**必须含快照标记之一。
+// ⚠️ 2026-10-09（审计 §4.197）：**扫描面从 `docs/qualification` 扩到 `tests/qualification`** ——
+//   后者有 **8 份**验收记录，其中 **6 份**缺快照声明（实测），而它们**同样会被按「当前」读**
+//   （如 `source-fidelity-corpus.md` 的「151 个文件 / 0 diff」是 2026-08-16 的实跑快照，
+//   而它的数字来自脚本的**运行时** `find | wc -l` ⇒ **无法静态校验**）。
 const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
   ['ux-score-gate-template.md', '**模板/工具**（不是记录）：定义「怎么做」，不含某次执行的结论'],
   ['release-blocker-audit-2026-09-25.md', '**现状真值源本身**：滚动审计日志（§4.NN 递增），不是某次快照'],
+  ['README.md', '**索引 / 真值源指针**（`tests/qualification/`）：它说明「当前状态以哪份为准」，本身不是快照'],
 ]);
+const QUALIFICATION_SNAPSHOT_DIRS = ['docs/qualification', 'tests/qualification'];
 {
   const SNAPSHOT_MARKER = /快照声明|不是当前|已过期|历史记录|历史快照|按当时读/;
-  const dir = resolve(root, 'docs/qualification');
-  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : [];
   let checked = 0;
-  for (const name of files) {
-    if (QUALIFICATION_SNAPSHOT_EXEMPT.has(name)) continue;
-    checked += 1;
-    const head = readFileSync(resolve(dir, name), 'utf8').replace(/\r\n/g, '\n').split('\n').slice(0, 14).join('\n');
-    if (!SNAPSHOT_MARKER.test(head)) {
-      fail(`docs/qualification/${name} 的前 14 行缺少**快照声明** —— `
-        + '本目录是**验收记录**，读者会把「当时」的裁决读成「当前」就绪度；'
-        + '请加一句「本文是 <日期> 的历史记录，当前状态以 verify-release-gate.mjs 为准」，'
-        + '或登记进 QUALIFICATION_SNAPSHOT_EXEMPT（带理由）');
+  const allNames = new Set();
+  for (const rel of QUALIFICATION_SNAPSHOT_DIRS) {
+    const dir = resolve(root, rel);
+    const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : [];
+    for (const name of files) {
+      allNames.add(name);
+      if (QUALIFICATION_SNAPSHOT_EXEMPT.has(name)) continue;
+      checked += 1;
+      const head = readFileSync(resolve(dir, name), 'utf8').replace(/\r\n/g, '\n').split('\n').slice(0, 14).join('\n');
+      if (!SNAPSHOT_MARKER.test(head)) {
+        fail(`${rel}/${name} 的前 14 行缺少**快照声明** —— `
+          + '本目录是**验收记录**，读者会把「当时」的裁决读成「当前」就绪度；'
+          + '请加一句「本文是 <日期> 的历史记录，当前状态以 verify-release-gate.mjs 为准」，'
+          + '或登记进 QUALIFICATION_SNAPSHOT_EXEMPT（带理由）');
+      }
     }
   }
   if (checked < 8) {
@@ -830,7 +841,7 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
   }
   // 例外表**双向**：登记了但文件不存在 / 已不再需要豁免 ⇒ 报错
   for (const [name, reason] of QUALIFICATION_SNAPSHOT_EXEMPT) {
-    if (!files.includes(name)) {
+    if (!allNames.has(name)) {
       fail(`QUALIFICATION_SNAPSHOT_EXEMPT 登记了 ${name}，但该文件不存在 —— 请删除该例外条目`);
     }
     if (typeof reason !== 'string' || reason.trim() === '') {

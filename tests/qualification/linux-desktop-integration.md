@@ -1,5 +1,8 @@
 # Linux Desktop Integration Qualification
 
+> **⚠️ 快照声明（2026-08-12）**：本文是 **2026-08-12 的实跑记录**，**不是当前状态**；
+> 当前状态以 `node tests/parity/verify-release-gate.mjs` 的输出为准。
+
 > 对应实现：`apps/desktop/src-tauri/Cargo.toml`（tauri-plugin-dialog `xdg-portal`）、
 > `tauri.conf.json`（bundle.fileAssociations / bundle.linux.deb / publisher）。
 > 平台约束：本清单在真实 Linux（GNOME / KDE / Wayland / X11）上手动执行；

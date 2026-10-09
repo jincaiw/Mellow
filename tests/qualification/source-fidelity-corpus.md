@@ -5,6 +5,11 @@
 
 ## 结论
 
+> **⚠️ 快照声明（2026-08-16）**：本文的数字（151 个文件 / 0 diff）是 **2026-08-16 的实跑快照**，
+> **不是当前状态** —— **真值源** = `bash tests/qualification/run-source-fidelity-corpus.sh` 的输出
+> （脚本用 `find "$CORPUS" -type f | wc -l` **运行时数** ⇒ **无法静态校验**）
+> ⇒ 语料库变化后请**重跑并更新本文**；当前状态以 `node tests/parity/verify-release-gate.mjs` 为准。
+
 | 指标 | 结果 |
 |---|---|
 | Open → No Edit → Save → Git Diff | ✅ **0 diff（151/151 字节级一致）** |

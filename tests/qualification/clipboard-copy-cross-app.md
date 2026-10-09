@@ -1,5 +1,8 @@
 # Clipboard Copy Cross-App Manual Test Matrix
 
+> **⚠️ 快照声明（2026-08-12）**：本文是 **2026-08-12 的人工实测记录**，**不是当前状态**；
+> 当前状态以 `node tests/parity/verify-release-gate.mjs` 的输出为准。
+
 对应 `docs/specs/clipboard-smart-paste-spec.md` §2 / §8 与 PRD §50。
 
 > 状态：自动化覆盖已完成；以下为真机 GUI 手动验收记录模板。执行前运行 `cd apps/desktop && npm run tauri dev`。

@@ -1,5 +1,8 @@
 # File Safety Corpus — Gate 记录
 
+> **⚠️ 快照声明（2026-08-16）**：本文是 **2026-08-16 的实跑记录**，**不是当前状态**；
+> 当前状态以 `node tests/parity/verify-release-gate.mjs` 的输出为准。
+
 > 对应 PRD §141（File Safety Corpus）、`docs/specs/document-file-safety-spec.md`、
 > ADR-0009（File Safety / Atomic Save）、PRD §104（Atomic Save 保留 permissions/encoding/EOL）。
 
