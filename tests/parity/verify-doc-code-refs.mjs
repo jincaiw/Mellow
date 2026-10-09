@@ -996,7 +996,13 @@ const QUALIFICATION_SNAPSHOT_FILES = [
     const noFences = raw.replace(/```[\s\S]*?```/g, '');
     const dir = resolve(abs, '..');
     noFences.split('\n').forEach((line, i) => {
-      if (/原写|原文|更正|不存在|审计 §4\.(?:90|93|94)/.test(line)) return;
+      // ⚠️ 更正说明会**引用示例**（旧路径 / 已删文档）⇒ 逐行豁免。
+      // ⚠️ **2026-10-09（审计 §4.213）删除了一处死豁免**：这里原还写着 `|审计 §4\.(?:90|93|94)`
+      //   —— 那是 §4.94 立本判据时，为「那几节里**举例用的断链**」加的豁免。
+      //   实测：**去掉它本判据仍绿**（不可达 0 处），且全仓含该字样的 **7 行**（都是「更正块」）
+      //   **一条链接都没有** ⇒ **豁免已成死代码**，且它按「提到哪一节」而不是按「这行的性质」放行
+      //   ⇒ 任何将来提到那几节的行都会**静默免检**（盲区）。故删除。
+      if (/原写|原文|更正|不存在/.test(line)) return;
       const clean = line.replace(/`[^`]*`/g, '');
       for (const target of linkTargets(clean)) {
         if (isExternalLink(target)) continue;
@@ -1024,9 +1030,9 @@ const QUALIFICATION_SNAPSHOT_FILES = [
     fail(`markdown 链接可达性普查只解析出 ${linkCount} 条相对链接（下限 27 = 2026-10-09 实测基线；**已排除生成型夹具**）`
       + ' —— 解析或扫描面漂移会让本判据空转；若确实删过文档，请同步下调下限并说明');
   }
-  // canary：四向 —— ①相对路径必须被识别 ②绝对 URL/锚点必须被跳过
+  // canary：五向 —— ①相对路径必须被识别 ②绝对 URL/锚点必须被跳过
   // ③**带标题属性的链接只能取到路径**（正则放宽成 `([^)]*)` 会把 `"标题"` 并进目标 ⇒ 假阳性）
-  // ④围栏代码块必须真的被剥离
+  // ④围栏代码块必须真的被剥离 ⑤（原写「四向」—— 2026-10-09 审计 §4.213 实测**实为 5 条**，同步）
   if (linkTargets('[a](docs/x.md)').join(',') !== 'docs/x.md') {
     errors.push('markdown 链接护栏 canary 失效：相对路径样本未被正确解析');
   }
@@ -1270,7 +1276,8 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
       errors.push(`审计文档里有**不可解析且无限定词**的 \`§4.N\`（${bad.length}）：${bad.join('、')}`
         + ' —— 要么指向本文档（则应能解析），要么加文档限定词（如 `master-plan §4.3` / `PITFALLS §4.143`）');
     }
-    // canary：三向（可解析 ⇒ 放行 / 不可解析且无限定词 ⇒ 报 / 不可解析但有 限定词 ⇒ 放行）
+    // canary：四向（可解析 ⇒ 放行 / 不可解析且无限定词 ⇒ 报 / 不可解析但有 限定词 ⇒ 放行 / 小节集合解析对）
+    // （原写「三向」—— 2026-10-09 审计 §4.213 实测**实为 4 条**，同步）
     const S_OK = '## 4.9 x\n见 §4.9\n';
     const S_BAD = '## 4.9 x\n见 §4.77\n';
     const S_QUAL = '## 4.9 x\n见 PITFALLS §4.77\n';
