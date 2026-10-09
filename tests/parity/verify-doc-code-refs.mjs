@@ -1617,11 +1617,17 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 // 真实出处是 **PRD §4.7**（「Mellow 正式采用」清单里的 `One Settings Model`）。
 // ⚠️ 与 §4.148 的 `§4.N` 同族（不可解析 / 假解析），但**命名空间不同**（这里是 PRD / master-plan）。
 {
+  // ⚠️ **必须含子节**（2026-10-09 审计 §4.208）：旧谓词 `§+\s*(\d+)` 只捕获**主号**
+  //   ⇒ `master-plan §9.9`（不存在的子节）会被当成「§9 存在」⇒ **静默通过**。
+  //   实测仓库内有 **124 处带点引用**（`PRD §4.7` ×74 / `master-plan §9.5` ×50）**从未被校验**。
+  //   层级实测（2026-10-09）：PRD = `# N`(151) + `## N.M`(28) + `### N.M.K`(2)；
+  //                            master-plan = `## N`(16) + `### N.M`(52)。
+  //   ⇒ 集合键改用**点号字符串**（`'4.7'`），判定用 `has(m[1])` 而非 `has(Number(...))`。
   const secsOf = (p, re) => new Set([...readFileSync(resolve(root, p), 'utf8')
-    .replace(/\r\n/g, '\n').matchAll(re)].map((m) => Number(m[1])));
-  const PRD_SECS = secsOf('docs/product/Mellow-PRD-V1.2-FINAL.md', /^# (\d+)[. ]/gm);
-  const MP_SECS = secsOf('docs/plans/typora-parity-master-plan.md', /^## (\d+)[. ]/gm);
-  if (PRD_SECS.size < 100 || MP_SECS.size < 10) {
+    .replace(/\r\n/g, '\n').matchAll(re)].map((m) => m[1]));
+  const PRD_SECS = secsOf('docs/product/Mellow-PRD-V1.2-FINAL.md', /^#{1,3} (\d+(?:\.\d+)*)[.\s]/gm);
+  const MP_SECS = secsOf('docs/plans/typora-parity-master-plan.md', /^#{2,3} (\d+(?:\.\d+)*)[.\s]/gm);
+  if (PRD_SECS.size < 150 || MP_SECS.size < 60) {
     fail(`PRD/master-plan 的节号集合异常（${PRD_SECS.size} / ${MP_SECS.size}）—— 判据会空转`);
   }
   // ⚠️ 更正说明会**引用旧编号** ⇒ 逐行豁免 —— **先配好豁免再动笔写说明**（见 skill §145 / PITFALLS §4.217）。
@@ -1631,11 +1637,11 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     const out = [];
     text.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       if (NOTE.test(line)) return;
-      for (const m of line.matchAll(/PRD\s*§+\s*(\d+)/g)) {
-        if (!PRD_SECS.has(Number(m[1]))) out.push(`L${i + 1} PRD §${m[1]}`);
+      for (const m of line.matchAll(/PRD\s*§+\s*(\d+(?:\.\d+)*)/g)) {
+        if (!PRD_SECS.has(m[1])) out.push(`L${i + 1} PRD §${m[1]}`);
       }
-      for (const m of line.matchAll(/(?:master[-\s]?plan|施工计划|本计划)\s*§+\s*(\d+)/gi)) {
-        if (!MP_SECS.has(Number(m[1]))) out.push(`L${i + 1} master-plan §${m[1]}`);
+      for (const m of line.matchAll(/(?:master[-\s]?plan|施工计划|本计划)\s*§+\s*(\d+(?:\.\d+)*)/gi)) {
+        if (!MP_SECS.has(m[1])) out.push(`L${i + 1} master-plan §${m[1]}`);
       }
     });
     return out;
@@ -1654,8 +1660,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     const bad = badRefs(text);
     if (bad.length > 0) {
       fail(`${relative(root, f)} 引用了**不存在**的节：${bad.join('、')}`
-        + ' —— `PRD §N` 的 N 必须在 PRD 的顶层节号里'
-        + '（实测：`packages/settings` 的 3 个文件都写 `PRD §531`，而 PRD 只有 0–150；真实出处是 §4.7）');
+        + ' —— `PRD §N` / `master-plan §N` 的 N（**含点号子节**，如 `§4.7`）必须指向该文档的**实际标题**'
+        + '（实测：`packages/settings` 的 3 个文件都写 `PRD §531`，而 PRD 只有 0–150；真实出处是 §4.7。'
+        + '子节层是 2026-10-09 审计 §4.208 补的：此前 `§9.9` 会被当成「§9 存在」而**静默通过**）');
     }
   }
   // 防空转：下限**贴着基线取**（实测 PRD 638 / master-plan 79）
@@ -1670,6 +1677,19 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   if (badRefs('见 master-plan §99。').length !== 1) {
     errors.push('PRD 节号护栏 canary 失效：master-plan 的不存在节未被检出');
+  }
+  // canary ⑤–⑧：**子节**层（2026-10-09 审计 §4.208 扩展的能力）
+  if (badRefs('见 master-plan §9.9。').length !== 1) {
+    errors.push('PRD 节号护栏 canary 失效：master-plan 的**不存在子节**未被检出（子节层已退化成空真）');
+  }
+  if (badRefs('见 master-plan §9.5。').length !== 0) {
+    errors.push('PRD 节号护栏 canary 过宽：master-plan 的**存在子节**被判为不存在');
+  }
+  if (badRefs('见 PRD §4.99。').length !== 1) {
+    errors.push('PRD 节号护栏 canary 失效：PRD 的**不存在子节**未被检出（子节层已退化成空真）');
+  }
+  if (badRefs('见 PRD §4.7。').length !== 0) {
+    errors.push('PRD 节号护栏 canary 过宽：PRD 的**存在子节**被判为不存在');
   }
 }
 
