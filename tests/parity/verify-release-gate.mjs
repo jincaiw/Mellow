@@ -247,6 +247,11 @@ const PENDING_ADRS = [
     '偏好默认值 5 项偏离 Typora（highlight / sub·sup / mermaid / zoomByMouse）'],
   ['docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md',
     '行内强调的渲染语义：`**` 紧贴全角标点时是否对齐 Typora（偏离 CommonMark）'],
+  // 2026-10-10（审计 §4.248）：**再增一项** —— 11 个语法特性开关（PRD §94）只接线到**预览**一条路径，
+  // HTML 导出有 3 个选项调用点不传、6 个语法完全没实现；PDF 导出无任何开关。
+  // 修它会改变导出件内容 ⇒ 按「改变用户可见结果属产品决策」立 ADR-0036（**未擅自改渲染行为**）。
+  ['docs/adr/ADR-0036-export-path-syntax-feature-parity.md',
+    '语法特性开关与导出路径的接线缺口：三条渲染路径要不要语法一致'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {

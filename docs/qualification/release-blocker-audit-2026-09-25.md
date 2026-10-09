@@ -78,6 +78,7 @@ Release verdict: NO-GO：6 项未闭环
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
 | 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **待裁决（10 问）** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`）⚠️ **2026-10-09 更正（审计 §4.202）**：本行写的「默认值轴 **5** 项 / 行为轴 **5** 项」是**当时**的计数 —— 实际**默认值轴 4 项**（本行列的就是 4 个）· **行为轴 4 项**（`noLegacyMath` 已由 `ADR-0034` 的取证**排除**，见该 ADR「Q9」节）⇒ **实际 8 问**（`ADR-0034` 的 Q1–Q13 去掉合并的 Q2/Q3 与已排除的 Q9）。 | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
 | 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **待裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
+| 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **待裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -15238,6 +15239,55 @@ D 表 / PRD / 偏好矩阵亦无登记（逐处实测）⇒ **这是一条「谁
 - 预览侧的「不加粗」是**解析器层面**的一手证据（无 `StrongEmphasis` 节点）；
   **未**在运行中的应用里截图确认（那需要人工会话）—— 装饰层由解析树驱动，这一步是**推论**，如实标注。
 - Typora 侧只取了**解析规则**（一手）与**正则复现**（可复现），**未**运行 Typora 截图。
+
+## 4.248 新透镜「**一个开关 × 每条渲染路径**」：11 个语法特性开关**只接线到一条路径**（2026-10-10）
+
+**怎么发现的**：§4.247 的透镜是「同一段源文本在两条产品里渲染成什么」。本轮把它**横向展开**：
+不问「这个语法渲染成什么」，而问「**这个开关对每条渲染路径都生效吗**」。
+Mellow 有**三条**渲染路径（预览 / HTML 导出 / PDF 导出），而 `markdown.*` 那 11 个开关的
+storageKey 全是 `mellow.engine.features.*`，**只被 bundle loader（预览/编辑器）读取**。
+
+**实测（登记表见 `tests/parity/fixtures/export-feature-parity.json`）**：
+
+| 开关 | 预览 | HTML 导出 | PDF 导出 |
+|---|---|---|---|
+| `highlight` / `supSub` | implemented | **not-implemented** | **not-implemented** |
+| `emoji` | **always-on**（开关只管补全） | **not-implemented** | **not-implemented** |
+| `alerts` | implemented | **not-implemented** | **always-on** |
+| `math` / `mermaid` | implemented | **option-unwired** | **always-on** |
+| `toc` / `footnote` | implemented | **always-on** | **always-on** |
+| `wikilink` / `yaml` | implemented | **not-implemented** | **not-implemented** |
+| `html` | implemented | **option-unwired** | **not-implemented** |
+
+**两类用户可见后果**：
+
+1. **开关关不掉**：`HtmlExportOptions` 里**已有** `math` / `mermaid` / `rawHtml`（默认 `true`），
+   但 `apps/desktop/src/App.tsx` 的 `exportHtml(...)` 调用**只传** `mode` / `theme` / `title` /
+   `preserveLineBreaks` ⇒ 关掉设置后导出仍渲染。`toc` / `footnote` 更彻底：两条导出路径**恒启用**、
+   **没有**对应选项。
+2. **预览与导出长得不一样**：`==高亮==` / `^上标^` / `~下标~` / `:smile:` / `> [!NOTE]` /
+   `[[页面]]` / YAML front matter 在预览渲染、导出件里是字面源码。
+   ⚠️ 其中 `highlight` / `supSub` **默认开启** ⇒ **默认配置下就已经不一致**。
+
+**为什么不是「有意差异」**：PRD §94 是 **Settings** 章节（不是「编辑器专属」）；
+且对标对象 Typora 的导出与编辑用**同一个 Lexer**（`File.option.enableHighlight` 等直接作用于导出）。
+
+**顺带发现一处与事实相反的注释**：`packages/editor-engine/src/config.ts` 写
+「全部默认开启（**与 Typora 默认行为一致**）」—— 而一手证据（Typora 1.14.9 `DEFAULT_OPTIONS`）
+显示 `enableHighlight` / `enableSubscript` / `enableSuperscript` **均为 false**。
+该默认值偏离已由 **ADR-0034** 登记；但**注释本身**是「无人守着的断言」，且**已与事实相反**。
+
+**处置（本轮）**：**登记，不改行为**。修它会改变导出件内容，且「三条路径要不要语法一致」是产品取舍
+（PDF 是 pdfmake 独立实现，改造面远大于 HTML 导出）⇒ 立 **ADR-0036（Proposed）**：
+
+- **登记表** `tests/parity/fixtures/export-feature-parity.json`：11 开关 × 3 路径 + **受控词表** + 逐条 `ref`；
+- **判据**（`verify-settings-contract.mjs`）：登记表必须**双向覆盖** schema 里的全部语法特性开关、
+  状态取自受控词表、**非 `implemented` 的条目必须带存在的 `ref`**；配**三向 canary** 与覆盖下限；
+- 审计「待裁决项登记表」**新增第 19 行**；门禁 `PENDING_ADRS` 增列 ⇒ `Pending decisions:` 会列出它。
+
+**范围限制（如实声明）**：PDF 那一列是**读代码**得出的（`packages/export/src/index.ts` 的
+block/inline 分支），**未**实跑 `createPdfBuffer`（需要 Noto 字体与 pdfmake 环境）；
+预览与 HTML 导出两列均有**实跑**证据。
 
 
 ## 五、本次审计做的改动（非策略性）

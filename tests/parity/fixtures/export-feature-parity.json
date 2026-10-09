@@ -1,0 +1,112 @@
+{
+  "source": "packages/settings/src/index.ts（PRD §94 语法特性开关，判据现读 schema）",
+  "why": "这 11 个开关的 storageKey 都是 `mellow.engine.features.*`，由 **bundle loader**（预览/编辑器）读取 —— 即**只接线到一条渲染路径**。Mellow 有三条渲染路径：预览（CoreEditor + lezer）、HTML 导出（markdown-it）、PDF 导出（pdfmake，独立实现）。**导出路径是否受这些开关控制，此前无人核对**。2026-10-10 实测（审计 §4.248）：HTML 导出有 3 个选项**调用点不传**、6 个语法**完全没实现**；PDF 导出**无任何开关**。",
+  "statusVocabulary": {
+    "implemented": "该路径实现该语法，且**受开关控制**",
+    "option-unwired": "该路径**有**对应选项，但**调用点没传** ⇒ 开关不生效（选项默认值恒生效）",
+    "always-on": "该路径**恒启用**该语法、**无**对应选项 ⇒ 开关关掉也无效",
+    "not-implemented": "该路径**完全没有**该语法"
+  },
+  "note": "⚠️ 本表是**事实登记**，不是「要求三条路径一致」的判据。三条路径一致与否是**产品决策**（见 ref 指向的 ADR）；本表的作用是让缺口**可发现、可机械核对覆盖性**。",
+  "entries": [
+    {
+      "settingId": "markdown.highlight",
+      "syntax": "==高亮==",
+      "preview": "implemented",
+      "html": "not-implemented",
+      "pdf": "not-implemented",
+      "evidence": "预览：`packages/editor-engine/src/index.ts:316`（`buildInlineExtrasExtension`）；HTML 导出：实跑 `createMarkdownIt(...).render('==高亮==')` = `<p>==高亮==</p>`；PDF：`packages/export/src/index.ts` 的行内 token 化只认 bold/italic/strike/code/link/image/math",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.supSub",
+      "syntax": "^上标^ / ~下标~",
+      "preview": "implemented",
+      "html": "not-implemented",
+      "pdf": "not-implemented",
+      "evidence": "预览：同上 :316；HTML 导出：实跑 = `<p>^上标^ 与 ~下标~</p>`",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.emoji",
+      "syntax": ":smile:",
+      "preview": "always-on",
+      "html": "not-implemented",
+      "pdf": "not-implemented",
+      "evidence": "⚠️ 预览侧该开关**只控制补全**（`index.ts:320` 把 emoji 源喂给围栏补全），而 `:x:` 的**渲染**来自 `markdownLanguage` 里**常开**的 `Emoji` 扩展（`CoreEditor/src/@vendor/lang-markdown/markdown.ts:75`）⇒ 关掉开关 `:x:` 仍渲染；HTML 导出：实跑 = `<p>:smile:</p>`",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.alerts",
+      "syntax": "> [!NOTE]",
+      "preview": "implemented",
+      "html": "not-implemented",
+      "pdf": "always-on",
+      "evidence": "预览：`index.ts:313`；HTML 导出：实跑 = `<blockquote><p>[!NOTE]…`（字面）；PDF：`packages/export/src/index.ts:258` 有 `[!(NOTE|TIP|…)` 分支，**无选项**",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.math",
+      "syntax": "$x$ / $$x$$",
+      "preview": "implemented",
+      "html": "option-unwired",
+      "pdf": "always-on",
+      "evidence": "预览：`index.ts:309`；HTML 导出：`HtmlExportOptions.math` **存在**（`packages/export/src/html/types.ts`），但 `apps/desktop/src/App.tsx` 的 `exportHtml(...)` 调用**只传 mode/theme/title/preserveLineBreaks** ⇒ 恒用默认 `true`；PDF：`index.ts:425` `case 'math'`，无选项",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.mermaid",
+      "syntax": "```mermaid 围栏",
+      "preview": "implemented",
+      "html": "option-unwired",
+      "pdf": "always-on",
+      "evidence": "预览：`index.ts:310`；HTML 导出：`HtmlExportOptions.mermaid` 存在但调用点不传；PDF：`index.ts:428` `case 'mermaid'`",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.toc",
+      "syntax": "[TOC]",
+      "preview": "implemented",
+      "html": "always-on",
+      "pdf": "always-on",
+      "evidence": "预览：`index.ts:312`；HTML 导出：`md.block.ruler.before('paragraph','mellow_toc',…)` **无条件注册**，`HtmlExportOptions` 里**没有** toc 开关（`tocMaxLevel`/`includeOutline` 是排版参数，不是启用开关）；PDF：`index.ts:306`",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.footnote",
+      "syntax": "正文[^1] + 定义",
+      "preview": "implemented",
+      "html": "always-on",
+      "pdf": "always-on",
+      "evidence": "预览：`index.ts:311`；HTML 导出：`md.use(footnotePlugin)` **无条件**；PDF：`index.ts:312`",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.wikilink",
+      "syntax": "[[页面]]",
+      "preview": "implemented",
+      "html": "not-implemented",
+      "pdf": "not-implemented",
+      "evidence": "预览：`index.ts:319`；两条导出路径均无该语法",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.html",
+      "syntax": "<div>…</div>",
+      "preview": "implemented",
+      "html": "option-unwired",
+      "pdf": "not-implemented",
+      "evidence": "预览：`index.ts:315`；HTML 导出：`HtmlExportOptions.rawHtml` 存在但调用点不传 ⇒ 恒为默认 `true`（带白名单 sanitize）；PDF：pdfmake 不渲染 raw HTML",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.yaml",
+      "syntax": "--- front matter ---",
+      "preview": "implemented",
+      "html": "not-implemented",
+      "pdf": "not-implemented",
+      "evidence": "预览：`index.ts:314`；HTML 导出：markdown-it 把 `---` 渲染为 `<hr>` + 段落；PDF：无 front matter 处理",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    }
+  ]
+}

@@ -2706,6 +2706,79 @@ if (cssLayerAnchor === undefined) {
   console.log(`Settings contract: ADR-0034 的「逐项事实」（${checked} 项 Mellow 默认值）== 代码 defaultValue`);
 }
 
+// ── 语法特性开关（PRD §94）在**导出路径**的接线：登记表必须覆盖全部开关（2026-10-10，审计 §4.248）──
+// 【为什么】这 11 个开关的 storageKey 都是 `mellow.engine.features.*`，**由 bundle loader（预览/编辑器）读取**
+//   ⇒ 只接线到**一条**渲染路径。而 Mellow 有**三条**：预览（CoreEditor + lezer）/ HTML 导出（markdown-it）/
+//   PDF 导出（pdfmake，独立实现）。实测（§4.248）：HTML 导出有 3 个选项**调用点不传**、
+//   6 个语法**完全没实现**；PDF 导出**无任何开关**。⇒ 「设置声明了 X，导出路径不读它」= 设置静默失效。
+//   ⚠️ 这类缺口**静态可判**：只要把「每个开关 × 每条路径」的状态登记下来，就能机械核对
+//      「有没有开关被漏掉」—— 而**此前一个都没登记**（同族「只锁了一半」第 76 次）。
+// 【判据】`tests/parity/fixtures/export-feature-parity.json` 必须
+//   ① 覆盖 schema 里**全部** `applyCommand === 'settings.engineFeature'` 的开关（**双向**）；
+//   ② 每个条目的三路径状态取自**受控词表**；
+//   ③ 状态**不是** `implemented` 的条目必须带 `ref`，且该 ref **文件存在**。
+//   ⚠️ 本判据**不**要求三条路径行为一致 —— 一致与否是**产品决策**（载体见各条 `ref`）；
+//      本判据只保证「缺口被登记、且登记表不会悄悄漏项或过期」。
+{
+  const FIXTURE = 'tests/parity/fixtures/export-feature-parity.json';
+  const SETTINGS = 'packages/settings/src/index.ts';
+  const BOLD_PATHS = ['preview', 'html', 'pdf'];
+  const schemaIds = new Set();
+  for (const line of read(SETTINGS).split('\n')) {
+    const idM = /id:\s*'(markdown\.[a-zA-Z]+)'/.exec(line);
+    if (idM === null || !line.includes("applyCommand: 'settings.engineFeature'")) continue;
+    schemaIds.add(idM[1]);
+  }
+  const fixture = JSON.parse(readFileSync(resolve(root, FIXTURE), 'utf8'));
+  const vocab = new Set(Object.keys(fixture.statusVocabulary ?? {}));
+  const rows = Array.isArray(fixture.entries) ? fixture.entries : [];
+  const tableIds = new Set(rows.map((r) => r.settingId));
+  // 判定与 canary **共用**同一谓词
+  const rowProblems = (row) => {
+    const out = [];
+    for (const path of BOLD_PATHS) {
+      if (!vocab.has(row[path])) out.push(`路径 \`${path}\` 的状态「${row[path]}」不在受控词表内`);
+    }
+    if (BOLD_PATHS.some((p) => row[p] !== 'implemented')) {
+      if (typeof row.ref !== 'string' || row.ref === '') out.push('状态非 `implemented` 却没有 `ref`');
+      else if (!existsSync(resolve(root, row.ref))) out.push(`\`ref\` 指向的文件不存在：${row.ref}`);
+    }
+    return out;
+  };
+  for (const row of rows) {
+    for (const p of rowProblems(row)) fail(`${FIXTURE} 的 \`${row.settingId}\`：${p}`);
+  }
+  for (const id of schemaIds) {
+    if (!tableIds.has(id)) {
+      fail(`schema 里的语法特性开关 \`${id}\` **不在** ${FIXTURE} 里 —— 新开关必须同时登记它在三条渲染路径的状态`);
+    }
+  }
+  for (const id of tableIds) {
+    if (!schemaIds.has(id)) {
+      fail(`${FIXTURE} 里的 \`${id}\` **不在** schema 的语法特性开关里 —— 条目已过期，请删除或说明`);
+    }
+  }
+  // [覆盖型] 下限 == 当前基线（立此判据时 11 个开关）
+  if (schemaIds.size < 11) {
+    fail(`只从 schema 解析出 ${schemaIds.size} 个语法特性开关（下限 11 = 立此判据时基线）`
+      + ' —— 锚点漂移会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** `rowProblems`）
+  const okRow = { settingId: 'canary', preview: 'implemented', html: 'implemented', pdf: 'implemented' };
+  if (rowProblems(okRow).length !== 0) {
+    fail('导出路径语法登记 canary 失效：三路径全 `implemented` 的合法条目被误判');
+  }
+  if (rowProblems({ ...okRow, pdf: 'bogus' }).length === 0) {
+    fail('导出路径语法登记 canary 失效：**词表外**的状态未被检出');
+  }
+  if (rowProblems({ ...okRow, pdf: 'not-implemented' }).length === 0) {
+    fail('导出路径语法登记 canary 失效：**非 implemented 却缺 ref** 未被检出');
+  }
+  const gaps = rows.reduce((s, r) => s + BOLD_PATHS.filter((p) => r[p] !== 'implemented').length, 0);
+  console.log(`Settings contract: 语法特性开关 ${schemaIds.size} 个 × ${BOLD_PATHS.length} 条渲染路径（预览 / HTML 导出 / PDF 导出）`
+    + `已登记；其中**非 implemented** 的组合 ${gaps} 处（载体见各条 ref）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }

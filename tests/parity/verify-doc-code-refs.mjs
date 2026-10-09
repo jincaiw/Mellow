@@ -3338,9 +3338,9 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
       + '要**真的**显示字面 `**` 请放进行内码。');
   }
   // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（203 份 tracked `.md`
-  //    − 4 份冻结 release notes − 28 份夹具；**2026-10-10 新增 ADR-0035 ⇒ 172**），
+  //    − 4 份冻结 release notes − 28 份夹具；**2026-10-10 新增 ADR-0035/0036 ⇒ 173**），
   //    否则「扫描面被改窄」不会红。
-  const BOLD_BASELINE = 172;
+  const BOLD_BASELINE = 173;
   if (boldFiles.length !== BOLD_BASELINE) {
     fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
       + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');
