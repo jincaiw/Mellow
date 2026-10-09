@@ -3375,9 +3375,12 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   // 夹具是**输入样本**，允许含任意 markdown 形态（实测 `tests/fixtures/markdown/full-syntax-corpus.md`
   //   刻意写了「空强调」这类边界样本）⇒ 与「文档是否可读」无关，排除。
   const BOLD_SKIP_SEG = new Set(['fixtures']);
-  const boldFiles = committedFiles().filter(
+  const COMMITTED = committedFiles();
+  const boldFiles = COMMITTED.filter(
     (f) => f.endsWith('.md') && !BOLD_FROZEN.has(f) && !f.split('/').some((s) => BOLD_SKIP_SEG.has(s)),
   );
+  /** 一份 .md 里「渲染后仍是字面 `**`」的处数（判定与 canary **共用**本谓词）。 */
+  const boldLiteralCount = (src) => boldUnits(src).reduce((acc, u) => acc + boldUnpaired(u.text), 0);
   const boldBad = [];
   for (const rel of boldFiles) {
     const src = readFileSync(resolve(root, rel), 'utf8');
@@ -3392,6 +3395,24 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
       + '（`汉字**「引文」**汉字`）⇒ 加粗**静默失效**、读者看到字面 `**`。'
       + '修法：把引号移出加粗（`汉字「**引文**」汉字`），或在定界符外侧留一个空格；'
       + '要**真的**显示字面 `**` 请放进行内码。');
+  }
+  // ── 双向：冻结表必须**仍需要**豁免，且文件必须**仍在**（2026-10-10，审计 §4.256）──
+  // 【为什么】豁免表**只往前生效** ⇒ 若某份 release notes 日后被改写 / 重新生成到不再含字面 `**`，
+  //   它**不再需要**豁免，而表里那一条会**永久留着** ⇒ 豁免面**静默变宽**（本仓 #1 形态）。
+  //   ⚠️ 实测（本轮普查，见 §4.256）：22 张「内容豁免类」例外表里 **21 张**都有陈旧检查，
+  //     **只有本表没有** —— 而本表正是**上一轮我自己加的**。
+  //   ⚠️ **不查「是否仍有字面 `**`」以外的理由**：冻结表是**具名**的（不是模式匹配），
+  //     所以「仍需要豁免」可以用**同一谓词**现读判定。
+  for (const [rel, why] of BOLD_FROZEN) {
+    if (!COMMITTED.includes(rel)) {
+      fail(`加粗配对的冻结表里 \`${rel}\` **已不在仓库里**（原登记理由：${why}）—— 请从 BOLD_FROZEN 删除`);
+      continue;
+    }
+    if (boldLiteralCount(readFileSync(resolve(root, rel), 'utf8')) === 0) {
+      fail(`加粗配对的冻结表里 \`${rel}\` **已不再需要豁免**：它现在渲染后没有字面 \`**\``
+        + `（原登记理由：${why}）—— 请从 BOLD_FROZEN 删除`
+        + '（豁免**只往前生效**会让豁免面静默变宽）');
+    }
   }
   // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（203 份 tracked `.md`
   //    − 4 份冻结 release notes − 28 份夹具；**2026-10-10 新增 ADR-0035/0036/0037 ⇒ 174**），
@@ -3421,8 +3442,19 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   if (boldUnpaired(`**A****B**`) !== 2) {
     fail('加粗配对护栏 canary 失效：CommonMark 规则 9（长度和不得为 3 的倍数）未被实现');
   }
+  // canary：三向（冻结表陈旧检查，与判定**共用** `boldLiteralCount` 与 `COMMITTED`）
+  if (boldLiteralCount(`正常 ${D}加粗${D} 文本`) !== 0) {
+    fail('冻结表陈旧检查 canary 失效：**无需豁免**的样本被判为需要豁免（会把有效豁免误删）');
+  }
+  if (boldLiteralCount(`汉字${D}「引文」${D}汉字`) === 0) {
+    fail('冻结表陈旧检查 canary 失效：**需要豁免**的样本未被识别（陈旧检测已退化成空转）');
+  }
+  if (COMMITTED.includes('__not_a_committed_file__.md')) {
+    fail('冻结表陈旧检查 canary 失效：不存在的文件被判为「在仓库里」');
+  }
   console.log(`Doc code refs: 加粗配对 —— 扫描 ${boldFiles.length} 份 .md，`
-    + `字面 \`**\` 残留 ${boldBad.length} 处（豁免 ${BOLD_FROZEN.size} 份已发布 release notes）`);
+    + `字面 \`**\` 残留 ${boldBad.length} 处（豁免 ${BOLD_FROZEN.size} 份已发布 release notes，`
+    + '**均已复核仍需要豁免**）');
 }
 
 // ── 审计文档的**节号单调性**：最大 `## 4.N` 不得跌破地板（2026-10-10，审计 §4.252）──
@@ -3433,7 +3465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 255; // 2026-10-10 加 §4.255 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 256; // 2026-10-10 加 §4.256 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
