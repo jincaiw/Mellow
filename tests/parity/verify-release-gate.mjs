@@ -1636,6 +1636,64 @@ if (driftedMissing.length === 0) {
     errors.push('qualification README 数字一致性 canary 失效：注入漂移后仍判定一致');
   }
 
+  // ── 「**清单**」也必须锁（2026-10-09，审计 §4.238）──────────────────────────────
+  // 【为什么】README 自己写着「**数量与清单由护栏锁定**」，而本节此前**只锁了数量** ——
+  //   ⇒ **声称强于实际**（本仓纪律：「读数强度必须匹配结论强度」）。
+  //   ⚠️ 且该清单**有前科**：README 自己记着「上一版写 14 个且**清单里缺**
+  //      i18n-contract / doc-code-refs / no-color-only-status 三条 —— 数量**与清单**都已过期」。
+  //   ⇒ 「数量对了」**不能**推出「清单也对」（两者是**独立**的漂移面）。
+  // 【判据】**双向**（同一不变量族的另一半，**不新开判据号**）：
+  //   ① 每个实际护栏名必须在声明行里**作为 token** 出现（防子串误判）；
+  //   ② 声明行里的「**段首 token**」必须都是真实护栏 —— 尾句「外加 `tests/qualification/
+  //      ux-gate-recorder.mjs --self-test`」里的名字**不是**护栏 ⇒ 用 `NOT_A_GUARD` 例外表
+  //      **显式登记**（**双向核对**，不静默豁免）。
+  // ⚠️ 谓词与 canary **共用**；样本**运行时拼接**（本行会被判据自己引用）。
+  const guardListLine = readme.split('\n').find((l) => /^Parity 契约护栏 \*\*\d+ 个\*\*/.test(l));
+  /** 声明行里「**段首 token**」（`/` 切分后的首个标识符）—— 判定与 canary **共用**。 */
+  const listHeadsOf = (line) => {
+    const i = line.indexOf('：');
+    const after = i < 0 ? line : line.slice(i + 1);
+    return [...new Set(after.split('/')
+      .map((s) => (/^\s*\*{0,2}([a-z][a-z0-9-]*)\*{0,2}/.exec(s) ?? [])[1])
+      .filter(Boolean))];
+  };
+  /** 某名字是否作为 **token** 出现在行里（`-` 也属名字字符 ⇒ 防 `a-b` 命中 `a-b-c`）。 */
+  const hasToken = (line, name) => new RegExp(`(^|[^a-z0-9-])${name.replace(/-/g, '\\-')}([^a-z0-9-]|$)`).test(line);
+  const NOT_A_GUARD = new Map([
+    ['ux-gate-recorder', '声明行**尾句**提到的记录器（`tests/qualification/ux-gate-recorder.mjs --self-test`），**不是** parity 护栏'],
+    ['qualification', '同上尾句里的目录名（由 `tests/qualification/ux-gate-recorder.mjs` 按 `/` 切分产生），**不是**护栏'],
+  ]);
+  if (guardListLine === undefined) {
+    fail('qualification README 的「Parity 契约护栏 N 个」声明行找不到 —— 清单判据无处可依');
+  } else {
+    const shortNames = guardFiles.map((f) => f.replace(/^verify-/, '').replace(/\.mjs$/, ''));
+    const absent = shortNames.filter((n) => !hasToken(guardListLine, n));
+    if (absent.length > 0) {
+      fail(`qualification README 的护栏**清单漏了**：${absent.join('、')}`
+        + ' —— 该行自称「数量**与清单**由护栏锁定」，清单必须与实际一致（数量对 ≠ 清单对）');
+    }
+    const heads = listHeadsOf(guardListLine);
+    const phantom = heads.filter((n) => !shortNames.includes(n) && !NOT_A_GUARD.has(n));
+    if (phantom.length > 0) {
+      fail(`qualification README 的护栏**清单里有不存在的护栏**：${phantom.join('、')}`
+        + ' —— 若它不是护栏（如尾句提到的其它脚本），请登记进 `NOT_A_GUARD` 并写明理由');
+    }
+    // 例外表**双向核对**（不再出现 ⇒ 报错，防化石）
+    const staleNotGuard = [...NOT_A_GUARD.keys()].filter((n) => !heads.includes(n));
+    if (staleNotGuard.length > 0) {
+      fail(`NOT_A_GUARD 里这些名字**已不再出现**在声明行：${staleNotGuard.join('、')}`
+        + ' —— 例外表要**双向**核对（防化石）');
+    }
+    // canary：三向（判定与 canary **共用** hasToken / listHeadsOf）
+    const SAMPLE = 'Parity 契约护栏 **3 个**：' + ['aa-bb', 'cc-dd', 'ee-ff'].join(' / ') + '。';
+    if (!hasToken(SAMPLE, 'aa-bb') || hasToken(SAMPLE, 'aa-bb-cc')) {
+      errors.push('护栏清单一致性 canary 失效：token 匹配不能区分 `aa-bb` 与 `aa-bb-cc`（子串会误判）');
+    }
+    if (listHeadsOf(SAMPLE).join(',') !== 'aa-bb,cc-dd,ee-ff') {
+      errors.push('护栏清单一致性 canary 失效：**段首 token** 未按 `/` 正确切分');
+    }
+  }
+
   // ── 包用例数：**单一真源 = 「各包规模」行**；文件其它位置必须与之一致（2026-10-08）──────
   // 判定与 canary **共用**本谓词（`pkgAudit`）：返回 `{truthSize,total,bad}`，真值源缺失返回 `null`。
   const PKGS = ['editor-engine', 'app-core', 'export', 'host-api', 'commands',
