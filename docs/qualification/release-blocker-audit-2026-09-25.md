@@ -12299,6 +12299,58 @@ PITFALLS **§4.297** · skill **§174** · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
+## 4.187 效率 Gate 的「≥90% / ≥27/30」：记录器**硬编码**、文档**复述**，而**无判据**（「只锁了一半」同族**第 17 次**，2026-10-09）
+
+### 一、发现
+
+PRD §132 的门槛是「≥**90%** 任务 ≤ Typora+5%」，而**具体条数**「≥**27/30**」出现在：
+
+- `ux-score-gate-template.md`（**2 处**：§二 要求 + 「通过判定」）；
+- `docs/plans/typora-parity-master-plan.md` §8。
+
+⚠️ 而记录器 `ux-gate-recorder.mjs` 的判定 **硬编码**：
+
+```js
+if (withinFivePct < 27) gateErrors.push(`仅 ${withinFivePct}/30 任务满足 Typora +5%`);
+```
+
+⇒ `27` 与消息里的 `/30` **都是字面量**；若 `TASKS` 变成 32 项，
+**记录器的判定与文档的「27/30」会同时需要改，而没有任何判据把它们绑在一起**。
+
+### 二、处置
+
+1. **修记录器**（**派生**）：
+   ```js
+   const PASS_RATE = 0.9;
+   const PASS_MIN_TASKS = Math.ceil(PASS_RATE * TASKS.length);
+   ```
+   判定与消息改用它们（消息里保留门槛值，便于诊断）。
+2. **加判据**（`verify-runtime-qualification-workflow.mjs`，**两侧都现读**）：
+   文档里「≥N/M 任务」的 N == `ceil(PASS_RATE × TASKS.length)`、M == `TASKS.length`；
+   模板的「≥N%」必须与 `PASS_RATE` 一致；+ 防空转 + 2 canary。
+
+### 三、注入验证（2/2）
+
+① 模板的「≥27/30」→「≥26/30」⇒ **转红**（「写「≥26/30 任务」，而记录器 = 27/30（= ceil(0.9 × 30)）」）；
+② **改记录器那一侧**（`PASS_RATE` 0.9 → 0.8）⇒ **转红**（「记录器 = 24/30（= ceil(0.8 × 30)）」）。
+
+### 四、教训
+
+1. **「比例门槛」与「条数门槛」是同一件事的两种表述** —— 而**换算关系**（`ceil(rate × N)`）
+   **没有任何判据**守着；一旦基数（30）变，**两个表述都要重算**
+   （本轮把记录器改成**派生**，文档仍写数字但被判据锁住）。
+2. ⚠️ **「机器侧」也不是天然自洽的**：`27` 与 `/30` 在**同一行**硬编码，而它们本该由 `TASKS.length` 派生
+   ⇒ 查缺口时**也要查机器侧内部**（同 §4.186 的教训）。
+3. ⇒ **同族第 17 次**（§4.170 / … / §4.186 / 本节）。
+
+### 五、产物
+
+`tests/qualification/ux-gate-recorder.mjs`（派生化）·
+`tests/parity/verify-runtime-qualification-workflow.mjs`（新判据 + 2 canary）· 审计 **§4.187** ·
+PITFALLS **§4.300** · skill **§177** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 

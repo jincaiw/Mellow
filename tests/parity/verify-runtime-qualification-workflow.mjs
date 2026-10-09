@@ -498,4 +498,49 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   console.log(`UX gate scale: ${nTasks} 任务 × ${nApps} app × ${nRounds} round = ${total} 条 —— 模板与记录器一致`);
 }
 
+// ── 效率 Gate 的「≥90% / ≥27/30」在文档与记录器两处必须一致（2026-10-09，审计 §4.187）──────────
+// 【为什么】PRD §132 的门槛是「≥90% 任务 ≤ Typora+5%」，而**具体条数**（27/30）出现在
+//   `ux-score-gate-template.md`（2 处：§二 要求 + 「通过判定」）与 master-plan §8。
+//   记录器原先**硬编码** `27` 与消息里的 `/30`（本轮改为 `Math.ceil(PASS_RATE * TASKS.length)`）
+//   ⇒ 若 `TASKS` 变（如 32 项），文档的「27/30」与记录器的判定会**同时**需要改，
+//   而**没有任何判据**把它们绑在一起。
+// 【判据】**两侧都现读**：文档里「≥N/M 任务」的 N == `ceil(PASS_RATE × TASKS.length)`、M == `TASKS.length`；
+//   模板的「≥N%」必须与 `PASS_RATE` 一致。
+{
+  const REC = 'tests/qualification/ux-gate-recorder.mjs';
+  const rec = readFileSync(resolve(root, REC), 'utf8').replace(/\r\n/g, '\n');
+  const countTasks = (s) => {
+    const b = (/const TASKS = \[([\s\S]*?)\n\];/.exec(s) ?? [])[1];
+    return b === undefined ? null : (b.match(/'[^']*'/g) ?? []).length;
+  };
+  const nTasks = countTasks(rec);
+  const rateM = /const PASS_RATE = ([\d.]+);/.exec(rec);
+  if (nTasks === null || rateM === null) throw new Error(`${REC} 解析不到 TASKS / PASS_RATE —— 判据锚点漂移`);
+  const rate = Number(rateM[1]);
+  const minTasks = Math.ceil(rate * nTasks);
+  const countRe = /≥\s*\**(\d+)\s*\/\s*(\d+)\s*任务/g;
+  let found = 0;
+  for (const d of ['docs/qualification/ux-score-gate-template.md', 'docs/plans/typora-parity-master-plan.md']) {
+    for (const m of readFileSync(resolve(root, d), 'utf8').replace(/\r\n/g, '\n').matchAll(countRe)) {
+      found += 1;
+      if (Number(m[1]) !== minTasks || Number(m[2]) !== nTasks) {
+        throw new Error(`效率 Gate 条数不一致：${d} 写「≥${m[1]}/${m[2]} 任务」，`
+          + `而记录器 = ${minTasks}/${nTasks}（= ceil(${rate} × ${nTasks})）`);
+      }
+    }
+  }
+  if (found === 0) throw new Error('效率 Gate 条数：文档里一处「≥N/M 任务」都找不到 —— 判据锚点漂移');
+  const TPL = 'docs/qualification/ux-score-gate-template.md';
+  const pctM = /≥\s*(\d+)%\s*任务完成时间/.exec(readFileSync(resolve(root, TPL), 'utf8').replace(/\r\n/g, '\n'));
+  if (pctM === null) throw new Error(`${TPL} 找不到「≥N% 任务完成时间」—— 判据锚点漂移`);
+  if (Number(pctM[1]) !== Math.round(rate * 100)) {
+    throw new Error(`效率 Gate 比例不一致：${TPL} 写「≥${pctM[1]}%」，而记录器 PASS_RATE = ${rate}`);
+  }
+  // canary：谓词与判定共用
+  const parse = (s) => { const m = /≥\s*\**(\d+)\s*\/\s*(\d+)\s*任务/.exec(s); return m === null ? null : `${m[1]}/${m[2]}`; };
+  if (parse('≥ 27/30 任务 ≤ Typora +5%') !== '27/30') throw new Error('效率 Gate 条数 canary 失效：形态取不到');
+  if (parse('无此形态') !== null) throw new Error('效率 Gate 条数 canary 过宽：无锚点的样本被误判');
+  console.log(`UX gate efficiency: ≥${minTasks}/${nTasks} 任务（${Math.round(rate * 100)}%）—— 文档与记录器一致`);
+}
+
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');

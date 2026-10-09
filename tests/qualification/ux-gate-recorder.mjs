@@ -18,6 +18,10 @@ const TASKS = [
   '导出 HTML', '打印', '干净文件外部修改重载', 'dirty 文件冲突处理', '大文档（≈2 MB）打开、搜索、编辑、保存',
 ];
 const CRITICAL_TASKS = new Set([2, 11, 12, 25, 30]); // save / table / image / PDF / large-file save
+// 统计门槛：≥90% 任务 ≤ Typora+5%（PRD §132 / 模板「通过判定」）—— **派生**，不写死 27/30。
+// （2026-10-09，审计 §4.187：此处原硬编码 `27` 与消息里的 `/30`；`TASKS` 一变两者都会漂。）
+const PASS_RATE = 0.9;
+const PASS_MIN_TASKS = Math.ceil(PASS_RATE * TASKS.length);
 const APPS = ['typora', 'mellow'];
 const ROUNDS = [1, 2];
 
@@ -256,7 +260,9 @@ function validate(record) {
   const mellowScore = mean(taskResults.map((task) => task.mellowScore));
   const typoraScore = mean(taskResults.map((task) => task.typoraScore));
   const gateErrors = [];
-  if (withinFivePct < 27) gateErrors.push(`仅 ${withinFivePct}/30 任务满足 Typora +5%`);
+  if (withinFivePct < PASS_MIN_TASKS) {
+    gateErrors.push(`仅 ${withinFivePct}/${TASKS.length} 任务满足 Typora +5%（门槛 ${PASS_MIN_TASKS}）`);
+  }
   if (criticalSlow.length) gateErrors.push(`关键任务慢于 Typora 15%：${criticalSlow.join(', ')}`);
   if (errorRegressions.length) gateErrors.push(`Mellow 错误率高于 Typora：${errorRegressions.join(', ')}`);
   if (mellowScore < typoraScore) gateErrors.push(`主观评分 Mellow ${mellowScore.toFixed(2)} < Typora ${typoraScore.toFixed(2)}`);
