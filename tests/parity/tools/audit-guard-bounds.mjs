@@ -42,6 +42,19 @@ const TIMEOUT = Number(process.env.BOUND_AUDIT_TIMEOUT_MS ?? 180000);
 
 const git = (args, opts = {}) => execFileSync('git', args, { cwd: root, encoding: 'utf8', ...opts });
 
+// ── 前提 ⓪：**先清理上次中断留下的突变**（必须在「工作区干净」检查**之前**）─────────────
+// ⚠️ 顺序很重要（2026-10-09，审计 §4.190 实测）：若把清理放在干净检查**之后**，
+//    残留突变会让检查失败 ⇒ 工具**拒绝运行** ⇒ **永远清理不了**（自愈机制失效）。
+const LOCK = join(tmpdir(), 'mellow-audit-guard-bounds.lock');
+if (existsSync(LOCK)) {
+  const stale = readFileSync(LOCK, 'utf8').trim();
+  if (stale !== '') {
+    git(['checkout', '--', stale], { stdio: 'ignore' });
+    console.error(`⚠️ 清理上次中断留下的突变：${stale}（已 \`git checkout --\` 还原）`);
+  }
+  unlinkSync(LOCK);
+}
+
 // ── 前提 ①：工作区必须干净 ────────────────────────────────────────────────
 const dirty = git(['status', '--porcelain']);
 if (dirty !== '') {
@@ -75,7 +88,6 @@ const INTENT_HEALTH = /解析|扫描面|漂移|空转|失效|过窄|漏成员/;
 //    `start` → kill → 阻塞 6s 结束 → 打印 `after-sync` 而 **handler 未执行**。
 //    ⇒ 另加**锁文件**兜底：突变前把目标文件写进 `/tmp` 的锁文件，**下次启动时先清理**
 //    （`git checkout --` 幂等 ⇒ 重复清理无害）。这样即使被 `kill -9` 也能**自愈**。
-const LOCK = join(tmpdir(), 'mellow-audit-guard-bounds.lock');
 let mutatedRel = null;
 const restoreNow = () => {
   if (mutatedRel === null) return;
@@ -85,15 +97,6 @@ const restoreNow = () => {
 };
 process.on('SIGTERM', () => { restoreNow(); process.exit(143); });
 process.on('SIGINT', () => { restoreNow(); process.exit(130); });
-// **启动时清理上次残留**（上次若被 kill -9 / 阻塞期被 SIGTERM，锁文件还在）
-if (existsSync(LOCK)) {
-  const stale = readFileSync(LOCK, 'utf8').trim();
-  if (stale !== '') {
-    git(['checkout', '--', stale], { stdio: 'ignore' });
-    console.error(`⚠️ 清理上次中断留下的突变：${stale}（已 \`git checkout --\` 还原）`);
-  }
-  unlinkSync(LOCK);
-}
 const withMutation = (abs, text, fn) => {
   const rel = abs.slice(root.length + 1);
   mutatedRel = rel;
