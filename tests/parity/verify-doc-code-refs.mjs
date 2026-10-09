@@ -570,6 +570,15 @@ const PACKAGING_VERSION_ALLOW = new Map([
         }
       }
     }
+    // ⚠️ **外层双向（2026-10-09，审计 §4.215）**：`PACKAGING_VERSION_ALLOW` 的**文档键**也必须在扫描面内 ——
+    //   否则该键下的所有条目**永不参与核对**（外层漏核 ⇒ 内层的双向核对**也白做**）。
+    //   ⚠️ 本仓的「嵌套例外表」不止这一处 ⇒ **核双向时两层都要核**。
+    for (const doc of PACKAGING_VERSION_ALLOW.keys()) {
+      if (!PACKAGING_DOCS.includes(doc)) {
+        fail(`PACKAGING_VERSION_ALLOW 登记了 ${doc}，但它**不在扫描面** PACKAGING_DOCS 里 —— `
+          + '该键下的条目**永不参与核对**（外层漏核）⇒ 请删掉该键，或把该文档加进扫描面');
+      }
+    }
     // 防空转：扫描面必须**真的**覆盖到 2 份文档（少一份 ⇒ 判据范围萎缩）
     if (checkedDocs !== PACKAGING_DOCS.length || PACKAGING_DOCS.length < 2) {
       fail(`版本字面量判据只覆盖了 ${checkedDocs}/${PACKAGING_DOCS.length} 份文档 —— 扫描面萎缩会让本判据空转`);
