@@ -482,10 +482,21 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   if (dTotal !== total) {
     throw new Error(`观测总数不一致：${TPL} 写「共 ${dTotal} 条」，而 ${nTasks}×${nApps}×${nRounds} = ${total}`);
   }
-  // 模板里其他「共 N 条」（正文另有两处）
-  for (const t of [...tpl.matchAll(/共\s*(\d+)\s*条/g)].map((x) => Number(x[1]))) {
-    if (t !== total) {
-      throw new Error(`观测总数不一致：${TPL} 有「共 ${t} 条」，而记录器乘积 = ${total}`);
+  // 模板里其他「共 N 条」（正文另有两处）+ **「N 条计时记录」**形态。
+  // ⚠️ 2026-10-09（审计 §4.191）：原判据**只认「共 N 条」** ⇒ 模板 §二 与 **夹具**
+  //    `tests/fixtures/ux-gate/ux-gate-30tasks.md` 里各一处「**不进** 120 条计时记录」
+  //    **从未被检查**（用 `tests/parity/tools/audit-doc-counts.mjs --min 2` 普查时发现）。
+  const SCAN = [
+    ['docs/qualification/ux-score-gate-template.md', tpl],
+    ['tests/fixtures/ux-gate/ux-gate-30tasks.md',
+      readFileSync(resolve(root, 'tests/fixtures/ux-gate/ux-gate-30tasks.md'), 'utf8').replace(/\r\n/g, '\n')],
+  ];
+  for (const [file, src] of SCAN) {
+    for (const m of src.matchAll(/共\s*(\d+)\s*条|(\d+)\s*条计时记录/g)) {
+      const t = Number(m[1] ?? m[2]);
+      if (t !== total) {
+        throw new Error(`观测总数不一致：${file} 写「${t} 条」（观测总数），而记录器乘积 = ${total}`);
+      }
     }
   }
   // canary：谓词与判定共用
