@@ -1693,11 +1693,14 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
-// ── ㉒ 引用的 `ADR-NNNN` 必须**存在**（2026-10-09，审计 §4.209）────────────────────
-// 立此条的原因（实测）：往 `docs/architecture/README.md` 注入 `ADR-0099`（**不存在**）后，
-//   本护栏与 `verify-release-gate.mjs` **都没红** ⇒ 仓库级**没有**「ADR 编号必须存在」的判据。
-//   而仓库内 `ADR-NNNN` 引用共 **1036 处**（md 755 / mjs 192 / ts 38 / json 29 / yml 12 / tsx 6 / rs 4）。
-//   ⚠️ 门禁里已有的 `resolvesRef` 只覆盖**矩阵 disposition** 那一处，**不是全仓**。
+// ── ㉒ 引用的编号（`ADR-NNNN` / 台账 `P0-*`）必须**存在**（2026-10-09，审计 §4.209 / §4.210）──
+// 立此条的原因（**两次注入实测**）：
+//   ① `ADR-NNNN`：往 `docs/architecture/README.md` 注入 `ADR-0099`（**不存在**）后，
+//      本护栏与 `verify-release-gate.mjs` **都没红** ⇒ 仓库级**没有**该判据；
+//      仓库内 `ADR-NNNN` 引用共 **1036 处**（md 755 / mjs 192 / ts 38 / json 29 / yml 12 / tsx 6 / rs 4）。
+//   ② 台账 `P0-*`：把 `P0-EDITOR-999`（**不存在**）注入**无关文档** ⇒ **全链 `npm run parity` 绿** ⇒ 也没有该判据；
+//      仓库内 `P0-*` 引用共 **399 处**（50 个不同 id = 台账**全部** 50 项）。
+//   ⚠️ 已有的 `resolvesRef`（门禁）/ §6 的 `resolveCarrier` 只覆盖**各自的上下文**（矩阵 disposition / §6 表），**不是全仓**。
 {
   const ADR_DIR = resolve(root, 'docs/adr');
   const ADR_IDS = new Set(readdirSync(ADR_DIR)
@@ -1705,62 +1708,84 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   if (ADR_IDS.size < 30) {
     fail(`docs/adr/ 只解析出 ${ADR_IDS.size} 份 ADR（下限 30 = 2026-10-09 实测 34）—— 判据锚点漂移`);
   }
-  // ⚠️ **哨兵值**：护栏自己的合成样本用 `ADR-9999`（**永不存在**）⇒ 必须登记豁免（带理由 + 双向核对）
-  const ADR_REF_EXEMPT = new Map([
+  // 台账 id 的**真值源 = 台账 JSON 本身**
+  const LEDGER = JSON.parse(readFileSync(resolve(root, 'tests/parity/typora-parity-ledger.json'), 'utf8'));
+  const LEDGER_IDS = new Set((LEDGER.items ?? []).map((x) => x.id));
+  if (LEDGER_IDS.size < 40) {
+    fail(`台账只解析出 ${LEDGER_IDS.size} 项（下限 40 = 2026-10-09 实测 50）—— 判据锚点漂移`);
+  }
+  // ⚠️ **哨兵值**：护栏自己的合成样本用 `ADR-9999` / `P0-NOPE-999`（**永不存在**）⇒ 必须登记豁免（带理由 + 双向核对）
+  const ID_REF_EXEMPT = new Map([
     ['ADR-9999', '护栏的**哨兵编号**（合成样本专用，永不存在）—— `verify-release-gate.mjs` 的 canary'],
+    ['P0-NOPE-999', '护栏的**哨兵编号**（合成样本专用，永不存在）—— `verify-runtime-qualification-workflow.mjs` 的 canary'],
   ]);
   // 更正说明会**引用旧编号** ⇒ 逐行豁免（与 ⑳ 同谓词）
   const NOTE = /原写|原文|更正|漂移|已改为|也写|不存在/;
   const SCAN_EXTS = ['md', 'mjs', 'cjs', 'ts', 'tsx', 'rs', 'json', 'yml', 'yaml'];
   // ⚠️ 必须排除本护栏自身：它含**合成样本**（canary 里的 `ADR-0099`）⇒ 不排除会**恒报错**
   const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
-  /** 返回本文件里「引用了不存在的 ADR 编号」的清单（判定与 canary **共用**本谓词）。 */
-  const badAdrRefs = (text) => {
+  /** 返回本文件里「引用了不存在的编号」的清单（判定与 canary **共用**本谓词）。 */
+  const badIdRefs = (text) => {
     const out = [];
     text.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       if (NOTE.test(line)) return;
       for (const m of line.matchAll(/\bADR-(\d{4})\b/g)) {
         const id = `ADR-${m[1]}`;
-        if (ADR_IDS.has(id) || ADR_REF_EXEMPT.has(id)) continue;
+        if (ADR_IDS.has(id) || ID_REF_EXEMPT.has(id)) continue;
+        out.push(`L${i + 1} ${id}`);
+      }
+      for (const m of line.matchAll(/\bP0-[A-Z]+-\d{3}\b/g)) {
+        const id = m[0];
+        if (LEDGER_IDS.has(id) || ID_REF_EXEMPT.has(id)) continue;
         out.push(`L${i + 1} ${id}`);
       }
     });
     return out;
   };
-  let adrRefs = 0; const seenExempt = new Set();
+  const ID_PATTERNS = [/\bADR-\d{4}\b/g, /\bP0-[A-Z]+-\d{3}\b/g];
+  let idRefs = 0; const seenExempt = new Set();
   for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
     if (resolve(f) === resolve(SELF)) continue;
     const text = readFileSync(f, 'utf8');
-    for (const m of text.matchAll(/\bADR-(\d{4})\b/g)) {
-      adrRefs += 1;
-      if (ADR_REF_EXEMPT.has(`ADR-${m[1]}`)) seenExempt.add(`ADR-${m[1]}`);
+    for (const re of ID_PATTERNS) {
+      for (const m of text.matchAll(re)) {
+        idRefs += 1;
+        if (ID_REF_EXEMPT.has(m[0])) seenExempt.add(m[0]);
+      }
     }
-    const bad = badAdrRefs(text);
+    const bad = badIdRefs(text);
     if (bad.length > 0) {
-      fail(`${relative(root, f)} 引用了**不存在**的 ADR 编号：${bad.join('、')}`
-        + ' —— `ADR-NNNN` 必须在 `docs/adr/` 里有对应文件'
-        + '（实测：往 `docs/architecture/README.md` 注入 `ADR-0099` 时，本护栏与发布门禁**都没红**）');
+      fail(`${relative(root, f)} 引用了**不存在**的编号：${bad.join('、')}`
+        + ' —— `ADR-NNNN` 必须在 `docs/adr/` 里有对应文件；台账 `P0-*` 必须在'
+        + ' `tests/parity/typora-parity-ledger.json` 的 `items` 里'
+        + '（实测：注入 `ADR-0099` / `P0-EDITOR-999` 时，**全链 `parity` 都不红**）');
     }
   }
-  // 防空转：下限**留余量**（健康度型 —— 引用数会随新 ADR 增长）
-  if (adrRefs < 900) {
-    fail(`ADR 编号引用只解析出 ${adrRefs} 处（下限 900；2026-10-09 实测 **1064**）—— 判据会空转`);
+  // 防空转：下限**留余量**（健康度型 —— 引用数会随新 ADR / 台账项增长）
+  if (idRefs < 1300) {
+    fail(`编号引用只解析出 ${idRefs} 处（下限 1300；2026-10-09 实测 **1469** = ADR 1072 + 台账 397）—— 判据会空转`);
   }
   // 例外表**双向**：登记了却不再出现 ⇒ 报错（防止哨兵值被删后豁免表变成噪声）
-  for (const id of ADR_REF_EXEMPT.keys()) {
+  for (const id of ID_REF_EXEMPT.keys()) {
     if (!seenExempt.has(id)) {
-      fail(`ADR_REF_EXEMPT 登记了 ${id}，但扫描面里已不再出现 —— 请删除该例外条目`);
+      fail(`ID_REF_EXEMPT 登记了 ${id}，但扫描面里已不再出现 —— 请删除该例外条目`);
     }
   }
-  // canary：三向（判定与 canary 共用 badAdrRefs）
-  if (badAdrRefs('见 ADR-0099。').length !== 1) {
-    errors.push('ADR 编号护栏 canary 失效：不存在的编号未被检出（判据已退化成空真）');
+  // canary：五向（判定与 canary 共用 badIdRefs）
+  if (badIdRefs('见 ADR-0099。').length !== 1) {
+    errors.push('编号护栏 canary 失效：不存在的 ADR 编号未被检出（判据已退化成空真）');
   }
-  if (badAdrRefs('见 ADR-0034。').length !== 0) {
-    errors.push('ADR 编号护栏 canary 过宽：存在的编号被判为不存在');
+  if (badIdRefs('见 ADR-0034。').length !== 0) {
+    errors.push('编号护栏 canary 过宽：存在的 ADR 编号被判为不存在');
   }
-  if (badAdrRefs('> 原写 `ADR-0099`，已更正。').length !== 0) {
-    errors.push('ADR 编号护栏 canary 失效：更正说明里**引用**的旧编号未被豁免');
+  if (badIdRefs('> 原写 `ADR-0099`，已更正。').length !== 0) {
+    errors.push('编号护栏 canary 失效：更正说明里**引用**的旧编号未被豁免');
+  }
+  if (badIdRefs('见 `P0-EDITOR-999`。').length !== 1) {
+    errors.push('编号护栏 canary 失效：不存在的**台账 id**未被检出（判据已退化成空真）');
+  }
+  if (badIdRefs('见 `P0-EDITOR-004`。').length !== 0) {
+    errors.push('编号护栏 canary 过宽：存在的台账 id 被判为不存在');
   }
 }
 
