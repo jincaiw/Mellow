@@ -1848,6 +1848,61 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ㉓ 「审计 §4.N」的引用必须在**审计文档**里解析得到（2026-10-09，审计 §4.219）──────────────
+// 立此条的原因（实测）：判据 §4.148 只扫**审计文档自身**，且把「审计」也列为**限定词**
+//   ⇒ 别处写「审计 §4.N」（**指向审计文档**）时**无人校验**。实测抓到 **3 处悬空**：
+//   `verify-release-gate.mjs` 的 2 处「审计 §4.237」（实为 `PITFALLS §4.237`，标题逐字吻合）
+//   + `verify-parity-ledger.mjs` 的 1 处「审计 §4.1」（审计文档**没有** `## 4.1`，日志从 `## 4.3` 起）。
+//   ⚠️ 限定词「审计」**恰恰指向本文档** ⇒ 它**不该**被当作「跨文档豁免」（§4.148 的豁免表漏了这条）。
+{
+  const AUDIT_DOC = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const auditSrc = readFileSync(resolve(root, AUDIT_DOC), 'utf8').replace(/\r\n/g, '\n');
+  const AUDIT_SECS = new Set([...auditSrc.matchAll(/^## 4\.(\d+)[ \t]/gm)].map((m) => Number(m[1])));
+  if (AUDIT_SECS.size < 100) {
+    fail(`审计文档只解析出 ${AUDIT_SECS.size} 个 \`## 4.N\` 小节（下限 100 = 2026-10-09 实测 216）—— 判据会空转`);
+  }
+  // 只在「审计 / 本文档」**紧邻** `§4.N` 时才算（中间只允许空白与一个左括号）
+  const AUDIT_REF = /(?:审计|本文档)\s*[（(]?\s*§4\.(\d+)/g;
+  /** 返回 `src` 里「指向审计文档、但该节不存在」的清单（判定与 canary **共用**本谓词）。 */
+  const badAuditRefs = (src) => {
+    const out = [];
+    src.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(AUDIT_REF)) {
+        if (!AUDIT_SECS.has(Number(m[1]))) out.push(`L${i + 1} §4.${m[1]}`);
+      }
+    });
+    return out;
+  };
+  const SCAN_EXTS = ['md', 'mjs', 'cjs', 'ts', 'tsx', 'rs', 'json', 'yml', 'yaml'];
+  // ⚠️ 必须排除本护栏自身：它的注释与 canary 里含**合成样本**（如 `审计 §4.9999`）⇒ 不排除会恒报错
+  const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
+  let auditRefs = 0;
+  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+    if (resolve(f) === resolve(SELF)) continue;
+    const text = readFileSync(f, 'utf8');
+    auditRefs += [...text.replace(/\r\n/g, '\n').matchAll(AUDIT_REF)].length;
+    const bad = badAuditRefs(text);
+    if (bad.length > 0) {
+      fail(`${relative(root, f)} 引用了**不存在的审计小节**：${bad.join('、')}`
+        + ' —— 「审计 §4.N」**指向本文档**（`docs/qualification/release-blocker-audit-…md`）'
+        + '⇒ N 必须是它的 `## 4.N`；若本意是 PITFALLS，请写 `PITFALLS §4.N`（实测抓到 3 处误标）');
+    }
+  }
+  if (auditRefs < 400) {
+    fail(`「审计 §4.N」引用只解析出 ${auditRefs} 处（下限 400 = 2026-10-09 实测 601）—— 判据会空转`);
+  }
+  // canary：三向（判定与 canary 共用 badAuditRefs）
+  if (badAuditRefs('见 审计 §4.9999。').length !== 1) {
+    errors.push('审计小节护栏 canary 失效：不存在的审计小节未被检出');
+  }
+  if (badAuditRefs('见 审计 §4.100。').length !== 0) {
+    errors.push('审计小节护栏 canary 过宽：存在的审计小节被判为不存在');
+  }
+  if (badAuditRefs('见 PITFALLS §4.9999。').length !== 0) {
+    errors.push('审计小节护栏 canary 过宽：`PITFALLS §4.N` 被误判（限定词必须**紧邻**）');
+  }
+}
+
 // ── ㉑ 「零跨包消费者」的包，其分诊必须在**审计文档的待裁决登记表**里可发现 ───────────────
 // 立此条的原因（实测，2026-10-08 审计 §4.160）：`PKG_NO_CONSUMER_EXEMPT` 有 **4** 条
 // （`document-model` / **`editor-react`** / `shared` / `workspace`），而**登记表第 14 行与

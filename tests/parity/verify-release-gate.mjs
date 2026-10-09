@@ -577,7 +577,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   //     （防「canary 被删了却没人发现」）。⚠️ **不按文件排除** `verify-*.mjs`：那样会把护栏里
   //     **真实的** D 引用（如 `verify-sidebar-contract.mjs` 的 `D-C`/`D-J`）也一起豁免掉。
   // ⚠️ **本文件自己现在也是引用源** ⇒ 本文件里**任何位置**（含注释、举例）都不得写「不存在的编号」字面量
-  //   （审计 §4.237：初稿在注释里写了那个不存在的编号，判据当场命中自己）。
+  //   （PITFALLS §4.237：初稿在注释里写了那个不存在的编号，判据当场命中自己）。
   let REF_SOURCES = [];
   if (trackedFiles === null) {
     fail('D 表引用源无法枚举：`git ls-files` 执行失败 —— 本判据要求在有 git 的检出里运行');
@@ -686,7 +686,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   }
   // canary ②（负样本）：未声明的编号必须落进「悬空」这一支。
   // ⚠️ 探针编号**必须运行时拼出来** —— 本文件现在**自己也在引用源里**，写字面量就会被上面的判据命中
-  //   （审计 §4.237 的教训：在引用源里写不存在的编号字面量 ⇒ 判据命中自己）。
+  //   （PITFALLS §4.237 的教训：在引用源里写不存在的编号字面量 ⇒ 判据命中自己）。
   const DANGLING_PROBE = `D-${String.fromCharCode(81)}${String.fromCharCode(90)}`;
   if (!isDangling(DANGLING_PROBE)) {
     fail('D 表 canary 失效：未声明编号未被判为悬空（判据已退化成空真）');
