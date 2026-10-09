@@ -219,7 +219,12 @@ if (!existsSync(resolve(root, MANIFEST))) {
 //   **窗口**（标记行 + 紧邻下一行 —— 这两份文档都是**跨行**写法），其 N 必须 == `fileCount`。
 {
   const archManifest = JSON.parse(readFileSync(resolve(root, MANIFEST), 'utf8'));
-  const ARCH_DOCS = ['docs/architecture/README.md', 'docs/architecture/editor-core.md'];
+  // ⚠️ 扫描面**按职责**取（凡「复述上游文件数」的**活文档**都要在内）——
+  //    2026-10-09（审计 §4.190）：`packages/editor-core/UPSTREAM.md` 也写着「…sha256 前 16 位，
+  //    **199 个文件**」，而原扫描面只有 `docs/architecture/*` ⇒ 那处**从未被检查**
+  //    （用 `tests/parity/tools/audit-doc-counts.mjs` 普查时发现）。
+  const ARCH_DOCS = ['docs/architecture/README.md', 'docs/architecture/editor-core.md',
+    'packages/editor-core/UPSTREAM.md'];
   const numOfFiles = (w) => {
     const m = /(\d+)\s*个文件/.exec(w);
     return m === null ? null : Number(m[1]);
@@ -241,7 +246,7 @@ if (!existsSync(resolve(root, MANIFEST))) {
     }
   }
   if (counted < 2) {
-    fail(`上游文件数：只找到 ${counted} 处「upstream-manifest.json + N 个文件」（下限 2 = 2026-10-09 实测）—— 判据范围萎缩`);
+    fail(`上游文件数：只找到 ${counted} 处「upstream-manifest.json + N 个文件」（下限 3 = 2026-10-09 实测）—— 判据范围萎缩`);
   }
   // canary ①（正样本）：**跨行**形态必须能取到
   if (numOfFiles('以 `upstream-manifest.json` 为真值源 ——\n  共 **199 个文件**（该文件的 `fileCount`）。') !== 199) {

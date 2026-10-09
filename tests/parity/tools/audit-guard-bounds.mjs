@@ -65,13 +65,27 @@ const INTENT_COVERAGE = /悄悄|消失|删掉|删条目|成员|萎缩|不该缩�
 const INTENT_HEALTH = /解析|扫描面|漂移|空转|失效|过窄|漏成员/;
 
 /** 就地突变 → 跑 → **用 git 兜底还原**（不依赖内存副本：进程被杀时内存副本救不了盘） */
+// ⚠️ **被 SIGTERM 时 `finally` 不会跑**（2026-10-09，审计 §4.190 实测：本工具被 kill 后
+//    在 `verify-release-gate.mjs` 留下一处突变 `< 9` → `< 10`，直到下次跑门禁才暴露 ——
+//    因为 `okSample` 的 canary 当场判「合法样本被判为不一致」）
+//    ⇒ 另注册信号处理器**主动还原**（`git checkout --` 幂等，重复执行无害）。
+let mutatedRel = null;
+const restoreNow = () => {
+  if (mutatedRel === null) return;
+  git(['checkout', '--', mutatedRel], { stdio: 'ignore' });
+  mutatedRel = null;
+};
+process.on('SIGTERM', () => { restoreNow(); process.exit(143); });
+process.on('SIGINT', () => { restoreNow(); process.exit(130); });
 const withMutation = (abs, text, fn) => {
   const rel = abs.slice(root.length + 1);
+  mutatedRel = rel;
   try {
     writeFileSync(abs, text);
     return fn();
   } finally {
     git(['checkout', '--', rel], { stdio: 'ignore' });
+    mutatedRel = null;
   }
 };
 

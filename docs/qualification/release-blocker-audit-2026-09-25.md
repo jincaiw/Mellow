@@ -12436,6 +12436,60 @@ PITFALLS **§4.302** · skill **§179** · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
+## 4.190 新工具 `audit-doc-counts.mjs` · 扩展 §4.180 扫描面 · ⚠️ **跑 `audit-guard-bounds.mjs` 被 kill 留下突变**（2026-10-09）
+
+### 一、本轮结论：**守备面已密**（四次复核均无缺口）
+
+按「**复核已有判据也要跑多写法透镜**」复核了四处：
+
+- **⑨c**（README ⇄ ADR-0020 门槛）：语料里「项验收 / UX Score≥N」有 **26 种形态**，
+  但 ⑨c 的**扫描面只有 README + ADR-0020** ⇒ 其余变体在审计 / 带日期 / ADR-0024·0031 ⇒ **不在面内** ✅
+- **⑫**（ADR 状态）：**已覆盖第三种状态 `Conditional`**（词表 + `CONDITIONAL_REGISTERED` + 双向）✅
+- **包用例数判据**：谓词 `/([a-z][a-z0-9-]*) (\*\*)?(\d+)/` —— 实测语料**空格形态 25 / 其他 0** ⇒ 覆盖完整 ✅
+- **22 处防空转下限**：多数标注「= 实测基线」（精确），少数是**数量级下限**（防扫描面崩塌，故意宽松）⇒ 合理 ✅
+
+### 二、新增工具：`tests/parity/tools/audit-doc-counts.mjs`
+
+把「**复述数字的普查**」**工具化**（PITFALLS §4.296 的结论「该做的是固定动作」）：
+扫活文档（**按职责**排除归档 / 带日期 / release-notes / 审计日志），列出「出现于 ≥N 个文件的计数短语」，
+并**显式声明输出是候选不是缺陷**（同 `audit-guard-bounds.mjs` 的纪律）。
+
+**首次运行即发现 1 处真缺口**：`packages/editor-core/UPSTREAM.md` 也写「…sha256 前 16 位，**199 个文件**」，
+而 §4.180 的扫描面**只有** `docs/architecture/*` ⇒ 那处**从未被检查**。
+
+### 三、处置
+
+1. **扩展 §4.180 的扫描面**（加 `packages/editor-core/UPSTREAM.md`）+ 防空转下限 2 → **3**；
+2. **新增** `audit-doc-counts.mjs`。
+
+### 四、注入验证（1/1）
+
+`UPSTREAM.md` 的「199 个文件」→「201 个文件」⇒ **转红**（「`UPSTREAM.md:80` 复述上游文件数 201」）。
+
+### 五、⚠️ 过程中的事故与修复（**本节最重要的部分**）
+
+我在复核「22 处防空转下限」时**跑了** `audit-guard-bounds.mjs`（本机工具，原理「**抬 1 再跑**」），
+它**就地突变源码**、靠 `git checkout --` 兜底 —— **但它被 SIGTERM kill（exit 137）⇒ `finally` 未执行
+⇒ 在 `verify-release-gate.mjs` 留下一处突变**（`okSample` 的 `< 9` → `< 10`）。
+⇒ 之后跑门禁**转红**（「⑥ canary 失效：合法样本被判为不一致」），才发现。
+
+**修复**：给该工具注册 **`SIGTERM` / `SIGINT` 处理器主动还原**（`git checkout --` 幂等，重复执行无害）。
+
+**教训**：
+
+1. **「就地突变源码」的工具，还原不能只靠 `finally`** —— **信号终止不跑 `finally`**；
+2. **跑完这类工具要立即 `git status` 检查**（本轮是靠**跑门禁**才发现的 —— 若直接提交，
+   就会把一个**被污染的护栏**推上去）；
+3. ⇒ 与 PITFALLS §4.287「注入前先提交」**同族**（都是「**破坏性实验的收尾纪律**」）。
+
+### 六、产物
+
+`tests/parity/tools/audit-doc-counts.mjs`（**新工具**）· `tests/parity/tools/audit-guard-bounds.mjs`（信号处理）·
+`tests/parity/verify-upstream-manifest.mjs`（扫描面 + 下限）· 审计 **§4.190** · PITFALLS **§4.303–§4.304** ·
+skill **§180–§181** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 
