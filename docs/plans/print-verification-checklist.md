@@ -1,5 +1,9 @@
 # Print 三平台验证清单（PRD §77）
 
+> **⚠️ 快照声明（2026-08-13）**：本文的**自动化验证结果**是 **2026-08-13 的实跑记录**，
+> **不是当前状态**；且「**手动验证**」一节**仍需三平台真机 + GUI 会话**（尚未执行）。
+> 当前状态以 `node tests/parity/verify-release-gate.mjs` 的输出为准。
+
 Print 实现：桌面端注入打印样式表（与 PDF 共享排版常量），打印命令经
 `invoke('print_window')` 调 Tauri `WebviewWindow::print()`（系统打印对话框）。
 

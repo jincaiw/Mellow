@@ -821,6 +821,10 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
 const QUALIFICATION_SNAPSHOT_DIRS = [
   'docs/qualification', 'tests/qualification', 'docs/accessibility', 'docs/security',
 ];
+// ⚠️ 2026-10-09（审计 §4.206）：**单文件**也纳入 —— `docs/plans/print-verification-checklist.md`
+//   兼有「流程」与「**2026-08-13 的自动化验证结果**」⇒ 同样会被按「当前」读
+//   （且它「手动验证」一节**仍待真机**）。⚠️ **不整目录纳入 `docs/plans/`**（含施工文件，假阳性多）。
+const QUALIFICATION_SNAPSHOT_FILES = ['docs/plans/print-verification-checklist.md'];
 {
   const SNAPSHOT_MARKER = /快照声明|不是当前|已过期|历史记录|历史快照|按当时读/;
   let checked = 0;
@@ -839,6 +843,19 @@ const QUALIFICATION_SNAPSHOT_DIRS = [
           + '请加一句「本文是 <日期> 的历史记录，当前状态以 verify-release-gate.mjs 为准」，'
           + '或登记进 QUALIFICATION_SNAPSHOT_EXEMPT（带理由）');
       }
+    }
+  }
+  // ⚠️ 单文件（2026-10-09，审计 §4.206）
+  for (const rel of QUALIFICATION_SNAPSHOT_FILES) {
+    const abs = resolve(root, rel);
+    if (!existsSync(abs)) {
+      fail(`QUALIFICATION_SNAPSHOT_FILES 登记了 ${rel}，但该文件不存在 —— 请删除该条目`);
+      continue;
+    }
+    checked += 1;
+    const head = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n').split('\n').slice(0, 14).join('\n');
+    if (!SNAPSHOT_MARKER.test(head)) {
+      fail(`${rel} 的前 14 行缺少**快照声明** —— 它含「某次实跑的结果」，读者会按「当前」读`);
     }
   }
   if (checked < 8) {
