@@ -20,7 +20,7 @@ src/
 │   ├── selection/       # 选区管理（多光标、normalize、导航）
 │   ├── history/         # undo 分组（@vendor custom history）
 │   ├── search/          # 搜索（当前文件 find/replace）
-│   ├── toc/  link/  task/  table/  completion/  snippets/
+│   ├── toc/  link/  completion/  snippets/
 │   ├── frontMatter/  lineEndings/  indentation/  lines/
 │   └── events/          # composition 事件、clickable link/task、滚动通知
 ├── styling/

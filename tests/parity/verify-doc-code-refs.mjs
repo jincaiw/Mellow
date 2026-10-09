@@ -1903,59 +1903,71 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
-// ── ㉔ README 的「目录结构」树里的**目录必须真实存在**（2026-10-09，审计 §4.220）──────────────
-// 立此条的原因（实测）：该树在**代码围栏内** ⇒ 既有的「markdown 链接可达性」与
-//   「反引号仓库相对路径」判据**都会剥掉围栏** ⇒ **整棵树无人校验**
-//   （注入一个不存在的目录 ⇒ **全链 `npm run parity` 绿**）。
-//   ⚠️ 它**漂过**：§4.94 曾一次修 **5 处失真**。README 是**仓库门面** ⇒ 漂了最伤读者。
+// ── ㉔ 「`├──` 树」里的**目录必须真实存在**（2026-10-09，审计 §4.220 / §4.221）──────────────
+// 立此条的原因（实测）：这些树在**代码围栏内** ⇒ 链接判据与「反引号仓库相对路径」判据
+//   **都会剥掉围栏** ⇒ **整棵树无人校验**。实测抓到两处：
+//   ① `README.md` 的「目录结构」树 —— 注入一个不存在的目录 ⇒ **全链 `npm run parity` 绿**；
+//   ② `docs/architecture/editor-core.md` 的「模块地图」树 —— **2 处真失真**：
+//      把 `task/` `table/` 列成 `modules/` 的子目录，而它们**实际是 `styling/nodes/{task,table}.ts`**。
+//   ⚠️ README 是**仓库门面**（§4.94 曾一次修 **5 处失真**）⇒ 漂了最伤读者。
+// ⚠️ **只锁「存在性」，不锁「完整性」** —— 这些树是**示意**（可能只列代表项）⇒ 不要求列全。
 {
-  const README = 'README.md';
-  const readmeSrc = readFileSync(resolve(root, README), 'utf8').replace(/\r\n/g, '\n');
-  const sec = readmeSrc.split(/^## 目录结构[ \t]*$/m)[1];
-  const fence = sec === undefined ? undefined : /```\n([\s\S]*?)```/.exec(sec)?.[1];
   /**
-   * 从树的文本里抽出**目录**的仓库相对路径（判定与 canary **共用**本谓词）。
-   * 口径：`├──`/`└──` 后的 token，**以 `/` 结尾**的才算目录（文件如 `README.md` 不计）；
-   *      缩进 4 空格（或 `│   `）= 1 层；**深度 0 的目录名作为下一层的父**。
+   * 解析 `├──`/`└──` 树 ⇒ `[{rel, depth}]`（判定与 canary **共用**本谓词）。
+   * 口径：① **首行裸根目录**（`mellow/` / `src/`）**已并入 `base`** ⇒ 跳过不解析；
+   *      ② 只算**以 `/` 结尾**的 token（文件如 `README.md` 不计）；
+   *      ③ 缩进 4 空格（或 `│   `）= 1 层；父链 = 各层**最后**一个目录名。
    */
-  const treeDirs = (text) => {
-    const out = []; let parent = '';
-    for (const line of text.split('\n')) {
+  const parseTree = (text, base) => {
+    const lines = text.split('\n').filter((l) => l.trim() !== '');
+    const stack = []; const out = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (i === 0 && !/[├└]──/.test(line)) continue;          // 根行 ⇒ 已在 base 里
       const m = /^((?:│   |    )*)[├└]── (.*)$/.exec(line);
       if (m === null) continue;
       const depth = m[1].length / 4;
-      if (depth > 1) { out.push({ rel: `(深度 ${depth} 未支持)`, depth }); continue; }
       const names = m[2].split('#')[0].split(/\s+/).filter((t) => t.endsWith('/'))
         .map((t) => t.replace(/\/+$/, ''));
       if (names.length === 0) continue;
-      if (depth === 0) parent = names[0];           // 本层第一个目录名作为下一层的父
-      for (const n of names) out.push({ rel: depth === 0 ? n : `${parent}/${n}`, depth });
+      const parent = stack.slice(0, depth).join('/');
+      for (const n of names) out.push({ rel: `${base}${parent === '' ? '' : `${parent}/`}${n}`, depth });
+      stack.length = depth;
+      stack[depth] = names[names.length - 1];                  // 最深那个作下一层的父
     }
     return out;
   };
-  if (fence === undefined) {
-    fail(`${README} 的「## 目录结构」节里找不到代码围栏 —— 判据锚点漂移，别静默跳过`);
-  } else {
-    const dirs = treeDirs(fence);
-    const bad = dirs.filter((d) => d.depth <= 1 && !existsSync(resolve(root, d.rel)));
+  // [文档, 节标题, 树的根（含尾 `/`；空串 = 仓库根）, 目录数下限（贴实测）]
+  const TREES = [
+    ['README.md', '## 目录结构', '', 25],
+    ['docs/architecture/editor-core.md', '## 模块地图', 'packages/editor-core/CoreEditor/src/', 15],
+  ];
+  for (const [doc, head, base, floor] of TREES) {
+    const src = readFileSync(resolve(root, doc), 'utf8').replace(/\r\n/g, '\n');
+    const sec = src.split(new RegExp(`^${head}[ \\t]*$`, 'm'))[1];
+    const fence = sec === undefined ? undefined : /```\n([\s\S]*?)```/.exec(sec)?.[1];
+    if (fence === undefined) {
+      fail(`${doc} 的「${head}」节里找不到代码围栏 —— 判据锚点漂移，别静默跳过`);
+      continue;
+    }
+    const dirs = parseTree(fence, base);
+    const bad = dirs.filter((d) => !existsSync(resolve(root, d.rel)));
     if (bad.length > 0) {
-      fail(`${README} 的「目录结构」树里有**不存在的目录**：${bad.map((d) => `${d.rel}/`).join('、')}`
-        + ' —— 该树在**代码围栏内**（链接/路径判据都会剥掉它）⇒ 改名/删目录时**无人报**；'
-        + '请同步更新树（§4.94 曾一次修 5 处失真）');
+      fail(`${doc} 的「${head}」树里有**不存在的目录**：${bad.map((d) => `${d.rel}/`).join('、')}`
+        + ' —— 该树在**代码围栏内**（链接 / 路径判据都会剥掉它）⇒ 改名 / 删目录时**无人报**；请同步更新树');
     }
-    // 防空转：下限**贴实测**（2026-10-09 实测 29 个目录）
-    if (dirs.length < 25) {
-      fail(`${README} 的「目录结构」树只解析出 ${dirs.length} 个目录（下限 25 = 2026-10-09 实测 29）—— 谓词或锚点漂移`);
+    if (dirs.length < floor) {
+      fail(`${doc} 的「${head}」树只解析出 ${dirs.length} 个目录（下限 ${floor}）—— 谓词或锚点漂移`);
     }
   }
-  // canary：两向（判定与 canary 共用 treeDirs）
-  const T = 'mellow/\n├── docs/\n│   ├── product/\n│   └── specs/\n├── packages/\n│   ├── a/ b/\n└── tests/\n';
-  const got = treeDirs(T).map((d) => d.rel).join(',');
-  if (got !== 'docs,docs/product,docs/specs,packages,packages/a,packages/b,tests') {
-    errors.push(`README 目录树护栏 canary 失效：解析结果 = ${got}（层级 / 多目录同行 / 文件不计 三向都要对）`);
+  // canary：三向（判定与 canary 共用 parseTree）
+  const T = 'root/\n├── docs/\n│   ├── a/\n│   │   └── deep/\n│   └── b/ c/\n├── packages/\n└── tests/\n';
+  const got = parseTree(T, 'B/').map((d) => d.rel).join(',');
+  if (got !== 'B/docs,B/docs/a,B/docs/a/deep,B/docs/b,B/docs/c,B/packages,B/tests') {
+    errors.push(`树护栏 canary 失效：解析结果 = ${got}（**三层深度 / 多目录同行 / 根行跳过** 三向都要对）`);
   }
-  if (treeDirs('├── README.md\n').length !== 0) {
-    errors.push('README 目录树护栏 canary 过宽：**文件**（不以 `/` 结尾）被当成了目录');
+  if (parseTree('├── README.md\n├── x/\n', '').length !== 1) {
+    errors.push('树护栏 canary 过宽：**文件**（不以 `/` 结尾）被当成了目录');
   }
 }
 

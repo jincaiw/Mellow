@@ -13924,6 +13924,46 @@ README 的 `## 目录结构` 树（**29 个目录**）在 **``` 围栏内** ⇒ 
 
 ---
 
+## 4.221 判据 ㉔ **泛化为表驱动** ⇒ 当场抓到 `editor-core.md` 的 **2 处真失真**（「只锁了一半」同族**第 50 次**，2026-10-09）
+
+### 一、方法：把上轮的判据**从「一个文档」泛化为「表」**
+
+上轮（§4.220）的判据 ㉔ 把路径**写死**为 `README.md`。本轮**普查全仓围栏里的清单** ⇒ **12 个**：
+`AGENTS.md`（**已被「治理文件不得指向不存在的目录」判据守住** ✅）· `README.md`（㉔）· `editor-core.md` · `monorepo.md` ·
+`overview.md` · `packages/editor-core/README.md` · PRD ×3 · `markdown-syntax-demo-…plan.md` ·
+`real-desktop-execution-bundle.md` · `macos-local-verification-2026-09-12.md`。
+
+⇒ **泛化 ㉔** 为**表驱动**：`[文档, 节标题, 树的根, 目录数下限]` ⇒ 覆盖 `README.md`（`## 目录结构`，根 = 仓库）
+与 `editor-core.md`（`## 模块地图`，根 = `packages/editor-core/CoreEditor/src/`）。
+
+### 二、⚠️ 泛化后**当场抓到 2 处真失真**
+
+`docs/architecture/editor-core.md:23` 写 `│   ├── toc/  link/  task/  table/  completion/  snippets/` ——
+而 **`modules/` 下没有 `task/` `table/`**（`find` 全树无此目录）⇒ 它们**实际是 `styling/nodes/{task,table}.ts`**。
+⚠️ **同一行内自相矛盾**：该行**末尾的注释**已正确列了 `table/task`（指 `nodes/*.ts`）。
+⇒ **修**：从 `modules/` 列表里删掉这两个。
+
+⚠️ **量具 3 次迭代**（**父链 / 根行**两个坑）：
+① 父链只记了第 0 层 ⇒ **深度 2 的路径全错**（**23 处假阳性**）；
+② 树的**首行是裸根目录**（`src/` / `mellow/`）而解析器只认 `├──` ⇒ **根被跳过** ⇒ 链缺一层。
+⇒ **口径定稿**：**根行并入 `base`**、父链取**各层最后一个**目录名。
+
+### 三、注入验证 1/1
+
+把 `task/ table/` **加回** ⇒ **转红**（报 `…/modules/task/、…/modules/table/`）。
+
+### 四、教训（PITFALLS §4.339 / skill §212）
+
+① ✅ **新判据落成后要立刻问「这是特例还是类」**（把路径写死成 `README.md` = **只锁了一半**）
+   —— **「修一处 ≠ 修一类」第 9 次**；
+② ✅ **泛化后往往当场抓到新缺陷**（本轮 2 处）⇒ **泛化不是重构，是「扩大取证」**；
+③ ⚠️ **「树的解析」要定两个口径**：**根行归属**（并入 base）与**父链取哪个名字**（各层最后一个）；
+④ ⚠️ **只锁「存在性」不锁「完整性」** —— 这些树是**示意**（可能只列代表项）。
+
+产物：`tests/parity/verify-doc-code-refs.mjs`（㉔ 泛化）· `docs/architecture/editor-core.md`（删 2 处失真）· 审计 §4.221 · PITFALLS **§4.339** · skill **§212** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 
