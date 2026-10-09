@@ -98,7 +98,7 @@
 |---|---|---|---|
 | D1 | 会话恢复深度 | **P1**：仅恢复主窗口最后文档（省 Rust 注册表，改动小）；**P2**：恢复全部上次窗口（每文档一窗，需 Rust 窗口注册表 + per-window 几何） | 视 Phase 0.13 真值：Typora 恢复多窗口则 P2，否则 P1。**默认 P2**（完全对齐代价） |
 | D2 | 文档状态收敛方式 | **1a**：保留 `TabManager` 但锁死单元素（tabs.test 保留 3 处改断言）；**1b**：收敛重写为 `DocumentState`（删 tabs[]/activeId/closed/closeOthers/closeRight/reorder/snapshot 多 tab 结构，保留 documentId/dirty/encoding/eol/diskState/revision 概念） | **1b**（模型干净、长期无债；代价是 App.tsx 88 处引用与 tabs.test 重写，与 B1 目标一致） |
-| D3 | 「再打开一个文档」语义 | **同窗替换**（Typora 侧栏/⌘O 在标签页关闭时多为替换；用户当前工作流可能依赖）；**新窗口**（绝对 SDI 直觉）；**按来源分流**（树单击=替换、odoc/⌘N=新窗） | 由 Phase 0.3–0.7 真值表决定；**预判按来源分流**，同一份打开核心函数按调用方传 `{mode:'replace'|'new-window'}` |
+| D3 | 「再打开一个文档」语义 | **同窗替换**（Typora 侧栏/⌘O 在标签页关闭时多为替换；用户当前工作流可能依赖）；**新窗口**（绝对 SDI 直觉）；**按来源分流**（树单击=替换、odoc/⌘N=新窗） | 由 Phase 0.3–0.7 真值表决定；**预判按来源分流**，同一份打开核心函数按调用方传 `{mode:'replace'\|'new-window'}` |
 | D4 | 系统关闭保护通道 | **A**：Rust `CloseRequested` 拦截 → emit 给前端 → 前端 dirty 确认后 `window.destroy()`（自毁 flag 防环）；**B**：不拦截，仅记会话（现状，脏数据靠 crash snapshot 兜底） | **A**。现状 lib.rs:229–233 仅做几何监听，系统关窗**无保存确认**；SDI 下关窗=关文档，缺口从「可容忍」变「必修」 |
 | D5 | 「重新打开关闭的文件」 | 删除（无标签即无 closed 概念）；保留但 app 级 + 新窗口打开； | 以 Phase 0.14 真值为准（本地化字典存在 Reopen Closed File，倾向保留 app 级） |
 | D6 | 多窗口会话载体 | localStorage per-window（`mellow.session.<label>`，现状 localStorage 全窗共享会互相覆盖，最差）；Rust 侧 `windows.json`（app_data_dir，label→docPath/geometry，仿 geometry.rs A2 模式） | Rust 侧（与 A2 geometry、RunEvent flush 同构；几何记忆顺带 per-label 化） |
@@ -145,7 +145,7 @@
 | 任务 | 说明 / 锚点 |
 |---|---|
 | B1-4.1 | **关闭保护**：window.rs / lib.rs 对每窗口 `on_window_event` 增 `CloseRequested` 分支（现 229–233 仅几何）：`prevent_close()` → emit `mellow://close-requested`（带 window label）→ 前端 `confirmCloseDocument()`（复用 confirmCloseTabs 3444 提炼）→ 确认后 `invoke('confirm_close', {label})` 销毁；销毁前记会话。**防环 flag**：Rust 侧 `allow_close` 集合 |
-| B1-4.2 | **窗口注册表**（仿 geometry.rs A2 模式）：新 `session.rs`：`WindowRecord { label, path|null, geometry }`；`load/save/record/flush`；`RunEvent::{ExitRequested, Exit}` 落盘（同 geometry flush 处合并写，避免双文件抖动）；`app_data_dir/windows.json` |
+| B1-4.2 | **窗口注册表**（仿 geometry.rs A2 模式）：新 `session.rs`：`WindowRecord { label, path\|null, geometry }`；`load/save/record/flush`；`RunEvent::{ExitRequested, Exit}` 落盘（同 geometry flush 处合并写，避免双文件抖动）；`app_data_dir/windows.json` |
 | B1-4.3 | **几何 per-label**：geometry.rs 现单窗 key → 按 window label 分键（A2 只记了主窗；B1 后多窗各自记忆，复用 visible_on_any_screen 校验） |
 | B1-4.4 | **启动恢复**：lib.rs setup 读 windows.json → 为每个有 path 的 record 建窗口（携带恢复参数，经 PendingOpen/odoc 通道或 URL query 打开）；与现 `reopenLast`/`mellow.tabs.session`（App.tsx 2706–2716）职责合并——SDI 后前端 localStorage 会话逻辑删除，改由 Rust 注入 |
 | B1-4.5 | **新窗参数化**：`new_window(app, { path?: string })` 扩展签名（现 window.rs:13 无参）；前端 invoke 传 path 用于「再打开文档 → 新窗口」 |
@@ -155,7 +155,7 @@
 
 | 任务 | 说明 / 锚点 |
 |---|---|
-| B1-5.1 | 打开核心函数重构：现 `openPathInTab`（3016–3052）/ `handleOpen`（2985–3013）拆为 `openDocument(path, {mode:'replace'|'new-window'})`；mode 由调用方真值表决定 |
+| B1-5.1 | 打开核心函数重构：现 `openPathInTab`（3016–3052）/ `handleOpen`（2985–3013）拆为 `openDocument(path, {mode:'replace'\|'new-window'})`；mode 由调用方真值表决定 |
 | B1-5.2 | 四个同窗加 tab 入口逐个改：pandoc 导入输出 3075、文件树/列表打开（3093 附近、3154 附近）、odoc 事件 3807（→ 现窗口替换 or 新窗，以 Phase 0.6 真值）、最近文件 4392 |
 | B1-5.3 | replace 模式 = 现「关当前文档 → 开新文档」：脏文档复用关闭确认；`autoLoadParentFolder` 2976/记录最近/侧栏联动逻辑保持 |
 | B1-5.4 | 拖放路径注入（2681–2696）目标改为 openDocument（mode 以真值表定）；CLI/OpenRequest（lib.rs 237–260）同 |

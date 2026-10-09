@@ -2279,6 +2279,78 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ㉙ markdown **表格数据行的格数不得多于表头**（2026-10-09，审计 §4.227）──
+// 立此条的原因（新透镜「**表格列数一致性**」）：GFM 对「行比表头多格」的处理是**静默丢弃溢出格**
+//   ⇒ 单元格内容**在渲染视图里消失**（本仓已为 **D 表**单独落过「声明行恰好 4 格」的判据，但**其它表格无人守**）。
+//   首轮扫 **595 表 / 3622 数据行**，**12 处**行比表头多格，**全部**是「**单元格内未转义的 `|`**」：
+//     代码里的 `||`（`path.resolve(rootUrl || docFolder, src)`、`for(; c || u<l;)`）· 联合类型（`path|null`）·
+//     正则交替（`color-only|仅颜色|颜色.*唯一|color alone`）· 4 个连写的杂散 `| | | |`（产生空单元格）。
+//     修法**一律是转义/删多余分隔符**（内容**保真**，只是从「不可见」变回可见）。
+// ⚠️ **范围（如实声明，别当成「表格已全部核对」）**：**只锁「多于表头」这一个方向** ——
+//   它是**内容消失**；反方向（**少于**表头）GFM 用**空格补齐**，文本仍在（只是落在**相邻表头**下），属**外观**问题。
+//   实测反方向 **8 处**（全在 `master-plan`，均为「两列被合并成一格」）⇒ **修它要拆内容**（属**内容判断**，
+//   不是格式修复）⇒ **本判据不覆盖**，已在审计 §4.227 逐条登记。
+// ⚠️ **渲染语料豁免**（`tests/fixtures/**`、`tests/benchmark/**`）—— 与 §4.94 同理：
+//   那是**故意**含畸形语法的夹具，判它会产生假阳性。⚠️ 围栏代码块内的表格**不判**（不是表格）。
+{
+  const MD = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
+    .toString().split('\0').filter((f) => f.endsWith('.md'));
+  /** 单元格数：按**未转义**的 `|` 切分（`\|` 是转义，不算分隔）。判定与 canary **共用**本谓词。 */
+  const tableCells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).length;
+  const isTableRow = (l) => /^\s*\|/.test(l) && l.includes('|');
+  const isDelimiter = (l) => /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l) && l.includes('-');
+  let tblTables = 0;
+  let tblRows = 0;
+  for (const rel of MD) {
+    if (/^(?:tests\/fixtures\/|tests\/benchmark\/)/.test(rel)) continue;   // 渲染语料：**故意**含畸形表格
+    const lines = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n');
+    let inFence = false;
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*```/.test(line)) { inFence = !inFence; i += 1; continue; }
+      if (inFence) { i += 1; continue; }
+      if (!isTableRow(line) || !(i + 1 < lines.length) || !isDelimiter(lines[i + 1])) { i += 1; continue; }
+      const head = tableCells(line);
+      tblTables += 1;
+      let j = i + 2;
+      while (j < lines.length && isTableRow(lines[j]) && !isDelimiter(lines[j])) {
+        tblRows += 1;
+        const c = tableCells(lines[j]);
+        if (c > head) {
+          fail(`${rel}:${j + 1} 表格数据行有 ${c} 格 > 表头 ${head} 格 —— GFM 会**静默丢弃**溢出格 ⇒`
+            + ' 单元格内容在渲染视图里**消失**（实测：单元格内未转义的 `|`，如 `a || b` / `x|y` 联合类型；修法=转义 `\\|`）');
+        }
+        j += 1;
+      }
+      i = j;
+    }
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 3622，下限 3500）
+  if (tblRows < 3500) {
+    fail(`只解析出 ${tblRows} 个表格数据行（下限 3500 = 立此判据时的基线 3622 − 余量）`
+      + ' —— 谓词或文档内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
+  }
+  // canary：五向（判定与 canary **共用** tableCells / isTableRow / isDelimiter）
+  if (tableCells('| a | b |') !== 2) {
+    errors.push('表格列数护栏 canary 失效：基础行未被解析成 2 格');
+  }
+  if (tableCells('| a \\| b | c |') !== 2) {
+    errors.push('表格列数护栏 canary 失效：**转义 `\\|`** 被当成了分隔符（会把合法行误判为多格）');
+  }
+  if (!(tableCells('| a | b | c |') > tableCells('| a | b |'))) {
+    errors.push('表格列数护栏 canary 失效：多格行未被判为多格');
+  }
+  if (!isDelimiter('|---|---|')) {
+    errors.push('表格列数护栏 canary 失效：分隔行未被识别（表格起点找不到 ⇒ 判据空转）');
+  }
+  if (isDelimiter('| a | b |')) {
+    errors.push('表格列数护栏 canary 过宽：数据行被当成了分隔行');
+  }
+  // 覆盖数**派生打印**（判据 ⑧）—— 让「本判据查了多少」可见
+  console.log(`Doc code refs: 表格 ${tblTables} 个 / 数据行 ${tblRows} 行，格数**不多于**表头`);
+}
+
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
 //   实测 `CoreEditor/src/styling/themes/` 有 **18 个 `.ts`**，其中 `index.ts` / `colors.ts`

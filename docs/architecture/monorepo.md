@@ -48,8 +48,8 @@ app-core     不允许直接调用 Swift / Win32 / DBus。
 |---|---|---|
 | CoreEditor 独立 | `packages/editor-core/CoreEditor/`（vendored 原样） | T-0003 未完成：未按 Mellow 契约封装（入口/类型导出/平台假设清理） |
 | 包划分 | editor-core + editor-engine + desktop | editor-react/desktop-ui/document-model 等未建 |
-| 代码生成产物隔离 | ts-gyb 生成的 Swift 桥文件落在 vendored 目录（`packages/editor-core/MarkEditKit|MarkEditCore`） | ⚠️ macOS-only 产物不应进入跨平台包，后续迁移时隔离 |
-| 平台代码 | `src-tauri/`（Rust） | 无 native/macos|windows|linux 适配目录（PRD §113.4） |
+| 代码生成产物隔离 | ts-gyb 生成的 Swift 桥文件落在 vendored 目录（`packages/editor-core/MarkEditKit\|MarkEditCore`） | ⚠️ macOS-only 产物不应进入跨平台包，后续迁移时隔离 |
+| 平台代码 | `src-tauri/`（Rust） | 无 native/macos\|windows\|linux 适配目录（PRD §113.4） |
 
 ## package 规范（PRD §117.1）
 

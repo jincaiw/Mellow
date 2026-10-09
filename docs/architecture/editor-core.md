@@ -38,7 +38,7 @@ src/
 
 | 方向 | 机制 | 契约 |
 |---|---|---|
-| Web → 宿主 | `window.nativeModules.*` → `window.webkit.messageHandlers.bridge.postMessage({moduleName, methodName, parameters})` | Promise 语义；宿主应答 `{result | error}` |
+| Web → 宿主 | `window.nativeModules.*` → `window.webkit.messageHandlers.bridge.postMessage({moduleName, methodName, parameters})` | Promise 语义；宿主应答 `{result \| error}` |
 | 宿主 → Web | `window.webModules.*`（同上下文 JS 直接调用） | `core.resetEditor/getEditorText/getEditorState/insertText/replaceText` 等 |
 | 配置注入 | `"{{EDITOR_CONFIG}}"` / `"{{USER_SETTINGS}}"` 占位符替换 | EditorConfig JSON |
 
