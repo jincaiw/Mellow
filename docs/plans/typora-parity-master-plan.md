@@ -1635,7 +1635,7 @@ Typora 有一整组「**When drop file / folder into Typora**」偏好（面板 
 
 ### 15.4 本轮更正的文档失真（累计 9 处）
 
-1. **§0.2 / §11.2 台账数字**：仍写「32 项 AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1」，实为 50 项（AUTO 44 / MAC 2 / IMPL 1 / BLOCKED 2 / NOT_TESTED 1）。
+1. **§0.2 / §11.2 台账数字**（**本轮已更正** —— 措辞「仍写」指的是**更正前**的状态；2026-10-09 实测：§11.2 已是「台账 **50 项**」、§0.2 **无**台账数字）：更正前写「32 项 AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1」，实为 50 项（AUTO 44 / MAC 2 / IMPL 1 / BLOCKED 2 / NOT_TESTED 1）。
 2. **「Linux 真机 IME 已通」**：CI run 58（2026-09-06）起持续失败，从未通过（§5.8 G7-QA-03）。
 3. **「Windows 仅诊断级」已过时**：run 60/61 的 Source Fidelity 与 launch/type/save 均 success。
 4. **G7-EDIT-01「矩阵覆盖不足」**：实为 11 家族 × 16 态参数化，无缺口。
