@@ -31,9 +31,10 @@
  *
  * 用法：`node tests/parity/tools/audit-guard-bounds.mjs`
  */
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const root = resolve(import.meta.dirname, '../../..');
 const PARITY = resolve(root, 'tests/parity');
@@ -69,23 +70,41 @@ const INTENT_HEALTH = /解析|扫描面|漂移|空转|失效|过窄|漏成员/;
 //    在 `verify-release-gate.mjs` 留下一处突变 `< 9` → `< 10`，直到下次跑门禁才暴露 ——
 //    因为 `okSample` 的 canary 当场判「合法样本被判为不一致」）
 //    ⇒ 另注册信号处理器**主动还原**（`git checkout --` 幂等，重复执行无害）。
+// ⚠️ **信号处理器不够**（2026-10-09，审计 §4.190 实测）：`execFileSync` **阻塞**期间收到的
+//    SIGTERM 会被**吞掉**（同步调用返回后 handler **不跑**）。独立小实验复现：
+//    `start` → kill → 阻塞 6s 结束 → 打印 `after-sync` 而 **handler 未执行**。
+//    ⇒ 另加**锁文件**兜底：突变前把目标文件写进 `/tmp` 的锁文件，**下次启动时先清理**
+//    （`git checkout --` 幂等 ⇒ 重复清理无害）。这样即使被 `kill -9` 也能**自愈**。
+const LOCK = join(tmpdir(), 'mellow-audit-guard-bounds.lock');
 let mutatedRel = null;
 const restoreNow = () => {
   if (mutatedRel === null) return;
   git(['checkout', '--', mutatedRel], { stdio: 'ignore' });
   mutatedRel = null;
+  if (existsSync(LOCK)) unlinkSync(LOCK);
 };
 process.on('SIGTERM', () => { restoreNow(); process.exit(143); });
 process.on('SIGINT', () => { restoreNow(); process.exit(130); });
+// **启动时清理上次残留**（上次若被 kill -9 / 阻塞期被 SIGTERM，锁文件还在）
+if (existsSync(LOCK)) {
+  const stale = readFileSync(LOCK, 'utf8').trim();
+  if (stale !== '') {
+    git(['checkout', '--', stale], { stdio: 'ignore' });
+    console.error(`⚠️ 清理上次中断留下的突变：${stale}（已 \`git checkout --\` 还原）`);
+  }
+  unlinkSync(LOCK);
+}
 const withMutation = (abs, text, fn) => {
   const rel = abs.slice(root.length + 1);
   mutatedRel = rel;
+  writeFileSync(LOCK, rel); // **先落锁**：即使本进程随后被 kill -9，下次启动也能自愈
   try {
     writeFileSync(abs, text);
     return fn();
   } finally {
     git(['checkout', '--', rel], { stdio: 'ignore' });
     mutatedRel = null;
+    if (existsSync(LOCK)) unlinkSync(LOCK);
   }
 };
 

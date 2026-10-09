@@ -12473,7 +12473,15 @@ PITFALLS **§4.302** · skill **§179** · `MEMORY.md` · `2026-10-09.md`。
 ⇒ 在 `verify-release-gate.mjs` 留下一处突变**（`okSample` 的 `< 9` → `< 10`）。
 ⇒ 之后跑门禁**转红**（「⑥ canary 失效：合法样本被判为不一致」），才发现。
 
-**修复**：给该工具注册 **`SIGTERM` / `SIGINT` 处理器主动还原**（`git checkout --` 幂等，重复执行无害）。
+**修复（两步 —— 第 1 步被实测否掉）**：
+
+1. 先给该工具注册 **`SIGTERM` / `SIGINT` 处理器主动还原**；
+2. ⚠️ **但实测证明「信号处理器不够」**：独立小实验（`execFileSync` 阻塞 6s 期间 `kill -TERM`）显示
+   —— 日志只有 `start` + `after-sync`，**没有** `HANDLER RAN` ⇒ **`execFileSync` 阻塞期间收到的
+   SIGTERM 会被吞掉**，同步调用返回后 handler **不执行**（验证时也确实留下了残留突变）。
+   ⇒ 改用**锁文件兜底**：突变前把目标文件写进 `/tmp/mellow-audit-guard-bounds.lock`，
+   **下次启动时先清理**（`git checkout --` 幂等，重复无害）⇒ 即使被 `kill -9` 也能**自愈**。
+   （信号处理器**保留** —— 对「非阻塞期间」的信号仍有效。）
 
 **教训**：
 
