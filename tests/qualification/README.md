@@ -13,7 +13,7 @@
 > **验证范围裁决（2026-09-12，用户）**：**macOS 使用本机实机验证；Windows / Linux 不做真实设备验证**
 > （与 ADR-0022 一致：Win/Linux 以 GitHub Actions 为正式 Runtime 证据来源）。
 > macOS 本机证据见 **[`macos-local-verification-2026-09-12.md`](./macos-local-verification-2026-09-12.md)**：
-> 本机 Typora 1.14.9（7785）与规范基线一致、基线 dump 可复现、Rust 83 + jest 1613、前端/release
+> 本机 Typora 1.14.9（7785）与规范基线一致、基线 dump 可复现、**Rust / jest 规模见该文档与下文「各包规模」行**、前端/release
 > 构建 + 渲染层指纹 + 启动冒烟、parity 护栏全绿（**数量见下文「Parity 契约护栏」行** —— 该处由护栏锁定，
 > 本行不重复写数字以免二次漂移）、`tsc --noEmit` **0 错误**。
 > **受阻项**：依赖**原生 App 界面操控**的验证（原生 IME 面板 / 20 分钟连续写作 /

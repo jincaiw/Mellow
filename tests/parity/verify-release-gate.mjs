@@ -1731,6 +1731,57 @@ if (driftedMissing.length === 0) {
     }
   }
 
+  // ── 写了「不重复写数字以免二次漂移」的段落，**不得**出现规模计数（2026-10-10，审计 §4.245）──
+  // 【为什么】实测：`tests/qualification/README.md` 的 macOS 证据段自己写着
+  //   「**本行不重复写数字以免二次漂移**」，而**同一段**却复述了「Rust 83 + jest 1613」——
+  //   而 jest 的当前合计是 **1915**（§4.244 刚把真值源做成实跑对账）⇒ **自己的规则 + 自己违反**，
+  //   且该数字**已漂**（1613 → 1915）。⇒ 「声称不写数字」的段落本身是一个**可机械复核**的断言。
+  // 【判据】活文档里凡出现「不重复写数字 / 以免二次漂移」的行，其 **±3 行窗口**内不得出现
+  //   **规模计数**（`jest N` / `Rust N` / `N 例` / `合计 N`）。
+  //   ⚠️ **记录类排除**（目录 + **文件名含日期**）：记录里的旧值是**当时快照**，合法。
+  //   ⚠️ **不含「N 错误」**：那是**通过 / 不通过**的断言（不为 0 就是红的），不是会漂的规模。
+  {
+    const DUP_RULE = /不重复写数字|以免二次漂移/;
+    const SCALE = /(?:jest|Rust)\s*\*{0,2}\d{2,}|\d{2,}\s*例|合计\s*\*{0,2}\d{2,}/;
+    const RECORD_DIRS = ['docs/qualification/', 'docs/plans/archive/'];
+    let dupSections = 0;
+    const dupBad = [];
+    for (const rel of trackedFiles ?? []) {
+      if (!rel.endsWith('.md')) continue;
+      if (RECORD_DIRS.some((d) => rel.startsWith(d))) continue;
+      if (rel.startsWith('.github/release-notes-')) continue;
+      if (rel.startsWith('docs/adr/')) continue;
+      if (/\d{4}-\d{2}-\d{2}/.test(rel.split('/').pop())) continue;   // 文件名含日期 ⇒ 记录
+      // ⚠️ **不要**在这里再归一化 —— `read()` 已归一化；而本文件里**任何地方**出现那个两字符
+      //   转义序列（**包括注释里**）都会**破坏本文件自己的 CRLF canary**（⑤ 会报，见 L1539 的警告）。
+      const lines = read(rel).split('\n');
+      for (let i = 0; i < lines.length; i += 1) {
+        if (!DUP_RULE.test(lines[i])) continue;
+        dupSections += 1;
+        for (let j = Math.max(0, i - 3); j <= Math.min(lines.length - 1, i + 3); j += 1) {
+          if (SCALE.test(lines[j])) dupBad.push(`${rel}:${j + 1}「${lines[j].trim().slice(0, 60)}」`);
+        }
+      }
+    }
+    for (const b of dupBad) {
+      fail(`写了「不重复写数字以免二次漂移」的段落里仍有**规模计数**：${b}`
+        + ' —— 要么删掉数字（改为指向真值源），要么去掉那句规则');
+    }
+    if (dupSections < 1) {
+      fail('一处「不重复写数字 / 以免二次漂移」的声明都没找到（立此判据时 1 处）—— 锚点漂移会让本判据**空转**');
+    }
+    // canary：三向（判定与 canary **共用** DUP_RULE / SCALE）
+    if (!DUP_RULE.test('本行不重复写数字以免二次漂移')) {
+      fail('数字不重复护栏 canary 失效：规则句未被识别');
+    }
+    if (!SCALE.test('Rust 83 + jest 1613')) {
+      fail('数字不重复护栏 canary 失效：规模计数未被识别');
+    }
+    if (SCALE.test('`tsc --noEmit` **0 错误**')) {
+      fail('数字不重复护栏**过宽**：`0 错误` 这种**通过 / 不通过断言**被当成了规模计数');
+    }
+  }
+
   // ── 包用例数：**单一真源 = 「各包规模」行**；文件其它位置必须与之一致（2026-10-08）──────
   // 判定与 canary **共用**本谓词（`pkgAudit`）：返回 `{truthSize,total,bad}`，真值源缺失返回 `null`。
   const PKGS = ['editor-engine', 'app-core', 'export', 'host-api', 'commands',
