@@ -444,19 +444,36 @@ for (const key of usedLabelKeys) {
   else if (enMenu.get(key).trim() === '') fail(`菜单 en-US 文案为空: ${key}`);
 }
 // 孤儿 key 检测：i18n 中 menu.* 必须被 schema 引用或登记白名单
-const ORPHAN_ALLOWED = new Set([
+// ⚠️ **字面登记的条目**单独列出 —— 只有它们需要「双向核对」（`menu.theme.*` 是**派生**的 ⇒ 无需核对）
+const ORPHAN_ALLOWED_LITERAL = new Set([
   'menu.top.insert', // 预留：插入类顶层菜单（当前归入段落/格式，暂未装配）
+]);
+const ORPHAN_ALLOWED = new Set([
+  ...ORPHAN_ALLOWED_LITERAL,
   ...[...zhMenu.keys()].filter((k) => k.startsWith('menu.theme.')),
 ]);
 for (const key of zhMenu.keys()) {
   if (!usedLabelKeys.has(key) && !ORPHAN_ALLOWED.has(key)) fail(`i18n 孤儿菜单文案（schema 未引用）: ${key}`);
+}
+// ⚠️ **双向核对（2026-10-09，审计 §4.214）**：登记的「孤儿豁免」必须**仍是孤儿** ——
+//   否则是**过期条目**：留着会让该 key 将来真变孤儿时**静默免检**
+//   （同 §4.213 的死豁免盲区：**豁免按「对象」核，不按「曾经是孤儿」核**）。
+for (const key of ORPHAN_ALLOWED_LITERAL) {
+  if (!zhMenu.has(key)) {
+    fail(`孤儿菜单豁免 ${key} 已过期：i18n 里已无此 key —— 请删除该例外条目`);
+  } else if (usedLabelKeys.has(key)) {
+    fail(`孤儿菜单豁免 ${key} 已过期：schema 已引用它（**不再是孤儿**）—— 请删除该例外条目`);
+  }
 }
 
 // ── 7. 快捷键单一真源（§7.4 硬规则 2）────────────────────────────────────
 // schema 是唯一声明处；App.tsx 仅允许 SCHEMA_SHORTCUTS 注入 + 平台互补白名单。
 const INLINE_SHORTCUT_ALLOWED = new Set([
   'settings.open', // schema 仅 mac（app 菜单），内联补充 Win/Linux Ctrl+,（键盘）
-  'export.repeat', // schema 仅 Win/Linux（菜单），内联补充 mac Ctrl+E（键盘）
+  // ⚠️ **2026-10-09（审计 §4.214）删除了 `export.repeat`** —— 原注「schema 仅 Win/Linux，
+  //   内联补充 mac Ctrl+E」，但**实测 `menuSchema.ts:150` 已不再声明它的 shortcut**
+  //   ⇒ 上面的 `!schemaShortcuts.has(id)` 已经跳过它 ⇒ **该条目什么都不做**（死条目）。
+  //   （**双向核对**当场报出：「已不再声明它的快捷键」—— 这正是它存在的意义。）
 ]);
 const commandBlocks = [];
 {
@@ -475,6 +492,19 @@ for (const { id, block } of commandBlocks) {
 }
 if (!appSource.includes('SCHEMA_SHORTCUTS.get(command.id)')) {
   fail('App.tsx 缺少 SCHEMA_SHORTCUTS 快捷键注入（§7.4 硬规则 2）');
+}
+// ⚠️ **双向核对（2026-10-09，审计 §4.214）**：登记的「内联快捷键豁免」必须**仍在使用** ——
+//   该 id 必须**仍被 schema 声明快捷键**、**且** App.tsx **仍内联**它；否则例外什么都不做（过期条目）
+//   ⇒ 留着会让「**双真源**」在将来**静默免检**（同 §4.213 的死豁免盲区）。
+const inlineShortcutIds = new Set(commandBlocks
+  .filter(({ block }) => /shortcut:\s*(\{[^}]*\}|COMMAND_PALETTE_SHORTCUT)/.test(block))
+  .map(({ id }) => id));
+for (const id of INLINE_SHORTCUT_ALLOWED) {
+  if (!schemaShortcuts.has(id)) {
+    fail(`内联快捷键豁免 ${id} 已过期：menuSchema.ts 已不再声明它的快捷键 —— 请删除该例外条目`);
+  } else if (!inlineShortcutIds.has(id)) {
+    fail(`内联快捷键豁免 ${id} 已过期：App.tsx 已不再内联它的快捷键 —— 请删除该例外条目`);
+  }
 }
 
 // D1 决议：Win/Linux 9 处官方键位契约（对照 Typora 官方 Shortcut Keys，防回归漂移）
