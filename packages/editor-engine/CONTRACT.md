@@ -78,7 +78,7 @@
 
 ## 9. 测试入口
 
-- `test/` 下 **78** 个测试文件（本仓最大）
+- `test/` 下 **79** 个测试文件（本仓最大）
 - 护栏：`verify-adapter-contract.mjs`、`verify-clipboard-contract.mjs`、`verify-i18n-contract.mjs`、
   `verify-parity-ledger.mjs`、`verify-no-color-only-status.mjs`、`verify-shell-*.mjs`、
   `verify-settings-contract.mjs`、`verify-tauri-command-contract.mjs`、`verify-package-conventions.mjs`

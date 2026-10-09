@@ -222,36 +222,51 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
   canary(g5.join(',') === 'CONTRACT.md', `canary 失效：只缺 CONTRACT.md 时未判出（得到 ${JSON.stringify(g5)}）`);
 }
 
-// ── 包文档里复述的「N 个测试文件」必须 == `test/` 目录里的 `.test.ts` 数（2026-10-09，审计 §4.192）──
+// ── 包文档里复述的「N 个测试文件」必须 == 该包 `test/` 里的 `.test.ts` 数（2026-10-09，审计 §4.192/§4.193）──
 // 【为什么】`packages/app-core/{README.md, CONTRACT.md}` 都写「`test/` 下 **24** 个测试文件」——
 //   实测目录里已是 **25** 个 ⇒ **两处都已漂**，且**无判据**
 //   （用 `tests/parity/tools/audit-doc-counts.mjs --min 2` 普查时发现）。
 //   ⚠️ 本判据与 §4.153 的「包用例数」**不同**：**用例数需实跑**（只能文档内自洽），
 //   而**测试文件数可直接数目录** ⇒ **可以与实际比对**（更强）。
-// 【判据】两处文档的「N 个测试文件」必须 == `packages/app-core/test/` 下的 `*.test.ts` 数。
+// 【2026-10-09 扩展（审计 §4.193）】**从「app-core 两处」泛化到「所有包」** ——
+//   首版只写死 `app-core` 的 2 个路径 ⇒ 全仓扫描发现 `editor-engine/CONTRACT.md` 也漂了
+//   （**78** vs 实测 **79**）而**判据看不到**（**「修一处 ≠ 修一类」的第 6 次**）。
+// 【判据】**每个包**的 `README.md` / `CONTRACT.md` 里「N 个测试文件」必须 == 该包 `test/` 下的 `*.test.ts` 数。
 {
-  const DOCS = ['packages/app-core/README.md', 'packages/app-core/CONTRACT.md'];
-  const TEST_DIR = resolve(root, 'packages/app-core/test');
-  const actual = existsSync(TEST_DIR)
-    ? readdirSync(TEST_DIR).filter((f) => f.endsWith('.test.ts')).length
-    : 0;
-  if (actual === 0) throw new Error('app-core 的 test/ 目录解析出 0 个 .test.ts —— 判据锚点漂移');
-  let seen = 0;
-  for (const d of DOCS) {
-    // ⚠️ 文档里写的是 `**25** 个测试文件`（**加粗**）⇒ 谓词必须容忍 `**`
-    //    （2026-10-09 实测：首版漏了 `\**` ⇒ 一处都匹配不到，防空转下限当场报「0 处」）
-    for (const m of readFileSync(resolve(root, d), 'utf8').replace(/\r\n/g, '\n').matchAll(/\**(\d+)\**\s*个测试文件/g)) {
-      seen += 1;
-      if (Number(m[1]) !== actual) {
-        throw new Error(`${d} 写「${m[1]} 个测试文件」，而 \`packages/app-core/test/\` 下有 ${actual} 个`
-          + ' —— **测试文件数可直接数目录** ⇒ 加/删测试时同步改文档（**两处**）');
+  const PKG_DIR = resolve(root, 'packages');
+  let seen = 0; let checkedPkgs = 0;
+  for (const p of readdirSync(PKG_DIR, { withFileTypes: true }).filter((d) => d.isDirectory())) {
+    const testDir = resolve(PKG_DIR, p.name, 'test');
+    const actual = existsSync(testDir)
+      ? readdirSync(testDir).filter((f) => f.endsWith('.test.ts')).length
+      : 0;
+    let pkgSeen = 0;
+    for (const doc of ['README.md', 'CONTRACT.md']) {
+      const f = resolve(PKG_DIR, p.name, doc);
+      if (!existsSync(f)) continue;
+      // ⚠️ 文档里写的是 `**25** 个测试文件`（**加粗**）⇒ 谓词必须容忍 `**`
+      //    （2026-10-09 实测：首版漏了 `\**` ⇒ 一处都匹配不到，防空转下限当场报「0 处」）
+      for (const m of readFileSync(f, 'utf8').replace(/\r\n/g, '\n').matchAll(/\**(\d+)\**\s*个测试文件/g)) {
+        seen += 1; pkgSeen += 1;
+        if (actual === 0) {
+          throw new Error(`packages/${p.name}/${doc} 复述了「${m[1]} 个测试文件」，`
+            + `而该包**没有** \`test/\` 目录 —— 判据锚点漂移`);
+        }
+        if (Number(m[1]) !== actual) {
+          throw new Error(`packages/${p.name}/${doc} 写「${m[1]} 个测试文件」，`
+            + `而 \`packages/${p.name}/test/\` 下有 ${actual} 个`
+            + ' —— **测试文件数可直接数目录** ⇒ 加/删测试时同步改文档');
+        }
       }
     }
+    if (pkgSeen > 0) checkedPkgs += 1;
   }
-  if (seen < 2) {
-    throw new Error(`「N 个测试文件」只找到 ${seen} 处（下限 2 = 2026-10-09 实测）—— 判据范围萎缩`);
+  // 防空转：实测 4 处（app-core×2 + editor-engine×1 + export×1）；留 1 余量（健康度型）
+  if (seen < 3) {
+    throw new Error(`「N 个测试文件」只找到 ${seen} 处（下限 3 = 2026-10-09 实测 4 处）`
+      + ' —— 判据范围萎缩会让本判据空转');
   }
-  console.log(`Package docs: app-core 的「测试文件数」两处 == \`test/\` 实际 ${actual} 个`);
+  console.log(`Package docs: ${checkedPkgs} 个包的「测试文件数」（${seen} 处）== 各自 \`test/\` 实际数`);
 }
 
 if (errors.length > 0) {
