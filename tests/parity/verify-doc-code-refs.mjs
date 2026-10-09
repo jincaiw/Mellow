@@ -60,28 +60,34 @@ function walk(dir, out = []) {
   return out;
 }
 
-// ⚠️ 扩展名过滤必须显式列举，**不要**从正则字符串上 slice ——
-// 实测踩到：`CODE_EXT.slice(4, -1)` 把 `(?:ts|…` 切成 `s|tsx|…`，
-// 于是 **`.ts` 整类被静默漏掉**（`menuSchema.ts` 因此从未被判定，
-// 而护栏输出看起来「全绿」）。这正是「解析器漏成员必须响亮失败」那条。
-const codeFiles = walk(root).filter((f) => CODE_EXTS.includes(f.split('.').pop()));
-
 /** 「**会被提交的文件**」= 已跟踪 **+** 未跟踪但**不被忽略**，再**按 `SKIP_DIRS` 逐段剔除** ——
  *  用作需要「仓库级」扫描面的判据。
  *  ⚠️ **为什么不是 `walk`**：`walk` 跳过 `archive/` / `CoreEditor/` 是对的（**故意**），
- *     但它**看不见未跟踪的新文件**（本地工作区里的 WIP）⇒ 与「已提交」不一致；
+ *     但它**会扫到本地独有的东西** —— 实测多出 **1344** 个文件：构建产物
+ *     （`apps/desktop/public/editor/*.js`）、**别的工具的记忆目录**（`.workbuddy/memory/`、`.trae/documents/`）
+ *     ⇒ 「本地红 / CI 绿」；且差集的**反方向为 0**（`committedFiles()` 不漏任何已提交文件）；
  *  ⚠️ **为什么不是裸 `git ls-files`**：它只读**索引** ⇒ **未 `git add` 的新文件本地看不见**
  *     ⇒ **本地绿、CI 红**（2026-10-09 审计 §4.233 实测事故：新增的本机工具被漏扫，
  *     CI 上才报出它注释里的裸 `§4.N`）；
  *  ⚠️ **为什么要再过滤 `SKIP_DIRS`**：`archive/` / `CoreEditor/` 是**故意排除**的
  *     （前者是历史方案，后者是 vendored 上游）—— 不过滤会把它们重新纳入并**制造假阳性**
  *     （实测：`archive` 里「重**审计**（§4.0）」被当成「审计文档 §4.0」）。
- *  ⚠️ 本函数的**输出是相对路径**（调用方自行 `resolve`）。 */
+ *  ⚠️ 本函数的**输出是相对路径**（调用方自行 `resolve`）。
+ *  ⚠️ **必须定义在第一个使用点之前**（`const` 有 TDZ：实测「Cannot access before initialization」）。 */
 const committedFiles = () => execFileSync(
   'git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
   { cwd: root, maxBuffer: 1 << 28 },
 ).toString().split('\0').filter(Boolean)
   .filter((f) => !f.split('/').some((seg) => SKIP_DIRS.has(seg)));
+
+/** 同 `committedFiles()`，但返回**绝对路径**（供以绝对路径为 `f` 的循环直接使用）。 */
+const committedAbs = () => committedFiles().map((f) => resolve(root, f));
+
+// ⚠️ 扩展名过滤必须显式列举，**不要**从正则字符串上 slice ——
+// 实测踩到：`CODE_EXT.slice(4, -1)` 把 `(?:ts|…` 切成 `s|tsx|…`，
+// 于是 **`.ts` 整类被静默漏掉**（`menuSchema.ts` 因此从未被判定，
+// 而护栏输出看起来「全绿」）。这正是「解析器漏成员必须响亮失败」那条。
+const codeFiles = committedAbs().filter((f) => CODE_EXTS.includes(f.split('.').pop()));
 const byBase = new Map();
 for (const f of codeFiles) {
   const b = basename(f);
@@ -259,7 +265,7 @@ for (const doc of docs) {
   // `process.env.TYPORA_APP`），不排除 ⇒ 主判据被自己的样本满足 ⇒ **恒不报错**。
   // （首版踩了两次：先是注释里的 `TYPORA_APP` 字样，再是 canary 里的 `process.env.TYPORA_APP`。）
   const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
-  const scanFiles = [...codeFiles, ...walk(root).filter((f) => f.endsWith('.sh'))]
+  const scanFiles = [...codeFiles, ...committedAbs().filter((f) => f.endsWith('.sh'))]
     .filter((f) => resolve(f) !== resolve(SELF));
   if (scanFiles.some((f) => resolve(f) === resolve(SELF))) {
     errors.push('文档开关护栏自检失败：本护栏自身的源码未被排除 —— 它含合成样本，会让判据恒真');
@@ -277,7 +283,7 @@ for (const doc of docs) {
     // ⚠️ **必须与路径分隔符无关，不要写 `/(^|\/)README\.md$/`** ——
     // Windows 上 `walk()` 产出的是 `\` 分隔符 ⇒ 那种写法会**静默漏掉**全部 README，
     // 于是 `checked` 掉到下限以下、**CI 在 Windows 上红而本地绿**（2026-10-05 实测踩到）。
-    ...walk(root).filter(isReadme),
+    ...committedAbs().filter(isReadme),
   ];
   // ⚠️ **故意不含 `docs/qualification`**：审计 / 验收记录的职责就是**引用旧值**
   // （「原写 `TYPORA_APP`」「该开关不存在」），纳入会把**如实记录**误判成**声明错误**
@@ -1007,7 +1013,7 @@ const QUALIFICATION_SNAPSHOT_FILES = [
   // `benchmark/fixtures/` 这一形态）⇒ **本地计数被这一个文件灌到 1037**，而 **CI 里该文件不存在
   // ⇒ 只剩 25** ⇒ 撞穿当时按污染值设的下限 500（**CI 当场变红**）。
   const FIXTURE_RE = /^tests\/(?:fixtures\/|benchmark\/fixtures\/|benchmark\/.*\/(?:work|fixtures)\/)/;
-  const mdFiles = walk(root).filter((f) => f.endsWith('.md'));
+  const mdFiles = committedAbs().filter((f) => f.endsWith('.md'));
   const LINK_RE = /\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
   // ⚠️ 过滤谓词**必须是共用函数**（主循环与 canary 同一对象）—— 否则放宽它不会被抓到。
   const isExternalLink = (t) => t === '' || /^(?:https?:|mailto:|#|[a-z][a-z0-9+.-]*:)/i.test(t);
@@ -1686,7 +1692,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   //    （本仓在 `MELLOW_*`/`TYPORA_*` 那节踩过同一坑；本轮实测也踩了一次。）
   const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
   let prdRefs = 0; let mpRefs = 0;
-  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+  for (const f of committedAbs().filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
     if (resolve(f) === resolve(SELF)) continue;
     const text = readFileSync(f, 'utf8');
     prdRefs += [...text.matchAll(/PRD\s*§+\s*\d+/g)].length;
@@ -1808,7 +1814,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const ID_PATTERNS = [/\bADR-\d{4}\b/g, /\bP0-[A-Z]+-\d{3}\b/g, /\bT-\d{4}\b/g,
     /\b[a-z][a-z0-9-]*-spec`?\s*§\s*\d+(?:\.\d+)*/g];
   let idRefs = 0; const seenExempt = new Set();
-  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+  for (const f of committedAbs().filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
     if (resolve(f) === resolve(SELF)) continue;
     const text = readFileSync(f, 'utf8');
     for (const re of ID_PATTERNS) {
@@ -2027,7 +2033,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     });
     return out;
   };
-  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+  for (const f of committedAbs().filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
     // ⚠️ **路径必须按 `/` 归一化后再比**（Windows 上 `relative()` 产出 `\` ⇒ 直接 `===` 会**静默失配**，
     //   本项目**已因此红过一次 CI**；2026-10-09 本轮**又踩一次**：审计文档的排除在 Windows 上失效 ⇒ CI 红）。
     const rel = relative(root, f).split('\\').join('/');
@@ -2078,7 +2084,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   };
   const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
   let checked = 0;
-  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+  for (const f of committedAbs().filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
     if (resolve(f) === resolve(SELF)) continue;               // 本护栏自身含 canary 样本
     const src = readFileSync(f, 'utf8');
     if (!src.includes('relative(')) continue;
@@ -2170,8 +2176,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const LOOKS_LIKE_QUOTE_SPEC = /原写|原文|更正|漂移|已改为|也写|曾有一份|已被|取代/;
   const existsSpec = (p) => existsSync(resolve(root, p.replace(/\\/g, '/')));
   const isExternal = (p) => [...EXT_PREFIX.keys()].some((pre) => p.startsWith(pre));
-  const specDocs = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
-    .toString().split('\0').filter((f) => f.startsWith(SPEC_DIR + '/') && f.endsWith('.md')).sort();
+  const specDocs = committedFiles().filter((f) => f.startsWith(SPEC_DIR + '/') && f.endsWith('.md')).sort();
   let specChecked = 0;
   let specBare = 0;
   for (const rel of specDocs) {
@@ -2235,8 +2240,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //   ⚠️ 这**不是**「覆盖率不足」的借口：实测被排除的 27 处里 **0 处**是悬空引用。
 // ⚠️ **目标目录无 `package.json` 时跳过并计数**（如 `cd /tmp/pw && npm run …` 的临时目录）。
 {
-  const MD_ALL = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
-    .toString().split('\0').filter((f) => f.endsWith('.md'));
+  const MD_ALL = committedFiles().filter((f) => f.endsWith('.md'));
   const RECORD_DIRS = ['docs/qualification/', 'docs/plans/archive/'];
   const MD = MD_ALL.filter((f) => !RECORD_DIRS.some((d) => f.startsWith(d)));
   const scriptCache = new Map();
@@ -2311,8 +2315,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 // ⚠️ **渲染语料豁免**（`tests/fixtures/**`、`tests/benchmark/**`）—— 与 §4.94 同理：
 //   那是**故意**含畸形语法的夹具，判它会产生假阳性。⚠️ 围栏代码块内的表格**不判**（不是表格）。
 {
-  const MD = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
-    .toString().split('\0').filter((f) => f.endsWith('.md'));
+  const MD = committedFiles().filter((f) => f.endsWith('.md'));
   /** 单元格数：按**未转义**的 `|` 切分（`\|` 是转义，不算分隔）。判定与 canary **共用**本谓词。 */
   const tableCells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).length;
   const isTableRow = (l) => /^\s*\|/.test(l) && l.includes('|');
@@ -2353,9 +2356,11 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
       i = j;
     }
   }
-  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 3622，下限 3500）
-  if (tblRows < 3500) {
-    fail(`只解析出 ${tblRows} 个表格数据行（下限 3500 = 立此判据时的基线 3622 − 余量）`
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 3180 —— ⚠️ 2026-10-09 从 3622 下调：
+  //   扫描面由裸 `git ls-files` 换成 `committedFiles()` 后**排除了 vendored `CoreEditor` 的文档**
+  //   （那是上游、不该 lint，见 §4.234）⇒ 少 42 表 / 456 行；下限 3000 留余量）
+  if (tblRows < 3000) {
+    fail(`只解析出 ${tblRows} 个表格数据行（下限 3000 = 立此判据时的基线 3180 − 余量）`
       + ' —— 谓词或文档内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
   }
   // canary：五向（判定与 canary **共用** tableCells / isTableRow / isDelimiter）
@@ -2391,8 +2396,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //   **引用块里的围栏根本不认** ⇒ 一个未闭合的 `> \`\`\`` 会**静默漏过**（本仓实测 2 份文档 4 行，均成对）。
 // ⚠️ **渲染语料豁免**（`tests/fixtures/**`、`tests/benchmark/**`）：语料**故意**含异形语法。
 {
-  const MD = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
-    .toString().split('\0').filter((f) => f.endsWith('.md'));
+  const MD = committedFiles().filter((f) => f.endsWith('.md'));
   /** 返回**未闭合**的开启栅栏 `{len, line}`，无则 null。判定与 canary **共用**本谓词。 */
   const unclosedFence = (src) => {
     const lines = src.split('\n');
@@ -2600,6 +2604,67 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     errors.push('裸 §4.N 护栏 canary 过宽：存在的审计节被误判');
   }
   console.log(`Doc code refs: 代码文件里的 §4.N 引用 ${bareRefs} 处（裸形态均已指向审计节或带限定词）`);
+}
+
+// ── ㉝ 本文件的**扫描面**只允许**受控形态**（2026-10-09，审计 §4.234）──
+// 立此条的原因（实测，**同一会话 3 次**同类事故，全部是「扫描面与 CI 不一致」）：
+//   ① §4.224：`relative()` 跨平台 ⇒ 本机绿 CI 红；
+//   ② §4.233：**裸 `git ls-files`** 只读索引 ⇒ 未 `git add` 的新文件本地看不见 ⇒ 本机绿 CI 红；
+//   ③ §4.234：`walk(root)` 多扫 **1344** 个**本地独有**文件（构建产物 `apps/desktop/public/editor/*.js` +
+//      **别的工具的记忆目录** `.workbuddy/memory/`、`.trae/documents/`）⇒ 本地红 CI 绿；且差集**反方向为 0**。
+//   ⇒ 扫描面**只允许** `committedFiles()` / `committedAbs()`（仓库级：已跟踪 + 未跟踪未被忽略 − `SKIP_DIRS`）。
+//   ⚠️ 确需别的方式 ⇒ **先复核，再把基线改到本判据**（改基线就是那次复核的记录）。
+// ⚠️ 计数必须**剥注释** —— 本判据的注释里就写了那两个名字与 `walk(root)`，**不剥会命中自己**。
+{
+  const SELF_SRC = readFileSync(import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs'), 'utf8');
+  // ⚠️ **被搜索的子串与 canary 样本都运行时拼接** —— 本判据的扫描面**就是本文件**，
+  //    写字面量会**命中自己**（`PITFALLS §4.237` 的教训；本会话已踩 7 次）。
+  const WALK = 'walk(' + 'root)';
+  const LS = "'git'" + ", ['ls-" + "files'";
+  const DEF = 'const committed' + 'Files = ';
+  /** 剥掉**整行**注释与**行首**块注释。⚠️ **必须行锚定**：扫描全文找 `/*` 会被**字符串/正则里的 `/*`** 骗到
+   *  —— 实测本文件 `/*` 有 75 个而 `*/` 只 48 个 ⇒ 全文式剥离器**过度剥除 34%** ⇒ 计数**漏报**
+   *  （「护栏全绿但没在看」）。判定与 canary **共用**。
+   *  ⚠️ 已知边界：**行尾**注释**不剥**（行内 `//` 剥离器会截断字符串/正则里的 `//`，见 `PITFALLS §4.240`）。 */
+  const codeOnly = (src) => {
+    const out = [];
+    let inBlock = false;
+    for (const line of src.split('\n')) {
+      const t = line.trim();
+      if (inBlock) { if (t.includes('*/')) inBlock = false; continue; }
+      if (t.startsWith('/*')) { if (!t.includes('*/')) inBlock = true; continue; }
+      if (t.startsWith('//')) continue;
+      out.push(line);
+    }
+    return out.join('\n');
+  };
+  const countSub = (src, sub) => codeOnly(src).split(sub).length - 1;
+  const rawLsFiles = countSub(SELF_SRC, LS);
+  const helperDefs = countSub(SELF_SRC, DEF);
+  const walkRoot = countSub(SELF_SRC, WALK);
+  if (rawLsFiles !== 1 || helperDefs !== 1) {
+    fail(`本文件里**裸 \`git ls-files\` 调用** ${rawLsFiles} 处 / \`committedFiles\` 定义 ${helperDefs} 处`
+      + '（基线：1 / 1 —— 只允许出现在 `committedFiles()` 的实现里）'
+      + ' —— 新扫描面请改用 `committedFiles()` / `committedAbs()`（见 §4.233 / §4.234）');
+  }
+  if (walkRoot !== 0) {
+    fail(`本文件里还有 ${walkRoot} 处 \`${WALK}\` 扫描面（基线 0）—— 它会扫到**本地独有**的构建产物`
+      + ' 与**别的工具的记忆目录**（实测多出 1344 个文件）⇒ 本地 / CI 分歧；请改用 `committedAbs()`');
+  }
+  // canary：四向（判定与 canary **共用** codeOnly / countSub）
+  if (countSub(`const a = ${WALK}; // ${WALK}\n`, WALK) !== 2) {
+    errors.push('扫描面护栏 canary 失效：**行尾**注释里的调用**应当**仍被计入（本判据只剥整行注释）');
+  }
+  if (countSub(`/* ${WALK} */\nconst a = 1;\n`, WALK) !== 0) {
+    errors.push('扫描面护栏 canary 失效：**行首块注释里的**调用被计入了');
+  }
+  if (countSub(`execFileSync(${LS}, '-z']);\n`, LS) !== 1) {
+    errors.push('扫描面护栏 canary 失效：裸 `git ls-files` 调用未被计入');
+  }
+  if (countSub(`  // execFileSync(${LS}]);\n`, LS) !== 0) {
+    errors.push('扫描面护栏 canary 过宽：**整行注释里的**裸调用被计入（会恒报错）');
+  }
+  console.log(`Doc code refs: 扫描面受控（裸 \`git ls-files\` ${rawLsFiles} 处 = \`committedFiles()\` 的实现；\`${WALK}\` ${walkRoot} 处）`);
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
