@@ -1,7 +1,7 @@
 # Auto Update Spec（安全自动更新）
 
 > 对应 PRD §125-127（打包发布）、tauri-plugin-updater（signed update 基础设施）、
-> ADR-0009（数据安全优先）。实现：Rust `src-tauri/src/updater.rs`（rollback 策略）、
+> ADR-0009（数据安全优先）。实现：Rust `apps/desktop/src-tauri/src/updater.rs`（rollback 策略）、
 > 前端 `apps/desktop/src/host/updater.ts` + App.tsx 横幅 UI。
 
 ## 1. 硬约束

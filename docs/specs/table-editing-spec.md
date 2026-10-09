@@ -70,7 +70,7 @@ Create Dialog：
 覆盖文档所述的「超过 6 列或 10 行时用数字输入」路径。
 引擎侧为 `packages/editor-engine/src/table/commands.ts` 的 `resizeTable` / `planResizeTable`
 （**单次 dispatch** = 最小 patch + 一次 undo；**delimiter 行永不删**）；
-工具栏弹层在 `table/toolbar.ts`。尺寸上限（30 列 / 100 行）与创建对话框**共用同一组值**，
+工具栏弹层在 `packages/editor-engine/src/table/toolbar.ts`。尺寸上限（30 列 / 100 行）与创建对话框**共用同一组值**，
 由 `verify-parity-ledger.mjs` 的「表格尺寸上限两端一致」护栏锁定。
 
 ---

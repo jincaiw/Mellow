@@ -60,7 +60,7 @@ Normal Copy 尽可能写：
 >
 > **原冲突**：优先级 **1**（Paste Plain）与 **3–5**（TSV / HTML / URL）在
 > `smartPaste.ts` 的**同一个**处理器里（链内顺序正确：测试已钉住 **3 > 4**、**4 > 5**）；
-> 而优先级 **2**（image / file payload）在**另一个**处理器里（`image/input.ts`）。
+> 而优先级 **2**（image / file payload）在**另一个**处理器里（`packages/editor-engine/src/image/input.ts`）。
 > 两者是**独立注册的 `eventHandlers.paste`**，CM 按扩展顺序调用、**首个返回 `true` 者胜**，
 > 而 `index.ts` 把 `buildSmartPasteExtension()` 排在 `buildImageExtensions()` **之前**
 > ⇒ 剪贴板**同时**含富文本与图片时 HTML 分支先赢 ⇒ **与本节「2 高于 3 / 4」相反**

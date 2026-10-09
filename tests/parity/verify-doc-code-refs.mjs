@@ -34,6 +34,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '../..');
 const errors = [];
@@ -2115,6 +2116,90 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   if (registrySection(auditSrc).length < 500) {
     errors.push('零消费者登记护栏 canary 失效：登记表区间解析过短（解析漂移 ⇒ 判据空转）');
+  }
+}
+
+// ── ㉗ `docs/specs` 里以反引号给出的**含 `/` 的代码路径**必须**可直接打开**（2026-10-09，审计 §4.225）──
+// 立此条的原因（实测）：同类判据（§4.76）**只覆盖 `docs/architecture` + `docs/superpowers`**；
+//   `docs/specs` 虽在 `DOC_GLOBS` 里，却只受「**符号**（`文件:行号`）」这一种形态覆盖 ⇒
+//   它里面**裸写路径**的地方**从未被查过**。首轮扫 32 个含 `/` 的路径，**3 个不能直接打开**，
+//   且**都是「同一行内前缀不一致」**（读者按图索骥打不开）：
+//     · `auto-update-spec.md` —— 同一行写 `apps/desktop/src/host/updater.ts`（带前缀）却写
+//       `src-tauri/src/updater.rs`（**缺 `apps/desktop/`**）
+//     · `table-editing-spec.md` —— 同一行写 `packages/editor-engine/src/table/commands.ts`（带前缀）
+//       却写 `table/toolbar.ts`（缺前缀）
+//     · `clipboard-smart-paste-spec.md` —— `image/input.ts`（缺 `packages/editor-engine/src/`）
+// ⚠️ **为什么不扩到 `docs/plans` / `docs/adr` / `docs/qualification`（实测结论，别重做）**：
+//   把 §4.76 的谓词原样扩过去得 **32 个「不存在」**，**逐条读原文后 0 个是缺陷** —— 全属
+//   ① **Typora 基线路径**（`TypeMark/appsrc/main.js` / `style/themes/*.css` / `conf/conf.user.json`）
+//   ② **生成物**（`dist/*.js`）③ **已删除文件**（`EditorToolbar.tsx`，原文即写「**删除**：…」）
+//   ④ **更正/变更记录**（`examples/hello-command.ts`，原文写「实际是 `helloCommand.ts`」）
+//   ⑤ **外部 crate**（`tauri-macros/src/command/wrapper.rs`）
+//   ⇒ 那三类是**历史/叙事**文档，**合法地**引用已不存在的路径；该扩法**误报率 ≈100%** ⇒
+//   **不可机械化**（同 `PITFALLS` 的「表里只进消息的列」）。**本判据只覆盖 `docs/specs`。**
+// ⚠️ **范围（如实声明）**：① 只查**含 `/`** 的路径（**裸文件名**跳过但**计数**）；
+//   ② 跳过**围栏代码块**；③ 「更正/取代/曾有一份」类行**豁免**；④ **外部基线前缀**豁免（`EXT_PREFIX`）；
+//   ⑤ 路径按 `/` 归一化后再判（Windows 产出 `\`；本项目已因此红过一次 CI）。
+{
+  const SPEC_DIR = 'docs/specs';
+  const EXT = '(?:ts|tsx|js|mjs|cjs|rs|css|json|yml|yaml|sh|toml)';
+  const TOK = new RegExp('`([\\w./-]+\\.' + EXT + ')`', 'g');
+  /** 外部/非仓库路径前缀 —— **只列实测出现的那条**（基线证据）。双向：不再出现即报错（防化石）。 */
+  const EXT_PREFIX = new Map([
+    ['TypeMark/', 'Typora 应用内路径（**基线证据**，不在本仓库）'],
+  ]);
+  const stripFencesSpec = (src) => src.replace(/```[\s\S]*?```/g, '');
+  const LOOKS_LIKE_QUOTE_SPEC = /原写|原文|更正|漂移|已改为|也写|曾有一份|已被|取代/;
+  const existsSpec = (p) => existsSync(resolve(root, p.replace(/\\/g, '/')));
+  const isExternal = (p) => [...EXT_PREFIX.keys()].some((pre) => p.startsWith(pre));
+  const specDocs = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
+    .toString().split('\0').filter((f) => f.startsWith(SPEC_DIR + '/') && f.endsWith('.md')).sort();
+  let specChecked = 0;
+  let specBare = 0;
+  for (const rel of specDocs) {
+    stripFencesSpec(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'))
+      .split('\n')
+      .forEach((line, i) => {
+        if (LOOKS_LIKE_QUOTE_SPEC.test(line)) return;
+        for (const m of line.matchAll(TOK)) {
+          const p = m[1];
+          if (!p.includes('/')) { specBare += 1; continue; }
+          if (isExternal(p)) continue;
+          specChecked += 1;
+          if (!existsSpec(p)) {
+            fail(`${rel}:${i + 1} 写了路径 \`${p}\`，但**仓库里不存在**`
+              + ' —— spec 里的路径必须可直接打开（实测：同一行里有的带前缀、有的不带）');
+          }
+        }
+      });
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 31，下限 25）
+  if (specChecked < 25) {
+    fail(`${SPEC_DIR} 只解析出 ${specChecked} 个含 \`/\` 的路径（下限 25）`
+      + ' —— 谓词或目录内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
+  }
+  // canary：三向（判定与 canary **共用** stripFencesSpec / existsSpec / isExternal）
+  if (stripFencesSpec('a\n```\n`x/y.ts`\n```\n`z/w.ts`').includes('x/y.ts')) {
+    errors.push('spec 路径护栏 canary 失效：围栏代码块未被剥离');
+  }
+  if (!existsSpec('docs/specs/auto-update-spec.md') || existsSpec('no/such/file.ts')) {
+    errors.push('spec 路径护栏 canary 失效：存在性判定不能区分正/负样本');
+  }
+  if (!existsSpec('docs\\specs\\auto-update-spec.md')) {
+    errors.push('spec 路径护栏 canary 失效：Windows 分隔符写法未被归一化（本项目已因此红过一次 CI）');
+  }
+  if (!isExternal('TypeMark/appsrc/main.js') || isExternal('docs/specs/auto-update-spec.md')) {
+    errors.push('spec 路径护栏 canary 失效：外部基线前缀豁免不能区分正/负样本');
+  }
+  if (specBare === 0) {
+    errors.push('spec 路径护栏 canary 失效：裸文件名计数为 0（谓词可能已失效）');
+  }
+  // 豁免表**双向**：每条外部前缀必须在 `docs/specs` 里真的用到（不再需要就删，防化石）
+  const specAll = specDocs.map((f) => readFileSync(resolve(root, f), 'utf8').replace(/\r\n/g, '\n')).join('\n');
+  const unusedPrefix = [...EXT_PREFIX.keys()].filter((pre) => !specAll.includes('`' + pre));
+  if (unusedPrefix.length > 0) {
+    fail(`EXT_PREFIX 里这些前缀在 ${SPEC_DIR} 中**已不再出现**：${unusedPrefix.join('、')}`
+      + ' —— 豁免表要**双向**核对（不再需要就删，防化石）');
   }
 }
 

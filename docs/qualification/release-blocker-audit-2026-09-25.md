@@ -14080,6 +14080,79 @@ README 的 `## 目录结构` 树（**29 个目录**）在 **``` 围栏内** ⇒ 
 
 ---
 
+## 4.225 新透镜「**同类判据的文档树泛化**」：`docs/specs` 的**裸写路径从未被查过** ⇒ 3 处**前缀缺失**（「只锁了一半」同族**第 54 次**，2026-10-09）
+
+### 一、差距实测（**第 6 次**，六次一致）
+
+| 面 | 读数 |
+|---|---|
+| 台账 | **NO-GO / 未闭环 9 / `PASS-E = 0/50`** |
+| 偏好矩阵（84） | `implemented 40 / gap 38 / n/a 6` |
+| 「面板独有键」（47） | `equivalent 36 / gap 4 / n/a 7` |
+| 第三面（15） | `undefined 15` |
+| D 表 / ADR | 40 行 / 34 份（Proposed 仅 ADR-0034） |
+
+`gap 38` 的**逐条机械复核**（本轮新增）：`matches-default` **30**（无害）· `differs` **6** · `n/a` **2**。
+**6 条 `differs` 全部已阻塞**：**5 条** `disposition.kind: undecided`（`ref: ADR-0034`）+ **1 条** `disposition.kind: gap`
+（`ref: P0-EDITOR-005` 拼写词典，`IMPL/runtime-verification-pending`）⇒ **可自主面 = 0** 再次成立。
+
+### 二、新透镜（本轮首次使用）
+
+**「同类判据的**文档树**泛化」** —— 问：**一条已有判据，它的扫描面是不是只覆盖了一个子集？**
+
+选它是因为 §4.76（「`docs/architecture` 里以反引号给出的仓库相对路径必须存在」）**自带一句范围声明**：
+「该目录**从未被任何护栏覆盖**」。而它的判据谓词（`existsSync`）**与文档树无关** —— 那**别的文档树**呢？
+
+**实测（两半，结论相反）**：
+
+**① `docs/plans` / `docs/adr` / `docs/qualification` —— 扩过去**不可行**（误报率 ≈100%）**：
+谓词原样扩过去得 **32 个「不存在」**，**逐条读原文后 0 个是缺陷**：
+- **Typora 基线路径**（`TypeMark/appsrc/main.js`、`style/themes/*.css`、`conf/conf.user.json`）
+- **生成物**（`dist/*.js`）
+- **已删除文件**（`packages/desktop-ui/src/EditorToolbar.tsx` —— 原文即写「**删除**：…」）
+- **更正/变更记录**（`examples/hello-command.ts` —— 原文写「实际是 `helloCommand.ts`」）
+- **外部 crate**（`tauri-macros/src/command/wrapper.rs`）
+
+⇒ 这三类是**历史/叙事**文档，**合法地**引用已不存在的路径 ⇒ **不可机械化**（同「表里只进消息的列」一类）。
+⚠️ **在此登记，防下轮重写。**
+
+**② `docs/specs` —— 可行，且当场抓到 3 处真缺陷**：
+`docs/specs` 在 `DOC_GLOBS` 里，却**只受「符号（`文件:行号`）」这一种形态**覆盖 ⇒ 它里面**裸写路径**的地方**从未被查过**。
+首轮扫 **32 个**含 `/` 的路径，**3 个不能直接打开**，且**都是「同一行内前缀不一致」**（读者按图索骥打不开）：
+
+| 文档 | 写的 | 实际 |
+|---|---|---|
+| `auto-update-spec.md` | `src-tauri/src/updater.rs` | `apps/desktop/src-tauri/src/updater.rs` |
+| `table-editing-spec.md` | `table/toolbar.ts` | `packages/editor-engine/src/table/toolbar.ts` |
+| `clipboard-smart-paste-spec.md` | `image/input.ts` | `packages/editor-engine/src/image/input.ts` |
+
+⚠️ **同一行里**：`auto-update-spec.md` 写对了 `apps/desktop/src/host/updater.ts` 却写错 Rust 侧；
+`table-editing-spec.md` 写对了 `packages/editor-engine/src/table/commands.ts` 却写错 `toolbar.ts`
+⇒ **「前缀」这件事在同一行里都做不到自洽**。
+
+### 三、处置 + 验证
+
+1. **修**：三处补全前缀（目标均已核对存在）；
+2. **落判据 ㉗**（`verify-doc-code-refs.mjs`）：`docs/specs` 里含 `/` 的反引号代码路径必须**可直接打开**；
+   - **外部基线前缀豁免** `EXT_PREFIX`（只列**实测出现**的 `TypeMark/`）+ **双向核对**（不再出现即报错，防化石）；
+   - **[健康度型]** 下限 25（基线 31）；跳过围栏 / 豁免「更正/取代」行 / 按 `/` 归一化；
+   - **canary 四向**：围栏剥离 · 存在性正负样本 · Windows 分隔符 · 外部前缀正负样本；另有「裸文件名计数 > 0」。
+3. **验证**：① **注入**（把 `toolbar.ts` 改回缺前缀）⇒ **转红**（`EXIT=1`，报出该行）✅，还原 ⇒ **绿**；
+   ② **豁免体检**（把 `TypeMark/` 换成假前缀）⇒ 报出 `TypeMark/appsrc/main.js`（**豁免是承重的**）
+   + `EXT_PREFIX` 双向核对报「已不再出现」✅，还原 ⇒ **绿**。
+
+### 四、教训
+
+① ✅ **「新判据落成后立刻问『这是特例还是类』」要连**扫描面**一起问** —— 本轮的「类」不在**谓词**而在
+   **文档树**（§4.76 的谓词早已通用，**缺的是把 `docs/specs` 纳入**）；
+② ⚠️ **泛化必须分「当前状态文档」与「历史/叙事文档」** —— 后者**合法地**引用已不存在的路径
+   ⇒ 一律扩会得到 ≈100% 误报（**本轮实测，已登记以防重写**）；
+③ ⚠️ **「同一行内不一致」是比「路径不存在」更硬的证据** —— 它排除了「整篇风格如此」的辩解。
+
+产物：`docs/specs/{auto-update,table-editing,clipboard-smart-paste}-spec.md`（各 1 处前缀）· `tests/parity/verify-doc-code-refs.mjs`（判据 ㉗）· 审计 §4.225 · PITFALLS **§4.343** · skill **§216** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 
