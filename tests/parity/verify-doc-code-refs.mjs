@@ -21,7 +21,9 @@
  * ⚠️ **本护栏的范围限制（如实声明，不要当成「文档引用已全部核对」）**：
  * 只覆盖**紧邻形态**「`符号`（`文件:行号`）」；文档里其它写法
  * （如「见 `文件:行号` 的 `符号`」、散文里提到行号、表格里的裸行号）**不在覆盖内**。
- * 实测 41 份权威文档中仅 3 处属该形态 —— 覆盖率低是**形态罕见**，不是文档干净。
+ * 立此判据时（2026-09-30）实测 41 份权威文档中仅 3 处属该形态 —— 覆盖率低是**形态罕见**，
+ * 不是文档干净。⚠️ 「41 份 / 3 处」是**立此判据时的快照**（那 3 处均已修正），扫描面其后已扩大
+ * ⇒ **别按当前读**，当前值见文件末输出（2026-10-10 审计 §4.255 补此限定）。
  *
  * **路径解析（2026-10-01 增补）**：文档里大量把路径写成 `settings/src/index.ts`
  * （**省掉 `packages/` 前缀**），此时 `basename` 往往不唯一（`index.ts` 有 20 个）
@@ -122,7 +124,14 @@ function resolveTarget(file) {
 }
 
 /** 权威文档：施工计划 / ADR / specs —— 这里的引用会直接驱动施工与裁决 */
-const DOC_GLOBS = ['docs/plans', 'docs/adr', 'docs/specs'];
+// **权威文档**的扫描面（驱动施工 / 裁决的文档）。
+// 2026-10-10（审计 §4.255）**扩入 `docs/superpowers`**：该目录下的
+// `specs/2026-08-11-image-file-ops-design.md` 自称 `Approved` 且列了「宪法依据」，
+// 而它**自己声明过**一条边界 ——「另两项判据仍不含本目录；若日后出现那两类形态，需同时加入本表」。
+// ✅ **实测**：把它加进来后本护栏**保持全绿** ⇒ 那条边界**已闭合**（不是「等以后再说」）。
+// ⚠️ **刻意排除**：`docs/accessibility` / `docs/security` / `docs/qualification` —— 它们是**带日期的记录**，
+// 记录**不应被要求保持引用有效**（那会迫使改写历史）；它们的正确处置是「加时间上下文」，不是修引用。
+const DOC_GLOBS = ['docs/plans', 'docs/adr', 'docs/specs', 'docs/superpowers'];
 const docs = DOC_GLOBS.flatMap((d) => walk(resolve(root, d)))
   .filter((f) => f.endsWith('.md'))
   .sort();
@@ -2399,7 +2408,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //   其中含 3 个反引号的行）⇒ 奇偶法会**失同步**。正确规则 = 「闭合栅栏的反引号数 **>=** 开启栅栏」
 //   + 「info string **不得含反引号**」（含则那一行**不是**围栏）。
 // ⚠️ **引用块内的围栏**（`> \`\`\``）**必须一并识别**（2026-10-09，审计 §4.229）：原正则只认 `^(\s*)`，
-//   **引用块里的围栏根本不认** ⇒ 一个未闭合的 `> \`\`\`` 会**静默漏过**（本仓实测 2 份文档 4 行，均成对）。
+//   **引用块里的围栏根本不认** ⇒ 一个未闭合的 `> \`\`\`` 会**静默漏过**（立此判据时（2026-10-09）实测 2 份文档 4 行，均成对）。
 // ⚠️ **渲染语料豁免**（`tests/fixtures/**`、`tests/benchmark/**`）：语料**故意**含异形语法。
 {
   const MD = committedFiles().filter((f) => f.endsWith('.md'));
@@ -2452,7 +2461,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     errors.push('围栏护栏 canary 过宽：info string 含反引号的行被当成了开启栅栏');
   }
   // ⚠️ **引用块内的围栏**（`> ``` `）—— 2026-10-09（审计 §4.229）：原正则只认 `^(\s*)`，
-  //    **引用块里的围栏根本不认** ⇒ 一个未闭合的 `> ``` ` 会**静默漏过**（本仓实测 2 份文档 4 行，均成对）。
+  //    **引用块里的围栏根本不认** ⇒ 一个未闭合的 `> ``` ` 会**静默漏过**（立此判据时（2026-10-09）实测 2 份文档 4 行，均成对）。
   if (unclosedFence('> ```\n> a\n> ```\n') !== null) {
     errors.push('围栏护栏 canary 失效：**引用块内成对**的围栏被判为未闭合');
   }
@@ -3041,47 +3050,79 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   console.log(`Doc code refs: 护栏名+编号配对引用 ${pairRefs} 处（编号均在该护栏里存在）`);
 }
 
-// ── ㊳ 「基线 N」注释必须带**时间限定**或**当前性限定**（2026-10-09，审计 §4.240）──
+// ── ㊳ 注释里的**计数快照**必须带**时间限定**或**当前性限定**（2026-10-09 立 / 2026-10-10 扩，审计 §4.240 + §4.255）──
 // 【为什么】`[健康度型]` 的「基线 N」是**立此判据时的快照**，会随扫描面 / 文档内容漂 ——
 //   实测（2026-10-09）：围栏判据的「基线 181」在**同一轮**把扫描面换成 `committedFiles()` 后
 //   **已不可达**（实测 170），而它**没有标注时间** ⇒ 读者会把余量算成 31，**真实余量只有 20**（低估风险）。
 //   ⚠️ 更关键：那一轮**只同步了 ㉙ 的基线、漏了本处** —— 正是本仓 #1 形态「修一处没修另一处」。
-//   ⇒ 规则：注释里的「基线 N」必须能自证「这是**快照**还是**当前值**」。
-// 【判据】**注释行**（`//` 开头）里出现「基线 <数字>」时，同一行必须含
+//   ⇒ 规则：注释里的计数快照必须能自证「这是**快照**还是**当前值**」。
+// 【判据】**注释行**里出现「基线 <数字>」**或**「…<数字> 份」时，同一行必须含
 //   ① **时间限定**（`YYYY-MM-DD` 或「立此判据时」），或
 //   ② **当前性限定**（「当前值」/「当前基线」—— `[覆盖型]` 用，其契约本就是「必须 == 当前值」）。
-//   ⚠️ **只扫注释行**：fail 消息与代码里的「基线 <数字>」不在覆盖内
+//   ⚠️ **只扫注释行**：fail 消息与代码里的计数不在覆盖内
 //      （实测：按「全行」扫会把正则字面量里的版本号也算进来 ⇒ 假阳性）。
+// 【2026-10-10 两处扩展（审计 §4.255）—— 两处**各自都必需**，且**各有实例**】：
+//   ① **谓词**：原只认「基线 N」，漏了同族的「…<数字> 份」快照形态
+//      ⇒ 实测 3 处命中、3 处违规（本文件头部那条「41 份权威文档」即其一，
+//      且**已漂**：扫描面现为 53 份）。
+//   ② **扫描面**：原只认 `//` 行，**完全漏掉 JSDoc 块**（`/** … * … */`）——
+//      而护栏**头部注释恰恰就是 JSDoc** ⇒ 最显眼的那条基线**从未被本判据看过**
+//      （实例即①里的头部那行）。`*` 行首在 JS 里只可能是块注释内部
+//      （多行字符串里出现行首 `*` 属极端例外 —— 那时会以**假阳性**形式暴露，不是静默漏过）。
 {
   const BASE_RE = /基线\s*(\d+)/;
+  const COUNT_RE = /(?:实测|当前|共|扫描)\s*\**(\d+)\**\s*份/;
   const QUAL_RE = /\d{4}-\d{2}-\d{2}|立此判据时|当前值|当前基线/;
+  /** 注释行 = `//` 行 **或** 块注释内以 `*` 开头的行。
+   *  ⚠️ 判定与 canary **共用**本谓词（否则 canary 守不住真实扫描面）。 */
+  const isCommentLine = (t) => t.startsWith('//') || t.startsWith('*');
   let baseNotes = 0;
-  const baseBad = [];
+  let countNotes = 0;
+  /** **JSDoc 行**（`*` 开头）的命中数 —— 它是「扫描面扩到 JSDoc」这条扩展的**唯一活性证据**
+   *  （若谓词被退回 `//` 口径，它会变 0 ⇒ 头部那条基线**整类脱管**而其余判据照常全绿）。 */
+  let jsdocNotes = 0;
+  const bad = [];
   for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
     readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       const t = line.trim();
-      if (!t.startsWith('//')) return;
-      if (!BASE_RE.test(t)) return;
-      baseNotes += 1;
+      if (!isCommentLine(t)) return;
+      const isBase = BASE_RE.test(t);
+      const isCount = COUNT_RE.test(t);
+      if (!isBase && !isCount) return;
+      if (isBase) baseNotes += 1;
+      if (isCount) countNotes += 1;
+      if (t.startsWith('*')) jsdocNotes += 1;
       if (QUAL_RE.test(t)) return;
-      baseBad.push(`${rel}:${i + 1}「${t.slice(0, 64)}」`);
+      bad.push(`${rel}:${i + 1}「${t.slice(0, 64)}」`);
     });
   }
-  for (const b of baseBad) {
-    fail(`注释里的「基线 N」缺**时间 / 当前性限定**：${b}`
-      + ' —— 快照会随扫描面 / 内容漂（实测围栏的「基线 181」已不可达），'
-      + '必须写「立此判据时」或日期（`[覆盖型]` 写「当前值」）');
+  for (const b of bad) {
+    fail(`注释里的计数快照（「基线 N」/「N 份」）缺**时间 / 当前性限定**：${b}`
+      + ' —— 快照会随扫描面 / 内容漂（实测：围栏的「基线 181」已不可达、'
+      + '头部的「41 份」已漂到 53），必须写「立此判据时」或日期（`[覆盖型]` 写「当前值」）');
   }
-  // [健康度型] 集合由注释内容产生 ⇒ 留余量（立此判据时基线 22，下限 14）
+  // [健康度型] 集合由注释内容产生 ⇒ 留余量（立此判据时基线 22，下限 14；2026-10-10 实测 23）
   if (baseNotes < 14) {
     fail(`只解析出 ${baseNotes} 条「基线 N」注释（下限 14 = 立此判据时的基线 22 − 余量）`
       + ' —— 谓词或扫描面漂移会让本判据**空转**');
   }
-  // canary：三向（判定与 canary **共用** BASE_RE / QUAL_RE）
+  // 同族第二形态的防空转下限（立此判据时基线 3）—— 它曾**整类不在覆盖内**
+  if (countNotes < 2) {
+    fail(`只解析出 ${countNotes} 条「N 份」注释（下限 2 = 立此判据时的基线 3 − 余量）`
+      + ' —— 谓词漂移会让该形态**静默脱管**（实测它曾整类不在覆盖内）');
+  }
+  // 「扫描面扩到 JSDoc」的**活性证据**（立此判据时基线 1 = 本文件头部那条「41 份权威文档」）
+  //   ⚠️ 没有这条，「把 `isCommentLine` 退回 `//` 口径」会**静默通过**（注入验证实测）。
+  if (jsdocNotes < 1) {
+    fail(`JSDoc 行里一条计数快照都没扫到（下限 1）—— 扫描面可能已退回 \`//\` 口径，`
+      + '而**护栏头部注释恰恰是 JSDoc** ⇒ 最显眼的那条基线**整类脱管**');
+  }
+  // canary：五向（判定与 canary **共用** BASE_RE / COUNT_RE / QUAL_RE / isCommentLine）
   // ⚠️ 样本**运行时拼接**（本判据的注释里必然出现该形态）
   const B = '基' + '线';
   const Y = '立此' + '判据时';
   const C = '当前' + '值';
+  const S = '份';
   if (!QUAL_RE.test(`// [健康度型] …（${Y}${B} 10，下限 5）`)) {
     fail('基线注释护栏 canary 失效：「立此判据时」未被识别为时间限定');
   }
@@ -3091,7 +3132,22 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   if (QUAL_RE.test(`// [健康度型] …（${B} 10，下限 5）`)) {
     fail('基线注释护栏过宽：**无任何限定**的注释被判为已限定');
   }
-  console.log(`Doc code refs: 「基线 N」注释 ${baseNotes} 条（均已带时间 / 当前性限定）`);
+  // canary ④（新谓词·正样本）：`N 份` 形态必须取得到（且带日期 ⇒ 合规）
+  if (!COUNT_RE.test(`// 实测 2 ${S}`)) {
+    fail('基线注释护栏 canary 失效：「N 份」形态取不到 ⇒ 该形态会**整类脱管**');
+  }
+  // canary ⑤（新扫描面·双向）：JSDoc 块注释行必须算注释行，且**无日期时**必须被判违规
+  if (!isCommentLine(`* 实测 41 ${S}权威文档中仅 3 处`)) {
+    fail('基线注释护栏 canary 失效：JSDoc 块注释行未被算作注释 ⇒ **头部基线整类脱管**');
+  }
+  if (QUAL_RE.test(`* 实测 41 ${S}权威文档中仅 3 处`)) {
+    fail('基线注释护栏过宽：JSDoc 里**无日期**的计数快照被判为已限定');
+  }
+  if (isCommentLine('const x = 41;')) {
+    fail('基线注释护栏过宽：**代码行**被误判为注释行');
+  }
+  console.log(`Doc code refs: 注释计数快照 —— 「基线 N」${baseNotes} 条 / 「N 份」${countNotes} 条`
+    + `（均已带时间 / 当前性限定；其中 JSDoc 行 ${jsdocNotes} 条）`);
 }
 
 // ── ㊴ 「**原始数据 / 原始样本**」段声明的文件名必须**可复核**（存在，或段内显式注明未入库）（2026-10-09，审计 §4.241）──
@@ -3377,7 +3433,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 254; // 2026-10-10 加 §4.254 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 255; // 2026-10-10 加 §4.255 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3426,6 +3482,59 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   }
   if (maxOf('## 4.250\n') >= AUDIT_FLOOR) fail('审计节号地板 canary 失效：低于地板的样本未被判为不合规');
   console.log(`Doc code refs: 审计文档节号地板 —— ${auditFiles.length} 份文档的最大 \`## 4.N\` 均 ≥ ${AUDIT_FLOOR}`);
+}
+
+// ── ㊶ `DOC_GLOBS` 的**每一个**条目都必须真实存在且**贡献 ≥1 份 `.md`**（2026-10-10，审计 §4.255）──
+// 【为什么】`walk()` 对**不存在的目录**是 `try/catch` **静默返回 `[]`**，而 `docs.length`
+//   此前**只被打印、从未被断言** ⇒ 把任一目录从 `DOC_GLOBS` 删掉 / 改名 / 移走，
+//   扫描面就**静默缩小**，护栏照常全绿（本仓 #1 形态：**判据空转**）。
+//   ⚠️ 实测口径澄清（三个数**各是什么**，别再当成互相矛盾）：
+//     · **60** = `git ls-files` 口径（含 `docs/plans/archive/` 的 7 份历史方案）；
+//     · **53** = `walk` 口径（`SKIP_DIRS` 剔除 `archive` ⇒ 不含那 7 份）= **当前真值**；
+//     · **41** = 本文件头部注释里的**历史快照**（2026-09-30 立此判据时，已补时间限定）。
+// 【判据】① `DOC_GLOBS` 每项贡献 **> 0** 份；② 合计 ≥ 地板；③ 条目数不得缩小。
+{
+  const docCountOf = (globs) => globs.flatMap((d) => walk(resolve(root, d)))
+    .filter((f) => f.endsWith('.md')).length;
+  // [健康度型] 扫描面**只增不减**（立此判据时基线 53，下限 45 —— 留余量以便将来合并 / 移动目录）
+  const DOC_FLOOR = 45;
+  for (const d of DOC_GLOBS.filter((g) => docCountOf([g]) === 0)) {
+    fail(`\`DOC_GLOBS\` 的 \`${d}\` 贡献 0 份 \`.md\` —— 目录不存在 / 被改名 / 被 \`SKIP_DIRS\` 吃掉`
+      + '（`walk()` 对不存在目录**静默返回 `[]`** ⇒ 扫描面静默缩小、本文件多数判据**空转**）');
+  }
+  const scanned = docCountOf(DOC_GLOBS);
+  if (scanned < DOC_FLOOR) {
+    fail(`\`DOC_GLOBS\` 只扫到 ${scanned} 份 \`.md\`，跌破地板 ${DOC_FLOOR}`
+      + ' —— 扫描面缩小 = 本文件多数判据**空转**（实测口径：`walk` 53 / `git ls-files` 60）');
+  }
+  // 扫描面**条目数**也不得缩小（下限 4 = 立此判据时的基线 4）
+  if (DOC_GLOBS.length < 4) {
+    fail(`\`DOC_GLOBS\` 只剩 ${DOC_GLOBS.length} 个条目（下限 4 = 立此判据时的基线 4）`
+      + ' —— 删条目会让**整类文档静默脱管**');
+  }
+  // canary：四向（判定与 canary **共用** `docCountOf`，语义与真实扫描面一致）
+  if (docCountOf(['docs/adr']) === 0) {
+    fail('DOC_GLOBS 扫描面 canary 失效：**真实存在**的目录被判为 0 份');
+  }
+  if (docCountOf(['docs/__not_a_dir__']) !== 0) {
+    fail('DOC_GLOBS 扫描面 canary 失效：**不存在**的目录未被判为 0 份（`walk` 的静默 `[]` 未被识破）');
+  }
+  if (!(docCountOf(['docs/adr']) < DOC_FLOOR)) {
+    fail('DOC_GLOBS 扫描面 canary 失效：**低于地板**的样本未被判为不合规（地板比较方向写反）');
+  }
+  // ⚠️ **不要**用实时数据做这条 canary —— 注入验证实测：写成 `!(DOC_GLOBS.length >= 4)` 时，
+  //    「条目数真的不够」会**同时**报「canary 失效」⇒ 把「数据坏了」误报成「判据坏了」。
+  //    canary 必须用**构造样本**，不得依赖被检数据本身（PITFALLS「canary 与数据解耦」）。
+  const fewGlobs = ['a', 'b', 'c'];
+  const enoughGlobs = ['a', 'b', 'c', 'd'];
+  if (!(fewGlobs.length < 4)) {
+    fail('DOC_GLOBS 扫描面 canary 失效：**构造样本**（3 个条目）未被判为不合规 ⇒ 比较方向写反');
+  }
+  if (enoughGlobs.length < 4) {
+    fail('DOC_GLOBS 扫描面 canary 过宽：**构造样本**（4 个条目）被判为不合规');
+  }
+  console.log(`Doc code refs: DOC_GLOBS 扫描面 —— ${DOC_GLOBS.length} 个目录**均非空**，`
+    + `共 ${scanned} 份 .md（地板 ${DOC_FLOOR}）`);
 }
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
