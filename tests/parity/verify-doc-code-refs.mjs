@@ -2259,6 +2259,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail(`只解析出 ${cmdChecked} 处 \`npm run X\`（下限 30 = 立此判据时的基线 36 − 余量）`
       + ' —— 谓词或文档内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
   }
+  // 覆盖数**派生打印**（判据 ⑧：`console.log` 里不得有手写计数）—— 让「本判据查了多少」可见
+  console.log(`Doc code refs: 文档命令引用 ${cmdChecked} 处（目录 ${[...cmdDirs].sort().join(' / ')}）`
+    + `；目标目录无 package.json 跳过 ${cmdSkipped} 处`);
   // canary：四向（判定与 canary **共用** scanRun / scriptsOf）
   const c1 = scanRun('cd apps/desktop && npm run tauri dev');
   if (c1.length !== 1 || c1[0].name !== 'tauri' || c1[0].dir !== 'apps/desktop') {
