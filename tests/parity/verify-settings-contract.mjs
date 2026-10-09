@@ -2967,6 +2967,67 @@ if (cssLayerAnchor === undefined) {
     + `**${PDF_UNCONSUMED.size} 个登记为未消费**：${[...PDF_UNCONSUMED.keys()].join(' / ')}）`);
 }
 
+// ── 「多个开关共用一个扩展」必须能按开关过滤，或显式登记（2026-10-10，审计 §4.253）──
+// 【为什么】`editor-engine/src/index.ts` 的挂载行 `if (f.highlight || f.supSub) ext.push(buildInlineExtrasExtension())`
+//   把**两个独立设置项**交给**一个无参**构建函数 ⇒ 该函数**不可能**按开关过滤 ⇒
+//   实测（`scanInlineExtras` 纯函数 + 静态读取）：**只关掉其中一个开关时，该语法仍会被装饰**
+//   ⇒ 两个开关**各自都关不掉**（假开关）。⚠️ 这与 `ADR-0034` 的 Q1/Q2/Q3 **直接冲突**：
+//   那三项正在裁决「默认是否改 `false`」—— 若裁决为「改」，**单独改是不生效的**。
+// 【判据】凡「一行里引用 ≥2 个开关」的挂载行，其 `build*Extension(...)` **必须带实参**
+//   （能按开关过滤）；否则必须登记进例外表（带理由 + 存在的 `ref`）。
+//   ⚠️ 对照：`f.emoji` 那一行**带实参**（`buildCodeFenceAutocompleteExtension([...])`）⇒ 是正确形态。
+{
+  const SRC = 'packages/editor-engine/src/index.ts';
+  const src = readFileSync(resolve(root, SRC), 'utf8').replace(/\r\n/g, '\n');
+  // 例外表（**按被豁免对象分表**：本表只管「多开关共用一个无参扩展」这一形态）
+  const MULTI_SWITCH_UNFILTERED = new Map([
+    ['buildInlineExtrasExtension',
+      ['挂载条件 `f.highlight || f.supSub` 且构建函数**无参** ⇒ 两个开关各自都关不掉（只关一个时仍装饰）',
+        'docs/adr/ADR-0034-preference-deviations-2026-10-07.md']],
+  ]);
+  const mounts = [];
+  for (const line of src.split('\n')) {
+    const flags = [...line.matchAll(/\bf\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]);
+    const push = /ext\.push\(\s*(build[A-Za-z0-9]*Extension)\s*\(([^)]*)\)/.exec(line);
+    if (flags.length === 0 || push === null) continue;
+    mounts.push([new Set(flags).size, push[1], push[2].trim(), line.trim()]);
+  }
+  if (mounts.length < 11) {
+    fail(`${SRC} 只解析出 ${mounts.length} 条带开关的挂载行（下限 11 = 立此判据时基线）`
+      + ' —— 锚点漂移会让本判据**空转**');
+  }
+  const seen = new Set();
+  for (const [flagCount, fn, args, line] of mounts) {
+    if (flagCount < 2) continue;
+    seen.add(fn);
+    const filtered = args !== '';
+    const exempt = MULTI_SWITCH_UNFILTERED.get(fn);
+    if (filtered) {
+      if (exempt !== undefined) fail(`\`${fn}\` **已带实参**（能按开关过滤），请从例外表删除（过期）`);
+      continue;
+    }
+    if (exempt === undefined) {
+      fail(`\`${line}\` 让 ${flagCount} 个开关共用一个**无参**扩展 \`${fn}\` ⇒ 它们**各自都关不掉**`
+        + '（假开关）—— 必须给构建函数传开关参数，或登记进例外表并给 `ref`');
+      continue;
+    }
+    if (typeof exempt[0] !== 'string' || exempt[0] === '') fail(`例外 \`${fn}\` 缺理由`);
+    if (!existsSync(resolve(root, exempt[1]))) fail(`例外 \`${fn}\` 的 \`ref\` 指向的文件不存在：${exempt[1]}`);
+  }
+  for (const fn of MULTI_SWITCH_UNFILTERED.keys()) {
+    if (!seen.has(fn)) fail(`例外表里的 \`${fn}\` 已不再是「多开关共用」的挂载形态 —— 请删除该例外`);
+  }
+  // canary：两向（与判定**共用**同一「取开关数」谓词）
+  const flagsOf = (line) => new Set([...line.matchAll(/\bf\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1])).size;
+  if (flagsOf('if (f.a || f.b) ext.push(buildXExtension())') !== 2) {
+    fail('多开关挂载 canary 失效：取不到 2 个开关');
+  }
+  if (flagsOf('if (f.a) ext.push(buildXExtension(f.a))') !== 1) {
+    fail('多开关挂载 canary 失效：单开关行被误判为多开关');
+  }
+  console.log(`Settings contract: 带开关的挂载行 ${mounts.length} 条；其中**多开关共用** ${seen.size} 个`
+    + `（登记为无参未过滤 ${MULTI_SWITCH_UNFILTERED.size} 个，载体见例外表 ref）`);
+}
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }

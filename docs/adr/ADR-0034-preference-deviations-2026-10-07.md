@@ -72,6 +72,31 @@
 
 ---
 
+## ⚠️ 裁决前提（2026-10-10 实测补充）：**这两个开关各自都关不掉**
+
+`packages/editor-engine/src/index.ts` 的挂载行是：
+
+```ts
+if (f.highlight || f.supSub) ext.push(buildInlineExtrasExtension());
+```
+
+而 `buildInlineExtrasExtension()` **不接任何参数**，它内部用纯函数 `scanInlineExtras(doc, …)`
+把 `==高亮==` / `^上标^` / `~下标~` **三种标记一并装饰**。
+实测（`scanInlineExtras('a ==x== b ^y^ c ~z~ d', [])` 返回三条 range，且该函数**不看开关**）
+⇒ **只要两个开关中有一个开着，扩展就被挂载，三种标记全部生效** ⇒
+**单独关掉 `markdown.highlight` 不生效**（`==x==` 仍被高亮）；**单独关掉 `markdown.supSub` 也不生效**。
+
+**这对本 ADR 的三项裁决意味着什么**：
+
+- 若裁决「`markdown.highlight` 默认改 `false`」（Q1）或「`markdown.supSub` 默认改 `false`」（Q2 / Q3），
+  **只改默认值是不够的** —— 必须**同时**让扩展按开关过滤（给 `buildInlineExtrasExtension` 传开关参数，
+  或拆成两个扩展），否则「关掉」是**假控件**
+  （同 ADR-0033 里「`enablePinchZoom` 必须返回 disposer」那条先例）。
+- ⇒ 本 ADR 的裁决动作应包含**两项**：**① 默认值 · ② 扩展的过滤逻辑**（两项一起改才算完成）。
+
+**机器可读化**：`verify-settings-contract.mjs` 新增判据 —— 「一行里引用 ≥2 个开关」的挂载行，
+其 `build*Extension(...)` **必须带实参**，否则必须登记进例外表并给 `ref`（本项已登记，载体 = 本 ADR）。
+
 ## Q1 — `markdown.highlight` 默认是否改为 `false`（对齐 Typora）？
 
 **选项**

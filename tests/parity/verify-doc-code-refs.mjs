@@ -3377,7 +3377,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 252;
+  const AUDIT_FLOOR = 253; // 2026-10-10 加 §4.253 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3393,6 +3393,17 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
       fail(`${rel} 的最大 \`## 4.N\` 只有 ${max}，跌破地板 ${AUDIT_FLOOR}`
         + ' —— 可能是**整节被回写掉**（实测过：外部编辑器用旧缓冲区覆盖 ⇒ 内容静默消失而护栏全绿）');
     }
+    // ⚠️ **只查「最大节号」挡不住「中间丢一节」**：实测第二次事故丢的是 §4.252（**不是最后一节**）
+    //    ⇒ 必须再查**连续性**：从最小节号到最大节号**不得有缺号**。
+    const uniq = [...new Set(nums)].sort((a, b) => a - b);
+    const gaps = [];
+    for (let n = uniq[0]; n <= uniq[uniq.length - 1]; n += 1) {
+      if (!uniq.includes(n)) gaps.push(n);
+    }
+    if (gaps.length > 0) {
+      fail(`${rel} 的 \`## 4.N\` **有缺号**：${gaps.join(', ')}`
+        + ' —— 节号应连续；缺号 = **整节被删或被回写掉**（实测过两次：外部编辑器旧缓冲区回写）');
+    }
   }
   // canary：两向（与判定**共用**同一「取最大节号」逻辑）
   const maxOf = (text) => {
@@ -3400,6 +3411,19 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
     return ns.length === 0 ? -1 : Math.max(...ns);
   };
   if (maxOf('## 4.9\n## 4.10\n') !== 10) fail('审计节号地板 canary 失效：最大节号取不到');
+  // canary：**缺号**必须被检出（与判定共用同一「取集合 + 找缺号」逻辑）
+  const gapsOf = (text) => {
+    const ns = [...new Set([...text.matchAll(/^##\s+4\.(\d+)\b/gm)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+    const g = [];
+    for (let n = ns[0]; n <= ns[ns.length - 1]; n += 1) if (!ns.includes(n)) g.push(n);
+    return g;
+  };
+  if (gapsOf('## 4.10\n## 4.12\n').join(',') !== '11') {
+    fail('审计节号连续性 canary 失效：中间缺号未被检出');
+  }
+  if (gapsOf('## 4.10\n## 4.11\n').length !== 0) {
+    fail('审计节号连续性 canary 失效：连续节号被误判为缺号');
+  }
   if (maxOf('## 4.250\n') >= AUDIT_FLOOR) fail('审计节号地板 canary 失效：低于地板的样本未被判为不合规');
   console.log(`Doc code refs: 审计文档节号地板 —— ${auditFiles.length} 份文档的最大 \`## 4.N\` 均 ≥ ${AUDIT_FLOOR}`);
 }
