@@ -3369,6 +3369,40 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
     + `字面 \`**\` 残留 ${boldBad.length} 处（豁免 ${BOLD_FROZEN.size} 份已发布 release notes）`);
 }
 
+// ── 审计文档的**节号单调性**：最大 `## 4.N` 不得跌破地板（2026-10-10，审计 §4.252）──
+// 【为什么】实测事故：本文档的工作区版本被**外部编辑器用旧缓冲区回写** ⇒ **整节 §4.251 消失**、
+//   并混入 4344 行尾随空格；而**所有护栏照常全绿** —— 它们只看「当前内容自洽」，
+//   不看「内容有没有变少」。⇒ 补一条**历史地板型**判据（本仓下限三类型之一）。
+// 【判据】`docs/qualification/release-blocker-audit-*.md` 里最大的 `## 4.N` 必须 ≥ 地板值。
+//   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
+//   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
+{
+  const AUDIT_FLOOR = 252;
+  const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
+  if (auditFiles.length === 0) {
+    fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
+  }
+  for (const rel of auditFiles) {
+    const nums = [];
+    for (const line of readFileSync(resolve(root, rel), 'utf8').split('\n')) {
+      const m = /^##\s+4\.(\d+)\b/.exec(line);
+      if (m !== null) nums.push(Number(m[1]));
+    }
+    const max = nums.length === 0 ? -1 : Math.max(...nums);
+    if (max < AUDIT_FLOOR) {
+      fail(`${rel} 的最大 \`## 4.N\` 只有 ${max}，跌破地板 ${AUDIT_FLOOR}`
+        + ' —— 可能是**整节被回写掉**（实测过：外部编辑器用旧缓冲区覆盖 ⇒ 内容静默消失而护栏全绿）');
+    }
+  }
+  // canary：两向（与判定**共用**同一「取最大节号」逻辑）
+  const maxOf = (text) => {
+    const ns = [...text.matchAll(/^##\s+4\.(\d+)\b/gm)].map((m) => Number(m[1]));
+    return ns.length === 0 ? -1 : Math.max(...ns);
+  };
+  if (maxOf('## 4.9\n## 4.10\n') !== 10) fail('审计节号地板 canary 失效：最大节号取不到');
+  if (maxOf('## 4.250\n') >= AUDIT_FLOOR) fail('审计节号地板 canary 失效：低于地板的样本未被判为不合规');
+  console.log(`Doc code refs: 审计文档节号地板 —— ${auditFiles.length} 份文档的最大 \`## 4.N\` 均 ≥ ${AUDIT_FLOOR}`);
+}
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
 //   实测 `CoreEditor/src/styling/themes/` 有 **18 个 `.ts`**，其中 `index.ts` / `colors.ts`
@@ -3451,6 +3485,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   }
   console.log(`Doc code refs: monorepo.md 的「${actual} 个包」== \`packages/\` 目录数（名单 ${listed.length} 个一致）`);
 }
+
 
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');

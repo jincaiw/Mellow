@@ -2884,61 +2884,73 @@ if (cssLayerAnchor === undefined) {
     + `${rows.filter((r) => r.status === 'defaulted').length} / **missing ${missing}**，载体见各条 ref）`);
 }
 
-// ── 「声明了但没人消费」的**块类型**字段必须登记（2026-10-10，审计 §4.251）──
-// 【为什么】`PdfBlock` 的 `list` 变体**声明了** `ordered` 与每项的 `task` / `checked`，
-//   而渲染器 `case 'list'` **一个都没用** ⇒ 实测：有序列表变成无序（且丢起始编号）、
-//   任务列表 checkbox 丢失。这与「漏传可选协作者」**同族**，只是发生在**块类型**上 ——
-//   而上一轮的「死选项」普查**只扫了 options 对象**（透镜漏了一半）。
-// 【判据】这三个字段**要么**在 `case 'list'` 渲染分支里被消费，
-//   **要么**在 `PDF_LIST_UNCONSUMED` 例外表里带理由 + 存在的 `ref`。
+// ── 「声明了但没人消费」的**全部**块 / 行内字段必须登记（全字段普查）（2026-10-10，审计 §4.252）──
+// 【为什么】`PdfBlock` 的 `list` 变体声明了 `ordered` / `task` / `checked`，而渲染器 `case 'list'`
+//   **一个都没用** ⇒ 实测：有序列表变无序、任务列表 checkbox 丢失（审计 §4.251）。
+//   上一轮只钉住了**已实测确认的那三个字段**，并如实声明「全字段普查属后续工作」——**本轮收口**。
+//   普查结果：`PdfBlock` 15 个变体共 23 个字段 + `Inline` 5 个字段里，
+//   **未消费的是 `list.{ordered,task,checked}` 与 `code.language`**（其余全部消费）。
+// 【判据】每个 `变体.字段` / `Inline.字段` **要么**在渲染面里出现，**要么**在例外表里带理由 + 存在的 `ref`。
 //   修好后从例外表删掉即可（判据仍绿）；**新增一个「声明了但没消费」的字段会被抓到**。
 {
   const SRC = 'packages/export/src/index.ts';
   const src = readFileSync(resolve(root, SRC), 'utf8');
-  const variant = /type: 'list';([\s\S]*?)\n/.exec(src);
-  const at = src.indexOf("case 'list':");
-  const caseWindow = at < 0 ? '' : src.slice(at, at + 400);
-  const FIELDS = ['ordered', 'task', 'checked'];
-  // 例外表（**按被豁免对象分表**：本表只管 `PdfBlock.list` 的这三个字段）
-  const PDF_LIST_UNCONSUMED = new Map([
-    ['ordered', ['渲染器只输出 `ul` ⇒ 有序列表变无序、起始编号也丢', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
-    ['task', ['渲染器不输出 checkbox ⇒ 任务列表退化为普通列表', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
-    ['checked', ['同上（`checked` 同样未被消费）', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
+  const lineAt = (anchor) => {
+    const lines = src.split('\n');
+    const a = lines.findIndex((l) => l.includes(anchor));
+    if (a < 0) return null;
+    const b = lines.findIndex((l, i) => i > a && /^}/.test(l));
+    return lines.slice(a, b < 0 ? lines.length : b).join('\n');
+  };
+  const renderBody = lineAt('export async function buildPdfDocument');
+  const inlineBody = lineAt('function inlineToPdf');
+  const unionM = /export type PdfBlock =([\s\S]*?);\n/.exec(src);
+  const inlineM = /export interface Inline \{([\s\S]*?)\n\}/.exec(src);
+  // 例外表（**按被豁免对象分表**：本表只管 `PdfBlock` 的块字段与 `Inline` 的行内字段）
+  const PDF_UNCONSUMED = new Map([
+    ['list.ordered', ['渲染器只输出 `ul` ⇒ 有序列表变无序、起始编号也丢', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
+    ['list.task', ['渲染器不输出 checkbox ⇒ 任务列表退化为普通列表', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
+    ['list.checked', ['同上（`checked` 同样未被消费）', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
+    ['code.language', ['渲染器只输出代码文本 ⇒ PDF 里**没有语言标识**（HTML 侧带 `class="language-xx"`）', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
   ]);
-  if (variant === null || at < 0) {
-    fail(`无法定位 ${SRC} 的 \`PdfBlock.list\` 变体或 \`case 'list'\` 渲染分支 —— 锚点漂移会让本判据**空转**`);
+  const pairs = [];
+  if (unionM === null || inlineM === null || renderBody === null || inlineBody === null) {
+    fail(`无法解析 ${SRC} 的 \`PdfBlock\` / \`Inline\` / 渲染面 —— 锚点漂移会让本判据**空转**`);
   } else {
-    for (const f of FIELDS) {
-      if (!new RegExp(`\\b${f}\\s*:`).test(variant[1])) {
-        fail(`锚点漂移：\`PdfBlock.list\` 变体里已找不到字段 \`${f}\` —— 本判据需同步（不得静默放宽）`);
-        continue;
-      }
-      const consumed = new RegExp(`\\b${f}\\b`).test(caseWindow);
-      const exempt = PDF_LIST_UNCONSUMED.get(f);
+    for (const m of unionM[1].matchAll(/\{ type: '([a-z]+)';([^}]*)\}/g)) {
+      for (const f of m[2].matchAll(/([A-Za-z][A-Za-z0-9]*)\??:/g)) pairs.push([`${m[1]}.${f[1]}`, f[1], renderBody]);
+    }
+    for (const m of inlineM[1].matchAll(/^\s{2}([A-Za-z][A-Za-z0-9]*)\??:/gm)) pairs.push([`Inline.${m[1]}`, m[1], inlineBody]);
+    // [覆盖型] 下限 == 当前基线（立此判据时 23 + 5 = 28）
+    if (pairs.length < 28) {
+      fail(`只解析出 ${pairs.length} 个字段（下限 28 = 立此判据时基线）—— 锚点漂移会让本判据空转`);
+    }
+    for (const [key, field, body] of pairs) {
+      const consumed = new RegExp(`\\b${field}\\b`).test(body);
+      const exempt = PDF_UNCONSUMED.get(key);
       if (consumed) {
-        if (exempt !== undefined) fail(`\`${f}\` **已在渲染器里被消费**，请从 PDF_LIST_UNCONSUMED 删除（例外表过期）`);
+        if (exempt !== undefined) fail(`\`${key}\` **已在渲染面里被消费**，请从 PDF_UNCONSUMED 删除（例外表过期）`);
         continue;
       }
       if (exempt === undefined) {
-        fail(`\`PdfBlock.list\` 声明了 \`${f}\`，但 \`case 'list'\` 渲染器**未消费**、也不在例外表里`
+        fail(`\`${key}\` 被声明并解析，但渲染面**未消费**、也不在例外表里`
           + ' —— 「声明了但没人消费」= 静默降级，必须登记');
         continue;
       }
-      if (typeof exempt[0] !== 'string' || exempt[0] === '') fail(`例外 \`${f}\` 缺理由`);
-      if (!existsSync(resolve(root, exempt[1]))) fail(`例外 \`${f}\` 的 \`ref\` 指向的文件不存在：${exempt[1]}`);
+      if (typeof exempt[0] !== 'string' || exempt[0] === '') fail(`例外 \`${key}\` 缺理由`);
+      if (!existsSync(resolve(root, exempt[1]))) fail(`例外 \`${key}\` 的 \`ref\` 指向的文件不存在：${exempt[1]}`);
     }
     // canary：两向（与判定**共用**同一谓词）
-    const declaredUnconsumed = (text) => FIELDS.some((f) => !new RegExp(`\\b${f}\\b`).test(text));
-    if (!declaredUnconsumed('content.push({ ul: items })')) {
-      fail('块类型字段 canary 失效：**未消费**的样本未被检出');
+    const unconsumedIn = (body, fields) => fields.some((f) => !new RegExp(`\\b${f}\\b`).test(body));
+    if (!unconsumedIn('content.push({ ul: items })', ['ordered'])) {
+      fail('块/行内字段 canary 失效：**未消费**的样本未被检出');
     }
-    if (declaredUnconsumed('content.push({ ol: items, task: 1, checked: 1, ordered: 1 })')) {
-      fail('块类型字段 canary 失效：**已消费**的样本被误判');
+    if (unconsumedIn('content.push({ ol: items, ordered: 1, task: 1, checked: 1 })', ['ordered', 'task', 'checked'])) {
+      fail('块/行内字段 canary 失效：**已消费**的样本被误判');
     }
   }
-  console.log(`Settings contract: \`PdfBlock.list\` 的 ${FIELDS.length} 个字段已核（`
-    + `${FIELDS.filter((f) => new RegExp(`\\b${f}\\b`).test(caseWindow)).length} 个被消费 / `
-    + `**${PDF_LIST_UNCONSUMED.size} 个登记为未消费**，载体见例外表 ref）`);
+  console.log(`Settings contract: 块/行内字段 ${pairs.length} 个已核（`
+    + `**${PDF_UNCONSUMED.size} 个登记为未消费**：${[...PDF_UNCONSUMED.keys()].join(' / ')}）`);
 }
 
 if (errors.length > 0) {
