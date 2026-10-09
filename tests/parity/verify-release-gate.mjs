@@ -238,9 +238,15 @@ const DECIDED_ADRS = [
 // 2026-10-07（审计 §4.120）：**重新非空** —— 偏好矩阵里 5 条 `deviation.kind === 'undecided'`
 // 此前**只写在 master-plan 的轮次叙述里**，审计登记表一行都没有 ⇒ 本门禁报 `Pending decisions: 无`，
 // 即**项目在机器可读层面声称「没有待裁决项」**。ADR-0034 是它们的载体（**未擅自改任何默认值**）。
+// 2026-10-10（审计 §4.247）：**再增一项** —— 行内强调的**渲染语义**差异
+// （`**` 紧贴全角标点且外侧紧贴汉字时，Typora 渲染成加粗、Mellow 的两条路径都判为不成对）。
+// 它此前**不在任何台账条目内**（`P0-MARKDOWN-002` 说的是「格式命令」，不是「解析器语义」），
+// 故按「待裁决项必须有 ADR 载体」立 ADR-0035（**未擅自改任何渲染行为**）。
 const PENDING_ADRS = [
   ['docs/adr/ADR-0034-preference-deviations-2026-10-07.md',
     '偏好默认值 5 项偏离 Typora（highlight / sub·sup / mermaid / zoomByMouse）'],
+  ['docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md',
+    '行内强调的渲染语义：`**` 紧贴全角标点时是否对齐 Typora（偏离 CommonMark）'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
