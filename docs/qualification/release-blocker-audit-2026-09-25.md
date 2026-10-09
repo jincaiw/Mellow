@@ -76,7 +76,7 @@ Release verdict: NO-GO：6 项未闭环
 | 14 | §4.95 | **零跨包消费者的包**去留 —— ⚠️ **2026-10-08 更正（审计 §4.160）**：原文写「**3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）」，而实测是 **4 个**（`PKG_NO_CONSUMER_EXEMPT` 四条 = 上述三个 + **`editor-react`**）⇒ **原表述把「3 个待裁决的」写成了「3 个零消费者的」**（数量对、**对象错**）。**待裁决的仍是 3 个**；`editor-react` 是**有意预留**（契约 re-export；组件化 UI 见阶段 2 计划）⇒ **不待裁决**。其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
-| 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **待裁决（10 问）** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`） | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
+| 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **待裁决（10 问）** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`）⚠️ **2026-10-09 更正（审计 §4.202）**：本行写的「默认值轴 **5** 项 / 行为轴 **5** 项」是**当时**的计数 —— 实际**默认值轴 4 项**（本行列的就是 4 个）· **行为轴 4 项**（`noLegacyMath` 已由 `ADR-0034` 的取证**排除**，见该 ADR「Q9」节）⇒ **实际 8 问**（`ADR-0034` 的 Q1–Q13 去掉合并的 Q2/Q3 与已排除的 Q9）。 | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
 
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
@@ -13037,6 +13037,60 @@ PITFALLS **§4.315** · skill **§191** · `MEMORY.md` · `2026-10-09.md`。
 
 `docs/qualification/ux-score-gate-template.md`（追加「会话前置已核」）· 审计 **§4.201** ·
 PITFALLS **§4.316** · skill **§192** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
+## 4.202 **MEMORY 的「待裁决」表述过期**（2 处）—— 而 MEMORY **不进仓库、无护栏**（2026-10-09）
+
+### 一、发现（用「待裁决项的**事实面**」透镜扫 **MEMORY 自身**）
+
+MEMORY 是**每个会话的注入上下文** ⇒ **它的表述过期会误导每个会话**。
+
+**扫 MEMORY 的「待裁决 / 未裁决 / 仍需 / 尚未 / 未实施」（9 处）**，逐条与实际对照：
+
+| 行 | 表述 | 实际 | |
+|---|---|---|---|
+| 99 | 「16ms 目标**未裁决判定**（ADR-0026 Q3）」 | `ADR-0026` 是 **Accepted**，**Q3 已裁决 = B1**（「接受本 harness 不可判定」；应用内埋点 `inputLatency.ts` **已落地**） | ⚠️ **过期** |
+| 44 | 「**待裁决**：`fileTree.options`/`outline.options`/`statusbar.fields`」 | **已裁决**（`ADR-0032` Q4 = **D2**，2026-10-06） | ⚠️ **过期** |
+| 28 | 门禁 `Pending decisions` = `ADR-0034` | ✅ | ✅ |
+| 29 | 登记表规则 | ✅ | ✅ |
+| 18 / 21 | 「第三面 4 条待裁决」等 | 载体 = `ADR-0034`（**登记表 #17**） | ✅（**但见下**） |
+| 59 / 62 / 90 | 判据 / 教训表述 | ✅ | ✅ |
+
+### 二、顺带发现：**登记表 #17 的计数未同步**
+
+登记表 #17 写「默认值轴 **5** 项 / 行为轴 **5** 项（共 10）」，而：
+
+- **默认值轴实际 4 项**（该行**自己列的就是 4 个**）；
+- **行为轴实际 4 项**（`noLegacyMath` 已由 `ADR-0034` 的取证**排除**，见该 ADR 的「Q9」节）
+
+⇒ **实际 8 问**。⇒ 已在 #17 行**追加更正**（登记表**只追加**）。
+
+### 三、处置
+
+1. **修** MEMORY 的 2 处过期表述（99 / 44 行），并**明确指向「可发现处」**
+   （99 行 → 门禁的 `Pending decisions`；44 行 → **审计登记表**）；
+2. **追加**登记表 #17 的计数更正。
+
+### 四、⚠️ 为什么**不加判据**（如实声明）
+
+**MEMORY 在 `.workbuddy-ai/` 下、不进仓库** ⇒ **无 CI 护栏能守它**（该事实 MEMORY 自己已记）。
+⇒ 只能靠**纪律**：**「转述裁决状态时，必须同时给可发现处」**（本轮两处更正都加了指向）。
+
+### 五、教训
+
+1. **「待裁决项的事实面」透镜同样适用于「记忆 / 笔记」** —— 它们**转述**裁决状态，
+   而**裁决状态会变**（`ADR-0026` 从 Proposed → Accepted、`ADR-0032` 裁决 D2…）
+   ⇒ **转述必须带「可发现处」**（否则读者（含 AI）会**按转述读**）。
+2. ⚠️ **「不进仓库的文档」没有护栏** ⇒ 它的准确性**只能靠「每次引用时回查真值源」**。
+3. ✅ **「登记的计数」也会漂**（#17 的 5 → 4）—— 因为**被登记的对象自己变了**（`noLegacyMath` 排除）
+   ⇒ **计数应与「被登记对象的现态」对齐**，而不是与「登记时的快照」对齐。
+4. ⇒ **同族第 31 次**（§4.170 / … / §4.201 / 本节）。
+
+### 六、产物
+
+`MEMORY.md`（2 处更正，**不进仓库**）· `docs/qualification/release-blocker-audit-2026-09-25.md`
+（登记表 #17 追加更正）· 审计 **§4.202** · PITFALLS **§4.317** · skill **§193** · `2026-10-09.md`。
 
 ---
 
