@@ -2798,7 +2798,9 @@ if (cssLayerAnchor === undefined) {
   const FIXTURE = 'tests/parity/fixtures/export-collaborators.json';
   const LEDGER = 'tests/parity/typora-parity-ledger.json';
   const envFieldsOf = (file, iface) => {
-    const m = new RegExp(`export interface ${iface}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(readFileSync(resolve(root, file), 'utf8'));
+    // ⚠️ 必须归一化 CRLF：Windows 检出是 CRLF，而下面的正则锚在 `\n}` 上 —— 不归一化会**静默解析出 0 个字段**
+    //    （实测：Windows CI 报「无法解析 … 锚点漂移」，Linux 全绿）。
+    const m = new RegExp(`export interface ${iface}\\s*\\{([\\s\\S]*?)\\r?\\n\\}`).exec(readFileSync(resolve(root, file), 'utf8').replace(/\r\n/g, '\n'));
     if (m === null) return null;
     const out = new Set();
     for (const line of m[1].split('\n')) {
@@ -2894,7 +2896,9 @@ if (cssLayerAnchor === undefined) {
 //   修好后从例外表删掉即可（判据仍绿）；**新增一个「声明了但没消费」的字段会被抓到**。
 {
   const SRC = 'packages/export/src/index.ts';
-  const src = readFileSync(resolve(root, SRC), 'utf8');
+  // ⚠️ 必须归一化 CRLF（Windows 检出是 CRLF）：下面的正则锚在 `;\n` 与 `\n}` 上，
+  //    不归一化会**静默解析出 0 个字段**并误报「锚点漂移」（实测 Windows CI 红、Linux 绿）。
+  const src = readFileSync(resolve(root, SRC), 'utf8').replace(/\r\n/g, '\n');
   const lineAt = (anchor) => {
     const lines = src.split('\n');
     const a = lines.findIndex((l) => l.includes(anchor));
@@ -2947,6 +2951,16 @@ if (cssLayerAnchor === undefined) {
     }
     if (unconsumedIn('content.push({ ol: items, ordered: 1, task: 1, checked: 1 })', ['ordered', 'task', 'checked'])) {
       fail('块/行内字段 canary 失效：**已消费**的样本被误判');
+    }
+    // canary：**CRLF** 三向（与判定**共用**同一正则）——
+    //   ① 归一化后**必须**匹配；② **未归一化**必须**不**匹配（否则说明归一化已非必需，本 canary 失去意义）
+    const CRLF_UNION = "export type X =\r\n  | { type: 'a'; f1: number };\r\n";
+    const UNION_RE = /export type X =([\s\S]*?);\n/;
+    if (!UNION_RE.test(CRLF_UNION.replace(/\r\n/g, '\n'))) {
+      fail('块/行内字段 canary 失效：**归一化后**仍解析不到（Windows 会静默空转）');
+    }
+    if (UNION_RE.test(CRLF_UNION)) {
+      fail('块/行内字段 canary 失效：**未归一化**的 CRLF 样本竟然也匹配 —— 归一化已非必需，请复核本判据');
     }
   }
   console.log(`Settings contract: 块/行内字段 ${pairs.length} 个已核（`
