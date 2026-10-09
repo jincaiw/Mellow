@@ -15,6 +15,13 @@
 `tests/parity/tools/` 下的脚本依赖本机 Typora 安装，只用于**人工复核护栏里内嵌的官方真值**，
 不参与 `pnpm test` / `pnpm run parity`（CI runner 上不装 Typora）：
 
+- `audit-typora-orphan-strings.mjs` —— 查「**Typora 到底有没有在用一个字符串**」（文案面 + 代码面双向），
+  用于判「Typora 有这个功能吗」。用法：`--check "<串>"`。
+
+- `audit-typora-preferences.mjs` —— **双向**核对偏好矩阵（`typora-preferences-matrix.json`）与
+  **Typora 真正持久化的键**（`JSBridge.putSetting(...)`）：矩阵自述看不见**死键**，
+  也看不见「Typora 会写、但矩阵与面板都不覆盖」的缝隙。`--write` 可把 Typora 新增的键补进矩阵。
+
 - `audit-typora-menu-labels.mjs` —— 反查 `verify-menu-contract.mjs` §12 里内嵌的每一条
   zh/en 是否真的能在本机 `Typora.app/Contents/Resources/{Base,zh-Hans}.lproj/Menu.strings`
   中原样查到。立此脚本的原因：内嵌真值的代价是**没人能保证它真的来自官方** —— 实测抓到

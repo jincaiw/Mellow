@@ -2432,6 +2432,96 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   console.log(`Doc code refs: 代码围栏闭合（扫描 ${fenceDocs} 份非夹具文档）`);
 }
 
+// ── ㉛ **README 的索引型章节必须与它索引的目录一致**（2026-10-09，审计 §4.230）──
+// 立此条的原因（新透镜「**索引穷举性**」）：§4.159（`docs/architecture/README.md` 的「## 文档」）与
+//   ⑱（根 README 的 spec 索引）各自锁了**一个**索引 —— 但**索引是一族**（每个目录的 README 都可能索引自己的同级）。
+//   首轮普查 ⇒ **2 处真缺陷**：
+//     · `tests/fixtures/README.md` 的「## 目录」表**漏了 2 个顶层目录**（`typora-parity/`、`updater/`）
+//     · `tests/parity/README.md` 的「## 工具」段**只列 1/3** 个「需本机 Typora」的工具
+//       （漏 `audit-typora-orphan-strings.mjs`、`audit-typora-preferences.mjs`）
+// ⚠️ **表驱动**（**不**自动识别「哪些章节是索引」—— 那不可机械判）。每条给 `cover` 模式：
+//   `entries` = 必须覆盖目录的**每个顶层条目**（排除 README.md 自身）；
+//   `typora-tools` = 只覆盖**头部自述「需本机 Typora」**的工具（该章节的标题就是这么写的）。
+{
+  const INDEXES = [
+    { readme: 'tests/fixtures/README.md', section: '## 目录', dir: 'tests/fixtures', cover: 'entries' },
+    { readme: 'tests/fixtures/ux-gate/README.md', section: '## 文件', dir: 'tests/fixtures/ux-gate', cover: 'entries' },
+    { readme: 'tests/parity/README.md', section: '## 工具（需本机装有 Typora，**不进 CI**）', dir: 'tests/parity/tools', cover: 'typora-tools' },
+  ];
+  /** 章节正文（到下一个 `## ` 为止）；找不到标题 ⇒ null。判定与 canary **共用**。 */
+  const sectionBody = (src, heading) => {
+    const at = src.indexOf(heading);
+    if (at < 0) return null;
+    const rest = src.slice(at + heading.length);
+    const next = rest.search(/\n## /);
+    return next < 0 ? rest : rest.slice(0, next);
+  };
+  /** 章节里**列出的条目**：① 表格首列的 `` `路径` ``；② **列表项**里的 `` `名字.mjs` ``。判定与 canary **共用**。 */
+  const listedEntries = (body) => [...new Set([
+    ...[...body.matchAll(/^\|\s*`([^`]+)`\s*\|/gm)].map((m) => m[1]),
+    ...[...body.matchAll(/^-\s+`([a-z0-9-]+\.mjs)`/gm)].map((m) => m[1]),
+  ])];
+  /** 工具**头部自述**「需本机 Typora」⇒ 属于该章节索引的集合。判定与 canary **共用**。 */
+  const needsLocalTypora = (abs) => /需本机(?:装有)?\s*Typora/.test(
+    readFileSync(abs, 'utf8').split('\n').slice(0, 10).join('\n'),
+  );
+  let idxChecked = 0;
+  for (const { readme, section, dir, cover } of INDEXES) {
+    const src = readFileSync(resolve(root, readme), 'utf8').replace(/\r\n/g, '\n');
+    const body = sectionBody(src, section);
+    if (body === null) {
+      fail(`${readme} 找不到章节「${section}」—— 判据锚点漂移，别静默跳过`);
+      continue;
+    }
+    const listed = listedEntries(body);
+    if (listed.length === 0) {
+      fail(`${readme} 的「${section}」没解析出任何条目 —— 谓词漂移（本判据会空转）`);
+      continue;
+    }
+    idxChecked += listed.length;
+    for (const p of listed) {
+      if (!existsSync(resolve(root, dir, p))) {
+        fail(`${readme} 的「${section}」列了 \`${p}\`，但 \`${dir}/\` 下**不存在**`);
+      }
+    }
+    const dirAbs = resolve(root, dir);
+    const entries = readdirSync(dirAbs).filter((e) => e !== 'README.md');
+    const covered = (e) => listed.some((p) => p === e || p.startsWith(e + '/'));
+    const inScope = (e) => (cover === 'entries' ? true : (e.endsWith('.mjs') && needsLocalTypora(resolve(dirAbs, e))));
+    const missing = entries.filter((e) => inScope(e) && !covered(e));
+    if (missing.length > 0) {
+      fail(`${readme} 的「${section}」**漏了** \`${dir}/\` 的条目：${missing.join('、')}`
+        + ' —— 该章节是**索引**，必须覆盖（实测：漏 2 个顶层目录 / 漏 2 个「需本机 Typora」的工具）');
+    }
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 31，下限 25）
+  if (idxChecked < 25) {
+    fail(`索引章节只解析出 ${idxChecked} 个条目（下限 25 = 立此判据时的基线 31 − 余量）`
+      + ' —— 谓词或文档内容漂移会让本判据**空转**');
+  }
+  // canary：五向（判定与 canary **共用** sectionBody / listedEntries / needsLocalTypora）
+  if (sectionBody('## A\nbody\n## B\nx', '## A') !== '\nbody') {
+    errors.push('索引护栏 canary 失效：章节切分错（会把下一个章节的内容算进来）');
+  }
+  if (sectionBody('## A\nbody', '## Z') !== null) {
+    errors.push('索引护栏 canary 失效：找不到标题时应返回 null（否则判据静默空转）');
+  }
+  if (!listedEntries('| `x/y.md` | z |\n').includes('x/y.md')) {
+    errors.push('索引护栏 canary 失效：表格首列的路径未被解析');
+  }
+  if (!listedEntries('- `a.mjs` —— 说明\n').includes('a.mjs')) {
+    errors.push('索引护栏 canary 失效：列表项里的工具名未被解析');
+  }
+  if (listedEntries('正文提到 `b.mjs` 但不在列表项里\n').length !== 0) {
+    errors.push('索引护栏 canary 过宽：**正文里提到的**工具名被当成了列表项（会误报）');
+  }
+  if (!needsLocalTypora(resolve(root, 'tests/parity/tools/audit-typora-preferences.mjs'))
+    || needsLocalTypora(resolve(root, 'tests/parity/tools/audit-doc-counts.mjs'))) {
+    errors.push('索引护栏 canary 失效：「需本机 Typora」谓词不能区分正 / 负样本');
+  }
+  console.log(`Doc code refs: README 索引章节 ${INDEXES.length} 个 / 条目 ${idxChecked} 条，均已覆盖其目录`);
+}
+
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
 //   实测 `CoreEditor/src/styling/themes/` 有 **18 个 `.ts`**，其中 `index.ts` / `colors.ts`
