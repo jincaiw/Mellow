@@ -37,6 +37,12 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '../..');
+
+/** 判据编号用的**圈号**全集（①–⑳ / ㉑–㉟ / ㊱–㊿ = 50 个），按**码位区间**写。
+ *  ⚠️ **枚举式**字符类会**静默漏掉**新编号（实测：`[①-⑳㉑-㉟]` 让新增的 ㊱ 不可见）⇒ 必须用区间。
+ *  ⚠️ 三处以上共用本常量 ⇒ 改一处即全改（见 ㉞ / ㊲）。 */
+const CIRCLED_CLASS = '\u2460-\u2473\u3251-\u325F\u32B1-\u32BF';
+
 const errors = [];
 const fail = (message) => errors.push(message);
 
@@ -2690,15 +2696,15 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     let rest = m[1];
     const out = [];
     for (;;) {
-      const t = new RegExp(`^\\s*([\u2460-\u2473\u3251-\u325F\u32B1-\u32BF])(?:-?([a-z]))?\\s*(?:[+·/、]\\s*)?`).exec(rest);
+      const t = new RegExp(`^\\s*([${CIRCLED_CLASS}])(?:-?([a-z]))?\\s*(?:[+·/、]\\s*)?`).exec(rest);
       if (t === null) break;
       out.push(t[1]);
       rest = rest.slice(t[0].length);
-      if (!new RegExp(`^\\s*[\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]`).test(rest)) break;
+      if (!new RegExp(`^\\s*[${CIRCLED_CLASS}]`).test(rest)) break;
     }
     return out;
   };
-  const CIRCLED_REF = () => new RegExp(`判据\\s*([\u2460-\u2473\u3251-\u325F\u32B1-\u32BF])`, 'g');
+  const CIRCLED_REF = () => new RegExp(`判据\\s*([${CIRCLED_CLASS}])`, 'g');
   const GUARD_NAME = /(verify-[a-z-]+\.mjs)/;
   /** 判定（与 canary **共用**）：返回该行里「本文件没有、且未指名护栏」的圈号列表。 */
   const unresolvedRefs = (mine, line) => {
@@ -2931,6 +2937,84 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail('ADR 节号护栏 canary 失效：**没有任何** ADR 解析出节号（解析器失效 ⇒ 判定会静默跳过）');
   }
   console.log(`Doc code refs: ADR 节号引用 ${adrSecRefs} 处（均指向该 ADR 真实存在的节）`);
+}
+
+// ── ㊲ 文档里「`` `verify-x.mjs` `` + 紧邻的判据编号」的**编号**必须在该护栏里存在（2026-10-09，审计 §4.239）──
+// 【为什么】判据 ㉟ 锁了**护栏文件名**存在，判据 ㉞ 锁了**护栏文件里**的「判据 N」可解析 ——
+//   而**文档里**把两者**配对**写的形态（如 `THIRD_PARTY_NOTICES.md` 的
+//   「覆盖范围由护栏锁定（`` `tests/parity/verify-doc-code-refs.mjs` `` ⑲）」）**从未被查**：
+//   护栏**内部重排编号**后，这类文档引用会**静默指向该护栏里不存在的判据**。
+//   实测：当前状态文档 **31** 处配对引用，**当前 0 处违规**（**预防性**）。
+// 【判据】`` `…verify-x.mjs` `` 收尾后 **≤6 个非反引号字符**内出现的圈号，必须 ∈ 该护栏的判据头集合。
+//   ⚠️ **窗口必须紧（≤6）**：实测用「同行 40 字符」的宽窗口会得 **17 处假阳性** ——
+//      它们同行里另有**来自别处**的圈号：D 表决策行的 `①…⑤` 枚举、散文里的「① ②」标记。
+//   ⚠️ 扫描面 = **当前状态文档**（排除 `docs/qualification/`、`docs/plans/archive/`）：
+//      记录类里有**刻意反例**（审计条目描述「某护栏里没有该编号」的表格行）
+//      与**历史枚举标记**（archive 计划里的 D 表行）⇒ 纳入会恒报错。
+//   ⚠️ **已知局限（如实声明）**：只判「编号在不在该护栏里」，**不判**它是不是作者想指的那一条判据。
+{
+  /** 护栏短名 → 该护栏判据头里的圈号集合（判定与 canary **共用**）。 */
+  const headerSpace = new Map();
+  for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
+    const set = new Set();
+    for (const l of readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+      const m = /^\s*\/\/ ──\s*(.*)$/.exec(l);
+      if (m === null) continue;
+      let rest = m[1];
+      for (;;) {
+        const t = new RegExp(`^\\s*([${CIRCLED_CLASS}])(?:-?([a-z]))?\\s*(?:[+·/、]\\s*)?`).exec(rest);
+        if (t === null) break;
+        set.add(t[1]);
+        rest = rest.slice(t[0].length);
+        if (!new RegExp(`^\\s*[${CIRCLED_CLASS}]`).test(rest)) break;
+      }
+    }
+    headerSpace.set(rel.split('/').pop(), set);
+  }
+  const PAIR_RE = new RegExp('`([^`\\n]*?verify-[a-z-]+\\.mjs)`[^`\\n]{0,6}?([' + CIRCLED_CLASS + '])', 'g');
+  const RECORD_DIRS = ['docs/qualification/', 'docs/plans/archive/'];
+  let pairRefs = 0;
+  const pairBad = [];
+  for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
+    if (RECORD_DIRS.some((d) => rel.startsWith(d))) continue;
+    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(PAIR_RE)) {
+        const name = m[1].split('/').pop();
+        if (!headerSpace.has(name)) continue;      // 护栏名存在性由判据 ㉟ 单独锁
+        pairRefs += 1;
+        if (headerSpace.get(name).has(m[2])) continue;
+        pairBad.push(`${rel}:${i + 1}  \`${name}\` 里没有判据 ${m[2]}（该护栏的判据头是 ${[...headerSpace.get(name)].join(' ') || '（无编号）'}）`);
+      }
+    });
+  }
+  for (const b of pairBad) {
+    fail(`文档里把护栏名与判据编号**配对**写错了：${b}`
+      + ' —— 护栏内部重排编号后这类引用会静默失效；请改编号或写明「本护栏的判据」');
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 31，下限 20）
+  if (pairRefs < 20) {
+    fail(`只解析出 ${pairRefs} 处「护栏名 + 紧邻判据编号」引用（下限 20 = 立此判据时的基线 31 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（判定与 canary **共用** headerSpace / PAIR_RE）
+  // ⚠️ **样本运行时拼接**（本判据的注释里必然出现该形态）
+  const GN = 'verify-' + 'release-gate.mjs';
+  const sampleLine = (g, n) => '见 `' + g + '` ' + n + '。';
+  const hitOf = (line) => {
+    const out = [];
+    for (const m of line.matchAll(new RegExp(PAIR_RE.source, 'g'))) out.push(m[2]);
+    return out;
+  };
+  if (hitOf(sampleLine(GN, '⑲')).join('') !== '⑲') {
+    fail('护栏名+编号配对 canary 失效：紧邻形态未被解析出来');
+  }
+  if (hitOf('见 `' + GN + '` 的应用内对话框节）：① 说明。').length !== 0) {
+    fail('护栏名+编号配对 canary 过宽：**远离**的枚举标记 `①` 被当成了判据编号（窗口必须紧）');
+  }
+  if (headerSpace.size < 20) {
+    fail(`护栏名+编号配对 canary 失效：只解析出 ${headerSpace.size} 个护栏的判据头（下限 20）`);
+  }
+  console.log(`Doc code refs: 护栏名+编号配对引用 ${pairRefs} 处（编号均在该护栏里存在）`);
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
