@@ -2884,6 +2884,63 @@ if (cssLayerAnchor === undefined) {
     + `${rows.filter((r) => r.status === 'defaulted').length} / **missing ${missing}**，载体见各条 ref）`);
 }
 
+// ── 「声明了但没人消费」的**块类型**字段必须登记（2026-10-10，审计 §4.251）──
+// 【为什么】`PdfBlock` 的 `list` 变体**声明了** `ordered` 与每项的 `task` / `checked`，
+//   而渲染器 `case 'list'` **一个都没用** ⇒ 实测：有序列表变成无序（且丢起始编号）、
+//   任务列表 checkbox 丢失。这与「漏传可选协作者」**同族**，只是发生在**块类型**上 ——
+//   而上一轮的「死选项」普查**只扫了 options 对象**（透镜漏了一半）。
+// 【判据】这三个字段**要么**在 `case 'list'` 渲染分支里被消费，
+//   **要么**在 `PDF_LIST_UNCONSUMED` 例外表里带理由 + 存在的 `ref`。
+//   修好后从例外表删掉即可（判据仍绿）；**新增一个「声明了但没消费」的字段会被抓到**。
+{
+  const SRC = 'packages/export/src/index.ts';
+  const src = readFileSync(resolve(root, SRC), 'utf8');
+  const variant = /type: 'list';([\s\S]*?)\n/.exec(src);
+  const at = src.indexOf("case 'list':");
+  const caseWindow = at < 0 ? '' : src.slice(at, at + 400);
+  const FIELDS = ['ordered', 'task', 'checked'];
+  // 例外表（**按被豁免对象分表**：本表只管 `PdfBlock.list` 的这三个字段）
+  const PDF_LIST_UNCONSUMED = new Map([
+    ['ordered', ['渲染器只输出 `ul` ⇒ 有序列表变无序、起始编号也丢', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
+    ['task', ['渲染器不输出 checkbox ⇒ 任务列表退化为普通列表', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
+    ['checked', ['同上（`checked` 同样未被消费）', 'docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md']],
+  ]);
+  if (variant === null || at < 0) {
+    fail(`无法定位 ${SRC} 的 \`PdfBlock.list\` 变体或 \`case 'list'\` 渲染分支 —— 锚点漂移会让本判据**空转**`);
+  } else {
+    for (const f of FIELDS) {
+      if (!new RegExp(`\\b${f}\\s*:`).test(variant[1])) {
+        fail(`锚点漂移：\`PdfBlock.list\` 变体里已找不到字段 \`${f}\` —— 本判据需同步（不得静默放宽）`);
+        continue;
+      }
+      const consumed = new RegExp(`\\b${f}\\b`).test(caseWindow);
+      const exempt = PDF_LIST_UNCONSUMED.get(f);
+      if (consumed) {
+        if (exempt !== undefined) fail(`\`${f}\` **已在渲染器里被消费**，请从 PDF_LIST_UNCONSUMED 删除（例外表过期）`);
+        continue;
+      }
+      if (exempt === undefined) {
+        fail(`\`PdfBlock.list\` 声明了 \`${f}\`，但 \`case 'list'\` 渲染器**未消费**、也不在例外表里`
+          + ' —— 「声明了但没人消费」= 静默降级，必须登记');
+        continue;
+      }
+      if (typeof exempt[0] !== 'string' || exempt[0] === '') fail(`例外 \`${f}\` 缺理由`);
+      if (!existsSync(resolve(root, exempt[1]))) fail(`例外 \`${f}\` 的 \`ref\` 指向的文件不存在：${exempt[1]}`);
+    }
+    // canary：两向（与判定**共用**同一谓词）
+    const declaredUnconsumed = (text) => FIELDS.some((f) => !new RegExp(`\\b${f}\\b`).test(text));
+    if (!declaredUnconsumed('content.push({ ul: items })')) {
+      fail('块类型字段 canary 失效：**未消费**的样本未被检出');
+    }
+    if (declaredUnconsumed('content.push({ ol: items, task: 1, checked: 1, ordered: 1 })')) {
+      fail('块类型字段 canary 失效：**已消费**的样本被误判');
+    }
+  }
+  console.log(`Settings contract: \`PdfBlock.list\` 的 ${FIELDS.length} 个字段已核（`
+    + `${FIELDS.filter((f) => new RegExp(`\\b${f}\\b`).test(caseWindow)).length} 个被消费 / `
+    + `**${PDF_LIST_UNCONSUMED.size} 个登记为未消费**，载体见例外表 ref）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
