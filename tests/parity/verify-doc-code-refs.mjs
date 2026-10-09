@@ -2687,8 +2687,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //   ⚠️ 扫描面 = **只护栏**（`tests/parity/verify-*.mjs`）：`tools/*.mjs` 用的是**它自己的**临时编号
 //      （如 `audit-typora-preferences.mjs` 的「绝对判据 1 / 2」），不属本约定。
 //   ⚠️ **自排除**（本判据的报错消息与 canary 样本里必然出现该形态）。
-//   ⚠️ **已知局限（如实声明）**：只判「有没有写护栏名」，**不判写的是不是对的** ——
-//      写错护栏名（如把 `verify-release-gate.mjs` 写成 `verify-build-pipeline.mjs`）本判据看不出。
+//   ✅ **原「已知局限」已于 2026-10-09 收口（审计 §4.242）**：原写「只判『有没有写护栏名』，
+//      **不判写的是不是对的**」—— 现**指名的护栏必须真的有该编号**（错配会红）。
+//      ⚠️ **残余局限（如实声明）**：只判「编号**在不在**那个护栏里」，**不判**它是不是作者想指的那一条。
 {
   /** 判据头行里的**全部**圈号 —— `// ── ① + ② 核心包…` ⇒ `[①,②]`；`// ── ③-b Windows…` ⇒ `[③]`。
    *  ⚠️ 只取**第一个**圈号会**漏掉** `① + ②` 这类合并写法（实测 `verify-adapter-contract.mjs` 的 ②）。 */
@@ -2707,13 +2708,25 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     return out;
   };
   const CIRCLED_REF = () => new RegExp(`判据\\s*([${CIRCLED_CLASS}])`, 'g');
-  const GUARD_NAME = /(verify-[a-z-]+\.mjs)/;
-  /** 判定（与 canary **共用**）：返回该行里「本文件没有、且未指名护栏」的圈号列表。 */
+  /** 护栏短名 → 该护栏判据头里的圈号集合（**含本文件**，故用全仓枚举而非 `guardFiles`）。 */
+  const guardSpace = new Map();
+  for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
+    const set = new Set();
+    for (const l of readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+      for (const c of headerNums(l)) set.add(c);
+    }
+    guardSpace.set(rel.split('/').pop(), set);
+  }
+  /** 判定（与 canary **共用**）：返回该行里「本文件没有、且**同行指名且存在的护栏也没有**」的圈号。
+   *  ⚠️ 2026-10-09（审计 §4.242）**收紧**：原实现只要同行出现**任意** `verify-*.mjs` 名就算解析 ——
+   *    那只锁了「**有没有写**」这一半，**「写得对不对」没人守**（= 本条自己的「已知局限」）。
+   *  ⚠️ 指名的护栏**不存在**时不在此报（由判据 ㉟ 单独锁文件名存在性）⇒ **不重复报**。 */
   const unresolvedRefs = (mine, line) => {
+    const named = [...line.matchAll(/verify-[a-z-]+\.mjs/g)].map((m) => m[0]).filter((g) => guardSpace.has(g));
     const out = [];
     for (const m of line.matchAll(CIRCLED_REF())) {
       if (mine.has(m[1])) continue;
-      if (GUARD_NAME.test(line)) continue;
+      if (named.some((g) => guardSpace.get(g).has(m[1]))) continue;
       out.push(m[1]);
     }
     return out;
@@ -2732,9 +2745,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
       const bad = unresolvedRefs(mine, line);
       if (bad.length === 0) return;
       const rel = relative(root, f).split('\\').join('/');
-      fail(`${rel}:${i + 1} 引用了「判据 ${bad.join('、')}」，但**本文件没有**该编号、同行也未写明护栏名`
+      fail(`${rel}:${i + 1} 引用了「判据 ${bad.join('、')}」，但**本文件没有**该编号，同行**指名且存在的护栏也没有**`
         + ' —— 判据编号是**每护栏本地**的（同一个圈号在多个护栏里含义不同）'
-        + ' ⇒ 请写成「`verify-xxx.mjs` 判据 N」');
+        + ' ⇒ 请写成「`verify-xxx.mjs` 判据 N」，且 N 必须是**那个护栏里真实存在**的编号');
     });
   }
   // [健康度型] 集合由源码内容产生 ⇒ 留余量（立此判据时基线 8，下限 5）
@@ -2763,6 +2776,15 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   if (unresolvedRefs(new Set([C]), `// ${KW} ${C} 锁的是 …`).length !== 0) {
     errors.push('判据引用护栏 canary 过宽：**本文件有的**编号被要求指名护栏（会大面积误报）');
+  }
+  // canary：**「写得对不对」这一半**（2026-10-09，审计 §4.242 收紧）——
+  //   ① 指名了一个**存在且真有该编号**的护栏 ⇒ 不报；② 指名了一个**存在但没该编号**的护栏 ⇒ 必须报。
+  if (unresolvedRefs(new Set(), `// ${G} ${KW} ${'⑦'} 的谓词 …`).length !== 0) {
+    errors.push('判据引用护栏 canary 失效：指名了**真有该编号**的护栏仍被判为未解析');
+  }
+  if (unresolvedRefs(new Set(), `// ${G} ${KW} ${'㊿'} …`).join('') !== '㊿') {
+    errors.push('判据引用护栏 canary 失效：指名了**存在但没该编号**的护栏**未被报出**'
+      + '（只锁了「有没有写护栏名」这一半）');
   }
   if (unresolvedRefs(new Set(), `// ${KW} ${C} 锁的是 …`).join('') !== C) {
     errors.push('判据引用护栏 canary 失效：本文件没有该编号且未指名护栏时**未被报出**');
