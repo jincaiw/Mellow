@@ -1982,6 +1982,54 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ㉕ 「已判定**无真值源**的数字」不得在活文档里复述（2026-10-09，审计 §4.223）──────────────
+// 立此条的原因（实测）：`13,625 行` 曾被 §4.94 判为「**全仓无出处、口径未声明**」并**改为引用真值源**
+//   —— 但**只改了两处**（`editor-core.md` / `docs/architecture/README.md`），
+//   `docs/architecture/migration.md` 与 `packages/editor-core/README.md` **仍在复述它**
+//   （**「修一处 ≠ 修一类」第 10 次**）。
+// ⚠️ 这类数字**没有真值源可核对** ⇒ 只能**登记** + **禁止在活文档复述**
+//   （同 `D_TABLE_NOT_DECLARED` 的 idiom：登记「已知坏字面量」，扫「别处复述」）。
+{
+  // 已判定「无真值源」的字面量 → 判定出处（登记理由）
+  const UNSOURCED = new Map([
+    ['13,625', '§4.94：CoreEditor 行数「全仓无出处、口径未声明」⇒ 已改为引用真值源（199 个文件）'],
+  ]);
+  // 更正块 / 审计记录**需要引用**它 ⇒ 逐行豁免（含「无出处 / 无真值源」两类措辞）
+  const NOTE = /原写|原文|更正|漂移|已改为|也写|不存在|无出处|无真值源/;
+  const AUDIT_REL = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const SCAN_EXTS = ['md', 'mjs', 'cjs', 'ts', 'tsx', 'rs', 'json', 'yml', 'yaml'];
+  const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
+  /** 返回 `text` 里「复述了无真值源数字」的清单（判定与 canary **共用**本谓词）。 */
+  const unsourcedHits = (text) => {
+    const out = [];
+    text.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      if (NOTE.test(line)) return;
+      for (const lit of UNSOURCED.keys()) if (line.includes(lit)) out.push(`L${i + 1} ${lit}`);
+    });
+    return out;
+  };
+  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+    const rel = relative(root, f);
+    if (rel === AUDIT_REL) continue;                       // 审计文档是**记录**，需要引用它
+    if (resolve(f) === resolve(SELF)) continue;            // 本护栏自身含 canary 样本
+    const bad = unsourcedHits(readFileSync(f, 'utf8'));
+    if (bad.length > 0) {
+      fail(`${rel} 复述了**无真值源**的数字：${bad.join('、')} —— `
+        + `${[...UNSOURCED.values()].join('；')}；请改为**引用真值源**，或把该数字登记进 UNSOURCED（带理由）`);
+    }
+  }
+  // canary：三向（判定与 canary 共用 unsourcedHits）
+  if (unsourcedHits('规模：13,625 行。').length !== 1) {
+    errors.push('无真值源数字护栏 canary 失效：复述未被检出');
+  }
+  if (unsourcedHits('> 原写「13,625 行」，已改为引用真值源。').length !== 0) {
+    errors.push('无真值源数字护栏 canary 失效：更正说明里的引用未被豁免');
+  }
+  if (unsourcedHits('规模：199 个文件。').length !== 0) {
+    errors.push('无真值源数字护栏 canary 过宽：真值源数字被误判');
+  }
+}
+
 // ── ㉑ 「零跨包消费者」的包，其分诊必须在**审计文档的待裁决登记表**里可发现 ───────────────
 // 立此条的原因（实测，2026-10-08 审计 §4.160）：`PKG_NO_CONSUMER_EXEMPT` 有 **4** 条
 // （`document-model` / **`editor-react`** / `shared` / `workspace`），而**登记表第 14 行与

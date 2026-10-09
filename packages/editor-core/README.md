@@ -13,7 +13,7 @@
 ```
 editor-core/
 ├── CoreEditor/          # MarkEdit 上游 CoreEditor（固定 commit 81da2a20；改动登记见 UPSTREAM.md）
-│   ├── src/             # modules/styling/api/bridge（13,625 行）
+│   ├── src/             # modules/styling/api/bridge（规模以 `upstream-manifest.json` 的 199 个文件为真值源）
 │   ├── test/            # jest 185 用例（jsdom，可运行）
 │   └── package.json     # yarn 4.17.1（corepack）
 ├── src/                 # Mellow 平台适配层（public API）

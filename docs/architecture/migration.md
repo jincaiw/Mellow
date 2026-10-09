@@ -55,5 +55,6 @@ Phase 7  QA（parity/IME 矩阵/10MB 基准）
 ## 基线快照
 
 - 上游：`81da2a20`（2026-08-09）
-- CoreEditor：13,625 行；Swift：28,781 行
+- CoreEditor：规模以 `packages/editor-core/upstream-manifest.json` 为真值源（**199 个文件**）
+- Swift：28,781 行（**上游快照值，本仓无真值源可核对**，如实声明）
 - 已实现：vendored ✓、Tauri 壳 ✓、Host fs/bridge ✓、marker reveal Phase 1 ✓
