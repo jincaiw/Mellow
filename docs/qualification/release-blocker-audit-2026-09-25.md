@@ -80,6 +80,7 @@ Release verdict: NO-GO：6 项未闭环
 | 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **待裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
 | 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **待裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
 
+| 20 | §4.250 | **PDF 导出的公式与图表渲染不出来**（`PdfEnv.renderMath` / `renderMermaid` 调用点未提供 ⇒ 降级为源码文本）；台账 `P0-EXPORT-001` 已如实改为 `IMPL` | **待裁决** —— 两条路都能修，但成本差一个量级：A1 给 pdfmake 补 webview 栅格化渲染器（+100–200 行、位图、本机不可验）；A2 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml`，实跑确认含 `<math>` / mermaid / 内联图片）；A3 维持现状 + 明说文案。**换 PDF 引擎属架构级改动** ⇒ 未自行改 | `docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md` |
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
 ### 2.1 三项**自身证据已齐备**，只被全局策略挡住
@@ -15364,6 +15365,40 @@ renderMermaid?  →  case 'mermaid' : env.renderMermaid ? {image} : {text: code}
 - `renderMath` / `renderMermaid` 的修复**需要渲染器**（把 TeX / Mermaid 栅格化），
   本轮**不做**：它属**实现工作**而非接线，且改的是用户可见的导出件内容。
 - 判据只核「字段名出现在调用点实参窗口里」——**不**核语义是否正确（那要靠行为测试）。
+
+## 4.250 收口 §4.249 留下的 `blockedBy`：**PDF 的公式与图表**该怎么修？（2026-10-10）
+
+**怎么发现的**：§4.249 把 `P0-EXPORT-001` 改为 `IMPL` 并写了
+`blockedBy: pdf-renderer-collaborators-pending` —— 但那个字符串只说「**等一个渲染器**」，
+**没说「还有一条更便宜的路」**。本轮把这句话展开成**一个可裁决的问题**。
+
+**实跑证据（同一份含公式 / Mermaid / 图片的文档）**：
+
+| 能力 | pdfmake 管线（与 App 同形调用） | HTML 打印管线（`buildPrintHtml`） |
+|---|---|---|
+| 行内 `$x^2$` | **字面**（`parseInline` 没 token 化行内数学） | **`<math>`（MathML）** ✅ |
+| 块级 `$$…$$` | **`{text:"x^2",italics:true,style:"code"}`**（源码） | **`<math>`** ✅ |
+| ` ```mermaid ` | **`{text:"graph TD;A-->B",style:"code"}`**（源码） | **内联 mermaid bundle** ✅ |
+| 图片 | 本轮已修 | `<img>`（内联 data URL） ✅ |
+| 分页 / 页眉页脚 / 大纲 | pdfmake 原生 | 靠 `@page` CSS（**大纲能力待确认**） |
+
+HTML 打印管线那一列是**实跑**得出的（`buildPrintHtml(DOC, {}, { resolveImage })` 的产物里
+`<math` / mermaid bundle / `<img` 全部命中，且带 `mellow-print-ready` 脚本）。
+
+⇒ **关键事实：修这个问题有两条路，成本差一个量级**：
+A1 给 pdfmake 补一个 **webview 栅格化渲染器**（+100–200 行、位图、本机不可验）；
+A2 **改用已经实现、已有单测的 HTML 打印管线**（一次性解决公式 / 图表 / 图片，且是矢量）。
+
+**为什么本轮不改**：**换 PDF 引擎属架构级改动** —— `AGENTS.md` 明写「**不要自行修改架构，先报告冲突**」，
+且该条比常设授权**更具体因而优先**。⇒ 立 **ADR-0037（Proposed）**，把两条路的事实与代价摆出来。
+
+**登记**：审计「待裁决项登记表」**第 20 行**（载体 = ADR-0037）· 门禁 `PENDING_ADRS` 增列 ·
+台账 `P0-EXPORT-001` 的 `blockedBy` 由 `pdf-renderer-collaborators-pending` 改为
+**`pdf-renderer-decision-pending（ADR-0037）`** —— 让「等什么」指向**决策**，而不是「等一个渲染器」。
+
+**范围限制（如实声明）**：`buildPrintHtml` 的**产物**是实跑验证的；但「把该产物打印成 PDF」
+这一步（隐藏打印视图 + 系统「存储为 PDF」）**未**实现也**未**验证 ——
+ADR-0037 的 A2 里把「大纲与页眉页脚能否由 `@page` 等价实现」列为**必须先确认**的前置。
 
 ## 五、本次审计做的改动（非策略性）
 

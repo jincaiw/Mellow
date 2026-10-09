@@ -86,7 +86,7 @@ mellow/
 
 ### 判决（ADR）
 
-见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ **ADR-0036**（**最新编号以该目录为准**）。
+见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ **ADR-0037**（**最新编号以该目录为准**）。
 其中 **ADR-0020 §1 与 ADR-0024 Q2=B1 的「pre-release」结论已被 [ADR-0031](docs/adr/ADR-0031-release-status-promotion.md)（发布状态转正：正式发布）取代** ——
 旧 ADR 原文**保留为历史记录**（ADR 只追加、不改写结论）；**引用发布状态时以 ADR-0031 为准**。
 

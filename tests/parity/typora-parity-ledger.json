@@ -642,7 +642,7 @@
         "linux-ci",
         "export-corpus"
       ],
-      "blockedBy": "pdf-renderer-collaborators-pending"
+      "blockedBy": "pdf-renderer-decision-pending（ADR-0037）"
     },
     {
       "id": "P0-PERF-001",

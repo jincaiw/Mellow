@@ -252,6 +252,11 @@ const PENDING_ADRS = [
   // 修它会改变导出件内容 ⇒ 按「改变用户可见结果属产品决策」立 ADR-0036（**未擅自改渲染行为**）。
   ['docs/adr/ADR-0036-export-path-syntax-feature-parity.md',
     '语法特性开关与导出路径的接线缺口：三条渲染路径要不要语法一致'],
+  // 2026-10-10（审计 §4.250）：PDF 里公式与图表渲染不出来（需栅格化渲染器）。
+  // 台账 P0-EXPORT-001 的 blockedBy 已指向本 ADR —— **换 PDF 引擎属架构级改动**（AGENTS.md），
+  // 故只登记两条路的事实与代价（pdfmake 补渲染器 vs 复用已实现的 HTML 打印管线），**未自行改**。
+  ['docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md',
+    'PDF 导出的公式与图表：给 pdfmake 补渲染器，还是改用已实现的 HTML 打印管线'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
