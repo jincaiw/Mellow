@@ -13755,6 +13755,54 @@ skill **§198** · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
+## 4.217 `LS_CHECKED_SETTINGS` 第一列**只进报错消息**（拼错静默）+ **沙箱复制面 ⊇ 护栏读面** 落判据（「只锁了一半」同族**第 46 次**，2026-10-09）
+
+### 一、新透镜：**「跨层配对」的族**
+
+先排除两对（**已有判据**）：
+- **主题文件 ↔ 注册表**：注册表（`themes/index.ts`）在 **vendored `CoreEditor`** 里，护栏**不扫该树** ⇒ **非本仓面**；
+- **i18n zh ↔ en**：`enUS: Record<keyof typeof zhCN, string>` ⇒ **TS 类型强制**（编译期，CI 会跑）。
+
+再用**宽名过滤**重列全仓常量表 ⇒ **77 张**（上轮只列 **22** —— **名过滤漏了 `_UNUSED` / `_INERT` / `_DEVIATIONS` 等**）
+⇒ 逐个判「是不是例外表」⇒ 找到 **1 张真的缺双向**。
+
+### 二、发现：`LS_CHECKED_SETTINGS` 的**第①列不参与判定**
+
+`verify-menu-contract.mjs` 的 `LS_CHECKED_SETTINGS`（3 行 `[设置项 id, applySetting 定位标记, 菜单命令 id, 标记类型]`）：
+- 判定用的是 **②③ 两列**（caseMarker / commandId 必须存在 + 必须自增 `setMenuCheckTick`）；
+- ⚠️ **第①列 `settingId` 只出现在 `fail(...)` 消息里** ⇒ **拼错静默**。
+
+**注入验证**：把第一列改成 `editor.spellcheckTYPO`（**不存在**）⇒ **全链 `npm run parity` 绿** ⇒ **真缺口**
+（**「消息里的字面量」家族**，同 §4.188：不参与判定 ⇒ 不会红但**会骗人** —— 报错会**指向一个不存在的设置**）。
+
+### 三、处置 + 验证
+
+给该表加**双向核对**：第①列必须是**真实的设置 id**（真值源 = `packages/settings/src/index.ts`；
+⚠️ 口径与 `verify-settings-contract.mjs` 一致：**同行含 `type:`** ⇒ **刻意排除 section id**；下限 70（实测 85））。
+**注入验证 1/1**：改回 `editor.spellcheckTYPO`（**不存在**）⇒ **转红**。
+
+### 四、⚠️ 修这个缺口时**踩到沙箱**（并顺手机械化）
+
+加完判据后**全链转红**：`verify-menu-contract-guard.mjs`（**mutation 沙箱**）把护栏放进**临时目录**跑，
+而它的 `FILES` 是**手写清单（7 个文件）** ⇒ **没复制设置 schema** ⇒ 每个用例都 ENOENT。
+
+- **修**：把 `packages/settings/src/index.ts` 加进 `FILES`；
+- **并加元判据**：**`FILES` 必须覆盖护栏里每一处 `resolve(root, '…')`**（+ 下限 5（实测 10）+ 2 canary）；
+- **注入验证 1/1**：从 `FILES` 删掉该条目 ⇒ **转红**（「沙箱未复制护栏要读的文件」）。
+
+⚠️ 该耦合**本仓已踩过 3 次**（`FILES` 里的 §10b / §1b 注释 + 本轮）⇒ **机械化是必要的**。
+
+### 五、教训（PITFALLS §4.335 / skill §208）
+
+① ⚠️ **「宽名过滤」才有完备性**：上轮枚举 22 张表，本轮放宽到 **77 张** ⇒ **名过滤本身就是「扫描面」**；
+② ⚠️ **表里「不参与判定」的列**（只进消息 / 只作 label）是**独立风险面** ⇒ **必须单独核**（同 §4.188）；
+③ ⚠️ **沙箱 / 夹具的「复制面」是另一个「扫描面」** —— **护栏读面变了，它必须同步** ⇒ **元判据 `FILES ⊇ reads`**；
+④ ✅ **改护栏后要跑「全链」而不是只跑该护栏** —— 本轮正是全链才暴露沙箱问题（**单跑 `verify-menu-contract.mjs` 是绿的**）。
+
+产物：`tests/parity/verify-menu-contract.mjs`（双向核对）· `tests/parity/verify-menu-contract-guard.mjs`（`FILES` +1 + 元判据）· 审计 §4.217 · PITFALLS **§4.335** · skill **§208** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 

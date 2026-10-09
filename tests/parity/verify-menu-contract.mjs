@@ -337,6 +337,26 @@ if (/#\[cfg\(target_os/.test(menuRsSource)) {
       }
     }
   }
+  // ⚠️ **双向核对（2026-10-09，审计 §4.217）**：本表**第一列 `settingId` 原只进报错消息、不参与判定**
+  //   ⇒ 拼错**静默**（**实测**：改成 `editor.spellcheckTYPO` 后**全链 `parity` 绿**）
+  //   —— 「**消息里的字面量**」家族（同 §4.188：不参与判定 ⇒ 不会红但**会骗人**：
+  //   报错会**指向一个不存在的设置**，读者按它去查会白跑）。
+  //   ⇒ 要求它必须是**真实的设置 id**（真值源 = `packages/settings/src/index.ts`；
+  //   ⚠️ 口径与 `verify-settings-contract.mjs` 一致：**同行含 `type:`** ⇒ **刻意排除 section id**）。
+  {
+    const settingsSrc = readFileSync(resolve(root, 'packages/settings/src/index.ts'), 'utf8').replace(/\r\n/g, '\n');
+    const SETTING_IDS = new Set(settingsSrc.split('\n').filter((l) => /type:\s*'/.test(l))
+      .map((l) => /\bid:\s*'([^']+)'/.exec(l)?.[1]).filter(Boolean));
+    if (SETTING_IDS.size < 70) {
+      fail(`设置 schema 只解析出 ${SETTING_IDS.size} 个 id（下限 70 = 2026-10-09 实测 85）—— 判据锚点漂移`);
+    }
+    for (const [settingId] of LS_CHECKED_SETTINGS) {
+      if (!SETTING_IDS.has(settingId)) {
+        fail(`LS_CHECKED_SETTINGS 的 ${settingId} **不是设置 schema 里的 id** —— `
+          + '该列只进报错消息（不参与判定）⇒ 拼错不会红，但**报错会指向一个不存在的设置**');
+      }
+    }
+  }
   // 前端不得调用已移除的 legacy 状态同步命令（与 §4 的 Rust 侧禁令互补）
   const legacyCalls = ['set_menu_locale', 'set_recent_files', 'set_theme_selection', 'set_spellcheck_state', 'set_smart_punct_state'];
   const appCode = appSource.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');

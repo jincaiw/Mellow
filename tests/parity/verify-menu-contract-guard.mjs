@@ -36,6 +36,10 @@ const FILES = {
   // §1b（2026-09-30）：菜单护栏现在还**真的读取并逐条比对**跨入口菜单合同，
   // 故沙箱必须一并复制它，否则每个用例都会因「合同不存在」失败（沙箱缺文件 ≠ 被注入的缺陷）。
   'packages/commands/src/menuContract.ts': 'packages/commands/src/menuContract.ts',
+  // §4.217（2026-10-09）：菜单护栏新增了「`LS_CHECKED_SETTINGS` 的第一列必须是真实设置 id」的
+  // 双向核对（真值源 = 设置 schema）⇒ 沙箱必须一并复制它，否则每个用例都会因
+  // 「文件不存在」失败（沙箱缺文件 ≠ 被注入的缺陷）。
+  'packages/settings/src/index.ts': 'packages/settings/src/index.ts',
 };
 
 let work = '';
@@ -168,6 +172,33 @@ const CASES = [
 ];
 
 const failures = [];
+
+// ── 元判据（2026-10-09，审计 §4.217）：**沙箱复制面必须覆盖护栏的读面** ──────────────────
+// 【为什么】`FILES` 是**手写清单**；护栏一旦**新读一个文件**而这里没同步，**每个用例都会因
+//   「文件不存在」失败** —— 那是**沙箱缺文件**（**假阳性**），不是被注入的缺陷。
+//   本仓已两次踩到（见 `FILES` 里的 §10b / §1b 注释），第三次就是本轮（设置 schema）⇒ **机械化**。
+{
+  /** 返回 `src` 里「护栏读了、但沙箱没复制」的路径（判定与 canary **共用**本谓词）。 */
+  const unshippedReads = (src) => [...new Set([...src.matchAll(/resolve\(root,\s*'([^']+)'\)/g)]
+    .map((m) => m[1]))].filter((p) => !(p in FILES));
+  const guardSrc = readFileSync(GUARD, 'utf8');
+  const reads = [...new Set([...guardSrc.matchAll(/resolve\(root,\s*'([^']+)'\)/g)].map((m) => m[1]))];
+  if (reads.length < 5) {
+    failures.push(`沙箱元判据失效：护栏只解析出 ${reads.length} 处 resolve(root, '…')（下限 5 = 2026-10-09 实测 10）—— 谓词漂移`);
+  }
+  const missing = unshippedReads(guardSrc);
+  if (missing.length > 0) {
+    failures.push(`沙箱未复制护栏要读的文件：${missing.join('、')} —— \`FILES\` 是**手写清单**，`
+      + '护栏新读文件时必须同步（否则**每个用例**都会因「文件不存在」失败 = **假阳性**）');
+  }
+  // canary：两向（共用 unshippedReads）
+  if (unshippedReads("readFileSync(resolve(root, 'no/such/file.ts'), 'utf8')").length !== 1) {
+    failures.push('沙箱元判据 canary 失效：漏复制的文件未被检出');
+  }
+  if (unshippedReads("readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8')").length !== 0) {
+    failures.push('沙箱元判据 canary 过宽：已复制的文件被判为缺失');
+  }
+}
 try {
   // 基线：未注入缺陷时护栏必须全绿
   scaffold();
