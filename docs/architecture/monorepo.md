@@ -36,7 +36,8 @@ app-core     不允许直接调用 Swift / Win32 / DBus。
 
 > **⚠️ 2026-10-06 复核：下表是 2026-08 的**历史快照**，其中「未建」已全部不成立。**
 >
-> 实测（`ls packages/`）当前共 **15 个包**：
+> 实测（`ls packages/`）当前共 **15 个包**（**口径 = 全部目录**，**含 vendored `editor-core`**；
+> ⚠️ `verify-package-conventions.mjs` 的口径是 **14**，因为它**排除 vendored** —— **两个数都对**，别混）：
 > `app-core` / `commands` / `desktop-ui` / `document-model` / `editor-core` / `editor-engine` /
 > `editor-react` / `export` / `extension-api` / `host-api` / `i18n` / `settings` / `shared` / `themes` / `workspace`。
 > ⇒ 下表原标「**未建**」的 `editor-react` / `desktop-ui` / `document-model` **都已建成**；

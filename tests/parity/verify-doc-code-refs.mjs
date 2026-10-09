@@ -1728,6 +1728,47 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   console.log(`Doc code refs: editor-core.md 的「主题数」== 上游 themes/ 实际 ${actual} 个`);
 }
 
+// ── `docs/architecture/monorepo.md` 的「N 个包」必须 == `ls packages/` 目录数，且**名单**要与之相符（2026-10-09，审计 §4.203）──
+// 【为什么】该文档写「实测（`ls packages/`）当前共 **15 个包**」并**列了 15 个名字** ——
+//   实测 `packages/` 有 **15 个目录** ✅ 准确；但**护栏的口径是 14**（**排除 vendored `editor-core`**）
+//   ⇒ 两数**都对**却**容易混**（本轮实测时先判成「漂了」）。
+//   ⚠️ 属「**口径不确定**」类（PITFALLS §4.308）⇒ 数字与名单要一致，且**口径要写明**（本轮已补）。
+// 【判据】文档的「N 个包」== `packages/` 目录数；且**紧随其后列出的真实包名数** == N。
+{
+  const DOC = 'docs/architecture/monorepo.md';
+  const src = readFileSync(resolve(root, DOC), 'utf8').replace(/\r\n/g, '\n');
+  const pkgDirs = readdirSync(resolve(root, 'packages'), { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name);
+  const actual = pkgDirs.length;
+  if (actual === 0) throw new Error('packages/ 解析出 0 个目录 —— 判据锚点漂移');
+  const m = /当前共\s*\**(\d+)\**\s*个包/.exec(src);
+  if (m === null) {
+    throw new Error(`${DOC} 找不到「当前共 N 个包」—— 判据锚点漂移，别静默跳过`);
+  }
+  if (Number(m[1]) !== actual) {
+    throw new Error(`${DOC} 写「当前共 ${m[1]} 个包」，而 \`packages/\` 有 ${actual} 个目录`
+      + '（**口径 = 全部目录，含 vendored**）—— 加/删包时同步改该文档');
+  }
+  const after = src.slice(m.index, m.index + 900);
+  // ⚠️ **必须去重**：后续说明句会**重复提到**部分包名
+  //    （2026-10-09 实测：不去重时数出 24 个，去重后 15 ✅）
+  const listed = [...new Set([...after.matchAll(/`([a-z][a-z0-9-]*)`/g)]
+    .map((x) => x[1]).filter((n) => pkgDirs.includes(n)))];
+  if (listed.length !== actual) {
+    throw new Error(`${DOC} 的「${m[1]} 个包」后面只列出了 ${listed.length} 个**真实**包名`
+      + `（\`packages/\` 有 ${actual} 个）—— 名单与数字必须一致`);
+  }
+  // canary：谓词与判定共用
+  const probe = (s) => { const r = /当前共\s*\**(\d+)\**\s*个包/.exec(s); return r === null ? null : Number(r[1]); };
+  if (probe('实测（`ls packages/`）当前共 **15 个包**') !== 15) {
+    throw new Error('包数 canary 失效：形态取不到');
+  }
+  if (probe('无此形态') !== null) {
+    throw new Error('包数 canary 过宽：无锚点的样本被误判');
+  }
+  console.log(`Doc code refs: monorepo.md 的「${actual} 个包」== \`packages/\` 目录数（名单 ${listed.length} 个一致）`);
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
