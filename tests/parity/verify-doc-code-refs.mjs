@@ -2690,15 +2690,15 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     let rest = m[1];
     const out = [];
     for (;;) {
-      const t = /^\s*([①-⑳㉑-㉟])(?:-?([a-z]))?\s*(?:[+·/、]\s*)?/.exec(rest);
+      const t = new RegExp(`^\\s*([\u2460-\u2473\u3251-\u325F\u32B1-\u32BF])(?:-?([a-z]))?\\s*(?:[+·/、]\\s*)?`).exec(rest);
       if (t === null) break;
       out.push(t[1]);
       rest = rest.slice(t[0].length);
-      if (!/^\s*[①-⑳㉑-㉟]/.test(rest)) break;
+      if (!new RegExp(`^\\s*[\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]`).test(rest)) break;
     }
     return out;
   };
-  const CIRCLED_REF = () => /判据\s*([①-⑳㉑-㉟])/g;
+  const CIRCLED_REF = () => new RegExp(`判据\\s*([\u2460-\u2473\u3251-\u325F\u32B1-\u32BF])`, 'g');
   const GUARD_NAME = /(verify-[a-z-]+\.mjs)/;
   /** 判定（与 canary **共用**）：返回该行里「本文件没有、且未指名护栏」的圈号列表。 */
   const unresolvedRefs = (mine, line) => {
@@ -2744,6 +2744,14 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   if (headerNums(`// ── ${'③'}-b Windows JumpList ──`).join('') !== '③') {
     errors.push('判据引用护栏 canary 失效：带 `-b` 后缀的判据头解析错了');
+  }
+  // canary：**圈号字符类必须覆盖整个圈号区段（①–⑳ / ㉑–㉟ / ㊱–㊿）** ——
+  // ⚠️ 实测踩到：原写 `[①-⑳㉑-㉟]`（**枚举式**）⇒ 新编号 **㊱ 不可见** ⇒ 本判据**静默漏掉**它
+  //   （同族：「枚举类 ⇒ 完备性无法自证」）。现用**码位区间**，并在此**正向锁住**。
+  if (headerNums(`// ── ${'㊱'} 新增判据 ──`).join('') !== '㊱'
+    || unresolvedRefs(new Set(), `// ${KW} ${'㊿'} …`).join('') !== '㊿') {
+    errors.push('判据引用护栏 canary 失效：圈号字符类**没有覆盖 ㊱–㊿**'
+      + '（枚举式字符类会静默漏掉新编号 —— 必须用码位区间）');
   }
   if (unresolvedRefs(new Set([C]), `// ${KW} ${C} 锁的是 …`).length !== 0) {
     errors.push('判据引用护栏 canary 过宽：**本文件有的**编号被要求指名护栏（会大面积误报）');
@@ -2834,6 +2842,95 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail('护栏名引用 canary 失效：占位符表取不到（豁免会静默失效）');
   }
   console.log(`Doc code refs: 护栏名引用 ${guardRefChecked} 处（均已存在或登记为占位符）`);
+}
+
+// ── ㊱ 「`ADR-XXXX §N`」的**节号**必须是该 ADR 里真实存在的节（2026-10-09，审计 §4.237）──
+// 【为什么】判据 ⑳ 锁了 `PRD §N` / `master-plan §N`，判据 ㉒ 锁了 `ADR-NNNN` 的**编号存在** ——
+//   而 `ADR-XXXX §N` 的**节号**这一半**从未被查过** ⇒ ADR 被改写 / 重排后，
+//   引用会**静默指向一个不存在的节**（读者按它去该 ADR 里找，而那里什么都没有）。
+//   实测：全仓 **46** 处引用（含本判据注释里的 1 处示范），**当前 0 处违规**（**预防性**，与判据 ⑪ 同类）。
+// 【判据】`ADR-XXXX §N` 里的 N 必须 ∈ 该 ADR 的**节号集合**。
+//   ⚠️ **节号集合的口径**（实测踩到）：本仓 ADR 的节号有**两种**形态 ——
+//      ① **标题**里的编号（`## 1. …`）；② **`## 决策` 下的行首编号列表项**（`1.` / `2.` …）。
+//      只取标题会**误报 25 处**（实测：`ADR-0020 §1/§2` 指的是它「决策」列表的第 1 / 2 条，
+//      而该 ADR 的标题**根本没有编号**）。
+//   ⚠️ 扫描面 = 全部 tracked 文档 + 代码（**含记录类**）：与 ㉟ 同理 —— 「节号」是**可核对的引用**。
+//   ⚠️ **已知局限（如实声明）**：只判「N **是否出现过**」，**不判**它指的是不是作者想指的那一节。
+{
+  const ADR_SEC_RE = /ADR-(\d{4})\s*§\s*(\d+)/g;
+  const adrByNum = new Map();
+  for (const rel of committedFiles()) {
+    const m = /^docs\/adr\/ADR-(\d{4}).*\.md$/.exec(rel);
+    if (m !== null) adrByNum.set(m[1], rel);
+  }
+  /** 节号 = **标题编号** ∪ **行首编号列表项**（判定与 canary **共用**）。 */
+  const secNumsOf = (src) => {
+    const out = new Set();
+    for (const l of src.split('\n')) {
+      let m = /^#{2,4}\s*§?\s*(\d+)[.、)]?[\s　]/.exec(l);
+      if (m !== null) { out.add(m[1]); continue; }
+      m = /^\s*(\d+)\.\s+\S/.exec(l);
+      if (m !== null) out.add(m[1]);
+    }
+    return out;
+  };
+  const cache = new Map();
+  const secsOfAdr = (n) => {
+    if (!cache.has(n)) {
+      cache.set(n, adrByNum.has(n)
+        ? secNumsOf(readFileSync(resolve(root, adrByNum.get(n)), 'utf8').replace(/\r\n/g, '\n'))
+        : null);
+    }
+    return cache.get(n);
+  };
+  let adrSecRefs = 0;
+  const missing = new Map();
+  const SCAN = /\.(?:md|mjs|cjs|js|ts|tsx|json|yml|yaml)$/;
+  for (const rel of committedFiles().filter((f) => SCAN.test(f))) {
+    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(ADR_SEC_RE)) {
+        adrSecRefs += 1;
+        const secs = secsOfAdr(m[1]);
+        if (secs === null) {
+          fail(`${rel}:${i + 1} 引用了 ADR-${m[1]}，但**仓库里没有这份 ADR**`
+            + '（判据 ㉒ 单独锁编号存在性；此处不重复报）');
+          continue;
+        }
+        if (secs.has(m[2])) continue;
+        const key = `ADR-${m[1]} §${m[2]}`;
+        if (!missing.has(key)) missing.set(key, []);
+        missing.get(key).push(`${rel}:${i + 1}`);
+      }
+    });
+  }
+  for (const [key, locs] of missing) {
+    fail(`${key} 的**节号在该 ADR 里不存在**：${locs.slice(0, 3).join('、')}`
+      + ' —— 「节号」是**可核对的引用**（口径：标题编号 ∪ 行首编号列表项）');
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 46，下限 30）
+  if (adrSecRefs < 30) {
+    fail(`只解析出 ${adrSecRefs} 处 \`ADR-XXXX §N\` 引用（下限 30 = 立此判据时的基线 46 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（判定与 canary **共用** secNumsOf / secsOfAdr）
+  // ⚠️ 样本**运行时拼接**（本判据的注释里必然出现 `ADR-XXXX §N` 这一形态）
+  const SAMPLE = ['## 1. 甲', '', '## 决策', '', '1. 乙', '2. 丙', ''].join('\n');
+  const got = secNumsOf(SAMPLE);
+  if (!(got.has('1') && got.has('2'))) {
+    fail('ADR 节号护栏 canary 失效：**行首编号列表项**未被计入节号（会误报 25 处）');
+  }
+  if (secNumsOf('正文里提到 §7，但标题与行首列表都没有编号\n').size !== 0) {
+    fail('ADR 节号护栏过宽：正文里的 `§7` 被当成了节号（必须**行首**锚定）');
+  }
+  // ⚠️ 实测踩到：首版 canary 用 `ADR-0002` 当正样本，而它**根本没有编号节**（全文只有散文）
+  //   ⇒ canary 自己失效。改为**结构性**断言：ADR 映射必须非空，且**至少一份**解析出非空节号集合。
+  if (adrByNum.size < 30) {
+    fail(`ADR 节号护栏 canary 失效：只解析出 ${adrByNum.size} 份 ADR（下限 30）—— 目录解析漂移`);
+  }
+  if (![...adrByNum.keys()].some((n) => (secsOfAdr(n) ?? new Set()).size > 0)) {
+    fail('ADR 节号护栏 canary 失效：**没有任何** ADR 解析出节号（解析器失效 ⇒ 判定会静默跳过）');
+  }
+  console.log(`Doc code refs: ADR 节号引用 ${adrSecRefs} 处（均指向该 ADR 真实存在的节）`);
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
