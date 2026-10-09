@@ -2032,6 +2032,57 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ㉖ `relative()` 的结果若参与**比较**，必须先按 `/` 归一化（2026-10-09，审计 §4.223）──────────
+// 立此条的原因（实测，**本项目已踩两次**）：Windows 上 `relative()` 产出 `\` ⇒ 与含 `/` 的**字面量/常量**
+//   比较时**静默失配**。§4.223 本轮就因此把 CI 打红（本机全绿）：`rel === AUDIT_REL` 在 Windows 上恒 false
+//   ⇒ **审计文档的排除失效** ⇒ 判据去扫了它不该扫的文件。
+// ⚠️ **只锁「参与比较」的形态**（`===` / `!==` / `.includes` / `.startsWith` / `.endsWith` / `.has`）——
+//   **仅用于报错消息**的 `relative()`（外观问题）**不锁**（避免无收益的 churn）。
+{
+  const SCAN_EXTS = ['mjs', 'cjs', 'ts', 'tsx'];
+  const NORM = /\.split\(['"]\\\\['"]\)\.join\(['"]\/['"]\)|\.replace\(\/\\\\\/g,\s*['"]\/['"]\)/;
+  /** 返回 `src` 里「`relative()` 的结果参与比较却没归一化」的清单（判定与 canary **共用**本谓词）。 */
+  const unnormalizedCompares = (src) => {
+    const lines = src.replace(/\r\n/g, '\n').split('\n');
+    const out = [];
+    lines.forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      const m = /const\s+(\w+)\s*=\s*relative\(/.exec(line);
+      if (m === null || NORM.test(line)) return;              // 已归一化 ⇒ 合法
+      const v = m[1];
+      const CMP = new RegExp(`(${v}\\s*[!=]==?\\s*[^\\s]|[!=]==?\\s*${v}\\b|\\.includes\\(\\s*${v}\\b|${v}\\.includes\\(|\\.startsWith\\(\\s*${v}\\b|${v}\\.startsWith\\(|\\.endsWith\\(\\s*${v}\\b|${v}\\.endsWith\\(|\\.has\\(\\s*${v}\\b)`);
+      for (let j = i + 1; j < Math.min(lines.length, i + 41); j += 1) {
+        if (CMP.test(lines[j])) { out.push(`L${i + 1}（${v} 在 L${j + 1} 参与比较）`); break; }
+      }
+    });
+    return out;
+  };
+  const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
+  let checked = 0;
+  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+    if (resolve(f) === resolve(SELF)) continue;               // 本护栏自身含 canary 样本
+    const src = readFileSync(f, 'utf8');
+    if (!src.includes('relative(')) continue;
+    checked += 1;
+    const bad = unnormalizedCompares(src);
+    if (bad.length > 0) {
+      fail(`${relative(root, f).split('\\').join('/')} 里 \`relative()\` 的结果**参与比较却没归一化**：${bad.join('、')}`
+        + ' —— Windows 上 `relative()` 产出 `\\` ⇒ 与含 `/` 的字面量 / 常量比较会**静默失配**'
+        + '（本项目已踩两次：本机全绿而 CI 红）⇒ 请 `.split(\'\\\').join(\'/\')` 或 `.replace(/\\\\/g, \'/\')` 后再比');
+    }
+  }
+  if (checked < 5) {
+    fail(`路径归一化普查只检查了 ${checked} 份含 \`relative(\` 的护栏（下限 5）—— 扫描面漂移`);
+  }
+  // canary：两向（判定与 canary 共用 unnormalizedCompares）
+  if (unnormalizedCompares("const rel = relative(root, f);\nif (rel === 'a/b.md') {}\n").length !== 1) {
+    errors.push('路径归一化护栏 canary 失效：未归一化却参与比较未被检出');
+  }
+  if (unnormalizedCompares("const rel = relative(root, f).split('\\\\').join('/');\nif (rel === 'a/b.md') {}\n").length !== 0) {
+    errors.push('路径归一化护栏 canary 过宽：已归一化的被判为违规');
+  }
+}
+
 // ── ㉑ 「零跨包消费者」的包，其分诊必须在**审计文档的待裁决登记表**里可发现 ───────────────
 // 立此条的原因（实测，2026-10-08 审计 §4.160）：`PKG_NO_CONSUMER_EXEMPT` 有 **4** 条
 // （`document-model` / **`editor-react`** / `shared` / `workspace`），而**登记表第 14 行与
