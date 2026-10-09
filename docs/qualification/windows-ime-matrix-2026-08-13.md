@@ -1,7 +1,7 @@
 # Windows IME Matrix（2026-08-13）
 
 > **⚠️ 快照声明（2026-10-06 审计 §4.91 补）**：本文是 **2026-08-13 的历史记录**，**不是当前就绪度**。
-> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（实测 **9 项未闭环 / `PASS-E = 0/50`**，
+> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（实测 **10 项未闭环 / `PASS-E = 0/50`**，
 > 全部阻塞于人工 UX Gate / 真机证据）；发布状态为**正式发布**（ADR-0031）。
 
 

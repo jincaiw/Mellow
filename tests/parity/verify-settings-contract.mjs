@@ -1408,7 +1408,10 @@ if (cssLayerAnchor === undefined) {
       && /const abs = resolveImageSrc\(src, docDir, exportRootDir\)/.test(desktopSrc2)
       && /invoke<number\[\]>\('read_binary', \{ path: abs \}\)/.test(desktopSrc2)],
     ['HTML 导出：读取失败必须回退保留原 src（不能阻断导出）',
-      /return null; \/\/ 读取失败由 exportHtml 保留原 src/.test(desktopSrc2)],
+      // 2026-10-10（审计 §4.249）：解析器抽成 `makeLocalImageResolver()`（HTML 与 PDF 共用），
+      // 故断言改为「共用解析器存在 + 其失败路径返回 null」——**不是**放宽，是跟着重构移动。
+      /function makeLocalImageResolver\(/.test(desktopSrc2)
+      && /return null; \/\/ 读取失败由导出管线保留原 src/.test(desktopSrc2)],
     ['front matter 边界只有一处实现（宿主不为扫描 front matter 拉入 CodeMirror）',
       /export function frontMatterBounds/.test(read('packages/editor-engine/src/frontMatter.ts'))
       && /frontMatterBounds\(doc\)/.test(read('packages/editor-engine/src/yamlFrontMatter.ts'))],
@@ -2777,6 +2780,108 @@ if (cssLayerAnchor === undefined) {
   const gaps = rows.reduce((s, r) => s + BOLD_PATHS.filter((p) => r[p] !== 'implemented').length, 0);
   console.log(`Settings contract: 语法特性开关 ${schemaIds.size} 个 × ${BOLD_PATHS.length} 条渲染路径（预览 / HTML 导出 / PDF 导出）`
     + `已登记；其中**非 implemented** 的组合 ${gaps} 处（载体见各条 ref）`);
+}
+
+// ── 导出 env 的**可选协作者**必须逐处传，或显式登记为 missing（2026-10-10，审计 §4.249）──
+// 【为什么】`PdfEnv` / `HtmlExportEnv` 的可选协作者都有「`env.X ? … : 回退`」的**静默降级**分支。
+//   实测（§4.249）：`createPdfBuffer` 的调用点**只传了 `fonts`** ⇒ PDF 导出里**所有图片退化成
+//   `![alt](src)` 源码文本**；而导出包的单测**自己传了**这些协作者 ⇒ 一直全绿；
+//   台账条目也因 `AUTO` 被门禁视为闭环。⇒ 这是 ④「**『可选』≠『可以不传』**」的又一实例，
+//   而它**跨包**（消费方在 `apps/desktop`，声明在 `packages/export`）⇒ 最容易被漏。
+// 【判据】`tests/parity/fixtures/export-collaborators.json` 必须
+//   ① **双向覆盖**两个 env 接口里的**全部可选**字段；
+//   ② 每条 status 取自受控词表；
+//   ③ `missing` ⇒ 必须带存在的 `ref` + 在台账里存在的 `refId`（登记处要可解析）；
+//   ④ `provided` ⇒ 该字段名必须出现在**对应调用点的实参窗口**里（否则「登记为已提供」是空话）。
+//   ⚠️ ④ 只核「字段名在窗口里」——**不**核语义是否正确（那要靠行为测试），窗口是近似手段。
+{
+  const FIXTURE = 'tests/parity/fixtures/export-collaborators.json';
+  const LEDGER = 'tests/parity/typora-parity-ledger.json';
+  const envFieldsOf = (file, iface) => {
+    const m = new RegExp(`export interface ${iface}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(readFileSync(resolve(root, file), 'utf8'));
+    if (m === null) return null;
+    const out = new Set();
+    for (const line of m[1].split('\n')) {
+      const f = /^\s{2}([A-Za-z][A-Za-z0-9]*)\?:/.exec(line);
+      if (f !== null) out.add(f[1]);
+    }
+    return out;
+  };
+  const envFields = {
+    PdfEnv: envFieldsOf('packages/export/src/index.ts', 'PdfEnv'),
+    HtmlExportEnv: envFieldsOf('packages/export/src/html/types.ts', 'HtmlExportEnv'),
+  };
+  const fixture = JSON.parse(readFileSync(resolve(root, FIXTURE), 'utf8'));
+  const vocab = new Set(Object.keys(fixture.statusVocabulary ?? {}));
+  const rows = Array.isArray(fixture.entries) ? fixture.entries : [];
+  const ledgerIds = new Set(
+    (JSON.parse(readFileSync(resolve(root, LEDGER), 'utf8')).items ?? []).map((it) => it.id),
+  );
+  const appSrc = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8');
+  const windowAt = (site) => {
+    const at = appSrc.indexOf(site.marker);
+    return at < 0 ? null : appSrc.slice(at, at + 1500);
+  };
+  // 判定与 canary **共用**同一谓词
+  const rowProblems = (row, win) => {
+    const out = [];
+    if (!vocab.has(row.status)) out.push(`status「${row.status}」不在受控词表内`);
+    if (row.status === 'missing') {
+      if (typeof row.ref !== 'string' || !existsSync(resolve(root, row.ref))) out.push('missing 却没有可解析的 `ref`');
+      if (typeof row.refId !== 'string' || !ledgerIds.has(row.refId)) out.push('missing 的 `refId` 在台账里找不到');
+    }
+    if (row.status === 'provided') {
+      if (win === null) out.push(`调用点标记 \`${row.callSite}\` 在 App.tsx 里找不到`);
+      else if (!new RegExp(`\\b${row.field}\\s*:`).test(win)) {
+        out.push(`登记为 provided，但字段 \`${row.field}\` **不在**调用点 \`${row.callSite}\` 的实参窗口里`);
+      }
+    }
+    return out;
+  };
+  for (const row of rows) {
+    const site = fixture.callSites?.[row.callSite];
+    for (const p of rowProblems(row, site === undefined ? null : windowAt(site))) {
+      fail(`${FIXTURE} 的 \`${row.env}.${row.field}\`：${p}`);
+    }
+  }
+  // ① 双向覆盖
+  for (const [iface, fields] of Object.entries(envFields)) {
+    if (fields === null) {
+      fail(`无法解析 \`${iface}\` 接口的可选字段 —— 锚点漂移会让本判据**空转**`);
+      continue;
+    }
+    const inTable = new Set(rows.filter((r) => r.env === iface).map((r) => r.field));
+    for (const f of fields) {
+      if (!inTable.has(f)) fail(`${iface} 的可选协作者 \`${f}\` **不在** ${FIXTURE} 里 —— 漏传会静默降级，必须登记`);
+    }
+    for (const f of inTable) {
+      if (!fields.has(f)) fail(`${FIXTURE} 里的 \`${iface}.${f}\` 已不在接口里 —— 条目过期，请删除`);
+    }
+  }
+  // [覆盖型] 下限 == 当前基线（立此判据时 3 + 3 个可选协作者）
+  const total = Object.values(envFields).reduce((s, f) => s + (f === null ? 0 : f.size), 0);
+  if (total < 6) {
+    fail(`两个 env 接口只解析出 ${total} 个可选协作者（下限 6 = 立此判据时基线）—— 锚点漂移会让本判据空转`);
+  }
+  // canary：四向（与判定**共用** `rowProblems`）
+  const okWin = 'createPdfBuffer(content, { ...DEFAULT_PDF_OPTIONS }, { fonts, resolveImage: x })';
+  const okRow = { env: 'PdfEnv', field: 'resolveImage', callSite: 'pdf', status: 'provided' };
+  if (rowProblems(okRow, okWin).length !== 0) {
+    fail('导出协作者登记 canary 失效：字段确实在窗口里的 provided 条目被误判');
+  }
+  if (rowProblems({ ...okRow, field: 'renderMath' }, okWin).length === 0) {
+    fail('导出协作者登记 canary 失效：**登记为 provided 但字段不在窗口里**未被检出');
+  }
+  if (rowProblems({ env: 'PdfEnv', field: 'renderMath', callSite: 'pdf', status: 'missing' }, okWin).length === 0) {
+    fail('导出协作者登记 canary 失效：**missing 却缺 ref/refId** 未被检出');
+  }
+  if (rowProblems({ ...okRow, status: 'bogus' }, okWin).length === 0) {
+    fail('导出协作者登记 canary 失效：**词表外**的 status 未被检出');
+  }
+  const missing = rows.filter((r) => r.status === 'missing').length;
+  console.log(`Settings contract: 导出 env 可选协作者 ${total} 个已登记（provided `
+    + `${rows.filter((r) => r.status === 'provided').length} / defaulted `
+    + `${rows.filter((r) => r.status === 'defaulted').length} / **missing ${missing}**，载体见各条 ref）`);
 }
 
 if (errors.length > 0) {

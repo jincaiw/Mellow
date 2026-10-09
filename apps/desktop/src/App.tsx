@@ -139,6 +139,48 @@ function readStored(key: string): string | null {
   }
 }
 /**
+ * 本地图片 → data URL 的解析器（**HTML 导出与 PDF 导出共用**）。
+ *
+ * ⚠️ `rasterOnly` 不是优化，是**必需**：pdfmake **只支持 PNG / JPEG**，
+ * 其余格式会**直接抛错**（实测 SVG / WebP / GIF 均报 `Unknown image format`）
+ * ⇒ PDF 侧**不能**把 HTML 侧的解析器原样复用，否则含 SVG 图片的文档**整份导出失败**。
+ * 过滤后不支持的格式返回 `null`，由导出管线回退为源码文本（与「不传解析器」同行为）。
+ *
+ * 【为什么有这条】2026-10-10（审计 §4.249）实测：`createPdfBuffer` 的调用点
+ * **只传了 `fonts`**，没传 `resolveImage` ⇒ PDF 导出里**所有图片都退化成 `![alt](src)` 源码文本**
+ * （`packages/export/src/index.ts` 的 `case 'image'` 分支：`env.resolveImage ? … : null`）。
+ * 导出包的单测**自己传了**这个协作者，所以一直全绿；台账条目也因 `AUTO` 被门禁视为闭环。
+ */
+function makeLocalImageResolver(
+  docDir: string | null,
+  exportRootDir: string | null,
+  rasterOnly = false,
+): (src: string) => Promise<string | null> {
+  return async (src: string): Promise<string | null> => {
+    if (!isTauri() || /^(?:https?:|data:)/i.test(src)) return null;
+    const abs = resolveImageSrc(src, docDir, exportRootDir);
+    if (abs === null) return null;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const bytes = await invoke<number[]>('read_binary', { path: abs });
+      // 不要把整张图片 spread 给 String.fromCharCode：大图会触发调用栈溢出。
+      const binaryParts: string[] = [];
+      const data = new Uint8Array(bytes);
+      for (let i = 0; i < data.length; i += 8192) {
+        binaryParts.push(String.fromCharCode(...data.subarray(i, i + 8192)));
+      }
+      const base64 = btoa(binaryParts.join(''));
+      const ext = abs.split('?')[0].split('#')[0].toLowerCase().split('.').pop() ?? '';
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : ext === 'svg' ? 'image/svg+xml' : 'image/png';
+      if (rasterOnly && mime !== 'image/png' && mime !== 'image/jpeg') return null;
+      return `data:${mime};base64,${base64}`;
+    } catch {
+      return null; // 读取失败由导出管线保留原 src，不能阻断整份导出
+    }
+  };
+}
+
+/**
  * 读取布尔型设置项（真源 = settings schema 的 `defaultValue`；非法/缺失回落 `fallback`）。
  * 走 `settingById` + `readSetting` 而非自行拼 storageKey —— 避免真值散落两处。
  */
@@ -1312,12 +1354,22 @@ export default function App() {
       ]);
       if (savePath === null) return; // 用户取消
       const fonts = await loadNotoFonts();
+      const content = hostRef.current.getText();
+      // 2026-10-10（审计 §4.249）：本调用此前**只传 `fonts`** ⇒ `PdfEnv` 的三个可选协作者全部缺失，
+      // 其中 `resolveImage` 缺失会让 PDF 里**所有图片退化成 `![alt](src)` 源码文本**
+      // （`packages/export/src/index.ts` 的 `case 'image'`）。现补 `resolveImage`；
+      // ⚠️ 必须 `rasterOnly`（pdfmake 只支持 PNG/JPEG，SVG/WebP/GIF 会抛错 ⇒ 整份导出失败，已实测）。
+      // `renderMath` / `renderMermaid` 仍缺（需渲染器，属实现工作）⇒ 登记在
+      // `tests/parity/fixtures/export-collaborators.json` + 台账 `P0-EXPORT-001`。
+      const docPath = filePathRef.current;
+      const docDir = docPath === null ? null : docPath.replace(/[\/][^\/]*$/, '');
+      const exportRootDir = docDir === null ? null : parseRootUrl(content, docDir);
       // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（preLinebreakOnExport，默认关）——
       // 与 HTML 导出同源同一设置，两条管线语义一致（见 export 包 types.ts / PdfOptions 说明）。
-      const buffer = await createPdfBuffer(hostRef.current.getText(), {
+      const buffer = await createPdfBuffer(content, {
         ...DEFAULT_PDF_OPTIONS,
         preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
-      }, { fonts });
+      }, { fonts, resolveImage: makeLocalImageResolver(docDir, exportRootDir, true) });
       await invoke('write_binary', { path: savePath, data: Array.from(buffer) });
       setToast({ message: t('export.pdf.done') });
     } catch (err) {
@@ -1476,27 +1528,7 @@ export default function App() {
         preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
       }, {
         // 仅在 exportHtml 需要内联图片时调用；without-style 不会触发（embedImages=false）。
-        resolveImage: async (src: string): Promise<string | null> => {
-          if (!isTauri() || /^(?:https?:|data:)/i.test(src)) return null;
-          const abs = resolveImageSrc(src, docDir, exportRootDir);
-          if (abs === null) return null;
-          try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            const bytes = await invoke<number[]>('read_binary', { path: abs });
-            // 不要把整张图片 spread 给 String.fromCharCode：大图会触发调用栈溢出。
-            const binaryParts: string[] = [];
-            const data = new Uint8Array(bytes);
-            for (let i = 0; i < data.length; i += 8192) {
-              binaryParts.push(String.fromCharCode(...data.subarray(i, i + 8192)));
-            }
-            const base64 = btoa(binaryParts.join(''));
-            const ext = abs.split('?')[0].split('#')[0].toLowerCase().split('.').pop() ?? '';
-            const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : ext === 'svg' ? 'image/svg+xml' : 'image/png';
-            return `data:${mime};base64,${base64}`;
-          } catch {
-            return null; // 读取失败由 exportHtml 保留原 src，不能阻断整份导出
-          }
-        },
+        resolveImage: makeLocalImageResolver(docDir, exportRootDir),
       });
       await invoke('write_text', { path: savePath, content: html });
       setToast({ message: t('export.html.done') });

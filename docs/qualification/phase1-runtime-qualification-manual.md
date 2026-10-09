@@ -1,7 +1,7 @@
 # 阶段 1 三平台 Runtime Qualification 执行手册
 
 > **⚠️ 快照声明（2026-10-06 审计 §4.91 补）**：本手册的「状态：⏳ 待真机执行」是 **2026-08 的记录**；
-> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（**9 项未闭环 / `PASS-E = 0/50`**）。
+> 当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出（**10 项未闭环 / `PASS-E = 0/50`**）。
 
 > **范围说明（2026-08-24）**：ADR-0022 已将 Windows／Linux 的正式证据环境改为 GitHub Actions CI；本手册的 Windows／Linux 人工步骤仅保留为可选诊断，不构成 V1 Gate。macOS 仍使用实机步骤。
 

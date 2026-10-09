@@ -5,9 +5,10 @@
     "implemented": "该路径实现该语法，且**受开关控制**",
     "option-unwired": "该路径**有**对应选项，但**调用点没传** ⇒ 开关不生效（选项默认值恒生效）",
     "always-on": "该路径**恒启用**该语法、**无**对应选项 ⇒ 开关关掉也无效",
-    "not-implemented": "该路径**完全没有**该语法"
+    "not-implemented": "该路径**完全没有**该语法",
+    "collaborator-missing": "该路径**有**实现，但调用点**未提供必需的协作件**（`env.renderMath` / `env.renderMermaid` 等）⇒ **静默降级**为源码文本"
   },
-  "note": "⚠️ 本表是**事实登记**，不是「要求三条路径一致」的判据。三条路径一致与否是**产品决策**（见 ref 指向的 ADR）；本表的作用是让缺口**可发现、可机械核对覆盖性**。",
+  "note": "⚠️ 本表是**事实登记**，不是「要求三条路径一致」的判据。三条路径一致与否是**产品决策**（见 ref 指向的 ADR）；本表的作用是让缺口**可发现、可机械核对覆盖性**。 ⚠️ **2026-10-10 自我更正**：`markdown.math` / `markdown.mermaid` 的 PDF 列原为 `always-on`（**读代码**得出），实跑后改为 `collaborator-missing` —— 见审计 §4.249。",
   "entries": [
     {
       "settingId": "markdown.highlight",
@@ -50,8 +51,8 @@
       "syntax": "$x$ / $$x$$",
       "preview": "implemented",
       "html": "option-unwired",
-      "pdf": "always-on",
-      "evidence": "预览：`index.ts:309`；HTML 导出：`HtmlExportOptions.math` **存在**（`packages/export/src/html/types.ts`），但 `apps/desktop/src/App.tsx` 的 `exportHtml(...)` 调用**只传 mode/theme/title/preserveLineBreaks** ⇒ 恒用默认 `true`；PDF：`index.ts:425` `case 'math'`，无选项",
+      "pdf": "collaborator-missing",
+      "evidence": "预览：`index.ts:309`；HTML 导出：`HtmlExportOptions.math` **存在**但调用点不传 ⇒ 恒默认 `true`；PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`，是**读代码**得出的，**错了**）—— 实跑 `buildPdfDocument(..., { fonts })`：块级 `$$x^2$$` 输出 `{text:\"x^2\",italics:true,style:\"code\"}`（源码文本），**行内** `$x^2$` 在 PDF 的 `parseInline` 里**根本没被 token 化** ⇒ 字面。根因是 `PdfEnv.renderMath` **调用点未提供**（见 `export-collaborators.json` + 台账 `P0-EXPORT-001`）。",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {
@@ -59,8 +60,8 @@
       "syntax": "```mermaid 围栏",
       "preview": "implemented",
       "html": "option-unwired",
-      "pdf": "always-on",
-      "evidence": "预览：`index.ts:310`；HTML 导出：`HtmlExportOptions.mermaid` 存在但调用点不传；PDF：`index.ts:428` `case 'mermaid'`",
+      "pdf": "collaborator-missing",
+      "evidence": "预览：`index.ts:310`；HTML 导出：`HtmlExportOptions.mermaid` 存在但调用点不传；PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`）—— 实跑 `buildPdfDocument(..., { fonts })` 输出 `{text:\"graph TD;A-->B\",style:\"code\"}`（源码文本）⇒ `PdfEnv.renderMermaid` **调用点未提供**。",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-06",
+  "updatedAt": "2026-10-10",
   "normativeBaseline": {
     "product": "Typora",
     "version": "1.14.9",
@@ -628,7 +628,7 @@
       "typoraBehavior": "导出产物在中文、图片、表格、公式和图表下可用。",
       "mellowTarget": "导出路径、错误反馈和输出 fidelity 可验证。",
       "grade": "E",
-      "status": "AUTO",
+      "status": "IMPL",
       "ownerPackage": "packages/export",
       "evidence": [
         "docs/specs/document-file-safety-spec.md",
@@ -641,7 +641,8 @@
         "windows-ci",
         "linux-ci",
         "export-corpus"
-      ]
+      ],
+      "blockedBy": "pdf-renderer-collaborators-pending"
     },
     {
       "id": "P0-PERF-001",

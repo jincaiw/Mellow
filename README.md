@@ -6,7 +6,7 @@ Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编
 
 **状态：正式发布**（[ADR-0031](docs/adr/ADR-0031-release-status-promotion.md)，2026-10-05 用户裁决：忽略真机 Gate 回填转正；**取代 ADR-0024 Q2=B1**）。
 
-> ⚠️ **正式发布是「发布状态」，不是「完成度」**：`PASS-E = 0/50`、未闭环 **9 项**依然成立。
+> ⚠️ **正式发布是「发布状态」，不是「完成度」**：`PASS-E = 0/50`、未闭环 **10 项**依然成立。
 > ⚠️ **macOS 产物未签名、未公证**（本仓无 Apple 凭据）⇒ 首次打开会遇到 **Gatekeeper 警告**。
 > **「V1.0 正式发布」的门槛未变**（ADR-0020 §2 未被取代）= PRD P0 范围 + 发布评审 18 项验收全部通过
 > （三平台真机矩阵、UX Score ≥ 92 实测、30 任务效率 Gate、签名公证等）；

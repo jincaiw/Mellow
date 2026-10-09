@@ -15290,6 +15290,81 @@ block/inline 分支），**未**实跑 `createPdfBuffer`（需要 Noto 字体与
 预览与 HTML 导出两列均有**实跑**证据。
 
 
+## 4.249 收口上一轮的「未实跑」局限 ⇒ **PDF 导出漏传三个可选协作者**（2026-10-10）
+
+**怎么发现的**：§4.248 我在条目末尾如实写了「PDF 那一列是**读代码**得出的，**未**实跑 `createPdfBuffer`」。
+本轮把这条**已知局限收口** —— 而且**实跑推翻了我自己的结论**（见下）。
+
+**实跑条件（本轮确认可复现）**：真实 Noto 字体在仓库里
+（`apps/desktop/public/fonts/NotoSansSC-{Regular,Bold}.ttf`）⇒ `createPdfBuffer` **可以在本机端到端跑**。
+
+**实跑一：与 App **同形**的调用**（`buildPdfDocument(doc, DEFAULT_PDF_OPTIONS, { fonts })`）：
+
+| 语法 | PDF 真实输出 | §4.248 登记的状态 |
+|---|---|---|
+| `==高亮==` / `^上标^` / `~下标~` / `:smile:` / `[[页面]]` / YAML front matter | 字面文本 | `not-implemented` ✅ |
+| `> [!NOTE]` | `style: alert-NOTE` | `always-on` ✅ |
+| `[TOC]` / 脚注 | 实现 | `always-on` ✅ |
+| `$$x^2$$` | **`{text:"x^2",italics:true,style:"code"}`**（源码文本） | ⚠️ 原写 `always-on` —— **错了** |
+| `$x^2$`（行内） | **字面**（PDF 的 `parseInline` 根本没 token 化行内数学） | ⚠️ 同上 |
+| ` ```mermaid ` | **`{text:"graph TD;A-->B",style:"code"}`**（源码文本） | ⚠️ 原写 `always-on` —— **错了** |
+
+⇒ **自我更正**：`markdown.math` / `markdown.mermaid` 的 PDF 列由 `always-on` 改为
+**`collaborator-missing`**（登记表词表新增该项）。**根因不是「没实现」，是「调用点没提供协作件」。**
+
+**实跑二：根因定位**。`packages/export/src/index.ts` 的 `PdfEnv` 有**三个可选协作者**：
+
+```
+resolveImage?   →  case 'image'   : env.resolveImage ? {image} : {text: `[alt](src)`}
+renderMath?     →  case 'math'    : env.renderMath ? {image} : {text: tex, italics: true}
+renderMermaid?  →  case 'mermaid' : env.renderMermaid ? {image} : {text: code}
+```
+
+而 `apps/desktop/src/App.tsx` 的 `createPdfBuffer(...)` 调用**只传了 `fonts`** ⇒ **三个全部缺失**：
+
+1. **`resolveImage` 缺失 ⇒ PDF 里所有图片退化成 `![alt](src)` 源码文本**（已修，见下）；
+2. `renderMath` / `renderMermaid` 缺失 ⇒ 公式与图表降级为源码（**未修**：需要渲染器，属实现工作）。
+
+⚠️ **为什么此前没人发现**：`packages/export` 的单测**自己传了**这三个协作者
+（`index.test.ts` / `corpus.test.ts` 里都有 `renderMath: async () => PNG_1PX`）⇒ **测试全绿**；
+台账 `P0-EXPORT-001` 是 `AUTO` ⇒ 门禁视为闭环。这正是本仓 ④「**『可选』≠『可以不传』**」那一族。
+
+**处置一（已修，端到端验证）**：把 HTML 侧那个内联的图片解析器抽成
+`makeLocalImageResolver(docDir, exportRootDir, rasterOnly?)`，HTML 与 PDF **共用**；PDF 侧传
+`rasterOnly = true`。
+
+- ⚠️ **`rasterOnly` 是必需的，不是优化**：实跑证明 pdfmake **只支持 PNG / JPEG**，
+  SVG / WebP / GIF 会**直接抛错**（`Error: Invalid image: Unknown image format.`）
+  ⇒ 不过滤会让**含 SVG 图片的文档整份导出失败**（比「图片变源码」更糟）。
+  过滤后不支持的格式返回 `null`，回退为源码文本（与「不传解析器」同行为）⇒ **不会引入新失败**。
+- **端到端实跑**：真实 Noto 字体下 `createPdfBuffer` 产物头为 `%PDF-1.3`；
+  同一份文档「不传 `resolveImage`」8851 字节 vs「传」8896 字节（+45 = 内嵌的 1px 图）。
+- **类型检查**：`apps/desktop` 的 `tsc --noEmit` 通过。
+
+**处置二（登记，未修）**：`renderMath` / `renderMermaid` 仍缺（需渲染器）⇒
+
+- **新登记表** `tests/parity/fixtures/export-collaborators.json`：两个 env 的**全部可选协作者**
+  × 调用点 × 状态（`provided` / `missing` / `defaulted`），`missing` 必须带 `ref` + `refId`；
+- **新判据**（`verify-settings-contract.mjs`）：**双向覆盖**接口可选字段；`missing` 的 `refId` 必须在台账里存在；
+  **`provided` 的字段名必须真的出现在调用点的实参窗口里**（否则「登记为已提供」是空话）；
+  配四向 canary 与覆盖下限；
+- **台账如实更正**：`P0-EXPORT-001`（capability = 「PDF、HTML、Image、Print 导出」，
+  `typoraBehavior` 写「导出产物在中文、**图片**、表格、**公式和图表**下可用」）
+  由 `AUTO` 改为 **`IMPL`** + `blockedBy: pdf-renderer-collaborators-pending`
+  ⇒ 门禁 `未闭环 9 → 10`，并同步全仓 **14 处**「当前状态真值源」指针行（判据 ⑨/⑨b 逐处点名）。
+
+**注入验证（6 向）**：① `provided` 但字段名不在调用点窗口 ⇒ 红；② `missing` 缺 `refId` ⇒ 红；
+③ 漏登记一个接口字段（双向）⇒ 红；④ 登记了接口里没有的字段 ⇒ 红；⑤ `refId` 在台账里不存在 ⇒ 红；
+⑥ status 词表外 ⇒ 红。还原后绿。
+
+**范围限制（如实声明）**：
+
+- PDF 的「图片已恢复」是**端到端实跑**（真实字体、真实 `%PDF` 产物）；
+  但**未**在运行中的应用里点「导出 PDF」确认（那需要人工会话）。
+- `renderMath` / `renderMermaid` 的修复**需要渲染器**（把 TeX / Mermaid 栅格化），
+  本轮**不做**：它属**实现工作**而非接线，且改的是用户可见的导出件内容。
+- 判据只核「字段名出现在调用点实参窗口里」——**不**核语义是否正确（那要靠行为测试）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

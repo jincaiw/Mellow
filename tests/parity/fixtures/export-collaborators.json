@@ -1,0 +1,62 @@
+{
+  "source": "packages/export/src/index.ts（`PdfEnv`）+ packages/export/src/html/index.ts（`HtmlExportEnv`）—— 判据现读接口",
+  "why": "这两个 env 的**可选协作者**都有一个「静默降级」分支（`env.X ? … : 回退`）。调用点漏传**不会报错**，只会让能力悄悄消失 —— 实测：`createPdfBuffer` 的调用点只传了 `fonts` ⇒ PDF 里**所有图片退化成源码文本**。而导出包的单测**自己传了**这些协作者，所以一直全绿；台账条目也因 `AUTO` 被门禁视为闭环。⇒ 把「每个可选协作者 × 是否被提供」登记下来，并让判据**在调用点实参里核对**。",
+  "statusVocabulary": {
+    "provided": "应用调用点**已提供**该协作者（判据会在调用点实参窗口里核对字段名）",
+    "missing": "**未提供** ⇒ 该能力静默降级；必须带 `ref` + `refId` 指向登记处（台账条目 id）",
+    "defaulted": "未提供**无副作用**：该协作者在包里**有内置默认实现**"
+  },
+  "callSites": {
+    "pdf": { "file": "apps/desktop/src/App.tsx", "marker": "createPdfBuffer(" },
+    "html": { "file": "apps/desktop/src/App.tsx", "marker": "exportHtml(" }
+  },
+  "note": "⚠️ 判据只核「字段名出现在调用点实参窗口里」——**不**核语义是否正确（那要靠行为测试）。窗口是近似手段，如实声明。",
+  "entries": [
+    {
+      "env": "PdfEnv",
+      "field": "resolveImage",
+      "callSite": "pdf",
+      "status": "provided",
+      "evidence": "2026-10-10（审计 §4.249）**本轮修复**：此前漏传 ⇒ PDF 里所有图片退化为 `![alt](src)`；现传 `makeLocalImageResolver(docDir, exportRootDir, true)`。⚠️ `rasterOnly` 是必需的：pdfmake 只支持 PNG/JPEG，SVG/WebP/GIF 会**抛错**（实测 `Unknown image format`）⇒ 不过滤会让含 SVG 图片的文档整份导出失败。端到端实跑：真实 Noto 字体下 `createPdfBuffer` 产物 `%PDF-1.3`，带图 +45 字节。"
+    },
+    {
+      "env": "PdfEnv",
+      "field": "renderMath",
+      "callSite": "pdf",
+      "status": "missing",
+      "ref": "tests/parity/typora-parity-ledger.json",
+      "refId": "P0-EXPORT-001",
+      "evidence": "实跑 `buildPdfDocument(..., { fonts })`：块级 `$$x^2$$` 输出 `{text:'x^2',italics:true,style:'code'}`（**源码文本**，非图片）；行内 `$x^2$` 在 PDF 的 `parseInline` 里**根本没被 token 化** ⇒ 字面。⇒ PDF 导出的数学**渲染不出来**（需渲染器，属实现工作）。"
+    },
+    {
+      "env": "PdfEnv",
+      "field": "renderMermaid",
+      "callSite": "pdf",
+      "status": "missing",
+      "ref": "tests/parity/typora-parity-ledger.json",
+      "refId": "P0-EXPORT-001",
+      "evidence": "实跑 `buildPdfDocument(..., { fonts })`：```` ```mermaid ```` 输出 `{text:'graph TD;A-->B',style:'code'}`（**源码文本**，非图片）。"
+    },
+    {
+      "env": "HtmlExportEnv",
+      "field": "resolveImage",
+      "callSite": "html",
+      "status": "provided",
+      "evidence": "`runExportHtml` 一直有传；2026-10-10 抽成 `makeLocalImageResolver()` 与 PDF 侧共用（PDF 侧加 `rasterOnly` 过滤）。"
+    },
+    {
+      "env": "HtmlExportEnv",
+      "field": "mermaidBundle",
+      "callSite": "html",
+      "status": "defaulted",
+      "evidence": "缺省时从 `mermaid` 包读取 `mermaid.min.js`（`packages/export/src/html/index.ts` 的 env 说明）。"
+    },
+    {
+      "env": "HtmlExportEnv",
+      "field": "katexCss",
+      "callSite": "html",
+      "status": "defaulted",
+      "evidence": "缺省时从 `katex` 包读取 CSS 并把字体内联为 data URL。"
+    }
+  ]
+}
