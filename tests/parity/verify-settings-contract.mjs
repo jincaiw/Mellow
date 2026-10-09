@@ -2531,7 +2531,31 @@ if (cssLayerAnchor === undefined) {
       if (uncovered === null || !Array.isArray(uncovered.entries)) {
         fail('第三登记面（typora-persisted-uncovered.json）无法读取 —— 缝隙键判据无法运行');
       } else {
-        const KINDS = new Set(['view-state', 'warning-suppression', 'preference-like']);
+        // ⚠️ **2026-10-10（审计 §4.257）：词表必须读夹具，不得在此硬编码一份副本** ——
+        //   实测（本轮）：三份夹具声明了受控词表，另两份（`export-feature-parity` /
+        //   `export-collaborators`）的护栏都写成 `Object.keys(fixture.statusVocabulary ?? {})`，
+        //   **只有本处硬编码**；而本夹具的 `kindVocabulary` **自称声明了词表却无人读**
+        //   ⇒ 它可以**永远说谎**（改措辞没人知道、加档位没人知道）。
+        //   这是本仓 #1 形态「**同一语义两处维护、只一处有判据**」，且**同一形状在本仓有两种约定**。
+        //   ⇒ 单一真源 = 夹具；判定与 canary **共用** `kindsOf`。
+        const kindsOf = (fx) => new Set(Object.keys(fx?.kindVocabulary ?? {}));
+        const vocabObj = uncovered.kindVocabulary ?? {};
+        const KINDS = kindsOf(uncovered);
+        if (KINDS.size === 0) {
+          fail('第三登记面的 `kindVocabulary` 缺失或为空 —— 词表**没有真值源**'
+            + '（`kind` 校验会退化成「一律非法」，归因不清）');
+        }
+        for (const [k, def] of Object.entries(vocabObj)) {
+          if (typeof def !== 'string' || def.trim() === '') {
+            fail(`第三登记面的 \`kindVocabulary.${k}\` 没有说明 —— 词表项必须是**可读的定义**，`
+              + '不是光秃秃的键名（否则「这个词表档位是什么意思」无处可查）');
+          }
+        }
+        // [健康度型] 词表不得萎缩（立此判据时基线 3，下限 3 —— 三档各有语义，少一档即分类退化）
+        if (KINDS.size < 3) {
+          fail(`第三登记面的词表只剩 ${KINDS.size} 档（下限 3 = 立此判据时的基线 3）`
+            + ' —— 分类退化会让「桶非空」检查失去意义');
+        }
         // ⚠️ 矩阵条目在**别的块作用域**里（`let` 不跨块）⇒ 自己读一份（本文件的老陷阱）
         let mxEntries5 = [];
         try {
@@ -2573,6 +2597,14 @@ if (cssLayerAnchor === undefined) {
         console.log(`ℹ️ 第三登记面（Typora 会持久化、但矩阵与面板都不覆盖的键）${uncovered.entries.length} 条：`
           + `${[...KINDS].map((k) => `${k} ${uncovered.entries.filter((e) => e.kind === k).length}`).join(' / ')}`
           + '（⚠️ 只做自洽性；漏登需本机工具重抽 putSetting）');
+        // canary：三向（**词表来源** —— 判定与 canary **共用** `kindsOf`）
+        //   ⚠️ 样本**构造**（不是实时数据）：否则「数据坏了」会被误报成「canary 坏了」。
+        if (kindsOf({ kindVocabulary: { a: 'x', b: 'y' } }).size !== 2) {
+          fail('第三面词表 canary 失效：夹具声明的词表未被取到（有人把它改回硬编码了？）');
+        }
+        if (kindsOf({}).size !== 0 || kindsOf(null).size !== 0) {
+          fail('第三面词表 canary 失效：无 / 空 `kindVocabulary` 时应取到**空集**（判定据此报「没有真值源」）');
+        }
         // canary：三向（正样本 / 已进矩阵 ⇒ 过期 / kind 非法）
         const K3 = new Set(['view-state']);
         if (judgeFace3([{ key: 'k', kind: 'view-state', reason: 'r' }], new Set(), new Set(), K3).length !== 0) {
@@ -3028,6 +3060,71 @@ if (cssLayerAnchor === undefined) {
   console.log(`Settings contract: 带开关的挂载行 ${mounts.length} 条；其中**多开关共用** ${seen.size} 个`
     + `（登记为无参未过滤 ${MULTI_SWITCH_UNFILTERED.size} 个，载体见例外表 ref）`);
 }
+// ── ⑰ 夹具里**声明的词表**必须真的有消费者读它（2026-10-10，审计 §4.257）──────────────
+// 【为什么】实测（本轮）：三份夹具声明了受控词表 —— `export-feature-parity.json` 的
+//   `statusVocabulary`、`export-collaborators.json` 的 `statusVocabulary`、
+//   `typora-persisted-uncovered.json` 的 `kindVocabulary`。前两份**被护栏读**
+//   （`Object.keys(fixture.statusVocabulary ?? {})`），**第三份没有**（护栏硬编码了一份 `KINDS` 副本）。
+//   ⇒ 那份词表**自称声明了分类却无人读** ⇒ 它可以**永远说谎**：改了措辞没人知道、
+//     加了档位没人知道、删了档位也没人知道（同族「同一语义两处维护、只一处有判据」）。
+//   ⚠️ 更根本的一层：**同一形状在本仓有两种约定**本身就是缺陷 —— 读者无法从形状判断
+//     「这个词表是真值源，还是装饰」。
+// 【判据】`tests/parity/fixtures/*.json` 里顶层以 `Vocabulary` 结尾的键，其**键名必须出现**在
+//   某个消费者源码里（`tests/parity/*.mjs` / `tests/parity/tools/*.mjs` / `tests/qualification/*.mjs`）
+//   —— 即「有人真的读它」。
+//   ⚠️ **只认字面键名**（本仓既有写法都是 `fixture.statusVocabulary` / `uncovered.kindVocabulary`）；
+//     若将来出现**动态取键**（`fixture[name]`）⇒ 必须登记进 `VOCAB_DYNAMIC_READERS` 并写理由。
+//   ⚠️ **本判据的样本必须运行时拼接**：判据自己就住在 `tests/parity/verify-settings-contract.mjs`，
+//     而它**也在消费者扫描面里** ⇒ 写字面样本会让判据**被自己的 canary 满足**（本仓已踩 8 次）。
+{
+  const FIX_DIR = 'tests/parity/fixtures';
+  // 空 = 当前没有任何动态取键（刻意为空：一旦出现，登记时才需要写理由）
+  const VOCAB_DYNAMIC_READERS = new Map([]);
+  const CONSUMER_DIRS = ['tests/parity', 'tests/parity/tools', 'tests/qualification'];
+  const consumerFiles = CONSUMER_DIRS.flatMap((d) => {
+    try {
+      return readdirSync(resolve(root, d)).filter((f) => f.endsWith('.mjs')).map((f) => `${d}/${f}`);
+    } catch { return []; }
+  });
+  if (consumerFiles.length === 0) throw new Error('词表消费者扫描面为空 —— 判据锚点漂移');
+  const consumerSrc = consumerFiles.map((p) => read(p)).join('\n');
+  /** 判定与 canary **共用**：该键名是否出现在消费者源码里。 */
+  const isRead = (key) => new RegExp(`(?<![\\w$])${key}(?![\\w$])`).test(consumerSrc);
+  const vocabKeys = [];
+  for (const f of readdirSync(resolve(root, FIX_DIR)).filter((n) => n.endsWith('.json')).sort()) {
+    const j = JSON.parse(read(`${FIX_DIR}/${f}`));
+    for (const k of Object.keys(j)) if (/Vocabulary$/.test(k)) vocabKeys.push({ f, k });
+  }
+  for (const { f, k } of vocabKeys) {
+    if (VOCAB_DYNAMIC_READERS.has(`${f}#${k}`)) continue;
+    if (!isRead(k)) {
+      fail(`${FIX_DIR}/${f} 声明的词表 \`${k}\` **没有任何消费者读它** —— `
+        + '「自称声明了分类却无人读」的词表可以**永远说谎**（改措辞 / 加档位都没人知道）。'
+        + `修法：让护栏**读夹具**（\`Object.keys(fixture.${k} ?? {})\`），或删掉该字段；`
+        + '若确实是动态取键，请登记进 `VOCAB_DYNAMIC_READERS` 并写明理由');
+    }
+  }
+  // 防空转：扫描面必须真的覆盖到词表（下限 2 = 立此判据时的基线 2）
+  if (vocabKeys.length < 2) {
+    fail(`只发现 ${vocabKeys.length} 份夹具声明了词表（下限 2 = 立此判据时的基线 2）`
+      + ' —— 命名约定或扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（构造样本；**键名运行时拼接**，避免判据被自己的样本满足）
+  const V = 'status' + 'Vocabulary';
+  const W = 'kind' + 'Vocabulary';
+  if (!isRead(V)) {
+    fail('词表消费者护栏 canary 失效：既有写法（`Object.keys(fixture.<key>)`）未被识别');
+  }
+  if (isRead('definitelyAbsent' + 'Vocabulary')) {
+    fail('词表消费者护栏**过宽**：无人读的键名被判为「有人读」（判据已退化成空真）');
+  }
+  if (!/Vocabulary$/.test(V) || !/Vocabulary$/.test(W) || /Vocabulary$/.test('vocabularyList')) {
+    fail('词表消费者护栏 canary 失效：`*Vocabulary` 命名约定未被正确识别');
+  }
+  console.log(`Settings contract: 夹具声明的词表 ${vocabKeys.length} 份，均已确认**有消费者读它**`
+    + `（扫描 ${consumerFiles.length} 个消费者文件）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
