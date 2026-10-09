@@ -126,7 +126,7 @@ function blankRecord(platform, mellowCommit = 'REPLACE_WITH_COMMIT') {
     uxScore: null, // 人工填写：见 UX_MODULES / UX_THRESHOLDS；null 会被 validate 拒绝
     observations: skeletonObservations(),
     notes:
-      'observations 已预置 120 条**骨架**（task/app/round/appOrder 已按交替规则填好），'
+      `observations 已预置 ${TASKS.length * APPS.length * ROUNDS.length} 条**骨架**（task/app/round/appOrder 已按交替规则填好），`
       + '你只需补测量值：durationMs（秒→毫秒）、error(布尔)、steps(整数)、subjectiveScore(1-5)、'
       + 'evidence(至少一项截图/视频/日志路径)、entryPoint、sourceDiff。'
       + '**骨架不含任何数值**，故 validate 仍会拒绝未填项；随时用 progress 查进度。'
@@ -181,7 +181,7 @@ function validate(record) {
     const key = `${task}/${app}/${round}`;
     require(Number.isInteger(task) && task >= 1 && task <= TASKS.length, `无效 task：${task}`);
     require(APPS.includes(app), `task ${task} 的 app 必须为 typora 或 mellow`);
-    require(ROUNDS.includes(round), `task ${task} 的 round 必须为 1 或 2`);
+    require(ROUNDS.includes(round), `task ${task} 的 round 必须为 ${ROUNDS.join(' 或 ')}`);
     require(!byKey.has(key), `重复观测：${key}`);
     byKey.set(key, observation);
     require(Number.isFinite(observation?.durationMs) && observation.durationMs > 0, `${key} 的 durationMs 必须为正数`);
@@ -485,8 +485,9 @@ try {
     if (r.commitCheck.status === 'mismatch') {
       console.log(`修订核对：${r.commitCheck.message}`);
     }
-    if (r.filled === r.total && r.orderIssues.length === 0 && r.meta.imeCorruption.endsWith('✓') && r.meta.dataLoss.endsWith('✓')) {
-      console.log('✓ 120 条齐备、顺序规则与两项安全声明均通过 → 可执行 validate');
+    const SAFETY_FIELDS = [r.meta.imeCorruption, r.meta.dataLoss];
+    if (r.filled === r.total && r.orderIssues.length === 0 && SAFETY_FIELDS.every((v) => v.endsWith('✓'))) {
+      console.log(`✓ ${TASKS.length * APPS.length * ROUNDS.length} 条齐备、顺序规则与 ${SAFETY_FIELDS.length} 项安全声明均通过 → 可执行 validate`);
       if (r.commitCheck.status === 'mismatch') {
         console.log('⚠️ 但 mellowCommit 与当前 HEAD 不一致 —— 校验前请先确认记录的是你实际测试的修订。');
       }

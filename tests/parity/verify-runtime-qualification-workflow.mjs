@@ -543,4 +543,30 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   console.log(`UX gate efficiency: ≥${minTasks}/${nTasks} 任务（${Math.round(rate * 100)}%）—— 文档与记录器一致`);
 }
 
+// ── 记录器的**输出消息**里不得有「N 条」字面计数（2026-10-09，审计 §4.188）────────────────────
+// 【为什么】`ux-gate-recorder.mjs` 曾有**三处**消息硬编码条数：「observations 已预置 **120 条**骨架」
+//   「✓ **120 条**齐备…**两项**安全声明」（后者的「两项」也是计数）⇒ `TASKS`/`APPS`/`ROUNDS`
+//   一变它们就漂（同族「只锁了一半」第 18 次）。
+//   ⚠️ **消息里的字面量最容易漏**：它**不参与判定** ⇒ 测试不会因它而红，但会**骗读者**（§4.300）。
+// 【判据】记录器**非注释行**里不得出现「N 条」的字面计数。
+{
+  const REC = 'tests/qualification/ux-gate-recorder.mjs';
+  const COUNT = new RegExp(`${'\\d'}+\\s*条`);
+  const lines = readFileSync(resolve(root, REC), 'utf8').replace(/\r\n/g, '\n').split('\n');
+  const offenders = [];
+  lines.forEach((l, i) => {
+    if (/^\s*(\/\/|\*|\/\*)/.test(l)) return; // 注释豁免（说明性文字会**引用**坏形态）
+    if (COUNT.test(l)) offenders.push(`${i + 1}`);
+  });
+  if (offenders.length > 0) {
+    throw new Error(`${REC} 的输出消息里有「N 条」**字面**计数（行 ${offenders.join('、')}）`
+      + ' —— 消息里的字面量不参与判定 ⇒ 改基数时不会红，但会**骗读者** ⇒ 改为派生'
+      + '（如 `${TASKS.length * APPS.length * ROUNDS.length} 条`）');
+  }
+  // canary：谓词与判定共用
+  if (!COUNT.test(`已预置 ${120} 条骨架`)) throw new Error('记录器消息计数 canary 失效：形态取不到');
+  if (COUNT.test('无此形态')) throw new Error('记录器消息计数 canary 过宽：无锚点的样本被误判');
+  console.log('UX gate recorder: 输出消息里无「N 条」字面计数（全部派生）');
+}
+
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
