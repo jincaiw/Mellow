@@ -1,5 +1,9 @@
 # Markdown 全语法样例：Typora ↔ Mellow 编辑与显示深度对标方案
 
+> **⚠️ 快照声明（2026-08-23）**：本文是 **2026-08-23 的专项方案与实测记录**，**不是当前状态**
+> —— 其中的「Mellow 基线 `74c454b` / Desktop `1.3.4`」是**当时的**基线；
+> 当前状态以 `node tests/parity/verify-release-gate.mjs` 的输出为准。
+
 > 状态：本轮实现与本地自动化 Gate 已完成；产品级全量 parity Gate 仍按 Master Plan 管理
 > 制定日期：2026-08-23
 > 输入样例：`/Volumes/My-Data/jason.wa/Downloads/markdown-syntax-demo.md`

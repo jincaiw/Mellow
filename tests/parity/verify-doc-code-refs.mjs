@@ -824,7 +824,12 @@ const QUALIFICATION_SNAPSHOT_DIRS = [
 // ⚠️ 2026-10-09（审计 §4.206）：**单文件**也纳入 —— `docs/plans/print-verification-checklist.md`
 //   兼有「流程」与「**2026-08-13 的自动化验证结果**」⇒ 同样会被按「当前」读
 //   （且它「手动验证」一节**仍待真机**）。⚠️ **不整目录纳入 `docs/plans/`**（含施工文件，假阳性多）。
-const QUALIFICATION_SNAPSHOT_FILES = ['docs/plans/print-verification-checklist.md'];
+const QUALIFICATION_SNAPSHOT_FILES = [
+  'docs/plans/print-verification-checklist.md',
+  // 2026-10-09（审计 §4.207）：同为 `docs/plans/` 下的**专项验证记录**（「制定日期 2026-08-23」+
+  // 「Mellow 基线 `74c454b` / Desktop **1.3.4**」）⇒ 同样会被按「当前」读。
+  'docs/plans/markdown-syntax-demo-parity-validation-plan.md',
+];
 {
   const SNAPSHOT_MARKER = /快照声明|不是当前|已过期|历史记录|历史快照|按当时读/;
   let checked = 0;
