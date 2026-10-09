@@ -50,6 +50,14 @@
 - `audit-guard-bounds.mjs` —— 普查 parity 护栏里的「**防空转下限**」是否**过松**。
   ⚠️ 输出是候选：实测报 41 处，逐条读原文后**全部非缺陷** ⇒ **不要照桶机械收紧**。
 
+- `audit-bold-pairing.mjs` —— 把 `verify-doc-code-refs.mjs` 判据 ㊵ 里那个**无依赖**的
+  CommonMark 行内扫描器与**真解析器**（`packages/export` 的 `markdown-it`）逐文件交叉验证。
+  ⚠️ 立此工具的原因（2026-10-10，审计 §4.246）：判据 ㊵ **不能**依赖外部包
+  （`parity-guard` 两个 CI job **有意不跑 `pnpm install`**）⇒ 护栏自带扫描器，
+  而**手写量具必须被交叉验证**，否则它自己就是下一个「静默失效」。
+  用法：`node tests/parity/tools/audit-bold-pairing.mjs [<git-rev>]`（不带参数 = 工作区）。
+  实测：工作区 **0/0**；`HEAD~1`（修复前）**136/136** —— 两侧**逐文件 0 处不一致**。
+
 - `audit-memory-refs.mjs` —— 核对 `.workbuddy-ai/memory/` 的**交叉引用**是否仍然有效
   （`PITFALLS §4.N` / `审计 §4.N` / `skill §N` 是否仍存在）、**编号是否完整**（无重复、无缺号），
   并报出**可疑的范围端点**（写成 `§4.A–§4.B` 而 B ≠ 当前最大节号）。

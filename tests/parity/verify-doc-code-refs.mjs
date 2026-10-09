@@ -35,7 +35,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 
 const root = resolve(import.meta.dirname, '../..');
 
@@ -3159,20 +3158,154 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   console.log(`Doc code refs: 「原始数据 / 样本」段 ${rawSections} 个（段内文件均已存在或已注明未入库）`);
 }
 
+/** 无依赖的 CommonMark 行内扫描器（**只服务于判据 ㊵**）：数出「渲染后仍是字面 `**`」的出现次数。
+ *  ⚠️ **为什么手写**：`parity-guard` 两个 CI job **有意不跑 `pnpm install`**（「只依赖 Node 内建模块」）
+ *     ⇒ 引入 `markdown-it` 会让那两个 job **直接红**（实测踩过）。
+ *  ✅ **与真解析器的交叉验证**：`node tests/parity/tools/audit-bold-pairing.mjs`
+ *     —— 203 份 tracked `.md` × 修复前/后两个版本，逐文件比对，**在本判据的扫描面上 0 处不一致**。 */
+const boldIsSpace = (c) => c === undefined || c === '' || /\s/.test(c);
+// ⚠️ CommonMark 的「Unicode 标点」= **ASCII 标点 ∪ Unicode P 类**。
+//   实测：`+` 必须算标点 —— 否则 `A**+b+**C` 会被判成「可配对」，而真解析器渲染成字面 `**`。
+const BOLD_ASCII_PUNCT = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+const boldIsPunct = (c) => c !== undefined && c !== ''
+  && (BOLD_ASCII_PUNCT.includes(c) || /\p{P}/u.test(c));
+
+/** 围栏代码块内的行替换为空行（含引用块前缀形态）。 */
+function boldBlankFences(src) {
+  const lines = src.split('\n');
+  let fence = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = /^\s{0,3}(?:>\s?)*\s{0,3}(`{3,}|~{3,})/.exec(lines[i]);
+    if (fence === null) {
+      if (m !== null) { fence = { ch: m[1][0], len: m[1].length }; lines[i] = ''; }
+    } else {
+      if (m !== null && m[1][0] === fence.ch && m[1].length >= fence.len) fence = null;
+      lines[i] = '';
+    }
+  }
+  return lines;
+}
+
+/** 切成「行内上下文」：空行分块；标题 / 表格单元格 / 列表项各自独立；主题分隔线丢弃。
+ *  ⚠️ **表格单元格是独立行内上下文**（跨单元格计 `**` 会得到错误结论，实测）。 */
+function boldUnits(src) {
+  const lines = boldBlankFences(src);
+  const units = [];
+  let cur = [];
+  let curLine = 0;
+  const flush = () => { if (cur.length > 0) { units.push({ line: curLine, text: cur.join('\n') }); cur = []; } };
+  for (let i = 0; i < lines.length; i += 1) {
+    const body = lines[i].replace(/^\s{0,3}(?:>\s?)+/, '');
+    if (body.trim() === '') { flush(); continue; }
+    if (/^\s{0,3}(?:[*_-]\s*){3,}$/.test(body)) { flush(); continue; }            // 主题分隔线
+    if (/^\s{0,3}#{1,6}\s/.test(body)) { flush(); curLine = i; cur.push(body.trim()); flush(); continue; }
+    if (/^\s{0,3}\|/.test(body)) {                                               // 表格：按单元格切
+      flush();
+      for (const cell of body.replace(/\\\|/g, '\u0000').split('|')) {
+        const t = cell.replace(/\u0000/g, '|');
+        if (t.trim() !== '') units.push({ line: i, text: t });
+      }
+      continue;
+    }
+    const item = /^\s{0,3}(?:[-*+]|\d{1,9}[.)])\s/.exec(body);
+    if (item !== null) { flush(); curLine = i; cur.push(body.slice(item[0].length)); continue; }
+    if (cur.length === 0) curLine = i;
+    cur.push(body);
+  }
+  flush();
+  return units;
+}
+
+/** CommonMark 行内码区间。**单趟扫描**：
+ *  ① 转义只在**当前位置**生效（`\`` 是字面反引号，不开启码）；
+ *  ② 找到开反引号后，**在原始文本里**向前找「恰好 N 个」的反引号串作为闭合 —— 码内**不适用转义**。
+ *  ⚠️ 实测踩过：把码内的 `\\` 当成转义会**跳掉闭合反引号**，于是一段长行内码把后面的 `**` 全吞掉 ⇒ 假阳性。 */
+function boldCodeRanges(text) {
+  const out = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '\\' && BOLD_ASCII_PUNCT.includes(text[i + 1] ?? '')) { i += 2; continue; }
+    if (text[i] !== '`') { i += 1; continue; }
+    let n = 0;
+    while (text[i + n] === '`') n += 1;
+    let j = i + n;
+    let found = -1;
+    while (j < text.length) {
+      if (text[j] !== '`') { j += 1; continue; }
+      let m = 0;
+      while (text[j + m] === '`') m += 1;
+      if (m === n) { found = j; break; }
+      j += m;
+    }
+    if (found < 0) { i += n; continue; }
+    out.push([i, found + n]);
+    i = found + n;
+  }
+  return out;
+}
+
+/** 该段行内文本里「未成对 `**`」的出现次数（= 渲染后会看到的字面 `**` 个数）。 */
+function boldUnpaired(text) {
+  const code = boldCodeRanges(text);
+  const inCode = (p) => code.some(([a, b]) => p >= a && p < b);
+  const runs = [];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '\\') { i += 1; continue; }
+    if (text[i] !== '*') continue;
+    let n = 0;
+    while (text[i + n] === '*') n += 1;
+    if (!inCode(i)) {
+      const prev = text[i - 1];
+      const next = text[i + n];
+      const left = !boldIsSpace(next) && (!boldIsPunct(next) || boldIsSpace(prev) || boldIsPunct(prev));
+      const right = !boldIsSpace(prev) && (!boldIsPunct(prev) || boldIsSpace(next) || boldIsPunct(next));
+      runs.push({ len: n, canOpen: left, canClose: right });
+    }
+    i += n - 1;
+  }
+  const used = runs.map(() => 0);
+  const rem = (k) => runs[k].len - used[k];
+  // CommonMark 规则 9：若有一方能「又开又关」，则两侧**长度和**不得是 3 的倍数（除非两者都是 3 的倍数）。
+  // ⚠️ 少了这条，`**A****B**` 会被判成两段加粗 —— 而真解析器渲染成 `<strong>A****B</strong>`。
+  const violates = (j, i) => {
+    if (!(runs[j].canOpen && runs[j].canClose) && !(runs[i].canOpen && runs[i].canClose)) return false;
+    const s = rem(j) + rem(i);
+    return s % 3 === 0 && !(rem(j) % 3 === 0 && rem(i) % 3 === 0);
+  };
+  for (let i = 0; i < runs.length; i += 1) {
+    if (!runs[i].canClose) continue;
+    for (;;) {
+      if (rem(i) < 2) break;
+      let hit = -1;
+      for (let j = i - 1; j >= 0; j -= 1) {
+        if (!runs[j].canOpen || rem(j) < 2) continue;
+        if (violates(j, i)) continue;
+        hit = j;
+        break;
+      }
+      if (hit < 0) break;
+      used[hit] += 2;
+      used[i] += 2;
+    }
+  }
+  let n = 0;
+  for (let k = 0; k < runs.length; k += 1) n += Math.floor(rem(k) / 2);
+  return n;
+}
+
+/** 整份文档的「字面 `**`」总数。 */
+const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.text), 0);
+
 // ── ㊵ 文档里写的 `**` 必须在**渲染后消失**（否则读者看到的是字面 `**`）（2026-10-10，审计 §4.246）──
-// 【为什么】用**真实 CommonMark 解析器**渲染 tracked `.md`，实测有 **87** 处 `text` 结点残留字面 `**`。
+// 【为什么】把 tracked `.md` **按 CommonMark 渲染一遍**、再看渲染出的文本，实测 **87 处**残留字面 `**`。
 //   根因是 **CommonMark 的 flanking 规则对全角标点不友好** —— 不是「作者想写字面 `**`」：
 //   在 `一个**「设置改了」**的缺陷` 里，开 `**` 后随 `「`（标点）且前邻 `个`（字母）⇒ **非 left-flanking**；
 //   闭 `**` 前邻 `」`（标点）且后随 `的`（字母）⇒ **非 right-flanking** ⇒ 不成对 ⇒ 字面显示。
 //   （对照：`一个 **「设置改了」** 的缺陷`（两侧留空格）**能**渲染成加粗。）
 //   ⇒ 权威文档是**给别人读的**，「看起来是加粗、实际显示 `**`」属静默失效。
-// ⚠️ **必须用真解析器**：手写「数 `**` 个数」的量具在三种情形下给错结论（均实测）：
-//   ① 反引号不配对时会把 `**` 卷进伪代码段；② `**A****B**` 在 CommonMark 里渲染成
-//      `<strong>A****B</strong>`（字面 `****` 可见）而**不是**两段加粗；③ 表格单元格是**独立行内上下文**。
-//   （两版手写剥离器的实测误报见 `PITFALLS §4.364`。）
 // 【判据】tracked `.md`（排除 `SKIP_DIRS`、`fixtures/` 与**冻结表**里的已发布 release notes）
-//   经 `markdown-it` 解析后，`inline` 结点的 `text` 子结点里**不得出现 `**`**。
-//   - `code_inline` / `fence` 天然不进 `text` ⇒ 代码里写字面 `**`（如 glob `` `**/*.ts` ``）不受影响。
+//   渲染后**不得出现字面 `**`**。
+//   - 行内码 / 围栏代码块里的 `**`（如 glob `` `**/*.ts` ``）天然不算 ⇒ 不受影响。
 //   - **冻结表是具名的**（不是模式匹配）：release notes 已随 Release 对外发布，改写源文件会与
 //     已发布正文脱钩 ⇒ 它们**不是活文档**；每条豁免都要给理由。
 {
@@ -3186,62 +3319,53 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   // 夹具是**输入样本**，允许含任意 markdown 形态（实测 `tests/fixtures/markdown/full-syntax-corpus.md`
   //   刻意写了「空强调」这类边界样本）⇒ 与「文档是否可读」无关，排除。
   const BOLD_SKIP_SEG = new Set(['fixtures']);
-  let renderer = null;
-  try {
-    renderer = createRequire(resolve(root, 'packages/export/package.json'))('markdown-it')({ html: true });
-  } catch (err) {
-    fail(`加粗配对护栏无法加载 CommonMark 解析器（\`packages/export\` 的 \`markdown-it\`）：${err.message}`
-      + ' —— 解析器加载失败**不得**静默跳过（那会让本判据空转）');
+  const boldFiles = committedFiles().filter(
+    (f) => f.endsWith('.md') && !BOLD_FROZEN.has(f) && !f.split('/').some((s) => BOLD_SKIP_SEG.has(s)),
+  );
+  const boldBad = [];
+  for (const rel of boldFiles) {
+    const src = readFileSync(resolve(root, rel), 'utf8');
+    for (const u of boldUnits(src)) {
+      const n = boldUnpaired(u.text);
+      if (n > 0) boldBad.push(`${rel}:${u.line + 1} 字面 \`**\` ${n} 处「${u.text.replace(/\n/g, '⏎').slice(0, 50)}」`);
+    }
   }
-  if (renderer !== null) {
-    const boldFiles = committedFiles().filter(
-      (f) => f.endsWith('.md') && !BOLD_FROZEN.has(f) && !f.split('/').some((s) => BOLD_SKIP_SEG.has(s)),
-    );
-    const boldBad = [];
-    for (const rel of boldFiles) {
-      const src = readFileSync(resolve(root, rel), 'utf8');
-      for (const tok of renderer.parse(src, {})) {
-        if (tok.type !== 'inline' || !tok.children) continue;
-        for (const child of tok.children) {
-          if (child.type !== 'text' || !child.content.includes('**')) continue;
-          boldBad.push(`${rel} 「${child.content.replace(/\n/g, '⏎').slice(0, 60)}」`);
-        }
-      }
-    }
-    for (const b of boldBad) {
-      fail(`文档里的加粗定界符**渲染后仍是字面 \`**\`**：${b}`
-        + ' —— CommonMark 的 flanking 规则下，`**` 紧贴**全角标点**且外侧紧贴汉字时不成对'
-        + '（`汉字**「引文」**汉字`）⇒ 加粗**静默失效**、读者看到字面 `**`。'
-        + '修法：把引号移出加粗（`汉字「**引文**」汉字`），或在定界符外侧留一个空格；'
-        + '要**真的**显示字面 `**` 请放进行内码。');
-    }
-    // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（立此判据时 203 份 tracked `.md`
-    //    − 4 份冻结 release notes − 28 份夹具），否则「扫描面被改窄」不会红。
-    const BOLD_BASELINE = 171;
-    if (boldFiles.length !== BOLD_BASELINE) {
-      fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
-        + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');
-    }
-    // canary：三向（判定与 canary **共用**同一个 renderer 与「text 结点含 `**`」这一谓词）
-    const D = '**';
-    const hasLit = (s) => renderer.parse(s, {})
-      .flatMap((t) => (t.type === 'inline' && t.children ? t.children : []))
-      .some((c) => c.type === 'text' && c.content.includes(D));
-    if (!hasLit(`汉字${D}「引文」${D}汉字`)) {
-      fail('加粗配对护栏 canary 失效：全角标点紧贴的未成对形态**未被检出**');
-    }
-    if (hasLit(`汉字 ${D}「引文」${D} 汉字`)) {
-      fail('加粗配对护栏**过宽**：两侧留空格的合法加粗被误判');
-    }
-    if (hasLit(`\`${D}\` 是行内码`)) {
-      fail('加粗配对护栏**过宽**：行内码里的 `**` 被误判（要写字面 `**` 的正确写法）');
-    }
-    if (hasLit(`\`\`\`\n${D}\n\`\`\``)) {
-      fail('加粗配对护栏**过宽**：围栏代码块里的 `**` 被误判');
-    }
-    console.log(`Doc code refs: 加粗配对 —— 扫描 ${boldFiles.length} 份 .md，`
-      + `字面 \`**\` 残留 ${boldBad.length} 处（豁免 ${BOLD_FROZEN.size} 份已发布 release notes）`);
+  for (const b of boldBad) {
+    fail(`文档里的加粗定界符**渲染后仍是字面 \`**\`**：${b}`
+      + ' —— CommonMark 的 flanking 规则下，`**` 紧贴**全角标点**且外侧紧贴汉字时不成对'
+      + '（`汉字**「引文」**汉字`）⇒ 加粗**静默失效**、读者看到字面 `**`。'
+      + '修法：把引号移出加粗（`汉字「**引文**」汉字`），或在定界符外侧留一个空格；'
+      + '要**真的**显示字面 `**` 请放进行内码。');
   }
+  // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（立此判据时 203 份 tracked `.md`
+  //    − 4 份冻结 release notes − 28 份夹具），否则「扫描面被改窄」不会红。
+  const BOLD_BASELINE = 171;
+  if (boldFiles.length !== BOLD_BASELINE) {
+    fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
+      + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');
+  }
+  // canary：三向（判定与 canary **共用** `boldUnpaired()` 这一谓词）
+  const D = '**';
+  if (boldUnpaired(`汉字${D}「引文」${D}汉字`) === 0) {
+    fail('加粗配对护栏 canary 失效：全角标点紧贴的未成对形态**未被检出**');
+  }
+  if (boldUnpaired(`汉字 ${D}「引文」${D} 汉字`) !== 0) {
+    fail('加粗配对护栏**过宽**：两侧留空格的合法加粗被误判');
+  }
+  if (boldUnpaired(`\`${D}\` 是行内码`) !== 0) {
+    fail('加粗配对护栏**过宽**：行内码里的 `**` 被误判（要写字面 `**` 的正确写法）');
+  }
+  if (boldCount(`\`\`\`\n${D}\n\`\`\``) !== 0) {
+    fail('加粗配对护栏**过宽**：围栏代码块里的 `**` 被误判');
+  }
+  if (boldUnpaired(`x${D}+y+${D}z`) === 0) {
+    fail('加粗配对护栏 canary 失效：ASCII 标点（`+`）未按 CommonMark 算作标点 ⇒ flanking 判反');
+  }
+  if (boldUnpaired(`**A****B**`) !== 2) {
+    fail('加粗配对护栏 canary 失效：CommonMark 规则 9（长度和不得为 3 的倍数）未被实现');
+  }
+  console.log(`Doc code refs: 加粗配对 —— 扫描 ${boldFiles.length} 份 .md，`
+    + `字面 \`**\` 残留 ${boldBad.length} 处（豁免 ${BOLD_FROZEN.size} 份已发布 release notes）`);
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
