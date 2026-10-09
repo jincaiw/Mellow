@@ -2369,6 +2369,8 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 // ⚠️ **不能数 `\`\`\`` 的奇偶**：GFM 允许**更长的栅栏**包住更短的（本仓实测有 **4 个反引号**的围栏，
 //   其中含 3 个反引号的行）⇒ 奇偶法会**失同步**。正确规则 = 「闭合栅栏的反引号数 **>=** 开启栅栏」
 //   + 「info string **不得含反引号**」（含则那一行**不是**围栏）。
+// ⚠️ **引用块内的围栏**（`> \`\`\``）**必须一并识别**（2026-10-09，审计 §4.229）：原正则只认 `^(\s*)`，
+//   **引用块里的围栏根本不认** ⇒ 一个未闭合的 `> \`\`\`` 会**静默漏过**（本仓实测 2 份文档 4 行，均成对）。
 // ⚠️ **渲染语料豁免**（`tests/fixtures/**`、`tests/benchmark/**`）：语料**故意**含异形语法。
 {
   const MD = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
@@ -2378,7 +2380,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     const lines = src.split('\n');
     let open = null;
     for (let i = 0; i < lines.length; i += 1) {
-      const m = /^(\s*)(`{3,})(.*)$/.exec(lines[i]);
+      const m = /^(\s*(?:>+\s*)*)(`{3,})(.*)$/.exec(lines[i]);
       if (m === null) continue;
       const len = m[2].length;
       const rest = m[3].trim();
@@ -2418,6 +2420,14 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   if (unclosedFence('```js `x`\na\n```\n') === null) {
     errors.push('围栏护栏 canary 过宽：info string 含反引号的行被当成了开启栅栏');
+  }
+  // ⚠️ **引用块内的围栏**（`> ``` `）—— 2026-10-09（审计 §4.229）：原正则只认 `^(\s*)`，
+  //    **引用块里的围栏根本不认** ⇒ 一个未闭合的 `> ``` ` 会**静默漏过**（本仓实测 2 份文档 4 行，均成对）。
+  if (unclosedFence('> ```\n> a\n> ```\n') !== null) {
+    errors.push('围栏护栏 canary 失效：**引用块内成对**的围栏被判为未闭合');
+  }
+  if (unclosedFence('> ```\n> a\n') === null) {
+    errors.push('围栏护栏 canary 失效：**引用块内未闭合**的围栏未被检出（引用块前缀未被识别）');
   }
   console.log(`Doc code refs: 代码围栏闭合（扫描 ${fenceDocs} 份非夹具文档）`);
 }
