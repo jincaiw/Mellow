@@ -338,7 +338,7 @@ if (!/Windows Source Fidelity gate/.test(workflow)
 //   · `docs/qualification/ux-score-gate-template.md` §二 的任务表（**唯一来源**，master-plan §9.5 指定）
 //   · `docs/product/Mellow-PRD-V1.2-FINAL.md` §132（「30 个核心 Typora 任务」+ 四条阈值）
 //   · `tests/qualification/ux-gate-recorder.mjs` 的 `TASKS`（**机器可读**；记录器按它生成 30×2×2 条观测）
-//   · `README.md` / `ADR-0020 §2`（「30 任务效率 Gate」，由判据 ⑨c 锁）
+//   · `README.md` / `ADR-0020 §2`（「30 任务效率 Gate」，由 `verify-release-gate.mjs` 判据 ⑨c 锁）
 //   ⚠️ 记录器**已经**用 `TASKS.length` 算观测总数（`TASKS.length * APPS.length * ROUNDS.length`）
 //   ⇒ 若 `TASKS` 被误改成 31 项，**模板表 / PRD / README 都不会红**（只是观测数悄悄变了）。
 // 【判据】以 `TASKS.length` 为**真值源**：模板 §二 任务表行数、PRD §132 的数量声明都必须 == 它。

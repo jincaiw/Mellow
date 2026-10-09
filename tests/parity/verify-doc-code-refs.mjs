@@ -2281,7 +2281,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail(`只解析出 ${cmdChecked} 处 \`npm run X\`（下限 30 = 立此判据时的基线 36 − 余量）`
       + ' —— 谓词或文档内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
   }
-  // 覆盖数**派生打印**（判据 ⑧：`console.log` 里不得有手写计数）—— 让「本判据查了多少」可见
+  // 覆盖数**派生打印**（`verify-release-gate.mjs` 判据 ⑧：`console.log` 里不得有手写计数）—— 让「本判据查了多少」可见
   console.log(`Doc code refs: 文档命令引用 ${cmdChecked} 处（目录 ${[...cmdDirs].sort().join(' / ')}）`
     + `；目标目录无 package.json 跳过 ${cmdSkipped} 处`);
   // canary：四向（判定与 canary **共用** scanRun / scriptsOf）
@@ -2382,7 +2382,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   if (tableCells('| a | b | c |') === tableCells('|---|---|')) {
     errors.push('表格列数护栏 canary 失效：**分隔行与表头**的格数不可区分（分隔行判据会空转）');
   }
-  // 覆盖数**派生打印**（判据 ⑧）—— 让「本判据查了多少」可见
+  // 覆盖数**派生打印**（`verify-release-gate.mjs` 判据 ⑧）—— 让「本判据查了多少」可见
   console.log(`Doc code refs: 表格 ${tblTables} 个 / 数据行 ${tblRows} 行，格数**不多于**表头且**分隔行 == 表头**`);
 }
 
@@ -2665,6 +2665,96 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     errors.push('扫描面护栏 canary 过宽：**整行注释里的**裸调用被计入（会恒报错）');
   }
   console.log(`Doc code refs: 扫描面受控（裸 \`git ls-files\` ${rawLsFiles} 处 = \`committedFiles()\` 的实现；\`${WALK}\` ${walkRoot} 处）`);
+}
+
+// ── ㉞ 护栏里的「判据 <圈号>」引用：**本文件没有的**编号必须**同行**写明护栏名（2026-10-09，审计 §4.235）──
+// 【为什么】判据编号是**每护栏本地**的 —— 每个 `verify-*.mjs` 各自从 ① 开始写 `// ── ① …`。
+//   实测：23 个护栏里 **8 个**用编号，而这 8 个合计只用到 **35** 个圈号（**33 个被 ≥2 个护栏共用**）
+//   ⇒ 同一个「判据 ⑧」在 `verify-build-pipeline.mjs`（包 dist 新鲜度闸门）与 `verify-release-gate.mjs`
+//   （输出里不得有手写的 `N-单词` 计数）里是**两条完全不同的判据**。
+//   ⇒ **跨护栏引用不写护栏名 = 读者查错护栏**（实测 4 处，全部指向 `verify-release-gate.mjs`）。
+// 【判据】对每个 `verify-*.mjs`：凡出现「判据 <圈号>」，若该圈号**不在本文件**的判据头里
+//   ⇒ **同一行**必须出现 `verify-*.mjs` 名。
+//   ⚠️ **本文件有的编号 ⇒ 局部优先，不要求指名**（否则会把「本文件的 ⑨」也判成歧义 ⇒ 大面积误报）。
+//   ⚠️ 扫描面 = **只护栏**（`tests/parity/verify-*.mjs`）：`tools/*.mjs` 用的是**它自己的**临时编号
+//      （如 `audit-typora-preferences.mjs` 的「绝对判据 1 / 2」），不属本约定。
+//   ⚠️ **自排除**（本判据的报错消息与 canary 样本里必然出现该形态）。
+//   ⚠️ **已知局限（如实声明）**：只判「有没有写护栏名」，**不判写的是不是对的** ——
+//      写错护栏名（如把 `verify-release-gate.mjs` 写成 `verify-build-pipeline.mjs`）本判据看不出。
+{
+  /** 判据头行里的**全部**圈号 —— `// ── ① + ② 核心包…` ⇒ `[①,②]`；`// ── ③-b Windows…` ⇒ `[③]`。
+   *  ⚠️ 只取**第一个**圈号会**漏掉** `① + ②` 这类合并写法（实测 `verify-adapter-contract.mjs` 的 ②）。 */
+  const headerNums = (line) => {
+    const m = /^\s*\/\/ ──\s*(.*)$/.exec(line);
+    if (m === null) return [];
+    let rest = m[1];
+    const out = [];
+    for (;;) {
+      const t = /^\s*([①-⑳㉑-㉟])(?:-?([a-z]))?\s*(?:[+·/、]\s*)?/.exec(rest);
+      if (t === null) break;
+      out.push(t[1]);
+      rest = rest.slice(t[0].length);
+      if (!/^\s*[①-⑳㉑-㉟]/.test(rest)) break;
+    }
+    return out;
+  };
+  const CIRCLED_REF = () => /判据\s*([①-⑳㉑-㉟])/g;
+  const GUARD_NAME = /(verify-[a-z-]+\.mjs)/;
+  /** 判定（与 canary **共用**）：返回该行里「本文件没有、且未指名护栏」的圈号列表。 */
+  const unresolvedRefs = (mine, line) => {
+    const out = [];
+    for (const m of line.matchAll(CIRCLED_REF())) {
+      if (mine.has(m[1])) continue;
+      if (GUARD_NAME.test(line)) continue;
+      out.push(m[1]);
+    }
+    return out;
+  };
+  const SELF_ABS = resolve(import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs'));
+  const guardFiles = committedAbs()
+    .filter((f) => /[\\/]tests[\\/]parity[\\/]verify-.*\.mjs$/.test(f))
+    .filter((f) => resolve(f) !== SELF_ABS);
+  let critRefs = 0;
+  for (const f of guardFiles) {
+    const lines = readFileSync(f, 'utf8').replace(/\r\n/g, '\n').split('\n');
+    const mine = new Set();
+    for (const l of lines) for (const c of headerNums(l)) mine.add(c);
+    lines.forEach((line, i) => {
+      critRefs += [...line.matchAll(CIRCLED_REF())].length;
+      const bad = unresolvedRefs(mine, line);
+      if (bad.length === 0) return;
+      const rel = relative(root, f).split('\\').join('/');
+      fail(`${rel}:${i + 1} 引用了「判据 ${bad.join('、')}」，但**本文件没有**该编号、同行也未写明护栏名`
+        + ' —— 判据编号是**每护栏本地**的（同一个圈号在多个护栏里含义不同）'
+        + ' ⇒ 请写成「`verify-xxx.mjs` 判据 N」');
+    });
+  }
+  // [健康度型] 集合由源码内容产生 ⇒ 留余量（基线 8，下限 5）
+  if (critRefs < 5) {
+    fail(`只解析出 ${critRefs} 处护栏间的「判据 N」引用（下限 5 = 立此判据时的基线 8 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（判定与 canary **共用** headerNums / unresolvedRefs）
+  // ⚠️ **样本运行时拼接**（本判据的扫描面是护栏源码 ⇒ 写字面量会命中自己，`PITFALLS §4.237` 的教训）
+  const KW = '判' + '据';
+  const C = '⑧';
+  const G = 'verify-' + 'release-gate.mjs';
+  if (headerNums(`// ── ${'①'} + ${'②'} 核心包平台边界扫描 ──`).join('') !== '①②') {
+    errors.push('判据引用护栏 canary 失效：判据头里的**合并写法**只解析出了第一个圈号（会漏编号）');
+  }
+  if (headerNums(`// ── ${'③'}-b Windows JumpList ──`).join('') !== '③') {
+    errors.push('判据引用护栏 canary 失效：带 `-b` 后缀的判据头解析错了');
+  }
+  if (unresolvedRefs(new Set([C]), `// ${KW} ${C} 锁的是 …`).length !== 0) {
+    errors.push('判据引用护栏 canary 过宽：**本文件有的**编号被要求指名护栏（会大面积误报）');
+  }
+  if (unresolvedRefs(new Set(), `// ${KW} ${C} 锁的是 …`).join('') !== C) {
+    errors.push('判据引用护栏 canary 失效：本文件没有该编号且未指名护栏时**未被报出**');
+  }
+  if (unresolvedRefs(new Set(), `// ${G} ${KW} ${C} 锁的是 …`).length !== 0) {
+    errors.push('判据引用护栏 canary 过宽：**已指名护栏**的引用仍被判为未解析');
+  }
+  console.log(`Doc code refs: 判据编号引用 ${critRefs} 处（护栏间，均属本文件或已指名护栏）`);
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──

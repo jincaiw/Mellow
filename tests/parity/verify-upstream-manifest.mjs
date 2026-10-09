@@ -183,7 +183,7 @@ if (!existsSync(resolve(root, MANIFEST))) {
   // ── canary：用**同一套纯函数**跑合成输入，必须报出不一致 ────────────────
   // 直接测逻辑（不是测字符串替换）—— 清单里翻一个哈希 = 事实多一个「已改动」。
   // ⚠️ 计数必须**派生**（§4.172/§4.173 的 idiom）：2026-10-09（审计 §4.180）实测该收口行
-  //   原写「含 **5 项**逻辑 canary」而当时已有 **7** 条 —— 而判据 ⑦/⑧ 的谓词分别是
+  //   原写「含 **5 项**逻辑 canary」而当时已有 **7** 条 —— 而 `verify-release-gate.mjs` 判据 ⑦/⑧ 的谓词分别是
   //   `canary N 项`（canary 在**前**）与 `N-word`（英文连字符）⇒ **两个都没覆盖「N 项…canary」**。
   //   `canary` / `canaryCount` 定义在**模块级**（收口行在块外，需可见）。
   const base = { 'src/untouched.ts': 'aaaaaaaaaaaaaaaa', 'src/edited.ts': 'bbbbbbbbbbbbbbbb' };
