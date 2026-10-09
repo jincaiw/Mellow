@@ -2663,6 +2663,49 @@ if (cssLayerAnchor === undefined) {
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────
+// ── `ADR-0034` 的「逐项事实」表里 **Mellow 默认值**必须 == `settings/src/index.ts` 的 `defaultValue`（2026-10-09，审计 §4.200）──
+// 【为什么】ADR-0034 是 **Proposed**（待裁决），而它的**裁决前提**是那张表里的**事实准确**。
+//   本轮实测（§4.200）：4 项设置（5 行）**全部一致** ✅ —— 但**没有任何判据**守着它
+//   ⇒ 若有人改了 `defaultValue` 而没同步 ADR，**裁决会基于过期事实**（同族「只锁了一半」）。
+// 【判据】ADR 表每行的「Mellow 设置 id（第 4 列）+ Mellow 默认（第 5 列）」必须 == 代码的 `defaultValue`。
+{
+  const ADR = 'docs/adr/ADR-0034-preference-deviations-2026-10-07.md';
+  const SETTINGS = 'packages/settings/src/index.ts';
+  const adrLines = readFileSync(resolve(root, ADR), 'utf8').replace(/\r\n/g, '\n').split('\n');
+  const setLines = readFileSync(resolve(root, SETTINGS), 'utf8').replace(/\r\n/g, '\n').split('\n');
+  let checked = 0;
+  for (const line of adrLines) {
+    // 形态：`| Q1 | \`enableHighlight\` | \`false\` | \`markdown.highlight\` | **\`true\`** | …`
+    const cells = line.split('|').map((c) => c.trim());
+    if (cells.length < 7) continue;
+    const idM = /^`([a-z][a-zA-Z0-9.]*)`$/.exec(cells[4]);
+    const defM = /^\**`?(true|false)`?\**$/.exec(cells[5]);
+    if (idM === null || defM === null) continue;
+    const id = idM[1];
+    const declared = defM[1] === 'true';
+    const srcLine = setLines.find((x) => x.includes(`id: '${id}'`));
+    if (srcLine === undefined) {
+      fail(`ADR-0034 表里引用了设置 id \`${id}\`，但 ${SETTINGS} 里**找不到** —— 悬空引用`);
+      continue;
+    }
+    const actual = /defaultValue:\s*(true|false)/.exec(srcLine);
+    if (actual === null) {
+      fail(`${SETTINGS} 的 \`${id}\` 没有可解析的 \`defaultValue\` —— 判据锚点漂移`);
+      continue;
+    }
+    checked += 1;
+    if ((actual[1] === 'true') !== declared) {
+      fail(`ADR-0034 表写「${id} 默认 **${declared}**」，而 ${SETTINGS} 的 \`defaultValue\` = **${actual[1]}**`
+        + ' —— **裁决前提是事实准确** ⇒ 改默认值必须同步该 ADR');
+    }
+  }
+  // 防空转：实测 5 行（Q1 / Q2 / Q3 / Q4 / Q5；Q2-Q3 虽合并裁决但表里是两行）
+  if (checked < 4) {
+    fail(`ADR-0034 的「逐项事实」只解析到 ${checked} 行（下限 4 = 2026-10-09 实测 5）—— 判据范围萎缩`);
+  }
+  console.log(`Settings contract: ADR-0034 的「逐项事实」（${checked} 项 Mellow 默认值）== 代码 defaultValue`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
