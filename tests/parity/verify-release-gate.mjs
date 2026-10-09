@@ -1778,9 +1778,14 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     const m = /PASS-E\s*=\s*(\d+)\s*\/\s*(\d+)/.exec(s);
     return m === null ? null : [Number(m[1]), Number(m[2])];
   };
+  // ⚠️ **两种语序都要覆盖**（2026-10-09，审计 §4.189）：`未闭环 N 项`（正装）与 `N 项未闭环`（**倒装**）
+  //   —— 实测活文档里有 **8 处倒装**（含 2 处带「当前状态真值源」标记的），而原谓词**只认正装**
+  //   ⇒ 静默漏检（同族「**同一语义多种写法**」**第 4 次**：§4.180 的 canary 语序 · §4.181 的中文量词 ·
+  //   PITFALLS §4.293）。
   const unclosedOf = (s) => {
-    const m = /未闭环\s*\**\s*(\d+)\s*项/.exec(s);
-    return m === null ? null : Number(m[1]);
+    const m = /未闭环\s*\**\s*(\d+)\s*项|\**(\d+)\s*项\**\s*未闭环/.exec(s);
+    if (m === null) return null;
+    return Number(m[1] ?? m[2]);
   };
   const statedPassE = passEOf(readmeSnapshot);
   const statedUnclosed = unclosedOf(readmeSnapshot);
@@ -1790,7 +1795,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       + '要么同步，要么改为指向门禁输出（`node tests/parity/verify-release-gate.mjs`）');
   }
   if (statedUnclosed !== null && statedUnclosed !== noGo.length) {
-    fail(`README.md 写「未闭环 ${statedUnclosed} 项」，而门禁**现算**为 ${noGo.length} 项 —— 同上：快照会漂`);
+    fail(`该处写「未闭环 ${statedUnclosed} 项」（或**倒装**「${statedUnclosed} 项未闭环」），`
+      + `而门禁**现算**为 ${noGo.length} 项 —— 同上：快照会漂`);
   }
   // 防空转：README 必须**真的**还带这类快照（否则本判据失去靶子）
   if (statedPassE === null && statedUnclosed === null) {
@@ -1804,6 +1810,14 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   // canary ②：带后缀 / 加粗形态也要能取到（README 里是「未闭环 **9 项**」）
   if (unclosedOf('未闭环 **9 项**依然成立') !== 9) {
     fail('⑨ canary 失效：加粗形态「未闭环 **N 项**」取不到');
+  }
+  // canary ④：**倒装**形态也要能取到（活文档里 8 处，含 2 处带「当前状态真值源」标记的）
+  if (unclosedOf('（**9 项未闭环 / `PASS-E = 0/50`**）') !== 9) {
+    fail('⑨ canary 失效：倒装形态「N 项未闭环」取不到');
+  }
+  // canary ⑤（负样本）：倒装的不一致值也必须能取到（防「只取了正装」）
+  if (unclosedOf('8 项未闭环') === noGo.length) {
+    fail('⑨ canary 失效：倒装形态的不一致值未被识别');
   }
   // canary ③（负样本）：不一致必须能检出（谓词与判定共用 ⇒ 直接比对现算值）
   if (passEOf('PASS-E = 1/50')[0] === passECount) {
