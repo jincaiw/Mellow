@@ -123,7 +123,7 @@ NODE_PATH=/tmp/pw/node_modules node tests/e2e/<script>.mjs
 | `smoke.mjs` | **10/10** ✅ | React 非白屏、iframe 挂载、`webModules.core` 就绪、CodeMirror 实例、引擎扩展安装、输入闭环、WYSIWYG marker 隐藏 5/5、零页面错误、零控制台错误 |
 | `sidebar-verify.mjs` | **19/19** ✅ | ⌃⌘1/2/3 三模式、写作宽度不随侧栏变化、Source Mode 往返、Reader 往返、⌘F 临时过滤框、☰ 直切、窄窗暂隐与恢复 |
 | `sidebar-resize-verify.mjs` | **12/12** ✅ | 默认 260、拖拽 380、clamp 200/480、持久化、重载恢复、越界回落、<900 暂隐、200% zoom |
-| `block-shortcuts-verify.mjs` | **15/15** ✅ | ⌥⌘Q/U/O/X/C/B 块级、**⌘⇧` 行内代码**、⌃⇧` 删除线、⌘\\ 清除样式、查找替换面板 |
+| `block-shortcuts-verify.mjs` | **15/15** ✅ | ⌥⌘Q/U/O/X/C/B 块级、**⌘⇧\` 行内代码**、⌃⇧\` 删除线、⌘\\ 清除样式、查找替换面板 |
 | `zoom-verify.mjs` | **8/8** ✅ | — |
 | `theme-verify.mjs` | **8/8** ✅ | — |
 | `font-family-verify.mjs` | **4/4** ✅ | — |
@@ -135,7 +135,7 @@ NODE_PATH=/tmp/pw/node_modules node tests/e2e/<script>.mjs
 | 断言 | 实测 | 定性 |
 |---|---|---|
 | `⌃⌘2 unbound (V5-A1: list retired)` | `mode=fileList`（已绑定） | **断言过期**：W1.5 已按 Typora 官方表恢复 Articles（⌃⌘2）。实现正确。 |
-| `⌃` wraps selection as inline code` | 未包裹 | **断言过期**：W1.9 已按官方表将行内 Code 的 macOS 键位改为 **⌘⇧`**（⌃⇧` 为删除线）。实现正确。 |
+| `⌃` wraps selection as inline code` | 未包裹 | **断言过期**：W1.9 已按官方表将行内 Code 的 macOS 键位改为 **⌘⇧\`**（⌃⇧\` 为删除线）。实现正确。 |
 
 向 Typora 官方 Shortcut Keys 页（rev. 2026-09-06）求证后确认官方真值：
 `Code = Cmd+Shift+\``、`Strike = Ctrl+Shift+\``、`Articles = Cmd+Control+2`、
@@ -289,7 +289,7 @@ shell 内的 `osascript → System Events` 仍返回 `-10004`；因此性能 run
 `node` 不在 PATH，导致 Typora 阶段完成后整体失败；已改为使用当前 Node 的绝对路径
 （`${process.execPath} generate-fixtures.mjs`）。
 
-随后用修复后的 runner 完成一轮正式的 **Mellow vs Typora（N=3）**打开 / 滚动对照，报告：
+随后用修复后的 runner 完成一轮正式的 **Mellow vs Typora（N=3**）打开 / 滚动对照，报告：
 `tests/benchmark/reports/2026-09-12T09-04-16-mellow-vs-typora.md`。
 
 | 夹具 | Mellow open median / P95 | Typora open median / P95 | Mellow scroll P95 / FPS | Typora scroll P95 / FPS |

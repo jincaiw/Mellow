@@ -1,6 +1,6 @@
 # Codex Implementation Plan
 
-> **2026-10-06 复核（本文件是**任务编号脚手架**，不是状态台账）**
+> **2026-10-06 复核（本文件是**任务编号脚手架 **，不是状态台账）**
 >
 > - **本文档不记录完成状态** —— 每个任务只有编号与一句话。**权威完成记录**是
 >   `docs/plans/typora-parity-master-plan.md` 的 **§15 完成度审计**（+ 台账 `tests/parity/typora-parity-ledger.json`）。

@@ -104,8 +104,8 @@ node tests/benchmark/generate-fixtures.mjs
 | D1 | 拖入单个 .md | 打开文档 |
 | D2 | 拖入图片（单/多张） | 按图片策略插入 |
 
-> **⚠️ 2026-10-08 更新（审计 §4.152；**取代** §4.124 的「未实现」判断）：D1 的行为**已实装**（§4.134），
-> 但仍**未做真机验证** ⇒ 本行应读作「**待人工真机执行**」，既不是「已通过」、也不是「不可能通过」。**
+> **⚠️ 2026-10-08 更新（审计 §4.152；取代 §4.124 的「未实现」判断）：D1 的行为已实装（§4.134），
+> 但仍未做真机验证 ⇒ 本行应读作「待人工真机执行」，既不是「已通过」、也不是「不可能通过」。**
 > 实装内容（审计 §4.134）：决策表逐字转写为纯函数 `packages/app-core/src/dropAction.ts` 的
 > `decideDropAction()`（39 例单测全行覆盖）+ 三档设置 `files.dropFolderAction` / `files.dropFileAction` /
 > `files.dropImportAction`（默认 **open / open / import**，与 Typora 一致）+ Rust `path_kind`

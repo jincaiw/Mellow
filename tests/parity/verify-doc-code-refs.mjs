@@ -35,6 +35,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const root = resolve(import.meta.dirname, '../..');
 
@@ -3156,6 +3157,91 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail('原始数据护栏 canary 失效：「未入库 / 外部」标记未被识别（会导致恒报错）');
   }
   console.log(`Doc code refs: 「原始数据 / 样本」段 ${rawSections} 个（段内文件均已存在或已注明未入库）`);
+}
+
+// ── ㊵ 文档里写的 `**` 必须在**渲染后消失**（否则读者看到的是字面 `**`）（2026-10-10，审计 §4.246）──
+// 【为什么】用**真实 CommonMark 解析器**渲染 tracked `.md`，实测有 **87** 处 `text` 结点残留字面 `**`。
+//   根因是 **CommonMark 的 flanking 规则对全角标点不友好** —— 不是「作者想写字面 `**`」：
+//   在 `一个**「设置改了」**的缺陷` 里，开 `**` 后随 `「`（标点）且前邻 `个`（字母）⇒ **非 left-flanking**；
+//   闭 `**` 前邻 `」`（标点）且后随 `的`（字母）⇒ **非 right-flanking** ⇒ 不成对 ⇒ 字面显示。
+//   （对照：`一个 **「设置改了」** 的缺陷`（两侧留空格）**能**渲染成加粗。）
+//   ⇒ 权威文档是**给别人读的**，「看起来是加粗、实际显示 `**`」属静默失效。
+// ⚠️ **必须用真解析器**：手写「数 `**` 个数」的量具在三种情形下给错结论（均实测）：
+//   ① 反引号不配对时会把 `**` 卷进伪代码段；② `**A****B**` 在 CommonMark 里渲染成
+//      `<strong>A****B</strong>`（字面 `****` 可见）而**不是**两段加粗；③ 表格单元格是**独立行内上下文**。
+//   （两版手写剥离器的实测误报见 `PITFALLS §4.364`。）
+// 【判据】tracked `.md`（排除 `SKIP_DIRS`、`fixtures/` 与**冻结表**里的已发布 release notes）
+//   经 `markdown-it` 解析后，`inline` 结点的 `text` 子结点里**不得出现 `**`**。
+//   - `code_inline` / `fence` 天然不进 `text` ⇒ 代码里写字面 `**`（如 glob `` `**/*.ts` ``）不受影响。
+//   - **冻结表是具名的**（不是模式匹配）：release notes 已随 Release 对外发布，改写源文件会与
+//     已发布正文脱钩 ⇒ 它们**不是活文档**；每条豁免都要给理由。
+{
+  // 已发布、不得改写的 release notes（**不要**改成通配模式 —— 豁免要逐条可复核）
+  const BOLD_FROZEN = new Map([
+    ['.github/release-notes-v1.5.17.md', 'v1.5.17 已发布：改写源文件会与 GitHub Release 上的正文脱钩'],
+    ['.github/release-notes-v1.5.20.md', 'v1.5.20 已发布：同上'],
+    ['.github/release-notes-v1.5.21.md', 'v1.5.21 已发布：同上'],
+    ['.github/release-notes-v1.5.23.md', 'v1.5.23 已发布：同上'],
+  ]);
+  // 夹具是**输入样本**，允许含任意 markdown 形态（实测 `tests/fixtures/markdown/full-syntax-corpus.md`
+  //   刻意写了「空强调」这类边界样本）⇒ 与「文档是否可读」无关，排除。
+  const BOLD_SKIP_SEG = new Set(['fixtures']);
+  let renderer = null;
+  try {
+    renderer = createRequire(resolve(root, 'packages/export/package.json'))('markdown-it')({ html: true });
+  } catch (err) {
+    fail(`加粗配对护栏无法加载 CommonMark 解析器（\`packages/export\` 的 \`markdown-it\`）：${err.message}`
+      + ' —— 解析器加载失败**不得**静默跳过（那会让本判据空转）');
+  }
+  if (renderer !== null) {
+    const boldFiles = committedFiles().filter(
+      (f) => f.endsWith('.md') && !BOLD_FROZEN.has(f) && !f.split('/').some((s) => BOLD_SKIP_SEG.has(s)),
+    );
+    const boldBad = [];
+    for (const rel of boldFiles) {
+      const src = readFileSync(resolve(root, rel), 'utf8');
+      for (const tok of renderer.parse(src, {})) {
+        if (tok.type !== 'inline' || !tok.children) continue;
+        for (const child of tok.children) {
+          if (child.type !== 'text' || !child.content.includes('**')) continue;
+          boldBad.push(`${rel} 「${child.content.replace(/\n/g, '⏎').slice(0, 60)}」`);
+        }
+      }
+    }
+    for (const b of boldBad) {
+      fail(`文档里的加粗定界符**渲染后仍是字面 \`**\`**：${b}`
+        + ' —— CommonMark 的 flanking 规则下，`**` 紧贴**全角标点**且外侧紧贴汉字时不成对'
+        + '（`汉字**「引文」**汉字`）⇒ 加粗**静默失效**、读者看到字面 `**`。'
+        + '修法：把引号移出加粗（`汉字「**引文**」汉字`），或在定界符外侧留一个空格；'
+        + '要**真的**显示字面 `**` 请放进行内码。');
+    }
+    // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（立此判据时 203 份 tracked `.md`
+    //    − 4 份冻结 release notes − 28 份夹具），否则「扫描面被改窄」不会红。
+    const BOLD_BASELINE = 171;
+    if (boldFiles.length !== BOLD_BASELINE) {
+      fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
+        + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');
+    }
+    // canary：三向（判定与 canary **共用**同一个 renderer 与「text 结点含 `**`」这一谓词）
+    const D = '**';
+    const hasLit = (s) => renderer.parse(s, {})
+      .flatMap((t) => (t.type === 'inline' && t.children ? t.children : []))
+      .some((c) => c.type === 'text' && c.content.includes(D));
+    if (!hasLit(`汉字${D}「引文」${D}汉字`)) {
+      fail('加粗配对护栏 canary 失效：全角标点紧贴的未成对形态**未被检出**');
+    }
+    if (hasLit(`汉字 ${D}「引文」${D} 汉字`)) {
+      fail('加粗配对护栏**过宽**：两侧留空格的合法加粗被误判');
+    }
+    if (hasLit(`\`${D}\` 是行内码`)) {
+      fail('加粗配对护栏**过宽**：行内码里的 `**` 被误判（要写字面 `**` 的正确写法）');
+    }
+    if (hasLit(`\`\`\`\n${D}\n\`\`\``)) {
+      fail('加粗配对护栏**过宽**：围栏代码块里的 `**` 被误判');
+    }
+    console.log(`Doc code refs: 加粗配对 —— 扫描 ${boldFiles.length} 份 .md，`
+      + `字面 \`**\` 残留 ${boldBad.length} 处（豁免 ${BOLD_FROZEN.size} 份已发布 release notes）`);
+  }
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──

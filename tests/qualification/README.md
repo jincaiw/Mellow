@@ -18,7 +18,7 @@
 > 本行不重复写数字以免二次漂移）、`tsc --noEmit` **0 错误**。
 > **受阻项**：依赖**原生 App 界面操控**的验证（原生 IME 面板 / 20 分钟连续写作 /
 > Golden Journeys / 30 计时 / UX Score / 跨应用剪贴板 C3 / 盲测）仍因 **System Events 被 TCC
-> 拒绝（-609 / -10004）**无法完整执行。注意：`screen-timing check` 已显示
+> 拒绝（-609 / -10004**）无法完整执行。注意：`screen-timing check` 已显示
 > `Accessibility=true` + `ScreenRecording=true`，但 WorkBuddy shell 的 `osascript → System Events`
 > 仍返回 `-10004`；helper 权限与 shell Apple Events 权限是两个独立上下文。
 >

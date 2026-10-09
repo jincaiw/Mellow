@@ -91,7 +91,7 @@ P1：
 - unused image cleanup
 - image manager
 
-> **⚠️ 2026-10-01 一手证据复核：P1 后两项**无一手依据**，登记为待裁决**
+> **⚠️ 2026-10-01 一手证据复核：P1 后两项**无一手依据 **，登记为待裁决**
 >
 > 取本机 Typora 1.14.9 逐字核对：
 > - **`Upload All` ✓ 是 Typora 的**（`Menu.strings`：`Upload All Local Images = 上传所有本地图片`；

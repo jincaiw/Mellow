@@ -352,7 +352,7 @@ Typora 的面板键 `quitAfterWindowClose`（组 **"Quit"**，**仅 macOS 显示
 
 判据分两处（**形状** vs **解析**，各自只做一件事）：
 
-**A. `verify-settings-contract.mjs` ⑭ 节（矩阵的**形状**）**
+**A. `verify-settings-contract.mjs` ⑭ 节（矩阵的**形状 **）**
 
 1. `deviation.kind === 'undecided'` ⇒ **必须**带 `pendingRef`（形如 `ADR-0034`）；`deliberate` ⇒ **必须**带 `carrier`（非空的「依据在哪」）；
 2. **行为轴同理**：`behavior === 'differs'` ⇒ **必须**带 `disposition: { kind, ref }`，且

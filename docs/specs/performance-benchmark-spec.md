@@ -68,7 +68,7 @@ PRD §110 明确要求：
 
 核心原则：**对 Mellow 与 Typora 使用完全相同的测量路径**，不做 in-app 插桩（Typora 不可插桩，插桩会破坏可比性）。
 
-> **⚠️ 2026-10-05 更正（本节与 §10 的 W-PERF-1 曾**字面矛盾**）**：
+> **⚠️ 2026-10-05 更正（本节与 §10 的 W-PERF-1 曾**字面矛盾 **）**：
 > 本节原文的「**不做 in-app 插桩**」是**对「主测量路径」的约束**，**不是全仓禁令** ——
 > 而 §10 的 **W-PERF-1 正是应用内埋点**（`packages/editor-engine/src/inputLatency.ts`，**已落地**）。
 > 两者**并不矛盾**，但原文的绝对措辞会让人以为 W-PERF-1 违规。准确表述是三条：
@@ -116,7 +116,7 @@ PRD §110 明确要求：
 `tests/benchmark/reports/<时间戳>-mellow-vs-typora.md`：
 
 > **⚠️ 2026-10-05 更正**：本节原写文件名形如 `<YYYY-MM-DD>-<mellow-commit>-<typora-version>.md` ——
-> **与实现不符**。实际是 `reports/<ts>-mellow-vs-typora.md`（如 `2026-09-30T19-39-23-mellow-vs-typora.md`），
+> **与实现不符 **。实际是 `reports/<ts>-mellow-vs-typora.md`（如 `2026-09-30T19-39-23-mellow-vs-typora.md`），
 > **commit / 脏树 / Typora 版本记在报告**内部**（环境头，见下第 1 项），不在文件名里**。
 > 两者**信息等价**（可追溯性不丢），差别只在「能否靠 `ls` 一眼定位」。
 > ⚠️ 另注：`reports/` 与 `results/` 均**已 gitignore**（见 `verify-parity-ledger.mjs` 的说明），
