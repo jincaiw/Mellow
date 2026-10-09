@@ -1693,6 +1693,77 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ㉒ 引用的 `ADR-NNNN` 必须**存在**（2026-10-09，审计 §4.209）────────────────────
+// 立此条的原因（实测）：往 `docs/architecture/README.md` 注入 `ADR-0099`（**不存在**）后，
+//   本护栏与 `verify-release-gate.mjs` **都没红** ⇒ 仓库级**没有**「ADR 编号必须存在」的判据。
+//   而仓库内 `ADR-NNNN` 引用共 **1036 处**（md 755 / mjs 192 / ts 38 / json 29 / yml 12 / tsx 6 / rs 4）。
+//   ⚠️ 门禁里已有的 `resolvesRef` 只覆盖**矩阵 disposition** 那一处，**不是全仓**。
+{
+  const ADR_DIR = resolve(root, 'docs/adr');
+  const ADR_IDS = new Set(readdirSync(ADR_DIR)
+    .filter((f) => /^ADR-\d{4}.*\.md$/.test(f)).map((f) => f.slice(0, 8)));
+  if (ADR_IDS.size < 30) {
+    fail(`docs/adr/ 只解析出 ${ADR_IDS.size} 份 ADR（下限 30 = 2026-10-09 实测 34）—— 判据锚点漂移`);
+  }
+  // ⚠️ **哨兵值**：护栏自己的合成样本用 `ADR-9999`（**永不存在**）⇒ 必须登记豁免（带理由 + 双向核对）
+  const ADR_REF_EXEMPT = new Map([
+    ['ADR-9999', '护栏的**哨兵编号**（合成样本专用，永不存在）—— `verify-release-gate.mjs` 的 canary'],
+  ]);
+  // 更正说明会**引用旧编号** ⇒ 逐行豁免（与 ⑳ 同谓词）
+  const NOTE = /原写|原文|更正|漂移|已改为|也写|不存在/;
+  const SCAN_EXTS = ['md', 'mjs', 'cjs', 'ts', 'tsx', 'rs', 'json', 'yml', 'yaml'];
+  // ⚠️ 必须排除本护栏自身：它含**合成样本**（canary 里的 `ADR-0099`）⇒ 不排除会**恒报错**
+  const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
+  /** 返回本文件里「引用了不存在的 ADR 编号」的清单（判定与 canary **共用**本谓词）。 */
+  const badAdrRefs = (text) => {
+    const out = [];
+    text.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      if (NOTE.test(line)) return;
+      for (const m of line.matchAll(/\bADR-(\d{4})\b/g)) {
+        const id = `ADR-${m[1]}`;
+        if (ADR_IDS.has(id) || ADR_REF_EXEMPT.has(id)) continue;
+        out.push(`L${i + 1} ${id}`);
+      }
+    });
+    return out;
+  };
+  let adrRefs = 0; const seenExempt = new Set();
+  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+    if (resolve(f) === resolve(SELF)) continue;
+    const text = readFileSync(f, 'utf8');
+    for (const m of text.matchAll(/\bADR-(\d{4})\b/g)) {
+      adrRefs += 1;
+      if (ADR_REF_EXEMPT.has(`ADR-${m[1]}`)) seenExempt.add(`ADR-${m[1]}`);
+    }
+    const bad = badAdrRefs(text);
+    if (bad.length > 0) {
+      fail(`${relative(root, f)} 引用了**不存在**的 ADR 编号：${bad.join('、')}`
+        + ' —— `ADR-NNNN` 必须在 `docs/adr/` 里有对应文件'
+        + '（实测：往 `docs/architecture/README.md` 注入 `ADR-0099` 时，本护栏与发布门禁**都没红**）');
+    }
+  }
+  // 防空转：下限**留余量**（健康度型 —— 引用数会随新 ADR 增长）
+  if (adrRefs < 900) {
+    fail(`ADR 编号引用只解析出 ${adrRefs} 处（下限 900；2026-10-09 实测 **1064**）—— 判据会空转`);
+  }
+  // 例外表**双向**：登记了却不再出现 ⇒ 报错（防止哨兵值被删后豁免表变成噪声）
+  for (const id of ADR_REF_EXEMPT.keys()) {
+    if (!seenExempt.has(id)) {
+      fail(`ADR_REF_EXEMPT 登记了 ${id}，但扫描面里已不再出现 —— 请删除该例外条目`);
+    }
+  }
+  // canary：三向（判定与 canary 共用 badAdrRefs）
+  if (badAdrRefs('见 ADR-0099。').length !== 1) {
+    errors.push('ADR 编号护栏 canary 失效：不存在的编号未被检出（判据已退化成空真）');
+  }
+  if (badAdrRefs('见 ADR-0034。').length !== 0) {
+    errors.push('ADR 编号护栏 canary 过宽：存在的编号被判为不存在');
+  }
+  if (badAdrRefs('> 原写 `ADR-0099`，已更正。').length !== 0) {
+    errors.push('ADR 编号护栏 canary 失效：更正说明里**引用**的旧编号未被豁免');
+  }
+}
+
 // ── ㉑ 「零跨包消费者」的包，其分诊必须在**审计文档的待裁决登记表**里可发现 ───────────────
 // 立此条的原因（实测，2026-10-08 审计 §4.160）：`PKG_NO_CONSUMER_EXEMPT` 有 **4** 条
 // （`document-model` / **`editor-react`** / `shared` / `workspace`），而**登记表第 14 行与
