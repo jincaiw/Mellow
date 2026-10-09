@@ -1,5 +1,9 @@
 # Mellow Security Review
 
+> **⚠️ 快照声明（2026-08-13）**：本文是 **2026-08-13 的静态审查记录**（被测 commit `20c2dbd`），
+> **不是当前状态** —— 下面「结论摘要」里的问题**不代表至今仍存在**；
+> 当前状态以 `node tests/parity/verify-release-gate.mjs` 的输出为准。
+
 - 日期：2026-08-13
 - 被测 commit：`20c2dbd`（含未提交工作区改动：largeFile / print / export）
 - 范围：HTML / Mermaid / Links / Remote Images / File Access / Tauri capabilities / Clipboard / Custom Commands / Extensions / Keychain / Network + 默认隐私原则（无需联网 / Telemetry Off / AI Off / Upload None）

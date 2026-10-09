@@ -12841,6 +12841,60 @@ PITFALLS **§4.311** · skill **§187** · `MEMORY.md` · `2026-10-09.md`。
 
 ---
 
+## 4.198 「快照声明」扫描面**再扩**：`docs/accessibility/` 与 `docs/security/`（「只锁了一半」同族**第 27 次**，2026-10-09）
+
+### 一、方法：**「同类目录」透镜**（PITFALLS §4.312 的教训，本轮**可执行化**）
+
+**对比「实际目录」与「被判据扫到的目录」** —— 后者**从护栏源码里提取目录路径字面量**：
+
+| 实际有（含 `.md`） | 被判据扫到 | |
+|---|---|---|
+| `docs/accessibility/` | ❌ | ⚠️ **缺口** |
+| `docs/security/` | ❌ | ⚠️ **缺口** |
+| `docs/{adr,architecture,plans,product,qualification,specs}/` | ✅ | |
+| `tests/{benchmark,e2e,fixtures,parity,qualification,shared,visual}/` | ✅ | |
+| `packages/*`（14 个） | ✅（`PKG_ROOT` **遍历**，无需硬编码） | |
+| `docs/superpowers/specs/` | ✅（§4.158 路径判据覆盖；且该文件**已有**快照声明） | |
+
+⇒ **差集 = 候选**（本轮 2 处）。
+
+### 二、发现
+
+两个目录各 **1 份记录**，都**会被按「当前」读**：
+
+- `docs/accessibility/accessibility-phase-2026-08-13.md` —— **审计与修复记录**，其矩阵是「**修复前**」的；
+- `docs/security/security-review-2026-08-13.md` —— **安全评审**，其「结论摘要」列「🔴 高 **2**」项
+  而**未说明是否已修复** ⇒ 读者会以为**至今仍有 2 个高危**。
+
+⚠️ 两者**都在任何「快照声明」扫描面之外**。
+
+### 三、处置
+
+1. **给两份加快照声明**（含日期 + 明确「**不是当前状态**」+ 指向当前真值源）；
+2. **扩展判据扫描面**：`QUALIFICATION_SNAPSHOT_DIRS` 加 `docs/accessibility` / `docs/security`。
+
+### 四、注入验证（1/1）
+
+把 `security-review` 的声明**整行**替换为「本文是最新评审」⇒ **转红**
+（「`docs/security/security-review-2026-08-13.md` 的前 14 行缺少**快照声明**」）。
+
+### 五、教训
+
+1. ✅ **「同类目录」透镜可机械化**：**从护栏源码里提取目录路径字面量**，与实际目录列表**求差集**
+   ⇒ **差集就是候选** —— 这是 PITFALLS §4.312 的**可执行化**（不再靠"想到"）。
+2. ⚠️ **「标题里有日期」不等于「有快照声明」**：判据注释早已写明
+   「**日期是唯一的过期信号，但只写在标题里不够**」—— 本轮两份文档**标题/正文都有日期**，
+   但**仍缺**「这是历史、当前在哪」这句话。
+3. ⇒ **同族第 27 次**（§4.170 / … / §4.197 / 本节）。
+
+### 六、产物
+
+`docs/accessibility/accessibility-phase-2026-08-13.md` + `docs/security/security-review-2026-08-13.md`
+（加快照声明）· `tests/parity/verify-doc-code-refs.mjs`（扫描面 +2 目录）· 审计 **§4.198** ·
+PITFALLS **§4.313** · skill **§189** · `MEMORY.md` · `2026-10-09.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 

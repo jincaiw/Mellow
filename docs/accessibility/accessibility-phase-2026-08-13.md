@@ -1,5 +1,8 @@
 # Accessibility Phase — 审计与修复记录
 
+> **⚠️ 快照声明（2026-08-13）**：本文是 **2026-08-13 的审计记录**，**不是当前状态**；
+> 下面的矩阵是**修复前**的（保留作对照）；当前状态以 `node tests/parity/verify-release-gate.mjs` 的输出为准。
+
 - 日期：2026-08-13
 - 范围：Editor / Sidebar / Outline / Search / Settings / Command Palette / Floating Toolbar / Table Toolbar
 - 基准：keyboard navigation / focus ring / semantic labels / 200% zoom / contrast / reduced motion（WCAG 2.1 AA）

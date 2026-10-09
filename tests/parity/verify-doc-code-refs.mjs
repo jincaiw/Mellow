@@ -815,7 +815,12 @@ const QUALIFICATION_SNAPSHOT_EXEMPT = new Map([
   ['release-blocker-audit-2026-09-25.md', '**现状真值源本身**：滚动审计日志（§4.NN 递增），不是某次快照'],
   ['README.md', '**索引 / 真值源指针**（`tests/qualification/`）：它说明「当前状态以哪份为准」，本身不是快照'],
 ]);
-const QUALIFICATION_SNAPSHOT_DIRS = ['docs/qualification', 'tests/qualification'];
+// ⚠️ 2026-10-09（审计 §4.198）：**扫描面再扩** —— 用「同类目录」透镜对比「实际目录 vs 被判据扫到的目录」，
+//   发现 `docs/accessibility/`（审计与修复记录）与 `docs/security/`（安全评审，含「🔴 高 2」结论摘要）
+//   **同样会被按「当前」读**（后者的问题清单**不代表至今仍存在**）而**不在任何扫描面**。
+const QUALIFICATION_SNAPSHOT_DIRS = [
+  'docs/qualification', 'tests/qualification', 'docs/accessibility', 'docs/security',
+];
 {
   const SNAPSHOT_MARKER = /快照声明|不是当前|已过期|历史记录|历史快照|按当时读/;
   let checked = 0;
