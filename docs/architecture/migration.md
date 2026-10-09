@@ -7,7 +7,7 @@
 - CoreEditor parser / CodeMirror setup / Lezer 定制
 - history（undo 分组）、completion、task、table、Math parsing、Mermaid
 - Markdown styles / themes（16 个）、extension API（P1）
-- CoreEditor jest 测试（185 用例，jsdom 可跑）
+- CoreEditor jest 测试（200 用例，jsdom 可跑）
 
 ## Refactor（适配）
 

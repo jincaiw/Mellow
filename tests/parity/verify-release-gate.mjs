@@ -1694,6 +1694,43 @@ if (driftedMissing.length === 0) {
     }
   }
 
+  // ── vendored CoreEditor 的**用例数**也必须与真值源一致（2026-10-10，审计 §4.244）──────────
+  // 【为什么】真值源行里写着「（另有 vendored CoreEditor **N**）」—— 该数**不在** `packages/*` 的 jest 里，
+  //   而它在**活文档 5 处**被复述。实测（2026-10-10）：复述写 **185**，而实跑 `yarn test` 是 **200**
+  //   ⇒ 一处**已漂**的复述数字（与「各包规模」同一类；该类的可执行对账由本机工具
+  //   `tests/parity/tools/audit-pkg-test-counts.mjs` 承担，本判据只锁**文件间自洽**）。
+  //   ⚠️ 同源前科：ADR-0021 的**更正块**更新了同一行的 3 个数字（5 job / wrapper 14 / 486），
+  //   **漏了同行第 4 个（vendored 185）** ⇒ 又一次「修一处没修另一处」。
+  // 【判据】**表驱动**（**不**做全仓模糊匹配 —— 记录类里的「185」是**当时快照**，合法）：
+  //   下表每条的**每个**捕获都必须 == 真值源里的 vendored 数；总捕获数下限 5（防空转）。
+  {
+    const vendored = /另有 vendored CoreEditor \*\*(\d+)\*\*/.exec(readme)?.[1];
+    if (vendored === undefined) {
+      fail('qualification README 的「各包规模」行里找不到「另有 vendored CoreEditor **N**」—— 真值源缺失');
+    } else {
+      const RESTATED = [
+        ['tests/qualification/README.md', /另有 vendored CoreEditor \*\*(\d+)\*\*/g],
+        ['tests/qualification/README.md', /CoreEditor \*\*(\d+)\*\* \+ 全仓 jest/g],
+        ['packages/editor-core/README.md', /jest (\d+) 用例/g],
+        ['packages/editor-core/CONTRACT.md', /`yarn test` = (\d+)\/\d+/g],
+        ['docs/architecture/migration.md', /CoreEditor jest 测试（(\d+) 用例/g],
+      ];
+      let seen = 0;
+      for (const [rel, re] of RESTATED) {
+        if (!existsSync(resolve(root, rel))) { fail(`vendored 用例数复述表里的 ${rel} 不存在`); continue; }
+        for (const m of read(`${rel}`).matchAll(re)) {
+          seen += 1;
+          if (m[1] !== vendored) {
+            fail(`${rel} 复述的 vendored 用例数是 ${m[1]}，而真值源写 ${vendored} —— 同一数字多处出现时必须一致`);
+          }
+        }
+      }
+      if (seen < 5) {
+        fail(`vendored 用例数的复述只解析出 ${seen} 处（下限 5 = 立此判据时的实测）—— 谓词或文档漂移会让本判据**空转**`);
+      }
+    }
+  }
+
   // ── 包用例数：**单一真源 = 「各包规模」行**；文件其它位置必须与之一致（2026-10-08）──────
   // 判定与 canary **共用**本谓词（`pkgAudit`）：返回 `{truthSize,total,bad}`，真值源缺失返回 `null`。
   const PKGS = ['editor-engine', 'app-core', 'export', 'host-api', 'commands',

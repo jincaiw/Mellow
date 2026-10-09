@@ -9,6 +9,10 @@
  *   该行**已两次过期**（2026-10-01 首次刷新、2026-10-08 再次：`editor-engine 1277 → 1318` 等），
  *   而**过期没有任何信号** —— 这条工具把「需实跑」变成**一条命令**。
  *
+ * ⚠️ 2026-10-10（审计 §4.244）**再加一半**：真值源行里还有「（另有 vendored CoreEditor **N**）」——
+ *   它**不在 `packages/*` 的 jest 里**，要单独跑；实测该数在**活文档 5 处**被复述（写 185，实跑 **200**）。
+ *   ⇒ 本工具一并跑 `packages/editor-core/CoreEditor` 的 jest 并对账。
+ *
  * 【它做什么】逐个包跑该包自己的 jest（`packages/<p>/node_modules/.bin/jest`；
  *   `extension-api` 无本地二进制 ⇒ 按 `package.json` 的 `test` 脚本用 `../settings/…`），
  *   解析 `Tests:  N passed, N total`，与真值源行**逐项 + 合计**对账。
@@ -41,9 +45,15 @@ if (row === undefined) {
   console.error(`✗ ${README} 找不到「各包规模」行 —— 真值源缺失（本工具无从对账）`);
   process.exit(1);
 }
+// ⚠️ 解析包之前，先把「（**另有 vendored CoreEditor N**…）」那段括注**删掉** ——
+//   它也匹配 `名字 **N**` 形态（实测：不删会把 `CoreEditor` 当成**第 13 个包** ⇒ 去 `packages/CoreEditor` 跑 jest）。
+//   ⚠️ 也**不能**按「另有 vendored」截断 —— 它在**中间**，截断会丢掉它之后的 5 个包（实测：只剩 7 个）。
+const rowPkgs = row.replace(/（另有 vendored[^）]*）/g, '');
 const declared = new Map();
-for (const m of row.matchAll(PAIR_RE)) declared.set(m[1], Number(m[2]));
+for (const m of rowPkgs.matchAll(PAIR_RE)) declared.set(m[1], Number(m[2]));
 const declaredTotal = Number(TOTAL_RE.exec(row)?.[1] ?? NaN);
+/** 真值源行里的 vendored 数：`（另有 vendored CoreEditor **N**）` */
+const declaredVendored = Number(/另有 vendored CoreEditor \*\*(\d+)\*\*/.exec(row)?.[1] ?? NaN);
 if (declared.size === 0) {
   console.error('✗ 真值源行里一个「包 **N**」都没解析出来 —— 解析漂移');
   process.exit(1);
@@ -98,6 +108,30 @@ for (const p of pkgs) {
   if (!ok) bad += 1;
   console.log(`  ${ok ? '✓' : '✗'} ${p.padEnd(18)} 实跑 ${String(passed).padStart(5)}  ·  声明 ${String(want).padStart(5)}`
     + (ok ? '' : `   ← **应改为 ${passed}**`));
+}
+
+// ── vendored CoreEditor（**不在 `packages/*` 的 jest 里**，单独跑）────────────────────
+// ⚠️ 实测（2026-10-10）：该数在**活文档 5 处**被复述（`qualification/README.md` ×2 ·
+//   `editor-core/README.md` ×2 · `editor-core/CONTRACT.md` · `architecture/migration.md`），
+//   而**实跑是 200**（复述写 185）—— 与「各包规模」同一类「快照无人对账」。
+if (ONLY === null && Number.isFinite(declaredVendored)) {
+  const ceDir = resolve(root, 'packages/editor-core/CoreEditor');
+  const bin = './node_modules/.bin/jest';
+  const r = spawnSync(bin, [], { cwd: ceDir, encoding: 'utf8', maxBuffer: 1 << 28 });
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  const m = /^Tests:\s+(\d+) passed,\s+(\d+) total$/m.exec(out);
+  if (m === null) {
+    console.error(`  ✗ vendored CoreEditor 的输出里找不到「Tests:  N passed, N total」（exit=${r.status}）`);
+    bad += 1;
+    anyUnparsed = true;
+  } else {
+    const got = Number(m[1]);
+    const ok = got === declaredVendored;
+    if (!ok) bad += 1;
+    if (Number(m[1]) !== Number(m[2]) || r.status !== 0) { anyFail = true; }
+    console.log(`  ${ok ? '✓' : '✗'} ${'vendored CoreEditor'.padEnd(18)} 实跑 ${String(got).padStart(5)}  ·  声明 ${String(declaredVendored).padStart(5)}`
+      + (ok ? '' : `   ← **应改为 ${got}**（活文档另有 4 处复述，见文件头）`));
+  }
 }
 
 if (ONLY === null) {

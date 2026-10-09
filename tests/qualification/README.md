@@ -68,7 +68,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 |---|---|---|---|---|
 | 最小壳构建（Tauri+Rust+React+editor-core） | ✅ | ✅（CI release 构建 gate） | ✅ | ✅（CI release 构建 gate） |
 | 打开 Markdown（dialog + fs read） | ✅（Rust 命令 + 类型适配） | ✅（CI 启动/打开 gate） | 🔶（实机 journey 待回填） | ✅（CI 冒烟） |
-| 编辑（CoreEditor 185 + 全仓 jest，2026-09-12 实跑见文末包规模） | ✅ | ✅（同构建） | 🔶 | ✅（同构建） |
+| 编辑（CoreEditor **200** + 全仓 jest，2026-10-10 实跑见文末包规模） | ✅ | ✅（同构建） | 🔶 | ✅（同构建） |
 | 保存（atomic write + source fidelity corpus） | ✅（Windows byte-identical gate） | ✅（CI gate） | 🔶 | 🔶（corpus 待 CI 扩展） |
 | Live Markdown（marker reveal / nodes） | ✅（editor-engine 1318，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
 | File links（渲染/点击打开/broken indicator，spec engine §12） | ✅（md-link 15 例 + settings/adapter 护栏锚点；2026-09-03 用户裁决解冻实现） | — | 🔶（broken 视觉一致 Typora 对照待真机） | — |
@@ -137,7 +137,7 @@ cd apps/desktop && npm run build
 cd src-tauri && cargo check
 ```
 
-各包规模（jest，**2026-10-08 按包定向实跑，合计 1915 例全绿**）：editor-engine **1318** / app-core **297** / export **100** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor 185）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
+各包规模（jest，**2026-10-08 按包定向实跑，合计 1915 例全绿**）：editor-engine **1318** / app-core **297** / export **100** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor **200**，2026-10-10 实跑）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
 
 > **数字刷新纪律**：数字按当日**按包定向**调用 `node_modules/.bin/jest` 的实跑结果刷新；
 > 全仓 `pnpm -r run test` 在本机会被 corepack 交互提示阻塞（要下载 pnpm 11.7.0），故不以此为度量口径。

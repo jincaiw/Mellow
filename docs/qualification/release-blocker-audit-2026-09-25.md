@@ -15027,6 +15027,53 @@ no-color-only-status 三条 —— **数量与清单都已过期**」（审计 �
 
 ---
 
+## 4.244 新透镜「**真值源行里的「另一半」**」：vendored CoreEditor 的用例数 **185 → 实跑 200**（「只锁了一半」同族**第 72 次**，2026-10-10）
+
+### 一、透镜
+上一轮把「各包规模」行的**包用例数**做成了可执行对账 —— 而**同一行**里还有一半：
+「editor-core **19**（**另有 vendored CoreEditor N**）」。它**不在 `packages/*` 的 jest 里**（是 vendored 上游树），
+⇒ 上一轮的工具**没覆盖它**。**「真值源行里的另一半」= 一个可机械复核的待办**。
+
+### 二、实测（**1 处真缺陷：复述数字已漂**）
+实跑 `packages/editor-core/CoreEditor` 的 jest ⇒ **`Tests: 200 passed, 200 total`**（23 suites）。
+而「**185**」在**活文档 5 处**被复述：
+
+| 文件 | 原文 |
+|---|---|
+| `tests/qualification/README.md:71` | 「编辑（CoreEditor **185** + 全仓 jest…）」 |
+| `tests/qualification/README.md:140` | 「（另有 vendored CoreEditor **185**）」 |
+| `packages/editor-core/README.md:17` | 「test/ # jest **185** 用例」 |
+| `packages/editor-core/README.md:63` | 「`yarn test` # **185** 用例」 |
+| `packages/editor-core/CONTRACT.md:29` | 「`yarn test` = **185/185**」 |
+| `docs/architecture/migration.md:10` | 「CoreEditor jest 测试（**185** 用例…）」 |
+
+⚠️ **同源前科（同一行内的「修一处没修另一处」）**：`ADR-0021` 的**更正块**已经更新了那一行的
+**3 个**数字（「5 job」→ 8、「wrapper 14」→ 19、「editor-engine 486」→ 1318），**却漏了同行第 4 个**
+（「vendored 185」）⇒ **更正块本身不完整**。
+
+### 三、处置 + 验证
+① **修 6 处**（5 处活文档 + 1 处 README 行内）⇒ 全部改为 **200**（带 2026-10-10 实测说明）；
+   **记录类不改**（`.github/release-notes-v1.5.*` / `rc-audit-2026-08-16` / `v1.0-release-notes` 里的 185
+   是**当时快照**，合法）；`ADR-0021` **只追加**一行更正（「vendored **185**」→ **200**，并注明上一版更正漏了它）。
+② **扩展本机工具** `audit-pkg-test-counts.mjs`：一并跑 `packages/editor-core/CoreEditor` 的 jest，
+   与真值源行里的 vendored 数对账（**这一半也变成一条命令**）。
+③ **落静态判据**（`verify-release-gate.mjs`，锚在既有「各包规模」块里）：**表驱动**的 5 条复述面
+   （`qualification/README` ×2 · `editor-core/README` ×1 条正则覆盖 2 处 · `CONTRACT.md` · `migration.md`），
+   每处捕获必须 == 真值源；**下限 5**（防空转）。⚠️ **不做全仓模糊匹配** —— 记录类里的「185」是**当时快照**。
+**验证**：注入（把 `migration.md` 的 200 改回 185）⇒ **转红 `EXIT=1`** ✅；还原 ⇒ 绿。
+
+### 四、教训（PITFALLS §4.362 / skill §235）
+① ✅ **「真值源行里的另一半」是可机械复核的待办** —— 上轮锁了包用例数，本轮补 vendored 数；
+② ⚠️ **更正块本身也会「只改一半」**：同一行 4 个数字改了 3 个 ⇒ **更正块要逐数字核对**，
+   并把「**上一版漏了哪一个**」写进去（本轮就这么写的）；
+③ ⚠️ **复述面要表驱动、不要全仓模糊匹配**（记录类里的旧值是**合法快照**）；
+④ ⚠️ **「185」这种数字在 7+ 处出现**（含历史记录）⇒ 修的时候必须**先分类**（活文档 vs 记录），否则会把记录改坏；
+⑤ ⇒ **同族第 72 次**（§4.170…§4.243）。
+
+产物：`tests/qualification/README.md`（2 处）· `packages/editor-core/README.md`（2 处）· `packages/editor-core/CONTRACT.md` · `docs/architecture/migration.md` · `docs/adr/ADR-0021-platform-build-matrix-pass.md`（追加 1 行更正）· `tests/parity/tools/audit-pkg-test-counts.mjs`（扩展 vendored 一半）· `tests/parity/verify-release-gate.mjs`（vendored 复述一致性判据）· 审计 §4.244 · PITFALLS **§4.362** · skill **§235** · `MEMORY.md` · `2026-10-10.md`。
+
+---
+
 ## 五、本次审计做的改动（非策略性）
 
 
