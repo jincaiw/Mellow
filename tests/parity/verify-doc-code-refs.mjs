@@ -1938,9 +1938,20 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     return out;
   };
   // [文档, 节标题, 树的根（含尾 `/`；空串 = 仓库根）, 目录数下限（贴实测）]
+  // ⚠️ **只纳入「描述当前状态」的 `├──` 树**（2026-10-09 审计 §4.222 的**范围口径**，防下轮重判）：
+  //   · ✅ 纳入：`README.md`「## 目录结构」· `docs/architecture/editor-core.md`「## 模块地图」·
+  //     `packages/editor-core/README.md`（**实测 5 个目录全部存在**）。
+  //   · ❌ **排除「目标 / 建议」树**：`docs/architecture/monorepo.md` 的「## 目标结构（PRD §117）」
+  //     （含**未建**的 `extensions/` ⇒ 合法）· PRD「# 117. Monorepo」（同）·
+  //     PRD「目录建议：`packages/i18n/{zh-CN,…}`」（**建议**，实际是单文件 `messages.ts`）。
+  //   · ❌ **排除「生成 / 工作目录」树**：`docs/plans/markdown-syntax-demo-parity-validation-plan.md`
+  //     （列的是 `…/fixtures` `…/diffs` `…/timings` 等**运行时生成**的目录）。
+  //   · ❌ **排除非 `├──` 格式**：`AGENTS.md`（2 空格缩进 —— **已由「治理文件不得指向不存在的目录」判据守住**）·
+  //     `docs/architecture/overview.md`（**ASCII 框图**，不是树）· PRD 其余 2 块 · 2 个命令/记录块。
   const TREES = [
     ['README.md', '## 目录结构', '', 25],
     ['docs/architecture/editor-core.md', '## 模块地图', 'packages/editor-core/CoreEditor/src/', 15],
+    ['packages/editor-core/README.md', '## 结构', 'packages/editor-core/', 4],
   ];
   for (const [doc, head, base, floor] of TREES) {
     const src = readFileSync(resolve(root, doc), 'utf8').replace(/\r\n/g, '\n');
