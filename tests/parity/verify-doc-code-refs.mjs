@@ -2009,7 +2009,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     return out;
   };
   for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
-    const rel = relative(root, f);
+    // ⚠️ **路径必须按 `/` 归一化后再比**（Windows 上 `relative()` 产出 `\` ⇒ 直接 `===` 会**静默失配**，
+    //   本项目**已因此红过一次 CI**；2026-10-09 本轮**又踩一次**：审计文档的排除在 Windows 上失效 ⇒ CI 红）。
+    const rel = relative(root, f).split('\\').join('/');
     if (rel === AUDIT_REL) continue;                       // 审计文档是**记录**，需要引用它
     if (resolve(f) === resolve(SELF)) continue;            // 本护栏自身含 canary 样本
     const bad = unsourcedHits(readFileSync(f, 'utf8'));
