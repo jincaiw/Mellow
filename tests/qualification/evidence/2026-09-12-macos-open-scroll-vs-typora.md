@@ -75,5 +75,10 @@ PRD 目标：P95 ≤ 1.2s to editable。
 
 ## 原始数据
 
+> ⚠️ **这两个 dump 未入库**（属**外部**产物）：它们由 benchmark harness 在**仓库外**产出，
+> 而 `tests/benchmark/reports/` 是**生成目录**（`tests/benchmark/.gitignore` 里写着 `reports/`）——
+> 实测该目录里 **0 个 json**，**干净检出与本机都找不到**。
+> **可复核的载体是本文件的表格**（结论数据已内联在上文）；生成报告 `2026-09-12T09-04-16-mellow-vs-typora.md` 同属生成物、不入库。
+
 - `2026-09-12T09-04-16-Typora.json`
 - `2026-09-12T09-04-16-Mellow.json`

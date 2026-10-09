@@ -3072,6 +3072,70 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   console.log(`Doc code refs: 「基线 N」注释 ${baseNotes} 条（均已带时间 / 当前性限定）`);
 }
 
+// ── ㊴ 「**原始数据 / 原始样本**」段声明的文件名必须**可复核**（存在，或段内显式注明未入库）（2026-10-09，审计 §4.241）──
+// 【为什么】实测：`tests/qualification/evidence/2026-09-12-macos-open-scroll-vs-typora.md` 的
+//   「## 原始数据」段列了两个 `*.json`，而它们**仓库里没有、磁盘上也没有** ——
+//   `tests/benchmark/reports/` 是**生成目录**（`tests/benchmark/.gitignore` 里 `reports/`），实测其中 **0 个 json**。
+//   ⇒ 读者按它去找**什么都找不到**（「原始数据」是**可复核性声明**，不是文件名备忘）。
+//   ⚠️ 同仓已有**正确先例**：`docs/qualification/ux-score-gate-template.md` 对它的
+//      `macos-ux-gate-DRAFT.json` **原文就注明**了「已被取代」。
+// 【判据】tracked `.md` 里「**原始 + （数据 / 样本 / dump / 日志 / 记录）**」标题段内，
+//   反引号形式给出的**文件名**必须 ① 在仓库里存在，或 ② 该段内含「未入库 / 外部 / 生成物 / 已取代」之一。
+//   ⚠️ **锚点必须收紧到「数据类」**：实测含「原始」的标题有 **3** 个，其中一个是**安全发现标题**
+//      （「Reader **原始** HTML 净化…」）⇒ 只按「原始」锚会**语义误命中**。
+//   ⚠️ **只锚这一族标题段、不扫全仓 `*.json`**：全仓扫需要一张 **9** 条的「非仓库文件」豁免表
+//      （`latest.json` / `conf/conf.user.json` / `app_data_dir/*.json` / …），而它们与「原始数据」这一
+//      **声明**无关 ⇒ 锚定标题段既**精确**又**不需要豁免表**。
+{
+  const RAW_HEAD = /^#{2,4}\s*[^\n]*(?:原始)[^\n]*(?:数据|样本|dump|日志|记录)[^\n]*$/;
+  const NEXT_HEAD = /^#{1,4}\s/;
+  const RAW_FILE = /`([^`\n]*?\.(?:json|ya?ml|csv|log|txt))`/g;
+  const RAW_MARK = /未入库|外部|生成物|已取代/;
+  let rawSections = 0, rawFiles = 0;
+  const rawBad = [];
+  for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
+    const lines = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!RAW_HEAD.test(lines[i])) continue;
+      rawSections += 1;
+      const body = [];
+      for (let j = i + 1; j < lines.length && !NEXT_HEAD.test(lines[j]); j += 1) body.push(lines[j]);
+      if (RAW_MARK.test(body.join('\n'))) continue;      // 段内已显式注明「未入库 / 外部 / 生成物」
+      for (const b of body) {
+        for (const m of b.matchAll(RAW_FILE)) {
+          const p = m[1];
+          if (p.includes('*') || p.includes('<') || p.startsWith('http')) continue;
+          rawFiles += 1;
+          if (existsSync(resolve(root, p)) || existsSync(resolve(root, dirname(rel), p))) continue;
+          rawBad.push(`${rel}:${i + 1} 段内列了 \`${p}\`，但仓库里没有该文件，段内也未注明「未入库」`);
+        }
+      }
+    }
+  }
+  for (const b of rawBad) {
+    fail(`「原始数据」段声明的文件**不可复核**：${b}`
+      + ' —— 「原始数据」是**可复核性声明**（读者会按它去找文件）；'
+      + '若这些 dump 确在仓库外，请在**同段内**注明「未入库 / 外部 / 生成物」');
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（立此判据时基线 2 个段，下限 1）
+  if (rawSections < 1) {
+    fail(`一个「原始（数据 / 样本 / …）」标题段都没解析到（立此判据时基线 2 个）`
+      + ' —— 锚点漂移会让本判据**空转**（若确实删过，请同步下调并说明）');
+  }
+  // canary：三向（判定与 canary **共用** RAW_HEAD / RAW_MARK / RAW_FILE）
+  const H = (s) => RAW_HEAD.test(s);
+  if (!H('## 原始数据') || !H('### 二、原始样本（关键证据）')) {
+    fail('原始数据护栏 canary 失效：合法标题段未被识别');
+  }
+  if (H('### H1. Reader 原始 HTML 净化可被实体编码绕过')) {
+    fail('原始数据护栏**过宽**：**安全发现标题**里的「原始 HTML」被当成了数据段（锚点必须含「数据/样本/…」）');
+  }
+  if (!RAW_MARK.test('> ⚠️ 这两个 dump 未入库（属外部产物）')) {
+    fail('原始数据护栏 canary 失效：「未入库 / 外部」标记未被识别（会导致恒报错）');
+  }
+  console.log(`Doc code refs: 「原始数据 / 样本」段 ${rawSections} 个（段内文件均已存在或已注明未入库）`);
+}
+
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
 //   实测 `CoreEditor/src/styling/themes/` 有 **18 个 `.ts`**，其中 `index.ts` / `colors.ts`
