@@ -3377,7 +3377,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 253; // 2026-10-10 加 §4.253 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 254; // 2026-10-10 加 §4.254 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
