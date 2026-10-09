@@ -1670,6 +1670,48 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
+// 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
+//   实测 `CoreEditor/src/styling/themes/` 有 **18 个 `.ts`**，其中 `index.ts` / `colors.ts`
+//   **不是主题**（入口与调色板）⇒ 主题 = **16** ✅ 当前一致，但**无判据**
+//   （用 `tests/parity/tools/audit-doc-counts.mjs` 的**宽形态**扫描时发现）。
+//   ⚠️ 这是「**可直接数**」类 ⇒ 应与真值比对（PITFALLS §4.306）。
+// 【判据】文档的「N 个主题」必须 == 主题目录 `.ts` 数 − **显式登记**的非主题文件数。
+{
+  const DOC = 'docs/architecture/editor-core.md';
+  const THEME_DIR = 'packages/editor-core/CoreEditor/src/styling/themes';
+  // **非主题**文件（显式登记 + 理由）；双向：不再存在即报错（防化石）
+  const NON_THEME = new Map([['index.ts', '入口（re-export）'], ['colors.ts', '调色板常量']]);
+  const abs = resolve(root, THEME_DIR);
+  if (!existsSync(abs)) throw new Error(`缺少 ${THEME_DIR} —— 判据锚点漂移`);
+  const tsFiles = readdirSync(abs).filter((f) => f.endsWith('.ts'));
+  for (const f of NON_THEME.keys()) {
+    if (!tsFiles.includes(f)) {
+      throw new Error(`${THEME_DIR} 里的非主题文件 ${f} 已不存在 —— 请更新 NON_THEME 登记（防化石）`);
+    }
+  }
+  const actual = tsFiles.length - NON_THEME.size;
+  const src = readFileSync(resolve(root, DOC), 'utf8').replace(/\r\n/g, '\n');
+  const RE = /themes\/[^\n]*?(\d+)\s*个主题/;
+  const m = RE.exec(src);
+  if (m === null) {
+    throw new Error(`${DOC} 找不到「themes/ … N 个主题」—— 判据锚点漂移，别静默跳过`);
+  }
+  if (Number(m[1]) !== actual) {
+    throw new Error(`${DOC} 写「${m[1]} 个主题」，而 \`${THEME_DIR}\` 有 ${tsFiles.length} 个 .ts`
+      + `（减 ${NON_THEME.size} 个非主题 = ${actual}）—— 主题数**可直接数** ⇒ 同步改文档`);
+  }
+  // canary：谓词与判定共用
+  const probe = (s) => { const r = RE.exec(s); return r === null ? null : Number(r[1]); };
+  if (probe('│   └── themes/            # 16 个主题（github-light 等）') !== 16) {
+    throw new Error('主题数 canary 失效：目录树形态取不到');
+  }
+  if (probe('无此形态') !== null) {
+    throw new Error('主题数 canary 过宽：无锚点的样本被误判');
+  }
+  console.log(`Doc code refs: editor-core.md 的「主题数」== 上游 themes/ 实际 ${actual} 个`);
+}
+
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
   for (const e of errors) console.error(`- ${e}`);
