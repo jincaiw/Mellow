@@ -65,6 +65,23 @@ function walk(dir, out = []) {
 // 于是 **`.ts` 整类被静默漏掉**（`menuSchema.ts` 因此从未被判定，
 // 而护栏输出看起来「全绿」）。这正是「解析器漏成员必须响亮失败」那条。
 const codeFiles = walk(root).filter((f) => CODE_EXTS.includes(f.split('.').pop()));
+
+/** 「**会被提交的文件**」= 已跟踪 **+** 未跟踪但**不被忽略**，再**按 `SKIP_DIRS` 逐段剔除** ——
+ *  用作需要「仓库级」扫描面的判据。
+ *  ⚠️ **为什么不是 `walk`**：`walk` 跳过 `archive/` / `CoreEditor/` 是对的（**故意**），
+ *     但它**看不见未跟踪的新文件**（本地工作区里的 WIP）⇒ 与「已提交」不一致；
+ *  ⚠️ **为什么不是裸 `git ls-files`**：它只读**索引** ⇒ **未 `git add` 的新文件本地看不见**
+ *     ⇒ **本地绿、CI 红**（2026-10-09 审计 §4.233 实测事故：新增的本机工具被漏扫，
+ *     CI 上才报出它注释里的裸 `§4.N`）；
+ *  ⚠️ **为什么要再过滤 `SKIP_DIRS`**：`archive/` / `CoreEditor/` 是**故意排除**的
+ *     （前者是历史方案，后者是 vendored 上游）—— 不过滤会把它们重新纳入并**制造假阳性**
+ *     （实测：`archive` 里「重**审计**（§4.0）」被当成「审计文档 §4.0」）。
+ *  ⚠️ 本函数的**输出是相对路径**（调用方自行 `resolve`）。 */
+const committedFiles = () => execFileSync(
+  'git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+  { cwd: root, maxBuffer: 1 << 28 },
+).toString().split('\0').filter(Boolean)
+  .filter((f) => !f.split('/').some((seg) => SKIP_DIRS.has(seg)));
 const byBase = new Map();
 for (const f of codeFiles) {
   const b = basename(f);
@@ -1878,7 +1895,8 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   // ⚠️ 必须排除本护栏自身：它的注释与 canary 里含**合成样本**（如 `审计 §4.9999`）⇒ 不排除会恒报错
   const SELF = import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs');
   let auditRefs = 0;
-  for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
+  for (const rel of committedFiles().filter((f) => SCAN_EXTS.includes(f.split('.').pop()))) {
+    const f = resolve(root, rel);
     if (resolve(f) === resolve(SELF)) continue;
     const text = readFileSync(f, 'utf8');
     auditRefs += [...text.replace(/\r\n/g, '\n').matchAll(AUDIT_REF)].length;
@@ -2555,8 +2573,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   };
   const CODE_EXTS = ['mjs', 'cjs', 'js', 'ts', 'tsx', 'rs'];
   const SELF2 = resolve(import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs'));
-  const repoCode = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
-    .toString().split('\0').filter((f) => CODE_EXTS.includes(f.split('.').pop()));
+  const repoCode = committedFiles().filter((f) => CODE_EXTS.includes(f.split('.').pop()));
   let bareRefs = 0;
   for (const rel of repoCode) {
     if (resolve(root, rel) === SELF2) continue;   // 自排除：本护栏的注释含**合成样本**（如 `§4.9999`）
