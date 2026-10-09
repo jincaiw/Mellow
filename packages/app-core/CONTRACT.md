@@ -12,7 +12,7 @@
 
 ## 2. 公开接口与类型
 
-- 入口 `src/index.ts`（**124** 个导出），按模块分组见 `README.md` 的表。
+- 入口 `src/index.ts`（导出按模块分组，见 `README.md` 的表；**完整清单见该文件**）。
 - 关键类型：`DocumentService`、`EditorBridge`、`FileTreeModel`、`OutlineModel`、`SearchResultsModel`、
   `ExtensionRegistry`、`RecentFileEntry`、`WordCount`、`ReaderRenderOptions`
 - 跨包导入走**相对路径**（`name`/`main` 装饰性）—— 见审计 §4.95。

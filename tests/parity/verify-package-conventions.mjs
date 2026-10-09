@@ -269,6 +269,40 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
   console.log(`Package docs: ${checkedPkgs} 个包的「测试文件数」（${seen} 处）== 各自 \`test/\` 实际数`);
 }
 
+// ── 包文档里「N 个符号」（README）与「N 个导出」（CONTRACT）必须**彼此一致**（2026-10-09，审计 §4.194）──
+// 【为什么】`packages/app-core` 的 README 写「导出 **130** 个符号」而 CONTRACT 写「**124** 个导出」
+//   ⇒ **同一包的两份文档互相矛盾**（实测 `src/index.ts` 的具名导出 ≈ **131**，两个数**都不对**）。
+//   ⚠️ **不与代码比对**：口径复杂（`export * from` 的重导出 / type-only / 粘连行 ⇒ 两次试算差 1~2）
+//   ⇒ **只锁「包内两处一致」**（可机械、不需解析 TS）—— 与 §4.153 的「文档内自洽」同族。
+//   ⚠️ 处置见 §4.194：`app-core` 两处**改为不复述数字**（指向 `src/index.ts`），
+//   因为**口径不确定的数字，与其写错不如不写**。
+// 【判据】若某包的 README 与 CONTRACT **都**写了该数字，则两者必须相等。
+{
+  const PKG_DIR = resolve(root, 'packages');
+  let compared = 0;
+  for (const p of readdirSync(PKG_DIR, { withFileTypes: true }).filter((d) => d.isDirectory())) {
+    const grab = (doc, re) => {
+      const f = resolve(PKG_DIR, p.name, doc);
+      if (!existsSync(f)) return null;
+      const m = re.exec(readFileSync(f, 'utf8').replace(/\r\n/g, '\n'));
+      return m === null ? null : Number(m[1]);
+    };
+    const sym = grab('README.md', /\**(\d+)\**\s*个符号/);
+    const exp = grab('CONTRACT.md', /\**(\d+)\**\s*个导出/);
+    if (sym === null || exp === null) continue;
+    compared += 1;
+    if (sym !== exp) {
+      throw new Error(`packages/${p.name}：README 写「${sym} 个符号」而 CONTRACT 写「${exp} 个导出」`
+        + ' —— **同一包的两份文档必须一致**（口径复杂，故只锁「两处一致」，不与代码比对）');
+    }
+  }
+  // 防空转：2026-10-09 实测 **12** 个包两处都写（app-core 已按 §4.194 改为不复述）
+  if (compared < 8) {
+    throw new Error(`只有 ${compared} 个包的两处导出数可比（下限 8 = 2026-10-09 实测 12）—— 判据范围萎缩`);
+  }
+  console.log(`Package docs: ${compared} 个包的「符号数（README）⇄ 导出数（CONTRACT）」两处一致`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Package convention violations (PRD §117.1):\n  ${errors.join('\n  ')}`);
 }
