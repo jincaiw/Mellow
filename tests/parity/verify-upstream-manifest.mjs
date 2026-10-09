@@ -258,6 +258,38 @@ if (!existsSync(resolve(root, MANIFEST))) {
   }
 }
 
+// ── `packages/editor-core/README.md` 复述的「修改 N / 新增 M」必须 == `UPSTREAM.md` 表行数（2026-10-09，审计 §4.195）──
+// 【为什么】该 README 写「`UPSTREAM.md` 记录本仓**修改 19 个上游文件 / 新增 3 个**」，
+//   而 `UPSTREAM.md` 的「修改的文件」表**实测 21 行**（本护栏自己的输出）⇒ **已漂 2**。
+//   ⚠️ 这是「**可直接数**」类（表行数）⇒ 应**与真值比对**（比「文档内自洽」强，§4.306）。
+// 【判据】README 的「修改 N / 新增 M」必须 == `docModified.files.length` / `docAdded.files.length`。
+{
+  const README = 'packages/editor-core/README.md';
+  const src = readFileSync(resolve(root, README), 'utf8').replace(/\r\n/g, '\n');
+  const RE = /修改\s*\**(\d+)\**\s*个上游文件\s*\/\s*新增\s*\**(\d+)\**\s*个/;
+  const m = RE.exec(src);
+  if (m === null) {
+    fail(`${README} 找不到「修改 N 个上游文件 / 新增 M 个」—— 判据锚点漂移，别静默跳过`);
+  } else {
+    if (Number(m[1]) !== docModified.files.length) {
+      fail(`${README} 写「修改 ${m[1]} 个上游文件」，而 ${UPSTREAM_MD} 的「修改的文件」表有 `
+        + `${docModified.files.length} 行 —— 表行数**可直接数** ⇒ 改表时同步改该 README`);
+    }
+    if (Number(m[2]) !== docAdded.files.length) {
+      fail(`${README} 写「新增 ${m[2]} 个」，而 ${UPSTREAM_MD} 的「新增的文件」表有 `
+        + `${docAdded.files.length} 行`);
+    }
+  }
+  // canary：谓词与判定共用
+  const probe = (s) => { const r = RE.exec(s); return r === null ? null : `${r[1]}/${r[2]}`; };
+  if (probe('修改 **19** 个上游文件 / 新增 3 个') !== '19/3') {
+    fail('上游改动数 canary 失效：形态取不到');
+  }
+  if (probe('无此形态') !== null) {
+    fail('上游改动数 canary 过宽：无锚点的样本被误判');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Upstream manifest contract violations:\n  ${errors.join('\n  ')}`);
 }
