@@ -2279,7 +2279,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
-// ── ㉙ markdown **表格数据行的格数不得多于表头**（2026-10-09，审计 §4.227）──
+// ── ㉙ markdown **表格结构完整性**：① 数据行格数不得多于表头 ② **分隔行格数必须 == 表头**（2026-10-09，审计 §4.227 / §4.228）──
 // 立此条的原因（新透镜「**表格列数一致性**」）：GFM 对「行比表头多格」的处理是**静默丢弃溢出格**
 //   ⇒ 单元格内容**在渲染视图里消失**（本仓已为 **D 表**单独落过「声明行恰好 4 格」的判据，但**其它表格无人守**）。
 //   首轮扫 **595 表 / 3622 数据行**，**12 处**行比表头多格，**全部**是「**单元格内未转义的 `|`**」：
@@ -2313,6 +2313,15 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
       if (!isTableRow(line) || !(i + 1 < lines.length) || !isDelimiter(lines[i + 1])) { i += 1; continue; }
       const head = tableCells(line);
       tblTables += 1;
+      // ⚠️ **分隔行必须与表头同格数**（2026-10-09，审计 §4.228）：GFM 要求二者**相等**，
+      //    否则**整个表格不被识别** ⇒ 整块**退化成普通文本**（`|` 原样显示）—— 比「丢一格」更严重。
+      //    实测 1 处：`tests/qualification/evidence/2026-09-12-macos-open-scroll-vs-typora.md`
+      //    表头 **9 格** / 分隔行 **8 格**（`|---|` 少一个）。
+      const delimCells = tableCells(lines[i + 1]);
+      if (delimCells !== head) {
+        fail(`${rel}:${i + 2} 表格**分隔行**有 ${delimCells} 格，而表头有 ${head} 格 —— GFM 要求二者**相等**，`
+          + '否则**整个表格不被识别**（整块退化成普通文本，`|` 原样显示；实测：表头 9 格 / 分隔行 8 格）');
+      }
       let j = i + 2;
       while (j < lines.length && isTableRow(lines[j]) && !isDelimiter(lines[j])) {
         tblRows += 1;
@@ -2347,8 +2356,70 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   if (isDelimiter('| a | b |')) {
     errors.push('表格列数护栏 canary 过宽：数据行被当成了分隔行');
   }
+  if (tableCells('| a | b | c |') === tableCells('|---|---|')) {
+    errors.push('表格列数护栏 canary 失效：**分隔行与表头**的格数不可区分（分隔行判据会空转）');
+  }
   // 覆盖数**派生打印**（判据 ⑧）—— 让「本判据查了多少」可见
-  console.log(`Doc code refs: 表格 ${tblTables} 个 / 数据行 ${tblRows} 行，格数**不多于**表头`);
+  console.log(`Doc code refs: 表格 ${tblTables} 个 / 数据行 ${tblRows} 行，格数**不多于**表头且**分隔行 == 表头**`);
+}
+
+// ── ㉚ **代码围栏必须闭合**（按 GFM 的**长度规则**）（2026-10-09，审计 §4.228）──
+// 立此条的原因（同一透镜「**markdown 结构完整性**」）：**围栏未闭合** ⇒ GFM 把**其后全文**渲染成代码块
+//   ⇒ 读者看到的是一大段代码（**静默**：CI 不会红、`git diff` 也看不出来）。
+// ⚠️ **不能数 `\`\`\`` 的奇偶**：GFM 允许**更长的栅栏**包住更短的（本仓实测有 **4 个反引号**的围栏，
+//   其中含 3 个反引号的行）⇒ 奇偶法会**失同步**。正确规则 = 「闭合栅栏的反引号数 **>=** 开启栅栏」
+//   + 「info string **不得含反引号**」（含则那一行**不是**围栏）。
+// ⚠️ **渲染语料豁免**（`tests/fixtures/**`、`tests/benchmark/**`）：语料**故意**含异形语法。
+{
+  const MD = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
+    .toString().split('\0').filter((f) => f.endsWith('.md'));
+  /** 返回**未闭合**的开启栅栏 `{len, line}`，无则 null。判定与 canary **共用**本谓词。 */
+  const unclosedFence = (src) => {
+    const lines = src.split('\n');
+    let open = null;
+    for (let i = 0; i < lines.length; i += 1) {
+      const m = /^(\s*)(`{3,})(.*)$/.exec(lines[i]);
+      if (m === null) continue;
+      const len = m[2].length;
+      const rest = m[3].trim();
+      if (open === null) {
+        if (rest.includes('`')) continue;   // GFM：info string 含反引号 ⇒ 该行不是开启栅栏
+        open = { len, line: i + 1 };
+      } else if (len >= open.len && rest === '') {
+        open = null;                        // 合法闭合（长度 >= 开启）
+      }
+    }
+    return open;
+  };
+  let fenceDocs = 0;
+  for (const rel of MD) {
+    if (/^(?:tests\/fixtures\/|tests\/benchmark\/)/.test(rel)) continue;   // 渲染语料：**故意**含异形语法
+    fenceDocs += 1;
+    const bad = unclosedFence(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'));
+    if (bad !== null) {
+      fail(`${rel}:${bad.line} 的代码围栏（${bad.len} 个反引号）**没有闭合** ——`
+        + ' GFM 会把**其后全文**渲染成代码块（读者看到一大段代码；CI 与 `git diff` 都看不出来）');
+    }
+  }
+  // [健康度型] 集合由仓库文件产生 ⇒ 留余量（基线 181，下限 150）
+  if (fenceDocs < 150) {
+    fail(`只扫描了 ${fenceDocs} 份非夹具文档（下限 150 = 立此判据时的基线 181 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：四向（判定与 canary **共用** unclosedFence）
+  if (unclosedFence('```\na\n```\n') !== null) {
+    errors.push('围栏护栏 canary 失效：成对的围栏被判为未闭合');
+  }
+  if (unclosedFence('```\na\n') === null) {
+    errors.push('围栏护栏 canary 失效：**未闭合**围栏未被检出');
+  }
+  if (unclosedFence('````\n```\n````\n') !== null) {
+    errors.push('围栏护栏 canary 失效：**长度规则**未生效（4 个反引号包 3 个反引号被判成未闭合）');
+  }
+  if (unclosedFence('```js `x`\na\n```\n') === null) {
+    errors.push('围栏护栏 canary 过宽：info string 含反引号的行被当成了开启栅栏');
+  }
+  console.log(`Doc code refs: 代码围栏闭合（扫描 ${fenceDocs} 份非夹具文档）`);
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──

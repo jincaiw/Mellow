@@ -37,7 +37,7 @@ PRD 目标：P95 ≤ 1.2s to editable。
 ## 3. typing P95（按键→回显，ms）
 
 | fixture | 模式 | Mellow P95 | Mellow median | Typora P95 | Typora median | ratio P95 (M/T) | PRD 目标 | 达标 |
-|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|
 | 1MB.md | 普通 | — | — | — | — | — | <16ms |  |
 | 10MB.md | Large | — | — | — | — | — | <32ms |  |
 
