@@ -2757,6 +2757,85 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   console.log(`Doc code refs: 判据编号引用 ${critRefs} 处（护栏间，均属本文件或已指名护栏）`);
 }
 
+// ── ㉟ 文档里引用的 **`verify-*.mjs` 护栏文件名**必须真实存在（2026-10-09，审计 §4.236）──
+// 【为什么】「引用存在性」族此前只锁了两种形态：**路径**（㉗ / §4.76，且只覆盖 `docs/specs` 与
+//   `docs/architecture`）与**编号**（㉒ / ㉜）—— **护栏文件名**这一形态**从未被查过**。
+//   实测（全仓 **796** 处引用）：**1 处指向一个从未存在的名字** ——
+//   审计 §4.117 处写「`verify-doc-release-gate.mjs` 只锁「状态行 ⇄ `prerelease=`」那一段」，
+//   而真正锁那段的是 `verify-release-gate.mjs`（`grep -l prerelease tests/parity/*.mjs` 的唯一命中）。
+//   ⚠️ 另有 **2** 处是**模板占位符**（`verify-xxx.mjs`：文档里示范「怎么写引用」用的**假名**）。
+// 【判据】文档里反引号中的 `verify-*.mjs`（**含全路径形式**，按 **basename** 判定）必须能在
+//   **仓库文件名**里找到；占位符必须登记在 `PLACEHOLDER_GUARD_REFS`（**双向核对**，防化石）。
+//   ⚠️ 扫描面 = **全部 tracked `.md`**（**含记录类**）：护栏文件名是**稳定标识符**（不是路径），
+//      记录里写一个**从未存在**的名字是**笔误**，不是「合法引用已删/改名的路径」
+//      （与 §4.227「历史文档合法引用旧路径」的口径**不同**，故这里**不**排除记录类）。
+//   ⚠️ **若某护栏确实改过名**，请把旧名登记进 `PLACEHOLDER_GUARD_REFS` 并在理由里写清 ——
+//      **不静默豁免**（本仓反复记过「名过滤 = 静默豁免面」）。
+{
+  /** 反引号里的 `verify-*.mjs`（**可含目录前缀** ⇒ 判定取 basename）。判定与 canary **共用**。 */
+  const guardRefsOf = (src) => {
+    const out = [];
+    for (const m of src.matchAll(/`([^`\n]*?verify-[a-z0-9-]+\.mjs)`/g)) out.push(m[1].split('/').pop());
+    return out;
+  };
+  const PLACEHOLDER_GUARD_REFS = new Map([
+    ['verify-xxx.mjs', '模板占位符：文档里示范「引用要怎么写」用的**假名**（不指向任何真实护栏）'],
+  ]);
+  const realBasenames = new Set(committedFiles().map((f) => f.split('/').pop()));
+  let guardRefChecked = 0;
+  const seenPlaceholder = new Set();
+  const unknown = new Map();
+  for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
+    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    src.split('\n').forEach((line, i) => {
+      for (const name of guardRefsOf(line)) {
+        guardRefChecked += 1;
+        if (realBasenames.has(name)) continue;
+        if (PLACEHOLDER_GUARD_REFS.has(name)) { seenPlaceholder.add(name); continue; }
+        if (!unknown.has(name)) unknown.set(name, []);
+        unknown.get(name).push(`${rel}:${i + 1}`);
+      }
+    });
+  }
+  for (const [name, locs] of unknown) {
+    fail(`文档里引用了护栏 \`${name}\`，但**仓库里没有这个文件名**：${locs.slice(0, 4).join('、')}`
+      + ' —— 护栏文件名是**稳定标识符**（写错 = 读者去找一个不存在的文件）；'
+      + '若它是**已改名的旧名**，请登记进 `PLACEHOLDER_GUARD_REFS` 并写明理由');
+  }
+  // 占位符表**双向核对**（不再出现 ⇒ 报错，防化石）
+  const stale = [...PLACEHOLDER_GUARD_REFS.keys()].filter((n) => !seenPlaceholder.has(n));
+  if (stale.length > 0) {
+    fail(`PLACEHOLDER_GUARD_REFS 里这些占位符**已不再出现**：${stale.join('、')} —— 登记表要**双向**核对（防化石）`);
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 796，下限 600）
+  if (guardRefChecked < 600) {
+    fail(`只解析出 ${guardRefChecked} 处护栏名引用（下限 600 = 立此判据时的基线 796 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：四向（判定与 canary **共用** guardRefsOf）
+  // ⚠️ **样本运行时拼接**（本判据的注释里必然出现这些名字）
+  const OK = 'verify-' + 'release-gate.mjs';
+  const MISSING = 'verify-' + 'no-such-guard.mjs';
+  const FULL = 'apps/desktop/scripts/' + OK;
+  const PH = 'verify-' + 'xxx.mjs';
+  if (guardRefsOf('见 `' + OK + '`。').join() !== OK) {
+    fail('护栏名引用 canary 失效：存在的护栏名未被解析出来');
+  }
+  if (guardRefsOf('见 `' + FULL + '`。').join() !== OK) {
+    fail('护栏名引用 canary 失效：**全路径形式**未按 basename 解析（会误报）');
+  }
+  if (guardRefsOf('见 `' + MISSING + '`。').join() !== MISSING) {
+    fail('护栏名引用 canary 失效：不存在的护栏名未被解析出来');
+  }
+  if (realBasenames.has(MISSING) || !realBasenames.has(OK)) {
+    fail('护栏名引用 canary 失效：真实文件名集合取错（正 / 负样本无法区分）');
+  }
+  if (!PLACEHOLDER_GUARD_REFS.has(PH)) {
+    fail('护栏名引用 canary 失效：占位符表取不到（豁免会静默失效）');
+  }
+  console.log(`Doc code refs: 护栏名引用 ${guardRefChecked} 处（均已存在或登记为占位符）`);
+}
+
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
 //   实测 `CoreEditor/src/styling/themes/` 有 **18 个 `.ts`**，其中 `index.ts` / `colors.ts`
