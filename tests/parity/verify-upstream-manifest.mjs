@@ -261,7 +261,7 @@ if (!existsSync(resolve(root, MANIFEST))) {
 // ── `packages/editor-core/README.md` 复述的「修改 N / 新增 M」必须 == `UPSTREAM.md` 表行数（2026-10-09，审计 §4.195）──
 // 【为什么】该 README 写「`UPSTREAM.md` 记录本仓**修改 19 个上游文件 / 新增 3 个**」，
 //   而 `UPSTREAM.md` 的「修改的文件」表**实测 21 行**（本护栏自己的输出）⇒ **已漂 2**。
-//   ⚠️ 这是「**可直接数**」类（表行数）⇒ 应**与真值比对**（比「文档内自洽」强，§4.306）。
+//   ⚠️ 这是「**可直接数**」类（表行数）⇒ 应**与真值比对**（比「文档内自洽」强，PITFALLS §4.306）。
 // 【判据】README 的「修改 N / 新增 M」必须 == `docModified.files.length` / `docAdded.files.length`。
 {
   const README = 'packages/editor-core/README.md';

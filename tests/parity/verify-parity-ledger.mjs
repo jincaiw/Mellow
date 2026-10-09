@@ -36,7 +36,7 @@ assert(Array.isArray(ledger.patchObservations), 'patchObservations 必须为数�
 // （「Better 项通过对照或盲测」），且 §4.3 结尾写明「**最终「Done」只能是 `PASS-E` 或 `PASS-BETTER`**」——
 // 而**台账的 `statusDefinitions` 与本护栏的 `allowedStatuses` 都没有它**
 // ⇒ **有 Better 项通过盲测时，按宪法无法标记 Done**（只能标 `PASS-E`，与 §4.3 的区分丢失）。
-// 注意它**不是** `grade: B` 的重复：§4.2 的 `grade`（E/B/D）说的是「**该项是不是 Better 项**」，
+// 注意它**不是** `grade: B` 的重复：master-plan §4.2 的 `grade`（E/B/D）说的是「**该项是不是 Better 项**」，
 // §4.3 的 `PASS-BETTER` 说的是「**那个 Better 项的验收级别**」。
 // ⇒ **本轮不擅自补**（加一个状态会牵动本护栏、门禁口径与 50 项既有数据），
 //   改为**显式例外表 + 理由**，让「要么补状态、要么改 §4.3」这件事**无法被静默忽略**。

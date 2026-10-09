@@ -558,7 +558,7 @@ if (!/Windows Source Fidelity gate/.test(workflow)
 // 【为什么】`ux-gate-recorder.mjs` 曾有**三处**消息硬编码条数：「observations 已预置 **120 条**骨架」
 //   「✓ **120 条**齐备…**两项**安全声明」（后者的「两项」也是计数）⇒ `TASKS`/`APPS`/`ROUNDS`
 //   一变它们就漂（同族「只锁了一半」第 18 次）。
-//   ⚠️ **消息里的字面量最容易漏**：它**不参与判定** ⇒ 测试不会因它而红，但会**骗读者**（§4.300）。
+//   ⚠️ **消息里的字面量最容易漏**：它**不参与判定** ⇒ 测试不会因它而红，但会**骗读者**（PITFALLS §4.300）。
 // 【判据】记录器**非注释行**里不得出现「N 条」的字面计数。
 {
   const REC = 'tests/qualification/ux-gate-recorder.mjs';

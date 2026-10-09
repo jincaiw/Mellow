@@ -2213,7 +2213,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //   22 处真引用里 **20 处也在散文里** ⇒ **判别式无效** ⇒ **简写形态不可机械化，本判据不覆盖它**。
 // ⚠️ **扫描面（如实声明）**：**当前状态文档** = 仓库跟踪的 `.md` **去掉记录类目录**
 //   （`docs/qualification/` 是**已发生事实的记录**、`docs/plans/archive/` 是**历史方案**）。
-//   依据 §4.340「存在性判据只适用于描述**当前状态**的清单」：记录里引用**当时的**脚本**不该被改**。
+//   依据 PITFALLS §4.340「存在性判据只适用于描述**当前状态**的清单」：记录里引用**当时的**脚本**不该被改**。
 //   ⚠️ 这**不是**「覆盖率不足」的借口：实测被排除的 27 处里 **0 处**是悬空引用。
 // ⚠️ **目标目录无 `package.json` 时跳过并计数**（如 `cd /tmp/pw && npm run …` 的临时目录）。
 {
@@ -2520,6 +2520,68 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     errors.push('索引护栏 canary 失效：「需本机 Typora」谓词不能区分正 / 负样本');
   }
   console.log(`Doc code refs: README 索引章节 ${INDEXES.length} 个 / 条目 ${idxChecked} 条，均已覆盖其目录`);
+}
+
+// ── ㉜ 代码文件里的**裸 `§4.N`** 必须是**审计文档**里存在的节（否则补限定词）（2026-10-09，审计 §4.231）──
+// 立此条的原因：㉓ 只管**带限定词**的「审计 §4.N」；而**裸 `§4.N`**（无任何限定词）在代码注释里
+//   同样按本仓约定**指审计文档** ⇒ N 必须是它的 `## 4.N`。首轮实测 **9 处悬空**，**全部**是
+//   「引用了 **PITFALLS** / **master-plan** 的节，却写成裸形态」：
+//     `§4.1`（PITFALLS §4.1「三条已实现 ≠ 完成母题」）· `§4.2`（**master-plan** §4.2「Experience Contract」）·
+//     `§4.156` · `§4.157` · `§4.168` · `§4.237` ×3 · `§4.240` · `§4.300` · `§4.306`（均 PITFALLS）
+//   ⇒ 与「写审计条目时漏限定词」（§4.226 / §4.229 两次）是**同一形态**，本轮把它**机械化**。
+// ⚠️ **限定词必须紧邻**（与 ㉓ 同一口径）：`PITFALLS §4.237` ✓ / `见 §4.237` ✗（「见」不是限定词）。
+// ⚠️ 扫描面用 **`git ls-files`**（不是 `walk`）—— 构建产物（`apps/desktop/public/editor/` 等）在**本地**存在、
+//   在 CI 不存在，用 `walk` 会让「本地红 / CI 绿」。
+{
+  const AUDIT_DOC = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const auditSrc2 = readFileSync(resolve(root, AUDIT_DOC), 'utf8').replace(/\r\n/g, '\n');
+  const AUDIT_SECS2 = new Set([...auditSrc2.matchAll(/^## 4\.(\d+)[ \t]/gm)].map((m) => Number(m[1])));
+  if (AUDIT_SECS2.size < 100) {
+    fail(`审计文档只解析出 ${AUDIT_SECS2.size} 个 \`## 4.N\` 小节（下限 100）—— 判据会空转`);
+  }
+  /** 限定词**紧邻** `§4.N`（中间只允许空白与一个左括号）⇒ 视为已限定。判定与 canary **共用**。 */
+  const QUALIFIED_BEFORE = /(?:审计|本文档|PITFALLS|MEMORY|master-plan|PRD|方案|模板|spec|skill|台账|ADR-)\s*[（(]?\s*$/;
+  /** 返回**裸 `§4.N` 且不是审计节**的清单。判定与 canary **共用**本谓词。 */
+  const bareBadRefs = (src) => {
+    const out = [];
+    src.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/§4\.(\d+)/g)) {
+        if (QUALIFIED_BEFORE.test(line.slice(0, m.index))) continue;
+        if (!AUDIT_SECS2.has(Number(m[1]))) out.push(`L${i + 1} §4.${m[1]}`);
+      }
+    });
+    return out;
+  };
+  const CODE_EXTS = ['mjs', 'cjs', 'js', 'ts', 'tsx', 'rs'];
+  const SELF2 = resolve(import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs'));
+  const repoCode = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
+    .toString().split('\0').filter((f) => CODE_EXTS.includes(f.split('.').pop()));
+  let bareRefs = 0;
+  for (const rel of repoCode) {
+    if (resolve(root, rel) === SELF2) continue;   // 自排除：本护栏的注释含**合成样本**（如 `§4.9999`）
+    const text = readFileSync(resolve(root, rel), 'utf8');
+    bareRefs += [...text.replace(/\r\n/g, '\n').matchAll(/§4\.\d+/g)].length;
+    const bad = bareBadRefs(text);
+    if (bad.length > 0) {
+      fail(`${rel} 里的**裸 \`§4.N\`** 指向**审计文档**（按本仓约定），但审计文档没有该节：${bad.join('、')}`
+        + ' —— 要么是悬空引用，要么**漏了限定词**（`PITFALLS §4.N` / `MEMORY §4.1` / `master-plan §4.2`）');
+    }
+  }
+  // [健康度型] 集合由仓库文件产生 ⇒ 留余量（基线 481，下限 300）
+  if (bareRefs < 300) {
+    fail(`代码文件里只解析出 ${bareRefs} 处 \`§4.N\`（下限 300 = 2026-10-09 实测 481）—— 判据会空转`);
+  }
+  // canary：三向（判定与 canary **共用** bareBadRefs）
+  if (bareBadRefs('见 §4.9999。').length !== 1) {
+    errors.push('裸 §4.N 护栏 canary 失效：无限定词且不存在的节未被检出');
+  }
+  if (bareBadRefs('见 PITFALLS §4.9999。').length !== 0) {
+    errors.push('裸 §4.N 护栏 canary 过宽：**紧邻限定词**的引用被误判');
+  }
+  if (bareBadRefs('见 审计 §4.100。').length !== 0) {
+    errors.push('裸 §4.N 护栏 canary 过宽：存在的审计节被误判');
+  }
+  console.log(`Doc code refs: 代码文件里的 §4.N 引用 ${bareRefs} 处（裸形态均已指向审计节或带限定词）`);
 }
 
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
