@@ -52,7 +52,7 @@ Reader 渲染、自动保存、外部变更、扩展注册。**不含任何平�
 
 ## 测试
 
-`test/` 下 **24** 个测试文件，覆盖上述各模块（`autosave` / `documentState` / `fileTree` /
+`test/` 下 **25** 个测试文件，覆盖上述各模块（`autosave` / `documentState` / `fileTree` /
 `outline` / `quickOpen` / `reader` / `recovery` / `wordCount` …）。
 
 ## 边界与约束

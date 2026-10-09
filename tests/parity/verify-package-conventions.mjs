@@ -222,6 +222,38 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
   canary(g5.join(',') === 'CONTRACT.md', `canary 失效：只缺 CONTRACT.md 时未判出（得到 ${JSON.stringify(g5)}）`);
 }
 
+// ── 包文档里复述的「N 个测试文件」必须 == `test/` 目录里的 `.test.ts` 数（2026-10-09，审计 §4.192）──
+// 【为什么】`packages/app-core/{README.md, CONTRACT.md}` 都写「`test/` 下 **24** 个测试文件」——
+//   实测目录里已是 **25** 个 ⇒ **两处都已漂**，且**无判据**
+//   （用 `tests/parity/tools/audit-doc-counts.mjs --min 2` 普查时发现）。
+//   ⚠️ 本判据与 §4.153 的「包用例数」**不同**：**用例数需实跑**（只能文档内自洽），
+//   而**测试文件数可直接数目录** ⇒ **可以与实际比对**（更强）。
+// 【判据】两处文档的「N 个测试文件」必须 == `packages/app-core/test/` 下的 `*.test.ts` 数。
+{
+  const DOCS = ['packages/app-core/README.md', 'packages/app-core/CONTRACT.md'];
+  const TEST_DIR = resolve(root, 'packages/app-core/test');
+  const actual = existsSync(TEST_DIR)
+    ? readdirSync(TEST_DIR).filter((f) => f.endsWith('.test.ts')).length
+    : 0;
+  if (actual === 0) throw new Error('app-core 的 test/ 目录解析出 0 个 .test.ts —— 判据锚点漂移');
+  let seen = 0;
+  for (const d of DOCS) {
+    // ⚠️ 文档里写的是 `**25** 个测试文件`（**加粗**）⇒ 谓词必须容忍 `**`
+    //    （2026-10-09 实测：首版漏了 `\**` ⇒ 一处都匹配不到，防空转下限当场报「0 处」）
+    for (const m of readFileSync(resolve(root, d), 'utf8').replace(/\r\n/g, '\n').matchAll(/\**(\d+)\**\s*个测试文件/g)) {
+      seen += 1;
+      if (Number(m[1]) !== actual) {
+        throw new Error(`${d} 写「${m[1]} 个测试文件」，而 \`packages/app-core/test/\` 下有 ${actual} 个`
+          + ' —— **测试文件数可直接数目录** ⇒ 加/删测试时同步改文档（**两处**）');
+      }
+    }
+  }
+  if (seen < 2) {
+    throw new Error(`「N 个测试文件」只找到 ${seen} 处（下限 2 = 2026-10-09 实测）—— 判据范围萎缩`);
+  }
+  console.log(`Package docs: app-core 的「测试文件数」两处 == \`test/\` 实际 ${actual} 个`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Package convention violations (PRD §117.1):\n  ${errors.join('\n  ')}`);
 }

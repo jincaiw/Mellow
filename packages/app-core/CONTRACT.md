@@ -64,7 +64,7 @@
 
 ## 9. 测试入口
 
-- `test/` 下 **24** 个测试文件
+- `test/` 下 **25** 个测试文件
 - 护栏：`verify-adapter-contract.mjs`、`verify-settings-contract.mjs`、`verify-sidebar-contract.mjs`、
   `verify-shell-*.mjs`、`verify-no-color-only-status.mjs`、`verify-parity-ledger.mjs`、
   `verify-package-conventions.mjs`
