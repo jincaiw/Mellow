@@ -2203,6 +2203,79 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
+// ── ㉘ 文档里显式写的 `npm run X`（可带 `cd <dir> &&` 前缀）必须解析到该目录 package.json 里**存在的 script**（2026-10-09，审计 §4.226）──
+// 立此条的原因（新透镜「**命令引用存在性**」）：**路径**引用已有判据（§4.76 / ㉗），但**脚本名**从没被查过 ——
+//   脚本一改名（如 `parity`），文档里的命令会**静默指向不存在的 script**：读者照抄得到
+//   「Missing script」，而**没有任何信号**（与 §4.76 的「行号还在范围内」同类：看起来完全正常）。
+// ⚠️ **谓词只认「显式 run」形态**（`(npm|pnpm|yarn) run X`）—— 实测依据（**别放宽，别重做**）：
+//   不带 `run` 的简写（`pnpm test` / `yarn build`）**与名词用法同形**（`pnpm workspace` / `npm packages`）。
+//   实测该形态 **22 处真引用 + 4 处名词**，且**两者都在散文里** —— 试过「只认围栏内」的判别式：
+//   22 处真引用里 **20 处也在散文里** ⇒ **判别式无效** ⇒ **简写形态不可机械化，本判据不覆盖它**。
+// ⚠️ **扫描面（如实声明）**：**当前状态文档** = 仓库跟踪的 `.md` **去掉记录类目录**
+//   （`docs/qualification/` 是**已发生事实的记录**、`docs/plans/archive/` 是**历史方案**）。
+//   依据 §4.340「存在性判据只适用于描述**当前状态**的清单」：记录里引用**当时的**脚本**不该被改**。
+//   ⚠️ 这**不是**「覆盖率不足」的借口：实测被排除的 27 处里 **0 处**是悬空引用。
+// ⚠️ **目标目录无 `package.json` 时跳过并计数**（如 `cd /tmp/pw && npm run …` 的临时目录）。
+{
+  const MD_ALL = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 1 << 28 })
+    .toString().split('\0').filter((f) => f.endsWith('.md'));
+  const RECORD_DIRS = ['docs/qualification/', 'docs/plans/archive/'];
+  const MD = MD_ALL.filter((f) => !RECORD_DIRS.some((d) => f.startsWith(d)));
+  const scriptCache = new Map();
+  /** 该目录 package.json 的 script 名集合；**没有 package.json** ⇒ null（跳过，不判）。 */
+  const scriptsOf = (dir) => {
+    const key = dir.replace(/\\/g, '/');
+    if (scriptCache.has(key)) return scriptCache.get(key);
+    const p = resolve(root, key, 'package.json');
+    const set = existsSync(p) ? new Set(Object.keys(JSON.parse(readFileSync(p, 'utf8')).scripts ?? {})) : null;
+    scriptCache.set(key, set);
+    return set;
+  };
+  /** 判定与 canary **共用**本谓词：抽出 `[cd <dir> &&] <pm> run <name>`。 */
+  const RE_RUN = /(?:cd\s+([\w./-]+)\s*&&\s*)?\b(?:npm|pnpm|yarn)\s+run\s+([a-z][a-z0-9:_-]*)/g;
+  const scanRun = (line) => [...line.matchAll(RE_RUN)].map((m) => ({
+    dir: m[1] ? m[1].replace(/\/+$/, '').replace(/\\/g, '/') : '.',
+    name: m[2],
+  }));
+  let cmdChecked = 0;
+  let cmdSkipped = 0;
+  const cmdDirs = new Set();
+  for (const rel of MD) {
+    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      for (const { dir, name } of scanRun(line)) {
+        const set = scriptsOf(dir);
+        if (set === null) { cmdSkipped += 1; continue; }
+        cmdChecked += 1;
+        cmdDirs.add(dir);
+        if (!set.has(name)) {
+          fail(`${rel}:${i + 1} 写了 \`npm run ${name}\`（目录 \`${dir}\`），但该目录 package.json 里**没有这个 script**`
+            + ' —— 读者照抄会得到「Missing script」，而**没有任何信号**（实测：脚本改名后文档无人同步）');
+        }
+      }
+    });
+  }
+  // [健康度型] 集合由文档内容产生 ⇒ 留余量（基线 36，下限 30）
+  if (cmdChecked < 30) {
+    fail(`只解析出 ${cmdChecked} 处 \`npm run X\`（下限 30 = 立此判据时的基线 36 − 余量）`
+      + ' —— 谓词或文档内容漂移会让本判据**空转**；若确实删过，请同步下调下限并说明');
+  }
+  // canary：四向（判定与 canary **共用** scanRun / scriptsOf）
+  const c1 = scanRun('cd apps/desktop && npm run tauri dev');
+  if (c1.length !== 1 || c1[0].name !== 'tauri' || c1[0].dir !== 'apps/desktop') {
+    errors.push('命令引用护栏 canary 失效：`cd <dir> && npm run X` 的前缀 / 脚本名未被正确解析');
+  }
+  if (scanRun('工具链：根目录 pnpm workspace').length !== 0) {
+    errors.push('命令引用护栏 canary 过宽：**不带 run 的简写**被当成了命令（名词用法会误报）');
+  }
+  const rootScripts = scriptsOf('.');
+  if (rootScripts === null || !rootScripts.has('parity') || rootScripts.has('no-such-script-xyz')) {
+    errors.push('命令引用护栏 canary 失效：script 存在性判定不能区分正 / 负样本');
+  }
+  if (!cmdDirs.has('apps/desktop')) {
+    errors.push('命令引用护栏 canary 失效：`cd <dir> &&` 分支**未被真实用例触发**（前缀解析可能已死）');
+  }
+}
+
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——
 //   实测 `CoreEditor/src/styling/themes/` 有 **18 个 `.ts`**，其中 `index.ts` / `colors.ts`
