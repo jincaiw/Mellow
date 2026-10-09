@@ -1693,13 +1693,15 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 }
 
-// ── ㉒ 引用的编号（`ADR-NNNN` / 台账 `P0-*`）必须**存在**（2026-10-09，审计 §4.209 / §4.210）──
-// 立此条的原因（**两次注入实测**）：
+// ── ㉒ 引用的编号（`ADR-NNNN` / 台账 `P0-*` / 任务 `T-NNNN`）必须**存在**（2026-10-09，审计 §4.209–§4.211）──
+// 立此条的原因（**三次「逐个扫编号族」实测**）：
 //   ① `ADR-NNNN`：往 `docs/architecture/README.md` 注入 `ADR-0099`（**不存在**）后，
 //      本护栏与 `verify-release-gate.mjs` **都没红** ⇒ 仓库级**没有**该判据；
 //      仓库内 `ADR-NNNN` 引用共 **1036 处**（md 755 / mjs 192 / ts 38 / json 29 / yml 12 / tsx 6 / rs 4）。
 //   ② 台账 `P0-*`：把 `P0-EDITOR-999`（**不存在**）注入**无关文档** ⇒ **全链 `npm run parity` 绿** ⇒ 也没有该判据；
 //      仓库内 `P0-*` 引用共 **399 处**（50 个不同 id = 台账**全部** 50 项）。
+//   ③ 任务 `T-NNNN`：扫描面内 **139 处**（真值源 = `codex-implementation-plan.md` 的 `### T-NNNN` 标题，**80 个**）
+//      —— 全部**引用自代码注释与文档**（`Reader.tsx` / `SettingsPanel.tsx` / 各包源码）⇒ 悬空引用会让读者找不到任务。
 //   ⚠️ 已有的 `resolvesRef`（门禁）/ §6 的 `resolveCarrier` 只覆盖**各自的上下文**（矩阵 disposition / §6 表），**不是全仓**。
 {
   const ADR_DIR = resolve(root, 'docs/adr');
@@ -1713,6 +1715,12 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const LEDGER_IDS = new Set((LEDGER.items ?? []).map((x) => x.id));
   if (LEDGER_IDS.size < 40) {
     fail(`台账只解析出 ${LEDGER_IDS.size} 项（下限 40 = 2026-10-09 实测 50）—— 判据锚点漂移`);
+  }
+  // 任务编号的**真值源 = `docs/plans/codex-implementation-plan.md` 的 `### T-NNNN` 标题**
+  const TASK_IDS = new Set([...readFileSync(resolve(root, 'docs/plans/codex-implementation-plan.md'), 'utf8')
+    .matchAll(/\bT-(\d{4})\b/g)].map((m) => `T-${m[1]}`));
+  if (TASK_IDS.size < 60) {
+    fail(`任务清单只解析出 ${TASK_IDS.size} 个 T 编号（下限 60 = 2026-10-09 实测 80）—— 判据锚点漂移`);
   }
   // ⚠️ **哨兵值**：护栏自己的合成样本用 `ADR-9999` / `P0-NOPE-999`（**永不存在**）⇒ 必须登记豁免（带理由 + 双向核对）
   const ID_REF_EXEMPT = new Map([
@@ -1739,10 +1747,15 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
         if (LEDGER_IDS.has(id) || ID_REF_EXEMPT.has(id)) continue;
         out.push(`L${i + 1} ${id}`);
       }
+      for (const m of line.matchAll(/\bT-\d{4}\b/g)) {
+        const id = m[0];
+        if (TASK_IDS.has(id) || ID_REF_EXEMPT.has(id)) continue;
+        out.push(`L${i + 1} ${id}`);
+      }
     });
     return out;
   };
-  const ID_PATTERNS = [/\bADR-\d{4}\b/g, /\bP0-[A-Z]+-\d{3}\b/g];
+  const ID_PATTERNS = [/\bADR-\d{4}\b/g, /\bP0-[A-Z]+-\d{3}\b/g, /\bT-\d{4}\b/g];
   let idRefs = 0; const seenExempt = new Set();
   for (const f of walk(root).filter((p) => SCAN_EXTS.includes(p.split('.').pop()))) {
     if (resolve(f) === resolve(SELF)) continue;
@@ -1761,9 +1774,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
         + '（实测：注入 `ADR-0099` / `P0-EDITOR-999` 时，**全链 `parity` 都不红**）');
     }
   }
-  // 防空转：下限**留余量**（健康度型 —— 引用数会随新 ADR / 台账项增长）
-  if (idRefs < 1300) {
-    fail(`编号引用只解析出 ${idRefs} 处（下限 1300；2026-10-09 实测 **1469** = ADR 1072 + 台账 397）—— 判据会空转`);
+  // 防空转：下限**留余量**（健康度型 —— 引用数会随新 ADR / 台账项 / 任务增长）
+  if (idRefs < 1500) {
+    fail(`编号引用只解析出 ${idRefs} 处（下限 1500；2026-10-09 实测 **1616** = ADR 1073 + 台账 404 + 任务 139）—— 判据会空转`);
   }
   // 例外表**双向**：登记了却不再出现 ⇒ 报错（防止哨兵值被删后豁免表变成噪声）
   for (const id of ID_REF_EXEMPT.keys()) {
@@ -1786,6 +1799,12 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   if (badIdRefs('见 `P0-EDITOR-004`。').length !== 0) {
     errors.push('编号护栏 canary 过宽：存在的台账 id 被判为不存在');
+  }
+  if (badIdRefs('见 T-9999。').length !== 1) {
+    errors.push('编号护栏 canary 失效：不存在的**任务编号**未被检出（判据已退化成空真）');
+  }
+  if (badIdRefs('见 T-0001。').length !== 0) {
+    errors.push('编号护栏 canary 过宽：存在的任务编号被判为不存在');
   }
 }
 
