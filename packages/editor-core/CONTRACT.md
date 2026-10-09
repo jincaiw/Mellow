@@ -26,6 +26,6 @@ vendored MarkEdit CoreEditor（TypeScript Editor Core，ADR-0001/0004）。
 
 ## 验收
 
-- `yarn test` = 185/185；
+- `yarn test` = 200/200；
 - `yarn build` 产出 singlefile `dist/index.html`；
 - 不出现新增 `window.webkit` / `window.__TAURI__` 引用（唯一豁免：`src/bridge/nativeModule.ts`）。
