@@ -2686,19 +2686,21 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + '（本仓只需 `contents: write` 用于发版；⚠️ 结构判据，行为需等一次真跑）');
 }
 
-// ── ⑰ 二进制文件必须**显式**声明（不依赖 `text=auto` 的内容探测）（2026-10-10，审计 §4.279）──
+// ── ⑰ **每个**被跟踪文件的换行符属性必须与「它是不是二进制」一致（2026-10-10，审计 §4.279 / §4.280）──
 // 【为什么】`.gitattributes` 的注释自己写着「二进制：**显式**标注（不依赖 `text=auto` 的内容探测）
-//   —— 让政策可读，也避免探测边界上的意外」。但实测：**4 个被跟踪文件**（3 个 `.jpeg` + 1 个 `.bin`）
-//   的内容含 NUL（= git 自己的二进制启发式会判为二进制），而 `git check-attr text` 返回 **`auto`**
+//   —— 让政策可读，也避免探测边界上的意外」。但实测：**3 个被跟踪的 `.jpeg`** 的内容含 NUL
+//   （= git 自己的二进制启发式会判为二进制），而 `git check-attr text` 返回 **`auto`**
 //   ⇒ 它们**没有**被显式声明 ⇒ 与那句注释**不符**。
 //   ⚠️ **后果**：`text=auto` 会**自动探测**，所以这些文件**当前是安全的**；但「探测」只在
-//     **前 8000 字节含 NUL** 时判为二进制 —— 一个**恰好不含 NUL** 的二进制（如某些 `.bin`）
-//     会被当成文本 ⇒ 在检出时被 `eol=lf` **改写 CRLF** ⇒ **静默损坏**。
-//     ⇒ 显式声明的价值正是「不依赖探测边界」。
-// 【判据】**被跟踪**的文件里，凡**前 8000 字节含 NUL** 的（git 的二进制启发式），
-//   其 `git check-attr text` 必须是 **`unset`**（即被某条 `binary` 规则覆盖）。
-//   ⚠️ 用 **git 自己的谓词**（`git check-attr --stdin`，批量一次调用）+ **git 自己的启发式**（8000 字节内找 NUL）。
-//   ⚠️ **不改任何文件内容** —— 只补 `.gitattributes` 的声明（本判据立起时已补 `*.jpeg` / `*.jpg` / `*.bin`）。
+//     **前 8000 字节含 NUL** 时判为二进制 —— 一个**恰好不含 NUL** 的二进制会被当成文本
+//     ⇒ 在检出时被 `eol=lf` **改写 CRLF** ⇒ **静默损坏**。显式声明的价值正是「不依赖探测边界」。
+// 【判据】**两半都要锁**（2026-10-10 审计 §4.280 扩面 —— 首版**只锁了二进制那一半**）：
+//   · **二进制类**（前 8000 字节含 NUL）⇒ `git check-attr text` 必须 **`unset`**；
+//   · **文本类**（无 NUL）⇒ `text` 必须 **`auto`** 且 `eol` 必须 **`lf`**。
+//   ⇒ 合起来 = **全部被跟踪文件**（立此判据时 1069 个）都落在判据里 —— 不再是「一半」。
+//   ⚠️ 用 **git 自己的谓词**（`git check-attr --stdin text eol`，批量一次调用）
+//     + **git 自己的启发式**（8000 字节内找 NUL）⇒ 无需维护扩展名清单。
+//   ⚠️ **不改任何文件内容** —— 只补 `.gitattributes` 的声明（立此判据时已补 `*.jpeg`）。
 {
   const tracked = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
     .split('\n').filter(Boolean);
@@ -2714,31 +2716,51 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     } catch { return false; } finally { if (fd !== null) closeSync(fd); }
   };
   const binFiles = tracked.filter((f) => hasNul(resolve(root, f)));
-  let unsetCount = 0;
-  if (binFiles.length > 0) {
-    const out = execFileSync('git', ['check-attr', '--stdin', 'text'],
-      { cwd: root, input: binFiles.join('\n'), encoding: 'utf8' });
-    const bad = [];
+  const textFiles = tracked.filter((f) => !hasNul(resolve(root, f)));
+  const attrs = new Map(); // path → { text, eol }
+  if (tracked.length > 0) {
+    const out = execFileSync('git', ['check-attr', '--stdin', 'text', 'eol'],
+      { cwd: root, input: tracked.join('\n'), encoding: 'utf8' });
     for (const line of out.split('\n').filter(Boolean)) {
-      const m = /^(.*): text: (.*)$/.exec(line);
+      const m = /^(.*): (text|eol): (.*)$/.exec(line);
       if (m === null) continue;
-      if (m[2] === 'unset') { unsetCount += 1; continue; }
-      bad.push(`${m[1]} → \`text: ${m[2]}\``);
-    }
-    if (bad.length > 0) {
-      fail(`这些**被跟踪**文件的内容含 NUL（git 会判为二进制），但没有被 \`.gitattributes\` **显式**声明为 binary：`
-        + `${bad.join('、')} —— \`.gitattributes\` 的注释自己写着「**显式**标注（**不依赖** \`text=auto\` 的内容探测）」。`
-        + '⚠️ 探测只在**前 8000 字节含 NUL** 时判为二进制 ⇒ 一个**恰好不含 NUL** 的二进制会被当成文本，'
-        + '在检出时被 `eol=lf` **改写 CRLF** ⇒ **静默损坏**。请按扩展名补一条 `binary` 规则（放在 `*` 规则**之后**）');
+      if (!attrs.has(m[1])) attrs.set(m[1], {});
+      attrs.get(m[1])[m[2]] = m[3];
     }
   }
-  // 防空转：**覆盖型**（下限 = 立此判据时的基线 84 个含 NUL 的文件；减到很少说明启发式或扫描面漂移）
+  const binBad = [];
+  for (const f of binFiles) {
+    if (attrs.get(f)?.text !== 'unset') binBad.push(`${f} → \`text: ${attrs.get(f)?.text}\``);
+  }
+  if (binBad.length > 0) {
+    fail(`这些**被跟踪**文件的内容含 NUL（git 会判为二进制），但没有被 \`.gitattributes\` **显式**声明为 binary：`
+      + `${binBad.join('、')} —— \`.gitattributes\` 的注释自己写着「**显式**标注（**不依赖** \`text=auto\` 的内容探测）」。`
+      + '⚠️ 探测只在**前 8000 字节含 NUL** 时判为二进制 ⇒ 一个**恰好不含 NUL** 的二进制会被当成文本，'
+      + '在检出时被 `eol=lf` **改写 CRLF** ⇒ **静默损坏**。请按扩展名补一条 `binary` 规则（放在 `*` 规则**之后**）');
+  }
+  const textBad = [];
+  for (const f of textFiles) {
+    const a = attrs.get(f) ?? {};
+    if (a.text !== 'auto' || a.eol !== 'lf') textBad.push(`${f} → \`text: ${a.text}\` / \`eol: ${a.eol}\``);
+  }
+  if (textBad.length > 0) {
+    fail(`这些**被跟踪**文件没有 NUL（git 会判为文本），但换行符属性不是 \`text: auto\` + \`eol: lf\`：`
+      + `${textBad.slice(0, 10).join('、')}${textBad.length > 10 ? ` …（共 ${textBad.length} 处）` : ''}`
+      + ' —— `.gitattributes` 的换行符政策是「检出时一律写 LF」；'
+      + '属性不符会让**同一份代码在不同平台上检出不同**（本仓已因 CRLF 出过一次真实事故：审计 §4.252）');
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；文件增删时须一并复核）
   const NUL_BASELINE = 84; // [覆盖型] 基线 84
+  const TEXT_BASELINE = 985; // [覆盖型] 基线 985
   if (binFiles.length < NUL_BASELINE) {
     fail(`只找到 ${binFiles.length} 个「前 ${NUL_WINDOW} 字节含 NUL」的被跟踪文件`
       + `（[覆盖型] 基线 ${NUL_BASELINE}）—— 扫描面或启发式漂移会让本判据**空转**`);
   }
-  // canary：三向（与判定**共用** hasNul；样本用**临时文件**构造）
+  if (textFiles.length < TEXT_BASELINE) {
+    fail(`只找到 ${textFiles.length} 个「无 NUL」的被跟踪文件（[覆盖型] 基线 ${TEXT_BASELINE}）`
+      + ' —— 扫描面漂移会让本判据的**文本那一半**空转');
+  }
+  // canary：四向（与判定**共用** hasNul；样本用**临时文件**构造）
   const tmpA = join(tmpdir(), `mellow-nul-canary-${process.pid}-a`);
   const tmpB = join(tmpdir(), `mellow-nul-canary-${process.pid}-b`);
   writeFileSync(tmpA, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
@@ -2747,8 +2769,11 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   if (hasNul(tmpB)) fail('⑰ canary **过宽**：纯文本样本被判为二进制');
   rmSync(tmpA, { force: true });
   rmSync(tmpB, { force: true });
-  console.log(`Release gate: ${binFiles.length} 个含 NUL 的被跟踪文件 —— **均被显式声明为 binary**`
-    + `（\`git check-attr text\` = \`unset\` ${unsetCount} 处）`);
+  if (binFiles.length + textFiles.length !== tracked.length) {
+    fail('⑰ canary 失效：两类之和 ≠ 被跟踪文件数（分诊有遗漏）');
+  }
+  console.log(`Release gate: 换行符属性 —— **全部 ${tracked.length} 个**被跟踪文件已分诊：`
+    + `二进制 ${binFiles.length} 个（\`text: unset\`）/ 文本 ${textFiles.length} 个（\`text: auto\` + \`eol: lf\`）`);
 }
 
 if (errors.length > 0) {
