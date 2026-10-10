@@ -16381,6 +16381,18 @@ Windows runner 的 `core.autocrlf=true` 会把文本文件**检出为 CRLF**。�
 
 ⇒ 于是本节的结论从「**不声称已生效**」升级为：
 **政策的存在性与属性解析由本机验证；政策的**效果**由 CI 的 Windows job 用字节级断言验证。**
+
+✅ **已在 Windows job 上验证通过**（2026-10-10，run `38015889686`，8/8 全绿）。日志（**Windows runner**）：
+
+```
+Release gate: 仓库卫生 —— 换行符政策 **已生效**
+（`git check-attr` 实测：文本 `text=auto` + `eol=lf` / 二进制 `text=unset`）
+```
+
+⚠️ 这条输出的**意义在于它出现在 Windows job 里**：该 runner 的 `core.autocrlf=true`
+**本来**会把文本文件检出为 CRLF —— 而**字节级断言（不得含 CR）在同一 job 上通过**
+⇒ **Windows 的检出确实是 LF**（改动前该断言会红）。这就是本政策的**直接证据**。
+
 ⚠️ 仍要说清**当前意义**：创可贴**先不删**（本机 Windows 开发者仍会遇到 CRLF），
 本判据是「**未来可以删创可贴**」的**前置条件**。
 
