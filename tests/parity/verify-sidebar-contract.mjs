@@ -676,7 +676,10 @@ if (trashDrift === appSource) {
   fail('文件操作委托 canary 失效：注入后仍命中判定');
 }
 
-// ── ㉑ canary：护栏必须能抓住 clamp 回退 ─────────────────────────────────
+// ── ⑲b canary：护栏必须能抓住 clamp 回退 ─────────────────────────────────
+// ⚠️ 本条原误用 **㉑**（该号已被 L694 的 P3.9 Sidebar Golden 占用）⇒ 2026-10-10 审计 §4.271
+//   改为 **⑲b**（它本就是 ⑲「Sidebar resize / 记忆 / 窄化 / 200% Zoom」的 canary），
+//   并由 `verify-doc-code-refs.mjs` 判据 ㊸（「单护栏内圈号不得重复」）机械守住。
 // 模拟「去掉 clamp 直接透传」的漂移：突变后源码应包含退化形态，且 clamp 正则不再命中
 const CLAMP_EXPR = 'Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(next)))';
 const clampDrift = appSource.replace(CLAMP_EXPR, 'next');

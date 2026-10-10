@@ -7,7 +7,8 @@
     "dev": "node scripts/build-editor-bundle.mjs && vite",
     "build": "node scripts/build-editor-bundle.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "quicklook:build": "node scripts/build-quicklook-bundle.mjs && bash quicklook/build.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

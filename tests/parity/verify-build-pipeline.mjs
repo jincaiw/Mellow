@@ -13,7 +13,7 @@
  *   ③ 桌面 `build` script 必须先跑 bundle 抽取再 vite build（否则产物缺引擎）；
  *   ④ 脚本注释不得谎称「CI 已编排」（历史失真：原注释如此，实际两处 workflow 都没调用）。
  */
-import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { resolve, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -494,7 +494,9 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
 }
 
-// ── ⑤ **pnpm 版本只有一个真值源**：`package.json` 的 `packageManager`（2026-10-10，审计 §4.264）──
+// ── ⑭ **pnpm 版本只有一个真值源**：`package.json` 的 `packageManager`（2026-10-10，审计 §4.264）──
+// ⚠️ 本条立时误用了 **⑤**（该号已被 L76 的 canary 占用）⇒ 2026-10-10 审计 §4.271 改为 **⑭**，
+//   并由 `verify-doc-code-refs.mjs` 判据 ㊸（「单护栏内圈号不得重复」）机械守住。
 // 【为什么】实测（本轮新透镜「版本与环境一致性」）：`version: 11.7.0` 曾**硬编码在 10 处**
 //   （`ci.yml` 4 / `release.yml` 3 / `runtime-qualification.yml` 3），而真值源是
 //   `package.json` 的 `packageManager: pnpm@11.7.0` ⇒ **1 处真值源 + 10 处副本**（本仓 #1 形态）。
@@ -562,6 +564,125 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   //   那是**历史事实**、无法从制品派生 ⇒ 改为**不写数字**（历史记在本判据的注释里，注释不受 ⑧ 约束）。
   console.log(`Build pipeline: pnpm 版本真值源唯一 —— \`packageManager\` = \`${pm}\`；`
     + `${setups} 处 \`pnpm/action-setup\` **均未硬编码** \`version:\`（副本已删，历史见本判据注释）`);
+}
+
+// ── ⑮ 每个可执行脚本必须**可被发现**（被某处引用）或**显式登记**（2026-10-10，审计 §4.271）──
+// 【为什么】「死代码要删」这条纪律在**文件级**没人守 —— `verify-doc-code-refs.mjs` 判据 ㊷
+//   只抓**入口脚本内部的**未使用声明，抓不到「**整个脚本文件**没有任何地方提到它」。实测 102 个脚本里
+//   **6 个零引用**，其中
+//   `apps/desktop/quicklook/build.sh` 是 **PRD §82（P1 · macOS Quick Look）唯一的构建入口**
+//   （驱动 `scripts/build-quicklook-bundle.mjs` → `qlmarkdown.appex`）—— 而
+//   **master-plan / 打包门禁 / 台账 / `package.json` 全都不提它** ⇒ **读者无法发现它**
+//   （与「登记的可发现性」同族）。本轮已把它接进 `apps/desktop/package.json` 的 `quicklook:build`。
+// 【判据】对 `tools/` `tests/` `apps/` 下的每个 `.sh` / `.mjs` / `.cjs` / `.swift`（排除夹具与产物目录）：
+//   ① 其**文件名**必须出现在**至少一处别的**已提交文本文件里（= 有人提到 ⇒ 可发现）；或
+//   ② 登记进 `ORPHAN_SCRIPT_EXEMPT`（写明**它是什么** + **谁在什么场景跑**）。
+//   ⚠️ **例外表双向**：登记项必须 (a) **文件仍存在**、(b) **仍在扫描面内**、(c) 理由非空。
+//   ⚠️ **如实声明两条局限**：
+//     ① 这是**子串**判定 ⇒ 散文里提一句就算「被引用」⇒ **只抓「无人提及」这一半**
+//        （正是本轮的真缺陷形态），**不判**引用是否指向真实用法；
+//     ② **不判「登记项仍然零引用」** —— 本判据的例外表自身 + 审计文档都会写到这些名字
+//        ⇒ 那条判定**永假**（宁可如实声明，也不要一条永远为真的「双向」）。
+{
+  const SCRIPT_EXT = ['.sh', '.mjs', '.cjs', '.swift'];
+  const SCRIPT_DIRS = ['tools/', 'tests/', 'apps/'];
+  const EXCLUDE = [/^tests\/fixtures\//, /^tests\/benchmark\/(fixtures|results|reports)\//,
+    /^tests\/visual\/(actual|baseline|golden)\//];
+  // 例外表：**手工探针库**（自我文档化，但无自动调用方 ⇒ 文件名不出现在别处）
+  const ORPHAN_SCRIPT_EXEMPT = new Map([
+    ['tests/benchmark/lib/dump-menu.sh',
+      'AX API 菜单树 dump（手工：`bash dump-menu.sh <进程名>`）—— 对标复评取证'],
+    ['tests/benchmark/lib/probe-shortcuts.sh',
+      '探测 Typora 菜单项原始 AX 修饰键值（手工跑）—— 快捷键全集提取'],
+    ['tests/benchmark/lib/imgstat.swift',
+      '截图尺寸/像素统计（手工：`swift imgstat.swift <png>`）'],
+    ['tests/benchmark/lib/ocr.swift',
+      'Vision OCR 读取截图文字（手工：`swift ocr.swift <png>`）—— 无头验证窗口内容'],
+    ['tests/benchmark/lib/zoom-probe.swift',
+      '字体缩放真机视觉实证（手工跑）—— B1-1 取证'],
+  ]);
+  const TEXT_RE = /\.(md|json|jsonc|ya?ml|mjs|cjs|sh|ts|tsx|toml|rs|swift|html)$/;
+  const SELF_REL = 'tests/parity/verify-build-pipeline.mjs';
+  const corpus11 = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'],
+    { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+  const texts11 = new Map();
+  for (const g of corpus11) {
+    if (!TEXT_RE.test(g)) continue;
+    const abs = resolve(root, g);
+    try { if (statSync(abs).size > 4_000_000) continue; } catch { continue; }
+    try { texts11.set(g, readFileSync(abs, 'utf8')); } catch { /* 跳过不可读 */ }
+  }
+  const scripts11 = corpus11
+    .filter((f) => SCRIPT_EXT.some((e) => f.endsWith(e)))
+    .filter((f) => SCRIPT_DIRS.some((d) => f.startsWith(d)))
+    .filter((f) => !f.includes('/node_modules/'))
+    .filter((f) => !EXCLUDE.some((re) => re.test(f)))
+    .sort();
+  /** 判定（与 canary **共用**）：该脚本在给定语料里是否「有人提到」。
+   *  ⚠️ **排除本护栏自身**（例外表里必然出现这些名字）。
+   *  ⚠️ 语料**作参数**（不是闭包）—— 否则「自排除」这条 canary 没法构造反例（实测踩到）。 */
+  const isReferencedIn = (corpus, rel) => {
+    const base = rel.split('/').pop();
+    for (const [g, t] of corpus) if (g !== rel && g !== SELF_REL && t.includes(base)) return true;
+    return false;
+  };
+  const isReferenced = (rel) => isReferencedIn(texts11, rel);
+  const orphans11 = scripts11.filter((f) => !isReferenced(f) && !ORPHAN_SCRIPT_EXEMPT.has(f));
+  if (orphans11.length > 0) {
+    fail(`这些可执行脚本**零引用**（没有任何地方提到它们的文件名 ⇒ 读者无法发现）：`
+      + `${orphans11.join('、')} —— 请在**某处**提到它（package.json script / 文档 / 另一个脚本），`
+      + '或登记进 `ORPHAN_SCRIPT_EXEMPT`（写明它是什么 + 谁在什么场景跑）');
+  }
+  // 例外表**双向**：登记项必须仍存在 + 仍在扫描面内 + 理由非空
+  for (const [rel, why] of ORPHAN_SCRIPT_EXEMPT) {
+    if (!existsSync(resolve(root, rel))) {
+      fail(`ORPHAN_SCRIPT_EXEMPT 登记了 \`${rel}\`，但**该文件不存在**（过期登记）`);
+      continue;
+    }
+    if (!scripts11.includes(rel)) {
+      fail(`ORPHAN_SCRIPT_EXEMPT 登记了 \`${rel}\`，但它**不在扫描面内**（登记一个不被扫描的对象 ⇒ 例外表空转）`);
+    }
+    if (typeof why !== 'string' || why.trim() === '') {
+      fail(`ORPHAN_SCRIPT_EXEMPT 的 \`${rel}\` **没有写明理由**（登记必须回答「它是什么 + 谁在什么场景跑」）`);
+    }
+  }
+  // ⚠️ 「**引用宪法 ≠ 读宪法**」：本判据的注释引用了 **PRD §82**（QuickLook 是 **P1**
+  //    ⇒ 不在 P0 发布门禁内，这正是「零引用但不阻断发布」的处置理由）⇒ **必须真的读 PRD 原文**，
+  //    否则宪法被改（§82 升为 P0）时这里**不会红**。
+  const PRD = 'docs/product/Mellow-PRD-V1.2-FINAL.md';
+  const prdSrc = read(PRD);
+  const sec82 = /^# 82\. macOS Quick Look$([\s\S]*?)(?=^# )/m.exec(prdSrc);
+  if (sec82 === null) {
+    fail(`${PRD} 里找不到 \`# 82. macOS Quick Look\` —— 本判据注释引用的宪法条款漂移了`);
+  } else if (!/^\s*P1\s*[。.]?\s*$/m.test(sec82[1])) {
+    fail(`${PRD} 的 §82 不再是 **P1** —— 若升为 P0，QuickLook 就必须进台账与发布门禁`
+      + '（本判据「零引用但不阻断」的处置理由随之失效）');
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；脚本增删时须一并调整）
+  const SCRIPT_BASELINE = 100; // [覆盖型] 基线 100
+  if (scripts11.length < SCRIPT_BASELINE) {
+    fail(`只扫描到 ${scripts11.length} 个脚本（[覆盖型] 基线 ${SCRIPT_BASELINE}）`
+      + ' —— 扫描面萎缩会让本判据空转');
+  }
+  // canary：四向（与判定**共用** isReferencedIn；样本运行时拼接 —— 本文件自己也在扫描面里）
+  const REF_OK = 'tests/parity/' + 'verify-release-gate.mjs';
+  if (!isReferenced(REF_OK)) {
+    fail('⑪ canary 失效：一个**确定被提到**的文件被判为零引用（谓词过窄）');
+  }
+  if (isReferenced('tests/parity/' + 'no-such-script-zzz.mjs')) {
+    fail('⑪ canary **过宽**：构造的零引用文件名被判为「有人提到」');
+  }
+  // 自排除（构造语料）：名字**只出现在本护栏里** ⇒ 必须判为「未被引用」
+  const SAMPLE_REL = 'tests/benchmark/lib/' + 'dump-menu.sh';
+  if (isReferencedIn(new Map([[SELF_REL, `x ${'dump-menu.sh'} y`]]), SAMPLE_REL)) {
+    fail('⑪ canary 失效：本护栏**自身**未被排除（例外表里的名字会把它自己判成「被引用」）');
+  }
+  // 反向：**别的文件**提到同名 ⇒ 必须判为「被引用」
+  if (!isReferencedIn(new Map([['package.json', `x ${'dump-menu.sh'} y`]]), SAMPLE_REL)) {
+    fail('⑪ canary 失效：别的文件提到文件名却未被判为「被引用」');
+  }
+  console.log(`Build pipeline: ${scripts11.length} 个脚本**均有人提到或已登记**`
+    + `（手工探针例外表 ${ORPHAN_SCRIPT_EXEMPT.size} 项）`);
 }
 
 if (errors.length > 0) {

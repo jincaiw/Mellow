@@ -3465,7 +3465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 270; // 2026-10-10 加 §4.270 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 271; // 2026-10-10 加 §4.271 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3741,6 +3741,91 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   console.log(`Doc code refs: monorepo.md 的「${actual} 个包」== \`packages/\` 目录数（名单 ${listed.length} 个一致）`);
 }
 
+// ── ㊸ 单个护栏内「判据圈号」不得重复（2026-10-10，审计 §4.271）──────────────────────
+// ⚠️ **用 `throw` 而不是 `errors.push`**：本块落在本文件**最后一个 `throw new Error(` 之后**，
+//   而 `verify-release-gate.mjs` 判据 ⑩ 要求「抛错点之后不得再有 `fail(` / `errors.push(` 断言」
+//   （首版用 `errors.push` ⇒ 判据 ⑩ 当场报「抛错点之后还有断言（永不判定）」）。
+// 【为什么】判据编号是**每护栏本地**的，且本文件判据 ㉞ 依赖「编号 ↔ 判据」**一一对应**
+//   （跨护栏引用必须指名护栏，指名之后还要能**唯一定位**）。而实测 **3 个**护栏里同一圈号被
+//   **两条不同判据**占用：
+//     · `verify-adapter-contract.mjs` **③**（Adapter contract 三方锚点 / 宿主↔引擎桥完整性）
+//     · `verify-build-pipeline.mjs` **⑤**（指纹校验 canary / pnpm 真值源）—— 后者是
+//       **2026-10-10 我自己**在审计 §4.264 加的（**同一轮我还刚写了「判据抓到作者」**）
+//     · `verify-sidebar-contract.mjs` **㉑**（clamp canary / P3.9 Sidebar Golden）
+//   ⇒ 「<护栏> 判据 N」**不唯一** ⇒ 读者查错判据。㉞ 只查**引用**，**不查定义** ⇒ 这是它没锁的那一半。
+// 【判据】对每个 `verify-*.mjs`：把每行 `// ── <圈号>[可选字母后缀]` 解成**编号 token**
+//   （`① + ②` ⇒ 两个；`③-b` ⇒ `③-b`；`⑳c` ⇒ `⑳c`），同一 token 在**同一文件内**出现 ≥2 次即报错。
+//   ⚠️ **后缀参与身份**：`⑳` / `⑳b` / `⑳c` 是**三条不同判据**（本仓既有的子编号惯用法）⇒ 不算重复；
+//      但 `③` 与 `③-b` 是**不同 token** ⇒ `③` 出现两次（`③` + `③-b` + `③` 这种）**算**重复。
+//   ⚠️ 扫描面 = **只护栏**（与 ㉞ 一致）。
+{
+  const TOKEN_RE = new RegExp(`^\\s*([${CIRCLED_CLASS}])(-?[a-z])?`);
+  const hasCircled = new RegExp(`^[${CIRCLED_CLASS}]`);
+  /** 判定（与 canary **共用**）：该行 `// ──` 头里的编号 token 列表。 */
+  const headerTokens = (line) => {
+    const m = /^\s*\/\/ ──\s*(.*)$/.exec(line);
+    if (m === null) return [];
+    let rest = m[1];
+    const out = [];
+    for (;;) {
+      const t = TOKEN_RE.exec(rest);
+      if (t === null) break;
+      out.push(t[1] + (t[2] ?? ''));
+      rest = rest.slice(t[0].length);
+      // 合并写法 `① + ②`：分隔符后可再跟一个圈号
+      const sep = new RegExp(`^\\s*[+·/、]\\s*(?=[${CIRCLED_CLASS}])`).exec(rest);
+      if (sep !== null) rest = rest.slice(sep[0].length);
+      if (!hasCircled.test(rest)) break;
+    }
+    return out;
+  };
+  let tokens43 = 0;
+  for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
+    const seen = new Map();
+    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      for (const tk of headerTokens(line)) {
+        tokens43 += 1;
+        if (!seen.has(tk)) seen.set(tk, []);
+        seen.get(tk).push(i + 1);
+      }
+    });
+    for (const [tk, at] of seen) {
+      if (at.length > 1) {
+        throw new Error(`${rel} 里判据圈号 **${tk}** 出现 ${at.length} 次（行 ${at.join('、')}）`
+          + ' —— 「<护栏> 判据 N」必须能**唯一定位一条判据**（判据编号是每护栏本地的，㉞ 依赖它）'
+          + '；请给后一条换一个**未被占用**的圈号（子编号 `N-b` / `Nc` 可与 `N` 共存）');
+      }
+    }
+  }
+  // [健康度型] 集合由源码内容产生 ⇒ 留余量（立此判据时基线 143 个判据头 token）
+  if (tokens43 < 100) {
+    throw new Error(`只解析出 ${tokens43} 个判据头 token（下限 100 = 立此判据时的基线 143 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：四向（判定与 canary **共用** headerTokens；样本运行时拼接）
+  //   ⚠️ 首版把两 token 的期望写成 `'①②'`，而 `.join(',')` 产出的是 `'①,②'` ⇒ canary **自己**写错
+  //      （它红了 —— 这正是 canary 该有的样子：**先证明它能红**）。
+  if (headerTokens(`// ── ${'①'} + ${'②'} 核心包 ──`).join(',') !== '①,②') {
+    throw new Error('判据圈号唯一性 canary 失效：合并写法 `① + ②` 只解析出一个 token');
+  }
+  if (headerTokens(`// ── ${'③'}-b Windows ──`).join(',') !== '③-b') {
+    throw new Error('判据圈号唯一性 canary 失效：子编号 `③-b` 的后缀被丢掉'
+      + '（那样 `③` 与 `③-b` 会被误判为同一 token ⇒ 既有子编号惯用法大面积假阳性）');
+  }
+  if (headerTokens(`// ── ${'⑳'}c 最近文件 ──`).join(',') !== '⑳c') {
+    throw new Error('判据圈号唯一性 canary 失效：子编号 `⑳c` 的后缀被丢掉');
+  }
+  if (headerTokens('// ── 侧栏截图：判据由「文件存在」改为… ──').length !== 0) {
+    throw new Error('判据圈号唯一性 canary **过宽**：无圈号的 `// ──` 头被解析出了 token');
+  }
+  // ⚠️ 补一条：**只认标题开头**的圈号 —— 本仓有 `// ── ㉖ V7-W3.3（D-C = ①）侧栏底部…`
+  //    这类**标题中间夹圈号**的头（那是正文引用，不是判据编号）⇒ 不锚定开头会把 ① 误算一次。
+  if (headerTokens(`// ── ${'㉖'} V7-W3.3（D-C = ${'①'}）侧栏底部 ──`).join(',') !== '㉖') {
+    throw new Error('判据圈号唯一性 canary **过宽**：标题**中间**的圈号被解析成了判据编号'
+      + '（`TOKEN_RE` 必须锚定在标题开头）');
+  }
+  console.log(`Doc code refs: 每个护栏内的判据圈号**互不重复**（共 ${tokens43} 个判据头 token）`);
+}
 
 if (errors.length > 0) {
   console.error('Doc code-reference guard failed:');
