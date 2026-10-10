@@ -39,6 +39,42 @@ if (trackedFiles === null) {
   fail('无法枚举仓库跟踪集：`git ls-files` 执行失败 —— 多条判据要求在有 git 的检出里运行');
 }
 
+// ── 仓库卫生：**已跟踪的文件不得命中 `.gitignore`**（2026-10-10，审计 §4.265）────────────────
+// 【为什么】若一个**已跟踪**文件同时命中 `.gitignore`，`git status` **不会**再显示它的改动
+//   ⇒ 「改了但没提交」**静默**发生（本仓 #1 形态的变体：**没有任何信号**）。
+//   实测（本轮新透镜「仓库卫生」）：当前 **0 处冲突** ✅ ⇒ 判据落地即绿、可长期拦回归。
+// 【判据】`git ls-files -i -c --exclude-standard`（**git 自带的**谓词 = 已跟踪 ∩ 被忽略）必须为空。
+//   ⚠️ **用 git 自己的谓词，不自己解析 `.gitignore`** —— 嵌套 `.gitignore`（本仓有
+//     `tests/benchmark/.gitignore`）· 否定规则 `!` · 目录语义（`dir/` 只匹配目录）都极易写错。
+//   ⚠️ **例外：无**。该集合**应当恒为空**；若确有「必须跟踪但命中忽略规则」的文件，
+//     正确做法是加**否定规则 `!`** 或把忽略规则**写窄**，**不是**放宽本判据。
+{
+  let ignoredTracked = null;
+  try {
+    ignoredTracked = execFileSync('git', ['ls-files', '-i', '-c', '--exclude-standard'], { cwd: root, encoding: 'utf8' })
+      .split('\n').filter(Boolean);
+  } catch {
+    fail('无法执行 `git ls-files -i -c --exclude-standard` —— 本判据要求在有 git 的检出里运行');
+  }
+  if (ignoredTracked !== null) {
+    for (const f of ignoredTracked) {
+      fail(`\`${f}\` **已被跟踪**却又命中 \`.gitignore\` —— \`git status\` **不会再显示它的改动**`
+        + ' ⇒ 「改了但没提交」会**静默**发生。请加否定规则 `!` 或把忽略规则写窄（**不要**放宽本判据）');
+    }
+  }
+  // canary：两向（用 git 自己的 `check-ignore`；样本取自**本仓稳定的既有事实**）
+  const isIgnored = (p) => {
+    try { execFileSync('git', ['check-ignore', '-q', p], { cwd: root }); return true; } catch { return false; }
+  };
+  if (!isIgnored('tests/visual/actual/')) {
+    fail('仓库卫生护栏 canary 失效：**已知被忽略**的目录未被判为忽略（`.gitignore` 规则或谓词失效）');
+  }
+  if (isIgnored('README.md')) {
+    fail('仓库卫生护栏**过宽**：**已跟踪**的 `README.md` 被判为被忽略（谓词失效 ⇒ 判据会恒报错）');
+  }
+  console.log(`Release gate: 仓库卫生 —— 已跟踪 ∩ 被忽略 = ${ignoredTracked === null ? '?' : ignoredTracked.length} 处（应为 0）`);
+}
+
 const parityDir = resolve(root, 'tests/parity');
 // ⚠️ 逐文件检查（接线 / CRLF / PRD 引用）用**工作区枚举**：本地 ⊇ CI ⇒ 本地**至少一样严**，
 //   方向**安全**（只会「本地红、CI 绿」，不会反过来），且给 WIP 护栏即时反馈。
