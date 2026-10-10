@@ -48,7 +48,7 @@
  */
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolve, join } from 'node:path';
+import { resolve, join, relative } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const errors = [];
@@ -304,7 +304,7 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
   console.log(`Package docs: ${compared} 个包的「符号数（README）⇄ 导出数（CONTRACT）」两处一致`);
 }
 
-// ── C6 **裸模块名必须在 package.json 里声明**（2026-10-10，审计 §4.263）────────────────────────
+// ── C7 **裸模块名必须在 package.json 里声明**（2026-10-10，审计 §4.263）────────────────────────
 // 【为什么】「import 了一个包但没声明依赖」= **幽灵依赖**：本地靠 **hoisting** 能跑，
 //   严格布局（pnpm 不 hoist / 干净安装）会炸 —— **而没有任何信号**。
 //   实测（本轮新透镜「依赖声明完整性」）：自有 **16 个包**（15 个 `packages/*` + `apps/desktop`）
@@ -406,7 +406,7 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     + `${refs} 处裸引用，未声明 ${undeclared.length} 处（**不含 vendored \`CoreEditor\`**）`);
 }
 
-// ── C7 三个**严格检查**必须在**所有** tsconfig 里开启（2026-10-10，审计 §4.267）────────────────
+// ── C8 三个**严格检查**必须在**所有** tsconfig 里开启（2026-10-10，审计 §4.267）────────────────
 // 【为什么】实测：`noUnusedLocals` / `noUnusedParameters` 只在 **3/15** 份 tsconfig 里、
 //   `noFallthroughCasesInSwitch` 只在 **1/15** 份里 ⇒ **12 个包的「未使用的局部变量 / 参数」**、
 //   **14 个包的「switch 落空」**都**不会被 typecheck 抓到**（与本仓「死代码要删」**同族**：
@@ -449,7 +449,7 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     + `${STRICT_KEYS.join(' / ')}`);
 }
 
-// ── C8 **测试文件的类型检查不能被静默关掉**（2026-10-10，审计 §4.268）──────────────────────
+// ── C9 **测试文件的类型检查不能被静默关掉**（2026-10-10，审计 §4.268）──────────────────────
 // 【为什么】实测：`packages/extension-api/jest.config.js` 关掉了 `ts-jest` 的 **`diagnostics`**
 //   （因为该包**零 jest 依赖**、`test` 脚本复用 `../settings/node_modules/.bin/jest`），
 //   而**所有**包的 `tsconfig.json` 的 `include` 都是 `["src"]` ⇒ **`tsc -p` 也不查 `test/`**
@@ -503,6 +503,99 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
   }
   console.log(`Package conventions: 测试类型诊断 —— ${withJest.length} 个带 jest 配置的包；`
     + `关掉诊断并**已登记** ${PKG_TS_DIAGNOSTICS_GAPS.size} 个`);
+}
+
+// ── C10 **跨包依赖图必须有机器可读真值源**：实际跨包引用 ⊆ 登记表，且登记表 ⊆ 实际引用（2026-10-10，审计 §4.275）──
+// 【为什么】本仓**跨包引用一律走相对路径**（`../../../packages/x/src`）：实测按**包名** `@mellow/*`
+//   导入 **0 处**（唯一 1 处是 `editor-engine/src/index.ts` 的**自引用**）⇒ 后果三条：
+//   ① `package.json` 的 `dependencies` **没有任何跨包声明**（实测 0 条）⇒ **包依赖图不在任何机器可读处**；
+//   ② `main` / `types` 成为**死字段**（全仓无 alias / `moduleNameMapper` / `paths` 提及 `@mellow/`）；
+//   ③ `AGENTS.md` 的「包依赖规则」只是**散文草图**，且**未覆盖** `desktop-ui` / `settings` / `themes` /
+//      `export` / `i18n` / `commands` 等包。
+//   ⇒ 与 C6（裸模块名必须声明）**互为另一半**：C6 锁「裸名」，本判据锁「**相对路径跨包**」。
+// 【判据】实测所有 `.ts/.tsx` 里 `from '../../…'` 解析到**别的包**的引用，去重成 `(from, to)` 边；
+//   ① 每条实测边**必须**登记在 `tests/parity/fixtures/cross-package-edges.json`（并写明理由）；
+//   ② 登记表里的每条边**必须仍被实际引用**（双向：防化石）；
+//   ③ 目标目录必须真的是一个包（`package.json` 存在）。
+//   ⚠️ **如实声明**：本判据**不判**「该不该有这条边」（分层是否合理）—— 那需要人读理由；
+//     它判的是「**新增耦合必须登记**」= 让每次耦合增长都成为**有意识的决定**。
+//   ⚠️ **不改 `package.json` 的 dependencies**（那会改 pnpm 的链接与解析行为 ⇒ 属架构级，且本机 pnpm 需联网
+//     无法验证）⇒ 本判据只提供**机器可读的替代真值源**，并把「dependencies 为空 / main·types 无消费者」
+//     如实写进夹具与 `docs/architecture/monorepo.md`。
+{
+  const EDGES_FIXTURE = 'tests/parity/fixtures/cross-package-edges.json';
+  const fx = JSON.parse(readFileSync(resolve(root, EDGES_FIXTURE), 'utf8'));
+  const registered = new Set((fx.edges ?? []).map((e) => `${e.from} -> ${e.to}`));
+  // 包目录 → 名称（用于「目标真的是包」这一条）
+  const pkgDirs = readdirSync(resolve(root, 'packages'), { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => `packages/${e.name}`);
+  const allDirs = [...pkgDirs, 'apps/desktop'];
+  const isPkg = (d) => existsSync(resolve(root, d, 'package.json'));
+  // 实测：跨包相对引用 → 去重边（判定与 canary **共用**下面两个纯函数）
+  //   ⚠️ **纯函数**（只吃源码文本、不读盘）—— 首版把「读文件」写进判定，canary 一喂合成样本就
+  //      `ENOENT`（实测踩到）。canary 必须能**不碰文件系统**地构造正/负样本。
+  /** 一段源码里解析出的**跨包目标目录**集合。
+   *  ⚠️ 相对路径必须按**文件所在目录**（`fileDir`）解析，**不是包目录** —— 首版按包目录解析，
+   *     于是 `apps/desktop/src` 里的 `../../../packages/x/src` 被解析到仓库**外面** ⇒ 实测出 **0 条边**（实测踩到）。 */
+  const crossTargets = (from, fileDir, src) => {
+    const out = new Set();
+    for (const m of src.matchAll(/from\s+'(\.\.\/[^']+)'/g)) {
+      const t = relative(root, resolve(root, fileDir, m[1])).split('\\').join('/');
+      const to = allDirs.find((d) => t === d || t.startsWith(`${d}/`));
+      if (to !== undefined && to !== from) out.add(to);
+    }
+    return out;
+  };
+  const committed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'],
+    { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+  const actual = new Map();
+  for (const rel of committed) {
+    if (!/\.(ts|tsx)$/.test(rel)) continue;
+    if (rel.includes('node_modules') || rel.includes('/CoreEditor/')) continue;
+    const from = allDirs.find((d) => rel.startsWith(`${d}/`));
+    if (from === undefined) continue;
+    const fileDir = rel.split('/').slice(0, -1).join('/');
+    for (const to of crossTargets(from, fileDir, readFileSync(resolve(root, rel), 'utf8'))) {
+      const k = `${from} -> ${to}`;
+      actual.set(k, (actual.get(k) ?? 0) + 1);
+    }
+  }
+  for (const [edge] of actual) {
+    if (!registered.has(edge)) {
+      fail(`实测到一条**未登记**的跨包引用边：\`${edge}\` —— 本仓跨包引用走相对路径，`
+        + `\`dependencies\` 里没有跨包声明 ⇒ 本登记表是**唯一**的机器可读依赖图。`
+        + `请登记到 ${EDGES_FIXTURE}（含**理由**）：新增耦合必须是**有意识的决定**`);
+    }
+    const [, to] = edge.split(' -> ');
+    if (!isPkg(to)) fail(`跨包边 \`${edge}\` 的目标目录 \`${to}\` 里没有 package.json —— 目标不是包`);
+  }
+  for (const e of fx.edges ?? []) {
+    if (!actual.has(`${e.from} -> ${e.to}`)) {
+      fail(`${EDGES_FIXTURE} 登记了 \`${e.from} -> ${e.to}\`，但**已无任何实际引用**`
+        + ` —— 请删除该条（理由：${e.reason ?? '（缺）'}）`);
+    }
+    if (typeof e.reason !== 'string' || e.reason.trim() === '') {
+      fail(`${EDGES_FIXTURE} 的 \`${e.from} -> ${e.to}\` **缺理由**（登记必须回答「为什么这条耦合存在」）`);
+    }
+  }
+  // [健康度型] 边集合由**源码内容**产生 ⇒ 留余量（立此判据时基线 16 条）
+  if (actual.size < 8) {
+    fail(`只实测到 ${actual.size} 条跨包引用边（下限 8 = 立此判据时的基线 16 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** crossTargets；样本运行时拼接、**不碰文件系统**）
+  const A = 'packages/app-core', B = 'packages/host-api';
+  canary(crossTargets(A, `${A}/src`, `import x from '../app-core/src/y'`).size === 0,
+    'C10 canary 失效：**包内自引用**被判成了跨包边');
+  canary(crossTargets(A, `${A}/src`, `import x from './y'`).size === 0,
+    'C10 canary 失效：**同目录相对引用**被判成了跨包边');
+  canary(crossTargets(A, `${A}/src`, `import x from '../../host-api/src'`).size === 1
+    && crossTargets(A, `${A}/src`, `import x from '../../host-api/src'`).has(B),
+    'C10 canary 失效：**真实的跨包相对引用**未被解析出边');
+  canary(registered.size >= 1 && fx.edges.every((e) => typeof e.reason === 'string'),
+    'C10 canary 失效：登记表被清空或理由缺失');
+  console.log(`Package conventions: 跨包引用边 ${actual.size} 条 —— 与 ${EDGES_FIXTURE} **双向一致**`
+    + '（⚠️ 本表是机器可读依赖图的**唯一**真值源：`dependencies` 无跨包声明、`main`/`types` 无消费者）');
 }
 
 if (errors.length > 0) {

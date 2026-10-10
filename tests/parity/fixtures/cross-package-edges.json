@@ -1,0 +1,103 @@
+{
+  "source": "实测：全仓 .ts/.tsx 里 `from '../../packages/x/...'` 形式的跨包相对引用（排除 node_modules 与 vendored CoreEditor）",
+  "why": "本仓**跨包引用一律走相对路径**（按包名 `@mellow/*` 导入实测 **0 处**）⇒ 包依赖图**不在 package.json 的 dependencies 里**（跨包声明实测 0 条）⇒ 若无本表，依赖图**只存在于 AGENTS.md 的散文草图**（且草图未覆盖 desktop-ui / settings / themes / export / i18n / commands）。本表是**机器可读的唯一真值源**，由 `verify-package-conventions.mjs` 判据 C9 守（双向：实际边 ⊆ 表，且表 ⊆ 实际边）。",
+  "note": "新增跨包引用必须**登记到本表并写明理由** —— 这是「有意识地决定耦合」的唯一入口。⚠️ 本表**不代表 package.json 的 dependencies**：后者当前**没有任何跨包声明**，而 `main` / `types` 也**无消费者**（全仓无 alias / moduleNameMapper / paths 提及 `@mellow/`）—— 如实记录，未擅自改动。",
+  "edges": [
+    {
+      "from": "apps/desktop",
+      "to": "packages/app-core",
+      "refs": 2,
+      "reason": "应用层消费核心逻辑（文档/文件/侧栏状态）"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/commands",
+      "refs": 2,
+      "reason": "应用层消费命令注册表与菜单 schema"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/desktop-ui",
+      "refs": 1,
+      "reason": "应用层消费桌面 UI 组件（StatusBar / FileTree / …）"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/editor-core",
+      "refs": 1,
+      "reason": "应用层消费编辑器契约与 CoreEditor 封装"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/editor-engine",
+      "refs": 4,
+      "reason": "应用层消费 Live Markdown 引擎（含图片子模块）"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/export",
+      "refs": 2,
+      "reason": "应用层消费导出管线"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/extension-api",
+      "refs": 1,
+      "reason": "应用层消费扩展契约"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/host-api",
+      "refs": 2,
+      "reason": "应用层**实现** Host API 契约（系统能力只允许在 apps/desktop）"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/i18n",
+      "refs": 1,
+      "reason": "应用层消费文案表"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/settings",
+      "refs": 1,
+      "reason": "应用层消费设置 schema 与读写"
+    },
+    {
+      "from": "apps/desktop",
+      "to": "packages/themes",
+      "refs": 1,
+      "reason": "应用层消费主题清单"
+    },
+    {
+      "from": "packages/app-core",
+      "to": "packages/editor-engine",
+      "refs": 4,
+      "reason": "核心逻辑驱动引擎（图片扫描 / 路径 / 资源策略）"
+    },
+    {
+      "from": "packages/app-core",
+      "to": "packages/extension-api",
+      "refs": 2,
+      "reason": "核心逻辑消费扩展契约（含权限表）"
+    },
+    {
+      "from": "packages/app-core",
+      "to": "packages/host-api",
+      "refs": 3,
+      "reason": "核心逻辑经 Host API 契约依赖注入（PRD §113.4）"
+    },
+    {
+      "from": "packages/desktop-ui",
+      "to": "packages/app-core",
+      "refs": 1,
+      "reason": "UI 组件消费核心逻辑提供的类型/状态"
+    },
+    {
+      "from": "packages/editor-react",
+      "to": "packages/editor-core",
+      "refs": 1,
+      "reason": "React 封装消费 CoreEditor 契约"
+    }
+  ]
+}

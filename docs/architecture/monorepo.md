@@ -69,3 +69,28 @@ app-core     不允许直接调用 Swift / Win32 / DBus。
 > 两种正当处置：① **补齐**（并加护栏）；② 走 **ADR** 说明为何在本仓不适用/需改写。
 > **本轮不擅自选择** —— 它改的是「包结构规范」，属方案级；此处只把**差距变成可见的事实**
 > （否则读者会把「PRD 写了必须」误读成「仓库已经这样」）。
+
+## 跨包引用约定（2026-10-10 实测，审计 §4.275）
+
+**实测事实**（全部现跑，可复核）：
+
+| 项 | 实测 |
+|---|---|
+| 按**包名**导入（`from '@mellow/…'`） | **0 处**（唯一 1 处是 `packages/editor-engine/src/index.ts` 的**自引用**） |
+| 按**相对路径**跨包导入（`from '../../packages/x/src'` 等） | **16 条** `(from 包 → to 包)` 边 |
+| 各包 `package.json` 的 `dependencies` 里的**跨包声明** | **0 条** |
+| 全仓 alias / `moduleNameMapper` / tsconfig `paths` 提及 `@mellow/` | **0 处** |
+
+⇒ **本仓的包依赖图不在 `package.json` 里**，而是通过**相对路径**表达。随之而来三条后果：
+
+1. **`dependencies` 不回答「谁依赖谁」** ⇒ pnpm 的过滤 / 拓扑序、依赖图工具都拿不到真实关系；
+2. **各包的 `main` / `types` 是死字段** —— 没有任何消费者按包名解析（无 alias、无 `paths`、0 处按名导入）；
+3. 上面「包依赖规则」那张图是**散文草图**，且**未覆盖** `desktop-ui` / `settings` / `themes` / `export` /
+   `i18n` / `commands` 等包。
+
+**唯一的机器可读真值源** = `tests/parity/fixtures/cross-package-edges.json`（16 条边 + 逐条理由），
+由 `verify-package-conventions.mjs` 判据 **C10** 守（**双向**：实际边 ⊆ 表，且表 ⊆ 实际边）。
+
+> ⚠️ **新增跨包引用必须登记到该表并写明理由** —— 这是「**有意识地决定耦合**」的唯一入口。
+> ⚠️ **未擅自改动 `package.json` 的 `dependencies`**：那会改变 pnpm 的链接与解析行为（属**方案级**），
+> 且本机 pnpm 经 corepack 需联网、无法验证 ⇒ 本轮只提供**替代真值源**并把事实写明。

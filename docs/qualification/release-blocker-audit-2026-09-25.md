@@ -16149,7 +16149,7 @@ canary 两向**构造样本**：合法夹具取到 2 档 ✅ / `{}` 与 `null` �
 （`tools/gen-upstream-manifest.mjs`，需联网或本地 tarball）+ 更新 `UPSTREAM.md` 的两张表
 ⇒ **成本高于收益**；③ 依赖清单是**上游的事**（re-vendor 会覆盖）。
 
-### 三、处置：落判据 **C6**（`verify-package-conventions.mjs`）
+### 三、处置：落判据 **C7**（`verify-package-conventions.mjs`）
 
 **范围如实声明**：**排除 vendored `CoreEditor/` 子树** —— 与本文件 C1–C5 既有的
 「14/15 个包，**不含 vendored editor-core**」**同先例**。
@@ -16433,7 +16433,7 @@ Release gate: 仓库卫生 —— 换行符政策 **已生效**
 其余选项或**按包性质有意不同**（`jsx` / `outDir` / `rootDir` / `declaration` / `noEmit`：只有 `editor-engine`
 emit）、或是 **no-op**、或**有语义但当前无问题** ⇒ **只记录，不锁**（避免造噪声判据）。
 
-### 四、判据 **C7**（`verify-package-conventions.mjs`）
+### 四、判据 **C8**（`verify-package-conventions.mjs`）
 
 这三个键必须在**所有** tsconfig 里为 `true` + 防空转下限（份数 ≥ **12**，立此判据时基线 **15**）
 + canary **两向**（三项齐全 ⇒ 合规；**缺两项 ⇒ 必须被判不合规**）。
@@ -16536,7 +16536,7 @@ jest 关了诊断、`tsc` 不含 `test/`。
 交互式询问；60s 超时被终止）⇒ **不在本环境可完成**。
 ⇒ 故**登记**，并把**修法**写进登记理由（防下一个人重新查一遍）。
 
-### 六、判据 **C8**（`verify-package-conventions.mjs`）
+### 六、判据 **C9**（`verify-package-conventions.mjs`）
 
 ① 有 `jest.config.js` 的包必须**开着** `ts-jest` 诊断；② 关掉的必须**逐条登记**进
 `PKG_TS_DIAGNOSTICS_GAPS` 并写明原因（**同 `PKG_TEST_GAPS` 的既有 idiom**）；
@@ -17143,6 +17143,82 @@ tracked 的 `.md` / `.mjs` / `.cjs` 里，凡行内码形如 `` `tools/….(mjs|
 3. 无状态码 / 策略 / 产品代码改动。
 
 ⇒ 同族「只锁了一半」累计 **第 102 次**（§4.170–§4.273）。
+
+## 4.275 「包依赖图」透镜：**跨包引用一律走相对路径** ⇒ `dependencies` 空、`main`/`types` 死、判据编号重号（2026-10-10）
+
+### 一、发现（三条，全部现跑可复核）
+
+| 项 | 实测 |
+|---|---|
+| 按**包名**导入（`from '@mellow/…'`） | **0 处**（唯一 1 处是 `packages/editor-engine/src/index.ts` 的**自引用**） |
+| 按**相对路径**跨包导入 | **16 条** `(from 包 → to 包)` 边（`apps/desktop → 11 个包` 等） |
+| 各包 `package.json` 的 `dependencies` 里的**跨包声明** | **0 条** |
+| 全仓 alias / `moduleNameMapper` / tsconfig `paths` 提及 `@mellow/` | **0 处** |
+
+⇒ **本仓的包依赖图不在 `package.json` 里**，而是通过**相对路径**表达。三条后果：
+① `dependencies` **不回答「谁依赖谁」**（pnpm 过滤 / 拓扑序拿不到真实关系）；
+② 各包的 **`main` / `types` 是死字段**（无 alias、无 `paths`、0 处按名导入）；
+③ `AGENTS.md` 的「包依赖规则」是**散文草图**，**未覆盖** `desktop-ui` / `settings` / `themes` / `export` / `i18n` / `commands`。
+
+✅ **先判「有没有分层违规」**：16 条边逐条看**全部合理**（`apps/desktop` 在最上；
+`app-core → {editor-engine, extension-api, host-api}`；`desktop-ui → app-core`；`editor-react → editor-core`）
+⇒ **没有**「低层包引用高层包」或「核心包引用平台代码」的违规（后者另有 adapter contract 守）。
+
+### 二、顺带抓到：**判据编号 `C6` 重号**，而判据 ㊸ **只认圈号**
+
+`verify-package-conventions.mjs` 里 **`C6` 出现两次**（L143「README 导出数」/ L307「裸模块名声明」），
+且**重号已经传播进本文档**（§4.161 与 §4.263 都把它叫 C6）。
+⚠️ 判据 ㊸（单护栏内判据编号不得重复）**只认圈号 `①…㊺`** ⇒ **完全不覆盖 `C<数字>` 这套编号**
+⇒ 又一处「只锁了一半」—— 而这一半**藏着一个既有缺陷**。
+
+### 三、处置
+
+**① 扩展判据 ㊸**：token 正则从「圈号」扩为「**圈号 或 `C<数字>`**」，消息措辞从「判据圈号」改为
+「判据编号」。✅ **扩展后当场抓到既有的 `C6` 重号**（这是「判据抓到既有缺陷」的直接证据）。
+
+**② 重编号**（保持位置顺序）：L307 `C6 → C7` · L409 `C7 → C8` · L452 `C8 → C9`；
+本文档 §4.263 `C6 → C7` · §4.267 `C7 → C8` · §4.268 `C8 → C9`。
+（`C6` 的权威含义 = 「README 导出数」，由 §4.161 / §4.263 的引用确认 ⇒ **L307 那个是闯入者**。）
+
+**③ 新增判据 C10 + 机器可读真值源** `tests/parity/fixtures/cross-package-edges.json`：
+16 条边 + **逐条理由**；C10 判「**实际边 ⊆ 表**」且「**表 ⊆ 实际边**」（双向）+ 目标目录必须是包 +
+[健康度型] 下限 8 + canary 三向。
+⚠️ **如实声明**：C10 **不判**「该不该有这条边」（分层是否合理 —— 那要人读理由）；
+它判的是「**新增耦合必须登记**」= 让每次耦合增长都成为**有意识的决定**。
+⚠️ **与 C6 互为另一半**：C6 锁「**裸模块名**必须声明」，C10 锁「**相对路径跨包**」。
+
+**④ 未擅自改 `package.json` 的 `dependencies`**：那会改变 pnpm 的链接与解析行为（属**方案级**），
+且本机 pnpm 经 corepack 需联网、无法验证 ⇒ 只提供**替代真值源**，并把事实写进
+`docs/architecture/monorepo.md`（新增「跨包引用约定」一节）。
+
+### 四、⚠️ 本轮谓词两次失效（同一类：**分辨率基准**）
+
+1. **相对路径按「包目录」解析而不是「文件所在目录」** ⇒ `apps/desktop/src` 里的
+   `../../../packages/x/src` 被解析到仓库**外面** ⇒ 实测出 **0 条边**（下限当场报「空转」）。
+2. **canary 里读文件**：首版把「读文件」写进判定 ⇒ canary 一喂合成样本就 `ENOENT`
+   ⇒ 必须把边抽取抽成**纯函数**（只吃源码文本），canary 才能**不碰文件系统**地构造正/负样本。
+3. （附带）**canary 样本的相对层数写错**：从 `packages/app-core/src` 到 `packages/host-api/src`
+   是 `../../host-api/src`，我写成 `../../packages/host-api/src` ⇒ 正样本失败。
+
+### 五、注入验证（均还原后逐字节一致、EXIT=0）
+
+| 注入 | 结果 |
+|---|---|
+| A 新增一条**未登记**的跨包引用（`desktop-ui → themes`） | ✅（「未登记」分支） |
+| B 让边抽取恒返回空 | ✅（[健康度型] 下限触发） |
+| C 让谓词接受**包内自引用** | ✅（「自引用」canary 触发） |
+
+### 六、改动清单
+
+1. `verify-doc-code-refs.mjs`：判据 **㊸** 扩面到 `C<数字>` 编号 + 措辞通用化。
+2. `verify-package-conventions.mjs`：**`C6` 重号重编号**（L307→C7 · L409→C8 · L452→C9）+
+   新增判据 **C10**（跨包边登记）+ 补 `relative` 导入。
+3. **新增** `tests/parity/fixtures/cross-package-edges.json`（16 条边 + 理由）。
+4. `docs/architecture/monorepo.md`：新增「跨包引用约定」一节（事实 + 真值源指针）。
+5. 本文档：§4.263 / §4.267 / §4.268 的 C 编号同步。
+6. 无状态码 / 策略 / 产品代码改动。
+
+⇒ 同族「只锁了一半」累计 **第 103 次**（§4.170–§4.274）。
 
 ## 五、本次审计做的改动（非策略性）
 
