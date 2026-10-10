@@ -108,5 +108,13 @@
       "observedIn": "CI run 38035994927 日志：\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026\"",
       "todo": "迁移窗口开启后复核 Tauri 的 Linux 系统依赖（webkit2gtk / libappindicator 等）是否仍满足；本轮**无动作**（尚未开始迁移）"
     }
+  ],
+  "knownRemainingWarnings": [
+    {
+      "what": "12 条 [DEP0040] punycode + 1 条 [DEP0005] Buffer()",
+      "observedIn": "CI run 38038665944（升版后）日志里仍有 13 条 `is deprecated`；同期 `Node.js 20 is deprecated` 已归零",
+      "whyNotAnActionIssue": "两者都是**依赖内部**的 Node API 弃用（punycode 提示「use a userland alternative」），与 action 的 `runs.using` 无关",
+      "todo": "**未裁决**：登记为待办，本轮不动。⚠️ 不要与「action 的运行时」混为一谈 —— 同一个词 `is deprecated` 在两处指不同的事（本轮计数 36→13 就是被这个同形词干扰过）"
+    }
   ]
 }

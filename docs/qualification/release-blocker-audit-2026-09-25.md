@@ -17761,6 +17761,21 @@ if (cache && isCacheFeatureAvailable()) {
   已登记在 fixture 的 `knownFutureMigrations`。
 - `tauri-apps/tauri-action@v0→v1` 未验证（见五-B）。
 
+### 十、CI 实测确认（run 38038665944，8/8 全绿）
+
+⚠️ 本仓纪律是「**改流水线本机验不了行为**：只验 YAML 可解析 + 判据锁结构，**不得声称已生效**」。
+本轮**拿到了实测证据**，因此**可以**声称 —— 但**必须带 run id**：
+
+- `Node.js 20 is deprecated` **从 36 条降到 0 条**（同一判据：全日志计数）⇒ 升版生效的**直接证据**。
+- 8 个 job **全绿**；日志里出现的版本为 `checkout@v5` / `setup-node@v5` / `pnpm/action-setup@v5` /
+  `upload-artifact@v6` / `download-artifact@v7`，**无 v4 残留**。
+- `download-artifact@v7` 的**落点未变**（日志：`Starting download of artifact to: …/packages/editor-core/CoreEditor/dist`）
+  ⇒ 印证了「只用 `name:` 下载 ⇒ v5 的 Breaking 不影响本仓」这条判断（见五-A）。
+
+⚠️ **但仍有 13 条 `is deprecated`** —— **不是**本轮的靶子，**如实登记、本轮不动**：
+**12 条 `[DEP0040] punycode`** + **1 条 `[DEP0005] Buffer()`**，都是**依赖内部**的 Node API 弃用告警
+（前者提示「use a userland alternative」），与「action 的运行时」无关。⇒ 登记为**新的待办**（未裁决）。
+
 ⇒ 同族「只锁了一半」累计 **第 111 次**（§4.170–§4.282）。
 
 ## 五、本次审计做的改动（非策略性）
