@@ -131,6 +131,17 @@ if (trackedFiles === null) {
           + ' —— ⚠️ **规则顺序有意义**（后面的覆盖前面的）：`*.png binary` 必须写在 `*` 规则**之后**');
       }
     }
+    // ⚠️ **政策「生效」的**唯一直接证据**：读**原始字节**看有没有 CR。
+    //   各护栏的 CRLF 归一化创可贴会让它们**无论检出是 LF 还是 CRLF 都通过** ⇒ 区分不了。
+    //   本断言在 **CI 的 Windows job** 上是真检验（该 runner 的 `core.autocrlf=true` 会把文本文件
+    //   检出为 CRLF）—— 政策若失效，这里会**响亮报红**。
+    for (const p of TEXT_SAMPLES) {
+      const raw = readFileSync(resolve(root, p));
+      if (raw.includes(0x0d)) {
+        fail(`工作区里的文本文件 \`${p}\` **含 CR 字节**（检出不是 LF）—— 换行符政策**没有生效**。`
+          + '在 Windows runner 上这通常意味着 `.gitattributes` 缺失 / 写错，或该文件以 CRLF 入库过');
+      }
+    }
   }
   // canary：两向（构造样本 = 仓库里稳定的两类真实路径；与判定**共用** attrsOf）
   if (attrsOf('README.md').text !== 'auto') {
