@@ -47,6 +47,7 @@
  *   ④ `fixtures/` —— 按意图判（见上）。
  */
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -301,6 +302,108 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     throw new Error(`只有 ${compared} 个包的两处导出数可比（下限 8 = 2026-10-09 实测 12）—— 判据范围萎缩`);
   }
   console.log(`Package docs: ${compared} 个包的「符号数（README）⇄ 导出数（CONTRACT）」两处一致`);
+}
+
+// ── C6 **裸模块名必须在 package.json 里声明**（2026-10-10，审计 §4.263）────────────────────────
+// 【为什么】「import 了一个包但没声明依赖」= **幽灵依赖**：本地靠 **hoisting** 能跑，
+//   严格布局（pnpm 不 hoist / 干净安装）会炸 —— **而没有任何信号**。
+//   实测（本轮新透镜「依赖声明完整性」）：自有 **16 个包**（15 个 `packages/*` + `apps/desktop`）
+//   / **311** 个源文件 / **305** 处裸引用（**去重口径** = 每文件唯一模块名；按「每处匹配」数是 322
+//   —— 两个都对，差别在口径）⇒ **0 处未声明** ✅（本判据落地即绿、可长期拦回归）。
+// 【范围如实声明】**排除 vendored `CoreEditor/` 子树**（与本文件 C1–C5 的「不含 vendored editor-core」同先例）：
+//   它是**上游代码**，依赖清单是上游的事；实测它确有 **3 处**未声明的直接依赖
+//   （`@codemirror/lang-html` / `style-mod` / `@jest/globals` —— 全是**传递依赖**，靠 hoisting 可用）
+//   ⇒ 修它要动 vendored 树 + 重生成 sha256 清单（`tools/gen-upstream-manifest.mjs`）+ 更新两张表
+//   ⇒ **成本高于收益**（仅潜在）⇒ **已记入审计 §4.263，不在本判据内**。
+// 【判据】上述包源码里四种形态的**字面**模块名 —— `import/export … from 'x'` / 副作用 `import 'x'` /
+//   动态 `import('x')` / `require('x')` —— 必须出现在该包 `package.json` 的
+//   `dependencies` ∪ `peerDependencies` ∪ `devDependencies`（或 = 包自身名）。
+//   ⚠️ **必须先剥注释**：JSDoc 里的 `import('jest').Config` 会被动态 import 谓词误命中（本轮实测踩到）。
+//   ⚠️ **模板字面量**（`require(\`${pkg}\`)`）**不是**字面模块名 ⇒ 跳过。
+//   ⚠️ 扫描面用 **`committedFiles` 口径**（`git ls-files --cached --others --exclude-standard`）——
+//     裸 `git ls-files` 只读索引 ⇒ 未 `git add` 的新文件本地看不见（§4.233）。本护栏自成一体、
+//     不跨护栏 import（同 `verify-release-gate.mjs` 自带 `git ls-files` 的先例）。
+{
+  const SKIP_SUBTREE = '/CoreEditor/'; // vendored 上游子树（见上）
+  const NODE_BUILTIN = new Set([
+    'assert', 'async_hooks', 'buffer', 'child_process', 'cluster', 'console', 'constants', 'crypto',
+    'dgram', 'diagnostics_channel', 'dns', 'domain', 'events', 'fs', 'http', 'http2', 'https',
+    'inspector', 'module', 'net', 'os', 'path', 'perf_hooks', 'process', 'punycode', 'querystring',
+    'readline', 'repl', 'stream', 'string_decoder', 'timers', 'tls', 'trace_events', 'tty', 'url',
+    'util', 'v8', 'vm', 'wasi', 'worker_threads', 'zlib',
+  ]);
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  /** 判定与 canary **共用**：抽出该源码里的全部**字面**模块名（先剥注释）。 */
+  const bareSpecsOf = (src) => {
+    const s = stripComments(src);
+    const out = new Set();
+    for (const m of s.matchAll(/(?:^|\n)\s*(?:import|export)[^'"\n]*?from\s+['"]([^'"]+)['"]/g)) out.add(m[1]);
+    for (const m of s.matchAll(/(?:^|\n)\s*import\s+['"]([^'"]+)['"]/g)) out.add(m[1]);
+    for (const m of s.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]/g)) out.add(m[1]);
+    for (const m of s.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]/g)) out.add(m[1]);
+    return [...out].filter((x) => !x.includes('${') && !x.startsWith('.') && !x.startsWith('/') && !x.startsWith('node:'));
+  };
+  /** 基础包名：`@scope/pkg/sub` → `@scope/pkg`；`plain/sub` → `plain`。判定与 canary **共用**。 */
+  const baseOf = (spec) => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]);
+  let committed = [];
+  try {
+    committed = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, maxBuffer: 1 << 28 })
+      .toString().split('\0').filter(Boolean);
+  } catch {
+    fail('C6 无法枚举仓库文件集：`git ls-files` 执行失败 —— 本判据要求在有 git 的检出里运行');
+  }
+  const pkgDirs = ['apps/desktop', ...readdirSync(resolve(root, 'packages')).map((d) => `packages/${d}`)]
+    .filter((d) => existsSync(resolve(root, d, 'package.json')));
+  let refs = 0;
+  let filesScanned = 0;
+  const undeclared = [];
+  for (const dir of pkgDirs) {
+    const pj = JSON.parse(readFileSync(resolve(root, dir, 'package.json'), 'utf8'));
+    const declared = new Set([
+      ...Object.keys(pj.dependencies ?? {}), ...Object.keys(pj.peerDependencies ?? {}),
+      ...Object.keys(pj.devDependencies ?? {}), pj.name,
+    ]);
+    const srcFiles = committed.filter((f) => f.startsWith(`${dir}/`) && /\.(ts|tsx|mts|cts|mjs|cjs|js)$/.test(f)
+      && !f.includes('/node_modules/') && !f.includes(SKIP_SUBTREE));
+    filesScanned += srcFiles.length;
+    for (const f of srcFiles) {
+      for (const spec of bareSpecsOf(readFileSync(resolve(root, f), 'utf8'))) {
+        const base = baseOf(spec);
+        if (NODE_BUILTIN.has(base)) continue;
+        refs += 1;
+        if (!declared.has(base)) {
+          undeclared.push(`${f} 引用了 \`${base}\`，但 \`${dir}/package.json\` **未声明**它`);
+        }
+      }
+    }
+  }
+  for (const u of undeclared) {
+    fail(`${u} —— **幽灵依赖**：本地靠 hoisting 能跑，严格布局（pnpm 不 hoist / 干净安装）会炸`
+      + '**且没有任何信号**。请把它加进该包的 `dependencies`（或 `peerDependencies` / `devDependencies`）');
+  }
+  // 防空转（立此判据时基线：16 个包 / 311 个源文件 / 305 处裸引用（去重口径））
+  if (pkgDirs.length < 12) {
+    fail(`C6 只扫描到 ${pkgDirs.length} 个包（下限 12 = 立此判据时的基线 16 − 余量）—— 扫描面萎缩会让本判据空转`);
+  }
+  if (filesScanned < 250) {
+    fail(`C6 只扫描到 ${filesScanned} 个源文件（下限 250 = 立此判据时的基线 311 − 余量）`);
+  }
+  if (refs < 250) {
+    fail(`C6 只解析出 ${refs} 处裸模块引用（下限 250 = 立此判据时的基线 305 − 余量）—— 谓词漂移`);
+  }
+  // canary：四向（与判定**共用** bareSpecsOf / baseOf）
+  canary(bareSpecsOf("import { a } from 'react';\n").join(',') === 'react', 'C6 canary 失效：`import … from` 形态未被解析');
+  canary(bareSpecsOf("import 'polyfill-x';\n").join(',') === 'polyfill-x', 'C6 canary 失效：副作用 `import` 未被解析');
+  canary(bareSpecsOf("const m = await import('heavy-lib');\n").join(',') === 'heavy-lib', 'C6 canary 失效：动态 `import()` 未被解析');
+  canary(bareSpecsOf("const r = require('old-lib');\n").join(',') === 'old-lib', 'C6 canary 失效：`require()` 未被解析');
+  canary(bareSpecsOf("import { x } from './local';\n").length === 0, 'C6 canary 过宽：相对路径被当成裸模块名');
+  canary(bareSpecsOf('const m = require(`${pkg}`);\n').length === 0, 'C6 canary 过宽：**模板字面量**被当成字面模块名');
+  canary(bareSpecsOf("/** @type {import('jest').Config} */\nconst x = 1;\n").length === 0,
+    'C6 canary 过宽：**注释里**的 `import(\'jest\')` 被命中（必须先剥注释）');
+  canary(baseOf('@scope/pkg/sub') === '@scope/pkg' && baseOf('plain/sub') === 'plain',
+    'C6 canary 失效：scope / 子路径的基础名解析不对');
+  console.log(`Package conventions: 依赖声明完整性 —— ${pkgDirs.length} 个包 / ${filesScanned} 个源文件 / `
+    + `${refs} 处裸引用，未声明 ${undeclared.length} 处（**不含 vendored \`CoreEditor\`**）`);
 }
 
 if (errors.length > 0) {

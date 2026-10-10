@@ -16126,6 +16126,62 @@ canary 两向**构造样本**：合法夹具取到 2 档 ✅ / `{}` 与 `null` �
 
 ⇒ 同族「只锁了一半」**本节不计数**（0 缺陷 + 一处**工具可读性**改进）；累计仍 **第 90 次**（§4.170–§4.261）。
 
+## 4.263 「**依赖声明完整性**」透镜：自有 16 个包 0 缺陷 + vendored 树 3 处**幽灵依赖**（记录不改）（2026-10-10）
+
+### 一、透镜与谓词
+
+**「import 了一个包但没声明依赖」= 幽灵依赖**：本地靠 **hoisting** 能跑，
+**严格布局（pnpm 不 hoist / 干净安装）会炸 —— 而没有任何信号**。
+谓词：源码里四种形态的**字面**模块名 —— `import/export … from 'x'` / 副作用 `import 'x'` /
+动态 `import('x')` / `require('x')` —— 必须出现在该包 `package.json` 的
+`dependencies` ∪ `peerDependencies` ∪ `devDependencies`（或 = 包自身名）。
+
+### 二、实测：自有包 **0 缺陷**，vendored 树 **3 处**
+
+| 范围 | 结果 |
+|---|---|
+| 自有 **16 个包**（15 个 `packages/*` + `apps/desktop`）/ **311** 个源文件 / **305** 处裸引用 | **0 处未声明** ✅ |
+| vendored `packages/editor-core/CoreEditor/`（上游 `markedit-app`） | **3 处**：`@codemirror/lang-html`（`src/@quicklook/index.ts` 等）· `style-mod`（`src/styling/builder.ts`）· `@jest/globals`（测试） |
+
+**为什么这 3 处「记录不改」**：① 它们是**传递依赖**（`@codemirror/lang-html` ← `@codemirror/lang-markdown`；
+`style-mod` ← `@codemirror/view`；`@jest/globals` ← `jest`）⇒ 靠 hoisting **今天可用**，属**潜在**风险；
+② 改它要动 **vendored 树**，而本仓对 vendored 的改动有**明文额外成本**：须重生成 sha256 清单
+（`tools/gen-upstream-manifest.mjs`，需联网或本地 tarball）+ 更新 `UPSTREAM.md` 的两张表
+⇒ **成本高于收益**；③ 依赖清单是**上游的事**（re-vendor 会覆盖）。
+
+### 三、处置：落判据 **C6**（`verify-package-conventions.mjs`）
+
+**范围如实声明**：**排除 vendored `CoreEditor/` 子树** —— 与本文件 C1–C5 既有的
+「14/15 个包，**不含 vendored editor-core**」**同先例**。
+判据内容：谓词如上 + 防空转三条下限（包数 ≥ 12 / 源文件 ≥ 250 / 裸引用 ≥ 250；
+立此判据时基线 **16 / 311 / 305**）+ canary **四向**（四种形态各一 + 三条**过宽**负样本）。
+⚠️ **扫描面用 `committedFiles` 口径**（`git ls-files --cached --others --exclude-standard`）——
+裸 `git ls-files` 只读索引 ⇒ 未 `git add` 的新文件本地看不见（§4.233）。
+⚠️ **不跨护栏 import**（各护栏自成一体；`verify-release-gate.mjs` 亦自带 `git ls-files`，同先例）。
+
+**注入验证（三向，均还原后 EXIT=0）**：
+
+| 注入 | 结果 |
+|---|---|
+| 往 `packages/themes/src/index.ts` 注入一个未声明的 `import` | ✅ 被「**幽灵依赖**」抓住并指到文件 |
+| 往同一文件注入**注释里**的 `import('jest')` | ✅ **正确地不报**（剥注释生效） |
+| 把防空转下限抬到 100000 | ✅ 「只解析出 305 处裸模块引用（下限 250）」 |
+
+### 四、⚠️ 本轮的**四处探针 bug**（全部是我自己的）
+
+① **把 vendored `CoreEditor` 算进 wrapper 包**（它有**自己的 `package.json`**）⇒ 首轮 19 处假阳性；
+② **`${pkg}` 模板字面量**被当成字面模块名（`apps/desktop/scripts/build-editor-bundle.mjs`）；
+③ 即使按包归属修正后，仍把 `/CoreEditor/` 子树算进 `packages/editor-core` ⇒ 需**显式排除子树**；
+④ ⚠️ **必须先剥注释**：`packages/extension-api/jest.config.js` 的 JSDoc 里写着
+`import('jest').Config` ⇒ 被**动态 import** 谓词命中（假阳性）。
+⇒ 通则：**四种 import 形态的谓词 + 注释 + 模板字面量 + 子树归属，四者都要处理**，
+少一个就假阳性（本仓「先 stripComments」的既有教训在此第四次复现）。
+
+⚠️ **第三次口径差**：我按「**每处匹配**」量基线得 **322**，而判据按「**每文件去重**」是 **305**
+—— **两个都对，差别在口径**（前两次：256/296、783/3565）⇒ 已在注释里**同时写两个口径**。
+
+⇒ 同族「只锁了一半」累计 **第 91 次**（§4.170–§4.262）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
