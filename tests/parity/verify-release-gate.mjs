@@ -2305,6 +2305,107 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
 }
 
+// ── ⑬ 每个护栏的**末条语句**必须是「自述输出」（2026-10-10，审计 §4.269 后续）──────────────
+// 【为什么】§4.269 落新判据时，我**用新块替换掉了** `verify-runtime-qualification-workflow.mjs`
+//   末尾的自述行（`console.log('Runtime Qualification embeds frontendDist …')`）——
+//   **没有任何判据因此变红**（该护栏照样退出 0）。⇒ 「每个护栏跑一次就能自报它查了什么」
+//   这条约定**无人守**（「明文规则 ≠ 有人守」）。⚠️ **约束只写在注释里就不算约束** ⇒ 机械守。
+// 【判据】取每个 `verify-*.mjs` 里**最后**一次 `console.log(` / `process.stdout.write(`，
+//   用**括号配平**（跳过注释 / 字符串 / 模板字面量）找它的结束位置；要求其后只剩空白 / 注释 / 一个 `;`。
+//   ⚠️ **不能按行判断**：实测 **15/23** 个护栏的自述输出是**多行模板字面量**（续行以 `}` 或 `+` 开头）
+//     ⇒ 朴素「最后一行以 `console.log(` 开头」会误报 15 个（本轮实测）。
+{
+  // 样本**拼接构造**：避免本判据的样本被自己（或 ⑩）当成真的调用点命中。
+  const SELF_OUT = ['console' + '.log(', 'process' + '.stdout.write('];
+  const THROW = 'throw new ' + 'Error(';
+  // 从 `(` 起配平，返回匹配 `)` 的下标（跳过注释 / 单双引号 / 模板字面量含 `${}` 嵌套）
+  const matchParen = (src, start) => {
+    let depth = 0;
+    let i = start;
+    while (i < src.length) {
+      const c = src[i];
+      const c2 = src[i + 1];
+      if (c === '/' && c2 === '/') { const j = src.indexOf('\n', i); i = j === -1 ? src.length : j; continue; }
+      if (c === '/' && c2 === '*') { const j = src.indexOf('*/', i + 2); i = j === -1 ? src.length : j + 2; continue; }
+      if (c === "'" || c === '"') {
+        i += 1;
+        while (i < src.length && src[i] !== c) { if (src[i] === '\\') i += 1; i += 1; }
+        i += 1;
+        continue;
+      }
+      if (c === '`') {
+        i += 1;
+        let nest = 0;
+        while (i < src.length) {
+          if (src[i] === '\\') { i += 2; continue; }
+          if (src[i] === '$' && src[i + 1] === '{') { nest += 1; i += 2; continue; }
+          if (src[i] === '}' && nest > 0) { nest -= 1; i += 1; continue; }
+          if (src[i] === '`' && nest === 0) break;
+          i += 1;
+        }
+        i += 1;
+        continue;
+      }
+      if (c === '(') { depth += 1; i += 1; continue; }
+      if (c === ')') { depth -= 1; i += 1; if (depth === 0) return i; continue; }
+      i += 1;
+    }
+    return -1;
+  };
+  // 从 `from` 起是否只剩空白 / 一个 `;` / 注释
+  const tailIsBlank = (src, from) => {
+    let i = from;
+    while (i < src.length) {
+      const c = src[i];
+      const c2 = src[i + 1];
+      if (/\s/.test(c) || c === ';') { i += 1; continue; }
+      if (c === '/' && c2 === '/') { const j = src.indexOf('\n', i); i = j === -1 ? src.length : j; continue; }
+      if (c === '/' && c2 === '*') { const j = src.indexOf('*/', i + 2); i = j === -1 ? src.length : j + 2; continue; }
+      return false;
+    }
+    return true;
+  };
+  const isSelfDescribing = (src) => {
+    let at = -1;
+    let parenAt = -1;
+    for (const anchor of SELF_OUT) {
+      const k = src.lastIndexOf(anchor);
+      if (k > at) { at = k; parenAt = k + anchor.length - 1; }
+    }
+    if (at === -1) return false;
+    const close = matchParen(src, parenAt);
+    return close !== -1 && tailIsBlank(src, close + 1);
+  };
+
+  const guards13 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const offenders13 = guards13.filter((f) => !isSelfDescribing(read(`tests/parity/${f}`)));
+  if (offenders13.length > 0) {
+    fail(`这些护栏的**末条语句不是自述输出**（跑一次无法自报它查了什么）：${offenders13.join('、')} —— `
+      + '自述行必须留在文件**末尾**；**新增判据块时不要把已有的自述行替换掉**'
+      + '（审计 §4.269 实测发生过一次，且当时没有任何判据变红）');
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；新护栏加入时须一并上调）
+  const GUARD_BASELINE = 23; // [覆盖型] 基线 23
+  if (guards13.length < GUARD_BASELINE) {
+    fail(`只扫描到 ${guards13.length} 个 verify-*.mjs（[覆盖型] 基线 ${GUARD_BASELINE}）`
+      + ' —— 扫描面萎缩会让本判据空转');
+  }
+  // canary ① 正样本：多行模板字面量 + 尾随注释 / `;` ⇒ 不得报
+  if (!isSelfDescribing(`const a = 1;\n${'console'}.log(\`line1\n} line2\`);\n// trailing note\n`)) {
+    fail('⑬ canary 失效：正常的自述输出（多行模板 + 尾随注释）未被识别');
+  }
+  // canary ② 负样本：自述输出**之后还有语句** ⇒ 必须报
+  if (isSelfDescribing(`${'console'}.log('done');\nconst a = 1;`)) {
+    fail('⑬ canary 失效：自述输出之后**还有语句**却未检出');
+  }
+  // canary ③ 负样本：完全没有自述输出 ⇒ 必须报
+  if (isSelfDescribing(`const a = 1;\n${THROW}"x");`)) {
+    fail('⑬ canary 失效：没有任何自述输出的文件未被检出');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

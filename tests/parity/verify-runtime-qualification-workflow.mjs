@@ -580,4 +580,69 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   console.log('UX gate recorder: 输出消息里无「N 条」字面计数（全部派生）');
 }
 
+// ── qualification **工具**与 app 的 Rust API 契约（2026-10-10，审计 §4.269）────────────────────
+// 【为什么】`tools/source-fidelity` 是 **source fidelity 门禁的工具**（由
+//   `tests/qualification/run-source-fidelity-corpus.sh` 驱动，产出
+//   `tests/qualification/source-fidelity-corpus.md` —— 它**是台账 `P0-FILE-001` 的证据**）。
+//   而它的**全部价值**在于「**复用 app 的真实管线**」：`Cargo.toml` 里
+//   `mellow-desktop = { path = "../../apps/desktop/src-tauri" }`。
+//   ⚠️ **CI 不编译它**（它依赖 app 的整个 Rust 依赖树 ⇒ 冷编译数分钟；它是**本机门禁**工具）
+//   ⇒ **app 侧 API 一改名，工具就编译不了，而没人会知道**（直到有人跑那个门禁 —— 那可能很久以后）。
+//   **实测（本轮）**：工具当前**能编译**（`tools/source-fidelity/target/` 存在 = 本机构建过），
+//   且它用到的 4 个符号在 app 侧**都还在** ⇒ 现在**不是缺陷**，是**耦合风险**。
+// 【判据】**符号级契约**（精确、零 CI 成本）：工具 `main.rs` 的
+//   `use <lib>::fs::{…}` 里的**每个**符号，必须在 `apps/desktop/src-tauri/src/fs.rs` 里有
+//   `pub fn <名字>`；且 `Cargo.toml` 的 `[lib] name` 必须 == 工具 `use` 的前缀。
+//   ⚠️ **如实声明：这是「代理」，不替代编译** —— 它只抓「**改名 / 移动**」这类最常见的漂移，
+//     抓不到「签名改了」（那要编译）。真正的验证 = **有人跑那个门禁**（或将来给 CI 加编译）。
+{
+  const TOOL_MAIN = 'tools/source-fidelity/src/main.rs';
+  const APP_FS = 'apps/desktop/src-tauri/src/fs.rs';
+  const APP_CARGO = 'apps/desktop/src-tauri/Cargo.toml';
+  const toolMain = readFileSync(resolve(root, TOOL_MAIN), 'utf8').replace(/\r\n/g, '\n');
+  const appFs = readFileSync(resolve(root, APP_FS), 'utf8').replace(/\r\n/g, '\n');
+  const appCargo = readFileSync(resolve(root, APP_CARGO), 'utf8').replace(/\r\n/g, '\n');
+  // ① app 的 lib 名
+  const libName = /^\[lib\][\s\S]*?^name\s*=\s*"([^"]+)"/m.exec(appCargo)?.[1] ?? null;
+  if (libName === null) throw new Error(`${APP_CARGO} 里找不到 \`[lib] name\` —— 判据锚点漂移`);
+  // ② 工具 `use <lib>::fs::{…}` 的符号清单（判定与 canary **共用**）
+  const importedSymbols = (src, lib) => {
+    const m = new RegExp(`use\\s+${lib}::fs::\\{([^}]*)\\}`).exec(src);
+    return m === null ? null : m[1].split(',').map((s) => s.trim()).filter(Boolean);
+  };
+  const symbols = importedSymbols(toolMain, libName);
+  if (symbols === null) {
+    throw new Error(`${TOOL_MAIN} 里找不到 \`use ${libName}::fs::{…}\` —— 工具与 app 的耦合面变了，请同步本判据`);
+  }
+  // 防空转：立此判据时基线 3 个符号（decode / encode / atomic_save）
+  if (symbols.length < 3) {
+    throw new Error(`工具只 import 了 ${symbols.length} 个 fs 符号（下限 3 = 立此判据时的基线）`
+      + ' —— 谓词或工具结构漂移会让本判据空转');
+  }
+  for (const sym of symbols) {
+    if (!new RegExp(`pub fn ${sym}\\b`).test(appFs)) {
+      throw new Error(`${APP_FS} 里**没有** \`pub fn ${sym}\`，但 ${TOOL_MAIN} 仍在用它`
+        + ' —— 门禁工具**编译不了**了（CI 不编译它 ⇒ 只能在这里发现）。'
+        + '请修工具，或同步本判据（若耦合面确实变了）');
+    }
+  }
+  // ③ 工具还用了 `SaveError::message()`（跨类型的方法，不是 fs 的 free fn）
+  if (/\.message\(\)/.test(toolMain) && !/pub fn message\b/.test(appFs)) {
+    throw new Error(`${TOOL_MAIN} 调用了 \`.message()\`，但 ${APP_FS} 里没有 \`pub fn message\``
+      + ' —— 同上：工具会编译不了');
+  }
+  // canary：两向（构造样本；与判定**共用** importedSymbols）
+  if (importedSymbols(`use ${libName}::fs::{a, b};`, libName)?.join(',') !== 'a,b') {
+    throw new Error('source-fidelity 工具契约 canary 失效：`use …::fs::{…}` 的符号清单取不到');
+  }
+  if (importedSymbols('use other_lib::fs::{a};', libName) !== null) {
+    throw new Error('source-fidelity 工具契约 canary **过宽**：别的 lib 前缀被误判为本 app');
+  }
+  console.log(`Source fidelity tool contract: ${symbols.length} 个 fs 符号（${symbols.join(' / ')}）`
+    + `在 ${APP_FS} 里均有 \`pub fn\`；lib 名 = ${libName}（⚠️ 代理检查，不替代编译）`);
+}
+
+// ⚠️ 本行**必须留在文件末尾**：它是本护栏的「自述行」（跑一次就知道这脚本查了什么）。
+//   §4.269 落新判据时**误删过一次**（新块替换掉了它）—— 这类「静默丢自述」不会让任何判据变红。
 console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
+

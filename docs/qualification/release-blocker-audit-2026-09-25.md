@@ -16561,6 +16561,171 @@ jest 关了诊断、`tsc` 不含 `test/`。
 
 ⇒ 同族「只锁了一半」累计 **第 96 次**（§4.170–§4.267）。
 
+## 4.269 「谁在检查什么」继续追问：**CI 不编译的 Rust crate**（`tools/source-fidelity`）（2026-10-10）
+
+### 一、实测：2 个 Cargo crate，**1 个在 CI 里完全不出现**
+
+| crate | CI 覆盖 |
+|---|---|
+| `apps/desktop/src-tauri` | ✅ **2 个 job**（`rust-check` on ubuntu + `rust-check-macos`） |
+| **`tools/source-fidelity`** | ❌ **CI 里一个字都没有**（无 `working-directory`、无 `cargo`、无提及） |
+
+**它是什么**（可复核）：**source fidelity 门禁的工具** —— 由
+`tests/qualification/run-source-fidelity-corpus.sh` 驱动，产出
+`tests/qualification/source-fidelity-corpus.md`，而该文档**是台账 `P0-FILE-001` 的证据**。
+它的**全部价值**在于「**复用 app 的真实管线**」：
+`Cargo.toml` 里 `mellow-desktop = { path = "../../apps/desktop/src-tauri" }`
+（注释原文：「复用 `mellow_desktop_lib` 的真实 decode/encode/atomic_save 管线」）。
+
+⇒ **风险**：**app 侧 API 一改名，工具就编译不了，而没人会知道**（CI 不编译它；
+而它由**人工**门禁脚本驱动 ⇒ 可能很久以后才发现）。
+
+### 二、实测：它**现在能编译** ⇒ **不是缺陷，是耦合风险**
+
+逐符号核对（工具 `main.rs` 的 `use mellow_desktop_lib::fs::{atomic_save, decode, encode};`）：
+
+| 工具用到的 | app 侧（`src-tauri/src/fs.rs`） |
+|---|---|
+| `decode` / `encode` / `atomic_save` | ✅ 均有 `pub fn`（且**签名逐参对齐**：`atomic_save(target, data, expected)` ↔ 工具传 3 个实参） |
+| `SaveError::message()` | ✅ `pub fn message(&self) -> String` |
+| `mellow_desktop_lib` 前缀 | ✅ `Cargo.toml` 的 `[lib] name = "mellow_desktop_lib"` |
+
+✅ 另有**独立佐证**：`tools/source-fidelity/target/` **存在** ⇒ 该工具**在本机构建过**。
+
+⚠️ 顺带核实 `AGENTS.md:125` 的说法（「`qualification/` … 可执行脚本（source-fidelity / packaging smoke）」）
+是**准确的** ✅ —— `run-source-fidelity-corpus.sh` 与 `run-packaging-smoke.sh` **都在**。
+
+### 三、处置：落「**符号级契约**」判据（`verify-runtime-qualification-workflow.mjs`）
+
+① 工具的 `use <lib>::fs::{…}` 里的**每个**符号，必须在 app 的 `fs.rs` 里有 `pub fn <名字>`；
+② `Cargo.toml` 的 `[lib] name` 必须 == 工具 `use` 的前缀（否则工具**锚点漂移** ⇒ 报「耦合面变了」）；
+③ 工具若调用 `.message()`，app 侧必须有 `pub fn message`；
+④ 防空转下限（符号数 ≥ **3**，立此判据时基线 **3**）+ canary **两向**（正样本取到符号 / **过宽**负样本：别的 lib 前缀）。
+
+⚠️ **如实声明：这是「代理」，不替代编译** —— 它只抓「**改名 / 移动**」这类最常见的漂移，
+**抓不到「签名改了」**（那需要编译）。真正的验证 = **有人跑那个门禁**。
+⚠️ **为什么不给 CI 加编译**：它依赖 app 的**整个 Rust 依赖树** ⇒ 冷编译数分钟；
+且它是**本机门禁**工具（与 `tests/parity/tools/*` 同类）⇒ **记录，不做**。
+
+**注入验证（三向，均还原后 EXIT=0）**：
+
+| 注入 | 结果 |
+|---|---|
+| 把 app 的 `pub fn decode` 改名为 `decode_bytes` | ✅ 「`fs.rs` 里**没有** `pub fn decode`，但工具仍在用它 —— 门禁工具**编译不了**了」 |
+| 改 app 的 `[lib] name` | ✅ 「工具与 app 的**耦合面变了**，请同步本判据」 |
+| 让谓词**不区分 lib 前缀**（canary 应触发） | ✅ 「canary **过宽**：别的 lib 前缀被误判为本 app」 |
+
+⚠️ **首版注入 C 是无效注入**（如实记录）：我把箭头函数体替换掉 ⇒ 文件**语法错误**（`Illegal return statement`），
+那次「未抓」**不构成测试**。⇒ 重做成「让 canary 必然失败」的注入后才有效。
+（同族 §4.263 的教训：**注入必须真的移除被测性质**。）
+
+### 四、⚠️ 自伤一次 —— 而这次是「**判据在工作**」的证明
+
+我新写的这段代码里有一个 `const toolCargo = readFileSync(...)`，**声明后从未使用**
+⇒ **判据 ㊷（死代码，正是我 §4.260 加的那条）当场报红**：
+
+```
+入口脚本里有**死代码**（只出现在声明处）：tests/parity/verify-runtime-qualification-workflow.mjs:604 `toolCargo`
+```
+
+⇒ **判据在守它的作者本人**。已删除该变量；复跑 ⇒ 「只出现在声明处的 **0** 个」✅。
+⚠️ 这是本轮最好的验证形式：**判据不是摆设 —— 它会抓到我刚写的代码**。
+
+⇒ 同族「只锁了一半」累计 **第 97 次**（§4.170–§4.268）。
+
+## 4.270 收尾自查：**我上一轮把目标护栏的「自述行」替换掉了**，而没有任何判据变红（2026-10-10）
+
+### 一、发现（**自伤第二次，但这次是「无人守」的证据**）
+
+§4.269 我是这样落判据的：把 `verify-runtime-qualification-workflow.mjs` **文件末尾**那一行
+
+```js
+console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
+```
+
+**当作插入点替换掉了**（新判据块 + 空行），而不是**追加在它之后**。
+⇒ 该护栏**照样退出 0**，`npm run parity` **照样全绿**，**没有任何判据因此变红**。
+
+`git diff` 一眼可见（`-console.log('Runtime Qualification embeds…')` 是**纯删除**），
+但**只有在有人去看那个 diff 时**才可见 —— 这正是一句「明文规则」：
+「每个护栏跑一次就能自报它查了什么」，而**它无人守**。
+
+### 二、量代价：23 个护栏的自述行**形态不一**，朴素谓词会误报 15 个
+
+先写一次性探针（**已删除**，见第四节）量「每个 `verify-*.mjs` 的最后一条语句是什么」：
+
+| 谓词 | 判为「不是自述输出」 |
+|---|---|
+| 朴素按行：**最后一行以 `console.log(` 开头** | **15/23** ❌（几乎全是假阳性） |
+| **括号配平**（跳过注释 / 字符串 / 模板字面量） | **0/23** ✅ |
+
+根因：**15/23 个护栏的自述输出是多行模板字面量**，续行以 `}` 或 `+` 开头，例如
+
+```
+console.log(`W3.8 文件操作撤销：…;${''}
+} W3.9 Recent Locations：…;${''}
+} Search invalid regex 就地提示：…`);
+```
+
+⇒ 与 §4.167/§4.169 同一形态：**「按行」读源码在本仓反复出错**，必须按**语句**读。
+⚠️ 另有 1 个护栏用 `process.stdout.write(` 而非 `console.log(` ⇒ 谓词必须接受两种锚点。
+
+### 三、处置：判据 **⑬**（`verify-release-gate.mjs`）
+
+**判据**：取每个 `verify-*.mjs` 里**最后**一次 `console.log(` / `process.stdout.write(`，
+用**括号配平**（跳过 `//` `/* */`、单双引号、模板字面量含 `${}` 嵌套）找它的 `)`；
+要求其后只剩空白 / 注释 / 一个 `;` —— 即「**末条语句 = 自述输出**」。
+
+**防空转**：`[覆盖型] 基线 23`（下限 == 立此判据时的护栏数；新护栏加入时须一并上调）。
+
+**注入验证（三向；均还原后逐字节一致、EXIT=0）**：
+
+| 注入 | 结果 |
+|---|---|
+| **A**：删掉目标护栏末尾的自述行（**复现本节第一节的真实回归**） | ✅ 「这些护栏的**末条语句不是自述输出**」 |
+| **B**：自述行之后**再加一条语句** | ✅ 同上 |
+| **C**：让谓词只判「找得到调用」不判「后面没语句」（canary 应触发） | ✅ 「⑬ canary 失效：自述输出之后**还有语句**却未检出」 |
+
+canary **三向**：① 正样本（多行模板 + 尾随注释）不得报；② 尾随语句必须报；③ 无自述输出必须报。
+⚠️ 样本**拼接构造**（`'console' + '.log('` / `'throw new ' + 'Error('`）——
+本文件自己也在扫描面里，且它的**最后一个 `throw new Error(`** 被判据 ⑩ 当锚点用。
+
+### 四、顺带修掉 §4.269 引入的**第二个**缺陷（同一次落盘，同一次自查）
+
+新块里那句
+
+```js
+throw new Error(`${TOOL_MAIN} 调用了 \`.message()\`，但 ${APP_FS} 里没有 \`pub fn message\`'
+  + ' —— 同上：工具会编译不了`);
+```
+
+**反引号不配对**（`\`` 之后紧跟 `'`）⇒ 模板字面量把 `' + ' —— 同上…'` **整段吞成字符串内容**。
+⚠️ **它是「语法合法」的**（模板字面量允许跨行与含引号）⇒ **不会报错、测试不会红**，
+只是**报错信息变成一串垃圾**。⇒ 「能跑」≠「对」；**语法合法是噪声，不是保证**。
+已修为配对形态。（同族：约束只写在注释里就不算约束 —— 这次的约束连注释都没有。）
+
+### 五、判据**又一次**抓到作者本人
+
+我第一版把 `[覆盖型] 基线 23` 写在 `fail(...)` 的**消息字符串**里 ⇒ **判据 ⑥**
+（覆盖型下限的「标记 ↔ 阈值」自洽）当场报红：
+
+```
+verify-release-gate.mjs:2391 有「[覆盖型] 基线 23」标记，但**紧随其后找不到阈值**
+```
+
+⇒ 改为 `const GUARD_BASELINE = 23; // [覆盖型] 基线 23` + 消息里用 `${GUARD_BASELINE}` 插值。
+⚠️ **这是 §4.269 之后的第二次「判据抓到我自己」**（第一次是 ㊷ 抓到未使用的 `const toolCargo`）
+⇒ **判据不是摆设**，这是护栏有效性的直接证据。
+
+### 六、改动清单
+
+1. `verify-runtime-qualification-workflow.mjs`：**恢复**被误删的自述行，并加注「**本行必须留在文件末尾**」；
+   修 `\`.message()\`` 的反引号不配对。
+2. `verify-release-gate.mjs`：新增判据 **⑬**（末条语句必须是自述输出）+ 覆盖型下限 23 + canary 三向。
+3. 删除一次性探针（其能力已被判据 ⑬ 完全取代 —— **不留死工具**）。
+
+⇒ 同族「只锁了一半」累计 **第 98 次**（§4.170–§4.269）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
