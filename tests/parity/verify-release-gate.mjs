@@ -2522,6 +2522,87 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + `；已登记非突变 ${IN_PLACE_MUTATORS_EXEMPT.size} 个（⚠️ 代理判据，不替代真跑）`);
 }
 
+// ── ⑮ 每个 CI job 必须有**超时边界** `timeout-minutes`（2026-10-10，审计 §4.276）──────────────
+// 【为什么】GitHub 的默认 job 超时是 **360 min** ⇒ 一个**卡住**的 job 要 **6 小时**才被发现。
+//   而本仓三个 workflow 里**只有一个**做了这件事：`runtime-qualification.yml` 三个 job 都有
+//   `timeout-minutes: 45`，而 `ci.yml`（8 个 job）与 `release.yml`（5 个 job）**一个都没有**
+//   ⇒ 同类配置在 3 个文件里只做了 1 个（本仓「只锁了一半」的又一形态）。
+//   ⚠️ `release.yml` 尤其要紧：它的 `concurrency.cancel-in-progress: false`（对外，取消会留半成品）
+//     ⇒ 卡住的 job **不会**被下一次推送取消，会把发布管线堵满 6 小时。
+// 【判据】每个 `.github/workflows/*.yml` 的**每个 job** 必须有 `timeout-minutes`，
+//   且必须是 **1–180** 的整数（⚠️ ≥ 360 等于 GitHub 默认值 ⇒ **等于没设**）。
+//   ⚠️ **按行结构读**（不引 `js-yaml`：那会在护栏里引入新的裸依赖，被 C6 抓；且 pnpm 隔离下
+//     根目录解析不到它）。形态按本仓约定：`jobs:` 之下的 job 名是 **2 空格**缩进，
+//     job 级键（`runs-on` / `timeout-minutes` …）是 **4 空格**缩进。
+//   ⚠️ **如实声明**：这是**结构判据**，只锁「有没有设、设得合不合理」；
+//     **「改流水线本机验不了行为」** ⇒ 不得声称「超时已生效」（那要等一次真跑）。
+{
+  const WF_DIR = '.github/workflows';
+  const JOB_HEAD = /^ {2}([A-Za-z0-9_-]+):\s*$/;
+  const TIMEOUT = /^ {4}timeout-minutes:\s*(\d+)\s*$/;
+  const MIN_TIMEOUT = 1;
+  const MAX_TIMEOUT = 180;
+  /** 判定（与 canary **共用**；纯函数 —— 只吃文本，**不碰文件系统**，见 PITFALLS §4.395）。 */
+  const jobsOf = (text) => {
+    const lines = text.split('\n');
+    const start = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+    if (start < 0) return null; // 没有 jobs: 段
+    const out = [];
+    let cur = null;
+    const flush = () => { if (cur !== null) out.push(cur); };
+    for (let i = start + 1; i < lines.length; i += 1) {
+      const m = JOB_HEAD.exec(lines[i]);
+      if (m !== null) { flush(); cur = { name: m[1], timeout: null }; continue; }
+      const t = TIMEOUT.exec(lines[i]);
+      if (t !== null && cur !== null) cur.timeout = Number(t[1]);
+    }
+    flush();
+    return out;
+  };
+  const wfFiles = existsSync(resolve(root, WF_DIR))
+    ? readdirSync(resolve(root, WF_DIR)).filter((f) => /\.ya?ml$/.test(f)).sort()
+    : [];
+  let jobCount = 0;
+  for (const f of wfFiles) {
+    const jobs = jobsOf(read(`.github/workflows/${f}`));
+    if (jobs === null) { fail(`${WF_DIR}/${f} 里找不到 \`jobs:\` 段 —— 判据锚点漂移`); continue; }
+    jobCount += jobs.length;
+    for (const j of jobs) {
+      if (j.timeout === null) {
+        fail(`${WF_DIR}/${f} 的 job \`${j.name}\` **没有 \`timeout-minutes\`** —— GitHub 默认 **360 min**`
+          + ' ⇒ 卡住时要 **6 小时**才发现（`release.yml` 的 `cancel-in-progress: false` ⇒ 不会被下次推送取消）。'
+          + '请按**实测耗时**的数倍设一个边界（本仓先例：`runtime-qualification.yml` 三个 job 都是 45）');
+      } else if (j.timeout < MIN_TIMEOUT || j.timeout > MAX_TIMEOUT) {
+        fail(`${WF_DIR}/${f} 的 job \`${j.name}\` 的 \`timeout-minutes: ${j.timeout}\` 不在 ${MIN_TIMEOUT}–${MAX_TIMEOUT}`
+          + ' —— ⚠️ **≥ 360 等于 GitHub 默认值 ⇒ 等于没设**；请按实测耗时设一个有意义的边界');
+      }
+    }
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；加 workflow / job 时须一并上调）
+  const JOB_BASELINE = 16; // [覆盖型] 基线 16
+  if (jobCount < JOB_BASELINE) {
+    fail(`三个 workflow 里只解析出 ${jobCount} 个 job（[覆盖型] 基线 ${JOB_BASELINE}）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** jobsOf）
+  const OK_WF = `jobs:\n  a:\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n`;
+  const NO_WF = `jobs:\n  a:\n    runs-on: ubuntu-latest\n`;
+  if (jobsOf(OK_WF)?.[0]?.timeout !== 30) {
+    fail('⑮ canary 失效：合法样本的 `timeout-minutes` 未被解析出');
+  }
+  if (jobsOf(NO_WF)?.[0]?.timeout !== null) {
+    fail('⑮ canary 失效：**缺** `timeout-minutes` 的 job 未被判为 null');
+  }
+  if (jobsOf(OK_WF)?.length !== 1 || jobsOf(`${OK_WF}  b:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n`)?.length !== 2) {
+    fail('⑮ canary 失效：job 切分不对（多 job 被并成一个）');
+  }
+  if (jobsOf(`on:\n  push:\n    branches: [main]\n`)?.[0] !== undefined) {
+    fail('⑮ canary **过宽**：`on:` 段的子键被当成了 job（必须只在 `jobs:` 之下找）');
+  }
+  console.log(`Release gate: ${wfFiles.length} 个 workflow / ${jobCount} 个 job —— **均有超时边界**`
+    + `（${MIN_TIMEOUT}–${MAX_TIMEOUT} min；⚠️ 结构判据，行为需等一次真跑）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

@@ -66,6 +66,9 @@ jobs:
     # 而三个平台 job `needs: [create-release]` ⇒ **连带全被跳过**（把「仅构建」路径也弄没了）。
     # 故：本 job 总是运行，**在步骤内**按 `GITHUB_REF_TYPE` 判断是否真的要创建 release。
     runs-on: ubuntu-latest
+    # 超时边界：**实测**该 job 的耗时可定（2026-10-10，审计 §4.276）——
+    # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
+    timeout-minutes: 15
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
     steps:
@@ -110,6 +113,9 @@ jobs:
     name: Windows (MSI + NSIS)
     needs: [create-release]
     runs-on: windows-latest
+    # 超时边界：**实测**该 job 的耗时可定（2026-10-10，审计 §4.276）——
+    # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
+    timeout-minutes: 90
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -245,6 +251,9 @@ jobs:
     name: macOS (DMG；有 Apple 凭据时签名 + 公证)
     needs: [create-release]
     runs-on: macos-latest
+    # 超时边界：**实测**该 job 的耗时可定（2026-10-10，审计 §4.276）——
+    # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
+    timeout-minutes: 90
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -320,6 +329,9 @@ jobs:
     name: Linux (AppImage + deb + rpm)
     needs: [create-release]
     runs-on: ubuntu-latest
+    # 超时边界：**实测**该 job 的耗时可定（2026-10-10，审计 §4.276）——
+    # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
+    timeout-minutes: 90
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -383,6 +395,9 @@ jobs:
     needs: [windows, macos, linux]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # 超时边界：**实测**该 job 的耗时可定（2026-10-10，审计 §4.276）——
+    # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:

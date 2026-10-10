@@ -17220,6 +17220,80 @@ tracked 的 `.md` / `.mjs` / `.cjs` 里，凡行内码形如 `` `tools/….(mjs|
 
 ⇒ 同族「只锁了一半」累计 **第 103 次**（§4.170–§4.274）。
 
+## 4.276 「CI job 的超时边界」透镜：**3 个 workflow 里只有 1 个设了**（2026-10-10）
+
+### 一、发现
+
+GitHub 的**默认 job 超时是 360 min** ⇒ 一个**卡住**的 job 要 **6 小时**才被发现。实测三个 workflow：
+
+| workflow | job 数 | `timeout-minutes` |
+|---|---|---|
+| `runtime-qualification.yml` | 3 | ✅ **全部有**（`45`） |
+| **`ci.yml`** | 8 | ❌ **一个都没有** |
+| **`release.yml`** | 5 | ❌ **一个都没有** |
+
+⇒ **同类配置在 3 个文件里只做了 1 个** —— 本仓「只锁了一半」的又一形态
+（同族先例：pnpm 版本 10 处副本、`.gitattributes`、tsconfig 严格项只在 3/15）。
+
+⚠️ **`release.yml` 尤其要紧**：它的 `concurrency.cancel-in-progress: false`（**对外**，取消会留半成品）
+⇒ 卡住的 job **不会**被下一次推送取消，会把**发布管线堵满 6 小时**。
+（`ci.yml` 是 `true` ⇒ 会被下次推送取消，危害小一些，但仍然要等下一次推送。）
+
+### 二、定值依据（**实测**，不拍脑袋）
+
+取最近 4 次**成功**运行的 job 耗时（min）：
+
+| job | 4 次观测 |
+|---|---|
+| Mellow packages typecheck + unit tests | 3.1 / 3.2 / 3.7 |
+| editor-engine test + build | 2.9 / 3.0 / 3.0 |
+| Rust system core check + test | 1.0 / 1.2 / 1.2 |
+| editor-core vendored + wrapper | 0.8 / 1.1 / 1.1 |
+| Rust macOS-native test | 0.8 / 0.8 / 1.1 |
+| Typora parity guardrails (Windows) | 0.5 / 0.6 / 0.7 |
+| Desktop frontend build | 0.5 / 0.5 / 0.6 |
+| Typora parity guardrails (ledger…) | 0.2 / 0.3 / 0.3 |
+
+最慢 **3.7 min** ⇒ `ci.yml` 取 **30**（≈ 8× 余量，冷缓存也够）。
+`release.yml` 的平台构建更重（Rust 全量编译 + 打包 + 签名/公证）⇒ **90**；`create-release` / `finalize`
+只做 API 操作 ⇒ **15**。
+
+### 三、处置：判据 **⑮**（`verify-release-gate.mjs`）
+
+每个 `.github/workflows/*.yml` 的**每个 job** 必须有 `timeout-minutes`，且必须是 **1–180** 的整数
+（⚠️ **≥ 360 等于 GitHub 默认值 ⇒ 等于没设**）。[覆盖型] 基线 **16**；canary **四向**。
+⚠️ **按行结构读**（**不引 `js-yaml`**：那会在护栏里引入新的**裸依赖**，被 C6 抓；且 pnpm 隔离下根目录解析不到）。
+⚠️ **如实声明**：这是**结构判据**，只锁「有没有设、设得合不合理」；
+**「改流水线本机验不了行为」** ⇒ 本轮**不得声称「超时已生效」**（那要等一次真跑）。
+本机能验的只有：`js-yaml` **实解**三个 workflow 全部通过 + 判据锁结构。
+
+### 四、改动清单
+
+1. `.github/workflows/ci.yml`：8 个 job 各加 `timeout-minutes: 30`（+ 一句定值依据的注释）。
+2. `.github/workflows/release.yml`：`create-release` / `finalize` = **15**；`windows` / `macos` / `linux` = **90**。
+3. `verify-release-gate.mjs`：新增判据 **⑮**（job 超时边界）+ [覆盖型] 基线 + canary 四向。
+4. 无状态码 / 策略 / 产品代码改动。
+
+### 五、注入验证（均还原后逐字节一致、EXIT=0）
+
+| 注入 | 结果 |
+|---|---|
+| A 删掉一个 job 的 `timeout-minutes` | ✅ |
+| B 把 `timeout-minutes` 设成 `360`（等于默认值） | ✅（「不在 1–180」） |
+| C 让 `jobsOf` 恒返回空 | ✅（[覆盖型] 基线触发） |
+
+### 六、顺带记录的两条 0 缺陷透镜（防下轮重做）
+
+① **「`npm run X` 的引用存在性」扩到 `.yml` / `.mjs`** —— 判据 ㉘ 只扫 `.md`；
+   **该扩展已在审计 §4.260 六被明确评估并否决**（27 处引用、**0 处悬空**；三条理由：
+   工作流里的悬空会**响亮失败**、基址不唯一、vendored 的 yarn 里有同名**错误消息字符串**）⇒ **不是缺口**。
+② **`.gitignore` 的旁及命中** —— 全仓 146,453 个被忽略文件，除 `node_modules`/`dist`/`target` 外
+   另有 231 个「源文件形态」的，逐类看**全部有意**：`tests/benchmark/fixtures/`（生成型夹具，
+   由 `generate-fixtures.mjs` 产出）与 `tests/benchmark/reports/`（运行产物）—— 由**嵌套**的
+   `tests/benchmark/{,.}/.gitignore` 忽略（根 `.gitignore` 里没有这两条，是**有意分散**的）⇒ ✅ 0 缺陷。
+
+⇒ 同族「只锁了一半」累计 **第 104 次**（§4.170–§4.275）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
