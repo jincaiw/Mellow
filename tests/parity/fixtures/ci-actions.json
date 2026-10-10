@@ -1,18 +1,9 @@
 {
-  "$comment": [
-    "CI action 的版本 / 运行时登记处（审计 §4.283）。",
-    "为什么需要它：`.nvmrc` 只管 **job 里跑的 Node**；action **自己声明的运行时**",
-    "（action.yml 的 runs.using）是**第二条完全独立的轴** —— 本仓 5 个 action 曾长期停在",
-    "node20，而 runner 已于 2026-09-23 移除 Node 20（GitHub changelog 2026-08-25 更新），",
-    "即它们一直在**未声明支持的运行时**上被强制运行。",
-    "判据（verify-release-gate.mjs ⑱）守：双向登记 / 禁浮动 ref / pin 主版本 ≥ minMajorForNode24 /",
-    "自述 runtime 不得为 node20 / latestKnown 主版本 ≥ pin。",
-    "⚠️ 本表**只存事实与理由，不存计数**（计数一律由判据现读派生，手写计数必然漂移）。",
-    "⚠️ `minMajorForNode24` / `latestKnown` 是**人工核实的事实**，会过期 ⇒ 每条带 checkedAt + evidence；",
-    "判据只守「自洽」，不守「上游是否又发了新版」（离线判据无法知道）。"
-  ],
+  "source": "逐个 `gh api repos/<owner>/<repo>/contents/action.yml?ref=<tag>` 读 `runs.using`（不是读 release notes 的措辞）；告警清单来自 CI run 日志（见 evidenceRuns）。",
+  "why": "`.nvmrc` 只管 **job 里跑的 Node**；action **自己声明的运行时**（`action.yml` 的 `runs.using`）是**第二条完全独立的轴**，此前没有任何登记处。本仓 5 个 action 曾长期停在 `node20`，而 runner 已于 2026-09-23 移除 Node 20（GitHub changelog 2026-08-25 更新删除日期），即它们一直在**未声明支持的运行时**上被强制运行。",
+  "note": "⚠️ 本表**只存事实与理由，不存计数**（计数一律由判据现读派生，手写计数必然漂移）。⚠️ `minMajorForNode24` / `latestKnown` 是**人工核实的事实**，会过期 ⇒ 每条带 checkedAt + evidence；判据只守「自洽」，不守「上游是否又发了新版」（离线判据无法知道）。⚠️ 本文件的**顶层键与条目键**由判据 ⑲ 的字段契约双向锁定 —— 加字段必须同时改判据（审计 §4.284）。",
   "reviewedAt": "2026-10-10",
-  "evidenceRuns": ["38035994927"],
+  "evidenceRuns": ["38035994927", "38038665944"],
   "actions": [
     {
       "action": "actions/checkout",

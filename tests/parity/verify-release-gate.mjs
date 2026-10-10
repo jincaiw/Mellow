@@ -2938,6 +2938,196 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       : ''));
 }
 
+// ── ⑲ 夹具的**字段契约**：字段必须被声明过，「出处」必须自洽（2026-10-10，审计 §4.284）──
+// 【为什么】§4.257 用过「孤儿字段」透镜（夹具字段有没有人消费），但那次只覆盖 **5** 份夹具，
+//   而且**谓词不健全**。本轮用两种口径重跑同一批夹具，得到 **11（朴素）/ 24（剥注释+属性访问）**，
+//   **两个数都不是答案**：
+//     · 假阳性 ①：**动态读词表**（`Object.keys(vocab)`）⇒ 档位名本就不出现在源码里（§4.257 已记）。
+//     · 假阳性 ②：**泛型读取**（`Object.entries(e)` / 解构 / 展开）⇒ `why` / `todo` / `what` 这类
+//       字段名**根本不会以属性访问形态出现**。
+//     · 假阴性 ③：**名字撞车** —— 朴素口径说 `why`「被引用」，实为 6 个**别的**护栏里的**局部变量名**；
+//       而 `note` 在**两种口径里都没被报出来**，可它在 `ci-actions.json` 里**确实没人读**。
+//   ⇒ **靠 grep 判「有没有人读」不成立**（同一透镜的第二次失效，第 1 次见 §4.257 的探针 bug ①）。
+//   可靠做法是**让消费方声明它读什么** —— 即「字段契约」：声明面 = 本表，消费面 = 各护栏的读取，
+//   两者相减 = 可复核的「声明了但没人读」清单。
+//   ⚠️ 触发本轮的直接事实：**我自己上一轮建的 `ci-actions.json` 里，20 个字段有 10 个没人读（50%）** ——
+//     正是 §4.280「刚立的判据也要问锁了几分之几」的又一次复现（这次是我自己的产物）。
+// 【判据】① **顶层键契约**：7 份夹具的顶层键必须与本表**双向相等**。
+//   ② **条目键契约**：`ci-actions.json` 再细到条目键（双向）。
+//   ③ **出处自洽**：夹具正文里每个 `run <数字>` 必须在 `evidenceRuns` 里；`evidenceRuns` 的每个 id
+//      也必须真的被引用（防化石）。
+//   ④ **登记表形状**：`knownFutureMigrations` / `knownRemainingWarnings` 每条必须有非空
+//      `what` / `observedIn` / `todo`。
+//   ⑤ **表头散文**：`source` / `why` / `note` 若存在必须是非空字符串（形状统一，读者才能判断
+//      「这个字段是真值源还是装饰」—— §4.257 的根因）。
+// 【边界如实声明】② 只落到 `ci-actions.json`（本轮我拥有、且已逐字段核过的那份）；
+//   **其余 6 份的条目键契约 = 已登记的后续项，本节不假装已覆盖**。
+{
+  const FIX_DIR = 'tests/parity/fixtures';
+  // 顶层键契约（与夹具实际**双向**相等；加/删字段必须同时改这里）
+  const TOP_CONTRACT = {
+    'ci-actions.json': ['actions', 'evidenceRuns', 'floatingRefExceptions', 'knownFutureMigrations',
+      'knownRemainingWarnings', 'note', 'reviewedAt', 'source', 'why'],
+    'cross-package-edges.json': ['edges', 'note', 'source', 'why'],
+    'export-collaborators.json': ['callSites', 'entries', 'note', 'source', 'statusVocabulary', 'why'],
+    'export-feature-parity.json': ['entries', 'note', 'source', 'statusVocabulary', 'why'],
+    'typora-panel-only-keys.json': ['entries', 'note', 'source', 'why'],
+    'typora-persisted-uncovered.json': ['entries', 'extract', 'kindVocabulary', 'note', 'source'],
+    'typora-preferences-matrix.json': ['entries', 'note', 'source'],
+  };
+  // 条目键契约（**只对 ci-actions.json 落地** —— 边界见上）
+  const ENTRY_CONTRACT = {
+    'ci-actions.json': {
+      actions: ['action', 'checkedAt', 'evidence', 'latestKnown', 'minMajorForNode24', 'note', 'ref', 'runtime'],
+      floatingRefExceptions: ['action', 'reason', 'ref'],
+      knownFutureMigrations: ['observedIn', 'todo', 'what'],
+      knownRemainingWarnings: ['observedIn', 'todo', 'what', 'whyNotAnActionIssue'],
+    },
+  };
+  const HEADER_FIELDS = ['source', 'why', 'note'];
+  /** 判定与 canary **共用**：从任意字符串里抽 `run <id>`。 */
+  const runsIn = (s) => [...s.matchAll(/\brun\s+(\d{6,})\b/g)].map((m) => m[1]);
+  const diff = (actual, declared) => ({
+    missing: declared.filter((k) => !actual.includes(k)),
+    extra: actual.filter((k) => !declared.includes(k)),
+  });
+
+  const names = readdirSync(resolve(root, FIX_DIR)).filter((n) => n.endsWith('.json')).sort();
+  const parsed = new Map();
+  for (const n of names) {
+    try { parsed.set(n, JSON.parse(read(`${FIX_DIR}/${n}`))); } catch (e) {
+      fail(`⑲ \`${FIX_DIR}/${n}\` 不是合法 JSON：${e.message}`);
+    }
+  }
+
+  // ① 顶层键契约（双向）
+  for (const n of names) {
+    const fx = parsed.get(n);
+    if (fx === null || typeof fx !== 'object' || Array.isArray(fx)) {
+      fail(`⑲ \`${n}\` 的顶层必须是对象（否则顶层键契约无从判定）`);
+      continue;
+    }
+    const declared = TOP_CONTRACT[n];
+    if (declared === undefined) {
+      fail(`⑲ 新增夹具 \`${n}\` **未在字段契约里登记** —— 夹具的顶层键必须被声明，`
+        + '否则读者无法判断哪些字段是真值源、哪些是装饰（§4.257 的根因）');
+      continue;
+    }
+    const { missing, extra } = diff(Object.keys(fx), declared);
+    if (missing.length > 0 || extra.length > 0) {
+      fail(`⑲ \`${n}\` 的顶层键与契约不符：`
+        + (missing.length > 0 ? `契约有而夹具没有 [${missing.join(', ')}]；` : '')
+        + (extra.length > 0 ? `夹具**多出** [${extra.join(', ')}]；` : '')
+        + '—— 加 / 删字段必须**同时**改本判据（否则字段可以永远是错的而没人知道）');
+    }
+  }
+  for (const n of Object.keys(TOP_CONTRACT).sort()) {
+    if (!names.includes(n)) {
+      fail(`⑲ 字段契约登记了 \`${n}\`，但夹具目录里没有它 —— 契约与事实脱节`);
+    }
+  }
+
+  // ② 条目键契约（只对已落地的那份）
+  for (const [n, groups] of Object.entries(ENTRY_CONTRACT)) {
+    const fx = parsed.get(n);
+    if (fx === undefined) continue;
+    for (const [group, declared] of Object.entries(groups)) {
+      const arr = fx[group];
+      if (!Array.isArray(arr)) {
+        fail(`⑲ \`${n}.${group}\` 不是数组（条目键契约无从判定）`);
+        continue;
+      }
+      const actual = [...new Set(arr.flatMap((e) => (e && typeof e === 'object' ? Object.keys(e) : [])))];
+      const { missing, extra } = diff(actual, declared);
+      if (missing.length > 0 || extra.length > 0) {
+        fail(`⑲ \`${n}.${group}\` 的条目键与契约不符：`
+          + (missing.length > 0 ? `契约有而条目没有 [${missing.join(', ')}]；` : '')
+          + (extra.length > 0 ? `条目**多出** [${extra.join(', ')}]；` : ''));
+      }
+    }
+  }
+
+  // ③ 出处自洽（双向）+ ④ 登记表形状 + ⑤ 表头散文
+  for (const n of names) {
+    const fx = parsed.get(n);
+    if (fx === null || typeof fx !== 'object' || Array.isArray(fx)) continue;
+    for (const f of HEADER_FIELDS) {
+      if (f in fx && (typeof fx[f] !== 'string' || fx[f].trim() === '')) {
+        fail(`⑲ \`${n}\` 的 \`${f}\` 存在但**不是非空字符串** —— 表头散文必须形状统一，`
+          + '否则读者无法从形状判断「这个字段是真值源还是装饰」');
+      }
+    }
+    if ('evidenceRuns' in fx) {
+      const declaredRuns = fx.evidenceRuns;
+      if (!Array.isArray(declaredRuns) || declaredRuns.length === 0
+        || declaredRuns.some((r) => typeof r !== 'string' || !/^\d{6,}$/.test(r))) {
+        fail(`⑲ \`${n}\` 的 \`evidenceRuns\` 必须是非空、元素为纯数字串（run id）的数组`);
+      } else {
+        const cited = new Set();
+        const walk = (v) => {
+          if (typeof v === 'string') { for (const id of runsIn(v)) cited.add(id); return; }
+          if (Array.isArray(v)) { for (const x of v) walk(x); return; }
+          if (v !== null && typeof v === 'object') for (const x of Object.values(v)) walk(x);
+        };
+        walk(fx);
+        for (const id of [...cited].sort()) {
+          if (!declaredRuns.includes(id)) {
+            fail(`⑲ \`${n}\` 的正文引用了 \`run ${id}\`，但它**不在** \`evidenceRuns\` 里 —— 出处清单与正文脱节`);
+          }
+        }
+        for (const id of [...declaredRuns].sort()) {
+          if (!cited.has(id)) {
+            fail(`⑲ \`${n}\` 的 \`evidenceRuns\` 里有 \`${id}\`，但正文**一处也没引用** —— 化石条目`);
+          }
+        }
+      }
+    }
+    for (const key of ['knownFutureMigrations', 'knownRemainingWarnings']) {
+      const arr = fx[key];
+      if (arr === undefined) continue;
+      if (!Array.isArray(arr)) { fail(`⑲ \`${n}\` 的 \`${key}\` 必须是数组`); continue; }
+      arr.forEach((e, i) => {
+        for (const f of ['what', 'observedIn', 'todo']) {
+          if (typeof e?.[f] !== 'string' || e[f].trim() === '') {
+            fail(`⑲ \`${n}\` 的 \`${key}[${i}]\` 缺 \`${f}\`（或为空）—— 登记的条目必须能独立读懂`);
+          }
+        }
+      });
+    }
+    if (Array.isArray(fx.actions)) {
+      fx.actions.forEach((a, i) => {
+        if (typeof a?.note !== 'string') {
+          fail(`⑲ \`${n}\` 的 \`actions[${i}]\` 缺 \`note\`（字符串，可为空）—— 形状必须**统一**，`
+            + '否则读者无法从形状判断「这个字段是真值源还是装饰」');
+        }
+      });
+    }
+  }
+
+  // 防空转：**覆盖型**（夹具增删时须一并复核）
+  const FIXTURE_BASELINE = 7; // [覆盖型] 基线 7
+  if (names.length < FIXTURE_BASELINE) {
+    fail(`⑲ 只扫描到 ${names.length} 份夹具（[覆盖型] 基线 ${FIXTURE_BASELINE}）`
+      + ' —— 扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** runsIn）
+  if (runsIn('CI run 38035994927 日志点名 checkout@v4').join() !== '38035994927') {
+    fail('⑲ canary 失效：`run <id>` 未被提取');
+  }
+  if (runsIn('上游已发 action-v1.0.0（2026-06-29）').length !== 0) {
+    fail('⑲ canary **过宽**：版本号被当成了 run id');
+  }
+  if (runsIn('运行 38035994927 次').length !== 0) {
+    fail('⑲ canary **过宽**：没有 `run` 前缀的数字被提取');
+  }
+
+  const withContract = Object.keys(ENTRY_CONTRACT).length;
+  console.log(`Release gate: 夹具字段契约 —— ${names.length} 份夹具的顶层键已双向锁定`
+    + `（其中 ${withContract} 份细到条目键）；出处 \`run <id>\` 与 \`evidenceRuns\` 双向一致；`
+    + '两张「已知 / 待办」登记表条目形状齐备。'
+    + '⚠️ 其余夹具的**条目键**契约 = 已登记后续项（本节不假装覆盖）。');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
