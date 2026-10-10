@@ -179,6 +179,84 @@ if (!existsSync(manifestPath)) {
   fail('tests/benchmark/screenshots/window-chrome-manifest.json 缺失（P2-2.8 归档状态）');
 }
 
+// ── 孤儿证据棘轮：`tests/benchmark/screenshots/` 的每个文件都必须**有人引用**（2026-10-10，审计 §4.261）──
+// 【为什么】该目录是**被跟踪的证据归档**（ADR-0029 Q6=F1 之后 `tests/visual/actual/` 不再跟踪，
+//   这里仍跟踪，并由 `window-chrome-manifest.json` 登记三平台状态）。但**没有任何东西在守「有没有孤儿」**——
+//   实测（本轮新透镜「孤儿证据」）：5 个 PNG 里 **1 个无任何文档 / 脚本引用**
+//   （`b3-2-newsprint-real.png`：528 KB、2026-08-21、该目录**最老**；其余三个 `b3-2-*.png`
+//   由 `tests/e2e/theme-verify.mjs` **生成** ⇒ 被引用；`p2-8-*` 被 manifest 列出 ⇒ 被引用）。
+// 【判据】该目录的每个文件（`window-chrome-manifest.json` 自身除外）必须满足三者之一：
+//   ① 出现在**消费者文本**里（manifest 的 `file` 字段 / 产出脚本源码 / `docs/qualification/*.md`）；
+//   ② 登记进 `SCREENSHOT_ORPHAN_EXEMPT`（**逐条给理由**）；
+//   ③ —— 无第三支：既没消费者又没登记 ⇒ **报错**。
+//   ⚠️ **范围如实声明：不覆盖 `tests/visual/golden/`** —— 那里的基线名由 `golden-path.mjs` 的
+//     `goldenFile()` **按平台派生**（`<name>-golden.${tag}.json`）⇒ 字面文件名**本就不会出现**
+//     （实测 2 处假阳性：`scenes-golden.windows.json` / `sidebar-golden.windows.json` 都是**在用**的基线）。
+//     那类目录要另按「构造规则」判，**不在本判据内**。
+{
+  const SHOT_DIR = 'tests/benchmark/screenshots';
+  const SHOT_MANIFEST = 'window-chrome-manifest.json';
+  // 消费者文本 = manifest（`file` 字段）+ 两个产出脚本 + `docs/qualification/` 下的记录
+  //   ⚠️ **不用 walk(root)**（§4.234：会扫到本地独有文件 ⇒ 本地红 CI 绿）——
+  //     这里只读**具名文件 + 一个受限目录**，扫描面本身是可复核的。
+  const consumerFiles = [
+    `${SHOT_DIR}/${SHOT_MANIFEST}`,
+    'tests/e2e/theme-verify.mjs',
+    'tests/visual/capture-window-chrome.mjs',
+    ...readdirSync(resolve(root, 'docs/qualification')).filter((n) => n.endsWith('.md')).map((n) => `docs/qualification/${n}`),
+  ];
+  const consumerSrc = consumerFiles.map((p) => read(p)).join('\n');
+  // 例外表：**逐条给理由**（判定与 canary **共用**本表）
+  const SCREENSHOT_ORPHAN_EXEMPT = new Map([
+    ['b3-2-newsprint-real.png',
+      '2026-08-21 的**手工对照截图**（该目录最老，也是唯一 528 KB 的整屏图；其余 `b3-2-*.png` 由 '
+      + '`tests/e2e/theme-verify.mjs` 生成）—— ⚠️ **它不在任何文档 / 脚本 / manifest 里**，'
+      + '保留理由仅「可能是当时真实渲染的唯一留档」；**若确认无用可直接删除**（git 可恢复）'],
+  ]);
+  const shots = readdirSync(resolve(root, SHOT_DIR)).filter((n) => n !== SHOT_MANIFEST).sort();
+  if (shots.length === 0) throw new Error(`${SHOT_DIR} 解析出 0 个文件 —— 判据锚点漂移`);
+  const isReferenced = (name) => consumerSrc.includes(name);
+  /** 判定与 canary **共用**：该文件是否被例外表豁免（`table` 可注入构造样本）。 */
+  const isExempt = (name, table = SCREENSHOT_ORPHAN_EXEMPT) => table.has(name);
+  for (const name of shots) {
+    if (isExempt(name)) continue;
+    if (isReferenced(name)) continue;
+    fail(`${SHOT_DIR}/${name} 是**孤儿证据**：manifest 没列它、产出脚本没写它、`
+      + '`docs/qualification/` 也没提到它 —— 证据要么**补登记**（谁生成它 / 它支持哪条结论），'
+      + '要么**删除**；确要保留请登记进 `SCREENSHOT_ORPHAN_EXEMPT` 并写明理由');
+  }
+  // 例外表**双向**：登记的条目必须**确实存在**（否则是过期例外 ⇒ 应删）
+  for (const [name, why] of SCREENSHOT_ORPHAN_EXEMPT) {
+    if (!shots.includes(name)) {
+      fail(`SCREENSHOT_ORPHAN_EXEMPT 登记了 \`${name}\`，但该文件**已不在** ${SHOT_DIR}/`
+        + `（原登记理由：${why}）—— 请删除该例外条目`);
+    }
+  }
+  // 防空转：目录被削空会让本判据**空转**（立此判据时基线 5 个 PNG，下限 3）
+  if (shots.length < 3) {
+    fail(`${SHOT_DIR} 只有 ${shots.length} 个文件（下限 3 = 立此判据时的基线 5 − 余量）`
+      + ' —— 目录被削空会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** isReferenced / isExempt）
+  //   ⚠️ 例外表那两条必须用**构造样本** —— 注入验证实测：写成 `SCREENSHOT_ORPHAN_EXEMPT.has('<真实文件名>')`
+  //     时，「条目被改名」会**同时**报「canary 失效」⇒ 把「数据坏了」误报成「判据坏了」
+  //     （同族 `PITFALLS §4.375`：**canary 不得依赖被检数据本身**）。
+  if (!isReferenced('p2-8-window-chrome-macos.png')) {
+    fail('孤儿证据护栏 canary 失效：manifest 里**确实列出**的文件未被判为「有消费者」');
+  }
+  if (isReferenced('definitely-not-referenced-anywhere.png')) {
+    fail('孤儿证据护栏**过宽**：没有任何消费者的名字被判为「有消费者」（判据已退化成空真）');
+  }
+  if (!isExempt('x.png', new Map([['x.png', 'r']]))) {
+    fail('孤儿证据护栏 canary 失效：例外表未生效（登记过的条目仍会被报）');
+  }
+  if (isExempt('x.png', new Map())) {
+    fail('孤儿证据护栏**过宽**：空例外表却把条目判为已豁免');
+  }
+  console.log(`Visual golden: 截图归档孤儿检查 —— ${shots.length} 个文件，`
+    + `例外 ${SCREENSHOT_ORPHAN_EXEMPT.size} 个（消费者文本 ${consumerFiles.length} 份）`);
+}
+
 // ── drift canary：护栏必须能抓住契约漂移 ─────────────────────────────────
 if (existsSync(resolve(root, scriptPath))) {
   const drifted = read(scriptPath).replace('expectedPaddingTop: 56', 'expectedPaddingTop: 2');
