@@ -504,7 +504,10 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
 // 【判据】① 根 `package.json` 必须有 `packageManager`，且形如 `pnpm@<精确 x.y.z>`（corepack 要求精确）；
 //   ② 三份 workflow 里**不得**再出现 pnpm action 的 `version:` 输入（副本会漂 ⇒ 真值源必须唯一）。
 //   ⚠️ **改流水线本机验不了行为**（本仓纪律）：本条只锁**结构**（「有没有副本」/「真值源在不在」），
-//     **不声称**「action 一定会读到 `packageManager`」—— 那由下一次 CI 的 setup 步骤验证。
+//     **不声称**「action 一定会读到 `packageManager`」。
+//     ✅ **该行为已由 CI 实测确认**（2026-10-10，run 38013593360，8/8 全绿）：删掉副本后日志里
+//       `Run pnpm/action-setup@v4   + pnpm 11.7.0` / `Install   Done in 5.5s using pnpm v11.7.0`
+//       ⇒ 确实从 `packageManager` 解析出 `11.7.0`（读不到会**响亮失败**，不是静默）。见审计 §4.264。
 {
   const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/release.yml', '.github/workflows/runtime-qualification.yml'];
   /** 判定与 canary **共用**：该行是不是 pnpm action 的 `version:` 输入（回看 5 行找 `pnpm/action-setup`）。 */
