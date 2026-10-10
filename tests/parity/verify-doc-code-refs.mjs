@@ -3465,7 +3465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 259; // 2026-10-10 加 §4.259 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 260; // 2026-10-10 加 §4.260 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3567,6 +3567,96 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   }
   console.log(`Doc code refs: DOC_GLOBS 扫描面 —— ${DOC_GLOBS.length} 个目录**均非空**，`
     + `共 ${scanned} 份 .md（地板 ${DOC_FLOOR}）`);
+}
+
+// ── ㊷ 入口脚本里不得有**只出现在声明处**的顶层 `const` / `function`（死代码）（2026-10-10，审计 §4.260）──
+// 【为什么】本仓有明文规则「**死代码要删**」，但**没有任何东西在守它**。实测（本轮新透镜「死代码」）：
+//   32 个入口脚本 / **3565** 个顶层声明（含缩进；只数行首是 783）里 **2 处**真死代码：
+//   `verify-i18n-contract.mjs` 的 `esc`（「按字面量转义正则元字符」的助手，早已无人调用）与
+//   `verify-visual-golden.mjs` 的 `CAPTURE_PNGS`（「4 个配置必须被采集」那条断言**被有意削弱**时留下的）。
+// 【为什么这个谓词**只对入口脚本**成立】产品代码里的 `export function` 是**给别的文件用**的
+//   ⇒ 「在本文件里只出现一次」**不构成死代码**。实测：把谓词扩到全仓（剔 vendored）得 **255 处**，
+//   逐条看**几乎全是 export 给别处用的** ⇒ **该扩法不可用**（与 §4.227 / §4.376 同族：谓词只在
+//   特定范围内成立，**必须写明范围**）。
+//   ⇒ 适用范围 = `tests/parity/`（护栏）+ `tests/parity/tools/` + `tests/qualification/` 的**直接** `.mjs`
+//     —— 它们是**入口脚本**（不导出给别人用）。
+//   ⚠️ 但实测 **32 个里有 3 个含顶层 `export`**（`verify-command-id-refs` / `verify-tauri-command-contract` /
+//     `verify-upstream-manifest`）⇒ **导出的声明跳过**（否则那 3 个文件会假阳性）。
+// 【判据】上述文件里，**非导出**的顶层 `const` / `let` / `var` / `function` 名字，
+//   必须在**本文件内**至少出现 **2** 次（声明 + 至少一次引用）。
+//   ⚠️ **已知假阴性（如实声明，别当成「死代码已全部清除」）**：
+//     ① 名字只出现在**注释**里 ⇒ 计数 ≥ 2 ⇒ **漏报**；
+//     ② **多声明式**（`const a = 1, b = 2;`）只取**第一个**名字 ⇒ 后面的名字不被检查；
+//     ③ 通过 `eval` / 动态取名的引用不会被计入（护栏里无此形态）。
+{
+  const ENTRY_DIRS = ['tests/parity', 'tests/parity/tools', 'tests/qualification'];
+  const entryFiles = committedFiles()
+    .filter((f) => f.endsWith('.mjs') && ENTRY_DIRS.some((d) => f.startsWith(`${d}/`) && !f.slice(d.length + 1).includes('/')))
+    .sort();
+  if (entryFiles.length === 0) throw new Error('死代码判据的扫描面为空 —— 锚点漂移');
+  // 判定与 canary **共用**本谓词：`[export ](const|let|var|function) <name>`
+  const DEAD_DECL = /^(export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=|^(export\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/;
+  const isExported = (line) => /^export\s/.test(line);
+  /** 该名字在本文件里出现的次数（词边界）。判定与 canary **共用**。 */
+  const countIn = (src, name) => {
+    const re = new RegExp(`(?<![\\w$])${name.replace(/\$/g, '\\$')}(?![\\w$])`, 'g');
+    return src.split('\n').reduce((acc, l) => acc + (l.match(re) ?? []).length, 0);
+  };
+  let declared = 0;
+  let skippedExported = 0;
+  const dead = [];
+  for (const rel of entryFiles) {
+    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    src.split('\n').forEach((line, i) => {
+      const m = DEAD_DECL.exec(line.trim());
+      if (m === null) return;
+      declared += 1;
+      if (isExported(line.trim())) { skippedExported += 1; return; }
+      const name = m[2] ?? m[4];
+      if (countIn(src, name) === 1) dead.push(`${rel}:${i + 1} \`${name}\``);
+    });
+  }
+  for (const d of dead) {
+    fail(`入口脚本里有**死代码**（只出现在声明处）：${d}`
+      + ' —— 本仓规则「死代码要删」；请删掉它（若是**给读者看的示例**，请改成注释而不是真声明）');
+  }
+  // 防空转：扫描面 / 谓词漂移会让本判据**空转**（立此判据时基线 **3565** 个顶层声明，下限 3000）
+  //   ⚠️ 计数口径：本判据对每行先 `trim()` ⇒ **含块内缩进的声明**。
+  //     （只数**行首**声明是 **783** —— 两个都对，差别在口径；首版注释误写了 783，被注入验证注 C 抓出。）
+  if (declared < 3000) {
+    fail(`只解析出 ${declared} 个顶层声明（下限 3000 = 立此判据时的基线 3565 − 余量）`
+      + ' —— 扫描面或谓词漂移会让本判据**空转**');
+  }
+  // 「跳过导出」这一支的**活性证据**（立此判据时基线 12）—— 没有它，那 3 个带 export 的文件
+  //   会**静默**回到假阳性（或反之：`isExported` 写坏 ⇒ 全部假阳性而没人知道）
+  if (skippedExported < 5) {
+    fail(`只跳过 ${skippedExported} 个**导出**声明（下限 5 = 立此判据时的基线 12 − 余量）`
+      + ' —— `isExported` 或扫描面漂移会让「跳过导出」这一支失效');
+  }
+  // canary：四向（构造样本；与判定**共用** DEAD_DECL / countIn / isExported）
+  const S_ONCE = 'const fooDead = 1;\nconsole.log(fooDead);\n';
+  const S_TWICE = 'const fooLive = 1;\nconsole.log(fooLive, fooLive);\n';
+  const S_EXPORTED = 'export const fooExported = 1;\n';
+  if (countIn(S_ONCE, 'fooDead') !== 2) {
+    fail('死代码判据 canary 失效：计数谓词不准（声明 + 1 次引用应为 2）');
+  }
+  if (countIn(S_EXPORTED, 'fooExported') !== 1) {
+    fail('死代码判据 canary 失效：导出声明的计数不准');
+  }
+  if (!isExported('export const x = 1;') || isExported('const x = 1;')) {
+    fail('死代码判据 canary 失效：`isExported` 不能区分导出 / 非导出');
+  }
+  if (DEAD_DECL.exec('const a = 1;')?.[2] !== 'a' || DEAD_DECL.exec('function b() {')?.[4] !== 'b') {
+    fail('死代码判据 canary 失效：声明形态（const / function）未被正确解析');
+  }
+  if (DEAD_DECL.exec('  const indented = 1;') !== null) {
+    fail('死代码判据 canary 失效：谓词是**行首锚定**的，调用方必须先 `trim()`');
+  }
+  if (countIn(S_TWICE, 'fooLive') !== 3) {
+    fail('死代码判据 canary 失效：多次引用未被计入');
+  }
+  console.log(`Doc code refs: 入口脚本死代码 —— ${entryFiles.length} 个文件 / ${declared} 个顶层声明`
+    + `（跳过导出 ${skippedExported} 个），只出现在声明处的 ${dead.length} 个`);
 }
 // ── `docs/architecture/editor-core.md` 复述的「N 个主题」必须 == 上游主题目录的文件数（2026-10-09，审计 §4.196）──
 // 【为什么】该文档的目录树写「`themes/`  # **16 个主题**（github-light 等）」——

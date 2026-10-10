@@ -86,8 +86,6 @@ const sourceFiles = allFiles.filter(
 
 /** 只剥**整行** `//` 注释（行尾 `//` 可能落在字符串里，剥了会误伤）。 */
 const stripWholeLineComments = (code) => code.split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
-/** 锚点按字面量匹配（键名含 `.`）。 */
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ── A. `t('<字面量>')` 必须可解析 ─────────────────────────────────────────
 const T_LITERAL = /\bt\(\s*'([a-zA-Z][\w.]*\.[\w.]+)'/g;

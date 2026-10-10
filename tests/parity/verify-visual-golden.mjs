@@ -129,7 +129,11 @@ if (!existsSync(goldenPath)) {
 // 被台账 `P0-LAYOUT-002` 引用为证据）承担，**那一处仍被跟踪** ✓。
 {
   const VISUAL_SCRIPT = 'tests/visual/visual-golden.mjs';
-  const CAPTURE_PNGS = ['win-900x600', 'win-1200x800', 'win-1440x900', 'zoom-200'];
+  // ⚠️ 2026-10-10（审计 §4.260）：这里原有 `const CAPTURE_PNGS = ['win-900x600', …]`，**从未被引用**
+  //   —— 它是「4 个配置必须被采集」那条断言**被有意削弱**（见上方注释：跟踪已取消，代价已声明）时
+  //   留下的**死代码**。本块的断言只有 `writesActualPng` + `ignoresActualDir` 两条。
+  //   ⇒ 已删除（本仓规则「死代码要删」）。**配置清单的真值源在采集脚本里**（`tests/visual/visual-golden.mjs`），
+  //     不要在本文件里再放一份副本（副本会漂）。
   if (!existsSync(resolve(root, VISUAL_SCRIPT))) {
     fail(`缺少 ${VISUAL_SCRIPT}（视觉采集脚本）`);
   } else {
