@@ -16398,6 +16398,66 @@ Release gate: 仓库卫生 —— 换行符政策 **已生效**
 
 ⇒ 同族「只锁了一半」累计 **第 94 次**（§4.170–§4.265）。
 
+## 4.267 「**各包 tsconfig 一致性**」透镜：3 个**质量检查**只在 3/15 份里 ⇒ 对齐到最严（0 代价）（2026-10-10）
+
+### 一、实测：15 份**独立副本**，21 个 `compilerOptions` 键
+
+**没有根 tsconfig**；`packages/*/tsconfig.json`（14）+ `apps/desktop/tsconfig.json`（1）
+= **15 份独立副本**，**全部 `extends=（无）`** ⇒ **同一配置 15 处维护**（与 §4.264 的 pnpm 副本**同族**）。
+
+逐键比对 21 个 `compilerOptions`：
+
+| 类别 | 键 | 结论 |
+|---|---|---|
+| **完全一致**（5） | `strict` · `target` · `module` · `moduleResolution` · `skipLibCheck` | ✅ |
+| **`target: ES2022` 下的 no-op**（2） | `useDefineForClassFields`（ES2022 默认即 true）· `downlevelIteration`（只在 target < ES2015 有意义） | **无后果** ⇒ 记录 |
+| **无后果的不一致**（1） | `lib` 的 `DOM.Iterable` 只在 **1/15**（app） | **实测每一处 DOM 集合迭代都包了 `Array.from(...)`**（13 处）⇒ **哪里都不需要它** ⇒ 记录 |
+| **⚠️ 缺检查**（3） | `noUnusedLocals` / `noUnusedParameters` 只在 **3/15**；`noFallthroughCasesInSwitch` 只在 **1/15** | **真缺口**（见下） |
+| 有语义、当前无问题（3） | `esModuleInterop` 3/15 · `isolatedModules` 2/15 · `resolveJsonModule` 1/15 | 记录，**不锁** |
+
+### 二、真缺口：**缺的是检查，不是代码**
+
+`noUnusedLocals` / `noUnusedParameters` 只在 **3/15** 份里 ⇒ **12 个包**的「未使用的局部变量 / 参数」
+**不会被 typecheck 抓到**；`noFallthroughCasesInSwitch` 只在 **1/15** ⇒ **14 个包**的「switch 落空」同样不被抓。
+⇒ 与本仓明文规则「**死代码要删**」**同族**（§4.260 只查了**顶层声明**，**没查局部变量**）。
+
+### 三、处置：**对齐到最严**（实测**代价为 0**）
+
+**逐包实测代价**（CLI 注入，不改文件）：14 个包 `tsc --noEmit --noUnusedLocals --noUnusedParameters
+--noFallthroughCasesInSwitch` ⇒ **0 个新错误** ✅ ⇒ **对齐是免费的**。
+
+⇒ 把这三个键加入**全部 15 份** tsconfig。**差异形态：纯插入 38 行 / 0 重排**
+（`git diff --numstat` 全是 `3/0` 或 `1/0`；在 `"strict": true,` 之后按**各文件自己的缩进**插入）。
+
+⚠️ **为什么只锁这 3 个**：它们是**质量检查**（不开 = 静默漏检）。
+其余选项或**按包性质有意不同**（`jsx` / `outDir` / `rootDir` / `declaration` / `noEmit`：只有 `editor-engine`
+emit）、或是 **no-op**、或**有语义但当前无问题** ⇒ **只记录，不锁**（避免造噪声判据）。
+
+### 四、判据 **C7**（`verify-package-conventions.mjs`）
+
+这三个键必须在**所有** tsconfig 里为 `true` + 防空转下限（份数 ≥ **12**，立此判据时基线 **15**）
++ canary **两向**（三项齐全 ⇒ 合规；**缺两项 ⇒ 必须被判不合规**）。
+
+**注入验证（三向，均还原后 EXIT=0）**：
+
+| 注入 | 结果 |
+|---|---|
+| 删掉 `packages/themes/tsconfig.json` 的 `noUnusedLocals` | ✅ 「未开启严格检查：`noUnusedLocals = null`」 |
+| 把该键改成 `false` | ✅ 「未开启严格检查：`noUnusedLocals = false`」 |
+| 把 `strictOk` 改成恒真（破坏 canary） | ✅ 「C7 canary **过宽**：**缺两项**的样本被判为合规」 |
+
+### 五、⚠️ 顺带查明一处「**本机红 / CI 绿**」的环境类分歧（**不是缺陷**）
+
+本机 `packages/desktop-ui` 的 `tsc --noEmit` 报 **11 个 `TS2688`**（`Cannot find type definition file
+for 'babel__core'` 等）。查明：`packages/desktop-ui/node_modules/@types/` 下的
+`babel__core` / `babel__generator` / `jsdom` / `node` / `tough-cookie` / `yargs` 等是**空目录**
+（而 `jest` / `react` / `react-dom` 是**符号链接**）⇒ **本机 `node_modules` 的损坏产物**
+（2026-09-05 的残留）；**CI 每次 `pnpm install --frozen-lockfile` 新装 ⇒ 无此问题**。
+⇒ 这解释了「CI 一直绿而本机这里红」，**与本次改动无关**（加不加那 3 个 flag，都是同样 11 个 TS2688）。
+⚠️ **别把它记成仓库缺陷**；但它是「本机判据读数要打折」的一个实例。
+
+⇒ 同族「只锁了一半」累计 **第 95 次**（§4.170–§4.266）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

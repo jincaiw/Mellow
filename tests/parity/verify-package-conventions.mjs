@@ -406,6 +406,49 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     + `${refs} 处裸引用，未声明 ${undeclared.length} 处（**不含 vendored \`CoreEditor\`**）`);
 }
 
+// ── C7 三个**严格检查**必须在**所有** tsconfig 里开启（2026-10-10，审计 §4.267）────────────────
+// 【为什么】实测：`noUnusedLocals` / `noUnusedParameters` 只在 **3/15** 份 tsconfig 里、
+//   `noFallthroughCasesInSwitch` 只在 **1/15** 份里 ⇒ **12 个包的「未使用的局部变量 / 参数」**、
+//   **14 个包的「switch 落空」**都**不会被 typecheck 抓到**（与本仓「死代码要删」**同族**：
+//   **缺的是检查，不是代码**）。而 15 份 tsconfig 是**独立副本**（**没有** `extends`）⇒ 必然漂移。
+// 【处置】**对齐到最严**（实测代价 **0 个新错误**：逐包 `tsc --noEmit` 全绿）+ 本判据锁住「不得漂回去」。
+// 【判据】`packages/*/tsconfig.json` + `apps/desktop/tsconfig.json` 的这三个选项**必须为 `true`**。
+//   ⚠️ **只锁这 3 个**（**质量检查**）；其余选项（`jsx` / `outDir` / `lib` / `esModuleInterop` /
+//     `isolatedModules` / `resolveJsonModule` …）是**按包性质有意不同**或**在 `target: ES2022` 下是
+//     no-op** ⇒ **不锁**（逐条分诊见审计 §4.267）。
+{
+  const STRICT_KEYS = ['noUnusedLocals', 'noUnusedParameters', 'noFallthroughCasesInSwitch'];
+  const tsconfigs = [
+    ...readdirSync(resolve(root, 'packages')).map((d) => `packages/${d}/tsconfig.json`),
+    'apps/desktop/tsconfig.json',
+  ].filter((p) => existsSync(resolve(root, p)));
+  // 防空转：立此判据时基线 15 份（14 个包 + app），下限 12
+  if (tsconfigs.length < 12) {
+    fail(`C7 只找到 ${tsconfigs.length} 份 tsconfig（下限 12 = 立此判据时的基线 15 − 余量）—— 扫描面萎缩`);
+  }
+  /** 判定与 canary **共用**：三项是否齐全为 `true`。 */
+  const strictOk = (co) => STRICT_KEYS.every((k) => co[k] === true);
+  for (const p of tsconfigs) {
+    let co = null;
+    try { co = JSON.parse(readFileSync(resolve(root, p), 'utf8')).compilerOptions ?? {}; } catch { /* 下面报错 */ }
+    if (co === null) { fail(`C7 无法解析 \`${p}\`（JSON 坏了？）`); continue; }
+    if (strictOk(co)) continue;
+    const bad = STRICT_KEYS.filter((k) => co[k] !== true)
+      .map((k) => `${k} = ${JSON.stringify(co[k] ?? null)}`).join(' / ');
+    fail(`${p} 未开启严格检查：${bad}（应为 \`true\`）—— 这三个是**质量检查**：不开就等于`
+      + '「未使用的局部变量 / 参数 / switch 落空」**不会被发现**（实测曾有 12 / 14 个包没开）');
+  }
+  // canary：两向（构造样本；与判定**共用** strictOk）
+  if (!strictOk({ noUnusedLocals: true, noUnusedParameters: true, noFallthroughCasesInSwitch: true })) {
+    fail('C7 canary 失效：**三项齐全**的样本未被判为合规');
+  }
+  if (strictOk({ noUnusedLocals: true })) {
+    fail('C7 canary **过宽**：**缺两项**的样本被判为合规');
+  }
+  console.log(`Package conventions: 严格检查 —— ${tsconfigs.length} 份 tsconfig 均已开启 `
+    + `${STRICT_KEYS.join(' / ')}`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Package convention violations (PRD §117.1):\n  ${errors.join('\n  ')}`);
 }
