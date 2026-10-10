@@ -16294,7 +16294,7 @@ canary **两向**（用 git 的 `check-ignore`，样本取自**本仓稳定的�
 
 | 读数 | 为什么不是缺陷 |
 |---|---|
-| 8 个 action 的 `@vN`（`checkout@v4` / `setup-node@v4` / `upload-artifact@v4` …） | 实测**每个 action 只有一个版本** ✅ ⇒ 无漂移 |
+| 8 个 action 的 `@vN`（`checkout@v4` / `setup-node@v4` / `upload-artifact@v4` …） | 实测**每个 action 只有一个版本** ✅ ⇒ 无漂移 —— ⚠️ **只回答了「一不一致」，没回答「还活着吗」**：2026-10-10 复查（审计 §4.283）发现其中 **5 个停在 `node20`**，而 runner 已于 **2026-09-23 移除 Node 20** ⇒ 当时这个「✅」**只覆盖了半条轴** |
 | `runs-on` 3 个标签（`ubuntu-latest` × 10 / `windows-latest` × 3 / `macos-latest` × 3） | 跨平台项目**本就该有多个 runner**；`-latest` 是**浮动标签**，但**没有**「固定 runner 版本」的声明式真值源 ⇒ 无可漂之物 |
 | `dtolnay/rust-toolchain@stable` × **7** | 仓库里**没有** `rust-toolchain.toml`（实测 0 个）⇒ **Rust 版本没有声明式真值源** ⇒ 无可漂之物 |
 
@@ -17623,6 +17623,145 @@ GitHub 的**默认 job 超时是 360 min** ⇒ 一个**卡住**的 job 要 **6 �
 3. 无状态码 / 策略 / 产品代码改动。
 
 ⇒ 同族「只锁了一半」累计 **第 110 次**（§4.170–§4.281）。
+
+## 4.283 「CI action 的**运行时**」是第二条无人登记的轴：5 个 action 跑在**已被移除**的 Node 20 上（2026-10-10）
+
+### 一、透镜来源：刚核完 CI 全绿时，日志里刷屏的那一行
+
+本轮「继续」的收尾是核对 CI 8/8 全绿。同一份日志里有 **36 条**：
+
+> `! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, pnpm/action-setup@v4.`
+
+另有一条 `ubuntu-latest` 将于 **2026-10-19** 起迁移到 Ubuntu 26 的提示。
+
+### 二、为什么这是**硬缺陷**而不是「提示」
+
+GitHub changelog 原文（该页 2026-08-25 的编辑注）：
+
+> *Editor's note (August 25, 2026): Updated the Node20 removal date to September 23rd, 2026.*
+
+即 **Node 20 已于 2026-09-23 从 runner 移除**（本轮距该日 **17 天**）。告警里「being forced to run on
+Node.js 24」正是「runner 已不提供 Node 20、只能强制改跑 24」的表述 ⇒ 这些 action 正在**它们并未
+声明支持的运行时**上执行。而「豁免开关」`ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION` 按同一页说明
+**只到 2026-09-23 为止** ⇒ 已经不存在。
+
+### 三、取证：逐个 action 读 `action.yml` 的 `runs.using`
+
+| action | 本仓 pin | 该 pin 实测运行时 | 首个声明 node24 的主版本 | 已知最新 |
+|---|---|---|---|---|
+| `actions/checkout` | `v4` | **node20** | `v5` | `v7` |
+| `actions/setup-node` | `v4` | **node20** | `v5` | `v7` |
+| `pnpm/action-setup` | `v4` | **node20** | `v5` | `v6` |
+| `actions/upload-artifact` | `v4` | **node20** | `v6` | `v7` |
+| `actions/download-artifact` | `v4` | **node20** | `v7` | `v8` |
+| `Swatinem/rust-cache` | `v2` | node24 | — | `v2` |
+| `tauri-apps/tauri-action` | `v0` | node24 | — | `v1` |
+| `dtolnay/rust-toolchain` | `stable` | 非 JS（composite） | — | `v1` |
+
+⚠️ **两条读数纪律**（本轮的代价都在这里）：
+
+1. **CI 告警清单 ≠ 真实 node20 清单**：`actions/upload-artifact@v4` 的 `action.yml` 实测就是 `node20`，
+   却**不在任何一条告警里**（原因未查证，如实记录，不编造根因）⇒ **只按告警清单去修会漏掉它**。
+2. 判「某个主版本是不是 node24」**必须读 `action.yml`**：release notes 的措辞会骗人 ——
+   `upload-artifact@v5` 的标题写着「supports Node `v24.x`」，而它的 `runs.using` **仍是 `node20`**。
+
+### 四、同一条轴**此前查过** —— 但谓词问错了问题
+
+审计 §4.264「三、三条『没有真值源』的读数」第 1 行当时写的是：
+
+> `8 个 action 的 @vN（checkout@v4 / setup-node@v4 / upload-artifact@v4 …）` → 结论「实测**每个 action 只有一个版本** ✅ ⇒ 无漂移」
+
+那次透镜是「**版本漂移**」，问的是「**各 job 之间一不一致**」，答案是「一致」——于是这条轴看起来
+**已经被覆盖过了**。**但「一致」≠「还活着」**：一致地停在 `node20` 也是一种「一致」。
+⇒ 同族「只锁了一半」的**又一种形态**：不是漏了样本，是**问错了问题**（谓词覆盖不到真正的风险维度）。
+⇒ 已在该行**追加时间上下文**（保留原结论与数字，只补一句「当时只覆盖了半条轴」）。
+
+### 五、处置
+
+**A. 升级**（只跳到「首个声明 node24 的主版本」，**不**跳到最新 —— 跳版破坏性逐条读 release notes 核过）：
+
+| action | 跳到 | 跳版破坏性（据 release notes） |
+|---|---|---|
+| `actions/checkout` | `v5` | 无（全文只有「Update actions checkout to use node 24」一项） |
+| `pnpm/action-setup` | `v5` | 无（全文一句「Updated the action to use Node.js 24.」） |
+| `actions/upload-artifact` | `v6` | 无功能变化（v5 只是「preliminary support for Node.js 24」，v6 才默认 node24） |
+| `actions/download-artifact` | `v7` | v5 改了「按 **ID** 下载单个制品」的落点路径 —— **本仓只用 `name:`**，官方迁移指南明写「No Action Needed If: You download artifacts by name」 |
+| `actions/setup-node` | `v5` | **有**：新增「自动包管理器缓存」（见 C） |
+
+**B. 明确不升级的**：`tauri-apps/tauri-action@v0→v1` —— 发布路径的主版本跳变，本机无法验证
+（本仓纪律：改流水线本机验不了行为）⇒ **登记为待办，不自行改**。
+
+**C. 一次自我纠正：「不可达配置」**
+
+首版我给**全部 12 处** `setup-node` 都加了 `package-manager-cache: false`。读 v5 源码 `src/main.ts` 后
+发现语义是：
+
+```ts
+if (cache && isCacheFeatureAvailable()) {
+  await restoreCache(cache, cacheDependencyPath);
+} else if (resolvedPackageManager && packagemanagercache) {
+  await restoreCache(resolvedPackageManager, cacheDependencyPath);
+}
+```
+
+⇒ **显式 `cache:` 优先**，`package-manager-cache` 只关**自动**那条分支。而本仓 12 处里
+**10 处本来就显式写了 `cache: pnpm`** ⇒ 那 10 处加本键是**不可达配置**（走不到 `else if`）⇒ 已删，
+只留真正生效的 2 处（`ci.yml` 的 `parity-guard` / `windows-parity-guard`）。
+
+⚠️ 附带一条**读数教训**：我先前用 `grep -A 2` 看上下文就断言「12 处形态**完全一致**」——
+`-A 2` **看不到第 4 行**（那行正是 `cache: pnpm`）⇒ **读数强度没匹配结论强度**。
+最终把它暴露出来的是 **YAML 解析后的 `with` 字典**，不是我的 grep。
+
+**D. 真值源 + 判据**：新建 `tests/parity/fixtures/ci-actions.json`（8 条，**只存事实与理由、不存计数**）
++ `verify-release-gate.mjs` 判据 **⑱**（双向登记 / 禁浮动 ref + 例外表双向 / pin 主版本 ≥
+`minMajorForNode24` / 自述 `runtime` 不得为 node20 / `latestKnown` 不得比 pin 更旧 / 日期形态 /
+覆盖型下限 / 六向 canary）。
+
+### 六、注入验证
+
+| 注入 | 结果 |
+|---|---|
+| 把 `ci.yml` 的 `checkout@v5` 退回 `@v4` | ✅ 双向登记先抓：「`uses: actions/checkout@v4` **未登记**」 |
+| 新增一个未登记的 action（`actions/cache@v4`） | ✅ 同上 |
+| 删掉 fixture 里 `tauri-apps/tauri-action` 一条 | ✅ **正向**抓到：「`uses: tauri-apps/tauri-action@v0` **未登记**」 |
+| fixture 里新增一条 workflow 中不存在的 action | ✅ **反向**抓到：「登记了但 workflow 里**一处也没有**」 |
+| 把 `checkout` 的 `ref` 改成 `main`（浮动） | ✅ 「也不在 `floatingRefExceptions` 里」 |
+| 把 `minMajorForNode24` 从 5 改成 6 | ✅ 「< 该 action 声明 node24 的起始主版本」 |
+| 把 `runtime` 自述改成 `node20` | ✅ 「自述 runtime = node20」 |
+
+⚠️ 首版注入表**把第 3 条的期望串写成了反向消息** ⇒ 护栏确实红了、但先触发的是正向那条，
+于是被脚本判成「红了但不是本条」。**修正的是我的期望串，不是判据** —— 并因此补了第 4 条
+注入，让双向登记的**两半各自被验到**。（这正是本仓「`expect` 串必须逐字来自消息」那条纪律的现场代价。）
+
+### 七、被升级打断的既有判据（1 条，**响亮误报**）
+
+`verify-runtime-qualification-workflow.mjs` 的 checkout 落点正则写死了 `@v4` ⇒ 升级后**失配** ⇒
+`checkoutPath` 恒为 `''` ⇒ 三个 job 一次报出 **10 条假违规**。
+⚠️ 失败模式是**响亮误报**（**不是**静默通过），但代价同样是「升级 action 版本会莫名撞红一条无关判据」。
+⇒ 改 `@v\d+`（版本无关）+ 补一条**独立判定**：「找不到 checkout 步骤」与「checkout 落在仓库根」
+是两件事，混在一起时判据会把「找不到」读成「落在根」。
+
+### 八、改动清单
+
+1. 三份 workflow：`checkout` `v4→v5`（16 处）、`setup-node` `v4→v5`（12 处）、
+   `pnpm/action-setup` `v4→v5`（10 处）、`upload-artifact` `v4→v6`（7 处）、
+   `download-artifact` `v4→v7`（1 处）；`uses:` 总处数 **61 不变**。
+2. `setup-node` 中**无** `cache:` 的 2 处加 `package-manager-cache: false`（保持 v4 行为）。
+3. 新建 `tests/parity/fixtures/ci-actions.json`。
+4. `verify-release-gate.mjs`：新增判据 **⑱**。
+5. `verify-runtime-qualification-workflow.mjs`：checkout 正则版本无关 + 防空转判定。
+6. `verify-build-pipeline.mjs`：`@v4` 引用改为版本无关或 `@v5`（**CI 日志引文照录，不改写历史证据**）。
+7. 无状态码 / 策略 / 产品代码改动。
+
+### 九、本节**未**覆盖的（如实声明）
+
+- 「上游是否又发了新版」**离线判据无法知道** ⇒ 判据只守**自洽**，`latestKnown` 只做
+  「不得比 pin 更旧」的 sanity。
+- `runs-on: ubuntu-latest` → Ubuntu 26 迁移（2026-10-19 起）**本轮无动作**，
+  已登记在 fixture 的 `knownFutureMigrations`。
+- `tauri-apps/tauri-action@v0→v1` 未验证（见五-B）。
+
+⇒ 同族「只锁了一半」累计 **第 111 次**（§4.170–§4.282）。
 
 ## 五、本次审计做的改动（非策略性）
 

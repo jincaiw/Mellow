@@ -1,0 +1,112 @@
+{
+  "$comment": [
+    "CI action 的版本 / 运行时登记处（审计 §4.283）。",
+    "为什么需要它：`.nvmrc` 只管 **job 里跑的 Node**；action **自己声明的运行时**",
+    "（action.yml 的 runs.using）是**第二条完全独立的轴** —— 本仓 5 个 action 曾长期停在",
+    "node20，而 runner 已于 2026-09-23 移除 Node 20（GitHub changelog 2026-08-25 更新），",
+    "即它们一直在**未声明支持的运行时**上被强制运行。",
+    "判据（verify-release-gate.mjs ⑱）守：双向登记 / 禁浮动 ref / pin 主版本 ≥ minMajorForNode24 /",
+    "自述 runtime 不得为 node20 / latestKnown 主版本 ≥ pin。",
+    "⚠️ 本表**只存事实与理由，不存计数**（计数一律由判据现读派生，手写计数必然漂移）。",
+    "⚠️ `minMajorForNode24` / `latestKnown` 是**人工核实的事实**，会过期 ⇒ 每条带 checkedAt + evidence；",
+    "判据只守「自洽」，不守「上游是否又发了新版」（离线判据无法知道）。"
+  ],
+  "reviewedAt": "2026-10-10",
+  "evidenceRuns": ["38035994927"],
+  "actions": [
+    {
+      "action": "actions/checkout",
+      "ref": "v5",
+      "runtime": "node24",
+      "minMajorForNode24": 5,
+      "latestKnown": "v7",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref：v4=runs.using node20 / v5、v6、v7=node24。CI run 38035994927 日志点名 checkout@v4 被强制降级到 Node 24。v4→v5 的 release notes 只有『Update actions checkout to use node 24』一项 ⇒ 无功能破坏。",
+      "note": "仍落后最新 v7 两个主版本（v6/v7 的 release notes 未逐条读 ⇒ 不擅自跳）"
+    },
+    {
+      "action": "actions/setup-node",
+      "ref": "v5",
+      "runtime": "node24",
+      "minMajorForNode24": 5,
+      "latestKnown": "v7",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref：v4=node20 / v5、v6、v7=node24。CI run 38035994927 日志点名 setup-node@v4 被强制降级。v5 的 release notes 标注 Breaking Changes：新增『自动包管理器缓存』（packageManager 字段存在时自动开缓存）。",
+      "note": "⚠️ 已读 v5 源码 `src/main.ts` 定清语义：`if (cache && …) {…} else if (resolvedPackageManager && packagemanagercache) {…}` ⇒ **显式 `cache:` 优先**，`package-manager-cache` 只关**自动**那条分支。本仓 12 处 setup-node 里 **10 处已显式 `cache: pnpm`** ⇒ 那 10 处加本键是**不可达配置**，故只在剩下 2 处（ci.yml 的 parity-guard / windows-parity-guard）显式写 `false` 以保持 v4 行为。是否改用自动缓存 = 性能决策，未裁决。"
+    },
+    {
+      "action": "pnpm/action-setup",
+      "ref": "v5",
+      "runtime": "node24",
+      "minMajorForNode24": 5,
+      "latestKnown": "v6",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref：v4=node20 / v5、v6=node24。CI run 38035994927 日志点名 pnpm/action-setup@v4 被强制降级。v5.0.0 的 release notes 全文只有一句『Updated the action to use Node.js 24.』⇒ 无功能破坏。",
+      "note": "省略 version: 时仍读 package.json 的 packageManager（审计 §4.264 的判据不受影响）"
+    },
+    {
+      "action": "actions/upload-artifact",
+      "ref": "v6",
+      "runtime": "node24",
+      "minMajorForNode24": 6,
+      "latestKnown": "v7",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref：v4=node20 / v5=node20 / v6=node24 / v7=node24。⚠️ 它是**唯一一个「实测是 node20 但 CI 告警清单里没有它」**的 action ⇒ 只按告警清单修会漏掉它（本表存在的直接理由）。v6 的 release notes：v5 只是『preliminary support for Node.js 24』，v6 才默认 node24。",
+      "note": "跳 2 个主版本是必需的：v5 仍是 node20"
+    },
+    {
+      "action": "actions/download-artifact",
+      "ref": "v7",
+      "runtime": "node24",
+      "minMajorForNode24": 7,
+      "latestKnown": "v8",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref：v4/v5/v6=node20，v7/v8=node24。CI run 38035994927 日志点名 download-artifact@v4 被强制降级。v5.0.0 是 Breaking Change（『按 ID 下载单个制品』的落点路径变了）；本仓只用 name: 下载 ⇒ 官方迁移指南明写『No Action Needed If: You download artifacts by name』。",
+      "note": "⚠️ 该豁免的前提是「只用 name:」—— 一旦改用 artifact-ids: 必须重读 v5 的迁移指南"
+    },
+    {
+      "action": "Swatinem/rust-cache",
+      "ref": "v2",
+      "runtime": "node24",
+      "minMajorForNode24": 2,
+      "latestKnown": "v2",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref=v2：runs.using node24。CI run 38035994927 未告警。v2 即最新主版本（v2.9.2）。",
+      "note": ""
+    },
+    {
+      "action": "tauri-apps/tauri-action",
+      "ref": "v0",
+      "runtime": "node24",
+      "minMajorForNode24": 0,
+      "latestKnown": "v1",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref：v0、v1 均为 runs.using node24 ⇒ 无运行时缺陷。上游已发 action-v1.0.0（2026-06-29）。",
+      "note": "⚠️ 唯一一条『版本落后但**不擅自升**』：v0→v1 是发布路径的主版本跳变，本机无法验证 ⇒ 登记为待办，不自行改"
+    },
+    {
+      "action": "dtolnay/rust-toolchain",
+      "ref": "stable",
+      "runtime": "non-js",
+      "minMajorForNode24": null,
+      "latestKnown": "v1",
+      "checkedAt": "2026-10-10",
+      "evidence": "gh api 读 action.yml@ref=stable：runs.using composite（第 32 行）⇒ **非 JS action，无 Node 运行时**，不受 Node 20 弃用影响。",
+      "note": "官方 README 即要求 @stable 跟随 Rust stable；仓库无 rust-toolchain.toml 真值源（审计 §4.264 已登记）"
+    }
+  ],
+  "floatingRefExceptions": [
+    {
+      "action": "dtolnay/rust-toolchain",
+      "ref": "stable",
+      "reason": "非 JS action（runs.using composite）。官方用法就是 @stable 跟随 Rust stable 分支；固定成 @v1 会**失去**跟随 stable 的能力。仓库里没有 rust-toolchain.toml 作为声明式真值源（审计 §4.264 第 3 条已登记）⇒ 此处不引入副本。"
+    }
+  ],
+  "knownFutureMigrations": [
+    {
+      "what": "runs-on: ubuntu-latest",
+      "observedIn": "CI run 38035994927 日志：\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026\"",
+      "todo": "迁移窗口开启后复核 Tauri 的 Linux 系统依赖（webkit2gtk / libappindicator 等）是否仍满足；本轮**无动作**（尚未开始迁移）"
+    }
+  ]
+}

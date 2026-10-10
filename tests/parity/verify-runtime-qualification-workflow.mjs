@@ -61,8 +61,20 @@ if (!/Windows Source Fidelity gate/.test(workflow)
     const next = /\n  [a-z][a-z0-9-]*:\n/.exec(rest.slice(name.length + 4));
     const body = next === null ? rest : rest.slice(0, name.length + 4 + next.index);
     // 该 job 的 checkout 落点（缺省 = 仓库根）
-    const checkoutPath = (/uses: actions\/checkout@v4\n(?:[ \t]+with:\n)?(?:[ \t]+path:[ \t]*([^\n]+)\n)?/
-      .exec(body)?.[1] ?? '').trim();
+    // ⚠️ 版本号必须用 `@v\d+` 匹配。首版写死 `@v4`，2026-10-10 把 action 升到 v5（审计 §4.283）
+    //   时该正则**失配** ⇒ `checkoutPath` 恒为 '' ⇒ 本判据把每个 `working-directory: mellow`
+    //   都判成「与仓库根不一致」，**一次报出 10 条假违规**。失败模式是**响亮误报**（不是静默通过），
+    //   但代价同样是「升级 action 版本会莫名其妙撞红一条无关判据」⇒ 改成版本无关。
+    //   同时补一条防空转：**找不到 checkout 步骤**与「checkout 落在仓库根」是两件事，
+    //   混在一起时判据会把「找不到」读成「落在根」。
+    const checkoutMatch = /uses: actions\/checkout@v\d+\n(?:[ \t]+with:\n)?(?:[ \t]+path:[ \t]*([^\n]+)\n)?/
+      .exec(body);
+    if (checkoutMatch === null) {
+      problems.push(`${name} 里找不到 \`actions/checkout\` 步骤 —— 本判据的「checkout 落点」无从判定`
+        + '（⚠️ 必须用 `@v\\d+` 匹配版本：写死 `@v4` 会在升级 action 时失配，2026-10-10 实际发生过一次）');
+      continue;
+    }
+    const checkoutPath = (checkoutMatch[1] ?? '').trim();
     const where = checkoutPath === '' ? '<repo root>' : checkoutPath;
     for (const m of body.matchAll(/working-directory:[ \t]*([^\n]+)/g)) {
       const wd = m[1].trim();

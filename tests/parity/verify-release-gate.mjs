@@ -2776,6 +2776,168 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + `二进制 ${binFiles.length} 个（\`text: unset\`）/ 文本 ${textFiles.length} 个（\`text: auto\` + \`eol: lf\`）`);
 }
 
+// ── ⑱ CI action 的**运行时**必须登记，且不得退回已被 runner 移除的运行时（2026-10-10，审计 §4.283）──
+// 【为什么】判据 ⑯ 锁的 `.nvmrc` 只管 **job 里跑的 Node**；action **自己声明的运行时**
+//   （`action.yml` 的 `runs.using`）是**第二条完全独立的轴**，此前**没有任何登记处**。
+//   实测：本仓 5 个 action 停在 `node20`，而 runner 已于 **2026-09-23 移除 Node 20**
+//   （GitHub changelog「Deprecation of Node 20 on GitHub Actions runners」，2026-08-25 更新删除日期）
+//   ⇒ 它们一直在**未声明支持的运行时**上被强制运行。CI run 38035994927 里有 36 条
+//   `Node.js 20 is deprecated` 就是现场证据。
+//   ⚠️ 同一条轴**此前查过**，但当时只问了「各 job 之间的 `@vN` **一不一致**」，结论是
+//   「实测每个 action 只有一个版本 ✅ ⇒ 无漂移」（审计 §4.264 三、第 1 行）——
+//   **「一致」≠「还活着」**：那次谓词问的是「有没有漂移」，不是「这个版本还能不能跑」。
+//   这是同族「只锁了一半」的又一种形态：**问错了问题**，于是整条轴看起来已被覆盖。
+//   ⚠️ 另一条：**CI 告警清单 ≠ 真实 node20 清单** —— `actions/upload-artifact@v4` 经 `gh api`
+//   读 `action.yml` 实测也是 `node20`，却**不在**告警里（原因未查证，如实记录，不编造根因）
+//   ⇒ **只按告警清单去修会漏掉它**；这也是本判据读登记表、而不读 CI 日志的原因。
+// 【真值源】tests/parity/fixtures/ci-actions.json（只存事实与理由，**不存计数**）。
+// 【守什么】双向登记 + 禁浮动 ref（例外表**双向**）+ pin 主版本 ≥ `minMajorForNode24`
+//   + 自述 runtime 不得为 node20 + `latestKnown` 不得比 pin 更旧。
+//   **不守**「上游是否又发了新版」—— 离线判据无法知道（这是本节的已知边界，不假装守住了）。
+{
+  const REG = 'tests/parity/fixtures/ci-actions.json';
+  const WF_DIR = '.github/workflows';
+  const reg = JSON.parse(read(REG));
+  const entries = reg.actions ?? [];
+  const dateOk = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const majorOf = (ref) => (/^v(\d+)$/.exec(String(ref))?.[1] ?? null);
+  /** 判定与 canary **共用**：从一行 YAML 取 `uses:` 的 `<owner>/<repo>@<ref>`；整行注释返回 null。 */
+  const usesOf = (line) => {
+    const t = line.trim();
+    if (t.startsWith('#')) return null; // 剥整行注释（注释里必须能写坏形态）
+    return /^(?:-\s*)?uses:\s*([^\s#]+)(?:\s+#.*)?$/.exec(t)?.[1] ?? null;
+  };
+  /** 判定与 canary **共用**：一条登记项是否合规（null = 合规，否则返回原因）。 */
+  const verdict = (a) => {
+    if (a.runtime === 'non-js') {
+      return a.minMajorForNode24 === null ? null : 'non-js 项不应声明 minMajorForNode24';
+    }
+    if (a.runtime !== 'node24') {
+      return `自述 runtime = ${a.runtime}（登记表里不得留下被 runner 移除的运行时）`;
+    }
+    const major = majorOf(a.ref);
+    if (major === null) return `JS action 的 ref 必须是 \`v<N>\` 形态（现值 \`${a.ref}\`）`;
+    if (!Number.isInteger(a.minMajorForNode24) || a.minMajorForNode24 < 0) {
+      return 'minMajorForNode24 必须是非负整数';
+    }
+    if (Number(major) < a.minMajorForNode24) {
+      return `pin 的主版本 ${major} < 该 action 声明 node24 的起始主版本 ${a.minMajorForNode24}`
+        + ' ⇒ 运行在**已被 runner 移除**的运行时上';
+    }
+    return null;
+  };
+
+  // 现读全部 workflow 里的 `uses:`（**遍历 + 过滤**，不枚举文件）
+  const found = new Map();
+  for (const f of readdirSync(resolve(root, WF_DIR)).filter((n) => /\.ya?ml$/.test(n)).sort()) {
+    for (const line of read(`${WF_DIR}/${f}`).split('\n')) {
+      const key = usesOf(line);
+      if (key !== null) found.set(key, (found.get(key) ?? 0) + 1);
+    }
+  }
+
+  // ① 双向登记
+  const regKeys = new Set(entries.map((a) => `${a.action}@${a.ref}`));
+  for (const key of [...found.keys()].sort()) {
+    if (!regKeys.has(key)) {
+      fail(`⑱ workflow 里的 \`uses: ${key}\` **未登记**在 \`${REG}\` —— 新增 / 改版 action 必须登记`
+        + '（含它的运行时与出处）；否则「退回被弃用运行时」这件事**无人能发现**');
+    }
+  }
+  for (const key of [...regKeys].sort()) {
+    if (!found.has(key)) {
+      fail(`⑱ \`${REG}\` 登记了 \`${key}\`，但 workflow 里**一处也没有** —— 登记表与事实脱节`
+        + '（要么删掉该条，要么说明它跑在哪份 workflow 里）');
+    }
+  }
+
+  // ② 禁浮动 ref（例外表**双向**：例外只能豁免已登记项）
+  const floatOk = new Set((reg.floatingRefExceptions ?? []).map((e) => `${e.action}@${e.ref}`));
+  for (const key of [...floatOk].sort()) {
+    if (!regKeys.has(key)) {
+      fail(`⑱ \`floatingRefExceptions\` 里的 \`${key}\` 不在 \`actions\` 里 —— 例外表只能豁免**已登记**项`);
+    }
+  }
+  for (const a of entries) {
+    const key = `${a.action}@${a.ref}`;
+    if (majorOf(a.ref) !== null || floatOk.has(key)) continue;
+    fail(`⑱ \`${key}\` 的 ref 既不是主版本标签 \`v<N>\`，也不在 \`floatingRefExceptions\` 里 ——`
+      + ' 浮动 ref 会**静默换实现**（今天跑得通，明天跑的是另一份代码）');
+  }
+
+  // ③ 运行时判定 + 出处 + 日期形态（全部与 canary 共用 verdict）
+  for (const a of entries) {
+    const key = `${a.action}@${a.ref}`;
+    const bad = verdict(a);
+    if (bad !== null) fail(`⑱ \`${key}\`：${bad}`);
+    if (typeof a.evidence !== 'string' || a.evidence.trim() === '') {
+      fail(`⑱ \`${key}\` 没有 \`evidence\` —— 运行时是**人工核实的事实**，必须带出处（否则下一个审计者无从复核）`);
+    }
+    if (!dateOk(a.checkedAt)) {
+      fail(`⑱ \`${key}\` 的 \`checkedAt\` 不是 \`YYYY-MM-DD\`（现值 \`${a.checkedAt}\`）`);
+    }
+    const latest = majorOf(a.latestKnown);
+    const pin = majorOf(a.ref);
+    if (latest === null) {
+      fail(`⑱ \`${key}\` 的 \`latestKnown\` 不是 \`v<N>\` 形态（现值 \`${a.latestKnown}\`）`);
+    } else if (pin !== null && Number(latest) < Number(pin)) {
+      fail(`⑱ \`${key}\` 的 \`latestKnown\`（${a.latestKnown}）比 pin 的 ${a.ref} **还旧** —— 字段填反了`);
+    }
+  }
+  if (!dateOk(reg.reviewedAt)) fail(`⑱ \`${REG}\` 的 \`reviewedAt\` 不是 \`YYYY-MM-DD\``);
+
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；action 增删时须一并复核）
+  const REG_BASELINE = 8; // [覆盖型] 基线 8
+  const USES_BASELINE = 61; // [覆盖型] 基线 61
+  const usesTotal = [...found.values()].reduce((s, n) => s + n, 0);
+  if (entries.length < REG_BASELINE) {
+    fail(`⑱ 登记表只有 ${entries.length} 条（[覆盖型] 基线 ${REG_BASELINE}）—— 条目被删会让本判据**空转**`);
+  }
+  if (usesTotal < USES_BASELINE) {
+    fail(`⑱ workflow 里只找到 ${usesTotal} 处 \`uses:\`（[覆盖型] 基线 ${USES_BASELINE}）`
+      + ' —— 扫描面或提取谓词漂移会让本判据**空转**');
+  }
+
+  // canary：多向（与判定**共用** usesOf / verdict；样本**运行时构造**）
+  if (usesOf('      - uses: actions/checkout@v5') !== 'actions/checkout@v5') {
+    fail('⑱ canary 失效：普通 `- uses:` 行未被提取');
+  }
+  if (usesOf('        uses: actions/upload-artifact@v6  # 制品') !== 'actions/upload-artifact@v6') {
+    fail('⑱ canary 失效：带行尾注释的 `uses:` 行未被提取');
+  }
+  if (usesOf('      # - uses: actions/checkout@v4') !== null) {
+    fail('⑱ canary **过宽**：整行注释里的 `uses:` 被当成真引用（注释里必须能写坏形态）');
+  }
+  if (usesOf('      - run: echo "uses: actions/checkout@v4"') !== null) {
+    fail('⑱ canary **过宽**：消息字符串里的 `uses:` 被当成真引用');
+  }
+  const CANARIES = [
+    [{ action: 'a/b', ref: 'v4', runtime: 'node20', minMajorForNode24: 5 }, false, '自述 node20'],
+    [{ action: 'a/b', ref: 'v4', runtime: 'node24', minMajorForNode24: 5 }, false, '主版本低于下限'],
+    [{ action: 'a/b', ref: 'stable', runtime: 'node24', minMajorForNode24: 5 }, false, 'ref 非 v<N>'],
+    [{ action: 'a/b', ref: 'v1', runtime: 'non-js', minMajorForNode24: 3 }, false, 'non-js 却声明了下限'],
+    [{ action: 'a/b', ref: 'v5', runtime: 'node24', minMajorForNode24: 5 }, true, '合规'],
+    [{ action: 'a/b', ref: 'v1', runtime: 'non-js', minMajorForNode24: null }, true, '合规（non-js）'],
+  ];
+  for (const [sample, shouldPass, what] of CANARIES) {
+    if ((verdict(sample) === null) !== shouldPass) {
+      fail(`⑱ canary ${shouldPass ? '**过宽**' : '失效'}：${what} 的样本被误判`);
+    }
+  }
+
+  // 落后项**只报不判**（离线判据无法知道上游有没有更新；报出来是为了不让它变成隐形债）
+  const behind = entries.filter((a) => {
+    const pin = majorOf(a.ref);
+    const latest = majorOf(a.latestKnown);
+    return pin !== null && latest !== null && Number(latest) > Number(pin);
+  });
+  console.log(`Release gate: CI action 运行时 —— ${entries.length} 个 action / ${usesTotal} 处 \`uses:\` 已登记；`
+    + `pin 主版本均 ≥ 各自声明 node24 的起始主版本；浮动 ref 例外 ${floatOk.size} 个`
+    + (behind.length > 0
+      ? `；⚠️ ${behind.length} 个**落后于已知最新**（仅登记、不判）：${behind.map((a) => `${a.action}@${a.ref}→${a.latestKnown}`).join('、')}`
+      : ''));
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

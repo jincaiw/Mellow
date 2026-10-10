@@ -40,11 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: mellow
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -192,7 +192,7 @@ jobs:
 
       - name: Upload Linux evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-runtime-evidence
           path: |
@@ -281,7 +281,7 @@ jobs:
           exit $status
       - name: Upload Linux visual golden
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-visual-golden
           path: |
@@ -295,9 +295,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -438,7 +438,7 @@ jobs:
           exit $status
       - name: Upload Windows visual golden
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-visual-golden
           # 与 checkout 落点一致（本 job 无 `path: mellow`）—— 路径前缀写错同样是
@@ -454,9 +454,9 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm

@@ -36,9 +36,9 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -62,7 +62,7 @@ jobs:
           pnpm test
           pnpm run build
       - name: Upload dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: editor-core-dist
           path: packages/editor-core/CoreEditor/dist
@@ -74,9 +74,9 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -95,9 +95,9 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -118,16 +118,16 @@ jobs:
     timeout-minutes: 30
     needs: [editor-core, editor-engine]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Restore editor-core dist (vendored bundle)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: editor-core-dist
           path: packages/editor-core/CoreEditor/dist
@@ -154,10 +154,16 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          # v5 起：`package.json` 有 `packageManager` 时**自动开缓存**（release notes 标 Breaking
+          # Change）。v5 源码 `src/main.ts` 是 `if (cache) … else if (packageManager && pmCache)`
+          # ⇒ 显式 `cache:` 优先，**只有本步没有 `cache:` 时**才走自动分支（本仓另有 10 处已显式
+          # `cache: pnpm`，故那 10 处不需要本键 —— 加了也是**不可达配置**）。
+          # 此处显式关掉以保持 v4 行为（是否改用自动缓存 = 性能决策，未裁决）。
+          package-manager-cache: false
       # 护栏脚本只依赖 Node 内建模块，无需 pnpm install，可在 30s 内给出结论。
       # 无 Typora 授权环境时 dump 生成器退化为 UNVERIFIED 占位（不构成验收证据）。
       - name: Generate Typora baseline dump
@@ -183,10 +189,16 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          # v5 起：`package.json` 有 `packageManager` 时**自动开缓存**（release notes 标 Breaking
+          # Change）。v5 源码 `src/main.ts` 是 `if (cache) … else if (packageManager && pmCache)`
+          # ⇒ 显式 `cache:` 优先，**只有本步没有 `cache:` 时**才走自动分支（本仓另有 10 处已显式
+          # `cache: pnpm`，故那 10 处不需要本键 —— 加了也是**不可达配置**）。
+          # 此处显式关掉以保持 v4 行为（是否改用自动缓存 = 性能决策，未裁决）。
+          package-manager-cache: false
       # 无 Typora 的 runner 上，生成器会保留仓库已入库的 EXTRACTED 基线而不重写
       # （见 generate-typora-menu-dump.mjs），故不会退化成 UNVERIFIED。
       - name: Generate Typora baseline dump
@@ -201,7 +213,7 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri system deps
         run: |
@@ -230,7 +242,7 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

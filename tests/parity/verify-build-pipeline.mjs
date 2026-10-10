@@ -500,8 +500,10 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
 // 【为什么】实测（本轮新透镜「版本与环境一致性」）：`version: 11.7.0` 曾**硬编码在 10 处**
 //   （`ci.yml` 4 / `release.yml` 3 / `runtime-qualification.yml` 3），而真值源是
 //   `package.json` 的 `packageManager: pnpm@11.7.0` ⇒ **1 处真值源 + 10 处副本**（本仓 #1 形态）。
-//   ⚠️ 而 `pnpm/action-setup@v4` 的**官方 README** 明写：**省略 `version` 输入时会读 `packageManager`**
+//   ⚠️ 而 `pnpm/action-setup` 的**官方 README** 明写：**省略 `version` 输入时会读 `packageManager`**
 //     （「Omit `version` input to use the version in the `packageManager` field」）⇒ 那 10 处是**纯冗余**。
+//     该结论**与主版本无关**：v4→v5 只换了运行时（release notes 全文一句「Updated the action to use
+//     Node.js 24.」），`version` 输入的语义未变（2026-10-10，审计 §4.283）。
 //   ⇒ 处置：**删掉 10 处副本**（**结构性消除**，而不是再写一条判据去守副本）—— 这才是本仓 #1 形态的正解。
 // 【判据】① 根 `package.json` 必须有 `packageManager`，且形如 `pnpm@<精确 x.y.z>`（corepack 要求精确）；
 //   ② 三份 workflow 里**不得**再出现 pnpm action 的 `version:` 输入（副本会漂 ⇒ 真值源必须唯一）。
@@ -509,6 +511,7 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
 //     **不声称**「action 一定会读到 `packageManager`」。
 //     ✅ **该行为已由 CI 实测确认**（2026-10-10，run 38013593360，8/8 全绿）：删掉副本后日志里
 //       `Run pnpm/action-setup@v4   + pnpm 11.7.0` / `Install   Done in 5.5s using pnpm v11.7.0`
+//       （**引文照录**：该 run 时仍是 `@v4`，同日稍后升到 `@v5` —— 历史证据不改写，见审计 §4.283）
 //       ⇒ 确实从 `packageManager` 解析出 `11.7.0`（读不到会**响亮失败**，不是静默）。见审计 §4.264。
 {
   const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/release.yml', '.github/workflows/runtime-qualification.yml'];
@@ -522,7 +525,7 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   const pm = JSON.parse(read('package.json')).packageManager ?? '';
   if (!exactPnpm(pm)) {
     fail(`根 \`package.json\` 的 \`packageManager\` 缺失或不是精确版本（现值「${pm}」）—— `
-      + '它是 **pnpm 版本的唯一真值源**：corepack 与 `pnpm/action-setup@v4`（省略 `version` 时）都读它，'
+      + '它是 **pnpm 版本的唯一真值源**：corepack 与 `pnpm/action-setup`（省略 `version` 时）都读它，'
       + '且必须精确到补丁号');
   }
   let setups = 0;
@@ -536,18 +539,19 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
   for (const p of pins) {
     fail(`${p} 硬编码了 pnpm 的 \`version:\` —— pnpm 版本的**唯一真值源**是根 \`package.json\` 的 `
-      + `\`packageManager\`（现值 \`${pm}\`）：\`pnpm/action-setup@v4\` **省略 \`version\` 时会读它**`
+      + `\`packageManager\`（现值 \`${pm}\`）：\`pnpm/action-setup\` **省略 \`version\` 时会读它**`
       + '⇒ 这里的副本只会漂（实测曾有 10 处）。请删掉该 `with: version:` 块');
   }
-  // 防空转：靶子必须在（立此判据时基线 10 处 `uses: pnpm/action-setup@v4`，下限 8）
+  // 防空转：靶子必须在（立此判据时基线 10 处 `uses: pnpm/action-setup`，下限 8；计数**与主版本无关**，
+  //   故 2026-10-10 从 @v4 升到 @v5 时基线不变 —— 审计 §4.283）
   if (setups < 8) {
     fail(`三份 workflow 里只找到 ${setups} 处 \`pnpm/action-setup\`（下限 8 = 立此判据时的基线 10 − 余量）`
       + ' —— 靶子消失会让本判据**空转**（若确实改用了别的安装方式，请同步改本判据并说明）');
   }
   // canary：四向（与判定**共用** isPnpmVersionPin / exactPnpm）
-  const S_PIN = ['      - uses: pnpm/action-setup@v4', '        with:', '          version: 11.7.0'];
-  const S_NO_PIN = ['      - uses: pnpm/action-setup@v4', '        name: Install pnpm'];
-  const S_NODE = ['      - uses: actions/setup-node@v4', '        with:', '          node-version: 22'];
+  const S_PIN = ['      - uses: pnpm/action-setup@v5', '        with:', '          version: 11.7.0'];
+  const S_NO_PIN = ['      - uses: pnpm/action-setup@v5', '        name: Install pnpm'];
+  const S_NODE = ['      - uses: actions/setup-node@v5', '        with:', '          node-version: 22'];
   if (!isPnpmVersionPin(S_PIN, 2)) {
     errors.push('pnpm 真值源护栏 canary 失效：pnpm action 的 `version:` 未被识别');
   }

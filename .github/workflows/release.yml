@@ -76,7 +76,7 @@ jobs:
       # 否则报 `failed to run git: fatal: not a git repository` 并 exit 1。
       # （本 job 是 §4.108 修竞态时新增的 —— 它**第一次运行**（v1.5.33）就因此失败：
       #   三平台 job `needs:` 它 ⇒ 连带被跳过 ⇒ **整个发布没跑**。修法 = 补这一步。）
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create draft release if absent (tags only; asserts no duplicate)
         id: create
         env:
@@ -122,9 +122,9 @@ jobs:
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -228,7 +228,7 @@ jobs:
           $zip = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/portable/*.zip" | Select-Object -First 1
           gh release upload $env:GITHUB_REF_NAME $zip.FullName --clobber
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mellow-windows
           path: |
@@ -258,9 +258,9 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -316,7 +316,7 @@ jobs:
           releaseDraft: true
           args: --bundles app,dmg
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mellow-macos
           path: |
@@ -336,9 +336,9 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -379,7 +379,7 @@ jobs:
           releaseDraft: true
           args: --bundles appimage,deb,rpm
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mellow-linux
           path: |
@@ -399,7 +399,7 @@ jobs:
     # GitHub 默认 360 min ⇒ 「跑不动」要 6 小时才被发现；此处按实测耗时的数倍留余量。
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Fill notes, assert assets, publish as official release (ADR-0031)
