@@ -3465,7 +3465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 271; // 2026-10-10 加 §4.271 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 272; // 2026-10-10 加 §4.272 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3739,6 +3739,75 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
     throw new Error('包数 canary 过宽：无锚点的样本被误判');
   }
   console.log(`Doc code refs: monorepo.md 的「${actual} 个包」== \`packages/\` 目录数（名单 ${listed.length} 个一致）`);
+}
+
+// ── ㊹ 文档 / 护栏里以**行内码**引用的「本机工具路径」必须存在（2026-10-10，审计 §4.272）──
+// 【为什么】markdown 的**相对链接**有判据守（`[x](path)`），但**行内码里写的仓库路径没人守**。
+//   本仓的「本机工具」住在 `tools/` 与 `tests/parity/tools/` —— 这两个目录**只放工具、无同名子目录**
+//   ⇒ 以这两个前缀开头的行内码路径**必然是仓库根相对路径** ⇒ 可以**无例外**地机械判定存在性。
+//   实测（本轮）：**46 处**引用里 **2 处悬空**，都是同一笔误 —— 审计文档把
+//   `tests/parity/tools/audit-guard-bounds.mjs` 写成了**少一层目录**的形态
+//   （工具早已从 `tools/` 迁到 `tests/parity/tools/`，**旧前缀的引用没人守**）。
+//   ⚠️ 本注释**刻意不写出那个坏形态的字面** —— 写了它，**本判据会命中自己**（首版实测）。
+// 【判据】tracked 的 `.md` / `.mjs` / `.cjs` 里，凡行内码形如
+//   `` `tools/….(mjs|sh|swift)` `` 或 `` `tests/parity/tools/….(mjs|sh|swift)` `` ⇒ 路径必须存在。
+//   ⚠️ **范围如实声明**：**只**覆盖这两个无歧义前缀。其它前缀（`scripts/…` / `src/…` / `test/…`）
+//     既可能是仓库根相对、也可能是**包内相对**（如 `apps/desktop` 下的 `scripts/sync-version.mjs`）
+//     ⇒ 机械判定会**成片假阳性** ⇒ **明确不做**（同 `verify-build-pipeline.mjs` ⑪ 的「不扫 .mjs」口径）。
+//   ⚠️ **`.md` 的围栏代码块是「引述区」，不判定** —— 与判据 ㊵ 同一口径（共用 `boldBlankFences`）。
+//     理由：更正块 / 审计正文**必须**能**引用坏形态**（本判据自己的 §4.272 就引用了那 2 处）
+//     ⇒ 判定它等于「禁止记录缺陷」。围栏内引用是**唯一**的合法引述方式。
+{
+  const TOOL_REF = /`((?:tests\/parity\/)?tools\/[A-Za-z0-9._/-]+\.(?:mjs|sh|swift))`/g;
+  /** 判定（与 canary **共用**）：该行里悬空的工具路径。 */
+  const missingToolPaths = (line) => {
+    const out = [];
+    for (const m of line.matchAll(TOOL_REF)) {
+      if (!existsSync(resolve(root, m[1]))) out.push(m[1]);
+    }
+    return out;
+  };
+  const toolScan = committedFiles().filter((f) => /\.(md|mjs|cjs)$/.test(f));
+  const toolBad = [];
+  let toolRefs = 0;
+  for (const rel of toolScan) {
+    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    // `.md` ⇒ 先按围栏分块清空（引述区不判定）；其它文件按原样逐行
+    const lines = rel.endsWith('.md') ? boldBlankFences(src) : src.split('\n');
+    lines.forEach((line, i) => {
+      const bad = missingToolPaths(line);
+      toolRefs += [...line.matchAll(TOOL_REF)].length;
+      for (const b of bad) toolBad.push(`${rel}:${i + 1} \`${b}\``);
+    });
+  }
+  for (const b of toolBad) {
+    errors.push(`引用了**不存在的**本机工具路径：${b} —— \`tools/\` 与 \`tests/parity/tools/\` 下的`
+      + '行内码路径是**仓库根相对**的（这两个目录只放工具、无同名歧义）⇒ 路径必须真实存在；'
+      + '工具迁移过目录时**旧前缀的引用没人守**（实测：`audit-guard-bounds.mjs` 曾被写成 `tools/…`）');
+  }
+  // [健康度型] 引用面由**文档内容**产生 ⇒ 留余量（立此判据时基线 46 处引用 / 0 处悬空）
+  if (toolRefs < 20) {
+    errors.push(`只扫描到 ${toolRefs} 处「工具路径」行内码引用（下限 20 = 立此判据时的基线 46 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（判定与 canary **共用** missingToolPaths；样本运行时拼接）
+  const T_OK = 'tests/parity/' + 'tools/audit-guard-bounds.mjs';
+  if (missingToolPaths('`' + T_OK + '`').length !== 0) {
+    errors.push('工具路径存在性 canary 失效：一个**确实存在**的工具被判为悬空');
+  }
+  const T_BAD = 'tools/' + 'no-such-tool-zzz.mjs';
+  if (missingToolPaths('`' + T_BAD + '`').length !== 1) {
+    errors.push('工具路径存在性 canary 失效：构造的悬空路径**未被检出**');
+  }
+  // 过宽：包内相对路径（`apps/desktop/scripts/…`）**不得**被本判据匹配（否则成片假阳性）
+  //   ⚠️ 样本必须用**不存在**的路径 —— 首版用了**存在**的 `sync-version.mjs`，
+  //     于是谓词被放宽成任意前缀时它照样返回空 ⇒ **canary 抓不到**（实测踩到）。
+  const T_WIDE = 'apps/desktop/' + 'scripts/no-such-zzz.mjs';
+  if (missingToolPaths('`' + T_WIDE + '`').length !== 0) {
+    errors.push('工具路径存在性 canary **过宽**：非 `tools/` 前缀的路径被匹配了');
+  }
+  console.log(`Doc code refs: 本机工具路径引用 ${toolRefs} 处**全部存在**`
+    + '（范围：`tools/` 与 `tests/parity/tools/` 两个无歧义前缀）');
 }
 
 // ── ㊸ 单个护栏内「判据圈号」不得重复（2026-10-10，审计 §4.271）──────────────────────

@@ -11242,7 +11242,7 @@ PITFALLS **§4.244–§4.248** · skill **§157** + 自查清单 +3 · `MEMORY.m
 2. **新增 CI 判据 ⑥**（`verify-release-gate.mjs`）：扫描全部护栏，凡带标记者，
    其**同一行或紧随其后 3 行内**必须能找到阈值且 **== 标记里的基线**；并断言**标记数 ≥ 5**。
    **分工**（本仓 idiom）：**CI 守自洽**（标记 ↔ 阈值），**本机工具守完整**
-   （`tools/audit-guard-bounds.mjs` 二分实测真实值，判定阈值是否**过时**）。
+   （`tests/parity/tools/audit-guard-bounds.mjs` 二分实测真实值，判定阈值是否**过时**）。
 
 ⚠️ **立 ⑥ 时又两次被自己抓到**：
 
@@ -11279,7 +11279,7 @@ PITFALLS **§4.244–§4.248** · skill **§157** + 自查清单 +3 · `MEMORY.m
 
 `verify-parity-ledger.mjs`（2 处阈值同步 + 4 处标记）· `verify-doc-code-refs.mjs`（1 处阈值同步 + 标记）·
 `verify-release-gate.mjs`（2 处标记 + **判据 ⑥** + 4 canary）· `verify-visual-golden.mjs`（1 处标记）·
-`tools/audit-guard-bounds.mjs`（补认 `<=` / `>=` / `>`）· 审计 **§4.168** ·
+`tests/parity/tools/audit-guard-bounds.mjs`（补认 `<=` / `>=` / `>`）· 审计 **§4.168** ·
 PITFALLS **§4.249–§4.252** · skill **§158** + 自查清单 +3 · `MEMORY.md` · `2026-10-09.md`。
 
 ---
@@ -16871,6 +16871,78 @@ flanking 规则快得多。⚠️ 但要注意**段落成组**：`boldUnits` 按
 5. 删除 2 个一次性探针（能力已被判据 ⑮ 取代）。
 
 ⇒ 同族「只锁了一半」累计 **第 99 次**（§4.170–§4.270）。
+
+## 4.272 「引用面」透镜：**行内码里的工具路径没人守** + 三条 0 缺陷透镜（2026-10-10）
+
+### 一、先做三条**0 缺陷**的普查（**已用过的透镜**，记录以防重做）
+
+| 透镜 | 实测 | 结论 |
+|---|---|---|
+| **工作区成员 ↔ `packages/` 实际目录** | `pnpm-workspace.yaml` 的 `packages/*` 覆盖**全部 15 个包**；全仓 18 份 `package.json` 里**唯一非成员**是刻意 vendored 的 `packages/editor-core/CoreEditor` | ✅ 0 缺陷（`!packages/editor-core/CoreEditor` 那行是**冗余但无害**的意图声明 —— `packages/*` 本来就不跨 `/`） |
+| **护栏里的「静默跳过」形态** | 扫 23 个护栏的 5 类跳过形态（`!existsSync ⇒ return/continue` · `=== null ⇒ continue` · 空 catch · catch 里 continue/return · catch 里只 warn）共 **44 处**，逐处看：**全部是 `assert` 之后的防御性分支**或**可选匹配** | ✅ 0 缺陷（但 **「跳过型形态」本身噪声太大**，不适合落判据） |
+| **「测试文件被拾取，但一个断言都没有」** | 148 个测试文件（含 vendored 23）逐个统计 `expect(` / `assert*` —— **零断言 0 个**；含 `skip`/`todo` 的 **1 个**（`state-matrix.test.ts`）逐处看是**带理由的动态跳过**（`（跳过：${skip}）`） | ✅ 0 缺陷 |
+
+### 二、发现：**46 处**「工具路径」行内码引用里 **2 处悬空**
+
+markdown 的**相对链接**有判据守（`[x](path)`，27 条），但**行内码里写的仓库路径没人守**。
+本轮把扫描面收窄到**无歧义前缀**（`tools/` 与 `tests/parity/tools/` —— 这两个目录**只放工具**，
+不存在同名子目录 ⇒ 以它们开头的行内码路径**必然是仓库根相对**）：
+
+```
+docs/qualification/release-blocker-audit-2026-09-25.md:11245  `tools/audit-guard-bounds.mjs`
+docs/qualification/release-blocker-audit-2026-09-25.md:11282  `tools/audit-guard-bounds.mjs`
+```
+
+**两处都是同一笔误**：工具早已从 `tools/` 迁到 `tests/parity/tools/`，而**旧前缀的引用没人守**
+⇒ 读者按它去找会**找不到**。⇒ 已修。
+
+⚠️ **为什么不把扫描面放宽到「所有行内码路径」**：实测全仓 **1223 处**行内码路径、**33 处**不存在 ——
+逐处分诊后**只有 2 处是真漂移**，其余全是**有意**的：
+**更正块**（原文写「`apps/desktop/src/host/types.ts`，**该文件不存在**」）· **删除记录**
+（「**删除**：`packages/desktop-ui/src/EditorToolbar.tsx`」）· **引用他人上下文**
+（打包手册里相对 `apps/desktop` 的 `scripts/sync-version.mjs`）· **archive/ 历史方案** · **构建产物路径**。
+⇒ **例外面会大过判据本身** ⇒ **明确不做**（与 `verify-build-pipeline.mjs` ⑪「不扫 `.mjs`」同一口径）。
+
+### 三、处置：判据 **㊹**（`verify-doc-code-refs.mjs`）
+
+tracked 的 `.md` / `.mjs` / `.cjs` 里，凡行内码形如 `` `tools/….(mjs|sh|swift)` `` 或
+`` `tests/parity/tools/….(mjs|sh|swift)` `` ⇒ 该路径**必须存在**。
+[健康度型] 下限 20（立此判据时基线 **47** 处引用 / 0 处悬空）；canary **三向**。
+⚠️ **范围如实声明**：**只**覆盖这两个无歧义前缀；`scripts/…` / `src/…` / `test/…` 既可能是
+仓库根相对、也可能是**包内相对** ⇒ 机械判定会成片假阳性 ⇒ **明确不做**。
+
+### 四、⚠️ 判据**第一次运行就命中自己**（本仓第 **10** 次）
+
+㊹ 的注释里我写了那个「坏形态」的**字面路径**（用来举例）⇒ 判据当场报
+「引用了**不存在的**本机工具路径：`tests/parity/verify-doc-code-refs.mjs:3749`」。
+⇒ 改为**不写出坏形态的字面**（用「写成了**少一层目录**的形态」描述），并把这句教训**写进注释**。
+（同族：㊵ 扫全部 tracked `.md`、⑰ 在消费者扫描面里、㊷ 抓作者新写的 `const`。）
+
+### 五、⚠️ canary 设计错误：用了**存在**的路径
+
+首版「过宽」canary 写的是 `` `apps/desktop/scripts/sync-version.mjs` ``（**该文件存在**）——
+于是把谓词**放宽成任意前缀**后，它照样返回「无悬空」⇒ **canary 抓不到**。
+⇒ 改为**不存在**的 `apps/desktop/scripts/no-such-zzz.mjs`：正确谓词下**不匹配**（返回空），
+放宽后**匹配且不存在**（返回 1）⇒ 真能抓。
+⚠️ **通则**：**「过宽」canary 的样本必须在「宽谓词下会命中、窄谓词下不命中」** ——
+用一个**存在**的路径会让两侧都返回空 ⇒ canary **恒绿**。
+
+### 六、注入验证（均还原后逐字节一致、EXIT=0）
+
+| 注入 | 结果 |
+|---|---|
+| A 文档里一个**存在**的工具路径改成悬空 | ✅ |
+| B 让判定恒返回空 | ✅（「悬空」canary 触发） |
+| C 让谓词接受任意前缀 | ✅（「过宽」canary 触发 —— **修好 canary 之后**） |
+
+### 七、改动清单
+
+1. `docs/qualification/release-blocker-audit-2026-09-25.md`：修 2 处**少一层目录**的工具路径
+   （`audit-guard-bounds.mjs` 应挂在 `tests/parity/tools/` 下，原写成了 `tools/` 直挂）。
+2. `verify-doc-code-refs.mjs`：新增判据 **㊹**（工具路径存在性）+ 健康度型下限 + canary 三向。
+3. 删除 2 个一次性探针。
+
+⇒ 同族「只锁了一半」累计 **第 100 次**（§4.170–§4.271）。
 
 ## 五、本次审计做的改动（非策略性）
 
