@@ -3125,6 +3125,65 @@ if (cssLayerAnchor === undefined) {
     + `（扫描 ${consumerFiles.length} 个消费者文件）`);
 }
 
+// ── ⑱ 三张登记表的 note 里**引用的仓库路径必须存在**（2026-10-10，审计 §4.274）──────────────
+// 【为什么】三张登记表（偏好矩阵 / 面板独有键 / 第三面）的 `note` 是**给裁决者读的证据**：
+//   它们用「代码落点」把每条 gap 钉在具体实现上（如 `packages/editor-engine/src/image/insert.ts`）。
+//   一旦那个文件被改名 / 移动，**理由就不可复核了** —— 而读者只会看到「这里写着某文件」，
+//   不会去验证它还在不在。⇒ 与 `verify-doc-code-refs.mjs` 判据 ㊹（行内码工具路径）同族，
+// 【判据】note 里以**已知顶层目录**（`apps/ packages/ tests/ tools/ docs/ scripts/`）开头、
+//   且带扩展名的路径，**必须存在**。
+//   ⚠️ **范围如实声明**：只认「顶层目录前缀」的路径 —— 笔记里大量出现的是**裸文件名**
+//     （`insert.ts:97` / `ops.ts`），那是**相对引用**，机械判定会成片假阳性 ⇒ **明确不做**。
+//   ⚠️ 扩展名交替里 **`tsx` 必须排在 `ts` 前** —— 否则 `App.tsx` 会被截成 `App.ts` 而**假报悬空**
+//     （实测踩到）。
+{
+  const FIXTURES = [
+    'tests/parity/fixtures/typora-preferences-matrix.json',
+    'tests/parity/fixtures/typora-panel-only-keys.json',
+    'tests/parity/fixtures/typora-persisted-uncovered.json',
+  ];
+  const PATH_REF = /(?:^|[^\w/.-])((?:apps|packages|tests|tools|docs|scripts)\/[A-Za-z0-9._/-]+\.(?:tsx|mjs|cjs|json|toml|ya?ml|html|css|swift|ts|js|md|rs|sh))/g;
+  /** 判定（与 canary **共用**）：该段文字里悬空的仓库路径。 */
+  const missingRefs = (text) => {
+    const out = [];
+    for (const m of String(text).matchAll(PATH_REF)) if (!existsSync(resolve(root, m[1]))) out.push(m[1]);
+    return out;
+  };
+  let refs = 0;
+  for (const fx of FIXTURES) {
+    const j = JSON.parse(read(fx));
+    for (const e of j.entries ?? []) {
+      const note = String(e.note ?? e.reason ?? '');
+      const bad = missingRefs(note);
+      refs += [...note.matchAll(PATH_REF)].length;
+      for (const b of bad) {
+        fail(`${fx} 的 \`${e.key ?? e.typora ?? '?'}\` 的 note 引用了**不存在的仓库路径** \`${b}\` —— `
+          + '登记理由靠「代码落点」可复核；路径失效后**理由就不可复核了**（读者不会去验证它还在不在）'
+          + '⇒ 请更新路径，或改成不带顶层前缀的相对引用（那样不属本判据范围）');
+      }
+    }
+  }
+  // [健康度型] 引用面由**夹具内容**产生 ⇒ 留余量（立此判据时基线 27 处引用 / 0 处悬空）
+  if (refs < 8) {
+    fail(`三张登记表的 note 里只扫到 ${refs} 处「顶层目录路径」引用（下限 8 = 立此判据时的基线 27 − 余量）`
+      + ' —— 谓词或夹具结构漂移会让本判据**空转**');
+  }
+  // canary：三向（判定与 canary **共用** missingRefs；样本运行时拼接）
+  if (missingRefs('见 `' + 'packages/editor-engine/' + 'src/image/ops.ts`').length !== 0) {
+    fail('⑱ canary 失效：一个**确实存在**的路径被判为悬空');
+  }
+  if (missingRefs('见 `' + 'packages/editor-engine/' + 'src/no-such-zzz.ts`').length !== 1) {
+    fail('⑱ canary 失效：构造的悬空路径**未被检出**');
+  }
+  // 过宽：**裸文件名**（无顶层前缀，如笔记里常见的 `ops.ts`）**不得**被本判据匹配
+  //   ⚠️ 样本必须让**窄谓词不匹配、宽谓词匹配且判为悬空** —— 首版用了 `insert.ts:97`
+  //     （带行号），宽谓词（要求反引号紧跟扩展名）**也不匹配** ⇒ canary 恒绿（实测踩到）。
+  if (missingRefs('见 `' + 'ops.ts' + '`（裸文件名，无顶层前缀）').length !== 0) {
+    fail('⑱ canary **过宽**：不带顶层前缀的相对引用被匹配了');
+  }
+  console.log(`Settings contract: 三张登记表的 note 引用 ${refs} 处仓库路径**全部存在**`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }

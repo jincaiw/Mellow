@@ -17049,6 +17049,101 @@ tracked 的 `.md` / `.mjs` / `.cjs` 里，凡行内码形如 `` `tools/….(mjs|
 
 ⇒ 同族「只锁了一半」累计 **第 101 次**（§4.170–§4.272）。
 
+## 4.274 「评估与 Typora 的差距」：**现测快照** + 两处**过期/失准的登记理由**（2026-10-10）
+
+### 一、四个面的**现测快照**（全部现跑，不引用记忆）
+
+| 面 | 规模 | 分布 |
+|---|---|---|
+| ① 台账 `typora-parity-ledger.json` | **50** 项 P0 | `AUTO 44` / `MAC 2` / `IMPL 2` / `NOT_TESTED 1` / `BLOCKED 1`；**未闭环 10**、**`PASS-E = 0/50`** |
+| ② 偏好矩阵 `typora-preferences-matrix.json` | **84** 键 | `implemented 40` / `gap 38` / `not-applicable 6` |
+| ③ 面板独有键 `typora-panel-only-keys.json` | **47** 键 | `equivalent 36` / `gap 4` / `not-applicable 7` |
+| ④ 第三面 `typora-persisted-uncovered.json` | **15** 键 | `preference-like 4` / `warning-suppression 5` / `view-state 6` |
+
+**阻塞归因（逐条核过，无一条「缺理由」）**：
+
+- 台账未闭环 10 项：`ux-gate-policy` 6（含 4 项 AUTO 但 `requiredEvidence` 含 `ux-gate` ⇒ 不得以 AUTO 收口）·
+  `pdf-renderer-decision-pending（ADR-0037）` 1 · `perf-harness-pending` 1 · `human-ux-gate-session` 1 · `runtime-verification-pending` 1。
+- 矩阵 `gap 38` = `matches-default 30`（**无害**：Mellow 有该设置、默认值一致）+ `differs 6` + `n/a 2`；
+  `differs 6` 里 **5 条 → ADR-0034（undecided）**、1 条 → `P0-EDITOR-005`（拼写检查词典）。**0 条缺载体**。
+- 面板 `gap 4`：`allowPhysicsConflict`（precondition）· `no_image_move_for_local`（ADR-0034 Q13）·
+  `openExportLocation`（ADR-0034 Q11）· `quitAfterWindowClose`（ADR-0034 Q12）。
+- 第三面 `preference-like 4`：`useRegexp` / `fileSearchUseRegexp`（**均已实装持久化**，登记的是「不在矩阵与面板任一面」这一事实 ⇒ **是否进矩阵待裁决**）·
+  `listSortType` / `treeSortType`（形态差异已由 **D-AG** 裁决为有意）。其余 11 条为「记忆 / 派生值」，不需动作。
+
+⇒ **结论与既有记录一致：可自主面 = 0**（唯一可自主面 = 护栏守备面）。
+
+### 二、发现：两处**登记理由与现状不符**（都可复核）
+
+**① `allowPhysicsConflict` 的阻塞理由**（面板）：
+
+原文写「**`precondition`：前置能力「数学渲染」未接通**」「须先接通数学渲染（自持 MathJax 或上游提供）」。
+**实测（逐处读代码）：数学渲染已接通**，走的是 **KaTeX** 而非 MathJax ——
+
+| 环节 | 位置 |
+|---|---|
+| 声明点 | `packages/editor-core/src/core.ts` 的 `installKatexRenderer(…)` |
+| 接线点 | `apps/desktop/src/App.tsx` 的 `host.installKatexRenderer((tex, display) => loadKatex()…)` |
+| 加载器 | `apps/desktop/src/katexLoader.ts`（按需动态 import `katex` + `katex/contrib/mhchem` + CSS） |
+| 回落链 | `apps/desktop/src/useAsyncRenderers.ts`（宿主若注入 MathJax 则优先，否则按需 KaTeX） |
+
+⚠️ **原文只搜「MathJax」** ⇒ 查到「全仓无 MathJax」就下了「数学渲染未接通」的结论，**漏了 KaTeX 这条路**。
+⇒ **真正的缺口是 `physics` 包**：实测 KaTeX 的 `dist/contrib/` 只有
+`auto-render` / `copy-tex` / `mathtex-script-type` / `mhchem` / `render-a11y-string`，**无 physics**；
+而 Typora 该开关控制的正是 MathJax 的 physics 包（重定义 `\div` / `\Re` 等宏）。
+⇒ `blockedBy` **仍为 `precondition`**，但前置能力应表述为「**physics 宏语义的支持**」—— 仍属**方案级**。
+（**已更正 note**；`blockedBy` 字段未变，故不牵动 ADR。）
+
+**② `no_image_move_for_local` 的 note 里一句过期断言**（面板）：
+
+原文写「同族共 3 条（矩阵）：… —— **三条在矩阵里都是 `gap`**」。**现读矩阵**：
+`allowImageMove` = **implemented** · `applyImageMoveForLocal` = **gap**（且 `behavior: differs` → ADR-0034）·
+`applyImageMoveForWeb` = **implemented** ⇒ **只有 1 条仍是 gap**。
+⚠️ 写那句时的 2026-10-07 快照**确实是**「三条都是 gap」⇒ 属**过期断言**（不是当时的错误）⇒ **已按现读更正**。
+
+### 三、处置：判据 **⑱**（`verify-settings-contract.mjs`）
+
+「三张登记表的 `note` 里**引用的仓库路径必须存在**」——以**已知顶层目录**
+（`apps/ packages/ tests/ tools/ docs/ scripts/`）开头且带扩展名的路径必须存在。
+[健康度型] 下限 8（立此判据时基线 **27** 处引用 / 0 处悬空）；canary **三向**。
+⚠️ **范围如实声明**：只认**顶层目录前缀** —— 笔记里大量出现的是**裸文件名**（`insert.ts:97` / `ops.ts`），
+那是**相对引用** ⇒ 机械判定会成片假阳性 ⇒ **明确不做**。
+⚠️ 扩展名交替里 **`tsx` 必须排在 `ts` 前** —— 否则 `App.tsx` 被截成 `App.ts` 而**假报悬空**（实测踩到）。
+
+### 四、⚠️ 本轮**三次谓词失效**（全部如实记录，同一类）
+
+1. **取「第一段」而不是「最后一段」**：`no_image_move_for_local` 的 note 里有**两段**【阻塞原因】，
+   后一段明确写「**由 `not-implemented` 改为 `adr-pending`**」⇒ 该条**本来就是自洽的**；
+   我的谓词取了第一段 ⇒ **假报不一致**。
+2. **描述「变更」的句子必然同时出现两个 kind**（「由 A 改为 B」）⇒ 想用「段落里出现的 kind」判定
+   **当前** kind，注定不可靠。
+3. **字段名猜错**：矩阵条目的键名字段是 **`typora`**（不是 `key`）⇒ 一度得出「矩阵里没有任何 image 相关键」的**假结论**。
+4. （附带）**note 里的反引号 token** 想当「键名交叉引用」判：30 个候选**全部是代码标识符**
+   （`planMoveImage` / `tex2chtmlPromise` / `DEFAULT_OPTIONS`）⇒ **不可机械化** ⇒ **不落判据**。
+
+⇒ **教训**：**「登记理由里的事实断言是否过期」这类判定，正文解析不可靠 ⇒ 不要硬做判据**；
+能机械化的只有**路径存在性**（判据 ⑱）这一层。
+
+### 五、注入验证（均还原后逐字节一致、EXIT=0）
+
+| 注入 | 结果 |
+|---|---|
+| A note 里一个**存在**的路径改成悬空 | ✅ |
+| B 让判定恒返回空 | ✅（「悬空」canary 触发） |
+| C 让谓词接受任意前缀 | ✅（「过宽」canary 触发 —— **改好样本之后**） |
+
+⚠️ 首版「过宽」样本用了 `insert.ts:97`（**带行号**）⇒ 宽谓词（要求反引号紧跟扩展名）**也不匹配**
+⇒ canary **恒绿**；改用裸文件名 `ops.ts` 后才真能抓。
+
+### 六、改动清单
+
+1. `tests/parity/fixtures/typora-panel-only-keys.json`：更正 `allowPhysicsConflict` 的阻塞理由 +
+   更正 `no_image_move_for_local` 的过期断言（**只改 2 行**，无整体重排）。
+2. `verify-settings-contract.mjs`：新增判据 **⑱**（登记理由引用的路径存在性）+ 健康度型下限 + canary 三向。
+3. 无状态码 / 策略 / 产品代码改动。
+
+⇒ 同族「只锁了一半」累计 **第 102 次**（§4.170–§4.273）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
