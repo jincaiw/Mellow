@@ -513,7 +513,9 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
 //   ③ `AGENTS.md` 的「包依赖规则」只是**散文草图**，且**未覆盖** `desktop-ui` / `settings` / `themes` /
 //      `export` / `i18n` / `commands` 等包。
 //   ⇒ 与 C6（裸模块名必须声明）**互为另一半**：C6 锁「裸名」，本判据锁「**相对路径跨包**」。
-// 【判据】实测所有 `.ts/.tsx` 里 `from '../../…'` 解析到**别的包**的引用，去重成 `(from, to)` 边；
+// 【判据】实测所有 `.ts/.tsx/mts/cts/mjs/cjs/js` 里 `from '../../…'` 解析到**别的包**的引用，去重成 `(from, to)` 边；
+//   ⚠️ **扫描面必须与同族判据 C7 一致**（2026-10-10 审计 §4.281 扩面）—— 首版只扫 `\.(ts|tsx)$`
+//      ⇒ 漏掉 `.mjs/.cjs/.js`，而 `apps/desktop/scripts/*.mjs` 确有跨包引用（实测 1 条边 / 2 处）。
 //   ① 每条实测边**必须**登记在 `tests/parity/fixtures/cross-package-edges.json`（并写明理由）；
 //   ② 登记表里的每条边**必须仍被实际引用**（双向：防化石）；
 //   ③ 目标目录必须真的是一个包（`package.json` 存在）。
@@ -550,7 +552,11 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
   const actual = new Map();
   for (const rel of committed) {
-    if (!/\.(ts|tsx)$/.test(rel)) continue;
+    // ⚠️ **扫描面必须与同族判据 C7（裸模块名）一致**（2026-10-10，审计 §4.281）：
+    //   首版只写 `\.(ts|tsx)$` ⇒ **漏掉 `.mjs/.cjs/.js`**，而 `apps/desktop/scripts/*.mjs`
+    //   确有**跨包相对引用**（`../../../packages/editor-core/dist/bundle.js`，实测 **1 条边 / 2 处**）
+    //   ⇒ 又一处「只锁了一半」。C7 的扫描面是 `/\.(ts|tsx|mts|cts|mjs|cjs|js)$/` ⇒ 本判据**对齐它**。
+    if (!/\.(ts|tsx|mts|cts|mjs|cjs|js)$/.test(rel)) continue;
     if (rel.includes('node_modules') || rel.includes('/CoreEditor/')) continue;
     const from = allDirs.find((d) => rel.startsWith(`${d}/`));
     if (from === undefined) continue;
