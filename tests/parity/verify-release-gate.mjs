@@ -2603,6 +2603,88 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + `（${MIN_TIMEOUT}–${MAX_TIMEOUT} min；⚠️ 结构判据，行为需等一次真跑）`);
 }
 
+// ── ⑯ 每个 workflow 必须**显式声明** `permissions:`（2026-10-10，审计 §4.277）──────────────
+// 【为什么】不写 `permissions:` 时，该 workflow 的有效 token 权限由**仓库设置**
+//   `default_workflow_permissions` 决定 —— 那**不在仓库里**、**无法审计**。
+//   实测：三个 workflow 里 **`release.yml`（write）与 `runtime-qualification.yml`（read）都写了**，
+//   而 **`ci.yml` 没写** ⇒ 同类配置 2/3，且**唯一那个的有效权限依赖仓库外的状态**。
+//   ✅ **实测（`gh api repos/<owner>/<repo>/actions/permissions/workflow`）**：本仓当前该设置是
+//     **`read`** ⇒ **今天没有安全缺口**；但换个仓库 / 有人改了那个设置 ⇒ `ci.yml` 会**静默**获得写权限。
+//   ⇒ 判据把「有效权限」拉回**仓库内可审**。
+// 【判据】每个 `.github/workflows/*.yml`：
+//   ① 必须有**顶层** `permissions:`（标量 `read-all`/`write-all` 或具名映射都算「有」）；
+//   ② 具名映射里**除 `contents` 外不得有 `write`** —— 本仓只需要 `contents: write`（发版）。
+//   ⚠️ **按行结构读**（顶层键在第 0 列、其下条目 2 空格缩进）；**不引 `js-yaml`**（见判据 ⑮ 的同一理由）。
+//   ⚠️ **如实声明**：这是**结构判据**；「改流水线本机验不了行为」⇒ 只能验「YAML 实解 + 结构」。
+{
+  const WF_DIR = '.github/workflows';
+  const PERM_HEAD = /^permissions:\s*$/;
+  const PERM_SCALAR = /^permissions:\s*(\S+)\s*$/;
+  const PERM_ITEM = /^ {2}([a-z-]+):\s*(\S+)\s*$/;
+  /** 判定（与 canary **共用**；纯函数，不碰文件系统）。返回 null = **没有**顶层 permissions。 */
+  const permissionsOf = (text) => {
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      const scalar = PERM_SCALAR.exec(lines[i]);
+      if (scalar !== null) return { scalar: scalar[1], scopes: {} };
+      if (PERM_HEAD.test(lines[i])) {
+        const scopes = {};
+        for (let j = i + 1; j < lines.length; j += 1) {
+          if (lines[j].trim() === '' || /^\s*#/.test(lines[j])) continue;
+          const item = PERM_ITEM.exec(lines[j]);
+          if (item === null) break; // 缩进变了 ⇒ 块结束
+          scopes[item[1]] = item[2];
+        }
+        return { scalar: null, scopes };
+      }
+    }
+    return null;
+  };
+  const wfFiles = existsSync(resolve(root, WF_DIR))
+    ? readdirSync(resolve(root, WF_DIR)).filter((f) => /\.ya?ml$/.test(f)).sort()
+    : [];
+  for (const f of wfFiles) {
+    const p = permissionsOf(read(`.github/workflows/${f}`));
+    if (p === null) {
+      fail(`${WF_DIR}/${f} **没有顶层 \`permissions:\`** —— 不写它时，该 workflow 的有效 token 权限`
+        + '由**仓库设置** `default_workflow_permissions` 决定，而那**不在仓库里、无法审计**。'
+        + '请显式声明（本仓先例：`release.yml` = `contents: write`、'
+        + '`runtime-qualification.yml` = `contents: read`）');
+      continue;
+    }
+    if (p.scalar === 'write-all') {
+      fail(`${WF_DIR}/${f} 声明了 \`permissions: write-all\` —— 过宽（本仓只需要 \`contents: write\`）`);
+    }
+    for (const [scope, val] of Object.entries(p.scopes)) {
+      if (val === 'write' && scope !== 'contents') {
+        fail(`${WF_DIR}/${f} 给 \`${scope}\` 声明了 **write** —— 本仓只需要 \`contents: write\`（发版）；`
+          + '其它 scope 的写权限属过宽（最小权限原则）');
+      }
+    }
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；加 workflow 时须一并上调）
+  const WF_PERM_BASELINE = 3; // [覆盖型] 基线 3
+  if (wfFiles.length < WF_PERM_BASELINE) {
+    fail(`只扫描到 ${wfFiles.length} 个 workflow（[覆盖型] 基线 ${WF_PERM_BASELINE}）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** permissionsOf）
+  if (permissionsOf(`permissions:\n  contents: read\n`)?.scopes?.contents !== 'read') {
+    fail('⑯ canary 失效：具名映射形态的 `permissions` 未被解析出');
+  }
+  if (permissionsOf(`permissions: read-all\n`)?.scalar !== 'read-all') {
+    fail('⑯ canary 失效：标量形态 `permissions: read-all` 未被识别为「有声明」');
+  }
+  if (permissionsOf(`name: X\non:\n  push:\n`) !== null) {
+    fail('⑯ canary 失效：**没有** `permissions:` 的样本未被判为 null');
+  }
+  if (permissionsOf(`permissions:\n  contents: read\n\njobs:\n`)?.scopes?.jobs !== undefined) {
+    fail('⑯ canary **过宽**：`permissions` 块之后的顶层键被当成了 scope');
+  }
+  console.log(`Release gate: ${wfFiles.length} 个 workflow —— 均**显式声明 token 权限**`
+    + '（本仓只需 `contents: write` 用于发版；⚠️ 结构判据，行为需等一次真跑）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

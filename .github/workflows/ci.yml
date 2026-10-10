@@ -19,6 +19,15 @@ concurrency:
 # 统一 pnpm workspace 工具链（根 package.json + pnpm-workspace.yaml，阶段 0 迁移）。
 # 特例：packages/editor-core/CoreEditor（vendored MarkEdit）排除出 workspace，保留上游 yarn。
 
+# **显式声明 token 权限**（2026-10-10，审计 §4.277）：不写这一行时，本 workflow 的有效权限
+# 由**仓库设置** `default_workflow_permissions` 决定 —— 那**不在仓库里**、无法审计。
+# 【实测（`gh api repos/<owner>/<repo>/actions/permissions/workflow`）】当前该设置为 **`read`**
+#   ⇒ 今天**没有**安全缺口；但**换一个仓库 / 有人改了那个设置**，本 workflow 就会**静默**获得写权限。
+# ⇒ 与另两个 workflow 对齐（`release.yml` = `contents: write`、`runtime-qualification.yml` = `contents: read`），
+#   让**有效权限变成仓库内可审的东西**。CI 只需要读代码。
+permissions:
+  contents: read
+
 jobs:
   editor-core:
     name: editor-core vendored (yarn) + wrapper (pnpm)

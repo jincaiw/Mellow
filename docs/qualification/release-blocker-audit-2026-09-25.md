@@ -17294,6 +17294,71 @@ GitHub 的**默认 job 超时是 360 min** ⇒ 一个**卡住**的 job 要 **6 �
 
 ⇒ 同族「只锁了一半」累计 **第 104 次**（§4.170–§4.275）。
 
+## 4.277 「CI 的隐性默认」透镜：**`ci.yml` 的有效 token 权限在仓库外**（2026-10-10）
+
+### 一、发现：同类配置 2/3，且**唯一那个的有效权限依赖仓库设置**
+
+| workflow | 顶层 `permissions:` |
+|---|---|
+| `release.yml` | ✅ `contents: write`（发版需要） |
+| `runtime-qualification.yml` | ✅ `contents: read` |
+| **`ci.yml`** | ❌ **没有** |
+
+不写 `permissions:` 时，该 workflow 的有效 token 权限由**仓库设置** `default_workflow_permissions` 决定
+—— 那**不在仓库里、无法审计**。
+
+✅ **实测**（`gh api repos/<owner>/<repo>/actions/permissions/workflow`）：
+
+```json
+{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}
+```
+
+⇒ **今天没有安全缺口**（`ci.yml` 继承 `read`）。但**换个仓库 / 有人改了那个设置**，
+`ci.yml` 就会**静默**获得写权限 ⇒ 「同一份代码在不同仓库设置下行为不同」。
+
+### 二、处置
+
+**① `ci.yml` 加 `permissions: contents: read`**（一行 + 说明注释，含上面那条实测事实）。
+**② 判据 ⑯**（`verify-release-gate.mjs`）：每个 workflow 必须**显式声明**顶层 `permissions:`；
+具名映射里**除 `contents` 外不得有 `write`**（本仓只需 `contents: write` 用于发版）；
+不得 `write-all`。[覆盖型] 基线 3；canary 四向。
+⚠️ **按行结构读**（顶层键第 0 列、条目 2 空格缩进）；**不引 `js-yaml`**（同判据 ⑮ 的理由）。
+⚠️ **如实声明**：结构判据；「改流水线本机验不了行为」⇒ 本机能验的只有 `js-yaml` **实解** + 结构。
+
+### 三、⚠️ 两条**已评估、决定不改**的读数（如实记录，防下轮重做）
+
+**① PowerShell `run:` 块的错误处理** —— 实测 7 个 PowerShell 多行块里 **4 个**没有显式的
+`$LASTEXITCODE` / `throw` 检查。**为什么不改**：GitHub 的 `pwsh` shell 模板**本身**会
+`$ErrorActionPreference = 'stop'`（cmdlet/.NET 异常 ⇒ **终止**）并在末尾 `exit $LASTEXITCODE`
+⇒ 残余风险只限「**中间**是**原生命令**、且**后续原生命令成功**」这一形态；
+逐块读过那 4 个（证书导入 / zip 上传 / playwright 安装），**没有这种形态** ⇒ **记录不改**。
+⚠️ 与 `verify-runtime-qualification-workflow.mjs` 已锁的「逐条记录退出码」是同族问题，那边已处理。
+
+**② `upload-artifact` 的 `if-no-files-found`** —— 7 处里 **3 处 `error`**（全在 `release.yml`）/
+**3 处 `warn`**（`runtime-qualification.yml` 的 evidence 上传，带 `if: always()`）/ **1 处未设**
+（`ci.yml` 的 `Upload dist`）。**为什么不统一改 `error`**：
+- 「制品路径前缀写错 ⇒ 静默为空」这一**真缺陷形态**已由 `verify-runtime-qualification-workflow.mjs`
+  的「路径必须与 checkout 落点一致」判据锁住 ✅；
+- evidence 上传带 `if: always()` ⇒ 改成 `error` 会在**已经失败**的运行上**再叠一个错误**，
+  反而**掩盖真正的失败原因**（该处注释也如实写着「upload-artifact 只会 warn」）⇒ **有意保留 `warn`**。
+
+### 四、改动清单
+
+1. `.github/workflows/ci.yml`：加 `permissions: contents: read`（+ 实测事实的注释）。
+2. `verify-release-gate.mjs`：新增判据 **⑯**（workflow 必须显式声明 token 权限）+ 最小权限断言
+   + [覆盖型] 基线 + canary 四向。
+3. 无状态码 / 策略 / 产品代码改动。
+
+### 五、注入验证（均还原后逐字节一致、EXIT=0）
+
+| 注入 | 结果 |
+|---|---|
+| A 删掉 `ci.yml` 的 `permissions` | ✅ |
+| B 给非 `contents` 的 scope 加 `write` | ✅（过宽） |
+| C 改成 `permissions: write-all` | ✅ |
+
+⇒ 同族「只锁了一半」累计 **第 105 次**（§4.170–§4.276）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
