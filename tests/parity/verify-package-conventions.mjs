@@ -449,6 +449,62 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     + `${STRICT_KEYS.join(' / ')}`);
 }
 
+// ── C8 **测试文件的类型检查不能被静默关掉**（2026-10-10，审计 §4.268）──────────────────────
+// 【为什么】实测：`packages/extension-api/jest.config.js` 关掉了 `ts-jest` 的 **`diagnostics`**
+//   （因为该包**零 jest 依赖**、`test` 脚本复用 `../settings/node_modules/.bin/jest`），
+//   而**所有**包的 `tsconfig.json` 的 `include` 都是 `["src"]` ⇒ **`tsc -p` 也不查 `test/`**
+//   ⇒ **该包的测试文件不被任何东西类型检查**。
+//   **注入验证（本轮）**：往它里面写 `const x: number = 'oops'` ⇒ `jest` **14/14 通过**（不报错）⇒ **缺口证实**。
+//   ⚠️ 实测该文件里**确实已经躺着一个真类型错误**（`permissions: ['root' as string]` 违反
+//     `ExtensionPermission[]`）—— **已修**（改用同文件第 80 行的惯用写法 `as never`）；
+//     修后该文件只剩「缺 `@types/jest`」那类错（`TS2304` × 24 + `TS2582` × 15），**0 个真类型错误**。
+// 【判据】① 有 `jest.config.js` 的包必须**开着** `ts-jest` 诊断（未设 `diagnostics: false`）；
+//   ② 关掉的必须**逐条登记**进 `PKG_TS_DIAGNOSTICS_GAPS` 并写明原因（同 `PKG_TEST_GAPS` 的 idiom）；
+//   ③ **双向**：登记项必须**仍然**是 `diagnostics: false`（否则是过期登记）。
+//   ⚠️ **本判据不假装能修好它**：修它要给 `extension-api` 加 `@types/jest` ⇒ **改 `package.json`
+//     ⇒ 必须更新 `pnpm-lock.yaml`** ⇒ 本机 `pnpm` 经 **corepack 需联网**（实测：交互式提示下载、
+//     被终止）⇒ **不在本环境可完成**。故**登记**，并把「怎么修」写进理由（防下一个人重查一遍）。
+{
+  const PKG_TS_DIAGNOSTICS_GAPS = new Map([
+    ['extension-api', '**零 jest 依赖**（`devDependencies` 只有 `typescript`），`test` 脚本复用 '
+      + '`../settings/node_modules/.bin/jest` ⇒ 为让它跑起来而关掉了 `ts-jest` 的 `diagnostics`；'
+      + '而本包 `tsconfig.include` 只有 `["src"]` ⇒ **测试文件不被任何东西类型检查**（注入验证证实）。'
+      + '**修法**：给该包加 `@types/jest` 依赖 + 打开诊断 + 更新 `pnpm-lock.yaml`'
+      + '（⚠️ 本机 `pnpm` 经 corepack 需联网 ⇒ 本环境不可完成）'],
+  ]);
+  const withJest = readdirSync(resolve(root, 'packages'))
+    .filter((d) => existsSync(resolve(root, 'packages', d, 'jest.config.js')));
+  // 防空转：立此判据时基线 12 个带 jest 配置的包，下限 10
+  if (withJest.length < 10) {
+    fail(`C8 只找到 ${withJest.length} 个带 jest 配置的包（下限 10 = 立此判据时的基线 12 − 余量）`
+      + ' —— 扫描面萎缩会让本判据空转');
+  }
+  /** 判定与 canary **共用**：该 jest 配置是否**关掉了**类型诊断。 */
+  const diagnosticsOff = (src) => /diagnostics:\s*false/.test(src);
+  for (const pkg of withJest) {
+    const off = diagnosticsOff(readFileSync(resolve(root, 'packages', pkg, 'jest.config.js'), 'utf8'));
+    const registered = PKG_TS_DIAGNOSTICS_GAPS.has(pkg);
+    if (off && !registered) {
+      fail(`packages/${pkg}/jest.config.js 关掉了 \`ts-jest\` 的 \`diagnostics\``
+        + '（= 测试文件**不被类型检查**；而 `tsconfig.include` 只有 `["src"]` ⇒ 也没有别人在查它）'
+        + '且**未登记** —— 请打开诊断；若确有原因，登记进 `PKG_TS_DIAGNOSTICS_GAPS` 并写明理由');
+    }
+    if (!off && registered) {
+      fail(`\`PKG_TS_DIAGNOSTICS_GAPS\` 登记了 \`${pkg}\`，但它**已不再**关掉诊断 —— 请删除该登记`
+        + '（过期登记会让「已登记」与「真的存在」脱钩）');
+    }
+  }
+  // canary：两向（构造样本；与判定**共用** diagnosticsOff）
+  if (!diagnosticsOff("transform: { '^.+\\\\.tsx?$': ['ts-jest', { diagnostics: false }] }")) {
+    fail('C8 canary 失效：`diagnostics: false` 的写法未被识别');
+  }
+  if (diagnosticsOff("transform: { '^.+\\\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }] }")) {
+    fail('C8 canary **过宽**：**没关**诊断的配置被误判');
+  }
+  console.log(`Package conventions: 测试类型诊断 —— ${withJest.length} 个带 jest 配置的包；`
+    + `关掉诊断并**已登记** ${PKG_TS_DIAGNOSTICS_GAPS.size} 个`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Package convention violations (PRD §117.1):\n  ${errors.join('\n  ')}`);
 }

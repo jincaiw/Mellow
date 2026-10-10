@@ -16488,6 +16488,79 @@ for 'babel__core'` 等）。查明：`packages/desktop-ui/node_modules/@types/` 
 
 ⇒ 同族「只锁了一半」累计 **第 95 次**（§4.170–§4.266）。
 
+## 4.268 「**配置的全部消费者**」透镜（上一轮教训的推广）：`extension-api` 的测试文件**不被任何东西类型检查**（2026-10-10）
+
+### 一、透镜的推广
+
+上一轮（§4.267）的教训是「**量代价必须覆盖配置的全部消费者**」（`tsconfig` 被 `tsc` **和** `jest` 消费）。
+⇒ 本轮把同一条透镜**反过来用**：**对每个消费者单独问「它检查了什么」**。
+
+**`jest.config.js` 的 `ts-jest` 设置**：`diagnostics: false` 会**关掉测试文件的类型检查**。
+
+### 二、实测：**1 个包**的测试文件**无人检查**
+
+| 读数 | 值 |
+|---|---|
+| 有 `jest.config.js` 的包 | **12** |
+| 其中关掉 `ts-jest` 诊断的 | **1**（`extension-api`） |
+| 所有包的 `tsconfig.json` 的 `include` | **都是 `["src"]`** ⇒ `tsc -p` **不查 `test/`** |
+
+⇒ `packages/extension-api/test/permissions.test.ts` **不被任何东西类型检查**：
+jest 关了诊断、`tsc` 不含 `test/`。
+
+**为什么它关了诊断**（可复核）：该包 `devDependencies` **只有 `typescript`**（**零 jest 依赖**），
+`test` 脚本复用 **`../settings/node_modules/.bin/jest --rootDir .`** ⇒ 拿不到 `@types/jest`
+⇒ 关掉诊断才能跑。
+
+### 三、**注入证明**（缺口不是推测）
+
+往 `permissions.test.ts` 写入 `const __injectedTypeError: number = 'oops';`：
+
+| 检查者 | 结果 |
+|---|---|
+| `jest`（`diagnostics: false`） | **14/14 通过** ⇒ **未检出**注入的类型错误 |
+| 对照：把 `test` 纳入 `tsconfig.include` 后跑 `tsc` | ✅ **能**检出（`TS2322: Type 'string' is not assignable to type 'number'`） |
+
+### 四、⚠️ 顺带发现并修掉**一处真实的类型错误**
+
+同一文件第 84 行：`permissions: ['root' as string]` —— 违反声明类型 `ExtensionPermission[]`
+（`TS2322`）。它**一直躺在那里没人发现**，正因为**没人检查这个文件**。
+**修法**：改用**同文件第 80 行已有的惯用写法 `as never`**（`type: 'kernel' as never`）。
+✅ **修后复测**：该文件只剩「缺 `@types/jest`」那类错（`TS2304` × 24 + `TS2582` × 15），
+**0 个真类型错误**；jest 仍 **14/14 通过**。
+
+### 五、为什么**不顺手修好**（如实说明，并核实过）
+
+修它要给 `extension-api` 加 `@types/jest` ⇒ **改 `package.json`** ⇒ **必须更新 `pnpm-lock.yaml`**。
+而本机 `pnpm` 经 **corepack 需联网**（**实测**：`pnpm --version` 就提示要下载 `pnpm-11.7.0.tgz`、
+交互式询问；60s 超时被终止）⇒ **不在本环境可完成**。
+⇒ 故**登记**，并把**修法**写进登记理由（防下一个人重新查一遍）。
+
+### 六、判据 **C8**（`verify-package-conventions.mjs`）
+
+① 有 `jest.config.js` 的包必须**开着** `ts-jest` 诊断；② 关掉的必须**逐条登记**进
+`PKG_TS_DIAGNOSTICS_GAPS` 并写明原因（**同 `PKG_TEST_GAPS` 的既有 idiom**）；
+③ **双向**：登记项必须**仍然**是 `diagnostics: false`（否则是**过期登记**）；
+④ 防空转下限（带 jest 配置的包 ≥ **10**，立此判据时基线 **12**）+ canary **两向**。
+
+**注入验证（三向，均还原后 EXIT=0）**：
+
+| 注入 | 结果 |
+|---|---|
+| 打开 `extension-api` 的诊断（登记项变过期） | ✅ 「登记了 `extension-api`，但它**已不再**关掉诊断」 |
+| 关掉 `themes` 的诊断（未登记） | ✅ 「**未登记** …… 请打开诊断；若确有原因，登记进 `PKG_TS_DIAGNOSTICS_GAPS`」 |
+| 破坏 canary（`diagnosticsOff` 恒假） | ✅ 「C8 canary 失效：`diagnostics: false` 的写法未被识别」 |
+
+### 七、顺带记录：一处**跨包二进制引用**（同一件事的代价）
+
+`packages/extension-api/package.json` 的 `test` 脚本是
+**`../settings/node_modules/.bin/jest --rootDir .`** ⇒ **引用另一个包的 `node_modules` 里的二进制**。
+⚠️ 这依赖 `settings` 的依赖布局（若 `settings` 去掉 jest，`extension-api` 的测试**直接跑不起来**）。
+⇒ 与上面**同一处**根因（零 jest 依赖）；**修法与它同一件事**（加 `@types/jest` + `jest` 自身依赖）
+⇒ **只记录，不单独处置**。
+
+⇒ 同族「只锁了一半」累计 **第 96 次**（§4.170–§4.267）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

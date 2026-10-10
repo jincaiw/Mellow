@@ -81,7 +81,7 @@ describe('P6.1 permissions 纯函数（PRD §120 最小权限）', () => {
   });
 
   test('validateManifest：未知权限经 validatePermissions 传递拒绝', () => {
-    expect(validateManifest({ ...VALID_MANIFEST, permissions: ['root' as string] })).toContain('未知权限');
+    expect(validateManifest({ ...VALID_MANIFEST, permissions: ['root' as never] })).toContain('未知权限');
   });
 
   test('guardPermission：未声明 → 抛 permission-denied', () => {
