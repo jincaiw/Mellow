@@ -16944,6 +16944,111 @@ tracked 的 `.md` / `.mjs` / `.cjs` 里，凡行内码形如 `` `tools/….(mjs|
 
 ⇒ 同族「只锁了一半」累计 **第 100 次**（§4.170–§4.271）。
 
+## 4.273 「不进 CI 的本机工具现在还能跑吗」：实测 8 个 + 一条**静默改判据**的通道（2026-10-10）
+
+### 一、先做三条结构型 0 缺陷普查（已用过的透镜，记录以防重做）
+
+| 透镜 | 实测 | 结论 |
+|---|---|---|
+| **`npm scripts` 调用的可执行 ↔ 各包 `node_modules/.bin/`** | 17 份 `package.json` 逐个对照：脚本里用到的每个二进制（`tsc` / `jest` / `vite` / `tauri` / …）**都在该包自己的 `.bin` 里** | ✅ 0 缺陷 |
+| **`tsconfig` 的 `paths` / `references` ↔ 实际目录** | 16 份 tsconfig **全无** `paths` / `references` | ✅ 0 缺陷（无可漂对象） |
+| **action 版本 / rust toolchain 一致性** | 8 个 action 在 3 个 workflow 里版本**完全一致**；`dtolnay/rust-toolchain@stable` 7 处一致；无 `rust-toolchain` 文件、Cargo 无 `rust-version`（⇒「Rust 版本无真值源」是**已记录的读数**，非本轮新发现） | ✅ 0 缺陷 |
+
+### 二、发现：8 个本机工具**都能跑**，但过程中**踩到一条静默改判据的通道**
+
+带 150s 超时逐个实跑 `tests/parity/tools/*.mjs`：
+
+| 工具 | 耗时 | 结果 |
+|---|---|---|
+| `audit-typora-menu-labels.mjs` | 0.13s | ✅ |
+| `audit-typora-preferences.mjs` | 0.17s | ✅ |
+| `audit-doc-counts.mjs` | 0.60s | ✅ |
+| `audit-bold-pairing.mjs` | 0.85s | ✅ |
+| `audit-typora-orphan-strings.mjs` | 2.1s | ✅ |
+| `audit-memory-refs.mjs` | 3.3s | ✅ |
+| `audit-guard-bounds.mjs` | **>150s** | ⏱️ 它做**二分实测**（反复跑护栏）⇒ 慢是**设计**，不是坏 |
+| `audit-pkg-test-counts.mjs` | **>150s** | ⏱️ 它**实跑 12 个包**⇒ 同上 |
+
+⇒ **没有坏工具**。但我在超时后 **SIGKILL** 了 `audit-guard-bounds.mjs` —— 它在**工作区留下了残留突变**：
+
+```
+ M tests/parity/verify-doc-code-refs.mjs
+-  if (npmDeps.size < 24 || cargoDeps.size < 14) {
++  if (npmDeps.size < 25 || cargoDeps.size < 14) {
+```
+
+⚠️ **关键**：这是「下限抬 1」，**护栏照样全绿** ⇒ 若没看 `git status`，它会**被直接提交**
+（= 一次**静默改判据**）。
+
+### 三、深挖：工具的安全机制完备，但**自愈锁落在仓库之外**
+
+`audit-guard-bounds.mjs` 的设计其实很完整：`finally` 还原 + `SIGTERM`/`SIGINT` 处理器 +
+**锁文件**（`finally` 与信号处理器都救不了 SIGKILL，所以突变前先落锁、**下次启动时先清理**）+
+「工作区必须干净」前置检查。它自己的注释还记着「顺序不能反，否则工具拒绝运行 ⇒ 永远清理不了」。
+
+⚠️ **但锁落在 `os.tmpdir()`** —— 在 macOS 上是 `/var/folders/…/T/`，**随重启 / 系统定期清理而消失**
+（换机、改 `TMPDIR` 也会丢）。⇒ **锁一丢，自愈机制失效**：残留突变**再也无人还原**，
+而「工作区必须干净」的前置检查会让工具**拒绝运行** ⇒ 正是它自己警告过的那个失败模式，
+**从另一条路径复现**。
+
+✅ **硬证据（本轮实测复现）**：手工造一处残留突变 + 删掉 `/tmp` 锁 ⇒
+
+```
+拒绝运行：工作区不干净 —— 本工具会就地突变源码文件，必须能用 `git checkout --` 兜底还原。
+ M tests/parity/verify-doc-code-refs.mjs
+```
+
+⇒ 残留**永久留下**，工具**无法自愈**。
+
+### 四、处置
+
+**① 结构性修复**（`tests/parity/tools/audit-guard-bounds.mjs`）：
+- 锁改落在 **`<git-dir>/mellow-audit-guard-bounds.lock`** —— 不进版本库、**不被系统清理**、随仓库存在；
+- **不保留**对旧 `/tmp` 锁的兼容清理（那需要 `os.tmpdir()`，会与判据 ⑭ 直接冲突；
+  旧锁只在「本修复落地前被 kill」这一极小窗口里存在 ⇒ 由拒绝运行时的**新提示**引导手工还原）；
+- 还原后**校验** `git status --porcelain -- <file>` 为空，不为空则**显式报错**（不再静默）；
+- 拒绝运行时新增提示：「若这些文件你**没改过**，那是上次中断留下的**残留突变** ⇒ 手工还原，**不要提交**」。
+
+**② 判据 ⑭**（`verify-release-gate.mjs`）：**具名登记 + 双向** ——
+候选发现（同时出现 `writeFileSync(` 与**带引号的** `'checkout'`）⇒ 每个候选必须登记进
+`IN_PLACE_MUTATORS`（受**三条安全前提**约束）或 `IN_PLACE_MUTATORS_EXEMPT`（写明为什么它不是）；
+两张表**双向**；受约束的必须满足：
+① 锁**不得落在仓库之外**（不得出现 `tmpdir(`）· ② 有机器可读的干净前置检查（`'--porcelain'`）·
+③ 还原走 `git checkout --`。
+⚠️ **如实声明：这是「代理」** —— 它判**实现形态**不是行为（真验证 = 有人真跑那个工具）。
+形态判据的价值在于：**这三条正是「安全前提」，而它们的失效是静默的**（本轮实测：失效后护栏全绿）。
+
+### 五、⚠️ 判据自己踩了三个坑（全部如实记录）
+
+1. **命中自己（本仓第 11 次）**：我把 `os.tmpdir()` 写进了**注释**（解释「曾经落在哪」）⇒ 判据当场报自己
+   ⇒ 加**注释剥离**（块注释保留换行数）。⚠️ 这同时修掉一个**真问题**：注释里写一句
+   「用 git checkout 还原」本来就能让 ③ **空转**。
+2. **谓词过粗 ⇒ 误报**：首版用**裸子串** `checkout` ⇒ `tools/gen-upstream-manifest.mjs` 被误判为候选
+   （它的 `tmpdir()` 是**上游 tarball 的工作目录**，不是锁）⇒ 收窄成**带引号的实参** `'checkout'`。
+   ✅ **收窄后双向检查立刻把那条例外判为「过期」** —— 例外表**双向**在正常工作。
+3. **谓词被骗 ⇒ 注入未抓**：首版用裸子串 `--porcelain` ⇒ 工具末尾那句
+   `console.log('… git status --porcelain')` 让检查**恒真** ⇒ **把真的前置检查删掉后判据照样绿**
+   （注入 B **未抓**，实测）⇒ 同样改为**带引号的实参** `'--porcelain'`。
+
+### 六、注入验证（均还原后逐字节一致、EXIT=0）
+
+| 注入 | 结果 |
+|---|---|
+| A 把锁挪回仓库外（真用 `tmpdir()`） | ✅ |
+| B 删掉全部 `'--porcelain'` 前置检查 | ✅（**收窄谓词之后**） |
+| C 新增一个未登记的候选工具 | ✅（「未登记」分支） |
+
+⚠️ 首轮 A/B 都是**无效注入**（A 只写 `tmpdir` 没写 `tmpdir(`；B 漏了另一处 `--porcelain`，
+且当时谓词恒真）⇒ 重做后才有效。
+
+### 七、改动清单
+
+1. `tests/parity/tools/audit-guard-bounds.mjs`：锁落点迁到 `<git-dir>/`、还原后校验、拒绝时给提示。
+2. `verify-release-gate.mjs`：新增判据 **⑭**（具名登记 + 双向 + 三条安全前提 + canary 三向）。
+3. 无状态码 / 策略 / 产品代码改动。
+
+⇒ 同族「只锁了一半」累计 **第 101 次**（§4.170–§4.272）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

@@ -2406,6 +2406,122 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
 }
 
+// ── ⑭ 「就地突变仓库文件」的工具：自愈锁**不得落在仓库之外**（2026-10-10，审计 §4.273）──
+// 【为什么】`tests/parity/tools/audit-guard-bounds.mjs` 用「把下限抬 1 再跑护栏」的办法普查下限是否过松 ——
+//   它**就地改写护栏源码**，靠 `git checkout --` 兜底还原。`finally` 与信号处理器**都救不了 SIGKILL**，
+//   所以它另有一道**锁文件**：突变前把目标文件写进锁，**下次启动时先清理**（`git checkout --` 幂等）。
+//   ⚠️ **锁原本落在 `os.tmpdir()`** —— 在 macOS 上是 `/var/folders/…/T/`，**随重启 / 系统定期清理而消失**
+//     （换机、改 `TMPDIR` 也会丢）。⇒ 锁一丢，残留突变**再也无人还原**；而「工作区必须干净」的前置检查
+//     会让工具**拒绝运行** ⇒ **自愈机制失效**（正是该文件自己注释里警告过的失败模式，从另一条路径复现）。
+//   ✅ **实测复现**（本轮）：手工造一处残留突变 + 删掉 `/tmp` 锁 ⇒ 工具报「拒绝运行：工作区不干净」，
+//     残留**永久留下**。而残留是「阈值抬 1」⇒ **护栏照样全绿** ⇒ **可能被直接提交**（一次静默改判据）。
+//   ✅ **已结构性修复**：锁改落在 `<git-dir>/mellow-audit-guard-bounds.lock`（不进版本库、不被系统清理、
+//     随仓库存在）+ 保留对旧 `/tmp` 锁的兼容清理 + 还原后**校验**并显式报错。
+// 【判据】**具名登记 + 双向**（本仓惯用法）：
+//   ① **候选发现**：`tests/parity/tools/*.mjs` 与 `tools/*.mjs` 里**同时**出现 `writeFileSync(` 与
+//      `checkout` 的文件 = 「疑似就地突变」；
+//   ② 每个候选必须登记进 `IN_PLACE_MUTATORS`（受**三条安全前提**约束）**或** `IN_PLACE_MUTATORS_EXEMPT`
+//      （写明「为什么它不是就地突变」）；
+//   ③ 两张表**双向**：登记项的文件必须存在，且**必须仍在候选集合里**（否则是过期登记）；
+//   ④ 受约束的每个必须满足三条安全前提：
+//      · 自愈锁**不得落在仓库之外** —— 源码里**不得**出现 `tmpdir(`；
+//      · 有「工作区必须干净」的**机器可读**前置检查 —— 必须出现 `--porcelain`；
+//      · 还原走 `git checkout --`（而不是内存副本）—— 必须出现 `checkout`。
+//   ⚠️ **如实声明：这是「代理」** —— 它判的是**实现形态**，不是行为（真验证 = 有人真跑那个工具）。
+//     形态判据的价值在于：**这三条正是「安全前提」，而它们的失效是静默的**（本轮实测：失效后
+//     护栏全绿、只有 `git status` 能看出来）。
+{
+  const TOOL_DIRS = ['tests/parity/tools', 'tools'];
+  // 受三条安全前提约束的：**会就地突变仓库文件**（写别人的文件 + 靠 git 还原）
+  const IN_PLACE_MUTATORS = new Map([
+    ['tests/parity/tools/audit-guard-bounds.mjs',
+      '把下限抬 1 再跑护栏 —— **就地改写护栏源码**，靠 `git checkout --` 还原 + 自愈锁'],
+  ]);
+  // 候选里**不是**就地突变的（写明理由；双向：理由失效即报错）
+  // ⚠️ **刻意为空**（2026-10-10）：首版谓词用裸子串 `checkout` ⇒ `tools/gen-upstream-manifest.mjs`
+  //   被**误报**为候选（它只在注释/消息里出现该词），当时为它登记了一条例外。
+  //   谓词收窄成「**带引号的实参** `'checkout'`」后它不再命中 ⇒ **例外随之删除**（双向检查抓到的）。
+  //   ⚠️ 本表**不因空而删** —— 将来若有「疑似但确非」的工具，登记处就在这。
+  const IN_PLACE_MUTATORS_EXEMPT = new Map();
+  const candidates = [];
+  /** 去掉 `//` 行注释与 `/* … *\/` 块注释（块注释**保留换行数**）——
+   *  ⚠️ 「源码里有没有 X」**必须排除注释**，否则「注释里提到」会被当成「代码里有」。
+   *  实测（本判据首版）：`tmpdir(` 只出现在**注释里**（解释「曾经落在 os.tmpdir()」）⇒ 判据**命中自己**。
+   *  ⚠️ **还必须排除「消息字符串里的提及」** —— 首版用裸子串判 `--porcelain`，
+   *  而工具末尾有一句 `console.log('… git status --porcelain')` ⇒ 把**真的**前置检查删掉后
+   *  判据照样绿（注入 B **未抓**，实测）。⇒ 一律用**带引号的实参形态**（`'--porcelain'`）。 */
+  const stripComments = (src) => src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/\/\/[^\n]*/g, '');
+  const hasQuoted = (src, tok) => src.includes(`'${tok}'`) || src.includes(`"${tok}"`);
+  for (const dir of TOOL_DIRS) {
+    const abs = resolve(root, dir);
+    if (!existsSync(abs)) continue;
+    for (const name of readdirSync(abs)) {
+      if (!name.endsWith('.mjs')) continue;
+      const rel = `${dir}/${name}`;
+      const src = stripComments(readFileSync(resolve(root, rel), 'utf8'));
+      if (src.includes('writeFileSync(') && hasQuoted(src, 'checkout')) candidates.push(rel);
+    }
+  }
+  const unregistered = candidates.filter(
+    (c) => !IN_PLACE_MUTATORS.has(c) && !IN_PLACE_MUTATORS_EXEMPT.has(c),
+  );
+  if (unregistered.length > 0) {
+    fail(`这些工具**疑似就地突变仓库文件**（同时出现 \`writeFileSync(\` 与 \`checkout\`），但**未登记**：`
+      + `${unregistered.join('、')} —— 请登记进 IN_PLACE_MUTATORS（它必须满足三条安全前提）`
+      + '或 IN_PLACE_MUTATORS_EXEMPT（写明为什么它不是就地突变）');
+  }
+  for (const [rel, why] of IN_PLACE_MUTATORS) {
+    if (!existsSync(resolve(root, rel))) { fail(`IN_PLACE_MUTATORS 登记了 \`${rel}\`，但**该文件不存在**`); continue; }
+    if (!candidates.includes(rel)) {
+      fail(`IN_PLACE_MUTATORS 登记了 \`${rel}\`，但它**已不再是候选**（不再同时出现 writeFileSync 与 checkout）`
+        + ` —— 登记过期，请复核（原理由：${why}）`);
+    }
+    const src = stripComments(readFileSync(resolve(root, rel), 'utf8'));
+    if (src.includes('tmpdir(')) {
+      fail(`${rel} 是「就地突变仓库文件」的工具，但它的自愈锁落在**仓库之外**（用了 \`os.tmpdir()\`）—— `
+        + '系统临时目录**随重启 / 定期清理而消失**（换机、改 TMPDIR 也会丢）⇒ 锁一丢，'
+        + '被 SIGKILL 留下的突变**再也无人还原**，而工具会因「工作区不干净」**拒绝运行**（自愈失效）；'
+        + '残留的突变是「阈值抬 1」⇒ **护栏照样全绿** ⇒ 可能被直接提交。'
+        + '锁必须落在 `<git-dir>/` 下（不进版本库、不被系统清理）');
+    }
+    if (!hasQuoted(src, '--porcelain')) {
+      fail(`${rel} 是「就地突变仓库文件」的工具，但没有「工作区必须干净」的**机器可读**前置检查`
+        + '（缺 `\'--porcelain\'` 这一**实参**）—— 没有它，工具会去改一个已经脏的工作区，'
+        + '残留突变将与开发者的真实改动**无法区分**'
+        + '（⚠️ 只把 `--porcelain` 写在**消息字符串**里不算 —— 本判据首版就是这么被骗过的）');
+    }
+  }
+  for (const [rel, why] of IN_PLACE_MUTATORS_EXEMPT) {
+    if (!existsSync(resolve(root, rel))) { fail(`IN_PLACE_MUTATORS_EXEMPT 登记了 \`${rel}\`，但**该文件不存在**`); continue; }
+    if (!candidates.includes(rel)) {
+      fail(`IN_PLACE_MUTATORS_EXEMPT 为 \`${rel}\` 登记了「不是就地突变」，但它**已不在候选里** —— `
+        + `请删除该例外（原理由：${why}）`);
+    }
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；新增突变型工具时须一并上调）
+  const MUTATION_TOOL_BASELINE = 1; // [覆盖型] 基线 1
+  if (IN_PLACE_MUTATORS.size < MUTATION_TOOL_BASELINE) {
+    fail(`IN_PLACE_MUTATORS 只有 ${IN_PLACE_MUTATORS.size} 项`
+      + `（[覆盖型] 基线 ${MUTATION_TOOL_BASELINE}）—— 登记表被删空会让本判据**空转**`);
+  }
+  // canary：三向（与判定**共用**同一个「疑似就地突变」谓词；样本运行时拼接）
+  const looksMutating = (s) => s.includes('writeFileSync(') && hasQuoted(stripComments(s), 'checkout');
+  if (!looksMutating(`const a=1; ${'writeFileSync'}('x'); git(['${'checkout'}']);`)) {
+    fail('⑭ canary 失效：一个**确实**就地突变的样本未被识别为候选');
+  }
+  if (looksMutating('const a = 1; // 只是读文件')) {
+    fail('⑭ canary **过宽**：只读的工具被误判为候选');
+  }
+  if (IN_PLACE_MUTATORS.size < 1) {
+    fail('⑭ canary 失效：IN_PLACE_MUTATORS 被清空（登记机制本身失效）');
+  }
+  console.log(`Release gate: 就地突变工具候选 ${candidates.length} 个 —— 受约束 ${IN_PLACE_MUTATORS.size} 个`
+    + `**安全前提齐备**（锁在仓库内 / 有干净前置检查 / 走 \`git checkout --\` 还原）`
+    + `；已登记非突变 ${IN_PLACE_MUTATORS_EXEMPT.size} 个（⚠️ 代理判据，不替代真跑）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
