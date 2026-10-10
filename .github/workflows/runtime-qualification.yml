@@ -46,7 +46,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: mellow/pnpm-lock.yaml
       - name: Install system deps (GUI + X + IME)
@@ -299,7 +299,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - name: Install workspace
@@ -458,7 +458,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - name: Install workspace

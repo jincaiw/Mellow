@@ -685,6 +685,80 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
     + `（手工探针例外表 ${ORPHAN_SCRIPT_EXEMPT.size} 项）`);
 }
 
+// ── ⑯ Node 主版本只有一个真值源：**`.nvmrc`**（2026-10-10，审计 §4.278）────────────────────
+// 【为什么】实测：`node-version: 22` **硬编码在 12 处**（ci 6 / release 3 / runtime-qualification 3），
+//   而根 `package.json` 的 `engines.node` 是 **`>=20`** ⇒ 三处口径不一：
+//   · CI 只验证 **22**；· 声明允许 20/21/22/23…；· 本机构建走受管的 `versions/current` 指针（判据 ⑥）。
+//   ⇒ **值的副本 12 处** —— 与本仓已修过的「pnpm 版本 10 处副本」（判据 ⑭）**同型**。
+// 【判据】
+//   ① `.nvmrc` 必须存在且内容是**合法版本**（`\d+` / `\d+\.\d+` / `\d+\.\d+\.\d+`，可带 `v` 前缀）；
+//   ② 三个 workflow 里**不得**出现硬编码 `node-version:` —— 必须写 `node-version-file: .nvmrc`；
+//   ③ 每个 workflow **至少一处** `node-version-file: .nvmrc`（否则该 workflow 不 pin Node）；
+//   ④ `package.json` 的 `engines.node` 的**下界**必须 ≤ `.nvmrc` 的主版本
+//      （即「声明允许」必须**包含**「CI 实测」—— 否则声明与证据矛盾）。
+//   ⚠️ **不改 `engines.node`**：把 `>=20` 收紧成 `>=22` 会改变对使用者的约束（属**声明级**决定）
+//     ⇒ 本判据只锁**包含关系**，并把「声明宽于实测」作为一条**读数**如实记录在审计里。
+{
+  const NVMRC = '.nvmrc';
+  const WF = ['.github/workflows/ci.yml', '.github/workflows/release.yml', '.github/workflows/runtime-qualification.yml'];
+  const nvmrcPath = resolve(root, NVMRC);
+  // ⚠️ **`read()` 必须留在 `existsSync` 分支内** —— 首版在分支外取主版本 ⇒ 「删掉 .nvmrc」这个
+  //    注入让护栏**直接崩**（`ENOENT`）而不是报出违规 ⇒ **判据从未运行**（实测踩到）。
+  let nvmrcMajor = null;
+  if (!existsSync(nvmrcPath)) {
+    fail(`缺少 ${NVMRC} —— Node 主版本没有**单一真值源**（此前硬编码在 12 处）`);
+  } else {
+    const raw = read(NVMRC).trim();
+    if (!/^v?\d+(\.\d+){0,2}$/.test(raw)) {
+      fail(`${NVMRC} 的内容 ${JSON.stringify(raw)} 不是合法版本 —— 解析器漂移会让本判据空转`);
+    } else {
+      nvmrcMajor = Number(/^v?(\d+)/.exec(raw)[1]);
+    }
+  }
+  let pinned = 0;
+  for (const rel of WF) {
+    if (!existsSync(resolve(root, rel))) continue;
+    const src = read(rel);
+    if (/^\s*node-version:\s*\S/m.test(src)) {
+      fail(`${rel} 里仍有**硬编码**的 \`node-version:\` —— Node 主版本必须只有一个真值源（\`${NVMRC}\`）；`
+        + '请改成 `node-version-file: .nvmrc`（`actions/setup-node` 原生支持）');
+    }
+    const n = (src.match(/node-version-file:\s*\.nvmrc/g) ?? []).length;
+    pinned += n;
+    if (n === 0) {
+      fail(`${rel} 里没有 \`node-version-file: .nvmrc\` —— 该 workflow 没有 pin Node 版本（会用 runner 默认值）`);
+    }
+  }
+  // ④ engines 的**下界**必须 ≤ .nvmrc 的主版本
+  const engines = JSON.parse(read('package.json')).engines?.node ?? null;
+  if (engines === null) {
+    fail('根 package.json 缺 `engines.node` —— 「支持哪些 Node」没有声明，本判据无从比对');
+  } else if (nvmrcMajor !== null) {
+    const lo = /(\d+)/.exec(engines);
+    if (lo === null) {
+      fail(`\`engines.node\` 的值 ${JSON.stringify(engines)} 里取不到下界 —— 解析器漂移`);
+    } else if (Number(lo[1]) > nvmrcMajor) {
+      fail(`\`engines.node\` = \`${engines}\` 的**下界** ${lo[1]} **大于** ${NVMRC} 的 ${nvmrcMajor}`
+        + ' —— 声明允许的版本**不包含** CI 实测的版本（声明与证据矛盾）');
+    }
+  }
+  // 防空转：[健康度型] 集合由 workflow 内容产生 ⇒ 留余量（立此判据时基线 12 处）
+  if (pinned < 8) {
+    fail(`三个 workflow 里只找到 ${pinned} 处 \`node-version-file: .nvmrc\`（下限 8 = 立此判据时的基线 12 − 余量）`
+      + ' —— 扫描面或谓词漂移会让本判据**空转**');
+  }
+  // canary：三向（样本运行时拼接）
+  const OKV = /^v?\d+(\.\d+){0,2}$/;
+  if (!OKV.test('22') || !OKV.test('v22.22.2') || !OKV.test('22.22')) {
+    fail('⑯ canary 失效：合法版本样本未被识别');
+  }
+  if (OKV.test('node22') || OKV.test('22.x') || OKV.test('')) {
+    fail('⑯ canary **过宽**：非法版本样本被误判为合法');
+  }
+  console.log(`Build pipeline: Node 主版本单一真值源 = \`${NVMRC}\`（${existsSync(nvmrcPath) ? read(NVMRC).trim() : "**缺失**"}）；`
+    + `${pinned} 处 workflow 步骤引用它；\`engines.node\` = \`${engines}\`（下界须 ≤ 主版本）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }

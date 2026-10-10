@@ -40,7 +40,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - name: Install workspace
         run: pnpm install --frozen-lockfile
@@ -78,7 +78,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -99,7 +99,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -122,7 +122,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -157,7 +157,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       # 护栏脚本只依赖 Node 内建模块，无需 pnpm install，可在 30s 内给出结论。
       # 无 Typora 授权环境时 dump 生成器退化为 UNVERIFIED 占位（不构成验收证据）。
       - name: Generate Typora baseline dump
@@ -186,7 +186,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       # 无 Typora 的 runner 上，生成器会保留仓库已入库的 EXTRACTED 基线而不重写
       # （见 generate-typora-menu-dump.mjs），故不会退化成 UNVERIFIED。
       - name: Generate Typora baseline dump
