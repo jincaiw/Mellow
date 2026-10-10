@@ -16,6 +16,7 @@
  * 用法：`node tests/parity/tools/audit-memory-refs.mjs`
  */
 import { readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -99,8 +100,84 @@ if (mem !== null && existsSync(memPath)) {
   if (soft.length === 0) console.log('MEMORY 范围端点：未发现可疑项');
 }
 
-console.log('\n=== 硬问题（悬空引用 / 重复 / 缺号）===');
-if (hard.length === 0) console.log('（无）');
+// ── **仓库里**的 `PITFALLS §4.N` 引用（2026-10-10，审计 §4.258）──────────────────────
+// 【为什么补】上面那段**只查 MEMORY 的交叉引用**（旧注释里明写了这个范围）。但**仓库里**还有
+//   **296 处** `PITFALLS §4.N` **数字引用**（按数字计、含 `–` 范围两端；审计文档 215 / 护栏注释 34 /
+//   master-plan 3 / README 2 / 本工具 4 …）—— 而 `PITFALLS.md` **不在仓库内** ⇒ **CI 永远查不了它们**，
+//   只能靠本工具。⚠️ 悬空的代价与 MEMORY 相同：读者按编号**找不到依据**；护栏注释里的那 34 处尤其如此
+//   —— 它们是「**为什么立这条判据**」的唯一线索（判据本体的注释只写「见 PITFALLS §4.N」）。
+//   ⚠️ 计数口径要写清：**匹配数**（正则命中次数）是 **256**，**数字数**（范围两端各算一个）是 **296**
+//     —— 两个都对，差别在口径（同族：本仓「报数必须同时报口径」）。
+// 【判据】仓库（`git ls-files --cached --others --exclude-standard`，按文本扩展名过滤）里
+//   `PITFALLS §4.N`（含 `–` 范围写法）指向的节必须**存在** ⇒ 否则**硬**（退出码 1）。
+//   ⚠️ 例外：`PITFALLS_REF_SENTINELS` —— 护栏 canary 用的**哨兵编号**（刻意不存在），逐条给理由。
+//   ⚠️ 谓词要求 `§4.` 后**紧跟数字** ⇒ 正则字面量（`§4\.(\d+)`）与 `PITFALLS §4.N`（占位符）都不会命中。
+{
+  // 哨兵编号：**刻意不存在**，且**必须仍被引用**（否则例外表自己过期）
+  const PITFALLS_REF_SENTINELS = new Map([
+    [9999, '护栏 canary 的哨兵编号：`verify-doc-code-refs.mjs` 用它验证「限定词必须紧邻」这条谓词'
+      + '（`PITFALLS §4.9999` 不得被当成**裸** `§4.N`）'],
+  ]);
+  const TEXT_EXT = /\.(md|mjs|cjs|js|ts|tsx|rs|json|yml|yaml|css)$/;
+  let repoFiles = [];
+  try {
+    repoFiles = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' })
+      .split('\n').filter(Boolean).filter((f) => TEXT_EXT.test(f));
+  } catch {
+    console.log('ℹ️ 仓库引用核对：`git ls-files` 不可用 ⇒ 跳过（本工具要求在有 git 的检出里运行）');
+  }
+  const pit = sections.get('PITFALLS');
+  if (repoFiles.length > 0 && pit !== null && pit !== undefined) {
+    // 判定与 canary **共用**本 RE 与例外表
+    const RE = /PITFALLS(?:\.md)?[^\n§]{0,14}?§4\.(\d+)(?:\s*[–—~]\s*§?4?\.?(\d+))?/g;
+    const numsOf = (s) => [...s.matchAll(RE)]
+      .flatMap((m) => [Number(m[1]), m[2] ? Number(m[2]) : null]).filter((n) => n !== null);
+    let refs = 0;
+    let sentinelSeen = 0;
+    const dangling = [];
+    for (const f of repoFiles) {
+      let src; try { src = readFileSync(resolve(root, f), 'utf8'); } catch { continue; }
+      src.replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+        for (const n of numsOf(line)) {
+          refs += 1;
+          if (PITFALLS_REF_SENTINELS.has(n)) { sentinelSeen += 1; continue; }
+          if (!pit.nums.has(n)) {
+            dangling.push(`${f}:${i + 1} → \`PITFALLS §4.${n}\``);
+          }
+        }
+      });
+    }
+    for (const d of dangling) {
+      hard.push(`仓库里引用了**不存在**的 PITFALLS 节：${d}（PITFALLS 当前最大 §4.${pit.max}）`
+        + ' —— 读者按编号找不到依据；请改为存在的节号，或补写该节');
+    }
+    // 防空转：扫描面 / 谓词漂移会让本检查**空转**（立此判据时基线 296 个数字引用，下限 200）
+    if (refs < 200) {
+      hard.push(`仓库里只找到 ${refs} 处 \`PITFALLS §4.N\` 数字引用（下限 200 = 立此判据时的基线 296 − 余量）`
+        + ' —— 扫描面或谓词漂移会让本检查**空转**');
+    }
+    // 例外表**双向**：哨兵编号必须仍被引用（否则是过期例外 ⇒ 应删）
+    if (sentinelSeen === 0) {
+      hard.push('`PITFALLS_REF_SENTINELS` 里的哨兵编号**已不再被引用** —— 请删除该例外条目');
+    }
+    if (pit.nums.has(9999)) {
+      hard.push('哨兵编号竟成了**真实节号** —— 例外表已失去意义，请删掉该条目');
+    }
+    // canary：四向（构造样本；**编号运行时拼接**，避免本工具命中自己）
+    const P = 'PITFALLS §4.';
+    const SENT = String(9) + String(9) + String(9) + String(9);
+    if (numsOf(`${P}1`).join(',') !== '1') hard.push('仓库引用核对 canary 失效：单节引用未被解析');
+    if (numsOf(`${P}1–§4.3`).join(',') !== '1,3') hard.push('仓库引用核对 canary 失效：范围端点未被解析');
+    if (numsOf(`${P}N`).length !== 0) hard.push('仓库引用核对**过宽**：占位符 `§4.N`（非数字）被当成引用');
+    if (numsOf(`${P}${SENT}`).join(',') !== SENT) {
+      hard.push('仓库引用核对 canary 失效：哨兵样本未被解析 ⇒ 例外表失去意义');
+    }
+    console.log(`仓库 PITFALLS 引用：${refs} 处（悬空 ${dangling.length} · 哨兵 ${sentinelSeen} 处，`
+      + `例外表 ${PITFALLS_REF_SENTINELS.size} 个）`);
+  }
+}
+
+console.log('\n=== 硬问题（悬空引用 / 重复 / 缺号）===');if (hard.length === 0) console.log('（无）');
 for (const h of hard) console.log(`- ${h}`);
 console.log('=== 软问题（候选，需人工判断）===');
 if (soft.length === 0) console.log('（无）');
