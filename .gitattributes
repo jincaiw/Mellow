@@ -22,6 +22,7 @@
 # 二进制：**显式**标注（不依赖 `text=auto` 的内容探测）—— 让政策可读，也避免探测边界上的意外。
 # ⚠️ 必须放在 `*` 规则**之后**才生效。
 *.png binary
+*.jpeg binary
 *.ttf binary
 *.icns binary
 *.ico binary

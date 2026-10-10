@@ -13,9 +13,10 @@
  * NO-GO 清单只报告不抛错（开发期必然存在未闭环项）；但「标了 PASS-E 却缺证据」、
  * 「护栏断链」、「CI 缺门禁」都是硬失败。
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, openSync, readSync, closeSync, writeFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
@@ -2683,6 +2684,71 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   console.log(`Release gate: ${wfFiles.length} 个 workflow —— 均**显式声明 token 权限**`
     + '（本仓只需 `contents: write` 用于发版；⚠️ 结构判据，行为需等一次真跑）');
+}
+
+// ── ⑰ 二进制文件必须**显式**声明（不依赖 `text=auto` 的内容探测）（2026-10-10，审计 §4.279）──
+// 【为什么】`.gitattributes` 的注释自己写着「二进制：**显式**标注（不依赖 `text=auto` 的内容探测）
+//   —— 让政策可读，也避免探测边界上的意外」。但实测：**4 个被跟踪文件**（3 个 `.jpeg` + 1 个 `.bin`）
+//   的内容含 NUL（= git 自己的二进制启发式会判为二进制），而 `git check-attr text` 返回 **`auto`**
+//   ⇒ 它们**没有**被显式声明 ⇒ 与那句注释**不符**。
+//   ⚠️ **后果**：`text=auto` 会**自动探测**，所以这些文件**当前是安全的**；但「探测」只在
+//     **前 8000 字节含 NUL** 时判为二进制 —— 一个**恰好不含 NUL** 的二进制（如某些 `.bin`）
+//     会被当成文本 ⇒ 在检出时被 `eol=lf` **改写 CRLF** ⇒ **静默损坏**。
+//     ⇒ 显式声明的价值正是「不依赖探测边界」。
+// 【判据】**被跟踪**的文件里，凡**前 8000 字节含 NUL** 的（git 的二进制启发式），
+//   其 `git check-attr text` 必须是 **`unset`**（即被某条 `binary` 规则覆盖）。
+//   ⚠️ 用 **git 自己的谓词**（`git check-attr --stdin`，批量一次调用）+ **git 自己的启发式**（8000 字节内找 NUL）。
+//   ⚠️ **不改任何文件内容** —— 只补 `.gitattributes` 的声明（本判据立起时已补 `*.jpeg` / `*.jpg` / `*.bin`）。
+{
+  const tracked = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const NUL_WINDOW = 8000;
+  /** 判定（与 canary **共用**）：前 8000 字节是否含 NUL。 */
+  const hasNul = (abs) => {
+    let fd = null;
+    try {
+      fd = openSync(abs, 'r');
+      const buf = Buffer.alloc(NUL_WINDOW);
+      const n = readSync(fd, buf, 0, NUL_WINDOW, 0);
+      return buf.subarray(0, n).includes(0);
+    } catch { return false; } finally { if (fd !== null) closeSync(fd); }
+  };
+  const binFiles = tracked.filter((f) => hasNul(resolve(root, f)));
+  let unsetCount = 0;
+  if (binFiles.length > 0) {
+    const out = execFileSync('git', ['check-attr', '--stdin', 'text'],
+      { cwd: root, input: binFiles.join('\n'), encoding: 'utf8' });
+    const bad = [];
+    for (const line of out.split('\n').filter(Boolean)) {
+      const m = /^(.*): text: (.*)$/.exec(line);
+      if (m === null) continue;
+      if (m[2] === 'unset') { unsetCount += 1; continue; }
+      bad.push(`${m[1]} → \`text: ${m[2]}\``);
+    }
+    if (bad.length > 0) {
+      fail(`这些**被跟踪**文件的内容含 NUL（git 会判为二进制），但没有被 \`.gitattributes\` **显式**声明为 binary：`
+        + `${bad.join('、')} —— \`.gitattributes\` 的注释自己写着「**显式**标注（**不依赖** \`text=auto\` 的内容探测）」。`
+        + '⚠️ 探测只在**前 8000 字节含 NUL** 时判为二进制 ⇒ 一个**恰好不含 NUL** 的二进制会被当成文本，'
+        + '在检出时被 `eol=lf` **改写 CRLF** ⇒ **静默损坏**。请按扩展名补一条 `binary` 规则（放在 `*` 规则**之后**）');
+    }
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线 84 个含 NUL 的文件；减到很少说明启发式或扫描面漂移）
+  const NUL_BASELINE = 84; // [覆盖型] 基线 84
+  if (binFiles.length < NUL_BASELINE) {
+    fail(`只找到 ${binFiles.length} 个「前 ${NUL_WINDOW} 字节含 NUL」的被跟踪文件`
+      + `（[覆盖型] 基线 ${NUL_BASELINE}）—— 扫描面或启发式漂移会让本判据**空转**`);
+  }
+  // canary：三向（与判定**共用** hasNul；样本用**临时文件**构造）
+  const tmpA = join(tmpdir(), `mellow-nul-canary-${process.pid}-a`);
+  const tmpB = join(tmpdir(), `mellow-nul-canary-${process.pid}-b`);
+  writeFileSync(tmpA, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
+  writeFileSync(tmpB, Buffer.from('plain text, no nul here\n'));
+  if (!hasNul(tmpA)) fail('⑰ canary 失效：含 NUL 的样本未被判为二进制');
+  if (hasNul(tmpB)) fail('⑰ canary **过宽**：纯文本样本被判为二进制');
+  rmSync(tmpA, { force: true });
+  rmSync(tmpB, { force: true });
+  console.log(`Release gate: ${binFiles.length} 个含 NUL 的被跟踪文件 —— **均被显式声明为 binary**`
+    + `（\`git check-attr text\` = \`unset\` ${unsetCount} 处）`);
 }
 
 if (errors.length > 0) {
