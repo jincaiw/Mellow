@@ -47,9 +47,13 @@ describe('Global Search pure logic', () => {
       ['a{2,1}', false],
       ['\\\\', true],
     ];
-    for (const [query, regex] of cases) {
+    for (const [query, expectValid] of cases) {
       const options = { query, caseSensitive: false, wholeWord: false, regex: true };
-      expect(isSearchRegexValid(options)).toBe(buildSearchRegex(options) !== null);
+      // ⚠️ 2026-10-10（审计 §4.267）：第二列**此前从未被断言**（变量名 `regex` 未使用）——
+      //   数据里明明写着期望值，测试却只断言「两侧一致」⇒ **比它看起来弱**。
+      //   现按数据断言两侧（「一致」由两者都 == `expectValid` 蕴含）。
+      expect(isSearchRegexValid(options)).toBe(expectValid);
+      expect(buildSearchRegex(options) !== null).toBe(expectValid);
     }
   });
 

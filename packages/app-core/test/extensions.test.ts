@@ -8,7 +8,7 @@
  * - 贡献点分发（setup 填充 contributions → collect 聚合）；
  * - setup 失败 → enabled=false + setupError。
  */
-import { ExtensionRegistry, createNullExtensionHost } from '../src/extensions';
+import { ExtensionRegistry } from '../src/extensions';
 import type { ExtensionHost, ExtensionDocumentHost } from '../src/extensions';
 import {
   ExtensionError,

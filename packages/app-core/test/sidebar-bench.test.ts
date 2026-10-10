@@ -30,7 +30,6 @@ function seededRandom(seed: number): () => number {
 }
 
 const now = (): number => globalThis.performance.now();
-const elapsed = (started: number): string => `${(now() - started).toFixed(1)}ms`;
 
 const results: Array<{ id: string; name: string; ms: number; budgetMs: number }> = [];
 async function timed(id: string, name: string, budgetMs: number, run: () => void | Promise<void>): Promise<void> {

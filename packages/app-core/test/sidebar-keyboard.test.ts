@@ -2,7 +2,7 @@
  * P3.3 侧栏键盘导航模型单测（G4-SIDE-02：Outline / Search ↑↓/Enter/Esc/Home/End）。
  * Esc 清空是 UI 装配行为（App.tsx），模型层只覆盖选中移动 / Home / End / Enter / 空集 / clamp。
  */
-import { buildOutline, OutlineModel, type OutlineHeading } from '../src/outline';
+import { buildOutline, OutlineModel } from '../src/outline';
 import { FileListModel } from '../src/fileList';
 import { SearchResultsModel } from '../src/globalSearch';
 import type { SearchResult } from '../../host-api/src';

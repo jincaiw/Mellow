@@ -16456,6 +16456,36 @@ for 'babel__core'` 等）。查明：`packages/desktop-ui/node_modules/@types/` 
 ⇒ 这解释了「CI 一直绿而本机这里红」，**与本次改动无关**（加不加那 3 个 flag，都是同样 11 个 TS2688）。
 ⚠️ **别把它记成仓库缺陷**；但它是「本机判据读数要打折」的一个实例。
 
+### 六、⚠️ **CI 红了**：本机「0 代价」的测量**不完整**（本轮最重要的教训）
+
+**推上去后 `Mellow packages typecheck + unit tests` 失败**（run `38017156436`），报 **4 个 `TS6133`**
+（`declared but its value is never read`），**全在 `packages/app-core/test/*.test.ts`**：
+
+| 位置 | 是什么 | 处置 |
+|---|---|---|
+| `test/extensions.test.ts:11` | 具名导入 `createNullExtensionHost` 未使用 | 从导入里删掉 |
+| `test/sidebar-bench.test.ts:33` | 助手 `elapsed` 未使用（**死代码**） | 删掉该助手 |
+| `test/sidebar-keyboard.test.ts:5` | `type OutlineHeading` 未使用 | 从导入里删掉 |
+| `test/globalSearch.test.ts:50` | 解构出的 `regex` 未使用 | ⚠️ **见下（测试本身弱）** |
+
+⚠️ **为什么本机量出「0 个新错误」而 CI 红了**：我本机用 `tsc -p packages/<pkg> --noEmit` 量 ——
+而 **`tsconfig.json` 的 `include` 只有 `["src"]`** ⇒ **量不到 `test/`**。
+但 CI 的 **jest（`ts-jest`）会用同一份 tsconfig 检查测试文件** ⇒ 新增的 3 个 flag
+**同样作用于测试文件** ⇒ 本机**根本没量到那一半**。
+
+⇒ **通则（本轮最重要的产出）**：**「量代价」必须覆盖「谁在用这份配置」的全部消费者** ——
+这里 `tsc` **和** `jest` 都用它；**只量 `tsc` 是不完整的**。
+更稳的做法：**直接按 CI 的方法本机复现**（本轮改用「逐包跑 `jest`」⇒ 12 个包 **0 个 TS 错误** ✅）。
+
+**其中一处不是「删掉就行」**：`globalSearch.test.ts` 的
+`for (const [query, regex] of cases)` —— 第二列（期望的合法性布尔值）**从未被断言**，
+循环体里硬编码 `regex: true` 且只断言「两个函数一致」⇒ **这个测试比它看起来弱**（数据里写着期望值却没用）。
+⇒ 处置**不是**改成 `_regex`（那会把问题藏起来），而是**按数据接上断言**：
+`expect(isSearchValid(options)).toBe(expectValid)` + `expect(buildSearchRegex(options) !== null).toBe(expectValid)`
+⇒ 实测**通过**（期望值本来就是对的）⇒ **测试变强了**。
+
+**修复后本机复现**：逐包 `jest`（= CI 的方法）⇒ **12 个包 0 个 TS 错误**；`app-core` **25 套 / 297 用例全过** ✅。
+
 ⇒ 同族「只锁了一半」累计 **第 95 次**（§4.170–§4.266）。
 
 ## 五、本次审计做的改动（非策略性）
