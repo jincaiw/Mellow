@@ -75,6 +75,74 @@ if (trackedFiles === null) {
   console.log(`Release gate: 仓库卫生 —— 已跟踪 ∩ 被忽略 = ${ignoredTracked === null ? '?' : ignoredTracked.length} 处（应为 0）`);
 }
 
+// ── 仓库卫生：**换行符政策**必须存在且**真的生效**（2026-10-10，审计 §4.266）──────────────────
+// 【为什么】本仓此前**没有** `.gitattributes`，而 Windows runner 的 `core.autocrlf=true`
+//   会把文本文件**检出为 CRLF** ⇒ **已造成一次真实事故**：§4.252 的判据用 `readFileSync` +
+//   锚在「分号 + 换行」上的正则 ⇒ **Linux 绿 / Windows 红**；此后多处判据写了 `.replace()` 的
+//   **CRLF 归一化**作为**创可贴**（`verify-upstream-manifest.mjs` 的哈希归一化即其一）。
+//   ⇒ 立 `.gitattributes` 后**根因消除**（检出时一律 LF）；本判据锁住它**不被删掉 / 不被写错**。
+//   ⚠️ **本注释刻意不写出那个两字符转义序列**（连注释里也不行）—— 本文件的 CRLF canary（⑤）
+//     要求「去掉归一化后，全文不再出现该序列」，写了就会让它报「注入后仍未检出缺失归一化」
+//     （本仓既有警告，本轮**实测踩到**）。要引用该形态请**运行时拼接**。
+// 【判据】① `.gitattributes` 必须存在；② 用 **`git check-attr`**（**git 自己的谓词**）断言
+//   **代表性文本文件**的 `eol == lf` 且 `text == auto`；③ **代表性二进制**的 `text == unset`；
+//   ④ 样本文件本身必须存在（否则判据会静默失去靶子）。
+//   ⚠️ **不解析 `.gitattributes` 的文本**：规则**顺序有意义**（后面的覆盖前面的）· `binary` 是**宏** ·
+//     注释与空行 —— 自己解析必然出错。**实测**：首版把 `*.png binary` 写在 `*` 规则**之前**
+//     ⇒ 被通用规则覆盖（`check-attr` 才发现 `text` 仍是 `auto`）。
+//   ⚠️ **不声称**「Windows 检出一定是 LF」—— 那由 **CI 的 Windows job** 验证。
+{
+  const GA = '.gitattributes';
+  /** 判定与 canary **共用**：用 git 自己解析某路径的属性（`check-attr`）。 */
+  const attrsOf = (p) => {
+    const out = {};
+    try {
+      for (const line of execFileSync('git', ['check-attr', 'text', 'eol', '--', p], { cwd: root, encoding: 'utf8' }).split('\n')) {
+        const m = /^(.+?): ([\w-]+): (.*)$/.exec(line);
+        if (m !== null) out[m[2]] = m[3];
+      }
+    } catch { /* 由下面的断言报错 */ }
+    return out;
+  };
+  const TEXT_SAMPLES = ['README.md', 'package.json', '.github/workflows/ci.yml', 'apps/desktop/src-tauri/Cargo.toml'];
+  const BIN_SAMPLES = ['apps/desktop/src-tauri/icons/32x32.png', 'apps/desktop/public/fonts/NotoSansSC-Regular.ttf'];
+  if (!existsSync(resolve(root, GA))) {
+    fail(`缺少 \`${GA}\` —— 本仓**没有换行符政策** ⇒ Windows runner（\`core.autocrlf=true\`）会把文本文件`
+      + '检出为 CRLF ⇒ 「Linux 绿 / Windows 红」（实测事故：审计 §4.252）。请加 `* text=auto eol=lf`');
+  } else {
+    for (const p of [...TEXT_SAMPLES, ...BIN_SAMPLES]) {
+      if (!existsSync(resolve(root, p))) {
+        fail(`换行符政策判据的样本 \`${p}\` **不存在** —— 判据已失去靶子（请换一个仍然存在的样本）`);
+      }
+    }
+    for (const p of TEXT_SAMPLES) {
+      const a = attrsOf(p);
+      if (a.eol !== 'lf') {
+        fail(`${GA} 未对文本文件 \`${p}\` 生效：\`eol\` = \`${a.eol ?? '(未取到)'}\`（应为 \`lf\`）`);
+      }
+      if (a.text !== 'auto') {
+        fail(`${GA} 未对文本文件 \`${p}\` 生效：\`text\` = \`${a.text ?? '(未取到)'}\`（应为 \`auto\`）`);
+      }
+    }
+    for (const p of BIN_SAMPLES) {
+      const a = attrsOf(p);
+      if (a.text !== 'unset') {
+        fail(`${GA} 未把二进制 \`${p}\` 标为非文本：\`text\` = \`${a.text ?? '(未取到)'}\`（应为 \`unset\`）`
+          + ' —— ⚠️ **规则顺序有意义**（后面的覆盖前面的）：`*.png binary` 必须写在 `*` 规则**之后**');
+      }
+    }
+  }
+  // canary：两向（构造样本 = 仓库里稳定的两类真实路径；与判定**共用** attrsOf）
+  if (attrsOf('README.md').text !== 'auto') {
+    fail('换行符政策 canary 失效：**已知文本文件**的属性未取到（`git check-attr` 谓词失效）');
+  }
+  if (attrsOf('apps/desktop/src-tauri/icons/32x32.png').text === 'auto') {
+    fail('换行符政策 canary 失效：**已知二进制**未被标为非文本（判据会恒报错或恒通过）');
+  }
+  console.log(`Release gate: 仓库卫生 —— 换行符政策 ${existsSync(resolve(root, GA)) ? '**已生效**' : '**缺失**'}`
+    + '（`git check-attr` 实测：文本 `text=auto` + `eol=lf` / 二进制 `text=unset`）');
+}
+
 const parityDir = resolve(root, 'tests/parity');
 // ⚠️ 逐文件检查（接线 / CRLF / PRD 引用）用**工作区枚举**：本地 ⊇ CI ⇒ 本地**至少一样严**，
 //   方向**安全**（只会「本地红、CI 绿」，不会反过来），且给 WIP 护栏即时反馈。

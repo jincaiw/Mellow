@@ -1,0 +1,30 @@
+# 换行符政策（2026-10-10，审计 §4.266）
+#
+# 【为什么必须有】本仓此前**没有** `.gitattributes`，而 Windows runner 的 `core.autocrlf=true`
+#   会把文本文件**检出为 CRLF**。该根因**已造成一次真实事故**：审计 §4.252 的判据用
+#   `readFileSync` + 锚在 `;\n` / `\n}` 上的正则解析源码 ⇒ **Linux 绿 / Windows 红**。
+#   此后多处判据写了 `.replace(/\r\n/g,'\n')` 作为**创可贴**
+#   （`verify-upstream-manifest.mjs` 的哈希归一化就是其一，其注释里明写了这个根因）。
+#   ⇒ 创可贴**保留**（本机 Windows 开发者仍会遇到 CRLF），但**根因在这里消除**：
+#     检出时**一律写 LF** ⇒ 「Linux 绿 / Windows 红」这一类**不可能再发生**。
+#
+# 【实测（立此文件时）】本仓 **895 个文本文件已全部是纯 LF**（含 CRLF 的 0 个）
+#   ⇒ 本文件**不产生任何内容改动**，只改变**未来检出**的行为
+#   （安全性验证：`git add --renormalize .` 为**空 diff**）。
+#
+# ⚠️ **规则顺序有意义：后面的覆盖前面的** —— 所以「通用规则在前、特例在后」
+#   （首版把 `*.png binary` 写在 `*` 规则**之前** ⇒ 被通用规则覆盖，`check-attr` 实测仍是 `text: auto`）。
+#
+# ⚠️ 判据：`verify-release-gate.mjs` 的「仓库卫生」段用 **`git check-attr`**（git 自己的谓词）
+#   断言本政策**真的生效**（不是只断言这个文件里有一行字）。
+* text=auto eol=lf
+
+# 二进制：**显式**标注（不依赖 `text=auto` 的内容探测）—— 让政策可读，也避免探测边界上的意外。
+# ⚠️ 必须放在 `*` 规则**之后**才生效。
+*.png binary
+*.ttf binary
+*.icns binary
+*.ico binary
+*.otf binary
+*.woff binary
+*.woff2 binary
