@@ -16182,6 +16182,74 @@ canary 两向**构造样本**：合法夹具取到 2 档 ✅ / `{}` 与 `null` �
 
 ⇒ 同族「只锁了一半」累计 **第 91 次**（§4.170–§4.262）。
 
+## 4.264 「**版本与环境一致性**」透镜：pnpm 版本 **1 处真值源 + 10 处副本** ⇒ **结构性删除**（2026-10-10）
+
+### 一、缺口
+
+`package.json` 声明了 **`packageManager: pnpm@11.7.0`**（**pnpm 版本的唯一真值源**；
+corepack 也读它）。而实测三份 workflow 里 **`version: 11.7.0` 硬编码在 10 处**：
+
+| 文件 | 处数 |
+|---|---|
+| `.github/workflows/ci.yml` | 4 |
+| `.github/workflows/release.yml` | 3 |
+| `.github/workflows/runtime-qualification.yml` | 3 |
+
+⇒ **1 处真值源 + 10 处副本**（本仓 #1 形态）。改了 `packageManager` 而忘了这 10 处 ⇒
+CI 装的是**旧 pnpm**，本地与 CI 的安装/解析行为可能不同，**而没有任何信号**。
+
+### 二、关键事实（决定了处置方向）
+
+`pnpm/action-setup@v4` 的**官方 README** 明写（原文引文）：
+
+> **`version`** — Version of pnpm to install. **Optional** when there is a
+> [`packageManager` field in the `package.json`](https://nodejs.org/api/corepack.html).
+>
+> ### Install only pnpm with `packageManager`
+> **Omit `version` input** to use the version in the `packageManager` field in the `package.json`.
+
+⇒ 那 10 处**不是「必须写」的配置，而是纯冗余的副本**。
+
+### 三、处置：**结构性删除**（而不是再写一条判据去守副本）
+
+**删掉 10 处 `with: version:` 块**（每处 3 行 → 1 行）。实测差异 **纯删除 20 行、0 新增**
+（`git diff --numstat` = `0/8` · `0/6` · `0/6`；逐行核对 = **20 删除 / 0 新增**）。
+
+⚠️ **这才是本仓 #1 形态的正解**：能**消除副本**时就不要去**守副本**
+（对照 §4.180 的「199 个文件」—— 那里的副本**有信息价值**（文档要能自读），所以选择**守**；
+而这里的副本**零信息价值**（action 自己能读真值源），所以选择**删**）。
+
+### 四、判据：**⑤ pnpm 版本只有一个真值源**（`verify-build-pipeline.mjs`）
+
+① 根 `package.json` 必须有 `packageManager`，且形如 **`pnpm@<精确 x.y.z>`**（corepack 要求精确到补丁号）；
+② 三份 workflow 里**不得**再出现 pnpm action 的 `version:` 输入。
+配套：防空转（`uses: pnpm/action-setup@v4` 处数 ≥ 8，立此判据时基线 **10**）
++ canary **四向**（含**过宽**负样本：「`node-version:` 不得被当成 pnpm 版本」——
+谓词必须**回看 `pnpm/action-setup`**）。
+
+**注入验证（三向，均还原后 EXIT=0）**：
+
+| 注入 | 结果 |
+|---|---|
+| 往 `ci.yml` 重新加回一处 `with: version:` | ✅ 「硬编码了 pnpm 的 `version:`」+ 指到 `ci.yml:30` |
+| 把 `packageManager` 改成 `pnpm@11`（非精确） | ✅ 「缺失或不是精确版本」 |
+| 把 `uses` 处数下限抬到 1000 | ✅ 「只找到 10 处（下限 8）」 |
+
+⚠️ **行为未本机验证（如实声明）**：本仓纪律「**改流水线本机验不了行为** ⇒ 不得声称『已生效』」。
+本判据只锁**结构**（「有没有副本」/「真值源在不在」），**不声称**「action 一定会读到 `packageManager`」
+—— 那由**下一次 CI 的 setup 步骤**验证（若读不到，setup 会**响亮失败**，不是静默）。
+依据是**官方 README 的明文**（上引）+ 本仓 `package.json` 确有精确的 `packageManager`。
+
+### 五、顺带记录的另一条读数（**不是缺陷**）
+
+`node-version: 22` 在 workflow 里出现 **17 处**，而 `engines.node` 是 **`>=20`**。
+**这不是副本漂移**：`engines.node` 是**最低要求**，CI 用 22 是「受支持版本」的选择；
+**「CI 用哪个 node」本身没有声明式真值源**（仓库里没有 `.nvmrc` / `.node-version`）
+⇒ **无可漂之物** ⇒ 只记录，不落判据。
+（若将来引入 `.nvmrc`，它就**成为真值源**，届时这 17 处就变成副本 ⇒ 那时再按本节的办法处置。）
+
+⇒ 同族「只锁了一半」累计 **第 92 次**（§4.170–§4.263）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

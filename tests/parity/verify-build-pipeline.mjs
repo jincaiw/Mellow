@@ -494,6 +494,73 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
 }
 
+// ── ⑤ **pnpm 版本只有一个真值源**：`package.json` 的 `packageManager`（2026-10-10，审计 §4.264）──
+// 【为什么】实测（本轮新透镜「版本与环境一致性」）：`version: 11.7.0` 曾**硬编码在 10 处**
+//   （`ci.yml` 4 / `release.yml` 3 / `runtime-qualification.yml` 3），而真值源是
+//   `package.json` 的 `packageManager: pnpm@11.7.0` ⇒ **1 处真值源 + 10 处副本**（本仓 #1 形态）。
+//   ⚠️ 而 `pnpm/action-setup@v4` 的**官方 README** 明写：**省略 `version` 输入时会读 `packageManager`**
+//     （「Omit `version` input to use the version in the `packageManager` field」）⇒ 那 10 处是**纯冗余**。
+//   ⇒ 处置：**删掉 10 处副本**（**结构性消除**，而不是再写一条判据去守副本）—— 这才是本仓 #1 形态的正解。
+// 【判据】① 根 `package.json` 必须有 `packageManager`，且形如 `pnpm@<精确 x.y.z>`（corepack 要求精确）；
+//   ② 三份 workflow 里**不得**再出现 pnpm action 的 `version:` 输入（副本会漂 ⇒ 真值源必须唯一）。
+//   ⚠️ **改流水线本机验不了行为**（本仓纪律）：本条只锁**结构**（「有没有副本」/「真值源在不在」），
+//     **不声称**「action 一定会读到 `packageManager`」—— 那由下一次 CI 的 setup 步骤验证。
+{
+  const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/release.yml', '.github/workflows/runtime-qualification.yml'];
+  /** 判定与 canary **共用**：该行是不是 pnpm action 的 `version:` 输入（回看 5 行找 `pnpm/action-setup`）。 */
+  const isPnpmVersionPin = (lines, i) => {
+    if (!/^\s+version:\s*\S+\s*$/.test(lines[i])) return false;
+    return lines.slice(Math.max(0, i - 5), i).some((l) => l.includes('pnpm/action-setup'));
+  };
+  /** 判定与 canary **共用**：`packageManager` 是否为 `pnpm@x.y.z`。 */
+  const exactPnpm = (pm) => /^pnpm@\d+\.\d+\.\d+$/.test(pm);
+  const pm = JSON.parse(read('package.json')).packageManager ?? '';
+  if (!exactPnpm(pm)) {
+    fail(`根 \`package.json\` 的 \`packageManager\` 缺失或不是精确版本（现值「${pm}」）—— `
+      + '它是 **pnpm 版本的唯一真值源**：corepack 与 `pnpm/action-setup@v4`（省略 `version` 时）都读它，'
+      + '且必须精确到补丁号');
+  }
+  let setups = 0;
+  const pins = [];
+  for (const wf of WORKFLOWS) {
+    let src;
+    try { src = read(wf); } catch { continue; }
+    const lines = src.split('\n');
+    setups += lines.filter((l) => l.includes('pnpm/action-setup')).length;
+    lines.forEach((_, i) => { if (isPnpmVersionPin(lines, i)) pins.push(`${wf}:${i + 1}`); });
+  }
+  for (const p of pins) {
+    fail(`${p} 硬编码了 pnpm 的 \`version:\` —— pnpm 版本的**唯一真值源**是根 \`package.json\` 的 `
+      + `\`packageManager\`（现值 \`${pm}\`）：\`pnpm/action-setup@v4\` **省略 \`version\` 时会读它**`
+      + '⇒ 这里的副本只会漂（实测曾有 10 处）。请删掉该 `with: version:` 块');
+  }
+  // 防空转：靶子必须在（立此判据时基线 10 处 `uses: pnpm/action-setup@v4`，下限 8）
+  if (setups < 8) {
+    fail(`三份 workflow 里只找到 ${setups} 处 \`pnpm/action-setup\`（下限 8 = 立此判据时的基线 10 − 余量）`
+      + ' —— 靶子消失会让本判据**空转**（若确实改用了别的安装方式，请同步改本判据并说明）');
+  }
+  // canary：四向（与判定**共用** isPnpmVersionPin / exactPnpm）
+  const S_PIN = ['      - uses: pnpm/action-setup@v4', '        with:', '          version: 11.7.0'];
+  const S_NO_PIN = ['      - uses: pnpm/action-setup@v4', '        name: Install pnpm'];
+  const S_NODE = ['      - uses: actions/setup-node@v4', '        with:', '          node-version: 22'];
+  if (!isPnpmVersionPin(S_PIN, 2)) {
+    errors.push('pnpm 真值源护栏 canary 失效：pnpm action 的 `version:` 未被识别');
+  }
+  if (isPnpmVersionPin(S_NO_PIN, 1)) {
+    errors.push('pnpm 真值源护栏**过宽**：没有 `version:` 的 action 被误判');
+  }
+  if (isPnpmVersionPin(S_NODE, 2)) {
+    errors.push('pnpm 真值源护栏**过宽**：`node-version:` 被当成 pnpm 版本（谓词必须回看 `pnpm/action-setup`）');
+  }
+  if (!exactPnpm('pnpm@11.7.0') || exactPnpm('pnpm@11') || exactPnpm('')) {
+    errors.push('pnpm 真值源护栏 canary 失效：`packageManager` 的精确版本判定不对（corepack 要求 x.y.z）');
+  }
+  // ⚠️ 收口行里**不得有手写计数**（判据 ⑧）：此处曾写「（实测曾有 10 处副本，已删）」——
+  //   那是**历史事实**、无法从制品派生 ⇒ 改为**不写数字**（历史记在本判据的注释里，注释不受 ⑧ 约束）。
+  console.log(`Build pipeline: pnpm 版本真值源唯一 —— \`packageManager\` = \`${pm}\`；`
+    + `${setups} 处 \`pnpm/action-setup\` **均未硬编码** \`version:\`（副本已删，历史见本判据注释）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Build pipeline contract violations:\n  ${errors.join('\n  ')}`);
 }
