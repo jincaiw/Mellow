@@ -1136,7 +1136,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
       if (SRC_SKIP.has(e.name)) continue;
       const p = join(dir, e.name);
       if (e.isDirectory()) collectTs(p, out);
-      else if (/\.(ts|tsx)$/.test(e.name)) out.push(p);
+      else if (/\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(e.name)) out.push(p);
     }
     return out;
   };
@@ -3465,7 +3465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 281; // 2026-10-10 加 §4.281 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 282; // 2026-10-10 加 §4.282 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3898,6 +3898,76 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
       + '（`TOKEN_RE` 必须锚定在标题开头）');
   }
   console.log(`Doc code refs: 每个护栏内的判据编号**互不重复**（共 ${tokens43} 个判据头 token）`);
+}
+
+// ── ㊺ 护栏里「**代码文件**的扫描面」必须**统一**（2026-10-10，审计 §4.282）──────────────────
+// 【为什么】把「扫描面」当透镜扫全部 23 个护栏，抽出**所有含 `ts` 的扩展名面**：
+//   实测 **16 处、9 种形态** —— 同一个概念（「本仓的代码文件」）被写成了
+//   `ts|tsx` / `mjs|ts|tsx` / `ts|tsx|js|jsx|mjs` / `ts|tsx|mts|cts|mjs|cjs|js` / `css|ts|tsx` …
+//   ⚠️ **最窄的 `ts|tsx` 有 5 处**，其中两处扫的是 **`packages/`** —— 而那里**有 12 个 `jest.config.js`**
+//     ⇒ 一个 `.js`/`.mjs` 源文件里出现被扫模式时**不会被发现**（同族判据却扫 `.js`）。
+//   ⇒ 这与 §4.281（同族判据扫描面不一致）**同根**：**没有一处定义「本仓的代码文件」是什么**。
+// 【判据】护栏源码（**剥注释**）里凡 `\.(…)$` 形态、**且含 `ts`** 的扫描面，
+//   必须 **⊇ 规范面** `ts|tsx|mts|cts|mjs|cjs|js|jsx`（**允许有额外扩展名**，如 `css` / `html` / `rs`）。
+//   ⚠️ **必须剥注释**：本文件与 `verify-package-conventions.mjs` 的**注释里**就写着
+//     `\.(ts|tsx)$`（解释历史）⇒ 不剥会**假阳性**（本轮实测）。
+//   ⚠️ **范围如实声明**：只认 `\.(…)$` 这一种写法 —— `endsWith('.md')` / `extname(p) === '.rs'`
+//     等形态**不在覆盖内**（本仓实测无「含 ts 的」这类写法；若将来出现，请同步扩面）。
+//   ⚠️ **本判据用 `throw`**（与 ㊸ 同）：它落在本文件**最后一个 `throw new Error(` 之后**，
+//     而 `verify-release-gate.mjs` 判据 ⑩ 要求「抛错点之后不得再有 `fail(` / `errors.push(`」。
+{
+  const CANON = ['ts', 'tsx', 'mts', 'cts', 'mjs', 'cjs', 'js', 'jsx'];
+  const stripComments = (s) => s
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const SURFACE = /\\\.\(([a-z0-9|]+)\)\$/g;
+  /** 判定（与 canary **共用**）：一段源码（**已剥注释**）里「含 ts 的代码面」缺哪些规范扩展名。 */
+  const missingOf = (src) => {
+    const out = [];
+    for (const m of stripComments(src).matchAll(SURFACE)) {
+      const cur = m[1].split('|');
+      if (!cur.includes('ts')) continue; // 不是「代码面」（如 `.css` / `.rs` 专用面）
+      const miss = CANON.filter((e) => !cur.includes(e));
+      if (miss.length > 0) out.push(`${m[1]}（缺 ${miss.join('/')}）`);
+    }
+    return out;
+  };
+  let surfaces = 0;
+  for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
+    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    for (const m of stripComments(src).matchAll(SURFACE)) if (m[1].split('|').includes('ts')) surfaces += 1;
+    const miss = missingOf(src);
+    if (miss.length > 0) {
+      throw new Error(`${rel} 的**代码文件扫描面**不是规范面的超集：${miss.join('、')}`
+        + ` —— 本仓的「代码文件」= \`${CANON.join('|')}\`（\`.jsx/.cjs/.mts/.cts\` 当前 0 个文件，`
+        + '但面上要有，否则将来加一个就会**静默漏扫**）。'
+        + '⚠️ 最窄的 `ts|tsx` 扫 `packages/` 时会**漏掉 12 个 `jest.config.js`**（同族判据却扫 `.js`）'
+        + '（审计 §4.282；同根于 §4.281「同族判据扫描面不一致」）');
+    }
+  }
+  // 防空转：[健康度型] 面数由护栏源码内容产生 ⇒ 留余量。
+  // ⚠️ **口径**：本判据**剥注释**后数 = **11 处**；不剥注释是 16 处（差 5 处是**注释里**的示例）
+  //   ⇒ 两个数都对，**基线取本判据自己的口径 11**（同族 §4.258 的「两个口径都要写」）。
+  if (surfaces < 8) {
+    throw new Error(`只解析出 ${surfaces} 个「含 ts 的代码扫描面」（下限 8 = 立此判据时的基线 11 − 余量）`
+      + ' —— 谓词或扫描面漂移会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** missingOf；样本运行时拼接）
+  const OK = `\\.(${CANON.join('|')})$`;
+  const OK_EXTRA = `\\.(${CANON.join('|')}|css|html)$`;
+  if (missingOf(OK).length !== 0 || missingOf(OK_EXTRA).length !== 0) {
+    throw new Error('㊺ canary 失效：**规范面本身**或「规范面 + 额外扩展名」被判为缺项');
+  }
+  if (missingOf(`\\.(${'ts|tsx'})$`).length !== 1) {
+    throw new Error('㊺ canary 失效：窄面 `ts|tsx` **未被检出**');
+  }
+  if (missingOf(`// 注释里的 \\.(${'ts|tsx'})$ 不算`).length !== 0) {
+    throw new Error('㊺ canary **过宽**：**注释里**的面被当成了真扫描面（必须剥注释）');
+  }
+  if (missingOf(`\\.(${'css|rs'})$`).length !== 0) {
+    throw new Error('㊺ canary **过宽**：不含 `ts` 的专用面被误判为「代码面」');
+  }
+  console.log(`Doc code refs: 护栏的**代码文件扫描面** —— ${surfaces} 处，均为规范面 \`${CANON.join('|')}\` 的超集`);
 }
 
 if (errors.length > 0) {

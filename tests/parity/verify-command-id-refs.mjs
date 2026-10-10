@@ -80,7 +80,7 @@ let calls = 0;
 const dead = [];
 for (const base of SCAN_BASES) {
   for (const f of walk(resolve(root, base))) {
-    if (!/\.(mjs|ts|tsx)$/.test(f)) continue;
+    if (!/\.(mjs|ts|tsx|mts|cts|cjs|js|jsx)$/.test(f)) continue;
     const rel = relative(root, f).split('\\').join('/');
     if (rel === SELF) continue; // 护栏自身（其 canary 夹具里就有字面量）不算
     for (const id of dispatchedIdsOf(read(rel))) {

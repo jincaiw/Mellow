@@ -409,7 +409,7 @@ function keyReferenced(key, blob) {
     && f !== SELF                            // ⚠️ **护栏自己不算使用** —— 否则下方 MESSAGES_UNUSED 表里
                                              //    的键字符串会让每个死键都「看起来被引用」（自指假阴性，实测踩到）
     && f !== 'packages/i18n/src/messages.ts' // 目录自身不算使用（但该包的**测试**要算，见 app.name）
-    && /\.(ts|tsx|js|jsx|mjs|html|json)$/.test(f));
+    && /\.(ts|tsx|js|jsx|mjs|html|json|mts|cts|cjs)$/.test(f));
   if (DEAD_SCAN.length < 100) {
     fail(`死键判据的扫描面只解析出 ${DEAD_SCAN.length} 个文件（下限 100）—— 扫描面漂移会让本判据空转`);
   }

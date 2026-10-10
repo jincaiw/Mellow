@@ -363,7 +363,7 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
       ...Object.keys(pj.dependencies ?? {}), ...Object.keys(pj.peerDependencies ?? {}),
       ...Object.keys(pj.devDependencies ?? {}), pj.name,
     ]);
-    const srcFiles = committed.filter((f) => f.startsWith(`${dir}/`) && /\.(ts|tsx|mts|cts|mjs|cjs|js)$/.test(f)
+    const srcFiles = committed.filter((f) => f.startsWith(`${dir}/`) && /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(f)
       && !f.includes('/node_modules/') && !f.includes(SKIP_SUBTREE));
     filesScanned += srcFiles.length;
     for (const f of srcFiles) {
@@ -556,7 +556,7 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     //   首版只写 `\.(ts|tsx)$` ⇒ **漏掉 `.mjs/.cjs/.js`**，而 `apps/desktop/scripts/*.mjs`
     //   确有**跨包相对引用**（`../../../packages/editor-core/dist/bundle.js`，实测 **1 条边 / 2 处**）
     //   ⇒ 又一处「只锁了一半」。C7 的扫描面是 `/\.(ts|tsx|mts|cts|mjs|cjs|js)$/` ⇒ 本判据**对齐它**。
-    if (!/\.(ts|tsx|mts|cts|mjs|cjs|js)$/.test(rel)) continue;
+    if (!/\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(rel)) continue;
     if (rel.includes('node_modules') || rel.includes('/CoreEditor/')) continue;
     const from = allDirs.find((d) => rel.startsWith(`${d}/`));
     if (from === undefined) continue;

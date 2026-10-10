@@ -2563,7 +2563,7 @@ const HOST_TOKENS_UNUSED = [
   const hostUsed = new Set();
   for (const d of ['apps/desktop/src', 'packages']) {
     for (const f of walkSkip(d)) {
-      if (!/\.(css|ts|tsx)$/.test(f)) continue;
+      if (!/\.(css|ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(f)) continue;
       const p = `${d}/${f}`;
       if (p.includes('packages/themes/src/index.ts')) continue; // 声明处本身不算消费
       if (p.includes('/test/')) continue;

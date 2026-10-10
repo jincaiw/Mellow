@@ -317,14 +317,14 @@ if (registeredList === null) {
 
 const FE_ROOTS = ['apps/desktop/src', 'apps/desktop/scripts', 'packages'];
 const FE_SKIP_DIR = new Set(['node_modules', 'dist', 'target', '.git']);
-const FE_SKIP_FILE = /\.(test|spec)\.(ts|tsx|js|jsx|mjs)$/;
+const FE_SKIP_FILE = /\.(test|spec)\.(ts|tsx|js|jsx|mjs|mts|cts|cjs)$/;
 function* walkFe(dir) {
   let entries;
   try { entries = readdirSync(dir); } catch { return; }
   for (const e of entries) {
     const full = resolve(dir, e);
     if (statSync(full).isDirectory()) { if (!FE_SKIP_DIR.has(e)) yield* walkFe(full); }
-    else if (/\.(ts|tsx|js|jsx|mjs)$/.test(e) && !FE_SKIP_FILE.test(e)) yield full;
+    else if (/\.(ts|tsx|js|jsx|mjs|mts|cts|cjs)$/.test(e) && !FE_SKIP_FILE.test(e)) yield full;
   }
 }
 

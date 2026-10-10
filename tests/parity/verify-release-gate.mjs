@@ -704,7 +704,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
   //   ⇒ **改用权威真值源 `git ls-files`**：它就是「哪些文件在仓库里」的定义，
   //   **天然排除 gitignore 的生成物、又天然包含强制跟踪的文件**，且**本地与 CI 看到同一集合**。
   //   ⇒ 不再需要任何目录级排除（依赖/产物/工具数据目录**本来就不被跟踪**）。
-  const REF_EXT = /\.(md|mjs|cjs|js|ts|tsx|json|yml|yaml|rs|sh)$/;
+  const REF_EXT = /\.(md|mjs|cjs|js|ts|tsx|json|yml|yaml|rs|sh|mts|cts|jsx)$/;
   //   · **canary 合成编号**：见下方 `CANARY_SYNTHETIC_IDS` —— 它们**刻意不声明**，但**必须仍被引用**
   //     （防「canary 被删了却没人发现」）。⚠️ **不按文件排除** `verify-*.mjs`：那样会把护栏里
   //     **真实的** D 引用（如 `verify-sidebar-contract.mjs` 的 `D-C`/`D-J`）也一起豁免掉。

@@ -33,7 +33,7 @@ function* walkSources(dir) {
     if (statSync(full).isDirectory()) {
       if (SKIP_DIRS.has(entry)) continue;
       yield* walkSources(full);
-    } else if (/\.(ts|tsx)$/.test(entry) && !SKIP_FILE.test(entry)) {
+    } else if (/\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(entry) && !SKIP_FILE.test(entry)) {
       yield full;
     }
   }
@@ -168,7 +168,7 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
   const SKIP_DIR = new Set(['node_modules', 'dist']);
   const walkAll = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     if (e.isDirectory()) return SKIP_DIR.has(e.name) ? [] : walkAll(resolve(dir, e.name));
-    return /\.(ts|tsx|mjs|js)$/.test(e.name) ? [resolve(dir, e.name)] : [];
+    return /\.(ts|tsx|mjs|js|mts|cts|cjs|jsx)$/.test(e.name) ? [resolve(dir, e.name)] : [];
   });
   const stripJsComments = (s) => s
     .replace(/\/\*[\s\S]*?\*\//g, ' ')

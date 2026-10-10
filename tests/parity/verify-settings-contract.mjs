@@ -36,7 +36,7 @@ const stripWholeLineComments = (code) => code
   .replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p) => {
   const raw = readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
-  return /\.(ts|tsx|mjs|rs|css)$/.test(p) ? stripWholeLineComments(raw) : raw;
+  return /\.(ts|tsx|mjs|rs|css|mts|cts|cjs|js|jsx)$/.test(p) ? stripWholeLineComments(raw) : raw;
 };
 const errors = [];
 const fail = (message) => errors.push(message);
@@ -2650,7 +2650,7 @@ if (cssLayerAnchor === undefined) {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = resolve(dir, e.name);
       if (e.isDirectory()) walkConsumers(p);
-      else if (/\.(ts|tsx)$/.test(e.name)) consumerFiles.push(p);
+      else if (/\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(e.name)) consumerFiles.push(p);
     }
   };
   walkConsumers(resolve(root, 'apps/desktop/src'));
