@@ -3641,6 +3641,109 @@ const stripJsComments = (s) => {
     + '；⚠️ 谓词是**字面量匹配**，只认「以 `/*…*/` 为唯一分支」这一种写法');
 }
 
+// ── ㉖ ADR 的**问数自述**必须与文档实际一致（2026-10-11，审计 §4.297）──
+// 【为什么】ADR-0034 实测：文档被**追加**了 Q11 / Q12 / Q13，而**计数没同步** ——
+//   标题写「9 项（默认值轴 5 + 行为轴 4）」、段内写「10 项」、小节头写「行为轴 4 项」，
+//   实际是 **12 问**。这四份 ADR 是**待裁决**的（人要看它才能定），而「裁决成本 = 看一眼就能定」
+//   正是它们存在的理由 ⇒ **读者按标题会低估成本**。本仓纪律「**手写计数必然漂移**」，
+//   而 `verify-doc-code-refs.mjs` 的判据 ㊻ 只守审计文档的「同族次数 + 区间」，**不守 ADR 的问数**。
+// 【判据】每份 `docs/adr/ADR-*.md`（**仅当含 `## Q<N>` 小节**）：
+//   ① **「裁决」节**里形如 `N 问` 的自述（若有）必须 == 实际问数（**最多一处**）；
+//   ② **标题行**里形如 `N 项 / N 问` 的计数若 != 实际问数，则**标题之后 20 行内必须有 `> **⚠️` 更正块**。
+// 【为什么 ② 不是「直接改标题」】本仓规则是「ADR **只追加不修改**」（`AGENTS.md` 统一规则 16 /
+//   `README.md` 的目录约定）⇒ 过期计数**保留为历史**，但**必须**紧跟更正块，否则读者只看到错数。
+// ⚠️ **问数按「问号」计、不按小节计**：`## Q2 / Q3 — …` 是**一个**小节里的**两个**问
+//   （ADR-0034 的 Q2 / Q3 是同一个 Mellow 键 `markdown.supSub` 的两个方向，合写一节）。
+// ⚠️ **无 `## Q<N>` 小节的 ADR 一律跳过** —— 本仓多数 Accepted ADR 只留 `### Q1 = …` 形态，
+//   那类**不在覆盖内**（如实声明；若将来给它们加 `## Q` 小节，请回来扩面）。
+{
+  const ADR_DIR_26 = 'docs/adr';
+  const WITHQ26_FLOOR = 3; // [健康度型] 下限（立此判据时 5 份含 Q 小节）
+  /** 判定（与 canary **共用**同一份谓词）：一份 ADR 源码的问数自述问题。 */
+  const adrCountIssues = (src) => {
+    const out = [];
+    const qs = (() => {
+      const set = new Set();
+      for (const m of src.matchAll(/^##\s*Q([\d\s/、,，]+)/gm)) {
+        for (const n of m[1].match(/\d+/g) ?? []) set.add(Number(n));
+      }
+      return [...set].sort((a, b) => a - b);
+    })();
+    if (qs.length === 0) return { qs, issues: out };
+    const lines = src.split('\n');
+    const at = lines.findIndex((l) => /^##\s*裁决/.test(l));
+    if (at >= 0) {
+      const end = lines.findIndex((l, i) => i > at && /^## /.test(l));
+      const decl = [...lines.slice(at, end < 0 ? lines.length : end).join('\n')
+        .matchAll(/(\d+)\s*问/g)].map((m) => Number(m[1]));
+      if (decl.length > 1) {
+        out.push(`「裁决」节有 ${decl.length} 处「N 问」自述（${decl.join(' / ')}）—— 只允许一处`);
+      } else if (decl.length === 1 && decl[0] !== qs.length) {
+        out.push(`「裁决」节自述 ${decl[0]} 问，实际 ${qs.length} 问`);
+      }
+    }
+    const titleNums = [...lines[0].matchAll(/(\d+)\s*(项|问)/g)].map((m) => Number(m[1]));
+    if (titleNums.length > 0 && !titleNums.includes(qs.length)
+      && !lines.slice(1, 21).some((l) => /^>\s*\*\*⚠️/.test(l))) {
+      out.push(`标题计数 ${titleNums.join('/')} ≠ 实际 ${qs.length} 问，且标题后 20 行内**没有** ⚠️ 更正块`);
+    }
+    return { qs, issues: out };
+  };
+  const adrFiles26 = existsSync(resolve(root, ADR_DIR_26))
+    ? readdirSync(resolve(root, ADR_DIR_26)).filter((f) => /^ADR-\d{4}.*\.md$/.test(f)).sort()
+    : [];
+  const offenders26 = [];
+  let withQ26 = 0;
+  for (const f of adrFiles26) {
+    const { qs, issues } = adrCountIssues(read(`docs/adr/${f}`));
+    if (qs.length === 0) continue;
+    withQ26 += 1;
+    if (issues.length > 0) offenders26.push(`${f}（${issues.join('；')}）`);
+  }
+  if (offenders26.length > 0) {
+    fail(`这些 ADR 的**问数自述**与文档实际不符：${offenders26.join('、')} —— `
+      + '「手写计数必然漂移」；ADR **只追加不修改** ⇒ 过期计数**保留为历史**，'
+      + '但**必须**紧跟 `> **⚠️` 更正块，且「裁决」节那一处**必须**是当前值'
+      + '（那是读者据以评估裁决成本的地方；审计 §4.297）');
+  }
+  if (withQ26 < WITHQ26_FLOOR) {
+    fail(`㉖ 只找到 ${withQ26} 份含 \`## Q<N>\` 小节的 ADR（[健康度型] 下限 ${WITHQ26_FLOOR}）`
+      + ' —— 扫描面漂移会让本判据空转');
+  }
+  // canary ①（正样本）：自述与实际一致 ⇒ 不得报
+  const OK_SAMPLE = '# ADR-9999 — 示例\n\n**Status:** **Proposed**\n\n'
+    + '## Q1 — a\n\n## Q2 — b\n\n## 裁决\n\n**待裁决（2 问）。**\n';
+  if (adrCountIssues(OK_SAMPLE).issues.length !== 0) {
+    fail('㉖ canary 失效：自述与实际一致的样本被误报');
+  }
+  // canary ②（负样本）：「裁决」节自述与实际**不符** ⇒ 必须报
+  const BAD_DECL = OK_SAMPLE.replace('（2 问）', '（3 问）');
+  if (!adrCountIssues(BAD_DECL).issues.some((s) => s.includes('「裁决」节自述'))) {
+    fail('㉖ canary 失效：「裁决」节自述与实际不符**未被检出**（判据已退化成空真）');
+  }
+  // canary ③（负样本）：标题计数不符且**无**更正块 ⇒ 必须报
+  const BAD_TITLE = OK_SAMPLE.replace('示例', '示例 **7 项**');
+  if (!adrCountIssues(BAD_TITLE).issues.some((s) => s.includes('标题计数'))) {
+    fail('㉖ canary 失效：标题计数不符且无更正块**未被检出**');
+  }
+  // canary ④（正样本）：标题计数不符但**有**更正块 ⇒ 不得报（本仓「只追加不修改」的落地形态）
+  const FIXED_TITLE = BAD_TITLE.replace(
+    '**Status:** **Proposed**',
+    '**Status:** **Proposed**\n\n> **⚠️ 2026-10-11 更正**：标题的 7 项已过期。',
+  );
+  if (adrCountIssues(FIXED_TITLE).issues.some((s) => s.includes('标题计数'))) {
+    fail('㉖ canary **过宽**：标题计数不符但**有** ⚠️ 更正块，仍被误报');
+  }
+  // canary ⑤（正样本）：**无** `## Q<N>` 小节的 ADR 一律跳过（本仓多数 Accepted ADR 属此）
+  if (adrCountIssues('# ADR-9999 — 示例 **7 项**\n\n## 裁决\n\n待裁决。\n').issues.length !== 0) {
+    fail('㉖ canary 失效：无 Q 小节的 ADR 被误报');
+  }
+  console.log(`Release gate: ADR 的问数自述 —— 扫描 ${adrFiles26.length} 份 ADR，`
+    + `其中 ${withQ26} 份含 \`## Q<N>\` 小节、自述不一致 ${offenders26.length} 份`
+    + `（[健康度型] 下限 ${WITHQ26_FLOOR}）`
+    + '；⚠️ 只锁「裁决」节那一处与「标题计数不符时必须有 ⚠️ 更正块」，不锁标题本身');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
