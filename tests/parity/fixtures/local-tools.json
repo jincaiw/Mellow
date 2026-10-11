@@ -1,17 +1,17 @@
 {
-  "source": "逐个工具读文件头 + 2026-10-11 全量实跑（记退出码与输出）。`runsIn` 是**分类**，不是工具自述。",
+  "source": "逐个工具读文件头 + 2026-10-11 全量实跑（记退出码与输出）。`runsIn` 是**分类**，不是工具自述。 `failsOn` 由 2026-10-11（审计 §4.309）逐个工具从源码里摘出并机械核对（逐字 + 唯一）。",
   "why": "「本机工具」这个分类此前**没有任何判据** —— 8 个工具里谁该在 CI 跑、谁只能在本机跑，从来没被登记过。后果实测：`audit-pkg-test-counts.mjs` **当前就是红的**（`export` 声明 100 / 实跑 104），而**没有任何 CI 会跑它、也没有任何登记说它属于谁** ⇒ 它可以一直红下去。",
-  "note": "⚠️ `runsIn` 只有两个合法值：`ci`（必须**真的**出现在某个 workflow 里，判据 ⑳ 双向核对）与 `local-only`（必须给非空 `why`）。⚠️ `signal: advisory`（恒退出 0、只报线索）的条目**必须**再给 `advisoryWhy`，说明「为什么不做成硬判据」—— 这是审计 §4.286「**软报 = 没报**」的机械化。⚠️ **新增工具必须同时登记**，否则判据 ⑳ 报「未登记」。",
+  "note": "⚠️ `runsIn` 只有两个合法值：`ci`（必须**真的**出现在某个 workflow 里，判据 ⑳ 双向核对）与 `local-only`（必须给非空 `why`）。⚠️ `signal: advisory`（恒退出 0、只报线索）的条目**必须**再给 `advisoryWhy`，说明「为什么不做成硬判据」—— 这是审计 §4.286「**软报 = 没报**」的机械化。⚠️ **新增工具必须同时登记**，否则判据 ⑳ 报「未登记」。 ⚠️ `signal: hard`（**会因发现而失败**）的条目**必须**再给 `failsOn` —— 一段**逐字**取自该工具源码的片段；判据 ㉟ 核对它「逐字存在、**唯一**、含**非零**退出、**不是信号处理器**」。这是审计 §4.309 补的另一半：本表原本只把「**软**」管住了（`advisory` 要写 `advisoryWhy`），**「假硬」零举证** —— 而 `hard` 是**更强**的声明，实测两条声明都与实际相反。",
   "reviewedAt": "2026-10-11",
   "staleAfterDays": 180,
   "tools": [
     {
       "name": "audit-bold-pairing.mjs",
       "runsIn": "local-only",
-      "signal": "advisory",
-      "advisoryWhy": "它是**交叉验证**（用独立实现复核仓库内 ㊵ 的同一谓词），价值在「发现两个实现不一致」而不是「守门」；且默认以**工作区**为基准，CI 的干净检出下含义不同。",
-      "why": "以**工作区**为基准交叉验证加粗配对（不带参数 = 工作区）⇒ 结论依赖未提交状态；且恒退出 0。",
-      "evidence": "2026-10-11 实测 EXIT=0：`加粗配对交叉验证（rev=工作区）：174 份 .md · 扫描器 0 / 真解析器 0 · 不一致 0 处`。⚠️ 同日（审计 §4.293）**修了它的 rev 模式**：首版对「该 rev 里不存在的文件」直接 `execFileSync` ⇒ **抛错崩掉**（实测 `3fdfe20^`）⇒ 现**跳过并报出跳过数**（`bf7bbad^` ⇒ 171 份（跳过 3 份）· 136 / 136 · 不一致 0 处），并把 `git show` 的 stderr 一并吞掉（否则每跳过一份就多一行 `fatal:`，看起来像工具坏了）。"
+      "signal": "hard",
+      "why": "以**工作区**为基准交叉验证加粗配对（不带参数 = 工作区）⇒ 结论依赖未提交状态，且它是**交叉验证**（用独立实现复核仓库内 ㊵ 的同一谓词）而不是守门。⚠️ 2026-10-11（审计 §4.309）**修正了一处不实声明**：原登记为 `advisory` 并在 `why` 里写「且恒退出 0」，实测末行是 `process.exit(bad === 0 ? 0 : 1)` ⇒ **它会因不一致而失败** ⇒ 已改 `hard` 并给 `failsOn`。（原 `advisoryWhy` 里「它是交叉验证不是守门」的说法，与 `signal` 无关 —— `signal` 的语义只是**退出码**；该说法已并入本条 `why` 的前半。）",
+      "evidence": "2026-10-11 实测 EXIT=0：`加粗配对交叉验证（rev=工作区）：174 份 .md · 扫描器 0 / 真解析器 0 · 不一致 0 处`。⚠️ 同日（审计 §4.293）**修了它的 rev 模式**：首版对「该 rev 里不存在的文件」直接 `execFileSync` ⇒ **抛错崩掉**（实测 `3fdfe20^`）⇒ 现**跳过并报出跳过数**（`bf7bbad^` ⇒ 171 份（跳过 3 份）· 136 / 136 · 不一致 0 处），并把 `git show` 的 stderr 一并吞掉（否则每跳过一份就多一行 `fatal:`，看起来像工具坏了）。 ⚠️ 2026-10-11（审计 §4.309）核对退出语义时发现上述「声明与实际相反」。",
+      "failsOn": "process.exit(bad === 0 ? 0 : 1);"
     },
     {
       "name": "audit-doc-counts.mjs",
@@ -24,30 +24,34 @@
     {
       "name": "audit-guard-bounds.mjs",
       "runsIn": "local-only",
-      "signal": "hard",
+      "signal": "advisory",
       "why": "它用「**抬 1 仍绿**」二分实测真实阈值 ⇒ **就地突变仓库文件**（这正是判据 ⑭ 具名登记的那 1 个工具，自愈锁必须在 `<git-dir>/`）⇒ **绝不能进 CI**（并发突变会互相踩）。",
-      "evidence": "2026-10-11 实测 EXIT=0，输出 72 行 + 「⚠️ 结束前请确认工作区仍干净：`git status --porcelain`」。"
+      "evidence": "2026-10-11 实测 EXIT=0，输出 72 行 + 「⚠️ 结束前请确认工作区仍干净：`git status --porcelain`」。 ⚠️ 2026-10-11（审计 §4.309）：核对退出语义 ⇒ 无「因发现而失败」路径，声明已改 `advisory`。",
+      "advisoryWhy": "它的头部**逐字**写着「⚠️ **本工具的输出是『候选』，不是『缺陷』**」—— 防空转下限分**覆盖型**（必须 == 当前基线）与**健康度型**（必须留余量）两类，**只有人工读原文才能判定**，工具自己明确拒绝自动判定（它的关键词分桶只是提示、实测有反例）。⚠️ 2026-10-11（审计 §4.309）：它原先登记为 `hard` —— 实测其**唯一**两处非零退出是「工作区不干净 ⇒ **拒绝运行** `process.exit(2)`」与信号处理 `process.exit(143/130)`，**没有一处是「因发现而失败」** ⇒ 那是**假硬**（给人「它会拦住」的错觉）。"
     },
     {
       "name": "audit-memory-refs.mjs",
       "runsIn": "local-only",
       "signal": "hard",
       "why": "它核对的是 `MEMORY.md` / `PITFALLS.md` / skill —— **三者都不在仓库内**（`.workbuddy-ai/` 被 gitignore；skill 在用户目录）⇒ **CI 拿不到它们**。",
-      "evidence": "2026-10-11 实测 EXIT=0：悬空引用 / 重号 / 缺号 / 范围端点 全部（无）。"
+      "evidence": "2026-10-11 实测 EXIT=0：悬空引用 / 重号 / 缺号 / 范围端点 全部（无）。",
+      "failsOn": "process.exit(hard.length > 0 ? 1 : 0);"
     },
     {
       "name": "audit-pkg-test-counts.mjs",
       "runsIn": "local-only",
       "signal": "hard",
       "why": "它要**逐包跑 jest** 才能拿到真实用例数 ⇒ 接进 CI 等于**把同一批测试再跑一遍**（成本 ≈ 该 job 翻倍）。⚠️ **该成本未裁决** ⇒ 目前留在本机；**代价是它会漂而没人知道** —— 2026-10-11 实测就漂了（`export` 声明 100 / 实跑 104）。⚠️ **范围边界（如实声明）**：它对「某包有用例失败」**只打印 ⚠️、不退出非零**（退出码只表达「**对账**是否通过」）—— 「测试必须全绿」是 CI 测试 job 的职责，不是本工具的。",
-      "evidence": "2026-10-11 实测 **EXIT=1**（`export` 100 vs 104 · 合计 1915 vs 1919）⇒ 已刷新真值源为 104 / 1919，复跑 EXIT=0。"
+      "evidence": "2026-10-11 实测 **EXIT=1**（`export` 100 vs 104 · 合计 1915 vs 1919）⇒ 已刷新真值源为 104 / 1919，复跑 EXIT=0。",
+      "failsOn": "以及 verify-release-gate.mjs 锁定的各处内联数字。`);\nprocess.exit(1);"
     },
     {
       "name": "audit-typora-menu-labels.mjs",
       "runsIn": "local-only",
       "signal": "hard",
       "why": "要读**本机 Typora 安装**的 `Menu.strings`（`/Applications/Typora.app/…`）⇒ CI 里没有 Typora。",
-      "evidence": "2026-10-11 实测 EXIT=0：官方 Menu.strings Base 301 / zh-Hans 301 条；§12 内嵌合同 30 条全部原样可查。"
+      "evidence": "2026-10-11 实测 EXIT=0：官方 Menu.strings Base 301 / zh-Hans 301 条；§12 内嵌合同 30 条全部原样可查。",
+      "failsOn": "throw new Error(`§12 内嵌的官方真值有 ${forged.length} 条在本机 Typora 中查不到（疑似把 Mellow 自己的值当成官方值）：\\n  ${forged.join('\\n  ')}`);"
     },
     {
       "name": "audit-typora-orphan-strings.mjs",
@@ -62,7 +66,8 @@
       "runsIn": "local-only",
       "signal": "hard",
       "why": "要读**本机 Typora 的 main.js / 偏好 dump** 做逐键对账 ⇒ CI 里没有 Typora。",
-      "evidence": "2026-10-11 实测 EXIT=0：「✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记」。"
+      "evidence": "2026-10-11 实测 EXIT=0：「✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记」。",
+      "failsOn": "for (const e of errors) console.error(`  - ${e}`);\nprocess.exit(1);"
     }
   ]
 }

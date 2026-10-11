@@ -3015,7 +3015,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       entries: ['evidence', 'html', 'pdf', 'preview', 'ref', 'settingId', 'syntax'],
     },
     'local-tools.json': {
-      tools: ['advisoryWhy', 'evidence', 'name', 'runsIn', 'signal', 'why'],
+      tools: ['advisoryWhy', 'evidence', 'failsOn', 'name', 'runsIn', 'signal', 'why'],
     },
     'node-types.json': {
       divergences: ['kind', 'package', 'typesMajor', 'why'],
@@ -4510,6 +4510,110 @@ const stripJsComments = (s) => {
   console.log(`Release gate: workflow 的**缩进假设** —— 扫描 ${wfFiles34.length} 个 workflow / ${jobs34} 个 job 头，`
     + `与「2 / 4 空格 + 裸整数」不一致 ${offenders34.length} 处`
     + '；⚠️ 只锁**解析器假设的那两处**（`steps` / `with` 等不在覆盖内），不声称 2/4 是唯一正确的 YAML');
+}
+
+// ── ㉟ `signal: hard` 必须**指出**它的失败点（2026-10-11，审计 §4.309）──
+// 【为什么】判据 ⑳ 把「**软**」管住了（`signal: advisory` 必须写 `advisoryWhy`），
+//   却**完全没管「假硬」** —— 而 `hard` 是**更强**的声明（「会因发现而失败」），
+//   反而**零举证**：一个工具可以声称会拦住，而实际恒退出 0（= 事实上的 advisory，却
+//   **不需要**写任何理由）。⇒ 与 §4.286「软报 = 没报」**镜像**：那次管的是「软」，
+//   这次是「**假硬**」—— 同一句话（`signal` 的语义）的另一半。
+//   ⚠️ 实测代价（本轮，两条声明**都与实际相反**）：
+//     · `audit-guard-bounds.mjs` 登记 `hard` —— 它**唯一**的两处非零退出是
+//       「工作区不干净 ⇒ **拒绝运行** `process.exit(2)`」与信号处理 `143/130`；
+//       它的头部**逐字**写着「本工具的输出是『候选』，不是『缺陷』」⇒ **从不因发现而失败**。
+//     · `audit-bold-pairing.mjs` 登记 `advisory`（语义 = **恒退出 0**），
+//       而它末行是 `process.exit(bad === 0 ? 0 : 1)` ⇒ **它其实会失败**。
+// 【判据】每条 `signal: hard` 必须给 `failsOn`：一段**逐字**取自该工具源码的片段，且
+//   ① 在源码里**恰好出现一次**（唯一 ⇒ 强制精确到能区分同一文件里的别的退出路径）；
+//   ② 含**非零**退出（`process.exit(非 0)` / `process.exitCode = 非 0` / `throw`）；
+//   ③ **不是信号处理器**（片段里不得出现 `process.on(` / `SIGTERM|SIGINT|SIGHUP|SIGQUIT`）。
+//   ⚠️ 比较按**逐行 trim** 后拼接（对缩进不敏感）—— §4.308 的教训：**绝对缩进假设会静默漏检**。
+// 【边界如实声明】
+//   ⚠️ 本判据**不能**证明「该退出路径真的会因『发现』而触发」（静态不可判定）。它只保证
+//     「**声明**指向一条**真实存在、唯一、非零、非信号**的退出路径」—— 把「假硬」从
+//     「一句无人核对的话」变成「**必须挑出一行代码**」。
+//   ⚠️ 反向（`advisory` 却其实会失败 = 「假软」）**不在覆盖内**：静态上无法与
+//     「canary 失败 / 拒绝运行」区分（实测 `audit-doc-counts.mjs` 的 `process.exitCode = 1`
+//     就在 `failCanary` 里）⇒ 如实登记为盲区。本轮的两条实例是**人工**核对出来的。
+{
+  const TOOLS_REG35 = 'tests/parity/fixtures/local-tools.json';
+  const reg35 = JSON.parse(read(TOOLS_REG35));
+  const entries35 = reg35.tools ?? [];
+  /** 逐行 trim 后拼接 —— 对缩进不敏感。
+   *  ⚠️ **这里刻意不做 CRLF 归一化**（首版做了，被判据 ⑤ 的 canary 当场抓住 ✅）：
+   *    · 工具源码经 `read()` 读入 —— 它**已经**归一化（判据 ⑤ 要求全文件**只有那一处**归一化）；
+   *    · `failsOn` 来自 JSON 夹具 —— 文本文件走 `.gitattributes` 的 `eol: lf`（判据 ⑰ 守）。 */
+  const normLines35 = (s) => s.split('\n').map((l) => l.trim()).join('\n');
+  const NONZERO_EXIT35 = /process\.exit\s*\(\s*(?!0\s*\))/;
+  const NONZERO_CODE35 = /process\.exitCode\s*=\s*(?!0\b)\d/;
+  const THROW35 = /\bthrow\s+(new\s+)?\w/;
+  const SIGNAL35 = /process\.on\s*\(|\bSIGTERM\b|\bSIGINT\b|\bSIGHUP\b|\bSIGQUIT\b/;
+  /** 判定与 canary **共用**：`failsOn` 是否合格（null = 合格）。 */
+  const failsOnVerdict = (failsOn, src) => {
+    if (typeof failsOn !== 'string' || failsOn.trim() === '') return '缺 `failsOn`（或为空）';
+    if (!(NONZERO_EXIT35.test(failsOn) || NONZERO_CODE35.test(failsOn) || THROW35.test(failsOn))) {
+      return '`failsOn` 里**没有非零退出**（`process.exit(非 0)` / `process.exitCode = 非 0` / `throw`）';
+    }
+    if (SIGNAL35.test(failsOn)) {
+      return '`failsOn` 指向的是**信号处理器**（`process.on(` / `SIGTERM` / `SIGINT` / …）'
+        + ' —— 那不是「因发现而失败」';
+    }
+    const hay = normLines35(src);
+    const needle = normLines35(failsOn);
+    const at = hay.indexOf(needle);
+    if (at < 0) return '`failsOn` **在该工具源码里找不到**（必须逐字取自源码）';
+    if (hay.indexOf(needle, at + 1) >= 0) {
+      return '`failsOn` 在源码里**出现多于一次**（不唯一）—— 请把片段写长到能**唯一定位**那一条退出路径';
+    }
+    return null;
+  };
+  const hard35 = entries35.filter((t) => t.signal === 'hard');
+  for (const t of hard35) {
+    let src = '';
+    try { src = read(`tests/parity/tools/${t.name}`); } catch { continue; }
+    const bad = failsOnVerdict(t.failsOn, src);
+    if (bad !== null) {
+      fail(`㉟ \`${t.name}\` 声称 \`signal: hard\`（「会因发现而失败」），但 ${bad}`
+        + ' —— `hard` 是**更强**的声明，**必须**指出那行代码；'
+        + '若它其实只报线索，请改 `signal: advisory` 并写 `advisoryWhy`（审计 §4.309）');
+    }
+  }
+  // 防空转：[覆盖型] hard 条目数（登记表增删时必须一并复核）
+  const HARD35_BASELINE = 5; // [覆盖型] 基线 5
+  if (hard35.length < HARD35_BASELINE) {
+    fail(`㉟ 只有 ${hard35.length} 条 \`signal: hard\`（[覆盖型] 基线 ${HARD35_BASELINE}）`
+      + ' —— 登记表被删条目会让本判据**空转**');
+  }
+  // canary：六向（与判定**共用** failsOnVerdict）
+  const SRC_A35 = normLines35(
+    'if (bad > 0) {\n'
+    + '  process.exit(1);\n'
+    + '}\n'
+    + 'if (forged.length > 0) {\n'
+    + "  throw new Error('boom');\n"
+    + '}\n'
+    + "process.on('SIGTERM', () => { process.exit(143); });\n"
+    + 'process.exit(0);',
+  );
+  const SRC_B35 = normLines35('process.exit(1);\nprocess.exit(1);');
+  const CANARIES35 = [
+    ['process.exit(1);', SRC_A35, true, '合格样本（非零 + 唯一 + 非信号）'],
+    ["throw new Error('boom');", SRC_A35, true, '`throw` 也算失败点'],
+    ['process.exit(0);', SRC_A35, false, '**零**退出不算失败点'],
+    ["process.on('SIGTERM', () => { process.exit(143); });", SRC_A35, false, '信号处理器不算'],
+    ['process.exit(1);', SRC_B35, false, '出现多于一次 ⇒ 不唯一'],
+    ['process.exit(9);', SRC_A35, false, '源码里找不到'],
+  ];
+  for (const [failsOn, src, shouldPass, what] of CANARIES35) {
+    if ((failsOnVerdict(failsOn, src) === null) !== shouldPass) {
+      fail(`㉟ canary ${shouldPass ? '**过宽**' : '失效'}：${what} 的样本被误判`);
+    }
+  }
+  console.log(`Release gate: 本机工具的 \`signal: hard\` 失败点 —— ${hard35.length} 条 hard 条目`
+    + '（每条 `failsOn` 都**逐字存在、唯一、含非零退出、不是信号处理器**）；'
+    + '⚠️ 只保证「声明指向一条真实的失败路径」，**不保证**它真会因「发现」而触发（静态不可判定）；'
+    + '⚠️ 反向（`advisory` 却其实会失败 = 假软）**不在覆盖内**，如实登记为盲区');
 }
 
 if (errors.length > 0) {
