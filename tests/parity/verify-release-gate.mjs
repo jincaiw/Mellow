@@ -5170,46 +5170,70 @@ const stripStrings = (s) => s.replace(
 }
 
 // ── ㊸ markdown 的**围栏代码块必须成对闭合**（2026-10-11，审计 §4.320）──
-// 【为什么】本仓**多处判据**依赖「**跳过围栏代码块**」这个假设 ——
-//   实测（`verify-*.mjs` 里的围栏处理）：`verify-doc-code-refs.mjs` 的链接检查 / 加粗配对 /
-//   `verify-release-gate.mjs` 的 ⑧ 手写计数 / 本轮的 ㊷ 表结构 …… **全都**「先剥围栏再判」。
-//   ⇒ 一个**未闭合**的围栏会让**其后全部内容**被当成代码 ⇒ 那些判据会**静默漏检尾部**
-//     （**假阴性、无人知**）—— 这正是 §4.308「**假设今天成立 ≠ 被守**」的同族形态。
-//   ⚠️ 而且它在**渲染层**也显眼（文档后半段变成代码块），但在**护栏层**是**静默**的。
-// 【判据】扫全部被跟踪的 `.md`：每个围栏标记行必须能**成对闭合** ——
-//   闭合标记必须与开启标记**同字符**（`` ` `` / `~`）且**长度 ≥** 开启标记（CommonMark 规则）。
+// 【为什么】本仓**多处判据**依赖「**跳过围栏代码块**」这个假设（`verify-doc-code-refs.mjs` 的链接检查 /
+//   加粗配对 / 本护栏的 ⑧ 手写计数 / ㊷ 表结构 …）⇒ 一个**未闭合**的围栏会让**其后全部内容**
+//   被当成代码 ⇒ 那些判据**静默漏检尾部**（**假阴性、无人知**）。
+//   ⚠️ 它在**渲染层**显眼（文档后半段变成代码块），但在**护栏层**是**静默**的。
+// ⚠️ **本条不是新缺陷类**：`verify-doc-code-refs.mjs` 判据 **㉚**（2026-10-09，审计 §4.228/§4.229）
+//   **早已**守同一谓词。§4.320 **如实记录**：本条第一版的立论前提（「没人守」）**是错的** ——
+//   见审计节的**自我更正**。留存本条的理由是下面的「**真实增量 = 面，不是谓词**」。
+// 【真实增量一：面】㉚ 的面 = `committedFiles()` 的 `.md` **减去** `tests/fixtures/**` 与
+//   `tests/benchmark/**`（立此判据时 173 份）；本条的面 = **全部被跟踪的 `.md`**（立此判据时 217 份）
+//   ⇒ **㉚ 豁免掉的那一面由本条补上**。两者**同谓词、本条面为超集** ⇒ **互为镜像**：
+//   任一护栏所在文件崩掉，另一方仍能指出同类破损。
+// 【真实增量二：谓词】㉚ 的正则**只认反引号**（`(`{3,})`）⇒ **波浪号栅栏在 ㉚ 面上完全不可见**；本条补上。
+//   （实测全仓 `~` 栅栏 **0 行** ⇒ 当前**无输入**，如实登记。）
+// 【为什么夹具也该守】㉚ 的豁免理由是「语料**故意**含异形语法」—— 但**未闭合的围栏不是「语法异形」，
+//   是「结构破损」**：它让语料**后半段整体变成代码块** ⇒ **依赖该语料的渲染 / 性能测试静默少测**。
+//   实测（立此判据时）夹具与基准语料 **0 处未闭合** ⇒ 那条豁免在**这一维**上**从未被需要**。
+// 【判据】GFM 规则：闭合栅栏须与开启栅栏**同字符**（`` ` `` / `~`）且**长度 ≥**；
+//   反引号栅栏的**开启行 info string 含反引号则那一行不是栅栏**；**闭合行不得带 info string**；
+//   **引用块前缀**（`> `）一并识别。
 // 【边界如实声明】
-//   ⚠️ 只锁「**成对闭合**」；**不锁语言标注**（新增语言标识是**合法**的 —— 机械禁止会挡住 `go` / `sql` /
-//     `swift` 这类正常用法）⇒ 只登记读数（§4.320：17 种语言标识，全部合法）。
-//   ⚠️ 缩进围栏（`  ``` `）**在覆盖内**；**行内**出现的反引号串**不是**围栏（要求行首）。
-//   ⚠️ **解析器自身的两条假设未守**（行首任意缩进 / info string 字符集）—— 读数、边界与「为什么只登记」见 §4.320。
+//   ⚠️ **不锁语言标注**（新增语言标识是**合法**的 —— 机械禁止会挡住 `go` / `sql` / `swift`）⇒ 只登记读数。
+//   ⚠️ 缩进按**绝对**缩进识别（`^\s*`）—— **这不是 CommonMark 的规则**（列表容器内按相对缩进算）
+//     ⇒ 正确实现需要块级解析器；本仓合规的扫描器只存在于**本机工具** `audit-bold-pairing.mjs`（不进 CI）
+//     ⇒ 护栏**不能复用** ⇒ 如实登记，不落更强的判据（§4.320 记了这条边界）。
 {
   const mdFiles43 = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
     .split('\n').filter(Boolean).filter((f) => f.endsWith('.md'));
-  /** 判定与 canary **共用**：一行是否是围栏标记（返回 `{ ch, len }`，否则 null）。 */
-  const fenceOf = (l) => {
-    const m = /^\s*(`{3,}|~{3,})\s*[A-Za-z0-9_+-]*\s*$/.exec(l);
-    return m === null ? null : { ch: m[1][0], len: m[1].length };
+  /** 判定与 canary **共用**：该行是不是**栅栏标记行**（GFM：允许 `>` 前缀与缩进）。
+   *  返回 `{ ch, len, rest }`，否则 null。 */
+  const fenceOf43 = (l) => {
+    const m = /^(\s*(?:>+\s*)*)(`{3,}|~{3,})(.*)$/.exec(l);
+    return m === null ? null : { ch: m[2][0], len: m[2].length, rest: m[3].trim() };
   };
-  /** 判定与 canary **共用**：找出一段文本里**未闭合**的围栏（返回 `{line, ch, len}[]`）。 */
-  const unclosedFences = (lines) => {
-    const out = [];
+  /** 判定与 canary **共用**：返回**未闭合**的开启栅栏 `{line, ch, len}`，无则 null。 */
+  const unclosedFence43 = (lines) => {
     let open = null;
     for (const [i, l] of lines.entries()) {
-      const f = fenceOf(l);
+      const f = fenceOf43(l);
       if (f === null) continue;
-      if (open === null) open = { ...f, line: i + 1 };
-      else if (f.ch === open.ch && f.len >= open.len) open = null;
+      if (open === null) {
+        // GFM：反引号栅栏的 info string **含反引号** ⇒ 该行**不是**开启栅栏
+        if (f.ch === '`' && f.rest.includes('`')) continue;
+        open = { line: i + 1, ch: f.ch, len: f.len };
+      } else if (f.ch === open.ch && f.len >= open.len && f.rest === '') {
+        open = null;   // 合法闭合（同字符 + 长度 ≥ + 不带 info string）
+      }
     }
-    if (open !== null) out.push(open);
-    return out;
+    return open;
   };
   let fences43 = 0;
+  let fences43Blockquote = 0;
+  let fences43Tilde = 0;
   const bad43 = [];
   for (const f of mdFiles43) {
     const lines = read(f).split('\n');
-    for (const l of lines) if (fenceOf(l) !== null) fences43 += 1;
-    for (const u of unclosedFences(lines)) {
+    for (const l of lines) {
+      const x = fenceOf43(l);
+      if (x === null) continue;
+      fences43 += 1;
+      if (/^\s*>/.test(l)) fences43Blockquote += 1;
+      if (x.ch === '~') fences43Tilde += 1;
+    }
+    const u = unclosedFence43(lines);
+    if (u !== null) {
       bad43.push(`${f}:${u.line}（\`${String(u.ch).repeat(u.len)}\` 未闭合）`);
     }
   }
@@ -5220,27 +5244,39 @@ const stripStrings = (s) => s.replace(
       + '（假阴性、无人知）⇒ 请补上闭合标记（审计 §4.320）');
   }
   // 防空转：[健康度型]（输入是「文档里的围栏数」，随开发增长 ⇒ 留余量）
-  const FENCE_SCAN_BASELINE = 700; // [健康度型] 下限 700（立此判据时实测 932 行）
+  const FENCE_SCAN_BASELINE = 700; // [健康度型] 下限 700（立此判据时实测 938 行）
   if (fences43 < FENCE_SCAN_BASELINE) {
     fail(`㊸ 只扫到 ${fences43} 个围栏标记行（[健康度型] 下限 ${FENCE_SCAN_BASELINE}）`
       + ' —— 解析器或扫描面失效会让本判据**空转**');
   }
-  // canary：四向（与判定**共用** fenceOf / unclosedFences）
-  if (unclosedFences(['```js', 'x', '```']).length !== 0) {
+  // canary：六向（与判定**共用** fenceOf43 / unclosedFence43）
+  if (unclosedFence43(['```js', 'x', '```']) !== null) {
     fail('㊸ canary 失效：**成对闭合**的样本被判为未闭合');
   }
-  if (unclosedFences(['```js', 'x']).length !== 1) {
+  if (unclosedFence43(['```js', 'x']) === null) {
     fail('㊸ canary 失效：**未闭合**的样本未被检出');
   }
-  if (unclosedFences(['```', 'x', '``']).length !== 1) {
-    fail('㊸ canary 失效：**闭合标记比开启短**（`` `` `` < `` ``` ``）的样本未被检出');
+  if (unclosedFence43(['````', '```', '````']) !== null) {
+    fail('㊸ canary 失效：**长度规则**未生效（4 个反引号包 3 个反引号被判成未闭合）');
   }
-  if (unclosedFences(['```', 'x', '~~~']).length !== 1) {
-    fail('㊸ canary 失效：**换字符**（`` ` `` 开 / `~` 闭）的样本未被检出');
+  if (unclosedFence43(['```', 'x', '``']) === null) {
+    fail('㊸ canary 失效：**闭合标记比开启短**的样本未被检出');
   }
-  console.log(`Release gate: markdown 的**围栏代码块** —— 扫描 ${mdFiles43.length} 份 md / ${fences43} 个围栏标记行，`
-    + `**未闭合** ${bad43.length} 处；`
-    + '⚠️ **边界**：只锁「**成对闭合**」；**不锁语言标注**（新增语言标识合法 ⇒ 只登记读数，§4.320）');
+  if (unclosedFence43(['```', 'x', '~~~']) === null) {
+    fail('㊸ canary 失效：**换字符**（反引号开 / 波浪号闭）的样本未被检出');
+  }
+  if (unclosedFence43(['```js `x`', 'a', '```']) === null) {
+    fail('㊸ canary **过宽**：info string 含反引号的行被当成了开启栅栏');
+  }
+  if (unclosedFence43(['> ```', '> a', '> ```']) !== null) {
+    fail('㊸ canary 失效：**引用块内成对**的栅栏被判为未闭合');
+  }
+  if (unclosedFence43(['> ```', '> a']) === null) {
+    fail('㊸ canary 失效：**引用块内未闭合**的栅栏未被检出（`>` 前缀未被识别）');
+  }
+  console.log(`Release gate: markdown 的**围栏代码块** —— 扫描 ${mdFiles43.length} 份 md / ${fences43} 个围栏标记行`
+    + `（引用块前缀 ${fences43Blockquote} · 波浪号 ${fences43Tilde}），**未闭合** ${bad43.length} 处；`
+    + '⚠️ 与 `verify-doc-code-refs.mjs` 判据 **㉚ 同谓词、本条面为超集**（含夹具与基准语料）⇒ **互为镜像**');
 }
 
 if (errors.length > 0) {
