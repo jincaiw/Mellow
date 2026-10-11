@@ -591,7 +591,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       coverEq('待裁决项登记表行数', rows.length, ROWS_BASELINE,
         '登记表是「不该缩小的集合」；若确实删过行，请同步下调本阈值并说明');
       for (const row of rows) {
-        const cols = row.split('|').map((c) => c.trim());
+        const cols = row.split(/(?<!\\)\|/).map((c) => c.trim());
         // 归一化：表里可能写成 `` `已处置`（证据） `` —— 先去掉反引号再判定，
         // 否则「带反引号的已处置」会被判成「载体不含 .md」（本判据首跑即踩到）。
         const carrier = (cols[cols.length - 2] ?? '').replace(/`/g, '');
@@ -613,7 +613,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       }
       // canary：三个方向
       const carrierOf = (row) => {
-        const cols = row.split('|').map((c) => c.trim());
+        const cols = row.split(/(?<!\\)\|/).map((c) => c.trim());
         return cols[cols.length - 2] ?? '';
       };
       if (!carrierOf('| 1 | x | y | 待裁决 | `docs/adr/ADR-9999-nope.md` |').includes('ADR-9999')) {
@@ -760,7 +760,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
     if (m === null) continue;
     declRows += 1;
     declared.add(m[1]);
-    const cells = line.split('|').slice(1, -1);
+    const cells = line.split(/(?<!\\)\|/).slice(1, -1);
     if (cells.length !== 4) {
       fail(`master-plan D 表声明行「${m[1]}」有 ${cells.length} 格（应为 4）：${line.slice(0, 60)}…`
         + ' —— 超出的格在 GFM 渲染时被**静默丢弃**（D-AB 就是这样整条从渲染视图里消失的）');
@@ -988,8 +988,13 @@ for (const [p, what, decision] of DECIDED_ADRS) {
     if (declOf('| **D-A** | a | b | c |').includes('D-QQ')) {
       errors.push('D 表自洽护栏 canary 失效：声明集与引用集未区分');
     }
-    if ('| **D-ZZ** | a | b | c | d |'.split('|').slice(1, -1).length !== 5) {
+    if ('| **D-ZZ** | a | b | c | d |'.split(/(?<!\\)\|/).slice(1, -1).length !== 5) {
       errors.push('D 表自洽护栏 canary 失效：5 格行未被数出 5 格');
+    }
+    // ⚠️ 2026-10-11（审计 §4.321）：**区分性** canary —— 转义 `\|` **不是**分隔符。
+    //    用裸 `split('|')` 会数出 5 格（假阳性）⇒ 这一条会红。
+    if ('| **D-ZZ** | a \\| b | c | d |'.split(/(?<!\\)\|/).slice(1, -1).length !== 4) {
+      errors.push('D 表自洽护栏 canary 失效：**转义 `\\|`** 被当成了分隔符（会把合法行判红）');
     }
     // 判据本身必须能区分「有声明 / 无声明」—— 用真实数据验一次
     if (!declared.has('D-AB') || declared.has('D-AN')) {
@@ -4695,7 +4700,7 @@ const stripStrings = (s) => s.replace(
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 31; // [覆盖型] 基线 31（2026-10-11 §4.318：新增 ㊶ 的标记）
+  const COVERAGE_MARK_BASELINE = 32; // [覆盖型] 基线 32（2026-10-11 §4.321：新增 ㊹ 的标记）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -5116,17 +5121,22 @@ const stripStrings = (s) => s.replace(
 //   ⇒ **同一句话的另一半**：**其余 809 张表**的**结构健全**没有任何判据。
 // 【为什么只锁「表头 vs 分隔行」】分隔行**只含** `-` / `:` / `|` / 空格 ⇒ **无行内码、无转义**
 //   ⇒ 格数**可精确判定**（**无假阳性**）。
-//   ⚠️ **数据行**的格数**不锁**：它会含**行内代码**（可能内含 `|`）与**转义 `\|`**，而正确的剥离
-//     需要**符合 CommonMark「同长定界」的扫描器**（本仓那个在**本机工具** `audit-bold-pairing.mjs` 里，
-//     **不进 CI** ⇒ 护栏**不能**复用）⇒ 手写剥离器**不可靠** ⇒ 按「**不健全就不落判据**」**只登记读数**
-//     （§4.319：两种自包含剥离器都测到「行 > 表头」**0 处**）。
+//   ⚠️ **数据行的格数不锁** —— 但**理由不是「谓词不健全」**（2026-10-11，审计 §4.321 **更正**）：
+//     **GFM 的表格规则使这个谓词本就健全** —— 表内**未转义**的 `|` **一律**是分隔符，
+//     **行内代码不提供保护**（要写字面 `|` 必须写 `\|`）⇒ 格数**可精确判定**，**不需要** CommonMark 扫描器。
+//     真正的理由是**分工**：`verify-doc-code-refs.mjs` 判据 **㉙** 已经锁了「**行 > 表头**」
+//     （危险方向 —— GFM 会**静默丢弃**溢出格）⇒ 本条**不重复**它，只锁另一半。
+//     （§4.319 原写「不能确证 / 需要 CommonMark 同长定界扫描器」—— **那条理由与 ㉙ 的代码相反**，已更正。）
 // 【判据】扫全部被跟踪的 `.md`（跳过围栏代码块）：每张表（表头行 + 紧跟的 `|---|` 分隔行）
-//   两者的**格数必须相等**。
+//   两者的**格数必须相等**；**格数**按 GFM 规则计（**未转义**的 `|` 才算分隔）。
 {
   const tracked42 = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
     .split('\n').filter(Boolean).filter((f) => f.endsWith('.md'));
-  /** 判定与 canary **共用**：一行的格数（**只适用于无行内码的行**，如分隔行与表头行）。 */
-  const cellCount42 = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').length;
+  /** 判定与 canary **共用**：一行的格数（**认 GFM 转义 `\|`** —— 它**不是**分隔符）。
+   *  ⚠️ 2026-10-11（审计 §4.321）：原实现是裸 `split('|')` —— 而本判据的立论只证明了
+   *  「**分隔行**无行内码、无转义」，代码却把**同一个谓词也用在表头行上**，而表头**可以**含 `\|`
+   *  ⇒ 一旦出现，一张**合法**表会被判红（**潜在假阳性**；立此判据时实测表头含 `\|` **0 处**）。 */
+  const cellCount42 = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).length;
   const isSep42 = (l) => /^\s*\|[\s:|-]+\|\s*$/.test(l);
   let tables42 = 0;
   const bad42 = [];
@@ -5156,17 +5166,20 @@ const stripStrings = (s) => s.replace(
     fail(`㊷ 只扫到 ${tables42} 张 markdown 表格（[健康度型] 下限 ${TABLE_SCAN_BASELINE}）`
       + ' —— 解析器或扫描面失效会让本判据**空转**');
   }
-  // canary：三向（与判定**共用** cellCount42 / isSep42）
+  // canary：四向（与判定**共用** cellCount42 / isSep42）
   if (cellCount42('| a | b | c |') !== 3 || cellCount42('|---|---|---|') !== 3) {
     fail('㊷ canary 失效：3 格样本未被数成 3');
+  }
+  if (cellCount42('| a \\| b | c |') !== 2) {
+    fail('㊷ canary 失效：**转义 `\\|`** 被当成了分隔符（那会把**合法**表判红 —— §4.321）');
   }
   if (!isSep42('|---|:--:|---|')) fail('㊷ canary 失效：带对齐冒号的分隔行未被识别');
   if (isSep42('| a | b |')) fail('㊷ canary **过宽**：**数据行**被当成了分隔行');
   console.log(`Release gate: markdown 表格的**表结构** —— 扫描 ${tracked42.length} 份 md / ${tables42} 张表，`
     + `**表头格数 ≠ 分隔行格数** ${bad42.length} 处；`
-    + '⚠️ **边界**：只锁**表头 vs 分隔行**（两者**无行内码/无转义** ⇒ 可精确判定）；'
-    + '**数据行**的格数**不锁**（会含行内代码与 `\\|`，正确的剥离需 CommonMark 同长定界扫描器 —— '
-    + '那个在**本机工具**里、不进 CI）⇒ 那半**只登记读数**（§4.319）');
+    + '⚠️ **边界**：只锁**表头 vs 分隔行**；「**行 > 表头**」由 `verify-doc-code-refs.mjs` 判据 **㉙** 锁'
+    + '（**分工，不重复**）；两者共用同一条 GFM 规则 —— 表内**未转义**的 `|` 一律分隔'
+    + '（**行内代码不保护**）⇒ 谓词**健全**（§4.321 更正了 §4.319 的「需 CommonMark 扫描器」）');
 }
 
 // ── ㊸ markdown 的**围栏代码块必须成对闭合**（2026-10-11，审计 §4.320）──
@@ -5277,6 +5290,86 @@ const stripStrings = (s) => s.replace(
   console.log(`Release gate: markdown 的**围栏代码块** —— 扫描 ${mdFiles43.length} 份 md / ${fences43} 个围栏标记行`
     + `（引用块前缀 ${fences43Blockquote} · 波浪号 ${fences43Tilde}），**未闭合** ${bad43.length} 处；`
     + '⚠️ 与 `verify-doc-code-refs.mjs` 判据 **㉚ 同谓词、本条面为超集**（含夹具与基准语料）⇒ **互为镜像**');
+}
+
+// ── ㊹ 表格**格数**谓词必须认 GFM 转义 `\|`（2026-10-11，审计 §4.321）──
+// 【为什么】GFM 的表格规则：表内**未转义**的 `|` **一律**是单元格分隔符，**行内代码不提供保护**
+//   （要写字面 `|` 必须写 `\|`）⇒ 一个**裸**切分遇到 `\|` 会**多切一格** ⇒
+//   把**合法**表判成「格数不符」= **假阳性**（护栏红了、内容其实没错 ⇒ 人们学会忽略它）。
+//   ⚠️ 本仓**刚实测**过同族形态（§4.321 的 ㊷）：**立论只论证了「分隔行」**（无行内码、无转义），
+//   代码却把同一个谓词**也用在表头行上** ⇒ 「**论证了一半的谓词，用在两半上**」。
+//   ⚠️ 立此判据时全仓**表内 `\|` 实测 0 处** ⇒ 这是**潜在**假阳性、**不是**现行缺陷 —— **照样落判据**
+//   （本仓先例：㉜「0 缺陷也落判据」—— 缺陷为零不等于谓词健全）。
+// 【判据】扫全部 `tests/parity/verify-*.mjs`，**剥注释**后（注释里写切分写法是**说明**、不是用法）：
+//   每处**裸**切分必须在 `BARE_PIPE_SPLIT` 里**逐字**登记 + 写理由。
+//   **双向**：① 每处用法都要有登记；② 每条登记都必须**仍然存在**（陈旧条目 ⇒ 失败）。
+// 【边界如实声明】
+//   ⚠️ 只认**三种字面写法**（单引号 / 双引号 / 正则）；「先 `replace` 再切」的写法**也会**被命中
+//     ⇒ 必须登记（理由写清它**已经**是转义感知的）。
+//   ⚠️ **不覆盖**「用别的办法算格数」（`matchAll` 数分隔符 / 手写扫描器）—— 那半**只登记读数**。
+{
+  const guards44 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  // ⚠️ **运行时拼出**（抄 ⑥ 的做法）：本判据的登记键与 canary 样本里**不出现**裸写法整串，
+  //    否则它们自己会被判定命中（「判据命中自己」）。
+  const PIPE44 = '|';
+  /** 判定与 canary **共用**：一段代码里**裸**切分的写法（**转义感知**的 `(?<!\\)` **不在内**）。 */
+  const barePipeSplits44 = (code) => {
+    const out = [];
+    for (const l of code.split('\n')) {
+      if (/split\(\s*(?:'\|'|"\|"|\/\\?\|\/)\s*\)/.test(l)) out.push(l.trim());
+    }
+    return out;
+  };
+  /** 登记表：键 = 该行 `trim()` 后的代码文本（**逐字**）⇒ 代码改了形状就会**陈旧**并被判失败。 */
+  const BARE_PIPE_SPLIT = new Map([
+    [`for (const cell of body.replace(/\\\\\\${PIPE44}/g, '\\u0000').split('${PIPE44}')) {`,
+      '**已经**是转义感知的（先把 `\\|` 换成 NUL 再切）—— 另一种写法，不是漏网'],
+    [`const cur = m[1].split('${PIPE44}');`,
+      '切的是**正则的交替分支**（`SURFACE`），不是表格行'],
+    [`for (const m of stripComments(src).matchAll(SURFACE)) if (m[1].split('${PIPE44}').includes('ts')) surfaces += 1;`,
+      '同上（`SURFACE` 的交替分支）'],
+    [`const [ef, ehit] = key.split('${PIPE44}');`,
+      '切的是**复合键** `file|needle`，不是表格行'],
+  ]);
+  const found44 = new Set();
+  for (const f of guards44) {
+    for (const l of barePipeSplits44(stripJsComments(read(`tests/parity/${f}`)))) found44.add(l);
+  }
+  const unregistered44 = [...found44].filter((l) => !BARE_PIPE_SPLIT.has(l));
+  if (unregistered44.length > 0) {
+    fail(`㊹ 这些护栏代码里有**裸**切分 \`|\`（不认 GFM 转义）：${unregistered44.slice(0, 4).join(' ⏎ ')}`
+      + `${unregistered44.length > 4 ? ` …（共 ${unregistered44.length} 处）` : ''}`
+      + ' —— GFM 里表内**未转义**的 `|` 一律是分隔符 ⇒ 裸切分遇到 `\\|` 会**多切一格** ⇒'
+      + ' 把**合法**表判红（**假阳性**）。请改用**转义感知**的切分，或在本判据的 `BARE_PIPE_SPLIT` 里'
+      + '**逐字**登记并写明「它不是表格格数」（审计 §4.321）');
+  }
+  const stale44 = [...BARE_PIPE_SPLIT.keys()].filter((k) => !found44.has(k));
+  if (stale44.length > 0) {
+    fail(`㊹ \`BARE_PIPE_SPLIT\` 有**陈旧条目**（代码里已不存在）：${stale44.slice(0, 3).join(' ⏎ ')}`
+      + ' —— 陈旧登记会让「每处裸切分都已登记」这句话**悄悄失效**');
+  }
+  // 防空转：[健康度型] 扫描面（护栏数）+ [覆盖型] 登记数（人工枚举）
+  if (guards44.length < 20) {
+    fail(`㊹ 只扫到 ${guards44.length} 个护栏（[健康度型] 下限 20）—— 扫描面萎缩会让本判据**空转**`);
+  }
+  const BARE44_BASELINE = 4; // [覆盖型] 基线 4
+  coverEq('㊹ 裸切分的登记条数', BARE_PIPE_SPLIT.size, BARE44_BASELINE,
+    '登记被删空会让「每处裸切分都已登记」重新变成**无人守**');
+  // canary：三向（与判定**共用** barePipeSplits44）
+  if (barePipeSplits44(`const a = row.split('${PIPE44}');`).length !== 1) {
+    fail('㊹ canary 失效：**裸**切分未被检出');
+  }
+  if (barePipeSplits44(`const a = row.split(/(?<!\\\\)\\${PIPE44}/);`).length !== 0) {
+    fail('㊹ canary **过宽**：**转义感知**的切分被当成了裸切分（那会把正确写法判红）');
+  }
+  if (barePipeSplits44(`const a = row.split(/\\${PIPE44}/);`).length !== 1) {
+    fail('㊹ canary 失效：**正则写法**的裸切分未被检出（它与单引号写法等价）');
+  }
+  console.log(`Release gate: 表格**格数**谓词的 GFM 转义 —— 扫描 ${guards44.length} 个护栏，`
+    + `**裸**切分 \`|\` ${found44.size} 处**全部已登记**（登记表 ${BARE_PIPE_SPLIT.size} 条，含陈旧检查）；`
+    + '⚠️ **边界**：只认三种字面写法，**不覆盖**「用别的办法算格数」');
 }
 
 if (errors.length > 0) {

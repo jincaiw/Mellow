@@ -2711,7 +2711,7 @@ if (cssLayerAnchor === undefined) {
   let checked = 0;
   for (const line of adrLines) {
     // 形态：`| Q1 | \`enableHighlight\` | \`false\` | \`markdown.highlight\` | **\`true\`** | …`
-    const cells = line.split('|').map((c) => c.trim());
+    const cells = line.split(/(?<!\\)\|/).map((c) => c.trim());
     if (cells.length < 7) continue;
     const idM = /^`([a-z][a-zA-Z0-9.]*)`$/.exec(cells[4]);
     const defM = /^\**`?(true|false)`?\**$/.exec(cells[5]);
