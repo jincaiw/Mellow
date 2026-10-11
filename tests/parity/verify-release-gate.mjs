@@ -4704,7 +4704,7 @@ const stripStrings = (s) => s.replace(
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 24; // [覆盖型] 基线 24
+  const COVERAGE_MARK_BASELINE = 25; // [覆盖型] 基线 25
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -4874,7 +4874,8 @@ const stripStrings = (s) => s.replace(
 
 // ── ㊴ `includes('<针>')` 的针**不得只在注释里**（2026-10-11，审计 §4.314）──
 // 【为什么】本仓的「X 必须存在」类判据大量用 `read('路径')` + `X.includes('针')`。
-//   实测（2026-10-11）：全仓**可解析目标路径**的这类检查共 **34** 处，其中 **16** 处的针在目标文件里
+//   实测（2026-10-11）：全仓**可解析目标路径**的这类检查共 **32** 处（**已剥护栏自己的注释** ——
+//   不剥会把注释里写的示例当成真检查，实测多报 3 处），其中 **11** 处的针在目标文件里
 //   **不唯一** ⇒ 「检查强度」取决于「**针的写法有多特异**」。
 //   本轮用**注入**证明了 **2 处真缺陷**（§4.314）：删掉「契约定义行」/「`import` + 用法」之后，
 //   判据**仍然绿** —— 因为**注释里还剩同样的字样**。⇒ 两处已**锚定到代码形态**并配 canary。
@@ -4890,14 +4891,47 @@ const stripStrings = (s) => s.replace(
       '该判据**故意**检查「**不变量注释**仍在」（它守的是**文档化的不变量**，不是代码符号）'
       + ' —— 这是唯一一处「用注释当证据」是**设计**的情形'],
   ]);
+  // ⚠️ **「针不唯一」的登记表**（2026-10-11，审计 §4.315）：键 = `护栏文件|针|目标文件`。
+  //   登记的是「**为什么多处也算证据**」（多为「**至少一处**」语义：声明 + 使用、值导出 + 类型导出…）。
+  //   ⚠️ **双向**：登记了却不再命中 ⇒ 红（针变唯一了 / 检查被删 / 目标路径变了）。
+  const UNANCHORED_NEEDLE = new Map([
+    ['verify-adapter-contract.mjs|__TAURI__|apps/desktop/scripts/build-editor-bundle.mjs',
+      '「**接线存在**」是**至少一处**语义 —— 该脚本把 `__MELLOW_BRIDGE__` 接到 `__TAURI__.core`，多处调用都是接线的一部分'],
+    ['verify-adapter-contract.mjs|jump_list_add_recent|apps/desktop/src-tauri/src/lib.rs',
+      '**定义 + 注册**各一处（`fn jump_list_add_recent` 与 `invoke_handler` 列表）—— 判据要的是「命令**已注册**」⇒ 至少一处'],
+    ['verify-menu-contract.mjs|serde::Deserialize|apps/desktop/src-tauri/src/menu.rs',
+      '`#[derive(serde::Deserialize)]` 出现在**多个 struct** 上 —— 判据要的是「该文件**用 serde 反序列化**」⇒ 至少一处'],
+    ['verify-settings-contract.mjs|mellow.updater.skippedVersion|apps/desktop/src/App.tsx',
+      '**读 + 写**各一处（读跳过版本 / 写跳过版本）⇒ 至少一处'],
+    ['verify-settings-contract.mjs|__MELLOW_MD_LINK_EXISTS__|apps/desktop/src/App.tsx',
+      '**类型声明 + 赋值**各一处（同一契约的两种写法）⇒ 至少一处'],
+    ['verify-settings-contract.mjs|__MELLOW_MD_LINK_REFRESH__|packages/editor-core/src/core.ts',
+      '**类型声明 + 调用**各一处（同 `__MELLOW_MD_LINK_EXISTS__`）⇒ 至少一处'],
+    ['verify-sidebar-contract.mjs|SidebarFooter|packages/desktop-ui/src/index.ts',
+      '**值导出 + 类型导出**各一处（`export { X }` / `export type { XProps }`）⇒ 至少一处'],
+    ['verify-sidebar-contract.mjs|.sidebar-footer|apps/desktop/src/styles.css',
+      'CSS **类名**在多个选择器里出现是**正常**的 —— 判据要的是「**有该类的样式**」⇒ 至少一处'],
+    ['verify-sidebar-contract.mjs|highlightNonce|packages/desktop-ui/src/OutlineList.tsx',
+      '**声明 + 使用**各一处 ⇒ 至少一处'],
+    ['verify-sidebar-contract.mjs|ContextMenuAction|apps/desktop/src/ContextMenu.tsx',
+      '**类型 + 用法**各一处 ⇒ 至少一处'],
+    ['verify-sidebar-contract.mjs|context-menu-action|apps/desktop/src/ContextMenu.tsx',
+      '**DOM 类名**（与上一条同族：类名在多处出现是正常）⇒ 至少一处'],
+  ]);
   const guards39 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
     : [];
   const onlyInComments = [];
+  const unanchored = [];
+  const unanchoredHit = new Set();
   let checked39 = 0;
   let exemptHit39 = 0;
+  let unique39 = 0;
   for (const f of guards39) {
-    const src = read(`tests/parity/${f}`);
+    // ⚠️ **必须剥注释**（2026-10-11，审计 §4.315）：否则**注释里写的示例**（例如「原判据是
+    //   `X.includes('…')`」这种说明）会被当成**真检查** —— 实测它让本判据多报了 3 处幻影。
+    //   ⚠️ 与 §4.314 的教训**同源**：**注释冒充证据**。
+    const src = stripJsComments(read(`tests/parity/${f}`));
     /** 变量 → 目标文件（**只认字符串字面量路径**；非字面量一律跳过并计数） */
     const targetOf = new Map();
     for (const m of src.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:read|readFileSync)\(\s*(?:resolve\([^,]+,\s*)?'([^']+)'\s*\)?/g)) {
@@ -4913,10 +4947,19 @@ const stripStrings = (s) => s.replace(
       if (!existsSync(resolve(root, relPath))) continue;
       checked39 += 1;
       const body = stripJsComments(read(relPath));
-      if (body.includes(needle)) continue;
-      const key = `${f}|${needle}`;
-      if (COMMENT_ONLY_NEEDLE_EXEMPT.has(key)) { exemptHit39 += 1; continue; }
-      onlyInComments.push(`${f} → \`${needle}\`（目标 ${rel}）`);
+      if (!body.includes(needle)) {
+        const key = `${f}|${needle}`;
+        if (COMMENT_ONLY_NEEDLE_EXEMPT.has(key)) { exemptHit39 += 1; continue; }
+        onlyInComments.push(`${f} → \`${needle}\`（目标 ${relPath}）`);
+        continue;
+      }
+      // ⚠️ **第二半**（2026-10-11，审计 §4.315）：针在**剥注释后**出现 **>1** 次 ⇒
+      //   检查**不锚定**（删掉「该处」不会红）⇒ 必须登记「为什么多处也算证据」。
+      const codeCount = body.split(needle).length - 1;
+      if (codeCount === 1) { unique39 += 1; continue; }
+      const uKey = `${f}|${needle}|${relPath}`;
+      if (UNANCHORED_NEEDLE.has(uKey)) { unanchoredHit.add(uKey); continue; }
+      unanchored.push(`${f} → \`${needle}\`（目标 ${relPath}，**剥注释后 ${codeCount} 处**）`);
     }
   }
   if (onlyInComments.length > 0) {
@@ -4924,13 +4967,26 @@ const stripStrings = (s) => s.replace(
       + ' —— 「注释里提过」**不是**「代码里有」（§4.314 实测：删掉契约定义 / `import` 后，'
       + '注释里的字样让判据**仍然绿**）。请**锚定到代码形态**，或登记进 `COMMENT_ONLY_NEEDLE_EXEMPT` 并写明理由');
   }
-  // 双向：登记的豁免项必须**真的**命中（否则陈旧）
+  if (unanchored.length > 0) {
+    fail(`㊴ 这些 \`includes('<针>')\` 的针**在目标文件里不唯一**（剥注释后仍 >1 处），且**未登记**：`
+      + `${unanchored.join('；')}`
+      + ' —— 针不唯一 ⇒ **删掉「该处」不会红**（检查强度 = 「针有多特异」，§4.314 的教训）。'
+      + '要么**锚定到代码形态**（正则锁声明/导入/调用），要么登记进 `UNANCHORED_NEEDLE` 并写明'
+      + '「**为什么多处也算证据**」（例如「至少一处」语义）');
+  }
+  // 双向：两表的登记项都必须**真的**命中（否则陈旧）
   if (exemptHit39 !== COMMENT_ONLY_NEEDLE_EXEMPT.size) {
     fail(`㊴ \`COMMENT_ONLY_NEEDLE_EXEMPT\` 有 ${COMMENT_ONLY_NEEDLE_EXEMPT.size} 条，但只有 ${exemptHit39} 条命中`
       + ' —— 其余已**过期**（该针现在要么在代码里出现、要么那条检查已被删），请移除');
   }
+  for (const k of UNANCHORED_NEEDLE.keys()) {
+    if (!unanchoredHit.has(k)) {
+      fail(`㊴ \`UNANCHORED_NEEDLE\` 登记了 \`${k}\`，但它**已不再命中**`
+        + ' —— 该登记项已**过期**（针现在唯一了 / 该检查已删 / 目标路径变了），请移除');
+    }
+  }
   // 防空转：[健康度型]（输入是「别的护栏的写法」，随开发变化 ⇒ 留余量）
-  const NEEDLE_CHECK_BASELINE = 30; // [健康度型] 下限 30（立此判据时实测 34）
+  const NEEDLE_CHECK_BASELINE = 30; // [健康度型] 下限 30（立此判据时实测 32）
   if (checked39 < NEEDLE_CHECK_BASELINE) {
     fail(`㊴ 只解析出 ${checked39} 处可核对目标的 \`includes\` 检查（[健康度型] 下限 ${NEEDLE_CHECK_BASELINE}）`
       + ' —— 解析器失效会让本判据**空转**');
@@ -4945,9 +5001,14 @@ const stripStrings = (s) => s.replace(
   const COMMENT_ONLY_BASELINE = 1; // [覆盖型] 基线 1
   coverEq('㊴ 「只在注释里」的豁免条数', COMMENT_ONLY_NEEDLE_EXEMPT.size, COMMENT_ONLY_BASELINE,
     '豁免被删空会让本条重新变成**无人守**');
-  console.log(`Release gate: \`includes\` 型判据的**针** —— 可核对目标 ${checked39} 处，`
-    + `其中「只在注释里」${onlyInComments.length} 处（豁免 ${COMMENT_ONLY_NEEDLE_EXEMPT.size} 条）；`
-    + '⚠️ **边界**：只锁「针不得只在注释里」，**不覆盖**「定义被删而用法尚存」'
+  const UNANCHORED_BASELINE = 11; // [覆盖型] 基线 11
+  coverEq('㊴ 「针不唯一」的登记条数', UNANCHORED_NEEDLE.size, UNANCHORED_BASELINE,
+    '登记被删空会让「针必须锚定」重新变成**无人守**');
+  console.log(`Release gate: \`includes\` 型判据的**针** —— 可核对目标 ${checked39} 处：`
+    + `**唯一**（自锚定）${unique39} 处 · **只在注释里**${onlyInComments.length} 处`
+    + `（豁免 ${COMMENT_ONLY_NEEDLE_EXEMPT.size}）· **不唯一**${unanchored.length} 处`
+    + `（登记 ${UNANCHORED_NEEDLE.size}，理由：多为「**至少一处**」语义）；`
+    + '⚠️ **边界**：只锁「针不得只在注释里」+「针不唯一必须登记」，**不覆盖**「定义被删而用法尚存」'
     + '（那半靠**锚定正则 + canary**，§4.314 已修）；⚠️ 另一边界：`stripJsComments` **保留字符串字面量**'
     + ' ⇒ 「针只在**字符串**里」仍算「在代码里」');
 }
