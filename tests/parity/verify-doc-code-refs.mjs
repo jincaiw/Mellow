@@ -562,6 +562,8 @@ const PACKAGING_VERSION_ALLOW = new Map([
     ['v1.5.2', '**历史起点**（「v1.5.2 起替换占位域名」），不是当前版本'],
     ['1.5.5', '**更正块引用的旧值**（§4.316：`tools/source-fidelity/Cargo.lock` 曾停在 `1.5.5`）—— '
       + '同 `0.1.0` 的理由：更正惯例是**引用错误原文**，故必须保留'],
+    ['1.5.33', '**历史事实**（§4.316 实测时「两份 lock 不一致」的**当时的正确值**）—— '
+      + '发版升到 1.5.34 后它不再是当前版本，但它是那次实测的原文，**改掉就等于篡改记录**'],
   ])],
   ['tests/qualification/packaging-gate.md', new Map([
     ['0.1.0', '**记录时的版本**（v0.1.0 时期的 Gate 记录）—— 文件顶部已加「当前版本以 tauri.conf.json 为准」指针，故保留为历史事实'],
@@ -3433,10 +3435,13 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
         + '（豁免**只往前生效**会让豁免面静默变宽）');
     }
   }
-  // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（203 份 tracked `.md`
-  //    − 4 份冻结 release notes − 28 份夹具；**2026-10-10 新增 ADR-0035/0036/0037 ⇒ 174**），
+  // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（**175**），
   //    否则「扫描面被改窄」不会红。
-  const BOLD_BASELINE = 174;
+  //    ⚠️ 变更记录（**每次改都要写清是哪份文件**，否则「+1」无法复核）：
+  //      · 2026-10-10 新增 ADR-0035/0036/0037 ⇒ 174；
+  //      · 2026-10-11 发版 v1.5.34 新增 `.github/release-notes-v1.5.34.md` ⇒ **175**
+  //        （该文件**不在** 4 份冻结 release notes 的豁免名单里 ⇒ 它**要**参与加粗配对核对）。
+  const BOLD_BASELINE = 175;
   if (boldFiles.length !== BOLD_BASELINE) {
     fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
       + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');
