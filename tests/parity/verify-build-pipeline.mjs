@@ -669,9 +669,11 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；脚本增删时须一并调整）
   const SCRIPT_BASELINE = 100; // [覆盖型] 基线 100
-  if (scripts11.length < SCRIPT_BASELINE) {
-    fail(`只扫描到 ${scripts11.length} 个脚本（[覆盖型] 基线 ${SCRIPT_BASELINE}）`
-      + ' —— 扫描面萎缩会让本判据空转');
+  // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==` —— 覆盖型 = 「阈值必须 **==** 当前基线」；
+  //   `< N` 只挡「缩小」，**集合增长时会静默稀释防线**（§4.310）。加脚本是**显式**行为 ⇒ 一并同步基线。
+  if (scripts11.length !== SCRIPT_BASELINE) {
+    fail(`脚本数 ${scripts11.length} ≠ [覆盖型] 基线 ${SCRIPT_BASELINE}`
+      + ' —— **缩小** = 扫描面萎缩 / 脚本被删；**增长** = 请复核后**同时**改标记与阈值（审计 §4.317）');
   }
   // canary：四向（与判定**共用** isReferencedIn；样本运行时拼接 —— 本文件自己也在扫描面里）
   const REF_OK = 'tests/parity/' + 'verify-release-gate.mjs';

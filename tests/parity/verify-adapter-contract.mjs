@@ -119,12 +119,10 @@ const parseBundleTargets = (src) => {
     fail(`tauri.conf.json 的 \`bundle.targets\` **多出**未登记的 ${extraTargets.join(' / ')}`
       + ' —— 新增 target 必须**显式**纳入安装矩阵（并同步 `release.yml` 的 `--bundles` 与 finalize 断言）');
   }
-  // 防空转：[覆盖型]（目标集合增删时须一并复核）
-  const BUNDLE_TARGET_BASELINE = 7; // [覆盖型] 基线 7
-  if (actual.length < BUNDLE_TARGET_BASELINE) {
-    fail(`④ 只解析出 ${actual.length} 个 bundle target（[覆盖型] 基线 ${BUNDLE_TARGET_BASELINE}）`
-      + ' —— 解析器失效会让本判据**空转**');
-  }
+  // ⚠️ **2026-10-11（审计 §4.317）：原有一条 `[覆盖型]` 防空转下限（基线 7），本轮**删除** ——
+  //   它**冗余**：上面的 `missingTargets` / `extraTargets` **双向**核对已经覆盖了它
+  //   （解析器返回 `[]` ⇒ `missing` = 7 ⇒ 红；文件多出一个 target ⇒ `extra` 非空 ⇒ 红）
+  //   ⇒ 按本仓「**能消除就不要守**」做**结构性消除**。
   // canary：三向（与判定**共用** parseBundleTargets；样本**运行时构造**）
   const PROBE_OK = '{\n  "bundle": {\n    "targets": [\n      "app",\n      "dmg"\n    ],\n    "macOS": { "dmg": {} }\n  }\n}';
   if (parseBundleTargets(PROBE_OK).join(',') !== 'app,dmg') {

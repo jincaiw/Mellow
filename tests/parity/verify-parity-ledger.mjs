@@ -1267,9 +1267,11 @@ if (existsSync(benchmarkRunnerPath)) {
           + '改为「含边界」会让 caret 紧贴定界符时**改为显示源码**（与同族其它元素不一致）');
       }
     }
-    // [覆盖型] 基线 9 —— 家族成员不得被删空（防空转）；阈值必须 == 当前值（skill §2）
-    if (checked < 9) {
-      fail(`caret 边界家族只解析到 ${checked} 个文件（下限 9 = 2026-10-09 实测基线）—— 判据可能已空转`);
+    // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==`（`< N` 只挡「缩小」，增长会**静默稀释防线**）。
+    const CARET_FAMILY_BASELINE = 9; // [覆盖型] 基线 9
+    if (checked !== CARET_FAMILY_BASELINE) {
+      fail(`caret 边界家族文件数 ${checked} ≠ [覆盖型] 基线 ${CARET_FAMILY_BASELINE}`
+        + ' —— **缩小** = 家族成员被删 / 解析失效；**增长** = 请复核后同步基线（审计 §4.317）');
     }
     // 与「文档化来源」挂钩：测试矩阵必须仍声明 boundaryReveals（否则约定失去成文依据）
     const matrixPath = resolve(root, 'packages/editor-engine/test/widget-state-matrix.test.ts');
@@ -2082,8 +2084,10 @@ for (const domain of ['editing', 'sidebar', 'desktop-ui', 'menu', 'acceptance'])
 // V7-W0（2026-09-12）：台账从 32 项扩容到覆盖 §7 分域合同的 50 项。下限提到 45，
 // 防止未来「删条目瘦身」悄悄退回只覆盖少数域。
 // 覆盖下限取**当前基线 50**（V7-W0 扩容目标）：此前写 45，意味着删掉 5 项也不会报错 —— 覆盖型下限一旦宽松，成员就会悄悄消失。
-// [覆盖型] 基线 50 —— 阈值必须 == 当前值（skill §2）
-assert(ids.size >= 50, `台账必须覆盖至少 50 个 P0 项（当前 ${ids.size}；V7-W0 扩容后基线即 50）`);
+// ⚠️ 2026-10-11（审计 §4.317）：`>=` → `===`（覆盖型 = 「阈值必须 == 当前基线」）。
+const LEDGER_P0_BASELINE = 50; // [覆盖型] 基线 50
+assert(ids.size === LEDGER_P0_BASELINE, `台账 P0 项数 ${ids.size} ≠ [覆盖型] 基线 ${LEDGER_P0_BASELINE}`
+  + ' —— **缩小** = 项被悄悄删；**增长** = 请复核后同步基线（审计 §4.317）');
 for (const domain of ['file', 'layout', 'feature', 'build']) {
   assert(domains.has(domain), `台账缺少 V7-W0 新增域：${domain}`);
 }
@@ -2265,8 +2269,11 @@ const walkRustFiles = (dir) => readdirSync(resolve(root, dir), { withFileTypes: 
   // 覆盖型下限**等于当前基线**（skill：下限比基线小就会留下「悄悄消失」的空位）。
   // ⚠️ 2026-10-09（审计 §4.168）：注释原写「2026-10-01 实测基线：74」，而**实际已 81** ⇒
   //   阈值 74 留了 7 个空位（用「抬 1 仍绿」二分实测）。现同步为 **81**。
-  // [覆盖型] 基线 81 —— 阈值必须 == 当前值（skill §2）
-  assert(scanned >= 81, `Rust 单测扫描面异常（只扫到 ${scanned} 个用例，2026-10-09 实测基线 81）—— 解析可能失效，护栏需同步`);
+  // ⚠️ **改标 `[健康度型]`**（2026-10-11，审计 §4.317）：该集合**由内容产生**（扫描 `#[test]`）
+  //   且**随正常开发增长**（加一个 Rust 测试就变）⇒ 「== 当前值」不可行 ⇒ **留余量**。
+  const RUST_TEST_BASELINE = 70; // [健康度型] 下限 70（立此判据时实测 81）
+  assert(scanned >= RUST_TEST_BASELINE,
+    `Rust 单测扫描面异常（只扫到 ${scanned} 个用例，[健康度型] 下限 ${RUST_TEST_BASELINE}）—— 解析可能失效，护栏需同步`);
   assert(shells.length === 0,
     `Rust 单测出现「函数体只有 let _ = f(...)」的恒真空壳（不 panic 即通过，断言本体不检查任何东西）：`
     + `${shells.join(', ')} —— 请改为真断言（先自证「读到了东西」+ 断言用户可见不变量）`);
@@ -2304,10 +2311,13 @@ const walkRustFiles = (dir) => readdirSync(resolve(root, dir), { withFileTypes: 
     const declaredTests = (spell.match(/#\[test\]/g) ?? []).length;
     assert(testBodies.length === declaredTests,
       `spellcheck.rs 的 #[test] 解析不完整：源码有 ${declaredTests} 处，只解析出 ${testBodies.length} 个 —— 形态变了，护栏需同步`);
-    // [覆盖型] 基线 9 —— 自述「**是否被误删？**」⇒ 阈值必须 == 当前值（skill §2）
-    // ⚠️ 2026-10-09（审计 §4.168）：原写 8，而 `spellcheck.rs` 实际有 **9** 个 `#[test]`
-    //   （用「抬 1 仍绿」二分实测）⇒ 留了 1 个空位。
-    assert(testBodies.length >= 9, `spellcheck.rs 的 #[test] 过少（${testBodies.length}，2026-10-09 基线 9）—— 是否被误删？`);
+    // ⚠️ **原标 `[覆盖型]`（基线 9，自述「是否被误删？」）—— 2026-10-11（审计 §4.317）改标 `[健康度型]`**：
+    //   集合**由内容产生**（解析 `spellcheck.rs`）且**随正常开发增长**（加一个测试就变）
+    //   ⇒ 「== 当前值」不可行 ⇒ **留余量**。
+    // ⚠️ 2026-10-09（审计 §4.168）：原写 8，而 `spellcheck.rs` 实际有 **9** 个 `#[test]`（二分实测）。
+    const SPELLCHECK_TEST_BASELINE = 6; // [健康度型] 下限 6（立此判据时实测 9）
+    assert(testBodies.length >= SPELLCHECK_TEST_BASELINE,
+      `spellcheck.rs 的 #[test] 过少（${testBodies.length}，[健康度型] 下限 ${SPELLCHECK_TEST_BASELINE}）—— 是否被误删？`);
     // ③ 每个测试都必须至少含一个断言（防「不 panic 即通过」）
     for (const t of testBodies) {
       assert(/assert/.test(t.body), `spellcheck.rs 的测试 ${t.name} 不含任何断言（空壳：不 panic 即通过）`);

@@ -1525,7 +1525,9 @@ if (driftedMissing.length === 0) {
   const MARKER = /\[覆盖型\]\s*基线\s*(\d+)/;
   // 阈值形态：**窗口内第一个比较运算**（`<` / `<=` / `>=` / `>` 后跟数字），或 `const NAME = N`。
   // ⚠️ 不能只认 `X.length/size <op> N` —— 实测有 `if (linkCount < 27)`（**变量**，无 `.length`）。
-  const BOUND_EXPR = /(?:<=|<|>=|>)\s*(\d+)/;
+  // ⚠️ 2026-10-11（审计 §4.317）：运算符**增加** `!==` / `===` —— 覆盖型下限的**忠实形态**
+  //   是「必须 == 当前值」，本仓已把它落成 `!== <基线>`（或 `=== <基线>`）⇒ 本判据必须认它。
+  const BOUND_EXPR = /(?:<=|<|>=|>|!==|===)\s*(\d+)/;
   const BOUND_CONST = /const\s+[A-Z][A-Z0-9_]*\s*=\s*(\d+)/;
   const guards6 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
@@ -4657,54 +4659,43 @@ const stripStrings = (s) => s.replace(
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
     : [];
   const MARKER36 = /\[覆盖型\]\s*基线\s*(\d+)/;
-  /** 判定与 canary **共用**：某段源码里，每个标记的窗口内是否出现 `coverEq(`。 */
+  /** 判定与 canary **共用**：某段源码里，每个标记的窗口内是否有「**严格相等**」的实现。
+   *  ⚠️ **2026-10-11（审计 §4.317）：迁移完成，两种形态都接受** ——
+   *    ① `coverEq(...)`（本文件的助手）；② 与**数字**的 `!==` / `===` 比较
+   *    （其余护栏的失败机制不同 —— `fail()` push vs `assert()` throw —— 故**不必**抽共享助手；
+   *    判据只要求「**阈值 == 当前值**」这件事**被断言**，不要求用同一个函数）。
+   *    ⚠️ `< N` / `>= N` **不算**合规（它们只挡一个方向，增长时会**静默稀释防线**）。 */
   const allMarkedHaveEq = (src) => {
     const ls = src.split('\n');
-    return ls.every((l, i) => !MARKER36.test(l) || ls.slice(i, i + 4).join('\n').includes('coverEq('));
+    return ls.every((l, i) => !MARKER36.test(l)
+      || /(?:coverEq\(|(?:!==|===)\s*(?:\d|[A-Z][A-Z0-9_]*\b))/.test(ls.slice(i, i + 4).join('\n')));
   };
   /** 某文件里 `[覆盖型]` 标记的行号（空数组 = 该文件没有标记）。 */
   const markerLines = (src) => src.split('\n')
     .map((l, i) => (MARKER36.test(l) ? i + 1 : 0)).filter((x) => x > 0);
-  // ⚠️ **未迁移登记**（**双向**：登记的文件必须真的有标记；有标记的文件必须「已迁移」或「已登记」）。
-  //   为什么不在本轮顺手迁移：`coverEq` 目前只在**本文件**里定义，而其余护栏的失败机制**不同**
-  //   （`fail()` = push vs `assert()` = throw）⇒ 抽成共享助手是**架构级决定**
-  //   （`AGENTS.md`：「**不要自行修改架构，先报告冲突**」）⇒ **如实登记**，不顺手做。
-  const COVERAGE_EQ_PENDING = new Map([
-    ['verify-adapter-contract.mjs', '`fail()`（push）型；2026-10-11（审计 §4.313）新增 1 处 `[覆盖型]` 标记（bundle target 基线）'],
-    ['verify-build-pipeline.mjs', '`fail()`（push）型；抽共享助手需注入失败回调'],
-    ['verify-doc-code-refs.mjs', '`fail()` 型；且该处 `linkCount` 是**内容派生**（加一条文档链接就变）⇒ 应先改标 `[健康度型]`'],
-    ['verify-parity-ledger.mjs', '`assert()`（throw）型 ⇒ 与 push 型不兼容'],
-    ['verify-visual-golden.mjs', '同 `verify-parity-ledger.mjs`'],
-  ]);
+  // ⚠️ **2026-10-11（审计 §4.317）：`COVERAGE_EQ_PENDING`（未迁移登记表）已**删除** —— 迁移完成。
+  //   原先的 5 个文件全部落地：4 处改 `!==` / `===`（人工枚举 / 显式决定），3 处改标 `[健康度型]`（内容派生），
+  //   1 处**删除冗余**（adapter 的 bundle target 下限 —— `missing`/`extra` 双向已覆盖）。
+  //   ⇒ 登记表的存在本身就是「**已知未守**」⇒ 迁移完成后**结构性消除**它（本仓「能消除就不要守」）。
   let marked36 = 0;
   const noEq36 = [];
   const migrated36 = [];
   for (const f of guards36) {
     const src = read(`tests/parity/${f}`);
     const n = markerLines(src).length;
-    if (n === 0) {
-      // 登记表**双向**：登记了却一个标记都没有 ⇒ 陈旧
-      if (COVERAGE_EQ_PENDING.has(f)) {
-        fail(`㊱ \`${f}\` 登记在「未迁移」表里，但它**没有任何** \`[覆盖型] 基线\` 标记`
-          + ' —— 该登记项已过期，请移除（否则它会掩盖「这个文件将来新增标记」）');
-      }
-      continue;
-    }
+    if (n === 0) continue;
     if (allMarkedHaveEq(src)) { migrated36.push(f); marked36 += n; continue; }
-    if (!COVERAGE_EQ_PENDING.has(f)) {
-      noEq36.push(`${f}（${markerLines(src).join('、')} 行）`);
-    }
+    noEq36.push(`${f}（${markerLines(src).join('、')} 行）`);
   }
   if (noEq36.length > 0) {
-    fail(`㊱ 这些文件有 \`[覆盖型] 基线\` 标记，但**没有**由 \`coverEq\` 实现，也**没有**登记在`
-      + ` \`COVERAGE_EQ_PENDING\`：${noEq36.join('；')}`
+    fail(`㊱ 这些文件有 \`[覆盖型] 基线\` 标记，但**窗口内没有**「严格相等」的实现：${noEq36.join('；')}`
       + ' —— `[覆盖型]` 的定义是「阈值必须 == 当前基线」，而 `< N` **只挡「缩小」**，'
       + '**集合增长时会静默稀释防线**（实测：待裁决项登记表 17 → 20 无人知；夹具 7 → 9 无人知）。'
       + '请改用 `coverEq(...)`；**若该集合会随正常开发频繁增长**，则它**不是**覆盖型 ⇒ '
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 26; // [覆盖型] 基线 26
+  const COVERAGE_MARK_BASELINE = 30; // [覆盖型] 基线 30（2026-10-11 §4.317 迁移完成：4 个跨文件标记纳入）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -4714,13 +4705,16 @@ const stripStrings = (s) => s.replace(
   if (!allMarkedHaveEq(`const X = 7; // ${mk36(7)}\ncoverEq('x', y, X);`)) {
     fail('㊱ canary 失效：合法样本（标记 + `coverEq`）被判为不合规');
   }
+  if (!allMarkedHaveEq(`const X = 7; // ${mk36(7)}\nif (y !== X) { fail('x'); }`)) {
+    fail('㊱ canary 失效：`!== 常量` 形态的样本被判为不合规（§4.317 后这是**合法形态**）');
+  }
   if (allMarkedHaveEq(`const X = 7; // ${mk36(7)}\nif (y < X) { fail('x'); }`)) {
     fail('㊱ canary **过宽**：只用 `<` 实现的样本被判为合规');
   }
-  console.log(`Release gate: \`[覆盖型]\` 下限的**实现** —— ${migrated36.length} 个文件已迁移`
-    + `（共 ${marked36} 处标记**全部由 \`coverEq\` 实现**，阈值 == 当前值**在 CI 里被断言**）；`
-    + `⚠️ **未覆盖**：${[...COVERAGE_EQ_PENDING.keys()].join('、')}`
-    + '（已双向登记 —— 抽共享助手是**架构级决定**，见 `AGENTS.md`）；'
+  console.log(`Release gate: \`[覆盖型]\` 下限的**实现** —— ${migrated36.length} 个文件、共 ${marked36} 处标记`
+    + '**全部**由「**严格相等**」实现（`coverEq(...)` 或 `!== 数字` / `=== 数字`）'
+    + ' ⇒ 阈值 == 当前值**在 CI 里被断言**（`< N` 只挡「缩小」，增长会**静默稀释防线**）；'
+    + '⚠️ **迁移已完成**（§4.317）：原「未迁移登记表」已**删除**；'
     + '⚠️ **内容派生**的集合应改标 `[健康度型]`（留余量），改标即合规');
 }
 

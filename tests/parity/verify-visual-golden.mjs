@@ -609,8 +609,8 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
   // 新增一个采样脚本时它会自动进入判据（见 isSampler），而不是悄悄溜过去。
   const NON_SAMPLERS = ['dev-server.mjs', 'golden-path.mjs', 'wait-rendered.mjs'];
   // 采样脚本的覆盖下限 = 当前基线（防止某次重构把脚本挪走/改名后判据静默变空）。
-  // [覆盖型] 基线 4 —— 阈值必须 == 当前值（skill §2；2026-10-09 二分实测 == 4 ✅）
-  const MIN_SAMPLERS = 4;
+  // ⚠️ 采样脚本数的覆盖下限：**常量与标记在下方检查点处**（`[覆盖型]`，基线 4 = **立此判据时**的实测值；§4.317 前它在这里、
+  //   而标记与阈值**隔了 38 行** ⇒ 标记的窗口里看不到阈值 ⇒ `verify-release-gate.mjs` 判据 ⑥ 会报「找不到阈值」）。
 
   // 剥注释（**具名函数**，判定与 canary 共用同一份 —— 否则 canary 测的是副本）。
   // 沿用本文件既有约定：整行注释 / 块注释起始行一律剔除。
@@ -648,8 +648,11 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
       .map((e) => `${VISUAL_DIR}/${e.name}`)
       .filter((p) => isSampler(read(p)))
       .sort();
-    if (SAMPLERS.length < MIN_SAMPLERS) {
-      fail(`${VISUAL_DIR} 下只派生到 ${SAMPLERS.length} 个采样脚本（下限 ${MIN_SAMPLERS}）—— `
+    // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==`；**常量与标记移到这里**
+    //   （标记必须贴在被它描述的阈值旁 —— ⑥ 的窗口只有 4 行）。
+    const MIN_SAMPLERS = 4; // [覆盖型] 基线 4（2026-10-09 二分实测 == 4 ✅）
+    if (SAMPLERS.length !== MIN_SAMPLERS) {
+      fail(`${VISUAL_DIR} 下的采样脚本数 ${SAMPLERS.length} ≠ [覆盖型] 基线 ${MIN_SAMPLERS}—— `
         + '脚本可能被改名/挪走后判据静默变空，请核对 NON_SAMPLERS 与目录内容');
     }
 
