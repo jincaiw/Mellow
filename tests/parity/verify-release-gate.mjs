@@ -3270,6 +3270,27 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
 //     不认**变量**引用）⇒ 已提到模块级，并把该边界写进 ㉒ 的注释。
 const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
 
+// ── **剥注释的唯一实现**（㉑ ㉒ ㉓ ㉔ 共用；2026-10-11，审计 §4.295）────────────────
+// ⚠️ **两条硬约束，都来自实测事故**：
+//   ① **块注释只认「行首（可带前导空白）的 `/*`」** —— 朴素实现 `s.replace(/\/\*[\s\S]*?\*\//g, '')`
+//      会被**字符串里的 `/*`** 骗到（如 glob 模式 `"src/**/*.ts"`）⇒ 从那里一路吃到下一个 `*/`
+//      ⇒ **静默删掉真实代码**。实测：`verify-doc-code-refs.mjs` 里的 **5 个**例外表定义
+//      被吃到只剩 **1 个**（本条判据的「例外表数 16 ≠ 21」就是这么来的）。
+//   ② **行注释只在「前面没有引号」时才截断** —— 否则 `const u = 'http://x'; fail('y')`
+//      会被截成 `const u = 'http:` ⇒ **`fail(` 被吃掉** ⇒ 假阴性。
+//   ⇒ **取舍方向**：宁可**留注释**（只会**假阳性**，会有人来修），**不可吃代码**（**假阴性，无人知**）。
+//   ⚠️ **边界如实声明**：行内块注释（`x(); /* c */`）**不剥**；引号后跟的 `//` 注释**不剥**。
+const stripJsComments = (s) => {
+  const cutLine = (l) => {
+    if (l.trimStart().startsWith('//')) return '';
+    const i = l.search(/[ \t]\/\//);
+    if (i < 0) return l;
+    return /['"`]/.test(l.slice(0, i)) ? l : l.slice(0, i);
+  };
+  return s.split('\n').map(cutLine).join('\n')
+    .replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1');
+};
+
 // ── ㉑ 本仓**代码面**不得使用已弃用的 Node API（2026-10-11，审计 §4.289）──
 //   （`[DEP0040] punycode` ×12 · `[DEP0169] url.parse()` ×8 · `[DEP0005] Buffer()` ×1）
 //   **全部由我们使用的 action 自身发出**（告警所在的**步骤名就是 action 名**）。
@@ -3290,12 +3311,8 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     { name: `\`${PUNY}\` 模块`, re: new RegExp(`(require\\(\\s*['"]${PUNY}['"]\\s*\\))|(from\\s+['"]${PUNY}['"])`) },
     { name: `\`${NEWB}\``, re: new RegExp(NEWB.replace('(', '\\(')) },
   ];
-  /** 判定与 canary **共用**：剥注释（行注释 + 块注释）—— 注释里提到 API 名不算「使用」。 */
-  const stripComments = (s) => s
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .map((l) => (l.trim().startsWith('//') ? '' : l.replace(/[ \t]\/\/.*$/, '')))
-    .join('\n');
+  // ⚠️ 用**模块级的唯一实现**（首版朴素版会被字符串里的 `/*` 吃掉代码；见 `stripJsComments`）。
+  const stripComments = stripJsComments;
   const hitOf = (s) => DEPRECATED_API.some((a) => a.re.test(stripComments(s)));
 
   let codeScanned = 0;
@@ -3354,11 +3371,8 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
 //     **而本判据抓不到它**（那是**变量**引用）。⇒ 那条边界只能靠**运行**兜住（响亮崩）。
 {
   const HELPERS = ['fail', 'assert'];
-  const stripComments22 = (s) => s
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .map((l) => (l.trim().startsWith('//') ? '' : l.replace(/[ \t]\/\/.*$/, '')))
-    .join('\n');
+  // ⚠️ 用**模块级的唯一实现**（首版朴素版会被字符串里的 `/*` 吃掉代码；见 `stripJsComments`）。
+  const stripComments22 = stripJsComments;
   const guards22 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
     : [];
@@ -3480,6 +3494,96 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   console.log(`Release gate: 空 \`catch\` —— 扫描 ${code23} 个代码文件，`
     + `**全部带理由注释**（${emptyCatches.length} 处真空 catch，[覆盖型] 基线 ${EMPTY_CATCH_BASELINE}）`
     + '；⚠️ 模板字面量里的生成 JS **不在扫描面内**');
+}
+
+// ── ㉔ 「例外表」必须有**陈旧检查**（2026-10-11，审计 §4.295）──
+// 【为什么】本仓纪律是「例外表**按被豁免对象分表 + 双向**」，其中**最容易缺的一半**是
+//   **陈旧检查**（表里的条目对应的东西已经不存在了 ⇒ 例外永久驻留、豁免面悄悄变大）。
+//   实测 21 个例外表**全部**有陈旧检查（0 缺陷）⇒ 本条把这条纪律**钉住**，防它悄悄退化。
+// 【判据】对每个护栏里的**例外表常量**（命名含 `EXEMPT|ALLOW|EXCEPTION|SENTINEL|FROZEN|WHITELIST|IGNORE|SKIP`）：
+//   搜该表名在文件里的**所有出现点**，要求**至少一处**的 ±3 行内**同时**出现
+//   ① 一个断言（`fail(` / `errors.push(`）与 ② 一个陈旧关键词。
+//   ⚠️ **谓词必须搜「所有出现点」，不能只看「定义点附近的窗口」** —— 实测首版用 4000 字窗口
+//      ⇒ **4 个全部假阳性**（检查点在**判据体内**，离定义很远）。**这是本节的直接教训。**
+//   ⚠️ **必须剥注释**（否则注释里提到「请删除」会被当成检查）；但**不能剥字符串**
+//      （陈旧关键词就在 `fail('…')` 的**消息字符串**里）。
+//   ⚠️ **边界如实声明**：本谓词是**形态匹配** —— 它保证「有一处像检查」，**不保证检测正确**。
+{
+  // ⚠️ **命名模式不含 `SKIP` / `IGNORE`** —— 它们是**扫描器跳过表**（`node_modules` / `dist` / `target`），
+  //   **不是**「豁免某个对象」的例外表 ⇒ 要求它们有陈旧检查是**错的**（实测踩到：
+  //   `RS_SKIP` / `FE_SKIP_DIR` / `FE_SKIP_FILE` 被误报为「缺陈旧检查」）。
+  //   ⚠️ 若将来用 `SKIP` 命名**豁免表**，需回来扩本条（并说明）。
+  const TABLE_RE = /^const ([A-Z][A-Z0-9_]*(?:EXEMPT|ALLOW|EXCEPTION|SENTINEL|FROZEN|WHITELIST)[A-Z0-9_]*)\s*=/gm;
+  const STALE_KW = ['已过期', '过期', '请移除', '请删除', '已不存在', '不再存在', '陈旧', '化石'];
+  // ⚠️ 用**模块级的唯一实现**（首版朴素版会被字符串里的 `/*` 吃掉代码；见 `stripJsComments`）。
+  const stripComments24 = stripJsComments;
+  const guards24 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const tables = [];
+  const missing = [];
+  for (const f of guards24) {
+    const src = stripComments24(read(`tests/parity/${f}`));
+    const lines = src.split('\n');
+    for (const m of src.matchAll(TABLE_RE)) {
+      const name = m[1];
+      tables.push(`${f} → ${name}`);
+      const occ = lines.map((l, i) => (l.includes(name) ? i : -1)).filter((i) => i >= 0);
+      const hasStale = occ.some((i) => {
+        const win = lines.slice(Math.max(0, i - 3), i + 4).join('\n');
+        return /(?:fail|errors\.push)\(/.test(win) && STALE_KW.some((k) => win.includes(k));
+      });
+      if (!hasStale) missing.push(`${f} → \`${name}\``);
+    }
+  }
+  if (missing.length > 0) {
+    fail(`㉔ 这些**例外表没有陈旧检查**：${missing.join('、')}`
+      + ' —— 本仓纪律是「例外表**分表 + 双向**」，而**最容易缺的一半**就是陈旧检查：'
+      + '表里的条目对应的东西已不存在时，例外会**永久驻留、豁免面悄悄变大**。'
+      + '请补一条「已过期 ⇒ 报错并请移除」的检查（形态：`fail(\'…已过期，请移除…\')`）');
+  }
+  // 防空转：**覆盖型**（立此判据时实测 17 个例外表 —— 已排除扫描器跳过表）
+  const TABLE_BASELINE = 17; // [覆盖型] 基线 17
+  if (tables.length < TABLE_BASELINE) {
+    fail(`㉔ 只找到 ${tables.length} 个例外表（[覆盖型] 基线 ${TABLE_BASELINE}）`
+      + ' —— 命名约定漂移或扫描面萎缩会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** TABLE_RE / STALE_KW / stripComments24）
+  const staleIn = (s) => {
+    const t = stripComments24(s);
+    const ls = t.split('\n');
+    const m = TABLE_RE.exec(t);
+    TABLE_RE.lastIndex = 0;
+    if (m === null) return null;
+    const occ = ls.map((l, i) => (l.includes(m[1]) ? i : -1)).filter((i) => i >= 0);
+    return occ.some((i) => {
+      const win = ls.slice(Math.max(0, i - 3), i + 4).join('\n');
+      return /(?:fail|errors\.push)\(/.test(win) && STALE_KW.some((k) => win.includes(k));
+    });
+  };
+  if (staleIn('const X_EXEMPT = new Set();\nfor (const x of X_EXEMPT) { fail(`已过期，请移除 ${x}`); }') !== true) {
+    fail('㉔ canary 失效：**有**陈旧检查的样本被判为缺检查');
+  }
+  if (staleIn('const X_EXEMPT = new Set();\nfor (const x of X_EXEMPT) { use(x); }') !== false) {
+    fail('㉔ canary **过宽**：**没有**陈旧检查的样本被判为有');
+  }
+  if (staleIn('const X_EXEMPT = new Set();\n// 这里提到 X_EXEMPT 的条目已过期请删除\nfor (const x of X_EXEMPT) { use(x); }') !== false) {
+    fail('㉔ canary **过宽**：**注释里**的陈旧措辞被当成检查（必须剥注释）');
+  }
+  // canary ④（2026-10-11 §4.295 的事故本身）：**字符串里的 `/*` 不得吃掉真实代码**。
+  //   朴素剥块注释（`s.replace(/\/\*[\s\S]*?\*\//g,'')`）会被 glob 模式 `"src/**/*.ts"` 骗到，
+  //   一路吃到下一个 `*/` ⇒ 把**真实定义**删掉（实测某文件里的 5 个定义被吃到只剩 1 个）。
+  const GLOB_SAMPLE = `const X_EXEMPT = new Set();\nconst G = "src/**/*.ts";\nfor (const x of X_EXEMPT) { fail(\`已过期，请移除 \${x}\`); }`;
+  if (staleIn(GLOB_SAMPLE) !== true) {
+    fail('㉔ canary 失效：**含 glob 字符串**的文件里，陈旧检查被「吃代码」的剥注释实现弄丢了'
+      + '（这正是 §4.295 的事故形态）');
+  }
+  if (stripJsComments(`const A = 1;\nconst G = "src/**/*.ts";\nconst B = 2;`).includes('const B = 2;') === false) {
+    fail('㉔ canary 失效：剥注释**吃掉了 `const B = 2;`**（字符串里的 `/*` 被当成了块注释起点）');
+  }
+  console.log(`Release gate: 例外表的陈旧检查 —— ${tables.length} 个例外表`
+    + `**全部带陈旧检查**（[覆盖型] 基线 ${TABLE_BASELINE}）`
+    + '；⚠️ 谓词是**形态匹配**：保证「有一处像检查」，**不保证检测正确**');
 }
 
 if (errors.length > 0) {
