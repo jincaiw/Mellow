@@ -91,6 +91,32 @@ const committedFiles = () => execFileSync(
 /** 同 `committedFiles()`，但返回**绝对路径**（供以绝对路径为 `f` 的循环直接使用）。 */
 const committedAbs = () => committedFiles().map((f) => resolve(root, f));
 
+// ── markdown 正文的**唯一**读取入口：剥 HTML 注释（2026-10-12，审计 §4.324）──────────
+// 【为什么】markdown 里的 `<!-- … -->` **不渲染** ⇒ 里面的链接 / 表格 / 围栏 / `**`
+//   **都不是真内容**。而本文件有 **19 处**直读 `.md`，此前**一处都没剥 HTML 注释**
+//   ⇒ **实测 4 条判据全部假阳性**（注入一段 HTML 注释即复现）：
+//     ① 相对链接可达性 ⇒ 报「注释里的链接 404」；
+//     ② 加粗配对 ⇒ 报「注释里的孤立 `**`」；
+//     ③ 表格结构（表头 vs 分隔行）⇒ 报「注释里的畸形表」；
+//     ④ 围栏闭合 ⇒ 报「注释里的未闭合围栏」。
+//   ⇒ 与 §4.323 同族：**判据扫的是源码，而注释会被当成真内容**（这次是 markdown 的注释）。
+// 【手法】**置空但保留行数**（与 `boldBlankFences` 同一手法）—— 行号映射不变，报错仍指得准。
+// ⚠️ **边界如实声明**：只处理**成对**的 `<!-- … -->`；**未闭合**的 `<!--` 原样保留（不猜）。
+const blankHtmlComments = (s) => s.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+/** `.md` 正文（**剥 HTML 注释**、归一换行）。**读 markdown 一律走这里**。 */
+const mdText = (rel) => blankHtmlComments(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'));
+
+// canary：`blankHtmlComments` **三向**（与判定共用同一实现）
+if (blankHtmlComments('a <!-- 内容 --> b').includes('内容')) {
+  throw new Error('HTML 注释剥除 canary 失效：**成对**注释未被置空');
+}
+if (blankHtmlComments('a <!-- 一\n二 --> b').split('\n').length !== 2) {
+  throw new Error('HTML 注释剥除 canary 失效：置空**改变了行数**（行号映射会漂，报错会指错行）');
+}
+if (!blankHtmlComments('a <!-- 未闭合').includes('未闭合')) {
+  throw new Error('HTML 注释剥除 canary **过宽**：**未闭合**的 `<!--` 被当成注释（会误删正文）');
+}
+
 // ⚠️ 扩展名过滤必须显式列举，**不要**从正则字符串上 slice ——
 // 实测踩到：`CODE_EXT.slice(4, -1)` 把 `(?:ts|…` 切成 `s|tsx|…`，
 // 于是 **`.ts` 整类被静默漏掉**（`menuSchema.ts` 因此从未被判定，
@@ -380,7 +406,7 @@ for (const doc of docs) {
   let bare = 0;
   for (const abs of ARCH_DIRS.flatMap((d) => walk(resolve(root, d))).filter((f) => f.endsWith('.md'))) {
     const rel = relative(root, abs);
-    stripFences(readFileSync(abs, 'utf8').replace(/\r\n/g, '\n'))
+    stripFences(blankHtmlComments(readFileSync(abs, 'utf8')).replace(/\r\n/g, '\n'))
       .split('\n')
       .forEach((line, i) => {
         if (LOOKS_LIKE_QUOTE.test(line)) return;   // 更正说明会引用旧路径，豁免
@@ -822,7 +848,7 @@ const DOC_PATH_EXEMPT = new Map([
   const seenPaths = new Set();
   for (const abs of mdFiles) {
     const rel = relative(root, abs).replace(/\\/g, '/');
-    const lines = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n').split('\n');
+    const lines = blankHtmlComments(readFileSync(abs, 'utf8')).replace(/\r\n/g, '\n').split('\n');
     lines.forEach((line, i) => {
       for (const m of line.matchAll(DOC_PATH_RE)) {
         const ref = m[0];
@@ -924,7 +950,7 @@ const QUALIFICATION_SNAPSHOT_FILES = [
       continue;
     }
     checked += 1;
-    const head = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n').split('\n').slice(0, 14).join('\n');
+    const head = blankHtmlComments(readFileSync(abs, 'utf8')).replace(/\r\n/g, '\n').split('\n').slice(0, 14).join('\n');
     if (!SNAPSHOT_MARKER.test(head)) {
       fail(`${rel} 的前 14 行缺少**快照声明** —— 它含「某次实跑的结果」，读者会按「当前」读`);
     }
@@ -1058,7 +1084,7 @@ const QUALIFICATION_SNAPSHOT_FILES = [
     const rel = relative(root, abs).replace(/\\/g, '/');
     if (FIXTURE_RE.test(rel)) continue;
     if (MD_SKIP_DIRS.has(rel.split('/').slice(0, -1).find((seg) => MD_SKIP_DIRS.has(seg)) ?? '')) continue;
-    const raw = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
+    const raw = blankHtmlComments(readFileSync(abs, 'utf8')).replace(/\r\n/g, '\n');
     const noFences = raw.replace(/```[\s\S]*?```/g, '');
     const dir = resolve(abs, '..');
     noFences.split('\n').forEach((line, i) => {
@@ -2216,7 +2242,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   let specChecked = 0;
   let specBare = 0;
   for (const rel of specDocs) {
-    stripFencesSpec(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'))
+    stripFencesSpec(mdText(rel).replace(/\r\n/g, '\n'))
       .split('\n')
       .forEach((line, i) => {
         if (LOOKS_LIKE_QUOTE_SPEC.test(line)) return;
@@ -2299,7 +2325,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   let cmdSkipped = 0;
   const cmdDirs = new Set();
   for (const rel of MD) {
-    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+    mdText(rel).replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       for (const { dir, name } of scanRun(line)) {
         const set = scriptsOf(dir);
         if (set === null) { cmdSkipped += 1; continue; }
@@ -2360,7 +2386,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   let tblRows = 0;
   for (const rel of MD) {
     if (/^(?:tests\/fixtures\/|tests\/benchmark\/)/.test(rel)) continue;   // 渲染语料：**故意**含畸形表格
-    const lines = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n');
+    const lines = mdText(rel).replace(/\r\n/g, '\n').split('\n');
     let inFence = false;
     let i = 0;
     while (i < lines.length) {
@@ -2455,7 +2481,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   for (const rel of MD) {
     if (/^(?:tests\/fixtures\/|tests\/benchmark\/)/.test(rel)) continue;   // 渲染语料：**故意**含异形语法
     fenceDocs += 1;
-    const bad = unclosedFence(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'));
+    const bad = unclosedFence(mdText(rel).replace(/\r\n/g, '\n'));
     if (bad !== null) {
       fail(`${rel}:${bad.line} 的代码围栏（${bad.len} 个反引号）**没有闭合** ——`
         + ' GFM 会把**其后全文**渲染成代码块（读者看到一大段代码；CI 与 `git diff` 都看不出来）');
@@ -2619,7 +2645,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   let bareRefs = 0;
   for (const rel of repoCode) {
     if (resolve(root, rel) === SELF2) continue;   // 自排除：本护栏的注释含**合成样本**（如 `§4.9999`）
-    const text = readFileSync(resolve(root, rel), 'utf8');
+    const text = mdText(rel);
     bareRefs += [...text.replace(/\r\n/g, '\n').matchAll(/§4\.\d+/g)].length;
     const bad = bareBadRefs(text);
     if (bad.length > 0) {
@@ -2742,7 +2768,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const guardSpace = new Map();
   for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
     const set = new Set();
-    for (const l of readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+    for (const l of mdText(rel).replace(/\r\n/g, '\n').split('\n')) {
       for (const c of headerNums(l)) set.add(c);
     }
     guardSpace.set(rel.split('/').pop(), set);
@@ -2854,7 +2880,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const seenPlaceholder = new Set();
   const unknown = new Map();
   for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
-    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    const src = mdText(rel).replace(/\r\n/g, '\n');
     src.split('\n').forEach((line, i) => {
       for (const name of guardRefsOf(line)) {
         guardRefChecked += 1;
@@ -2947,7 +2973,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const missing = new Map();
   const SCAN = /\.(?:md|mjs|cjs|js|ts|tsx|json|yml|yaml)$/;
   for (const rel of committedFiles().filter((f) => SCAN.test(f))) {
-    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+    mdText(rel).replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       for (const m of line.matchAll(ADR_SEC_RE)) {
         adrSecRefs += 1;
         const secs = secsOfAdr(m[1]);
@@ -3011,7 +3037,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const headerSpace = new Map();
   for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
     const set = new Set();
-    for (const l of readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+    for (const l of mdText(rel).replace(/\r\n/g, '\n').split('\n')) {
       const m = /^\s*\/\/ ──\s*(.*)$/.exec(l);
       if (m === null) continue;
       let rest = m[1];
@@ -3031,7 +3057,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const pairBad = [];
   for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
     if (RECORD_DIRS.some((d) => rel.startsWith(d))) continue;
-    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+    mdText(rel).replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       for (const m of line.matchAll(PAIR_RE)) {
         const name = m[1].split('/').pop();
         if (!headerSpace.has(name)) continue;      // 护栏名存在性由判据 ㉟ 单独锁
@@ -3104,7 +3130,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   let jsdocNotes = 0;
   const bad = [];
   for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
-    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+    mdText(rel).replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       const t = line.trim();
       if (!isCommentLine(t)) return;
       const isBase = BASE_RE.test(t);
@@ -3193,7 +3219,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   let rawSections = 0, rawFiles = 0;
   const rawBad = [];
   for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
-    const lines = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n');
+    const lines = mdText(rel).replace(/\r\n/g, '\n').split('\n');
     for (let i = 0; i < lines.length; i += 1) {
       if (!RAW_HEAD.test(lines[i])) continue;
       rawSections += 1;
@@ -3404,7 +3430,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   const boldLiteralCount = (src) => boldUnits(src).reduce((acc, u) => acc + boldUnpaired(u.text), 0);
   const boldBad = [];
   for (const rel of boldFiles) {
-    const src = readFileSync(resolve(root, rel), 'utf8');
+    const src = mdText(rel);
     for (const u of boldUnits(src)) {
       const n = boldUnpaired(u.text);
       if (n > 0) boldBad.push(`${rel}:${u.line + 1} 字面 \`**\` ${n} 处「${u.text.replace(/\n/g, '⏎').slice(0, 50)}」`);
@@ -3429,7 +3455,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
       fail(`加粗配对的冻结表里 \`${rel}\` **已不在仓库里**（原登记理由：${why}）—— 请从 BOLD_FROZEN 删除`);
       continue;
     }
-    if (boldLiteralCount(readFileSync(resolve(root, rel), 'utf8')) === 0) {
+    if (boldLiteralCount(mdText(rel)) === 0) {
       fail(`加粗配对的冻结表里 \`${rel}\` **已不再需要豁免**：它现在渲染后没有字面 \`**\``
         + `（原登记理由：${why}）—— 请从 BOLD_FROZEN 删除`
         + '（豁免**只往前生效**会让豁免面静默变宽）');
@@ -3489,14 +3515,14 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 323; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 324; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
   }
   for (const rel of auditFiles) {
     const nums = [];
-    for (const line of readFileSync(resolve(root, rel), 'utf8').split('\n')) {
+    for (const line of mdText(rel).split('\n')) {
       const m = /^##\s+4\.(\d+)\b/.exec(line);
       if (m !== null) nums.push(Number(m[1]));
     }
@@ -3630,7 +3656,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   let skippedExported = 0;
   const dead = [];
   for (const rel of entryFiles) {
-    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    const src = mdText(rel).replace(/\r\n/g, '\n');
     src.split('\n').forEach((line, i) => {
       const m = DEAD_DECL.exec(line.trim());
       if (m === null) return;
@@ -3795,7 +3821,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   const toolBad = [];
   let toolRefs = 0;
   for (const rel of toolScan) {
-    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    const src = mdText(rel).replace(/\r\n/g, '\n');
     // `.md` ⇒ 先按围栏分块清空（引述区不判定）；其它文件按原样逐行
     const lines = rel.endsWith('.md') ? boldBlankFences(src) : src.split('\n');
     lines.forEach((line, i) => {
@@ -3879,7 +3905,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   let tokens43 = 0;
   for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
     const seen = new Map();
-    readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+    mdText(rel).replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
       for (const tk of headerTokens(line)) {
         tokens43 += 1;
         if (!seen.has(tk)) seen.set(tk, []);
@@ -3962,7 +3988,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   };
   let surfaces = 0;
   for (const rel of committedFiles().filter((f) => /^tests\/parity\/verify-.*\.mjs$/.test(f))) {
-    const src = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+    const src = mdText(rel).replace(/\r\n/g, '\n');
     for (const m of stripComments(src).matchAll(SURFACE)) if (m[1].split('|').includes('ts')) surfaces += 1;
     const miss = missingOf(src);
     if (miss.length > 0) {

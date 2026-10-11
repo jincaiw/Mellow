@@ -25,6 +25,12 @@ const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).j
 /** workflow 正文（剥注释后）。**读 workflow 一律走这里**（审计 §4.323）。 */
 const wfText = (rel) => stripYamlComments(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'));
 
+// ── 剥 markdown 的 **HTML 注释**（2026-10-12，审计 §4.324）──────────────────────────
+// 【为什么】`<!-- … -->` **不渲染** ⇒ 注释里的路径 / 名字**不是真内容**。
+//   本文件有一处按块扫 `.md`（`CORRECTION_MARKER` 那节）⇒ 一条注释就能**满足**豁免（假阴性）。
+// ⚠️ 手法：**置空但保留行数**。只处理**成对** `<!-- … -->`；未闭合的原样保留。
+const blankHtmlComments = (s) => s.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+
 function assert(condition, message) {
   if (!condition) errors.push(message);
 }
@@ -1646,7 +1652,7 @@ if (existsSync(benchmarkRunnerPath)) {
       if (!existsSync(abs)) continue;
       for (const name of readdirSync(abs)) {
         if (!name.endsWith('.md')) continue;
-        const src = readFileSync(resolve(abs, name), 'utf8').replace(/\r\n/g, '\n');
+        const src = blankHtmlComments(readFileSync(resolve(abs, name), 'utf8').replace(/\r\n/g, '\n'));
         for (const block of src.split(/\n[ \t]*\n/)) {
           if (CORRECTION_MARKER.test(block)) continue; // 更正/引用块豁免
           if (CITES_NUMBERED_TASKS.test(block) || CITES_TASK_LIST.test(block)) {

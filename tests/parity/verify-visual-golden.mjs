@@ -16,6 +16,14 @@ import { pathToFileURL } from 'node:url';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+
+// ── 剥 markdown 的 **HTML 注释**（2026-10-12，审计 §4.324）──────────────────────────
+// 【为什么】`<!-- … -->` **不渲染** ⇒ 注释里的文件名**不是真引用**。
+//   本判据是「截图文件**必须出现在消费者文本里**」—— 若把注释也算作消费者，
+//   一个**注释掉的**文件名就能**满足**它 ⇒ **假阴性**（同族：注释满足判据）。
+// ⚠️ 手法：**置空但保留行数**（与 `boldBlankFences` 同一手法）。
+// ⚠️ 只处理**成对** `<!-- … -->`；**未闭合**的原样保留（不猜）。
+const blankHtmlComments = (s) => s.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
 const errors = [];
 const fail = (message) => errors.push(message);
 
@@ -205,7 +213,9 @@ if (!existsSync(manifestPath)) {
     'tests/visual/capture-window-chrome.mjs',
     ...readdirSync(resolve(root, 'docs/qualification')).filter((n) => n.endsWith('.md')).map((n) => `docs/qualification/${n}`),
   ];
-  const consumerSrc = consumerFiles.map((p) => read(p)).join('\n');
+  // ⚠️ **必须剥 HTML 注释**（2026-10-12，审计 §4.324）：`<!-- 文件名 -->` **不渲染**，
+  //   把它算作「消费者」会让一个**注释掉的**文件名**满足**本判据（假阴性）。
+  const consumerSrc = blankHtmlComments(consumerFiles.map((p) => read(p)).join('\n'));
   // 例外表：**逐条给理由**（判定与 canary **共用**本表）
   const SCREENSHOT_ORPHAN_EXEMPT = new Map([
     ['b3-2-newsprint-real.png',

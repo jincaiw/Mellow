@@ -5660,6 +5660,60 @@ const stripStrings = (s) => s.replace(
     + '⚠️ **边界**：只挡**同行**直读形态；跨行 / 变量间接的绕过不覆盖');
 }
 
+// ── ㊼ 扫 markdown 的护栏必须剥 **HTML 注释**（2026-10-12，审计 §4.324）──
+// 【为什么】markdown 里的 `<!-- … -->` **不渲染** ⇒ 里面的链接 / 表格 / 围栏 / `**`
+//   **都不是真内容**。⚠️ 实测（`verify-doc-code-refs.mjs`）：注入**一段** HTML 注释
+//   ⇒ **4 条判据同时假阳性**（相对链接可达性 / 加粗配对 / 表格结构 / 围栏闭合）。
+//   ⇒ 与 **㊻**（workflow 的 YAML 注释）**同族**：**判据扫的是源码，而注释会被当成真内容**。
+//   ⚠️ 该文件有 **19 处**直读 `.md`，此前**一处都没剥** HTML 注释。
+// 【判据】源码里扫 markdown 的护栏（出现 `.endsWith('.md')` 或 `\.md` 字面量）必须含
+//   **剥 HTML 注释**的实现（针：`<!--` 与 `.replace(` **同行** —— 只查 `<!--` 会被
+//   「注释里写了 `<!--`」满足，那正是本判据要防的事）。
+// 【边界如实声明】⚠️ 只保证**存在**剥法，**不保证每条判据都用了它** ——
+//   兜底是「读 markdown 经**唯一入口** `mdText` / `blankHtmlComments`」（结构约定，判据证不了）。
+{
+  const guards47 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  /** 判定与 canary **共用**：该源码是否含**剥 HTML 注释**的实现。 */
+  const hasHtmlBlank47 = (code) => code.split('\n')
+    .some((l) => l.includes('<!--') && l.includes('.replace('));
+  /** 判定与 canary **共用**：该源码是否**扫 markdown**。 */
+  const scansMd47 = (code) => code.includes(`.endsWith('.md')`) || code.includes('\\.md');
+  const offenders47 = [];
+  let mdGuards47 = 0;
+  for (const f of guards47) {
+    const code = stripJsComments(read(`tests/parity/${f}`));
+    if (!scansMd47(code)) continue;
+    mdGuards47 += 1;
+    if (!hasHtmlBlank47(code)) offenders47.push(f);
+  }
+  if (offenders47.length > 0) {
+    fail(`㊼ 这些护栏扫 markdown 却**没有剥 HTML 注释**：${offenders47.slice(0, 4).join('、')}`
+      + ' —— `<!-- … -->` **不渲染** ⇒ 注释里的链接 / 表格 / 围栏 / `**` **都不是真内容**；'
+      + '实测注入一段 HTML 注释会让**4 条判据同时假阳性**。修法：读 markdown 一律走剥 HTML 注释的'
+      + '入口（**置空但保留行数**，别改变行号映射）（审计 §4.324）');
+  }
+  // 防空转：[健康度型]（扫 markdown 的护栏数由仓库内容产生 ⇒ 留余量）
+  if (mdGuards47 < 3) {
+    fail(`㊼ 只找到 ${mdGuards47} 个扫 markdown 的护栏（[健康度型] 下限 3）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** hasHtmlBlank47 / scansMd47）
+  if (hasHtmlBlank47(`const x = 1;`)) {
+    fail('㊼ canary 失效：**没有**剥 HTML 注释的源码被判为「有」');
+  }
+  if (!hasHtmlBlank47(`const b = (s) => s.replace(/<!--[\\s\\S]*?-->/g, ' ');`)) {
+    fail('㊼ canary **过宽**：**有**剥 HTML 注释的源码被判为「没有」');
+  }
+  if (!scansMd47(`const md = files.filter((f) => f.endsWith('.md'));`)) {
+    fail('㊼ canary 失效：扫 markdown 的源码未被识别（那样本判据会**空转**）');
+  }
+  console.log(`Release gate: markdown 判据的**注释纪律** —— 扫 markdown 的护栏 ${mdGuards47} 个，`
+    + `**未剥 HTML 注释** ${offenders47.length} 个；`
+    + '⚠️ **边界**：只保证**存在**剥法，不保证每条判据都用了它（兜底 = 唯一入口 `mdText`）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
