@@ -3248,6 +3248,77 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + '⚠️ 本节只保证「**归属与理由已声明**」，**不保证本机工具有人跑** —— 那需要人。');
 }
 
+// ── ㉑ 本仓**代码面**不得使用已弃用的 Node API（2026-10-11，审计 §4.289）──
+// 【为什么】2026-10-11 把 CI 日志里的弃用告警逐条按**步骤名**分诊：**21 条**
+//   （`[DEP0040] punycode` ×12 · `[DEP0169] url.parse()` ×8 · `[DEP0005] Buffer()` ×1）
+//   **全部由我们使用的 action 自身发出**（告警所在的**步骤名就是 action 名**）。
+//   但「**不是我们的**」这句话若只靠**一次人工核对**，就会过期 ⇒ 用判据把它钉住：
+//   **本仓代码面不得出现 `punycode` / `new Buffer(`** ⇒ 那两类告警**不可能来自本仓**。
+//   ⚠️ **豁免 vendored 发布制品**（`CoreEditor/.yarn/releases/*.cjs`）—— 它是上游产物、非本仓源码
+//     （实测**唯一**命中就在那里）。
+//   ⚠️ 扫面与判据 **㊺** 的规范面一致（`ts|tsx|mts|cts|mjs|cjs|js|jsx`），且**必须剥注释**
+//     （注释里提到 API 名不算「使用」—— 本仓通则）。
+//   ⚠️ **canary 样本必须运行时拼接**：本文件**自己也在扫描面里**，直接写字面量会**命中自己**。
+{
+  const CODE_EXT = /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/;
+  const VENDORED = /CoreEditor\/\.yarn\/|node_modules\//;
+  // ⚠️ **全部拼接构造**：本文件**自己也在扫描面里** ⇒ 直接写字面量会**命中自己**（本仓已记 11 次）。
+  const PUNY = 'puny' + 'code';
+  const NEWB = 'new ' + 'Buffer(';
+  const DEPRECATED_API = [
+    { name: `\`${PUNY}\` 模块`, re: new RegExp(`(require\\(\\s*['"]${PUNY}['"]\\s*\\))|(from\\s+['"]${PUNY}['"])`) },
+    { name: `\`${NEWB}\``, re: new RegExp(NEWB.replace('(', '\\(')) },
+  ];
+  /** 判定与 canary **共用**：剥注释（行注释 + 块注释）—— 注释里提到 API 名不算「使用」。 */
+  const stripComments = (s) => s
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .map((l) => (l.trim().startsWith('//') ? '' : l.replace(/[ \t]\/\/.*$/, '')))
+    .join('\n');
+  const hitOf = (s) => DEPRECATED_API.some((a) => a.re.test(stripComments(s)));
+
+  let codeScanned = 0;
+  const apiHits = [];
+  // 口径与 `verify-doc-code-refs.mjs` 的 `committedFiles()` 一致（索引 + 未跟踪但不被忽略）。
+  // ⚠️ 本文件**没有** `committedFiles()` 这个辅助（那是另一个护栏里的）⇒ 直接执行同一条命令。
+  let repoFiles = [];
+  try {
+    repoFiles = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'],
+      { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(Boolean);
+  } catch {
+    fail('㉑ 无法枚举仓库文件集（`git ls-files` 失败）—— 本判据要求在有 git 的检出里运行');
+  }
+  for (const f of repoFiles) {
+    if (!CODE_EXT.test(f) || VENDORED.test(f)) continue;
+    codeScanned += 1;
+    const src = stripComments(read(f));
+    for (const api of DEPRECATED_API) {
+      if (api.re.test(src)) apiHits.push(`${f} → ${api.name}`);
+    }
+  }
+  if (apiHits.length > 0) {
+    fail(`㉑ 本仓**代码面**里出现了已弃用的 Node API：${apiHits.join('、')}`
+      + ' —— 这会让 CI 日志里的弃用告警**无法再归给上游**（审计 §4.289 的登记建立在「本仓零使用」上）。'
+      + '要么改掉，要么在 `ci-actions.json` 的 `knownRemainingWarnings` 里如实登记并说明');
+  }
+  // 防空转：必须**真的**扫到代码面（否则本判据**空转**，而输出照打「未使用」）
+  const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
+  if (codeScanned < CODE_BASELINE) {
+    fail(`㉑ 只扫到 ${codeScanned} 个代码文件（[健康度型] 下限 ${CODE_BASELINE}，立此判据时 575）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** hitOf；样本**拼接构造**）
+  const S_REQ = `const p = require(${JSON.stringify(PUNY)});`;
+  const S_BUF = `const b = ${NEWB}4);`;
+  if (!hitOf(S_REQ)) fail('㉑ canary 失效：`punycode` 的 require 写法**未被检出**');
+  if (!hitOf(S_BUF)) fail(`㉑ canary 失效：\`${NEWB}\` 写法**未被检出**`);
+  if (hitOf('Buffer.from(x)') || hitOf(`// 注释里提到 ${NEWB} 不算使用`)) {
+    fail('㉑ canary **过宽**：正确写法 / 注释被误判为使用');
+  }
+  console.log(`Release gate: 本仓代码面 —— ${codeScanned} 个文件**未使用** \`${PUNY}\` / \`${NEWB}\``
+    + '（⇒ CI 日志里这两类弃用告警**不可能来自本仓**；vendored 发布制品已豁免）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

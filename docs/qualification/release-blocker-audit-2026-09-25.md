@@ -18180,6 +18180,74 @@ if (cache && isCacheFeatureAvailable()) {
 
 ⇒ 同族「只锁了一半」累计 **第 116 次**（§4.170–§4.287）。
 
+## 4.289 CI 日志的**告警分诊**：21 条弃用告警**全部来自 action 自身** · 而 §4.283 的「13 条」是**我自己的口径错**（2026-10-11）
+
+### 一、透镜：把 CI 日志里的告警逐条问「**谁发出的 / 可不可修**」
+
+§4.283 登记了一条「未裁决」：`knownRemainingWarnings`（punycode / Buffer）。「未裁决」往往只是「没人看过」⇒ 本轮**逐条按步骤名分诊**。
+
+### 二、实测：**21 条**，全部来自 action 自身
+
+| 告警 | 条数 | 所在**步骤**（= 发出者） |
+|---|---|---|
+| `[DEP0040] punycode` | 6 + 6 | `Run` / `Post Run` **actions/setup-node@v5** |
+| `[DEP0169] url.parse()` | 4 + 4 | `Run` **pnpm/action-setup@v5** / `Run` **actions/setup-node@v5** |
+| `[DEP0005] Buffer()` | 1 | `Restore editor-core dist`（= **actions/download-artifact@v7**） |
+
+⇒ **21 条全部由我们使用的 action 自身发出** —— 证据是**告警所在的步骤名就是 action 名**。
+
+### 三、⚠️ 而 §4.283 登记的「13 条」是**我自己的口径错**
+
+| 口径 | 计数 |
+|---|---|
+| `grep -c 'is deprecated'` | **13** ← §4.283 用的就是这个 |
+| `grep -c 'DeprecationWarning'` | **21** |
+| 三类 DEP 码之和 | **21** |
+
+**原因**：`[DEP0169]` 的文案是「`url.parse()` behavior is not standardized and prone to errors…」—— 里面**没有** `is deprecated` 这个词 ⇒ **用那个串数必然漏它**。
+
+⚠️ **讽刺的是**：§4.283 **同一节**我刚写下「**只数 `is deprecated` 的总数会把两件事混成一件**」，然后用**那个串**当了计数口径。
+⇒ **教训**：**记下口径陷阱 ≠ 用对口径** —— 写计数口径时必须**当场地**把两个口径的数都算一遍（本节就是这么做的）。
+
+### 四、本仓源码**零使用**（这条让「不是我们的」站得住）
+
+按 `git ls-files --cached --others --exclude-standard` 扫代码面（`ts|tsx|mts|cts|mjs|cjs|js|jsx`，排除 `node_modules/` 与 `CoreEditor/.yarn/`）：
+**575 个文件，`require('punycode')` / `from 'punycode'` / `new Buffer(` 全部 0 命中**。
+⚠️ 全仓**唯一**命中在 `packages/editor-core/CoreEditor/.yarn/releases/yarn-4.17.1.cjs` —— 那是 **vendored 发布制品**（上游产物、非本仓源码）。
+
+### 五、处置
+
+1. **结清登记**：`ci-actions.json` 的 `knownRemainingWarnings` 从「未裁决」改为
+   **「上游噪音、本仓无可修」**，并附**步骤名证据 + 三个口径的数**（防下一个人重踩）。
+2. **新判据 ㉑**：**本仓代码面不得使用 `punycode` / `new Buffer(`** ⇒ 把「不是我们的」这条声明**钉住**，
+   而不是只靠一次人工核对。含：vendored 豁免 · **必须剥注释** · 防空转（代码面下限 400，立此判据时 575）· 三向 canary。
+
+### 六、注入验证
+
+| 注入 | 结果 |
+|---|---|
+| 源码加 `require('punycode')` | ✅ 红 |
+| 源码加 `new Buffer(4)` | ✅ 红 |
+| **负对照**：只在**注释**里提 | ✅ **仍绿**（剥注释生效） |
+| **负对照**：写进 **vendored 发布制品** | ✅ **仍绿**（豁免生效） |
+
+### 七、⚠️ 两条「判据抓到作者」（都当场修了）
+
+1. **㉑ 命中自己**：它的**报错消息**里写了字面量 `new Buffer(`（在字符串里、不在注释里）⇒ 当场红。
+   ⇒ 改成 `${NEWB}` 拼接。**这与判据 ⑩「判据命中自己」同族** —— 本仓已记 11 次，这是第 12 次。
+2. **⑲ 抓到化石条目**：把 `knownRemainingWarnings` 改写后，`evidenceRuns` 里的 `38038665944`
+   **不再被正文引用** ⇒ 「**化石条目**」当场红 ⇒ 已移除。
+   ✅ 这正是 §4.284 那条「`run <id>` ↔ `evidenceRuns` 双向」判据**第一次真的抓到东西**。
+
+### 八、本节**未**覆盖的（如实声明）
+
+- 分诊是**时点事实**（基于 run 38107299460 的日志）：若上游 action 改了实现，结论需重核
+  （fixture 已有 `checkedAt` / `reviewedAt` 惯例）。
+- 判据 ㉑ 只保证「**本仓代码面**不使用这两个 API」；**依赖树内部**是否使用**未覆盖**
+  （那属于上游依赖，且实测 CI 日志里没有来自依赖的该类告警）。
+
+⇒ 同族「只锁了一半」累计 **第 117 次**（§4.170–§4.288）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

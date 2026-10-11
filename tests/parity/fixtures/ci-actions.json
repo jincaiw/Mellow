@@ -3,7 +3,7 @@
   "why": "`.nvmrc` 只管 **job 里跑的 Node**；action **自己声明的运行时**（`action.yml` 的 `runs.using`）是**第二条完全独立的轴**，此前没有任何登记处。本仓 5 个 action 曾长期停在 `node20`，而 runner 已于 2026-09-23 移除 Node 20（GitHub changelog 2026-08-25 更新删除日期），即它们一直在**未声明支持的运行时**上被强制运行。",
   "note": "⚠️ 本表**只存事实与理由，不存计数**（计数一律由判据现读派生，手写计数必然漂移）。⚠️ `minMajorForNode24` / `latestKnown` 是**人工核实的事实**，会过期 ⇒ 每条带 checkedAt + evidence；判据只守「自洽」，不守「上游是否又发了新版」（离线判据无法知道）。⚠️ 本文件的**顶层键与条目键**由判据 ⑲ 的字段契约双向锁定 —— 加字段必须同时改判据（审计 §4.284）。",
   "reviewedAt": "2026-10-10",
-  "evidenceRuns": ["38035994927", "38038665944"],
+  "evidenceRuns": ["38035994927", "38107299460"],
   "actions": [
     {
       "action": "actions/checkout",
@@ -102,10 +102,10 @@
   ],
   "knownRemainingWarnings": [
     {
-      "what": "12 条 [DEP0040] punycode + 1 条 [DEP0005] Buffer()",
-      "observedIn": "CI run 38038665944（升版后）日志里仍有 13 条 `is deprecated`；同期 `Node.js 20 is deprecated` 已归零",
-      "whyNotAnActionIssue": "两者都是**依赖内部**的 Node API 弃用（punycode 提示「use a userland alternative」），与 action 的 `runs.using` 无关",
-      "todo": "**未裁决**：登记为待办，本轮不动。⚠️ 不要与「action 的运行时」混为一谈 —— 同一个词 `is deprecated` 在两处指不同的事（本轮计数 36→13 就是被这个同形词干扰过）"
+      "what": "三类 Node 弃用告警共 **21** 条：`[DEP0040] punycode` ×12 · `[DEP0169] url.parse()` ×8 · `[DEP0005] Buffer()` ×1",
+      "observedIn": "CI run 38107299460（2026-10-11）逐条按**步骤名**归类：`DEP0040` → `Run` / `Post Run` **actions/setup-node@v5**（6 + 6）；`DEP0169` → `Run` **pnpm/action-setup@v5**（4）+ `Run` **actions/setup-node@v5**（4）；`DEP0005` → `Restore editor-core dist`（= **actions/download-artifact@v7**）。",
+      "whyNotAnActionIssue": "**21 条全部由我们使用的 action 自身发出** —— 证据是**告警所在的步骤名就是 action 名**；不是本仓代码、也不是本仓依赖。⚠️ 且**本仓源码零使用**：按 `committedFiles()` 扫 **575** 个代码文件，`require('punycode')` / `from 'punycode'` / `new Buffer(` **0 命中**（唯一命中是 vendored 发布制品 `packages/editor-core/CoreEditor/.yarn/releases/yarn-4.17.1.cjs`）。⇒ 判据 ⑱ 已加一条「本仓源码不得使用 punycode / new Buffer(」，让这条声明**被守**而不是只靠一次人工核对。",
+      "todo": "✅ **已结清（2026-10-11，审计 §4.289）**：**上游噪音、本仓无可修** ⇒ 原来那条「未裁决」**没有可裁决的东西**。⚠️ **计数口径必须写下来**：`grep -c 'is deprecated'` 只得 **13**，而按 `DeprecationWarning` 或按 DEP 码数是 **21** —— `[DEP0169]` 的文案里**没有** `is deprecated` 这个词 ⇒ **用那个串数必然漏它**（§4.283 登记的「13 条」就是这么漏的：**我在同一节记下了这个同形词陷阱，然后用陷阱的口径去数**）。"
     }
   ]
 }
