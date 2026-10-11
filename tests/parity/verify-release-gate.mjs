@@ -13,7 +13,7 @@
  * NO-GO 清单只报告不抛错（开发期必然存在未闭环项）；但「标了 PASS-E 却缺证据」、
  * 「护栏断链」、「CI 缺门禁」都是硬失败。
  */
-import { existsSync, readdirSync, readFileSync, openSync, readSync, closeSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, openSync, readSync, closeSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -3979,6 +3979,215 @@ const stripJsComments = (s) => {
     !== '^24.0.0') {
     fail('㉘ canary 失效：`devDependencies` 未优先于 `dependencies`');
   }
+}
+
+// ── ㉙ 根 README 的**目录结构树**必须与实际一致（2026-10-11，审计 §4.300）──
+// 【为什么】`README.md` 的「目录结构」段是**门面**：读者据它判断「这个仓库里有什么」。
+//   实测（2026-10-11）：`docs/` 实际 **9** 个子目录而树里只列 **6**（漏 `accessibility/` / `security/` / `superpowers/`）、
+//   `tests/` 实际 **7** 个而只列 **3**（**漏了 `tests/parity/` —— 23 条护栏的家**），根目录还漏了 `tools/`。
+//   ⚠️ §4.94（2026-10-06）修过一次，但修的是「**列出的条目**要准确」（易漂清单改为指向真值源）
+//   —— **从没锁「该列的有没有列」** ⇒ 同族「**只锁了一半**」。
+// 【判据】根 `README.md` 的「目录结构」代码块里提取**目录条目**（**层级感知**），与实际**双向**核对：
+//   ① 每个**列出的**目录路径必须**存在**（防「列了已删的目录」）；
+//   ② 实际的**顶层目录**（排除生成物）必须**全部被列出**；
+//   ③ 实际的 **`docs/*` 与 `tests/*` 二级目录**必须**全部被列出**。
+// ⚠️ **必须层级感知**：若只比对「目录名」（basename），`packages/shared/` 会**掩盖** `tests/shared/` 的缺失。
+// ⚠️ **范围如实声明**：`packages/*` **不在覆盖内** —— 它的 15 个包已由 `verify-doc-code-refs.mjs` 的
+//   「`monorepo.md` 的 15 个包 == `packages/` 目录数」判据守住，README 里那一段是它的**副本**
+//   ⇒ 本判据**只补没人守的那一半**。⚠️ **排除生成物**：`node_modules` / `.git` 不出现在树里是**正常的**。
+{
+  const README29 = 'README.md';
+  const SKIP_TOP29 = new Set(['node_modules', '.git', 'dist', 'target', 'build', 'coverage']);
+  const TREE_HEAD29 = /^##\s*目录结构\s*$/;
+  /** 判定与 canary **共用**：从「目录结构」代码块里提取**带层级的目录路径**。 */
+  const treeDirsOf = (src) => {
+    const lines = src.split('\n');
+    const at = lines.findIndex((l) => TREE_HEAD29.test(l));
+    if (at < 0) return null; // 找不到该节 ⇒ 由调用方报错（不静默跳过）
+    let start = -1;
+    for (let i = at + 1; i < lines.length; i += 1) {
+      if (/^```/.test(lines[i])) { start = i + 1; break; }
+      if (/^##\s/.test(lines[i])) return null;
+    }
+    if (start < 0) return null;
+    const out = [];
+    const stack = [];
+    for (let i = start; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (/^```/.test(line)) break;
+      if (!/[├└]──/.test(line)) continue;
+      const gi = line.search(/[├└]──/);
+      const level = Math.floor(gi / 4);
+      const rest = line.slice(gi + 3).replace(/\s*#.*$/, '');
+      const names = [...rest.matchAll(/([A-Za-z0-9._-]+)\//g)].map((m) => m[1]);
+      if (names.length === 0) continue;
+      stack.length = level;
+      for (const [k, name] of names.entries()) {
+        if (k === 0) {
+          stack[level] = name;
+          out.push(stack.filter((x) => x !== undefined).join('/'));
+        } else {
+          // ⚠️ 同一行内联的多个目录是**兄弟**（如 `workspace/ commands/ i18n/ …`）
+          //   ⇒ 路径 = **上一层** + 名字（首版误写成 `level + 1` ⇒ 拼出 `packages/workspace/commands`）
+          out.push([...stack.filter((x) => x !== undefined).slice(0, level), name].join('/'));
+        }
+      }
+    }
+    return out;
+  };
+  const readme29 = read(README29);
+  const listed = treeDirsOf(readme29);
+  if (listed === null) {
+    fail(`${README29} 找不到「## 目录结构」代码块 —— 删掉它会让「README 说得对不对」重新变成无人守`);
+  } else {
+    const isDir = (rel) => existsSync(resolve(root, rel)) && statSync(resolve(root, rel)).isDirectory();
+    const listedSet = new Set(listed);
+    const actualTop = readdirSync(root)
+      .filter((n) => !n.startsWith('.') && n !== 'node_modules' && isDir(n))
+      .sort();
+    const actualSecond = [];
+    for (const top of ['docs', 'tests']) {
+      if (!isDir(top)) continue;
+      for (const n of readdirSync(resolve(root, top))) {
+        if (isDir(`${top}/${n}`)) actualSecond.push(`${top}/${n}`);
+      }
+    }
+    actualSecond.sort();
+    const problems = [];
+    // ① 列出的必须存在
+    for (const p of listed) if (!isDir(p)) problems.push(`列出但**不存在**：\`${p}/\``);
+    // ② 顶层必须全列
+    for (const n of actualTop) {
+      if (SKIP_TOP29.has(n)) continue;
+      if (!listedSet.has(n)) problems.push(`**顶层目录** \`${n}/\` 未列出`);
+    }
+    // ③ `docs/*` 与 `tests/*` 必须全列
+    for (const p of actualSecond) {
+      if (!listedSet.has(p)) problems.push(`**\`${p}/\`** 未列出`);
+    }
+    if (problems.length > 0) {
+      fail(`${README29} 的「目录结构」树与实际不符：${problems.join('；')}`
+        + ' —— 该段是**门面**，读者据它判断仓库里有什么；'
+        + '「列出的条目要准确」在 §4.94 修过，但**从没锁「该列的有没有列」**（审计 §4.300）');
+    }
+    // 防空转：**健康度型**（条目数由 README 内容产生 ⇒ 留余量；立此判据时 30 个目录条目）
+    if (listed.length < 20) {
+      fail(`㉙ 只从 README 的目录树里解析出 ${listed.length} 个目录条目（[健康度型] 下限 20）`
+        + ' —— 解析器失效或该段被删空会让本判据空转');
+    }
+    console.log(`Release gate: README 的「目录结构」树 —— 解析出 ${listed.length} 个目录条目，`
+      + `与实际（顶层 ${actualTop.length} / docs+tests 二级 ${actualSecond.length}）**双向一致**`
+      + '；⚠️ 范围只到**顶层 + docs/* + tests/***（`packages/*` 由另一条判据守）');
+  }
+  // canary：三向（与判定**共用** treeDirsOf）
+  const SAMPLE_TREE = '## 目录结构\n\n```\nmellow/\n├── docs/\n│   ├── adr/\n│   └── specs/\n└── tests/\n    └── parity/\n```\n';
+  const parsed = treeDirsOf(SAMPLE_TREE);
+  if (parsed === null || !parsed.includes('docs/adr') || !parsed.includes('tests/parity')) {
+    fail('㉙ canary 失效：树里的**二级**目录未被解析出（层级感知失效）');
+  }
+  if (parsed.includes('docs') === false || parsed.filter((p) => p === 'docs').length !== 1) {
+    fail('㉙ canary 失效：顶层目录未被解析出');
+  }
+  if (treeDirsOf('## 别的节\n\n```\n├── docs/\n```\n') !== null) {
+    fail('㉙ canary **过宽**：没有「## 目录结构」节的文档被当成了有');
+  }
+  if (treeDirsOf(SAMPLE_TREE).includes('adr') || treeDirsOf(SAMPLE_TREE).includes('parity')) {
+    fail('㉙ canary 失效：二级目录被当成了**顶层**（层级未生效）');
+  }
+}
+
+// ── ㉚ 护栏里调用的 `node:*` 导出名必须先 import（2026-10-11，审计 §4.301）──
+// 【为什么】判据 ㉒ 守「调用了未定义的**断言辅助函数**」，但它**只认 `fail` / `assert` 两个名字**
+//   （§4.292 明写了这个边界）。**其他名字**调用了却没定义 ⇒ 抛 `ReferenceError` ⇒
+//   **整条护栏中断、其后判据从未判定** —— 而**静态阅读看不出**（名字在、逻辑也对）。
+//   ⚠️ **本轮实测（活证据）**：新写的 ㉙ 用了 `statSync` 却**没 import** ⇒ 运行即
+//   `ReferenceError: statSync is not defined` ⇒ **㉙ 从未判定**；
+//   而 `node --check` 只做**语法**检查，**抓不到**未定义标识符。
+// 【判据】每个护栏源码（**剥注释 + 剥字符串**）里：凡**裸调用**了「全仓护栏从 `node:*` 导入过的名字」
+//   中的某一个，而该名字在本护栏里**既没 import 也没本地定义**（`const/let/var/function/class NAME`）⇒ 红。
+// ⚠️ **词表是派生的**（全仓 `node:*` import 名字的**并集**）⇒ 自维护、无副本。
+// ⚠️ **必须剥字符串**：实测 6 处假阳性**全部**是「`fail('…必须 writeFileSync(…)')` 的消息」与
+//   「canary 样本字符串」⇒ **不剥字符串这条判据不可用**（本轮实测）。
+// ⚠️ **边界如实声明**：**模板字面量整体被剥** ⇒ `${statSync(x)}` 这类**表达式内**的调用**不在覆盖内**；
+//   属性访问（`fs.statSync(`）与本地定义（`const statSync = …`）**正确地不报**。
+// ⚠️ **与 ㉒ 的分工**：㉒ 守「**断言辅助函数**」、本判据守「**`node:*` 导出名**」
+//   —— 两者合起来才覆盖「**调用了就必须有定义**」这一句话。
+// ⚠️ **边界（实测，必须声明）：本判据**不能保护它自己所在的文件**。**
+//   实测（2026-10-11）：把本文件的 `statSync` 从 import 里拿掉 ⇒ **本文件直接崩**
+//   （`ReferenceError`）⇒ **本判据自己也不会运行** ⇒ 报的是崩溃、不是这条消息。
+//   ⇒ 但**不会假绿**：崩溃 = CI 红 = 有人来查（**丢的是「具体性」，不是「正确性」**）。
+//   其余 22 个护栏**由本判据覆盖**（实测：往 `verify-menu-contract.mjs` 注入裸 `spawnSync` ⇒ 被抓住）。
+{
+  const NODE_IMPORT30 = /import\s*\{([^}]+)\}\s*from\s*'node:[^']+'/g;
+  /** 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）。 */
+  const stripStrings30 = (s) => s.replace(
+    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
+    (m) => m.replace(/[^\n]/g, ' '),
+  );
+  /** 判定与 canary **共用**：一份护栏源码里「调用了 `node:*` 导出名却没 import / 没本地定义」的名字。 */
+  const missingNodeImports = (rawSrc, vocab, imported) => {
+    const src = stripStrings30(stripJsComments(rawSrc));
+    const out = [];
+    for (const name of vocab) {
+      if (imported.has(name)) continue;
+      if (!new RegExp(`(^|[^.\\w$])${name}\\s*\\(`).test(src)) continue;
+      if (new RegExp(`(?:const|let|var|function|class)\\s+${name}\\b`).test(src)) continue;
+      out.push(name);
+    }
+    return out;
+  };
+  const guards30 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const vocab30 = new Set();
+  const importedOf30 = new Map();
+  const srcOf30 = new Map();
+  for (const f of guards30) {
+    const s = read(`tests/parity/${f}`);
+    srcOf30.set(f, s);
+    const set = new Set();
+    for (const m of s.matchAll(NODE_IMPORT30)) {
+      for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) { vocab30.add(n); set.add(n); }
+    }
+    importedOf30.set(f, set);
+  }
+  const offenders30 = [];
+  for (const f of guards30) {
+    const miss = missingNodeImports(srcOf30.get(f), vocab30, importedOf30.get(f));
+    if (miss.length > 0) offenders30.push(`${f}（${[...new Set(miss)].join(', ')}）`);
+  }
+  if (offenders30.length > 0) {
+    fail(`这些护栏**调用了未 import 的 \`node:*\` 导出名**：${offenders30.join('、')} —— `
+      + '运行即 `ReferenceError` ⇒ **整条护栏中断、其后判据从未判定**（而 `node --check` 只查语法、抓不到）；'
+      + '请补 import（审计 §4.301）');
+  }
+  // 防空转：[健康度型] 词表由全仓 import 产生 ⇒ 留余量（立此判据时 24 个）
+  if (vocab30.size < 15) {
+    fail(`㉚ 只从全仓护栏里收集到 ${vocab30.size} 个 \`node:*\` 导入名（[健康度型] 下限 15）`
+      + ' —— 词表塌缩会让本判据空真');
+  }
+  // canary：五向（与判定**共用** missingNodeImports）
+  const VOCAB30_SAMPLE = new Set(['statSync', 'readFileSync']);
+  const BAD30 = 'const a = statSync("x");';
+  if (!missingNodeImports(BAD30, VOCAB30_SAMPLE, new Set()).includes('statSync')) {
+    fail('㉚ canary 失效：**未 import 的裸调用**未被检出（判据已退化成空真）');
+  }
+  if (missingNodeImports(`import { statSync } from 'node:fs';\n${BAD30}`, VOCAB30_SAMPLE, new Set(['statSync'])).length !== 0) {
+    fail('㉚ canary **过宽**：已 import 的名字被误报');
+  }
+  if (missingNodeImports('const statSync = (p) => p;\nstatSync("x");', VOCAB30_SAMPLE, new Set()).length !== 0) {
+    fail('㉚ canary **过宽**：**本地定义**的名字被误报');
+  }
+  if (missingNodeImports('fs.statSync("x");', VOCAB30_SAMPLE, new Set()).length !== 0) {
+    fail('㉚ canary **过宽**：**属性访问**（`fs.statSync(`）被误报');
+  }
+  // ⚠️ 本向**就是本轮 6 处假阳性的形态**：名字出现在**字符串**里（消息 / canary 样本）
+  if (missingNodeImports(`fail('必须 writeFileSync(OUT, next)');`, VOCAB30_SAMPLE, new Set()).length !== 0) {
+    fail('㉚ canary **过宽**：**字符串里**的调用被误报（必须剥字符串 —— 本轮实测的 6 处假阳性形态）');
+  }
+  console.log(`Release gate: 护栏的 \`node:*\` 导入 —— 扫描 ${guards30.length} 个护栏、词表 ${vocab30.size} 个名字，`
+    + `未 import 的裸调用 ${offenders30.length} 处`
+    + '；⚠️ 只覆盖**裸调用**（属性访问 / 本地定义不报；**模板内的 `${…}` 表达式不在覆盖内**）');
 }
 
 if (errors.length > 0) {

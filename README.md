@@ -30,12 +30,15 @@ Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编
 mellow/
 ├── README.md / AGENTS.md / LICENSE / THIRD_PARTY_NOTICES.md
 ├── docs/
-│   ├── product/      # 宪法：PRD V1.2 FINAL
-│   ├── specs/        # 法律：各领域规范
-│   ├── adr/          # 判决：ADR-0001 起，**只追加不修改**（最新编号见该目录）
-│   ├── plans/        # 施工图：typora-parity-master-plan.md（唯一权威）+ codex-implementation-plan.md（从属脚手架）
-│   ├── architecture/ # 实现架构（文件清单见该目录 README.md）
-│   └── qualification/# 验证记录（评审、IME 矩阵、golden journeys、benchmark）
+│   ├── product/       # 宪法：PRD V1.2 FINAL
+│   ├── specs/         # 法律：各领域规范
+│   ├── adr/           # 判决：ADR-0001 起，**只追加不修改**（最新编号见该目录）
+│   ├── plans/         # 施工图：typora-parity-master-plan.md（唯一权威）+ codex-implementation-plan.md（从属脚手架）
+│   ├── architecture/  # 实现架构（文件清单见该目录 README.md）
+│   ├── security/      # 安全评审记录（PRD §48 相关）
+│   ├── accessibility/ # 可访问性（a11y）阶段记录
+│   ├── superpowers/   # 早期设计草稿（`specs/`，历史记录）
+│   └── qualification/ # 验证记录（评审、IME 矩阵、golden journeys、benchmark）
 ├── apps/
 │   └── desktop/      # Tauri 2 + React 桌面壳（Adapter 装配层，平台代码只允许在此）
 ├── packages/
@@ -47,10 +50,15 @@ mellow/
 │   ├── host-api/         # 系统能力契约（PRD §116，纯类型 + mock/null）
 │   ├── document-model/   # 文档模型（ADR-0008）
 │   ├── workspace/ commands/ i18n/ themes/ extension-api/ export/ settings/ shared/
-└── tests/
-    ├── benchmark/     # macOS 对照 harness（golden journeys / IME 矩阵 / 性能，对照 Typora 1.14.9）
-    ├── fixtures/      # Markdown / 导出 / 文件安全素材库
-    └── qualification/ # V0.0 门禁记录 + 可执行脚本（source-fidelity / packaging smoke）
+├── tests/
+│   ├── parity/       # **静态契约护栏**（`verify-*.mjs` + `fixtures/`）与本机审计工具（`tools/`，不进 CI）
+│   ├── e2e/          # 端到端验证脚本（**不进 CI**，需真机/浏览器）
+│   ├── visual/       # 视觉基线采集（`golden/` 按平台分离 + `actual/`）
+│   ├── benchmark/    # macOS 对照 harness（golden journeys / IME 矩阵 / 性能，对照 Typora 1.14.9）
+│   ├── fixtures/     # Markdown / 导出 / 文件安全素材库
+│   ├── shared/       # 测试共用工具
+│   └── qualification/ # V0.0 门禁记录 + 可执行脚本（source-fidelity / packaging smoke）
+└── tools/            # 仓库级工具（vendored 校验 / 上游清单生成 / source-fidelity）
 ```
 
 > ⚠️ **2026-10-06 更正（审计 §4.94）**：上面「目录结构」段原有 **5 处失真**，已修：
