@@ -20124,6 +20124,83 @@ ADR-0034 实际含 **11 个 `## Q<N>` 小节**，覆盖 **12 个问**（Q1–Q8�
 
 ⇒ 同族「只锁了一半」累计 **第 149 次**（§4.170–§4.320）。
 
+## 4.322 「间歇失败」要先证伪：Linux runtime 作业**每次都在第一步就死**（2026-10-12）
+
+### 一、透镜
+
+发版 v1.5.34 时，标签同时触发了 `Runtime Qualification`，其中
+`Linux: Xvfb + fcitx5 IME matrix` **失败**。它的历史看起来像 flaky
+（v1.5.33 一次成功一次失败、v1.5.29 也失败）⇒ 本仓纪律：
+**「间歇失败」的结论必须先证伪 —— 把失败步骤的日志读出来。**
+
+### 二、取证（读日志，不看结论）
+
+```
+Linux: Xvfb + fcitx5 IME matrix  Run pnpm/action-setup@v5
+Error: No pnpm version is specified.
+  - in the GitHub Action config with the key "version"
+  - in the package.json with the key "packageManager"
+```
+
+⇒ 不是 flaky，是**确定性缺陷**：该 job 是**全仓唯一**把 checkout 落到子目录的 job
+（`actions/checkout` 的 `with: path: mellow`），而 `pnpm/action-setup` 的
+`package_json_file` 默认 `package.json`、**相对「工作区根」解析** ⇒ 它去读
+`<workspace>/package.json`（**不存在**，仓库在 `<workspace>/mellow/`）⇒ 版本解析失败
+⇒ **整个 job 在第一步就死**。
+
+⚠️ **为什么容易漏**：`working-directory:` 对它**无效** —— 它是 **JS action**，不是 `run` 步骤。
+（同文件的 Windows job 有 `path: mellow` 吗？**没有** —— 它早先的注释还专门记过
+「移除不存在的 `working-directory: mellow`」，但那次只修了 `run` 步骤，没意识到 action 的路径是另一回事。）
+
+### 三、处置
+
+1. **修 workflow**：给该步骤加 `with: package_json_file: mellow/package.json`
+   （**保持单一真值源** —— 版本仍从 `packageManager` 派生，不硬编码 `version:`）。
+2. **判据 ㊺**：扫全部 `.github/workflows/*.yml`，每个 `pnpm/action-setup` 步骤必须满足其一 ——
+   ① 自己有 `with.version`；② 自己有 `with.package_json_file`，且**按「工作区根」解析**后的文件
+   **真实存在**且含 `"packageManager"`；③ 所属 job 的 checkout **没有**自定义 `path` 且根
+   `package.json` 含 `packageManager`。canary **四向**；防空转 3 个 workflow / 8 个该步骤。
+
+### 三之二、**修的过程中又撞出第二处「只锁了一半」**（同一形态，同一文件）
+
+改完 workflow 后 `npm run parity` **红了**，红在 `verify-runtime-qualification-workflow.mjs`：
+
+```
+linux-runtime 的 working-directory '` 对它**无效** —— 它是 JS action，不是 `run` 步骤。'
+与 checkout 落点 'mellow' 不一致
+```
+
+⇒ 被当成「真值」的那个字符串，是**我刚写下的半句中文注释**。
+根因：该文件的**路径一致性**块用 `body.matchAll(/working-directory:[ \t]*([^\n]+)/g)` 扫**原始源码**，
+**没有剥 YAML 注释** —— 而**同一个文件**里「非默认入口探针」块**剥了**，注释还写着
+「本仓已实测过 4 次的同型坑：注释满足 / 触发判据」。
+⇒ **同一文件、同一形态，剥法只用在了一条判据上。**
+
+**处置**：把 `stripYamlComments` **提到模块级**（本仓纪律：「同族判据的**剥法必须一致** ——
+否则它们只是**两个带不同 bug 的意见**」），两处共用；并给路径一致性块补 **canary 两向**
+（整行注释里的 `working-directory:` 必须被剥掉 · 真代码行里的必须**不**被剥）。
+⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
+
+### 四、注入验证（3/3）
+
+| 注入 | 结果 |
+|---|---|
+| 撤回修复（删掉 `package_json_file`） | ✅ 红：解析不到 pnpm 版本 |
+| 指向**不存在**的文件 | ✅ 红：`package_json_file` 解析到不存在的文件 |
+| 指向 **checkout 之外** | ✅ 红：不在 checkout 目录之内 |
+
+### 五、边界如实声明
+
+- ⚠️ ㊺ 只解析**行式 YAML**（本仓 workflow 均为 2 空格缩进 + `- ` 步骤）—— 换缩进风格会漏。
+- ⚠️ ㊺ **只覆盖 `pnpm/action-setup`** —— **其它 action 的隐式路径假设不覆盖**（如实登记）。
+- ⚠️ 本次**只修了「死因」**：修好后 Linux 作业**能跑到真正的 IME 矩阵**了，
+  但矩阵本身是否通过**尚未验证** —— 它对应台账里**已登记未闭环**的「Win/Linux 真机 / IME 矩阵」
+  （`P0-PLATFORM-001`）⇒ **不得当作已闭环**。
+- ⚠️ 本次改动**只在 `.github/workflows/`**，不影响交付产物 ⇒ **不重新发版**
+  （v1.5.34 已发布，制品不变）。
+
+⇒ 同族「只锁了一半」累计 **第 150 次**（§4.170–§4.321）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

@@ -5372,6 +5372,156 @@ const stripStrings = (s) => s.replace(
     + '⚠️ **边界**：只认三种字面写法，**不覆盖**「用别的办法算格数」');
 }
 
+// ── ㊺ `pnpm/action-setup` 的版本必须**真的能解析到**（2026-10-12，审计 §4.322）──
+// 【为什么】`pnpm/action-setup` 的版本来源只有两条：步骤自己的 `with.version`，
+//   或 `package_json_file`（**默认 `package.json`，相对「工作区根」解析**）里的 `packageManager`。
+//   ⚠️ 一个 job 若把 checkout 落到**子目录**（`actions/checkout` 的 `with.path`），
+//   默认路径就指向一个**不存在的文件** ⇒ 该 action 报 `Error: No pnpm version is specified.`
+//   ⇒ **整个 job 在第一步就死**（而它看起来只是「setup 步骤红」）。
+//   ⚠️ `working-directory:` 对这个步骤**无效** —— 它是 JS action，不是 `run` 步骤。**这正是它容易漏的原因。**
+//   ⚠️ 实测（v1.5.34 发版）：`runtime-qualification.yml` 的 `linux-runtime` 是**全仓唯一**
+//   用 `path: mellow` 的 job ⇒ 它的 Linux IME matrix **每次都死**，而历史里那几次失败
+//   一直被读成「**flaky**」（v1.5.33 一次成功一次失败、v1.5.29 失败）。
+//   ⇒ 「间歇失败」的结论**必须先证伪**：把失败步骤的日志读出来。
+// 【判据】扫全部 `.github/workflows/*.yml`：每个 `uses: pnpm/action-setup@…` 步骤必须满足其一：
+//   ① 自己有 `with.version`；
+//   ② 自己有 `with.package_json_file`，且**按「工作区根」解析**后的文件**真实存在**
+//      且内容含 `"packageManager"`；
+//   ③ 所属 job 的 checkout **没有**自定义 `path`（即落在仓库根）且根 `package.json` 含 `packageManager`。
+// 【边界如实声明】⚠️ 只解析**行式 YAML**（本仓 workflow 均为 2 空格缩进 + `- ` 步骤）。
+//   ⚠️ 只覆盖 `pnpm/action-setup` —— 其它 action 的隐式路径假设**不覆盖**（如实登记）。
+{
+  const wfDir45 = resolve(root, '.github/workflows');
+  const wfFiles45 = existsSync(wfDir45)
+    ? readdirSync(wfDir45).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml')).sort()
+    : [];
+  /** 判定与 canary **共用**：从第 `i` 行起的**步骤**行（`- ` 缩进更深的续行）。 */
+  const stepLinesAt45 = (jobLines, i) => {
+    const dash = jobLines[i].indexOf('-');
+    const out = [jobLines[i]];
+    for (let j = i + 1; j < jobLines.length; j += 1) {
+      const t = jobLines[j];
+      if (t.trim() === '') { out.push(t); continue; }
+      if (t.search(/\S/) <= dash) break;
+      out.push(t);
+    }
+    return out;
+  };
+  /** 判定与 canary **共用**：一个 job 段落里 checkout 的 `path:`（无则 `.`）。 */
+  const checkoutPath45 = (jobLines) => {
+    let p = '.';
+    for (let i = 0; i < jobLines.length; i += 1) {
+      if (!/uses:\s*actions\/checkout@/.test(jobLines[i])) continue;
+      for (const l of stepLinesAt45(jobLines, i)) {
+        const m = /^\s*path:\s*(\S+)\s*$/.exec(l);
+        if (m !== null) p = m[1].replace(/^\.\//, '').replace(/\/+$/, '');
+      }
+    }
+    return p;
+  };
+  /** 判定与 canary **共用**：给定 job 行 + 「根 package.json 是否声明 packageManager」，
+   *  返回**不合规原因**（字符串）；合规返回 null。 */
+  const pnpmVerdict45 = (jobLines, rootHasPM) => {
+    for (let i = 0; i < jobLines.length; i += 1) {
+      if (!/uses:\s*pnpm\/action-setup@/.test(jobLines[i])) continue;
+      const step = stepLinesAt45(jobLines, i);
+      if (step.some((l) => /^\s*version:/.test(l))) continue;             // ①
+      const cp = checkoutPath45(jobLines);
+      const pjfLine = step.find((l) => /^\s*package_json_file:/.test(l));
+      if (pjfLine !== undefined) {                                       // ②
+        const declared = pjfLine.split(':').slice(1).join(':').trim().replace(/^['"]|['"]$/g, '');
+        // 「工作区根」视角 → 仓库视角：剥掉 checkout 的子目录前缀
+        const repoRel = cp === '.' ? declared
+          : (declared.startsWith(`${cp}/`) ? declared.slice(cp.length + 1) : null);
+        if (repoRel === null) {
+          return `package_json_file（${declared}）**不在** checkout 目录 \`${cp}/\` 之内 ——`
+            + ' 它会被解析到工作区里**本仓之外**的路径';
+        }
+        const full = resolve(root, repoRel);
+        if (!existsSync(full)) return `package_json_file 解析到**不存在**的文件：${repoRel}`;
+        if (!/"packageManager"/.test(readFileSync(full, 'utf8'))) {
+          return `package_json_file（${repoRel}）里**没有** \`packageManager\` 字段 ⇒ 版本仍解析不到`;
+        }
+        continue;
+      }
+      if (cp === '.') {                                                  // ③
+        if (!rootHasPM) return 'checkout 落在仓库根，但根 `package.json` 里没有 `packageManager`';
+        continue;
+      }
+      return `所属 job 的 checkout 落在子目录 \`${cp}\`，而本步骤**没有** \`package_json_file\``
+        + '（默认值相对**工作区根**解析 ⇒ 读不到）';
+    }
+    return null;
+  };
+  const rootHasPM45 = /"packageManager"/.test(read('package.json'));
+  const offenders45 = [];
+  let steps45 = 0;
+  for (const f of wfFiles45) {
+    const lines = read(`.github/workflows/${f}`).split('\n');
+    // 按 2 空格缩进的 job 头切段（与 ㉞ 同款约定）
+    const jobs = [];
+    let cur = null;
+    for (const l of lines) {
+      const m = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(l);
+      if (m !== null) { if (cur !== null) jobs.push(cur); cur = { name: m[1], lines: [] }; continue; }
+      if (cur !== null) cur.lines.push(l);
+    }
+    if (cur !== null) jobs.push(cur);
+    for (const job of jobs) {
+      for (const l of job.lines) if (/uses:\s*pnpm\/action-setup@/.test(l)) steps45 += 1;
+      const why = pnpmVerdict45(job.lines, rootHasPM45);
+      if (why !== null) offenders45.push(`${f} → job \`${job.name}\`：${why}`);
+    }
+  }
+  if (offenders45.length > 0) {
+    fail(`㊺ 这些 job 里的 \`pnpm/action-setup\` **解析不到 pnpm 版本**：${offenders45.slice(0, 4).join('；')}`
+      + ' —— 该 action 的 `package_json_file` 默认 `package.json`、**相对工作区根**解析；'
+      + 'checkout 落到子目录时它会读到一个**不存在的文件** ⇒ 报 `No pnpm version is specified.`'
+      + ' ⇒ **整个 job 在第一步就死**（`working-directory:` 对它**无效**）。'
+      + '修法：给该步骤加 `with: package_json_file: <checkout 路径>/package.json`（审计 §4.322）');
+  }
+  // 防空转：[健康度型]（workflow 与步骤数由仓库内容产生 ⇒ 留余量）
+  if (wfFiles45.length < 3 || steps45 < 8) {
+    fail(`㊺ 只扫到 ${wfFiles45.length} 个 workflow / ${steps45} 个 \`pnpm/action-setup\` 步骤`
+      + '（[健康度型] 下限 3 / 8）—— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** pnpmVerdict45 / checkoutPath45 / stepLinesAt45）
+  const jobWith45 = (inner) => ['    steps:', ...inner];
+  const badJob45 = jobWith45([
+    '      - uses: actions/checkout@v5', '        with:', '          path: sub',
+    '      - uses: pnpm/action-setup@v5',
+  ]);
+  if (pnpmVerdict45(badJob45, true) === null) {
+    fail('㊺ canary 失效：**checkout 落子目录 + 无 package_json_file** 的样本未被检出');
+  }
+  if (checkoutPath45(badJob45) !== 'sub') {
+    fail('㊺ canary 失效：`path: sub` 未被解析出来（那样判定会退化成「永远认为在仓库根」）');
+  }
+  const okJobPjf45 = jobWith45([
+    '      - uses: actions/checkout@v5', '        with:', '          path: sub',
+    '      - uses: pnpm/action-setup@v5', '        with:',
+    `          package_json_file: sub/${'package.json'}`,
+  ]);
+  if (pnpmVerdict45(okJobPjf45, true) !== null) {
+    fail('㊺ canary **过宽**：**显式指向存在的 package.json** 的样本被判为不合规');
+  }
+  const okJobRoot45 = jobWith45([
+    '      - uses: actions/checkout@v5', '      - uses: pnpm/action-setup@v5',
+  ]);
+  if (pnpmVerdict45(okJobRoot45, true) !== null) {
+    fail('㊺ canary **过宽**：checkout 在**仓库根**的常规样本被判为不合规');
+  }
+  if (pnpmVerdict45(jobWith45([
+    '      - uses: actions/checkout@v5', '        with:', '          path: sub',
+    '      - uses: pnpm/action-setup@v5', '        with:', '          package_json_file: elsewhere/package.json',
+  ]), true) === null) {
+    fail('㊺ canary 失效：`package_json_file` **指到 checkout 之外**的样本未被检出');
+  }
+  console.log(`Release gate: \`pnpm/action-setup\` 的版本解析 —— 扫描 ${wfFiles45.length} 个 workflow / `
+    + `${steps45} 个该步骤，**解析不到版本** ${offenders45.length} 处；`
+    + '⚠️ **边界**：只覆盖这一个 action（其它 action 的隐式路径假设不覆盖）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

@@ -43,7 +43,16 @@ jobs:
       - uses: actions/checkout@v5
         with:
           path: mellow
+      # ⚠️ **必须显式给 `package_json_file`**（2026-10-12，审计 §4.322）：
+      #   本 job 是**全仓唯一**把 checkout 落到子目录的 job（`path: mellow`），
+      #   而 `pnpm/action-setup` 的默认 `package_json_file: package.json` 是**相对工作区根**解析的
+      #   ⇒ 它读 `<workspace>/package.json`（**不存在**，仓库在 `<workspace>/mellow/`）
+      #   ⇒ 报 `Error: No pnpm version is specified.` ⇒ **整个 Linux 作业在第一步就死**
+      #   （v1.5.34 发版实测；该 workflow 历史里 v1.5.33 / v1.5.29 的失败都是它）。
+      #   注意 `working-directory:` 对它**无效** —— 它是 JS action，不是 `run` 步骤。
       - uses: pnpm/action-setup@v5
+        with:
+          package_json_file: mellow/package.json
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc

@@ -6,6 +6,16 @@ const workflow = readFileSync(resolve(root, '.github/workflows/runtime-qualifica
 const cargoManifest = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n');
 const releaseBuilds = [...workflow.matchAll(/run:\s*cargo build --release([^\n]*)/g)];
 
+// ── YAML 注释剥离（**模块级唯一实现** —— 本文件里**两处**判据共用）──────────────────
+// 【为什么必须有】判据扫的是 workflow **源码**，而**说明注释**里会**引用**判据要匹配的字面量
+//   （本仓已实测 4 次的同型坑：注释满足 / 触发判据）。
+// 【为什么提到模块级】2026-10-12（审计 §4.322）：本剥法原先**只定义在「非默认入口探针」块内**
+//   ⇒ **路径一致性块没剥注释** ⇒ 一条写着 `working-directory:` 的说明注释被当成了**真值**
+//   （实测报出「`working-directory` 与 checkout 落点不一致」，而那个值其实是半句中文注释）。
+//   ⇒ 同族判据的**剥法必须一致**（否则它们只是「两个带不同 bug 的意见」）。
+// ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
+const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+
 if (!/workflow_dispatch:\s*\n\s+inputs:\s*\n\s+target:/.test(workflow)
   || !/macos-windows/.test(workflow)
   || !/inputs\.target == 'all' \|\| inputs\.target == 'macos-windows'/.test(workflow)) {
@@ -59,7 +69,9 @@ if (!/Windows Source Fidelity gate/.test(workflow)
     if (start < 0) { problems.push(`workflow 缺少 job ${name}`); continue; }
     const rest = workflow.slice(start + 1);
     const next = /\n  [a-z][a-z0-9-]*:\n/.exec(rest.slice(name.length + 4));
-    const body = next === null ? rest : rest.slice(0, name.length + 4 + next.index);
+    // ⚠️ **必须剥 YAML 注释**（2026-10-12，审计 §4.322）—— 否则**说明注释**里写的
+    //   `working-directory:` / `path:` 会被当成真值（实测踩到）。用**模块级**的同一实现。
+    const body = stripYamlComments(next === null ? rest : rest.slice(0, name.length + 4 + next.index));
     // 该 job 的 checkout 落点（缺省 = 仓库根）
     // ⚠️ 版本号必须用 `@v\d+` 匹配。首版写死 `@v4`，2026-10-10 把 action 升到 v5（审计 §4.283）
     //   时该正则**失配** ⇒ `checkoutPath` 恒为 '' ⇒ 本判据把每个 `working-directory: mellow`
@@ -108,6 +120,14 @@ if (!/Windows Source Fidelity gate/.test(workflow)
       }
     }
   }
+  // canary：两向（与判定**共用** stripYamlComments）—— 2026-10-12（审计 §4.322）
+  if (/working-directory:/.test(stripYamlComments('      # working-directory: 说明文字\n      - name: x'))) {
+    throw new Error('路径一致性 canary 失效：**整行注释**里的 `working-directory:` 未被剥掉'
+      + '（那样说明注释会触发假违规 —— 实测已发生过一次）');
+  }
+  if (!/working-directory:/.test(stripYamlComments('      working-directory: mellow'))) {
+    throw new Error('路径一致性 canary **过宽**：**真代码行**里的 `working-directory:` 被误剥（会漏检）');
+  }
   if (problems.length > 0) {
     throw new Error(`Runtime Qualification 路径一致性违规：\n  ${problems.join('\n  ')}`);
   }
@@ -124,7 +144,7 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   const ENTRY_PROBES = ['theme-follow-probe', 'i18n-engine-probe', 'startup-state-probe'];
   // 剥 YAML 注释行 —— 否则本步骤的**说明注释**里写的「不得用 continue-on-error」会触发判据
   // （本仓已实测过 4 次的同型坑：注释满足/触发判据）。
-  const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  // ⚠️ 2026-10-12（审计 §4.322）：本实现已**提到模块级** `stripYamlComments`，两处共用。
   // 该步骤必须在**每个带 Playwright 的平台 job** 里都存在（Linux + Windows）——
   // 只挂一个平台，另一个平台的非默认入口仍无人走；而本仓平台专有代码集中在 Adapter
   // （ADR-0016/0022），Windows 侧尤其值得跑（上一轮在 Linux 抓到的正是**按键处理**类问题）。
