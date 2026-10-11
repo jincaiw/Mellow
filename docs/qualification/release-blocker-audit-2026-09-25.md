@@ -19781,6 +19781,61 @@ ADR-0034 实际含 **11 个 `## Q<N>` 小节**，覆盖 **12 个问**（Q1–Q8�
 
 ⇒ 同族「只锁了一半」累计 **第 143 次**（§4.170–§4.314）。
 
+## 4.316 升版其实是 **5 处**：`tools/source-fidelity/Cargo.lock` **落后 28 个版本**（2026-10-11）
+
+### 一、透镜（承上轮的登记项）
+
+上轮我把「**`cargo --locked` 明文规则未落实**」登记为**未做**（理由：离线无法验证 lockfile 一致性）。
+⇒ 本轮**先试能不能取证**：`cargo metadata --locked`（**联网**）—— 结果**发现了另一件事**。
+
+### 二、取证
+
+`cargo metadata --locked` 对 `apps/desktop/src-tauri` **EXIT=0** ✅，但对 `tools/source-fidelity` **EXIT=101**：
+
+> `error: cannot update the lock file …/tools/source-fidelity/Cargo.lock because --locked was passed`
+
+⇒ **两份 lockfile 里 `mellow-desktop` 的版本不一致**：
+
+| lockfile | `mellow-desktop` version |
+|---|---|
+| `apps/desktop/src-tauri/Cargo.lock` | **1.5.33** ✅（== 真值源） |
+| `tools/source-fidelity/Cargo.lock` | **1.5.5** ❌ **落后 28 个版本** |
+
+**根因**：该工具 **path-依赖** `apps/desktop/src-tauri` ⇒ 它的 lock 也记 `mellow-desktop` 的版本。
+而**发版手册写「升版是 4 处」**、`VERSION_SOURCES` **只守 4 处** ⇒ **第 5 处无人守**。
+**后果两条**：① 该工具的 `cargo build --locked` **失败**；② `run-source-fidelity-corpus.sh` **不**带 `--locked`
+⇒ **静默重写**那份 lock ⇒ 本地产物与仓库不一致，且**无人知道**。
+
+### 三、处置
+
+① **修** `tools/source-fidelity/Cargo.lock` 的版本（`1.5.5` → `1.5.33`）；
+② **`VERSION_SOURCES` 4 → 5**（用**共用**的 `lockVersionOf` 助手，不复制 pick 逻辑）；
+③ **发版手册**「4 处」→「5 处」（判据**当场抓到**手册副本不一致 —— 这正是它的设计）；
+④ **CI 的 6 条 `cargo` 命令全部加 `--locked`**（`run-source-fidelity-corpus.sh` 也加）；
+⑤ **判据 ㊵**：CI 的 `cargo` 命令必须带 `--locked`；
+⑥ 登记 `1.5.5` 到 `PACKAGING_VERSION_ALLOW`（更正块**引用旧值**）。
+
+### 四、边界如实声明
+
+- ⚠️ ㊵ 只锁**单行** `run: cargo …`（多行 `run: |` 里的 cargo **不在覆盖内**）。
+- ⚠️ **加 `--locked` 之前实测过**：`cargo metadata --locked` 对**两份** lockfile 都 EXIT=0
+  ⇒ 与 manifest 一致 ⇒ **不会**让 CI 红（这就是本节的取证）。
+- ⚠️ 剩余登记项：**8 处跨文件 `[覆盖型]` 标记未迁移**（需先决定共享助手形态 —— 架构级）。
+
+### 五、注入验证（**3/3**）
+
+| 注入 | 结果 |
+|---|---|
+| 删掉一处 `--locked` | ✅ 红 |
+| 新增一条不带 `--locked` 的 cargo 命令 | ✅ 红 |
+| 删掉一条 cargo 命令 | ✅ 红：`实际 5 ≠ 基线 6` |
+
+### 六、`coverEq` 又抓到 1 处
+
+新标记 ⇒ ㊱ 25 → **26**。
+
+⇒ 同族「只锁了一半」累计 **第 144 次**（§4.170–§4.315）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

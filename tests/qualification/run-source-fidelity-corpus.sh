@@ -21,7 +21,7 @@ TAURI="$ROOT/apps/desktop/src-tauri"
 
 echo "== 1/5 构建 source_fidelity 工具 =="
 TOOL="$ROOT/tools/source-fidelity"
-cargo build --quiet --manifest-path "$TOOL/Cargo.toml"
+cargo build --quiet --locked --manifest-path "$TOOL/Cargo.toml"
 BIN="$TOOL/target/debug/source-fidelity"
 [ -x "$BIN" ]
 

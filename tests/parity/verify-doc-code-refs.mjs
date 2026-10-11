@@ -560,6 +560,8 @@ const PACKAGING_VERSION_ALLOW = new Map([
   ['docs/plans/packaging-release.md', new Map([
     ['0.1.0', '**更正块引用的旧值**（原文曾写「当前版本 0.1.0」）—— 更正惯例是引用错误原文，故必须保留'],
     ['v1.5.2', '**历史起点**（「v1.5.2 起替换占位域名」），不是当前版本'],
+    ['1.5.5', '**更正块引用的旧值**（§4.316：`tools/source-fidelity/Cargo.lock` 曾停在 `1.5.5`）—— '
+      + '同 `0.1.0` 的理由：更正惯例是**引用错误原文**，故必须保留'],
   ])],
   ['tests/qualification/packaging-gate.md', new Map([
     ['0.1.0', '**记录时的版本**（v0.1.0 时期的 Gate 记录）—— 文件顶部已加「当前版本以 tauri.conf.json 为准」指针，故保留为历史事实'],
@@ -650,7 +652,22 @@ const PACKAGING_VERSION_ALLOW = new Map([
 //   恰好写着「**升版是 4 处（漏了 Cargo.lock）**」，说明这形态被记录过，但**没落成判据**）。
 // 【为什么值得守】版本不一致 ⇒ 制品名 / updater 元数据 / 关于面板互相矛盾，
 //   而这类「同一数值多处维护」在本仓已出现 4 次（§4.40 族的 spec 硬数字、§4.161 的导出数、§4.169 的标记数）。
-// 【锚点】`tauri.conf.json` 是**真值源**（memory / 发版手册均如此声明）；其余 3 处必须 == 它。
+// 【锚点】`tauri.conf.json` 是**真值源**（memory / 发版手册均如此声明）；其余必须 == 它。
+// ⚠️ **2026-10-11（审计 §4.316）：升版其实是 5 处，不是 4 处。** `tools/source-fidelity/Cargo.lock`
+//   也含 `mellow-desktop` 的 version —— 因为该工具**path-依赖** `apps/desktop/src-tauri`。
+//   实测它**落后 28 个版本**（`1.5.5` vs `1.5.33`），而**没有任何判据守它**。后果两条：
+//   ① 该工具的 `cargo build --locked` 会**失败**（实测 `cargo metadata --locked` EXIT=101）；
+//   ② `tests/qualification/run-source-fidelity-corpus.sh` **不**带 `--locked` ⇒ **静默重写**那份 lock
+//      ⇒ 本地产物与仓库不一致，且**无人知道**。
+//   ⇒ 现把两份 `Cargo.lock` 都纳入，并**共用**同一段 pick（不复制）。
+/** 判定与 canary **共用**：从一份 `Cargo.lock` 里取本包（`mellow-desktop`）的 version。 */
+const lockVersionOf = (s) => {
+  const crate = (readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8')
+    .match(/^name\s*=\s*"([^"]+)"/m) ?? [])[1];
+  if (crate === undefined) return undefined;
+  const re = new RegExp(`\\[\\[package\\]\\]\\nname = "${crate}"\\nversion = "([^"]+)"`);
+  return (s.match(re) ?? [])[1];
+};
 const VERSION_SOURCES = [
   { path: 'apps/desktop/src-tauri/tauri.conf.json', label: 'tauri.conf.json（**真值源**）',
     pick: (s) => JSON.parse(s).version },
@@ -659,14 +676,9 @@ const VERSION_SOURCES = [
   { path: 'apps/desktop/src-tauri/Cargo.toml', label: 'src-tauri/Cargo.toml',
     pick: (s) => (s.match(/^version\s*=\s*"([^"]+)"/m) ?? [])[1] },
   { path: 'apps/desktop/src-tauri/Cargo.lock', label: 'src-tauri/Cargo.lock（**手工改，最易漏**）',
-    pick: (s) => {
-      // 本包的 lock 条目：`[[package]]\nname = "<crate>"\nversion = "<v>"`
-      const crate = (readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8')
-        .match(/^name\s*=\s*"([^"]+)"/m) ?? [])[1];
-      if (crate === undefined) return undefined;
-      const re = new RegExp(`\\[\\[package\\]\\]\\nname = "${crate}"\\nversion = "([^"]+)"`);
-      return (s.match(re) ?? [])[1];
-    } },
+    pick: lockVersionOf },
+  { path: 'tools/source-fidelity/Cargo.lock', label: 'tools/source-fidelity/Cargo.lock（**手工改**；§4.316 新纳入）',
+    pick: lockVersionOf },
 ];
 {
   const read0 = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
@@ -683,8 +695,10 @@ const VERSION_SOURCES = [
     got.push({ ...src, v });
   }
   // 防空转：**4 处**必须都被解析到（少一处 ⇒ 判据范围萎缩）
-  if (got.length !== VERSION_SOURCES.length || VERSION_SOURCES.length !== 4) {
-    fail(`升版一致性只解析到 ${got.length}/${VERSION_SOURCES.length} 处（应为 4）—— 判据会空转`);
+  // ⚠️ 防空转下限：`VERSION_SOURCES` 被删空会让本判据**空转**。
+  //   2026-10-11（审计 §4.316）：4 → **5**（纳入 `tools/source-fidelity/Cargo.lock`）。
+  if (got.length !== VERSION_SOURCES.length || VERSION_SOURCES.length !== 5) {
+    fail(`升版一致性只解析到 ${got.length}/${VERSION_SOURCES.length} 处（应为 5）—— 判据会空转`);
   }
   const uniq = new Set(got.map((g) => g.v));
   if (uniq.size > 1) {
@@ -3467,7 +3481,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 315; // 2026-10-11 加 §4.315 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 316; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');

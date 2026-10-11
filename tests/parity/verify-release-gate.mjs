@@ -1037,7 +1037,7 @@ for (const anchor of [
   'run: pnpm run build',                                 // 桌面构建
   'node scripts/verify-release-bundle.mjs',              // 渲染层指纹（G7-TYPO-04）
   'run: npm run parity',                                 // parity 护栏链
-  'run: cargo test',                                     // Rust System Core
+  'run: cargo test --locked',                            // Rust System Core（--locked：lockfile 必须与 manifest 一致）
 ]) {
   if (!ci.includes(anchor)) fail(`ci.yml 缺少门禁锚点：${anchor}`);
 }
@@ -4704,7 +4704,7 @@ const stripStrings = (s) => s.replace(
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 25; // [覆盖型] 基线 25
+  const COVERAGE_MARK_BASELINE = 26; // [覆盖型] 基线 26
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -5011,6 +5011,58 @@ const stripStrings = (s) => s.replace(
     + '⚠️ **边界**：只锁「针不得只在注释里」+「针不唯一必须登记」，**不覆盖**「定义被删而用法尚存」'
     + '（那半靠**锚定正则 + canary**，§4.314 已修）；⚠️ 另一边界：`stripJsComments` **保留字符串字面量**'
     + ' ⇒ 「针只在**字符串**里」仍算「在代码里」');
+}
+
+// ── ㊵ CI 的 `cargo` 命令必须带 `--locked`（2026-10-11，审计 §4.316）──
+// 【为什么】发版手册**逐字**写着「改完用 `cargo check --locked` 验证」「漏改 `Cargo.lock` 会让
+//   `--locked` 构建失败」—— 但 **CI 的 6 条 `cargo` 命令一条都没带 `--locked`** ⇒
+//   lockfile 陈旧时 cargo 会**就地重写**它并**继续构建**（`--locked` 才会失败）。
+//   ⚠️ 实测代价：`tools/source-fidelity/Cargo.lock` **落后 28 个版本**（`1.5.5` vs `1.5.33`）——
+//     因为发版手册只写「**4 处**」、判据只守 4 处，而该工具 **path-依赖** `mellow-desktop`。
+//     （本轮已修：手册改「5 处」、`VERSION_SOURCES` 纳入它。）
+// 【判据】`.github/workflows/*.yml` 里每个单行 `run: cargo <subcommand>` 都必须带 `--locked`。
+//   ⚠️ **边界如实声明**：只锁**单行** `run: cargo …`（多行 `run: |` 里的 cargo 不在覆盖内）。
+// 【为什么安全】加之前**实测**过：`cargo metadata --locked` 对**两份** lockfile 都 EXIT=0
+//   ⇒ lockfile 与 manifest 一致 ⇒ 加 `--locked` **不会**让 CI 红（§4.316 的取证）。
+{
+  const wfDir40 = '.github/workflows';
+  const wfFiles40 = existsSync(resolve(root, wfDir40))
+    ? readdirSync(resolve(root, wfDir40)).filter((f) => /\.ya?ml$/.test(f)).sort()
+    : [];
+  /** 判定与 canary **共用**：从一行里抽 `run: cargo …` 的命令体（null = 不是 cargo 行）。 */
+  const cargoRunOf = (l) => {
+    const m = /^\s*(?:-\s*)?run:\s*(cargo\s+.+?)\s*$/.exec(l);
+    return m === null ? null : m[1];
+  };
+  const offenders40 = [];
+  let cargoLines40 = 0;
+  for (const f of wfFiles40) {
+    read(`${wfDir40}/${f}`).split('\n').forEach((l, i) => {
+      const cmd = cargoRunOf(l);
+      if (cmd === null) return;
+      cargoLines40 += 1;
+      if (!/\s--locked\b/.test(cmd)) offenders40.push(`${f}:${i + 1} → \`${cmd}\``);
+    });
+  }
+  if (offenders40.length > 0) {
+    fail(`㊵ 这些 CI \`cargo\` 命令**没有** \`--locked\`：${offenders40.join('；')}`
+      + ' —— 没有 `--locked` 时，lockfile 与 manifest 不一致 ⇒ cargo **就地重写 lock 并继续**'
+      + '（**静默**），而发版手册**逐字**要求 `--locked`。请补 `--locked`');
+  }
+  // 防空转：[覆盖型]（cargo 命令增删时须一并复核）
+  const CARGO_CMD_BASELINE = 6; // [覆盖型] 基线 6
+  coverEq('㊵ CI 里的 cargo 命令数', cargoLines40, CARGO_CMD_BASELINE,
+    '命令被删会让「CI 必须用 --locked」重新变成**无人守**');
+  // canary：两向（与判定**共用** cargoRunOf）
+  if (!/\s--locked\b/.test(cargoRunOf('        run: cargo test --locked'))) {
+    fail('㊵ canary 失效：带 `--locked` 的样本被判为缺');
+  }
+  if (/\s--locked\b/.test(cargoRunOf('        run: cargo build --release --features custom-protocol'))) {
+    fail('㊵ canary **过宽**：不带 `--locked` 的样本被判为有');
+  }
+  console.log(`Release gate: CI 的 \`cargo\` 命令 —— ${cargoLines40} 条**全部带 \`--locked\`**`
+    + '（lockfile 与 manifest 不一致时**响亮失败**，而不是**就地重写**）；'
+    + '⚠️ **边界**：只锁**单行** `run: cargo …`（多行 `run: |` 里的 cargo 不在覆盖内）');
 }
 
 if (errors.length > 0) {

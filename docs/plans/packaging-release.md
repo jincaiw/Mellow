@@ -19,12 +19,17 @@ cd apps/desktop
 node scripts/sync-version.mjs
 ```
 
-⚠️ **升版是 4 处，不是 3 处**：`sync-version.mjs` 只同步
-`tauri.conf.json` / `package.json` / `Cargo.toml` —— **`src-tauri/Cargo.lock` 需要自己改**
-（`mellow-desktop` 的 `version` 字段）。改完用 `cargo check --locked` 验证。
-漏改 `Cargo.lock` 会让 `--locked` 构建失败（或产物版本元数据不一致）。
+⚠️ **升版是 5 处，不是 3 处**：`sync-version.mjs` 只同步
+`tauri.conf.json` / `package.json` / `Cargo.toml` —— **两份 `Cargo.lock` 需要自己改**
+（`mellow-desktop` 的 `version` 字段）：`src-tauri/Cargo.lock` **与**
+`tools/source-fidelity/Cargo.lock`（该工具 **path-依赖** `mellow-desktop`，所以它的 lock 也记版本）。
+改完用 `cargo check --locked` 验证。
+⚠️ **2026-10-11（审计 §4.316）**：此前写「4 处」⇒ `tools/source-fidelity/Cargo.lock` **落后 28 个版本**
+（`1.5.5` vs `1.5.33`），后果是该工具的 `cargo build --locked` **失败**，而
+`run-source-fidelity-corpus.sh` **不**带 `--locked` ⇒ **静默重写**那份 lock。
+现判据 `verify-doc-code-refs.mjs` 已把**两份 lock 都纳入**（`VERSION_SOURCES` 5 处）。
 
-发布新版本：改 `tauri.conf.json` → 跑 sync → **手改 `Cargo.lock`** → `cargo check --locked` → 按 §9 顺序发版。
+发布新版本：改 `tauri.conf.json` → 跑 sync → **手改两份 `Cargo.lock`** → `cargo check --locked` → 按 §9 顺序发版。
 
 ## 2. 产物矩阵
 
@@ -134,10 +139,10 @@ Windows/Linux 在 CI 对应 runner 或真机执行）。
 ## 9. 发布清单（Release Checklist）
 
 > ⚠️ **顺序不能颠倒**（2026-10-06 复核修正）：
-> ① 升版 4 处 → ② `npm run parity` → ③ **先推 `main` 等 CI 全绿** → ④ 再推 `v<版本>` 标签（**标签才触发 Release**）。
+> ① 升版 5 处 → ② `npm run parity` → ③ **先推 `main` 等 CI 全绿** → ④ 再推 `v<版本>` 标签（**标签才触发 Release**）。
 
-1. 改 `tauri.conf.json` 的 `version` → `node scripts/sync-version.mjs` → **手改 `src-tauri/Cargo.lock`**
-   → `cargo check --locked`（**4 处**，见 §1）；
+1. 改 `tauri.conf.json` 的 `version` → `node scripts/sync-version.mjs` → **手改两份 `Cargo.lock`**
+   → `cargo check --locked`（**5 处**，见 §1）；
 2. `npm run parity` 全绿（含 19 个护栏 + vendored CoreEditor 的 lint/jest）；
    - ⚠️ **不要用 `npm run build` 作为「渲染层构建」的验证**：`apps/desktop` 的 `build`
      script 只做 `build-editor-bundle + tsc + vite`，**不构建各包 `dist`** ⇒
