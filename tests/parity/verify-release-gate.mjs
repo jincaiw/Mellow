@@ -2987,11 +2987,11 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   // 顶层键契约（与夹具实际**双向**相等；加/删字段必须同时改这里）
   const TOP_CONTRACT = {
     'ci-actions.json': ['actions', 'evidenceRuns', 'floatingRefExceptions', 'knownFutureMigrations',
-      'knownRemainingWarnings', 'note', 'reviewedAt', 'source', 'why'],
+      'knownRemainingWarnings', 'note', 'reviewedAt', 'source', 'staleAfterDays', 'why'],
     'cross-package-edges.json': ['edges', 'note', 'source', 'why'],
     'export-collaborators.json': ['callSites', 'entries', 'note', 'source', 'statusVocabulary', 'why'],
     'export-feature-parity.json': ['entries', 'note', 'source', 'statusVocabulary', 'why'],
-    'local-tools.json': ['note', 'reviewedAt', 'source', 'tools', 'why'],
+    'local-tools.json': ['note', 'reviewedAt', 'source', 'staleAfterDays', 'tools', 'why'],
     'typora-panel-only-keys.json': ['entries', 'note', 'source', 'why'],
     'typora-persisted-uncovered.json': ['entries', 'extract', 'kindVocabulary', 'note', 'source'],
     'typora-preferences-matrix.json': ['entries', 'note', 'source'],
@@ -3001,7 +3001,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     'ci-actions.json': {
       actions: ['action', 'checkedAt', 'evidence', 'latestKnown', 'minMajorForNode24', 'note', 'ref', 'runtime'],
       floatingRefExceptions: ['action', 'reason', 'ref'],
-      knownFutureMigrations: ['observedIn', 'todo', 'what'],
+      knownFutureMigrations: ['observedIn', 'todo', 'what', 'windowOpensAt'],
       knownRemainingWarnings: ['observedIn', 'todo', 'what', 'whyNotAnActionIssue'],
     },
     'cross-package-edges.json': {
@@ -3742,6 +3742,131 @@ const stripJsComments = (s) => {
     + `其中 ${withQ26} 份含 \`## Q<N>\` 小节、自述不一致 ${offenders26.length} 份`
     + `（[健康度型] 下限 ${WITHQ26_FLOOR}）`
     + '；⚠️ 只锁「裁决」节那一处与「标题计数不符时必须有 ⚠️ 更正块」，不锁标题本身');
+}
+
+// ── ㉗ **带日期的登记**必须有「到期机制」（2026-10-11，审计 §4.298）──
+// 【为什么】判据 ⑱ 只校验 `checkedAt` / `reviewedAt` 的**格式**（`YYYY-MM-DD`），**没有保质期** ——
+//   于是「**人工核实的外部事实**」（`latestKnown` / `minMajorForNode24`）可以**永久留在那里**而无人复核；
+//   而 `knownFutureMigrations` 的**未来日期**（`runs-on: ubuntu-latest` → Ubuntu 26，2026-10-19）
+//   此前**连字段都没有**（日期只写在 `observedIn` 散文里）⇒ **到点无人知**。
+//   ⇒ 这正是本仓记过的「**「登记为已知」≠「有人守」**」（`PITFALLS §4.394`）：**登记了日期，但没有任何东西会因它过期而响**。
+// 【判据】两份**带日期的登记表**（`ci-actions.json` / `local-tools.json`）：
+//   ① 顶层必须有**正整数** `staleAfterDays` —— **阈值写在登记表里、不写进判据**（可复核、可解释）；
+//   ② 每条 `checkedAt`（`local-tools.json` 用顶层 `reviewedAt`）必须是合法 `YYYY-MM-DD` 且**不得是未来**；
+//   ③ **今天 − 最早的日期** ≤ `staleAfterDays`（**取最早**：只更新一半仍是「只锁了一半」）；
+//   ④ 每条 `knownFutureMigrations` 必须有合法 `windowOpensAt`；**今天 ≥ `windowOpensAt` ⇒ 红**
+//      （**到期不是自动通过，而是强制重新分诊**：处置它，或**更新 `windowOpensAt` 并写明新的观察依据**）。
+// ⚠️ **边界如实声明**：本判据**不能**阻止「无限推期」（那要人判断）；它只保证
+//   **每次推期都必须有人动手**（而不是静默过期）。⚠️ 也**不守**「上游是否真的又发了新版」—— 离线判据无法知道。
+// ⚠️ **本判据依赖「今天」**（UTC）⇒ 结果**会随时间变化** —— 这是**设计意图**（它就是那个闹钟）。
+{
+  const DATED_REGISTRIES = [
+    { file: 'tests/parity/fixtures/ci-actions.json', dateKey: 'checkedAt', in: 'actions' },
+    { file: 'tests/parity/fixtures/local-tools.json', dateKey: 'reviewedAt', in: null },
+  ];
+  const DATED_REGISTRY_BASELINE = 2; // [覆盖型] 基线 2
+  const DAY_MS = 86400000;
+  const todayUtc = () => {
+    const d = new Date();
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  };
+  const parseDay = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(String(s))
+    ? Date.UTC(Number(String(s).slice(0, 4)), Number(String(s).slice(5, 7)) - 1, Number(String(s).slice(8, 10)))
+    : null);
+  /** 判定与 canary **共用**：一份登记表的**保质期**问题。 */
+  const stalenessIssues = (fx, spec, today) => {
+    const out = [];
+    const stale = fx?.staleAfterDays;
+    if (!Number.isInteger(stale) || stale <= 0) {
+      out.push('`staleAfterDays` 缺失或不是正整数（**阈值必须显式写进登记表**，不放判据里）');
+      return out;
+    }
+    const rows = spec.in === null ? [{ [spec.dateKey]: fx?.[spec.dateKey] }] : (fx?.[spec.in] ?? []);
+    const days = [];
+    for (const [i, r] of rows.entries()) {
+      const t = parseDay(r?.[spec.dateKey]);
+      const at = `${spec.in ?? '（顶层）'}[${i}].${spec.dateKey}`;
+      if (t === null) { out.push(`${at} 不是 \`YYYY-MM-DD\``); continue; }
+      if (t > today) out.push(`${at} 是**未来**日期`);
+      days.push({ at, t });
+    }
+    if (days.length === 0) { out.push(`没有解析出任何 \`${spec.dateKey}\``); return out; }
+    const oldest = days.reduce((a, b) => (b.t < a.t ? b : a));
+    const age = Math.floor((today - oldest.t) / DAY_MS);
+    if (age > stale) {
+      out.push(`最早的 \`${spec.dateKey}\`（${oldest.at}）距今 **${age} 天**，超过 \`staleAfterDays\` = ${stale}`
+        + ' ⇒ 请复核并用 `gh api` 重读上游事实，然后更新日期');
+    }
+    return out;
+  };
+  /** 判定与 canary **共用**：`knownFutureMigrations` 的**到期**问题。 */
+  const expiryIssues = (arr, today) => {
+    const out = [];
+    for (const [i, e] of (arr ?? []).entries()) {
+      const t = parseDay(e?.windowOpensAt);
+      if (t === null) {
+        out.push(`knownFutureMigrations[${i}] 的 \`windowOpensAt\` 不是 \`YYYY-MM-DD\``
+          + '（**删掉字段不能绕过本判据**）');
+        continue;
+      }
+      if (today >= t) {
+        out.push(`knownFutureMigrations[${i}]（${e?.what ?? '?'}）的 \`windowOpensAt\` = ${e.windowOpensAt} **已到点**`
+          + ' ⇒ 请**重新分诊**：① 已适配 ⇒ 删除该条目；② 尚未 ⇒ **更新 `windowOpensAt` 并写明新的观察依据**');
+      }
+    }
+    return out;
+  };
+  const today = todayUtc();
+  let datedChecked = 0;
+  const offenders27 = [];
+  for (const spec of DATED_REGISTRIES) {
+    if (!existsSync(resolve(root, spec.file))) { fail(`㉗ 缺少登记表 ${spec.file}`); continue; }
+    datedChecked += 1;
+    const fx = JSON.parse(read(spec.file));
+    for (const s of stalenessIssues(fx, spec, today)) offenders27.push(`${spec.file}：${s}`);
+    for (const s of expiryIssues(fx.knownFutureMigrations, today)) offenders27.push(`${spec.file}：${s}`);
+  }
+  if (offenders27.length > 0) {
+    fail(`带日期的登记**过期或未声明保质期**：${offenders27.join('；')}`);
+  }
+  if (datedChecked < DATED_REGISTRY_BASELINE) {
+    fail(`㉗ 只检查到 ${datedChecked} 份带日期的登记表（[覆盖型] 基线 ${DATED_REGISTRY_BASELINE}）`
+      + ' —— 扫描面漂移会让本判据空转');
+  }
+  // canary ①（正样本）：**未过期**的样本不得报
+  const SPEC_A = { file: 'x', dateKey: 'checkedAt', in: 'actions' };
+  if (stalenessIssues({ staleAfterDays: 90, actions: [{ checkedAt: '2026-10-10' }] }, SPEC_A, today).length !== 0) {
+    fail('㉗ canary 失效：未过期的样本被误报');
+  }
+  // canary ②（负样本）：**超期**必须检出（与判定共用谓词）
+  if (!stalenessIssues({ staleAfterDays: 90, actions: [{ checkedAt: '2020-01-01' }] }, SPEC_A, today)
+    .some((s) => s.includes('超过'))) {
+    fail('㉗ canary 失效：超期样本**未被检出**（判据已退化成空真）');
+  }
+  // canary ③（负样本）：**缺** `staleAfterDays` 必须检出
+  if (!stalenessIssues({ actions: [{ checkedAt: '2026-10-10' }] }, SPEC_A, today)
+    .some((s) => s.includes('staleAfterDays'))) {
+    fail('㉗ canary 失效：缺 `staleAfterDays` **未被检出**');
+  }
+  // canary ④（负样本）：**未来**日期必须检出（否则「填 2099 年」就能绕过保质期）
+  if (!stalenessIssues({ staleAfterDays: 90, actions: [{ checkedAt: '2099-01-01' }] }, SPEC_A, today)
+    .some((s) => s.includes('未来'))) {
+    fail('㉗ canary 失效：**未来**日期未被检出（填 2099 年即可绕过保质期）');
+  }
+  // canary ⑤（负样本）：`windowOpensAt` **已到点**必须检出
+  if (!expiryIssues([{ what: 'w', windowOpensAt: '2020-01-01' }], today).some((s) => s.includes('已到点'))) {
+    fail('㉗ canary 失效：已到点的 `windowOpensAt` **未被检出**');
+  }
+  // canary ⑥（正样本 + **防绕过**）：未到点不得报；但**缺字段**必须报（不能「没有字段就跳过」）
+  if (expiryIssues([{ what: 'w', windowOpensAt: '2099-01-01' }], today).length !== 0) {
+    fail('㉗ canary 失效：未到点的 `windowOpensAt` 被误报');
+  }
+  if (expiryIssues([{ what: 'w' }], today).length !== 1) {
+    fail('㉗ canary 失效：缺 `windowOpensAt` 的条目**未被检出** —— 那样「把字段删掉」就能绕过本判据');
+  }
+  console.log(`Release gate: 带日期的登记 —— 检查 ${datedChecked} 份登记表的保质期与到期日，`
+    + `过期 ${offenders27.length} 项（[覆盖型] 基线 ${DATED_REGISTRY_BASELINE}）`
+    + '；⚠️ 不守「上游是否真的又发了新版」（离线判据无法知道），也不能阻止「无限推期」');
 }
 
 if (errors.length > 0) {
