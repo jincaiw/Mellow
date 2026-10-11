@@ -5110,6 +5110,65 @@ const stripStrings = (s) => s.replace(
     + `（${entries41.length} 个工具全是 \`local-only\`）⇒ 那半**只能靠人**（㉗ 的**到期变红**是唯一的机械化提醒）`);
 }
 
+// ── ㊷ markdown 表格：**表头格数必须 == 分隔行格数**（2026-10-11，审计 §4.319）──
+// 【为什么】本仓**只对 §12 的 D 表**守了「**恰好 4 格**」—— 理由是 GFM 会**静默丢弃**超出表宽的格
+//   （实测代价：D-AB 的前 3 格在一次编辑中丢失 ⇒ **整条在渲染视图中不可见**）。
+//   ⇒ **同一句话的另一半**：**其余 809 张表**的**结构健全**没有任何判据。
+// 【为什么只锁「表头 vs 分隔行」】分隔行**只含** `-` / `:` / `|` / 空格 ⇒ **无行内码、无转义**
+//   ⇒ 格数**可精确判定**（**无假阳性**）。
+//   ⚠️ **数据行**的格数**不锁**：它会含**行内代码**（可能内含 `|`）与**转义 `\|`**，而正确的剥离
+//     需要**符合 CommonMark「同长定界」的扫描器**（本仓那个在**本机工具** `audit-bold-pairing.mjs` 里，
+//     **不进 CI** ⇒ 护栏**不能**复用）⇒ 手写剥离器**不可靠** ⇒ 按「**不健全就不落判据**」**只登记读数**
+//     （§4.319：两种自包含剥离器都测到「行 > 表头」**0 处**）。
+// 【判据】扫全部被跟踪的 `.md`（跳过围栏代码块）：每张表（表头行 + 紧跟的 `|---|` 分隔行）
+//   两者的**格数必须相等**。
+{
+  const tracked42 = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean).filter((f) => f.endsWith('.md'));
+  /** 判定与 canary **共用**：一行的格数（**只适用于无行内码的行**，如分隔行与表头行）。 */
+  const cellCount42 = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').length;
+  const isSep42 = (l) => /^\s*\|[\s:|-]+\|\s*$/.test(l);
+  let tables42 = 0;
+  const bad42 = [];
+  for (const f of tracked42) {
+    const lines = read(f).split('\n');
+    let inFence = false;
+    for (let i = 0; i + 1 < lines.length; i += 1) {
+      if (/^\s*(```|~~~)/.test(lines[i])) { inFence = !inFence; continue; }
+      if (inFence) continue;
+      if (!/^\s*\|/.test(lines[i]) || !isSep42(lines[i + 1])) continue;
+      tables42 += 1;
+      const a = cellCount42(lines[i]);
+      const b = cellCount42(lines[i + 1]);
+      if (a !== b) bad42.push(`${f}:${i + 1}（表头 ${a} 格 / 分隔行 ${b} 格）`);
+    }
+  }
+  if (bad42.length > 0) {
+    fail(`㊷ 这些 markdown 表格的**表头格数与分隔行不一致**：${bad42.slice(0, 8).join('、')}`
+      + `${bad42.length > 8 ? ` …（共 ${bad42.length} 处）` : ''}`
+      + ' —— GFM 的**列数由分隔行决定**：表头多出的格会被**静默丢弃**、少的会渲染为空'
+      + '（本仓已记过同型代价：D-AB 的前 3 格丢失 ⇒ **整条在渲染视图中不可见**）。'
+      + '请把两者对齐（审计 §4.319）');
+  }
+  // 防空转：[健康度型]（输入是「文档里的表格数」，随开发增长 ⇒ 留余量）
+  const TABLE_SCAN_BASELINE = 700; // [健康度型] 下限 700（立此判据时实测 809 张）
+  if (tables42 < TABLE_SCAN_BASELINE) {
+    fail(`㊷ 只扫到 ${tables42} 张 markdown 表格（[健康度型] 下限 ${TABLE_SCAN_BASELINE}）`
+      + ' —— 解析器或扫描面失效会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** cellCount42 / isSep42）
+  if (cellCount42('| a | b | c |') !== 3 || cellCount42('|---|---|---|') !== 3) {
+    fail('㊷ canary 失效：3 格样本未被数成 3');
+  }
+  if (!isSep42('|---|:--:|---|')) fail('㊷ canary 失效：带对齐冒号的分隔行未被识别');
+  if (isSep42('| a | b |')) fail('㊷ canary **过宽**：**数据行**被当成了分隔行');
+  console.log(`Release gate: markdown 表格的**表结构** —— 扫描 ${tracked42.length} 份 md / ${tables42} 张表，`
+    + `**表头格数 ≠ 分隔行格数** ${bad42.length} 处；`
+    + '⚠️ **边界**：只锁**表头 vs 分隔行**（两者**无行内码/无转义** ⇒ 可精确判定）；'
+    + '**数据行**的格数**不锁**（会含行内代码与 `\\|`，正确的剥离需 CommonMark 同长定界扫描器 —— '
+    + '那个在**本机工具**里、不进 CI）⇒ 那半**只登记读数**（§4.319）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
