@@ -3521,7 +3521,11 @@ const stripJsComments = (s) => {
   //   **不是**「豁免某个对象」的例外表 ⇒ 要求它们有陈旧检查是**错的**（实测踩到：
   //   `RS_SKIP` / `FE_SKIP_DIR` / `FE_SKIP_FILE` 被误报为「缺陈旧检查」）。
   //   ⚠️ 若将来用 `SKIP` 命名**豁免表**，需回来扩本条（并说明）。
-  const TABLE_RE = /^const ([A-Z][A-Z0-9_]*(?:EXEMPT|ALLOW|EXCEPTION|SENTINEL|FROZEN|WHITELIST)[A-Z0-9_]*)\s*=/gm;
+  // ⚠️ 2026-10-11（审计 §4.302）：`TABLE_RE` **原先要求 `^const`（列 0）** ⇒
+  //   **缩进声明的例外表整类不在扫描面内**（实测 9 张：`BOLD_FROZEN` / `CJK_COUNT_EXEMPT` /
+  //   `ID_REF_EXEMPT` / `SCREENSHOT_ORPHAN_EXEMPT` / …）—— 而「例外表必须有陈旧检查」这条纪律
+  //   对它们**从来没生效过**。⇒ 改成 `^\s*const`（与 §4.295 的教训同族：**谓词的扫描面漏了一整类**）。
+  const TABLE_RE = /^\s*const ([A-Z][A-Z0-9_]*(?:EXEMPT|ALLOW|EXCEPTION|SENTINEL|FROZEN|WHITELIST)[A-Z0-9_]*)\s*=/gm;
   const STALE_KW = ['已过期', '过期', '请移除', '请删除', '已不存在', '不再存在', '陈旧', '化石'];
   // ⚠️ 用**模块级的唯一实现**（首版朴素版会被字符串里的 `/*` 吃掉代码；见 `stripJsComments`）。
   const stripComments24 = stripJsComments;
@@ -3550,8 +3554,10 @@ const stripJsComments = (s) => {
       + '表里的条目对应的东西已不存在时，例外会**永久驻留、豁免面悄悄变大**。'
       + '请补一条「已过期 ⇒ 报错并请移除」的检查（形态：`fail(\'…已过期，请移除…\')`）');
   }
-  // 防空转：**覆盖型**（立此判据时实测 17 个例外表 —— 已排除扫描器跳过表）
-  const TABLE_BASELINE = 17; // [覆盖型] 基线 17
+  // 防空转：**覆盖型**（立此判据时实测 25 个例外表 —— 已排除扫描器跳过表；
+  //   ⚠️ 2026-10-11（§4.302）：原为 **17**，修掉「`^const` 只认列 0」的扫描面缺陷后
+  //   纳入 **8 张缩进表** ⇒ 25）
+  const TABLE_BASELINE = 25; // [覆盖型] 基线 25
   if (tables.length < TABLE_BASELINE) {
     fail(`㉔ 只找到 ${tables.length} 个例外表（[覆盖型] 基线 ${TABLE_BASELINE}）`
       + ' —— 命名约定漂移或扫描面萎缩会让本判据**空转**');
@@ -4188,6 +4194,81 @@ const stripJsComments = (s) => {
   console.log(`Release gate: 护栏的 \`node:*\` 导入 —— 扫描 ${guards30.length} 个护栏、词表 ${vocab30.size} 个名字，`
     + `未 import 的裸调用 ${offenders30.length} 处`
     + '；⚠️ 只覆盖**裸调用**（属性访问 / 本地定义不报；**模板内的 `${…}` 表达式不在覆盖内**）');
+}
+
+// ── ㉛ workflow 里**不得**用 `continue-on-error` 吞掉失败（2026-10-11，审计 §4.302）──
+// 【为什么】`continue-on-error: true` 把**步骤失败降级成 job 成功** ⇒ **假绿**（本仓 #1 形态）。
+//   ⚠️ 本仓**真的发生过**（§4.51「发现 2」）：`runtime-qualification.yml` 的两个视觉步骤曾是
+//   `continue-on-error: true`，理由写的是「本步骤用于**采集**基线……**基线入库后**如需作为门禁，
+//   再改为严格比对」—— 而三平台基线**都已入库** ⇒ **该理由按它自己的条件已失效** ⇒
+//   回归**随 v1.5.16 发布**、而门禁**报绿**。修掉之后，注释里立了**明文规则**
+//   「**不得**用 `continue-on-error` 掩盖」—— 但**没有任何判据守它**
+//   （本轮实测：全仓 6 处提及**全在注释里**、**0 处实际使用**）⇒ 明文规则问「**谁在守它**」。
+// 【判据】`.github/workflows/*.yml` 里 `continue-on-error` 的**取值不得是 `true`**
+//   （**step 级与 job 级同形**；`false` 是默认值、不报；表达式（`${{ … }}`）**也要登记**——
+//   它同样是「按条件吞掉失败」）。豁免必须登记进 `CONTINUE_ON_ERROR_EXEMPT` 并给理由（**双向**）。
+// ⚠️ **边界如实声明**：同类还有 **`|| true` / `set +e`**（实测 19 处，**全部**在**诊断 / 清理**类
+//   命令上 —— `pkill` / `cat` / `grep -c` / `xdotool`）⇒ **不做机械禁止**（会大面积假阳性，
+//   而「**做假阳性判据不如不做**」）。本判据只锁**语义最明确**的那一种。
+{
+  const WF_DIR31 = '.github/workflows';
+  const COE_LINE = /^\s*continue-on-error:\s*(.+?)\s*(?:#.*)?$/;
+  /** 判定与 canary **共用**：一行是否命中「`continue-on-error` 取值 != `false`」。 */
+  const hits31Like = (re, line) => {
+    const m = re.exec(line);
+    return m !== null && m[1] !== 'false';
+  };
+  // 豁免登记处（目前为空 —— 确需豁免时在此登记并给理由；**双向**检查在下方）
+  const CONTINUE_ON_ERROR_EXEMPT = new Map();
+  const wfFiles31 = existsSync(resolve(root, WF_DIR31))
+    ? readdirSync(resolve(root, WF_DIR31)).filter((f) => /\.ya?ml$/.test(f)).sort()
+    : [];
+  const hits31 = new Map(); // `${file}:${line}` → 取值
+  for (const f of wfFiles31) {
+    read(`${WF_DIR31}/${f}`).split('\n').forEach((l, i) => {
+      // ⚠️ 注释行不匹配：`^\s*continue-on-error` 要求它紧跟空白（`# …` 开头的不匹配）
+      if (hits31Like(COE_LINE, l)) hits31.set(`${f}:${i + 1}`, COE_LINE.exec(l)[1]);
+    });
+  }
+  const unregistered31 = [...hits31.entries()].filter(([k]) => !CONTINUE_ON_ERROR_EXEMPT.has(k));
+  if (unregistered31.length > 0) {
+    fail(`这些 workflow 里 \`continue-on-error\` 会**把步骤失败降级成 job 成功**（**假绿**）：`
+      + `${unregistered31.map(([k, v]) => `${k}（取值 \`${v}\`）`).join('、')} —— `
+      + '本仓明文规则「**不得**用 `continue-on-error` 掩盖」（§4.51 发现 2：回归曾随 v1.5.16 发布、'
+      + '而门禁报绿）；确需豁免请登记进 `CONTINUE_ON_ERROR_EXEMPT` 并给理由（审计 §4.302）');
+  }
+  // 豁免表**双向**：登记了却不再命中 ⇒ **已过期，请移除**（否则例外永久驻留、豁免面悄悄变大）
+  for (const [key, why] of CONTINUE_ON_ERROR_EXEMPT) {
+    if (!hits31.has(key)) {
+      fail(`㉛ 的 CONTINUE_ON_ERROR_EXEMPT 登记了 ${key}（理由：${why}），`
+        + '但它已不再命中 —— 已过期，请移除该例外条目');
+    }
+  }
+  // 防空转：**覆盖型**（立此判据时的 workflow 数；加 workflow 时须一并上调）
+  const WF31_BASELINE = 3; // [覆盖型] 基线 3
+  if (wfFiles31.length < WF31_BASELINE) {
+    fail(`㉛ 只扫描到 ${wfFiles31.length} 个 workflow（[覆盖型] 基线 ${WF31_BASELINE}）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** COE_LINE）
+  if (!hits31Like(COE_LINE, '        continue-on-error: true')) {
+    fail('㉛ canary 失效：`continue-on-error: true` **未被检出**（判据已退化成空真）');
+  }
+  if (!hits31Like(COE_LINE, '    continue-on-error: true   # 有意')) {
+    fail('㉛ canary 失效：**带尾注释**的形态未被检出');
+  }
+  if (hits31Like(COE_LINE, '        continue-on-error: false')) {
+    fail('㉛ canary **过宽**：`false`（默认值）被误报');
+  }
+  if (hits31Like(COE_LINE, '        # continue-on-error: true（说明为何移除）')) {
+    fail('㉛ canary **过宽**：**注释里**的提及被误报（本仓 6 处提及全在注释里）');
+  }
+  if (!hits31Like(COE_LINE, '    continue-on-error: ${{ github.event_name == \'push\' }}')) {
+    fail('㉛ canary 失效：**表达式**形态未被检出（它同样是「按条件吞掉失败」）');
+  }
+  console.log(`Release gate: workflow 的 \`continue-on-error\` —— 扫描 ${wfFiles31.length} 个 workflow，`
+    + `会吞掉失败的步骤 ${hits31.size} 处（[覆盖型] 基线 ${WF31_BASELINE}）`
+    + '；⚠️ 同类 `|| true` / `set +e`（**诊断 / 清理类**）不做机械禁止，如实声明');
 }
 
 if (errors.length > 0) {

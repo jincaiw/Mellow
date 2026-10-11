@@ -623,18 +623,20 @@ const PACKAGING_VERSION_ALLOW = new Map([
       fail(`版本字面量判据只覆盖了 ${checkedDocs}/${PACKAGING_DOCS.length} 份文档 —— 扫描面萎缩会让本判据空转`);
     }
     // canary ①：当前版本必须放行；② 未登记的异值必须被抓到（同一谓词 isOffender）
-    const EMPTY_ALLOW = new Map();
-    if (isOffender(current, current, EMPTY_ALLOW)) {
+    // ⚠️ 名字**刻意不含** `ALLOW` / `EXEMPT` 等**登记处后缀** —— 它是 **canary 用的临时空表**，
+    //   不是豁免登记处（审计 §4.302：`*ALLOW*` 命名的表会被判据 ㉔ 要求「陈旧检查」）。
+    const EMPTY_CANARY_MAP = new Map();
+    if (isOffender(current, current, EMPTY_CANARY_MAP)) {
       errors.push('版本字面量护栏 canary 失效：当前版本样本被误判为违规');
     }
-    if (!isOffender('v9.9.9', current, EMPTY_ALLOW)) {
+    if (!isOffender('v9.9.9', current, EMPTY_CANARY_MAP)) {
       errors.push('版本字面量护栏 canary 失效：未登记的异值样本未被识别');
     }
     // canary ③：**按文档**分表 —— 本表的例外生效；空表下同一字面量必须被抓到
     if (isOffender('0.1.0', current, new Map([['0.1.0', 'x']]))) {
       errors.push('版本字面量护栏 canary 失效：本表内的例外未生效');
     }
-    if (!isOffender('0.1.0', current, EMPTY_ALLOW)) {
+    if (!isOffender('0.1.0', current, EMPTY_CANARY_MAP)) {
       errors.push('版本字面量护栏 canary 失效：空例外表下异值未被识别（「按文档分表」的前提）');
     }
   }
@@ -3465,7 +3467,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 301; // 2026-10-11 加 §4.300 / §4.301 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 303; // 2026-10-11 加 §4.302 / §4.303 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
