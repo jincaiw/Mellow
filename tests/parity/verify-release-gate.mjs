@@ -4271,6 +4271,66 @@ const stripJsComments = (s) => {
     + '；⚠️ 同类 `|| true` / `set +e`（**诊断 / 清理类**）不做机械禁止，如实声明');
 }
 
+// ── ㉜ JS/TS 测试文件**必须有用例，且有用例就必须有断言**（2026-10-11，审计 §4.304）──
+// 【为什么】本仓**已有**「空壳测试」检查 —— 但**只覆盖 Rust**（`verify-parity-ledger.mjs` 的
+//   「函数体只有 `let _ = f(...)` 的**恒真空壳**」；起因是 `P0-EDITOR-005` 的拼写建议测试
+//   长期是恒真空壳）。**JS/TS 侧没有对应的检查** ⇒ 同族「只锁了一半」的**语言轴那一半**。
+// 【判据】每个 `*.test.*` / `*.spec.*` 文件（**排除 vendored `CoreEditor/`**）：
+//   ① 必须至少有 **1 个用例**（`it(` / `test(` / `it.each(` / `test.each(`）——
+//      「被 jest 收集、但 0 个用例」= **文件级空壳**（jest 会平静地报 `0 tests`）；
+//   ② 有用例 ⇒ 必须至少有 **1 个断言**（`expect(`）—— 「有用例但零断言」= **体级空壳**
+//      （不抛异常即通过，断言本体不检查任何东西 —— 与 Rust 侧**同一形态**）。
+// ⚠️ **范围如实声明**：只覆盖 `expect(` 这一种断言形态（本仓 148 个测试文件**实测全部**用它）；
+//   若将来引入别的断言库（`assert` / `chai`），需回来扩面。
+// ⚠️ **实测（2026-10-11）**：148 个文件 · **0 个零用例** · **0 个零断言** ⇒ 本判据**落地即绿**，
+//   作用是**防它出现**（同 §4.265「0 缺陷也落判据」）。
+{
+  const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+  const VENDORED32 = '/CoreEditor/';
+  const testFiles32 = (trackedFiles ?? [])
+    .filter((f) => TEST_FILE.test(f) && !f.includes(VENDORED32))
+    .sort();
+  const CASE_RE = /(?:^|[^.\w])(?:it|test)(?:\.\w+)?\s*\(/g;
+  const EXPECT_RE = /(?:^|[^.\w])expect\s*\(/g;
+  /** 判定与 canary **共用**：一份测试源码的「空壳」问题（返回原因数组）。 */
+  const shellIssues = (src) => {
+    const out = [];
+    const cases = (src.match(CASE_RE) ?? []).length;
+    const expects = (src.match(EXPECT_RE) ?? []).length;
+    if (cases === 0) out.push('**0 个用例**（文件级空壳：被 jest 收集但什么也不跑）');
+    else if (expects === 0) out.push(`有 ${cases} 个用例但 **0 个断言**（体级空壳：不抛异常即通过）`);
+    return out;
+  };
+  const offenders32 = [];
+  for (const f of testFiles32) {
+    const issues = shellIssues(read(f));
+    if (issues.length > 0) offenders32.push(`${f}（${issues.join('；')}）`);
+  }
+  if (offenders32.length > 0) {
+    fail(`这些测试文件是**空壳**：${offenders32.join('、')} —— `
+      + '本仓对 **Rust** 已有「恒真空壳」检查（`P0-EDITOR-005` 的拼写建议测试曾是恒真空壳），'
+      + '而 **JS/TS 侧此前没有对应检查**（审计 §4.304）；请补上用例与断言');
+  }
+  // 防空转：**健康度型**（测试文件数由仓库内容产生 ⇒ 留余量；立此判据时 148 个）
+  if (testFiles32.length < 100) {
+    fail(`㉜ 只找到 ${testFiles32.length} 个测试文件（[健康度型] 下限 100）`
+      + ' —— 扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** shellIssues）
+  if (shellIssues("it('a', () => { expect(1).toBe(1); });").length !== 0) {
+    fail('㉜ canary **过宽**：正常用例被误报为空壳');
+  }
+  if (!shellIssues("it('a', () => { doThing(); });").some((s) => s.includes('0 个断言'))) {
+    fail('㉜ canary 失效：**有用例但零断言**未被检出（判据已退化成空真）');
+  }
+  if (!shellIssues('describe("x", () => {});').some((s) => s.includes('0 个用例'))) {
+    fail('㉜ canary 失效：**零用例**的文件未被检出');
+  }
+  console.log(`Release gate: JS/TS 测试的**空壳** —— 扫描 ${testFiles32.length} 个测试文件`
+    + `（[健康度型] 下限 100），空壳 ${offenders32.length} 个`
+    + '；⚠️ 只覆盖 `expect(` 这一种断言形态（Rust 侧的同类检查在 `verify-parity-ledger.mjs`）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
