@@ -4670,6 +4670,7 @@ const stripStrings = (s) => s.replace(
   //   （`fail()` = push vs `assert()` = throw）⇒ 抽成共享助手是**架构级决定**
   //   （`AGENTS.md`：「**不要自行修改架构，先报告冲突**」）⇒ **如实登记**，不顺手做。
   const COVERAGE_EQ_PENDING = new Map([
+    ['verify-adapter-contract.mjs', '`fail()`（push）型；2026-10-11（审计 §4.313）新增 1 处 `[覆盖型]` 标记（bundle target 基线）'],
     ['verify-build-pipeline.mjs', '`fail()`（push）型；抽共享助手需注入失败回调'],
     ['verify-doc-code-refs.mjs', '`fail()` 型；且该处 `linkCount` 是**内容派生**（加一条文档链接就变）⇒ 应先改标 `[健康度型]`'],
     ['verify-parity-ledger.mjs', '`assert()`（throw）型 ⇒ 与 push 型不兼容'],

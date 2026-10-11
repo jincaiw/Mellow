@@ -75,11 +75,58 @@ if (!bridgeRust.includes('bridge_call')) {
 
 // ── ④ 三平台打包矩阵（P7 任务表的构建级锚点）────────────────────────────
 const tauriConf = readFileSync(resolve(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8').replace(/\r\n/g, '\n');
-for (const target of ['"dmg"', '"nsis"', '"msi"', '"appimage"', '"deb"', '"rpm"']) {
-  if (!tauriConf.includes(target)) {
-    fail(`tauri.conf.json bundle targets 缺少 ${target}（P7 三平台安装矩阵的构建级前提）`);
+// ⚠️ **2026-10-11（审计 §4.313）：原判据用「整文件 `includes`」⇒ 实测删掉 7 个 target 里的 6 个都不红。**
+//   原因：`"dmg"` / `"nsis"` / `"appimage"` / `"deb"` / `"rpm"` / `"app"` 这些字样在**同一文件的别处也出现**
+//   （`bundle.macOS.dmg` / `bundle.linux.deb` 等**同名配置键**）⇒ `includes` 假绿。
+//   注入实测：删 `app` / `dmg` / `nsis` / `appimage` / `deb` / `rpm` ⇒ **EXIT=0（漏检）**；
+//   只有 `"msi"` 被抓到（因为它在整份文件里**只出现一次**）。
+//   ⚠️ **同一文件里已经记过这个教训**（下方 §134 那段：「canary 实证过 `includes` 缺陷」，并用词边界正则修了）
+//     —— 但 ④ **没有同步** ⇒ 「**只锁了一半**」的**同一文件内**形态。
+//   ⇒ 现改为**解析 `bundle.targets` 数组本身**，并与登记的目标集合**双向**核对。
+/** 判定与 canary **共用**：从 tauri.conf.json 文本里解析 `bundle.targets` 数组。 */
+const parseBundleTargets = (src) => {
+  const m = /"targets"\s*:\s*\[([^\]]*)\]/.exec(src);
+  return m === null ? [] : [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+};
+{
+  // 登记的目标集合（**人工维护的枚举**：新增 target 必须**显式**纳入安装矩阵，而不是被静默加进来）
+  const BUNDLE_TARGETS = ['app', 'dmg', 'nsis', 'msi', 'appimage', 'deb', 'rpm'];
+  const actual = parseBundleTargets(tauriConf);
+  const missingTargets = BUNDLE_TARGETS.filter((t) => !actual.includes(t));
+  const extraTargets = actual.filter((t) => !BUNDLE_TARGETS.includes(t));
+  if (missingTargets.length > 0) {
+    fail(`tauri.conf.json 的 \`bundle.targets\` **缺少** ${missingTargets.join(' / ')}`
+      + '（P7 三平台安装矩阵的构建级前提）—— ⚠️ 请**解析数组**判定，'
+      + '不要用整文件 `includes`（同名配置键会造成假绿，审计 §4.313）');
+  }
+  if (extraTargets.length > 0) {
+    fail(`tauri.conf.json 的 \`bundle.targets\` **多出**未登记的 ${extraTargets.join(' / ')}`
+      + ' —— 新增 target 必须**显式**纳入安装矩阵（并同步 `release.yml` 的 `--bundles` 与 finalize 断言）');
+  }
+  // 防空转：[覆盖型]（目标集合增删时须一并复核）
+  const BUNDLE_TARGET_BASELINE = 7; // [覆盖型] 基线 7
+  if (actual.length < BUNDLE_TARGET_BASELINE) {
+    fail(`④ 只解析出 ${actual.length} 个 bundle target（[覆盖型] 基线 ${BUNDLE_TARGET_BASELINE}）`
+      + ' —— 解析器失效会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** parseBundleTargets；样本**运行时构造**）
+  const PROBE_OK = '{\n  "bundle": {\n    "targets": [\n      "app",\n      "dmg"\n    ],\n    "macOS": { "dmg": {} }\n  }\n}';
+  if (parseBundleTargets(PROBE_OK).join(',') !== 'app,dmg') {
+    fail('④ canary 失效：`targets` 数组未被正确解析');
+  }
+  // ⚠️ 这一向**直接锁住首版的缺陷**：**别处**的同名配置键不得被当成 target
+  if (parseBundleTargets('{\n  "bundle": { "macOS": { "dmg": {} }, "linux": { "deb": {} } }\n}').length !== 0) {
+    fail('④ canary **过宽**：**别处**的同名字样被当成了 bundle target'
+      + '（这正是首版整文件 `includes` 的缺陷，审计 §4.313）');
+  }
+  // 抽掉一个 ⇒ 必须被判为缺（防「解析器恒返回全集」）
+  if (BUNDLE_TARGETS.filter((t) => !parseBundleTargets(PROBE_OK).includes(t)).length !== 5) {
+    fail('④ canary 失效：抽掉 target 的样本未被判为缺失');
   }
 }
+// ⚠️ **同族的边界（如实声明）**：下面两条**仍是整文件匹配** —— 本次**未**一并修正。
+//   `"fileAssociations"` 键名在文件里唯一，风险低；但 `"md"` 是**短串**，
+//   若将来别处出现独立的 `"md"` 字样，它会**静默假绿**。⇒ 登记为**已知边界**。
 if (!/"fileAssociations"/.test(tauriConf) || !/"md"/.test(tauriConf)) {
   fail('tauri.conf.json 缺少 .md File Association（P7 Windows「File Association / Open With」前提）');
 }
