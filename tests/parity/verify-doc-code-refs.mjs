@@ -3467,7 +3467,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 305; // 2026-10-11 加 §4.305 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 306; // 2026-10-11 加 §4.306 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -4063,6 +4063,110 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   }
   console.log(`Doc code refs: 审计文档的「同族累计次数 + 区间」—— ${hits} 处**自洽**`
     + `（次数严格 +1；区间末尾 == 所在节 − 1；起点恒为 §4.${FAMILY_FROM}）`);
+}
+
+// ── ㊼ 护栏里调用的 `node:*` 导出名必须先 import（2026-10-11，审计 §4.306）──
+// 【为什么】这是 `verify-release-gate.mjs` 判据 **㉚** 的**镜像** —— 之所以要在**另一个文件**里再写一遍：
+//   ⚠️ **判据不能检查它自己所在的文件**。实测（审计 §4.301）：把 ㉚ 所在文件的 `statSync`
+//   从 import 里拿掉 ⇒ **那个文件直接崩**（`ReferenceError`）⇒ **㉚ 自己也不会运行**。
+//   ⇒ **「判据崩掉 = 从未判定」这条纪律，靠「另一个文件里的判据」才守得住** ——
+//     那是 §4.301 的**结论**，本轮把它**落地**（此前只有结论、没有实现）。
+// 【判据】与 ㉚ **同款谓词**：全仓 `verify-*.mjs` 的 `node:*` 导入名**并集**为词表；
+//   每个护栏源码（**剥字符串 + 剥注释**）里凡**裸调用**词表名字、而本护栏**既没 import
+//   也没本地定义**（`const/let/var/function/class NAME`）⇒ 报错。
+// ⚠️ **代价如实声明**：本判据与 ㉚ **重复**（本仓「各护栏自成一体、不跨护栏 import」⇒ 只能各写一份）；
+//   换来的是一条**互相覆盖**：任一文件崩掉，**另一个仍能指出「谁少 import 了什么」**。
+// ⚠️ **边界同 ㉚**：**模板字面量整体被剥** ⇒ `` `${f(x)}` `` 表达式内的调用不在覆盖内；
+//   属性访问（`fs.statSync(`）与本地定义**正确地不报**。
+{
+  const NODE_IMPORT47 = /^[ \t]*import\s*\{([^}]+)\}\s*from\s*'node:[^']+'/gm;
+  /** 剥注释（**与 `verify-release-gate.mjs` 的 `stripJsComments` 逐字同款**：
+   *  行注释**前面有引号就不截**、块注释**只认行首（可带前导空白）的 `/*`**）。
+   *  ⚠️ **镜像判据必须与本体用同一套剥法** —— 首版我用了「先剥字符串」的顺序（看起来更自然），
+   *     结果**注释里的引号 / 反引号开了「假字符串」** ⇒ 脱同步 ⇒ **假阳性**（实测把
+   *     `verify-visual-golden.mjs` 里**只在注释/字符串中出现**的 `fileURLToPath` 报成了裸调用）。
+   *     ⇒ 镜像若用不同剥法，它就不是镜像，而是**另一个带不同 bug 的第二意见**。 */
+  const stripJsComments47 = (s) => {
+    const cutLine = (l) => {
+      if (l.trimStart().startsWith('//')) return '';
+      const i = l.search(/[ \t]\/\//);
+      if (i < 0) return l;
+      return /['"`]/.test(l.slice(0, i)) ? l : l.slice(0, i);
+    };
+    return s.split('\n').map(cutLine).join('\n')
+      .replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1');
+  };
+  /** 剥字符串（**保留换行数**）—— 与 ㉚ 的 `stripStrings30` 同款。 */
+  const stripStrings47 = (s) => s.replace(
+    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
+    (m) => m.replace(/[^\n]/g, ' '),
+  );
+  const scrub47 = (s) => stripStrings47(stripJsComments47(s));
+  /** 判定与 canary **共用**：一份护栏源码里「调用了 `node:*` 导出名却没 import / 没本地定义」的名字。 */
+  const missingNodeImports47 = (rawSrc, vocab, imported) => {
+    const src = scrub47(rawSrc);
+    const out = [];
+    for (const name of vocab) {
+      if (imported.has(name)) continue;
+      if (!new RegExp(`(^|[^.\\w$])${name}\\s*\\(`).test(src)) continue;
+      if (new RegExp(`(?:const|let|var|function|class)\\s+${name}\\b`).test(src)) continue;
+      out.push(name);
+    }
+    return out;
+  };
+  const guards47 = existsSync(resolve(root, 'tests/parity'))
+    ? readdirSync(resolve(root, 'tests/parity')).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const vocab47 = new Set();
+  const importedOf47 = new Map();
+  const srcOf47 = new Map();
+  for (const f of guards47) {
+    const s = readFileSync(resolve(root, 'tests/parity', f), 'utf8').replace(/\r\n/g, '\n');
+    srcOf47.set(f, s);
+    const set = new Set();
+    // ⚠️ **import 解析在「剥注释 + 行首锚定」的文本上做**（审计 §4.306）：
+    //   在原文上匹配会让**本类判据自己的 canary 样本**（写成字符串的 `import { … } from 'node:…';`）
+    //   被当成真 import ⇒ **真正的缺失被样本掩盖**（假阴性）。
+    for (const m of stripJsComments47(s).matchAll(NODE_IMPORT47)) {
+      for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) { vocab47.add(n); set.add(n); }
+    }
+    importedOf47.set(f, set);
+  }
+  const offenders47 = [];
+  for (const f of guards47) {
+    const miss = missingNodeImports47(srcOf47.get(f), vocab47, importedOf47.get(f));
+    if (miss.length > 0) offenders47.push(`${f}（${[...new Set(miss)].join(', ')}）`);
+  }
+  if (offenders47.length > 0) {
+    errors.push(`这些护栏**调用了未 import 的 \`node:*\` 导出名**：${offenders47.join('、')} —— `
+      + '运行即 `ReferenceError` ⇒ **整条护栏中断、其后判据从未判定**（而 `node --check` 只查语法、抓不到）；'
+      + '请补 import（审计 §4.306）');
+  }
+  // 防空转：[健康度型] 词表由全仓 import 产生 ⇒ 留余量（立此判据时 24 个）
+  if (vocab47.size < 15) {
+    errors.push(`㊼ 只从全仓护栏里收集到 ${vocab47.size} 个 \`node:*\` 导入名（[健康度型] 下限 15）`
+      + ' —— 词表塌缩会让本判据空真');
+  }
+  // canary：五向（与判定**共用** missingNodeImports47）
+  const VOCAB47_SAMPLE = new Set(['statSync', 'readFileSync']);
+  if (!missingNodeImports47('const a = statSync("x");', VOCAB47_SAMPLE, new Set()).includes('statSync')) {
+    errors.push('㊼ canary 失效：**未 import 的裸调用**未被检出（判据已退化成空真）');
+  }
+  if (missingNodeImports47('import { statSync } from \'node:fs\';\nstatSync("x");', VOCAB47_SAMPLE, new Set(['statSync'])).length !== 0) {
+    errors.push('㊼ canary **过宽**：已 import 的名字被误报');
+  }
+  if (missingNodeImports47('const statSync = (p) => p;\nstatSync("x");', VOCAB47_SAMPLE, new Set()).length !== 0) {
+    errors.push('㊼ canary **过宽**：**本地定义**的名字被误报');
+  }
+  if (missingNodeImports47('fs.statSync("x");', VOCAB47_SAMPLE, new Set()).length !== 0) {
+    errors.push('㊼ canary **过宽**：**属性访问**（`fs.statSync(`）被误报');
+  }
+  if (missingNodeImports47('fail(\'必须 writeFileSync(OUT, next)\');', VOCAB47_SAMPLE, new Set()).length !== 0) {
+    errors.push('㊼ canary **过宽**：**字符串里**的调用被误报（必须剥字符串）');
+  }
+  console.log(`Doc code refs: 护栏的 \`node:*\` 导入（**镜像判据**）—— 扫描 ${guards47.length} 个护栏、`
+    + `词表 ${vocab47.size} 个名字，未 import 的裸调用 ${offenders47.length} 处`
+    + '；⚠️ 与 `verify-release-gate.mjs` 的 ㉚ **互为镜像**：**任一方所在文件崩掉，另一方仍能指出它**');
 }
 
 if (errors.length > 0) {

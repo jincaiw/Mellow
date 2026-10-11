@@ -4124,7 +4124,7 @@ const stripJsComments = (s) => {
 //   ⇒ 但**不会假绿**：崩溃 = CI 红 = 有人来查（**丢的是「具体性」，不是「正确性」**）。
 //   其余 22 个护栏**由本判据覆盖**（实测：往 `verify-menu-contract.mjs` 注入裸 `spawnSync` ⇒ 被抓住）。
 {
-  const NODE_IMPORT30 = /import\s*\{([^}]+)\}\s*from\s*'node:[^']+'/g;
+  const NODE_IMPORT30 = /^[ \t]*import\s*\{([^}]+)\}\s*from\s*'node:[^']+'/gm;
   /** 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）。 */
   const stripStrings30 = (s) => s.replace(
     /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
@@ -4152,7 +4152,14 @@ const stripJsComments = (s) => {
     const s = read(`tests/parity/${f}`);
     srcOf30.set(f, s);
     const set = new Set();
-    for (const m of s.matchAll(NODE_IMPORT30)) {
+    // ⚠️ **import 解析必须在「剥注释 + 行首锚定」的文本上做**（2026-10-11，审计 §4.306 实测）：
+    //   首版直接在**原文**上匹配 `import { … } from 'node:…'` ⇒ **本判据自己的 canary 样本**
+    //   （写成字符串的 `import { statSync } from 'node:fs';`）**被当成了真 import**
+    //   ⇒ `statSync` 进了「已 import」集合 ⇒ **真正的缺失被样本掩盖**（**假阴性**，且只有
+    //   在「本文件少 import 一个名字」时才暴露 —— 而那正是本判据要抓的形态）。
+    //   ⇒ ① 剥注释（注释里的示例不再污染）；② **行首锚定**（真 import 在行首，
+    //      而样本在**字符串**里、不在行首）。⚠️ 边界：**含真实换行的模板样本**仍可能污染。
+    for (const m of stripJsComments(s).matchAll(NODE_IMPORT30)) {
       for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) { vocab30.add(n); set.add(n); }
     }
     importedOf30.set(f, set);
