@@ -3584,7 +3584,7 @@ const stripStrings = (s) => s.replace(
   // 防空转：**覆盖型**（立此判据时实测 25 个例外表 —— 已排除扫描器跳过表；
   //   ⚠️ 2026-10-11（§4.302）：原为 **17**，修掉「`^const` 只认列 0」的扫描面缺陷后
   //   纳入 **8 张缩进表** ⇒ 25）
-  const TABLE_BASELINE = 25; // [覆盖型] 基线 25
+  const TABLE_BASELINE = 26; // [覆盖型] 基线 26
   coverEq('㉔ 例外表个数', tables.length, TABLE_BASELINE,
     '命名约定漂移或扫描面萎缩会让本判据**空转**');
   // canary：三向（与判定**共用** TABLE_RE / STALE_KW / stripComments24）
@@ -4696,7 +4696,7 @@ const stripStrings = (s) => s.replace(
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 21; // [覆盖型] 基线 21
+  const COVERAGE_MARK_BASELINE = 22; // [覆盖型] 基线 22
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -4714,6 +4714,72 @@ const stripStrings = (s) => s.replace(
     + `⚠️ **未覆盖**：${[...COVERAGE_EQ_PENDING.keys()].join('、')}`
     + '（已双向登记 —— 抽共享助手是**架构级决定**，见 `AGENTS.md`）；'
     + '⚠️ **内容派生**的集合应改标 `[健康度型]`（留余量），改标即合规');
+}
+
+// ── ㊲ 每个护栏必须有 **canary 断言**（2026-10-11，审计 §4.311）──
+// 【为什么】本仓纪律：**「判据有效 ≠ 有人跑」**、**「空壳测试」必须落判据**（㉜ 是 JS/TS 侧的那一半）。
+//   护栏侧的**同一句话**是：**「谓词从未被证明会红」** —— 一条**没有 canary** 的护栏，
+//   它的断言可能是**恒真**的（恒真的断言看起来一样绿）。本仓已实测过一次同型后果：
+//   `audit-pkg-test-counts.mjs` 漂了而无人知（§4.287）。
+//   实测（2026-10-11）：23 个护栏里 **22 个**有 canary 断言、**1 个**没有
+//   （`verify-context-menu-guard.mjs` —— 它是 **mutation harness**，本职就是注入已知缺陷
+//   并断言**下游护栏**拒绝，故**登记豁免**）。
+// 【判据】剥注释后，每个 `verify-*.mjs` 必须至少出现 **1 次**词 `canary`。
+//   ⇒ 它是「该护栏的谓词被证明过会红」的**最低可核对证据**。
+// 【边界如实声明 —— **不落判据的那一半**】
+//   ⚠️ **「canary：N 向」的自述数不可机械核对**：一个「向」是**测试方向**，不等于**断言条数**。
+//     实测**两版量具都不健全**：① 按**文件**计数 ⇒ 与「每判据块」的自述**口径不符**（23 个文件全报不符）；
+//     ② 按 `// ── <圈号>` 切块 ⇒ 段边界与 canary 所在块**不重合**，且**漏了** `failures.push(` /
+//     `throw new Error(` 两种上报形态 ⇒ 把 3 个护栏**误报**成「0 条」。
+//   ⚠️ **登记读数**（2026-10-11 实测）：canary **两向**（失效 + 过宽）16 个 / **单向** 6 个 / **无** 1 个。
+//     **「单向」不判** —— 「过宽」canary 是否可能**取决于谓词**（静态判不了）⇒ 不落判据。
+{
+  const CANARY_EXEMPT = new Map([
+    ['verify-context-menu-guard.mjs',
+      '**mutation harness** —— 它注入已知缺陷并断言**下游护栏**拒绝（且自检「注入没有生效」）；'
+      + '「canary」一词不出现是**设计**，不是缺口'],
+  ]);
+  const guards37 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const hasCanary = (src) => /\bcanary\b/.test(stripJsComments(src));
+  let withCanary37 = 0;
+  const noCanary37 = [];
+  for (const f of guards37) {
+    if (hasCanary(read(`tests/parity/${f}`))) { withCanary37 += 1; continue; }
+    if (!CANARY_EXEMPT.has(f)) noCanary37.push(f);
+  }
+  if (noCanary37.length > 0) {
+    fail(`㊲ 这些护栏**没有任何 canary 断言**：${noCanary37.join('、')}`
+      + ' —— 没有 canary 的护栏，「它的谓词会红」这句话**从未被证明**'
+      + '（恒真的断言看起来一样绿）。请至少给一条断言配一个「注入后必须红」的样本；'
+      + '确属 **mutation harness** 等特例请登记进 `CANARY_EXEMPT` 并写明理由');
+  }
+  // 双向：登记的豁免项必须**真的**没有 canary（否则陈旧 —— 它会掩盖「该护栏将来失去 canary」）
+  for (const [f] of CANARY_EXEMPT) {
+    if (!guards37.includes(f)) {
+      fail(`㊲ \`CANARY_EXEMPT\` 登记了**不存在**的护栏 \`${f}\` —— 登记表与事实脱节`);
+    } else if (hasCanary(read(`tests/parity/${f}`))) {
+      fail(`㊲ \`${f}\` 登记在 \`CANARY_EXEMPT\` 里，但它**已经有 canary 断言**`
+        + ' —— 该豁免项已过期，请移除');
+    }
+  }
+  // 防空转：[覆盖型]（护栏增删时须一并复核）
+  const CANARY_BASELINE = 22; // [覆盖型] 基线 22
+  coverEq('㊲ 有 canary 断言的护栏数', withCanary37, CANARY_BASELINE,
+    '标记被删空会让「护栏必须有 canary」重新变成**无人守**');
+  // canary：两向（样本**拼接构造** —— 本文件自己也在扫描面里）
+  const w37 = 'cana' + 'ry';
+  if (!hasCanary(`fail('${w37} 失效：x')`)) {
+    fail('㊲ canary 失效：带 canary 消息的样本未被识别');
+  }
+  if (hasCanary(`// ${w37}：注释里提到它不算断言`)) {
+    fail('㊲ canary **过宽**：注释里的词被当成了 canary 断言（必须剥注释）');
+  }
+  console.log(`Release gate: 护栏的 **canary** —— ${guards37.length} 个护栏里 ${withCanary37} 个有 canary 断言`
+    + `（豁免 ${CANARY_EXEMPT.size} 个：mutation harness）；`
+    + '⚠️ **边界**：「canary：N 向」的**自述数不可机械核对**（一个「向」≠ 一条断言；'
+    + '实测两版量具都不健全）⇒ 已把读数（两向 16 / 单向 6 / 无 1）**登记**，**不落判据**');
 }
 
 if (errors.length > 0) {
