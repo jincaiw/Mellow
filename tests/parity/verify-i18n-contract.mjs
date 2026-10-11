@@ -211,8 +211,13 @@ if (schemaRefs < 300) {
   const EXEMPT_REASON = '`fail()` 抛出的**开发者错误**（null host 的未实现占位），不面向用户；'
     + 'localize 它们只会让开发者看不懂栈';
 
+  // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把
+  //   **行注释里**的 `/*`（如 glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（如 `'/*'`）当成注释起始，
+  //   **一路吃掉真实代码**（实测 68 个文件 / 247 段）⇒ **假阴性、无人知**。
+  //   故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」；正则靠启发式识别（失准 = 多留注释 = 假阳性）。
   const stripComments = (s) => s
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
+      (m, keep) => (keep === undefined ? ' ' : keep))
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   const walkDir = (dir, rel = '') => readdirSync(resolve(root, dir, rel), { withFileTypes: true }).flatMap((e) =>
     (e.isDirectory() ? walkDir(dir, `${rel}${e.name}/`) : [`${rel}${e.name}`]));

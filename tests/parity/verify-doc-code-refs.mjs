@@ -3465,7 +3465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 295; // 2026-10-11 加 §4.295 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 296; // 2026-10-11 加 §4.296 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3917,8 +3917,12 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //     而 `verify-release-gate.mjs` 判据 ⑩ 要求「抛错点之后不得再有 `fail(` / `errors.push(`」。
 {
   const CANON = ['ts', 'tsx', 'mts', 'cts', 'mjs', 'cjs', 'js', 'jsx'];
+  // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
+  //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
+  //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
   const stripComments = (s) => s
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
+      (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   const SURFACE = /\\\.\(([a-z0-9|]+)\)\$/g;
   /** 判定（与 canary **共用**）：一段源码（**已剥注释**）里「含 ts 的代码面」缺哪些规范扩展名。 */
@@ -3946,10 +3950,12 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
     }
   }
   // 防空转：[健康度型] 面数由护栏源码内容产生 ⇒ 留余量。
-  // ⚠️ **口径**：本判据**剥注释**后数 = **11 处**；不剥注释是 16 处（差 5 处是**注释里**的示例）
-  //   ⇒ 两个数都对，**基线取本判据自己的口径 11**（同族 §4.258 的「两个口径都要写」）。
+  // ⚠️ **口径**：本判据**剥注释**后数 = **15 处**；不剥注释是 **19 处**（差 4 处是**注释里**的示例）
+  //   ⇒ 两个数都对，**基线取本判据自己的口径 15**（同族 §4.258 的「两个口径都要写」）。
+  //   ⚠️ 2026-10-11（审计 §4.296）：两个数都**随剥注释实现变化**（旧朴素实现吃到过真实代码，
+  //   当时是 11 / 16）⇒ 改剥离器后**必须重量**，别照抄旧数。
   if (surfaces < 8) {
-    throw new Error(`只解析出 ${surfaces} 个「含 ts 的代码扫描面」（下限 8 = 立此判据时的基线 11 − 余量）`
+    throw new Error(`只解析出 ${surfaces} 个「含 ts 的代码扫描面」（下限 8 = 立此判据时的基线 15 − 余量）`
       + ' —— 谓词或扫描面漂移会让本判据**空转**');
   }
   // canary：四向（与判定**共用** missingOf；样本运行时拼接）

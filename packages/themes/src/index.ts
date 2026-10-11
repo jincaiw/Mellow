@@ -444,7 +444,13 @@ export function parseUserThemeCss(fileName: string, css: string): MellowTheme {
     }
   }
 
-  const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  // ⚠️ 剥 CSS 注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, '')` 会把
+  //   **字符串里**的 `/*`（如 `content: "/*"`）当成注释起始，一路吃掉其后的 `--mellow-*` 声明
+  //   ⇒ 用户主题**静默丢变量**（假阴性、无人知）。CSS 无行注释 / 模板 / 正则，故只需保留字符串。
+  const cssWithoutComments = css.replace(
+    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(\/\*[\s\S]*?\*\/)/g,
+    (_m, keep) => (keep === undefined ? '' : keep),
+  );
   const overrides: Record<string, string> = {};
   const varRe = /(--mellow-[a-zA-Z0-9-]+)\s*:\s*([^;{}]+)[;}]/g;
   let vm: RegExpExecArray | null;

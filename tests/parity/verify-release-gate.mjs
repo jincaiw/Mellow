@@ -2467,7 +2467,11 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
    *  而工具末尾有一句 `console.log('… git status --porcelain')` ⇒ 把**真的**前置检查删掉后
    *  判据照样绿（注入 B **未抓**，实测）。⇒ 一律用**带引号的实参形态**（`'--porcelain'`）。 */
   const stripComments = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
+    //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
+    //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
+    .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
+      (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
     .replace(/\/\/[^\n]*/g, '');
   const hasQuoted = (src, tok) => src.includes(`'${tok}'`) || src.includes(`"${tok}"`);
   for (const dir of TOOL_DIRS) {
@@ -3584,6 +3588,57 @@ const stripJsComments = (s) => {
   console.log(`Release gate: 例外表的陈旧检查 —— ${tables.length} 个例外表`
     + `**全部带陈旧检查**（[覆盖型] 基线 ${TABLE_BASELINE}）`
     + '；⚠️ 谓词是**形态匹配**：保证「有一处像检查」，**不保证检测正确**');
+}
+
+// ── ㉕ 护栏源码里不得出现**朴素块注释剥离**（2026-10-11，审计 §4.296）──
+// 【判据】每个 `verify-*.mjs` 的源码（**先剥注释**）里**不得**出现
+//   「以 `/*…*/` 为**唯一**分支的 matcher」（= 朴素实现）。
+// 【为什么】它会吃掉真实代码 ⇒ 判据的扫描面**静默缩水**（**假阴性、无人知**）。
+//   实测全仓曾有 **19 处**（14 个护栏 + 1 处产品码），吃掉 **44 文件 / 130 段 / 151201 字符**。
+// ⚠️ **needle 运行时拼接**（两半）：否则本判据会**命中自己的源码**（第 13 次踩，同 ㉑ 的 `new Buffer(`）。
+// ⚠️ **必须剥注释**：14 个护栏的注释里**写着**这个反面教材（教学用）—— 不剥会全红（假阳性）。
+// ⚠️ **边界如实声明**：谓词是**字面量匹配**，只认这一种写法。若将来有护栏把朴素形态当
+//   **字符串样本**（而不是注释里的教材），会被误报 ⇒ 那时请改**拼接构造**或登记豁免。
+{
+  const N1 = '/\\/\\*[\\s\\S]*?';
+  const N2 = '\\*\\//g';
+  const NAIVE_MATCHER = N1 + N2; // 值 = `/\/\*[\s\S]*?\*\//g`
+  const offenders25 = [];
+  let scanned25 = 0;
+  for (const f of guardFiles) {
+    const src = read(`tests/parity/${f}`);
+    if (!src.includes('replace(')) continue;
+    scanned25 += 1;
+    if (stripJsComments(src).includes(NAIVE_MATCHER)) offenders25.push(f);
+  }
+  if (offenders25.length > 0) {
+    fail(`这些护栏里还有**朴素块注释剥离**（会把真实代码当注释吃掉 ⇒ 假阴性）：${offenders25.join('、')}`
+      + ' —— 改用「字符串 / 模板 / 行注释 / 正则字面量」四保留分支的形态（见 `stripJsComments`；审计 §4.296）');
+  }
+  // 防空转：[覆盖型] 基线 = 立此判据时的护栏数（防「扫描面萎缩 ⇒ 永远绿」）
+  const GUARD25_BASELINE = 23; // [覆盖型] 基线 23
+  if (scanned25 < GUARD25_BASELINE) {
+    fail(`㉕ 只扫描到 ${scanned25} 个护栏（[覆盖型] 基线 ${GUARD25_BASELINE}）`
+      + ' —— 判据范围萎缩会让本判据空转');
+  }
+  // canary ①（负样本）：朴素形态必须被**检出**（needle 拼接构造）
+  if (!stripJsComments(`const strip = (s) => s.replace(${NAIVE_MATCHER}, '');`).includes(NAIVE_MATCHER)) {
+    fail('㉕ canary 失效：朴素形态**未被检出**（判据已退化成空真）');
+  }
+  // canary ②（**核心**：防「不剥注释 ⇒ 假阳性」）：注释里的**反面教材**不得被当成真实现
+  //   ⚠️ 这条不是装饰：14 个护栏的注释里**真的**写着这个反面教材（本节自己的注释也是）。
+  if (stripJsComments(`// 反面教材：${NAIVE_MATCHER}\nconst x = 1;`).includes(NAIVE_MATCHER)) {
+    fail('㉕ canary 失效：**注释里**的反面教材被当成真实现（必须剥注释）');
+  }
+  // canary ③（过宽）：带**保留分支**的形态（有第 1 个捕获组）不得被误判
+  const KEEP_BRANCH = '/("(?:[^"\\\\]|\\\\.)*"|\\\\/\\\\/[^\\\\n]*)|(\\\\/\\\\*[\\\\s\\\\S]*?\\\\*\\\\/)/g';
+  if (stripJsComments(`const strip = (s) => s.replace(${KEEP_BRANCH}, (m, keep) => keep);`)
+    .includes(NAIVE_MATCHER)) {
+    fail('㉕ canary **过宽**：带保留分支的形态被误判为朴素实现');
+  }
+  console.log(`Release gate: 护栏的剥注释实现 —— 扫描 ${scanned25} 个护栏，`
+    + `朴素块注释剥离 ${offenders25.length} 处（[覆盖型] 基线 ${GUARD25_BASELINE}）`
+    + '；⚠️ 谓词是**字面量匹配**，只认「以 `/*…*/` 为唯一分支」这一种写法');
 }
 
 if (errors.length > 0) {

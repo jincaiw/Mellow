@@ -112,6 +112,19 @@ describe('Theme engine — user themes (Typora themes folder semantics)', () => 
     expect(theme.kind).toBe('dark');
   });
 
+  // 审计 §4.296：剥 CSS 注释**必须字符串感知** —— 朴素 `replace(/\/\*[\s\S]*?\*\//g, '')` 会把
+  // **字符串里**的 `/*` 当注释起始，一路吃到**后面那条真注释的 `*/`**，把中间的变量声明全删掉
+  // （用户主题静默丢变量，无任何信号）。⚠️ 样本**必须带一条后续真注释**，否则朴素版无 `*/` 可配、
+  // 什么都不删 ⇒ 用例不敏感（本用例首版就这么写错了，注入验证当场抓到）。
+  test('parseUserThemeCss keeps variables declared after a `/*` inside a CSS string', () => {
+    const theme = parseUserThemeCss(
+      'tricky.css',
+      ':root { content: "/*"; --mellow-bg: #101010; --mellow-fg: #eeeeee; }\n/* 结尾注释 */',
+    );
+    expect(theme.variables['--mellow-fg']).toBe('#eeeeee');
+    expect(theme.kind).toBe('dark');
+  });
+
   test('registerUserThemes makes themes resolvable and replaceable', () => {
     const theme = parseUserThemeCss('a.css', ':root { --mellow-bg: #101010; }');
     registerUserThemes([theme]);

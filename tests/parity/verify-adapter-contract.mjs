@@ -170,8 +170,13 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
     if (e.isDirectory()) return SKIP_DIR.has(e.name) ? [] : walkAll(resolve(dir, e.name));
     return /\.(ts|tsx|mjs|js|mts|cts|cjs|jsx)$/.test(e.name) ? [resolve(dir, e.name)] : [];
   });
+  // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把
+  //   **行注释里**的 `/*`（如 glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（如 `'/*'`）当成注释起始，
+  //   **一路吃掉真实代码**（实测 68 个文件 / 247 段）⇒ **假阴性、无人知**。
+  //   故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」；正则靠启发式识别（失准 = 多留注释 = 假阳性）。
   const stripJsComments = (s) => s
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
+      (m, keep) => (keep === undefined ? ' ' : keep))
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   /**
    * 判定某次出现是「声明」还是「读取」——**声明** = 全局名之后紧跟 `=`（且不是 `==`）。
