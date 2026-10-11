@@ -607,8 +607,15 @@ if (PRD_117_1_DEVIATIONS.length === 0) {
     'C10 canary 失效：**真实的跨包相对引用**未被解析出边');
   canary(registered.size >= 1 && fx.edges.every((e) => typeof e.reason === 'string'),
     'C10 canary 失效：登记表被清空或理由缺失');
+  // ⚠️ 2026-10-11（审计 §4.305）：每条边的**文件数**改为**现算并打印** ——
+  //   原先夹具里手写的 `refs` 已删（16 条里 **10 条**与「文件数」「处数」**两个口径都不符**，
+  //   且**口径从未定义**、**没有任何判据读它**）⇒ 按「**能消除就不要守**」删副本，
+  //   信息在这里**现算**给出（读者仍能看到每条边的耦合重量）。
+  const edgeCounts = [...actual.entries()].sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${k}（${n} 个文件）`).join(' | ');
   console.log(`Package conventions: 跨包引用边 ${actual.size} 条 —— 与 ${EDGES_FIXTURE} **双向一致**`
-    + '（⚠️ 本表是机器可读依赖图的**唯一**真值源：`dependencies` 无跨包声明、`main`/`types` 无消费者）');
+    + '（⚠️ 本表是机器可读依赖图的**唯一**真值源：`dependencies` 无跨包声明、`main`/`types` 无消费者）'
+    + `\n  每条边的**文件数**（**现算，不手写**）：${edgeCounts}`);
 }
 
 if (errors.length > 0) {

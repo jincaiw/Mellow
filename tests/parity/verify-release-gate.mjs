@@ -3006,7 +3006,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       knownRemainingWarnings: ['observedIn', 'todo', 'what', 'whyNotAnActionIssue'],
     },
     'cross-package-edges.json': {
-      edges: ['from', 'reason', 'refs', 'to'],
+      edges: ['from', 'reason', 'to'],
     },
     'export-collaborators.json': {
       entries: ['callSite', 'env', 'evidence', 'field', 'ref', 'refId', 'status'],
