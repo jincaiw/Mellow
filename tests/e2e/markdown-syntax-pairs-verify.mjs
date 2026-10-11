@@ -30,7 +30,9 @@ async function main() {
   const browser = await chromium.launch();
   try {
     const deadline = Date.now() + 40000; let ready = false;
-    while (Date.now() < deadline) { try { if ((await fetch(`${base}/editor/index.html`, { method: 'HEAD' })).ok) { ready = true; break; } } catch {} await sleep(300); }
+    // ⚠️ 空 catch 必须写明理由（判据 ㉓）：dev server 尚未监听时 `fetch` 必然失败，
+    //    这是**轮询的正常路径**；循环结束后由下面的 `if (!ready) throw` **统一报错** ⇒ 不是静默吞掉。
+    while (Date.now() < deadline) { try { if ((await fetch(`${base}/editor/index.html`, { method: 'HEAD' })).ok) { ready = true; break; } } catch { /* 见上：轮询期间的预期失败 */ } await sleep(300); }
     if (!ready) throw new Error('vite dev server 未就绪');
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('.app, #root > *', { timeout: 15000 });

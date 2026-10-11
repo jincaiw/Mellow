@@ -3263,8 +3263,14 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + '⚠️ 本节只保证「**归属与理由已声明**」，**不保证本机工具有人跑** —— 那需要人。');
 }
 
+// ⚠️ **模块级**常量：㉑ 与 ㉓ 都要扫「本仓代码面」—— 基线**只能有一处**。
+//   ⚠️ 2026-10-11（审计 §4.292）：首版把它写在 ㉑ 的**块内**，而 ㉓ 引用它 ⇒
+//     `ReferenceError: CODE_BASELINE is not defined` —— **我在 §4.290 刚写完「未定义标识符」的判据，
+//     下一节就自己犯了同一个错**（且 ㉒ 抓不到：它只认 `fail` / `assert` 两个**函数**名，
+//     不认**变量**引用）⇒ 已提到模块级，并把该边界写进 ㉒ 的注释。
+const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
+
 // ── ㉑ 本仓**代码面**不得使用已弃用的 Node API（2026-10-11，审计 §4.289）──
-// 【为什么】2026-10-11 把 CI 日志里的弃用告警逐条按**步骤名**分诊：**21 条**
 //   （`[DEP0040] punycode` ×12 · `[DEP0169] url.parse()` ×8 · `[DEP0005] Buffer()` ×1）
 //   **全部由我们使用的 action 自身发出**（告警所在的**步骤名就是 action 名**）。
 //   但「**不是我们的**」这句话若只靠**一次人工核对**，就会过期 ⇒ 用判据把它钉住：
@@ -3317,7 +3323,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       + '要么改掉，要么在 `ci-actions.json` 的 `knownRemainingWarnings` 里如实登记并说明');
   }
   // 防空转：必须**真的**扫到代码面（否则本判据**空转**，而输出照打「未使用」）
-  const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
+  // ⚠️ `CODE_BASELINE` 定义在**模块级**（㉓ 也用）—— 见本块上方的注释。
   if (codeScanned < CODE_BASELINE) {
     fail(`㉑ 只扫到 ${codeScanned} 个代码文件（[健康度型] 下限 ${CODE_BASELINE}，立此判据时 575）`
       + ' —— 扫描面萎缩会让本判据**空转**');
@@ -3342,6 +3348,10 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
 //     （**静态阅读看不出**：`fail(` 长得完全正常）。
 //   ⇒ 用一条**廉价的定向 lint** 钉住：**调用了就必须有定义 / import / globalThis**。
 //   ⚠️ **必须剥注释**（本仓通则）—— 否则注释里提到的 `fail(` 会被当成真调用。
+//   ⚠️ **覆盖边界（如实声明）**：只认 `HELPERS` 里那两个**函数名**；
+//     **变量 / 其它 helper 的未定义引用不在覆盖内** —— 实测 2026-10-11（审计 §4.292）：
+//     我在 ㉓ 里引用了 ㉑ 块内的 `CODE_BASELINE`（块级作用域）⇒ 运行即抛 `ReferenceError`，
+//     **而本判据抓不到它**（那是**变量**引用）。⇒ 那条边界只能靠**运行**兜住（响亮崩）。
 {
   const HELPERS = ['fail', 'assert'];
   const stripComments22 = (s) => s
@@ -3399,6 +3409,77 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
     + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）`);
+}
+
+// ── ㉓ 空 `catch` 必须写明理由（2026-10-11，审计 §4.292）──
+// 【为什么】`catch {}` 会把异常**静默吞掉** ⇒ 「失败了」看起来像「成功了」。
+//   与 §4.289 同族：那一节管的是**告警**，本节管的是**异常**。
+//   本仓已有的空 catch 大多**带理由注释**（「未就绪 no-op」/「view 已销毁」/「best effort」）
+//   —— 那**正是**要保住的性质；要防的是**新加的、连理由都没有的**空 catch。
+// 【判据】代码面里 `catch` 的**函数体只含空白**（连注释都没有）⇒ 报错，要求写明理由。
+//   ⚠️ **必须剥字符串**：首版没剥 ⇒ 命中**夹具样本**（`verify-settings-contract.mjs` 的负样本
+//     字符串里就写着 `catch {}`）⇒ **假阳性**。
+//   ⚠️ **必须保留注释**：第二版把注释也剥了 ⇒ 「带理由的空 catch」与「真空 catch」**混在一起**
+//     （实测 **15 → 60** 处）⇒ **不可判**。保留注释后 ⇒ 只剩 **1 处**（已补理由）。
+//   ⚠️ **边界如实声明**：**模板字面量里的生成 JS 不在扫描面内**（被字符串剥离排除）——
+//     实测有 2 处（`build-editor-bundle.mjs` 注入浏览器的桥接脚本），已**人工补理由注释**。
+{
+  // ⚠️ 扫描面**必须与规范面一致**（`ts|tsx|mts|cts|mjs|cjs|js|jsx`）——
+  //   首版漏了 `jsx`，`verify-doc-code-refs.mjs` **判据 ㊺** 当场报红（它正是为防这个而立的；审计 §4.282）。
+  const CODE_EXT23 = /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/;
+  const VENDORED23 = /CoreEditor\/\.yarn\/|node_modules\//;
+  /** 判定与 canary **共用**：剥字符串（**保留注释** —— 注释是「理由」的载体）。 */
+  const stripStrings23 = (s) => s
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/gs, '``');
+  /** 判定与 canary **共用**：`catch` 体**只含空白**。 */
+  const EMPTY_CATCH_RE = /catch\s*(?:\([^)]*\))?\s*\{\s*\}/g;
+  let repoFiles23 = [];
+  try {
+    repoFiles23 = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'],
+      { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(Boolean);
+  } catch {
+    fail('㉓ 无法枚举仓库文件集（`git ls-files` 失败）—— 本判据要求在有 git 的检出里运行');
+  }
+  const emptyCatches = [];
+  let code23 = 0;
+  for (const f of repoFiles23) {
+    if (!CODE_EXT23.test(f) || VENDORED23.test(f)) continue;
+    code23 += 1;
+    const s = stripStrings23(read(f));
+    for (const m of s.matchAll(EMPTY_CATCH_RE)) {
+      emptyCatches.push(`${f}:${s.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  if (emptyCatches.length > 0) {
+    fail(`㉓ 这些地方的 \`catch\` **体只含空白**（连理由注释都没有）⇒ 异常被**静默吞掉**：`
+      + `${emptyCatches.join('、')} —— 「失败了」会看起来像「成功了」。`
+      + '请写明理由（本仓既有写法：「未就绪 no-op」/「view 已销毁」/「best effort」），'
+      + '或改为上报（`console.error` / 抛错 / 计数）');
+  }
+  // 防空转：**覆盖型**（立此判据时：全部带理由 ⇒ 0 处）
+  const EMPTY_CATCH_BASELINE = 0; // [覆盖型] 基线 0
+  if (emptyCatches.length > EMPTY_CATCH_BASELINE) {
+    fail(`㉓ 真空 catch 数 ${emptyCatches.length} > [覆盖型] 基线 ${EMPTY_CATCH_BASELINE}`);
+  }
+  if (code23 < CODE_BASELINE) {
+    fail(`㉓ 只扫到 ${code23} 个代码文件（[健康度型] 下限 ${CODE_BASELINE}）—— 扫描面萎缩会让本判据**空转**`);
+  }
+  // canary：四向（与判定**共用** stripStrings23 / EMPTY_CATCH_RE）
+  const emptyIn = (s) => [...stripStrings23(s).matchAll(EMPTY_CATCH_RE)].length;
+  if (emptyIn('try { x(); } catch {}') !== 1 || emptyIn('try { x(); } catch (e) { }') !== 1) {
+    fail('㉓ canary 失效：真空 catch 的两种写法**未被检出**');
+  }
+  if (emptyIn('try { x(); } catch { /* 未就绪 no-op */ }') !== 0) {
+    fail('㉓ canary **过宽**：**带理由注释**的空 catch 被误判');
+  }
+  if (emptyIn("const s = 'try { x(); } catch {}';") !== 0) {
+    fail('㉓ canary **过宽**：**字符串里的** `catch {}`（夹具样本）被当成真代码（必须剥字符串）');
+  }
+  console.log(`Release gate: 空 \`catch\` —— 扫描 ${code23} 个代码文件，`
+    + `**全部带理由注释**（${emptyCatches.length} 处真空 catch，[覆盖型] 基线 ${EMPTY_CATCH_BASELINE}）`
+    + '；⚠️ 模板字面量里的生成 JS **不在扫描面内**');
 }
 
 if (errors.length > 0) {
