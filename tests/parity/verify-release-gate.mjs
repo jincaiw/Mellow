@@ -2960,8 +2960,9 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
 //      `what` / `observedIn` / `todo`。
 //   ⑤ **表头散文**：`source` / `why` / `note` 若存在必须是非空字符串（形状统一，读者才能判断
 //      「这个字段是真值源还是装饰」—— §4.257 的根因）。
-// 【边界如实声明】② 只落到 `ci-actions.json`（本轮我拥有、且已逐字段核过的那份）；
-//   **其余 6 份的条目键契约 = 已登记的后续项，本节不假装已覆盖**。
+// 【边界如实声明】② 现已覆盖**全部夹具的条目键**（2026-10-11 审计 §4.288 补齐 ——
+//   §4.284 立此判据时只落地了 `ci-actions.json`，其余 6 份当时**登记为后续项**，本轮已落地）。
+//   ⚠️ **仍未覆盖**：夹具里**嵌套字典的值**的形状（如 `statusVocabulary` 的每个档位对象）—— 如实声明。
 {
   const FIX_DIR = 'tests/parity/fixtures';
   // 顶层键契约（与夹具实际**双向**相等；加/删字段必须同时改这里）
@@ -2976,13 +2977,36 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     'typora-persisted-uncovered.json': ['entries', 'extract', 'kindVocabulary', 'note', 'source'],
     'typora-preferences-matrix.json': ['entries', 'note', 'source'],
   };
-  // 条目键契约（**只对 ci-actions.json 落地** —— 边界见上）
+  // 条目键契约（**全部夹具** —— 2026-10-11 审计 §4.288 补齐：§4.284 登记时只落地了 `ci-actions.json`）
   const ENTRY_CONTRACT = {
     'ci-actions.json': {
       actions: ['action', 'checkedAt', 'evidence', 'latestKnown', 'minMajorForNode24', 'note', 'ref', 'runtime'],
       floatingRefExceptions: ['action', 'reason', 'ref'],
       knownFutureMigrations: ['observedIn', 'todo', 'what'],
       knownRemainingWarnings: ['observedIn', 'todo', 'what', 'whyNotAnActionIssue'],
+    },
+    'cross-package-edges.json': {
+      edges: ['from', 'reason', 'refs', 'to'],
+    },
+    'export-collaborators.json': {
+      entries: ['callSite', 'env', 'evidence', 'field', 'ref', 'refId', 'status'],
+    },
+    'export-feature-parity.json': {
+      entries: ['evidence', 'html', 'pdf', 'preview', 'ref', 'settingId', 'syntax'],
+    },
+    'local-tools.json': {
+      tools: ['advisoryWhy', 'evidence', 'name', 'runsIn', 'signal', 'why'],
+    },
+    'typora-panel-only-keys.json': {
+      entries: ['anchor', 'blockedBy', 'consumer', 'consumerNote', 'internal', 'key', 'mellow', 'note',
+        'pendingRef', 'status'],
+    },
+    'typora-persisted-uncovered.json': {
+      entries: ['key', 'kind', 'reason'],
+    },
+    'typora-preferences-matrix.json': {
+      entries: ['behavior', 'behaviorNote', 'comparable', 'comparableNote', 'dCarrier', 'default',
+        'deviation', 'disposition', 'mellow', 'note', 'polarity', 'status', 'typora'],
     },
   };
   const HEADER_FIELDS = ['source', 'why', 'note'];
@@ -3126,7 +3150,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   console.log(`Release gate: 夹具字段契约 —— ${names.length} 份夹具的顶层键已双向锁定`
     + `（其中 ${withContract} 份细到条目键）；出处 \`run <id>\` 与 \`evidenceRuns\` 双向一致；`
     + '两张「已知 / 待办」登记表条目形状齐备。'
-    + '⚠️ 其余夹具的**条目键**契约 = 已登记后续项（本节不假装覆盖）。');
+    + '⚠️ 边界：未覆盖夹具里**嵌套字典**（如 `statusVocabulary`）的值的形状。');
 }
 
 // ── ⑳ 「本机工具」的**分类**必须登记（2026-10-11，审计 §4.287）──

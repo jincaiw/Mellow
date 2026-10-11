@@ -9616,6 +9616,19 @@ JSBridge.putSetting("caseSensitive", t.caseSensitive)
    而本仓约定「**engine 不读存储，只问宿主**」⇒ 需要一条宿主注入通道（同 `__MELLOW_IMAGE_UPLOAD__` 模式）。
 3. **`wholeWord`（查找面板）是能力缺口** —— 需要在查找面板加一个 toggle + 接线；未做。
 
+> ✅ **2026-10-11 收口（审计 §4.288）**：上面三条**均已实现** ⇒ **本条登记已过期**，如实记录（**保留原文，只加时间上下文**）：
+> 1. 「正则」复选框**已持久化** —— `App.tsx:6287` 写 `persistBoolSetting('files.searchRegex', …)`，
+>    并在 `packages/settings/src/index.ts:315` 登记为 `files.searchRegex`（带 `applyCommand: 'settings.searchOptions'`）；
+> 2. 查找面板 `caseSensitive` **已接宿主持久化** —— `documentSearch.ts` 的
+>    `__MELLOW_SEARCH_PREFS__`（读）/ `__MELLOW_SEARCH_PREF_SET__`（写），宿主侧接线在 `App.tsx:4072-4081`，
+>    引擎侧由 `documentSearch.test.ts` 覆盖；
+> 3. `wholeWord` toggle **已落地** —— `documentSearch.ts` 的 `wholeWordBtn`，持久化链路同 ②。
+>
+> ⚠️ 实现发生在 **2026-10-08（审计 §4.147）**，而**本节的三条「残留」当时没有一并收口** ——
+> 这正是 `PITFALLS §4.394`「**登记为已知 ≠ 理由仍然成立**」的实例：**登记会过期，而过期无人报**。
+> ⇒ **教训**：**实现一项「残留」时，必须回头把登记它的那一节一起收口** ——
+> 否则下一个读者会去做一件**已经完成**的事（本节就是一个）。
+
 ### 八、教训
 
 1. **「同一事实、两种 status」是本仓的结构性缺陷类** —— 它**跨条目**，**单看任一条都自洽**；
@@ -18096,6 +18109,76 @@ if (cache && isCacheFeatureAvailable()) {
   「测试必须全绿」是 CI 测试 job 的职责。**范围边界已登记**。
 
 ⇒ 同族「只锁了一半」累计 **第 115 次**（§4.170–§4.286）。
+
+## 4.288 与 Typora 差距的**再检查** + 两件**已登记未完成**任务的收口（2026-10-11）
+
+### 一、差距再检查（**全部实读制品**，不引用旧快照）
+
+| 面 | 现状（2026-10-11 实测） |
+|---|---|
+| ① 台账（发布门禁） | **NO-GO**：**10 项未闭环**；`PASS-E = 0/50` |
+| ② 偏好矩阵（`DEFAULT_OPTIONS`，84 键） | `implemented **40** / gap **38** / n/a **6**` |
+| ③ 面板独有面（47 键） | `equivalent **36** / gap **4** / n/a **7**`（gap 的 `blockedBy` = `precondition 1` / `adr-pending 3`） |
+| ④ 第三面（缝隙，15 键） | `preference-like 4` / `warning-suppression 5` / `view-state 6` |
+| ⑤ D 表 | **40** 条声明行 |
+| ⑥ ADR | **37** 份；`Proposed` = **0034–0037** |
+
+**10 项未闭环的阻塞分布**：`ux-gate-policy` **6** · `pdf-renderer-decision-pending（ADR-0037）` 1 ·
+`ux-gate-policy + perf-harness-pending` 1 · `human-ux-gate-session` 1 · `runtime-verification-pending` 1。
+
+⇒ **结论：可自主面仍为 0**（与 §4.162 起的历次实测一致）。② 的 38 条 gap 里 **30 条 `matches-default`**
+（实现 = 加**没人要的开关**）· **6 条 `differs`**（5 条等 ADR-0034 + 1 条拼写词典）· **2 条**是**已决定不做**（File Library）。
+
+### 二、未完成任务（一）：§4.284 登记的「其余 6 份夹具的条目键契约」**已落地**
+
+§4.284 立判据 ⑲ 时只覆盖了 `ci-actions.json` 的条目键，其余 6 份**登记为后续项**。本轮补齐：
+
+- `ENTRY_CONTRACT` 现覆盖 **8 份夹具**：`cross-package-edges` · `export-collaborators` ·
+  `export-feature-parity` · `local-tools` · `typora-panel-only-keys` · `typora-persisted-uncovered` ·
+  `typora-preferences-matrix`（+ 原有的 `ci-actions`）。
+- 判据自述行随之更新为「**8 份**夹具的顶层键已双向锁定（其中 **8 份**细到条目键）」。
+- ⚠️ **边界同步收窄**：仍未覆盖的是**嵌套字典的值**的形状（如 `statusVocabulary` 的每个档位对象）——
+  从「未覆盖条目键」改成「未覆盖嵌套字典的值」，**不假装全覆盖**。
+
+### 三、未完成任务（二）：§4.145 的三条「残留」**早已实现，登记却没收口**
+
+§4.145（2026-10-07）的「七、残留（如实登记）」列了三条：
+
+| 残留项 | 实际状态（2026-10-11 核） |
+|---|---|
+| 「正则」复选框不持久化 | ✅ **已持久化**：`App.tsx:6287` 写 `files.searchRegex`；`settings/src/index.ts:315` 已登记该键 |
+| 查找面板 `caseSensitive` 持久化未做 | ✅ **已接宿主持久化**：`documentSearch.ts` 的读/写注入 + 宿主接线 `App.tsx:4072-4081` |
+| `wholeWord` 是能力缺口 | ✅ **已落地**：`documentSearch.ts` 的 `wholeWordBtn` |
+
+⇒ **实现发生在 2026-10-08（审计 §4.147），而登记它的那一节当时没回头收口。**
+⚠️ 这是 `PITFALLS §4.394`「**登记为已知 ≠ 理由仍然成立**」的一个实例：**登记会过期，而过期无人报**。
+**处置**：按「历史记录文档**加时间上下文**、不改数字」的纪律，**保留三条原文**、在其后加**收口说明**
+（含逐条证据与「实现发生在哪一节」）。
+⚠️ **教训**：**实现一项「残留」时，必须回头把登记它的那一节一起收口** ——
+否则下一个读者会去做一件**已经完成**的事（本节就是）。
+
+### 四、注入验证
+
+| 注入 | 结果 |
+|---|---|
+| 往 `cross-package-edges.json` 的 `edges[0]` 加字段 | ✅ 「条目**多出**」 |
+| 往 `export-collaborators.json` 的 `entries[0]` 加字段 | ✅ 同上 |
+| 往 `export-feature-parity.json` 的 `entries[0]` 加字段 | ✅ 同上 |
+| 往 `typora-panel-only-keys.json` 的 `entries[0]` 加字段 | ✅ 同上 |
+| 往 `typora-persisted-uncovered.json` 的 `entries[0]` 加字段 | ✅ 同上 |
+| 往 `typora-preferences-matrix.json` 的 `entries[0]` 加字段 | ✅ 同上 |
+
+⇒ **6 份新覆盖的夹具逐份被验过**（不是「加进契约表就算覆盖」）。
+
+### 五、本节**未**覆盖的（如实声明）
+
+- 差距检查只**读制品**，**不重跑**真机/视觉门禁 ⇒ ①②③④ 的数字是「制品自述」，**未经真机复核**。
+- **可自主面 = 0** 的结论依赖 §4.162 对 38 条 gap 的分类（`matches-default` / `differs` / `n/a`）——
+  本轮**复核了分类的汇总数**，**未逐条重判 38 条**。
+- 其余已登记未做的项**仍开着**：`tauri-action@v0→v1`（发布路径，本机不可验）· `punycode` / `Buffer` 告警（未裁决）·
+  `audit-pkg-test-counts` 是否接进 CI（未裁决）· master-plan 的「图片导出字号选项」（E 级，**默认值是否对齐需视觉/真机确认**）。
+
+⇒ 同族「只锁了一半」累计 **第 116 次**（§4.170–§4.287）。
 
 ## 五、本次审计做的改动（非策略性）
 
