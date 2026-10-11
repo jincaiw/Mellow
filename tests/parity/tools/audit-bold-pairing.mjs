@@ -13,7 +13,11 @@
  *   修复后应接近 0 ⇒ 检验「不误报」）。
  *
  * 【用法】`node tests/parity/tools/audit-bold-pairing.mjs [<git-rev>]`
- *   不带参数 = 比对**工作区**；带 rev = 比对该版本（如 `HEAD~1`）。
+ *   不带参数 = 比对**工作区**；带 rev = 比对该版本。
+ *   ⚠️ 2026-10-11（审计 §4.293）：**rev 要写固定提交，不要写 `HEAD~1` 这类相对引用** ——
+ *     它会**随提交漂移**（原注释就举了 `HEAD~1`，而它早已指向别的提交）。
+ *   ⚠️ 该 rev 里**不存在**的文件（后来才加的）会**跳过并报出跳过数** ——
+ *     首版直接 `execFileSync` ⇒ 对旧 rev **抛错崩掉**（实测 `3fdfe20^`）。
  *
  * 【退出码】`0` = 在本判据的扫描面上无差异；`1` = 有差异（打印文件与两侧计数）。
  */
@@ -60,16 +64,33 @@ const files = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--
   .filter((f) => f.endsWith('.md') && !f.split('/').some((s) => SKIP_DIRS.has(s) || BOLD_SKIP_SEG.has(s)))
   .filter((f) => !BOLD_FROZEN.has(f));
 
-let mine = 0; let ref = 0; let bad = 0;
+let mine = 0; let ref = 0; let bad = 0; let skipped = 0;
 for (const rel of files) {
-  const src = rev === null
-    ? readFileSync(resolve(root, rel), 'utf8')
-    : execFileSync('git', ['show', `${rev}:${rel}`], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+  let src;
+  if (rev === null) {
+    src = readFileSync(resolve(root, rel), 'utf8');
+  } else {
+    try {
+      // ⚠️ **必须把 git 的 stderr 也吞掉**（`stdio` 第 3 位 = 'ignore'）——
+      //   否则每跳过一个文件，终端就会多一行 `fatal: path … exists on disk, but not in '<rev>'`，
+      //   看起来像工具坏了（实测）。
+      src = execFileSync('git', ['show', `${rev}:${rel}`],
+        { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      // ⚠️ 2026-10-11（审计 §4.293）：**该 rev 里不存在这个文件**（它是后来才加的）。
+      //   首版直接 `execFileSync` ⇒ **抛错崩掉** ⇒ 实测对 `3fdfe20^` 这类旧 rev **完全不可用**
+      //   （而 README 却写着「用法：`[<git-rev>]`」）⇒ 现**跳过并计数**，
+      //   让读者知道「这次比较覆盖了多少份」—— 否则「跳过」会被读成「通过」。
+      skipped += 1;
+      continue;
+    }
+  }
   const a = boldCount(src);
   const b = refCount(src);
   mine += a; ref += b;
   if (a !== b) { bad += 1; console.log(`✗ ${rel}  扫描器=${a}  真解析器=${b}`); }
 }
-console.log(`加粗配对交叉验证（rev=${rev ?? '工作区'}）：${files.length} 份 .md`
+console.log(`加粗配对交叉验证（rev=${rev ?? '工作区'}）：${files.length - skipped} 份 .md`
+  + (skipped > 0 ? `（**跳过 ${skipped} 份**：该 rev 里不存在）` : '')
   + ` · 扫描器 ${mine} / 真解析器 ${ref} · 不一致 ${bad} 处`);
 process.exit(bad === 0 ? 0 : 1);
