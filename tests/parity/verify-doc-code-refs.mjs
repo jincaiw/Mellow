@@ -3465,7 +3465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 284; // 2026-10-10 加 §4.284 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 285; // 2026-10-10 加 §4.285 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -3968,6 +3968,93 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
     throw new Error('㊺ canary **过宽**：不含 `ts` 的专用面被误判为「代码面」');
   }
   console.log(`Doc code refs: 护栏的**代码文件扫描面** —— ${surfaces} 处，均为规范面 \`${CANON.join('|')}\` 的超集`);
+}
+
+// ── ㊻ 审计文档里「同族累计次数 + 区间」是**位置派生量**，却全靠手写 ⇒ 必须自洽（2026-10-10，审计 §4.285）──
+// 【为什么】审计文档里有二十多处收尾行写着
+//   `⇒ 同族「只锁了一半」累计 **第 N 次**（§4.170–§4.B）`。
+//   这三个量**全都是位置派生量**，却**全靠手写**，而且**此前没有任何判据守它**：
+//     · `N` 每出现一次 +1（= 出现序数）；
+//     · 区间末尾 `B` 必须 == **该行所在节的节号 − 1**；
+//     · 区间起点恒为 **§4.170**（族起点，登记在下方常量）。
+//   ⚠️ **实测已漂移 1 处**（本判据首跑就抓到）：`§4.259` 的收尾行写 `§4.170–§4.257`，
+//     而它**前一节是 §4.258**（该节**存在**，只是那节没记实例）⇒ 末尾少 1。
+//   ⚠️ 这正是本仓通则「**手写计数必然漂移** ⇒ 一律派生」的又一次实例 —— 而判据 **⑦/⑧**
+//     只守**护栏的收口行**，**守不到文档** ⇒ 这是它们**没锁的那一半**。
+// 【判据】对审计文档的每一处该形态：① `B` == 所在节号 − 1；② 起点 == 族起点常量；
+//   ③ `N` 相对上一处**严格 +1**（首处除外）。
+//   ⚠️ **必须剥围栏代码块**（本文档正文里要能**引用**坏形态 —— 与 ㊵「围栏 = 引述区」同一条纪律）。
+//   ⚠️ 用 `throw`（与 ㊸ / ㊺ 同）：本块落在本文件**最后一个 `errors.push` 之后**，
+//     而 `verify-release-gate.mjs` 判据 ⑩ 要求「抛错点之后不得再有 `fail(` / `errors.push(` 断言」。
+{
+  const AUDIT_DOC = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const FAMILY_FROM = 170; // 族起点 §4.170（人工核实的事实）
+  const MIN_HITS = 20; // 防空转下限（立此判据时实测 27 处）
+  const LINE_RE = /同族「只锁了一半」累计\s*\*{0,2}第\s*(\d+)\s*次\*{0,2}（§4\.(\d+)–§4\.(\d+)）/;
+  /** 判定与 canary **共用**：把围栏代码块**置空但保留行数**（保住行号 → 节号映射不变）。 */
+  const blankFences = (src) => {
+    let inFence = false;
+    return src.split('\n').map((l) => {
+      if (/^```/.test(l)) { inFence = !inFence; return ''; }
+      return inFence ? '' : l;
+    }).join('\n');
+  };
+  const lines = blankFences(readFileSync(resolve(root, AUDIT_DOC), 'utf8')).split('\n');
+  const marks = [];
+  lines.forEach((l, i) => {
+    const m = /^## 4\.(\d+)\s/.exec(l);
+    if (m !== null) marks.push([i, Number(m[1])]);
+  });
+  const secOf = (idx) => {
+    let cur = null;
+    for (const [i, n] of marks) { if (i <= idx) cur = n; else break; }
+    return cur;
+  };
+  let hits = 0;
+  let prev = null;
+  const bad = [];
+  lines.forEach((l, i) => {
+    const m = LINE_RE.exec(l);
+    if (m === null) return;
+    hits += 1;
+    const n = Number(m[1]);
+    const from = Number(m[2]);
+    const to = Number(m[3]);
+    if (from !== FAMILY_FROM) {
+      bad.push(`L${i + 1} 区间起点 §4.${from} ≠ 族起点 §4.${FAMILY_FROM}`);
+    }
+    const sec = secOf(i);
+    if (sec === null) {
+      bad.push(`L${i + 1} 落在任何 \`## 4.N\` 节之外`);
+    } else if (to !== sec - 1) {
+      bad.push(`L${i + 1} 在 §4.${sec} 里，区间末尾应为 §4.${sec - 1}，实际写 §4.${to}`);
+    }
+    if (prev !== null && n !== prev + 1) {
+      bad.push(`L${i + 1} 累计次数 ${n} ≠ 上一处 ${prev} + 1`);
+    }
+    prev = n;
+  });
+  if (bad.length > 0) {
+    throw new Error('审计文档的「同族累计次数 / 区间」**自相矛盾**：\n  ' + bad.join('\n  ')
+      + '\n  —— 这三个量都是**位置派生量**，却全靠手写（本仓通则：手写计数必然漂移 ⇒ 一律派生）');
+  }
+  if (hits < MIN_HITS) {
+    throw new Error(`审计文档里只找到 ${hits} 处「同族累计次数」收尾行（下限 ${MIN_HITS}）`
+      + ' —— 形态改名或扫描面漂移会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** LINE_RE / blankFences）
+  if (LINE_RE.exec('⇒ 同族「只锁了一半」累计 **第 9 次**（§4.170–§4.7）。') === null) {
+    throw new Error('㊻ canary 失效：正常形态未被解析');
+  }
+  if (LINE_RE.exec('⇒ 同族累计第 9 次（§4.170–§4.7）。') !== null) {
+    throw new Error('㊻ canary **过宽**：缺「只锁了一半」的句子被误判');
+  }
+  const FENCE_SAMPLE = ['```', '⇒ 同族「只锁了一半」累计 **第 9 次**（§4.170–§4.7）。', '```'].join('\n');
+  if (blankFences(FENCE_SAMPLE).split('\n').some((l) => LINE_RE.test(l))) {
+    throw new Error('㊻ canary 失效：**围栏代码块内的引述**被当成了真记录（必须剥围栏）');
+  }
+  console.log(`Doc code refs: 审计文档的「同族累计次数 + 区间」—— ${hits} 处**自洽**`
+    + `（次数严格 +1；区间末尾 == 所在节 − 1；起点恒为 §4.${FAMILY_FROM}）`);
 }
 
 if (errors.length > 0) {
