@@ -2992,6 +2992,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     'export-collaborators.json': ['callSites', 'entries', 'note', 'source', 'statusVocabulary', 'why'],
     'export-feature-parity.json': ['entries', 'note', 'source', 'statusVocabulary', 'why'],
     'local-tools.json': ['note', 'reviewedAt', 'source', 'staleAfterDays', 'tools', 'why'],
+    'node-types.json': ['divergences', 'note', 'reviewedAt', 'source', 'staleAfterDays', 'why'],
     'typora-panel-only-keys.json': ['entries', 'note', 'source', 'why'],
     'typora-persisted-uncovered.json': ['entries', 'extract', 'kindVocabulary', 'note', 'source'],
     'typora-preferences-matrix.json': ['entries', 'note', 'source'],
@@ -3015,6 +3016,9 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     },
     'local-tools.json': {
       tools: ['advisoryWhy', 'evidence', 'name', 'runsIn', 'signal', 'why'],
+    },
+    'node-types.json': {
+      divergences: ['kind', 'package', 'typesMajor', 'why'],
     },
     'typora-panel-only-keys.json': {
       entries: ['anchor', 'blockedBy', 'consumer', 'consumerNote', 'internal', 'key', 'mellow', 'note',
@@ -3763,8 +3767,9 @@ const stripJsComments = (s) => {
   const DATED_REGISTRIES = [
     { file: 'tests/parity/fixtures/ci-actions.json', dateKey: 'checkedAt', in: 'actions' },
     { file: 'tests/parity/fixtures/local-tools.json', dateKey: 'reviewedAt', in: null },
+    { file: 'tests/parity/fixtures/node-types.json', dateKey: 'reviewedAt', in: null },
   ];
-  const DATED_REGISTRY_BASELINE = 2; // [覆盖型] 基线 2
+  const DATED_REGISTRY_BASELINE = 3; // [覆盖型] 基线 3
   const DAY_MS = 86400000;
   const todayUtc = () => {
     const d = new Date();
@@ -3867,6 +3872,113 @@ const stripJsComments = (s) => {
   console.log(`Release gate: 带日期的登记 —— 检查 ${datedChecked} 份登记表的保质期与到期日，`
     + `过期 ${offenders27.length} 项（[覆盖型] 基线 ${DATED_REGISTRY_BASELINE}）`
     + '；⚠️ 不守「上游是否真的又发了新版」（离线判据无法知道），也不能阻止「无限推期」');
+}
+
+// ── ㉘ 「Node 的版本」的**第三条轴**：类型定义（`@types/node`）（2026-10-11，审计 §4.299）──
+// 【为什么】本仓已守**两条**轴：① **job 运行时** = `.nvmrc`（判据 ⑯，审计 §4.278）；
+//   ② **action 自己声明的运行时** = `action.yml` 的 `runs.using`（判据 ⑱ + `ci-actions.json`，§4.283）。
+//   **第三条轴此前没人守**：**类型定义的 Node 版本** = `@types/node`。
+//   它的后果是**静默**的 —— TS 会接受 Node 24/26 才有的 API ⇒ `npm run typecheck` 通过、
+//   **运行时（`.nvmrc` = 22）崩**。实测（2026-10-11）：**4 处声明 / 2 个主版本**（24 ×3、26 ×1）；
+//   `pnpm-lock.yaml` 里 `@types/node@24.13.3` 与 `@types/node@26.2.0` **并存**（同仓两套 Node 类型）。
+// 【真值源】`tests/parity/fixtures/node-types.json`（**只登记偏离**，不复制完整 spec ⇒ 无副本可漂）。
+// 【判据】① **运行时主版本从 `.nvmrc` 派生**（登记表里**不写**该值）；
+//   ② 每个声明了 `@types/node` 的包，若主版本 != 运行时主版本，必须在 `divergences` 里**且 `typesMajor` 相符**
+//      （否则「悄悄换成 30」不会被发现）；
+//   ③ `divergences` 每条必须**真的**对应一个偏离的包（**双向**，防化石条目）；
+//   ④ `kind` ∈ {`pendingDecision`, `deliberate`}，且 `why` 非空。
+// ⚠️ **范围**：排除 vendored `packages/editor-core/CoreEditor/`（独立 yarn 工程、有自己的 lockfile，
+//   依赖是上游的事 —— 同 `verify-package-conventions.mjs` 的 C1–C7 先例）。
+// ⚠️ **只核对主版本**：minor/patch 的变动不是决策（`^24.13.3` → `^24.20.0` 不该红）。
+// ⚠️ **本判据不改任何依赖**（`AGENTS.md`：依赖变更属方案级）—— 它只让「偏离」**可见且必须被登记**。
+{
+  const REG28 = 'tests/parity/fixtures/node-types.json';
+  const KINDS28 = ['pendingDecision', 'deliberate'];
+  const VENDORED28 = '/CoreEditor/';
+  /** 判定与 canary **共用**：一个包的 `@types/node` 声明（`devDependencies` 优先）。 */
+  const typesSpecOf = (pkg) => (pkg?.devDependencies?.['@types/node']
+    ?? pkg?.dependencies?.['@types/node'] ?? null);
+  const majorOf28 = (spec) => {
+    const m = /(\d+)/.exec(String(spec ?? ''));
+    return m === null ? null : Number(m[1]);
+  };
+  if (!existsSync(resolve(root, REG28))) {
+    fail(`㉘ 缺少登记表 ${REG28} —— 「类型定义的 Node 版本」是**第三条轴**，没有登记处就等于没人守`);
+  } else if (!existsSync(resolve(root, '.nvmrc'))) {
+    fail('㉘ 缺少 `.nvmrc` —— 运行时主版本**必须从它派生**（不写进登记表，避免副本）');
+  } else {
+    const runtimeMajor = majorOf28(read('.nvmrc').trim());
+    const reg = JSON.parse(read(REG28));
+    const divs = Array.isArray(reg.divergences) ? reg.divergences : [];
+    const pkgFiles = (trackedFiles ?? [])
+      .filter((f) => f === 'package.json' || f.endsWith('/package.json'))
+      .filter((f) => !f.includes('node_modules') && !f.includes(VENDORED28))
+      .sort();
+    const actual = new Map(); // 包目录 → { major, spec }
+    for (const f of pkgFiles) {
+      const spec = typesSpecOf(JSON.parse(read(f)));
+      if (spec === null) continue;
+      const dir = f === 'package.json' ? '.' : f.slice(0, -'/package.json'.length);
+      actual.set(dir, { major: majorOf28(spec), spec });
+    }
+    const declared = new Map(divs.map((d) => [d.package, d]));
+    // ② 偏离必须登记（且 `typesMajor` 相符）
+    for (const [dir, { major, spec }] of actual) {
+      if (major === null) {
+        fail(`㉘ \`${dir}\` 的 \`@types/node\` 取不出主版本（现值 \`${spec}\`）`);
+        continue;
+      }
+      if (major === runtimeMajor) {
+        if (declared.has(dir)) {
+          fail(`㉘ \`${dir}\` 的 \`@types/node\`（${spec}）**已与运行时主版本一致**，`
+            + '但 `divergences` 里仍有它 —— **化石条目**，请删除（双向检查）');
+        }
+        continue;
+      }
+      const d = declared.get(dir);
+      if (d === undefined) {
+        fail(`㉘ \`${dir}\` 的 \`@types/node\` 主版本是 **${major}**，而运行时（\`.nvmrc\`）是 **${runtimeMajor}**，`
+          + `但它**不在** \`${REG28}\` 的 \`divergences\` 里 —— 请登记并写明理由`
+          + '（TS 会因此接受运行时没有的 API：**typecheck 通过、运行时崩**）');
+        continue;
+      }
+      if (d.typesMajor !== major) {
+        fail(`㉘ \`${dir}\` 登记的是 \`typesMajor: ${d.typesMajor}\`，而**现读**是 **${major}** —— 登记值已漂`);
+      }
+      if (!KINDS28.includes(d.kind)) {
+        fail(`㉘ \`${dir}\` 的 \`kind\` = \`${d.kind}\` 不在合法值里（${KINDS28.join(' / ')}）`);
+      }
+      if (typeof d.why !== 'string' || d.why.trim() === '') {
+        fail(`㉘ \`${dir}\` 的偏离没有 \`why\` —— **没有理由的偏离等于没登记**`);
+      }
+    }
+    // ③ 反向：登记的包必须真的存在（且真的偏离 —— 由上面的化石分支覆盖）
+    for (const d of divs) {
+      if (!actual.has(d.package)) {
+        fail(`㉘ \`divergences\` 里的 \`${d.package}\` **不存在**（或没有声明 \`@types/node\`）—— 化石条目`);
+      }
+    }
+    // 防空转：**覆盖型**（下限 = 立此判据时的基线；包增删时须一并复核）
+    const NODE_PKG_BASELINE = 4; // [覆盖型] 基线 4
+    if (actual.size < NODE_PKG_BASELINE) {
+      fail(`㉘ 只现读到 ${actual.size} 个声明了 \`@types/node\` 的包（[覆盖型] 基线 ${NODE_PKG_BASELINE}）`
+        + ' —— 扫描面漂移会让本判据空转');
+    }
+    console.log(`Release gate: Node 的**第三条轴**（类型定义）—— 现读 ${actual.size} 个声明了 \`@types/node\` 的包，`
+      + `其中 ${divs.length} 个与运行时主版本（${runtimeMajor}，**派生自 \`.nvmrc\`**）不同且已登记`
+      + '；⚠️ 本判据**不改依赖**，只让偏离**可见且必须被登记**');
+  }
+  // canary：三向（与判定**共用** typesSpecOf / majorOf28）
+  if (majorOf28('^24.13.3') !== 24 || majorOf28('26.2.0') !== 26) {
+    fail('㉘ canary 失效：`@types/node` 主版本解析错');
+  }
+  if (majorOf28('latest') !== null) {
+    fail('㉘ canary **过宽**：非数字 spec 未被判为「取不出主版本」');
+  }
+  if (typesSpecOf({ devDependencies: { '@types/node': '^24.0.0' }, dependencies: { '@types/node': '^26.0.0' } })
+    !== '^24.0.0') {
+    fail('㉘ canary 失效：`devDependencies` 未优先于 `dependencies`');
+  }
 }
 
 if (errors.length > 0) {

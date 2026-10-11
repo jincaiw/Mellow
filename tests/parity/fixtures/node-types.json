@@ -1,0 +1,33 @@
+{
+  "source": "逐个 `package.json` 现读 `@types/node`（`devDependencies` 优先，其次 `dependencies`）；**运行时主版本从 `.nvmrc` 派生**（判据 ㉘ 现读，本表不写运行时值）。",
+  "why": "「Node 的版本」在本仓有**三条轴**：① **job 运行时** = `.nvmrc`（判据 ⑯ 守）；② **action 自己声明的运行时** = `action.yml` 的 `runs.using`（判据 ⑱ 守，登记处 `ci-actions.json`）；③ **类型定义的 Node 版本** = `@types/node` —— **此前没有任何登记处**。第三条轴的后果是**静默**的：TS 会接受 Node 24/26 才有的 API ⇒ `npm run typecheck` 通过、**运行时（`.nvmrc` = 22）崩**。实测（2026-10-11）：**4 处声明 / 2 个主版本**（24 ×3、26 ×1），且 `pnpm-lock.yaml` 里 `@types/node@24.13.3` 与 `@types/node@26.2.0` **并存**（同一仓库两套 Node 类型）。",
+  "note": "⚠️ 本表**只登记「与运行时主版本不同」的包**（`divergences`）—— **不复制**每个包的完整 spec（那是 `package.json` 的副本、会漂）；判据从 `package.json` **现读**，只核对**主版本**（minor/patch 变动不是决策）。⚠️ 每条必须有非空 `why`；`kind` 只有两个合法值：`pendingDecision`（待裁决 —— 对齐要动依赖 + 重生成 lockfile）与 `deliberate`（有意的，理由必须自洽）。⚠️ 本表**不改任何依赖**（`AGENTS.md`：依赖变更属方案级）。⚠️ **范围**：排除 vendored `packages/editor-core/CoreEditor/`（它是独立 yarn 工程、有自己的 lockfile ⇒ 依赖是上游的事；同判据 C1–C7 的先例）。⚠️ 顶层键与条目键由判据 ⑲ 的字段契约**双向**锁定。",
+  "reviewedAt": "2026-10-11",
+  "staleAfterDays": 180,
+  "divergences": [
+    {
+      "package": "apps/desktop",
+      "typesMajor": 24,
+      "kind": "pendingDecision",
+      "why": "与运行时主版本差 **2**。**对齐要动 `devDependencies` + 重生成 `pnpm-lock.yaml`** ⇒ 本机 `pnpm` 经 corepack 需联网下载、被阻断（2026-10-11 实测）⇒ **未自行改**（依赖变更属方案级）。"
+    },
+    {
+      "package": "packages/editor-core",
+      "typesMajor": 24,
+      "kind": "pendingDecision",
+      "why": "同上（与运行时主版本差 **2**；对齐需重生成 lockfile）。"
+    },
+    {
+      "package": "packages/editor-engine",
+      "typesMajor": 24,
+      "kind": "pendingDecision",
+      "why": "同上（与运行时主版本差 **2**；对齐需重生成 lockfile）。"
+    },
+    {
+      "package": "packages/export",
+      "typesMajor": 26,
+      "kind": "pendingDecision",
+      "why": "⚠️ **本仓唯一与另外三个包也不同**的：其余三包是 **24**，它是 **26**（与运行时差 **4**）⇒ `pnpm-lock.yaml` 里因此**并存两份** `@types/node`。对齐需重生成 lockfile。"
+    }
+  ]
+}
