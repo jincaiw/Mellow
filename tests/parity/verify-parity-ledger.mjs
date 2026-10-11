@@ -16,6 +16,16 @@ function assert(condition, message) {
   if (!condition) errors.push(message);
 }
 
+// ⚠️ 2026-10-11（审计 §4.290）：本文件里有 **8 处** `fail(...)` 调用，而 `fail` **从未定义** ——
+//   即这 8 条断言的**失败路径**一直是坏的：条件一旦成立，抛 `ReferenceError` 而不是给出可操作的消息。
+//   （护栏仍会非零退出，所以**不是静默通过**；但**丢掉诊断信息**，且**整条护栏当场中断**
+//   ⇒ 其后的所有判据**从未判定**。）
+//   ⚠️ 它一直没被发现，是因为**这 8 个分支从未被触发过** —— 注入验证当场抓到（`fail is not defined`）。
+//   ⇒ 补上定义，语义与上面的 `assert` **一致**（**push 而非 throw**）。
+function fail(message) {
+  errors.push(message);
+}
+
 assert(ledger.schemaVersion === 1, 'schemaVersion 必须为 1');
 assert(ledger.normativeBaseline?.product === 'Typora', '规范产品必须为 Typora');
 assert(ledger.normativeBaseline?.version === '1.14.9', '规范验收基线必须为 Typora 1.14.9');
@@ -794,18 +804,39 @@ if (existsSync(benchmarkRunnerPath)) {
     if (existsSync(relPath)) {
       const rel = readFileSync(relPath, 'utf8').replace(/\r\n/g, '\n');
       const macJob = (rel.match(/\n  macos:\n[\s\S]*?(?=\n  \w+:\n|\n\n  \w+)/) ?? [])[0] ?? rel;
-      const jobName = (macJob.match(/\n    name: (.+)/) ?? [])[1] ?? '';
-      const claimsSigning = /Signed/i.test(jobName);
+      // ⚠️ 2026-10-11（审计 §4.290）**扩面**：首版只取 **job 名**（`\n    name: `，4 空格缩进）
+      //   ⇒ **漏掉 step 名**（`      - name: `）—— 实测 `Build Signed + Notarized DMG`
+      //   **仍在宣称签名**，而 job 名早已按**同一理由**改成如实描述 ⇒ 「**只锁了一半**」同族。
+      //   现扫该 job 内**所有** `name:` 行（job 名 + 每个 step 名），**谓词不变**（`/Signed/i`）。
+      const nameLines = [...macJob.matchAll(/^[ \t]*(?:- )?name: (.+)$/gm)].map((m) => m[1].trim());
+      const claiming = nameLines.filter((n) => /Signed/i.test(n));
+      const claimsSigning = claiming.length > 0;
       // 凭据缺失分支是否硬失败（`exit 1` 或 `set -e` 下必然失败）
       const hasHardFail = /凭据未配置[\s\S]{0,120}?exit 1/.test(macJob) || /未配置[\s\S]{0,80}?exit 1/.test(macJob);
       if (claimsSigning && !hasHardFail) {
-        fail('release.yml 的 macOS job 名宣称「Signed」，但 Apple 凭据缺失时只 echo 一句就继续'
-          + '（job 仍 success）→ 名称在骗人。要么把凭据缺失改为硬失败，要么名称不宣称签名。');
+        fail(`release.yml 的 macOS job 里有 ${claiming.length} 处名称宣称「Signed」，`
+          + `但 Apple 凭据缺失时只 echo 一句就继续（job 仍 success）→ 名称在骗人：`
+          + `${claiming.map((n) => `\`${n}\``).join('、')}。`
+          + '要么把凭据缺失改为硬失败，要么**所有**名称（job 名**与** step 名）都不宣称签名。');
       }
-      // canary：自检该判定（样本拼接构造）
+      // 防空转：必须真的扫到该 job 的多个 name（否则「扩面」等于没扩）
+      if (nameLines.length < 5) {
+        fail(`macOS job 里只扫到 ${nameLines.length} 个 \`name:\`（下限 5）`
+          + ' —— 扫描面萎缩会让「job 名 + step 名」的扩面**空转**');
+      }
+      // canary：自检该判定（样本拼接构造；**两种缩进各一条**）
       const CLAIM_SAMPLE = 'macOS (Signed + Notarized' + ' + DMG)';
+      const CLAIM_STEP = '      - name: Build Signed + Notarized' + ' DMG';
       if (!/Signed/i.test(CLAIM_SAMPLE)) {
         errors.push('job 名宣称护栏 canary 失效：宣称样本未被检出');
+      }
+      const stepNames = [...CLAIM_STEP.matchAll(/^[ \t]*(?:- )?name: (.+)$/gm)].map((m) => m[1].trim());
+      if (stepNames.length !== 1 || !/Signed/i.test(stepNames[0])) {
+        errors.push('job 名宣称护栏 canary 失效：**step 名**形态未被新扫描面检出'
+          + '（扩面后若只认 job 名缩进，这条会红）');
+      }
+      if (nameLines.length > 0 && nameLines.some((n) => n === '')) {
+        errors.push('job 名宣称护栏 canary **过宽**：扫到了空的 `name:`');
       }
     }
   }

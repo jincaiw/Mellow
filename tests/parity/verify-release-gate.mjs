@@ -3319,6 +3319,73 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + '（⇒ CI 日志里这两类弃用告警**不可能来自本仓**；vendored 发布制品已豁免）');
 }
 
+// ── ㉒ 护栏里调用的「断言辅助函数」必须有定义 / import（2026-10-11，审计 §4.290）──
+// 【为什么】实测 `verify-parity-ledger.mjs` 里有 **8 处** `fail(...)` 调用，而 `fail` **从未定义**
+//   ⇒ 那 8 条断言的**失败路径**一直是坏的：条件一旦成立就抛 `ReferenceError`，
+//   丢掉可操作消息，而且**整条护栏当场中断 ⇒ 其后的判据从未判定**。
+//   ⚠️ 它藏了很久，因为**那 8 个分支从未被触发过** —— 是**注入验证**当场抓到的
+//     （**静态阅读看不出**：`fail(` 长得完全正常）。
+//   ⇒ 用一条**廉价的定向 lint** 钉住：**调用了就必须有定义 / import / globalThis**。
+//   ⚠️ **必须剥注释**（本仓通则）—— 否则注释里提到的 `fail(` 会被当成真调用。
+{
+  const HELPERS = ['fail', 'assert'];
+  const stripComments22 = (s) => s
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .map((l) => (l.trim().startsWith('//') ? '' : l.replace(/[ \t]\/\/.*$/, '')))
+    .join('\n');
+  const guards22 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const undefinedCalls = [];
+  let scanned22 = 0;
+  for (const f of guards22) {
+    const src = stripComments22(read(`tests/parity/${f}`));
+    scanned22 += 1;
+    for (const h of HELPERS) {
+      const callRe = new RegExp(`(?<![\\w.$])${h}\\(`, 'g');
+      const hits = src.match(callRe);
+      if (hits === null) continue;
+      const defined = new RegExp(`(?:const|let|var|function)\\s+${h}\\b`).test(src);
+      const imported = new RegExp(`import\\s*\\{[^}]*\\b${h}\\b[^}]*\\}`).test(src)
+        || new RegExp(`import\\s+${h}\\b`).test(src);
+      const globalized = new RegExp(`globalThis\\.${h}\\b`).test(src);
+      if (!defined && !imported && !globalized) {
+        undefinedCalls.push(`${f} → \`${h}(\`（${hits.length} 处调用）`);
+      }
+    }
+  }
+  if (undefinedCalls.length > 0) {
+    fail(`㉒ 这些护栏**调用了未定义的断言辅助函数**：${undefinedCalls.join('、')}`
+      + ' —— **静态阅读看不出**（`fail(` 长得完全正常），但**失败路径**会抛 `ReferenceError`：'
+      + '丢掉可操作消息，且**整条护栏当场中断 ⇒ 其后的判据从未判定**。'
+      + '请补上定义（或 import），别指望「反正会红」');
+  }
+  // 防空转：**覆盖型**（护栏增删时须一并复核）
+  const GUARD22_BASELINE = 23; // [覆盖型] 基线 23
+  if (scanned22 < GUARD22_BASELINE) {
+    fail(`㉒ 只扫描到 ${scanned22} 个护栏（[覆盖型] 基线 ${GUARD22_BASELINE}）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用**同一套正则；样本**拼接构造**）
+  const callReC = (h) => new RegExp(`(?<![\\w.$])${h}\\(`);
+  const defReC = (h) => new RegExp(`(?:const|let|var|function)\\s+${h}\\b`);
+  const H = 'fa' + 'il';
+  const OK_SAMPLE = `const ${H} = (m) => errors.push(m);\n${H}('x');`;
+  const BAD_SAMPLE = `${H}('x');`;
+  if (!callReC(H).test(OK_SAMPLE) || !defReC(H).test(OK_SAMPLE)) {
+    fail('㉒ canary 失效：合规样本未被判为「有定义」');
+  }
+  if (callReC(H).test(BAD_SAMPLE) && defReC(H).test(BAD_SAMPLE)) {
+    fail('㉒ canary **过宽**：只有调用、没有定义的样本被判为有定义');
+  }
+  if (callReC(H).test(stripComments22(`// ${H}(x) 在注释里不算调用`))) {
+    fail('㉒ canary **过宽**：注释里的调用被当成真调用（必须剥注释）');
+  }
+  console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
+    + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）`);
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

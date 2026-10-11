@@ -303,7 +303,10 @@ jobs:
           else
             echo "Apple 凭据未配置：产出未签名 DMG"
           fi
-      - name: Build Signed + Notarized DMG
+      # ⚠️ 2026-10-11（审计 §4.290）：本步名原为 `Build Signed + Notarized DMG` ——
+      #   与 job 名**同一个假声明**（凭据缺失时并不会签名）。job 名早已改成如实描述，
+      #   而 step 名**漏改**（护栏当时只扫 job 名）⇒ 现一并如实描述，并已把护栏扩到 step 名。
+      - name: Build DMG（有 Apple 凭据时签名 + 公证）
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
