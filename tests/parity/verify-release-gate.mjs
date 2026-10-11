@@ -2992,6 +2992,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   const TOP_CONTRACT = {
     'ci-actions.json': ['actions', 'evidenceRuns', 'floatingRefExceptions', 'knownFutureMigrations',
       'knownRemainingWarnings', 'note', 'reviewedAt', 'source', 'staleAfterDays', 'why'],
+    'ci-secrets.json': ['note', 'reviewedAt', 'secrets', 'source', 'staleAfterDays', 'why'],
     'cross-package-edges.json': ['edges', 'note', 'source', 'why'],
     'export-collaborators.json': ['callSites', 'entries', 'note', 'source', 'statusVocabulary', 'why'],
     'export-feature-parity.json': ['entries', 'note', 'source', 'statusVocabulary', 'why'],
@@ -3008,6 +3009,9 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       floatingRefExceptions: ['action', 'reason', 'ref'],
       knownFutureMigrations: ['observedIn', 'todo', 'what', 'windowOpensAt'],
       knownRemainingWarnings: ['observedIn', 'todo', 'what', 'whyNotAnActionIssue'],
+    },
+    'ci-secrets.json': {
+      secrets: ['consequence', 'name', 'status', 'why'],
     },
     'cross-package-edges.json': {
       edges: ['from', 'reason', 'to'],
@@ -3160,7 +3164,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   // ⚠️ 2026-10-11（审计 §4.310）：`coverEq` 上线时实测 **9**，而基线写的是 **7** ⇒
   //   两次夹具新增（`ci-actions.json` / `node-types.json`）**都没同步基线** ——
   //   `< 7` 静默容忍了它们。现同步为 9。
-  const FIXTURE_BASELINE = 9; // [覆盖型] 基线 9
+  const FIXTURE_BASELINE = 10; // [覆盖型] 基线 10
   coverEq('⑲ 夹具份数', names.length, FIXTURE_BASELINE,
     '扫描面漂移会让本判据**空转**');
   // canary：三向（与判定**共用** runsIn）
@@ -3795,6 +3799,9 @@ const stripStrings = (s) => s.replace(
 {
   const DATED_REGISTRIES = [
     { file: 'tests/parity/fixtures/ci-actions.json', dateKey: 'checkedAt', in: 'actions' },
+    // ⚠️ 2026-10-11（审计 §4.312）：`ci-secrets.json` 的 `status` 是**快照**（CI 里不查 `gh secret list`）
+    //   ⇒ 必须挂到「**到期变红**」这套机制上（㉗），否则「配了凭据却没人更新散文」永远不会被发现。
+    { file: 'tests/parity/fixtures/ci-secrets.json', dateKey: 'reviewedAt', in: null },
     { file: 'tests/parity/fixtures/local-tools.json', dateKey: 'reviewedAt', in: null },
     { file: 'tests/parity/fixtures/node-types.json', dateKey: 'reviewedAt', in: null },
   ];
@@ -3862,7 +3869,7 @@ const stripStrings = (s) => s.replace(
   if (offenders27.length > 0) {
     fail(`带日期的登记**过期或未声明保质期**：${offenders27.join('；')}`);
   }
-  const DATED_REGISTRY_BASELINE = 3; // [覆盖型] 基线 3
+  const DATED_REGISTRY_BASELINE = 4; // [覆盖型] 基线 4
   coverEq('㉗ 带日期的登记表份数', datedChecked, DATED_REGISTRY_BASELINE,
     '扫描面漂移会让本判据空转');
   // canary ①（正样本）：**未过期**的样本不得报
@@ -4696,7 +4703,7 @@ const stripStrings = (s) => s.replace(
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 22; // [覆盖型] 基线 22
+  const COVERAGE_MARK_BASELINE = 23; // [覆盖型] 基线 23
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -4780,6 +4787,88 @@ const stripStrings = (s) => s.replace(
     + `（豁免 ${CANARY_EXEMPT.size} 个：mutation harness）；`
     + '⚠️ **边界**：「canary：N 向」的**自述数不可机械核对**（一个「向」≠ 一条断言；'
     + '实测两版量具都不健全）⇒ 已把读数（两向 16 / 单向 6 / 无 1）**登记**，**不落判据**');
+}
+
+// ── ㊳ workflow 引用的 `secrets.*` 必须登记（2026-10-11，审计 §4.312）──
+// 【为什么】**未配置的 secret 不会报错** —— GitHub 把 `${{ secrets.X }}` 求值为**空字符串**。
+//   实测代价：`release.yml` 引用 **11** 个 secret，仓库里**只配置了 2 个**（另有 1 个是自动的
+//   `GITHUB_TOKEN`）⇒ macOS **不签名不公证**、Windows **不签名**，而**构建照样成功**
+//   （`release.yml:287-304` 显式处理缺失分支：`if [ -n "$APPLE_CERTIFICATE" ]` → `echo "Apple 凭据未配置…"`）。
+//   ⚠️ 这件事此前只写在**散文**里（README / ADR-0031 / release template / 7 份 release notes /
+//     `packaging-release.md` / workflow 注释）—— **没有机器可读的清单**，也**没有「到点重新分诊」**：
+//     哪天配了凭据，**没有任何东西**提醒去更新那 6 处散文。
+// 【真值源】`tests/parity/fixtures/ci-secrets.json`（带 `reviewedAt` + `staleAfterDays` ⇒ 判据 ㉗ 守）。
+// 【判据】① **双向**：workflow 里引用的每个 `secrets.X` 必须在表里；表里每条必须被引用；
+//   ② 每条自洽：`status` ∈ {auto, configured, missing} · 非空 `why`；
+//   ③ `status: missing` ⇒ 必须给非空 `consequence`（**缺了可以，但必须写出缺了什么**）。
+// 【边界如实声明】⚠️ **`status` 是快照** —— 本判据**无法**核对「GitHub 上现在到底配了没有」
+//   （需要 `gh secret list` + 网络 + token 权限，**CI 里不做**）⇒ 靠 `reviewedAt` + `staleAfterDays`
+//   的**到期变红**强制重新分诊（判据 ㉗）。⚠️ 与 ⑱（`ci-actions.json`）同族但对象不同：
+//   ⑱ 守 **action 的版本 / pin**，本条守 **secret 的配置状态**。
+{
+  const SECRETS_REG = 'tests/parity/fixtures/ci-secrets.json';
+  const SECRET_STATUS = ['auto', 'configured', 'missing'];
+  const reg = JSON.parse(read(SECRETS_REG));
+  const entries = reg.secrets ?? [];
+  /** 判定与 canary **共用**：一条登记项是否自洽（null = 合规）。 */
+  const secretVerdict = (e) => {
+    if (!SECRET_STATUS.includes(e.status)) return `\`status\` 必须是 ${SECRET_STATUS.join(' / ')}（现值 \`${e.status}\`）`;
+    if (typeof e.why !== 'string' || e.why.trim() === '') return '缺非空 `why`（谁提供 / 用途）';
+    if (e.status === 'missing' && (typeof e.consequence !== 'string' || e.consequence.trim() === '')) {
+      return '是 `missing` 却没有 `consequence` —— 「**软报 = 没报**」：**缺了可以，但必须写出缺了什么**'
+        + '（否则「未签名未公证」只能靠读散文发现）';
+    }
+    return null;
+  };
+  const wfDir38 = '.github/workflows';
+  const wfFiles38 = existsSync(resolve(root, wfDir38))
+    ? readdirSync(resolve(root, wfDir38)).filter((f) => /\.ya?ml$/.test(f)).sort()
+    : [];
+  const referenced = new Set();
+  for (const f of wfFiles38) {
+    for (const m of read(`${wfDir38}/${f}`).matchAll(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/g)) referenced.add(m[1]);
+  }
+  const declared = new Set(entries.map((e) => e.name));
+  for (const n of [...referenced].sort()) {
+    if (!declared.has(n)) {
+      fail(`㊳ workflow 引用了 \`secrets.${n}\`，但它**未登记**在 \`${SECRETS_REG}\` —— `
+        + '**未配置的 secret 不会报错**（表达式求值为空字符串）⇒ 必须先登记「谁提供 / 用途 / 当前状态」，'
+        + '否则「签名没配」这件事只能靠读散文发现（审计 §4.312）');
+    }
+  }
+  for (const e of entries) {
+    if (!referenced.has(e.name)) {
+      fail(`㊳ \`${SECRETS_REG}\` 登记了 \`secrets.${e.name}\`，但**没有任何 workflow 引用它**`
+        + ' —— 登记表与事实脱节（引用被删了？请同步删掉该条）');
+      continue;
+    }
+    const bad = secretVerdict(e);
+    if (bad !== null) fail(`㊳ \`secrets.${e.name}\`：${bad}`);
+  }
+  // 防空转：[覆盖型]（workflow 增删 secret 引用时须一并复核）
+  const SECRET_BASELINE = 11; // [覆盖型] 基线 11
+  coverEq('㊳ 登记表条目数', entries.length, SECRET_BASELINE,
+    '条目被删会让「引用的 secret 都有登记」重新变成**无人守**');
+  // canary：四向（与判定**共用** secretVerdict）
+  const CANARIES38 = [
+    [{ name: 'x', status: 'configured', why: 'w' }, true, '合规（configured + why）'],
+    [{ name: 'x', status: 'missing', why: 'w', consequence: 'c' }, true, '合规（missing + consequence）'],
+    [{ name: 'x', status: 'missing', why: 'w' }, false, '`missing` 缺 `consequence`'],
+    [{ name: 'x', status: 'unknown', why: 'w' }, false, '`status` 非枚举值'],
+    [{ name: 'x', status: 'auto', why: '' }, false, '`why` 为空'],
+  ];
+  for (const [sample, shouldPass, what] of CANARIES38) {
+    if ((secretVerdict(sample) === null) !== shouldPass) {
+      fail(`㊳ canary ${shouldPass ? '**过宽**' : '失效'}：${what} 的样本被误判`);
+    }
+  }
+  const miss38 = entries.filter((e) => e.status === 'missing').length;
+  console.log(`Release gate: CI \`secrets.*\` —— workflow 引用 ${referenced.size} 个 / 登记 ${entries.length} 条**双向一致**`
+    + `（auto ${entries.filter((e) => e.status === 'auto').length}`
+    + ` / configured ${entries.filter((e) => e.status === 'configured').length}`
+    + ` / **missing ${miss38}**）；⚠️ 缺 ${miss38} 个 ⇒ macOS **不签名不公证** / Windows **不签名**`
+    + '（`release.yml` 显式走 else 分支，**构建照样成功**）；'
+    + '⚠️ **边界**：`status` 是**快照**（CI 里不查 `gh secret list`）⇒ 靠 `reviewedAt` + `staleAfterDays` 到期**变红**强制重新分诊');
 }
 
 if (errors.length > 0) {

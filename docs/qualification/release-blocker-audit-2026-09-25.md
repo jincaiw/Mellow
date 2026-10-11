@@ -19574,6 +19574,71 @@ ADR-0034 实际含 **11 个 `## Q<N>` 小节**，覆盖 **12 个问**（Q1–Q8�
 
 ⇒ 同族「只锁了一半」累计 **第 139 次**（§4.170–§4.310）。
 
+## 4.312 `secrets.*` 引用**没有清单**：未配置的 secret **静默为空**（2026-10-11）
+
+### 一、透镜
+
+本仓对「CI 的外部依赖」已有两份清单：`ci-actions.json`（**⑱** 守 action 的版本 / pin）、
+`node-types.json`（**㉘** 守类型定义轴）。
+⇒ 问：**同一个 CI 里的另一类外部依赖 —— `secrets.*` —— 有清单吗？**
+
+### 二、取证：**没有**
+
+`release.yml` 引用 **11** 个 `secrets.*`，而 `gh secret list` 实测仓库里**只配置了 2 个**：
+
+| 类别 | 数量 | 明细 |
+|---|---|---|
+| `auto`（GitHub 自动提供） | 1 | `GITHUB_TOKEN` |
+| `configured`（实测已在） | 2 | `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` |
+| **`missing`（实测不在）** | **8** | `APPLE_CERTIFICATE` / `_PASSWORD` / `APPLE_SIGNING_IDENTITY` / `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` / `WINDOWS_CERTIFICATE` / `_PASSWORD` |
+
+⚠️ **未配置的 secret 不会报错** —— GitHub 把 `${{ secrets.X }}` 求值为**空字符串**。
+`release.yml:287-304` **显式处理**了缺失分支（`if [ -n "$APPLE_CERTIFICATE" ]` → `echo "Apple 凭据未配置：产出未签名 DMG"`）
+⇒ **构建照样成功**。
+
+⇒ **这就是 README / ADR-0031 / `release-template.md` / 7 份 release notes / `packaging-release.md` 里那句
+「macOS 产物未签名未公证」的机制。**
+⚠️ 但它**只写在散文里**：**没有机器可读的清单**，也**没有「到点重新分诊」** —— 哪天配了凭据，
+**没有任何东西**会提醒去更新那 6 处散文。
+
+### 三、处置
+
+① **新夹具 `tests/parity/fixtures/ci-secrets.json`**（引用清单**从 workflow 派生**，11 条；带 `reviewedAt` + `staleAfterDays`）；
+② **判据 ㊳** —— **双向**（引用的必须登记 / 登记的必须被引用）+ 每条 `status` ∈ {auto, configured, missing}
++ 非空 `why` + **`status: missing` ⇒ 非空 `consequence`**（「缺了可以，但必须写出缺了什么」）；
+③ 挂到 **㉗** 的「**到期变红**」机制上（`DATED_REGISTRIES` 3 → 4）⇒ 180 天后强制重新分诊；
+④ 同步 **⑲** 的字段契约（顶层键 + 条目键）。
+
+### 四、边界如实声明
+
+⚠️ **`status` 是快照** —— 本判据**无法**核对「GitHub 上现在到底配了没有」
+（需要 `gh secret list` + 网络 + token 权限，**CI 里不做**）⇒ 靠 **㉗ 的到期变红**强制重新分诊。
+**本轮的 `missing 8` 是 2026-10-11 的实测快照。**
+⚠️ 与 **⑱**（`ci-actions.json`）**同族但对象不同**：⑱ 守 **action 的版本 / pin**，本条守 **secret 的配置状态**。
+
+### 五、注入验证（**5/5**）
+
+| 注入 | 结果 |
+|---|---|
+| 从登记表**删掉**一条（`APPLE_TEAM_ID`） | ✅ 红：`但它**未登记**` |
+| 登记一条 workflow **不引用**的 | ✅ 红：`没有任何 workflow 引用它` |
+| `status: missing` 却**删掉** `consequence` | ✅ 红：`却没有 consequence` |
+| `status` 改成**非法值** | ✅ 红：`必须是 auto / configured / missing` |
+| 在 workflow 里**新增** `secrets.PROBE_NEW` 引用 | ✅ 红：`未登记` |
+
+### 六、`coverEq` **一次抓到 3 处**（本轮新增内容引起）
+
+| 基线 | 旧 | 新 | 原因 |
+|---|---|---|---|
+| ⑲ 夹具份数 | 9 | **10** | 新增 `ci-secrets.json` |
+| ㉗ 带日期的登记表 | 3 | **4** | 新增登记项 |
+| ㊱ 覆盖型标记数 | 22 | **23** | 新增 `SECRET_BASELINE` |
+
+⚠️ **这三处在旧的 `< N` 实现下全都不会红**（都会静默留出空位）。
+⇒ **§4.310 / §4.311 的结论在本轮被连续三次验证**：`coverEq` 把「**新增内容引起的漂移**」也变成**当场红**。
+
+⇒ 同族「只锁了一半」累计 **第 140 次**（§4.170–§4.311）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
