@@ -2971,6 +2971,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     'cross-package-edges.json': ['edges', 'note', 'source', 'why'],
     'export-collaborators.json': ['callSites', 'entries', 'note', 'source', 'statusVocabulary', 'why'],
     'export-feature-parity.json': ['entries', 'note', 'source', 'statusVocabulary', 'why'],
+    'local-tools.json': ['note', 'reviewedAt', 'source', 'tools', 'why'],
     'typora-panel-only-keys.json': ['entries', 'note', 'source', 'why'],
     'typora-persisted-uncovered.json': ['entries', 'extract', 'kindVocabulary', 'note', 'source'],
     'typora-preferences-matrix.json': ['entries', 'note', 'source'],
@@ -3126,6 +3127,101 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + `（其中 ${withContract} 份细到条目键）；出处 \`run <id>\` 与 \`evidenceRuns\` 双向一致；`
     + '两张「已知 / 待办」登记表条目形状齐备。'
     + '⚠️ 其余夹具的**条目键**契约 = 已登记后续项（本节不假装覆盖）。');
+}
+
+// ── ⑳ 「本机工具」的**分类**必须登记（2026-10-11，审计 §4.287）──
+// 【为什么】`tests/parity/tools/*.mjs` 这 8 个脚本此前**没有任何分类判据** ——
+//   谁该在 CI 跑、谁只能在本机跑，**从来没被登记过**。后果实测：
+//   `audit-pkg-test-counts.mjs` **当前就是红的**（`export` 声明 100 / 实跑 104），
+//   而**没有任何 CI 会跑它、也没有任何登记说它属于谁** ⇒ 它可以一直红下去。
+//   ⇒ 与 §4.286「**判据有效 ≠ 有人跑**」同族，只是对象换成了**工具本身**。
+// 【真值源】`tests/parity/fixtures/local-tools.json`（只存分类与理由，**不存计数**）。
+// 【判据】① **双向登记**：每个 `tools/*.mjs` 必须在表里；表里每条必须在磁盘上。
+//   ② 每条必须自洽：`runsIn` ∈ {ci, local-only} · `signal` ∈ {hard, advisory} · 非空 `why` / `evidence`。
+//   ③ `signal: advisory`（恒退出 0、只报线索）⇒ 必须再给非空 `advisoryWhy`，说明**为什么不做成硬判据**
+//      —— 这是 §4.286「**软报 = 没报**」的机械化：**软可以，但必须写出为什么软**。
+//   ④ `runsIn: ci` ⇒ 必须**真的**出现在某个 workflow 里（防空转：当前 0 条也要**打印**出来 ——
+//      这条规则的用途是「**将来**第一个接进 CI 的工具必须真接线」）。
+{
+  const TOOLS_DIR = 'tests/parity/tools';
+  const TOOLS_REG = 'tests/parity/fixtures/local-tools.json';
+  const RUNS_IN = ['ci', 'local-only'];
+  const SIGNAL = ['hard', 'advisory'];
+  const reg = JSON.parse(read(TOOLS_REG));
+  const entries = reg.tools ?? [];
+  /** 判定与 canary **共用**：一条登记项是否自洽（null = 合规）。 */
+  const entryVerdict = (t) => {
+    if (!RUNS_IN.includes(t.runsIn)) return `\`runsIn\` 必须是 ${RUNS_IN.join(' / ')}（现值 \`${t.runsIn}\`）`;
+    if (!SIGNAL.includes(t.signal)) return `\`signal\` 必须是 ${SIGNAL.join(' / ')}（现值 \`${t.signal}\`）`;
+    for (const f of ['why', 'evidence']) {
+      if (typeof t[f] !== 'string' || t[f].trim() === '') return `缺 \`${f}\`（或为空）`;
+    }
+    if (t.signal === 'advisory' && (typeof t.advisoryWhy !== 'string' || t.advisoryWhy.trim() === '')) {
+      return '是 `advisory`（恒退出 0、只报线索）却没有 `advisoryWhy` —— '
+        + '「**软报 = 没报**」（§4.286）：软可以，但**必须写出为什么软**';
+    }
+    return null;
+  };
+
+  const onDisk = readdirSync(resolve(root, TOOLS_DIR)).filter((n) => n.endsWith('.mjs')).sort();
+  const regNames = entries.map((t) => t.name);
+  const wfSrc = readdirSync(resolve(root, '.github/workflows'))
+    .filter((n) => /\.ya?ml$/.test(n))
+    .map((n) => read(`.github/workflows/${n}`)).join('\n');
+
+  // ① 双向登记
+  for (const n of onDisk) {
+    if (!regNames.includes(n)) {
+      fail(`⑳ \`${TOOLS_DIR}/${n}\` **未登记**在 \`${TOOLS_REG}\` —— 新增本机工具必须登记它的`
+        + '**运行位置**（`runsIn`）与**理由**；否则它会成为「**没有归属的工具**」'
+        + '（实测代价：一个当前就红的工具可以一直红下去，审计 §4.287）');
+    }
+  }
+  for (const n of regNames) {
+    if (!onDisk.includes(n)) {
+      fail(`⑳ \`${TOOLS_REG}\` 登记了 \`${n}\`，但 \`${TOOLS_DIR}\` 里没有它 —— 登记表与事实脱节`);
+    }
+  }
+  // ② + ③ 每条自洽（共用 entryVerdict）
+  for (const t of entries) {
+    const bad = entryVerdict(t);
+    if (bad !== null) fail(`⑳ \`${t.name}\`：${bad}`);
+  }
+  // ④ `runsIn: ci` 必须真的接线
+  const ciTools = entries.filter((t) => t.runsIn === 'ci');
+  for (const t of ciTools) {
+    if (!wfSrc.includes(`tools/${t.name}`)) {
+      fail(`⑳ \`${t.name}\` 登记为 \`runsIn: ci\`，但**没有任何 workflow 调用它** ——`
+        + ' 「登记为在 CI 跑」不等于**真的在跑**');
+    }
+  }
+  // 防空转：**覆盖型**（工具增删时须一并复核）
+  const TOOLS_BASELINE = 8; // [覆盖型] 基线 8
+  if (entries.length < TOOLS_BASELINE) {
+    fail(`⑳ 登记表只有 ${entries.length} 条（[覆盖型] 基线 ${TOOLS_BASELINE}）`
+      + ' —— 条目被删会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** entryVerdict）
+  const CANARIES = [
+    [{ name: 'x', runsIn: 'local', signal: 'hard', why: 'w', evidence: 'e' }, false, '`runsIn` 非枚举值'],
+    [{ name: 'x', runsIn: 'ci', signal: 'soft', why: 'w', evidence: 'e' }, false, '`signal` 非枚举值'],
+    [{ name: 'x', runsIn: 'ci', signal: 'hard', why: '', evidence: 'e' }, false, '`why` 为空'],
+    [{ name: 'x', runsIn: 'ci', signal: 'advisory', why: 'w', evidence: 'e' }, false, 'advisory 缺 advisoryWhy'],
+    [{ name: 'x', runsIn: 'ci', signal: 'hard', why: 'w', evidence: 'e' }, true, '合规（ci + hard）'],
+    [{ name: 'x', runsIn: 'local-only', signal: 'advisory', why: 'w', evidence: 'e', advisoryWhy: 'a' }, true,
+      '合规（local-only + advisory 带理由）'],
+  ];
+  for (const [sample, shouldPass, what] of CANARIES) {
+    if ((entryVerdict(sample) === null) !== shouldPass) {
+      fail(`⑳ canary ${shouldPass ? '**过宽**' : '失效'}：${what} 的样本被误判`);
+    }
+  }
+
+  const advisory = entries.filter((t) => t.signal === 'advisory');
+  console.log(`Release gate: 本机工具分类 —— ${onDisk.length} 个工具**全部已登记**`
+    + `（runsIn: ${ciTools.length} 个 ci / ${entries.length - ciTools.length} 个 local-only；`
+    + `signal: ${advisory.length} 个 advisory 均已写出「为什么软」）。`
+    + '⚠️ 本节只保证「**归属与理由已声明**」，**不保证本机工具有人跑** —— 那需要人。');
 }
 
 if (errors.length > 0) {

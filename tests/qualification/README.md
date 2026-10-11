@@ -77,7 +77,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 | 中文输入（composition guard + IME 冻结） | ✅（逻辑层全绿） | ✅（Xvfb+fcitx5 矩阵 gate，Linux 列；Windows IME 矩阵 CI 仅诊断级） | 🔶（20 分钟实机写作待 P4.11） | ✅（CI IME matrix） |
 | IME corruption = 0 | ✅（自动化层） | 🔶（SendKeys 保存读回为诊断，不入证据） | ⛔（实机待执行） | 🔶（CI 矩阵内断言） |
 | Clipboard P0（smart paste priority/IME guard） | ✅（smart-paste 17） | ⛔（cross-app 7 目标待执行） | ⛔ | ⛔ |
-| PDF / HTML Export | ✅（export 100，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
+| PDF / HTML Export | ✅（export 104，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
 | 10MB 可编辑 / P95 | ✅（large-file 自动化护栏） | ✅（CI 10MB 冒烟 gate） | ⛔（benchmark 待 P4.12） | 🔶 |
 | Settings / Theme / Export 契约 | ✅（settings 17 + verify-settings-contract） | — | — | — |
 | Extension permission / Safe Mode | ✅（permissions 14 + app-core extensions） | — | — | — |
@@ -123,7 +123,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 ## 自动化检查（本仓库可执行）
 
 ```sh
-# 1. 全仓测试（12 包 jest 1915 例 + parity 契约护栏 + qualification self-test）
+# 1. 全仓测试（12 包 jest 1919 例 + parity 契约护栏 + qualification self-test）
 pnpm test
 
 # 2. 构建 editor-core dist（bundle 构建模块）
@@ -137,7 +137,7 @@ cd apps/desktop && npm run build
 cd src-tauri && cargo check
 ```
 
-各包规模（jest，**2026-10-08 按包定向实跑，合计 1915 例全绿**）：editor-engine **1318** / app-core **297** / export **100** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor **200**，2026-10-10 实跑）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
+各包规模（jest，**2026-10-11 按包定向实跑，合计 1919 例全绿**）：editor-engine **1318** / app-core **297** / export **104** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor **200**，2026-10-10 实跑）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
 
 > **数字刷新纪律**：数字按当日**按包定向**调用 `node_modules/.bin/jest` 的实跑结果刷新；
 > 全仓 `pnpm -r run test` 在本机会被 corepack 交互提示阻塞（要下载 pnpm 11.7.0），故不以此为度量口径。
@@ -152,9 +152,11 @@ cd src-tauri && cargo check
 >   `jest N 例` / `合计 N 例` 必须与本行一致（判据已落）。
 >   ⚠️ 原写「**包用例数无法静态校验**（需实跑），故只锁护栏数量」—— 那句**把两件事混为一谈**：
 >   「无法对**现实**校验」成立，「无法对**同文件真值源**校验」**不成立**（实测 4 处内联数字**全部**是旧值）。
-> - ⚠️ **仍未覆盖**：本行**自身与现实是否一致**（需实跑）—— 这条边界如实声明。
+> - ⚠️ **仍未覆盖**（**CI 侧**）：本行**自身与现实是否一致**（需实跑）—— 这条边界如实声明。
+>   该对账由**本机工具** `tests/parity/tools/audit-pkg-test-counts.mjs` 承担（**不进 CI**：需逐包跑 jest）。
+>   ⇒ **只能靠人记得跑** —— 实测 2026-10-11 跑出 `export` 声明 100 而实跑 **104**（见审计 §4.287）。
 >
-> **刷新记录**：2026-10-01（首次）· **2026-10-08**（本轮：上一版 `editor-engine 1277` → **1318** · `app-core 258` → **297** · `export 89` → **100**；其余 9 包与上次一致；合计 `1824` → **1915**）。
+> **刷新记录**：2026-10-01（首次）· **2026-10-08**（本轮：上一版 `editor-engine 1277` → **1318** · `app-core 258` → **297** · `export 89` → **100**；其余 9 包与上次一致；合计 `1824` → **1915**）· **2026-10-11**（本轮：`export 100` → **104**；其余 11 包与上次一致；合计 `1915` → **1919** —— 由本机工具 `audit-pkg-test-counts.mjs` 实跑对账发现，见审计 §4.287）。
 
 > **注**：`extension-api` 自身无本地 jest 二进制，按其 package.json 的 `test` 脚本用
 > `../settings/node_modules/.bin/jest --rootDir .` 执行。全仓 `pnpm -r run test` 曾挂起
