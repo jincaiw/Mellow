@@ -4338,6 +4338,93 @@ const stripJsComments = (s) => {
     + '；⚠️ 只覆盖 `expect(` 这一种断言形态（Rust 侧的同类检查在 `verify-parity-ledger.mjs`）');
 }
 
+// ── ㉝ 每个护栏的**判据头编号必须连续**（2026-10-11，审计 §4.307）──
+// 【为什么】判据 **①** 守「`tests/parity/verify-*.mjs` 的每一个都必须出现在两条脚本链里」——
+//   即**防「某人悄悄删掉一条护栏」**。但它守的是**文件**粒度
+//   ⇒ **「护栏内某一条判据被删掉」没有任何信号**（`verify-doc-code-refs.mjs` 判据 ㊸ 只守「**同一护栏内不重复**」，不守「**缺号**」）。
+//   ⇒ 同族「只锁了一半」的**粒度轴那一半**：**文件 vs 判据**。
+// 【判据】每个 `verify-*.mjs` 的「`// ── <圈号>`」判据头编号集合必须**连续**：
+//   允许**子编号**（`③-b` / `⑳c`）与**合并写法**（`① + ②`）—— 解析方式与 ㊸ **同款**（㊸ 守重复、本条守缺号）。
+//   缺号 ⇒ 报「某条判据被删过，请确认它守的纪律是否还有人守（或把编号补齐）」。
+// ⚠️ **代价如实声明**：**重编号**（把后面的判据往前挪以填洞）也会红 —— 那是**有意的**：
+//   编号是「每护栏本地」的定位符（`verify-doc-code-refs.mjs` 判据 ㊸ 的注释写了这一点）⇒ 删号会让「`<护栏>` 判据 N」**永久指空**。
+// ⚠️ **边界**：只覆盖「`// ── <圈号>`」这一种判据头形态（本仓实测**全部**判据头都是它）；
+//   用别的形态写判据头 ⇒ 不在扫描面内（本判据会因总数下限而**响亮失败**，不会静默）。
+{
+  const CIRCLED33 = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚㉛㉜㉝㉞㉟㊱㊲㊳㊴㊵㊶㊷㊸㊹㊺㊻㊼㊽㊾㊿';
+  const CLASS33 = '①-⑳㉑-㉟㊱-㊿';
+  const TOKEN33 = new RegExp(`^\\s*([${CLASS33}]|C\\d+)(-?[a-z])?`);
+  const HAS33 = new RegExp(`^(?:[${CLASS33}]|C\\d+)`);
+  /** 判定与 canary **共用**（与 ㊸ 同款）：该行 `// ──` 头里的编号 token 列表。 */
+  const headerTokens33 = (line) => {
+    const m = /^\s*\/\/ ──\s*(.*)$/.exec(line);
+    if (m === null) return [];
+    let rest = m[1];
+    const out = [];
+    for (;;) {
+      const t = TOKEN33.exec(rest);
+      if (t === null) break;
+      out.push(t[1] + (t[2] ?? ''));
+      rest = rest.slice(t[0].length);
+      // 合并写法 `① + ②`：分隔符后可再跟一个圈号
+      const sep = new RegExp(`^\\s*[+·/、]\\s*(?=[${CLASS33}])`).exec(rest);
+      if (sep !== null) rest = rest.slice(sep[0].length);
+      if (!HAS33.test(rest)) break;
+    }
+    return out;
+  };
+  const guards33 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const offenders33 = [];
+  let withHeads33 = 0;
+  for (const f of guards33) {
+    const nums = new Set();
+    for (const line of read(`tests/parity/${f}`).split('\n')) {
+      for (const tk of headerTokens33(line)) {
+        const c = tk[0];
+        const n = CIRCLED33.indexOf(c);
+        if (n >= 0) nums.add(n + 1);
+      }
+    }
+    if (nums.size === 0) continue;
+    withHeads33 += 1;
+    const arr = [...nums].sort((a, b) => a - b);
+    const gaps = [];
+    for (let i = arr[0]; i < arr[arr.length - 1]; i += 1) if (!nums.has(i)) gaps.push(i);
+    if (gaps.length > 0) {
+      offenders33.push(`${f}（缺号：${gaps.map((g) => CIRCLED33[g - 1]).join('、')}）`);
+    }
+  }
+  if (offenders33.length > 0) {
+    fail(`这些护栏的**判据头编号不连续**：${offenders33.join('、')} —— `
+      + '判据 ① 守的是「**护栏文件**不被悄悄删掉」，而**护栏内某一条判据被删**此前**没有任何信号**；'
+      + '编号是「每护栏本地」的定位符 ⇒ **删号会让「`<护栏>` 判据 N」永久指空**。'
+      + '请**补齐编号**，或在删号处写明「为什么这条纪律不再需要」（审计 §4.307）');
+  }
+  // 防空转：[健康度型] 集合由源码内容产生 ⇒ 留余量（立此判据时 9 个护栏有判据头）
+  if (withHeads33 < 6) {
+    fail(`㉝ 只解析出 ${withHeads33} 个带判据头的护栏（[健康度型] 下限 6）`
+      + ' —— 解析器失效或扫描面漂移会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** headerTokens33；样本运行时拼接）
+  if (headerTokens33(`// ── ${'①'} + ${'②'} 核心包 ──`).join(',') !== '①,②') {
+    fail('㉝ canary 失效：合并写法 `① + ②` 只解析出一个 token（那样缺号判定会漏一半）');
+  }
+  if (headerTokens33(`// ── ${'③'}-b Windows ──`).join(',') !== '③-b') {
+    fail('㉝ canary 失效：子编号 `③-b` 的后缀被丢掉');
+  }
+  if (headerTokens33('// ── 侧栏截图：判据由「文件存在」改为… ──').length !== 0) {
+    fail('㉝ canary **过宽**：无圈号的 `// ──` 头被解析出了 token');
+  }
+  if (headerTokens33(`    // ── ${'⑪'} 发版手册 ──`).length !== 1) {
+    fail('㉝ canary 失效：**缩进**的判据头未被解析（实测本仓有缩进头 ⇒ 漏掉会让缺号判定失真）');
+  }
+  console.log(`Release gate: 判据头编号连续性 —— 扫描 ${guards33.length} 个护栏，`
+    + `其中 ${withHeads33} 个有判据头、不连续 ${offenders33.length} 个`
+    + '；⚠️ 与 ㊸ 的分工：**㊸ 守重复、本条守缺号**，两条合起来才是「编号空间健全」');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
