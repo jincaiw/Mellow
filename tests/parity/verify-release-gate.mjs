@@ -5714,6 +5714,77 @@ const stripStrings = (s) => s.replace(
     + '⚠️ **边界**：只保证**存在**剥法，不保证每条判据都用了它（兜底 = 唯一入口 `mdText`）');
 }
 
+// ── ㊽ 每个 ≥ 惯例起点的 tag 必须有 `release-notes-v<版本>.md`（2026-10-12，审计 §4.326）──
+// 【为什么】本仓自 **v1.4.8** 起为每个 tag 写一份 notes（「这次发布了什么」的**唯一入库记录**）。
+//   ⚠️ 实测：**v1.5.8 是唯一漏掉的一个** —— 前后邻居（v1.5.7 / v1.5.9）都有，
+//   而**没有任何东西会指出它**（本次才补写）。
+// 【判据】`git tag` 可得时（≥ 20 个）：
+//   ① 每个 semver ≥ `NOTES_FLOOR` 的 tag 必须有 `.github/release-notes-<tag>.md`；
+//   ② **反向**：每个 notes 文件必须对应一个**存在的 tag**（陈旧 ⇒ 红）。
+//   ⚠️ `git tag` 不可得时（**CI 是浅克隆，`ci.yml` 无 `fetch-depth: 0`**）⇒
+//   **打印一行说明并跳过** —— **不是**静默通过。
+// 【边界如实声明】
+//   ⚠️ **本判据在 CI 里不判定**（浅克隆拿不到 tag）⇒ 它靠**本地 `npm run parity`** 生效。
+//     「**能失败 + 没人跑 = 它可以一直红**」是本仓记过的坑 ⇒ 这一条**如实登记**，不粉饰。
+//   ⚠️ `NOTES_FLOOR` 是**惯例起点**，**不是**「所有 tag 都要求」—— 惯例之前有 **19 个** tag
+//     **合法地**没有 notes（v1.0.0 … v1.4.7）。
+{
+  const NOTES_FLOOR = '1.4.8'; // 惯例起点：第一个有 notes 文件的 tag（**立此判据时实测**）
+  const semver48 = (t) => (/^v(\d+)\.(\d+)\.(\d+)$/.exec(t) ?? []).slice(1).map(Number);
+  const ge48 = (a, b) => {
+    for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] > b[i];
+    return true;
+  };
+  /** 判定与 canary **共用**（**纯函数**）：给定 tag 列表 / 存在性谓词 / notes 文件名列表，返回不合规项。 */
+  const notesVerdict48 = (tags, exists, notesNames) => {
+    const out = [];
+    const floor = semver48(`v${NOTES_FLOOR}`);
+    for (const t of tags) {
+      const v = semver48(t);
+      if (v.length !== 3 || !ge48(v, floor)) continue;
+      if (!exists(t)) out.push(`缺 notes：${t}`);
+    }
+    for (const n of notesNames) if (!tags.includes(n)) out.push(`notes 指向不存在的 tag：${n}`);
+    return out;
+  };
+  const notesNames48 = existsSync(resolve(root, '.github'))
+    ? readdirSync(resolve(root, '.github'))
+      .filter((f) => /^release-notes-v\d+\.\d+\.\d+\.md$/.test(f))
+      .map((f) => f.replace(/^release-notes-/, '').replace(/\.md$/, '')).sort()
+    : [];
+  let tags48 = [];
+  try {
+    tags48 = execFileSync('git', ['tag'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+  } catch { tags48 = []; }
+  const notesExists48 = (t) => existsSync(resolve(root, `.github/release-notes-${t}.md`));
+  // canary：三向（与判定**共用** notesVerdict48）
+  if (notesVerdict48(['v1.4.8', 'v1.4.9'], (t) => t === 'v1.4.8', []).length !== 1) {
+    fail('㊽ canary 失效：**缺 notes 的 tag** 未被检出');
+  }
+  if (notesVerdict48(['v1.4.8', 'v1.4.7'], () => true, ['v1.4.8']).length !== 0) {
+    fail('㊽ canary **过宽**：**完整**样本被判为不合规（或惯例之前的 tag 被要求有 notes）');
+  }
+  if (notesVerdict48(['v1.4.8'], () => true, ['v1.4.9']).length !== 1) {
+    fail('㊽ canary 失效：**notes 指向不存在的 tag**（陈旧）未被检出');
+  }
+  if (tags48.length >= 20) {
+    const offenders48 = notesVerdict48(tags48, notesExists48, notesNames48);
+    if (offenders48.length > 0) {
+      fail(`㊽ release notes 与 tag **不一致**：${offenders48.slice(0, 6).join('、')}`
+        + `${offenders48.length > 6 ? ` …（共 ${offenders48.length} 处）` : ''}`
+        + ` —— 本仓自 **v${NOTES_FLOOR}** 起每个 tag 一份 notes（「这次发布了什么」的**唯一入库记录**）；`
+        + '缺一份 ⇒ **没人能从仓库看出那次发了什么**。补写：`git log --oneline <上个 tag>..<该 tag>`'
+        + '（审计 §4.326）');
+    }
+    console.log(`Release gate: release notes 覆盖率 —— \`git tag\` ${tags48.length} 个 / notes ${notesNames48.length} 份，`
+      + `**不一致** ${offenders48.length} 处（惯例起点 v${NOTES_FLOOR}）；`
+      + '⚠️ **边界**：**CI 是浅克隆 ⇒ 本判据在 CI 里跳过**（只在本地生效，如实登记）');
+  } else {
+    console.log(`Release gate: release notes 覆盖率 —— ⚠️ **跳过**（\`git tag\` 只返回 ${tags48.length} 个`
+      + ' ⇒ 浅克隆；`ci.yml` 无 `fetch-depth: 0`）；⚠️ **本判据在 CI 里不判定**，靠**本地** `npm run parity` 生效');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
