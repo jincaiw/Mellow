@@ -87,18 +87,110 @@ if (mem !== null && existsSync(memPath)) {
     }
   }
   console.log(`MEMORY 交叉引用：${refCount} 处（PITFALLS / 审计 / skill）`);
-  // ── 范围端点（**软**：作者可能故意固定到某节）──
-  for (const m of src.matchAll(/(PITFALLS(?:\.md)?|审计文档?)\s*§4\.(\d+)\s*[–—]\s*§4\.(\d+)/g)) {
-    const target = m[1].startsWith('PITFALLS') ? 'PITFALLS' : '审计文档';
-    const t = sections.get(target);
-    if (t === null || t === undefined) continue;
-    if (Number(m[3]) !== t.max) {
-      soft.push(`MEMORY 的「${m[1]} §4.${m[2]}–§4.${m[3]}」**端点可疑**：${target} 当前最大是 §${t.max}`
-        + ' —— 若本意是「该系列到最新」，请改为**不写端点**的形态（如「`PITFALLS §4.290` **起**」）');
-    }
-  }
-  if (soft.length === 0) console.log('MEMORY 范围端点：未发现可疑项');
 }
+
+// ── 范围端点：MEMORY / PITFALLS / skill 里的 `§A–§B`（2026-10-10 审计 §4.286 **扩面 + 由软转硬**）──
+// 【为什么扩面】首版只匹配 `PITFALLS|审计文档` × `§4.N–§4.M`，且**只扫 MEMORY**
+//   ⇒ 实测漏掉 `MEMORY.md` 里的 `skill（§1–§276）`（skill 当时已到 §277 ⇒ **已经漂了而没人报**）。
+//   现覆盖**三个文件**（MEMORY / PITFALLS / skill）× **两套编号空间**（`§4.N` 与 skill 的 `§N`）。
+//   ⚠️ **不含审计文档** —— 它的 `§4.170–§4.B` 由仓库内判据 **㊻** 守（`B == 所在节 − 1`），
+//     语义不同（那是「族**已覆盖**的范围」，不是「到最新的指针」）。
+// 【为什么由软转硬】首版是**软**（只报、不改退出码），理由是「作者可能故意固定到某节」。
+//   但实测「软」= **可忽略**：端点漂了照样没人管（§4.285 我刚漂过一次）。
+//   现改为**硬**，并给出**显式逃生口**：带**时间 / 当前性限定**即视为**有意固定的快照**
+//   —— 与仓库内判据 ⑥ 的「注释计数快照 —— 均已带时间 / 当前性限定」是**同一条惯例**。
+//   ⚠️ 本仓在这三份文件里的范围**几乎总是**「该系列到最新」的指针 ⇒ 正解是**不写端点**
+//     （`PITFALLS §4.290` **起**），而不是维护端点。
+const SNAPSHOT_QUALIFIERS = ['当时', '快照', '立此判据时', '固定', '截至'];
+// ⚠️ 右侧数字后必须**不是** `.`/字母 ⇒ 占位符形态 `§4.170–§4.B`（文档里描述形态用）**不得**被匹配。
+//   首版没有这个负向先行 ⇒ 把 `§4.B` 截成 `§4` ⇒ 报出 `§4.170–§4` 这种**不存在的范围**。
+const RANGE_RE = /§\d+(?:\.\d+)?\s*[–—]\s*§?\d+(?:\.\d+)?(?![.\dA-Za-z])/g;
+// 豁免①：**逐节族记录**（`同族…第 N 次（§4.A–§4.B）`）—— 它是「截至本节」的**快照**，
+//   且审计侧的同一形态由**仓库内判据 ㊻** 守（`B == 所在节 − 1`）。⚠️ 必须带「**第**…次」：
+//   `同族 113 次，§4.170–§4.285`（无「第」）是**指针**，**要**被检查。
+const FAMILY_RECORD_RE = /同族[^\n]{0,40}第\s*\d+\s*次/;
+/** 判定与豁免**共用**：把**引述区**置空但保留行数（``` 围栏 + heredoc 转录）。 */
+const blankQuoted = (src) => {
+  const out = [];
+  let inFence = false;
+  let heredoc = null;
+  let openedAt = 0;
+  let openWhat = '';
+  src.split('\n').forEach((l, i) => {
+    if (heredoc !== null) {
+      out.push('');
+      if (l.trim() === heredoc) heredoc = null;
+      return;
+    }
+    // ⚠️ **两个条件都要**：① 标识符**全大写**（`<<'JSEOF'` / `<<'EOF'`），否则会误吞 JS 左移 `<<`；
+    //   ② 同一行 `<<` **之前必须已有重定向 `>`**（真实写法是 `cat >> file <<'EOF'`）——
+    //   否则**内联举例**（如「还有 heredoc 转录（`<<'EOF'`）」）会被当成真的开区。
+    //   ⚠️ 这正是本轮实测踩到的：我**在 PITFALLS/skill 里写「heredoc 长什么样」时**，
+    //   检测器把**我举的例子**当成了未闭合的开区 ⇒ 自伤。
+    const h = />>?[^>\n]*<<-?\s*'?"?([A-Z][A-Z0-9_]*)'?"?/.exec(l);
+    if (h !== null) { heredoc = h[1]; openedAt = i + 1; openWhat = `heredoc \`${h[1]}\``; out.push(''); return; }
+    if (/^```/.test(l)) {
+      inFence = !inFence;
+      if (inFence) { openedAt = i + 1; openWhat = '围栏 ```'; }
+      out.push('');
+      return;
+    }
+    out.push(inFence ? '' : l);
+  });
+  return {
+    text: out.join('\n'),
+    unclosed: heredoc !== null || inFence,
+    openedAt,
+    openWhat,
+  };
+};
+let rangeHits = 0;
+let rangeScanned = 0;
+let rangeExempted = 0;
+const rangeUnclosed = [];
+for (const s of SOURCES) {
+  if (s.name === '审计文档') continue; // 它的范围由仓库内判据 ㊻ 守，语义不同
+  const sec = sections.get(s.name);
+  if (sec === null || sec === undefined) continue; // 文件不存在 ⇒ 已如实报告过
+  rangeScanned += 1;
+  // ⚠️ **必须用 `SOURCES` 的 `s.path`**：`sections` 里存的是**派生对象** `{ nums, max, count }`，
+  //   **没有 `.path`** ⇒ 首版写成 `sections.get(name).path` ⇒ `existsSync(undefined)` 为假 ⇒
+  //   三个文件**全被 `continue` 跳过**，而输出照打「命中 0 处」**看起来像成功**。
+  //   ⇒ 同族「**崩掉 = 从未判定**」的又一次实例（判据没生效 ≠ 判据通过）。
+  const blanked = blankQuoted(readFileSync(s.path, 'utf8').replace(/\r\n/g, '\n'));
+  if (blanked.unclosed) rangeUnclosed.push(`${s.name}（L${blanked.openedAt} 起的 ${blanked.openWhat}）`);
+  const lines = blanked.text.split('\n');
+  lines.forEach((l, i) => {
+    if (SNAPSHOT_QUALIFIERS.some((q) => l.includes(q))) return;
+    for (const m of l.matchAll(RANGE_RE)) {
+      // 豁免：**逐节族记录**（`同族…第 N 次（§4.170–§4.B）`）—— 但**必须锚定 `§4.170`**，
+      //   否则「某行顺带提了族计数」会把同一行上**别的**指针一起豁免掉（豁免过宽）。
+      if (FAMILY_RECORD_RE.test(l) && /^§4\.170[–—]/.test(m[0])) { rangeExempted += 1; continue; }
+      rangeHits += 1;
+      hard.push(`${s.name}:${i + 1} 出现**范围端点** \`${m[0]}\` 且无时间 / 当前性限定`
+        + ' —— 本仓在这三份文件里的范围几乎总是「该系列到最新」的指针，端点**每加一节就漂一次**。'
+        + '请改为**不写端点**的形态（如「`PITFALLS §4.290` **起**」），'
+        + `或补一个限定词（${SNAPSHOT_QUALIFIERS.join(' / ')}）`);
+    }
+  });
+}
+// 防空转：必须**真的**扫到了那几份文件（否则「命中 0 处」可能只是**没扫**）
+if (rangeScanned < 3) {
+  hard.push(`范围端点检查只扫到 ${rangeScanned} 份文件（下限 3：MEMORY / PITFALLS / skill）`
+    + ' —— 扫描面萎缩会让本检查**空转**，而输出照打「命中 0 处」看起来像通过');
+}
+// 防空转：引述区剥法**不得**留下未闭合的围栏 / heredoc（否则会静默吞掉后文）
+if (rangeUnclosed.length > 0) {
+  hard.push(`这些文件的引述区**未闭合**：${rangeUnclosed.join('、')}`
+    + ' —— 剥法会把后续内容**静默吞掉**（假阴性），请先修文中的围栏 / heredoc 配对');
+}
+// 防空转：豁免必须**真的**命中过（否则豁免谓词已化石，可能已把不该豁免的放过去了）
+if (rangeExempted === 0) {
+  hard.push('范围端点检查的「族记录」豁免**一次也没命中** —— 豁免谓词可能已失效'
+    + '（若族记录形态确实改了，请同步改 `FAMILY_RECORD_RE`）');
+}
+console.log(`范围端点：扫描 ${rangeScanned} 份文件（MEMORY / PITFALLS / skill），`
+  + `命中 ${rangeHits} 处（**硬**：无限定词即失败）· 族记录豁免 ${rangeExempted} 处`);
 
 // ── **仓库里**的 `PITFALLS §4.N` 引用（2026-10-10，审计 §4.258）──────────────────────
 // 【为什么补】上面那段**只查 MEMORY 的交叉引用**（旧注释里明写了这个范围）。但**仓库里**还有
