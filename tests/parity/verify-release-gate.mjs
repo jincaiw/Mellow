@@ -5372,25 +5372,46 @@ const stripStrings = (s) => s.replace(
     + '⚠️ **边界**：只认三种字面写法，**不覆盖**「用别的办法算格数」');
 }
 
-// ── ㊺ `pnpm/action-setup` 的版本必须**真的能解析到**（2026-10-12，审计 §4.322）──
-// 【为什么】`pnpm/action-setup` 的版本来源只有两条：步骤自己的 `with.version`，
-//   或 `package_json_file`（**默认 `package.json`，相对「工作区根」解析**）里的 `packageManager`。
-//   ⚠️ 一个 job 若把 checkout 落到**子目录**（`actions/checkout` 的 `with.path`），
-//   默认路径就指向一个**不存在的文件** ⇒ 该 action 报 `Error: No pnpm version is specified.`
-//   ⇒ **整个 job 在第一步就死**（而它看起来只是「setup 步骤红」）。
-//   ⚠️ `working-directory:` 对这个步骤**无效** —— 它是 JS action，不是 `run` 步骤。**这正是它容易漏的原因。**
-//   ⚠️ 实测（v1.5.34 发版）：`runtime-qualification.yml` 的 `linux-runtime` 是**全仓唯一**
-//   用 `path: mellow` 的 job ⇒ 它的 Linux IME matrix **每次都死**，而历史里那几次失败
-//   一直被读成「**flaky**」（v1.5.33 一次成功一次失败、v1.5.29 失败）。
+// ── ㊺ 把 checkout 落到**子目录**的 job：所有「相对工作区根」的 action 输入都必须显式带前缀（2026-10-12，审计 §4.322）──
+// 【为什么】`actions/checkout` 的 `with.path:` 会把仓库落到**工作区的一个子目录**里；
+//   而**若干 action 的输入默认是「相对工作区根」解析**的 —— 此时它们指向**不存在的文件**。
+//   ⚠️ `working-directory:` 对这些步骤**无效** —— 它们是 **JS action**，不是 `run` 步骤。
+//   **这正是它容易漏的原因。**
+//   ⚠️ 实测（v1.5.34 发版 + 随后的派发验证）—— 同一个 job 上**连撞两次**，而两次**形态相同**：
+//     ① `pnpm/action-setup` 的 `package_json_file`（默认 `package.json`）
+//        ⇒ `Error: No pnpm version is specified.` ⇒ **整个 job 在第一步就死**；
+//     ② 修好后同一个 `with:` 里 `actions/setup-node` 的 `node-version-file: .nvmrc`
+//        ⇒ `The specified node version file at: …/Mellow/.nvmrc does not exist`
+//        —— ⚠️ **而同一行的 `cache-dependency-path: mellow/pnpm-lock.yaml` 是写对的**
+//        ⇒ 「**一个 `with:` 里只写对了一半**」（同族「只锁了一半」的又一形态）。
+//   ⚠️ 而该 job 在历史上被读成「**flaky**」（v1.5.33 一次成功一次失败、v1.5.29 失败）
 //   ⇒ 「间歇失败」的结论**必须先证伪**：把失败步骤的日志读出来。
-// 【判据】扫全部 `.github/workflows/*.yml`：每个 `uses: pnpm/action-setup@…` 步骤必须满足其一：
-//   ① 自己有 `with.version`；
-//   ② 自己有 `with.package_json_file`，且**按「工作区根」解析**后的文件**真实存在**
-//      且内容含 `"packageManager"`；
-//   ③ 所属 job 的 checkout **没有**自定义 `path`（即落在仓库根）且根 `package.json` 含 `packageManager`。
-// 【边界如实声明】⚠️ 只解析**行式 YAML**（本仓 workflow 均为 2 空格缩进 + `- ` 步骤）。
-//   ⚠️ 只覆盖 `pnpm/action-setup` —— 其它 action 的隐式路径假设**不覆盖**（如实登记）。
+// 【判据】扫全部 `.github/workflows/*.yml`，按 `ACTION_PATH_INPUTS45` 登记表逐个核对
+//   **注册过的**（action, input）组合：
+//   ① 该输入**已声明** ⇒ 在 `cp !== '.'` 时必须带 `cp/` 前缀；去掉前缀后的路径**必须真实存在**
+//      （带通配符的登记项跳过存在性）；登记了 `need` 的还必须**内容匹配**；
+//   ② 该输入**未声明**且有**仓库相对的默认值** ⇒ 要求 `cp === '.'`（否则默认值必然指空）。
+//   ⚠️ 这条规则**与 action 无关** —— 新增一个「有仓库相对默认值」的 action 时，
+//   往登记表加一行即可（而不是再写一条判据）。
+// 【边界如实声明】
+//   ⚠️ 只解析**行式 YAML**（本仓 workflow 均为 2 空格缩进 + `- ` 步骤）。
+//   ⚠️ 只覆盖 `ACTION_PATH_INPUTS45` **登记过的**（action, input）—— **没登记的输入不覆盖**
+//     （登记表是本判据的**扫描面**；它不空，且逐项都有 `why`）。
+//   ⚠️ **「输入未声明且它没有仓库相对默认值」不在覆盖内** —— 那属于「少写了一个输入」
+//     （另一类、更轻的问题：不指空，只是不生效），**不混进本判据**（如实登记，不偷偷放宽）。
 {
+  /** 登记表：哪些 action 的哪个输入是「相对工作区根」的路径。
+   *  `def` = 未声明时的默认值（`null` = 该输入无默认、不声明就没事）；
+   *  `glob` = 值可能是通配符 ⇒ 跳过存在性；`need` = 内容必须匹配的正则。 */
+  const ACTION_PATH_INPUTS45 = [
+    { action: 'pnpm/action-setup', input: 'package_json_file', def: 'package.json',
+      need: /"packageManager"/, why: '版本从 `packageManager` 派生；读不到就报 `No pnpm version is specified.`' },
+    { action: 'actions/setup-node', input: 'node-version-file', def: null,
+      why: '读不到就报 `The specified node version file … does not exist`' },
+    { action: 'actions/setup-node', input: 'cache-dependency-path', def: null, glob: true,
+      why: '缓存键算不出来 ⇒ 只是慢，但同样是「路径假设」漏写' },
+  ];
+
   const wfDir45 = resolve(root, '.github/workflows');
   const wfFiles45 = existsSync(wfDir45)
     ? readdirSync(wfDir45).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml')).sort()
@@ -5419,43 +5440,45 @@ const stripStrings = (s) => s.replace(
     }
     return p;
   };
-  /** 判定与 canary **共用**：给定 job 行 + 「根 package.json 是否声明 packageManager」，
-   *  返回**不合规原因**（字符串）；合规返回 null。 */
-  const pnpmVerdict45 = (jobLines, rootHasPM) => {
+  /** 判定与 canary **共用**：给定 job 行，返回**不合规原因**（字符串）；合规返回 null。 */
+  const pathInputVerdict45 = (jobLines) => {
+    const cp = checkoutPath45(jobLines);
     for (let i = 0; i < jobLines.length; i += 1) {
-      if (!/uses:\s*pnpm\/action-setup@/.test(jobLines[i])) continue;
+      if (!/uses:\s*[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@/.test(jobLines[i])) continue;
       const step = stepLinesAt45(jobLines, i);
-      if (step.some((l) => /^\s*version:/.test(l))) continue;             // ①
-      const cp = checkoutPath45(jobLines);
-      const pjfLine = step.find((l) => /^\s*package_json_file:/.test(l));
-      if (pjfLine !== undefined) {                                       // ②
-        const declared = pjfLine.split(':').slice(1).join(':').trim().replace(/^['"]|['"]$/g, '');
-        // 「工作区根」视角 → 仓库视角：剥掉 checkout 的子目录前缀
-        const repoRel = cp === '.' ? declared
-          : (declared.startsWith(`${cp}/`) ? declared.slice(cp.length + 1) : null);
-        if (repoRel === null) {
-          return `package_json_file（${declared}）**不在** checkout 目录 \`${cp}/\` 之内 ——`
-            + ' 它会被解析到工作区里**本仓之外**的路径';
+      for (const reg of ACTION_PATH_INPUTS45) {
+        const uses = new RegExp(`uses:\\s*${reg.action.replace(/[/.]/g, '\\$&')}@`);
+        if (!uses.test(jobLines[i])) continue;
+        if (reg.action === 'pnpm/action-setup' && step.some((l) => /^\s*version:/.test(l))) continue;
+        const line = step.find((l) => new RegExp(`^\\s*${reg.input}:`).test(l));
+        if (line === undefined) {
+          if (reg.def !== null && cp !== '.') {
+            return `${reg.action} 的 \`${reg.input}\` **未声明**，其默认值 \`${reg.def}\` 是`
+              + `**相对工作区根**解析的，而本 job 的 checkout 落在 \`${cp}/\` ⇒ **必然指空**（${reg.why}）`;
+          }
+          continue;
         }
+        const declared = line.split(':').slice(1).join(':').trim().replace(/^['"]|['"]$/g, '');
+        if (cp !== '.' && !declared.startsWith(`${cp}/`)) {
+          return `${reg.action} 的 \`${reg.input}: ${declared}\` **不在** checkout 目录 \`${cp}/\` 之内`
+            + ' —— 它会解析到工作区里**本仓之外**的路径';
+        }
+        const repoRel = cp === '.' ? declared : declared.slice(cp.length + 1);
+        if (reg.glob === true || /[*?[\]]/.test(repoRel)) continue;      // 通配符 ⇒ 跳过存在性
         const full = resolve(root, repoRel);
-        if (!existsSync(full)) return `package_json_file 解析到**不存在**的文件：${repoRel}`;
-        if (!/"packageManager"/.test(readFileSync(full, 'utf8'))) {
-          return `package_json_file（${repoRel}）里**没有** \`packageManager\` 字段 ⇒ 版本仍解析不到`;
+        if (!existsSync(full)) {
+          return `${reg.action} 的 \`${reg.input}: ${declared}\` 指向**不存在**的文件（${repoRel}）`;
         }
-        continue;
+        if (reg.need !== undefined && !reg.need.test(readFileSync(full, 'utf8'))) {
+          return `${reg.action} 的 \`${reg.input}: ${declared}\` 内容不满足要求（需 ${String(reg.need)}）`
+            + ` —— ${reg.why}`;
+        }
       }
-      if (cp === '.') {                                                  // ③
-        if (!rootHasPM) return 'checkout 落在仓库根，但根 `package.json` 里没有 `packageManager`';
-        continue;
-      }
-      return `所属 job 的 checkout 落在子目录 \`${cp}\`，而本步骤**没有** \`package_json_file\``
-        + '（默认值相对**工作区根**解析 ⇒ 读不到）';
     }
     return null;
   };
-  const rootHasPM45 = /"packageManager"/.test(read('package.json'));
   const offenders45 = [];
-  let steps45 = 0;
+  let checked45 = 0;
   for (const f of wfFiles45) {
     const lines = read(`.github/workflows/${f}`).split('\n');
     // 按 2 空格缩进的 job 头切段（与 ㉞ 同款约定）
@@ -5468,58 +5491,58 @@ const stripStrings = (s) => s.replace(
     }
     if (cur !== null) jobs.push(cur);
     for (const job of jobs) {
-      for (const l of job.lines) if (/uses:\s*pnpm\/action-setup@/.test(l)) steps45 += 1;
-      const why = pnpmVerdict45(job.lines, rootHasPM45);
+      for (const l of job.lines) {
+        for (const reg of ACTION_PATH_INPUTS45) {
+          if (new RegExp(`uses:\\s*${reg.action.replace(/[/.]/g, '\\$&')}@`).test(l)) checked45 += 1;
+        }
+      }
+      const why = pathInputVerdict45(job.lines);
       if (why !== null) offenders45.push(`${f} → job \`${job.name}\`：${why}`);
     }
   }
   if (offenders45.length > 0) {
-    fail(`㊺ 这些 job 里的 \`pnpm/action-setup\` **解析不到 pnpm 版本**：${offenders45.slice(0, 4).join('；')}`
-      + ' —— 该 action 的 `package_json_file` 默认 `package.json`、**相对工作区根**解析；'
-      + 'checkout 落到子目录时它会读到一个**不存在的文件** ⇒ 报 `No pnpm version is specified.`'
-      + ' ⇒ **整个 job 在第一步就死**（`working-directory:` 对它**无效**）。'
-      + '修法：给该步骤加 `with: package_json_file: <checkout 路径>/package.json`（审计 §4.322）');
+    fail(`㊺ 这些 job 的 action 输入会**解析到不存在的文件**：${offenders45.slice(0, 4).join('；')}`
+      + ' —— 本 job 的 checkout 落在**子目录**，而 action 的输入是**相对「工作区根」**解析的'
+      + '（`working-directory:` 对它们**无效** —— 它们是 JS action，不是 `run` 步骤）。'
+      + '修法：把该输入写成 `<checkout 路径>/…`（审计 §4.322）');
   }
   // 防空转：[健康度型]（workflow 与步骤数由仓库内容产生 ⇒ 留余量）
-  if (wfFiles45.length < 3 || steps45 < 8) {
-    fail(`㊺ 只扫到 ${wfFiles45.length} 个 workflow / ${steps45} 个 \`pnpm/action-setup\` 步骤`
-      + '（[健康度型] 下限 3 / 8）—— 扫描面萎缩会让本判据**空转**');
+  if (wfFiles45.length < 3 || checked45 < 12) {
+    fail(`㊺ 只扫到 ${wfFiles45.length} 个 workflow / ${checked45} 处登记过的 action 用法`
+      + '（[健康度型] 下限 3 / 12）—— 扫描面萎缩会让本判据**空转**');
   }
-  // canary：四向（与判定**共用** pnpmVerdict45 / checkoutPath45 / stepLinesAt45）
+  // canary：五向（与判定**共用** pathInputVerdict45 / checkoutPath45 / stepLinesAt45）
   const jobWith45 = (inner) => ['    steps:', ...inner];
-  const badJob45 = jobWith45([
-    '      - uses: actions/checkout@v5', '        with:', '          path: sub',
-    '      - uses: pnpm/action-setup@v5',
-  ]);
-  if (pnpmVerdict45(badJob45, true) === null) {
-    fail('㊺ canary 失效：**checkout 落子目录 + 无 package_json_file** 的样本未被检出');
+  const subCheckout45 = ['      - uses: actions/checkout@v5', '        with:', '          path: sub'];
+  if (pathInputVerdict45(jobWith45([...subCheckout45,
+    '      - uses: pnpm/action-setup@v5'])) === null) {
+    fail('㊺ canary 失效：**checkout 落子目录 + `package_json_file` 未声明**（有仓库相对默认值）未被检出');
   }
-  if (checkoutPath45(badJob45) !== 'sub') {
-    fail('㊺ canary 失效：`path: sub` 未被解析出来（那样判定会退化成「永远认为在仓库根」）');
+  if (pathInputVerdict45(jobWith45([...subCheckout45,
+    '      - uses: actions/setup-node@v5', '        with:', '          node-version-file: .nvmrc'])) === null) {
+    fail('㊺ canary 失效：**`node-version-file` 没带子目录前缀**未被检出（实测第二次撞的就是它）');
   }
-  const okJobPjf45 = jobWith45([
-    '      - uses: actions/checkout@v5', '        with:', '          path: sub',
+  if (pathInputVerdict45(jobWith45([...subCheckout45,
+    '      - uses: actions/setup-node@v5'])) !== null) {
+    fail('㊺ canary **过宽**：`node-version-file` **未声明且无默认值**的样本被判为不合规');
+  }
+  if (pathInputVerdict45(jobWith45([...subCheckout45,
     '      - uses: pnpm/action-setup@v5', '        with:',
-    `          package_json_file: sub/${'package.json'}`,
-  ]);
-  if (pnpmVerdict45(okJobPjf45, true) !== null) {
-    fail('㊺ canary **过宽**：**显式指向存在的 package.json** 的样本被判为不合规');
+    `          package_json_file: sub/${'package.json'}`])) !== null) {
+    fail('㊺ canary **过宽**：**显式指对子目录路径**的样本被判为不合规');
   }
-  const okJobRoot45 = jobWith45([
+  if (pathInputVerdict45(jobWith45([
     '      - uses: actions/checkout@v5', '      - uses: pnpm/action-setup@v5',
-  ]);
-  if (pnpmVerdict45(okJobRoot45, true) !== null) {
+  ])) !== null) {
     fail('㊺ canary **过宽**：checkout 在**仓库根**的常规样本被判为不合规');
   }
-  if (pnpmVerdict45(jobWith45([
-    '      - uses: actions/checkout@v5', '        with:', '          path: sub',
-    '      - uses: pnpm/action-setup@v5', '        with:', '          package_json_file: elsewhere/package.json',
-  ]), true) === null) {
-    fail('㊺ canary 失效：`package_json_file` **指到 checkout 之外**的样本未被检出');
+  if (checkoutPath45(jobWith45(subCheckout45)) !== 'sub') {
+    fail('㊺ canary 失效：`path: sub` 未被解析出来（那样判定会退化成「永远认为在仓库根」）');
   }
-  console.log(`Release gate: \`pnpm/action-setup\` 的版本解析 —— 扫描 ${wfFiles45.length} 个 workflow / `
-    + `${steps45} 个该步骤，**解析不到版本** ${offenders45.length} 处；`
-    + '⚠️ **边界**：只覆盖这一个 action（其它 action 的隐式路径假设不覆盖）');
+  console.log(`Release gate: checkout 子目录下的 action 路径输入 —— 扫描 ${wfFiles45.length} 个 workflow / `
+    + `${checked45} 处登记过的 action 用法，**会解析到不存在的文件** ${offenders45.length} 处；`
+    + `⚠️ **边界**：只覆盖登记表里的 ${ACTION_PATH_INPUTS45.length} 组（action, input）；`
+    + '「输入未声明且无仓库相对默认值」不在覆盖内（那是另一类、更轻的问题）');
 }
 
 if (errors.length > 0) {

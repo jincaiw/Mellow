@@ -20181,13 +20181,44 @@ linux-runtime 的 working-directory '` 对它**无效** —— 它是 JS action�
 （整行注释里的 `working-directory:` 必须被剥掉 · 真代码行里的必须**不**被剥）。
 ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
 
-### 四、注入验证（3/3）
+### 三之三、修好后**又撞出第三次**：同一个 `with:` 里**只写对了一半**
+
+派发 `Runtime Qualification`（`target: linux`）验证修复 ⇒ pnpm setup **过了**，但作业**死在下一步**：
+
+```
+Run actions/setup-node@v5   with:  node-version-file: .nvmrc
+##[error]The specified node version file at: /home/runner/work/Mellow/Mellow/.nvmrc does not exist
+```
+
+⚠️ **同一个 `with:` 里**，`cache-dependency-path: mellow/pnpm-lock.yaml` **一直是对的**，
+而 `node-version-file: .nvmrc` **没写前缀** ⇒ **「一个 `with:` 里只写对了一半」**。
+⇒ 这条类比「一个 action」宽得多 ⇒ **把 ㊺ 泛化为「登记表驱动的路径输入核对」**：
+
+| action | 输入 | 未声明时的默认值 | 额外要求 |
+|---|---|---|---|
+| `pnpm/action-setup` | `package_json_file` | `package.json` | 内容必须含 `packageManager` |
+| `actions/setup-node` | `node-version-file` | 无（不声明就没事） | — |
+| `actions/setup-node` | `cache-dependency-path` | 无 | 值可能带通配符 ⇒ 跳过存在性 |
+
+**规则**（与 action 无关）：① 已声明 ⇒ 在 `cp !== '.'` 时必须带 `cp/` 前缀，去掉前缀后**必须真实存在**，
+登记了 `need` 的还必须**内容匹配**；② 未声明且**有仓库相对默认值** ⇒ 要求 `cp === '.'`。
+
+### 四、注入验证
+
+**㊺（泛化后）5/5**：
 
 | 注入 | 结果 |
 |---|---|
-| 撤回修复（删掉 `package_json_file`） | ✅ 红：解析不到 pnpm 版本 |
-| 指向**不存在**的文件 | ✅ 红：`package_json_file` 解析到不存在的文件 |
-| 指向 **checkout 之外** | ✅ 红：不在 checkout 目录之内 |
+| 有仓库相对默认值的输入**未声明**（删 `package_json_file`） | ✅ 红 |
+| 指向**不存在**的文件 | ✅ 红 |
+| 去掉子目录前缀 | ✅ 红 |
+| 指到 **checkout 之外** | ✅ 红 |
+| 内容不满足要求（指向无 `packageManager` 的文件） | ✅ 红 |
+
+⚠️ **注入教训（第四次同款）**：我最初的注入之一是「**删掉 `node-version-file`**」⇒ **没红**。
+原因：删掉它**不是**「让路径指向不存在的文件」，而是「**移除了输入**」（另一类、更轻的问题）
+⇒ **被测性质根本没被移除** ⇒ 又一次「**注入必须真的移除被测性质**」。
+⇒ 顺带定下**边界**：「未声明且**无默认值**」**不在本判据覆盖内**（如实登记，不偷偷放宽）。
 
 ### 五、边界如实声明
 
