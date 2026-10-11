@@ -3588,7 +3588,7 @@ const stripStrings = (s) => s.replace(
   // 防空转：**覆盖型**（立此判据时实测 25 个例外表 —— 已排除扫描器跳过表；
   //   ⚠️ 2026-10-11（§4.302）：原为 **17**，修掉「`^const` 只认列 0」的扫描面缺陷后
   //   纳入 **8 张缩进表** ⇒ 25）
-  const TABLE_BASELINE = 26; // [覆盖型] 基线 26
+  const TABLE_BASELINE = 27; // [覆盖型] 基线 27
   coverEq('㉔ 例外表个数', tables.length, TABLE_BASELINE,
     '命名约定漂移或扫描面萎缩会让本判据**空转**');
   // canary：三向（与判定**共用** TABLE_RE / STALE_KW / stripComments24）
@@ -4704,7 +4704,7 @@ const stripStrings = (s) => s.replace(
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 23; // [覆盖型] 基线 23
+  const COVERAGE_MARK_BASELINE = 24; // [覆盖型] 基线 24
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -4870,6 +4870,86 @@ const stripStrings = (s) => s.replace(
     + ` / **missing ${miss38}**）；⚠️ 缺 ${miss38} 个 ⇒ macOS **不签名不公证** / Windows **不签名**`
     + '（`release.yml` 显式走 else 分支，**构建照样成功**）；'
     + '⚠️ **边界**：`status` 是**快照**（CI 里不查 `gh secret list`）⇒ 靠 `reviewedAt` + `staleAfterDays` 到期**变红**强制重新分诊');
+}
+
+// ── ㊴ `includes('<针>')` 的针**不得只在注释里**（2026-10-11，审计 §4.314）──
+// 【为什么】本仓的「X 必须存在」类判据大量用 `read('路径')` + `X.includes('针')`。
+//   实测（2026-10-11）：全仓**可解析目标路径**的这类检查共 **34** 处，其中 **16** 处的针在目标文件里
+//   **不唯一** ⇒ 「检查强度」取决于「**针的写法有多特异**」。
+//   本轮用**注入**证明了 **2 处真缺陷**（§4.314）：删掉「契约定义行」/「`import` + 用法」之后，
+//   判据**仍然绿** —— 因为**注释里还剩同样的字样**。⇒ 两处已**锚定到代码形态**并配 canary。
+//   ⚠️ 本条只锁**能机械判定的那一半**：**针必须在「剥注释后」的目标文件里出现 ≥1 次**。
+//     ⚠️ 它**不**覆盖「定义被删而用法尚存」（那需要理解「**哪一处才是真的**」）—— **如实声明**。
+//   ⚠️ 另一条边界：本仓的 `stripJsComments` **保留字符串字面量**（那是设计）⇒ 「针只在**字符串**里」
+//     仍会被算作「在代码里」。**登记为已知边界**（不假装覆盖）。
+// 【判据】对每处 `<X>.includes('<针>')`（`X` 由**字符串字面量路径**的 `read`/`readFileSync` 赋值）：
+//   目标文件**剥注释后**必须仍含该针；否则红（除非登记进 `COMMENT_ONLY_NEEDLE_EXEMPT`）。
+{
+  const COMMENT_ONLY_NEEDLE_EXEMPT = new Map([
+    ['verify-sidebar-contract.mjs|only the last **one** file operation',
+      '该判据**故意**检查「**不变量注释**仍在」（它守的是**文档化的不变量**，不是代码符号）'
+      + ' —— 这是唯一一处「用注释当证据」是**设计**的情形'],
+  ]);
+  const guards39 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const onlyInComments = [];
+  let checked39 = 0;
+  let exemptHit39 = 0;
+  for (const f of guards39) {
+    const src = read(`tests/parity/${f}`);
+    /** 变量 → 目标文件（**只认字符串字面量路径**；非字面量一律跳过并计数） */
+    const targetOf = new Map();
+    for (const m of src.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:read|readFileSync)\(\s*(?:resolve\([^,]+,\s*)?'([^']+)'\s*\)?/g)) {
+      targetOf.set(m[1], m[2]);
+    }
+    for (const m of src.matchAll(/([A-Za-z_$][\w$]*)\.includes\(\s*(['"])([^'"\\]{1,40})\2\s*\)/g)) {
+      const [, v, , needle] = m;
+      if (!targetOf.has(v)) continue;
+      const rel = targetOf.get(v);
+      // ⚠️ 用 `read()`（它**已经**做换行归一化）—— 本文件里**任何地方**再写一遍那个两字符转义
+      //   都会破坏本文件自己的 CRLF canary（⑤）。
+      const relPath = existsSync(resolve(root, rel)) ? rel : `tests/parity/${rel}`;
+      if (!existsSync(resolve(root, relPath))) continue;
+      checked39 += 1;
+      const body = stripJsComments(read(relPath));
+      if (body.includes(needle)) continue;
+      const key = `${f}|${needle}`;
+      if (COMMENT_ONLY_NEEDLE_EXEMPT.has(key)) { exemptHit39 += 1; continue; }
+      onlyInComments.push(`${f} → \`${needle}\`（目标 ${rel}）`);
+    }
+  }
+  if (onlyInComments.length > 0) {
+    fail(`㊴ 这些 \`includes('<针>')\` 的针**在目标文件里只出现在注释中**：${onlyInComments.join('；')}`
+      + ' —— 「注释里提过」**不是**「代码里有」（§4.314 实测：删掉契约定义 / `import` 后，'
+      + '注释里的字样让判据**仍然绿**）。请**锚定到代码形态**，或登记进 `COMMENT_ONLY_NEEDLE_EXEMPT` 并写明理由');
+  }
+  // 双向：登记的豁免项必须**真的**命中（否则陈旧）
+  if (exemptHit39 !== COMMENT_ONLY_NEEDLE_EXEMPT.size) {
+    fail(`㊴ \`COMMENT_ONLY_NEEDLE_EXEMPT\` 有 ${COMMENT_ONLY_NEEDLE_EXEMPT.size} 条，但只有 ${exemptHit39} 条命中`
+      + ' —— 其余已**过期**（该针现在要么在代码里出现、要么那条检查已被删），请移除');
+  }
+  // 防空转：[健康度型]（输入是「别的护栏的写法」，随开发变化 ⇒ 留余量）
+  const NEEDLE_CHECK_BASELINE = 30; // [健康度型] 下限 30（立此判据时实测 34）
+  if (checked39 < NEEDLE_CHECK_BASELINE) {
+    fail(`㊴ 只解析出 ${checked39} 处可核对目标的 \`includes\` 检查（[健康度型] 下限 ${NEEDLE_CHECK_BASELINE}）`
+      + ' —— 解析器失效会让本判据**空转**');
+  }
+  // canary：两向（与判定**共用** stripJsComments）
+  if (stripJsComments('const x = 1; // note: NEEDLE_TOKEN').includes('NEEDLE_TOKEN')) {
+    fail('㊴ canary 失效：**行注释**里的针未被剥掉');
+  }
+  if (!stripJsComments('const s = "NEEDLE_TOKEN";').includes('NEEDLE_TOKEN')) {
+    fail('㊴ canary **过宽**：**字符串字面量**里的针被误剥（那会制造**假阳性**）');
+  }
+  const COMMENT_ONLY_BASELINE = 1; // [覆盖型] 基线 1
+  coverEq('㊴ 「只在注释里」的豁免条数', COMMENT_ONLY_NEEDLE_EXEMPT.size, COMMENT_ONLY_BASELINE,
+    '豁免被删空会让本条重新变成**无人守**');
+  console.log(`Release gate: \`includes\` 型判据的**针** —— 可核对目标 ${checked39} 处，`
+    + `其中「只在注释里」${onlyInComments.length} 处（豁免 ${COMMENT_ONLY_NEEDLE_EXEMPT.size} 条）；`
+    + '⚠️ **边界**：只锁「针不得只在注释里」，**不覆盖**「定义被删而用法尚存」'
+    + '（那半靠**锚定正则 + canary**，§4.314 已修）；⚠️ 另一边界：`stripJsComments` **保留字符串字面量**'
+    + ' ⇒ 「针只在**字符串**里」仍算「在代码里」');
 }
 
 if (errors.length > 0) {

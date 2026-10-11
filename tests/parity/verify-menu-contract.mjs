@@ -273,7 +273,25 @@ if (allEntries().some((e) => e.kind === 'command' && /^theme\.apply\./.test(e.id
   fail('主题命令 id 不得静态声明（theme.apply.* 必须由 dynamic: themes 生成）');
 }
 if (/mellow-light/.test(menuRsSource)) fail('Rust menu.rs 不得硬编码主题列表（P1-1.5：主题从 Theme Registry 派生）');
-if (!nativeMenuSource.includes('BUILTIN_THEMES')) fail('nativeMenu.ts 必须从 BUILTIN_THEMES 派生主题菜单');
+// ⚠️ 2026-10-11（审计 §4.314）：原判据是 `nativeMenuSource.includes('BUILTIN_THEMES')` ——
+//   而该词在 `nativeMenu.ts` 里出现 **3 次**（1 处在**注释**、1 处 `import`、1 处用法）⇒
+//   注入实测：**删掉 `import` + 用法（保留注释）⇒ EXIT=0（漏检）**。
+//   ⇒ 现**剥注释**并**锚定 `import` / 用法形态**（裸词不算证据）。
+const THEMES_DERIVE_RE = /(?:import\s*\{[^}]*\bBUILTIN_THEMES\b[^}]*\}|BUILTIN_THEMES\s*\.\s*map\()/;
+if (!THEMES_DERIVE_RE.test(stripComments(nativeMenuSource))) {
+  fail('nativeMenu.ts 必须从 BUILTIN_THEMES 派生主题菜单'
+    + '（⚠️ 判据**剥注释**并锚定 `import` / `BUILTIN_THEMES.map(` 形态，不再只查裸词；审计 §4.314）');
+}
+// canary：三向（与判定**共用** THEMES_DERIVE_RE；**第三向**锁住首版缺陷）
+if (!THEMES_DERIVE_RE.test("import { BUILTIN_THEMES } from '../../../packages/themes/src';")) {
+  fail('主题派生护栏 canary 失效：`import` 形态未被识别');
+}
+if (!THEMES_DERIVE_RE.test('  ...BUILTIN_THEMES.map((theme) => theme.id),')) {
+  fail('主题派生护栏 canary 失效：用法形态未被识别');
+}
+if (THEMES_DERIVE_RE.test(stripComments('// P1-1.5：主题菜单从 Theme Registry（BUILTIN_THEMES + 用户主题）派生'))) {
+  fail('主题派生护栏 canary **过宽**：**注释**里的提及被当成了派生证据（这正是首版的缺陷）');
+}
 if (!appSource.includes("invoke('set_menu_spec'")) fail('App.tsx 必须经 set_menu_spec 下发 NativeMenuSpec');
 
 // ── 4. Rust menu.rs 降级为 materialization Adapter（§7.4 硬规则 6）─────────

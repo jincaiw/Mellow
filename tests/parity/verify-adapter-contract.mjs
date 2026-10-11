@@ -61,8 +61,24 @@ if (platformViolations.length > 0) {
 
 // ── ③ Adapter contract 三方锚点 ─────────────────────────────────────────
 const bridgeInjection = readFileSync(resolve(root, 'packages/editor-core/src/bridge-injection.ts'), 'utf8').replace(/\r\n/g, '\n');
-if (!bridgeInjection.includes('__MELLOW_BRIDGE__')) {
-  fail('editor-core bridge-injection.ts 缺少 __MELLOW_BRIDGE__ 契约定义（ADR-0007）');
+// ⚠️ **2026-10-11（审计 §4.314）：原判据是 `bridgeInjection.includes('__MELLOW_BRIDGE__')`** ——
+//   而该词在文件里出现 **6 次**：3 处在**注释**、2 处在**用法**、**1 处才是契约定义**。
+//   注入实测：**删掉契约定义那一行 ⇒ EXIT=0（漏检）** —— 因为注释与用法里还有 5 处。
+//   ⇒ 现**锚定契约定义的形态**（`__MELLOW_BRIDGE__?: { invoke(…) }`，即 `declare global` 里的可选属性声明）。
+//   ⚠️ 一般形态（§4.314 的教训）：**「文件里有 X」这类检查的强度 = 「X 的写法有多特异」**；
+//     用裸词时，**注释与用法都会冒充证据**。
+const BRIDGE_DECL_RE = /__MELLOW_BRIDGE__\?\s*:\s*\{\s*invoke\(/;
+if (!BRIDGE_DECL_RE.test(bridgeInjection)) {
+  fail('editor-core bridge-injection.ts 缺少 __MELLOW_BRIDGE__ 契约定义（ADR-0007）—— '
+    + '⚠️ 判据**锚定契约定义形态**（`__MELLOW_BRIDGE__?: { invoke(…) }`），不再只查裸词；'
+    + '裸词在注释/用法里也出现 ⇒ 删掉定义不会红（审计 §4.314）');
+}
+// canary：两向（与判定**共用** BRIDGE_DECL_RE；**第二向**锁住首版缺陷）
+if (!BRIDGE_DECL_RE.test('    __MELLOW_BRIDGE__?: { invoke(message: unknown): Promise<unknown> };')) {
+  fail('③ canary 失效：契约定义样本未被识别');
+}
+if (BRIDGE_DECL_RE.test(' * - Tauri：desktop Adapter 层把 __MELLOW_BRIDGE__ 接到 Tauri 全局桥')) {
+  fail('③ canary **过宽**：**注释**里的提及被当成了契约定义（这正是首版的缺陷）');
 }
 const bundleScript = readFileSync(resolve(root, 'apps/desktop/scripts/build-editor-bundle.mjs'), 'utf8').replace(/\r\n/g, '\n');
 if (!bundleScript.includes('__MELLOW_BRIDGE__') || !bundleScript.includes('__TAURI__')) {
