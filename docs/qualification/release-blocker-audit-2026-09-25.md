@@ -20249,6 +20249,82 @@ Run actions/setup-node@v5   with:  node-version-file: .nvmrc
 
 ⇒ 同族「只锁了一半」累计 **第 150 次**（§4.170–§4.321）。
 
+## 4.323 workflow 判据扫的是**源码**：注释会**满足 / 触发**判据（2026-10-12）
+
+### 一、透镜（承 §4.322 的「只锁了一半」）
+
+本仓 workflow 的**注释比代码还长**。判据扫的是 workflow **源码** ⇒ 一条**说明性注释**里
+只要**引用了**判据要匹配的字面量，就能**满足**或**触发**它。⇒ 问：
+**「读 workflow 的判据，剥注释了吗？」**
+
+### 二、取证（逐文件量，**注入一条注释**即复现）
+
+| 文件 | 读 workflow 处数 | 剥 YAML 注释？ | 实测 |
+|---|---|---|---|
+| `verify-release-gate.mjs` | **12** | ❌ **连剥法都没有** | **2 处活缺陷**（见下） |
+| `verify-build-pipeline.mjs` | 3 | ⚠️ **只剥了 1 处** | 见下（最干净的一例） |
+| `verify-parity-ledger.mjs` | 1 | ❌ | 潜在（内容匹配可被注释满足） |
+| `verify-runtime-qualification-workflow.mjs` | 1 | ✅（§4.322 才补全） | 见下（**唯一合法例外**） |
+
+**活缺陷 ①（㊳，注释触发）**：在 `ci.yml` 末尾插一行注释
+`#   X: ${{ secrets.PROBE_TOKEN }}` ⇒ ㊳ 报「未登记的 secret」。
+**活缺陷 ②（㊺，注释触发，且是**上一轮刚写**的判据）**：在 `linux-runtime` 作业里插一段
+**注释掉的** `uses: pnpm/action-setup@v5` ⇒ ㊺ 把它当成**真步骤** ⇒ 假违规。
+⇒ **同一条纪律（「剥注释」）在上一轮刚刚讨论过，却没有应用到同一轮新写的判据上。**
+
+**最干净的一例（`verify-build-pipeline.mjs`）**：该文件里「视觉 Golden 不得 `continue-on-error`」
+那一节**自己剥了**注释，并写着「**这是本会话第四次踩「护栏匹配到散文」**」——
+**而同一文件顶部**的 `ciYml` / `releaseYml` 两条读取（被**多条**判据使用）**一直是原文**。
+⇒ **纪律写在同一文件里，却没有覆盖同一文件。**
+
+**唯一合法例外**：`verify-runtime-qualification-workflow.mjs` 的 IME 覆盖清单节核的**正是**
+workflow **注释里**写的「N 场景 IME 矩阵」—— 那是**有意**的（同一件事的**第三份副本**）
+⇒ 剥注释会**破坏**它 ⇒ 这一处**必须**用原文（且**逐字登记**，见处置 3）。
+
+### 三、处置
+
+1. **4 个文件各加模块级 `stripYamlComments` + 唯一入口**：
+   `verify-release-gate.mjs`（`wfText`，12 处全部改经它）· `verify-build-pipeline.mjs`（`wfText`，3 处）·
+   `verify-parity-ledger.mjs`（`wfText`，1 处）· `verify-runtime-qualification-workflow.mjs`（读进来就剥）。
+2. **保留唯一例外**：`verify-runtime-qualification-workflow.mjs` 额外留一个 `workflowRaw`
+   （**不剥注释**）**只**给那一处用。
+3. **判据 ㊻**（`verify-release-gate.mjs`）：
+   - **R1（文件级）**：源码里出现 `.github/workflows` ⇒ 必须同时含**整行 YAML 注释剥离**的实现
+     （针**必须特异**：只查 `/^\s*#/` 会被「某处内联判断注释行」满足 —— 实测
+     `verify-build-pipeline.mjs` 就有一行 `if (/^\s*#/.test(line)) return false;`，**那不是剥法**
+     ⇒ 必须**同时**出现 `.filter(`）。
+   - **R2（直读）**：`read(` / `readFileSync(` 与 workflow 路径**同行** ⇒ 必须**逐字**登记在
+     `RAW_WF_READ` + 写明理由；**双向**（登记了却已不存在 ⇒ **陈旧** ⇒ 红）。
+   - canary **五向**；防空转「读 workflow 的护栏 ≥ 3」。
+
+### 四、注入验证（4/4）
+
+| 注入 | 结果 |
+|---|---|
+| 撤回 `verify-release-gate.mjs` 的一处 `wfText`（改回直读） | ✅ 红：㊻ 未登记直读 |
+| 撤回 `verify-build-pipeline.mjs` 的 `ciYml` | ✅ 红：㊻ 未登记直读 |
+| 删掉某文件里的剥法实现 | ✅ 红：㊻ R1「读了 workflow 却没有剥法」 |
+| 改掉 `RAW_WF_READ` 的一条登记文本 | ✅ 红：㊻ **陈旧条目** |
+
+### 五、⚠️ 本轮的一次**危险失误**（如实记录）
+
+用 `Edit` 把 ㊻ 插到文件末尾时，我的 `old_string` 恰好**包含**了
+`if (errors.length > 0) { throw new Error(...) }` 两行，而 `new_string` **只补回了 `if` 那一行**
+⇒ **`throw` 被删掉** ⇒ 该护栏会**静默吞掉所有错误**（`errors` 非空也不抛）。
+⇒ 被 `grep -c "Release gate violations"` = **0** 当场发现并补回。
+⇒ **教训**：**改「护栏的收口行」后必须立刻核对「收口还在不在」** ——
+本仓已有同型记载（「落位必须在 `if (errors.length > 0)` **之前**」，§4.175 / §4.176），
+而这次错的是**另一半**（**把收口本身删了**）。⇒ 已写进 skill。
+
+### 六、边界如实声明
+
+- ⚠️ ㊻ 的 R2 **只挡「同行」直读** —— 把路径存进变量再读（跨行 / 变量间接）**不在覆盖内**。
+- ⚠️ R1 **只保证「存在剥法」**，**不保证每条判据都用了它** —— 兜底是「所有读取经唯一入口 `wfText`」
+  （4 个文件已全部改造，但这是**结构约定**，不是判据能证的东西）。
+- ⚠️ 只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**（本仓 workflow 未使用行尾注释）。
+
+⇒ 同族「只锁了一半」累计 **第 151 次**（§4.170–§4.322）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

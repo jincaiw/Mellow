@@ -19,11 +19,24 @@ import { execFileSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+
+// ── workflow 正文的**唯一**读取入口：剥 YAML 整行注释（2026-10-12，审计 §4.323）────────
+// 【为什么】判据扫的是 workflow **源码**，而 workflow 里**注释极多** ⇒ **说明性注释会满足 / 触发判据**。
+//   ⚠️ 本文件**早就知道**这件事：下面「视觉 Golden 不得 continue-on-error」那一节自己剥了注释，
+//   并写着「**这是本会话第四次踩「护栏匹配到散文」**」—— 但**只剥了那一处**，
+//   而 `ciYml` / `releaseYml` 这两条**读取**（被多条判据使用）**一直是原文**。
+//   ⇒ 同族「只锁了一半」的**最干净形态**：**纪律写在同一文件里，却没有覆盖同一文件**。
+//   ⇒ `verify-release-gate.mjs` 判据 **㊻** 守「读 workflow 不得直读」。
+// ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
+const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+/** workflow 正文（剥注释后）。 */
+const wfText = (rel) => stripYamlComments(read(rel));
+
 const errors = [];
 const fail = (m) => errors.push(m);
 
-const ciYml = read('.github/workflows/ci.yml');
-const releaseYml = read('.github/workflows/release.yml');
+const ciYml = wfText('.github/workflows/ci.yml');
+const releaseYml = wfText('.github/workflows/release.yml');
 const buildAll = read('apps/desktop/scripts/build-editor-all.mjs');
 const desktopPkg = JSON.parse(read('apps/desktop/package.json'));
 
@@ -224,11 +237,12 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
 // 该步骤自己的注释写「基线提交后即进入比对模式」，而三平台基线**都已入库** →
 // 「采集模式」的理由已失效，故按注释自身的条件恢复为严格比对。
 {
-  const rqRaw = read('.github/workflows/runtime-qualification.yml');
   // ⚠️ **先剥 YAML 注释再断言**：上面的说明注释里就写着 `continue-on-error: true`
   // （「移除了它」这句话本身包含该串）→ 不剥注释会**首跑即误报**。
   // 这是本会话第四次踩「护栏匹配到散文」。
-  const rq = rqRaw.split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+  // ⚠️ 2026-10-12（审计 §4.323）：本处原先**就地**剥（`rqRaw` + 局部 filter）——
+  //    现在统一走 `wfText()`（同一条纪律**只剥一处**正是本条要找的缺陷）。
+  const rq = wfText('.github/workflows/runtime-qualification.yml');
   if (/continue-on-error:\s*true/.test(rq)) {
     fail('runtime-qualification 的视觉 Golden 步骤不得是 continue-on-error —— 那会把「golden 失败」'
       + '降级成 job 成功（实测 v1.5.16 就这样放过了表格工具栏 436→478 的排版回归）');

@@ -2,19 +2,28 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const workflow = readFileSync(resolve(root, '.github/workflows/runtime-qualification.yml'), 'utf8').replace(/\r\n/g, '\n');
-const cargoManifest = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n');
-const releaseBuilds = [...workflow.matchAll(/run:\s*cargo build --release([^\n]*)/g)];
 
-// ── YAML 注释剥离（**模块级唯一实现** —— 本文件里**两处**判据共用）──────────────────
+// ── YAML 注释剥离（**模块级唯一实现** —— 本文件里**三处**共用）──────────────────
 // 【为什么必须有】判据扫的是 workflow **源码**，而**说明注释**里会**引用**判据要匹配的字面量
 //   （本仓已实测 4 次的同型坑：注释满足 / 触发判据）。
 // 【为什么提到模块级】2026-10-12（审计 §4.322）：本剥法原先**只定义在「非默认入口探针」块内**
 //   ⇒ **路径一致性块没剥注释** ⇒ 一条写着 `working-directory:` 的说明注释被当成了**真值**
 //   （实测报出「`working-directory` 与 checkout 落点不一致」，而那个值其实是半句中文注释）。
 //   ⇒ 同族判据的**剥法必须一致**（否则它们只是「两个带不同 bug 的意见」）。
+// 【为什么 `workflow` 本身也要剥】2026-10-12（审计 §4.323）：本文件顶部的 `workflow` 变量
+//   曾是**未剥注释**的原文，而**多条**判据直接对它做正则（如
+//   `/ime-matrix-linux\.mjs --im=fcitx5 --driver=xdotool/.test(workflow)`）⇒
+//   一条**写着该命令的注释**就能**满足**判据 ⇒ **假阴性**。现改为**读进来就剥**。
 // ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
 const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+/** ⚠️ **原始**文本（**不剥注释**）—— **只**给「**注释本身是被核对的对象**」那一处用：
+ *  IME 覆盖清单节要核的是 workflow **注释里**写的「N 场景 IME 矩阵」（那是同一件事的**第三份副本**）。
+ *  ⇒ 这是「剥注释」纪律的**唯一例外**，且**必须显式**（登记在 `verify-release-gate.mjs` 的 ㊻ 里）。 */
+const workflowRaw = readFileSync(resolve(root, '.github/workflows/runtime-qualification.yml'), 'utf8')
+  .replace(/\r\n/g, '\n');
+const workflow = stripYamlComments(workflowRaw);
+const cargoManifest = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n');
+const releaseBuilds = [...workflow.matchAll(/run:\s*cargo build --release([^\n]*)/g)];
 
 if (!/workflow_dispatch:\s*\n\s+inputs:\s*\n\s+target:/.test(workflow)
   || !/macos-windows/.test(workflow)
@@ -258,8 +267,10 @@ if (!/Windows Source Fidelity gate/.test(workflow)
     throw new Error(`ime-test-plan 声明覆盖 ${missInMatrix.join(', ')}，而 SCENARIOS 里没有这些场景`
       + ' —— 覆盖声明**不得超出实际**（双向一致，不是单向）');
   }
-  // 同一件事的第三个副本：RQ 注释里的「N 场景 IME 矩阵」
-  const stepCount = /(\d+)\s*场景\s*IME 矩阵/.exec(workflow)?.[1];
+  // 同一件事的第三个副本：RQ **注释**里的「N 场景 IME 矩阵」
+  // ⚠️ 这里**必须**用 `workflowRaw`（**不剥注释**）—— 因为**被核对的对象就是那条注释**。
+  //    这是「workflow 判据必须剥注释」的唯一例外，已在 `verify-release-gate.mjs` 判据 ㊻ 里**逐字登记**。
+  const stepCount = /(\d+)\s*场景\s*IME 矩阵/.exec(workflowRaw)?.[1];
   if (stepCount === undefined) {
     throw new Error('runtime-qualification.yml 找不到「N 场景 IME 矩阵」字样 —— 锚点漂移，别静默跳过');
   }

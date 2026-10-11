@@ -20,6 +20,22 @@ import { tmpdir } from 'node:os';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
+
+// ── workflow 正文的**唯一**读取入口：剥 YAML 整行注释（2026-10-12，审计 §4.323）────────
+// 【为什么】本文件有 **12 处**读 `.github/workflows/*.yml`，而 workflow 里**注释极多**
+//   （本仓的注释比代码还长）—— **说明性注释会满足 / 触发判据**。
+//   ⚠️ **实测两处**（都是「注入一条注释」就复现的）：
+//     ① **㊳**：一条注释 `# X: ${{ secrets.PROBE_TOKEN }}` ⇒ 报「未登记的 secret」；
+//     ② **㊺**：一段**注释掉的** `uses: pnpm/action-setup@v5` 被当成**真步骤** ⇒ 假违规。
+//        （㊺ 是**上一轮刚写**的 —— 同一条纪律**没应用到新判据上**。）
+//   ⚠️ 而**同仓** `verify-runtime-qualification-workflow.mjs` **早就**剥了（它的注释写着
+//   「本仓已实测过 4 次的同型坑：注释满足 / 触发判据」）⇒ 同族「只锁了一半」：
+//   **纪律在 A 文件学到了，B 文件一条都没用**。
+// 【纪律】读 workflow **一律**走 `wfText()`；判据 ㊻ 守「不得绕过」。
+// ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
+const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+/** workflow 正文（剥注释后）。**判据 ㊻ 守「workflow 不得被直读」**。 */
+const wfText = (rel) => stripYamlComments(read(rel));
 const errors = [];
 const fail = (message) => errors.push(message);
 /** **覆盖型下限**：集合大小必须 **== 基线**（2026-10-11，审计 §4.310）。
@@ -1035,7 +1051,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
 }
 
 // ── ③ CI 门禁完整性 ─────────────────────────────────────────────────────
-const ci = read('.github/workflows/ci.yml');
+const ci = wfText('.github/workflows/ci.yml');
 for (const anchor of [
   'run: pnpm -r --filter \'!mellow-desktop\' run test', // packages 单测
   'working-directory: packages/editor-engine',           // engine 单测
@@ -1078,7 +1094,7 @@ if (!/runs-on:\s*windows-latest/.test(ci)) {
   const offenders = [];
   for (const name of WORKFLOWS) {
     let src = '';
-    try { src = read(`.github/workflows/${name}`); } catch { continue; }
+    try { src = wfText(`.github/workflows/${name}`); } catch { continue; }
     for (const m of src.matchAll(/^\s+- name: "?(.*?)"?$/gm)) {
       const stepName = m[1];
       if (/\d{2,}/.test(stripRefs(stepName))) offenders.push(`${name}：${stepName}`);
@@ -1107,7 +1123,7 @@ if (buildIdx === -1 || fpIdx === -1 || fpIdx < buildIdx) {
 }
 
 // ── ④ 发布门禁：打包前必须校验渲染层指纹 ────────────────────────────────
-const release = read('.github/workflows/release.yml');
+const release = wfText('.github/workflows/release.yml');
 if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
   fail('缺少 .github/workflows/release.yml');
 } else {
@@ -2599,7 +2615,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     : [];
   let jobCount = 0;
   for (const f of wfFiles) {
-    const jobs = jobsOf(read(`.github/workflows/${f}`));
+    const jobs = jobsOf(wfText(`.github/workflows/${f}`));
     if (jobs === null) { fail(`${WF_DIR}/${f} 里找不到 \`jobs:\` 段 —— 判据锚点漂移`); continue; }
     jobCount += jobs.length;
     for (const j of jobs) {
@@ -2677,7 +2693,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     ? readdirSync(resolve(root, WF_DIR)).filter((f) => /\.ya?ml$/.test(f)).sort()
     : [];
   for (const f of wfFiles) {
-    const p = permissionsOf(read(`.github/workflows/${f}`));
+    const p = permissionsOf(wfText(`.github/workflows/${f}`));
     if (p === null) {
       fail(`${WF_DIR}/${f} **没有顶层 \`permissions:\`** —— 不写它时，该 workflow 的有效 token 权限`
         + '由**仓库设置** `default_workflow_permissions` 决定，而那**不在仓库里、无法审计**。'
@@ -2863,7 +2879,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   // 现读全部 workflow 里的 `uses:`（**遍历 + 过滤**，不枚举文件）
   const found = new Map();
   for (const f of readdirSync(resolve(root, WF_DIR)).filter((n) => /\.ya?ml$/.test(n)).sort()) {
-    for (const line of read(`${WF_DIR}/${f}`).split('\n')) {
+    for (const line of wfText(`${WF_DIR}/${f}`).split('\n')) {
       const key = usesOf(line);
       if (key !== null) found.set(key, (found.get(key) ?? 0) + 1);
     }
@@ -3230,7 +3246,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   const regNames = entries.map((t) => t.name);
   const wfSrc = readdirSync(resolve(root, '.github/workflows'))
     .filter((n) => /\.ya?ml$/.test(n))
-    .map((n) => read(`.github/workflows/${n}`)).join('\n');
+    .map((n) => wfText(`.github/workflows/${n}`)).join('\n');
 
   // ① 双向登记
   for (const n of onDisk) {
@@ -4264,7 +4280,7 @@ const stripStrings = (s) => s.replace(
     : [];
   const hits31 = new Map(); // `${file}:${line}` → 取值
   for (const f of wfFiles31) {
-    read(`${WF_DIR31}/${f}`).split('\n').forEach((l, i) => {
+    wfText(`${WF_DIR31}/${f}`).split('\n').forEach((l, i) => {
       // ⚠️ 注释行不匹配：`^\s*continue-on-error` 要求它紧跟空白（`# …` 开头的不匹配）
       if (hits31Like(COE_LINE, l)) hits31.set(`${f}:${i + 1}`, COE_LINE.exec(l)[1]);
     });
@@ -4481,7 +4497,7 @@ const stripStrings = (s) => s.replace(
   const offenders34 = [];
   let jobs34 = 0;
   for (const f of wfFiles34) {
-    const lines = read(`${WF_DIR34}/${f}`).split('\n');
+    const lines = wfText(`${WF_DIR34}/${f}`).split('\n');
     const at = lines.findIndex((l) => /^jobs:\s*$/.test(l));
     if (at < 0) continue;
     const indents = new Set();
@@ -4826,7 +4842,7 @@ const stripStrings = (s) => s.replace(
     : [];
   const referenced = new Set();
   for (const f of wfFiles38) {
-    for (const m of read(`${wfDir38}/${f}`).matchAll(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/g)) referenced.add(m[1]);
+    for (const m of wfText(`${wfDir38}/${f}`).matchAll(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/g)) referenced.add(m[1]);
   }
   const declared = new Set(entries.map((e) => e.name));
   for (const n of [...referenced].sort()) {
@@ -5036,7 +5052,7 @@ const stripStrings = (s) => s.replace(
   const offenders40 = [];
   let cargoLines40 = 0;
   for (const f of wfFiles40) {
-    read(`${wfDir40}/${f}`).split('\n').forEach((l, i) => {
+    wfText(`${wfDir40}/${f}`).split('\n').forEach((l, i) => {
       const cmd = cargoRunOf(l);
       if (cmd === null) return;
       cargoLines40 += 1;
@@ -5485,7 +5501,7 @@ const stripStrings = (s) => s.replace(
   const offenders45 = [];
   let checked45 = 0;
   for (const f of wfFiles45) {
-    const lines = read(`.github/workflows/${f}`).split('\n');
+    const lines = wfText(`.github/workflows/${f}`).split('\n');
     // 按 2 空格缩进的 job 头切段（与 ㉞ 同款约定）
     const jobs = [];
     let cur = null;
@@ -5548,6 +5564,100 @@ const stripStrings = (s) => s.replace(
     + `${checked45} 处登记过的 action 用法，**会解析到不存在的文件** ${offenders45.length} 处；`
     + `⚠️ **边界**：只覆盖登记表里的 ${ACTION_PATH_INPUTS45.length} 组（action, input）；`
     + '「输入未声明且无仓库相对默认值」不在覆盖内（那是另一类、更轻的问题）');
+}
+
+// ── ㊻ 读 workflow 必须剥 YAML 注释；**直读**必须逐字登记 + 理由（2026-10-12，审计 §4.323）──
+// 【为什么】见文件顶部 `stripYamlComments` / `wfText` 的说明。本仓已实测**三处**「注释 vs 判据」：
+//   ① ㊳（**注释触发**）：`# X: ${{ secrets.PROBE_TOKEN }}` ⇒ 报「未登记 secret」；
+//   ② ㊺（**注释触发**，且是**上一轮刚写**的）：注释掉的 `uses:` 被当成**真步骤** ⇒ 假违规；
+//   ③ `verify-runtime-qualification-workflow.mjs`（**注释满足**）：它核对的**正是** workflow
+//      **注释里**的「N 场景 IME 矩阵」—— 那是**有意**的（同一件事的**第三份副本**）
+//      ⇒ 剥注释会**破坏**它 ⇒ 那一处**必须**用原文。
+//   ⇒ 所以规则不是「一律剥」，而是「**一律剥；直读必须登记并写明理由**」。
+// 【判据】对每个 `tests/parity/verify-*.mjs`：
+//   R1（**文件级**）：源码里出现 `.github/workflows` ⇒ 必须同时含**整行 YAML 注释剥离**的实现。
+//   R2（**直读**）：`read(` / `readFileSync(` 与 workflow 路径**同行** ⇒ 必须**逐字**登记在
+//     `RAW_WF_READ`（键 = 该行 `trim()` 后的文本）+ 写明理由；**双向**（登记了却已不存在 ⇒ **陈旧** ⇒ 红）。
+// 【边界如实声明】
+//   ⚠️ R2 只挡**同行**形态 —— 把路径存进变量再读（跨行 / 间接）**不在覆盖内**（如实登记）。
+//   ⚠️ R1 只保证**存在**剥法，**不保证每条判据都用了它** —— 兜底是「所有读取经唯一入口 `wfText`」。
+{
+  const guards46 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  /** 判定与 canary **共用**：该源码里 `read(`/`readFileSync(` 与 workflow 路径**同行**的行（已 trim）。
+   *  ⚠️ 两个模式**刻意分行写** —— 写在同一行会让**本判据命中自己**（实测踩到）。 */
+  const directReads46 = (code) => code.split('\n')
+    .filter((l) => /read(?:FileSync)?\(/.test(l)
+      && /workflows|WF_DIR|wfDir/.test(l))
+    .map((l) => l.trim());
+  /** 判定与 canary **共用**：该源码是否含**整行 YAML 注释剥离**的实现。
+   *  ⚠️ 针要**特异**：只查 `/^\s*#/` 会被「某处内联判断注释行」满足（实测：
+   *  `verify-build-pipeline.mjs` 有一行 `if (/^\s*#/.test(line)) return false;` —— 那不是剥法）
+   *  ⇒ 必须**同时**出现 `.filter(`（剥法是把行**过滤掉**）。 */
+  const hasYamlStripper46 = (code) => code.split('\n')
+    .some((l) => l.includes('/^\\s*#/') && l.includes('.filter('));
+  /** 直读的**逐字**登记表（键 = 该行 `trim()` 后的文本）。
+   *  ⚠️ 键里的函数名**运行时拼出** —— 否则这一行自己会被 `directReads46` 命中（**判据命中自己**）。 */
+  const RAW_WF_READ = new Map([
+    [`const workflowRaw = ${'read'}FileSync(resolve(root, '.github/workflows/runtime-qualification.yml'), 'utf8')`,
+      '**注释本身是被核对的对象**：`verify-runtime-qualification-workflow.mjs` 的 IME 覆盖清单节核的是'
+      + ' workflow **注释里**写的「N 场景 IME 矩阵」（同一件事的**第三份副本**）⇒ 剥注释会破坏它'],
+  ]);
+  const offenders46 = [];
+  const found46 = new Set();
+  let wfGuards46 = 0;
+  for (const f of guards46) {
+    const code = stripJsComments(read(`tests/parity/${f}`));
+    if (!/\.github\/workflows/.test(code)) continue;
+    wfGuards46 += 1;
+    if (!hasYamlStripper46(code)) {
+      offenders46.push(`${f} 读了 workflow，却**没有**整行 YAML 注释剥离的实现`);
+    }
+    for (const l of directReads46(code)) {
+      found46.add(l);
+      if (!RAW_WF_READ.has(l)) {
+        offenders46.push(`${f} **直读** workflow（未剥注释、也未登记）：${l.slice(0, 70)}`);
+      }
+    }
+  }
+  if (offenders46.length > 0) {
+    fail(`㊻ ${offenders46.slice(0, 4).join('；')} —— workflow 里**注释极多**，判据扫原文时`
+      + ' **说明性注释会满足 / 触发判据**（本仓已实测 3 处：㊳ 被注释触发 · ㊺ 把注释掉的 `uses:`'
+      + ' 当成真步骤 · 另有 1 处**故意**核注释）。修法：读 workflow 一律走剥注释的入口；'
+      + '确需原文的**逐字**登记进 `RAW_WF_READ` 并写明理由（审计 §4.323）');
+  }
+  const stale46 = [...RAW_WF_READ.keys()].filter((k) => !found46.has(k));
+  if (stale46.length > 0) {
+    fail(`㊻ \`RAW_WF_READ\` 有**陈旧条目**（源码里已不存在该直读）：${stale46.slice(0, 2).join(' ⏎ ')}`
+      + ' —— 陈旧登记会让「每处直读都已登记」**悄悄失效**');
+  }
+  // 防空转：[健康度型]（读 workflow 的护栏数由仓库内容产生 ⇒ 留余量）
+  if (wfGuards46 < 3) {
+    fail(`㊻ 只找到 ${wfGuards46} 个读 workflow 的护栏（[健康度型] 下限 3）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：五向（与判定**共用** directReads46 / hasYamlStripper46）
+  // ⚠️ 样本里的 `read` **运行时拼出** —— 否则这一行自己会被 `directReads46` 命中（**判据命中自己**）。
+  if (directReads46(`const a = ${'read'}('.github/workflows/ci.yml');`).length !== 1) {
+    fail('㊻ canary 失效：**同行直读**未被检出');
+  }
+  if (directReads46(`const a = wfText('.github/workflows/ci.yml');`).length !== 0) {
+    fail('㊻ canary **过宽**：**经入口函数**的读取被当成了直读（那会把正确写法判红）');
+  }
+  if (hasYamlStripper46(`const x = 1;`)) {
+    fail('㊻ canary 失效：**没有**剥法的源码被判为「有剥法」');
+  }
+  if (!hasYamlStripper46(`const s = x.split('\\n').filter((l) => !/^\\s*#/.test(l)).join('\\n');`)) {
+    fail('㊻ canary **过宽**：**有**剥法的源码被判为「没有剥法」');
+  }
+  if (hasYamlStripper46(`if (/^\\s*#/.test(line)) return false;`)) {
+    fail('㊻ canary 失效：**内联判断注释行**（不是剥法）被判为「有剥法」'
+      + '（针的特异性不足 —— 实测 `verify-build-pipeline.mjs` 就有这样一行）');
+  }
+  console.log(`Release gate: workflow 判据的**注释纪律** —— 读 workflow 的护栏 ${wfGuards46} 个，`
+    + `**直读**（未登记）${offenders46.length} 处 · 直读登记 ${RAW_WF_READ.size} 条（含陈旧检查）；`
+    + '⚠️ **边界**：只挡**同行**直读形态；跨行 / 变量间接的绕过不覆盖');
 }
 
 if (errors.length > 0) {

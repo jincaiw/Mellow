@@ -12,6 +12,19 @@ const allowedStatuses = new Set([
 const platformEvidence = new Set(['macos', 'windows', 'linux']);
 const errors = [];
 
+// ── workflow 正文的**唯一**读取入口：剥 YAML 整行注释（2026-10-12，审计 §4.323）────────
+// 【为什么】判据扫的是 workflow **源码**，而本仓 workflow 的**注释比代码还长**
+//   ⇒ **说明性注释会满足 / 触发判据**（本仓已实测 4 次的同型坑）。
+//   ⚠️ 实测（`verify-release-gate.mjs` 的 ㊳ / ㊺）：一条注释 `# X: ${{ secrets.PROBE_TOKEN }}`
+//   会让「未登记 secret」判据报红；一段**注释掉的** `uses:` 会被当成**真步骤**。
+//   ⚠️ 本文件的 macOS 名称护栏**也**读 release.yml（`hasHardFail` 那半是**内容匹配**）
+//   ⇒ 一条写着「凭据未配置时应当 `exit 1`」的**注释**会**满足**它 ⇒ **假阴性**（潜在）。
+//   ⚠️ 同仓 `verify-runtime-qualification-workflow.mjs` **早就**剥了 ⇒ 同族「只锁了一半」。
+// ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
+const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+/** workflow 正文（剥注释后）。**读 workflow 一律走这里**（审计 §4.323）。 */
+const wfText = (rel) => stripYamlComments(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'));
+
 function assert(condition, message) {
   if (!condition) errors.push(message);
 }
@@ -810,7 +823,7 @@ if (existsSync(benchmarkRunnerPath)) {
     const relPath = resolve(root, '.github/workflows/release.yml');
     assert(existsSync(relPath), 'release.yml 不存在');
     if (existsSync(relPath)) {
-      const rel = readFileSync(relPath, 'utf8').replace(/\r\n/g, '\n');
+      const rel = wfText('.github/workflows/release.yml');
       const macJob = (rel.match(/\n  macos:\n[\s\S]*?(?=\n  \w+:\n|\n\n  \w+)/) ?? [])[0] ?? rel;
       // ⚠️ 2026-10-11（审计 §4.290）**扩面**：首版只取 **job 名**（`\n    name: `，4 空格缩进）
       //   ⇒ **漏掉 step 名**（`      - name: `）—— 实测 `Build Signed + Notarized DMG`
