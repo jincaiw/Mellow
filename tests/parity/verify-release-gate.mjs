@@ -5169,6 +5169,80 @@ const stripStrings = (s) => s.replace(
     + '那个在**本机工具**里、不进 CI）⇒ 那半**只登记读数**（§4.319）');
 }
 
+// ── ㊸ markdown 的**围栏代码块必须成对闭合**（2026-10-11，审计 §4.320）──
+// 【为什么】本仓**多处判据**依赖「**跳过围栏代码块**」这个假设 ——
+//   实测（`verify-*.mjs` 里的围栏处理）：`verify-doc-code-refs.mjs` 的链接检查 / 加粗配对 /
+//   `verify-release-gate.mjs` 的 ⑧ 手写计数 / 本轮的 ㊷ 表结构 …… **全都**「先剥围栏再判」。
+//   ⇒ 一个**未闭合**的围栏会让**其后全部内容**被当成代码 ⇒ 那些判据会**静默漏检尾部**
+//     （**假阴性、无人知**）—— 这正是 §4.308「**假设今天成立 ≠ 被守**」的同族形态。
+//   ⚠️ 而且它在**渲染层**也显眼（文档后半段变成代码块），但在**护栏层**是**静默**的。
+// 【判据】扫全部被跟踪的 `.md`：每个围栏标记行必须能**成对闭合** ——
+//   闭合标记必须与开启标记**同字符**（`` ` `` / `~`）且**长度 ≥** 开启标记（CommonMark 规则）。
+// 【边界如实声明】
+//   ⚠️ 只锁「**成对闭合**」；**不锁语言标注**（新增语言标识是**合法**的 —— 机械禁止会挡住 `go` / `sql` /
+//     `swift` 这类正常用法）⇒ 只登记读数（§4.320：17 种语言标识，全部合法）。
+//   ⚠️ 缩进围栏（`  ``` `）**在覆盖内**；**行内**出现的反引号串**不是**围栏（要求行首）。
+//   ⚠️ **解析器自身的两条假设未守**（行首任意缩进 / info string 字符集）—— 读数、边界与「为什么只登记」见 §4.320。
+{
+  const mdFiles43 = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean).filter((f) => f.endsWith('.md'));
+  /** 判定与 canary **共用**：一行是否是围栏标记（返回 `{ ch, len }`，否则 null）。 */
+  const fenceOf = (l) => {
+    const m = /^\s*(`{3,}|~{3,})\s*[A-Za-z0-9_+-]*\s*$/.exec(l);
+    return m === null ? null : { ch: m[1][0], len: m[1].length };
+  };
+  /** 判定与 canary **共用**：找出一段文本里**未闭合**的围栏（返回 `{line, ch, len}[]`）。 */
+  const unclosedFences = (lines) => {
+    const out = [];
+    let open = null;
+    for (const [i, l] of lines.entries()) {
+      const f = fenceOf(l);
+      if (f === null) continue;
+      if (open === null) open = { ...f, line: i + 1 };
+      else if (f.ch === open.ch && f.len >= open.len) open = null;
+    }
+    if (open !== null) out.push(open);
+    return out;
+  };
+  let fences43 = 0;
+  const bad43 = [];
+  for (const f of mdFiles43) {
+    const lines = read(f).split('\n');
+    for (const l of lines) if (fenceOf(l) !== null) fences43 += 1;
+    for (const u of unclosedFences(lines)) {
+      bad43.push(`${f}:${u.line}（\`${String(u.ch).repeat(u.len)}\` 未闭合）`);
+    }
+  }
+  if (bad43.length > 0) {
+    fail(`㊸ 这些 markdown 的**围栏代码块未闭合**：${bad43.slice(0, 6).join('、')}`
+      + `${bad43.length > 6 ? ` …（共 ${bad43.length} 处）` : ''}`
+      + ' —— 未闭合的围栏会让**其后全部内容**被当成代码 ⇒ **依赖「跳过围栏」的判据会静默漏检尾部**'
+      + '（假阴性、无人知）⇒ 请补上闭合标记（审计 §4.320）');
+  }
+  // 防空转：[健康度型]（输入是「文档里的围栏数」，随开发增长 ⇒ 留余量）
+  const FENCE_SCAN_BASELINE = 700; // [健康度型] 下限 700（立此判据时实测 932 行）
+  if (fences43 < FENCE_SCAN_BASELINE) {
+    fail(`㊸ 只扫到 ${fences43} 个围栏标记行（[健康度型] 下限 ${FENCE_SCAN_BASELINE}）`
+      + ' —— 解析器或扫描面失效会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** fenceOf / unclosedFences）
+  if (unclosedFences(['```js', 'x', '```']).length !== 0) {
+    fail('㊸ canary 失效：**成对闭合**的样本被判为未闭合');
+  }
+  if (unclosedFences(['```js', 'x']).length !== 1) {
+    fail('㊸ canary 失效：**未闭合**的样本未被检出');
+  }
+  if (unclosedFences(['```', 'x', '``']).length !== 1) {
+    fail('㊸ canary 失效：**闭合标记比开启短**（`` `` `` < `` ``` ``）的样本未被检出');
+  }
+  if (unclosedFences(['```', 'x', '~~~']).length !== 1) {
+    fail('㊸ canary 失效：**换字符**（`` ` `` 开 / `~` 闭）的样本未被检出');
+  }
+  console.log(`Release gate: markdown 的**围栏代码块** —— 扫描 ${mdFiles43.length} 份 md / ${fences43} 个围栏标记行，`
+    + `**未闭合** ${bad43.length} 处；`
+    + '⚠️ **边界**：只锁「**成对闭合**」；**不锁语言标注**（新增语言标识合法 ⇒ 只登记读数，§4.320）');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
