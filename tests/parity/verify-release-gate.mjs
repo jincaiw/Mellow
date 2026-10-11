@@ -22,6 +22,21 @@ const root = resolve(import.meta.dirname, '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 const errors = [];
 const fail = (message) => errors.push(message);
+/** **覆盖型下限**：集合大小必须 **== 基线**（2026-10-11，审计 §4.310）。
+ *  ⚠️ **为什么不用 `< N`**：`< N` 只挡「缩小」，**集合增长时会静默稀释防线** ——
+ *    实测形态：某判据的基线是 23，集合涨到 25 之后，**删掉 2 个都不红**
+ *    ⇒ 那正是「防某人悄悄删掉一条」想挡的事。`< N` 与 `!== N` 只在「值恰好 == 基线」时等价，
+ *    而本仓**没有任何东西**保证「值 == 基线」（判据 ⑥ 只核对「标记里的数 == 阈值」）。
+ *  ⚠️ 本助手把 `[覆盖型]` 的定义**机械化**：集合增删**必须**在此刻同步基线（判据 ㊱ 守）。
+ *  ⚠️ 若某集合**会随正常开发频繁增长**（如「文本文件数」），它**不是**覆盖型 ⇒ 请改标
+ *    `[健康度型] 下限 N`（留余量），**不要**硬套本助手。 */
+const coverEq = (what, actual, baseline, why) => {
+  if (actual !== baseline) {
+    fail(`[覆盖型] ${what}：实际 ${actual} ≠ 基线 ${baseline}`
+      + ` —— 覆盖型下限必须 **== 当前基线**（skill §2）：**缩小** = 成员被悄悄删了；`
+      + `**增长** = 集合变了，请复核后**同时**改标记里的数与阈值。${why ? `（本条的用途：${why}）` : ''}`);
+  }
+};
 
 // ── 仓库跟踪集（`git ls-files`，含已 `git add` 的**暂存**文件）────────────────
 // ⚠️ 2026-10-08（审计 §4.166/§4.167）：**判据的锚点是「仓库」，不是「工作区」**。
@@ -175,11 +190,9 @@ const parityChain = pkg.scripts?.parity ?? '';
 // ⚠️ 2026-10-08（审计 §4.167）：下限原写 `18`（2026-10-01 基线），而实际已是 **23** ⇒
 //   本条自己声明的意图「**防某人悄悄删掉一条**」**根本没有实现**（连删 5 条都不会红）。
 //   现按本仓纪律「**下限 == 当前基线**」改为 **23**。
-// [覆盖型] 基线 23 —— 阈值必须 == 当前值（skill §2）
-if (repoGuardFiles.length < 23) {
-  fail(`**仓库里**的 parity 护栏只有 ${repoGuardFiles.length} 条（下限 23 = 2026-10-08 基线）—— `
-    + '本条的目的正是「防某人悄悄删掉一条」；数量退化会让它退化成**空真**');
-}
+const REPO_GUARD_BASELINE = 23; // [覆盖型] 基线 23
+coverEq('**仓库里**的 parity 护栏条数', repoGuardFiles.length, REPO_GUARD_BASELINE,
+  '防某人悄悄删掉一条；数量退化会让它退化成**空真**');
 // 两个锚点必须一致：逐文件检查不能漏掉任何**已跟踪**的护栏（否则「接线检查」会静默漏检）
 const missingFromWorkspace = repoGuardFiles.filter((f) => !guardFiles.includes(f));
 if (missingFromWorkspace.length > 0) {
@@ -570,12 +583,13 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       //   「不该缩小的集合」」）⇒ 按本仓纪律「**覆盖型下限 == 当前基线**」（skill §2），
       //   阈值必须是**当前行数**。原写 `10`（立表时的基线），而实际已是 **17** ⇒ 留了 7 个空位，
       //   「行被删掉会让登记表退化成空表」这个意图**被削弱了 7 行**。现改为 **17**。
-      // [覆盖型] 基线 17 —— 阈值必须 == 当前值（skill §2）
-      if (rows.length < 17) {
-        fail(`待裁决项登记表只有 ${rows.length} 行（下限 17 = 2026-10-09 实测基线）—— `
-          + '行被删掉会让登记表退化成空表（**覆盖型下限**：登记表是「不该缩小的集合」，'
-          + '故阈值必须 == 当前行数；若确实删过行，请同步下调本阈值并说明）');
-      }
+      // ⚠️ **2026-10-11（审计 §4.310）：它又漂到 20 了** —— 因为当时的实现是 `< ROWS_BASELINE`，
+      //   而**没有任何东西**核对「阈值 == 当前值」（判据 ⑥ 只核对「标记里的数 == 阈值」）。
+      //   ⇒ 这正是「`< N` 会**静默稀释防线**」的活证据（修了一次，又在无人守时漂了 3）。
+      //   现改用 `coverEq`（严格相等）⇒ 值一漂**当场红**。
+      const ROWS_BASELINE = 20; // [覆盖型] 基线 20
+      coverEq('待裁决项登记表行数', rows.length, ROWS_BASELINE,
+        '登记表是「不该缩小的集合」；若确实删过行，请同步下调本阈值并说明');
       for (const row of rows) {
         const cols = row.split('|').map((c) => c.trim());
         // 归一化：表里可能写成 `` `已处置`（证据） `` —— 先去掉反引号再判定，
@@ -2277,10 +2291,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   // 防空转：必须**真的**检查到了带检查点的护栏（否则判据已不覆盖任何文件）
   const CHECKPOINT_BASELINE = 23; // [覆盖型] 基线 23
-  if (checked10 < CHECKPOINT_BASELINE) {
-    fail(`只检查到 ${checked10} 个带检查点的护栏（[覆盖型] 基线 ${CHECKPOINT_BASELINE}）`
-      + ' —— 判据范围萎缩会让本判据空转');
-  }
+  coverEq('带检查点的护栏数', checked10, CHECKPOINT_BASELINE,
+    '判据范围萎缩会让本判据空转');
   // canary ①（正样本）：抛错点之后**没有**断言 ⇒ 不得报
   if (TAIL_ASSERT.test('console.log("done");')) {
     fail('⑩ canary 失效：无断言的尾部被误判');
@@ -2404,10 +2416,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；新护栏加入时须一并上调）
   const GUARD_BASELINE = 23; // [覆盖型] 基线 23
-  if (guards13.length < GUARD_BASELINE) {
-    fail(`只扫描到 ${guards13.length} 个 verify-*.mjs（[覆盖型] 基线 ${GUARD_BASELINE}）`
-      + ' —— 扫描面萎缩会让本判据空转');
-  }
+  coverEq('verify-*.mjs 护栏数', guards13.length, GUARD_BASELINE,
+    '扫描面萎缩会让本判据空转');
   // canary ① 正样本：多行模板字面量 + 尾随注释 / `;` ⇒ 不得报
   if (!isSelfDescribing(`const a = 1;\n${'console'}.log(\`line1\n} line2\`);\n// trailing note\n`)) {
     fail('⑬ canary 失效：正常的自述输出（多行模板 + 尾随注释）未被识别');
@@ -2522,10 +2532,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；新增突变型工具时须一并上调）
   const MUTATION_TOOL_BASELINE = 1; // [覆盖型] 基线 1
-  if (IN_PLACE_MUTATORS.size < MUTATION_TOOL_BASELINE) {
-    fail(`IN_PLACE_MUTATORS 只有 ${IN_PLACE_MUTATORS.size} 项`
-      + `（[覆盖型] 基线 ${MUTATION_TOOL_BASELINE}）—— 登记表被删空会让本判据**空转**`);
-  }
+  coverEq('IN_PLACE_MUTATORS 登记项数', IN_PLACE_MUTATORS.size, MUTATION_TOOL_BASELINE,
+    '登记表被删空会让本判据**空转**');
   // canary：三向（与判定**共用**同一个「疑似就地突变」谓词；样本运行时拼接）
   const looksMutating = (s) => s.includes('writeFileSync(') && hasQuoted(stripComments(s), 'checkout');
   if (!looksMutating(`const a=1; ${'writeFileSync'}('x'); git(['${'checkout'}']);`)) {
@@ -2600,10 +2608,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；加 workflow / job 时须一并上调）
   const JOB_BASELINE = 16; // [覆盖型] 基线 16
-  if (jobCount < JOB_BASELINE) {
-    fail(`三个 workflow 里只解析出 ${jobCount} 个 job（[覆盖型] 基线 ${JOB_BASELINE}）`
-      + ' —— 谓词或扫描面漂移会让本判据**空转**');
-  }
+  coverEq('三个 workflow 里的 job 数', jobCount, JOB_BASELINE,
+    '谓词或扫描面漂移会让本判据**空转**');
   // canary：四向（与判定**共用** jobsOf）
   const OK_WF = `jobs:\n  a:\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n`;
   const NO_WF = `jobs:\n  a:\n    runs-on: ubuntu-latest\n`;
@@ -2684,10 +2690,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；加 workflow 时须一并上调）
   const WF_PERM_BASELINE = 3; // [覆盖型] 基线 3
-  if (wfFiles.length < WF_PERM_BASELINE) {
-    fail(`只扫描到 ${wfFiles.length} 个 workflow（[覆盖型] 基线 ${WF_PERM_BASELINE}）`
-      + ' —— 扫描面萎缩会让本判据**空转**');
-  }
+  coverEq('workflow 文件数', wfFiles.length, WF_PERM_BASELINE,
+    '扫描面萎缩会让本判据**空转**');
   // canary：四向（与判定**共用** permissionsOf）
   if (permissionsOf(`permissions:\n  contents: read\n`)?.scopes?.contents !== 'read') {
     fail('⑯ canary 失效：具名映射形态的 `permissions` 未被解析出');
@@ -2770,14 +2774,17 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；文件增删时须一并复核）
   const NUL_BASELINE = 84; // [覆盖型] 基线 84
-  const TEXT_BASELINE = 985; // [覆盖型] 基线 985
-  if (binFiles.length < NUL_BASELINE) {
-    fail(`只找到 ${binFiles.length} 个「前 ${NUL_WINDOW} 字节含 NUL」的被跟踪文件`
-      + `（[覆盖型] 基线 ${NUL_BASELINE}）—— 扫描面或启发式漂移会让本判据**空转**`);
-  }
+  coverEq('二进制（前 ${NUL_WINDOW} 字节含 NUL）文件数', binFiles.length, NUL_BASELINE,
+    '扫描面或启发式漂移会让本判据**空转**');
+  // ⚠️ **本条是 `[健康度型]`，不是 `[覆盖型]`**（2026-10-11，审计 §4.310 修正）：
+  //   集合由 `git ls-files` **内容产生**，且**随正常开发频繁增长**（实测 985 → 988）⇒
+  //   「阈值 == 当前值」**不可行**（每加一个文本文件都要改基线）。它的用途只是
+  //   「**扫描面失效时别空转**」= 健康度型语义 ⇒ **留余量**。
+  const TEXT_BASELINE = 900; // [健康度型] 下限 900（当前 988）
   if (textFiles.length < TEXT_BASELINE) {
-    fail(`只找到 ${textFiles.length} 个「无 NUL」的被跟踪文件（[覆盖型] 基线 ${TEXT_BASELINE}）`
-      + ' —— 扫描面漂移会让本判据的**文本那一半**空转');
+    fail(`只找到 ${textFiles.length} 个「无 NUL」的被跟踪文件（[健康度型] 下限 ${TEXT_BASELINE}）`
+      + ' —— 扫描面漂移会让本判据的**文本那一半**空转（⚠️ 集合随正常开发增长 ⇒ 是**健康度型**，'
+      + '留余量是设计意图；不要把它改成 `[覆盖型]` 的 `coverEq`，那会让每次加文件都红）');
   }
   // canary：四向（与判定**共用** hasNul；样本用**临时文件**构造）
   const tmpA = join(tmpdir(), `mellow-nul-canary-${process.pid}-a`);
@@ -2909,13 +2916,10 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   const REG_BASELINE = 8; // [覆盖型] 基线 8
   const USES_BASELINE = 61; // [覆盖型] 基线 61
   const usesTotal = [...found.values()].reduce((s, n) => s + n, 0);
-  if (entries.length < REG_BASELINE) {
-    fail(`⑱ 登记表只有 ${entries.length} 条（[覆盖型] 基线 ${REG_BASELINE}）—— 条目被删会让本判据**空转**`);
-  }
-  if (usesTotal < USES_BASELINE) {
-    fail(`⑱ workflow 里只找到 ${usesTotal} 处 \`uses:\`（[覆盖型] 基线 ${USES_BASELINE}）`
-      + ' —— 扫描面或提取谓词漂移会让本判据**空转**');
-  }
+  coverEq('⑱ 登记表条目数', entries.length, REG_BASELINE,
+    '条目被删会让本判据**空转**');
+  coverEq('⑱ workflow 里的 `uses:` 处数', usesTotal, USES_BASELINE,
+    '扫描面或提取谓词漂移会让本判据**空转**');
 
   // canary：多向（与判定**共用** usesOf / verdict；样本**运行时构造**）
   if (usesOf('      - uses: actions/checkout@v5') !== 'actions/checkout@v5') {
@@ -3153,11 +3157,12 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
 
   // 防空转：**覆盖型**（夹具增删时须一并复核）
-  const FIXTURE_BASELINE = 7; // [覆盖型] 基线 7
-  if (names.length < FIXTURE_BASELINE) {
-    fail(`⑲ 只扫描到 ${names.length} 份夹具（[覆盖型] 基线 ${FIXTURE_BASELINE}）`
-      + ' —— 扫描面漂移会让本判据**空转**');
-  }
+  // ⚠️ 2026-10-11（审计 §4.310）：`coverEq` 上线时实测 **9**，而基线写的是 **7** ⇒
+  //   两次夹具新增（`ci-actions.json` / `node-types.json`）**都没同步基线** ——
+  //   `< 7` 静默容忍了它们。现同步为 9。
+  const FIXTURE_BASELINE = 9; // [覆盖型] 基线 9
+  coverEq('⑲ 夹具份数', names.length, FIXTURE_BASELINE,
+    '扫描面漂移会让本判据**空转**');
   // canary：三向（与判定**共用** runsIn）
   if (runsIn('CI run 38035994927 日志点名 checkout@v4').join() !== '38035994927') {
     fail('⑲ canary 失效：`run <id>` 未被提取');
@@ -3244,10 +3249,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   // 防空转：**覆盖型**（工具增删时须一并复核）
   const TOOLS_BASELINE = 8; // [覆盖型] 基线 8
-  if (entries.length < TOOLS_BASELINE) {
-    fail(`⑳ 登记表只有 ${entries.length} 条（[覆盖型] 基线 ${TOOLS_BASELINE}）`
-      + ' —— 条目被删会让本判据**空转**');
-  }
+  coverEq('⑳ 登记表条目数', entries.length, TOOLS_BASELINE,
+    '条目被删会让本判据**空转**');
   // canary：四向（与判定**共用** entryVerdict）
   const CANARIES = [
     [{ name: 'x', runsIn: 'local', signal: 'hard', why: 'w', evidence: 'e' }, false, '`runsIn` 非枚举值'],
@@ -3298,6 +3301,18 @@ const stripJsComments = (s) => {
   return s.split('\n').map(cutLine).join('\n')
     .replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1');
 };
+
+// ── 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）──────────
+// 【为什么必须有】本仓纪律：**静态检查的谓词必须剥字符串**。否则「**错误消息里的示例**」全是假阳性 ——
+//   实测代价（§4.296 / §4.293）：`fail('… 必须 writeFileSync(…)')` 这类**消息**会被当成**调用**。
+// ⚠️ **顺序**：必须先 `stripJsComments`（它**字符串感知**）再本函数 —— 反过来会让**注释里的引号**
+//   开一个「假字符串」⇒ 脱同步 ⇒ 假阳性（§4.306 的镜像判据首版就踩了这个）。
+// ⚠️ **本函数是模块级的唯一实现**：`㉒`（断言辅助函数）与 `㉚`（`node:*` 导入）**共用它** ——
+//   同族判据的**剥法必须一致**（否则它们只是「两个带不同 bug 的意见」；§4.306 的教训）。
+const stripStrings = (s) => s.replace(
+  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
+  (m) => m.replace(/[^\n]/g, ' '),
+);
 
 // ── ㉑ 本仓**代码面**不得使用已弃用的 Node API（2026-10-11，审计 §4.289）──
 //   （`[DEP0040] punycode` ×12 · `[DEP0169] url.parse()` ×8 · `[DEP0005] Buffer()` ×1）
@@ -3381,13 +3396,18 @@ const stripJsComments = (s) => {
   const HELPERS = ['fail', 'assert'];
   // ⚠️ 用**模块级的唯一实现**（首版朴素版会被字符串里的 `/*` 吃掉代码；见 `stripJsComments`）。
   const stripComments22 = stripJsComments;
+  // ⚠️ **2026-10-11（审计 §4.310）：必须**再剥字符串** —— 实测（本轮当场踩到）：我在
+  //   `COVERAGE_EQ_PENDING` 的**理由字符串**里写了 `` `assert()`（throw）型 `` ⇒ 被当成
+  //   「调用了未定义的 `assert(`」**假阳性**。同族的 `㉚` **一直**是剥字符串的（§4.293）⇒
+  //   本条**漏了同一句话的另一半**。现共用模块级 `stripStrings`（同族剥法必须一致）。
+  const scrub22 = (s) => stripStrings(stripComments22(s));
   const guards22 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
     : [];
   const undefinedCalls = [];
   let scanned22 = 0;
   for (const f of guards22) {
-    const src = stripComments22(read(`tests/parity/${f}`));
+    const src = scrub22(read(`tests/parity/${f}`));
     scanned22 += 1;
     for (const h of HELPERS) {
       const callRe = new RegExp(`(?<![\\w.$])${h}\\(`, 'g');
@@ -3410,10 +3430,8 @@ const stripJsComments = (s) => {
   }
   // 防空转：**覆盖型**（护栏增删时须一并复核）
   const GUARD22_BASELINE = 23; // [覆盖型] 基线 23
-  if (scanned22 < GUARD22_BASELINE) {
-    fail(`㉒ 只扫描到 ${scanned22} 个护栏（[覆盖型] 基线 ${GUARD22_BASELINE}）`
-      + ' —— 扫描面萎缩会让本判据**空转**');
-  }
+  coverEq('㉒ 扫描到的护栏数', scanned22, GUARD22_BASELINE,
+    '扫描面萎缩会让本判据**空转**');
   // canary：三向（与判定**共用**同一套正则；样本**拼接构造**）
   const callReC = (h) => new RegExp(`(?<![\\w.$])${h}\\(`);
   const defReC = (h) => new RegExp(`(?:const|let|var|function)\\s+${h}\\b`);
@@ -3428,6 +3446,16 @@ const stripJsComments = (s) => {
   }
   if (callReC(H).test(stripComments22(`// ${H}(x) 在注释里不算调用`))) {
     fail('㉒ canary **过宽**：注释里的调用被当成真调用（必须剥注释）');
+  }
+  // ⚠️ **2026-10-11（审计 §4.310）新增第四向**：**字符串里的提及不算调用**（本轮当场踩到的假阳性）
+  if (callReC(H).test(scrub22(`const why = '${H}() 是 throw 型';`))) {
+    fail('㉒ canary **过宽**：**字符串里**的提及被当成真调用（必须剥字符串 —— 本仓通则）');
+  }
+  // ⚠️ 反面：剥字符串**只该剥掉字面量，不该吃掉调用**（假阴性无人知）。
+  //   ⚠️ 断言的是「**调用形态**存活」而不是「整行字面量存活」—— 实参**也会**被剥掉
+  //     （首版写成 `.includes("${H}('x')")` ⇒ 假报红；**这正是 canary 该干的事**）。
+  if (!scrub22(`const why = '${H}() 是 throw 型';\n${H}('x');`).includes(`${H}(`)) {
+    fail('㉒ canary 失效：剥字符串**吃掉了真调用**（假阴性，无人知）');
   }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
     + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）`);
@@ -3482,9 +3510,8 @@ const stripJsComments = (s) => {
   }
   // 防空转：**覆盖型**（立此判据时：全部带理由 ⇒ 0 处）
   const EMPTY_CATCH_BASELINE = 0; // [覆盖型] 基线 0
-  if (emptyCatches.length > EMPTY_CATCH_BASELINE) {
-    fail(`㉓ 真空 catch 数 ${emptyCatches.length} > [覆盖型] 基线 ${EMPTY_CATCH_BASELINE}`);
-  }
+  coverEq('㉓ 真空 catch 数', emptyCatches.length, EMPTY_CATCH_BASELINE,
+    '真空 catch 一律不得存在（该集合的「当前值」恒为 0）');
   if (code23 < CODE_BASELINE) {
     fail(`㉓ 只扫到 ${code23} 个代码文件（[健康度型] 下限 ${CODE_BASELINE}）—— 扫描面萎缩会让本判据**空转**`);
   }
@@ -3558,10 +3585,8 @@ const stripJsComments = (s) => {
   //   ⚠️ 2026-10-11（§4.302）：原为 **17**，修掉「`^const` 只认列 0」的扫描面缺陷后
   //   纳入 **8 张缩进表** ⇒ 25）
   const TABLE_BASELINE = 25; // [覆盖型] 基线 25
-  if (tables.length < TABLE_BASELINE) {
-    fail(`㉔ 只找到 ${tables.length} 个例外表（[覆盖型] 基线 ${TABLE_BASELINE}）`
-      + ' —— 命名约定漂移或扫描面萎缩会让本判据**空转**');
-  }
+  coverEq('㉔ 例外表个数', tables.length, TABLE_BASELINE,
+    '命名约定漂移或扫描面萎缩会让本判据**空转**');
   // canary：三向（与判定**共用** TABLE_RE / STALE_KW / stripComments24）
   const staleIn = (s) => {
     const t = stripComments24(s);
@@ -3627,10 +3652,8 @@ const stripJsComments = (s) => {
   }
   // 防空转：[覆盖型] 基线 = 立此判据时的护栏数（防「扫描面萎缩 ⇒ 永远绿」）
   const GUARD25_BASELINE = 23; // [覆盖型] 基线 23
-  if (scanned25 < GUARD25_BASELINE) {
-    fail(`㉕ 只扫描到 ${scanned25} 个护栏（[覆盖型] 基线 ${GUARD25_BASELINE}）`
-      + ' —— 判据范围萎缩会让本判据空转');
-  }
+  coverEq('㉕ 扫描到的护栏数', scanned25, GUARD25_BASELINE,
+    '判据范围萎缩会让本判据空转');
   // canary ①（负样本）：朴素形态必须被**检出**（needle 拼接构造）
   if (!stripJsComments(`const strip = (s) => s.replace(${NAIVE_MATCHER}, '');`).includes(NAIVE_MATCHER)) {
     fail('㉕ canary 失效：朴素形态**未被检出**（判据已退化成空真）');
@@ -3775,7 +3798,6 @@ const stripJsComments = (s) => {
     { file: 'tests/parity/fixtures/local-tools.json', dateKey: 'reviewedAt', in: null },
     { file: 'tests/parity/fixtures/node-types.json', dateKey: 'reviewedAt', in: null },
   ];
-  const DATED_REGISTRY_BASELINE = 3; // [覆盖型] 基线 3
   const DAY_MS = 86400000;
   const todayUtc = () => {
     const d = new Date();
@@ -3840,10 +3862,9 @@ const stripJsComments = (s) => {
   if (offenders27.length > 0) {
     fail(`带日期的登记**过期或未声明保质期**：${offenders27.join('；')}`);
   }
-  if (datedChecked < DATED_REGISTRY_BASELINE) {
-    fail(`㉗ 只检查到 ${datedChecked} 份带日期的登记表（[覆盖型] 基线 ${DATED_REGISTRY_BASELINE}）`
-      + ' —— 扫描面漂移会让本判据空转');
-  }
+  const DATED_REGISTRY_BASELINE = 3; // [覆盖型] 基线 3
+  coverEq('㉗ 带日期的登记表份数', datedChecked, DATED_REGISTRY_BASELINE,
+    '扫描面漂移会让本判据空转');
   // canary ①（正样本）：**未过期**的样本不得报
   const SPEC_A = { file: 'x', dateKey: 'checkedAt', in: 'actions' };
   if (stalenessIssues({ staleAfterDays: 90, actions: [{ checkedAt: '2026-10-10' }] }, SPEC_A, today).length !== 0) {
@@ -3966,10 +3987,8 @@ const stripJsComments = (s) => {
     }
     // 防空转：**覆盖型**（下限 = 立此判据时的基线；包增删时须一并复核）
     const NODE_PKG_BASELINE = 4; // [覆盖型] 基线 4
-    if (actual.size < NODE_PKG_BASELINE) {
-      fail(`㉘ 只现读到 ${actual.size} 个声明了 \`@types/node\` 的包（[覆盖型] 基线 ${NODE_PKG_BASELINE}）`
-        + ' —— 扫描面漂移会让本判据空转');
-    }
+    coverEq('㉘ 声明了 `@types/node` 的包数', actual.size, NODE_PKG_BASELINE,
+      '扫描面漂移会让本判据空转');
     console.log(`Release gate: Node 的**第三条轴**（类型定义）—— 现读 ${actual.size} 个声明了 \`@types/node\` 的包，`
       + `其中 ${divs.length} 个与运行时主版本（${runtimeMajor}，**派生自 \`.nvmrc\`**）不同且已登记`
       + '；⚠️ 本判据**不改依赖**，只让偏离**可见且必须被登记**');
@@ -4125,11 +4144,10 @@ const stripJsComments = (s) => {
 //   其余 22 个护栏**由本判据覆盖**（实测：往 `verify-menu-contract.mjs` 注入裸 `spawnSync` ⇒ 被抓住）。
 {
   const NODE_IMPORT30 = /^[ \t]*import\s*\{([^}]+)\}\s*from\s*'node:[^']+'/gm;
-  /** 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）。 */
-  const stripStrings30 = (s) => s.replace(
-    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
-    (m) => m.replace(/[^\n]/g, ' '),
-  );
+  // ⚠️ **2026-10-11（审计 §4.310）**：原为本块内的局部 `stripStrings30` ⇒ 现提到**模块级**
+  //   `stripStrings`，与 `㉒` **共用同一实现**（同族判据的剥法必须一致 —— 否则它们只是
+  //   「两个带不同 bug 的意见」）。
+  const stripStrings30 = stripStrings;
   /** 判定与 canary **共用**：一份护栏源码里「调用了 `node:*` 导出名却没 import / 没本地定义」的名字。 */
   const missingNodeImports = (rawSrc, vocab, imported) => {
     const src = stripStrings30(stripJsComments(rawSrc));
@@ -4253,10 +4271,8 @@ const stripJsComments = (s) => {
   }
   // 防空转：**覆盖型**（立此判据时的 workflow 数；加 workflow 时须一并上调）
   const WF31_BASELINE = 3; // [覆盖型] 基线 3
-  if (wfFiles31.length < WF31_BASELINE) {
-    fail(`㉛ 只扫描到 ${wfFiles31.length} 个 workflow（[覆盖型] 基线 ${WF31_BASELINE}）`
-      + ' —— 扫描面萎缩会让本判据**空转**');
-  }
+  coverEq('㉛ workflow 文件数', wfFiles31.length, WF31_BASELINE,
+    '扫描面萎缩会让本判据**空转**');
   // canary：四向（与判定**共用** COE_LINE）
   if (!hits31Like(COE_LINE, '        continue-on-error: true')) {
     fail('㉛ canary 失效：`continue-on-error: true` **未被检出**（判据已退化成空真）');
@@ -4581,10 +4597,8 @@ const stripJsComments = (s) => {
   }
   // 防空转：[覆盖型] hard 条目数（登记表增删时必须一并复核）
   const HARD35_BASELINE = 5; // [覆盖型] 基线 5
-  if (hard35.length < HARD35_BASELINE) {
-    fail(`㉟ 只有 ${hard35.length} 条 \`signal: hard\`（[覆盖型] 基线 ${HARD35_BASELINE}）`
-      + ' —— 登记表被删条目会让本判据**空转**');
-  }
+  coverEq('㉟ `signal: hard` 条目数', hard35.length, HARD35_BASELINE,
+    '登记表被删条目会让本判据**空转**');
   // canary：六向（与判定**共用** failsOnVerdict）
   const SRC_A35 = normLines35(
     'if (bad > 0) {\n'
@@ -4614,6 +4628,92 @@ const stripJsComments = (s) => {
     + '（每条 `failsOn` 都**逐字存在、唯一、含非零退出、不是信号处理器**）；'
     + '⚠️ 只保证「声明指向一条真实的失败路径」，**不保证**它真会因「发现」而触发（静态不可判定）；'
     + '⚠️ 反向（`advisory` 却其实会失败 = 假软）**不在覆盖内**，如实登记为盲区');
+}
+
+// ── ㊱ `[覆盖型]` 基线必须由 `coverEq` 实现（2026-10-11，审计 §4.310）──
+// 【为什么】判据 ⑥ 只核对「**标记里的数 == 阈值**」，**不核对「阈值 == 实际值」** ——
+//   后者被**显式分工**给本机工具（`audit-guard-bounds.mjs`，用「抬 1 仍绿」二分），
+//   而它**不在 CI**、且**只给候选、由人判断**（它自己的头部写着「输出是『候选』，不是『缺陷』」）。
+//   ⇒ 后果实测：`[覆盖型]` 的下限普遍用 `< N` 实现，而 `< N` **只挡「缩小」**：
+//     **集合增长时会静默稀释防线**。两条活证据（本轮由 `coverEq` 当场抓出）：
+//       · 待裁决项登记表：`10 → 17`（§4.168 **修过一次**）**又漂到 20** —— 没人守；
+//       · ⑲ 夹具份数：写 `7`，而实际 **9**（两次夹具新增都没同步基线）。
+//   ⚠️ 更根本的是：`[覆盖型]` 的**定义**（集合是**人工维护的枚举**）与**用法**系统性不符 ——
+//     21 处里 ≈15 处的**报错消息自己写着**「会让本判据**空转**」/「扫描面萎缩」= **健康度型语义**。
+// 【判据】每个 `[覆盖型] 基线 N` 标记，其窗口（标记行起 4 行）内必须出现 `coverEq(` ——
+//   即「阈值 == 当前值」必须**在 CI 里被断言**，而不是只写在注释里。
+//   ⚠️ **逃生口**：若某集合**会随正常开发频繁增长**（如「文本文件数」，实测 985 → 988），
+//     `==` 不可行 ⇒ 应改标 `[健康度型] 下限 N`（留余量）**而不是**硬套 `coverEq`。
+//     本判据**只管 `[覆盖型]`** ⇒ 改标即自动合规（这正是它想要的判断）。
+{
+  const guards36 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const MARKER36 = /\[覆盖型\]\s*基线\s*(\d+)/;
+  /** 判定与 canary **共用**：某段源码里，每个标记的窗口内是否出现 `coverEq(`。 */
+  const allMarkedHaveEq = (src) => {
+    const ls = src.split('\n');
+    return ls.every((l, i) => !MARKER36.test(l) || ls.slice(i, i + 4).join('\n').includes('coverEq('));
+  };
+  /** 某文件里 `[覆盖型]` 标记的行号（空数组 = 该文件没有标记）。 */
+  const markerLines = (src) => src.split('\n')
+    .map((l, i) => (MARKER36.test(l) ? i + 1 : 0)).filter((x) => x > 0);
+  // ⚠️ **未迁移登记**（**双向**：登记的文件必须真的有标记；有标记的文件必须「已迁移」或「已登记」）。
+  //   为什么不在本轮顺手迁移：`coverEq` 目前只在**本文件**里定义，而其余护栏的失败机制**不同**
+  //   （`fail()` = push vs `assert()` = throw）⇒ 抽成共享助手是**架构级决定**
+  //   （`AGENTS.md`：「**不要自行修改架构，先报告冲突**」）⇒ **如实登记**，不顺手做。
+  const COVERAGE_EQ_PENDING = new Map([
+    ['verify-build-pipeline.mjs', '`fail()`（push）型；抽共享助手需注入失败回调'],
+    ['verify-doc-code-refs.mjs', '`fail()` 型；且该处 `linkCount` 是**内容派生**（加一条文档链接就变）⇒ 应先改标 `[健康度型]`'],
+    ['verify-parity-ledger.mjs', '`assert()`（throw）型 ⇒ 与 push 型不兼容'],
+    ['verify-visual-golden.mjs', '同 `verify-parity-ledger.mjs`'],
+  ]);
+  let marked36 = 0;
+  const noEq36 = [];
+  const migrated36 = [];
+  for (const f of guards36) {
+    const src = read(`tests/parity/${f}`);
+    const n = markerLines(src).length;
+    if (n === 0) {
+      // 登记表**双向**：登记了却一个标记都没有 ⇒ 陈旧
+      if (COVERAGE_EQ_PENDING.has(f)) {
+        fail(`㊱ \`${f}\` 登记在「未迁移」表里，但它**没有任何** \`[覆盖型] 基线\` 标记`
+          + ' —— 该登记项已过期，请移除（否则它会掩盖「这个文件将来新增标记」）');
+      }
+      continue;
+    }
+    if (allMarkedHaveEq(src)) { migrated36.push(f); marked36 += n; continue; }
+    if (!COVERAGE_EQ_PENDING.has(f)) {
+      noEq36.push(`${f}（${markerLines(src).join('、')} 行）`);
+    }
+  }
+  if (noEq36.length > 0) {
+    fail(`㊱ 这些文件有 \`[覆盖型] 基线\` 标记，但**没有**由 \`coverEq\` 实现，也**没有**登记在`
+      + ` \`COVERAGE_EQ_PENDING\`：${noEq36.join('；')}`
+      + ' —— `[覆盖型]` 的定义是「阈值必须 == 当前基线」，而 `< N` **只挡「缩小」**，'
+      + '**集合增长时会静默稀释防线**（实测：待裁决项登记表 17 → 20 无人知；夹具 7 → 9 无人知）。'
+      + '请改用 `coverEq(...)`；**若该集合会随正常开发频繁增长**，则它**不是**覆盖型 ⇒ '
+      + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
+  }
+  // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
+  const COVERAGE_MARK_BASELINE = 21; // [覆盖型] 基线 21
+  coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
+    '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
+  // canary：两向（与判定**共用** allMarkedHaveEq）
+  // ⚠️ 样本**必须用拼接构造** —— 本文件**自己也在扫描面里**（它的真实标记要被本判据检查），
+  //   把 `[覆盖型] 基线 <数字>` 写成字面量会让样本本身被当成一条标记（⑥ 已记过这个坑）。
+  const mk36 = (n) => `[覆盖型] 基线 ${n}`;
+  if (!allMarkedHaveEq(`const X = 7; // ${mk36(7)}\ncoverEq('x', y, X);`)) {
+    fail('㊱ canary 失效：合法样本（标记 + `coverEq`）被判为不合规');
+  }
+  if (allMarkedHaveEq(`const X = 7; // ${mk36(7)}\nif (y < X) { fail('x'); }`)) {
+    fail('㊱ canary **过宽**：只用 `<` 实现的样本被判为合规');
+  }
+  console.log(`Release gate: \`[覆盖型]\` 下限的**实现** —— ${migrated36.length} 个文件已迁移`
+    + `（共 ${marked36} 处标记**全部由 \`coverEq\` 实现**，阈值 == 当前值**在 CI 里被断言**）；`
+    + `⚠️ **未覆盖**：${[...COVERAGE_EQ_PENDING.keys()].join('、')}`
+    + '（已双向登记 —— 抽共享助手是**架构级决定**，见 `AGENTS.md`）；'
+    + '⚠️ **内容派生**的集合应改标 `[健康度型]`（留余量），改标即合规');
 }
 
 if (errors.length > 0) {
