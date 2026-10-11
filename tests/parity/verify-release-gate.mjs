@@ -2254,10 +2254,16 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   let checked10 = 0;
   for (const f of guards10) {
     const src = read(`tests/parity/${f}`);
-    const throws = [...src.matchAll(/throw new Error\(/g)].map((m) => m.index);
-    if (throws.length === 0) continue;
+    // ⚠️ 2026-10-11（审计 §4.291）**扩面**：首版只把 **`throw new Error(`** 当检查点标记
+    //   ⇒ **用 `process.exit(1)` 作检查点的护栏完全不在扫描面内**。实测 3 个护栏没有
+    //   `throw new Error(`（`verify-context-menu-guard.mjs` / `verify-context-menu-parity.mjs` /
+    //   `verify-parity-ledger.mjs`）—— 其中两个用 `process.exit(1)` 收口，**目前恰好干净，
+    //   但没有任何护栏保证它们保持干净**（那正是本判据要守的性质）。
+    //   ⇒ 标记集合扩成「`throw new Error(` **或** `process.exit(1)`」。
+    const marks = [...src.matchAll(/throw new Error\(|process\.exit\(\s*1\s*\)/g)].map((m) => m.index);
+    if (marks.length === 0) continue;
     checked10 += 1;
-    const last = throws[throws.length - 1];
+    const last = marks[marks.length - 1];
     const tail = src.slice(last);
     const hit = TAIL_ASSERT.exec(tail);
     if (hit !== null) {
@@ -2267,11 +2273,13 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   if (offenders10.length > 0) {
     fail(`这些护栏在**抛错点之后**还有断言（**永不判定**）：${offenders10.join('、')} —— `
       + '`fail()` / `errors.push()` 只是往数组塞字符串，而检查点已经过去；'
-      + '把断言**上移到 `if (errors.length > 0)` 之前**（本文件同族已 3 次）');
+      + '把断言**上移到检查点之前**（本文件同族已 3 次）');
   }
-  // 防空转：必须**真的**检查到了带 throw 的护栏（否则判据已不覆盖任何文件）
-  if (checked10 < 3) {
-    fail(`只检查到 ${checked10} 个带抛错点的护栏（下限 3）—— 判据范围萎缩会让本判据空转`);
+  // 防空转：必须**真的**检查到了带检查点的护栏（否则判据已不覆盖任何文件）
+  const CHECKPOINT_BASELINE = 23; // [覆盖型] 基线 23
+  if (checked10 < CHECKPOINT_BASELINE) {
+    fail(`只检查到 ${checked10} 个带检查点的护栏（[覆盖型] 基线 ${CHECKPOINT_BASELINE}）`
+      + ' —— 判据范围萎缩会让本判据空转');
   }
   // canary ①（正样本）：抛错点之后**没有**断言 ⇒ 不得报
   if (TAIL_ASSERT.test('console.log("done");')) {
@@ -2285,6 +2293,13 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   // canary ③（前提自检）：**非行首**的示例（消息字符串里）不得被误判
   if (TAIL_ASSERT.test(`  + '… if (!ok) ${'errors.push'}(msg); };'`)) {
     fail('⑩ canary 失效：消息字符串里的示例被误判为断言（行首锚定失效）');
+  }
+  // canary ④（2026-10-11 扩面）：**`process.exit(1)` 也必须是检查点标记**
+  //   —— 否则「用 exit 收口的护栏」整类漏检（实测 2 个）。样本拼接构造。
+  const EXIT_MARK = new RegExp(`throw new Error\\(|process\\.exit\\(\\s*1\\s*\\)`);
+  if (!EXIT_MARK.test('if (errors.length > 0) { process.exit(1); }')
+    || !EXIT_MARK.test('if (errors.length > 0) { throw new Error(`x`); }')) {
+    fail('⑩ canary 失效：检查点标记未同时认 `throw new Error(` 与 `process.exit(1)`（扩面未生效）');
   }
 }
 
