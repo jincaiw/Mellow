@@ -4695,7 +4695,7 @@ const stripStrings = (s) => s.replace(
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 30; // [覆盖型] 基线 30（2026-10-11 §4.317 迁移完成：4 个跨文件标记纳入）
+  const COVERAGE_MARK_BASELINE = 31; // [覆盖型] 基线 31（2026-10-11 §4.318：新增 ㊶ 的标记）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -5057,6 +5057,57 @@ const stripStrings = (s) => s.replace(
   console.log(`Release gate: CI 的 \`cargo\` 命令 —— ${cargoLines40} 条**全部带 \`--locked\`**`
     + '（lockfile 与 manifest 不一致时**响亮失败**，而不是**就地重写**）；'
     + '⚠️ **边界**：只锁**单行** `run: cargo …`（多行 `run: |` 里的 cargo 不在覆盖内）');
+}
+
+// ── ㊶ 本机工具的 `evidence` 必须**可对账**（含日期 + 退出码）（2026-10-11，审计 §4.318）──
+// 【为什么】本仓纪律「**「能失败」+「没人跑」= 它可以一直红**」**实测又一次生效**：
+//   `audit-pkg-test-counts.mjs` 的 `evidence` 写「已刷新、复跑 EXIT=0」，而**同一天又漂了一次**
+//   （`themes` 12 → 13 / 合计 1919 → 1920）—— **没有人再跑它**。
+//   ⚠️ 根因不是「判据不够」，而是 **`evidence` 是快照、却长得像承诺**：
+//     它写「实测 EXIT=0」而**不写日期与退出码**时，读者无法一眼对账（也就无法发现它过期）。
+// 【判据】`local-tools.json` 的每条 `evidence` 必须**同时**含
+//   ① 一个日期（`YYYY-MM-DD`）· ② 一个退出码（`EXIT=<数字>`）。
+//   ⇒ 让「实测」这件事**可对账**（下次有人跑时一眼比对），而不是一句散文。
+// 【边界如实声明】⚠️ 本判据**只锁形状**（有没有日期与退出码），**不锁数值** ——
+//   「声明的退出码 == 当前实跑」**不可 CI 守**（8 个工具全是 `local-only`，需 Typora / 逐包跑 jest）
+//   ⇒ 那半**只能靠人**（`reviewedAt` + `staleAfterDays` 的**到期变红**是唯一的机械化提醒，判据 ㉗）。
+{
+  const TOOLS_REG41 = 'tests/parity/fixtures/local-tools.json';
+  const reg41 = JSON.parse(read(TOOLS_REG41));
+  const entries41 = reg41.tools ?? [];
+  /** 判定与 canary **共用**：`evidence` 是否「可对账」（null = 合规）。 */
+  const evidenceVerdict = (e) => {
+    if (typeof e !== 'string' || e.trim() === '') return '缺 `evidence`';
+    if (!/\d{4}-\d{2}-\d{2}/.test(e)) return '`evidence` 里没有**日期**（`YYYY-MM-DD`）—— 快照必须能被看出「什么时候测的」';
+    if (!/EXIT=\d/.test(e)) return '`evidence` 里没有**退出码**（`EXIT=<数字>`）—— 「实测」必须**可对账**';
+    return null;
+  };
+  for (const t of entries41) {
+    const bad = evidenceVerdict(t.evidence);
+    if (bad !== null) {
+      fail(`㊶ \`${t.name}\`：${bad}`
+        + ' —— 「**能失败」+「没人跑」= 它可以一直红**（§4.287 的原始案例、§4.318 的第二次实证）'
+        + '⇒ `evidence` 必须写清**日期**与**退出码**，让「实测」**可对账**，而不是一句散文');
+    }
+  }
+  // 防空转：[覆盖型]（工具增删时须一并复核）
+  const EVIDENCE_BASELINE = 8; // [覆盖型] 基线 8
+  coverEq('㊶ 有可对账 evidence 的工具数', entries41.length, EVIDENCE_BASELINE,
+    '工具被删会让「evidence 可对账」重新变成**无人守**');
+  // canary：三向（与判定**共用** evidenceVerdict）
+  if (evidenceVerdict('2026-10-11 实测 EXIT=0（尾部输出…）') !== null) {
+    fail('㊶ canary 失效：合规样本（日期 + 退出码）被判为不合规');
+  }
+  if (evidenceVerdict('实测 EXIT=0（尾部输出…）') === null) {
+    fail('㊶ canary **过宽**：**没有日期**的样本被判为合规');
+  }
+  if (evidenceVerdict('2026-10-11 实测通过，输出见上') === null) {
+    fail('㊶ canary **过宽**：**没有退出码**的样本被判为合规');
+  }
+  console.log(`Release gate: 本机工具的 \`evidence\` —— ${entries41.length} 条**全部可对账**`
+    + '（各含**日期**与**退出码** `EXIT=<数字>`）；'
+    + '⚠️ **边界**：只锁**形状**，**不锁数值** —— 「声明的退出码 == 当前实跑」不可 CI 守'
+    + `（${entries41.length} 个工具全是 \`local-only\`）⇒ 那半**只能靠人**（㉗ 的**到期变红**是唯一的机械化提醒）`);
 }
 
 if (errors.length > 0) {

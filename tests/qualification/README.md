@@ -123,7 +123,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 ## 自动化检查（本仓库可执行）
 
 ```sh
-# 1. 全仓测试（12 包 jest 1919 例 + parity 契约护栏 + qualification self-test）
+# 1. 全仓测试（12 包 jest 1920 例 + parity 契约护栏 + qualification self-test）
 pnpm test
 
 # 2. 构建 editor-core dist（bundle 构建模块）
@@ -137,7 +137,7 @@ cd apps/desktop && npm run build
 cd src-tauri && cargo check
 ```
 
-各包规模（jest，**2026-10-11 按包定向实跑，合计 1919 例全绿**）：editor-engine **1318** / app-core **297** / export **104** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor **200**，2026-10-10 实跑）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **12**。
+各包规模（jest，**2026-10-11 按包定向实跑，合计 1920 例全绿**）：editor-engine **1318** / app-core **297** / export **104** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor **200**，2026-10-10 实跑）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **13**。
 
 > **数字刷新纪律**：数字按当日**按包定向**调用 `node_modules/.bin/jest` 的实跑结果刷新；
 > 全仓 `pnpm -r run test` 在本机会被 corepack 交互提示阻塞（要下载 pnpm 11.7.0），故不以此为度量口径。
@@ -156,7 +156,7 @@ cd src-tauri && cargo check
 >   该对账由**本机工具** `tests/parity/tools/audit-pkg-test-counts.mjs` 承担（**不进 CI**：需逐包跑 jest）。
 >   ⇒ **只能靠人记得跑** —— 实测 2026-10-11 跑出 `export` 声明 100 而实跑 **104**（见审计 §4.287）。
 >
-> **刷新记录**：2026-10-01（首次）· **2026-10-08**（本轮：上一版 `editor-engine 1277` → **1318** · `app-core 258` → **297** · `export 89` → **100**；其余 9 包与上次一致；合计 `1824` → **1915**）· **2026-10-11**（本轮：`export 100` → **104**；其余 11 包与上次一致；合计 `1915` → **1919** —— 由本机工具 `audit-pkg-test-counts.mjs` 实跑对账发现，见审计 §4.287）。
+> **刷新记录**：2026-10-01（首次）· **2026-10-08**（本轮：上一版 `editor-engine 1277` → **1318** · `app-core 258` → **297** · `export 89` → **100**；其余 9 包与上次一致；合计 `1824` → **1915**）· **2026-10-11**（本轮：`export 100` → **104**；其余 11 包与上次一致；合计 `1915` → **1919** —— 由本机工具 `audit-pkg-test-counts.mjs` 实跑对账发现，见审计 §4.287）· **2026-10-11（同日第二次）**（`themes 12` → **13**；其余 11 包与上次一致；合计 `1919` → **1920** —— 同样由该本机工具实跑对账发现；⚠️ 它**上一轮已被标记为「已刷新、复跑 EXIT=0」**，而**没有人再跑它** ⇒ 一天内又漂了一次，见审计 §4.318）。
 
 > **注**：`extension-api` 自身无本地 jest 二进制，按其 package.json 的 `test` 脚本用
 > `../settings/node_modules/.bin/jest --rootDir .` 执行。全仓 `pnpm -r run test` 曾挂起
