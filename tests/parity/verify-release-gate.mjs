@@ -4425,6 +4425,93 @@ const stripJsComments = (s) => {
     + '；⚠️ 与 ㊸ 的分工：**㊸ 守重复、本条守缺号**，两条合起来才是「编号空间健全」');
 }
 
+// ── ㉞ workflow 的**缩进**必须与解析器的假设一致（2 / 4 空格）（2026-10-11，审计 §4.308）──
+// 【为什么】判据 **⑮**（每个 job 必须有 `timeout-minutes`）与 **⑯**（每个 workflow 必须声明 `permissions:`）
+//   都**按行结构读 YAML**（不引 `js-yaml`，见 ⑮ 的注释），因此**假设了固定缩进**：
+//   ⑮ 的 `JOB_HEAD = /^ {2}(…):\s*$/` 与 `TIMEOUT = /^ {4}timeout-minutes:\s*(\d+)\s*$/`；
+//   ⑯ 的 `PERM_ITEM = /^ {2}([a-z-]+):\s*(\S+)\s*$/`。
+//   ⚠️ **YAML 允许任意缩进** ⇒ 换个缩进（或**手工重排一个 job**）会让这些解析器**静默漏检**：
+//   `timeout-minutes` 被漏掉 ⇒ 该 job **无超时边界**、而判据不报（**假阴性**）。
+//   ⚠️ **防空转只挡「整体改变」**（job 数骤降会红）—— **挡不住「局部改一个 job」**。
+// 【判据】每个 `.github/workflows/*.yml`：
+//   ① **`jobs:` 块内的最小缩进必须恰好是 2**（⇒ **job 头**就在 2 空格 —— ⑮ 的 `^ {2}` 才抓得到）；
+//   ② **`timeout-minutes:`** 必须**恰好 4 空格**缩进，且值是**裸整数**（不带引号 / 表达式）。
+//   ⇒ 把「解析器的假设」变成**响亮失败**，而不是静默漏检。
+// ⚠️ **首版谓词错了**（实测：报 **61 处**假阳性）：它把「**任意**缩进的键」都当成 job 头 ⇒
+//   `steps:` 下的深层键全被误判。**正解 = 看块内最小缩进**（job 头 = `jobs:` 的直接子键 = 最浅那层）。
+// ⚠️ **边界如实声明**：本判据**不判断** YAML 的其它缩进风格（`steps` / `with` 等不在覆盖内），
+//   也不声称「2/4 是唯一正确的 YAML」—— 它只是**本仓解析器的假设**。
+{
+  const WF_DIR34 = '.github/workflows';
+  const KEY_LINE34 = /^( +)([A-Za-z0-9_-]+):(\s|$)/;
+  const TIMEOUT34 = /^( +)timeout-minutes:\s*(\S+)\s*$/;
+  const wfFiles34 = existsSync(resolve(root, WF_DIR34))
+    ? readdirSync(resolve(root, WF_DIR34)).filter((f) => /\.ya?ml$/.test(f)).sort()
+    : [];
+  const offenders34 = [];
+  let jobs34 = 0;
+  for (const f of wfFiles34) {
+    const lines = read(`${WF_DIR34}/${f}`).split('\n');
+    const at = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+    if (at < 0) continue;
+    const indents = new Set();
+    let blockJobs34 = 0;
+    for (let i = at + 1; i < lines.length; i += 1) {
+      const l = lines[i];
+      if (l.trim() === '' || /^\s*#/.test(l)) continue;
+      if (/^\S/.test(l)) break; // 回到顶层键 ⇒ jobs 块结束
+      const k = KEY_LINE34.exec(l);
+      if (k !== null) {
+        indents.add(k[1].length);
+        // ⚠️ **只在 `jobs:` 块内计数**（首版在全文件上数 ⇒ 把 `on:` 块里的 2 空格键也算成 job ⇒ 报 29 而实际 16）
+        if (k[1].length === 2) blockJobs34 += 1;
+      }
+      const t = TIMEOUT34.exec(l);
+      if (t === null) continue;
+      if (t[1].length !== 4) {
+        offenders34.push(`${f}:${i + 1} \`timeout-minutes\` 缩进 **${t[1].length} 空格**（解析器假设 4）`);
+      } else if (!/^\d+$/.test(t[2])) {
+        offenders34.push(`${f}:${i + 1} \`timeout-minutes\` 的值 \`${t[2]}\` **不是裸整数**（解析器假设 \`\\d+\`）`);
+      }
+    }
+    if (indents.size === 0) continue;
+    const minIndent = Math.min(...indents);
+    if (minIndent !== 2) {
+      offenders34.push(`${f} 的 \`jobs:\` 块**最小缩进是 ${minIndent} 空格**（解析器假设 2 ⇒ job 头在 2 空格）`);
+    } else {
+      jobs34 += blockJobs34;
+    }
+  }
+  if (offenders34.length > 0) {
+    fail(`workflow 的缩进与**解析器的假设**不一致：${offenders34.join('；')} —— `
+      + '判据 ⑮ / ⑯ **按行结构读 YAML**（不引 `js-yaml`）⇒ **假设 job 头 2 空格、`timeout-minutes` 4 空格且为裸整数**。'
+      + '**YAML 允许任意缩进**，但换个缩进会让它们**静默漏检**（假阴性）；'
+      + '本判据把该假设变成**响亮失败**（审计 §4.308）');
+  }
+  // 防空转：[健康度型] job 数由仓库内容产生 ⇒ 留余量（立此判据时 16 个 job）
+  if (jobs34 < 10) {
+    fail(`㉞ 只解析出 ${jobs34} 个 2 空格缩进的 job 头（[健康度型] 下限 10）`
+      + ' —— 解析器失效会让本判据**空转**');
+  }
+  // canary：四向（与判定**共用** KEY_LINE34 / TIMEOUT34）
+  if (!KEY_LINE34.test('  build:')) {
+    fail('㉞ canary 失效：2 空格的键未被识别');
+  }
+  if (TIMEOUT34.exec('    timeout-minutes: 15') === null
+    || TIMEOUT34.exec('    timeout-minutes: 15')[1].length !== 4) {
+    fail('㉞ canary 失效：4 空格的 `timeout-minutes` 未被识别');
+  }
+  if (TIMEOUT34.exec('      timeout-minutes: 15')[1].length === 4) {
+    fail('㉞ canary **过宽**：6 空格的 `timeout-minutes` 被当成了 4 空格');
+  }
+  if (/^\d+$/.test('"15"')) {
+    fail('㉞ canary 失效：带引号的数值被当成了裸整数');
+  }
+  console.log(`Release gate: workflow 的**缩进假设** —— 扫描 ${wfFiles34.length} 个 workflow / ${jobs34} 个 job 头，`
+    + `与「2 / 4 空格 + 裸整数」不一致 ${offenders34.length} 处`
+    + '；⚠️ 只锁**解析器假设的那两处**（`steps` / `with` 等不在覆盖内），不声称 2/4 是唯一正确的 YAML');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }
