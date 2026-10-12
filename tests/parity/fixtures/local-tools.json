@@ -67,7 +67,7 @@
       "runsIn": "local-only",
       "signal": "hard",
       "why": "要读**本机 Typora 的 main.js / 偏好 dump** 做逐键对账 ⇒ CI 里没有 Typora。",
-      "evidence": "2026-10-11 实测 EXIT=0：「✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记」。 ⚠️ **2026-10-11 全量复跑（8 个工具逐个实跑）**：EXIT=0（`✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记`）",
+      "evidence": "**2026-10-13 实测** EXIT=0：「✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记」；并新增一行诊断「矩阵键里走 `putSetting` 通道的：**14** 个（实测基线 14，下限 10）」（审计 §4.350 的新不变量：上游**换了持久化通道**时，第三面的定义会失效而原有双向判据**仍绿**）。 ⚠️ **2026-10-11 全量复跑**：EXIT=0（`✅ 偏好项审计通过：Typora 每个偏好键都已在矩阵中登记`）",
       "failsOn": "for (const e of errors) console.error(`  - ${e}`);\nprocess.exit(1);"
     }
   ],

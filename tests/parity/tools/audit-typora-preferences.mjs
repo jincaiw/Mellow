@@ -671,6 +671,28 @@ if (badIds.length > 0) {
       if (uncovered.length !== face3.entries.length) {
         errors.push(`第三面条数（${face3.entries.length}）与实测缝隙（${uncovered.length}）不一致`);
       }
+      // ── 不变量：**矩阵键里仍有一部分走 `putSetting` 通道**（2026-10-13，审计 §4.350）──
+      // 【为什么】第三面的**定义**是「`putSetting` 键 − 矩阵 − 面板」。若上游改版后**换了持久化通道**
+      //   （矩阵键**全部**不再走 `putSetting`），那个定义就**失效**了 —— 而**上面两条双向判据仍会绿**
+      //   （它们只比「并集 vs 登记表」，不关心并集**是否还代表矩阵**）。
+      //   ⇒ 加一条**能发现「换了通道」**的不变量。
+      // 【实测（2026-10-13，Typora 1.14.9 / 7785）】矩阵 **84** 键 ∩ 并集 = **14**；
+      //   ⚠️ **面板偏好走的是另一条通道**（`File.option.<key> = …` 赋值 + `JSBridge.invoke`），
+      //   **不是** `putSetting` ⇒ 「矩阵键**不在**并集里」**不等于**「死键」。
+      //   （本轮据**逐字读上游**证伪了一个「70 个死键」的假设 ⇒ 见审计 §4.350「0 缺陷」节。）
+      const MATRIX_IN_PUT_FLOOR = 10; // [健康度型] 下限 10（实测 14 ⇒ 留余量，只挡「归零/大幅萎缩」）
+      const matrixInPut = [...putKeys].filter((k) => byKey.has(k)).length;
+      const tooFewInPut = (n) => n < MATRIX_IN_PUT_FLOOR;
+      console.log(`矩阵键里走 \`putSetting\` 通道的：${matrixInPut} 个（实测基线 14，下限 ${MATRIX_IN_PUT_FLOOR}）`);
+      if (tooFewInPut(matrixInPut)) {
+        errors.push(`矩阵键里只有 ${matrixInPut} 个走 \`putSetting\` 通道（下限 ${MATRIX_IN_PUT_FLOOR}，实测基线 14）—— `
+          + '⚠️ 这通常意味着**上游换了持久化通道** ⇒ 第三面的定义（`putSetting` 键 − 两面）**可能已失效**。'
+          + '请先确认**新通道**、再重定第三面；**不要**只把下限调低（那会让本判据空转）');
+      }
+      // canary：**双向**（判定与 canary **共用** tooFewInPut）
+      if (!tooFewInPut(0) || tooFewInPut(84)) {
+        errors.push('矩阵∩并集 下限 canary 失效：谓词不区分「低于下限」与「不低于下限」');
+      }
       // canary：谓词双向（拼接构造，不依赖真实数据）
       const cmp = (put, mx, panel, reg) => {
         const unc = [...put].filter((k) => !mx.has(k) && !panel.has(k));

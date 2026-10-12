@@ -1,5 +1,5 @@
 {
-  "source": "Typora 1.14.9 (7785) — TypeMark/appsrc/main.js 与 TypeMark/appsrc/window/frame.js 里 JSBridge.putSetting(\"<key>\", …) 的实参集合（并集 38 键）",
+  "source": "Typora 1.14.9 (7785) — TypeMark/appsrc/main.js 与 TypeMark/appsrc/window/frame.js 里 JSBridge.putSetting(\"<key>\", …) 的实参集合（并集 38 键） ⚠️ **这只是一条通道**：**面板偏好**走的是**另一条**（`frame.js` 里的 `File.option.<key> = …` **赋值** + `JSBridge.invoke(...)`）⇒ 「**矩阵键不在本并集里**」**不等于**「死键」（**2026-10-13，审计 §4.350 逐字读上游实测**：矩阵 84 键里只有 **14** 个走 `putSetting`，而其余 **70** 个**并非**死键 —— 该假设已被证伪）。",
   "extract": "node -e \"const fs=require('fs');const k=new Set();for(const f of ['appsrc/main.js','appsrc/window/frame.js'])for(const m of fs.readFileSync('<TY>/'+f,'utf8').matchAll(/JSBridge\\.putSetting\\(\"([A-Za-z_][A-Za-z0-9_]*)\"/g))k.add(m[1]);console.log([...k].sort().join('\\n'))\"",
   "note": "**第三个登记面**（2026-10-07，审计 §4.146）。它登记的是「**Typora 真的会持久化、但既不在偏好矩阵（`DEFAULT_OPTIONS` 面）也不在面板独有面（`keyName` 面）里**」的键 —— 也就是两个面之间的**缝隙**。⚠️ 缝隙里的键**不是**都该进偏好矩阵：其中多数是**视图/会话状态**或**「不再提示」记忆**（Typora 经同一通道持久化它们，但它们不是偏好）。`kind` 的三档正是为此而设；`preference-like` 的那几个是**待裁决**（要不要登记进矩阵）。本文件由 `tests/parity/tools/audit-typora-preferences.mjs`（需本机 Typora）做**双向**核对，并由 `verify-settings-contract.mjs` 做自洽性核对（不需要 Typora）。",
   "kindVocabulary": {
