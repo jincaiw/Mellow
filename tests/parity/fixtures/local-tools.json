@@ -41,7 +41,7 @@
       "name": "audit-pkg-test-counts.mjs",
       "runsIn": "ci",
       "signal": "hard",
-      "why": "逐个包跑该包自己的 jest，把 `tests/qualification/README.md` 的「各包规模」行与**实跑**对账（该行是包用例数的**单一真值源**；CI 侧另有判据只锁「**文件内自洽**」）。⚠️ **2026-10-12（审计 §4.331）改为 `runsIn: ci`** —— 理由：它把该行的「**自身与现实是否一致**」从「**需实跑**」变成**每次 CI 都跑**；此前 `local-only` ⇒ README 的边界声明写着「**只能靠人记得跑**」，而该行**已两次过期**（§4.153 / §4.287：`export` 声明 100 而实跑 **104**）。⚠️ 它需要**各包的 `node_modules/.bin/jest`** ⇒ 只能放在**有 `pnpm install` 的 job**。⚠️ 代价如实登记：它**重跑一遍**各包 jest（本机实测约 4m44s）⇒ `mellow-packages` job 耗时增加。",
+      "why": "逐个包跑该包自己的 jest，把 `tests/qualification/README.md` 的「各包规模」行与**实跑**对账（该行是包用例数的**单一真值源**；CI 侧另有判据只锁「**文件内自洽**」）。⚠️ **2026-10-12（审计 §4.331）改为 `runsIn: ci`** —— 理由：它把该行的「**自身与现实是否一致**」从「**需实跑**」变成**每次 CI 都跑**；此前 `local-only` ⇒ README 的边界声明写着「**只能靠人记得跑**」，而该行**已两次过期**（§4.153 / §4.287：`export` 声明 100 而实跑 **104**）。⚠️ 它需要**两套**依赖：① 根 `pnpm install`（12 个包各自的 `node_modules/.bin/jest`）；② `packages/editor-core/CoreEditor` 的 **`yarn install`**（「vendored CoreEditor 200」那一项）。⚠️ **实测**：首版放进 `mellow-packages` job ⇒ 那里**没有** yarn 的 CoreEditor 依赖 ⇒ 该工具报「vendored CoreEditor 的输出里找不到 `Tests: …`（exit=null）」而**红**；现放在 **`editor-core` job**（**唯一**同时具备两套依赖的地方）。⚠️ 代价如实登记：它**重跑一遍**各包 jest（本机实测约 4m44s）⇒ `mellow-packages` job 耗时增加。",
       "evidence": "**2026-10-12 实测**（接进 CI 之前，本机）：EXIT=0 —— `✓ 合计 实跑 1920 · 声明 1920` + `✓ 各包用例数与真值源**逐项 + 合计**一致。`（耗时约 4m44s）。⚠️ 更早的快照（2026-10-11）写「EXIT=1（`themes` 12 vs **13** · 合计 1919 vs **1920**）⇒ 已刷新」—— **那是当时的事实**；而**同日第二次**它又漂过一次（§4.318）⇒ **快照不是承诺**。",
       "failsOn": "以及 verify-release-gate.mjs 锁定的各处内联数字。`);\nprocess.exit(1);"
     },

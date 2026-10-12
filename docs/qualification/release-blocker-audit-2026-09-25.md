@@ -20920,9 +20920,14 @@ Proposed（0034–0038）。
 
 ### 三、处置
 
-1. **接进 CI**（**第二个 `runsIn: ci` 的工具**）：加在 `ci.yml` 的 **`mellow-packages` job**
-   （`Package test counts (README snapshot ↔ real run)`）—— **必须是有 `pnpm install` 的 job**
-   （它逐个包调用该包自己的 `node_modules/.bin/jest`）。
+1. **接进 CI**（**第二个 `runsIn: ci` 的工具**）：加在 `ci.yml` 的 **`editor-core` job**
+   （`Package test counts (README snapshot ↔ real run)`）。
+   ⚠️ **同日更正（首次提交 `79a5bde` 的 CI 当场红）**：首版放在 **`mellow-packages` job**，
+   理由是「需要 `pnpm install`」—— **那只是一半**：它还要跑 **`packages/editor-core/CoreEditor`
+   的 `yarn` 依赖**（对账「vendored CoreEditor **200**」那一项）。实测 CI 里 12 个包**全部 ✓**
+   （含合计 1920），**唯一失败**是 `vendored CoreEditor 的输出里找不到 Tests: …（exit=null）`。
+   ⇒ `editor-core` job 是**唯一**同时具备**两套**依赖的地方（根 `pnpm install` + CoreEditor 的 `yarn install`）。
+   ⚠️ **教训**：**「它需要 X」时，先问「还需要别的吗」** —— 我按「一半的前置」选了 job。
    ⚠️ **代价如实登记**：它**重跑一遍**各包 jest（本机实测约 **4m44s**）⇒ 该 job 耗时增加；
    若日后嫌慢，可改为**复用上一步的 jest 汇总输出**（那需要改工具，属独立一轮）。
 2. **收口 README 的边界声明**：把「**仍未覆盖** …… **只能靠人记得跑**」改为 **✅ 已收口**，
@@ -20952,6 +20957,11 @@ Proposed（0034–0038）。
 - ⚠️ **`--only` 调试模式不做合计判定** ⇒ 若日后在 CI 里误加 `--only`，判据会**静默变弱**（本判据**不守**这一点）。
 - ⚠️ **自曝**：R5 立起来后**连续 3 次报的是我自己的新文字** —— 因为**引用/复述被禁止的短语**时
   我也写下了那个短语。⇒ **纪律**：**引用禁语必须带历史限定词**（本轮的修法是加「原写 / 原来」）。
+- ⚠️ **自曝 ②（同日第二次）**：**移动**那个 CI 步骤时，我用 `replace(anchor, newStep)` 而 `newStep`
+  **不含** `anchor` ⇒ **把 `- name: Upload dist / uses: actions/upload-artifact@v6` 那一步删掉了**。
+  **是判据 ⑱（「workflow 里的 `uses:` 处数」= 61 的覆盖型基线）当场报出 `实际 60`**，不是我自己发现的。
+  ⇒ **纪律**：**`replace(a, b)` 里若 `b` 不含 `a`，那就是「删除」** —— 改结构时要么把 `a` 拼回 `b`，
+  要么改用「插入到锚点**之前/之后**」的写法（本轮修法 = 把 `Upload dist` 拼回）。
 
 ⇒ 同族「只锁了一半」累计 **第 159 次**（§4.170–§4.330）。
 
