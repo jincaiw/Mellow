@@ -46,6 +46,10 @@ func fail(_ msg: String) -> Never {
 }
 func nowMs() -> Double { CACurrentMediaTime() * 1000.0 }
 
+/// **epoch** 毫秒（与调用方 JS 的 `Date.now()` 同一时基）—— 用于把本进程内的相位时刻
+/// 与「进程启动 / 窗口出现」对齐（`nowMs()` 是开机以来的单调时钟，跨进程不可比）。
+func epochMs() -> Double { Date().timeIntervalSince1970 * 1000 }
+
 // MARK: - 参数解析
 
 func argVal(_ args: [String], _ key: String) -> String? {
@@ -635,13 +639,33 @@ func currentIsKeyboardLayout() -> Bool {
 /// 输入源是 IME 时按键会弹候选窗而不是回显文本，测出来的不是「编辑器回显」。
 func cmdStartupProbe(pid: Int32, roi: Roi, timeoutMs: Double, clickFocus: Bool = true, snapOnFail: String? = nil, roiFrac: [Double]? = nil, ensureAscii: Bool = false) async {
   guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Settings → Privacy → Accessibility）") }
+  // W-PERF-3 相位计时（2026-10-13，审计 §4.348）：`loadMs` 恒为 600ms 地板的根因是
+  // 「**观测窗口开得太晚**」—— 本进程从**进入**到**拿到首帧**之间有一段死时间（激活应用 +
+  // 解析 ROI + SCK 建流），而文档内容正是在这段死时间里画完的。把每个相位的**epoch 时刻**
+  // 报给调用方，即可与「进程启动 / 窗口出现」对齐 ⇒ **死时间成为可测的量**（此前只能推断）。
+  let tEntry = epochMs()
   activateAndEnsureInput(pid: pid, ensureAscii: ensureAscii)
+  // ⚠️ 2026-10-13（审计 §4.348，**实测 16 样本**）：曾把上面这行 `activateAndEnsureInput`
+  //   （实测 ≈1.4s）移到 `start()` **之后**，理由是「激活不是捕获的前置条件，却把观测窗口推迟了」。
+  //   ⇒ **A/B 交替实测（同二进制、只换开关、各 8 样本）**：旧序 `changed>0` **1/8**、
+  //     新序 **0/8** ⇒ **顺序不是决定因素**（甚至略差）⇒ **已回退**，不保留那个开关。
+  //   ⇒ 真正的决定因素是「**内容绘制**是否落在**首帧**之后」—— 那是**竞态**，不是固定顺序。
+  //     要让窗口必然前移，得让捕获在**窗口创建之前**就开始（SCK 按窗口捕获做不到，需改**显示器级**）。
+  //   ⚠️ 注释**刻意放在调用之后**：台账护栏用「函数头起 900 字符窗口」锁这一行，
+  //     把长注释放在**前面**会把这行挤出窗口 ⇒ 护栏**响亮红**（本机实测，那是对的）。
+  let tActivate = epochMs()
   let probe = Probe()
   guard let (win, effRoi) = await resolveRoiForCapture(pid: pid, fallback: roi, roiFrac: roiFrac) else {
     fail("SCK 捕获启动失败（找不到 pid=\(pid) 的可捕获窗口，重试 3 次后）")
   }
+  let tRoi = epochMs()
   do { try await probe.start(window: win, roi: effRoi) } catch { fail("SCK 捕获启动失败: \(error)") }
+  let tFirstFrame = epochMs()
   let loadMs = probe.waitStable()
+  let tStable = epochMs()
+  let phaseLine = "phases: entry=\(Int(tEntry)) activate=\(Int(tActivate)) roi=\(Int(tRoi)) "
+    + "firstFrame=\(Int(tFirstFrame)) stable=\(Int(tStable))\n"
+  FileHandle.standardError.write(Data(phaseLine.utf8))
   // W-PERF-3 诊断字段（2026-10-01）：`loadMs` 恒为「等待画面静止」的 600ms 地板，
   // **不是加载耗时**；把本窗口内的观察统计一并报出，让「有没有东西可观察」成为可见事实。
   // 实测（1MB 双应用 + 10MB 共 8 样本）changedFrames **全为 0** —— 即窗口在 `waitStable`
