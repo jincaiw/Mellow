@@ -3565,7 +3565,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 338; // 2026-10-13 加 §4.338 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 339; // 2026-10-13 加 §4.339 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -4021,9 +4021,8 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
   //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
   const stripComments = (s) => s
-    .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
+    .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g,
       (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   const SURFACE = /\\\.\(([a-z0-9|]+)\)\$/g;
   /** 判定（与 canary **共用**）：一段源码（**已剥注释**）里「含 ts 的代码面」缺哪些规范扩展名。 */
   const missingOf = (src) => {

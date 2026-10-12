@@ -181,9 +181,8 @@ if (!MENU_SCHEMA[0].macOnly) fail('应用菜单必须声明 macOnly（Windows/Li
       // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
       //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
       //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
-      .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
+      .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g,
         (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
-      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
     const contractSrc = stripComments(contractRaw);
     const orderBlock = /TYPOGRAPHIC_MENU_ORDER\s*=\s*\[([\s\S]*?)\]\s*as const/.exec(contractSrc)?.[1] ?? '';
     const contractOrder = [...orderBlock.matchAll(/'([^']+)'/g)].map((m) => m[1]);

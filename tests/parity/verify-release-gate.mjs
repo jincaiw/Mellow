@@ -1704,11 +1704,11 @@ if (driftedMissing.length === 0) {
   const CANARY_LITERAL = new RegExp(`canary\\s+${'\\d'}+\\s*项|${'\\d'}+\\s*项[^。\\n]{0,12}canary`);
   // ⚠️ **先剥注释**：说明性文字里会**引用**这个坏形态（如「原手写「canary 5 项全绿」」），
   //   不剥会把**解释**当成**违规**（同 §4.156「散文提及满足了判据」的老坑）。
-  const stripLineComments = (src) => src.split('\n')
-    .map((l) => l.replace(/(^|[^:'"`])\/\/.*$/, '$1'))
-    // ⚠️ **置空而不删除** ⇒ **行号映射不变**（此处报出的 `file:line` 曾整体偏移 —— 审计 §4.334）。
-    .map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? '' : l))
-    .join('\n');
+  // ⚠️ 2026-10-13（审计 §4.339）：原先写成「**一个字符的 lookbehind**」（`(^|[^:'"`])\/\/.*$`）——
+  //   它只挡「紧挨着引号 / 冒号」的 `//`，**不是**语法感知的 ⇒ `'a // b'` 这类**字符串里**的 `//`
+  //   照样被**删到行尾**（**吃掉真实代码**；同族第三个实例，见 §4.338 / §4.337）。
+  //   ⇒ 改用模块级 `blankComments`（**一次扫描**、字符串/正则原样、注释走置空分支 ⇒ **保长度**）。
+  const stripLineComments = blankComments;
   const guards7 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
     : [];
@@ -3832,41 +3832,63 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     fail('㉒ R3 canary **过宽**：两遍式**没有**吃掉代码 —— 那本判据就没有存在的理由，请**重新评估**'
       + '（也许 `stripStrings` 已被改成正则感知，那时本判据应当删除而不是保留）');
   }
-  // ── R4（2026-10-13，审计 §4.338）：**不得用「裸扫」剥行注释**（它**不认字符串**）────────────
-  // 【为什么】`.replace(/\/\/[^\n]*/g, '')` **不看引号** ⇒ 行内出现 `'http://x'` 时，
-  //   它从**字符串里的** `//` 开始**删到行尾** ⇒ **该行剩下的真实代码整段消失**（**假阴性、无人知**）。
-  //   ⚠️ 与 §4.337 同族：都是「**剥法不看语法边界 ⇒ 吃掉代码**」，只是一个跨行、一个截行。
-  //   实测：⑭ 块内曾有这一句 ⇒ 它自己的扫描面里 `audit-bold-pairing.mjs:77` 的
-  //   `guardSrc.indexOf('// ── ㊵ ')` 被截成 `guardSrc.indexOf('`（丢 **8** 个非空白字符）。
-  // 【判据】护栏**代码**（已剥注释）里**不得**出现这个写法 —— 行注释一律走**四保留分支**的置空分支
-  //   （`blankComments` / `scrubOf`）。
-  // 【边界如实声明】⚠️ **形态匹配**：只认这一种字面写法；用别的等价写法（例如先 `split` 再按行切）
-  //   **不覆盖**。
+  // ── R4（2026-10-13，审计 §4.338 / §4.339）：**行注释只能与块注释在同一次扫描里剥** ──────
+  // 【为什么】「从某个 `//` 删到行尾」的写法**都不看语法边界** —— 它们用**一个字符的 lookbehind**
+  //   （`[^:]` 挡 `://`、`[^:'"`]` 挡「引号后紧跟」）**假装**保护了字符串，实际都**不是**语法感知的：
+  //   行内出现 `'a // b'`（或模板 / 正则里的 `//`）时照样**删到行尾** ⇒ **真实代码消失**
+  //   （**假阴性、无人知**）。⚠️ 同族三连：§4.296（朴素**块注释**剥离）→ §4.337（**字符串**跨行）
+  //   → §4.338 / §4.339（**行注释**截行）。
+  // 【判据】**一行里既有 `replace(` 又有 `\/\/` ⇒ 该行必须同时有 `\/\*`** —— 即「行注释与
+  //   块注释**在同一次扫描**里处理」（走四保留分支的置空分支）。
+  //   ⚠️ **行首锚定**的整行剥离是**安全**的例外（不可能吃行内代码）⇒ 逐条登记在
+  //   `LINE_ANCHORED_EXEMPT`（**双向**：条目陈旧即报）。
+  // 【边界如实声明】⚠️ **形态匹配**：用别的等价写法（`split` 后按行切、`/\/\/.*$/gm` …）**不覆盖**。
   // ⚠️ needle **运行时拼接** —— 否则本判据的**样本**会命中自己。
-  const NAKED_SWEEP = '.replace(/' + '\\/' + '\\/' + '[^' + '\\n]*/g';
-  const nakedHits = [];
+  const SLASH2 = '\\/' + '\\/';            // 字面：\/\/
+  const BLOCKOPEN = '\\/' + '\\*';         // 字面：\/\*
+  /** **行首锚定**的整行剥离 —— 安全（不可能吃行内代码）。键 = 该写法的**片段**。 */
+  const LINE_ANCHORED_EXEMPT = new Map([
+    ['^[ \\t]*' + SLASH2 + '.*$/gm',
+      '整行剥离：`\\/\\/` **行首锚定** ⇒ 只可能删**整行**注释，**不可能**从行内某处删到行尾'],
+  ]);
+  /** 判定与 canary **共用**：该行是否「**单独**扫行注释」（行注释没有与块注释同次处理）。 */
+  const isSoloSweep = (l) => l.includes('replace(') && l.includes(SLASH2) && !l.includes(BLOCKOPEN)
+    && ![...LINE_ANCHORED_EXEMPT.keys()].some((k) => l.includes(k));
+  const sweepHits = [];
+  const exemptSeen = new Set();
   for (const f of guards22) {
     scrubOf(read(`tests/parity/${f}`)).split('\n').forEach((l, i) => {
-      if (l.includes(NAKED_SWEEP)) nakedHits.push(`${f}:${i + 1}`);
+      for (const k of LINE_ANCHORED_EXEMPT.keys()) if (l.includes(k)) exemptSeen.add(k);
+      if (isSoloSweep(l)) sweepHits.push(`${f}:${i + 1}`);
     });
   }
-  if (nakedHits.length > 0) {
-    fail(`㉒ R4 这些护栏里还有「**裸扫**行注释」（\`${NAKED_SWEEP}…\`）：${nakedHits.join('、')}`
-      + ' —— 它**不认字符串** ⇒ 行内出现「http://」形式时会让它**删到行尾**（真实代码消失）；'
-      + '行注释一律走**四保留分支**的置空分支（`blankComments` / `scrubOf`）');
+  if (sweepHits.length > 0) {
+    fail(`㉒ R4 这些护栏里还有「**单独**扫行注释」的写法：${sweepHits.join('、')}`
+      + ' —— 它**不认字符串 / 模板 / 正则** ⇒ 行内的「a // b」形式会让它**删到行尾**（真实代码消失）；'
+      + '行注释必须与块注释在**同一次扫描**里剥（`blankComments` / `scrubOf` 的置空分支）');
   }
-  // canary：两向（与判定**共用** NAKED_SWEEP；样本**运行时构造**）
-  const CANARY_NAKED = `const s = x.replace(/\\/\\/[^\\n]*/g, '');`;
-  if (!CANARY_NAKED.includes(NAKED_SWEEP)) {
-    fail('㉒ R4 canary 失效：**裸扫**写法**未被检出**（判据已退化成空真）');
+  const staleExempt = [...LINE_ANCHORED_EXEMPT.keys()].filter((k) => !exemptSeen.has(k));
+  if (staleExempt.length > 0) {
+    fail(`㉒ R4 \`LINE_ANCHORED_EXEMPT\` 有**陈旧条目**（扫描面里已不存在该写法）：${staleExempt.join(' ⏎ ')}`
+      + ' —— 陈旧豁免会让本判据**悄悄放宽**');
   }
-  if ((`const s = x.replace(/[^\\n]*/g, '');`).includes(NAKED_SWEEP)) {
-    fail('㉒ R4 canary **过宽**：**不带 `//` 的**扫法被判成裸扫');
+  // canary：两向（与判定**共用** isSoloSweep；样本**运行时构造**）
+  const CANARY_SOLO = 'const s = x.replace(/' + SLASH2 + '[^' + '\\n]*/g, \'\');';
+  if (!isSoloSweep(CANARY_SOLO)) {
+    fail('㉒ R4 canary 失效：**单独扫行注释**的样本**未被检出**（判据已退化成空真）');
+  }
+  const CANARY_OK = 'x.replace(/(' + SLASH2 + '[^' + '\\n]*|' + BLOCKOPEN + '[\\s\\S]*?' + BLOCKOPEN + ')/g, y);';
+  if (isSoloSweep(CANARY_OK)) {
+    fail('㉒ R4 canary **过宽**：**与块注释同一次扫描**的写法被判成「单独扫」');
+  }
+  const CANARY_LINEANCHOR = 'const s = x.replace(/' + LINE_ANCHORED_EXEMPT.keys().next().value + "', '');";
+  if (isSoloSweep(CANARY_LINEANCHOR)) {
+    fail('㉒ R4 canary **过宽**：**已登记豁免**的行首锚定写法被判成「单独扫」');
   }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
     + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）；`
     + `**先用后定义**（R2）${tdzViolations.length} 处 · 共享文本助手定义 ${sharedDefs} 个 · `
-    + `**正则不感知的第二遍**（R3）${badStrip.length} 处 · **裸扫行注释**（R4）${nakedHits.length} 处`);
+    + `**正则不感知的第二遍**（R3）${badStrip.length} 处 · **单独扫行注释**（R4）${sweepHits.length} 处`);
 }
 
 // ── ㉓ 空 `catch` 必须写明理由（2026-10-11，审计 §4.292）──
@@ -4010,7 +4032,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   // 防空转：**覆盖型**（立此判据时实测 25 个例外表 —— 已排除扫描器跳过表；
   //   ⚠️ 2026-10-11（§4.302）：原为 **17**，修掉「`^const` 只认列 0」的扫描面缺陷后
   //   纳入 **8 张缩进表** ⇒ 25）
-  const TABLE_BASELINE = 27; // [覆盖型] 基线 27
+  const TABLE_BASELINE = 28; // [覆盖型] 基线 28（2026-10-13 §4.339：新增 ㉒ R4 的 LINE_ANCHORED_EXEMPT）
   coverEq('㉔ 例外表个数', tables.length, TABLE_BASELINE,
     '命名约定漂移或扫描面萎缩会让本判据**空转**');
   // canary：三向（与判定**共用** TABLE_RE / STALE_KW / stripComments24）
