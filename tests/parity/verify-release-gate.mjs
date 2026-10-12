@@ -6399,8 +6399,10 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
 //   ② **反向**：每个 notes 文件必须对应一个**存在的 tag**（陈旧 ⇒ 红）。
 //   ⚠️ `git tag` 不可得时 ⇒ **只有「本地且真的没有 tag」才允许跳过**（打印一行说明，**不是**静默通过）。
 //   ⚠️ 2026-10-13（审计 §4.344）：**CI 里不得跳过** —— 两个 parity job 的 `actions/checkout`
-//     已声明 `fetch-tags: true`（checkout v4+ 的**文档化输入**，`fetch-depth: 1` 时**仍取全部 tag**）
-//     ⇒ `process.env.CI` 时 tag 数不足 **硬失败**（判据 `mustJudge48`）。
+//     已声明 **`fetch-depth: 0`** ⇒ `process.env.CI` 时 tag 数不足 **硬失败**（判据 `mustJudge48`）。
+//     ⚠️ **`fetch-tags: true` 不解决问题**（它只表示「不要传 `--no-tags`」，**不会**加 `--tags`
+//     ⇒ `fetch-depth: 1` 时 `git tag` 仍为 **0** —— CI run 38300015895 **实测失败**，
+//     上游 `git-command-manager.ts` 源码可证）。判据 **R2** 锁的就是那一行。
 // 【边界如实声明】
 //   ⚠️ 本判据**在 CI 里也会判定**（§4.344 前是「CI 跳过」，那正是本仓记过的坑：
 //     「**能失败 + 没人跑 = 它可以一直红**」）⇒ 现由 `mustJudge48` 把「CI」这条轴**也纳入判定**。
@@ -6471,17 +6473,19 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     }
     console.log(`Release gate: release notes 覆盖率 —— \`git tag\` ${tags48.length} 个 / notes ${notesNames48.length} 份，`
       + `**不一致** ${offenders48.length} 处（惯例起点 v${NOTES_FLOOR}）；`
-      + '⚠️ **边界**：**CI 里同样判定**（`fetch-tags: true`）；只有**本地**缺 tag 才跳过（会打印说明）');
+      + '⚠️ **边界**：**CI 里同样判定**（`fetch-depth: 0`）；只有**本地**缺 tag 才跳过（会打印说明）');
   } else if (mustJudge48(tags48.length, process.env.CI)) {
-    // ⚠️ 2026-10-13（审计 §4.344）：**CI 里不得跳过**。两个 parity job 的 `actions/checkout` 已声明
-    //   `fetch-tags: true`（checkout v4+ 的**文档化输入**）⇒ tag 应当可得。
-    //   ⚠️ 若这一步红了：先看**本行报出的 tag 个数**，再查 checkout 的 `fetch-tags` 是否生效
-    //   （或改用 `fetch-depth: 0`）。**不要**把本判据改回「静默跳过」——
+    // ⚠️ 2026-10-13（审计 §4.344，**经 CI 实证更正**）：**CI 里不得跳过**。两个 parity job 的
+    //   `actions/checkout` 已声明 **`fetch-depth: 0`** ⇒ tag 应当可得。
+    //   ⚠️ 若这一步红了：先看**本行报出的 tag 个数**，再查 **㊽ R2**（它锁 `fetch-depth: 0` 那一行）。
+    //   ⚠️ **`fetch-tags: true` 不是修法** —— 实测它只表示「不要传 `--no-tags`」，`git tag` 仍为 0。
+    //   **不要**把本判据改回「静默跳过」——
     //   「**能失败 + 没人跑 = 它可以一直红**」正是本仓记过的坑。
     fail(`㊽ **CI 里 \`git tag\` 只返回 ${tags48.length} 个** ⇒ 本判据在 CI 里**被跳过**了 —— `
       + '而「**能失败 + 没人跑 = 它可以一直红**」正是本仓记过的坑。'
-      + '两个 parity job 的 `actions/checkout` 已声明 `fetch-tags: true`；'
-      + '若仍为 0，请检查该输入是否生效（或改用 `fetch-depth: 0`）');
+      + '两个 parity job 的 `actions/checkout` 已声明 **`fetch-depth: 0`**；'
+      + '若仍为 0，先看 **㊽ R2**（它锁的就是那一行）；⚠️ **`fetch-tags: true` 不解决问题**'
+      + '（它只表示「不要传 `--no-tags`」，`git tag` 仍为 0 —— CI run 38300015895 实测）');
   } else {
     console.log(`Release gate: release notes 覆盖率 —— ⚠️ **跳过**（\`git tag\` 只返回 ${tags48.length} 个`
       + ' ⇒ **本地**仓库缺 tag）；⚠️ **边界**：**CI 里不得跳过**（`process.env.CI` 时**硬失败**）');
@@ -6491,14 +6495,19 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   // ⚠️ 子编号**不得**写成 `// ── ㊽ R2 …` 的**判据头**形态 —— 判据 ㊸ 把 `// ── <圈号>` 当**身份**，
   //   同号出现 2 次即红（本仓既有子编号惯用法是「块内普通注释」，不是新头）。
   // 【为什么】R1 只让「CI 里拿不到 tag」**红**了 —— 那是**症状**。**成因**是 `actions/checkout`
-  //   没声明 `fetch-tags: true`（或 `fetch-depth: 0`）⇒ 默认浅克隆。
+  //   没声明 `fetch-depth: 0` ⇒ 默认浅克隆。
   //   只锁症状的代价（本仓「只锁了一半」同族，§4.170 起）：报错指向「tag 只有 0 个」，
   //   而**真正要改的那一行在另一个文件里**（`ci.yml`）—— 下一个审计者得自己把它推出来。
   // 【判据】扫全部 `.github/workflows/*.yml`：**每个**运行 `npm run parity` /
-  //   `verify-release-gate.mjs` 的 job，其 `actions/checkout` 步必须声明
-  //   `fetch-tags: true` 或 `fetch-depth: 0`（`fetch-tags` 是 checkout **v4+ 的文档化输入**）。
+  //   `verify-release-gate.mjs` 的 job，其 `actions/checkout` 步必须声明 **`fetch-depth: 0`**。
+  //   ⚠️ **`fetch-tags: true` 不算** —— 2026-10-13（**经 CI 实证 + 读上游源码**）：它**只表示**
+  //     「不要传 `--no-tags`」，**不会**加 `--tags`；`fetch-depth: 1` 时 refspec 只含当前 commit
+  //     ⇒ **`git tag` 返回 0**（CI run 38300015895 实测失败）。上游源码（`git-command-manager.ts`）：
+  //     `if (!refSpec.some(x => x === tagsRefSpec) && !options.fetchTags) args.push('--no-tags')`。
+  //     ⇒ 唯一真正取到全部 tag 的写法 = **`fetch-depth: 0`**（那时 refspec 才含 `+refs/tags/*:…`）。
   // 【边界如实声明】
-  //   ⚠️ **结构判据**：只锁「有没有声明」，**不**证明 checkout 真的取到了 tag（那要等一次真跑）。
+  //   ⚠️ **结构判据**：只锁「有没有声明 `fetch-depth: 0`」，**不**证明 checkout 真的取到了 tag
+  //     （那要等一次真跑；本轮已用 CI run 38300015895 取证过一次**失败**）。
   //   ⚠️ 只认**同一个 job、同一个 step 内**的绑定；用别的手段取 tag（如手写 `git fetch --tags`）
   //     **不在面内**（实测：本仓当前没有这种写法）。
   //   ⚠️ 只覆盖「**跑** `verify-release-gate.mjs`」的 job —— 判据 ⑮/⑯ 管另外的轴（超时 / 权限）。
@@ -6525,7 +6534,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       const sm = /^\s*-\s+(.*)$/.exec(l);
       if (sm !== null) {
         flushStep();
-        step = { uses: '', tags: false };
+        step = { uses: '', allTags: false };
         const um = /^uses:\s*(\S+)/.exec(sm[1]);
         if (um !== null) step.uses = um[1];
         continue;
@@ -6533,14 +6542,15 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       if (step === null) continue;
       const um = /^\s*uses:\s*(\S+)/.exec(l);
       if (um !== null) { step.uses = um[1]; continue; }
-      if (/^\s*fetch-tags:\s*true\s*$/.test(l) || /^\s*fetch-depth:\s*0\s*$/.test(l)) step.tags = true;
+      // ⚠️ **只认 `fetch-depth: 0`**；`fetch-tags: true` **刻意不认**（见上「不算」）。
+      if (/^\s*fetch-depth:\s*0\s*$/.test(l)) step.allTags = true;
     }
     flushJob();
     return jobs;
   };
-  /** 该 job 的 `actions/checkout` 步是否声明了取 tag（⚠️ 必须是**同一个 step**）。 */
+  /** 该 job 的 `actions/checkout` 步是否声明了**取全部 tag**（⚠️ 必须是**同一个 step**）。 */
   const takesTags48 = (j) => Array.isArray(j?.steps)
-    && j.steps.some((s) => /^actions\/checkout@/.test(s.uses) && s.tags);
+    && j.steps.some((s) => /^actions\/checkout@/.test(s.uses) && s.allTags);
   const parityJobs48 = [];
   const wfFiles48 = existsSync(resolve(root, '.github/workflows'))
     ? readdirSync(resolve(root, '.github/workflows')).filter((f) => /\.ya?ml$/.test(f)).sort()
@@ -6556,10 +6566,12 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       parityJobs48.push(`${f}:${j.name}`);
       if (!takesTags48(j)) {
         fail(`㊽ R2：\`.github/workflows/${f}\` 的 job \`${j.name}\` **跑 \`verify-release-gate.mjs\`，`
-          + '但它的 `actions/checkout` 步没有 `fetch-tags: true`（或 `fetch-depth: 0`）** —— '
-          + '默认浅克隆 ⇒ 该 job 里「release notes 覆盖率」判据**拿不到 tag**'
-          + '（㊽ R1 会因此红，但报的是**症状**，要改的行在**另一个文件**里）。'
-          + '`fetch-tags` 是 checkout v4+ 的**文档化输入**（`fetch-depth: 1` 时**仍取全部 tag**）');
+          + '但它的 `actions/checkout` 步没有 `fetch-depth: 0`** —— 默认浅克隆 ⇒ 该 job 里'
+          + '「release notes 覆盖率」判据**拿不到 tag**（㊽ R1 会因此红，但报的是**症状**，'
+          + '要改的行在**另一个文件**里）。'
+          + '⚠️ **`fetch-tags: true` 不算**：它**只表示**「不要传 `--no-tags`」，**不会**加 `--tags` '
+          + '⇒ `fetch-depth: 1` 时 `git tag` 仍是 **0**（CI run 38300015895 实测；'
+          + '上游 `git-command-manager.ts` 源码可证）。唯一真正取到全部 tag 的写法 = `fetch-depth: 0`');
       }
     }
   }
@@ -6567,35 +6579,41 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   const PARITY_JOBS_BASELINE = 2; // [覆盖型] 基线 2
   coverEq('跑 `verify-release-gate.mjs` 的 workflow job 数', parityJobs48.length, PARITY_JOBS_BASELINE,
     '扫描面萎缩（job 改名 / 不再跑 parity）会让本判据**空转**');
-  // canary：五向（与判定**共用** checkoutTakesTags48 / takesTags48；样本**运行时构造**）
+  // canary：六向（与判定**共用** checkoutTakesTags48 / takesTags48；样本**运行时构造**）
   const WF_OK48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
-    + '        with:\n          fetch-tags: true\n      - run: npm run parity\n';
-  const WF_DEPTH48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
     + '        with:\n          fetch-depth: 0\n      - run: npm run parity\n';
+  const WF_TAGS48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
+    + '        with:\n          fetch-tags: true\n      - run: npm run parity\n';
+  const WF_DEPTH1_48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
+    + '        with:\n          fetch-depth: 1\n          fetch-tags: true\n      - run: npm run parity\n';
   const WF_NO48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n      - run: npm run parity\n';
   const WF_OTHER48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
-    + '      - uses: foo/bar@v1\n        with:\n          fetch-tags: true\n      - run: npm run parity\n';
+    + '      - uses: foo/bar@v1\n        with:\n          fetch-depth: 0\n      - run: npm run parity\n';
   const WF_NOPARITY48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n      - run: pnpm install\n';
   const j48 = (t) => checkoutTakesTags48(t)?.[0];
   if (j48(WF_OK48)?.runsParity !== true || takesTags48(j48(WF_OK48)) !== true) {
-    fail('㊽ R2 canary 失效：**合规**样本（checkout + `fetch-tags` + `npm run parity`）未被判为合规');
+    fail('㊽ R2 canary 失效：**合规**样本（checkout + `fetch-depth: 0` + `npm run parity`）未被判为合规');
   }
-  if (takesTags48(j48(WF_DEPTH48)) !== true) {
-    fail('㊽ R2 canary 失效：`fetch-depth: 0` 形态未被判为「取 tag」');
+  if (takesTags48(j48(WF_TAGS48)) !== false) {
+    fail('㊽ R2 canary **过宽**：**只有 `fetch-tags: true`** 被判为合规 —— '
+      + '实测它**不取 tag**（只表示「不要传 `--no-tags`」）⇒ 那正是本判据要禁止的「**声明了但没生效**」');
+  }
+  if (takesTags48(j48(WF_DEPTH1_48)) !== false) {
+    fail('㊽ R2 canary **过宽**：`fetch-depth: 1` + `fetch-tags: true` 被判为合规（实测该组合 `git tag` = 0）');
   }
   if (takesTags48(j48(WF_NO48)) !== false) {
-    fail('㊽ R2 canary 失效：**缺** `fetch-tags` 的样本未被判为不合规');
+    fail('㊽ R2 canary 失效：**缺** `fetch-depth: 0` 的样本未被判为不合规');
   }
   if (takesTags48(j48(WF_OTHER48)) !== false) {
-    fail('㊽ R2 canary **过宽**：`fetch-tags` 写在**非 checkout 的步骤**上也被判为合规');
+    fail('㊽ R2 canary **过宽**：`fetch-depth: 0` 写在**非 checkout 的步骤**上也被判为合规');
   }
   if (j48(WF_NOPARITY48)?.runsParity !== false) {
     fail('㊽ R2 canary **过宽**：**不跑 parity** 的 job 被判为「跑 parity」');
   }
   console.log(`Release gate: 跑 release gate 的 job 的 **checkout 取 tag** —— `
-    + `${parityJobs48.length} 个 job（${parityJobs48.join('、')}）**全部**声明了 `
-    + '`fetch-tags: true` / `fetch-depth: 0`；⚠️ **边界**：结构判据，'
-    + '「checkout 真的取到 tag」需等一次真跑（本地已用 `git fetch --tags --depth=1` 验证过机制）');
+    + `${parityJobs48.length} 个 job（${parityJobs48.join('、')}）**全部**声明了 \`fetch-depth: 0\`；`
+    + '⚠️ **`fetch-tags: true` 不算**（实测只表示「不要传 `--no-tags`」，`git tag` 仍为 0）；'
+    + '⚠️ **边界**：结构判据，「checkout 真的取到 tag」需等一次真跑（CI run 38300015895 已取过一次**失败**）');
 }
 
 // ── ㊾ 扫**代码/配置**目标的护栏必须剥注释（2026-10-12，审计 §4.327）──

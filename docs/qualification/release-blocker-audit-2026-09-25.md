@@ -21839,6 +21839,74 @@ git fetch --tags --depth=1 origin                           ⇒ tags=55
 4. **两次注入并行跑** ⇒ 注入 B 读到的是注入 C 已经 `git fetch` 过的仓库（报 55 个 tag 而不是 0）⇒ **重做**。
    **纪律**：**注入与受测链必须串行**（§4.338 记过同一条）。
 
+### 七、⚠️ 同日更正（**CI 实证 + 读上游源码**）：`fetch-tags: true` **不是**修法
+
+> **⚠️ 本节之前**（一～六）**所有**把「`fetch-tags: true`」当作修法的表述**已被更正为 `fetch-depth: 0`**。
+> **原文保留**（它记录了当时的判断与自曝），但**以本节为准**。
+
+**CI run 38300015895（提交 `c286e7a`）两个 parity job 都失败**，报的正是我自己新加的硬失败：
+
+```text
+㊽ **CI 里 `git tag` 只返回 0 个** ⇒ 本判据在 CI 里**被跳过**了 …
+```
+
+**⇒ 我的「修法」是假的。** 两条取证：
+
+**（a）读 CI 日志里 checkout 实际跑的命令**（`fetch-tags: true` **确实被传入**了）：
+
+```text
+with:
+  fetch-tags: true
+  fetch-depth: 1
+...
+[command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules --depth=1 origin +c286e7a1…:refs/remotes/origin/main
+```
+
+⚠️ **命令里没有 `--tags`。**
+
+**（b）读上游源码**（`actions/checkout@v5`，SHA `fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09`）——
+`src/git-command-manager.ts`：
+
+```ts
+if (!refSpec.some(x => x === refHelper.tagsRefSpec) && !options.fetchTags) {
+  args.push('--no-tags')
+}
+```
+
+⇒ **`fetchTags: true` 的唯一作用是「不要传 `--no-tags`」，它从不加 `--tags`。**
+而 `fetch-depth: 1` 时 refspec 只有 `+<sha>:refs/remotes/origin/main`（`git-source-provider.ts` 的 else 分支）
+⇒ git 的默认行为是「只取指向**已取对象**的 tag」⇒ 只取了 1 个 commit ⇒ **0 个 tag**。
+**只有 `fetch-depth <= 0`** 才走 `getRefSpecForAllHistory()`
+（`['+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*']`）。
+
+**⇒ 更正后的处置**
+
+1. `ci.yml` 两个 parity job：`fetch-tags: true` → **`fetch-depth: 0`**（注释同步写明「`fetch-tags` 不解决问题」）。
+2. ㊽ R2 的谓词：**只认 `fetch-depth: 0`**；**`fetch-tags: true` 刻意不认**
+   —— 它正是本轮要禁的那类「**声明了但没生效**」。
+3. 新增**两条** canary（共六向）：`fetch-tags: true` **单独**出现 ⇒ 必须判**不合规**；
+   `fetch-depth: 1` + `fetch-tags: true` ⇒ 必须判**不合规**。
+4. ㊽ R1 的失败消息、㊽ 的头注释、成功分支的 `console.log` —— **三处转述**全部改为 `fetch-depth: 0`。
+
+**⇒ 更正后的注入验证（4/4）**
+
+| 项 | 结果 |
+|---|---|
+| D 删 `parity-guard` 的 `fetch-depth: 0` | ✅ 红，点名 `parity-guard` |
+| E 删 `windows-parity-guard` 的 `fetch-depth: 0` | ✅ 红，点名 `windows-parity-guard` |
+| F 把 `fetch-depth: 0` **换成** `fetch-tags: true`（那个「看起来对」的假修法） | ✅ 红（**这条是本轮的核心**） |
+| G windows 改**短横线形态** + 删 `fetch-depth: 0` | ✅ 红，点名 `windows-parity-guard` |
+| 还原 / 残留 | ✅ `EXIT=0` · `git diff --stat` 只剩预期改动 |
+
+**⇒ 机制（本机复现，与 CI 实测一致）**：完整 clone（= `fetch-depth: 0` 的等价物）⇒ `tags=55` · `commits=867`；
+`--depth 1` clone ⇒ `tags=0`。
+
+**⇒ ⚠️ 自曝（第五次，也是本轮最重要的一条）**：我上一轮的「修法」**从未被验证过就提交了**。
+我在 §二(a) 里写「`fetch-tags` 是**文档化输入**，`fetch-depth: 1` 时**仍取全部 tag**」——
+那是**从输入的名字推出来的**，**既没读源码、也没实测**。
+⇒ **纪律：一个「名字听起来就是干这个的」的配置，必须读它的实现（或实测），不得从名字推断语义。**
+本仓通则「**不采信自述**」在这里被我**违反了一次** —— 而且违反它的地方正是我**为了守这条通则**才写的那一节。
+
 ⇒ 同族「只锁了一半」累计 **第 172 次**（§4.170–§4.343）。
 
 ## 五、本次审计做的改动（非策略性）

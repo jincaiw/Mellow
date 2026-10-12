@@ -179,10 +179,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # ⚠️ 2026-10-13（审计 §4.344）：本 job 跑 `verify-release-gate.mjs` 的「release notes 覆盖率」
-          #   判据，它要 `git tag`。默认浅克隆拿不到 tag ⇒ 该判据会**跳过**（「能失败 + 没人跑」）。
-          #   `fetch-tags` 是 checkout v4+ 的**文档化输入**：`fetch-depth` 为 1 时**仍取全部 tag**（便宜）。
-          fetch-tags: true
+          # ⚠️ 2026-10-13（审计 §4.344，**经 CI 实证更正**）：本 job 跑 `verify-release-gate.mjs`
+          #   的「release notes 覆盖率」判据，它要 `git tag`。**默认浅克隆拿不到 tag。**
+          #   ⚠️ **`fetch-tags: true` 不解决问题** —— 实测（CI run 38300015895，失败）它**只表示
+          #   「不要传 `--no-tags`」**，**不会**加 `--tags`；`fetch-depth: 1` 时 fetch 的 refspec
+          #   只含当前 commit ⇒ **`git tag` 返回 0**。读上游源码可证（`git-command-manager.ts`：
+          #   `if (!refSpec.some(x => x === tagsRefSpec) && !options.fetchTags) args.push('--no-tags')`）。
+          #   ⇒ 唯一真正取到全部 tag 的写法 = **`fetch-depth: 0`**（那时 refspec 才含
+          #   `+refs/tags/*:refs/tags/*`）。判据 ㊽ R2 锁的就是这一行。
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
@@ -219,10 +224,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # ⚠️ 2026-10-13（审计 §4.344）：本 job 跑 `verify-release-gate.mjs` 的「release notes 覆盖率」
-          #   判据，它要 `git tag`。默认浅克隆拿不到 tag ⇒ 该判据会**跳过**（「能失败 + 没人跑」）。
-          #   `fetch-tags` 是 checkout v4+ 的**文档化输入**：`fetch-depth` 为 1 时**仍取全部 tag**（便宜）。
-          fetch-tags: true
+          # ⚠️ 2026-10-13（审计 §4.344，**经 CI 实证更正**）：同 `parity-guard` ——
+          #   **`fetch-tags: true` 不解决问题**（它只表示「不要传 `--no-tags`」），
+          #   唯一真正取到全部 tag 的写法是 **`fetch-depth: 0`**。判据 ㊽ R2 锁这一行。
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
