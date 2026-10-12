@@ -358,7 +358,7 @@ for (const f of existsSync(goldenDir) ? readdirSync(goldenDir) : []) {
 // 屏幕上看不出任何异常（`P0-LAYOUT-002` 因此永久 BLOCKED）。
 // 四个视觉脚本必须共用 dev-server.mjs 的平台感知启动器；此处同时锁反例。
 const stripComments = (s) => s
-  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, ' '))
   // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
   //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
   //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。

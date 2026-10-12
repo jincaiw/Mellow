@@ -5184,7 +5184,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 40; // [覆盖型] 基线 40（2026-10-13 §4.341：再加 `stripWholeLineComments`）
+  const COVERAGE_MARK_BASELINE = 41; // [覆盖型] 基线 41（2026-10-13 §4.343：加 `codeText`）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -6210,9 +6210,27 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   //     ⚠️ **多行定义**（`codeText` 6 份 · `stripComments` 3 份）**抽不出来** ⇒ 如实登记为边界。
   //   ⚠️ 基线写成**具名常量**，且 `coverEq(...)` 必须**紧邻**（㊱ 的窗口只认「标记旁就是实现」——
   //     基线塞进数组元素、或 `coverEq` 隔着十几行，㊱ 都**认不出**，实测当场红）。
+  /** 判定与 canary **共用**：抽某名字的**完整定义**（单行 **或** 多行），并**归一化**。
+   *  ⚠️ 2026-10-13（审计 §4.343）：原先**只认单行** ⇒ 多行定义（`codeText` / `stripComments`）
+   *    **锁不进去**（那正是「名单只锁了 7 个」的**另一半**原因）。
+   *  多行收尾规则 = 「第一行之后的某行，其 trimmed 以 `;` / `}` 结尾 **且下一行在列 0**」
+   *    —— 定义体内每行都是**缩进**的 ⇒ 只有真正的收尾满足它。
+   *  ⚠️ **归一化**（剥注释 + 去空行 + 去缩进）：否则同一份实现会因为**解释性注释**不同
+   *    而被判成不同形态（实测 `stripComments` 的 3 份就带着不同的注释块）。 */
   const defOf46 = (code, name) => {
-    const m = new RegExp(`^\\s*const ${name} = .*;$`, 'm').exec(code);
-    return m === null ? null : m[0].trim();
+    const lines = code.split('\n');
+    const i = lines.findIndex((l) => new RegExp(`^\\s*const ${name} = `).test(l));
+    if (i < 0) return null;
+    const out = [lines[i]];
+    if (!/;\s*$/.test(lines[i])) {
+      for (let k = i + 1; k < lines.length; k += 1) {
+        out.push(lines[k]);
+        const next = lines[k + 1];
+        if (/[;}]\s*$/.test(lines[k]) && (next === undefined || /^\S/.test(next))) break;
+      }
+    }
+    return stripJsComments(out.join('\n')).split('\n')
+      .map((l) => l.trim()).filter((l) => l !== '').join('\n');
   };
   /** 判定与 canary **共用**：某共享剥法的**副本数**（并查「所有副本是否**互相**逐字相同」）。
    *  ⚠️ 2026-10-13（审计 §4.341）：**不再需要「基准文件」** —— 原先要求 `verify-release-gate.mjs`
@@ -6245,6 +6263,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   const blankhashCopies46 = copiesOf46('blankHash');
   const blankhtmlCopies46 = copiesOf46('blankHtmlComments');
   const wholelineCopies46 = copiesOf46('stripWholeLineComments');
+  const codetextCopies46 = copiesOf46('codeText');
   const YAML_COPIES_BASELINE46 = 4; // [覆盖型] 基线 4
   coverEq('㊻ R3 `stripYamlComments` 的副本数', yamlCopies46, YAML_COPIES_BASELINE46,
     '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
@@ -6266,6 +6285,15 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   const WHOLELINE_COPIES_BASELINE46 = 2; // [覆盖型] 基线 2
   coverEq('㊻ R3 `stripWholeLineComments` 的副本数', wholelineCopies46, WHOLELINE_COPIES_BASELINE46,
     '副本增删必须此刻同步（本条立起前它**已经不一致**：两形态在 472 个文件上输出不同）');
+  const CODETEXT_COPIES_BASELINE46 = 6; // [覆盖型] 基线 6
+  coverEq('㊻ R3 `codeText` 的副本数', codetextCopies46, CODETEXT_COPIES_BASELINE46,
+    '副本增删必须此刻同步（它是**读代码/配置目标的唯一入口**）');
+  // ⚠️ **`stripComments` 刻意**不进名单****（2026-10-13，审计 §4.343）：实测它有 **8** 份副本、
+  //   **6 种形态**，而且**同名不同义** —— `verify-release-gate.mjs` 的那份是 **YAML** 的
+  //   （`.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l))`），其余是 **JS** 的（剥块注释 / JSX 注释的写法各异）。
+  //   ⇒ 强行要求它们「逐字相同」是**错的**。⚠️ **真正的那 3 份**（`verify-menu-contract` /
+  //   `verify-shell-widgets` / `verify-visual-golden`，语义相同）**本轮已统一**（原先 1 份置空 / 2 份删除，
+  //   后者在 `App.tsx` 上**删掉 17 行**）—— 但**没有判据**守它们（如实登记）。
   // canary：四向（与判定**共用** hasLineFilter46 / preservesLines46）
   if (!hasLineFilter46(`const s = x.split('\\n').filter((l) => !/^\\s*#/.test(l)).join('\\n');`)) {
     fail('㊻ R3 canary 失效：「按整行注释过滤」的写法**未被检出**（判据已退化成空真）');
