@@ -67,6 +67,31 @@ const codeText = (rel) => {
  *  ⚠️ 三处以上共用本常量 ⇒ 改一处即全改（见 ㉞ / ㊲）。 */
 const CIRCLED_CLASS = '\u2460-\u2473\u3251-\u325F\u32B1-\u32BF';
 
+/** 「`§4.N` 的**文档限定词**」的**唯一**词表（2026-10-13，审计 §4.345）。判定与 canary **共用**。
+ *  【为什么必须共享】判据 **§4.148**（审计文档自扫）与 **㉜**（代码文件）判的是**同一件事** ——
+ *    「这个 `§4.N` 有没有带**文档限定词**」—— 却**各有各的词表** ⇒ 实测**两个方向都产生假阳性**：
+ *      ① `MEMORY §4.1`（**㉜ 自己的错误消息明文认可**的形态）被 §4.148 判为「无限定词」；
+ *      ② `见 README §4.2` / `AGENTS.md §4.2`（**§4.148 的表明明接受**）被 ㉜ 判为「裸 `§4.N`」。
+ *    ⇒ 本仓纪律「**同族判据的谓词必须一致**」。判据 **㊾** 守「只有一份 + 两边接受同一集合」。
+ *  【为什么是模块级】`verify-release-gate.mjs` 的 **㉒ R2** 的 TDZ 纪律：判据块用到的模块级助手
+ *    必须定义在**所有判据块之前**。
+ *  【两套锚定（**刻意不同**）】两张表的**用途**不同 ⇒ **锚定**也不同：
+ *    · `QUALIFIER_WITHIN`（前 30 字窗口内出现即可）—— §4.148 用：判「**是不是跨文档引用**」；
+ *    · `QUALIFIER_ADJACENT`（必须**紧邻**，中间只允许空白与一个左括号）—— ㉜ 用：
+ *      判「**这个节号归谁**」，所以限定词必须紧贴（`见 §4.237` 里的「见」**不是**限定词）。
+ *    ⇒ **共享的是「哪些词算限定词」，不是锚定方式。** */
+const DOC_QUALIFIER_TOKEN_LIST = [
+  'PITFALLS', 'MEMORY', 'master[-\\s]?plan', 'PRD', 'spec', '方案', '模板', 'skill', '台账',
+  '宪法', 'README', 'AGENTS', '同文档', '该文档', '\\.md', 'ADR-?\\d*', '审计', '本文档',
+];
+/** 拼成**交替**形态（两个谓词共用）。⚠️ 刻意**不**用 `.split('|')` 反推 token 数
+ *  —— 裸切分 `|` 会被判据 **㊹** 抓（它不认「这不是表格格数」），改为**直接从列表读** `length`。 */
+const DOC_QUALIFIER_TOKENS = DOC_QUALIFIER_TOKEN_LIST.join('|');
+/** 限定词出现在 `§4.N` **之前 30 字**内即算（§4.148 用）。 */
+const QUALIFIER_WITHIN = new RegExp(`(?:${DOC_QUALIFIER_TOKENS})`);
+/** 限定词必须**紧邻** `§4.N`（中间只允许空白与一个左括号；㉜ 用）。 */
+const QUALIFIER_ADJACENT = new RegExp(`(?:${DOC_QUALIFIER_TOKENS})\\s*[（(]?\\s*$`);
+
 const errors = [];
 const fail = (message) => errors.push(message);
 
@@ -127,6 +152,23 @@ const committedAbs = () => committedFiles().map((f) => resolve(root, f));
 const blankHtmlComments = (s) => s.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
 /** `.md` 正文（**剥 HTML 注释**、归一换行）。**读 markdown 一律走这里**。 */
 const mdText = (rel) => blankHtmlComments(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'));
+
+/** **围栏代码块**（```` ``` ```` 之间）置空 —— 行数不变。**「围栏 = 引述区」的唯一实现**。
+ *  【为什么】围栏里是**引述 / 示例**（本仓大量引用护栏输出、命令输出、坏样本），
+ *    **不是**文档的断言 ⇒ 拿它当内容判会产生假阳性。
+ *  【2026-10-13（审计 §4.345）为什么提上来】原先是 **㊻ 块内的私有实现**，而 **§4.148**
+ *    （审计文档自扫 `§4.N`）**没有豁免围栏** —— **本轮实测**：我在 §4.345 里**引述护栏自己的
+ *    输出**（围栏内，含裸 `§4.1`）⇒ **§4.148 判我违规**。⚠️ 这正是「**同族判据的谓词必须一致**」
+ *    的又一例：纪律（围栏 = 引述区）在 A 判据学到了，B 判据一条都没用。
+ *  ⚠️ **边界**：只认**行首**（允许前导空白）的三反引号；**四反引号**（```` ```` ````）也按三反引号切换
+ *    —— 与 ㊻ 的原实现**逐字一致**（本轮只**搬家**，不改语义）。 */
+const blankFences = (src) => {
+  let inFence = false;
+  return src.split('\n').map((l) => {
+    if (/^```/.test(l)) { inFence = !inFence; return ''; }
+    return inFence ? '' : l;
+  }).join('\n');
+};
 
 // canary：`blankHtmlComments` **三向**（与判定共用同一实现）
 if (blankHtmlComments('a <!-- 内容 --> b').includes('内容')) {
@@ -1366,7 +1408,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 {
   const AUDIT_REL = 'docs/qualification/release-blocker-audit-2026-09-25.md';
   // 限定词：出现即认为该 `§4.N` 是**跨文档引用**（与「不可解析」合取后才是违规）
-  const QUALIFIER = /(PITFALLS|master[-\s]?plan|master plan|PRD|spec|ADR-?\d|台账|模板|审计|宪法|README|AGENTS|\.md|同文档|该文档)/;
+  // ⚠️ 2026-10-13（审计 §4.345）：**改走模块级共享词表** —— 此前是本块内的私有字面量，
+  //   与 ㉜ 的紧邻表**不一致** ⇒ `MEMORY §4.1` 被本判据误判为「无限定词」（**实测**）。
+  const QUALIFIER = QUALIFIER_WITHIN;
   const collect = (src) => {
     const sections = new Set([...src.matchAll(/^## 4\.(\d+)[ \t]/gm)].map((m) => Number(m[1])));
     const bad = [];
@@ -1381,7 +1425,11 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     });
     return { sections, bad };
   };
-  const auditSrc = existsSync(resolve(root, AUDIT_REL)) ? readFileSync(resolve(root, AUDIT_REL), 'utf8') : '';
+  const auditSrc = existsSync(resolve(root, AUDIT_REL))
+    // ⚠️ 2026-10-13（审计 §4.345）：**围栏 = 引述区** ⇒ 先置空围栏（否则**引述护栏输出**会被判违规，
+    //   本轮实测）。用模块级唯一实现 `blankFences`（与 ㊻ 同一份）。
+    ? blankFences(readFileSync(resolve(root, AUDIT_REL), 'utf8'))
+    : '';
   if (auditSrc === '') {
     errors.push(`读不到 ${AUDIT_REL} —— 「裸 §4.N 必须可解析」判据无法运行`);
   } else {
@@ -2648,8 +2696,11 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   if (AUDIT_SECS2.size < 100) {
     fail(`审计文档只解析出 ${AUDIT_SECS2.size} 个 \`## 4.N\` 小节（下限 100）—— 判据会空转`);
   }
-  /** 限定词**紧邻** `§4.N`（中间只允许空白与一个左括号）⇒ 视为已限定。判定与 canary **共用**。 */
-  const QUALIFIED_BEFORE = /(?:审计|本文档|PITFALLS|MEMORY|master-plan|PRD|方案|模板|spec|skill|台账|ADR-)\s*[（(]?\s*$/;
+  /** 限定词**紧邻** `§4.N`（中间只允许空白与一个左括号）⇒ 视为已限定。判定与 canary **共用**。
+   *  ⚠️ 2026-10-13（审计 §4.345）：**改走模块级共享词表** —— 此前是本块内的私有字面量，
+   *    与 §4.148 的 30 字窗口表**不一致** ⇒ `见 README §4.2` / `AGENTS.md §4.2` 被本判据
+   *    误判为「裸 `§4.N`」（**实测**）。 */
+  const QUALIFIED_BEFORE = QUALIFIER_ADJACENT;
   /** 返回**裸 `§4.N` 且不是审计节**的清单。判定与 canary **共用**本谓词。 */
   const bareBadRefs = (src) => {
     const out = [];
@@ -2690,6 +2741,121 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     errors.push('裸 §4.N 护栏 canary 过宽：存在的审计节被误判');
   }
   console.log(`Doc code refs: 代码文件里的 §4.N 引用 ${bareRefs} 处（裸形态均已指向审计节或带限定词）`);
+}
+
+// ── ㊾ 「`§4.N` 的文档限定词」词表必须**只有一份**，且两个判据**真的在用它**（2026-10-13，审计 §4.345）──
+// 【为什么】判据 **§4.148** 与 **㉜** 判的是**同一件事**（「有没有带文档限定词」），此前却**各有各的字面量**
+//   ⇒ 实测**两个方向都产生假阳性**：
+//     ① `MEMORY §4.1`（㉜ 自己的错误消息**明文认可**的形态）被 §4.148 判为「无限定词」；
+//     ② `见 README §4.2` / `AGENTS.md §4.2`（§4.148 的表**明明接受**）被 ㉜ 判为「裸 `§4.N`」。
+//   ⇒ 已把词表提成模块级 `DOC_QUALIFIER_TOKENS` + 两个谓词；本判据守它**不被再拆开**。
+// 【判据】
+//   ① **两个判据块真的在用共享谓词**：形如 `const <任意名> = QUALIFIER_WITHIN|QUALIFIER_ADJACENT;`
+//      的行必须**恰好** `ALIAS_USES_BASELINE49` 条。⚠️ 按**形态**找、**不按别名名** ——
+//      别名改名是**无害**的，不该被误报（本轮**自曝**：首版按名字找，于是「全局改名」把哨兵一起带走 ⇒ 判据被自己的样本骗过）。
+//   ② **没有第二份字面量**：不得出现「`const <名> = /…PITFALLS…/`」形态
+//      （**以 token 为锚** ⇒ **改名带不走它**，因为 token 是**内容**、标识符不是）。
+//   ③ **行为（正）**：`PROBES49` 里每个已知限定词，**两个**谓词都必须接受。
+//   ④ **行为（负）**：每个**非**限定词，**两个**谓词都必须拒绝（防词表退化成 `.*` ⇒ 两个判据一起恒绿）。
+//   ⑤ **反空转**：token 数 ≥ 下限（**从共享表现读**，不手写数字）。
+// 【边界如实声明】
+//   ⚠️ ③ 只对**探针表**成立（探针表**手写**；它漂了 ③ 会**静默变松**，只能靠 ④ 的负向部分兜）。
+//   ⚠️ ② 只认「`const X = /…/`」这一种**内联形态**；把字面量塞进**别的**位置（如 `new RegExp('…')`）
+//     **不在面内** —— 但那种写法会同时让 ① 的计数 ≠ 基线 ⇒ **被 ① 兜住**（两条**互补**）。
+//   ⚠️ 「另抄一份**内容完全相同**的表并在别处使用」**不在面内**（② 只禁内联到别名上）。
+{
+  const SELF49 = 'tests/parity/verify-doc-code-refs.mjs';
+  const src49 = readFileSync(resolve(root, SELF49), 'utf8');
+  const lines49 = src49.split('\n');
+  // ① 两个判据块真的在用共享谓词（**按形态找，不按别名名** —— 改名无害，不该误报）
+  const ALIAS_USE49 = /^\s*const [A-Za-z_$][\w$]* = (QUALIFIER_WITHIN|QUALIFIER_ADJACENT);\s*$/;
+  const aliasUses49 = lines49.filter((l) => ALIAS_USE49.test(l));
+  const ALIAS_USES_BASELINE49 = 2; // [覆盖型] 基线 2
+  if (aliasUses49.length !== ALIAS_USES_BASELINE49) {
+    fail(`㊾ 只有 ${aliasUses49.length} 处 \`const <名> = QUALIFIER_WITHIN|QUALIFIER_ADJACENT;\``
+      + `（应为 **${ALIAS_USES_BASELINE49}**：§4.148 与 ㉜ 各一处）—— 少一处说明它又变回了`
+      + '**自己一份字面量**（那正是本轮修掉的形态：两份词表各漏一半 ⇒ 两个方向都假阳性）；'
+      + '⚠️ 若你**新增**了用共享谓词的判据，请**同时**上调本基线（覆盖型下限的定义）');
+  }
+  // ② 没有第二份内联字面量（**以 token 为锚** ⇒ 改名带不走）
+  const INLINE_LIT49 = /^\s*const [A-Za-z_$][\w$]* = \/[^/\n]*PITFALLS/;
+  const inline49 = lines49.filter((l) => INLINE_LIT49.test(l));
+  if (inline49.length > 0) {
+    fail(`㊾ 又出现了**内联的限定词字面量**（${inline49.length} 处）：`
+      + `${inline49.map((l) => `\`${l.trim().slice(0, 50)}\``).join('；')}`
+      + ' —— 词表必须只有 `DOC_QUALIFIER_TOKENS` 一份');
+  }
+  // ②b 「**围栏 = 引述区**」的实现也只能有一份（**以内容为锚** ⇒ 改名带不走）
+  // ⚠️ 名字刻意**不含** `SENTINEL|EXEMPT|ALLOW|…` —— 那些词会被判据 **㉔** 当成「**例外表**」，
+  //   而要求它配「陈旧检查」（本条**不是**豁免表，配一个只会是**假绿**）。
+  const FENCE_ANCHOR49 = ['return inFence ? ', "''", ' : l;'].join('');
+  const fenceDefs49 = lines49.filter((l) => l.includes(FENCE_ANCHOR49)).length;
+  const FENCE_DEF_BASELINE49 = 1; // [覆盖型] 基线 1
+  if (fenceDefs49 !== FENCE_DEF_BASELINE49) {
+    fail(`㊾ 「围栏置空」的实现出现 ${fenceDefs49} 处（应为 **${FENCE_DEF_BASELINE49}**）—— `
+      + '同一个概念三份副本正是本轮修掉的形态之一（§4.148 原先**没有**豁免围栏 ⇒ '
+      + '**引述护栏输出**会被判违规）');
+  }
+  // ② 行为（正）：已知限定词 ⇒ 两个谓词都必须接受
+  const PROBES49 = ['PITFALLS', 'MEMORY', 'master-plan', 'PRD', 'spec', '方案', '模板', 'skill',
+    '台账', '宪法', 'README', 'AGENTS', '同文档', '该文档', 'MEMORY.md', 'ADR-0034', '审计', '本文档'];
+  const acceptWithin49 = (w) => QUALIFIER_WITHIN.test(`${w} `);
+  const acceptAdjacent49 = (w) => QUALIFIER_ADJACENT.test(`${w} `);
+  const missing49 = PROBES49.filter((w) => !acceptWithin49(w) || !acceptAdjacent49(w));
+  if (missing49.length > 0) {
+    fail(`㊾ 这些**已知**文档限定词**未被两个谓词同时接受**：${missing49.join('、')}`
+      + ' —— 那正是本轮修掉的形态（两份词表各漏一半 ⇒ 两个方向都假阳性）');
+  }
+  // ③ 行为（负）：非限定词 ⇒ 两个谓词都必须拒绝
+  const NON49 = ['见', '参见', 'foo', '', '文档', 'PITFALL'];
+  const over49 = NON49.filter((w) => acceptWithin49(w) || acceptAdjacent49(w));
+  if (over49.length > 0) {
+    fail(`㊾ 这些**非**限定词被接受：${over49.map((w) => JSON.stringify(w)).join('、')}`
+      + ' —— 词表退化（如写成 `.*`）会让 §4.148 / ㉜ **一起恒绿**');
+  }
+  // ④ 反空转（token 数**派生**）
+  const tokenCount49 = DOC_QUALIFIER_TOKEN_LIST.length;
+  const TOKENS_FLOOR49 = 18; // [健康度型] 下限 18（立此判据时实测 = 18 个 token）
+  if (tokenCount49 < TOKENS_FLOOR49) {
+    fail(`㊾ 共享词表只有 ${tokenCount49} 个 token（下限 ${TOKENS_FLOOR49}）—— token 被删会让`
+      + '**两个判据同时失去分辨力**，而没有任何别的东西会指出');
+  }
+  // canary：五向（与判定**共用**两个谓词与两个形态正则；样本**运行时构造**，避免判据检出自己）
+  if (!acceptWithin49('MEMORY') || !acceptAdjacent49('MEMORY')) {
+    fail('㊾ canary 失效：`MEMORY` 未被两个谓词同时接受（那正是本轮修掉的假阳性）');
+  }
+  if (acceptWithin49('见') || acceptAdjacent49('见')) {
+    fail('㊾ canary **过宽**：非限定词「见」被接受（`见 §4.237` 里的「见」**不是**限定词）');
+  }
+  if (!ALIAS_USE49.test(`  const ${'X'} = ${'QUALIFIER_WITHIN'};`)) {
+    fail('㊾ canary 失效：别名形态（`const X = QUALIFIER_WITHIN;`）抓不到 ⇒ ① 会**空转**');
+  }
+  if (ALIAS_USE49.test(`  const ${'QUALIFIER_WITHIN'} = new ${'RegExp'}();`)) {
+    fail('㊾ canary **过宽**：共享谓词**自己的定义行**被判成「别名」⇒ ① 的计数会虚高');
+  }
+  if (!INLINE_LIT49.test(`  const ${'Y'} = /(${'PIT'}${'FALLS'}|x)/;`)) {
+    fail('㊾ canary 失效：内联字面量形态抓不到 ⇒ ② 会**空转**');
+  }
+  // canary：共享表的**拼装**必须自洽（`|` 数 == token 数 − 1）——
+  //   防「列表被截断 / 拼装写错」而 `tokenCount49` 仍读列表、**看不出**词表其实变短了。
+  if ((DOC_QUALIFIER_TOKENS.match(/\|/g) ?? []).length !== DOC_QUALIFIER_TOKEN_LIST.length - 1) {
+    fail('㊾ canary 失效：共享表**拼装**不自洽（`|` 数 ≠ token 数 − 1）⇒ 词表可能被截断而无人知');
+  }
+  // canary：②b 的锚点必须**真的**落在 `blankFences` 的定义体内（否则计数恒 0 = 空转）
+  const defStart49 = lines49.findIndex((l) => l.startsWith('const blankFences = (src) => {'));
+  if (defStart49 < 0) {
+    fail('㊾ 找不到 `const blankFences = (src) => {` —— 判据锚点漂移（②b 会空转）');
+  } else if (!lines49.slice(defStart49, defStart49 + 8).some((l) => l.includes(FENCE_ANCHOR49))) {
+    fail('㊾ canary 失效：锚点在 `blankFences` 的**定义体内**找不到 ⇒ ②b 的计数会恒为 0');
+  }
+  if ('if (/^\\s*```/.test(line)) { inFence = !inFence; i += 1; continue; }'.includes(FENCE_ANCHOR49)) {
+    fail('㊾ canary **过宽**：锚点命中了 ㉚ 的**闭合检测**（它不是「置空」实现）⇒ ②b 的计数会虚高');
+  }
+  console.log(`Doc code refs: \`§4.N\` 的**文档限定词** —— **单一真源** \`DOC_QUALIFIER_TOKENS\``
+    + `（${tokenCount49} 个 token）；两个判据块**各有一处**别名在用它（形态计数 ${aliasUses49.length}）· `
+    + `**无内联字面量**（${inline49.length} 处）· 两个谓词（30 字窗口 / 紧邻）对 ${PROBES49.length} 个已知限定词`
+    + `与 ${NON49.length} 个非限定词**判定一致**；⚠️ **边界**：探针表**手写**（漂了会静默变松）· `
+    + '只禁「内联到 `const X = /…/`」这一形态（**另抄一份相同的表**不在面内）');
 }
 
 // ── ㉝ 本文件的**扫描面**只允许**受控形态**（2026-10-09，审计 §4.234）──
@@ -3565,7 +3731,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 344; // 2026-10-13 加 §4.344 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 345; // 2026-10-13 加 §4.345 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -4096,14 +4262,8 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   const FAMILY_FROM = 170; // 族起点 §4.170（人工核实的事实）
   const MIN_HITS = 20; // 防空转下限（立此判据时实测 27 处）
   const LINE_RE = /同族「只锁了一半」累计\s*\*{0,2}第\s*(\d+)\s*次\*{0,2}（§4\.(\d+)–§4\.(\d+)）/;
-  /** 判定与 canary **共用**：把围栏代码块**置空但保留行数**（保住行号 → 节号映射不变）。 */
-  const blankFences = (src) => {
-    let inFence = false;
-    return src.split('\n').map((l) => {
-      if (/^```/.test(l)) { inFence = !inFence; return ''; }
-      return inFence ? '' : l;
-    }).join('\n');
-  };
+  // ⚠️ 2026-10-13（审计 §4.345）：本块原先**自带一份** `blankFences`（与 §4.148 现在用的那份
+  //   逻辑相同 ⇒ **同一个概念三份副本**）⇒ 已改为使用**模块级唯一实现**（判据 ㊾ 守「只有一份」）。
   const lines = blankFences(readFileSync(resolve(root, AUDIT_DOC), 'utf8')).split('\n');
   const marks = [];
   lines.forEach((l, i) => {
@@ -4285,14 +4445,8 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   const MD_ROW_58 = /^\s*\|.*\|\s*$/;
   /** 判定与 canary **共用**：该行是否是**分隔行**（`|---|` 形态）。 */
   const isDelim58 = (l) => /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l) && l.includes('-');
-  /** 判定与 canary **共用**：把围栏代码块**置空但保留行数**（同 ㊻ 的 `blankFences`）。 */
-  const blankFences58 = (src) => {
-    let inFence = false;
-    return src.split('\n').map((l) => {
-      if (/^```/.test(l)) { inFence = !inFence; return ''; }
-      return inFence ? '' : l;
-    }).join('\n');
-  };
+  // ⚠️ 2026-10-13（审计 §4.345）：本块原先**自带一份** `blankFences`（**第三份**同样的逻辑）
+  //   ⇒ 已改为使用**模块级唯一实现** `blankFences`（判据 ㊾ 守「只有一份」）。
   /** 判定与 canary **共用**：返回**被空行截断**的表格行行号（1 基）。 */
   const cutRows58 = (lines) => {
     const out = [];
@@ -4311,7 +4465,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
     scanned58 += 1;
     if (FIXTURE_58.test(rel)) continue;
-    for (const n of cutRows58(blankFences58(mdText(rel)).split('\n'))) bad58.push(`${rel}:${n}`);
+    for (const n of cutRows58(blankFences(mdText(rel)).split('\n'))) bad58.push(`${rel}:${n}`);
   }
   if (bad58.length > 0) {
     fail(`㊽ 这些 markdown 的**表格被空行截断**（其后那行**不在表格里** ⇒ 渲染成**纯文本**）：`
@@ -4321,7 +4475,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   if (scanned58 < 150) {
     fail(`㊽ 只扫到 ${scanned58} 份 .md（[健康度型] 下限 150）—— 扫描面萎缩会让本判据**空转**`);
   }
-  // canary：四向（与判定**共用** cutRows58 / blankFences58 / isDelim58）
+  // canary：四向（与判定**共用** cutRows58 / blankFences / isDelim58）
   if (cutRows58(['| a | b |', '| c | d |', '', '| e | f |']).length !== 1) {
     fail('㊽ canary 失效：**被空行截断的表格行**未被检出');
   }
@@ -4331,7 +4485,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   if (cutRows58(['| a | b |', '| c | d |', '', '| e | f |', '|---|---|']).length !== 0) {
     fail('㊽ canary **过宽**：**新表的表头**（空行后另起一张表）被判为被截断');
   }
-  if (cutRows58(blankFences58('```\n| a |\n\n| b |\n```').split('\n')).length !== 0) {
+  if (cutRows58(blankFences('```\n| a |\n\n| b |\n```').split('\n')).length !== 0) {
     fail('㊽ canary 失效：**围栏里的**假表格未被剥掉');
   }
   console.log(`Doc code refs: markdown 表格**未被空行截断** —— 扫描 ${scanned58} 份 md`
