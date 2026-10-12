@@ -178,6 +178,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          # ⚠️ 2026-10-13（审计 §4.344）：本 job 跑 `verify-release-gate.mjs` 的「release notes 覆盖率」
+          #   判据，它要 `git tag`。默认浅克隆拿不到 tag ⇒ 该判据会**跳过**（「能失败 + 没人跑」）。
+          #   `fetch-tags` 是 checkout v4+ 的**文档化输入**：`fetch-depth` 为 1 时**仍取全部 tag**（便宜）。
+          fetch-tags: true
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
@@ -213,6 +218,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          # ⚠️ 2026-10-13（审计 §4.344）：本 job 跑 `verify-release-gate.mjs` 的「release notes 覆盖率」
+          #   判据，它要 `git tag`。默认浅克隆拿不到 tag ⇒ 该判据会**跳过**（「能失败 + 没人跑」）。
+          #   `fetch-tags` 是 checkout v4+ 的**文档化输入**：`fetch-depth` 为 1 时**仍取全部 tag**（便宜）。
+          fetch-tags: true
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc

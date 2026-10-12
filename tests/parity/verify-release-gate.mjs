@@ -5184,7 +5184,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 41; // [覆盖型] 基线 41（2026-10-13 §4.343：加 `codeText`）
+  const COVERAGE_MARK_BASELINE = 42; // [覆盖型] 基线 42（2026-10-13 §4.344：加 ㊽ R2 的 `PARITY_JOBS_BASELINE`）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -6397,11 +6397,14 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
 // 【判据】`git tag` 可得时（≥ 20 个）：
 //   ① 每个 semver ≥ `NOTES_FLOOR` 的 tag 必须有 `.github/release-notes-<tag>.md`；
 //   ② **反向**：每个 notes 文件必须对应一个**存在的 tag**（陈旧 ⇒ 红）。
-//   ⚠️ `git tag` 不可得时（**CI 是浅克隆，`ci.yml` 无 `fetch-depth: 0`**）⇒
-//   **打印一行说明并跳过** —— **不是**静默通过。
+//   ⚠️ `git tag` 不可得时 ⇒ **只有「本地且真的没有 tag」才允许跳过**（打印一行说明，**不是**静默通过）。
+//   ⚠️ 2026-10-13（审计 §4.344）：**CI 里不得跳过** —— 两个 parity job 的 `actions/checkout`
+//     已声明 `fetch-tags: true`（checkout v4+ 的**文档化输入**，`fetch-depth: 1` 时**仍取全部 tag**）
+//     ⇒ `process.env.CI` 时 tag 数不足 **硬失败**（判据 `mustJudge48`）。
 // 【边界如实声明】
-//   ⚠️ **本判据在 CI 里不判定**（浅克隆拿不到 tag）⇒ 它靠**本地 `npm run parity`** 生效。
-//     「**能失败 + 没人跑 = 它可以一直红**」是本仓记过的坑 ⇒ 这一条**如实登记**，不粉饰。
+//   ⚠️ 本判据**在 CI 里也会判定**（§4.344 前是「CI 跳过」，那正是本仓记过的坑：
+//     「**能失败 + 没人跑 = 它可以一直红**」）⇒ 现由 `mustJudge48` 把「CI」这条轴**也纳入判定**。
+//   ⚠️ 剩下的边界：**本地**仓库若确实没有 tag（如 `--depth` 克隆）⇒ 跳过，但会**打印**说明。
 //   ⚠️ `NOTES_FLOOR` 是**惯例起点**，**不是**「所有 tag 都要求」—— 惯例之前有 **19 个** tag
 //     **合法地**没有 notes（v1.0.0 … v1.4.7）。
 {
@@ -6433,6 +6436,10 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     tags48 = execFileSync('git', ['tag'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
   } catch { tags48 = []; }
   const notesExists48 = (t) => existsSync(resolve(root, `.github/release-notes-${t}.md`));
+  /** 判定与 canary **共用**：在给定「tag 数 / 是否 CI」下，本判据**必须判定**（而不是跳过）。
+   *  ⚠️ 2026-10-13（审计 §4.344）：`tagCount >= 20` 是「拿得到 tag」；**`isCI` 是另一条轴** ——
+   *   本仓纪律「**能失败 + 没人跑 = 它可以一直红**」⇒ **在 CI 里不允许跳过**。 */
+  const mustJudge48 = (tagCount, isCI) => tagCount >= 20 || Boolean(isCI);
   // canary：三向（与判定**共用** notesVerdict48）
   if (notesVerdict48(['v1.4.8', 'v1.4.9'], (t) => t === 'v1.4.8', []).length !== 1) {
     fail('㊽ canary 失效：**缺 notes 的 tag** 未被检出');
@@ -6442,6 +6449,16 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   }
   if (notesVerdict48(['v1.4.8'], () => true, ['v1.4.9']).length !== 1) {
     fail('㊽ canary 失效：**notes 指向不存在的 tag**（陈旧）未被检出');
+  }
+  // canary：三向（与判定**共用** mustJudge48）—— ⚠️ 2026-10-13（审计 §4.344）
+  if (mustJudge48(25, false) !== true) {
+    fail('㊽ canary 失效：**拿得到 tag**（≥20）时被判为「不必判定」');
+  }
+  if (mustJudge48(3, true) !== true) {
+    fail('㊽ canary 失效：**CI 里**（tag 少）被判为「不必判定」—— 那正是本判据要禁止的静默跳过');
+  }
+  if (mustJudge48(3, false) !== false) {
+    fail('㊽ canary **过宽**：**本地**缺 tag 时被判为「必须判定」（那会把本地环境判红）');
   }
   if (tags48.length >= 20) {
     const offenders48 = notesVerdict48(tags48, notesExists48, notesNames48);
@@ -6454,11 +6471,131 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     }
     console.log(`Release gate: release notes 覆盖率 —— \`git tag\` ${tags48.length} 个 / notes ${notesNames48.length} 份，`
       + `**不一致** ${offenders48.length} 处（惯例起点 v${NOTES_FLOOR}）；`
-      + '⚠️ **边界**：**CI 是浅克隆 ⇒ 本判据在 CI 里跳过**（只在本地生效，如实登记）');
+      + '⚠️ **边界**：**CI 里同样判定**（`fetch-tags: true`）；只有**本地**缺 tag 才跳过（会打印说明）');
+  } else if (mustJudge48(tags48.length, process.env.CI)) {
+    // ⚠️ 2026-10-13（审计 §4.344）：**CI 里不得跳过**。两个 parity job 的 `actions/checkout` 已声明
+    //   `fetch-tags: true`（checkout v4+ 的**文档化输入**）⇒ tag 应当可得。
+    //   ⚠️ 若这一步红了：先看**本行报出的 tag 个数**，再查 checkout 的 `fetch-tags` 是否生效
+    //   （或改用 `fetch-depth: 0`）。**不要**把本判据改回「静默跳过」——
+    //   「**能失败 + 没人跑 = 它可以一直红**」正是本仓记过的坑。
+    fail(`㊽ **CI 里 \`git tag\` 只返回 ${tags48.length} 个** ⇒ 本判据在 CI 里**被跳过**了 —— `
+      + '而「**能失败 + 没人跑 = 它可以一直红**」正是本仓记过的坑。'
+      + '两个 parity job 的 `actions/checkout` 已声明 `fetch-tags: true`；'
+      + '若仍为 0，请检查该输入是否生效（或改用 `fetch-depth: 0`）');
   } else {
     console.log(`Release gate: release notes 覆盖率 —— ⚠️ **跳过**（\`git tag\` 只返回 ${tags48.length} 个`
-      + ' ⇒ 浅克隆；`ci.yml` 无 `fetch-depth: 0`）；⚠️ **本判据在 CI 里不判定**，靠**本地** `npm run parity` 生效');
+      + ' ⇒ **本地**仓库缺 tag）；⚠️ **边界**：**CI 里不得跳过**（`process.env.CI` 时**硬失败**）');
   }
+
+  // ㊽ R2（2026-10-13，审计 §4.344）：把**成因**也锁住 —— 「跨层字段必须两端同时锁」。
+  // ⚠️ 子编号**不得**写成 `// ── ㊽ R2 …` 的**判据头**形态 —— 判据 ㊸ 把 `// ── <圈号>` 当**身份**，
+  //   同号出现 2 次即红（本仓既有子编号惯用法是「块内普通注释」，不是新头）。
+  // 【为什么】R1 只让「CI 里拿不到 tag」**红**了 —— 那是**症状**。**成因**是 `actions/checkout`
+  //   没声明 `fetch-tags: true`（或 `fetch-depth: 0`）⇒ 默认浅克隆。
+  //   只锁症状的代价（本仓「只锁了一半」同族，§4.170 起）：报错指向「tag 只有 0 个」，
+  //   而**真正要改的那一行在另一个文件里**（`ci.yml`）—— 下一个审计者得自己把它推出来。
+  // 【判据】扫全部 `.github/workflows/*.yml`：**每个**运行 `npm run parity` /
+  //   `verify-release-gate.mjs` 的 job，其 `actions/checkout` 步必须声明
+  //   `fetch-tags: true` 或 `fetch-depth: 0`（`fetch-tags` 是 checkout **v4+ 的文档化输入**）。
+  // 【边界如实声明】
+  //   ⚠️ **结构判据**：只锁「有没有声明」，**不**证明 checkout 真的取到了 tag（那要等一次真跑）。
+  //   ⚠️ 只认**同一个 job、同一个 step 内**的绑定；用别的手段取 tag（如手写 `git fetch --tags`）
+  //     **不在面内**（实测：本仓当前没有这种写法）。
+  //   ⚠️ 只覆盖「**跑** `verify-release-gate.mjs`」的 job —— 判据 ⑮/⑯ 管另外的轴（超时 / 权限）。
+  const RUNS_PARITY48 = /npm run parity\b|verify-release-gate\.mjs/;
+  const checkoutTakesTags48 = (text) => {
+    const lines = text.split('\n');
+    const start = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+    if (start < 0) return null; // 没有 jobs: 段
+    const jobs = [];
+    let job = null;
+    let step = null;
+    const flushStep = () => { if (job !== null && step !== null) job.steps.push(step); step = null; };
+    const flushJob = () => { flushStep(); if (job !== null) jobs.push(job); job = null; };
+    for (let i = start + 1; i < lines.length; i += 1) {
+      const l = lines[i];
+      const jh = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(l);
+      if (jh !== null) { flushJob(); job = { name: jh[1], runsParity: false, steps: [] }; continue; }
+      if (job === null) continue;
+      // ⚠️ 本行**先**判 parity，再判 step 起点 —— 因为 `- run: npm run parity`（**短横线形态**）
+      //   同时是「step 起点」和「跑 parity 的那一行」。2026-10-13（审计 §4.344）**自曝**：
+      //   首版把 parity 判定放在 step 分支**之后**且该分支 `continue` ⇒ **短横线形态整个漏检**
+      //   （本仓 `ci.yml` 恰好是「`- name:` + 下一行 `run:`」的长形态 ⇒ 真实文件上**看不出来**）。
+      if (RUNS_PARITY48.test(l)) job.runsParity = true;
+      const sm = /^\s*-\s+(.*)$/.exec(l);
+      if (sm !== null) {
+        flushStep();
+        step = { uses: '', tags: false };
+        const um = /^uses:\s*(\S+)/.exec(sm[1]);
+        if (um !== null) step.uses = um[1];
+        continue;
+      }
+      if (step === null) continue;
+      const um = /^\s*uses:\s*(\S+)/.exec(l);
+      if (um !== null) { step.uses = um[1]; continue; }
+      if (/^\s*fetch-tags:\s*true\s*$/.test(l) || /^\s*fetch-depth:\s*0\s*$/.test(l)) step.tags = true;
+    }
+    flushJob();
+    return jobs;
+  };
+  /** 该 job 的 `actions/checkout` 步是否声明了取 tag（⚠️ 必须是**同一个 step**）。 */
+  const takesTags48 = (j) => Array.isArray(j?.steps)
+    && j.steps.some((s) => /^actions\/checkout@/.test(s.uses) && s.tags);
+  const parityJobs48 = [];
+  const wfFiles48 = existsSync(resolve(root, '.github/workflows'))
+    ? readdirSync(resolve(root, '.github/workflows')).filter((f) => /\.ya?ml$/.test(f)).sort()
+    : [];
+  for (const f of wfFiles48) {
+    const jobs = checkoutTakesTags48(wfText(`.github/workflows/${f}`));
+    if (jobs === null) {
+      fail(`㊽ R2：\`.github/workflows/${f}\` 里找不到 \`jobs:\` 段 —— 判据锚点漂移`);
+      continue;
+    }
+    for (const j of jobs) {
+      if (!j.runsParity) continue;
+      parityJobs48.push(`${f}:${j.name}`);
+      if (!takesTags48(j)) {
+        fail(`㊽ R2：\`.github/workflows/${f}\` 的 job \`${j.name}\` **跑 \`verify-release-gate.mjs\`，`
+          + '但它的 `actions/checkout` 步没有 `fetch-tags: true`（或 `fetch-depth: 0`）** —— '
+          + '默认浅克隆 ⇒ 该 job 里「release notes 覆盖率」判据**拿不到 tag**'
+          + '（㊽ R1 会因此红，但报的是**症状**，要改的行在**另一个文件**里）。'
+          + '`fetch-tags` 是 checkout v4+ 的**文档化输入**（`fetch-depth: 1` 时**仍取全部 tag**）');
+      }
+    }
+  }
+  // 防空转：**覆盖型**（下限 = 立此判据时的基线；加 workflow / job 时须一并上调）
+  const PARITY_JOBS_BASELINE = 2; // [覆盖型] 基线 2
+  coverEq('跑 `verify-release-gate.mjs` 的 workflow job 数', parityJobs48.length, PARITY_JOBS_BASELINE,
+    '扫描面萎缩（job 改名 / 不再跑 parity）会让本判据**空转**');
+  // canary：五向（与判定**共用** checkoutTakesTags48 / takesTags48；样本**运行时构造**）
+  const WF_OK48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
+    + '        with:\n          fetch-tags: true\n      - run: npm run parity\n';
+  const WF_DEPTH48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
+    + '        with:\n          fetch-depth: 0\n      - run: npm run parity\n';
+  const WF_NO48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n      - run: npm run parity\n';
+  const WF_OTHER48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n'
+    + '      - uses: foo/bar@v1\n        with:\n          fetch-tags: true\n      - run: npm run parity\n';
+  const WF_NOPARITY48 = 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v5\n      - run: pnpm install\n';
+  const j48 = (t) => checkoutTakesTags48(t)?.[0];
+  if (j48(WF_OK48)?.runsParity !== true || takesTags48(j48(WF_OK48)) !== true) {
+    fail('㊽ R2 canary 失效：**合规**样本（checkout + `fetch-tags` + `npm run parity`）未被判为合规');
+  }
+  if (takesTags48(j48(WF_DEPTH48)) !== true) {
+    fail('㊽ R2 canary 失效：`fetch-depth: 0` 形态未被判为「取 tag」');
+  }
+  if (takesTags48(j48(WF_NO48)) !== false) {
+    fail('㊽ R2 canary 失效：**缺** `fetch-tags` 的样本未被判为不合规');
+  }
+  if (takesTags48(j48(WF_OTHER48)) !== false) {
+    fail('㊽ R2 canary **过宽**：`fetch-tags` 写在**非 checkout 的步骤**上也被判为合规');
+  }
+  if (j48(WF_NOPARITY48)?.runsParity !== false) {
+    fail('㊽ R2 canary **过宽**：**不跑 parity** 的 job 被判为「跑 parity」');
+  }
+  console.log(`Release gate: 跑 release gate 的 job 的 **checkout 取 tag** —— `
+    + `${parityJobs48.length} 个 job（${parityJobs48.join('、')}）**全部**声明了 `
+    + '`fetch-tags: true` / `fetch-depth: 0`；⚠️ **边界**：结构判据，'
+    + '「checkout 真的取到 tag」需等一次真跑（本地已用 `git fetch --tags --depth=1` 验证过机制）');
 }
 
 // ── ㊾ 扫**代码/配置**目标的护栏必须剥注释（2026-10-12，审计 §4.327）──

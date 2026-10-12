@@ -21764,6 +21764,83 @@ ReferenceError: Cannot access 'blankComments' before initialization
 
 ⇒ 同族「只锁了一半」累计 **第 171 次**（§4.170–§4.342）。
 
+## 4.344 自己声明的边界「**CI 是浅克隆 ⇒ 本判据在 CI 里跳过**」—— 把「跳过」改成「判定」，并把**成因**也锁住（2026-10-13）
+
+### 一、透镜（承 §4.326 **自己登记**的边界）
+
+§4.326 立 ㊽（release notes 覆盖率）时**如实登记**过一条边界：
+
+> ⚠️ **本判据在 CI 里不判定**（浅克隆拿不到 tag）⇒ 它靠**本地 `npm run parity`** 生效。
+
+本仓对这类声明有两条**通则**：**「登记为已知」≠「理由仍然成立」**（`MEMORY.md` 的 `§4.1` 硬纪律）、
+**「能失败 + 没人跑 = 它可以一直红」**（§4.287 / §4.330）。⇒ 这一轮**回头问**：「跳过」是**必须**的吗？
+
+### 二、取证
+
+**（a）`git tag` 在 CI 里真的拿不到吗 —— 不。** `actions/checkout` 自 **v4** 起有**文档化输入** `fetch-tags`；
+`fetch-depth: 1`（默认）时它**仍取全部 tag**。而本仓 `ci.yml` 的两个 parity job **都没声明**它。
+⇒ 「跳过」不是**环境限制**，是**配置缺失** —— 而它被写成了「边界」，于是**没人再问**。
+
+**（b）本地实测该机制**（不靠文档）：
+
+```text
+git clone --depth 1 --no-local file://<repo> /tmp/shallow   ⇒ tags=0, commits=1
+git fetch --tags --depth=1 origin                           ⇒ tags=55
+```
+
+⇒ `fetch-tags` 背后的动作**在本机复现过**（浅克隆 + 一次 fetch ⇒ 55 个 tag）。
+
+**（c）谁在跑 `verify-release-gate.mjs`。** `grep -rnE "npm run parity|verify-release-gate" .github/workflows/*.yml`
+⇒ **恰好 2 个 job**（`ci.yml:parity-guard` L200、`ci.yml:windows-parity-guard` L240），都是 `npm run parity`。
+⚠️ 另有 4 处 `pnpm test`，但**都带 `working-directory`**（`packages/editor-core` / `packages/editor-engine`）
+⇒ 跑的是**包**的 test，**不是**根 `test` 脚本 ⇒ **不含** release gate（**实测核对**，不是推断）。
+
+### 三、处置（**两半**：症状 + 成因）
+
+1. **症状**：㊽ 增加 `mustJudge48(tagCount, isCI)`（**纯函数**，判定与 canary **共用**）——
+   `tagCount >= 20 || isCI` ⇒ **CI 里 tag 数不足即硬失败**（不再静默跳过）；**本地**确实没有 tag 时才跳过（仍**打印**说明）。
+2. **成因**：`ci.yml` 的 **2 个** parity job 的 `actions/checkout@v5` 加 `fetch-tags: true`（带理由注释）。
+3. **成因的判据**（㊽ **R2**，把「**跨层字段必须两端同时锁**」机械化）：扫全部 workflow，
+   **每个**跑 `npm run parity` / `verify-release-gate.mjs` 的 job，其 `actions/checkout` 步
+   **必须**声明 `fetch-tags: true` 或 `fetch-depth: 0`。
+   ⚠️ **只锁症状的代价实测过**：报错指向「tag 只有 0 个」，而**要改的那一行在另一个文件里**。
+
+### 四、注入验证（**8/8**）
+
+| 项 | 结果 |
+|---|---|
+| 注入 A：浅克隆 + `CI=true`（等价于没有 `fetch-tags`） | ✅ `EXIT=1` · ㊽ 报出「`git tag` 只返回 **0** 个」 |
+| 注入 B：浅克隆 + **非** CI | ✅ `EXIT=0` · 打印跳过说明，**不**因 ㊽ 红 |
+| 注入 C：`git fetch --tags --depth=1` 后 + `CI=true` | ✅ `EXIT=0`（**机制**可复现） |
+| 注入 D：删 `parity-guard` 的 `fetch-tags` | ✅ 红，点名 `parity-guard` |
+| 注入 E：删 `windows-parity-guard` 的 `fetch-tags` | ✅ 红，点名 `windows-parity-guard` |
+| 注入 F：windows 的 step 改**短横线形态** `- run: npm run parity` + 删 `fetch-tags` | ✅ 红，点名 `windows-parity-guard` |
+| 还原 / 残留 | ✅ `EXIT=0` · `git diff --stat` 只剩预期 **10 行** |
+
+### 五、边界如实声明
+
+- ⚠️ **R2 是结构判据**：只锁「有没有声明 `fetch-tags`」，**不**证明 checkout 真的取到了 tag
+  （那要等一次真跑）⇒ **不得**声称「CI 里一定拿得到 tag」。
+- ⚠️ 只认**同一个 job、同一个 step 内**的绑定；用别的手段取 tag（如手写 `git fetch --tags`）**不在面内**
+  （实测：本仓当前没有这种写法）。
+- ⚠️ 若 `fetch-tags` 这个输入在 checkout 的某个版本里**改名 / 移除** ⇒ 本判据会**响亮红**（不是静默）✓。
+
+### 六、⚠️ 自曝（四次）
+
+1. **我的谓词漏了一整种写法**：首版把「跑 parity」的判定放在 **step 分支之后**，而该分支 `continue`
+   ⇒ `- run: npm run parity`（**短横线形态**）**整个漏检**。⚠️ 本仓 `ci.yml` 恰好是「`- name:` + 下一行 `run:`」
+   的长形态 ⇒ **真实文件上完全看不出来**。⇒ **是 canary 抓到的**（「合规样本被判为不合规」）
+   —— 这正是「**canary 证明谓词会红**」的价值（㊲）。
+2. **输出消息留在旧口径**：R1 改成「CI 里硬失败」之后，**成功分支的 `console.log` 仍写着**
+   「CI 是浅克隆 ⇒ 本判据在 CI 里跳过」⇒ 修完**必须回头改**所有**转述**该结论的地方
+   （本仓「**残留**被实现后必须回头收口」）。
+3. **子编号写成了判据头**：我把 `// ── ㊽ R2（…）──` 写成**判据头**形态 ⇒ 判据 **㊸**（编号唯一）当场红
+   （`㊽` 出现 2 次）。本仓既有子编号惯用法是「**块内普通注释**」，**不是**新头。
+4. **两次注入并行跑** ⇒ 注入 B 读到的是注入 C 已经 `git fetch` 过的仓库（报 55 个 tag 而不是 0）⇒ **重做**。
+   **纪律**：**注入与受测链必须串行**（§4.338 记过同一条）。
+
+⇒ 同族「只锁了一半」累计 **第 172 次**（§4.170–§4.343）。
+
 ## 五、本次审计做的改动（非策略性）
 
 
