@@ -89,9 +89,10 @@ if (!existsSync(resolve(root, scriptPath))) {
     fail('视觉 Golden 不得再使用 .sidebar 选择器采样侧栏可见性（V7-W2.9）');
   }
   // 只在代码行（剔除注释）中检查废弃公式，避免命中解释性注释
+  // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
   const codeOnly = source
     .split('\n')
-    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .map((line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? '' : line))
     .join('\n');
   if (/\* 1\.65/.test(codeOnly)) fail('视觉 Golden 仍以 ×1.65 计算行高（V7-W2.2：应为 TYPOGRAPHY_LINE_HEIGHT = 1.6）');
   if (/fontSize: 17|820px/.test(codeOnly)) fail('视觉 Golden 代码中仍残留废弃默认值（17 / 820px，V7-W2.2）');
@@ -362,9 +363,10 @@ const stripComments = (s) => s
   //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
   //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
   .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-    (m, keep) => (keep === undefined ? '' : keep))
+    (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
+  // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
   .split('\n')
-  .filter((line) => !/^\s*\/\//.test(line))
+  .map((line) => (/^\s*\/\//.test(line) ? '' : line))
   .join('\n');
 const devServerPath = 'tests/visual/dev-server.mjs';
 const visualScripts = [
@@ -625,7 +627,7 @@ for (const script of ['tests/visual/visual-golden.mjs', 'tests/visual/sidebar-go
   // 剥注释（**具名函数**，判定与 canary 共用同一份 —— 否则 canary 测的是副本）。
   // 沿用本文件既有约定：整行注释 / 块注释起始行一律剔除。
   // 保守做法（只剔整行）——行内双斜杠剥离器会截断字符串/正则里的 `//`（本仓已实测的坑）。
-  const codeOnlyOf = (s) => s.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n');
+  const codeOnlyOf = (s) => s.split('\n').map((line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? '' : line)).join('\n');
   // 「是不是采样脚本」的**具名判据**：**读过几何** 或 **截过图** —— 两者都会被「入场动画」影响：
   //   · `getBoundingClientRect()` 直接读坐标；
   //   · `screenshot()` 把画面冻结下来（动画中间帧会被**归档成证据**）。

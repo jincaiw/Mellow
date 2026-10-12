@@ -40,9 +40,10 @@ function stripComments(source) {
     //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
     //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
     .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-      (m, keep) => (keep === undefined ? '' : keep))
+      (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
+    // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
     .split('\n')
-    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .map((line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? '' : line))
     .join('\n');
 }
 const appCode = stripComments(appSource);

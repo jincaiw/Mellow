@@ -57,14 +57,15 @@ const fail = (message) => errors.push(message);
  * `includes` 会误报。剥块注释（含 JSX {/* *\/}）后再剥行注释。
  */
 const stripComments = (s) => s
-  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, ' '))
   // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
   //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
   //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
   .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-    (m, keep) => (keep === undefined ? '' : keep))
+    (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
+  // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
   .split('\n')
-  .filter((line) => !/^\s*\/\//.test(line))
+  .map((line) => (/^\s*\/\//.test(line) ? '' : line))
   .join('\n');
 const appCode = stripComments(appSource);
 
@@ -181,7 +182,7 @@ if (!MENU_SCHEMA[0].macOnly) fail('应用菜单必须声明 macOnly（Windows/Li
       //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
       //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
       .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-        (m, keep) => (keep === undefined ? '' : keep))
+        (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
       .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
     const contractSrc = stripComments(contractRaw);
     const orderBlock = /TYPOGRAPHIC_MENU_ORDER\s*=\s*\[([\s\S]*?)\]\s*as const/.exec(contractSrc)?.[1] ?? '';
@@ -317,7 +318,7 @@ if (THEMES_DERIVE_RE.test(stripComments('// P1-1.5：主题菜单从 Theme Regis
 if (!appSource.includes("invoke('set_menu_spec'")) fail('App.tsx 必须经 set_menu_spec 下发 NativeMenuSpec');
 
 // ── 4. Rust menu.rs 降级为 materialization Adapter（§7.4 硬规则 6）─────────
-const menuRsCode = menuRsSource.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+const menuRsCode = menuRsSource.split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
 if (/MENU_LABELS/.test(menuRsCode)) fail('Rust menu.rs 不得再持有 MENU_LABELS（文案真源已迁 i18n menu.*）');
 for (const legacy of ['set_menu_locale', 'set_recent_files', 'set_theme_selection', 'set_spellcheck_state', 'set_smart_punct_state']) {
   if (menuRsCode.includes(legacy)) fail(`Rust menu.rs 不得再保留旧状态同步命令: ${legacy}`);
@@ -407,7 +408,7 @@ if (/#\[cfg\(target_os/.test(menuRsSource)) {
   }
   // 前端不得调用已移除的 legacy 状态同步命令（与 §4 的 Rust 侧禁令互补）
   const legacyCalls = ['set_menu_locale', 'set_recent_files', 'set_theme_selection', 'set_spellcheck_state', 'set_smart_punct_state'];
-  const appCode = appSource.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  const appCode = appSource.split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
   for (const legacy of legacyCalls) {
     if (new RegExp(`invoke(?:\\(|<[^>]*>\\()\\s*'${legacy}'`).test(appCode)) {
       fail(`App.tsx 仍在调用已移除的状态同步命令 ${legacy}（架构已改为整体 set_menu_spec；该调用必然失败且被 catch 吞掉）`);

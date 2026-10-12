@@ -37,7 +37,8 @@ const codeText = (rel) => {
 //   `/ime-matrix-linux\.mjs --im=fcitx5 --driver=xdotool/.test(workflow)`）⇒
 //   一条**写着该命令的注释**就能**满足**判据 ⇒ **假阴性**。现改为**读进来就剥**。
 // ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
-const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+// ⚠️ **置空而不删除** ⇒ **行号映射不变**（删除会让判据报出的 `file:line` **全是错的** —— 审计 §4.334）。
+const stripYamlComments = (s) => s.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
 /** ⚠️ **原始**文本（**不剥注释**）—— **只**给「**注释本身是被核对的对象**」那一处用：
  *  IME 覆盖清单节要核的是 workflow **注释里**写的「N 场景 IME 矩阵」（那是同一件事的**第三份副本**）。
  *  ⇒ 这是「剥注释」纪律的**唯一例外**，且**必须显式**（登记在 `verify-release-gate.mjs` 的 ㊻ 里）。 */
@@ -216,7 +217,8 @@ if (!/Windows Source Fidelity gate/.test(workflow)
   // 统一用 Playwright 的 `ControlOrMeta`（macOS→Cmd / 其它→Ctrl）。
   for (const probe of ENTRY_PROBES) {
     const src = readFileSync(resolve(root, `tests/e2e/${probe}.mjs`), 'utf8')
-      .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');   // 先剥注释（本仓已实测 5 次同型坑）
+      // 先剥注释（本仓已实测 5 次同型坑）；⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）
+      .split('\n').map((l) => (/^\s*(\/\/|\*)/.test(l) ? '' : l)).join('\n');
     const bad = /['"`](Meta|Cmd)\+/.exec(src);
     if (bad !== null) {
       throw new Error(`非默认入口探针 ${probe} 用了 macOS 专有的按键 ${bad[0]} —— `

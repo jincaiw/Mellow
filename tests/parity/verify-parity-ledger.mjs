@@ -43,7 +43,8 @@ const errors = [];
 //   ⇒ 一条写着「凭据未配置时应当 `exit 1`」的**注释**会**满足**它 ⇒ **假阴性**（潜在）。
 //   ⚠️ 同仓 `verify-runtime-qualification-workflow.mjs` **早就**剥了 ⇒ 同族「只锁了一半」。
 // ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
-const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+// ⚠️ **置空而不删除** ⇒ **行号映射不变**（删除会让判据报出的 `file:line` **全是错的** —— 审计 §4.334）。
+const stripYamlComments = (s) => s.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
 /** workflow 正文（剥注释后）。**读 workflow 一律走这里**（审计 §4.323）。 */
 const wfText = (rel) => stripYamlComments(readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n'));
 
@@ -221,14 +222,15 @@ if (existsSync(benchmarkRunnerPath)) {
   // 整批已测数据丢失（实测「Typora 测完、Mellow 一个未跑」）。
   // 注释里也会出现这些关键字，故先剥注释再断言。
   const stripComments = (s) => s
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, ' '))
     // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
     //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
     //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
     .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-      (m, keep) => (keep === undefined ? '' : keep))
+      (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
+    // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
     .split('\n')
-    .filter((line) => !/^\s*\/\//.test(line))
+    .map((line) => (/^\s*\/\//.test(line) ? '' : line))
     .join('\n');
   const benchCode = stripComments(benchmarkRunner);
   const WARMUP_RE = /argVal\('--warmup',\s*'[1-9]\d*'\)/;
@@ -930,13 +932,14 @@ if (existsSync(benchmarkRunnerPath)) {
   {
     const readDoc = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
     const strip = (s) => s
-      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, ' '))
       // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
       //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
       //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
       .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-        (m, keep) => (keep === undefined ? '' : keep))
-      .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+        (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
+      // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
+      .split('\n').map((l) => (/^\s*(\/\/|\*)/.test(l) ? '' : l)).join('\n');
 
     // ⚠️ 判据必须是**同一个谓词对象**（断言与 canary 共用），否则「放宽谓词」抓不到：
     // 若 canary 里另写一份正则，改掉断言那份时 canary 仍用旧的那份 → 双向自检形同虚设。

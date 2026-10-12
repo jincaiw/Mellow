@@ -33,7 +33,8 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n'
 //   **纪律在 A 文件学到了，B 文件一条都没用**。
 // 【纪律】读 workflow **一律**走 `wfText()`；判据 ㊻ 守「不得绕过」。
 // ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
-const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+// ⚠️ **置空而不删除** ⇒ **行号映射不变**（删除会让判据报出的 `file:line` **全是错的** —— 审计 §4.334）。
+const stripYamlComments = (s) => s.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
 /** workflow 正文（剥注释后）。**判据 ㊻ 守「workflow 不得被直读」**。 */
 const wfText = (rel) => stripYamlComments(read(rel));
 const errors = [];
@@ -1167,7 +1168,8 @@ if (!existsSync(resolve(root, '.github/workflows/release.yml'))) {
   const UNPUBLISH = '-F draft=true';
   // ⚠️ **判据必须先剥注释**：finalize 的注释里写着「**不要**在这里写 `-F draft=true`」——
   // 不剥注释的话，`/-F draft=true/` 会命中**那句说明**（本仓已踩过同型坑：护栏检出自己写的注释）。
-  const stripComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
+  const stripComments = (s) => s.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
   // ⚠️ 判据要按**实际写法**取（首版写成 /"-lt 15"/ 就匹配不到 `"$COUNT" -lt 15` ——
   // 「判据的形态假设」错一次就是一条恒真的护栏）。
   const COUNT_FLOOR = /-lt\s+15/;
@@ -1628,7 +1630,8 @@ if (driftedMissing.length === 0) {
   //   不剥会把**解释**当成**违规**（同 §4.156「散文提及满足了判据」的老坑）。
   const stripLineComments = (src) => src.split('\n')
     .map((l) => l.replace(/(^|[^:'"`])\/\/.*$/, '$1'))
-    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    // ⚠️ **置空而不删除** ⇒ **行号映射不变**（此处报出的 `file:line` 曾整体偏移 —— 审计 §4.334）。
+    .map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? '' : l))
     .join('\n');
   const guards7 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
@@ -1720,7 +1723,7 @@ if (driftedMissing.length === 0) {
       // ⚠️ **必须剥掉语句内的注释行**：多行 `console.log(...)` 里可以插注释（实测
       //   `verify-package-conventions.mjs` 就插了「本行原**手写**『canary 5 项全绿』」），
       //   那是**说明**不是**输出** ⇒ 不剥会把解释当成违规（§4.156 的老坑）。
-      const body = m[1].split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+      const body = m[1].split('\n').map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? '' : l)).join('\n');
       const hit = N_WORD.exec(body);
       if (hit !== null) offenders8.push(`${f}:${at}（${hit[0]}）`);
       // 中文量词形态：**剥掉 `${...}`** 后仍含「数字 + 量词」⇒ 是**字面**计数（会漂）
@@ -1744,7 +1747,7 @@ if (driftedMissing.length === 0) {
     const [ef, ehit] = key.split('|');
     let seen = false;
     for (const m of read(`tests/parity/${ef}`).matchAll(/console\.log\(([\s\S]{0,1200}?)\);/g)) {
-      const body = m[1].split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+      const body = m[1].split('\n').map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? '' : l)).join('\n');
       const c = CJK_COUNT.exec(stripInterp(body));
       if (c !== null && c[0] === ehit) { seen = true; break; }
     }
@@ -3025,7 +3028,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     'cross-package-edges.json': ['edges', 'note', 'source', 'why'],
     'export-collaborators.json': ['callSites', 'entries', 'note', 'source', 'statusVocabulary', 'why'],
     'export-feature-parity.json': ['entries', 'note', 'source', 'statusVocabulary', 'why'],
-    'local-tools.json': ['note', 'reviewedAt', 'source', 'staleAfterDays', 'tools', 'why'],
+    'local-tools.json': ['evidenceRuns', 'note', 'reviewedAt', 'source', 'staleAfterDays', 'tools', 'why'],
     'node-types.json': ['divergences', 'note', 'reviewedAt', 'source', 'staleAfterDays', 'why'],
     'typora-panel-only-keys.json': ['entries', 'note', 'source', 'why'],
     'typora-persisted-uncovered.json': ['entries', 'extract', 'kindVocabulary', 'note', 'source'],
@@ -3335,6 +3338,43 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
   if (entries.filter((x) => typeof x.why === 'string' && x.why.includes('交叉验证')).length < 1) {
     fail('⑳ R6 canary 失效：**没有一个**工具在 `why` 里自称「交叉验证」⇒ 本判据**空转**');
+  }
+  // ⑦ R7（2026-10-12，审计 §4.333）：**登记为 `runsIn: ci` 的工具，其 `evidence` 必须指向一次 CI run** ——
+  //   本仓对 `AUTO` 台账项的同一纪律是「**须引用 ≥1 份 CI 制品**」；工具此前**只有本机读数**
+  //   ⇒ 「它在 CI 里真的跑过吗」**没有可核对的出处**。⚠️ 与 **⑲ ③**（夹具正文的 `run <id>` 必须在
+  //   `evidenceRuns` 里，**双向**）**配合**：本判据保证**有引用**，⑲ 保证**引用自洽**。
+  const RUN_RE = /\brun\s+\d{6,}\b/;
+  const badEvidence = ciTools.filter((t) => !RUN_RE.test(t.evidence ?? ''));
+  if (badEvidence.length > 0) {
+    fail(`⑳ R7 这些登记为「runsIn: ci」的工具，其 evidence **没有指向任何 CI run**：`
+      + `${badEvidence.map((t) => t.name).join('、')} —— 请写明「本工具的步骤在 **CI run <id>** 里 success」`
+      + '（`run <id>` 必须同时登记进该夹具的 `evidenceRuns`，⑲ ③ 会双向核对）');
+  }
+  // ⑧ R8（2026-10-12，审计 §4.333）：**CI 里调用本机工具时不得传「会削弱判定的参数」** ——
+  //   实测某工具有 `--only <pkgs>` 调试开关，**它会跳过合计判定** ⇒ 若 CI 里误加，判据会**静默变弱**
+  //   （此前**只写在注释里**，**没有判据**）。⇒ 扫 workflow 里调用 `tools/*.mjs` 的 `run:` 行。
+  const WEAKENING_ARGS = ['--only'];
+  const weakHits = [];
+  for (const f of (trackedFiles ?? []).filter((x) => /^\.github\/workflows\/.*\.ya?ml$/.test(x))) {
+    wfText(f).split('\n').forEach((l, i) => {
+      if (!/tests\/parity\/tools\//.test(l)) return;
+      for (const a of WEAKENING_ARGS) if (l.includes(a)) weakHits.push(`${f}:${i + 1}（${a}）`);
+    });
+  }
+  if (weakHits.length > 0) {
+    fail(`⑳ R8 CI 里调用本机工具时带了**会削弱判定的参数**：${weakHits.slice(0, 3).join('、')}`
+      + ` —— ${WEAKENING_ARGS.join(' / ')} 会让判据**跳过合计判定**（**静默变弱**）；`
+      + '调试参数不得进 CI');
+  }
+  // canary：三向（与判定**共用** RUN_RE / WEAKENING_ARGS）
+  if (!RUN_RE.test('在 CI run 38263238027 里 success')) {
+    fail('⑳ R7 canary 失效：合法样本里的 `run <id>` 未被识别');
+  }
+  if (RUN_RE.test('本机实测 EXIT=0（无 run id）')) {
+    fail('⑳ R7 canary **过宽**：不含 `run <id>` 的样本被判为「有引用」');
+  }
+  if (!WEAKENING_ARGS.some((a) => `run: node tests/parity/tools/x.mjs ${a} pkg`.includes(a))) {
+    fail('⑳ R8 canary 失效：削弱参数未被识别（那样本判据会**空转**）');
   }
   // 防空转：**覆盖型**（工具增删时须一并复核）
   const TOOLS_BASELINE = 8; // [覆盖型] 基线 8
@@ -4800,7 +4840,7 @@ const scanBodyOf = (rel, raw) => {
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 32; // [覆盖型] 基线 32（2026-10-11 §4.321：新增 ㊹ 的标记）
+  const COVERAGE_MARK_BASELINE = 33; // [覆盖型] 基线 33（2026-10-12 §4.334：新增 ㊻ R3 的副本数标记）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -5712,9 +5752,12 @@ const scanBodyOf = (rel, raw) => {
   /** 判定与 canary **共用**：该源码是否含**整行 YAML 注释剥离**的实现。
    *  ⚠️ 针要**特异**：只查 `/^\s*#/` 会被「某处内联判断注释行」满足（实测：
    *  `verify-build-pipeline.mjs` 有一行 `if (/^\s*#/.test(line)) return false;` —— 那不是剥法）
-   *  ⇒ 必须**同时**出现 `.filter(`（剥法是把行**过滤掉**）。 */
+   *  ⇒ 必须**同时**出现 `.map(` 或 `.filter(`（剥法是把那些行**处理掉**）。
+   *  ⚠️ **2026-10-12（审计 §4.334）放宽**：原谓词**只认 `.filter(`** ⇒ 它把「删行」这个**缺陷**钉成了
+   *  「唯一正确写法」（改成保留行号的 `.map(` 反而**判红**）。现在两种写法都算「有剥法」；
+   *  **「剥法不得删行」由 R3 单独守**（分工：R1 有剥法 / R3 剥法不得改变行数）。 */
   const hasYamlStripper46 = (code) => code.split('\n')
-    .some((l) => l.includes('/^\\s*#/') && l.includes('.filter('));
+    .some((l) => l.includes('/^\\s*#/') && /\.(?:map|filter)\(/.test(l));
   /** 直读的**逐字**登记表（键 = 该行 `trim()` 后的文本）。
    *  ⚠️ 键里的函数名**运行时拼出** —— 否则这一行自己会被 `directReads46` 命中（**判据命中自己**）。 */
   const RAW_WF_READ = new Map([
@@ -5750,6 +5793,87 @@ const scanBodyOf = (rel, raw) => {
     fail(`㊻ \`RAW_WF_READ\` 有**陈旧条目**（源码里已不存在该直读）：${stale46.slice(0, 2).join(' ⏎ ')}`
       + ' —— 陈旧登记会让「每处直读都已登记」**悄悄失效**');
   }
+  // ── R3（2026-10-12，审计 §4.334）：**剥注释助手必须保留行数** ─────────────────────────
+  // 【为什么】判据报的是 `file:line`。剥法若**删行**，报出的行号就**整体偏移**
+  //   —— 实测（本轮）：`ci.yml` 的**真**行 112 被报成 **68**，偏的正好是它前面被删掉的 **44** 行整行注释
+  //   ⇒ 读报错的人会去**错地方**找（「诊断把读者引偏」比「诊断缺失」更坏）。
+  // 【三条互补的检查】
+  //   ③ **形态**：`tests/parity/verify-*.mjs` 里不得出现「按整行注释**过滤掉**」的写法 —— 一律「置空」。
+  //   ① **行为**：本文件作用域内的剥法助手**逐个实跑**，断言「注释没了 **且** 行数不变」。
+  //   ② **同一性**：`stripYamlComments` 在 N 个护栏里是**逐字相同**的一行 ⇒ ① 的结论可**传递**给那 N-1 份。
+  // 【边界如实声明】⚠️ ③ 只认「`.filter(` + `!/^\s*` + 注释标记」**同一行**的写法；
+  //   `.map(…).filter(Boolean)` 之类**等价但不同形**的绕过**不覆盖**（如实登记）。
+  /** 判定与 canary **共用**：该源码是否含「按整行注释**过滤掉**」的写法。
+   *  ⚠️ 两个针**运行时拼接/转义** —— 否则本判据的**注释**会命中自己（同 ㉑ 的 `new Buffer(`）。 */
+  const hasLineFilter46 = (code) => code.split('\n').some((l) => l.includes('.filter(')
+    && l.includes('!/^\\s*') && (l.includes('#/') || l.includes('\\/\\/')));
+  /** 判定与 canary **共用**：剥法是否**保留行数**（纯函数，不碰文件系统）。 */
+  const preservesLines46 = (fn, sample) => fn(sample).split('\n').length === sample.split('\n').length;
+  const offenders46b = [];
+  for (const f of guards46) {
+    if (hasLineFilter46(stripJsComments(read(`tests/parity/${f}`)))) {
+      offenders46b.push(f);
+    }
+  }
+  if (offenders46b.length > 0) {
+    fail(`㊻ R3 这些护栏里还有「按整行注释**过滤掉**」的剥法：${offenders46b.join('、')}`
+      + ' —— 删行 ⇒ 判据报出的 `file:line` **整体偏移**；改用「**置空而不删除**」'
+      + '（`.map((l) => (/^\\s*#/.test(l) ? \'\' : l))`；审计 §4.334）');
+  }
+  // ① 行为：逐个实跑本文件作用域内的剥法（用例 = `a` + 注释行 + `b` ⇒ 恒 3 行）
+  const STRIP_CASES46 = [
+    ['stripYamlComments', stripYamlComments, 'a\n# ZQ1\nb', 'ZQ1'],
+    ['blankHash', blankHash, 'a\n# ZQ2\nb', 'ZQ2'],
+    ['blankComments', blankComments, 'a\n// ZQ3\nb', 'ZQ3'],
+    ['blankHtmlComments', blankHtmlComments, 'a\n<!-- ZQ4 -->\nb', 'ZQ4'],
+    ['stripJsComments', stripJsComments, 'a\n// ZQ5\nb', 'ZQ5'],
+    ['stripStrings', stripStrings, 'a\nconst s = \'ZQ6\';\nb', 'ZQ6'],
+  ];
+  for (const [name, fn, sample, token] of STRIP_CASES46) {
+    const out = fn(sample);
+    if (out.includes(token)) {
+      fail(`㊻ R3 剥法 \`${name}\` **没剥掉**注释/字符串（用例 token \`${token}\` 仍在）—— 谓词会读到注释`);
+    }
+    if (!preservesLines46(fn, sample)) {
+      fail(`㊻ R3 剥法 \`${name}\` **改变了行数**（${sample.split('\n').length} → `
+        + `${out.split('\n').length} 行）—— 判据报出的 \`file:line\` 会**整体偏移**（审计 §4.334）`);
+    }
+  }
+  // ② 同一性：`stripYamlComments` 的**定义行**必须逐字相同（① 的结论才能传递到别的护栏）
+  const YAML_DEF_RE46 = /^const stripYamlComments = .*;$/m;
+  const yamlDef46 = (code) => (YAML_DEF_RE46.exec(code) ?? [null])[0];
+  const CANON46 = yamlDef46(stripJsComments(read('tests/parity/verify-release-gate.mjs')));
+  if (CANON46 === null) {
+    fail('㊻ R3 找不到本文件的 `stripYamlComments` 定义 —— **量具失效**（派生不出基准就无从比对）');
+  } else {
+    const copies46 = [];
+    for (const f of guards46) {
+      const def = yamlDef46(stripJsComments(read(`tests/parity/${f}`)));
+      if (def !== null) copies46.push([f, def]);
+    }
+    const drifted46 = copies46.filter(([, def]) => def !== CANON46);
+    if (drifted46.length > 0) {
+      fail(`㊻ R3 这些护栏的 \`stripYamlComments\` 与基准**不逐字相同**：`
+        + `${drifted46.map(([f]) => f).join('、')} —— **同族判据的剥法必须一致**，`
+        + '否则 R3 ① 的行为结论**传递不到**它们身上（它们只是「另一个带不同 bug 的意见」）');
+    }
+    const YAML_COPIES_BASELINE = 4; // [覆盖型] 基线 4
+    coverEq('㊻ R3 `stripYamlComments` 的副本数', copies46.length, YAML_COPIES_BASELINE,
+      '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
+  }
+  // canary：四向（与判定**共用** hasLineFilter46 / preservesLines46）
+  if (!hasLineFilter46(`const s = x.split('\\n').filter((l) => !/^\\s*#/.test(l)).join('\\n');`)) {
+    fail('㊻ R3 canary 失效：「按整行注释过滤」的写法**未被检出**（判据已退化成空真）');
+  }
+  if (hasLineFilter46(`const s = x.split('\\n').map((l) => (/^\\s*#/.test(l) ? '' : l)).join('\\n');`)) {
+    fail('㊻ R3 canary **过宽**：**保留行数**的正确写法被判为违规');
+  }
+  if (preservesLines46((s) => s.split('\n').filter((l) => l !== 'x').join('\n'), 'a\nx\nb')) {
+    fail('㊻ R3 canary 失效：**删行**的剥法被判为「保留行数」');
+  }
+  if (!preservesLines46((s) => s.split('\n').map((l) => (l === 'x' ? '' : l)).join('\n'), 'a\nx\nb')) {
+    fail('㊻ R3 canary **过宽**：**置空**的剥法被判为「改变行数」');
+  }
   // 防空转：[健康度型]（读 workflow 的护栏数由仓库内容产生 ⇒ 留余量）
   if (wfGuards46 < 3) {
     fail(`㊻ 只找到 ${wfGuards46} 个读 workflow 的护栏（[健康度型] 下限 3）`
@@ -5774,7 +5898,8 @@ const scanBodyOf = (rel, raw) => {
       + '（针的特异性不足 —— 实测 `verify-build-pipeline.mjs` 就有这样一行）');
   }
   console.log(`Release gate: workflow 判据的**注释纪律** —— 读 workflow 的护栏 ${wfGuards46} 个，`
-    + `**直读**（未登记）${offenders46.length} 处 · 直读登记 ${RAW_WF_READ.size} 条（含陈旧检查）；`
+    + `**直读**（未登记）${offenders46.length} 处 · 直读登记 ${RAW_WF_READ.size} 条（含陈旧检查）· `
+    + `**剥法删行**（R3）${offenders46b.length} 处（剥法必须**保留行数**，否则报出的 \`file:line\` 会偏移）；`
     + '⚠️ **边界**：只挡**同行**直读形态；跨行 / 变量间接的绕过不覆盖');
 }
 

@@ -28,7 +28,8 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n'
 //   ⇒ 同族「只锁了一半」的**最干净形态**：**纪律写在同一文件里，却没有覆盖同一文件**。
 //   ⇒ `verify-release-gate.mjs` 判据 **㊻** 守「读 workflow 不得直读」。
 // ⚠️ **边界如实声明**：只剥**整行**注释（`^\s*#`）—— **行尾**注释（`key: v  # note`）**不剥**。
-const stripYamlComments = (s) => s.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+// ⚠️ **置空而不删除** ⇒ **行号映射不变**（删除会让判据报出的 `file:line` **全是错的** —— 审计 §4.334）。
+const stripYamlComments = (s) => s.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
 /** workflow 正文（剥注释后）。 */
 const wfText = (rel) => stripYamlComments(read(rel));
 
@@ -430,11 +431,12 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   //   **一路吃掉真实代码**（实测 68 个文件 / 247 段）⇒ **假阴性、无人知**。
   //   故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」；正则靠启发式识别（失准 = 多留注释 = 假阳性）。
   const stripCommentsOf = (s) => s
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, ' '))
     .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-      (m, keep) => (keep === undefined ? '' : keep))
+      (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
+    // ⚠️ **置空而不删除** ⇒ **行号映射不变**（审计 §4.334）。
     .split('\n')
-    .filter((line) => !/^\s*\/\//.test(line))
+    .map((line) => (/^\s*\/\//.test(line) ? '' : line))
     .join('\n');
   const isBareNpx = (src) => /spawn\(\s*'npx'/.test(stripCommentsOf(src));
   const usesSharedLauncher = (src) => stripCommentsOf(src).includes('dev-server.mjs');
