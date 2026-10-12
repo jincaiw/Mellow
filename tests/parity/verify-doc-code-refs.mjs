@@ -2777,6 +2777,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //   ②b **「围栏置空」的实现恰好 1 份**（**以内容为锚**：`return inFence ? '' : l;`）。
 //   ②c **不得**再有「**删除式**」围栏剥离（`replace(<三反引号>…<三反引号>, '')`）——
 //      2026-10-13（审计 §4.346）：**删行** ⇒ 报出的 `file:line` **整体偏移**。
+//   ②d **层 2**：「保留行数」的共享实现必须**真的被调用**（`const <名> = blankFences;` / `= blankFences(…)`
+//      的形态计数 == 基线）。2026-10-13（审计 §4.347）：②c 只禁**已知形态** ⇒ **换写法**的删除式
+//      不在面内 ⇒ **两端同时锁**（②c 锁「不是坏形态」，②d 锁「是好形态」）。
 //   ③ **行为（正）**：`PROBES49` 里每个已知限定词，**两个**谓词都必须接受。
 //   ④ **行为（负）**：每个**非**限定词，**两个**谓词都必须拒绝（防词表退化成 `.*` ⇒ 两个判据一起恒绿）。
 //   ⑤ **反空转**：token 数 ≥ 下限（**从共享表现读**，不手写数字）。
@@ -2836,6 +2839,21 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail(`㊾ 又出现了**删除式**围栏剥离（${fenceDeletes49} 处）—— 「**删行**」会让报出的 `
       + '`file:line` **整体偏移**（**实测**：77/193 份 md 受影响、累计少 **8679** 行、'
       + '最大单文件 **6415** 行）⇒ 请改用**置空**的 `blankFences`');
+  }
+  // ②d **层 2**：「保留行数」的共享实现必须**真的被调用**（`const <名> = blankFences;` / `= blankFences(…)`）。
+  //   ⚠️ 2026-10-13（审计 §4.347）：②c 只禁「**已知形态**」的删除式 ⇒ **换个写法**的删除式
+  //     （手写 `inFence` 切换 + `filter`、`split`/`slice` 拼接…）**不在面内** ⇒ 报 `file:line` 的
+  //     那三处仍会**静默偏移**。⇒ **两端同时锁**：②c 锁「**不是**坏形态」，②d 锁「**是**好形态」。
+  //   ⚠️ **计数含 canary 与 ㊻**（3 处是**报行号**的站点：架构路径 / **全仓链接可达性** / spec 路径；
+  //     另 2 处是「置空 + 行数不变」的 canary 与 ㊻ 的收尾判据）⇒ 增删**必须同步基线**。
+  const BLANK_USE49 = /^\s*const [A-Za-z_$][\w$]* = blankFences[;(]/;
+  const blankUses49 = codeLines49.filter((l) => BLANK_USE49.test(l));
+  const BLANK_USES_BASELINE49 = 5; // [覆盖型] 基线 5
+  if (blankUses49.length !== BLANK_USES_BASELINE49) {
+    fail(`㊾ 只有 ${blankUses49.length} 处 \`const <名> = blankFences;\` / \`= blankFences(…)\``
+      + `（应为 **${BLANK_USES_BASELINE49}**）—— 其中 **3 处**是**会报 \`file:line\`** 的站点`
+      + '（架构路径 / 全仓链接可达性 / spec 路径）⇒ 它们**必须**用**保留行数**的实现；'
+      + '⚠️ 新增或改写调用点时请**同时**上调本基线');
   }
   // ② 行为（正）：已知限定词 ⇒ 两个谓词都必须接受
   const PROBES49 = ['PITFALLS', 'MEMORY', 'master-plan', 'PRD', 'spec', '方案', '模板', 'skill',
@@ -2903,10 +2921,21 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   if (blankComments(`// s.replace(/${BT49}${FENCE_DELETE_ANCHOR}/g, '');`).includes(FENCE_DELETE_ANCHOR)) {
     fail('㊾ canary 失效：**注释里**的删除式未被剥掉 ⇒ 「记录旧写法」的注释会把判据**自己**判红');
   }
+  // canary：②d 三向（样本**运行时拼接**）
+  if (!BLANK_USE49.test(`  const ${'z'} = ${'blankFences'};`)) {
+    fail('㊾ canary 失效：`const <名> = blankFences;`（别名形态）抓不到 ⇒ ②d 会**空转**');
+  }
+  if (!BLANK_USE49.test(`  const ${'z'} = ${'blankFences'}(${'src'});`)) {
+    fail('㊾ canary 失效：`const <名> = blankFences(…)`（直接调用）抓不到');
+  }
+  if (BLANK_USE49.test(`  const ${'blankFences'} = (src) => {`)) {
+    fail('㊾ canary **过宽**：共享实现的**定义行**被判成「调用点」⇒ ②d 的计数会虚高');
+  }
   console.log(`Doc code refs: \`§4.N\` 的**文档限定词** —— **单一真源** \`DOC_QUALIFIER_TOKENS\``
     + `（${tokenCount49} 个 token）；两个判据块**各有一处**别名在用它（形态计数 ${aliasUses49.length}）· `
     + `**无内联字面量**（${inline49.length} 处）· **围栏置空**（${fenceDefs49} 份）· `
-    + `**无删除式围栏剥离**（${fenceDeletes49} 处）· 两个谓词（30 字窗口 / 紧邻）对 ${PROBES49.length} 个已知限定词`
+    + `**无删除式围栏剥离**（${fenceDeletes49} 处）· **保留行数的实现被调用**（${blankUses49.length} 处）· `
+    + `两个谓词（30 字窗口 / 紧邻）对 ${PROBES49.length} 个已知限定词`
     + `与 ${NON49.length} 个非限定词**判定一致**；⚠️ **边界**：探针表**手写**（漂了会静默变松）· `
     + '只禁「内联到 `const X = /…/`」这一形态（**另抄一份相同的表**不在面内）');
 }
@@ -3784,7 +3813,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 346; // 2026-10-13 加 §4.346 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 347; // 2026-10-13 加 §4.347 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
