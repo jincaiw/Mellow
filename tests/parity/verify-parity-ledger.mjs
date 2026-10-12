@@ -54,6 +54,33 @@ const wfText = (rel) => stripYamlComments(readFileSync(resolve(root, rel), 'utf8
 // ⚠️ 手法：**置空但保留行数**。只处理**成对** `<!-- … -->`；未闭合的原样保留。
 const blankHtmlComments = (s) => s.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
 
+/** **结构锚**：把 \`idx\` **回退到所在行行首**，再取「该行起、到**缩进 ≤ 起始行**的下一行非空行为止」的片段。
+ *  【为什么必须有】本仓原有 **5 处「字符数窗口」**（\`slice(i, i + 700 / 900 / 1200 / 1400)\`）——
+ *    2026-10-13（审计 §4.348）**实测**：往 \`func cmdStartupProbe\` **前面**加 9 行注释，
+ *    就把被锁的 \`activateAndEnsureInput\` **挤出 900 字符窗口** ⇒ 护栏**响亮红**，
+ *    而**行为一点没变** ⇒ 那是**假阳性**（**长注释会顶掉被锁的行**）。
+ *  ⇒ 一律改用本助手：按**缩进**找块边界 ⇒ **注释与空行不影响**。
+ *  ⚠️ **调用方要把 \`idx\` 指向「块头那一行」**（\`if (\` / \`case \` / \`func \`），**不是**块外的声明行
+ *    —— 指向同级声明行会**立刻收尾**（下一行缩进已 ≤ 起始行）。
+ *  ⚠️ **边界**：只认缩进，**不做括号配对** ⇒ 块内若出现**列 0 的续行**（模板字面量里嵌的代码）
+ *    会**提前收尾**；那时锁会**响亮失败**，**不是**静默放行。
+ *  ⚠️ **边界**：块内**缩进不足**的行（例如 2 空格的注释放进 6 空格缩进的 \`case\` 块）也会提前收尾
+ *    （本机实测：注入用错缩进 ⇒ 锁红）。 */
+const blockFrom = (src, idx) => {
+  const from = src.lastIndexOf('\n', idx) + 1;   // 回退到行首（否则 lines[0] 是半行 ⇒ 缩进读成 0）
+  const lines = src.slice(from).split('\n');
+  const indentOf = (l) => l.length - l.trimStart().length;
+  const base = indentOf(lines[0]);
+  const out = [lines[0]];
+  for (let i = 1; i < lines.length; i += 1) {
+    const l = lines[i];
+    if (l.trim() === '') { out.push(l); continue; }
+    if (indentOf(l) <= base) break;
+    out.push(l);
+  }
+  return out.join('\n');
+};
+
 function assert(condition, message) {
   if (!condition) errors.push(message);
 }
@@ -1937,7 +1964,8 @@ if (existsSync(benchmarkRunnerPath)) {
   {
     const i = benchCode.indexOf('isLockScreen');
     assert(i >= 0, 'run-benchmark 必须检查 isLockScreen（锁屏时拒绝执行）');
-    const tail = i >= 0 ? benchCode.slice(i, i + 700) : '';
+    // ⚠️ 2026-10-13（审计 §4.349）：原为**字符数窗口**（加注释即假阳性）⇒ 改**结构锚**。
+    const tail = i >= 0 ? blockFrom(benchCode, i) : '';
     assert(/process\.exit\(1\)/.test(tail),
       '锁屏时必须 process.exit(1) 拒绝执行，不能产出「0 个有效样本」的报告');
   }
@@ -1985,8 +2013,15 @@ if (existsSync(benchmarkRunnerPath)) {
   assert(/KEYSTROKE_METRICS/.test(benchCode),
     'run-benchmark 必须声明 KEYSTROKE_METRICS（合成按键类指标集合）');
   {
-    const i = benchCode.indexOf('KEYSTROKE_METRICS');
-    const tail = i >= 0 ? benchCode.slice(i, i + 1200) : '';
+    // ⚠️ 2026-10-13（审计 §4.349）：锚点从**声明行**改为**硬失败块的头行**。
+    //   ⚠️ 不能直接 `indexOf('needsKeystrokes && ')`：那个条件在文件里出现**两次**
+    //     （第一处是**软切换**「尝试切到 ABC」、第二处才是**硬失败**）⇒ 会取到**第一处**，
+    //     而它**不含** `process.exit(1)` ⇒ 锁会**响亮失败**（**本机实测**，正是「换量具必须重量」的价值）。
+    //   ⇒ 两步锚：① 找**块内唯一**的提示串；② 回退到**最近的外层 `if (` 行**当块头。
+    const inside = benchCode.indexOf('不是键盘布局');
+    assert(inside >= 0, 'run-benchmark 必须给出「输入源不是键盘布局」的硬失败提示');
+    const head = benchCode.lastIndexOf('\n  if (', inside) + 1;
+    const tail = head > 0 ? blockFrom(benchCode, head) : '';
     assert(/process\.exit\(1\)/.test(tail),
       '输入源非键盘布局时必须**拒绝执行**（process.exit(1)），不能只警告放行 —— 否则产出的是「IME 候选窗耗时」');
   }
@@ -2035,7 +2070,8 @@ if (existsSync(benchmarkRunnerPath)) {
         const i = hs.indexOf('case .detect:');
         assert(i >= 0, 'helper 缺少 detect 分支');
         if (i >= 0) {
-          const body = hs.slice(i, i + 1400);
+          // ⚠️ 2026-10-13（审计 §4.349）：原为字符数窗口（加注释即假阳性）⇒ 改**结构锚**。
+          const body = blockFrom(hs, i);
           assert(!/[^P]pixelDiff\(/.test(body.replace(/pixelDiffPair\(/g, '')),
             'detect 分支不得直接用 pixelDiff（其分母取自单一帧的几何，帧几何变化时会得到 changed > total）');
           assert(/pixelDiffPair\(/.test(body), 'detect 分支必须用 pixelDiffPair 计算变化比例');
@@ -2052,7 +2088,8 @@ if (existsSync(benchmarkRunnerPath)) {
         const i = hs.indexOf(`func ${fn}(`);
         assert(i >= 0, `helper 缺少 ${fn}`);
         if (i >= 0) {
-          const body = hs.slice(i, i + 900);
+          // ⚠️ 2026-10-13（审计 §4.349）：原为字符数窗口（加注释即假阳性）⇒ 改**结构锚**。
+          const body = blockFrom(hs, i);
           assert(/activateAndEnsureInput\(/.test(body),
             `${fn} 必须用 activateAndEnsureInput（激活后重新断言输入源），不得裸调 activateApp`);
         }
@@ -2060,10 +2097,25 @@ if (existsSync(benchmarkRunnerPath)) {
       // canary：自检该反例锁
       const BARE_ACTIVATE_SAMPLE = 'func cmdStartupProbe(pid: Int32) async {\n  activateApp(pid: pid)\n}';
       const i = BARE_ACTIVATE_SAMPLE.indexOf('func cmdStartupProbe(');
-      if (!/activateAndEnsureInput\(/.test(BARE_ACTIVATE_SAMPLE.slice(i, i + 900))) {
+      if (!/activateAndEnsureInput\(/.test(blockFrom(BARE_ACTIVATE_SAMPLE, i))) {
         // 预期：裸调样本「不含」activateAndEnsureInput → 锁能检出
       } else {
         errors.push('输入源断言反例锁 canary 失效：裸 activateApp 样本未被检出');
+      }
+      // 反例锁：本护栏**不得**再用「字符数窗口」定位（2026-10-13，审计 §4.349）
+      //   ⚠️ **实测（§4.348）**：往 `func cmdStartupProbe` **前面**加 9 行注释，就把被锁的
+      //     `activateAndEnsureInput` **挤出 900 字符窗口** ⇒ 护栏**响亮红**而**行为一点没变**
+      //     ⇒ 那是**假阳性**（**长注释会顶掉被锁的行**）。⇒ 一律改用 `blockFrom()` 的**结构锚**。
+      //   ⚠️ **以内容为锚**（`slice(i, i + <数字>)` 这个形态本身）⇒ 改名带不走；
+      //     **先剥注释** ⇒ 注释里**可以**引述旧写法（本文件就引述了 4 处）。
+      //   ⚠️ **自指边界（如实声明）**：本判据读的是**本文件** —— 本文件崩掉时它也不运行
+      //     （本仓「丢的是**具体性**，不是**正确性**」；镜像由 `verify-release-gate.mjs` 的 ㉚ 提供）。
+      {
+        const self = readFileSync(new URL(import.meta.url), 'utf8');
+        const hits = (blankComments(self).match(/slice\(i, i \+ \d+\)/g) ?? []).length;
+        assert(hits === 0,
+          `本护栏仍有「字符数窗口」定位 ${hits} 处 —— 往被锁的行**前面**加注释会把它顶破`
+          + '（假阳性：行为没变却红）⇒ 请改用 blockFrom() 的结构锚');
       }
     }
   }
