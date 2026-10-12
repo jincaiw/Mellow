@@ -3341,6 +3341,28 @@ const stripStrings = (s) => s.replace(
   (m) => m.replace(/[^\n]/g, ' '),
 );
 
+// ── 与各护栏**入口 `codeText()` 同一语义**的剥法（2026-10-12，审计 §4.327）──────────────
+// 【为什么必须有】判据 **㊴** 量的是「针在**目标文件**里剥注释后还剩几处」——
+//   它此前用 `stripJsComments`（**行式**：只看行首 `//`），而各护栏读代码目标的入口
+//   `codeText()` 用的是**字符串/模板感知**的 `blankComments`。
+//   ⇒ **两套剥法给出不同读数**：实测 `apps/desktop/scripts/build-editor-bundle.mjs` 里
+//   `__MELLOW_BRIDGE__` 的计数 **1（行式） vs 2（模板感知）** —— 于是 **㊴ 判「唯一、已锚定」，
+//   而护栏实际**不锚定**（删掉模板里的真实赋值行仍绿）。
+//   ⇒ **量具必须与被量的判据同一套**（本仓纪律：「同族判据的**剥法必须一致**」）。
+// ⚠️ **边界**：`blankComments` 不认 Rust 的 `r"…"` / `'a` 生命周期 ⇒ 只会**少剥**。
+const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
+/** `#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
+const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
+/** markdown 的 `<!-- … -->`（**不渲染** ⇒ 不是真内容）置空。 */
+const blankHtmlComments = (src) => src.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+/** 判定与 canary **共用**：按目标文件的**扩展名**选剥法（与护栏入口 `codeText()` / `mdText()` 一致）。 */
+const scanBodyOf = (rel, raw) => {
+  if (rel.endsWith('.md')) return blankHtmlComments(raw);
+  if (/\.(?:toml|sh|ya?ml)$/.test(rel)) return blankHash(raw);
+  if (/\.(?:rs|ts|tsx|mts|cts|mjs|cjs|js|jsx|css)$/.test(rel)) return blankComments(raw);
+  return stripJsComments(raw);
+};
+
 // ── ㉑ 本仓**代码面**不得使用已弃用的 Node API（2026-10-11，审计 §4.289）──
 //   （`[DEP0040] punycode` ×12 · `[DEP0169] url.parse()` ×8 · `[DEP0005] Buffer()` ×1）
 //   **全部由我们使用的 action 自身发出**（告警所在的**步骤名就是 action 名**）。
@@ -4896,9 +4918,15 @@ const stripStrings = (s) => s.replace(
 //   判据**仍然绿** —— 因为**注释里还剩同样的字样**。⇒ 两处已**锚定到代码形态**并配 canary。
 //   ⚠️ 本条只锁**能机械判定的那一半**：**针必须在「剥注释后」的目标文件里出现 ≥1 次**。
 //     ⚠️ 它**不**覆盖「定义被删而用法尚存」（那需要理解「**哪一处才是真的**」）—— **如实声明**。
-//   ⚠️ 另一条边界：本仓的 `stripJsComments` **保留字符串字面量**（那是设计）⇒ 「针只在**字符串**里」
+//   ⚠️ 另一条边界：`blankComments` **保留字符串 / 模板字面量**（那是设计）⇒ 「针只在**字符串/模板**里」
 //     仍会被算作「在代码里」。**登记为已知边界**（不假装覆盖）。
-// 【判据】对每处 `<X>.includes('<针>')`（`X` 由**字符串字面量路径**的 `read`/`readFileSync` 赋值）：
+//   ⚠️ **2026-10-12（审计 §4.327）：量具必须与被量的判据同一套** —— 本条原先用**行式**
+//     `stripJsComments` 量目标文件，而各护栏读代码目标的入口是**模板感知**的 `codeText()`；
+//     两者对 `build-editor-bundle.mjs` 里 `__MELLOW_BRIDGE__` 的计数是 **1 vs 2**
+//     ⇒ **本条曾把「不锚定」误判为「唯一」**。现改用 `scanBodyOf()`（按扩展名分派，
+//     与 `codeText()` / `mdText()` 同语义）。
+// 【判据】对每处 `<X>.includes('<针>')`（`X` 由**字符串字面量路径**的
+//   `read`/`readFileSync`/`codeText` 赋值）：
 //   目标文件**剥注释后**必须仍含该针；否则红（除非登记进 `COMMENT_ONLY_NEEDLE_EXEMPT`）。
 {
   const COMMENT_ONLY_NEEDLE_EXEMPT = new Map([
@@ -4910,8 +4938,9 @@ const stripStrings = (s) => s.replace(
   //   登记的是「**为什么多处也算证据**」（多为「**至少一处**」语义：声明 + 使用、值导出 + 类型导出…）。
   //   ⚠️ **双向**：登记了却不再命中 ⇒ 红（针变唯一了 / 检查被删 / 目标路径变了）。
   const UNANCHORED_NEEDLE = new Map([
-    ['verify-adapter-contract.mjs|__TAURI__|apps/desktop/scripts/build-editor-bundle.mjs',
-      '「**接线存在**」是**至少一处**语义 —— 该脚本把 `__MELLOW_BRIDGE__` 接到 `__TAURI__.core`，多处调用都是接线的一部分'],
+    // ⚠️ 2026-10-12（审计 §4.327）：`verify-adapter-contract.mjs|__TAURI__|…build-editor-bundle.mjs`
+    //   那一条**已移除** —— 该检查已**锚定到接线形态**（`__TAURI__.core.invoke(`，剥注释后唯一）
+    //   ⇒ 登记项**不再需要**（陈旧检查当场报了它）。
     ['verify-adapter-contract.mjs|jump_list_add_recent|apps/desktop/src-tauri/src/lib.rs',
       '**定义 + 注册**各一处（`fn jump_list_add_recent` 与 `invoke_handler` 列表）—— 判据要的是「命令**已注册**」⇒ 至少一处'],
     ['verify-menu-contract.mjs|serde::Deserialize|apps/desktop/src-tauri/src/menu.rs',
@@ -4947,9 +4976,13 @@ const stripStrings = (s) => s.replace(
     //   `X.includes('…')`」这种说明）会被当成**真检查** —— 实测它让本判据多报了 3 处幻影。
     //   ⚠️ 与 §4.314 的教训**同源**：**注释冒充证据**。
     const src = stripJsComments(read(`tests/parity/${f}`));
-    /** 变量 → 目标文件（**只认字符串字面量路径**；非字面量一律跳过并计数） */
+    /** 变量 → 目标文件（**只认字符串字面量路径**；非字面量一律跳过并计数）。
+     *  ⚠️ **2026-10-12（审计 §4.327）**：面里**必须**含 `codeText` —— 本轮把「读代码/配置目标」
+     *    统一改经 `codeText()`（剥注释的入口）后，只认 `read`/`readFileSync` 会让 **㊴ 的扫描面
+     *    静默缩小**（实测 32 → 24，并让 3 条 `UNANCHORED_NEEDLE` 变成「陈旧」）——
+     *    **本条自己抓到了这次改动**，这正是「同族判据的**扫描面**必须同步」的实证。 */
     const targetOf = new Map();
-    for (const m of src.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:read|readFileSync)\(\s*(?:resolve\([^,]+,\s*)?'([^']+)'\s*\)?/g)) {
+    for (const m of src.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:read|readFileSync|codeText)\(\s*(?:resolve\([^,]+,\s*)?'([^']+)'\s*\)?/g)) {
       targetOf.set(m[1], m[2]);
     }
     for (const m of src.matchAll(/([A-Za-z_$][\w$]*)\.includes\(\s*(['"])([^'"\\]{1,40})\2\s*\)/g)) {
@@ -4961,7 +4994,10 @@ const stripStrings = (s) => s.replace(
       const relPath = existsSync(resolve(root, rel)) ? rel : `tests/parity/${rel}`;
       if (!existsSync(resolve(root, relPath))) continue;
       checked39 += 1;
-      const body = stripJsComments(read(relPath));
+      // ⚠️ **量具必须与被量的判据同一套**（2026-10-12，审计 §4.327）：改用 `scanBodyOf`
+      //   （按扩展名分派，与各护栏的入口 `codeText()` / `mdText()` 同语义）——
+      //   此前的行式 `stripJsComments` 会把**模板字面量里**的行首 `//` 也剥掉 ⇒ 计数偏差。
+      const body = scanBodyOf(relPath, read(relPath));
       if (!body.includes(needle)) {
         const key = `${f}|${needle}`;
         if (COMMENT_ONLY_NEEDLE_EXEMPT.has(key)) { exemptHit39 += 1; continue; }
@@ -5013,10 +5049,28 @@ const stripStrings = (s) => s.replace(
   if (!stripJsComments('const s = "NEEDLE_TOKEN";').includes('NEEDLE_TOKEN')) {
     fail('㊴ canary **过宽**：**字符串字面量**里的针被误剥（那会制造**假阳性**）');
   }
+  // canary：**量具**（`scanBodyOf`）必须与被量的判据**同一套**（2026-10-12，审计 §4.327）
+  // ⚠️ 边界如实声明：这三条只保**量具本身**；**调用点**若被换回 `stripJsComments`
+  //   （`body = stripJsComments(read(relPath))`）**没有判据会红** —— 那半靠**结构约定**，如实登记。
+  if (!scanBodyOf('x.ts', 'const t = `\n// keep\n`;\n').includes('// keep')) {
+    fail('㊴ canary 失效：量具把**模板字面量里**的行首 `//` 也剥掉了'
+      + '（那正是 §4.327 的根因：会把「**不锚定**」误判为「唯一」）');
+  }
+  if (scanBodyOf('x.ts', 'const a = 1; // drop\n').includes('drop')) {
+    fail('㊴ canary 失效：量具没有剥**行尾**注释');
+  }
+  if (scanBodyOf('x.toml', '# c\nname = "x"\n').includes('# c')
+    || !scanBodyOf('x.toml', '# c\nname = "x"\n').includes('name = "x"')) {
+    fail('㊴ canary 失效：`#` 家族（`.toml` / `.sh` / `.yml`）的剥法不对');
+  }
+  if (scanBodyOf('x.md', '<!-- [a](b) -->\nsee [c](d)\n').includes('[a](b)')
+    || !scanBodyOf('x.md', '<!-- [a](b) -->\nsee [c](d)\n').includes('[c](d)')) {
+    fail('㊴ canary 失效：markdown 的 `<!-- … -->` 未被置空（与 `mdText()` 不同套）');
+  }
   const COMMENT_ONLY_BASELINE = 1; // [覆盖型] 基线 1
   coverEq('㊴ 「只在注释里」的豁免条数', COMMENT_ONLY_NEEDLE_EXEMPT.size, COMMENT_ONLY_BASELINE,
     '豁免被删空会让本条重新变成**无人守**');
-  const UNANCHORED_BASELINE = 11; // [覆盖型] 基线 11
+  const UNANCHORED_BASELINE = 10; // [覆盖型] 基线 10（2026-10-12 §4.327：`__TAURI__` 一条**已锚定** ⇒ 移除）
   coverEq('㊴ 「针不唯一」的登记条数', UNANCHORED_NEEDLE.size, UNANCHORED_BASELINE,
     '登记被删空会让「针必须锚定」重新变成**无人守**');
   console.log(`Release gate: \`includes\` 型判据的**针** —— 可核对目标 ${checked39} 处：`
@@ -5024,8 +5078,10 @@ const stripStrings = (s) => s.replace(
     + `（豁免 ${COMMENT_ONLY_NEEDLE_EXEMPT.size}）· **不唯一**${unanchored.length} 处`
     + `（登记 ${UNANCHORED_NEEDLE.size}，理由：多为「**至少一处**」语义）；`
     + '⚠️ **边界**：只锁「针不得只在注释里」+「针不唯一必须登记」，**不覆盖**「定义被删而用法尚存」'
-    + '（那半靠**锚定正则 + canary**，§4.314 已修）；⚠️ 另一边界：`stripJsComments` **保留字符串字面量**'
-    + ' ⇒ 「针只在**字符串**里」仍算「在代码里」');
+    + '（那半靠**锚定正则 + canary**，§4.314 已修）；⚠️ 另一边界：`blankComments` **保留字符串/模板**'
+    + ' ⇒ 「针只在**字符串/模板**里」仍算「在代码里」；⚠️ 量具 = `scanBodyOf`（**按扩展名分派**，与各护栏'
+    + '入口 `codeText()` / `mdText()` **同语义**）—— §4.327 修：此前用**行式** `stripJsComments`，'
+    + '会把**模板字面量里**的行首 `//` 也剥掉 ⇒ 把「**不锚定**」误判为「唯一」');
 }
 
 // ── ㊵ CI 的 `cargo` 命令必须带 `--locked`（2026-10-11，审计 §4.316）──
@@ -5783,6 +5839,178 @@ const stripStrings = (s) => s.replace(
     console.log(`Release gate: release notes 覆盖率 —— ⚠️ **跳过**（\`git tag\` 只返回 ${tags48.length} 个`
       + ' ⇒ 浅克隆；`ci.yml` 无 `fetch-depth: 0`）；⚠️ **本判据在 CI 里不判定**，靠**本地** `npm run parity` 生效');
   }
+}
+
+// ── ㊾ 扫**代码/配置**目标的护栏必须剥注释（2026-10-12，审计 §4.327）──
+// 【为什么】同族**第三半**：判据扫的是**源码**，而**注释会被当成真内容** ——
+//   workflow 的 YAML `#`（㊻，§4.323）与 markdown 的 `<!-- -->`（㊼，§4.324）已各踩一次；
+//   本轮实测**代码/配置**同样中招，**五种写法全部假阴性**：
+//     ① `bridge.rs` 把 `bridge_call` 的调用**整行注释掉** ⇒ 绿；
+//     ② `lib.rs` 注释掉 `jump_list_add_recent` ⇒ 绿；③ `App.tsx` 注释掉 `invoke('set_menu_spec'`
+//     与 `SCHEMA_SHORTCUTS.get(command.id)` ⇒ 绿；④ `Cargo.toml` 删掉真依赖、改写成一行
+//     `# windows-sys = "0.59"` ⇒ 绿；⑤（最刺眼）`build-editor-bundle.mjs` **删掉模板字面量里的
+//     真实注入行** `window.__MELLOW_BRIDGE__ = {` ⇒ 绿 —— 因为**块注释里**还有同样的字样。
+//   ⇒ 24 处「读代码/配置目标」已统一改经**唯一入口** `codeText()`（剥注释 + **保留行号**）。
+// 【判据】
+//   R1（文件级）：按**字面路径**读带注释语法的目标 ⇒ 必须含**注释剥法**
+//     （针：一行里同时出现**注释记号**与**行处理算子** —— 只查记号会被「注释里写了记号」满足）。
+//   R2（逐处）：`const X = readFileSync(resolve(root, '<目标>'), …)` 这种**裸绑定**、以及同行
+//     `.includes(` / `.test(` 的**直读** ⇒ 必须经 `codeText(`，或**逐字**登记进 `RAW_CODE_READ`。
+//     **双向**：登记了却不再命中 ⇒ **陈旧** ⇒ 红。
+// 【边界如实声明】
+//   ⚠️ 只认「`=` 后**紧接** `readFileSync`」与「同行判定」两种形态；**加括号跨行续写**
+//     （`const x = (readFileSync(…)` + 下一行 `.match(…)`）、**多参数路径**
+//     （`resolve(root, 'a', 'b')`）、**自读**（`import.meta.filename`）**不在面内**。
+//   ⚠️ R1 只保证**存在**剥法，**不保证每条判据都用了它**（兜底 = 唯一入口 `codeText`）。
+//   ⚠️ `blankComments` **不认** Rust 的 `r"…"` 原始字符串与 `'a` 生命周期 ⇒ 只会**少剥**、**不会吃代码**。
+{
+  const CODE_TARGET_EXTS = 'rs|ts|tsx|mts|cts|mjs|cjs|js|jsx|toml|sh|css|html';
+  /** 判定与 canary **共用**：该行是否**裸读**一个带注释语法的目标文件（字面路径）。 */
+  const TARGET_LIT49 = new RegExp(`'[^']+\\.(?:${CODE_TARGET_EXTS})'`);
+  const bareRead49 = (l) => /(^|[^.\w])readFileSync\(/.test(l) && TARGET_LIT49.test(l);
+  /** 判定与 canary **共用**：该行是否**读**了带注释语法的目标文件（**含经入口** `codeText(` 的写法）。
+   *  ⚠️ R1 的面**必须**含 `codeText(` —— 修好之后裸 `readFileSync` 就没了，
+   *     只认裸读会让「读了却没剥法」这一半**静默失去面**（本轮实测：面从 6 缩到 4）。 */
+  const targetRead49 = (l) => new RegExp(
+    `(?:^|[^.\\w])(?:read|readFileSync|codeText)\\(\\s*(?:resolve\\([^)]*,\\s*)?'[^']+\\.(?:${CODE_TARGET_EXTS})'`,
+  ).test(l);
+  /** 判定与 canary **共用**：该行是否是**立即绑定**（`const X = readFileSync(`）。 */
+  const bareBind49 = (l) => /^\s*const\s+[A-Za-z0-9_]+\s*=\s*readFileSync\(/.test(l);
+  /** 判定与 canary **共用**：该行是否**同行做判定**（`.includes(` / `.test(`）。 */
+  const inlineCheck49 = (l) => /\.includes\(|\.test\(/.test(l);
+  // ⚠️ 记号与样本都**运行时拼出**（否则本判据会命中自己的样本）。
+  const BSLASH49 = String.fromCharCode(92); // `\`
+  const CMT_SLASH49 = `/^${BSLASH49}s*${BSLASH49}/${BSLASH49}/`; // 源码形态：/^\s*\/\//
+  /** 记号家族 → 扩展名（R1 **按家族**要求，见下）。 */
+  const EXTS_SLASH49 = ['rs', 'ts', 'tsx', 'mts', 'cts', 'mjs', 'cjs', 'js', 'jsx', 'css'];
+  const EXTS_HASH49 = ['toml', 'sh', 'yml', 'yaml'];
+  const EXTS_HTML49 = ['html'];
+  /** 判定与 canary **共用**：该源码**按字面路径读到的目标扩展名**集合。 */
+  const targetExts49 = (code) => {
+    const out = new Set();
+    const re = new RegExp(
+      `(?:^|[^.\\w])(?:read|readFileSync|codeText)\\(\\s*(?:resolve\\([^)]*,\\s*)?'[^']+\\.(${CODE_TARGET_EXTS})'`, 'g',
+    );
+    for (const m of code.matchAll(re)) out.add(m[1]);
+    return out;
+  };
+  /** 判定与 canary **共用**：该源码是否含**某记号家族**的剥法（记号与算子**同一行**）。
+   *  ⚠️ 记号与算子**必须同行** —— 否则 `if (/^\s*#/.test(l)) return false;` 这类
+   *     「**内联判断**」会被误认为剥法（㊻ 已实测过这个假阳性）。 */
+  const hasStripperFor49 = (code, marker) => code.split('\n').some((l) =>
+    l.includes(marker) && (l.includes('.map(') || l.includes('.filter(') || l.includes('.replace(')));
+  /** **裸读**的逐字登记表（键 = 该行 `trim()` 后的文本）。
+   *  ⚠️ 键里的函数名**运行时拼出** —— 否则这一行自己会被 `bareRead49` 命中（**判据命中自己**，抄 ㊻）。 */
+  const RAW_CODE_READ = new Map([
+    [`const SELF_SRC = ${'read'}FileSync(import.meta.filename ?? resolve(import.meta.dirname, 'verify-doc-code-refs.mjs'), 'utf8');`,
+      '**自读**：该判据数的是**本文件里** `walk(root)` / 裸 `git ls-files` 的出现次数，'
+      + '且它**故意只剥整行注释**（canary 明确断言「**行尾**注释里的调用**应当**仍被计入」）'
+      + '⇒ 换成 `codeText()` 会**改变被数的量**'],
+  ]);
+  /** R1 的**具名例外**（逐条给理由）：读了带注释语法的目标，却**不需要**剥法。 */
+  const NO_STRIPPER_OK = new Map([
+    ['verify-menu-contract-guard.mjs',
+      '**mutation harness**：它**不读**代码目标的内容（`patch()` 的路径是**变量**）；'
+      + '面里的那两处 `readFileSync(resolve(root, \'…\'))` 是**元判据的 canary 样本字符串**'
+      + '（`unshippedReads("…")` 的参数），**不是真读**'],
+  ]);
+  const guards49 = existsSync(parityDir)
+    ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
+    : [];
+  const offenders49 = [];
+  const found49 = new Set();
+  let guards49Reading = 0;
+  let codeTextUses49 = 0;
+  for (const f of guards49) {
+    const src = stripJsComments(read(`tests/parity/${f}`));
+    if (!src.split('\n').some((l) => targetRead49(l))) continue;
+    guards49Reading += 1;
+    codeTextUses49 += src.split('codeText(').length - 1;
+    // ⚠️ **按记号家族分别要求**（2026-10-12）：只要求「文件里有**某个**剥法」是不够的 ——
+    //   实测注入「把 `blankComments` 换成恒等函数」时，同文件的 `blankHash`（`#` 家族）
+    //   仍满足那个笼统的针 ⇒ **R1 不红**（**假绿**）。⇒ 读 `//` 家族就必须有 `//` 家族的剥法。
+    const exts49 = targetExts49(src);
+    for (const [marker, label, fam] of [
+      [`${BSLASH49}/`, '`//` 家族（rs/ts/tsx/mjs/js/css…）', EXTS_SLASH49],
+      ['/^\\s*#/', '`#` 家族（toml/sh/yml）', EXTS_HASH49],
+      ['<!--', 'HTML 注释（html）', EXTS_HTML49],
+    ]) {
+      if (![...exts49].some((e) => fam.includes(e))) continue;
+      if (hasStripperFor49(src, marker)) continue;
+      if (NO_STRIPPER_OK.has(f)) continue;
+      offenders49.push(`${f} 读了 **${label}** 的目标（${[...exts49].filter((e) => fam.includes(e)).join('/')}），`
+        + '却**没有**该家族的注释剥法');
+    }
+    for (const l of src.split('\n')) {
+      if (!bareRead49(l)) continue;
+      if (!bareBind49(l) && !inlineCheck49(l)) continue;
+      if (l.includes('codeText(')) continue;
+      const t = l.trim();
+      found49.add(t);
+      if (!RAW_CODE_READ.has(t)) {
+        offenders49.push(`${f} **裸读**代码/配置目标（未剥注释、也未登记）：${t.slice(0, 70)}`);
+      }
+    }
+  }
+  if (offenders49.length > 0) {
+    fail(`㊾ ${offenders49.slice(0, 4).join('；')} —— 判据扫的是**源码**，而**注释会被当成真内容**`
+      + '（本仓已实测 5 处：注释掉调用 / 注释里写依赖名 / 删掉模板里的真实注入行 ⇒ 判据**照样绿**）。'
+      + '修法：读代码/配置目标一律走剥注释的入口 `codeText()`；确需原文的**逐字**登记进'
+      + ' `RAW_CODE_READ` 并写明理由（审计 §4.327）');
+  }
+  const stale49 = [...RAW_CODE_READ.keys()].filter((k) => !found49.has(k));
+  if (stale49.length > 0) {
+    fail(`㊾ \`RAW_CODE_READ\` 有**陈旧条目**（源码里已不存在该裸读）：${stale49.slice(0, 2).join(' ⏎ ')}`
+      + ' —— 陈旧登记会让「每处裸读都已登记」**悄悄失效**');
+  }
+  for (const k of NO_STRIPPER_OK.keys()) {
+    if (!guards49.includes(k)) {
+      fail(`㊾ \`NO_STRIPPER_OK\` 登记了 \`${k}\`，但它**已不在护栏集合里** —— 请移除该登记`);
+    }
+  }
+  // 防空转：[健康度型]（读代码目标的护栏数与 `codeText` 用法数由仓库内容产生 ⇒ 留余量）
+  if (guards49Reading < 6 || codeTextUses49 < 20) {
+    fail(`㊾ 只找到 ${guards49Reading} 个读代码/配置目标的护栏 / ${codeTextUses49} 处 \`codeText(\``
+      + '（[健康度型] 下限 6 / 20）—— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：七向（与判定**共用** bareRead49 / targetRead49 / bareBind49 / inlineCheck49 /
+  //   targetExts49 / hasStripperFor49）
+  if (!bareRead49(`const a = ${'read'}FileSync(resolve(root, 'x.ts'), 'utf8');`)) {
+    fail('㊾ canary 失效：**字面路径裸读**未被检出');
+  }
+  if (bareRead49(`const a = codeText('x.ts');`)) {
+    fail('㊾ canary **过宽**：**经入口函数**的读取被当成了裸读（那会把正确写法判红）');
+  }
+  if (!targetRead49(`const a = codeText('x.ts');`)) {
+    fail('㊾ canary 失效：**经入口函数**的读取未被算进 R1 的面（面会**静默缩小**）');
+  }
+  if (!bareBind49(`const a = ${'read'}FileSync(resolve(root, 'x.ts'), 'utf8');`)) {
+    fail('㊾ canary 失效：**立即绑定**形态未被识别（那样 R2 会**空转**）');
+  }
+  if (!inlineCheck49(`if (!${'read'}FileSync(resolve(root, 'x.toml'), 'utf8').includes('y')) {`)) {
+    fail('㊾ canary 失效：**同行判定**形态未被识别');
+  }
+  if (!targetExts49(`const a = codeText('a/b.rs');`).has('rs')) {
+    fail('㊾ canary 失效：**扩展名分派**未解析出 `rs`（那样 R1 会**空转**）');
+  }
+  if (hasStripperFor49('const x = 1;', `${BSLASH49}/`)) {
+    fail('㊾ canary 失效：**没有**剥法的源码被判为「有剥法」');
+  }
+  if (!hasStripperFor49(`const s = x.split('\\n').map((l) => (${CMT_SLASH49}.test(l) ? '' : l)).join('\\n');`, `${BSLASH49}/`)) {
+    fail('㊾ canary **过宽**：**有** `//` 家族剥法的源码被判为「没有剥法」');
+  }
+  if (hasStripperFor49(`if (${CMT_SLASH49}.test(line)) return false;`, `${BSLASH49}/`)) {
+    fail('㊾ canary 失效：**内联判断注释行**（不是剥法）被判为「有剥法」（针的特异性不足）');
+  }
+  // ⚠️ **按家族分派**的 canary：`#` 家族的剥法**不得**被当成 `//` 家族的剥法（那是 §4.327 的假绿根因）
+  if (hasStripperFor49(`const h = (s) => s.split('\\n').map((l) => (/^\\s*#/.test(l) ? '' : l)).join('\\n');`, `${BSLASH49}/`)) {
+    fail('㊾ canary 失效：**`#` 家族的剥法**被判为满足 **`//` 家族**（⇒ 把 `blankComments` 换成'
+      + '恒等函数**不会红**，R1 形同虚设）');
+  }
+  console.log(`Release gate: 代码/配置目标的**注释纪律** —— 读这类目标的护栏 ${guards49Reading} 个 / `
+    + `\`codeText(\` ${codeTextUses49} 处 · **裸读**（未登记）${offenders49.length} 处 · `
+    + `裸读登记 ${RAW_CODE_READ.size} 条（含陈旧检查）· 具名例外 ${NO_STRIPPER_OK.size} 条；`
+    + '⚠️ **边界**：只认「立即绑定」与「同行判定」两种形态；加括号跨行续写 / 多参数路径 / 自读不在面内');
 }
 
 if (errors.length > 0) {

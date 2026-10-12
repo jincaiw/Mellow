@@ -178,22 +178,33 @@ const failures = [];
 //   「文件不存在」失败** —— 那是**沙箱缺文件**（**假阳性**），不是被注入的缺陷。
 //   本仓已两次踩到（见 `FILES` 里的 §10b / §1b 注释），第三次就是本轮（设置 schema）⇒ **机械化**。
 {
+  /** 判定与 canary **共用**：`src` 里**护栏要读的路径** ——
+   *  **两种形态都要认**：`resolve(root, '…')` **与** `codeText('…')`（剥注释的入口）。
+   *  ⚠️ **2026-10-12（审计 §4.327）**：只认 `resolve(root, …)` 会让**改经 `codeText()` 的读取
+   *    静默消失** —— 实测本护栏的读数 **10 → 3**，本条**当场红**（它是对的）；
+   *    若不修，沙箱复制面就再也**盖不住**护栏的真实读面（**假阳性**会回来）。 */
+  const readPathsOf = (src) => [...new Set([
+    ...[...src.matchAll(/resolve\(root,\s*'([^']+)'\)/g)].map((m) => m[1]),
+    ...[...src.matchAll(/\bcodeText\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]),
+  ])];
   /** 返回 `src` 里「护栏读了、但沙箱没复制」的路径（判定与 canary **共用**本谓词）。 */
-  const unshippedReads = (src) => [...new Set([...src.matchAll(/resolve\(root,\s*'([^']+)'\)/g)]
-    .map((m) => m[1]))].filter((p) => !(p in FILES));
+  const unshippedReads = (src) => readPathsOf(src).filter((p) => !(p in FILES));
   const guardSrc = readFileSync(GUARD, 'utf8');
-  const reads = [...new Set([...guardSrc.matchAll(/resolve\(root,\s*'([^']+)'\)/g)].map((m) => m[1]))];
+  const reads = readPathsOf(guardSrc);
   if (reads.length < 5) {
-    failures.push(`沙箱元判据失效：护栏只解析出 ${reads.length} 处 resolve(root, '…')（下限 5 = 2026-10-09 实测 10）—— 谓词漂移`);
+    failures.push(`沙箱元判据失效：护栏只解析出 ${reads.length} 处读取路径（下限 5 = 2026-10-09 实测 10）—— 谓词漂移`);
   }
   const missing = unshippedReads(guardSrc);
   if (missing.length > 0) {
     failures.push(`沙箱未复制护栏要读的文件：${missing.join('、')} —— \`FILES\` 是**手写清单**，`
       + '护栏新读文件时必须同步（否则**每个用例**都会因「文件不存在」失败 = **假阳性**）');
   }
-  // canary：两向（共用 unshippedReads）
+  // canary：三向（共用 unshippedReads / readPathsOf）
   if (unshippedReads("readFileSync(resolve(root, 'no/such/file.ts'), 'utf8')").length !== 1) {
     failures.push('沙箱元判据 canary 失效：漏复制的文件未被检出');
+  }
+  if (unshippedReads("const a = codeText('no/such/file.ts');").length !== 1) {
+    failures.push('沙箱元判据 canary 失效：`codeText(…)` 形态的漏复制文件未被检出');
   }
   if (unshippedReads("readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8')").length !== 0) {
     failures.push('沙箱元判据 canary 过宽：已复制的文件被判为缺失');

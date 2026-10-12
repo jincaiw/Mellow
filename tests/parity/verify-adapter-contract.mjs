@@ -16,6 +16,28 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, relative, sep } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
+
+// ── 代码/配置目标的**注释剥离**（2026-10-12，审计 §4.327）──────────────────────────────
+// 【为什么】判据扫的是**源码**，而**注释会被当成真内容** —— 本仓已在 workflow（YAML `#`，§4.323）
+//   与 markdown（`<!-- -->`，§4.324）上各踩一次；同族**第三半**是**代码/配置**：实测
+//   ① 把 `bridge_call` / `invoke('set_menu_spec'` / `pub fn set_menu_spec` 的调用**注释掉**；
+//   ② 给 `Cargo.toml` 加一行 `# windows-sys = "0.59"`；③ 删掉 `build-editor-bundle.mjs`
+//   **模板字面量里**的真实注入行（`window.__MELLOW_BRIDGE__ = {`）—— 判据**全都照样绿**
+//   （**假阴性、无人知**）。
+// 【为什么必须**字符串/模板感知**】朴素整行剥离会**吃掉模板字面量内部的**行首 `//`：
+//   实测 `apps/desktop/scripts/build-editor-bundle.mjs` 有 **17** 行属于这种情况
+//   （那是**真内容** —— 注入进 iframe 的 JS 源码），吃掉它反而**制造**假阴性。
+//   ⇒ 采用「字符串 / 模板 / 正则字面量 / 行注释」**四保留分支**（同 `verify-parity-ledger.mjs`
+//   的 `stripComments`，§4.296），但**置空而不删除** ⇒ **行号映射不变**。
+// ⚠️ **边界如实声明**：不认 Rust 的 `r"…"` 原始字符串与 `'a` 生命周期 —— 只会**少剥**、**不会吃代码**。
+const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
+/** 判定与 canary **共用**：`#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
+const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
+/** 读**代码/配置**目标文件的**唯一入口**（按扩展名选剥法）。判定与 canary **共用**。 */
+const codeText = (rel) => {
+  const raw = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+  return /\.(?:toml|sh|ya?ml)$/.test(rel) ? blankHash(raw) : blankComments(raw);
+};
 const errors = [];
 const fail = (message) => errors.push(message);
 
@@ -60,7 +82,7 @@ if (platformViolations.length > 0) {
 }
 
 // ── ③ Adapter contract 三方锚点 ─────────────────────────────────────────
-const bridgeInjection = readFileSync(resolve(root, 'packages/editor-core/src/bridge-injection.ts'), 'utf8').replace(/\r\n/g, '\n');
+const bridgeInjection = codeText('packages/editor-core/src/bridge-injection.ts');
 // ⚠️ **2026-10-11（审计 §4.314）：原判据是 `bridgeInjection.includes('__MELLOW_BRIDGE__')`** ——
 //   而该词在文件里出现 **6 次**：3 处在**注释**、2 处在**用法**、**1 处才是契约定义**。
 //   注入实测：**删掉契约定义那一行 ⇒ EXIT=0（漏检）** —— 因为注释与用法里还有 5 处。
@@ -80,11 +102,27 @@ if (!BRIDGE_DECL_RE.test('    __MELLOW_BRIDGE__?: { invoke(message: unknown): Pr
 if (BRIDGE_DECL_RE.test(' * - Tauri：desktop Adapter 层把 __MELLOW_BRIDGE__ 接到 Tauri 全局桥')) {
   fail('③ canary **过宽**：**注释**里的提及被当成了契约定义（这正是首版的缺陷）');
 }
-const bundleScript = readFileSync(resolve(root, 'apps/desktop/scripts/build-editor-bundle.mjs'), 'utf8').replace(/\r\n/g, '\n');
-if (!bundleScript.includes('__MELLOW_BRIDGE__') || !bundleScript.includes('__TAURI__')) {
+const bundleScript = codeText('apps/desktop/scripts/build-editor-bundle.mjs');
+// ⚠️ **2026-10-12（审计 §4.327）：原判据是 `includes('__MELLOW_BRIDGE__') || includes('__TAURI__')`** ——
+//   实测**删掉模板字面量里的真实注入行**（`window.__MELLOW_BRIDGE__ = {`）⇒ **仍然绿**：
+//   ① 该词在**块注释**（文件头注释 / 函数文档）里另有 3 处；② 剥注释后**模板里还剩 2 处**
+//   （真实赋值 + 注入 JS 内部的一句注释）⇒ **针不唯一 ⇒ 删掉「该处」不会红**（§4.314 的教训）。
+//   ⇒ 锚定到**接线形态**：`window.__MELLOW_BRIDGE__ = {`（剥注释后**唯一**）与
+//   `__TAURI__.core.invoke(`（把桥接到 Tauri 的那一次调用，剥注释后**唯一**）。
+if (!bundleScript.includes('window.__MELLOW_BRIDGE__ = {') || !bundleScript.includes('__TAURI__.core.invoke(')) {
   fail('build-editor-bundle.mjs 缺少 __MELLOW_BRIDGE__ → __TAURI__ 适配器接线（desktop 专属 Tauri Bridge Adapter）');
 }
-const bridgeRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/bridge.rs'), 'utf8').replace(/\r\n/g, '\n');
+// canary：`blankComments` 必须**真的**剥注释，且**保留模板字面量里的**内容（§4.327 的承重性质）
+{
+  const SAMPLE = `const a = 1; // invoke('set_menu_spec')\n/* window.__MELLOW_BRIDGE__ = { */\nconst t = \`\n// keep me\n\`;`;
+  const OUT = blankComments(SAMPLE);
+  if (OUT.includes("invoke('set_menu_spec'") || OUT.includes('window.__MELLOW_BRIDGE__ = {')
+    || !OUT.includes('// keep me') || OUT.split('\n').length !== SAMPLE.split('\n').length) {
+    fail('Adapter contract 护栏自检失败：`blankComments` 未按预期剥注释'
+      + '（**行注释 / 块注释必须剥**、**模板字面量里的必须保留**、**行数不得变**）');
+  }
+}
+const bridgeRust = codeText('apps/desktop/src-tauri/src/bridge.rs');
 if (!bridgeRust.includes('bridge_call')) {
   fail('Rust System Core bridge.rs 缺少 bridge_call 命令（桥契约 Rust 侧实现）');
 }
@@ -179,20 +217,20 @@ if (!/"createUpdaterArtifacts": true/.test(tauriConf)) {
     fail('§134 宪法侧护栏 canary 失效：带后缀的样本被误判为独立条目');
   }
 }
-const jumplistRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/jumplist.rs'), 'utf8').replace(/\r\n/g, '\n');
+const jumplistRust = codeText('apps/desktop/src-tauri/src/jumplist.rs');
 // 词边界正则（\b）：add_recent_renamed 之类超集子串不得假绿（canary 实证过 includes 缺陷）
 if (!/\bpub fn add_recent\b/.test(jumplistRust) || !jumplistRust.includes('SHAddToRecentDocs')) {
   fail('src-tauri jumplist.rs 缺少 add_recent/SHAddToRecentDocs（Windows JumpList Rust 侧实现）');
 }
-const libRust = readFileSync(resolve(root, 'apps/desktop/src-tauri/src/lib.rs'), 'utf8').replace(/\r\n/g, '\n');
+const libRust = codeText('apps/desktop/src-tauri/src/lib.rs');
 if (!libRust.includes('jump_list_add_recent')) {
   fail('src-tauri lib.rs 未注册 jump_list_add_recent 命令（JumpList 前端入口）');
 }
-const appTsSource = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const appTsSource = codeText('apps/desktop/src/App.tsx');
 if (!appTsSource.includes("invoke('jump_list_add_recent'")) {
   fail('App.tsx recordRecentFile 未调用 jump_list_add_recent（JumpList 系统最近文档挂点）');
 }
-if (!readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n').includes('windows-sys')) {
+if (!codeText('apps/desktop/src-tauri/Cargo.toml').includes('windows-sys')) {
   fail('src-tauri Cargo.toml 缺少 windows-sys（cfg(windows) target 依赖，JumpList Shell API）');
 }
 

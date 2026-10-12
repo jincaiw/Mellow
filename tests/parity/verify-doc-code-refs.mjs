@@ -40,6 +40,28 @@ import { execFileSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '../..');
 
+// ── 代码/配置目标的**注释剥离**（2026-10-12，审计 §4.327）──────────────────────────────
+// 【为什么】判据扫的是**源码**，而**注释会被当成真内容** —— 本仓已在 workflow（YAML `#`，§4.323）
+//   与 markdown（`<!-- -->`，§4.324）上各踩一次；同族**第三半**是**代码/配置**：实测
+//   ① 把 `bridge_call` / `invoke('set_menu_spec'` / `pub fn set_menu_spec` 的调用**注释掉**；
+//   ② 给 `Cargo.toml` 加一行 `# windows-sys = "0.59"`；③ 删掉 `build-editor-bundle.mjs`
+//   **模板字面量里**的真实注入行（`window.__MELLOW_BRIDGE__ = {`）—— 判据**全都照样绿**
+//   （**假阴性、无人知**）。
+// 【为什么必须**字符串/模板感知**】朴素整行剥离会**吃掉模板字面量内部的**行首 `//`：
+//   实测 `apps/desktop/scripts/build-editor-bundle.mjs` 有 **17** 行属于这种情况
+//   （那是**真内容** —— 注入进 iframe 的 JS 源码），吃掉它反而**制造**假阴性。
+//   ⇒ 采用「字符串 / 模板 / 正则字面量 / 行注释」**四保留分支**（同 `verify-parity-ledger.mjs`
+//   的 `stripComments`，§4.296），但**置空而不删除** ⇒ **行号映射不变**。
+// ⚠️ **边界如实声明**：不认 Rust 的 `r"…"` 原始字符串与 `'a` 生命周期 —— 只会**少剥**、**不会吃代码**。
+const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
+/** 判定与 canary **共用**：`#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
+const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
+/** 读**代码/配置**目标文件的**唯一入口**（按扩展名选剥法）。判定与 canary **共用**。 */
+const codeText = (rel) => {
+  const raw = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+  return /\.(?:toml|sh|ya?ml)$/.test(rel) ? blankHash(raw) : blankComments(raw);
+};
+
 /** 判据编号用的**圈号**全集（①–⑳ / ㉑–㉟ / ㊱–㊿ = 50 个），按**码位区间**写。
  *  ⚠️ **枚举式**字符类会**静默漏掉**新编号（实测：`[①-⑳㉑-㉟]` 让新增的 ㊱ 不可见）⇒ 必须用区间。
  *  ⚠️ 三处以上共用本常量 ⇒ 改一处即全改（见 ㉞ / ㊲）。 */
@@ -690,7 +712,7 @@ const PACKAGING_VERSION_ALLOW = new Map([
 //   ⇒ 现把两份 `Cargo.lock` 都纳入，并**共用**同一段 pick（不复制）。
 /** 判定与 canary **共用**：从一份 `Cargo.lock` 里取本包（`mellow-desktop`）的 version。 */
 const lockVersionOf = (s) => {
-  const crate = (readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8')
+  const crate = (codeText('apps/desktop/src-tauri/Cargo.toml')
     .match(/^name\s*=\s*"([^"]+)"/m) ?? [])[1];
   if (crate === undefined) return undefined;
   const re = new RegExp(`\\[\\[package\\]\\]\\nname = "${crate}"\\nversion = "([^"]+)"`);
@@ -1675,7 +1697,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
 
   // Cargo：`[dependencies]` 与各 `[target.'…'.dependencies]`（**不含** `[dev-dependencies]`）
-  const cargoSrc = readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8').replace(/\r\n/g, '\n');
+  const cargoSrc = codeText('apps/desktop/src-tauri/Cargo.toml');
   const cargoDeps = new Set();
   for (const sec of cargoSrc.split(/^(?=\[)/m)) {
     const head = sec.split('\n')[0].trim();
@@ -3516,7 +3538,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 326; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 327; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');

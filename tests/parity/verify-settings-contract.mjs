@@ -15,6 +15,28 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
+
+// ── 代码/配置目标的**注释剥离**（2026-10-12，审计 §4.327）──────────────────────────────
+// 【为什么】判据扫的是**源码**，而**注释会被当成真内容** —— 本仓已在 workflow（YAML `#`，§4.323）
+//   与 markdown（`<!-- -->`，§4.324）上各踩一次；同族**第三半**是**代码/配置**：实测
+//   ① 把 `bridge_call` / `invoke('set_menu_spec'` / `pub fn set_menu_spec` 的调用**注释掉**；
+//   ② 给 `Cargo.toml` 加一行 `# windows-sys = "0.59"`；③ 删掉 `build-editor-bundle.mjs`
+//   **模板字面量里**的真实注入行（`window.__MELLOW_BRIDGE__ = {`）—— 判据**全都照样绿**
+//   （**假阴性、无人知**）。
+// 【为什么必须**字符串/模板感知**】朴素整行剥离会**吃掉模板字面量内部的**行首 `//`：
+//   实测 `apps/desktop/scripts/build-editor-bundle.mjs` 有 **17** 行属于这种情况
+//   （那是**真内容** —— 注入进 iframe 的 JS 源码），吃掉它反而**制造**假阴性。
+//   ⇒ 采用「字符串 / 模板 / 正则字面量 / 行注释」**四保留分支**（同 `verify-parity-ledger.mjs`
+//   的 `stripComments`，§4.296），但**置空而不删除** ⇒ **行号映射不变**。
+// ⚠️ **边界如实声明**：不认 Rust 的 `r"…"` 原始字符串与 `'a` 生命周期 —— 只会**少剥**、**不会吃代码**。
+const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
+/** 判定与 canary **共用**：`#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
+const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
+/** 读**代码/配置**目标文件的**唯一入口**（按扩展名选剥法）。判定与 canary **共用**。 */
+const codeText = (rel) => {
+  const raw = readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n');
+  return /\.(?:toml|sh|ya?ml)$/.test(rel) ? blankHash(raw) : blankComments(raw);
+};
 /**
  * ⚠️ **代码文件先剥「整行注释」再断言**（2026-09-30 补）。
  *
@@ -2851,7 +2873,7 @@ if (cssLayerAnchor === undefined) {
   const ledgerIds = new Set(
     (JSON.parse(readFileSync(resolve(root, LEDGER), 'utf8')).items ?? []).map((it) => it.id),
   );
-  const appSrc = readFileSync(resolve(root, 'apps/desktop/src/App.tsx'), 'utf8');
+  const appSrc = codeText('apps/desktop/src/App.tsx');
   const windowAt = (site) => {
     const at = appSrc.indexOf(site.marker);
     return at < 0 ? null : appSrc.slice(at, at + 1500);
