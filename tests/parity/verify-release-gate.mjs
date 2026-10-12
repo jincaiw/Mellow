@@ -92,16 +92,21 @@ const stripJsComments = (s) => {
 };
 
 // ── 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）──────────
-// 【为什么必须有】本仓纪律：**静态检查的谓词必须剥字符串**。否则「**错误消息里的示例**」全是假阳性 ——
-//   实测代价（§4.296 / §4.293）：`fail('… 必须 writeFileSync(…)')` 这类**消息**会被当成**调用**。
-// ⚠️ **顺序**：必须先 `stripJsComments`（它**字符串感知**）再本函数 —— 反过来会让**注释里的引号**
-//   开一个「假字符串」⇒ 脱同步 ⇒ 假阳性（§4.306 的镜像判据首版就踩了这个）。
-// ⚠️ **本函数是模块级的唯一实现**：`㉒`（断言辅助函数）与 `㉚`（`node:*` 导入）**共用它** ——
-//   同族判据的**剥法必须一致**（否则它们只是「两个带不同 bug 的意见」；§4.306 的教训）。
-const stripStrings = (s) => s.replace(
-  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
-  (m) => m.replace(/[^\n]/g, ' '),
-);
+// ── **剥字符串 + 剥注释的唯一实现**（㉒ ㉓ ㉚ ㊼ 共用；2026-10-12，审计 §4.337）──────────
+// 【为什么必须**一次扫描**】实测（本轮）：把它拆成**两遍**（先剥注释、再剥字符串）时，
+//   第二遍**不认正则字面量** ⇒ 正则里的反引号（如 `/['"`]/`）被当成**模板起始**，
+//   而模板分支**允许换行** ⇒ 从那里一路吃到**下一个**反引号（实测跨 **14 行**）
+//   ⇒ 把中间的真实代码**整段置空**（**假阴性、无人知**）。
+//   ⇒ 与 §4.296 的「朴素块注释剥离被字符串里的 `/*` 骗到」**同型** —— 只是换成了**字符串剥离**。
+// 【为什么**保留正则字面量**】多处判据要读**别的护栏**的 `failsOn`（那是正则字面量）⇒
+//   剥掉它会让那些判据失效。保留它**不会**引入上面的问题：**同一次**左到右扫描里
+//   正则分支先把 `/…/ ` 整个吃掉 ⇒ 里面的反引号**不会**再被当成模板起始。
+// ⚠️ 用 `keep.startsWith('/')` 区分「正则」与「串」（串总以引号开头）—— 可靠。
+// ⚠️ **边界**：不认 Rust 的 `r"…"` / `'a` 生命周期（只**少剥**，不吃代码）。
+// ⚠️ **定义行必须以 `;` 结尾**（㊻ R3 ② 要把它**逐字**抽出来比对）。
+const SCRUB_RE = /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g;
+/** 剥注释 + 剥**字符串/模板**（保留正则字面量），**一次扫描** ⇒ 不会跨行吃代码。 */
+const scrubOf = (src) => src.replace(SCRUB_RE, (m, keep) => (keep !== undefined && keep.startsWith('/') ? keep : m.replace(/[^\n]/g, ' ')));
 
 // ── 与各护栏**入口 `codeText()` 同一语义**的剥法（2026-10-12，审计 §4.327）──────────────
 // 【为什么必须有】判据 **㊴** 量的是「针在**目标文件**里剥注释后还剩几处」——
@@ -3657,7 +3662,9 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   //   `COVERAGE_EQ_PENDING` 的**理由字符串**里写了 `` `assert()`（throw）型 `` ⇒ 被当成
   //   「调用了未定义的 `assert(`」**假阳性**。同族的 `㉚` **一直**是剥字符串的（§4.293）⇒
   //   本条**漏了同一句话的另一半**。现共用模块级 `stripStrings`（同族剥法必须一致）。
-  const scrub22 = (s) => stripStrings(stripComments22(s));
+  // ⚠️ 2026-10-12（审计 §4.337）：原先写成 `stripStrings(stripComments22(s))` —— **两遍**，
+  //   第二遍不认正则 ⇒ 正则里的反引号开模板 ⇒ **跨行吃代码**。现共用**单遍** `scrubOf`。
+  const scrub22 = scrubOf;
   const guards22 = existsSync(parityDir)
     ? readdirSync(parityDir).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).sort()
     : [];
@@ -3726,7 +3733,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   // 【边界如实声明】⚠️ 只覆盖 `SHARED_TEXT_HELPERS` 列出的名字（跨块共享的那一小组）；
   //   **别的模块级 `const` 的 TDZ 不在覆盖内** —— 那半靠**运行**兜住（崩 = CI 红，
   //   丢的是**具体性**而不是**正确性**）。
-  const SHARED_TEXT_HELPERS = ['stripJsComments', 'stripStrings', 'blankComments', 'blankHash',
+  const SHARED_TEXT_HELPERS = ['stripJsComments', 'scrubOf', 'SCRUB_RE', 'blankComments', 'blankHash',
     'blankHtmlComments', 'scanBodyOf', 'hasQuotedArg', 'stripYamlComments', 'codeText', 'mdText'];
   /** 判定与 canary **共用**：`name` 在源码里是否「先用后定义」。
    *  返回**首次使用的行号**（1 起）；合规返回 `-1`；**未定义**返回 `null`（不由本判据负责）。 */
@@ -3769,9 +3776,65 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   if (firstUseBeforeDef('const x = 1;\n', 'a') !== null) {
     fail('㉒ R2 canary **过宽**：**未定义**的名字被判为「合规」（那会让本判据假装覆盖了它）');
   }
+  // ── R3（2026-10-12，审计 §4.337）：**剥串必须走唯一入口 `scrubOf`（一次扫描）** ─────────
+  // 【为什么】把「剥注释」与「剥字符串」拆成**两遍**时，第二遍**不认正则字面量** ⇒
+  //   正则里的反引号（如 `/['"`]/`）被当成**模板起始**，而模板分支**允许换行**
+  //   ⇒ 从那里一路吃到**下一个**反引号（实测跨 **14 行**）⇒ 中间的真实代码**整段置空**
+  //   （**假阴性、无人知**）。⚠️ 与 §4.296 的「朴素块注释剥离」**同型**，只是换成了字符串剥离。
+  // 【判据】`tests/parity/verify-*.mjs` 的**代码**（已剥注释）里**不得**出现 `stripStrings(` 调用
+  //   —— 它是那个**正则不感知的第二遍**；剥串一律走模块级 `scrubOf`。
+  // 【边界如实声明】⚠️ 这是**结构性**判据（锁「只有一个入口」）—— 它**不保证**那个入口
+  //   对**所有** JS 语法正确（嵌套模板 `${`…`}`、正则 vs 除法的 `/` 歧义**都不覆盖**）；
+  //   那半靠下面**行为 canary 的合成样本**兜住，**没有全语法覆盖**。
+  // ⚠️ needle **运行时拼接** —— 否则本判据自己的样本会命中自己（同 ㉑ 的 `new Buffer(`）。
+  const OLD_STRIP = 'strip' + 'Strings';
+  const BAD_STRIP_RE = new RegExp(`(?<![\\w.$])${OLD_STRIP}\\(`);
+  const badStrip = [];
+  let scrubDefs = 0;
+  for (const f of guards22) {
+    const src = scrubOf(read(`tests/parity/${f}`));
+    if (src.includes('const scrubOf = ')) scrubDefs += 1;
+    src.split('\n').forEach((l, i) => {
+      if (BAD_STRIP_RE.test(l)) badStrip.push(`${f}:${i + 1}`);
+    });
+  }
+  if (badStrip.length > 0) {
+    fail(`㉒ R3 这些护栏里还有 \`${OLD_STRIP}(\`（**正则不感知的第二遍**）：${badStrip.join('、')}`
+      + ' —— 它会把**正则里的反引号**当成模板起始、**跨行吃掉真实代码**（§4.337 实测跨 14 行）；'
+      + '改用**一次扫描**的 `scrubOf`（剥注释 + 剥字符串 + 剥模板，**保留正则字面量**）');
+  }
+  // 防空转：[健康度型]（定义 `scrubOf` 的护栏数由仓库内容产生 ⇒ 留余量；实测 2）
+  if (scrubDefs < 2) {
+    fail(`㉒ R3 只有 ${scrubDefs} 个护栏定义了 \`scrubOf\`（[健康度型] 下限 2）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：三向（与判定**共用** BAD_STRIP_RE；样本**拼接构造**）
+  if (!BAD_STRIP_RE.test(`const s = ${OLD_STRIP}(x);`)) {
+    fail(`㉒ R3 canary 失效：\`${OLD_STRIP}(\` 调用**未被检出**（判据已退化成空真）`);
+  }
+  if (BAD_STRIP_RE.test(`const ${OLD_STRIP}X = (x) => x;`)) {
+    fail('㉒ R3 canary **过宽**：**别的标识符**（前缀相同）被判成那个调用');
+  }
+  // canary ③（**行为**：证明这个谓词值得存在）—— 合成样本：**两个**正则字面量，各自带一个反引号
+  //   ⚠️ **必须有两个**：只有一个反引号时模板分支**找不到收尾**⇒ 不匹配 ⇒ 两遍式也**不会**吃代码
+  //   （首版样本只有一个 ⇒ canary **假报「过宽」**；这正是 canary 该干的事）。
+  const SAMPLE_RX = "const a = /['\"`]/;\nconst KEEP_ME = 1;\nconst b = /`/;\n";
+  /** 复刻那个**错的两遍式**（只在本 canary 里存在）。 */
+  const twoPass = (s) => stripJsComments(s).replace(
+    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
+    (m) => m.replace(/[^\n]/g, ' '),
+  );
+  if (!scrubOf(SAMPLE_RX).includes('KEEP_ME')) {
+    fail('㉒ R3 canary 失效：**单遍** `scrubOf` 吃掉了正则之后的真实代码');
+  }
+  if (twoPass(SAMPLE_RX).includes('KEEP_ME')) {
+    fail('㉒ R3 canary **过宽**：两遍式**没有**吃掉代码 —— 那本判据就没有存在的理由，请**重新评估**'
+      + '（也许 `stripStrings` 已被改成正则感知，那时本判据应当删除而不是保留）');
+  }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
     + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）；`
-    + `**先用后定义**（R2）${tdzViolations.length} 处 · 共享文本助手定义 ${sharedDefs} 个`);
+    + `**先用后定义**（R2）${tdzViolations.length} 处 · 共享文本助手定义 ${sharedDefs} 个 · `
+    + `**正则不感知的第二遍**（R3）${badStrip.length} 处`);
 }
 
 // ── ㉓ 空 `catch` 必须写明理由（2026-10-11，审计 §4.292）──
@@ -3782,8 +3845,9 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
 // 【判据】代码面里 `catch` 的**函数体只含空白**（连注释都没有）⇒ 报错，要求写明理由。
 //   ⚠️ **必须剥字符串**：首版没剥 ⇒ 命中**夹具样本**（`verify-settings-contract.mjs` 的负样本
 //     字符串里就写着 `catch {}`）⇒ **假阳性**。
-//   ⚠️ **必须保留注释**：第二版把注释也剥了 ⇒ 「带理由的空 catch」与「真空 catch」**混在一起**
-//     （实测 **15 → 60** 处）⇒ **不可判**。保留注释后 ⇒ 只剩 **1 处**（已补理由）。
+//   ⚠️ **「带理由」怎么判**：不能靠「保留注释」—— 那会让**注释里引用的** `catch {}`（本仓到处是教学引用）
+//     变成假阳性；也不能靠「剥掉注释」—— 那会让 `catch { /* no-op */ }` 与 `catch {}` **长得一样**。
+//     ⇒ 正解 = **置空后匹配 + 回读原文片段**（见 `emptyCatchLines`；审计 §4.337）。
 //   ⚠️ **边界如实声明**：**模板字面量里的生成 JS 不在扫描面内**（被字符串剥离排除）——
 //     实测有 2 处（`build-editor-bundle.mjs` 注入浏览器的桥接脚本），已**人工补理由注释**。
 {
@@ -3791,11 +3855,23 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   //   首版漏了 `jsx`，`verify-doc-code-refs.mjs` **判据 ㊺** 当场报红（它正是为防这个而立的；审计 §4.282）。
   const CODE_EXT23 = /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/;
   const VENDORED23 = /CoreEditor\/\.yarn\/|node_modules\//;
-  /** 判定与 canary **共用**：剥字符串（**保留注释** —— 注释是「理由」的载体）。 */
-  const stripStrings23 = (s) => s
-    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
-    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
-    .replace(/`(?:[^`\\]|\\.)*`/gs, '``');
+  /** 判定与 canary **共用**：一份源码里「**真空** catch」的行号（1 起）。
+   *  ⚠️ 2026-10-12（审计 §4.337）：原先用本块局部的 `stripStrings23`（**保留注释**，且模板分支带 `/s`
+   *    ⇒ **跨行**）—— 三个问题：① 跨行模板匹配会把**中间的真实代码连同注释整段置空** ⇒
+   *    本判据当时是**靠这个 bug 通过**的（修好剥法后立刻暴露 2 处**注释里的** `catch {}` 假阳性）；
+   *    ② 模板被压成 ``` `` ``` ⇒ **行号整体偏移**（§4.334 同型）；③ 正则字面量里的反引号被当成模板起始。
+   *  ⇒ 改为 `scrubOf`（一次扫描、**保长度**）+ **回读原文片段**判「体内有没有注释」。
+   *  ⚠️ **保长度**是关键：置空不删除 ⇒ `m.index` 能**逐字**映射回原文 ⇒ 既取得到真注释，行号也**正确**。 */
+  const emptyCatchLines = (raw) => {
+    const code = scrubOf(raw);
+    const out = [];
+    for (const m of code.matchAll(EMPTY_CATCH_RE)) {
+      const seg = raw.slice(m.index, m.index + m[0].length);
+      if (/\/\/|\/\*/.test(seg)) continue;        // 体内有注释 ⇒ 已写明理由
+      out.push(code.slice(0, m.index).split('\n').length);
+    }
+    return out;
+  };
   /** 判定与 canary **共用**：`catch` 体**只含空白**。 */
   const EMPTY_CATCH_RE = /catch\s*(?:\([^)]*\))?\s*\{\s*\}/g;
   let repoFiles23 = [];
@@ -3810,10 +3886,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   for (const f of repoFiles23) {
     if (!CODE_EXT23.test(f) || VENDORED23.test(f)) continue;
     code23 += 1;
-    const s = stripStrings23(read(f));
-    for (const m of s.matchAll(EMPTY_CATCH_RE)) {
-      emptyCatches.push(`${f}:${s.slice(0, m.index).split('\n').length}`);
-    }
+    for (const ln of emptyCatchLines(read(f))) emptyCatches.push(`${f}:${ln}`);
   }
   if (emptyCatches.length > 0) {
     fail(`㉓ 这些地方的 \`catch\` **体只含空白**（连理由注释都没有）⇒ 异常被**静默吞掉**：`
@@ -3828,8 +3901,8 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   if (code23 < CODE_BASELINE) {
     fail(`㉓ 只扫到 ${code23} 个代码文件（[健康度型] 下限 ${CODE_BASELINE}）—— 扫描面萎缩会让本判据**空转**`);
   }
-  // canary：四向（与判定**共用** stripStrings23 / EMPTY_CATCH_RE）
-  const emptyIn = (s) => [...stripStrings23(s).matchAll(EMPTY_CATCH_RE)].length;
+  // canary：六向（与判定**共用** emptyCatchLines / EMPTY_CATCH_RE）
+  const emptyIn = (s) => emptyCatchLines(s).length;
   if (emptyIn('try { x(); } catch {}') !== 1 || emptyIn('try { x(); } catch (e) { }') !== 1) {
     fail('㉓ canary 失效：真空 catch 的两种写法**未被检出**');
   }
@@ -3838,6 +3911,14 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   }
   if (emptyIn("const s = 'try { x(); } catch {}';") !== 0) {
     fail('㉓ canary **过宽**：**字符串里的** `catch {}`（夹具样本）被当成真代码（必须剥字符串）');
+  }
+  // ⚠️ **第五向**（2026-10-12，审计 §4.337）：**注释里引用**的 `catch {}`（本仓到处是教学引用）不算
+  if (emptyIn('// 反例：catch {} 会把异常吞掉\nconst x = 1;\n') !== 0) {
+    fail('㉓ canary **过宽**：**注释里**引用的 `catch {}` 被当成真代码（§4.337 实测：本判据**曾靠跨行吃码的 bug 通过**）');
+  }
+  // ⚠️ **第六向**（行号）：多行模板**不得**让后面的行号偏移（§4.334 同型）
+  if (emptyCatchLines('const t = `\na\nb\n`;\ntry { x(); } catch {}\n').join() !== '5') {
+    fail('㉓ canary 失效：多行模板之后的 `catch {}` **行号不对** —— 剥法必须**保长度**（§4.334 同型）');
   }
   console.log(`Release gate: 空 \`catch\` —— 扫描 ${code23} 个代码文件，`
     + `**全部带理由注释**（${emptyCatches.length} 处真空 catch，[覆盖型] 基线 ${EMPTY_CATCH_BASELINE}）`
@@ -4463,10 +4544,10 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   // ⚠️ **2026-10-11（审计 §4.310）**：原为本块内的局部 `stripStrings30` ⇒ 现提到**模块级**
   //   `stripStrings`，与 `㉒` **共用同一实现**（同族判据的剥法必须一致 —— 否则它们只是
   //   「两个带不同 bug 的意见」）。
-  const stripStrings30 = stripStrings;
+  const stripStrings30 = scrubOf;   // §4.337：单遍（原先 `stripStrings` 是**第二遍**，不认正则）
   /** 判定与 canary **共用**：一份护栏源码里「调用了 `node:*` 导出名却没 import / 没本地定义」的名字。 */
   const missingNodeImports = (rawSrc, vocab, imported) => {
-    const src = stripStrings30(stripJsComments(rawSrc));
+    const src = stripStrings30(rawSrc);
     const out = [];
     for (const name of vocab) {
       if (imported.has(name)) continue;
@@ -5002,7 +5083,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 34; // [覆盖型] 基线 34（2026-10-12 §4.335：新增 ⑳ R10 的显式 blocker 计数）
+  const COVERAGE_MARK_BASELINE = 36; // [覆盖型] 基线 36（2026-10-12 §4.337：㊻ R3 ② 由 1 个名字推广成 3 个）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -5989,7 +6070,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     ['blankComments', blankComments, 'a\n// ZQ3\nb', 'ZQ3'],
     ['blankHtmlComments', blankHtmlComments, 'a\n<!-- ZQ4 -->\nb', 'ZQ4'],
     ['stripJsComments', stripJsComments, 'a\n// ZQ5\nb', 'ZQ5'],
-    ['stripStrings', stripStrings, 'a\nconst s = \'ZQ6\';\nb', 'ZQ6'],
+    ['scrubOf', scrubOf, 'a\nconst s = \'ZQ6\';\nb', 'ZQ6'],
   ];
   for (const [name, fn, sample, token] of STRIP_CASES46) {
     const out = fn(sample);
@@ -6001,28 +6082,49 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
         + `${out.split('\n').length} 行）—— 判据报出的 \`file:line\` 会**整体偏移**（审计 §4.334）`);
     }
   }
-  // ② 同一性：`stripYamlComments` 的**定义行**必须逐字相同（① 的结论才能传递到别的护栏）
-  const YAML_DEF_RE46 = /^const stripYamlComments = .*;$/m;
-  const yamlDef46 = (code) => (YAML_DEF_RE46.exec(code) ?? [null])[0];
-  const CANON46 = yamlDef46(stripJsComments(read('tests/parity/verify-release-gate.mjs')));
-  if (CANON46 === null) {
-    fail('㊻ R3 找不到本文件的 `stripYamlComments` 定义 —— **量具失效**（派生不出基准就无从比对）');
-  } else {
-    const copies46 = [];
+  // ② 同一性：**共享剥法**的**定义行**必须逐字相同（① 的结论才能传递到别的护栏）
+  //   ⚠️ 2026-10-12（审计 §4.337）：从「只锁 `stripYamlComments` **一个名字**」推广成**一张清单** ——
+  //     只锁一个名字时，**新加的**共享剥法（本轮新增的 `scrubOf` / `SCRUB_RE`）**没有任何同一性约束**
+  //     （那正是 §4.334 登记过的边界「别名助手已改但无判据」）。
+  //   ⚠️ 抽取用 `^\s*const`（允许缩进）并比较 **trim 后**的定义 ⇒ 镜像文件里缩进不同的副本也能比对。
+  //   ⚠️ 基线写成**具名常量**，且 `coverEq(...)` 必须**紧邻**（㊱ 的窗口只认「标记旁就是实现」——
+  //     基线塞进数组元素、或 `coverEq` 隔着十几行，㊱ 都**认不出**，实测当场红）。
+  const defOf46 = (code, name) => {
+    const m = new RegExp(`^\\s*const ${name} = .*;$`, 'm').exec(code);
+    return m === null ? null : m[0].trim();
+  };
+  const SELF46 = 'tests/parity/verify-release-gate.mjs';
+  /** 判定与 canary **共用**：某共享剥法在各护栏里的**副本数**（并顺带查漂移）。 */
+  const copiesOf46 = (name) => {
+    const canon = defOf46(stripJsComments(read(SELF46)), name);
+    if (canon === null) {
+      fail(`㊻ R3 找不到本文件的 \`${name}\` 定义 —— **量具失效**（派生不出基准就无从比对）`);
+      return 0;
+    }
+    const copies = [];
     for (const f of guards46) {
-      const def = yamlDef46(stripJsComments(read(`tests/parity/${f}`)));
-      if (def !== null) copies46.push([f, def]);
+      const def = defOf46(stripJsComments(read(`tests/parity/${f}`)), name);
+      if (def !== null) copies.push([f, def]);
     }
-    const drifted46 = copies46.filter(([, def]) => def !== CANON46);
-    if (drifted46.length > 0) {
-      fail(`㊻ R3 这些护栏的 \`stripYamlComments\` 与基准**不逐字相同**：`
-        + `${drifted46.map(([f]) => f).join('、')} —— **同族判据的剥法必须一致**，`
-        + '否则 R3 ① 的行为结论**传递不到**它们身上（它们只是「另一个带不同 bug 的意见」）');
+    const drifted = copies.filter(([, def]) => def !== canon);
+    if (drifted.length > 0) {
+      fail(`㊻ R3 这些护栏的 \`${name}\` 与基准**不逐字相同**：${drifted.map(([f]) => f).join('、')}`
+        + ' —— **同族判据的剥法必须一致**，否则 R3 ① 的行为结论**传递不到**它们身上');
     }
-    const YAML_COPIES_BASELINE = 4; // [覆盖型] 基线 4
-    coverEq('㊻ R3 `stripYamlComments` 的副本数', copies46.length, YAML_COPIES_BASELINE,
-      '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
-  }
+    return copies.length;
+  };
+  const yamlCopies46 = copiesOf46('stripYamlComments');
+  const scrubreCopies46 = copiesOf46('SCRUB_RE');
+  const scrubofCopies46 = copiesOf46('scrubOf');
+  const YAML_COPIES_BASELINE46 = 4; // [覆盖型] 基线 4
+  coverEq('㊻ R3 `stripYamlComments` 的副本数', yamlCopies46, YAML_COPIES_BASELINE46,
+    '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
+  const SCRUBRE_COPIES_BASELINE46 = 2; // [覆盖型] 基线 2
+  coverEq('㊻ R3 `SCRUB_RE` 的副本数', scrubreCopies46, SCRUBRE_COPIES_BASELINE46,
+    '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
+  const SCRUBOF_COPIES_BASELINE46 = 2; // [覆盖型] 基线 2
+  coverEq('㊻ R3 `scrubOf` 的副本数', scrubofCopies46, SCRUBOF_COPIES_BASELINE46,
+    '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
   // canary：四向（与判定**共用** hasLineFilter46 / preservesLines46）
   if (!hasLineFilter46(`const s = x.split('\\n').filter((l) => !/^\\s*#/.test(l)).join('\\n');`)) {
     fail('㊻ R3 canary 失效：「按整行注释过滤」的写法**未被检出**（判据已退化成空真）');

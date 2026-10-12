@@ -3565,7 +3565,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 336; // 2026-10-12 加 §4.335/§4.336 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 337; // 2026-10-12 加 §4.337 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -4194,12 +4194,12 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
     return s.split('\n').map(cutLine).join('\n')
       .replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1');
   };
-  /** 剥字符串（**保留换行数**）—— 与 ㉚ 的 `stripStrings30` 同款。 */
-  const stripStrings47 = (s) => s.replace(
-    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
-    (m) => m.replace(/[^\n]/g, ' '),
-  );
-  const scrub47 = (s) => stripStrings47(stripJsComments47(s));
+  // ⚠️ 2026-10-12（审计 §4.337）：原先写成 `stripStrings47(stripJsComments47(s))` —— **两遍**，
+  //   第二遍不认正则 ⇒ 正则里的反引号开模板 ⇒ **跨行吃代码**。现与 `verify-release-gate.mjs`
+  //   **逐字相同**地定义单遍 `scrubOf`（㊻ R3 ② 会比对两处是否一致）。
+  const SCRUB_RE = /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g;
+  const scrubOf = (src) => src.replace(SCRUB_RE, (m, keep) => (keep !== undefined && keep.startsWith('/') ? keep : m.replace(/[^\n]/g, ' ')));
+  const scrub47 = scrubOf;
   /** 判定与 canary **共用**：一份护栏源码里「调用了 `node:*` 导出名却没 import / 没本地定义」的名字。 */
   const missingNodeImports47 = (rawSrc, vocab, imported) => {
     const src = scrub47(rawSrc);
