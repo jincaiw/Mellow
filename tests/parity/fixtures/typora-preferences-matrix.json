@@ -37,7 +37,9 @@
       "typora": "applyImageMoveForWeb",
       "default": false,
       "status": "implemented",
-      "mellow": ["image.downloadRemote"],
+      "mellow": [
+        "image.downloadRemote"
+      ],
       "note": "**已实装**（2026-10-07，审计 §4.142）：新增设置 `image.downloadRemote`（toggle，**默认 false** ⇒ 默认行为与 Typora 一致：插入远端图**不**自动下载）+ 宿主注入 `__MELLOW_IMAGE_DOWNLOAD_REMOTE__`（`apps/desktop/src/App.tsx`）+ engine 的 `shouldDownloadRemoteImages()`（`packages/editor-engine/src/image/host.ts`）+ `packages/editor-engine/src/image/insert.ts` 的 `kind:'url'` 分支产出 `download` fsOp 并把 src 改写为本地相对路径（含 `host.exists()` 防覆盖去重）。⚠️ **与 Typora 的两点差异**（均为有意）：① Mellow 额外要求**文档已保存**（无 `docDir` 时算不出相对路径 ⇒ 回退直插）；② Typora 的 `shouldTriggerMove` 对 web src 直接返回该偏好，Mellow 另保留一条**独立的手动通道** —— `packages/app-core/src/imageFileOps.ts` 的 `downloadRemoteImage` / `planDownloadRemote`（用户显式执行「图片：下载远程到 asset 目录」），两者并存、互不干扰。"
     },
     {
@@ -47,7 +49,7 @@
       "mellow": [],
       "note": "自动纠正拼写未实装（Mellow 只有拼写检查 editor.spellcheck，非自动纠正）",
       "behavior": "matches-default",
-      "behaviorNote": "Mellow 无自动纠正拼写能力，与 Typora 默认 false（不自动纠正）一致【代码落点（2026-10-07，审计 §4.138）】`tests/parity/typora-parity-ledger.json` —— 台账 `P0-EDITOR-005`：拼写检查的**词典/消费方**未实现 ⇒ Mellow 无「自动纠正拼写」能力。"
+      "behaviorNote": "Mellow 无自动纠正拼写能力，与 Typora 默认 false（不自动纠正）一致。⚠️ **2026-10-12 更正（审计 §4.329）**：原注把原因写成「台账 P0-EDITOR-005：词典/消费方未实现」—— 该台账项**已 IMPL**；实测真实原因是**不可实现**：其所需的 `setAutomaticSpellingCorrectionEnabled` 在 `objc2-app-kit` 0.3.2 的 `NSSpellChecker` 绑定中**不存在**，且它作用于 `NSTextView`、对 `WKWebView` 的拼写检查**无效**（加上去只会是空开关）⇒ 该条的 status/disposition 属 **ADR-0038** 的裁决范围。【代码落点（2026-10-12，审计 §4.329）】`tests/parity/typora-parity-ledger.json` 的 `P0-EDITOR-005`（其正文明确记有「另 3 项**不可实现**（已核实，非未做）」）。"
     },
     {
       "typora": "autoEscapeImageURL",
@@ -100,7 +102,9 @@
       "typora": "caseSensitive",
       "default": false,
       "status": "implemented",
-      "mellow": ["editor.searchCaseSensitive"],
+      "mellow": [
+        "editor.searchCaseSensitive"
+      ],
       "note": "**查找面板**（⌘F）的「区分大小写」选项。**已实装持久化**（2026-10-08，审计 §4.147）：新增设置 `editor.searchCaseSensitive`（toggle，**默认 false ⇒ 默认行为不变**）；引擎在**面板创建时**惰性读宿主注入的 `__MELLOW_SEARCH_PREFS__`，用户切换时经 `__MELLOW_SEARCH_PREF_SET__` 通知宿主写回设置（engine 不读存储）。⚠️ **沿革**：§4.145 曾把它从 `implemented` 更正为 `gap`（当时确未持久化，且原 note 把落点写成了**文件搜索**面板的 `App.tsx searchCase`）；本轮实装后回到 `implemented`。**残留**：改设置后需**下次打开面板**生效（引擎在创建时读；Typora 亦然）。"
     },
     {
@@ -116,7 +120,9 @@
       "typora": "convertSmartOnRender",
       "default": false,
       "status": "implemented",
-      "mellow": ["editor.smartPunctuationOnRender"],
+      "mellow": [
+        "editor.smartPunctuationOnRender"
+      ],
       "note": "**「转换时机」**（Typora 面板 radio `Convert on Input` / `Convert on Rendering`，**默认 Input**）。**已实装**（2026-10-08，审计 §4.150）：新增设置 `editor.smartPunctuationOnRender`（toggle，**默认 false ⇒ 默认行为不变**）。语义：开启 ⇒ **输入与落盘保持 ASCII**，只在**显示**上呈现弯引号 / em dash（`packages/editor-engine/src/smartPunctuation.ts` 的 `buildSmartPunctuationRenderExtension`，用 `Decoration.replace` + widget；**不改写文档**）。三条约束：跳过代码上下文（复用 `isInsideCodeContext`）、**光标所在行揭示源码**、复用输入期同一套规则（`smartQuoteFor` / `shouldEmDash`）保证两档结果一致。⚠️ **与 Typora 同构**：功能开关是 `smartQuote` / `smartDash`（Typora 默认都 `false` ⇒ 默认不转换），本键只决定**何时**转换；且渲染期档开启时**输入期改写停用**（对应 Typora 输入分支的 `!convertSmartOnRender`）。"
     },
     {
@@ -281,14 +287,18 @@
       "typora": "fileSearchCaseSensitive",
       "default": false,
       "status": "implemented",
-      "mellow": ["files.searchCaseSensitive"],
+      "mellow": [
+        "files.searchCaseSensitive"
+      ],
       "note": "**文件搜索面板**（侧栏）的「区分大小写」选项。**已实装持久化**（2026-10-07，审计 §4.145）：新增设置 `files.searchCaseSensitive`（toggle，**默认 false ⇒ 默认行为不变**），侧栏复选框（`apps/desktop/src/App.tsx`）读写它；设置页改动经 `applyCommand: settings.searchOptions` 同步面板 state（两处同源，不会分叉）。⚠️ **更正原 `behaviorNote` 的两处错误**：① 「选项**未暴露**」是**假的** —— 侧栏早就有该复选框（`App.tsx` 的 `searchCase`）；② 落点引的是 `apps/desktop/src/host/searchServices.ts` 的 **`searchFiles()`（兼容旧 API）**，它硬编码 `false`，而**主路径** `searchFilesStreaming()` 是**透传**的（调用方给什么用什么，侧栏传的就是 `searchCase`）。"
     },
     {
       "typora": "fileSearchWholeWord",
       "default": false,
       "status": "implemented",
-      "mellow": ["files.searchWholeWord"],
+      "mellow": [
+        "files.searchWholeWord"
+      ],
       "note": "**文件搜索面板**（侧栏）的「全词匹配」选项。**已实装持久化**（2026-10-07，审计 §4.145）：新增设置 `files.searchWholeWord`（toggle，**默认 false ⇒ 默认行为不变**），侧栏复选框（`apps/desktop/src/App.tsx`）读写它。⚠️ 同 `fileSearchCaseSensitive` 的两处更正：原断言「选项未暴露」为假；落点引的是**兼容旧 API** `apps/desktop/src/host/searchServices.ts` 的 `searchFiles()`（硬编码 `false`），不是主路径 `searchFilesStreaming()`（透传）。**残留（如实登记）**：同一面板的「正则」复选框（Typora `fileSearchUseRegexp`）**仍不持久化** —— 该键被 Typora `main.js` 消费但**不在 `DEFAULT_OPTIONS`** 里（矩阵以 `DEFAULT_OPTIONS` 为面 ⇒ 结构上看不到它）；`context` 无对应键。"
     },
     {
@@ -540,12 +550,12 @@
       "default": "auto",
       "status": "gap",
       "mellow": [],
-      "note": "预置拼写检查（词典/语言）未实装 —— 依赖 host-api 的拼写词典能力（P0-EDITOR-005）",
+      "note": "预置拼写检查（词典/语言）**未实装** —— ⚠️ 原注写「依赖 host-api 的拼写词典能力（P0-EDITOR-005）」，而该项**已 IMPL**（消费方已落地）⇒ **理由已过期**；剩下的**是决策**：Typora 有整套**语言包管理**（按语言下载/安装/切换词典 + 4 态提示），Mellow 用**系统** NSSpellChecker ⇒ 载体 = **ADR-0038**（2026-10-12，审计 §4.329）",
       "behavior": "differs",
       "behaviorNote": "Typora 默认 `auto`（预置拼写检查自动选择）；Mellow 无 spellcheck 消费方/词典能力（P0-EDITOR-005）→ 默认能力不同，属于真实 gap，依赖 host-api 词典设计【证据落点（2026-10-07，审计 §4.137）】`tests/parity/typora-parity-ledger.json` 的 `P0-EDITOR-005`（拼写检查的**词典/消费方**未实现）⇒ Mellow 无「预置拼写检查」能力。",
       "disposition": {
-        "kind": "gap",
-        "ref": "P0-EDITOR-005"
+        "kind": "undecided",
+        "ref": "ADR-0038"
       }
     },
     {
@@ -665,7 +675,7 @@
       "default": false,
       "status": "gap",
       "mellow": [],
-      "note": "代码与链接内拼写检查开关未实装",
+      "note": "代码与链接内拼写检查**开关**未实装 —— ⚠️ **2026-10-12 更正**：原注引用的「依赖 host-api 的拼写词典能力（P0-EDITOR-005）」**已过期**（该项已 IMPL）。现状：**代码区排除本身已实现**（inlineCodeAttrs.ts 给行内码设 spellcheck=false；块级码由 CoreEditor codeBlockStyle 承担），缺的是**开关**（无条件排除）⇒ 属 ADR-0038 的裁决范围",
       "behavior": "matches-default",
       "behaviorNote": "默认 false；Mellow 没有拼写检查消费方，代码/链接内自然不标拼写错误 → matches-default【代码落点（2026-10-07，审计 §4.138）】`tests/parity/typora-parity-ledger.json` —— 台账 `P0-EDITOR-005`：拼写检查消费方未实现 ⇒ 代码/链接内**自然不标**拼写错误 ⇒ 与 Typora 默认 false 一致。"
     },
@@ -775,7 +785,9 @@
       "typora": "wholeWord",
       "default": false,
       "status": "implemented",
-      "mellow": ["editor.searchWholeWord"],
+      "mellow": [
+        "editor.searchWholeWord"
+      ],
       "note": "**查找面板**（⌘F）的「全词匹配」选项。**已实装**（2026-10-08，审计 §4.147）：① **补上按钮**（`wholeWordBtn`，文案 `engine.search.wholeWord` = Typora Front.strings 的 \"Whole Word\"）—— 此前 Mellow 的查找面板**只有** `caseSensitive` 与 `regexp` 两个 toggle（**能力缺口**）；② 接上持久化（设置 `editor.searchWholeWord`，**默认 false ⇒ 默认行为不变**）。依赖已核：`@codemirror/search` 的 `SearchQuery` **原生支持 `wholeWord`**（vendored dist 的 `this.wholeWord = !!config.wholeWord` + 匹配处 `if (spec.wholeWord)`）。⚠️ **沿革**：§4.145 曾把它从 `implemented` 更正为 `gap`（原 note 引的是**文件搜索**面板的 `searchWholeWord`，不是查找面板）。"
     },
     {

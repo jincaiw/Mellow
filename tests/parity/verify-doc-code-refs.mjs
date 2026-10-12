@@ -3517,7 +3517,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   //      · 2026-10-11 发版 v1.5.34 新增 `.github/release-notes-v1.5.34.md` ⇒ **175**
   //        （该文件**不在** 4 份冻结 release notes 的豁免名单里 ⇒ 它**要**参与加粗配对核对）；
   //      · 2026-10-12 审计 §4.326 **补写** `.github/release-notes-v1.5.8.md` ⇒ **176**（同上）。
-  const BOLD_BASELINE = 176;
+  const BOLD_BASELINE = 177;
   if (boldFiles.length !== BOLD_BASELINE) {
     fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
       + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');
@@ -3565,7 +3565,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 328; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 329; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
@@ -4265,6 +4265,79 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   console.log(`Doc code refs: 护栏的 \`node:*\` 导入（**镜像判据**）—— 扫描 ${guards47.length} 个护栏、`
     + `词表 ${vocab47.size} 个名字，未 import 的裸调用 ${offenders47.length} 处`
     + '；⚠️ 与 `verify-release-gate.mjs` 的 ㉚ **互为镜像**：**任一方所在文件崩掉，另一方仍能指出它**');
+}
+
+// ── ㊽ markdown 表格**不得被空行截断**（2026-10-12，审计 §4.329）──────────────────────
+// 【为什么】GFM 里**空行会终止表格** —— 表格中途插一个空行，其后的 `| … |` 行**不再是表格行**，
+//   渲染成**纯文本**（读者看到一串竖线）。实测本仓**真的发生过**：审计的
+//   「**待裁决项登记表**」（**唯一声明处**）第 19 与第 20 行之间有一个空行
+//   ⇒ **第 20 行（PDF 导出那条）从未被渲染成表格**。
+//   ⚠️ 而**没有判据**看这件事：㊷ 只查「表头 vs 分隔行」的**格数**，㉙ 只查「行 > 表头」的**格数**
+//   ⇒ 同族「只锁了一半」：**格数对** ≠ **它在表格里**。
+// 【判据】扫全部被跟踪的 `.md`（**剥围栏**、**剥 HTML 注释**）：**不得**出现
+//   「某行像表格行（`| … |`）、其**上一行是空行**、而**上上一行也是表格行**」——
+//   那一行**不在任何表格里**。⚠️ **例外**：若该行的**下一行是分隔行**，它是**新表的表头**
+//   （空行本就该终止上一张表）⇒ **合法，不报**（实测这一条把唯一一处假阳性去掉了）。
+// 【边界如实声明】
+//   ⚠️ 只锁**这一种**截断形态（空行夹在两个表格行之间）；「表头后直接空行」等**不覆盖**。
+//   ⚠️ 围栏只认**行首反引号**（本仓既有约定，同 ㊻ 的 `blankFences`）—— 波浪号围栏**不覆盖**。
+//   ⚠️ **夹具豁免**：`tests/fixtures/**` 的语料**刻意**含异形 markdown。
+{
+  const MD_ROW_58 = /^\s*\|.*\|\s*$/;
+  /** 判定与 canary **共用**：该行是否是**分隔行**（`|---|` 形态）。 */
+  const isDelim58 = (l) => /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l) && l.includes('-');
+  /** 判定与 canary **共用**：把围栏代码块**置空但保留行数**（同 ㊻ 的 `blankFences`）。 */
+  const blankFences58 = (src) => {
+    let inFence = false;
+    return src.split('\n').map((l) => {
+      if (/^```/.test(l)) { inFence = !inFence; return ''; }
+      return inFence ? '' : l;
+    }).join('\n');
+  };
+  /** 判定与 canary **共用**：返回**被空行截断**的表格行行号（1 基）。 */
+  const cutRows58 = (lines) => {
+    const out = [];
+    for (let i = 2; i < lines.length; i += 1) {
+      if (!MD_ROW_58.test(lines[i])) continue;
+      if (lines[i - 1].trim() !== '') continue;
+      if (!MD_ROW_58.test(lines[i - 2])) continue;
+      if (isDelim58(lines[i + 1] ?? '')) continue; // 新表的表头 ⇒ 合法
+      out.push(i + 1);
+    }
+    return out;
+  };
+  const FIXTURE_58 = /^tests\/fixtures\//;
+  const bad58 = [];
+  let scanned58 = 0;
+  for (const rel of committedFiles().filter((f) => f.endsWith('.md'))) {
+    scanned58 += 1;
+    if (FIXTURE_58.test(rel)) continue;
+    for (const n of cutRows58(blankFences58(mdText(rel)).split('\n'))) bad58.push(`${rel}:${n}`);
+  }
+  if (bad58.length > 0) {
+    fail(`㊽ 这些 markdown 的**表格被空行截断**（其后那行**不在表格里** ⇒ 渲染成**纯文本**）：`
+      + `${bad58.slice(0, 5).join('、')} —— GFM 里**空行终止表格**；删掉那个空行即可（审计 §4.329）`);
+  }
+  // 防空转：[健康度型]（扫描面由仓库内容产生 ⇒ 留余量）
+  if (scanned58 < 150) {
+    fail(`㊽ 只扫到 ${scanned58} 份 .md（[健康度型] 下限 150）—— 扫描面萎缩会让本判据**空转**`);
+  }
+  // canary：四向（与判定**共用** cutRows58 / blankFences58 / isDelim58）
+  if (cutRows58(['| a | b |', '| c | d |', '', '| e | f |']).length !== 1) {
+    fail('㊽ canary 失效：**被空行截断的表格行**未被检出');
+  }
+  if (cutRows58(['| a | b |', '| c | d |', '| e | f |']).length !== 0) {
+    fail('㊽ canary **过宽**：**连续表格**被判为被截断');
+  }
+  if (cutRows58(['| a | b |', '| c | d |', '', '| e | f |', '|---|---|']).length !== 0) {
+    fail('㊽ canary **过宽**：**新表的表头**（空行后另起一张表）被判为被截断');
+  }
+  if (cutRows58(blankFences58('```\n| a |\n\n| b |\n```').split('\n')).length !== 0) {
+    fail('㊽ canary 失效：**围栏里的**假表格未被剥掉');
+  }
+  console.log(`Doc code refs: markdown 表格**未被空行截断** —— 扫描 ${scanned58} 份 md`
+    + `（豁免 \`tests/fixtures/**\`），**被截断** ${bad58.length} 处；`
+    + '⚠️ **边界**：只锁「空行夹在两个表格行之间」这一种形态（新表头除外）');
 }
 
 if (errors.length > 0) {

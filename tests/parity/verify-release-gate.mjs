@@ -402,6 +402,12 @@ const PENDING_ADRS = [
   // 故只登记两条路的事实与代价（pdfmake 补渲染器 vs 复用已实现的 HTML 打印管线），**未自行改**。
   ['docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md',
     'PDF 导出的公式与图表：给 pdfmake 补渲染器，还是改用已实现的 HTML 打印管线'],
+  // 2026-10-12（审计 §4.329）：拼写检查的**语言 / 词典**能力 —— Typora 有一套**语言包管理**
+  // （按语言下载/安装/切换词典 + 4 态提示，一手证据 = 本机 zh-Hans Front.strings 的 10 条），
+  // 而 Mellow 用**系统** NSSpellChecker。矩阵 presetSpellCheck 的 disposition 由「gap→P0-EDITOR-005」
+  // 改指本 ADR（该项已 IMPL，「等 host-api」不再是真实原因 ⇒ 剩下的是**决策**）。
+  ['docs/adr/ADR-0038-spellcheck-dictionary-language.md',
+    '拼写检查的语言/词典：用系统拼写检查（登记为平台惯用等价物），还是复刻 Typora 的语言包管理'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
@@ -603,7 +609,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       //   而**没有任何东西**核对「阈值 == 当前值」（判据 ⑥ 只核对「标记里的数 == 阈值」）。
       //   ⇒ 这正是「`< N` 会**静默稀释防线**」的活证据（修了一次，又在无人守时漂了 3）。
       //   现改用 `coverEq`（严格相等）⇒ 值一漂**当场红**。
-      const ROWS_BASELINE = 20; // [覆盖型] 基线 20
+      const ROWS_BASELINE = 21; // [覆盖型] 基线 21（2026-10-12 §4.329：新增第 21 行 = ADR-0038）
       coverEq('待裁决项登记表行数', rows.length, ROWS_BASELINE,
         '登记表是「不该缩小的集合」；若确实删过行，请同步下调本阈值并说明');
       for (const row of rows) {
@@ -6112,6 +6118,7 @@ const scanBodyOf = (rel, raw) => {
   const masterLines50 = existsSync(resolve(root, MASTER50)) ? read(MASTER50).split('\n') : [];
   let pairs50 = 0;
   let hist50 = 0;
+  let declaredPending50 = 0;
   for (let i = 0; i < masterLines50.length; i += 1) {
     const ln = masterLines50[i];
     if (DATED_ROW50.test(ln)) continue;
@@ -6133,6 +6140,16 @@ const scanBodyOf = (rel, raw) => {
         bad50.push(`${MASTER50}:${i + 1} 写 ${status}=${n}，台账现算 ${want}`);
       }
     }
+    // R4（2026-10-12 补）：`待裁决 N 项` 必须 == `PENDING_ADRS.length`
+    //   —— 实测该处写「待裁决 **3** 项（ADR-0034/0035/0036）」而实际是 **5** 份 Proposed
+    //     ⇒ **同一族的第四种写法**（计数也是「状态转述」）。
+    const pend = /待裁决\s*\**\s*(\d+)\s*项/.exec(ln);
+    if (pend !== null) {
+      declaredPending50 += 1;
+      if (Number(pend[1]) !== PENDING_ADRS.length && !hasFixNote50(masterLines50, i)) {
+        bad50.push(`${MASTER50}:${i + 1} 写「待裁决 ${pend[1]} 项」，现为 ${PENDING_ADRS.length} 项`);
+      }
+    }
   }
   if (bad50.length > 0) {
     fail(`㊿ 文档里对**状态**的转述与真值源**不一致**：${bad50.slice(0, 5).join('；')}`
@@ -6142,9 +6159,10 @@ const scanBodyOf = (rel, raw) => {
       + ' `> **⚠️` **更正块**并写明现算值（审计 §4.328）');
   }
   // 防空转：[健康度型]（面由仓库内容产生 ⇒ 留余量）
-  if (claimed50 < 10 || pairs50 < 4 || hist50 < 4) {
+  if (claimed50 < 10 || pairs50 < 4 || hist50 < 4 || declaredPending50 < 1) {
     fail(`㊿ 只解析出 ${claimed50} 处「声称当前」的声明 / ${pairs50} 组「id → 状态词」配对 / `
-      + `${hist50} 处状态直方图（[健康度型] 下限 10 / 4 / 4）—— 扫描面萎缩会让本判据**空转**`);
+      + `${hist50} 处状态直方图 / ${declaredPending50} 处「待裁决 N 项」`
+      + '（[健康度型] 下限 10 / 4 / 4 / 1）—— 扫描面萎缩会让本判据**空转**');
   }
   // canary：九向（与判定**共用** CURRENT50 / DATED_ROW50 / hasFixNote50 / unclosed50 /
   //   pairsOf50 / histOf50）
@@ -6194,8 +6212,12 @@ const scanBodyOf = (rel, raw) => {
     fail('㊿ canary **过宽**：**普通直方图行**被判为更正行（那会让 R3 **空转**）');
   }
   console.log(`Release gate: 文档状态的**转述一致性** —— 「声称当前」的声明 ${claimed50} 处 · `
-    + `\`master-plan\` 的「id → 状态词」配对 ${pairs50} 组，**不一致** ${bad50.length} 处；`
-    + '⚠️ **边界**：R1 只认四个**显式**写法（其它措辞不覆盖）· R2 只认**同行**且只覆盖 master-plan 一份');
+    + `\`master-plan\` 的「id → 状态词」配对 ${pairs50} 组 · 状态直方图 ${hist50} 处 · `
+    + `「待裁决 N 项」${declaredPending50} 处，**不一致** ${bad50.length} 处；`
+    + '⚠️ **边界**：R1 只认四个**显式**写法（其它措辞不覆盖）· R2/R3/R4 只覆盖 master-plan 一份 · '
+    + '⚠️ **豁免是位置性的**（同行或 ±3 行内有 `> **⚠️…`/`> **…更正…` 即豁免）'
+    + '⇒ **一条只更正了别的事的 ⚠️ 块会顺带保护邻近的错值**（实测：§14 前的 ⚠️ 块「不改变本行」'
+    + '掩护了同一段的「待裁决」计数，已人工修正）');
 }
 
 if (errors.length > 0) {
