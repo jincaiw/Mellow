@@ -3397,9 +3397,12 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   }
 
   const advisory = entries.filter((t) => t.signal === 'advisory');
+  const weakArgs = WEAKENING_ARGS.join(' / ');
   console.log(`Release gate: 本机工具分类 —— ${onDisk.length} 个工具**全部已登记**`
     + `（runsIn: ${ciTools.length} 个 ci / ${entries.length - ciTools.length} 个 local-only；`
-    + `signal: ${advisory.length} 个 advisory 均已写出「为什么软」）。`
+    + `signal: ${advisory.length} 个 advisory 均已写出「为什么软」；`
+    + `ci 工具的 **CI 制品引用**（R7）缺 ${badEvidence.length} 个 · `
+    + `CI 调用里的**削弱参数**（R8，词表 ${weakArgs}）${weakHits.length} 处）。`
     + '⚠️ 本节只保证「**归属与理由已声明**」，**不保证本机工具有人跑** —— 那需要人。');
 }
 
