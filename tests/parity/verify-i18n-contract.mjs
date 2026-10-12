@@ -84,8 +84,13 @@ const sourceFiles = allFiles.filter(
     && !f.startsWith('packages/i18n/'),
 );
 
-/** 只剥**整行** `//` 注释（行尾 `//` 可能落在字符串里，剥了会误伤）。 */
-const stripWholeLineComments = (code) => code.split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
+// ⚠️ 2026-10-13（审计 §4.341）：本函数原先**只剥整行 `//`** —— 与 `verify-settings-contract.mjs`
+//   的同名函数**形态不同**（实测 **472 个文件**上输出不同）⇒ 统一成**同一条单行实现**。
+//   ⚠️ **置空而不删除**（原先那版 `.replace(…, '')` 会**删行**：实测 **439 个文件 / 少 6,145 行**，
+//      §4.334 同族）⇒ 现在**保行数**。⚠️ **语义保持不变**：仍然**只剥整行**注释 ——
+//      有谓词**依赖**「注释文本可见」（实测：broadening 到 `blankComments` 时，
+//      `verify-settings-contract.mjs` 的 `typora-root-url` 契约当场红）。
+const stripWholeLineComments = (code) => code.replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, (m) => m.replace(/[^\n]/g, ' ')).replace(/^[ \t]*\/\/.*$/gm, (m) => m.replace(/[^\n]/g, ' '));
 
 // ── A. `t('<字面量>')` 必须可解析 ─────────────────────────────────────────
 const T_LITERAL = /\bt\(\s*'([a-zA-Z][\w.]*\.[\w.]+)'/g;

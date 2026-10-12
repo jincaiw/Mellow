@@ -53,9 +53,13 @@ const codeText = (rel) => {
  * **风险分级（同日实测）**：用本剥离器重跑，当前代码**仍然全绿**（0 失败）——
  * 即**没有任何断言是「当前靠注释通过」**。故这是**加固**，不是修复现行缺陷。
  */
-const stripWholeLineComments = (code) => code
-  .replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')
-  .replace(/^[ \t]*\/\/.*$/gm, '');
+// ⚠️ 2026-10-13（审计 §4.341）：本函数与 `verify-i18n-contract.mjs` 的同名函数原先**形态不同**
+//   （实测 **472 个文件**上输出不同：本版处理整行块注释、i18n 版不处理）⇒ 统一成**同一条单行实现**。
+//   ⚠️ **置空而不删除**：原先 `.replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')` **删除**多行块注释
+//      ⇒ **删行**（实测 **439 个文件 / 少 6,145 行**）—— §4.334 / §4.340 同族。
+//   ⚠️ **语义保持不变**（仍然**只剥整行**）：实测把它 broadening 到 `blankComments` 时，
+//      本文件自己的 `typora-root-url` 契约**当场红**（那条谓词**依赖**注释文本可见）。
+const stripWholeLineComments = (code) => code.replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, (m) => m.replace(/[^\n]/g, ' ')).replace(/^[ \t]*\/\/.*$/gm, (m) => m.replace(/[^\n]/g, ' '));
 const read = (p) => {
   const raw = readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
   return /\.(ts|tsx|mjs|rs|css|mts|cts|cjs|js|jsx)$/.test(p) ? stripWholeLineComments(raw) : raw;

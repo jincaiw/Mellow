@@ -21573,6 +21573,86 @@ ReferenceError: Cannot access 'blankComments' before initialization
 
 ⇒ 同族「只锁了一半」累计 **第 168 次**（§4.170–§4.339）。
 
+## 4.341 剥法家族的**同一性判据只锁了 3 个名字** —— 而实际有 9 个成员，其中 **2 个已经不一致**（2026-10-13）
+
+### 一、透镜（承 §4.340 的「收敛成单入口」）
+
+§4.340 把 `stripJsComments` 收敛掉了。⇒ 顺着问：**还有哪些剥法是「多份副本」？**
+
+### 二、取证（枚举**跨文件复制**的模块级 `const`）
+
+按份数排（`tests/parity/verify-*.mjs`，🔒 = 已被 ㊻ R3 ② 锁）：
+
+`root` 23 · `errors` 20 · `fail` 19 · `read` 13 · **`blankComments` 7** · **`blankHash` 7** · **`codeText` 6** ·
+`SKIP_DIRS` 5 · **`stripYamlComments` 4 🔒** · **`blankHtmlComments` 4** · **`stripComments` 3** ·
+**`SCRUB_RE` 2 🔒** · **`scrubOf` 2 🔒** · **`stripWholeLineComments` 2** …
+
+⇒ **「剥法家族」共 9 个成员，而同一性判据只锁了 3 个。**
+
+⚠️ **其中两个已经不一致**：
+
+| 名字 | 份数 | 形态 | 性质 |
+|---|---|---|---|
+| `blankHtmlComments` | 4 | **2** | **语义相同**（只是参数名 `(s)` vs `(src)` 没对齐） |
+| `stripWholeLineComments` | 2 | **2** | **语义不同** —— settings 版处理**整行块注释**、i18n 版**不处理** ⇒ 实测 **472 个文件上输出不同** |
+
+⚠️ 而 settings 版那句 `.replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')` **删除**多行块注释
+⇒ **删行**：实测 **439 个文件 / 少 6,145 行** ⇒ **§4.334 / §4.340 同族**（**第六个实例**）。
+
+### 三、处置
+
+1. **统一 `stripWholeLineComments`** 到**同一条单行实现** ——
+   ⚠️ **我先试的是「别名化到 `blankComments`」，当场红**：`verify-settings-contract.mjs` 的
+   `typora-root-url` 契约**依赖「注释文本可见」**（该函数的契约**本来就是**「只剥整行」）
+   ⇒ 那次 broadening **是错的**（见 §六 自曝②）。
+   ⇒ **正解 = 保持原语义（只剥整行）+ 置空不删除**；写成**单行**才能进同一性名单。
+2. **对齐 `blankHtmlComments`** 的参数名 ⇒ 4 份**逐字相同**。
+3. **㊻ R3 ② 名单 3 → 7 个名字**：`stripYamlComments`(4) · `SCRUB_RE`(2) · `scrubOf`(2) ·
+   **`blankComments`(8)** · **`blankHash`(7)** · **`blankHtmlComments`(4)** · **`stripWholeLineComments`(2)**。
+4. ⚠️ **`copiesOf46` 重写**（**这是「只锁了 3 个」的一半原因**）：原先它要求
+   「**基准文件自己**定义该名字」（否则报「**量具失效**」）⇒ 于是**不在 `verify-release-gate.mjs` 里**的
+   共享剥法（如 `stripWholeLineComments`）**根本锁不进去**。
+   ⇒ 改成 **「所有副本必须**互相**逐字相同」** —— **不需要基准**，且对「本文件没有该名字」也成立。
+5. `LINE_ANCHORED_EXEMPT` 的**唯一条目变陈旧**（它的载体被别名化）⇒ **陈旧检查当场报红**（按设计工作）
+   ⇒ 清空该表（**保留表本身**；先例：⑭ 的 `IN_PLACE_MUTATORS_EXEMPT` 也不因空而删）
+   + **空表时 canary 打印并跳过**（`keys().next().value` 在空表上是 `undefined`）。
+6. `COVERAGE_MARK_BASELINE` 36 → **40**。
+
+### 四、注入验证（**9/9**）
+
+| 项 | 结果 |
+|---|---|
+| 行为：修复后多行块注释**行数不变** | ✅ 4 → 4 |
+| 注入：把某文件的 `blankComments` 改一个字符 | ✅ 形态数 2 ⇒ 红 |
+| 注入：把 `blankComments` **改名**（副本 8 → 7） | ✅ `[覆盖型]` 基线红 |
+| 注入：把 i18n 的 `stripWholeLineComments` 改回**旧一行式** | ✅ 形态数 2 ⇒ 红 |
+| 注入：把 `blankHtmlComments` 参数名改回 `(src)` | ✅ 形态数 2 ⇒ 红 |
+| 注入：给例外表加一条**永不命中**的写法 | ✅ **陈旧检查**红 |
+| 基线 / 还原 / 残留 | ✅ `EXIT=0` · 逐字还原 |
+
+### 五、边界如实声明
+
+- ⚠️ **多行定义抽不出来**：`codeText`（6 份）· `stripComments`（3 份）是**多行**定义，而抽取器
+  只认**单行** `^\s*const NAME = .*;$` ⇒ 它们**不在名单内**（**如实登记**；当前两者各自逐字相同）。
+- ⚠️ **行为变化如实声明**：`stripWholeLineComments` 从「只剥**整行**注释」变成
+  「**也剥行内 + 块注释**」⇒ **更严**（旧注释里「行尾 `//` 可能落在字符串里，剥了会误伤」**已过期**：
+  规范实现**认字符串**）。实测 `parity` 全绿。
+
+### 六、⚠️ 自曝（两次）
+
+**① 注入失败反而指路**：
+
+我的**第一版注入 ③** 打在 `stripWholeLineComments` 上 —— 结果是 **`EXIT=0`（没红）**。
+原因不是判据坏了，而是**它根本没被锁**（`copiesOf46` 当时要求「基准文件自己定义该名字」）。
+⇒ **纪律**：**注入没红时，先问「它真的被锁了吗」** —— 那一次没红，恰好**指出了本轮的缺陷**。
+
+**② broadening 是错的（我改完才被拦住）**：我把 `stripWholeLineComments` **别名化到 `blankComments`**
+（「更严」），`parity` 当场红 —— `verify-settings-contract.mjs` 的 `typora-root-url` 契约**依赖**
+注释文本可见。⇒ **纪律**：**改一个共享助手的「严格度」之前，先问「谁**依赖**它现在的宽松度」** ——
+「更严」**不等于**「更对」；一个函数叫 `stripWholeLineComments` 时，**「只剥整行」就是它的契约**。
+
+⇒ 同族「只锁了一半」累计 **第 169 次**（§4.170–§4.340）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

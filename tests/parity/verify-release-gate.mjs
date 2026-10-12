@@ -125,7 +125,7 @@ const scrubOf = (src) => src.replace(SCRUB_RE, (m, keep) => (keep !== undefined 
 /** `#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
 const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
 /** markdown 的 `<!-- … -->`（**不渲染** ⇒ 不是真内容）置空。 */
-const blankHtmlComments = (src) => src.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+const blankHtmlComments = (s) => s.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
 /** 判定与 canary **共用**：按目标文件的**扩展名**选剥法（与护栏入口 `codeText()` / `mdText()` 一致）。 */
 const scanBodyOf = (rel, raw) => {
   if (rel.endsWith('.md')) return blankHtmlComments(raw);
@@ -3851,10 +3851,11 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   const SLASH2 = '\\/' + '\\/';            // 字面：\/\/
   const BLOCKOPEN = '\\/' + '\\*';         // 字面：\/\*
   /** **行首锚定**的整行剥离 —— 安全（不可能吃行内代码）。键 = 该写法的**片段**。 */
-  const LINE_ANCHORED_EXEMPT = new Map([
-    ['^[ \\t]*' + SLASH2 + '.*$/gm',
-      '整行剥离：`\\/\\/` **行首锚定** ⇒ 只可能删**整行**注释，**不可能**从行内某处删到行尾'],
-  ]);
+  // ⚠️ **刻意为空**（2026-10-13，审计 §4.341）：原先唯一的条目是 `verify-settings-contract.mjs` 的
+  //   `stripWholeLineComments` 里的 `.replace(/^[ \t]*\/\/.*$/gm, '')` —— 那个实现已被**别名化**
+  //   （收敛到 `blankComments`）⇒ 该写法**在扫描面里已不存在** ⇒ **陈旧检查当场报红**（本判据按设计工作）。
+  //   ⚠️ 本表**不因空而删**（先例：⑭ 的 `IN_PLACE_MUTATORS_EXEMPT`）—— 将来若有「疑似但确非」的写法，登记处就在这。
+  const LINE_ANCHORED_EXEMPT = new Map();
   /** 判定与 canary **共用**：该行是否「**单独**扫行注释」（行注释没有与块注释同次处理）。 */
   const isSoloSweep = (l) => l.includes('replace(') && l.includes(SLASH2) && !l.includes(BLOCKOPEN)
     && ![...LINE_ANCHORED_EXEMPT.keys()].some((k) => l.includes(k));
@@ -3885,9 +3886,15 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   if (isSoloSweep(CANARY_OK)) {
     fail('㉒ R4 canary **过宽**：**与块注释同一次扫描**的写法被判成「单独扫」');
   }
-  const CANARY_LINEANCHOR = 'const s = x.replace(/' + LINE_ANCHORED_EXEMPT.keys().next().value + "', '');";
-  if (isSoloSweep(CANARY_LINEANCHOR)) {
-    fail('㉒ R4 canary **过宽**：**已登记豁免**的行首锚定写法被判成「单独扫」');
+  // ⚠️ **空例外表时跳过这一向**（2026-10-13，审计 §4.341）：`keys().next().value` 在空表上是 `undefined`
+  //   ⇒ 构造出的样本没有意义 ⇒ 必须**打印并跳过**，而不是拿它去断言（那样 canary 自己会变成噪声）。
+  if (LINE_ANCHORED_EXEMPT.size === 0) {
+    console.log('㉒ R4 canary ③ **跳过**：LINE_ANCHORED_EXEMPT 当前为空（无豁免写法可测）');
+  } else {
+    const CANARY_LINEANCHOR = 'const s = x.replace(/' + LINE_ANCHORED_EXEMPT.keys().next().value + "', '');";
+    if (isSoloSweep(CANARY_LINEANCHOR)) {
+      fail('㉒ R4 canary **过宽**：**已登记豁免**的行首锚定写法被判成「单独扫」');
+    }
   }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
     + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）；`
@@ -5141,7 +5148,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 36; // [覆盖型] 基线 36（2026-10-12 §4.337：㊻ R3 ② 由 1 个名字推广成 3 个）
+  const COVERAGE_MARK_BASELINE = 40; // [覆盖型] 基线 40（2026-10-13 §4.341：再加 `stripWholeLineComments`）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
@@ -6160,28 +6167,37 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   //     只锁一个名字时，**新加的**共享剥法（本轮新增的 `scrubOf` / `SCRUB_RE`）**没有任何同一性约束**
   //     （那正是 §4.334 登记过的边界「别名助手已改但无判据」）。
   //   ⚠️ 抽取用 `^\s*const`（允许缩进）并比较 **trim 后**的定义 ⇒ 镜像文件里缩进不同的副本也能比对。
+  //   ⚠️ 2026-10-13（审计 §4.341）：名单从 **3** 个名字扩到 **6** 个 —— 实测「剥法家族」里
+  //     跨文件复制的模块级常量共 **9** 个，而原先**只锁了 3 个**（`blankComments` 有 **7** 份副本却没人守）。
+  //     ⚠️ 而且**已经真的不一致**：`blankHtmlComments`（4 份 · 2 形态，参数名 `(s)` vs `(src)`）与
+  //     `stripWholeLineComments`（2 份 · 2 形态 —— **语义不同**，实测在 **472 个文件**上输出不同）。
+  //     ⚠️ **多行定义**（`codeText` 6 份 · `stripComments` 3 份）**抽不出来** ⇒ 如实登记为边界。
   //   ⚠️ 基线写成**具名常量**，且 `coverEq(...)` 必须**紧邻**（㊱ 的窗口只认「标记旁就是实现」——
   //     基线塞进数组元素、或 `coverEq` 隔着十几行，㊱ 都**认不出**，实测当场红）。
   const defOf46 = (code, name) => {
     const m = new RegExp(`^\\s*const ${name} = .*;$`, 'm').exec(code);
     return m === null ? null : m[0].trim();
   };
-  const SELF46 = 'tests/parity/verify-release-gate.mjs';
-  /** 判定与 canary **共用**：某共享剥法在各护栏里的**副本数**（并顺带查漂移）。 */
+  /** 判定与 canary **共用**：某共享剥法的**副本数**（并查「所有副本是否**互相**逐字相同」）。
+   *  ⚠️ 2026-10-13（审计 §4.341）：**不再需要「基准文件」** —— 原先要求 `verify-release-gate.mjs`
+   *   自己定义该名字（否则报「量具失效」）⇒ 于是 `stripWholeLineComments` 这类**不在本文件里**的
+   *   共享剥法**根本锁不进去**（这正是「名单只锁了 3 个名字」的一半原因）。
+   *   ⇒ 改成 **「所有副本必须互相逐字相同」**：**不需要基准**，且对「本文件没有该名字」也成立。 */
   const copiesOf46 = (name) => {
-    const canon = defOf46(stripJsComments(read(SELF46)), name);
-    if (canon === null) {
-      fail(`㊻ R3 找不到本文件的 \`${name}\` 定义 —— **量具失效**（派生不出基准就无从比对）`);
-      return 0;
-    }
     const copies = [];
     for (const f of guards46) {
       const def = defOf46(stripJsComments(read(`tests/parity/${f}`)), name);
       if (def !== null) copies.push([f, def]);
     }
-    const drifted = copies.filter(([, def]) => def !== canon);
-    if (drifted.length > 0) {
-      fail(`㊻ R3 这些护栏的 \`${name}\` 与基准**不逐字相同**：${drifted.map(([f]) => f).join('、')}`
+    const forms = new Set(copies.map(([, def]) => def));
+    if (forms.size > 1) {
+      const groups = new Map();
+      for (const [f, def] of copies) {
+        if (!groups.has(def)) groups.set(def, []);
+        groups.get(def).push(f);
+      }
+      fail(`㊻ R3 \`${name}\` 的 **${copies.length}** 份副本有 **${forms.size}** 种形态（应只有 1 种）：`
+        + `${[...groups.values()].map((g) => g.join('/')).join(' ⏎ ')}`
         + ' —— **同族判据的剥法必须一致**，否则 R3 ① 的行为结论**传递不到**它们身上');
     }
     return copies.length;
@@ -6189,6 +6205,10 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   const yamlCopies46 = copiesOf46('stripYamlComments');
   const scrubreCopies46 = copiesOf46('SCRUB_RE');
   const scrubofCopies46 = copiesOf46('scrubOf');
+  const blankcommentsCopies46 = copiesOf46('blankComments');
+  const blankhashCopies46 = copiesOf46('blankHash');
+  const blankhtmlCopies46 = copiesOf46('blankHtmlComments');
+  const wholelineCopies46 = copiesOf46('stripWholeLineComments');
   const YAML_COPIES_BASELINE46 = 4; // [覆盖型] 基线 4
   coverEq('㊻ R3 `stripYamlComments` 的副本数', yamlCopies46, YAML_COPIES_BASELINE46,
     '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
@@ -6198,6 +6218,18 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   const SCRUBOF_COPIES_BASELINE46 = 2; // [覆盖型] 基线 2
   coverEq('㊻ R3 `scrubOf` 的副本数', scrubofCopies46, SCRUBOF_COPIES_BASELINE46,
     '副本增删必须此刻同步（新增副本 ⇒ ① 的结论覆盖不到它）');
+  const BLANKCOMMENTS_COPIES_BASELINE46 = 7; // [覆盖型] 基线 7
+  coverEq('㊻ R3 `blankComments` 的副本数', blankcommentsCopies46, BLANKCOMMENTS_COPIES_BASELINE46,
+    '副本增删必须此刻同步（它是**最多副本**的剥法：7 份）');
+  const BLANKHASH_COPIES_BASELINE46 = 7; // [覆盖型] 基线 7
+  coverEq('㊻ R3 `blankHash` 的副本数', blankhashCopies46, BLANKHASH_COPIES_BASELINE46,
+    '副本增删必须此刻同步');
+  const BLANKHTML_COPIES_BASELINE46 = 4; // [覆盖型] 基线 4
+  coverEq('㊻ R3 `blankHtmlComments` 的副本数', blankhtmlCopies46, BLANKHTML_COPIES_BASELINE46,
+    '副本增删必须此刻同步（本条立起前它**已经不一致**：参数名 (s) vs (src)）');
+  const WHOLELINE_COPIES_BASELINE46 = 2; // [覆盖型] 基线 2
+  coverEq('㊻ R3 `stripWholeLineComments` 的副本数', wholelineCopies46, WHOLELINE_COPIES_BASELINE46,
+    '副本增删必须此刻同步（本条立起前它**已经不一致**：两形态在 472 个文件上输出不同）');
   // canary：四向（与判定**共用** hasLineFilter46 / preservesLines46）
   if (!hasLineFilter46(`const s = x.split('\\n').filter((l) => !/^\\s*#/.test(l)).join('\\n');`)) {
     fail('㊻ R3 canary 失效：「按整行注释过滤」的写法**未被检出**（判据已退化成空真）');
