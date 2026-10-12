@@ -5184,7 +5184,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 44; // [覆盖型] 基线 44（2026-10-13 §4.345：加 ㊾ 的 `ALIAS_USES_BASELINE49` + `FENCE_DEF_BASELINE49`）
+  const COVERAGE_MARK_BASELINE = 45; // [覆盖型] 基线 45（2026-10-13 §4.346：加 ㊾ 的 `FENCE_DELETE_BASELINE49`）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）

@@ -462,8 +462,13 @@ for (const doc of docs) {
   const EXT = '(?:ts|tsx|js|mjs|cjs|rs|css|json|yml|yaml|md|sh|toml)';
   const TOK = new RegExp('`([\\w./-]+\\.' + EXT + ')`', 'g');
   const LOOKS_LIKE_QUOTE = /原写|原文|更正|漂移|已改为|也写/;
-  /** 去掉围栏代码块（```…```）—— 那里的路径是示意，基址不明。判定与 canary 共用。 */
-  const stripFences = (src) => src.replace(/```[\s\S]*?```/g, '');
+  /** 去掉围栏代码块（```…```）—— 那里的路径是示意，基址不明。判定与 canary 共用。
+   *  ⚠️ 2026-10-13（审计 §4.346）：原先写 `src.replace(/```[\s\S]*?```/g, '')` —— **删行**
+   *    ⇒ 本判据报出的 `${rel}:${i + 1}` **整体偏移**（**实测**：注入一条断链，真实 **52** 行、报 **50** 行）；
+   *    且它会把围栏**两侧的行粘在一起**（**2026-10-13 实测**：193 份 md 里 **10 份**出现行合并
+   *    ⇒ 可能**造出**假链接）。
+   *    ⇒ 改用**置空**的模块级 `blankFences`（**行数不变**）。判据 ㊾ ②c 守「不得再出现删除式」。 */
+  const stripFences = blankFences;
   /** 归一化分隔符后判存在。判定与 canary 共用。 */
   const exists = (p) => existsSync(resolve(root, p.replace(/\\/g, '/')));
   let checked = 0;
@@ -1149,7 +1154,9 @@ const QUALIFICATION_SNAPSHOT_FILES = [
     if (FIXTURE_RE.test(rel)) continue;
     if (MD_SKIP_DIRS.has(rel.split('/').slice(0, -1).find((seg) => MD_SKIP_DIRS.has(seg)) ?? '')) continue;
     const raw = blankHtmlComments(readFileSync(abs, 'utf8')).replace(/\r\n/g, '\n');
-    const noFences = raw.replace(/```[\s\S]*?```/g, '');
+    // ⚠️ 2026-10-13（审计 §4.346）：原先是**删除式** `raw.replace(/```[\s\S]*?```/g, '')` ⇒
+    //   **行号整体偏移**（下面报的是 `${rel}:${i + 1}`）⇒ 改用**置空**的 `blankFences`。
+    const noFences = blankFences(raw);
     const dir = resolve(abs, '..');
     noFences.split('\n').forEach((line, i) => {
       // ⚠️ 更正说明会**引用示例**（旧路径 / 已删文档）⇒ 逐行豁免。
@@ -1204,8 +1211,18 @@ const QUALIFICATION_SNAPSHOT_FILES = [
   if (linkTargets('[a](docs/x.md "标题")').join(',') !== 'docs/x.md') {
     errors.push('markdown 链接护栏 canary 失效：带标题属性的链接未只取路径（放宽正则会引入假阳性）');
   }
-  if (/```[\s\S]*?```/.test('```\n[x](src)\n```'.replace(/```[\s\S]*?```/g, ''))) {
-    errors.push('markdown 链接护栏 canary 失效：围栏代码块未被剥离（示例会被误报）');
+  // ⚠️ 2026-10-13（审计 §4.346）：本 canary 原先断言「**删除式**剥离把围栏内容去掉了」
+  //   —— 它**钉住了旧实现**（改实现时它当场红，那是对的）。现改为断言**置空**语义 **+ 行数不变**
+  //   （本轮的要点就是：**删行 ⇒ 报出的 `file:line` 整体偏移**）。
+  {
+    const SAMPLE = ['a', '```', '[x](src)', '```', 'b'].join('\n');
+    const blanked = blankFences(SAMPLE);
+    if (linkTargets(blanked).length !== 0) {
+      errors.push('markdown 链接护栏 canary 失效：围栏里的**示例链接**未被剥离（会被误报）');
+    }
+    if (blanked.split('\n').length !== SAMPLE.split('\n').length) {
+      errors.push('markdown 链接护栏 canary 失效：围栏剥离**改了行数** ⇒ 报出的 `file:line` 会偏移');
+    }
   }
 }
 
@@ -2304,7 +2321,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   const EXT_PREFIX = new Map([
     ['TypeMark/', 'Typora 应用内路径（**基线证据**，不在本仓库）'],
   ]);
-  const stripFencesSpec = (src) => src.replace(/```[\s\S]*?```/g, '');
+  /** 去掉围栏代码块 —— ⚠️ 2026-10-13（审计 §4.346）：同 `stripFences`，原先**删行** ⇒
+   *    下面报的 `${rel}:${i + 1}` 会偏移 ⇒ 改用**置空**的模块级 `blankFences`。 */
+  const stripFencesSpec = blankFences;
   const LOOKS_LIKE_QUOTE_SPEC = /原写|原文|更正|漂移|已改为|也写|曾有一份|已被|取代/;
   const existsSpec = (p) => existsSync(resolve(root, p.replace(/\\/g, '/')));
   const isExternal = (p) => [...EXT_PREFIX.keys()].some((pre) => p.startsWith(pre));
@@ -2755,6 +2774,9 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //      别名改名是**无害**的，不该被误报（本轮**自曝**：首版按名字找，于是「全局改名」把哨兵一起带走 ⇒ 判据被自己的样本骗过）。
 //   ② **没有第二份字面量**：不得出现「`const <名> = /…PITFALLS…/`」形态
 //      （**以 token 为锚** ⇒ **改名带不走它**，因为 token 是**内容**、标识符不是）。
+//   ②b **「围栏置空」的实现恰好 1 份**（**以内容为锚**：`return inFence ? '' : l;`）。
+//   ②c **不得**再有「**删除式**」围栏剥离（`replace(<三反引号>…<三反引号>, '')`）——
+//      2026-10-13（审计 §4.346）：**删行** ⇒ 报出的 `file:line` **整体偏移**。
 //   ③ **行为（正）**：`PROBES49` 里每个已知限定词，**两个**谓词都必须接受。
 //   ④ **行为（负）**：每个**非**限定词，**两个**谓词都必须拒绝（防词表退化成 `.*` ⇒ 两个判据一起恒绿）。
 //   ⑤ **反空转**：token 数 ≥ 下限（**从共享表现读**，不手写数字）。
@@ -2762,14 +2784,19 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
 //   ⚠️ ③ 只对**探针表**成立（探针表**手写**；它漂了 ③ 会**静默变松**，只能靠 ④ 的负向部分兜）。
 //   ⚠️ ② 只认「`const X = /…/`」这一种**内联形态**；把字面量塞进**别的**位置（如 `new RegExp('…')`）
 //     **不在面内** —— 但那种写法会同时让 ① 的计数 ≠ 基线 ⇒ **被 ① 兜住**（两条**互补**）。
+//   ⚠️ ②c 只认「正则正文 + 三反引号」这一种**删除式**形态；用 `split`/`slice` 等**别的办法**删围栏
+//     **不在面内**（如实登记）。
 //   ⚠️ 「另抄一份**内容完全相同**的表并在别处使用」**不在面内**（② 只禁内联到别名上）。
 {
   const SELF49 = 'tests/parity/verify-doc-code-refs.mjs';
   const src49 = readFileSync(resolve(root, SELF49), 'utf8');
-  const lines49 = src49.split('\n');
+  // ⚠️ **先剥注释**（`blankComments` 保留字符串 / 正则字面量 ⇒ 假阴性无）——
+  //   否则「**解释这个锚点**」的注释行会把锚点**自己**写进去 ⇒ 计数虚高（本轮**实测**：
+  //   ②b 的头部注释里写了 `return inFence ? '' : l;` ⇒ 计数 2 ≠ 1）。
+  const codeLines49 = blankComments(src49).split('\n');
   // ① 两个判据块真的在用共享谓词（**按形态找，不按别名名** —— 改名无害，不该误报）
   const ALIAS_USE49 = /^\s*const [A-Za-z_$][\w$]* = (QUALIFIER_WITHIN|QUALIFIER_ADJACENT);\s*$/;
-  const aliasUses49 = lines49.filter((l) => ALIAS_USE49.test(l));
+  const aliasUses49 = codeLines49.filter((l) => ALIAS_USE49.test(l));
   const ALIAS_USES_BASELINE49 = 2; // [覆盖型] 基线 2
   if (aliasUses49.length !== ALIAS_USES_BASELINE49) {
     fail(`㊾ 只有 ${aliasUses49.length} 处 \`const <名> = QUALIFIER_WITHIN|QUALIFIER_ADJACENT;\``
@@ -2779,7 +2806,7 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   // ② 没有第二份内联字面量（**以 token 为锚** ⇒ 改名带不走）
   const INLINE_LIT49 = /^\s*const [A-Za-z_$][\w$]* = \/[^/\n]*PITFALLS/;
-  const inline49 = lines49.filter((l) => INLINE_LIT49.test(l));
+  const inline49 = codeLines49.filter((l) => INLINE_LIT49.test(l));
   if (inline49.length > 0) {
     fail(`㊾ 又出现了**内联的限定词字面量**（${inline49.length} 处）：`
       + `${inline49.map((l) => `\`${l.trim().slice(0, 50)}\``).join('；')}`
@@ -2789,12 +2816,26 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   // ⚠️ 名字刻意**不含** `SENTINEL|EXEMPT|ALLOW|…` —— 那些词会被判据 **㉔** 当成「**例外表**」，
   //   而要求它配「陈旧检查」（本条**不是**豁免表，配一个只会是**假绿**）。
   const FENCE_ANCHOR49 = ['return inFence ? ', "''", ' : l;'].join('');
-  const fenceDefs49 = lines49.filter((l) => l.includes(FENCE_ANCHOR49)).length;
+  const fenceDefs49 = codeLines49.filter((l) => l.includes(FENCE_ANCHOR49)).length;
   const FENCE_DEF_BASELINE49 = 1; // [覆盖型] 基线 1
   if (fenceDefs49 !== FENCE_DEF_BASELINE49) {
     fail(`㊾ 「围栏置空」的实现出现 ${fenceDefs49} 处（应为 **${FENCE_DEF_BASELINE49}**）—— `
       + '同一个概念三份副本正是本轮修掉的形态之一（§4.148 原先**没有**豁免围栏 ⇒ '
       + '**引述护栏输出**会被判违规）');
+  }
+  // ②c **不得**再有「**删除式**」围栏剥离（`replace(<三反引号>…<三反引号>, '')`）——
+  //   ⚠️ 2026-10-13（审计 §4.346）：**删行** ⇒ 报出的 `file:line` **整体偏移**
+  //   （**实测**：193 份 md 里 **77 份**受影响、累计少 **8679** 行、最大单文件 **6415** 行；
+  //     注入一条断链 ⇒ 真实 **52** 行、报 **50** 行）。⚠️ 还会把围栏**两侧的行粘在一起**。
+  //   ⚠️ **以内容为锚**（正则正文 + 三反引号）⇒ 改名带不走；**先剥注释** ⇒ 注释里**可以**写这个形态
+  //     （否则「记录旧写法」的注释会把判据自己判红）。`blankComments` 保留**字符串/正则字面量** ⇒ 假阴性无。
+  const FENCE_DELETE_ANCHOR = ['[\\s\\S]*?', '`'.repeat(3)].join('');
+  const fenceDeletes49 = codeLines49.filter((l) => l.includes(FENCE_DELETE_ANCHOR)).length;
+  const FENCE_DELETE_BASELINE49 = 0; // [覆盖型] 基线 0
+  if (fenceDeletes49 !== FENCE_DELETE_BASELINE49) {
+    fail(`㊾ 又出现了**删除式**围栏剥离（${fenceDeletes49} 处）—— 「**删行**」会让报出的 `
+      + '`file:line` **整体偏移**（**实测**：77/193 份 md 受影响、累计少 **8679** 行、'
+      + '最大单文件 **6415** 行）⇒ 请改用**置空**的 `blankFences`');
   }
   // ② 行为（正）：已知限定词 ⇒ 两个谓词都必须接受
   const PROBES49 = ['PITFALLS', 'MEMORY', 'master-plan', 'PRD', 'spec', '方案', '模板', 'skill',
@@ -2842,18 +2883,30 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
     fail('㊾ canary 失效：共享表**拼装**不自洽（`|` 数 ≠ token 数 − 1）⇒ 词表可能被截断而无人知');
   }
   // canary：②b 的锚点必须**真的**落在 `blankFences` 的定义体内（否则计数恒 0 = 空转）
-  const defStart49 = lines49.findIndex((l) => l.startsWith('const blankFences = (src) => {'));
+  const defStart49 = codeLines49.findIndex((l) => l.startsWith('const blankFences = (src) => {'));
   if (defStart49 < 0) {
     fail('㊾ 找不到 `const blankFences = (src) => {` —— 判据锚点漂移（②b 会空转）');
-  } else if (!lines49.slice(defStart49, defStart49 + 8).some((l) => l.includes(FENCE_ANCHOR49))) {
+  } else if (!codeLines49.slice(defStart49, defStart49 + 8).some((l) => l.includes(FENCE_ANCHOR49))) {
     fail('㊾ canary 失效：锚点在 `blankFences` 的**定义体内**找不到 ⇒ ②b 的计数会恒为 0');
   }
   if ('if (/^\\s*```/.test(line)) { inFence = !inFence; i += 1; continue; }'.includes(FENCE_ANCHOR49)) {
     fail('㊾ canary **过宽**：锚点命中了 ㉚ 的**闭合检测**（它不是「置空」实现）⇒ ②b 的计数会虚高');
   }
+  // canary：②c 三向（样本**运行时拼接** ⇒ 判据不检出自己）
+  const BT49 = '`'.repeat(3);
+  if (!`const f = (s) => s.replace(/${BT49}${FENCE_DELETE_ANCHOR}/g, '');`.includes(FENCE_DELETE_ANCHOR)) {
+    fail('㊾ canary 失效：**删除式**锚点认不出自己拼的样本 ⇒ ②c 会**空转**');
+  }
+  if (`if (/^${BT49}/.test(l)) { inFence = !inFence; return ''; }`.includes(FENCE_DELETE_ANCHOR)) {
+    fail('㊾ canary **过宽**：锚点命中了**置空**实现（它不是删除式）⇒ ②c 会**恒红**');
+  }
+  if (blankComments(`// s.replace(/${BT49}${FENCE_DELETE_ANCHOR}/g, '');`).includes(FENCE_DELETE_ANCHOR)) {
+    fail('㊾ canary 失效：**注释里**的删除式未被剥掉 ⇒ 「记录旧写法」的注释会把判据**自己**判红');
+  }
   console.log(`Doc code refs: \`§4.N\` 的**文档限定词** —— **单一真源** \`DOC_QUALIFIER_TOKENS\``
     + `（${tokenCount49} 个 token）；两个判据块**各有一处**别名在用它（形态计数 ${aliasUses49.length}）· `
-    + `**无内联字面量**（${inline49.length} 处）· 两个谓词（30 字窗口 / 紧邻）对 ${PROBES49.length} 个已知限定词`
+    + `**无内联字面量**（${inline49.length} 处）· **围栏置空**（${fenceDefs49} 份）· `
+    + `**无删除式围栏剥离**（${fenceDeletes49} 处）· 两个谓词（30 字窗口 / 紧邻）对 ${PROBES49.length} 个已知限定词`
     + `与 ${NON49.length} 个非限定词**判定一致**；⚠️ **边界**：探针表**手写**（漂了会静默变松）· `
     + '只禁「内联到 `const X = /…/`」这一形态（**另抄一份相同的表**不在面内）');
 }
@@ -3731,7 +3784,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 345; // 2026-10-13 加 §4.345 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 346; // 2026-10-13 加 §4.346 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');
