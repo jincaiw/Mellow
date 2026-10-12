@@ -2857,12 +2857,39 @@ const PKG_NO_CONSUMER_EXEMPT = new Map([
   }
   // canary：**「写得对不对」这一半**（2026-10-09，审计 §4.242 收紧）——
   //   ① 指名了一个**存在且真有该编号**的护栏 ⇒ 不报；② 指名了一个**存在但没该编号**的护栏 ⇒ 必须报。
-  if (unresolvedRefs(new Set(), `// ${G} ${KW} ${'⑦'} 的谓词 …`).length !== 0) {
-    errors.push('判据引用护栏 canary 失效：指名了**真有该编号**的护栏仍被判为未解析');
+  // ⚠️ **2026-10-12（审计 §4.328）：② 的样本必须**派生**，不能写死。**
+  //   原实现把「护栏缺的那个编号」**写死成 ㊿** —— 而 ㊿ 正是**下一个要加的编号**：
+  //   本轮给 `verify-release-gate.mjs` 加上 ㊿ 之后，这条 canary **自己变成了假阳性**
+  //   （「存在但没该编号」的前提不再成立）。⇒ 改为从 `G` 的**真实判据头**里算出**第一个缺号**。
+  //   同族纪律：「**手写派生量必然漂移 ⇒ 一律派生**」。
+  const CIRCLED_ALL = (() => {
+    const out = [];
+    for (const [a, b] of [[0x2460, 0x2473], [0x3251, 0x325F], [0x32B1, 0x32BF]]) {
+      for (let c = a; c <= b; c += 1) out.push(String.fromCodePoint(c));
+    }
+    return out;
+  })();
+  const gAbs = resolve(root, 'tests/parity', G);
+  const gNums = new Set();
+  if (existsSync(gAbs)) {
+    for (const l of readFileSync(gAbs, 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+      for (const c of headerNums(l)) gNums.add(c);
+    }
   }
-  if (unresolvedRefs(new Set(), `// ${G} ${KW} ${'㊿'} …`).join('') !== '㊿') {
+  const MISSING = CIRCLED_ALL.find((n) => !gNums.has(n));
+  const PRESENT = CIRCLED_ALL.find((n) => gNums.has(n));
+  if (PRESENT === undefined || unresolvedRefs(gNums, `// ${G} ${KW} ${PRESENT} 的谓词 …`).length !== 0) {
+    errors.push('判据引用护栏 canary 失效：指名了**真有该编号**的护栏仍被判为未解析'
+      + `（样本用**派生**的 ${PRESENT ?? '(空)'}）`);
+  }
+  if (MISSING === undefined) {
+    // ⚠️ `G` 已含**全部** 50 个圈号 ⇒ 「存在但没该编号」的样本**无法构造** ⇒ **打印跳过**
+    //   （**不是**静默通过）。这本身就是「编号空间**耗尽**」的信号 —— 下一条新判据只能换命名空间。
+    console.log(`Doc code refs: ⚠️ 判据引用护栏 canary ② **跳过** —— \`${G}\` 已含**全部**圈号，`
+      + '无法构造「存在但没该编号」的样本（**圈号空间耗尽**；新判据需换命名空间）');
+  } else if (unresolvedRefs(gNums, `// ${G} ${KW} ${MISSING} …`).join('') !== MISSING) {
     errors.push('判据引用护栏 canary 失效：指名了**存在但没该编号**的护栏**未被报出**'
-      + '（只锁了「有没有写护栏名」这一半）');
+      + `（样本用**派生**的 ${MISSING}，**不写死** —— 写死会在该编号刚被加上时变成**假阳性**）`);
   }
   if (unresolvedRefs(new Set(), `// ${KW} ${C} 锁的是 …`).join('') !== C) {
     errors.push('判据引用护栏 canary 失效：本文件没有该编号且未指名护栏时**未被报出**');
@@ -3538,7 +3565,7 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
 //   ⚠️ 这是**地板不是等值**：正常追加新节只增不减；**加新节后请把地板一并上调**（上调是显式动作）。
 //   ⚠️ 它挡得住「整节被回写掉」，挡不住「**同一节内部被改写**」——那要靠 `git diff` 人工复核。
 {
-  const AUDIT_FLOOR = 327; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
+  const AUDIT_FLOOR = 328; // 2026-10-11 加 §4.316 后上调（**加新节必须一并上调**）
   const auditFiles = committedFiles().filter((f) => /^docs\/qualification\/release-blocker-audit-.*\.md$/.test(f));
   if (auditFiles.length === 0) {
     fail('找不到审计文档（`docs/qualification/release-blocker-audit-*.md`）—— 本判据失去靶子');

@@ -6013,6 +6013,191 @@ const scanBodyOf = (rel, raw) => {
     + '⚠️ **边界**：只认「立即绑定」与「同行判定」两种形态；加括号跨行续写 / 多参数路径 / 自读不在面内');
 }
 
+// ── ㊿ 文档里对**状态**的转述必须与真值源一致（2026-10-12，审计 §4.328）──
+// 【为什么】判据 **⑨b** 只锁**含显式标记 `当前状态真值源`** 的行 —— 而「**声称当前**」有**多种写法**：
+//   实测 `master-plan` §8 写「**当前输出**（2026-09-12）：`NO-GO：6 项未闭环`」—— **不含**那个标记
+//   ⇒ **不受 ⑨b 覆盖** ⇒ 那个「6」一直漂着（**现算 10**）。**同族「同一语义多种写法」第 5 次**
+//   （§4.180 canary 语序 · §4.181 中文量词 · §4.189 倒装 · §4.293）。
+//   另一半：**唯一施工文件** `master-plan` 里 `<P0-id>` **同行的状态词**与台账**相反**
+//   （实测 3 处：`P0-PLATFORM-001` 写 IMPL / 台账 AUTO；`P0-EDITOR-005` 写 BLOCKED / 台账 IMPL）
+//   ⇒ **施工文件指向已完成的活**（下一个人会照着它**重做**，或以为 W5 仍被堵）。
+// 【判据】
+//   R1：凡**声称当前**的行（`当前输出|当前门禁|当前状态|现状`）同行含 `PASS-E = M/K` 或
+//       「未闭环 N 项 / N 项未闭环」⇒ 必须 == **门禁现算**。
+//       ⚠️ 与 **⑨b** 的关系：⑨b 的面 = 「**带显式标记** `当前状态真值源`」；本条的面 = 「**任何**
+//          声称当前的写法」 ⇒ 本条是 ⑨b 的**超集**（**互为镜像**：⑨b 的标记若被改名，本条仍守得住）。
+//   R2：`master-plan` 里 `<P0-id>` **同行**出现状态词（`AUTO|MAC|IMPL|BLOCKED|NOT_TESTED`）
+//       ⇒ 必须 == 台账里该项的 `status`；引用了**台账里不存在**的 id ⇒ 也红。
+//   ⚠️ **两条共用的豁免**：**带日期的记录行**（`| **20YY-MM-DD…**`）是**历史**（职责是记录**当时**的事实）
+//      ⇒ 豁免（同 ⑨b 的「不误伤带日期的历史」）；**更正块**（同行或**上下 3 行内**的 `> **⚠️`）亦可
+//      —— 那是本仓对「只追加」文档的既有做法（**保留原文只划除** + 紧邻更正）。
+// 【边界如实声明】
+//   ⚠️ R1 只认那四个**显式**写法 —— 其它措辞（「最新」「现在」）**不覆盖**（如实登记）。
+//   ⚠️ R2 只认**同行**；跨行的状态列（表格换行）**不覆盖**；只覆盖 `master-plan` **一份**文件。
+{
+  const MASTER50 = 'docs/plans/typora-parity-master-plan.md';
+  const AUDIT_LOG50 = /^docs\/qualification\/release-blocker-audit-.*\.md$/;
+  /** 判定与 canary **共用**：**声称当前**的显式写法。 */
+  const CURRENT50 = /(当前输出|当前门禁|当前状态|现状)/;
+  /** 判定与 canary **共用**：带日期的**记录行**（历史）⇒ 豁免。 */
+  const DATED_ROW50 = /^\s*\|\s*\*\*20\d\d-\d\d-\d\d/;
+  /** 判定与 canary **共用**：该行（或**上下 3 行内**）是否有 `> **⚠️` / `> **…更正…**` 更正块。 */
+  const hasFixNote50 = (lines, i) => {
+    for (let k = Math.max(0, i - 3); k <= Math.min(lines.length - 1, i + 3); k += 1) {
+      if (/^>\s*\*\*[^*]*(⚠️|更正)/.test(lines[k].trim())) return true;
+    }
+    return false;
+  };
+  /** 判定与 canary **共用**：「未闭环 N 项 / N 项未闭环」两种语序。 */
+  const unclosed50 = (s) => {
+    const m = /未闭环\s*\**\s*(\d+)\s*项|\**(\d+)\s*项\**\s*未闭环/.exec(s);
+    return m === null ? null : Number(m[1] ?? m[2]);
+  };
+  /** 判定与 canary **共用**：`PASS-E = M/K`。 */
+  const passE50 = (s) => {
+    const m = /PASS-E\s*=\s*(\d+)\s*\/\s*(\d+)/.exec(s);
+    return m === null ? null : [Number(m[1]), Number(m[2])];
+  };
+  /** 判定与 canary **共用**：该行**自身在讲「更正」**（引用**旧值** vs 新值）⇒ **直方图**读数豁免。
+   *  ⚠️ 实测：`master-plan` §15.4 的更正记录行同时引用「更正前写『AUTO 28 …』」与「实为『AUTO 44 …』」
+   *     ⇒ 不豁免会把**被引用的旧值**当成新声明（**假阳性**）。⚠️ 该豁免**只用于 R3**（直方图）——
+   *     引用旧值是这类行的常态；R1 的「当前」声明**不**享受它。 */
+  const CORRECTION_LINE50 = /(更正前|原写|原文写|原为|实为|已更正)/;
+  /** 判定与 canary **共用**：一行里「`<P0-id>` → 紧随其后的状态词」的配对。 */
+  const pairsOf50 = (ln) => {
+    const out = [];
+    let last = null;
+    for (const t of ln.matchAll(/P0-[A-Z]+-\d+|(?<![A-Z_])(AUTO|MAC|IMPL|BLOCKED|NOT_TESTED)(?![A-Z_])/g)) {
+      if (t[0].startsWith('P0-')) { last = t[0]; continue; }
+      if (last === null) continue;
+      out.push([last, t[1]]);
+      last = null;
+    }
+    return out;
+  };
+  /** 判定与 canary **共用**：该行的**状态直方图**读数 —— `| <STATUS> | <N> |` 行 **或** 行内 `AUTO n / MAC n / …`。 */
+  const histOf50 = (ln) => {
+    const out = [];
+    const row = /^\s*\|\s*(AUTO|MAC|IMPL|BLOCKED|NOT_TESTED)\s*\|\s*\**\s*(\d+)\s*\**\s*\|/.exec(ln);
+    if (row !== null) out.push([row[1], Number(row[2])]);
+    for (const m of ln.matchAll(/(AUTO|MAC|IMPL|BLOCKED|NOT_TESTED)\s+(\d+)/g)) out.push([m[1], Number(m[2])]);
+    return out;
+  };
+  const md50 = (trackedFiles ?? []).filter((f) => f.endsWith('.md')
+    && !f.startsWith('archive/') && !f.startsWith('docs/adr/') && !AUDIT_LOG50.test(f));
+  const bad50 = [];
+  let claimed50 = 0;
+  for (const f of md50) {
+    const lines = read(f).split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!CURRENT50.test(lines[i]) || DATED_ROW50.test(lines[i])) continue;
+      // ⚠️ 声明可能**跨行**（标记在上一行、数字在续行）—— 同 ⑨b 的教训（按单行取会静默漏检）。
+      const win = lines[i] + '\n' + (lines[i + 1] ?? '');
+      const pe = passE50(win);
+      const un = unclosed50(win);
+      if (pe === null && un === null) continue; // 只是**引用**该短语 ⇒ 不是声明
+      claimed50 += 1;
+      if (hasFixNote50(lines, i)) continue;
+      if (pe !== null && (pe[0] !== passECount || pe[1] !== totalItems)) {
+        bad50.push(`${f}:${i + 1} 写「PASS-E = ${pe[0]}/${pe[1]}」，现算 ${passECount}/${totalItems}`);
+      }
+      if (un !== null && un !== noGo.length) {
+        bad50.push(`${f}:${i + 1} 写「未闭环 ${un} 项」，现算 ${noGo.length} 项`);
+      }
+    }
+  }
+  const st50 = new Map((ledger.items ?? []).map((x) => [x.id, x.status]));
+  const cnt50 = new Map();
+  for (const x of (ledger.items ?? [])) cnt50.set(x.status, (cnt50.get(x.status) ?? 0) + 1);
+  const masterLines50 = existsSync(resolve(root, MASTER50)) ? read(MASTER50).split('\n') : [];
+  let pairs50 = 0;
+  let hist50 = 0;
+  for (let i = 0; i < masterLines50.length; i += 1) {
+    const ln = masterLines50[i];
+    if (DATED_ROW50.test(ln)) continue;
+    for (const [id, got] of pairsOf50(ln)) {
+      pairs50 += 1;
+      const want = st50.get(id);
+      if (want === undefined) {
+        bad50.push(`${MASTER50}:${i + 1} 引用**台账里不存在**的 ${id}`);
+        continue;
+      }
+      if (got !== want && !hasFixNote50(masterLines50, i)) {
+        bad50.push(`${MASTER50}:${i + 1} 写 ${id}=${got}，台账=${want}`);
+      }
+    }
+    for (const [status, n] of histOf50(ln)) {
+      hist50 += 1;
+      const want = cnt50.get(status) ?? 0;
+      if (n !== want && !CORRECTION_LINE50.test(ln) && !hasFixNote50(masterLines50, i)) {
+        bad50.push(`${MASTER50}:${i + 1} 写 ${status}=${n}，台账现算 ${want}`);
+      }
+    }
+  }
+  if (bad50.length > 0) {
+    fail(`㊿ 文档里对**状态**的转述与真值源**不一致**：${bad50.slice(0, 5).join('；')}`
+      + ' —— 「**当前**」是**声称**，会被按**现在**读；`master-plan` 是**唯一施工文件**，'
+      + '它写错状态 ⇒ 下一个人会**照着它重做**（或以为某任务仍被堵）。'
+      + '修法：同步到门禁**现算** / 台账；若必须**保留原文**（历史记录），请在**上下 3 行内**加'
+      + ' `> **⚠️` **更正块**并写明现算值（审计 §4.328）');
+  }
+  // 防空转：[健康度型]（面由仓库内容产生 ⇒ 留余量）
+  if (claimed50 < 10 || pairs50 < 4 || hist50 < 4) {
+    fail(`㊿ 只解析出 ${claimed50} 处「声称当前」的声明 / ${pairs50} 组「id → 状态词」配对 / `
+      + `${hist50} 处状态直方图（[健康度型] 下限 10 / 4 / 4）—— 扫描面萎缩会让本判据**空转**`);
+  }
+  // canary：九向（与判定**共用** CURRENT50 / DATED_ROW50 / hasFixNote50 / unclosed50 /
+  //   pairsOf50 / histOf50）
+  if (!CURRENT50.test('**当前输出**（2026-09-12）：`NO-GO：6 项未闭环`')) {
+    fail('㊿ canary 失效：「当前输出」这种**写法**未被识别（那正是本条要补的那一半）');
+  }
+  if (CURRENT50.test('该次的输出为 6 项未闭环')) {
+    fail('㊿ canary **过宽**：**不含**「当前」语义的行被判为声明');
+  }
+  if (!DATED_ROW50.test('| **2026-10-01（二十一续）** | 盘点 |')) {
+    fail('㊿ canary 失效：**带日期的记录行**未被识别（那会误伤历史）');
+  }
+  if (DATED_ROW50.test('| 4.2 | 拼写检查 | ⛔ BLOCKED |')) {
+    fail('㊿ canary **过宽**：**不带日期**的任务行被判为历史记录');
+  }
+  if (unclosed50('**当前输出**：`NO-GO：6 项未闭环`') !== 6 || unclosed50('实测 **10 项未闭环**') !== 10) {
+    fail('㊿ canary 失效：两种语序的「未闭环」取不到');
+  }
+  if (JSON.stringify(pairsOf50('`P0-EDITOR-005`（拼写检查词典，BLOCKED）')) !== JSON.stringify([['P0-EDITOR-005', 'BLOCKED']])) {
+    fail('㊿ canary 失效：「`<id>`（…，状态词）」配对取不到（R2 会**空转**）');
+  }
+  if (pairsOf50('| AUTO | 2 | 拼写检查词典 |').length !== 0) {
+    fail('㊿ canary **过宽**：**没有 id** 的状态词被配了对（那会误伤 §11.2 直方图）');
+  }
+  if (!hasFixNote50(['x', '> **⚠️ 更正（2026-10-12）**：现算 10 项', 'y'], 0)
+    || hasFixNote50(['x', 'y', 'z'], 0)) {
+    fail('㊿ canary 失效：**更正块**的识别不对（豁免面会失控或失效）');
+  }
+  // ⚠️ 第二种更正块写法（`> **数字更正**：…`）也必须认 —— 实测 master-plan §0.2 用的是它
+  if (!hasFixNote50(['x', '> **数字更正**：以门禁输出为准', 'y'], 0)) {
+    fail('㊿ canary 失效：`> **…更正…**` 形态的更正块未被识别（那会误伤**已更正过**的行）');
+  }
+  if (JSON.stringify(histOf50('| IMPL | 1 | 三平台 Runtime 门禁 |')) !== JSON.stringify([['IMPL', 1]])) {
+    fail('㊿ canary 失效：**表格直方图**行取不到（R3 会**空转**）');
+  }
+  if (JSON.stringify(histOf50('**PASS-E = 0**，AUTO 44 / MAC 2 / IMPL 1。')) !== JSON.stringify([['AUTO', 44], ['MAC', 2], ['IMPL', 1]])) {
+    fail('㊿ canary 失效：**行内直方图**（`AUTO n / MAC n / …`）取不到');
+  }
+  if (histOf50('| BLOCKED | 触发 Release Blocker |').length !== 0) {
+    fail('㊿ canary **过宽**：**状态定义表**（第二格不是数字）被判为直方图');
+  }
+  // canary：**引用旧值**的更正行必须被识别（否则会把被引用的旧值当新声明）
+  if (!CORRECTION_LINE50.test('更正前写「32 项 AUTO 28」，实为 50 项（AUTO 44）')) {
+    fail('㊿ canary 失效：**更正行**（引用旧值）未被识别 ⇒ 会误报被引用的旧值');
+  }
+  if (CORRECTION_LINE50.test('| AUTO | 44 | 自动化通过 |')) {
+    fail('㊿ canary **过宽**：**普通直方图行**被判为更正行（那会让 R3 **空转**）');
+  }
+  console.log(`Release gate: 文档状态的**转述一致性** —— 「声称当前」的声明 ${claimed50} 处 · `
+    + `\`master-plan\` 的「id → 状态词」配对 ${pairs50} 组，**不一致** ${bad50.length} 处；`
+    + '⚠️ **边界**：R1 只认四个**显式**写法（其它措辞不覆盖）· R2 只认**同行**且只覆盖 master-plan 一份');
+}
+
 if (errors.length > 0) {
   throw new Error(`Release gate violations:\n  ${errors.join('\n  ')}`);
 }

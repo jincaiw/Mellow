@@ -786,7 +786,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | Caret / Selection | 单击/双击/三击/拖拽选择平台化；Home/End/词移动平台化 | E |
 | IME | Composition Guard 覆盖全部节点；三平台连续 20 分钟写作 0 丢字 | B |
 | Undo / Redo | 一次用户动作 = 一次撤销（含 GUI 操作、表格、图片尺寸） | E |
-| Auto Pair / 智能标点 / 拼写检查 | 默认状态与 Typora 一致；代码与 URL 排除；拼写检查有词典与建议 | E（智能标点 ✅ 有设置项；Auto Pair 恒开、**不可关**，与 Typora 默认值一致 → 登记 **D-V**；拼写检查词典与建议 → **D-S** / `P0-EDITOR-005` BLOCKED） |
+| Auto Pair / 智能标点 / 拼写检查 | 默认状态与 Typora 一致；代码与 URL 排除；拼写检查有词典与建议 | E（智能标点 ✅ 有设置项；Auto Pair 恒开、**不可关**，与 Typora 默认值一致 → 登记 **D-V**；拼写检查词典与建议 → **D-S** / `P0-EDITOR-005` **IMPL**） |
 | Focus / Typewriter / Reader | F8 / F9；Reader 支持搜索 / 大纲 / Zoom / Lightbox / Print | E / B |
 | Slash / Palette | 行首触发、可关闭、不抢普通 `/` 输入与 IME | B |
 | 字数统计 | 词 / 行 / 字符 / 段落 / 阅读时长；选中时显示选中统计；**中文一字一词**；排除格式语法 | E |
@@ -1052,7 +1052,7 @@ Flat / Collapsible 切换此前已在右键菜单（`outline.switchFlat` / `swit
 | # | 任务 | 定位 | 状态 |
 |---|---|---|---|
 | 4.1 | 状态矩阵补齐至全部块级 / 行内节点（spec §21 全 16 态） | `packages/editor-engine/test/` | ✅ **已完成（复核后确认原判定失真；2026-09-30 补 `keyboard` 态）** —— `state-matrix.test.ts` 为 **11 家族 × 16 态**参数化 = 176 例 + FencedCode 专述 7 例（合 183）；`widget-state-matrix.test.ts` 9 家族 × 16 态（15 个用例函数，`undo/redo` 合并）= 135 例；矩阵无空洞 |
-| 4.2 | 拼写检查：接入词典与替换建议，代码区 / URL 排除，三平台一致 | `editor-engine` | ⛔ **BLOCKED（W5）** —— 需 `host-api` 暴露平台拼写服务（`NSSpellChecker` / Hunspell / ISpell），非引擎层可解 |
+| 4.2 | 拼写检查：接入词典与替换建议，代码区 / URL 排除，三平台一致 | `editor-engine` | ✅ **已实现**（`P0-EDITOR-005` = **IMPL**）—— `host-api` 的 `SpellcheckService`（`packages/host-api/src/host.ts`）+ Rust `spellcheck.rs` 6 个命令（`NSSpellChecker`）+ 桌面适配器 + 右键**建议列表**（经 `dispatchCommand(id, payload)`）+ `edit.spelling.learn/unlearn/checkDocument`；**代码区排除**由 `inlineCodeAttrs.ts` / `codeBlockStyle` 承担（spec §11）。⚠️ 剩「**真机三平台证据**」⇒ 不标 AUTO（见 §15.3）。**原「⛔ BLOCKED（需 `host-api` 暴露平台拼写服务）」已过期**（审计 §4.328） |
 | 4.3 | 单图独占段落居中（Typora 官方 CSS 语义） | `image/widget.ts` | ✅ **完成**（原定位 `wysiwygBlocks.ts` 有误 —— 图片是 widget，不在块级装饰里） |
 | 4.4 | Undo 语义全量核对：GUI 动作（表格、图片尺寸、格式命令）各一个 Undo | `undo.test.ts` / `table-undo-diff.test.ts` | ✅ **完成** —— 37 例（21 + 16）+ 本轮新增 3 例锁定「格式命令 / 图片尺寸改写各一个 Undo」 |
 | 4.5 | Enter / Backspace / Delete / Home / End / 词移动平台化；鼠标选择矩阵 | `editor-engine` / CoreEditor | ✅ **完成（2026-09-12）** —— `platformNav.ts` 存在；鼠标选择矩阵新增 `tests/e2e/mouse-selection-verify.mjs`，**7/7 运行时验证通过**：单击定位（选区为空）、双击选词（hello / world）、三击选整行、拖拽连续选区（2→6）、Shift+单击扩展选区（2→7）、列表行三击含 marker 整行。<br/>**三击语义固化为「整行 + 行尾换行」**（`"first line\n"`），属 CodeMirror 默认语义；Typora 同为该引擎族（见 typora-menu-dump 的 keymap 段），逐字对照仍需真机取样。<br/>**踩坑记录**：`view.coordsAtPos()` 返回 **iframe 视口内**坐标，而 `page.mouse.*` 用**主页面视口**坐标，必须叠加 iframe 偏移，否则所有点击都会落到偏移 0 |
@@ -1243,11 +1243,17 @@ Typora 官方 CSS 语义 `p > img:only-child { display:block; margin:auto }`。C
    （指纹错配会静默加载旧引擎，是最危险的静默降级）。
 5. **NO-GO 清单只报告不抛错**：开发期必然存在未闭环项，护栏如实列出而非掩盖。
 
-**当前输出**（2026-09-12）：`NO-GO：6 项未闭环` ——
-`P0-EDITOR-004`（IME，仅 macOS）、`P0-PERF-001`（性能，仅 macOS）、`P0-PLATFORM-001`（三平台 Runtime，IMPL）、
-`P0-QA-001`（UX Score / 30 任务，NOT_TESTED）、`P0-EDITOR-005`（拼写检查词典，BLOCKED）、
-`P0-LAYOUT-002`（三平台视觉 Golden，BLOCKED）。**这 6 项全部依赖真机或 `host-api` 扩展，
-本环境无法闭环 —— 在补齐前不得发布 PASS-E 结论。**
+**当前输出**（**2026-10-12 实跑**）：`NO-GO：10 项未闭环` ——
+`P0-EDITOR-001`、`P0-EDITOR-003`、`P0-EDITOR-004`（IME，仅 macOS，**MAC**）、`P0-SHELL-001`、`P0-MENU-001`、
+`P0-LAYOUT-002`（三平台视觉 Golden，**BLOCKED**）、`P0-EDITOR-005`（拼写检查词典，**IMPL**）、
+`P0-PERF-001`（性能，仅 macOS，**MAC**）、`P0-EXPORT-001`（PDF 渲染路径，**IMPL**）、
+`P0-QA-001`（UX Score / 30 任务，**NOT_TESTED**）。**这 10 项全部依赖人工 UX Gate 会话 /
+方案级裁决（ADR-0037）/ 真机证据 —— 本环境无法闭环 ⇒ 在补齐前不得发布 PASS-E 结论。**
+> **⚠️ 更正（2026-10-12，审计 §4.328）**：本节原文写「**当前输出**（2026-09-12）：`NO-GO：6 项未闭环`」，
+> 并把 `P0-PLATFORM-001` 记作 **IMPL**、`P0-EDITOR-005` 记作 **BLOCKED**。实测两项**都已变**：
+> `P0-PLATFORM-001` 台账已是 **AUTO**（三平台 Runtime 证据已齐）、`P0-EDITOR-005` 已是 **IMPL**
+> （`host-api` 的 `SpellcheckService` 已落地 —— 见 §7 的 4.2）。**数字与状态以门禁现算 / 台账为准**，
+> 不以本节记忆为准（「**当前**」是**声称**，会被按**现在**读）。
 
 ---
 
@@ -1362,18 +1368,23 @@ Functional
 
 任何一项缺失，状态只能是 IMPL / AUTO / platform-partial，**不得写「已完成对标」**。
 
-### 11.2 当前看板（台账 50 项 · 2026-09-13 实跑）
+### 11.2 当前看板（台账 50 项 · **2026-10-12 实跑**）
 
 | 状态 | 数量 | 说明 |
 |---|---|---|
 | PASS-E | **0** | 尚无 —— 三平台 Experience Contract 未闭环前不得标 PASS-E |
 | AUTO | 44 | 自动化通过，真机体验验收未完成 |
 | MAC | 2 | IME / Undo、性能（仅 macOS 有证据） |
-| IMPL | 1 | 三平台 Runtime 门禁（Windows ✅ / macOS ✅ / Linux ❌） |
-| BLOCKED | 2 | 拼写检查词典（需 host-api）、三平台视觉 Golden（需基线入库） |
+| IMPL | 2 | 拼写检查词典（`host-api` 已落地，缺**真机三平台**证据）、PDF 渲染路径（待 ADR-0037 裁决） |
+| BLOCKED | 1 | 三平台视觉 Golden（需基线入库） |
 | NOT_TESTED | 1 | UX Score / 30 任务（工具设计上禁止自动生成计时，只能人工） |
 
 **W0 的扩容目标已完成**（32 → 50，覆盖 §7 全部合同条目）；原表「32 项」为旧值，已更正。
+
+> **⚠️ 更正（2026-10-12，审计 §4.328）**：本节标题原写「**当前**看板（台账 50 项 · **2026-09-13 实跑**）」，
+> 且 `IMPL` 记 **1**、`BLOCKED` 记 **2**。实测（门禁现算 / 台账）：`IMPL` **2**（`P0-EDITOR-005` 由
+> `BLOCKED` 转为 `IMPL`、`P0-EXPORT-001` 本就是 `IMPL`）、`BLOCKED` **1**。
+> ⇒ 已按现算改正并改标 **2026-10-12 实跑**。**「当前看板」是声称，会被按现在读。**
 
 **完整任务完成度审计见 §15。**
 
@@ -1593,7 +1604,7 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 |---|---|---|---|
 | 1 | **G7-EDIT-02** 跨应用剪贴板（7 目标应用） | 脚本已有，但需真机 + System Events | 在有 GUI 权限的终端运行 `clipboard-cross-app.mjs` |
 | 2 | **G7-EDIT-03** PicGo / 图床真实链路 | 需 PicGo 服务与图床凭据 | 提供凭据或本地 PicGo |
-| 3 | **G7-EDIT-04 / P0-EDITOR-005** 拼写检查词典与建议 | 需 `host-api` 暴露 `NSSpellChecker` / Hunspell | 扩展 Host 契约（需新增 ADR） |
+| 3 | **G7-EDIT-04 / P0-EDITOR-005** 拼写检查词典与建议 | ✅ **2026-10-12 复核：`host-api` 已落地**（`SpellcheckService` + `spellcheck.rs` 6 命令 + 适配器 + 建议列表 + e2e）⇒ 本行原「需 `host-api` 暴露 `NSSpellChecker` / Hunspell」**已过期**。台账 **IMPL** | 剩余 = **真机三平台证据**（审计 §4.328） |
 | 4 | **G7-EDIT-05** 三平台 20 分钟连续写作 | 需真机 + 原生输入法 | 真机执行 |
 | 5 | **G7-QA-01** UX Score 100 分表 | 工具设计上**禁止自动生成计时**（`ux-gate-recorder` 只接受人工记录） | 人工评分 |
 | 6 | **G7-QA-02** 30 任务计时 | 同上 | 人工计时（两轮交叉顺序） |
@@ -1635,7 +1646,7 @@ Typora 有一整组「**When drop file / folder into Typora**」偏好（面板 
 
 ### 15.4 本轮更正的文档失真（累计 9 处）
 
-1. **§0.2 / §11.2 台账数字**（**本轮已更正** —— 措辞「仍写」指的是**更正前**的状态；2026-10-09 实测：§11.2 已是「台账 **50 项**」、§0.2 **无**台账数字）：更正前写「32 项 AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1」，实为 50 项（AUTO 44 / MAC 2 / IMPL 1 / BLOCKED 2 / NOT_TESTED 1）。
+1. **§0.2 / §11.2 台账数字**（**本轮已更正** —— 措辞「仍写」指的是**更正前**的状态；2026-10-09 实测：§11.2 已是「台账 **50 项**」、§0.2 **无**台账数字）：更正前写「32 项 AUTO 28 / MAC 2 / IMPL 1 / NOT_TESTED 1」，实为 50 项（AUTO 44 / MAC 2 / IMPL 1 / BLOCKED 2 / NOT_TESTED 1）。（**2026-10-12 更新**：其中 `IMPL 1` / `BLOCKED 2` 亦已过期 ⇒ 现为 `IMPL 2` / `BLOCKED 1`，见审计 §4.328。）
 2. **「Linux 真机 IME 已通」**：CI run 58（2026-09-06）起持续失败，从未通过（§5.8 G7-QA-03）。
 3. **「Windows 仅诊断级」已过时**：run 60/61 的 Source Fidelity 与 launch/type/save 均 success。
 4. **G7-EDIT-01「矩阵覆盖不足」**：实为 11 家族 × 16 态参数化，无缺口。
