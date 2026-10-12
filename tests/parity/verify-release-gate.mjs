@@ -3726,20 +3726,40 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   if (!scrub22(`const why = '${H}() 是 throw 型';\n${H}('x');`).includes(`${H}(`)) {
     fail('㉒ canary 失效：剥字符串**吃掉了真调用**（假阴性，无人知）');
   }
-  // ── R2（2026-10-12，审计 §4.336）：**共享文本助手的定义必须早于它的第一次出现** ──────
+  // ── R2（2026-10-12，审计 §4.336；**2026-10-13 扩面**，审计 §4.342）：
+  //      **模块级 `const` 的定义必须早于它的第一次出现**（TDZ） ──────────────────────────
   // 【为什么】`const` 在**定义行之前**被引用 ⇒ **TDZ** ⇒ `ReferenceError` ⇒
   //   **整条护栏当场中断、其后所有判据从未判定**（「崩掉 = 从未判定」，比「报错」更坏）。
   //   ⚠️ 本仓已踩**三次**（§4.292 的 `CODE_BASELINE` → §4.336 的 `blankComments`），
   //   **前两次只写了注释 / 只移了那一个常量，没有判据** ⇒ 又复发。这正是「只锁了一半」。
-  // ⚠️ **为什么只锁这一小组名字**：通用的「模块级 `const` 先用后定义」谓词**不健全** ——
-  //   实测 516 个定义里 2 处**假阳性**（① 与**函数参数**同名：`gapsOf(pkg, ctx)`；
-  //   ② **字符串内容**里出现该词）⇒ 按本仓纪律「谓词不健全就不落判据」，
-  //   只对**名字在全仓唯一**的共享助手落。
-  // 【边界如实声明】⚠️ 只覆盖 `SHARED_TEXT_HELPERS` 列出的名字（跨块共享的那一小组）；
-  //   **别的模块级 `const` 的 TDZ 不在覆盖内** —— 那半靠**运行**兜住（崩 = CI 红，
-  //   丢的是**具体性**而不是**正确性**）。
-  const SHARED_TEXT_HELPERS = ['stripJsComments', 'scrubOf', 'SCRUB_RE', 'blankComments', 'blankHash',
-    'blankHtmlComments', 'scanBodyOf', 'hasQuotedArg', 'stripYamlComments', 'codeText', 'mdText'];
+  // ⚠️ **为什么原先只锁 10 个名字**：通用谓词当时**不健全** —— 实测 516 个定义里 2 处假阳性
+  //   （① 与**函数参数**同名 `gapsOf(pkg, ctx)`；② **字符串内容**里出现该词）。
+  //   ⇒ **2026-10-13 复查**：② 已被 `scrubOf`（**字符串感知**）消掉；① 可**健全地排除** ——
+  //   凡**在文件里任何位置作过函数参数**的名字，**整体跳过**（那样就**不可能**有 TDZ 歧义）。
+  //   ⇒ 实测：**625** 个定义 · 跳过 **5** 个 · 违规 **0** 个 · **103 ms** ⇒ **扩面到全部**。
+  // 【边界如实声明】⚠️ ① **名作过函数参数 ⇒ 整体跳过**（本判据**不做作用域分析**）；
+  //   ② 只看 **列 0** 的 `^const NAME =` ⇒ 块内 / 缩进的 `const` **不在面内**。
+  const MODULE_CONST_RE = /^const ([A-Za-z_$][\w$]*) = /;
+  /** 判定与 canary **共用**：该行上的**参数表**（`function f(…)` 与 `(…) =>` 两种形态）。 */
+  const paramListsOf = (line) => {
+    const out = [];
+    for (const m of line.matchAll(/function\s*[\w$]*\s*\(([^)]*)\)/g)) out.push(m[1]);
+    for (const m of line.matchAll(/\(([^)]*)\)\s*=>/g)) out.push(m[1]);
+    return out;
+  };
+  /** 判定与 canary **共用**：该文件里「作过函数参数」的名字集合（这些名字**整体跳过**）。 */
+  const paramNamesOf = (lines) => {
+    const set = new Set();
+    for (const l of lines) {
+      for (const p of paramListsOf(l)) {
+        for (const raw of p.split(',')) {
+          const t = raw.trim().replace(/=.*$/, '').replace(/^\.\.\./, '').trim();
+          if (/^[A-Za-z_$][\w$]*$/.test(t)) set.add(t);
+        }
+      }
+    }
+    return set;
+  };
   /** 判定与 canary **共用**：`name` 在源码里是否「先用后定义」。
    *  返回**首次使用的行号**（1 起）；合规返回 `-1`；**未定义**返回 `null`（不由本判据负责）。 */
   const firstUseBeforeDef = (src, name) => {
@@ -3752,23 +3772,28 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
   };
   const tdzViolations = [];
   let sharedDefs = 0;
+  let skippedParamNames = 0;
   for (const f of guards22) {
     const src = scrub22(read(`tests/parity/${f}`));
-    for (const n of SHARED_TEXT_HELPERS) {
-      const at = firstUseBeforeDef(src, n);
-      if (at === null) continue;
+    const lines = src.split('\n');
+    const params = paramNamesOf(lines);
+    for (const l of lines) {
+      const m = MODULE_CONST_RE.exec(l);
+      if (m === null) continue;
+      if (params.has(m[1])) { skippedParamNames += 1; continue; }   // ⚠️ 无法健全分析 ⇒ 整体跳过
       sharedDefs += 1;
-      if (at > 0) tdzViolations.push(`${f} → \`${n}\`（L${at} 已用，定义在更后）`);
+      const at = firstUseBeforeDef(src, m[1]);
+      if (at !== null && at > 0) tdzViolations.push(`${f} → \`${m[1]}\`（L${at} 已用，定义在更后）`);
     }
   }
   if (tdzViolations.length > 0) {
-    fail(`㉒ R2 这些护栏**先用后定义**共享文本助手**：${tdzViolations.join('、')}`
+    fail(`㉒ R2 这些护栏**先用后定义**模块级 \`const\`：${tdzViolations.join('、')}`
       + ' —— `const` 的 **TDZ** 会抛 `ReferenceError` ⇒ **整条护栏中断、其后判据从未判定**'
-      + '（§4.292 / §4.336 实测）。把共享助手移到**模块顶部**（所有判据块之前）');
+      + '（§4.292 / §4.336 实测）。把定义移到**使用之前**（共享助手放模块顶部）');
   }
-  // 防空转：[健康度型]（助手定义数随护栏增长 ⇒ 留余量；实测 32）
-  if (sharedDefs < 20) {
-    fail(`㉒ R2 只找到 ${sharedDefs} 个共享文本助手定义（[健康度型] 下限 20）`
+  // 防空转：[健康度型]（定义数随护栏增长 ⇒ 留余量；实测 625）
+  if (sharedDefs < 300) {
+    fail(`㉒ R2 只找到 ${sharedDefs} 个模块级 \`const\` 定义（[健康度型] 下限 300）`
       + ' —— 扫描面萎缩会让本判据**空转**');
   }
   // canary：两向（与判定**共用** firstUseBeforeDef）
@@ -3896,9 +3921,20 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       fail('㉒ R4 canary **过宽**：**已登记豁免**的行首锚定写法被判成「单独扫」');
     }
   }
+  // ⚠️ **第四~六向**（2026-10-13，审计 §4.342）：**函数参数名必须被收进跳过集合** ——
+  //   扩面到「全部模块级 `const`」的前提就是它（否则 `gapsOf(pkg, ctx)` 那类会成**假阳性**）。
+  if (!paramNamesOf(['function f(source) {', '  return source;', '}']).has('source')) {
+    fail('㉒ R2 canary 失效：**函数参数**名未被收进跳过集合（扩面后会引入假阳性）');
+  }
+  if (paramNamesOf(['const f = (a, b) => a + b;']).size !== 2) {
+    fail('㉒ R2 canary 失效：**箭头函数参数**未被识别');
+  }
+  if (paramNamesOf(['const a = 1;']).size !== 0) {
+    fail('㉒ R2 canary **过宽**：**没有参数**的行被判出参数名');
+  }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
     + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）；`
-    + `**先用后定义**（R2）${tdzViolations.length} 处 · 共享文本助手定义 ${sharedDefs} 个 · `
+    + `**先用后定义**（R2）${tdzViolations.length} 处 · 模块级 \`const\` ${sharedDefs} 个（跳过参数名 ${skippedParamNames}） · `
     + `**正则不感知的第二遍**（R3）${badStrip.length} 处 · **单独扫行注释**（R4）${sweepHits.length} 处`);
 }
 
