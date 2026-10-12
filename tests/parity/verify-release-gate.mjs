@@ -2584,13 +2584,14 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
    *  ⚠️ **还必须排除「消息字符串里的提及」** —— 首版用裸子串判 `--porcelain`，
    *  而工具末尾有一句 `console.log('… git status --porcelain')` ⇒ 把**真的**前置检查删掉后
    *  判据照样绿（注入 B **未抓**，实测）。⇒ 一律用**带引号的实参形态**（`'--porcelain'`）。 */
-  const stripComments = (src) => src
-    // ⚠️ 剥块注释**必须字符串感知**（审计 §4.296）：朴素 `replace(/\/\*[\s\S]*?\*\//g, …)` 会把**行注释里**的
-    //   `/*`（glob `packages/**`）与**字符串 / 正则字面量里**的 `/*`（`'/*'`）当注释起始，**一路吃掉真实代码**
-    //   （实测 68 文件 / 247 段）⇒ **假阴性、无人知**。故保留分支必须含「字符串 / 模板 / 行注释 / 正则字面量」。
-    .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
-      (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
-    .replace(/\/\/[^\n]*/g, '');
+  // ⚠️ 2026-10-13（审计 §4.338）：这里原先是**本块自建**的 `stripComments` —— 四保留分支 **加末尾一次裸扫**
+  //   `.replace(/\/\/[^\n]*/g, '')`。那次裸扫**不认字符串** ⇒ 行内出现 `'http://x'` 时，
+  //   它从**字符串里的** `//` 开始**删到行尾** ⇒ **该行剩下的真实代码整段消失**（**假阴性、无人知**）。
+  //   实测（本块自己的扫描面）：`tests/parity/tools/audit-bold-pairing.mjs:77` 的
+  //   `guardSrc.indexOf('// ── ㊵ ')` 被截成 `guardSrc.indexOf('`（丢 8 个非空白字符）。
+  //   ⇒ 改用**模块级** `blankComments`：同样是四保留分支，但**行注释走「置空」分支** ⇒
+  //   不需要第二次裸扫 ⇒ **保长度**、且字符串里的 `//` 不受影响（本块要的正是「保留字符串」）。
+  const stripComments = blankComments;
   // ⚠️ 2026-10-12（审计 §4.335）：`hasQuoted` **已提到模块级** `hasQuotedArg` —— 因为 **⑳ R9**
   //   判的是**同一件事**（「会不会就地改写仓库文件」）⇒ 同族谓词必须**只有一份**。
   for (const dir of TOOL_DIRS) {
@@ -3831,10 +3832,41 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     fail('㉒ R3 canary **过宽**：两遍式**没有**吃掉代码 —— 那本判据就没有存在的理由，请**重新评估**'
       + '（也许 `stripStrings` 已被改成正则感知，那时本判据应当删除而不是保留）');
   }
+  // ── R4（2026-10-13，审计 §4.338）：**不得用「裸扫」剥行注释**（它**不认字符串**）────────────
+  // 【为什么】`.replace(/\/\/[^\n]*/g, '')` **不看引号** ⇒ 行内出现 `'http://x'` 时，
+  //   它从**字符串里的** `//` 开始**删到行尾** ⇒ **该行剩下的真实代码整段消失**（**假阴性、无人知**）。
+  //   ⚠️ 与 §4.337 同族：都是「**剥法不看语法边界 ⇒ 吃掉代码**」，只是一个跨行、一个截行。
+  //   实测：⑭ 块内曾有这一句 ⇒ 它自己的扫描面里 `audit-bold-pairing.mjs:77` 的
+  //   `guardSrc.indexOf('// ── ㊵ ')` 被截成 `guardSrc.indexOf('`（丢 **8** 个非空白字符）。
+  // 【判据】护栏**代码**（已剥注释）里**不得**出现这个写法 —— 行注释一律走**四保留分支**的置空分支
+  //   （`blankComments` / `scrubOf`）。
+  // 【边界如实声明】⚠️ **形态匹配**：只认这一种字面写法；用别的等价写法（例如先 `split` 再按行切）
+  //   **不覆盖**。
+  // ⚠️ needle **运行时拼接** —— 否则本判据的**样本**会命中自己。
+  const NAKED_SWEEP = '.replace(/' + '\\/' + '\\/' + '[^' + '\\n]*/g';
+  const nakedHits = [];
+  for (const f of guards22) {
+    scrubOf(read(`tests/parity/${f}`)).split('\n').forEach((l, i) => {
+      if (l.includes(NAKED_SWEEP)) nakedHits.push(`${f}:${i + 1}`);
+    });
+  }
+  if (nakedHits.length > 0) {
+    fail(`㉒ R4 这些护栏里还有「**裸扫**行注释」（\`${NAKED_SWEEP}…\`）：${nakedHits.join('、')}`
+      + ' —— 它**不认字符串** ⇒ 行内出现「http://」形式时会让它**删到行尾**（真实代码消失）；'
+      + '行注释一律走**四保留分支**的置空分支（`blankComments` / `scrubOf`）');
+  }
+  // canary：两向（与判定**共用** NAKED_SWEEP；样本**运行时构造**）
+  const CANARY_NAKED = `const s = x.replace(/\\/\\/[^\\n]*/g, '');`;
+  if (!CANARY_NAKED.includes(NAKED_SWEEP)) {
+    fail('㉒ R4 canary 失效：**裸扫**写法**未被检出**（判据已退化成空真）');
+  }
+  if ((`const s = x.replace(/[^\\n]*/g, '');`).includes(NAKED_SWEEP)) {
+    fail('㉒ R4 canary **过宽**：**不带 `//` 的**扫法被判成裸扫');
+  }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
     + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）；`
     + `**先用后定义**（R2）${tdzViolations.length} 处 · 共享文本助手定义 ${sharedDefs} 个 · `
-    + `**正则不感知的第二遍**（R3）${badStrip.length} 处`);
+    + `**正则不感知的第二遍**（R3）${badStrip.length} 处 · **裸扫行注释**（R4）${nakedHits.length} 处`);
 }
 
 // ── ㉓ 空 `catch` 必须写明理由（2026-10-11，审计 §4.292）──
