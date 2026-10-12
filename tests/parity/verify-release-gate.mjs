@@ -70,6 +70,17 @@ const hasQuotedArg = (src, tok) => src.includes(`'${tok}'`) || src.includes(`"${
 //   而 **⑳** 的块在第 3420 行就用了 `blankComments` ⇒ **TDZ** ⇒ `ReferenceError` ⇒ **整条护栏中断、
 //   其后所有判据从未判定**（这正是 §4.292 踩过的同一形态的**第三次**）。
 //   ⇒ **纪律：判据块用到的模块级助手，必须定义在所有判据块之前。**
+// ── 与各护栏**入口 `codeText()` 同一语义**的剥法（2026-10-12，审计 §4.327）──────────────
+// 【为什么必须有】判据 **㊴** 量的是「针在**目标文件**里剥注释后还剩几处」——
+//   它此前用 `stripJsComments`（**行式**：只看行首 `//`），而各护栏读代码目标的入口
+//   `codeText()` 用的是**字符串/模板感知**的 `blankComments`。
+//   ⇒ **两套剥法给出不同读数**：实测 `apps/desktop/scripts/build-editor-bundle.mjs` 里
+//   `__MELLOW_BRIDGE__` 的计数 **1（行式） vs 2（模板感知）** —— 于是 **㊴ 判「唯一、已锚定」，
+//   而护栏实际**不锚定**（删掉模板里的真实赋值行仍绿）。
+//   ⇒ **量具必须与被量的判据同一套**（本仓纪律：「同族判据的**剥法必须一致**」）。
+// ⚠️ **边界**：`blankComments` 不认 Rust 的 `r"…"` / `'a` 生命周期 ⇒ 只会**少剥**。
+const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
+
 // ── **剥注释的唯一实现**（㉑ ㉒ ㉓ ㉔ 共用；2026-10-11，审计 §4.295）────────────────
 // ⚠️ **两条硬约束，都来自实测事故**：
 //   ① **块注释只认「行首（可带前导空白）的 `/*`」** —— 朴素实现 `s.replace(/\/\*[\s\S]*?\*\//g, '')`
@@ -80,16 +91,19 @@ const hasQuotedArg = (src, tok) => src.includes(`'${tok}'`) || src.includes(`"${
 //      会被截成 `const u = 'http:` ⇒ **`fail(` 被吃掉** ⇒ 假阴性。
 //   ⇒ **取舍方向**：宁可**留注释**（只会**假阳性**，会有人来修），**不可吃代码**（**假阴性，无人知**）。
 //   ⚠️ **边界如实声明**：行内块注释（`x(); /* c */`）**不剥**；引号后跟的 `//` 注释**不剥**。
-const stripJsComments = (s) => {
-  const cutLine = (l) => {
-    if (l.trimStart().startsWith('//')) return '';
-    const i = l.search(/[ \t]\/\//);
-    if (i < 0) return l;
-    return /['"`]/.test(l.slice(0, i)) ? l : l.slice(0, i);
-  };
-  return s.split('\n').map(cutLine).join('\n')
-    .replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1');
-};
+// ⚠️ 2026-10-13（审计 §4.340）：本函数**收敛**到规范实现 `blankComments`。
+//   旧实现（行式 + 行首块注释）有两个缺陷，且都在实测里落地：
+//   ① **删行**：`.replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1')` **删除**多行块注释
+//      ⇒ 其后**所有行号整体偏移**（实测 **439 个文件 / 少 6143 行**；例 `audit-bold-pairing.mjs` 118 → 94）
+//      —— §4.334 同族（「剥法删行 ⇒ 报出的 `file:line` 是错的」）。
+//   ② **不认字符串**：**字符串/模板里**的行首 `/*` 被当成真注释起点 ⇒ 吃到下一个 `*/`
+//      （实测字符串里的行首 `/*` **11** 处，其中 **1 处跨行**：`packages/export/src/printStyle.ts:75`）
+//      —— §4.296 / §4.337 / §4.338 / §4.339 同族（「剥法不看语法边界」）。
+//   ⇒ `blankComments` **一次扫描**（字符串分支在前 ⇒ 串里的 `/*` 先被吃掉）+ **置空不删除**
+//      ⇒ 两个缺陷同时消失；顺带把「本仓有两个剥法入口」收敛成一个（§4.337 登记过的边界）。
+//   ⚠️ **行为变化如实声明**：旧实现**保守**（行内块注释、引号后跟的 `//` **不剥**）；
+//      `blankComments` 会**一并剥掉**它们 ⇒ 更严。实测 ㉑/㉕/㊻/⑭ 的结论**不变**（见审计 §4.340）。
+const stripJsComments = blankComments;
 
 // ── 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）──────────
 // ── **剥字符串 + 剥注释的唯一实现**（㉒ ㉓ ㉚ ㊼ 共用；2026-10-12，审计 §4.337）──────────
@@ -108,16 +122,6 @@ const SCRUB_RE = /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(
 /** 剥注释 + 剥**字符串/模板**（保留正则字面量），**一次扫描** ⇒ 不会跨行吃代码。 */
 const scrubOf = (src) => src.replace(SCRUB_RE, (m, keep) => (keep !== undefined && keep.startsWith('/') ? keep : m.replace(/[^\n]/g, ' ')));
 
-// ── 与各护栏**入口 `codeText()` 同一语义**的剥法（2026-10-12，审计 §4.327）──────────────
-// 【为什么必须有】判据 **㊴** 量的是「针在**目标文件**里剥注释后还剩几处」——
-//   它此前用 `stripJsComments`（**行式**：只看行首 `//`），而各护栏读代码目标的入口
-//   `codeText()` 用的是**字符串/模板感知**的 `blankComments`。
-//   ⇒ **两套剥法给出不同读数**：实测 `apps/desktop/scripts/build-editor-bundle.mjs` 里
-//   `__MELLOW_BRIDGE__` 的计数 **1（行式） vs 2（模板感知）** —— 于是 **㊴ 判「唯一、已锚定」，
-//   而护栏实际**不锚定**（删掉模板里的真实赋值行仍绿）。
-//   ⇒ **量具必须与被量的判据同一套**（本仓纪律：「同族判据的**剥法必须一致**」）。
-// ⚠️ **边界**：`blankComments` 不认 Rust 的 `r"…"` / `'a` 生命周期 ⇒ 只会**少剥**。
-const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
 /** `#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
 const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
 /** markdown 的 `<!-- … -->`（**不渲染** ⇒ 不是真内容）置空。 */
@@ -6123,9 +6127,24 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
     ['blankHash', blankHash, 'a\n# ZQ2\nb', 'ZQ2'],
     ['blankComments', blankComments, 'a\n// ZQ3\nb', 'ZQ3'],
     ['blankHtmlComments', blankHtmlComments, 'a\n<!-- ZQ4 -->\nb', 'ZQ4'],
-    ['stripJsComments', stripJsComments, 'a\n// ZQ5\nb', 'ZQ5'],
+    // ⚠️ 2026-10-13（审计 §4.340）：用例从「行注释」换成**多行块注释** —— 旧实现会在这里红
+    //   （它**删除**块注释 ⇒ 行数 4 → 3；「行数不变」那条断言当场抓住）。
+    ['stripJsComments', stripJsComments, 'a\n/* ZQ5\nZQ5b */\nb', 'ZQ5'],
     ['scrubOf', scrubOf, 'a\nconst s = \'ZQ6\';\nb', 'ZQ6'],
   ];
+  // ⚠️ **反向用例**（2026-10-13，审计 §4.340）：**字符串/模板里**的内容**必须存活** ——
+  //   旧实现的行首块注释规则**不认字符串** ⇒ 模板里的行首 `/*` 被当成真注释起点、吃到下一个 `*/`
+  //   （§4.296 同族）。⚠️ 正向用例（「注释没了」）**抓不到**这一类 ⇒ 必须**反向**再写一条。
+  const STRIP_KEEP_CASES46 = [
+    ['stripJsComments', stripJsComments, 'const t = `a\n/* KEEP46 */\nb`;', 'KEEP46'],
+    ['blankComments', blankComments, 'const t = `a\n/* KEEP47 */\nb`;', 'KEEP47'],
+  ];
+  for (const [name, fn, sample, token] of STRIP_KEEP_CASES46) {
+    if (!fn(sample).includes(token)) {
+      fail(`㊻ R3 剥法 \`${name}\` **吃掉了字符串/模板里的内容**（\`${token}\` 不见了）`
+        + ' —— 行首 `/*` 规则**不认字符串** ⇒ 会一路吃到下一个 `*/`（§4.296 同族；审计 §4.340）');
+    }
+  }
   for (const [name, fn, sample, token] of STRIP_CASES46) {
     const out = fn(sample);
     if (out.includes(token)) {
