@@ -87,6 +87,16 @@ jobs:
       # V7-W5：括号内数字为各包用例数（2026-09-12 实跑），仅作可读性参考；数量变化不会使 Job 失败。
       - name: "Unit tests (all workspace packages)"
         run: pnpm -r --filter '!mellow-desktop' run test
+      # 2026-10-12（审计 §4.330）：**第一个登记为 `runsIn: ci` 的本机工具**。
+      #   为什么必须进 CI：它是**唯一**能发现「`verify-doc-code-refs.mjs` 判据 ㊵ 的自包含扫描器
+      #   对**嵌套 / 交叠加粗**漏检」的**对照物**（真解析器 = 仓内已依赖的 `markdown-it`）。
+      #   实测代价：审计文档里 1 行嵌套 `**` ⇒ **扫描器 0 / 真解析器 2**（那 2 个会**渲染成字面 `**`**），
+      #   而 ㊵ 是绿的 ⇒ 「**能失败 + 没人跑 = 它可以一直红**」（本仓 §4.287 记过的形态）——
+      #   该工具**当时确实就是红的**，而它的 `evidence` 还写着旧快照「不一致 0 处」。
+      #   ⚠️ **必须放在有 `pnpm install` 的 job 里**：它用 `createRequire` 解析 `markdown-it`；
+      #   两个 parity-guard job **有意不装依赖**（30s 内给结论）⇒ 放那里会**直接红**。
+      - name: Bold-pairing cross-check (self-contained scanner ↔ real parser)
+        run: node tests/parity/tools/audit-bold-pairing.mjs
 
   editor-engine:
     name: editor-engine test + build

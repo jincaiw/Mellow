@@ -6089,12 +6089,31 @@ const scanBodyOf = (rel, raw) => {
     for (const m of ln.matchAll(/(AUTO|MAC|IMPL|BLOCKED|NOT_TESTED)\s+(\d+)/g)) out.push([m[1], Number(m[2])]);
     return out;
   };
+  // ⚠️ **2026-10-12（审计 §4.330）：`AUDIT_LOG50` **整份**豁免是**过宽**的** ——
+  //   实测审计文档的**活的总述节**（`## 一`–`## 四` / `## 六`）里 **2 处状态转述已过期**
+  //   （`P0-PLATFORM-001` 写 IMPL / 台账 AUTO；`P0-LAYOUT-002` 写 MAC / 台账 BLOCKED），
+  //   而它们**不是**历史记录（`## 4.N` 才是逐轮日志）。
+  //   ⇒ 现改为**只豁免**：① 审计文档的 `## 4.N` **节**；② **围栏内的逐字转录**
+  //   （§一 是 `$ node …` 的**终端输出引用** —— 改它等于**伪造记录**）。
   const md50 = (trackedFiles ?? []).filter((f) => f.endsWith('.md')
-    && !f.startsWith('archive/') && !f.startsWith('docs/adr/') && !AUDIT_LOG50.test(f));
+    && !f.startsWith('archive/') && !f.startsWith('docs/adr/'));
+  /** 判定与 canary **共用**：把**不可判**的行置空（保留行数）——
+   *  ① **围栏内**（逐字转录 / 示例）；② 审计文档的 **`## 4.N` 节**（逐轮历史）。 */
+  const blankUnjudged50 = (f, lines) => {
+    const isAudit = AUDIT_LOG50.test(f);
+    let inFence = false;
+    let inRound = false;
+    return lines.map((l) => {
+      if (/^## /.test(l)) inRound = isAudit && /^## 4\.\d/.test(l);
+      if (/^```/.test(l)) { inFence = !inFence; return ''; }
+      if (inFence || inRound) return '';
+      return l;
+    });
+  };
   const bad50 = [];
   let claimed50 = 0;
   for (const f of md50) {
-    const lines = read(f).split('\n');
+    const lines = blankUnjudged50(f, read(f).split('\n'));
     for (let i = 0; i < lines.length; i += 1) {
       if (!CURRENT50.test(lines[i]) || DATED_ROW50.test(lines[i])) continue;
       // ⚠️ 声明可能**跨行**（标记在上一行、数字在续行）—— 同 ⑨b 的教训（按单行取会静默漏检）。
@@ -6116,38 +6135,48 @@ const scanBodyOf = (rel, raw) => {
   const cnt50 = new Map();
   for (const x of (ledger.items ?? [])) cnt50.set(x.status, (cnt50.get(x.status) ?? 0) + 1);
   const masterLines50 = existsSync(resolve(root, MASTER50)) ? read(MASTER50).split('\n') : [];
+  // ⚠️ **2026-10-12（审计 §4.330）**：R2/R3/R4 的面**不止 master-plan** —— 审计文档的
+  //   **活的总述节**（`## 一`–`## 四` / `## 六`）同样是「活文档」，实测其中 **2 处状态转述已过期**。
+  //   ⇒ 面 = {唯一施工文件, 审计的活节}（审计的 `## 4.N` 节与围栏已在 `blankUnjudged50` 里置空）。
+  const AUDIT_SRC50 = 'docs/qualification/release-blocker-audit-2026-09-25.md';
+  const auditLines50 = existsSync(resolve(root, AUDIT_SRC50))
+    ? blankUnjudged50(AUDIT_SRC50, read(AUDIT_SRC50).split('\n'))
+    : [];
+  const CHECK50 = [[MASTER50, masterLines50], [AUDIT_SRC50, auditLines50]];
   let pairs50 = 0;
   let hist50 = 0;
   let declaredPending50 = 0;
-  for (let i = 0; i < masterLines50.length; i += 1) {
-    const ln = masterLines50[i];
-    if (DATED_ROW50.test(ln)) continue;
-    for (const [id, got] of pairsOf50(ln)) {
-      pairs50 += 1;
-      const want = st50.get(id);
-      if (want === undefined) {
-        bad50.push(`${MASTER50}:${i + 1} 引用**台账里不存在**的 ${id}`);
-        continue;
+  for (const [src50, srcLines50] of CHECK50) {
+    for (let i = 0; i < srcLines50.length; i += 1) {
+      const ln = srcLines50[i];
+      if (DATED_ROW50.test(ln)) continue;
+      for (const [id, got] of pairsOf50(ln)) {
+        pairs50 += 1;
+        const want = st50.get(id);
+        if (want === undefined) {
+          bad50.push(`${src50}:${i + 1} 引用**台账里不存在**的 ${id}`);
+          continue;
+        }
+        if (got !== want && !hasFixNote50(srcLines50, i)) {
+          bad50.push(`${src50}:${i + 1} 写 ${id}=${got}，台账=${want}`);
+        }
       }
-      if (got !== want && !hasFixNote50(masterLines50, i)) {
-        bad50.push(`${MASTER50}:${i + 1} 写 ${id}=${got}，台账=${want}`);
+      for (const [status, n] of histOf50(ln)) {
+        hist50 += 1;
+        const want = cnt50.get(status) ?? 0;
+        if (n !== want && !CORRECTION_LINE50.test(ln) && !hasFixNote50(srcLines50, i)) {
+          bad50.push(`${src50}:${i + 1} 写 ${status}=${n}，台账现算 ${want}`);
+        }
       }
-    }
-    for (const [status, n] of histOf50(ln)) {
-      hist50 += 1;
-      const want = cnt50.get(status) ?? 0;
-      if (n !== want && !CORRECTION_LINE50.test(ln) && !hasFixNote50(masterLines50, i)) {
-        bad50.push(`${MASTER50}:${i + 1} 写 ${status}=${n}，台账现算 ${want}`);
-      }
-    }
-    // R4（2026-10-12 补）：`待裁决 N 项` 必须 == `PENDING_ADRS.length`
-    //   —— 实测该处写「待裁决 **3** 项（ADR-0034/0035/0036）」而实际是 **5** 份 Proposed
-    //     ⇒ **同一族的第四种写法**（计数也是「状态转述」）。
-    const pend = /待裁决\s*\**\s*(\d+)\s*项/.exec(ln);
-    if (pend !== null) {
-      declaredPending50 += 1;
-      if (Number(pend[1]) !== PENDING_ADRS.length && !hasFixNote50(masterLines50, i)) {
-        bad50.push(`${MASTER50}:${i + 1} 写「待裁决 ${pend[1]} 项」，现为 ${PENDING_ADRS.length} 项`);
+      // R4（2026-10-12 补）：`待裁决 N 项` 必须 == `PENDING_ADRS.length`
+      //   —— 实测该处写「待裁决 **3** 项（ADR-0034/0035/0036）」而实际是 **5** 份 Proposed
+      //     ⇒ **同一族的第四种写法**（计数也是「状态转述」）。
+      const pend = /待裁决\s*\**\s*(\d+)\s*项/.exec(ln);
+      if (pend !== null) {
+        declaredPending50 += 1;
+        if (Number(pend[1]) !== PENDING_ADRS.length && !hasFixNote50(srcLines50, i)) {
+          bad50.push(`${src50}:${i + 1} 写「待裁决 ${pend[1]} 项」，现为 ${PENDING_ADRS.length} 项`);
+        }
       }
     }
   }
