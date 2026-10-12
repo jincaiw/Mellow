@@ -87,6 +87,15 @@ jobs:
       # V7-W5：括号内数字为各包用例数（2026-09-12 实跑），仅作可读性参考；数量变化不会使 Job 失败。
       - name: "Unit tests (all workspace packages)"
         run: pnpm -r --filter '!mellow-desktop' run test
+      # 2026-10-12（审计 §4.331）：**第二个登记为 `runsIn: ci` 的本机工具**。
+      #   它把「`tests/qualification/README.md` 的『各包规模』行**自身与现实是否一致**」
+      #   从「**需实跑**」变成**每次 CI 都跑** —— 该行**已两次过期**（§4.153 / §4.287：
+      #   `export` 声明 100 而实跑 104），而此前**过期没有任何信号**（「只能靠人记得跑」）。
+      #   ⚠️ **必须放在有 `pnpm install` 的 job**：它逐个包调用该包自己的 `node_modules/.bin/jest`。
+      #   ⚠️ 代价如实登记：它**重跑一遍**各包 jest（本机实测约 4m44s）⇒ 本 job 耗时增加；
+      #     若日后嫌慢，可改为**复用上一步的 jest 汇总输出**（那需要改工具，属独立一轮）。
+      - name: Package test counts (README snapshot ↔ real run)
+        run: node tests/parity/tools/audit-pkg-test-counts.mjs
       # 2026-10-12（审计 §4.330）：**第一个登记为 `runsIn: ci` 的本机工具**。
       #   为什么必须进 CI：它是**唯一**能发现「`verify-doc-code-refs.mjs` 判据 ㊵ 的自包含扫描器
       #   对**嵌套 / 交叠加粗**漏检」的**对照物**（真解析器 = 仓内已依赖的 `markdown-it`）。

@@ -3280,6 +3280,40 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
         + ' 「登记为在 CI 跑」不等于**真的在跑**');
     }
   }
+  // ⑤ R5（2026-10-12，审计 §4.331）：**已登记 `runsIn: ci` 的工具不得被描述成「不进 CI」** ——
+  //   实测：某工具已登记 `runsIn: ci`，而**它的文件头**与 **`tests/qualification/README.md` 的一行**
+  //   都还写着「**不进 CI**」+「**只能靠人记得跑**」⇒ **文档与登记相反**（本仓 #1 形态）。
+  //   ⚠️ **历史限定词豁免**：同行含 `此前|原来|原写|曾是|历史|起` ⇒ 那是在**叙述沿革**，不是当前声明。
+  //   ⚠️ 样本运行时拼出（`NOT_CI`）—— 避免本判据命中自己的样本。
+  const NOT_CI = new RegExp(`${'不'}${'进'}\\s*${'C'}${'I'}`);
+  const HIST_QUAL = /(此前|当时|原来|原写|曾是|历史|起)/;
+  const badDescr = [];
+  for (const t of ciTools) {
+    const head = read(`${TOOLS_DIR}/${t.name}`).split('\n').slice(0, 40);
+    head.forEach((l, i) => {
+      if (NOT_CI.test(l) && !HIST_QUAL.test(l)) badDescr.push(`${TOOLS_DIR}/${t.name}:${i + 1}（文件头）`);
+    });
+    for (const f of (trackedFiles ?? []).filter((x) => x.endsWith('.md'))) {
+      read(f).split('\n').forEach((l, i) => {
+        if (l.includes(t.name) && NOT_CI.test(l) && !HIST_QUAL.test(l)) badDescr.push(`${f}:${i + 1}`);
+      });
+    }
+  }
+  if (badDescr.length > 0) {
+    fail(`⑳ R5 这些地方把**已登记 \`runsIn: ci\`** 的工具描述成「**不进 CI**」：`
+      + `${badDescr.slice(0, 4).join('、')} —— 登记与文档**相反**；若是在**叙述沿革**，`
+      + '请加**历史限定词**（此前 / 原来 / 起）');
+  }
+  // canary：两向（与判定**共用** NOT_CI / HIST_QUAL）
+  if (!(NOT_CI.test('（**不进 CI**：需逐包跑 jest）') && !HIST_QUAL.test('（**不进 CI**：需逐包跑 jest）'))) {
+    fail('⑳ R5 canary 失效：**当前声称**「不进 CI」的样本未被识别');
+  }
+  if (NOT_CI.test('**2026-10-12 起进 CI**（此前不进 CI）') === false) {
+    fail('⑳ R5 canary 失效：含该短语的沿革叙述未被识别（那样豁免分支永不生效）');
+  }
+  if (!HIST_QUAL.test('**2026-10-12 起进 CI**（此前不进 CI）')) {
+    fail('⑳ R5 canary **过宽**：带**历史限定词**的沿革叙述未走豁免');
+  }
   // 防空转：**覆盖型**（工具增删时须一并复核）
   const TOOLS_BASELINE = 8; // [覆盖型] 基线 8
   coverEq('⑳ 登记表条目数', entries.length, TOOLS_BASELINE,
