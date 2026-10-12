@@ -7,6 +7,9 @@
  *   （「护栏脚本只依赖 Node 内建模块，30s 内给结论」）—— 实测引入 `markdown-it` 会让那两个 job **直接红**。
  *   ⇒ 护栏自带一个**无依赖**的 CommonMark 行内扫描器（行内码 + flanking + 规则 9 + 配对栈）。
  *
+ * ⚠️ **扫描面（`BOLD_FROZEN` / `BOLD_SKIP_SEG`）同样从护栏源码派生**（2026-10-12，审计 §4.332）：
+ *   此前**只派生谓词、复制了面** ⇒ 护栏改面时会**静默地比另一个集合**（**假信心**）。
+ *
  * ⚠️ **手写量具必须被交叉验证**，否则它自己就是下一个「静默失效」。本工具把真解析器
  *   （仓内 `packages/export` 已依赖的 `markdown-it`）当**参照物**，逐文件比对两者给出的
  *   「字面 `**` 个数」，并在**修复前后两个版本**上各跑一遍（修复前有 87 处真缺陷 ⇒ 检验「抓得住」；
@@ -28,12 +31,31 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const SKIP_DIRS = new Set(['node_modules', '.git', '.workbuddy-ai', 'archive', 'dist', 'target', 'CoreEditor']);
-// 判据 ㊵ 的扫描面：再排除 `fixtures/`（输入样本）与冻结的已发布 release notes
-const BOLD_SKIP_SEG = new Set(['fixtures']);
-const BOLD_FROZEN = new Set([
-  '.github/release-notes-v1.5.17.md', '.github/release-notes-v1.5.20.md',
-  '.github/release-notes-v1.5.21.md', '.github/release-notes-v1.5.23.md',
-]);
+
+/** 判据 ㊵ 的护栏源码（**谓词与面都从这里派生**）。 */
+const guardSrc = readFileSync(resolve(root, 'tests/parity/verify-doc-code-refs.mjs'), 'utf8');
+
+// ⚠️ **扫描面必须从护栏源码**派生**（2026-10-12，审计 §4.332）**：
+//   本工具此前**只派生谓词**（`scannerSrc`），而把**面**（`BOLD_FROZEN` / `BOLD_SKIP_SEG`）**复制**了一份
+//   ⇒ 护栏改了面（增删冻结项 / 排除段）时，本工具会**静默地比另一个集合**
+//   （**假信心**：「不一致 0 处」说的是**另一个集合**）。
+//   ⚠️ **派生失败 ⇒ 响亮失败（exit 2）** —— 绝不用一个**猜出来的面**去比对。
+const FACE = (() => {
+  const i = guardSrc.indexOf('const BOLD_FROZEN = new Map([');
+  const j = guardSrc.indexOf('const BOLD_SKIP_SEG = new Set([');
+  if (i < 0 || j < 0 || j < i) return null;
+  const frozen = [...guardSrc.slice(i, j).matchAll(/\['([^']+)'/g)].map((m) => m[1]);
+  const skip = [...guardSrc.slice(j, guardSrc.indexOf('\n', j)).matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  return { frozen, skip };
+})();
+if (FACE === null || FACE.frozen.length === 0 || FACE.skip.length === 0) {
+  console.error('✗ 无法从 `tests/parity/verify-doc-code-refs.mjs` 派生扫描面'
+    + '（`BOLD_FROZEN` / `BOLD_SKIP_SEG`）—— 本工具**拒绝**用一个**猜出来的面**去比对'
+    + '（那会是**假信心**）。请检查护栏里那两个常量的写法（审计 §4.332）。');
+  process.exit(2);
+}
+const BOLD_SKIP_SEG = new Set(FACE.skip);
+const BOLD_FROZEN = new Set(FACE.frozen);
 
 const md = createRequire(resolve(root, 'packages/export/package.json'))('markdown-it')({ html: true });
 
@@ -49,8 +71,7 @@ function refCount(src) {
   return n;
 }
 
-/** 被测物：护栏里的自包含扫描器（**直接读护栏源码求值**，避免两份实现漂移）。 */
-const guardSrc = readFileSync(resolve(root, 'tests/parity/verify-doc-code-refs.mjs'), 'utf8');
+/** 被测物：护栏里的自包含扫描器（**谓词**同样从护栏源码派生 —— 见上）。 */
 const scannerSrc = guardSrc.slice(
   guardSrc.indexOf('const boldIsSpace'),
   guardSrc.indexOf('// ── ㊵ '),
@@ -90,7 +111,7 @@ for (const rel of files) {
   mine += a; ref += b;
   if (a !== b) { bad += 1; console.log(`✗ ${rel}  扫描器=${a}  真解析器=${b}`); }
 }
-console.log(`加粗配对交叉验证（rev=${rev ?? '工作区'}）：${files.length - skipped} 份 .md`
+console.log(`加粗配对交叉验证（rev=${rev ?? '工作区'}）：面 = ${FACE.frozen.length} 个冻结项 + 跳过段 [${FACE.skip.join(',')}] · ${files.length - skipped} 份 .md`
   + (skipped > 0 ? `（**跳过 ${skipped} 份**：该 rev 里不存在）` : '')
   + ` · 扫描器 ${mine} / 真解析器 ${ref} · 不一致 ${bad} 处`);
 process.exit(bad === 0 ? 0 : 1);

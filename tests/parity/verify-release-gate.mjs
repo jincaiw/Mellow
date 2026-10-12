@@ -3314,6 +3314,28 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   if (!HIST_QUAL.test('**2026-10-12 起进 CI**（此前不进 CI）')) {
     fail('⑳ R5 canary **过宽**：带**历史限定词**的沿革叙述未走豁免');
   }
+  // ⑥ R6（2026-10-12，审计 §4.332）：**交叉验证工具不得**复制**被判护栏的扫描面** ——
+  //   实测：某工具在 `why` 里自称「交叉验证」，而它**只派生了谓词、复制了面**
+  //   （`BOLD_FROZEN` / `BOLD_SKIP_SEG`）⇒ 护栏改面时会**静默地比另一个集合**
+  //   （**假信心**：「不一致 0 处」说的是**另一个集合**）。
+  //   ⚠️ **判据形态**：凡 `why` 含「交叉验证」的工具，其源码**不得**出现**面字面量**
+  //     （`.github/release-notes-v`）—— 面必须**派生**。
+  const FACE_LITERAL = ['.github', 'release-notes-v'].join('/');
+  const badFace = [];
+  for (const t of entries.filter((x) => typeof x.why === 'string' && x.why.includes('交叉验证'))) {
+    if (read(`${TOOLS_DIR}/${t.name}`).includes(FACE_LITERAL)) badFace.push(t.name);
+  }
+  if (badFace.length > 0) {
+    fail(`⑳ R6 这些**交叉验证**工具里**复制了被判护栏的扫描面字面量**（${badFace.join('、')}）：`
+      + '`' + FACE_LITERAL + '` —— 面必须**从护栏源码派生**，否则护栏改面时它会**静默地比另一个集合**（假信心）');
+  }
+  // canary：两向（与判定**共用** FACE_LITERAL）
+  if (!FACE_LITERAL.includes('release-notes-v') || FACE_LITERAL.startsWith('.') === false) {
+    fail('⑳ R6 canary 失效：面字面量的构造不对（那样本判据会**空转**）');
+  }
+  if (entries.filter((x) => typeof x.why === 'string' && x.why.includes('交叉验证')).length < 1) {
+    fail('⑳ R6 canary 失效：**没有一个**工具在 `why` 里自称「交叉验证」⇒ 本判据**空转**');
+  }
   // 防空转：**覆盖型**（工具增删时须一并复核）
   const TOOLS_BASELINE = 8; // [覆盖型] 基线 8
   coverEq('⑳ 登记表条目数', entries.length, TOOLS_BASELINE,
