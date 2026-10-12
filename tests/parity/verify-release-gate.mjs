@@ -55,6 +55,77 @@ const coverEq = (what, actual, baseline, why) => {
   }
 };
 
+// ── **共享谓词**：源码里是否有**带引号的实参** `tok`（模块级唯一实现）──────────────────
+// 【为什么是模块级】**⑭**（就地突变候选）与 **⑳ R9**（不能进 CI 的理由）判的是**同一件事**
+//   ——「这个工具会不会就地改写仓库文件」。⚠️ 两处各写一份 ⇒ 它们只是「两个带不同 bug 的意见」
+//   （本仓纪律：**同族判据的谓词必须一致**）。2026-10-12（审计 §4.335）把它从 ⑭ 的块内提上来。
+// 【为什么必须是「带引号」的形态】裸子串会把**消息字符串里的提及**当成代码：实测 ⑭ 首版用裸
+//   `--porcelain`，而工具末尾有一句 `console.log('… git status --porcelain')` ⇒ 把**真的**前置检查
+//   删掉后判据照样绿（注入未抓）。同理裸 `checkout` 会命中 `console.error('… git checkout -- …')`。
+//   ⇒ 一律用**带引号的实参形态**（`'checkout'` / `"checkout"`）。
+// ⚠️ 调用方**必须**先剥注释（且剥法要字符串感知）—— 本助手只看**已剥**的文本。
+const hasQuotedArg = (src, tok) => src.includes(`'${tok}'`) || src.includes(`"${tok}"`);
+
+// ⚠️ **2026-10-12（审计 §4.336）**：以下 6 个**共享文本助手**原先定义在第 3500 行附近，
+//   而 **⑳** 的块在第 3420 行就用了 `blankComments` ⇒ **TDZ** ⇒ `ReferenceError` ⇒ **整条护栏中断、
+//   其后所有判据从未判定**（这正是 §4.292 踩过的同一形态的**第三次**）。
+//   ⇒ **纪律：判据块用到的模块级助手，必须定义在所有判据块之前。**
+// ── **剥注释的唯一实现**（㉑ ㉒ ㉓ ㉔ 共用；2026-10-11，审计 §4.295）────────────────
+// ⚠️ **两条硬约束，都来自实测事故**：
+//   ① **块注释只认「行首（可带前导空白）的 `/*`」** —— 朴素实现 `s.replace(/\/\*[\s\S]*?\*\//g, '')`
+//      会被**字符串里的 `/*`** 骗到（如 glob 模式 `"src/**/*.ts"`）⇒ 从那里一路吃到下一个 `*/`
+//      ⇒ **静默删掉真实代码**。实测：`verify-doc-code-refs.mjs` 里的 **5 个**例外表定义
+//      被吃到只剩 **1 个**（本条判据的「例外表数 16 ≠ 21」就是这么来的）。
+//   ② **行注释只在「前面没有引号」时才截断** —— 否则 `const u = 'http://x'; fail('y')`
+//      会被截成 `const u = 'http:` ⇒ **`fail(` 被吃掉** ⇒ 假阴性。
+//   ⇒ **取舍方向**：宁可**留注释**（只会**假阳性**，会有人来修），**不可吃代码**（**假阴性，无人知**）。
+//   ⚠️ **边界如实声明**：行内块注释（`x(); /* c */`）**不剥**；引号后跟的 `//` 注释**不剥**。
+const stripJsComments = (s) => {
+  const cutLine = (l) => {
+    if (l.trimStart().startsWith('//')) return '';
+    const i = l.search(/[ \t]\/\//);
+    if (i < 0) return l;
+    return /['"`]/.test(l.slice(0, i)) ? l : l.slice(0, i);
+  };
+  return s.split('\n').map(cutLine).join('\n')
+    .replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1');
+};
+
+// ── 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）──────────
+// 【为什么必须有】本仓纪律：**静态检查的谓词必须剥字符串**。否则「**错误消息里的示例**」全是假阳性 ——
+//   实测代价（§4.296 / §4.293）：`fail('… 必须 writeFileSync(…)')` 这类**消息**会被当成**调用**。
+// ⚠️ **顺序**：必须先 `stripJsComments`（它**字符串感知**）再本函数 —— 反过来会让**注释里的引号**
+//   开一个「假字符串」⇒ 脱同步 ⇒ 假阳性（§4.306 的镜像判据首版就踩了这个）。
+// ⚠️ **本函数是模块级的唯一实现**：`㉒`（断言辅助函数）与 `㉚`（`node:*` 导入）**共用它** ——
+//   同族判据的**剥法必须一致**（否则它们只是「两个带不同 bug 的意见」；§4.306 的教训）。
+const stripStrings = (s) => s.replace(
+  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
+  (m) => m.replace(/[^\n]/g, ' '),
+);
+
+// ── 与各护栏**入口 `codeText()` 同一语义**的剥法（2026-10-12，审计 §4.327）──────────────
+// 【为什么必须有】判据 **㊴** 量的是「针在**目标文件**里剥注释后还剩几处」——
+//   它此前用 `stripJsComments`（**行式**：只看行首 `//`），而各护栏读代码目标的入口
+//   `codeText()` 用的是**字符串/模板感知**的 `blankComments`。
+//   ⇒ **两套剥法给出不同读数**：实测 `apps/desktop/scripts/build-editor-bundle.mjs` 里
+//   `__MELLOW_BRIDGE__` 的计数 **1（行式） vs 2（模板感知）** —— 于是 **㊴ 判「唯一、已锚定」，
+//   而护栏实际**不锚定**（删掉模板里的真实赋值行仍绿）。
+//   ⇒ **量具必须与被量的判据同一套**（本仓纪律：「同族判据的**剥法必须一致**」）。
+// ⚠️ **边界**：`blankComments` 不认 Rust 的 `r"…"` / `'a` 生命周期 ⇒ 只会**少剥**。
+const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
+/** `#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
+const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
+/** markdown 的 `<!-- … -->`（**不渲染** ⇒ 不是真内容）置空。 */
+const blankHtmlComments = (src) => src.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+/** 判定与 canary **共用**：按目标文件的**扩展名**选剥法（与护栏入口 `codeText()` / `mdText()` 一致）。 */
+const scanBodyOf = (rel, raw) => {
+  if (rel.endsWith('.md')) return blankHtmlComments(raw);
+  if (/\.(?:toml|sh|ya?ml)$/.test(rel)) return blankHash(raw);
+  if (/\.(?:rs|ts|tsx|mts|cts|mjs|cjs|js|jsx|css)$/.test(rel)) return blankComments(raw);
+  return stripJsComments(raw);
+};
+
+
 // ── 仓库跟踪集（`git ls-files`，含已 `git add` 的**暂存**文件）────────────────
 // ⚠️ 2026-10-08（审计 §4.166/§4.167）：**判据的锚点是「仓库」，不是「工作区」**。
 //   本地工作区 ⊃ 仓库（未跟踪 + 生成物）⇒ 用 `readdirSync` 会让**同一份代码在本地与干净检出
@@ -2515,7 +2586,8 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     .replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\*[\s\S]*?\*\/)/g,
       (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep))
     .replace(/\/\/[^\n]*/g, '');
-  const hasQuoted = (src, tok) => src.includes(`'${tok}'`) || src.includes(`"${tok}"`);
+  // ⚠️ 2026-10-12（审计 §4.335）：`hasQuoted` **已提到模块级** `hasQuotedArg` —— 因为 **⑳ R9**
+  //   判的是**同一件事**（「会不会就地改写仓库文件」）⇒ 同族谓词必须**只有一份**。
   for (const dir of TOOL_DIRS) {
     const abs = resolve(root, dir);
     if (!existsSync(abs)) continue;
@@ -2523,7 +2595,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       if (!name.endsWith('.mjs')) continue;
       const rel = `${dir}/${name}`;
       const src = stripComments(readFileSync(resolve(root, rel), 'utf8'));
-      if (src.includes('writeFileSync(') && hasQuoted(src, 'checkout')) candidates.push(rel);
+      if (src.includes('writeFileSync(') && hasQuotedArg(src, 'checkout')) candidates.push(rel);
     }
   }
   const unregistered = candidates.filter(
@@ -2548,7 +2620,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
         + '残留的突变是「阈值抬 1」⇒ **护栏照样全绿** ⇒ 可能被直接提交。'
         + '锁必须落在 `<git-dir>/` 下（不进版本库、不被系统清理）');
     }
-    if (!hasQuoted(src, '--porcelain')) {
+    if (!hasQuotedArg(src, '--porcelain')) {
       fail(`${rel} 是「就地突变仓库文件」的工具，但没有「工作区必须干净」的**机器可读**前置检查`
         + '（缺 `\'--porcelain\'` 这一**实参**）—— 没有它，工具会去改一个已经脏的工作区，'
         + '残留突变将与开发者的真实改动**无法区分**'
@@ -2567,7 +2639,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   coverEq('IN_PLACE_MUTATORS 登记项数', IN_PLACE_MUTATORS.size, MUTATION_TOOL_BASELINE,
     '登记表被删空会让本判据**空转**');
   // canary：三向（与判定**共用**同一个「疑似就地突变」谓词；样本运行时拼接）
-  const looksMutating = (s) => s.includes('writeFileSync(') && hasQuoted(stripComments(s), 'checkout');
+  const looksMutating = (s) => s.includes('writeFileSync(') && hasQuotedArg(stripComments(s), 'checkout');
   if (!looksMutating(`const a=1; ${'writeFileSync'}('x'); git(['${'checkout'}']);`)) {
     fail('⑭ canary 失效：一个**确实**就地突变的样本未被识别为候选');
   }
@@ -3055,7 +3127,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       entries: ['evidence', 'html', 'pdf', 'preview', 'ref', 'settingId', 'syntax'],
     },
     'local-tools.json': {
-      tools: ['advisoryWhy', 'evidence', 'failsOn', 'name', 'runsIn', 'signal', 'why'],
+      tools: ['advisoryWhy', 'ciBlocker', 'evidence', 'failsOn', 'name', 'runsIn', 'signal', 'why'],
     },
     'node-types.json': {
       divergences: ['kind', 'package', 'typesMajor', 'why'],
@@ -3376,6 +3448,89 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
   if (!WEAKENING_ARGS.some((a) => `run: node tests/parity/tools/x.mjs ${a} pkg`.includes(a))) {
     fail('⑳ R8 canary 失效：削弱参数未被识别（那样本判据会**空转**）');
   }
+  // ⑨ R9 / R10 / R11（2026-10-12，审计 §4.335）：**「为什么它不能进 CI」必须可从源码派生** ——
+  //   此前这一半**只有 `why` 的散文**（§4.331 自己登记的边界：「仍未登记成机器可读字段 ⇒ 没有判据」）。
+  //   ⚠️ **不要手写这个字段**：三种 blocker **可从源码派生**（本仓纪律「手写派生量 ⇒ 结构性消除」）。
+  //   ⚠️ **必须剥注释**（㊾ 的教训）：路径本身在**字符串字面量**里 ⇒ 用 `blankComments`
+  //     （保字符串、剥注释）—— 否则「注释里提了一句 Typora」就会被当成「它需要 Typora」。
+  //   R9（派生 ⇒ 反向）：源码派生出 blocker ⇒ **不得**登记为 `runsIn: ci`（否则 CI 上必然红 / 无意义）。
+  //   R10（齐备）：每个 `local-only` 必须**被解释** —— 派生 blocker 非空 **或** 显式 `ciBlocker`
+  //     （闭词表，且**只有派生不出来的那一类**才准手写）。
+  //   R11（显式 blocker 要有出处）：`no-machine-verdict` ⇒ 该工具源码须**自称**「候选」+「人工」；
+  //     且 `runsIn: ci` 的工具**不得**带 `ciBlocker`（双向）。
+  const CI_BLOCKER_EVIDENCE = [
+    ['needs-typora-app', (s) => /Typora\.app/.test(s)],
+    ['needs-untracked-files', (s) => /\.workbuddy-ai\/memory/.test(s)],
+    // ⚠️ 与 **⑭** 的谓词**逐字一致**（`writeFileSync(` + **带引号**的 `'checkout'`）—— 判的是同一件事，
+    //   各写一份就会变成「两个带不同 bug 的意见」。⚠️ 裸 `git checkout` **不行**：它只出现在**错误消息**里。
+    ['mutates-worktree', (s) => /writeFileSync\(/.test(s) && hasQuotedArg(s, 'checkout')],
+  ];
+  /** 判定与 canary **共用**：纯函数 —— 从**已剥注释**的源码里派生 blocker 名（可多个）。 */
+  const blockersIn = (raw) => {
+    const s = blankComments(raw);
+    return CI_BLOCKER_EVIDENCE.filter(([, p]) => p(s)).map(([n]) => n);
+  };
+  /** 判定与 canary **共用**：显式 `ciBlocker` 的**闭词表**（只收「派生不出来」的那一类）。 */
+  const EXPLICIT_CI_BLOCKERS = new Set(['no-machine-verdict']);
+  const contradicted = [];
+  const unexplained = [];
+  const badExplicit = [];
+  for (const t of entries) {
+    let raw;
+    try { raw = read(`${TOOLS_DIR}/${t.name}`); } catch { continue; }  // 不存在 ⇒ 由 R1 报
+    const src = blankComments(raw);
+    const derived = blockersIn(raw);
+    if (t.runsIn === 'ci') {
+      if (derived.length > 0) {
+        contradicted.push(`${t.name}（派生：${derived.join(' + ')}）`);
+      }
+      if (t.ciBlocker !== undefined) {
+        contradicted.push(`${t.name}（登记 \`runsIn: ci\` 却带 \`ciBlocker\`）`);
+      }
+      continue;
+    }
+    if (derived.length === 0 && !EXPLICIT_CI_BLOCKERS.has(t.ciBlocker)) {
+      unexplained.push(t.name);
+    }
+    if (t.ciBlocker === 'no-machine-verdict' && !(/候选/.test(src) && /人工/.test(src))) {
+      badExplicit.push(t.name);
+    }
+  }
+  if (contradicted.length > 0) {
+    fail(`⑳ R9 这些工具**登记为 \`runsIn: ci\`，但源码里派生出「不能进 CI」的证据**：`
+      + `${contradicted.join('、')} —— 它们需要本机 Typora / 仓库外文件 / 就地突变源码；`
+      + '放进 CI 只会**红**（§4.331 实测：`audit-pkg-test-counts` 放错 job 当场红）或**静默无意义**');
+  }
+  if (unexplained.length > 0) {
+    fail(`⑳ R10 这些 \`local-only\` 工具**没有被解释**（既派生不出 blocker，也没有 \`ciBlocker\`）：`
+      + `${unexplained.join('、')} —— 「为什么它不能进 CI」必须**机器可读**`
+      + `（闭词表：${[...EXPLICIT_CI_BLOCKERS].join(' / ')}）；⚠️ 能派生的**不要手写**`);
+  }
+  if (badExplicit.length > 0) {
+    fail(`⑳ R11 这些工具登记了 \`ciBlocker: no-machine-verdict\`，但源码里**没有**「候选 / 人工」的自述：`
+      + `${badExplicit.join('、')} —— 「它没有机器可判的结论」这句话**没有出处**（判据不能空口声称）`);
+  }
+  // canary：四向（与判定**共用** blockersIn / EXPLICIT_CI_BLOCKERS）
+  if (blockersIn("const p = '/Applications/Typora.app/Contents/Resources';").join() !== 'needs-typora-app') {
+    fail('⑳ R9 canary 失效：**需要 Typora 应用**的证据未被派生出来');
+  }
+  if (blockersIn('// 说明：本工具读 /Applications/Typora.app\nconst x = 1;').length !== 0) {
+    fail('⑳ R9 canary 失效：**注释里**提到 Typora 被当成了证据（必须剥注释 —— ㊾ 的教训）');
+  }
+  if (blockersIn("writeFileSync(p, s); execFileSync('git', ['checkout', '--', f]);").join() !== 'mutates-worktree') {
+    fail('⑳ R9 canary 失效：**就地突变**的证据未被派生出来');
+  }
+  if (blockersIn('const x = 1;').length !== 0) {
+    fail('⑳ R9 canary **过宽**：**没有任何证据**的源码被判为「有 blocker」');
+  }
+  if (EXPLICIT_CI_BLOCKERS.has('needs-typora-app')) {
+    fail('⑳ R10 canary 失效：**可派生**的 blocker 混进了手写词表（那会让「不要手写」这条纪律失效）');
+  }
+  // [覆盖型] 显式 `ciBlocker` 的条数 —— 「**能派生的不要手写**」⇒ 新增一条手写必须在此刻复核
+  const EXPLICIT_BLOCKER_COUNT_BASELINE = 1; // [覆盖型] 基线 1
+  coverEq('⑳ R10 显式 `ciBlocker` 的条数',
+    entries.filter((t) => t.ciBlocker !== undefined).length, EXPLICIT_BLOCKER_COUNT_BASELINE,
+    '能派生的 blocker **不要手写**；新增手写条目时必须复核「它真的派生不出来吗」');
   // 防空转：**覆盖型**（工具增删时须一并复核）
   const TOOLS_BASELINE = 8; // [覆盖型] 基线 8
   coverEq('⑳ 登记表条目数', entries.length, TOOLS_BASELINE,
@@ -3402,7 +3557,9 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     + `（runsIn: ${ciTools.length} 个 ci / ${entries.length - ciTools.length} 个 local-only；`
     + `signal: ${advisory.length} 个 advisory 均已写出「为什么软」；`
     + `ci 工具的 **CI 制品引用**（R7）缺 ${badEvidence.length} 个 · `
-    + `CI 调用里的**削弱参数**（R8，词表 ${weakArgs}）${weakHits.length} 处）。`
+    + `CI 调用里的**削弱参数**（R8，词表 ${weakArgs}）${weakHits.length} 处；`
+    + `**不能进 CI 的理由**（R9/R10）**未解释** ${unexplained.length} 个 · `
+    + `**与源码相反** ${contradicted.length} 个）。`
     + '⚠️ 本节只保证「**归属与理由已声明**」，**不保证本机工具有人跑** —— 那需要人。');
 }
 
@@ -3413,60 +3570,6 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
 //     不认**变量**引用）⇒ 已提到模块级，并把该边界写进 ㉒ 的注释。
 const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
 
-// ── **剥注释的唯一实现**（㉑ ㉒ ㉓ ㉔ 共用；2026-10-11，审计 §4.295）────────────────
-// ⚠️ **两条硬约束，都来自实测事故**：
-//   ① **块注释只认「行首（可带前导空白）的 `/*`」** —— 朴素实现 `s.replace(/\/\*[\s\S]*?\*\//g, '')`
-//      会被**字符串里的 `/*`** 骗到（如 glob 模式 `"src/**/*.ts"`）⇒ 从那里一路吃到下一个 `*/`
-//      ⇒ **静默删掉真实代码**。实测：`verify-doc-code-refs.mjs` 里的 **5 个**例外表定义
-//      被吃到只剩 **1 个**（本条判据的「例外表数 16 ≠ 21」就是这么来的）。
-//   ② **行注释只在「前面没有引号」时才截断** —— 否则 `const u = 'http://x'; fail('y')`
-//      会被截成 `const u = 'http:` ⇒ **`fail(` 被吃掉** ⇒ 假阴性。
-//   ⇒ **取舍方向**：宁可**留注释**（只会**假阳性**，会有人来修），**不可吃代码**（**假阴性，无人知**）。
-//   ⚠️ **边界如实声明**：行内块注释（`x(); /* c */`）**不剥**；引号后跟的 `//` 注释**不剥**。
-const stripJsComments = (s) => {
-  const cutLine = (l) => {
-    if (l.trimStart().startsWith('//')) return '';
-    const i = l.search(/[ \t]\/\//);
-    if (i < 0) return l;
-    return /['"`]/.test(l.slice(0, i)) ? l : l.slice(0, i);
-  };
-  return s.split('\n').map(cutLine).join('\n')
-    .replace(/^([ \t]*)\/\*[\s\S]*?\*\//gm, '$1');
-};
-
-// ── 剥**字符串**（`'` `"` `` ` `` 三种，含转义）—— **保留换行数**（便于报行号）──────────
-// 【为什么必须有】本仓纪律：**静态检查的谓词必须剥字符串**。否则「**错误消息里的示例**」全是假阳性 ——
-//   实测代价（§4.296 / §4.293）：`fail('… 必须 writeFileSync(…)')` 这类**消息**会被当成**调用**。
-// ⚠️ **顺序**：必须先 `stripJsComments`（它**字符串感知**）再本函数 —— 反过来会让**注释里的引号**
-//   开一个「假字符串」⇒ 脱同步 ⇒ 假阳性（§4.306 的镜像判据首版就踩了这个）。
-// ⚠️ **本函数是模块级的唯一实现**：`㉒`（断言辅助函数）与 `㉚`（`node:*` 导入）**共用它** ——
-//   同族判据的**剥法必须一致**（否则它们只是「两个带不同 bug 的意见」；§4.306 的教训）。
-const stripStrings = (s) => s.replace(
-  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
-  (m) => m.replace(/[^\n]/g, ' '),
-);
-
-// ── 与各护栏**入口 `codeText()` 同一语义**的剥法（2026-10-12，审计 §4.327）──────────────
-// 【为什么必须有】判据 **㊴** 量的是「针在**目标文件**里剥注释后还剩几处」——
-//   它此前用 `stripJsComments`（**行式**：只看行首 `//`），而各护栏读代码目标的入口
-//   `codeText()` 用的是**字符串/模板感知**的 `blankComments`。
-//   ⇒ **两套剥法给出不同读数**：实测 `apps/desktop/scripts/build-editor-bundle.mjs` 里
-//   `__MELLOW_BRIDGE__` 的计数 **1（行式） vs 2（模板感知）** —— 于是 **㊴ 判「唯一、已锚定」，
-//   而护栏实际**不锚定**（删掉模板里的真实赋值行仍绿）。
-//   ⇒ **量具必须与被量的判据同一套**（本仓纪律：「同族判据的**剥法必须一致**」）。
-// ⚠️ **边界**：`blankComments` 不认 Rust 的 `r"…"` / `'a` 生命周期 ⇒ 只会**少剥**。
-const blankComments = (src) => src.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|(?!\*\/)[^/\\\n])+?\/[a-z]*)|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g, (m, keep) => (keep === undefined ? m.replace(/[^\n]/g, ' ') : keep));
-/** `#` 家族（`.toml` / `.sh` / `.yml`）的**整行**注释置空。 */
-const blankHash = (src) => src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
-/** markdown 的 `<!-- … -->`（**不渲染** ⇒ 不是真内容）置空。 */
-const blankHtmlComments = (src) => src.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
-/** 判定与 canary **共用**：按目标文件的**扩展名**选剥法（与护栏入口 `codeText()` / `mdText()` 一致）。 */
-const scanBodyOf = (rel, raw) => {
-  if (rel.endsWith('.md')) return blankHtmlComments(raw);
-  if (/\.(?:toml|sh|ya?ml)$/.test(rel)) return blankHash(raw);
-  if (/\.(?:rs|ts|tsx|mts|cts|mjs|cjs|js|jsx|css)$/.test(rel)) return blankComments(raw);
-  return stripJsComments(raw);
-};
 
 // ── ㉑ 本仓**代码面**不得使用已弃用的 Node API（2026-10-11，审计 §4.289）──
 //   （`[DEP0040] punycode` ×12 · `[DEP0169] url.parse()` ×8 · `[DEP0005] Buffer()` ×1）
@@ -3611,8 +3714,64 @@ const scanBodyOf = (rel, raw) => {
   if (!scrub22(`const why = '${H}() 是 throw 型';\n${H}('x');`).includes(`${H}(`)) {
     fail('㉒ canary 失效：剥字符串**吃掉了真调用**（假阴性，无人知）');
   }
+  // ── R2（2026-10-12，审计 §4.336）：**共享文本助手的定义必须早于它的第一次出现** ──────
+  // 【为什么】`const` 在**定义行之前**被引用 ⇒ **TDZ** ⇒ `ReferenceError` ⇒
+  //   **整条护栏当场中断、其后所有判据从未判定**（「崩掉 = 从未判定」，比「报错」更坏）。
+  //   ⚠️ 本仓已踩**三次**（§4.292 的 `CODE_BASELINE` → §4.336 的 `blankComments`），
+  //   **前两次只写了注释 / 只移了那一个常量，没有判据** ⇒ 又复发。这正是「只锁了一半」。
+  // ⚠️ **为什么只锁这一小组名字**：通用的「模块级 `const` 先用后定义」谓词**不健全** ——
+  //   实测 516 个定义里 2 处**假阳性**（① 与**函数参数**同名：`gapsOf(pkg, ctx)`；
+  //   ② **字符串内容**里出现该词）⇒ 按本仓纪律「谓词不健全就不落判据」，
+  //   只对**名字在全仓唯一**的共享助手落。
+  // 【边界如实声明】⚠️ 只覆盖 `SHARED_TEXT_HELPERS` 列出的名字（跨块共享的那一小组）；
+  //   **别的模块级 `const` 的 TDZ 不在覆盖内** —— 那半靠**运行**兜住（崩 = CI 红，
+  //   丢的是**具体性**而不是**正确性**）。
+  const SHARED_TEXT_HELPERS = ['stripJsComments', 'stripStrings', 'blankComments', 'blankHash',
+    'blankHtmlComments', 'scanBodyOf', 'hasQuotedArg', 'stripYamlComments', 'codeText', 'mdText'];
+  /** 判定与 canary **共用**：`name` 在源码里是否「先用后定义」。
+   *  返回**首次使用的行号**（1 起）；合规返回 `-1`；**未定义**返回 `null`（不由本判据负责）。 */
+  const firstUseBeforeDef = (src, name) => {
+    const lines = src.split('\n');
+    const dl = lines.findIndex((l) => new RegExp(`^const ${name} =`).test(l));
+    if (dl < 0) return null;
+    const useRe = new RegExp(`\\b${name}\\b`);
+    for (let i = 0; i < dl; i += 1) if (useRe.test(lines[i])) return i + 1;
+    return -1;
+  };
+  const tdzViolations = [];
+  let sharedDefs = 0;
+  for (const f of guards22) {
+    const src = scrub22(read(`tests/parity/${f}`));
+    for (const n of SHARED_TEXT_HELPERS) {
+      const at = firstUseBeforeDef(src, n);
+      if (at === null) continue;
+      sharedDefs += 1;
+      if (at > 0) tdzViolations.push(`${f} → \`${n}\`（L${at} 已用，定义在更后）`);
+    }
+  }
+  if (tdzViolations.length > 0) {
+    fail(`㉒ R2 这些护栏**先用后定义**共享文本助手**：${tdzViolations.join('、')}`
+      + ' —— `const` 的 **TDZ** 会抛 `ReferenceError` ⇒ **整条护栏中断、其后判据从未判定**'
+      + '（§4.292 / §4.336 实测）。把共享助手移到**模块顶部**（所有判据块之前）');
+  }
+  // 防空转：[健康度型]（助手定义数随护栏增长 ⇒ 留余量；实测 32）
+  if (sharedDefs < 20) {
+    fail(`㉒ R2 只找到 ${sharedDefs} 个共享文本助手定义（[健康度型] 下限 20）`
+      + ' —— 扫描面萎缩会让本判据**空转**');
+  }
+  // canary：两向（与判定**共用** firstUseBeforeDef）
+  if (firstUseBeforeDef('const x = a + 1;\nconst a = 2;\n', 'a') !== 1) {
+    fail('㉒ R2 canary 失效：**先用后定义**的样本未被检出');
+  }
+  if (firstUseBeforeDef('const a = 2;\nconst x = a + 1;\n', 'a') !== -1) {
+    fail('㉒ R2 canary **过宽**：**先定义后使用**的样本被判为违规');
+  }
+  if (firstUseBeforeDef('const x = 1;\n', 'a') !== null) {
+    fail('㉒ R2 canary **过宽**：**未定义**的名字被判为「合规」（那会让本判据假装覆盖了它）');
+  }
   console.log(`Release gate: 护栏的断言辅助函数 —— 扫描 ${scanned22} 个护栏，`
-    + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）`);
+    + `${HELPERS.join(' / ')} **均有定义或 import**（未定义的调用会让失败路径抛 ReferenceError）；`
+    + `**先用后定义**（R2）${tdzViolations.length} 处 · 共享文本助手定义 ${sharedDefs} 个`);
 }
 
 // ── ㉓ 空 `catch` 必须写明理由（2026-10-11，审计 §4.292）──
@@ -4843,7 +5002,7 @@ const scanBodyOf = (rel, raw) => {
       + '改标 `[健康度型] 下限 N`（留余量）；确需后续迁移则**登记**并写明理由');
   }
   // 防空转：[覆盖型] 下限数（**只数已迁移的文件**；标记增删时须一并复核）
-  const COVERAGE_MARK_BASELINE = 33; // [覆盖型] 基线 33（2026-10-12 §4.334：新增 ㊻ R3 的副本数标记）
+  const COVERAGE_MARK_BASELINE = 34; // [覆盖型] 基线 34（2026-10-12 §4.335：新增 ⑳ R10 的显式 blocker 计数）
   coverEq('㊱ 已迁移文件里的 [覆盖型] 下限数', marked36, COVERAGE_MARK_BASELINE,
     '标记被删空会让「覆盖型必须 == 当前值」重新变成**无人守**（§4.168 实测）');
   // canary：两向（与判定**共用** allMarkedHaveEq）
