@@ -28,7 +28,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, relative } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const MATRIX_PATH = resolve(root, 'tests/parity/fixtures/typora-preferences-matrix.json');
@@ -706,6 +706,158 @@ if (badIds.length > 0) {
         errors.push('第三面双向 canary 失效：已在矩阵里的键被算成缝隙');
       }
     }
+  }
+}
+
+// ── 「未实装」声明的**过期复核**（2026-10-13，审计 §4.351）────────────────────────────────
+// 【为什么】矩阵里有 **`CLAIMS_BASELINE` 条** `gap` 的 `note` / `behaviorNote` 写着「Mellow **未实装** / 无实现」——
+//   那是**有保质期的结论**（本仓通则：**「登记为已知」≠「理由仍然成立」**，`MEMORY §4.1` 的纪律）。
+//   一旦某条**已经实装**而声明没改，两件事同时错：① 声明过期；② `matches-default` 的**结论**
+//   可能失效 —— 若实现后**默认开着**，行为就**不再**等于 Typora 默认（那就变成 `differs` 了）。
+// 【判据（**advisory**）】按每个 Typora 键的**探针关键词**扫 **Mellow 的 95 个设置 id + 源码**；
+//   **候选 = 「设置 id」命中**（见下）。⚠️ **命中不是缺陷**，须**逐条读**才能判。
+//   ⚠️ 2026-10-13（审计 §4.351）：首版把「**仅源码提及**」也算候选 ⇒ 实测 **7 条候选全是假阳性**，
+//   两类成因：① 命中**注释**里引用的 Typora 键名（正是 §4.346 记过的「判据不能扫『解释自己的注释』」）；
+//   ② 命中**另一个键**的名字（`applyImageMoveForWeb` 之于 `…ForLocal` ⇒ **探针过宽**）。
+//   ⇒ 现改为「仅源码提及」**单列且不计入候选**。更早的假阳性另有：
+//   `autocorrect=off` 是**禁用属性**（不是「自动纠正」）、`edit.copyMarkdown` 是**独立命令**
+//   （不是「默认复制为 Markdown」的设置）、`setextUnderlineRanges` 是**解析**（不是「样式选择」）。
+// 【为什么不做成 hard】谓词是**关键词** ⇒ 硬判会把假阳性变成红，而那些**都不该改**。
+//   ⇒ 与 `audit-doc-counts.mjs` 同形：**advisory 输出 + 硬防空转下限**。
+// 【硬的那一半】被探测的声明数必须 ≥ 下限 —— 关键词过滤坏掉时它会掉到 0，
+//   那时**整个复核面静默失效**，而 advisory 输出会**看起来正常**（0 候选 = 全都没过期）。
+{
+  // ⚠️ 2026-10-13（审计 §4.351）：原正则只认 7 种措辞 ⇒ **静默排除一整类同义表达**
+  //   （实测 `defaultExtension` 写「**未作为设置暴露**」⇒ 不被判为声明 ⇒ **它的探针成了孤儿**、
+  //   该声明**不在复核面内**）。⇒ 扩成**语义家族**：`未…设置` / `缺…开关` / `未暴露` / `未分离`
+  //   （**邻近形态**，不枚举具体措辞）。**实测 28 → 34 条**；仍未命中的 4 条已逐条读：
+  //   2 条是**有意差异**（`autoEscapeImageURL` 互操作性 / `useRelativePathForImg` 可移植性）、
+  //   1 条明写「**不是偏好项**」（`sidebarWidth`，视图几何另处登记）、1 条 note 为「同上」（`libraryFileFilterPatterns`）。
+  const STALE_WORDS = /未实装|未实现|无实现|无对应|均无|不存在|没有实现|未暴露|未分离|未[^。；\n]{0,12}设置|缺[^。；\n]{0,12}开关/;
+  const claims = entries.filter((e) => e.status === 'gap' && STALE_WORDS.test(`${e.note ?? ''}${e.behaviorNote ?? ''}`));
+  const SETTINGS_TS = readFileSync(resolve(root, 'packages/settings/src/index.ts'), 'utf8');
+  const setIds = [...SETTINGS_TS.matchAll(/id: '([a-zA-Z0-9._-]+)'/g)].map((m) => m[1]);
+  const SKIP_DIRS2 = new Set(['node_modules', '.git', 'dist', 'target', 'CoreEditor', '.workbuddy-ai', 'archive']);
+  const walkSrc = (dir, out = []) => {
+    if (!existsSync(dir)) return out;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP_DIRS2.has(e.name)) continue;
+      const p = resolve(dir, e.name);
+      if (e.isDirectory()) walkSrc(p, out);
+      else if (/\.(ts|tsx|mts|cts|mjs|cjs|js|jsx|rs)$/.test(e.name) && !/\.test\.|__tests__|\/test\//.test(p)) out.push(p);
+    }
+    return out;
+  };
+  const CORPUS = [
+    ...walkSrc(resolve(root, 'apps/desktop/src')),
+    ...walkSrc(resolve(root, 'packages')),
+  ].map((f) => [relative(root, f), readFileSync(f, 'utf8')]);
+  // 键 → 探针（**只列「实现该偏好项时会出现」的标识符**；泛词（如 `strict`）刻意不收，防噪声）
+  const PROBES = {
+    autoCorrectMisspell: [/autoCorrect/i, /misspellCorrect/i],
+    autoNumberingForMath: [/autoNumber(ing)?ForMath/i],
+    copyMarkdownByDefault: [/copyMarkdown/i],
+    defaultImageStorage: [/defaultImageStorage/i, /imageStorage/i],
+    expandSimpleBlock: [/expandSimpleBlock/i],
+    headingStyle: [/headingStyle/i, /\bsetext\b/i],
+    hideBrAndLineBreak: [/hideBrAndLineBreak/i],
+    htmlMath: [/htmlMath/i],
+    ignoreLineBreak: [/ignoreLineBreak/i],
+    legacyInlineMathParse: [/legacyInlineMath/i],
+    lineWiseCopyCut: [/lineWise/i, /wholeLine/i],
+    listNoGroup: [/listNoGroup/i],
+    monocolorEmoji: [/monocolor/i],
+    noAutoLink: [/autoLink/i],
+    noUnsavedDraftsBackup: [/unsavedDrafts/i, /draftsBackup/i],
+    olStyle: [/olStyle/i, /orderedListStyle/i],
+    prettyIndent: [/prettyIndent/i],
+    remapUnicodePunctuation: [/remapUnicode/i],
+    scrollWithCursor: [/scrollWithCursor/i],
+    spellcheckForCodeAndLink: [/spellcheckForCode/i],
+    strictMarkdown: [/strictMarkdown/i],
+    strictNumberStartOnNewLine: [/strictNumberStart/i],
+    treeNoGroup: [/treeNoGroup/i],
+    ulStyle: [/ulStyle/i, /unorderedListStyle/i],
+    userQuotesArray: [/userQuotes/i],
+    defaultExtension: [/defaultExtension/i],
+    // ⚠️ 2026-10-13（审计 §4.351）：这三条**原先没有探针** ⇒ 会被**静默跳过**（复核面**漏一整类**）。
+    //   本机实测抓到 ⇒ 已补（并由下面那条「无探针即红」的判据守住）。
+    libraryFileFilterMode: [/libraryFile/i, /fileLibrary/i, /filterMode/i],
+    presetSpellCheck: [/presetSpell/i, /spellCheckLanguage/i, /spellLanguage/i],
+    wordCountDelimiter: [/wordCountDelimiter/i, /countDelimiter/i, /wordCountMode/i],
+    // ⚠️ 2026-10-13（审计 §4.351）：扩语义家族后新纳入的声明，**必须有探针**（否则被下面那条覆盖型判据抓）
+    // ⚠️ 2026-10-13（审计 §4.351）：原 `/applyImageMove/i` **过宽** ⇒ 命中**另一个键** `applyImageMoveForWeb`（实测 5 处假阳性）。
+    applyImageMoveForLocal: [/applyImageMoveForLocal/i, /imageMoveForLocal/i],
+    gitlabMath: [/gitlabMath/i],
+    mathFormatOnCopy: [/mathFormatOnCopy/i, /copyMathFormat/i, /mathCopyFormat/i],
+    noEmojiAutoComplete: [/emojiAutoComplete/i, /autoCompleteEmoji/i],
+    noLegacyMath: [/noLegacyMath/i, /legacyMathDelimiter/i],
+  };
+  // ⚠️ **覆盖型硬判据**：每条「未实装」声明**必须有探针** —— 否则它被**静默跳过**，
+  //   而 advisory 输出会**看起来正常**（那条声明永远不出现）。**本机实测**：首版漏了 3 条。
+  const unprobed = claims.filter((c) => PROBES[c.typora] === undefined).map((c) => c.typora);
+  if (unprobed.length > 0) {
+    errors.push(`这些「未实装」声明**没有探针**（${unprobed.length}）：${unprobed.join(', ')} —— `
+      + '它们会被**静默跳过**（复核面**漏一整类**）⇒ 请补探针，或把该声明改写成不再声称「未实装」');
+  }
+  const candidates = [];
+  const srcOnly = [];
+  for (const c of claims) {
+    const regs = PROBES[c.typora];
+    if (regs === undefined) continue;
+    const idHit = setIds.filter((id) => regs.some((r) => r.test(id)));
+    const srcHit = CORPUS.filter(([, s]) => regs.some((r) => r.test(s))).map(([f]) => f);
+    // ⚠️ 2026-10-13（审计 §4.351）：**候选以「设置 id」为准** —— 「仅源码提及」**不是证据**。
+    //   实测这些「仅源码提及」**全是假阳性**，两类成因：
+    //   ① 命中**注释**里引用的 Typora 键名（§4.346 的教训：「判据不能扫『解释自己的注释』」）；
+    //   ② 命中**另一个键**的名字（`applyImageMoveForWeb` 之于 `…ForLocal`）。
+    if (idHit.length > 0) candidates.push([c.typora, idHit, srcHit]);
+    else if (srcHit.length > 0) srcOnly.push([c.typora, srcHit]);
+  }
+  const CLAIMS_BASELINE = 34; // [快照] 2026-10-13 扩语义家族后实测的声明条数（**消息里只引用它**）
+  const PROBED_FLOOR = 26; // [健康度型] 下限 26（基线 CLAIMS_BASELINE=34 ⇒ 留余量，只挡「过滤面静默失效」）
+  if (claims.length < PROBED_FLOOR) {
+    errors.push(`「未实装」声明只筛出 ${claims.length} 条（下限 ${PROBED_FLOOR}，基线 ${CLAIMS_BASELINE}）—— `
+      + '关键词过滤或矩阵措辞漂移会让**过期复核面静默失效**（0 候选看起来「全都不过期」）');
+  }
+  if (Object.keys(PROBES).length < PROBED_FLOOR) {
+    errors.push(`探针表只有 ${Object.keys(PROBES).length} 条（下限 ${PROBED_FLOOR}）—— 探针被删会让复核空转`);
+  }
+  // ⚠️⚠️ **反向覆盖型判据**（2026-10-13，审计 §4.351）：探针**必须**有对应的声明 ——
+  //   孤儿探针正是**本轮发现漏检类的那个信号**：`defaultExtension` 的 note 写「**未作为设置暴露**」
+  //   （与「未实装」**同义但措辞不同**）⇒ 不被关键词认出 ⇒ 探针成孤儿、**该声明不在复核面内**。
+  //   ⇒ 有了这条，**措辞漂移会当场红**（而不是静默缩小复核面）。
+  const orphanProbes = Object.keys(PROBES).filter((k) => !claims.some((c) => c.typora === k));
+  if (orphanProbes.length > 0) {
+    errors.push(`这些探针**没有对应的「未实装」声明**（${orphanProbes.length}）：${orphanProbes.join(', ')} —— `
+      + '要么该声明已被改写（探针该删），要么**声明的措辞不再被关键词认出**（复核面**静默漏检**）');
+  }
+  // ⚠️ canary：每条探针必须能命中**它自己的键名** —— 否则该探针恒不命中，
+  //   该声明的复核面**静默失效**（永远不出现候选，而输出看起来正常）。
+  const deadProbes = Object.entries(PROBES).filter(([k, regs]) => !regs.some((r) => r.test(k))).map(([k]) => k);
+  if (deadProbes.length > 0) {
+    errors.push(`这些探针**命中不了它自己的键名**（${deadProbes.length}）：${deadProbes.join(', ')} —— `
+      + '谓词恒不命中 ⇒ 该声明的复核面**静默失效**');
+  }
+  console.log(`\n「未实装」声明的**过期复核**（advisory）：筛出 ${claims.length} 条声明 · 探针 ${Object.keys(PROBES).length} 条 · `
+    + `命中 **${candidates.length}** 处（⚠️ **命中是候选不是缺陷**，须逐条读；候选**以「设置 id」为准**）`
+    + `${srcOnly.length > 0 ? ` · 另有 ${srcOnly.length} 条**仅源码提及**（**非候选**）` : ''}`);
+  for (const [k, ids2, files] of candidates) {
+    console.log(`  ★ ${k} ｜ 设置 id：${ids2.join(', ')}`
+      + `${files.length > 0 ? ` ｜ 源码 ${files.length} 个：${files.slice(0, 3).join(', ')}${files.length > 3 ? ' …' : ''}` : ''}`);
+  }
+  if (srcOnly.length > 0) {
+    console.log(`  （仅源码提及，**非候选**：${srcOnly.map(([k]) => k).join(', ')}）`);
+  }
+  // canary：双向（与判定**共用**同一套谓词）
+  if (!STALE_WORDS.test('Mellow 未实装')) {
+    errors.push('过期复核 canary 失效：`未实装` 未被筛出');
+  }
+  if (STALE_WORDS.test('已实装并有测试')) {
+    errors.push('过期复核 canary **过宽**：`已实装` 被判为「未实装」声明');
+  }
+  if (!PROBES.headingStyle.some((r) => r.test('headingStyle'))) {
+    errors.push('过期复核 canary 失效：探针认不出同名标识符');
   }
 }
 
