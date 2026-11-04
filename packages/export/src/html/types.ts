@@ -40,6 +40,18 @@ export interface HtmlExportOptions {
   math?: boolean;
   /** 渲染 Mermaid 图表（```mermaid 围栏），默认 true */
   mermaid?: boolean;
+  /**
+   * 渲染 `[TOC]` 标记与 `includeOutline` 插入的目录（ADR-0036 A1 施工批次 A36）。
+   * 默认 true；关闭后 `[TOC]` 行**保留为字面文本**（与预览端 `markdown.toc` 开关同义）。
+   */
+  toc?: boolean;
+  /**
+   * 渲染脚注（`[^1]` 语法，markdown-it-footnote；ADR-0036 A1 施工批次 A36）。
+   * 默认 true；关闭后不注册插件，`[^1]` 按 CommonMark 原生降级
+   * （无匹配定义 = 字面文本；`[^1]: …` 恰是合法的链接引用定义 = 降级为引用链接），
+   * 与预览端 `markdown.footnote` 开关同义。
+   */
+  footnote?: boolean;
   /** 本地图片是否内联为 data URL。with-theme 默认 true；self-contained 强制 true；without-style 忽略 */
   embedImages?: boolean;
   /**
@@ -79,6 +91,8 @@ export const DEFAULT_HTML_OPTIONS: HtmlExportOptions = {
   rawHtml: true,
   math: true,
   mermaid: true,
+  toc: true,
+  footnote: true,
   embedImages: true,
   preserveLineBreaks: false,
 };

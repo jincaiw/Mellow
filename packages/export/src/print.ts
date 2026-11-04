@@ -32,6 +32,15 @@ export interface PrintOptions {
   tocMaxLevel?: number;
   /** 无 [TOC] 标记时在开头插入目录 */
   includeOutline?: boolean;
+  /**
+   * 语法特性开关（ADR-0036 A1 / ADR-0037 A2）：打印与 PDF 管线复用 HTML 导出的同一 features 集，
+   * 由宿主把 `mellow.engine.features.*` 的取值原样传入；缺省（undefined）= 全部启用（默认输出不变）。
+   */
+  rawHtml?: boolean;
+  math?: boolean;
+  mermaid?: boolean;
+  toc?: boolean;
+  footnote?: boolean;
 }
 
 /** 打印就绪脚本：Mermaid 渲染完成后通知父窗口；无 Mermaid 时 load 后即就绪；2.5s 兜底。 */
@@ -65,6 +74,11 @@ export function buildPrintHtml(markdown: string, options: PrintOptions = {}, env
       lang: options.lang,
       tocMaxLevel: options.tocMaxLevel,
       includeOutline: options.includeOutline,
+      rawHtml: options.rawHtml,
+      math: options.math,
+      mermaid: options.mermaid,
+      toc: options.toc,
+      footnote: options.footnote,
       customCss: printStylesheet(styleOptions),
     },
     env,

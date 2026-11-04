@@ -84,7 +84,7 @@ Release verdict: NO-GO：6 项未闭环
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
 | 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **已裁决** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`）⚠️ **2026-10-09 更正（审计 §4.202）**：本行写的「默认值轴 **5** 项 / 行为轴 **5** 项」是**当时**的计数 —— 实际**默认值轴 4 项**（本行列的就是 4 个）· **行为轴 4 项**（`noLegacyMath` 已由 `ADR-0034` 的取证**排除**，见该 ADR「Q9」节）⇒ **实际 8 问**（`ADR-0034` 的 Q1–Q13 去掉合并的 Q2/Q3 与已排除的 Q9）。⚠️ **2026-10-11 更正（审计 §4.297）**：上句的「**实际 8 问**」**也不准** —— 它沿用了「行为轴 **4** 项」这个**当时**的口径，而行为轴实际是 **7 项**（Q6 / Q7 / Q8 / Q10 / Q11 / Q12 / Q13）。实测（数 `ADR-0034` 的 `## Q<N>` 小节）= **12 问**；按**独立设置项**数是 **11**（默认值轴 4 + 行为轴 7）。**本行其余内容（待裁决、载体）不受影响。** **已裁决（2026-11-03，用户拍板）**：默认值轴（Q1/Q2/Q3/Q4/Q5）**全部翻转对齐 Typora**（highlight / subscript / superscript / mermaid / cmdWheelZoom 默认 false；Q2/Q3 拆 supSub 为两开关）；行为轴（Q6/Q7/Q8/Q10/Q13）= 维持 Mellow 行为 + 登记 D（D-AP/D-AQ/D-AR/D-AV）；Q11/Q12 = 新增开关（默认关 / 默认不退出，待施工 D-AT/D-AU）；Q9 已取证排除。逐项见 ADR-0034「裁决」节。 | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
 | 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **已裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） **已裁决（2026-11-03，用户拍板）= A1**：预览与导出**都渲染加粗**（偏离 CommonMark，属有意对齐 Typora；Source Fidelity 不变）。验收载体 = 台账新增 `P0-MARKDOWN-006`；施工 = 批次 A35。 | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
-| 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **已裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** **已裁决（2026-11-03，用户拍板）= A1**：只修「开关关不掉」（3 个 option-unwired 接线 + 共用挂载行按子开关过滤）；6 个未实现导出语法**不**随 A1 补齐（留待独立裁决）。施工 = 批次 A36。 | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
+| 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **已裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** **已裁决（2026-11-03，用户拍板）= A1**：只修「开关关不掉」（3 个 option-unwired 接线 + 共用挂载行按子开关过滤）；6 个未实现导出语法**不**随 A1 补齐（留待独立裁决）。施工 = 批次 A36（✅ **2026-11-04 已落地**：5 个开关全部接线，登记表 HTML 列 5 行转 `implemented`，审计 §4.353；PDF 列不动，等 A37）。 | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
 | 20 | §4.250–§4.252 | **PDF 导出比 HTML 导出少 10 类能力**：① 公式与图表（`PdfEnv.renderMath` / `renderMermaid` 调用点未提供 ⇒ 降级为源码）；② **核心语法**（嵌套列表层级全丢 / 有序列表变无序且丢起始号 / 任务列表 checkbox 丢失 / 嵌套引用拍平 / 硬换行变空格 / 链接整条丢失 / autolink 字面 / **代码块语言被解析但未消费 ⇒ 无语言标识**）。台账 `P0-EXPORT-001` 已如实改为 `IMPL` | **已裁决** —— 两条路都能修，但成本差一个量级：A1 给 pdfmake 补 webview 栅格化渲染器（+100–200 行、位图、本机不可验）；A2 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml`，实跑确认含 `<math>` / mermaid / 内联图片，且**核心语法全部正确** ⇒ 一次性解决 10 类）；A3 维持现状 + 明说文案。**换 PDF 引擎属架构级改动** ⇒ 未自行改 **已裁决（2026-11-03，用户拍板）= A2**：PDF 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml` + printToPdf）⇒ 一次性解决 10 类差距。施工 = 批次 A37；`P0-EXPORT-001`（现 `IMPL`）实施验收后回闭环。 | `docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md` |
 | 21 | §4.328 | **拼写检查的「语言 / 词典」能力**：Typora 有一整套**语言包管理**（按语言下载/安装/切换词典 + 4 种状态提示，一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 **10 条** key）；而 Mellow 用**系统** `NSSpellChecker`（词典与语言由 **OS** 提供）⇒ 「选语言」在 macOS 的惯用位置是**系统设置**。同批还有两条小缺口：**代码/链接内检查的开关**（排除已实现、开关无）与 **自动纠正拼写**（其所需 API 在 `objc2-app-kit` 0.3.2 中**不存在**、且对 WKWebView 无效 ⇒ 属**不可实现**而非「未做」） | **已裁决** —— A 维持系统拼写检查（登记为平台惯用等价物）· B 复刻语言包管理（新增词典下载子系统）· C 折中（只读语言 + 打开系统设置入口 + 给代码/链接检查加开关）。⚠️ **未擅自改任何用户可见行为**；矩阵三条 `gap` 的说明此前引用「依赖 `host-api` 的拼写词典能力（`P0-EDITOR-005`）」—— 而该项**已 `IMPL`**（消费方已落地）⇒ **理由已过期**，故 `presetSpellCheck` 的 `disposition` 改指本 ADR **已裁决（2026-11-03，用户拍板）= C**：系统拼写检查 + 应用内**只读语言展示** + 「打开系统拼写设置」入口 + 新增 `editor.spellcheckForCodeAndLink`（默认关）。`autoCorrectMisspell` 登记**不可实现**。施工 = 批次 A38；矩阵 `presetSpellCheck` disposition 改指 **D-AW**。 | `docs/adr/ADR-0038-spellcheck-dictionary-language.md` |
 | 22 | §4.352（2026-11-03 本批） | **UX Gate 策略**：人工体验 Gate（30 计时任务 + UX Score ≥92）是**逐项**前置（ADR-0024 Q2=B1 残余效力），还是**单点**承载 | **已裁决（2026-11-03，用户拍板）= 收窄**：`ux-gate` 只由 `P0-QA-001` 声明与承载；其余 6 项（`P0-EDITOR-001` / `P0-EDITOR-003` / `P0-SHELL-001` / `P0-MENU-001` / `P0-EDITOR-004` / `P0-LAYOUT-002`）不再被这条全局策略挂起 → 落 AUTO（不升 PASS-E）。A3 规则**保留**（只对仍声明 ux-gate 的项适用）。取代 ADR-0024 **Q2=B1** 的残余效力 | `docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md` |
@@ -22532,6 +22532,67 @@ master-plan §11.2 看板、§15.1 真值源行、§14 输出行同步；**加�
 
 **产物**：`docs/adr/ADR-0039-*.md`（新）· `docs/adr/ADR-0040-*.md`（新）· 五份 ADR 转 Accepted ·
 台账/矩阵/面板键夹具/登记表/master-plan/README 及 14 份文档同步 · 9 处护栏协调改动（见二）。
+
+## 4.353 批次 A36 落地 —— 导出侧 5 个语法开关「关不掉」修复（2026-11-04）
+
+### 一、做了什么（ADR-0036 A1 裁决的施工，Batch 0 挂账清偿）
+
+**问题**（§4.248 登记、ADR-0036 裁决）：`markdown.math` / `markdown.mermaid` / `markdown.html`
+在 HTML 导出**有**选项但**调用点不传**（`option-unwired` ⇒ 恒默认生效）；`markdown.toc` /
+`markdown.footnote` 在 HTML 导出**恒启用无选项**（`always-on` ⇒ 关不掉）。用户在设置里关掉
+这些开关后，预览不渲染、导出件**照样渲染** = 设置静默失效。
+
+**改动**（4 个文件 + 1 测试 + 1 夹具）：
+
+| 文件 | 改动 |
+|---|---|
+| `packages/export/src/html/types.ts` | `HtmlExportOptions` 新增 `toc` / `footnote`（默认 `true` ⇒ **默认输出不变**，ADR-0036「不动 not-implemented、默认行为不变」约束） |
+| `packages/export/src/html/markdown.ts` | `HtmlRenderContext` 新增 `tocEnabled` / `footnoteEnabled`；`footnote:false` 时**不注册** `md.use(footnotePlugin)`；`toc:false` 时**不注册** `mellow_toc` 块规则（标记保留字面段落） |
+| `packages/export/src/html/index.ts` | `normalizeOptions` 补两键；ctx 透传；`includeOutline` 插入同样受 `toc` 门控 |
+| `packages/export/src/print.ts` | `PrintOptions` 新增 `rawHtml`/`math`/`mermaid`/`toc`/`footnote` 五字段并透传 `exportHtml` —— 为 ADR-0037 A2（PDF 复用打印管线）预备「同一 features 集」通道；不传 = 全部默认启用（现行为不变） |
+| `apps/desktop/src/App.tsx` | `runExportHtml` 的 `exportHtml` 调用补传 5 个 `readBoolSetting('markdown.*', <schema 默认>)`（**mermaid 的 fallback 是 `false`** —— ADR-0034 翻转后 schema 默认；其余 4 个 `true`） |
+| `packages/export/test/html.test.ts` | 新增「语法特性开关」describe：默认全渲染 + 5 个 off-case 断言（**34/34 绿**） |
+| `tests/parity/fixtures/export-feature-parity.json` | 5 行 `html` 列 `option-unwired`/`always-on` → **`implemented`**，evidence 写明接线点与 off-case 测试；note 追加批次 A36 同步句 |
+
+**接线面事实核对**：ADR-0036 原文写「App.tsx 的**三处** HTML 导出调用」—— 实际 grep 只有
+**一处** `exportHtml` 调用点（`runExportHtml`，with-theme / without-style 两个菜单项共用它，
+经 `handleExportHtml` / `handleExportHtmlPlain` 分发）。⇒ 「三处」按**调用点**口径为**一处**，
+本批如实按现状接线；ADR 原文不改写（判决只追加），此段即执行记录。
+
+### 二、off-case 语义的实测修正（写测试时三轮红→绿的收获）
+
+初版断言按「关闭 = 字面文本」的直觉写，实测输出**三处**与直觉不符，判据以实跑为准修正：
+
+1. **`footnote:false` 时 `[^1]: 定义` 不是字面文本** —— `[^1]: …` 本身是**合法的 CommonMark
+   链接引用定义** ⇒ 降级为引用链接（`<a href>`）；只有**无匹配定义**的 `[^1]` 才留在正文为字面。
+   `types.ts` 注释与测试都按此实况书写。
+2. **math off 的判据不能用裸 `katex` 字样** —— mermaid bundle 与主题 CSS（`styles.ts` 固定含一条
+   `.katex-display` 小规则）里都有该字样 ⇒ 改用渲染标记 `class="katex"` 与整包 CSS 的
+   `data:font/woff2` 内联字体做判据。
+3. **toc off 的判据不能用裸 `mellow-toc`** —— 主题 CSS 含 `.mellow-toc` 选择器 ⇒ 用
+   `<nav class="mellow-toc"` 结构锚。
+
+这与 §4.349「字符数窗口假阳性」同族：**判据锚必须落在结构形态上，不能落在会被无关内容
+携带的字样上**。
+
+### 三、联动与验证（统一规则 17）
+
+- `verify-settings-contract.mjs` 的「语法开关 × 3 路径」判据**按设计不需改**（词表校验 +
+  非 implemented 必须带 ref；夹具改状态即绿）—— 这正是当初把判据写成「事实登记不锁状态」的
+  意图兑现。缺口计数日志从「非 implemented 25 处」变为 **20 处**（−5，恰为本批 5 行 × html 列）。
+- `pnpm --dir packages/export test`：**110/110 绿**（8 suites）。
+- `typecheck:desktop`：绿（App.tsx 调用点类型通过）。
+- 全部 23 份 `tests/parity/verify-*.mjs` 顺序跑：**全绿**（含 release-gate ⑲ 字段契约 ——
+  本批未改夹具键形态，无需协调改动）。
+- 登记表第 19 行追加「✅ 2026-11-04 已落地」施工注记。
+
+**未做（按裁决边界）**：6 个 `not-implemented` 导出语法不补（A1 边界）；PDF 列 `collaborator-missing`
+不动（等 A37 打印管线复用同一 features 集后一并收敛）；`print.ts` 的透传只是**通道预备**，
+宿主打印/PDF 调用点尚无（A37 施工时补）。
+
+**产物**：`packages/export/src/html/{types,markdown,index}.ts` · `packages/export/src/print.ts` ·
+`apps/desktop/src/App.tsx` · `packages/export/test/html.test.ts` ·
+`tests/parity/fixtures/export-feature-parity.json` · 本审计节 + 登记表第 19 行注记。
 
 ## 五、本次审计做的改动（非策略性）
 

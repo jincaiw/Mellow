@@ -8,7 +8,7 @@
     "not-implemented": "该路径**完全没有**该语法",
     "collaborator-missing": "该路径**有**实现，但调用点**未提供必需的协作件**（`env.renderMath` / `env.renderMermaid` 等）⇒ **静默降级**为源码文本"
   },
-  "note": "⚠️ 本表是**事实登记**，不是「要求三条路径一致」的判据。三条路径一致与否是**产品决策**（见 ref 指向的 ADR）；本表的作用是让缺口**可发现、可机械核对覆盖性**。 ⚠️ **2026-10-10 自我更正**：`markdown.math` / `markdown.mermaid` 的 PDF 列原为 `always-on`（**读代码**得出），实跑后改为 `collaborator-missing` —— 见审计 §4.249。",
+  "note": "⚠️ 本表是**事实登记**，不是「要求三条路径一致」的判据。三条路径一致与否是**产品决策**（见 ref 指向的 ADR）；本表的作用是让缺口**可发现、可机械核对覆盖性**。 ⚠️ **2026-10-10 自我更正**：`markdown.math` / `markdown.mermaid` 的 PDF 列原为 `always-on`（**读代码**得出），实跑后改为 `collaborator-missing` —— 见审计 §4.249。 ⚠️ **2026-11-04（批次 A36，ADR-0036 A1 裁决落地）**：HTML 列的 3 个 `option-unwired` + 2 个 `always-on`（math/mermaid/html/toc/footnote）已全部接线为 `implemented`；PDF 列缺口不动（`not-implemented` 按裁决不补；`collaborator-missing` 由 ADR-0037 A2 打印管线复用同一 features 集，施工批次 A37）。",
   "entries": [
     {
       "settingId": "markdown.highlight",
@@ -59,36 +59,36 @@
       "settingId": "markdown.math",
       "syntax": "$x$ / $$x$$",
       "preview": "implemented",
-      "html": "option-unwired",
+      "html": "implemented",
       "pdf": "collaborator-missing",
-      "evidence": "预览：`index.ts:309`；HTML 导出：`HtmlExportOptions.math` **存在**但调用点不传 ⇒ 恒默认 `true`；PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`，是**读代码**得出的，**错了**）—— 实跑 `buildPdfDocument(..., { fonts })`：块级 `$$x^2$$` 输出 `{text:\"x^2\",italics:true,style:\"code\"}`（源码文本），**行内** `$x^2$` 在 PDF 的 `parseInline` 里**根本没被 token 化** ⇒ 字面。根因是 `PdfEnv.renderMath` **调用点未提供**（见 `export-collaborators.json` + 台账 `P0-EXPORT-001`）。",
+      "evidence": "预览：`index.ts:309`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：`runExportHtml` 调用点补传 `math: readBoolSetting('markdown.math', true)`，且 `packages/export/test/html.test.ts` 有 off-case 断言（`$E=mc^2$` 保留字面）⇒ 开关关得掉；默认输出不变。PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`，是**读代码**得出的，**错了**）—— 实跑 `buildPdfDocument(..., { fonts })`：块级 `$$x^2$$` 输出 `{text:\"x^2\",italics:true,style:\"code\"}`（源码文本），**行内** `$x^2$` 在 PDF 的 `parseInline` 里**根本没被 token 化** ⇒ 字面。根因是 `PdfEnv.renderMath` **调用点未提供**（见 `export-collaborators.json` + 台账 `P0-EXPORT-001`）。",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {
       "settingId": "markdown.mermaid",
       "syntax": "```mermaid 围栏",
       "preview": "implemented",
-      "html": "option-unwired",
+      "html": "implemented",
       "pdf": "collaborator-missing",
-      "evidence": "预览：`index.ts:310`；HTML 导出：`HtmlExportOptions.mermaid` 存在但调用点不传；PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`）—— 实跑 `buildPdfDocument(..., { fonts })` 输出 `{text:\"graph TD;A-->B\",style:\"code\"}`（源码文本）⇒ `PdfEnv.renderMermaid` **调用点未提供**。",
+      "evidence": "预览：`index.ts:310`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：`runExportHtml` 调用点补传 `mermaid: readBoolSetting('markdown.mermaid', false)`（ADR-0034 翻转后 schema 默认 false ⇒ 默认不再渲染 mermaid），off-case 断言：无 `<pre class=\"mermaid\">`。PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`）—— 实跑 `buildPdfDocument(..., { fonts })` 输出 `{text:\"graph TD;A-->B\",style:\"code\"}`（源码文本）⇒ `PdfEnv.renderMermaid` **调用点未提供**。",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {
       "settingId": "markdown.toc",
       "syntax": "[TOC]",
       "preview": "implemented",
-      "html": "always-on",
+      "html": "implemented",
       "pdf": "always-on",
-      "evidence": "预览：`index.ts:312`；HTML 导出：`md.block.ruler.before('paragraph','mellow_toc',…)` **无条件注册**，`HtmlExportOptions` 里**没有** toc 开关（`tocMaxLevel`/`includeOutline` 是排版参数，不是启用开关）；PDF：`index.ts:306`",
+      "evidence": "预览：`index.ts:312`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：新增 `HtmlExportOptions.toc`（默认 true）——`toc:false` 时不注册 `mellow_toc` 块规则、`includeOutline` 同样不插入，`[TOC]` 保留字面文本（off-case 断言）。PDF：`index.ts:306`",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {
       "settingId": "markdown.footnote",
       "syntax": "正文[^1] + 定义",
       "preview": "implemented",
-      "html": "always-on",
+      "html": "implemented",
       "pdf": "always-on",
-      "evidence": "预览：`index.ts:311`；HTML 导出：`md.use(footnotePlugin)` **无条件**；PDF：`index.ts:312`",
+      "evidence": "预览：`index.ts:311`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：新增 `HtmlExportOptions.footnote`（默认 true）——`footnote:false` 时不注册 `md.use(footnotePlugin)`，`[^1]` 按 CommonMark 原生降级（无定义=字面、`[^1]: …`=链接引用定义）。PDF：`index.ts:312`",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {
@@ -104,9 +104,9 @@
       "settingId": "markdown.html",
       "syntax": "<div>…</div>",
       "preview": "implemented",
-      "html": "option-unwired",
+      "html": "implemented",
       "pdf": "not-implemented",
-      "evidence": "预览：`index.ts:315`；HTML 导出：`HtmlExportOptions.rawHtml` 存在但调用点不传 ⇒ 恒为默认 `true`（带白名单 sanitize）；PDF：pdfmake 不渲染 raw HTML",
+      "evidence": "预览：`index.ts:315`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：`runExportHtml` 调用点补传 `rawHtml: readBoolSetting('markdown.html', true)`；`rawHtml:false` 时整体转义（off-case 断言 `&lt;div…`）。PDF：pdfmake 不渲染 raw HTML",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {

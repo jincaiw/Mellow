@@ -29,6 +29,10 @@ export interface HtmlRenderContext {
   mode: HtmlExportMode;
   mathEnabled: boolean;
   mermaidEnabled: boolean;
+  /** `[TOC]` 目录开关（ADR-0036 A1 批次 A36）：false 时不注册 mellow_toc 块规则，标记保留为字面文本 */
+  tocEnabled: boolean;
+  /** 脚注开关（ADR-0036 A1 批次 A36）：false 时不注册 markdown-it-footnote，`[^1]` 保留为字面文本 */
+  footnoteEnabled: boolean;
   tocMaxLevel: number;
   /** 原文图片 src → data URL（无映射则保留原 src） */
   imageMap: Map<string, string>;
@@ -145,7 +149,9 @@ export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
   });
 
   // footnote + task list
-  md.use(footnotePlugin);
+  // ADR-0036 A1（批次 A36）：脚注受开关控制 —— 关闭时不注册插件，`[^1]` 保留为字面文本，
+  // 与预览端 `markdown.footnote` 开关同义（「开关关不掉」的导出侧即在此修复）。
+  if (ctx.footnoteEnabled) md.use(footnotePlugin);
   md.use(taskListsPlugin, { enabled: true, label: true, labelAfter: false });
 
   // ── math ────────────────────────────────────────────────
@@ -255,7 +261,10 @@ export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
     state.line = startLine + 1;
     return true;
   };
-  md.block.ruler.before('paragraph', 'mellow_toc', tocRule);
+  // ── [TOC] 标记 ──────────────────────────────────────────
+  // ADR-0036 A1（批次 A36）：受 `toc` 开关控制 —— 关闭时不注册块规则，
+  // `[TOC]` 行按普通段落渲染为字面文本（与预览端 `markdown.toc` 开关同义）。
+  if (ctx.tocEnabled) md.block.ruler.before('paragraph', 'mellow_toc', tocRule);
 
   // ── renderer 规则 ───────────────────────────────────────
   const defaultFence = md.renderer.rules.fence;

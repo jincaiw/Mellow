@@ -1528,6 +1528,14 @@ export default function App() {
         title: tab.title ?? undefined,
         // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（preLinebreakOnExport，默认关）
         preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
+        // ADR-0036 A1（批次 A36）：导出复用预览端同一批 `mellow.engine.features.*` 开关 ——
+        // 修复「开关关不掉」：用户在设置里关掉数学/Mermaid/原始 HTML/目录/脚注后，导出件同样不渲染。
+        // fallback 传 schema 默认值（mermaid 默认 false，ADR-0034 翻转；其余 true）。
+        rawHtml: readBoolSetting('markdown.html', true),
+        math: readBoolSetting('markdown.math', true),
+        mermaid: readBoolSetting('markdown.mermaid', false),
+        toc: readBoolSetting('markdown.toc', true),
+        footnote: readBoolSetting('markdown.footnote', true),
       }, {
         // 仅在 exportHtml 需要内联图片时调用；without-style 不会触发（embedImages=false）。
         resolveImage: makeLocalImageResolver(docDir, exportRootDir),

@@ -280,6 +280,66 @@ describe('HTML export — 表格 / task / footnote / raw HTML', () => {
   });
 });
 
+describe('HTML export — 语法特性开关（ADR-0036 A1 批次 A36：「开关关不掉」修复）', () => {
+  it('默认（不传开关）：math/mermaid/toc/footnote 全部渲染 —— 默认输出不变', async () => {
+    const html = await exportHtml(SAMPLE_MD, { mode: 'with-theme' }, { resolveImage });
+    expect(html).toContain('katex'); // 数学渲染
+    expect(html).toContain('<pre class="mermaid">'); // Mermaid 渲染
+    expect(html).toContain('mellow-toc'); // [TOC] 渲染
+    expect(html).toContain('footnote-ref'); // 脚注渲染
+  });
+
+  it('math=false：$E=mc^2$ 与 $$…$$ 保留字面文本', async () => {
+    const md = '行内 $E=mc^2$ 与\n\n$$x^2$$';
+    const html = await exportHtml(md, { mode: 'with-theme', math: false });
+    expect(html).toContain('$E=mc^2$');
+    expect(html).toContain('$$x^2$$');
+    // KaTeX 渲染与整包 KaTeX CSS（字体 base64 内联）都不应出现；
+    // 主题 CSS 本身固定含一个 .katex-display 小规则（styles.ts），故判据用「内联字体」
+    expect(html).not.toContain('class="katex"');
+    expect(html).not.toContain('data:font/woff2');
+  });
+
+  it('mermaid=false：围栏按普通代码块输出，无 .mermaid 容器', async () => {
+    const md = '```mermaid\ngraph TD\n  A --> B\n```';
+    const html = await exportHtml(md, { mode: 'with-theme', mermaid: false });
+    expect(html).not.toContain('<pre class="mermaid">');
+    expect(html).toContain('graph TD');
+  });
+
+  it('rawHtml=false：原始 HTML 转义为可见文本', async () => {
+    const md = '# T\n\n<div class="box">内容</div>';
+    const on = await exportHtml(md, { mode: 'with-theme', rawHtml: true });
+    expect(on).toContain('<div class="box">内容</div>');
+    const off = await exportHtml(md, { mode: 'with-theme', rawHtml: false });
+    expect(off).toContain('&lt;div class=&quot;box&quot;&gt;内容&lt;/div&gt;');
+    expect(off).not.toContain('<div class="box">内容</div>');
+  });
+
+  it('toc=false：[TOC] 保留字面文本，includeOutline 同样不插入', async () => {
+    const md = '# A\n\n## B\n\n[TOC]';
+    const on = await exportHtml(md, { mode: 'with-theme', toc: true });
+    expect(on).toContain('<nav class="mellow-toc"');
+    const off = await exportHtml(md, { mode: 'with-theme', toc: false });
+    expect(off).not.toContain('<nav class="mellow-toc"');
+    expect(off).toContain('[TOC]');
+    const outlineOff = await exportHtml('# A\n\n## B', { mode: 'with-theme', toc: false, includeOutline: true });
+    expect(outlineOff).not.toContain('<nav class="mellow-toc"');
+  });
+
+  it('footnote=false：不渲染脚注容器；[^1] 按 CommonMark 降级', async () => {
+    const md = '正文[^1]\n\n[^1]: 脚注内容';
+    const off = await exportHtml(md, { mode: 'with-theme', footnote: false });
+    expect(off).not.toContain('footnote-ref');
+    expect(off).not.toContain('class="footnotes"');
+    // `[^1]: 脚注内容` 本身是合法的 CommonMark 链接引用定义 ⇒ 降级为引用链接（非脚注语义）
+    expect(off).toContain('<a href=');
+    // 无匹配定义时保留字面文本
+    const literal = await exportHtml('正文[^1]', { mode: 'with-theme', footnote: false });
+    expect(literal).toContain('[^1]');
+  });
+});
+
 describe('HTML export — fileToDataUrl', () => {
   it('读取本地文件为 data URL', async () => {
     const fixture = path.resolve(__dirname, 'fixtures/pixel.png');
