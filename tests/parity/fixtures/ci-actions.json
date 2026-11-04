@@ -4,7 +4,7 @@
   "note": "⚠️ 本表**只存事实与理由，不存计数**（计数一律由判据现读派生，手写计数必然漂移）。⚠️ `minMajorForNode24` / `latestKnown` 是**人工核实的事实**，会过期 ⇒ 每条带 checkedAt + evidence；判据只守「自洽」，不守「上游是否又发了新版」（离线判据无法知道）。⚠️ 本文件的**顶层键与条目键**由判据 ⑲ 的字段契约双向锁定 —— 加字段必须同时改判据（审计 §4.284）。",
   "reviewedAt": "2026-10-10",
   "staleAfterDays": 90,
-  "evidenceRuns": ["38035994927", "38107299460"],
+  "evidenceRuns": ["38035994927", "38107299460", "38557644285"],
   "actions": [
     {
       "action": "actions/checkout",
@@ -97,9 +97,9 @@
   "knownFutureMigrations": [
     {
       "what": "runs-on: ubuntu-latest",
-      "observedIn": "CI run 38035994927 日志：\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026\"",
-      "windowOpensAt": "2026-10-19",
-      "todo": "迁移窗口开启后复核 Tauri 的 Linux 系统依赖（webkit2gtk / libappindicator 等）是否仍满足；本轮**无动作**（尚未开始迁移）"
+      "observedIn": "CI run 38035994927 日志：\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026\"。2026-11-03 ㉗ 到期重新分诊：官方公告（github.blog changelog 2026-09-17《Ubuntu 26 generally available and latest migration》）明写迁移为**渐进轮转 2026-10-19 ～ 2026-11-19**；run 38557644285（2026-11-03 对 main `558e0c4` 重跑）实测 `Image: ubuntu-24.04` ⇒ 本仓所在池子**尚未轮转**，观察窗口按官方轮转结束日顺延。",
+      "windowOpensAt": "2026-11-20",
+      "todo": "轮转窗口（2026-11-19）结束后复核：① 依赖 ubuntu-latest 的 Linux job 在新镜像下通过；② Tauri 的 Linux 系统依赖（webkit2gtk / libappindicator 等）是否仍满足；③ 届时若仍为 24.04 ⇒ 再延期并写明新的观察依据；已适配 ⇒ 删除本条目。"
     }
   ],
   "knownRemainingWarnings": [
