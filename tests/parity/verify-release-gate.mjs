@@ -366,9 +366,9 @@ for (const item of ledger.items ?? []) {
         fail(`${item.id} 标记 PASS-E 但 requiredEvidence 缺 ${group.join(' / ')}（结论不可达）`);
       }
     }
-    if (!required.includes('ux-gate')) {
-      fail(`${item.id} 标记 PASS-E 但 requiredEvidence 缺 ux-gate（结论不可达）`);
-    }
+    // ADR-0039（2026-11-03，用户裁决「收窄」）：不再**全局**要求 PASS-E 含 ux-gate ——
+    // 人工体验 Gate 集中由 `P0-QA-001` 单点承载（逐项声明只会把证据齐备的项挂成策略噪声）。
+    // 三平台证据组断言**保留**（PASS-E 的证据下限没有放宽）。
   }
   // 未闭环项必须**声明阻塞原因**（2026-09-25）。
   //
@@ -451,6 +451,28 @@ const DECIDED_ADRS = [
   // A1 会把 parity 缺口永久留着）。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变。**
   ['docs/adr/ADR-0033-image-export-theme-font-size.md',
     '图片导出的「用主题字号」等价物（canvas 无主题 CSS 通道）', 'A2（跟随编辑器字号；默认 custom 不变）'],
+  // 2026-11-03 裁决（**用户拍板**，五问逐项结论见各 ADR「裁决」节）：
+  //   ADR-0034 = 「默认值轴全部翻转对齐 Typora（Q1/Q2/Q3/Q4/Q5 均改默认 false；Q2/Q3 拆
+  //     supSub→subscript+superscript）+ 行为轴按 ADR 建议（Q6/Q7/Q8/Q10/Q13 维持+登记 D，
+  //     Q11/Q12 新增开关默认关/不退出）」；Q4 用户**推翻** ADR 起草时的 C2 建议、采 C1。
+  //   ADR-0035 = A1（CJK 紧贴全角标点的 `**…**` 预览+导出都渲染加粗；配套新增台账 P0-MARKDOWN-006）。
+  //   ADR-0036 = A1（只修「开关关不掉」，6 个未实现导出语法**不**随 A1 补齐）。
+  //   ADR-0037 = A2（PDF 复用 HTML 打印管线 printToPdf；实施后 `P0-EXPORT-001` 回 AUTO）。
+  //   ADR-0038 = C（系统拼写检查 + 只读语言展示 + 系统设置入口 + spellcheckForCodeAndLink 开关）。
+  ['docs/adr/ADR-0034-preference-deviations-2026-10-07.md',
+    '偏好默认值 5 项偏离 Typora + 行为轴偏离（12 问）', '默认值轴全翻转 / 行为轴维持+D / Q11·Q12 新增开关'],
+  ['docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md',
+    '行内强调的渲染语义：`**` 紧贴全角标点时是否对齐 Typora', 'A1（预览+导出均渲染加粗）'],
+  ['docs/adr/ADR-0036-export-path-syntax-feature-parity.md',
+    '语法特性开关与导出路径的接线缺口', 'A1（只修「开关关不掉」）'],
+  ['docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md',
+    'PDF 导出的公式与图表渲染路径', 'A2（复用 HTML 打印管线）'],
+  ['docs/adr/ADR-0038-spellcheck-dictionary-language.md',
+    '拼写检查的语言/词典能力', 'C（系统拼写检查 + 只读展示 + 新开关）'],
+  // 2026-11-03（ADR-0039，用户裁决「收窄」）：ux-gate **逐项**前置（ADR-0024 Q2=B1 的残余
+  // 效力）被取代 —— 人工体验 Gate 集中于 `P0-QA-001` 单点承载；A3 规则保留。
+  ['docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md',
+    'UX Gate 策略：逐项前置还是单点承载', 'C（收窄：仅 P0-QA-001 需人工 Gate）'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
@@ -468,27 +490,15 @@ const DECIDED_ADRS = [
 // （`**` 紧贴全角标点且外侧紧贴汉字时，Typora 渲染成加粗、Mellow 的两条路径都判为不成对）。
 // 它此前**不在任何台账条目内**（`P0-MARKDOWN-002` 说的是「格式命令」，不是「解析器语义」），
 // 故按「待裁决项必须有 ADR 载体」立 ADR-0035（**未擅自改任何渲染行为**）。
+// 2026-11-03（**用户裁决**）：本清单里的 0034/0035/0036/0037/0038 **全部裁决为 Accepted**
+// （逐项结论见各 ADR「裁决」节），已移入 `DECIDED_ADRS`（断言方向随之反转：不得删除/退回）。
+// 2026-11-03（审计）：**重新非空** —— master-plan §5.6 的 **G7-TYPO-05**（3 个内置主题与
+// Typora 同名而外观不同，`gothic` **明暗相反**）自 2026-09-13 起写「待裁决」而登记表与 ADR
+// 均**无载体** ⇒ 违反「待裁决项必须有 ADR 载体」。ADR-0040 是补的载体（**未擅自改名、
+// 未擅自改配色** —— 改名/换外观都是用户可见的品牌决策）。
 const PENDING_ADRS = [
-  ['docs/adr/ADR-0034-preference-deviations-2026-10-07.md',
-    '偏好默认值 5 项偏离 Typora（highlight / sub·sup / mermaid / zoomByMouse）'],
-  ['docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md',
-    '行内强调的渲染语义：`**` 紧贴全角标点时是否对齐 Typora（偏离 CommonMark）'],
-  // 2026-10-10（审计 §4.248）：**再增一项** —— 11 个语法特性开关（PRD §94）只接线到**预览**一条路径，
-  // HTML 导出有 3 个选项调用点不传、6 个语法完全没实现；PDF 导出无任何开关。
-  // 修它会改变导出件内容 ⇒ 按「改变用户可见结果属产品决策」立 ADR-0036（**未擅自改渲染行为**）。
-  ['docs/adr/ADR-0036-export-path-syntax-feature-parity.md',
-    '语法特性开关与导出路径的接线缺口：三条渲染路径要不要语法一致'],
-  // 2026-10-10（审计 §4.250）：PDF 里公式与图表渲染不出来（需栅格化渲染器）。
-  // 台账 P0-EXPORT-001 的 blockedBy 已指向本 ADR —— **换 PDF 引擎属架构级改动**（AGENTS.md），
-  // 故只登记两条路的事实与代价（pdfmake 补渲染器 vs 复用已实现的 HTML 打印管线），**未自行改**。
-  ['docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md',
-    'PDF 导出的公式与图表：给 pdfmake 补渲染器，还是改用已实现的 HTML 打印管线'],
-  // 2026-10-12（审计 §4.329）：拼写检查的**语言 / 词典**能力 —— Typora 有一套**语言包管理**
-  // （按语言下载/安装/切换词典 + 4 态提示，一手证据 = 本机 zh-Hans Front.strings 的 10 条），
-  // 而 Mellow 用**系统** NSSpellChecker。矩阵 presetSpellCheck 的 disposition 由「gap→P0-EDITOR-005」
-  // 改指本 ADR（该项已 IMPL，「等 host-api」不再是真实原因 ⇒ 剩下的是**决策**）。
-  ['docs/adr/ADR-0038-spellcheck-dictionary-language.md',
-    '拼写检查的语言/词典：用系统拼写检查（登记为平台惯用等价物），还是复刻 Typora 的语言包管理'],
+  ['docs/adr/ADR-0040-theme-name-appearance-divergence.md',
+    '内置主题与 Typora 同名而外观不同（G7-TYPO-05）：改名 / 对齐外观 / 维持现状'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
@@ -690,7 +700,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       //   而**没有任何东西**核对「阈值 == 当前值」（判据 ⑥ 只核对「标记里的数 == 阈值」）。
       //   ⇒ 这正是「`< N` 会**静默稀释防线**」的活证据（修了一次，又在无人守时漂了 3）。
       //   现改用 `coverEq`（严格相等）⇒ 值一漂**当场红**。
-      const ROWS_BASELINE = 21; // [覆盖型] 基线 21（2026-10-12 §4.329：新增第 21 行 = ADR-0038）
+      const ROWS_BASELINE = 23; // [覆盖型] 基线 23（2026-11-03 §4.352：新增第 22 行 = ADR-0039、第 23 行 = ADR-0040 补登记）
       coverEq('待裁决项登记表行数', rows.length, ROWS_BASELINE,
         '登记表是「不该缩小的集合」；若确实删过行，请同步下调本阈值并说明');
       for (const row of rows) {
@@ -1059,7 +1069,7 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       if (!resolvesRef('gap', 'P0-EDITOR-005') || resolvesRef('gap', 'P0-NO-SUCH-ITEM')) {
         errors.push('偏好矩阵载体解析 canary 失效：gap 的台账 id 判定不能区分正/负样本');
       }
-      if (!resolvesRef('undecided', 'ADR-0034') || resolvesRef('undecided', 'ADR-9999')) {
+      if (!resolvesRef('undecided', 'ADR-0040') || resolvesRef('undecided', 'ADR-9999')) {
         errors.push('偏好矩阵载体解析 canary 失效：undecided 的 ADR 判定不能区分正/负样本');
       }
       if (resolvesRef('', 'D-AK')) {
@@ -1067,9 +1077,11 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       }
       // 本判据**不得**与上面那条「凡被引用的 D 编号必须有声明行」互相冒充：
       // 后者的引用源是**文档**（plan/audit/ADR），本条的引用源是**矩阵**。用真实数据各验一次。
-      if (!declared.has('D-AK') || !declared.has('D-AO') || !isProposed('ADR-0034')) {
-        errors.push('偏好矩阵载体解析 canary 失效：真实数据里 D-AK/D-AO 应有声明行、ADR-0034 应为 Proposed'
-          + '（若 ADR-0034 已裁决，请把矩阵里的 undecided 一并改掉）');
+      // ⚠️ ADR-0034 已于 2026-11-03 裁决（矩阵里的 undecided 已全部改判 deliberate/gap）⇒
+      //   「真实数据里存在 Proposed ADR」不再是矩阵的属性；**派生 Proposed == PENDING_ADRS**
+      //   的方向安全由 ⑫ 的双向检查承担（那里真实数据必须非空：ADR-0040 Proposed）。
+      if (!declared.has('D-AK') || !declared.has('D-AO')) {
+        errors.push('偏好矩阵载体解析 canary 失效：真实数据里 D-AK/D-AO 应有声明行');
       }
     }
   }
@@ -3142,9 +3154,14 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     'node-types.json': {
       divergences: ['kind', 'package', 'typesMajor', 'why'],
     },
+    // ⚠️ `pendingRef` 已**退役**（2026-11-03，ADR-0034 Q11/Q12 + ADR-0038 裁决落地）：三条
+    // `adr-pending` 行全部改判为 `not-implemented` / `deliberate` ⇒ 条目里再无任何 pendingRef。
+    // 本契约是**双向**的（「契约有而条目没有」也算违规），故同步删除声明。若将来某行重新
+    // 需要「待裁决机器可读载体」，必须**同时**在这里加回、在 settings-contract 里通过形态
+    // 校验、并在登记表登记 —— 三处一起改正是有意的摩擦（§4.257 根因）。
     'typora-panel-only-keys.json': {
       entries: ['anchor', 'blockedBy', 'consumer', 'consumerNote', 'internal', 'key', 'mellow', 'note',
-        'pendingRef', 'status'],
+        'status'],
     },
     'typora-persisted-uncovered.json': {
       entries: ['key', 'kind', 'reason'],
@@ -7061,6 +7078,8 @@ console.log(
     : '')
   + `\n  Closure basis: 本门禁的「不阻断」口径 = PASS-E / PASS-B / AUTO（**且 requiredEvidence 不含 ux-gate**）；`
   + `按 ADR-0024 Q1=A3（Accepted 2026-09-30），自身声明需要人工门禁的 AUTO 项不得以 AUTO 收口。`
+  + `按 ADR-0039（Accepted 2026-11-03，**收窄**），ux-gate 只由 \`P0-QA-001\` 声明 —— `
+  + `其余项不再逐项携带该要求（取代 ADR-0024 Q2=B1 的逐项前置）。`
   + `按 master-plan §4.3，AUTO 的含义是「自动化测试通过、**真机体验验收未完成**」。`
   + `实际 PASS-E = ${passECount}/${totalItems}。`
   + (autoWithUxGate.length > 0

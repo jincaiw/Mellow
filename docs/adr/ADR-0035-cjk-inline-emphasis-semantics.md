@@ -1,6 +1,6 @@
 # ADR-0035 — 行内强调的**渲染语义**：`**` 紧贴全角标点时，**对齐 Typora** 还是**保持 CommonMark**？
 
-**Status:** **Proposed**（2026-10-10）—— 待裁决。
+**Status:** **Accepted**（2026-11-03，**用户裁决**）—— 裁决 = A1（见文末「裁决」节）。
 
 > **本 ADR 为什么是 Proposed**：它改的是**同一份 Markdown 在 Mellow 与 Typora 里看起来不同** ——
 > 属**用户可见的渲染结果**，不是审计派生出来的死代码清理。
@@ -86,9 +86,22 @@ left-/right-flanking（标点相邻）规则，也没有 CommonMark 规则 9（�
 
 ## 裁决
 
-（待裁决。）裁决后必须同步：
+**裁决 = A1**（对齐 Typora：预览 + 导出**都**改为「内侧非空白即可加粗」）—— 用户 2026-11-03 拍板（最终对标轮，
+总目标「与 Typora 功能/编辑体验完全一致或更优」）。
 
-1. 本文件顶部状态改为 `Accepted`，并在此写明所选选项；
-2. 门禁 `PENDING_ADRS` / `DECIDED_ADRS` 与审计登记表第 18 行；
-3. **若选 A1**：须**新增台账条目**（本差异当前不在任何条目内）并同步全仓的 `PASS-E = M/K`；
-4. **若选 A3**：须在 D 表新增一行（有意差异）并写明「用户自救」写法。
+- **实现路径**（施工批次 A35）：
+  - **预览**优先走 **Mellow 自有装饰层**（`editor-engine` 的 inline scan / decoration），
+    **不动 vendored `CoreEditor` 的 `@lezer/markdown` 解析器** ⇒ 避免 UPSTREAM 改动成本；
+    若装饰层无法覆盖（需要语法树节点），再评估最小 vendored 改动并登记 UPSTREAM.md。
+  - **导出**：`packages/export/src/html/markdown.ts` 的 markdown-it 加自定义 inline rule（strong/em 放宽）。
+  - **Source Fidelity**：doc 纯文本**不变**（只改渲染判定）⇒ 规则 3 不受触。
+- **验收**：`中文**「必须」**的` 三例矩阵（本 ADR「实测」表）在预览 / HTML / PDF 全部渲染加粗；
+  既有 CommonMark 用例不回退（`**a**b**c**` 之类保持原语义）。
+
+以下 1–4 为裁决同步清单的执行记录（2026-11-03）：
+
+1. ✅ 状态已改 `Accepted`，本节目绑选项 A1；
+2. ✅ 门禁 `PENDING_ADRS` 已清空、本 ADR 移入 `DECIDED_ADRS`；审计登记表第 18 行改「已裁决」；
+3. ✅ 已**新增台账条目 `P0-MARKDOWN-006`**（「CJK 行内强调语义」，当前 `NOT_TESTED`，实装 + 三路径验收后升级），
+   `LEDGER_P0_BASELINE` 同步 50 → **51**，全仓 `PASS-E = M/K` 的分母随之更正；
+4. 不适用（未选 A3）。

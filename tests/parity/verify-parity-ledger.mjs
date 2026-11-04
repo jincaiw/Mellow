@@ -2180,7 +2180,7 @@ for (const domain of ['editing', 'sidebar', 'desktop-ui', 'menu', 'acceptance'])
 // 防止未来「删条目瘦身」悄悄退回只覆盖少数域。
 // 覆盖下限取**当前基线 50**（V7-W0 扩容目标）：此前写 45，意味着删掉 5 项也不会报错 —— 覆盖型下限一旦宽松，成员就会悄悄消失。
 // ⚠️ 2026-10-11（审计 §4.317）：`>=` → `===`（覆盖型 = 「阈值必须 == 当前基线」）。
-const LEDGER_P0_BASELINE = 50; // [覆盖型] 基线 50
+const LEDGER_P0_BASELINE = 51; // [覆盖型] 基线 51（2026-11-03 ADR-0035 裁决新增 P0-MARKDOWN-006：CJK 行内强调语义）
 assert(ids.size === LEDGER_P0_BASELINE, `台账 P0 项数 ${ids.size} ≠ [覆盖型] 基线 ${LEDGER_P0_BASELINE}`
   + ' —— **缩小** = 项被悄悄删；**增长** = 请复核后同步基线（审计 §4.317）');
 for (const domain of ['file', 'layout', 'feature', 'build']) {

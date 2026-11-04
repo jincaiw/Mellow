@@ -12,15 +12,21 @@ import { EditorView } from '@codemirror/view';
 import { EditorSelection } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { install, MARKER_CLASS } from '../src/index';
+import type { EngineFeatureConfig } from '../src/config';
 
-/** 构建带引擎的编辑器（测试环境自行管理 composition 状态） */
-export function setUpEditor(doc: string): EditorView {
+/**
+ * 构建带引擎的编辑器（测试环境自行管理 composition 状态）。
+ *
+ * ADR-0034（2026-11-03）裁决后部分特性默认关（对齐 Typora）⇒ 需要该特性渲染的
+ * 家族测试**显式传入** features；不传 = 走产品默认值（默认行为本身也可被测）。
+ */
+export function setUpEditor(doc: string, features?: Partial<EngineFeatureConfig>): EditorView {
   const view = new EditorView({
     doc,
     parent: document.body,
     extensions: [
       markdown({ base: markdownLanguage }),
-      install(false),
+      install(false, features),
     ],
   });
   view.focus();

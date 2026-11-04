@@ -6,7 +6,7 @@ Mellow 是以 **MarkEdit**（vendored CoreEditor，CodeMirror 6 + Lezer）为编
 
 **状态：正式发布**（[ADR-0031](docs/adr/ADR-0031-release-status-promotion.md)，2026-10-05 用户裁决：忽略真机 Gate 回填转正；**取代 ADR-0024 Q2=B1**）。
 
-> ⚠️ **正式发布是「发布状态」，不是「完成度」**：`PASS-E = 0/50`、未闭环 **10 项**依然成立。
+> ⚠️ **正式发布是「发布状态」，不是「完成度」**：`PASS-E = 0/51`、未闭环 **5 项**依然成立（2026-11-03 按 ADR-0039 收窄 + ADR-0035 新增 `P0-MARKDOWN-006` 同步）。
 > ⚠️ **macOS 产物未签名、未公证**（本仓无 Apple 凭据）⇒ 首次打开会遇到 **Gatekeeper 警告**。
 > **「V1.0 正式发布」的门槛未变**（ADR-0020 §2 未被取代）= PRD P0 范围 + 发布评审 18 项验收全部通过
 > （三平台真机矩阵、UX Score ≥ 92 实测、30 任务效率 Gate、签名公证等）；
@@ -94,9 +94,10 @@ mellow/
 
 ### 判决（ADR）
 
-见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ **ADR-0038**（**最新编号以该目录为准**）。
+见 [docs/adr/](docs/adr/)：ADR-0001（MarkEdit 核心）~ **ADR-0040**（**最新编号以该目录为准**）。
 其中 **ADR-0020 §1 与 ADR-0024 Q2=B1 的「pre-release」结论已被 [ADR-0031](docs/adr/ADR-0031-release-status-promotion.md)（发布状态转正：正式发布）取代** ——
 旧 ADR 原文**保留为历史记录**（ADR 只追加、不改写结论）；**引用发布状态时以 ADR-0031 为准**。
+（**2026-11-03**：[ADR-0039](docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md) 再取代 ADR-0024 **Q2=B1 的残余效力**（ux-gate 逐项前置 → 收窄为 `P0-QA-001` 单点承载）；**Q1=A3 继续有效**。）
 
 > ⚠️ **2026-10-08 更正（审计 §4.155）**：本页「文档索引」有两处**清单漂移**，已修：
 > ① **法律（Specs）** 表漏了 `performance-benchmark-spec.md`（**9/10**）—— 索引应**穷举** `docs/specs/`；

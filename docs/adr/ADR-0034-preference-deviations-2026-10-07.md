@@ -1,6 +1,6 @@
 # ADR-0034 — 偏好矩阵的 **9 项**「未登记的待裁决偏离」（**默认值轴 5 + 行为轴 4**）
 
-**Status:** **Proposed**（2026-10-07）—— 待裁决。
+**Status:** **Accepted**（2026-11-03，**用户裁决**）—— 已裁决（12 问逐项结论见文末「裁决」节）。
 
 > **⚠️ 2026-10-11 更正（审计 §4.297；只追加，不改写原文）**：**标题里的计数已过期**。
 > 「**9 项（默认值轴 5 + 行为轴 4）**」是 **2026-10-07 的快照** —— 当时行为轴 5 项（含 `noLegacyMath`）、
@@ -76,11 +76,14 @@
 
 | # | Typora 键 | Typora 默认 | Mellow 设置 id | Mellow 默认 | 可感知差异 |
 |---|---|---|---|---|---|
-| Q1 | `enableHighlight` | `false` | `markdown.highlight` | **`true`** | `==文字==` 在 Mellow 渲染成**高亮**；Typora 默认按**字面文本**显示 |
-| Q2 | `enableSubscript` | `false` | `markdown.supSub` | **`true`** | `~文字~` 在 Mellow 渲染成**下标**；Typora 默认字面显示 |
-| Q3 | `enableSuperscript` | `false` | `markdown.supSub` | **`true`** | `^文字^` 在 Mellow 渲染成**上标**；Typora 默认字面显示 |
-| Q4 | `enableDiagram` | `false` | `markdown.mermaid` | **`true`** | ```` ```mermaid ```` 在 Mellow 渲染成**图**；Typora 默认按**代码块**显示（需在偏好里开启） |
-| Q5 | `zoomByMouse` | `false` | `editor.cmdWheelZoom` | **`true`** | Mellow 下 `Cmd/Ctrl+滚轮`**直接缩放**；Typora 默认不响应 |
+| Q1 | `enableHighlight` | `false` | `markdown.highlight` | **`false`** | （2026-11-03 裁决后）**已对齐**：`==文字==` 默认按字面文本显示（原 Mellow 默认渲染成高亮） |
+| Q2 | `enableSubscript` | `false` | `markdown.subscript` | **`false`** | （裁决后）**已对齐**：`~文字~` 默认字面显示（原 `markdown.supSub` 合并项已拆分，默认渲染下标） |
+| Q3 | `enableSuperscript` | `false` | `markdown.superscript` | **`false`** | （裁决后）**已对齐**：`^文字^` 默认字面显示（原合并项已拆分，默认渲染上标） |
+| Q4 | `enableDiagram` | `false` | `markdown.mermaid` | **`false`** | （裁决后）**已对齐**：```` ```mermaid ```` 默认按代码块显示（原 Mellow 默认渲染成图） |
+| Q5 | `zoomByMouse` | `false` | `editor.cmdWheelZoom` | **`false`** | （裁决后）**已对齐**：`Cmd/Ctrl+滚轮`默认不缩放（`Cmd+=/-/0` 仍在） |
+
+> **⚠️ 本表已于 2026-11-03 随裁决同步**（原「Mellow 默认」列是**裁决前**快照：五项均 `true`；Q2/Q3 的 id 是合并项 `markdown.supSub`）。
+> 判据（`verify-settings-contract.mjs`）逐行核对本表第 4/5 列 == `packages/settings/src/index.ts` 的 `defaultValue` ⇒ 本表是**当前事实**，历史见「裁决」节。
 
 **一手证据（本机 Typora 1.14.9 build 7785）**：`TypeMark/appsrc/window/frame.js` 的 `DEFAULT_OPTIONS`
 含 `enableHighlight:!1` / `enableSubscript:!1` / `enableSuperscript:!1` / `enableDiagram:!1` / `zoomByMouse:!1`
@@ -411,7 +414,29 @@ Typora 的面板键 `quitAfterWindowClose`（组 **"Quit"**，**仅 macOS 显示
 
 ## 裁决
 
-**待裁决（12 问：Q1–Q8、Q10、Q11、Q12、Q13；Q9 已由取证排除）。** 裁决后请：
+**已裁决（2026-11-03，用户拍板；12 问：Q1–Q8、Q10、Q11、Q12、Q13；Q9 已由取证排除）——**
+**默认值轴全部翻转对齐 Typora**（用户明确「全部翻转对齐 Typora」，其中 **Q4 覆盖了本 ADR 自己的建议 C2**，
+采 **C1**：mermaid 默认改 `false`）；**行为轴全部采纳本 ADR 建议**（Q6/Q7/Q8/Q10/Q13 = 维持现状 + 登记 `D`，
+Q11/Q12 = 新增开关 + 默认对齐 Mellow 现状侧）。逐问结论：
+
+| 问 | 裁决 | 落地（已实施 / 施工批次） |
+|---|---|---|
+| Q1 | **A1** 默认 `true → false` | ✅ `packages/settings/src/index.ts` + `packages/editor-engine/src/config.ts`；矩阵 `deviation` 已删（默认已对齐） |
+| Q2/Q3 | **B1** 拆分 `markdown.supSub` → `markdown.subscript` / `markdown.superscript`，默认均 `false` | ✅ 设置 schema + 引擎 `EngineFeatureConfig` + i18n 双键 + 登记表拆分 |
+| Q3（补充） | 开关必须**真的关得掉**（「裁决前提」第二半） | ✅ `buildInlineExtrasExtension({ highlight, sub, sup })` 按开关过滤；挂载例外表已清空 |
+| Q4 | **C1** 默认 `true → false`（⚠️ 覆盖本 ADR 建议 C2，用户明示「全部翻转对齐 Typora」） | ✅ 同上；矩阵 `deviation` 已删 |
+| Q5 | **D1** 默认 `true → false` | ✅ `editor.cmdWheelZoom` 默认 `false`；滚轮桥改走 `readBoolSetting`（未设 = 关） |
+| Q6 | **A2** 维持恒转义 + 登记 `D-AP` | `D` 表已声明（互操作性取向） |
+| Q7 | **A2** 维持恒相对 + 登记 `D-AQ` | `D` 表已声明（可移植性取向） |
+| Q8 | **A2** 维持 LaTeX 源码 + 登记 `D-AR`（A1「SVG 复制」留作独立工作项） | `D` 表已声明 |
+| Q10 | **A2** 维持同时展示 + 登记 `D-AS` | `D` 表已声明（超集形态，交互差异同 `D-AG`） |
+| Q11 | **A2** 新增开关 + 默认关（= 现状）；登记 `D-AT` | 实装 = 施工批次（开关 `export.openExportLocation` + 导出后 `reveal` 接线） |
+| Q12 | **A2** 新增开关 + 默认**不退出**（对齐 Typora / macOS 惯例）；登记 `D-AU` | 实装 = 施工批次（Rust `ExitRequested` + `prevent_exit`，⚠️ 不得破坏 dirty 确认门；Dock 点击重开窗） |
+| Q13 | **A2** 维持 keep-original + 登记 `D-AV`（开关缺口保留 `gap`，可自主实施） | `D` 表已声明 |
+
+⚠️ 发布说明义务（本 ADR 既定）：Q1–Q5 的**默认值变更**须在 `.github/release-notes-v<版本>.md` 逐条写明。
+
+以下 ①–④ 为裁决同步清单，**已于 2026-11-03 全部执行**：
 
 > ⚠️ **Q11 / Q12 / Q13 的登记面与 Q1–Q10 不同**：Q1–Q10 来自**偏好矩阵**
 > （`typora-preferences-matrix.json`，范围 = `frame.js` 的 `DEFAULT_OPTIONS`）；
@@ -428,3 +453,9 @@ Typora 的面板键 `quitAfterWindowClose`（组 **"Quit"**，**仅 macOS 显示
    行为轴的 `disposition.kind` 改 `deliberate`（并给 `D-`+编号）或 `gap`（并给台账 id）；
 ③ 从门禁 `PENDING_ADRS` 移入 `DECIDED_ADRS`；
 ④ 审计登记表第 17 行改为「已裁决」。
+
+> ✅ **2026-11-03 执行记录**：①②③④ 已落地 —— 矩阵 5 条 `deviation` 已删（默认值已对齐 Typora，
+> 无偏离可登记）；5 条行为轴 `disposition.undecided` 改 `deliberate → D-AP…D-AV`；
+> 面板独有键 3 条的 `adr-pending` 改 `not-implemented`（Q11/Q12）与维持 `gap`（`no_image_move_for_local`）；
+> `presetSpellCheck` 归 **ADR-0038** 裁决（C）；`PENDING_ADRS` 已清空本 ADR 并移入 `DECIDED_ADRS`；
+> 登记表第 17 行处置已改「已裁决」。

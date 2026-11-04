@@ -66,7 +66,7 @@ Release verdict: NO-GO：6 项未闭环
 
 | # | 出处 | 裁决问题 | 处置 | 载体 |
 |---|---|---|---|---|
-| 1 | §3（2026-09-29） | `AUTO` 是否阻断发布 / `ux-gate` 是否逐项前置 | **已裁决**（A3 / ~~B1~~）⚠️ **2026-10-06 更正**：`Q2 = B1`（保持 pre-release）**已被 `ADR-0031` 取代**（「取代：ADR-0024 的 Q2 = B1」）⇒ 本行的 `B1` 是**历史值**，**`Q1 = A3` 继续有效**（ADR-0031 明示「不取代 Q1=A3」） | `docs/adr/ADR-0024-release-closure-semantics.md`；**取代者** `docs/adr/ADR-0031-release-status-promotion.md` |
+| 1 | §3（2026-09-29） | `AUTO` 是否阻断发布 / `ux-gate` 是否逐项前置 | **已裁决**（A3 / ~~B1~~）⚠️ **2026-10-06 更正**：`Q2 = B1`（保持 pre-release）**已被 `ADR-0031` 取代**（「取代：ADR-0024 的 Q2 = B1」）⇒ 本行的 `B1` 是**历史值**，**`Q1 = A3` 继续有效**（ADR-0031 明示「不取代 Q1=A3」）；⚠️ **2026-11-03 再更正**：**`Q2 = B1` 的残余效力（ux-gate **逐项**前置）已被 `ADR-0039`（Accepted，**用户裁决「收窄」**）取代** ⇒ `ux-gate` 只由 `P0-QA-001` 单点声明；**`Q1 = A3` 继续有效**（规则不删，只对仍声明 ux-gate 的项适用）。 | `docs/adr/ADR-0024-release-closure-semantics.md`；**取代者** `docs/adr/ADR-0031-release-status-promotion.md` |
 | 2 | §3.1 | `P0-PERF-001` 的 5 项口径中有两项是否开放 | **已由 PRD 判定**（宪法已判，无需裁决） | `已处置`（§3.1 记录依据） |
 | 3 | §4.3 | 远程图片默认值（安全相关默认值） | **已由两处独立一手证据判定**（Typora 始终加载远程图片且无退出选项） | `已处置`（§4.3 记录 `frame.js` 的 `DEFAULT_OPTIONS`） |
 | 4 | §4.4 | **安全验收是否应进入台账**（新增安全域与条目） | **已裁决**（B2：不新增，改在验收文档单列） | `docs/adr/ADR-0029-audit-pending-decisions-registry.md`（Q2） |
@@ -82,11 +82,13 @@ Release verdict: NO-GO：6 项未闭环
 | 14 | §4.95 | **零跨包消费者的包**去留 —— ⚠️ **2026-10-08 更正（审计 §4.160）**：原文写「**3 个零跨包消费者的包**（`document-model` / `shared` / `workspace`）」，而实测是 **4 个**（`PKG_NO_CONSUMER_EXEMPT` 四条 = 上述三个 + **`editor-react`**）⇒ **原表述把「3 个待裁决的」写成了「3 个零消费者的」**（数量对、**对象错**）。**待裁决的仍是 3 个**；`editor-react` 是**有意预留**（契约 re-export；组件化 UI 见阶段 2 计划）⇒ **不待裁决**。其中 `document-model` 涉及 **ADR-0008 的落地实现整体未被采用** | **已裁决（2026-10-06）= C3：保留 + 记录理由与触发条件** —— **按 `AGENTS.md`「不要自行修改架构，先报告冲突」不自行改**（该条比常设授权更具体因而优先）；触发条件已写明（`document-model` 需替代设计或新 ADR；`shared`/`workspace` 若仍无消费者可在专门架构裁决中删除） | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q3） |
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
-| 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **待裁决（10 问）** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`）⚠️ **2026-10-09 更正（审计 §4.202）**：本行写的「默认值轴 **5** 项 / 行为轴 **5** 项」是**当时**的计数 —— 实际**默认值轴 4 项**（本行列的就是 4 个）· **行为轴 4 项**（`noLegacyMath` 已由 `ADR-0034` 的取证**排除**，见该 ADR「Q9」节）⇒ **实际 8 问**（`ADR-0034` 的 Q1–Q13 去掉合并的 Q2/Q3 与已排除的 Q9）。⚠️ **2026-10-11 更正（审计 §4.297）**：上句的「**实际 8 问**」**也不准** —— 它沿用了「行为轴 **4** 项」这个**当时**的口径，而行为轴实际是 **7 项**（Q6 / Q7 / Q8 / Q10 / Q11 / Q12 / Q13）。实测（数 `ADR-0034` 的 `## Q<N>` 小节）= **12 问**；按**独立设置项**数是 **11**（默认值轴 4 + 行为轴 7）。**本行其余内容（待裁决、载体）不受影响。** | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
-| 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **待裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
-| 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **待裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
-| 20 | §4.250–§4.252 | **PDF 导出比 HTML 导出少 10 类能力**：① 公式与图表（`PdfEnv.renderMath` / `renderMermaid` 调用点未提供 ⇒ 降级为源码）；② **核心语法**（嵌套列表层级全丢 / 有序列表变无序且丢起始号 / 任务列表 checkbox 丢失 / 嵌套引用拍平 / 硬换行变空格 / 链接整条丢失 / autolink 字面 / **代码块语言被解析但未消费 ⇒ 无语言标识**）。台账 `P0-EXPORT-001` 已如实改为 `IMPL` | **待裁决** —— 两条路都能修，但成本差一个量级：A1 给 pdfmake 补 webview 栅格化渲染器（+100–200 行、位图、本机不可验）；A2 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml`，实跑确认含 `<math>` / mermaid / 内联图片，且**核心语法全部正确** ⇒ 一次性解决 10 类）；A3 维持现状 + 明说文案。**换 PDF 引擎属架构级改动** ⇒ 未自行改 | `docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md` |
-| 21 | §4.328 | **拼写检查的「语言 / 词典」能力**：Typora 有一整套**语言包管理**（按语言下载/安装/切换词典 + 4 种状态提示，一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 **10 条** key）；而 Mellow 用**系统** `NSSpellChecker`（词典与语言由 **OS** 提供）⇒ 「选语言」在 macOS 的惯用位置是**系统设置**。同批还有两条小缺口：**代码/链接内检查的开关**（排除已实现、开关无）与 **自动纠正拼写**（其所需 API 在 `objc2-app-kit` 0.3.2 中**不存在**、且对 WKWebView 无效 ⇒ 属**不可实现**而非「未做」） | **待裁决** —— A 维持系统拼写检查（登记为平台惯用等价物）· B 复刻语言包管理（新增词典下载子系统）· C 折中（只读语言 + 打开系统设置入口 + 给代码/链接检查加开关）。⚠️ **未擅自改任何用户可见行为**；矩阵三条 `gap` 的说明此前引用「依赖 `host-api` 的拼写词典能力（`P0-EDITOR-005`）」—— 而该项**已 `IMPL`**（消费方已落地）⇒ **理由已过期**，故 `presetSpellCheck` 的 `disposition` 改指本 ADR | `docs/adr/ADR-0038-spellcheck-dictionary-language.md` |
+| 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **已裁决** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`）⚠️ **2026-10-09 更正（审计 §4.202）**：本行写的「默认值轴 **5** 项 / 行为轴 **5** 项」是**当时**的计数 —— 实际**默认值轴 4 项**（本行列的就是 4 个）· **行为轴 4 项**（`noLegacyMath` 已由 `ADR-0034` 的取证**排除**，见该 ADR「Q9」节）⇒ **实际 8 问**（`ADR-0034` 的 Q1–Q13 去掉合并的 Q2/Q3 与已排除的 Q9）。⚠️ **2026-10-11 更正（审计 §4.297）**：上句的「**实际 8 问**」**也不准** —— 它沿用了「行为轴 **4** 项」这个**当时**的口径，而行为轴实际是 **7 项**（Q6 / Q7 / Q8 / Q10 / Q11 / Q12 / Q13）。实测（数 `ADR-0034` 的 `## Q<N>` 小节）= **12 问**；按**独立设置项**数是 **11**（默认值轴 4 + 行为轴 7）。**本行其余内容（待裁决、载体）不受影响。** **已裁决（2026-11-03，用户拍板）**：默认值轴（Q1/Q2/Q3/Q4/Q5）**全部翻转对齐 Typora**（highlight / subscript / superscript / mermaid / cmdWheelZoom 默认 false；Q2/Q3 拆 supSub 为两开关）；行为轴（Q6/Q7/Q8/Q10/Q13）= 维持 Mellow 行为 + 登记 D（D-AP/D-AQ/D-AR/D-AV）；Q11/Q12 = 新增开关（默认关 / 默认不退出，待施工 D-AT/D-AU）；Q9 已取证排除。逐项见 ADR-0034「裁决」节。 | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
+| 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **已裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） **已裁决（2026-11-03，用户拍板）= A1**：预览与导出**都渲染加粗**（偏离 CommonMark，属有意对齐 Typora；Source Fidelity 不变）。验收载体 = 台账新增 `P0-MARKDOWN-006`；施工 = 批次 A35。 | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
+| 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **已裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** **已裁决（2026-11-03，用户拍板）= A1**：只修「开关关不掉」（3 个 option-unwired 接线 + 共用挂载行按子开关过滤）；6 个未实现导出语法**不**随 A1 补齐（留待独立裁决）。施工 = 批次 A36。 | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
+| 20 | §4.250–§4.252 | **PDF 导出比 HTML 导出少 10 类能力**：① 公式与图表（`PdfEnv.renderMath` / `renderMermaid` 调用点未提供 ⇒ 降级为源码）；② **核心语法**（嵌套列表层级全丢 / 有序列表变无序且丢起始号 / 任务列表 checkbox 丢失 / 嵌套引用拍平 / 硬换行变空格 / 链接整条丢失 / autolink 字面 / **代码块语言被解析但未消费 ⇒ 无语言标识**）。台账 `P0-EXPORT-001` 已如实改为 `IMPL` | **已裁决** —— 两条路都能修，但成本差一个量级：A1 给 pdfmake 补 webview 栅格化渲染器（+100–200 行、位图、本机不可验）；A2 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml`，实跑确认含 `<math>` / mermaid / 内联图片，且**核心语法全部正确** ⇒ 一次性解决 10 类）；A3 维持现状 + 明说文案。**换 PDF 引擎属架构级改动** ⇒ 未自行改 **已裁决（2026-11-03，用户拍板）= A2**：PDF 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml` + printToPdf）⇒ 一次性解决 10 类差距。施工 = 批次 A37；`P0-EXPORT-001`（现 `IMPL`）实施验收后回闭环。 | `docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md` |
+| 21 | §4.328 | **拼写检查的「语言 / 词典」能力**：Typora 有一整套**语言包管理**（按语言下载/安装/切换词典 + 4 种状态提示，一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 **10 条** key）；而 Mellow 用**系统** `NSSpellChecker`（词典与语言由 **OS** 提供）⇒ 「选语言」在 macOS 的惯用位置是**系统设置**。同批还有两条小缺口：**代码/链接内检查的开关**（排除已实现、开关无）与 **自动纠正拼写**（其所需 API 在 `objc2-app-kit` 0.3.2 中**不存在**、且对 WKWebView 无效 ⇒ 属**不可实现**而非「未做」） | **已裁决** —— A 维持系统拼写检查（登记为平台惯用等价物）· B 复刻语言包管理（新增词典下载子系统）· C 折中（只读语言 + 打开系统设置入口 + 给代码/链接检查加开关）。⚠️ **未擅自改任何用户可见行为**；矩阵三条 `gap` 的说明此前引用「依赖 `host-api` 的拼写词典能力（`P0-EDITOR-005`）」—— 而该项**已 `IMPL`**（消费方已落地）⇒ **理由已过期**，故 `presetSpellCheck` 的 `disposition` 改指本 ADR **已裁决（2026-11-03，用户拍板）= C**：系统拼写检查 + 应用内**只读语言展示** + 「打开系统拼写设置」入口 + 新增 `editor.spellcheckForCodeAndLink`（默认关）。`autoCorrectMisspell` 登记**不可实现**。施工 = 批次 A38；矩阵 `presetSpellCheck` disposition 改指 **D-AW**。 | `docs/adr/ADR-0038-spellcheck-dictionary-language.md` |
+| 22 | §4.352（2026-11-03 本批） | **UX Gate 策略**：人工体验 Gate（30 计时任务 + UX Score ≥92）是**逐项**前置（ADR-0024 Q2=B1 残余效力），还是**单点**承载 | **已裁决（2026-11-03，用户拍板）= 收窄**：`ux-gate` 只由 `P0-QA-001` 声明与承载；其余 6 项（`P0-EDITOR-001` / `P0-EDITOR-003` / `P0-SHELL-001` / `P0-MENU-001` / `P0-EDITOR-004` / `P0-LAYOUT-002`）不再被这条全局策略挂起 → 落 AUTO（不升 PASS-E）。A3 规则**保留**（只对仍声明 ux-gate 的项适用）。取代 ADR-0024 **Q2=B1** 的残余效力 | `docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md` |
+| 23 | §4.352（2026-11-03 本批） | **内置主题与 Typora 同名而外观不同**（G7-TYPO-05）：master-plan §5.6 自 2026-09-13 写「待裁决」而登记表**一行都没有** ⇒ 违反「待裁决项必须有 ADR 载体」——本行是**补登记**（§4.328/§4.329 同型欠债）。`newsprint` 观感不同 / `whitey` 接近 / `gothic` **明暗相反**（Typora 浅 #fcfcfc vs Mellow 深 #17141f），且 Mellow 无 `night` | **待裁决** —— 选项 A 改原创名 + 存储迁移（起草建议）/ B 改配色对齐（与 §6.2 不变量 10「不复制 Typora 专有资源」**冲突**，须先有新 ADR 取代它）/ C 维持现状。**未擅自改名、未擅自改配色、未动用户已保存的主题选择** | `docs/adr/ADR-0040-theme-name-appearance-divergence.md` |
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
 ### 2.1 三项**自身证据已齐备**，只被全局策略挡住
@@ -96,12 +98,11 @@ Release verdict: NO-GO：6 项未闭环
 | `P0-EDITOR-004` | MAC | unit / macos / windows-ci / linux-ci / **ux-gate** | 三平台 Runtime 证据已取得（Linux IME 矩阵 8/8、Windows Source Fidelity + SendKeys 读回、macOS launch/CLI-open）。原文：「状态仍不升 PASS-E：**全局策略要求 PASS-E 必须带 ux-gate**，而 ux-gate-recorder 按设计只接受人工计时记录」 |
 | `P0-PLATFORM-001` | **AUTO** | macos-native / windows-ci / linux-ci / linux-ime-matrix | 原文：「本项 requiredEvidence（macos-native / windows-ci / linux-ci / linux-ime-matrix）至此**已全部取得**。状态仍维持 IMPL：PASS-E 全局策略额外要求 ux-gate」 |
 | `P0-LAYOUT-002` | BLOCKED | unit / macos / windows-ci / linux-ci / visual-golden | 三平台 × 3 类基线全部入库并进入比对模式，三平台各 3 个脚本均报 match。原文：「**本项自身 requiredEvidence 已齐备**，但 PASS-E 全局策略要求 `ux-gate`，需人工计时会话（P0-QA-001）」 |
-
-> **⚠️ 更正（2026-10-12，审计 §4.330）**：`P0-PLATFORM-001` 的台账状态已是 **`AUTO`**（三平台 Runtime 证据齐备、`requiredEvidence` 不含 `ux-gate`）⇒ 本项**已闭环**、**不在**未闭环清单里 ⇒ 本表标题的「**三项**」现为 **2 项**（`P0-EDITOR-004` / `P0-LAYOUT-002`）。
+> **⚠️ 更正（2026-10-12 审计 §4.330；2026-11-03 ADR-0039 后扩）**：本表是 **2026-09-25 快照**，状态列三值均已过期。现台账：`P0-PLATFORM-001` **AUTO**（三平台 Runtime 证据齐备、`requiredEvidence` 不含 `ux-gate`）；`P0-EDITOR-004` **AUTO**、`P0-LAYOUT-002` **AUTO**（三平台证据早已取得 ⇒ ADR-0039 收窄后不再被 ux-gate 策略挂起，**不升 PASS-E**）⇒ 本表「**三项**」全部闭环，「只被全局策略挡住」这一节的前提已随 ADR-0039 消失。
 
 **⚠️ 状态码本身在误导**：`MAC 仅单平台` / `IMPL` 会让人以为「缺平台证据」，
 实际缺的是**人工 UX Gate 会话**。本次审计已把原因变成机器可读字段 `blockedBy`，
-门禁输出改为 `P0-EDITOR-004(MAC — ux-gate-policy)`。
+门禁输出改为「id（阻塞原因）」形态（当时该串为 `P0-EDITOR-004`（`ux-gate-policy`））。
 
 ### 2.2 其余三项
 
@@ -115,15 +116,20 @@ Release verdict: NO-GO：6 项未闭环
 
 > **`ux-gate` 是否必须是*每一项* PASS-E 的前置？**
 
-- 若「是」（现状）：6 项全部要等同一场人工 UX Gate 会话；证据齐备的三项也只能停在
-  各自的状态：`P0-EDITOR-004`（`MAC`）/ `P0-PLATFORM-001`（**`AUTO`**，⚠️ **2026-10-12：已闭环**）/ `P0-LAYOUT-002`（`BLOCKED`）。
-- 若「仅 `P0-QA-001`（验收域）需要」：上述三项可凭**已取得的证据**升 PASS-E，
-  未闭环从 6 项降到 3 项（`P0-QA-001` 仍需人工会话；`P0-EDITOR-005` 仍需实现；
+- 若「是」（**2026-09-25 当时的现状**）：6 项全部要等同一场人工 UX Gate 会话；证据齐备的三项也只能停在
+  各自当时的状态：`P0-EDITOR-004`（单平台态）/ `P0-PLATFORM-001`（**`AUTO`**，⚠️ **2026-10-12：已闭环**）/ `P0-LAYOUT-002`（视觉基线未入库时点）。
+- 若「仅 `P0-QA-001`（验收域）需要」：上述三项可凭**已取得的证据**收口，
+  未闭环显著下降（`P0-QA-001` 仍需人工会话；`P0-EDITOR-005` 仍需运行时验证；
   `P0-PERF-001` 仍需口径裁决）。
 
-该策略是 `docs/plans/typora-parity-master-plan.md` §8 的明示设计
-（「任何 PASS-E 项的 requiredEvidence 必须含三平台真机 + ux-gate；硬失败」），
-**属方案级决策，本环境不擅自改动**；改与不改都需要你裁决。
+> **⚠️ 裁决（2026-11-03，用户拍板 = ADR-0039「收窄」）**：采**下法** —— `ux-gate` 只由 `P0-QA-001`
+> 单点声明与承载；`P0-EDITOR-004` / `P0-PLATFORM-001` / `P0-LAYOUT-002` 等凭已取得证据落 **AUTO**
+> （**不升 PASS-E** —— PASS-E 仍要求三平台证据 + 体验结论）。未闭环由当时的规模降到 **5 项**（含新增
+> `P0-MARKDOWN-006`）。master-plan §8 的该句设计同步挂 ADR-0039 收窄注。
+
+该策略曾是 `docs/plans/typora-parity-master-plan.md` §8 的明示设计
+（「任何 PASS-E 项的 requiredEvidence 必须含三平台真机 + ux-gate；硬失败」）——
+**属方案级决策，本环境不擅自改动**；改与不改都需要你裁决。⇒ **2026-11-03 已裁决（ADR-0039），见上方注。**
 
 > **2026-09-29 更新：已收敛为 ADR，待裁决。**
 > 本节的两项（`AUTO` 是否阻断、`ux-gate` 是否逐项前置）连同 §3.2 的 PRD-现实冲突，
@@ -22466,6 +22472,66 @@ tests/parity/tmp-probe-345.mjs 里的**裸 `§4.N`** …但审计文档没有该
    **恰好就是 §4.346 记过的形态**（注释里的键名引用被当证据）—— **记过 ≠ 会遵守**。
 
 ⇒ 同族「只锁了一半」累计 **第 179 次**（§4.170–§4.350）。
+
+## 4.352 五份 ADR **一次性收口**（0034–0038）+ **ADR-0039/0040 新增** —— 「Batch 0 治理翻转」全链（2026-11-03）
+
+### 一、本批做了什么（用户授权：AskUserQuestion 逐项拍板）
+
+五份 Proposed ADR 全部由用户裁决转 **Accepted**，并新增两份：
+
+| ADR | 裁决 | 落地 |
+|---|---|---|
+| ADR-0034 偏好偏离 | **默认值轴全部翻转对齐 Typora**（用户**推翻**了 ADR 自己的 C2 建议）：highlight / subscript / superscript / mermaid / cmdWheelZoom 默认 **false**；`supSub` **拆分**为两个开关（Q4 用户选 C1）。行为轴 Q6/Q7/Q8/Q10/Q13 维持 Mellow + 登记 **D-AP…D-AV**；Q11/Q12 新增开关（**D-AT/D-AU 待施工**）；Q9 取证排除 | `packages/settings`（schema 默认值 + supSub 拆分）、`i18n`（两语言文案）、`editor-engine/config.ts`（`DEFAULT_ENGINE_FEATURES` + **legacy supSub 一次性迁移**，聚合 JSON 与 per-key 两通道都迁）、`App.tsx`（localStorage 迁移 + cmdWheelZoom 桥默认 false）、矩阵 5 条 `deviation.undecided` **删除**（默认已对齐）+ 6 条 `disposition.undecided` → **deliberate→D 行**（矩阵 0 undecided） |
+| ADR-0035 CJK 行内强调 | **A1**：预览与导出**都渲染加粗**（偏离 CommonMark，有意对齐 Typora） | 台账**新增 `P0-MARKDOWN-006`**（ABSENT，批次 A35 施工）⇒ **P0 基线 50→51**；`LEDGER_P0_BASELINE` 同步 |
+| ADR-0036 导出路径语法 | **A1**：只修「开关关不掉」，6 个未实现导出语法**不**补齐 | `export-feature-parity.json` 行随 supSub 拆分重写；`inlineExtras` 按子开关过滤（批次 A36 施工项已在 ref 中挂账） |
+| ADR-0037 PDF 渲染路径 | **A2**：PDF 改用 HTML 打印管线（`buildPrintHtml` + printToPdf） | 批次 A37 施工；`P0-EXPORT-001` blockedBy 改挂 ADR-0037 裁决后的施工编号 |
+| ADR-0038 拼写词典 | **C**：只读语言展示 + 系统设置入口 + `spellcheckForCodeAndLink` 开关；`autoCorrectMisspell` 登记**不可实现** | 批次 A38 施工；矩阵 `presetSpellCheck` disposition → **D-AW** |
+| **ADR-0039（新增）** ux-gate 收窄 | **用户裁决「仅 `P0-QA-001` 需要人工 Gate」** —— 取代 ADR-0024 **Q2=B1 的残余效力**；**Q1=A3 保留** | 6 项「证据齐备但被策略挂着」→ AUTO（**不升 PASS-E**）；门禁移除「PASS-E 全局必含 ux-gate」断言（三平台证据组断言保留）；`closedViaAuto` 保留；未闭环 **10→5**、`P0-EDITOR-004` MAC→AUTO、`P0-LAYOUT-002` BLOCKED→AUTO |
+| **ADR-0040（新增）** 主题名称分歧 | **Proposed**（G7-TYPO-05 自 2026-09-13 写「待裁决」而登记表无载体 ⇒ 补载体，§4.328/§4.329 同型） | 登记为 `PENDING_ADRS` 唯一残留 ⇒ 门禁 `Pending decisions: ADR-0040`（**诚实的 1 项**，不谎报「无」） |
+
+### 二、护栏联动（**协调改动**清单，全部现跑转绿）
+
+本批把「待裁决」从 5 清零为「1（ADR-0040）」，联动 **9 处**护栏/夹具基线，任何一处漏改都会红：
+`DECIDED_ADRS` +5、`PENDING_ADRS` 重写、`ROWS_BASELINE` 21→**23**（登记表第 22/23 行）、
+`LEDGER_P0_BASELINE` 50→**51**、矩阵 resolvesRef 的 canary 从 `isProposed('ADR-0034')` 改锚 **ADR-0040**、
+`checkedRefs` 防空转下限 8 由 6 条新 D 载体（D-AP…D-AW 中 6）+ D-AK/D-AO 补足、
+**⑲ 字段契约退役 `pendingRef`**（三条 `adr-pending` 行全部改判 ⇒ 契约双向锁必须同步删声明 ——
+「**契约与事实同批改**」正是 ⑲ 自述的根因防线）、settings-contract 两条「还有 undecided」活体探针
+按其**自述指令**退役为 deliberate 探针、Closure basis 行**追加式**改写（保住 6 条字符串锁中的
+精确匹配项）。**「PASS-E 口径」未被本批放宽**（PASS-E 仍 0/51，§8 Exit Gate 正交）。
+
+### 三、⚠️ 顺带抓到：**墙钟基准测试在并发下饿死**（环境性，非本批回归）
+
+`pnpm test`（`workspace-concurrency=4`）里 `packages/app-core` 的 **T4** `sidebar-bench`
+（预算 10000ms）报 **13.5–15.9s** 失败；**单独跑 812ms、串行全量（concurrency=1）全绿**。
+本批不碰 `FileListModel`（diff 可复核）⇒ 判定为**并发 CPU 饿死墙钟断言**，
+与 §4.348「观测窗口做成可测量」同族（计时类判据对调度噪声敏感）。
+**处置**：本批**不改**基准（改预算=放宽判据，需专门裁决）；**如实登记**：`pnpm test` 并行口径下
+T4 可能假红，串行口径 297/297 全绿为**权威结果**；后续若 CI 也出现同型假红，再单独立条裁决
+（选项：`--runInBand` 仅对该套件 / 预算随负载自适应 / 单调时钟预算换算）。
+
+### 四、文档面同步（⑨/⑨b/㊿ 的「声称当前」全链）
+
+快照句「当前状态真值源」在 **README + 14 份文档**逐处同步为 `PASS-E = 0/51`、未闭环 **5 项**、
+待裁决 **1 项（ADR-0040）**；带日期的历史记录按本仓惯例**保留原文 + 更正块**（§4.328 修法）；
+`docs/specs/runtime-qualification-plan.md` §6 的逐条状态表按 ADR-0039/0037 复核更新
+（`（2 条未闭环）` 锚保持 `verify-runtime-qualification-workflow.mjs` 的判据形态）；
+§2.1/§三 两处**活节**状态转述补「2026-11-03 复核」注（㊿ R2 的 id→状态词配对按现台账修正）；
+master-plan §11.2 看板、§15.1 真值源行、§14 输出行同步；**加粗配对扫描面 177→179**
+（新增 ADR-0039/0040 两份 .md，按该判据「每次改都要写清是哪份文件」的变更记录纪律登记）。
+
+### 五、验证（统一规则 17）
+
+- `verify-release-gate.mjs` exit 0：`NO-GO：5 项未闭环`（逐项为**真实缺口**：perf harness / PDF 施工 /
+  拼写运行时验证 / 人工会话本身 / CJK 强调施工）、`Pending decisions: ADR-0040`、`实际 PASS-E = 0/51`。
+- `verify-parity-ledger.mjs` exit 0（基线 51；仪表板 ABSENT=1 / IMPL=2 / AUTO=46 / MAC=1 / NOT_TESTED=1）。
+- `verify-settings-contract.mjs` exit 0（含新登记的瞬态键 `mellow.engine.features.supSub` ——
+  一次性迁移的**读/删**对象，普查判据正确地要求它带理由登记）。
+- 全链 parity 守卫 24 份 + `typecheck:desktop` + 引擎 bundle 重建（`core-main-v1.5.34.js`，
+  config.ts 变更必须重打）+ `pnpm -r test`（`--workspace-concurrency=1`）**全绿 = 1923 项**（engine 1321 + 其余 11 包 602）。
+
+**产物**：`docs/adr/ADR-0039-*.md`（新）· `docs/adr/ADR-0040-*.md`（新）· 五份 ADR 转 Accepted ·
+台账/矩阵/面板键夹具/登记表/master-plan/README 及 14 份文档同步 · 9 处护栏协调改动（见二）。
 
 ## 五、本次审计做的改动（非策略性）
 

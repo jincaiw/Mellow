@@ -157,7 +157,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // **默认 false ⇒ 默认行为不变**（仍是输入时转换）。
       { id: 'editor.smartPunctuationOnRender', labelKey: 'settings.editor.smartPunctuationOnRender', type: 'toggle', storageKey: 'mellow.editor.smartPunctuationOnRender', defaultValue: false, descriptionKey: 'settings.editor.smartPunctuationOnRenderDesc', applyCommand: 'settings.smartPunctuation' },
       // Cmd/Ctrl+滚轮缩放（Typora 偏好→通用；实际字号仍走 editor.fontSize 单一真源）
-      { id: 'editor.cmdWheelZoom', labelKey: 'settings.editor.cmdWheelZoom', type: 'toggle', storageKey: 'mellow.editor.cmdWheelZoom', defaultValue: true, descriptionKey: 'settings.editor.cmdWheelZoomDesc' },
+      // ADR-0034 Q5 裁决（2026-11-03）：默认 true→**false** 对齐 Typora `zoomByMouse:!1`（易误触；
+      //  ⇧⌘= / ⇧⌘- / ⇧⌘0 三档缩放不受影响，D-Z 已登记）
+      { id: 'editor.cmdWheelZoom', labelKey: 'settings.editor.cmdWheelZoom', type: 'toggle', storageKey: 'mellow.editor.cmdWheelZoom', defaultValue: false, descriptionKey: 'settings.editor.cmdWheelZoomDesc' },
       { id: 'editor.typewriter', labelKey: 'settings.editor.typewriter', type: 'toggle', storageKey: 'mellow.editor.typewriter', defaultValue: false, applyCommand: 'view.typewriter.on' },
       { id: 'editor.focusMode', labelKey: 'settings.editor.focusMode', type: 'select', storageKey: 'mellow.editor.focusMode', defaultValue: 'off',
         options: [
@@ -195,12 +197,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     settings: [
       { id: 'markdown.slashCommands', labelKey: 'settings.markdown.slashCommands', type: 'toggle', storageKey: 'mellow.slashCommands.enabled', defaultValue: true, applyCommand: 'slash.toggleEnabled' },
       // 语法特性开关（PRD §94）：bundle loader 读取 mellow.engine.features（JSON）
-      { id: 'markdown.highlight', labelKey: 'settings.markdown.highlight', type: 'toggle', storageKey: 'mellow.engine.features.highlight', defaultValue: true, applyCommand: 'settings.engineFeature' },
-      { id: 'markdown.supSub', labelKey: 'settings.markdown.supSub', type: 'toggle', storageKey: 'mellow.engine.features.supSub', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      // ADR-0034 裁决（2026-11-03，用户拍板「默认值轴全部翻转对齐 Typora」）：
+      //   highlight / subscript / superscript / mermaid 默认 **false**（Typora 均 `!1`）；
+      //   `markdown.supSub` 合并项**拆分**为两个开关（Typora 是两个独立偏好，B1）。
+      { id: 'markdown.highlight', labelKey: 'settings.markdown.highlight', type: 'toggle', storageKey: 'mellow.engine.features.highlight', defaultValue: false, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.subscript', labelKey: 'settings.markdown.subscript', type: 'toggle', storageKey: 'mellow.engine.features.subscript', defaultValue: false, applyCommand: 'settings.engineFeature' },
+      { id: 'markdown.superscript', labelKey: 'settings.markdown.superscript', type: 'toggle', storageKey: 'mellow.engine.features.superscript', defaultValue: false, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.emoji', labelKey: 'settings.markdown.emoji', type: 'toggle', storageKey: 'mellow.engine.features.emoji', defaultValue: true, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.alerts', labelKey: 'settings.markdown.alerts', type: 'toggle', storageKey: 'mellow.engine.features.alerts', defaultValue: true, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.math', labelKey: 'settings.markdown.math', type: 'toggle', storageKey: 'mellow.engine.features.math', defaultValue: true, applyCommand: 'settings.engineFeature' },
-      { id: 'markdown.mermaid', labelKey: 'settings.markdown.mermaid', type: 'toggle', storageKey: 'mellow.engine.features.mermaid', defaultValue: true, applyCommand: 'settings.engineFeature' },
+      // ADR-0034 Q4 裁决（2026-11-03）：默认 true→**false** 对齐 Typora `enableDiagram:!1`
+      //   （```mermaid 默认按代码块显示，需在偏好里开启；能力不缺失，只是默认不渲染）
+      { id: 'markdown.mermaid', labelKey: 'settings.markdown.mermaid', type: 'toggle', storageKey: 'mellow.engine.features.mermaid', defaultValue: false, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.toc', labelKey: 'settings.markdown.toc', type: 'toggle', storageKey: 'mellow.engine.features.toc', defaultValue: true, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.footnote', labelKey: 'settings.markdown.footnote', type: 'toggle', storageKey: 'mellow.engine.features.footnote', defaultValue: true, applyCommand: 'settings.engineFeature' },
       { id: 'markdown.wikilink', labelKey: 'settings.markdown.wikilink', type: 'toggle', storageKey: 'mellow.engine.features.wikilink', defaultValue: true, applyCommand: 'settings.engineFeature' },

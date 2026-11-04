@@ -20,12 +20,21 @@
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {
-      "settingId": "markdown.supSub",
-      "syntax": "^上标^ / ~下标~",
+      "settingId": "markdown.subscript",
+      "syntax": "~下标~",
       "preview": "implemented",
       "html": "not-implemented",
       "pdf": "not-implemented",
-      "evidence": "预览：同上 :316；HTML 导出：实跑 = `<p>^上标^ 与 ~下标~</p>`",
+      "evidence": "预览：`packages/editor-engine/src/inlineExtras.ts`（`buildInlineExtrasExtension` 按开关过滤，`.mellow-md-sub`）；HTML 导出：实跑 = `<p>~下标~</p>`（字面）；PDF：行内 token 化只认 bold/italic/strike/code/link/image/math。ADR-0036 裁决 A1 = 只修「开关关不掉」，扩展语法补齐**不**随 A1 实施（留待后续独立裁决）",
+      "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
+    },
+    {
+      "settingId": "markdown.superscript",
+      "syntax": "^上标^",
+      "preview": "implemented",
+      "html": "not-implemented",
+      "pdf": "not-implemented",
+      "evidence": "预览：`packages/editor-engine/src/inlineExtras.ts`（`buildInlineExtrasExtension` 按开关过滤，`.mellow-md-sup`）；HTML 导出：实跑 = `<p>^上标^</p>`（字面）；PDF：行内 token 化只认 bold/italic/strike/code/link/image/math。ADR-0036 裁决 A1 = 只修「开关关不掉」，扩展语法补齐**不**随 A1 实施（留待后续独立裁决）",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {

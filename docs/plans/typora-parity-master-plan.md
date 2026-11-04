@@ -1243,12 +1243,16 @@ Typora 官方 CSS 语义 `p > img:only-child { display:block; margin:auto }`。C
    （指纹错配会静默加载旧引擎，是最危险的静默降级）。
 5. **NO-GO 清单只报告不抛错**：开发期必然存在未闭环项，护栏如实列出而非掩盖。
 
-**当前输出**（**2026-10-12 实跑**）：`NO-GO：10 项未闭环` ——
-`P0-EDITOR-001`、`P0-EDITOR-003`、`P0-EDITOR-004`（IME，仅 macOS，**MAC**）、`P0-SHELL-001`、`P0-MENU-001`、
-`P0-LAYOUT-002`（三平台视觉 Golden，**BLOCKED**）、`P0-EDITOR-005`（拼写检查词典，**IMPL**）、
-`P0-PERF-001`（性能，仅 macOS，**MAC**）、`P0-EXPORT-001`（PDF 渲染路径，**IMPL**）、
-`P0-QA-001`（UX Score / 30 任务，**NOT_TESTED**）。**这 10 项全部依赖人工 UX Gate 会话 /
-方案级裁决（ADR-0037）/ 真机证据 —— 本环境无法闭环 ⇒ 在补齐前不得发布 PASS-E 结论。**
+**当前输出**（**2026-11-03 实跑**）：`NO-GO：5 项未闭环` ——
+`P0-PERF-001`（性能，仅 macOS，**MAC**）、`P0-EXPORT-001`（PDF 渲染路径，**IMPL**，ADR-0037 = A2 待施工批次 A37）、
+`P0-EDITOR-005`（拼写检查词典，**IMPL**，端到端运行时验证待做）、`P0-QA-001`（UX Score / 30 任务，**NOT_TESTED**）、
+`P0-MARKDOWN-006`（CJK 行内强调语义，ABSENT，ADR-0035 = A1 待施工批次 A35）。
+**这 5 项分别依赖人工 UX Gate 会话 / 施工批次 / 真机运行时验证 —— 本环境无法闭环 ⇒ 在补齐前不得发布 PASS-E 结论。**
+> **⚠️ 更正（2026-11-03，ADR-0039 / ADR-0035）**：本段原写「**2026-10-12 实跑**：`NO-GO：10 项未闭环`」，
+> 其中 6 项（`P0-EDITOR-001` / `P0-EDITOR-003` / `P0-SHELL-001` / `P0-MENU-001` / `P0-EDITOR-004` / `P0-LAYOUT-002`）
+> 的唯一阻塞原因是「PASS-E 逐项前置 ux-gate」这条**全局策略**（它们的三平台/CI/视觉证据早已取得）⇒
+> 已由 **ADR-0039（Accepted 2026-11-03，用户裁决「收窄：仅 `P0-QA-001` 需要人工 Gate」）收敛为单点承载**，
+> 如实升为 **AUTO**（不是升为 PASS-E）。台账同时新增 `P0-MARKDOWN-006` ⇒ P0 项数 50→**51**。
 > **⚠️ 更正（2026-10-12，审计 §4.328）**：本节原文写「**当前输出**（2026-09-12）：`NO-GO：6 项未闭环`」，
 > 并把 `P0-PLATFORM-001` 记作 **IMPL**、`P0-EDITOR-005` 记作 **BLOCKED**。实测两项**都已变**：
 > `P0-PLATFORM-001` 台账已是 **AUTO**（三平台 Runtime 证据已齐）、`P0-EDITOR-005` 已是 **IMPL**
@@ -1368,15 +1372,15 @@ Functional
 
 任何一项缺失，状态只能是 IMPL / AUTO / platform-partial，**不得写「已完成对标」**。
 
-### 11.2 当前看板（台账 50 项 · **2026-10-12 实跑**）
+### 11.2 当前看板（台账 51 项 · **2026-11-03 实跑**）
 
 | 状态 | 数量 | 说明 |
 |---|---|---|
 | PASS-E | **0** | 尚无 —— 三平台 Experience Contract 未闭环前不得标 PASS-E |
-| AUTO | 44 | 自动化通过，真机体验验收未完成 |
-| MAC | 2 | IME / Undo、性能（仅 macOS 有证据） |
-| IMPL | 2 | 拼写检查词典（`host-api` 已落地，缺**真机三平台**证据）、PDF 渲染路径（待 ADR-0037 裁决） |
-| BLOCKED | 1 | 三平台视觉 Golden（需基线入库） |
+| AUTO | 46 | 自动化通过，真机体验验收未完成（2026-11-03：ADR-0039 收窄后 6 项策略挂起项落此，含 `P0-EDITOR-004` / `P0-LAYOUT-002`） |
+| MAC | 1 | 性能（`P0-PERF-001`，仅 macOS 有证据） |
+| IMPL | 2 | 拼写检查词典（`host-api` 已落地，缺端到端运行时验证）、PDF 渲染路径（ADR-0037 已裁决 = A2，待施工批次 A37） |
+| ABSENT | 1 | CJK 行内强调语义（`P0-MARKDOWN-006`，ADR-0035 已裁决 = A1，待施工批次 A35） |
 | NOT_TESTED | 1 | UX Score / 30 任务（工具设计上禁止自动生成计时，只能人工） |
 
 **W0 的扩容目标已完成**（32 → 50，覆盖 §7 全部合同条目）；原表「32 项」为旧值，已更正。
@@ -1385,6 +1389,9 @@ Functional
 > 且 `IMPL` 记 **1**、`BLOCKED` 记 **2**。实测（门禁现算 / 台账）：`IMPL` **2**（`P0-EDITOR-005` 由
 > `BLOCKED` 转为 `IMPL`、`P0-EXPORT-001` 本就是 `IMPL`）、`BLOCKED` **1**。
 > ⇒ 已按现算改正并改标 **2026-10-12 实跑**。**「当前看板」是声称，会被按现在读。**
+> ⚠️ **2026-11-03 再更正**：`BLOCKED` **0**（`P0-LAYOUT-002` 三平台视觉基线早已入库 ⇒ 按 ADR-0039 落
+> `AUTO`）；新增 `ABSENT` **1**（ADR-0035 的 CJK 行内强调语义）⇒ 台账 50→**51**；`AUTO` 44→**46**、
+> `MAC` 2→**1**（`P0-EDITOR-004` 三平台运行时证据 2026-09-22 已取得 ⇒ 落 `AUTO`）。
 
 **完整任务完成度审计见 §15。**
 
@@ -1432,6 +1439,14 @@ Functional
 | **D-AE**（2026-09-13） | **命令面板文案与原生菜单文案不统一** | **保留两套表达习惯，登记 D；只锁「漏译」** | 交叉比对 163 个同名命令，两套文案共 **46 处用词不同**（菜单名词式「专注模式」/ 面板动词式「切换 Focus Mode」；菜单「PDF…」/ 面板「导出 PDF…」；菜单「引用」/ 面板「Blockquote」）。命令面板是 Mellow 自有能力（Typora 无），其**分类前缀 + 动词式**表达是有意设计，强行统一到菜单文案会削弱面板的可检索性（「图片：上传」便于按类别搜）。故**不统一**。<br/>**但同一命令在同一语言下不得出现两个名字** —— 已对齐 4 处：`quickOpen.open` 面板 zh 漏译（`Quick Open` → 「快速打开」，与 G7-MENU-11 修过的菜单侧同源却漏了面板侧）、`file.saveAll`（含多余的 `…`）/`export.repeat`/`recent.clear` 的 en 与菜单同名不同值。<br/>**护栏**：`verify-menu-contract.mjs` **§14** 锁「中文标题不得漏译」并断言解析完整性（防新形态静默漏检）；专有名词走白名单（当前仅 `paragraph.yamlFrontMatter`）。 |
 | **D-AF**（2026-09-30 补登记） | **「设置」在 Windows / Linux 的**菜单入口 | **不新增菜单项；Win/Linux 经键盘 `Ctrl+,` 与命令面板触达，登记 D** | 现状：`settings.open` 在 schema 中**只存在于 macOS 应用菜单（`app`，`macOnly`）**；非 macOS 的键位由 `App.tsx` 的 CommandRegistry 互补提供，`verify-menu-contract.mjs` §11「平台互补键位专项」**断言**它必须有 Win/Linux 的 `Ctrl+,`。该设计此前**只写在代码注释里**（`verify-menu-contract.mjs` 的 **§11「平台互补键位专项」** 与其注释、`App.tsx` 的 CommandRegistry 互补键位处），**方案正文从未登记** —— 与 **D-AC** 的教训同型（「护栏注释**不是**决策登记处 —— 裁决必须进本 D 表，否则后续轮次无法发现」）。补登记后，本表是唯一可发现处。**与 Typora 的差异（证据等级须注明）**：Typora 在 Win/Linux 有 `File → Preferences` 一类入口；Mellow 不复制该入口形态，理由同 D-AC 的「同一语义单一入口」原则。⚠️ **本机无一级证据**：本机只装了 **macOS** Typora 1.14.9，无法观察其在 Windows/Linux 的菜单结构；上句依官方文档/通行认知，**未经实机验证**。若日后取得 Win/Linux 实机证据且确认差异不可接受，应以**新 ADR** 变更本裁决（不得直接改本行）。<br/>**（2026-10-01 补：本行就是 `ADR-0029` Q1 = A3 的落地 —— 故不另立编号）** ADR-0029 的 Q1 裁决要求三件事：① 维持现状（Win/Linux 走 `Ctrl+,` + 命令面板）；② **把理由从代码注释搬进 D 表**；③ **注明「与 Typora 的差异未经一手核实」**。**本行已于 2026-09-30 完整满足这三项** ⇒ 本轮**不新建 `D-AN`**（同一裁决重复登记会制造与 **D-E / D-Q** 同型的「同一件事两个编号、结论还可能不一致」的二义 —— 那份二义本表已收敛过一次）。本轮只补上 **ADR ↔ 本行的互相指认**，使两侧都能发现对方。 |
 | **D-AC**（2026-09-13 补登记，原为 **V7-I1 用户裁决**） | **「用 Reader 打开」与「只读模式」是否进显示菜单** | **两者均从显示菜单移除；命令保留在注册表，仍可经命令面板 / Reader 内按钮触达** | 该裁决此前**只写在 `verify-settings-contract.mjs` 的注释与断言里**，方案正文从未登记 —— 2026-09-13 本轮做 Typora 实机对照时，因发现 `view.readonly.toggle` 「能力已实现但菜单不可达」而**误加了菜单项**，被该护栏当场拦下（`menuSchema 含已裁撤的 view.readonly.toggle 菜单入口（V7-I1 应删除）`）。<br/>**教训**：护栏注释**不是**决策登记处 —— 裁决必须进本 D 表，否则后续轮次无法发现。<br/>**注意与 §3.3 的关系**：Typora 确有 `Readonly Mode`（Menu.strings 有「只读模式」），故这属**有意差异（D）**而非缺口；补登记后，本表是唯一可发现处。<br/>**⚠️ 2026-10-01**：本行原先多出**一个第 5 格**（内容是 **D-AB** 的依据格 —— 因 D-AB 行前 3 格丢失而被并到这里，GFM 渲染时被静默丢弃）；已把该格移回 **D-AB** 行，本行恢复 4 格。 |
+| **D-AP**（2026-11-03，**ADR-0034 Q6** 裁决） | **图片路径恒做 `%XX` 转义**（Typora `autoEscapeImageURL` 默认 `false` ⇒ 默认不转义） | **维持转义**（Typora 行为不改齐） | 转义是**互操作性**取向：`%20` 在 GitHub / VS Code / pandoc 等**所有**渲染器都能工作；不转义只对「自行解码的渲染器」有效，代价只是源码可读性。一手证据 = Typora `frame.js` 的 `resolveImagePath`（`autoEscapeImageURL ? escapeURL(e) : e`）；代码落点 = `packages/editor-engine/src/image/path.ts` 的 `escapeImageSrc()`。与 **D-AQ** 是两件独立的事（转义 vs 相对/绝对），不得合并。 |
+| **D-AQ**（2026-11-03，**ADR-0034 Q7** 裁决） | **插入本地图片恒写相对路径**（Typora `useRelativePathForImg` 默认 `false` ⇒ 默认写绝对路径） | **维持相对** | 可移植性取向：整目录搬走仍可用；绝对路径换机器/换路径即全部断链。Mellow 行为**有边界**（只在同根时走相对，跨根仍写绝对）。代码落点 = `packages/editor-engine/src/image/insert.ts` 默认分支的 `computeRelativePath(docDir, abs)`。⚠️ 本行更正 **D-AA** 里「与 Typora 该选项默认态一致」的旧断言（审计 §4.121：Typora 默认态写的是绝对路径）。 |
+| **D-AR**（2026-11-03，**ADR-0034 Q8** 裁决） | **复制公式得到 LaTeX 源码**（Typora `mathFormatOnCopy` 默认 `"svg"` ⇒ 复制渲染图） | **维持 LaTeX 源码** | 对「想把公式拿去别处用」的用户，源码往往比图更有用；且 Mellow 的渲染走**异步** `tex2svgPromise`，复制必须在 `copy` 事件里**同步**写剪贴板 ⇒ SVG 复制需要「预渲染缓存 + 失效策略」，属**功能增量**而非 parity 修补（留作独立工作项）。代码落点 = `packages/editor-engine/src/clipboardCopy.ts`（全文无 math/SVG 分支）。 |
+| **D-AS**（2026-11-03，**ADR-0034 Q10** 裁决） | **字数统计固定同时展示 words / chars / lines / readingTime**（Typora `wordCountDelimiter` 面板是 WORD / CHAR / LINE / TIME **四模式切换**） | **维持同时展示** | Mellow 形态是**超集**（Typora 一次只显示一种），不存在「看不到某项统计」的问题；差异只在交互形态（切换 vs 并列），与 **D-AG**（侧栏排序菜单形态）同类。代码落点 = `packages/app-core/src/wordCount.ts` 的 `countWords()`。⚠️ CJK-aware 的统计口径**不是**本条（那是 **D-AO** 的 `wordsPerMinute`）。 |
+| **D-AT**（2026-11-03，**ADR-0034 Q11** 裁决） | **导出完成后不自动打开文件管理器**（Typora 的 `openExportLocation` 在 schema 里是 `!0` ⇒ 全新安装**默认勾选** = 导出后 `JSBridge.showInFinder`） | **新增开关 + 默认关**（= Mellow 现状） | 默认对齐 Typora 会改变**所有用户**的导出后体验（每次导出多弹一个 Finder 窗口）⇒ 按「不得静默改用户可见默认」取「补能力、默认不变」。**待施工**：设置项 `export.openExportLocation`（默认 `false`）+ 导出成功后复用既有命令 `file.revealInFinder` 的接线。⚠️ 如实记录 Typora 上游两处默认不一致（「通用导出设置」页默认不勾 / HTML 导出 schema 默认勾）。 |
+| **D-AU**（2026-11-03，**ADR-0034 Q12** 裁决） | **关掉最后一个窗口即退出应用**（Typora `quitAfterWindowClose` 默认 `false` ⇒ macOS 下关最后一个窗口**不退出**，符合 macOS 惯例） | **新增开关 + 默认「不退出」**（对齐 Typora） | 这是 macOS 平台惯例问题（不是纯口味），对齐代价低；Mellow 是 SDI（一窗一文档）⇒「关窗即退出」会被部分用户读成数据丢失的错觉（其实已保存）。**待施工**：`apps/desktop/src-tauri/src/lib.rs` 的 `RunEvent::ExitRequested` 捕获 `api` 并按设置调用 `prevent_exit()`（⚠️ 不得破坏 `window.rs` 的 dirty 确认门），并补 Dock 点击重开窗口。**默认值本身翻转**（现状会退出 → 新默认不退出）⇒ 须在发布说明写明。 |
+| **D-AV**（2026-11-03，**ADR-0034 Q13** 裁决） | **OS 级拖入本地图片不复制到目标目录**（Typora `applyImageMoveForLocal` 默认 `true` ⇒ 拖入即复制/移动到目标目录） | **维持 keep-original** | **复制用户的文件是有副作用的行为**，用户没有明确要求时不应默认执行；Typora 的复制默认是其历史选择。代码落点 = `packages/editor-engine/src/image/input.ts` 的拖入支（不传 `strategy` ⇒ `insert.ts` 的 `auto` 对 `kind:'file'` 走 keep-original）。⚠️ 同族的**粘贴支**与 Typora 一致（显式传 `copy-to-assets`）。设置缺口（该族三键未作设置暴露）仍记 `gap` ⇒ 可自主实施；若将来改为对齐，须同时处理「已在目标目录内 ⇒ 不重复复制」（Typora `shouldTriggerMove` 有此判据）。 |
+| **D-AW**（2026-11-03，**ADR-0038 C** 裁决） | **拼写检查的语言/词典 = 系统 NSSpellChecker**（Typora 自带一套**语言包管理**：按语言下载/安装/切换词典 + 4 态提示） | **折中 C**：系统拼写检查 + 应用内**只读语言展示** + 「打开系统拼写设置」入口 + 新增 `editor.spellcheckForCodeAndLink` 开关（默认关） | macOS 的 `NSSpellChecker` 本来就用 OS 词典与 OS 语言列表 ⇒「选语言」的惯用位置是**系统设置**，应用内复刻词典体系（ADR-0038 选项 B）成本高（网络 + 磁盘 + 状态机 + 三平台词典源）且与平台惯例冲突。一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 10 条语言包 key。⚠️ `autoCorrectMisspell` **不随本条实施**：其所需 `setAutomaticSpellingCorrectionEnabled` 在 `objc2-app-kit` 0.3.2 绑定中不存在、且对 WKWebView 无效 ⇒ 属**不可实现**。待施工 = 批次 A38。 |
 | **D-L（新）** | View 菜单「Search」条目 | **置于侧栏三视图之后、模式组之前** | 官方 View 菜单无 Search（搜索在侧栏内）；Mellow 全局搜索（⇧⌘F）需常驻入口，紧邻侧栏组语义最近，且不与 Typora 基础项混淆。 |
 | **D-M（新）** | View 菜单「Word Count / Always on Top」位置 | **归入状态组，排在状态栏开关之后** | 二者均为「窗口/状态」语义，与 Typora 的 `Show Status Bar` 同组；不插入 Typora 的显示模式组。 |
 | **D-AG（2026-09-30 裁决）** | 侧栏排序菜单的**形态** | **保留 Mellow 形态**（4 个可勾选键 + 升序/降序开关），不改为 Typora 的 8 条平铺 | §15.3 行 14 ① 的遗留问题。**功能已等价且有护栏**（`FileTreeOptions` 的 4 键 × 2 方向 = Typora 8 条的同一组合集；`verify-sidebar-contract.mjs` 锁 4 个排序项）。Mellow 用 **6 个条目**表达 Typora 的 8 个，更紧凑且方向可独立切换；差异只在**菜单形态**，与 D-AE（两套表面的表达习惯）同类。 |
@@ -1571,7 +1586,7 @@ W8 全部通过后，才允许描述为：**「与 Typora 1.14.9 核心体验一
 **当前仍只可描述为「以 Typora 体验为目标的 Mellow」**，不得宣称「与 Typora 1.14.9 核心体验一致或更优」。
 
 > **⚠️ 2026-10-05（ADR-0031 转正）不改变本行**：发布状态已转为**正式发布**，
-> 但那是**发布状态**的变更，**不是完成度**的变更 —— **当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出**（`PASS-E = 0/50`、未闭环 10 项）、**待裁决 5 项**（ADR-0034 / ADR-0035 / ADR-0036 / ADR-0037 / ADR-0038）依然成立（⚠️ 原写「3 项（0034/0035/0036）」—— 2026-10-12 更正，见审计 §4.329）。
+> 但那是**发布状态**的变更，**不是完成度**的变更 —— **当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出**（`PASS-E = 0/51`、未闭环 5 项）、**待裁决 1 项**（ADR-0040 主题名称/外观分歧；⚠️ 原写「`PASS-E = 0/50`、未闭环 10 项、待裁决 5 项（ADR-0034 / ADR-0035 / ADR-0036 / ADR-0037 / ADR-0038）」—— 2026-10-12 曾更正「3→5 项」（审计 §4.329），**2026-11-03 再更正**：ADR-0034–0038 五份已由用户裁决转 Accepted、台账按 ADR-0035 新增 `P0-MARKDOWN-006`（50→51）、按 ADR-0039 收窄 ux-gate（10→5）。详见各 ADR 与审计登记表第 22/23 行）。
 > ⇒ 本行的**证据要求**（「体验一致或更优」须由证据挣得）**继续有效，不因转正而放宽**。
 > 同理 §14「最终目标」的措辞门槛不变。
 

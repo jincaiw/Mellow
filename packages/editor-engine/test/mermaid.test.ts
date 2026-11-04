@@ -83,7 +83,8 @@ describe('Mermaid Live Rendering（PRD §43 / live-markdown-engine-spec §19）'
   });
 
   test('caret inside Mermaid source reveals source instead of widget', async () => {
-    const view = setUpEditor('```mermaid\nflowchart TD\nA-->B\n```');
+    // ADR-0034 裁决后 mermaid 默认关（对齐 Typora）⇒ 显式开启
+    const view = setUpEditor('```mermaid\nflowchart TD\nA-->B\n```', { mermaid: true });
     view.dispatch({ selection: { anchor: view.state.doc.toString().indexOf('A-->B') } });
     await sleep();
     expect(view.dom.querySelector('.mellow-mermaid-widget')).toBeNull();

@@ -204,8 +204,18 @@ function kindClass(kind: InlineExtraKind): string {
   return 'mellow-md-sub';
 }
 
-/** 构建行内扩展标记扩展（==高亮== / ^上标^ / ~下标~） */
-export function buildInlineExtrasExtension(): Extension {
+/** 构建行内扩展标记扩展（==高亮== / ^上标^ / ~下标~）。
+ *
+ * ADR-0034 裁决（2026-11-03）：开关必须**真能关掉**对应语法 ⇒ 构建函数按开关过滤
+ * （原「`f.highlight || f.supSub` 挂载 + 无参构建」是假控件：只关一个时三种标记仍全部装饰）。
+ * `sub` / `sup` 分列：Typora 是两个独立偏好，Mellow 已拆分（原 `markdown.supSub` 合并项作废）。
+ */
+export interface InlineExtrasOptions {
+  highlight: boolean;
+  sub: boolean;
+  sup: boolean;
+}
+export function buildInlineExtrasExtension(opts: InlineExtrasOptions): Extension {
   const cm = resolveCm();
   const { EditorView: CmEditorView, ViewPlugin, Decoration, RangeSetBuilder } = cm;
 
@@ -213,7 +223,8 @@ export function buildInlineExtrasExtension(): Extension {
     const doc = view.state.doc.toString();
     // Large File Mode：扫描裁剪到视口 ± 余量（PRD §109；与 math/mermaid 一致）
     const win = isLargeFileMode() ? largeFileViewportRange(view) : undefined;
-    const extras = scanInlineExtras(doc, fencedRanges(doc), win);
+    const extras = scanInlineExtras(doc, fencedRanges(doc), win)
+      .filter((e) => (e.kind === 'highlight' ? opts.highlight : e.kind === 'sup' ? opts.sup : opts.sub));
     const head = view.state.selection.main.head;
     const sourceMode = isSourceMode(view);
     const builder = new RangeSetBuilder<import('@codemirror/view').Decoration>();

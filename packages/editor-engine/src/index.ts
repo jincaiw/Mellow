@@ -214,7 +214,9 @@ export function installTableTabCapture(): void {
  * 宿主安装入口：注册 composition 监听并返回引擎扩展。
  *
  * @param autoInstallComposition 默认 true；测试环境可关闭，自行管理状态
- * @param features 语法特性开关（PRD §94）；未传则全部开启。变更后需重新加载编辑器生效
+ * @param features 语法特性开关（PRD §94）；未传则走 DEFAULT_ENGINE_FEATURES
+ *                 （ADR-0034 裁决：highlight/subscript/superscript/mermaid 默认关，对齐 Typora）。
+ *                 变更后需重新加载编辑器生效
  */
 export function install(autoInstallComposition = true, features?: Partial<EngineFeatureConfig>): ReturnType<typeof buildMarkerRevealExtension> {
   installTableTabCapture();
@@ -313,7 +315,7 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   if (f.alerts) ext.push(buildGitHubAlertsExtension(false));
   if (f.yaml) ext.push(buildYamlFrontMatterExtension(false));
   if (f.html) ext.push(buildSafeHtmlExtension(false));
-  if (f.highlight || f.supSub) ext.push(buildInlineExtrasExtension());
+  if (f.highlight || f.subscript || f.superscript) ext.push(buildInlineExtrasExtension({ highlight: f.highlight, sub: f.subscript, sup: f.superscript }));
   // V6-P1：行内 HTML `<kbd>` 键帽（Typora 图16 对标；随 HTML 特性开关）
   if (f.html) ext.push(buildKbdCapsExtension());
   if (f.wikilink) ext.push(buildWikilinkExtension());

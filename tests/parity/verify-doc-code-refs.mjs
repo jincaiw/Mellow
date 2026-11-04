@@ -3758,14 +3758,17 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
         + '（豁免**只往前生效**会让豁免面静默变宽）');
     }
   }
-  // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（**176**），
+  // [覆盖型] 扫描面由 committedFiles() 产生 ⇒ 必须 == 当前基线（**179**），
   //    否则「扫描面被改窄」不会红。
   //    ⚠️ 变更记录（**每次改都要写清是哪份文件**，否则「+1」无法复核）：
   //      · 2026-10-10 新增 ADR-0035/0036/0037 ⇒ 174；
   //      · 2026-10-11 发版 v1.5.34 新增 `.github/release-notes-v1.5.34.md` ⇒ **175**
   //        （该文件**不在** 4 份冻结 release notes 的豁免名单里 ⇒ 它**要**参与加粗配对核对）；
-  //      · 2026-10-12 审计 §4.326 **补写** `.github/release-notes-v1.5.8.md` ⇒ **176**（同上）。
-  const BOLD_BASELINE = 177;
+  //      · 2026-10-12 审计 §4.326 **补写** `.github/release-notes-v1.5.8.md` ⇒ **176**（同上）；
+  //      · 2026-10-13 `c1e2bc1` 新增 `docs/adr/ADR-0038-spellcheck-dictionary-language.md` ⇒ **177**；
+  //      · 2026-11-03 审计 §4.352 新增 `docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md`
+  //        + `docs/adr/ADR-0040-theme-name-appearance-divergence.md` ⇒ **179**（+2，已逐份核对）。
+  const BOLD_BASELINE = 179;
   if (boldFiles.length !== BOLD_BASELINE) {
     fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
       + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');

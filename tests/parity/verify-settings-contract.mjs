@@ -333,6 +333,11 @@ const NON_SCHEMA_STORAGE_KEYS = new Map([
     + '⚠️ 同上：不被「恢复默认」重置，审计 §4.85 登记为待裁决'],
   // ── 通道 / 兜底键（不是用户设置）──
   ['mellow.engine.features', '引擎特性开关**通道**（构建期注入 + 运行时读）'],
+  ['mellow.engine.features.supSub', '⚠️ **历史键的一次性迁移读/删**（2026-11-03 ADR-0034 Q2/Q3 裁决把 '
+    + 'supSub 拆为 subscript/superscript 两开关）：`App.tsx` 与 `editor-engine/config.ts` 各有一次性迁移'
+    + '（读到旧键 ⇒ 派生两新键 ⇒ **removeItem**），故它是**瞬态**持久化键 —— 迁移后不再存在，'
+    + '不需要进 schema、也不被「恢复默认」引用（恢复默认走聚合键 `mellow.engine.features`）。'
+    + '待迁移普遍完成后本条目应随之删除（两处迁移代码一起退役）。'],
   ['mellow.engine.locale', '引擎 locale 的 **localStorage 兜底键**（桥未就绪时引擎自读，覆盖宿主先于引擎注入的时序）'],
   ['mellow.md.tokens', 'md token 的 **localStorage 兜底键**（同上；桥未就绪时 engine 安装时自读）'],
   ['mellow.shortcuts.overrides', '快捷键 **override 层**（menuSchema 仍是默认值唯一真源）。'
@@ -1110,13 +1115,18 @@ if (cssLayerAnchor === undefined) {
       if (shapeOk('', 'D-AK') !== false) {
         errors.push('偏好项载体形状 canary 失效：非法 kind 未被拒');
       }
-      // 真实数据必须两条轴都还有 undecided（否则本判据会**空转**）
-      if (!entries.some((e) => e.deviation?.kind === 'undecided')) {
-        errors.push('偏好项载体判据**空转**：矩阵里已无 deviation.undecided —— '
-          + '若确实全部裁决完，请把本条判据连同 pendingRef 约定一并收掉，而不是留一个恒真的判据');
+      // 真实数据防空转（2026-11-03 按 ADR-0034/0038 裁决**收口**）：裁决前本判据要求「两条轴
+      // 都还有 undecided」；五份 ADR 全部 Accepted 后该前提**消失**（原 5 条 deviation.undecided
+      // 改判为「默认已对齐 ⇒ deviation 删除」，6 条 disposition.undecided 改判为 deliberate→D 行）。
+      // 按判据自述「若确实全部裁决完，请把本条判据收掉」⇒ 换成**当下仍成立**的活体探针：
+      // 载体种类必须仍有真实数据流过（deliberate 两侧各 ≥1），否则本节的形状判据即成空壳。
+      if (!entries.some((e) => e.deviation?.kind === 'deliberate')) {
+        errors.push('偏好项载体判据**空转**：矩阵里已无 deviation.deliberate —— '
+          + '与 Typora 的默认值不可能全部一致，疑为登记缺失');
       }
-      if (!entries.some((e) => e.behavior === 'differs' && e.disposition?.kind === 'undecided')) {
-        errors.push('偏好项载体判据**空转**：矩阵里已无 behavior=differs 且 undecided 的条目 —— 同上，请收掉本判据');
+      if (!entries.some((e) => e.behavior === 'differs' && e.disposition?.kind === 'deliberate')) {
+        errors.push('偏好项载体判据**空转**：矩阵里已无 behavior=differs 且 disposition=deliberate 的条目 '
+          + '（有意差异的 D 载体链断了）—— 请核对矩阵，而不是留一个恒真的判据');
       }
     }
 
@@ -2819,9 +2829,10 @@ if (cssLayerAnchor === undefined) {
       fail(`${FIXTURE} 里的 \`${id}\` **不在** schema 的语法特性开关里 —— 条目已过期，请删除或说明`);
     }
   }
-  // [覆盖型] 下限 == 当前基线（立此判据时 11 个开关）
-  if (schemaIds.size < 11) {
-    fail(`只从 schema 解析出 ${schemaIds.size} 个语法特性开关（下限 11 = 立此判据时基线）`
+  // [覆盖型] 下限 == 当前基线 **12**（2026-11-03 ADR-0034 Q2/Q3：`markdown.supSub` 拆分为
+  //   `markdown.subscript` / `markdown.superscript`，由 11 增为 12）
+  if (schemaIds.size < 12) {
+    fail(`只从 schema 解析出 ${schemaIds.size} 个语法特性开关（下限 12 = 2026-11-03 拆分后基线）`
       + ' —— 锚点漂移会让本判据**空转**');
   }
   // canary：三向（与判定**共用** `rowProblems`）
@@ -3038,11 +3049,10 @@ if (cssLayerAnchor === undefined) {
   const SRC = 'packages/editor-engine/src/index.ts';
   const src = readFileSync(resolve(root, SRC), 'utf8').replace(/\r\n/g, '\n');
   // 例外表（**按被豁免对象分表**：本表只管「多开关共用一个无参扩展」这一形态）
-  const MULTI_SWITCH_UNFILTERED = new Map([
-    ['buildInlineExtrasExtension',
-      ['挂载条件 `f.highlight || f.supSub` 且构建函数**无参** ⇒ 两个开关各自都关不掉（只关一个时仍装饰）',
-        'docs/adr/ADR-0034-preference-deviations-2026-10-07.md']],
-  ]);
+  // ⚠️ 2026-11-03：`buildInlineExtrasExtension` 的例外**已按本表自述删除** ——
+  //   ADR-0034「裁决前提」的第二半已实施：构建函数改为接收 `{ highlight, sub, sup }` 并按开关
+  //   过滤 `scanInlineExtras` 结果（挂载行带实参）⇒ 「已带实参却仍留在例外表」会被本判据判红。
+  const MULTI_SWITCH_UNFILTERED = new Map([]);
   const mounts = [];
   for (const line of src.split('\n')) {
     const flags = [...line.matchAll(/\bf\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]);

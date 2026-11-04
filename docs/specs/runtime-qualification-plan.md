@@ -189,19 +189,19 @@ B. Electron/Chromium
 > **注意优先级**：按 `AGENTS.md`，spec 是 **P1**、ADR 是 **P2** —— 即**按本节，Tauri 本不该被锁定**。
 > ADR-0019 的实际路径是「**架构证据 + 无 FAIL**」，**不是**本节的 9 条实测。
 >
-> **② 今天的逐条状态**（2026-10-01 实跑门禁；`AUTO` 且 `requiredEvidence` 不含 `ux-gate` 才算闭环，ADR-0024 Q3=A3）：
+> **② 今天的逐条状态**（2026-10-01 实跑门禁；**2026-11-03 复核更新**（ADR-0039 收窄 / ADR-0037 裁决后）。闭环口径 = `PASS-E` / `PASS-B` / `AUTO`（且 `requiredEvidence` 不含 `ux-gate`，ADR-0024 Q3=A3 + ADR-0039））：
 >
 > | 条件 | 载体 | 状态 |
 > |---|---|---|
-> | IME corruption = 0 | `P0-EDITOR-004` | **未闭环**（`MAC`，等人工 `ux-gate`） |
-> | no blocking caret bug / no selection loss | `P0-EDITOR-003` | **未闭环**（`AUTO` 但 `requiredEvidence` 含 `ux-gate`） |
+> | IME corruption = 0 | `P0-EDITOR-004` | ✅ 闭环（三平台证据早已取得；2026-11-03 按 ADR-0039 收窄升 `AUTO`） |
+> | no blocking caret bug / no selection loss | `P0-EDITOR-003` | ✅ 闭环（2026-11-03 起 `ux-gate` 不再逐项前置，ADR-0039 ⇒ `AUTO` 可收口） |
 > | clipboard P0 complete | `P0-CLIPBOARD-001` | ✅ 闭环 |
-> | PDF/print viable | `P0-EXPORT-001` | ✅ 闭环 |
-> | 10 MB editable / typing P95 target met | `P0-PERF-001` | **未闭环**（`MAC`，`ux-gate` + `perf-harness-pending`） |
+> | PDF/print viable | `P0-EXPORT-001` | **未闭环**（`IMPL`；ADR-0037 已裁决 = A2 复用 HTML 打印管线，待施工批次 A37） |
+> | 10 MB editable / typing P95 target met | `P0-PERF-001` | **未闭环**（`MAC`，`perf-harness-pending`） |
 > | Linux P0 journeys pass | `P0-PLATFORM-001` | ✅ 闭环 |
 > | no platform requires editor fork | `verify-adapter-contract.mjs` | ✅ 护栏常态守护 |
 >
-> ⇒ **本节的「全部满足」至今仍未达成**（3 条未闭环），这与**当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出**（全仓 `PASS-E = 0/50`）的结论一致。
+> ⇒ **本节的「全部满足」至今仍未达成**（**2 条未闭环**）—— `P0-EXPORT-001` / `P0-PERF-001`；2026-10-01 当时为 3 条，这与**当前状态真值源 = `tests/parity/verify-release-gate.mjs` 的输出**（全仓 `PASS-E = 0/51`、未闭环 5 项 —— 门禁口径按**台账全部 P0**，本表只列 §6 的 7 条载体）的结论一致。
 > **但这不推翻 Tauri 锁定** —— 锁定的依据是 ADR-0019 的架构证据路径，本节只是**当时写的、从未满足的门禁**。
 >
 > **③ 处置**：**保留原文 + 挂载体 + 本更正块**。

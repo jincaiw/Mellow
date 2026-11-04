@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-10",
+  "updatedAt": "2026-11-03",
   "normativeBaseline": {
     "product": "Typora",
     "version": "1.14.9",
@@ -62,11 +62,76 @@
       ]
     },
     {
+      "id": "P0-BUILD-001",
+      "domain": "build",
+      "capability": "渲染层资产指纹与构建链一致性",
+      "typoraBehavior": "（工程治理项，非 Typora 功能）渲染层资产为版本化文件名，指纹错配会静默降级。",
+      "mellowTarget": "`verify-release-bundle.mjs` 必须在 CI 执行（G7-TYPO-04 已修）；护栏 `verify-build-pipeline.mjs` 锁定一键构建 5 步链路与 CI 序位。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "apps/desktop/scripts/verify-release-bundle.mjs",
+        ".github/workflows/ci.yml",
+        "tests/parity/verify-build-pipeline.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-CLIPBOARD-001",
+      "domain": "clipboard",
+      "capability": "复制为纯文本、Markdown 与 HTML",
+      "typoraBehavior": "复制到不同目标应用保留符合目标预期的格式。",
+      "mellowTarget": "同一次复制提供多 MIME 表示，降级路径明确。 【2026-09-12 跨应用实测】C1 富文本 MIME ✅、C2 Mellow→TextEdit Markdown 读回精确一致 ✅、C3 TextEdit→Mellow 纯文本 ⛔（TextEdit 输入阶段未生效，待完整 System Events 上下文复跑），不升 PASS-E。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "docs/specs/clipboard-smart-paste-spec.md",
+        "packages/editor-engine/test/clipboard-copy.test.ts",
+        "tests/qualification/evidence/2026-09-12-macos-clipboard-cross-app.json"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "cross-app"
+      ]
+    },
+    {
+      "id": "P0-CLIPBOARD-002",
+      "domain": "clipboard",
+      "capability": "Smart Paste",
+      "typoraBehavior": "URL、HTML、TSV、图片和文件粘贴走可预测路径。",
+      "mellowTarget": "智能识别不改变纯文本粘贴语义，且可撤销。 【2026-09-12】跨应用矩阵同上，C3 未形成有效证据，暂不判定 Smart Paste 实现。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "packages/editor-engine/test/smart-paste.test.ts",
+        "docs/specs/clipboard-smart-paste-spec.md",
+        "tests/qualification/evidence/2026-09-12-macos-clipboard-cross-app.json"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "cross-app"
+      ]
+    },
+    {
       "id": "P0-EDITOR-001",
       "domain": "editing",
       "capability": "Live Markdown 编辑",
       "typoraBehavior": "Markdown 在同一编辑表面中按光标位置显示源码或排版结果。",
-      "mellowTarget": "保留 MarkEdit CoreEditor，并以节点级体验合同完成对照。",
+      "mellowTarget": "保留 MarkEdit CoreEditor，并以节点级体验合同完成对照。 【2026-11-03 ADR-0039（用户裁决「收窄」）】ux-gate 改由 P0-QA-001 **单点**承载 ⇒ 本项 requiredEvidence 移除 ux-gate、删除策略噪声 blockedBy；本项自身证据链不变（AUTO 的含义仍是「真机体验验收未完成」，见 §4.3）。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
@@ -78,10 +143,8 @@
         "unit",
         "macos",
         "windows-ci",
-        "linux-ci",
-        "ux-gate"
-      ],
-      "blockedBy": "ux-gate-policy"
+        "linux-ci"
+      ]
     },
     {
       "id": "P0-EDITOR-002",
@@ -110,7 +173,7 @@
       "domain": "editing",
       "capability": "Caret、Selection 与 marker reveal",
       "typoraBehavior": "光标进入、离开节点时标记显隐稳定，选择不跳变。",
-      "mellowTarget": "所有节点状态矩阵中 Caret 与 Selection 不回退。 【2026-09-12】鼠标选择矩阵已取得运行时证据：tests/e2e/mouse-selection-verify.mjs 7/7（单击定位 / 双击选词 / 三击选整行含行尾换行 / 拖拽连续选区 / Shift+单击扩展 / 列表行三击含 marker）。",
+      "mellowTarget": "所有节点状态矩阵中 Caret 与 Selection 不回退。 【2026-09-12】鼠标选择矩阵已取得运行时证据：tests/e2e/mouse-selection-verify.mjs 7/7（单击定位 / 双击选词 / 三击选整行含行尾换行 / 拖拽连续选区 / Shift+单击扩展 / 列表行三击含 marker）。 【2026-11-03 ADR-0039（用户裁决「收窄」）】ux-gate 改由 P0-QA-001 **单点**承载 ⇒ 本项 requiredEvidence 移除 ux-gate、删除策略噪声 blockedBy；本项自身证据链不变（AUTO 的含义仍是「真机体验验收未完成」，见 §4.3）。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
@@ -124,20 +187,17 @@
         "unit",
         "macos",
         "windows-ci",
-        "linux-ci",
-        "ux-gate"
-      ],
-      "blockedBy": "ux-gate-policy"
+        "linux-ci"
+      ]
     },
     {
       "id": "P0-EDITOR-004",
       "domain": "editing",
       "capability": "IME 与 Undo / Redo",
       "typoraBehavior": "组词不被格式化打断，提交后结果正确；一次用户动作对应可预测撤销。",
-      "mellowTarget": "Composition Guard 覆盖编辑节点，IME corruption = 0。 【2026-09-13 更正】本机/文档原称「Linux 真机 IME 已通」不成立：Runtime Qualification 的 Linux Xvfb+fcitx5 IME 矩阵自 run 58（2026-09-06）起连续失败（58/59/60/61），含早于本轮改动的 run 59 → 属既有失败，非本轮引入。同 run 的 macOS 与 Windows Runtime job 均 success。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】Linux Xvfb + fcitx5 IME 矩阵 **8/8 场景全部通过**（paragraph/heading/format/list/table/code/math/link：四音节各提交一汉字、无丢字重复、保存读回一致、Undo 后汉字归零），Windows Source Fidelity gate + runtime smoke（SendKeys 输入 + 保存读回）通过，macOS launch/CLI-open smoke 通过。此前「Linux IME 自 run 58 起连续失败」的结论已作废：两个根因都在 harness 侧（code 场景探针坐标与 caret 复位错误；Undo 验证被 Ctrl+A/C 读回动作污染观察窗口），已修复。状态仍不升 PASS-E：全局策略要求 PASS-E 必须带 ux-gate，而 ux-gate-recorder 按设计只接受人工计时记录。",
+      "mellowTarget": "Composition Guard 覆盖编辑节点，IME corruption = 0。 【2026-09-13 更正】本机/文档原称「Linux 真机 IME 已通」不成立：Runtime Qualification 的 Linux Xvfb+fcitx5 IME 矩阵自 run 58（2026-09-06）起连续失败（58/59/60/61），含早于本轮改动的 run 59 → 属既有失败，非本轮引入。同 run 的 macOS 与 Windows Runtime job 均 success。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】Linux Xvfb + fcitx5 IME 矩阵 **8/8 场景全部通过**（paragraph/heading/format/list/table/code/math/link：四音节各提交一汉字、无丢字重复、保存读回一致、Undo 后汉字归零），Windows Source Fidelity gate + runtime smoke（SendKeys 输入 + 保存读回）通过，macOS launch/CLI-open smoke 通过。此前「Linux IME 自 run 58 起连续失败」的结论已作废：两个根因都在 harness 侧（code 场景探针坐标与 caret 复位错误；Undo 验证被 Ctrl+A/C 读回动作污染观察窗口），已修复。状态仍不升 PASS-E：全局策略要求 PASS-E 必须带 ux-gate，而 ux-gate-recorder 按设计只接受人工计时记录。 【2026-11-03】原句「状态仍不升 PASS-E：全局策略要求 PASS-E 必须带 ux-gate」的前提已被 **ADR-0039**（用户裁决收窄）取代 ⇒ 状态按 §4.3 落 **AUTO**（三平台 Runtime 证据 2026-09-22 run 35635085958 齐备；「真机体验验收未完成」由 P0-QA-001 单点承载）。不升 PASS-E（体验结论仍待 QA-001）。",
       "grade": "B",
-      "status": "MAC",
-      "blockedBy": "ux-gate-policy",
+      "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
         "docs/specs/ime-test-plan.md",
@@ -152,8 +212,345 @@
         "unit",
         "macos",
         "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-EDITOR-005",
+      "domain": "editing",
+      "capability": "拼写检查词典与替换建议",
+      "typoraBehavior": "Typora 使用系统拼写检查（词典 + 建议 + 智能引号 / 文本替换）。",
+      "mellowTarget": "结构已对齐（Edit → Spelling and Grammar / Substitutions 子菜单，D-S）。【2026-09-12 本机实测收窄缺口】系统拼写检查**已真实接线并可调**：edit.spellcheck.toggle 实测把 contentDOM 的 spellcheck 属性从 true 翻到 false（CoreEditor modules/textChecker + 大文件模式自动关闭），红色下划线能力具备。因此本项缺口**比原描述更窄**：仅缺「词典与右键建议列表」（属平台能力，需 host-api 扩展后补齐），而非「拼写检查本身不工作」。证据：tests/e2e/feature-liveness-verify.mjs（拼写检查开关断言）。 【2026-09-29 实施进度】已落地**三层**（均带测试，但**尚无 UI 消费方**，故本项缺口未缩小）： ① 引擎 `contextMenu.wordAt()` + `EditorContextMenuRequest.word`（右键处拉丁词提取，CJK/纯数字/单字符一律不返回——系统拼写检查对中日韩不给建议，返回词会让菜单弹出空建议区）； ② `host-api` 的 `SpellcheckService`（available/suggest/learn/unlearn/hasLearned）+ mock/null 实现（null **优雅降级不抛错**，宿主用 available() 决定是否显示）； ③ Rust `spellcheck.rs`（macOS 走 NSSpellChecker，非 macOS `available=false`）+ 5 个命令。 【2026-09-29 后续：a/b 已完成】a) 「添加到字典 / 忘记拼写」已迁入 command registry（`edit.spelling.learn` / `edit.spelling.unlearn`），右键项**走 dispatchCommand**； 命令只带 id，故目标词在**派发时**由引擎动作 `wordAtCursor()` 解析（= Typora 语义：作用于**光标所在词**，而非「上次右键位置」）； b) 适配器 `apps/desktop/src/host/spellcheck.ts` 已落地，含**可用性同步缓存**（启动 `primeSpellcheckAvailability()` 预取）—— 右键菜单需同步决定是否显示拼写区，不可用时不显示（避免「点了没反应」）；i18n 6 键（zh+en）。 【2026-09-30 补：菜单侧已完成】`edit.spell` 子菜单已补 `edit.spelling.learn`（添加到字典）/ `edit.spelling.unlearn`（忘记拼写）—— 一级证据为 `typora-menu-dump.txt` 的 `Learn Spelling => 添加到字典` / `Unlearn Spelling => 忘记拼写`；菜单命令 ID 173→175、标签 210→212，且 `audit-typora-menu-labels.mjs` 确认 27 条内嵌真值均可在本机 Typora `Menu.strings` 原样查到。 【2026-09-30 补：Check Document Now 已实现】`edit.spell` 子菜单补 `edit.spelling.checkDocument`（立即检查文稿）—— 真功能而非空开关： Rust `spellcheck_check_document` 用 `NSSpellChecker.checkSpellingOfString:startingAt:` 逐段收集未命中区间（**偏移按 UTF-16 码元**，与 CM6 位置同一坐标系，Rust 侧有测试锁住「不是字节偏移」）；引擎补 `getDocumentText()` / `selectRange()`；命令选中**第一处**并提示总数。 【另 3 项**不可实现**（已核实，非未做）】`Check Grammar With Spelling` / `Correct Spelling Automatically` 所需的 `setGrammarCheckingEnabled` / `setAutomaticSpellingCorrectionEnabled` **在 objc2-app-kit 0.3.2 的 NSSpellChecker 绑定中不存在**，且它们作用于 NSTextView、对 WKWebView 的拼写检查无效 → 加上去只会是「点了没反应」的空开关； `Show Spelling and Grammar`（`spellingPanel`）是面向 NSTextView 客户端的系统面板，同样无法呈现 WebView 内的文档错误。 **仍缺（下一步）**：右键**建议列表** —— 但它被**契约模型**挡住，不只是工作量问题： `verify-context-menu-parity` 的模型是「每个条目 = 一个 `onClick: run('id')`」，而建议项要携带**选中值**（点哪个建议就替换成哪个），无法用只带 id 的命令表达； 该护栏的 `DIRECT_CALL_EXCEPTIONS` 又是**按 kind** 生效的，给 `text` 登记会豁免整个文本菜单。 故要落地建议列表，需先**扩展契约模型**（例如允许声明 `dynamic: true` 的取值型条目并说明理由）—— 属**护栏契约变更**，不擅自决定。另仍需本项自身的真机证据（三平台）。\n【2026-09-30 契约扩展 + 建议列表落地】「建议列表」此前被**契约模型**挡住（条目模型是「一条目 = 一个 onClick: run('id')」，而建议项必须携带**选中值**；DIRECT_CALL_EXCEPTIONS 又**按 kind** 生效，给 text 登记会豁免整个文本菜单）。本轮按用户授权**自行裁决并实施**契约扩展：允许条目经 dispatchCommand **携带 payload**（`onClick: run('id', <expr>)`）—— 基础设施本就支持（dispatchCommand(id, source, payload) → CommandContext.payload，插件已在用），缺的只是「菜单条目约定」与「护栏解析」。该扩展**强化**而非削弱 §7.4 硬规则 11：携带 payload 的条目仍走同一条入口（同一 enabledWhen / 同一命令注册表），故**无需**登记直连例外。\n落地四件：① 引擎新增 `wordSpanAt()`（`wordAt` 改由它派生，保证边界规则永不漂移）与动作 `replaceWordAtCursor(replacement)`（含 Composition Guard；无词/无编辑器/CJK → false 且不改文档）；② 桌面 `run(id, payload?)` + `edit.spelling.applySuggestion` 命令（目标词区间由引擎按「光标处词」解析，宿主不猜位置）；③ 文本右键**顶部**补入建议（系统建议异步取 → 先弹菜单、取到后补入；用**菜单代次 token** 丢弃「慢响应落到后开菜单」的陈旧结果）；④ 护栏 `verify-context-menu-parity` 接受 payload 写法并新增 canary。\n**仍未验证**：建议的**端到端运行时行为**（右键真的弹出建议、点击真的替换）没有自动化测试覆盖 —— 它依赖 macOS NSSpellChecker 与真实右键交互。故本项**不标 AUTO**（避免重演 §5.7「AUTO 把不可用功能当闭环」），而是显式保持未闭环，`blockedBy` 由 `host-api-extension` 改为 `runtime-verification-pending`。\n【2026-10-01 运行时验证（应用侧）已覆盖，缺口收窄】新增 tests/e2e/spellcheck-suggestions-verify.mjs（浏览器 dev + Playwright，**不进 CI**，按仓库既有 e2e 约定）：走**真实交互链** —— 右键（engine `posAtCoords` → `wordAt`）→ 建议出现在菜单**顶部** → 点击建议 → 引擎 `replaceWordAtCursor` **真的替换文档** → 菜单关闭；并有**反向相位**：点「添加到字典」后同一词的**建议区消失**（证明 learn 真的写进宿主词典，而不是「弹了个菜单什么也没做」）。实测 7/7 通过；并做过**变异验证**：把建议置空 → 失败于「建议出现在顶部」；把 learn 变空开关 → 失败于「建议区消失」（失败点与变异一一对应）。\n范围限制（如实声明）：dev 模式的词典是 `browserMockHost` 的**内存 mock**（确定性：非词典词 → `[w+s, w+ed, w+ing]`），故本 e2e **不能**证明「macOS `NSSpellChecker` 返回真实建议」。因此 `blockedBy` **仍为 `runtime-verification-pending`** —— 但含义已**收窄**为「**真实词典**的建议内容 + 真机三平台证据」，而非「端到端行为无覆盖」。\n【2026-10-01 第三轮：真实词典侧机器验证 + CI 已守】两件事：\n① **那条 Rust 测试长期是恒真空壳**：`spellcheck.rs` 的 `suggest_returns_guesses_for_misspelling` 函数体只有 `let _ = suggest(\"recieve\");`（「不 panic 即通过」），而测试名声称 \"returns guesses\" —— 于是「**真实** NSSpellChecker 是否真的给建议」**从未被任何机器验证过**。已改为真断言：**先自证「读到了东西」**（`assert!(!guesses.is_empty())`）+ 建议里必须含正确拼写 `receive` + 不得原样回吐输入 + 规范化契约（trim/小写）。本机实测（macOS 27.0 / arm64）：`suggest(\"recieve\") == [\"receive\",\"relieve\"]`、`suggest(\"teh\")[0] == \"the\"`、`suggest(\"mellowzzrecieve\") == []`。\n② **新增 `rust-check-macos` CI job**：此前 `#[cfg(target_os = \"macos\")]` 的单测**在 CI 中根本不执行**（`ci.yml` 的 rust-check 在 ubuntu，被 cfg 掉；`runtime-qualification.yml` 只跑定向的 `file_safety_corpus` 用例）→ 「不变量只存在于本地才会跑的测试里 = 没守护」。仓库为 public → macOS runner 免费。\n③ **平台判定改为可两端测试的纯函数**：`spellcheck_available()` 的返回值决定宿主**是否显示拼写区**（用户可见行为），原先直接写 `cfg!(target_os = \"macos\")` → 该分支**只能在非 macOS 上被测**（macOS 单测全在 cfg(macos) 里 → 本地永远验不到 false，CI 永远验不到 true）。抽成 `spellcheck_supported_on(is_macos)` 后**两端都能在任意平台断言**，并加一条「纯函数 ↔ 真实命令」端到端一致性断言（否则两边可各自漂移而纯函数测试仍全绿）。\n**故 `runtime-verification-pending` 的含义再收窄**：macOS 侧的真实词典行为现已机器验证（本地 + CI）；剩余仅为**真机三平台证据**（Windows/Linux 按 ADR-0016 返回 `available=false`、宿主不显示拼写区 —— 该降级契约现已由跨平台纯函数测试守住）。",
+      "grade": "D",
+      "status": "IMPL",
+      "blockedBy": "runtime-verification-pending",
+      "ownerPackage": "packages/host-api",
+      "evidence": [
+        "packages/commands/src/menuSchema.ts",
+        "tests/parity/verify-menu-contract.mjs",
+        "apps/desktop/src-tauri/src/spellcheck.rs",
+        "tests/e2e/feature-liveness-verify.mjs",
+        "tests/e2e/spellcheck-suggestions-verify.mjs",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-EDITOR-006",
+      "domain": "editing",
+      "capability": "字数统计语义",
+      "typoraBehavior": "词 / 行 / 字符 / 段落 / 阅读时长；选中时显示选中统计；排除格式语法。",
+      "mellowTarget": "同语义，**中文一字一词**（CJK 计数与 Typora 对齐）；macOS 标题栏常显可配置（G7-SHELL-06 已修），Win/Linux 走状态栏。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/app-core",
+      "evidence": [
+        "packages/app-core/src/wordCount.ts",
+        "packages/app-core/test/wordCount.test.ts",
+        "packages/desktop-ui/src/StatusBar.tsx"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-EXPORT-001",
+      "domain": "export",
+      "capability": "PDF、HTML、Image、Print 导出",
+      "typoraBehavior": "导出产物在中文、图片、表格、公式和图表下可用。",
+      "mellowTarget": "导出路径、错误反馈和输出 fidelity 可验证。",
+      "grade": "E",
+      "status": "IMPL",
+      "ownerPackage": "packages/export",
+      "evidence": [
+        "docs/specs/document-file-safety-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "packages/export/test/index.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
         "linux-ci",
-        "ux-gate"
+        "export-corpus"
+      ],
+      "blockedBy": "pdf-html-print-pipeline-pending（ADR-0037 已裁决 = A2 复用 HTML 打印管线，待施工批次 A37）"
+    },
+    {
+      "id": "P0-FEATURE-001",
+      "domain": "feature",
+      "capability": "单一编辑表面（无编辑/预览分区）",
+      "typoraBehavior": "不存在编辑/预览分区；标记按 Caret 显隐且不改变文档位置。",
+      "mellowTarget": "Live Markdown 经 Decoration / Widget 实现，Markdown 纯文本唯一真源（禁止私有 Rich Text 模型）；spec §21 的 16 状态矩阵全覆盖（marker 家族 11 × 16 + FencedCode 专述 = 183 例；widget 家族 9 × 16 态 = 135 例，undo/redo 合并）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "packages/editor-engine/test/state-matrix.test.ts",
+        "tests/parity/verify-menu-contract.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-FEATURE-002",
+      "domain": "feature",
+      "capability": "可预测输出（Source Fidelity）",
+      "typoraBehavior": "保存 / 复制 / 导出不引入非用户输入的 Markdown 变更。",
+      "mellowTarget": "Source Fidelity 0 diff（保存路径）；多格式剪贴板；导出 corpus 覆盖 CJK + Math + Mermaid + Table + Footnote + TOC。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/export",
+      "evidence": [
+        "packages/export/src/print.ts",
+        "packages/export/test/print.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-FILE-001",
+      "domain": "file",
+      "capability": "打开、保存与另存为",
+      "typoraBehavior": "打开与保存稳定，文档路径和脏状态可见。",
+      "mellowTarget": "文件 IO 仅由 Rust System Core 执行，保存采用安全写入。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop/src-tauri",
+      "evidence": [
+        "docs/specs/document-file-safety-spec.md",
+        "tests/qualification/source-fidelity-corpus.md",
+        "apps/desktop/src-tauri/tests/file_safety_corpus.rs",
+        "packages/editor-core/CoreEditor/test/document-isolation.test.ts"
+      ],
+      "requiredEvidence": [
+        "integration",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "source-fidelity"
+      ]
+    },
+    {
+      "id": "P0-FILE-002",
+      "domain": "file",
+      "capability": "外部变更、冲突与恢复",
+      "typoraBehavior": "外部修改、dirty 冲突和异常恢复不会静默丢失用户内容。",
+      "mellowTarget": "Reload、Keep、Compare 与 Recovery 均有明确决定路径。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/app-core",
+      "evidence": [
+        "docs/specs/document-file-safety-spec.md",
+        "tests/qualification/file-safety-corpus.md",
+        "packages/app-core/test/externalChange.test.ts",
+        "packages/app-core/test/recovery.test.ts"
+      ],
+      "requiredEvidence": [
+        "integration",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "source-fidelity"
+      ]
+    },
+    {
+      "id": "P0-FILE-003",
+      "domain": "file",
+      "capability": "重新打开关闭的文件",
+      "typoraBehavior": "Typora File → Reopen Closed File（⇧⌘T / Ctrl+Shift+T）恢复最近关闭的文档。",
+      "mellowTarget": "app 级已关闭文件栈（localStorage，上限 20）+ 同键位；SDI 下语义 = 当前窗口打开（D-R），未保存修改仍经 guardSingleDocument() 确认。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "apps/desktop/src/App.tsx",
+        "packages/commands/src/menuSchema.ts",
+        "packages/app-core/test/fileOpHistory.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-FILE-004",
+      "domain": "file",
+      "capability": "定时自动保存",
+      "typoraBehavior": "官方《Auto Save》：Win/Linux 默认每 5 分钟保存一次（`conf.user.json` 的 autoSaveTimer，Double/分钟，默认 5，GUI 不可达）；macOS 为 NSDocument 系统特性、始终开启。",
+      "mellowTarget": "三平台统一 5 分钟定时保存（受既有 mellow.file.autosave 开关控制）；间隔在 GUI 暴露（Typora 需手改 JSON）= B 级增强。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/app-core",
+      "evidence": [
+        "packages/app-core/src/autosave.ts",
+        "packages/app-core/test/autosave.test.ts",
+        "packages/settings/src/index.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-FILE-005",
+      "domain": "file",
+      "capability": "页面设置与打印",
+      "typoraBehavior": "File 菜单只有 Print 与 Page Setup 两项（typora-menu-dump.txt 实证），**没有**打印预览窗口。",
+      "mellowTarget": "Print 直接调系统打印对话框（D-H = ②，护栏禁止 file.printPreview 复活）；Page Setup 在 macOS 走 NSApplication.runPageLayout:，非 macOS 给出可操作提示（G7-FEAT-02）。",
+      "grade": "D",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "apps/desktop/src-tauri/src/window.rs",
+        "apps/desktop/src-tauri/src/print.rs",
+        "packages/export/src/print.ts",
+        "packages/export/test/print.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-I18N-001",
+      "domain": "i18n",
+      "capability": "简体中文默认与 English 完整性",
+      "typoraBehavior": "桌面文案、菜单和快捷键提示可本地化。",
+      "mellowTarget": "中文默认、English 完整，命令 ID 不依赖显示语言。\n【2026-10-01 更正：「English 完整」在**引擎侧**不成立 —— 状态由 AUTO 降为 IMPL】\n**实测（e2e 探针 `tests/e2e/i18n-engine-probe.mjs`）**：把 `mellow.locale` 设为 `en-US` 后，\nSettings 面板显示**英文**（前提成立：`Settings / General / … / Language / 简体中文 / English`），\n而**引擎（iframe 内）渲染的 UI 文案仍是中文** ——\n· 表格工具栏：`调整 / ↑行 / ↓行 / 删行 / ←列 / →列 / 删列 / 左 / 中 / 右 / 整理 / 删除表`；\n· 查找面板：placeholder `查找` / `替换`，按钮 `替换` / `全部`；\n· DOM 里 title：`一级标题 / 二级标题 / 三级标题 / 粗体 / 斜体 / 删除线 / 行内代码 / 链接 / 引用 / 列表 / 区分大小写 / 正则表达式`；\n· `setAttribute('aria-label', …)`：`查找` / `替换` / `格式工具栏`。\n**范围**：引擎侧共 **43 处**硬编码中文 UI 文案，分布在 5 个文件\n（`image/widget.ts` 10 / `table/toolbar.ts` 13 / `selectionToolbar.ts` 11 / `documentSearch.ts` 8 / `codeBlockLabel.ts` 1）。\n**为什么此前没有被发现**：本项的证据只有 `packages/i18n/test/index.test.ts`（zh/en **目录键一致性**），\n而 CI 护栏 `verify-i18n-contract.mjs` 只覆盖 `t('<字面量>')` 与 schema 的 labelKey/descriptionKey ——\n**硬编码字符串对二者都不可见**（该护栏的范围声明此前只写「不覆盖 Rust 侧 / HTML 模板」，未提引擎侧）。\n**处置**：① 状态 `AUTO` → `IMPL`（`AUTO` 的含义是「自动化测试通过」；而本项的关键主张\n「English 完整」在引擎侧**经实测不成立**，继续标 `AUTO` 会让门禁把它当不阻断 —— 与 §5.7 同型）；\n② `blockedBy: engine-i18n-plumbing-pending`（修复需先定「引擎侧文案的真值源与注入方式」——\n属设计决策，非纯工作量）；③ `verify-i18n-contract.mjs` 新增**登记表 + 双向核对**：\n现状已登记为清单（新增硬编码中文 UI 文案即失败、删掉须注销），清单同时充当修复的工作清单；\n④ 证据补入本探针与清单所在护栏。\n**未处置（仅记录，属另一方向）**：`table/liveView.ts` 的 aria-label 是**硬编码英文**\n（`Empty table cell` / `Edit table cell: …` / `Markdown table`）—— 在**默认的中文界面**下同样未本地化。\n该方向不在本次登记表内（英文串里混有刻意语言中立的按钮文本如 `Aa` / `.*`，静态判定噪声大）。\n\n【2026-10-01 更正：登记表**少计一半** —— 原记「43 处 / 5 个文件」→ 实测 **79 处 / 8 个文件**】\n根因：`verify-i18n-contract.mjs` 的判据只认「**UI 属性赋值**」这一种写法\n（`x.textContent = '…'` / `{ title: '…' }` / `setAttribute('<UI 属性>', '…')`），\n于是**同语义的其它写法全部漏检**：\n① **三元 / 表达式位置**：`label.textContent = lang === '' ? '语言' : …`（`=` 后面不是引号）；\n② **函数实参**：`new Option('(无语言)', '')`、`copyCodeText(code, btn, '复制')`；\n③ **模板串**：`` fail(`mkdir(${path}) 未实现`) ``；\n④ **整个文件从未被扫到**：`wysiwygBlocks.ts`、`image/ops.ts`、`image/host.ts`。\n新增漏检项分布：`codeBlockLabel.ts` +2（语言 / (无语言)）、`image/widget.ts` +10（各按钮的 tooltip 描述）、\n`table/toolbar.ts` +2（列 / 行）、以及 3 个新文件（`wysiwygBlocks.ts` 3、`image/ops.ts` 15、`image/host.ts` 4）。\n**判据已改为「按事实枚举」**：逐行扫描、**任意位置**、单/双/反引号**三种形态**，只要含汉字即登记；\n唯一豁免是**已本地化的调用**（`tEngine('…')` / `t('…')`，即修复的目标状态）。\n并加 8 条逐形态 canary（含历史上漏检的三种写法）+ 9 例注入验证。\n这与 §4.52 同型 —— **只核对一半 = 没核对**。\n**故本项实际工作量约为原估计的 1.8 倍**（79 条 / 8 文件，而非 43 条 / 5 文件）；\n`blockedBy` 与状态**不变**（仍 `engine-i18n-plumbing-pending` / `IMPL`）—— 接线尚未开始。\n**附带**：`image/host.ts` 那 4 条是**错误路径 / 开发者消息**（`fail()` 与 io 兜底），\n本轮**照收不误**（宁可多登记，不可漏登记）；是否真属 UI 由接入 i18n 时逐条判定。\n\n\n【2026-10-01 ADR-0028 落地：引擎侧文案已本地化 → 状态 IMPL 升回 AUTO】\n裁决（ADR-0028：Q1=A2 逐项加桥 / Q2=B1 引擎自带目录 / Q3=C1 默认 zh-CN）后实施：\n① 新增 `packages/editor-engine/src/engineI18n.ts` —— 引擎文案目录（76 键 × zh/en）\n+ `tEngine()` + `__MELLOW_ENGINE_LOCALE__` 桥（含 localStorage 时序兜底）；\n② 引擎侧 **79 处 / 8 文件**硬编码中文全部改为 `tEngine('…')`（登记表**清空** —— 它是待修清单，目标即缩到 0）；\n③ 宿主链：`engine/index.ts` 装桥 → `editor-core.setEngineLocale()` → `App.tsx` 在「引擎就绪」回调 + locale 变化时注入；\n④ 英文真值：带 Typora 一手出处的取自本机 `.strings`/`main.js`（`Find` / `Replace` / `All` / `Case Sensitive` /\n`Regular Expression` / `Download` / `Open` / `Rename` / `Heading 1..3` / `Strike` / `Quote` / `Emphasis`（斜体）/\n`Strong`（粗体）/ `Align Left|Center|Right` / `Delete Table`），其余标注为 **Mellow 自译（参数原创）**；\n⑤ 护栏 `verify-i18n-contract.mjs` 改为四条判据：E1 无硬编码中文（仅豁免 3 条**开发者错误**消息）/\nE2 每个 `tEngine` 键必须在目录中（防**裸键**）/ E3 两 locale 齐备且与 `packages/i18n` 键**不重叠** /\nE4 **接线链完整**（引擎装桥 → editor-core → App.tsx —— 缺一段就是「目录存在但界面不变」的半成品）。\n\n**实测证据（`tests/e2e/i18n-engine-probe.mjs`，dev 浏览器 + Playwright，把界面切到 en-US 后读引擎真实 DOM）**：\n· 表格工具栏：`Resize / ↑ Row / ↓ Row / Delete Row / ← Col / → Col / Delete Col / Align Left / Align Center / Align Right / Tidy / Delete Table`；\n· 查找面板占位符：`Find` / `Replace`；按钮 `Replace` / `All`；\n· 选区浮动工具栏：`Heading 1|2|3 / Strong / Emphasis / Strike / Inline Code / Hyperlink / Quote / List`，`aria-label = Format toolbar`；\n· 引擎 DOM **可见**元素中 title 含中文的 = **0**。\n\n**⚠️ 本项差点以「半成品」收口（值得记）**：静态护栏 E1–E4 全绿之后，探针仍报**表格工具栏与选区工具栏是中文** ——\n根因是**求值时机**：`selectionToolbar.ts` 的按钮定义是**模块级常量**、`table/toolbar.ts` 在**构造时**渲染，\n而引擎 `install()` 早于宿主注入 locale 的桥 → 标签被**烘死**成默认语言。\n**静态护栏查不出「求值时机」错误**（源码里确实没有硬编码中文），只有 e2e 探针能抓到。\n已修：标签改为**显示时求值**（`actionDefs()` 函数化 + `renderButtons()` 移到 `updateToolbar` 的显示路径）。\n\n**`blockedBy` 已移除**（`engine-i18n-plumbing-pending` 已消解）。\n**状态 = AUTO 的含义**：自动化证据（引擎单测 + 四判据护栏 + e2e 实测）齐备；\n**真机三平台体验验收仍未做** —— 按 master-plan §4.3，`AUTO` 不等于「已完成」。\n",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/i18n",
+      "evidence": [
+        "docs/product/Mellow-PRD-V1.2-FINAL.md",
+        "packages/i18n/test/index.test.ts",
+        "tests/e2e/i18n-engine-probe.mjs",
+        "packages/editor-engine/src/engineI18n.ts",
+        "packages/editor-engine/test/engine-i18n.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "integration",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-IMAGE-001",
+      "domain": "image",
+      "capability": "图片插入与路径策略",
+      "typoraBehavior": "本地图片、粘贴图片与相对路径工作流可预测。",
+      "mellowTarget": "图片资产写入经 Host Adapter，源码引用保持可移植。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "docs/specs/image-workflow-spec.md",
+        "packages/editor-engine/test/image-insert.test.ts",
+        "packages/editor-engine/test/image-path.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "source-fidelity"
+      ]
+    },
+    {
+      "id": "P0-IMAGE-002",
+      "domain": "image",
+      "capability": "图片尺寸、扫描与操作",
+      "typoraBehavior": "图片显示与属性操作不损坏原始 Markdown。",
+      "mellowTarget": "尺寸和扫描策略可撤销、可恢复。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "packages/editor-engine/test/image-size.test.ts",
+        "packages/editor-engine/test/image-scan.test.ts",
+        "packages/editor-engine/test/image-ops.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "source-fidelity"
+      ]
+    },
+    {
+      "id": "P0-LAYOUT-001",
+      "domain": "layout",
+      "capability": "排版单一真源",
+      "typoraBehavior": "正文 16px / line-height 1.6；写作宽度分档可选。",
+      "mellowTarget": "`TYPOGRAPHY_DEFAULTS = { fontSize: 16, lineHeight: 1.6, writingWidth: 860 }` 唯一真源；编辑器（setEditorConfig）与 Reader（CSS 变量）同源（V7-W5 补齐字号）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/settings",
+      "evidence": [
+        "packages/settings/src/index.ts",
+        "tests/parity/verify-shell-typography.mjs",
+        "apps/desktop/src/styles.css",
+        "tests/visual/golden/layout-golden.json",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-LAYOUT-002",
+      "domain": "layout",
+      "capability": "三平台视觉 Golden（14 场景）",
+      "typoraBehavior": "以 Typora 1.14.9 三平台截图为参照。",
+      "mellowTarget": "三平台 × 14 场景截图归档并比对（§9.3）；当前仅本机，三平台 chrome 截图未归档 = G7-QA-04。 【2026-09-12】基线已支持按平台分离（tests/visual/golden-path.mjs：macOS 主基线 / *-golden.linux.json / *-golden.windows.json），避免用 macOS 测量值比对跨平台产物；runtime-qualification.yml 的 Linux / Windows job 已加入 §9.3 14 场景 Golden 采集与产物上传。首次运行自动生成该平台基线，基线提交后即进入比对模式。 【2026-09-22 v1.5.14 run 35635085958】Linux 侧 `visual-golden.mjs` 成功产出 6 配置布局基线，逐项「实测 vs 期望」校验一致（fontSize 16 / lineHeight 25.6 / paddingTop 56 / writingWidth 860），基线 `layout-golden.linux.json` 已提交入库 → Linux 布局漂移自下次运行起受门禁保护。仍缺：① Windows 基线 —— 采集步骤此前静默产出 0 文件（根因 `spawn('npx')` 在 Windows 无法执行 `npx.cmd` → ENOENT，叠加 continue-on-error 与「步骤退出码取最后一条命令」），已新增跨平台启动器 `tests/visual/dev-server.mjs` + workflow 逐条记录退出码，**修复待 runner 验证**；② Linux sidebar / scenes 基线 —— `sidebar-golden.mjs` 在 Linux 报 `mock workspace 构建失败`，需 Linux 环境复现。另新增护栏：硬断言必须先于基线写入（防把真实缺陷固化成基准）、侧栏默认宽度与 App.tsx 单一真源交叉比对。 【2026-09-22 三平台比对模式全绿（run 35763137678）】**3 平台 × 3 类基线全部入库并进入比对模式**，三平台各 3 个脚本均报「match baseline (±1px)」：Linux `6 configs / 4 views / 7 场景`、Windows `6 configs / 4 views / 7 场景`、macOS 主基线。Windows 侧从「自加入起从未产出任何基线」到就位，剥出并修掉 **4 个互相掩盖的独立缺陷**：① `working-directory: mellow` 指向不存在的目录（Windows job 的 checkout 无 `path: mellow` → pwsh 无法启动 → 步骤**一步未跑**）；② `spawn('npx')` → Windows 上 `npx.cmd` ENOENT；③ `new URL(...).pathname` → `D:\\D:\\...` 重复盘符（tests/ 下 32 处，全量改 `fileURLToPath`）；④ `waitEditorFrame` 就绪判定弱于采样需求（只查 `window.editor`，未查采样真正读的 `.cm-content`）→ 慢 runner 上间歇性失败（同一提交两次运行结果互换）。另修 Linux 侧 `window.prompt` 残留消费者（G7-EDIT-10 迁移漏改 `sidebar-golden` 与 `drag-drop-verify`）。护栏新增：路径一致性（working-directory / 制品前缀 vs checkout 落点）、全目录禁止取 URL 对象的 pathname、就绪判定必须含 `.cm-content`、硬断言必须先于基线写入、跨平台 dev server 启动器 —— 各配 canary（均实测注入检出）。**状态仍维持 BLOCKED 不升 PASS-E**：本项自身 requiredEvidence 已齐备，但 PASS-E 全局策略要求 `ux-gate`，需人工计时会话（P0-QA-001）。\n【2026-10-01 视觉门禁从「假门禁」改为真门禁 + 基线更新（审计 §4.51）】实跑三个 Golden 抓到三重缺陷：\n① `scenes-golden` 失败：`table-toolbar.bar.w 436 → 478`、`buttonCount 11 → 12` —— 归因于 10-01 的\n`eb3acd7`（实施 Resize Table，新增「调整」按钮），而**基线自 09-13 起未更新**；\n② **最严重**：`runtime-qualification.yml` 的两个视觉步骤带 `continue-on-error: true` →\nv1.5.16 那次运行的 Linux 与 Windows **日志里都写着 `VISUAL_GOLDEN scenes-golden: FAILED (exit 1)`，\n而两个 job 结论都是 success** —— 即**一个真实可见的排版回归随版本发布而门禁看不见**；\n③ 比对容差（`TOLERANCE_PX = 1`）被套在**所有**数值字段上 → `buttonCount` 的 1 之差被静默放过，\n而它本是唯一能抓住「增删按钮」的判据。②与③叠加才让回归一路发布。\n**处置**：基线三平台同步（macOS 实测重建；Linux/Windows 按 CI 日志实测值）；容差改为按字段语义选择\n（像素 ±1px、计数/设计常量精确 0）；**移除两个视觉步骤的 `continue-on-error`**（实现该步骤注释自身的\n条件「基线入库后即进入比对模式」——三平台基线早已入库）；新增两条护栏（视觉步骤不得 `continue-on-error`；\n容差必须由 `PX_FIELD` 选择）各配双向 canary。\n**对本项的意义**：视觉 Golden 从「失败也不阻断」变为**真门禁**，故本项的视觉证据链现在是**可阻断的**；\n`blockedBy` 与状态**不变**（仍为 `ux-gate-policy`）—— 人工 UX Gate 会话与真机基线采集仍需完成。 【2026-11-03】原句「blockedBy 与状态不变（仍为 ux-gate-policy）」的前提已被 **ADR-0039**（用户裁决收窄）取代：本项的挂起理由**只有**那条全局策略（三平台视觉基线已入库且比对为**可阻断门禁**）⇒ 状态按 §4.3 落 **AUTO**（不升 PASS-E，同 EDITOR-004）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "tests/parity",
+      "evidence": [
+        "tests/parity/verify-visual-golden.mjs",
+        "tests/visual/golden/layout-golden.json",
+        "tests/visual/golden/sidebar-golden.json",
+        "tests/benchmark/screenshots/p2-8-window-chrome-macos.png",
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/visual/golden-path.mjs",
+        "tests/qualification/evidence/2026-09-22-v1.5.14-three-platform-runtime-qualification.md",
+        "tests/visual/golden/layout-golden.linux.json"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
       ]
     },
     {
@@ -261,184 +658,282 @@
       ]
     },
     {
-      "id": "P0-TABLE-001",
-      "domain": "table",
-      "capability": "表格创建与键盘导航",
-      "typoraBehavior": "Tab 在单元格间移动、末格加行，表格仍是标准 Markdown。",
-      "mellowTarget": "表格编辑、Undo、IME 与最小 patch 均可验。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。 【2026-10-01 口径更正（审计 §4.39）】本项 capability 为「表格创建与键盘导航」，但下方 evidence 覆盖的是**键盘导航 / 最小 patch / IME / Undo**，**不含创建路径的对话框**。Mellow 能建表（固定 2×2 插入 / TSV 粘贴 / 手写 `| a | b |`），**spec §3 的 Create Dialog（Rows 默认 4 / Columns 默认 3，Rows 含表头行）已于 2026-10-01 实施**（菜单与 Slash 共用的 `insert.table` 打开应用内多字段对话框，复用 `askUser` 状态机；生成逻辑为可单测的纯函数 `buildGfmTable`）；同批还发现 spec §3 的「optional alignment」为规格失真（Typora 对话框无对齐字段，已在 spec 内更正）、以及 spec 原先**漏收** Typora 的 `Resize Table`（已补入 spec §3b）。",
+      "id": "P0-MARKDOWN-006",
+      "domain": "markdown",
+      "capability": "CJK 行内强调语义（`**` 紧贴全角标点）",
+      "typoraBehavior": "这是**「必须」**的：`**` 内侧非空白即可成对，外侧紧贴汉字/全角标点不影响 ⇒ 渲染成加粗。",
+      "mellowTarget": "预览（lezer）与导出（markdown-it）两条路径对 `**` 紧贴全角标点的行内强调**都渲染加粗**（ADR-0035 = A1，2026-11-03 用户裁决）。⚠️ 这**偏离 CommonMark**（CommonMark 按 flanking 规则判不成对）⇒ 属**有意对齐 Typora** 的产品决策，Source Fidelity 不受影响（doc 文本仍原样）。待施工 = 批次 A35（预览走 Mellow decoration 层，不改 vendored parser；导出走 markdown-it 自定义 inline rule）。",
+      "grade": "E",
+      "status": "ABSENT",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "source-fidelity"
+      ],
+      "blockedBy": "construction-pending（批次 A35：ADR-0035 已裁决 A1，未施工）"
+    },
+    {
+      "id": "P0-MENU-001",
+      "domain": "menu",
+      "capability": "顶层菜单合同",
+      "typoraBehavior": "File、Edit、Paragraph、Format、View、Theme、Window、Help 顺序稳定。",
+      "mellowTarget": "菜单和命令注册表共享同一语义；不保留独立 Insert 顶层菜单。 【2026-11-03 ADR-0039（用户裁决「收窄」）】ux-gate 改由 P0-QA-001 **单点**承载 ⇒ 本项 requiredEvidence 移除 ux-gate、删除策略噪声 blockedBy；本项自身证据链不变（AUTO 的含义仍是「真机体验验收未完成」，见 §4.3）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop/src-tauri",
+      "evidence": [
+        "tests/benchmark/fixtures/typora-menu-dump.txt",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/parity/verify-menu-contract.mjs"
+      ],
+      "requiredEvidence": [
+        "menu-schema",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-MENU-002",
+      "domain": "menu",
+      "capability": "菜单、快捷键与 Command Palette 一致性",
+      "typoraBehavior": "菜单入口和快捷键可预测、无冲突。",
+      "mellowTarget": "每个用户命令有唯一 ID、可见性、启用条件和平台快捷键。",
+      "grade": "B",
+      "status": "AUTO",
+      "ownerPackage": "packages/commands",
+      "evidence": [
+        "docs/specs/desktop-ui-design-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/parity/verify-menu-contract.mjs",
+        "packages/commands/test/registry.test.ts"
+      ],
+      "requiredEvidence": [
+        "command-registry",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-MENU-003",
+      "domain": "menu",
+      "capability": "Context Menu 覆盖面",
+      "typoraBehavior": "文本 / 链接 / 图片 / 代码 / 公式 / Mermaid / 表格 / 文件树 / 大纲 / 搜索均有上下文菜单。",
+      "mellowTarget": "11 类上下文菜单全部走 dispatchCommand（命令单一真源，ADR-0023）。 【2026-09-12】新增运行时证据 tests/e2e/context-menu-verify.mjs（4/4）：编辑器右键弹出 7 项（剪切/复制/粘贴/段落/格式/复制为 Markdown/复制为纯文本），「格式」子菜单展开为 加粗/斜体/删除线/代码/超链接…，点击「加粗」真的加粗文档且菜单关闭 —— 此前仅静态护栏，无运行时验证。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "tests/parity/verify-context-menu-parity.mjs",
+        "tests/parity/verify-context-menu-guard.mjs",
+        "tests/parity/verify-menu-contract.mjs",
+        "tests/e2e/context-menu-verify.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-MENU-004",
+      "domain": "menu",
+      "capability": "菜单护栏（schema diff）",
+      "typoraBehavior": "菜单结构、条目顺序、separator、accelerator、勾选态三平台一致且与 Typora 对齐。",
+      "mellowTarget": "MENU_SCHEMA 单一真源 → toNativeMenuSpec() 只做 materialization；护栏覆盖条目顺序 / separator / accel / checkState / 三平台 × 双语。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/commands",
+      "evidence": [
+        "packages/commands/src/menuSchema.ts",
+        "tests/parity/verify-menu-contract.mjs",
+        "tests/parity/verify-menu-contract-guard.mjs"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci"
+      ]
+    },
+    {
+      "id": "P0-PERF-001",
+      "domain": "performance",
+      "capability": "大文件与交互性能",
+      "typoraBehavior": "同机、同文档条件下维持可编辑和可导航；**Typora 自身对 >2,000,000 字符的文档不渲染，该尺寸无 Typora 行为可比**（一级证据：TypeMark/appsrc/window/frame.js 的 tryEnterOversize + MAX_FILE_SIZE: 2e6；ADR-0025 Q1=A1，Accepted 2026-09-30）。",
+      "mellowTarget": "性能不差于 Typora 规定阈值，大文件降级不破坏编辑。 【2026-09-12 本机原生基准】冷启动带文件 N=3：1MB open median 1289.2ms（Typora 1326.9ms，0.97×）、10MB open median 1109.7ms（Typora 428.1ms，2.59×）；scroll 两侧均约 57 FPS 无掉帧。10MB 打开为真实优化项，未擅自重写大文件架构，状态保持 MAC。 【2026-09-22 复测：原 2.59× 结论口径无效，已更正】按当前版本重建二进制后复测（runs=5 / warmup=2），原始样本显示 `open` 指标不能作为「大文件处理慢」的证据：① Mellow 10MB 样本为 `1300,236,1311,235,1299` —— **严格交替双峰**（~236ms / ~1300ms），交替意味着被测的是**上一次启动遗留的会话状态**而非文件成本；② Mellow 快态 ~236ms **快于** Typora 10MB 的 398ms，且低于 PRD 目标 1.0–1.5s；③ Typora 自身 1MB（1021.8ms）反而**慢于** 10MB（398.5ms），1MB 不可能比 10MB 慢 2.6×，说明该指标对 Typora 同样非单调。同时修复两个 harness 缺陷：**缺少预热轮**（新增 `--warmup`，默认 1；此前首个 fixture 吸收一次性启动成本，制造「越大越快」假象）与**夹具重建失败丢弃整批数据**（`execSync` 未捕获 → results JSON 不落盘，实测「Typora 测完、Mellow 一个未跑」）。结论：本项状态**维持 MAC**；原「10MB 打开 2.59×」不得再作为大文件处理缺口的证据；真实待办拆分为两条独立项 —— (a) Mellow 启动路径存在约 1.06s 的**间歇性**成本（成因未隔离：恢复快照/自动保存、WKWebView 内容进程 2 态、kill 后静默不足），(b) 需要 hot-open 口径（同进程内连续打开多文档）才能得到可比的「文档打开成本」。 【2026-09-22 分量分解：结论再更正】把 open 指标按分量拆开后找到决定性证据：(a) `loadMs` 是 **≈600ms 常量**（Mellow 1MB 603.8 / Mellow 10MB 604.0 / Typora 1MB 629.8 —— 跨应用、跨尺寸不变，真实加载不可能对 1MB 与 10MB 给同一个数）；(b) 样本总量完全由**探针成功率**决定：Typora 10MB 探针 0/5 成功 → 指标静默退化为「窗口出现」=398ms；Typora 1MB 探针 5/5 成功 → 额外加 ≈685ms =1022ms；Mellow 10MB 3/5 成功 → 1300ms。「Typora 10MB 比 1MB 快 2.6×」与「Mellow 2.59× 于 Typora」因此被完整解释为**探针成功率差异**，与文件尺寸无关。(c) 单独复测 Mellow 10MB（runs=8/warmup=1）：winMs 8/8 稳定 228–242ms，**无间歇成本**，远低于 PRD 1.0–1.5s；但本轮探针 8/8 失败，故该读数**不含首键回显**，不等于完整 open-to-editable 达标。真实待办收窄为两条纯 harness 工作：**修 startup-probe**（loadMs 常量 + 成功率漂移）+ **补 hot-open 口径**。状态**维持 MAC**。 【2026-09-22 源码级确证：loadMs 是 600ms 硬地板】`screen-timing.swift` 的 `waitStable(stableMs: Double = 600)` 要求 ROI **连续 600ms 无像素变化**才 break，循环结构上不可能早于 600ms 返回 → `loadMs` 不是「文档加载耗时」而是「等待画面静止」，天然带 600ms 地板（实测跨应用/尺寸 603.8–629.8，只反映 30ms 采样抖动）。叠加旧实现 `winMs + (probe.ok ? … : null)` 在 JS 里 `number + null === number` 的静默退化，两个不可比的量被一起求中位数 → 这才是「2.59×」与「10MB 比 1MB 快 2.6×」的共同成因。已修：失败样本记 null、响亮报失败率与有效样本数、报告新增「有效样本与探针失败率」节。修正后 Mellow 10MB 有效 open-to-editable ≈1356ms（3/4 有效，落在 PRD 1.0–1.5s 内，其中 ~610ms 为 waitStable 地板）；**Typora 10MB 有效读数为空（0/5）→ 目前不存在可比的 Mellow vs Typora 10MB 结论**。真实待办：改 waitStable 为真正的「内容就绪」信号 + 隔离探针 0/5 的根因 + 补 hot-open 口径。 【2026-10-01 实测：原定「一行级修法」不可行，已回退】本机权限齐备（`screen-timing check` → accessibility:true / screenRecording:true）、helper 与 release 构建都在 —— 故这不是「缺环境」，而是**验证后发现修法本身不成立**。A/B 实测：改前 1MB loadMs=[631,631]（Typora）/[633,629]（Mellow）；把 `return nowMs() - start` 改成 `return lastChange - start` 后，**全部 8 个样本的 stderr 均为 `0 changed`** → loadMs **恒为 0**（1MB 双应用 + 10MB 共 8 样本）。即「恒 600ms 地板」被换成「恒 0」，后者更糟（0 读起来像「瞬时加载」）。**根因**：`waitStable` 在**窗口已被绘制之后**才被调用（调用序：窗口检测 → waitStable），此时**没有后续变化可观察**。**真实修法 = 把观测窗口前移到打开之前（harness 时序重排）**，不是改返回值。附加证据：10MB 的真实代价体现在 latencyMs ≈ 1.4s（首键回显 [1418,1339]），**不是** loadMs。源码与**已授权二进制**均已回退（回退后复测读数恢复 613–629ms）。\n【2026-10-01 待办清单过期核查（**高估剩余工作**，逐项对代码核实）】上面两处列的「真实待办」共 3 条，实测只有 1 条仍成立：\n① **补 hot-open 口径 = 已完成**（证据：`run-benchmark.mjs` 的 `ALL_METRICS` 含 `hotopen`、报告 §2d、`hot-open-probe` 调用；且 ADR-0026 Q1/Q2=A1 已把 `hotopen.switchMs` 定为 PRD §110 的**判定量**）；\n② **隔离探针 0/5 的根因 = 已解释**（ADR-0025 Q1/Q2：Typora 对 >2,000,000 字符**不渲染** → 该尺寸**不存在 Typora 基线**，跨应用比值一律经 `ratioOrNA()`；台账 `typoraBehavior` 已按 ADR-0025 改为限定式表述）—— 故 0/5 不是待查的谜团，而是**设计内的已知边界**；\n③ **冷启动 `loadMs` 的「内容就绪」读数 = 仍待办**，但它的性质是**诊断量而非判定量**：ADR-0026 已把判定改走 `hotopen.switchMs`（同一实例内换文档，触发点**在捕获开始之后**，故观测窗口天然能覆盖加载），冷启动 `open` 一节亦已声明「不参与任何 PRD 判定」。2026-10-01 的 A/B 实测进一步证明其一行级修法不可行（改后 8 样本恒 0），真修法是**把观测窗口前移到打开之前**。\n**故 `perf-harness-pending` 的实际剩余范围 = ③ 一项（诊断量）**；本项无论如何仍被 `ux-gate-policy` 阻塞，故 `blockedBy` 保持原样、状态不变。\n（方法：本次按「**过期是双向的**」纪律核查 —— 不只查「把没做的说成做了」，也查「把做了的说成没做」；后者的证据强度更低（找到实现即可），但会被系统性地误当成「还需投入」。）【2026-10-13 实测：把「观测窗口」做成**可测量**的量 —— 并**否掉**了「时序重排」这条修法】① **首次把相位计时落进 helper**：`startup-probe` 现在向 stderr 报 `phases: entry/activate/roi/firstFrame/stable`（**epoch 毫秒**，可与调用方的「进程启动 / 窗口出现」对齐）⇒ 死时间从「只能推断」变成「**每样本可测**」。② **本机 1MB 实测分解**：窗口出现 = 启动后 **+722ms**；`activateAndEnsureInput` = **1423ms**（**最大一块**）；`resolveRoiForCapture` = 33ms；SCK 建流 + 首帧 = 110ms ⇒ **首帧比窗口出现晚 ≈1.9s**（文档内容正在这段死时间里画完 ⇒ 观测窗口开得太晚）。③ ⚠️ **但「把激活移到开捕获之后」不是修法**：曾按「激活不是捕获的前置条件」实现该重排（开关控制），**A/B 交替实测（同二进制、只换开关、各 8 样本）**：旧序 `stableChangedFrames>0` **1/8**、新序 **0/8**⇒ **顺序不是决定因素**（甚至略差）⇒ **已回退**，不保留该开关。④ **更正后的结论**：决定 `changedFrames` 的是「**内容绘制**是否落在**首帧**之后」—— 那是**竞态**（本会话 16 样本里 15 个为 0、偶发 1 个），**不是**固定顺序问题。要让观测窗口**必然**前移，只能让捕获在**窗口创建之前**开始；而 SCK 的 `desktopIndependentWindow` 是**按窗口**捕获，**结构上做不到** ⇒ 真实路径是**显示器级**捕获（先开显示器流，再在流里检测目标窗口区域出现）。**故上文「真实修法 = harness 时序重排」已被实测否掉**，剩余范围据此更新。⑤ **本项性质不变**：`loadMs` 是**诊断量**、不参与任何 PRD 判定（ADR-0026 已把判定改走 `hotopen.switchMs`）；判定量（`ok` / `latencyMs`）在两序下均正常。 【2026-11-03 ADR-0039】blockedBy 原含 ux-gate 分量（「ux-gate-policy + perf-harness-pending」）⇒ 收窄后只留**真实剩余缺口** perf-harness-pending；状态维持 MAC（单平台，见上：10MB 快/慢双峰竞态未解）。",
+      "grade": "B",
+      "status": "MAC",
+      "blockedBy": "perf-harness-pending",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "docs/specs/performance-benchmark-spec.md",
+        "packages/editor-engine/test/large-file.test.ts",
+        "tests/benchmark/run-benchmark.mjs",
+        "docs/qualification/real-desktop-execution-bundle.md",
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/qualification/evidence/2026-09-12-macos-open-scroll-vs-typora.md",
+        "tests/qualification/evidence/2026-09-22-perf-open-metric-validity.md",
+        "tests/qualification/evidence/2026-09-23-perf-probe-root-cause-and-fix.md",
+        "tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md",
+        "tests/qualification/evidence/2026-09-23-input-source-validity-and-hot-open.md",
+        "tests/qualification/evidence/2026-09-25-perf-hot-open-authoritative.md",
+        "tests/qualification/evidence/2026-09-25-hotopen-criterion-and-large-file-cliff.md",
+        "tests/qualification/evidence/2026-09-25-lockscreen-invalidates-visual-metrics.md",
+        "tests/qualification/evidence/2026-09-28-open-echo-criterion-and-fresh-comparison.md",
+        "tests/qualification/evidence/2026-09-29-typing-metric-resolution-limit.md"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "benchmark"
+      ]
+    },
+    {
+      "id": "P0-PLATFORM-001",
+      "domain": "platform",
+      "capability": "三平台 Runtime 体验门禁",
+      "typoraBehavior": "核心编辑任务在目标桌面平台可稳定完成。",
+      "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。 【2026-09-13 windows-ci 证据】ci.yml 新增的 windows-parity-guard（纯 Node parity 契约链）已在 windows-latest 常态通过（CI run 144，7/7 job 全绿）—— 契约层（菜单 schema / 键位表 / 设置 / 侧栏 / 排版 / 视觉 Golden / 台账 / 发布门禁）在 Windows 上成立。修复过程中暴露并根治了一个真实缺陷：Windows 的 actions/checkout 以 CRLF 检出源码，护栏注入与 canary 的 \\n 锚点全部失配（已全局归一化 + 元护栏守护）。仍缺：Windows Runtime 级证据（打包/启动/10MB/输入交互），需 runtime-qualification.yml 运行，故状态维持 IMPL。 【2026-09-13 Runtime 证据（Runtime Qualification run 60，v1.5.7 标签自动触发）】Windows：Source Fidelity gate ✅（真实原子保存管线、字节级一致）、runtime smoke（launch + SendKeys type + save 读回）✅；macOS：launch + CLI open smoke ✅。**Windows Runtime 级证据首次取得**。Linux：Xvfb + fcitx5 IME 矩阵 ❌（本轮失败，需排查）。另 Visual golden 采集步骤在 runner 上失败（各平台 dev server / 字体度量不同，首次无可比基线），已改为不阻断，仅作基线采集。 【2026-09-13 run 61】Windows Runtime job 整体 success（Source Fidelity gate + launch/SendKeys/save 读回）；macOS launch smoke success；仅 Linux IME 矩阵失败（既有问题）。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】三平台 Runtime 级证据**首次全部通过**：Linux IME 矩阵 8/8（含 undo）、Windows Source Fidelity gate + launch/SendKeys/save 读回、macOS launch + CLI open + 存活。本项 requiredEvidence（macos-native / windows-ci / linux-ci / linux-ime-matrix）至此**已全部取得**。状态仍维持 IMPL：PASS-E 全局策略额外要求 ux-gate，需人工计时会话（P0-QA-001）后才能宣称结论。\n\n【2026-10-01 状态更正：IMPL → **AUTO**（按 ADR-0024 的规则，非 judgement）】\n本项 `requiredEvidence` = `macos-native` / `windows-ci` / `linux-ci` / `linux-ime-matrix`\n（**不含 `ux-gate`**），而本项记录在 2026-09-22 已写明「本项 requiredEvidence 至此**已全部取得**」。\n门禁 `verify-release-gate.mjs` 的闭环口径（ADR-0024 Q1=A3）规定：\n**`AUTO` 且 `requiredEvidence` 不含 `ux-gate` ⇒ 视为已闭环** —— 因为 `AUTO` 的含义正是\n「自动化测试通过、**真机体验验收未完成**」，与「本项证据齐备、仅差全局 ux-gate 策略」完全对应。\n此前维持 `IMPL` 的理由写的是「PASS-E 全局策略额外要求 ux-gate，需人工计时会话后才能**宣称结论**」——\n那说的是**能否宣称 PASS-E**，不是「本项证据是否齐备」；用 `IMPL` 表达它属**状态词误用**\n（`IMPL` = 未实现/未完成）。\n\n**独立复核（2026-10-01 实跑）**：派发 Runtime Qualification（run 36825957958）→\n**macOS / Windows / Linux 三平台全绿**（含 Linux IME 矩阵、Windows Source Fidelity + runtime smoke、\nmacOS launch + CLI open）⇒ 上列四项证据**确实取得**，非仅凭自述。\n\n**因此状态改为 `AUTO`、并移除 `blockedBy`**（已闭环项不得再挂「阻塞」）。\n**这不改变任何结论**：门禁仍报 `PASS-E = 0/50`，且 `AUTO` **不等于**「真机体验验收已完成」；\n全局人工 UX Gate 会话（`P0-QA-001`）仍是发布转正的前提。\n",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "apps/desktop",
+      "evidence": [
+        "docs/adr/ADR-0022-ci-runtime-qualification-evidence-policy.md",
+        "docs/specs/runtime-qualification-plan.md",
+        "tests/qualification/README.md",
+        "tests/benchmark/ime-matrix-linux.mjs",
+        ".github/workflows/runtime-qualification.yml",
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/qualification/evidence/2026-09-22-v1.5.14-three-platform-runtime-qualification.md"
+      ],
+      "requiredEvidence": [
+        "macos-native",
+        "windows-ci",
+        "linux-ci",
+        "linux-ime-matrix"
+      ]
+    },
+    {
+      "id": "P0-QA-001",
+      "domain": "acceptance",
+      "capability": "UX Score 与 30 个核心任务",
+      "typoraBehavior": "同机同文档同任务的效率对照可量化。",
+      "mellowTarget": "UX Score ≥ 92，关键任务不慢于 Typora 门槛。",
+      "grade": "E",
+      "status": "NOT_TESTED",
+      "blockedBy": "human-ux-gate-session",
+      "ownerPackage": "tests/benchmark",
+      "evidence": [
+        "docs/qualification/ux-score-gate-template.md",
+        "tests/benchmark/golden-journeys.mjs",
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md",
+        "docs/qualification/release-blocker-audit-2026-09-25.md"
+      ],
+      "requiredEvidence": [
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "ux-gate"
+      ]
+    },
+    {
+      "id": "P0-SHELL-001",
+      "domain": "desktop-ui",
+      "capability": "文档优先桌面布局",
+      "typoraBehavior": "默认窗口低干扰，正文表面占视觉主导。",
+      "mellowTarget": "默认隐藏 Sidebar / Status Bar，减少常驻操作控件。 【2026-11-03 ADR-0039（用户裁决「收窄」）】ux-gate 改由 P0-QA-001 **单点**承载 ⇒ 本项 requiredEvidence 移除 ux-gate、删除策略噪声 blockedBy；本项自身证据链不变（AUTO 的含义仍是「真机体验验收未完成」，见 §4.3）。",
+      "grade": "E",
+      "status": "AUTO",
+      "ownerPackage": "packages/desktop-ui",
+      "evidence": [
+        "docs/specs/desktop-ui-design-spec.md",
+        "docs/plans/typora-parity-master-plan.md",
+        "tests/e2e/sidebar-verify.mjs",
+        "tests/parity/verify-visual-golden.mjs"
+      ],
+      "requiredEvidence": [
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-SHELL-002",
+      "domain": "desktop-ui",
+      "capability": "Focus 与 Typewriter（SDI：无 Tabs）",
+      "typoraBehavior": "专注写作与打字机模式不让 chrome 喧宾夺主；Typora 的多标签在 Mellow 的 SDI 模型下不存在（D-D）。",
+      "mellowTarget": "Focus / Typewriter 可被键盘发现（F8 / F9）；Tabs 在 SDI 下不提供并登记为 D-D，台账不得再写「Tabs 可扩展」。",
+      "grade": "D",
+      "status": "AUTO",
+      "ownerPackage": "packages/editor-engine",
+      "evidence": [
+        "packages/editor-engine/test/focusMode.test.ts",
+        "packages/editor-engine/test/typewriterMode.test.ts"
+      ],
+      "requiredEvidence": [
+        "unit",
+        "macos",
+        "windows-ci",
+        "linux-ci",
+        "visual-golden"
+      ]
+    },
+    {
+      "id": "P0-SHELL-003",
+      "domain": "desktop-ui",
+      "capability": "Editor Toolbar 形态（D-B）",
+      "typoraBehavior": "1.14 What's New：可从 View → Toolbar 或 Settings → Appearance 启用的**浮动**工具栏。",
+      "mellowTarget": "D-B 裁决 = ①：单一浮动工具栏（Selection 锚定、IME 冻结、可键盘操作），退役壳层常驻横条；入口与设置项同源 storageKey。 【2026-09-12 真 bug 修复】结构契约在、功能曾是死的：position() 在 CodeMirror update 周期内调用 view.coordsAtPos()（CM6 禁止读布局）→ 抛错被 getAnchor 的 catch 吞掉 → 返回 null → 立即 hideEl()，且 visible=false 后不再重定位，浮动工具栏**永不显示**（实测程序化选区与真实鼠标拖拽均 display:none）。已改为 schedulePosition() 把定位推迟到 update 周期外（rAF），实测 w×h=300.7×34 可见；destroy 取消待执行帧。回归防线：verify-shell-widgets.mjs 静态契约（禁止 showEl/update 同步定位 + canary）+ tests/visual/scenes-golden.mjs 的 selection-toolbar 场景硬断言 visible===true。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
-        "docs/specs/table-editing-spec.md",
-        "packages/editor-engine/test/table-keyboard.test.ts",
-        "packages/editor-engine/test/table-engine.test.ts",
-        "tests/e2e/ime-composition-verify.mjs",
-        "tests/e2e/widget-buttons-verify.mjs"
+        "tests/parity/verify-shell-widgets.mjs",
+        "packages/settings/src/index.ts",
+        "tests/visual/scenes-golden.mjs",
+        "tests/visual/golden/scenes-golden.json",
+        "tests/qualification/macos-local-verification-2026-09-12.md"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
         "windows-ci",
         "linux-ci",
-        "source-fidelity"
+        "visual-golden"
       ]
     },
     {
-      "id": "P0-TABLE-002",
-      "domain": "table",
-      "capability": "表格 GUI 与对齐",
-      "typoraBehavior": "表格工具可在不改变未触及单元格的前提下完成行列与对齐操作。",
-      "mellowTarget": "工具栏按上下文出现，键盘路径始终可用。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。",
-      "grade": "B",
+      "id": "P0-SHELL-004",
+      "domain": "desktop-ui",
+      "capability": "状态栏与字数可见性",
+      "typoraBehavior": "状态栏默认隐藏、View 菜单可开；macOS 字数在标题栏（hover 或常显）。",
+      "mellowTarget": "view.statusbar.toggle 入菜单（G7-MENU-03 已修）；appearance.wordCount 常显开关 + 标题并入字数（G7-SHELL-06 已修）；hover 显隐登记 D。",
+      "grade": "E",
       "status": "AUTO",
-      "ownerPackage": "packages/editor-engine",
+      "ownerPackage": "packages/desktop-ui",
       "evidence": [
-        "packages/editor-engine/test/table-toolbar.test.ts",
-        "packages/editor-engine/test/table-column-width.test.ts",
-        "tests/e2e/ime-composition-verify.mjs",
-        "tests/e2e/widget-buttons-verify.mjs"
+        "packages/desktop-ui/src/StatusBar.tsx",
+        "packages/commands/src/menuSchema.ts",
+        "packages/desktop-ui/test/statusbar-defaults.test.ts"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
         "windows-ci",
-        "linux-ci",
-        "source-fidelity"
-      ]
-    },
-    {
-      "id": "P0-IMAGE-001",
-      "domain": "image",
-      "capability": "图片插入与路径策略",
-      "typoraBehavior": "本地图片、粘贴图片与相对路径工作流可预测。",
-      "mellowTarget": "图片资产写入经 Host Adapter，源码引用保持可移植。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/editor-engine",
-      "evidence": [
-        "docs/specs/image-workflow-spec.md",
-        "packages/editor-engine/test/image-insert.test.ts",
-        "packages/editor-engine/test/image-path.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "source-fidelity"
-      ]
-    },
-    {
-      "id": "P0-IMAGE-002",
-      "domain": "image",
-      "capability": "图片尺寸、扫描与操作",
-      "typoraBehavior": "图片显示与属性操作不损坏原始 Markdown。",
-      "mellowTarget": "尺寸和扫描策略可撤销、可恢复。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/editor-engine",
-      "evidence": [
-        "packages/editor-engine/test/image-size.test.ts",
-        "packages/editor-engine/test/image-scan.test.ts",
-        "packages/editor-engine/test/image-ops.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "source-fidelity"
-      ]
-    },
-    {
-      "id": "P0-CLIPBOARD-001",
-      "domain": "clipboard",
-      "capability": "复制为纯文本、Markdown 与 HTML",
-      "typoraBehavior": "复制到不同目标应用保留符合目标预期的格式。",
-      "mellowTarget": "同一次复制提供多 MIME 表示，降级路径明确。 【2026-09-12 跨应用实测】C1 富文本 MIME ✅、C2 Mellow→TextEdit Markdown 读回精确一致 ✅、C3 TextEdit→Mellow 纯文本 ⛔（TextEdit 输入阶段未生效，待完整 System Events 上下文复跑），不升 PASS-E。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/editor-engine",
-      "evidence": [
-        "docs/specs/clipboard-smart-paste-spec.md",
-        "packages/editor-engine/test/clipboard-copy.test.ts",
-        "tests/qualification/evidence/2026-09-12-macos-clipboard-cross-app.json"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "cross-app"
-      ]
-    },
-    {
-      "id": "P0-CLIPBOARD-002",
-      "domain": "clipboard",
-      "capability": "Smart Paste",
-      "typoraBehavior": "URL、HTML、TSV、图片和文件粘贴走可预测路径。",
-      "mellowTarget": "智能识别不改变纯文本粘贴语义，且可撤销。 【2026-09-12】跨应用矩阵同上，C3 未形成有效证据，暂不判定 Smart Paste 实现。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/editor-engine",
-      "evidence": [
-        "packages/editor-engine/test/smart-paste.test.ts",
-        "docs/specs/clipboard-smart-paste-spec.md",
-        "tests/qualification/evidence/2026-09-12-macos-clipboard-cross-app.json"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "cross-app"
-      ]
-    },
-    {
-      "id": "P0-FILE-001",
-      "domain": "file",
-      "capability": "打开、保存与另存为",
-      "typoraBehavior": "打开与保存稳定，文档路径和脏状态可见。",
-      "mellowTarget": "文件 IO 仅由 Rust System Core 执行，保存采用安全写入。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "apps/desktop/src-tauri",
-      "evidence": [
-        "docs/specs/document-file-safety-spec.md",
-        "tests/qualification/source-fidelity-corpus.md",
-        "apps/desktop/src-tauri/tests/file_safety_corpus.rs",
-        "packages/editor-core/CoreEditor/test/document-isolation.test.ts"
-      ],
-      "requiredEvidence": [
-        "integration",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "source-fidelity"
-      ]
-    },
-    {
-      "id": "P0-FILE-002",
-      "domain": "file",
-      "capability": "外部变更、冲突与恢复",
-      "typoraBehavior": "外部修改、dirty 冲突和异常恢复不会静默丢失用户内容。",
-      "mellowTarget": "Reload、Keep、Compare 与 Recovery 均有明确决定路径。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/app-core",
-      "evidence": [
-        "docs/specs/document-file-safety-spec.md",
-        "tests/qualification/file-safety-corpus.md",
-        "packages/app-core/test/externalChange.test.ts",
-        "packages/app-core/test/recovery.test.ts"
-      ],
-      "requiredEvidence": [
-        "integration",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "source-fidelity"
+        "linux-ci"
       ]
     },
     {
@@ -507,359 +1002,6 @@
         "windows-ci",
         "linux-ci",
         "visual-golden"
-      ]
-    },
-    {
-      "id": "P0-SHELL-001",
-      "domain": "desktop-ui",
-      "capability": "文档优先桌面布局",
-      "typoraBehavior": "默认窗口低干扰，正文表面占视觉主导。",
-      "mellowTarget": "默认隐藏 Sidebar / Status Bar，减少常驻操作控件。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "packages/desktop-ui",
-      "evidence": [
-        "docs/specs/desktop-ui-design-spec.md",
-        "docs/plans/typora-parity-master-plan.md",
-        "tests/e2e/sidebar-verify.mjs",
-        "tests/parity/verify-visual-golden.mjs"
-      ],
-      "requiredEvidence": [
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "visual-golden",
-        "ux-gate"
-      ],
-      "blockedBy": "ux-gate-policy"
-    },
-    {
-      "id": "P0-SHELL-002",
-      "domain": "desktop-ui",
-      "capability": "Focus 与 Typewriter（SDI：无 Tabs）",
-      "typoraBehavior": "专注写作与打字机模式不让 chrome 喧宾夺主；Typora 的多标签在 Mellow 的 SDI 模型下不存在（D-D）。",
-      "mellowTarget": "Focus / Typewriter 可被键盘发现（F8 / F9）；Tabs 在 SDI 下不提供并登记为 D-D，台账不得再写「Tabs 可扩展」。",
-      "grade": "D",
-      "status": "AUTO",
-      "ownerPackage": "packages/editor-engine",
-      "evidence": [
-        "packages/editor-engine/test/focusMode.test.ts",
-        "packages/editor-engine/test/typewriterMode.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "visual-golden"
-      ]
-    },
-    {
-      "id": "P0-MENU-001",
-      "domain": "menu",
-      "capability": "顶层菜单合同",
-      "typoraBehavior": "File、Edit、Paragraph、Format、View、Theme、Window、Help 顺序稳定。",
-      "mellowTarget": "菜单和命令注册表共享同一语义；不保留独立 Insert 顶层菜单。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "apps/desktop/src-tauri",
-      "evidence": [
-        "tests/benchmark/fixtures/typora-menu-dump.txt",
-        "docs/plans/typora-parity-master-plan.md",
-        "tests/parity/verify-menu-contract.mjs"
-      ],
-      "requiredEvidence": [
-        "menu-schema",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "ux-gate"
-      ],
-      "blockedBy": "ux-gate-policy"
-    },
-    {
-      "id": "P0-MENU-002",
-      "domain": "menu",
-      "capability": "菜单、快捷键与 Command Palette 一致性",
-      "typoraBehavior": "菜单入口和快捷键可预测、无冲突。",
-      "mellowTarget": "每个用户命令有唯一 ID、可见性、启用条件和平台快捷键。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/commands",
-      "evidence": [
-        "docs/specs/desktop-ui-design-spec.md",
-        "docs/plans/typora-parity-master-plan.md",
-        "tests/parity/verify-menu-contract.mjs",
-        "packages/commands/test/registry.test.ts"
-      ],
-      "requiredEvidence": [
-        "command-registry",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-THEME-001",
-      "domain": "theme",
-      "capability": "主题、字体与缩放",
-      "typoraBehavior": "主题和字体改变阅读外观，不改变 Markdown 内容。",
-      "mellowTarget": "主题注册、菜单、设置和 UI 实际可用主题完全同步。\n【2026-10-01 追加记录：引擎侧主题跟随缺口（审计 §4.53）—— **不影响本项主张，故状态不变**】\n实测：宿主（`App.tsx` applyTheme）把主题变量设在 **app 根**上，而编辑器 iframe 只经\n`setMdTokens()` 拿到 **`--mellow-md-*`**（`mdTokens.ts` 的 `setTokenProperties` 显式过滤，\n文件头亦自述「宿主的 `--mellow-*` 变量不会自动继承」）。\n**后果**：引擎里 **6 个非 md 主题变量**（`--mellow-accent` / `--mellow-bg-hover` / `--mellow-border` /\n`--mellow-danger` / `--mellow-toolbar-bg` / `--mellow-toolbar-fg`，分布在 8 个文件）**永远取 fallback**；\n而 `table/toolbar.ts` 更是 15 处硬编码色、一个主题变量都没用 → **暗色主题下表格工具栏仍是白底**\n（探针 `tests/e2e/theme-follow-probe.mjs` 实测：app 侧 `data-theme=mellow-dark`、\n`--mellow-toolbar-bg=rgba(40,40,42,.95)`，而表格工具栏 `bg=rgba(255,255,255,0.92)`、\n选区工具栏 `bg=rgba(30,30,30,0.92)`＝fallback）。\n\n**为什么不改本项状态**：本项主张是「主题和字体改变**阅读外观**」+「主题**注册/菜单/设置/UI 同步**」，\n**都没有**声称「引擎侧每个表面都跟随主题」→ 本缺口属它**未覆盖**的部分，不构成对其主张的反驳。\n（与 §4.52 的 `P0-I18N-001` 不同：那条的能力名就是「English **完整性**」，故必须降级。）\n\n**处置**：护栏 `verify-parity-ledger.mjs` 新增「引擎不得出现新的非 md 主题变量」（登记上述 6 个，新增即失败）；\n**未**改动那 6 个 `var()` —— 它们承载「这些表面**想**跟随主题」的意图，正解是**拓宽 token 桥**（设计决策）。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/themes",
-      "evidence": [
-        "packages/themes/src/index.ts",
-        "docs/specs/desktop-ui-design-spec.md",
-        "packages/themes/test/index.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "integration",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-EXPORT-001",
-      "domain": "export",
-      "capability": "PDF、HTML、Image、Print 导出",
-      "typoraBehavior": "导出产物在中文、图片、表格、公式和图表下可用。",
-      "mellowTarget": "导出路径、错误反馈和输出 fidelity 可验证。",
-      "grade": "E",
-      "status": "IMPL",
-      "ownerPackage": "packages/export",
-      "evidence": [
-        "docs/specs/document-file-safety-spec.md",
-        "docs/plans/typora-parity-master-plan.md",
-        "packages/export/test/index.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "export-corpus"
-      ],
-      "blockedBy": "pdf-renderer-decision-pending（ADR-0037）"
-    },
-    {
-      "id": "P0-PERF-001",
-      "domain": "performance",
-      "capability": "大文件与交互性能",
-      "typoraBehavior": "同机、同文档条件下维持可编辑和可导航；**Typora 自身对 >2,000,000 字符的文档不渲染，该尺寸无 Typora 行为可比**（一级证据：TypeMark/appsrc/window/frame.js 的 tryEnterOversize + MAX_FILE_SIZE: 2e6；ADR-0025 Q1=A1，Accepted 2026-09-30）。",
-      "mellowTarget": "性能不差于 Typora 规定阈值，大文件降级不破坏编辑。 【2026-09-12 本机原生基准】冷启动带文件 N=3：1MB open median 1289.2ms（Typora 1326.9ms，0.97×）、10MB open median 1109.7ms（Typora 428.1ms，2.59×）；scroll 两侧均约 57 FPS 无掉帧。10MB 打开为真实优化项，未擅自重写大文件架构，状态保持 MAC。 【2026-09-22 复测：原 2.59× 结论口径无效，已更正】按当前版本重建二进制后复测（runs=5 / warmup=2），原始样本显示 `open` 指标不能作为「大文件处理慢」的证据：① Mellow 10MB 样本为 `1300,236,1311,235,1299` —— **严格交替双峰**（~236ms / ~1300ms），交替意味着被测的是**上一次启动遗留的会话状态**而非文件成本；② Mellow 快态 ~236ms **快于** Typora 10MB 的 398ms，且低于 PRD 目标 1.0–1.5s；③ Typora 自身 1MB（1021.8ms）反而**慢于** 10MB（398.5ms），1MB 不可能比 10MB 慢 2.6×，说明该指标对 Typora 同样非单调。同时修复两个 harness 缺陷：**缺少预热轮**（新增 `--warmup`，默认 1；此前首个 fixture 吸收一次性启动成本，制造「越大越快」假象）与**夹具重建失败丢弃整批数据**（`execSync` 未捕获 → results JSON 不落盘，实测「Typora 测完、Mellow 一个未跑」）。结论：本项状态**维持 MAC**；原「10MB 打开 2.59×」不得再作为大文件处理缺口的证据；真实待办拆分为两条独立项 —— (a) Mellow 启动路径存在约 1.06s 的**间歇性**成本（成因未隔离：恢复快照/自动保存、WKWebView 内容进程 2 态、kill 后静默不足），(b) 需要 hot-open 口径（同进程内连续打开多文档）才能得到可比的「文档打开成本」。 【2026-09-22 分量分解：结论再更正】把 open 指标按分量拆开后找到决定性证据：(a) `loadMs` 是 **≈600ms 常量**（Mellow 1MB 603.8 / Mellow 10MB 604.0 / Typora 1MB 629.8 —— 跨应用、跨尺寸不变，真实加载不可能对 1MB 与 10MB 给同一个数）；(b) 样本总量完全由**探针成功率**决定：Typora 10MB 探针 0/5 成功 → 指标静默退化为「窗口出现」=398ms；Typora 1MB 探针 5/5 成功 → 额外加 ≈685ms =1022ms；Mellow 10MB 3/5 成功 → 1300ms。「Typora 10MB 比 1MB 快 2.6×」与「Mellow 2.59× 于 Typora」因此被完整解释为**探针成功率差异**，与文件尺寸无关。(c) 单独复测 Mellow 10MB（runs=8/warmup=1）：winMs 8/8 稳定 228–242ms，**无间歇成本**，远低于 PRD 1.0–1.5s；但本轮探针 8/8 失败，故该读数**不含首键回显**，不等于完整 open-to-editable 达标。真实待办收窄为两条纯 harness 工作：**修 startup-probe**（loadMs 常量 + 成功率漂移）+ **补 hot-open 口径**。状态**维持 MAC**。 【2026-09-22 源码级确证：loadMs 是 600ms 硬地板】`screen-timing.swift` 的 `waitStable(stableMs: Double = 600)` 要求 ROI **连续 600ms 无像素变化**才 break，循环结构上不可能早于 600ms 返回 → `loadMs` 不是「文档加载耗时」而是「等待画面静止」，天然带 600ms 地板（实测跨应用/尺寸 603.8–629.8，只反映 30ms 采样抖动）。叠加旧实现 `winMs + (probe.ok ? … : null)` 在 JS 里 `number + null === number` 的静默退化，两个不可比的量被一起求中位数 → 这才是「2.59×」与「10MB 比 1MB 快 2.6×」的共同成因。已修：失败样本记 null、响亮报失败率与有效样本数、报告新增「有效样本与探针失败率」节。修正后 Mellow 10MB 有效 open-to-editable ≈1356ms（3/4 有效，落在 PRD 1.0–1.5s 内，其中 ~610ms 为 waitStable 地板）；**Typora 10MB 有效读数为空（0/5）→ 目前不存在可比的 Mellow vs Typora 10MB 结论**。真实待办：改 waitStable 为真正的「内容就绪」信号 + 隔离探针 0/5 的根因 + 补 hot-open 口径。 【2026-10-01 实测：原定「一行级修法」不可行，已回退】本机权限齐备（`screen-timing check` → accessibility:true / screenRecording:true）、helper 与 release 构建都在 —— 故这不是「缺环境」，而是**验证后发现修法本身不成立**。A/B 实测：改前 1MB loadMs=[631,631]（Typora）/[633,629]（Mellow）；把 `return nowMs() - start` 改成 `return lastChange - start` 后，**全部 8 个样本的 stderr 均为 `0 changed`** → loadMs **恒为 0**（1MB 双应用 + 10MB 共 8 样本）。即「恒 600ms 地板」被换成「恒 0」，后者更糟（0 读起来像「瞬时加载」）。**根因**：`waitStable` 在**窗口已被绘制之后**才被调用（调用序：窗口检测 → waitStable），此时**没有后续变化可观察**。**真实修法 = 把观测窗口前移到打开之前（harness 时序重排）**，不是改返回值。附加证据：10MB 的真实代价体现在 latencyMs ≈ 1.4s（首键回显 [1418,1339]），**不是** loadMs。源码与**已授权二进制**均已回退（回退后复测读数恢复 613–629ms）。\n【2026-10-01 待办清单过期核查（**高估剩余工作**，逐项对代码核实）】上面两处列的「真实待办」共 3 条，实测只有 1 条仍成立：\n① **补 hot-open 口径 = 已完成**（证据：`run-benchmark.mjs` 的 `ALL_METRICS` 含 `hotopen`、报告 §2d、`hot-open-probe` 调用；且 ADR-0026 Q1/Q2=A1 已把 `hotopen.switchMs` 定为 PRD §110 的**判定量**）；\n② **隔离探针 0/5 的根因 = 已解释**（ADR-0025 Q1/Q2：Typora 对 >2,000,000 字符**不渲染** → 该尺寸**不存在 Typora 基线**，跨应用比值一律经 `ratioOrNA()`；台账 `typoraBehavior` 已按 ADR-0025 改为限定式表述）—— 故 0/5 不是待查的谜团，而是**设计内的已知边界**；\n③ **冷启动 `loadMs` 的「内容就绪」读数 = 仍待办**，但它的性质是**诊断量而非判定量**：ADR-0026 已把判定改走 `hotopen.switchMs`（同一实例内换文档，触发点**在捕获开始之后**，故观测窗口天然能覆盖加载），冷启动 `open` 一节亦已声明「不参与任何 PRD 判定」。2026-10-01 的 A/B 实测进一步证明其一行级修法不可行（改后 8 样本恒 0），真修法是**把观测窗口前移到打开之前**。\n**故 `perf-harness-pending` 的实际剩余范围 = ③ 一项（诊断量）**；本项无论如何仍被 `ux-gate-policy` 阻塞，故 `blockedBy` 保持原样、状态不变。\n（方法：本次按「**过期是双向的**」纪律核查 —— 不只查「把没做的说成做了」，也查「把做了的说成没做」；后者的证据强度更低（找到实现即可），但会被系统性地误当成「还需投入」。）【2026-10-13 实测：把「观测窗口」做成**可测量**的量 —— 并**否掉**了「时序重排」这条修法】① **首次把相位计时落进 helper**：`startup-probe` 现在向 stderr 报 `phases: entry/activate/roi/firstFrame/stable`（**epoch 毫秒**，可与调用方的「进程启动 / 窗口出现」对齐）⇒ 死时间从「只能推断」变成「**每样本可测**」。② **本机 1MB 实测分解**：窗口出现 = 启动后 **+722ms**；`activateAndEnsureInput` = **1423ms**（**最大一块**）；`resolveRoiForCapture` = 33ms；SCK 建流 + 首帧 = 110ms ⇒ **首帧比窗口出现晚 ≈1.9s**（文档内容正在这段死时间里画完 ⇒ 观测窗口开得太晚）。③ ⚠️ **但「把激活移到开捕获之后」不是修法**：曾按「激活不是捕获的前置条件」实现该重排（开关控制），**A/B 交替实测（同二进制、只换开关、各 8 样本）**：旧序 `stableChangedFrames>0` **1/8**、新序 **0/8**⇒ **顺序不是决定因素**（甚至略差）⇒ **已回退**，不保留该开关。④ **更正后的结论**：决定 `changedFrames` 的是「**内容绘制**是否落在**首帧**之后」—— 那是**竞态**（本会话 16 样本里 15 个为 0、偶发 1 个），**不是**固定顺序问题。要让观测窗口**必然**前移，只能让捕获在**窗口创建之前**开始；而 SCK 的 `desktopIndependentWindow` 是**按窗口**捕获，**结构上做不到** ⇒ 真实路径是**显示器级**捕获（先开显示器流，再在流里检测目标窗口区域出现）。**故上文「真实修法 = harness 时序重排」已被实测否掉**，剩余范围据此更新。⑤ **本项性质不变**：`loadMs` 是**诊断量**、不参与任何 PRD 判定（ADR-0026 已把判定改走 `hotopen.switchMs`）；判定量（`ok` / `latencyMs`）在两序下均正常。",
-      "grade": "B",
-      "status": "MAC",
-      "blockedBy": "ux-gate-policy + perf-harness-pending",
-      "ownerPackage": "packages/editor-engine",
-      "evidence": [
-        "docs/specs/performance-benchmark-spec.md",
-        "packages/editor-engine/test/large-file.test.ts",
-        "tests/benchmark/run-benchmark.mjs",
-        "docs/qualification/real-desktop-execution-bundle.md",
-        "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/qualification/evidence/2026-09-12-macos-open-scroll-vs-typora.md",
-        "tests/qualification/evidence/2026-09-22-perf-open-metric-validity.md",
-        "tests/qualification/evidence/2026-09-23-perf-probe-root-cause-and-fix.md",
-        "tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md",
-        "tests/qualification/evidence/2026-09-23-input-source-validity-and-hot-open.md",
-        "tests/qualification/evidence/2026-09-25-perf-hot-open-authoritative.md",
-        "tests/qualification/evidence/2026-09-25-hotopen-criterion-and-large-file-cliff.md",
-        "tests/qualification/evidence/2026-09-25-lockscreen-invalidates-visual-metrics.md",
-        "tests/qualification/evidence/2026-09-28-open-echo-criterion-and-fresh-comparison.md",
-        "tests/qualification/evidence/2026-09-29-typing-metric-resolution-limit.md"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "benchmark"
-      ]
-    },
-    {
-      "id": "P0-I18N-001",
-      "domain": "i18n",
-      "capability": "简体中文默认与 English 完整性",
-      "typoraBehavior": "桌面文案、菜单和快捷键提示可本地化。",
-      "mellowTarget": "中文默认、English 完整，命令 ID 不依赖显示语言。\n【2026-10-01 更正：「English 完整」在**引擎侧**不成立 —— 状态由 AUTO 降为 IMPL】\n**实测（e2e 探针 `tests/e2e/i18n-engine-probe.mjs`）**：把 `mellow.locale` 设为 `en-US` 后，\nSettings 面板显示**英文**（前提成立：`Settings / General / … / Language / 简体中文 / English`），\n而**引擎（iframe 内）渲染的 UI 文案仍是中文** ——\n· 表格工具栏：`调整 / ↑行 / ↓行 / 删行 / ←列 / →列 / 删列 / 左 / 中 / 右 / 整理 / 删除表`；\n· 查找面板：placeholder `查找` / `替换`，按钮 `替换` / `全部`；\n· DOM 里 title：`一级标题 / 二级标题 / 三级标题 / 粗体 / 斜体 / 删除线 / 行内代码 / 链接 / 引用 / 列表 / 区分大小写 / 正则表达式`；\n· `setAttribute('aria-label', …)`：`查找` / `替换` / `格式工具栏`。\n**范围**：引擎侧共 **43 处**硬编码中文 UI 文案，分布在 5 个文件\n（`image/widget.ts` 10 / `table/toolbar.ts` 13 / `selectionToolbar.ts` 11 / `documentSearch.ts` 8 / `codeBlockLabel.ts` 1）。\n**为什么此前没有被发现**：本项的证据只有 `packages/i18n/test/index.test.ts`（zh/en **目录键一致性**），\n而 CI 护栏 `verify-i18n-contract.mjs` 只覆盖 `t('<字面量>')` 与 schema 的 labelKey/descriptionKey ——\n**硬编码字符串对二者都不可见**（该护栏的范围声明此前只写「不覆盖 Rust 侧 / HTML 模板」，未提引擎侧）。\n**处置**：① 状态 `AUTO` → `IMPL`（`AUTO` 的含义是「自动化测试通过」；而本项的关键主张\n「English 完整」在引擎侧**经实测不成立**，继续标 `AUTO` 会让门禁把它当不阻断 —— 与 §5.7 同型）；\n② `blockedBy: engine-i18n-plumbing-pending`（修复需先定「引擎侧文案的真值源与注入方式」——\n属设计决策，非纯工作量）；③ `verify-i18n-contract.mjs` 新增**登记表 + 双向核对**：\n现状已登记为清单（新增硬编码中文 UI 文案即失败、删掉须注销），清单同时充当修复的工作清单；\n④ 证据补入本探针与清单所在护栏。\n**未处置（仅记录，属另一方向）**：`table/liveView.ts` 的 aria-label 是**硬编码英文**\n（`Empty table cell` / `Edit table cell: …` / `Markdown table`）—— 在**默认的中文界面**下同样未本地化。\n该方向不在本次登记表内（英文串里混有刻意语言中立的按钮文本如 `Aa` / `.*`，静态判定噪声大）。\n\n【2026-10-01 更正：登记表**少计一半** —— 原记「43 处 / 5 个文件」→ 实测 **79 处 / 8 个文件**】\n根因：`verify-i18n-contract.mjs` 的判据只认「**UI 属性赋值**」这一种写法\n（`x.textContent = '…'` / `{ title: '…' }` / `setAttribute('<UI 属性>', '…')`），\n于是**同语义的其它写法全部漏检**：\n① **三元 / 表达式位置**：`label.textContent = lang === '' ? '语言' : …`（`=` 后面不是引号）；\n② **函数实参**：`new Option('(无语言)', '')`、`copyCodeText(code, btn, '复制')`；\n③ **模板串**：`` fail(`mkdir(${path}) 未实现`) ``；\n④ **整个文件从未被扫到**：`wysiwygBlocks.ts`、`image/ops.ts`、`image/host.ts`。\n新增漏检项分布：`codeBlockLabel.ts` +2（语言 / (无语言)）、`image/widget.ts` +10（各按钮的 tooltip 描述）、\n`table/toolbar.ts` +2（列 / 行）、以及 3 个新文件（`wysiwygBlocks.ts` 3、`image/ops.ts` 15、`image/host.ts` 4）。\n**判据已改为「按事实枚举」**：逐行扫描、**任意位置**、单/双/反引号**三种形态**，只要含汉字即登记；\n唯一豁免是**已本地化的调用**（`tEngine('…')` / `t('…')`，即修复的目标状态）。\n并加 8 条逐形态 canary（含历史上漏检的三种写法）+ 9 例注入验证。\n这与 §4.52 同型 —— **只核对一半 = 没核对**。\n**故本项实际工作量约为原估计的 1.8 倍**（79 条 / 8 文件，而非 43 条 / 5 文件）；\n`blockedBy` 与状态**不变**（仍 `engine-i18n-plumbing-pending` / `IMPL`）—— 接线尚未开始。\n**附带**：`image/host.ts` 那 4 条是**错误路径 / 开发者消息**（`fail()` 与 io 兜底），\n本轮**照收不误**（宁可多登记，不可漏登记）；是否真属 UI 由接入 i18n 时逐条判定。\n\n\n【2026-10-01 ADR-0028 落地：引擎侧文案已本地化 → 状态 IMPL 升回 AUTO】\n裁决（ADR-0028：Q1=A2 逐项加桥 / Q2=B1 引擎自带目录 / Q3=C1 默认 zh-CN）后实施：\n① 新增 `packages/editor-engine/src/engineI18n.ts` —— 引擎文案目录（76 键 × zh/en）\n+ `tEngine()` + `__MELLOW_ENGINE_LOCALE__` 桥（含 localStorage 时序兜底）；\n② 引擎侧 **79 处 / 8 文件**硬编码中文全部改为 `tEngine('…')`（登记表**清空** —— 它是待修清单，目标即缩到 0）；\n③ 宿主链：`engine/index.ts` 装桥 → `editor-core.setEngineLocale()` → `App.tsx` 在「引擎就绪」回调 + locale 变化时注入；\n④ 英文真值：带 Typora 一手出处的取自本机 `.strings`/`main.js`（`Find` / `Replace` / `All` / `Case Sensitive` /\n`Regular Expression` / `Download` / `Open` / `Rename` / `Heading 1..3` / `Strike` / `Quote` / `Emphasis`（斜体）/\n`Strong`（粗体）/ `Align Left|Center|Right` / `Delete Table`），其余标注为 **Mellow 自译（参数原创）**；\n⑤ 护栏 `verify-i18n-contract.mjs` 改为四条判据：E1 无硬编码中文（仅豁免 3 条**开发者错误**消息）/\nE2 每个 `tEngine` 键必须在目录中（防**裸键**）/ E3 两 locale 齐备且与 `packages/i18n` 键**不重叠** /\nE4 **接线链完整**（引擎装桥 → editor-core → App.tsx —— 缺一段就是「目录存在但界面不变」的半成品）。\n\n**实测证据（`tests/e2e/i18n-engine-probe.mjs`，dev 浏览器 + Playwright，把界面切到 en-US 后读引擎真实 DOM）**：\n· 表格工具栏：`Resize / ↑ Row / ↓ Row / Delete Row / ← Col / → Col / Delete Col / Align Left / Align Center / Align Right / Tidy / Delete Table`；\n· 查找面板占位符：`Find` / `Replace`；按钮 `Replace` / `All`；\n· 选区浮动工具栏：`Heading 1|2|3 / Strong / Emphasis / Strike / Inline Code / Hyperlink / Quote / List`，`aria-label = Format toolbar`；\n· 引擎 DOM **可见**元素中 title 含中文的 = **0**。\n\n**⚠️ 本项差点以「半成品」收口（值得记）**：静态护栏 E1–E4 全绿之后，探针仍报**表格工具栏与选区工具栏是中文** ——\n根因是**求值时机**：`selectionToolbar.ts` 的按钮定义是**模块级常量**、`table/toolbar.ts` 在**构造时**渲染，\n而引擎 `install()` 早于宿主注入 locale 的桥 → 标签被**烘死**成默认语言。\n**静态护栏查不出「求值时机」错误**（源码里确实没有硬编码中文），只有 e2e 探针能抓到。\n已修：标签改为**显示时求值**（`actionDefs()` 函数化 + `renderButtons()` 移到 `updateToolbar` 的显示路径）。\n\n**`blockedBy` 已移除**（`engine-i18n-plumbing-pending` 已消解）。\n**状态 = AUTO 的含义**：自动化证据（引擎单测 + 四判据护栏 + e2e 实测）齐备；\n**真机三平台体验验收仍未做** —— 按 master-plan §4.3，`AUTO` 不等于「已完成」。\n",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/i18n",
-      "evidence": [
-        "docs/product/Mellow-PRD-V1.2-FINAL.md",
-        "packages/i18n/test/index.test.ts",
-        "tests/e2e/i18n-engine-probe.mjs",
-        "packages/editor-engine/src/engineI18n.ts",
-        "packages/editor-engine/test/engine-i18n.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "integration",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-PLATFORM-001",
-      "domain": "platform",
-      "capability": "三平台 Runtime 体验门禁",
-      "typoraBehavior": "核心编辑任务在目标桌面平台可稳定完成。",
-      "mellowTarget": "Windows、macOS、Linux 共享产品语义，Adapter 仅承载系统差异。 【2026-09-13 windows-ci 证据】ci.yml 新增的 windows-parity-guard（纯 Node parity 契约链）已在 windows-latest 常态通过（CI run 144，7/7 job 全绿）—— 契约层（菜单 schema / 键位表 / 设置 / 侧栏 / 排版 / 视觉 Golden / 台账 / 发布门禁）在 Windows 上成立。修复过程中暴露并根治了一个真实缺陷：Windows 的 actions/checkout 以 CRLF 检出源码，护栏注入与 canary 的 \\n 锚点全部失配（已全局归一化 + 元护栏守护）。仍缺：Windows Runtime 级证据（打包/启动/10MB/输入交互），需 runtime-qualification.yml 运行，故状态维持 IMPL。 【2026-09-13 Runtime 证据（Runtime Qualification run 60，v1.5.7 标签自动触发）】Windows：Source Fidelity gate ✅（真实原子保存管线、字节级一致）、runtime smoke（launch + SendKeys type + save 读回）✅；macOS：launch + CLI open smoke ✅。**Windows Runtime 级证据首次取得**。Linux：Xvfb + fcitx5 IME 矩阵 ❌（本轮失败，需排查）。另 Visual golden 采集步骤在 runner 上失败（各平台 dev server / 字体度量不同，首次无可比基线），已改为不阻断，仅作基线采集。 【2026-09-13 run 61】Windows Runtime job 整体 success（Source Fidelity gate + launch/SendKeys/save 读回）；macOS launch smoke success；仅 Linux IME 矩阵失败（既有问题）。 【2026-09-22 v1.5.14 Runtime Qualification run 35635085958】三平台 Runtime 级证据**首次全部通过**：Linux IME 矩阵 8/8（含 undo）、Windows Source Fidelity gate + launch/SendKeys/save 读回、macOS launch + CLI open + 存活。本项 requiredEvidence（macos-native / windows-ci / linux-ci / linux-ime-matrix）至此**已全部取得**。状态仍维持 IMPL：PASS-E 全局策略额外要求 ux-gate，需人工计时会话（P0-QA-001）后才能宣称结论。\n\n【2026-10-01 状态更正：IMPL → **AUTO**（按 ADR-0024 的规则，非 judgement）】\n本项 `requiredEvidence` = `macos-native` / `windows-ci` / `linux-ci` / `linux-ime-matrix`\n（**不含 `ux-gate`**），而本项记录在 2026-09-22 已写明「本项 requiredEvidence 至此**已全部取得**」。\n门禁 `verify-release-gate.mjs` 的闭环口径（ADR-0024 Q1=A3）规定：\n**`AUTO` 且 `requiredEvidence` 不含 `ux-gate` ⇒ 视为已闭环** —— 因为 `AUTO` 的含义正是\n「自动化测试通过、**真机体验验收未完成**」，与「本项证据齐备、仅差全局 ux-gate 策略」完全对应。\n此前维持 `IMPL` 的理由写的是「PASS-E 全局策略额外要求 ux-gate，需人工计时会话后才能**宣称结论**」——\n那说的是**能否宣称 PASS-E**，不是「本项证据是否齐备」；用 `IMPL` 表达它属**状态词误用**\n（`IMPL` = 未实现/未完成）。\n\n**独立复核（2026-10-01 实跑）**：派发 Runtime Qualification（run 36825957958）→\n**macOS / Windows / Linux 三平台全绿**（含 Linux IME 矩阵、Windows Source Fidelity + runtime smoke、\nmacOS launch + CLI open）⇒ 上列四项证据**确实取得**，非仅凭自述。\n\n**因此状态改为 `AUTO`、并移除 `blockedBy`**（已闭环项不得再挂「阻塞」）。\n**这不改变任何结论**：门禁仍报 `PASS-E = 0/50`，且 `AUTO` **不等于**「真机体验验收已完成」；\n全局人工 UX Gate 会话（`P0-QA-001`）仍是发布转正的前提。\n",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "apps/desktop",
-      "evidence": [
-        "docs/adr/ADR-0022-ci-runtime-qualification-evidence-policy.md",
-        "docs/specs/runtime-qualification-plan.md",
-        "tests/qualification/README.md",
-        "tests/benchmark/ime-matrix-linux.mjs",
-        ".github/workflows/runtime-qualification.yml",
-        "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/qualification/evidence/2026-09-22-v1.5.14-three-platform-runtime-qualification.md"
-      ],
-      "requiredEvidence": [
-        "macos-native",
-        "windows-ci",
-        "linux-ci",
-        "linux-ime-matrix"
-      ]
-    },
-    {
-      "id": "P0-QA-001",
-      "domain": "acceptance",
-      "capability": "UX Score 与 30 个核心任务",
-      "typoraBehavior": "同机同文档同任务的效率对照可量化。",
-      "mellowTarget": "UX Score ≥ 92，关键任务不慢于 Typora 门槛。",
-      "grade": "E",
-      "status": "NOT_TESTED",
-      "blockedBy": "human-ux-gate-session",
-      "ownerPackage": "tests/benchmark",
-      "evidence": [
-        "docs/qualification/ux-score-gate-template.md",
-        "tests/benchmark/golden-journeys.mjs",
-        "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/qualification/evidence/2026-09-23-typora-render-limit-2mb.md",
-        "docs/qualification/release-blocker-audit-2026-09-25.md"
-      ],
-      "requiredEvidence": [
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "ux-gate"
-      ]
-    },
-    {
-      "id": "P0-FILE-003",
-      "domain": "file",
-      "capability": "重新打开关闭的文件",
-      "typoraBehavior": "Typora File → Reopen Closed File（⇧⌘T / Ctrl+Shift+T）恢复最近关闭的文档。",
-      "mellowTarget": "app 级已关闭文件栈（localStorage，上限 20）+ 同键位；SDI 下语义 = 当前窗口打开（D-R），未保存修改仍经 guardSingleDocument() 确认。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "apps/desktop",
-      "evidence": [
-        "apps/desktop/src/App.tsx",
-        "packages/commands/src/menuSchema.ts",
-        "packages/app-core/test/fileOpHistory.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-FILE-004",
-      "domain": "file",
-      "capability": "定时自动保存",
-      "typoraBehavior": "官方《Auto Save》：Win/Linux 默认每 5 分钟保存一次（`conf.user.json` 的 autoSaveTimer，Double/分钟，默认 5，GUI 不可达）；macOS 为 NSDocument 系统特性、始终开启。",
-      "mellowTarget": "三平台统一 5 分钟定时保存（受既有 mellow.file.autosave 开关控制）；间隔在 GUI 暴露（Typora 需手改 JSON）= B 级增强。",
-      "grade": "B",
-      "status": "AUTO",
-      "ownerPackage": "packages/app-core",
-      "evidence": [
-        "packages/app-core/src/autosave.ts",
-        "packages/app-core/test/autosave.test.ts",
-        "packages/settings/src/index.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-FILE-005",
-      "domain": "file",
-      "capability": "页面设置与打印",
-      "typoraBehavior": "File 菜单只有 Print 与 Page Setup 两项（typora-menu-dump.txt 实证），**没有**打印预览窗口。",
-      "mellowTarget": "Print 直接调系统打印对话框（D-H = ②，护栏禁止 file.printPreview 复活）；Page Setup 在 macOS 走 NSApplication.runPageLayout:，非 macOS 给出可操作提示（G7-FEAT-02）。",
-      "grade": "D",
-      "status": "AUTO",
-      "ownerPackage": "apps/desktop",
-      "evidence": [
-        "apps/desktop/src-tauri/src/window.rs",
-        "apps/desktop/src-tauri/src/print.rs",
-        "packages/export/src/print.ts",
-        "packages/export/test/print.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-EDITOR-005",
-      "domain": "editing",
-      "capability": "拼写检查词典与替换建议",
-      "typoraBehavior": "Typora 使用系统拼写检查（词典 + 建议 + 智能引号 / 文本替换）。",
-      "mellowTarget": "结构已对齐（Edit → Spelling and Grammar / Substitutions 子菜单，D-S）。【2026-09-12 本机实测收窄缺口】系统拼写检查**已真实接线并可调**：edit.spellcheck.toggle 实测把 contentDOM 的 spellcheck 属性从 true 翻到 false（CoreEditor modules/textChecker + 大文件模式自动关闭），红色下划线能力具备。因此本项缺口**比原描述更窄**：仅缺「词典与右键建议列表」（属平台能力，需 host-api 扩展后补齐），而非「拼写检查本身不工作」。证据：tests/e2e/feature-liveness-verify.mjs（拼写检查开关断言）。 【2026-09-29 实施进度】已落地**三层**（均带测试，但**尚无 UI 消费方**，故本项缺口未缩小）： ① 引擎 `contextMenu.wordAt()` + `EditorContextMenuRequest.word`（右键处拉丁词提取，CJK/纯数字/单字符一律不返回——系统拼写检查对中日韩不给建议，返回词会让菜单弹出空建议区）； ② `host-api` 的 `SpellcheckService`（available/suggest/learn/unlearn/hasLearned）+ mock/null 实现（null **优雅降级不抛错**，宿主用 available() 决定是否显示）； ③ Rust `spellcheck.rs`（macOS 走 NSSpellChecker，非 macOS `available=false`）+ 5 个命令。 【2026-09-29 后续：a/b 已完成】a) 「添加到字典 / 忘记拼写」已迁入 command registry（`edit.spelling.learn` / `edit.spelling.unlearn`），右键项**走 dispatchCommand**； 命令只带 id，故目标词在**派发时**由引擎动作 `wordAtCursor()` 解析（= Typora 语义：作用于**光标所在词**，而非「上次右键位置」）； b) 适配器 `apps/desktop/src/host/spellcheck.ts` 已落地，含**可用性同步缓存**（启动 `primeSpellcheckAvailability()` 预取）—— 右键菜单需同步决定是否显示拼写区，不可用时不显示（避免「点了没反应」）；i18n 6 键（zh+en）。 【2026-09-30 补：菜单侧已完成】`edit.spell` 子菜单已补 `edit.spelling.learn`（添加到字典）/ `edit.spelling.unlearn`（忘记拼写）—— 一级证据为 `typora-menu-dump.txt` 的 `Learn Spelling => 添加到字典` / `Unlearn Spelling => 忘记拼写`；菜单命令 ID 173→175、标签 210→212，且 `audit-typora-menu-labels.mjs` 确认 27 条内嵌真值均可在本机 Typora `Menu.strings` 原样查到。 【2026-09-30 补：Check Document Now 已实现】`edit.spell` 子菜单补 `edit.spelling.checkDocument`（立即检查文稿）—— 真功能而非空开关： Rust `spellcheck_check_document` 用 `NSSpellChecker.checkSpellingOfString:startingAt:` 逐段收集未命中区间（**偏移按 UTF-16 码元**，与 CM6 位置同一坐标系，Rust 侧有测试锁住「不是字节偏移」）；引擎补 `getDocumentText()` / `selectRange()`；命令选中**第一处**并提示总数。 【另 3 项**不可实现**（已核实，非未做）】`Check Grammar With Spelling` / `Correct Spelling Automatically` 所需的 `setGrammarCheckingEnabled` / `setAutomaticSpellingCorrectionEnabled` **在 objc2-app-kit 0.3.2 的 NSSpellChecker 绑定中不存在**，且它们作用于 NSTextView、对 WKWebView 的拼写检查无效 → 加上去只会是「点了没反应」的空开关； `Show Spelling and Grammar`（`spellingPanel`）是面向 NSTextView 客户端的系统面板，同样无法呈现 WebView 内的文档错误。 **仍缺（下一步）**：右键**建议列表** —— 但它被**契约模型**挡住，不只是工作量问题： `verify-context-menu-parity` 的模型是「每个条目 = 一个 `onClick: run('id')`」，而建议项要携带**选中值**（点哪个建议就替换成哪个），无法用只带 id 的命令表达； 该护栏的 `DIRECT_CALL_EXCEPTIONS` 又是**按 kind** 生效的，给 `text` 登记会豁免整个文本菜单。 故要落地建议列表，需先**扩展契约模型**（例如允许声明 `dynamic: true` 的取值型条目并说明理由）—— 属**护栏契约变更**，不擅自决定。另仍需本项自身的真机证据（三平台）。\n【2026-09-30 契约扩展 + 建议列表落地】「建议列表」此前被**契约模型**挡住（条目模型是「一条目 = 一个 onClick: run('id')」，而建议项必须携带**选中值**；DIRECT_CALL_EXCEPTIONS 又**按 kind** 生效，给 text 登记会豁免整个文本菜单）。本轮按用户授权**自行裁决并实施**契约扩展：允许条目经 dispatchCommand **携带 payload**（`onClick: run('id', <expr>)`）—— 基础设施本就支持（dispatchCommand(id, source, payload) → CommandContext.payload，插件已在用），缺的只是「菜单条目约定」与「护栏解析」。该扩展**强化**而非削弱 §7.4 硬规则 11：携带 payload 的条目仍走同一条入口（同一 enabledWhen / 同一命令注册表），故**无需**登记直连例外。\n落地四件：① 引擎新增 `wordSpanAt()`（`wordAt` 改由它派生，保证边界规则永不漂移）与动作 `replaceWordAtCursor(replacement)`（含 Composition Guard；无词/无编辑器/CJK → false 且不改文档）；② 桌面 `run(id, payload?)` + `edit.spelling.applySuggestion` 命令（目标词区间由引擎按「光标处词」解析，宿主不猜位置）；③ 文本右键**顶部**补入建议（系统建议异步取 → 先弹菜单、取到后补入；用**菜单代次 token** 丢弃「慢响应落到后开菜单」的陈旧结果）；④ 护栏 `verify-context-menu-parity` 接受 payload 写法并新增 canary。\n**仍未验证**：建议的**端到端运行时行为**（右键真的弹出建议、点击真的替换）没有自动化测试覆盖 —— 它依赖 macOS NSSpellChecker 与真实右键交互。故本项**不标 AUTO**（避免重演 §5.7「AUTO 把不可用功能当闭环」），而是显式保持未闭环，`blockedBy` 由 `host-api-extension` 改为 `runtime-verification-pending`。\n【2026-10-01 运行时验证（应用侧）已覆盖，缺口收窄】新增 tests/e2e/spellcheck-suggestions-verify.mjs（浏览器 dev + Playwright，**不进 CI**，按仓库既有 e2e 约定）：走**真实交互链** —— 右键（engine `posAtCoords` → `wordAt`）→ 建议出现在菜单**顶部** → 点击建议 → 引擎 `replaceWordAtCursor` **真的替换文档** → 菜单关闭；并有**反向相位**：点「添加到字典」后同一词的**建议区消失**（证明 learn 真的写进宿主词典，而不是「弹了个菜单什么也没做」）。实测 7/7 通过；并做过**变异验证**：把建议置空 → 失败于「建议出现在顶部」；把 learn 变空开关 → 失败于「建议区消失」（失败点与变异一一对应）。\n范围限制（如实声明）：dev 模式的词典是 `browserMockHost` 的**内存 mock**（确定性：非词典词 → `[w+s, w+ed, w+ing]`），故本 e2e **不能**证明「macOS `NSSpellChecker` 返回真实建议」。因此 `blockedBy` **仍为 `runtime-verification-pending`** —— 但含义已**收窄**为「**真实词典**的建议内容 + 真机三平台证据」，而非「端到端行为无覆盖」。\n【2026-10-01 第三轮：真实词典侧机器验证 + CI 已守】两件事：\n① **那条 Rust 测试长期是恒真空壳**：`spellcheck.rs` 的 `suggest_returns_guesses_for_misspelling` 函数体只有 `let _ = suggest(\"recieve\");`（「不 panic 即通过」），而测试名声称 \"returns guesses\" —— 于是「**真实** NSSpellChecker 是否真的给建议」**从未被任何机器验证过**。已改为真断言：**先自证「读到了东西」**（`assert!(!guesses.is_empty())`）+ 建议里必须含正确拼写 `receive` + 不得原样回吐输入 + 规范化契约（trim/小写）。本机实测（macOS 27.0 / arm64）：`suggest(\"recieve\") == [\"receive\",\"relieve\"]`、`suggest(\"teh\")[0] == \"the\"`、`suggest(\"mellowzzrecieve\") == []`。\n② **新增 `rust-check-macos` CI job**：此前 `#[cfg(target_os = \"macos\")]` 的单测**在 CI 中根本不执行**（`ci.yml` 的 rust-check 在 ubuntu，被 cfg 掉；`runtime-qualification.yml` 只跑定向的 `file_safety_corpus` 用例）→ 「不变量只存在于本地才会跑的测试里 = 没守护」。仓库为 public → macOS runner 免费。\n③ **平台判定改为可两端测试的纯函数**：`spellcheck_available()` 的返回值决定宿主**是否显示拼写区**（用户可见行为），原先直接写 `cfg!(target_os = \"macos\")` → 该分支**只能在非 macOS 上被测**（macOS 单测全在 cfg(macos) 里 → 本地永远验不到 false，CI 永远验不到 true）。抽成 `spellcheck_supported_on(is_macos)` 后**两端都能在任意平台断言**，并加一条「纯函数 ↔ 真实命令」端到端一致性断言（否则两边可各自漂移而纯函数测试仍全绿）。\n**故 `runtime-verification-pending` 的含义再收窄**：macOS 侧的真实词典行为现已机器验证（本地 + CI）；剩余仅为**真机三平台证据**（Windows/Linux 按 ADR-0016 返回 `available=false`、宿主不显示拼写区 —— 该降级契约现已由跨平台纯函数测试守住）。",
-      "grade": "D",
-      "status": "IMPL",
-      "blockedBy": "runtime-verification-pending",
-      "ownerPackage": "packages/host-api",
-      "evidence": [
-        "packages/commands/src/menuSchema.ts",
-        "tests/parity/verify-menu-contract.mjs",
-        "apps/desktop/src-tauri/src/spellcheck.rs",
-        "tests/e2e/feature-liveness-verify.mjs",
-        "tests/e2e/spellcheck-suggestions-verify.mjs",
-        "tests/qualification/macos-local-verification-2026-09-12.md"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-EDITOR-006",
-      "domain": "editing",
-      "capability": "字数统计语义",
-      "typoraBehavior": "词 / 行 / 字符 / 段落 / 阅读时长；选中时显示选中统计；排除格式语法。",
-      "mellowTarget": "同语义，**中文一字一词**（CJK 计数与 Typora 对齐）；macOS 标题栏常显可配置（G7-SHELL-06 已修），Win/Linux 走状态栏。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "packages/app-core",
-      "evidence": [
-        "packages/app-core/src/wordCount.ts",
-        "packages/app-core/test/wordCount.test.ts",
-        "packages/desktop-ui/src/StatusBar.tsx"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
       ]
     },
     {
@@ -946,201 +1088,69 @@
       ]
     },
     {
-      "id": "P0-FEATURE-001",
-      "domain": "feature",
-      "capability": "单一编辑表面（无编辑/预览分区）",
-      "typoraBehavior": "不存在编辑/预览分区；标记按 Caret 显隐且不改变文档位置。",
-      "mellowTarget": "Live Markdown 经 Decoration / Widget 实现，Markdown 纯文本唯一真源（禁止私有 Rich Text 模型）；spec §21 的 16 状态矩阵全覆盖（marker 家族 11 × 16 + FencedCode 专述 = 183 例；widget 家族 9 × 16 态 = 135 例，undo/redo 合并）。",
+      "id": "P0-TABLE-001",
+      "domain": "table",
+      "capability": "表格创建与键盘导航",
+      "typoraBehavior": "Tab 在单元格间移动、末格加行，表格仍是标准 Markdown。",
+      "mellowTarget": "表格编辑、Undo、IME 与最小 patch 均可验。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。 【2026-10-01 口径更正（审计 §4.39）】本项 capability 为「表格创建与键盘导航」，但下方 evidence 覆盖的是**键盘导航 / 最小 patch / IME / Undo**，**不含创建路径的对话框**。Mellow 能建表（固定 2×2 插入 / TSV 粘贴 / 手写 `| a | b |`），**spec §3 的 Create Dialog（Rows 默认 4 / Columns 默认 3，Rows 含表头行）已于 2026-10-01 实施**（菜单与 Slash 共用的 `insert.table` 打开应用内多字段对话框，复用 `askUser` 状态机；生成逻辑为可单测的纯函数 `buildGfmTable`）；同批还发现 spec §3 的「optional alignment」为规格失真（Typora 对话框无对齐字段，已在 spec 内更正）、以及 spec 原先**漏收** Typora 的 `Resize Table`（已补入 spec §3b）。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
-        "packages/editor-engine/test/state-matrix.test.ts",
-        "tests/parity/verify-menu-contract.mjs"
+        "docs/specs/table-editing-spec.md",
+        "packages/editor-engine/test/table-keyboard.test.ts",
+        "packages/editor-engine/test/table-engine.test.ts",
+        "tests/e2e/ime-composition-verify.mjs",
+        "tests/e2e/widget-buttons-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
         "windows-ci",
-        "linux-ci"
+        "linux-ci",
+        "source-fidelity"
       ]
     },
     {
-      "id": "P0-FEATURE-002",
-      "domain": "feature",
-      "capability": "可预测输出（Source Fidelity）",
-      "typoraBehavior": "保存 / 复制 / 导出不引入非用户输入的 Markdown 变更。",
-      "mellowTarget": "Source Fidelity 0 diff（保存路径）；多格式剪贴板；导出 corpus 覆盖 CJK + Math + Mermaid + Table + Footnote + TOC。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "packages/export",
-      "evidence": [
-        "packages/export/src/print.ts",
-        "packages/export/test/print.test.ts"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-SHELL-003",
-      "domain": "desktop-ui",
-      "capability": "Editor Toolbar 形态（D-B）",
-      "typoraBehavior": "1.14 What's New：可从 View → Toolbar 或 Settings → Appearance 启用的**浮动**工具栏。",
-      "mellowTarget": "D-B 裁决 = ①：单一浮动工具栏（Selection 锚定、IME 冻结、可键盘操作），退役壳层常驻横条；入口与设置项同源 storageKey。 【2026-09-12 真 bug 修复】结构契约在、功能曾是死的：position() 在 CodeMirror update 周期内调用 view.coordsAtPos()（CM6 禁止读布局）→ 抛错被 getAnchor 的 catch 吞掉 → 返回 null → 立即 hideEl()，且 visible=false 后不再重定位，浮动工具栏**永不显示**（实测程序化选区与真实鼠标拖拽均 display:none）。已改为 schedulePosition() 把定位推迟到 update 周期外（rAF），实测 w×h=300.7×34 可见；destroy 取消待执行帧。回归防线：verify-shell-widgets.mjs 静态契约（禁止 showEl/update 同步定位 + canary）+ tests/visual/scenes-golden.mjs 的 selection-toolbar 场景硬断言 visible===true。",
-      "grade": "E",
+      "id": "P0-TABLE-002",
+      "domain": "table",
+      "capability": "表格 GUI 与对齐",
+      "typoraBehavior": "表格工具可在不改变未触及单元格的前提下完成行列与对齐操作。",
+      "mellowTarget": "工具栏按上下文出现，键盘路径始终可用。 【2026-09-12】表格 cell IME 已取得运行时证据：tests/e2e/ime-composition-verify.mjs 8/8，单元格内合成中文后列结构与管道数不变，撤销精确还原；CDP 合成路径不覆盖原生输入法面板。 【2026-09-12 真 bug 修复】表格列对齐分隔符连字符被侵蚀：setColumnAlignment 用固定 2 连字符的 mark 再 slice 拼装，丢弃原始连字符长度 → 每切换一次对齐少一个（--- → :--: → :-: → :: 非法）。既有单测只断言解析后的对齐语义（:--: 与 :-: 解析结果相同），因此从未暴露。已改为保留原连字符数（--- → :---: → :---）；回归测试 table-toolbar.test.ts 11b 已 canary 验证（旧实现下失败）。工具栏按钮实测可用：Selection Toolbar Bold 真的加粗、Table Toolbar Align/Row Below 真的改写文档（widget-buttons-verify.mjs 4/4）。",
+      "grade": "B",
       "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
-        "tests/parity/verify-shell-widgets.mjs",
-        "packages/settings/src/index.ts",
-        "tests/visual/scenes-golden.mjs",
-        "tests/visual/golden/scenes-golden.json",
-        "tests/qualification/macos-local-verification-2026-09-12.md"
+        "packages/editor-engine/test/table-toolbar.test.ts",
+        "packages/editor-engine/test/table-column-width.test.ts",
+        "tests/e2e/ime-composition-verify.mjs",
+        "tests/e2e/widget-buttons-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",
         "macos",
         "windows-ci",
         "linux-ci",
-        "visual-golden"
+        "source-fidelity"
       ]
     },
     {
-      "id": "P0-SHELL-004",
-      "domain": "desktop-ui",
-      "capability": "状态栏与字数可见性",
-      "typoraBehavior": "状态栏默认隐藏、View 菜单可开；macOS 字数在标题栏（hover 或常显）。",
-      "mellowTarget": "view.statusbar.toggle 入菜单（G7-MENU-03 已修）；appearance.wordCount 常显开关 + 标题并入字数（G7-SHELL-06 已修）；hover 显隐登记 D。",
-      "grade": "E",
+      "id": "P0-THEME-001",
+      "domain": "theme",
+      "capability": "主题、字体与缩放",
+      "typoraBehavior": "主题和字体改变阅读外观，不改变 Markdown 内容。",
+      "mellowTarget": "主题注册、菜单、设置和 UI 实际可用主题完全同步。\n【2026-10-01 追加记录：引擎侧主题跟随缺口（审计 §4.53）—— **不影响本项主张，故状态不变**】\n实测：宿主（`App.tsx` applyTheme）把主题变量设在 **app 根**上，而编辑器 iframe 只经\n`setMdTokens()` 拿到 **`--mellow-md-*`**（`mdTokens.ts` 的 `setTokenProperties` 显式过滤，\n文件头亦自述「宿主的 `--mellow-*` 变量不会自动继承」）。\n**后果**：引擎里 **6 个非 md 主题变量**（`--mellow-accent` / `--mellow-bg-hover` / `--mellow-border` /\n`--mellow-danger` / `--mellow-toolbar-bg` / `--mellow-toolbar-fg`，分布在 8 个文件）**永远取 fallback**；\n而 `table/toolbar.ts` 更是 15 处硬编码色、一个主题变量都没用 → **暗色主题下表格工具栏仍是白底**\n（探针 `tests/e2e/theme-follow-probe.mjs` 实测：app 侧 `data-theme=mellow-dark`、\n`--mellow-toolbar-bg=rgba(40,40,42,.95)`，而表格工具栏 `bg=rgba(255,255,255,0.92)`、\n选区工具栏 `bg=rgba(30,30,30,0.92)`＝fallback）。\n\n**为什么不改本项状态**：本项主张是「主题和字体改变**阅读外观**」+「主题**注册/菜单/设置/UI 同步**」，\n**都没有**声称「引擎侧每个表面都跟随主题」→ 本缺口属它**未覆盖**的部分，不构成对其主张的反驳。\n（与 §4.52 的 `P0-I18N-001` 不同：那条的能力名就是「English **完整性**」，故必须降级。）\n\n**处置**：护栏 `verify-parity-ledger.mjs` 新增「引擎不得出现新的非 md 主题变量」（登记上述 6 个，新增即失败）；\n**未**改动那 6 个 `var()` —— 它们承载「这些表面**想**跟随主题」的意图，正解是**拓宽 token 桥**（设计决策）。",
+      "grade": "B",
       "status": "AUTO",
-      "ownerPackage": "packages/desktop-ui",
+      "ownerPackage": "packages/themes",
       "evidence": [
-        "packages/desktop-ui/src/StatusBar.tsx",
-        "packages/commands/src/menuSchema.ts",
-        "packages/desktop-ui/test/statusbar-defaults.test.ts"
+        "packages/themes/src/index.ts",
+        "docs/specs/desktop-ui-design-spec.md",
+        "packages/themes/test/index.test.ts"
       ],
       "requiredEvidence": [
         "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-LAYOUT-001",
-      "domain": "layout",
-      "capability": "排版单一真源",
-      "typoraBehavior": "正文 16px / line-height 1.6；写作宽度分档可选。",
-      "mellowTarget": "`TYPOGRAPHY_DEFAULTS = { fontSize: 16, lineHeight: 1.6, writingWidth: 860 }` 唯一真源；编辑器（setEditorConfig）与 Reader（CSS 变量）同源（V7-W5 补齐字号）。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "packages/settings",
-      "evidence": [
-        "packages/settings/src/index.ts",
-        "tests/parity/verify-shell-typography.mjs",
-        "apps/desktop/src/styles.css",
-        "tests/visual/golden/layout-golden.json",
-        "tests/qualification/macos-local-verification-2026-09-12.md"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "visual-golden"
-      ]
-    },
-    {
-      "id": "P0-LAYOUT-002",
-      "domain": "layout",
-      "capability": "三平台视觉 Golden（14 场景）",
-      "typoraBehavior": "以 Typora 1.14.9 三平台截图为参照。",
-      "mellowTarget": "三平台 × 14 场景截图归档并比对（§9.3）；当前仅本机，三平台 chrome 截图未归档 = G7-QA-04。 【2026-09-12】基线已支持按平台分离（tests/visual/golden-path.mjs：macOS 主基线 / *-golden.linux.json / *-golden.windows.json），避免用 macOS 测量值比对跨平台产物；runtime-qualification.yml 的 Linux / Windows job 已加入 §9.3 14 场景 Golden 采集与产物上传。首次运行自动生成该平台基线，基线提交后即进入比对模式。 【2026-09-22 v1.5.14 run 35635085958】Linux 侧 `visual-golden.mjs` 成功产出 6 配置布局基线，逐项「实测 vs 期望」校验一致（fontSize 16 / lineHeight 25.6 / paddingTop 56 / writingWidth 860），基线 `layout-golden.linux.json` 已提交入库 → Linux 布局漂移自下次运行起受门禁保护。仍缺：① Windows 基线 —— 采集步骤此前静默产出 0 文件（根因 `spawn('npx')` 在 Windows 无法执行 `npx.cmd` → ENOENT，叠加 continue-on-error 与「步骤退出码取最后一条命令」），已新增跨平台启动器 `tests/visual/dev-server.mjs` + workflow 逐条记录退出码，**修复待 runner 验证**；② Linux sidebar / scenes 基线 —— `sidebar-golden.mjs` 在 Linux 报 `mock workspace 构建失败`，需 Linux 环境复现。另新增护栏：硬断言必须先于基线写入（防把真实缺陷固化成基准）、侧栏默认宽度与 App.tsx 单一真源交叉比对。 【2026-09-22 三平台比对模式全绿（run 35763137678）】**3 平台 × 3 类基线全部入库并进入比对模式**，三平台各 3 个脚本均报「match baseline (±1px)」：Linux `6 configs / 4 views / 7 场景`、Windows `6 configs / 4 views / 7 场景`、macOS 主基线。Windows 侧从「自加入起从未产出任何基线」到就位，剥出并修掉 **4 个互相掩盖的独立缺陷**：① `working-directory: mellow` 指向不存在的目录（Windows job 的 checkout 无 `path: mellow` → pwsh 无法启动 → 步骤**一步未跑**）；② `spawn('npx')` → Windows 上 `npx.cmd` ENOENT；③ `new URL(...).pathname` → `D:\\D:\\...` 重复盘符（tests/ 下 32 处，全量改 `fileURLToPath`）；④ `waitEditorFrame` 就绪判定弱于采样需求（只查 `window.editor`，未查采样真正读的 `.cm-content`）→ 慢 runner 上间歇性失败（同一提交两次运行结果互换）。另修 Linux 侧 `window.prompt` 残留消费者（G7-EDIT-10 迁移漏改 `sidebar-golden` 与 `drag-drop-verify`）。护栏新增：路径一致性（working-directory / 制品前缀 vs checkout 落点）、全目录禁止取 URL 对象的 pathname、就绪判定必须含 `.cm-content`、硬断言必须先于基线写入、跨平台 dev server 启动器 —— 各配 canary（均实测注入检出）。**状态仍维持 BLOCKED 不升 PASS-E**：本项自身 requiredEvidence 已齐备，但 PASS-E 全局策略要求 `ux-gate`，需人工计时会话（P0-QA-001）。\n【2026-10-01 视觉门禁从「假门禁」改为真门禁 + 基线更新（审计 §4.51）】实跑三个 Golden 抓到三重缺陷：\n① `scenes-golden` 失败：`table-toolbar.bar.w 436 → 478`、`buttonCount 11 → 12` —— 归因于 10-01 的\n`eb3acd7`（实施 Resize Table，新增「调整」按钮），而**基线自 09-13 起未更新**；\n② **最严重**：`runtime-qualification.yml` 的两个视觉步骤带 `continue-on-error: true` →\nv1.5.16 那次运行的 Linux 与 Windows **日志里都写着 `VISUAL_GOLDEN scenes-golden: FAILED (exit 1)`，\n而两个 job 结论都是 success** —— 即**一个真实可见的排版回归随版本发布而门禁看不见**；\n③ 比对容差（`TOLERANCE_PX = 1`）被套在**所有**数值字段上 → `buttonCount` 的 1 之差被静默放过，\n而它本是唯一能抓住「增删按钮」的判据。②与③叠加才让回归一路发布。\n**处置**：基线三平台同步（macOS 实测重建；Linux/Windows 按 CI 日志实测值）；容差改为按字段语义选择\n（像素 ±1px、计数/设计常量精确 0）；**移除两个视觉步骤的 `continue-on-error`**（实现该步骤注释自身的\n条件「基线入库后即进入比对模式」——三平台基线早已入库）；新增两条护栏（视觉步骤不得 `continue-on-error`；\n容差必须由 `PX_FIELD` 选择）各配双向 canary。\n**对本项的意义**：视觉 Golden 从「失败也不阻断」变为**真门禁**，故本项的视觉证据链现在是**可阻断的**；\n`blockedBy` 与状态**不变**（仍为 `ux-gate-policy`）—— 人工 UX Gate 会话与真机基线采集仍需完成。",
-      "grade": "E",
-      "status": "BLOCKED",
-      "blockedBy": "ux-gate-policy",
-      "ownerPackage": "tests/parity",
-      "evidence": [
-        "tests/parity/verify-visual-golden.mjs",
-        "tests/visual/golden/layout-golden.json",
-        "tests/visual/golden/sidebar-golden.json",
-        "tests/benchmark/screenshots/p2-8-window-chrome-macos.png",
-        "tests/qualification/macos-local-verification-2026-09-12.md",
-        "tests/visual/golden-path.mjs",
-        "tests/qualification/evidence/2026-09-22-v1.5.14-three-platform-runtime-qualification.md",
-        "tests/visual/golden/layout-golden.linux.json"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci",
-        "visual-golden"
-      ]
-    },
-    {
-      "id": "P0-MENU-003",
-      "domain": "menu",
-      "capability": "Context Menu 覆盖面",
-      "typoraBehavior": "文本 / 链接 / 图片 / 代码 / 公式 / Mermaid / 表格 / 文件树 / 大纲 / 搜索均有上下文菜单。",
-      "mellowTarget": "11 类上下文菜单全部走 dispatchCommand（命令单一真源，ADR-0023）。 【2026-09-12】新增运行时证据 tests/e2e/context-menu-verify.mjs（4/4）：编辑器右键弹出 7 项（剪切/复制/粘贴/段落/格式/复制为 Markdown/复制为纯文本），「格式」子菜单展开为 加粗/斜体/删除线/代码/超链接…，点击「加粗」真的加粗文档且菜单关闭 —— 此前仅静态护栏，无运行时验证。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "apps/desktop",
-      "evidence": [
-        "tests/parity/verify-context-menu-parity.mjs",
-        "tests/parity/verify-context-menu-guard.mjs",
-        "tests/parity/verify-menu-contract.mjs",
-        "tests/e2e/context-menu-verify.mjs"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-MENU-004",
-      "domain": "menu",
-      "capability": "菜单护栏（schema diff）",
-      "typoraBehavior": "菜单结构、条目顺序、separator、accelerator、勾选态三平台一致且与 Typora 对齐。",
-      "mellowTarget": "MENU_SCHEMA 单一真源 → toNativeMenuSpec() 只做 materialization；护栏覆盖条目顺序 / separator / accel / checkState / 三平台 × 双语。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "packages/commands",
-      "evidence": [
-        "packages/commands/src/menuSchema.ts",
-        "tests/parity/verify-menu-contract.mjs",
-        "tests/parity/verify-menu-contract-guard.mjs"
-      ],
-      "requiredEvidence": [
-        "unit",
-        "macos",
-        "windows-ci",
-        "linux-ci"
-      ]
-    },
-    {
-      "id": "P0-BUILD-001",
-      "domain": "build",
-      "capability": "渲染层资产指纹与构建链一致性",
-      "typoraBehavior": "（工程治理项，非 Typora 功能）渲染层资产为版本化文件名，指纹错配会静默降级。",
-      "mellowTarget": "`verify-release-bundle.mjs` 必须在 CI 执行（G7-TYPO-04 已修）；护栏 `verify-build-pipeline.mjs` 锁定一键构建 5 步链路与 CI 序位。",
-      "grade": "E",
-      "status": "AUTO",
-      "ownerPackage": "apps/desktop",
-      "evidence": [
-        "apps/desktop/scripts/verify-release-bundle.mjs",
-        ".github/workflows/ci.yml",
-        "tests/parity/verify-build-pipeline.mjs"
-      ],
-      "requiredEvidence": [
-        "unit",
+        "integration",
         "macos",
         "windows-ci",
         "linux-ci"

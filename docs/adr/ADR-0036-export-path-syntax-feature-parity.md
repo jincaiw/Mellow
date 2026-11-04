@@ -1,6 +1,6 @@
 # ADR-0036 — **语法特性开关**（PRD §94）与**导出路径**的接线缺口：三条渲染路径要不要一致？
 
-**Status:** **Proposed**（2026-10-10）—— 待裁决。
+**Status:** **Accepted**（2026-11-03，**用户裁决**）—— 裁决 = A1（见文末「裁决」节）。
 
 > **本 ADR 为什么是 Proposed**：修它会让**导出件的内容**发生变化（对改过设置的用户），
 > 属**用户可见结果**。且「三条渲染路径要不要语法一致」本身是一个**产品取舍**
@@ -103,10 +103,24 @@ markdown.mermaid / markdown.toc / markdown.footnote / markdown.wikilink / markdo
 
 ## 裁决
 
-（待裁决。）裁决后必须同步：
+**裁决 = A1**（只修「开关关不掉」：`option-unwired` + `always-on` 接线到 `mellow.engine.features.*`，
+**不**补 6 个 `not-implemented` 的扩展语法）—— 用户 2026-11-03 拍板（最终对标轮）。
 
-1. 本文件顶部状态改为 `Accepted`，并在此写明所选选项；
-2. 门禁 `PENDING_ADRS` / `DECIDED_ADRS` 与审计登记表第 19 行；
-3. **若选 A1 / A2**：把登记表里相应条目的状态改为 `implemented`（判据仍绿，这正是它的设计）；
-4. **若选 A3**：把本表登记进 D 表，并**同步设置页文案**；
-5. **顺带**：修正 `packages/editor-engine/src/config.ts` 那句与一手证据相反的注释。
+- **施工批次 A36**：`apps/desktop/src/App.tsx` 的三处 HTML 导出调用补传 `math` / `mermaid` / `rawHtml`
+  （读同一批 `mellow.engine.features.*`）；给 HTML 导出的 `toc` / `footnote` 补开关；
+  PDF 侧（A2 打印管线，见 ADR-0037）天然复用同一 features 集。
+- **默认输出不变**（三项选项默认都 `true`）；只有改过设置的用户看到导出件变化 —— 那正是他们要求的。
+- `not-implemented` 的 6 个语法（highlight / subscript / superscript / emoji / alerts / wikilink / yaml）
+  **留待后续独立裁决**；其中 highlight/sub/sup 已随 ADR-0034 默认关 ⇒ 默认配置下「预览字面 = 导出字面」，
+  不一致面收窄为「显式开启的用户」。
+
+以下 1–5 为裁决同步清单的执行记录（2026-11-03）：
+
+1. ✅ 状态已改 `Accepted`，本节目绑选项 A1；
+2. ✅ 门禁清单与审计登记表第 19 行已同步；
+3. ✅ 登记表（`export-feature-parity.json`）的 `preview` 列已随 ADR-0034 的拆分/过滤更新
+   （`supSub` 一行拆成 `subscript` / `superscript` 两行）；**A36 接线落地后**相应 `html` / `pdf`
+   条目再改 `implemented`（判据设计使然，改状态即绿）；
+4. 不适用（未选 A3）；
+5. ✅ `packages/editor-engine/src/config.ts` 的相反注释**已修正**（改前注释称「全部默认开启（与 Typora
+   默认行为一致）」—— 一手证据相反；现注释按 ADR-0034 写明翻转后的默认与拆分事实）。

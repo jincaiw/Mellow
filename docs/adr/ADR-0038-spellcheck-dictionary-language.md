@@ -1,6 +1,6 @@
 # ADR-0038 — 拼写检查的**语言 / 词典**能力：用**系统**拼写检查，还是复刻 Typora 的**语言包管理**？
 
-**Status:** **Proposed**（2026-10-12）—— 待裁决。
+**Status:** **Accepted**（2026-11-03，**用户裁决**）—— 裁决 = C（见文末「六、裁决」节）。
 
 > **本 ADR 为什么是 Proposed**：两条路都会**改变用户可见行为**（是否出现「选择语言 / 下载词典」入口、
 > 「代码 / 链接内是否检查」的默认值），属**产品取舍**；而 B 路还要新增一个**词典下载子系统**
@@ -85,11 +85,25 @@
 
 ## 六、裁决
 
-（待裁决。）裁决后必须同步：
+**裁决 = C**（折中：**只读展示「当前语言」+「打开系统拼写设置」入口 + 给「代码/链接内拼写检查」加开关**，
+开关**默认关** = 对齐 Typora 的 `spellcheckForCodeAndLink` 默认 `false` 与 Mellow 现状
+「无条件排除代码/链接」）—— 用户 2026-11-03 拍板（最终对标轮）。
 
-1. 本文件顶部状态改为 `Accepted`，并在此写明所选选项（**不改写本文其余部分** —— ADR 只追加）；
-2. 门禁 `PENDING_ADRS` → `DECIDED_ADRS`；审计登记表第 21 行的「处置」；
-3. 矩阵 `presetSpellCheck` 的 `disposition`（A ⇒ `deliberate` + D 表行；B/C ⇒ `implemented` + 实现）；
-4. 若选 C：`spellcheckForCodeAndLink` 与 `autoCorrectMisspell` 的 `status` / `disposition` 同步；
-5. 若选 A：在 master-plan §12 D 表加一行（登记「用系统拼写检查」这个**有意差异**），
-   并在 §7 的 4.2 行写明「语言/词典 = 平台惯用等价物」。
+- **施工批次 A38**：设置页拼写区加「当前语言（只读）」+「打开系统设置…」按钮（macOS 深链
+  `x-apple.systempreferences:` 走 Rust Adapter；Win/Linux 隐藏该区或降级，沿用 `available()` 门）；
+  新增 `editor.spellcheckForCodeAndLink`（默认 `false`）接线 `inlineCodeAttrs.ts` /
+  CoreEditor `codeBlockStyle` 的排除逻辑（开关关 = 现行无条件排除不变 ⇒ **默认行为不变**）。
+- ⚠️ `autoCorrectMisspell` **维持不可实现**的登记（`objc2-app-kit` 0.3.2 无该 API 且对 WKWebView 无效，
+  见本文「各选项的已知事实」）⇒ 加上去只会是**空开关**，**不**随 C 实施。
+
+以下 1–5 为裁决同步清单的执行记录（2026-11-03）：
+
+1. ✅ 状态已改 `Accepted`，本节目绑选项 C（其余部分未改写）；
+2. ✅ 门禁清单与登记表第 21 行已同步；
+3. ✅ 矩阵 `presetSpellCheck` 的 `disposition` 已改 `{ kind:'deliberate', ref:'D-AW' }`
+   （「用系统拼写检查 + 平台惯用入口」= 有意差异；「implemented + 实现」留给 A38 落地时按真实状态再改）；
+4. ✅ `spellcheckForCodeAndLink`：`status` 维持 `gap`、`blockedBy` 改 `not-implemented`
+   （裁决已给出，施工批次 A38 可自主实施）；`autoCorrectMisspell`：维持 `gap` + `not-implemented`
+   （按上文**不可实现**结论，实装批次**不**含它；若未来平台 API 到位再重开）；
+5. 不适用（未选 A）；D 表新增 **`D-AW`** 登记「系统拼写检查 = 平台惯用等价物」的有意差异，
+   §7 4.2 行已由 A38 批次改写。

@@ -92,6 +92,8 @@ import { openThemesFolder, refreshUserThemes } from './host/userThemes';
 import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
+// ADR-0034：引擎特性默认值的**单一真源**（config.ts 不依赖 CodeMirror，可安全被宿主引用）
+import { DEFAULT_ENGINE_FEATURES } from '../../../packages/editor-engine/src/config';
 // G7-FEAT-08：引擎的图片路径纯函数（parseRootUrl / resolveImageSrc）—— 与编辑器内 scan 链共用同一语义
 import { parseRootUrl, resolveImageSrc } from '../../../packages/editor-engine/src/image/path';
 import type { Encoding, LineEnding, RecoveryEntry, FileChangeEvent, DialogService, OpenerService, SearchResult, SearchService, WindowService, ImageUploadOptions, ImageUploadService } from '../../../packages/host-api/src/index';
@@ -5256,16 +5258,31 @@ export default function App() {
         break;
       case 'settings.engineFeature': {
         // 语法特性开关（PRD §94）：重建 JSON → mellow.engine.features（bundle loader 读取）
-        // V5-C4：无 localStorage 键 = 从未设置 → 默认开启（此前 `=== '1'` 让新装用户全量默认关闭）
-        const keys = ['highlight', 'supSub', 'emoji', 'alerts', 'math', 'mermaid', 'toc', 'footnote', 'wikilink', 'html', 'yaml'];
-        const features: Record<string, boolean> = {};
-        for (const k of keys) {
-          let value = true;
+        // ⚠️ 默认值**不得**在此硬编码 —— 真值源 = engine 的 DEFAULT_ENGINE_FEATURES
+        //   （ADR-0034 裁决 2026-11-03：highlight/subscript/superscript/mermaid 默认 false；
+        //    supSub 拆分为 subscript + superscript）。此处原硬编码 `let value = true`
+        //    会让「从未设置过开关的用户」在任一开关被点击时把**旧默认**固化写盘（假默认）。
+        const features: Record<string, boolean> = { ...DEFAULT_ENGINE_FEATURES };
+        // 一次性迁移（ADR-0034 Q2/Q3：`supSub` 拆分为 subscript + superscript）：
+        // 老用户只存过 `mellow.engine.features.supSub` ⇒ 迁移到两个新键后删除旧键，
+        // 否则拆分对「开过 supSub」的用户表现为静默回默认（关）。幂等：迁移后旧键不存在。
+        try {
+          const legacy = localStorage.getItem('mellow.engine.features.supSub');
+          if (legacy !== null) {
+            const both = legacy === '1';
+            for (const k of ['subscript', 'superscript']) {
+              if (localStorage.getItem(`mellow.engine.features.${k}`) === null) {
+                localStorage.setItem(`mellow.engine.features.${k}`, both ? '1' : '0');
+              }
+            }
+            localStorage.removeItem('mellow.engine.features.supSub');
+          }
+        } catch { /* 读不到 = 不迁移，走 schema 默认 */ }
+        for (const k of Object.keys(DEFAULT_ENGINE_FEATURES)) {
           try {
             const raw = localStorage.getItem(`mellow.engine.features.${k}`);
-            if (raw !== null) value = raw === '1';
-          } catch { value = true; }
-          features[k] = value;
+            if (raw !== null) features[k] = raw === '1';
+          } catch { /* 读不到 = 保持 schema 默认 */ }
         }
         try { localStorage.setItem('mellow.engine.features', JSON.stringify(features)); } catch { /* noop */ }
         // PRD §K.2：语法开关在编辑器加载时生效 → 提供「重新加载编辑器」动作（会话经 localStorage 恢复）
@@ -5876,11 +5893,13 @@ export default function App() {
   }, [dispatchShortcut]);
 
   // Cmd/Ctrl+滚轮缩放桥（bundle 内 wheelForwarder 同源直调）：读 mellow.editor.cmdWheelZoom
-  // 开关后调 adjustFontSize（与 ⇧⌘= 共用 editor.fontSize 单一真源；关闭时宿主侧静默）
+  // 开关后调 adjustFontSize（与 ⇧⌘= 共用 editor.fontSize 单一真源；关闭时宿主侧静默）。
+  // ADR-0034 Q5（2026-11-03）：默认翻转为 false ⇒ 裸读 `=== '0'` 会把**未设置**当成**开启**
+  // （假控件）；改走 readBoolSetting —— 真值源 = schema 的 defaultValue + 存储值。
   useEffect(() => {
     (window as unknown as { __MELLOW_WHEEL_API__?: { zoom: (direction: number) => void } }).__MELLOW_WHEEL_API__ = {
       zoom: (direction) => {
-        if (localStorage.getItem('mellow.editor.cmdWheelZoom') === '0') return;
+        if (!readBoolSetting('editor.cmdWheelZoom', false)) return;
         void adjustFontSize(direction);
       },
     };

@@ -74,6 +74,8 @@ interface WidgetFamilyCfg {
   deleteStartWidgetMayRemain?: boolean;
   /** 源码模式下引擎显式隐藏 widget（image/widget.ts:313、taskCheckbox.ts:88、wikilink.ts:102） */
   sourceModeHides?: boolean;
+  /** ADR-0034 后默认关的特性 ⇒ 家族显式开启（不传 = 走产品默认） */
+  features?: Partial<import('../src/config').EngineFeatureConfig>;
 }
 
 async function makeView(cfg: WidgetFamilyCfg, kind: 'plain' | 'history' | 'composition'): Promise<EditorView> {
@@ -81,15 +83,15 @@ async function makeView(cfg: WidgetFamilyCfg, kind: 'plain' | 'history' | 'compo
   if (kind === 'history') {
     view = new EditorView({
       doc: cfg.doc, parent: document.body,
-      extensions: [markdown({ base: markdownLanguage }), history(), install(false)],
+      extensions: [markdown({ base: markdownLanguage }), history(), install(false, cfg.features)],
     });
   } else if (kind === 'composition') {
     view = new EditorView({
       doc: cfg.doc, parent: document.body,
-      extensions: [markdown({ base: markdownLanguage }), install(true)],
+      extensions: [markdown({ base: markdownLanguage }), install(true, cfg.features)],
     });
   } else {
-    view = setUpEditor(cfg.doc);
+    view = setUpEditor(cfg.doc, cfg.features);
   }
   view.focus();
   return view;
@@ -305,7 +307,7 @@ function runWidgetStateMatrix(cfg: WidgetFamilyCfg): void {
     test('keyboard — 真实 ArrowLeft 进入节点 → 按家族 caret 语义重算', async () => {
       const view = new EditorView({
         doc: cfg.doc, parent: document.body,
-        extensions: [markdown({ base: markdownLanguage }), history(), keymap.of(defaultKeymap), install(false)],
+        extensions: [markdown({ base: markdownLanguage }), history(), keymap.of(defaultKeymap), install(false, cfg.features)],
       });
       try {
         view.focus();
@@ -400,6 +402,8 @@ runWidgetStateMatrix({
   sourced: (v) => widgetCount(v, '.mellow-mermaid-widget') === 0,
   boundaryReveals: false,
   copyExpect: 'graph TD',
+  // ADR-0034 裁决后 mermaid 默认关（对齐 Typora）⇒ 本家族显式开启
+  features: { mermaid: true },
 });
 
 runWidgetStateMatrix({

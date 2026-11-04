@@ -97,6 +97,8 @@ interface FamilyCfg {
   copyExpect: string;
   /** 跳过某状态（附原因，仅限有明确合同豁免的家族） */
   skipStates?: Partial<Record<string, string>>;
+  /** ADR-0034 后默认关的特性 ⇒ 家族显式开启（不传 = 走产品默认） */
+  features?: Partial<import('../src/config').EngineFeatureConfig>;
 }
 
 async function makeView(cfg: FamilyCfg, kind: 'plain' | 'history' | 'composition'): Promise<EditorView> {
@@ -105,16 +107,16 @@ async function makeView(cfg: FamilyCfg, kind: 'plain' | 'history' | 'composition
     view = new EditorView({
       doc: cfg.doc,
       parent: document.body,
-      extensions: [markdown({ base: markdownLanguage }), history(), install(false)],
+      extensions: [markdown({ base: markdownLanguage }), history(), install(false, cfg.features)],
     });
   } else if (kind === 'composition') {
     view = new EditorView({
       doc: cfg.doc,
       parent: document.body,
-      extensions: [markdown({ base: markdownLanguage }), install(true)],
+      extensions: [markdown({ base: markdownLanguage }), install(true, cfg.features)],
     });
   } else {
-    view = setUpEditor(cfg.doc);
+    view = setUpEditor(cfg.doc, cfg.features);
   }
   view.focus();
   return view;
@@ -344,7 +346,7 @@ function runStateMatrix(cfg: FamilyCfg): void {
             const view = new EditorView({
               doc: cfg.doc,
               parent: document.body,
-              extensions: [markdown({ base: markdownLanguage }), history(), keymap.of(defaultKeymap), install(false)],
+              extensions: [markdown({ base: markdownLanguage }), history(), keymap.of(defaultKeymap), install(false, cfg.features)],
             });
             try {
               view.focus();
@@ -504,6 +506,8 @@ runStateMatrix({
   hiddenWhenIdle: (v) => delimCount(v) === 2,
   revealedWhenTouched: (v) => delimCount(v) === 0,
   copyExpect: 'hi',
+  // ADR-0034 裁决后 highlight 默认关（对齐 Typora）⇒ 本家族显式开启
+  features: { highlight: true },
 });
 
 // ─────────────────────────── FencedCode（always source） ───────────────────────────

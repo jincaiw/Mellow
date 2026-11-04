@@ -84,11 +84,12 @@ describe('scanInlineExtras（纯函数）', () => {
 });
 
 describe('Inline Extras 渲染', () => {
-  function setUp(doc: string): EditorView {
+  // ADR-0034 裁决后默认值翻转（highlight/sub/sup 默认 false，对齐 Typora）⇒ 渲染类测试**显式开启**
+  function setUp(doc: string, opts?: Partial<{ highlight: boolean; subscript: boolean; superscript: boolean }>): EditorView {
     const view = new EditorView({
       doc,
       parent: document.body,
-      extensions: [markdown({ base: markdownLanguage }), install(true)],
+      extensions: [markdown({ base: markdownLanguage }), install(true, { highlight: true, subscript: true, superscript: true, ...opts })],
     });
     view.focus();
     return view;
@@ -120,6 +121,45 @@ describe('Inline Extras 渲染', () => {
     await sleep();
     expect(view.dom.querySelector('.mellow-md-sup')).not.toBeNull();
     expect(view.dom.querySelector('.mellow-md-sub')).not.toBeNull();
+    view.destroy();
+  });
+
+  // ADR-0034「裁决前提」的收口证明：**单独关一个开关必须真的不装饰**（原实现是假控件）
+  test('只关 highlight → ==x== 字面、上下标仍渲染（真开关）', async () => {
+    const view = setUp('==hi== ^x^ ~y~', { highlight: false });
+    await sleep();
+    moveCaret(view, 10);
+    await sleep();
+    expect(view.dom.querySelector('.mellow-md-highlight')).toBeNull();
+    expect(view.dom.querySelector('.mellow-md-sup')).not.toBeNull();
+    expect(view.dom.querySelector('.mellow-md-sub')).not.toBeNull();
+    view.destroy();
+  });
+
+  test('只关 subscript → ~y~ 字面、高亮与上标仍渲染（真开关）', async () => {
+    const view = setUp('==hi== ^x^ ~y~', { subscript: false });
+    await sleep();
+    moveCaret(view, 10);
+    await sleep();
+    expect(view.dom.querySelector('.mellow-md-sub')).toBeNull();
+    expect(view.dom.querySelector('.mellow-md-highlight')).not.toBeNull();
+    expect(view.dom.querySelector('.mellow-md-sup')).not.toBeNull();
+    view.destroy();
+  });
+
+  test('默认（不显式开启）→ 三种标记全部字面（ADR-0034 默认翻转）', async () => {
+    const view = new EditorView({
+      doc: '==hi== ^x^ ~y~',
+      parent: document.body,
+      extensions: [markdown({ base: markdownLanguage }), install(true)],
+    });
+    view.focus();
+    await sleep();
+    moveCaret(view, 10);
+    await sleep();
+    expect(view.dom.querySelector('.mellow-md-highlight')).toBeNull();
+    expect(view.dom.querySelector('.mellow-md-sup')).toBeNull();
+    expect(view.dom.querySelector('.mellow-md-sub')).toBeNull();
     view.destroy();
   });
 
