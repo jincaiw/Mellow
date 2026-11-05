@@ -282,7 +282,7 @@
         "linux-ci",
         "export-corpus"
       ],
-      "blockedBy": "pdf-html-print-pipeline-pending（ADR-0037 已裁决 = A2 复用 HTML 打印管线，待施工批次 A37）"
+      "blockedBy": "pdf-html-print-pipeline-pending（ADR-0037 = A2 复用 HTML 打印管线，施工批次 A37；⚠️ 本机不可验：createPDFWithConfiguration 实测是单页快照不能分页，NSPrintOperation 会把作业假脱机到真实打印机 —— 审计 §4.354，需 CI/隔离打印队列设备）"
     },
     {
       "id": "P0-FEATURE-001",
@@ -662,12 +662,14 @@
       "domain": "markdown",
       "capability": "CJK 行内强调语义（`**` 紧贴全角标点）",
       "typoraBehavior": "这是**「必须」**的：`**` 内侧非空白即可成对，外侧紧贴汉字/全角标点不影响 ⇒ 渲染成加粗。",
-      "mellowTarget": "预览（lezer）与导出（markdown-it）两条路径对 `**` 紧贴全角标点的行内强调**都渲染加粗**（ADR-0035 = A1，2026-11-03 用户裁决）。⚠️ 这**偏离 CommonMark**（CommonMark 按 flanking 规则判不成对）⇒ 属**有意对齐 Typora** 的产品决策，Source Fidelity 不受影响（doc 文本仍原样）。待施工 = 批次 A35（预览走 Mellow decoration 层，不改 vendored parser；导出走 markdown-it 自定义 inline rule）。",
+      "mellowTarget": "预览（`packages/editor-engine/src/cjkEmphasis.ts` 装饰层）与导出（`packages/export/src/html/markdown.ts` 的 `installTyporaEmphasis`）两条路径对 `**` 紧贴全角标点的行内强调**都渲染加粗**（ADR-0035 = A1，2026-11-03 用户裁决，批次 A35 于 2026-11-05 落地）。⚠️ 这**偏离 CommonMark**（flanking 规则判不成对）⇒ 属**有意对齐 Typora** 的产品决策，Source Fidelity 不受影响（doc 文本仍原样）。两处有意保留的 CommonMark 守卫（两路径同判据）：① ASCII 单词内 `_`（`snake_case_word` 不加粗，marked 会加粗，属其自身粗糙分支）；② `%3` odd-match / `**a**b**c**` 空段守卫 / `***foo***` 嵌套 = markdown-it 原样机器。预览侧**不动 vendored 解析器**（装饰层只补语法树未覆盖的孤岛区间）。",
       "grade": "E",
-      "status": "ABSENT",
+      "status": "AUTO",
       "ownerPackage": "packages/editor-engine",
       "evidence": [
-        "docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md"
+        "docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md",
+        "packages/editor-engine/test/cjk-emphasis.test.ts",
+        "packages/export/test/html.test.ts"
       ],
       "requiredEvidence": [
         "unit",
@@ -675,8 +677,7 @@
         "windows-ci",
         "linux-ci",
         "source-fidelity"
-      ],
-      "blockedBy": "construction-pending（批次 A35：ADR-0035 已裁决 A1，未施工）"
+      ]
     },
     {
       "id": "P0-MENU-001",

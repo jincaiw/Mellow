@@ -72,4 +72,7 @@ smoke、macOS launch —— v1.5.14 run 35635085958；`P0-LAYOUT-002` 的三平�
 ## 验证
 
 - `node tests/parity/verify-release-gate.mjs`：未闭环 5 项（逐一为真实缺口）、`PENDING_ADRS` = ADR-0040。
+
+> **⚠️ 更正（2026-11-05，批次 A35）**：上行是 2026-11-03 的实跑记录（历史保留）。现算 **4 项未闭环**
+> —— `P0-MARKDOWN-006`（ADR-0035 = A1）已于批次 A35 落地转 `AUTO`（审计 §4.354）；`PENDING_ADRS` 不变（仍 ADR-0040）。
 - `node tests/parity/verify-parity-ledger.mjs`：基线 51 通过；ux-gate 声明项 = 1（仅 QA-001）。

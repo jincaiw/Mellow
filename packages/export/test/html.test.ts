@@ -362,38 +362,63 @@ describe('HTML export — 默认值', () => {
 });
 
 /**
- * 行内强调的**渲染语义台账**（**不是**「这个行为是对的」的断言）。
+ * 行内强调的**渲染语义台账**（ADR-0035 裁决 = A1「对齐 Typora」后的语义钉）。
  *
- * 【为什么有这条】`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），
- *   CommonMark 的 flanking 规则判它**不成对** ⇒ 渲染出字面 `**`；
- *   而 **Typora 不这样**（其 `marked` 分支的 `strong` 只要求「内侧非空白」）⇒ Typora 会加粗。
- *   ⇒ 这是 Mellow 与 Typora 之间一条**用户可见的渲染差异**，
- *   已登记为**待裁决项**：`docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md`
- *   （审计 §4.247 / 登记表第 18 行）。
- *
- * 【这条测试的作用】**钉住当前语义** —— 若将来按 ADR-0035 改了渲染语义（无论选哪个选项），
- *   本测试**必须**同步修改；它红了就是「回到 ADR-0035 看一眼」的信号。
- *   ⚠️ **不要**为了让它变绿而删掉它 —— 那会把这条差异重新变成「没人知道」。
+ * 【历史】本组测试在裁决前钉住 CommonMark 语义（`这是**「必须」**的` 渲染字面 `**`），
+ *   作用 = 「改动渲染语义时它会红，迫使回到 ADR-0035」。
+ * 【现状】2026-11-05 批次 A35 落地 A1：导出侧 `installTyporaEmphasis`
+ *   （packages/export/src/html/markdown.ts）把 flanking 判据放宽为「内侧非空白即可」
+ *   ⇒ 差异用例翻转为**加粗**。本组改为钉住 A1 语义 + 不回退用例：
+ *   - ADR-0035 验收矩阵 4 用例全部加粗（预览侧对应测试 = packages/editor-engine/test/cjk-emphasis.test.ts）；
+ *   - 既有 CommonMark 机器不回退：`**a**b**c**`、`***foo***` 嵌套、`snake_case_word` 守卫、未闭合。
+ *   ⚠️ 再改动渲染语义 = 回到 ADR-0035 重新裁决，本组必须同步。
  */
-describe('HTML export — 行内强调语义台账（见 ADR-0035）', () => {
-  const render = async (md: string): Promise<string> => exportHtml(md, { ...DEFAULT_HTML_OPTIONS, mode: 'plain' });
+describe('HTML export — 行内强调语义台账（ADR-0035 = A1，批次 A35 已落地）', () => {
+  // mode = without-style：纯语义 HTML（无内嵌样式/脚本/渲染器 bundle）⇒ 断言可裸查标签。
+  // （旧 `mode: 'plain'` 并非合法取值，会落到 with-theme 整文档 —— 内嵌 bundle 里有渲染器
+  // 源码字符串，裸查 `<em>`/`<strong>` 会命中源码；正查 CJK 串侥幸不中。批次 A35 修正。）
+  const render = async (md: string): Promise<string> => exportHtml(md, { ...DEFAULT_HTML_OPTIONS, mode: 'without-style' });
 
-  it('内侧是汉字：三条路径一致，都加粗', async () => {
+  it('验收矩阵 ①：内侧是汉字，加粗', async () => {
     expect(await render('中文**粗体**中文')).toContain('<strong>粗体</strong>');
   });
 
-  it('行首 / 行尾：三条路径一致，都加粗', async () => {
+  it('验收矩阵 ②：内侧紧贴全角标点且外侧紧贴汉字 ⇒ **加粗**（A1 翻转的用例）', async () => {
+    const html = await render('这是**「必须」**的。');
+    expect(html).toContain('<p>这是<strong>「必须」</strong>的。</p>');
+  });
+
+  it('验收矩阵 ③：行首 / 行尾，加粗', async () => {
     expect(await render('**「引文」**。')).toContain('<strong>「引文」</strong>');
   });
 
-  it('两侧留空格：三条路径一致，都加粗', async () => {
+  it('验收矩阵 ④：两侧留空格，加粗', async () => {
     expect(await render('这是 **「必须」** 的')).toContain('<strong>「必须」</strong>');
   });
 
-  it('⚠️ 内侧紧贴全角标点且外侧紧贴汉字：CommonMark 判不成对 ⇒ 导出**不加粗**（Typora 会加粗）', async () => {
-    const html = await render('这是**「必须」**的。');
-    // ⚠️ 断言必须**锚定渲染出的段落**：导出件里内嵌了渲染器源码，裸查 `<strong>` 会命中源码字符串。
-    expect(html).toContain('<p>这是**「必须」**的。</p>');
-    expect(html).not.toContain('<strong>「必须」</strong>');
+  it('`__` 同形：内侧全角标点 + 外侧汉字也加粗', async () => {
+    expect(await render('这是__「必须」__的')).toContain('<strong>「必须」</strong>');
+  });
+
+  it('`*` 单星同理：中文*「斜体」*中文 渲染斜体', async () => {
+    expect(await render('中文*「斜体」*中文')).toContain('<em>「斜体」</em>');
+  });
+
+  it('不回退 ①：`**a**b**c**` 维持两对 strong', async () => {
+    expect(await render('**a**b**c**')).toContain('<strong>a</strong>b<strong>c</strong>');
+  });
+
+  it('不回退 ②：`***foo***` 维持 em>strong 嵌套', async () => {
+    expect(await render('***foo***')).toContain('<em><strong>foo</strong></em>');
+  });
+
+  it('不回退 ③：`snake_case_word` 保持字面（ASCII 单词内 `_` 守卫）', async () => {
+    const html = await render('snake_case_word');
+    expect(html).not.toContain('<em>');
+    expect(html).toContain('snake_case_word');
+  });
+
+  it('不回退 ④：未闭合 `**粗体` 保持字面', async () => {
+    expect(await render('**未闭合')).toContain('<p>**未闭合</p>');
   });
 });

@@ -83,7 +83,7 @@ Release verdict: NO-GO：6 项未闭环
 | 15 | §4.85 | **3 个不在设置 schema 的持久化键**（`fileTree.options` / `outline.options` / `statusbar.fields`）：既不在设置页、也不被「恢复默认」清理 | **已裁决（2026-10-06）= D2：维持登记 + 补文档** —— 它们已有独立 UI 入口，进设置页会造成双入口；已在 master-plan 偏好设置小节写明「不在设置页、且不被『恢复默认』清理」 | `docs/adr/ADR-0032-audit-new-pending-decisions-2026-10-06.md`（Q4） |
 | 16 | §4.113 | **图片导出的「用主题字号」**（Typora `useThemeFontSize` radio 的**另一半**）：Mellow 只有「自定义字号」`export.image.fontSize`，**无「跟随主题字号」选项**；且 Typora 默认 24px vs Mellow 16px | **已裁决（2026-10-06）= A2：提供「跟随编辑器字号」开关** —— A3（跟随主题字号）**实测等于空操作**（主题无 per-theme 字号，恒为 16 ⇒ 假控件）；A1 会把 parity 缺口永久留着。⚠️ **有意的差异**（canvas 无主题 CSS 通道）⇒ 须登记 D。**默认仍为 `custom` ⇒ 既有导出输出逐字节不变** | `docs/adr/ADR-0033-image-export-theme-font-size.md` |
 | 17 | §4.120 / §4.121 | **偏好矩阵两条轴上共 10 项「未登记的待裁决偏离」**：**默认值轴** 5 项（`markdown.highlight` / `markdown.supSub`（Typora 拆成 sub·sup 两个）/ `markdown.mermaid` / `editor.cmdWheelZoom` —— 默认值与 Typora 默认相反）；**行为轴** 5 项（`autoEscapeImageURL` / `useRelativePathForImg` / `mathFormatOnCopy` / `noLegacyMath` / `wordCountDelimiter` —— 无该选项且行为不同） | **已裁决** —— ⚠️ 这 10 项此前**只在 master-plan 的轮次叙述里**，**登记表一行都没有** ⇒ 门禁据此报 `Pending decisions: 无`（**项目在机器可读层面声称「没有待裁决项」**）。本行是补登记；**未擅自改任何默认值或行为**（改的是用户可见结果，属产品决策）。行为轴另 3 项已各有载体（`useTreeStyle`→**D-AK**、`wordsPerMinute`→**D-AO**、`presetSpellCheck`→台账 `P0-EDITOR-005`）⚠️ **2026-10-09 更正（审计 §4.202）**：本行写的「默认值轴 **5** 项 / 行为轴 **5** 项」是**当时**的计数 —— 实际**默认值轴 4 项**（本行列的就是 4 个）· **行为轴 4 项**（`noLegacyMath` 已由 `ADR-0034` 的取证**排除**，见该 ADR「Q9」节）⇒ **实际 8 问**（`ADR-0034` 的 Q1–Q13 去掉合并的 Q2/Q3 与已排除的 Q9）。⚠️ **2026-10-11 更正（审计 §4.297）**：上句的「**实际 8 问**」**也不准** —— 它沿用了「行为轴 **4** 项」这个**当时**的口径，而行为轴实际是 **7 项**（Q6 / Q7 / Q8 / Q10 / Q11 / Q12 / Q13）。实测（数 `ADR-0034` 的 `## Q<N>` 小节）= **12 问**；按**独立设置项**数是 **11**（默认值轴 4 + 行为轴 7）。**本行其余内容（待裁决、载体）不受影响。** **已裁决（2026-11-03，用户拍板）**：默认值轴（Q1/Q2/Q3/Q4/Q5）**全部翻转对齐 Typora**（highlight / subscript / superscript / mermaid / cmdWheelZoom 默认 false；Q2/Q3 拆 supSub 为两开关）；行为轴（Q6/Q7/Q8/Q10/Q13）= 维持 Mellow 行为 + 登记 D（D-AP/D-AQ/D-AR/D-AV）；Q11/Q12 = 新增开关（默认关 / 默认不退出，待施工 D-AT/D-AU）；Q9 已取证排除。逐项见 ADR-0034「裁决」节。 | `docs/adr/ADR-0034-preference-deviations-2026-10-07.md` |
-| 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **已裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） **已裁决（2026-11-03，用户拍板）= A1**：预览与导出**都渲染加粗**（偏离 CommonMark，属有意对齐 Typora；Source Fidelity 不变）。验收载体 = 台账新增 `P0-MARKDOWN-006`；施工 = 批次 A35。 | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
+| 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **已裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） **已裁决（2026-11-03，用户拍板）= A1**：预览与导出**都渲染加粗**（偏离 CommonMark，属有意对齐 Typora；Source Fidelity 不变）。验收载体 = 台账新增 `P0-MARKDOWN-006`；施工 = 批次 A35（✅ **2026-11-05 已落地**：导出 `installTyporaEmphasis` 只放宽 flanking、配对机器保留；预览走装饰层孤岛补齐、不动 vendored 解析器；台账 `P0-MARKDOWN-006` ABSENT→AUTO；审计 §4.354）。 | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
 | 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **已裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** **已裁决（2026-11-03，用户拍板）= A1**：只修「开关关不掉」（3 个 option-unwired 接线 + 共用挂载行按子开关过滤）；6 个未实现导出语法**不**随 A1 补齐（留待独立裁决）。施工 = 批次 A36（✅ **2026-11-04 已落地**：5 个开关全部接线，登记表 HTML 列 5 行转 `implemented`，审计 §4.353；PDF 列不动，等 A37）。 | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
 | 20 | §4.250–§4.252 | **PDF 导出比 HTML 导出少 10 类能力**：① 公式与图表（`PdfEnv.renderMath` / `renderMermaid` 调用点未提供 ⇒ 降级为源码）；② **核心语法**（嵌套列表层级全丢 / 有序列表变无序且丢起始号 / 任务列表 checkbox 丢失 / 嵌套引用拍平 / 硬换行变空格 / 链接整条丢失 / autolink 字面 / **代码块语言被解析但未消费 ⇒ 无语言标识**）。台账 `P0-EXPORT-001` 已如实改为 `IMPL` | **已裁决** —— 两条路都能修，但成本差一个量级：A1 给 pdfmake 补 webview 栅格化渲染器（+100–200 行、位图、本机不可验）；A2 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml`，实跑确认含 `<math>` / mermaid / 内联图片，且**核心语法全部正确** ⇒ 一次性解决 10 类）；A3 维持现状 + 明说文案。**换 PDF 引擎属架构级改动** ⇒ 未自行改 **已裁决（2026-11-03，用户拍板）= A2**：PDF 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml` + printToPdf）⇒ 一次性解决 10 类差距。施工 = 批次 A37；`P0-EXPORT-001`（现 `IMPL`）实施验收后回闭环。 | `docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md` |
 | 21 | §4.328 | **拼写检查的「语言 / 词典」能力**：Typora 有一整套**语言包管理**（按语言下载/安装/切换词典 + 4 种状态提示，一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 **10 条** key）；而 Mellow 用**系统** `NSSpellChecker`（词典与语言由 **OS** 提供）⇒ 「选语言」在 macOS 的惯用位置是**系统设置**。同批还有两条小缺口：**代码/链接内检查的开关**（排除已实现、开关无）与 **自动纠正拼写**（其所需 API 在 `objc2-app-kit` 0.3.2 中**不存在**、且对 WKWebView 无效 ⇒ 属**不可实现**而非「未做」） | **已裁决** —— A 维持系统拼写检查（登记为平台惯用等价物）· B 复刻语言包管理（新增词典下载子系统）· C 折中（只读语言 + 打开系统设置入口 + 给代码/链接检查加开关）。⚠️ **未擅自改任何用户可见行为**；矩阵三条 `gap` 的说明此前引用「依赖 `host-api` 的拼写词典能力（`P0-EDITOR-005`）」—— 而该项**已 `IMPL`**（消费方已落地）⇒ **理由已过期**，故 `presetSpellCheck` 的 `disposition` 改指本 ADR **已裁决（2026-11-03，用户拍板）= C**：系统拼写检查 + 应用内**只读语言展示** + 「打开系统拼写设置」入口 + 新增 `editor.spellcheckForCodeAndLink`（默认关）。`autoCorrectMisspell` 登记**不可实现**。施工 = 批次 A38；矩阵 `presetSpellCheck` disposition 改指 **D-AW**。 | `docs/adr/ADR-0038-spellcheck-dictionary-language.md` |
@@ -22593,6 +22593,58 @@ master-plan §11.2 看板、§15.1 真值源行、§14 输出行同步；**加�
 **产物**：`packages/export/src/html/{types,markdown,index}.ts` · `packages/export/src/print.ts` ·
 `apps/desktop/src/App.tsx` · `packages/export/test/html.test.ts` ·
 `tests/parity/fixtures/export-feature-parity.json` · 本审计节 + 登记表第 19 行注记。
+
+## 4.354 批次 A35 落地 —— CJK 行内强调语义（ADR-0035 = A1）+ 批次 A37 环境受阻登记（2026-11-05）
+
+### 一、A35：两路径同判据的实现形态
+
+| 文件 | 改动 |
+|---|---|
+| `packages/export/src/html/markdown.ts` | 新增 `installTyporaEmphasis(md)`：`md.inline.ruler.at('emphasis', …)` **只替换 flanking 判据**（开 = 内侧后一字符非空白；闭 = 内侧前一字符非空白；行界视作空格），配对机器（`balance_pairs` 的 `%3` odd-match、`postProcess` 的 strong/em 尺寸消耗与 `***foo***` 嵌套）全部保留 = CommonMark 用例不回退的最小改动 |
+| `packages/editor-engine/src/cjkEmphasis.ts` | **新建**装饰层（ADR-0035 实现路径指定的「不动 vendored 解析器」路线）：语法树行内容段（Paragraph/Setext/ATXHeading/TableCell）内扫描「树未配对、但 Typora 判据成对」的**孤岛区间**，补 `mellow-cjk-strong`/`mellow-cjk-em` mark 装饰 + 定界符走 `MARKER_CLASS` 隐藏通道（reveal/源码模式/IME/大文件视口语义与 inlineExtras 同构）；配对机器 = markdown-it `processDelimiters`+`postProcess` 的逐字移植（`token` 邻接 → `pos` 邻接） |
+| `packages/editor-engine/src/index.ts` | `install()` 挂载 `buildCjkEmphasisExtension()`（无特性开关：强调是核心语法，Typora 亦无开关） |
+| `packages/export/test/html.test.ts` | 语义台账组**翻转**（钉 A1 语义 + 新增不回退用例 4 条）；⚠️ 顺带修正旧 helper 的 `mode: 'plain'` —— **不是合法取值**（落到 with-theme 整文档 ⇒ 内嵌渲染器源码使裸查 `<em>` 假阳性命中），改为 `without-style`（§4.353 同族教训的第三次复发） |
+| `packages/editor-engine/test/cjk-emphasis.test.ts` | **新建** 19 用例：验收矩阵 4 例 + `__`/`*` 同形 + 不回退集（`**a**b**c**`、`***foo***`、`snake_case_word`、`a_b_c`、未闭合）+ 集成（idle 隐藏 / caret 进入显示 / 已配对区间不重复装饰 / IME / source 态） |
+| `tests/parity/typora-parity-ledger.json` | `P0-MARKDOWN-006` **ABSENT → AUTO**（unit 证据 = 两侧测试文件；`blockedBy` 移除；requiredEvidence 的 macos/windows-ci/linux-ci 维持待真机，与 P0-MARKDOWN-002 等 AUTO 先例同形态） |
+
+**两处有意保留的 CommonMark 守卫（登记为有意差异，两路径同判据）**：
+① ASCII 单词内 `_` 守卫（`snake_case_word` 不加粗 —— marked 正则会加粗，属 Typora 自身偏离其
+宣称语义的分支；CommonMark 规范用例，ADR 验收要求不回退）；守卫只认 `[A-Za-z0-9_]` ⇒ 汉字/全角
+不是单词字符 ⇒ `中文_「斜体」_中文`、`这是__「必须」__的` 仍按 Typora 渲染。
+② `%3` odd-match / 空段守卫 / `***foo***` 嵌套 = markdown-it 原样机器（marked 无这些分支）。
+
+**已知边界（登记，不修复）**：markdown-it 的 emphasis 定界符是全 state 一条列表（link/image 标签内
+的强调递归处理），装饰层按段扫描且嵌套节点（Link/Image/AutoLink 等）整体进 covered 集 ⇒ 形如
+`[*x*「y」*z*](url)` 的「嵌套结构内部再含孤岛对」预览不渲染、导出渲染。该形状在 ADR-0035 验收
+矩阵之外，预览保守跳过只会**少渲染**、不会渲染出错误样式。差分探针（756 组合 × 两引擎逐 HTML 比对）：
+孤岛 526 例 **0 不一致**；残余差异仅 `****__y****` 退化嵌套形状（markdown-it 出 `<strong><strong>`
+双对，预览内层由 tree 管线装饰 ⇒ 视觉等价）。
+
+**预览侧被否决的两条路线**（防重做）：① `MarkEdit.addMarkdownConfig` 以 `parseInline` 按名替换
+内置 `Emphasis`（`inlineNames.indexOf` 命中即槽位替换，实测可行、零 vendored diff）—— 否决因：
+自造 `DelimiterType` 对象与内置 `EmphasisAsterisk` **非同一引用** ⇒ `resolveMarkers` 的 `part.type == close.type`
+配对孤岛/正常区间两宇宙不通（`x**「a」y**z` 实测无输出），且内置 `emp` 尺寸逻辑只认 `_`/`*` 两种
+共享类型，无法同时给 `**` 孤岛与 `*` 孤岛建对；②「decline-if-equal」混合策略 —— 同一否决。
+装饰层路线是 ADR-0035 明文的首选路径，两路径一致性由同算法 + 差分测试保证。
+
+**验证（统一规则 17）**：export 116/116 绿 · engine 1340/1340 绿（+19）· `typecheck:desktop` 绿 ·
+23 份 verify-*.mjs 全绿 · release-gate 判词不变（ABSENT 清零使 PASS-E 分母不变 —— 该条本就计入）。
+
+### 二、批次 A37（ADR-0037 = A2 PDF 打印管线）：环境受阻登记，未施工
+
+本机无头实测（Swift 探针，非 guess）：`WKWebView.createPDFWithConfiguration` 是**单页内容快照**
+（页尺寸 = frame 尺寸 794×1123pt；长内容 → 单个 600×11055pt 巨页；rect 只能裁切、按行切断；无
+outline）⇒ **不能分页**，A2 的分页/outline 验收在此 API 上不可达。`NSPrintOperation` 的
+print-to-PDF 通路在本机 headless CLI 下**会把作业假脱机到真实打印机**（EPSON_L3250_Series，
+4 个作业 20:45–20:47，已 `cancel -a` 清空并核实队列 0 pending）⇒ 本环境**禁止再跑原生打印探针**，
+printToPdf 通路的分页/outline 无法在本会话验证。**P0-EXPORT-001 维持 IMPL**（ADR-0037 验收原文
+即要求「macOS 实测通过后」才转级，此处属环境受限而非裁决反转；`blockedBy` 更正为
+`pdf-html-print-pipeline-pending（本机不可验：原生打印通路会触达真实打印机，需 CI/带隔离打印队列的设备）`）。
+A36 已把 `print.ts` 的 features 透传通道备好，A37 施工点 = 宿主调用 `buildPrintHtml` + 平台 print-to-PDF 绑定。
+
+**产物**：`packages/export/src/html/markdown.ts` · `packages/editor-engine/src/{cjkEmphasis.ts,index.ts}` ·
+`packages/export/test/html.test.ts` · `packages/editor-engine/test/cjk-emphasis.test.ts` ·
+`tests/parity/typora-parity-ledger.json` · 本审计节 + 登记表第 18 行注记。
 
 ## 五、本次审计做的改动（非策略性）
 

@@ -137,6 +137,64 @@ export function renderTocHtml(items: TocItem[], maxLevel: number): string {
   return `<nav class="mellow-toc" role="navigation" aria-label="Table of contents">${html}</nav>`;
 }
 
+/**
+ * Typora 行内强调判据（ADR-0035 = A1，批次 A35）：替换 markdown-it 内置 emphasis
+ * **tokenizer 的 flanking 判定**，其余配对机器（`***foo***` 嵌套、strong/em 尺寸
+ * 消耗、`%3` 规则、postProcess 配对）全部保留。
+ *
+ * Typora 的 marked 分支正则（ADR-0035 一手证据，1.14.9/build 7785）：
+ *   strong: /^__(?=\S)([\s\S]*?\S)__(?!_)|^\*\*(?=\S)([\s\S]*?\S)\*\*(?!\*)/
+ *   em:     /^_(?=\S)([\s\S]*?\S)_(?!_)|^\*(?=\S)([\s\S]*?\S)\*(?!\*)/
+ * ⇒ 开/闭判据只看**定界符内侧紧邻非空白**；CommonMark 的标点 flanking
+ * （left-/right-flanking 的 punct 相邻分支）不再生效 ⇒ `这是**「必须」**的` 加粗。
+ *
+ * 有意保留的一条 CommonMark 守卫：ASCII 单词内 `_`（`snake_case_word` 不加粗）。
+ * marked 正则会把它加粗，但那是 Typora 自身偏离其宣称语义的分支，且
+ * `snake_case_word` 是 CommonMark 规范用例（ADR-0035 验收要求「既有
+ * CommonMark 用例不回退」）⇒ 判定：守卫保留，登记为有意差异。
+ * （守卫仅认 `[A-Za-z0-9_]`：汉字/全角字符**不算**单词字符 ⇒ `中文_「斜体」_中文`
+ *   与 `这是__「必须」__的` 仍按 Typora 渲染。与预览侧装饰层同判据。）
+ */
+function installTyporaEmphasis(md: MarkdownItInstance): void {
+  const tokenize: RuleInline = (state, silent) => {
+    if (silent) return false; // 与内置一致：silent 模式下不注册定界符
+    const start = state.pos;
+    const marker = state.src.charCodeAt(start);
+    if (marker !== 95 /* _ */ && marker !== 42 /* * */) return false;
+    let pos = start + 1;
+    while (pos < state.posMax && state.src.charCodeAt(pos) === marker) pos += 1;
+    const length = pos - start;
+    const prev = start === 0 ? ' ' : state.src[start - 1];
+    const next = pos >= state.posMax ? ' ' : state.src[pos];
+    // Typora 判据：内侧非空白即可开/闭
+    let canOpen = !/\s/.test(next);
+    let canClose = !/\s/.test(prev);
+    if (marker === 95) {
+      // ASCII 单词内 `_` 守卫（见上方判定说明）
+      const word = (ch: string): boolean => /[A-Za-z0-9_]/.test(ch);
+      if (word(prev)) canOpen = false;
+      if (word(next)) canClose = false;
+    }
+    // 与内置 emphasis_tokenize 同构：每个标记字符一个 text token + 一条 delimiter，
+    // 由 ruler2 的 balance_pairs/emphasis.postProcess 完成配对与 strong/em 判定。
+    for (let i = 0; i < length; i += 1) {
+      const token = state.push('text', '', 0);
+      token.content = String.fromCharCode(marker);
+      state.delimiters.push({
+        marker,
+        length,
+        token: state.tokens.length - 1,
+        end: -1,
+        open: canOpen,
+        close: canClose,
+      });
+    }
+    state.pos += length;
+    return true;
+  };
+  md.inline.ruler.at('emphasis', tokenize);
+}
+
 export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
   const md = new MarkdownIt({
     html: true,
@@ -147,6 +205,9 @@ export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
     breaks: ctx.preserveLineBreaks === true,
     typographer: false,
   });
+
+  // ── CJK 行内强调（ADR-0035 = A1，批次 A35）───────────────
+  installTyporaEmphasis(md);
 
   // footnote + task list
   // ADR-0036 A1（批次 A36）：脚注受开关控制 —— 关闭时不注册插件，`[^1]` 保留为字面文本，

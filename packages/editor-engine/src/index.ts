@@ -45,6 +45,9 @@ import { buildCodeFenceAutocompleteExtension } from './codeFence';
 import { buildCodeBlockLabelExtension } from './codeBlockLabel';
 import { emojiSource } from './emoji';
 import { buildInlineExtrasExtension } from './inlineExtras';
+import { buildCjkEmphasisExtension } from './cjkEmphasis';
+
+export { buildCjkEmphasisExtension, scanCjkEmphasisSegment, CJK_STRONG_CLASS, CJK_EM_CLASS } from './cjkEmphasis';
 import { buildKbdCapsExtension } from './kbdCaps';
 import { installSourceApi } from './sourceMode';
 import { buildReadonlyExtension, installReadonlyApi } from './readonly';
@@ -316,6 +319,10 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   if (f.yaml) ext.push(buildYamlFrontMatterExtension(false));
   if (f.html) ext.push(buildSafeHtmlExtension(false));
   if (f.highlight || f.subscript || f.superscript) ext.push(buildInlineExtrasExtension({ highlight: f.highlight, sub: f.subscript, sup: f.superscript }));
+  // ADR-0035 A1（批次 A35）：CJK 行内强调装饰层（无特性开关：`**`/`*` 是核心语法）。
+  // 孤岛区间上语法树没有 StrongEmphasis/Emphasis 节点 ⇒ marker-reveal 不会经过这些字符，
+  // 定界符隐藏由本扩展自己用 MARKER_CLASS 完成（与 inlineExtras 同构）。
+  ext.push(buildCjkEmphasisExtension());
   // V6-P1：行内 HTML `<kbd>` 键帽（Typora 图16 对标；随 HTML 特性开关）
   if (f.html) ext.push(buildKbdCapsExtension());
   if (f.wikilink) ext.push(buildWikilinkExtension());
