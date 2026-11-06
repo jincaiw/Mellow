@@ -22785,8 +22785,11 @@ Mellow 的偏离**是裁决结果、不是欠债**）⇒ 本轮授权范围 = **
   copy-to-assets 免重复三分支（assets / docname 变体 / 子目录）；drop 开关四分支（开→复制、开+已在内→
   不重复、开+未保存→keep-original、关→行为不变））。测试 mock `makeHost` 曾以 `??` 吞掉显式 `docPath: null`
   ⇒ 改为 `undefined` 判缺省（测试基建 bug，非产品 bug，如实记录）。
-- **tsc**：settings / i18n / desktop 净。**护栏**：verify-settings-contract（含面板表/矩阵两节 + 载体
-  引用 43 处路径全存在）与 verify-i18n-contract 绿。
+- **tsc**：settings / i18n / desktop 净。**护栏**：verify-settings-contract 新增**五层接线判据**（仿
+  §4.142 `downloadRemote` 同构：① settings toggle 默认 false；② App 注入 = 惰性读 + 总闸
+  `image.allowMove` 串联；③ host 接口声明 + 桥接实现真读注入点（锚定义形态防改名）；④ input.ts
+  drop 支门控 + 未保存护栏；⑤ insert.ts `isPathInsideDir` 免重复复制），每层配正/负 canary；
+  面板表/矩阵两节 + 载体引用 43 处路径全存在；verify-i18n-contract 绿。
 
 ### 四、fixture 登记面的收口口径（诚实版）
 

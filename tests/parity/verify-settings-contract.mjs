@@ -2150,6 +2150,71 @@ if (cssLayerAnchor === undefined) {
   }
 }
 
+// ── 拖入本地图片复制开关（2026-11-07，审计 §4.357；Typora `applyImageMoveForLocal`）──────────
+// Typora 真值：`applyImageMoveForLocal` 默认 **true**（拖入即复制）；Mellow 按 D-AV 裁决默认
+// **false = keep-original** ⇒ **默认行为必须与现状一致（drop 支不传 strategy）**。
+// 与上面 §4.142 的 downloadRemote 判据同构，**跨 5 层**（缺任一 ⇒ 功能不存在或行为回归）：
+//   ① settings toggle + 默认 false；② App 注入（惰性读 + 总闸 `image.allowMove` 串联）；
+//   ③ engine host 声明 + 消费注入点；④ input.ts drop 支被开关门控（含未保存文档护栏）；
+//   ⑤ insert.ts 的「已在 asset 目录内 ⇒ 不重复复制」判据（Typora `shouldTriggerMove` 同判据）。
+{
+  // ① 设置定义：toggle + **默认 false**（取 true 会**改变现状** = 违背 D-AV 裁决）
+  if (!/id: 'image\.moveLocalOnDrop'[^}]*type: 'toggle'[^}]*defaultValue: false/.test(settingsSource)) {
+    fail('settings 缺少 image.moveLocalOnDrop（toggle / **默认 false**）—— 默认必须 false（D-AV：不默认复制用户文件）');
+  }
+  // ② 宿主注入：惰性读 + 总闸串联（Typora shouldTriggerMove 同构：allowImageMove 是一票否决）
+  if (!/__MELLOW_IMAGE_MOVE_LOCAL__ = \(\) => readBoolSetting\('image\.allowMove', true\)\s*&&\s*readBoolSetting\('image\.moveLocalOnDrop', false\)/.test(appSource)) {
+    fail('App.tsx 未注入 __MELLOW_IMAGE_MOVE_LOCAL__（或未串联总闸 image.allowMove）—— engine 永远拿不到宿主偏好');
+  }
+  // ③ engine host：接口声明 + 桥接实现真的读注入探针（判据形状同 §4.142：锚定义形态，防改名）
+  const hostSrc357 = read('packages/editor-engine/src/image/host.ts');
+  if (!/shouldMoveLocalDroppedImages\(\): boolean;/.test(hostSrc357)) {
+    fail('ImageHost 接口未声明 shouldMoveLocalDroppedImages() —— 实现方无从对齐');
+  }
+  if (!/shouldMoveLocalDroppedImages:\s*\(\)\s*=>\s*\{[^}]*__MELLOW_IMAGE_MOVE_LOCAL__/.test(hostSrc357)) {
+    fail('engine 桥接 host 的 shouldMoveLocalDroppedImages 未读 __MELLOW_IMAGE_MOVE_LOCAL__ —— 宿主注入无人消费（开关永远关）');
+  }
+  // ④ input.ts drop 支必须被开关门控 + 未保存文档护栏（docPath null ⇒ 强制 keep-original）
+  const inputSrc = read('packages/editor-engine/src/image/input.ts');
+  if (!/host\.getDocumentPath\(\) !== null && host\.shouldMoveLocalDroppedImages\(\)/.test(inputSrc)) {
+    fail('input.ts 的 drop 支未被 shouldMoveLocalDroppedImages() 门控（或缺未保存护栏）—— 空开关/回归风险');
+  }
+  // ⑤ insert.ts：已在 asset 目录内 ⇒ 不重复复制（copy-to-assets 支的 isPathInsideDir 短路）
+  const insertSrc357 = read('packages/editor-engine/src/image/insert.ts');
+  if (!/isPathInsideDir\(abs, assetAbs\)/.test(insertSrc357)) {
+    fail('insert.ts 的 copy-to-assets 支缺 isPathInsideDir 免重复复制判据 —— 拖入已在 assets 内的图会自我复制');
+  }
+  // canary：四层各一正一负（负样本一律「改名/改默认」形态，同 §4.142 的取证纪律）
+  const MV_SET_RE = /id: 'image\.moveLocalOnDrop'[^}]*type: 'toggle'[^}]*defaultValue: false/;
+  if (!MV_SET_RE.test("{ id: 'image.moveLocalOnDrop', type: 'toggle', storageKey: 's', defaultValue: false }")) {
+    fail('moveLocalOnDrop 设置 canary 失效：正样本未命中');
+  }
+  if (MV_SET_RE.test("{ id: 'image.moveLocalOnDrop', type: 'toggle', storageKey: 's', defaultValue: true }")) {
+    fail('moveLocalOnDrop 设置 canary 失效：负样本（默认 true）被判为命中');
+  }
+  const MV_INJ_RE = /__MELLOW_IMAGE_MOVE_LOCAL__ = \(\) => readBoolSetting\('image\.allowMove', true\)\s*&&\s*readBoolSetting\('image\.moveLocalOnDrop', false\)/;
+  if (!MV_INJ_RE.test("__MELLOW_IMAGE_MOVE_LOCAL__ = () => readBoolSetting('image.allowMove', true) && readBoolSetting('image.moveLocalOnDrop', false);")) {
+    fail('moveLocalOnDrop 注入 canary 失效：正样本未命中');
+  }
+  if (MV_INJ_RE.test("__MELLOW_IMAGE_MOVE_LOCAL__ = () => readBoolSetting('image.moveLocalOnDrop2', false);")) {
+    fail('moveLocalOnDrop 注入 canary 失效：负样本（漏总闸/错 id）被判为命中');
+  }
+  const MV_HOST_RE = /shouldMoveLocalDroppedImages:\s*\(\)\s*=>\s*\{[^}]*__MELLOW_IMAGE_MOVE_LOCAL__/;
+  if (!MV_HOST_RE.test('shouldMoveLocalDroppedImages: () => {\n  const p = window.__MELLOW_IMAGE_MOVE_LOCAL__;\n},')) {
+    fail('moveLocalOnDrop host canary 失效：正样本未命中');
+  }
+  if (MV_HOST_RE.test('shouldMoveLocalDroppedImagesX: () => {\n  const p = window.__MELLOW_IMAGE_MOVE_LOCAL__;\n},')) {
+    fail('moveLocalOnDrop host canary 失效：负样本（属性改名）被判为命中');
+  }
+  const MV_GATE_RE = /host\.getDocumentPath\(\) !== null && host\.shouldMoveLocalDroppedImages\(\)/;
+  if (!MV_GATE_RE.test("const moveLocal = host.getDocumentPath() !== null && host.shouldMoveLocalDroppedImages();")) {
+    fail('moveLocalOnDrop drop 门控 canary 失效：正样本未命中');
+  }
+  if (MV_GATE_RE.test("const moveLocal = host.shouldMoveLocalDroppedImages();")) {
+    fail('moveLocalOnDrop drop 门控 canary 失效：负样本（缺未保存护栏）被判为命中');
+  }
+}
+
 // ── 侧栏**文件搜索**的两个选项：面板复选框必须**读写设置**（2026-10-07，审计 §4.145）──────────
 // Typora 的 `fileSearchCaseSensitive` / `fileSearchWholeWord` 经 `JSBridge.putSetting(...)` **持久化**
 // （`main.js` 实测）；Mellow 的侧栏复选框此前是 `useState(false)` **字面量** ⇒ 重启即回默认
