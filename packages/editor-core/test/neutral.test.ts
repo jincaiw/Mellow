@@ -132,6 +132,40 @@ describe('中性 2 — 注入脚本在无 WebKit 环境实跑', () => {
     expect(invoked).toHaveLength(1);
     expect(result).toEqual({ ok: true, method: 'bridge_call' });
   });
+
+  test('WKWebView 清扫模拟：自有属性被回收后 handler 仍可达（原型 getter 回归）', async () => {
+    // 2026-11-07 原生实测（审计 §4.356）：真实 WKWebView 的 messageHandlers 是稳定包装对象，
+    // 但 JS 侧新增的**自有属性**会被 WebKit 按原生 handler 注册表清扫 ⇒ 旧写法（直接赋值）
+    // 在解析期存活、随后消失 ⇒ 内核每次调用重新解析 `?.bridge?.postMessage` 全部静默短路。
+    // 本测试模拟该清扫：包装对象的原型**不是** Object.prototype（真实 WebKit 形态），
+    // 注入必须走原型 getter 分支；删除自有属性（模拟清扫）后 handler 依然可达。
+    delete (window as unknown as Record<string, unknown>).webkit;
+    const invoked: unknown[] = [];
+    installBridge({ invoke: async (message) => { invoked.push(message); return null; } });
+    class NativeMessageHandlers {} // 非 Object.prototype 的原型 ⇒ 注入走 getter 分支
+    const wrapper = new NativeMessageHandlers();
+    Object.defineProperty(window, 'webkit', { value: { messageHandlers: wrapper }, configurable: true });
+    // eslint-disable-next-line no-eval
+    (0, eval)(BRIDGE_INJECTION);
+    // 注入后立刻模拟 WebKit 清扫：删掉任何自有 bridge 属性
+    delete (wrapper as Record<string, unknown>).bridge;
+    const mh = (window as unknown as { webkit: { messageHandlers: Record<string, { postMessage(m: unknown): Promise<unknown> }> } }).webkit.messageHandlers;
+    expect(mh.bridge).toBeDefined(); // 自有属性已删 ⇒ 只能来自原型 getter
+    expect(Object.prototype.hasOwnProperty.call(mh, 'bridge')).toBe(false);
+    await mh.bridge.postMessage({ moduleName: 'core', methodName: 'notifyViewDidUpdate', parameters: '{}' });
+    expect(invoked).toHaveLength(1);
+    // 还原 window.webkit（后续测试的 beforeEach 也会清，但这里保持独立可重复）
+    delete (window as unknown as Record<string, unknown>).webkit;
+  });
+
+  test('jsdom 合成对象（原型 = Object.prototype）：不污染全局原型，退回赋值', () => {
+    delete (window as unknown as Record<string, unknown>).webkit;
+    // eslint-disable-next-line no-eval
+    (0, eval)(BRIDGE_INJECTION);
+    expect(Object.prototype.hasOwnProperty.call(Object.prototype, 'bridge')).toBe(false);
+    const mh = (window as unknown as { webkit: { messageHandlers: Record<string, unknown> } }).webkit.messageHandlers;
+    expect(Object.prototype.hasOwnProperty.call(mh, 'bridge')).toBe(true);
+  });
 });
 
 describe('中性 3 — bundle 构建注入', () => {

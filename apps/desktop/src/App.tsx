@@ -4861,6 +4861,13 @@ export default function App() {
   const maybeAutoSaveRef = useRef<(() => Promise<void>) | null>(null);
   const maybeAutoSave = useCallback(async () => {
     if (!dirtyRef.current) return;
+    // ⚠️ 2026-11-07（审计 §4.356，原生实测）：自动保存**绝不**对未保存（无磁盘路径）文档
+    // 触发另存 —— Typora 的 Auto Save 只作用于有磁盘路径的文档；旧实现走
+    // handleSave → documents.save(null) → **直接弹原生保存面板**（实测多窗口扇出污染时
+    // 两个 untitled 窗口失焦同时弹出面板，用户被迫逐个取消）。未命名草稿由崩溃恢复
+    // 快照 + 手动 ⌘S 兜底。文档切换路径（guardSingleDocument）早已带
+    // `existing.path !== null` 同款护栏，此处是失焦/5 分钟定时器两条漏网路径。
+    if (filePathRef.current === null) return;
     if (!isAutosaveEnabled(readStored('mellow.file.autosave'))) return;
     await handleSave();
   }, [handleSave]);
@@ -5421,8 +5428,11 @@ export default function App() {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let cancelled = false;
-    void import('@tauri-apps/api/event')
-      .then(({ listen }) => listen<{ path: string; mode?: string }>('mellow://open-file', (e) => { openPathWithMode(e.payload); }))
+    // ⚠️ 2026-11-07（审计 §4.356）：target 必须为本窗口 label（同 mellow://bridge 注释）。
+    // Rust 侧（Finder odoc / CLI / RunEvent::Opened）本就 emit_to 到目标窗口，但 target=Any
+    // 的监听会收到**一切**事件 ⇒ 多窗口下「在 A 窗口打开文件，B/C 窗口也被抢导航」。
+    void Promise.all([import('@tauri-apps/api/event'), import('@tauri-apps/api/window')])
+      .then(([{ listen }, { getCurrentWindow }]) => listen<{ path: string; mode?: string }>('mellow://open-file', (e) => { openPathWithMode(e.payload); }, { target: getCurrentWindow().label }))
       .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
       .catch(() => { /* 非 Tauri 环境 */ });
     // 前端就绪前的事件已存入 Rust state：mount 后主动拉取，保证不丢
@@ -5434,24 +5444,33 @@ export default function App() {
   }, [openPathWithMode]);
   // B1（SDI，D4=A）：Rust 侧 CloseRequested 拦截（红绿灯/✕/原生 close）→ 此监听做
   // dirty 确认。窗口自身发起的关闭（⌘W）已在 closeCurrentWindow 内 arm，不经过此事件。
+  // ⚠️ 2026-11-07（审计 §4.356）：target 必须为本窗口 label（同 mellow://bridge 注释）——
+  // 否则关闭 A 窗口的请求会让 B/C 窗口也弹「未保存」确认并各自走关闭流程。
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let cancelled = false;
-    void import('@tauri-apps/api/event')
-      .then(({ listen }) => listen('mellow://window-close-requested', () => { void handleSystemCloseRequest(); }))
+    void Promise.all([import('@tauri-apps/api/event'), import('@tauri-apps/api/window')])
+      .then(([{ listen }, { getCurrentWindow }]) => listen('mellow://window-close-requested', () => { void handleSystemCloseRequest(); }, { target: getCurrentWindow().label }))
       .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
   }, [handleSystemCloseRequest]);
   // CoreEditor 位于 iframe 中，编辑事件经 Tauri bridge 回到桌面壳。不能只依赖
   // window keydown：IME、粘贴、拖放和输入法提交都可能绕过该路径。
+  // ⚠️ 2026-11-07（审计 §4.356，原生三窗口实测取证）：监听**必须以本窗口 label 为 target**
+  // 注册。Tauri 事件表的 `match_any_or_filter`（tauri-2.11.5 event/listener.rs）规定：
+  // target=Any 的监听**无条件收到一切事件**（`emit_to` 的过滤根本不参与判断）——
+  // 实测 `emit_to(main-xxx)` 一条 notifyViewDidUpdate，三个窗口的 App.tsx 全部触发。
+  // 若按默认 Any 注册，多窗口下「A 窗口打字 ⇒ B/C 窗口也标 dirty/写快照」= 数据安全事故
+  // （close 门被误触发 / 恢复快照互相污染）。注册 target=AnyLabel{本窗口} 后，
+  // 过滤表按 label 精确匹配（同文件 AnyLabel 才通过）⇒ 与 Rust 侧 emit_to 闭环。
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let cancelled = false;
-    void import('@tauri-apps/api/event')
-      .then(({ listen }) => listen<{ moduleName: string; methodName: string; parameters: string }>('mellow://bridge', (e) => {
+    void Promise.all([import('@tauri-apps/api/event'), import('@tauri-apps/api/window')])
+      .then(([{ listen }, { getCurrentWindow }]) => listen<{ moduleName: string; methodName: string; parameters: string }>('mellow://bridge', (e) => {
         if (e.payload.moduleName !== 'core') return;
         if (e.payload.methodName === 'notifyCompositionEnded') {
           hostRef.current?.emitExternalEvent({
@@ -5473,7 +5492,7 @@ export default function App() {
           // 老 bundle 未包含该字段时，保持原有非合成态行为。
           compositionEnded: parameters.compositionEnded !== false,
         });
-      }))
+      }, { target: getCurrentWindow().label }))
       .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };

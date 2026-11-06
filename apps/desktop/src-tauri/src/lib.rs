@@ -139,10 +139,21 @@ pub(crate) fn insert_pending_open(app: &tauri::AppHandle, label: &str, req: Open
         .insert(label.to_string(), req);
 }
 
-/// Web→Native 消息（与 CoreEditor nativeModule.ts 格式一致）
+/// Web→Native 消息。
+///
+/// ⚠️ 2026-11-07（原生实测，审计 §4.356）：**两个发送端拼写不同，必须都收**：
+/// - vendored CoreEditor 内核（`nativeModules` 工厂）发 **camelCase** `{moduleName, methodName}`；
+/// - editor-engine 的 `fs` 桥（image host）发 **snake_case** `{module_name, method_name}`。
+/// 本结构原只认 snake_case ⇒ **内核每一次 `notify*` 都被 serde 拒**
+/// （实测报错原文：`invalid args 'message' for command 'bridge_call': missing field 'module_name'`），
+/// 于是 `notifyViewDidUpdate`（dirty 的唯一事实来源）从未到达桌面壳
+/// ⇒ ● 不显示、关闭确认门不触发、崩溃恢复快照不写。
+/// 修法 = serde `alias` 同时接受两种拼写（不改 vendored 内核、不改 engine 发送端）。
 #[derive(serde::Deserialize)]
 pub struct BridgeMessage {
+    #[serde(alias = "moduleName")]
     pub module_name: String,
+    #[serde(alias = "methodName")]
     pub method_name: String,
     pub parameters: String,
 }
@@ -152,6 +163,30 @@ mod tests {
     use super::{take_pending_open, OpenRequest, PendingOpen};
     use std::collections::HashMap;
     use std::sync::Mutex;
+
+    /// 2026-11-07（审计 §4.356）：BridgeMessage 必须**同时接受两种拼写**——
+    /// vendored CoreEditor 内核发 camelCase（`moduleName`），editor-engine 的 fs 桥发
+    /// snake_case（`module_name`）。此前只认 snake_case ⇒ 内核每一次 `notify*` 都被
+    /// serde 拒（`missing field 'module_name'`）⇒ dirty 跟踪/关闭确认门/崩溃恢复快照
+    /// 在原生 app 里全部静默失效（P0 数据安全隐患）。
+    #[test]
+    fn bridge_message_accepts_both_spellings() {
+        use super::BridgeMessage;
+        let camel: BridgeMessage = serde_json::from_str(
+            r#"{"moduleName":"core","methodName":"notifyViewDidUpdate","parameters":"{}"}"#,
+        )
+        .expect("camelCase（vendored 内核）必须可反序列化");
+        assert_eq!(camel.module_name, "core");
+        assert_eq!(camel.method_name, "notifyViewDidUpdate");
+        let snake: BridgeMessage = serde_json::from_str(
+            r#"{"module_name":"fs","method_name":"copyFile","parameters":"{}"}"#,
+        )
+        .expect("snake_case（engine fs 桥）必须可反序列化");
+        assert_eq!(snake.module_name, "fs");
+        assert_eq!(snake.method_name, "copyFile");
+        // 缺字段仍须报错（alias 不是「全部可选」）
+        assert!(serde_json::from_str::<BridgeMessage>(r#"{"methodName":"x","parameters":"{}"}"#).is_err());
+    }
 
     fn pending_with(entries: &[(&str, &str)]) -> PendingOpen {
         let mut map = HashMap::new();

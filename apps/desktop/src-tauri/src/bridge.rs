@@ -15,6 +15,7 @@ use crate::BridgeMessage;
 #[tauri::command]
 pub fn bridge_call(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     message: BridgeMessage,
 ) -> Result<Option<serde_json::Value>, String> {
     match message.module_name.as_str() {
@@ -22,7 +23,17 @@ pub fn bridge_call(
             // 状态通知：转发为事件供 React 订阅。parameters 必须原样保留：
             // notifyViewDidUpdate 的 contentEdited/isDirty 是桌面壳判定 dirty、
             // recovery 与状态栏刷新的唯一编辑器事实来源。
-            let _ = app.emit(
+            // ⚠️ 2026-11-07（审计 §4.356，三窗口原生实测）：**只发给来源窗口**（emit_to）。
+            // 此前 `app.emit` 广播到所有窗口 ⇒ SDI 多窗口下「A 窗口打字 ⇒ B/C 也显示 ●」
+            // （每个窗口的 App.tsx 都把事件记到自己文档上）。桥此前整体失效掩盖了该缺陷，
+            // 修复拼写/清扫后暴露。**但 emit_to 单独不够**：Tauri 事件表对 target=Any 的
+            // 监听**无条件放行一切过滤事件**（tauri-2.11.5 event/listener.rs
+            // `match_any_or_filter`），实测一条 emit_to 仍触发三个窗口的监听回调 ⇒
+            // 接收侧必须以本窗口 label 为 target 注册（App.tsx mellow://bridge 监听，
+            // 两侧共同构成窗口隔离）。窗口归属由命令的 `window` 参数提供
+            // （Tauri 按 invoke 来源解析，iframe 属于其宿主窗口）。
+            let _ = app.emit_to(
+                window.label(),
                 "mellow://bridge",
                 serde_json::json!({
                     "moduleName": message.module_name,

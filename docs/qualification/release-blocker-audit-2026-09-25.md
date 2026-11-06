@@ -22699,6 +22699,64 @@ e2e 断言「开：checkbox 视觉状态跟随」转为常驻回归项。**教�
 `tests/parity/fixtures/{typora-preferences-matrix,typora-panel-only-keys}.json` ·
 ADR-0038 执行记录 + master-plan D-AT/D-AU/D-AW 行 + 登记表第 21 行注记 · 本节。
 
+## 4.356 原生桥 P0 全链修复 —— WKWebView 属性清扫 + serde 拼写 + 事件窗口隔离 + untitled 自动保存护栏（2026-11-07）
+
+### 一、母题：桥整体「无声死亡」，dirty/close 门/崩溃恢复在真机全线失效
+
+§4.355 的 D-AU 原生实测（tauri dev 真实进程）当时靠**合成注入** `mellow://bridge` 事件驱动 dirty 链路。
+2026-11-07 起改用**真实编辑器输入**（Swift AX + 原生菜单粘贴）验收时，当场抓到三类相互掩盖的 P0 缺陷 ——
+**桌面壳的 dirty 判定、脏关闭门、崩溃恢复快照在原生运行时全部死链**（编辑任何文档：● 不出现、
+关闭不弹确认、recovery 目录零写入 ⇒ 关窗即静默销毁内容 = 数据安全红线，统一规则 13）：
+
+| # | 缺陷 | 根因（一手证据） | 修复 |
+|---|---|---|---|
+| **A** | `notifyViewDidUpdate` 等全部核心桥通知**解析期后无声死亡** | 真实 WKWebView 里 `window.webkit.messageHandlers` 是**稳定包装对象**（identity 跨访问成立），但 **JS 侧新增的自有属性被 WebKit 按其原生 handler 注册表周期清扫**（注册表无 `bridge` ⇒ 赋值存活 ~1–2.5s 后消失；`window.webkit` 本身 non-configurable，无法遮蔽）。MarkEdit 内核每次调用重新解析 `window.webkit?.messageHandlers?.bridge?.postMessage` ⇒ 属性被扫后**可选链整条短路，连 `.then` 都不执行**（无任何报错）。探针实据：清扫后 `?.bridge` → `undefined`，同刻**原型 getter 仍可达** | `bridge-injection.ts`：handler 装到 `messageHandlers` 的**原型**上（`Object.defineProperty(proto, 'bridge', { get })`，属性查找落原型链、不受清扫影响；原生同名 handler 若存在仍以自有属性优先遮蔽 ⇒ 语义不变）。**判据护栏**：原型 = `Object.prototype` 时不装（jsdom / 浏览器 dev 的合成对象 ⇒ 避免污染全局原型），退回自有属性赋值 |
+| **B** | 桥**活着也被拒**：每条 core 调用报 `invalid args 'message' for command 'bridge_call': missing field 'module_name'` | vendored 内核发 **camelCase** `{moduleName, methodName}`（MarkEdit 原生形状），Rust `BridgeMessage` 只收 **snake_case**。editor-engine 的 `fs` 桥（图片工作流）发的却是 snake_case ⇒ **两种拼写并存**，不能单边改 | `lib.rs`：serde `#[serde(alias)]` **同时接受两种拼写**；新测试 `bridge_message_accepts_both_spellings`（camel ✓ / snake ✓ / 缺字段仍报错 ✓） |
+| **C** | 修好 A+B 后**反向暴露**：A 窗口打字 ⇒ B/C 窗口也显示 ●、且各自写 recovery 快照（实测 02:40 两个 untitled 空快照）| **两层扇出叠加**：① 发送侧 `bridge_call` 用 `app.emit` 广播全窗口（桥死时无人可见）；② **更深一层：Tauri 事件表对 target=`Any` 的监听无条件放行一切过滤事件** —— `tauri-2.11.5/event/listener.rs::match_any_or_filter`：`*target == EventTarget::Any \|\| filter(…)`，而 JS `listen()` 的默认 target 正是 `Any`（`@tauri-apps/api 2.11.1 event.js`）⇒ **只把发送侧改 `emit_to` 不够**。三窗口原生取证（临时 `eprintln` + probe invoke 打印两侧 label）：一条 `emit_to(main-xxx)` 仍在三个窗口各打出一个 `listen-*` ⇒ 坐实 | ① `bridge.rs`：`app.emit_to(window.label(), …)`（命令参数 `window: tauri::WebviewWindow`，Tauri 按 invoke 来源解析，iframe 归属其宿主窗口）；② **接收侧以本窗口 label 注册**：`listen('mellow://bridge', …, { target: getCurrentWindow().label })` —— `emit_js_filter` 的表过滤对 `AnyLabel{L}` 发射只投递给 `AnyLabel{label==L}` 的 handler ⇒ 两端闭环。同类缺陷逐一排查：`mellow://window-close-requested`（关 A 弹 B/C 确认）与 `mellow://open-file`（A 开文件抢 B/C 导航）同改；`dir-changed` / `file-changed` / `search-result` 是**应用级广播、payload 已自带过滤**（root/path/searchId），维持 `Any` 正确 |
+| **D** | 扇出污染期间，**untitled 窗口失焦直接弹原生保存面板**（实测两窗同时弹、AppleScript 不可达吞事件）| `maybeAutoSave` 无路径护栏：dirty 的**未命名**文档走 `handleSave → documents.save(null)` = **另存为对话框**。「切换文档」路径（`guardSingleDocument`）早有 `path !== null` 同款护栏，**失焦 + 5 分钟定时器两条路径漏网**（PRD §101 语义 = 自动保存只作用于有磁盘路径文档，Typora Auto Save 同） | `maybeAutoSave` 增加 `filePathRef.current === null → return`（未命名草稿由崩溃恢复快照 + 手动 ⌘S 兜底） |
+
+### 二、门文案再确认（对抗 hook 反馈的「文案自拟」疑虑）
+
+G7-EDIT-09（2026-09-13 已落地，master-plan 一手证据 = TypeMark `appsrc/main.js` 的 `tryLeaveDocument`）已把
+文案对齐官方：标题「保存」、正文「是否要保存对文档的更改？\n如果不保存，你的更改将丢失。」、按钮
+**保存 / 放弃更改（未命名 =「丢弃」）/ 取消** —— 与 Typora `["Save", filePath ? "Discard Changes" : "Discard", "Cancel"]`
+逐字对应（messages.ts:436–441 现值复核成立）。本轮原生实测的对话框即此文案，**无「自拟」残留**；
+此前会话中一度出现的「保存/取消/不保存」记述是**未提交草稿**（误引 macOS NSAlert 惯例），已废弃回权威基线。
+
+### 三、验收链（本机实跑，全部真实输入）
+
+- **editor-core jest** 21 绿（含新增 2 例：**WebKit 清扫模拟** = 非 `Object.prototype` 原型的假 messageHandlers
+  包装对象上执行注入、删除自有 `bridge` 后断言原型 getter 仍可达且 postMessage 路由成立；jsdom 防污染回归）；
+  **cargo** 86+16+4 绿（含 alias 测试）；**tsc --noEmit** 净；**23 护栏 + release-gate + vendored 检查**全绿。
+- **原生三窗口 E2E（tauri dev 真实进程 + Swift AX/原生菜单驱动，非合成注入）**：① 隔离 = untitled 窗口粘贴
+  ⇒ **仅该窗 ●**，其余窗口标题不动、recovery 只写它一份快照；② 关闭门三分支 = 保存（原生首存面板弹出、
+  Esc 取消后内容仍在）/ 放弃更改（窗口关闭、磁盘零写入）/ 取消（对话框关、窗留、● 保留）；③ 用户真实文件
+  `markdown-basic-syntax-test.md` 全程 MD5 不变（`b485146445ebf34969313aaf8e33cf3e`），污染期 mtime 变化由
+  扇出期 blur 自动保存内容相同重写所致（数据完好，事故如实登记）。
+- **时序坑（两次实测作废的教训）**：harness 重启与二进制重链存在竞态 —— **每轮原生测试前必须核对
+  `ps lstart` > 二进制 mtime**，否则跑的是旧代码（PITFALLS §4.474）。
+- **取证方法沉淀**：AppleScript System Events 看不见 webview 内树（仅窗口级 8–9 元素）⇒ **Swift AXUIElement
+  API 可见全树**（AXTextArea 值/frames）；a11y 树窗口重建后休眠 ⇒ 先点击编辑器 + 跑一遍 dump 唤醒；
+  原生保存面板属 `openAndSavePanelService` **跨进程**，本进程 AX 与 AppleScript 菜单事件均不可达（吞 -1728）；
+  `screencapture` 会堆叠 TCC 授权窗拦截点击 ⇒ 观察一律走 AX 读值，不走截图。
+
+### 四、诚实缺口
+
+- **⌘Q / 菜单「退出 Mellow」仍绕过脏门**（缺陷 C，本轮**只登记不扩权**）：muda `terminate:` ⇒ tao LoopDestroyed ⇒
+  `RunEvent::Exit`，**不经 ExitRequested**（§4.355 一手源码证据）。缓解 = 崩溃恢复快照现已真实写入（下次启动
+  Recover/Compare/Ignore 找回，Typora 同语义）；根治需 ExitRequested→逐窗确认回环或 NSApplicationDelegate
+  `applicationShouldTerminate` 拦 `terminate:`，属方案级改动 ⇒ 待裁决后再动。
+- **三分平台与打包 App 复验未做**（Windows/Linux 无环境；打包复验同 G7-SHELL-06 先例人工复核）。
+- 本轮测试曾把粘贴落进用户文件窗口（多轮清理：撤销未达焦点 → 「从磁盘重新加载」复原 → 扇出期自动保存
+  以**相同内容**重写文件）。**教训固化**：原生输入类探针**必须先开 untitled 窗口再注入**，且探针文本必须
+  唯一可 grep；用户文件窗口在测试期间必须先移走焦点或直接关掉（PITFALLS §4.474）。
+- recovery 目录的测试期快照已**隔离**（`/tmp/mellow-recovery-quarantine/`，9 份），避免「恢复」按钮把
+  测试文本重新注入用户文档。
+
+**产物**：`packages/editor-core/src/bridge-injection.ts` · `packages/editor-core/test/neutral.test.ts` ·
+`apps/desktop/src-tauri/src/{bridge.rs,lib.rs}` · `apps/desktop/src/App.tsx` ·
+`apps/desktop/public/editor/index.html`（重建产物）· 本节 + PITFALLS §4.474 + master-plan 相应行。
+
 ## 五、本次审计做的改动（非策略性）
 
 
