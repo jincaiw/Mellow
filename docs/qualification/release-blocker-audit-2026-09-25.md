@@ -22687,9 +22687,7 @@ e2e 断言「开：checkbox 视觉状态跟随」转为常驻回归项。**教�
 
 ### 四、诚实缺口
 
-- **原生层运行时证据不可在本会话取得**（dev 浏览器无 Tauri）：「关窗后 App 存活 / Dock 点击重开」
-  「导出后 Finder 定位」「深链真的打开系统设置」三处 = 静态契约 + 单测/e2e 到宿主边界为止，
-  **须打包 App 人工复核**（同 G7-SHELL-06 先例，证据等级如实记录在 e2e 文件头）。
+- **原生层运行时证据（2026-11-06 同日补齐 D-AU）**：`tauri dev` 真实进程 + AppleScript 驱动实测三分支全过 —— ①关最后一个窗口 ⇒ 进程存活（0 窗口）；②重新激活（= Dock 点击同一 applicationShouldHandleReopen 事件）⇒ 同进程重建「未命名」窗口；③菜单「退出 Mellow」⇒ 正常终止（ExitRequested 守卫不劫持 Quit）。剩余 = 打包 App 复验 + Windows/Linux。**D-AT「导出后 Finder 定位」与 A38「深链真的打开系统设置」两处的原生实测仍未做**（dev 浏览器无 Tauri ⇒ 静态契约 + e2e 到宿主边界为止，须打包 App 人工复核 —— 同 G7-SHELL-06 先例，证据等级如实记录在 e2e 文件头）。
 - `RunEvent::Reopen` 新建窗口 label 为 `main-{stamp}`（与 setup 的 `main` 不同名）：geometry 恢复按
   URL/label 双查，功能等价；差异登记于此。
 - ⚠️ **原生打印探针仍禁止在本机运行**（§4.354 安全边界不变，EPSON 假脱机风险）。
