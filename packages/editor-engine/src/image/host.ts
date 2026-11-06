@@ -95,6 +95,14 @@ export interface ImageHost {
    * 由**宿主**决定（读设置）—— engine 不读存储。2026-10-07，审计 §4.142。
    */
   shouldDownloadRemoteImages(): boolean;
+  /**
+   * **OS 拖入**本地图片时是否复制进 asset 目录（Typora `applyImageMoveForLocal` 的
+   * Mellow 对应物；2026-11-07，审计 §4.357）。宿主默认 **false = keep-original**
+   * （D-AV 裁决：复制用户文件是有副作用的行为，未明确要求不得默认执行；Typora 的
+   * `true` 是其历史选择）；打开后拖入支与「粘贴复制的文件」支同走 copy-to-assets。
+   * 由宿主决定（读设置）—— engine 不读存储。
+   */
+  shouldMoveLocalDroppedImages(): boolean;
   /** 下载远端图到 `to`（绝对路径）。宿主不支持时返回失败 ⇒ engine 回退「直插 URL」。 */
   downloadFile(url: string, to: string): Promise<Result<void>>;
   /** 在文件管理器中定位（broken placeholder reveal） */
@@ -117,6 +125,7 @@ export function createNullImageHost(): ImageHost {
     resolveAbsolutePath: () => null,
     exists: async () => false,
     shouldDownloadRemoteImages: () => false,
+    shouldMoveLocalDroppedImages: () => false,
     downloadFile: (url, to) => fail(`downloadFile(${url} → ${to}) 未实现`),
     revealFile: async () => {},
   };
@@ -172,6 +181,12 @@ export function createBridgeImageHost(): ImageHost {
     // 与 `__MELLOW_IMAGE_UPLOAD__` 同一模式：engine 不读存储，只问宿主。
     shouldDownloadRemoteImages: () => {
       const probe = (window as unknown as { __MELLOW_IMAGE_DOWNLOAD_REMOTE__?: () => boolean }).__MELLOW_IMAGE_DOWNLOAD_REMOTE__;
+      return typeof probe === 'function' ? probe() === true : false;
+    },
+    // 拖入本地图片复制开关（2026-11-07，审计 §4.357）：与 __MELLOW_IMAGE_DOWNLOAD_REMOTE__
+    // 同一模式（宿主注入函数、惰性读设置 ⇒ live 生效；缺省 false = D-AV 的 keep-original）。
+    shouldMoveLocalDroppedImages: () => {
+      const probe = (window as unknown as { __MELLOW_IMAGE_MOVE_LOCAL__?: () => boolean }).__MELLOW_IMAGE_MOVE_LOCAL__;
       return typeof probe === 'function' ? probe() === true : false;
     },
     downloadFile: (url, to) => invokeFs('download', { url, to }),

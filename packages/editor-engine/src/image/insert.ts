@@ -13,7 +13,7 @@
  */
 
 import type { ImageHost, ImageCandidate, ImagePlan } from './host';
-import { buildFileLinkMarkdown, buildImageMarkdown, buildImageSrcFrom, computeRelativePath, dirname, joinPaths, pathKind, normalizeSlashes, assetDirName, basename } from './path';
+import { buildFileLinkMarkdown, buildImageMarkdown, buildImageSrcFrom, computeRelativePath, dirname, joinPaths, pathKind, normalizeSlashes, assetDirName, basename, isPathInsideDir } from './path';
 import { remoteTargetName } from './ops';
 import type { AssetDirConfig } from './path';
 
@@ -149,6 +149,15 @@ export async function planImageCandidate(
   }
   const assetRelative = assetDirName(docPath === null ? null : docStem(docPath), opts.assetDir ?? 'assets');
   const assetAbs = joinPaths(docDir, assetRelative.replace(/^\.\//, ''));
+  // 已在 asset 目录内 ⇒ 不重复复制（Typora `shouldTriggerMove` 的同判据；
+  // 2026-11-07，审计 §4.357：拖入/粘贴支共用）。仍写相对路径（与复制后一致）。
+  if (isPathInsideDir(abs, assetAbs)) {
+    const rel = computeRelativePath(docDir, abs);
+    return {
+      markdown: buildImageMarkdown(pathIsUnrelativizable(rel, abs) ? abs : rel, candidate.alt),
+      fsOps: [],
+    };
+  }
   const target = joinPaths(assetAbs, name);
   const src = buildImageSrcFrom(target, docDir, rootDir);
   return {

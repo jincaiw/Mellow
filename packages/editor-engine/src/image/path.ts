@@ -129,6 +129,20 @@ export function normalizePath(p: string): string {
   return out.join('/');
 }
 
+/**
+ * 判断绝对路径 `p` 是否位于目录 `dir` **内部**（含 dir 本身）。
+ * 词法比较（normalizePath 解析 `.`/`..`，不访问文件系统），大小写敏感按 POSIX 语义、
+ * Windows 盘符仅统一为 `X:` 前缀形态（Typora `shouldTriggerMove` 的「已在目标目录内
+ * ⇒ 不重复移动」判据的 Mellow 对应物，2026-11-07，审计 §4.357）。
+ */
+export function isPathInsideDir(p: string, dir: string): boolean {
+  const np = normalizePath(p);
+  const nd = normalizePath(dir).replace(/\/+$/, '');
+  if (np === '' || nd === '') return false;
+  if (np === nd) return true;
+  return np.startsWith(`${nd}/`);
+}
+
 /** 分割路径段（保留 drive/UNC 前缀段） */
 function splitSegments(p: string): string[] {
   const n = normalizeSlashes(p).replace(/\/+$/, '');

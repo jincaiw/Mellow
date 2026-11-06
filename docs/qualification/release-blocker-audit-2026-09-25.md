@@ -22757,6 +22757,50 @@ G7-EDIT-09（2026-09-13 已落地，master-plan 一手证据 = TypeMark `appsrc/
 `apps/desktop/src-tauri/src/{bridge.rs,lib.rs}` · `apps/desktop/src/App.tsx` ·
 `apps/desktop/public/editor/index.html`（重建产物）· 本节 + PITFALLS §4.474 + master-plan 相应行。
 
+## 4.357 图片「拖入本地图片复制」开关族落地 —— panel-keys 两处 gap 的开关半收口（2026-11-07）
+
+### 一、母题与授权边界
+
+§4.356 的 Release 反馈点名「2 个 panel-keys gap 条目仍登记在案」。其中
+`no_image_move_for_local`（面板键，反向语义）与矩阵 `applyImageMoveForLocal` 是**同一事实的两个面**
+（§4.135/§4.136 的阻塞链：`not-implemented` → `adr-pending` → ADR-0034 **Q13=A2（D-AV）裁决后回到
+`not-implemented` = 「开关未实装，可自主推进」**）。D-AV 已把**默认值**定死为
+**keep-original**（不默认复制用户文件，统一规则 13/14 的调和：Typora 默认 `true` 是其历史选择，
+Mellow 的偏离**是裁决结果、不是欠债**）⇒ 本轮授权范围 = **把开关暴露出来 + 接线 + 免重复复制判据**，
+**不含**改默认值。默认对齐属发布前用户裁决，继续在 D-AV 行与两处 fixture 登记。
+
+### 二、实施（五处，注入式扩展模式 = `__MELLOW_IMAGE_DOWNLOAD_REMOTE__` 同型）
+
+| 层 | 落点 | 内容 |
+|---|---|---|
+| 设置 schema | `packages/settings/src/index.ts` | `image.moveLocalOnDrop`（toggle，`mellow.image.moveLocalOnDrop`，**默认 false**），紧邻 `image.downloadRemote` |
+| i18n | `packages/i18n/src/messages.ts` | zh/en label + desc（写明「Typora 默认开启，Mellow 按 D-AV 默认关闭」） |
+| 宿主注入 | `apps/desktop/src/App.tsx` | `__MELLOW_IMAGE_MOVE_LOCAL__ = () => readBoolSetting('image.allowMove', true) && readBoolSetting('image.moveLocalOnDrop', false)` —— 与 Typora `shouldTriggerMove` 一致**再套总闸** `allowImageMove`；函数惰性读 ⇒ 改设置即时生效 |
+| engine 宿主接口 | `packages/editor-engine/src/image/host.ts` | `ImageHost.shouldMoveLocalDroppedImages()`（null host = false；bridge host 读上述注入函数，engine 不读存储） |
+| engine 行为 | `packages/editor-engine/src/image/input.ts` + `packages/editor-engine/src/image/insert.ts` + `packages/editor-engine/src/image/path.ts` | drop 支：开关开**且文档已保存** ⇒ `copy-to-assets`（未保存文档无目标目录语义 ⇒ 强制 keep-original，不回归现状）。`planImageCandidate` copy-to-assets 支新增**已在 asset 目录内 ⇒ 不重复复制**（Typora `shouldTriggerMove(src,target)` 同判据），由新纯函数 `isPathInsideDir`（`packages/editor-engine/src/image/path.ts`，词法归一 `.`/`..`，drive 前缀统一，不访问文件系统）支撑 |
+
+### 三、验收链
+
+- **editor-engine jest 全量 1354 绿**（新增 8 例：`isPathInsideDir` 真值表含前缀陷阱/`.`/`..`/drive/空串；
+  copy-to-assets 免重复三分支（assets / docname 变体 / 子目录）；drop 开关四分支（开→复制、开+已在内→
+  不重复、开+未保存→keep-original、关→行为不变））。测试 mock `makeHost` 曾以 `??` 吞掉显式 `docPath: null`
+  ⇒ 改为 `undefined` 判缺省（测试基建 bug，非产品 bug，如实记录）。
+- **tsc**：settings / i18n / desktop 净。**护栏**：verify-settings-contract（含面板表/矩阵两节 + 载体
+  引用 43 处路径全存在）与 verify-i18n-contract 绿。
+
+### 四、fixture 登记面的收口口径（诚实版）
+
+- **矩阵 `applyImageMoveForLocal`**：`mellow: []` → `mellow: ["image.moveLocalOnDrop"]`；note 改为
+  「开关族已暴露；**status 仍为 gap 的原因只剩默认值**」。`behavior: differs` + `disposition:
+  deliberate/D-AV` **不变**（默认偏离是有意的，这正是登记的本意）。
+- **面板表 `no_image_move_for_local`**：保持 `gap` + `blockedBy: not-implemented`，note 追加开关实装记录，
+  并把「not-implemented」的语义**收窄为「默认对齐未实装（发布前用户裁决)」**。
+- ⇒ 两处 gap **不撤销登记**（撤销=谎报 parity），只有 D-AV 默认值裁决落地才能闭环。
+- 另一条 panel gap `allowPhysicsConflict` 与本轮无关：Mellow 数学引擎为 KaTeX（`apps/desktop/src/katexLoader.ts`），
+  MathJax `physics` 包不是「加个开关」—— 等价物需逐个注册宏，属新增功能而非开关缺口 ⇒ 维持登记，不假闭环。
+
+**产物**：上表五文件 + 4 个 image 测试文件（mock 补方法 + 新增用例）+ 两个 fixture 条目 + master-plan D-AV 行追加。
+
 ## 五、本次审计做的改动（非策略性）
 
 

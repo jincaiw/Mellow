@@ -25,6 +25,7 @@ function makeHost(
     resolveAbsolutePath: () => null,
     exists: async (path) => existing.has(path) || true,   // 默认「都存在」（既有用例依赖）；传 existing 时按集合判
     shouldDownloadRemoteImages: () => opts.downloadRemote === true,
+    shouldMoveLocalDroppedImages: () => false,
     downloadFile: async (url, to) => { ops.push(`download:${url}→${to}`); return { ok: true, value: undefined }; },
     revealFile: async () => {},
     ops,
@@ -122,6 +123,32 @@ describe('策略：copy-to-assets（spec §3 pasted bitmap → asset dir）', ()
       { assetDir: 'docname' },
     );
     expect(srcOf(plan)).toBe('note.assets/a.png');
+  });
+
+  // 2026-11-07（审计 §4.357）：Typora `shouldTriggerMove` 同判据 —— 已在目标目录内 ⇒ 不重复复制
+  test('copy-to-assets：已在 asset 目录内的文件 → 无 fs 操作，写相对路径', async () => {
+    const host = makeHost('/docs/note.md');
+    const plan = await planImageCandidate(host, { kind: 'file', path: '/docs/assets/x.png' }, { strategy: 'copy-to-assets' });
+    expect(plan.fsOps).toHaveLength(0);
+    expect(srcOf(plan)).toBe('assets/x.png');
+  });
+
+  test('copy-to-assets：asset 目录的 docname 变体同样免重复', async () => {
+    const host = makeHost('/docs/note.md');
+    const plan = await planImageCandidate(
+      host,
+      { kind: 'file', path: '/docs/note.assets/x.png' },
+      { strategy: 'copy-to-assets', assetDir: 'docname' },
+    );
+    expect(plan.fsOps).toHaveLength(0);
+    expect(srcOf(plan)).toBe('note.assets/x.png');
+  });
+
+  test('copy-to-assets：asset 目录**子目录**内的文件也免重复', async () => {
+    const host = makeHost('/docs/note.md');
+    const plan = await planImageCandidate(host, { kind: 'file', path: '/docs/assets/sub/x.png' }, { strategy: 'copy-to-assets' });
+    expect(plan.fsOps).toHaveLength(0);
+    expect(srcOf(plan)).toBe('assets/sub/x.png');
   });
 });
 

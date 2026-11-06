@@ -24,8 +24,10 @@
       "typora": "applyImageMoveForLocal",
       "default": true,
       "status": "gap",
-      "mellow": [],
-      "note": "本地图片移动应用范围未作为设置暴露；**且默认行为在「拖入」这一支与 Typora 不同**（见 behaviorNote）",
+      "mellow": [
+        "image.moveLocalOnDrop"
+      ],
+      "note": "开关族已作为设置 `image.moveLocalOnDrop` 暴露（2026-11-07，审计 §4.357：toggle + 宿主注入 `__MELLOW_IMAGE_MOVE_LOCAL__` + `packages/editor-engine/src/image/host.ts` 的 `shouldMoveLocalDroppedImages()` + `packages/editor-engine/src/image/input.ts` drop 支 + `packages/editor-engine/src/image/insert.ts` 已在 asset 目录内免重复复制）；**status 仍为 gap 的原因只剩默认值**：Mellow 默认 false（keep-original，D-AV 裁决），Typora 默认 true（拖入即复制）⇒ 默认对齐属发布前用户裁决，见 D-AV 发布注记",
       "behavior": "differs",
       "behaviorNote": "⚠️ **2026-10-07（审计 §4.136）更正：原判 `matches-default` 是错的** —— 原文写「代码（image/insert.ts 本地图片 → copy-to-assets）」，但**逐字读代码**（`insert.ts:97`）显示：`strategy = opts.strategy ?? 'auto'`，而 `if (strategy === 'keep-original' || strategy === 'auto')` ⇒ **默认 `auto` 对 `kind:'file'` 走 keep-original（相对路径、不复制）**；`copy-to-assets` 只在调用方**显式**传时才走。调用点（`input.ts`）分两支：**OS 级拖入**（`:199`）**不传 strategy ⇒ keep-original（不复制）**；**粘贴复制的文件 / 位图**（`:231`/`:242`）传 `copy-to-assets` ⇒ 复制。⇒ 与 Typora 对比：Typora 的 `shouldTriggerMove(src, target)` 对**本地 src** 返回 `applyImageMoveForLocal`（默认 **true**）⇒ **复制到目标目录** ⇒ **粘贴支一致、拖入支偏离**（Mellow 保持原路径、Typora 复制）。⚠️ 偏离的是**用户可见的默认行为**（拖入一张图，文件是否被复制到 assets）⇒ 需裁决。",
       "disposition": {

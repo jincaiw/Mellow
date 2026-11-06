@@ -367,6 +367,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // + bridge 的 `download` 方法（复用 `fs::download_remote_impl`，与「下载远程到 asset 目录」命令同一实现）。
       // **默认 false ⇒ 默认行为不变**（仍是直插 URL）。
       { id: 'image.downloadRemote', labelKey: 'settings.image.downloadRemote', type: 'toggle', storageKey: 'mellow.image.downloadRemote', defaultValue: false, descriptionKey: 'settings.image.downloadRemoteDesc' },
+      // 2026-11-07（审计 §4.357）：Typora 的 `applyImageMoveForLocal`（**默认 true**，非面板键）。
+      // 语义：OS 拖入**本地图片**时，是否复制进 asset 目录并改写 src 为相对路径。
+      // Mellow 的对应物 = `ImageHost.shouldMoveLocalDroppedImages()`（宿主读本设置，engine 不读存储）。
+      // ⚠️ **默认 false ≠ Typora 默认 true**：D-AV 裁决（ADR-0034 Q13=A2）——复制用户文件是有副作用的
+      // 行为，未明确要求不得默认执行；此处**只补齐开关暴露**，默认 deviation 保留（台账 gap 条目
+      // 由「开关缺口」降级为「默认值 deviation」）。已在 asset 目录内的文件由 `isPathInsideDir`
+      // 免重复复制（Typora `shouldTriggerMove` 同判据）；未保存文档强制 keep-original。
+      { id: 'image.moveLocalOnDrop', labelKey: 'settings.image.moveLocalOnDrop', type: 'toggle', storageKey: 'mellow.image.moveLocalOnDrop', defaultValue: false, descriptionKey: 'settings.image.moveLocalOnDropDesc' },
       { id: 'image.allowUpload', labelKey: 'settings.image.allowUpload', type: 'toggle', storageKey: 'mellow.image.allowUpload', defaultValue: true, descriptionKey: 'settings.image.allowUploadDesc' },
       // V6-P1 1.2.6：默认自动加载远程图片（Typora 行为）；引擎读 '0' 为关（默认开）
       { id: 'image.loadRemote', labelKey: 'settings.image.loadRemote', type: 'toggle', storageKey: 'mellow.image.loadRemote', defaultValue: true, descriptionKey: 'settings.image.loadRemoteDesc' },

@@ -4118,6 +4118,17 @@ export default function App() {
           dlWin.__MELLOW_IMAGE_DOWNLOAD_REMOTE__ = () => readBoolSetting('image.downloadRemote', false);
         }
 
+        // 拖入本地图片复制开关（2026-11-07，审计 §4.357）：Typora `applyImageMoveForLocal` 的
+        // Mellow 对应物。**默认 false = keep-original**（D-AV 裁决：复制用户文件不得默认执行）。
+        // 同一注入模式：函数惰性读设置 ⇒ 改设置即时生效；engine 不读存储，只问宿主。
+        // ⚠️ 与 Typora 一致再套一层总闸 `image.allowMove`（= allowImageMove，关闭时任何
+        // 图片移动/复制都不执行；对应「允许移动图片」设置语义）。
+        const mvWin = frame?.contentWindow as (Window & { __MELLOW_IMAGE_MOVE_LOCAL__?: () => boolean }) | null;
+        if (mvWin) {
+          mvWin.__MELLOW_IMAGE_MOVE_LOCAL__ = () => readBoolSetting('image.allowMove', true)
+            && readBoolSetting('image.moveLocalOnDrop', false);
+        }
+
         // 查找 / 替换面板的三个选项（2026-10-08，审计 §4.147）：Typora 的 `caseSensitive` /
         // `wholeWord` / `useRegexp` 都会记住（`main.js` 经 `JSBridge.putSetting` 持久化）。
         // 与 `__MELLOW_IMAGE_*` 同一模式：**engine 不读存储，只问宿主**。

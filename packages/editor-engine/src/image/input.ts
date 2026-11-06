@@ -196,7 +196,12 @@ export function buildImageInputExtension(host: ImageHost): Extension {
             linkPaths.push(sidebarPath);
           }
           if (candidates.length > 0) {
-            void insertImageCandidates(host, view, candidates);
+            // 2026-11-07（审计 §4.357，Typora `applyImageMoveForLocal` 开关）：打开后拖入的
+            // 本地图片复制进 asset 目录（与「粘贴复制的文件」支同策略；已在目标目录内的
+            // 由 planImageCandidate 的 isPathInsideDir 判据免重复复制）。**默认关 = keep-original**
+            // （D-AV 裁决）。未保存文档没有目标目录语义 ⇒ 强制 keep-original（不回归现状）。
+            const moveLocal = host.getDocumentPath() !== null && host.shouldMoveLocalDroppedImages();
+            void insertImageCandidates(host, view, candidates, moveLocal ? { strategy: 'copy-to-assets' } : {});
           }
           if (linkPaths.length > 0) {
             insertDroppedFileLinks(host, view, linkPaths, { x: event.clientX, y: event.clientY });

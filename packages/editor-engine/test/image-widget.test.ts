@@ -49,6 +49,7 @@ function makeHost(
     readClipboardFiles: async () => [],
     consumeDroppedFilePaths: () => [],
     shouldDownloadRemoteImages: () => false,
+    shouldMoveLocalDroppedImages: () => false,
     downloadFile: async () => ({ ok: true, value: undefined }),
     copyFile: async () => ({ ok: true, value: undefined }),
     mkdir: async () => ({ ok: true, value: undefined }),

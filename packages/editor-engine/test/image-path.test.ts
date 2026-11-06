@@ -14,6 +14,7 @@ import {
   dirname,
   joinPaths,
   computeRelativePath,
+  isPathInsideDir,
   escapeImageSrc,
   unescapeImageSrc,
   resolveImageSrc,
@@ -77,6 +78,23 @@ describe('路径操作（跨平台）', () => {
     expect(joinPaths('C:\\docs', 'assets\\a.png')).toBe('C:/docs/assets/a.png');
     expect(joinPaths('\\\\srv\\share', 'a.png')).toBe('//srv/share/a.png');
     expect(joinPaths('/docs/', '/assets/')).toBe('/docs/assets');
+  });
+
+  // 2026-11-07（审计 §4.357）：isPathInsideDir —— Typora `shouldTriggerMove`
+  // 「已在目标目录内 ⇒ 不重复移动」判据的 Mellow 对应物（纯词法，不访问文件系统）
+  test('isPathInsideDir（拖入/粘贴免重复复制判据）', () => {
+    expect(isPathInsideDir('/docs/assets/a.png', '/docs/assets')).toBe(true);
+    expect(isPathInsideDir('/docs/assets/sub/a.png', '/docs/assets')).toBe(true);
+    expect(isPathInsideDir('/docs/assets/', '/docs/assets')).toBe(true);        // dir 尾斜杠
+    expect(isPathInsideDir('/docs/assets', '/docs/assets/')).toBe(true);        // 目录本身
+    expect(isPathInsideDir('/docs/a.png', '/docs/assets')).toBe(false);         // 兄弟
+    expect(isPathInsideDir('/docs/assetsx/a.png', '/docs/assets')).toBe(false); // 前缀陷阱
+    expect(isPathInsideDir('/docs/./assets/a.png', '/docs/assets')).toBe(true); // `.` 段解析
+    expect(isPathInsideDir('/tmp/../docs/assets/a.png', '/docs/assets')).toBe(true); // `..` 解析
+    expect(isPathInsideDir('C:\\docs\\assets\\a.png', 'C:/docs/assets')).toBe(true); // drive 归一
+    expect(isPathInsideDir('c:\\docs\\assets\\a.png', 'C:/docs/assets')).toBe(false); // 大小写敏感（POSIX 语义）
+    expect(isPathInsideDir('', '/docs/assets')).toBe(false);
+    expect(isPathInsideDir('/docs/assets/a.png', '')).toBe(false);
   });
 });
 

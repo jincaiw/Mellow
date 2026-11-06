@@ -16,15 +16,21 @@ interface MockHost extends ImageHost {
   clipFiles: Array<{ name: string; path: string }>;
   writes: Array<{ path: string; data: ArrayBuffer }>;
   copies: Array<{ from: string; to: string }>;
+  /** 拖入本地图片复制开关（2026-11-07，审计 §4.357）：true ⇒ shouldMoveLocalDroppedImages */
+  moveLocalOnDrop?: boolean;
+  /** 文档路径覆写（null = 未保存文档） */
+  docPath?: string | null;
 }
 
 function makeHost(overrides: Partial<MockHost> = {}): MockHost {
   const base: MockHost = {
-    getDocumentPath: () => '/docs/note.md',
+    // ⚠️ 不是 `??`：测试需要能显式传 docPath: null（未保存文档）
+    getDocumentPath: () => (overrides.docPath === undefined ? '/docs/note.md' : overrides.docPath),
     pickImageFiles: async () => overrides.picked ?? [],
     readClipboardFiles: async () => overrides.clipFiles ?? [],
     consumeDroppedFilePaths: () => overrides.dropped ?? [],
     shouldDownloadRemoteImages: () => false,
+    shouldMoveLocalDroppedImages: () => overrides.moveLocalOnDrop === true,
     downloadFile: async () => ({ ok: true, value: undefined }),
     copyFile: async (from, to) => {
       base.copies.push({ from, to });
@@ -169,6 +175,49 @@ describe('drag（spec §2 single/multiple）', () => {
     fireDrop(view);
     await sleep();
     expect(view.state.doc.toString()).toBe('hello');
+  });
+});
+
+// 2026-11-07（审计 §4.357）：`image.moveLocalOnDrop` 开关 —— 拖入本地图片是否复制进 asset 目录
+// （Typora `applyImageMoveForLocal` 的 Mellow 对应物；默认关 = keep-original，D-AV 裁决）。
+describe('drag 本地图片复制开关（applyImageMoveForLocal 对应物）', () => {
+  test('开关开 → 拖入复制到 asset 目录（相对 src）', async () => {
+    const host = makeHost({ dropped: ['/tmp/pic.png'], moveLocalOnDrop: true });
+    const view = setUp(host);
+    fireDrop(view);
+    await sleep();
+    await sleep();
+    expect(host.copies).toEqual([{ from: '/tmp/pic.png', to: '/docs/assets/pic.png' }]);
+    expect(view.state.doc.toString()).toContain('![](assets/pic.png)');
+  });
+
+  test('开关开 + 已在 asset 目录内 → 不重复复制，仍写相对路径', async () => {
+    const host = makeHost({ dropped: ['/docs/assets/pic.png'], moveLocalOnDrop: true });
+    const view = setUp(host);
+    fireDrop(view);
+    await sleep();
+    await sleep();
+    expect(host.copies.length).toBe(0);
+    expect(view.state.doc.toString()).toContain('![](assets/pic.png)');
+  });
+
+  test('开关开 + 未保存文档 → 强制 keep-original（绝对路径直插，无复制）', async () => {
+    const host = makeHost({ dropped: ['/tmp/pic.png'], moveLocalOnDrop: true, docPath: null });
+    const view = setUp(host);
+    fireDrop(view);
+    await sleep();
+    await sleep();
+    expect(host.copies.length).toBe(0);
+    expect(view.state.doc.toString()).toContain('![](/tmp/pic.png)');
+  });
+
+  test('开关关（默认）→ 行为不变：keep-original 相对路径，无复制', async () => {
+    const host = makeHost({ dropped: ['/tmp/pic.png'] });
+    const view = setUp(host);
+    fireDrop(view);
+    await sleep();
+    expect(host.copies.length).toBe(0);
+    expect(view.state.doc.toString()).toContain('![](../tmp/pic.png)');
   });
 });
 
