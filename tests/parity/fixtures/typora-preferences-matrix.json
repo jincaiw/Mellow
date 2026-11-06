@@ -657,11 +657,9 @@
     {
       "typora": "spellcheckForCodeAndLink",
       "default": false,
-      "status": "gap",
-      "mellow": [],
-      "note": "代码与链接内拼写检查**开关**未实装 —— ⚠️ **2026-10-12 更正**：原注引用的「依赖 host-api 的拼写词典能力（P0-EDITOR-005）」**已过期**（该项已 IMPL）。现状：**代码区排除本身已实现**（inlineCodeAttrs.ts 给行内码设 spellcheck=false；块级码由 CoreEditor codeBlockStyle 承担），缺的是**开关**（无条件排除）⇒ 属 ADR-0038 的裁决范围",
-      "behavior": "matches-default",
-      "behaviorNote": "默认 false；Mellow 没有拼写检查消费方，代码/链接内自然不标拼写错误 → matches-default【代码落点（2026-10-07，审计 §4.138）】`tests/parity/typora-parity-ledger.json` —— 台账 `P0-EDITOR-005`：拼写检查消费方未实现 ⇒ 代码/链接内**自然不标**拼写错误 ⇒ 与 Typora 默认 false 一致。"
+      "status": "implemented",
+      "mellow": ["editor.spellcheckForCodeAndLink"],
+      "note": "代码与链接内拼写检查**开关**已实装（2026-11-06，批次 A38 / ADR-0038 C 裁决落地）。⚠️ 历史：2026-10-12 前记「未实装」时原判据（依赖 P0-EDITOR-005 词典能力）已过期。现状：行内码排除由 `packages/editor-engine/src/inlineCodeAttrs.ts`（开关开 ⇒ 构建装饰时**省略** spellcheck 属性，继承 cm-content 有效态），块级码由 `packages/editor-engine/src/spellcheckScope.ts` 的 ViewPlugin 幂等同步 `.cm-md-codeBlockWrapper` 的 spellcheck 属性（生效值同时受全局 `editor.spellcheck` 约束）；链接侧 Mellow 从未设过拼写排除 ⇒ Typora 该键的「Link」半天然成立。默认 false ⇒ 与 Typora 默认一致，且 = 开关引入前行为。"
     },
     {
       "typora": "strictMarkdown",

@@ -21,6 +21,7 @@
 import type { Extension } from '@codemirror/state';
 import type { EditorView, ViewUpdate, DecorationSet } from '@codemirror/view';
 import { isComposing } from './composition';
+import { isSpellcheckForCodeAndLink, spellcheckScopeVersion } from './spellcheckScope';
 
 /** 行内代码容器 class（无 CSS 规则；仅用于测试与调试定位） */
 export const INLINE_CODE_ATTR_CLASS = 'mellow-md-inlinecode-attr';
@@ -31,6 +32,9 @@ export const INLINE_CODE_ATTR_CLASS = 'mellow-md-inlinecode-attr';
  * 保持与块级代码一致而不是另创一套，理由：两者要表达的是同一件事
  *（「这段不是自然语言，别做拼写/自动更正」），分叉会让未来的维护者不知道该改哪一处。
  * ⚠️ 若上游 `code.ts` 的这组属性变了，这里要同步（`verify-parity-ledger.mjs` 未覆盖 —— 如实记录）。
+ * ⚠️ 本字面量本身被 `verify-parity-ledger.mjs` 的 INLINE↔BLOCK 相等守卫按**文本**比对
+ * —— 不许为「条件化」而增删这里的键；批次 A38 的 `editor.spellcheckForCodeAndLink`
+ * 在**构建装饰时**复制后再删 `spellcheck` 键（见 build()），字面量保持不动。
  */
 const INLINE_CODE_ATTRIBUTES: Readonly<Record<string, string>> = {
   'spellcheck': 'false',
@@ -75,6 +79,11 @@ export function buildInlineCodeAttrsExtension(): Extension {
     const ranges = view.visibleRanges.length > 0
       ? view.visibleRanges
       : [{ from: 0, to: state.doc.length }];
+    // A38（editor.spellcheckForCodeAndLink）：开关开 ⇒ **省略** spellcheck 属性
+    // （继承 cm-content 的有效拼写态）。字面量 INLINE_CODE_ATTRIBUTES 本身不动
+    // （verify-parity-ledger 的 INLINE↔BLOCK 守卫按文本比对，见其定义处注释）。
+    const attributes: Record<string, string> = { ...INLINE_CODE_ATTRIBUTES };
+    if (isSpellcheckForCodeAndLink()) delete attributes['spellcheck'];
 
     for (const { from, to } of ranges) {
       syntaxTree(state).iterate({
@@ -86,7 +95,7 @@ export function buildInlineCodeAttrsExtension(): Extension {
           builder.add(
             node.from,
             node.to,
-            Decoration.mark({ class: INLINE_CODE_ATTR_CLASS, attributes: { ...INLINE_CODE_ATTRIBUTES } }),
+            Decoration.mark({ class: INLINE_CODE_ATTR_CLASS, attributes }),
           );
           return false; // 行内代码不嵌套，无需下钻
         },
@@ -98,6 +107,7 @@ export function buildInlineCodeAttrsExtension(): Extension {
   const plugin = ViewPlugin.fromClass(
     class InlineCodeAttrsPlugin {
       decorations: DecorationSet;
+      private watchedVersion = spellcheckScopeVersion();
       constructor(readonly view: EditorView) {
         this.decorations = build(view);
       }
@@ -105,8 +115,10 @@ export function buildInlineCodeAttrsExtension(): Extension {
         // 文本变化：先映射位置，保持渲染正确（与 plugin.ts / mdLink.ts 同序）
         if (update.docChanged) this.decorations = this.decorations.map(update.changes);
         // Composition Guard：合成期间只映射、不重算（spec §6）
+        const scopeChanged = spellcheckScopeVersion() !== this.watchedVersion;
+        if (scopeChanged) this.watchedVersion = spellcheckScopeVersion();
         if (isComposing(update.view)) return;
-        if (update.docChanged || update.viewportChanged) this.decorations = build(update.view);
+        if (update.docChanged || update.viewportChanged || scopeChanged) this.decorations = build(update.view);
       }
     },
     { decorations: (value: { decorations: DecorationSet }) => value.decorations },

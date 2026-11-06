@@ -231,7 +231,8 @@
         "apps/desktop/src-tauri/src/spellcheck.rs",
         "tests/e2e/feature-liveness-verify.mjs",
         "tests/e2e/spellcheck-suggestions-verify.mjs",
-        "tests/qualification/macos-local-verification-2026-09-12.md"
+        "tests/qualification/macos-local-verification-2026-09-12.md",
+        "tests/e2e/a38-spellcheck-scope-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",

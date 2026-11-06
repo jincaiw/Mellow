@@ -14,7 +14,9 @@
 
 ## 2. 公开接口与类型
 
-- 入口 `src/index.ts`（**46** 个源文件）。关键面：`plugin.ts`（扩展装配）、`state.ts`、
+- 入口 `src/index.ts`（`src/` 顶层 **49** 个源文件；2026-11-06 批次 A38 新增
+  `spellcheckScope.ts`。⚠️ 本行原写 46，属**陈述性计数过期**——无护栏锁定，
+  以 `ls src/*.ts | wc -l` 为准）。关键面：`plugin.ts`（扩展装配）、`state.ts`、
   `config.ts`、`types.ts`、`nodes.ts`、`mdTokens.ts`、`safeHtml.ts`、`engineI18n.ts`、
   `largeFile.ts`、`inputLatency.ts`、`platformNav.ts`、`selectionCommands.ts`
 - 跨包导入走**相对路径**（`name`/`main` 装饰性）—— 见审计 §4.95。
@@ -78,7 +80,7 @@
 
 ## 9. 测试入口
 
-- `test/` 下 **80** 个测试文件（本仓最大）
+- `test/` 下 **81** 个测试文件（本仓最大；2026-11-06 批次 A38 新增 `spellcheck-scope.test.ts`）
 - 护栏：`verify-adapter-contract.mjs`、`verify-clipboard-contract.mjs`、`verify-i18n-contract.mjs`、
   `verify-parity-ledger.mjs`、`verify-no-color-only-status.mjs`、`verify-shell-*.mjs`、
   `verify-settings-contract.mjs`、`verify-tauri-command-contract.mjs`、`verify-package-conventions.mjs`

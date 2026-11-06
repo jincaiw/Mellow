@@ -532,6 +532,8 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
         }
         return out;
       },
+      // A38：只读语言展示。mock 返回**确定性**值便于断言（真实宿主 = NSSpellChecker.language()）。
+      language: async (): Promise<string | null> => 'en-US',
     },
 
     process: {

@@ -385,6 +385,11 @@ const zhCN = {
   'msg.autosaveTimer': '自动保存间隔已设为 {minutes} 分钟',
   'msg.reopenLastOn': '启动时将恢复上次会话',
   'msg.reopenLastOff': '启动时不再恢复上次会话',
+  // D-AU / A38（2026-11-06）
+  'msg.quitAfterWindowCloseOn': '关闭最后一个窗口将退出应用',
+  'msg.quitAfterWindowCloseOff': '关闭最后一个窗口不再退出应用',
+  'msg.systemSpellSettingsOpened': '已打开系统拼写设置',
+  'msg.systemSpellSettingsUnavailable': '系统拼写设置仅在当前平台（macOS）可用',
   'msg.editorNotLoaded': '未加载',
   'msg.renamedAssets': '已重命名（资源目录已同步，更新 {n} 处引用）',
   'msg.snapshotMissing': '快照不存在',
@@ -530,6 +535,9 @@ const zhCN = {
   'updater.rollbackFailed': '回滚失败',
 
   'settings.general.reopenLast': '启动时恢复上次会话',
+  // D-AU（批次 D-AU / ADR-0034 Q12）：仅 macOS 显示（Typora 该组亦仅 macOS 面板暴露）
+  'settings.general.quitAfterWindowClose': '关闭最后一个窗口时退出应用',
+  'settings.general.quitAfterWindowCloseDesc': '默认关闭（macOS 惯例：关最后一个窗口不退出，点 Dock 图标可重开窗口）。开启后关闭最后一个窗口即退出应用（未保存内容仍会先确认）。',
   'settings.general.language': '语言',
   'settings.language.zh': '简体中文',
   'settings.language.en': 'English',
@@ -563,6 +571,12 @@ const zhCN = {
   'settings.editor.allowMagnificationDesc': '允许用触控板双指捏合缩放编辑区（1.0–2.5 倍）；默认关闭。与 ⌘+滚轮改字号是两条独立通道。',
   'settings.editor.spellcheck': '键入时检查拼写',
   'settings.editor.spellcheckDesc': '系统拼写检查（红色下划线）；大文件模式下自动关闭。',
+  // A38（批次 A38 / ADR-0038 C）：拼写检查作用域 + 系统设置入口
+  'settings.editor.spellcheckForCodeAndLink': '在代码与链接中标记拼写错误',
+  'settings.editor.spellcheckForCodeAndLinkDesc': '默认关闭：代码与链接属于非自然语言内容，不标红波浪线。开启后其拼写态跟随上方总开关。',
+  'settings.editor.spellcheckLanguage': '当前拼写检查语言',
+  'settings.editor.openSystemSpellSettings': '打开系统拼写设置',
+  'settings.editor.openSystemSpellSettingsDesc': '在系统设置中管理词典与拼写语言（macOS：键盘 → 文本输入 → 编辑）。',
   'settings.editor.smartPunctuation': '智能标点',
   'settings.editor.smartPunctuationDesc': '输入时转换：直引号 " \' 自动成对转为 “” ‘’；行内 -- 加空格转为破折号 —（不干扰水平线与表格语法）。',
 
@@ -705,6 +719,9 @@ const zhCN = {
   'settings.export.image.qualityDesc': '0.1–1，仅 JPEG 生效；PNG 无损。',
   // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」官方文案
   'settings.export.preserveLineBreaks': '导出时保留单换行符',
+  // D-AT（批次 D-AT / ADR-0034 Q11 裁决 = A2）
+  'settings.export.openExportLocation': '导出后打开文件所在位置',
+  'settings.export.openExportLocationDesc': '导出完成后在文件管理器中显示导出文件所在目录。默认关闭（仅提示导出成功）。',
   'settings.export.preserveLineBreaksDesc': '把段落内的单个换行也导出为换行（默认按 Markdown 规则渲染为空格）。适用于写诗、歌词、地址等依赖软换行的内容。',
   'settings.export.pandocPath': 'Pandoc 路径',
   'settings.export.pandocPathDesc': '留空即自动检测（依次查 PATH、常见安装位置，如 /opt/homebrew/bin、/usr/local/bin）。macOS 上从访达启动的应用不继承终端 PATH，装了 Homebrew 版 Pandoc 仍提示「需要安装」时，在此填可执行文件的绝对路径。',
@@ -1317,6 +1334,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'msg.autosaveTimer': 'Auto save interval set to {minutes} minutes',
   'msg.reopenLastOn': 'Last session will be restored on launch',
   'msg.reopenLastOff': 'Last session will not be restored on launch',
+  'msg.quitAfterWindowCloseOn': 'Closing the last window will quit the app',
+  'msg.quitAfterWindowCloseOff': 'Closing the last window will no longer quit the app',
+  'msg.systemSpellSettingsOpened': 'Opened system spelling settings',
+  'msg.systemSpellSettingsUnavailable': 'System spelling settings are only available on macOS',
   'msg.editorNotLoaded': 'Not loaded',
   'msg.renamedAssets': 'Renamed (asset directory synced, {n} references updated)',
   'msg.snapshotMissing': 'Snapshot not found',
@@ -1454,6 +1475,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'updater.rollbackFailed': 'Rollback failed',
 
   'settings.general.reopenLast': 'Restore last session on launch',
+  'settings.general.quitAfterWindowClose': 'Quit when the last window is closed',
+  'settings.general.quitAfterWindowCloseDesc': 'Off by default (macOS convention: closing the last window keeps the app running; clicking the Dock icon reopens a window). When on, closing the last window quits the app (unsaved content is still confirmed first).',
   'settings.general.language': 'Language',
   'settings.language.zh': '简体中文',
   'settings.language.en': 'English',
@@ -1485,6 +1508,11 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.editor.allowMagnificationDesc': 'Allow trackpad pinch to zoom the editing area (1.0–2.5×); off by default. Independent from ⌘+wheel font-size zoom.',
   'settings.editor.spellcheck': 'Check spelling while typing',
   'settings.editor.spellcheckDesc': 'System spell check (red underline); automatically off in large file mode.',
+  'settings.editor.spellcheckForCodeAndLink': 'Show spelling errors in code and links',
+  'settings.editor.spellcheckForCodeAndLinkDesc': 'Off by default: code and links are not natural-language content, so no red squiggles. When on, their spell-check state follows the master switch above.',
+  'settings.editor.spellcheckLanguage': 'Current spell-check language',
+  'settings.editor.openSystemSpellSettings': 'Open System Spelling Settings',
+  'settings.editor.openSystemSpellSettingsDesc': 'Manage dictionaries and spell-check languages in System Settings (macOS: Keyboard → Text Input → Edit).',
   'settings.editor.smartPunctuation': 'Smart punctuation',
   'settings.editor.smartPunctuationDesc': 'Convert while typing: straight quotes " \' become paired “” ‘’; inline -- plus space becomes em-dash — (never touches horizontal rules or tables).',
 
@@ -1621,6 +1649,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'settings.export.image.quality': 'JPEG quality',
   'settings.export.image.qualityDesc': '0.1–1, only for JPEG; PNG is lossless.',
   'settings.export.preserveLineBreaks': 'Preserve single line breaks on export',
+  'settings.export.openExportLocation': 'Open exported file location after export',
+  'settings.export.openExportLocationDesc': 'After a successful export, reveal the exported file in the file manager. Off by default (success is only announced).',
   'settings.export.preserveLineBreaksDesc': 'Export single line breaks inside a paragraph as real line breaks (by default Markdown renders them as spaces). Useful for poetry, lyrics, or addresses that rely on soft line breaks.',
   'settings.export.pandocPath': 'Pandoc Path',
   'settings.export.pandocPathDesc': 'Leave empty to auto-detect (PATH first, then common install locations such as /opt/homebrew/bin and /usr/local/bin). On macOS, apps launched from Finder do not inherit the shell PATH — enter the absolute path to the executable if Mellow reports Pandoc as missing although Homebrew pandoc is installed.',

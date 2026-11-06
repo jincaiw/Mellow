@@ -52,6 +52,12 @@ export const tauriSpellcheckService: SpellcheckService = {
     if (!isTauri()) return browserMockHost.spellcheck.checkDocument(text);
     return (await callSpellcheck<SpellIssue[]>('spellcheck_check_document', { text })) ?? [];
   },
+  // A38（ADR-0038 C）：只读展示当前系统拼写语言（NSSpellChecker.language()）。
+  // 命令不可用（老构建）或平台无能力 ⇒ null ⇒ UI 隐藏该行，与 available() 同策略。
+  language: async () => {
+    if (!isTauri()) return browserMockHost.spellcheck.language();
+    return (await callSpellcheck<string | null>('spellcheck_language')) ?? null;
+  },
 };
 
 export const browserSpellcheckService: SpellcheckService = browserMockHost.spellcheck;

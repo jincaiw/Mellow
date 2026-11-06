@@ -212,11 +212,13 @@
     {
       "key": "openExportLocation",
       "consumer": "js",
-      "status": "gap",
-      "note": "面板 label **\"Open exported file location\"**（\"After Export\" 组）。【消费方 = **js**】读点：`n.openExportLocation && (JSBridge.showInFinder(t), …)`（同导出完成处理函数）。⚠️ **默认 = 开**（与 `openExportFile` 相反）：面板勾选值 `!!ae(r.X, a.X, l.X)`，而 **schema 里该字段是 `!0`** ——实测 `L={…, allowPerFileSetting:{…}, openExportLocation:!0}`（HTML 导出的 schema 片段）⇒ `ae(…)` 取到 `true` ⇒ **复选框默认勾选**⇒ **Typora 默认在导出完成后于 Finder 中显示导出件**。（另一处「通用导出设置」页用 `checked: !!n.openExportLocation`，`export.general` 未设时默认**不**勾 —— 上游两处默认并不一致，如实记录。）**Mellow 默认不做**（导出完成只弹 toast + 记录 `mellow.export.last`）⇒ **默认行为偏离** ⇒ 记为 gap。⚠️ **需裁决**：补齐该行为会**改变用户可见的默认行为**（导出后多弹一个 Finder 窗口），按本项目纪律不得静默改默认 ⇒ 已登记待裁决（候选：新增开关 + 默认是否对齐 Typora 的「开」）。Mellow 侧**有底层能力**：命令 `file.revealInFinder`（`App.tsx`）。 ⇒ **已登记待裁决：ADR-0034 Q11**（选项 A1 默认对齐 / A2 新增开关+默认关 / A3 维持+登记 D）。【2026-11-03 ADR-0034 裁决同步】`adr-pending` → `not-implemented`：该 ADR 已 Accepted（Q13=维持 keep-original / Q11=新增开关默认关 / Q12=新增开关默认不退出）⇒ 阻塞原因不再是「待裁决」而是「开关未实装」，**可自主推进**（默认值已定，见 master-plan D-AV / D-AT / D-AU）。",
+      "status": "equivalent",
+      "note": "面板 label **\"Open exported file location\"**（\"After Export\" 组）。【消费方 = **js**】读点：`n.openExportLocation && (JSBridge.showInFinder(t), …)`（同导出完成处理函数）。⚠️ **默认 = 开**（与 `openExportFile` 相反）：面板勾选值 `!!ae(r.X, a.X, l.X)`，而 **schema 里该字段是 `!0`** ——实测 `L={…, allowPerFileSetting:{…}, openExportLocation:!0}`（HTML 导出的 schema 片段）⇒ `ae(…)` 取到 `true` ⇒ **复选框默认勾选**⇒ **Typora 默认在导出完成后于 Finder 中显示导出件**。（另一处「通用导出设置」页用 `checked: !!n.openExportLocation`，`export.general` 未设时默认**不**勾 —— 上游两处默认并不一致，如实记录。）**Mellow 默认不做**（导出完成只弹 toast + 记录 `mellow.export.last`）⇒ **默认行为偏离** ⇒ 记为 gap。⚠️ **需裁决**：补齐该行为会**改变用户可见的默认行为**（导出后多弹一个 Finder 窗口），按本项目纪律不得静默改默认 ⇒ 已登记待裁决（候选：新增开关 + 默认是否对齐 Typora 的「开」）。Mellow 侧**有底层能力**：命令 `file.revealInFinder`（`App.tsx`）。 ⇒ **已登记待裁决：ADR-0034 Q11**（选项 A1 默认对齐 / A2 新增开关+默认关 / A3 维持+登记 D）。【2026-11-03 ADR-0034 裁决同步】`adr-pending` → `not-implemented`：该 ADR 已 Accepted（Q13=维持 keep-original / Q11=新增开关默认关 / Q12=新增开关默认不退出）⇒ 阻塞原因不再是「待裁决」而是「开关未实装」，**可自主推进**（默认值已定，见 master-plan D-AV / D-AT / D-AU）。【2026-11-06 批次 D-AT 落地】Mellow 侧开关 `export.openExportLocation`（默认 **false** = 现状不变）+ 生效点 `apps/desktop/src/App.tsx` 的 `maybeRevealExported()`（6 个导出成功站点接线：PDF / pandoc / repeat ⌃E / HTML / 图片 / math-diagram PNG；导入路径刻意不接）。默认不勾属 **ADR-0034 Q11 = A2** 的**裁决偏离**（已登记 master-plan **D-AT**），非缺口。",
       "anchor": "n.openExportLocation",
       "consumerNote": "消费方**未确定**，同 `openExportFile`（`n.openExportLocation` 是导出配置对象字段）。",
-      "blockedBy": "not-implemented"
+      "mellow": [
+        "export.openExportLocation"
+      ]
     },
     {
       "key": "pandocPath",
@@ -259,10 +261,12 @@
     {
       "key": "quitAfterWindowClose",
       "consumer": "native",
-      "status": "gap",
-      "note": "面板组 **\"Quit\"**（**仅 macOS**）、label **\"Quit Typora when last window is closed\"**，默认 **false**（`checked: !!this.getValue(...)` ⇒ 未设即 false）⇒ **Typora 在 macOS 的默认是「关掉最后一个窗口不退出」**（符合 macOS 惯例）。【Mellow 侧已定案 = **会退出**，源码级证据】① 本仓 `apps/desktop/src-tauri/src/lib.rs` 的 `RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app)` —— 模式里用 `{ .. }` **丢弃了 `api`** ⇒ **从不调用 `prevent_exit()`**；② vendored 依赖 `tauri-runtime-wry-2.11.4/src/lib.rs`（**本地 cargo registry 源码，Tauri 2.11.5**）：`TaoWindowEvent::Destroyed => { … let is_empty = windows.0.borrow().is_empty(); if is_empty { callback(RunEvent::ExitRequested{…}); let should_prevent = matches!(recv, Ok(ExitRequestedEventAction::Prevent)); if !should_prevent { *control_flow = ControlFlow::Exit; } } }` ⇒ **最后一个窗口被销毁且未阻止 ⇒ 进程退出**；③ `src-tauri/src/window.rs` 的关闭门是 `api.prevent_close()` + 前端确认后**再次 close ⇒ 窗口被销毁**（不是隐藏）⇒ 上述路径可达。⇒ **Mellow 关掉最后一个窗口会退出，而 Typora 的 macOS 默认是不退出 ⇒ 行为偏离** ⇒ 记 gap。⚠️ **证据级别如实声明**：这是**源码级**结论（本仓 handler + vendored 依赖源码），**非真机观察**；若将来做真机验收，请以「关掉最后一个窗口后进程是否仍在」为准。⇒ **已登记待裁决：ADR-0034 Q12**（A1 对齐 macOS 惯例：不退出 / A2 新增开关+默认不退出 / A3 维持退出+登记 D）。【2026-11-03 ADR-0034 裁决同步】`adr-pending` → `not-implemented`：该 ADR 已 Accepted（Q13=维持 keep-original / Q11=新增开关默认关 / Q12=新增开关默认不退出）⇒ 阻塞原因不再是「待裁决」而是「开关未实装」，**可自主推进**（默认值已定，见 master-plan D-AV / D-AT / D-AU）。",
+      "status": "equivalent",
+      "note": "面板组 **\"Quit\"**（**仅 macOS**）、label **\"Quit Typora when last window is closed\"**，默认 **false**（`checked: !!this.getValue(...)` ⇒ 未设即 false）⇒ **Typora 在 macOS 的默认是「关掉最后一个窗口不退出」**（符合 macOS 惯例）。【Mellow 侧已定案 = **会退出**，源码级证据】① 本仓 `apps/desktop/src-tauri/src/lib.rs` 的 `RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app)` —— 模式里用 `{ .. }` **丢弃了 `api`** ⇒ **从不调用 `prevent_exit()`**；② vendored 依赖 vendored 依赖 tauri-runtime-wry 2.11.4 源码（非本仓文件）（**本地 cargo registry 源码，Tauri 2.11.5**）：`TaoWindowEvent::Destroyed => { … let is_empty = windows.0.borrow().is_empty(); if is_empty { callback(RunEvent::ExitRequested{…}); let should_prevent = matches!(recv, Ok(ExitRequestedEventAction::Prevent)); if !should_prevent { *control_flow = ControlFlow::Exit; } } }` ⇒ **最后一个窗口被销毁且未阻止 ⇒ 进程退出**；③ `apps/desktop/src-tauri/src/window.rs` 的关闭门是 `api.prevent_close()` + 前端确认后**再次 close ⇒ 窗口被销毁**（不是隐藏）⇒ 上述路径可达。⇒ **Mellow 关掉最后一个窗口会退出，而 Typora 的 macOS 默认是不退出 ⇒ 行为偏离** ⇒ 记 gap。⚠️ **证据级别如实声明**：这是**源码级**结论（本仓 handler + vendored 依赖源码），**非真机观察**；若将来做真机验收，请以「关掉最后一个窗口后进程是否仍在」为准。⇒ **已登记待裁决：ADR-0034 Q12**（A1 对齐 macOS 惯例：不退出 / A2 新增开关+默认不退出 / A3 维持退出+登记 D）。【2026-11-03 ADR-0034 裁决同步】`adr-pending` → `not-implemented`：该 ADR 已 Accepted（Q13=维持 keep-original / Q11=新增开关默认关 / Q12=新增开关默认不退出）⇒ 阻塞原因不再是「待裁决」而是「开关未实装」，**可自主推进**（默认值已定，见 master-plan D-AV / D-AT / D-AU）。【2026-11-06 批次 D-AU 落地】`apps/desktop/src-tauri/src/lib.rs` 的 `RunEvent::ExitRequested{code,api}` 按 `window::should_prevent_exit` 拦自然退出；⌘Q 经 muda `terminate:` 不从此通道走（vendored 源码取证见上方 ①②）⇒ 不会困住退出。配套 `RunEvent::Reopen`（mac）重开主窗口。设置行 `general.quitAfterWindowClose`（macOS-only 显示）+ 启动灌值经 `set_quit_after_window_close`。**默认 false = 与 Typora 默认一致**（相对 Mellow 旧行为是默认翻转 ⇒ 发布说明义务已在 master-plan D-AU / ADR-0034 记录）。",
       "anchor": "quitAfterWindowClose",
-      "blockedBy": "not-implemented"
+      "mellow": [
+        "general.quitAfterWindowClose"
+      ]
     },
     {
       "key": "relativePathWithDot",

@@ -125,6 +125,78 @@ pub fn new_window(
     Ok(())
 }
 
+/// D-AU（ADR-0034 Q12 裁决 = A2）：关掉最后一个窗口是否退出应用（macOS 惯例）。
+///
+/// 默认 `false` = **不退出**（对齐 Typora 1.14.9 `quitAfterWindowClose: false` 与
+/// macOS 惯例：关窗 ≠ 退应用）。前端启动时经 `set_quit_after_window_close` 把设置值
+/// 灌进本状态（默认关 ⇒ 未灌值时行为即新默认）。
+///
+/// 生效点在 `lib.rs` 的 `RunEvent::ExitRequested`：**仅 `code: None`（最后窗口销毁的
+/// 自然退出）且本值为 false 时 `prevent_exit()`**。两条不可破坏的安全边界：
+/// 1. **⌘Q 不被拦**：`code: Some` 的程序化退出直接放行 —— 且据 vendored 源码
+///    （muda-0.20 `PredefinedMenuItemType::Quit => sel!(terminate:)`；
+///    tauri-runtime-wry `LoopExiting` 不重发 ExitRequested），macOS 原生 Quit 走
+///    `terminate:`，**根本不经过** last-window-destroyed 的 ExitRequested{None} 通道；
+/// 2. **关闭确认门不被旁路**（`CloseGate`）：被拦下的是「窗口已销毁后的进程退出」，
+///    窗口关闭本身的 dirty 确认流程不受影响。
+#[derive(Default)]
+pub struct QuitPolicy(pub std::sync::atomic::AtomicBool);
+
+/// 前端 → Rust：灌入 `editor.quitAfterWindowClose` 设置值。
+#[tauri::command]
+pub fn set_quit_after_window_close(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<QuitPolicy>();
+    state.0.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
+
+/// **纯函数**：给定「本次退出是否由最后窗口销毁自然触发」与「用户偏好」，是否应阻止退出。
+///
+/// 抽成纯函数的原因与 `spellcheck_supported_on` 同型（本仓「平台/分支判定的两端可测」
+/// 母题）：`prevent_exit` 分支只能在真机 GUI 里触发，把**判定**与**副作用**分开后，
+/// 判定本身在任何平台都有断言。
+pub const fn should_prevent_exit(code_is_none: bool, quit_after_window_close: bool) -> bool {
+    code_is_none && !quit_after_window_close
+}
+
+/// 「打开系统拼写设置」（批次 A38 / ADR-0038 C 的入口按钮）。
+///
+/// macOS 深链 `x-apple.systempreferences:com.apple.Keyboard-Settings.extension`
+/// —— 现代 macOS（Ventura 起）拼写检查设置**没有独立面板**，位于
+/// 「键盘 → 文本输入 → 编辑… → 拼写」，故落点 = 键盘面板（一手依据：Apple 支持文档
+/// mchlp2299 的「Open Keyboard settings」按钮同此路径）。
+/// 非 macOS 返回 Err，由前端按 `available()` 门**隐藏**本入口（不是点了报错）。
+///
+/// 为什么走 `NSWorkspace` 而不是 `opener.openUrl`：tauri-plugin-opener 的默认 ACL
+/// 只放行 mailto/tel/http(s)，自定义 `#[tauri::command]` 是本仓既有的合规通道
+/// （先例：`open_with_editor`、`page_setup`）。
+#[tauri::command]
+pub fn open_system_spell_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWorkspace;
+        use objc2_foundation::{MainThreadMarker, NSURL, NSString};
+        // NSWorkspace 只能在主线程访问（objc2 用 MainThreadMarker 静态强制；同 page_setup 的
+        // NSApplication 约束。Tauri v2 的同步命令在主线程执行，取不到 MTM 时如实报错不伪造）
+        let _mtm = MainThreadMarker::new()
+            .ok_or_else(|| "opening system settings requires the main thread".to_string())?;
+        let url = NSURL::URLWithString(&NSString::from_str(
+            "x-apple.systempreferences:com.apple.Keyboard-Settings.extension",
+        ))
+        .ok_or_else(|| "invalid system settings URL".to_string())?;
+        let ok = NSWorkspace::sharedWorkspace().openURL(&url);
+        if ok {
+            Ok(())
+        } else {
+            Err("System Settings refused the URL".to_string())
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("system spell settings are only available on macOS".to_string())
+    }
+}
+
 /// 页面设置（Typora 文件 → 页面设置）。
 ///
 /// macOS 走 `NSApplication.runPageLayout:`（系统页面设置面板）。
@@ -156,7 +228,28 @@ pub fn page_setup(_window: WebviewWindow) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::CloseGate;
+    use super::{should_prevent_exit, CloseGate};
+
+    #[test]
+    fn quit_default_keeps_app_alive_after_last_window() {
+        // D-AU（ADR-0034 Q12 = A2，默认 false = 不退出，对齐 Typora + macOS 惯例）：
+        // 最后窗口销毁（code None）且偏好为「不退出」⇒ 必须阻止进程退出。
+        assert!(should_prevent_exit(true, false));
+    }
+
+    #[test]
+    fn quit_preference_true_allows_window_close_exit() {
+        // 开关打开（= Mellow 旧行为）⇒ 不阻止，回归「关窗即退出」语义。
+        assert!(!should_prevent_exit(true, true));
+    }
+
+    #[test]
+    fn programmatic_exit_is_never_prevented() {
+        // **安全关键**：code: Some（AppHandle::exit / restart）不得被拦 ——
+        // 否则「退出应用」命令/Dock 退出会卡死（prevent 后无人再触发退出）。
+        assert!(!should_prevent_exit(false, false));
+        assert!(!should_prevent_exit(false, true));
+    }
 
     #[test]
     fn close_gate_allow_once_then_consumed() {

@@ -86,7 +86,7 @@ Release verdict: NO-GO：6 项未闭环
 | 18 | §4.247 | **行内强调的渲染语义**：`**` 紧贴**全角标点**且外侧紧贴汉字时（如 `这是**「必须」**的`），Typora **渲染成加粗**（其 `marked` 分支的 `strong` 只要求「内侧非空白」），而 Mellow 的**预览**（`@lezer/markdown`）与**导出**（`markdown-it`）都按 CommonMark 判为**不成对** ⇒ 显示字面 `**` | **已裁决** —— ⚠️ 本条**不在任何台账条目的覆盖范围内**（`P0-MARKDOWN-002` 说的是「格式命令不损坏选区/IME」，不是「解析器对同一段源文本的语义」）；D 表 / PRD / 偏好矩阵亦无登记（已逐处实测）。**未擅自改任何渲染行为**（改的是用户可见结果，属产品决策） **已裁决（2026-11-03，用户拍板）= A1**：预览与导出**都渲染加粗**（偏离 CommonMark，属有意对齐 Typora；Source Fidelity 不变）。验收载体 = 台账新增 `P0-MARKDOWN-006`；施工 = 批次 A35（✅ **2026-11-05 已落地**：导出 `installTyporaEmphasis` 只放宽 flanking、配对机器保留；预览走装饰层孤岛补齐、不动 vendored 解析器；台账 `P0-MARKDOWN-006` ABSENT→AUTO；审计 §4.354）。 | `docs/adr/ADR-0035-cjk-inline-emphasis-semantics.md` |
 | 19 | §4.248 | **语法特性开关（PRD §94，11 个 `markdown.*`）与导出路径的接线缺口**：它们的 storageKey 全是 `mellow.engine.features.*`，**只被预览/编辑器读取**。实测 HTML 导出有 3 个选项**调用点不传**（`math`/`mermaid`/`rawHtml`）⇒ 关掉开关导出仍渲染；6 个语法**完全没实现**（highlight/supSub/emoji/alerts/wikilink/yaml）⇒ 预览渲染、导出是字面；PDF 导出是独立实现、**无任何开关**（toc/footnote/math/mermaid/alerts 恒开） | **已裁决** —— ⚠️ 修它会**改变导出件内容**（对改过设置的用户），且「三条渲染路径要不要语法一致」是产品取舍（PDF 侧改造面大）。**未擅自改任何渲染行为**；已建**登记表**（11 × 3 路径 + 受控词表）与**覆盖性判据** **已裁决（2026-11-03，用户拍板）= A1**：只修「开关关不掉」（3 个 option-unwired 接线 + 共用挂载行按子开关过滤）；6 个未实现导出语法**不**随 A1 补齐（留待独立裁决）。施工 = 批次 A36（✅ **2026-11-04 已落地**：5 个开关全部接线，登记表 HTML 列 5 行转 `implemented`，审计 §4.353；PDF 列不动，等 A37）。 | `docs/adr/ADR-0036-export-path-syntax-feature-parity.md` |
 | 20 | §4.250–§4.252 | **PDF 导出比 HTML 导出少 10 类能力**：① 公式与图表（`PdfEnv.renderMath` / `renderMermaid` 调用点未提供 ⇒ 降级为源码）；② **核心语法**（嵌套列表层级全丢 / 有序列表变无序且丢起始号 / 任务列表 checkbox 丢失 / 嵌套引用拍平 / 硬换行变空格 / 链接整条丢失 / autolink 字面 / **代码块语言被解析但未消费 ⇒ 无语言标识**）。台账 `P0-EXPORT-001` 已如实改为 `IMPL` | **已裁决** —— 两条路都能修，但成本差一个量级：A1 给 pdfmake 补 webview 栅格化渲染器（+100–200 行、位图、本机不可验）；A2 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml`，实跑确认含 `<math>` / mermaid / 内联图片，且**核心语法全部正确** ⇒ 一次性解决 10 类）；A3 维持现状 + 明说文案。**换 PDF 引擎属架构级改动** ⇒ 未自行改 **已裁决（2026-11-03，用户拍板）= A2**：PDF 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml` + printToPdf）⇒ 一次性解决 10 类差距。施工 = 批次 A37；`P0-EXPORT-001`（现 `IMPL`）实施验收后回闭环。 | `docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md` |
-| 21 | §4.328 | **拼写检查的「语言 / 词典」能力**：Typora 有一整套**语言包管理**（按语言下载/安装/切换词典 + 4 种状态提示，一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 **10 条** key）；而 Mellow 用**系统** `NSSpellChecker`（词典与语言由 **OS** 提供）⇒ 「选语言」在 macOS 的惯用位置是**系统设置**。同批还有两条小缺口：**代码/链接内检查的开关**（排除已实现、开关无）与 **自动纠正拼写**（其所需 API 在 `objc2-app-kit` 0.3.2 中**不存在**、且对 WKWebView 无效 ⇒ 属**不可实现**而非「未做」） | **已裁决** —— A 维持系统拼写检查（登记为平台惯用等价物）· B 复刻语言包管理（新增词典下载子系统）· C 折中（只读语言 + 打开系统设置入口 + 给代码/链接检查加开关）。⚠️ **未擅自改任何用户可见行为**；矩阵三条 `gap` 的说明此前引用「依赖 `host-api` 的拼写词典能力（`P0-EDITOR-005`）」—— 而该项**已 `IMPL`**（消费方已落地）⇒ **理由已过期**，故 `presetSpellCheck` 的 `disposition` 改指本 ADR **已裁决（2026-11-03，用户拍板）= C**：系统拼写检查 + 应用内**只读语言展示** + 「打开系统拼写设置」入口 + 新增 `editor.spellcheckForCodeAndLink`（默认关）。`autoCorrectMisspell` 登记**不可实现**。施工 = 批次 A38；矩阵 `presetSpellCheck` disposition 改指 **D-AW**。 | `docs/adr/ADR-0038-spellcheck-dictionary-language.md` |
+| 21 | §4.328 | **拼写检查的「语言 / 词典」能力**：Typora 有一整套**语言包管理**（按语言下载/安装/切换词典 + 4 种状态提示，一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 **10 条** key）；而 Mellow 用**系统** `NSSpellChecker`（词典与语言由 **OS** 提供）⇒ 「选语言」在 macOS 的惯用位置是**系统设置**。同批还有两条小缺口：**代码/链接内检查的开关**（排除已实现、开关无）与 **自动纠正拼写**（其所需 API 在 `objc2-app-kit` 0.3.2 中**不存在**、且对 WKWebView 无效 ⇒ 属**不可实现**而非「未做」） | **已裁决** —— A 维持系统拼写检查（登记为平台惯用等价物）· B 复刻语言包管理（新增词典下载子系统）· C 折中（只读语言 + 打开系统设置入口 + 给代码/链接检查加开关）。⚠️ **未擅自改任何用户可见行为**；矩阵三条 `gap` 的说明此前引用「依赖 `host-api` 的拼写词典能力（`P0-EDITOR-005`）」—— 而该项**已 `IMPL`**（消费方已落地）⇒ **理由已过期**，故 `presetSpellCheck` 的 `disposition` 改指本 ADR **已裁决（2026-11-03，用户拍板）= C**：系统拼写检查 + 应用内**只读语言展示** + 「打开系统拼写设置」入口 + 新增 `editor.spellcheckForCodeAndLink`（默认关）。`autoCorrectMisspell` 登记**不可实现**。施工 = 批次 A38；矩阵 `presetSpellCheck` disposition 改指 **D-AW**。 ✅ **2026-11-06 已落地（批次 A38）**：开关 + live apply 全链 + 只读语言展示 + 系统设置深链，证据见 §4.355 / ADR-0038「执行记录」/ master-plan D-AW 行。 | `docs/adr/ADR-0038-spellcheck-dictionary-language.md` |
 | 22 | §4.352（2026-11-03 本批） | **UX Gate 策略**：人工体验 Gate（30 计时任务 + UX Score ≥92）是**逐项**前置（ADR-0024 Q2=B1 残余效力），还是**单点**承载 | **已裁决（2026-11-03，用户拍板）= 收窄**：`ux-gate` 只由 `P0-QA-001` 声明与承载；其余 6 项（`P0-EDITOR-001` / `P0-EDITOR-003` / `P0-SHELL-001` / `P0-MENU-001` / `P0-EDITOR-004` / `P0-LAYOUT-002`）不再被这条全局策略挂起 → 落 AUTO（不升 PASS-E）。A3 规则**保留**（只对仍声明 ux-gate 的项适用）。取代 ADR-0024 **Q2=B1** 的残余效力 | `docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md` |
 | 23 | §4.352（2026-11-03 本批） | **内置主题与 Typora 同名而外观不同**（G7-TYPO-05）：master-plan §5.6 自 2026-09-13 写「待裁决」而登记表**一行都没有** ⇒ 违反「待裁决项必须有 ADR 载体」——本行是**补登记**（§4.328/§4.329 同型欠债）。`newsprint` 观感不同 / `whitey` 接近 / `gothic` **明暗相反**（Typora 浅 #fcfcfc vs Mellow 深 #17141f），且 Mellow 无 `night` | **待裁决** —— 选项 A 改原创名 + 存储迁移（起草建议）/ B 改配色对齐（与 §6.2 不变量 10「不复制 Typora 专有资源」**冲突**，须先有新 ADR 取代它）/ C 维持现状。**未擅自改名、未擅自改配色、未动用户已保存的主题选择** | `docs/adr/ADR-0040-theme-name-appearance-divergence.md` |
 ## 二、六项逐条（阻塞原因与「还差什么」）
@@ -22645,6 +22645,61 @@ A36 已把 `print.ts` 的 features 透传通道备好，A37 施工点 = 宿主�
 **产物**：`packages/export/src/html/markdown.ts` · `packages/editor-engine/src/{cjkEmphasis.ts,index.ts}` ·
 `packages/export/test/html.test.ts` · `packages/editor-engine/test/cjk-emphasis.test.ts` ·
 `tests/parity/typora-parity-ledger.json` · 本审计节 + 登记表第 18 行注记。
+
+## 4.355 批次 A38 + D-AT + D-AU 落地 —— 拼写作用域开关 / 导出后打开位置 / 关窗不退出（macOS 惯例）（2026-11-06）
+
+### 一、本批做了什么
+
+ADR-0038 C 与 ADR-0034 Q11/Q12 三项「待施工」全部落地（用户裁决授权，无新增产品决策）：
+
+| 落点 | 内容 |
+|---|---|
+| **A38 引擎侧** | `packages/editor-engine/src/spellcheckScope.ts`（新建）：模块级开关态 + `blockWrapperSpellcheckAttr(scope, userSpellcheck)` 纯函数（生效值 = 开关 ∧ 全局拼写）+ ViewPlugin 幂等同步 `.cm-md-codeBlockWrapper`；`inlineCodeAttrs.ts` copy-then-delete（`INLINE_CODE_ATTRIBUTES` 字面量**逐字不动** ⇒ verify-parity-ledger 的 INLINE↔BLOCK 文本比对护栏不受波及）。链接侧**天然成立**（此前从未排除 ⇒ 开关对链接是 no-op，与 Typora 语义一致，如实登记而非虚报工作量） |
+| **A38 宿主/系统侧** | `spellcheck_language` 命令（`NSSpellChecker.language()`，不可用 ⇒ `null` 不抛错）+ `open_system_spell_settings` 自定义命令（NSWorkspace 深链 `x-apple.systempreferences:com.apple.Keyboard-Settings.extension`；**不走 opener 插件** —— 其权限只放 mailto/tel/http(s)，自定义 scheme 恒被 ACL 拒）。只读语言行**刻意不入 schema**（系统状态非用户设置；值型必须有 storageKey = settings-contract 规则 D，先例 = 已裁撤 `ai.panel`）⇒ 由 SettingsPanel 以 `editor.spellcheck` 行为锚点条件插入 |
+| **D-AT** | `export.openExportLocation`（默认 `false` = Mellow 现状；Typora schema 默认 `!0` 的偏离按 Q11=A2 裁决登记）+ `App.tsx` `maybeRevealExported()` 接 6 个导出成功站点（复用 `opener.revealInFolder` = Typora `showInFinder` 的「定位而非打开」语义）；**导入不接**（Typora 该键仅作用于导出） |
+| **D-AU** | `window.rs` `QuitPolicy(AtomicBool)` + 纯函数 `should_prevent_exit(code.is_none(), policy)`；`lib.rs` `RunEvent::ExitRequested` 仅拦「最后一个窗口自然关闭」（`code: None`），程序化退出/安装器重启（`Some(code)`）不拦；macOS 菜单 Quit 走 muda `terminate:` ⇒ tao LoopDestroyed ⇒ `RunEvent::Exit`，**不经 ExitRequested** ⇒ dirty 确认门零波及（一手证据 = vendored muda/tao 源码，非猜测）。`RunEvent::Reopen` 补 Dock 点击重开（无可见窗口 ⇒ `new_window`，与 ⌘⇧N 同路径）。**默认值翻转**（关窗即退出 → 不退出）按裁决**必须进发布说明**（未发布 ⇒ 翻转即新基线，登记于 panel-keys 行 note） |
+
+### 二、e2e 探针当场抓到一个**面板级真缺陷**（受控 checkbox 回弹）
+
+`tests/e2e/a38-spellcheck-scope-verify.mjs` 首次对设置面板断言**视觉勾选态**（而非只读 localStorage）——
+当场复现：点开关后 Playwright 报「Clicking the checkbox did not change its state」。根因 =
+`SettingsPanel.onChange` 写 localStorage + `applySetting`，而**纯引擎推送型**开关（无 React state 参与）
+不 bump 任何 state ⇒ 组件不重渲染 ⇒ React `restoreControlledState` 把受控 checkbox **弹回 props 旧值**
+—— **功能其实已生效**（引擎侧真的翻转了），用户看到的却是「点了自己跳回去」。
+这是本项目「结构在、功能死」母题的**反向变体**（功能在、UI 撒谎），且属**面板级**缺陷：
+所有不走 setState 的 toggle 行都中招（既有开关恰好都有 state 或 tick 参与，才从未暴露）。
+修法 = 面板 `onChange` 统一自增本地 `uiTick` 强制重渲染（`readValue` 读 localStorage ⇒ 显示跟随存储真值），
+e2e 断言「开：checkbox 视觉状态跟随」转为常驻回归项。**教训**：探针的断言层次决定它能看见什么 ——
+17 个旧面板探针全按存储值判定，UI 谎报态整类缺陷零覆盖（教训记 PITFALLS **§4.473**）。
+
+### 三、验证记录（全链，本机实跑）
+
+- **新增** `packages/editor-engine/test/spellcheck-scope.test.ts`（6 例：纯函数真值表含
+  `(false,false)⇒'false'` / `(true,false)⇒'false'` 两条「全局关时不得私自打开」判据、set/is 通道、
+  默认态逐字回归、开时只删一键、live toggle 往返）；`afterEach` 复位模块态（顺序污染防线）。
+- **新增** `tests/e2e/a38-spellcheck-scope-verify.mjs`（17 例全绿，exit 0）：面板三行出现（含异步语言行）、
+  默认关、开⇒**iframe 内行内码真的丢 spellcheck**、关⇒恢复、入口降级文案、D-AT/D-AU 行 + 持久化。
+  运行时链需 `build-editor-bundle.mjs` 重抽取（`public/editor/engine-v*` 版本目录 ⇒ 通道才进 dev 包）。
+- **cargo test**（`window.rs` 三分支：默认不退出 / 偏好开则退出 / 程序化不拦）85 绿；深链/语言命令测试绿。
+- **settings 测试** 17 绿 · **typecheck:desktop** 净 · **23 护栏**逐一退出码复核全绿（含
+  tauri-command 三元组 D=R=F=**63**、panel-keys 两行 gap→equivalent 翻转后反验「note 里的反引号路径
+  必须存在」抓到 2 处**先于本批存在的假路径**并更正 · ledger 矩阵 `spellcheckForCodeAndLink` gap→implemented）。
+
+### 四、诚实缺口
+
+- **原生层运行时证据不可在本会话取得**（dev 浏览器无 Tauri）：「关窗后 App 存活 / Dock 点击重开」
+  「导出后 Finder 定位」「深链真的打开系统设置」三处 = 静态契约 + 单测/e2e 到宿主边界为止，
+  **须打包 App 人工复核**（同 G7-SHELL-06 先例，证据等级如实记录在 e2e 文件头）。
+- `RunEvent::Reopen` 新建窗口 label 为 `main-{stamp}`（与 setup 的 `main` 不同名）：geometry 恢复按
+  URL/label 双查，功能等价；差异登记于此。
+- ⚠️ **原生打印探针仍禁止在本机运行**（§4.354 安全边界不变，EPSON 假脱机风险）。
+
+**产物**：`packages/editor-engine/src/{spellcheckScope.ts,inlineCodeAttrs.ts,index.ts}` ·
+`packages/editor-engine/test/spellcheck-scope.test.ts` · `packages/editor-core/src/core.ts` ·
+`apps/desktop/src-tauri/src/{lib.rs,window.rs,spellcheck.rs}` · `apps/desktop/src/{App.tsx,SettingsPanel.tsx,host/spellcheck.ts}` ·
+`packages/{settings,host-api,i18n}` · `tests/e2e/a38-spellcheck-scope-verify.mjs` ·
+`tests/parity/fixtures/{typora-preferences-matrix,typora-panel-only-keys}.json` ·
+ADR-0038 执行记录 + master-plan D-AT/D-AU/D-AW 行 + 登记表第 21 行注记 · 本节。
 
 ## 五、本次审计做的改动（非策略性）
 

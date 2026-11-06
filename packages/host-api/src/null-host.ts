@@ -88,6 +88,7 @@ export function createNullHost(): DesktopHost {
       unlearn: async (): Promise<boolean> => false,
       hasLearned: async (): Promise<boolean> => false,
       checkDocument: async (): Promise<SpellIssue[]> => [],
+      language: async (): Promise<string | null> => null,
     },
     process: {
       spawn: notImplemented('process.spawn'),

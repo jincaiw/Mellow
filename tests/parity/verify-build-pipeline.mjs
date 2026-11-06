@@ -684,7 +684,9 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
       + '（本判据「零引用但不阻断」的处置理由随之失效）');
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；脚本增删时须一并调整）
-  const SCRIPT_BASELINE = 100; // [覆盖型] 基线 100
+  // ⚠️ 2026-11-06（批次 A38）：100 → 101 —— 新增 `tests/e2e/a38-spellcheck-scope-verify.mjs`
+  //   （显式加脚本 ⇒ 按本节纪律同步基线）。
+  const SCRIPT_BASELINE = 101; // [覆盖型] 基线 101
   // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==` —— 覆盖型 = 「阈值必须 **==** 当前基线」；
   //   `< N` 只挡「缩小」，**集合增长时会静默稀释防线**（§4.310）。加脚本是**显式**行为 ⇒ 一并同步基线。
   if (scripts11.length !== SCRIPT_BASELINE) {

@@ -8,7 +8,7 @@
  * - **不提供 AI 分类**（2026-09-30 审计移除，见下方 sections 处注释）。
  */
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { SETTINGS_SECTIONS } from '../../../packages/settings/src';
 import type { SettingDefinition, SettingsSection } from '../../../packages/settings/src';
 import type { ThemeSettings } from '../../../packages/themes/src';
@@ -25,6 +25,16 @@ export interface SettingsPanelProps {
   shortcuts: Array<{ id: string; title: string; shortcut?: string }>;
   /** P2-2.6 录制回调：accelerator = null 表示恢复 schema 默认键位 */
   onShortcutChange?: (commandId: string, accelerator: string | null) => void;
+  /** A38（ADR-0038 C）：系统拼写检查可用性（host `spellcheckAvailableSync()` 缓存）。
+   *  false ⇒ 隐藏 `editor.spellcheckForCodeAndLink` / `editor.openSystemSpellSettings`
+   *  （点了没反应的入口比不显示更糟 —— 「占位项」母题）。 */
+  spellcheckAvailable: boolean;
+  /** A38：当前系统拼写检查语言（NSSpellChecker.language()，**只读展示**；
+   *  null = 未取到 ⇒ 不渲染展示行，不伪造值）。 */
+  spellcheckLanguage: string | null;
+  /** D-AU（ADR-0034 Q12）：仅 macOS 暴露「关最后一个窗口是否退出」（Typora 同）；
+   *  Windows/Linux 语义不经 ExitRequested 通道 ⇒ 隐藏本行。 */
+  platformMac: boolean;
 }
 
 /** P2-2.6 可编辑快捷键列表：点击键位进入录制态（capture-phase keydown 捕获组合键）；
@@ -86,15 +96,28 @@ function ShortcutList({ t, shortcuts, onShortcutChange }: {
 }
 
 export default function SettingsPanel(props: SettingsPanelProps) {
-  const { t, onClose, applySetting, currentLanguage, themeSettings, shortcuts, onShortcutChange } = props;
+  const { t, onClose, applySetting, currentLanguage, themeSettings, shortcuts, onShortcutChange, spellcheckAvailable, spellcheckLanguage, platformMac } = props;
   const [active, setActive] = useState<SettingsSection['id']>('general');
   const [query, setQuery] = useState('');
+  // 受控控件的「写存储 ⇒ 重读」重渲染 tick（详见 onChange 内注释；值本身不读，只借 setState 触发重渲染）
+  const [, setUiTick] = useState(0);
 
   // 2026-09-30 审计：此前在此按 aiEnabled 追加一个「AI」分类，其唯一控件 `ai.panel`
   // 无消费者（applyCommand 无对应 case）且持久化 `mellow.ai.panel` —— 与 PRD §122
   // 「无任何持久化 AI 状态」相悖，且渲染成一个点了没反应的开关。已移除；
   // AI 入口由 `extensions` 分类的 action 承载。
-  const sections: SettingsSection[] = SETTINGS_SECTIONS;
+  // A38 / D-AU：按平台与能力**过滤行**（schema 保持全量 —— 它是跨层真源，
+  // 显示门控属于 UI 层）。不显示 = 该行存在但对当前环境无意义：
+  //   · quitAfterWindowClose：Typora 亦仅 macOS 面板暴露；
+  //   · spellcheckForCodeAndLink / openSystemSpellSettings：非 NSSpellChecker 平台无能力。
+  const hiddenIds = new Set<string>();
+  if (!platformMac) hiddenIds.add('general.quitAfterWindowClose');
+  if (!spellcheckAvailable) {
+    hiddenIds.add('editor.spellcheckForCodeAndLink');
+    hiddenIds.add('editor.openSystemSpellSettings');
+  }
+  const sections: SettingsSection[] = SETTINGS_SECTIONS
+    .map((s) => ({ ...s, settings: s.settings.filter((def) => !hiddenIds.has(def.id)) }));
 
   const section = sections.find((s) => s.id === active) ?? sections[0];
 
@@ -132,6 +155,12 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         /* 忽略 */
       }
       applySetting(def, next);
+      // ⚠️ 2026-11-06（批次 A38 e2e 抓到）：checkbox 是受控的（checked={readValue(def)}），
+      // 而 applySetting 对**纯引擎推送型**开关（如 editor.spellcheckForCodeAndLink）不做
+      // 任何 setState ⇒ React 在事件末尾 `restoreControlledState` 把 DOM 勾选**弹回原值**
+      // —— 功能其实已生效，用户却看到开关自己回弹（「点了没反应」母题的变体）。
+      // 修法 = 面板自增本地 tick 强制重渲染，让 `readValue`（读 localStorage）重新驱动 UI。
+      setUiTick((n) => n + 1);
     };
     switch (def.type) {
       case 'toggle':
@@ -227,13 +256,25 @@ export default function SettingsPanel(props: SettingsPanelProps) {
                   <ShortcutList t={t} shortcuts={shortcuts} onShortcutChange={onShortcutChange} />
                 )}
                 {section.settings.map((def) => (
-                  <div key={def.id} className="settings-row">
+                  <Fragment key={def.id}>
+                  <div className="settings-row">
                     <span className="settings-row-label">{t(def.labelKey)}</span>
                     <span className="settings-row-control">{renderControl(def, readValue(def))}</span>
                     {def.descriptionKey !== undefined && (
                       <span className="settings-row-desc">{t(def.descriptionKey)}</span>
                     )}
                   </div>
+                  {/* A38（ADR-0038 C）：只读展示「当前拼写检查语言」。
+                      **刻意不入 schema**（它不是用户设置，是系统状态展示；值型设置必须有
+                      storageKey —— 假键 = 写了无人读的值，见 settings contract 护栏规则 D）。
+                      null ⇒ 不渲染（未取到不伪造）。Typora 同型：偏好里只读语言，词典管理在系统设置。 */}
+                  {def.id === 'editor.spellcheck' && spellcheckAvailable && spellcheckLanguage !== null && (
+                    <div className="settings-row">
+                      <span className="settings-row-label">{t('settings.editor.spellcheckLanguage')}</span>
+                      <span className="settings-row-value">{spellcheckLanguage}</span>
+                    </div>
+                  )}
+                  </Fragment>
                 ))}
               </>
             )}

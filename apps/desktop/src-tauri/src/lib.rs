@@ -249,6 +249,7 @@ pub fn run() {
             spellcheck::spellcheck_unlearn,
             spellcheck::spellcheck_has_learned,
             spellcheck::spellcheck_check_document,
+            spellcheck::spellcheck_language,
             recovery::recovery_save,
             recovery::recovery_list,
             recovery::recovery_get,
@@ -261,6 +262,8 @@ pub fn run() {
             window::new_window,
             window::page_setup,
             window::allow_close_window,
+            window::set_quit_after_window_close,
+            window::open_system_spell_settings,
             open_with::detect_open_with,
             open_with::open_with_editor,
             pandoc::pandoc_available,
@@ -279,6 +282,7 @@ pub fn run() {
         .manage(PendingOpen(Mutex::new(std::collections::HashMap::new())))
         .manage(geometry::GeometryState::default())
         .manage(window::CloseGate::default())
+        .manage(window::QuitPolicy::default())
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
             // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），
@@ -369,7 +373,53 @@ pub fn run() {
         .run(|app: &tauri::AppHandle, event| {
             match event {
                 // A2：应用退出/最后窗口关闭 → 把进程内最新几何落盘
-                RunEvent::ExitRequested { .. } | RunEvent::Exit => geometry::flush(app),
+                // D-AU（2026-11-06，ADR-0034 Q12 裁决 = A2）：macOS 下「关最后一个窗口」
+                // 不再必然退出应用 —— `code == None` 恒等于**用户交互**触发的自然退出
+                // （wry：最后窗口 Destroyed → ExitRequested{code:None}；程序化
+                // exit()/restart() 带 Some(code)）。默认（`quitAfterWindowClose=false`，
+                // 对齐 Typora macOS 惯例）阻止这次自然退出；程序化退出**永不**拦截。
+                // ⌘Q / 菜单 Quit 不经此事件（muda 走 `terminate:` → tao
+                // `application_will_terminate`，前端保存门照常运行），故本拦截
+                // **不可能**把应用困在「退不出去」状态。非 macOS 不编译此逻辑：
+                // Windows/Linux 语义不变（Typora 该偏好仅 macOS 面板暴露）。
+                RunEvent::ExitRequested { code, api, .. } => {
+                    geometry::flush(app);
+                    #[cfg(target_os = "macos")]
+                    {
+                        let quit_after = app
+                            .state::<window::QuitPolicy>()
+                            .0
+                            .load(std::sync::atomic::Ordering::Relaxed);
+                        if window::should_prevent_exit(code.is_none(), quit_after) {
+                            api.prevent_exit();
+                        }
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    let _ = (code, &api);
+                }
+                // macOS Dock 点击（应用无可见窗口时）：重开一个主窗口。
+                // 这是 D-AU「不退出」语义的**必需配套**：没有它，关最后一个窗口后
+                // 应用驻留后台、点 Dock 无反应 = 用户读作「应用坏了」。
+                // 语义对齐 macOS 惯例与 Typora：无窗口 → 新建；有窗口但被最小化/隐藏 → 复原聚焦。
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen {
+                    has_visible_windows,
+                    ..
+                } => {
+                    if has_visible_windows {
+                        return;
+                    }
+                    if app.webview_windows().is_empty() {
+                        let _ = window::new_window(app.clone(), app.state::<PendingOpen>(), None, None);
+                    } else {
+                        for (_label, w) in app.webview_windows() {
+                            let _ = w.unminimize();
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                }
+                RunEvent::Exit => geometry::flush(app),
                 // macOS Finder「打开方式」/ `open -a`（odoc Apple Event）
                 #[cfg(target_os = "macos")]
                 RunEvent::Opened { urls } => {

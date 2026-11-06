@@ -894,6 +894,14 @@ export default function App() {
   const shortcutOverridesRef = useRef(shortcutOverrides);
   shortcutOverridesRef.current = shortcutOverrides;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // A38（ADR-0038 C）：当前系统拼写检查语言（NSSpellChecker.language()，**只读展示**）。
+  // 打开设置面板时**重新取**：语言是系统状态，可能在会话中被用户在系统设置里换掉，
+  // 启动预取一次会给出过期值。null = 未取到/不可用 ⇒ SettingsPanel 不渲染该行。
+  const [spellcheckLanguage, setSpellcheckLanguage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!settingsOpen || !spellcheckAvailableSync()) return;
+    void createDesktopSpellcheckService().language().then(setSpellcheckLanguage).catch(() => setSpellcheckLanguage(null));
+  }, [settingsOpen]);
   // 2026-09-30 审计：原 `aiEnabled` state（读 `mellow.ai.enabled`）唯一用途是给 SettingsPanel
   // 追加一个「AI」分类，而该分类的唯一控件无消费者。分类已移除，state 随之删除
   // （PRD §122：不持久化任何 AI 状态；AI 入口由 extensions 分类的 action 承载）。
@@ -1341,6 +1349,25 @@ export default function App() {
     await rollbackCommit().catch(() => undefined);
   }, []);
 
+  /** D-AT（2026-11-06，批次 D-AT / ADR-0034 Q11 裁决 = A2）：导出成功后的「打开所在位置」。
+   *  Typora `openExportLocation` 默认开；Mellow 按「不得静默改用户可见默认」取
+   *  **新增开关 + 默认 false**（= 现状：只提示，不弹 Finder）。开 = 复用与文件树右键
+   *  同一条 `revealInFolder` 通道（Typora 的 `JSBridge.showInFinder` 亦即 reveal 语义，
+   *  不是 open-file）。失败静默：导出本身已成功，不该因 reveal 失败弹错误打断用户。
+   *  ⚠️ 只在**导出**成功站点调用；导入（`import.done`）不调 —— Typora 该键只管导出。
+   *  ⚠️ **声明位置**：必须在各导出回调**之前** —— 它们的依赖数组在渲染期求值，
+   *  本常量若声明在其后，首轮渲染即 TDZ 崩溃。 */
+  const maybeRevealExported = useCallback(async (path: string) => {
+    if (!readBoolSetting('export.openExportLocation', false)) return;
+    const opener = openerRef.current;
+    if (!opener) return;
+    try {
+      const r = await opener.revealInFolder(path);
+      // 失败不弹错误打断（导出本身已成功），只在状态栏留痕（与文件树右键同文案）。
+      if (!r.ok) setStatusText(t('msg.revealFailed', { error: r.error.message }));
+    } catch { /* revealInFolder 契约是返回 Result 不抛；此处纯兜底 */ }
+  }, [t]);
+
   // ── RC F1：PDF 导出（PRD §72 / golden journey #19；与打印共享排版常量）──
   const handleExportPdf = useCallback(async () => {
     const tab = docStateRef.current.doc;
@@ -1374,10 +1401,11 @@ export default function App() {
       }, { fonts, resolveImage: makeLocalImageResolver(docDir, exportRootDir, true) });
       await invoke('write_binary', { path: savePath, data: Array.from(buffer) });
       setToast({ message: t('export.pdf.done') });
+      void maybeRevealExported(savePath); // D-AT
     } catch (err) {
       setToast({ message: `${t('export.pdf.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t]);
+  }, [t, maybeRevealExported]);
 
   /** 某个路径所在目录（`undefined` = 不可用：未命名/未保存文档、或路径里没有分隔符）。
    *  ⚠️ 不直接用 `fileTreeDirname()` 的结果 —— 它对**裸文件名**会返回 `'/'`（`idx <= 0 ? '/' : …`），
@@ -1454,10 +1482,11 @@ export default function App() {
         localStorage.setItem('mellow.export.last', JSON.stringify({ docPath: tab.path, format, output: savePath }));
       } catch { /* quota 满 → 忽略（仅失去 ⌃E 记忆） */ }
       setToast({ message: t('export.pandoc.done', { format }) });
+      void maybeRevealExported(savePath); // D-AT
     } catch (err) {
       setToast({ message: `${t('export.pandoc.failed', { format })}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t]);
+  }, [t, maybeRevealExported]);
 
   /** D2：pandoc 导出命令表（Typora 导出子菜单全量对齐；id = 菜单/命令 id） */
   const PANDOC_EXPORT_COMMANDS: ReadonlyArray<{ id: string; format: string; ext: string; zh: string; en: string }> = [
@@ -1497,10 +1526,11 @@ export default function App() {
       }
       await invoke('pandoc_export', { input: tab.path, output: last.output, format: last.format, pandocPath: pandocPathSetting() });
       setToast({ message: t('export.repeat.done', { path: last.output }) });
+      void maybeRevealExported(last.output); // D-AT
     } catch (err) {
       setToast({ message: `${t('export.pandoc.failed', { format: last.format })}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t]);
+  }, [t, maybeRevealExported]);
 
   // 导出 HTML（PRD §73；with-theme 单文件，白名单 sanitize；D2 增 without-style 无样式模式）
   const runExportHtml = useCallback(async (mode: 'with-theme' | 'without-style') => {
@@ -1542,10 +1572,11 @@ export default function App() {
       });
       await invoke('write_text', { path: savePath, content: html });
       setToast({ message: t('export.html.done') });
+      void maybeRevealExported(savePath); // D-AT
     } catch (err) {
       setToast({ message: `${t('export.html.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t, themeSettings.mode]);
+  }, [t, themeSettings.mode, maybeRevealExported]);
   const handleExportHtml = useCallback(() => runExportHtml('with-theme'), [runExportHtml]);
   const handleExportHtmlPlain = useCallback(() => runExportHtml('without-style'), [runExportHtml]);
 
@@ -1667,6 +1698,7 @@ export default function App() {
       });
       await invoke('write_binary', { path: savePath, data: Array.from(bytes) });
       setToast({ message: t('export.image.done') });
+      void maybeRevealExported(savePath); // D-AT
     } catch (err) {
       if ((err as { code?: unknown }).code === 'image-too-long') {
         setToast({ message: t('export.image.tooLong') });
@@ -1674,7 +1706,7 @@ export default function App() {
       }
       setToast({ message: `${t('export.image.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t, themeSettings.mode, readerResolveImageSrc, refreshImageRootUrl]);
+  }, [t, themeSettings.mode, readerResolveImageSrc, refreshImageRootUrl, maybeRevealExported]);
 
   /**
    * W-PERF-1 诊断通道（2026-10-01）：把 iframe 内的**按键回显延迟报告**定期写到宿主指定路径。
@@ -2558,10 +2590,11 @@ export default function App() {
       for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
       await invoke('write_binary', { path: savePath, data: Array.from(bytes) });
       setToast({ message: t('export.image.done') });
+      void maybeRevealExported(savePath); // D-AT
     } catch (err) {
       setToast({ message: `${t('export.image.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t]);
+  }, [t, maybeRevealExported]);
 
   /** C1：复制光标处数学块的 MathML（Typora copyAsMathML） */
   const handleCopyMathMl = useCallback(() => {
@@ -3985,6 +4018,18 @@ export default function App() {
           if (spellDef && readSetting(spellDef) === false) {
             host.setSpellcheckEnabled(false);
           }
+          // A38（ADR-0038 C）：代码/链接拼写作用域启动恢复（默认 false ⇒ 不下发 = 现状）
+          const scopeDef = settingById('editor.spellcheckForCodeAndLink');
+          if (scopeDef && readSetting(scopeDef) === true) {
+            host.setSpellcheckForCodeAndLinkEnabled(true);
+          }
+          // D-AU（ADR-0034 Q12）：启动即把偏好灌进 Rust QuitPolicy（**含关着也灌** ——
+          // Rust 默认 false 与新默认一致，但用户改 true 后重启必须恢复 true）。仅 macOS
+          // 灌值：非 mac 不读该策略，灌了也无人消费。
+          const quitDef = settingById('general.quitAfterWindowClose');
+          if (quitDef && navigator.platform.toLowerCase().includes('mac')) {
+            void invoke('set_quit_after_window_close', { enabled: readSetting(quitDef) === true }).catch(() => undefined);
+          }
           // R2-1 智能标点启动恢复（默认 false；Typora parity）
           const smartPunctDef = settingById('editor.smartPunctuation');
           if (smartPunctDef && readSetting(smartPunctDef) === true) {
@@ -5194,6 +5239,28 @@ export default function App() {
         // 正确路径 = 自增 menuCheckTick 触发菜单 effect 重建（勾选值由 spec 里的 checkedFrom 派生）。
         hostRef.current?.setSpellcheckEnabled(Boolean(value));
         setMenuCheckTick((n) => n + 1);
+        break;
+      }
+      case 'settings.spellcheckForCodeAndLink':
+        // A38（ADR-0038 C）：代码/链接拼写作用域 live apply（引擎侧通道见 spellcheckScope.ts）。
+        // 无菜单勾选态（Typora 该项也不在菜单）。
+        hostRef.current?.setSpellcheckForCodeAndLinkEnabled(Boolean(value));
+        break;
+      case 'settings.quitAfterWindowClose': {
+        // D-AU（ADR-0034 Q12 裁决 = A2）：灌入 Rust QuitPolicy。本项**仅 macOS 显示**
+        // （Typora 亦只在 mac 面板暴露；Windows 菜单 Quit 走 PostQuitMessage 不经
+        // ExitRequested 通道，语义不变），因此只在 mac 下发，避免往别的平台进程里灌无人读的值。
+        const enabled = Boolean(value);
+        if (platformMac && isTauri()) void invoke('set_quit_after_window_close', { enabled }).catch(() => undefined);
+        setStatusText(enabled ? t('msg.quitAfterWindowCloseOn') : t('msg.quitAfterWindowCloseOff'));
+        break;
+      }
+      case 'settings.openSystemSpellSettings': {
+        // A38（ADR-0038 C）：深链打开系统拼写设置（命令本体见 window.rs；非 mac 恒 Err
+        // ⇒ 降级提示，而面板层本就按 available() 隐藏本入口，这里是双保险）。
+        void invoke('open_system_spell_settings')
+          .then(() => setStatusText(t('msg.systemSpellSettingsOpened')))
+          .catch((e: unknown) => setStatusText(`${t('msg.systemSpellSettingsUnavailable')}: ${String(e)}`));
         break;
       }
       case 'settings.smartPunctuation':
@@ -6874,6 +6941,9 @@ export default function App() {
             shortcut: platformMac ? c.shortcut?.mac : c.shortcut?.winLinux,
           }))}
           onShortcutChange={handleShortcutOverride}
+          spellcheckAvailable={spellcheckAvailableSync()}
+          spellcheckLanguage={spellcheckLanguage}
+          platformMac={platformMac}
         />
       )}
       {contextMenu !== null && (

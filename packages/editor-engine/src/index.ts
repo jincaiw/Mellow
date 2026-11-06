@@ -63,10 +63,12 @@ import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './
 import { buildSmartPunctuationExtension, buildSmartPunctuationRenderExtension, installSmartPunctuationApi } from './smartPunctuation';
 import { buildInlineCodeAttrsExtension } from './inlineCodeAttrs';
 import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
+import { buildSpellcheckScopeExtension, installSpellcheckScopeApi } from './spellcheckScope';
 import { buildWysiwygBlocksExtension } from './wysiwygBlocks';
 import { installMdTokensBridge } from './mdTokens';
 import { installEngineLocaleBridge } from './engineI18n';
 export { buildCodeLineNumbersExtension, installCodeLineNumbersApi, setCodeLineNumbers, isCodeLineNumbersEnabled, codeLineNumbersVersion, fenceContentRange } from './codeLineNumbers';
+export { buildSpellcheckScopeExtension, installSpellcheckScopeApi, setSpellcheckForCodeAndLink, isSpellcheckForCodeAndLink, spellcheckScopeVersion, blockWrapperSpellcheckAttr } from './spellcheckScope';
 export { buildWysiwygBlocksExtension, bumpHeadingFont } from './wysiwygBlocks';
 export { installMdTokensBridge, applyMdTokens, MD_TOKEN_DEFAULTS } from './mdTokens';
 // ADR-0028（Q1=A2 / Q2=B1 / Q3=C1）：引擎 UI 文案 + locale 桥
@@ -248,6 +250,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installSmartPunctuationApi();
   // 代码块行号（Typora parity）：宿主经 iframe window.__MELLOW_CODE_LINE_NUMBERS__ 调用
   installCodeLineNumbersApi();
+  // A38（ADR-0038 C）：代码/链接内拼写检查开关，宿主经 iframe window.__MELLOW_SPELLCHECK_SCOPE__ 调用
+  installSpellcheckScopeApi();
   // V5：md 排版 token 桥（宿主经 EditorCore.setMdTokens 注入 --mellow-md-*）
   installMdTokensBridge();
   // ADR-0028：引擎 UI 文案的 locale 桥（宿主经 EditorCore.setEngineLocale 注入）
@@ -295,6 +299,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildSmartPunctuationRenderExtension(),
     // spec §11：行内代码的 spellcheck/autocorrect 属性（块级代码由 CoreEditor codeBlockStyle 承担）
     buildInlineCodeAttrsExtension(),
+    // A38（ADR-0038 C）：块级码 wrapper 的 spellcheck 属性同步（受 editor.spellcheckForCodeAndLink 开关）
+    buildSpellcheckScopeExtension(),
     buildCodeLineNumbersExtension(),
     // V5：非聚焦块渲染（Typora WYSIWYG 对齐：引用/标题/代码块/HR 源码标记隐藏 + Github 排版）
     buildWysiwygBlocksExtension(),

@@ -107,3 +107,29 @@
    （按上文**不可实现**结论，实装批次**不**含它；若未来平台 API 到位再重开）；
 5. 不适用（未选 A）；D 表新增 **`D-AW`** 登记「系统拼写检查 = 平台惯用等价物」的有意差异，
    §7 4.2 行已由 A38 批次改写。
+
+---
+
+## 七、执行记录（2026-11-06，批次 A38）
+
+裁决 C 已落地。落点与证据（详见 master-plan **D-AW** 行的施工记录）：
+
+- **开关** `editor.spellcheckForCodeAndLink`（默认 `false` ⇒ 默认行为与开关引入前**逐字一致**）：
+  行内侧 = `inlineCodeAttrs.ts` 构建装饰时 copy-then-delete `spellcheck` 键（`INLINE_CODE_ATTRIBUTES`
+  字面量不动，护栏 INLINE↔BLOCK 文本比对仍过）；块内侧 = `spellcheckScope.ts` ViewPlugin 幂等同步
+  wrapper 的 `spellcheck` 属性，生效值 = 开关 ∧ 全局拼写偏好（纯函数 `blockWrapperSpellcheckAttr`）；
+  链接侧**天然成立**（此前从未排除链接 ⇒ 开关对链接是 no-op，与 Typora 语义一致）。
+- **只读语言展示**：`spellcheck_language` Rust 命令（`NSSpellChecker.language()`）⇒ 面板行；
+  **刻意不入 settings schema**（系统状态而非用户设置；值型必须有 storageKey —— 护栏规则 D，
+  先例 = 已裁撤的 `ai.panel`）。
+- **系统设置入口**：自定义命令 `open_system_spell_settings`（NSWorkspace 深链
+  `x-apple.systempreferences:com.apple.Keyboard-Settings.extension`）。⚠️ 不走 opener 插件
+  `openUrl`：其权限只放 `mailto/tel/http(s)`，自定义 scheme 会被 ACL 拒 —— 属 Adapter 面，合规。
+- **验证**：`packages/editor-engine/test/spellcheck-scope.test.ts`（6）＋
+  `apps/desktop/src-tauri` cargo 测试（深链/语言命令/退出策略三分支）＋
+  `tests/e2e/a38-spellcheck-scope-verify.mjs`（17 例：面板三行、live apply 全链
+  「开 ⇒ 行内码真的丢 spellcheck」、降级文案）。
+- ⚠️ **本轮附带抓到的面板级缺陷**（已修，`SettingsPanel.tsx`）：受控 checkbox 的 onChange 只写
+  localStorage + applySetting，而**纯引擎推送型**开关不 bump 任何 React state ⇒
+  React `restoreControlledState` 把勾选**弹回**，用户看到「点了自己跳回去」。e2e 探针（断言视觉态，
+  非仅存储值）当场暴露 —— 旧探针全按 localStorage 判，故此缺陷从未被捕获。

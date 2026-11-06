@@ -382,6 +382,17 @@ export class EditorCore {
     return win?.__MELLOW_CODE_LINE_NUMBERS__?.get?.() ?? false;
   }
 
+  /** 代码/链接内拼写检查开关（批次 A38 / ADR-0038 C；`editor.spellcheckForCodeAndLink`，默认关） */
+  setSpellcheckForCodeAndLinkEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SPELLCHECK_SCOPE__?: { set?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_SPELLCHECK_SCOPE__?.set?.(on);
+  }
+
+  isSpellcheckForCodeAndLinkEnabled(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SPELLCHECK_SCOPE__?: { get?: () => boolean } }) | null;
+    return win?.__MELLOW_SPELLCHECK_SCOPE__?.get?.() ?? false;
+  }
+
   /** 安装宿主 KaTeX 渲染通道（master-plan R3-2：编辑器内公式排版 + mhchem \ce/\pu）。
    *  render 异步返回渲染 HTML；null = 渲染失败（引擎回退源码显示）。 */
   installKatexRenderer(render: (tex: string, displayMode: boolean) => Promise<string | null>): void {

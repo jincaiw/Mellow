@@ -115,6 +115,24 @@ pub fn spellcheck_has_learned(word: String) -> bool {
     }
 }
 
+/// **当前拼写检查语言**（批次 A38 / ADR-0038 C：应用内**只读展示**，不做语言包管理）。
+///
+/// macOS 取 `NSSpellChecker.sharedSpellChecker.language` —— 系统拼写检查当前采用的
+/// BCP-47 语言码（自动识别时随文档语言变化）；不可用/未设置时返回 `None`。
+/// 非 macOS 恒 `None`（本模块的平台契约：非 macOS 无词典能力，宿主据此隐藏该区，
+/// 见 `spellcheck_available()`）。
+#[tauri::command]
+pub fn spellcheck_language() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        mac::current_language()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 /// **平台判定契约**（2026-10-01）。
 ///
 /// 立此测试的原因：`spellcheck_available()` 的返回值直接决定宿主**是否显示拼写区**
@@ -240,6 +258,17 @@ mod mac {
         checker.hasLearnedWord(&NSString::from_str(&w))
     }
 
+    /// 当前拼写检查语言（A38）。`language` 返回空串表示系统尚未选定语言 ⇒ 归一为 `None`。
+    pub fn current_language() -> Option<String> {
+        let checker = NSSpellChecker::sharedSpellChecker();
+        let lang = checker.language().to_string();
+        if lang.trim().is_empty() {
+            None
+        } else {
+            Some(lang)
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -279,6 +308,20 @@ mod mac {
         #[test]
         fn check_document_is_empty_for_empty_text() {
             assert!(check_document("", 100).is_empty());
+        }
+
+        #[test]
+        fn current_language_never_empty_string() {
+            // A38 只读展示的契约：宿主直接把返回值渲染成文本 ⇒ 空串会变成
+            // 「当前语言：（空白）」这种看似坏掉的 UI。规范化为本模块职责：
+            // 要么 Some(非空白)，要么 None（宿主显示「未检测到」）。
+            match current_language() {
+                Some(lang) => assert!(
+                    !lang.trim().is_empty(),
+                    "current_language 返回 Some 时必须非空白，实际：{lang:?}"
+                ),
+                None => {} // 系统未选定语言时 None 是合法值（宿主显示降级文案）
+            }
         }
 
         #[test]

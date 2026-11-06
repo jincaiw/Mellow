@@ -79,6 +79,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.general',
     settings: [
       { id: 'general.reopenLast', labelKey: 'settings.general.reopenLast', type: 'toggle', storageKey: 'mellow.general.reopenLast', defaultValue: true, applyCommand: 'settings.reopenLast' },
+      // D-AU（2026-11-06，批次 D-AU / ADR-0034 Q12 裁决 = A2）：Typora macOS 偏好
+      // 「Quit Typora when last window is closed」默认 **false**（= 关最后一个窗口不退出，
+      // 符合 macOS 惯例）。Mellow 此前恒「关窗即退出」⇒ 默认对齐 Typora 属**用户可见默认
+      // 值翻转**（须在发布说明写明）；生效点在 Rust `RunEvent::ExitRequested`（仅拦
+      // 最后窗口销毁的自然退出，⌘Q / 程序化 exit 不受影响，见 window.rs）。非 macOS
+      // 前端隐藏本项（该键 Typora 仅 macOS 面板暴露）。
+      { id: 'general.quitAfterWindowClose', labelKey: 'settings.general.quitAfterWindowClose', type: 'toggle', storageKey: 'mellow.general.quitAfterWindowClose', defaultValue: false, descriptionKey: 'settings.general.quitAfterWindowCloseDesc', applyCommand: 'settings.quitAfterWindowClose' },
       { id: 'general.language', labelKey: 'settings.general.language', type: 'select', storageKey: 'mellow.locale', defaultValue: 'zh-CN',
         options: [
           { value: 'zh-CN', labelKey: 'settings.language.zh' },
@@ -146,6 +153,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'editor.allowMagnification', labelKey: 'settings.editor.allowMagnification', type: 'toggle', storageKey: 'mellow.editor.allowMagnification', defaultValue: false, descriptionKey: 'settings.editor.allowMagnificationDesc', applyCommand: 'settings.editorConfig' },
       // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
+      // A38（ADR-0038 裁决 = C，2026-11-06）：Typora 偏好 `spellcheckForCodeAndLink`
+      // 「Show spelling errors in code and link」，**默认 false** ⇒ Mellow 现状（代码内
+      // 无条件排除拼写检查）与 Typora 默认一致，本开关把「排除」变成可关。
+      // 引擎侧生效点：`editor-engine/spellcheckScope.ts`（块级 wrapper 属性同步）+
+      // `inlineCodeAttrs.ts`（行内码标记属性省略）；链接侧 Mellow 从未排除 ⇒ 天然成立。
+      // ⚠️ 仅当系统拼写检查可用（macOS）时有意义，前端与非可用平台一并隐藏。
+      { id: 'editor.spellcheckForCodeAndLink', labelKey: 'settings.editor.spellcheckForCodeAndLink', type: 'toggle', storageKey: 'mellow.editor.spellcheckForCodeAndLink', defaultValue: false, descriptionKey: 'settings.editor.spellcheckForCodeAndLinkDesc', applyCommand: 'settings.spellcheckForCodeAndLink' },
+      // A38（ADR-0038 C 第②③项）：跳转系统拼写设置（macOS 深链 x-apple.systempreferences:
+      // com.apple.Keyboard-Settings.extension，自定义命令 `open_system_spell_settings` ——
+      // opener 插件默认 ACL 只允许 mailto/tel/http(s)，深链方案必须走自定义命令）。
+      // ⚠️ 只读「当前拼写检查语言」行**不入 schema**：它是系统状态的展示而非用户设置，
+      // 由 SettingsPanel 在 editor.spellcheck 行后特殊渲染（护栏规则 D 明令值型设置必须
+      // 有 storageKey，假键 = 写了无人读的值；同型判例见 2026-09-30 审计移除的 ai.panel）。
+      { id: 'editor.openSystemSpellSettings', labelKey: 'settings.editor.openSystemSpellSettings', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.editor.openSystemSpellSettingsDesc', applyCommand: 'settings.openSystemSpellSettings' },
       // 智能标点（master-plan R2-1：Typora 编辑→替换「智能引号/破折号」；默认关闭）
       { id: 'editor.smartPunctuation', labelKey: 'settings.editor.smartPunctuation', type: 'toggle', storageKey: 'mellow.editor.smartPunctuation', defaultValue: false, descriptionKey: 'settings.editor.smartPunctuationDesc', applyCommand: 'settings.smartPunctuation' },
       // 2026-10-08（审计 §4.150）：Typora `convertSmartOnRender`（面板 radio
@@ -425,6 +446,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // → 不开启时「编辑器里看到的换行在导出件里消失」。同时作用于 HTML 与 PDF 两条导出管线。
       // 无 applyCommand —— 导出时读取。
       { id: 'export.preserveLineBreaks', labelKey: 'settings.export.preserveLineBreaks', type: 'toggle', storageKey: 'mellow.export.preserveLineBreaks', defaultValue: false, descriptionKey: 'settings.export.preserveLineBreaksDesc' },
+      // D-AT（2026-11-06，批次 D-AT / ADR-0034 Q11 裁决 = A2）：Typora `openExportLocation`
+      // （schema 默认 `!0` ⇒ 导出完成后自动 `showInFinder`）。按「不得静默改用户可见默认」
+      // 取「补能力、默认不变」⇒ **默认 false**（= Mellow 现状：导出完成仅 toast）。
+      // 生效点 = App.tsx `maybeRevealExported()`（复用既有 `file.revealInFinder` 能力，
+      // 在 5 个导出成功站点调用；导入不落此路径）。无 applyCommand —— 导出时读取。
+      { id: 'export.openExportLocation', labelKey: 'settings.export.openExportLocation', type: 'toggle', storageKey: 'mellow.export.openExportLocation', defaultValue: false, descriptionKey: 'settings.export.openExportLocationDesc' },
       // 2026-10-07（审计 §4.127）：Typora 的 `pandocPath`（`File.option.pandocPath || "pandoc"`）。
       // 【为什么需要它】Rust 侧此前只做**裸 PATH 查找**（`Command::new("pandoc")`），而
       // **macOS 的 GUI 应用不继承 shell 的 PATH** —— Finder/Dock 启动时进程 PATH 只有

@@ -260,6 +260,12 @@ export interface SpellcheckService {
    * 否则 CJK 之前的位置会整体错位。
    */
   checkDocument(text: string): Promise<SpellIssue[]>;
+  /**
+   * 当前系统拼写检查语言（A38 / ADR-0038 C：设置面板**只读展示**，Typora 在偏好里
+   * 同样只展示语言而非选择器 —— 词典管理归系统设置）。
+   * 不可用或未取到时返回 `null`（**不抛错**，UI 据此隐藏该行）。
+   */
+  language(): Promise<string | null>;
 }
 
 // ─────────────────────────── process ───────────────────────────
