@@ -913,7 +913,7 @@ const OFFICIAL_SHORTCUTS = [
 
 /** 已登记的有意差异（§12 D 表）。键必须仍存在于 schema，否则为过期例外。 */
 const OFFICIAL_SHORTCUT_EXCEPTIONS = new Map([
-  ['search.replace', '§12 D-Q：macOS Cmd+H 被系统「隐藏应用」占用，沿用 Cmd+Alt+F；Win/Linux 已对齐 Ctrl+H'],
+  ['search.replace', '§12 D-Q：macOS Cmd+H 被系统「隐藏应用」占用；2026-09-13 撞车修复轮由 Cmd+Alt+F 让位 window.fullscreen 改绑 Cmd+Alt+H（Win/Linux 对齐 Ctrl+H）。⚠️ 本值现被 predefined hideOthers（实机 ⌥⌘H）同键相冲 ⇒ 物化 accel 恒空，属 §4.360「六」7b 登记的 D-AX 复核轮面，非本例外过期'],
   // G7-KEY-08：Command+` 在 SDI 下语义变为窗口切换，未绑定为文档切换。
   // G7-KEY-09：New Tab (Cmd+T) 随 SDI 决策移除。
 ]);

@@ -603,7 +603,7 @@ V4 暴露的 Win/Linux 9 处偏离**已全部纠偏**（`menuSchema.ts` 逐条�
 | **G7-KEY-03** | Articles 键位缺失 | `Ctrl+Shift+2` / `Cmd+Control+2` | 无 | **FAIL → 已修复（W1.5）** |
 | **G7-KEY-04** | macOS 全屏 | `Cmd+Option+F` | `Ctrl+Cmd+F`（`menuSchema.ts:358`） | FAIL → 已修复（W1.9） |
 | **G7-KEY-05** | macOS 行内 Code | `Cmd+Shift+`` ` | `Ctrl+`` `（`menuSchema.ts:313`） | FAIL → 已修复（W1.9） |
-| **G7-KEY-06** | macOS Replace | `Cmd+H` 🟡 | `Cmd+Alt+F`（`menuSchema.ts:213`） | **D（有意差异）**：`Cmd+H` 被 macOS 系统「隐藏应用」占用，沿用 `Cmd+Alt+F`；见 §12 D-Q |
+| **G7-KEY-06** | macOS Replace | `Cmd+H` 🟡 | `search.replace` = `Cmd+Alt+H`（§4.360「六」7b 更正：本行原写 `Cmd+Alt+F` + 行号引用 `menuSchema.ts:213`，系 2026-09-13 撞车修复轮的**转述层过期** —— 实现早已改 `Cmd+Alt+H`；行号引用同批漂移，改符号引用） | **D（有意差异）**：`Cmd+H` 被 macOS 系统「隐藏应用」占用 ⇒ 见 §12 D-Q（含「六」7b 补记：⌥⌘H 与 predefined hideOthers 同键相冲 ⇒ 显示层 accel 恒空，留 D-AX 复核轮） |
 | **G7-KEY-07** | Find Next（Win/Linux） | `F3` / `Enter` | 主绑定 `Ctrl+G` / `Cmd+G`；`F3` / `Shift+F3` 别名**两平台均已注册**（`App.tsx:4477-4478`）；`Enter` 由 CM 查找面板接管 | ✅ **已复核（2026-09-12）** —— `tests/e2e/block-shortcuts-verify.mjs` 实测 18/18：Enter 连续推进匹配（0→11）、F3 在编辑区聚焦时推进（含环绕）。<br/>**边界（如实记录）**：dev 环境无原生菜单 accelerator 通道，故「查找输入框聚焦时按 F3」无法验证；真机由菜单快捷键分发，不作断言 |
 | G7-KEY-08 | Switch Between Opened Documents | `Ctrl+Tab` / `Cmd+`` ` | 无（SDI 下语义变为窗口切换） | D（已显式登记，见 **D-Y**） |
 | G7-KEY-09 | New Tab | macOS `Cmd+T` | 无（SDI 决策移除） | D（已显式登记，见 **D-Y**） |
@@ -1424,7 +1424,7 @@ Functional
 
 | # | 决策点 | 裁决 | 依据 |
 |---|---|---|---|
-| **D-Q**（原 D-G 新） | macOS Replace 键位 | **`Cmd+Alt+H`，登记 D**（2026-09-13 由 `Cmd+Alt+F` 更正） | 官方表写 `Cmd+H`，但 macOS 保留 `Cmd+H` = 隐藏应用（NSApplication.hide:），改用它会导致系统菜单冲突。Mellow 为 macOS 原生菜单装配，冲突不可接受。<br/>**为何不是 `Cmd+Alt+F`**：该键与 W1.9 按官方表改定的 `window.fullscreen = Cmd+Option+F` 撞车（同一 mac 组合绑两个命令 → §10 Release Blocker「快捷键冲突」）。取舍：**全屏保留官方键**（有据可查），Replace 取官方 `Cmd+H` 的**同一字母**并加 Alt（`Cmd+Alt+H`），既规避系统冲突又保持助记一致。详见 G7-KEY-11。 |
+| **D-Q**（原 D-G 新） | macOS Replace 键位 | **`Cmd+Alt+H`，登记 D**（2026-09-13 由 `Cmd+Alt+F` 更正） | 官方表写 `Cmd+H`，但 macOS 保留 `Cmd+H` = 隐藏应用（NSApplication.hide:），改用它会导致系统菜单冲突。Mellow 为 macOS 原生菜单装配，冲突不可接受。<br/>**为何不是 `Cmd+Alt+F`**：该键与 W1.9 按官方表改定的 `window.fullscreen = Cmd+Option+F` 撞车（同一 mac 组合绑两个命令 → §10 Release Blocker「快捷键冲突」）。取舍：**全屏保留官方键**（有据可查），Replace 取官方 `Cmd+H` 的**同一字母**并加 Alt（`Cmd+Alt+H`），既规避系统冲突又保持助记一致。详见 G7-KEY-11。<br/>**补记（2026-11-08，审计 §4.360「六」7b 可复现实验）**：`Cmd+Alt+H` 与 predefined `hideOthers`（实机显示 ⌥⌘H，dump 解码 bit1+Cmd 隐含）**同组合相冲** ⇒ 该行 accel 在 mac 物化后**显示恒空**（三 dump 一致；实验：临时声明 ⌥⌘J 复 dump 显示正常后回退 ⇒ 排除物化链路故障，坐实同键相冲）。**本行裁决不改**（键位单一真源仍为声明值）；显示面真解 = 换键（⌥⌘J 等已验证可显示的组合）或并入 D-AX 键位表复核轮，届时一并裁决。护栏注释（verify-menu-contract D 例外）与 schema 注释均已指认本补记。 |
 | **D-R**（原 D-H 新） | Reopen Closed File 在 SDI 下的语义 | **在当前窗口打开**（非新窗口） | Typora 为多标签，`Reopen Closed File` 恢复标签页；Mellow 为 SDI 单文档窗口，语义等价映射为「替换当前文档」，未保存修改仍经 `guardSingleDocument()` 确认。避免为此新增 Rust 窗口传参通道。 |
 | **D-S**（原 D-I 新） | Edit 菜单「拼写和语法检查 / 替换」子菜单 | **保留子菜单结构，内容缺口转 W5** | 真机 nib 提取证实 Typora 确有这两个 NSSubmenu（`Substitutions` 含 5 项）。原 W1.4「平铺」计划被证据推翻，已回退。结构对齐优先，内容（词典/语法/智能引号/文本替换）作为 G7-EDIT-04 在 W5 补齐。 |
 | **D-T**（原 D-J 新） | `file.openSnapshotsFolder` 位置 | **保留 File 菜单末位独立分组** | 属 Mellow 崩溃恢复能力入口，Typora 无对应项；置于 separator 后不污染高频组，由 §7.2 31 槽位契约锁定，防未来漂移。 |

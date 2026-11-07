@@ -319,6 +319,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       // （W1.9 按官方表把全屏改为 `Cmd+Option+F` 时，未发现该键已被 replace 占用）。
       // 取舍：全屏保留官方键（有据）；replace 改为 `Cmd+Alt+H` —— 取官方 `Cmd+H`
       // 的同一字母、加 Alt 规避 macOS 系统「隐藏应用」（与 D-Q 的既有思路一致）。
+      // ⚠️ §4.360「六」7b 可复现实验：⌥⌘H 又与 predefined hideOthers（实机 ⌥⌘H）
+      // **同键相冲** ⇒ 本行 accel 在 mac 物化后显示恒空（临时改 ⌥⌘J 复 dump 正常显示）。
+      // 真解 = 换键（⌥⌘J 实验证明可显示）或官方表复核 ⇒ 留 D-AX 键位表复核轮统一裁决，
+      // 此处**不擅改**（键位单一真源 = 本声明；显示吞键是物化层事实，已入护栏例外注释）。
       { kind: 'command', id: 'search.replace', labelKey: 'menu.search.replace', shortcut: { mac: 'Cmd+Alt+H', winLinux: 'Ctrl+H' } },
       // §4.360「六」7：基线 fixture L255 `替换下一个 [Opt+E]` = ⌘⌥E（NoCmd 缺省 ⇒ Cmd 隐含，
       // 与 L254 查找和替换… [Opt+F] 同族）。能力桥 = 引擎 MellowSearchApi.replaceNext()
