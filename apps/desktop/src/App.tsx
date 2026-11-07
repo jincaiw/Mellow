@@ -3035,6 +3035,17 @@ export default function App() {
     host?.jumpToOffset(item.from);
   }, [readerOpen]);
 
+  // G7-SHELL-08（2026-11-08，一手证据）：Typora 浮动大纲（`#toc-dropmenu`）点击标题
+  // = `autoHideOutline()` + `focusAndRestorePos()`（`bindEventForOutline`），且
+  // `DEFAULT_OPTIONS` 无开关 ⇒ 出厂即开、不可关。Mellow 采**完全一致行为**（恒隐藏
+  // + 恒归还焦点）；不做成可配置 —— 没有设置 UI 的开关是死旋钮（且原生本就不可关）。
+  // 只作用于浮层实例：侧栏大纲（pinned 形态）的同款 onJump 不隐藏，与 Typora 一致。
+  const handleFloatOutlineJump = useCallback((item: OutlineHeading) => {
+    handleOutlineJump(item);
+    setOutlineFloatOpen(false);
+    hostRef.current?.focus();
+  }, [handleOutlineJump]);
+
   const handleOutlineToggle = useCallback((id: string) => {
     outlineModelRef.current.toggle(id);
     refreshOutline(outlineActiveRef.current === id ? undefined : hostRef.current?.getSelectionHead());
@@ -6800,24 +6811,39 @@ export default function App() {
             <div className="outline-float" role="complementary" aria-label={t('outline.listLabel')}>
               <div className="outline-float-header">
                 <span className="outline-float-title">{t('sidebar.outline')}</span>
-                <button
-                  type="button"
-                  className="outline-float-close"
-                  aria-label={t('reader.close')}
-                  title={t('reader.close')}
-                  onClick={() => { setOutlineFloatOpen(false); }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                    <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                  </svg>
-                </button>
+                <span className="outline-float-actions">
+                  {/* G7-SHELL-08（2026-11-08）：固定到侧栏 = Typora `#pin-outline-btn`
+                      （click → focusAndRestorePos + showSidebar("outline")；hover 标题区才显示）。 */}
+                  <button
+                    type="button"
+                    className="outline-float-pin"
+                    aria-label={t('outline.pin')}
+                    title={t('outline.pin')}
+                    onClick={() => { setOutlineFloatOpen(false); showSidebarAs('outline'); hostRef.current?.focus(); }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                      <path d="M4.5 1.5h3l-.5 3.5 1.5 1.5H3.5L5 5z M6 6.5v4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="outline-float-close"
+                    aria-label={t('reader.close')}
+                    title={t('reader.close')}
+                    onClick={() => { setOutlineFloatOpen(false); }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                      <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </span>
               </div>
               <div className="outline-float-list">
                 {(() => {
                   const items = visibleOutlineItems();
                   return items.length === 0
                     ? <div className="sidebar-empty">{t('outline.empty')}</div>
-                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} highlightNonce={outlineHighlightNonce} />;
+                    : <OutlineList items={items} selectedId={outlineSelectedId} currentId={currentOutlineId} flat={outlineFlat} collapsed={outlineModelRef.current.collapsed} onJump={handleFloatOutlineJump} onToggle={handleOutlineToggle} onContextMenu={openOutlineContextMenu} highlightNonce={outlineHighlightNonce} />;
                 })()}
               </div>
             </div>

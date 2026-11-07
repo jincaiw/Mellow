@@ -703,7 +703,10 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   //   （文件列表摘要开关全链存活探针；§4.360「六」8 正文即其引用 —— 调试期抓出两个
   //   探针级事实：handleSave/视图切换均不重取列表（判据必须显式 workspace.refresh），
   //   dblclick 打开是异步加载会覆盖先写入的正文（写判据须连续两次读回一致））。
-  const SCRIPT_BASELINE = 107; // [覆盖型] 基线 107
+  // ⚠️ 2026-11-08（审计 §4.360「六」10）：107 → 108 —— 新增 `tests/e2e/outline-float-parity-verify.mjs`
+  //   （浮动大纲 Typora 对齐探针；§4.360「六」10 正文即其引用 —— G7-SHELL-08 一手证据复核
+  //   推翻「不可拖拽 = 缺口」前提，装配几何 300/right:4 + pin 到侧栏 + 跳转即收起）。
+  const SCRIPT_BASELINE = 108; // [覆盖型] 基线 108
   // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==` —— 覆盖型 = 「阈值必须 **==** 当前基线」；
   //   `< N` 只挡「缩小」，**集合增长时会静默稀释防线**（§4.310）。加脚本是**显式**行为 ⇒ 一并同步基线。
   if (scripts11.length !== SCRIPT_BASELINE) {

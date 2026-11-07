@@ -835,13 +835,18 @@ html, body, #root {
   color: var(--mellow-fg);
 }
 
-/* ── V7-I7：浮动大纲面板（编辑器右侧 overlay）── */
+/* ── V7-I7：浮动大纲面板（编辑器右侧 overlay）──
+   G7-SHELL-08（2026-11-08 一手证据复核）：Typora 的对应物是 `#toc-dropmenu`
+   （base-control.css：`width:300px; right:4px; top:0; max-height:calc(100% - 20px)`，
+   系 dropdown-menu、高度随内容自适应、**本就不可拖拽**）⇒ 本面板几何对齐 300px/right:4，
+   高度由「上下拉伸」改为「内容自适应 + 上限」；行内锚点仍在本仓自有条下起
+   （top 42px = 本仓 `.editor-topbar` 34px + 8px，D-A 残余）。 */
 .outline-float {
   position: absolute;
   top: 42px;
-  right: 12px;
-  bottom: 42px;
-  width: 240px;
+  right: 4px;
+  max-height: calc(100% - 54px);
+  width: 300px;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -854,14 +859,43 @@ html, body, #root {
 .outline-float-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   padding: 8px 10px 6px;
   border-bottom: 1px solid var(--mellow-border);
 }
 .outline-float-title {
+  flex: 1;
   font-size: 12px;
   font-weight: 600;
   color: var(--mellow-fg-subtle);
+}
+.outline-float-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.outline-float-pin {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mellow-fg-subtle);
+  cursor: pointer;
+}
+/* Typora 同型：pin 按钮平时隐藏，hover 标题区才出现
+   （base-control.css `.outline-title-wrapper:hover #pin-outline-btn{display:inline-block}`） */
+.outline-float-header:hover .outline-float-pin {
+  display: inline-flex;
+}
+.outline-float-pin:hover,
+.outline-float-pin:focus-visible {
+  background: var(--mellow-bg-hover);
+  color: var(--mellow-fg);
 }
 .outline-float-close {
   display: inline-flex;
@@ -884,6 +918,7 @@ html, body, #root {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px;
 }
 

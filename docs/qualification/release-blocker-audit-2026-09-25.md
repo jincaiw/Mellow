@@ -23521,6 +23521,54 @@ master-plan 行 14b 追加带日期更正块：前置①②消解、❌ 收敛�
 `verify-doc-code-refs` 全绿；更正块内代码锚逐一 grep 证实（见④），无凭记忆
 引用。
 
+**10）非菜单面（ii）：G7-SHELL-08 浮动大纲 —— 一手证据推翻原判定，几何/pin/自动收起装配收口（2026-11-08）**
+
+**缺口来源与前提推翻**：G7-SHELL-08 原判定「D（增强，低优先级）：尺寸/位置
+硬编码 240px、不可拖拽/停靠」。本轮按「先验证目标形态再动手」纪律取本机
+Typora 1.14.9 **一手证据**（`style/base-control.css` + `index.html` +
+`appsrc/window/frame.js` 逐段提取），结论是**原判定前提不成立**：Typora 的
+浮动大纲 `#toc-dropmenu` 自己就是 `position:fixed` + 硬编码 `width:300px;
+right:4px; max-height:calc(100% - 20px)` 的下拉面板，**同样不可拖拽** ⇒
+「不可拖拽」从来不是 Typora 具备而 Mellow 缺失的能力；真正的缺口三件：
+
+① **几何**：Typora 300px / right:4 / 高度随内容（max-height 上限）vs Mellow
+240px / right:12 / `top:42 + bottom:42` 上下拉伸钉死。装配为 300 / right:4 /
+`max-height:calc(100% - 54px)`（行内 top 锚仍在本仓 `.editor-topbar` 下起 =
+D-A 裁决残余，不动）；`.outline-float-list` 补 `overflow-x:hidden`（Typora
+`.outline-content` 同型）。
+
+② **pin 到侧栏**：Typora `index.html` 的 `.outline-title-wrapper` 内有
+`#pin-outline-btn`（CSS `.outline-title-wrapper .btn{display:none}` + `:hover`
+才 `inline-block`；JS click → `focusAndRestorePos()` +
+`library.showSidebar("outline")`）。Mellow 完全没有此按钮 ⇒ 新增
+`.outline-float-pin`（同 hover-才现形态，SVG 图钉），click = 浮层关 +
+`showSidebarAs('outline')`（既有命令族，Mellow 侧栏大纲模式早已在场）+
+焦点回编辑器。**unpin 反向不做**（如实登记）：Typora 的 `#unpin-outline-btn`
+在 CSS 里被 `.active-tab-outline .sidebar-footer{display:none!important}` 与
+`.active-tab-files #unpin-outline-btn{display:none}` 双重压制，实机可见性无法
+从静态证据裁定；Mellow 该方向已由顶栏大纲开关（恒在、语义等价「显示/隐藏」）
+覆盖，不凭猜测装配。i18n 新键 `outline.pin`（zh「固定到侧边栏」/ en「Pin to
+Sidebar」；曾拟 `outline.unpin` 随 unpin 不做一并撤除，不留死键）。
+
+③ **跳转即收起**：Typora `bindEventForOutline` 的 `.outline-item` click 先
+`autoHideOutline()`（且 `DEFAULT_OPTIONS` 无该开关 ⇒ 出厂即开不可关），随后
+`focusAndRestorePos()`。Mellow 浮层此前点了不关。装配 = 浮层实例专用
+`handleFloatOutlineJump`（jump + `setOutlineFloatOpen(false)` + `host.focus`），
+侧栏停靠形态的原 `handleOutlineJump` 不收起（同 Typora pinned 不 auto-hide）。
+**刻意不做成可配置**：无设置 UI 的开关是死旋钮，且原生本就不可关 —— 与 D-AC
+「不给不存在的能力造入口」同族纪律。
+
+**探针 `tests/e2e/outline-float-parity-verify.mjs` 9/9**（SCRIPT_BASELINE
+107→**108**，引用即本节）：A1/A2/A3 几何（getBoundingClientRect 实测量宽
+300 / 右缘 gap 4 / 高度非拉伸钉死）；B1 pin 默认 display:none；B2 hover
+标题区后可见（⚠️ 判据实录：pin 位于 flex 容器内，声明 inline-flex 被计算成
+flex ⇒ 判据语义取「非 none」，不断具体形态）；B3 点 pin ⇒ 浮层关 + 侧栏
+`aria-label=大纲` + 有行；C1 浮层点行立即收起；D 侧栏点行不收起、浮层不复活。
+
+**验证**：apps/desktop `tsc --noEmit` 0；探针 9/9；`verify-i18n-contract` /
+`verify-build-pipeline`（基线 108）/ `verify-release-gate` /
+`verify-doc-code-refs` 全绿（见下）。
+
 
 
 ## 五、本次审计做的改动（非策略性）

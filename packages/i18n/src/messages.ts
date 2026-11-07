@@ -76,6 +76,7 @@ const zhCN = {
   'outline.filter': '过滤标题',
   'outline.flat': '扁平',
   'outline.number': '编号',
+  'outline.pin': '固定到侧边栏',
   'outline.empty': '当前文档没有标题',
 
   // Global Search
@@ -1114,6 +1115,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'outline.filter': 'Filter headings',
   'outline.flat': 'Flat',
   'outline.number': 'Number',
+  'outline.pin': 'Pin to Sidebar',
   'outline.empty': 'This document has no headings',
 
   'search.placeholder': 'Search workspace',
