@@ -23280,6 +23280,120 @@ localizedTitle 保留 Mellow 自有「动词前置」家族（导出 HTML（无�
 同形）—— 显示层合同管辖原生菜单标签，命令面板是 Mellow 增强表面、不在 Typora 显示层
 真源范围内（护栏 §14 只锁 CJK 在场，不锁措辞）。
 
+**7）编辑/文件/显示菜单差集收口 + ⌥-alternate 解码方法论（2026-11-08 续轮）**
+
+本轮起点 = 停止钩子点名的残余差集（编辑：Paste and Match Style / 替换下一个 / 删除 /
+跳转到行尾键位 / 粘贴组顺序；显示：状态栏 / 只读模式 / 大纲窗口 / tab 项；文件：
+打开文件夹；导出：使用上一次设置导出键位）。**方法论级发现（先于装配）**：用
+AXPosition + AXMenuItemCmdChar/AXMenuItemCmdModifiers 对基线 dump 的**可疑差集行**
+逐一复探，证明 dump 工具把 **AppKit 隐藏 ⌥-alternate 行当作普通行枚举** ——
+判据 = 与前一常驻行**同槽位**（AXPosition 相等）且 mods 差 bit1（⌥）：
+
+| 基线行 | 槽位证据 | 判定 |
+|---|---|---|
+| `全部关闭 [Opt+W]`（L135） | 与 `关闭` 同槽 {103,344}；关闭 char=W mods=0 / 全部关闭 char=W mods=2 | ⌥-alternate ⇒ **推翻 B1「mac 无全部关闭」**（说法错，装配结论不变，见下） |
+| `复制 [Shift+S]`（L137） | 与 `保存为…` 同槽 {103,403}；保存为… mods=3 / 复制 mods=1 | 同槽互斥对（保存为… 常驻 = ⇧⌘S、按 ⌥ 变 复制 = ⇧S）⇒ **D-AX 登记面不变**（D-AX 争的是常驻行 ⇧⌘S vs 官方 ⌘⇧S） |
+| `Paste and Match Style [OptShift+V]`（L189） | 与 `粘贴为纯文本` 同槽 {149,309}；char=V mods=1/mods=3 | ⌥-alternate，且 nib 无 zh 映射 ⇒ zh 原样显示英文（同 htmlPlain 母题） |
+| `删除`（L207，无 accel） | **独立槽** {149,438}（上移/下移 403/无 → 438，间距 35px 含分隔线） | **真常显行** ⇒ 真缺口，本轮装配 |
+| `打开文件夹` | 基线 File 段（L105-135，含 alternate 行）**不存在该行** | mac 真缺 ⇒ `winLinuxOnly` 装配 |
+| View 段 L393-419 | 全段核对（含 alternate 行）**无「状态栏」** | mac 真缺 ⇒ `winLinuxOnly` 装配（Win/Linux 实机有） |
+
+**关键平台限制（决定处置口径）**：Mellow 菜单栈 muda 0.19.3（`grep -r alternate
+~/.cargo/…/muda-0.19.3/src` 零命中）**不支持 `isAlternate`** ⇒「按 ⌥ 显形」形态在
+本项目**结构上不可表达**。据此本轮的差集口径 = **对齐 Typora 默认显示面**，⌥-面差
+登记为平台不可表达项（不制造常驻假行冒充 alternate 形态；1:1 复现的备选 = 自持
+NSMenu 桥，代价与收益不匹配，不采）。
+
+装配分流（六项）：
+
+1. **`workspace.openFolder` → `winLinuxOnly`**（mac 真缺，`打开…` 选目录承担）；
+   `TYPORA_MENU_LABELS` 的 en 列 `Open Folder` 保留（护栏解析原始 schema）。
+2. **`file.closeAll` 维持 `winLinuxOnly` + 注释更正**：旧注释「mac 无全部关闭」
+   被本轮探针推翻（存在，但 = ⌥-alternate）；维持过滤的现由 = muda 不可表达 +
+   SDI 下 mac Close All 语义=关窗口内全部标签页（Mellow mac 无标签页，B1 裁决）
+   ⇒ 常驻行反而制造语义偏离。**同型更正**：`edit.pasteMatchStyle` 旧位置（粘贴
+   之后、无分隔）系按「常显行」误读装配 ⇒ 本轮按基线组序重排（复制组后独立组、
+   粘贴为纯文本 之后），两项均常显（可表达面最大化，能力真实），zh 标签按显示真源
+   改英文原样 `Paste and Match Style`（messages zh + TYPORA_MENU_LABELS 同行改，
+   75→78 合同含本条；**命令面板 localizedTitle 保持中文** —— 面板标题漏译护栏
+   （§14 家族）当场拦截了把面板也改成英文的越界，「显示层合同管原生菜单标签、
+   不管 Mellow 自有表面」边界由此护栏复证）。
+3. **`search.replaceNext` 全链装配**（fixture L255 `替换下一个 [Opt+E]` = ⌘⌥E，
+   nib L303 `Replace Next => 替换下一个`）：引擎 `MellowSearchApi.replaceNext()`
+   （复用面板「替换」按钮同一 `searchMod.replaceNext`，无匹配/面板未开 = 自身
+   no-op）→ App.tsx `engineSearch` 联合 + 命令注册 → schema 行（查找和替换… 之后）
+   → i18n `menu.search.replaceNext`（zh 替换下一个 / en Replace Next）。
+4. **`edit.deleteSelection` 装配**（fixture L207 独立常显行 `删除`，无 accel）：
+   引擎新 `ToolbarAction 'deleteSelection'` + 纯函数 `applyDeleteSelection`
+   （有选区删选区、**空选区 no-op** —— 不做第二删除键，避免与「删除当前行或句」
+   语义/键位纠缠）+ jest 4 例（`format-delete-selection.test.ts`）+ App.tsx 命令
+   （`enabled: hasSelection`，先例 = cut/copy）+ schema 行（下移该行 后 separator
+   组，删除范围▸ 之前）+ i18n `menu.edit.deleteSelection`（删除 / Delete）。
+   **无 accelerator** = 键位护栏零冲突；`enabled` 只作用命令树（dispatch 拒绝），
+   原生菜单行常驻（与 Typora 同形态 —— 其行亦不随选区灰显）。
+5. **`view.statusbar.toggle` → `winLinuxOnly`**（mac View 全段无本项；勾选态
+   `checkedFrom` 合同/护栏仍锁原始 schema；mac 侧状态栏可见性由设置面板承载 =
+   D-AC「单一入口」母题）。jest 连带：checkState 用例的勾选断言移到 **win-linux**
+   物化面 + 新增「mac 面不得出现」断言（防标记位丢失的无声回归）；mac 显示顺序
+   数组去掉本项。
+6. **两处 accelerator 更正（⑤轮误读的连锁）**：`export.repeat` mac `Ctrl+E` →
+   **`Ctrl+Cmd+E`**（dump `[Ctrl+E]` 无 NoCmd 位 ⇒ Cmd 隐含 = ⌃⌘E；原声明物化成
+   裸 ⌃E `[NoCmdCtrl+E]` 与基线不符 —— 复 dump 实测抓出）；`edit.gotoLineEnd` mac
+   `Cmd+ArrowRight` → **`Ctrl+E`**（fixture L203 `跳转到行尾 [NoCmdCtrl+E]` = 裸 ⌃E，
+   与 跳转到行首 [NoCmdCtrl+A]=裸⌃A 同族；CM6 原生 charForward 语义本就对，纯显示
+   键位差）。§13 唯一性预检：⌃⌘E / ⌃E / ⌘⌥E 三组合均无占用（selectFormatSpan 占
+   mac ⌘E、winLinux Ctrl+E —— 按平台分桶不互撞）。**教训续记**：bit3=NoCmd 约定
+   的**镜像面** = 「无 NoCmd 位 ⇒ Cmd 隐含」；⑤轮只修了有 NoCmd 前缀的读法。
+
+**不装配面（本轮归类）**：只读模式 = **D-AC 用户裁决在册**（命令保留、面板触达；
+历史上正是「误加菜单项被护栏当场拦下」的那条，本轮不得重蹈）；大纲窗口/字数统计
+窗口 = §4.360 四.4 等价物在册；显示标签页栏/显示所有标签页 = B1 SDI 裁决；
+了解更多…/显示拼写和语法/输入时转换/保留单换行符/显示 `<br/>` = 复探证明
+**连 alternate 都不是**（ABSENT 于实机菜单）⇒ 维持原在册分流（D-S/G7-EDIT-04/
+P0-EDITOR-005/G7-EDIT-15/14）；`删除当前行或句` 子菜单行的基线 accel 为
+`[OptShift+L]`（非 ⇧⌘⌫）—— Mellow 受 §13 唯一性护栏约束不可双装（⌘⇧⌫ 已被
+deleteLine 常驻键持有），维持⑥轮注释登记。
+
+**护栏同步**：TYPORA_MENU_LABELS 75→**78**（pasteMatchStyle zh 列改英文原样 +
+replaceNext + deleteSelection）；accelerator 计数 86→**87**（replaceNext +1；
+gotoLineEnd/export.repeat 键位值变更不改计数）；jest：export.repeat accel 断言
+`Ctrl+Cmd+E`、closeAll 注释更正、statusbar 双平台断言、mac view 顺序数组；
+CONTRACT.md 测试文件数 81→82（判据 ㉛ 当场拦截新测试未同步文档 —— 先验量具母题
+再验证）；`verify-menu-contract` 全绿（33 槽 / 10 toggles / 55 官方键位 / 78 标签）。
+
+**验证**：`pnpm -w test` **EXIT=0**（全量：packages jest + typecheck:desktop +
+23 护栏链 + vendored CoreEditor lint/jest）；e2e 探针
+`tests/e2e/edit-menu-4362-verify.mjs`（端口 1470）**12/12 全绿 EXIT=0**：
+search.replaceNext 注册 + edit.deleteSelection 选区删除双向 + dispatch 面全链。
+调试中抓出两个**真合同级发现**（非探针噪声）：
+① **ACTION_IDS 静默吞案** —— `installFormatApi().format()` 只派发
+`ACTION_IDS` 集内的 action，`deleteSelection` 加了类型/switch/空选区守卫三处
+却漏加该集 ⇒ dispatch 表面成功实则 no-op（jest 纯函数测试全绿也照不出来，
+只有 dispatch 全链探针能抓）。⇒ **装配新格式 action 必须四处齐改**：类型、
+switch、（如有需要）空选区守卫、`ACTION_IDS`；
+② **CM6 `replaceNext` 是两步语义**（`@codemirror/search` dist L915：仅当选区
+恰落在当前匹配上才替换，否则第一次调用只定位）——面板「替换」按钮同一实现，
+桥有意复用，行为正确；⑤轮的探针预期写错（一步语义），改为按真实合同三段断言
+（定位→替换首匹配→替换次匹配）。**教训**：探针红 ≠ 实现红，先对上游语义
+再改预期。**原生复 dump 复核**（dev 实例：bundle 重建 + vite 1420 +
+`target/debug/mellow-desktop`；只读轮 —— 窗口标题为用户文件 ⇒ 零点击零键入，
+MD5 前后复验 `b4851464…`/5350B ✓；`dump-menu.sh mellow-desktop` →
+`/tmp/menu-mellow-4364.txt` **444 行**，全量物化健康检查过）六点全中：
+L148 `使用上一次设置导出 [Ctrl+E]`（⌃⌘E ✓）、L187 `跳转到行尾 [NoCmdCtrl+E]`
+（裸 ⌃E ✓）、L222 `替换下一个 [Opt+E]`（⌘⌥E ✓）、L191 `删除` 常显行在
+`删除范围` 之前（基线 L207-209 同形 ✓）、mac View 全段无 `状态栏`（grep 零命中 ✓）、
+mac File 全段无 `打开文件夹`（grep 零命中 ✓）；粘贴组顺序 L168-173 与基线
+L184-189 逐行一致（复制组 → 分隔 → `粘贴为纯文本 [Shift+V]` →
+`Paste and Match Style [OptShift+V]` → 分隔 → 选择▸）✓。
+
+**残余（如实登记）**：① ⌥-alternate **形态**不可表达（muda 能力缺失）—— 涉及
+全部关闭 / Paste and Match Style 的「按 ⌥ 显形」与 保存为…↔复制 的⇧键位翻转；
+若未来 muda 支持 `set_alternate`（上游 0.20+ 未见该 API），可重评；② 本轮
+`edit.pasteMatchStyle` 常显化 = 把 Typora 的 ⌥-面内容放上默认面，属「可表达面
+最大化」取舍而非 1:1 形态复制，与 closeAll（保持不装配）同族但取向了相反一侧 ——
+判据统一为：**能力真实且语义无偏离 ⇒ 常显补差集；语义偏离或能力缺失 ⇒ 不装**
+（closeAll 属 SDI 语义偏离，pasteMatchStyle 能力=真、语义=匹配样式粘贴无偏离）。
+
 
 
 ## 五、本次审计做的改动（非策略性）

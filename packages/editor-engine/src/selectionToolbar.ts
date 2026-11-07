@@ -283,7 +283,7 @@ export function applyHeading(doc: string, range: TextRange, level: number): Appl
   };
 }
 
-type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle' | 'deleteLine' | 'referenceLink' | 'underline' | 'comment' | 'indentMore' | 'indentLess' | 'insertParagraphAbove' | 'insertParagraphBelow' | 'newParagraph' | 'newLine';
+type ToolbarAction = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'quote' | 'list' | 'orderedList' | 'taskList' | 'codeBlock' | 'mathBlock' | 'highlight' | 'sup' | 'sub' | 'paragraph' | 'clear' | 'headingUp' | 'headingDown' | 'horizontalRule' | 'footnote' | 'yamlFrontMatter' | 'taskToggle' | 'deleteLine' | 'deleteSelection' | 'referenceLink' | 'underline' | 'comment' | 'indentMore' | 'indentLess' | 'insertParagraphAbove' | 'insertParagraphBelow' | 'newParagraph' | 'newLine';
 
 /** 既有块级 marker（heading/quote/ul/task/ol）：列表互转时先剥离（Typora 段落互转语义） */
 const BLOCK_PREFIX_RE = /^(#{1,6}\s|>\s|[-*+]\s(?:\[[ xX]\]\s)?|\d+\.\s)/;
@@ -536,8 +536,19 @@ export function applyDeleteLine(doc: string, range: TextRange): ApplyResult {
   };
 }
 
+/** 删除所选内容（Typora 编辑→「删除」常显行，fixture L207，无键位）：删除选区，caret 落选区起点。
+ *  空选区返回无变更（调用侧 applyToView 也已提前返回）—— 不做成第二个删除键，
+ *  以免与「删除当前行或句」语义/键位纠缠（§13 唯一性护栏）。 */
+export function applyDeleteSelection(doc: string, range: TextRange): ApplyResult {
+  if (range.from >= range.to || range.to > doc.length) return { changes: [], selection: range };
+  return {
+    changes: [{ from: range.from, to: range.to, insert: '' }],
+    selection: { from: range.from, to: range.from },
+  };
+}
+
 /** 链接引用（⌥⌘L，Typora 段落→链接引用）：选区文本 → [text][n]；当前段落块下方插入 [n]: 定义。
- * 空选区 → [][n]（caret 落 label 括号内）；有选区 → caret 落定义行 URL 位。n 为最小未占用引用号。 */
+ *  空选区 → [][n]（caret 落 label 括号内）；有选区 → caret 落定义行 URL 位。n 为最小未占用引用号。 */
 export function applyReferenceLink(doc: string, range: TextRange): ApplyResult {
   const used = new Set<number>();
   for (const m of doc.matchAll(/^\[(\d+)\]:/gm)) used.add(Number(m[1]));
@@ -609,7 +620,7 @@ const PAIR_WRAPS: Partial<Record<ToolbarAction, { open: string; close: string }>
   underline: { open: '<u>', close: '</u>' },
   comment: { open: '<!--', close: '-->' },
 };
-const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'referenceLink', 'underline', 'comment', 'indentMore', 'indentLess', 'insertParagraphAbove', 'insertParagraphBelow', 'newParagraph', 'newLine']);
+const ACTION_IDS = new Set<ToolbarAction>(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote', 'list', 'orderedList', 'taskList', 'codeBlock', 'mathBlock', 'highlight', 'sup', 'sub', 'paragraph', 'clear', 'headingUp', 'headingDown', 'horizontalRule', 'footnote', 'yamlFrontMatter', 'taskToggle', 'deleteLine', 'deleteSelection', 'referenceLink', 'underline', 'comment', 'indentMore', 'indentLess', 'insertParagraphAbove', 'insertParagraphBelow', 'newParagraph', 'newLine']);
 
 /**
  * 工具栏按钮定义。**必须是函数、不能是模块级常量**（ADR-0028 实测）：
@@ -660,6 +671,9 @@ function applyAction(action: ToolbarAction, doc: string, range: TextRange, defau
     case 'horizontalRule': return applyHorizontalRule(doc, range);
     case 'footnote': return applyFootnote(doc, range);
     case 'deleteLine': return applyDeleteLine(doc, range);
+    // §4.360「六」7：Typora 编辑菜单常显行「删除」（fixture L207，无键位；nib `Delete => 删除`）
+    // = 删除所选内容。空选区 no-op（applyToView 已提前返回；此处兜底）。
+    case 'deleteSelection': return applyDeleteSelection(doc, range);
     case 'referenceLink': return applyReferenceLink(doc, range);
     case 'yamlFrontMatter': return applyYamlFrontMatter(doc, range);
     case 'taskToggle': return applyTaskToggle(doc, range);
@@ -719,6 +733,7 @@ function applyToView(action: ToolbarAction, defaultCodeLang = ''): void {
   let result: ApplyResult;
   if (sel.empty) {
     if (action === 'clear') return; // 清除样式需要目标选区（Typora ⌘\ 空选区无操作）
+    if (action === 'deleteSelection') return; // 删除所选内容：空选区无操作（Typora「删除」语义）
     if (action === 'referenceLink') {
       // 链接引用：空选区直接以 caret 位调用（内部处理 [][n] + caret 落 label 内）
       result = applyReferenceLink(doc, { from: sel.head, to: sel.head });

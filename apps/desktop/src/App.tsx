@@ -557,14 +557,15 @@ export default function App() {
     win.webModules?.config?.setShowLineNumbers?.({ enabled: isSource ? source : live });
   }, []);
   /** 引擎查找/替换桥（菜单 → iframe __MELLOW_SEARCH_API__） */
-  const engineSearch = useCallback((mode: 'find' | 'replace' | 'findNext' | 'findPrevious') => {
+  const engineSearch = useCallback((mode: 'find' | 'replace' | 'findNext' | 'findPrevious' | 'replaceNext') => {
     const frame = containerRef.current?.querySelector('iframe');
-    const win = frame?.contentWindow as (Window & { __MELLOW_SEARCH_API__?: { openFind: () => void; openReplace: () => void; findNext: () => void; findPrevious: () => void } }) | null;
+    const win = frame?.contentWindow as (Window & { __MELLOW_SEARCH_API__?: { openFind: () => void; openReplace: () => void; findNext: () => void; findPrevious: () => void; replaceNext: () => void } }) | null;
     const api = win?.__MELLOW_SEARCH_API__;
     if (api === undefined) return;
     if (mode === 'find') api.openFind();
     else if (mode === 'replace') api.openReplace();
     else if (mode === 'findNext') api.findNext();
+    else if (mode === 'replaceNext') api.replaceNext();
     else api.findPrevious();
     hostRef.current?.focus();
   }, []);
@@ -5917,11 +5918,17 @@ export default function App() {
       // B2 编辑菜单补全（Typora 对齐：查找下一个/上一个 ⌘G / ⇧⌘G）
       { id: 'search.findNext', localizedTitle: { zh: '查找下一个', en: 'Find Next' }, category: 'edit', context: { scope: 'global' }, shortcutAliases: [{ winLinux: 'F3' }, { mac: 'F3' }], enabled: always, execute: () => engineSearch('findNext') },
       { id: 'search.findPrevious', localizedTitle: { zh: '查找上一个', en: 'Find Previous' }, category: 'edit', context: { scope: 'global' }, shortcutAliases: [{ winLinux: 'Shift+F3' }, { mac: 'Shift+F3' }], enabled: always, execute: () => engineSearch('findPrevious') },
+      // §4.360「六」7：Typora 查找子菜单「替换下一个」（fixture L255，⌘⌥E）——面板「替换」
+      // 按钮同一实现；面板未开/无匹配 = 引擎侧自身 no-op。
+      { id: 'search.replaceNext', localizedTitle: { zh: '替换下一个', en: 'Replace Next' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => engineSearch('replaceNext') },
       // B2 编辑菜单补全（Typora 对齐：复制为 Markdown ⇧⌘C / 粘贴为纯文本 ⇧⌘V）
       { id: 'edit.copyMarkdown', localizedTitle: { zh: '复制为 Markdown', en: 'Copy as Markdown' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyMarkdown') },
       { id: 'edit.pastePlain', localizedTitle: { zh: '粘贴为纯文本', en: 'Paste as Plain Text' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('pastePlain') },
       // ⇧⌘⌫ 删除行（Typora 编辑→删除行，引擎 applyDeleteLine）
       { id: 'edit.deleteLine', localizedTitle: { zh: '删除行', en: 'Delete Line' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineFormat('deleteLine') },
+      // §4.360「六」7：Typora 编辑菜单常显行「删除」（fixture L207，无键位）= 删除所选内容。
+      // 能力 = 引擎新 ToolbarAction 'deleteSelection'；enabled 随选区（先例：cut/copy）。
+      { id: 'edit.deleteSelection', localizedTitle: { zh: '删除', en: 'Delete' }, category: 'edit', context: { scope: 'selection' }, enabled: hasSelection, execute: () => engineFormat('deleteSelection') },
       // D1-4 选择命令（Typora 编辑→选择：⌘L 行 / ⌥⌘P 段落或块）
       { id: 'edit.selectLine', localizedTitle: { zh: '选择行', en: 'Select Line' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.selectLine(); } },
       { id: 'edit.selectParagraph', localizedTitle: { zh: '选择段落或块', en: 'Select Paragraph or Block' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.selectParagraph(); } },
@@ -5991,6 +5998,8 @@ export default function App() {
       { id: 'format.editLinkUrl', localizedTitle: { zh: '编辑链接…', en: 'Edit Link…' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => void handleEditLinkUrl() },
       { id: 'format.removeLink', localizedTitle: { zh: '移除链接', en: 'Remove Link' }, category: 'format', context: { scope: 'document' }, enabled: always, execute: () => { handleRemoveLink(); } },
       // C2：编辑菜单收口（Typora 对齐：粘贴并匹配样式 / 复制为无主题 HTML / 行结束符 / 空白）
+      // §4.360「六」7：菜单显示层文案按 Typora 实机（英文原样，见 i18n menu.edit.pasteMatchStyle），
+      // **命令面板属 Mellow 自有表面** ⇒ 中文标题保持中文（面板标题漏译护栏所锁）。
       { id: 'edit.pasteMatchStyle', localizedTitle: { zh: '粘贴并匹配样式', en: 'Paste and Match Style' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('pastePlain') },
       { id: 'edit.copyWithoutTheme', localizedTitle: { zh: '复制为无主题 HTML', en: 'Copy as HTML without Theme' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyWithoutTheme') },
       { id: 'edit.eol.lf', localizedTitle: { zh: '行结束符：LF（Unix/macOS）', en: 'Line Endings: LF (Unix/macOS)' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => handleDocEol('\n') },

@@ -220,7 +220,11 @@ const zhCN = {
   'contextmenu.tableAlign': '对齐',
   'contextmenu.tableMenu': '表格',
   // C2 菜单 §7.3 收口
-  'menu.edit.pasteMatchStyle': '粘贴并匹配样式',
+  // §4.360「六」7（显示真源）：Typora zh 实机在 ⌥ 态原样显示英文 `Paste and Match Style`
+  // （基线 fixture L189；nib `Paste and Match Style` 无 zh 映射 —— typora-menu-dump.txt L1288，
+  // 同 htmlPlain「导出格式名系内部 key 非本地化字符串」母题）。Mellow 取可表达面常显装配
+  // （muda 不支持 isAlternate），文案按显示层对齐英文原样。
+  'menu.edit.pasteMatchStyle': 'Paste and Match Style',
   'menu.edit.copyWithoutTheme': '复制内容并简化格式',
   'menu.edit.eolMenu': '换行符',
   // V7-W6（G7-EDIT-15）：Typora Edit → 空格与换行 子菜单（官方文案）
@@ -826,6 +830,9 @@ const zhCN = {
   'menu.edit.copyHtmlSource': '复制为 HTML 代码',
   'menu.edit.copyImage': '拷贝图片',
   'menu.edit.deleteLine': '删除当前行或句',
+  // §4.360「六」7：Typora 编辑菜单常显行「删除」（fixture L207，独立槽非 alternate、无键位；
+  // 一级证据 typora-menu-dump.txt L142 `Delete => 删除`）。
+  'menu.edit.deleteSelection': '删除',
   'menu.edit.selectMenu': '选择',
   'menu.edit.selectLine': '选中当前行或句',
   'menu.edit.selectParagraph': '选择段落或块',
@@ -862,6 +869,9 @@ const zhCN = {
   'menu.search.findNext': '查找下一个',
   'menu.search.findPrevious': '查找上一个',
   'menu.search.replace': '查找和替换…',
+  // §4.360「六」7：Typora 查找子菜单「替换下一个」（fixture L255 [Opt+E]；
+  // 一级证据 typora-menu-dump.txt L303 `Replace Next => 替换下一个`）。
+  'menu.search.replaceNext': '替换下一个',
   'menu.top.paragraph': '段落',
   'menu.paragraph.h1': '一级标题',
   'menu.paragraph.h2': '二级标题',
@@ -1806,6 +1816,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'menu.edit.copyHtmlSource': 'Copy as HTML Code',
   'menu.edit.copyImage': 'Copy Image',
   'menu.edit.deleteLine': 'Delete Line / Sentence',
+  'menu.edit.deleteSelection': 'Delete',
   'menu.edit.selectMenu': 'Select',
   'menu.edit.selectLine': 'Select Line / Sentence',
   'menu.edit.selectParagraph': 'Select Paragraph or Block',
@@ -1841,6 +1852,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'menu.search.findNext': 'Find Next',
   'menu.search.findPrevious': 'Find Previous',
   'menu.search.replace': 'Find and Replace…',
+  'menu.search.replaceNext': 'Replace Next',
   'menu.top.paragraph': 'Paragraph',
   'menu.paragraph.h1': 'Heading 1',
   'menu.paragraph.h2': 'Heading 2',

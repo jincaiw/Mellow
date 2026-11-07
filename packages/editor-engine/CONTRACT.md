@@ -80,7 +80,7 @@
 
 ## 9. 测试入口
 
-- `test/` 下 **81** 个测试文件（本仓最大；2026-11-06 批次 A38 新增 `spellcheck-scope.test.ts`）
+- `test/` 下 **82** 个测试文件（本仓最大；2026-11-08 批次「六」7 新增 `format-delete-selection.test.ts`）
 - 护栏：`verify-adapter-contract.mjs`、`verify-clipboard-contract.mjs`、`verify-i18n-contract.mjs`、
   `verify-parity-ledger.mjs`、`verify-no-color-only-status.mjs`、`verify-shell-*.mjs`、
   `verify-settings-contract.mjs`、`verify-tauri-command-contract.mjs`、`verify-package-conventions.mjs`

@@ -1058,6 +1058,15 @@ const TYPORA_MENU_LABELS = [
   ['menu.edit.eolLf', 'Unix 换行符 (LF)', 'Unix Line Endings (LF)'],
   ['menu.edit.eolCrlf', 'Windows 换行符 (CRLF)', 'Windows Line Endings (CRLF)'],
   ['menu.edit.copyWithoutTheme', '复制内容并简化格式', 'Copy without Theme Styling'],
+  // §4.360「六」7（⌥-alternate 复探轮新增）：实机 fixture 逐行 + nib 反查。
+  // pasteMatchStyle 的 zh 列**原样英文** —— Typora nib `Paste and Match Style` 无 zh 映射
+  //（typora-menu-dump.txt L1288；实机 fixture L189 zh 显示层即英文原样，同 htmlPlain 母题）。
+  ['menu.edit.pasteMatchStyle', 'Paste and Match Style', 'Paste and Match Style'],
+  // 查找子菜单「替换下一个」：fixture L255 `[Opt+E]`；nib L303 `Replace Next => 替换下一个`。
+  ['menu.search.replaceNext', '替换下一个', 'Replace Next'],
+  // 编辑菜单常显行「删除」（非 删除范围▸ 子项）：fixture L207 独立槽位（AXPosition 探针
+  // {149,438}，非 alternate、无 accelerator）；nib L142 `Delete => 删除`。
+  ['menu.edit.deleteSelection', '删除', 'Delete'],
   ['menu.insert.table', '插入表格', 'Insert Table'],
   ['menu.insert.image', '插入图片', 'Insert Image'],
   ['menu.file.duplicate', '复制', 'Duplicate'],

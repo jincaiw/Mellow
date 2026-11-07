@@ -133,12 +133,13 @@ describe('toNativeMenuSpec 物化', () => {
     const file = spec.menus.find((m) => m.id === 'file');
     const newFile = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'file.new');
     expect(newFile).toMatchObject({ id: 'file.new', label: '#menu.file.new', accel: 'Cmd+N' });
-    // §4.360：实机 Typora mac 显示「使用上一次设置导出 [Ctrl+E]」⇒ schema 声明 mac-only Ctrl+E
-    // （Win/Linux 仍无 accelerator：Ctrl+E 与 format.selectFormatSpan 冲突的历史裁决继续生效，
-    //  见下方 win-linux 用例）
+    // §4.360：实机 Typora mac 显示「使用上一次设置导出 [Ctrl+E]」。⚠️「六」7 更正⑤轮误读：
+    // dump `[Ctrl+E]` 无 NoCmd 位 ⇒ Cmd 隐含 = ⌃⌘E；原声明 'Ctrl+E' 物化成裸 ⌃E（复 dump
+    // 实测 `[NoCmdCtrl+E]`）与基线不符 ⇒ 现声明 'Ctrl+Cmd+E'。（Win/Linux 仍无 accelerator：
+    //  Ctrl+E 与 format.selectFormatSpan 冲突的历史裁决继续生效，见下方 win-linux 用例）
     const exportRepeat = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.top.export')
       ?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'export.repeat');
-    expect(exportRepeat?.accel).toBe('Ctrl+E');
+    expect(exportRepeat?.accel).toBe('Ctrl+Cmd+E');
   });
 
   test('win-linux 平台：过滤 app 与 window（macOnly），accelerator 取 winLinux 键位', () => {
@@ -160,7 +161,9 @@ describe('toNativeMenuSpec 物化', () => {
     const fileIds = (platform: 'mac' | 'win-linux') => toNativeMenuSpec({ ...base, platform }).menus
       .find((m) => m.id === 'file')!.items
       .filter((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command').map((i) => i.id);
-    // mac Typora 1.14.9 File 菜单无「全部关闭」（archive/sdi-truth-table-v1.md 0.8）→ mac 侧过滤
+    // §4.360「六」7：mac Typora File 菜单**确有**「全部关闭」（fixture L135 [Opt+W]，
+    // AXPosition 探针 = 关闭 的隐藏 ⌥-alternate 同槽 {103,344}）；但 muda 不支持
+    // isAlternate ⇒ 无法复现「按 ⌥ 显形」形态，维持 mac 过滤（默认显示面与 Typora 一致）。
     expect(fileIds('mac')).toContain('file.closeWindow');
     expect(fileIds('mac')).not.toContain('file.closeAll');
     expect(fileIds('win-linux')).toContain('file.closeAll');
@@ -244,20 +247,26 @@ describe('toNativeMenuSpec 物化', () => {
     const themeSystem = spec.menus.find((m) => m.id === 'theme')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'theme.mode.system');
     expect(themeSystem?.checked).toBe(true);
-    // V7-W1.6：状态栏开关勾选态（Typora Win/Linux 显示菜单）
-    const statusbar = spec.menus.find((m) => m.id === 'view')!.items
+    // V7-W1.6：状态栏开关勾选态。§4.360「六」7：本项 mac **不装配**（基线 fixture 显示段
+    // L393-419 全段核对 —— dump 枚举含 ⌥-alternate 行，亦无「状态栏」；Win/Linux 实机有）
+    // ⇒ 勾选态断言改在 **win-linux** 物化面上取（schema 声明 checkedFrom 不变，护栏仍锁）。
+    const winSpec = toNativeMenuSpec({ ...base, platform: 'win-linux', themeMode: 'system', spellcheck: false, smartPunct: true, statusbar: false, toolbar: false });
+    const statusbar = winSpec.menus.find((m) => m.id === 'view')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.statusbar.toggle');
     expect(statusbar).toMatchObject({ id: 'view.statusbar.toggle', checked: false });
     // 缺省（未传 statusbar）按可见处理（Mellow 默认隐藏由 UI 状态给出，schema 侧保守取 true）
-    const specDefault = toNativeMenuSpec({ ...base, platform: 'mac' });
-    const statusbarDefault = specDefault.menus.find((m) => m.id === 'view')!.items
+    const statusbarDefault = toNativeMenuSpec({ ...base, platform: 'win-linux' }).menus.find((m) => m.id === 'view')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.statusbar.toggle');
     expect(statusbarDefault?.checked).toBe(true);
-    // V7-W2.4：浮动编辑器工具栏开关勾选态（Typora 1.14 View → Toolbar）
+    // mac 面：本项被平台过滤 ⇒ 不得出现（防「winLinuxOnly 标记丢失」无声回归 mac 菜单）
+    const statusbarMac = spec.menus.find((m) => m.id === 'view')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.statusbar.toggle');
+    expect(statusbarMac).toBeUndefined();
+    // V7-W2.4：浮动编辑器工具栏开关勾选态（Typora 1.14 View → Toolbar；mac 常驻装配）
     const toolbar = spec.menus.find((m) => m.id === 'view')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.toolbar.toggle');
     expect(toolbar).toMatchObject({ id: 'view.toolbar.toggle', checked: false });
-    const toolbarDefault = specDefault.menus.find((m) => m.id === 'view')!.items
+    const toolbarDefault = toNativeMenuSpec({ ...base, platform: 'mac' }).menus.find((m) => m.id === 'view')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.toolbar.toggle');
     expect(toolbarDefault?.checked).toBe(true);
   });
@@ -272,7 +281,9 @@ describe('toNativeMenuSpec 物化', () => {
       'view.source.toggle', 'view.focus.cycle', 'view.typewriter.cycle', 'view.toolbar.toggle', '---',
       // §4.360「六」5：双指缩放（Typora 实机 = Allow Magnification CheckMenuItem，贴缩放三档之上）
       'window.fullscreen', 'view.magnification.toggle', 'view.zoomReset', 'view.zoomIn', 'view.zoomOut', '---',
-      'view.statusbar.toggle', 'view.wordCount', 'window.alwaysOnTop', '---',
+      // §4.360「六」7：view.statusbar.toggle mac 不装配（基线 mac View 段无「状态栏」，
+      // 含 ⌥-alternate 行核对）⇒ mac 物化序列中不得出现（Win/Linux 面由 checkState 用例覆盖）
+      'view.wordCount', 'window.alwaysOnTop', '---',
       'commandPalette.open',
     ]);
   });

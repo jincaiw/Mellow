@@ -120,7 +120,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     // 最近关闭的有路径文档；关闭栈为 app 级（localStorage `mellow.closedFiles`）。
     { kind: 'command', id: 'file.reopenClosed', labelKey: 'menu.file.reopenClosed', shortcut: { mac: 'Cmd+Shift+T', winLinux: 'Ctrl+Shift+T' } },
     { kind: 'command', id: 'quickOpen.open', labelKey: 'menu.quickOpen.open', shortcut: { mac: 'Cmd+Shift+O', winLinux: 'Ctrl+P' } },
-    { kind: 'command', id: 'workspace.openFolder', labelKey: 'menu.workspace.openFolder' },
+    // §4.360「六」7：workspace.openFolder 仅 Win/Linux（Typora 1.14.9 mac File 菜单**无**
+    // 「打开文件夹」—— 一手证据 = 基线 fixture L105-130 全段逐行核对，打开… 之后直达
+    // 打开最近文件/快速打开…，无本项；mac 上打开文件夹由「打开…」选中目录承担）。
+    // 同 file.closeAll 母题。原 TYPORA_MENU_LABELS 的 en 列 `Open Folder` 来源系
+    // Win/Linux 显示层证据（audit 工具可反查），标签本身保留。
+    { kind: 'command', id: 'workspace.openFolder', labelKey: 'menu.workspace.openFolder', winLinuxOnly: true },
     { kind: 'separator' },
     { kind: 'command', id: 'file.info', labelKey: 'menu.file.info' },
     { kind: 'command', id: 'file.revealInFileList', labelKey: 'menu.file.revealInFileList' },
@@ -133,8 +138,14 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'separator' },
     // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）
     { kind: 'command', id: 'file.closeWindow', labelKey: 'menu.file.closeWindow', shortcut: { mac: 'Cmd+W', winLinux: 'Ctrl+W' } },
-    // B1（SDI）：file.closeAll 仅 Win/Linux 保留（macOS Typora 1.14.9 File 菜单无「全部关闭」，
-    // 资源中无 Close All 文案/动作 —— archive/sdi-truth-table-v1.md 0.8 行）
+    // §4.360「六」7 更正 + 维持 Win/Linux 门控：原 B1 注释称「mac File 菜单无「全部关闭」」——
+    // **说法错了**：AXPosition + CmdChar/CmdModifiers 复探证明它是「关闭」的**隐藏 ⌥-alternate**
+    // （同槽 {103,344}；关闭 char=W mods=0 ⇔ ⌘W，全部关闭 char=W mods=2 ⇔ ⌥⌘W；
+    // 基线 fixture L135 `全部关闭 [Opt+W]` 一直在场 —— dump 枚举含 alternate 行）。
+    // 但 Mellow 菜单栈（muda 0.19.3 / Tauri）**不支持 isAlternate**（全源检索无此能力），
+    // 无法复现「按住 ⌥ 才显形」形态；且 SDI 下 mac Typora 的 Close All 语义=关窗口内全部
+    // 标签页（Mellow mac 无标签页，B1 裁决），可见行反而制造**语义偏离** ⇒
+    // 维持 winLinuxOnly（默认显示面与 Typora 齐）。⌥-面不可表达 = 本平台登记限制。
     { kind: 'command', id: 'file.closeAll', labelKey: 'menu.file.closeAll', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' }, winLinuxOnly: true },
     { kind: 'separator' },
     { kind: 'command', id: 'file.save', labelKey: 'menu.file.save', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' } },
@@ -167,8 +178,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'export.textile', labelKey: 'menu.export.textile' },
       { kind: 'command', id: 'export.opml', labelKey: 'menu.export.opml' },
       { kind: 'separator' },
-      // 实机 dump 对齐（§4.360）：Typora「使用上一次设置导出」mac accelerator = Ctrl+E
-      { kind: 'command', id: 'export.repeat', labelKey: 'menu.export.repeat', shortcut: { mac: 'Ctrl+E' } },
+      // 实机 dump 对齐（§4.360）。⚠️「六」7 更正⑤轮误读：Typora 显示 `[Ctrl+E]` = ⌃⌘E
+      //（修饰位约定：无 NoCmd 时 Cmd 隐含；裸 ⌃E 显示为 `[NoCmdCtrl+E]`）——
+      // 原声明 'Ctrl+E' 物化成裸 ⌃E（复 dump 实测 `[NoCmdCtrl+E]`），与基线不符。
+      { kind: 'command', id: 'export.repeat', labelKey: 'menu.export.repeat', shortcut: { mac: 'Ctrl+Cmd+E' } },
       { kind: 'command', id: 'export.overwriteLast', labelKey: 'menu.export.overwriteLast' },
       { kind: 'command', id: 'export.settings', labelKey: 'menu.export.settings' },
     ] },
@@ -193,13 +206,21 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'predefined', predefined: 'copy', labelKey: 'menu.top.copy' },
     { kind: 'command', id: 'edit.copyImage', labelKey: 'menu.edit.copyImage' },
     { kind: 'predefined', predefined: 'paste', labelKey: 'menu.top.paste' },
-    { kind: 'command', id: 'edit.pasteMatchStyle', labelKey: 'menu.edit.pasteMatchStyle', shortcut: { mac: 'Cmd+Alt+Shift+V' } },
     { kind: 'separator' },
     { kind: 'command', id: 'edit.copyPlain', labelKey: 'menu.edit.copyPlain' },
     { kind: 'command', id: 'edit.copyMarkdown', labelKey: 'menu.edit.copyMarkdown', shortcut: { mac: 'Cmd+Shift+C', winLinux: 'Ctrl+Shift+C' } },
     { kind: 'command', id: 'edit.copyHtmlSource', labelKey: 'menu.edit.copyHtmlSource' },
     { kind: 'command', id: 'edit.copyWithoutTheme', labelKey: 'menu.edit.copyWithoutTheme' },
+    { kind: 'separator' },
+    // §4.360「六」7（⌥-alternate 复探结论）：基线 fixture L188-189 —— 复制组之后独立成组：
+    // `粘贴为纯文本 [Shift+V]`（=⇧⌘V 常驻行，char=V mods=1）之后跟
+    // `Paste and Match Style [OptShift+V]`（char=V mods=3=⌥⇧⌘V，与前者**同槽** {149,309}
+    // ⇒ 它是隐藏 ⌥-alternate，且 zh 未本地化、原样显示英文）。Mellow 菜单栈
+    // （muda 0.19.3）不支持 isAlternate ⇒「按 ⌥ 显形」形态**不可表达**；取可表达面对齐：
+    // 两项均常显、顺序与分组按基线（原 deviate：pasteMatchStyle 贴在 粘贴 之后、无分隔）。
+    // 能力真实（pasteMatchStyle 执行 = engineClipboard('pastePlain') 同源语义）。
     { kind: 'command', id: 'edit.pastePlain', labelKey: 'menu.edit.pastePlain', shortcut: { mac: 'Cmd+Shift+V', winLinux: 'Ctrl+Shift+V' } },
+    { kind: 'command', id: 'edit.pasteMatchStyle', labelKey: 'menu.edit.pasteMatchStyle', shortcut: { mac: 'Cmd+Alt+Shift+V' } },
     { kind: 'separator' },
     { kind: 'submenu', id: 'edit.select', labelKey: 'menu.edit.selectMenu', entries: [
       { kind: 'predefined', predefined: 'selectAll', labelKey: 'menu.top.selectAll' },
@@ -213,10 +234,21 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'edit.gotoDocEnd', labelKey: 'menu.edit.gotoDocEnd', shortcut: { mac: 'Cmd+ArrowDown', winLinux: 'Ctrl+End' } },
       { kind: 'separator' },
       { kind: 'command', id: 'edit.gotoLineStart', labelKey: 'menu.edit.gotoLineStart', shortcut: { mac: 'Ctrl+A', winLinux: 'Home' } },
-      { kind: 'command', id: 'edit.gotoLineEnd', labelKey: 'menu.edit.gotoLineEnd', shortcut: { mac: 'Cmd+ArrowRight', winLinux: 'End' } },
+      // §4.360「六」7：基线 fixture L203 `跳转到行尾 [NoCmdCtrl+E]` = 裸 ⌃E（bit3=NoCmd 约定，
+      // 与 跳转到行首 [NoCmdCtrl+A]=裸⌃A 同族；CM6 原生 charForward）。原声明 'Cmd+ArrowRight'
+      // 物化为 ⌘→（⑤轮复 dump 已实测差异），现改正显示真值。winLinux 维持官方表 End。
+      { kind: 'command', id: 'edit.gotoLineEnd', labelKey: 'menu.edit.gotoLineEnd', shortcut: { mac: 'Ctrl+E', winLinux: 'End' } },
     ] },
     { kind: 'command', id: 'edit.moveLineUp', labelKey: 'menu.edit.moveLineUp', shortcut: { mac: 'Alt+ArrowUp', winLinux: 'Alt+ArrowUp' } },
     { kind: 'command', id: 'edit.moveLineDown', labelKey: 'menu.edit.moveLineDown', shortcut: { mac: 'Alt+ArrowDown', winLinux: 'Alt+ArrowDown' } },
+    { kind: 'separator' },
+    // §4.360「六」7：基线 fixture L205-209 —— 下移该行 后有 separator，随后独立常显行
+    // `删除`（实机 AXPosition 探针：独立槽 {149,438}，非 alternate；无 accelerator），
+    // 再跟 删除范围▸。
+    // 语义 = nib `Delete => 删除`（标准删除所选内容，nib 另有 `Delete Selected => 删除所选范围`
+    // 系右键菜单标签）。Mellow 能力 = 引擎新增 ToolbarAction 'deleteSelection'（有选区删除选区，
+    // 空选区 no-op —— 不做成第二个删除键以免与 §13 唯一性护栏/删除行语义纠缠）。
+    { kind: 'command', id: 'edit.deleteSelection', labelKey: 'menu.edit.deleteSelection' },
     { kind: 'submenu', id: 'edit.deleteRange', labelKey: 'menu.edit.deleteRangeMenu', entries: [
       { kind: 'command', id: 'edit.deleteParagraph', labelKey: 'menu.edit.deleteParagraph', shortcut: { mac: 'Cmd+Alt+Shift+P', winLinux: 'Ctrl+Alt+Shift+P' } },
       { kind: 'command', id: 'edit.deleteLine', labelKey: 'menu.edit.deleteLine', shortcut: { mac: 'Shift+Cmd+Backspace', winLinux: 'Ctrl+Shift+Backspace' } },
@@ -285,6 +317,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       // 取舍：全屏保留官方键（有据）；replace 改为 `Cmd+Alt+H` —— 取官方 `Cmd+H`
       // 的同一字母、加 Alt 规避 macOS 系统「隐藏应用」（与 D-Q 的既有思路一致）。
       { kind: 'command', id: 'search.replace', labelKey: 'menu.search.replace', shortcut: { mac: 'Cmd+Alt+H', winLinux: 'Ctrl+H' } },
+      // §4.360「六」7：基线 fixture L255 `替换下一个 [Opt+E]` = ⌘⌥E（NoCmd 缺省 ⇒ Cmd 隐含，
+      // 与 L254 查找和替换… [Opt+F] 同族）。能力桥 = 引擎 MellowSearchApi.replaceNext()
+      // （面板「替换」按钮同一实现）。winLinux 不声明（官方表 Win/Linux 键位未含本项）。
+      { kind: 'command', id: 'search.replaceNext', labelKey: 'menu.search.replaceNext', shortcut: { mac: 'Cmd+Alt+E' } },
     ] },
   ] },
 
@@ -505,7 +541,14 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'view.zoomOut', labelKey: 'menu.view.zoomOut', shortcut: { mac: 'Cmd+Shift+-', winLinux: 'Ctrl+Shift+-' } },
     { kind: 'separator' },
     // 状态与窗口（Typora Win/Linux 可从 View 菜单开启状态栏）
-    { kind: 'command', id: 'view.statusbar.toggle', labelKey: 'menu.view.statusbarToggle', checkedFrom: 'statusbar' },
+    // §4.360「六」7：view.statusbar.toggle 仅 Win/Linux。基线 fixture 显示菜单全段
+    //（L393-419，含 ⌥-alternate 行 —— dump 枚举已证明含 hidden alternate）无任何状态的
+    // 「状态栏」项：mac Typora 把状态栏开关放在**窗口/偏好面**而非 View 菜单；
+    // Win/Linux 实机 dump（audit §4.360 一节）确认 View 含本项 ⇒ 平台条件化。
+    // mac 侧状态栏可见性仍由设置面板「编辑器 → 状态栏」承载（同 D-AC「单一入口」母题）。
+    // ⚠️ checkedFrom 契约与 VIEW_GROUP_EXCEPTIONS 解析的是**原始 schema**（不经平台过滤）
+    // ⇒ 本项保留声明即继续受护栏约束，勾选态单一真源不变。
+    { kind: 'command', id: 'view.statusbar.toggle', labelKey: 'menu.view.statusbarToggle', checkedFrom: 'statusbar', winLinuxOnly: true },
     { kind: 'command', id: 'view.wordCount', labelKey: 'menu.view.wordCount' },
     { kind: 'command', id: 'window.alwaysOnTop', labelKey: 'menu.view.alwaysOnTop' },
     { kind: 'separator' },

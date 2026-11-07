@@ -57,6 +57,9 @@ export interface MellowSearchApi {
   openReplace(): void;
   findNext(): void;
   findPrevious(): void;
+  /** §4.360「六」7：Typora 查找子菜单 `替换下一个`（⌥⌘E）的宿主桥；
+   *  复用面板替换按钮同一实现（searchMod.replaceNext），面板未开/无活动视图 = no-op。 */
+  replaceNext(): void;
 }
 
 // 单编辑器 iframe：模块级视图引用（ViewPlugin 维护）
@@ -446,6 +449,13 @@ export function installSearchApi(): void {
       if (activeView === null) return;
       const searchMod = requireSearchMod();
       searchMod.findPrevious(activeView);
+    },
+    // §4.360「六」7：与面板「替换」按钮同一实现（searchMod.replaceNext 无匹配/无
+    // selection 时自身 no-op），与 findNext 的桥形态一致。
+    replaceNext: () => {
+      if (activeView === null) return;
+      const searchMod = requireSearchMod();
+      searchMod.replaceNext(activeView);
     },
   };
   (window as unknown as { __MELLOW_SEARCH_API__?: MellowSearchApi }).__MELLOW_SEARCH_API__ = api;
