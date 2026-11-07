@@ -23147,6 +23147,59 @@ App.tsx execute 是同一条链），因此该层判据与 GUI 点击等价且�
 33 槽位全绿）、`verify-menu-contract-guard` 33 注入全拒、`@mellow/commands` 23 例绿、
 `pnpm test` 全链 EXIT=0。
 
+**5）显示（View）菜单差集全量分流 + 双指缩放装配（2026-11-07 续轮）**
+
+「4」把格式菜单残余销完后，显示菜单的差集按**显示层唯一一手证据**（基线 fixture
+L393-419）逐项分流，结论：**除「双指缩放」外全部命中在册裁决，无一需要新裁决**：
+
+| Typora 显示菜单条目 | 分流 | 依据 |
+|---|---|---|
+| `显示标签页栏` / `显示所有标签页 [Shift+\]` | 不装配（SDI 裁决面） | **B1**（Mellow 走 SDI 多窗口，tab 面整体在册） |
+| `只读模式` | 待实施 | **D-AC**（Reader 裁决在册，非本轮） |
+| `字数统计窗口` / `大纲窗口` | 等价物覆盖，不装独立浮窗占位 | 本节「四」4（状态栏字数 + `view.wordCount` 模态 / 侧栏大纲） |
+| `全屏 [NoCmd+F]` | 保留 `Cmd+Opt+F` 官方表声明 | 官方表 vs 实机显示 = **D-AX 同一裁决面**（§11 键位表锁定，含 canary）；Mellow 末段另有 OS 自动项「进入全屏幕」 |
+| **`双指缩放`（CheckMenuItem）** | **真缺口 ⇒ 本轮装配** | 见下 |
+| 其余（源代码模式/专注/打字机/工具栏/侧栏五项/缩放三档/保持窗口在最前端/状态栏） | 已装配 | 「三」「4」轮 dump 逐行在场 |
+
+**装配内容**（能力面 §4.28 七环早已齐：设置项 `editor.allowMagnification` +
+`enablePinchZoom` disposer + bridge + `setEditorConfig` 白名单 + live-apply + 启动恢复，
+**唯菜单入口与勾选态环缺位**）：
+
+1. `menuSchema.ts`：`view.magnification.toggle`（labelKey `menu.view.magnification`，
+   `checkedFrom: 'magnification'`），**位置贴 Typora** —— 全屏之后、缩放三档之前。
+2. 勾选态单源环：`NativeMenuSpecInput.magnification` → `resolveChecked` 显式分支
+   （禁止静默 `return false` 兜底 = CHECK_STATE_CONTRACT 不变量，入册第 **7** 个
+   toggle 项）→ Rust `build_item` CheckMenuItem。
+3. 命令环（App.tsx registry）：读 `editor.allowMagnification` 取反 → `writeSetting`
+   → `hostRef.setEditorConfig('setAllowMagnification')` → **`setMenuCheckTick` 递增**
+   （菜单回显）→ 状态栏文案 `msg.magnificationOn/Off`。
+4. **双入口 tick 纪律**（LS_CHECKED_SETTINGS 母题，同 §4.28 缺陷修复先例）：设置面板
+   `applySetting` 分支同样补 `setMenuCheckTick` —— 否则面板改值、菜单勾选不刷新。
+5. i18n：`menu.view.magnification` zh `双指缩放` / en `Allow Magnification`
+   （nib 原文经 strings 提取复核）+ `msg.magnificationOn/Off` zh/en；
+   `verify-menu-contract` TYPORA_MENU_LABELS 增一行（**71** 条显示层文案）。
+6. 护栏配套：`verify-settings-contract` 的 magnification 接线正则放宽
+   `[\s\S]{0,6}` 容许命令体内 block 形态（原正则只认单表达式，非语义变化）。
+
+**e2e 功能轮**（`tests/e2e/magnification-menu-4360-verify.mjs`，8/8 绿，port 1468）：
+注册 / 首轮 dispatch → localStorage `'1'`（writeSetting 布尔序列化面）+ 状态栏
+「双指缩放已开启」/ 再点 → `'0'` + 「双指缩放已关闭」。调试过程的**探针时序教训**：
+首轮 ON 文案曾「0ms 出现、120ms 被『编辑器就绪』覆盖」—— 追采样面定位后确认是
+**启动恢复段（文档恢复/编辑器就绪）持续重写状态栏 ~1-2s**，属 harness 时序非产品
+缺陷（判据遵守 feature-liveness 纪律：先查『断言写错还是功能真死』，未改断言迁就）
+⇒ 探针加「状态栏 ===『编辑器就绪』」稳定门。`verify-build-pipeline` SCRIPT_BASELINE
+103 → **104**（显式加脚本，按该节纪律同步）。disposer 生效面（监听器撤下/zoom 复位）
+由 §4.28 的 `allow-magnification.test.ts` 4 例 + 护栏 8/8 mutation 承载，不在 e2e 重复。
+
+**原生复 dump 复核**（dev 实例再起：`build-editor-bundle` + vite 1420 +
+`target/debug/mellow-desktop`；只读轮 —— 窗口标题仍为用户文件 ⇒ 零点击零键入，
+MD5 前后复验 `b4851464…`/5350B ✓）：显示菜单出现 `双指缩放`，位置与 Typora 同段
+（全屏之后、实际大小之前）✓。⚠️ **勾选态显示差一次**：Typora 实机显示 `(✓)`、
+Mellow 现显示未勾 —— 追查 Typora 侧证据：其 `general.config` **无** `allowMagnification`
+键（仅 `zoomFactor` 存于 NSGlobalDomain），且该实例已连续运行 12 天 ⇒ 实机 `(✓)`
+是**会话态**而非出厂默认的一手证据，§4.28「默认取 false（保守）」的登记理由
+**不被推翻**；若后续取得一手默认证据（官方文档/干净安装），按裁决流程另行处理。
+
 
 
 ## 五、本次审计做的改动（非策略性）

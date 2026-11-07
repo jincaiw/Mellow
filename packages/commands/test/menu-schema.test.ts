@@ -270,7 +270,8 @@ describe('toNativeMenuSpec 物化', () => {
       'view.sidebar.toggle', '---',
       'view.sidebar.outline', 'view.sidebar.fileList', 'view.sidebar.fileTree', 'search.global', '---',
       'view.source.toggle', 'view.focus.cycle', 'view.typewriter.cycle', 'view.toolbar.toggle', '---',
-      'window.fullscreen', 'view.zoomReset', 'view.zoomIn', 'view.zoomOut', '---',
+      // §4.360「六」5：双指缩放（Typora 实机 = Allow Magnification CheckMenuItem，贴缩放三档之上）
+      'window.fullscreen', 'view.magnification.toggle', 'view.zoomReset', 'view.zoomIn', 'view.zoomOut', '---',
       'view.statusbar.toggle', 'view.wordCount', 'window.alwaysOnTop', '---',
       'commandPalette.open',
     ]);

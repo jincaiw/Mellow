@@ -912,6 +912,8 @@ const zhCN = {
   'menu.view.focus.cycle': '专注模式',
   'menu.view.typewriter.cycle': '打字机模式',
   'menu.view.toolbar.toggle': '工具栏',
+  // §4.360「六」5：Typora 实机显示菜单「双指缩放」（nib `Allow Magnification`）
+  'menu.view.magnification': '双指缩放',
   'menu.view.sidebarToggle': '显示／隐藏侧边栏',
   'menu.view.sidebarOutline': '大纲',
   // V7-W1.5：Typora 显示菜单「Articles」（⌃⌘2）。真机 Menu.strings 真值 =「文档列表」
@@ -984,6 +986,9 @@ const zhCN = {
   'msg.imageNoTarget': '请先将光标移到图片上',
   'msg.imageScaleUnresolved': '无法确定图片原始尺寸（图片尚未加载完成）',
   'msg.imageReloaded': '已重新加载所有图片',
+  // §4.360「六」5：双指缩放菜单入口的状态反馈（与 首行缩进 同款）
+  'msg.magnificationOn': '双指缩放已开启',
+  'msg.magnificationOff': '双指缩放已关闭',
   'dialog.imageRenameMoveMessage': '选择操作：重命名图片文件，或将其移动到其它目录（引用会同步更新）。',
   'menu.top.theme': '主题',
   'menu.theme.mellow-light': 'Mellow Light',
@@ -1881,6 +1886,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'menu.view.focus.cycle': 'Focus Mode',
   'menu.view.typewriter.cycle': 'Typewriter Mode',
   'menu.view.toolbar.toggle': 'Toolbar',
+  // §4.360 六.5：Typora nib value = "Allow Magnification"
+  'menu.view.magnification': 'Allow Magnification',
   'menu.view.sidebarToggle': 'Toggle Sidebar',
   'menu.view.sidebarOutline': 'Outline',
   // V7-W1.5：Typora View → Articles（⌃⌘2）
@@ -1947,6 +1954,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'msg.imageNoTarget': 'Place the caret on an image first',
   'msg.imageScaleUnresolved': 'Cannot determine the image natural size (image not loaded yet)',
   'msg.imageReloaded': 'Reloaded all images',
+  // §4.360 六.5：pinch-zoom menu entry status feedback
+  'msg.magnificationOn': 'Pinch to zoom on',
+  'msg.magnificationOff': 'Pinch to zoom off',
   'dialog.imageRenameMoveMessage': 'Choose an action: rename the image file, or move it to another folder (references update accordingly).',
   'menu.top.theme': 'Themes',
   'menu.theme.mellow-light': 'Mellow Light',

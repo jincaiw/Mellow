@@ -367,6 +367,8 @@ if (/#\[cfg\(target_os/.test(menuRsSource)) {
     ['editor.spellcheck', "case 'settings.spellcheck':", 'edit.spellcheck.toggle', 'case'],
     ['editor.smartPunctuation', "case 'settings.smartPunctuation':", 'edit.smartPunctuation.toggle', 'case'],
     ['editor.firstLineIndent', "def.id === 'editor.firstLineIndent'", 'edit.firstLineIndent.toggle', 'line'],
+    // §4.360「六」5：双指缩放（菜单入口 + 面板入口都必须自增 tick，同母题）
+    ['editor.allowMagnification', "def.id === 'editor.allowMagnification'", 'view.magnification.toggle', 'line'],
   ];
   const applyStart = appSource.indexOf('const applySetting = useCallback');
   const applyEnd = applyStart < 0 ? -1 : appSource.indexOf('\n  }, [', applyStart);
@@ -641,6 +643,8 @@ const CHECK_STATE_CONTRACT = [
   { id: 'view.toolbar.toggle', checkedFrom: 'toolbar' },
   // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行 → 首行缩进`
   { id: 'edit.firstLineIndent.toggle', checkedFrom: 'firstLineIndent' },
+  // §4.360「六」5：Typora 显示菜单 `Allow Magnification`（双指缩放）
+  { id: 'view.magnification.toggle', checkedFrom: 'magnification' },
 ];
 const VIEW_GROUP_EXCEPTIONS = new Set([
   'view.source.toggle', 'view.focus.cycle', 'view.typewriter.cycle',
@@ -686,6 +690,24 @@ if (firstLineCmd === '') {
   }
   if (!/setMenuCheckTick/.test(firstLineCmd)) {
     fail('edit.firstLineIndent.toggle 缺少 setMenuCheckTick（勾选态不会重建原生菜单）');
+  }
+}
+// §4.360「六」5：双指缩放勾选态单一真源（Typora 显示菜单 Allow Magnification）。
+if (!/magnification: \(\(\) => \{ const def = settingById\('editor\.allowMagnification'\); return def \? readSetting\(def\) === true : false; \}\)\(\)/.test(appSource)) {
+  fail('syncNativeMenu 必须从 Settings Store 读取 magnification 勾选态（单一真源）');
+}
+const magnificationCmd = /id: 'view\.magnification\.toggle'[\s\S]{0,700}?setStatusText/.exec(appSource)?.[0] ?? '';
+if (magnificationCmd === '') {
+  fail('App.tsx 缺少 view.magnification.toggle 命令');
+} else {
+  if (!/writeSetting\(def, next\)/.test(magnificationCmd)) {
+    fail('view.magnification.toggle 必须写回 Settings Store（否则菜单勾上了、设置里没变）');
+  }
+  if (!/setEditorConfig\('setAllowMagnification', \{ enabled: next \}\)/.test(magnificationCmd)) {
+    fail('view.magnification.toggle 必须即时下发到编辑器（审计 §4.28 disposer 双向生效）');
+  }
+  if (!/setMenuCheckTick/.test(magnificationCmd)) {
+    fail('view.magnification.toggle 缺少 setMenuCheckTick（勾选态不会重建原生菜单）');
   }
 }
 // ⚠️ 通用不变量：menuSchema 里出现的每个 `checkedFrom` 都必须在 resolveChecked 有**显式分支**。
@@ -1060,6 +1082,9 @@ const TYPORA_MENU_LABELS = [
   ['menu.image.reloadAll', '重新加载所有图片', 'Reload All Images'],
   ['menu.image.setRootPath', '设置图片根目录', 'Use Image Root Path'],
   ['menu.image.globalSettings', '全局图像设置…', 'Global Image Settings…'],
+  // §4.360「六」5：双指缩放（显示菜单）—— nib 标题 `Allow Magnification`（strings 一手
+  // 证据）；zh 值与实机 dump 一致（同 master-plan §15.3 行 10 的取证）。
+  ['menu.view.magnification', '双指缩放', 'Allow Magnification'],
 ];
 function checkTyporaMenuLabels(zhMap, enMap) {
   const bad = [];

@@ -5298,7 +5298,9 @@ export default function App() {
         else if (def.id === 'editor.codeIndentSize') host?.setEditorConfig('setCodeIndentSize', { indentWidth: Number(value) });
         else if (def.id === 'editor.firstLineIndent') { host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) }); setMenuCheckTick((n) => n + 1); }
         // 2026-09-30：Typora「双指缩放」—— 开关两个方向都生效（CoreEditor 侧持 disposer）
-        else if (def.id === 'editor.allowMagnification') host?.setEditorConfig('setAllowMagnification', { enabled: Boolean(value) });
+        // §4.360「六」5：设置面板入口也自增 tick ⇒ 菜单 CheckMenuItem 与设置单一真源
+        //（审计 §4.28 曾修过同款缺陷：菜单入口自增、面板入口漏自增）
+        else if (def.id === 'editor.allowMagnification') { host?.setEditorConfig('setAllowMagnification', { enabled: Boolean(value) }); setMenuCheckTick((n) => n + 1); }
         break;
       }
       case 'view.typewriter.on':
@@ -5715,6 +5717,18 @@ export default function App() {
       { id: 'view.zoomReset', localizedTitle: { zh: '实际大小', en: 'Actual Size' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(0) },
       { id: 'view.zoomIn', localizedTitle: { zh: '放大', en: 'Zoom In' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(1) },
       { id: 'view.zoomOut', localizedTitle: { zh: '缩小', en: 'Zoom Out' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => adjustFontSize(-1) },
+      // §4.360「六」5：双指缩放菜单入口（Typora 实机显示菜单 CheckMenuItem）。能力七环
+      // 早已齐（审计 §4.28），本条只补菜单面；勾选态经 checkedFrom:'magnification' →
+      // spec.magnification 输入（见 syncNativeMenu effect）单一真源。
+      { id: 'view.magnification.toggle', localizedTitle: { zh: '双指缩放', en: 'Allow Magnification' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.allowMagnification');
+        if (!def) return;
+        const next = readSetting(def) !== true;
+        writeSetting(def, next);
+        hostRef.current?.setEditorConfig('setAllowMagnification', { enabled: next });
+        setMenuCheckTick((v) => v + 1);
+        setStatusText(t(next ? 'msg.magnificationOn' : 'msg.magnificationOff'));
+      } },
       { id: 'view.typewriter.on', localizedTitle: { zh: 'Typewriter Mode：开启', en: 'Typewriter Mode: On' }, category: 'view', context: { scope: 'document' }, enabled: () => !typewriterEnabled, execute: () => setTypewriterMode(true) },
       { id: 'view.typewriter.off', localizedTitle: { zh: 'Typewriter Mode：关闭', en: 'Typewriter Mode: Off' }, category: 'view', context: { scope: 'document' }, enabled: () => typewriterEnabled, execute: () => setTypewriterMode(false) },
       { id: 'view.toolbar.toggle', localizedTitle: { zh: '工具栏', en: 'Toolbar' }, category: 'view', context: { scope: 'global' }, enabled: always, execute: () => toggleSelectionToolbar() },
@@ -6325,6 +6339,8 @@ export default function App() {
       toolbar: selectionToolbarEnabled,
       // V7-W6（G7-EDIT-15）：Typora Edit → 空格与换行 → 首行缩进 勾选态
       firstLineIndent: (() => { const def = settingById('editor.firstLineIndent'); return def ? readSetting(def) === true : false; })(),
+      // §4.360「六」5：双指缩放勾选态（Typora 显示菜单 Allow Magnification，单一真源）
+      magnification: (() => { const def = settingById('editor.allowMagnification'); return def ? readSetting(def) === true : false; })(),
       // 用户主题（appData/themes/*.css）：随加载/重扫变化重建主题菜单派生
       userThemes: userThemeList.map((theme) => ({ id: theme.id, name: theme.name })),
       // P2-2.6：自定义键位随 override 变化重建原生菜单（accelerator 物化）

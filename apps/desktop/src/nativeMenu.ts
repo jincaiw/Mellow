@@ -33,6 +33,9 @@ export interface NativeMenuInputs {
   toolbar: boolean;
   /** V7-W6（G7-EDIT-15）：首行缩进（Typora Edit → 空格与换行 → 首行缩进 CheckMenuItem 选中态）。 */
   firstLineIndent: boolean;
+  /** §4.360「六」5：双指缩放（Typora 显示菜单 Allow Magnification CheckMenuItem 选中态，
+   *  单一真源 = 设置 `editor.allowMagnification`）。 */
+  magnification: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制 → localStorage → 装配边界生效）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
 }
@@ -58,6 +61,7 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
     statusbar: inputs.statusbar,
     toolbar: inputs.toolbar,
     firstLineIndent: inputs.firstLineIndent,
+    magnification: inputs.magnification,
     shortcutOverrides: inputs.shortcutOverrides,
   });
 }

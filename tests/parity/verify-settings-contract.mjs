@@ -1686,7 +1686,8 @@ if (cssLayerAnchor === undefined) {
   if (!/'setAllowMagnification'/.test(read('packages/editor-core/src/core.ts'))) {
     fail("editor-core 的 setEditorConfig 白名单缺少 'setAllowMagnification'（漏加 → 调用被静默丢弃）");
   }
-  if (!/def\.id === 'editor\.allowMagnification'\) host\?\.setEditorConfig\('setAllowMagnification'/.test(appSource)) {
+  if (!/def\.id === 'editor\.allowMagnification'\)[\s\S]{0,6}host\?\.setEditorConfig\('setAllowMagnification'/.test(appSource)) {
+    // §4.360「六」5：允许块状分支（该行现在还要 setMenuCheckTick），接线本身仍是判据。
     fail('App.tsx 的 applySetting 缺少 editor.allowMagnification → setAllowMagnification 接线');
   }
   if (!/allowMagDef && readSetting\(allowMagDef\) === true[\s\S]{0,120}?setAllowMagnification', \{ enabled: true \}/.test(appSource)) {

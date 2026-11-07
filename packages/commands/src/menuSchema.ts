@@ -476,6 +476,12 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     // 全屏与缩放（Typora：Toggle Fullscreen → Actual Size → Zoom In → Zoom Out）
     // V7-W1.9：macOS 全屏对齐官方表 Cmd+Option+F（原 Ctrl+Cmd+F 为系统约定值）。
     { kind: 'command', id: 'window.fullscreen', labelKey: 'menu.window.fullscreen', shortcut: { mac: 'Cmd+Alt+F', winLinux: 'F11' } },
+    // §4.360「六」5：Typora 实机显示菜单「双指缩放 (✓)」= 原生 CheckMenuItem
+    // （nib `Allow Magnification` → `toggleAllowMagnification:`）。Mellow 能力七环
+    // 早已齐（审计 §4.28：设置项 + disposer + live-apply + 启动恢复），唯菜单入口缺位
+    // ⇒ 装配（勾选态与 `editor.allowMagnification` 单一真源，同 工具栏/状态栏 先例）。
+    // 位置贴 Typora：紧邻缩放三档之上。
+    { kind: 'command', id: 'view.magnification.toggle', labelKey: 'menu.view.magnification', checkedFrom: 'magnification' },
     { kind: 'command', id: 'view.zoomReset', labelKey: 'menu.view.zoomReset', shortcut: { mac: 'Cmd+Shift+0', winLinux: 'Ctrl+Shift+0' } },
     { kind: 'command', id: 'view.zoomIn', labelKey: 'menu.view.zoomIn', shortcut: { mac: 'Cmd+Shift+=', winLinux: 'Ctrl+Shift+=' } },
     { kind: 'command', id: 'view.zoomOut', labelKey: 'menu.view.zoomOut', shortcut: { mac: 'Cmd+Shift+-', winLinux: 'Ctrl+Shift+-' } },
@@ -622,6 +628,9 @@ export interface NativeMenuSpecInput {
   toolbar?: boolean;
   /** 首行缩进勾选态（V7-W6，G7-EDIT-15：Typora `Edit → 空格与换行 → 首行缩进`）。 */
   firstLineIndent?: boolean;
+  /** 双指缩放勾选态（§4.360「六」5：Typora 显示菜单 `Allow Magnification`，
+   *  单一真源 = 设置 `editor.allowMagnification`，默认 false 对齐 Typora 默认值面）。 */
+  magnification?: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制；schema 仍是默认值唯一真源，
    *  override 仅在 materialization 边界覆盖同平台字段；空串 = 已清除）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
@@ -638,6 +647,9 @@ function resolveChecked(checkedFrom: string, input: NativeMenuSpecInput): boolea
   if (checkedFrom === 'statusbar') return input.statusbar ?? true;
   if (checkedFrom === 'toolbar') return input.toolbar ?? true;
   if (checkedFrom === 'firstLineIndent') return input.firstLineIndent ?? false;
+  // §4.360「六」5：双指缩放勾选态默认 false = Typora `allowMagnification` 默认值面
+  // （审计 §4.28 保守裁决），与设置存储单一真源。
+  if (checkedFrom === 'magnification') return input.magnification ?? false;
   if (checkedFrom === 'themeModeSystem') return input.themeMode === 'system';
   if (checkedFrom.startsWith('activeTheme:')) return input.activeThemeId === checkedFrom.slice('activeTheme:'.length);
   return false;
