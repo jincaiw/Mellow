@@ -149,8 +149,15 @@ export interface EditorContextActions {
   docTransform(op: 'trimTrailing'): boolean;
   /** C1：删除光标所在块（code/math/mermaid —— Typora 右键 delete 条目） */
   deleteBlock(kind: 'math' | 'mermaid' | 'code'): boolean;
-  /** C1：图片引用的文档编辑类操作（Markdown↔HTML / 设置尺寸 / 改路径 / 删除引用） */
-  imageSpanOp(op: 'mdToHtml' | 'htmlToMd' | 'setSize' | 'replaceSrc' | 'delete', arg?: string): boolean;
+  /**
+   * C1：图片引用的文档编辑类操作（Markdown↔HTML / 设置尺寸 / 改路径 / 删除引用）
+   *
+   * §4.360 新增 `scale`（Typora「格式 → 图像 → 缩放图片」子菜单）：arg = 百分比数字串
+   * （如 `'50'`），按**原图自然尺寸 × pct/100** 写回 ` =WxH` 尺寸后缀；无自然尺寸可读
+   * （widget 未渲染/加载失败）时回退为「当前显示尺寸 × pct/100」。Typora 真值：百分比
+   * 相对的是**原图**（`Zoom Image to %@`），不是当前显示宽度。
+   */
+  imageSpanOp(op: 'mdToHtml' | 'htmlToMd' | 'setSize' | 'replaceSrc' | 'delete' | 'scale', arg?: string): boolean;
   /** G7-EDIT-08：任务状态菜单动作（Mark as Complete / Incomplete） */
   setTaskStatus(complete: boolean): boolean;
   /** G7-EDIT-08：读取光标处图片的原始 src，宿主负责安全地打开本地/远程目标 */
@@ -508,6 +515,17 @@ function widgetElementAt(view: EditorView, pos: number, selector: string): Eleme
   }
 }
 
+/**
+ * §4.360：pos 处图片 widget 的**原图自然尺寸**（`naturalWidth/Height`）。
+ * widget 未渲染 / 图未加载完成（naturalWidth === 0）→ null，由调用方决定退化路径。
+ */
+function imageNaturalSizeAt(view: EditorView, pos: number): { w: number; h: number } | null {
+  const wrapper = widgetElementAt(view, pos, '.mellow-md-image');
+  const img = wrapper?.querySelector('img.mellow-md-image-img');
+  if (!(img instanceof HTMLImageElement) || img.naturalWidth === 0 || img.naturalHeight === 0) return null;
+  return { w: img.naturalWidth, h: img.naturalHeight };
+}
+
 /** SVG 字符串 → 白底 PNG dataURL（2x 缩放，保证清晰度）；失败返回 null */
 function svgToPngDataUrl(svg: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -764,6 +782,19 @@ export function installContextMenuApi(): void {
       const hit = imageSpanFullAt(doc, pos, code);
       if (hit === null) return false;
       switch (op) {
+        case 'scale': {
+          // §4.360 Typora「缩放图片 → 25%…200%」：百分比相对**原图自然尺寸**
+          // （`Zoom Image to %@`）。自然尺寸读不到（widget 未渲染 / 图加载失败）时
+          // 退化为「当前显示尺寸 × pct」；两者都没有 → false（不静默写错误尺寸）。
+          const pct = Number(arg);
+          if (!Number.isFinite(pct) || pct <= 0) return false;
+          const base = imageNaturalSizeAt(view, pos) ?? hit.size;
+          if (base === null) return false;
+          const w = Math.max(1, Math.round((base.w * pct) / 100));
+          const h = Math.max(1, Math.round((base.h * pct) / 100));
+          view.dispatch({ changes: { from: hit.from, to: hit.to, insert: `![${hit.alt}](${hit.src} =${w}x${h})` } });
+          return true;
+        }
         case 'mdToHtml': {
           const style = hit.size !== null ? ` style="width:${hit.size.w}px;height:${hit.size.h}px;"` : '';
           view.dispatch({ changes: { from: hit.from, to: hit.to, insert: `<img src="${hit.src}" alt="${hit.alt}"${style} />` } });

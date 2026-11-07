@@ -35,6 +35,8 @@ export interface SettingsPanelProps {
   /** D-AU（ADR-0034 Q12）：仅 macOS 暴露「关最后一个窗口是否退出」（Typora 同）；
    *  Windows/Linux 语义不经 ExitRequested 通道 ⇒ 隐藏本行。 */
   platformMac: boolean;
+  /** §4.360：「导出设置…」直达入口 —— 打开面板时定位到指定分区（默认 general）。 */
+  initialSection?: SettingsSection['id'];
 }
 
 /** P2-2.6 可编辑快捷键列表：点击键位进入录制态（capture-phase keydown 捕获组合键）；
@@ -96,8 +98,12 @@ function ShortcutList({ t, shortcuts, onShortcutChange }: {
 }
 
 export default function SettingsPanel(props: SettingsPanelProps) {
-  const { t, onClose, applySetting, currentLanguage, themeSettings, shortcuts, onShortcutChange, spellcheckAvailable, spellcheckLanguage, platformMac } = props;
-  const [active, setActive] = useState<SettingsSection['id']>('general');
+  const { t, onClose, applySetting, currentLanguage, themeSettings, shortcuts, onShortcutChange, spellcheckAvailable, spellcheckLanguage, platformMac, initialSection } = props;
+  const [active, setActive] = useState<SettingsSection['id']>(initialSection ?? 'general');
+  // §4.360：面板已挂载时再次从菜单直达（导出设置… ⇒ export），同步切换分区
+  useEffect(() => {
+    if (initialSection !== undefined) setActive(initialSection);
+  }, [initialSection]);
   const [query, setQuery] = useState('');
   // 受控控件的「写存储 ⇒ 重读」重渲染 tick（详见 onChange 内注释；值本身不读，只借 setState 触发重渲染）
   const [, setUiTick] = useState(0);

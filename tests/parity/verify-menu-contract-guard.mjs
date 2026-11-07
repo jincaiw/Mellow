@@ -85,10 +85,10 @@ const CASES = [
   ['文件菜单丢失 separator', () => patch(schema(), (s) => s.replace(
     "    { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },\n    { kind: 'separator' },\n    // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）\n    { kind: 'command', id: 'file.closeWindow',",
     "    { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },\n    // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）\n    { kind: 'command', id: 'file.closeWindow',"))],
-  ['文件菜单顺序漂移（save ↔ saveAs 互换）', () => patch(schema(), (s) => {
-    const save = "    { kind: 'command', id: 'file.save', labelKey: 'menu.file.save', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' } },";
-    const saveAs = "    { kind: 'command', id: 'file.saveAs', labelKey: 'menu.file.saveAs', shortcut: { mac: 'Cmd+Shift+S', winLinux: 'Ctrl+Shift+S' } },";
-    return s.replace(`${save}\n${saveAs}`, `${saveAs}\n${save}`);
+  ['文件菜单顺序漂移（file.duplicate ↔ document.rename 互换）', () => patch(schema(), (s) => {
+    const dup = "    { kind: 'command', id: 'file.duplicate', labelKey: 'menu.file.duplicate' },";
+    const ren = "    { kind: 'command', id: 'document.rename', labelKey: 'menu.file.rename' },";
+    return s.replace(`${dup}\n${ren}`, `${ren}\n${dup}`);
   })],
   ['主题菜单 dynamic 占位被删', () => patch(schema(), (s) => s.replace(
     "    { kind: 'dynamic', dynamic: 'themes' },",
@@ -143,14 +143,15 @@ const CASES = [
     "  'menu.file.new': 'New',\n",
     ''))],
   // §12 官方文案合同：真值漂移必须被拒（含本轮新纳入合同的条目）
-  ['文案偏离官方真值（en：Open Quickly → Quick Open）', () => patch(messages(), (s) => s.replace(
-    "'menu.quickOpen.open': 'Open Quickly',",
-    "'menu.quickOpen.open': 'Quick Open',"))],
+  // §4.360：真值改为实机显示层（带省略号），注入锚点同步换行
+  ['文案偏离官方真值（en：Open Quickly… → Quick Open…）', () => patch(messages(), (s) => s.replace(
+    "'menu.quickOpen.open': 'Open Quickly…',",
+    "'menu.quickOpen.open': 'Quick Open…',"))],
   ['文案偏离官方真值（en：Save All → Save All Open Files）', () => patch(messages(), (s) => s.replace(
     "'menu.file.saveAll': 'Save All',",
     "'menu.file.saveAll': 'Save All Open Files',"))],
-  ['文案偏离官方真值（zh：移动所有图片到 → 移动全部到 asset 目录）', () => patch(messages(), (s) => s.replace(
-    "'menu.image.moveAll': '移动所有图片到',",
+  ['文案偏离官方真值（zh：移动所有图片到… → 移动全部到 asset 目录）', () => patch(messages(), (s) => s.replace(
+    "'menu.image.moveAll': '移动所有图片到…',",
     "'menu.image.moveAll': '移动全部到 asset 目录',"))],
   // ── §12b enabled 通道：空态占位必须两端贯通 ───────────────────────────
   ['最近文件空态占位被改名（recent.empty）', () => patch(schema(), (s) => s.replace(

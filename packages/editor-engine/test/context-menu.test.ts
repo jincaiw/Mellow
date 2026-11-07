@@ -252,6 +252,8 @@ interface ContextActions {
   selectRange(from: number, to: number): boolean;
   /** P0-EDITOR-005 建议列表：替换光标处的拉丁词 */
   replaceWordAtCursor(replacement: string): boolean;
+  /** §4.360：图片引用文档编辑（含缩放 scale） */
+  imageSpanOp(op: string, arg?: string): boolean;
 }
 
 describe('动作 API（__MELLOW_CONTEXT_ACTIONS__）', () => {
@@ -591,3 +593,61 @@ describe(
     });
   },
 );
+
+// ── §4.360：imageSpanOp('scale') —— Typora「格式 → 图像 → 缩放图片」子菜单 ──────────
+describe('imageSpanOp scale（缩放图片百分比）', () => {
+  function setUpWith(doc: string): { view: EditorView; actions: ContextActions } {
+    const view = new EditorView({
+      doc,
+      parent: document.body,
+      extensions: [markdown({ base: markdownLanguage }), install(true)],
+    });
+    view.focus();
+    const actions = (window as unknown as Record<string, unknown>)[ACTIONS_KEY] as ContextActions;
+    return { view, actions };
+  }
+
+  test('有尺寸后缀：jsdom 无自然尺寸 → 回退按当前显示尺寸 × pct 缩放', () => {
+    // Typora 语义：`![a](b.png =200x100)` 缩放到 50% ⇒ =100x50
+    const { view, actions } = setUpWith('![a](b.png =200x100)');
+    moveCaret(view, 5);
+    expect(actions.imageSpanOp('scale', '50')).toBe(true);
+    expect(view.state.doc.toString()).toBe('![a](b.png =100x50)');
+    view.destroy();
+  });
+
+  test('100% 复位：写回基准尺寸（无自然尺寸时的回退语义）', () => {
+    const { view, actions } = setUpWith('![x](y.png =133x77)');
+    moveCaret(view, 3);
+    expect(actions.imageSpanOp('scale', '100')).toBe(true);
+    expect(view.state.doc.toString()).toBe('![x](y.png =133x77)');
+    view.destroy();
+  });
+
+  test('无尺寸后缀且读不到自然尺寸（未渲染/加载失败）→ false 且不改文档', () => {
+    const { view, actions } = setUpWith('![a](b.png)');
+    moveCaret(view, 4);
+    expect(actions.imageSpanOp('scale', '25')).toBe(false);
+    expect(view.state.doc.toString()).toBe('![a](b.png)');
+    view.destroy();
+  });
+
+  test('arg 非法（0 / 负数 / 非数字）→ false 且不改文档', () => {
+    const { view, actions } = setUpWith('![a](b.png =200x100)');
+    moveCaret(view, 5);
+    expect(actions.imageSpanOp('scale', '0')).toBe(false);
+    expect(actions.imageSpanOp('scale', '-50')).toBe(false);
+    expect(actions.imageSpanOp('scale', 'abc')).toBe(false);
+    expect(actions.imageSpanOp('scale')).toBe(false);
+    expect(view.state.doc.toString()).toBe('![a](b.png =200x100)');
+    view.destroy();
+  });
+
+  test('光标不在图片引用内 → false', () => {
+    const { view, actions } = setUpWith('text\n![a](b.png =200x100)');
+    moveCaret(view, 2);
+    expect(actions.imageSpanOp('scale', '50')).toBe(false);
+    expect(view.state.doc.toString()).toBe('text\n![a](b.png =200x100)');
+    view.destroy();
+  });
+});

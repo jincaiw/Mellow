@@ -893,7 +893,10 @@ export default function App() {
   const [shortcutOverrides, setShortcutOverrides] = useState<ShortcutOverrideMap>(() => readShortcutOverrides());
   const shortcutOverridesRef = useRef(shortcutOverrides);
   shortcutOverridesRef.current = shortcutOverrides;
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);  // 实机 dump 对齐（§4.360）：Typora「导出设置…」「全局图像设置…」直达设置分区
+  // §4.360：直达分区扩展到 image（图像设置）；真值源仍是 settings schema 的分区 id
+  const [settingsSection, setSettingsSection] = useState<'general' | 'export' | 'image'>('general');
+
   // A38（ADR-0038 C）：当前系统拼写检查语言（NSSpellChecker.language()，**只读展示**）。
   // 打开设置面板时**重新取**：语言是系统状态，可能在会话中被用户在系统设置里换掉，
   // 启动预取一次会给出过期值。null = 未取到/不可用 ⇒ SettingsPanel 不渲染该行。
@@ -1369,6 +1372,10 @@ export default function App() {
   }, [t]);
 
   // ── RC F1：PDF 导出（PRD §72 / golden journey #19；与打印共享排版常量）──
+  // §4.360：「导出并覆盖上一次导出的文件」= 写回**本次会话最近一次导出**的确切路径
+  //（Typora 真值项；`mellow.export.last` 仅 pandoc 路径写入，本 ref 覆盖全部导出格式）。
+  const lastExportedRef = useRef<{ docPath: string; output: string; format: string } | null>(null);
+
   const handleExportPdf = useCallback(async () => {
     const tab = docStateRef.current.doc;
     if (tab === null || hostRef.current === null) return;
@@ -1400,6 +1407,7 @@ export default function App() {
         preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
       }, { fonts, resolveImage: makeLocalImageResolver(docDir, exportRootDir, true) });
       await invoke('write_binary', { path: savePath, data: Array.from(buffer) });
+      lastExportedRef.current = { docPath: tab.path ?? '', output: savePath, format: 'pdf' };
       setToast({ message: t('export.pdf.done') });
       void maybeRevealExported(savePath); // D-AT
     } catch (err) {
@@ -1481,6 +1489,7 @@ export default function App() {
       try {
         localStorage.setItem('mellow.export.last', JSON.stringify({ docPath: tab.path, format, output: savePath }));
       } catch { /* quota 满 → 忽略（仅失去 ⌃E 记忆） */ }
+      lastExportedRef.current = { docPath: tab.path, output: savePath, format };
       setToast({ message: t('export.pandoc.done', { format }) });
       void maybeRevealExported(savePath); // D-AT
     } catch (err) {
@@ -1511,9 +1520,15 @@ export default function App() {
       return;
     }
     let last: { docPath: string; format: string; output: string } | null = null;
-    try {
-      last = JSON.parse(localStorage.getItem('mellow.export.last') ?? 'null');
-    } catch { last = null; }
+    // §4.360：优先用本次会话的 lastExportedRef（覆盖 HTML/PDF/图像等全部格式），
+    // 退回 localStorage 的 pandoc 记录（跨会话记忆）。
+    if (lastExportedRef.current !== null && tab.path !== null && lastExportedRef.current.docPath === tab.path) {
+      last = { docPath: tab.path, format: lastExportedRef.current.format, output: lastExportedRef.current.output };
+    } else {
+      try {
+        last = JSON.parse(localStorage.getItem('mellow.export.last') ?? 'null');
+      } catch { last = null; }
+    }
     if (last === null || last.docPath !== tab.path) {
       setToast({ message: t('export.repeat.none') });
       return;
@@ -1525,6 +1540,7 @@ export default function App() {
         return;
       }
       await invoke('pandoc_export', { input: tab.path, output: last.output, format: last.format, pandocPath: pandocPathSetting() });
+      lastExportedRef.current = { docPath: tab.path, output: last.output, format: last.format };
       setToast({ message: t('export.repeat.done', { path: last.output }) });
       void maybeRevealExported(last.output); // D-AT
     } catch (err) {
@@ -1571,6 +1587,7 @@ export default function App() {
         resolveImage: makeLocalImageResolver(docDir, exportRootDir),
       });
       await invoke('write_text', { path: savePath, content: html });
+      lastExportedRef.current = { docPath: tab.path ?? '', output: savePath, format: mode === 'with-theme' ? 'html' : 'html' };
       setToast({ message: t('export.html.done') });
       void maybeRevealExported(savePath); // D-AT
     } catch (err) {
@@ -1697,6 +1714,7 @@ export default function App() {
         return { ctx: ctx as unknown as Canvas2DLike, toDataURL: (mime: string, quality?: number) => canvas.toDataURL(mime, quality) };
       });
       await invoke('write_binary', { path: savePath, data: Array.from(bytes) });
+      lastExportedRef.current = { docPath: tab.path ?? '', output: savePath, format: extFormat };
       setToast({ message: t('export.image.done') });
       void maybeRevealExported(savePath); // D-AT
     } catch (err) {
@@ -2565,6 +2583,60 @@ export default function App() {
       : await opener.openPath(src);
     setStatusText(result.ok ? t('msg.imageOpened') : t('msg.imageOpenFailed', { error: result.error.message }));
   }, [t]);
+
+  // ── §4.360：Typora「格式 → 图像」子菜单的宿主分发（目标 = 光标处图片）──────────
+  // Typora 对无目标项**灰显**；Mellow 菜单为静态声明（labelKey 无跨进程 enabled 回调），
+  // 故派发时判定并给出状态栏提示，不静默无反应（占位项母题 §4.22 的镜像约束：
+  // 可点击项点了必须有真实效果或明确反馈）。
+
+  /** 光标处图片 src；无目标 → 状态提示并返回 null（引擎 `getImageSrc` 只认 Markdown 引用） */
+  const cursorImageSrc = useCallback(async (): Promise<string | null> => {
+    const src = await engineContextRef.current<string | null>('getImageSrc');
+    if (src === null || src === '') {
+      setStatusText(t('msg.imageNoTarget'));
+      return null;
+    }
+    return src;
+  }, [t]);
+
+  const handleCursorImageAction = useCallback(async (action: Parameters<typeof handleImageAction>[0]['action']) => {
+    const src = await cursorImageSrc();
+    if (src === null) return;
+    void handleImageAction({ src, action });
+  }, [cursorImageSrc, handleImageAction]);
+
+  /** 缩放图片 → N%（引擎 imageSpanOp 'scale'：自然尺寸 × pct；读不到自然尺寸回退显示尺寸） */
+  const handleImageScale = useCallback(async (pct: number) => {
+    const src = await cursorImageSrc();
+    if (src === null) return;
+    const ok = await engineContextRef.current<boolean>('imageSpanOp', 'scale', String(pct));
+    // 状态反馈用 locale 中立的「50%」形态（数字 + %，双语同文），与 Typora 应用后即时可见一致
+    setStatusText(ok === true ? `${pct}%` : t('msg.imageScaleUnresolved'));
+  }, [cursorImageSrc, t]);
+
+  /** 转换图片语法（Typora Switch Image Syntax）：Markdown ↔ HTML —— 无需 src 前置判定
+   *  （htmlToMd 的目标是 `<img>`，`getImageSrc` 不覆盖它），失败即「光标不在图片上」。 */
+  const handleImageSyntaxConvert = useCallback(async (op: 'mdToHtml' | 'htmlToMd') => {
+    const ok = await engineContextRef.current<boolean>('imageSpanOp', op);
+    if (ok !== true) setStatusText(t('msg.imageNoTarget'));
+  }, [t]);
+
+  /** 重命名 / 移动图片到…（Typora 单条双分支）：应用内二选一（G7-EDIT-10 同一 askUser 状态机） */
+  const handleImageRenameMove = useCallback(async () => {
+    const src = await cursorImageSrc();
+    if (src === null) return;
+    const answer = await askUser({
+      title: t('menu.image.renameMove'),
+      message: t('dialog.imageRenameMoveMessage'),
+      buttons: [
+        { label: t('contextmenu.editorImageRename'), value: 'rename', primary: true },
+        { label: t('contextmenu.editorImageMove'), value: 'move' },
+        { label: t('dialog.cancel'), value: 'cancel' },
+      ],
+    });
+    if (answer !== 'rename' && answer !== 'move') return;
+    void handleImageAction({ src, action: answer });
+  }, [askUser, cursorImageSrc, handleImageAction, t]);
 
   /** C1：复制渲染结果为 PNG（Typora copyMathBlock→copyAsImage / 图表 copy-as-image） */
   const handleCopyRendered = useCallback((kind: 'math' | 'mermaid') => {
@@ -5094,6 +5166,20 @@ export default function App() {
   // 树/列表移动（定义在文件较早处）经此引用调用文档级实现
   moveDocumentRef.current = applyDocumentMove;
 
+  /** 实机 dump 对齐（审计 §4.360）：Typora File→复制（Duplicate）= 文档同级副本，
+   *  复用 fileTree.duplicate（同侧栏「复制」命令的实现）。未保存文档无法复制。 */
+  const handleDuplicateDocument = useCallback(async () => {
+    const svc = fileTreeServiceRef.current;
+    const path = filePathRef.current;
+    if (!svc || path === null) {
+      setStatusText(t('msg.renameNeedsSave'));
+      return;
+    }
+    const r = await svc.duplicate(path);
+    setStatusText(r.ok ? t('msg.duplicated', { value: r.value }) : t('msg.duplicateFailed', { error: r.error.message }));
+    await refreshFilesSidebar();
+  }, [t, refreshFilesSidebar]);
+
   const handleMoveDocument = useCallback(async () => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -5593,6 +5679,7 @@ export default function App() {
       { id: 'file.save', localizedTitle: { zh: '保存', en: 'Save' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSave() },
       { id: 'file.saveAs', localizedTitle: { zh: '另存为…', en: 'Save As…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleSaveAs() },
       { id: 'document.rename', localizedTitle: { zh: '重命名…', en: 'Rename…' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleRenameDocument() },
+      { id: 'file.duplicate', localizedTitle: { zh: '复制文件（副本）', en: 'Duplicate File' }, category: 'file', context: { scope: 'document' }, enabled: always, execute: () => void handleDuplicateDocument() },
       // D1-2/D1-3 文档操作（Typora 文件→移到…/删除）
       { id: 'file.moveTo', localizedTitle: { zh: '移到…', en: 'Move to…' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleMoveDocument() },
       { id: 'file.trash', localizedTitle: { zh: '删除', en: 'Delete' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => void handleTrashDocument() },
@@ -5678,8 +5765,11 @@ export default function App() {
         enabled: () => docStateRef.current.doc !== null,
         execute: () => void handleExportPandoc(format, ext),
       })),
-      // D2：使用上一次设置导出（Typora ⌃E）
-      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Previous' }, category: 'file', context: { scope: 'document' }, shortcut: { mac: 'Ctrl+E' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportRepeat() },
+      // D2：使用上一次设置导出（Typora ⌃E；键位由 SCHEMA_SHORTCUTS 注入，不得内联）
+      { id: 'export.repeat', localizedTitle: { zh: '使用上一次设置导出', en: 'Export with Previous' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportRepeat() },
+      // §4.360：Typora 导出子菜单实机尾部两项 —— 导出并覆盖上一次导出的文件 / 导出设置…
+      { id: 'export.overwriteLast', localizedTitle: { zh: '导出并覆盖上一次导出的文件', en: 'Export and Overwrite with Previous' }, category: 'file', context: { scope: 'document' }, enabled: () => docStateRef.current.doc !== null, execute: () => void handleExportRepeat() },
+      { id: 'export.settings', localizedTitle: { zh: '导出设置…', en: 'Export Setting…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { setSettingsSection('export'); setSettingsOpen(true); } },
       // D2：导入（Typora File→Import；pandoc → Markdown 新标签页）
       { id: 'file.import', localizedTitle: { zh: '导入…', en: 'Import…' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => void handleImportDocument() },
       // 导出图片 PNG/JPEG（PRD §74：width / quality / long-image protection）
@@ -5693,6 +5783,29 @@ export default function App() {
       // V7-W1.7：Typora 格式 → 图像 → 插入本地图片…（文件选择器 → 光标处插入图片语法）
       { id: 'image.insertLocal', localizedTitle: { zh: '插入本地图片…', en: 'Insert Local Images…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void insertLocalImage() },
       { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: async () => { const v = await askInput({ title: t('prompt.assetDir'), initialValue: assetDir }); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
+      // §4.360：Typora「格式 → 图像」子菜单的 Registry 侧（菜单项 id 必须在此注册，
+      // 护栏判据 2「schema 命令 id ⊆ CommandRegistry」）。缩放/转换/打开位置/复制/
+      // 重命名移动/上传 = 光标处图片；100% = 复位原图尺寸；下载远程图片不在菜单
+      //（Typora 实机菜单无此项，能力保留于上方 image.downloadRemote 面板命令）。
+      { id: 'image.openLocation', localizedTitle: { zh: '打开图片位置…', en: 'Open Image Location…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleCursorImageAction('reveal') },
+      // 缩放图片 8 档 = **逐条字面量**（护栏判据 2 用正则 `id: '…'` 收集 Registry 覆盖面，
+      // 模板字符串 id 不被识别 ⇒ map 生成会假性缺注册）。
+      { id: 'image.scale25', localizedTitle: { zh: '25%', en: '25%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(25) },
+      { id: 'image.scale33', localizedTitle: { zh: '33%', en: '33%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(33) },
+      { id: 'image.scale50', localizedTitle: { zh: '50%', en: '50%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(50) },
+      { id: 'image.scale67', localizedTitle: { zh: '67%', en: '67%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(67) },
+      { id: 'image.scale80', localizedTitle: { zh: '80%', en: '80%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(80) },
+      { id: 'image.scale100', localizedTitle: { zh: '100%', en: '100%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(100) },
+      { id: 'image.scale150', localizedTitle: { zh: '150%', en: '150%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(150) },
+      { id: 'image.scale200', localizedTitle: { zh: '200%', en: '200%' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageScale(200) },
+      { id: 'image.mdStyle', localizedTitle: { zh: 'Markdown 格式', en: 'Markdown Style' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageSyntaxConvert('mdToHtml') },
+      { id: 'image.htmlStyle', localizedTitle: { zh: 'HTML 格式', en: 'HTML Style' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageSyntaxConvert('htmlToMd') },
+      { id: 'image.deleteFile', localizedTitle: { zh: '删除图片文件', en: 'Delete Image File' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleCursorImageAction('delete') },
+      { id: 'image.copyOne', localizedTitle: { zh: '复制图片到…', en: 'Copy Image to…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleCursorImageAction('copy') },
+      { id: 'image.renameMove', localizedTitle: { zh: '重命名 / 移动图片到…', en: 'Rename or Move Image to…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleImageRenameMove() },
+      { id: 'image.uploadOne', localizedTitle: { zh: '上传图片', en: 'Upload Image' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void handleCursorImageAction('upload') },
+      { id: 'image.reloadAll', localizedTitle: { zh: '重新加载所有图片', en: 'Reload All Images' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => { hostRef.current?.refreshImages(); hostRef.current?.focus(); setStatusText(t('msg.imageReloaded')); } },
+      { id: 'image.globalSettings', localizedTitle: { zh: '全局图像设置…', en: 'Global Image Settings…' }, category: 'image', context: { scope: 'global' }, enabled: always, execute: () => { setSettingsSection('image'); setSettingsOpen(true); } },
       // 桌面 UI 对标（审计 §4.359）：窗口菜单的 最小化/缩放/前置全部 改为 OS predefined
       // （标准 selector ⇒ AppKit 注入「全部最小化/全部缩放/平铺/窗口列表」，Typora 47 项
       // 的来源）。mac ⌘M 由原生 accelerator 提供；Win/Linux 菜单 macOnly ⇒ Ctrl+M 键盘
@@ -5706,7 +5819,7 @@ export default function App() {
       { id: 'window.close', localizedTitle: { zh: '关闭窗口', en: 'Close Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.close(); } },
       { id: 'file.revealInFinder', localizedTitle: { zh: '在 Finder 中显示', en: 'Reveal in Finder' }, category: 'file', context: { scope: 'document' }, enabled: () => filePathRef.current !== null, execute: () => { if (filePathRef.current !== null) void handleTreeReveal(filePathRef.current); } },
       { id: 'commandPalette.open', localizedTitle: { zh: '命令面板', en: 'Command Palette' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { commandPaletteModelRef.current.selectedIndex = 0; setCommandPaletteSelected(0); setCommandPaletteVisible(true); } },
-      { id: 'settings.open', localizedTitle: { zh: '设置…', en: 'Settings…' }, category: 'system', shortcut: { mac: 'Cmd+,', winLinux: 'Ctrl+,' }, context: { scope: 'global' }, enabled: always, execute: () => setSettingsOpen(true) },
+      { id: 'settings.open', localizedTitle: { zh: '设置…', en: 'Settings…' }, category: 'system', shortcut: { mac: 'Cmd+,', winLinux: 'Ctrl+,' }, context: { scope: 'global' }, enabled: always, execute: () => { setSettingsSection('general'); setSettingsOpen(true); } },
       // 2026-09-30：Typora 偏好面板「重置高级设置」的对标（§15.3 行 14a ③）。
       // 破坏性 → 内部走 askUser 确认；不含快捷键自定义（文案已说明）。
       { id: 'settings.restoreDefaults', localizedTitle: { zh: '恢复默认设置', en: 'Restore Default Settings' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void handleRestoreSettingsDefaults(); } },
@@ -7007,6 +7120,7 @@ export default function App() {
       )}
       {settingsOpen && (
         <SettingsPanel
+          initialSection={settingsSection}
           t={t}
           onClose={() => setSettingsOpen(false)}
           applySetting={applySetting}

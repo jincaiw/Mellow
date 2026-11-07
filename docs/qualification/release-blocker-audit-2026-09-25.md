@@ -22956,6 +22956,188 @@ D-F Indent 键位等）—— **两个结构性缺口无处登记**：
 `packages/i18n/src/messages.ts`（`menu.window.bringAllToFront` zh/en）· `apps/desktop/src/App.tsx` ·
 `packages/commands/test/menu-schema.test.ts` · 本节 + master-plan 追加。
 
+## 4.360 菜单显示层真源三层模型 + 全量文案重基线 + File/导出/数学/任务/图像子菜单结构补齐（2026-11-07）
+
+### 一、母题：护栏核对的是**错误的真值层**
+
+§4.359 的实机 dump 对照暴露了一类系统性的文案缺陷：Mellow 菜单与 Typora **实机显示**
+不一致（省略号缺失/多余、用词不同）。追溯发现根因不在个别条目，而在**核对基准本身**：
+
+- `verify-menu-contract.mjs` §12 内嵌的「Typora 官方真值」长期取自 **`Menu.strings`**
+  （Base.lproj / zh-Hans.lproj，各 301 条）。
+- 实测该表**全表只有 1 个值带 `…`**（`'Search With…' => '搜索…'`），而实机显示里
+  「打开…」「打印…」「偏好设置…」等大量带省略号 ⇒ **`Menu.strings` 不是显示层**。
+
+一手证据逐层还原（本机 Typora 1.14.9 build 7785）：
+
+| 层 | 载体 | 角色 | 对显示的影响 |
+|---|---|---|---|
+| ① nib 标题 | 编译进 `MainMenu.nib` 的 title 串（如 `Open…` / `Preferences…`） | AppKit 本地化查找的**键** | 键找不到 → **原样显示**（回退），这是多数 `…` 的来源 |
+| ② `Menu.strings` | key = nib 标题（**不带 …**），value = 本地化值 | 只有当键精确命中才生效 | 带 … 的 nib 键在表里**查不到** ⇒ 回退 ① |
+| ③ appsrc `TypeMark/locales/<locale>/Menu.json` | frame.js 覆盖层（302 键，key = 英文原形）；函数 `m()` 在**键以 … 结尾**时把本地化值**重新追加** `…` | JS 层文案（复制/Duplicate、导出并覆盖上一次导出的文件、标记为已完成、数学工具、任务状态、缩放图片、转换图片语法、设置图片根目录、全局图像设置 等） | 直接决定一批条目的显示文本 |
+| ④ 实机 AX dump | `tests/benchmark/lib/dump-menu.sh` → `tests/benchmark/fixtures/typora-live-menu-1149-display.txt`（491 行，2026-11-07 快照入库） | **唯一显示真源** | ①②③ 之外的兜底：导出格式名（PDF / HTML / Word (.docx) / OpenOffice / RTF / Epub / LaTeX / Media Wiki / reStructuredText / Textile / OPML、HTML (无样式)）是 **appsrc 内部 key、非本地化字符串**，在 ①②③ 均无第一手文本，**只能**从 dump 读到 |
+
+**对旧结论的推翻**：G7-MENU-11 当年按 `Menu.strings` 把约 35+35 条（zh/en）改成
+**无省略号** —— 方向恰好搞反（表里没有 `…` ≠ 显示没有 `…`）。本轮按显示层**全部重基线**。
+教训：**「官方资源表」不等于「官方显示值」**，本地化表是「键→值」映射，键未命中时的
+回退行为不在表里；显示层必须由实机 dump 锚定。
+
+### 二、实施（文案 + 结构，四组）
+
+| 组 | 落点 | 内容 |
+|---|---|---|
+| 文案重基线 | `packages/i18n/src/messages.ts` | 约 35+35 条（zh/en）显示层翻转：打开… / Save As… / Preferences… / 图像(Image 子菜单名) 等；§12 合同表重基为显示层真值 |
+| File 菜单结构 | `packages/commands/src/menuSchema.ts` §7.2 | 31→33 槽位对齐实机顺序：删除（`file.trash`）单列 reveal 组后；保存组 = 保存 / 保存为… / **复制**（`file.duplicate`，新装配，`handleDuplicateDocument`）/ **重新命名…**（`document.rename`）/ 移到… / （保存全部，Mellow 保留项）/ 从磁盘重新加载 |
+| 导出/数学/任务子菜单 | 同上 + `App.tsx` + `SettingsPanel.tsx` | 导出尾部「导出并覆盖上一次导出的文件」「导出设置…」（直达 设置→导出，`SettingsPanel` 新增 `initialSection` prop）；Edit→数学工具（`math.refreshAll`）；段落→任务状态（切换/标记为已完成/标记为未完成）；键位按实机补声明 `export.repeat` mac `Ctrl+E`、`table.addRowBelow` mac `Cmd+Enter`（muda-0.19.3 实测两加速器均合法；`Cmd++` 不可表达 ⇒ 不声明） |
+| **图像子菜单全量** | `format.image` 8→19 项重建（第三节） | 见下 |
+
+### 三、格式 → 图像子菜单（本轮主体，实机 dump L350-387 逐项对齐）
+
+实机 19 项 → Mellow 装配 **17 项**（两级 + 两个第三级子菜单），未装配 2 项**全部有裁决
+依据**（第四节），零占位项（§4.22 母题）：
+
+```
+插入图片[⌃⌘I] / 插入本地图片… ─ 打开图片位置… / 缩放图片▸(25% 33% 50% 67% 80% ─ 100% ─ 150% 200%)
+/ 转换图片语法▸(Markdown 格式 / HTML 格式) ─ 删除图片文件 ─ 复制图片到… / 重命名 / 移动图片到…
+/ 上传图片 ─ 复制所有图片到… / 移动所有图片到… / 上传所有本地图片 ─ 重新加载所有图片 ─
+设置图片根目录 ─ 全局图像设置…
+```
+
+| 项 | id | 能力链 |
+|---|---|---|
+| 打开图片位置… | `image.openLocation` | 引擎 `getImageSrc()`（光标处）→ `handleImageAction(reveal)` → `OpenerService.revealInFolder` |
+| 缩放图片 8 档 | `image.scale{25,33,50,67,80,100,150,200}` | **引擎新增 `imageSpanOp('scale', pct)`**（contextMenu.ts）：优先 **DOM naturalWidth/Height**（widget `img.mellow-md-image-img`，Typora `Zoom Image to %@` 语义 = 相对**原图**），读不到回退当前 ` =WxH` 后缀 × pct；两者皆无 → false（不写错误尺寸）。回退分支是**有意保留**的：jsdom 恒无 natural 尺寸 ⇒ 单测锁的是回退语义；真机（图已加载）走自然尺寸分支 |
+| 转换图片语法 | `image.mdStyle` / `image.htmlStyle` | 既有 `imageSpanOp('mdToHtml'\|'htmlToMd')`（右键已有、菜单缺位）；⚠️ 已知限制：`htmlImgAt` 只匹配**单行** `<img>`（第四节登记） |
+| 删除图片文件 | `image.deleteFile` | `handleImageAction('delete')`（二次确认 + Trash，非静默） |
+| 复制图片到… | `image.copyOne` | `handleImageAction('copy')` → `showDirectory` → `ops.copyImage` |
+| 重命名 / 移动图片到… | `image.renameMove` | **单条双分支**（Typora 原文一条）：`askUser` 二选一（重命名/移动，按钮复用右键菜单同一对 i18n 键）→ `renameImage` / `moveImage`。分支判定放宿主（两操作能力本就在 `ImageFileOpsService`，引擎只认文档编辑） |
+| 上传图片 | `image.uploadOne` | `handleImageAction('upload')` → `ops.uploadOne`（图床服务未配置时给状态提示） |
+| 重新加载所有图片 | `image.reloadAll` | `host.refreshImages()`（引擎 `image/engineApi.ts` 既有，trackedWidgets 重试） |
+| 设置图片根目录 | `image.setAssetDir` | 既有命令（askInput assetDir）；**D-AA 裁决「无需菜单开关」指的是根路径开关，本条是 Typora 菜单里的设置入口本身** —— 二者不冲突 |
+| 全局图像设置… | `image.globalSettings` | `setSettingsSection('image')` + 打开面板（state 联合类型扩展 `'general'\|'export'\|'image'`） |
+
+**「无光标目标」的反馈语义**：Typora 实机对无目标项**灰显**；Mellow 菜单是**静态声明**
+（`labelKey` 无跨进程 enabled 回调通道，见 §12b 只覆盖占位项）⇒ 派发时判定并给状态栏
+提示（`msg.imageNoTarget`），**不静默无反应**。这是「占位项母题」的镜像约束：可点击项
+点了必须有真实效果或明确反馈。
+
+**第三级子菜单的物化验证**：`menu.rs` `build_item`/`build_items` 对 `submenu` 递归
+（无深度上限），格式→图像→缩放图片三级经 cargo check + 打包 dump 实测渲染正常；
+点击按 id 经 `on_menu_event` → `mellow-menu-command` → CommandRegistry（与两级无差）。
+
+### 四、诚实登记（未装配项与其裁决）
+
+**本节是 master-plan G7-MENU-16 行所引「§4.360 第四节」的落点。**
+
+1. **「当插入本地图片时」子菜单**（复制图片到文件夹… / 上传图片，实机 L382-384）——
+   **不装配**，沿用 **D-AB** 既有裁决（G7-MENU-07：该语义由设置面板 `image.assetDir` +
+   `image.uploadService` 承载，避免同一语义两处入口）。⚠️ 复核时一度拟新登记「D-AZ」，
+   查证后确认 D-AB 已覆盖 —— **新造编号前先搜登记表**是本轮自纠的一个母题。
+2. **下载远程图片不在 Typora 实机菜单** —— `image.downloadRemote` 从菜单**移出**
+   （此前是我方臆造位置），能力保留于命令面板；`menu.image.downloadRemote` i18n 键
+   同步删除（否则成死键，i18n 护栏 0 死键硬判据）。
+3. **帮助菜单 Typora 专有 8 项**（What's New… / 更新日志 / 鸣谢 / 隐私条款 / 键盘快捷键
+   参考 / 我的许可证… / Install and Use Pandoc / Custom Themes / Use Images in Typora /
+   More Topics…，实机 L490-503）—— 各自需要一手载体（更新日志/许可证/内置文档页），
+   Mellow 无对应内容物 ⇒ **不装占位**；已有能力以 `help.quickStart` / `help.markdownReference`
+   / `help.website` / `help.feedback` 覆盖语义近邻，`help.diagnostics` 为 Mellow 增强。
+4. **字数统计窗口 / 大纲窗口**（实机 显示菜单 L409-410）—— Typora 的独立浮动窗口；
+   Mellow 侧栏大纲（`view.sidebar.outline`）+ 状态栏字数（`view.statusbar`）覆盖信息面，
+   独立窗口形态属窗口管理面（与 B1 SDI 裁决相邻），**不在本轮**（无承载物 = 不装占位）。
+5. **语音子菜单** —— **D-AY**（NSResponder 不可达，装配即占位）。
+6. **saveAs mac 键位实机显示 `⌥⇧S` / 复制 `⇧⌘S`** 与官方表 `⌘⇧S` 矛盾 —— **D-AX 待裁决**
+   （D-F 先例：官方表赢，除非裁决改判）。
+7. **insert.image 键位偏差**：实机 bare `Ctrl+I`，官方表 `Cmd+Ctrl+I`/`Ctrl+Shift+I` ——
+   保留官方表声明（与 6 同构，**同一 D-AX 裁决面**一并处理；实机 dump 记法 Ctrl 在 mac
+   菜单里即 ⌃，⌃⌘I 显示为 `[Ctrl+I]` 是 AX 只报 modifier 子集的另一读法，**不足以推翻**）。
+8. **htmlImgAt 只匹配单行 `<img>`**：多行 HTML 图片上「转换图片语法 → Markdown 格式」
+   返回 false → 状态提示「请先将光标移到图片上」。是**已声明限制**非静默失败；扩展正则
+   需连带的排版保留设计，未在本轮范围。
+9. **file.saveAll**：Typora 实机 mac 菜单不显示，Mellow（SDI 多窗口）保留 —— §4.359 母题，
+   已在 §12 表内按「Save All」官方值锁定文案。
+
+### 五、验证
+
+- **护栏**：`verify-menu-contract.mjs` §12 合同 **70 条**显示层真值（zh+en 各 35 条对）；
+  §7.2 槽位 33；官方键位表 55 不变；199 个 schema 命令 id 全部经 CommandRegistry 注册
+  （新增 17 个图像子菜单 id，逐条字面量注册 —— 护栏判据 2 用正则收集 `id: '…'`，
+  模板字符串 id 不被识别 ⇒ scale25…200 若用 map 生成会假性「未注册」，已在代码注释登记）。
+  §14 面板文案白名单新增 8 个百分比项（数字+% 双语同文 = 显示层真值，非漏译）。
+- **审计工具升级**：`audit-typora-menu-labels.mjs` 反查基准从 `Menu.strings` 单层改为
+  **①②③ 三层**（Menu.strings 值/键 + appsrc Menu.json 值/键 + `m()` 增补规则 + 实机 dump
+  基线兜底）；首跑报 56 条「伪造」正是**旧基准错误**的直接证据；收口后
+  **29 条**仅实机层支撑（打印 `[display-layer ③]` 出处），其余在 ①② 层原样可查。
+  裸扫 nib 字节不可靠（假阳性，二进制 plist 无串）⇒ **不采用**该捷径。
+- **mutation 护栏**：33 注入全拒；本轮 3 处锚点随源码同步（save↔saveAs 因中间插入注释
+  断 adjacency → 改 duplicate↔rename 互换；Open Quickly… / 移动所有图片到… 省略号形态）
+  —— **锚点是 verbatim 源码串，源码一改动注入就哑，属结构性代价**，已在文件注释声明。
+- **jest**：`@mellow/editor-engine` context-menu 58 绿（新增 scale 5 例：回退语义 / 100%
+  复位 / 无基准 false / arg 非法 false / 光标不在图 false）；`@mellow/commands` 33 绿；
+  `@mellow/i18n` 绿（906/906 键，0 死键）。
+- **类型/构建**：apps/desktop `tsc --noEmit` 净；editor-engine `tsc` 净 + bundle 重建；
+  `cargo check` 净（2 warning 均为本轮未触碰文件 `bridge.rs`/`search.rs` 的既有项）。
+- **原生 round + 功能 round**：见「六」。
+
+**产物**：`packages/editor-engine/src/contextMenu.ts`（scale + `imageNaturalSizeAt`）·
+`packages/editor-engine/test/context-menu.test.ts` · `packages/commands/src/menuSchema.ts` ·
+`packages/i18n/src/messages.ts` · `apps/desktop/src/App.tsx` · `apps/desktop/src/SettingsPanel.tsx` ·
+`tests/parity/verify-menu-contract.mjs` · `tests/parity/verify-menu-contract-guard.mjs` ·
+`tests/parity/tools/audit-typora-menu-labels.mjs` ·
+`tests/benchmark/fixtures/typora-live-menu-1149-display.txt` · 本节 + master-plan
+（G7-MENU-16 / D-AX / D-AY）。
+
+### 六、原生 dump round + 功能 round（2026-11-07 收尾）
+
+**1）原生结构 dump（dev 实例，只读）**：`dump-menu.sh mellow-desktop` → 437 行
+（`/tmp/menu-mellow-4360.txt`）。逐菜单与 Typora 基线（同脚本产物 489 行）对照：
+
+| 表面 | 结果 |
+|---|---|
+| **格式→图像子菜单** | **逐行一致**（25%…200% 含两级分隔线分组、转换图片语法二级项、`打开图片位置…`/`全局图像设置…` 省略号形态、末三组分隔线）—— 仅 §四登记的 2 项未装配差集：`当插入本地图片时` 子菜单（**D-AB**）与 `<<Import From Device - unlocalized>>`（Typora 未本地化实验项，不装配） |
+| **文件菜单顺序** | `保存为… [Shift+S]` / `复制`（无键位）/ `保存全部打开的文件 [Opt+S]` / 删除… 位于显示简介组之后 —— 与基线一致 |
+| **键位显示** | `使用上一次设置导出 [NoCmdCtrl+E]` ✓（§二 Ctrl+E 裸 Control 生效）；`下方插入行 [Cmd+<U+000D>]` ✓（Cmd+Enter 可表达）；`代码 [Shift+\`] ⚠️ 见「4」残余登记 |
+
+**安全门执行（§4.358 教训沉淀条款，本轮全程生效）**：dump 前断言窗口标题 =
+`markdown-basic-syntax-test.md — Mellow`（**用户真实文件，不在 `probe-*`/`未命名`
+白名单**）⇒ **只跑只读 AX dump，不点击任何图像子菜单项、不注入任何击键**（点击
+`缩放图片→50%` 这类光标操作会直接改写该文档）。用户文件 MD5 于 round 前后各复验
+一次，均与已知真值 `b485146445ebf34969313aaf8e33cf3e` / 5350B 一致 ✓。
+
+**2）打包 App 原生功能 round —— 放弃并如实记录原因**：曾尝试 `tauri build --debug`
+重新打包（bundle 19:57 生成，含 §4.360 全部改动）后走「打开文档 → 菜单点击 → 校验」，
+被三类环境污染阻塞：① 崩溃恢复**会话复活**把 §4.358 事故轮的陈旧脏缓冲
+（`PKGSAVE` 前缀 + 用户文档内容 + 已删除的 `/tmp/probe-a.md` 路径）重新拉起，且
+`open -n` 与 odoc 通道并发产生多实例（窗口归属不稳定、System Events 焦点漂移）；
+② 复活窗口标题即用户文件名 ⇒ 白名单门**中止一切点击/键入**，原生验收无合法目标；
+③ 该残留属 harness localStorage 层（`mellow.tabs.session`），不是产品缺陷，重灌备份
+成本高且不保证不再被下一次 dev 会话污染。**结论：原生点击级功能验收对本轮不具可行性，
+改走「同一命令树」的 e2e 判据（下条），并把原生复验登记为打包烟测轮的顺带项。**
+
+**3）功能 round（e2e 命令路径，`tests/e2e/image-submenu-4360-verify.mjs`，14/14 全绿）**：
+`__MELLOW_COMMANDS__.dispatch(id)` 与菜单点击**同源**（menuSchema → CommandRegistry →
+App.tsx execute 是同一条链），因此该层判据与 GUI 点击等价且可重复、不依赖焦点。
+实测通过项：18 个命令 id 全注册 / 光标不在图上 → 「请先将光标移到图片上」（**显式反馈
+母题**：可点击项永不静默）/ 无可解析尺寸 → 「无法确定图片原始尺寸」**且文档零改写** /
+`=200x100 ×50% ⇒ =100x50` + 状态栏「50%」 / 连续缩放叠加（×200% ⇒ =200x100）/
+**100% 复位语义**（尺寸不变）/ `mdStyle ↔ htmlStyle` round-trip（`![](x =640x480)` ⇄
+`<img style="width:640px;height:480px">`）/ **⌘Z 撤销语法转换回到 HTML 形态**（统一规则 13）/
+`reloadAll` 反馈文案。文件 IO 项（copy/rename/move/delete/upload）不在本探针驱动真实磁盘，
+由 `app-core/imageFileOps` 单测 + `image-upload-verify.mjs` 既有覆盖承载（分层不重复）。
+运行环境注记：仓库外 `/tmp/pw` 的 playwright 更新到 1.65 后要求 browser rev 1254，缓存最高
+1248 ⇒ `npx playwright install chromium chromium-headless-shell` 补齐（README 的「时重建」
+含义含浏览器版本跟随）。
+
+**4）残余差异登记（格式菜单，dump 逐行 diff 产物；均为已登记类别，非新问题）**：
+
+| 差异 | 归类 |
+|---|---|
+| `代码 [Shift+\`]` vs Typora `[NoCmdCtrl+\`]`（裸 ⌃`） | 与 `insert.image` 同类 = 「官方键位表 vs 实机显示」偏差（§四 8 已登记 insert.image，此条同型补记；⌃` 经 muda `Ctrl+\`` 理论可表达，待键位表复核轮统一处理） |
+| Mellow 多 `高亮 / 上标 / 下标` 三项 inline（注释之后、分隔线之前） | G7-QA-05 已登记（默认开启偏差）；但**摆放位置**违反 §7.7「Mellow 增强项以 separator 隔离后置」约定（现夹在删除线/注释组内）⇒ 登记为**待办**：随格式菜单下一轮重排移到独立后置组 |
+| `清除样式` 位于图像子菜单**之前**，Typora 在其**之后**（末组，`<<Import From Device>>` 后随分隔线） | 同上轮重排一并处理（结构性顺序差，非缺项） |
+| Typora `代码` 与 `删除线` 之间有分隔线，Mellow 无（被上条 inline 增强项挤掉） | 同母题：分隔线组 = Typora 分组语义；随重排恢复 |
+
+
+
 ## 五、本次审计做的改动（非策略性）
 
 

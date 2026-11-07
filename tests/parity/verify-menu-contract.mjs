@@ -463,15 +463,17 @@ const FILE_MENU_CONTRACT = [
   { kind: 'command', id: 'file.revealInFileTree' },
   { kind: 'command', id: 'file.revealInFinder' },
   SEP,
-  { kind: 'command', id: 'file.moveTo' },
-  { kind: 'command', id: 'file.trash' },
+  { kind: 'command', id: 'file.trash' }, // §4.360：实机 Typora 删除… 单列于此
   SEP,
   { kind: 'command', id: 'file.closeWindow' }, // B1：⌘W 关闭窗口（mac performClose: 真值）
   { kind: 'command', id: 'file.closeAll' },
   SEP,
   { kind: 'command', id: 'file.save' },
   { kind: 'command', id: 'file.saveAs' },
-  { kind: 'command', id: 'file.saveAll' },
+  { kind: 'command', id: 'file.duplicate' }, // §4.360：Typora mac 1.14.9 实机 File→复制(Duplicate)
+  { kind: 'command', id: 'document.rename' }, // §4.360：实机 File→重新命名…
+  { kind: 'command', id: 'file.moveTo' },
+  { kind: 'command', id: 'file.saveAll' }, // Mellow 保留（实机 Typora mac 无；登记 §4.360）
   { kind: 'command', id: 'file.reloadFromDisk' },
   SEP,
   { kind: 'command', id: 'file.import' },
@@ -961,60 +963,52 @@ if (!articlesAnchor) {
   }
 }
 
-// ── §12 官方菜单文案合同（Typora 1.14.9 build 7785 Menu.strings）─────────
+// ── §12 官方菜单文案合同（Typora 1.14.9 build 7785 **实机显示层**）─────────
 //
-// 立节原因（第六类失真的回归防线）：本机装有 Typora 1.14.9，直接读其
-// `zh-Hans.lproj/Menu.strings` 与 Base（英文）逐条对照，发现 Mellow 有 **19 处**
-// 文案偏离官方：
-//   · 12 处**多加省略号** —— Typora 的 Menu.strings 全库只有 1 处 `…`
-//     （`Search With…`），而 Mellow 给「打开 / 另存为 / 打印 / 导入 / 查找 /
-//     超链接 / 插入本地图片 …」统统加了 `…`；
-//   · 7 处用词不同 —— 设置…(应为「偏好设置」)、移到…(「移动到」)、
-//     文件信息…(「显示简介」)、关闭窗口(「关闭」)、打开文件位置(「在 Finder 中显示」)、
-//     Quick Open(中文菜单里**直接是英文**，应为「快速打开」)、检查更新…/反馈问题…。
+// ⚠️ 2026-11-07 真值层更正（审计 §4.360）：本节原以 `Menu.strings`（nib 本地化表）为
+// 真值源，**该层不是显示层**。实测证明 Typora 的菜单标题来自编译进
+// `Base.lproj/MainMenu.nib` 的 title 串（如 `Open…` / `Print…` / `Preferences…` /
+// `Import…`），`Menu.strings` 只是把这些 title **键**（不带 …）再本地化一次 ——
+// 带 … 的键在 strings 表里查不到，AppKit 的本地化回退（键找不到→原样显示）正是
+// 「strings 说没有省略号，实机却有」的原因。appsrc（main.js/frame.js）的省略号键
+// 仅 11 个（Image→子菜单 / Move To… / Learn More… / Search With… 等），
+// File→打开… / 打印… / 导入… 等**不在 JS 层**，由 nib 注入。
+// ⇒ 本表的期望值 = **实机 AX dump**（tests/benchmark/lib/dump-menu.sh，2026-11-07 复核，
+// 见审计 §4.360 证据表）；G7-MENU-11 的 12 处「多加省略号」中大部分**实为删错了方向**，
+// 本轮按实机恢复。英文列以 `Menu.json/Base.strings` + 实机证据为据；无实机英文 dump 的
+// 条目在 audit-typora-menu-labels.mjs 的 DISPLAY_OVERRIDE 中登记来源。
 //
-// 真值不能靠 CI 现读（runner 上不装 Typora），故把期望值内嵌于此，
-// 由本护栏长期锁定，防再次漂移。修改前请先对照 Typora 的 Menu.strings。
-//
-// ⚠️ 2026-09-13 二次核对（第九轮）：用本机 Typora 反查本表**内嵌值本身**是否真的
-// 来自官方，发现 **2 条「Typora en」是伪造的** —— 实为把 Mellow 自己的英文值填进了
-// 官方列，护栏于是「自己给自己盖章」，永远绿：
-//   · `menu.file.saveAll` 官方 Base 为 `Save All`（非 `Save All Open Files`）；
-//   · `menu.quickOpen.open` 官方 Base 为 `Open Quickly`（非 `Quick Open`）。
-// 同批核对还发现 7 条**从未纳入合同**的偏离（recentClear / export.htmlPlain /
-// export.repeat / image.uploadAll / image.moveAll / image.copyAll / 空态占位）。
-// 复核脚本：`node tests/parity/tools/audit-typora-menu-labels.mjs`
-// （需本机装有 Typora，不进 CI；用于每次扩充本表后自查内嵌真值）。
+// 修改本表前必须先用本机 Typora 重跑 dump（CI 无 Typora，只能靠内嵌值）。
 const TYPORA_MENU_LABELS = [
-  // [labelKey, Typora zh-Hans, Typora en（Base）]
-  ['menu.file.open', '打开', 'Open'],
+  // [labelKey, Typora zh-Hans（实机显示）, Typora en]
+  ['menu.file.open', '打开…', 'Open…'],
   ['menu.workspace.openFolder', '打开文件夹', 'Open Folder'],
-  ['menu.file.saveAs', '另存为', 'Save As'],
+  ['menu.file.saveAs', '保存为…', 'Save As…'],
   ['menu.file.saveAll', '保存全部打开的文件', 'Save All'],
-  ['menu.file.import', '导入', 'Import'],
-  ['menu.file.print', '打印', 'Print'],
-  ['menu.file.moveTo', '移动到', 'Move To'],
-  ['menu.file.info', '显示简介', 'Get Info'],
+  ['menu.file.import', '导入…', 'Import…'],
+  ['menu.file.print', '打印…', 'Print…'],
+  ['menu.file.moveTo', '移到…', 'Move To…'],
+  ['menu.file.info', '显示简介…', 'Get Info…'],
   ['menu.file.closeWindow', '关闭', 'Close'],
-  ['menu.file.reveal', '在 Finder 中显示', 'Reveal in Finder'],
-  ['menu.top.settings', '偏好设置', 'Preferences'],
+  ['menu.file.reveal', '打开文件位置', 'Open File Location'],
+  ['menu.top.settings', '设置…', 'Preferences…'],
   ['menu.top.checkUpdate', '检查更新', 'Check for Updates'],
   ['menu.help.feedback', '反馈', 'Feedback'],
-  ['menu.quickOpen.open', '快速打开', 'Open Quickly'],
+  ['menu.quickOpen.open', '快速打开…', 'Open Quickly…'],
   // 「打开最近文件」子菜单：Typora 的「清除」项官方 en 是 `Clear Items`（zh「清除最近文件」），
   // 空态是**禁用占位项** `No Recent Files`（zh 真值即「空」）。
   ['menu.file.recentClear', '清除最近文件', 'Clear Items'],
   ['menu.file.recentEmpty', '空', 'No Recent Files'],
-  ['menu.export.htmlPlain', 'HTML (无样式)', 'HTML (without Styles)'],
+  ['menu.export.htmlPlain', 'HTML (无样式)', 'HTML (without styles)'],
   ['menu.export.repeat', '使用上一次设置导出', 'Export with Previous'],
   ['menu.image.uploadAll', '上传所有本地图片', 'Upload All Local Images'],
-  ['menu.image.moveAll', '移动所有图片到', 'Move All Images to'],
-  ['menu.image.copyAll', '复制所有图片到', 'Copy All Images to'],
-  ['menu.search.find', '查找', 'Find'],
-  ['menu.search.replace', '查找和替换', 'Find and Replace'],
+  ['menu.image.moveAll', '移动所有图片到…', 'Move All Images to…'],
+  ['menu.image.copyAll', '复制所有图片到…', 'Copy All Images to…'],
+  ['menu.search.find', '查找…', 'Find…'],
+  ['menu.search.replace', '查找和替换…', 'Find and Replace…'],
   ['menu.format.link', '超链接', 'Hyperlink'],
   ['menu.format.referenceLink', '链接引用', 'Link Reference'],
-  ['menu.image.insertLocal', '插入本地图片', 'Insert Local Images'],
+  ['menu.image.insertLocal', '插入本地图片…', 'Insert Local Images…'],
   // 右键菜单：Typora 区分 `Delete Image`（仅移除引用）与 `Delete Image File`（删磁盘文件）。
   // Mellow 该项确认框是「将图片移到回收站并移除引用？」= 会删磁盘文件，
   // 故文案必须对齐 `Delete Image File` —— 否则破坏性操作的标签比实际行为更轻。
@@ -1023,6 +1017,49 @@ const TYPORA_MENU_LABELS = [
   ['menu.edit.checkDocumentNow', '立即检查文稿', 'Check Document Now'],
   ['menu.edit.learnSpelling', '添加到字典', 'Learn Spelling'],
   ['menu.edit.unlearnSpelling', '忘记拼写', 'Unlearn Spelling'],
+  // ── §4.360 新增（实机 dump 2026-11-07 逐条核对）──
+  ['menu.top.undo', '撤消', 'Undo'],
+  ['menu.top.showAll', '全部显示', 'Show All'],
+  ['menu.edit.selectLine', '选中当前行或句', 'Select Line / Sentence'],
+  ['menu.edit.deleteLine', '删除当前行或句', 'Delete Line / Sentence'],
+  ['menu.edit.eolMenu', '换行符', 'Line Endings'],
+  ['menu.edit.eolLf', 'Unix 换行符 (LF)', 'Unix Line Endings (LF)'],
+  ['menu.edit.eolCrlf', 'Windows 换行符 (CRLF)', 'Windows Line Endings (CRLF)'],
+  ['menu.edit.copyWithoutTheme', '复制内容并简化格式', 'Copy without Theme Styling'],
+  ['menu.insert.table', '插入表格', 'Insert Table'],
+  ['menu.insert.image', '插入图片', 'Insert Image'],
+  ['menu.file.duplicate', '复制', 'Duplicate'],
+  ['menu.file.rename', '重新命名…', 'Rename…'],
+  ['menu.file.pageSetup', '页面设置…', 'Page Setup…'],
+  ['menu.export.pdf', 'PDF', 'PDF'],
+  ['menu.export.html', 'HTML', 'HTML'],
+  ['menu.export.image', '图像', 'Image'],
+  ['menu.export.docx', 'Word (.docx)', 'Word (.docx)'],
+  ['menu.export.odt', 'OpenOffice', 'OpenOffice'],
+  ['menu.export.rtf', 'RTF', 'RTF'],
+  ['menu.export.epub', 'Epub', 'Epub'],
+  ['menu.export.latex', 'LaTeX', 'LaTeX'],
+  ['menu.export.mediawiki', 'Media Wiki', 'Media Wiki'],
+  ['menu.export.rst', 'reStructuredText', 'reStructuredText'],
+  ['menu.export.textile', 'Textile', 'Textile'],
+  ['menu.export.opml', 'OPML', 'OPML'],
+  ['menu.export.overwriteLast', '导出并覆盖上一次导出的文件', 'Export and Overwrite with Previous'],
+  ['menu.export.settings', '导出设置…', 'Export Setting…'],
+  // ── §4.360 图像子菜单全量（实机 dump 2026-11-07；en 无 dump，取 appsrc Base/Menu.json
+  //    第一手值 + frame.js 的「键带 … ⇒ 本地化值重加 …」规则，与 zh 显示层同形）──
+  ['menu.image.openLocation', '打开图片位置…', 'Open Image Location…'],
+  ['menu.image.scaleMenu', '缩放图片', 'Zoom Image'],
+  ['menu.image.scale100', '100%', '100%'],
+  ['menu.image.convertSyntaxMenu', '转换图片语法', 'Switch Image Syntax'],
+  ['menu.image.mdStyle', 'Markdown 格式', 'Markdown Style'],
+  ['menu.image.htmlStyle', 'HTML 格式', 'HTML Style'],
+  ['menu.image.deleteFile', '删除图片文件', 'Delete Image File'],
+  ['menu.image.copyOne', '复制图片到…', 'Copy Image to…'],
+  ['menu.image.renameMove', '重命名 / 移动图片到…', 'Rename or Move Image to…'],
+  ['menu.image.uploadOne', '上传图片', 'Upload Image'],
+  ['menu.image.reloadAll', '重新加载所有图片', 'Reload All Images'],
+  ['menu.image.setRootPath', '设置图片根目录', 'Use Image Root Path'],
+  ['menu.image.globalSettings', '全局图像设置…', 'Global Image Settings…'],
 ];
 function checkTyporaMenuLabels(zhMap, enMap) {
   const bad = [];
@@ -1038,13 +1075,14 @@ for (const msg of checkTyporaMenuLabels(parseLocaleBlock('zhCN', ''), parseLocal
   fail(`菜单文案偏离 Typora：${msg}`);
 }
 
-// 省略号合同：Typora 全库仅 1 处 `…`，故 Mellow 不得对上述「Typora 有对应项」
-// 的条目自行添加省略号。canary：把 file.open 的 zh 文案改成「打开…」必须被拒。
+// 省略号合同（§4.360 方向反转）：实机 Typora 显示「打开…」，故 Mellow 不得删掉
+// 官方实机带的省略号（G7-MENU-11 的旧方向已废）。canary：把 file.open 的 zh 改回
+// 「打开」（去掉 …）必须被拒。
 {
   const driftedZh = new Map(zhMenu);
-  driftedZh.set('menu.file.open', '打开…');
+  driftedZh.set('menu.file.open', '打开');
   if (checkTyporaMenuLabels(driftedZh, enMenu).length === 0) {
-    fail('菜单文案 canary 未生效：把「打开」改成「打开…」仍未被拒绝');
+    fail('菜单文案 canary 未生效：把「打开…」改成「打开」仍未被拒绝');
   }
 }
 
@@ -1132,7 +1170,13 @@ for (const msg of checkTyporaMenuLabels(parseLocaleBlock('zhCN', ''), parseLocal
 {
   const cjk = /[\u3400-\u9FFF\uF900-\uFAFF]/;
   // 专有名词白名单：中文标题本来就该是拉丁文（登记后不得过期）。
-  const NON_TRANSLATED_TITLES = new Set(['paragraph.yamlFrontMatter']);
+  // §4.360：缩放图片 8 档 = 数字 + %（Typora 双语实机同文，`Zoom Image to 50%` 本地化
+  // 值里的百分比也是裸数字）⇒ 无 CJK 是**正确的显示层真值**，不是漏译。
+  const NON_TRANSLATED_TITLES = new Set([
+    'paragraph.yamlFrontMatter',
+    'image.scale25', 'image.scale33', 'image.scale50', 'image.scale67',
+    'image.scale80', 'image.scale100', 'image.scale150', 'image.scale200',
+  ]);
   const LITERAL_TITLE = /\{\s*id: '([^']+)',\s*localizedTitle: \{\s*zh: '((?:[^'\\]|\\.)*)',\s*en: '((?:[^'\\]|\\.)*)'\s*\}/g;
   // 已知的动态形态（无法用字面量正则解析）。数量必须对得上，否则本节点会**静默漏检**。
   const DYNAMIC_TITLE_FORMS = [

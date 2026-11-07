@@ -688,7 +688,10 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   //   （显式加脚本 ⇒ 按本节纪律同步基线）。
   // ⚠️ 2026-11-07（审计 §4.358）：101 → 102 —— 新增 `tests/benchmark/lib/ax-tool.swift`
   //   （⌘Q 脏门原生验收的 WKWebView 内容树 AX 探针；审计正文即其引用）。
-  const SCRIPT_BASELINE = 102; // [覆盖型] 基线 102
+  // ⚠️ 2026-11-07（审计 §4.360「六」）：102 → 103 —— 新增 `tests/e2e/image-submenu-4360-verify.mjs`
+  //   （图像子菜单命令路径功能存活探针；§4.360 正文即其引用 —— 原生 GUI 点击轮被会话复活
+  //   污染放弃，功能验收改走与菜单点击同源的 dispatch 判据）。
+  const SCRIPT_BASELINE = 103; // [覆盖型] 基线 103
   // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==` —— 覆盖型 = 「阈值必须 **==** 当前基线」；
   //   `< N` 只挡「缩小」，**集合增长时会静默稀释防线**（§4.310）。加脚本是**显式**行为 ⇒ 一并同步基线。
   if (scripts11.length !== SCRIPT_BASELINE) {

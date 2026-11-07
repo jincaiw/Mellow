@@ -103,7 +103,7 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'app.quit', labelKey: 'menu.top.quit', shortcut: { mac: 'Cmd+Q' } },
   ] },
 
-  // ── 文件（§7.2：31 槽位契约）─────────────────────────────────
+  // ── 文件（§7.2：33 槽位契约，§4.360 实机对齐）────────────────
   { id: 'file', labelKey: 'menu.top.file', entries: [
     // B1（SDI）：⌘N = 新建（新窗口空白文档）；「新建标签页」随多标签能力移除
     { kind: 'command', id: 'file.new', labelKey: 'menu.file.new', shortcut: { mac: 'Cmd+N', winLinux: 'Ctrl+N' } },
@@ -127,7 +127,8 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'file.revealInFileTree', labelKey: 'menu.file.revealInFileTree' },
     { kind: 'command', id: 'file.revealInFinder', labelKey: 'menu.file.reveal' },
     { kind: 'separator' },
-    { kind: 'command', id: 'file.moveTo', labelKey: 'menu.file.moveTo' },
+    // 实机 dump 对齐（2026-11-07，审计 §4.360）：Typora 1.14.9 mac File 菜单顺序 ——
+    // 删除… 单列于此（移到…/重新命名… 属保存组），Mellow 同步。
     { kind: 'command', id: 'file.trash', labelKey: 'menu.file.trash' },
     { kind: 'separator' },
     // B1（SDI）：⌘W = 关闭窗口（mac Typora 真值：File→Close = performClose: 关窗口，非关标签）
@@ -137,7 +138,15 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'file.closeAll', labelKey: 'menu.file.closeAll', shortcut: { mac: 'Cmd+Alt+W', winLinux: 'Ctrl+Shift+W' }, winLinuxOnly: true },
     { kind: 'separator' },
     { kind: 'command', id: 'file.save', labelKey: 'menu.file.save', shortcut: { mac: 'Cmd+S', winLinux: 'Ctrl+S' } },
+    // 冲突登记（§4.360 / D-AX）：Typora 1.14.9 **实机** mac 显示 保存为… = ⌥⇧S、复制 = ⇧⌘S；
+    // 官方 Shortcut Keys 表 = ⌘⇧S。按 D-F 先例（官方表为准，Accepted 裁决不得单方面推翻），
+    // 保留 ⇧⌘S，实机差登记待裁决。
     { kind: 'command', id: 'file.saveAs', labelKey: 'menu.file.saveAs', shortcut: { mac: 'Cmd+Shift+S', winLinux: 'Ctrl+Shift+S' } },
+    { kind: 'command', id: 'file.duplicate', labelKey: 'menu.file.duplicate' },
+    { kind: 'command', id: 'document.rename', labelKey: 'menu.file.rename' },
+    { kind: 'command', id: 'file.moveTo', labelKey: 'menu.file.moveTo' },
+    // 实机 dump 对齐（§4.360）：Typora 1.14.9 mac 菜单**不显示**「保存全部打开的文件」
+    //（Menu.json 有 Save All 字符串，实机 File 菜单无该项；多窗口 SDI 下 Mellow 保留）
     { kind: 'command', id: 'file.saveAll', labelKey: 'menu.file.saveAll', shortcut: { mac: 'Cmd+Alt+S', winLinux: 'Ctrl+Alt+S' } },
     { kind: 'command', id: 'file.reloadFromDisk', labelKey: 'menu.file.reloadFromDisk' },
     { kind: 'separator' },
@@ -158,7 +167,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'export.textile', labelKey: 'menu.export.textile' },
       { kind: 'command', id: 'export.opml', labelKey: 'menu.export.opml' },
       { kind: 'separator' },
-      { kind: 'command', id: 'export.repeat', labelKey: 'menu.export.repeat' },
+      // 实机 dump 对齐（§4.360）：Typora「使用上一次设置导出」mac accelerator = Ctrl+E
+      { kind: 'command', id: 'export.repeat', labelKey: 'menu.export.repeat', shortcut: { mac: 'Ctrl+E' } },
+      { kind: 'command', id: 'export.overwriteLast', labelKey: 'menu.export.overwriteLast' },
+      { kind: 'command', id: 'export.settings', labelKey: 'menu.export.settings' },
     ] },
     { kind: 'command', id: 'file.pageSetup', labelKey: 'menu.file.pageSetup' },
     { kind: 'command', id: 'file.print', labelKey: 'menu.file.print', shortcut: { mac: 'Cmd+P', winLinux: 'Ctrl+Alt+P' } },
@@ -236,6 +248,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'edit.smartPunctuation.toggle', labelKey: 'menu.edit.smartPunctuation', checkedFrom: 'smartPunct' },
     ] },
     // C2：行结束符 / 空白（Typora 编辑菜单对齐）
+    // 实机 dump 对齐（§4.360）：Typora Edit→数学工具子菜单（Mellow 此前只有右键入口）。
+    { kind: 'submenu', id: 'edit.mathTools', labelKey: 'menu.edit.mathToolsMenu', entries: [
+      { kind: 'command', id: 'math.refreshAll', labelKey: 'menu.math.refreshAll' },
+    ] },
     { kind: 'submenu', id: 'edit.eol', labelKey: 'menu.edit.eolMenu', entries: [
       { kind: 'command', id: 'edit.eol.lf', labelKey: 'menu.edit.eolLf' },
       { kind: 'command', id: 'edit.eol.crlf', labelKey: 'menu.edit.eolCrlf' },
@@ -249,6 +265,9 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'submenu', id: 'edit.whitespace', labelKey: 'menu.edit.whitespaceMenu', entries: [
       { kind: 'command', id: 'edit.firstLineIndent.toggle', labelKey: 'menu.edit.firstLineIndent', checkedFrom: 'firstLineIndent' },
     ] },
+    // 实机 dump 对齐（§4.360）：Typora Edit→语音（macOS 标准朗读项，无 accelerator；
+    // 命令走 WKWebView/NSResponder 不可达 ⇒ 登记 D，见 master-plan §12 D-AY）
+    // —— 装配暂缺：不注册无能力项（占位项母题），先以本注释登记。
     { kind: 'submenu', id: 'edit.find', labelKey: 'menu.top.find', entries: [
       { kind: 'command', id: 'search.find', labelKey: 'menu.search.find', shortcut: { mac: 'Cmd+F', winLinux: 'Ctrl+F' } },
       { kind: 'command', id: 'search.findNext', labelKey: 'menu.search.findNext', shortcut: { mac: 'Cmd+G', winLinux: 'Ctrl+G' } },
@@ -280,7 +299,8 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'insert.table', labelKey: 'menu.insert.table', shortcut: { mac: 'Cmd+Alt+T', winLinux: 'Ctrl+T' } },
       { kind: 'separator' },
       { kind: 'command', id: 'table.addRowAbove', labelKey: 'menu.table.addRowAbove' },
-      { kind: 'command', id: 'table.addRowBelow', labelKey: 'menu.table.addRowBelow' },
+      // 实机 dump 对齐（§4.360）：Typora「下方插入行」mac accelerator = ⌘↩
+      { kind: 'command', id: 'table.addRowBelow', labelKey: 'menu.table.addRowBelow', shortcut: { mac: 'Cmd+Enter' } },
       { kind: 'separator' },
       { kind: 'command', id: 'table.addColumnLeft', labelKey: 'menu.table.addColumnLeft' },
       { kind: 'command', id: 'table.addColumnRight', labelKey: 'menu.table.addColumnRight' },
@@ -324,7 +344,13 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'format.orderedList', labelKey: 'menu.format.orderedList', shortcut: { mac: 'Cmd+Alt+O', winLinux: 'Ctrl+Shift+[' } },
     { kind: 'command', id: 'format.list', labelKey: 'menu.format.list', shortcut: { mac: 'Cmd+Alt+U', winLinux: 'Ctrl+Shift+]' } },
     { kind: 'command', id: 'format.taskList', labelKey: 'menu.format.taskList', shortcut: { mac: 'Cmd+Alt+X', winLinux: 'Ctrl+Alt+X' } },
-    { kind: 'command', id: 'paragraph.taskToggle', labelKey: 'menu.paragraph.taskToggle', shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Shift+X' } },
+    // 实机 dump 对齐（§4.360）：Typora 1.14.9 把「切换任务状态」收纳进「任务状态」子菜单
+    { kind: 'submenu', id: 'paragraph.taskStatus', labelKey: 'menu.paragraph.taskStatusMenu', entries: [
+      { kind: 'command', id: 'paragraph.taskToggle', labelKey: 'menu.paragraph.taskToggle', shortcut: { mac: 'Ctrl+X', winLinux: 'Ctrl+Shift+X' } },
+      { kind: 'separator' },
+      { kind: 'command', id: 'task.markComplete', labelKey: 'menu.task.markComplete' },
+      { kind: 'command', id: 'task.markIncomplete', labelKey: 'menu.task.markIncomplete' },
+    ] },
     { kind: 'submenu', id: 'paragraph.indent', labelKey: 'menu.paragraph.indentMenu', entries: [
       // V7-W1.2：键位对齐 Typora 官方表（Indent = Ctrl/Cmd+[，Outdent = Ctrl/Cmd+]）。
       // 官方表与「[ 是左/减少」的直觉相反，此处以官方表为准（真机复核项见方案 §12 D-F）。
@@ -369,16 +395,56 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     ] },
     { kind: 'separator' },
     { kind: 'command', id: 'format.clear', labelKey: 'menu.format.clear', shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' } },
-    // V7-W1.7：格式 → 图像子菜单对齐 Typora（Format → Image ▸ Insert Local Images… /
-    // Move All / Copy All / Download All）。插入图片命令移入子菜单首位并保留原快捷键。
+    // §4.360（2026-11-07）：格式 → 图像子菜单按**实机 AX dump**（19 项）全量重建。
+    // 顺序与分组以 tests/benchmark/fixtures/typora-live-menu-1149-display.txt 为准；
+    // 第三级子菜单（缩放图片 / 转换图片语法）由 menu.rs build_item 递归物化（已验证）。
+    // 未装配 2 项（均已有裁决，非本轮新造）：①「当插入本地图片时」子菜单 ⇒ **D-AB**
+    //   （G7-MENU-07：语义由设置面板承载，避免同一语义两处入口）；②「下载远程图片」
+    //   **不在 Typora 实机菜单**（Mellow 能力保留于命令面板 image.downloadRemote）。
+    // 「设置图片根目录」= 既有 image.setAssetDir 直达（D-AA 裁决的是「无需菜单开关」，
+    // 本项是 Typora 实机在菜单里的**设置入口**本身，非开关）。
     { kind: 'submenu', id: 'format.image', labelKey: 'menu.format.imageMenu', entries: [
+      // Typora 实机 插入图片 [Ctrl+I]；官方快捷键表 = Cmd+Ctrl+I / Ctrl+Shift+I
+      // （键位偏差登记 D，见 master-plan §12 与审计 §4.360 第四节）。
       { kind: 'command', id: 'insert.image', labelKey: 'menu.insert.image', shortcut: { mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Shift+I' } },
       { kind: 'command', id: 'image.insertLocal', labelKey: 'menu.image.insertLocal' },
       { kind: 'separator' },
-      { kind: 'command', id: 'image.uploadAll', labelKey: 'menu.image.uploadAll' },
-      { kind: 'command', id: 'image.downloadRemote', labelKey: 'menu.image.downloadRemote' },
-      { kind: 'command', id: 'image.moveAll', labelKey: 'menu.image.moveAll' },
+      { kind: 'command', id: 'image.openLocation', labelKey: 'menu.image.openLocation' },
+      { kind: 'submenu', id: 'image.scaleMenu', labelKey: 'menu.image.scaleMenu', entries: [
+        // 实机分组：25/33/50/67/80 ─ 100 ─ 150/200（100% = 复位到原图尺寸）
+        { kind: 'command', id: 'image.scale25', labelKey: 'menu.image.scale25' },
+        { kind: 'command', id: 'image.scale33', labelKey: 'menu.image.scale33' },
+        { kind: 'command', id: 'image.scale50', labelKey: 'menu.image.scale50' },
+        { kind: 'command', id: 'image.scale67', labelKey: 'menu.image.scale67' },
+        { kind: 'command', id: 'image.scale80', labelKey: 'menu.image.scale80' },
+        { kind: 'separator' },
+        { kind: 'command', id: 'image.scale100', labelKey: 'menu.image.scale100' },
+        { kind: 'separator' },
+        { kind: 'command', id: 'image.scale150', labelKey: 'menu.image.scale150' },
+        { kind: 'command', id: 'image.scale200', labelKey: 'menu.image.scale200' },
+      ] },
+      { kind: 'submenu', id: 'image.convertSyntax', labelKey: 'menu.image.convertSyntaxMenu', entries: [
+        { kind: 'command', id: 'image.mdStyle', labelKey: 'menu.image.mdStyle' },
+        { kind: 'command', id: 'image.htmlStyle', labelKey: 'menu.image.htmlStyle' },
+      ] },
+      { kind: 'separator' },
+      { kind: 'command', id: 'image.deleteFile', labelKey: 'menu.image.deleteFile' },
+      { kind: 'separator' },
+      { kind: 'command', id: 'image.copyOne', labelKey: 'menu.image.copyOne' },
+      { kind: 'command', id: 'image.renameMove', labelKey: 'menu.image.renameMove' },
+      { kind: 'command', id: 'image.uploadOne', labelKey: 'menu.image.uploadOne' },
+      { kind: 'separator' },
       { kind: 'command', id: 'image.copyAll', labelKey: 'menu.image.copyAll' },
+      { kind: 'command', id: 'image.moveAll', labelKey: 'menu.image.moveAll' },
+      { kind: 'command', id: 'image.uploadAll', labelKey: 'menu.image.uploadAll' },
+      { kind: 'separator' },
+      { kind: 'command', id: 'image.reloadAll', labelKey: 'menu.image.reloadAll' },
+      { kind: 'separator' },
+      // Typora「设置图片根目录」（`Use Image Root Path`）= Mellow 既有 image.setAssetDir
+      // 能力（assets 目录单一真源），菜单文案按实机显示层。
+      { kind: 'command', id: 'image.setAssetDir', labelKey: 'menu.image.setRootPath' },
+      { kind: 'separator' },
+      { kind: 'command', id: 'image.globalSettings', labelKey: 'menu.image.globalSettings' },
     ] },
   ] },
 

@@ -9,7 +9,11 @@
  *   · `menu.file.saveAll` 官方为 `Save All`（护栏曾写 `Save All Open Files`）
  *   · `menu.quickOpen.open` 官方为 `Open Quickly`（护栏曾写 `Quick Open`）
  *
- * 本工具用本机 Typora 的 `Menu.strings`（Base = 英文 / zh-Hans）反查 §12 的每一条内嵌值，
+ * 本工具用本机 Typora 的三层真源反查 §12 的每一条内嵌值（§4.360 起）：
+ *   ① Menu.strings（Base = 英文 / zh-Hans）—— 原生 nib 标题的本地化表；
+ *   ② appsrc TypeMark/locales/<locale>/Menu.json —— frame.js 覆盖层（含 … 增补规则）；
+ *   ③ tests/benchmark/fixtures/typora-live-menu-1149-display.txt —— 实机 AX dump 基线
+ *     （仅当 ①② 均无第一手文本、如导出子菜单的格式名时兜底；不在该基线里即判伪造）。
  * 并顺带扫出「Mellow 菜单文案不在 Typora 词汇表里」的可疑项供人工复核。
  *
  * 用法：
@@ -67,11 +71,68 @@ const officialZh = readStrings(join(resources, 'zh-Hans.lproj/Menu.strings'));
 const enValues = new Set(Object.values(officialEn));
 const zhValues = new Set(Object.values(officialZh));
 
+// ── §4.360 显示层三层真源 ─────────────────────────────────────────────
+// Menu.strings 只是**本地化表**（key = nib 标题），不是显示层。实机显示值来自三层叠加：
+//   ① Menu.strings 值（原生 nib 标题被本地化的结果）；
+//   ② appsrc locales/*/Menu.json（frame.js 用其覆盖/追加；函数 m 在 appsrc 键以 … 结尾
+//      时把本地化值重新加上 … ⇒ 「另存为」显示成「保存为…/另存为…」一类漂移）；
+//   ③ 实机 AX dump（三层之外无第一手文本的项，如导出子菜单 PDF/HTML/… 格式名 ——
+//      appsrc 内部 key、非本地化字符串）。
+// 本工具把 ①② 作为可机检证据；仅 ③ 支撑的值必须进 DISPLAY_LAYER（下方），
+// 每条附实机 dump 出处，防止把 Mellow 自己的文案伪装成「实机值」。
+function readAppsrcMenu(locale) {
+  const p = join(resources, 'TypeMark/locales', locale, 'Menu.json');
+  if (!existsSync(p)) return { values: new Set(), keys: new Set() };
+  const d = JSON.parse(readFileSync(p, 'utf8'));
+  const values = new Set();
+  (function walk(o) {
+    if (o instanceof Array) o.forEach(walk);
+    else if (o && typeof o === 'object') Object.values(o).forEach(walk);
+    else if (typeof o === 'string') values.add(o);
+  })(d);
+  return { values, keys: new Set(Object.keys(d)) };
+}
+const appsrcZh = readAppsrcMenu('zh-Hans.lproj');
+const appsrcEn = readAppsrcMenu('Base.lproj');
+const stripEllipsis = (v) => (v.endsWith('…') ? v.slice(0, -1) : v);
+
+// 仅由实机 AX dump（③ 层）支撑的显示值。逐条核对基线：
+// tests/benchmark/fixtures/typora-live-menu-1149-display.txt（2026-11-07 实机 dump，
+// 见审计 §4.360）。新增条目必须先在该文件里原样可查到，否则视为伪造。
+const DISPLAY_LAYER_LIVE_DUMP = join(root, 'tests/benchmark/fixtures/typora-live-menu-1149-display.txt');
+const liveDump = existsSync(DISPLAY_LAYER_LIVE_DUMP) ? readFileSync(DISPLAY_LAYER_LIVE_DUMP, 'utf8') : null;
+
+/** 一条内嵌值是否可在 ①②③ 任一层原样查到（含 … 增补规则）。 */
+function foundInLayer(val, stringsVals, appsrc, isZh) {
+  const bare = stripEllipsis(val);
+  if (stringsVals.has(val) || stringsVals.has(bare)) return true;
+  if (appsrc.values.has(val) || appsrc.values.has(bare)) return true;
+  // frame.js 增补规则：Menu.strings 的**键**（nib 标题）以 … 结尾且其本地化值 = bare ⇒ 显示 val
+  const table = isZh ? officialZh : officialEn;
+  for (const [k, v] of Object.entries(table)) {
+    if (k.endsWith('…') && stripEllipsis(k) === bare && v === bare) return true;
+  }
+  // appsrc 键（英文原形）命中 en 层
+  if (!isZh && (appsrc.keys.has(bare) || appsrc.keys.has(val))) return true;
+  return false;
+}
+
 const contract = readEmbeddedContract();
 const forged = [];
 for (const { key, zh, en } of contract) {
-  if (!zhValues.has(zh)) forged.push(`${key}：内嵌 zh「${zh}」在本机 Typora zh-Hans/Menu.strings 中不存在`);
-  if (!enValues.has(en)) forged.push(`${key}：内嵌 en「${en}」在本机 Typora Base/Menu.strings 中不存在`);
+  const checks = [
+    ['zh', zh, zhValues, appsrcZh, true],
+    ['en', en, enValues, appsrcEn, false],
+  ];
+  for (const [lang, val, svals, asrc, isZh] of checks) {
+    if (foundInLayer(val, svals, asrc, isZh)) continue;
+    // ③ 层兜底：值必须能在实机 dump 基线里原样查到
+    if (liveDump !== null && liveDump.includes(val)) {
+      console.log(`  [display-layer ③] ${key}/${lang}「${val}」：仅实机 AX dump 支撑（已核对基线）`);
+      continue;
+    }
+    forged.push(`${key}：内嵌 ${lang}「${val}」在本机 Typora Menu.strings / appsrc Menu.json / 实机 dump 基线中均不存在`);
+  }
 }
 
 console.log(`Typora 资源：${resources}`);
@@ -82,4 +143,4 @@ if (forged.length > 0) {
   throw new Error(`§12 内嵌的官方真值有 ${forged.length} 条在本机 Typora 中查不到（疑似把 Mellow 自己的值当成官方值）：\n  ${forged.join('\n  ')}`);
 }
 
-console.log('§12 内嵌真值全部可在本机 Typora 的 Menu.strings 中原样查到。');
+console.log(`§12 内嵌真值全部可在三层真源（Menu.strings / appsrc Menu.json / 实机 dump 基线）中查到。${liveDump === null ? '（⚠️ 实机 dump 基线缺失，③ 层兜底不可用）' : ''}`);

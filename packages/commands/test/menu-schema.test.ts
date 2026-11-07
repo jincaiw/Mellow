@@ -86,13 +86,13 @@ describe('MENU_SCHEMA 结构不变量', () => {
       'file.new', 'file.newWindow', '---',
       'file.open', '[file.recent]', 'file.reopenClosed', 'quickOpen.open', 'workspace.openFolder', '---',
       'file.info', 'file.revealInFileList', 'file.revealInFileTree', 'file.revealInFinder', '---',
-      'file.moveTo', 'file.trash', '---',
+      'file.trash', '---',
       'file.closeWindow', 'file.closeAll', '---',
-      'file.save', 'file.saveAs', 'file.saveAll', 'file.reloadFromDisk', '---',
+      'file.save', 'file.saveAs', 'file.duplicate', 'document.rename', 'file.moveTo', 'file.saveAll', 'file.reloadFromDisk', '---',
       'file.import', '[file.export]', 'file.pageSetup', 'file.print', '---',
       'file.openSnapshotsFolder',
     ]);
-    expect(slots.length).toBe(31);
+    expect(slots.length).toBe(33);
   });
 
   test('B1：file.newTab / tabs.*（close/closeOthers/closeRight/prev/next/showAll/reopenClosed）不再存在于 schema', () => {
@@ -133,10 +133,12 @@ describe('toNativeMenuSpec 物化', () => {
     const file = spec.menus.find((m) => m.id === 'file');
     const newFile = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'file.new');
     expect(newFile).toMatchObject({ id: 'file.new', label: '#menu.file.new', accel: 'Cmd+N' });
-    // export.repeat 无任何平台 accelerator（原 Ctrl+E 与 selectFormatSpan 冲突，已移除）
+    // §4.360：实机 Typora mac 显示「使用上一次设置导出 [Ctrl+E]」⇒ schema 声明 mac-only Ctrl+E
+    // （Win/Linux 仍无 accelerator：Ctrl+E 与 format.selectFormatSpan 冲突的历史裁决继续生效，
+    //  见下方 win-linux 用例）
     const exportRepeat = file?.items.find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.top.export')
       ?.items.find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'export.repeat');
-    expect(exportRepeat?.accel).toBeUndefined();
+    expect(exportRepeat?.accel).toBe('Ctrl+E');
   });
 
   test('win-linux 平台：过滤 app 与 window（macOnly），accelerator 取 winLinux 键位', () => {
