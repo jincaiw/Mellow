@@ -15,6 +15,10 @@
  *     **那句话是错的**：D1 声称的行为**未实现**（唯一消费 `__MELLOW_DROP_PATHS__` 的是
  *     `image/host.ts` 的 `consumeDroppedFilePaths()`，**图片管线**；`.md` / 文件夹被忽略）。
  *     手动清单里 D1 那一行已同步标注「当前不可能通过」。
+ *     ⚠️ **2026-10-08 再更正（审计 §4.152；§4.134 当天已实装）**：上面「未实现」只对 §4.124
+ *     取证的那一刻成立 —— 同日 §4.134 已落地整组拖入决策（`dropAction.ts` + Rust `path_kind` +
+ *     `handleDroppedPaths`）。⇒ 本段头文件当时「已同步标注」的那句话**从未回改**（治理轮
+ *     登记的失真 ⑤），现修正为：**D1 = 已实装、待人工真机执行**（既非「不可能通过」也非「已通过」）。
  *   - Sidebar → Finder 拖出：Typora 1.14.9 基线无此语义，Mellow 不实现（不造语义）。
  *
  * 运行：node tests/e2e/drag-drop-verify.mjs
