@@ -22860,7 +22860,12 @@ Mellow 的偏离**是裁决结果、不是欠债**）⇒ 本轮授权范围 = **
 | **放弃更改**（文件文档） | AXPress 放弃更改 ⇒ 窗口关闭 ⇒ 最后一窗 ⇒ 进程退出（**尽管 D-AU 默认关窗不退出** ⇒ `QuitIntent` 放行公式在真进程生效） | ✓ |
 | **丢弃**（未命名文档，label 变体） | 同上，退出照常 | ✓ |
 | 多窗口逐窗门 | 脏未命名 + 干净文件窗同开：干净窗**静默关闭**、脏窗弹三选一（逐窗 `emit_to` + 各自 `handleQuitRequest` 语义） | ✓ |
-| **保存** 分支 | **未完成**（如实）：后几轮 dev 环境退化（System Events 假死 -600/-1728、IMK mach port 报错、焦点被第三方 App 抢占），且 scratch 文档键入未落 ●（门内 `syncDocFromEditor` 判干净 ⇒ 静默退 —— 这是**干净文档的正确路径**，非绕过）。该分支的接线由 §16 判据 + `verify-tauri-command-contract` 双向覆盖，端到端复验登记为打包轮待办 | 待打包复核 |
+| **保存** 分支 | **打包复核已完成（同日续轮）**：dev 环境后段退化（System Events 假死 -600/-1728、IMK mach port 报错、焦点被第三方 App 抢占）⇒ 改用**打包 App**（`tauri build --debug --bundles app`，updater 签名步因缺 key 口令失败不影响 app 产物；bundle 内二进制含四门符号 ✓）。真流程：`open -a Mellow.app /tmp/…/probe-a.md`（odoc 通道，**用户文件全程未参与**）⇒ 键入 PKGSAVE1 ⇒ ● ⇒ 菜单退出 ⇒ 三选一弹出（保存×2/放弃更改×1/取消×1）⇒ AXPress 保存 ⇒ **内容写入磁盘 + 进程退出 + 窗口消失** 全链成立 | ✓（打包） |
+
+**打包烟测同轮复跑**（§4.358 续）：`run-packaging-smoke.sh` 对新产物 **ALL PASS**（bundle id/version
+`com.mellow.editor / 1.5.34`、文件关联、zh-Hans/en、icns、Third Party Notices、ad-hoc codesign、
+clean install / 启动 / upgrade / uninstall）。DMG 本轮未构建（updater 签名步先失败 ⇒ 未走到 dmg 阶段），
+如实登记。Windows/Linux 打包复验仍为环境阻塞（同前例）。
 
 **事故记录（如实，数据安全事故零容忍的反面教材）**：首轮键入探针未加焦点断言，击键落进
 用户真实文件 `Downloads/markdown-basic-syntax-test.md`（当前打开的标签页），叠加**失焦自动保存**
