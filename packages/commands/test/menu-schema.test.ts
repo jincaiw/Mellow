@@ -38,16 +38,20 @@ describe('MENU_SCHEMA 结构不变量', () => {
     expect(shared.every((root) => !root.macOnly)).toBe(true);
   });
 
-  test('Command ID 只定义一次（submenu 内同名 insert.table 复用同一 id 属合法重复挂载）', () => {
-    // 同一 id 允许出现在多个菜单位置（如 insert.table 同时在表格子菜单与段落菜单），
-    // 但 accelerator 声明必须唯一 —— 由 SCHEMA_SHORTCUTS 单值 Map 天然保证。
+  test('Command ID 多槽位合法，但同 id 的 accelerator 声明必须一致（§4.360「六」7b 放宽）', () => {
+    // 同一 id 允许出现在多个菜单位置（如 insert.table 同时在表格子菜单与段落菜单；
+    // Typora 实机 查找▸ 与 编辑▸跳转组 双槽位同显「跳转到所选内容 [Cmd+J]」）。
+    // 原不变量「withShortcut ≤ 1」**过强** —— 它把「单真源」误写成「单槽位」：
+    // 真源约束的正确形态 = 同 id 的多处声明必须**逐字段相等**（双处漂移才是缺陷）。
     const counts = new Map<string, number>();
     for (const entry of allEntries()) {
       if (entry.kind === 'command') counts.set(entry.id, (counts.get(entry.id) ?? 0) + 1);
     }
     for (const [id, count] of counts) {
-      const withShortcut = allEntries().filter((e) => e.kind === 'command' && e.id === id && e.shortcut !== undefined).length;
-      expect({ id, withShortcut, ok: withShortcut <= 1 }).toEqual({ id, withShortcut, ok: true });
+      const shorts = allEntries()
+        .filter((e): e is Extract<MenuEntry, { kind: 'command' }> => e.kind === 'command' && e.id === id && e.shortcut !== undefined)
+        .map((e) => JSON.stringify(e.shortcut));
+      expect([...new Set(shorts)]).toEqual(shorts.length ? [shorts[0]] : []);
       expect(count).toBeGreaterThanOrEqual(1);
     }
   });
@@ -64,7 +68,11 @@ describe('MENU_SCHEMA 结构不变量', () => {
 
   test('快捷键声明唯一：SCHEMA_SHORTCUTS 每个命令只映射一个三平台键位', () => {
     const commandEntries = allEntries().filter((e): e is Extract<MenuEntry, { kind: 'command' }> => e.kind === 'command' && e.shortcut !== undefined);
-    expect(SCHEMA_SHORTCUTS.size).toBe(commandEntries.length);
+    // 多槽位同 id（§4.360「六」7b）⇒ Map 按 id 去重，口径 = 「去重后的 id 数」；
+    // 「同 id 多处声明必须一致」由上一条不变量锁（两向合起来 = 单真源）。
+    const uniqueIds = new Set(commandEntries.map((e) => e.id));
+    expect(SCHEMA_SHORTCUTS.size).toBe(uniqueIds.size);
+    expect(commandEntries.length - uniqueIds.size).toBe(1); // 当前唯一多槽位对 = edit.gotoSelection
     // drift canary（护栏锚点）：insert.image Win/Linux = Ctrl+Shift+I（P1-1.8 官方键位）
     expect(SCHEMA_SHORTCUTS.get('insert.image')).toEqual({ mac: 'Cmd+Ctrl+I', winLinux: 'Ctrl+Shift+I' });
     // 平台中性键位 F8/F9（focus/typewriter）

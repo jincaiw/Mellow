@@ -266,7 +266,10 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       // Typora 拼写子菜单的「Check Document Now」（一级证据：dump 中
       // `Check Document Now => 立即检查文稿`）。顺序按 macOS 标准拼写子菜单：
       // 「立即检查」在「键入时检查」**之前**（dump 是扁平清单，不含层级顺序）。
-      { kind: 'command', id: 'edit.spelling.checkDocument', labelKey: 'menu.edit.checkDocumentNow' },
+      // §4.360「六」7b：基线 fixture L243 `立即检查文稿 [Cmd+;]` = macOS 标准拼写
+      // 子菜单惯例键位；⌘; 在 schema/App.tsx 零占用（§13 分桶预检过）⇒ 能力真实
+      // + 语义无偏离 ⇒ 补装显示层键位（同 替换下一个 母题）。
+      { kind: 'command', id: 'edit.spelling.checkDocument', labelKey: 'menu.edit.checkDocumentNow', shortcut: { mac: 'Cmd+;' } },
       { kind: 'separator' },
       { kind: 'command', id: 'edit.spellcheck.toggle', labelKey: 'menu.edit.spellcheck', checkedFrom: 'spellcheck' },
       // P0-EDITOR-005：Typora 拼写子菜单的 Learn / Unlearn Spelling。
@@ -321,6 +324,11 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       // 与 L254 查找和替换… [Opt+F] 同族）。能力桥 = 引擎 MellowSearchApi.replaceNext()
       // （面板「替换」按钮同一实现）。winLinux 不声明（官方表 Win/Linux 键位未含本项）。
       { kind: 'command', id: 'search.replaceNext', labelKey: 'menu.search.replaceNext', shortcut: { mac: 'Cmd+Alt+E' } },
+      // §4.360「六」7b：基线 fixture L256-257 —— 分隔线后**第二处**「跳转到所选内容」
+      // （与 编辑▸跳转组 的那行同命令双槽位，Typora 实机即两行同显；muda 允许同 id
+      // 双行，dispatch 面同源）。display 层差集 ⇒ 装配（判据同「六」7）。
+      { kind: 'separator' },
+      { kind: 'command', id: 'edit.gotoSelection', labelKey: 'menu.edit.gotoSelection', shortcut: { mac: 'Cmd+J', winLinux: 'Ctrl+J' } },
     ] },
   ] },
 

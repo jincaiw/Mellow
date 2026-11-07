@@ -23394,6 +23394,52 @@ L184-189 逐行一致（复制组 → 分隔 → `粘贴为纯文本 [Shift+V]` 
 判据统一为：**能力真实且语义无偏离 ⇒ 常显补差集；语义偏离或能力缺失 ⇒ 不装**
 （closeAll 属 SDI 语义偏离，pasteMatchStyle 能力=真、语义=匹配样式粘贴无偏离）。
 
+**7b）标签集/重复计数/键位三面全量差集复扫 + 两项补装（2026-11-08 续轮）**
+
+「六」7 收口后，对 `/tmp/menu-mellow-4364.txt` 与基线做**三面**全量差集复扫
+（标签集双向 / 同标签**重复次数** / 同标签**键位显示**），滤除已注册分流面
+（B1 tab / D-AC 只读 / D-AY 语音 / D-S·G7-EDIT-04 转换簇 / P0-EDITOR-005 拼写 /
+D-AB 插图片 / 四.4 窗口项 / Typora 专有 Help 项 / AppKit OS 段 / MRU 会话项）后，
+抓到 **3 项真缺口 + 1 项新形态限制**（其余逐项归类即下表）：
+
+| 差集命中 | 归类 | 依据 |
+|---|---|---|
+| `立即检查文稿 [Cmd+;]`（基线 L243，Mellow 无键位） | **键位显示差 ⇒ 本轮装配** | ⌘; = macOS 标准拼写子菜单惯例键位，§13 分桶预检零占用；能力真实（`edit.spelling.checkDocument` 命令在册）+ 语义无偏离 ⇒ 补 mac accelerator 声明 |
+| 查找▸ **第二处** `跳转到所选内容 [Cmd+J]`（基线 L256；Mellow 仅 编辑▸跳转组 一处，重复计数 基线2 vs Mellow1） | **结构显示差 ⇒ 本轮装配** | Typora 实机 查找 子菜单尾部（替换下一个 之后）另挂同命令行；命令 id 复用、dispatch 面同源 |
+| `页面设置… [Shift+P]`（基线 L172；解码 = ⇧⌘P） | **§13 不可双装 ⇒ 登记显示差** | ⇧⌘P 已被 Mellow 增强项 `commandPalette.open`（命令面板，显示▸末组）持有 —— §13 唯一性护栏禁止双装（同「删除行 ⌘⇧⌫」母题）。取舍：命令面板是 Mellow 核心增强（PRD §116 面），不让位；`file.pageSetup` 行保持无 mac accelerator（能力仍在，面板/直达触达）⇒ **显示键位差登记**，若未来键位表复核轮裁决 ⇧⌘P 归 pageSetup，则命令面板另行让位 |
+| `复原到` / `合并所有窗口`（基线 L143/L470，Mellow 全段无此标签） | **OS predefined 面 ⇒ 登记** | 二者是 AppKit 对 `NSDocument` 自动注入的「复原到▸（版本）」与「窗口▸合并所有窗口」—— Mellow 非 NSDocument 架构（文件 IO 在 Rust System Core，统一规则「不允许 UI 直接访问文件系统」）⇒ 无宿主语义，不装占位（占位项母题）；**本轮首次显式登记**（此前差集扫到未归类） |
+| `查找和替换… [Opt+F]`（基线 L254；Mellow dump 该行**无 accel 显示**，但 schema 已声明 `Cmd+Alt+H`） | **声明与 predefined 同键相冲 ⇒ 登记 D-AX 家族** | predefined `hideOthers` 实机显示 `[Opt+H]` = **⌥⌘H**（dump 解码：bit1 + Cmd 隐含），与 `search.replace` 声明的 `Cmd+Alt+H` **同组合** ⇒ 物化层吞掉应用侧声明。本轮以**可复现实验**定因：临时把 replace 声明改 ⌥⌘J 复 dump → `查找和替换… [Opt+J]` **正常显示**（/tmp/menu-mellow-exph.txt），改回 ⌥⌘H → 恒空（三 dump 一致）⇒ 排除 muda/物化链路故障，**坐实同键相冲**。属 2026-09-13「replace 让位 ⌘H 改 ⌥⌘H」（D-Q）的**连锁面**：改后的键仍与系统「隐藏其他」相冲。真解 = 换键（⌥⌘J 实验证明可显示）或官方表复核 ⇒ **D-AX 键位表复核轮统一处理**，本轮不擅改（实验改动已回退） |
+| `代码 [NoCmdCtrl+`]` vs `代码 [Shift+`]`；`全屏 [NoCmd+F]` vs `[Opt+F]`；`保存为… [OptShift+S]` vs `[Shift+S]`；`删除行 [Shift+⌫]`；`提升标题级别 Cmd+= vs Cmd++`；`查找和替换…`（上行） | **官方键位表 vs 实机显示偏差 = D-AX/D-AX 同族在册** | §11 键位表合同锁定（含 canary），不擅改；「六」7 已对 `[Ctrl+E]`/`[NoCmdCtrl+E]` 两类**可表达**误读做更正，此类**双真源冲突**留待键位表复核轮统一裁决 |
+| `上传图片`（重复计数 基线2 vs Mellow1） | **图像子菜单 D-AB 关联 ⇒ 维持不装** | 第二处出现 = `当插入本地图片时▸上传图片`（D-AB 裁决子菜单），与 图像子菜单未装配 2 项在册同源 |
+
+**装配内容**：① `menuSchema.ts` `edit.spelling.checkDocument` 行 +
+`shortcut: { mac: 'Cmd+;' }`（**只 mac**：官方表 Win/Linux 键位未含本项，winLinux
+不声明）；② `edit.find` 子菜单尾部 + `separator` + `edit.gotoSelection` 复用行
+（同 id 双槽位，labelKey/shortcut 与跳转组那行逐字段一致）。
+
+**不变量放宽（本轮的第二个合同级发现）**：jest「Command ID 只定义一次」原断言
+`withShortcut ≤ 1` 把**单真源**误写成**单槽位** —— Typora 实机证明同命令可双槽位
+同显（`跳转到所选内容` 两处），正确的真源约束 = **同 id 的多处 shortcut 声明必须
+逐字段相等**（双处漂移才是缺陷）。⇒ 断言改为「集合去重后只剩一个声明值」，
+并新增 `commandEntries.length − uniqueIds.size === 1` 的**显式槽位差计数**
+（当前唯一多槽位对 = edit.gotoSelection；未来新增多槽位会**显式**撞计数，
+按 §4.317 纪律同步，防静默稀释）。SCHEMA_SHORTCUTS 是 id 键 Map ⇒ 双槽位同值
+天然收敛，护栏报「88 accelerators」不变（去重后 id 数），schemaShortcuts 遍历面
+（§13 分桶）同 id 双行 = 同键位 = 无新冲突。
+
+**验证**：`pnpm --filter @mellow/commands test` 33/33；`verify-menu-contract` 全绿
+（33 槽 / **88** accel / 10 toggles / 55 官方键位 / 78 标签）；**原生复 dump**
+（dev 实例重启：`target/debug/mellow-desktop`；只读轮 —— 窗口标题为用户文件 ⇒
+零点击零键入，MD5 前后复验 `b4851464…`/5350B ✓；`dump-menu.sh` →
+`/tmp/menu-mellow-4365.txt` **446 行**）两点全中：L199 `立即检查文稿 [Cmd+;]`、
+L224 查找▸ `跳转到所选内容 [Cmd+J]`（与 L183 跳转组那行同形双槽位）✓。
+三面差集复扫对 4365 重跑：滤注册面后**残余 = 零**（复原到/合并所有窗口/页面设置
+键位/查找和替换 键位已入本轮表格归类，不再属未登记缺口）。
+
+**残余（本轮如实登记）**：见上表 4–7 行（页面设置 ⇧ 双位歧义、复原到/合并所有窗口
+OS 注入语义、查找和替换 D-AX 连锁、键位表/实机 D-AX 族）—— 全部属**裁决面或
+muda 形态限制**，非可装配缺口。
+
 
 
 ## 五、本次审计做的改动（非策略性）
