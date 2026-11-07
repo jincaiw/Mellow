@@ -5024,6 +5024,29 @@ export default function App() {
     if (isTauri() && svc) { await armWindowClose(); void svc.close(); }
   }, [armWindowClose, confirmCloseDocument, syncDocFromEditor]);
 
+  /** ⌘Q 脏门（2026-11-07，审计 §4.358）：Quit 菜单命令经 Rust `request_quit` 广播到
+   *  本窗口的确认请求。与系统关窗（handleSystemCloseRequest）**同一条确认链**
+   *  （Typora `tryLeaveDocument` 一链多用；一手证据 = 其 Cancel 分支调 `app.cancelQuit`）：
+   *  dirty → 保存/放弃/取消；取消 → `quit_cancelled` 中止整个退出流程（Typora 语义）。
+   *  放行 → `confirm_quit` 置退出意图（**必须在 arm+close 之前**：最后一窗销毁走
+   *  ExitRequested{None}，D-AU「关窗不退出」默认会拦掉这次进程退出，意图即放行凭据）。 */
+  const handleQuitRequest = useCallback(async () => {
+    syncDocFromEditor();
+    const doc = docStateRef.current.doc;
+    if (doc !== null && !(await confirmCloseDocument(doc))) {
+      void invoke('quit_cancelled').catch(() => undefined);
+      return;
+    }
+    // 与系统关窗一致：关窗路径入 ⇧⌘T 恢复栈
+    if (doc !== null && doc.path !== null) setClosedFiles(pushClosedFile(doc.path));
+    const svc = windowServiceRef.current;
+    if (isTauri() && svc) {
+      try { await invoke('confirm_quit'); } catch { /* Rust 侧缺命令 = 旧后端：退化为直接关窗 */ }
+      await armWindowClose();
+      void svc.close();
+    }
+  }, [armWindowClose, confirmCloseDocument, syncDocFromEditor]);
+
   /** 移动当前文档到其他文件夹（D1-2：Typora 文件→移到…；tab/watcher/引擎路径基准同步） */
   /**
    * 文档级移动：把**当前打开文档**移到指定目录，并同步全部关联状态。
@@ -5467,6 +5490,20 @@ export default function App() {
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
   }, [handleSystemCloseRequest]);
+  // ⌘Q 脏门（2026-11-07，审计 §4.358）：Rust `request_quit` 逐窗 emit
+  // `mellow://quit-requested` → 本窗口做与系统关窗同一条 dirty 确认。
+  // ⚠️ 与 window-close-requested 同理：**必须以本窗口 label 为 target 注册**
+  // （§4.356：target=Any 的监听无条件收到一切事件 ⇒ 多窗口会各弹一轮确认）。
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void Promise.all([import('@tauri-apps/api/event'), import('@tauri-apps/api/window')])
+      .then(([{ listen }, { getCurrentWindow }]) => listen('mellow://quit-requested', () => { void handleQuitRequest(); }, { target: getCurrentWindow().label }))
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .catch(() => { /* 非 Tauri 环境 */ });
+    return () => { cancelled = true; unlisten?.(); };
+  }, [handleQuitRequest]);
   // CoreEditor 位于 iframe 中，编辑事件经 Tauri bridge 回到桌面壳。不能只依赖
   // window keydown：IME、粘贴、拖放和输入法提交都可能绕过该路径。
   // ⚠️ 2026-11-07（审计 §4.356，原生三窗口实测取证）：监听**必须以本窗口 label 为 target**
@@ -5706,6 +5743,11 @@ export default function App() {
       { id: 'fileTree.copyPath', localizedTitle: { zh: '复制路径', en: 'Copy Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(false) },
       { id: 'fileTree.copyRelativePath', localizedTitle: { zh: '复制相对路径', en: 'Copy Relative Path' }, category: 'workspace', context: { scope: 'target' }, enabled: () => selectedTreePath !== null, execute: () => void handleTreeCopyPath(true) },
       { id: 'updater.check', localizedTitle: { zh: '检查更新', en: 'Check for Updates' }, category: 'app', context: { scope: 'global' }, enabled: () => isTauri(), execute: () => void runUpdateCheck({ manual: true }) },
+      // ⌘Q 脏门（2026-11-07，审计 §4.358）：菜单/键盘 Quit 不再走 muda `terminate:`
+      // （绕过 dirty 确认），统一经 Rust `request_quit` 发起逐窗确认轮。
+      // 多窗口下本命令被**每窗各 dispatch 一次**（菜单事件广播，§4.356）⇒ Rust 侧
+      // QuitPrompted 一次性去重，只有首个 invoke 真正发起本轮。
+      { id: 'app.quit', localizedTitle: { zh: '退出 Mellow', en: 'Quit Mellow' }, category: 'app', context: { scope: 'global' }, enabled: always, execute: () => { void invoke('request_quit').catch(() => undefined); } },
       // B2 文件菜单补全：清除最近文件（Typora 的「打开最近文件」子菜单；执行时先选作用域）
       { id: 'recent.clear', localizedTitle: { zh: '清除最近文件', en: 'Clear Items' }, category: 'file', context: { scope: 'global' }, enabled: always, execute: () => { void clearRecentItems(); } },
       // 编辑：查找 / 替换（Typora 对齐；Ctrl+H 由引擎 keymap 处理）

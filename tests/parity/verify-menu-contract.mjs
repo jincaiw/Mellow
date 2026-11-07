@@ -1150,6 +1150,87 @@ for (const msg of checkTyporaMenuLabels(parseLocaleBlock('zhCN', ''), parseLocal
   else if (paletteLeaks(drift).length === 0) fail('§14 漏译 canary 失效：注入的英文标题未被检出');
 }
 
+// ── 16. ⌘Q 脏门接线（2026-11-07，审计 §4.358）──────────────────────────────
+// 【为什么】muda `PredefinedMenuItem::quit` 走 `sel!(terminate:)`，tao 无
+//   `applicationShouldTerminate:` ⇒ **OS Quit 不可拦 = 绕过 dirty 确认 = 数据丢失**
+//   （统一规则 13）。Typora 一手证据（TypeMark main.js 的 Cancel 分支
+//   `JSBridge.invoke("app.cancelQuit")`）⇒ Quit 过脏门是官方行为（统一规则 14）。
+//   根治 = Quit 改为带 id 命令 `app.quit` → Rust `request_quit` 逐窗确认。
+//   本链条任何一环被改回 predefined / 断线 ⇒ 缺陷**无声回归**，故逐层锁：
+//   ① schema 命令化 + Cmd+Q accelerator + TS 枚举剔除 quit；
+//   ② menu.rs 零 `PredefinedMenuItem::quit`（含启动 fallback = fallback 也走命令）；
+//   ③ App.tsx dispatch → `request_quit`；确认链 = `confirm_quit` 在 arm+close **之前**、
+//      取消分支 `quit_cancelled`、监听 target=本窗（§4.356 扇出教训）；
+//   ④ window.rs 放行判据 `&& !quit_intent`（D-AU 与脏门的交接点）；
+//      lib.rs ExitRequested 读 QuitIntent。
+// 命令/事件名存在性由 verify-tauri-command-contract 双向覆盖（D=R=F、emit⇄listen），此处不复述。
+const windowRsSource = codeText('apps/desktop/src-tauri/src/window.rs');
+const libRsSource = codeText('apps/desktop/src-tauri/src/lib.rs');
+/** 五文件联合判据（**全部入参化** ⇒ canary 注入哪一层都能被检出；同 `shortcutMapFrom(src)` 先例。
+ *  ⚠️ 首版把 schema 判据写成读闭包 `allEntries()` ⇒ 注入变异体**根本传不进去**（假武装）。） */
+function quitGateFindings(sSrc, aSrc, mSrc, wSrc, lSrc) {
+  const bad = [];
+  // ① schema：app 菜单必须是 command `app.quit`（labelKey 复用 menu.top.quit、mac Cmd+Q）
+  const quitEntry = parseMenuSchema(sSrc)
+    .flatMap((r) => [...walkEntries(r.entries)])
+    .find((e) => e.kind === 'command' && e.id === 'app.quit');
+  if (!quitEntry) bad.push('menuSchema.ts 缺少命令条目 app.quit（Quit 必须是可分发命令，不能是 predefined）');
+  else {
+    if (quitEntry.labelKey !== 'menu.top.quit') bad.push(`app.quit 文案 key 漂移：应为 menu.top.quit，实际 ${quitEntry.labelKey}`);
+    if (quitEntry.shortcut?.mac !== 'Cmd+Q') bad.push(`app.quit 缺 mac accelerator Cmd+Q（实际 ${JSON.stringify(quitEntry.shortcut ?? null)}）⇒ 键位单一真源被破坏`);
+  }
+  if (sSrc.includes("predefined: 'quit'")) bad.push("menuSchema.ts 仍存在 predefined: 'quit' ⇒ terminate: 绕过脏门（§4.358 回归）");
+  if (/MenuPredefinedKind[\s\S]{0,400}?'quit'/.test(sSrc)) bad.push("MenuPredefinedKind 枚举仍含 'quit' ⇒ 类型层重新放行绕过路径（§4.358）");
+  // ② menu.rs：OS Quit materialization 必须绝迹；fallback 菜单必须带 id 走命令
+  if (mSrc.includes('PredefinedMenuItem::quit')) bad.push('menu.rs 仍在物化 PredefinedMenuItem::quit ⇒ terminate: 绕过脏门（§4.358）');
+  if (!mSrc.includes('MenuItem::with_id(app, "app.quit"')) bad.push('menu.rs 启动 fallback 未走 app.quit 命令 ⇒ 前端就绪前 Quit 绕过脏门（§4.358）');
+  // ③ App.tsx：命令执行、逐窗监听（target 必须本窗）、确认链顺序、取消复位
+  if (!/id: 'app\.quit'[\s\S]{0,400}?invoke\('request_quit'\)/.test(aSrc)) bad.push("App.tsx 的 app.quit 命令未 invoke('request_quit')（§4.358）");
+  if (!aSrc.includes("listen('mellow://quit-requested'")) bad.push('App.tsx 未监听 mellow://quit-requested ⇒ Rust 发起后无人确认（§4.358）');
+  if (!/listen\('mellow:\/\/quit-requested'[\s\S]{0,200}?\{ target: getCurrentWindow\(\)\.label \}/.test(aSrc)) {
+    bad.push('mellow://quit-requested 监听未以本窗 label 为 target ⇒ 多窗口各弹一轮（§4.356 扇出教训，§4.358）');
+  }
+  if (!/invoke\('confirm_quit'\)[\s\S]{0,160}?armWindowClose\(\)/.test(aSrc)) bad.push("App.tsx 未在 armWindowClose **之前** await invoke('confirm_quit') ⇒ 确认过的退出可能被 D-AU 困住（§4.358）");
+  if (!/confirmCloseDocument[\s\S]{0,240}?invoke\('quit_cancelled'\)/.test(aSrc)) bad.push("App.tsx 取消分支未 invoke('quit_cancelled') ⇒ 取消不能中止退出、标记滞留（§4.358，Typora cancelQuit 语义）");
+  // ④ Rust 判定层：意图必须参与放行公式且被 ExitRequested 读取
+  if (!wSrc.includes('code_is_none && !quit_after_window_close && !quit_intent')) bad.push('window.rs should_prevent_exit 缺 `&& !quit_intent` 项 ⇒ 确认后的退出被 D-AU 困死（§4.358）');
+  if (!/QuitIntent[\s\S]{0,400}?should_prevent_exit\(code\.is_none\(\), quit_after, quit_intent\)/.test(lSrc)) {
+    bad.push('lib.rs ExitRequested 未按 QuitIntent 调三参 should_prevent_exit（§4.358）');
+  }
+  return bad;
+}
+for (const message of quitGateFindings(schemaSource, appCode, menuRsSource, windowRsSource, libRsSource)) fail(message);
+// canary（逐层注入，全部必须被拒；锚点失配 = 未武装，同 §4.214「死豁免」教训分开报因）：
+{
+  const QUIT_ENTRY_SRC = "{ kind: 'command', id: 'app.quit', labelKey: 'menu.top.quit', shortcut: { mac: 'Cmd+Q' } },";
+  const inject = (label, file, from, to) => {
+    const ctx = { schema: schemaSource, app: appCode, menu: menuRsSource, window: windowRsSource, lib: libRsSource };
+    if (!ctx[file].includes(from)) { fail(`⌘Q 脏门 canary 未武装：${label} 锚点失配（真源已漂移，请同步判据）`); return; }
+    ctx[file] = ctx[file].replace(from, to);
+    if (quitGateFindings(ctx.schema, ctx.app, ctx.menu, ctx.window, ctx.lib).length === 0) {
+      fail(`⌘Q 脏门护栏假绿：注入缺陷「${label}」未被检出`);
+    }
+  };
+  inject('Quit 改回 predefined', 'schema', QUIT_ENTRY_SRC, "{ kind: 'predefined', predefined: 'quit', labelKey: 'menu.top.quit' },");
+  inject('app.quit 丢 mac accelerator', 'schema', QUIT_ENTRY_SRC, "{ kind: 'command', id: 'app.quit', labelKey: 'menu.top.quit' },");
+  inject('menu.rs fallback 复活 OS Quit', 'menu',
+    'MenuItem::with_id(app, "app.quit", "退出 Mellow", true, None::<&str>)',
+    'PredefinedMenuItem::quit(app, Some("退出 Mellow"))');
+  inject('监听退化为全局广播', 'app',
+    "listen('mellow://quit-requested', () => { void handleQuitRequest(); }, { target: getCurrentWindow().label })",
+    "listen('mellow://quit-requested', () => { void handleQuitRequest(); })");
+  inject('确认链跳过 confirm_quit', 'app',
+    "try { await invoke('confirm_quit'); } catch",
+    "try { await invoke('placeholder_dead'); } catch");
+  inject('取消分支不复位', 'app', "invoke('quit_cancelled')", "invoke('placeholder_dead')");
+  inject('放行公式丢意图项', 'window',
+    'code_is_none && !quit_after_window_close && !quit_intent',
+    'code_is_none && !quit_after_window_close');
+  inject('ExitRequested 不读意图', 'lib',
+    'should_prevent_exit(code.is_none(), quit_after, quit_intent)',
+    'should_prevent_exit(code.is_none(), quit_after, false)');
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────
 if (errors.length > 0) {
   throw new Error(`Menu contract violations:\n  ${errors.join('\n  ')}`);

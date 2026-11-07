@@ -298,6 +298,9 @@ pub fn run() {
             window::page_setup,
             window::allow_close_window,
             window::set_quit_after_window_close,
+            window::request_quit,
+            window::confirm_quit,
+            window::quit_cancelled,
             window::open_system_spell_settings,
             open_with::detect_open_with,
             open_with::open_with_editor,
@@ -318,6 +321,8 @@ pub fn run() {
         .manage(geometry::GeometryState::default())
         .manage(window::CloseGate::default())
         .manage(window::QuitPolicy::default())
+        .manage(window::QuitIntent::default())
+        .manage(window::QuitPrompted::default())
         .setup(|app| {
             // 主窗口经 Builder 显式创建（Security Review H2 纵深防御）：
             // on_navigation 只允许应用自身页面（tauri:// 或 dev http://localhost），
@@ -413,10 +418,11 @@ pub fn run() {
                 // （wry：最后窗口 Destroyed → ExitRequested{code:None}；程序化
                 // exit()/restart() 带 Some(code)）。默认（`quitAfterWindowClose=false`，
                 // 对齐 Typora macOS 惯例）阻止这次自然退出；程序化退出**永不**拦截。
-                // ⌘Q / 菜单 Quit 不经此事件（muda 走 `terminate:` → tao
-                // `application_will_terminate`，前端保存门照常运行），故本拦截
-                // **不可能**把应用困在「退不出去」状态。非 macOS 不编译此逻辑：
-                // Windows/Linux 语义不变（Typora 该偏好仅 macOS 面板暴露）。
+                // ⌘Q 脏门（2026-11-07，审计 §4.358）：Quit 已改为带 id 命令 `app.quit`
+                // → `request_quit` → 逐窗 dirty 确认 → 全放行后关窗，最后一窗销毁**正是**
+                // 走本通道（code:None）⇒ 需按 `QuitIntent` 放行，否则 D-AU 会把已确认退出
+                // 的用户困在 0 窗口。任一窗取消 → `quit_cancelled` 复位 → 本拦截照常。
+                // 非 macOS 不编译此逻辑：Windows/Linux 语义不变（Typora 该偏好仅 macOS 面板暴露）。
                 RunEvent::ExitRequested { code, api, .. } => {
                     geometry::flush(app);
                     #[cfg(target_os = "macos")]
@@ -425,7 +431,11 @@ pub fn run() {
                             .state::<window::QuitPolicy>()
                             .0
                             .load(std::sync::atomic::Ordering::Relaxed);
-                        if window::should_prevent_exit(code.is_none(), quit_after) {
+                        let quit_intent = app
+                            .state::<window::QuitIntent>()
+                            .0
+                            .load(std::sync::atomic::Ordering::Relaxed);
+                        if window::should_prevent_exit(code.is_none(), quit_after, quit_intent) {
                             api.prevent_exit();
                         }
                     }

@@ -17,10 +17,12 @@ import type { CommandShortcut } from './index';
 
 // ── Schema 声明类型 ──────────────────────────────────────────────
 
-/** OS 预定义菜单项（PredefinedMenuItem，行为由系统提供，只可定制文案）。 */
+/** OS 预定义菜单项（PredefinedMenuItem，行为由系统提供，只可定制文案）。
+ *  ⚠️ 2026-11-07（审计 §4.358）：`quit` **已移除** —— OS Quit 走 `terminate:` 不可拦，
+ *  会绕过 ⌘Q 脏门（数据丢失）。Quit 唯一入口 = 命令 `app.quit`（见 MENU_SCHEMA）。 */
 export type MenuPredefinedKind =
   | 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll'
-  | 'about' | 'services' | 'hide' | 'hideOthers' | 'showAll' | 'quit';
+  | 'about' | 'services' | 'hide' | 'hideOthers' | 'showAll';
 
 export interface MenuCommandEntry {
   kind: 'command';
@@ -89,7 +91,11 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'predefined', predefined: 'hideOthers', labelKey: 'menu.top.hideOthers' },
     { kind: 'predefined', predefined: 'showAll', labelKey: 'menu.top.showAll' },
     { kind: 'separator' },
-    { kind: 'predefined', predefined: 'quit', labelKey: 'menu.top.quit' },
+    // ⌘Q 脏门（2026-11-07，审计 §4.358）：Quit 由 muda predefined（`terminate:` 不可拦，
+    // 绕过 dirty 确认 = 数据丢失缺陷）改为带 id 命令 → `request_quit` 逐窗确认。
+    // 一手依据：Typora TypeMark `appsrc/main.js` dirty 确认 Cancel 分支调
+    // `JSBridge.invoke("app.cancelQuit")` ⇒ Typora 的 ⌘Q **本来就过脏门**（统一规则 14）。
+    { kind: 'command', id: 'app.quit', labelKey: 'menu.top.quit', shortcut: { mac: 'Cmd+Q' } },
   ] },
 
   // ── 文件（§7.2：31 槽位契约）─────────────────────────────────

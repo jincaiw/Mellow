@@ -40,6 +40,10 @@ const FILES = {
   // 双向核对（真值源 = 设置 schema）⇒ 沙箱必须一并复制它，否则每个用例都会因
   // 「文件不存在」失败（沙箱缺文件 ≠ 被注入的缺陷）。
   'packages/settings/src/index.ts': 'packages/settings/src/index.ts',
+  // §4.358（2026-11-07）：⌘Q 脏门接线判据（§16）读取 window.rs（放行公式）与
+  // lib.rs（ExitRequested 读 QuitIntent）⇒ 沙箱必须一并复制（同上先例）。
+  'apps/desktop/src-tauri/src/window.rs': 'apps/desktop/src-tauri/src/window.rs',
+  'apps/desktop/src-tauri/src/lib.rs': 'apps/desktop/src-tauri/src/lib.rs',
 };
 
 let work = '';

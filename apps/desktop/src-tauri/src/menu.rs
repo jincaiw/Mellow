@@ -61,7 +61,9 @@ enum SpecItem {
     },
     Predefined {
         /// OS 预定义动作：undo/redo/cut/copy/paste/selectAll/about/services/hide/
-        /// hideOthers/showAll/quit（与 TS MenuPredefinedKind 一致）
+        /// hideOthers/showAll（与 TS MenuPredefinedKind 一致）。
+        /// ⚠️ `quit` 已移除（2026-11-07，审计 §4.358）：`terminate:` 不可拦 = 绕过
+        /// ⌘Q 脏门；Quit 唯一入口 = 带 id 命令 `app.quit`（见 install_menu / menuSchema）。
         predefined: String,
         #[serde(default)]
         label: Option<String>,
@@ -94,7 +96,9 @@ fn build_predefined(
         "hide" => Box::new(PredefinedMenuItem::hide(app, label)?),
         "hideOthers" => Box::new(PredefinedMenuItem::hide_others(app, label)?),
         "showAll" => Box::new(PredefinedMenuItem::show_all(app, label)?),
-        "quit" => Box::new(PredefinedMenuItem::quit(app, label)?),
+        // ⚠️ `quit` 分支已删除（2026-11-07，审计 §4.358）：`terminate:` 绕过 ⌘Q 脏门。
+        // 若 spec 仍带 predefined:'quit'（TS 枚举已不允许），落入下方 separator fallback
+        // —— **宁缺勿绕过**（统一规则 13）。
         // TS 侧 MenuPredefinedKind 枚举已穷举；防御性 fallback（不可达）
         _ => Box::new(PredefinedMenuItem::separator(app)?),
     };
@@ -173,7 +177,12 @@ pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
     if cfg!(target_os = "macos") {
         let about =
             PredefinedMenuItem::about(app, Some("关于 Mellow"), Some(AboutMetadata::default()))?;
-        let quit = PredefinedMenuItem::quit(app, Some("退出 Mellow"))?;
+        // ⌘Q 脏门（2026-11-07，审计 §4.358）：启动期 fallback 的「退出」**不用**
+        // PredefinedMenuItem::quit（`terminate:` 不可拦 = 绕过脏门），改为带 id 的
+        // 普通 MenuItem → `mellow-menu-command` → 前端 `app.quit` → `request_quit`
+        // 逐窗确认。fallback 窗口期若前端命令未就绪，dispatch 失败仅提示「命令不可用」——
+        // 宁可不退，不可静默丢数据（统一规则 13）。
+        let quit = MenuItem::with_id(app, "app.quit", "退出 Mellow", true, None::<&str>)?;
         let sep = PredefinedMenuItem::separator(app)?;
         let app_menu = Submenu::with_items(app, "Mellow", true, &[&about, &sep, &quit])?;
         let menu = Menu::with_items(app, &[&app_menu])?;

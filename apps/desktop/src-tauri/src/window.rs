@@ -132,15 +132,44 @@ pub fn new_window(
 /// 灌进本状态（默认关 ⇒ 未灌值时行为即新默认）。
 ///
 /// 生效点在 `lib.rs` 的 `RunEvent::ExitRequested`：**仅 `code: None`（最后窗口销毁的
-/// 自然退出）且本值为 false 时 `prevent_exit()`**。两条不可破坏的安全边界：
-/// 1. **⌘Q 不被拦**：`code: Some` 的程序化退出直接放行 —— 且据 vendored 源码
-///    （muda-0.20 `PredefinedMenuItemType::Quit => sel!(terminate:)`；
-///    tauri-runtime-wry `LoopExiting` 不重发 ExitRequested），macOS 原生 Quit 走
-///    `terminate:`，**根本不经过** last-window-destroyed 的 ExitRequested{None} 通道；
+/// 自然退出）、本值为 false、且无退出意图（`QuitIntent`）时 `prevent_exit()`**。
+/// 两条不可破坏的安全边界：
+/// 1. **程序化退出永不拦**：`code: Some` 的 exit()/restart()（安装器重启、
+///    `request_quit` 的无窗口直退）直接放行；
 /// 2. **关闭确认门不被旁路**（`CloseGate`）：被拦下的是「窗口已销毁后的进程退出」，
 ///    窗口关闭本身的 dirty 确认流程不受影响。
+///
+/// ⚠️ 2026-11-07 更正（审计 §4.358）：本注释原声称「⌘Q 走 muda `terminate:` ⇒
+/// **根本不经过** ExitRequested ⇒ 不会被困住」—— 该取证本身成立（muda-0.20
+/// `Quit => sel!(terminate:)`；tao-0.35.3 只注册 `applicationWillTerminate:`，无
+/// `applicationShouldTerminate:` 可拦），但结论是**⌘Q 绕过脏门 = 数据丢失缺陷**
+/// （统一规则 13），不是优点。现 Quit 菜单项已改为带 id 命令 `app.quit`（经
+/// `request_quit` 逐窗 dirty 确认），确认后最后一窗销毁**正是**经 ExitRequested{None}
+/// 退出 ⇒ 放行通道 = `QuitIntent`。Typora 一手证据（TypeMark `appsrc/main.js` 的
+/// dirty 确认 Cancel 分支调用 `JSBridge.invoke("app.cancelQuit")`）⇒ Quit 经脏门是
+/// 官方行为，本轮属 parity 修复（统一规则 14），不是架构偏离。
 #[derive(Default)]
 pub struct QuitPolicy(pub std::sync::atomic::AtomicBool);
+
+/// ⌘Q 脏门（2026-11-07，审计 §4.358）：用户发起「退出应用」的**放行**标记。
+///
+/// 语义 = 「至少一个窗口**已通过 dirty 确认并同意退出**」。生命周期：
+/// `confirm_quit`（某窗确认放行，在 arm+close **之前**置位）→ 最后一窗销毁触发
+/// `ExitRequested{None}` → `should_prevent_exit` 读到本标记 ⇒ 放行进程退出
+/// （否则 D-AU 默认「不退出」会把已确认退出的用户困在 0 窗口状态）。
+/// 任一窗取消 ⇒ `quit_cancelled` 复位 ⇒ 之后关最后一窗仍按 D-AU 拦（取消 = 不退出）。
+/// 数据安全双向安全：误残留最坏 = 多退/少退一次进程（无数据丢失，脏门照常），
+/// 误丢失 = 确认过的退出被 D-AU 困住（可恢复：Dock 激活后照常关窗/⌘Q）。
+#[derive(Default)]
+pub struct QuitIntent(pub std::sync::atomic::AtomicBool);
+
+/// ⌘Q 脏门：一轮「退出询问」的进行中标记（**一次性去重**）。
+/// 菜单命令经 `mellow-menu-command` **无过滤广播**到所有窗口（§4.356），每窗的
+/// CommandRegistry 都会 dispatch `app.quit` ⇒ `request_quit` 会被并行调用 N 次；
+/// `swap(true)` 保证只有首个调用真正发起本轮，其余 no-op（Tauri 命令在主线程串行，
+/// SeqCst 安全）。复位点：`quit_cancelled`（用户取消 ⇒ 下一轮 ⌘Q 重新弹确认）。
+#[derive(Default)]
+pub struct QuitPrompted(pub std::sync::atomic::AtomicBool);
 
 /// 前端 → Rust：灌入 `editor.quitAfterWindowClose` 设置值。
 #[tauri::command]
@@ -150,13 +179,81 @@ pub fn set_quit_after_window_close(app: tauri::AppHandle, enabled: bool) -> Resu
     Ok(())
 }
 
-/// **纯函数**：给定「本次退出是否由最后窗口销毁自然触发」与「用户偏好」，是否应阻止退出。
+/// **纯函数**：给定「本次退出是否由最后窗口销毁自然触发」「用户偏好」「是否有已确认的
+/// 退出放行（`QuitIntent`）」，是否应阻止退出。
 ///
 /// 抽成纯函数的原因与 `spellcheck_supported_on` 同型（本仓「平台/分支判定的两端可测」
 /// 母题）：`prevent_exit` 分支只能在真机 GUI 里触发，把**判定**与**副作用**分开后，
 /// 判定本身在任何平台都有断言。
-pub const fn should_prevent_exit(code_is_none: bool, quit_after_window_close: bool) -> bool {
-    code_is_none && !quit_after_window_close
+pub const fn should_prevent_exit(
+    code_is_none: bool,
+    quit_after_window_close: bool,
+    quit_intent: bool,
+) -> bool {
+    code_is_none && !quit_after_window_close && !quit_intent
+}
+
+/// ⌘Q 脏门（2026-11-07，审计 §4.358）：发起「退出应用」= 逐窗 dirty 确认。
+///
+/// 流程：本轮去重（`QuitPrompted::swap`）→ 对每个存活窗口
+/// `emit_to(label, "mellow://quit-requested")`（**逐窗投递 = 与 CloseGate 同构**：
+/// §4.356 实测 target=own-label 的 JS listener 只收本窗 `emit_to`，广播会让每窗
+/// 各弹一轮确认）→ 前端每窗走与系统关窗**同一条**确认链（`confirmCloseDocument`）：
+/// 放行 ⇒ `confirm_quit`（置意图）+ arm + close；取消 ⇒ `quit_cancelled`（复位）。
+/// 全部窗口关闭后 wry 发 `ExitRequested{code:None}`，读到意图 ⇒ 放行退出。
+///
+/// **无窗口时直退**（`app.exit(0)`，`code: Some` ⇒ 不经脏门、不被 D-AU 拦截）：
+/// 对齐 macOS 惯例 —— 应用驻留后台时 Quit 立即生效。
+#[tauri::command]
+pub fn request_quit(app: tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    let prompted = app.state::<QuitPrompted>();
+    let already = prompted.0.swap(true, Ordering::SeqCst);
+    let windows = app.webview_windows();
+    if windows.is_empty() {
+        // 无窗口可确认 ⇒ 直退（`code: Some` ⇒ 不经脏门、不被 D-AU 拦截），对齐 macOS
+        // 惯例。`already == true` 也放行 = **卡死逃生口**：一轮询问若因窗口异常销毁
+        // （崩溃 / AppleScript close）而未收到任何 confirm/cancel，标记会滞留 ⇒
+        // 后续 ⌘Q 永为 no-op。此刻已无窗口可问 ⇒ 退出是唯一正确语义。
+        prompted.0.store(false, Ordering::SeqCst);
+        app.exit(0);
+        return Ok(());
+    }
+    if already {
+        return Ok(()); // 本轮询问已发起（其它窗口并发 dispatch 同一命令）
+    }
+    for label in windows.keys() {
+        let _ = app.emit_to(label.as_str(), "mellow://quit-requested", ());
+    }
+    Ok(())
+}
+
+/// ⌘Q 脏门：某窗口**已通过 dirty 确认**、即将关闭 ⇒ 置退出放行意图。
+/// 必须在 arm+close **之前**调用（关闭是异步的，销毁事件可能紧随而至）。
+///
+/// **仅在本轮询问仍活跃时生效**（`QuitPrompted` 为 true）：若用户 B 已取消
+/// （`quit_cancelled` 同时复位两标记），稍后确认的窗口 A 不得再置意图 ——
+/// 否则残留的 intent 会让**很久以后**一次普通的「关最后窗口」被放行退出，
+/// 静默推翻 D-AU（「关窗不退出」）语义。
+#[tauri::command]
+pub fn confirm_quit(app: tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    if app.state::<QuitPrompted>().0.load(Ordering::SeqCst) {
+        app.state::<QuitIntent>().0.store(true, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+/// ⌘Q 脏门（2026-11-07，审计 §4.358）：用户在某窗口取消退出 ⇒ 复位意图与本轮标记。
+/// 对齐 Typora 的 `app.cancelQuit`（一手证据见 `QuitPolicy` 注释）。取消的窗口自身
+/// 不关；其它窗口若已确认保存/放弃则照常关闭 —— 至少一窗留存 ⇒
+/// `ExitRequested{None}` 不触发，不存在「取消后进程仍退出」的竞态。
+#[tauri::command]
+pub fn quit_cancelled(app: tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    app.state::<QuitIntent>().0.store(false, Ordering::SeqCst);
+    app.state::<QuitPrompted>().0.store(false, Ordering::SeqCst);
+    Ok(())
 }
 
 /// 「打开系统拼写设置」（批次 A38 / ADR-0038 C 的入口按钮）。
@@ -234,21 +331,31 @@ mod tests {
     fn quit_default_keeps_app_alive_after_last_window() {
         // D-AU（ADR-0034 Q12 = A2，默认 false = 不退出，对齐 Typora + macOS 惯例）：
         // 最后窗口销毁（code None）且偏好为「不退出」⇒ 必须阻止进程退出。
-        assert!(should_prevent_exit(true, false));
+        assert!(should_prevent_exit(true, false, false));
     }
 
     #[test]
     fn quit_preference_true_allows_window_close_exit() {
         // 开关打开（= Mellow 旧行为）⇒ 不阻止，回归「关窗即退出」语义。
-        assert!(!should_prevent_exit(true, true));
+        assert!(!should_prevent_exit(true, true, false));
     }
 
     #[test]
     fn programmatic_exit_is_never_prevented() {
         // **安全关键**：code: Some（AppHandle::exit / restart）不得被拦 ——
         // 否则「退出应用」命令/Dock 退出会卡死（prevent 后无人再触发退出）。
-        assert!(!should_prevent_exit(false, false));
-        assert!(!should_prevent_exit(false, true));
+        assert!(!should_prevent_exit(false, false, false));
+        assert!(!should_prevent_exit(false, true, false));
+    }
+
+    // ⌘Q 脏门（2026-11-07，审计 §4.358）：确认后最后一窗销毁走 ExitRequested{None}，
+    // 此刻 QuitIntent=true ⇒ 放行（否则 D-AU 默认「不退出」会把用户困在 0 窗口状态，
+    // 正是本门**不能**引入的回归）。
+    #[test]
+    fn quit_intent_releases_dau_prevention() {
+        assert!(!should_prevent_exit(true, false, true));
+        // 取消退出 ⇒ 意图已复位 ⇒ D-AU 拦截照常（关最后窗口不退出）
+        assert!(should_prevent_exit(true, false, false));
     }
 
     #[test]

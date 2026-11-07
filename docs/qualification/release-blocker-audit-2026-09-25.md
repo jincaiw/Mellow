@@ -22804,6 +22804,83 @@ Mellow 的偏离**是裁决结果、不是欠债**）⇒ 本轮授权范围 = **
 
 **产物**：上表五文件 + 4 个 image 测试文件（mock 补方法 + 新增用例）+ 两个 fixture 条目 + master-plan D-AV 行追加。
 
+## 4.358 ⌘Q 脏门落地 —— §4.356 诚实缺口「Quit 绕过 dirty 确认」根治（2026-11-07）
+
+### 一、母题与一手证据
+
+§4.356 的「诚实缺口」第一条：**⌘Q / 菜单「退出 Mellow」绕过脏门**（muda `PredefinedMenuItem::quit`
+→ `sel!(terminate:)` → tao 只注册 `applicationWillTerminate:`，无 `applicationShouldTerminate:`
+可拦 ⇒ 直接 `RunEvent::Exit`，**不经 ExitRequested、不经 CloseGate、不经任何前端确认**）。
+脏窗口被静默销毁 = 数据丢失路径，撞统一规则 13（数据安全优先）。
+
+**Typora 一手证据**（本轮从 `/Applications/Typora.app/Contents/Resources/TypeMark/appsrc/main.js`
+ perl 窗口提取）：dirty 确认三选一对话框的 **Cancel 分支**调用 `JSBridge.invoke("app.cancelQuit")`
+⇒ **Typora 的 ⌘Q 本来就过脏门，且取消中止整个退出流程**。故本改动是 **parity 修复（统一规则 14）**，
+不是架构偏离；此前「⌘Q 不经 ExitRequested ⇒ 不会困住退出」的取证结论**把缺陷写成了优点**。
+
+### 二、方案（全链复用既有构件，零新对话框、零新确认语义）
+
+| 层 | 落点 | 内容 |
+|---|---|---|
+| 菜单声明 | `packages/commands/src/menuSchema.ts` | app 菜单 `{ kind: 'predefined', predefined: 'quit' }` → `{ kind: 'command', id: 'app.quit', shortcut: { mac: 'Cmd+Q' } }`（labelKey `menu.top.quit` 不变 ⇒ 文案不变；muda 不可拦的 OS 动作换成可分发的命令） |
+| 命令注册 | `apps/desktop/src/App.tsx` | `app.quit` → `invoke('request_quit')`（`enabled: always`；菜单事件广播 ⇒ 每窗各 dispatch 一次，去重在下行 Rust 侧） |
+| 发起 | `window.rs` `request_quit` | `QuitPrompted::swap` 一次性去重 ⇒ 本轮只发起一次；**逐窗** `emit_to(label, "mellow://quit-requested")`（与 CloseGate `window-close-requested` 同构；§4.356 已实测「Rust emit_to + JS target=本窗 label」两端闭环，广播会让每窗各弹一轮）；**0 窗口直退** `app.exit(0)`（`code: Some` ⇒ 不拦，对齐 macOS 惯例；`already==true` 也走直退 = 卡死逃生口，防询问轮因窗口异常销毁而标记滞留） |
+| 确认 | `App.tsx` `handleQuitRequest` | **与系统关窗同一条链**：`syncDocFromEditor` → `confirmCloseDocument`（保存/放弃/取消三选一，Typora `tryLeaveDocument` 语义）→ 放行 = `confirm_quit` + `armWindowClose` + `svc.close()`；取消 = `quit_cancelled` |
+| 放行 | `window.rs` `confirm_quit` / `should_prevent_exit` | **仅本轮询问仍活跃时**置 `QuitIntent`（防已取消轮次的迟到确认残留意图、日后 hijack 一次普通关窗退出，静默推翻 D-AU）；`should_prevent_exit(code_is_none, quit_after, quit_intent)` 新增第三参 ⇒ 全部确认后最后一窗销毁走 `ExitRequested{None}` 时**放行**（否则 D-AU 默认「不退出」会把已确认退出的用户困在 0 窗口）；**取消**复位两个标记 ⇒ 之后关最后窗口仍按 D-AU 拦（取消 = 不退出） |
+| 程序化退出 | 不变 | `code: Some`（updater restart / `app.exit`）永不拦截 —— 「退不出去」不可能发生 |
+
+多窗口语义（每窗一文档 SDI）：**任一窗取消 ⇒ 整轮中止**（对齐 Typora `cancelQuit`）；已确认窗口照常
+关闭（至少一窗留存 ⇒ `ExitRequested{None}` 不触发 ⇒ 无「取消后进程仍退出」竞态）。⚠️ 已如实登记：
+「先确认 B 再取消 A」时 B 已关（其文档已保存/放弃），A 仍在 ⇒ 与 macOS「取消即全不退出」有半步之差，
+但**无数据丢失**（B 关闭前已过 dirty 门），且比现状（全部静默销毁）严格更优。
+
+### 三、验证（本轮实跑）
+
+- **cargo**：lib 87 绿（新分支 `quit_intent_releases_dau_prevention`：确认后放行 / 取消后照常拦）+
+  既有 `programmatic_exit_is_never_prevented` 等 3 分支签名同步；集成 16+4 绿。
+- **tsc --noEmit** 净；**verify-menu-contract** 绿（`app.quit` 进 CommandRegistry 覆盖表；
+  Cmd+Q accelerator 单一真源；双语 label 复用 `menu.top.quit`）；**verify-menu-contract-guard**
+  基线绿 + 32 注入全拒；**verify-tauri-command-contract** 绿（D=R=F=66，事件名双向 8⇄8 含
+  `mellow://quit-requested`；新命令无参 invoke）；**verify-command-id-refs** 绿（276 id）。
+- **待办（如实）**：真机 ⌘Q 三分支（保存/放弃/取消）+ 多窗口一轮取消 —— 原生 harness 验收下一轮做；
+  Windows/Linux 的 Ctrl+Q 无菜单 accelerator 声明（Typora Win/Linux Quit 键位本就 OS 惯例、本仓
+  schema 仅 mac 声明 ⇒ 无漂移），打包复验同前例登记。
+
+#### 三之一、原生验收（2026-11-07 当日续轮，`pnpm tauri dev` + AX 驱动）
+
+**取证方法**：AppleScript System Events 走菜单栏（`Mellow → 退出 Mellow`），应用内三选一对话框
+与编辑器正文在 WKWebView 树内 ⇒ 新增 `tests/benchmark/lib/ax-tool.swift`（AXUIElement 读写：
+`windows` / `textareas` / `has` / `press`）观察与按压。时序护栏照跑（`ps lstart` > binary mtime ✓；
+二进制含 `request_quit`/`confirm_quit`/`quit_cancelled`/`mellow://quit-requested` 四符号 ✓）。
+
+| 分支 | 判据 | 结果 |
+|------|------|------|
+| 菜单「退出 Mellow」触发脏门 | 脏文档（标题 ●）按下后 **出现** 保存/放弃更改/取消 三选一（`has` 计数 1/2/1）—— 修复前 muda `terminate:` 直退、**绝无** 此对话框 | ✓ |
+| **取消** | AXPress 取消 ⇒ 进程存活（`ps` 在）+ 窗口存活（● 仍在）+ 对话框消失（`has 放弃更改`=0） | ✓ |
+| **放弃更改**（文件文档） | AXPress 放弃更改 ⇒ 窗口关闭 ⇒ 最后一窗 ⇒ 进程退出（**尽管 D-AU 默认关窗不退出** ⇒ `QuitIntent` 放行公式在真进程生效） | ✓ |
+| **丢弃**（未命名文档，label 变体） | 同上，退出照常 | ✓ |
+| 多窗口逐窗门 | 脏未命名 + 干净文件窗同开：干净窗**静默关闭**、脏窗弹三选一（逐窗 `emit_to` + 各自 `handleQuitRequest` 语义） | ✓ |
+| **保存** 分支 | **未完成**（如实）：后几轮 dev 环境退化（System Events 假死 -600/-1728、IMK mach port 报错、焦点被第三方 App 抢占），且 scratch 文档键入未落 ●（门内 `syncDocFromEditor` 判干净 ⇒ 静默退 —— 这是**干净文档的正确路径**，非绕过）。该分支的接线由 §16 判据 + `verify-tauri-command-contract` 双向覆盖，端到端复验登记为打包轮待办 | 待打包复核 |
+
+**事故记录（如实，数据安全事故零容忍的反面教材）**：首轮键入探针未加焦点断言，击键落进
+用户真实文件 `Downloads/markdown-basic-syntax-test.md`（当前打开的标签页），叠加**失焦自动保存**
+（PRD §101 默认）把 10 字节前缀「QWQXQWQXZ7」写上了磁盘（MD5 变 `629d0793…` / 5360 字节）。
+处置：剥前缀还原件经 MD5 与已知真值 `b485146445ebf34969313aaf8e33cf3e` **密码学一致**（其余字节
+逐字节完好），经用户一次性批准后写回原路径，磁盘恢复真值 ✓。污染同样进了 dev harness 的
+`mellow.tabs.session`（WKWebView localStorage，重开即复活脏缓冲）⇒ 从**事前备份**整库回灌 +
+手术修复该行内容 = 磁盘真值 ✓。**教训沉淀**：本环境任何原生键入注入必须先断言目标窗口标题
+（`probe-*` / `未命名` 白名单，且不含用户文件名），失败即中止不注入 —— 本轮后续命令均照此执行。
+
+### 四、§4.356「诚实缺口」销账
+
+本节后，§4.356 第四条的「⌘Q / 菜单『退出 Mellow』仍绕过脏门」**已根治**（其缓解手段「崩溃恢复快照兜底」
+保留为纵深）。剩余诚实缺口不变：三分平台 + 打包 App 复验（环境阻塞）。
+
+**产物**：`packages/commands/src/menuSchema.ts`（command 化 + 枚举剔除 quit）· `apps/desktop/src/App.tsx` ·
+`apps/desktop/src-tauri/src/{window.rs,lib.rs,menu.rs}`（fallback 菜单同走命令）·
+`tests/parity/verify-menu-contract.mjs` 新 §16（五层接线判据 + 8 注入 canary；命令/事件名双向
+由 `verify-tauri-command-contract` 覆盖）· 本节 + master-plan 追加。
+
 ## 五、本次审计做的改动（非策略性）
 
 
