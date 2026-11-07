@@ -23513,8 +23513,14 @@ D-AX（待裁决行）是先例：待裁决项**可以**入 D 表，但裁决格
 `path_kind`、`lib.rs` 命令注册、`dropAction.ts` 的 `decideDropAction`、
 settings 三项 `files.dropFileAction/dropFolderAction/dropImportAction`、
 `dropFolderAction.link` 的 zh 文案「插入文件夹链接」）**全部在场** ⇒ 已在
-master-plan 行 14b 追加带日期更正块：前置①②消解、❌ 收敛为**仅剩**
-`使用主题的字体大小` 的 radio 半（2026-09-30「十续」§4.29 已另行在册）。更正块的
+master-plan 行 14b 追加带日期更正块：前置①②消解、❌ 剩项归零（本段初稿写
+「仅剩 `使用主题的字体大小` 的 radio 半（2026-09-30「十续」§4.29 在册）」，
+**同日续轮复核推翻**：ADR-0033（**Accepted 2026-10-06**，裁决 = A2）已实装
+radio 等价物 `export.image.fontSizeMode`（`custom` / `followEditor` 两档，
+canvas 无主题 CSS 通道 ⇒ followEditor 为有意近似，偏差在 ADR 与 schema 注释
+在册）—— 十续写「未实施」时（09-30）该判定**还是真的**，过期发生在其后的
+10-06，而各处转述层没跟着更新 ⇒ 教训 = **引用旧审计的「未实施」快照前，先查
+它之后有没有新 ADR / 新轮次把它做掉了**）。更正块的
 引用锚全部用**符号名**不用行号（行号漂移母题防线）。
 
 **本轮验证**：`verify-release-gate` D 表判据（50 声明行 / 55 引用、0 违例）+

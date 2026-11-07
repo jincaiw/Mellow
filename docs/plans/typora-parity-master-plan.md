@@ -1652,7 +1652,13 @@ Typora 有一整组「**When drop file / folder into Typora**」偏好（面板 
 > `guardSingleDocument`，前置② 已消解）/ `open-folder` / `insert-link` / `import-document`；
 > 设置项 `files.dropFileAction` / `files.dropFolderAction` / `files.dropImportAction` 齐备
 > （`dropFolderAction` 的 `link` 选项 i18n 文案即「插入文件夹链接」= Typora `Insert Folder Link`）。
-> ⇒ 本行的 ❌ **仅剩** `使用主题的字体大小` 的 radio 半（见下），`插入文件夹链接` 不再属未实现项。
+> ⇒ 本行的 ❌ 剩项更正为**零**（2026-11-08 同日续）：原「仅剩 `使用主题的字体大小` 的
+> radio 半」也**已过期** —— **ADR-0033（Accepted 2026-10-06，裁决 = A2）**已实装该 radio
+> 的 Mellow 等价物 `export.image.fontSizeMode`（select：`custom`（默认，走
+> `export.image.fontSize`）/ `followEditor`（跟随编辑器字号 `editor.fontSize`））；
+> canvas 导出无主题 CSS 通道 ⇒ `followEditor` 是**有意的近似**（非 Typora `Use theme
+> font size` 的字面等价，偏差已在 ADR-0033 与 schema 注释登记）。`插入文件夹链接`
+> 亦不再属未实现项。
 > **⚠️ 2026-10-06 更正（一次错误的「推翻」已回退，且其**归因**也已更正）**：本条曾被我**误判为「Typora 自身残留文案、非其功能」**
 > 并一度从待办移除。**该结论是错的**；而我随后把根因归给「本机 `grep` 是 toybox、会漏匹配」——**那个归因同样是错的**。
 > **一手证据（node 逐文件读 + 逐条分类）**：
