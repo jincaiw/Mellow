@@ -37,8 +37,10 @@ pub struct MenuSpec {
 
 #[derive(serde::Deserialize)]
 struct SpecMenu {
+    // `id` 不再是 dead_code：set_menu_spec 用它定位「窗口 / 帮助」两个 OS 集成菜单纯
+    // （绑定动作见 lib.rs 的 bind_windows_and_help_menus；**不用于结构分叉** ——
+    // 结构平台中立仍由 spec 侧过滤保证）。
     #[serde(default)]
-    #[allow(dead_code)]
     id: String,
     label: String,
     items: Vec<SpecItem>,
@@ -96,6 +98,13 @@ fn build_predefined(
         "hide" => Box::new(PredefinedMenuItem::hide(app, label)?),
         "hideOthers" => Box::new(PredefinedMenuItem::hide_others(app, label)?),
         "showAll" => Box::new(PredefinedMenuItem::show_all(app, label)?),
+        // 窗口角色项（2026-11-07 桌面 UI 对标，审计 §4.359）：必须是标准 selector 项
+        // （performMiniaturize:/performZoom:/arrangeInFront:），AppKit 才会在 windowsMenu
+        // 里以它们为锚点注入「全部最小化 / 全部缩放 / 平铺 / 窗口列表」—— 自建 command
+        // 项不触发注入（此前窗口菜单只有 2 项，Typora 同菜单 47 项）。
+        "minimize" => Box::new(PredefinedMenuItem::minimize(app, label)?),
+        "maximize" => Box::new(PredefinedMenuItem::maximize(app, label)?),
+        "bringAllToFront" => Box::new(PredefinedMenuItem::bring_all_to_front(app, label)?),
         // ⚠️ `quit` 分支已删除（2026-11-07，审计 §4.358）：`terminate:` 绕过 ⌘Q 脏门。
         // 若 spec 仍带 predefined:'quit'（TS 枚举已不允许），落入下方 separator fallback
         // —— **宁缺勿绕过**（统一规则 13）。
@@ -153,20 +162,37 @@ fn build_items(
     items.iter().map(|item| build_item(app, item)).collect()
 }
 
-/// 前端 syncNativeMenu → 物化完整菜单（三平台；spec 已含平台过滤与平台 accelerator）
+/// 前端下发 spec → 物化完整菜单（三平台；spec 已含平台过滤与平台 accelerator）。
 #[tauri::command]
 pub fn set_menu_spec(app: AppHandle, spec: MenuSpec) -> Result<(), String> {
+    // OS 集成菜单（2026-11-07 桌面 UI 对标：Typora 窗口菜单 47 项 / 帮助菜单带搜索框，
+    // 这些项**不是应用代码写的**，而是 AppKit 对 `NSApp.windowsMenu` / `helpMenu` 的
+    // 自动注入 —— 我们此前从未绑定这两个角色 ⇒ 窗口菜单只剩自建的 2 项、帮助菜单无搜索框。
+    // 绑定后由系统补全部（全部最小化/缩放/前置全部/窗口列表/平铺 + 搜索框）。
+    // 定位用 spec 的 `id`（稳定，**不用 label** —— label 随 locale 翻译）。
+    // **平台差异不进本文件**（§7.4 硬规则 6 + `verify-menu-contract` 的 cfg 禁令）⇒
+    // 绑定动作委托 lib.rs 的 cfg 化 helper（非 macOS 上是 no-op，Windows/Linux 语义不变）。
     let mut roots: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
+    let mut window_submenu: Option<Submenu<tauri::Wry>> = None;
+    let mut help_submenu: Option<Submenu<tauri::Wry>> = None;
     for menu in &spec.menus {
         let built = build_items(&app, &menu.items).map_err(|e| e.to_string())?;
         let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = built.iter().map(|i| i.as_ref()).collect();
         let submenu =
             Submenu::with_items(&app, &menu.label, true, &refs).map_err(|e| e.to_string())?;
+        // `id` 只用于**定位 OS 集成菜单**（结构性平台分叉仍由 spec 侧过滤保证）。
+        match menu.id.as_str() {
+            "window" => window_submenu = Some(submenu.clone()),
+            "help" => help_submenu = Some(submenu.clone()),
+            _ => {}
+        }
         roots.push(Box::new(submenu));
     }
     let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = roots.iter().map(|i| i.as_ref()).collect();
     let menu = Menu::with_items(&app, &refs).map_err(|e| e.to_string())?;
     app.set_menu(menu).map_err(|e| e.to_string())?;
+    // set_menu 安装新树 ⇒ 旧的 windowsMenu/helpMenu 指针随旧树作废，必须每轮重绑。
+    crate::bind_windows_and_help_menus(window_submenu, help_submenu);
     Ok(())
 }
 

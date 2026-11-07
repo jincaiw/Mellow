@@ -5693,7 +5693,12 @@ export default function App() {
       // V7-W1.7：Typora 格式 → 图像 → 插入本地图片…（文件选择器 → 光标处插入图片语法）
       { id: 'image.insertLocal', localizedTitle: { zh: '插入本地图片…', en: 'Insert Local Images…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: () => void insertLocalImage() },
       { id: 'image.setAssetDir', localizedTitle: { zh: '图片：设置 asset 目录…', en: 'Images: Set Asset Directory…' }, category: 'image', context: { scope: 'document' }, enabled: always, execute: async () => { const v = await askInput({ title: t('prompt.assetDir'), initialValue: assetDir }); if (v !== null && v.trim() !== '') setAssetDir(v.trim()); } },
-      { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.minimize(); } },
+      // 桌面 UI 对标（审计 §4.359）：窗口菜单的 最小化/缩放/前置全部 改为 OS predefined
+      // （标准 selector ⇒ AppKit 注入「全部最小化/全部缩放/平铺/窗口列表」，Typora 47 项
+      // 的来源）。mac ⌘M 由原生 accelerator 提供；Win/Linux 菜单 macOnly ⇒ Ctrl+M 键盘
+      // 键位保留在内联（schema 不再声明该命令 ⇒ 不违反快捷键单一真源，护栏按 id 跳过）。
+      // 命令本身仍在 Registry：标题栏按钮与命令面板走前端通道（windowService）。
+      { id: 'window.minimize', localizedTitle: { zh: '最小化窗口', en: 'Minimize Window' }, category: 'system', context: { scope: 'global' }, enabled: always, shortcut: { winLinux: 'Ctrl+M' }, execute: () => { void windowServiceRef.current?.minimize(); } },
       { id: 'window.maximizeToggle', localizedTitle: { zh: '最大化 / 还原窗口', en: 'Toggle Maximize' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.toggleMaximize(); } },
       { id: 'window.fullscreen', localizedTitle: { zh: '切换全屏', en: 'Toggle Fullscreen' }, category: 'system', context: { scope: 'global' }, enabled: always, execute: () => { void windowServiceRef.current?.isFullscreen().then((r) => { if (r.ok) void windowServiceRef.current?.setFullscreen(!r.value); }); } },
       // B2 显示菜单补全（Typora 对齐：保持窗口在最前端，toggle）

@@ -21,6 +21,40 @@ use tauri::{Emitter, Manager, RunEvent};
 
 use watcher::{DebounceState, WatcherRegistry};
 
+/// macOS 系统集成菜单绑定（2026-11-07 桌面 UI 对标；menu.rs 的 `set_menu_spec` 每轮调用）。
+///
+/// 【为什么在这里】`Submenu::set_as_windows_menu_for_nsapp / set_as_help_menu_for_nsapp`
+/// 在 tauri 2.11.5 里**本身就是 `#[cfg(target_os = "macos")]`**（非 macOS 上方法不存在，
+/// 不是 no-op）⇒ 调用必须 cfg 化；而菜单护栏明令 `menu.rs` 不得出现 `#[cfg(target_os)]`
+/// （§7.4 硬规则 6：物化层平台中立）⇒ 平台能力放 lib.rs（平台代码的合法落点）。
+///
+/// 【效果】绑定后 AppKit 自动向这两个菜单注入系统项：窗口菜单补全「全部最小化 /
+/// 全部缩放 / 移动与调整大小（二等分/四等分/排列）/ 全屏幕平铺 / 前置全部窗口 /
+/// 窗口列表」；帮助菜单补搜索框。这正是 Typora 1.14.9 窗口菜单 47 项的来源
+/// （本机实机 dump 对照，审计 §4.359）—— 不是应用代码，而是 `NSApp.windowsMenu` 角色。
+#[cfg(target_os = "macos")]
+pub fn bind_windows_and_help_menus(
+    window: Option<tauri::menu::Submenu<tauri::Wry>>,
+    help: Option<tauri::menu::Submenu<tauri::Wry>>,
+) {
+    if let Some(sm) = window {
+        let _ = sm.set_as_windows_menu_for_nsapp();
+    }
+    if let Some(sm) = help {
+        let _ = sm.set_as_help_menu_for_nsapp();
+    }
+}
+
+/// 非 macOS：无这两个角色概念（Windows/Linux 的窗口管理项本就由系统/任务栏承担，
+/// Typora 在两平台亦无等价菜单）⇒ no-op，语义不变。
+#[cfg(not(target_os = "macos"))]
+pub fn bind_windows_and_help_menus(
+    window: Option<tauri::menu::Submenu<tauri::Wry>>,
+    help: Option<tauri::menu::Submenu<tauri::Wry>>,
+) {
+    let _ = (window, help);
+}
+
 /// 打开请求（CLI `mellow-desktop [--reader|--source] <file>` / Finder odoc）：
 /// 前端 ready 前的事件不丢失，mount 后经 `pending_open_path` 拉取；ready 后由事件实时投递。
 #[derive(serde::Serialize, serde::Deserialize, Clone)]

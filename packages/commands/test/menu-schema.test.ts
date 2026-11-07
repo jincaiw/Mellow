@@ -162,10 +162,16 @@ describe('toNativeMenuSpec 物化', () => {
     expect(fileIds('mac')).toContain('file.closeWindow');
     expect(fileIds('mac')).not.toContain('file.closeAll');
     expect(fileIds('win-linux')).toContain('file.closeAll');
-    const windowIds = toNativeMenuSpec({ ...base, platform: 'mac' }).menus
-      .find((m) => m.id === 'window')!.items
-      .filter((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command').map((i) => i.id);
-    expect(windowIds).toEqual(['window.minimize', 'window.maximizeToggle']);
+    // 桌面 UI 对标（审计 §4.359）：窗口菜单三项 = OS predefined（performMiniaturize:/
+    // performZoom:/arrangeInFront: 标准 selector）—— AppKit 以标准项为锚点向 windowsMenu
+    // 注入「全部最小化 / 全部缩放 / 平铺 / 窗口列表」（Typora 同菜单 47 项的来源）；
+    // 自建 command 项不触发注入 ⇒ 本断言同时锁「窗口菜单不得退回 command 形态」。
+    const windowItems = toNativeMenuSpec({ ...base, platform: 'mac' }).menus
+      .find((m) => m.id === 'window')!.items;
+    expect(windowItems.map((i) => i.type)).toEqual(['predefined', 'predefined', 'separator', 'predefined']);
+    expect(windowItems.flatMap((i) => (i.type === 'predefined' ? [i.predefined] : [])))
+      .toEqual(['minimize', 'maximize', 'bringAllToFront']);
+    expect(windowItems.some((i) => i.type === 'command')).toBe(false);
   });
 
   test('debugOnly 条目：debug=false 不装配，debug=true 装配', () => {

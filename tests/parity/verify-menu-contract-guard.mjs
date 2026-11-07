@@ -173,6 +173,12 @@ const CASES = [
   ['主题硬编码进 Rust', () => patch(menuRs(), (s) => `${s}\nconst _HARDCODED_THEMES: &[&str] = &["mellow-light"];\n`)],
   ['Rust 复活旧状态同步命令', () => patch(menuRs(), (s) => `${s}\nfn set_spellcheck_state() {}\n`)],
   ['Rust 引入 target_os 平台分叉', () => patch(menuRs(), (s) => `${s}\n#[cfg(target_os = "windows")]\nfn _win_only_menu() {}\n`)],
+  // ── §4.359（2026-11-07）：窗口菜单 OS predefined 形态 ─────────────────
+  // 最小化/缩放/前置全部必须是标准 selector 项（AppKit 以标准项为锚点注入
+  // 「全部最小化/全部缩放/平铺/窗口列表」）⇒ 退回自建 command 必须被拒。
+  ['窗口菜单退回自建 command（AppKit 注入锚点消失，2→39 项差距回归）', () => patch(schema(), (s) => s.replace(
+    "{ kind: 'predefined', predefined: 'minimize', labelKey: 'menu.window.minimize' },",
+    "{ kind: 'command', id: 'window.minimize', labelKey: 'menu.window.minimize', shortcut: { mac: 'Cmd+M' } },"))],
 ];
 
 const failures = [];

@@ -22,7 +22,12 @@ import type { CommandShortcut } from './index';
  *  会绕过 ⌘Q 脏门（数据丢失）。Quit 唯一入口 = 命令 `app.quit`（见 MENU_SCHEMA）。 */
 export type MenuPredefinedKind =
   | 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll'
-  | 'about' | 'services' | 'hide' | 'hideOthers' | 'showAll';
+  | 'about' | 'services' | 'hide' | 'hideOthers' | 'showAll'
+  // 窗口角色项（2026-11-07 桌面 UI 对标，审计 §4.359）：必须是**标准 selector 项**
+  // （performMiniaturize:/performZoom:/arrangeInFront:），AppKit 才会以它们为锚点向
+  // windowsMenu 注入「全部最小化 / 全部缩放 / 平铺 / 窗口列表」—— 自建 command 项
+  // 不触发注入（本机 dump 实证：Typora 47 项 vs 我们自建版缺这三项）。
+  | 'minimize' | 'maximize' | 'bringAllToFront';
 
 export interface MenuCommandEntry {
   kind: 'command';
@@ -425,10 +430,17 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
   // ── 窗口（B3，第四轮：仅 macOS —— Typora Windows/Linux 顶层菜单无「窗口」，
   // 最小化/还原由系统标题栏控制按钮承担。
   // B1（SDI）：tabs.prev/next 移除 —— macOS Typora「显示上一个/下一个标签页」为系统
-  // NSWindow tabbing 运行时注入项，非菜单常驻槽位（archive/sdi-truth-table-v1.md 0.9 行））─────────
+  // NSWindow tabbing 运行时注入项，非菜单常驻槽位（archive/sdi-truth-table-v1.md 0.9 行）
+  // 桌面 UI 对标（审计 §4.359）：三项改为 **OS predefined**（performMiniaturize:/
+  // performZoom:/arrangeInFront: 标准 selector）—— AppKit 以标准项为锚点向 windowsMenu
+  // 注入「全部最小化 ⌥⌘M / 全部缩放 / 平铺 / 窗口列表」；自建 command 项不触发注入，
+  // 此前实测窗口菜单只有 2 项（Typora 同菜单 47 项）。⌘M 键位由原生 accelerator 提供
+  // （muda 默认），前端命令仍在 Registry（标题栏按钮 / 命令面板继续调用）。──────────
   { id: 'window', labelKey: 'menu.top.window', macOnly: true, entries: [
-    { kind: 'command', id: 'window.minimize', labelKey: 'menu.window.minimize', shortcut: { mac: 'Cmd+M', winLinux: 'Ctrl+M' } },
-    { kind: 'command', id: 'window.maximizeToggle', labelKey: 'menu.window.maximizeToggle' },
+    { kind: 'predefined', predefined: 'minimize', labelKey: 'menu.window.minimize' },
+    { kind: 'predefined', predefined: 'maximize', labelKey: 'menu.window.maximizeToggle' },
+    { kind: 'separator' },
+    { kind: 'predefined', predefined: 'bringAllToFront', labelKey: 'menu.window.bringAllToFront' },
   ] },
 
   // ── 帮助 ────────────────────────────────────────────────────

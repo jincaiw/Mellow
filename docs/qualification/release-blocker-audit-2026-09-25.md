@@ -22886,6 +22886,76 @@ clean install / 启动 / upgrade / uninstall）。DMG 本轮未构建（updater 
 `tests/parity/verify-menu-contract.mjs` 新 §16（五层接线判据 + 8 注入 canary；命令/事件名双向
 由 `verify-tauri-command-contract` 覆盖）· 本节 + master-plan 追加。
 
+## 4.359 macOS 窗口/帮助菜单 OS 角色绑定 —— 桌面 UI 对标：窗口菜单 2→39 项、帮助菜单搜索框（2026-11-07）
+
+### 一、母题与一手证据（本机实机 dump 对照，非文档推断）
+
+§4.358 收尾后继续桌面 UI 对标（目标 = 与 Typora 桌面 UI 完全一致）。用
+`tests/benchmark/lib/dump-menu.sh` 对**本机运行的 Typora 1.14.9** 与 Mellow 各做一份
+四层菜单 dump（`/tmp/menu-typora-1149.txt` 489 行 vs 首轮 Mellow dump），逐菜单分诊后，
+其余表面差异都能落到已登记裁决（D-AC 只读、B1 SDI 标签页、双指缩放 §4.28、智能引号/破折号、
+D-F Indent 键位等）—— **两个结构性缺口无处登记**：
+
+| 菜单 | Typora 1.14.9 | Mellow（改前） | 根因 |
+|---|---|---|---|
+| 窗口 | **47 行**（最小化/全部最小化/缩放/全部缩放/填充/居中/移动与调整大小(15)/全屏幕平铺/从组中移除/前置全部窗口/窗口列表…） | **2 行**（最小化/缩放） | 这些项**不是 Typora 代码写的** —— 是 AppKit 对 `NSApp.windowsMenu` 角色的**运行时注入**（「移动与调整大小」「全屏幕平铺」是 macOS Sequoia 系统项，Typora 1.14.9 自己也没有这些源码）。Mellow 从未调用 `set_as_windows_menu_for_nsapp` ⇒ 角色未绑定 ⇒ 注入不发生 |
+| 帮助 | 首项 = AppKit 搜索框（`NSMenu` 的 help 角色项） | 6 项，无搜索框 | 同理，`set_as_help_menu_for_nsapp` 从未调用 |
+
+### 二、实施（三层，物化层零平台分支）
+
+| 层 | 落点 | 内容 |
+|---|---|---|
+| 绑定 | `lib.rs` `bind_windows_and_help_menus`（`#[cfg(target_os)]` 成对，非 macOS = no-op） | tauri 的 `Submenu::set_as_windows_menu_for_nsapp / set_as_help_menu_for_nsapp` **本身就是 cfg 门控**（非 macOS 方法不存在）⇒ 调用必须 cfg 化；而菜单护栏禁 `menu.rs` 出现 `#[cfg(target_os)]`（§7.4 硬规则 6）⇒ 平台能力落 lib.rs（平台代码合法落点） |
+| 物化 | `menu.rs` `set_menu_spec` | 按 spec `id`（**不用 label —— 随 locale 漂移**）收集 `window`/`help` 两个 `Submenu`，`app.set_menu` 之后绑定（每轮重设菜单树 ⇒ 旧角色指针作废，**必须每轮重绑**）；`SpecMenu.id` 由此不再是 dead_code |
+| 结构 | `menuSchema.ts` 窗口菜单 | 最小化/缩放由自建 `command` 改为 **`predefined`**（`performMiniaturize:`/`performZoom:` 标准 selector），并补 `bringAllToFront`（`menu.window.bringAllToFront` = 前置全部窗口 / Bring All to Front，zh/en 双语）。**关键实证**：改前首轮 dump 只拿到系统平铺块 + 窗口列表，**缺「全部最小化/全部缩放」**—— AppKit 以*标准项*为锚点注入 All-变体，自建 command 项不触发；改后三项全部出现。`MenuPredefinedKind` 枚举 + `build_predefined` 同步扩展（`minimize`/`maximize`/`bringAllToFront`） |
+| 前端命令 | `App.tsx` | `window.minimize`/`window.maximizeToggle` 命令**保留**（标题栏按钮/命令面板仍走前端通道）；Win/Linux `Ctrl+M` 键位从 schema 声明改为内联（菜单 macOnly ⇒ 原生 accelerator 只覆盖 mac；schema 不再声明该 id ⇒ 不违反快捷键单一真源护栏）。mac ⌘M 由 muda 默认 accelerator 提供 |
+
+### 三、验证（原生 harness 实跑 + 参照系统对照）
+
+- **实机 dump（`pnpm tauri dev`，计时护栏：进程 lstart 晚于 binary mtime）**：窗口菜单 **39 行**，
+  结构 = 最小化[⌘M] / 全部最小化[⌥⌘M] / 缩放 / 全部缩放 / 填充 / 居中 / 移动与调整大小(15 子项) /
+  全屏幕平铺 / 从组中移除窗口 / 前置全部窗口 / 窗口列表(当前文档 ✓)。对照本机 **TextEdit**
+  （AppKit 标准形态参照）dump：其窗口菜单含**同样的「前置全部窗口 + 排在前面」成对项** ⇒
+  「排在前面」是 Sequoia AppKit 标准形态（Typora 无它是 Electron 手工构树的另一条路），
+  **不视为缺陷**；与 Typora 残余差 = 标签页四项（B1 SDI 已裁决）+ 窗口列表按实时窗口数（本征差异）。
+- **实验定形（两轮）**：① 去掉 `bringAllToFront` 种子项 ⇒ 「前置全部窗口/排在前面」**双双消失**
+  （证明该对项由种子项触发注入，去掉=菜单变薄，不是更干净）；② 种子项不带 label ⇒ 显示英文
+  `Bring All to Front`（muda 默认文案）⇒ **必须经 labelKey 本地化**，最终形态 = 带双语 label 的种子项。
+- **帮助菜单搜索框**：闭合态 dump 不可见（AppKit 在**打开菜单时**注入），改用 AX 打开态枚举：
+  首项 = 无标题搜索容器（size 0×0 + 2 子元素，实测 `subrole` 空/几何为零的 view 项）；
+  **Typora 帮助菜单首项实测同形态**（children=2）⇒ 搜索框出现，与 Typora/系统一致。
+  全程仅点击开/关菜单，**无键入注入**（遵守 §4.358 事故后规则：不向含用户文件名的窗口注入）。
+- **回归**：`cargo check` 净；`cargo test --lib` 87 绿（spec 契约测试含 `id` 字段路径）；
+  `verify-menu-contract` 绿（80 accelerator / 214 label key / 55 官方键位表不变 —— 窗口项改
+  predefined 后 ⌘M 退出 schema 声明，`OFFICIAL_SHORTCUTS` 表本就未锁它）；
+  `verify-menu-contract-guard` 基线绿 + **33 注入全拒**（较 32 增 1：「窗口菜单退回自建
+  command」变异必须被 §1c 新判据拒绝，已实测生效）；
+  `verify-tauri-command-contract` 绿（D=R=F=66 不变，窗口命令未增删）；`@mellow/commands`
+  jest 33 绿（`menu-schema.test.ts` 新增锁「窗口菜单三项必须 predefined、禁止退回 command」）；
+  `@mellow/i18n` 15 绿；`tsc --noEmit`（apps/desktop）净。
+- **用户文件安全**：本轮原生 round 后复验 `/Volumes/.../markdown-basic-syntax-test.md`
+  MD5 `b4851464…` / 5350 字节 = 已知良好态（未动）。
+
+### 四、诚实登记（不在本轮闭环）
+
+- **打包复核已同轮完成（后段）**：`tauri build --debug --bundles app` 重打 Mellow.app（updater
+  .sig 步骤照例因私钥口令不明而失败 ⇒ 不猜口令；.app 在失败前已产出）。计时护栏后启动打包实例
+  （15:03 > bundle 12:19）：**窗口菜单 41 行**（注入形态与 dev harness 一致）；**功能实测**：
+  点击「缩放」窗口 960×973 → 1920×975，再点复原（`performZoom:` 原生动作真实生效）；
+  帮助菜单打开态首项 = 搜索容器（children=2）。`run-packaging-smoke.sh` **ALL PASS**
+  （clean install / upgrade / uninstall / bundle 内容校验）。⚠️ 本段初稿写「留待下轮」，
+  实际同轮做了并替换为本记录（**记录滞后于事实也是一种漂移**）。
+- **窗口列表项内容随窗口数变化**（本征差异，非缺陷）：Typora 尾部列出其打开文档；Mellow 同理
+  （dump 中 = 当前文档 ✓）。tab 切换四项（显示上/下一个标签页等）属 B1 SDI 裁决面，不动。
+- **Windows/Linux**：无 windowsMenu/helpMenu 角色概念，`bind_windows_and_help_menus` 非 macOS
+  分支为 no-op ⇒ 两平台菜单语义与改前逐字节一致（`win-linux` spec 测试锁 window 根被过滤）。
+- **全量回归**：`pnpm test` 全绿（exit 0；23 护栏链 + 各包 jest + release-gate 照常
+  NO-GO 4 项环境门 = 与本轮无关的既有开放项）。
+
+**产物**：`apps/desktop/src-tauri/src/{lib.rs,menu.rs}` · `packages/commands/src/menuSchema.ts` ·
+`packages/i18n/src/messages.ts`（`menu.window.bringAllToFront` zh/en）· `apps/desktop/src/App.tsx` ·
+`packages/commands/test/menu-schema.test.ts` · 本节 + master-plan 追加。
+
 ## 五、本次审计做的改动（非策略性）
 
 

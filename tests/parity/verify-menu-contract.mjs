@@ -161,6 +161,25 @@ if (JSON.stringify(macOnlyRoots) !== JSON.stringify(['app', 'window'])) {
 }
 if (!MENU_SCHEMA[0].macOnly) fail('应用菜单必须声明 macOnly（Windows/Linux 不得出现应用菜单）');
 
+// ── 1c. 窗口菜单必须是 OS predefined 形态（2026-11-07，审计 §4.359）────────
+// 【为什么锁这里】Typora 窗口菜单 47 项的来源 = AppKit 向 `NSApp.windowsMenu` 注入
+// 「全部最小化/全部缩放/平铺/窗口列表」，**注入锚点是标准 selector 项**
+// （performMiniaturize:/performZoom:）。本机 dump 实证：最小化/缩放是自建 command 时
+// 全部变体不出现（2 项）；改 predefined 后 39 项齐。若将来「顺手」把它们改回 command，
+// 差距会**无声回归**（菜单仍可用，只是系统项没了 ⇒ e2e/单测全绿）⇒ 在此上锁。
+{
+  const windowRoot = MENU_SCHEMA.find((r) => r.id === 'window');
+  const windowEntries = windowRoot ? [...walkEntries(windowRoot.entries)] : [];
+  const kinds = windowEntries.map((e) => e.kind);
+  if (JSON.stringify(kinds) !== JSON.stringify(['predefined', 'predefined', 'separator', 'predefined'])) {
+    fail(`窗口菜单形态漂移（§4.359）：应为 [predefined, predefined, separator, predefined]，实际 ${kinds.join(', ')}`);
+  }
+  const roles = windowEntries.filter((e) => e.kind === 'predefined').map((e) => e.predefined);
+  if (JSON.stringify(roles) !== JSON.stringify(['minimize', 'maximize', 'bringAllToFront'])) {
+    fail(`窗口菜单 predefined 角色漂移（§4.359）：应为 [minimize, maximize, bringAllToFront]，实际 ${roles.join(', ')}`);
+  }
+}
+
 // ── 1b. 跨入口菜单合同（packages/commands/src/menuContract.ts）必须与 schema 一致 ──
 // 立此节的原因（2026-09-30）：**本文件头声称覆盖 `menuContract.ts`，但实际从未读取它** ——
 // 上面第 1 节把顶层顺序**自己硬编码**了一份（`const TYPOGRAPHIC_MENU_ORDER = [...]`），
