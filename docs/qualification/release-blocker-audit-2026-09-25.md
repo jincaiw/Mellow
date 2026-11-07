@@ -23622,6 +23622,65 @@ flex ⇒ 判据语义取「非 none」，不断具体形态）；B3 点 pin ⇒ 
 `verify-sidebar-contract` 全绿；探针 `drag-drop-verify` 5/5、
 `sidebar-resize-verify` 10/10 复跑（后者验证被更正的行所引用的实测基线）。
 
+**12）子代理报告的三分法：一手证据推翻 2 项、真缺口当场装配 2 项、1 项修码 + 补登记（2026-11-08）**
+
+本轮起点是一个 §7.5/§7.6 合同行审计子代理报告。母题**延续**：子代理 handback 不带
+用户权威，其每条 ❌ 先按「grep 产品代码 + Typora 一手」复核再处置。三分法结果：
+
+① **被一手证据推翻 ×2**（Mellow 没错、**合同行**错）：
+- 「dirty-close 对话框应明确文档名」—— Typora `appsrc/main.js` 字面量
+  `"Do you want to save the changes made to this document ?<br> Your changes
+  will be lost..."` 本身**不含**文档名 ⇒ Mellow 现状即 Typora 真值；§7.5
+  Dialog 行「明确文档名」系发明（本轮就地更正该格）。
+- 「Search advanced 折叠 ABSENT ⇒ 缺口」—— Typora `base-control.css`
+  `.searchpanel-search-option-btn{display:none}` +
+  `.ty-on-search …{display:inline-block}`：所谓「advanced」= option 按钮在
+  搜索激活/hover 时的 CSS 揭示，**不是**折叠控件；Mellow 三选项恒显 = 形态差
+  非缺口。（真折叠控件另有其物 = `.ty-search-item-collapse-icon`，见 ③。）
+
+①b **自纠（本轮唯一一次「更正写过头」）**：上面 ① 的框架里，我顺手把 §7.5 标题栏行的
+「右上角按钮」也判成「两侧均无一手依据」，并写进合同行 —— **该判断错了**：Typora 自带
+`Docs/Quick Start.md` 原文「Mouse over the windows toolbar and click the outline icon
+**on the right top of the window** can open outline panel」明确支撑 Typora mac 有此面，
+Mellow 等价物 = `.editor-topbar` 右端大纲开关（mac 恒显）。已就地改回为「等价面归位」
+表述。**教训归型**：① 那两条是「子代理的断言被一手推翻」，本条是「**我自己**的更正没有
+先过一手就落纸」—— 同轮内既执行了纪律又违反了纪律，说明**治理动作本身也需要护栏**
+（对 Typora 一侧的否定式断言，落纸前必须给出正面出处；`Docs/*.md` 就在 bundle 里，
+grep 一次的成本远低于一条假更正）。
+
+② **确认为真缺口、当场装配 ×2**：
+- **树/列表 Home/End**：Typora `frame.js` `bindFileViewKeyboard` 一手
+  （`"Home"==t||"End"==t → moveFileSelectionToEnd`，树/列表共用）而 Mellow
+  §7.3 行**一直声称**有、代码从未实现（「声称但未实现」= 转述层失真的镜像型：
+  ①是行错、这是**行对码错**）。装配 = `FileTreeModel`/`FileListModel.navigate`
+  扩 `home|end` + App.tsx 两处 keydown map 接线（护栏锁**四处** map 全含
+  Home/End，防「模型支持 = 死代码」母题 §4.25）；jest 2 例新增；
+  注入 canary INJECT=1 / RESTORED=0。
+- **搜索结果分组折叠（G7-SIDE-11）**：即 ① 里发现的 Typora 真折叠控件。装配
+  组标题 ▸/▾ + `collapsedSearchGroups` 真源 + 键盘可见序列与渲染同源 + 查询
+  变化重置；探针 `search-group-collapse-verify.mjs` 7/7（种子内容带 alpha/
+  beta 区分标记 —— 否则「键盘从未落到折叠组」不可证伪，属**假通过防线**）；
+  sidebar golden 复跑 4 视图 ±1px 不回归（图标只在交互后出现，静态基线无差）。
+
+③ **确认为真缺陷、修码 + 补登记 ×1**：**Linux 双窗口 chrome**。Rust 只对
+Windows `decorations(false)`，webview 控制按钮却按 `!platformMac` 渲染 ⇒
+Linux 系统标题栏下再画一排 min/max/close。同处 Rust 注释自述「记为 D」而
+D 表**从无该行**（「注释当登记处」= D-AC/D-AF 母题第三次复现）⇒ 本轮补
+**D-BA**（建议 = 维持系统装饰，Typora `frame:!0` 一手对照同向），修复三处
+同源（shell 类 / JSX 条件 / CSS 选择器）+ 护栏 `verify-shell-widgets`
+G7-SHELL-10 节 canary 实测会拦。⚠️ 本环境无 Linux 真机（D-W），Linux 腿
+回归交 CI —— 行内如实声明，不冒充已验证。
+
+**护栏踩坑（本轮新增）**：新守卫块里局部 `const fileTreeModelTs` 撞了模块
+后方（filterFileTree 判据节）同名**模块级** `const` ⇒ release-gate ㉒ R2 的**按行**先用后定义判据报 TDZ
+（块级作用域运行时合法、判据不理解作用域）。处置 = 改名 + 就地注释警告后人
+勿改回。教训归型：**R2 判据是行级近似**，绕开它的方式是换名而不是搬定义。
+
+**本轮验证**：`verify-release-gate` / `verify-doc-code-refs` /
+`verify-sidebar-contract` / `verify-shell-widgets` 全绿；
+`search-group-collapse-verify` 7/7、`sidebar-golden` 4 视图匹配、app-core
+jest 25  suites / desktop-ui 17 例全过；`tsc --noEmit` 0。
+
 
 
 ## 五、本次审计做的改动（非策略性）
