@@ -795,7 +795,9 @@ const zhCN = {
   'menu.top.export': '导出',
   'menu.export.pdf': 'PDF',
   'menu.export.html': 'HTML',
-  'menu.export.htmlPlain': 'HTML (无样式)',
+  // §4.360「六」6 续轮：Typora 实机 zh 菜单**原样显示英文**（基线 fixture L154，
+  // 官方未本地化该导出格式名）⇒ zh 值不得自创中文译名（原「HTML (无样式)」偏离显示层）。
+  'menu.export.htmlPlain': 'HTML (without styles)',
   'menu.export.docx': 'Word (.docx)',
   'menu.export.odt': 'OpenOffice',
   'menu.export.rtf': 'RTF',

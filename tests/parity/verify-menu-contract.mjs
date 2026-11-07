@@ -1029,7 +1029,9 @@ const TYPORA_MENU_LABELS = [
   // 空态是**禁用占位项** `No Recent Files`（zh 真值即「空」）。
   ['menu.file.recentClear', '清除最近文件', 'Clear Items'],
   ['menu.file.recentEmpty', '空', 'No Recent Files'],
-  ['menu.export.htmlPlain', 'HTML (无样式)', 'HTML (without styles)'],
+  // §4.360「六」6 续轮：zh 列按实机显示层改回**原样英文**（Typora 未本地化该导出格式名；
+  // 一手证据 = 基线 fixture L154，zh 实机 dump 原样显示 `HTML (without styles)`）。
+  ['menu.export.htmlPlain', 'HTML (without styles)', 'HTML (without styles)'],
   ['menu.export.repeat', '使用上一次设置导出', 'Export with Previous'],
   ['menu.image.uploadAll', '上传所有本地图片', 'Upload All Local Images'],
   ['menu.image.moveAll', '移动所有图片到…', 'Move All Images to…'],

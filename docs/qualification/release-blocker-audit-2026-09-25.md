@@ -22975,7 +22975,7 @@ D-F Indent 键位等）—— **两个结构性缺口无处登记**：
 | ① nib 标题 | 编译进 `MainMenu.nib` 的 title 串（如 `Open…` / `Preferences…`） | AppKit 本地化查找的**键** | 键找不到 → **原样显示**（回退），这是多数 `…` 的来源 |
 | ② `Menu.strings` | key = nib 标题（**不带 …**），value = 本地化值 | 只有当键精确命中才生效 | 带 … 的 nib 键在表里**查不到** ⇒ 回退 ① |
 | ③ appsrc `TypeMark/locales/<locale>/Menu.json` | frame.js 覆盖层（302 键，key = 英文原形）；函数 `m()` 在**键以 … 结尾**时把本地化值**重新追加** `…` | JS 层文案（复制/Duplicate、导出并覆盖上一次导出的文件、标记为已完成、数学工具、任务状态、缩放图片、转换图片语法、设置图片根目录、全局图像设置 等） | 直接决定一批条目的显示文本 |
-| ④ 实机 AX dump | `tests/benchmark/lib/dump-menu.sh` → `tests/benchmark/fixtures/typora-live-menu-1149-display.txt`（491 行，2026-11-07 快照入库） | **唯一显示真源** | ①②③ 之外的兜底：导出格式名（PDF / HTML / Word (.docx) / OpenOffice / RTF / Epub / LaTeX / Media Wiki / reStructuredText / Textile / OPML、HTML (无样式)）是 **appsrc 内部 key、非本地化字符串**，在 ①②③ 均无第一手文本，**只能**从 dump 读到 |
+| ④ 实机 AX dump | `tests/benchmark/lib/dump-menu.sh` → `tests/benchmark/fixtures/typora-live-menu-1149-display.txt`（491 行，2026-11-07 快照入库） | **唯一显示真源** | ①②③ 之外的兜底：导出格式名（PDF / HTML / Word (.docx) / OpenOffice / RTF / Epub / LaTeX / Media Wiki / reStructuredText / Textile / OPML、HTML (without styles) —— ⚠️ 本表原误抄为「HTML (无样式)」，实机 dump L154 原样显示英文，「六」6 续轮已按显示层改正 zh 值）是 **appsrc 内部 key、非本地化字符串**，在 ①②③ 均无第一手文本，**只能**从 dump 读到 |
 
 **对旧结论的推翻**：G7-MENU-11 当年按 `Menu.strings` 把约 35+35 条（zh/en）改成
 **无省略号** —— 方向恰好搞反（表里没有 `…` ≠ 显示没有 `…`）。本轮按显示层**全部重基线**。
@@ -23266,6 +23266,19 @@ L249-252 `向上移动表格行 [Ctrl+<U+F700>]` 等四条 ⌃⌘ 箭头显示 �
 **残余（本轮如实登记）**：`删除行 [Shift+⌫]` 显示差（§13 裁决面，注释登记于 schema）；
 `headingUp` 官方表 `Cmd+=` vs 实机 `Cmd++` 显示差 = D-F 同一表面；对齐 ▸ 子菜单为
 Mellow 增强项（§7.7 后置纪律，Typora 实机为上下文分派项，不构成显示差）。
+
+**6 续轮（同日）：全量标签集差集复查发现一处显示层偏离** —— 对 4362 新 dump 与基线
+做**标签集合级**差集（剥修饰键括号 / 勾选标记 / 会话动态项后双向比对），除已注册裁决
+面（B1 tab 项、D-AC 只读、D-AY 语音、D-S/G7-EDIT-04 转换簇、P0-EDITOR-005 拼写标准项、
+D-AB 当插入本地图片时、AppKit 系统段、四.4 窗口项）与 Typora 专有项（更新日志/我的
+许可证… 等，已登记）外，抓到 **`HTML (无样式)` → 实机原样显示 `HTML (without styles)`**
+一条未注册偏离：Typora **未本地化**该导出格式名（一手证据 = 基线 fixture L154，zh 菜单
+显示英文原文），Mellow zh 值系自创译名 ⇒ 改正 `messages.ts` zh 与 TYPORA_MENU_LABELS
+的 zh 列（en 列本就正确；master-plan §15.3 三层真源表的误抄同步更正，该行原把 dump
+读数抄成「HTML (无样式)」—— 正是一处「转述层偏离一手证据」的实证案例）。命令面板
+localizedTitle 保留 Mellow 自有「动词前置」家族（导出 HTML（无样式）… 与 导出 HTML…
+同形）—— 显示层合同管辖原生菜单标签，命令面板是 Mellow 增强表面、不在 Typora 显示层
+真源范围内（护栏 §14 只锁 CJK 在场，不锁措辞）。
 
 
 
