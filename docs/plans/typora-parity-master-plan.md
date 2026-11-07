@@ -1645,6 +1645,14 @@ Typora 有一整组「**When drop file / folder into Typora**」偏好（面板 
 **前置**（实现要碰的）：① Rust 侧无 `stat`/`is_dir`（只有 `read_dir`）⇒ 需要「判断路径是否为目录」的能力；
 ② 「打开」要经过**未保存文档守卫**（`guardSingleDocument`，数据丢失相邻路径）。
 ⇒ 属**独立工作项**，本轮只登记；手动清单 D1（「拖入单个 .md → 打开文档」）已同步标注「当前不可能通过」。
+> **⚠️ 2026-11-08 更正（审计 §4.360「六」8 治理轮）：上面「只登记 / 独立工作项 / D1 当前不可能通过」已过期** ——
+> §4.134（2026-10-07）已实装「拖入文件/文件夹」整组：Rust 侧新增 `path_kind`（前置① 已消解）；
+> `handleDroppedPaths`（App.tsx，按符号引用）经 `decideDropAction()`（`packages/app-core/src/dropAction.ts`，
+> Typora `File.onDropFile` 决策表**逐字转写** + 39 例单测全行覆盖）分派 `open-document`（自带
+> `guardSingleDocument`，前置② 已消解）/ `open-folder` / `insert-link` / `import-document`；
+> 设置项 `files.dropFileAction` / `files.dropFolderAction` / `files.dropImportAction` 齐备
+> （`dropFolderAction` 的 `link` 选项 i18n 文案即「插入文件夹链接」= Typora `Insert Folder Link`）。
+> ⇒ 本行的 ❌ **仅剩** `使用主题的字体大小` 的 radio 半（见下），`插入文件夹链接` 不再属未实现项。
 > **⚠️ 2026-10-06 更正（一次错误的「推翻」已回退，且其**归因**也已更正）**：本条曾被我**误判为「Typora 自身残留文案、非其功能」**
 > 并一度从待办移除。**该结论是错的**；而我随后把根因归给「本机 `grep` 是 toybox、会漏匹配」——**那个归因同样是错的**。
 > **一手证据（node 逐文件读 + 逐条分类）**：
