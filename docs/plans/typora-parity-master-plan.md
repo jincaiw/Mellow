@@ -828,7 +828,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | 正文上方 | **不出现额外的文件名条**（D-A 裁决） | E |
 | 侧栏开关入口 | macOS 标题栏 + 菜单；Win/Linux 状态栏 + 菜单；键位 ⇧⌘L | E |
 | 状态栏 | 默认关；菜单可开；字段含字数 / 行数 / 字符 / 行:列 / Markdown / 编码 / EOL / Zoom / 状态 | E |
-| 字数可见性 | macOS 标题栏（hover 或常显，可配置）；Win/Linux 状态栏 | E |
+| 字数可见性 | macOS：并入窗口标题（`appearance.wordCount` 开关驱动 `setTitle`，Typora 的「始终显示」等价物）；**hover 显隐登记 D**（原生标题栏在 webview 外，需 tao titlebar tracking —— 见 §5.3 G7-SHELL-06）；Win/Linux 状态栏 | E（hover 形态为 D） |
 | Editor Toolbar | **浮动**（Selection 锚定），入口 = View → 工具栏 / 设置 → 外观；无常驻横条 | E（V7-W2.4 已收敛） |
 | Dialog / Toast | 原生文件对话框；未保存关闭明确文档名 + Save/Don't Save/Cancel；文件操作 Toast + Undo | E |
 
