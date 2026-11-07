@@ -382,19 +382,17 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'format.underline', labelKey: 'menu.format.underline', shortcut: { mac: 'Cmd+U', winLinux: 'Ctrl+U' } },
     // V7-W1.9：行内 Code 的 macOS 键位对齐 Typora 官方表（Cmd+Shift+`）。
     { kind: 'command', id: 'format.code', labelKey: 'menu.format.code', shortcut: { mac: 'Cmd+Shift+`', winLinux: 'Ctrl+Shift+`' } },
+    // §4.360「六」4：代码↔删除线之间的分隔线恢复（Typora 基线分组语义 = 分隔线组；
+    // 此前被 inline 增强项挤掉）。
+    { kind: 'separator' },
     { kind: 'command', id: 'format.strike', labelKey: 'menu.format.strike', shortcut: { mac: 'Ctrl+Shift+`', winLinux: 'Alt+Shift+5' } },
     { kind: 'command', id: 'format.comment', labelKey: 'menu.format.comment', shortcut: { mac: 'Ctrl+-', winLinux: 'Ctrl+Alt+Shift+-' } },
-    { kind: 'command', id: 'format.highlight', labelKey: 'menu.format.highlight' },
-    { kind: 'command', id: 'format.sup', labelKey: 'menu.format.sup' },
-    { kind: 'command', id: 'format.sub', labelKey: 'menu.format.sub' },
     { kind: 'separator' },
     { kind: 'command', id: 'format.link', labelKey: 'menu.format.link', shortcut: { mac: 'Cmd+K', winLinux: 'Ctrl+K' } },
     { kind: 'submenu', id: 'format.linkOps', labelKey: 'menu.format.linkOpsMenu', entries: [
       { kind: 'command', id: 'format.openLink', labelKey: 'menu.format.openLink' },
       { kind: 'command', id: 'format.copyLinkUrl', labelKey: 'menu.format.copyLinkUrl' },
     ] },
-    { kind: 'separator' },
-    { kind: 'command', id: 'format.clear', labelKey: 'menu.format.clear', shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' } },
     // §4.360（2026-11-07）：格式 → 图像子菜单按**实机 AX dump**（19 项）全量重建。
     // 顺序与分组以 tests/benchmark/fixtures/typora-live-menu-1149-display.txt 为准；
     // 第三级子菜单（缩放图片 / 转换图片语法）由 menu.rs build_item 递归物化（已验证）。
@@ -446,6 +444,17 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'separator' },
       { kind: 'command', id: 'image.globalSettings', labelKey: 'menu.image.globalSettings' },
     ] },
+    // §4.360「六」4：清除样式按 Typora 基线移到图像子菜单**之后**（末组；基线在它前面
+    // 还有 `<<Import From Device - unlocalized>>` = 未本地化实验项，不装配，见审计登记）。
+    { kind: 'separator' },
+    { kind: 'command', id: 'format.clear', labelKey: 'menu.format.clear', shortcut: { mac: 'Cmd+\\', winLinux: 'Ctrl+\\' } },
+    // §4.360「六」4：高亮/上标/下标从「注释」组内移出，按 §7.7「Mellow 增强项以
+    // separator 隔离后置」独立成末组 —— 与 Typora 的偏差仅存在于 G7-QA-05 登记的
+    // 默认值面（== ^ ~ 渲染开关），菜单分组不再额外偏离。
+    { kind: 'separator' },
+    { kind: 'command', id: 'format.highlight', labelKey: 'menu.format.highlight' },
+    { kind: 'command', id: 'format.sup', labelKey: 'menu.format.sup' },
+    { kind: 'command', id: 'format.sub', labelKey: 'menu.format.sub' },
   ] },
 
   // ── 显示（V7-W1.5：按 Typora「显示」菜单顺序重排，Mellow 增强项 separator 后置）──

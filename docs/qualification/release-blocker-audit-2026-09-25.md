@@ -23127,14 +23127,25 @@ App.tsx execute 是同一条链），因此该层判据与 GUI 点击等价且�
 1248 ⇒ `npx playwright install chromium chromium-headless-shell` 补齐（README 的「时重建」
 含义含浏览器版本跟随）。
 
-**4）残余差异登记（格式菜单，dump 逐行 diff 产物；均为已登记类别，非新问题）**：
+**4）残余差异登记（格式菜单，dump 逐行 diff 产物）与处置**：
 
-| 差异 | 归类 |
-|---|---|
-| `代码 [Shift+\`]` vs Typora `[NoCmdCtrl+\`]`（裸 ⌃`） | 与 `insert.image` 同类 = 「官方键位表 vs 实机显示」偏差（§四 8 已登记 insert.image，此条同型补记；⌃` 经 muda `Ctrl+\`` 理论可表达，待键位表复核轮统一处理） |
-| Mellow 多 `高亮 / 上标 / 下标` 三项 inline（注释之后、分隔线之前） | G7-QA-05 已登记（默认开启偏差）；但**摆放位置**违反 §7.7「Mellow 增强项以 separator 隔离后置」约定（现夹在删除线/注释组内）⇒ 登记为**待办**：随格式菜单下一轮重排移到独立后置组 |
-| `清除样式` 位于图像子菜单**之前**，Typora 在其**之后**（末组，`<<Import From Device>>` 后随分隔线） | 同上轮重排一并处理（结构性顺序差，非缺项） |
-| Typora `代码` 与 `删除线` 之间有分隔线，Mellow 无（被上条 inline 增强项挤掉） | 同母题：分隔线组 = Typora 分组语义；随重排恢复 |
+| 差异 | 归类 | 处置 |
+|---|---|---|
+| `代码 [Shift+\`]` vs Typora `[NoCmdCtrl+\`]`（裸 ⌃`） | 与 `insert.image` 同类 = 「官方键位表 vs 实机显示」偏差（§四 8 已登记 insert.image，此条同型补记） | **不擅改**：`format.code` 的 `Cmd+Shift+`` 由 §11 官方键位表合同锁定（含 canary），改成裸 ⌃` 需先裁决「以官方表还是以实机显示为准」⇒ 留待键位表复核轮统一处理 |
+| Mellow 多 `高亮 / 上标 / 下标` 三项 inline（注释之后、分隔线之前） | G7-QA-05 已登记（默认开启偏差）；**摆放位置**违反 §7.7「Mellow 增强项以 separator 隔离后置」约定 | **本轮已修**（续轮）：移出注释组，置为菜单**末组**（清除样式之后）独立成组 —— 偏差收敛回 G7-QA-05 的默认值面，分组面与 Typora 一致 |
+| `清除样式` 位于图像子菜单**之前**，Typora 在其**之后**（末组，`<<Import From Device>>` 后随分隔线） | 结构性顺序差，非缺项 | **本轮已修**（续轮）：移到图像子菜单之后（分隔线组），与基线同位；`<<Import From Device - unlocalized>>` 仍未本地化实验项 ⇒ 不装配（维持登记） |
+| Typora `代码` 与 `删除线` 之间有分隔线，Mellow 无 | 分隔线组 = Typora 分组语义 | **本轮已修**（续轮）：恢复代码↔删除线之间的分隔线；linkOps↔图像之间**不补**分隔线（基线该处无分隔线，改前 Mellow 多了一条） |
+
+修复后的格式菜单结构（`menuSchema.ts` 声明序 = 实机显示序）：
+`加粗 / 斜体 / 下划线 / 代码 │ 删除线 / 注释 │ 超链接 / 链接操作▸ / 图像▸ │ 清除样式 │ 高亮 / 上标 / 下标`
+—— 前三组与 Typora 逐行一致；末两组为 Mellow 专有项按 §7.7 后置隔离（Typora 对应位置只有
+清除样式 + 未装配的 Import From Device）。**重排后原生复 dump 复核**（dev 实例，437 行，
+19:40 会话结束后 20:30 重起；首 dump 曾报 -600 = System Events 冷启动瞬态，重试即过）：
+格式菜单 vs 基线差集收敛到 **4 项全部已登记**（① 裸 ⌃` 键位面，不擅改；② D-AB 未装配；
+③ Import From Device 未本地化不装配；④ 高亮/上标/下标后置组 = 约定内的 Mellow 专有增强）。
+护栏复跑：`verify-menu-contract`（82 accel / 70 label /
+33 槽位全绿）、`verify-menu-contract-guard` 33 注入全拒、`@mellow/commands` 23 例绿、
+`pnpm test` 全链 EXIT=0。
 
 
 
