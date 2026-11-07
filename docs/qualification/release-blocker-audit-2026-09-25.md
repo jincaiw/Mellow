@@ -23679,7 +23679,9 @@ G7-SHELL-10 节 canary 实测会拦。⚠️ 本环境无 Linux 真机（D-W）�
 **本轮验证**：`verify-release-gate` / `verify-doc-code-refs` /
 `verify-sidebar-contract` / `verify-shell-widgets` 全绿；
 `search-group-collapse-verify` 7/7、`sidebar-golden` 4 视图匹配、app-core
-jest 25  suites / desktop-ui 17 例全过；`tsc --noEmit` 0。
+jest 25 suites / desktop-ui 17 例全过；`tsc --noEmit` 0；`pnpm -w test` 全链
+exit 0（调试期一次失败系新增探针未同步 `verify-build-pipeline` 脚本基线 108→109，
+按该判据「增长 ⇒ 复核后同时改标记与阈值」的纪律收口，非断言迁就）。
 
 
 
