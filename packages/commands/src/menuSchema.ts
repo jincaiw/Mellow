@@ -253,8 +253,15 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'math.refreshAll', labelKey: 'menu.math.refreshAll' },
     ] },
     { kind: 'submenu', id: 'edit.eol', labelKey: 'menu.edit.eolMenu', entries: [
-      { kind: 'command', id: 'edit.eol.lf', labelKey: 'menu.edit.eolLf' },
-      { kind: 'command', id: 'edit.eol.crlf', labelKey: 'menu.edit.eolCrlf' },
+      // §4.360「六」6：对齐 Typora 实机显示基线（fixture L216-220）——
+      // ① 顺序 CRLF 在前（Typora 实机即此序，非字母序）；② radio 勾选态经
+      // checkedFrom 单源到当前文档 EOL（`eolLf`/`eolCrlf` 互斥分支，同
+      // activeTheme: 前缀母题）；③ 分隔线后补「保存时在文末添加空行」=
+      // files.finalNewline 能力（G7-FEAT-12 早已实装、唯菜单入口缺位，同双指缩放母题）。
+      { kind: 'command', id: 'edit.eol.crlf', labelKey: 'menu.edit.eolCrlf', checkedFrom: 'eolCrlf' },
+      { kind: 'command', id: 'edit.eol.lf', labelKey: 'menu.edit.eolLf', checkedFrom: 'eolLf' },
+      { kind: 'separator' },
+      { kind: 'command', id: 'edit.finalNewline.toggle', labelKey: 'menu.edit.finalNewline', checkedFrom: 'finalNewline' },
     ] },
     { kind: 'command', id: 'edit.trimTrailingSpaces', labelKey: 'menu.edit.trimTrailing' },
     // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行` 子菜单。
@@ -295,7 +302,7 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'paragraph.headingUp', labelKey: 'menu.paragraph.headingUp', shortcut: { mac: 'Cmd+=', winLinux: 'Ctrl+=' } },
     { kind: 'command', id: 'paragraph.headingDown', labelKey: 'menu.paragraph.headingDown', shortcut: { mac: 'Cmd+-', winLinux: 'Ctrl+-' } },
     { kind: 'separator' },
-    { kind: 'submenu', id: 'paragraph.table', labelKey: 'menu.insert.table', entries: [
+    { kind: 'submenu', id: 'paragraph.table', labelKey: 'menu.table.root', entries: [
       { kind: 'command', id: 'insert.table', labelKey: 'menu.insert.table', shortcut: { mac: 'Cmd+Alt+T', winLinux: 'Ctrl+T' } },
       { kind: 'separator' },
       { kind: 'command', id: 'table.addRowAbove', labelKey: 'menu.table.addRowAbove' },
@@ -305,11 +312,21 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'table.addColumnLeft', labelKey: 'menu.table.addColumnLeft' },
       { kind: 'command', id: 'table.addColumnRight', labelKey: 'menu.table.addColumnRight' },
       { kind: 'separator' },
-      { kind: 'command', id: 'table.moveRowUp', labelKey: 'menu.table.moveRowUp' },
-      { kind: 'command', id: 'table.moveRowDown', labelKey: 'menu.table.moveRowDown' },
-      { kind: 'command', id: 'table.moveColumnLeft', labelKey: 'menu.table.moveColumnLeft' },
-      { kind: 'command', id: 'table.moveColumnRight', labelKey: 'menu.table.moveColumnRight' },
+      // §4.360「六」6：表格移动四项的 mac accelerator 按实机显示基线补声明
+      // （fixture L289-292 `[Ctrl+<U+F700..F703>]` —— dump 修饰位**无 NoCmd 位**
+      // ⇒ 真值是 ⌃⌘↑/↓/←/→，与 `大纲 [Ctrl+1]` = schema `Ctrl+Cmd+1` 同一读法
+      // （modifier bitfield 解码表见 tests/benchmark/lib/dump-menu.sh 头注）。
+      // 官方 Shortcut Keys 页未列「Move table row/column」⇒ 无 §12 合同冲突，
+      // 以显示层为据装配；引擎 keymap 实测表格未绑 ⌃⌘Arrow（table/keymap.ts 只绑 Tab）。
+      { kind: 'command', id: 'table.moveRowUp', labelKey: 'menu.table.moveRowUp', shortcut: { mac: 'Ctrl+Cmd+ArrowUp' } },
+      { kind: 'command', id: 'table.moveRowDown', labelKey: 'menu.table.moveRowDown', shortcut: { mac: 'Ctrl+Cmd+ArrowDown' } },
+      { kind: 'command', id: 'table.moveColumnLeft', labelKey: 'menu.table.moveColumnLeft', shortcut: { mac: 'Ctrl+Cmd+ArrowLeft' } },
+      { kind: 'command', id: 'table.moveColumnRight', labelKey: 'menu.table.moveColumnRight', shortcut: { mac: 'Ctrl+Cmd+ArrowRight' } },
       { kind: 'separator' },
+      // §4.360「六」6：Typora 实机把 ⌘⇧⌫ 显示在 表格→删除行（官方表行名
+      // 「Delete Row (in table)」= 同一键的**语境分发**：表内删行、表外删句/行）。
+      // Mellow 该键由 `edit.deleteLine` 持有（§12 官方键位合同锁定）⇒ deleteRow
+      // **不重复声明**（§13 唯一性硬护栏），差集登记见审计「六」6。
       { kind: 'command', id: 'table.deleteRow', labelKey: 'menu.table.deleteRow' },
       { kind: 'command', id: 'table.deleteColumn', labelKey: 'menu.table.deleteColumn' },
       { kind: 'separator' },
@@ -329,8 +346,9 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
     { kind: 'command', id: 'format.codeBlock', labelKey: 'menu.format.codeBlock', shortcut: { mac: 'Cmd+Alt+C', winLinux: 'Ctrl+Shift+K' } },
     { kind: 'submenu', id: 'paragraph.codeTools', labelKey: 'menu.paragraph.codeToolsMenu', entries: [
       { kind: 'command', id: 'paragraph.copyCodeBlock', labelKey: 'menu.paragraph.copyCodeBlock' },
-      { kind: 'command', id: 'paragraph.autoIndentCodeBlock', labelKey: 'menu.paragraph.autoIndentCodeBlock' },
+      // §4.360「六」6：声明序 = 实机显示序（Typora fixture 代码工具 = 复制 → 选中 → 整块）
       { kind: 'command', id: 'paragraph.autoIndentSelection', labelKey: 'menu.paragraph.autoIndentSelection' },
+      { kind: 'command', id: 'paragraph.autoIndentCodeBlock', labelKey: 'menu.paragraph.autoIndentCodeBlock' },
     ] },
     { kind: 'submenu', id: 'paragraph.alert', labelKey: 'menu.insert.alertMenu', entries: [
       { kind: 'command', id: 'alert.note', labelKey: 'menu.alert.note' },
@@ -631,6 +649,11 @@ export interface NativeMenuSpecInput {
   /** 双指缩放勾选态（§4.360「六」5：Typora 显示菜单 `Allow Magnification`，
    *  单一真源 = 设置 `editor.allowMagnification`，默认 false 对齐 Typora 默认值面）。 */
   magnification?: boolean;
+  /** 当前文档行结束符（§4.360「六」6：换行符子菜单 radio 对的单一真源；
+   *  '\n' | '\r\n'，缺省按 '\n'）。 */
+  docEol?: string;
+  /** 「保存时在文末添加空行」勾选态（§4.360「六」6：真源 = 设置 `files.finalNewline`）。 */
+  finalNewline?: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制；schema 仍是默认值唯一真源，
    *  override 仅在 materialization 边界覆盖同平台字段；空串 = 已清除）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
@@ -650,6 +673,11 @@ function resolveChecked(checkedFrom: string, input: NativeMenuSpecInput): boolea
   // §4.360「六」5：双指缩放勾选态默认 false = Typora `allowMagnification` 默认值面
   // （审计 §4.28 保守裁决），与设置存储单一真源。
   if (checkedFrom === 'magnification') return input.magnification ?? false;
+  // §4.360「六」6：换行符子菜单 radio 对（互斥分支 = 同一真源 `docEol`，
+  // activeTheme: 前缀母题的显式分支版）。CRLF 缺省 false（新建文档 = LF）。
+  if (checkedFrom === 'eolLf') return (input.docEol ?? '\n') !== '\r\n';
+  if (checkedFrom === 'eolCrlf') return (input.docEol ?? '\n') === '\r\n';
+  if (checkedFrom === 'finalNewline') return input.finalNewline ?? false;
   if (checkedFrom === 'themeModeSystem') return input.themeMode === 'system';
   if (checkedFrom.startsWith('activeTheme:')) return input.activeThemeId === checkedFrom.slice('activeTheme:'.length);
   return false;

@@ -36,6 +36,12 @@ export interface NativeMenuInputs {
   /** §4.360「六」5：双指缩放（Typora 显示菜单 Allow Magnification CheckMenuItem 选中态，
    *  单一真源 = 设置 `editor.allowMagnification`）。 */
   magnification: boolean;
+  /** §4.360「六」6：当前文档换行符（'\n' | '\r\n'），驱动 编辑→换行符 子菜单
+   *  CRLF/LF radio 勾选态（SDI 逐文档真值，重建时从 docMetaRef 求值）。 */
+  docEol: string;
+  /** §4.360「六」6：保存时在文末添加空行（CheckMenuItem 选中态，
+   *  单一真源 = 设置 `files.finalNewline`）。 */
+  finalNewline: boolean;
   /** P2-2.6 用户自定义键位 override（Settings 录制 → localStorage → 装配边界生效）。 */
   shortcutOverrides?: Readonly<Record<string, { mac?: string; winLinux?: string }>>;
 }
@@ -62,6 +68,8 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
     toolbar: inputs.toolbar,
     firstLineIndent: inputs.firstLineIndent,
     magnification: inputs.magnification,
+    docEol: inputs.docEol,
+    finalNewline: inputs.finalNewline,
     shortcutOverrides: inputs.shortcutOverrides,
   });
 }

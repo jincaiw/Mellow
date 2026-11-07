@@ -198,8 +198,10 @@ const zhCN = {
   // 故文案应对齐 Typora 的「删除图片文件」，否则破坏性操作的标签比实际行为更轻。
   'contextmenu.editorImageDelete': '删除图片文件',
   'contextmenu.codeTools': '代码工具',
-  'contextmenu.codeAutoIndentAll': '整体自动缩进',
-  'contextmenu.codeAutoIndentSelected': '所选内容自动缩进',
+  // §4.360「六」6：右键菜单两项文案对齐 nib 一手证据（Menu.strings：
+  // Auto Indent Selected Code → 为选中内容调整缩进；与菜单层同一真值）。
+  'contextmenu.codeAutoIndentAll': '为整个代码块调整缩进',
+  'contextmenu.codeAutoIndentSelected': '为选中内容调整缩进',
   'contextmenu.codeDeleteFences': '删除围栏',
   'contextmenu.codeInsertParagraphBefore': '在上方插入段落',
   'contextmenu.codeInsertParagraphAfter': '在下方插入段落',
@@ -227,8 +229,13 @@ const zhCN = {
   'menu.edit.eolLf': 'Unix 换行符 (LF)',
   'menu.edit.eolCrlf': 'Windows 换行符 (CRLF)',
   'menu.edit.trimTrailing': '清理行尾空白',
-  'menu.paragraph.autoIndentCodeBlock': '整体自动缩进',
-  'menu.paragraph.autoIndentSelection': '所选内容自动缩进',
+  // §4.360「六」6：Edit→换行符 子菜单补「保存时在文末添加空行」（能力 = G7-FEAT-12
+  // files.finalNewline，唯菜单入口缺位）；代码工具两项文案按 Typora 实机显示层
+  // （Menu.strings：Auto Indent Selected Code / Auto Indent Whole Code 之 zh 值）。
+  'menu.edit.finalNewline': '保存时在文末添加空行',
+  'menu.table.root': '表格',
+  'menu.paragraph.autoIndentCodeBlock': '为整个代码块调整缩进',
+  'menu.paragraph.autoIndentSelection': '为选中内容调整缩进',
   'menu.table.alignMenu': '对齐',
   'menu.table.alignLeft': '左对齐',
   'menu.table.alignCenter': '居中对齐',
@@ -989,6 +996,9 @@ const zhCN = {
   // §4.360「六」5：双指缩放菜单入口的状态反馈（与 首行缩进 同款）
   'msg.magnificationOn': '双指缩放已开启',
   'msg.magnificationOff': '双指缩放已关闭',
+  // §4.360「六」6：保存时补文末换行 toggle 的状态栏反馈
+  'msg.finalNewlineOn': '保存时将在文末添加空行',
+  'msg.finalNewlineOff': '保存时不再添加文末空行',
   'dialog.imageRenameMoveMessage': '选择操作：重命名图片文件，或将其移动到其它目录（引用会同步更新）。',
   'menu.top.theme': '主题',
   'menu.theme.mellow-light': 'Mellow Light',
@@ -1229,6 +1239,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'menu.edit.eolLf': 'Unix Line Endings (LF)',
   'menu.edit.eolCrlf': 'Windows Line Endings (CRLF)',
   'menu.edit.trimTrailing': 'Trim Trailing Whitespace',
+  'menu.edit.finalNewline': 'Insert Final New Line On Save',
+  'menu.table.root': 'Table',
   'menu.paragraph.autoIndentCodeBlock': 'Auto Indent Whole Code',
   'menu.paragraph.autoIndentSelection': 'Auto Indent Selected Code',
   'menu.table.alignMenu': 'Alignment',
@@ -1957,6 +1969,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   // §4.360 六.5：pinch-zoom menu entry status feedback
   'msg.magnificationOn': 'Pinch to zoom on',
   'msg.magnificationOff': 'Pinch to zoom off',
+  // §4.360「六」6：final-newline menu toggle status feedback
+  'msg.finalNewlineOn': 'Final newline will be added on save',
+  'msg.finalNewlineOff': 'Final newline will not be added on save',
   'dialog.imageRenameMoveMessage': 'Choose an action: rename the image file, or move it to another folder (references update accordingly).',
   'menu.top.theme': 'Themes',
   'menu.theme.mellow-light': 'Mellow Light',

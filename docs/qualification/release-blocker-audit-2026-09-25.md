@@ -23200,6 +23200,73 @@ Mellow 现显示未勾 —— 追查 Typora 侧证据：其 `general.config` **�
 是**会话态**而非出厂默认的一手证据，§4.28「默认取 false（保守）」的登记理由
 **不被推翻**；若后续取得一手默认证据（官方文档/干净安装），按裁决流程另行处理。
 
+**6）编辑（Edit）菜单差集全量分流 + 换行符子菜单 radio 装配（2026-11-07 续轮）**
+
+「5」之后，Edit/段落段的差集按显示层一手证据（基线 fixture L206-306）逐项分流，
+结论：**真缺口全部在换行符子菜单与两处文案/键位显示层，其余命中在册裁决**：
+
+| Typora 条目（实机显示） | 分流 | 依据 |
+|---|---|---|
+| 换行符 ▸ `Windows 换行符 (CRLF)` 在**前**、`Unix 换行符 (LF) (✓)` 在后 | **显示层偏离 ⇒ 本轮装配**（顺序重排 + radio 勾选态） | fixture L216-220；Mellow 原 LF 在前且两项无勾选 |
+| 换行符 ▸ `保存时在文末添加空行` | **真缺口 ⇒ 本轮装配** | 能力 G7-FEAT-12（`files.finalNewline`，保存路径读时生效）**早已实装、唯菜单入口缺位** —— 双指缩放同母题 |
+| 段落 ▸ `表格`（子菜单根标签） | 显示层偏离 ⇒ 改 `menu.table.root`（表格/Table） | fixture L282；原复用 `menu.insert.table`（插入表格） |
+| 段落 ▸ 代码工具 `为选中内容调整缩进`→`为整个代码块调整缩进` | 显示层偏离 ⇒ 文案对齐 nib + 顺序对调 | fixture L305-308；nib 一手映射（typora-menu-dump.txt `Auto Indent Selected Code => 为选中内容调整缩进`）；命令 id 不动、contextmenu/命令面板文案同步收敛 |
+| 段落 ▸ 表格移动四项 `[Ctrl+↑↓←→]` | 显示层偏离 ⇒ mac accelerator 补 `Ctrl+Cmd+Arrow*` | dump 修饰位解码 **bit3(8)=NoCmd**：`[Ctrl+…]` 无 NoCmd 位 ⇒ 实为 ⌃⌘（先例：`大纲 [Ctrl+1]` = schema `Ctrl+Cmd+1`） |
+| 表格 ▸ `删除行 [Shift+⌫]` | **不可装配** ⇒ 注释登记显示差 | Typora 把 ⌘⇧⌫ 按上下文分派给 删除行/删除句（官方键位表同键）；§13 加速器唯一性护栏禁止两入口同组合 ⇒ 保留 `edit.deleteLine` |
+| 输入时转换 ▸ 渲染时转换 / 智能引号 / 智能破折号 | 在册裁决，非本轮 | **D-S + G7-EDIT-04**（W5 host-api 宿主面） |
+| 编辑 ▸ 显示拼写和语法 / 检查拼写和语法 / 自动纠正拼写 等 AppKit 标准项 | 在册域 | **P0-EDITOR-005**（runtime-verification-pending；learn/unlearn/立即检查文稿 已装配） |
+| 段落 ▸ 标记为未完成 / 列表缩进 | 已装配（上轮 ④ 任务状态子菜单）；「列表缩进」为增强面在册 | §7.7 增强项后置纪律 |
+
+**装配内容**（勾选态三环 + 双入口纪律全部复用「5」的架构，radio 对是新形态）：
+
+1. `menuSchema.ts`：`edit.eol` 子菜单按 Typora 顺序重建 —— CRLF 前、LF 后、分隔线、
+   `edit.finalNewline.toggle`（labelKey `menu.edit.finalNewline`，`checkedFrom:
+   'finalNewline'`）。
+2. **radio 对 = 同一真源的互斥分支**（新形态，先例 = `activeTheme:` 前缀组）：
+   `resolveChecked` 增 `eolLf` / `eolCrlf` 两个显式分支，真源 = `input.docEol`
+   （逐文档值，缺省按 `\n` 处理 = 勾 LF，与「新建文档默认 LF」一致）。CHECK_STATE_CONTRACT
+   7→**10** 项（radio 对 + finalNewline 三条全部入册，静默兜底不可能）。
+3. **SDI 逐文档真值的重建时机**：`docEol` 只在 spec 重建时求值 ⇒ `menuCheckTick`
+   自增点 = EOL 转换成功（handleDocEol）/ 切换标签文档（applyTab）/ 文档重载
+   （3 处 reload 站点）/ **窗口重新聚焦**（新增 `getCurrentWindow().onFocusChanged`
+   监听，focused ⇒ tick++；多窗口先后聚焦后菜单停留在上一窗口 radio 态的防线）。
+4. `edit.finalNewline.toggle` 命令环：`readSetting` 取反 → `writeSetting` →
+   `setMenuCheckTick` → 状态栏 `msg.finalNewlineOn/Off`；保存路径本身不变
+   （读时生效 = G7-FEAT-12 既有实装）。
+5. **双入口 tick 纪律泛化**：`files.finalNewline` 无 `applyCommand` ⇒ 面板入口走
+   `applySetting` 的 `default:` 兜底分支 —— 该分支补 `if (def.storageKey !== '')
+   setMenuCheckTick(...)`：凡**存储型**设置的面板变更一律触发菜单重建（无害的幂等
+   重建；根治「面板改了、菜单不勾」缺陷族，LS_CHECKED_SETTINGS 新增行锁之）。
+6. i18n：`menu.edit.finalNewline`（zh 保存时在文末添加空行 / en `Insert Final New
+   Line On Save` 逐字 nib 原文）、`menu.table.root`（表格/Table）、代码工具两项 zh
+   文案改 nib 值（en 不变）；contextmenu 两项 zh 与命令面板 localizedTitle 同步
+   收敛（同一 nib 真值）。TYPORA_MENU_LABELS +4 行 → **75** 条。
+7. 表格移动四项 mac accelerator 改 `Ctrl+Cmd+ArrowUp/Down/Left/Right`（注释写明
+   dump 修饰位解码约定，防下轮再踩 bit3=NoCmd 误读）；`table.deleteRow` 无键位 +
+   注释登记 §13 同键冲突。
+
+**e2e 功能轮**（`tests/e2e/final-newline-menu-4361-verify.mjs`，port 1469，8/8 绿
+EXIT=0）：注册 / 稳定门（沿用「5」的「编辑器就绪」启动恢复门）/ dispatch →
+`mellow.file.finalNewline === '1'` + 「保存时将在文末添加空行」/ 再点 → `'0'` +
+「保存时不再添加文末空行」。radio 本体（`docEol` → 原生勾选）属 NativeMenuSpec 面、
+非浏览器可观测 ⇒ 由 CHECK_STATE_CONTRACT/resolveChecked 护栏承载，不在此重复。
+`verify-build-pipeline` SCRIPT_BASELINE 104 → **105**。
+
+**原生复 dump 复核**（dev 实例：vite 1420 + `target/debug/mellow-desktop`；只读轮 ——
+窗口标题为用户文件 ⇒ 零点击零键入，MD5 前后复验 `b4851464…`/5350B ✓；
+`dump-menu.sh mellow-desktop` → `/tmp/menu-mellow-4362.txt` 442 行）四点全中：
+L206-210 `Windows 换行符 (CRLF)` / `Unix 换行符 (LF) (✓)` / 分隔线 /
+`保存时在文末添加空行`（顺序与勾选与 Typora 基线 L216-220 一致，本窗口 LF）✓；
+L240 `表格` 根标签 ✓；L270-271 `为选中内容调整缩进`→`为整个代码块调整缩进` 顺序 ✓;
+L249-252 `向上移动表格行 [Ctrl+<U+F700>]` 等四条 ⌃⌘ 箭头显示 ✓。
+⚠️ **本轮 dump 教训（复述入档）**：4361 首 dump 曾在段落子菜单中途截断（fresh dev
+冷启动菜单未全量物化）→ 差集比对出现假缺口；本轮复 dump 前以 442 行 + 逐段行数
+健康检查确认全量物化后才做比对。
+
+**残余（本轮如实登记）**：`删除行 [Shift+⌫]` 显示差（§13 裁决面，注释登记于 schema）；
+`headingUp` 官方表 `Cmd+=` vs 实机 `Cmd++` 显示差 = D-F 同一表面；对齐 ▸ 子菜单为
+Mellow 增强项（§7.7 后置纪律，Typora 实机为上下文分派项，不构成显示差）。
+
 
 
 ## 五、本次审计做的改动（非策略性）

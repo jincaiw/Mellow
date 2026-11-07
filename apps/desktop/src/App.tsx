@@ -2236,6 +2236,8 @@ export default function App() {
     void windowServiceRef.current?.setTitle(`${tab.dirty ? '● ' : ''}${tab.title} — Mellow`);
     revisionRef.current = tab.revision;
     docMetaRef.current = { encoding: tab.encoding, eol: tab.eol };
+    // §4.360「六」6：换文档（含切窗后恢复）→ 换行符 radio 重建（docEol 只在重建时求值）
+    setMenuCheckTick((v) => v + 1);
     diskStateRef.current = tab.diskState;
     setConflict(null);
     setDirty(tab.dirty);
@@ -2700,6 +2702,9 @@ export default function App() {
     }
     if (!host.patchChanges([{ from: 0, to: text.length, text: next }])) return;
     docMetaRef.current = { ...docMetaRef.current, eol };
+    // §4.360「六」6：EOL 变了 → 换行符子菜单 radio 需重建（menuCheckTick 是
+    // syncNativeMenu 依赖，docEol 读 docMetaRef 只在重建时求值）
+    setMenuCheckTick((v) => v + 1);
     setStatusText(t('msg.eolConverted', { eol: eol === '\r\n' ? 'CRLF' : 'LF' }));
   }, [t]);
 
@@ -3722,6 +3727,7 @@ export default function App() {
       return;
     }
     docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
+    setMenuCheckTick((v) => v + 1); // §4.360「六」6：磁盘重载可能改 EOL → 换行符 radio 重建
     diskStateRef.current = r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined
       ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
       : null;
@@ -3764,6 +3770,7 @@ export default function App() {
       return;
     }
     docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
+    setMenuCheckTick((v) => v + 1); // §4.360「六」6：磁盘重载可能改 EOL → 换行符 radio 重建
     diskStateRef.current = r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined
       ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
       : null;
@@ -5032,6 +5039,7 @@ export default function App() {
       return;
     }
     docMetaRef.current = { encoding: r.value.encoding, eol: r.value.eol };
+    setMenuCheckTick((v) => v + 1); // §4.360「六」6：磁盘重载可能改 EOL → 换行符 radio 重建
     diskStateRef.current = r.value.diskMtimeMs !== undefined && r.value.identityKey !== undefined
       ? { mtimeMs: r.value.diskMtimeMs, identityKey: r.value.identityKey }
       : null;
@@ -5494,6 +5502,10 @@ export default function App() {
         break;
       }
       default:
+        // §4.360「六」6：「保存时在文末添加空行」= 无 applyCommand 的读时生效项
+        //（保存路径直接 readSetting），但它的**勾选态进菜单** ⇒ 面板入口也必须
+        // 自增 tick，否则「面板改了、菜单不勾」＝ §4.28 缺陷同型（LS_CHECKED_SETTINGS 锁）。
+        if (def.storageKey !== '') setMenuCheckTick((n) => n + 1);
         break;
     }
   }, [applyLineNumberPrefs, applyThemeById, dispatchCommand, setAssetDir, setFileTreeOption, setLocaleSettingPersist, setSidebarMode, setSlashEnabled]);
@@ -5592,6 +5604,22 @@ export default function App() {
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
   }, [handleQuitRequest]);
+  // §4.360「六」6：SDI 每窗口各自持有 React 根；换行符 radio 是逐文档真值
+  // （syncNativeMenu 里 docEol 读 docMetaRef，仅在 effect 重建时求值）。窗口重新
+  // 聚焦时自增 menuCheckTick ⇒ 以**本窗口当前文档**的 EOL 重推 spec，避免多窗口
+  // 先后 focus/unfocus 后菜单停留在上一个窗口的 radio 态。
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void import('@tauri-apps/api/window')
+      .then(({ getCurrentWindow }) => getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+        if (focused) setMenuCheckTick((v) => v + 1);
+      }))
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .catch(() => { /* 非 Tauri 环境 */ });
+    return () => { cancelled = true; unlisten?.(); };
+  }, []);
   // CoreEditor 位于 iframe 中，编辑事件经 Tauri bridge 回到桌面壳。不能只依赖
   // window keydown：IME、粘贴、拖放和输入法提交都可能绕过该路径。
   // ⚠️ 2026-11-07（审计 §4.356，原生三窗口实测取证）：监听**必须以本窗口 label 为 target**
@@ -5935,8 +5963,8 @@ export default function App() {
       // 因此只在命令面板提供，不进右键菜单，避免与 Typora parity 混淆。
       { id: 'mermaid.copySource', localizedTitle: { zh: '复制图表源码', en: 'Copy Diagram Source' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => { engineCopySource('mermaid'); } },
       // C1：代码工具（Typora code-tools 子菜单：Auto Indent Whole/Selected Code + delete-fences + 前后插入段落）
-      { id: 'paragraph.autoIndentCodeBlock', localizedTitle: { zh: '整体自动缩进', en: 'Auto Indent Whole Code' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'autoIndentAll'); } },
-      { id: 'paragraph.autoIndentSelection', localizedTitle: { zh: '所选内容自动缩进', en: 'Auto Indent Selected Code' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'autoIndentSelected'); } },
+      { id: 'paragraph.autoIndentCodeBlock', localizedTitle: { zh: '为整个代码块调整缩进', en: 'Auto Indent Whole Code' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'autoIndentAll'); } },
+      { id: 'paragraph.autoIndentSelection', localizedTitle: { zh: '为选中内容调整缩进', en: 'Auto Indent Selected Code' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'autoIndentSelected'); } },
       { id: 'paragraph.deleteFences', localizedTitle: { zh: '删除围栏', en: 'Delete Fences' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'deleteFences'); } },
       { id: 'paragraph.insertParagraphBefore', localizedTitle: { zh: '在上方插入段落', en: 'Insert Paragraph Before' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'insertParagraphBefore'); } },
       { id: 'paragraph.insertParagraphAfter', localizedTitle: { zh: '在下方插入段落', en: 'Insert Paragraph After' }, category: 'paragraph', context: { scope: 'document' }, enabled: always, execute: () => { void engineContext('codeTool', 'insertParagraphAfter'); } },
@@ -5967,6 +5995,17 @@ export default function App() {
       { id: 'edit.copyWithoutTheme', localizedTitle: { zh: '复制为无主题 HTML', en: 'Copy as HTML without Theme' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyWithoutTheme') },
       { id: 'edit.eol.lf', localizedTitle: { zh: '行结束符：LF（Unix/macOS）', en: 'Line Endings: LF (Unix/macOS)' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => handleDocEol('\n') },
       { id: 'edit.eol.crlf', localizedTitle: { zh: '行结束符：CRLF（Windows）', en: 'Line Endings: CRLF (Windows)' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => handleDocEol('\r\n') },
+      // §4.360「六」6：「保存时在文末添加空行」菜单入口（Typora 实机 换行符 子菜单末项；
+      // 能力 = G7-FEAT-12 files.finalNewline 早已实装、保存时读取，此前仅设置面板可达）。
+      // 勾选态与面板同一真源；toggle 后自增 menuCheckTick 回显（双入口母题同 §4.28）。
+      { id: 'edit.finalNewline.toggle', localizedTitle: { zh: '保存时在文末添加空行', en: 'Insert Final New Line On Save' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('files.finalNewline');
+        if (!def) return;
+        const next = readSetting(def) !== true;
+        writeSetting(def, next);
+        setMenuCheckTick((v) => v + 1);
+        setStatusText(t(next ? 'msg.finalNewlineOn' : 'msg.finalNewlineOff'));
+      } },
       { id: 'edit.trimTrailingSpaces', localizedTitle: { zh: '清理行尾空白', en: 'Trim Trailing Whitespace' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => handleTrimTrailing() },
       { id: 'edit.copyPlain', localizedTitle: { zh: '复制为纯文本', en: 'Copy as Plain Text' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyPlain') },
       { id: 'edit.copyHtmlSource', localizedTitle: { zh: '复制为 HTML 代码', en: 'Copy as HTML Code' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: () => engineClipboard('copyHtmlSource') },
@@ -6341,6 +6380,11 @@ export default function App() {
       firstLineIndent: (() => { const def = settingById('editor.firstLineIndent'); return def ? readSetting(def) === true : false; })(),
       // §4.360「六」5：双指缩放勾选态（Typora 显示菜单 Allow Magnification，单一真源）
       magnification: (() => { const def = settingById('editor.allowMagnification'); return def ? readSetting(def) === true : false; })(),
+      // §4.360「六」6：换行符子菜单 radio（单一真源 = 当前文档 docMetaRef.eol；
+      // 本 effect 因 menuCheckTick 在依赖里，在 EOL 转换/切窗/文档重载处自增重建）
+      docEol: docMetaRef.current.eol,
+      // §4.360「六」6：保存时在文末添加空行（真源 = files.finalNewline，保存时读取）
+      finalNewline: (() => { const def = settingById('files.finalNewline'); return def ? readSetting(def) === true : false; })(),
       // 用户主题（appData/themes/*.css）：随加载/重扫变化重建主题菜单派生
       userThemes: userThemeList.map((theme) => ({ id: theme.id, name: theme.name })),
       // P2-2.6：自定义键位随 override 变化重建原生菜单（accelerator 物化）

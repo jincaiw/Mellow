@@ -369,6 +369,9 @@ if (/#\[cfg\(target_os/.test(menuRsSource)) {
     ['editor.firstLineIndent', "def.id === 'editor.firstLineIndent'", 'edit.firstLineIndent.toggle', 'line'],
     // §4.360「六」5：双指缩放（菜单入口 + 面板入口都必须自增 tick，同母题）
     ['editor.allowMagnification', "def.id === 'editor.allowMagnification'", 'view.magnification.toggle', 'line'],
+    // §4.360「六」6：保存时在文末添加空行。面板入口 = applySetting 的 `default:` 兜底分支
+    // （该设置无专属 applyCommand ⇒ 走 default，行内自增 tick；行型切片只取该行）。
+    ['files.finalNewline', "if (def.storageKey !== '') setMenuCheckTick", 'edit.finalNewline.toggle', 'line'],
   ];
   const applyStart = appSource.indexOf('const applySetting = useCallback');
   const applyEnd = applyStart < 0 ? -1 : appSource.indexOf('\n  }, [', applyStart);
@@ -645,6 +648,11 @@ const CHECK_STATE_CONTRACT = [
   { id: 'edit.firstLineIndent.toggle', checkedFrom: 'firstLineIndent' },
   // §4.360「六」5：Typora 显示菜单 `Allow Magnification`（双指缩放）
   { id: 'view.magnification.toggle', checkedFrom: 'magnification' },
+  // §4.360「六」6：Typora Edit → 换行符 子菜单 radio 对 + 「保存时在文末添加空行」。
+  // radio 对 = 同一真源（input.docEol）的互斥分支（先例：activeTheme: 前缀组）。
+  { id: 'edit.eol.lf', checkedFrom: 'eolLf' },
+  { id: 'edit.eol.crlf', checkedFrom: 'eolCrlf' },
+  { id: 'edit.finalNewline.toggle', checkedFrom: 'finalNewline' },
 ];
 const VIEW_GROUP_EXCEPTIONS = new Set([
   'view.source.toggle', 'view.focus.cycle', 'view.typewriter.cycle',
@@ -1085,6 +1093,12 @@ const TYPORA_MENU_LABELS = [
   // §4.360「六」5：双指缩放（显示菜单）—— nib 标题 `Allow Magnification`（strings 一手
   // 证据）；zh 值与实机 dump 一致（同 master-plan §15.3 行 10 的取证）。
   ['menu.view.magnification', '双指缩放', 'Allow Magnification'],
+  // ── §4.360「六」6：换行符子菜单（radio + 文末空行）、表格根标签、代码工具文案 ──
+  // en 列来源 = Menu.strings nib 一手提取（Insert Final New Line On Save / Auto Indent … Code）。
+  ['menu.edit.finalNewline', '保存时在文末添加空行', 'Insert Final New Line On Save'],
+  ['menu.table.root', '表格', 'Table'],
+  ['menu.paragraph.autoIndentSelection', '为选中内容调整缩进', 'Auto Indent Selected Code'],
+  ['menu.paragraph.autoIndentCodeBlock', '为整个代码块调整缩进', 'Auto Indent Whole Code'],
 ];
 function checkTyporaMenuLabels(zhMap, enMap) {
   const bad = [];
