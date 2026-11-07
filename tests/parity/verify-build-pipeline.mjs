@@ -706,7 +706,10 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   // ⚠️ 2026-11-08（审计 §4.360「六」10）：107 → 108 —— 新增 `tests/e2e/outline-float-parity-verify.mjs`
   //   （浮动大纲 Typora 对齐探针；§4.360「六」10 正文即其引用 —— G7-SHELL-08 一手证据复核
   //   推翻「不可拖拽 = 缺口」前提，装配几何 300/right:4 + pin 到侧栏 + 跳转即收起）。
-  const SCRIPT_BASELINE = 108; // [覆盖型] 基线 108
+  // ⚠️ 2026-11-08（审计 §4.360「六」12）：108 → 109 —— 新增 `tests/e2e/search-group-collapse-verify.mjs`
+  //   （G7-SIDE-11 搜索结果按文件分组折叠探针：Typora `.ty-search-item-collapse-icon` 一手对标；
+  //   折叠只隐藏匹配行、组标题保留、键盘可见序列与渲染同源、换查询重置折叠态）。
+  const SCRIPT_BASELINE = 109; // [覆盖型] 基线 109
   // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==` —— 覆盖型 = 「阈值必须 **==** 当前基线」；
   //   `< N` 只挡「缩小」，**集合增长时会静默稀释防线**（§4.310）。加脚本是**显式**行为 ⇒ 一并同步基线。
   if (scripts11.length !== SCRIPT_BASELINE) {

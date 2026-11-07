@@ -227,8 +227,27 @@ if (!/setOutlineFilter\(''\);/.test(appSource) || !/outlineModelRef\.current\.se
 if (!/setSearchQuery\(''\);/.test(appSource) || !/searchResultsModelRef\.current\.reset\(\)/.test(appSource)) {
   fail('App.tsx search Esc 未清空查询与选中（P3.3 Esc 语义）');
 }
-if (!/const flatSearchMatches = useMemo\(\(\) => searchGroups\.flatMap/.test(appSource)) {
-  fail('App.tsx 缺少扁平匹配序列 flatSearchMatches（P3.3：键盘序 = 渲染序）');
+// G7-SIDE-11（2026-11-08）：折叠组只进可见序列的过滤形态 —— 键盘序 = 渲染序在折叠下仍成立
+if (!/const flatSearchMatches = useMemo\(\s*\(\) => searchGroups\.filter\(\(group\) => !collapsedSearchGroups\.has\(group\.path\)\)\.flatMap/.test(appSource)) {
+  fail('App.tsx 缺少扁平匹配序列 flatSearchMatches（P3.3：键盘序 = 渲染序；G7-SIDE-11：须按折叠集过滤）');
+}
+// ── G7-SIDE-11（2026-11-08）：搜索结果按文件分组折叠（Typora `.ty-search-item-collapse-icon`）──
+// 真源三处必须同源：App 折叠集 → 渲染（SearchResultsList 隐藏匹配行、保留组标题）→ 键盘（过滤后的可见序列）。
+const searchCollapseTsx = read('packages/desktop-ui/src/SearchResultsList.tsx');
+if (!/const \[collapsedSearchGroups, setCollapsedSearchGroups\] = useState<ReadonlySet<string>>\(new Set\(\)\);/.test(appSource)) {
+  fail('App.tsx 缺少 collapsedSearchGroups 折叠集（G7-SIDE-11）');
+}
+if (!/collapsedGroups=\{collapsedSearchGroups\} onToggleGroup=\{toggleSearchGroupCollapse\}/.test(appSource)) {
+  fail('App.tsx 未把折叠集/切换回调传给 SearchResultsList（G7-SIDE-11：渲染与键盘同源断链）');
+}
+if (!/setCollapsedSearchGroups\(new Set\(\)\);.*\n.*\}, \[searchQuery\];/.test(appSource) && !/setCollapsedSearchGroups\(new Set\(\)\); \/\/ G7-SIDE-11/.test(appSource)) {
+  fail('App.tsx 查询变化未重置折叠集（G7-SIDE-11：折叠态不得跨查询残留）');
+}
+if (!/collapsedGroups\?\.has\(group\.path\)/.test(searchCollapseTsx) || !/search-group-collapse/.test(searchCollapseTsx)) {
+  fail('SearchResultsList 缺少折叠判定或折叠图标（G7-SIDE-11）');
+}
+if (!/if \(!collapsed\) for \(const match of group\.matches\)/.test(searchCollapseTsx)) {
+  fail('SearchResultsList 折叠时仍输出匹配行（G7-SIDE-11：折叠 = 隐藏匹配行、保留组标题）');
 }
 if (!/if \(r\.jump\) handleOutlineJump\(r\.jump\);/.test(appSource)) {
   fail('App.tsx outline Enter 未跳转（P3.3）');
@@ -266,6 +285,30 @@ if (/sidebarMode === 'outline' \? handleOutlineKeyDown : handleSearchKeyDown/.te
 const fileListModelTs = read('packages/app-core/src/fileList.ts');
 if (!/navigate\(items: Array<\{ path: string \}>, key: 'up' \| 'down' \| 'left' \| 'right' \| 'enter' \| 'pageup' \| 'pagedown'/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 ←→/PageUp/PageDown 键位（P3.4 G4-SIDE-01）');
+}
+// 2026-11-08（治理轮续）：树与列表的 Home/End —— Typora `bindFileViewKeyboard` 一手证据
+// （`"Home"==t||"End"==t → moveFileSelectionToEnd`，树/列表共用同一处理器）。
+// §7.3 File Tree 行的「Home/End」自始是**声称但未实现**，本轮补齐并用本护栏锁定。
+if (!/navigate\(items: Array<\{ path: string \}>, key: [^)]*'home' \| 'end'/.test(fileListModelTs)) {
+  fail('FileListModel.navigate 缺少 home/end 键位（Typora bindFileViewKeyboard 一手对齐）');
+}
+{
+  // ⚠️ 局部名**不得**叫 `fileTreeModelTs`：模块后方的 filterFileTree 判据节已有同名**模块级** `const`，
+  //   而 §4.360 ㉒ R2（verify-release-gate）的先用后定义判据是**按行**扫的 —— 块级作用域在运行时合法，
+  //   却会被该判据报成 TDZ（2026-11-08 实测）。故此处用 fileTreeNavTs。
+  const fileTreeNavTs = read('packages/app-core/src/fileTree.ts');
+  if (!/navigate\(flat: FlatFileTreeNode\[\], key: [^)]*'home' \| 'end'/.test(fileTreeNavTs)) {
+    fail('FileTreeModel.navigate 缺少 home/end 键位（Typora bindFileViewKeyboard 一手对齐）');
+  }
+  if (!/if \(key === 'home'\)[\s\S]{0,120}flat\[0\]\.path/.test(fileTreeNavTs)
+    || !/if \(key === 'end'\)[\s\S]{0,120}flat\[flat\.length - 1\]\.path/.test(fileTreeNavTs)) {
+    fail('FileTreeModel.navigate 的 home/end 未落到首/尾项');
+  }
+  // App 接线：两处 keydown map 都必须含 Home/End（树 + 列表），否则模型支持仍是死代码（§4.25 母题）
+  const maps = appSource.match(/const map: Record<string, 'up' \| 'down'[^;]*;/g) ?? [];
+  if (maps.length < 2 || !maps.every((m) => m.includes("Home: 'home'") && m.includes("End: 'end'"))) {
+    fail(`App.tsx 树/列表 keydown map 未同时接线 Home/End（找到 ${maps.length} 张 map）`);
+  }
 }
 if (!/pageSize = 10/.test(fileListModelTs)) {
   fail('FileListModel.navigate 缺少 pageSize 翻页步长（P3.4）');

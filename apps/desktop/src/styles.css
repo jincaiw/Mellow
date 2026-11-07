@@ -50,14 +50,17 @@ html, body, #root {
   background: var(--mellow-bg-hover);
 }
 
-/* Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：
-   非 macOS 平台 titlebar 右侧窗口控制按钮（最小化 / 最大化 / 关闭）。
-   浏览器 dev（非 Tauri）不渲染该容器，仅样式兜底隐藏。 */
+/* Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：titlebar 右侧窗口控制按钮
+   （最小化 / 最大化 / 关闭）。浏览器 dev（非 Tauri）不渲染该容器，仅样式兜底隐藏。
+   G7-SHELL-10（2026-11-08，D-BA）：原选择器为 `.shell:not(.platform-mac)`（macOS 外的
+   全部平台），而 Rust 侧只对 **Windows** 去系统装饰（`#[cfg(target_os = "windows")]
+   decorations(false)`），Linux 维持系统装饰 ⇒ Linux 会在系统标题栏下**再画一排**
+   min/max/close = 双 chrome。现收敛为仅 `.platform-win` 生效（JSX 渲染条件同步收窄）。 */
 .titlebar-window-controls {
   display: none;
 }
 
-.shell:not(.platform-mac) .titlebar-window-controls {
+.shell.platform-win .titlebar-window-controls {
   display: flex;
   align-self: stretch;
   margin-left: auto;
@@ -727,6 +730,18 @@ html, body, #root {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+}
+
+/* G7-SIDE-11（2026-11-08）：结果分组折叠图标（Typora `.ty-search-item-collapse-icon` 一手证据） */
+.search-group-collapse {
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--mellow-fg-subtle);
+  user-select: none;
+}
+
+.search-group-collapse:hover {
+  color: var(--mellow-fg);
 }
 
 .search-match {

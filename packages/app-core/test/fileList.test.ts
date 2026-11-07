@@ -85,4 +85,17 @@ describe('FileListModel keyboard navigation', () => {
     expect(model.navigate(items, 'up').selected).toBe('/ws/a.md');
     expect(model.navigate(items, 'enter')).toEqual({ selected: '/ws/a.md', open: '/ws/a.md' });
   });
+
+  test('Home/End 跳到首/尾项（Typora bindFileViewKeyboard 树/列表共用一手证据）', () => {
+    const model = new FileListModel();
+    const items = [
+      { path: '/ws/a.md', title: 'A', filename: 'a.md' },
+      { path: '/ws/b.md', title: 'B', filename: 'b.md' },
+      { path: '/ws/c.md', title: 'C', filename: 'c.md' },
+    ];
+    model.selectedPath = '/ws/b.md';
+    expect(model.navigate(items, 'home').selected).toBe('/ws/a.md');
+    expect(model.navigate(items, 'end').selected).toBe('/ws/c.md');
+    expect(model.navigate([], 'end')).toEqual({ selected: null });
+  });
 });

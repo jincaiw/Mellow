@@ -809,6 +809,9 @@ export default function App() {
   const [searchRunning, setSearchRunning] = useState(false);
   // P3.3 Search 键盘选中（扁平匹配序列上的索引；流式追加时由渲染侧越界忽略）
   const [searchSelectedIndex, setSearchSelectedIndex] = useState(-1);
+  // G7-SIDE-11（2026-11-08）：结果按文件分组折叠（Typora `.ty-search-item-collapse-icon` 一手证据）。
+  // 折叠集为真源，键盘可见序列与 SearchResultsList 渲染**同源**（「导航与渲染同源」母题，D-C/W3.2 同型）。
+  const [collapsedSearchGroups, setCollapsedSearchGroups] = useState<ReadonlySet<string>>(new Set());
   const [commandPaletteVisible, setCommandPaletteVisible] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   const [commandPaletteSelected, setCommandPaletteSelected] = useState(0);
@@ -898,6 +901,10 @@ export default function App() {
     void windowServiceRef.current?.setTitle(`${prefix}${docTitle}${words} — Mellow`);
   }, [docTitle, dirty, wordCountInTitle, wordCountData, t]);
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
+  // G7-SHELL-10（2026-11-08，D-BA）：应用内窗口控制按钮**仅 Windows** —— Rust 侧只对 Windows 去
+  // 系统装饰（`#[cfg(target_os = "windows")] decorations(false)`），Linux 维持系统装饰；
+  // 此前条件写成 `!platformMac` 让 Linux 在系统标题栏下**再画一排**最小化/最大化/关闭 = 双 chrome。
+  const [platformWin] = useState(() => typeof navigator !== 'undefined' && /win/i.test(navigator.platform));
   // P2-2.6 快捷键自定义 override：Settings 录制 → localStorage → registry/native menu 装配边界生效
   const [shortcutOverrides, setShortcutOverrides] = useState<ShortcutOverrideMap>(() => readShortcutOverrides());
   const shortcutOverridesRef = useRef(shortcutOverrides);
@@ -3420,12 +3427,27 @@ export default function App() {
 
   // ── P3.3 Search 键盘导航（G4-SIDE-02：↑↓/Enter/Esc/Home/End）──
   // 扁平匹配序列（行序 = 组序 + 组内序），键盘导航与 SearchResultsList 高亮共用
-  const flatSearchMatches = useMemo(() => searchGroups.flatMap((group) => group.matches), [searchGroups]);
+  // G7-SIDE-11：折叠组的匹配行不进入可见序列（与渲染同源，键盘跳过折叠组）
+  const flatSearchMatches = useMemo(
+    () => searchGroups.filter((group) => !collapsedSearchGroups.has(group.path)).flatMap((group) => group.matches),
+    [searchGroups, collapsedSearchGroups],
+  );
+
+  // G7-SIDE-11：折叠某组后，键盘选中索引按「折叠前序列」计数会漂移到别的组上 → 显式清零
+  const toggleSearchGroupCollapse = useCallback((path: string) => {
+    setCollapsedSearchGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path); else next.add(path);
+      return next;
+    });
+    setSearchSelectedIndex(-1);
+  }, []);
 
   // 查询词变化 → 旧选中失效
   useEffect(() => {
     searchResultsModelRef.current.reset();
     setSearchSelectedIndex(-1);
+    setCollapsedSearchGroups(new Set()); // G7-SIDE-11：新结果集，折叠态不跨查询残留
   }, [searchQuery]);
 
   const handleSearchKeyDown = useCallback((event: ReactKeyboardEvent) => {
@@ -3681,7 +3703,7 @@ export default function App() {
     }
     const model = fileTreeModelRef.current;
     if (!model) return;
-    const map: Record<string, 'up' | 'down' | 'left' | 'right' | 'enter' | undefined> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter' };
+    const map: Record<string, 'up' | 'down' | 'left' | 'right' | 'enter' | 'home' | 'end' | undefined> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'enter', Home: 'home', End: 'end' };
     const key = map[event.key];
     if (key !== undefined) {
       event.preventDefault();
@@ -3712,8 +3734,8 @@ export default function App() {
       return;
     }
     // V7-W3.2：补齐 PageUp / PageDown（模型早已支持，此前未接线 —— 契约 §7.3「键盘 ↑↓ Enter PageUp/PageDown」）
-    const map: Record<string, 'up' | 'down' | 'enter' | 'pageup' | 'pagedown' | undefined> = {
-      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'up', ArrowRight: 'down', Enter: 'enter', PageUp: 'pageup', PageDown: 'pagedown',
+    const map: Record<string, 'up' | 'down' | 'enter' | 'pageup' | 'pagedown' | 'home' | 'end' | undefined> = {
+      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'up', ArrowRight: 'down', Enter: 'enter', PageUp: 'pageup', PageDown: 'pagedown', Home: 'home', End: 'end',
     };
     const key = map[event.key];
     if (key === undefined) return;
@@ -6526,7 +6548,7 @@ export default function App() {
   };
 
   return (
-    <div className={`shell${platformMac ? ' platform-mac' : ''}`}>
+    <div className={`shell${platformMac ? ' platform-mac' : ''}${platformWin ? ' platform-win' : ''}`}>
       <header className="titlebar" data-tauri-drag-region>
         <button
           className="titlebar-palette"
@@ -6535,8 +6557,10 @@ export default function App() {
           title={t('sidebar.toggleTitle')}
           aria-pressed={sidebarShown}
         ><span aria-hidden="true">☰</span><span className="sr-only">{platformMac ? '⇧⌘L' : 'Ctrl+Shift+L'}</span></button>
-        {/* Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：非 macOS Tauri 环境显示窗口控制按钮 */}
-        {!platformMac && isTauri() && (
+        {/* Windows 一体化自绘标题栏（Typora parity，V4 §17 D10）：Windows Tauri 环境显示窗口控制按钮。
+            G7-SHELL-10（D-BA）：原条件为 `!platformMac`，Linux 因保持系统装饰（Rust 侧仅 Windows
+            `decorations(false)`）会在系统标题栏下再画一排 min/max/close = 双 chrome，现收敛为仅 Windows。 */}
+        {platformWin && isTauri() && (
           <div className="titlebar-window-controls" role="group" aria-label="Window controls">
             <button
               type="button"
@@ -6679,7 +6703,7 @@ export default function App() {
               </div>
               <div className="search-results" aria-label={t('search.resultsLabel')}>
                 {searchQuery === '' && searchResults.length === 0 && <div className="sidebar-empty">{t('search.empty')}</div>}
-                {<SearchResultsList groups={searchGroups} selectedIndex={searchSelectedIndex} onJump={(m) => void jumpToSearchResult(m)} onContextMenu={openSearchContextMenu} />}
+                {<SearchResultsList groups={searchGroups} selectedIndex={searchSelectedIndex} onJump={(m) => void jumpToSearchResult(m)} onContextMenu={openSearchContextMenu} collapsedGroups={collapsedSearchGroups} onToggleGroup={toggleSearchGroupCollapse} t={t} />}
               </div>
             </>
           )}

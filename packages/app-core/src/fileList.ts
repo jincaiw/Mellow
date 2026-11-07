@@ -68,8 +68,11 @@ export class FileListModel {
   selectedPath: string | null = null;
   /** P3.4（G4-SIDE-01）键位补齐：↑↓/Enter 既有；←→ 在单列列表上与 ↑↓ 同义（桌面单列列表惯例）；
    * PageUp/PageDown 按 pageSize 整页移动（默认 10 项，clamp 边界）；未选中时任意移动键落到第一项。 */
-  navigate(items: Array<{ path: string }>, key: 'up' | 'down' | 'left' | 'right' | 'enter' | 'pageup' | 'pagedown', pageSize = 10): { selected: string | null; open?: string } {
+  navigate(items: Array<{ path: string }>, key: 'up' | 'down' | 'left' | 'right' | 'enter' | 'pageup' | 'pagedown' | 'home' | 'end', pageSize = 10): { selected: string | null; open?: string } {
     if (items.length === 0) return { selected: null };
+    // Home/End：Typora `bindFileViewKeyboard` 对树/列表共用（`moveFileSelectionToEnd`）。
+    if (key === 'home') { this.selectedPath = items[0].path; return { selected: this.selectedPath }; }
+    if (key === 'end') { this.selectedPath = items[items.length - 1].path; return { selected: this.selectedPath }; }
     const currentIndex = this.selectedPath === null ? -1 : items.findIndex((item) => item.path === this.selectedPath);
     const step = key === 'down' || key === 'right' ? 1
       : key === 'up' || key === 'left' ? -1

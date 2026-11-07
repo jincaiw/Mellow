@@ -132,6 +132,38 @@ if (!topbarBlock || !/height: 34px/.test(topbarBlock) || !/flex: 0 0 34px/.test(
   fail('styles.css .editor-topbar 必须保持 height 34px / flex 0 0 34px（V7-W2.3：避免视觉 Golden 基线漂移）');
 }
 
+// ── G7-SHELL-10（D-BA）：应用内窗口控制按钮仅 Windows ────────────────────
+// 真源链：Rust 侧只对 Windows 去系统装饰（window.rs / lib.rs 的
+// `#[cfg(target_os = "windows")] decorations(false)`，Linux 维持系统装饰）⇒
+// webview 自绘的 min/max/close 若发给「macOS 以外全部平台」，Linux 会出现
+// 系统标题栏 + 应用内一排按钮的**双 chrome**（2026-11-08 代理报告核实为真缺陷）。
+// 三处必须同源：shell 类的 platform-win、JSX 渲染条件、CSS 生效选择器。
+{
+  const winState = /const \[platformWin\] = useState\(\(\) => typeof navigator !== 'undefined' && \/win\/i\.test\(navigator\.platform\)\);/.test(appSource);
+  if (!winState) fail('App.tsx 缺少 platformWin 判定（G7-SHELL-10 / D-BA）');
+  if (!/\$\{platformWin \? ' platform-win' : ''\}/.test(appSource)) {
+    fail('App.tsx shell 类必须按 platformWin 追加 platform-win（G7-SHELL-10 / D-BA）');
+  }
+  if (!/\{platformWin && isTauri\(\) && \(/.test(appSource)) {
+    fail('App.tsx 窗口控制按钮渲染条件必须是 platformWin && isTauri()（G7-SHELL-10 / D-BA：`!platformMac` 会让 Linux 双 chrome）');
+  }
+  const controlsBlock = /\.shell\.platform-win \.titlebar-window-controls \{[^}]*\}/.exec(stylesSource)?.[0];
+  if (!controlsBlock || !/display: flex/.test(controlsBlock)) {
+    fail('styles.css 缺少 .shell.platform-win .titlebar-window-controls{display:flex}（G7-SHELL-10 / D-BA）');
+  }
+  if (/\.shell:not\(\.platform-mac\) \.titlebar-window-controls/.test(stripComments(stylesSource))) {
+    fail('styles.css 不得残留 .shell:not(.platform-mac) .titlebar-window-controls 生效规则（G7-SHELL-10 / D-BA：Linux 双 chrome 回归）');
+  }
+  // canary：把渲染条件改回 `!platformMac`，同一条判据必须判false（漂移可检出）
+  const renderCond = (src) => /\{platformWin && isTauri\(\) && \(/.test(src);
+  const drift = appSource.replace('{platformWin && isTauri() && (', '{!platformMac && isTauri() && (');
+  if (drift === appSource) {
+    fail('G7-SHELL-10 canary 未武装：注入点未命中');
+  } else if (renderCond(drift)) {
+    fail('G7-SHELL-10 canary 失效：注入 !platformMac 回归未被检出');
+  }
+}
+
 // ── V7-W2.6/W2.7：字数可见性契约 ─────────────────────────────────────────
 // Typora 官方 Word Count 文档：「Word count is displayed on status bar (Windows/Linux)
 // or title bar (macOS when hover)」+「You could click on the "word count" button to show

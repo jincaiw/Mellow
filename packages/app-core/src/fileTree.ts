@@ -206,8 +206,12 @@ export class FileTreeModel {
     return out;
   }
 
-  navigate(flat: FlatFileTreeNode[], key: 'up' | 'down' | 'left' | 'right' | 'enter'): { open?: string; selected: string | null } {
+  navigate(flat: FlatFileTreeNode[], key: 'up' | 'down' | 'left' | 'right' | 'enter' | 'home' | 'end'): { open?: string; selected: string | null } {
     if (flat.length === 0) return { selected: null };
+    // Typora `bindFileViewKeyboard`（一手证据）：Home/End ⇒ `moveFileSelectionToEnd(isEnd)`
+    // = 跳到可选序列首/尾（树与列表视图共用该处理器，useTreeStyle 只门控 ←→）。
+    if (key === 'home') { this.selectedPath = flat[0].path; return { selected: this.selectedPath }; }
+    if (key === 'end') { this.selectedPath = flat[flat.length - 1].path; return { selected: this.selectedPath }; }
     const index = Math.max(0, flat.findIndex((n) => n.path === this.selectedPath));
     const current = flat[index] ?? flat[0];
     if (key === 'up') this.selectedPath = flat[Math.max(0, index - 1)].path;

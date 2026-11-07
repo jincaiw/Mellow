@@ -56,6 +56,23 @@ describe('FileTree filtering/sorting/navigation（PRD §14/§59/§60）', () => 
     expect(model.navigate(flat, 'enter').open).toBe('/ws/a.md');
   });
 
+  test('Home/End 跳到首/尾项（Typora bindFileViewKeyboard → moveFileSelectionToEnd 一手证据）', () => {
+    const model = new FileTreeModel('/ws');
+    const flat = [
+      { path: '/ws/folder', name: 'folder', kind: 'folder' as const, depth: 0, expanded: false, index: 0 },
+      { path: '/ws/a.md', name: 'a.md', kind: 'file' as const, depth: 0, expanded: false, index: 1 },
+      { path: '/ws/b.md', name: 'b.md', kind: 'file' as const, depth: 0, expanded: false, index: 2 },
+    ];
+    model.select('/ws/a.md');
+    expect(model.navigate(flat, 'home').selected).toBe('/ws/folder');
+    expect(model.navigate(flat, 'end').selected).toBe('/ws/b.md');
+    // 未选中时 Home/End 同样落到首/尾（与 up/down 的 clamp 语义一致，且不返回 open）
+    const fresh = new FileTreeModel('/ws'); // selectedPath 初始 null
+    expect(fresh.navigate(flat, 'home')).toEqual({ selected: '/ws/folder' });
+    expect(fresh.navigate(flat, 'end')).toEqual({ selected: '/ws/b.md' });
+    expect(model.navigate([], 'end')).toEqual({ selected: null });
+  });
+
   test('copy relative path', () => {
     expect(relativePath('/ws/folder', '/ws/a.md')).toBe('../a.md');
     expect(relativePath('/ws', '/ws/folder/c.md')).toBe('folder/c.md');

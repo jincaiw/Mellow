@@ -93,6 +93,9 @@ const zhCN = {
   'search.matches': '{n} 个匹配',
   'search.streaming': '搜索中…',
   'search.empty': '输入关键词搜索当前文件夹',
+  // G7-SIDE-11（2026-11-08）：结果分组折叠/展开（Typora `.ty-search-item-collapse-icon`）
+  'search.collapseGroup': '折叠该文件的结果',
+  'search.expandGroup': '展开该文件的结果',
 
   // Palette / Quick Open
   'palette.command.placeholder': '命令面板 / 插件命令',
@@ -1131,6 +1134,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'search.matches': '{n} matches',
   'search.streaming': 'streaming…',
   'search.empty': 'Type keywords to search the current folder',
+  // G7-SIDE-11（2026-11-08）：结果分组折叠/展开（Typora `.ty-search-item-collapse-icon`）
+  'search.collapseGroup': 'Collapse results for this file',
+  'search.expandGroup': 'Expand results for this file',
 
   'palette.command.placeholder': 'Command Palette / Plugin Commands',
   'palette.slash.placeholder': 'Slash Commands: type to filter…',
