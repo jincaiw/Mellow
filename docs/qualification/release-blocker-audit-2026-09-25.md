@@ -23576,6 +23576,52 @@ flex ⇒ 判据语义取「非 none」，不断具体形态）；B3 点 pin ⇒ 
 `verify-build-pipeline`（基线 108）/ `verify-release-gate` /
 `verify-doc-code-refs` 全绿（见下）。
 
+**11）非菜单面（iii）：转述层过期四轮清扫 + §7.5 两行的终局形态对齐（2026-11-08 治理轮续）**
+
+「六」9 的教训（**引用旧快照前，先查它之后有没有新 ADR / 新轮次把它做掉了**）
+本轮反向兑现：不是查「旧快照有没有被做掉」，而是查**新结论有没有回写到全部
+转述层**。按 `grep '❌'` 全表清扫 master-plan，四处过期文本 + 两处 E 合同格
+欠精确，逐项先 grep 产品代码再改字：
+
+① **§7.3 行 1.7**（图片子菜单，commit 1185371）：「DONE（部分）：缺项转 W5」
+系 2026-09-13 快照 —— `image.setAssetDir` 菜单直达已在 G7-MENU-16 ⑥ 装配、
+`When Insert Local Images…` = D-AB ⇒ 两项均有终局裁决，无待办残留。（本行
+初稿曾写「schema L507-509」，**违反 §4.11 行号锚母题**，出稿前已改符号表述。）
+
+② **§15.3 行 14b 的 `❌ 仍缺：Use theme font size`**（commit 7add084）：
+同一格内「剩项归零」更正块在上、该 ❌ 半句在下 —— 后者是**更正块的下游
+转述层未同步**（ADR-0033 已实装 `export.image.fontSizeMode`）。就地改 ✅ +
+指认终局依据，读者自上而下不再收到矛盾信号。
+
+③ **`tests/e2e/drag-drop-verify.mjs` 头文件**（同 commit 7add084）：审计
+早前登记的**失真⑤**（「D1 已同步标注当前不可能通过」那句话从未回改）本轮
+兑现回改：补 2026-10-08 再更正 —— D1 = **已实装、待人工真机执行**。探针
+复跑 5/5 绿（改动仅注释）。
+
+④ **§7.3 响应式行**（commit 786392a）：「≥1200 可拖 **200–480**px」系 §7.6
+「侧栏宽度」行 2026-09-13 一手更正（Typora `base-control.css`
+`--sidebar-width: 270px` + `setSidebarWidth` 的 `Math.max(e, 160)`，本轮复核
+一手源码在场）之前的转述层残留。护栏 ⑲ + `sidebar-resize-verify.mjs`
+（复跑 10/10，含「drag below 160 clamps to 160」）锁的就是 160–480 / 270；
+行内补 D-AD（480 上限）标注。**初稿误引 §7.5，核对节号后改 §7.6** ——
+引用锚本身也要验，不能凭印象。
+
+⑤ **§7.5 字数可见性行**（commit b5d11d5）：原格「hover 或常显，可配置」暗示
+两形态均可得；代码实际交付 = `appearance.wordCount` 开关驱动 `setTitle`
+并入字数（Typora「始终显示」等价物），**hover 显隐登记 D**（G7-SHELL-06 在
+册）⇒ 格内补注（hover 形态为 D）。顺带复核该行相邻 claims：`view.sidebar.toggle`
+`⇧⌘L` 在场（menuSchema）、`TYPOGRAPHY_DEFAULTS.writingWidth = 860` 单一真源、
+`--mellow-writing-width` 已接 Reader（App.tsx 注释在册「此前硬编码 820」）—— 均 PASS。
+
+**方法自审**：五处全部是「文档声称 vs 代码/一手证据」型漂移，零产品代码改动；
+其中两处（①④）的**修稿过程本身**再犯并被自纠（行号锚、错节号），说明防线
+对**引用锚**的自动化检查（`verify-doc-code-refs` 的符号引用判据 0 处失配）仍
+弱于对**内容**的检查 —— 内容错了护栏不响，只有 grep 代码才响。
+
+**本轮验证**：`verify-doc-code-refs` / `verify-release-gate` /
+`verify-sidebar-contract` 全绿；探针 `drag-drop-verify` 5/5、
+`sidebar-resize-verify` 10/10 复跑（后者验证被更正的行所引用的实测基线）。
+
 
 
 ## 五、本次审计做的改动（非策略性）
