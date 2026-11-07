@@ -272,6 +272,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // （`shouldShowEntry` 的 includeGlobs / excludeGlobs），逗号或换行分隔。
       { id: 'files.includeGlobs', labelKey: 'settings.file.includeGlobs', type: 'text', storageKey: 'mellow.fileTree.includeGlobs', defaultValue: '', descriptionKey: 'settings.file.includeGlobsDesc', applyCommand: 'settings.fileTreeOptions' },
       { id: 'files.excludeGlobs', labelKey: 'settings.file.excludeGlobs', type: 'text', storageKey: 'mellow.fileTree.excludeGlobs', defaultValue: '', descriptionKey: 'settings.file.excludeGlobsDesc', applyCommand: 'settings.fileTreeOptions' },
+      // §4.360「六」8（非菜单面差集审计）：§7.3 E 合同 File List 行承诺「可选 modified /
+      // summary」，但宿主长期硬编码 `includeSummary={false}` ⇒ 模型/渲染两头支持、
+      // 中间无入口（未注册缺口）。本行把它接回设置面；默认 **false** = Typora Articles
+      // 默认不显示摘要（「可选」的出厂侧）。
+      { id: 'files.listSummary', labelKey: 'settings.file.listSummary', type: 'toggle', storageKey: 'mellow.file.listSummary', defaultValue: false, descriptionKey: 'settings.file.listSummaryDesc', applyCommand: 'settings.fileListSummary' },
       { id: 'files.autosave', labelKey: 'settings.file.autosave', type: 'toggle', storageKey: 'mellow.file.autosave', defaultValue: true, applyCommand: 'settings.autosave' },
       // V7-W5（G7-FEAT-03）：定时保存间隔（分钟）。Typora Win/Linux 默认 5 分钟，但只在
       // conf/conf.user.json 的 `autoSaveTimer` 中可改、GUI 不可达；Mellow 暴露为设置项 = B。

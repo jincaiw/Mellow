@@ -749,6 +749,14 @@ export default function App() {
   const [pinnedFolders, setPinnedFolders] = useState<string[]>(() => parseRecentFolders(localStorage.getItem(PINNED_FOLDERS_KEY)));
   // V7-W3.2：Articles 是否递归收集子文件夹（Typora Articles 的 current / recursive 开关）
   const [fileListRecursive, setFileListRecursive] = useState(true);
+  // §4.360「六」8：File List「摘要」显示开关（§7.3 E 合同「可选 summary」的宿主入口）。
+  // 真值 = settings `files.listSummary`（storageKey `mellow.file.listSummary`，默认 false）；
+  // ⚠️ 该 state 必须同时进 refreshFileList 依赖数组，否则改设置不重算（§4.25 反例同型，
+  // 由 settings 护栏「双端接线 + 依赖数组」纪律承载）。
+  const [fileListSummary, setFileListSummary] = useState<boolean>(() => {
+    const def = settingById('files.listSummary');
+    return def !== undefined && readSetting(def) === true;
+  });
   const [outlineItems, setOutlineItems] = useState<OutlineHeading[]>([]);
   const [outlineFilter, setOutlineFilter] = useState('');
   const [outlineFlat, setOutlineFlat] = useState(false);
@@ -2871,11 +2879,11 @@ export default function App() {
     }
     const r = await svc.readList(
       fileTreeRoot,
-      { ...DEFAULT_FILE_LIST_OPTIONS, recursive: fileListRecursive },
+      { ...DEFAULT_FILE_LIST_OPTIONS, recursive: fileListRecursive, includeSummary: fileListSummary },
       fileTreeOptions,
     );
     if (r.ok) setFileListItems(r.value);
-  }, [fileListRecursive, fileTreeOptions, fileTreeRoot]);
+  }, [fileListRecursive, fileListSummary, fileTreeOptions, fileTreeRoot]);
 
   /** V7-W3.2：Articles 分组标题 —— 相对当前根的路径（根本身显示为「.」）。 */
   const fileListFolderLabel = useCallback((path: string): string => {
@@ -3710,6 +3718,12 @@ export default function App() {
       void refreshFilesSidebarRef.current();
     }
   }, [fileTreeOptions, fileTreeRoot]);
+
+  // §4.360「六」8：摘要开关必须**重新取数**（summary 是 readList 读取时计算的，不像
+  // recursive 可以只改呈现层分组）⇒ 专用 effect 走 ref 守卫（P3.7 反循环纪律同 L3715）。
+  useEffect(() => {
+    if (fileTreeRoot !== null) void refreshFilesSidebarRef.current();
+  }, [fileListSummary, fileTreeRoot]);
 
   useEffect(() => {
     refreshOutlineRef.current();
@@ -5340,6 +5354,11 @@ export default function App() {
         else if (def.id === 'files.includeGlobs') setFileTreeOption({ includeGlobs: parseGlobList(String(value ?? '')) });
         else if (def.id === 'files.excludeGlobs') setFileTreeOption({ excludeGlobs: parseGlobList(String(value ?? '')) });
         break;
+      case 'settings.fileListSummary':
+        // §4.360「六」8：§7.3 E 合同「File List 可选 summary」的宿主入口（双端接线，
+        // settings 护栏纪律）。写入 state ⇒ 专用 effect 重跑 refreshFileList（见 ref 守卫）。
+        setFileListSummary(Boolean(value));
+        break;
       case 'settings.sidebarMode':
         setSidebarMode(String(value) as 'files' | 'fileList' | 'outline' | 'search');
         break;
@@ -6602,7 +6621,7 @@ export default function App() {
                     items={fileListItemsForRender}
                     selectedPath={fileListSelectedPath}
                     currentPath={filePathRef.current}
-                    includeSummary={false}
+                    includeSummary={fileListSummary}
                     compact
                     groupByFolder={fileListRecursive}
                     folderLabel={fileListFolderLabel}

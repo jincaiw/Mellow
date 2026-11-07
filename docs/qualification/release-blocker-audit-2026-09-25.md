@@ -23440,6 +23440,48 @@ L224 查找▸ `跳转到所选内容 [Cmd+J]`（与 L183 跳转组那行同形�
 OS 注入语义、查找和替换 D-AX 连锁、键位表/实机 D-AX 族）—— 全部属**裁决面或
 muda 形态限制**，非可装配缺口。
 
+**8）桌面 UI 非菜单面扫描 → File List「可选 summary」E 合同装配收口（2026-11-08）**
+
+「六」7b 把菜单面残余清零后，按 Stop-hook 反馈「无证据覆盖 sidebar/layout/
+editor-experience」转入**非菜单桌面 UI** 扫描（Explore agent 返回，逐项亲验后采信）。
+抓到一个**未登记的近端缺口**：§7.3 E 合同行「File List | title + filename
+（可选 modified / **summary**）」中 summary 一档**永远兑现不了** —— 两头早就支持、
+中间没有入口：`packages/app-core/src/fileList.ts` 的 `readList` 已按
+`includeSummary` 计算摘要（`summaryFromMarkdown` L46：跳过标题行与分隔线、取正文
+拼接、140 字截断加省略号）、`packages/desktop-ui/src/FileList.tsx:97` 已渲染
+`.file-list-summary`，但 `App.tsx` 把 `includeSummary` **写死 `{false}`**，
+设置 schema 无开关 —— 典型「死代码两端夹空中间」。
+
+**装配（五层，同 `files.listRecursive` 族的既有接线形态）**：① `packages/settings/
+src/index.ts` 新增 `files.listSummary`（toggle，`storageKey: mellow.file.listSummary`，
+`defaultValue: false` = Typora Articles **默认不显示摘要**，`applyCommand:
+settings.fileListSummary`）；② i18n zh/en 标签+描述四键；③ `App.tsx` state
+`fileListSummary`（`settingById` + `readSetting` 启动恢复，state **进** refreshFileList
+依赖数组 —— §4.25 母题防线）；④ `refreshFileList` 传 `includeSummary: fileListSummary`
++ `applySetting` 新 case `settings.fileListSummary` + **专用 effect**（`[fileListSummary,
+fileTreeRoot]` 键控、`refreshFilesSidebarRef` ref 守卫 —— P3.7 反循环纪律同 L3715
+fileTreeOptions 先例；summary 与 recursive 不同，是 **readList 读取时计算**，改开关
+必须**重取**而非仅改呈现）；⑤ 渲染层 `includeSummary={false}` → `{fileListSummary}`。
+无额外 IO：`readList` 本就为取 title 读全文，开摘要只多一次字符串处理。
+
+**新增探针 `tests/e2e/file-list-summary-verify.mjs`**（8 断言全绿；
+SCRIPT_BASELINE 106→**107**，引用即本节）：A 默认关闭无摘要节点 / B1–B3 面板勾选
+**零刷新**即出摘要（判据刻意 `refresh:false` 纯采样 —— 带 refresh 则「effect 没装、
+仅靠下次刷新」也会被误判绿）/ D 反向同样实时 / C1 落盘 `'0'/'1'` 非 `'true'` 漂移 /
+C2 受控 checkbox 不弹回（A38 母题回归防线）/ C3 预置 `'1'` 冷启动**全程未点开关**、
+仅数据刷新即出摘要（启动读回路径独立于 live 路径）。
+
+**探针调试期两个合同级事实（登记防重蹈）**：① `handleSave` **不**刷新侧栏
+（App.tsx:4914 起全程无 `refreshFilesSidebar`），且**视图切换也不重取**
+（`setSidebarMode` 只写 state+localStorage）⇒ 判据要读磁盘最新内容必须显式
+`workspace.refresh`；Typora 同型（Articles 亦刷新时重算），非缺陷。
+② dblclick 打开是**异步加载**，正文写入若发生在加载完成前会被空文档**覆盖** ⇒
+写判据 = 连续两次读回一致再保存（同 CM6 两步语义教训族：**探针红 ≠ 实现红**，
+先对上游语义再改预期）。
+
+**验证**：`verify-settings-contract` / `verify-i18n-contract` / `pnpm --filter
+@mellow/settings test` 17/17 / 新探针 8/8 / `verify-build-pipeline`（基线 107）全绿。
+
 
 
 ## 五、本次审计做的改动（非策略性）
