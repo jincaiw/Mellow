@@ -808,7 +808,7 @@ macOS/Windows 的原生菜单键位在事件分发早于 WebView keydown，故�
 | 排序 | Group by Folder + natural / alphabet / modified / created（各升降序） | E |
 | 文件操作撤销 | 语义与 Typora 对齐并显式记录差异 | E |
 | 规模 | 10k 文件 / 1000 headings / 1 万结果不阻塞 | E |
-| 响应式 | ≥1200 可拖 200–480px；900–1199 保持宽度；<900 自动隐藏；200% Zoom 不溢出 | E |
+| 响应式 | 可拖 **160–480px**（默认 270；原写「≥1200 可拖 200–480」系 §7.6「侧栏宽度」行更正前的转述层未同步，2026-11-08 治理轮对齐；宽度分档语义以 `sidebar-resize-verify.mjs` + 护栏 ⑲ 为准）；<900px 临时收起不覆盖偏好；200% Zoom 不溢出 | E（480 上限为 D-AD） |
 
 ### 7.4 域 D — 特点（五层体验）
 
