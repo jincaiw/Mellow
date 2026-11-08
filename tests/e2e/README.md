@@ -32,15 +32,22 @@ NODE_PATH=/tmp/pw/node_modules node tests/e2e/<script>.mjs
 **判别特征**：失败时 `document.getElementById('root').innerHTML.length` 明显偏大
 （带着恢复的会话，如 33873 vs 全新实例的 1598）。
 
-**处置**：清理残留后重跑；或把该脚本改为**动态选空闲端口**
+**现状（2026-11-08，审计「六」18）**：`startViteDevServer()` 在启动前**预检端口**，
+被占时**立即抛错并指名端口**，不再静默连上陌生服务器；`describeSpawnFailure()`
+也会带上 vite 的退出码与 stderr 尾部。因此现在遇到该问题会看到明确报错，而不是假红。
+
+**处置**：按报错里的命令清理残留后重跑；或把该脚本改为**动态选空闲端口**
 （`smoke.mjs` 已改：`pickFreePort()` + `listen(0)`，见其注释）。
 **不要**通过延长等待时间来「修」这类失败 —— 根因不是时序。
 
 ### 2. 用条件等待，不要用魔法时长
 
-等编辑器就绪应轮询条件（`waitForFunction` 判 `webContents.webModules.core`），
+等编辑器就绪应轮询条件（`waitForFunction` 同时判 `webModules?.core` **和** `window.editor`），
 而非 `waitForTimeout(5000)`。编辑器挂载走 `requestIdleCallback`，
 在负载高的机器上可能超过任意固定值。（`smoke.mjs` 原为固定 5s，已改。）
+⚠️ 两者**缺一不可**：`webModules` 在模块求值时同步挂上，而 `window.editor`（EditorView）
+要等 `resetEditor()` 才赋值 —— 只判前者会在「模块已在、视图未建」的窗口里误判就绪，
+随后 `dispatch` 抛 `editor view unavailable`（`fenced-math-verify` 实际踩过，见审计「六」18）。
 
 ### 3. `isTauri()` 门控的行为在 dev harness 天然测不到
 

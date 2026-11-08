@@ -173,9 +173,10 @@ async function main() {
     check('输入 `/` 触发 Slash 菜单', slashOpen.open && slashOpen.count > 0, JSON.stringify(slashOpen));
     await press('Escape');
 
-    // ── 6. Edit → New Paragraph / New Line（G7-MENU-06）──────────────────
-    // 官方表定义：New Paragraph = 真分段（\n\n）；New Line = 段内软换行（\n）。
-    // 注意 Mellow 的 Enter 产出的是单 \n（= New Line 语义），故 New Paragraph 必须自己插 \n\n。
+    // ── 6. 新段落 / 新行（命令入口；G7-MENU-06 撤回后菜单不再展示，能力保留）──
+    // 2026-11-08：原 G7-MENU-06 的「新段落 / 新行」菜单项经显示层一手证据证明
+    // Typora 并无此项，已从 Edit 菜单撤除；命令仍在注册表（命令面板可达），
+    // 这里继续覆盖其执行路径。Enter 键本身的语义见下一节 6b。
     // **顺序约束**：必须在 Source↔Live 往返之前执行 —— 源码模式切换后 activeFormatView
     // 指向的视图状态不同，此处再取会得到空文档（实测踩过）。
     const resetAtEnd = (t) => frame.evaluate((x) => {
@@ -202,6 +203,34 @@ async function main() {
     await sleep(600);
     const nlText = await getText();
     check('Edit → 新行插入段内软换行（\\n）', nlText === 'abc\n', `got=${JSON.stringify(nlText)}`);
+
+    // ── 6b. Enter / Shift+Enter 真键（G7-EDIT-07 根因收口，PRD §34）────────
+    // 与单测（jsdom）互补：这里走**真实宿主装配**（CoreEditor + 引擎 install +
+    // 真实键盘事件），证明 `Prec.highest` 的 Enter 接管在生产装配顺序下生效，
+    // 且列表仍交还 `lang-markdown`（段落接管不得连带破坏列表续写）。
+    await resetAtEnd('abc');
+    await sleep(300);
+    await frame.click('.cm-content');
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    const enterText = await getText();
+    check('Enter 在普通段落插入真分段（\\n\\n）', enterText === 'abc\n\n', `got=${JSON.stringify(enterText)}`);
+
+    await resetAtEnd('abc');
+    await sleep(300);
+    await frame.click('.cm-content');
+    await page.keyboard.press('Shift+Enter');
+    await sleep(400);
+    const shiftEnterText = await getText();
+    check('Shift+Enter 保持段内软换行（\\n）', shiftEnterText === 'abc\n', `got=${JSON.stringify(shiftEnterText)}`);
+
+    await resetAtEnd('- a');
+    await sleep(300);
+    await frame.click('.cm-content');
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    const listEnterText = await getText();
+    check('列表项 Enter 仍由 lang-markdown 续写（不插空行）', listEnterText === '- a\n- ', `got=${JSON.stringify(listEnterText)}`);
 
     // ── 7. Source ↔ Live 往返保持正文 ───────────────────────────────────
     await frame.click('.cm-content');

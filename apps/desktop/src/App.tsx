@@ -88,8 +88,10 @@ import { createDesktopWindowService } from './host/windowService';
 import { createDesktopSearchService } from './host/searchServices';
 import { createDesktopImageUploadService } from './host/uploadService';
 import { createDesktopSpellcheckService, primeSpellcheckAvailability, spellcheckAvailableSync } from './host/spellcheck';
+import { loadTextReplacementEntries, primeTextReplacementAvailability, textReplacementAvailableSync, textReplacementEntriesSync } from './host/textReplacement';
 import { openThemesFolder, refreshUserThemes } from './host/userThemes';
 import { loadKatex, renderKatex, injectKatexCssIntoFrame } from './katexLoader';
+import { loadMermaid } from './mermaidLoader';
 import type { ImageWidgetActionRequest } from '../../../packages/editor-engine/src/image/widget';
 import type { AssetDirConfig } from '../../../packages/editor-engine/src/image/path';
 // ADR-0034：引擎特性默认值的**单一真源**（config.ts 不依赖 CodeMirror，可安全被宿主引用）
@@ -101,7 +103,7 @@ import type { ImageExportOptions, Canvas2DLike } from '../../../packages/export/
 import { CommandPaletteModel, CommandRegistry, SCHEMA_SHORTCUTS, commandPaletteSearch, createCommandContext, normalizeShortcut, slashCommandSearch, titleFor } from '../../../packages/commands/src';
 import type { Command, CommandPaletteItem, CommandSource } from '../../../packages/commands/src';
 import type { CommandContribution } from '../../../packages/extension-api/src';
-import { DEFAULT_THEME_SETTINGS, allThemes, resolveActiveTheme, themeById } from '../../../packages/themes/src';
+import { DEFAULT_THEME_SETTINGS, allThemes, migrateThemeSettings, resolveActiveTheme, themeById } from '../../../packages/themes/src';
 import type { MellowTheme, ThemeSettings } from '../../../packages/themes/src';
 import { createI18n, MESSAGES, resolveLocale } from '../../../packages/i18n/src';
 import { buildNativeMenuSpec } from './nativeMenu';
@@ -191,6 +193,16 @@ function readBoolSetting(id: string, fallback: boolean): boolean {
   if (!def) return fallback;
   const value = readSetting(def);
   return typeof value === 'boolean' ? value : fallback;
+}
+/**
+ * 读取数值型设置项（非法 / 缺失 / 非正数回落 `fallback`）。
+ * 与 `readBoolSetting` 同源同一入口（`settingById` + `readSetting`），不自行拼 storageKey。
+ */
+function readNumberSetting(id: string, fallback: number | undefined): number | undefined {
+  const def = settingById(id);
+  if (!def) return fallback;
+  const raw = readSetting(def);
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : fallback;
 }
 /**
  * 写入布尔型设置项（真源 = settings schema 的 `storageKey`）。
@@ -922,7 +934,7 @@ export default function App() {
   shortcutOverridesRef.current = shortcutOverrides;
   const [settingsOpen, setSettingsOpen] = useState(false);  // 实机 dump 对齐（§4.360）：Typora「导出设置…」「全局图像设置…」直达设置分区
   // §4.360：直达分区扩展到 image（图像设置）；真值源仍是 settings schema 的分区 id
-  const [settingsSection, setSettingsSection] = useState<'general' | 'export' | 'image'>('general');
+  const [settingsSection, setSettingsSection] = useState<'general' | 'export' | 'image' | 'editor'>('general');
 
   // A38（ADR-0038 C）：当前系统拼写检查语言（NSSpellChecker.language()，**只读展示**）。
   // 打开设置面板时**重新取**：语言是系统状态，可能在会话中被用户在系统设置里换掉，
@@ -939,7 +951,18 @@ export default function App() {
     try {
       const saved = JSON.parse(localStorage.getItem(THEME_SETTINGS_KEY) ?? 'null') as ThemeSettings | null;
       if (saved !== null && typeof saved === 'object' && (saved.mode === 'system' || saved.mode === 'light' || saved.mode === 'dark')) {
-        return { ...DEFAULT_THEME_SETTINGS, ...saved };
+        const merged = { ...DEFAULT_THEME_SETTINGS, ...saved };
+        // ADR-0040 裁决 A：旧主题 id（newsprint / whitey / gothic）一次性迁移到现名，
+        // 保证升级后用户的选择与观感不变；迁移结果立即写回，避免每次都映射。
+        const migrated = migrateThemeSettings(merged);
+        if (migrated.lightThemeId !== merged.lightThemeId || migrated.darkThemeId !== merged.darkThemeId) {
+          try {
+            localStorage.setItem(THEME_SETTINGS_KEY, JSON.stringify(migrated));
+          } catch {
+            /* 持久化失败不影响本次会话（内存里已是迁移后的值） */
+          }
+        }
+        return migrated;
       }
     } catch {
       /* 回退默认 */
@@ -974,6 +997,16 @@ export default function App() {
   // 右键菜单需要在**同步**构造 items 时决定是否显示拼写区，故不能等异步。
   useEffect(() => {
     void primeSpellcheckAvailability();
+  }, []);
+  // G7-MENU-05：文本替换 —— 预取「本平台是否可用」（菜单项 / 设置行同步判据）
+  // 与系统词典；词典就绪后立即注入当前编辑器（切换文档重建编辑器时由就绪块重新注入）。
+  useEffect(() => {
+    void primeTextReplacementAvailability().then(() => loadTextReplacementEntries()).then((entries) => {
+      const def = settingById('editor.textReplacement');
+      const on = def ? readSetting(def) !== false : true;
+      hostRef.current?.setTextReplacementEnabled(on);
+      hostRef.current?.setTextReplacementEntries(entries);
+    }).catch(() => undefined);
   }, []);
   useEffect(() => {
     refreshUserThemeList();
@@ -1432,6 +1465,8 @@ export default function App() {
       const buffer = await createPdfBuffer(content, {
         ...DEFAULT_PDF_OPTIONS,
         preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
+        // 代码块行号与编辑器 / HTML 导出同源（Typora 的 showLineNumbersForFence 是全局项）
+        codeLineNumbers: readBoolSetting('markdown.codeLineNumbers', false),
       }, { fonts, resolveImage: makeLocalImageResolver(docDir, exportRootDir, true) });
       await invoke('write_binary', { path: savePath, data: Array.from(buffer) });
       lastExportedRef.current = { docPath: tab.path ?? '', output: savePath, format: 'pdf' };
@@ -1609,6 +1644,17 @@ export default function App() {
         mermaid: readBoolSetting('markdown.mermaid', false),
         toc: readBoolSetting('markdown.toc', true),
         footnote: readBoolSetting('markdown.footnote', true),
+        // 代码块自动换行与编辑器同源（Typora 的 noLineWrapping 同时作用于编辑器与导出件），
+        // 避免「编辑器里折行的长代码，导出后变成横向滚动」的所见非所得。
+        wrapCode: readBoolSetting('editor.lineWrapping', true),
+        // 代码块行号与编辑器同源（Typora showLineNumbersForFence 全局项；默认 false）
+        codeLineNumbers: readBoolSetting('markdown.codeLineNumbers', false),
+        // 首行缩进与编辑器同源（Typora indentFirstLine 同时作用于编辑区与导出件）
+        firstLineIndent: readBoolSetting('editor.firstLineIndent', false),
+        // 正文字号与编辑器/Reader 同源（Typora 导出件继承生效字号）
+        fontSize: readNumberSetting('editor.fontSize', undefined),
+        // 当前主题 token（Typora 导出件内联当前主题 CSS，而非只按亮/暗二选一）
+        themeVariables: activeTheme.variables,
       }, {
         // 仅在 exportHtml 需要内联图片时调用；without-style 不会触发（embedImages=false）。
         resolveImage: makeLocalImageResolver(docDir, exportRootDir),
@@ -1620,7 +1666,7 @@ export default function App() {
     } catch (err) {
       setToast({ message: `${t('export.html.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t, themeSettings.mode, maybeRevealExported]);
+  }, [t, themeSettings.mode, activeTheme.variables, maybeRevealExported]);
   const handleExportHtml = useCallback(() => runExportHtml('with-theme'), [runExportHtml]);
   const handleExportHtmlPlain = useCallback(() => runExportHtml('without-style'), [runExportHtml]);
 
@@ -4106,7 +4152,7 @@ export default function App() {
           const fontSize = typeof size === 'number' && size > 0 ? size : TYPOGRAPHY_DEFAULTS.fontSize;
           host.setEditorConfig('setFontSize', { fontSize });
           applyContentFontSize(fontSize); // Reader 同源（见 applyContentFontSize 注释）
-          // B3-2 字体族启动恢复：用户显式设置 > 主题级（Newsprint/Paper 衬线）> CoreEditor 默认。
+          // B3-2 字体族启动恢复：用户显式设置 > 主题级（Kraft/Inkwell/Paper 衬线）> CoreEditor 默认。
           // C4 修复（G4-EDIT / theme-verify）：无用户设置且主题未声明字体时也必须显式
           // apply 'ui-monospace' —— iframe 初始 window.config 的 fontFace.family 为
           // system-ui（vendored CoreEditor 契约默认），不覆盖会残留为 system-ui 开头的
@@ -4203,10 +4249,19 @@ export default function App() {
           if (quitDef && navigator.platform.toLowerCase().includes('mac')) {
             void invoke('set_quit_after_window_close', { enabled: readSetting(quitDef) === true }).catch(() => undefined);
           }
-          // R2-1 智能标点启动恢复（默认 false；Typora parity）
-          const smartPunctDef = settingById('editor.smartPunctuation');
-          if (smartPunctDef && readSetting(smartPunctDef) === true) {
-            host.setSmartPunctuationEnabled(true);
+          // 独立恢复引号 / 破折号；readSetting 同时迁移已发布的旧组合开关。
+          const smartQuotesDef = settingById('editor.smartQuotes');
+          host.setSmartQuotesEnabled(smartQuotesDef ? readSetting(smartQuotesDef) === true : false);
+          const smartDashesDef = settingById('editor.smartDashes');
+          host.setSmartDashesEnabled(smartDashesDef ? readSetting(smartDashesDef) === true : false);
+          const dashStyleDef = settingById('editor.twoHyphensToEm');
+          host.setTwoHyphensToEm(dashStyleDef ? readSetting(dashStyleDef) === true : false);
+          // G7-MENU-05 文本替换：开关（默认开）+ 词典（启动缓存；空表 ⇒ 引擎 no-op）。
+          // 每次重建编辑器都要注入 —— 引擎状态住在 iframe 模块里，随编辑器重建而清空。
+          {
+            const textReplDef = settingById('editor.textReplacement');
+            host.setTextReplacementEnabled(textReplDef ? readSetting(textReplDef) !== false : true);
+            host.setTextReplacementEntries(textReplacementEntriesSync());
           }
           // 2026-10-08（审计 §4.150）：转换时机（Typora `convertSmartOnRender`；默认 false = 输入时）
           const smartPunctOnRenderDef = settingById('editor.smartPunctuationOnRender');
@@ -4277,6 +4332,17 @@ export default function App() {
         host.installKatexRenderer((tex, display) =>
           loadKatex().then((katex) => renderKatex(katex, tex, display)).catch(() => null));
         injectKatexCssIntoFrame(frame);
+
+        // Mermaid 实时渲染（审计 §4.363）：引擎只消费 `window.mermaid` /
+        // `__MELLOW_MERMAID_LOADER__`，此前仓库内没有任何注入点 ⇒ 偏好里打开
+        // 「Mermaid」只会让图文块落到 `.mellow-mermaid-error`。此处与 KaTeX
+        // 同一分工：宿主按需加载渲染库，引擎保持零依赖（ADR/引擎契约不变）。
+        const mermaidWin = frame?.contentWindow as (Window & { __MELLOW_MERMAID_LOADER__?: () => Promise<unknown> }) | null;
+        if (mermaidWin) {
+          mermaidWin.__MELLOW_MERMAID_LOADER__ = loadMermaid;
+        }
+        // Reader 在主窗口内渲染（useAsyncRenderers 读的是主窗口的同一扩展点）。
+        (window as Window & { __MELLOW_MERMAID_LOADER__?: () => Promise<unknown> }).__MELLOW_MERMAID_LOADER__ = loadMermaid;
 
         // 注入 wikilink 打开 handler（[[name]] → 同目录 name.md；App 解析并打开）
         const wikilinkWin = frame?.contentWindow as (Window & { __MELLOW_WIKILINK_OPEN__?: (name: string) => void }) | null;
@@ -5365,10 +5431,10 @@ export default function App() {
   }, [t]);
 
   /** Settings live apply（不要求重启；安全项立即生效） */
-  // P1-1.3：菜单 checkState 变更 tick —— spellcheck / smartPunct / firstLineIndent 的勾选值
+  // P1-1.3：菜单 checkState 变更 tick —— spellcheck / 智能标点 / firstLineIndent 的勾选值
   // 存在 localStorage（非 React state），**任何入口**改动它们后都必须自增本 tick，
   // 菜单 effect 才会重建原生菜单、勾选态才跟随。
-  // ⚠️ 2026-09-30 审计修复：**菜单入口**（`edit.spellcheck.toggle` / `edit.smartPunctuation.toggle`
+  // ⚠️ 2026-09-30 审计修复：**菜单入口**（拼写与智能标点开关
   // / `edit.firstLineIndent.toggle` 三条命令）都自增了 tick ✓，但**设置面板入口**没有 ——
   // `applySetting` 的对应分支只写了 localStorage 与引擎开关，**漏了 tick** →
   // 结果是「**在设置里改了，Edit 菜单的勾选态不变**」（菜单入口则正常）。
@@ -5507,12 +5573,17 @@ export default function App() {
         break;
       }
       case 'settings.smartPunctuation':
-        // R2-1 智能标点 live apply（引擎 inputHandler 开关）+ 原生菜单勾选态重建
-        // ⚠️ 2026-10-08（审计 §4.150）：同一 `applyCommand` 现在覆盖**两个**设置
-        //   （功能开关 `editor.smartPunctuation` + 转换时机 `editor.smartPunctuationOnRender`）
-        //   ⇒ 两者都**从存储重读**（不能用 `value` 猜是哪一个 —— 那会把另一个冲掉）。
-        hostRef.current?.setSmartPunctuationEnabled(readBoolSetting('editor.smartPunctuation', false));
+        // 智能标点偏好共用应用路径：从存储重读，菜单和设置页不会互相覆盖。
+        hostRef.current?.setSmartQuotesEnabled(readBoolSetting('editor.smartQuotes', false));
+        hostRef.current?.setSmartDashesEnabled(readBoolSetting('editor.smartDashes', false));
+        hostRef.current?.setTwoHyphensToEm(readBoolSetting('editor.twoHyphensToEm', false));
         hostRef.current?.setSmartPunctuationOnRenderEnabled(readBoolSetting('editor.smartPunctuationOnRender', false));
+        setMenuCheckTick((n) => n + 1);
+        break;
+      case 'settings.textReplacement':
+        // G7-MENU-05：文本替换开关 live apply（默认开）。词典不随开关变化，无需重取；
+        // 菜单勾选态与设置页同读 `editor.textReplacement` ⇒ 自增 tick 重建原生菜单。
+        hostRef.current?.setTextReplacementEnabled(readBoolSetting('editor.textReplacement', true));
         setMenuCheckTick((n) => n + 1);
         break;
       case 'settings.codeLineNumbers':
@@ -6166,15 +6237,45 @@ export default function App() {
       // P0-EDITOR-005 建议列表：本条**携带 payload**（选中的建议文本）—— 契约扩展的第一个使用者。
       // 目标词区间由引擎按「光标处词」解析（与 wordAtCursor 同一规则），宿主不猜位置。
       { id: 'edit.spelling.applySuggestion', localizedTitle: { zh: '替换为建议', en: 'Replace with Suggestion' }, category: 'edit', context: { scope: 'document' }, enabled: always, execute: (ctx) => { const v = ctx?.payload; if (typeof v !== 'string' || v.length === 0) return; void applySpellingSuggestion(v); } },
-      // R2-1 编辑→替换「智能标点」（Typora parity；设置面板同一真源）
-      { id: 'edit.smartPunctuation.toggle', localizedTitle: { zh: '智能标点', en: 'Smart Punctuation' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
-        const def = settingById('editor.smartPunctuation');
+      // 替换菜单与设置页共用持久化和 live apply，转换时机写确定值（重复点击不反转）。
+      { id: 'edit.substitutions.onInput', localizedTitle: { zh: '输入时转换', en: 'Convert on Input' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.smartPunctuationOnRender');
+        if (!def) return;
+        writeSetting(def, false);
+        applySetting(def, false);
+      } },
+      { id: 'edit.substitutions.onRender', localizedTitle: { zh: '渲染时转换', en: 'Convert on Rendering' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.smartPunctuationOnRender');
+        if (!def) return;
+        writeSetting(def, true);
+        applySetting(def, true);
+      } },
+      { id: 'edit.smartQuotes.toggle', localizedTitle: { zh: '智能引号', en: 'Smart Quotes' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.smartQuotes');
         if (!def) return;
         const next = readSetting(def) !== true;
         writeSetting(def, next);
-        hostRef.current?.setSmartPunctuationEnabled(next);
-        setMenuCheckTick((v) => v + 1); // P1-1.3：菜单 CheckMenuItem 选中态随 syncNativeMenu 重建
-        setStatusText(t(next ? 'msg.smartPunctOn' : 'msg.smartPunctOff'));
+        applySetting(def, next);
+      } },
+      { id: 'edit.smartDashes.toggle', localizedTitle: { zh: '智能破折号', en: 'Smart Dashes' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.smartDashes');
+        if (!def) return;
+        const next = readSetting(def) !== true;
+        writeSetting(def, next);
+        applySetting(def, next);
+      } },
+      // G7-MENU-05：Typora 替换子菜单「文本替换」（仅 macOS；默认勾选）。
+      // 勾选态真值 = 设置 `editor.textReplacement`（菜单与设置页走同一写入路径）。
+      { id: 'edit.textReplacement.toggle', localizedTitle: { zh: '文本替换', en: 'Text Replacement' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        const def = settingById('editor.textReplacement');
+        if (!def) return;
+        const next = readSetting(def) !== true;
+        writeSetting(def, next);
+        applySetting(def, next);
+      } },
+      { id: 'edit.substitutions.settings', localizedTitle: { zh: '更多选项…', en: 'More Options…' }, category: 'edit', context: { scope: 'global' }, enabled: always, execute: () => {
+        setSettingsSection('editor');
+        setSettingsOpen(true);
       } },
       // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行 → 首行缩进`（可勾选菜单项）。
       // 菜单项与设置面板**同一真值**（`editor.firstLineIndent`）—— 两处入口必须走同一条写入路径，
@@ -6499,7 +6600,12 @@ export default function App() {
       activeThemeId: activeTheme.id,
       themeMode: themeSettings.mode,
       spellcheck: (() => { const def = settingById('editor.spellcheck'); return def ? readSetting(def) !== false : true; })(),
-      smartPunct: (() => { const def = settingById('editor.smartPunctuation'); return def ? readSetting(def) === true : false; })(),
+      smartQuotes: (() => { const def = settingById('editor.smartQuotes'); return def ? readSetting(def) === true : false; })(),
+      smartDashes: (() => { const def = settingById('editor.smartDashes'); return def ? readSetting(def) === true : false; })(),
+      smartPunctOnRender: (() => { const def = settingById('editor.smartPunctuationOnRender'); return def ? readSetting(def) === true : false; })(),
+      // G7-MENU-05：文本替换勾选态（真值 = 设置 `editor.textReplacement`，默认勾选）。
+      // 菜单项本身在 schema 层 macOnly ⇒ 非 mac 不下发（能力不存在，显示即占位）。
+      textReplacement: (() => { const def = settingById('editor.textReplacement'); return def ? readSetting(def) !== false : true; })(),
       // V7-W1.6：状态栏开关勾选态（Typora Win/Linux 显示菜单「状态栏」）
       statusbar: statusbarVisible,
       // V7-W2.4：浮动编辑器工具栏勾选态（Typora 1.14 View → Toolbar）
@@ -6680,8 +6786,8 @@ export default function App() {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') { e.stopPropagation(); setTreeFilterOpen(false); }
                       else if (e.key === 'Escape') { e.stopPropagation(); setFileFilterQuery(''); setTreeFilterOpen(false); }
-                      // ←→ 保护输入框光标移动（aside 层把它们映射为折叠/展开）
-                      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
+                      // 保留输入框 ←→ / Home / End（含 Shift 选区），避免冒泡为列表导航。
+                      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') e.stopPropagation();
                     }}
                   />
                 </div>
@@ -6709,7 +6815,7 @@ export default function App() {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') { e.stopPropagation(); setTreeFilterOpen(false); }
                       else if (e.key === 'Escape') { e.stopPropagation(); setFileFilterQuery(''); setTreeFilterOpen(false); }
-                      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
+                      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') e.stopPropagation();
                     }}
                   />
                 </div>
@@ -6763,8 +6869,13 @@ export default function App() {
                 </div>
                 {/* §7.3：invalid regex 就地提示 —— 非法正则此前被静默吞成「无结果」 */}
                 {searchRegexInvalid && <div className="search-regex-invalid" role="alert">{t('search.regexInvalid')}</div>}
-                <input className="search-input small" placeholder={t('search.include')} value={searchInclude} onChange={(e) => setSearchInclude(e.target.value)} />
-                <input className="search-input small" placeholder={t('search.exclude')} value={searchExclude} onChange={(e) => setSearchExclude(e.target.value)} />
+                <details className="search-advanced">
+                  <summary onKeyDown={(e) => e.stopPropagation()}>{t('search.filters')}</summary>
+                  <div className="search-advanced-fields">
+                    <input className="search-input small" placeholder={t('search.include')} aria-label={t('search.include')} value={searchInclude} onChange={(e) => setSearchInclude(e.target.value)} />
+                    <input className="search-input small" placeholder={t('search.exclude')} aria-label={t('search.exclude')} value={searchExclude} onChange={(e) => setSearchExclude(e.target.value)} />
+                  </div>
+                </details>
                 <button onClick={() => void runGlobalSearch()} disabled={!searchQuery || fileTreeRoot === null}>{t('search.run')}</button>
                 <span className="search-count">{searchRunning ? t('search.streaming') : ''} {t('search.matches', { n: searchResults.length })}</span>
               </div>
@@ -6882,6 +6993,7 @@ export default function App() {
               html={readerHtml}
               title={readerTitle}
               zoom={readerZoom}
+              firstLineIndent={readBoolSetting('editor.firstLineIndent', false)}
               onZoomChange={setReaderZoom}
               onOpenInEditor={closeReader}
               onClose={closeReader}
@@ -7344,6 +7456,7 @@ export default function App() {
           }))}
           onShortcutChange={handleShortcutOverride}
           spellcheckAvailable={spellcheckAvailableSync()}
+          textReplacementAvailable={textReplacementAvailableSync()}
           spellcheckLanguage={spellcheckLanguage}
           platformMac={platformMac}
         />

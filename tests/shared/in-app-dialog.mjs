@@ -62,9 +62,15 @@ export async function createWorkspaceEntry(page, commandId, name, options = {}) 
   await input.fill(name);
   await input.press('Enter');
   // 等对话框关闭，确保命令真正落盘到 mock fs 后才返回。
-  await page
+  // ⚠️ 未关闭**必须**返回 false（2026-11-08，审计「六」18）：早先这里 `.catch(() => undefined)`
+  // 把超时吞掉，仍然返回 true。后果是下一个 `createWorkspaceEntry` 会把名字填进**同一个
+  // 仍然打开的对话框** ⇒ 第一个条目永远不存在，而下游只看到「行不存在 / 工作区不完整」，
+  // 看不出真实原因（巡检里 `drag-drop-verify` 的第一条 newFile 就曾这样偶发丢失）。
+  // 本函数的契约本来就写明「是否确实走完了 … → 对话框关闭」，这里恢复契约。
+  const closed = await page
     .locator(INPUT_DIALOG_SELECTORS.backdrop)
     .waitFor({ state: 'detached', timeout: timeoutMs })
-    .catch(() => undefined);
-  return true;
+    .then(() => true)
+    .catch(() => false);
+  return closed;
 }

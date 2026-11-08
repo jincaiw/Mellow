@@ -135,7 +135,7 @@ function focusAndTypeMellow(pid, text) {
 }
 
 const FIXTURES = ['1MB.md', '5MB.md', '10MB.md', '100k-lines.md', 'large-table.md', '100-mermaid.md', '1000-images.md'];
-const ALL_METRICS = ['startup', 'open', 'hotopen', 'typing', 'scroll', 'search', 'save', 'memory'];
+const ALL_METRICS = ['startup', 'open', 'hotopen', 'typing', 'scroll', 'search', 'save', 'memory', 'contentpaint'];
 // PRD V1.2 FINAL 与 AGENTS.md 冻结的唯一性能/体验对标版本。
 // 非该版本的运行仍可用于历史观察，但不可作为当前 P0 判定证据。
 const TYPORA_NORMATIVE_VERSION = '1.14.9';
@@ -242,6 +242,14 @@ const round3 = (n) => Math.round(n * 1000) / 1000;
 const ROI_FRAC_TOP = ['--roi-frac', '0.2,0.06,0.6,0.10']; // 顶部 10% 高带（光标在文首）
 const ROI_FRAC_TOP6 = ['--roi-frac', '0.2,0.06,0.6,0.06']; // 顶部 6% 高带（find bar）
 const ROI_FRAC_FULL = ['--roi-frac', '0,0,1,1']; // 整窗（滚动帧统计）
+// contentpaint 的 ROI（2026-11-08）：**窗口内**的大块正文区域（去掉顶部工具条/标题与底部状态栏），
+// 由 startup-watch 在窗口出现后按窗口几何映射到显示器像素。
+// 与 startup-probe 的顶部窄带不同，这里要看「正文是否已经画出来」，
+// 窄带会漏掉「窗口在但内容仍空白」的形态。
+const CP_ROI_FRAC = ['--roi-frac', '0.05,0.10,0.90,0.80'];
+// 内容变化判据：ROI 采样点中变化比例 ≥ 0.1%（`roiSampledDiff` 的 step=4 采样）。
+// 1MB 实测首帧变化比例 33%，空白→正文远高于该阈值；取小值只为排除压缩噪声。
+const CP_MIN_FRAC = '0.001';
 // 合成按键类探针必须**在激活 app 之后**再断言输入源为键盘布局（2026-09-23）：
 // macOS 会**按应用记忆**输入源 —— 实测 runner 启动时断言为 ABC，激活 Typora 后
 // 变回「Pinyin – Simplified」。输入源是 IME 时按键会弹候选窗而非回显文本，
@@ -348,6 +356,121 @@ async function measureApp(appKey, opts) {
     };
     if (probeFailures > 0) {
       console.warn(`⚠️ [${app.name}/startup] ${probeFailures}/${opts.runs} 个样本的 startup-probe 失败（首键回显未测到）→ 记 null 不计入中位数。`);
+    }
+  }
+
+  // contentpaint（诊断）：窗口出现 → 首个正文绘制 → 画面稳定。
+  //
+  // 为什么需要这个指标（2026-11-08）：startup/open 两处都只把 `loadMs` 当诊断量落盘，
+  // 而 `loadMs` 是 `startup-probe` 里 `waitStable(stableMs: 600)` 的返回值 ——
+  // 该循环要求 ROI「连续 600ms 无像素变化」才退出，结构上不可能早于 600ms 返回，
+  // 实测恒落在 600–630ms。也就是说：**旧 harness 从未测到过内容绘制的时刻**。
+  // `startup-watch` 改用**显示器级** `SCContentFilter(display:excludingWindows:[])`，
+  // 在窗口出现前就开始接收帧，因此能报出「窗口出现后多久画出内容」。
+  // 它**不是 PRD 判定量**（ADR-0026 的判定量仍是 hotopen.switchMs），
+  // 存在的意义是让「冷启动里内容到底什么时候画出来」从不可观测变为可观测。
+  if (opts.metrics.includes('contentpaint')) {
+    const cpFixture = existsSync(join(FIXTURES_DIR, '1MB.md'))
+      ? '1MB.md'
+      : opts.fixtures.find((f) => existsSync(join(FIXTURES_DIR, f)) && baselineRendersFixture(f)) ?? null;
+    if (!cpFixture) {
+      console.warn(`[${app.name}/contentpaint] 无可用夹具（需存在且 Typora 可渲染），跳过。`);
+    } else {
+      const fpath = join(FIXTURES_DIR, cpFixture);
+      const warmup = opts.warmup ?? 1;
+      const settle = opts.settle ?? 600;
+      // **由 helper 启动应用**（2026-11-08）：`--launch-bin` 让显示器流在 `Process.run()`
+      // **之前**就绪，因此捕获覆盖进程启动的全过程。旧形态（runner 先 launch、helper 再接入）
+      // 存在结构性竞态：Mellow 窗口创建极快，实测 helper 接入时窗口已存在（流→窗口 35–65ms），
+      // 首绘必然错过。启动参数与 `launchApp` 完全一致（app.launchArgs + 夹具路径）。
+      const bin = app.bin;
+      const binArgs = [...(app.launchArgs || []), fpath];
+      const runWatch = (label) => {
+        try {
+          return helper('startup-watch', '--launch-bin', bin,
+            ...binArgs.flatMap((a) => ['--launch-arg', a]), ...CP_ROI_FRAC,
+            '--min-frac', CP_MIN_FRAC, '--timeout', '12000', '--stable-ms', '400', '--activate');
+        } catch (e) {
+          console.warn(`[${app.name}/contentpaint] ${label} 失败: ${e.message}`);
+          return null;
+        } finally {
+          killApp(app.killPattern);
+        }
+      };
+      for (let i = 0; i < warmup; i++) {
+        killApp(app.killPattern);
+        sleep(settle);
+        runWatch(`预热 ${i + 1}（不计入统计）`);
+      }
+      if (warmup > 0) console.log(`[${app.name}/contentpaint] 预热 ${warmup} 轮完成（已丢弃）`);
+
+      const firstAfterLaunch = [];
+      const maxChangeAfterLaunch = [];
+      const stableAfterLaunch = [];
+      const changedFrames = [];
+      const okFlags = [];
+      const streamToWindow = [];
+      const windowSeenAfterLaunch = [];
+      const maxFracs = [];
+      const hints = [];
+      for (let i = 0; i < opts.runs; i++) {
+        killApp(app.killPattern);
+        sleep(settle);
+        const w = runWatch(`样本 ${i + 1}`);
+        const ok = w?.ok === true && (w.changedFrames ?? 0) > 0;
+        // 有效性（2026-11-08）：必须走「先开流、再由探针启动应用」的形态
+        // （`launchedPid > 0`）。`--pid` 形态无法保证流先于窗口创建，样本不可用。
+        const streamEarly = w?.ok === true && (w.launchedPid ?? -1) > 0;
+        const s2w = w?.ok ? w.windowSeenEpochMs - w.streamStartEpochMs : null;
+        streamToWindow.push(s2w);
+        windowSeenAfterLaunch.push(w?.ok ? w.windowSeenAfterLaunchMs : null);
+        okFlags.push(ok);
+        changedFrames.push(w?.changedFrames ?? null);
+        maxFracs.push(w?.maxFrac ?? null);
+        if (ok && streamEarly) {
+          firstAfterLaunch.push(w.contentFirstChangeAfterLaunchMs);
+          maxChangeAfterLaunch.push(w.contentMaxChangeAfterLaunchMs);
+          stableAfterLaunch.push(w.contentStableAfterLaunchMs);
+          console.log(`  [contentpaint ${i + 1}] 启动→首变化 ${w.contentFirstChangeAfterLaunchMs.toFixed(1)}ms`
+            + ` / 最大变化 ${w.contentMaxChangeAfterLaunchMs.toFixed(1)}ms`
+            + ` / 稳定 ${w.contentStableAfterLaunchMs.toFixed(1)}ms`
+            + `（frames=${w.changedFrames} maxFrac=${w.maxFrac?.toFixed(4) ?? '?'}`
+            + ` 窗口出现=${w.windowSeenAfterLaunchMs.toFixed(0)}ms 流→窗口=${s2w.toFixed(0)}ms）`);
+        } else {
+          // 失败形态必须自解释：ok=false 是窗口都没找到；ok=true 但 0 帧变化说明
+          // ROI 内全程无变化（或捕获没覆盖绘制），不能记 0 冒充「瞬间完成」。
+          firstAfterLaunch.push(null);
+          maxChangeAfterLaunch.push(null);
+          stableAfterLaunch.push(null);
+          if (ok) {
+            hints.push(`流未先于启动就绪（streamBeforeLaunchMs=${w.streamBeforeLaunchMs ?? '?'}）`);
+          } else {
+            hints.push(w ? `无内容变化帧（windowSeenMs=${w.windowSeenMs ?? '?'} framesAll=${w.framesAll ?? '?'} framesInRoi=${w.framesInRoi ?? '?'}）` : '探针无输出');
+          }
+          console.warn(`  [contentpaint ${i + 1}] 无效样本：${hints[hints.length - 1]}`);
+        }
+      }
+      const valid = firstAfterLaunch.filter((v) => v !== null).length;
+      result.metrics.contentpaint = {
+        fixture: cpFixture,
+        stats: stats(firstAfterLaunch),
+        maxChangeStats: stats(maxChangeAfterLaunch),
+        stableStats: stats(stableAfterLaunch),
+        samplesFirstChangeAfterLaunchMs: firstAfterLaunch.slice(),
+        samplesMaxChangeAfterLaunchMs: maxChangeAfterLaunch.slice(),
+        samplesStableAfterLaunchMs: stableAfterLaunch.slice(),
+        samplesChangedFrames: changedFrames.slice(),
+        samplesMaxFrac: maxFracs.slice(),
+        samplesOk: okFlags.slice(),
+        samplesStreamToWindowMs: streamToWindow.slice(),
+        samplesWindowSeenAfterLaunchMs: windowSeenAfterLaunch.slice(),
+        failureHints: hints.slice(),
+        validSamples: valid,
+        probeFailures: opts.runs - valid,
+      };
+      if (valid < opts.runs) {
+        console.warn(`⚠️ [${app.name}/contentpaint] ${opts.runs - valid}/${opts.runs} 个样本未观察到内容变化 → 记 null 不计入中位数。`);
+      }
     }
   }
 
@@ -839,6 +962,7 @@ function renderReport(env, results, opts) {
   L.push('- **save**：Cmd+S → mtime 变化耗时；');
   L.push('- **memory**：主进程 RSS（打开后采样中位数/峰值）；');
   L.push('- **search**：Cmd+F → 键入 → find bar 首帧变化；Mellow 文档内查找（@codemirror/search）已实现。');
+  L.push('- **contentpaint**（诊断）：显示器级捕获（探针先开流、再启动应用）→ 进程启动 → 正文区首个变化 / 最大变化 / 稳定；**不参与 PRD 判定**。它**取代** `loadMs` 作为「内容何时画出」的观测（`loadMs` 仍保留为「等待画面静止」诊断量，未删、未改语义）。');
   L.push('');
 
   const R = (res) => res.app;
@@ -1092,6 +1216,55 @@ function renderReport(env, results, opts) {
     L.push('');
   }
 
+  // contentpaint（诊断，2026-11-08）
+  L.push('## 2e. contentpaint（进程启动 → 首变化 / 最大变化 / 稳定，ms；**诊断量**）');
+  L.push('');
+  L.push('> 本节**不是 PRD 判定量**（ADR-0026 的判定量是 §2d 的 `hotopen.switchMs`），');
+  L.push('> 存在的意义是补上一个此前无法观测的事实：**冷启动时内容到底什么时候画出来**。');
+  L.push('> 旧的 `loadMs` 来自 `waitStable(stableMs: 600)`，该循环要求「连续 600ms 无变化」才返回，');
+  L.push('> 结构上不可能早于 600ms —— 它从未测到内容绘制时刻，只是等待窗口的地板值。');
+  L.push('> 本节改用**显示器级**捕获（`SCContentFilter(display:excludingWindows:[])`），');
+  L.push('> 且**由探针进程先开流、再启动应用**（`startup-watch --launch-bin`），');
+  L.push('> 因此捕获从进程启动前开始，第一个正文变化不会被竞态漏掉。');
+  L.push('> **有效性门槛**：样本必须来自「探针先开流、再启动应用」形态（返回 `launchedPid > 0`）；');
+  L.push('> 不满足的样本记 null 并在下方列出。');
+  L.push('');
+  {
+    const cp = (k) => results.find((x) => x.app === k)?.metrics?.contentpaint;
+    const fixture = cp('Mellow')?.fixture ?? cp('Typora')?.fixture;
+    if (!fixture) {
+      L.push('（本次运行未采集 contentpaint：`--metrics` 不含该指标。）');
+    } else {
+      L.push(`夹具：${fixture}；ROI = 窗口内正文区（${CP_ROI_FRAC[1]}），变化判据 ≈${CP_MIN_FRAC}。`);
+      L.push('');
+      L.push('| app | 启动→首变化 median | 启动→最大变化 median | 启动→稳定 median | maxFrac（中位） | 流→窗口 median | 有效样本 |');
+      L.push('|---|---|---|---|---|---|---|');
+      for (const appName of ['Mellow', 'Typora']) {
+        const c = cp(appName);
+        if (!c) { L.push(`| ${appName} | — | — | — | — | — | 0 |`); continue; }
+        const maxFracs = (c.samplesMaxFrac ?? []).filter((v) => v !== null);
+        const maxFracMed = maxFracs.length ? [...maxFracs].sort((a, b) => a - b)[Math.floor(maxFracs.length / 2)] : null;
+        const s2w = stats(c.samplesStreamToWindowMs ?? []);
+        L.push(`| ${appName} | ${fmt(c.stats?.median)} | ${fmt(c.maxChangeStats?.median)} | `
+          + `${fmt(c.stableStats?.median)} | ${fmt(maxFracMed, 4)} | ${fmt(s2w.median, 0)} | ${c.validSamples}/${c.samplesOk.length} |`);
+      }
+      L.push('');
+      L.push('> **首变化 vs 最大变化**：首个 ≥ 判据的变化可能是工具条/滚动条/光标；');
+      L.push('> 「最大变化」是 ROI 内单帧变化比例最高的时刻，更接近**正文真正画出来**。两个值都给出，');
+      L.push('> 避免把「第一次闪动」当成「内容可用」。`maxFrac` 是同一判据下的最大变化比例。');
+      L.push('');
+      const failed = results.filter((r) => r.metrics.contentpaint && r.metrics.contentpaint.probeFailures > 0);
+      if (failed.length > 0) {
+        L.push('⚠️ 未计入中位数的样本（未观察到内容变化 / 窗口未出现 / 流启动晚于窗口），失败形态：');
+        for (const r of failed) {
+          const hints = r.metrics.contentpaint.failureHints;
+          L.push(`- ${r.app}：${r.metrics.contentpaint.probeFailures} 个 —— ${hints.length ? hints.join('；') : '—'}`);
+        }
+        L.push('');
+      }
+    }
+  }
+
   L.push('');
   L.push('## 3. typing（逐键回显延迟，ms）');
   // ── 测量分辨率（2026-09-29）：本指标的判据是**屏幕捕获的首帧变化**，
@@ -1205,6 +1378,8 @@ function renderReport(env, results, opts) {
   L.push('');
   L.push('- Mellow 文档内查找（Cmd+F）已实现（2026-08-16）；search 指标 ROI 口径待适配 CM 查找面板。');
   L.push('- 大文件模式（>5MB 或 >50,000 行触发）影响 10MB / 100k-lines 的打开与输入路径。');
+  L.push('- `loadMs`（startup/open 的诊断分量）结构上恒为 600ms 地板（`waitStable(stableMs: 600)`），'
+    + '不能当作加载耗时；内容绘制时刻改由 §2e `contentpaint` 观测（显示器级捕获 + 探针先开流后启动）。');
   L.push('- PRD「open-to-editable ≤250ms」的**口径未在 PRD 中规定**；本仓库推断为热打开口径'
     + '（依据：否则 250ms 比 Startup 的 1.2s 更严、两产品必不达标），**由 ADR-0026 裁决为「热打开」口径**（Accepted 2026-09-30）。'
     + '本 benchmark 采用冷启动口径（公平对比所需），绝对值不参与 PRD 判定。');

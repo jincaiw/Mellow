@@ -130,9 +130,10 @@ const waitFor = async (fn, timeoutMs = 8000, stepMs = 200) => {
 async function main() {
   mkdirSync(ACTUAL_DIR, { recursive: true });
   const server = startViteDevServer({ cwd: DESKTOP_DIR, port: PORT });
-  const browser = await chromium.launch();
+  let browser;
   const samples = {};
   try {
+    browser = await chromium.launch({ executablePath: process.env.MELLOW_TEST_CHROMIUM });
     if (!(await waitForServer(30000))) {
       throw new Error(`vite dev server 未就绪${describeSpawnFailure(server)}`);
     }
@@ -248,6 +249,8 @@ async function main() {
       return {
         ...base,
         searchInput: box('.search-input'),
+        advancedOpen: document.querySelector('.search-advanced')?.open ?? null,
+        advancedFieldsVisible: Array.from(document.querySelectorAll('.search-advanced input')).some((el) => el.checkVisibility()),
         groupCount: count('.search-group-title'),
         matchCount: count('.search-match'),
         firstMatch: box('.search-match'),
@@ -329,7 +332,7 @@ async function main() {
 
     await context.close();
   } finally {
-    await browser.close().catch(() => {});
+    await browser?.close().catch(() => {});
     server.stop();
   }
 
@@ -353,6 +356,8 @@ async function main() {
       s.outline.rowCount > 0],
     ['search 必须产出分组与命中行',
       s.search.groupCount > 0 && s.search.matchCount > 0],
+    ['include/exclude 必须默认收起（PRD §17）',
+      s.search.advancedOpen === false && s.search.advancedFieldsVisible === false],
   ]);
   const contractFailures = EXPECT(samples).filter(([, ok]) => !ok).map(([name]) => name);
   if (contractFailures.length > 0) {

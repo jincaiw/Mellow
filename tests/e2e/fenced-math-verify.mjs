@@ -85,7 +85,13 @@ async function main() {
       while (Date.now() < limit) {
         for (const candidate of page.frames()) {
           if (candidate.url().includes('/editor/index.html')) {
-            const isReady = await candidate.evaluate(() => !!(window.editor || window.webModules?.core)).catch(() => false);
+            // ⚠️ 判据必须是**两者同时**成立：CoreEditor 在模块求值时同步挂
+            // `window.webModules`（CoreEditor/index.ts:82），而 `window.editor`
+            // 要等 `resetEditor()` 才赋值（CoreEditor/src/core.ts:92）。
+            // 早先这里写成 `window.editor || window.webModules?.core`，会在
+            // 「webModules 已在、EditorView 未建」的窗口里把 iframe 判为就绪，
+            // 随后的 setDoc 直接抛 `editor view unavailable`（偶发、与渲染无关）。
+            const isReady = await candidate.evaluate(() => !!(window.webModules?.core && window.editor?.dispatch)).catch(() => false);
             if (isReady) return candidate;
           }
         }

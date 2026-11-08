@@ -173,7 +173,21 @@ async function main() {
 
       // Reader 与编辑器共用同一 Markdown 文本；切换往返不能改变内容或丢失编辑表面。
       const newDocumentOpened = await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('file.new'));
-      await new Promise((r) => setTimeout(r, 200));
+      // 上面刚用 view.dispatch 改写文本 ⇒ 文档为脏。⌘N 在脏文档上按 Typora
+      // `tryLeaveDocument` 弹「保存 / 丢弃 / 取消」三选一（data safety）。
+      // 必须显式应答：留着不答，`.confirm-modal-backdrop` 会一直覆盖页面，
+      // 后面的 pointer 点击全部被拦截（真实症状：intercepts pointer events）。
+      // 产品行为本身由 dirty-leave-dialog-verify.mjs 断言，这里只负责把状态推进到新文档。
+      if (await page.locator('.confirm-modal').waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)) {
+        await page.getByRole('button', { name: '丢弃' }).click();
+        await page.locator('.confirm-modal').waitFor({ state: 'detached', timeout: 5000 });
+      }
+      // 新建文档由 applyTab 异步生效：等编辑器真正清空后再写入 Reader 用例文本，避免竞态。
+      await frame.waitForFunction(
+        () => !!(window.webModules?.core && window.editor) && window.webModules.core.getEditorText() === '',
+        null,
+        { timeout: 8000 },
+      );
       const readerSource = await frame.evaluate(() => {
         const view = window.editor;
         const text = '# Reader Title\n\nReader body';

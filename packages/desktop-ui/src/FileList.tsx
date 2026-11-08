@@ -10,7 +10,7 @@
  * - 四态：current（当前文档）/ selected（键盘或点击选中）/ hover / missing（文档不在本
  *   文件夹 → 整列无 current 高亮，改由 `SidebarFooter` 的提示条表达）。
  */
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import type { FileListItem } from '../../app-core/src';
 import { dirname } from '../../app-core/src';
 import { VirtualRows } from './VirtualRows';
@@ -50,12 +50,6 @@ export function FileList({
   onOpen,
   onContextMenu,
 }: FileListProps) {
-  // P3.4 键盘选中滚动跟随（PageUp/PageDown/←→ 移动后保持可见）
-  useEffect(() => {
-    if (selectedPath === null || selectedPath === undefined) return;
-    document.querySelector('.file-list .file-list-item.selected')?.scrollIntoView({ block: 'nearest' });
-  }, [selectedPath, items.length]);
-
   const rows = useMemo<Row[]>(() => {
     if (!groupByFolder) return items.map((item) => ({ kind: 'item', key: item.path, item }));
     const out: Row[] = [];
@@ -72,6 +66,15 @@ export function FileList({
     const groupCount = out.filter((r) => r.kind === 'group').length;
     return groupCount <= 1 ? out.filter((r) => r.kind === 'item') : out;
   }, [items, groupByFolder, folderLabel]);
+
+  // P3.4 键盘选中滚动跟随（PageUp/PageDown/←→ 移动后保持可见）
+  // 分组时逻辑项与虚拟行不同（组标题占行）：这里映射到**实际虚拟行索引**，
+  // 由 VirtualRows 负责先滚动窗口、目标挂载后再校正（此前 querySelector 对未挂载行失效）。
+  const selectedRowIndex = useMemo(() => {
+    if (selectedPath === null || selectedPath === undefined) return null;
+    const index = rows.findIndex((row) => row.kind === 'item' && row.item.path === selectedPath);
+    return index >= 0 ? index : null;
+  }, [rows, selectedPath]);
 
   const renderRow = (index: number) => {
     const row = rows[index];
@@ -104,6 +107,7 @@ export function FileList({
       estimateRowHeight={compact ? 40 : 44}
       overscan={10}
       resetKey={`${rows.length}:${compact ? 1 : 0}:${groupByFolder ? 1 : 0}`}
+      scrollToIndex={selectedRowIndex}
       renderItem={renderRow}
     />
   );

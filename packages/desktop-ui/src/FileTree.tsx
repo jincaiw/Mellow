@@ -29,6 +29,9 @@ export function FileTree({ nodes, selectedPath, currentPath, onSelect, onToggle,
     }
   };
   walk(nodes);
+  // 键盘选中（↑↓ / Home / End）滚动跟随：树此前完全没有跟随，离屏选中后视口不动。
+  // rows 是「展开节点」扁平序列，selectedPath 的索引即实际虚拟行索引。
+  const selectedRowIndex = selectedPath === null ? null : rows.findIndex((node) => node.path === selectedPath);
   const renderRow = (index: number) => {
     const node = rows[index];
     return (
@@ -68,5 +71,5 @@ export function FileTree({ nodes, selectedPath, currentPath, onSelect, onToggle,
     );
   };
   // resetKey 用节点总数：刷新/展开折叠导致扁平序列变化时作废实测高度缓存
-  return <VirtualRows count={rows.length} estimateRowHeight={28} overscan={10} resetKey={rows.length} renderItem={renderRow} />;
+  return <VirtualRows count={rows.length} estimateRowHeight={28} overscan={10} resetKey={rows.length} scrollToIndex={selectedRowIndex !== null && selectedRowIndex >= 0 ? selectedRowIndex : null} renderItem={renderRow} />;
 }

@@ -4,7 +4,6 @@
  * P3.2 虚拟化：1000 headings 经 VirtualRows 窗口化渲染（Exit Gate：不阻塞）。
  * P3.3 键盘导航：selectedId 高亮键盘选中行（与 caret 驱动的 currentId 分离），变化时滚动跟随。
  */
-import { useEffect } from 'react';
 import type { OutlineHeading } from '../../app-core/src';
 import { VirtualRows } from './VirtualRows';
 
@@ -27,11 +26,10 @@ export interface OutlineListProps {
 }
 
 export function OutlineList({ items, currentId, selectedId = null, flat, collapsed, onJump, onToggle, onContextMenu, highlightNonce = 0 }: OutlineListProps) {
-  // 键盘选中滚动跟随（block: 'nearest' 不干扰用户当前视口）
-  useEffect(() => {
-    if (selectedId === null) return;
-    document.querySelector('.outline-list .outline-row.selected')?.scrollIntoView({ block: 'nearest' });
-  }, [selectedId, items.length, highlightNonce]);
+  // 键盘选中滚动跟随（block: 'nearest' 不干扰用户当前视口）。
+  // selectedId 映射到虚拟行索引；highlightNonce 让「当前项已是选中项」时也能重新定位。
+  // 目标行未挂载时由 VirtualRows 先滚动窗口再校正（旧 querySelector 对此无效）。
+  const selectedRowIndex = selectedId === null ? null : items.findIndex((item) => item.id === selectedId);
   const renderRow = (index: number) => {
     const item = items[index];
     return (
@@ -53,5 +51,5 @@ export function OutlineList({ items, currentId, selectedId = null, flat, collaps
       </button>
     );
   };
-  return <VirtualRows count={items.length} estimateRowHeight={28} overscan={10} resetKey={items.length} renderItem={renderRow} />;
+  return <VirtualRows count={items.length} estimateRowHeight={28} overscan={10} resetKey={items.length} scrollToIndex={selectedRowIndex !== null && selectedRowIndex >= 0 ? selectedRowIndex : null} scrollToNonce={highlightNonce} renderItem={renderRow} />;
 }

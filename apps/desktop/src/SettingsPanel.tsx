@@ -9,7 +9,7 @@
  */
 
 import { Fragment, useEffect, useState } from 'react';
-import { SETTINGS_SECTIONS } from '../../../packages/settings/src';
+import { SETTINGS_SECTIONS, readSetting, settingById } from '../../../packages/settings/src';
 import type { SettingDefinition, SettingsSection } from '../../../packages/settings/src';
 import type { ThemeSettings } from '../../../packages/themes/src';
 
@@ -35,6 +35,9 @@ export interface SettingsPanelProps {
   /** D-AU（ADR-0034 Q12）：仅 macOS 暴露「关最后一个窗口是否退出」（Typora 同）；
    *  Windows/Linux 语义不经 ExitRequested 通道 ⇒ 隐藏本行。 */
   platformMac: boolean;
+  /** G7-MENU-05：系统文本替换可用性（host `textReplacementAvailableSync()` 缓存）。
+   *  false ⇒ 隐藏 `editor.textReplacement`（非 macOS 无系统词典，显示即占位）。 */
+  textReplacementAvailable: boolean;
   /** §4.360：「导出设置…」直达入口 —— 打开面板时定位到指定分区（默认 general）。 */
   initialSection?: SettingsSection['id'];
 }
@@ -98,7 +101,7 @@ function ShortcutList({ t, shortcuts, onShortcutChange }: {
 }
 
 export default function SettingsPanel(props: SettingsPanelProps) {
-  const { t, onClose, applySetting, currentLanguage, themeSettings, shortcuts, onShortcutChange, spellcheckAvailable, spellcheckLanguage, platformMac, initialSection } = props;
+  const { t, onClose, applySetting, currentLanguage, themeSettings, shortcuts, onShortcutChange, spellcheckAvailable, spellcheckLanguage, platformMac, textReplacementAvailable, initialSection } = props;
   const [active, setActive] = useState<SettingsSection['id']>(initialSection ?? 'general');
   // §4.360：面板已挂载时再次从菜单直达（导出设置… ⇒ export），同步切换分区
   useEffect(() => {
@@ -118,10 +121,16 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   //   · spellcheckForCodeAndLink / openSystemSpellSettings：非 NSSpellChecker 平台无能力。
   const hiddenIds = new Set<string>();
   if (!platformMac) hiddenIds.add('general.quitAfterWindowClose');
+  const smartDashesDef = settingById('editor.smartDashes');
+  if (platformMac || !smartDashesDef || readSetting(smartDashesDef) !== true) {
+    hiddenIds.add('editor.twoHyphensToEm');
+  }
   if (!spellcheckAvailable) {
     hiddenIds.add('editor.spellcheckForCodeAndLink');
     hiddenIds.add('editor.openSystemSpellSettings');
   }
+  // G7-MENU-05：文本替换依赖 macOS 系统词典（非 mac 无能力 ⇒ 隐藏，与菜单 macOnly 同判据）
+  if (!textReplacementAvailable) hiddenIds.add('editor.textReplacement');
   const sections: SettingsSection[] = SETTINGS_SECTIONS
     .map((s) => ({ ...s, settings: s.settings.filter((def) => !hiddenIds.has(def.id)) }));
 

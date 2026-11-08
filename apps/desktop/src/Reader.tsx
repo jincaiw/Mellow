@@ -20,6 +20,8 @@ export interface ReaderViewProps {
   html: string;
   title: string;
   zoom: number;
+  /** 段落首行缩进（`editor.firstLineIndent` 单一真源；与编辑器 / 导出件同源） */
+  firstLineIndent?: boolean;
   onZoomChange: (zoom: number) => void;
   onOpenInEditor: () => void;
   onClose: () => void;
@@ -31,7 +33,7 @@ function escapeRegExp(value: string): string {
 }
 
 export default function ReaderView(props: ReaderViewProps) {
-  const { t, html, title, zoom, onZoomChange, onOpenInEditor, onClose, onCurrentHeadingChange } = props;
+  const { t, html, title, zoom, firstLineIndent = false, onZoomChange, onOpenInEditor, onClose, onCurrentHeadingChange } = props;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -206,7 +208,7 @@ export default function ReaderView(props: ReaderViewProps) {
       </div>
       <div className="mellow-reader-scroll" ref={scrollRef} onScroll={handleScroll}>
         {/* eslint-disable-next-line react/no-danger */}
-        <article className="mellow-reader" style={{ fontSize: `${zoom * 100}%` }} ref={contentRef} role="main" aria-label={title} dangerouslySetInnerHTML={{ __html: html }} onClick={handleContentClick} />
+        <article className={firstLineIndent ? 'mellow-reader first-line-indent' : 'mellow-reader'} style={{ fontSize: `${zoom * 100}%` }} ref={contentRef} role="main" aria-label={title} dangerouslySetInnerHTML={{ __html: html }} onClick={handleContentClick} />
       </div>
       {lightbox !== null && (
         // R3-1 lightbox：滚轮缩放（50%-400%）/ 双击重置 / Esc 或点遮罩关闭

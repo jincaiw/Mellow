@@ -25,8 +25,12 @@ export interface NativeMenuInputs {
   userThemes?: ReadonlyArray<{ id: string; name: string }>;
   /** 键入时检查拼写（CheckMenuItem 选中态，与 Settings Store 同一真源）。 */
   spellcheck: boolean;
-  /** 智能标点（CheckMenuItem 选中态）。 */
-  smartPunct: boolean;
+  /** 替换菜单：独立功能开关与转换时机，共用 Settings Store。 */
+  smartQuotes: boolean;
+  smartDashes: boolean;
+  smartPunctOnRender: boolean;
+  /** G7-MENU-05：文本替换（Typora 替换子菜单；仅 macOS 显示，真值 = 设置 `editor.textReplacement`）。 */
+  textReplacement: boolean;
   /** V7-W1.6：状态栏可见性（Typora Win/Linux 显示菜单「状态栏」CheckMenuItem 选中态）。 */
   statusbar: boolean;
   /** V7-W2.4：浮动编辑器工具栏启用态（Typora 1.14 View → Toolbar CheckMenuItem 选中态）。 */
@@ -63,7 +67,10 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
     activeThemeId: inputs.activeThemeId,
     themeMode: inputs.themeMode,
     spellcheck: inputs.spellcheck,
-    smartPunct: inputs.smartPunct,
+    smartQuotes: inputs.smartQuotes,
+    smartDashes: inputs.smartDashes,
+    smartPunctOnRender: inputs.smartPunctOnRender,
+    textReplacement: inputs.textReplacement,
     statusbar: inputs.statusbar,
     toolbar: inputs.toolbar,
     firstLineIndent: inputs.firstLineIndent,

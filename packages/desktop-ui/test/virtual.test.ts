@@ -4,6 +4,7 @@
  * 窗口大小上界（DOM 节点不随数据量增长）、10k 随机行高正确性（对照线性扫描）、性能冒烟。
  */
 import { buildOffsets, findRange } from '../src/virtual';
+import { scrollTopForRow } from '../src/VirtualRows';
 
 /** 线性扫描参照实现（慢但直观，用于交叉验证二分结果）。 */
 function findRangeLinear(offsets: Float64Array, scrollTop: number, viewportH: number, overscan: number): { start: number; end: number } {
@@ -85,6 +86,49 @@ describe('findRange', () => {
     const { start, end } = findRange(offsets, 28 * 50, 280, -5);
     expect(start).toBe(50);
     expect(end).toBe(60);
+  });
+});
+
+describe('scrollTopForRow（目标行滚动跟随，block: nearest）', () => {
+  const offsets = buildOffsets(100, () => 28); // 每行 28px，总高 2800
+
+  test('目标已完全可见：不改动 scrollTop（保留手动滚动位置）', () => {
+    expect(scrollTopForRow(offsets, 10, 280, 280)).toBe(280); // 第 10 行顶 = 280
+    expect(scrollTopForRow(offsets, 12, 280, 280)).toBe(280); // 完全在视口内
+  });
+
+  test('目标在上方：顶对齐', () => {
+    expect(scrollTopForRow(offsets, 5, 28 * 50, 280)).toBe(140);
+  });
+
+  test('目标在下方：底对齐到视口底部', () => {
+    expect(scrollTopForRow(offsets, 50, 0, 280)).toBe(28 * 51 - 280); // 行底 - 视口高
+  });
+
+  test('末尾行：clamp 到最大滚动距离，不越界', () => {
+    const maxScroll = offsets[100] - 280;
+    expect(scrollTopForRow(offsets, 99, 0, 280)).toBe(maxScroll);
+  });
+
+  test('越界 / 空集 / 零视口：原样返回或安全 clamp', () => {
+    expect(scrollTopForRow(offsets, -1, 100, 280)).toBe(100);
+    expect(scrollTopForRow(offsets, 100, 100, 280)).toBe(100);
+    const empty = buildOffsets(0, () => 28);
+    expect(scrollTopForRow(empty, 0, 100, 280)).toBe(100);
+    expect(scrollTopForRow(offsets, 50, 0, 0)).toBe(offsets[51]);
+  });
+
+  test('10k 离屏目标：结果落在合法滚动范围内且目标进入窗口', () => {
+    const big = buildOffsets(10000, () => 28);
+    const viewport = 600;
+    for (const index of [0, 123, 5000, 9999]) {
+      const next = scrollTopForRow(big, index, 0, viewport);
+      const { start, end } = findRange(big, next, viewport, 8);
+      expect(next).toBeGreaterThanOrEqual(0);
+      expect(next).toBeLessThanOrEqual(big[10000] - viewport);
+      expect(index).toBeGreaterThanOrEqual(start);
+      expect(index).toBeLessThan(end);
+    }
   });
 });
 

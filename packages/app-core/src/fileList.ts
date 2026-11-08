@@ -66,6 +66,8 @@ export function filterFileList(items: readonly FileListItem[], query: string): F
 
 export class FileListModel {
   selectedPath: string | null = null;
+  // 连续按键复用位置，避免全遍历累计 O(n²)；每次核对路径，兼容重排、过滤和外部选择。
+  private selectedIndex = -1;
   /** P3.4（G4-SIDE-01）键位补齐：↑↓/Enter 既有；←→ 在单列列表上与 ↑↓ 同义（桌面单列列表惯例）；
    * PageUp/PageDown 按 pageSize 整页移动（默认 10 项，clamp 边界）；未选中时任意移动键落到第一项。 */
   navigate(items: Array<{ path: string }>, key: 'up' | 'down' | 'left' | 'right' | 'enter' | 'pageup' | 'pagedown' | 'home' | 'end', pageSize = 10): { selected: string | null; open?: string } {
@@ -73,7 +75,9 @@ export class FileListModel {
     // Home/End：Typora `bindFileViewKeyboard` 对树/列表共用（`moveFileSelectionToEnd`）。
     if (key === 'home') { this.selectedPath = items[0].path; return { selected: this.selectedPath }; }
     if (key === 'end') { this.selectedPath = items[items.length - 1].path; return { selected: this.selectedPath }; }
-    const currentIndex = this.selectedPath === null ? -1 : items.findIndex((item) => item.path === this.selectedPath);
+    const currentIndex = this.selectedPath === null ? -1
+      : items[this.selectedIndex]?.path === this.selectedPath ? this.selectedIndex
+      : items.findIndex((item) => item.path === this.selectedPath);
     const step = key === 'down' || key === 'right' ? 1
       : key === 'up' || key === 'left' ? -1
       : key === 'pagedown' ? Math.max(1, pageSize)
@@ -81,7 +85,8 @@ export class FileListModel {
       : 0;
     if (step !== 0) {
       const base = currentIndex === -1 ? 0 : currentIndex + step;
-      this.selectedPath = items[Math.max(0, Math.min(items.length - 1, base))].path;
+      this.selectedIndex = Math.max(0, Math.min(items.length - 1, base));
+      this.selectedPath = items[this.selectedIndex].path;
     }
     if (key === 'enter' && this.selectedPath !== null) return { selected: this.selectedPath, open: this.selectedPath };
     return { selected: this.selectedPath };
@@ -98,14 +103,18 @@ export class FileListService {
     const items: FileListItem[] = [];
     for (const entry of sorted) {
       const text = await this.fs.readText(entry.path);
-      if (!text.ok) continue;
+      // 读不到内容（权限 / 编码不受支持）时**仍然列出该文件**：以文件名作标题、无摘要。
+      // 旧实现直接 `continue`，文件会从列表视图里**无声消失** —— 严格解码后，
+      // V1 之外编码（PRD §105 的 P1）的文件正是这种情况：树视图还看得见、打开时会
+      // 给出明确原因，唯独列表视图把它静默藏起来（2026-11-08，审计 §4.361）。
+      const content = text.ok ? text.value : '';
       items.push({
         path: entry.path,
         filename: entry.name,
-        title: titleFromMarkdown(text.value, entry.name),
+        title: titleFromMarkdown(content, entry.name),
         modifiedMs: entry.modifiedMs,
         createdMs: entry.createdMs,
-        summary: listOptions.includeSummary ? summaryFromMarkdown(text.value, listOptions.summaryMaxChars) : undefined,
+        summary: listOptions.includeSummary ? summaryFromMarkdown(content, listOptions.summaryMaxChars) : undefined,
       });
     }
     return ok(items);

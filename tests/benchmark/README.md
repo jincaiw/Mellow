@@ -44,7 +44,7 @@ node run-benchmark.mjs --app mellow --metrics startup
 |---|---|---|
 | `--app` | `both` | `typora` / `mellow` / `both` |
 | `--fixtures` | 7 个夹具 | 逗号分隔 |
-| `--metrics` | `open` | `startup,open,typing,scroll,search,save,memory`（`--all` 全选） |
+| `--metrics` | `open` | `startup,open,hotopen,typing,scroll,search,save,memory,contentpaint`（`--all` 全选） |
 | `--runs` | 5 | open/startup 重复次数 |
 | `--keystrokes` | 100 | typing 按键数 |
 | `--typora` / `--mellow` | 默认路径 | 覆盖被测二进制 |
@@ -65,6 +65,7 @@ node run-benchmark.mjs --app mellow --metrics startup
 - `search`：Cmd+F → 键入 → find bar 首帧变化（Mellow 无文档内查找 → N/A + 功能缺口发现项）；
 - `save`：Cmd+S → mtime 变化（测试前制造修改：无变更时 Typora 跳过写盘）；
 - `memory`：主进程 RSS（打开后采样中位数 / 峰值）。
+- `contentpaint`（诊断）：显示器级捕获（`SCContentFilter(display:excludingWindows:[])`，**探针先开流、再启动应用**）→ 进程启动 → 正文区首变化 / 最大变化 / 稳定。**不是 PRD 判定量**（判定量是 `hotopen.switchMs`）；它**取代** `loadMs` 作为「内容何时画出」的观测 —— 后者来自 `waitStable(stableMs: 600)`，结构上不可能早于 600ms 返回，从未测到内容绘制时刻（`loadMs` 本身仍保留为「等待画面静止」诊断量）。
 
 ## Sidebar 计时微任务（P3.10）
 

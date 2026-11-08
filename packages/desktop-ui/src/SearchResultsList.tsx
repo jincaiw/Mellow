@@ -9,7 +9,6 @@
  * `.ty-search-item-expand`（每个结果文件组独立）。折叠只隐藏匹配行，**组标题保持可见**
  * （sticky 语义不受影响，虚拟化计数随之收缩）。
  */
-import { useEffect } from 'react';
 import type { SearchGroup } from '../../app-core/src';
 import { VirtualRows } from './VirtualRows';
 
@@ -37,12 +36,24 @@ export function SearchResultsList({ groups, onJump, selectedIndex = -1, onContex
     // 折叠 = 只隐藏匹配行（组标题仍在，Typora collapse 同样保留文件行）
     if (!collapsed) for (const match of group.matches) rows.push({ kind: 'match', match });
   }
-  // 键盘选中滚动跟随（selectedIndex 是扁平匹配索引，与 rows 的 match 子序列对齐）
-  const selectedRow = selectedIndex >= 0 ? rows.filter((row) => row.kind === 'match')[selectedIndex] : undefined;
-  useEffect(() => {
-    if (selectedIndex < 0) return;
-    document.querySelector('.search-results .search-match.selected')?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIndex, groups]);
+  // 键盘选中滚动跟随。selectedIndex 是**扁平匹配序列**索引，rows 还夹着组标题行 ——
+  // 必须映射到实际虚拟行索引（含组标题）才能让 VirtualRows 正确定位；折叠时 rows
+  // 已收缩，映射与渲染同源。目标未挂载时由 VirtualRows 先滚动窗口再校正。
+  let selectedRow: SearchRow | undefined;
+  let selectedRowIndex: number | null = null;
+  if (selectedIndex >= 0) {
+    let matchOrdinal = -1;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row.kind !== 'match') continue;
+      matchOrdinal += 1;
+      if (matchOrdinal === selectedIndex) {
+        selectedRow = row;
+        selectedRowIndex = i;
+        break;
+      }
+    }
+  }
   const renderRow = (index: number) => {
     const row = rows[index];
     if (row.kind === 'group') {
@@ -74,5 +85,5 @@ export function SearchResultsList({ groups, onJump, selectedIndex = -1, onContex
       </button>
     );
   };
-  return <VirtualRows count={rows.length} estimateRowHeight={48} overscan={10} resetKey={rows.length} renderItem={renderRow} />;
+  return <VirtualRows count={rows.length} estimateRowHeight={48} overscan={10} resetKey={rows.length} scrollToIndex={selectedRowIndex} renderItem={renderRow} />;
 }

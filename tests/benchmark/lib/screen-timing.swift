@@ -17,6 +17,12 @@
  *   wait-window  --pid N --timeout T    等窗口出现，输出 bounds + elapsed ms
  *   startup-probe --pid N --roi x,y,w,h --timeout T
  *                               单键测量：post 'a' → ROI 首帧变化延迟（open-to-editable）
+ *   startup-watch --pid N --roi-frac x,y,w,h --timeout T [--stable-ms M] [--min-frac F]
+ *   startup-watch --launch-bin PATH [--launch-arg A]... [--roi-frac ...] ...
+ *                               **显示器级**诊断：开显示器流后再等窗口（或**先开流、由本进程
+ *                               启动应用**，后者保证捕获从进程启动前开始 —— 窗口创建极快的
+ *                               应用只有该形态可测到首绘）。窗口出现后按窗口几何裁 ROI，
+ *                               报首个/最大内容变化与稳定时刻（见 DisplayProbe）
  *   keypress-latency --pid N --roi x,y,w,h --key K --count C --interval MS --timeout T
  *                               逐键测量延迟序列（含自动校准）
  *   scroll-frames --pid N --roi x,y,w,h --count C --delta D --interval MS --timeout T
@@ -55,6 +61,15 @@ func epochMs() -> Double { Date().timeIntervalSince1970 * 1000 }
 func argVal(_ args: [String], _ key: String) -> String? {
   guard let i = args.firstIndex(of: key), i + 1 < args.count else { return nil }
   return args[i + 1]
+}
+/// 收集某个开关的**全部**取值（用于 `--launch-arg` 这类可重复参数）。
+func argVals(_ args: [String], _ key: String) -> [String] {
+  var result: [String] = []
+  var i = 0
+  while i + 1 < args.count {
+    if args[i] == key { result.append(args[i + 1]); i += 2 } else { i += 1 }
+  }
+  return result
 }
 struct Roi { let x: Double; let y: Double; let w: Double; let h: Double }
 func parseRoi(_ s: String) -> Roi {
@@ -464,6 +479,368 @@ final class Probe: NSObject, SCStreamOutput {
   func stableStats() -> (framesSeen: Int, changedFrames: Int, firstChangeMs: Double) {
     return (stableFramesSeen, stableChangedFrames, stableFirstChangeMs)
   }
+}
+
+// MARK: - DisplayProbe（显示器级捕获：观测窗口创建前的帧）
+//
+// 为什么必须到「显示器级」（2026-10-13 A/B 实测后确定的唯一真实路径，审计 §4.348）：
+// `desktopIndependentWindow` 只能捕获**已经存在**的窗口 ⇒ 观测窗口最早也只能从
+// 「窗口已出现」之后开始；而 Tauri / AppKit 窗口从出现在屏幕上到内部内容画完是一段
+// 竞态，实测 16 个样本里 15 个的内容变化落在首帧**之前**。把 `waitStable` 改成
+// `lastChange` 只会得到恒 0（8/8），因为那时已经无变化可观察。
+//
+// 本探针在**应用进程启动之前**就打开显示器流，待窗口出现后按窗口几何裁出 ROI，
+// 再在该 ROI 上检测「第一次内容变化」与「连续静止」时刻 ⇒ 读数才可能是真正的
+// 内容绘制时刻，而不是 `waitStable(stableMs: 600)` 的 600ms 地板。
+//
+// ⚠️ 边界（如实登记）：
+//  - 只捕获**主显示器**；窗口在副屏时如实报错（benchmark 在主流单屏场景使用）。
+//  - 全屏捕获比按窗口捕获更重，会轻微扰动被测算应用 ⇒ **仅用于诊断**，
+//    不参与任何 PRD 判定（判定量仍是 hotopen.switchMs，见 ADR-0026）。
+//  - 窗口出现的系统动画也会产生变化帧；跨应用比较时两边同样计入，不改变相对关系。
+final class DisplayProbe: NSObject, SCStreamOutput {
+  private let lock = NSLock()
+  private let queue = DispatchQueue(label: "screen-timing.display-probe")
+  private var stream: SCStream?
+  private var ready = false
+  private let readySema = DispatchSemaphore(value: 0)
+
+  private var displayFrame: CGRect = .zero
+  private var roiFrac: [Double] = [0.2, 0.06, 0.6, 0.1]
+  private var minFrac = 0.001
+
+  private var winFrame: CGRect? = nil
+  /// 每个窗口几何的**基线快照**（BGRA 四字节/点，step=4 网格），键 = 取整的 x,y,w,h。
+  ///
+  /// ⚠️ 不能保存 `CVPixelBuffer` 本身（2026-11-08 实测）：SCK 从固定大小的缓冲池复用
+  /// `CVPixelBuffer`，下一次回调会**覆写**上一次保存的那个 buffer ——
+  /// 于是「上一帧 vs 当前帧」实际变成「当前帧 vs 当前帧」，`roiSampleDiff` 恒返回 0。
+  /// 症状：`framesInRoi=574, changedFrames=0, maxFrac=0`，且只在缓冲池较小时稳定复现
+  /// （窗口级捕获池更大，所以旧 `startup-probe` 没暴露该问题）。
+  /// 解决：回调内立刻把采样点复制到独立堆数组，与 buffer 生命周期解耦。
+  ///
+  /// ⚠️ 也**不能只保存「上一帧」**（2026-11-08 第二轮实测）：窗口几何会在启动期间抖一下
+  /// （实测同一 pid 出现 1184×788 与 960×963 两个不同几何，间隔 31ms）。旧实现遇到几何变化
+  /// 就清空基线，若正文绘制恰好发生在这段抖动里，那次**大变化会被吞掉** ——
+  /// 症状：`maxFrac=0.006`（只剩光标/工具条的小变化），而同一场景重跑会得到 `maxFrac=0.406`。
+  /// 解决：基线**按几何分桶**（回到旧几何时仍可与抖动前的帧比较）。
+  private var baselines: [String: (samples: [UInt8], w: Int, h: Int)] = [:]
+  private var baselineOrder: [String] = []
+
+  private var framesAll = 0
+  private var framesInRoi = 0
+  private var changedFrames = 0
+  private var firstChangeEpoch = -1.0
+  private var lastChangeEpoch = -1.0
+  private var maxFrac = 0.0
+  /// 最大变化发生时刻：首个 ≥minFrac 的变化可能是工具条/滚动条，**内容绘制**往往不是第一帧。
+  /// 报「最大变化」让报告能区分「第一次有任何变化」与「正文真正画出来」。
+  private var maxFracEpoch = -1.0
+  private var roiUsed: CGRect = .zero
+  private var frameW = 0
+  private var frameH = 0
+  /// 窗口几何变化轨迹（epoch ms + x/y/w/h，最多 32 条）。
+  /// 诊断用（2026-11-08）：几何变化会清空基线，若正文绘制**恰好与一次 resize 同帧**，
+  /// 那一次大变化会被吞掉 —— 只有把「何时发生几何变化」报出来，才能判断读数是否被吃掉。
+  private var geomLog: [[Double]] = []
+  /// 帧对变化比例最大的若干次（epoch ms + frac，最多 10 条，降序）。
+  /// 用来区分「正文一次性绘出（单帧大比例）」与「逐块绘制（多帧小比例）」。
+  private var fracTop: [[Double]] = []
+
+  func setRoiFrac(_ f: [Double]) {
+    guard f.count == 4 else { return }
+    lock.lock(); roiFrac = f; lock.unlock()
+  }
+  func setMinFrac(_ v: Double) { lock.lock(); minFrac = v; lock.unlock() }
+
+  /// 窗口出现时调用（坐标 = 屏幕 points，左上原点，与 CGWindowList 一致）。
+  ///
+  /// **可重复调用**（2026-11-08）：窗口在出现后还会 resize（实测 Tauri 主窗先以
+  /// 过渡尺寸出现、再 resize 到最终尺寸）。若只在首次看到时固定几何，
+  /// ROI 会按过渡尺寸算出、落在最终窗口之外 → 整段 ROI 恒为背景色、永不报变化
+  /// （实测一次样本：`framesInRoi=574, changedFrames=0`）。
+  /// 几何变化**不再清空基线**：基线按几何分桶（见 `baselines`），
+  /// 跨几何的帧对比较天然由「桶」隔离，回到旧几何时仍可与抖动前的帧比较。
+  func setWindowFrame(_ f: CGRect) {
+    lock.lock(); defer { lock.unlock() }
+    if let old = winFrame,
+       abs(old.minX - f.minX) <= 2, abs(old.minY - f.minY) <= 2,
+       abs(old.width - f.width) <= 2, abs(old.height - f.height) <= 2 {
+      return
+    }
+    if geomLog.count < 32 {
+      geomLog.append([epochMs(), f.minX, f.minY, f.width, f.height])
+    }
+    winFrame = f
+  }
+  func isWindowFound() -> Bool { lock.lock(); defer { lock.unlock() }; return winFrame != nil }
+
+  func stats() -> (framesAll: Int, framesInRoi: Int, changedFrames: Int,
+                   firstChangeEpoch: Double, lastChangeEpoch: Double, maxFrac: Double,
+                   maxFracEpoch: Double,
+                   roi: CGRect, frameW: Int, frameH: Int) {
+    lock.lock(); defer { lock.unlock() }
+    return (framesAll, framesInRoi, changedFrames, firstChangeEpoch, lastChangeEpoch,
+            maxFrac, maxFracEpoch, roiUsed, frameW, frameH)
+  }
+
+  func diagnostics() -> (geom: [[Double]], fracTop: [[Double]]) {
+    lock.lock(); defer { lock.unlock() }
+    return (geomLog, fracTop)
+  }
+
+  func start(display: SCDisplay) async throws {
+    lock.lock(); displayFrame = display.frame; lock.unlock()
+    let pxW = max(1, CGDisplayPixelsWide(display.displayID))
+    let pxH = max(1, CGDisplayPixelsHigh(display.displayID))
+    let config = SCStreamConfiguration()
+    config.width = pxW
+    config.height = pxH
+    config.pixelFormat = kCVPixelFormatType_32BGRA
+    config.showsCursor = false
+    config.capturesAudio = false
+    config.queueDepth = 3
+    config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+    let filter = SCContentFilter(display: display, excludingWindows: [])
+    let s = SCStream(filter: filter, configuration: config, delegate: nil)
+    try s.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+    try await s.startCapture()
+    stream = s
+    _ = readySema.wait(timeout: .now() + 5)
+    guard ready else { fail("显示器捕获: 首帧超时") }
+  }
+
+  func stop() async { try? await stream?.stopCapture() }
+
+  func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
+    guard outputType == .screen, let buf = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+    lock.lock()
+    ready = true
+    readySema.signal()
+    framesAll += 1
+    frameW = CVPixelBufferGetWidth(buf)
+    frameH = CVPixelBufferGetHeight(buf)
+    guard let wf = winFrame, !roiFrac.isEmpty else {
+      lock.unlock()
+      return
+    }
+    let df = displayFrame
+    let scale = df.width > 0 ? Double(frameW) / Double(df.width) : 1.0
+    let rx = (wf.minX - df.minX + roiFrac[0] * wf.width) * scale
+    let ry = (wf.minY - df.minY + roiFrac[1] * wf.height) * scale
+    let rw = max(4, roiFrac[2] * wf.width * scale)
+    let rh = max(4, roiFrac[3] * wf.height * scale)
+    let rect = CGRect(x: rx, y: ry, width: rw, height: rh)
+    roiUsed = rect
+    framesInRoi += 1
+    // 立即复制采样点（见 baselines 注释：不能保存 buffer 引用）。
+    let snap = roiSnapshot(buf, rect: rect)
+    let key = "\(Int(wf.minX)),\(Int(wf.minY)),\(Int(wf.width)),\(Int(wf.height))"
+    if snap.w > 0, let base = baselines[key], base.w == snap.w, base.h == snap.h {
+      let (changed, total) = roiSampleDiff(base.samples, snap.samples)
+      let frac = Double(changed) / Double(max(1, total))
+      let t = epochMs()
+      if frac > maxFrac {
+        maxFrac = frac
+        maxFracEpoch = t
+      }
+      if frac > 0.0005 {
+        fracTop.append([t, frac])
+        fracTop.sort { $0[1] > $1[1] }
+        if fracTop.count > 10 { fracTop.removeLast(fracTop.count - 10) }
+      }
+      if frac >= minFrac {
+        if firstChangeEpoch < 0 { firstChangeEpoch = t }
+        lastChangeEpoch = t
+        changedFrames += 1
+      }
+    }
+    if baselines[key] == nil { baselineOrder.append(key) }
+    baselines[key] = (snap.samples, snap.w, snap.h)
+    // 基线桶上限 8 个：启动期几何抖动实测不超过 3 个；超出只可能是窗口在不停变化，
+    // 此时保留最新的几个即可（更老的几何不会再出现）。
+    while baselineOrder.count > 8 {
+      let old = baselineOrder.removeFirst()
+      baselines.removeValue(forKey: old)
+    }
+    lock.unlock()
+  }
+}
+
+/// 把 ROI 内的采样点复制成独立数组（BGRA 4 字节/点，step=4 网格）。
+/// 必须在持有 buffer 的回调内调用；返回值与 buffer 生命周期无关（见 baselines 注释）。
+func roiSnapshot(_ buf: CVPixelBuffer, rect: CGRect, step: Int = 4) -> (samples: [UInt8], w: Int, h: Int) {
+  let w = CVPixelBufferGetWidth(buf), h = CVPixelBufferGetHeight(buf)
+  let x0 = max(0, Int(rect.minX)), y0 = max(0, Int(rect.minY))
+  let x1 = min(w, Int(rect.maxX)), y1 = min(h, Int(rect.maxY))
+  guard x1 - x0 >= step, y1 - y0 >= step else { return ([], 0, 0) }
+  let gw = (x1 - x0) / step, gh = (y1 - y0) / step
+  var out = [UInt8](repeating: 0, count: gw * gh * 4)
+  CVPixelBufferLockBaseAddress(buf, .readOnly)
+  defer { CVPixelBufferUnlockBaseAddress(buf, .readOnly) }
+  guard let p = CVPixelBufferGetBaseAddress(buf)?.assumingMemoryBound(to: UInt8.self) else {
+    return ([], 0, 0)
+  }
+  let bpr = CVPixelBufferGetBytesPerRow(buf)
+  for gy in 0..<gh {
+    let y = y0 + gy * step
+    for gx in 0..<gw {
+      let x = x0 + gx * step
+      let i = y * bpr + x * 4
+      let o = (gy * gw + gx) * 4
+      out[o] = p[i]; out[o + 1] = p[i + 1]; out[o + 2] = p[i + 2]; out[o + 3] = p[i + 3]
+    }
+  }
+  return (out, gw, gh)
+}
+
+/// 两份采样快照的差异（BGRA，逐通道容忍 8）。
+/// 返回 (变化采样点数, 采样点总数)；分母 = 实际比较的点数。
+func roiSampleDiff(_ a: [UInt8], _ b: [UInt8]) -> (changed: Int, total: Int) {
+  guard a.count == b.count, a.count >= 4 else { return (0, 0) }
+  var changed = 0
+  var i = 0
+  while i + 3 < a.count {
+    let dr = abs(Int(a[i]) - Int(b[i]))
+    let dg = abs(Int(a[i + 1]) - Int(b[i + 1]))
+    let db = abs(Int(a[i + 2]) - Int(b[i + 2]))
+    if max(dr, max(dg, db)) > 8 { changed += 1 }
+    i += 4
+  }
+  return (changed, a.count / 4)
+}
+
+/// 显示器级启动观测：**先开流、再等窗口**。
+///
+/// 两种用法：
+/// - `--pid N`：调用方已启动应用；本进程**随后**接入。若 windowList 在首轮 poll 就看到窗口
+///   （`stream→window ≤ 100ms`），说明流启动晚于窗口，首个绘制可能已经错过 → 结果不可用。
+/// - `--launch-bin PATH [--launch-arg A]...`：**先开流、再由本进程启动应用**（2026-11-08）。
+///   这是唯一能保证「捕获从进程启动前开始」的形态；Mellow 窗口创建极快（实测流接入时窗口已存在），
+///   只有该形态才能测到它的首绘。
+func cmdStartupWatch(pid: Int32, roiFrac: [Double]?, timeoutMs: Double, stableMs: Double, minFrac: Double,
+                     launchBin: String?, launchArgs: [String], activate: Bool) async {
+  guard AXIsProcessTrusted() else { fail("辅助功能权限未授予（System Preferences → Privacy → Accessibility）") }
+  let tProbe = epochMs()
+  let content: SCShareableContent
+  do {
+    content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+  } catch { fail("SCK 共享内容获取失败: \(error)") }
+  let mainID = CGMainDisplayID()
+  guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first else {
+    fail("找不到可捕获的显示器")
+  }
+  let probe = DisplayProbe()
+  probe.setRoiFrac(roiFrac ?? [0.2, 0.06, 0.6, 0.1])
+  probe.setMinFrac(minFrac)
+  do { try await probe.start(display: display) } catch { fail("显示器捕获启动失败: \(error)") }
+  let tStream = epochMs()
+  // ---- 先开流、再启动（可选） ----
+  var effectivePid = pid
+  var launchedPid: Int32 = -1
+  var tLaunch = -1.0
+  if let bin = launchBin {
+    tLaunch = epochMs()
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: bin)
+    p.arguments = launchArgs
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { fail("启动失败 \(bin): \(error)") }
+    effectivePid = p.processIdentifier
+    launchedPid = effectivePid
+  }
+  var winSeenEpoch = -1.0
+  var winFrame: CGRect? = nil
+  var tActivate = -1.0
+  let deadline = tProbe + timeoutMs
+  while epochMs() < deadline {
+    // 每轮都重新查窗口几何（不只查一次）：窗口会 resize，
+    // 固定过渡几何会让 ROI 落到最终窗口之外 → 永不报变化（见 setWindowFrame 注释）。
+    for w in windowList() where (w["pid"] as? Int) == Int(effectivePid) {
+      let ww = (w["w"] as? Double) ?? 0
+      let wh = (w["h"] as? Double) ?? 0
+      if ww >= 120, wh >= 120 {
+        let f = CGRect(x: (w["x"] as? Double) ?? 0, y: (w["y"] as? Double) ?? 0,
+                       width: ww, height: wh)
+        if winFrame == nil {
+          winSeenEpoch = epochMs()
+          // 激活（可选）：SCK 对**被遮挡/非前台**窗口只能拿到静止帧。
+          // 若应用由本进程启动，它可能在后台上线 → ROI 全程零变化。
+          // 该激活发生在窗口出现之后，所以「窗口出现时刻」不受影响；
+          // 但它会改变窗口外观（标题栏焦点态），故 `activateEpochMs` 单独报出，
+          // 读者可判断首个变化是否只是激活引起的重绘。
+          if activate, tActivate < 0 {
+            tActivate = epochMs()
+            if let a = NSRunningApplication(processIdentifier: effectivePid) {
+              a.activate(options: [.activateIgnoringOtherApps])
+            }
+          }
+        }
+        winFrame = f
+        probe.setWindowFrame(f)
+        break
+      }
+    }
+    let st = probe.stats()
+    if st.changedFrames > 0, epochMs() - st.lastChangeEpoch >= stableMs { break }
+    Thread.sleep(forTimeInterval: 0.02)
+  }
+  let st = probe.stats()
+  let diag = probe.diagnostics()
+  await probe.stop()
+  let tEnd = epochMs()
+  guard let wf = winFrame else {
+    out(["ok": false, "error": "\(Int(timeoutMs))ms 内未出现窗口（pid=\(effectivePid)）",
+         "t0EpochMs": Int(tProbe), "elapsedMs": Int(tEnd - tProbe),
+         "launchedPid": Int(launchedPid),
+         "framesAll": st.framesAll, "framesInRoi": st.framesInRoi])
+    return
+  }
+  let mainRect = CGRect(x: display.frame.minX, y: display.frame.minY,
+                        width: display.frame.width, height: display.frame.height)
+  let afterLaunch: (Double) -> Double = { e in tLaunch < 0 ? -1 : round((e - tLaunch) * 10) / 10 }
+  out([
+    "ok": true,
+    "t0EpochMs": Int(tProbe),
+    "launchEpochMs": tLaunch < 0 ? -1 : Int(tLaunch),
+    "launchedPid": Int(launchedPid),
+    // 负值 = 流在启动**之后**才就绪（做不到「从启动前捕获」，首绘可能已被错过）
+    "streamBeforeLaunchMs": tLaunch < 0 ? -1 : round((tLaunch - tStream) * 10) / 10,
+    "streamStartEpochMs": Int(tStream),
+    "activateEpochMs": tActivate < 0 ? -1 : Int(tActivate),
+    "activateAfterLaunchMs": tActivate < 0 ? -1 : afterLaunch(tActivate),
+    "windowSeenEpochMs": Int(winSeenEpoch),
+    "windowSeenMs": round((winSeenEpoch - tProbe) * 10) / 10,
+    "windowSeenAfterLaunchMs": afterLaunch(winSeenEpoch),
+    "contentFirstChangeMs": st.firstChangeEpoch < 0 ? -1 : round((st.firstChangeEpoch - tProbe) * 10) / 10,
+    "contentFirstChangeAfterWindowMs": st.firstChangeEpoch < 0 ? -1 : round((st.firstChangeEpoch - winSeenEpoch) * 10) / 10,
+    "contentFirstChangeAfterLaunchMs": st.firstChangeEpoch < 0 ? -1 : afterLaunch(st.firstChangeEpoch),
+    // 最大变化时刻：首个变化可能是工具条/滚动条；「最大变化」更接近**正文绘制**。
+    // 两个值都给出，避免把「第一次闪动」当成「内容可用」。
+    "contentMaxChangeMs": st.maxFracEpoch < 0 ? -1 : round((st.maxFracEpoch - tProbe) * 10) / 10,
+    "contentMaxChangeAfterWindowMs": st.maxFracEpoch < 0 ? -1 : round((st.maxFracEpoch - winSeenEpoch) * 10) / 10,
+    "contentMaxChangeAfterLaunchMs": st.maxFracEpoch < 0 ? -1 : afterLaunch(st.maxFracEpoch),
+    "contentStableMs": st.changedFrames > 0 ? round((st.lastChangeEpoch - tProbe + stableMs) * 10) / 10 : -1,
+    "contentStableAfterWindowMs": st.changedFrames > 0 ? round((st.lastChangeEpoch - winSeenEpoch + stableMs) * 10) / 10 : -1,
+    "contentStableAfterLaunchMs": st.changedFrames > 0 ? afterLaunch(st.lastChangeEpoch + stableMs) : -1,
+    "changedFrames": st.changedFrames,
+    "maxFrac": round(st.maxFrac * 100000) / 100000,
+    "minFrac": minFrac,
+    "framesAll": st.framesAll,
+    "framesInRoi": st.framesInRoi,
+    "frameW": st.frameW,
+    "frameH": st.frameH,
+    "roiPx": "\(Int(st.roi.minX)),\(Int(st.roi.minY)),\(Int(st.roi.width)),\(Int(st.roi.height))",
+    "winFrame": "\(Int(wf.minX)),\(Int(wf.minY)),\(Int(wf.width)),\(Int(wf.height))",
+    "displayFrame": "\(Int(mainRect.minX)),\(Int(mainRect.minY)),\(Int(mainRect.width)),\(Int(mainRect.height))",
+    // 诊断（2026-11-08）：窗口几何变化轨迹 + 帧对变化比例 Top10（epoch ms 对齐 launchEpochMs）。
+    // 用途：判断一次大变化是否被「几何变化清空基线」吞掉 —— 若 topFracs 里没有大比例，
+    // 而 winFrameChanges 恰好落在首绘时刻附近，读数就不能当成「正文此时才画出」。
+    "winFrameChanges": diag.geom,
+    "topFracs": diag.fracTop,
+    "elapsedMs": Int(tEnd - tProbe),
+  ])
 }
 
 // MARK: - 获取窗口（SCShareableContent）
@@ -1077,6 +1454,15 @@ func mainAsync(_ args: [String]) async {
     // --roi-frac "x,y,w,h"：按「实际捕获窗口」的比例求 ROI（推荐；见 resolveRoiForCapture）。
     let roiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
     await cmdStartupProbe(pid: pid, roi: roi, timeoutMs: timeout, clickFocus: !noClick, snapOnFail: snapOnFail, roiFrac: roiFrac, ensureAscii: args.contains("--ensure-ascii"))
+  case "startup-watch":
+    let pid = Int32(argVal(args, "--pid") ?? "") ?? -1
+    let timeout = Double(argVal(args, "--timeout") ?? "20000") ?? 20000
+    let stableMs = Double(argVal(args, "--stable-ms") ?? "400") ?? 400
+    let minFrac = Double(argVal(args, "--min-frac") ?? "0.001") ?? 0.001
+    let swRoiFrac = argVal(args, "--roi-frac").map { s in s.split(separator: ",").compactMap { Double($0) } }
+    await cmdStartupWatch(pid: pid, roiFrac: swRoiFrac, timeoutMs: timeout, stableMs: stableMs, minFrac: minFrac,
+                          launchBin: argVal(args, "--launch-bin"), launchArgs: argVals(args, "--launch-arg"),
+                          activate: args.contains("--activate"))
   case "hot-open-probe":
     // 在已运行的实例内打开另一篇文档（见 cmdHotOpenProbe 注释）。
     let pid = Int32(argVal(args, "--pid") ?? "") ?? -1

@@ -677,6 +677,21 @@ html, body, #root {
   font-size: 11px;
 }
 
+.search-advanced summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--mellow-fg-subtle);
+  overflow-wrap: anywhere;
+}
+
+.search-advanced-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
 .search-toggles {
   display: flex;
   align-items: center;
@@ -1483,6 +1498,17 @@ html, body, #root {
 .mellow-reader h6 { font-size: 0.9em; color: var(--mellow-fg-subtle); }
 
 .mellow-reader p { margin: 0.8em 0; }
+
+/* V7-W7（G7-EDIT-15）：首行缩进在 Reader 与编辑器 / 导出件同源（同一设置
+   `editor.firstLineIndent`）。规则照抄 Typora `base.css` 的
+   `#write.first-line-indent p{text-indent:2em}` 一族；图片独占段落改用取消
+   `text-indent` 达成 typora `img{left:-2em}` 的同等效果（Reader 无居中包裹层，
+   直接撤销缩进即可保持图片原位置）。 */
+.mellow-reader.first-line-indent p { text-indent: 2em; }
+.mellow-reader.first-line-indent li p,
+.mellow-reader.first-line-indent p *,
+.mellow-reader.first-line-indent svg * { text-indent: 0; }
+.mellow-reader.first-line-indent p:has(> img:only-child) { text-indent: 0; }
 
 .mellow-reader a { color: var(--mellow-link); text-decoration: none; }
 .mellow-reader a:hover { text-decoration: underline; }

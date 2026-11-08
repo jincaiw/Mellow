@@ -74,7 +74,10 @@ async function waitForRow(page, path, timeoutMs = 8000) {
 async function createEntry(page, commandId, name) {
   const ok = await createWorkspaceEntry(page, commandId, name);
   if (!ok) {
-    throw new Error(`${commandId} 未弹出应用内输入框（.confirm-modal-input）—— 命令缺失或迁移被回退`);
+    throw new Error(
+      `${commandId} 未完成应用内输入框（未弹出或未关闭：.confirm-modal-input / .confirm-modal-backdrop）`
+      + ' —— 命令缺失、迁移被回退，或输入未被提交（对话框未关闭会把下一条的名字填进旧对话框）',
+    );
   }
   await new Promise((r) => setTimeout(r, 400));
 }
