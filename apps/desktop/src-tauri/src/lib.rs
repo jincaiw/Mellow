@@ -10,6 +10,7 @@ pub mod print;
 pub mod recovery;
 pub mod search;
 pub mod spellcheck;
+pub mod text_replacement;
 pub mod updater;
 pub mod upload;
 pub mod watcher;
@@ -319,6 +320,8 @@ pub fn run() {
             spellcheck::spellcheck_has_learned,
             spellcheck::spellcheck_check_document,
             spellcheck::spellcheck_language,
+            text_replacement::text_replacement_available,
+            text_replacement::text_replacement_entries,
             recovery::recovery_save,
             recovery::recovery_list,
             recovery::recovery_get,

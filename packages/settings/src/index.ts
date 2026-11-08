@@ -153,6 +153,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { id: 'editor.allowMagnification', labelKey: 'settings.editor.allowMagnification', type: 'toggle', storageKey: 'mellow.editor.allowMagnification', defaultValue: false, descriptionKey: 'settings.editor.allowMagnificationDesc', applyCommand: 'settings.editorConfig' },
       // 拼写检查（D1-1：Typora 编辑→拼写和语法「键入时检查」；大文件模式引擎侧强制关闭）
       { id: 'editor.spellcheck', labelKey: 'settings.editor.spellcheck', type: 'toggle', storageKey: 'mellow.editor.spellcheck', defaultValue: true, descriptionKey: 'settings.editor.spellcheckDesc', applyCommand: 'settings.spellcheck' },
+      // G7-MENU-05「文本替换」：真值 = 本设置（菜单勾选态同一真值）。默认 **true** ——
+      // Typora 快照中该项默认勾选（一手证据见审计 §4.360「六」16）。词条来自 macOS
+      // 系统「键盘 → 文本替换」词典，Mellow 不自带词条表；非 macOS 无能力 ⇒
+      // 菜单项 macOnly 隐藏，设置行由 Desktop Adapter 按可用性隐藏。
+      // ⚠️ 与 Typora 的已登记差异：Typora 不检查系统「文本替换」总开关（关掉后仍替换），
+      // Mellow 以本勾选为唯一生效条件，保证「勾选态 = 实际行为」。
+      { id: 'editor.textReplacement', labelKey: 'settings.editor.textReplacement', type: 'toggle', storageKey: 'mellow.editor.textReplacement', defaultValue: true, descriptionKey: 'settings.editor.textReplacementDesc', applyCommand: 'settings.textReplacement' },
       // A38（ADR-0038 裁决 = C，2026-11-06）：Typora 偏好 `spellcheckForCodeAndLink`
       // 「Show spelling errors in code and link」，**默认 false** ⇒ Mellow 现状（代码内
       // 无条件排除拼写检查）与 Typora 默认一致，本开关把「排除」变成可关。
@@ -168,10 +175,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       // 有 storageKey，假键 = 写了无人读的值；同型判例见 2026-09-30 审计移除的 ai.panel）。
       { id: 'editor.openSystemSpellSettings', labelKey: 'settings.editor.openSystemSpellSettings', type: 'action', storageKey: '', defaultValue: '', descriptionKey: 'settings.editor.openSystemSpellSettingsDesc', applyCommand: 'settings.openSystemSpellSettings' },
       // 智能标点（master-plan R2-1：Typora 编辑→替换「智能引号/破折号」；默认关闭）
-      { id: 'editor.smartPunctuation', labelKey: 'settings.editor.smartPunctuation', type: 'toggle', storageKey: 'mellow.editor.smartPunctuation', defaultValue: false, descriptionKey: 'settings.editor.smartPunctuationDesc', applyCommand: 'settings.smartPunctuation' },
+      { id: 'editor.smartQuotes', labelKey: 'settings.editor.smartQuotes', type: 'toggle', storageKey: 'mellow.editor.smartQuotes', defaultValue: false, descriptionKey: 'settings.editor.smartQuotesDesc', applyCommand: 'settings.smartPunctuation' },
+      { id: 'editor.smartDashes', labelKey: 'settings.editor.smartDashes', type: 'toggle', storageKey: 'mellow.editor.smartDashes', defaultValue: false, descriptionKey: 'settings.editor.smartDashesDesc', applyCommand: 'settings.smartPunctuation' },
+      // Typora twoHyphensToEm：仅非 macOS 且智能破折号开启时显示，显示门控在 Desktop Adapter。
+      { id: 'editor.twoHyphensToEm', labelKey: 'settings.editor.twoHyphensToEm', type: 'toggle', storageKey: 'mellow.editor.twoHyphensToEm', defaultValue: false, descriptionKey: 'settings.editor.twoHyphensToEmDesc', applyCommand: 'settings.smartPunctuation' },
       // 2026-10-08（审计 §4.150）：Typora `convertSmartOnRender`（面板 radio
       // 「Convert on Input」/「Convert on Rendering」，**默认 Convert on Input**）。
-      // ⚠️ **只在 `editor.smartPunctuation` 开启时有意义** —— 与 Typora 同构：
+      // 只在智能引号或智能破折号开启时有意义，与 Typora 同构：
       //   Typora 的功能开关是 `smartQuote` / `smartDash`（二者默认 `false` ⇒ 默认不转换），
       //   `convertSmartOnRender` 只决定**何时**转换。
       // 语义：开启 ⇒ **输入与落盘保持 ASCII**，只在**显示**上呈现弯引号 / em dash（对 git 友好）。
@@ -548,11 +558,32 @@ export function sectionById(id: SettingsSectionId): SettingsSection | undefined 
   return SETTINGS_SECTIONS.find((section) => section.id === id);
 }
 
+const LEGACY_SMART_PUNCTUATION_KEY = 'mellow.editor.smartPunctuation';
+const SMART_PUNCTUATION_KEYS = ['mellow.editor.smartQuotes', 'mellow.editor.smartDashes'];
+
+/** 已发布的合并偏好拆为两个开关；已有独立值优先，全部写成后才移除旧键。 */
+function migrateSmartPunctuationSettings(): void {
+  try {
+    const legacy = localStorage.getItem(LEGACY_SMART_PUNCTUATION_KEY);
+    if (legacy === null) return;
+    const raw = legacy === '1' || legacy === 'true' ? '1' : '0';
+    for (const key of SMART_PUNCTUATION_KEYS) {
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, raw);
+    }
+    localStorage.removeItem(LEGACY_SMART_PUNCTUATION_KEY);
+  } catch {
+    // 存储不可写时保留旧键；读取仍可回退旧值，下次读取重试迁移。
+  }
+}
+
 /** 从 localStorage 读取（无存储 → defaultValue）；storageKey 为空（action）返回 defaultValue */
 export function readSetting(def: SettingDefinition): string | number | boolean {
   if (def.storageKey === '') return def.defaultValue;
   try {
-    const raw = localStorage.getItem(def.storageKey);
+    const isPunctuation = SMART_PUNCTUATION_KEYS.includes(def.storageKey);
+    if (isPunctuation) migrateSmartPunctuationSettings();
+    const raw = localStorage.getItem(def.storageKey)
+      ?? (isPunctuation ? localStorage.getItem(LEGACY_SMART_PUNCTUATION_KEY) : null);
     if (raw === null) return def.defaultValue;
     if (def.type === 'number') {
       const n = Number(raw);
@@ -568,6 +599,7 @@ export function readSetting(def: SettingDefinition): string | number | boolean {
 /** 写入 localStorage（toggle → '1'/'0'；number → String；其余原样） */
 export function writeSetting(def: SettingDefinition, value: string | number | boolean): void {
   if (def.storageKey === '') return;
+  if (SMART_PUNCTUATION_KEYS.includes(def.storageKey)) migrateSmartPunctuationSettings();
   let raw: string;
   if (typeof value === 'boolean') raw = value ? '1' : '0';
   else raw = String(value);
@@ -596,6 +628,8 @@ export function writeSetting(def: SettingDefinition, value: string | number | bo
 export function restoreAllSettingsDefaults(
   apply: (def: SettingDefinition, value: string | number | boolean) => void,
 ): number {
+  // 先清理旧键，防止逐项 apply 时重新迁移已重置的独立开关。
+  try { localStorage.removeItem(LEGACY_SMART_PUNCTUATION_KEY); } catch { /* 与下方重置同样容忍不可写存储 */ }
   let n = 0;
   for (const section of SETTINGS_SECTIONS) {
     for (const def of section.settings) {

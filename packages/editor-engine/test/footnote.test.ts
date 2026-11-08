@@ -25,9 +25,17 @@ describe('Footnote（PRD §44）', () => {
     const view = setUpEditor('正文[^a]\n\n[^a]: 脚注内容');
     await sleep();
     const ref = view.dom.querySelector('.mellow-footnote-ref') as HTMLElement | null;
-    expect(ref?.textContent).toBe('[a]');
+    // 显示序号而非 `[^id]`（Typora：footnoteList.indexOf(name)+1）
+    expect(ref?.textContent).toBe('1');
     expect(ref?.getAttribute('title')).toBe('脚注内容');
     expect(view.dom.querySelector('.mellow-footnote-return')?.textContent).toBe('↩');
+  });
+
+  test('脚注序号按首次出现顺序，重复引用同号（Typora footnoteList 语义）', async () => {
+    const view = setUpEditor('正文[^x] 与 [^y]，再来 [^x]\n\n[^x]: X 内容\n\n[^y]: Y 内容');
+    await sleep();
+    const refs = Array.from(view.dom.querySelectorAll('.mellow-footnote-ref')).map((el) => el.textContent);
+    expect(refs).toEqual(['1', '2', '1']);
   });
 
   test('source reveal: caret inside ref does not render ref widget', async () => {

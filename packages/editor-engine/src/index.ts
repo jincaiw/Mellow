@@ -57,10 +57,12 @@ import { buildContextMenuExtension, buildContextMenuViewTrackerExtension, instal
 import { buildDocumentSearchExtension, installSearchApi } from './documentSearch';
 import { buildUndoGroupingExtension } from './undoGrouping';
 import { buildPlatformNavKeymap } from './platformNav';
+import { buildParagraphEnterKeymap } from './enterKeymap';
 import { installFormatApi } from './selectionToolbar';
 import { buildLargeFileExtension, installLargeFileApi, installSpellcheckApi } from './largeFile';
 import { buildSelectionCommandsExtension, installSelectionCommandsApi } from './selectionCommands';
 import { buildSmartPunctuationExtension, buildSmartPunctuationRenderExtension, installSmartPunctuationApi } from './smartPunctuation';
+import { buildTextReplacementExtension, installTextReplacementApi } from './textReplacement';
 import { buildInlineCodeAttrsExtension } from './inlineCodeAttrs';
 import { buildCodeLineNumbersExtension, installCodeLineNumbersApi } from './codeLineNumbers';
 import { buildSpellcheckScopeExtension, installSpellcheckScopeApi } from './spellcheckScope';
@@ -83,6 +85,7 @@ export { buildMarkerRevealExtension, MARKER_CLASS, MARKER_DIM_CLASS } from './pl
 export { buildUndoGroupingExtension } from './undoGrouping';
 export { buildPlatformNavKeymap, detectPlatform } from './platformNav';
 export type { MellowPlatform } from './platformNav';
+export { buildParagraphEnterKeymap, isParagraphBreakContext } from './enterKeymap';
 export { DEFAULT_ENGINE_FEATURES, mergeEngineFeatures, readEngineFeaturesFromStorage } from './config';
 export type { EngineFeatureConfig } from './config';
 export { buildTaskCheckboxExtension, CHECKBOX_CLASS } from './taskCheckbox';
@@ -139,13 +142,31 @@ export {
   installSmartPunctuationApi,
   setSmartPunctuation,
   isSmartPunctuationEnabled,
+  setSmartQuotes,
+  isSmartQuotesEnabled,
+  setSmartDashes,
+  isSmartDashesEnabled,
+  setTwoHyphensToEm,
+  isTwoHyphensToEm,
   setSmartPunctuationOnRender,
   isSmartPunctuationOnRender,
+  smartPunctuationRenderVersion,
   smartQuoteFor,
   shouldEmDash,
   isInsideCodeContext,
 } from './smartPunctuation';
 export type { SmartPunctuationApi } from './smartPunctuation';
+// G7-MENU-05：文本替换（宿主注入 macOS 系统词典；引擎不直接访问系统能力）
+export {
+  buildTextReplacementExtension,
+  installTextReplacementApi,
+  matchTextReplacement,
+  setTextReplacementEntries,
+  getTextReplacementEntries,
+  setTextReplacementEnabled,
+  isTextReplacementEnabled,
+} from './textReplacement';
+export type { TextReplacementApi, TextReplacementEntry } from './textReplacement';
 // spec §11：行内代码的 spellcheck/autocorrect 属性（块级代码由 CoreEditor codeBlockStyle 承担）
 export { buildInlineCodeAttrsExtension, INLINE_CODE_ATTR_CLASS } from './inlineCodeAttrs';
 export { buildCodeFenceAutocompleteExtension, fenceLangSource, FENCE_LANGUAGES } from './codeFence';
@@ -248,6 +269,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
   installReadonlyApi();
   // 智能标点（master-plan R2-1）：宿主经 iframe window.__MELLOW_SMART_PUNCTUATION__ 调用
   installSmartPunctuationApi();
+  // G7-MENU-05：文本替换（Typora「替换 → 文本替换」），宿主经 iframe __MELLOW_TEXT_REPLACEMENT__ 注入词典
+  installTextReplacementApi();
   // 代码块行号（Typora parity）：宿主经 iframe window.__MELLOW_CODE_LINE_NUMBERS__ 调用
   installCodeLineNumbersApi();
   // A38（ADR-0038 C）：代码/链接内拼写检查开关，宿主经 iframe window.__MELLOW_SPELLCHECK_SCOPE__ 调用
@@ -297,6 +320,8 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     // 渲染期智能标点（Typora `convertSmartOnRender`，2026-10-08 审计 §4.150）：
     // 默认关；开关与功能开关都在 plugin 内判定 ⇒ 无需 reconfigure。
     buildSmartPunctuationRenderExtension(),
+    // G7-MENU-05 Text Replacement：词典/开关由宿主注入（空表 + 关 = 恒 no-op），无需 reconfigure
+    buildTextReplacementExtension(),
     // spec §11：行内代码的 spellcheck/autocorrect 属性（块级代码由 CoreEditor codeBlockStyle 承担）
     buildInlineCodeAttrsExtension(),
     // A38（ADR-0038 C）：块级码 wrapper 的 spellcheck 属性同步（受 editor.spellcheckForCodeAndLink 开关）
@@ -315,6 +340,9 @@ export function install(autoInstallComposition = true, features?: Partial<Engine
     buildReadonlyExtension(),
     // Home/End 平台化（P4.4）：Windows/Linux 移动 caret 行首尾，mac 保持 CoreEditor 滚动语义
     buildPlatformNavKeymap(),
+    // Enter 语义（PRD §34 / G7-EDIT-07）：普通段落 Enter = 新段落（`\n\n`），
+    // 列表 / 引用 / 代码 / 表格 / frontmatter / 数学原样交还 CM 与 lang-markdown。
+    buildParagraphEnterKeymap(),
   ];
   // 可开关的语法特性（PRD §94 Markdown 设置）
   if (f.math) ext.push(buildMathExtension(false));

@@ -268,6 +268,37 @@ export interface SpellcheckService {
   language(): Promise<string | null>;
 }
 
+// ─────────────────────────── text replacement ───────────────────────────
+
+/** 系统文本替换词条（Typora: `replace` / `with`） */
+export interface TextReplacementEntry {
+  /** 触发词（Typora: phrase） */
+  phrase: string;
+  /** 替换文本（Typora: value） */
+  value: string;
+}
+
+/**
+ * 系统文本替换词典（G7-MENU-05「替换 → 文本替换」）。
+ *
+ * 一手证据（Typora 1.14.9 `handleUserReplacement`，审计 §4.360「六」16）：
+ * Typora 经原生桥 `word.getTextReplacement` 读 **macOS 系统词典**
+ * （`~/Library/Preferences/.GlobalPreferences.plist` 的
+ * `NSUserDictionaryReplacementItems`），自身不存储词条。
+ *
+ * **降级语义**：`available()` 为 `false` 时宿主**不得显示**该菜单项与设置行
+ * —— 点了没反应的占位项比不显示更糟（与 `SpellcheckService` 同一母题）。
+ * 非 macOS 恒不可用（平台差异只在此 Adapter，ADR-0016）。
+ *
+ * `entries()` 读不到 / 无词条 ⇒ **空数组，不抛错**（可安全渲染）。
+ */
+export interface TextReplacementService {
+  /** 该平台是否具备系统文本替换能力（决定菜单项 / 设置行是否显示） */
+  available(): Promise<boolean>;
+  /** 词条列表（仅启用项）；不可用或无词条时返回空数组（**不抛错**） */
+  entries(): Promise<TextReplacementEntry[]>;
+}
+
 // ─────────────────────────── process ───────────────────────────
 
 export interface ChildProcessInfo {

@@ -8,7 +8,7 @@ import {
   writeSetting,
 } from '../src/index';
 
-const STORAGE_KEYS = ['mellow.editor.fontSize', 'mellow.editor.lineNumbers', 'mellow.locale', 'mellow.shortcuts.overrides'];
+const STORAGE_KEYS = ['mellow.editor.fontSize', 'mellow.editor.lineNumbers', 'mellow.locale', 'mellow.shortcuts.overrides', 'mellow.editor.smartPunctuation', 'mellow.editor.smartQuotes', 'mellow.editor.smartDashes', 'mellow.editor.smartPunctuationOnRender', 'mellow.editor.textReplacement'];
 
 afterEach(() => {
   STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
@@ -51,8 +51,19 @@ describe('Settings schema', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test('live apply by default: requiresRestart defaults to false', () => {
-    for (const section of SETTINGS_SECTIONS) {
+  // G7-MENU-05：文本替换默认**开**（Typora 快照默认勾选）；真值 = 本设置，
+  // 菜单勾选态同一来源 ⇒ 勾选态永远等于实际行为。
+  test('editor.textReplacement: 默认开启、独立 storageKey、applyCommand 有消费者', () => {
+    const def = settingById('editor.textReplacement')!;
+    expect(def.type).toBe('toggle');
+    expect(def.defaultValue).toBe(true);
+    expect(def.storageKey).toBe('mellow.editor.textReplacement');
+    expect(readSetting(def)).toBe(true);
+    writeSetting(def, false);
+    expect(readSetting(def)).toBe(false);
+  });
+
+  test('live apply by default: requiresRestart defaults to false', () => {    for (const section of SETTINGS_SECTIONS) {
       for (const setting of section.settings) {
         expect(setting.requiresRestart ?? false).toBe(false);
       }
@@ -66,6 +77,60 @@ describe('Settings schema', () => {
         expect(['toggle', 'select', 'number', 'text', 'action']).toContain(setting.type);
       }
     }
+  });
+});
+
+describe('Smart punctuation preference migration', () => {
+  const quotes = settingById('editor.smartQuotes')!;
+  const dashes = settingById('editor.smartDashes')!;
+
+  test.each(['1', 'true', '0', 'false'])('migrates released combined value %s to both independent switches', (raw) => {
+    localStorage.setItem('mellow.editor.smartPunctuation', raw);
+    const enabled = raw === '1' || raw === 'true';
+    expect(readSetting(quotes)).toBe(enabled);
+    expect(readSetting(dashes)).toBe(enabled);
+    expect(localStorage.getItem('mellow.editor.smartPunctuation')).toBeNull();
+    // Reading repeatedly must not overwrite a later independent choice.
+    writeSetting(quotes, !enabled);
+    expect(readSetting(quotes)).toBe(!enabled);
+    expect(readSetting(dashes)).toBe(enabled);
+  });
+
+  test('preserves an existing independent false while migrating the other true', () => {
+    localStorage.setItem('mellow.editor.smartPunctuation', '1');
+    localStorage.setItem(quotes.storageKey, '0');
+    expect(readSetting(quotes)).toBe(false);
+    expect(readSetting(dashes)).toBe(true);
+  });
+
+  test('recovers from a partial migration and keeps readable legacy value when writes fail', () => {
+    localStorage.setItem('mellow.editor.smartPunctuation', 'true');
+    const original = Storage.prototype.setItem;
+    const spy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === dashes.storageKey) throw new Error('quota');
+      original.call(this, key, value);
+    });
+    try {
+      expect(readSetting(quotes)).toBe(true);
+      expect(readSetting(dashes)).toBe(true);
+      expect(localStorage.getItem('mellow.editor.smartPunctuation')).toBe('true');
+    } finally { spy.mockRestore(); }
+    writeSetting(quotes, false);
+    expect(readSetting(quotes)).toBe(false);
+    expect(readSetting(dashes)).toBe(true);
+    expect(localStorage.getItem('mellow.editor.smartPunctuation')).toBeNull();
+  });
+
+  test('reset before migration cannot resurrect the legacy preference during live apply', () => {
+    localStorage.setItem('mellow.editor.smartPunctuation', '1');
+    restoreAllSettingsDefaults((def) => {
+      if (def.applyCommand === 'settings.smartPunctuation') {
+        expect(readSetting(quotes)).toBe(false);
+        expect(readSetting(dashes)).toBe(false);
+      }
+    });
+    expect(readSetting(quotes)).toBe(false);
+    expect(readSetting(dashes)).toBe(false);
   });
 });
 

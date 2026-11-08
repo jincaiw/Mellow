@@ -7,7 +7,7 @@
 
 import type { DesktopHost } from './host';
 import type { Result } from './types';
-import type { SpellIssue } from './services';
+import type { SpellIssue, TextReplacementEntry } from './services';
 import { err } from './types';
 
 function notImplemented<T>(name: string): () => Promise<Result<T>> {
@@ -89,6 +89,12 @@ export function createNullHost(): DesktopHost {
       hasLearned: async (): Promise<boolean> => false,
       checkDocument: async (): Promise<SpellIssue[]> => [],
       language: async (): Promise<string | null> => null,
+    },
+    // 系统文本替换（G7-MENU-05）：与拼写检查同策略 —— 优雅降级不抛错。
+    // available() 恒 false ⇒ 宿主隐藏菜单项 / 设置行（非 macOS 的真实行为）。
+    textReplacement: {
+      available: async (): Promise<boolean> => false,
+      entries: async (): Promise<TextReplacementEntry[]> => [],
     },
     process: {
       spawn: notImplemented('process.spawn'),

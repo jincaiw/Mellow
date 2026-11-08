@@ -12,6 +12,7 @@ import type {
   ExportService,
   KeychainService,
   SpellcheckService,
+  TextReplacementService,
   ProcessService,
   NotificationService,
   OpenerService,
@@ -30,6 +31,8 @@ export interface DesktopHost {
   export: ExportService;
   keychain: KeychainService;
   spellcheck: SpellcheckService;
+  /** G7-MENU-05：系统文本替换词典（macOS 系统「文本替换」；非 mac 不可用） */
+  textReplacement: TextReplacementService;
   process: ProcessService;
   notification: NotificationService;
   opener: OpenerService;
@@ -47,6 +50,7 @@ export type {
   ExportService,
   KeychainService,
   SpellcheckService,
+  TextReplacementService,
   ProcessService,
   NotificationService,
   OpenerService,

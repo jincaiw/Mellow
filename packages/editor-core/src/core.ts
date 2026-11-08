@@ -368,6 +368,47 @@ export class EditorCore {
     return win?.__MELLOW_SMART_PUNCTUATION__?.get?.() ?? false;
   }
 
+  /** 智能引号与智能破折号分别控制，保留上方组合 API 兼容旧宿主。 */
+  setSmartQuotesEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { setQuotes?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_SMART_PUNCTUATION__?.setQuotes?.(on);
+  }
+
+  isSmartQuotesEnabled(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { getQuotes?: () => boolean } }) | null;
+    return win?.__MELLOW_SMART_PUNCTUATION__?.getQuotes?.() ?? false;
+  }
+
+  setSmartDashesEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { setDashes?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_SMART_PUNCTUATION__?.setDashes?.(on);
+  }
+
+  isSmartDashesEnabled(): boolean {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { getDashes?: () => boolean } }) | null;
+    return win?.__MELLOW_SMART_PUNCTUATION__?.getDashes?.() ?? false;
+  }
+
+  /** Typora 的两连字符样式；false = en dash，true = em dash。 */
+  setTwoHyphensToEm(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_SMART_PUNCTUATION__?: { setTwoHyphensToEm?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_SMART_PUNCTUATION__?.setTwoHyphensToEm?.(on);
+  }
+
+  /**
+   * 文本替换（G7-MENU-05）：宿主读 macOS 系统词典后经此注入引擎；引擎不直接访问系统能力。
+   * entries 为空 ⇒ 引擎恒 no-op（非 macOS 宿主不会调用到非空表）。
+   */
+  setTextReplacementEntries(entries: Array<{ phrase: string; value: string }>): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_TEXT_REPLACEMENT__?: { set?: (v: Array<{ phrase: string; value: string }>) => void } }) | null;
+    win?.__MELLOW_TEXT_REPLACEMENT__?.set?.(entries);
+  }
+
+  setTextReplacementEnabled(on: boolean): void {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_TEXT_REPLACEMENT__?: { setEnabled?: (v: boolean) => void } }) | null;
+    win?.__MELLOW_TEXT_REPLACEMENT__?.setEnabled?.(on);
+  }
+
   /**
    * 智能标点的**转换时机**（Typora `convertSmartOnRender`，2026-10-08 审计 §4.150）。
    * `false`（默认）= 输入时转换；`true` = 渲染时转换（文档保持 ASCII，只改显示）。

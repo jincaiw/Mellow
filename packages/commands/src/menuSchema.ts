@@ -193,12 +193,13 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
 
   // ── 编辑 ────────────────────────────────────────────────────
   { id: 'edit', labelKey: 'menu.top.edit', entries: [
-    // V7（G7-MENU-06）：官方 Shortcut Keys 表 Edit 段开头即这两项，顺序在 Undo/Cut 之前。
-    // 不声明 shortcut —— 官方表给的是 Enter / Shift+Enter，把它注册为菜单 accelerator
-    // 会全局吞掉回车键（打字直接坏掉）。故仅暴露菜单项，键位保持系统自然输入。
-    { kind: 'command', id: 'edit.newParagraph', labelKey: 'menu.edit.newParagraph' },
-    { kind: 'command', id: 'edit.newLine', labelKey: 'menu.edit.newLine' },
-    { kind: 'separator' },
+    // 2026-11-08 更正（G7-MENU-06 撤回 → G7-EDIT-07 根因收口）：
+    // 原 V7 依官方 Shortcut Keys 表在 Edit 段首放了「新段落 / 新行」两项，作为
+    // Enter 语义缺口的**补偿**。但显示层一手证据（Typora 1.14.9 AX dump
+    // `tests/benchmark/fixtures/typora-live-menu-1149-display.txt` + `MainMenu.nib`
+    // 字符串）证明 Typora 的 Edit 菜单**没有**这两项，首项即「撤消」⇒ 补偿项本身
+    // 成了显示层差异。Enter 语义改由引擎 `enterKeymap.ts` 从根因实现（PRD §34），
+    // 命令本身仍留在命令面板（App 命令注册），菜单不展示。
     { kind: 'predefined', predefined: 'undo', labelKey: 'menu.top.undo' },
     { kind: 'predefined', predefined: 'redo', labelKey: 'menu.top.redo' },
     { kind: 'separator' },
@@ -256,12 +257,56 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       { kind: 'command', id: 'edit.deleteWord', labelKey: 'menu.edit.deleteWord', shortcut: { mac: 'Shift+Cmd+D', winLinux: 'Ctrl+Shift+D' } },
     ] },
     { kind: 'separator' },
+    // 顺序对齐 Typora 1.14.9 显示层基线（`typora-live-menu-1149-display.txt`
+    // L215-241）：数学工具 → 换行符 → 空格与换行 → 替换 → 拼写和语法检查。
+    // 2026-11-08 校正：原先 替换 / 拼写 排在 数学 / 换行符 之前，与实机相反。
+    // 实机 dump 对齐（§4.360）：Typora Edit→数学工具子菜单（Mellow 此前只有右键入口）。
+    { kind: 'submenu', id: 'edit.mathTools', labelKey: 'menu.edit.mathToolsMenu', entries: [
+      { kind: 'command', id: 'math.refreshAll', labelKey: 'menu.math.refreshAll' },
+    ] },
+    { kind: 'submenu', id: 'edit.eol', labelKey: 'menu.edit.eolMenu', entries: [
+      // §4.360「六」6：对齐 Typora 实机显示基线（fixture L216-220）——
+      // ① 顺序 CRLF 在前（Typora 实机即此序，非字母序）；② radio 勾选态经
+      // checkedFrom 单源到当前文档 EOL（`eolLf`/`eolCrlf` 互斥分支，同
+      // activeTheme: 前缀母题）；③ 分隔线后补「保存时在文末添加空行」=
+      // files.finalNewline 能力（G7-FEAT-12 早已实装、唯菜单入口缺位，同双指缩放母题）。
+      { kind: 'command', id: 'edit.eol.crlf', labelKey: 'menu.edit.eolCrlf', checkedFrom: 'eolCrlf' },
+      { kind: 'command', id: 'edit.eol.lf', labelKey: 'menu.edit.eolLf', checkedFrom: 'eolLf' },
+      { kind: 'separator' },
+      { kind: 'command', id: 'edit.finalNewline.toggle', labelKey: 'menu.edit.finalNewline', checkedFrom: 'finalNewline' },
+    ] },
+    // ⚠️ 显示层差异（登记，不擅删）：Typora 1.14.9 的 Edit 菜单**没有**「清理行尾空白」
+    // 这一项（`Menu.strings` / `Panel.strings` / AX dump 均无），本行是 Mellow 自有能力入口。
+    // 撤除属于产品裁决（有能力的菜单项与「补偿项」性质不同），故保留并在审计「六」17 登记。
+    { kind: 'command', id: 'edit.trimTrailingSpaces', labelKey: 'menu.edit.trimTrailing' },
+    // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行` 子菜单。
+    // 一手证据（main.js 的 menu.update 路径）：该子菜单实际含 **3 项** ——
+    // `Indent first line of paragraphs`（首行缩进）/ `Visible <br/>` / `Preserve single line break`。
+    // Mellow 当前只装配已实现项；另两项为已登记缺口（G7-EDIT-15 与 G7-EDIT-14 的未做部分），
+    // 补齐时在本子菜单内追加即可，无需再改结构（同 edit.spell 的处理方式）。
+    { kind: 'submenu', id: 'edit.whitespace', labelKey: 'menu.edit.whitespaceMenu', entries: [
+      { kind: 'command', id: 'edit.firstLineIndent.toggle', labelKey: 'menu.edit.firstLineIndent', checkedFrom: 'firstLineIndent' },
+    ] },
     // V7-W1.4（修正）：Typora macOS 编辑菜单确有「拼写和语法检查 / 替换」两个子菜单
     // （真机 nib 提取：NSSubmenu `Substitutions` 含 Convert on Input / Convert on
     // Rendering / Smart Quotes / Smart Dashes / Text Replacement；Menu.strings zh 文案
     // 「拼写和语法检查」「替换」）。故保留子菜单结构以对齐 Typora 菜单树，
     // 当前仅装配 Mellow 已实现项；词典/语法/智能引号/智能破折号为已登记缺口
     // （方案 §5 G7-EDIT-04，W5 补齐后在同一子菜单内追加，无需再改结构）。
+    { kind: 'submenu', id: 'edit.replace', labelKey: 'menu.edit.replaceMenu', entries: [
+      { kind: 'command', id: 'edit.substitutions.onInput', labelKey: 'menu.edit.convertOnInput', checkedFrom: 'smartPunctOnInput' },
+      { kind: 'command', id: 'edit.substitutions.onRender', labelKey: 'menu.edit.convertOnRender', checkedFrom: 'smartPunctOnRender' },
+      { kind: 'separator' },
+      { kind: 'command', id: 'edit.smartQuotes.toggle', labelKey: 'menu.edit.smartQuotes', checkedFrom: 'smartQuotes' },
+      { kind: 'command', id: 'edit.smartDashes.toggle', labelKey: 'menu.edit.smartDashes', checkedFrom: 'smartDashes' },
+      // G7-MENU-05 Text Replacement：Typora 快照显示「文本替换 (✓)」默认勾选。一手证据
+      // （§4.360「六」16）：`handleUserReplacement` 仅 `File.isMac` 生效，词典 = macOS
+      // 系统文本替换词典（桥 `word.getTextReplacement`）⇒ 仅 macOS 显示本项（macOnly，
+      // 非 mac 隐藏而非「点了没反应」）。勾选态真值 = 设置 `editor.textReplacement`。
+      { kind: 'command', id: 'edit.textReplacement.toggle', labelKey: 'menu.edit.textReplacement', checkedFrom: 'textReplacement', macOnly: true },
+      { kind: 'separator' },
+      { kind: 'command', id: 'edit.substitutions.settings', labelKey: 'menu.edit.substitutionsMoreOptions' },
+    ] },
     { kind: 'submenu', id: 'edit.spell', labelKey: 'menu.edit.spellMenu', entries: [
       // Typora 拼写子菜单的「Check Document Now」（一级证据：dump 中
       // `Check Document Now => 立即检查文稿`）。顺序按 macOS 标准拼写子菜单：
@@ -278,34 +323,6 @@ export const MENU_SCHEMA: readonly MenuSchemaRoot[] = [
       // 引擎动作 `wordAtCursor()` 解析），与 Typora 语义一致。
       { kind: 'command', id: 'edit.spelling.learn', labelKey: 'menu.edit.learnSpelling' },
       { kind: 'command', id: 'edit.spelling.unlearn', labelKey: 'menu.edit.unlearnSpelling' },
-    ] },
-    { kind: 'submenu', id: 'edit.replace', labelKey: 'menu.edit.replaceMenu', entries: [
-      { kind: 'command', id: 'edit.smartPunctuation.toggle', labelKey: 'menu.edit.smartPunctuation', checkedFrom: 'smartPunct' },
-    ] },
-    // C2：行结束符 / 空白（Typora 编辑菜单对齐）
-    // 实机 dump 对齐（§4.360）：Typora Edit→数学工具子菜单（Mellow 此前只有右键入口）。
-    { kind: 'submenu', id: 'edit.mathTools', labelKey: 'menu.edit.mathToolsMenu', entries: [
-      { kind: 'command', id: 'math.refreshAll', labelKey: 'menu.math.refreshAll' },
-    ] },
-    { kind: 'submenu', id: 'edit.eol', labelKey: 'menu.edit.eolMenu', entries: [
-      // §4.360「六」6：对齐 Typora 实机显示基线（fixture L216-220）——
-      // ① 顺序 CRLF 在前（Typora 实机即此序，非字母序）；② radio 勾选态经
-      // checkedFrom 单源到当前文档 EOL（`eolLf`/`eolCrlf` 互斥分支，同
-      // activeTheme: 前缀母题）；③ 分隔线后补「保存时在文末添加空行」=
-      // files.finalNewline 能力（G7-FEAT-12 早已实装、唯菜单入口缺位，同双指缩放母题）。
-      { kind: 'command', id: 'edit.eol.crlf', labelKey: 'menu.edit.eolCrlf', checkedFrom: 'eolCrlf' },
-      { kind: 'command', id: 'edit.eol.lf', labelKey: 'menu.edit.eolLf', checkedFrom: 'eolLf' },
-      { kind: 'separator' },
-      { kind: 'command', id: 'edit.finalNewline.toggle', labelKey: 'menu.edit.finalNewline', checkedFrom: 'finalNewline' },
-    ] },
-    { kind: 'command', id: 'edit.trimTrailingSpaces', labelKey: 'menu.edit.trimTrailing' },
-    // V7-W6（G7-EDIT-15）：Typora `Edit → 空格与换行` 子菜单。
-    // 一手证据（main.js 的 menu.update 路径）：该子菜单实际含 **3 项** ——
-    // `Indent first line of paragraphs`（首行缩进）/ `Visible <br/>` / `Preserve single line break`。
-    // Mellow 当前只装配已实现项；另两项为已登记缺口（G7-EDIT-15 与 G7-EDIT-14 的未做部分），
-    // 补齐时在本子菜单内追加即可，无需再改结构（同 edit.spell 的处理方式）。
-    { kind: 'submenu', id: 'edit.whitespace', labelKey: 'menu.edit.whitespaceMenu', entries: [
-      { kind: 'command', id: 'edit.firstLineIndent.toggle', labelKey: 'menu.edit.firstLineIndent', checkedFrom: 'firstLineIndent' },
     ] },
     // 实机 dump 对齐（§4.360）：Typora Edit→语音（macOS 标准朗读项，无 accelerator；
     // 命令走 WKWebView/NSResponder 不可达 ⇒ 登记 D，见 master-plan §12 D-AY）
@@ -693,8 +710,12 @@ export interface NativeMenuSpecInput {
   themeMode?: string;
   /** 拼写检查勾选态（「键入时检查拼写」）。 */
   spellcheck?: boolean;
-  /** 智能标点勾选态（「替换 → 智能标点」）。 */
-  smartPunct?: boolean;
+  /** 替换菜单独立功能开关；转换时机两项由同一 boolean 派生。 */
+  smartQuotes?: boolean;
+  smartDashes?: boolean;
+  smartPunctOnRender?: boolean;
+  /** G7-MENU-05：文本替换勾选态（真值 = 设置 `editor.textReplacement`；仅 macOS 显示）。 */
+  textReplacement?: boolean;
   /** 状态栏可见性勾选态（V7-W1.6：Typora Win/Linux 显示菜单「状态栏」开关）。 */
   statusbar?: boolean;
   /** 浮动编辑器工具栏启用态（V7-W2.4 D-B：Typora 1.14 `View → Toolbar` 开关语义）。 */
@@ -721,7 +742,12 @@ export interface NativeMenuSpecInput {
  * 有一条不变量：**menuSchema 里出现的每个 `checkedFrom` 都必须在此处有显式分支**。 */
 function resolveChecked(checkedFrom: string, input: NativeMenuSpecInput): boolean {
   if (checkedFrom === 'spellcheck') return input.spellcheck ?? true;
-  if (checkedFrom === 'smartPunct') return input.smartPunct ?? false;
+  if (checkedFrom === 'smartQuotes') return input.smartQuotes ?? false;
+  if (checkedFrom === 'smartDashes') return input.smartDashes ?? false;
+  // G7-MENU-05：Typora 快照默认勾（✓），词典可用 + 设置默认开 ⇒ 默认 true。
+  if (checkedFrom === 'textReplacement') return input.textReplacement ?? true;
+  if (checkedFrom === 'smartPunctOnInput') return !(input.smartPunctOnRender ?? false);
+  if (checkedFrom === 'smartPunctOnRender') return input.smartPunctOnRender ?? false;
   if (checkedFrom === 'statusbar') return input.statusbar ?? true;
   if (checkedFrom === 'toolbar') return input.toolbar ?? true;
   if (checkedFrom === 'firstLineIndent') return input.firstLineIndent ?? false;

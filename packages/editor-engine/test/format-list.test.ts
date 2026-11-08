@@ -45,6 +45,12 @@ function hiddenCount(view: EditorView): number {
   return view.dom.querySelectorAll(`.${MARKER_CLASS}`).length;
 }
 
+/** 被弱化 marker 所在行号（用于区分「哪一项 dim」，避免只数个数时把旧状态当成新状态） */
+function dimLines(view: EditorView): number[] {
+  return Array.from(view.dom.querySelectorAll(`.${MARKER_DIM_CLASS}, .mellow-md-marker-bullet`))
+    .map((el) => view.state.doc.lineAt(view.posAtDOM(el)).number);
+}
+
 beforeEach(() => resetModeState());
 
 // ─────────────────────────── Unordered / Ordered ───────────────────────────
@@ -54,7 +60,11 @@ describe('List — marker reveal', () => {
     const view = setUpEditor('- item one\n- item two\n\nplain');
     await sleep();
     caretOutsideList(view);
-    expect(await waitFor(() => dimCount(view) === 2)).toBe(true);
+    // 2026-11-08（审计 §4.382）：同 §4.370 的形态在**满负载全链**下再次假红 ——
+    // 本用例已有条件轮询，但默认 1000 ms 预算在 suite 耗时 12.7 s 时仍不够
+    // （隔离运行 19/19 通过）。判据不变，只把轮询截止放宽到 5 s：等的是
+    // 「dim 数到 2」这个条件，不是固定延时。
+    expect(await waitFor(() => dimCount(view) === 2, 5000)).toBe(true);
     expect(dimCount(view)).toBe(2);
   });
 
@@ -62,10 +72,13 @@ describe('List — marker reveal', () => {
     const view = setUpEditor('- item one\n- item two\n\nplain');
     await sleep();
     moveCaret(view, 5); // 第一项内容
-    await sleep();
+    // 2026-11-08（审计 §4.370）：固定 `sleep()` 在**满负载并行**下会假红（本机实测 23.2s 时
+    // 装饰尚未重算，dimCount=0）—— 与 §4.44 同族：改用条件轮询，不延长时间阈值。
+    // 判据带行号：第二项（第 2 行）被弱化才算完成，避免「旧状态恰好也是 1」的假通过。
+    expect(await waitFor(() => dimLines(view).length === 1 && dimLines(view)[0] === 2)).toBe(true);
     expect(dimCount(view)).toBe(1); // 第二项仍 dim
     moveCaret(view, 15); // 第二项内容
-    await sleep();
+    expect(await waitFor(() => dimLines(view).length === 1 && dimLines(view)[0] === 1)).toBe(true);
     expect(dimCount(view)).toBe(1); // 第一项 dim
   });
 

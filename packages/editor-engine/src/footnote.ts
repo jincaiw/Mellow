@@ -140,13 +140,32 @@ export function buildFootnoteExtension(autoInstallComposition = true): Extension
   const cm = resolveCm();
   const { EditorView: CmEditorView, ViewPlugin, Decoration, WidgetType, RangeSetBuilder } = cm;
 
+  /**
+   * 脚注引用胶囊的观感，逐字取自 Typora `base.css` 的 `sup.md-footnote`
+   * （`padding:2px;padding-left:4px;padding-right:4px;background-color:rgba(238,238,238,.7);
+   * color:#555;border-radius:4px`）。Typora 在暗色主题下同样用这组固定值（不随主题反转），
+   * 这里如实复刻，保证编辑器与导出件观感一致。导出侧同值见
+   * `packages/export/src/html/styles.ts` 的 `sup.footnote-ref`。
+   */
+  const refStyle = {
+    padding: '2px 4px',
+    borderRadius: '4px',
+    backgroundColor: 'rgba(238, 238, 238, 0.7)',
+    color: '#555',
+  } as const;
+
+  /**
+   * 引用显示的是**序号**而非 `[^id]`：Typora 的引用 DOM 为
+   * `<sup class='md-footnote'><a …>{C}</a></sup>`，`C = footnoteList.indexOf(name) + 1`
+   * （首次出现顺序；重复引用同号）。此前 Mellow 显示 `[id]`，与 Typora 基线不一致。
+   */
   class FootnoteRefWidget extends WidgetType {
-    constructor(readonly id: string, readonly title: string, readonly target: number) { super(); }
-    eq(other: WidgetTypeT): boolean { return other instanceof FootnoteRefWidget && other.id === this.id && other.title === this.title && other.target === this.target; }
+    constructor(readonly ordinal: number, readonly title: string, readonly target: number) { super(); }
+    eq(other: WidgetTypeT): boolean { return other instanceof FootnoteRefWidget && other.ordinal === this.ordinal && other.title === this.title && other.target === this.target; }
     toDOM(view: EditorView): HTMLElement {
       const sup = document.createElement('sup');
       sup.className = 'mellow-footnote-ref';
-      sup.textContent = `[${this.id}]`;
+      sup.textContent = String(this.ordinal);
       sup.title = this.title;
       sup.tabIndex = 0;
       sup.onclick = () => view.dispatch({ selection: { anchor: this.target }, scrollIntoView: true });
@@ -175,12 +194,15 @@ export function buildFootnoteExtension(autoInstallComposition = true): Extension
     const doc = view.state.doc.toString();
     const pos = view.state.selection.main.head;
     const parsed = parseFootnotes(doc);
+    // 首次出现顺序 → 序号（Typora 的 footnoteList：重复引用同号）。
+    const ordinals = new Map<string, number>();
+    for (const ref of parsed.refs) if (!ordinals.has(ref.id)) ordinals.set(ref.id, ordinals.size + 1);
     const firstRefById = new Map<string, FootnoteRef>();
     for (const ref of parsed.refs) {
       if (!firstRefById.has(ref.id)) firstRefById.set(ref.id, ref);
       if (inside(ref.from, ref.to, pos)) continue;
       const def = parsed.definitions.get(ref.id);
-      builder.add(ref.from, ref.to, Decoration.replace({ widget: new FootnoteRefWidget(ref.id, footnotePreviewText(parsed, ref.id), def?.from ?? ref.to) }));
+      builder.add(ref.from, ref.to, Decoration.replace({ widget: new FootnoteRefWidget(ordinals.get(ref.id) as number, footnotePreviewText(parsed, ref.id), def?.from ?? ref.to) }));
     }
     for (const def of parsed.definitions.values()) {
       if (inside(def.from, def.to, pos)) continue;
@@ -201,7 +223,7 @@ export function buildFootnoteExtension(autoInstallComposition = true): Extension
   }, { decorations: (value: { decorations: DecorationSet }) => value.decorations });
 
   const theme = CmEditorView.theme({
-    '.mellow-footnote-ref': { cursor: 'pointer', userSelect: 'none' },
+    '.mellow-footnote-ref': { cursor: 'pointer', userSelect: 'none', ...refStyle },
     '.mellow-footnote-return': { marginRight: '0.35em', fontSize: '0.85em', cursor: 'pointer' },
   });
   return [plugin, theme];

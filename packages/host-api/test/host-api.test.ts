@@ -499,3 +499,26 @@ describe('spellcheck（P0-EDITOR-005）', () => {
     expect(await nh.spellcheck.hasLearned('word')).toBe(false);
   });
 });
+
+// ── G7-MENU-05：系统文本替换词典契约 ───────────────────────────────────────
+describe('textReplacement（G7-MENU-05）', () => {
+  test('mock：返回注入的词条副本（调用方改动不污染宿主状态）', async () => {
+    const host = createMockHost({ textReplacements: [{ phrase: '(c)', value: '©' }] });
+    expect(await host.textReplacement.available()).toBe(true);
+    const entries = await host.textReplacement.entries();
+    expect(entries).toEqual([{ phrase: '(c)', value: '©' }]);
+    entries[0].value = 'mutated';
+    expect((await host.textReplacement.entries())[0].value).toBe('©');
+  });
+
+  test('mock：未注入词条 ⇒ 空数组（引擎 no-op，不影响输入路径）', async () => {
+    const host = createMockHost();
+    expect(await host.textReplacement.entries()).toEqual([]);
+  });
+
+  test('nullHost：**优雅降级不抛错**；available=false ⇒ 宿主隐藏菜单项 / 设置行', async () => {
+    const nh = createNullHost();
+    expect(await nh.textReplacement.available()).toBe(false);
+    expect(await nh.textReplacement.entries()).toEqual([]);
+  });
+});

@@ -17,6 +17,7 @@ import type {
   ChildProcessInfo,
   ImageUploadOptions,
   SpellIssue,
+  TextReplacementEntry,
 } from './services';
 
 export interface MockHostState {
@@ -66,6 +67,8 @@ export interface MockHostState {
   secrets: Map<string, string>;
   /** 拼写检查内存词典（测试用；P0-EDITOR-005） */
   dictionary: Set<string>;
+  /** 系统文本替换词条（G7-MENU-05；同上，测试 / 浏览器 dev 用） */
+  textReplacements: TextReplacementEntry[];
   /** recovery 快照存储（内存，keyed by documentId） */
   recovery: Map<string, RecoveryPayload>;
   /** watcher 回调存储（测试可手动触发） */
@@ -102,6 +105,7 @@ export function createMockHostState(initial?: Partial<MockHostState>): MockHostS
     exported: initial?.exported ?? [],
     secrets: new Map(initial?.secrets ?? []),
     dictionary: new Set<string>(),
+    textReplacements: [...(initial?.textReplacements ?? [])],
     lastSaveMeta: initial?.lastSaveMeta ?? null,
     nextMtimeMs: initial?.nextMtimeMs ?? 1000,
     identityKey: initial?.identityKey ?? 'mock:1',
@@ -534,6 +538,13 @@ export function createMockHost(initial?: Partial<MockHostState>): DesktopHost {
       },
       // A38：只读语言展示。mock 返回**确定性**值便于断言（真实宿主 = NSSpellChecker.language()）。
       language: async (): Promise<string | null> => 'en-US',
+    },
+
+    // 系统文本替换（G7-MENU-05）：mock 恒可用，词条来自 state（确定性，便于断言）。
+    // 真值在 macOS 系统词典；这里返回副本，避免调用方改到 state。
+    textReplacement: {
+      available: async (): Promise<boolean> => true,
+      entries: async (): Promise<TextReplacementEntry[]> => state.textReplacements.map((e) => ({ ...e })),
     },
 
     process: {

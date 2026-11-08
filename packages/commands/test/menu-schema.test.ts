@@ -132,7 +132,9 @@ describe('toNativeMenuSpec 物化', () => {
     activeThemeId: 'mellow-light',
     themeMode: 'light',
     spellcheck: true,
-    smartPunct: false,
+    smartQuotes: false,
+    smartDashes: false,
+    smartPunctOnRender: false,
   };
 
   test('mac 平台：含 app 菜单，accelerator 取 mac 键位', () => {
@@ -234,8 +236,42 @@ describe('toNativeMenuSpec 物化', () => {
     expect(system?.checked).toBe(false);
   });
 
-  test('checkState：spellcheck/smartPunct/themeModeSystem/statusbar/toolbar 五来源解析', () => {
-    const spec = toNativeMenuSpec({ ...base, platform: 'mac', themeMode: 'system', spellcheck: false, smartPunct: true, statusbar: false, toolbar: false });
+  test.each(['mac', 'win-linux'] as const)('替换菜单：%s 独立开关、时机互斥与更多选项', (platform) => {
+    for (const onRender of [false, true]) {
+      for (const quotes of [false, true]) {
+        for (const dashes of [false, true]) {
+          const spec = toNativeMenuSpec({ ...base, platform, smartQuotes: quotes, smartDashes: dashes, smartPunctOnRender: onRender });
+          const submenu = spec.menus.find((m) => m.id === 'edit')!.items
+            .find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.edit.replaceMenu')!;
+          const commands = submenu.items.filter((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command');
+          // G7-MENU-05：文本替换仅 macOS 显示（macOnly），勾选态缺省 true（Typora 快照默认勾选）
+          expect(commands.map((c) => [c.id, c.checked])).toEqual([
+            ['edit.substitutions.onInput', !onRender],
+            ['edit.substitutions.onRender', onRender],
+            ['edit.smartQuotes.toggle', quotes],
+            ['edit.smartDashes.toggle', dashes],
+            ...(platform === 'mac' ? [['edit.textReplacement.toggle', true]] : []),
+            ['edit.substitutions.settings', undefined],
+          ]);
+          expect(submenu.items.filter((i) => i.type === 'separator')).toHaveLength(2);
+        }
+      }
+    }
+  });
+
+  test('Text Replacement：勾选态来自设置（缺省 true），非 mac 隐藏', () => {
+    const replaceMenu = (platform: 'mac' | 'win-linux', textReplacement?: boolean) => toNativeMenuSpec({ ...base, platform, ...(textReplacement === undefined ? {} : { textReplacement }) })
+      .menus.find((m) => m.id === 'edit')!.items
+      .find((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu' && i.label === '#menu.edit.replaceMenu')!;
+    const find = (platform: 'mac' | 'win-linux', textReplacement?: boolean) => replaceMenu(platform, textReplacement).items
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'edit.textReplacement.toggle');
+    expect(find('mac')?.checked).toBe(true);       // 缺省 = 勾选（Typora 快照默认勾选）
+    expect(find('mac', false)?.checked).toBe(false);
+    expect(find('win-linux')).toBeUndefined();     // 能力不存在 ⇒ 隐藏，不做占位项
+  });
+
+  test('checkState：拼写、智能引号、主题、状态栏与工具栏来源解析', () => {
+    const spec = toNativeMenuSpec({ ...base, platform: 'mac', themeMode: 'system', spellcheck: false, smartQuotes: true, smartDashes: false, smartPunctOnRender: true, statusbar: false, toolbar: false });
     const editItems = spec.menus.find((m) => m.id === 'edit')!.items
       .filter((i): i is Extract<NativeMenuItem, { type: 'submenu' }> => i.type === 'submenu');
     // 按 **id 查找**，不按下标 —— 下标耦合会在「子菜单里插入新项」时无故失败
@@ -244,9 +280,9 @@ describe('toNativeMenuSpec 物化', () => {
     const spellToggle = spellMenu.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'edit.spellcheck.toggle');
     const punctToggle = editItems.find((i) => i.label === '#menu.edit.replaceMenu')!.items
-      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'edit.smartPunctuation.toggle');
+      .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'edit.smartQuotes.toggle');
     expect(spellToggle).toMatchObject({ id: 'edit.spellcheck.toggle', checked: false });
-    expect(punctToggle).toMatchObject({ id: 'edit.smartPunctuation.toggle', checked: true });
+    expect(punctToggle).toMatchObject({ id: 'edit.smartQuotes.toggle', checked: true });
     // P0-EDITOR-005：新增的拼写条目必须**真的出现在物化结果里**
     // （防「只加了 schema、物化时被丢弃」——那会变成点了没反应的占位项）
     for (const id of ['edit.spelling.checkDocument', 'edit.spelling.learn', 'edit.spelling.unlearn']) {
@@ -258,7 +294,7 @@ describe('toNativeMenuSpec 物化', () => {
     // V7-W1.6：状态栏开关勾选态。§4.360「六」7：本项 mac **不装配**（基线 fixture 显示段
     // L393-419 全段核对 —— dump 枚举含 ⌥-alternate 行，亦无「状态栏」；Win/Linux 实机有）
     // ⇒ 勾选态断言改在 **win-linux** 物化面上取（schema 声明 checkedFrom 不变，护栏仍锁）。
-    const winSpec = toNativeMenuSpec({ ...base, platform: 'win-linux', themeMode: 'system', spellcheck: false, smartPunct: true, statusbar: false, toolbar: false });
+    const winSpec = toNativeMenuSpec({ ...base, platform: 'win-linux', themeMode: 'system', spellcheck: false, smartQuotes: true, smartDashes: false, smartPunctOnRender: true, statusbar: false, toolbar: false });
     const statusbar = winSpec.menus.find((m) => m.id === 'view')!.items
       .find((i): i is Extract<NativeMenuItem, { type: 'command' }> => i.type === 'command' && i.id === 'view.statusbar.toggle');
     expect(statusbar).toMatchObject({ id: 'view.statusbar.toggle', checked: false });
@@ -311,20 +347,18 @@ describe('toNativeMenuSpec 物化', () => {
   test('predefined 条目携带本地化文案且无 id（OS 提供行为）', () => {
     const spec = toNativeMenuSpec({ ...base, platform: 'mac' });
     const edit = spec.menus.find((m) => m.id === 'edit')!.items;
-    // V7（G7-MENU-06）：Edit 菜单顶部现为官方表的 New Paragraph / New Line，
-    // 故 undo 的索引由 0 后移；这里同时锁定该官方顺序，防止再次漂移。
-    expect(edit[0]).toEqual({ type: 'command', id: 'edit.newParagraph', label: '#menu.edit.newParagraph' });
-    expect(edit[1]).toEqual({ type: 'command', id: 'edit.newLine', label: '#menu.edit.newLine' });
-    expect(edit[2]).toEqual({ type: 'separator' });
-    expect(edit[3]).toEqual({ type: 'predefined', predefined: 'undo', label: '#menu.top.undo' });
+    // 2026-11-08：首项即「撤消」—— 与 Typora 1.14.9 显示层基线一致
+    // （`tests/benchmark/fixtures/typora-live-menu-1149-display.txt`）。
+    expect(edit[0]).toEqual({ type: 'predefined', predefined: 'undo', label: '#menu.top.undo' });
   });
 
-  test('V7（G7-MENU-06）：Edit 菜单前两项为官方「New Paragraph / New Line」', () => {
+  test('G7-MENU-06 撤回：Edit 菜单不得再出现「新段落 / 新行」补偿项', () => {
     const spec = toNativeMenuSpec({ ...base, platform: 'mac' });
     const edit = spec.menus.find((m) => m.id === 'edit')!.items;
-    const firstTwo = edit.slice(0, 2).map((i) => (i as { id?: string }).id);
-    expect(firstTwo).toEqual(['edit.newParagraph', 'edit.newLine']);
-    // 两者均不得声明 shortcut —— Enter / Shift+Enter 作为 accelerator 会吞掉回车键
+    const ids = edit.map((i) => (i as { id?: string }).id).filter(Boolean);
+    expect(ids).not.toContain('edit.newParagraph');
+    expect(ids).not.toContain('edit.newLine');
+    // 补偿项也不得声明快捷键（Enter / Shift+Enter 不能做 accelerator）
     expect(SCHEMA_SHORTCUTS.has('edit.newParagraph')).toBe(false);
     expect(SCHEMA_SHORTCUTS.has('edit.newLine')).toBe(false);
   });
