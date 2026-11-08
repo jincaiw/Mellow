@@ -23683,6 +23683,52 @@ jest 25 suites / desktop-ui 17 例全过；`tsc --noEmit` 0；`pnpm -w test` 全
 exit 0（调试期一次失败系新增探针未同步 `verify-build-pipeline` 脚本基线 108→109，
 按该判据「增长 ⇒ 复核后同时改标记与阈值」的纪律收口，非断言迁就）。
 
+**13）G7-SHELL-11 选区字数 + 一处比功能本身更大的连带发现（dev harness 事件通道）（2026-11-08）**
+
+**一手证据提取**（Typora `TypeMark/appsrc/window/frame.js` 的 WordCount 全对象）：
+① 页脚 `updateLabel` = **值门** `0<sel<all` 才出 `sel + " / " + all` 后缀；
+② 字数面板的 `-sel` 单元由 body class 门控，其条件是 `getTextInSelection().length>0`
+= **长度门** ⇒ **同一全选下，页脚回落单值、面板仍成对 —— 两门故意不同**（探针 D/E
+两段用同一选区分别验证两个相反方向，任何「两处装同一个门」的假实现都过不了）；
+③ mac 侧 `word.updateWordCount{sel,all}` 把 `|` 分隔的 sel 值推给原生标题；
+④ 每次 selectionUpdate 都跑 quickUpdate ⇒ 拖选实时变。
+
+**口径裁决（本轮最重要的克制）**：Typora 的词计数 `a(e)`（CJK 逐字 + 标点段折叠 +
+哨兵 token）在 node 里**直接执行原式**实测（`你好世界→4`、`hello 你好 world→4`、
+`こんにちは→5`）。曾着手移植，**后撤销**：`sel / all` 串的两端必须同一口径，移植
+`a(e)` 给选区而整篇留在 `countWords` = 制造「同一操作两套实现」母题（G7-SIDE-09）
+本仓已付过学费的那类荒谬（选区词数可能大于同屏整篇词数）；且与 Typora 绝对值的
+口径差本就登记在 D-AS/D-AO，不因选区功能重开。⇒ 选区复用 `countWords`，裁决写进
+`wordCount.ts` 的 G7-SHELL-11 注释块（连同实测数字），移植尝试不留残码。
+
+**连带发现（比功能本身大）**：探针首两轮页脚恒 `0 字 · 0 词`（而 E 段面板显
+「0 / 0、3 / 3」全对）。判定纪律（断言 vs 实现）逐层排除：桥诊断证明
+`getSelectedText` 与 `docLen` 全对 ⇒ 真凶在**传输层**：浏览器 dev / Playwright 下
+`isTauri()` 为 false ⇒ App.tsx 根本不注册 `mellow://bridge` 监听 ⇒ **viewUpdate
+从不投递** —— 这正是 `dirty-leave-dialog-verify.mjs` 头注释自 2026-09-13 登记
+（G7-QA-07）却从未补的缺口：**整条脏文档链（dirty ● / 离开确认 / 自动保存 / 崩溃
+恢复快照）在 e2e 中零覆盖**，此前所有探针的「绿」都是绕过它的绿。补齐：bundle
+构建脚本对无 Tauri 环境的 iframe 安装 `notify*` postMessage 回落（仅火-即忘通知；
+fs 等模块**保持旧 no-op** —— dev 本无 Rust fs，返回假成功反而有害），宿主侧把
+生产 Tauri 监听与 dev 监听收敛到**单一解析器** `applyCoreBridgeNotify`（先重构
+再接线 —— 防母题在传输层复活）。副产物：dirty-leave 探针的死分支自此生效，
+**7/7**（其「放弃更改」断言当场判红一次：Typora `main.js` 真值
+`filePath ? "Discard Changes" : "Discard"` ⇒ 未命名 harness 文档应显「丢弃」——
+判定纪律：断言写错，产品代码现状本来就对齐真值，改探针不改产品）。
+
+**护栏连带**：新 dev 回落引入第二处 `window.__MELLOW_BRIDGE__ = {` ⇒ release gate
+㊴（includes 针唯一性）判红 `verify-adapter-contract` 的裸针 —— 按其**自身给出的
+两条建议**选锚定（完整接线链正则：赋值 + invoke + `__TAURI__.core.invoke('bridge_call'`，
+附调用环注入 canary），不登记 UNANCHORED_NEEDLE（「至少一处」语义在这里不成立，
+两处赋值各有契约含义）。`verify-shell-widgets` 新增 G7-SHELL-11 节（五层接线 +
+标题选区形态 canary + viewUpdate 二选一 canary；canary 初版写成「替换后仍含
+else」的永真式，自纠为「删除 else 后判据必须失效」——**canary 也要被 canary 思考**）。
+`verify-build-pipeline` 脚本基线 109→110（新探针，同「六」12 纪律：标记 + 阈值同时改）。
+
+**验证**：探针 `selection-word-count-verify.mjs` 6/6、`dirty-leave-dialog-verify.mjs`
+7/7；`pnpm -w test` 全链 exit 0（中途一次 jest `format-list` 单例失败 = 并发负载下
+timer flake，隔离复跑 19/19，非本轮改动面；未改测试求绿）。
+
 
 
 ## 五、本次审计做的改动（非策略性）
