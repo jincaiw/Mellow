@@ -28,7 +28,10 @@ fn is_text(p: &Path) -> bool {
 /// Open → No Edit → Save。返回 Err 表示字节不一致或 IO 失败。
 fn roundtrip_file(input: &Path, output: &Path) -> Result<u64, String> {
     let bytes = fs::read(input).map_err(|e| format!("read {}: {e}", input.display()))?;
-    let (content, encoding) = decode(&bytes); // Open（与 open_document 同一解码管线）
+    // Open（与 open_document 同一解码管线）。解码失败 = 该文件不在 V1 支持编码内，
+    // 与产品行为一致：报告而不是有损解码（否则这里的「往返一致」会变成假绿）。
+    let (content, encoding) = decode(&bytes)
+        .map_err(|e| format!("decode {}: {}", input.display(), e.message()))?;
     let saved = encode(&content, encoding); // No Edit → Save（与 save_document 同一编码管线）
     atomic_save(output, &saved, None).map_err(|e| format!("save {}: {}", output.display(), e.message()))?;
     let on_disk = fs::read(output).map_err(|e| format!("verify {}: {e}", output.display()))?;

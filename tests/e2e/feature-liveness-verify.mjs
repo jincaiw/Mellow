@@ -57,6 +57,14 @@ async function main() {
   try {
     if (!(await waitForServer(30000))) throw new Error('vite dev server 未就绪');
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    // ADR-0034：mermaid 默认关闭（按代码块显示）。本用例验证「打开开关后真的渲染」，
+    // 故在文档加载前种下开关。引擎 bundle loader 只在启动时读这个 JSON
+    // （App 仅在 `settings.engineFeature` 命令执行时重建它，见 App.tsx 的同一注释）。
+    await page.addInitScript(() => {
+      localStorage.setItem('mellow.engine.features', JSON.stringify({ mermaid: true }));
+      localStorage.setItem('mellow.engine.features.mermaid', '1');
+      localStorage.setItem('markdown.mermaid', '1');
+    });
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.app, #root > *', { timeout: 15000 });
 
@@ -194,9 +202,60 @@ async function main() {
     check('代码块语言标签已渲染（.mellow-codeblock-lang，光标在围栏外）', codeLabel > 0, `nodes=${codeLabel}`);
 
     await setDoc('```mermaid\ngraph TD;\nA-->B;\n```\n');
-    await sleep(900);
-    const mermaidNodes = await countIn('.mellow-mermaid, [class*="mermaid"]');
-    check('Mermaid 块已渲染节点', mermaidNodes > 0, `nodes=${mermaidNodes}`);
+    // 真实渲染是异步的（debounce 120ms + 动态 import mermaid 11 + 渲染），
+    // 固定 sleep 会随机器负载漂移 ⇒ 等 SVG 或错误态出现再判定。
+    const mermaidState = await (async () => {
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        const state = await frame.evaluate(() => ({
+          widgets: document.querySelectorAll('.mellow-mermaid-widget').length,
+          svg: document.querySelectorAll('.mellow-mermaid-widget svg').length,
+          errors: document.querySelectorAll('.mellow-mermaid-error').length,
+          source: document.querySelector('.mellow-mermaid-widget')?.getAttribute('data-mellow-mermaid-source') ?? null,
+        }));
+        if (state.svg > 0 || state.errors > 0) return state;
+        await sleep(200);
+      }
+      return frame.evaluate(() => ({
+        widgets: document.querySelectorAll('.mellow-mermaid-widget').length,
+        svg: document.querySelectorAll('.mellow-mermaid-widget svg').length,
+        errors: document.querySelectorAll('.mellow-mermaid-error').length,
+        source: document.querySelector('.mellow-mermaid-widget')?.getAttribute('data-mellow-mermaid-source') ?? null,
+      }));
+    })();
+    check(
+      'Mermaid 开启后真的渲染出 SVG（宿主注入 loader，源文本保留）',
+      mermaidState.svg > 0 && mermaidState.errors === 0 && (mermaidState.source ?? '').includes('graph TD'),
+      JSON.stringify(mermaidState),
+    );
+
+    // Reader 与编辑器共用同一 Markdown；Reader 的 mermaid 走**主窗口**宿主装载器
+    // （useAsyncRenderers 读主窗口的 `__MELLOW_MERMAID_LOADER__`）。此前该扩展点
+    // 也没人注入 ⇒ Reader 里同样只剩源码，本断言同时锁住两条路径。
+    await dispatch('reader.open');
+    await page.locator('.mellow-reader-shell').waitFor({ state: 'visible', timeout: 5000 });
+    const readerMermaid = await (async () => {
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        const state = await page.evaluate(() => ({
+          blocks: document.querySelectorAll('.mellow-reader-mermaid').length,
+          svg: document.querySelectorAll('.mellow-reader-mermaid svg').length,
+        }));
+        if (state.svg > 0 || state.blocks === 0) return state;
+        await sleep(200);
+      }
+      return page.evaluate(() => ({
+        blocks: document.querySelectorAll('.mellow-reader-mermaid').length,
+        svg: document.querySelectorAll('.mellow-reader-mermaid svg').length,
+      }));
+    })();
+    check(
+      'Reader 的 Mermaid 也渲染出 SVG（主窗口宿主装载器）',
+      readerMermaid.blocks > 0 && readerMermaid.svg > 0,
+      JSON.stringify(readerMermaid),
+    );
+    await dispatch('reader.openInEditor');
+    await page.locator('.mellow-reader-shell').waitFor({ state: 'detached', timeout: 5000 });
 
     await setDoc('$x^2$\n');
     await sleep(700);

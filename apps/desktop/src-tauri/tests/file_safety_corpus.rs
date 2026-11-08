@@ -108,7 +108,7 @@ fn source_fidelity_open_no_edit_save_byte_identical() {
     for (i, bytes) in samples.iter().enumerate() {
         let target = dir.join(format!("f{i}.md"));
         fs::write(&target, bytes).unwrap();
-        let (content, encoding) = decode(bytes);
+        let (content, encoding) = decode(bytes).expect("4 种受支持编码必须可解码");
         let _eol = detect_eol(&content); // preserve EOL：encode 不转换
         let saved = encode(&content, encoding);
         assert_eq!(

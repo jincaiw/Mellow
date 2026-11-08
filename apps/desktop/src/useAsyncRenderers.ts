@@ -52,10 +52,16 @@ export function useAsyncRenderers(contentRef: React.RefObject<HTMLElement | null
     for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mellow-reader-mermaid'))) {
       const source = el.dataset.source ?? '';
       if (source === '' || el.dataset.rendered === '1') continue;
+      // 宿主注入的扩展点有两种形态：`window.mermaid` = API 对象；
+      // `__MELLOW_MERMAID_LOADER__` = 按需装载函数（引擎侧契约）。两者都支持，
+      // 否则主窗口里注入函数会让 Reader 把函数当 API 用（render 不存在 → 只剩源码）。
+      const provided = win.mermaid ?? win.__MELLOW_MERMAID_LOADER__;
+      if (provided === undefined) continue; // 尚未注入：不标记已渲染，下次可重试
       el.dataset.rendered = '1';
-      const api = win.mermaid ?? win.__MELLOW_MERMAID_LOADER__;
-      if (api === undefined) continue;
-      const renderer = createMermaid11Renderer(() => api as never);
+      const loader = typeof provided === 'function'
+        ? (provided as () => Promise<unknown>)
+        : async () => provided;
+      const renderer = createMermaid11Renderer(loader as never);
       mermaidId += 1;
       void renderer.render({ id: `mellow-reader-${mermaidId}`, source }).then((result) => {
         el.innerHTML = result.svg;

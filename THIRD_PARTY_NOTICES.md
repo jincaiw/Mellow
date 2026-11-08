@@ -65,6 +65,7 @@ Mellow 是基于开源项目构建的。以下第三方组件与许可信息供�
 | `serde` | 1.0.229 | MIT / Apache-2.0 | 序列化 |
 | `serde_json` | 1.0.151 | MIT / Apache-2.0 | JSON |
 | `regex` | 1.13.1 | MIT / Apache-2.0 | 正则 |
+| `plist` | 1.10.0 | MIT | 解析 macOS 全局域 plist（系统文本替换词典） |
 | `notify` | 8.2.0 | **CC0-1.0** | 文件系统监听 |
 | `trash` | 5.2.6 | MIT | 移入回收站 |
 | `ureq` | 2.12.1 | MIT / Apache-2.0 | HTTP（更新检查） |

@@ -111,18 +111,47 @@ impl SaveError {
 
 // ─────────────────────────── 编码 / EOL ───────────────────────────
 
-pub fn decode(bytes: &[u8]) -> (String, &'static str) {
+/// 解码失败（V1 只支持 UTF-8 / UTF-8 BOM / UTF-16；PRD §105）。
+///
+/// 为什么**必须报错而不是有损解码**（2026-11-08，审计 §4.361）：
+/// 旧实现用 `String::from_utf8_lossy`，非法字节被替换成 `U+FFFD`，而文件仍被标成
+/// `utf-8`。于是「打开 GB18030 文件 → 改一个字 → 保存」会把**整份文件**重写成
+/// UTF-8 + 替换字符 —— 用户只改了一个字，其余内容全毁，且保存后的校验（比对
+/// encode(content) 与已写入字节）必然通过，因为两边都来自同一份已损坏的字符串。
+/// 这与 `document-file-safety-spec` §12「wrong encoding」发布禁令、PRD §3
+/// 「Markdown 纯文本是唯一真源」直接冲突。宁可**拒绝打开**并说明原因，
+/// 也不能把一份还能被别的编辑器读的文件悄悄写坏。
+#[derive(Debug, PartialEq, Eq)]
+pub enum DecodeError {
+    InvalidUtf8,
+    InvalidUtf16,
+}
+
+impl DecodeError {
+    pub fn message(&self) -> String {
+        match self {
+            DecodeError::InvalidUtf8 => "文件不是有效的 UTF-8 编码，未打开以免保存时写坏内容\
+（V1 支持 UTF-8 / UTF-8 BOM / UTF-16；GB18030 / Big5 / Shift-JIS 属 PRD §105 的 P1）。\
+请先用其他编辑器转换编码后再打开。"
+                .to_string(),
+            DecodeError::InvalidUtf16 => "文件不是有效的 UTF-16 编码（字节数或代理对不合法），\
+未打开以免保存时写坏内容。"
+                .to_string(),
+        }
+    }
+}
+
+pub fn decode(bytes: &[u8]) -> Result<(String, &'static str), DecodeError> {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        (
-            String::from_utf8_lossy(&bytes[3..]).into_owned(),
-            ENC_UTF8_BOM,
-        )
+        let content = std::str::from_utf8(&bytes[3..]).map_err(|_| DecodeError::InvalidUtf8)?;
+        Ok((content.to_string(), ENC_UTF8_BOM))
     } else if bytes.starts_with(&[0xFF, 0xFE]) {
-        (decode_utf16(&bytes[2..], true), ENC_UTF16LE)
+        decode_utf16(&bytes[2..], true).map(|content| (content, ENC_UTF16LE))
     } else if bytes.starts_with(&[0xFE, 0xFF]) {
-        (decode_utf16(&bytes[2..], false), ENC_UTF16BE)
+        decode_utf16(&bytes[2..], false).map(|content| (content, ENC_UTF16BE))
     } else {
-        (String::from_utf8_lossy(bytes).into_owned(), ENC_UTF8)
+        let content = std::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8)?;
+        Ok((content.to_string(), ENC_UTF8))
     }
 }
 
@@ -147,32 +176,24 @@ pub fn encode(content: &str, encoding: &str) -> Vec<u8> {
     }
 }
 
-fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
-    let unit_at = |i: usize| -> u16 {
-        if little_endian {
-            u16::from_le_bytes([bytes[i], bytes[i + 1]])
-        } else {
-            u16::from_be_bytes([bytes[i], bytes[i + 1]])
-        }
-    };
-
-    let mut out = String::new();
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        let unit = unit_at(i);
-        i += 2;
-        if (0xD800..=0xDBFF).contains(&unit) && i + 1 < bytes.len() {
-            let low = unit_at(i);
-            if (0xDC00..=0xDFFF).contains(&low) {
-                let cp = 0x1_0000 + (((unit as u32 - 0xD800) << 10) | (low as u32 - 0xDC00));
-                out.push(char::from_u32(cp).unwrap_or('\u{FFFD}'));
-                i += 2;
-                continue;
-            }
-        }
-        out.push(char::from_u32(unit as u32).unwrap_or('\u{FFFD}'));
+/// 严格 UTF-16 解码：字节数必须为偶数、代理对必须成对。
+///
+/// 旧实现用 `from_u32(...).unwrap_or('\u{FFFD}')` 把畸形单元**替换**掉，
+/// 且末尾奇数字节被静默丢弃 —— 同样会在保存时写坏文件（见 `DecodeError` 注释）。
+fn decode_utf16(bytes: &[u8], little_endian: bool) -> Result<String, DecodeError> {
+    if bytes.len() % 2 != 0 {
+        return Err(DecodeError::InvalidUtf16);
     }
-    out
+    let units = bytes.chunks_exact(2).map(|pair| {
+        if little_endian {
+            u16::from_le_bytes([pair[0], pair[1]])
+        } else {
+            u16::from_be_bytes([pair[0], pair[1]])
+        }
+    });
+    char::decode_utf16(units)
+        .collect::<Result<String, _>>()
+        .map_err(|_| DecodeError::InvalidUtf16)
 }
 
 fn encode_utf16(content: &str, little_endian: bool) -> Vec<u8> {
@@ -367,7 +388,22 @@ pub async fn open_document(app: tauri::AppHandle) -> OpenDocumentResult {
 
     match fs::read(&path) {
         Ok(bytes) => {
-            let (content, encoding) = decode(&bytes);
+            let (content, encoding) = match decode(&bytes) {
+                Ok(decoded) => decoded,
+                // 解码失败 ⇒ **不打开**，把原因带给前端（见 DecodeError 注释）。
+                Err(e) => {
+                    return OpenDocumentResult {
+                        path: Some(path.to_string_lossy().into_owned()),
+                        content: None,
+                        encoding: None,
+                        eol: None,
+                        disk_mtime_ms: None,
+                        identity_key: None,
+                        large: None,
+                        error: Some(e.message()),
+                    };
+                }
+            };
             let eol = detect_eol(&content);
             // 磁盘状态（供前端保存时 validate disk revision）
             let (disk_mtime_ms, identity_key) = fs::metadata(&path)
@@ -524,7 +560,7 @@ pub struct ReadTextResult {
 #[tauri::command]
 pub async fn read_text(path: String) -> Result<ReadTextResult, String> {
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-    let (content, encoding) = decode(&bytes);
+    let (content, encoding) = decode(&bytes).map_err(|e| e.message())?;
     let eol = detect_eol(&content);
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
     Ok(ReadTextResult {
@@ -574,7 +610,7 @@ fn load_cached_text(path: &Path) -> Result<(), String> {
         .unwrap_or(false);
     if !fresh {
         let bytes = fs::read(path).map_err(|e| e.to_string())?;
-        let (content, encoding) = decode(&bytes);
+        let (content, encoding) = decode(&bytes).map_err(|e| e.message())?;
         let eol = detect_eol(&content);
         let char_count = content.chars().count();
         if cache.len() >= TEXT_CACHE_MAX_ENTRIES {
@@ -991,7 +1027,7 @@ mod tests {
 
     /// Open → No Edit → Save → byte identical（4 编码）
     fn roundtrip(original: &[u8]) {
-        let (content, encoding) = decode(original);
+        let (content, encoding) = decode(original).unwrap();
         let saved = encode(&content, encoding);
         assert_eq!(saved, original);
     }
@@ -1018,10 +1054,47 @@ mod tests {
     fn detect_eol_and_encoding() {
         assert_eq!(detect_eol("a\r\nb"), EOL_CRLF);
         assert_eq!(detect_eol("a\nb\r\n"), EOL_LF);
-        assert_eq!(decode(b"x").1, ENC_UTF8);
+        assert_eq!(decode(b"x").unwrap().1, ENC_UTF8);
         let mut bom = vec![0xEF, 0xBB, 0xBF];
         bom.extend_from_slice(b"x");
-        assert_eq!(decode(&bom).1, ENC_UTF8_BOM);
+        assert_eq!(decode(&bom).unwrap().1, ENC_UTF8_BOM);
+    }
+
+    /// 非法编码必须**拒绝打开**，绝不能有损解码（2026-11-08，审计 §4.361）。
+    #[test]
+    fn rejects_undecodable_bytes_instead_of_lossy_replacement() {
+        // GB18030 的「中文」= D6 D0 CE C4 —— 不是合法 UTF-8 序列
+        let gbk = [0xD6u8, 0xD0, 0xCE, 0xC4];
+        assert_eq!(decode(&gbk), Err(DecodeError::InvalidUtf8));
+        // 带 BOM 但正文非法：必须同样拒绝，而不是只剥 BOM 后用 lossy 遮住
+        let mut bad_bom = vec![0xEF, 0xBB, 0xBF];
+        bad_bom.extend_from_slice(&[0xFF]);
+        assert_eq!(decode(&bad_bom), Err(DecodeError::InvalidUtf8));
+
+        // UTF-16 奇数长度（尾部半字节被旧实现静默丢弃）
+        assert_eq!(decode(&[0xFF, 0xFE, 0x41]), Err(DecodeError::InvalidUtf16));
+        // 孤立高代理项
+        assert_eq!(
+            decode(&[0xFF, 0xFE, 0x00, 0xD8]),
+            Err(DecodeError::InvalidUtf16)
+        );
+        // 孤立低代理项
+        assert_eq!(
+            decode(&[0xFE, 0xFF, 0xDC, 0x00]),
+            Err(DecodeError::InvalidUtf16)
+        );
+        // 高代理项后跟普通字符（D83C 期望配 DC00..DFFF）
+        assert_eq!(
+            decode(&[0xFE, 0xFF, 0xD8, 0x3C, 0x00, 0x41]),
+            Err(DecodeError::InvalidUtf16)
+        );
+
+        // 合法代理对仍必须通过（回归保护：严格化不能误伤 emoji）
+        let mut ok = vec![0xFE, 0xFF];
+        for u in [0xD83Cu16, 0xDF89] {
+            ok.extend_from_slice(&u.to_be_bytes());
+        }
+        assert_eq!(decode(&ok).unwrap().0, "\u{1F389}");
     }
 
     // ── Atomic Save 场景 ──
