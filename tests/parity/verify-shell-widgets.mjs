@@ -188,10 +188,60 @@ if (!/id: 'appearance\.wordCount'/.test(settingsSource)) {
 if (!/case 'settings\.wordCount':/.test(appSource) || !/setWordCountInTitle\(Boolean\(value\)\)/.test(appSource)) {
   fail("App.tsx 缺少 settings.wordCount live apply（V7-W2.6）");
 }
-if (!/wordCountInTitle && wordCountData !== null[\s\S]{0,160}status\.wordCountShort/.test(appSource)) {
-  fail('App.tsx 窗口标题未按设置并入字数（V7-W2.6）');
+// V7-W2.6 标题字数契约 + G7-SHELL-11 选区形态扩展（2026-11-08）：
+// Typora mac 标题字数走 word.updateWordCount {sel, all}（0<sel<all ⇒ `sel / all`，同页脚值门）。
+// 判据 = 标题串里 sel 与单值两个 builder 并存；canary 把分支还原成「只有单值」，判据必须失效。
+const titleWordRe = /wordCountInTitle && wordCountData !== null[\s\S]{0,300}status\.wordCountSel[\s\S]{0,300}status\.wordCountShort/;
+if (!titleWordRe.test(appSource)) {
+  fail('App.tsx 窗口标题未按设置并入字数（V7-W2.6）/ 缺 G7-SHELL-11 选区 `sel / all` 形态');
 }
-for (const key of ['settings.appearance.wordCount', 'status.wordCountShort']) {
+{
+  // canary：模拟「标题选区形态退化」漂移（去掉 wordCountSel 三元），判据必须判 false
+  const anchor = appSource.indexOf('wordCountInTitle && wordCountData !== null');
+  const blockEnd = appSource.indexOf("      : '';", anchor);
+  if (anchor < 0 || blockEnd < 0) {
+    fail('G7-SHELL-11 标题 canary 未武装：无法定位标题字数块（锚点漂移，请更新护栏）');
+  } else {
+    const revertedTitle = appSource.slice(0, anchor)
+      + "wordCountInTitle && wordCountData !== null\n      ? ` — ${t('status.wordCountShort', { count: wordCountData.cjkChars + wordCountData.words })}`\n"
+      + appSource.slice(blockEnd);
+    if (titleWordRe.test(revertedTitle)) {
+      fail('G7-SHELL-11 标题 canary 失效：选区形态退化未被检出');
+    }
+  }
+}
+// ── G7-SHELL-11：选区字数五层接线 ───────────────────────────────────────
+// bridge（engine 暴露 getSelectedText）→ wrapper（core.ts 跨帧访问）→ 宿主刷新
+//（viewUpdate 内容/选区二选一）→ i18n 双语 sel 后缀串。运行时实证另见
+// tests/e2e/selection-word-count-verify.mjs（含 dev harness 事件通道补齐的回归）。
+const bridgeSource = read('packages/editor-engine/src/outlineBridge.ts');
+const coreWrapperSource = read('packages/editor-core/src/core.ts');
+if (!/getSelectedText\(\): string;/.test(bridgeSource) || !/getSelectedText: \(\) =>/.test(bridgeSource)) {
+  fail('outlineBridge 缺少 getSelectedText 契约或实现（G7-SHELL-11）');
+}
+if (!/getSelectedText\(\): string \| null/.test(coreWrapperSource)) {
+  fail('EditorCore 包装层缺少 getSelectedText（G7-SHELL-11）');
+}
+if (!/if \(contentEdited\) refreshStats\(host\);/.test(appSource) || !/else refreshSelectionStats\(host\);/.test(appSource)) {
+  fail('App.tsx viewUpdate 必须内容/选区二选一刷新（G7-SHELL-11：Typora 每 selectionUpdate 跑 quickUpdate）');
+}
+// G7-SHELL-11 canary：删掉 else 分支（= 打字刷新、选区不刷新的旧缺陷），判据必须失效
+if (/if \(contentEdited\) refreshStats\(host\);/.test(appSource)
+    && /else refreshSelectionStats\(host\);/.test(
+      appSource.replace('else refreshSelectionStats(host);', ''))) {
+  fail('G7-SHELL-11 viewUpdate canary 失效：else 分支被删后未被检出');
+}
+// dev harness 事件通道（G7-SHELL-11 连带修复，dirty-leave/选区字数探针的生效前提）：
+// bundle 侧 notify* postMessage 回落 + 宿主侧单一解析器（「同一操作两套实现」母题 G7-SIDE-09）
+const bundleScript = read('apps/desktop/scripts/build-editor-bundle.mjs');
+if (!/mellow\.bridge\.notify/.test(bundleScript)) {
+  fail('build-editor-bundle 缺少 dev harness notify 回落（G7-SHELL-11 连带：dev 无 viewUpdate ⇒ dirty/选区零覆盖）');
+}
+if (!/const applyCoreBridgeNotify = useCallback/.test(appSource)
+    || (appSource.match(/applyCoreBridgeNotify\(/g) ?? []).length < 2) {
+  fail('App.tsx 桥通知解析器必须存在且被两个通道共用（mellow://bridge 监听 + mellow.bridge.notify 监听，G7-SHELL-11）');
+}
+for (const key of ['settings.appearance.wordCount', 'status.wordCountShort', 'status.wordCountSel']) {
   let count = 0;
   for (const [, value] of messagesSource.matchAll(new RegExp(`'${key}': '([^']*)'`, 'g'))) {
     if (value.trim() !== '') count += 1;
@@ -737,4 +787,4 @@ if (errors.length > 0) {
   throw new Error(`Shell widget contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS; editor-topbar is a pure action strip (no filename, macOS sidebar entry, 34px baseline); standalone EditorToolbar retired in favour of the floating selection toolbar (V7-W2.4); word count clickable in status bar + optional title-bar count (V7-W2.6/W2.7); sidebar mode-menu dead CSS removed (V7-W2.8); dirty-document leave prompt is an in-app Save / Discard / Cancel dialog with every guard call site awaited (V7-W6, G7-EDIT-09); leave-time auto save lives in guardSingleDocument only — applyTab must not auto save (G7-EDIT-11)');
+console.log('Shell widgets: Tabbar/tab-overview/autoHideTabBar fully removed (B1 SDI); mode indicators (focus/typewriter) conditional + click-to-exit + low-noise CSS; editor-topbar is a pure action strip (no filename, macOS sidebar entry, 34px baseline); standalone EditorToolbar retired in favour of the floating selection toolbar (V7-W2.4); word count clickable in status bar + optional title-bar count (V7-W2.6/W2.7), title/footer selection form `sel / all` with value gate + panel length gate + typing/selection refresh + dev harness viewUpdate transport (G7-SHELL-11); sidebar mode-menu dead CSS removed (V7-W2.8); dirty-document leave prompt is an in-app Save / Discard / Cancel dialog with every guard call site awaited (V7-W6, G7-EDIT-09); leave-time auto save lives in guardSingleDocument only — applyTab must not auto save (G7-EDIT-11)');

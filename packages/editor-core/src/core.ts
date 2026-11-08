@@ -283,6 +283,17 @@ export class EditorCore {
     return typeof head === 'number' ? head : null;
   }
 
+  /**
+   * G7-SHELL-11（选区字数）：主选区文本（collapsed → ''；bridge 不可用 → null，
+   * 调用侧按「无选区」降级）。只跨帧传选区本身，不传全篇（每 viewUpdate marshal
+   * 整份文档 = 大文档光标移动直接卡）。
+   */
+  getSelectedText(): string | null {
+    const win = this.iframe?.contentWindow as (Window & { __MELLOW_OUTLINE_API__?: { getSelectedText?: () => string } }) | null;
+    const text = win?.__MELLOW_OUTLINE_API__?.getSelectedText?.();
+    return typeof text === 'string' ? text : null;
+  }
+
   /** 跳转到文档 offset（Outline click jump；失败时返回 false） */
   jumpToOffset(offset: number): boolean {
     const win = this.iframe?.contentWindow as (Window & { __MELLOW_OUTLINE_API__?: { jumpToOffset?: (offset: number) => boolean } }) | null;

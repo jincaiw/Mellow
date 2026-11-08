@@ -83,6 +83,22 @@ const tauriBridgeAdapter = `<script>
     if (typeof window.__MELLOW_DROP_PATHS__ === 'undefined') {
       window.__MELLOW_DROP_PATHS__ = [];
     }
+  } else if (window.parent !== window) {
+    // dev harness 回落（G7-SHELL-11 连带，2026-11-08）：无 Tauri 运行时（vite 浏览器 dev /
+    // Playwright 探针）时，把 core 模块的**火-即忘通知**经同源 postMessage 转给宿主
+    // （宿主 mellow.bridge.notify 监听与 Tauri mellow://bridge 共用同一解析器
+    // applyCoreBridgeNotify ⇒ 事件语义 dev/生产一套）。仅转发 notify*（无返回值依赖）；
+    // fs 等其他模块保持旧「no-op」行为（dev 本就没有 Rust fs，假成功反而有害）。
+    window.__MELLOW_BRIDGE__ = {
+      invoke: function (message) {
+        if (message && message.moduleName === 'core'
+            && typeof message.methodName === 'string'
+            && message.methodName.indexOf('notify') === 0) {
+          try { window.parent.postMessage({ type: 'mellow.bridge.notify', payload: message }, window.location.origin); } catch (e) { /* 宿主不可达：维持旧 no-op 语义 */ }
+        }
+        return Promise.resolve(null);
+      }
+    };
   }
 })();
 </script>`;

@@ -6,16 +6,13 @@
  * async —— 漏 await 的后果是「Promise 恒为真 → 取消静默失效 → 点取消仍会切走并丢内容」，
  * 属于**屏幕上看不出来**的缺陷，值得补运行时实证。
  *
- * ⚠️ **实测结论：本 dev harness 无法制造脏文档**（2026-09-13 实测，非推测）：
- *   · 在 iframe 内真实键盘输入后，编辑器内容确实变了（`doc = "hello world"`），
- *     但 App 的 `document.title` 不带 dirty 标记，⌘N 直接**无对话框**清空文档；
- *   · `dirty` 的唯一建立点是 `host.onEvent(e => e.type === 'viewUpdate' && e.contentEdited)`
- *     （App.tsx 约 3440 行），而 dev harness 的宿主不投递编辑器事件
- *     （`host/browserMockHost.ts` 无 onEvent/viewUpdate 通道）→ `docStateRef.doc.dirty`
- *     恒为 false；
- *   · ⌘S 同样无效（mock 保存不落盘、不改标题），无法借「保存后重命名」间接置脏。
- *   故本脚本**自动降级为能力探针**：先探测「打字 + ⌘N 是否出现对话框」，
- *   出现则跑完整断言；不出现则明确 SKIP 并说明原因，**不伪造通过**。
+ * ⚠️ harness 事件通道现状（2026-11-08 更正 —— 原「无法制造脏文档」结论已过期）：
+ *   · 2026-09-13 实测时 dev harness 确实不投递编辑器事件（`host/browserMockHost.ts` 无
+ *     onEvent/viewUpdate 通道）→ `dirty` 恒为 false，本脚本当时只能降级为能力探针；
+ *   · G7-SHELL-11 连带补齐了 dev 传输（build-editor-bundle 的 `mellow.bridge.notify`
+ *     postMessage 回落 → App 的 applyCoreBridgeNotify 与 Tauri 生产同一解析器），
+ *     viewUpdate/dirty 链路在 dev 下已真实建立 —— 本脚本的脏文档断言自此**实际生效**；
+ *   · 若通道再断（transport 回归），探测不到对话框时仍明确 SKIP，不伪造通过。
  *
  * 同时它断言一个仍然有意义的不变量：**任何路径都不得再弹出 WebView 原生确认面板**
  * （`page.on('dialog')` 在整个流程中必须为空）—— 这正是本次迁移要消除的东西。
@@ -145,10 +142,13 @@ async function main() {
     }
 
     // ── 以下在 harness 具备事件通道后自动生效 ────────────────────────────
+    // Typora 真值（master-plan G7-EDIT-09 一手证据：main.js tryLeaveDocument）：
+    //   buttons = ["Save", filePath ? "Discard Changes" : "Discard", "Cancel"]
+    // 本 harness 打开的是**未命名**文档（无磁盘路径）⇒ 中间按钮应为「丢弃」而非「放弃更改」。
     const labels = await page.locator('.confirm-modal-actions button').allInnerTexts();
     check(
-      '按钮为三选一且文案对齐 Typora 真值（保存 / 放弃更改 / 取消）',
-      labels.length === 3 && labels[0] === '保存' && labels[1] === '放弃更改' && labels[2] === '取消',
+      '按钮为三选一且文案对齐 Typora 真值（未命名文档 → 保存 / 丢弃 / 取消）',
+      labels.length === 3 && labels[0] === '保存' && labels[1] === '丢弃' && labels[2] === '取消',
       JSON.stringify(labels),
     );
     check(
@@ -169,10 +169,10 @@ async function main() {
     await sleep(200);
     await pressAppShortcut('Meta+n');
     await modal.waitFor({ state: 'visible', timeout: 5000 });
-    await page.getByRole('button', { name: '放弃更改' }).click();
+    await page.getByRole('button', { name: '丢弃' }).click(); // 未命名文档 ⇒ Typora「Discard」
     await sleep(600);
     check(
-      '点「放弃更改」后切换真的发生（文档被替换为新的未命名空文档）',
+      '点「丢弃」后切换真的发生（文档被替换为新的未命名空文档）',
       !(await docText()).includes('hello world'),
       JSON.stringify(await docText()),
     );

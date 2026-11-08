@@ -11,6 +11,12 @@ interface CmRuntime {
 export interface OutlineBridgeApi {
   getSelectionHead(): number | null;
   jumpToOffset(offset: number): boolean;
+  /**
+   * G7-SHELL-11（选区字数）：主选区文本（collapsed 时 ''）。宿主每次 viewUpdate
+   * 都要刷新选区统计，走它**只跨帧传选区大小**；若改传 getText() 全篇则每次光标
+   * 移动 marshal 整份文档 —— Typora 同源做法是 `editor.selection.getTextInSelection()`。
+   */
+  getSelectedText(): string;
 }
 
 function resolveCm(): CmRuntime {
@@ -26,6 +32,7 @@ function installApi(view: EditorView): OutlineBridgeApi {
   let jumpVersion = 0;
   const api: OutlineBridgeApi = {
     getSelectionHead: () => view.state.selection.main.head,
+    getSelectedText: () => view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to),
     jumpToOffset: (offset: number) => {
       const pos = Math.max(0, Math.min(view.state.doc.length, offset));
       const version = ++jumpVersion;

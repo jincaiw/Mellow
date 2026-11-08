@@ -109,8 +109,20 @@ const bundleScript = codeText('apps/desktop/scripts/build-editor-bundle.mjs');
 //   （真实赋值 + 注入 JS 内部的一句注释）⇒ **针不唯一 ⇒ 删掉「该处」不会红**（§4.314 的教训）。
 //   ⇒ 锚定到**接线形态**：`window.__MELLOW_BRIDGE__ = {`（剥注释后**唯一**）与
 //   `__TAURI__.core.invoke(`（把桥接到 Tauri 的那一次调用，剥注释后**唯一**）。
-if (!bundleScript.includes('window.__MELLOW_BRIDGE__ = {') || !bundleScript.includes('__TAURI__.core.invoke(')) {
+// ⚠️ **2026-11-08（G7-SHELL-11 连带）**：dev harness 回落分支（`mellow.bridge.notify`
+//   postMessage）引入了**第二个** `window.__MELLOW_BRIDGE__ = {` ⇒ 裸针不再唯一
+//   （release gate ㊴ 判红）。⇒ 升级锚定：正则锁「赋值 + invoke + __TAURI__.core.invoke('bridge_call'」
+//   的**完整接线链形态**，删掉链条任一环都判红；`__TAURI__.core.invoke(` 针保持。
+const TAURI_WIRING_RE = /window\.__MELLOW_BRIDGE__ = \{[\s\S]{0,120}invoke: function \(message\)[\s\S]{0,120}__TAURI__\.core\.invoke\('bridge_call'/;
+if (!TAURI_WIRING_RE.test(bundleScript) || !bundleScript.includes('__TAURI__.core.invoke(')) {
   fail('build-editor-bundle.mjs 缺少 __MELLOW_BRIDGE__ → __TAURI__ 适配器接线（desktop 专属 Tauri Bridge Adapter）');
+}
+{
+  // canary：删掉 bridge_call 调用环 ⇒ 锚定判据必须判 false（证明不是「裸词多现也算」）
+  const patched = bundleScript.replace(/__TAURI__\.core\.invoke\('bridge_call'/, "__TAURI__.core.invoke('other_call'");
+  if (TAURI_WIRING_RE.test(patched)) {
+    fail('Tauri 接线锚定 canary 失效：调用环被删后仍判通过');
+  }
 }
 // canary：`blankComments` 必须**真的**剥注释，且**保留模板字面量里的**内容（§4.327 的承重性质）
 {

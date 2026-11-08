@@ -246,14 +246,15 @@
       "domain": "editing",
       "capability": "字数统计语义",
       "typoraBehavior": "词 / 行 / 字符 / 段落 / 阅读时长；选中时显示选中统计；排除格式语法。",
-      "mellowTarget": "同语义，**中文一字一词**（CJK 计数与 Typora 对齐）；macOS 标题栏常显可配置（G7-SHELL-06 已修），Win/Linux 走状态栏。",
+      "mellowTarget": "同语义，**中文一字一词**（CJK 计数与 Typora 对齐）；macOS 标题栏常显可配置（G7-SHELL-06 已修），Win/Linux 走状态栏；选区 `sel / all` 后缀已装配（G7-SHELL-11，页脚值门 + 面板长度门双门，口径裁决见 wordCount.ts 注释——不移植 Typora a(e)，D-AS/D-AO 在册）。",
       "grade": "E",
       "status": "AUTO",
       "ownerPackage": "packages/app-core",
       "evidence": [
         "packages/app-core/src/wordCount.ts",
         "packages/app-core/test/wordCount.test.ts",
-        "packages/desktop-ui/src/StatusBar.tsx"
+        "packages/desktop-ui/src/StatusBar.tsx",
+        "tests/e2e/selection-word-count-verify.mjs"
       ],
       "requiredEvidence": [
         "unit",

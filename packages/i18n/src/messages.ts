@@ -313,6 +313,9 @@ const zhCN = {
   'status.readingTime': '约 {minutes} 分钟',
   // V7-W2.6：标题栏字数（Typora macOS「始终显示字数」）
   'status.wordCountShort': '{count} 字',
+  // G7-SHELL-11（2026-11-08）：标题栏/页脚的选区字数 —— Typora mac
+  // `word.updateWordCount {sel, all}` 的 `sel / all` 形态
+  'status.wordCountSel': '{sel} / {all} 字',
   'status.encoding.utf8bom': 'UTF-8 BOM',
   'status.encoding.utf16le': 'UTF-16 LE',
   'status.encoding.utf16be': 'UTF-16 BE',
@@ -1329,6 +1332,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   'status.lf': 'LF',
   'status.readingTime': '~{minutes} min',
   'status.wordCountShort': '{count} words',
+  // G7-SHELL-11（2026-11-08）：选区字数 `sel / all` 形态（Typora word.updateWordCount）
+  'status.wordCountSel': '{sel} / {all} words',
   'status.encoding.utf8bom': 'UTF-8 BOM',
   'status.encoding.utf16le': 'UTF-16 LE',
   'status.encoding.utf16be': 'UTF-16 BE',

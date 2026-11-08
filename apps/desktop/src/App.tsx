@@ -709,10 +709,16 @@ export default function App() {
   }, []);
   const [statusText, setStatusText] = useState(t('msg.editorNotLoaded'));
   const [dirty, setDirtyState] = useState(false);
-  const [stats, setStats] = useState('');
+  // G7-SHELL-11：`stats` 由 useState 改为 wordCountData/selCountData 的派生值
+  //（见 refreshStats 下方 useMemo）—— 选区后缀必须随**纯选区变化**更新，
+  //  state 形态要么重复存串、要么漏刷新。
   // R2-2 字数统计窗口（Typora 视图→字数统计窗口）：面板开时 refreshStats 实时刷新
   const [wordCountOpen, setWordCountOpen] = useState(false);
   const [wordCountData, setWordCountData] = useState<ReturnType<typeof countWords> | null>(null);
+  // G7-SHELL-11（2026-11-08）：选区字数 —— Typora WordCount.updateLabel 一手：有选区时
+  // 页脚 label 变 `sel / all Unit`（0<sel<all 才出），面板补 -sel 单元，mac 标题推 sel。
+  // 存**选区文本的计数结果**而非文本：stats 串刷新（contentEdited 路径）无需重读选区。
+  const [selCountData, setSelCountData] = useState<ReturnType<typeof countWords> | null>(null);
   // B1（SDI）：tabs/activeTabId React 状态移除 —— 无标签栏/Overview 消费方，
   // 单文档状态经 docStateRef 表达，DOM 重渲染由 applyTab/setDirty 等既有路径驱动。
   const [fileTreeRoot, setFileTreeRoot] = useState<string | null>(() => localStorage.getItem(FILE_TREE_ROOT_KEY));
@@ -895,11 +901,16 @@ export default function App() {
       return;
     }
     const prefix = dirty ? '● ' : '';
-    const words = wordCountInTitle && wordCountData !== null
-      ? ` — ${t('status.wordCountShort', { count: wordCountData.cjkChars + wordCountData.words })}`
+    // G7-SHELL-11：Typora mac 标题的字数（word.updateWordCount {sel, all}）= `sel / all`
+    // 形态（0<sel<all 才出后缀，与页脚同一门）；Mellow `appearance.wordCount` 开启时同型。
+    const selTotal = selCountData === null ? 0 : selCountData.cjkChars + selCountData.words;
+    const wordText = wordCountInTitle && wordCountData !== null
+      ? (selTotal > 0 && selTotal < wordCountData.cjkChars + wordCountData.words
+          ? ` — ${t('status.wordCountSel', { sel: selTotal, all: wordCountData.cjkChars + wordCountData.words })}`
+          : ` — ${t('status.wordCountShort', { count: wordCountData.cjkChars + wordCountData.words })}`)
       : '';
-    void windowServiceRef.current?.setTitle(`${prefix}${docTitle}${words} — Mellow`);
-  }, [docTitle, dirty, wordCountInTitle, wordCountData, t]);
+    void windowServiceRef.current?.setTitle(`${prefix}${docTitle}${wordText} — Mellow`);
+  }, [docTitle, dirty, wordCountInTitle, wordCountData, selCountData, t]);
   const [platformMac] = useState(() => typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac'));
   // G7-SHELL-10（2026-11-08，D-BA）：应用内窗口控制按钮**仅 Windows** —— Rust 侧只对 Windows 去
   // 系统装饰（`#[cfg(target_os = "windows")] decorations(false)`），Linux 维持系统装饰；
@@ -2193,14 +2204,49 @@ export default function App() {
     try {
       const text = host.getText();
       const count = countWords(text);
-      const base = formatWordCountStats(count, locale === 'zh-CN' ? 'zh' : 'en');
-      const reading = t('status.readingTime', { minutes: count.readingTimeMinutes });
-      setStats(base + ' · ' + reading);
       setWordCountData(count); // R2-2 字数统计窗口（面板未开时轻量更新 state）
+      // G7-SHELL-11：选区文本随全篇一起取（doc 已 marshal 过一次，不再多跨一次帧）；
+      // 纯选区变化走 refreshSelectionStats 的轻量路径（只传选区，不传全篇）。
+      const selText = host.getSelectedText();
+      const sel = selText !== null && selText !== '' ? countWords(selText) : null;
+      setSelCountData(sel);
     } catch {
-      setStats('');
+      setWordCountData(null);
+      setSelCountData(null);
     }
-  }, [locale, t]);
+  }, []);
+
+  /**
+   * G7-SHELL-11：页脚展示串 = countWords 结果的**纯派生**（Typora `updateLabel` 同型：
+   * `0<sel<all` 时 label 变 `sel / all Unit`，否则单值）。派生而非第二份 state ⇒
+   * 每次光标移动只重渲染，不需要全篇重算，也不会出现两份数不同步。
+   * 选区后缀与标题栏走**同一条 i18n**（`status.wordCountSel`）—— 两处一个 builder。
+   */
+  const stats = useMemo(() => {
+    if (wordCountData === null) return '';
+    const locale2 = locale === 'zh-CN' ? 'zh' : 'en';
+    const base = formatWordCountStats(wordCountData, locale2);
+    const reading = t('status.readingTime', { minutes: wordCountData.readingTimeMinutes });
+    const allTotal = wordCountData.cjkChars + wordCountData.words;
+    const selTotal = selCountData === null ? 0 : selCountData.cjkChars + selCountData.words;
+    if (!(selTotal > 0 && selTotal < allTotal)) return base + ' · ' + reading; // Typora 门：无选区/全选=单值
+    return base + ' · ' + reading + ' · ' + t('status.wordCountSel', { sel: selTotal, all: allTotal });
+  }, [wordCountData, selCountData, locale, t]);
+
+  /**
+   * G7-SHELL-11：viewUpdate（含**纯光标/选区移动**）的轻量刷新 —— 只跨帧取选区文本
+   * （Typora 同源 `getTextInSelection()`），不动 wordCountData。contentEdited 路径
+   * 由 refreshStats 一并重算选区，两路互不重复。
+   */
+  const refreshSelectionStats = useCallback((host: EditorCore) => {
+    try {
+      const selText = host.getSelectedText();
+      setSelCountData(selText !== null && selText !== '' ? countWords(selText) : null);
+    } catch {
+      setSelCountData(null);
+    }
+  }, []);
+
 
   /** Status Bar 行:列（viewUpdate 时刷新） */
   const refreshCursorPos = useCallback((host: EditorCore) => {
@@ -4332,6 +4378,13 @@ export default function App() {
             compositionEditPendingRef.current = false;
             refreshOutline(host.getSelectionHead());
             refreshCursorPos(host);
+            // G7-SHELL-11：Typora 每次 selectionUpdate 都跑 WordCount.quickUpdate →
+            // updateLabel（页脚 `sel / all` 随拖选**实时**变），每次内容变化都重算整篇。
+            // Mellow 此前两条路都不进（refreshStats 只在 open / 面板开合时跑）⇒
+            // 打字时字数不刷新，选区更无从谈起。现在：内容变化 = 全篇重算（refreshStats
+            // 内部已含选区，两路**二选一**，不重复跨帧）；纯选区变化 = 轻量路径。
+            if (contentEdited) refreshStats(host);
+            else refreshSelectionStats(host);
             // 光标/选区变化同样需要刷新 UI，但绝不能把它们记成未保存内容。
             // CoreEditor 的 contentEdited 精确对应 CodeMirror Transaction.docChanged。
             if (!contentEdited || suppressEditorEventRef.current) return;
@@ -5682,38 +5735,47 @@ export default function App() {
   // 若按默认 Any 注册，多窗口下「A 窗口打字 ⇒ B/C 窗口也标 dirty/写快照」= 数据安全事故
   // （close 门被误触发 / 恢复快照互相污染）。注册 target=AnyLabel{本窗口} 后，
   // 过滤表按 label 精确匹配（同文件 AnyLabel 才通过）⇒ 与 Rust 侧 emit_to 闭环。
+  // mellow://bridge 核心通知 → EditorEvent 的**唯一解析处**（「同一操作两套实现」母题，
+  // G7-SIDE-09：Tauri 生产监听与 dev harness 桥共用，不允许第二份 JSON.parse 语义）。
+  const applyCoreBridgeNotify = useCallback(
+    (payload: { moduleName: string; methodName: string; parameters: string }) => {
+      if (payload.moduleName !== 'core') return;
+      const host = hostRef.current;
+      if (!host) return;
+      if (payload.methodName === 'notifyCompositionEnded') {
+        host.emitExternalEvent({
+          type: 'viewUpdate', contentEdited: false, isDirty: true, compositionEnded: true,
+        });
+        return;
+      }
+      if (payload.methodName !== 'notifyViewDidUpdate') return;
+      let parameters: { contentEdited?: unknown; isDirty?: unknown; compositionEnded?: unknown };
+      try {
+        parameters = JSON.parse(payload.parameters) as { contentEdited?: unknown; isDirty?: unknown; compositionEnded?: unknown };
+      } catch {
+        return;
+      }
+      host.emitExternalEvent({
+        type: 'viewUpdate',
+        contentEdited: parameters.contentEdited === true,
+        isDirty: parameters.isDirty === true,
+        // 老 bundle 未包含该字段时，保持原有非合成态行为。
+        compositionEnded: parameters.compositionEnded !== false,
+      });
+    }, []);
+
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void Promise.all([import('@tauri-apps/api/event'), import('@tauri-apps/api/window')])
       .then(([{ listen }, { getCurrentWindow }]) => listen<{ moduleName: string; methodName: string; parameters: string }>('mellow://bridge', (e) => {
-        if (e.payload.moduleName !== 'core') return;
-        if (e.payload.methodName === 'notifyCompositionEnded') {
-          hostRef.current?.emitExternalEvent({
-            type: 'viewUpdate', contentEdited: false, isDirty: true, compositionEnded: true,
-          });
-          return;
-        }
-        if (e.payload.methodName !== 'notifyViewDidUpdate') return;
-        let parameters: { contentEdited?: unknown; isDirty?: unknown; compositionEnded?: unknown };
-        try {
-          parameters = JSON.parse(e.payload.parameters) as { contentEdited?: unknown; isDirty?: unknown; compositionEnded?: unknown };
-        } catch {
-          return;
-        }
-        hostRef.current?.emitExternalEvent({
-          type: 'viewUpdate',
-          contentEdited: parameters.contentEdited === true,
-          isDirty: parameters.isDirty === true,
-          // 老 bundle 未包含该字段时，保持原有非合成态行为。
-          compositionEnded: parameters.compositionEnded !== false,
-        });
+        applyCoreBridgeNotify(e.payload);
       }, { target: getCurrentWindow().label }))
       .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
       .catch(() => { /* 非 Tauri 环境 */ });
     return () => { cancelled = true; unlisten?.(); };
-  }, []);
+  }, [applyCoreBridgeNotify]);
   useEffect(() => {
     const registry = new CommandRegistry();
     const always = () => true;
@@ -6288,13 +6350,18 @@ export default function App() {
   }, [adjustFontSize]);
 
   // Engine iframe → host：Slash 行首触发通知
+  // G7-SHELL-11 连带（dev harness 传输补齐）：mellow.bridge.notify 把 bundle 的
+  // webkit.messageHandlers 桥在无 Tauri 运行时下接到同一解析器（见 applyCoreBridgeNotify），
+  // 使浏览器 dev / Playwright 探针也收到 viewUpdate —— dirty/字数/选区刷新在 dev 与生产
+  // 走同一事件语义（此前 dev harness「不投递 viewUpdate」，dirty-leave 探针被迫 SKIP）。
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === 'mellow.slash.open') handleSlashOpen(event.data.payload as SlashOpenRequest);
+      if (event.data?.type === 'mellow.bridge.notify') applyCoreBridgeNotify(event.data.payload as { moduleName: string; methodName: string; parameters: string });
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleSlashOpen]);
+  }, [handleSlashOpen, applyCoreBridgeNotify]);
 
   // 窗口 size/position 记忆（desktop-ui-design-spec §3 Window；settings.advanced.windowBounds 开关）
   useEffect(() => {
@@ -7165,12 +7232,18 @@ export default function App() {
       )}
       {wordCountOpen && wordCountData !== null && (() => {
         const c = wordCountData;
+        // G7-SHELL-11：Typora 面板的 -sel 单元门 = **选区文本长度 > 0**（`getTextInSelection().length`
+        // → `ty-show-word-count-in-selection`），与页脚的 `0<sel<all` **值门**不同型（全选时
+        // 页脚回到单值、面板仍显 `sel / all`）。四个数字行（字/词/字符/行）= Typora 有 -sel
+        // 单元的行；paragraphs / charsNoSpace / readingTime = Typora 无 -sel ⇒ 恒单值。
+        const selPair = (pick: (w: ReturnType<typeof countWords>) => number, all: number): string =>
+          selCountData !== null ? `${pick(selCountData)} / ${all}` : String(all);
         const rows: Array<[string, string]> = [
-          [t('wordCount.cjk'), String(c.cjkChars)],
-          [t('wordCount.words'), String(c.words)],
-          [t('wordCount.chars'), String(c.chars)],
+          [t('wordCount.cjk'), selPair((w) => w.cjkChars, c.cjkChars)],
+          [t('wordCount.words'), selPair((w) => w.words, c.words)],
+          [t('wordCount.chars'), selPair((w) => w.chars, c.chars)],
           [t('wordCount.charsNoSpace'), String(c.charsNoSpace)],
-          [t('wordCount.lines'), String(c.lines)],
+          [t('wordCount.lines'), selPair((w) => w.lines, c.lines)],
           [t('wordCount.paragraphs'), String(c.paragraphs)],
           [t('wordCount.readingTime'), t('status.readingTime', { minutes: c.readingTimeMinutes })],
         ];

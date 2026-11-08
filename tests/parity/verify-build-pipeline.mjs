@@ -709,7 +709,11 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   // ⚠️ 2026-11-08（审计 §4.360「六」12）：108 → 109 —— 新增 `tests/e2e/search-group-collapse-verify.mjs`
   //   （G7-SIDE-11 搜索结果按文件分组折叠探针：Typora `.ty-search-item-collapse-icon` 一手对标；
   //   折叠只隐藏匹配行、组标题保留、键盘可见序列与渲染同源、换查询重置折叠态）。
-  const SCRIPT_BASELINE = 109; // [覆盖型] 基线 109
+  // ⚠️ 2026-11-08（G7-SHELL-11）：109 → 110 —— 新增 `tests/e2e/selection-word-count-verify.mjs`
+  //   （选区字数探针：Typora 页脚**值门** `0<sel<all` 与面板**长度门**两套门用同一全选分别验证
+  //   方向相反 + 打字即刷新回归；调试期抓出 dev harness 不投递 viewUpdate 的通道缺口 ——
+  //   bundle 侧 notify* postMessage 回落 + 宿主单一解析器补齐，dirty-leave 探针的死分支自此生效）。
+  const SCRIPT_BASELINE = 110; // [覆盖型] 基线 110
   // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==` —— 覆盖型 = 「阈值必须 **==** 当前基线」；
   //   `< N` 只挡「缩小」，**集合增长时会静默稀释防线**（§4.310）。加脚本是**显式**行为 ⇒ 一并同步基线。
   if (scripts11.length !== SCRIPT_BASELINE) {

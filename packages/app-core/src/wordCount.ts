@@ -48,3 +48,21 @@ export function formatWordCountStats(count: WordCount, locale: 'zh' | 'en'): str
   }
   return count.words + ' words · ' + count.cjkChars + ' CJK · ' + count.chars + ' chars · ' + count.lines + ' lines';
 }
+
+/**
+ * G7-SHELL-11（选区字数）—— 一手证据与口径裁决（2026-11-08）：
+ * Typora `frame.js` WordCount：页脚 label 有选区时显示 `sel / all Unit`
+ * （`updateLabel`：`0<e&&e<t` 才出后缀；`e<0` 复用上次的 selCount），mac 侧
+ * `getLabelsToShowOnMac` 把 `|` 分隔的 sel 值推给原生标题；面板行值有 `-sel`
+ * 对应单元（`ty-show-word-count-in-selection` 门控）。
+ * ⚠️ **口径裁决**：Typora 的选区/整篇共用它自己的 `a(e)` 词计数（CJK 逐字计 +
+ * 标点段折叠 + 哨兵 token，node 直接执行原式实测 `你好世界→4`、
+ * `hello 你好 world→4`）。Mellow **不移植**该函数、选区仍走既有 `countWords`：
+ * ① `cjkChars + words` 在常规中英混排上与 `a(e)` 同值；
+ * ② `sel / all` 串的**两端必须同一口径**（否则「选区词数」可能大于同屏的
+ *   「整篇词数」这类荒谬显示）—— 双口径 = 「同一操作两套实现」母题
+ *   （G7-SIDE-09），本仓已为它付过学费；
+ * ③ 与 Typora 绝对值的口径差本就登记在 D-AS/D-AO，不因选区功能重开。
+ * ⇒ 选区后缀串在宿主侧统一走 i18n `status.wordCountSel`（标题栏与页脚同一 builder），
+ *   本模块只负责计数口径；「有选区才出后缀」的门（`0<sel<all`）判定也在宿主。
+ */
