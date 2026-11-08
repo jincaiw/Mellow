@@ -473,6 +473,10 @@ const DECIDED_ADRS = [
   // 效力）被取代 —— 人工体验 Gate 集中于 `P0-QA-001` 单点承载；A3 规则保留。
   ['docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md',
     'UX Gate 策略：逐项前置还是单点承载', 'C（收窄：仅 P0-QA-001 需人工 Gate）'],
+  // 2026-11-08（ADR-0040，**用户裁决**）：A（改名 + 存储迁移）+ 不补 night。
+  //   newsprint→kraft / whitey→snow / gothic→inkwell，配色与观感不变；旧 id 启动时一次性映射。
+  ['docs/adr/ADR-0040-theme-name-appearance-divergence.md',
+    '内置主题与 Typora 同名而外观不同（G7-TYPO-05）', 'A（改原创名 + 存储迁移；不补 night）'],
 ];
 // ── 待裁决 ADR（2026-10-01 起非空）────────────────────────────────────────
 // ADR-0027：引擎侧主题 token 的可达性判定与浮动面板表面取色。
@@ -496,9 +500,9 @@ const DECIDED_ADRS = [
 // Typora 同名而外观不同，`gothic` **明暗相反**）自 2026-09-13 起写「待裁决」而登记表与 ADR
 // 均**无载体** ⇒ 违反「待裁决项必须有 ADR 载体」。ADR-0040 是补的载体（**未擅自改名、
 // 未擅自改配色** —— 改名/换外观都是用户可见的品牌决策）。
+// 2026-11-08（**用户裁决 A**）：ADR-0040 已移入 `DECIDED_ADRS`（改名 + 存储迁移，不补 night）
+// ⇒ 本清单回到**空**；断言保持双向 ⇒ 任何新增 Proposed ADR 仍会被 ⑫ 拦下。
 const PENDING_ADRS = [
-  ['docs/adr/ADR-0040-theme-name-appearance-divergence.md',
-    '内置主题与 Typora 同名而外观不同（G7-TYPO-05）：改名 / 对齐外观 / 维持现状'],
 ];
 for (const [p, what] of PENDING_ADRS) {
   if (!existsSync(resolve(root, p))) {
@@ -1020,11 +1024,14 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       const adrFileOf = (id) => (existsSync(adrDir)
         ? readdirSync(adrDir).find((f) => f.startsWith(`${id}-`) && f.endsWith('.md'))
         : undefined);
+      // ⚠️ 必须锚定**行首**：无锚点会被 ADR 正文里引用的 `**Status:**` 满足
+      // （2026-10-07 实测：本判据首版就是这样，注入「ADR 改 Accepted」后**仍然通过**）。
+      // 谓词抽成对**文本**的纯函数：2026-11-08 ADR-0040 裁决后仓库里**没有** Proposed ADR，
+      // 正样本只能合成 —— 判据与 canary 必须共用同一份正则，否则 canary 会随数据清空而失效。
+      const isProposedSrc = (src) => /^\*\*Status:\*\*[^\n]*Proposed/m.test(src);
       const isProposed = (id) => {
         const f = adrFileOf(id);
-        // ⚠️ 必须锚定**行首**：无锚点会被 ADR 正文里引用的 `**Status:**` 满足
-        // （2026-10-07 实测：本判据首版就是这样，注入「ADR 改 Accepted」后**仍然通过**）。
-        return f !== undefined && /^\*\*Status:\*\*[^\n]*Proposed/m.test(read(`docs/adr/${f}`));
+        return f !== undefined && isProposedSrc(read(`docs/adr/${f}`));
       };
       // 谓词（判据与 canary 共用同一份）
       const resolvesRef = (kind, ref) => {
@@ -1070,7 +1077,11 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       if (!resolvesRef('gap', 'P0-EDITOR-005') || resolvesRef('gap', 'P0-NO-SUCH-ITEM')) {
         errors.push('偏好矩阵载体解析 canary 失效：gap 的台账 id 判定不能区分正/负样本');
       }
-      if (!resolvesRef('undecided', 'ADR-0040') || resolvesRef('undecided', 'ADR-9999')) {
+      // 2026-11-08：ADR-0040 裁决后仓库里**没有** Proposed ADR ⇒ 正样本改用合成状态行
+      // （谓词与 isProposed 共用 isProposedSrc，仍然能区分正/负样本）。
+      if (!isProposedSrc('**Status:** **Proposed**（2026-10-01）—— 待裁决')
+        || isProposedSrc('**Status:** **Accepted**（2026-11-08）—— 已裁决')
+        || resolvesRef('undecided', 'ADR-9999')) {
         errors.push('偏好矩阵载体解析 canary 失效：undecided 的 ADR 判定不能区分正/负样本');
       }
       if (resolvesRef('', 'D-AK')) {
@@ -1080,7 +1091,8 @@ for (const [p, what, decision] of DECIDED_ADRS) {
       // 后者的引用源是**文档**（plan/audit/ADR），本条的引用源是**矩阵**。用真实数据各验一次。
       // ⚠️ ADR-0034 已于 2026-11-03 裁决（矩阵里的 undecided 已全部改判 deliberate/gap）⇒
       //   「真实数据里存在 Proposed ADR」不再是矩阵的属性；**派生 Proposed == PENDING_ADRS**
-      //   的方向安全由 ⑫ 的双向检查承担（那里真实数据必须非空：ADR-0040 Proposed）。
+      //   的方向安全由 ⑫ 的双向检查承担（2026-11-08 ADR-0040 裁决后两侧均为空，
+      //   canary ④ 用合成集合验证双向判据本身）。
       if (!declared.has('D-AK') || !declared.has('D-AO')) {
         errors.push('偏好矩阵载体解析 canary 失效：真实数据里 D-AK/D-AO 应有声明行');
       }

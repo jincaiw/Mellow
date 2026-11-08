@@ -402,7 +402,7 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
     'setFontSize', 'setFontFace', 'setLineHeight', 'setShowLineNumbers', 'setLineWrapping',
     'setContentMaxWidth', 'setAutoPair', 'setMarkdownSyntaxPairs', 'setDefaultCodeLang',
     'setCodeIndentSize', 'setTabKeyBehavior', 'setFirstLineIndent', 'setAllowMagnification',
-    'setSpellcheckEnabled', 'setSmartPunctuationEnabled', 'setSmartPunctuationOnRenderEnabled', 'setCodeLineNumbersEnabled',
+    'setSpellcheckEnabled', 'setSmartQuotesEnabled', 'setSmartDashesEnabled', 'setSmartPunctuationOnRenderEnabled', 'setCodeLineNumbersEnabled',
     'setTypewriterMode', 'setFocusMode', 'setSelectionToolbarEnabled',
     'setTheme', 'setMdTokens', 'setEngineLocale',
   ];
@@ -439,6 +439,40 @@ if (TAURI_TOKENS.some((token) => token.test(canaryClean))) {
     if (synthMissing('setSelectionToolbarEnabledState(true);').length !== STARTUP_STATE_SETTERS.length) {
       errors.push('启动状态下发护栏 canary 失效：同名状态 setter 被误判为「已下发」');
     }
+  }
+}
+
+// ── ⑧ Mermaid 实时渲染的**宿主装载器锚点**（2026-11-08，审计 §4.363）────────────
+// 形态与 KaTeX 相同：engine 只负责消费（`window.mermaid` / `__MELLOW_MERMAID_LOADER__`），
+// 宿主按需装载渲染库。本轮之前**仓库内无人注入** ⇒ 打开开关只会落到错误态，而
+// `mermaid.test.ts` 注入的是**假 renderer**，所以"测试全绿、功能是死的"。
+// 这里锁住四个锚点：引擎读取点、桌面依赖、装载器实现、注入调用（iframe + Reader）。
+{
+  const engineMermaid = codeText('packages/editor-engine/src/mermaid.ts');
+  const loaderTs = codeText('apps/desktop/src/mermaidLoader.ts');
+  const asyncRenderers = codeText('apps/desktop/src/useAsyncRenderers.ts');
+  const desktopPkg = readFileSync(resolve(root, 'apps/desktop/package.json'), 'utf8');
+  // 判据锚定到**代码形态**（不信 `includes` 裸针）：裸针在目标文件里不唯一时，
+  // 删掉"该处"护栏也不会红（release gate ㊴ 的教训，§4.314）——引擎里该扩展点
+  // 同时出现在类型声明、读取与错误文案里，必须锁「读不到才抛」的调用形态。
+  if (!/win\.__MELLOW_MERMAID_LOADER__\s*!==\s*undefined\)\s*return\s+win\.__MELLOW_MERMAID_LOADER__\(\)/.test(engineMermaid)) {
+    fail('engine 不再从 __MELLOW_MERMAID_LOADER__ 装载渲染器（宿主装载器失去消费方，注入会变成死桥）');
+  }
+  if (!loaderTs.includes("import('mermaid')")) {
+    fail('apps/desktop/src/mermaidLoader.ts 未按需 import mermaid（装载器退化为空壳）');
+  }
+  // 两条注入各自锚定：iframe（引擎）+ 主窗口（Reader）。只锁其中一条会漏掉另一半。
+  if (!/\bmermaidWin\.__MELLOW_MERMAID_LOADER__ = loadMermaid;/.test(appTsSource)) {
+    fail('App.tsx 未把 loadMermaid 注入编辑器 iframe（Mermaid 开关重新变成死开关）');
+  }
+  if (!/\}\)\.__MELLOW_MERMAID_LOADER__ = loadMermaid;/.test(appTsSource)) {
+    fail('App.tsx 未把 loadMermaid 注入主窗口（Reader 的 Mermaid 重新只剩源码）');
+  }
+  if (!/["']mermaid["']\s*:\s*["']\^11\./.test(desktopPkg)) {
+    fail('apps/desktop/package.json 未声明 mermaid ^11 依赖（动态 import 会在运行时失败）');
+  }
+  if (!asyncRenderers.includes("typeof provided === 'function'")) {
+    fail('useAsyncRenderers 未区分「API 对象 / 装载函数」两种扩展点形态（Reader 会把函数当 API 用）');
   }
 }
 

@@ -709,7 +709,61 @@ if (!/Windows Source Fidelity gate/.test(workflow)
     + `在 ${APP_FS} 里均有 \`pub fn\`；lib 名 = ${libName}（⚠️ 代理检查，不替代编译）`);
 }
 
+// ── 文档解码必须是**严格**的（2026-11-08，审计 §4.361）────────────────────────────
+// 【为什么】`fs.rs` 曾用 `String::from_utf8_lossy` + `unwrap_or('\u{FFFD}')`：
+//   V1 之外的编码（GB18030 / Big5 / Shift-JIS，PRD §105 的 P1）被「解码成功」并标记为
+//   `utf-8`；用户改一个字后保存 ⇒ **整份文件**按 UTF-8 重写、其余内容不可逆损坏，
+//   而保存后的字节校验**必然通过**（两边同源于已损坏的字符串）⇒ 自检盲区。
+//   `document-file-safety-spec` §12 把「wrong encoding」列为发布禁令。
+// 【判据】`fs.rs` 的**生产代码**（注释豁免）里：
+//   ① 不得出现 `from_utf8_lossy(` 或 `unwrap_or('\u{FFFD}')`；
+//   ② `pub fn decode` 必须返回 `Result<…, DecodeError>`；
+//   ③ `decode_utf16` 必须返回 `Result` 且走 `char::decode_utf16`。
+//   ⚠️ 如实声明：这是**文本级代理判据**；行为真值在
+//   `fs::tests::rejects_undecodable_bytes_instead_of_lossy_replacement`，
+//   以及 `source-fidelity` 语料门禁（本文件上一条契约判据保证工具仍能编译）。
+{
+  const APP_FS = 'apps/desktop/src-tauri/src/fs.rs';
+  const source = readFileSync(resolve(root, APP_FS), 'utf8').replace(/\r\n/g, '\n');
+  // 只把整行注释（`//` / `///`）**置空**而非删行 —— 删行会让任何 `file:line` 报错整体偏移
+  // （审计 §4.334 的 R3 纪律）；说明性文字会**引用**坏形态，不能算实现。
+  const codeOnly = (src) => src.split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
+  const LOSSY = /from_utf8_lossy\s*\(|unwrap_or\(\s*'\\u\{FFFD\}'\s*\)/;
+  const DECODE_SIG = /pub fn decode\s*\([^)]*\)\s*->\s*Result<[^>]*DecodeError>/;
+  const UTF16_SIG = /fn decode_utf16\s*\([^)]*\)\s*->\s*Result<String,\s*DecodeError>/;
+  const UTF16_IMPL = /char::decode_utf16\s*\(/;
+
+  const code = codeOnly(source);
+  if (LOSSY.test(code)) {
+    throw new Error(`${APP_FS} 的生产代码里出现有损解码（\`from_utf8_lossy\` 或 `
+      + `\`unwrap_or('\\u{FFFD}')\`）—— 不支持的编码会被当成成功打开，`
+      + '保存时整份文件按 UTF-8 重写（data loss）。必须严格解码并拒绝打开。');
+  }
+  if (!DECODE_SIG.test(code)) {
+    throw new Error(`${APP_FS} 的 \`pub fn decode\` 不再返回 \`Result<…, DecodeError>\` —— `
+      + '调用方无法得知解码失败，又回到「静默遮住」的形态');
+  }
+  if (!UTF16_SIG.test(code) || !UTF16_IMPL.test(code)) {
+    throw new Error(`${APP_FS} 的 \`decode_utf16\` 不再是 \`Result\` + \`char::decode_utf16\` —— `
+      + '奇数字节 / 孤立代理项会被替换而不是拒绝');
+  }
+  // canary（与判定共用谓词）
+  if (!LOSSY.test(codeOnly('let s = String::from_utf8_lossy(&b);'))) {
+    throw new Error('严格解码 canary 失效：有损调用取不到');
+  }
+  if (LOSSY.test(codeOnly('// 旧实现用 String::from_utf8_lossy 遮住非法字节'))) {
+    throw new Error('严格解码 canary **过宽**：注释里的引用被当成实现');
+  }
+  if (!DECODE_SIG.test(`pub fn decode(bytes: &[u8]) -> Result<(String, &'static str), DecodeError> {`)) {
+    throw new Error('严格解码 canary 失效：正确签名取不到');
+  }
+  if (DECODE_SIG.test(`pub fn decode(bytes: &[u8]) -> (String, &'static str) {`)) {
+    throw new Error('严格解码 canary **过宽**：无 Result 的旧签名被误判为合规');
+  }
+  console.log('Document decode: 严格（无 lossy / Result 传播 / char::decode_utf16）');
+}
+
 // ⚠️ 本行**必须留在文件末尾**：它是本护栏的「自述行」（跑一次就知道这脚本查了什么）。
 //   §4.269 落新判据时**误删过一次**（新块替换掉了它）—— 这类「静默丢自述」不会让任何判据变红。
-console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity');
+console.log('Runtime Qualification embeds frontendDist on all platforms and gates Windows source fidelity and strict document decoding');
 

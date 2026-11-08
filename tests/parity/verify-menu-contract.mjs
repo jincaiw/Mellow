@@ -365,7 +365,10 @@ if (/#\[cfg\(target_os/.test(menuRsSource)) {
     // 固定窗口会够不到断言目标 → 误报「未自增」（护栏首跑即踩到）。
     // 故：case 型切到该 case 的 `break;`；单行分支型只切该行。
     ['editor.spellcheck', "case 'settings.spellcheck':", 'edit.spellcheck.toggle', 'case'],
-    ['editor.smartPunctuation', "case 'settings.smartPunctuation':", 'edit.smartPunctuation.toggle', 'case'],
+    ['editor.smartQuotes', "case 'settings.smartPunctuation':", 'edit.smartQuotes.toggle', 'case'],
+    ['editor.smartDashes', "case 'settings.smartPunctuation':", 'edit.smartDashes.toggle', 'case'],
+    ['editor.smartPunctuationOnRender', "case 'settings.smartPunctuation':", 'edit.substitutions.onInput', 'case'],
+    ['editor.smartPunctuationOnRender', "case 'settings.smartPunctuation':", 'edit.substitutions.onRender', 'case'],
     ['editor.firstLineIndent', "def.id === 'editor.firstLineIndent'", 'edit.firstLineIndent.toggle', 'line'],
     // §4.360「六」5：双指缩放（菜单入口 + 面板入口都必须自增 tick，同母题）
     ['editor.allowMagnification', "def.id === 'editor.allowMagnification'", 'view.magnification.toggle', 'line'],
@@ -404,7 +407,12 @@ if (/#\[cfg\(target_os/.test(menuRsSource)) {
         fail(`App.tsx 找不到命令 ${commandId}（菜单勾选态入口）→ 护栏需同步更新`);
         continue;
       }
-      if (!/setMenuCheckTick\(/.test(appSource.slice(cmdIdx, cmdIdx + 500))) {
+      // 允许复用已在上方验证含 tick 的 applySetting 分支；须传当前设置 def。
+      const nextCmdIdx = appSource.indexOf('\n      { id:', cmdIdx + 1);
+      const commandBody = appSource.slice(cmdIdx, nextCmdIdx < 0 ? cmdIdx + 500 : nextCmdIdx);
+      const viaApplySetting = commandBody.includes(`settingById('${settingId}')`)
+        && /applySetting\(def, (?:next|true|false)\)/.test(commandBody);
+      if (!/setMenuCheckTick\(/.test(commandBody) && !viaApplySetting) {
         fail(`${commandId} 的菜单入口未自增 menuCheckTick → 勾选态不跟随`);
       }
     }
@@ -638,7 +646,12 @@ if (!driftShortcut || driftShortcut.winLinux !== 'Ctrl+Shift+I') {
 // 随 P1-1.3 单一真源落地：拼写/智能标点/主题/跟随系统已在 schema checkedFrom 声明。
 const CHECK_STATE_CONTRACT = [
   { id: 'edit.spellcheck.toggle', checkedFrom: 'spellcheck' },
-  { id: 'edit.smartPunctuation.toggle', checkedFrom: 'smartPunct' },
+  { id: 'edit.smartQuotes.toggle', checkedFrom: 'smartQuotes' },
+  { id: 'edit.smartDashes.toggle', checkedFrom: 'smartDashes' },
+  // G7-MENU-05：文本替换（macOnly；勾选态真值 = 设置 `editor.textReplacement`，默认开）
+  { id: 'edit.textReplacement.toggle', checkedFrom: 'textReplacement' },
+  { id: 'edit.substitutions.onInput', checkedFrom: 'smartPunctOnInput' },
+  { id: 'edit.substitutions.onRender', checkedFrom: 'smartPunctOnRender' },
   { id: 'theme.mode.system', checkedFrom: 'themeModeSystem' },
   // V7-W1.6：状态栏可见性（Typora Win/Linux 显示菜单「状态栏」开关）
   { id: 'view.statusbar.toggle', checkedFrom: 'statusbar' },
@@ -664,8 +677,20 @@ for (const { id, checkedFrom } of CHECK_STATE_CONTRACT) {
   else if (entry.checkedFrom !== checkedFrom) fail(`${id} checkedFrom 应为 ${checkedFrom}，实际 ${entry.checkedFrom ?? '（无）'}`);
 }
 const spellcheckSync = /spellcheck: \(\(\) => \{ const def = settingById\('editor\.spellcheck'\); return def \? readSetting\(def\) !== false : true; \}\)\(\)/.test(appSource);
-const smartPunctSync = /smartPunct: \(\) => \{ const def = settingById\('editor\.smartPunctuation'\);/.test(appSource) || /smartPunct: \(\(\) => \{/.test(appSource);
-if (!spellcheckSync || !smartPunctSync) fail('syncNativeMenu 必须从 Settings Store 读取 spellcheck/smartPunct 勾选态（单一真源）');
+for (const [field, settingId] of [['smartQuotes', 'editor.smartQuotes'], ['smartDashes', 'editor.smartDashes'], ['smartPunctOnRender', 'editor.smartPunctuationOnRender']]) {
+  const expected = `${field}: (() => { const def = settingById('${settingId}'); return def ? readSetting(def) === true : false; })()`;
+  if (!appSource.includes(expected)) fail(`syncNativeMenu 必须从 Settings Store 读取 ${field}（单一真源）`);
+  if (!nativeMenuSource.includes(`${field}: inputs.${field}`)) fail(`nativeMenu 必须将 ${field} 原样传入 schema 物化层`);
+}
+if (!spellcheckSync) fail('syncNativeMenu 必须从 Settings Store 读取 spellcheck 勾选态（单一真源）');
+// G7-MENU-05：文本替换勾选态同源（默认 **开** ⇒ 判据是 !== false，不是 === true）
+const textReplacementSync = /textReplacement: \(\(\) => \{ const def = settingById\('editor\.textReplacement'\); return def \? readSetting\(def\) !== false : true; \}\)\(\)/.test(appSource);
+if (!textReplacementSync) fail('syncNativeMenu 必须从 Settings Store 读取 textReplacement 勾选态（G7-MENU-05 单一真源）');
+if (!nativeMenuSource.includes('textReplacement: inputs.textReplacement')) fail('nativeMenu 必须将 textReplacement 原样传入 schema 物化层');
+// macOnly：能力只存在于 macOS（Typora `File.isMac`），非 mac 必须**隐藏**而非显示占位项
+if (!/id: 'edit\.textReplacement\.toggle'[^\n]*macOnly: true/.test(schemaSource)) {
+  fail('edit.textReplacement.toggle 必须声明 macOnly: true（非 macOS 无系统词典，显示即占位项）');
+}
 // V7-W1.6：状态栏勾选态同样必须来自单一状态源（不得硬编码）
 if (!/statusbar: statusbarVisible/.test(appSource)) {
   fail('syncNativeMenu 必须从状态栏可见性状态读取 statusbar 勾选态（单一真源）');

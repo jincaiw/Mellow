@@ -676,6 +676,36 @@ if (existsSync(benchmarkRunnerPath)) {
     'run-benchmark 必须逐样本落盘 waitStable 窗口内的显著变化帧数（loadMs 的常量成因需可核对）');
   assert(/该窗口内观察到的显著变化帧数/.test(benchCode),
     '报告打印 loadMs 处必须伴随「该窗口内观察到的显著变化帧数」诊断行（字符串字面量）');
+  // ── contentpaint：显示器级诊断形态不得回退（2026-11-08）───────────────────
+  // 立此条的原因：`contentpaint` 的价值全在「流在应用启动**之前**就绪」与「基线按几何分桶」。
+  // 任何一条退回旧形态，读数都会静默失真（历史症状：framesInRoi=574 而 changedFrames=0；
+  // 同一场景 maxFrac 在 0.0062 / 0.4064 间跳变）—— 数字照常产出，只是不再测它声称测的东西。
+  assert(/startup-watch',\s*'--launch-bin'/.test(benchCode),
+    'contentpaint 必须用 `startup-watch --launch-bin`（探针先开流、再启动应用）：'
+    + 'runner 先启动、helper 再接入的形态结构上必然错过首绘');
+  assert(/launchedPid\s*\?\?\s*-1\)\s*>\s*0/.test(benchCode),
+    'contentpaint 的有效性门槛必须落在 `launchedPid > 0`（即「由探针启动」形态）：'
+    + '否则 --pid 形态的样本会混入统计，首绘可能已被错过');
+  assert(/## 2e\. contentpaint/.test(benchCode),
+    '报告必须保留 §2e contentpaint 节（诊断量的唯一出口）');
+  {
+    const cpHelper = existsSync(helperPath)
+      ? readFileSync(helperPath, 'utf8').replace(/\r\n/g, '\n') : '';
+    assert(/SCContentFilter\(display:/.test(cpHelper),
+      'contentpaint 必须是**显示器级**捕获（SCContentFilter(display:)）：'
+      + '窗口级 desktopIndependentWindow 必须先有窗口对象，无法覆盖进程启动');
+    assert(/baselines\[key\]/.test(cpHelper),
+      'contentpaint 的基线必须**按几何分桶**（baselines[key]）：'
+      + '几何抖动时清空全局基线会把正文绘制那一帧吞掉（实测 maxFrac 0.0062 vs 0.4064）');
+    // canary：抹掉分桶键必须被检出（防止本判据退化成「只要出现过 baselines 就行」）
+    const drift = cpHelper.replace(/baselines\[key\]/g, 'baselines[""]');
+    if (drift === cpHelper) {
+      errors.push('contentpaint 分桶 canary 未武装：无法注入「去掉分桶键」漂移（锚点漂移，请更新护栏）');
+    } else if (/baselines\[key\]/.test(drift)) {
+      errors.push('contentpaint 分桶 canary 失效：注入漂移后仍判定为按几何分桶');
+    }
+  }
+
   // ── W-PERF-1：应用内延迟读数必须有**出口**，且出口必须**环境变量门控**（2026-10-01）──
   // 立此条的原因：16ms Input 目标在屏幕捕获上原理性不可判定（16ms < 单帧），
   // 应用内埋点是**唯一可判定来源**；而埋点若没有出口（或出口无条件常开），

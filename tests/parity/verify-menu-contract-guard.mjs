@@ -99,6 +99,21 @@ const CASES = [
   ['checkState 声明丢失（spellcheck）', () => patch(schema(), (s) => s.replace(
     ", labelKey: 'menu.edit.spellcheck', checkedFrom: 'spellcheck' },",
     ", labelKey: 'menu.edit.spellcheck' },"))],
+  // G7-MENU-05：独立勾选态及菜单 → 共用 applySetting → tick 的两个入口都要守住。
+  ['智能引号 checkedFrom 错绑破折号', () => patch(schema(), (s) => s.replace(
+    "labelKey: 'menu.edit.smartQuotes', checkedFrom: 'smartQuotes'",
+    "labelKey: 'menu.edit.smartQuotes', checkedFrom: 'smartDashes'"))],
+  ['菜单引号命令漏调共用 applySetting', () => patch(appTsx(), (s) => s.replace(
+    'writeSetting(def, next);\n        applySetting(def, next);',
+    'writeSetting(def, next);\n        /* applySetting removed */'))],
+  ['智能标点设置页漏掉菜单重建 tick', () => patch(appTsx(), (s) => s.replace(
+    "setSmartPunctuationOnRenderEnabled(readBoolSetting('editor.smartPunctuationOnRender', false));\n        setMenuCheckTick((n) => n + 1);",
+    "setSmartPunctuationOnRenderEnabled(readBoolSetting('editor.smartPunctuationOnRender', false));"))],
+  ['菜单引号勾选态读了破折号偏好', () => patch(appTsx(), (s) => s.replace(
+    "smartQuotes: (() => { const def = settingById('editor.smartQuotes');",
+    "smartQuotes: (() => { const def = settingById('editor.smartDashes');"))],
+  ['native adapter 将引号状态误传为破折号', () => patch(nativeMenu(), (s) => s.replace(
+    'smartQuotes: inputs.smartQuotes', 'smartQuotes: inputs.smartDashes'))],
   // ── App.tsx / nativeMenu.ts：派生与注入契约 ───────────────────────────
   ['快捷键双真源（App.tsx 内联回潮）', () => patch(appTsx(), (s) => s.replace(
     "enabled: always, execute: () => replaceSlashTrigger('![]( )') },",

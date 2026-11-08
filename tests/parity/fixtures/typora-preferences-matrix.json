@@ -635,18 +635,18 @@
       "default": false,
       "status": "implemented",
       "mellow": [
-        "editor.smartPunctuation"
+        "editor.smartDashes"
       ],
-      "note": "同上"
+      "note": "G7-MENU-05：独立破折号开关（默认关闭），输入 / 渲染两档均独立过滤，包含 Typora smartDash 下的 ... → …；第二个连字符立即转 en dash，第三个转 em dash，渲染不要求空格。editor.twoHyphensToEm 默认 false，非 macOS 且智能破折号开启时可选择 em 样式；真实输入与渲染的细节见面板键登记。保护代码、转义、链接 / 图片目标，Source Mode 完整显示原始标点。tests/e2e/substitutions-menu-verify.mjs 43/43（Chromium；原生三平台独立验收）。"
     },
     {
       "typora": "smartQuote",
       "default": false,
       "status": "implemented",
       "mellow": [
-        "editor.smartPunctuation"
+        "editor.smartQuotes"
       ],
-      "note": "Mellow 合并引号/破折号为一个「智能标点」开关"
+      "note": "G7-MENU-05：独立引号开关（默认关闭），与智能破折号互不覆盖；菜单和设置页共用存储及即时应用路径，旧版组合偏好迁移为两个独立值。"
     },
     {
       "typora": "sortType",

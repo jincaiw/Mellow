@@ -57,7 +57,8 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n'
 
 // ── 显式包装器清单（转发到 Tauri invoke 的本地函数）─────────────────────────
 // 只放**确证**转发到 invoke 的函数；双向自检见下（清单项必须真含非成员 invoke 调用）。
-const INVOKE_WRAPPERS = ['callSpellcheck'];
+// 2026-11-08（G7-MENU-05 文本替换）：+ callTextReplacement（apps/desktop/src/host/textReplacement.ts）。
+const INVOKE_WRAPPERS = ['callSpellcheck', 'callTextReplacement'];
 
 // 扫描面下限（防止扫描面漂移 ⇒ 判据空转；2026-10-06 实测 D=R=59、F=58）
 const MIN_DECLARED = 50;
@@ -645,6 +646,8 @@ for (const [key, reason] of EVENT_EXEMPT) {
   // 包装器：显式清单里的名字必须被当作 invoke 同义词
   canary(parseInvoked("await callSpellcheck<boolean>('spellcheck_available');\n").has('spellcheck_available'),
     'canary 失效：包装器清单未生效（callSpellcheck 的参数未被算作命令）');
+  canary(parseInvoked("await callTextReplacement<boolean>('text_replacement_available');\n").has('text_replacement_available'),
+    'canary 失效：包装器清单未生效（callTextReplacement 的参数未被算作命令）');
   // 找不到 generate_handler 必须返回 null（而不是空数组 ⇒ 静默把 R 变空 ⇒ 全部误报）
   canary(parseRegistered('pub fn run() {}\n') === null,
     'canary 失效：缺少 generate_handler 时 parseRegistered 未返回 null');

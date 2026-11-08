@@ -310,6 +310,7 @@ if (/id: 'ai',/.test(settingsSource)) {
 // ⚠️ 不得宽松地扫所有 `'mellow.*'` 字面量：那会把 **CSS 类名**（`mellow-md-image` / `mellow-toc`）
 // 也算进来 —— 实测噪声从 21 涨到 90+。用 `mellow.`（**带点**）即可天然排除连字符类名。
 const NON_SCHEMA_STORAGE_KEYS = new Map([
+  ['mellow.editor.smartPunctuation', 'G7-MENU-05：已发布组合开关的瞬态迁移键；读取时填充缺失的 smartQuotes/smartDashes 后删除，恢复默认也显式删除，避免旧值复活。'],
   // ── 视图 / 会话状态（Typora 同样不把它们作为偏好）──
   ['mellow.tabs.session', '会话恢复：当前打开的标签列表（app 级，跨窗口共享）'],
   ['mellow.closedFiles', '已关闭文件栈（File → Reopen Closed File ⇧⌘T；有 CLOSED_FILES_LIMIT 上限）'],
@@ -824,6 +825,44 @@ if (cssLayerAnchor === undefined) {
   }
   if (!/'setFirstLineIndent'/.test(coreSource)) {
     fail("editor-core wrapper 白名单缺少 'setFirstLineIndent'");
+  }
+  // 导出侧（2026-11-08，§4.379）：Typora 的导出构建器按 `indentFirstLine` 给 `#write`
+  // 加 `first-line-indent` 类 ⇒ Mellow 的导出根节点必须同义，且宿主两条入口都要传值。
+  // 只锁编辑器侧时，用户在设置里开了缩进，导出件仍顶格（同类「开关关不掉」）。
+  const exportHtmlIndex = read('packages/export/src/html/index.ts');
+  const exportHtmlTypes = read('packages/export/src/html/types.ts');
+  const exportHtmlStyles = read('packages/export/src/html/styles.ts');
+  const exportPrint = read('packages/export/src/print.ts');
+
+  if (!/firstLineIndent\?: boolean;/.test(exportHtmlTypes) || !/firstLineIndent: false,/.test(exportHtmlTypes)) {
+    fail('HtmlExportOptions 缺少 firstLineIndent（或默认值不为 false）：Typora indentFirstLine 默认 false');
+  }
+  if (!/firstLineIndent: base\.firstLineIndent \?\? false/.test(exportHtmlIndex)) {
+    fail('HTML 导出 normalizeOptions 未给 firstLineIndent 默认值');
+  }
+  if (!/firstLineIndent: withStyles && opts\.firstLineIndent/.test(exportHtmlIndex)) {
+    fail('HTML 导出未按 firstLineIndent 给正文根节点加类（或未排除无样式模式）');
+  }
+  if (!/\.mellow-content\.first-line-indent p \{ text-indent: 2em; \}/.test(exportHtmlStyles)) {
+    fail('导出样式表缺少 first-line-indent 的 2em text-indent（Typora base.css 同源规则）');
+  }
+  if (!/\.mellow-content\.first-line-indent li \{ margin-left: 2em; \}/.test(exportHtmlStyles)) {
+    fail('导出样式表缺少 first-line-indent 的 li margin-left: 2em');
+  }
+  if (!/firstLineIndent: options\.firstLineIndent,/.test(exportPrint)) {
+    fail('打印管线（PrintOptions）未透传 firstLineIndent');
+  }
+  if (!/firstLineIndent: readBoolSetting\('editor\.firstLineIndent', false\)/.test(appSource)) {
+    fail('App.tsx 导出入口未把 editor.firstLineIndent 传入 HTML 导出选项');
+  }
+  const firstLineExportDrift = appSource.replace(
+    "firstLineIndent: readBoolSetting('editor.firstLineIndent', false)",
+    'firstLineIndent: false',
+  );
+  if (firstLineExportDrift === appSource) {
+    fail('首行缩进导出 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+  } else if (/firstLineIndent: readBoolSetting\('editor\.firstLineIndent', false\)/.test(firstLineExportDrift)) {
+    fail('首行缩进导出 canary 失效：注入的漂移未被检出');
   }
   const firstLineDrift = appSource.replace(
     "host?.setEditorConfig('setFirstLineIndent', { enabled: Boolean(value) })",
@@ -2368,6 +2407,19 @@ if (cssLayerAnchor === undefined) {
   if (!/host\.setSmartPunctuationOnRenderEnabled\(true\);/.test(appSource)) {
     fail('App.tsx 未在**启动时**恢复 `editor.smartPunctuationOnRender`（冷启动会丢）');
   }
+  // en/em 样式：平台门控留在 Adapter；存储、启动恢复与即时应用必须都存在。
+  if (!/id: 'editor\.twoHyphensToEm'[^}]*defaultValue: false/.test(settingsSource)
+    || !/setTwoHyphensToEm\(on: boolean\)/.test(core)
+    || !/host\.setTwoHyphensToEm\(/.test(appSource)
+    || !/hostRef\.current\?\.setTwoHyphensToEm\(readBoolSetting\('editor\.twoHyphensToEm', false\)\)/.test(appSource)
+    || !/getTwoHyphensToEm: isTwoHyphensToEm/.test(sp)) {
+    fail('两连字符 en/em 样式设置默认值或启动 / 即时应用通道断链');
+  }
+  const panel = read('apps/desktop/src/SettingsPanel.tsx');
+  if (!/platformMac \|\| !smartDashesDef \|\| readSetting\(smartDashesDef\) !== true/.test(panel)
+    || !/hiddenIds\.add\('editor\.twoHyphensToEm'\)/.test(panel)) {
+    fail('twoHyphensToEm 必须仅在非 macOS 且智能破折号开启时显示（Typora 面板基线）');
+  }
   // canary：正 / 负（改名）
   const GATE_RE = /if \(smartPunctuationOnRender\) return false;/;
   if (!GATE_RE.test('  if (smartPunctuationOnRender) return false;')) {
@@ -2957,7 +3009,12 @@ if (cssLayerAnchor === undefined) {
   const appSrc = codeText('apps/desktop/src/App.tsx');
   const windowAt = (site) => {
     const at = appSrc.indexOf(site.marker);
-    return at < 0 ? null : appSrc.slice(at, at + 1500);
+    // 实参窗口是**近似手段**（如实声明）：1500 字符在 §4.383 新增
+    // `themeVariables` + 注释后刚好够不到 `exportHtml` 第三个实参里的
+    // `resolveImage`（距离 1552），故放宽到 2200。取值上限的约束来自
+    // 「不能跨到下一个调用点的协作者」——这两个 marker 的下一次出现都远在
+    // 窗口之外（本文件唯一的另一处 `resolveImage:` 在前一个调用点）。
+    return at < 0 ? null : appSrc.slice(at, at + 2200);
   };
   // 判定与 canary **共用**同一谓词
   const rowProblems = (row, win) => {
@@ -3290,4 +3347,4 @@ if (errors.length > 0) {
   throw new Error(`Settings contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge (V7-W6, G7-EDIT-15); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框; outline max-level (2026-09-30): markdown.outlineMaxLevel 端到端 —— schema(select 1..6 / 默认 6) → applySetting 写 state → buildOutline 收 maxLevel（tree + all 两处）→ 该 state 必须进 refreshOutline 依赖数组（否则改设置不重算，§4.25 同型）; allow-magnification (2026-09-30): editor.allowMagnification 端到端（settings → bridge 声明+实现 → setEditorConfig 白名单 → App live+启动）+ **核心断言：enablePinchZoom 必须返回 disposer**（否则做成开关后「关不掉」= 假控件）; image font size (2026-09-30): export.image.fontSize 端到端（settings number 8–48 / 默认 16 → ImageExportOptions.bodyFontSize → resolveImageBodyFontSize → layout）+ **BODY_SIZE 必须仍为 16**（对齐 Typora 的 24 需单独裁决）；rel() 等比缩放的正确性由单测行为断言锁（非护栏形状锁）');
+console.log('Settings contract: files id normalized + updater merged into general (storage keys stable); editable shortcuts via schema-preserving override layer (registry + native menu boundaries); recording UX armed; P6 armed: AI default-off (no persisted AI state, PRD §122) + Reader/Palette/Slash hidden-by-default with menu/settings entry points + User CSS entry and appData/user.css injection; slash key drift canary armed; export wiring armed (Pandoc 9-format + Previous Export + Image Export, menu/schema/Rust anchors); W5 armed: 5-min timed auto save (Typora conf.user.json autoSaveTimer default) + interval exposed in GUI (Typora needs hand-editing JSON) + Print = system dialog with no preview window (D-H=②) + non-macOS Page Setup actionable hint (G7-FEAT-01/02/03) + Typora-style layered user CSS (themes/base.user.css → themes/<theme>.user.css → user.css, *.user.css excluded from theme scan); editor auto pair toggle wired end-to-end: settings schema → App startup/live apply → editor-core whitelist → CoreEditor autoPairCompartment + markdown language data + bridge (V7-W6, G7-EDIT-12); final newline on save wired through BOTH save paths with no bypass (V7-W6, G7-FEAT-12); Tab-key indent wired via tabKeyBehavior (NOT the inert indentUnit facet — probe-verified) (V7-W6, G7-EDIT-13); preserve-line-breaks on export wired into BOTH pipelines (markdown-it breaks + PDF parseBlocks) (V7-W6, G7-FEAT-13); first-line indent wired only for Paragraph via CoreEditor compartment + bridge, and to exported HTML/print via HtmlExportOptions/PrintOptions first-line-indent class (V7-W6, G7-EDIT-15 / §4.379); settings entries double-ended (2026-09-30): action 必有 applyCommand 且该 applyCommand 在 applySetting 有 case、action 不带 storageKey、值型必有 storageKey — 扫描面含 SettingsPanel 动态 section; restore-defaults (2026-09-30): 必须遍历 SETTINGS_SECTIONS（不得硬编码清单）、跳过入口型 action、删除键而非写默认值、逐项 apply 复用 applySetting、且必须走应用内确认对话框; outline max-level (2026-09-30): markdown.outlineMaxLevel 端到端 —— schema(select 1..6 / 默认 6) → applySetting 写 state → buildOutline 收 maxLevel（tree + all 两处）→ 该 state 必须进 refreshOutline 依赖数组（否则改设置不重算，§4.25 同型）; allow-magnification (2026-09-30): editor.allowMagnification 端到端（settings → bridge 声明+实现 → setEditorConfig 白名单 → App live+启动）+ **核心断言：enablePinchZoom 必须返回 disposer**（否则做成开关后「关不掉」= 假控件）; image font size (2026-09-30): export.image.fontSize 端到端（settings number 8–48 / 默认 16 → ImageExportOptions.bodyFontSize → resolveImageBodyFontSize → layout）+ **BODY_SIZE 必须仍为 16**（对齐 Typora 的 24 需单独裁决）；rel() 等比缩放的正确性由单测行为断言锁（非护栏形状锁）');

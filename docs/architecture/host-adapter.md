@@ -34,6 +34,7 @@ interface DesktopHost {
 | window | `apps/desktop/src-tauri/src/window.rs` | `apps/desktop/src/host/windowService.ts` | ✅ 标题 / 关闭门禁 / 几何记忆（size·position·maximized·fullscreen·sidebar） |
 | watcher | `apps/desktop/src-tauri/src/watcher.rs` | `apps/desktop/src/host/watcherAdapter.ts` | ✅ 外部变更监听（`mellow://file-changed`，含 dirty 冲突路径） |
 | search | `apps/desktop/src-tauri/src/search.rs` | `apps/desktop/src/host/searchServices.ts` | ✅ 流式全局搜索 |
+| textReplacement | `apps/desktop/src-tauri/src/text_replacement.rs` | `apps/desktop/src/host/textReplacement.ts` | ✅ 系统文本替换词典（macOS 全局域 plist；非 mac 不可用 ⇒ 菜单/设置隐藏） |
 | export | `apps/desktop/src-tauri/src/print.rs` | `packages/export/src/printStyle.ts` | ✅ PDF / HTML / Print |
 | keychain | — | — | ⛔ **有意不实现**（ADR-0029 Q5 = E1：本仓上传路径**不持有凭据**；扩展的 `keychain` 权限 V1 一律拒绝） |
 | process | — | — | 🟡 **无统一的 `ProcessService`** —— 需要外部进程的能力各自直接调用（如 `apps/desktop/src-tauri/src/pandoc.rs`）；**如将来要统一，应新增 ADR** |
@@ -51,6 +52,7 @@ apps/desktop/src/host/            # Adapter 装配层（PRD §113.4：平台代�
 ├── watcherAdapter.ts WatchService（watch_document + mellow://file-changed）
 ├── searchServices.ts SearchService（Tauri streaming search）
 ├── spellcheck.ts     SpellcheckService（macOS 走 Rust NSSpellChecker）
+├── textReplacement.ts TextReplacementService（macOS 系统文本替换词典；非 mac 不可用）
 ├── updater.ts        安全自动更新（auto-update-spec）
 ├── uploadService.ts  ImageUploadService（Rust 三通道）
 ├── userThemes.ts     用户主题加载（appData/themes/*.css）
@@ -62,6 +64,6 @@ apps/desktop/src/host/            # Adapter 装配层（PRD §113.4：平台代�
 契约类型在 **`packages/host-api/src/`**（纯类型包，PRD §116 —— 零实现、零 OS 依赖）。
 
 > **⚠️ 2026-10-06 更正**：本节原列 4 个文件（`editorHost.ts` / `fs.ts` / `bridge.ts` / `types.ts`）——
-> **一个都不存在**。实际是上列 **12 个按服务拆分的文件**。
+> **一个都不存在**。实际是上列 **13 个按服务拆分的文件**（2026-11-08 新增 `textReplacement.ts`）。
 > 浏览器 dev 模式（无 Tauri）由 `browserMockHost.ts` 统一降级为内存 mock；
 > 它必须是**单例**（所有 browser service 复用同一实例），否则浏览器端与桌面端的 fs 语义会分叉。

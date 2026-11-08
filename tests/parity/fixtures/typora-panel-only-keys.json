@@ -279,7 +279,7 @@
       "key": "remapPunctuation",
       "consumer": "js",
       "status": "equivalent",
-      "note": "**面板键 ≠ 内部选项名**：面板键 `remapPunctuation` → `File.option.remapUnicodePunctuation`（frame.js：`File.option.remapUnicodePunctuation=e||!1,JSBridge.putSetting(\"remapPunctuation\",e||!1)`）。面板可见 label = **\"Remap Unicode Punctuation on Parse\"**（hint：`》 blockquote → > blockquote`、`[link](src ’title’) → [link](src 'title')`，并写明 \"It will be turned on automatically if smart quotes/dashes will be converted on input.\"）⇒ 语义 = **解析时把 Unicode/全角标点也当 ASCII 语法**。消费点（main.js）：`shouldRemapPunctuation(){ return File.option.remapUnicodePunctuation || !File.option.convertSmartOnRender && (File.option.smartQuote || File.option.smartDash) }` —— 该表达式与面板 hint 那句**逐字对应**，互为验证。**默认 false**（main.js 默认值表：`remapUnicodePunctuation:!1`）⇒ 默认**不做** remap。Mellow 亦不做 ⇒ **默认行为一致**；Mellow 无此开关 ⇒ 记为 equivalent。⚠️ **联动约束**（给将来实现智能标点时用）：Typora 在「智能引号/破折号 + 输入时转换」时会**自动**打开它 —— 不是独立开关。",
+      "note": "**面板键 ≠ 内部选项名**：面板键 `remapPunctuation` → `File.option.remapUnicodePunctuation`（frame.js：`File.option.remapUnicodePunctuation=e||!1,JSBridge.putSetting(\"remapPunctuation\",e||!1)`）。面板可见 label = **\"Remap Unicode Punctuation on Parse\"**（hint：`》 blockquote → > blockquote`、`[link](src ’title’) → [link](src 'title')`，并写明 \"It will be turned on automatically if smart quotes/dashes will be converted on input.\"）⇒ 语义 = **解析时把 Unicode/全角标点也当 ASCII 语法**。消费点（main.js）：`shouldRemapPunctuation(){ return File.option.remapUnicodePunctuation || !File.option.convertSmartOnRender && (File.option.smartQuote || File.option.smartDash) }` —— 该表达式与面板 hint 那句**逐字对应**，互为验证。**默认 false**（main.js 默认值表：`remapUnicodePunctuation:!1`）⇒ 默认**不做** remap。Mellow 亦不做 ⇒ **默认行为一致**；Mellow 无此开关 ⇒ 记为 equivalent。⚠️ **联动约束**（给将来实现智能标点时用）：Typora 在「智能引号/破折号 + 输入时转换」时会**自动**打开它 —— 不是独立开关。 【2026-11-08 续轮复核（审计 §4.360「六」16）】：确认其语义在**解析期**（`》` 起引用、`【x】` 任务、链接标题弯引号），Lezer 在不改语法的前提下无法表达；面板键默认关且 Mellow 现状与之等价 ⇒ **本轮不新增开关**（空开关 = 假控件）。若要实现，需单独立项并评估自定义语法扩展，不在 G7-MENU-05 余项里悄悄塞入。",
       "anchor": "File.option.remapUnicodePunctuation",
       "internal": "remapUnicodePunctuation"
     },
@@ -356,7 +356,10 @@
       "key": "twoHyphensToEm",
       "consumer": "js",
       "status": "equivalent",
-      "note": "面板里**仅非 macOS 且 `smartDash` 开启时**才出现（`!window.isMac && this.getValue(\"smartDash\") ? <radio> : null`），radio 文案：`false:\"Convert -- to – (en dash), and --- to — (em dash)\"` / `true:\"Convert -- and --- to — (em dash)\"`。消费点（main.js + frame.js）：`inner: File.option.twoHyphensToEm ? \"—\" : \"–\"`（`^--` 分支）⇒ **缺省即 else ⇒ 默认 false ⇒ `--`→`–`(en)、`---`→`—`(em)**。Mellow 的 `shouldEmDash`（`smartPunctuation.ts`）把 `--␠` 换成 `— `（**em**）⇒ 取的是 Typora 的 **true 档**。两边 `smartDash` 默认均为关 ⇒ 默认都不触发；**一旦开启，`--` 的落点不同**（Mellow em / Typora en）—— 记为 equivalent + 该偏离已写明（Mellow 的取舍：`--` 与 `---` 都指向 em，避开 hr）。",
+      "mellow": [
+        "editor.twoHyphensToEm"
+      ],
+      "note": "2026-11-08：设置 editor.twoHyphensToEm 默认 false，且仅非 macOS、智能破折号开启时显示（Typora frame.js 同型）。Typora main.js 输入分支：第二个连字符按偏好转 – / —；默认档在 – 后输入第三键转 —；true 档第三键因不匹配 (--|–|-)$ 而保留普通连字符（不是照面板文案吞键）。渲染档 -- 按偏好显示 – / —，--- 显示 —，无需空格。Mellow 经 settings → App 启动 / live apply → EditorCore → smartPunctuation API 完整装配，保护代码、行首结构、表格分隔符、转义和链接 / 图片目标。tests/e2e/substitutions-menu-verify.mjs 43/43（Chromium），包含真实控件、输入、渲染、持久化、Source Mode、IME 与 Undo/Redo；不代替原生三平台验收。",
       "anchor": "File.option.twoHyphensToEm"
     },
     {

@@ -261,15 +261,41 @@ if (!/selectedId=\{outlineSelectedId\}/.test(appSource) || !/selectedIndex=\{sea
 // 展示层：选中高亮 + 滚动跟随
 const outlineListTsxP33 = read('packages/desktop-ui/src/OutlineList.tsx');
 const searchListTsxP33 = read('packages/desktop-ui/src/SearchResultsList.tsx');
-if (!/selectedId\??: string \| null/.test(outlineListTsxP33) || !/outline-row\.selected/.test(outlineListTsxP33) || !/scrollIntoView\(\{ block: 'nearest' \}\)/.test(outlineListTsxP33)) {
+if (!/selectedId\??: string \| null/.test(outlineListTsxP33) || !/selectedId === item\.id \? 'selected'/.test(outlineListTsxP33) || !/scrollToIndex=\{selectedRowIndex/.test(outlineListTsxP33) || !/scrollToNonce=\{highlightNonce\}/.test(outlineListTsxP33)) {
   fail('OutlineList 缺少键盘选中高亮或滚动跟随（P3.3）');
 }
-if (!/selectedIndex\??: number/.test(searchListTsxP33) || !/search-match\.selected/.test(searchListTsxP33) || !/scrollIntoView\(\{ block: 'nearest' \}\)/.test(searchListTsxP33)) {
+if (!/selectedIndex\??: number/.test(searchListTsxP33) || !/row === selectedRow \? ' selected'/.test(searchListTsxP33) || !/scrollToIndex=\{selectedRowIndex\}/.test(searchListTsxP33)) {
   fail('SearchResultsList 缺少键盘选中高亮或滚动跟随（P3.3）');
 }
 const stylesCss = read('apps/desktop/src/styles.css');
 if (!/\.outline-row\.selected/.test(stylesCss) || !/\.search-match\.selected/.test(stylesCss)) {
   fail('styles.css 缺少键盘选中样式（P3.3：高亮不可见即导航不可用）');
+}
+
+// 离屏目标必须由共享虚拟窗口先定位、挂载后校正；不能只查询已挂载的 selected DOM。
+for (const anchor of ['scrollTopForRow(offsets, scrollToIndex', 'adjustScrollForRect(scroller, targetRow)', 'scrollTargetKey', 'scrollVerifyRef']) {
+  if (!virtualRowsTsx.includes(anchor)) fail(`VirtualRows 缺少离屏选中跟随：${anchor}`);
+}
+if (!/scrollToIndex=\{selectedRowIndex/.test(read('packages/desktop-ui/src/FileTree.tsx'))) {
+  fail('FileTree 未接入共享离屏滚动跟随');
+}
+if (!/<details className="search-advanced">/.test(appSource)
+  || !/<summary onKeyDown=\{\(e\) => e\.stopPropagation\(\)\}/.test(appSource)) {
+  fail('Search include/exclude 必须默认折叠，并保留 summary 的原生键盘操作（PRD §17）');
+}
+// 引用宪法 ≠ 读宪法（verify-doc-code-refs 判据）：§17 的折叠要求必须从 PRD 原文取值，
+// 宪法被改（如反向要求「默认展开」）时本护栏要跟着红，而不是只锁一条注释里的 §N。
+{
+  const prd = read('docs/product/Mellow-PRD-V1.2-FINAL.md');
+  const sec17 = /# 17\. Search Sidebar\n([\s\S]*?)\n---/.exec(prd);
+  if (!sec17) fail('PRD §17 Search Sidebar 节不存在（护栏取值锚点漂移）');
+  else if (!sec17[1].includes('不默认展开 include/exclude')) {
+    fail('PRD §17 已不再声明「不默认展开 include/exclude」—— 本护栏的折叠判据需随宪法复核');
+  }
+}
+const followProbe = read('tests/e2e/sidebar-scroll-follow-verify.mjs');
+for (const anchor of ['verifyFilterCaret', 'Shift+Home', 'Shift+End', '160, 270', 'DOM_ROW_BOUND', 'waitForSelected']) {
+  if (!followProbe.includes(anchor)) fail(`侧栏运行时回归缺少 ${anchor}`);
 }
 
 // ── ⑩ P3.3 canary：护栏必须能抓住键盘导航回退 ──────────────────────────
@@ -321,7 +347,7 @@ if (!/\bFileList\b[,}]/.test(appSource.split('\n').filter((l) => l.includes('des
   fail('App.tsx 未从 desktop-ui 导入 FileList 组件（V7-W1.5 Articles 视图）');
 }
 // 列表选中滚动跟随（翻页后选中必须可见）
-if (!/\.file-list \.file-list-item\.selected/.test(fileListTsx) || !/scrollIntoView\(\{ block: 'nearest' \}\)/.test(fileListTsx)) {
+if (!/scrollToIndex=\{selectedRowIndex\}/.test(fileListTsx) || !/rows\.findIndex\(/.test(fileListTsx)) {
   fail('FileList 缺少键盘选中滚动跟随（P3.4）');
 }
 

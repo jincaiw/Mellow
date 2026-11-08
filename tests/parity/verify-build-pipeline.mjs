@@ -473,6 +473,69 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   if (usesSharedLauncher("// 见 dev-server.mjs 的说明\nconst a = 1;\n")) {
     errors.push('e2e 启动器卫生护栏 canary 过宽：**注释里**提到 dev-server.mjs 被算作「已使用」');
   }
+
+  // ── ⑫b 共享启动器**必须先重建编辑器 bundle**（2026-11-08，审计「六」17）──────
+  // 事故：直接 `npx vite` 会加载 public/editor 下**上一次构建**的引擎。本轮 Enter
+  // 键位已实装，探针却报旧行为（`abc\n`），差点被当成实现缺陷去「修」。
+  // 判据是**代码**而非注释：`stripCommentsOf` 之后仍须出现预构建调用，
+  // 否则「注释写着会重建、实际不重建」这种自我安慰也算通过。
+  const devServerPath = resolve(root, 'tests/visual/dev-server.mjs');
+  const devServerCode = existsSync(devServerPath)
+    ? stripCommentsOf(readFileSync(devServerPath, 'utf8').replace(/\r\n/g, '\n'))
+    : '';
+  // 判据必须区分**定义**与**调用**：`function prebuildEditorBundle(cwd)` 本身就形似调用，
+  // 实测把 `startViteDevServer` 里的调用行删掉后，旧的宽判据仍判「已预构建」（负向对照
+  // exit 0）。故用后行断言排除 `function ` 前缀，并要求调用语句以分号结束。
+  const prebuilds = (src) => /build-editor-bundle\.mjs/.test(src)
+    && /execFileSync\s*\(/.test(src)
+    && /(?<!function\s+)prebuildEditorBundle\s*\(\s*cwd\s*\)\s*;/.test(src);
+  if (!prebuilds(devServerCode)) {
+    fail('tests/visual/dev-server.mjs 未在启动 vite 前重建编辑器 bundle（build-editor-bundle.mjs）—— '
+      + '探针会静默加载 public/editor 下的**陈旧引擎**，验证结果不可信（审计「六」17）');
+  }
+  if (prebuilds(stripCommentsOf("// 说明：build-editor-bundle.mjs 会重建\nconst a = 1;\n"))) {
+    errors.push('启动器预构建护栏 canary 过宽：**注释里**提到 build-editor-bundle.mjs 被算作已预构建');
+  }
+  // 负向对照（实测跑出来的漏洞形态）：**实现了却不调用**必须判为未预构建
+  if (prebuilds(stripCommentsOf(
+    "function prebuildEditorBundle(cwd) {\n"
+    + "  execFileSync(process.execPath, ['scripts/build-editor-bundle.mjs'], { cwd });\n"
+    + '}\n',
+  ))) {
+    errors.push('启动器预构建护栏 canary 过宽：只定义 `prebuildEditorBundle(cwd)`、从未调用也被算作已预构建');
+  }
+  if (!prebuilds(stripCommentsOf(
+    "import { execFileSync } from 'node:child_process';\n"
+    + "function prebuildEditorBundle(cwd) { execFileSync(process.execPath, ['scripts/build-editor-bundle.mjs'], { cwd }); }\n"
+    + 'prebuildEditorBundle(cwd);\n',
+  ))) {
+    errors.push('启动器预构建护栏 canary 失效：真实的预构建调用未被识别');
+  }
+
+  // ── ⑫c 探针「就绪」判据不得把「模块已挂」当成「编辑器已就绪」（2026-11-08，审计「六」18）──
+  // 事故：`fenced-math-verify` 把就绪写成 `window.editor || window.webModules?.core`。
+  // CoreEditor 在**模块求值**时同步挂 `window.webModules`（CoreEditor/index.ts:82），
+  // 而 `window.editor` 要等 `resetEditor()` 才赋值（CoreEditor/src/core.ts:92）——
+  // 中间存在一段「模块已在、视图未建」的窗口。判据一旦用 `||`，探针会在该窗口把
+  // iframe 判为就绪，随后 `dispatch` 直接抛 `editor view unavailable`。
+  // 正确形态是**两者同时**成立（`webModules?.core && window.editor`）。
+  const moduleOnlyReady = (src) => /\|\|\s*window\.webModules\?\.core\b/.test(src);
+  const readinessOffenders = e2eFiles
+    .filter((f) => moduleOnlyReady(stripCommentsOf(readFileSync(f, 'utf8').replace(/\r\n/g, '\n'))))
+    .map((f) => relative(root, f).split('\\').join('/'));
+  if (readinessOffenders.length > 0) {
+    fail(`以下 e2e 探针把 \`webModules.core\` **单独**当作就绪条件（\`||\`）：${readinessOffenders.join(', ')} —— `
+      + 'CoreEditor 的模块与 EditorView 是**两段**就绪（模块同步、视图异步），'
+      + '`||` 会在「视图未建」窗口里判就绪，随后抛 `editor view unavailable`。'
+      + '请改为 `window.webModules?.core && window.editor?.dispatch`');
+  }
+  // canary：正例必须检出，正确形态必须**不**误报
+  if (!moduleOnlyReady(stripCommentsOf('const ok = !!(window.editor || window.webModules?.core);\n'))) {
+    errors.push('就绪判据护栏 canary 失效：`window.editor || window.webModules?.core` 未被检出');
+  }
+  if (moduleOnlyReady(stripCommentsOf('const ok = !!(window.webModules?.core && window.editor?.dispatch);\n'))) {
+    errors.push('就绪判据护栏 canary 过宽：正确的 `&&` 形态被误报');
+  }
 }
 
 // ── ⑬ CI 也必须**串行并取消被取代的运行**（2026-10-07，审计 §4.125）──────────────
@@ -713,7 +776,18 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   //   （选区字数探针：Typora 页脚**值门** `0<sel<all` 与面板**长度门**两套门用同一全选分别验证
   //   方向相反 + 打字即刷新回归；调试期抓出 dev harness 不投递 viewUpdate 的通道缺口 ——
   //   bundle 侧 notify* postMessage 回落 + 宿主单一解析器补齐，dirty-leave 探针的死分支自此生效）。
-  const SCRIPT_BASELINE = 110; // [覆盖型] 基线 110
+  // G7-MENU-05：110 → 111，新增 `tests/e2e/substitutions-menu-verify.mjs`。
+  // 运行时覆盖迁移、独立开关、输入/渲染互斥、即时重绘、Undo/Redo 与 IME。
+  // ⚠️ 2026-11-08（审计 §4.360「六」16）：112 → 113 —— 新增 `tests/e2e/text-replacement-verify.mjs`
+  //   （G7-MENU-05 文本替换运行时闭环：宿主 mock 词典 → App 注入 → 引擎 inputHandler →
+  //   真实键入替换 / 单事务 Undo-Redo / 菜单开关 live apply / 代码与 URL 保护 / composition guard）。
+  // ⚠️ 2026-11-08（审计 §4.368）：113 → 114 —— 新增 `tests/e2e/table-insert-dialog-verify.mjs`
+  //   （master-plan 任务 4.10 的覆盖边界补齐：insert.table → askForm 多字段对话框的真实弹出 /
+  //   默认 3-4 / Esc 取消不改文档 / 插入 Rows 含表头的 GFM 表格 / 零原生面板）。
+  // ⚠️ 2026-11-08（审计 §4.369）：114 → 115 —— 新增 `tests/e2e/table-resize-popover-verify.mjs`
+  //   （任务 4.11 的覆盖边界补齐：6×10 网格 / hover 预选 / 网格与数字输入两条缩放路径 /
+  //   delimiter 永不删 / 单次 dispatch 的一次 Undo 还原 / toggle 关闭）。
+  const SCRIPT_BASELINE = 115; // [覆盖型] 基线 115
   // ⚠️ 2026-10-11（审计 §4.317）：`<` → `!==` —— 覆盖型 = 「阈值必须 **==** 当前基线」；
   //   `< N` 只挡「缩小」，**集合增长时会静默稀释防线**（§4.310）。加脚本是**显式**行为 ⇒ 一并同步基线。
   if (scripts11.length !== SCRIPT_BASELINE) {

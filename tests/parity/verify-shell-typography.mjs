@@ -76,7 +76,7 @@ const fallbackIndex = appSource.indexOf(fontSizeFallback);
 if (fallbackIndex === -1 || !/setEditorConfig\('setFontSize'/.test(appSource.slice(fallbackIndex, fallbackIndex + 400))) {
   fail('App.tsx 字号启动恢复必须无条件 apply 并回落 TYPOGRAPHY_DEFAULTS.fontSize（V7-W2.2：iframe 初始 17 ≠ Mellow 默认 16）');
 }
-// V7-W5：正文字号两个消费方必须同源 —— 编辑器（setEditorConfig）+ Reader（CSS 变量）。
+// V7-W5：正文字号消费方必须同源 —— 编辑器（setEditorConfig）+ Reader（CSS 变量）+ 导出件。
 // 历史残余：Reader 硬编码 16px，用户设 20px 时 Reader 仍 16px（§6.1「三处不一致」）。
 if (!/\.mellow-reader \{[\s\S]*?font-size: var\(--mellow-content-font-size, ([0-9.]+)px\)/.test(stylesSource)) {
   fail('styles.css .mellow-reader 字号必须消费 var(--mellow-content-font-size, <TYPOGRAPHY_DEFAULTS.fontSize>px)（V7-W5 Reader/编辑器同源）');
@@ -93,6 +93,34 @@ if (applyContentFontSizeCalls < 4) {
 }
 if (/if \(typeof size === 'number' && size !== 17\)/.test(appSource)) {
   fail('App.tsx 仍以硬编码 17 作为「是否 apply 字号」的判据（V7-W2.2：17 是 CoreEditor 上游初始值，非 Mellow 默认）');
+}
+// 2026-11-08（§4.379 续）：字号的**第三个消费方** = 导出件。Typora 的导出构建器把生效
+// 字号写成 #write 的 inline font-size（`e.fontSize || document.body.parentElement.style.fontSize`）；
+// 只接编辑器 / Reader 时，用户设 20px、导出件仍 16px（同类「设置不随导出」缺陷）。
+const exportHtmlTypes = read('packages/export/src/html/types.ts');
+const exportHtmlIndex = read('packages/export/src/html/index.ts');
+const exportPrint = read('packages/export/src/print.ts');
+if (!/fontSize\?: number;/.test(exportHtmlTypes)) {
+  fail('HtmlExportOptions 缺少 fontSize（导出件无法继承编辑器字号）');
+}
+if (!/fontSize: withStyles \? opts\.fontSize : undefined,/.test(exportHtmlIndex)) {
+  fail('HTML 导出未把 fontSize 接到正文根节点（或未排除无样式模式）');
+}
+if (!/fontSize: options\.fontSize,/.test(exportPrint)) {
+  fail('打印管线（PrintOptions）未透传 fontSize');
+}
+if (!/function readNumberSetting\(id: string, fallback: number \| undefined\): number \| undefined/.test(appSource)
+  || !/fontSize: readNumberSetting\('editor\.fontSize', undefined\)/.test(appSource)) {
+  fail("App.tsx 导出入口未读取 editor.fontSize（字号不会跟随到导出件）");
+}
+const exportFontDrift = exportHtmlIndex.replace(
+  'fontSize: withStyles ? opts.fontSize : undefined',
+  'fontSize: undefined',
+);
+if (exportFontDrift === exportHtmlIndex) {
+  fail('导出字号 canary 未武装：无法注入漂移（锚点漂移，请更新护栏）');
+} else if (/fontSize: withStyles \? opts\.fontSize : undefined,/.test(exportFontDrift)) {
+  fail('导出字号 canary 失效：注入的漂移未被检出');
 }
 // ④ 写作宽度三段同源：settings 默认 / Reader CSS 回落 / App 回落 均引用同一真源
 if (!/\.mellow-reader \{[\s\S]*?max-width: var\(--mellow-writing-width, [0-9]+px\)/.test(stylesSource)) {
@@ -379,15 +407,107 @@ if (Number(/内置 (\d+) 主题/.exec(themeCountDrift)?.[1] ?? NaN) === declared
   }
 }
 
+// ── Reader 首行缩进与编辑器 / 导出件同源（V7-W7，G7-EDIT-15）──────────────
+//
+// 编辑器（CM6 compartment）与导出件（§4.379）都消费 `editor.firstLineIndent` 后，
+// Reader 成了唯一不生效的消费方：设置里勾上「首行缩进」，编辑区与导出件都变了，
+// 切到 Reader 又复原。这与字号（V7-W5）是同一类「消费方不同源」缺口，故锁进同一护栏。
+{
+  const readerTsx = read('apps/desktop/src/Reader.tsx');
+  const appSource = read('apps/desktop/src/App.tsx');
+  const cssSource = read('apps/desktop/src/styles.css');
+  const readerIndentOk = (reader, app, css) =>
+    /firstLineIndent\?: boolean;/.test(reader)
+    && /firstLineIndent \? 'mellow-reader first-line-indent' : 'mellow-reader'/.test(reader)
+    && /firstLineIndent=\{readBoolSetting\('editor\.firstLineIndent', false\)\}/.test(app)
+    && css.includes('.mellow-reader.first-line-indent p { text-indent: 2em; }')
+    && css.includes('.mellow-reader.first-line-indent li p,\n.mellow-reader.first-line-indent p *,\n.mellow-reader.first-line-indent svg * { text-indent: 0; }')
+    && css.includes('.mellow-reader.first-line-indent p:has(> img:only-child) { text-indent: 0; }');
+  if (!readerIndentOk(readerTsx, appSource, cssSource)) {
+    fail('Reader 首行缩进链路不完整：App 未把 editor.firstLineIndent 传给 ReaderView，或 Reader 未挂 first-line-indent 类，或 CSS 缺少 Typora `#write.first-line-indent` 同义规则');
+  }
+  // canary：接线与 CSS 两个方向各注入一次漂移
+  const appDrift = appSource.replace("firstLineIndent={readBoolSetting('editor.firstLineIndent', false)}", 'firstLineIndent={false}');
+  if (appDrift === appSource) {
+    fail('Reader 首行缩进 canary 未武装：App 接线锚点漂移，请更新护栏');
+  } else if (readerIndentOk(readerTsx, appDrift, cssSource)) {
+    fail('Reader 首行缩进 canary 失效：App 把首行缩进写死为 false 未被检出');
+  }
+  const cssDrift = cssSource.replace('.mellow-reader.first-line-indent p { text-indent: 2em; }', '.mellow-reader.first-line-indent p { text-indent: 0; }');
+  if (cssDrift === cssSource) {
+    fail('Reader 首行缩进 canary 未武装：CSS 锚点漂移，请更新护栏');
+  } else if (readerIndentOk(readerTsx, appSource, cssDrift)) {
+    fail('Reader 首行缩进 canary 失效：CSS 缩进值被清零未被检出');
+  }
+}
+
+// ── 导出件内联当前主题 token（V7-W8，审计 §4.383）──────────────────────────
+//
+// 一手证据（Typora 1.14.9 `appsrc/main.js`）：HTML 导出内联**当前主题**的
+// `theme_css` / `base_user_css` / `theme_user_css`，只有显式 `exportTheme` 时才改载
+// `<theme>.css`。Mellow 此前只按亮/暗二选一 ⇒ Paper / Kraft / Inkwell 等主题
+// 在导出件里不生效（编辑器变了、导出件没变 = 所见非所得）。
+//
+// 锁的链路：主题 token 产出（themes）→ 宿主接线（App）→ 选项契约（types）→
+// 映射渲染（styles）→ HTML 导出透传（index）。
+// ⚠️ 边界：打印 / PDF 走 `PDF_THEME_COLORS`（亮暗两档，A1 既定实现），
+// 与 HTML 导出不是同一条样式管线，故本护栏**不**要求 `print.ts` 透传 ——
+// 若将来把打印件主题化，须先补 PDF 配色裁决，再同步本节。
+{
+  const exportTypes = read('packages/export/src/html/types.ts');
+  const exportIndex = read('packages/export/src/html/index.ts');
+  const exportStyles = read('packages/export/src/html/styles.ts');
+  const themeChainOk = (types, index, styles, app) =>
+    /themeVariables\?: Record<string, string>;/.test(types)
+    && /themeVariables: opts\.themeVariables/.test(index)
+    && /const EXPORT_THEME_SOURCES: ThemeTokenSource\[\]/.test(styles)
+    && /\[target: string, sources: string\[\]\]/.test(styles)
+    && /\['--mellow-accent', \['--mellow-link', '--mellow-accent'\]\]/.test(styles)
+    && /\['--mellow-content-font', \['--mellow-content-font'\]\]/.test(styles)
+    && /function themeVariableOverrides\(variables: Record<string, string>\): string/.test(styles)
+    && /themeVariables\?: Record<string, string>/.test(styles)
+    && /font-family: var\(--mellow-content-font,/.test(styles)
+    && /themeVariables: activeTheme\.variables/.test(app)
+    && /\[t, themeSettings\.mode, activeTheme\.variables, maybeRevealExported\]/.test(app);
+  if (!themeChainOk(exportTypes, exportIndex, exportStyles, appSource)) {
+    fail('导出件主题 token 链路不完整：types 缺 themeVariables 契约 / index 未透传 / styles 缺 EXPORT_THEME_SOURCES 或 themeVariableOverrides / App 未传 activeTheme.variables（或 useCallback 依赖漏了它）');
+  }
+  // canary：两处各注入一次漂移（宿主接线 / 链接色映射）
+  const appDrift = appSource.replace('themeVariables: activeTheme.variables,', 'themeVariables: undefined,');
+  if (appDrift === appSource) {
+    fail('导出件主题 token canary 未武装：App 接线锚点漂移，请更新护栏');
+  } else if (themeChainOk(exportTypes, exportIndex, exportStyles, appDrift)) {
+    fail('导出件主题 token canary 失效：App 传 undefined 未被检出');
+  }
+  const mapDrift = exportStyles.replace("['--mellow-accent', ['--mellow-link', '--mellow-accent']],", "['--mellow-accent', ['--mellow-accent']],");
+  if (mapDrift === exportStyles) {
+    fail('导出件主题 token canary 未武装：映射表锚点漂移，请更新护栏');
+  } else if (themeChainOk(exportTypes, exportIndex, mapDrift, appSource)) {
+    fail('导出件主题 token canary 失效：链接色映射退回二选一未被检出');
+  }
+  const indexDrift = exportIndex.replace('themeVariables: opts.themeVariables', 'themeVariables: undefined');
+  if (indexDrift === exportIndex) {
+    fail('导出件主题 token canary 未武装：exportHtml 透传锚点漂移，请更新护栏');
+  } else if (themeChainOk(exportTypes, indexDrift, exportStyles, appSource)) {
+    fail('导出件主题 token canary 失效：exportHtml 不再透传未被检出');
+  }
+}
+
 if (errors.length > 0) {
   throw new Error(`Shell typography contract violations:\n  ${errors.join('\n  ')}`);
 }
 
-console.log(`Shell typography: line-height chain intact (CSS var → Reader; setEditorConfig → iframe editor); editor padding Top 56px (adapter-injected) / Bottom 50vh (≥30vh) shared across themes; typography single source TYPOGRAPHY_DEFAULTS{fontSize ${defFontSize}, lineHeight ${defLineHeight}, writingWidth ${defWritingWidth}} cross-checked against settings defaults + Reader CSS fallbacks; ${''
-}--- V7-W4 ---${''
-} W4.3 单图独占段落居中（Typora \`p > img:only-child\`）：widget 按「行内无其他内容」判定（图文混排 / 两图并排均不居中）+ centered 参与 widget 相等判定（居中态随编辑更新）+ 5 例单测;${''
-} W4.8 主题数量文档一致：内置 ${themeIds.length} 主题，注释声明 ${declared} 个（交叉比对，防再次失真）;${''
-}--- V7-W5 ---${''
-} 正文字号双消费方同源：Reader 消费 --mellow-content-font-size（回落 ${defFontSize}px）+ 编辑器 setEditorConfig，三个写入点（启动恢复 / 缩放 / live apply）齐全（消除「设置 20px、Reader 仍 16px」）;${''}
-}--- V7-W6 ---${''}
-} Reader 段内单换行保留为 <br>（Typora「Preserve single line break」默认开）：段落与引用共用 renderInlineWithSoftBreaks（哨兵法整段渲染，跨行行内标记不被切断）`);
+console.log([
+  `Shell typography: line-height chain intact (CSS var → Reader; setEditorConfig → iframe editor); editor padding Top 56px (adapter-injected) / Bottom 50vh (≥30vh) shared across themes; typography single source TYPOGRAPHY_DEFAULTS{fontSize ${defFontSize}, lineHeight ${defLineHeight}, writingWidth ${defWritingWidth}} cross-checked against settings defaults + Reader CSS fallbacks;`,
+  '--- V7-W4 ---',
+  ' W4.3 单图独占段落居中（Typora `p > img:only-child`）：widget 按「行内无其他内容」判定（图文混排 / 两图并排均不居中）+ centered 参与 widget 相等判定（居中态随编辑更新）+ 5 例单测;',
+  ` W4.8 主题数量文档一致：内置 ${themeIds.length} 主题，注释声明 ${declared} 个（交叉比对，防再次失真）;`,
+  '--- V7-W5 ---',
+  ` 正文字号三消费方同源：Reader 消费 --mellow-content-font-size（回落 ${defFontSize}px）+ 编辑器 setEditorConfig + 导出件 inline font-size，三个编辑器写入点（启动恢复 / 缩放 / live apply）齐全（消除「设置 20px、Reader 仍 16px」与「导出件仍 16px」）;`,
+  '--- V7-W6 ---',
+  ' Reader 段内单换行保留为 <br>（Typora「Preserve single line break」默认开）：段落与引用共用 renderInlineWithSoftBreaks（哨兵法整段渲染，跨行行内标记不被切断）;',
+  '--- V7-W7 ---',
+  ' 首行缩进四消费方同源（editor.firstLineIndent）：编辑器 compartment + 导出 HTML/打印件 + Reader（first-line-indent 类 + Typora base.css 同义规则，图片独占段落取消 text-indent）',
+  '--- V7-W8 ---',
+  ' 导出件内联当前主题 token（Typora 导出内联 theme_css）：App 传 activeTheme.variables → HtmlExportOptions.themeVariables → EXPORT_THEME_SOURCES 映射覆盖 :root（含 --mellow-link→accent、mark、quote/toc 回落、content-font）；⚠️ 打印 / PDF 走 PDF_THEME_COLORS（亮暗两档，A1 既定），不在本节范围;',
+].join('\n'));

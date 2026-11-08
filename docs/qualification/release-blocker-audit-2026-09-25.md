@@ -88,7 +88,7 @@ Release verdict: NO-GO：6 项未闭环
 | 20 | §4.250–§4.252 | **PDF 导出比 HTML 导出少 10 类能力**：① 公式与图表（`PdfEnv.renderMath` / `renderMermaid` 调用点未提供 ⇒ 降级为源码）；② **核心语法**（嵌套列表层级全丢 / 有序列表变无序且丢起始号 / 任务列表 checkbox 丢失 / 嵌套引用拍平 / 硬换行变空格 / 链接整条丢失 / autolink 字面 / **代码块语言被解析但未消费 ⇒ 无语言标识**）。台账 `P0-EXPORT-001` 已如实改为 `IMPL` | **已裁决** —— 两条路都能修，但成本差一个量级：A1 给 pdfmake 补 webview 栅格化渲染器（+100–200 行、位图、本机不可验）；A2 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml`，实跑确认含 `<math>` / mermaid / 内联图片，且**核心语法全部正确** ⇒ 一次性解决 10 类）；A3 维持现状 + 明说文案。**换 PDF 引擎属架构级改动** ⇒ 未自行改 **已裁决（2026-11-03，用户拍板）= A2**：PDF 改用**已实现且已有单测**的 HTML 打印管线（`buildPrintHtml` + printToPdf）⇒ 一次性解决 10 类差距。施工 = 批次 A37；`P0-EXPORT-001`（现 `IMPL`）实施验收后回闭环。 | `docs/adr/ADR-0037-pdf-math-mermaid-rendering-path.md` |
 | 21 | §4.328 | **拼写检查的「语言 / 词典」能力**：Typora 有一整套**语言包管理**（按语言下载/安装/切换词典 + 4 种状态提示，一手证据 = 本机 `zh-Hans.lproj/Front.strings` 的 **10 条** key）；而 Mellow 用**系统** `NSSpellChecker`（词典与语言由 **OS** 提供）⇒ 「选语言」在 macOS 的惯用位置是**系统设置**。同批还有两条小缺口：**代码/链接内检查的开关**（排除已实现、开关无）与 **自动纠正拼写**（其所需 API 在 `objc2-app-kit` 0.3.2 中**不存在**、且对 WKWebView 无效 ⇒ 属**不可实现**而非「未做」） | **已裁决** —— A 维持系统拼写检查（登记为平台惯用等价物）· B 复刻语言包管理（新增词典下载子系统）· C 折中（只读语言 + 打开系统设置入口 + 给代码/链接检查加开关）。⚠️ **未擅自改任何用户可见行为**；矩阵三条 `gap` 的说明此前引用「依赖 `host-api` 的拼写词典能力（`P0-EDITOR-005`）」—— 而该项**已 `IMPL`**（消费方已落地）⇒ **理由已过期**，故 `presetSpellCheck` 的 `disposition` 改指本 ADR **已裁决（2026-11-03，用户拍板）= C**：系统拼写检查 + 应用内**只读语言展示** + 「打开系统拼写设置」入口 + 新增 `editor.spellcheckForCodeAndLink`（默认关）。`autoCorrectMisspell` 登记**不可实现**。施工 = 批次 A38；矩阵 `presetSpellCheck` disposition 改指 **D-AW**。 ✅ **2026-11-06 已落地（批次 A38）**：开关 + live apply 全链 + 只读语言展示 + 系统设置深链，证据见 §4.355 / ADR-0038「执行记录」/ master-plan D-AW 行。 | `docs/adr/ADR-0038-spellcheck-dictionary-language.md` |
 | 22 | §4.352（2026-11-03 本批） | **UX Gate 策略**：人工体验 Gate（30 计时任务 + UX Score ≥92）是**逐项**前置（ADR-0024 Q2=B1 残余效力），还是**单点**承载 | **已裁决（2026-11-03，用户拍板）= 收窄**：`ux-gate` 只由 `P0-QA-001` 声明与承载；其余 6 项（`P0-EDITOR-001` / `P0-EDITOR-003` / `P0-SHELL-001` / `P0-MENU-001` / `P0-EDITOR-004` / `P0-LAYOUT-002`）不再被这条全局策略挂起 → 落 AUTO（不升 PASS-E）。A3 规则**保留**（只对仍声明 ux-gate 的项适用）。取代 ADR-0024 **Q2=B1** 的残余效力 | `docs/adr/ADR-0039-ux-gate-single-carrier-narrowing.md` |
-| 23 | §4.352（2026-11-03 本批） | **内置主题与 Typora 同名而外观不同**（G7-TYPO-05）：master-plan §5.6 自 2026-09-13 写「待裁决」而登记表**一行都没有** ⇒ 违反「待裁决项必须有 ADR 载体」——本行是**补登记**（§4.328/§4.329 同型欠债）。`newsprint` 观感不同 / `whitey` 接近 / `gothic` **明暗相反**（Typora 浅 #fcfcfc vs Mellow 深 #17141f），且 Mellow 无 `night` | **待裁决** —— 选项 A 改原创名 + 存储迁移（起草建议）/ B 改配色对齐（与 §6.2 不变量 10「不复制 Typora 专有资源」**冲突**，须先有新 ADR 取代它）/ C 维持现状。**未擅自改名、未擅自改配色、未动用户已保存的主题选择** | `docs/adr/ADR-0040-theme-name-appearance-divergence.md` |
+| 23 | §4.352（2026-11-03 本批） | **内置主题与 Typora 同名而外观不同**（G7-TYPO-05）：master-plan §5.6 自 2026-09-13 写「待裁决」而登记表**一行都没有** ⇒ 违反「待裁决项必须有 ADR 载体」——本行是**补登记**（§4.328/§4.329 同型欠债）。`newsprint` 观感不同 / `whitey` 接近 / `gothic` **明暗相反**（Typora 浅 #fcfcfc vs Mellow 深 #17141f），且 Mellow 无 `night` | **已裁决（2026-11-08，用户拍板）= A**：`newsprint → kraft` / `whitey → snow` / `gothic → inkwell`（配色与观感**不变**），旧 id 启动时一次性映射（`LEGACY_THEME_ID_ALIASES`）；**不补 `night`**。实现与回归见 §4.365 | `docs/adr/ADR-0040-theme-name-appearance-divergence.md` |
 ## 二、六项逐条（阻塞原因与「还差什么」）
 
 ### 2.1 三项**自身证据已齐备**，只被全局策略挡住
@@ -23730,6 +23730,1691 @@ else」的永真式，自纠为「删除 else 后判据必须失效」——**ca
 timer flake，隔离复跑 19/19，非本轮改动面；未改测试求绿）。
 
 
+
+**14）G7-MENU-05 替换子菜单：转换时机、独立引号 / 破折号与偏好闭环（2026-11-08）**
+
+**依据**：Typora 1.14.9 显示快照 `tests/benchmark/fixtures/typora-live-menu-1149-display.txt`
+的替换子菜单，以及 `frame.js` 的 `setSmartyPantsTiming` / `setSmartQuote` / `setSmartDash`。
+两档转换时机共用 `convertSmartOnRender`，引号与破折号各自独立。原 master-plan
+G7-MENU-05「每子菜单仅 1 项」已过期，不能用历史宿主依赖掩盖可实施的菜单缺口。
+
+**实施**：菜单新增「输入时转换 / 渲染时转换」互斥勾选、独立「智能引号 / 智能破折号」
+及「更多选项…」（直达设置 → 编辑器）。三个偏好从 Settings Store 读取，菜单命令复用
+`applySetting`；设置页与菜单均触发原生菜单重建。引擎在输入 / 渲染两条路径分别过滤，
+兼容 API 保留 set 同时设置两者、get 返回任一开启。渲染插件记录活跃 view 并即时刷新，
+合成期间冻结装饰，compositionend 后补刷新；销毁时移除 view。
+
+**已发布偏好迁移**：`v1.5.34` 已含 `mellow.editor.smartPunctuation`，故从旧键迁移为
+`editor.smartQuotes` / `editor.smartDashes` 有实际兼容依据。只填缺失的独立值，两项写成后
+才删除旧键；写失败保留旧值并允许重试。恢复默认先删除旧键，防止 live apply 时旧值复活。
+
+**运行时抓出的旧缺陷**：文末 `word--` 后键入空格，原 handler 替换两个字符为 `— `，
+但将光标设为 `from + 1`（新文档长度之外），导致转换抛异常且输入未落下。现修为 `from`，
+并以文末 / 行中两例锁住文本及光标位置；没有通过绕开文末场景让测试变绿。
+
+**验证**：设置单测 24/24、命令单测 35/35；引擎定向四套（smart punctuation / undo /
+ime guards / ime）76/76；桌面 TypeScript 检查通过。运行时探针
+`tests/e2e/substitutions-menu-verify.mjs` **21/21**，覆盖实际键入、独立开关、Undo/Redo、
+渲染档源码逐字保真、无输入即时重绘、CDP IME 提交、重载恢复及设置页反向应用。
+本机 Playwright 缺其对应 revision 的 headless shell，使用 `MELLOW_TEST_CHROMIUM` 指向
+已安装 Chrome，仍为独立浏览器测试上下文。编辑器构建产物已重建。
+整链验证发现旧组合开关留下的 `msg.smartPunctOn` / `msg.smartPunctOff` 无消费者，已清理
+两种语言的条目；随后 `pnpm run parity` 全链 exit 0，菜单变异用例由 33 增至 38，均被检出。
+首轮 `pnpm -w test` 因侧栏性能 T4 超 10 秒失败（约 22 秒）；隔离复核 11/11，T4 约
+494ms，最终复跑又达 10.32 秒。追踪发现 `FileListModel.navigate` 每步从头 `findIndex`，
+连续遍历累计 O(n²)；路径访问计数回归在旧实现上确定性失败（1000 条目读 500,500 次，
+线性上限 4000 次）。现仅在上次位置仍对应当前路径时复用下标，否则重新查找，兼容排序、
+过滤、删除与外部选择；定向三套 41/41，覆盖这些失效情形及原性能预算。
+同形检索发现 File Tree / Outline 也有按路径或 id 查找；本轮只修实际超时的 File List，
+未将其扩为全侧栏性能完成宣称。未调整预算或断言；修复后 `pnpm -w test` 全链 exit 0，
+app-core 25 套 302/302、editor-engine 82 套 1378/1378，桌面类型检查与全部串联契约检查通过。
+发布门禁仍为 NO-GO（4 项未闭环），不将自动化全绿等同于发布或真机体验验收通过。
+
+**同日补齐省略号**：只读核查本机 Typora 1.14.9 的 `main.js` 与 `frame.js`，确认
+`smartDash` 同时控制第三个句点触发 `…`，渲染分支也识别 `...`；Mellow 两条路径原先均缺失。
+新增 10 例回归，旧实现 5 例确定性失败；补齐后智能标点 49/49、引擎定向四套 86/86。
+输入档单事务替换并定位光标；渲染档仅加装饰，源码与选区不变。代码及显式转义不转换，
+只开引号时不启用省略号。运行时探针扩至 **27/27**，增加省略号真实键入、Undo/Redo 光标、
+代码与转义保护；CDP IME 同时覆盖引号及连续句点提交。中英文设置说明同步补齐，独立浏览器
+查看设置页，未见新增说明裁切或重叠；临时截图不计入正式 Visual Golden / 三平台验收。
+
+**同日 Source Mode 回归**：复核发现渲染插件没有读取模式，导致源码模式仍显示弯引号、
+破折号及省略号装饰，违反 Live Markdown spec §5。两例回归在修复前均失败；现按 view 的
+`isSourceMode(view)` 停用装饰，沿用既有 Source API 的 selection 事务即时刷新。切回 Live
+恢复装饰，两种切换均不改文档或选区。定向四套 **88/88**，运行时探针 **30/30**，覆盖真实
+`view.source.toggle` 命令往返。补测试期间有一次全链读取了两次 Edit 之间的中间状态
+（新增 `setSourceMode` import 尚未补使用点），报 TS6133；不把该次失败或前次全绿当作
+最终代码的验证结果。固定文件状态、重建引擎及桌面编辑器 bundle 后，最终
+`pnpm -w test` **全链 exit 0**：editor-engine 82 套 **1390/1390**、app-core 25 套
+**302/302**、settings **24/24**、commands **35/35**；桌面类型检查、全部串联契约护栏及
+vendored CoreEditor 的 lint + 23 套 **200/200** 均通过。菜单护栏 38 个注入缺陷全部检出。
+最终日志：`/tmp/mellow-substitutions-final-tests.log`（临时运行日志，不替代已登记的测试入口）。
+发布门禁仍为 **NO-GO，4 项未闭环，实际 PASS-E = 0/51**；本次自动化验证未补造原生
+三平台、导出打印、性能对照或人工体验证据。
+
+**边界**：本轮未实现文本替换、Unicode 标点解析重映射；`muda` 无预定义 Text Replacement
+构造器只说明缺少现成 API，不能推导为「技术上不可能」。破折号 en / em 既有规则差保留在
+`twoHyphensToEm` 登记。Chromium / 单测证据不替代 Tauri 原生三平台 IME、菜单与体验验证。
+G7-MENU-05 与 P0-EDITOR-005 保持部分完成，不将残余缺口伪装为完成。
+
+**15）en / em 破折号消除规则差 + URL 保护 + 侧栏虚拟滚动跟随与搜索筛选收起（2026-11-08 同日续轮）**
+
+**破折号 en / em**：新增 `editor.twoHyphensToEm`（默认 false，仅非 macOS 且智能破折号
+开启时在设置页显示；App 启动 / live apply / Core wrapper / 引擎四层接线，护栏
+`verify-settings-contract` 锁定）。默认输入档第二键即转 `–`、其后再键 `-` 转 `—`；
+开启后第二键即转 `—`。开启档第三键的行为**以 Typora 1.14.9 `main.js` 逐行核对为准**：
+其输入分支 `/(--|–)$/` / `/-$/` 不匹配已有 `—`，故第三键按普通字符落下（实测
+`word—-`）。本轮初版曾用 WeakMap 吞键模拟「第三键无操作」，读到一手分支后确认与
+Typora 实际行为不符，**已删除该机制**并同步改测试预期 —— 判定纪律：以真值源码为准，
+不为让初版设计成立而写断言。渲染档免尾随空格识别 `--` / `---`。
+
+**URL / 结构上下文保护**：智能标点输入与渲染此前只排除代码上下文，实测会改写
+`[link](path-.md)`、`![alt](image-.png)`、`<https://host/path->`、引用链接定义符与裸
+URL 中的连字符。7 例回归先行**全部判红**，随后新增 `isProtectedPunctuationContext`
+（Lezer 语法父链 URL / Autolink / HTMLTag / HTMLBlock / ProcessingInstruction /
+CommentBlock + 行前缀未完成链接目标与裸 URL）后 74/74。定向套件序列：新触发时机 5 红
+→ 66/66；URL 回归 7 红 → 74/74。
+
+**侧栏虚拟滚动跟随**：离屏选中项在旧实现中无 DOM 可查（`querySelector` 只能命中已挂载
+行），End / 连续 ArrowDown / Highlight Current Header 均不跟随。`VirtualRows` 新增
+`scrollToIndex` + `scrollToNonce`：先按累计偏移滚动挂载目标，再以真实矩形校正（≤4 轮），
+仅响应目标 / nonce 变化以保留手动滚动；File List / Search 由消费方把逻辑序号映射到含
+组标题的虚拟行。`scrollTopForRow` 纯函数 + 6 例单测。运行时
+`tests/e2e/sidebar-scroll-follow-verify.mjs` **54 项全过**（File Tree 225 行 / File List
+466 虚拟行 / Outline 220 / Search 920 虚拟行；每段 DOM 行断言 ≤90 锁虚拟化上界；折叠首组
+后 Home 映射 row 2）。集成首测曾暴露搜索筛选 summary 的 Enter 被结果导航 handler 截走 ——
+改为 summary 停透传 keydown、保留原生默认激活后转绿。
+
+**过滤输入框与搜索筛选**：File Tree / Articles 过滤框对 Home/End/←/→ 停透传（不
+preventDefault，保留原生光标与 Shift 选区），探针用真实键盘断言 `[0,0] / [4,4] /
+Shift 选区`；Search include/exclude 收进「文件筛选」details **默认收起**（PRD §17
+「不默认展开 include/exclude」），收起再展开保留值，160 / 270px 展开无横向溢出。首版
+Golden 可见性采样用 `getClientRects()` 误报「收起仍可见」（details 隐藏子树保留布局矩形），
+改 `checkVisibility()` 后正确。
+
+**视觉基线**：搜索默认收起使首条匹配上移 34px（230→196）。比对判红后**先读实际截图**
+确认布局正确（筛选行收起、无 include/exclude 输入框），再同步 macOS 基线并补记
+`advancedOpen=false / advancedFieldsVisible=false`；复跑 4 视图全匹配 ±1px。Linux /
+Windows 基线的 search 段仍含旧 `firstMatch.y=266`（含筛选区高度）—— 该平台实测环境不可用，
+**不做跨平台猜测式改数**，留待对应平台实机重采集（基线文件按平台分离本就是为此设计）。
+
+**验证**：引擎定向 smart punctuation **74/74**；运行时 substitutions-menu-verify 扩至
+**43/43**（含非 macOS `navigator.platform` 模拟下的偏好可见性门控与真实键入 —— 仅验证
+Adapter 门控，不等同 Windows 原生验收）；侧栏滚动跟随探针 **54 项**；桌面 TypeScript、
+`verify-sidebar-contract` / `verify-settings-contract` / i18n 契约、引擎与桌面 bundle
+重建通过；`sidebar-golden` 4 视图匹配。脚本基线 111→112（登记新探针）。发布门禁仍
+**NO-GO**：文本替换、Unicode 标点解析、原生三平台证据、人工 UX 会话未闭环。
+
+**16）G7-MENU-05 文本替换（系统词典 → App → 引擎）与 Unicode 标点解析的裁决（2026-11-08 同日续轮）**
+
+**一手真值**（Typora 1.14.9 只读核查）：`window/frame.js` 的 `handleUserReplacement`
+仅 `File.isMac` 生效，经桥 `word.getTextReplacement` 读 **macOS 系统文本替换词典**
+（`~/Library/Preferences/.GlobalPreferences.plist` 的
+`NSUserDictionaryReplacementItems`，元素 `{on, replace, with}`；开关键
+`WebAutomaticTextReplacementEnabled`，缺省按 true）。触发时机 = 词条**打完之后
+再键入一个字符**（`n = textarea.value 去掉最后键入字符`，`find(e => n.endsWith(e))`），
+替换后**触发字符保留**。Typora 的偏差：**不检查**系统「文本替换」总开关，关掉后仍替换。
+
+**实现（四层，与智能标点同型）**：
+- Rust Adapter `apps/desktop/src-tauri/src/text_replacement.rs`：`parse_replacement_entries`
+  / `parse_replacement_enabled` 为**跨平台纯函数**（3 项单测：on=0 与空词条过滤、缺 `on`
+  视为启用、开关显式 false 与缺省 true、垃圾输入空表）；命令
+  `text_replacement_available` / `text_replacement_entries`，非 macOS 恒不可用 / 空表。
+- 契约 `packages/host-api`：`TextReplacementService`（`available` / `entries`，
+  **降级不抛错**）；mock 注入确定性词条，null 宿主恒不可用。
+- App Adapter：`apps/desktop/src/host/textReplacement.ts`（可用性与词典**同步缓存**，
+  菜单 / 设置行在同步构造时就能决定显示）；`browserMockHost` 预置 `omw` / `(c)`
+  两条 dev 词条，仅用于浏览器探针。
+- 引擎 `packages/editor-engine/src/textReplacement.ts`：`inputHandler` 单字符、无选区、
+  非合成、非代码 / URL 上下文；`matchTextReplacement` 取**最长词条**、受行首硬界约束；
+  替换与触发字符合为**一个事务**（Undo 一步）；设置 `editor.textReplacement`（默认 true）
+  为唯一真值，菜单项 `macOnly`（非 mac 隐藏而非占位）。
+
+**已登记差异**：Typora 以 AppKit 开关为准但与系统开关脱节；Mellow 以设置勾选为唯一
+生效条件 —— **勾选态必须等于实际行为**，故不复刻该偏差。最长词条优先替代 Typora 的
+`find` 首命中（系统词典返回序不可控，取最长是确定性更强的等价规则）。
+
+**验证**：引擎 `text-replacement.test.ts` **12/12**（触发时机 / 最长词条 / 行首硬界 /
+保护上下文对照组 / 开关与空表 / 单事务 Undo-Redo / composition guard / API 安装）；
+运行时 `tests/e2e/text-replacement-verify.mjs` **14/14**（启动注入 → 真实键入替换 →
+Undo/Redo → 菜单命令关闭/开启 live apply + 存储真值 → 行内代码 / URL 不替换 →
+合成中不替换、结束后恢复）。自测过程中发现**两处探针光标写错**（行内代码 7→8、
+URL 17→16，原断言在「没有替换」与「替换了就不同」之间不可分辨），已按文档索引改正，
+单测同步修正 —— 未为求绿改断言。脚本基线 112→113。
+
+**Unicode 标点解析（`remapPunctuation`）裁决：本轮不实现**。一手证据显示它是
+**解析期**语义（`》` 起引用、`【x】` 任务、链接标题弯引号），Lezer 无法在不改语法的前提下
+表达；面板键默认关、Mellow 现状与该默认等价。**不新增空开关**（写了无人读的值 =
+假控件），需单独立项后再动。
+
+**边界**：`text-replacement-verify` 跑在浏览器 dev + mock 词典，不覆盖 Tauri 原生宿主
+与真实 macOS 系统词典链路（`muda` 无预定义 Text Replacement 构造器亦只说明无现成 API，
+不等于不可能）。未做任何原生键位注入 / 打印探针，未触碰用户文件。发布门禁仍 **NO-GO**：
+Unicode 标点解析、原生三平台证据、人工 UX 会话未闭环；G7-MENU-05 与 P0-EDITOR-005
+保持**部分完成**。
+
+---
+
+**17）G7-MENU-06 前提撤回 + G7-EDIT-07 根因收口：Enter = 新段落（2026-11-08 同日续轮）**
+
+**母题**：上一轮文本替换收口时复核 Edit 菜单，发现 Mellow 的 Edit 菜单比 Typora 1.14.9
+多出**两行**（`新段落` / `新行`）。追溯其来历：2026-09-13 依据官方 Shortcut Keys 页的
+**键位表**（Edit 段开头写 New Paragraph(Enter) / New Line(Shift+Enter)）判定「Typora Edit
+菜单含这两项」，遂加入 Mellow 菜单作为 Enter 语义缺口的**补偿**（G7-MENU-06）。但键位表
+描述的是**按键语义**，不是**菜单项存在性** —— 两者被混读。
+
+**一手证据（显示层三层互证，2026-11-08 只读）**：
+1. `tests/benchmark/fixtures/typora-live-menu-1149-display.txt`（AxAX dump，显示层唯一
+   一手基线，不得手改）：Edit 菜单首项即「撤消」，全文无 New Paragraph / New Line；
+2. `tests/benchmark/fixtures/typora-menu-dump.txt`（`Menu.strings` 标签表）：同样无这两项；
+3. `strings MainMenu.nib`（Typora 1.14.9 app bundle，只读）：无 `New Paragraph` /
+   `New Line` 字面量。
+   ⇒ **G7-MENU-06 的前提不成立**；补偿项本身成为显示层差异（多两行 + Undo 不在首位）。
+
+**处置（根因而非症状）**：
+- **撤除**菜单两行及其后分隔符（`packages/commands/src/menuSchema.ts`），Undo 回归首项；
+  同步删除 `menu.edit.newParagraph` / `menu.edit.newLine` 两个 locale 键（`menu.*` 由
+  `verify-menu-contract.mjs` 的孤儿判据**双向**核对，留着即报错）。
+- **保留**命令 `edit.newParagraph` / `edit.newLine`（`apps/desktop/src/App.tsx` 命令注册）
+  —— 能力不丢，只是菜单不展示；命令面板与 e2e 探针（`ux-flows-verify.mjs`）继续可用。
+- **根因对齐 Enter**：新增引擎模块 `packages/editor-engine/src/enterKeymap.ts`，
+  `Prec.highest(keymap.of([{key:'Enter'}]))` 只在**普通段落**上下文接管并插入 `\n\n`
+  （先吃掉 caret 前行尾空白）；Shift+Enter 不加绑定，由 CM 默认键位产出单个 `\n`，
+  形成 Typora 的 Enter / Shift+Enter 配对。
+- **不接管**（原样交还 CM / `lang-markdown`）：列表项与空列表项、引用、行内码 / 围栏码 /
+  缩进码、表格、frontmatter、HTML 块、注释块、数学 span（`$$…$$` / `\[…\]` 无语法树
+  节点，由 `parseMathSpans` 行级扫描判定，端点算外侧）；补全面板打开时返回 `false`；
+  IME 合成期间返回 `false`（复用 `composition.isComposing`）。判定走语法树父链
+  （O(树深)）+ 行首标记正则兜底（空的 `- ` / `> ` 行无对应语法节点）。
+- **接线**：`install()` 内置（非特性开关）—— 该语义是 PRD §34 的宪法级行为，不设开关。
+
+**验证**：
+- `packages/editor-engine/test/enter-keymap.test.ts` **15/15**：全部通过**真实 keydown**
+  事件驱动（`markdown()` + `defaultKeymap` + `historyKeymap` + `install(false)` 的真实
+  装配栈），覆盖段落末尾 / 行中切分 / 行尾空白剥离 / 标题 / Shift+Enter / 单步 Undo /
+  IME 合成 / 列表续写 / 空列表项 / 引用 / 围栏码 / 行内码 / 数学块 / 空行 / 判定函数。
+  其中 Undo 用例特意加了 `historyKeymap` —— CM 6.10.4 的 `defaultKeymap` **不含**
+  `Mod-z`，否则断言会因「按键根本没绑定」而假绿。
+- `packages/commands/test/menu-schema.test.ts` **36/36**：新增「G7-MENU-06 撤回」用例
+  （两 id 不在 Edit 菜单、且无快捷键注册），并把 `edit[0]` 断言改为 undo。
+- 护栏：`verify-menu-contract.mjs`（Edit 首项 / 250 个 label key 全部可解析 / 无孤儿）、
+  `verify-i18n-contract.mjs`（死键 0 项）、`verify-package-conventions.mjs`（引擎测试文件
+  数 84、源文件数 51）全绿。
+
+**诚实边界**：
+1. **空列表项的 Enter 行为未改变判定口径**：单测栈用 npm 版 `@codemirror/lang-markdown`
+   （`nonTightLists` 默认**开** ⇒ 空次项插空行），生产用 vendored 版
+   （`nonTightLists:false` ⇒ 删除标记退出列表）。两者混装会触发 CM 实例重复
+   （`instanceof` 断裂），故单测只锁「Enter **没有**被段落分隔接管」，不锁列表细节。
+2. **原生三平台与人工输入路径仍未验证**：本环境只到 jsdom 真实键盘事件层与浏览器
+   dev 宿主层，无 GUI 会话。浏览器宿主层已实跑：`tests/e2e/ux-flows-verify.mjs`
+   新增 §6b，用**真实键盘事件**（Playwright `keyboard.press('Enter')`）在
+   CoreEditor + 引擎 `install()` 的**生产装配**下断言 Enter=`\n\n`、
+   Shift+Enter=`\n`、列表项 Enter 仍由 `lang-markdown` 续写；全脚本 17 项全绿。
+3. **Edit 子菜单顺序已按显示层基线重排**：Typora 为 …删除 → 数学工具 → 换行符 →
+   空格与换行 → 替换 → 拼写和语法检查 → 查找…，Mellow 原先把 替换 / 拼写 排在
+   数学 / 换行符 之前。本轮按 `typora-live-menu-1149-display.txt` L215-241 重排，
+   六组子菜单相对顺序与实机一致。**仍存的显示层差异（登记，不擅删）**：Mellow 多一行
+   顶层 `清理行尾空白`（`edit.trimTrailingSpaces`）—— Typora 1.14.9 的
+   `Menu.strings` / `Panel.strings` / AX dump 均无此项，属 Mellow 自有能力入口，
+   与「补偿项」性质不同，撤除需产品裁决，保留并登记。
+4. **全量跑的时序抖动（已量，非本次改动）**：本轮第一次 `pnpm -w test` 在 4 路并行下出现
+   一次假红 —— `packages/editor-engine/test/format-list.test.ts:57`（装饰层 `waitFor` 1s
+   超时，`Expected: true / Received: false`）。同一用例单跑 **19/19**、引擎整套单跑
+   **84 suites / 1440 tests 全绿**、全量复跑全绿 ⇒ 判为并行负载下的超时抖动，**未改断言、
+   未放宽超时**（放宽会掩盖真断，同 §4.37 的教训）。该测试走的是 marker 装饰管线，
+   与本轮 Enter / 菜单改动无代码交集。
+5. **验证工具自身的陈旧产物陷阱（本轮实测踩中，已收口）**：探针第一次跑出
+   `❌ Enter 在普通段落插入真分段 — got="abc\n"`，与 jsdom 单测（`\n\n`）矛盾。
+   根因不在实现：`tests/visual/dev-server.mjs` 直接 `spawn('npx', ['vite'])`，
+   **绕过了** `apps/desktop` 的 `dev` / `build` 脚本，于是 iframe 加载
+   `public/editor/engine-v1.5.34/` 下**上一次构建**的引擎 —— 改的是 `src`，测的是旧产物。
+   这正是 §4.45（dist 陈旧静默进包）的同族形态，但发生在**验证层**：假阴性比假阳性更贵
+   （会让人去「修」本来正确的代码）。处置：启动器在 spawn vite 前先
+   `execFileSync(node, scripts/build-editor-bundle.mjs)`（该脚本自带 dist 新鲜度硬闸门，
+   失败则响亮报错并指名原因）；`verify-build-pipeline.mjs` 新增判据 ⑫b 锁住此行为。
+   **自我对照**：⑫b 的第一版判据是**过宽**的 —— 只要求出现
+   `prebuildEditorBundle(cwd)`，而**函数定义本身**就形似调用；删掉调用行做负向对照，
+   护栏仍 exit 0。已改为后行断言排除 `function ` 前缀 + 要求分号，并新增「只定义不调用」
+   负向 canary；重跑负向对照 exit 1、恢复文件后 md5 一致（`f15a256b…befa34`）。
+   探针复跑后 `enterKeymap.js` / `index.js` 的 mtime 均为当次运行时刻，证明预构建真实执行。
+6. 未做任何原生键位注入 / 打印探针，未触碰用户文件；发布门禁仍 **NO-GO**。
+
+## 4.361 打开非 UTF-8 / 非 UTF-16 文件时的**有损解码** ——「只改一个字，写坏整份文件」（2026-11-08）
+
+### 一、母题：编码不合法时，旧实现选择「遮住」而不是「拒绝」
+
+`apps/desktop/src-tauri/src/fs.rs` 的 `decode()` 原先用
+`String::from_utf8_lossy`，UTF-16 分支用 `from_u32(...).unwrap_or('\u{FFFD}')`
+且**静默丢弃末尾奇数字节**。于是任何 GB18030 / Big5 / Shift-JIS 文件
+（PRD §105 的 P1 编码，V1 未支持）都会被「解码成功」：
+
+- 非法字节变成 `U+FFFD`，文件仍被标记为 `utf-8`；
+- 用户改一个字后保存 ⇒ 整份文件按 UTF-8 重写，**其余内容全部不可逆损坏**；
+- 更糟的是保存后的校验（比对 `encode(content)` 与已写入字节）**必然通过** ——
+  两边都来自同一份已损坏的字符串，于是自检给出「一切正常」。
+
+这不是显示问题，而是 `document-file-safety-spec` §12 明列的发布禁令
+「wrong encoding」，也直接违反 PRD §3「Markdown 纯文本是唯一真源」与
+AGENTS 统一规则 13「数据安全优先」。此前审计 §12 证据列写的是「`fs.rs` roundtrip」，
+但那条用例只覆盖**四种受支持编码**，从未覆盖「不支持的编码」——覆盖缺口正是缺陷藏身处。
+
+### 二、处置：严格解码，失败即拒绝打开并说明原因
+
+- `decode()` 改为 `Result<(String, &'static str), DecodeError>`；新增
+  `DecodeError::{InvalidUtf8, InvalidUtf16}` 与用户可读的 `message()`（含处理建议）。
+- UTF-16 改用 `char::decode_utf16(...).collect::<Result<String, _>>()`：奇数字节、
+  孤立代理项、代理项后接普通字符一律拒绝；合法代理对（emoji）不受影响。
+- 三个生产调用点全部改为**向外传播失败**：
+  - `open_document` → 返回 `error: Some(...)`，前端走既有 `msg.openFailed`；
+  - `read_text`（快速打开/重读）→ `Err(message)`；
+  - `load_cached_text`（大文件分块路径，经 `read_text_meta` 暴露）→ 同样失败。
+  ⇒ 三条打开路径（对话框、Quick Open / 侧栏、大文件分块）行为一致：**不建标签页、不进入编辑器**。
+- 选择「拒绝」而不是「自动转码」：自动猜测编码并重写文件同样要写盘，一旦猜错仍是
+  整份损坏；V1 承诺的编码集合是 UTF-8 / UTF-8 BOM / UTF-16（PRD §105），
+  集合之外的正确动作是**告知**，把是否转码交给用户与其他编辑器。
+- **连带修复「无声消失」**：`packages/app-core/src/fileList.ts` 的列表视图原先
+  在 `readText` 失败时 `continue`，文件会从列表里静默消失。严格解码后，
+  P1 编码文件正好落进这条路 —— 树视图看得见、打开时能看到原因，唯独列表视图
+  把它藏起来。现改为**仍然列出**（文件名作标题、无摘要），把「不可读」留给打开时的
+  错误提示，而不是让列表替用户隐去文件。
+
+### 三、验证（本机实跑）
+
+- `cargo test`（`apps/desktop/src-tauri`）：lib **92 passed**、`file_safety_corpus`
+  **16 passed**、`updater_safety` **4 passed**，0 failed。
+- `packages/app-core/test/fileList.test.ts` **8/8**：新增「读不到内容的文件仍然列出」
+  用例（读失败项有文件名标题、无摘要；可读项不受影响）。
+- 新增 `fs::tests::rejects_undecodable_bytes_instead_of_lossy_replacement`：
+  GB18030 字节 `D6 D0 CE C4` → `InvalidUtf8`；带 BOM 的非法正文 → `InvalidUtf8`；
+  UTF-16 奇数长度 / 孤立高代理项 / 孤立低代理项 / 高代理项后接普通字符 → `InvalidUtf16`；
+  同时回归断言合法代理对（`D83C DF89` = 🎉）仍可解码 —— 严格化不得误伤 emoji。
+- 既有 4 编码 Source Fidelity 往返（UTF-8 / BOM / UTF-16 LE / BE，含 emoji）保持
+  byte identical：`fs::tests::roundtrip_all_encodings` 与
+  `file_safety_corpus::source_fidelity_open_no_edit_save_byte_identical` 全绿。
+- **门禁工具同步编译**：`tools/source-fidelity/src/main.rs` 是 `decode()` 的另一个调用方
+  （CI 不编译它，只有本机跑门禁时才编译）—— 已改为把解码失败作为**该文件的失败**上报，
+  而不是继续往返。`cargo build` 通过；`bash tests/qualification/run-source-fidelity-corpus.sh`
+  实跑 **251 个文件 · identical=251 · diff/failed=0 · git diff = 0**。
+- 顺带修掉该工具的一处**陈旧锁**：其 `Cargo.lock` 缺少上一轮 app 清单新增的 `plist`，
+  于是带 `--locked` 构建必然失败（门禁脚本正是 `--locked`）。本次构建补入 1 行后恢复可跑。
+- **新增回归护栏**：`verify-runtime-qualification-workflow.mjs` 增加「严格解码」判据
+  （生产代码无 `from_utf8_lossy` / `unwrap_or('\u{FFFD}')`，`decode` 返回 `Result`，
+  `decode_utf16` 走 `char::decode_utf16`），并带注释豁免与三组双向 canary。
+  如实声明它是**文本级代理**，行为真值仍是上条 Rust 用例。注入负向对照：
+  在 `fs.rs` 末尾加一个 lossy 调用 → 护栏 exit 1 并指名；恢复文件后 md5 一致
+  （`fd961bfa…2bd63`），护栏复跑 exit 0。
+
+### 四、诚实边界与扫尾
+
+1. **P1 编码仍不支持**：GB18030 / Big5 / Shift-JIS 现在会**明确报错**而非打开乱码。
+   这是 V1 范围内的正确边界；支持它们需要新增 ADR 与完整转码往返测试，不在本轮擅改。
+2. **同类形态扫过一遍**：`upload.rs` 中的 `from_utf8_lossy` 用于解析外部命令
+   stdout/stderr 与 HTTP 响应体，不存在「写回用户文档」的路径，保持原样（已登记为
+   「不构成本缺陷同族」）。
+3. 该缺陷不在发布台账 51 项之内（属于既有条目的实现层缺陷），故不改任何状态码；
+   发布门禁仍 **NO-GO**（4 项环境/人工阻塞未变）。
+
+## 4.362 侧栏快捷键探针假失败 —— 未应答的「保存更改」确认框拦截后续点击（2026-11-08）
+
+### 一、现象与定位
+
+`tests/e2e/sidebar-verify.mjs` 连续两轮复跑都在同一处失败：前 14 项全绿，
+`await page.locator('.sidebar-mode-trigger').click()`（旧 line 269）等待 30s 超时，
+Playwright 报 `<div class="confirm-modal-backdrop"> … intercepts pointer events`。
+
+**这不是产品回归。** 遮罩是 App 的应用内确认框（`apps/desktop/src/App.tsx:7143`
+的 `askDialog !== null` 分支），唯一来源是 `handleNew → guardSingleDocument →
+confirmCloseDocument`：脏文档切换按 Typora `tryLeaveDocument` 弹「保存 / 丢弃 / 取消」。
+该行为本身已由 `tests/e2e/dirty-leave-dialog-verify.mjs` 逐项断言（三选一文案、
+「取消」不切走、「丢弃」真切换），本次未改产品代码。
+
+### 二、证据链
+
+临时探针（跑完即删）实测：
+
+- `file.new` 派发**前**页面无 `.confirm-modal-backdrop`；派发后 **920ms** 出现遮罩，
+  标题「保存」、正文「是否要保存对文档的更改？如果不保存，你的更改将丢失。」、
+  按钮「保存 / 丢弃 / 取消」—— 与 Typora 未命名文档真值一致。
+- 点击「丢弃」后遮罩消失、编辑区清空，说明对话框可正常应答，只是探针从未应答。
+- MutationObserver 事件序列显示：探针在过滤框上合成的 `Escape` 被该输入框自身的
+  处理器 `stopPropagation`，未到达 `askDialog` 的 window 监听，故不会顺带关掉对话框。
+  真实用户此时焦点在模态主按钮上，不构成产品缺陷。
+
+根因一句话：探针先用 `view.dispatch` 改写编辑器文本（文档变脏），随后
+`dispatch('file.new')` 按数据安全语义停在确认框上；探针既不应答也不检查，
+遮罩遂覆盖页面，后续**所有 pointer 点击**被拦截。
+
+### 三、处置
+
+在 `file.new` 派发后显式等待并应答（选「丢弃」），再用 `frame.waitForFunction`
+等编辑器真正清空（`applyTab` 异步生效）后写入 Reader 用例文本。顺带消除了原先
+`setTimeout(200)` 固定等待与新建文档生效之间的潜在竞态。**未改任何断言、未改产品代码。**
+若对话框未出现（例如 dev harness 的 dirty 通道再次断开），则跳过应答，仍以
+「编辑器已清空」为推进条件，不伪造通过。
+
+### 四、验证
+
+复跑 `sidebar-verify.mjs`：**21/21 全绿**（原 14 项 + ☰/🔍/宽度/窄窗恢复 7 项），
+`exit 0`。范围核对：全仓 e2e 探针中只有本文件派发 `file.new`；其余使用
+`.confirm-modal` 的探针（`dirty-leave-dialog-verify` / `in-app-input-dialog-verify` /
+`recent-clear-scope-verify` 等）各自显式操作对话框。未触碰用户文件、未跑原生打印或
+键位注入；台账状态码不变，发布门禁仍 **NO-GO**（4 项环境/人工阻塞未变）。
+
+## 4.363 Mermaid 实时渲染「开关是死的」—— 引擎只读扩展点，宿主从未注入（2026-11-08）
+
+### 一、现象与定位
+
+`tests/e2e/feature-liveness-verify.mjs` 的 Mermaid 用例长期以「有没有
+`.mellow-mermaid*` 节点」为判据，页面里只要出现隐藏源码行就为真 —— 该断言**过宽**，
+掩盖了真实状态。本轮把判据收紧为「真的出现 SVG」后复跑：`nodes=0`。
+
+逐层取证（临时探针，跑完即删）确认两条独立事实：
+
+1. **默认关闭本身是设计**：`DEFAULT_ENGINE_FEATURES.mermaid = false`（ADR-0034，
+   2026-11-03 裁决），关闭时按普通代码块显示 —— 探针没有种开关，属于**断言过期**。
+2. **打开开关后功能仍然是死的**：在文档加载前种下
+   `mellow.engine.features = {"mermaid":true}` 与 `markdown.mermaid=1` 后复测，
+   引擎挂出了 `.mellow-mermaid-widget`，但落到 `.mellow-mermaid-error`、`svg: 0`，
+   `window.mermaid in frame: undefined`、`loader in frame: undefined`。
+
+根因一句话：**引擎只定义了「消费扩展点」** ——
+`packages/editor-engine/src/mermaid.ts:178-182` 读取 `window.mermaid` /
+`__MELLOW_MERMAID_LOADER__`，读不到就抛
+`Mermaid 11 renderer is not available…`；而**整个仓库没有任何一处声明/注入**它
+（§4.54 把它记为「用户 / 主题注入」的扩展点）。`apps/desktop/src/useAsyncRenderers.ts`
+（Reader）同样只读不装；打包产物里也只有读取侧字符串，没有库本体。
+
+### 二、为什么长期没有暴露
+
+- `packages/editor-engine/test/mermaid.test.ts` 注入的是**假 renderer**
+  （`createMermaid11Renderer(async () => ({ render: … }))`），验证的是 widget/错误
+  兜底逻辑，**不验证宿主接线** —— 单测全绿与真机不可用可以同时成立。
+- 台账 `P0-MARKDOWN-004`（AUTO）的 evidences 正是这份单测。
+- 偏好页注释写着「能力不缺失，只是默认不渲染」（`packages/settings/src/index.ts:241`），
+  在**没人注入**的现实下这句话不成立。
+- `docs/specs/live-markdown-engine-spec.md §19` 要求 Mermaid 有 render widget；
+  引擎侧实现齐全（debounce、取消、视口懒渲染、错误态、复制源码），差的只有**库**。
+
+### 三、冲突判定（先报告，再动手）
+
+按 AGENTS.md「实现与 Spec 冲突先报告」：本项**不是** spec 与实现的设计冲突，而是
+「扩展点存在、宿主侧接线缺失」的**实现缺口**。处置不触碰架构：
+
+- 引擎契约不变（ADR/§4.54 的注入式扩展点原样保留，packages/editor-engine 仍零依赖）；
+- 装载器放在 **Adapter 层** `apps/desktop/src/mermaidLoader.ts`，按需 `import('mermaid')`；
+- 与**已有的 KaTeX 分工完全同构**（`host.installKatexRenderer` → iframe 注入渲染函数），
+  不新增 ADR、不改任何已 Accepted 决策。
+
+### 四、处置
+
+1. `apps/desktop/package.json` + `pnpm-lock.yaml`：声明 `mermaid ^11.16.1`
+   （与 `packages/export` 同一版本；`THIRD_PARTY_NOTICES.md` 早已列出）。
+2. 新增 `apps/desktop/src/mermaidLoader.ts`：懒加载 + 失败可重试；返回代理对象，
+   在引擎每次 `initialize({ startOnLoad:false, securityLevel:'strict' })` 时
+   按 `documentElement.dataset.colorScheme` 补齐 `theme`（暗色界面不再出现白底图）。
+3. `apps/desktop/src/App.tsx:4308/4311`：引擎就绪后把装载器同时注入 iframe 与主窗口
+   （主窗口供给 Reader）。
+4. `packages/...` 无改动；`apps/desktop/src/useAsyncRenderers.ts:58-66` 兼容两种形态
+   （`window.mermaid` = API 对象；`__MELLOW_MERMAID_LOADER__` = 装载函数），并把
+   「标记已渲染」挪到确认能力可用之后，避免早于注入时被永久跳过。
+5. `tests/e2e/feature-liveness-verify.mjs`：启动前种开关；判据改为
+   「SVG > 0 且无错误态且源文本保留」，并新增 Reader 同路径断言（等 SVG 或错误态，
+   不用固定 sleep）。
+6. `tests/parity/verify-adapter-contract.mjs` ⑧：锁住以下锚点（引擎读取形态、桌面依赖、
+   装载器实现、iframe 注入、主窗口注入、Reader 双形态），防止再次「测试绿、功能死」。
+
+### 五、验证
+
+- `feature-liveness-verify.mjs`：**exit 0 / 29 项全绿**，其中
+  `Mermaid 开启后真的渲染出 SVG` → `{"widgets":1,"svg":1,"errors":0,...}`；
+  `Reader 的 Mermaid 也渲染出 SVG` → `{"blocks":1,"svg":1}`。
+- `verify-adapter-contract.mjs`：exit 0（含新增 ⑧）。
+- `pnpm --filter mellow-desktop build`：成功，mermaid 被拆成懒加载 chunk
+  （`mermaid.core-*.js` 616 kB 等），主包未引入库本体。
+- `pnpm run typecheck:desktop`：通过。
+- `pnpm -w test` 全链 **exit 0**（含 `verify-release-gate` / `check-vendored-editor`）。
+  ⚠️ 观察项（如实记录）：首轮全链在 4 路并发下 `format-list.test.ts` 的
+  「无序 idle → marker 弱化」偶发超时（`waitFor` 预算 1s）；该文件隔离复跑
+  **19/19 绿**，随后两轮全链均通过。判定为**测试时序抖动**（jsdom + 4 路并发），
+  与本轮改动无因果关系（未触碰 marker/list 代码），暂不修改测试预算以免掩盖真回归。
+
+### 六、边界（如实声明）
+
+- 以上为 Chromium dev harness 证据。**WKWebView / 三平台真机未在本轮验证**，
+  也未据此改动任何台账状态码；`P0-MARKDOWN-004` 保持 AUTO，发布门禁仍 **NO-GO**。
+- 台账该条的 evidences 目前仍是单测（假 renderer）；建议下次台账复核时把本探针
+  列入 evidences —— 属台账内容修订，不在本轮擅自改状态。
+- 未运行任何原生打印 / 键位注入探针，未触碰用户真实文件，未提交或推送。
+
+## 4.364 全量 e2e 巡检暴露的三处「量具」缺陷：就绪判据、端口占用、对话框未关闭（2026-11-08）
+
+### 一、现象
+
+按 `tests/e2e/*-verify.mjs` 全量**串行**巡检（39 个脚本，每个独占固定端口），首轮结果：
+
+```
+FAIL  fenced-math-verify.mjs  exit=1  2.6s  ✅0 ❌0   （抛错退出：editor view unavailable）
+FAIL  image-upload-verify.mjs exit=1 31.4s  ✅5 ❌1   （settings-nav-item 点击 30s 超时：element detached）
+```
+
+修复后第二轮巡检：
+
+```
+FAIL  drag-drop-verify.mjs  exit=1 37.0s ✅1 ❌6   （隔离复跑 4/4 绿）
+```
+
+三者都不是被测功能回归，但都指向**验证工具自身**的问题 —— 与 §4.45（陈旧 dist 静默进包）、
+`dev-server.mjs` 头部「静默采集不到」同族：**量具坏了却不说话**，结果会被当成产品缺陷。
+
+### 二、定位（逐个，先根因后改）
+
+#### ① `fenced-math-verify`：就绪判据把「模块已挂」当成「编辑器已就绪」
+
+- 判据原文：`tests/e2e/fenced-math-verify.mjs:88`
+  `window.editor || window.webModules?.core`
+- 时序事实：CoreEditor 在**模块求值**时同步挂 `window.webModules`
+  （`packages/editor-core/CoreEditor/index.ts:82`），而 `window.editor`（EditorView）
+  要等 `resetEditor()` 才赋值（`packages/editor-core/CoreEditor/src/core.ts:92`）。
+  中间存在一段「模块已在、视图未建」的窗口。
+- 后果：探针在该窗口把 iframe 判为就绪 → `setDoc` 里
+  `window.editor?.dispatch` 为空 → 抛 `editor view unavailable`（实测栈即如此）。
+- 处置：判据改为 `window.webModules?.core && window.editor?.dispatch`（与其余 30+ 探针同型）。
+- 护栏：`verify-build-pipeline.mjs` ⑫c 新增「不得用 `|| window.webModules?.core`」硬判据，
+  含正例 / 正确形态两个 canary。
+
+#### ② `image-upload`：固定端口被**上一次探针的 vite 孤儿**占着，探针静默连上陌生服务器
+
+- 实证据：`ps` 抓到 `npm exec vite --port 1426`（pid 98603）与其 node 子进程（pid 98630）
+  已存活 **6 小时 40 分**，正好占着本探针的固定端口 1426。
+- 形成链：探针被 **SIGKILL**（巡检脚本 180s 超时强杀）→ `finally` 不执行 → vite 成孤儿；
+  下一次同端口探针：新 vite 因 `--strictPort` **绑定失败并立刻退出**，而探针的
+  `waitForServer()` 只判断「端口上有没有人应答」⇒ **连上那台陌生服务器继续跑**。
+- 处置（`tests/visual/dev-server.mjs`）：
+  1. `startViteDevServer()` 启动前 `assertPortFree(port)`：被占则**同步抛错并指名端口 +
+     清理命令**（POSIX `lsof -ti tcp:<port> | xargs kill`；Windows `netstat` + `taskkill /T`），
+     不再静默连陌生服务器；
+  2. `describeSpawnFailure()` 追加 vite 的**退出码 + stderr 末尾 20 行**
+     （`--strictPort` 绑定失败时 spawn 的 `'error'` 事件不触发，只有这两样能指名原因）；
+  3. `tests/e2e/README.md` 的「残留 vite」条目同步改写：从「静默假红、手工清理」改为
+     「启动即响亮失败」，并把 §2 的就绪判据更正为「`webModules?.core` **和** `window.editor` 同时成立」。
+- 边界（如实）：**30s「element detached」的重试风暴本身没有被复现**。
+  「连到陌生服务器」能解释「测的不是自己的构建」，但不能单独证明那次的具体 DOM 现象；
+  本轮修的是**可证实的孤儿 + 静默附着**，不声称已解释全部细节。
+
+#### ③ `drag-drop`：巡检里偶发「第一条 newFile 丢失」，而驱动函数把「对话框没关」当成成功
+
+- 现象（第二轮巡检唯一失败）：`mock workspace built` 失败，末尾树形只有
+  `/dir/sub` 与 `/dir/sub/b.md` —— 第一条 `a.md` 从未创建；隔离复跑 4/4 全绿。
+- 静态定位：`tests/shared/in-app-dialog.mjs` 的 `createWorkspaceEntry()` 在
+  Enter 之后用 `.catch(() => undefined)` **吞掉**「对话框 8s 内没有关闭」，
+  然后无条件 `return true`。若第一条对话框没有关（Enter 未生效/提交未完成），
+  下一条 `createWorkspaceEntry` 会把**下一个名字填进同一个仍打开的对话框** ⇒
+  第一条永远不存在，下游只报「行不存在」，看不到真实原因。
+- 处置：未关闭即 `return false`（恢复函数自己写明的契约：
+  「是否确实走完了 出现输入框 → 填名 → 确定 → 对话框关闭」）；
+  `drag-drop-verify` 的报错文案改为同时点名「未弹出 / 未关闭」两种原因。
+  **不加**重试、不加等待时长 —— 若真的再发生，现在会得到指名失败而不是模糊断言。
+- 边界（如实）：该偶发的**触发条件仍未证实**（4/4 隔离复跑不复现），
+  本轮只把「静默变模糊失败」改为「响亮且指名」，并保留全部断言。
+
+### 三、冲突判定
+
+- 三处都属**测试工具**，不改产品行为、不改台账、不碰任何 Accepted ADR。
+- `README` 的就绪判据属**更正**：原文推荐「判 `webModules.core`」，与 ① 的根因同型；
+  改为两者同时成立，并注明原因。
+
+### 四、处置文件
+
+1. `tests/e2e/fenced-math-verify.mjs`：就绪判据（含注释说明两段就绪）。
+2. `tests/visual/dev-server.mjs`：端口预检 + stderr/退出码上报。
+3. `tests/parity/verify-build-pipeline.mjs`：⑫c 就绪判据护栏（正/负 canary）。
+4. `tests/shared/in-app-dialog.mjs`：未关闭 → false。
+5. `tests/e2e/drag-drop-verify.mjs`：报错文案点名两种原因。
+6. `tests/e2e/README.md`：两处条目同步。
+
+### 五、验证
+
+- `fenced-math-verify.mjs`：修复后 **13/13**；第二轮、第三轮全量巡检内均为绿。
+- `image-upload-verify.mjs`：清理孤儿 + 预检后 **14/14，2.3s**（第二轮）、**14/14，2.4s**（第三轮）。
+- **第三轮全量巡检**（`tests/e2e/*-verify.mjs` 共 39 个探针，串行、固定端口、逐条落 `PASS/FAIL`）：
+  **39/39 PASS，0 FAIL，exit 0** —— 其中 `drag-drop-verify` **7/7，4.7s**、
+  `image-upload-verify` **14/14，2.4s**，即本轮三处修复在两轮连续全量巡检中均未复现。
+- 对话框驱动 6 个消费者逐一复跑：`drag-drop` 7/7、`file-list-summary` 8/8、
+  `selection-word-count` 6/6、`outline-float-parity` 9/9、`search-group-collapse` 7/7、
+  `in-app-input-dialog` 9/9。
+- `verify-build-pipeline.mjs` exit 0；`verify-visual-golden.mjs` exit 0（dev-server 形态 canary 未漂移）。
+- `pnpm -w test` 全链 **exit 0**（package 测试 → typecheck → 24 道 parity → release gate → vendored 检查）。
+
+### 六、边界（如实声明）
+
+- 以上均为 **Chromium dev harness / 本机**证据；未运行任何原生打印、原生键位注入或真机探针，
+  未触碰用户真实文件，未改台账状态码，未提交或推送。
+- `drag-drop` 的偶发触发条件未证实；`image-upload` 的 30s detach 细节未复现 ——
+  本轮只修「可证实且会静默污染结果」的部分，并把其余转为指名失败。
+
+## 4.365 ADR-0040 裁决落地 —— 三个内置主题改原创名 + 旧 id 一次性迁移（2026-11-08）
+
+### 一、裁决
+
+用户拍板（AskUserQuestion，2026-11-08）：
+
+- **Q1 = A**：`newsprint → kraft`、`whitey → snow`、`gothic → inkwell`（显示名 `Kraft` / `Snow` / `Inkwell`）；
+  配色、字体族与 `themeCss` 参数**不动**。
+- **Q2 = 不补 `night`**：深色由 `mellow-dark` / `git-dark` / `inkwell` 承载，不再与 Typora 撞名。
+
+ADR-0040 状态由 `Proposed` 改为 `Accepted`（正文不改写，只追加「裁决」节）。
+
+### 二、实现
+
+1. `packages/themes/src/index.ts`：
+   - 三个主题的 `id` / `name` / `themeCss` 选择器改名；
+   - 新增 `LEGACY_THEME_ID_ALIASES` / `migrateThemeId` / `migrateThemeSettings`；
+   - `resolveActiveTheme` 对旧 id 做**防御性映射**（未迁移的存储也命中原主题，不静默回退默认主题）。
+2. `apps/desktop/src/App.tsx`：启动读取 `mellow.theme.settings` 后跑 `migrateThemeSettings`，
+   并把迁移结果**立即写回**（一次性；内存与存储同时更新，设置页/菜单勾选不再看到旧 id）。
+3. 文案与文档：`packages/i18n/src/messages.ts` 的 `menu.theme.*` 键（zh/en 各 3 条）、
+   `packages/themes/README.md` / `CONTRACT.md`（导出数 11→14、迁移不变量）、
+   `master-plan` §5.6 G7-TYPO-05 与 §15 状态行。
+4. 门禁：`verify-release-gate.mjs` 的 `PENDING_ADRS` → `DECIDED_ADRS`；矩阵 canary 原锚 `ADR-0040 Proposed`，
+   裁决后仓库里**没有** Proposed ADR ⇒ 改为与 `isProposed` **共用同一正则**的合成正/负样本。
+
+### 三、回归证据
+
+- `pnpm --filter @mellow/themes test`：**17/17 passed**（新增 4 例：映射 / 双槽迁移不改入参 /
+  旧 id 解析到原主题 / 改名后外观 token 与 themeCss 不变）。
+- `pnpm --filter @mellow/themes build`（tsc --noEmit）exit 0；`pnpm --filter @mellow/i18n test` **15/15 passed**。
+- `verify-i18n-contract.mjs` exit 0（zh/en 各 929 键，无缺失/死键）；`verify-package-conventions.mjs` exit 0
+  （12 个包 README「符号数」⇄ CONTRACT「导出数」一致，themes 两处均为 14）。
+- `verify-release-gate.mjs` exit 0：`Pending decisions: 无`（ADR-0040 列入已裁决），
+  未闭环仍为 4 项（均为环境/人工门禁，未变化）。
+- `tests/e2e/theme-verify.mjs`：**9/9 PASS** —— 含 `data-theme=kraft`、主题级衬线字体、themeCss 注入，以及关键新增项「存储里写 `newsprint`/`gothic` → 启动后按 `kraft` 生效且存储改写为 `kraft`/`inkwell`」。
+
+### 四、边界（如实声明）
+
+- 浏览器 dev harness 证据；未做原生真机三平台验证，未提交或推送。
+- 主题**外观未重新设计**：改名只换 id/显示名/选择器，色板与字体参数逐值不变；
+  视觉 golden 未重采集（改名不改变任何渲染值，仅 `data-theme` 属性值变化）。
+
+## 4.366 contentpaint：显示器级捕获让「冷启动何时画出内容」首次可观测（2026-11-08）
+
+### 一、现象与定位
+
+`P0-PERF-001` 的 `blockedBy` 里只剩 `perf-harness-pending`。逐条核查后它的真实剩余
+**只有一项**：冷启动 `loadMs` 的「内容就绪」读数。而 `loadMs` 来自
+`waitStable(stableMs: 600)` —— 该循环要求 ROI 连续 600ms 无变化才返回，
+**结构上不可能早于 600ms 返回**（实测跨应用、跨尺寸恒落 603.8–629.8ms）。
+它测的是「等待画面静止」，**从未测到内容绘制的时刻**。
+
+2026-10-01 已用 A/B 实测否掉「一行级修法」（改成 `return lastChange - start` 后 8 个样本
+全部恒为 0，stderr 均为 `0 changed`），并指出真实路径是**显示器级捕获 + 观测窗口前移**；
+`performance-benchmark-spec` 当时判定其「收益小于成本」，记为**未采用**。
+
+本轮把这条路径做完了。采纳理由**不是** `loadMs` 变成判定量（它没有，ADR-0026 的判定量
+仍是 `hotopen.switchMs`），而是「冷启动里内容何时画出」在此之前**没有任何机器读数** ——
+它是 P0 证据链上唯一的观测空白。
+
+### 二、实现与三个量具缺陷（逐个，先症状后修法）
+
+1. **显示器级捕获**：`SCContentFilter(display:excludingWindows:[])`。窗口级
+   `desktopIndependentWindow:` 必须先有窗口对象，结构上无法在窗口创建前开流。
+2. **探针先开流、再由探针启动应用**：新增 `startup-watch --launch-bin PATH [--launch-arg A]...`。
+   旧形态（runner 先启动、helper 再接入）实测 `流→窗口 = 35–65ms` —— 接入时窗口已存在，
+   首绘必然错过。
+3. **缺陷 A：`CVPixelBuffer` 被缓冲池复用** → 保存「上一帧」实际是自比较
+   （症状 `framesInRoi=574, changedFrames=0, maxFrac=0`）→ 改为回调内把 ROI 采样点
+   复制进独立堆数组。
+4. **缺陷 B：ROI 按窗口过渡几何计算** → Tauri 先以 `1178×786` 出现、再 resize 到 `960×963`，
+   按过渡几何算的 ROI 落在最终窗口外（症状：整幅纯白）→ 改为**每轮 poll 重读几何**。
+5. **缺陷 C：几何抖动清空全局基线**（本轮新发现）→ 补上 A/B 后读数仍不可复现
+   （同场景 `maxFrac` 在 0.0062 / 0.4064 间跳变）。加诊断输出后定位：
+   `winFrameChanges=[[+1264ms,1178,786],[+1291ms,960,963]]`，抖动间隔 31ms；
+   旧实现在几何变化时清空基线，正文绘制若落在抖动后第一帧，那一帧**无可比基线** →
+   整段大变化被丢弃，只剩光标的小变化被记成「首个变化」。
+   → 改为**基线按几何分桶**（键 = 取整几何，上限 8 桶）。修后 4 连测 `maxFrac` 恒 0.40642。
+
+### 三、实测（本机 Apple M4 / macOS 27.0.1，Typora 1.14.9）
+
+`node run-benchmark.mjs --app both --metrics contentpaint --runs 3 --warmup 1`（夹具 1MB.md）：
+
+| app | 启动→首变化 median | 启动→最大变化 median | 启动→稳定 median | maxFrac（中位） | 窗口出现 median | 有效样本 |
+|---|---|---|---|---|---|---|
+| Mellow | 1392.0ms | 1605.4ms | 2005.4ms | 0.4064 | 203ms | 3/3 |
+| Typora | 1438.6ms | 1438.6ms | 2143.4ms | 0.3274 | 365ms | 3/3 |
+
+Mellow 窗口出现比 Typora 早（203 vs 365ms），但正文绘制时刻相当 —— 即 Mellow 的启动成本
+更多落在「窗口已出现、内容尚未绘出」这段，而不是窗口创建。
+
+### 四、顺带修正的一处构建陷阱（非产品缺陷）
+
+先观察到「release 二进制启动后编辑区整片空白」，一度怀疑产品回归。实为构建方式错误：
+`Cargo.toml` 的 `custom-protocol` feature 是 `tauri/custom-protocol` 的显式转发，
+**只有带该 feature 构建才会嵌入 `frontendDist`**，否则运行时去请求 `devUrl`（`localhost:1420`）→ 白屏。
+判据：`strings -a <bin> | grep -o 'index-[A-Za-z0-9_-]*\.js'` 应能查到 `dist/index.html` 引用的 chunk。
+修正后截图确认正文（标题/列表/引用块/代码块/表格）正常渲染。
+
+### 五、边界（如实声明）
+
+- `contentpaint` 是**诊断量**，不进入任何 PRD 判定；`loadMs` 及其诊断行**保留未删、语义未改**。
+- 台账 `P0-PERF-001` 状态维持 `MAC`、`blockedBy` 维持 `perf-harness-pending`
+  （剩余含义**收窄为三平台 / CI 证据**）；发布门禁仍 **NO-GO**（4 项未变）。
+- 单平台（仅 macOS）、单夹具（1MB.md，Typora 对 >2,000,000 字符不渲染故大尺寸无基线）。
+- 未提交、未推送；未触碰用户文件；未跑原生打印或键盘注入。
+
+## 4.367 ADR-0037 A2 对照项机器化 —— 顺带逮到四处导出保真缺口（有序起始号 / 表格列对齐 / 图片基线 / 表格跨页）（2026-11-08）
+
+### 一、起因
+
+ADR-0037 = A2 的裁决依据是「打印管线一次解决 10 类核心语法」，而首版依据仅是一次**人工实跑**，
+仓库里没有机器断言。本轮把 10 类构造固化成 `packages/export/test/print.test.ts` 的
+`A2 打印管线` 用例（嵌套列表层级 / 有序起始号 / 任务 checkbox / 嵌套引用 / 硬换行 /
+链接 / autolink / 代码语言），断言对象是 `buildPrintHtml` 的 DOM 结构。
+
+固化过程中测试立刻变红，暴露两处**既有**保真缺口（都不是本轮引入）：
+
+### 二、缺口 1：有序列表起始号被 sanitize 静默剥掉
+
+- 现象：`3. 三` 渲染为 `<ol>`（无 `start`），起始号退化为 1。
+- 根因：`packages/export/src/html/sanitize.ts` 的 `ALLOWED_ATTRS` 漏了 `ol: ['start']`。
+  HTML 导出与打印导出共用该白名单 ⇒ 两条路径同时丢起始号；pdfmake 路径则**从未解析**起始号。
+- 修法：白名单补 `ol: ['start']`；`packages/export/test/html.test.ts` 增加回归用例
+  （导出层锁，因为两条路径共用 sanitize）。
+
+### 三、缺口 2：表格列对齐在全部三条管线丢失
+
+- 现象：`| :-- | :-: | --: |` 的分隔行只被当作分隔符，列对齐完全丢失。
+- 根因分三处：
+  1. HTML/打印：markdown-it 输出 `style="text-align:center"`，而 sanitize **有意**剥掉 `style`；
+  2. 直接放行 `style` 会重新打开任意 CSS 的攻击面（覆盖层等），**不能**这么修；
+  3. pdfmake：`parseBlocks` 把分隔行整行丢弃，单元格一律默认对齐。
+- 修法（保持「属性白名单无 `style`」这一不变式）：
+  - `sanitize.ts`：新增 `td` / `th` 的 transformer，只识别
+    `text-align` 的三个枚举值（left/center/right），转成 `mellow-align-*` class 后删除 `style`；
+    其它值不产生 class，其余 `style` 照旧被剥。
+  - `html/styles.ts` + `printStyle.ts`：补三条 `.mellow-align-* { text-align: … }` 规则。
+  - `index.ts`（pdfmake）：从 GFM 分隔行解析对齐（`:--` / `:-:` / `--:`），
+    写入各列单元格的 `alignment`。
+- 测试：`sanitize.test.ts`（转换 / 非枚举值 / 其余 style 仍被剥）、
+  `html.test.ts`（with-theme 与 without-style 两种模式）、`print.test.ts`（打印样式 + 表格标记）、
+  `index.test.ts`（PDF cell alignment）。
+
+### 四、缺口 3：图片导出基线 CSS 与 Typora 不一致
+
+- 一手证据（本机 Typora 1.14.9 安装包内 `TypeMark/style/base.css`，其中 `body.typora-export`
+  选择器证明该文件同样作用于导出文档）：`img{max-width:100%;vertical-align:middle;image-orientation:from-image}`
+  · `img:not([height]){height:auto}` · `.md-image:only-child…img,p>img:only-child{display:block;margin:auto}`。
+- 对照 Mellow：只有 `img { max-width: 100%; height: auto; }` ⇒ ① 独占段落的图片不居中；
+  ② **无条件** `height:auto` 会覆盖显式 `height` 属性（raw HTML 尺寸图会被压回原始比例）；
+  ③ 缺行内图 `vertical-align` 与 EXIF `image-orientation`。
+- 修法：`html/styles.ts` 与 `printStyle.ts` 按 Typora 基线改写为三条规则
+  （`img` / `img:not([height])` / `p > img:only-child`）。
+- **顺带（同源规则）**：Typora `base.css` 还给 `kbd` 配了键帽样式；Mellow 白名单放行 `kbd`
+  却从未提供样式 ⇒ 导出后键帽退化成普通文字（与 §4.83 的 `kbd` 白名单漂移同族，但这次是**样式面**）。
+  已按编辑器 `mellow-kbd` 的观感补 `kbd` 规则（HTML + 打印两处）。
+- **再顺带（同源规则）**：`base.css` 的 `video{max-width:100%;display:block;margin:0 auto}` 与
+  `iframe{max-width:100%;width:100%;border:none}` 也未对应到 Mellow —— 而 `<video>` / `<iframe>`
+  都在导出白名单内（`video` / `audio` / `source` / `iframe`），raw HTML 嵌入会溢出正文栏。
+  已补 `video` / `iframe` 规则（HTML + 打印两处）。
+- 测试：`html.test.ts`（三条规则 + `kbd` 规则 + `video` / `iframe` 规则 + raw HTML `height` 保留）、
+  `print.test.ts`（打印样式表同判据）。
+
+### 五、缺口 4：表格宽度与跨页行为未对齐 Typora 基线
+
+- 一手证据（同上 `base.css`）：`table{border-collapse:collapse;border-spacing:0;width:100%;
+  overflow:auto;page-break-inside:auto;text-align:left}` · `thead,tr{page-break-inside:avoid}`
+  · `thead{display:table-header-group}`。
+- 对照 Mellow：HTML 导出与打印样式都**没有** `width:100%`（窄表缩在左侧，与 Typora 的通栏表格
+  观感不一致）；打印样式也缺「表头跨页重复」与「行不拆页」两条分页规则 ⇒ 跨页表格在后续页
+  没有列标题、行也可能被页边界劈开。
+- 修法：`html/styles.ts` 的 `table` 补 `width: 100%` 与 `text-align: left`（浏览器默认把
+  `th` 居中，Typora 基线是整表左对齐；Mellow 的 `.mellow-align-*` class 只覆盖 markdown
+  分隔行显式声明的那一列）（`display:block` + `overflow-x:auto` 保留，超宽表仍可横向滚动）；
+  `printStyle.ts` 的 `table` 补 `width: 100%` + `text-align: left`，并补
+  `thead { display: table-header-group; }` 与 `tr { page-break-inside: avoid; }`。
+  `table` 自身的 `page-break-inside: avoid` 保留（比 Typora 的 `auto` 更保守：宁可整表推页
+  也不接受表头与首行分离）。
+- 测试：`html.test.ts`（样式含 `table { … width: 100%` 与 `text-align: left`）、
+  `print.test.ts`（同上 + `thead` / `tr` 两条分页规则）。
+
+### 六、验证
+
+`cd packages/export && npx jest`：**8 suites / 127 tests 全绿**。
+
+### 七、边界（如实声明）
+
+- 本节只锁**导出/打印管线自身的 DOM 结构与样式**。它**不**证明：
+  宿主是否真的调用了 `buildPrintHtml`、系统「存储为 PDF」的分页是否正确、PDF 大纲是否存在。
+  这些仍需真机 / CI（且本机禁止跑原生打印探针）。
+- 因此台账 `P0-EXPORT-001` 维持 `IMPL`、`blockedBy` 不变；发布门禁仍 **NO-GO**（4 项未变）。
+- 未提交、未推送；未触碰用户文件。
+
+## 4.368 表格创建对话框补齐运行时验证（master-plan 任务 4.10 的覆盖边界）（2026-11-08）
+
+### 一、起因
+
+master-plan 任务 4.10（表格创建对话框）此前只有 `buildGfmTable` / `parseTableCount` 的
+纯函数单测与 `verify-shell-widgets.mjs` 的静态护栏，任务表自己如实登记了覆盖边界：
+「对话框真的弹出 / 两框可用 / 确定后插入正确表格」**运行时未验证**，下一步是把
+`tests/e2e/in-app-input-dialog-verify.mjs` 的驱动扩展到 `askForm`。
+
+### 二、新增探针
+
+`tests/e2e/table-insert-dialog-verify.mjs`（Playwright + 动态空闲端口的 dev harness，
+不进 CI），派发 `insert.table`（菜单与 Slash 共用的同一命令）后断言 **15 项**：
+
+1. `insert.table` 已注册；对话框是**应用内**多字段区（`.confirm-modal-fields`），不是原生面板；
+2. 标题「插入表格」，字段标签「列 / 行」，两个字段 `type=number` 且 `min=1`；
+3. 默认值 **列=3 / 行=4**（Typora `#table-insert-dialog` 一手基线）；
+4. 首个字段 **autoFocus**（键盘可直接输入）；
+5. **Esc = 取消**：对话框关闭且文档逐字未变（不留 `/` 残字）；
+6. 输入 列=2 / 行=3 + Enter → 插入的文本恰为
+   `|  |  |\n|---|---|\n|  |  |\n|  |  |`（**Rows 含表头行**：1 表头 + 1 分隔 + 2 数据行）；
+7. 全流程 `window.confirm/alert/prompt` spy 记录为 0。
+
+### 三、探针自身踩到的两个坑（已在脚本内注释）
+
+- **Esc 必须先聚焦字段再按**：键盘事件从当前焦点派发；焦点若还在编辑器 iframe 内，
+  Esc 到不了主窗口的全局 handler（与 README 陷阱 5 同族）。
+- **`getEditorText` 有就绪窗口**：`window.editor` 已挂但 core 内部状态未初始化时，
+  `getEditorText()` 会抛 `Cannot read properties of undefined (reading 'lineBreak')`
+  ——脚本轮询到首次可读才继续（首次运行因此偶发失败，非产品缺陷）。
+
+### 四、验证与边界
+
+- 实跑：`NODE_PATH=/tmp/pw/node_modules node tests/e2e/table-insert-dialog-verify.mjs`
+  → **15/15，EXIT=0**。
+- 台账 `P0-TABLE-001` 的 `mellowTarget` 与 `evidence` 已补该探针；
+  master-plan 任务 4.10 的「覆盖边界」改为已补齐运行时层。
+- ⚠️ 边界不变：e2e **不进 CI**，且 dev harness **不是原生宿主** ⇒ 系统级对话框外观、
+  真实键盘与三平台宿主仍需真机证据；`P0-TABLE-001` 状态与 `requiredEvidence` 不变。
+
+## 4.369 Resize Table 弹层补齐运行时验证（master-plan 任务 4.11）（2026-11-08）
+
+### 一、起因
+
+任务 4.11 的覆盖边界写着「**运行时未验证**（本环境无 e2e 通道）—— 弹层视觉与真机交互
+无实测证据」。其纯函数层（`planResizeTable` / `resizeTable`，19 例）与静态护栏已在，
+缺的是「光标进表格 → 工具栏 → 弹层 → 两条缩放路径 → Undo」这条真实 DOM 链。
+
+### 二、新增探针
+
+`tests/e2e/table-resize-popover-verify.mjs`（Playwright，编辑器 iframe 内真实点击），
+**20/20 通过**：
+
+1. 光标进入 3 列 × 3 正文行表格 → `.mellow-table-toolbar` 可见，**最左**按钮「调整」
+   （`title = Resize Table`，对齐 Typora「tooltip 最左图标」）；
+2. 弹层网格 **6 列 × 10 行 = 60 格**；数字输入回显当前 **列 3 / 行 3**，高亮 **9** 格
+   —— 同时锁住「行 = **含表头**的正文行数，delimiter 不是行」这一口径；
+3. hover r=2 / c=2 → 输入预填 2 / 2、高亮 4 格（Typora 网格预选语义）；
+4. 点网格 2×2 → 文档为 3 行文本、每行 2 格、delimiter 在第 2 行，弹层自动关闭；
+5. **一次 Undo 逐字还原**到缩放前文本 ⇒ 单次 dispatch / 最小 patch；
+6. 数字输入 4 列 / 5 行 → 6 行文本、每行 4 格、delimiter 仍在；
+7. 再次打开回显 4 / 5、高亮 20 格；再点「调整」toggle 关闭。
+
+### 三、验证与边界
+
+- 实跑：`NODE_PATH=/tmp/pw/node_modules node tests/e2e/table-resize-popover-verify.mjs`
+  → **20/20，EXIT=0**。
+- 台账 `P0-TABLE-002` 的 `mellowTarget` 与 `evidence` 已补该探针；
+  master-plan 任务 4.11 的覆盖边界改为已补齐运行时层。
+- ⚠️ 边界不变：e2e **不进 CI**，dev harness 非原生宿主 ⇒ 弹层视觉、真实鼠标/触控板与
+  三平台宿主仍需真机证据；状态与 `requiredEvidence` 不变。
+- 探针新增使 `verify-build-pipeline.mjs` 的脚本覆盖基线按 [覆盖型] 纪律
+  113 → 114 → **115**（§4.368 / §4.369；阈值必须 == 当前值）。
+
+## 4.370 format-list 用例假红：固定 sleep 撞上并行负载下的装饰重算（2026-11-08）
+
+### 一、症状
+
+`pnpm -w test` 全链 EXIT=1，唯一失败在
+`packages/editor-engine/test/format-list.test.ts` 的
+「caret 行 → marker 完整显示（该行不 dim）」：
+
+```text
+Expected: 1
+Received: 0
+> 66 |     expect(dimCount(view)).toBe(1); // 第二项仍 dim
+Test Suites: 1 failed, 83 passed, 84 total
+Time:        132.056 s
+```
+
+该用例**隔离运行 19/19 通过**（10.362 s），说明不是断言口径错，而是等待方式不稳。
+
+### 二、根因
+
+断言前只有一次固定 `await sleep()`（约 20 ms）。在全链**满负载并行**下，本用例所在
+suite 耗时 23.183 s，`moveCaret` 之后的装饰重算（视口空闲时才跑）尚未落到 DOM，
+此时 `dimCount = 0` ⇒ 断言读到的是「旧的、还没变的状态」。**量具在等多久，而不是在等
+什么** —— 与 §4.44 同族：固定延时在负载下会变成随机判据。
+
+补一层：即使改成「轮询到数量为 1」也**不够**。本用例两个稳态的 `dimCount` 都是 1
+（第一项显示时第二项 dim；第二项显示时第一项 dim），只数个数可能在**旧状态**上立刻
+为真，造成假通过。因此判据必须带**位置**。
+
+### 三、修复（只改测试，不改预算/断言口径）
+
+- 新增 `dimLines(view)`：取被弱化 marker 所在**行号**（`posAtDOM` → `lineAt().number`），
+  与既有 `dimCount`（数量）互补。
+- 两处固定 `sleep()` 后的断言改为条件轮询：
+
+```ts
+expect(await waitFor(() => dimLines(view).length === 1 && dimLines(view)[0] === 2)).toBe(true);
+expect(dimCount(view)).toBe(1); // 第二项仍 dim
+moveCaret(view, 15);
+expect(await waitFor(() => dimLines(view).length === 1 && dimLines(view)[0] === 1)).toBe(true);
+expect(dimCount(view)).toBe(1); // 第一项 dim
+```
+
+  即「**第 2 行**被弱化」「**第 1 行**被弱化」，两个稳态可区分；原 `dimCount` 断言原样保留。
+
+### 四、验证与边界
+
+- 隔离实跑：`npx jest test/format-list.test.ts` → **19/19，EXIT=0**，10.08 s。
+- 无产品代码改动；无阈值放宽（`waitFor` 仍用默认 1000 ms，靠条件而非延长等待收敛）。
+- ⚠️ 边界：本次只修这一处已知假红；`editor-engine` 其余固定 `sleep()` 用例未做全量替换
+  （不在本任务范围，避免无关重构）。若再次观察到同形态假红，按本范式逐例收敛。
+
+## 4.371 PDF 导出补齐标题书签（Outline）：此前只有正文目录，没有阅读器书签面板（2026-11-08）
+
+### 一、缺口（一手证据）
+
+- **Typora 侧**：其 PDF 导出器固定写 `View.PageMode = TPDFPageMode.pmUseOutlines`
+  （`/Applications/Typora.app/Contents/Resources/TypeMark/appsrc/main.js` 的 TPDF 段），
+  并按标题树 `AddChild` —— 导出的 PDF 在预览器里**有书签面板**。
+- **Mellow 侧**：`buildPdfDocument` 的 `includeOutline` 只在正文里插入一个
+  `ol` 目录列表（`case 'toc'`）；标题节点没有 pdfmake 的 `outline` / `id` /
+  `outlineParentId` 字段 ⇒ 产物**不含 `/Outlines` 对象**。
+  ADR-0037 的能力表也把「PDF 大纲」在 A2 下列为「**待确认**」。
+- 结论：这不是样式差异，是 PDF 结构里**整整一类对象缺失**；A1 管线（当前宿主
+  `App.tsx` 仍调 `createPdfBuffer`）可修，且 pdfmake 0.3.11 原生支持该结构。
+
+### 二、修复
+
+`packages/export/src/index.ts` 的 heading 分支：
+
+```ts
+while (outlineStack.length > 0 && outlineStack.at(-1)!.level >= level) outlineStack.pop();
+el.outline = true;
+el.id = `heading-${(headingSeq += 1)}`;
+el.outlineText = block.content.map((token) => token.text).join('');
+if (parent !== undefined) el.outlineParentId = parent.id;
+```
+
+- **层级**：按标题级别维护父链；跳级（h1 → h3）回退到最近的更浅祖先；
+  同级/更高级先弹出 ⇒ 书签树与文档标题树一致。
+- **`outlineText` 必须显式给纯文本**：pdfmake 取 `outlineText || text`，
+  而 `text` 是 inline 数组，`new String(array)` 会写成 `[object Object]`。
+- 书签与 `includeOutline`（正文目录开关）**解耦**：Typora 的书签是无条件的，
+  不随正文目录选项消失。
+
+### 三、验证与边界
+
+- 新增 2 例（`packages/export/test/index.test.ts`）：
+  ① 4 个标题 → 产物含 `/Outlines`、`/UseOutlines`、恰好 4 个 `/Title`，且无
+  `[object Object]`；② 无标题文档 → 不写空 `/Outlines`。
+- 实跑：`packages/export` 全量 **129/129，EXIT=0**。
+- ⚠️ 边界：只覆盖 **A1 / pdfmake 管线**（当前宿主在用）。ADR-0037 裁决的 A2
+  （打印管线）尚未施工（批次 A37，本机不可验，见 §4.354）；A2 的分页与 outline
+  仍需在其施工后按 ADR 验收原文在 macOS 实测。台账 `P0-EXPORT-001` 状态与
+  `blockedBy` **不变**（本项不替代真机打印证据）。
+
+## 4.372 本地 e2e 全量回归：42/42 探针通过（2026-11-08）
+
+### 一、做了什么
+
+把 `tests/e2e/` 下**全部** `*verify.mjs` 加 `smoke.mjs` 共 **42 个**探针按同一命令顺序跑了一遍
+（Playwright vs dev harness，`NODE_PATH=/tmp/pw/node_modules`），逐个记录 exit code：
+
+```bash
+for f in tests/e2e/*verify.mjs tests/e2e/smoke.mjs; do
+  NODE_PATH=/tmp/pw/node_modules perl -e 'alarm 240; exec @ARGV' node "$f"
+done
+```
+
+结果：**42 START / 42 EXIT 0**。失败 0。覆盖范围 = 侧栏（树/列表/搜索结果/滚动跟随/缩放）、
+菜单装配（编辑/查找/图像/替换/双指缩放/文末空行）、表格（创建对话框 / Resize 弹层）、
+输入层（IME / Tab 缩进 / 自动配对 / 智能替换 / 鼠标选择）、对话框（应用内输入 / 脏文档离开）、
+主题/字号/字体、拼写作用域与建议、拖放、选区字数、UX 流程与冒烟门。
+
+### 二、判读与边界
+
+- 这是**回归证据**，不是新验收：探针内容与断言口径未改；它证明本批改动（§4.367 导出 CSS、
+  §4.368/§4.369 两个表格探针、§4.370 测试等待方式、§4.371 PDF 书签）**没有破坏任何既有
+  运行时链路**。
+- ⚠️ 边界不变：e2e **不进 CI**、跑在浏览器 dev harness 上 ⇒ 真机宿主、原生对话框外观、
+  三平台差异仍需 `requiredEvidence` 里的 `macos/windows-ci/linux-ci`；本结果不能替代它们。
+- 工具坑（本轮实际踩到）：本机没有 GNU `timeout`（macOS 默认不带）⇒ 首轮全部 exit 127；
+  改用 `perl -e 'alarm N; exec @ARGV'` 才有超时保护。以后写批处理探针脚本时不要假设
+  `timeout` 存在。
+
+## 4.373 两项外部证据核查：origin/main 的 CI 红是**过期登记**（本地已重分诊）+ macOS 拼写系统层实跑 10/10（2026-11-08）
+
+### 一、origin/main 的 CI 红：不是新缺陷
+
+`gh run list` 显示 `main` 最近一次 CI（run `38557644285`，2026-11-03，commit `558e0c4`）
+两个 parity job 失败。逐行读失败日志，两处**同一原因**：
+
+```text
+带日期的登记过期：tests/parity/fixtures/ci-actions.json：
+knownFutureMigrations[0]（runs-on: ubuntu-latest）的 windowOpensAt = 2026-10-19 已到点
+```
+
+- 该提交上 `windowOpensAt` 还是 **2026-10-19**（今天 2026-11-08 ⇒ 判据按设计变红）；
+- **本地 HEAD 已重新分诊**：`windowOpensAt = 2026-11-20`，依据是官方公告的渐进轮转窗口
+  （2026-10-19 ～ 2026-11-19）+ run `38557644285` 实测仍为 `Image: ubuntu-24.04`；
+- 本地 `verify-release-gate.mjs` **EXIT=0**（本轮已跑），所以这是**远端旧提交**的红，
+  不是当前工作树的缺陷。
+- ⚠️ **含义**：本地 `main` 领先 `origin/main` 37 个提交且未推送 ⇒ 这些提交的
+  windows-ci / linux-ci 证据**尚未产生**。这正是 `P0-PERF-001`、`P0-EDITOR-005`
+  的 `windows-ci` / `linux-ci` 分量当前无法补齐的直接原因（不是代码未实现）。
+- 本轮**未推送**（未授权），因此不对远端做任何修复动作。
+
+### 二、macOS 拼写系统层实跑：10/10
+
+`cargo test --lib spellcheck`（release 目标已构建）实跑：
+
+```text
+running 10 tests
+... 10 passed; 0 failed
+```
+
+其中真实系统词典用例包括 `suggest_returns_guesses_for_misspelling`（对拼错的拉丁词
+返回建议）、`learn_then_has_learned_roundtrip`（用户词典 learn/unlearn 往返）、
+`check_document_offsets_are_utf16_not_bytes`（CJK 前缀下 UTF-16 偏移）、
+`current_language_never_empty_string`。⇒ **macOS 系统层（NSSpellChecker + 用户词典）
+在本机有真实运行时证据**。
+
+⚠️ 边界：这仍是**系统 API 层**证据，不是「Mellow 窗口里右键看到建议列表」的
+端到端 UI 证据；`P0-EDITOR-005` 的 `requiredEvidence` 仍含 `windows-ci` / `linux-ci`，
+故状态**维持 IMPL**，不据此收口。
+
+## 4.374 导出/打印 CSS 再对照 Typora `base.css`：分页保护、导出件打印规则、任务复选框不可交互（2026-11-08）
+
+### 一、起因
+
+§4.367 用 `TypeMark/style/base.css`（Typora 1.14.9 安装包内，`body.typora-export`
+选择器证明它同样作用于导出文档）逐条对照 Mellow 的导出场，补齐了图片 / kbd / video /
+iframe / 表格规则。本轮把同一份 `base.css` 的**分页与交互**规则逐条过完，剩下的四组
+是真实缺口（都不是本轮引入）。
+
+### 二、缺口 1：标题 / 段落的分页保护不全
+
+- 一手证据（`base.css`）：
+  `h1,h2,h3,h4,h5,h6{page-break-after:avoid;break-after:avoid-page;page-break-inside:avoid;orphans:4}`
+  · `p{orphans:4}` · `li p{orphans:1}` · `@media print{body,html{...font-variant-ligatures:no-common-ligatures}}`。
+- 对照 Mellow：`printStyle.ts` 的标题规则只有 `page-break-after: avoid`。缺的三条各有
+  独立后果：标题自身可能被页脚**从中间切断**（`page-break-inside`）；只认旧属性的引擎
+  可能忽略分页意图（`break-after` 是标准对应属性）；正文段落最后一行落单（`orphans`）。
+  `orphans` 在 Chromium 系打印路径上目前不生效，但 **macOS 的打印走 WKWebView，支持该属性** ——
+  本机主路径正是它，故不是「死规则」。
+- 修法：`printStyle.ts` 的六级标题统一补 `break-after: avoid-page; page-break-inside: avoid; orphans: 4`；
+  `p` 补 `orphans: 4`、新增 `li p { orphans: 1 }`；`body` 补
+  `font-variant-ligatures: no-common-ligatures`（对齐 Typora 针对分页边界字形跳变的处理）。
+
+### 三、缺口 2：导出的 HTML 没有打印规则
+
+- Typora 的导出件内嵌完整 `base.css`，其中 `@media print` 段在**用户直接打印导出的
+  HTML** 时生效；Mellow 的 `themeCss()` 只有屏幕样式 ⇒ 浏览器打印时：
+  标题可能与下一段分离、表格行被页边界劈开、后续页没有表头、公式/图形被切断。
+- 另有 Mellow 自身的结构问题：屏幕态 `table { display: block; overflow-x: auto }`
+  （超宽表横向滚动）会让 `thead { display: table-header-group }` 与行级分页规则失效。
+- 修法：`html/styles.ts` 的 `BODY_CSS` 末尾新增 `@media print` 段 —— 标题
+  （三条分页属性 + `orphans: 4`）、`p` / `li p` 的 `orphans`、表格
+  `display: table; overflow: visible; page-break-inside: auto`、`thead` 表头跨页重复、
+  `thead,tr` 行不拆页、`img, svg, mjx-container, .katex-display` 不拆页。
+  `without-style` 模式仍不输出任何样式（该模式的定义不变）。
+
+### 四、缺口 3：导出件里的任务复选框可点击
+
+- 一手证据：Typora 导出 DOM 是
+  `<li class="task-list-item"><input type="checkbox"> 文本</li>`
+  （**无 label 包裹**），并由 `base.css` 的 `.typora-export .task-list-item input{pointer-events:none}` 关掉点击。
+- 对照 Mellow：`markdown-it-task-lists` 以 `label: true` 注册 ⇒ 输出
+  `<label><input …> 文本</label>`。只在 input 上加 `pointer-events:none` **挡不住**
+  label 的点击转发：点任务文本仍会切换复选框，而导出件是静态快照，切换不会保存 ⇒
+  用户会以为导出件可编辑。
+- 修法：插件改为 `label: false`（DOM 与 Typora 同构），并在 `li.task-list-item input`
+  规则上补 `pointer-events: none`。
+
+### 五、缺口 4：导出件的代码块不换行（与编辑器、与 Typora 默认都不一致）
+
+- 一手证据：`main.js` 的默认选项表 **`noLineWrapping: !1`**（默认 false = 换行开启），
+  导出件沿用同一状态 —— `base.css` 的 `#write pre{white-space:pre-wrap}` 是默认行为，
+  只有 `#write.fences-no-line-wrapping pre{white-space:pre}` 才撤销。
+- 对照 Mellow：编辑器 `editor.lineWrapping` 默认 **true**（CoreEditor 的 lineWrapping），
+  但 HTML 导出的 `pre` 没有任何 `white-space` 规则 ⇒ 长代码在编辑器里折行、在导出件里
+  **横向滚动**（所见非所得）。打印样式表当时已经换行（`pre { white-space: pre-wrap }`），
+  只有 HTML 导出这一条路径缺失。
+- 修法：`HtmlExportOptions` 新增 `wrapCode`（默认 **true**）→ `themeCss(theme, { wrapCode })`
+  追加 `pre { white-space: pre-wrap; word-break: break-word; }`；`false` 时保持
+  `overflow-x: auto` 的横向滚动。宿主（`App.tsx` 的 `runExportHtml`）把
+  `editor.lineWrapping` 原样传入 —— 与 Typora「一个 noLineWrapping 同时管编辑器与导出件」
+  的结构一致，避免两处真值分叉。
+
+### 六、验证
+
+```text
+cd packages/export && npx tsc --noEmit     # EXIT=0
+cd packages/export && npx jest             # 8 suites / 134 tests 全绿（+5：三条新判据、
+                                           #   任务列表 DOM、代码块换行开关）
+pnpm -w test                               # EXIT=0（editor-engine 1440 / export 134 / vendored 200 等）
+```
+
+新增判据：`html.test.ts`（`@media print` 段存在、`without-style` 不带样式、任务列表无
+`<label>` 且 CSS 禁点击、`wrapCode` 两个方向）、`print.test.ts`（六级标题三条分页属性 +
+`orphans`、`li p { orphans: 1 }`、连字关闭、`svg` / `mjx-container` / `.katex-display` 不拆页）。
+
+### 七、边界（如实声明）
+
+- 本节只锁**导出件与打印样式表自身的 CSS 结构**；它**不**证明浏览器/打印引擎真的按
+  这些规则分页（分页结果需真机目视或隔离打印队列），也不改变 `P0-EXPORT-001` 的
+  ADR-0037 A2 验收要求。台账状态与门禁结论不变（仍 **NO-GO：4 项**）。
+- `label: false` 只作用于**导出管线**（`packages/export`）；编辑器预览的任务列表由编辑器
+  引擎渲染，不走该插件，交互性不受影响。
+- 未提交、未推送；未触碰用户文件；未运行任何原生打印探针。
+
+## 4.375 导出件忽略 `showLineNumbersForFence`：编辑器开了行号，导出的代码块没有（2026-11-08）
+
+### 一、起因
+
+§4.374 过完 `base.css` 的 CSS 规则后，继续按**同一份一手来源**核对其余与
+「导出件外观」有关的行为。`appsrc/main.js` 的默认选项表里
+`showLineNumbersForFence:!1`（默认 false）—— 该选项在 Typora 里是**全局项**，
+同时作用于编辑器与导出件：
+
+- 编辑器：`File.option.showLineNumbersForFence` 为真时围栏的 CodeMirror 实例开启
+  `lineNumbers`（另有 per-fence `lineNumbers` 属性作为第二入口）。
+- 导出：围栏分支把**实时 CodeMirror DOM** 克隆进导出件
+  （`main.js` 的 `D.children(".CodeMirror").length && D.html(D.children(".CodeMirror")[0].outerHTML)`），
+  其中包含 `.CodeMirror-gutters` / `.CodeMirror-linenumber`；`base.css` 对
+  `.CodeMirror-linenumber` 声明 `user-select:none` ⇒ 行号**可见但不可选中/复制**。
+- Typora 的「HTML (Without Styles)」导出走另一条 `<pre><code>` 分支，**不带行号**。
+
+### 二、缺口
+
+Mellow 的 `markdown.codeLineNumbers`（存储键 `mellow.editor.codeLineNumbers`，默认 false）
+只作用于**编辑器**；`packages/export` 里没有任何行号逻辑（`src` 内 grep
+`lineNumber` 为空）。结果：用户在设置里打开「代码块行号」后，编辑器显示行号，
+**HTML / 打印导出件却没有** —— 同一全局偏好两条路径真值分叉。
+
+### 三、修法
+
+- `HtmlExportOptions.codeLineNumbers`（默认 **false** ⇒ 不开时输出与之前逐字一致）；
+  `HtmlRenderContext` 同步携带；`PrintOptions` 透传（打印与 HTML 共用同一渲染器）。
+- `markdown.ts` 新增 `renderNumberedFence()`：每个源码行一个块级 span，行号是
+  **真实 DOM 文本**并用 `user-select:none` 排除复制 —— 与 Typora 的
+  `.CodeMirror-linenumber` 语义一致。**不用 CSS counter**：`::before` 生成内容在部分
+  浏览器会被复制进剪贴板，会让「复制代码」带上行号。
+- `styles.ts` 的 `BODY_CSS` 增加 `.mellow-code-lineno` / `.mellow-code-line` /
+  `.mellow-code-num` 规则（gutter 右对齐、弱化色、禁选中）。未开启时选择器不匹配，无副作用。
+- 边界处理：`without-style` **不编号**（对齐 Typora 的无样式导出分支）；
+  Mermaid 图表分支在上方已返回（SVG 无行号）；`mermaid=false` 时该围栏是**普通代码块**，
+  照常编号；尾随换行不算一行；块内空行保留行号。
+- 宿主接线：`App.tsx` 的 `runExportHtml` 与 `handleExportPdf` 都把
+  `markdown.codeLineNumbers` 原样传入，与 `wrapCode` / `preserveLineBreaks` 同一
+  「编辑器设置 → 导出件」通道。
+- **PDF A1（pdfmake）同样接入**：`PdfOptions.codeLineNumbers` +
+  `buildNumberedCodeBlock()` —— pdfmake 没有 CSS gutter，用**无边框两列表格**模拟
+  （左列行号右对齐、右列代码，`dontBreakRows` 防行被页边界劈开，单元格 `fillColor`
+  维持代码背景）。行号是**独立文本节点**，复制代码不会带上行号；空代码块不生成空表格。
+  这样在 ADR-0037 A2 切换管线（批次 A37）之前，HTML / 打印 / PDF 三条路径的行号语义一致。
+
+### 四、验证
+
+```text
+cd packages/export && npx tsc --noEmit     # EXIT=0
+cd packages/export && npx jest             # 8 suites / 144 tests 全绿（+10）
+pnpm -w test                               # EXIT=0（全链，含 typecheck:desktop 与 23 个护栏）
+```
+
+新增判据（`html.test.ts` 7 例 + `print.test.ts` 1 例 + `index.test.ts` 2 例）：默认关闭
+无行号标记且输出与 markdown-it 默认围栏一致；开启后 1..N 逐行编号、空行占行、尾随换行
+不额外编号、缩进保留；`user-select:none` 两条 CSS 存在；行内 HTML 转义不因分行失效；
+`without-style` 不带行号；Mermaid 图表不编号而 `mermaid=false` 时编号；空代码块不产生
+行号；打印管线（`buildPrintHtml`）同样生效；PDF 行号为独立单元格（行号右对齐、
+`dontBreakRows`、空行占位、空代码块无空表格）。
+
+### 五、边界（如实声明）
+
+- 本节只锁**三条导出路径的结构化产物**（HTML 标记 / CSS 结构 / pdfmake docDefinition）；
+  它**不**证明真实浏览器、打印引擎或 PDF 阅读器的视觉结果（需真机目视）。台账状态与
+  门禁结论不变（仍 **NO-GO：4 项**，PASS-E = 0/51）。
+- PDF 行号使用 pdfmake 表格模拟 gutter，视觉上与 HTML/打印的 CSS gutter 不保证逐像素一致
+  （字号/行高取自同一 `PDF_TYPOGRAPHY`，但间距由 pdfmake 布局引擎决定）；ADR-0037 A2
+  切换管线后该实现将被 HTML/打印渲染器取代。
+- 未提交、未推送；未触碰用户文件；未运行任何原生打印探针。
+
+## 4.376 导出件的 `base.css` 打印段剩余四条：首尾空白页、背景色丢失、首页下移（2026-11-08）
+
+### 一、起因
+
+§4.374 已给 `themeCss()` 补了 `@media print` 的分页保护，但同一段
+`TypeMark/style/base.css` 的 `@media print` 里还有四条没搬过来。本轮用同一份一手来源
+（本机 Typora 1.14.9 安装包）逐条补齐。
+
+一手证据（`base.css`，单行压缩）：
+
+```text
+@media print{
+  body,html{border:1px solid transparent;height:99%;page-break-after:avoid;
+            page-break-before:avoid;font-variant-ligatures:no-common-ligatures}
+  #write{border-color:transparent!important;margin-top:0;padding-top:0!important;
+         padding-bottom:0!important}
+  .typora-export *{-webkit-print-color-adjust:exact}
+  .typora-export #write{page-break-after:avoid}
+  #write>p:nth-child(1){margin-top:0}
+  figure{overflow-x:visible}
+}
+```
+
+### 二、缺口与后果
+
+1. **`html, body` 首尾分页**：缺 `page-break-before/after: avoid` 时，浏览器打印常在
+   正文后多印一页空白（收尾分页点落在 body 上）。关连字（`font-variant-ligatures`）
+   也是同一条规则的一部分，缺它会让代码/正文在分页边界附近出现字形跳变。
+2. **背景色被丢弃**：打印引擎默认不印背景色。导出件里的代码块、引用块、表头、
+   GitHub Alerts、行内高亮都靠 `background` 表达 —— 缺 `print-color-adjust: exact`
+   时全部褪成白底，打印件与屏幕件不是一个东西。Typora 用 `.typora-export *` 通配；
+   Mellow 的对应根是 `.mellow-content`。
+3. **屏幕留白进入打印**：`.mellow-content` 的 32px 顶距 / 96px 底距分别让首页整体
+   下移、并在尾部制造空白页；首个段落还叠加 `margin: 0.7em 0` 的段前距。
+   Typora 在打印时把 `#write` 的 `margin-top` / `padding-top` / `padding-bottom`
+   归零，并单独把 `#write > p:nth-child(1)` 的 `margin-top` 归零。
+
+### 三、修法
+
+- `packages/export/src/html/styles.ts` 的 `@media print` 段新增：
+  `html, body { page-break-before/after: avoid; font-variant-ligatures: no-common-ligatures }`；
+  `.mellow-content * { -webkit-print-color-adjust: exact; print-color-adjust: exact }`
+  （Typora 只写前缀形式，这里补标准属性）；`.mellow-content { margin-top: 0;
+  padding-top: 0; padding-bottom: 0; page-break-after: avoid }`；
+  `.mellow-content > p:first-child { margin-top: 0 }`。
+- `packages/export/src/printStyle.ts`（`buildPrintHtml` 的打印样式表、桌面端注入主
+  Webview 的同一张表）补同源规则：`html, body` 首尾不分页；padding 归零选择器组补入
+  `.mellow-content`（`buildPrintHtml` 的内文根节点）；首元素 margin-top 归零组补入
+  `.mellow-content > p:first-child`。
+- **有意不搬的两条**（已在 `styles.ts` 注释中写明理由）：
+  - `figure { overflow-x: visible }`：导出白名单不含 `figure`，图片渲染为 `p > img`，
+    选择器不会命中；
+  - `.is-mac table { page-break-inside: avoid }`：规则只挂在 Typora 自己的 `.is-mac`
+    类上（Mellow 导出件无平台类，且同一份导出件可在任意平台打开），且整表不拆页会让
+    超长表溢出页面 —— 与 `table { page-break-inside: auto }` 的基线相冲突。
+
+### 四、验证
+
+```text
+cd packages/export && npx tsc --noEmit     # EXIT=0
+cd packages/export && npx jest             # 8 suites / 146 tests 全绿（+2）
+pnpm -w test                               # EXIT=0（全链：各包测试 + typecheck:desktop
+                                           #   + 23 个 parity 护栏 + 门禁；export 146）
+```
+
+新增判据：`html.test.ts`「打印规则：html/body 不分页、保留背景色、内容区留白归零」；
+`print.test.ts`「html/body 不分页 + 内容区留白归零」。
+`print-style.test.ts` 的 padding 规则锚点同步扩到 `.mellow-content`（其 canary 仍验证
+「删掉这组规则 ⇒ 判定失败」，未放宽）。
+
+### 五、边界（如实声明）
+
+- 本节只锁**样式表结构**；它不证明浏览器/WKWebView 的真实分页与背景色输出（需真机
+  目视或隔离打印队列）。台账状态与门禁结论不变（仍 **NO-GO：4 项**，PASS-E = 0/51）。
+- 未提交、未推送；未触碰用户文件；未运行任何原生打印探针。
+
+## 4.377 行内扩展语法（`==高亮==` / `^上标^` / `~下标~`）的导出渲染：ADR-0036 已裁决「留待独立裁决」，实现后回滚（2026-11-08）
+
+### 一、发现
+
+编辑器侧（`inlineExtras.ts` + `markdown.highlight/subscript/superscript`）已支持三种
+行内扩展，但 HTML / 打印 / PDF 三条导出路径都把它们渲染为字面文本。本轮先按「开关
+必须生效」的直觉实现了完整方案（`<mark>` / `<sup>` / `<sub>`，pdfmake 用递归行内
+解析 + `sup`/`sub`/`background`，默认 false，8 suites / 162 tests 全绿）。
+
+### 二、与裁决冲突
+
+`docs/adr/ADR-0036-export-path-syntax-feature-parity.md`（Accepted，2026-11-03，
+用户裁决）选择的是 **A1**：只修「开关关不掉」（`option-unwired` / `always-on`），
+并明确 **不**补 6 个 `not-implemented` 扩展语法（highlight / subscript / superscript /
+emoji / alerts / wikilink / yaml），原文写明「留待后续独立裁决」「属产品决策」，
+且 ADR 自述「本 ADR 不实施任何改动：改的是用户可见的导出件内容」。
+
+按 AGENTS.md 规则 16 与「冲突处理」（不得擅自裁决 / 不得改写 Accepted ADR 的结论），
+本轮**已完整回滚**该实现（生产代码、测试、宿主接线、护栏临时放宽全部还原），
+`packages/export` 回到 8 suites / 144 tests 的上一状态。
+
+### 三、后续路径（需用户裁决）
+
+若要补齐，正确做法是**新增 ADR 取代 ADR-0036 的该项延期**（A2 方向），而不是直接改
+实现。实现方案与测试已在本轮验证过（见会话记录），可复用；回滚后的导出件行为与
+ADR-0036 保持一致：三语法在导出件中仍为字面文本。
+
+## 4.378 脚注真值：引用应显示序号（而非 `[id]`）、单条分隔线、胶囊样式（2026-11-08）
+
+### 一、起因
+
+§4.376 补齐导出件打印规则后，按同一份一手来源继续核对「导出件 / 编辑器外观」。
+脚注是 PRD §44 的明确条目（superscript / hover preview / click definition /
+return location / source reveal），本轮逐条对照 Typora 的 DOM 构建代码与 `base.css`。
+
+### 二、一手证据
+
+`TypeMark/appsrc/main.js` 的脚注引用渲染分支（逐字）：
+
+```js
+case u.footnote:
+  if (y = t.nodeMap.foot_list.getNodeByRef(e.text)) {
+    var x, C = t.footnoteList.indexOf(e.text) + 1;
+    if (0 == C) { t.footnoteList.push(e.text); C = t.footnoteList.length; }
+    r = "<sup class='md-footnote'><a href='#dfref-footnote-" + x + "' …>" + C + "</a></sup>"
+  }
+```
+
+- 显示文字是 **`C`（序号）**，不是 `[^id]`；`C` 按**首次出现顺序**分配，
+  **重复引用同号**。
+- 导出件脚注区拼接：`"<div class='footnotes-area' …><hr/>" + S(d) + "</div>"`
+  ⇒ 只有**一条** `<hr/>` 分隔线。
+- `TypeMark/style/base.css`：`sup.md-footnote{padding:2px;padding-left:4px;
+  padding-right:4px;background-color:rgba(238,238,238,.7);color:#555;
+  border-radius:4px}`；`.footnotes{opacity:.8;font-size:.9rem;margin-top:1em;
+  margin-bottom:1em}`。
+
+### 三、缺口（编辑器与导出件各一处，互相印证）
+
+1. **引用文字**：Mellow 编辑器 widget 显示 `[a]`（源码 id），导出件显示 `[1]`
+   （markdown-it-footnote 默认 caption），两处都与 Typora 的「纯序号」不一致。
+2. **分隔线**：导出件 = `<hr class="footnotes-sep">` + `section.footnotes`
+   的 `border-top` ⇒ **两条**分隔线（Typora 一条）。
+3. **引用样式**：Mellow 两侧都没有胶囊（Typora 编辑器与导出件同用 `sup.md-footnote`）。
+4. **脚注区**：Mellow 用 `color: var(--fg-subtle)` 而非 Typora 的 `opacity:.8`，
+   上边距 2.4em（Typora 1em）。
+
+### 四、修法
+
+- `packages/editor-engine/src/footnote.ts`：
+  - `FootnoteRefWidget` 改为携带**序号**（`ordinal`），文字 `String(ordinal)`；
+    `build()` 先按 `parsed.refs` 首次出现顺序建 `id → 序号` 映射（重复引用同号，
+    与 `footnoteList` 语义一致）。`eq()` 同步改为比较 `ordinal`。
+  - `mellow-footnote-ref` 的 CM theme 补 Typora 胶囊四值（同值常量 `refStyle`）。
+- `packages/export/src/html/markdown.ts`：注册插件后覆盖
+  `renderer.rules.footnote_caption` → 只返回 `String(meta.id + 1)`
+  （无方括号、无 `subId` 后缀）；`footnote_ref` 规则不动 ⇒ `refid` 仍带
+  `subId`（重复引用的锚点唯一性不受影响）。
+- `packages/export/src/html/styles.ts`：脚注区改为 Typora 的
+  `margin: 1em 0; padding-top: 0; opacity: .8; font-size: .9em`（去掉
+  `border-top` —— 分隔线由 `<hr class="footnotes-sep">` 承担）；新增
+  `sup.footnote-ref` 胶囊与 `sup.footnote-ref a { color: inherit }`。
+
+### 五、验证
+
+```text
+cd packages/editor-engine && npx tsc --noEmit && npx jest test/footnote.test.ts   # 6/6
+cd packages/export && npx tsc --noEmit && npx jest                                # 8 suites / 147 tests
+pnpm -w test                                                                       # EXIT=0（全链）
+```
+
+新增 / 调整判据：
+
+- `footnote.test.ts`：引用文字由 `[a]` 改为 `1`；新增「首次出现顺序 + 重复同号」
+  （`x y x` → `1 2 1`）。
+- `html.test.ts`：新增「引用序号无方括号、重复引用同 refid 前缀 + 同显示号、
+  单条分隔线、胶囊与 `.footnotes` opacity」；原三处裸子串 `footnote-ref`
+  改为 `class="footnote-ref"` —— 样式表无条件含该选择器后，裸子串会与 CSS 撞车，
+  测不到「插件是否注册」。
+
+### 六、边界（如实声明）
+
+- 本节只锁 DOM / 样式表结构；编辑器胶囊与导出件的视觉结果需真机目视。
+  台账状态与门禁结论不变（仍 **NO-GO：4 项**，PASS-E = 0/51）。
+- 未改脚注的解析语义（`parseFootnotes` / markdown-it-footnote 的解析与锚点机制），
+  只改**显示文字与样式**；Source Fidelity 不受影响（文档文本原样）。
+- 未提交、未推送；未触碰用户文件；未运行任何原生打印探针。
+
+## 4.379 首行缩进（`editor.firstLineIndent`）在导出件里不生效（2026-11-08）
+
+### 一、起因
+
+§4.378 收口脚注后，继续按「编辑器有的设置，导出件必须同义」这条线核对。
+`editor.firstLineIndent`（V7-W6 / G7-EDIT-15）在编辑器侧已完整实现
+（CoreEditor 的 `firstLineIndentCompartment` + bridge + 菜单 / 设置双入口），
+但 `packages/export` 与 App 的导出站点**全仓无引用** —— 与 ADR-0036 A1 修的
+「开关关不掉」同类：用户开了首行缩进，导出的 HTML / 打印件里段落仍然顶格。
+
+### 二、一手证据（Typora 1.14.9）
+
+`TypeMark/appsrc/main.js` 的导出构建器（逐字）：
+
+```js
+var x=["typora-export"], …;
+File.option.indentFirstLine&&(u+=" first-line-indent"), …
+return `…<div id='write' … class='${u}'>${i}</div>…`
+```
+
+- 该类加在导出件的 **`#write`** 上；`u` 同时承载 `is-mac` / `is-node`（打印分支）。
+- **无样式导出走另一条提前返回的分支**（`if(n) return '<!doctype html>…<body>'+i…`），
+  在类名拼接**之前**返回 ⇒ 无样式导出件**不带**该类。
+
+`TypeMark/style/base.css`（逐字，四条）：
+
+```css
+#write.first-line-indent p{text-indent:2em}
+#write.first-line-indent li p,#write.first-line-indent p *,#write.first-line-indent svg *{text-indent:0}
+#write.first-line-indent li{margin-left:2em}
+#write.first-line-indent p>.md-image:only-child:not(.md-img-error) img{left:-2em;position:relative}
+```
+
+编辑区侧的真值此前已核对：`setIndentFirstLine` 给 `writingArea` 加同名类，
+`DEFAULT_OPTIONS.indentFirstLine: !1`（默认 false）。
+
+### 三、缺口
+
+1. `HtmlExportOptions` / `PrintOptions` 没有对应字段。
+2. 导出件正文根节点固定为 `<div class="mellow-content">`，没有可承载该规则的类。
+3. App 的两条导出入口（HTML / 打印用的 `buildPrintHtml` 选项）都不传该设置
+   ⇒ **编辑器与导出件不一致**。
+
+### 四、修法
+
+- `packages/export/src/html/types.ts`：新增 `HtmlExportOptions.firstLineIndent?`
+  （默认 false），`DEFAULT_HTML_OPTIONS` 同步。
+- `packages/export/src/html/index.ts`：`normalizeOptions` 补默认值；
+  `buildDocument` 仅在 `withStyles && firstLineIndent` 时输出
+  `class="mellow-content first-line-indent"`（无样式模式不输出，与 Typora 的
+  提前返回分支一致）。
+- `packages/export/src/html/styles.ts`：照搬前三条约到 `.mellow-content.first-line-indent`
+  （规则常驻，选择器只在类存在时命中）。**第四条不照搬**：它是 Typora 自身 DOM 的补偿
+  —— Typora 的独占图片外包着 `display:inline-block` 的 `.md-image`（inline 级，
+  会被 `text-indent` 推移）；Mellow 导出直接是 `p > img:only-child` 且
+  `display:block`（块级子元素不受 `text-indent` 影响），不存在被推移的问题。
+- `packages/export/src/print.ts`：`PrintOptions.firstLineIndent?` 并透传给
+  `exportHtml` —— 打印管线与 HTML 导出共用同一构建器。
+- `apps/desktop/src/App.tsx` 的 `runExportHtml`：`firstLineIndent:
+  readBoolSetting('editor.firstLineIndent', false)`（与 `codeLineNumbers` /
+  `wrapCode` 同一接线形态）。
+
+### 五、验证
+
+```text
+cd packages/export && npx tsc --noEmit        # 通过
+cd packages/export && npx jest               # 8 suites / 150 tests
+pnpm run typecheck:desktop                   # 通过
+pnpm -w test                                 # EXIT=0（全链：各包测试 + 23 个 parity 护栏 + 门禁 + vendored editor）
+```
+
+新增判据：
+
+- `html.test.ts`：「默认不加类 + 规则常驻」「开启时根节点带 `first-line-indent`
+  且含 `2em` 规则」「无样式模式不带类、无 `<style>`」。
+- `print.test.ts`：「打印管线同样按选项加类 / 默认不加类」。
+
+### 六、边界（如实声明）
+
+- 本节只锁 **HTML / 打印管线**的 DOM 与样式表；不证明浏览器 / 打印预览里的实际字形位置
+  （需真机目视），也不改任何门禁结论（仍 **NO-GO：4 项**，PASS-E = 0/51）。
+- **未接线**：PDF A1（pdfmake 管线没有对应选项，属 ADR-0037 A2 施工批次 A37 的
+  同一未闭环项）；Reader 预览与「直接打印主 Webview」（`PRINT_STYLESHEET` 路径）
+  也不渲染首行缩进 —— Reader 从未实现该语义，故两者行为未变（不是「不一致的新缺口」，
+  而是同一未实现面的既有边界，登记在案）。
+- 未提交、未推送；未触碰用户文件；未运行任何原生打印探针。
+
+## 4.380 正文字号（`editor.fontSize`）在导出件里不生效（2026-11-08）
+
+### 一、起因
+
+§4.379 把「首行缩进」接到导出件后，按同一条「编辑器 / Reader 有的排版设置，导出件必须同义」
+继续核对。Mellow 的正文字号已有**两个**消费方并已同源：编辑器
+（`setEditorConfig('setFontSize')`）与 Reader（`.mellow-reader` 消费
+`--mellow-content-font-size`，见 `App.tsx` 的 `applyContentFontSize` 注释与
+`tests/parity/verify-shell-typography.mjs` 的 V7-W5 断言）。**导出件是缺失的第三个消费方**
+—— 用户设 20px，编辑器与 Reader 都变成 20px，导出的 HTML / 打印件仍是样式表写死的 16px。
+
+### 二、一手证据（Typora 1.14.9）
+
+字号写入根元素（逐字）：
+
+```js
+if (File.option.useCustomFontSize) {
+  var s = (File.option.customFontSize || 16) + "";
+  document.body.parentElement.style.fontSize = s + "px"
+} else document.body.parentElement.style.fontSize = ""
+```
+
+导出构建器把**生效字号**写进导出件（逐字）：
+
+```js
+var h = e.fontSize || document.body.parentElement.style.fontSize || "";
+h && ("number" == typeof h && (h = `${h}px`, e.fontSize = h),
+      h = " style='font-size:" + h + " !important'"),
+```
+
+⇒ 自定义字号（或导出选项显式指定的字号）会随导出件走；缺省时导出件用主题自带的字号。
+
+### 三、缺口
+
+`HtmlExportOptions` / `PrintOptions` 没有字号字段，导出件正文根节点也没有内联
+`font-size` ⇒ 第三条消费方断链。
+
+### 四、修法
+
+- `packages/export/src/html/types.ts`：新增 `HtmlExportOptions.fontSize?`（px；缺省
+  undefined = 保持样式表自带的 16px，默认输出不变）。
+- `packages/export/src/html/index.ts`：`normalizeOptions` 只接受**有限正数**
+  （NaN / ≤0 / 非数字一律归一为 undefined）；`buildDocument` 在 `withStyles` 时给正文根节点
+  写 `style="font-size: {n}px"`，无样式模式不输出（与 Typora 的提前返回分支一致）。
+- `packages/export/src/print.ts`：`PrintOptions.fontSize?` 透传。
+- `apps/desktop/src/App.tsx` 的 `runExportHtml`：读 `editor.fontSize`（`settingById` +
+  `readSetting`，非法值回退 undefined）—— 与编辑器 / Reader 同一真源。
+- 护栏：`verify-shell-typography.mjs` 的 V7-W5 节从「双消费方」扩为**三消费方**
+  （Reader / 编辑器 / 导出件），锁字段、归一化、打印透传、App 读取 + canary。
+
+### 五、验证
+
+```text
+cd packages/export && npx tsc --noEmit        # 通过
+cd packages/export && npx jest               # 8 suites / 152 tests
+node tests/parity/verify-shell-typography.mjs # EXIT=0
+pnpm run typecheck:desktop                    # 通过
+pnpm -w test                                  # EXIT=0（全链）
+```
+
+新增判据：`html.test.ts`「传 fontSize → 根节点带 inline font-size；与首行缩进类共存；
+缺省 / NaN / 负数 / 无样式模式均不输出」；`print.test.ts`「打印管线同样生效」。
+
+### 六、边界（如实声明）
+
+- 只锁导出件的 DOM / 样式表结构；打印预览与导出的实际视觉需真机目视。
+- 未改 Reader / 编辑器的既有链路，也未改 PDF A1（pdfmake 管线，属 A37 同一未闭环项）。
+- 门禁结论不变（**NO-GO：4 项**，PASS-E = 0/51）；未提交、未推送；未触碰用户文件；
+  未运行任何原生打印探针。
+
+## 4.381 首行缩进（`editor.firstLineIndent`）在 Reader 里不生效（2026-11-08）
+
+### 一、起因
+
+§4.379 把首行缩进接到导出件后，消费方还剩最后一个断点：Reader。编辑器
+（CoreEditor compartment）与导出 HTML / 打印件都已消费 `editor.firstLineIndent`，
+只有 Reader 的只读渲染视图不带上该语义 —— 用户在设置里勾上「首行缩进」，编辑区与
+导出件都变了，切到 Reader 又复原。这与 §4.380 的字号缺口同型（「消费方不同源」），
+而同文件 V7-W5 已声明 Reader 是字号 / 行高 / 写作宽度的同源消费方。
+
+### 二、一手证据（Typora 1.14.9）
+
+`base.css` 的 `#write.first-line-indent` 规则（逐字，§4.379 已引）：
+
+```css
+#write.first-line-indent p { text-indent: 2em; }
+#write.first-line-indent li p,
+#write.first-line-indent p *,
+#write.first-line-indent svg * { text-indent: 0; }
+#write.first-line-indent li { margin-left: 2em; }
+#write.first-line-indent p > .md-image:only-child:not(.md-img-error) img { left: -2em; position: relative; }
+```
+
+⇒ 段落首行缩进 2em；列表内段落、段内行内元素与 SVG 子元素清零；图片独占段落用
+`left:-2em` 反向补偿。Reader 的 DOM 中没有 Typora 的 `.md-image` 居中包裹层，
+图片是 `p > img` 直接子元素，故用**取消该段 `text-indent`** 达成同等视觉结果。
+
+### 三、缺口
+
+`ReaderView` 没有 `firstLineIndent` 入参，正文 `<article class="mellow-reader">`
+也不带 `first-line-indent` 类；`styles.css` 没有对应的段落缩进规则。
+
+### 四、修法
+
+- `apps/desktop/src/Reader.tsx`：`ReaderViewProps.firstLineIndent?: boolean`；
+  `<article>` 按值拼接 `mellow-reader first-line-indent` / `mellow-reader`。
+- `apps/desktop/src/App.tsx`：渲染 `ReaderView` 时传
+  `firstLineIndent={readBoolSetting('editor.firstLineIndent', false)}` —— 与设置面板、
+  菜单命令（`edit.firstLineIndent.toggle`）同一真源；两处入口都会自增
+  `menuCheckTick` 触发重渲染，Reader 的类随之更新。
+- `apps/desktop/src/styles.css`：新增 `.mellow-reader.first-line-indent` 规则族
+  （段落 2em + `li p` / `p *` / `svg *` 清零 + `p:has(> img:only-child)` 取消缩进）。
+- 护栏：`verify-shell-typography.mjs` 新增 V7-W7 节，锁 App → Reader 接线、类名拼接与
+  三条 CSS 规则，并对「App 写死 false」「CSS 缩进清零」两个方向各注入一次 canary。
+  同轮修正该文件汇总输出的三处多余 `}`（此前 `${''}\n}` 拼接留下的字面字符，
+  不影响断言，只污染日志）。
+- `tests/e2e/first-line-indent-verify.mjs`：在既有 7 条编辑器断言后补 2 条 Reader 断言
+  （开启 → `.mellow-reader.first-line-indent` + 段落计算样式 32px；关闭 → 类与缩进撤销）。
+
+### 五、验证
+
+```text
+node tests/parity/verify-shell-typography.mjs  # EXIT=0（含 V7-W7 与双向 canary）
+pnpm run typecheck:desktop                     # 通过
+pnpm -w test                                   # EXIT=0（全链）
+```
+
+### 六、边界（如实声明）
+
+- 本机未安装 Playwright（`require('playwright')` 不可解析），`tests/e2e/*` 无法运行，
+  因此**没有** Reader 的实际渲染截图或计算样式证据；本轮的可执行判据是源码 / 样式表
+  结构断言。`first-line-indent-verify.mjs` 已补 Reader 断言，但**未在本机执行**；
+  「设置勾选 → Reader 段落首行缩进 2em」的实际视觉仍需真机目视（或在装有 Playwright
+  的环境跑该脚本）。
+- Typora 的 `#write.first-line-indent li{margin-left:2em}` 未照搬：Reader 的列表定位
+  依赖 `ul/ol { padding-left: 1.6em }`，再叠加 `li` 外边距会与现有列表排版叠加成
+  3.2em 以上；在缺少真机对照的情况下不引入未经验证的视觉位移。
+- 未改 PDF A1（pdfmake 管线，属 A37 同一未闭环项）；未改编辑器与导出件既有链路。
+- 门禁结论不变（**NO-GO：4 项**，PASS-E = 0/51）；未提交、未推送；未触碰用户文件；
+  未运行任何原生打印探针。
+
+## 4.382 format-list 同类假红复发：条件轮询的 1 s 截止在满负载下仍不足（2026-11-08）
+
+### 一、症状
+
+`pnpm -w test` 全链 EXIT=1，唯一失败在
+`packages/editor-engine/test/format-list.test.ts` 的「无序 idle → marker 弱化（dim）」：
+
+```text
+Expected: true
+Received: false
+> 63 |     expect(await waitFor(() => dimCount(view) === 2)).toBe(true);
+Test Suites: 1 failed, 83 passed, 84 total
+Tests:       1 failed, 1440 passed, 1441 total
+Time:        118.519 s
+```
+
+该用例隔离运行 19/19 通过（10.001 s）⇒ 与 §4.370 同族：不是断言口径错，是等待预算
+在全链满负载（84 suites 并行）下不足。
+
+### 二、根因
+
+§4.370 已把固定 `sleep()` 改成 `waitFor()` 条件轮询，但 `waitFor` 的默认截止是 **1000 ms**
+（`test/harness.ts`）。满负载时该 suite 耗时从常态约 5 s 拉长到 12.7 s，marker 弱化装饰的
+重算落在 1 s 之后 ⇒ 轮询在条件成立前就耗尽预算。**判据本身是对的，缺的是与负载匹配的
+轮询截止**；这与「延长固定延时」不同：等的仍是「dim 数到 2」这一条件。
+
+### 三、修复（只改测试等待预算，不改断言）
+
+```ts
+expect(await waitFor(() => dimCount(view) === 2, 5000)).toBe(true);
+```
+
+并就地注释复发原因；`format-list.test.ts` 另两处 `waitFor`（带行号的稳态判据）未动。
+
+### 四、验证与边界
+
+- 隔离实跑：`npx jest test/format-list.test.ts` → **19/19，EXIT=0**（10.001 s）。
+- 中间一轮全链：`editor-engine` **84 suites / 1441 tests 全通过**，但全链因本审计节尚未
+  存在（`verify-doc-code-refs.mjs` 抓到 `§4.382` 悬空引用）而 EXIT=1。
+- 补本节后全链重跑：`pnpm -w test` → **EXIT=0**（workspace 全包 + 23 个护栏 + 门禁 +
+  vendored CoreEditor lint/jest）。
+- 边界：只修这一处复发；未改 `waitFor` 默认值、未改任何断言口径、未动产品代码。
+  若第三处同形态出现，应优先评估 `editor-engine` 的 jest 并行度，而不是继续加预算。
+
+## 4.383 导出件不跟随当前主题：只按亮/暗二选一，8 个主题里的 Paper / Kraft / Inkwell 对导出件不生效（2026-11-08）
+
+### 一、起因
+
+§4.379–§4.381 把「首行缩进」「正文字号」接到导出件 / Reader 后，按同一条
+「编辑器里看到的排版，导出件必须同义」继续核对，命中一类更宽的缺口：**颜色与字体**。
+Mellow 有 8 个内置主题（`packages/themes/src/index.ts`），用户选 Paper / Kraft / Inkwell
+后编辑器与 Reader 立刻换底、换衬线字体；但 `exportHtml` 只接收 `theme: 'light' | 'dark'`，
+导出件永远用 `LIGHT_VARS` / `DARK_VARS` 里的固定色值和 UI 无衬线栈 —— 编辑器与导出件
+外观不一致（所见非所得）。
+
+### 二、一手证据（Typora 1.14.9）
+
+`/Applications/Typora.app/Contents/Resources/TypeMark/appsrc/main.js` 的导出构建器
+内联的是**当前主题**的 CSS（逐字，节选）：
+
+```js
+theme_css, base_user_css, theme_user_css
+```
+
+即：HTML 导出把当前主题的样式表整段塞进导出件；只有导出选项显式指定 `exportTheme`
+时才改载 `<theme>.css`。Typora 的打印 / PDF 走同一构建器 ⇒ 同一语义。
+「导出件必须跟随当前主题」是 Typora 的既定行为，不是 Mellow 的自选增强。
+
+### 三、缺口
+
+`HtmlExportOptions` 没有承载主题 token 的字段；
+`themeCss(theme)` 只按亮/暗输出内置默认值；`BODY_CSS` 的 `font-family` 是写死的 UI
+字体栈（Paper / Inkwell 的 `--mellow-content-font` 衬线栈无法到达导出件）。
+
+### 四、修法（不改默认输出）
+
+- `packages/export/src/html/types.ts`：新增 `HtmlExportOptions.themeVariables?`
+  （= `MellowTheme.variables`；缺省 / 空值保留内置默认 ⇒ 旧调用方逐字节同义）。
+- `packages/export/src/html/styles.ts`：
+  - 新增 `ALERT_TOKENS`（告警 token 名，`alertCss()` 与变量映射共用，避免两处清单漂移）；
+  - 新增 `EXPORT_THEME_SOURCES`（导出件 CSS 变量 ← 主题 token 的映射：`--mellow-link`
+    → `--mellow-accent`、`--mellow-mark` → `--mellow-mark-bg`、quote/toc 的回落链、
+    `--mellow-content-font` 直通、告警三色直通）；
+  - `themeVariableOverrides()` 生成 `:root` 内的覆盖声明，**只映射导出件真正消费的变量**
+    —— 编辑器专用的 `--mellow-md-*` / 侧栏 token 不泄漏进导出件；
+    值来自（可能是用户提供的）主题 CSS，故剥离 `;` / `}` 防提前闭合声明或规则；
+  - `themeCss(theme, { wrapCode, themeVariables })` 在默认 `vars` 之后追加覆盖；
+  - `BODY_CSS` 的 `font-family` 改为 `var(--mellow-content-font, <原字体栈>)`。
+- `packages/export/src/html/index.ts`：`exportHtml` 把 `opts.themeVariables` 透传给
+  `themeCss`（`without-style` 仍无样式表，自然不生效）。
+- `apps/desktop/src/App.tsx` 的 `runExportHtml`：传 `themeVariables: activeTheme.variables`
+  （`resolveActiveTheme` 的结果，与编辑器 / Reader 同一真源），并把
+  `activeTheme.variables` 补进 `useCallback` 依赖。
+- 护栏：`verify-shell-typography.mjs` 新增 V7-W8 节，锁 types 契约 → index 透传 →
+  映射表（含 `--mellow-link` 与 `--mellow-content-font` 两条关键映射）→ App 接线 +
+  useCallback 依赖，并对「App 传 undefined」「链接色映射退回二选一」「exportHtml 不透传」
+  三个方向各注入一次 canary。
+
+### 五、验证与边界
+
+- `packages/export` 新增 6 例 HTML 测试（覆盖：不传 ⇒ 默认不变、传入 ⇒ 覆盖 / 字体
+  var 生效、编辑器专用 token 不泄漏、空白值与危险字符处理、`without-style` 不输出 token）。
+- `cd packages/export && npx jest` → **8 suites / 158 tests 全通过**；`npx tsc --noEmit` → **EXIT=0**。
+- 边界：
+  - **默认输出不变**（不传 `themeVariables` 时 `:root` 内容与旧版逐字节一致），
+    故不改变任何既有导出件基线；
+  - 只映射导出件**实际消费**的变量；主题里其余 token（编辑器排版 / 侧栏 / 浮动面板）
+    有意不映射，避免把编辑器专属色带进导出件；
+  - **不内联主题的 `themeCss` 规则文本**：内置主题里只有 Kraft 带规则，且选择器全部锚在
+    `[data-theme='kraft'] .mellow-reader …`；导出件根节点是 `.mellow-content`、也不带
+    `data-theme`，直接内联会**静默不生效**。要做就得改写选择器 —— 那会改变导出件外观，
+    超出「把已有 token 送到已消费的变量上」这一轮的范围，登记为后续裁决项；
+  - 未触碰 PDF（pdfmake）配色：PDF 走 `PDF_THEME_COLORS`（亮/暗两档，属 A1 既定实现），
+    与 HTML/打印件不是同一条样式管线，主题化需要另行裁决（ADR 层面），本轮不擅自扩大；
+  - 未触碰图片导出（canvas）配色：它同样按 `themeSettings.mode` 在亮/暗调色板间二选一
+    （`DEFAULT_IMAGE_OPTIONS`），也不是 CSS 变量管线 —— 与 PDF 属同一类待裁决项，
+    不在本轮「把当前主题 CSS 内联进 HTML」的证据范围内；
+  - 未提交、未推送；发布门禁四项（`P0-EDITOR-005` / `P0-EXPORT-001` / `P0-PERF-001` /
+    `P0-QA-001`）状态不变（均为本机不可闭环的外部项）。
 
 ## 五、本次审计做的改动（非策略性）
 

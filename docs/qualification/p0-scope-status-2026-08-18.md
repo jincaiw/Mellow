@@ -27,7 +27,8 @@
 >   `Tabbar` / `tab-overview` / `autoHideTabBar` **已全量移除**）。
 > - **#3「editor-engine 491 测试」** —— 实测现为 **1293**（`packages/editor-engine` jest：79 suites）。
 > - **#39「6 内置原创主题」** —— **「6」是 PRD 的要求数**，实际 **8** 个
->   （`mellow-light` / `mellow-dark` / `paper` / `git-light` / `git-dark` / `newsprint` / `whitey` / `gothic`）
+>   （`mellow-light` / `mellow-dark` / `paper` / `git-light` / `git-dark` / `kraft` / `snow` / `inkwell`；
+>   后三个原名 `newsprint` / `whitey` / `gothic`，ADR-0040（2026-11-08）裁决改为原创名）
 >   ⇒ 这是**超额**，**不是失真**（勿「修正」回 6）。
 > - **「参考」里的 `docs/plans/typora-deep-parity-plan.md` 不存在**（**幽灵引用**）——
 >   ⚠️ 更精确地说：它**不是「从未存在」**，而是**已被取代并删除、且未归档**
