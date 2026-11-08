@@ -4,6 +4,8 @@
  * - 白名单标签与编辑器一致（A/IMG/IFRAME/VIDEO 等），额外放行导出自身的产物：
  *   TOC（nav）、footnote（section/sup）、task list（input）、KaTeX（katex + MathML）。
  * - 属性白名单：class / id / data-* / aria-* 通配 + 各标签必要属性；style 与 on* 一律删除。
+ *   （唯一例外：th/td 的 `style="text-align:…"` 会先转成 `mellow-align-*` class 再删除 ——
+ *   见 TRANSFORM_TAGS，目的只是保住表格列对齐，不放开任意 CSS。）
  * - URL 协议校验：a → http/https/mailto；img/video/audio/source 额外允许 data:；
  *   iframe 强制 sandbox=""。
  * - a[target=_blank] 强制补充 rel="noopener noreferrer"。
@@ -38,6 +40,9 @@ const ALLOWED_ATTRS: Record<string, string[]> = {
   source: ['src', 'type'],
   iframe: ['src', 'width', 'height', 'allowfullscreen', 'sandbox'],
   input: ['type', 'checked', 'disabled'],
+  // 有序列表起始编号（ADR-0037 A2 对照项之一）。markdown-it 会输出 `<ol start="3">`，
+  // 但白名单漏了 `start` ⇒ sanitize 静默剥掉，起始号退化。2026-11-08 由 A2 corpus 测试逮到。
+  ol: ['start'],
   td: ['colspan', 'rowspan'],
   th: ['colspan', 'rowspan'],
   code: ['class'],
@@ -65,11 +70,33 @@ interface SanitizeTag {
 }
 type SanitizeTransformer = (tagName: string, attribs: Record<string, string>) => SanitizeTag;
 
+/**
+ * 表格列对齐：markdown-it 为对齐列输出 `style="text-align:center"`，而白名单
+ * **有意**剥掉 `style`（不放开任意 CSS）。直接在属性白名单里放行 `style` 会把
+ * XSS 面重新打开（`position:fixed` 覆盖层等），所以改为：只识别**唯一一种**
+ * 受控形态（text-align 的三个枚举值），转成 `mellow-align-*` class，原 style 丢弃。
+ * 这样对齐信息不丢，属性白名单仍无 `style`。2026-11-08 由导出一致性排查发现
+ * （此前导出/打印的表格对齐列全部退化为默认对齐）。
+ */
+const TABLE_ALIGN_STYLE = /(?:^|;)\s*text-align\s*:\s*(left|right|center)\s*(?:;|$)/i;
+
+const tableAlignTransformer: SanitizeTransformer = (tagName, attribs) => {
+  const match = TABLE_ALIGN_STYLE.exec(attribs.style ?? '');
+  if (match) {
+    const cls = `mellow-align-${match[1].toLowerCase()}`;
+    attribs.class = attribs.class ? `${attribs.class} ${cls}` : cls;
+    delete attribs.style;
+  }
+  return { tagName, attribs };
+};
+
 const TRANSFORM_TAGS: Record<string, SanitizeTransformer> = {
   a: (tagName, attribs) => {
     if (attribs.target === '_blank') attribs.rel = 'noopener noreferrer';
     return { tagName, attribs };
   },
+  td: tableAlignTransformer,
+  th: tableAlignTransformer,
   iframe: (tagName, attribs) => {
     // 空值属性会被 sanitize-html 丢弃；"sandbox" token 无效被浏览器忽略，等价于全禁用
     attribs.sandbox = 'sandbox';

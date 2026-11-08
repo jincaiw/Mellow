@@ -1,10 +1,12 @@
 /**
  * B3-2 主题细节链路验证（浏览器 dev 模式，Playwright Chromium）。
  * 验证点：
- *   1. Newsprint 主题：data-theme + --mellow-content-font（Reader 衬线）+ themeCss 注入（报纸标题规则）
+ *   1. Kraft 主题（ADR-0040 前名 Newsprint）：data-theme + --mellow-content-font（Reader 衬线）
+ *      + themeCss 注入（报纸标题规则）
  *   2. 主题级编辑器字体：用户未设置 fontFamily → Georgia；切回 Mellow Light → 还原 ui-monospace
  *   3. 用户优先级：显式 fontFamily 设置覆盖主题字体
- *   4. 视觉对照截图（mellow-light / paper / newsprint）
+ *   4. ADR-0040 旧 id 迁移：localStorage 存 `newsprint` → 启动后按 `kraft` 生效，且存储被改写
+ *   5. 视觉对照截图（mellow-light / paper / kraft）
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -84,24 +86,24 @@ async function main() {
       return el ? getComputedStyle(el).fontFamily : null;
     });
 
-    // 1. Newsprint 主题
+    // 1. Kraft 主题（ADR-0040 改名，原 Newsprint）
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => localStorage.removeItem('mellow.editor.fontFamily'));
-    let frame = await applyTheme('newsprint');
+    let frame = await applyTheme('kraft');
     await new Promise((r) => setTimeout(r, 600)); // 等主题 useEffect + host ready 恢复
     const dataTheme = await page.evaluate(() => document.documentElement.dataset.theme);
-    check('data-theme=newsprint applied', dataTheme === 'newsprint', `dataTheme=${dataTheme}`);
+    check('data-theme=kraft applied', dataTheme === 'kraft', `dataTheme=${dataTheme}`);
 
     const contentFont = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--mellow-content-font'));
-    check('newsprint --mellow-content-font (serif stack)', contentFont.includes('Georgia') && contentFont.includes('serif'), `value=${contentFont.trim()}`);
+    check('kraft --mellow-content-font (serif stack)', contentFont.includes('Georgia') && contentFont.includes('serif'), `value=${contentFont.trim()}`);
 
     const themeCss = await page.evaluate(() => document.getElementById('mellow-theme-css')?.textContent ?? '');
-    check('newsprint themeCss injected (h1/h2 rules)', themeCss.includes("[data-theme='newsprint'] .mellow-reader h1"), `len=${themeCss.length}`);
+    check('kraft themeCss injected (h1/h2 rules)', themeCss.includes("[data-theme='kraft'] .mellow-reader h1"), `len=${themeCss.length}`);
 
     let ef = await editorFontFamily(frame);
     check('theme-level editor font (Georgia) applied', ef.startsWith('Georgia') || ef.includes('Georgia'), `computed=${ef}`);
 
-    await page.screenshot({ path: shot('b3-2-newsprint.png') });
+    await page.screenshot({ path: shot('b3-2-kraft.png') });
 
     // 2. Paper 主题（Pixyll 衬线方向）
     frame = await applyTheme('paper');
@@ -121,12 +123,27 @@ async function main() {
 
     // 4. 用户显式 fontFamily 优先于主题字体
     await page.evaluate(() => localStorage.setItem('mellow.editor.fontFamily', 'PingFang SC'));
-    frame = await applyTheme('newsprint');
+    frame = await applyTheme('kraft');
     await new Promise((r) => setTimeout(r, 600));
     ef = await editorFontFamily(frame);
     check('user fontFamily overrides theme font', ef.includes('PingFang SC'), `computed=${ef}`);
 
-    await page.screenshot({ path: shot('b3-2-newsprint-user-font.png') });
+    await page.screenshot({ path: shot('b3-2-kraft-user-font.png') });
+
+    // 5. ADR-0040 旧 id 一次性迁移：升级用户的存储里仍是 `newsprint`，
+    //    启动时 App 必须按 `kraft` 生效，并把迁移结果写回（否则每次启动都要再映射）。
+    await page.evaluate(() => localStorage.setItem('mellow.theme.settings', JSON.stringify({ mode: 'light', lightThemeId: 'newsprint', darkThemeId: 'gothic' })));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await new Promise((r) => setTimeout(r, 600));
+    const migrated = await page.evaluate(() => ({
+      theme: document.documentElement.dataset.theme,
+      stored: JSON.parse(localStorage.getItem('mellow.theme.settings') ?? 'null'),
+    }));
+    check(
+      'legacy theme ids migrate on startup (newsprint→kraft, gothic→inkwell)',
+      migrated.theme === 'kraft' && migrated.stored?.lightThemeId === 'kraft' && migrated.stored?.darkThemeId === 'inkwell',
+      JSON.stringify(migrated),
+    );
 
     // 清理
     await page.evaluate(() => {

@@ -1,7 +1,10 @@
 import {
   BUILTIN_THEMES,
   DEFAULT_THEME_SETTINGS,
+  LEGACY_THEME_ID_ALIASES,
   allThemes,
+  migrateThemeId,
+  migrateThemeSettings,
   parseUserThemeCss,
   registerUserThemes,
   resolveActiveTheme,
@@ -18,10 +21,14 @@ describe('Theme engine — built-in themes', () => {
       'paper',
       'git-light',
       'git-dark',
-      'newsprint',
-      'whitey',
-      'gothic',
+      'kraft',
+      'snow',
+      'inkwell',
     ]));
+    // ADR-0040 裁决 A：与 Typora 撞名的旧 id 不得再出现在内置主题表中。
+    for (const legacy of Object.keys(LEGACY_THEME_ID_ALIASES)) {
+      expect(ids).not.toContain(legacy);
+    }
   });
 
   test('light/dark classification', () => {
@@ -31,9 +38,9 @@ describe('Theme engine — built-in themes', () => {
     expect(byId['paper'].kind).toBe('light');
     expect(byId['git-light'].kind).toBe('light');
     expect(byId['git-dark'].kind).toBe('dark');
-    expect(byId['newsprint'].kind).toBe('light');
-    expect(byId['whitey'].kind).toBe('light');
-    expect(byId['gothic'].kind).toBe('dark');
+    expect(byId['kraft'].kind).toBe('light');
+    expect(byId['snow'].kind).toBe('light');
+    expect(byId['inkwell'].kind).toBe('dark');
   });
 
   test('every theme defines core CSS variable tokens and editor theme mapping', () => {
@@ -77,6 +84,41 @@ describe('Theme engine — resolveActiveTheme', () => {
   test('falls back to defaults for unknown theme ids', () => {
     expect(resolveActiveTheme({ ...DEFAULT_THEME_SETTINGS, lightThemeId: 'nope' }, false).id).toBe('mellow-light');
     expect(resolveActiveTheme({ ...DEFAULT_THEME_SETTINGS, darkThemeId: 'nope' }, true).id).toBe('mellow-dark');
+  });
+});
+
+// ADR-0040 裁决 A（2026-11-08）：旧 id 完成一次性迁移，用户既有的主题选择与观感不变。
+describe('Theme engine — legacy id migration (ADR-0040)', () => {
+  test('migrateThemeId maps the three renamed ids and leaves others untouched', () => {
+    expect(migrateThemeId('newsprint')).toBe('kraft');
+    expect(migrateThemeId('whitey')).toBe('snow');
+    expect(migrateThemeId('gothic')).toBe('inkwell');
+    expect(migrateThemeId('paper')).toBe('paper');
+    expect(migrateThemeId('user/my-theme')).toBe('user/my-theme');
+    expect(migrateThemeId('nope')).toBe('nope');
+  });
+
+  test('migrateThemeSettings rewrites both slots without mutating input', () => {
+    const saved = { mode: 'light' as const, lightThemeId: 'newsprint', darkThemeId: 'gothic' };
+    const migrated = migrateThemeSettings(saved);
+    expect(migrated).toEqual({ mode: 'light', lightThemeId: 'kraft', darkThemeId: 'inkwell' });
+    expect(saved.lightThemeId).toBe('newsprint');
+    expect(saved.darkThemeId).toBe('gothic');
+  });
+
+  test('resolveActiveTheme accepts legacy ids so an unmigrated store keeps its look', () => {
+    // 若在启动迁移前（或其它调用方直接传旧值）解析，必须命中原主题，而不是静默回退默认。
+    expect(resolveActiveTheme({ mode: 'light', lightThemeId: 'newsprint', darkThemeId: 'mellow-dark' }, false).id).toBe('kraft');
+    expect(resolveActiveTheme({ mode: 'dark', lightThemeId: 'mellow-light', darkThemeId: 'gothic' }, false).id).toBe('inkwell');
+  });
+
+  test('renamed themes keep their appearance tokens', () => {
+    expect(themeById('kraft')?.variables['--mellow-bg']).toBe('#f4ecd8');
+    expect(themeById('snow')?.variables['--mellow-bg']).toBe('#ffffff');
+    expect(themeById('inkwell')?.variables['--mellow-bg']).toBe('#17141f');
+    expect(themeById('inkwell')?.editorFontFamily).toBe('Georgia');
+    // themeCss 选择器跟随新 id（否则改名后报纸标题规则静默失效）
+    expect(themeById('kraft')?.themeCss).toContain("[data-theme='kraft'] .mellow-reader h1");
   });
 });
 

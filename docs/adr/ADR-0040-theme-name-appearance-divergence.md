@@ -1,6 +1,6 @@
 # ADR-0040 — 内置主题与 Typora 同名而外观不同（G7-TYPO-05）
 
-**Status:** **Proposed**（2026-11-03 立）—— 待裁决；裁决前不改任何主题名称、配色或用户已保存的主题选择。
+**Status:** **Accepted**（2026-11-08，**用户裁决**）—— 已裁决（选项 A）。
 
 ## 背景（一手证据）
 
@@ -58,4 +58,25 @@ master-plan §5.6 的 **G7-TYPO-05**（2026-09-13 实机核对，本机 Typora 1
 
 ## 裁决
 
-（待用户拍板后追加，本 ADR 只追加不改写上文。）
+**裁决 = A（改原创名 + 存储迁移），不补 `night`** —— 用户 2026-11-08 拍板（最终对标轮）。
+
+- **Q1（改名与映射）= A**：
+  - `newsprint → kraft`（显示名 `Kraft`）；
+  - `whitey → snow`（显示名 `Snow`）；
+  - `gothic → inkwell`（显示名 `Inkwell`）。
+  - 配色、字体族与 `themeCss` 参数**一律不动**（只改 id / 显示名 / 选择器）。
+- **Q2（是否补 `night`）= 不补**：深色需求由既有 `mellow-dark` / `git-dark` / `inkwell` 承载；
+  不与 Typora 的深色主题同名，也就不需要「补一个同名主题」来对齐。
+
+**实现约束**（落地时执行，不改变 Markdown 真源、不动 vendored 引擎）：
+
+1. 迁移**只在读取时映射**：`LEGACY_THEME_ID_ALIASES` + `migrateThemeId` / `migrateThemeSettings`；
+   `resolveActiveTheme` 对旧 id 做防御性映射（未迁移的存储也能命中原主题）。
+2. `apps/desktop` 启动读取 `mellow.theme.settings` 时迁移并**立即写回**（一次性），
+   保证用户既有的主题选择与观感不变。
+3. 改名面同步：主题表头注释、`themeCss` 选择器、i18n `menu.theme.*` 键、主题包 README/CONTRACT、
+   e2e `theme-verify.mjs`；**Typora 自身的主题名**（ADR-0027 证据、引擎注释、台账注释）不改。
+4. 门禁：`PENDING_ADRS` → `DECIDED_ADRS`；master-plan §5.6 G7-TYPO-05 与审计登记表同步
+   「已裁决」；本 ADR 其余部分不改写（只追加）。
+5. 回归证据：`packages/themes/test/index.test.ts`（映射 + 旧 id 解析 + 外观 token 不变）、
+   `tests/e2e/theme-verify.mjs`（启动迁移的端到端断言）。

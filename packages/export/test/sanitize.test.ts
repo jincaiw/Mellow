@@ -83,6 +83,26 @@ describe('HTML Export safe output（PRD §48）', () => {
     expect(out).not.toContain('style=');
   });
 
+  test('th/td 的 text-align 转成 class（表格列对齐），其余 style 仍被剥', () => {
+    // markdown-it 输出 `<th style="text-align:center">`；白名单不放行 style，
+    // 若不转换，列对齐会静默消失（2026-11-08 实测）。
+    const out = sanitizeOutput(
+      '<table><thead><tr><th style="text-align:center">C</th></tr></thead>'
+      + '<tbody><tr><td style="text-align:right;color:red">1</td></tr></tbody></table>',
+    );
+    expect(out).toContain('class="mellow-align-center"');
+    expect(out).toContain('class="mellow-align-right"');
+    expect(out).not.toContain('style=');
+    expect(out).not.toContain('color:red');
+  });
+
+  test('text-align 只接受枚举值，其它值不产生 class', () => {
+    const out = sanitizeOutput('<td style="text-align:expression(alert(1))">x</td>');
+    expect(out).not.toContain('mellow-align');
+    expect(out).not.toContain('style=');
+    expect(out).toContain('x');
+  });
+
   test('a[target=_blank] 强制补 rel="noopener noreferrer"', () => {
     const out = sanitizeOutput('<a href="https://x.com" target="_blank">x</a>');
     expect(out).toContain('rel="noopener noreferrer"');

@@ -24,7 +24,8 @@ describe('printStylesheet — 屏幕留白归零（防尾部空白页）', () =>
     expect(printBlock).toContain('.cm-scroller');
     // 必须 !important —— 屏幕规则（.mellow-reader / .cm-content）优先级更高或同源，
     // 不加 !important 会被覆盖，表现为「打印仍有空白页」。
-    const paddingRule = printBlock.match(/\.mellow-reader,\s*\n?\s*\.cm-content,\s*\n?\s*\.cm-scroller\s*\{[^}]*\}/);
+    // .mellow-content = buildPrintHtml 的内文根节点（exportHtml 的包装 div）。
+    const paddingRule = printBlock.match(/\.mellow-reader,\s*\n?\s*\.cm-content,\s*\n?\s*\.cm-scroller,\s*\n?\s*\.mellow-content\s*\{[^}]*\}/);
     expect(paddingRule).not.toBeNull();
     expect(paddingRule?.[0]).toMatch(/padding:\s*0\s*!important/);
   });
@@ -48,7 +49,7 @@ describe('printStylesheet — 屏幕留白归零（防尾部空白页）', () =>
 
   test('canary：移除留白归零规则时，本测试的判定条件会失败', () => {
     // 模拟「有人把这组规则删掉」：仅保留 @media print 到结尾之外的内容
-    const withoutReset = css.replace(/\.mellow-reader,\s*\n?\s*\.cm-content,\s*\n?\s*\.cm-scroller\s*\{[^}]*\}/, '');
+    const withoutReset = css.replace(/\.mellow-reader,\s*\n?\s*\.cm-content,\s*\n?\s*\.cm-scroller,\s*\n?\s*\.mellow-content\s*\{[^}]*\}/, '');
     expect(withoutReset).not.toBe(css); // 注入确实生效（锚点未漂移）
     expect(/padding:\s*0\s*!important/.test(withoutReset)).toBe(false);
   });

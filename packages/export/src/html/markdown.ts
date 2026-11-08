@@ -39,6 +39,11 @@ export interface HtmlRenderContext {
   tocItems: TocItem[];
   /** 导出时保留单换行符（Typora `preLinebreakOnExport`，默认 false；见 types.ts 说明） */
   preserveLineBreaks?: boolean;
+  /**
+   * 代码块行号（Typora `showLineNumbersForFence`，默认 false；见 types.ts 说明）。
+   * `without-style` 模式忽略（Typora 的无样式导出走 `<pre><code>` 分支，不带行号）。
+   */
+  codeLineNumbers?: boolean;
 }
 
 export function escapeHtml(value: string): string {
@@ -47,6 +52,30 @@ export function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * 带行号的围栏渲染（Typora `showLineNumbersForFence`）。
+ *
+ * 结构：每个源码行一个块级 span，行号是**真实 DOM 文本**并用 `user-select:none`
+ * 排除复制（Typora 导出的 `.CodeMirror-linenumber` 同样声明 `user-select:none`）。
+ * 不用 CSS counter：生成内容（`::before`）在部分浏览器会被复制进剪贴板，
+ * 会让「复制代码」带上行号。
+ *
+ * 尾随换行不算一行（```js a\\nb\\n``` 是 2 行，与编辑器行数一致）；
+ * 块内空行保留行号（CodeMirror 同样给空行编号）。
+ */
+function renderNumberedFence(content: string, lang: string): string {
+  const lines = content.split('\n');
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  const codeOpen = lang === '' ? '<code>' : `<code class="language-${escapeHtml(lang)}">`;
+  const lineHtml = lines
+    .map(
+      (line, index) =>
+        `<span class="mellow-code-line"><span class="mellow-code-num" aria-hidden="true">${index + 1}</span><span class="mellow-code-text">${escapeHtml(line)}</span></span>`,
+    )
+    .join('');
+  return `<pre class="mellow-code-lineno">${codeOpen}${lineHtml}</code></pre>\n`;
 }
 
 function stripInlineMarkdown(value: string): string {
@@ -212,8 +241,23 @@ export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
   // footnote + task list
   // ADR-0036 A1（批次 A36）：脚注受开关控制 —— 关闭时不注册插件，`[^1]` 保留为字面文本，
   // 与预览端 `markdown.footnote` 开关同义（「开关关不掉」的导出侧即在此修复）。
-  if (ctx.footnoteEnabled) md.use(footnotePlugin);
-  md.use(taskListsPlugin, { enabled: true, label: true, labelAfter: false });
+  if (ctx.footnoteEnabled) {
+    md.use(footnotePlugin);
+    // 引用文字 = 序号，无方括号（Typora 1.14.9 的引用 DOM：
+    // `<sup class='md-footnote'><a …>{C}</a></sup>`，C = 首次出现顺序，重复引用同号）。
+    // markdown-it-footnote 默认输出 `[1]`（重复引用还会带 `1:1` 后缀），与 Typora 不同。
+    // 只改**显示文字**：`footnote_ref` 仍用 subId 生成唯一 refid，锚点行为不变。
+    md.renderer.rules.footnote_caption = (tokens, idx) => {
+      const meta = tokens[idx].meta as { id: number };
+      return String(meta.id + 1);
+    };
+  }
+  // 任务列表：`label: false`（导出件里复选框是**内容快照**，不可交互）。
+  // 一手证据 = Typora 1.14.9 导出 DOM `<li class="task-list-item"><input type="checkbox"> 文本</li>`
+  // **没有 label 包裹**，并由 base.css `.typora-export .task-list-item input{pointer-events:none}`
+  // 关掉点击。若保留 label（插件默认 true），点文本会经 label 转发切换复选框 ——
+  // 仅在 input 上设 pointer-events:none 挡不住，导出的静态快照会被误以为可编辑。
+  md.use(taskListsPlugin, { enabled: true, label: false, labelAfter: false });
 
   // ── math ────────────────────────────────────────────────
   const mathInline: RuleInline = (state, silent) => {
@@ -352,6 +396,11 @@ export function createMarkdownIt(ctx: HtmlRenderContext): MarkdownItInstance {
     const lang = info.split(/\s+/)[0] ?? '';
     if (lang.toLowerCase() === 'mermaid' && ctx.mermaidEnabled && ctx.mode !== 'without-style') {
       return `<pre class="mermaid">\n${escapeHtml(token.content)}\n</pre>\n`;
+    }
+    // 代码块行号（Typora showLineNumbersForFence）：图表分支已在上方返回（SVG 无行号）；
+    // without-style 不带行号（与 Typora 无样式导出的 `<pre><code>` 分支一致）。
+    if (ctx.codeLineNumbers === true && ctx.mode !== 'without-style') {
+      return renderNumberedFence(token.content, lang);
     }
     if (defaultFence !== undefined) return defaultFence(tokens, idx, options, env, self);
     return `<pre><code>${escapeHtml(token.content)}</code></pre>\n`;

@@ -1,8 +1,10 @@
 /**
  * Theme Engine（T-0601 / T-0602）。
  *
- * - 内置 8 主题：Mellow Light / Mellow Dark / Paper / Git Light / Git Dark / Newsprint /
- *   Whitey / Gothic
+ * - 内置 8 主题：Mellow Light / Mellow Dark / Paper / Git Light / Git Dark / Kraft /
+ *   Snow / Inkwell
+ *   （ADR-0040 裁决 A，2026-11-08：原 `newsprint` / `whitey` / `gothic` 与 Typora 内置主题
+ *    同名而外观不同，已改为原创名；旧 id 由 `LEGACY_THEME_ID_ALIASES` 一次性映射。）
  *   （V7-W4.8：原注释写「6 主题」，与实际 8 个不一致 —— 文档失真已修正。
  *    D-J 裁决 = ① 保持 8 个：PRD 要求 ≥6 原创，更多不破坏心智，且 Typora 的 6 个是
  *    「主题数量」而非「主题名单」约束，无需收敛。）
@@ -299,8 +301,8 @@ export const BUILTIN_THEMES: MellowTheme[] = [
     editorTheme: 'github-dark',
   },
   {
-    id: 'newsprint',
-    name: 'Newsprint',
+    id: 'kraft',
+    name: 'Kraft',
     kind: 'light',
     variables: {
       ...LIGHT_BASE,
@@ -317,32 +319,33 @@ export const BUILTIN_THEMES: MellowTheme[] = [
       '--mellow-selection': '#e2d3b0',
       '--mellow-code-bg': '#efe5cd',
       '--mellow-code-border': '#d9c9a8',
-      // B3-2 报纸感（Typora Newsprint 方向）：衬线正文
+      // B3-2 纸张感（报纸排版方向，参数原创；ADR-0040 改名为 kraft）
       '--mellow-content-font': "Georgia, 'Songti SC', 'Noto Serif SC', 'Times New Roman', serif",
     },
-    // B3-2 报纸排版细节：标题衬线粗体 + h1/h2 下边框（对齐 Typora Newsprint 视觉，参数原创）
+    // B3-2 纸张排版细节：标题衬线粗体 + h1/h2 下边框（报纸方向，参数原创）
     themeCss: [
-      "[data-theme='newsprint'] .mellow-reader h1,",
-      "[data-theme='newsprint'] .mellow-reader h2 {",
+      "[data-theme='kraft'] .mellow-reader h1,",
+      "[data-theme='kraft'] .mellow-reader h2 {",
       "  border-bottom: 2px solid var(--mellow-border-strong);",
       "  padding-bottom: 0.25em;",
       '}',
-      "[data-theme='newsprint'] .mellow-reader h1 { letter-spacing: 0.02em; }",
-      "[data-theme='newsprint'] .mellow-reader blockquote {",
+      "[data-theme='kraft'] .mellow-reader h1 { letter-spacing: 0.02em; }",
+      "[data-theme='kraft'] .mellow-reader blockquote {",
       '  border-left: 3px solid var(--mellow-border-strong);',
       '}',
     ].join('\n'),
     editorTheme: 'winter-is-coming-light',
     editorFontFamily: 'Georgia',
   },
-  // R2-3 Typora 主题语义位补齐（master-plan G4）：Whitey 极简高对比白 / Gothic 衬线深色
+  // R2-3 主题语义位补齐（master-plan G4）：Snow 极简高对比白 / Inkwell 衬线深色
+  // （ADR-0040 裁决 A：原名 whitey / gothic 与 Typora 主题**同名而外观不同**，已改原创名）
   {
-    id: 'whitey',
-    name: 'Whitey',
+    id: 'snow',
+    name: 'Snow',
     kind: 'light',
     variables: {
       ...LIGHT_BASE,
-      // Typora Whitey 方向：纯白底 + 近黑文字，最大对比、去装饰（参数原创）
+      // 极简方向：纯白底 + 近黑文字，最大对比、去装饰（参数原创）
       '--mellow-bg': '#ffffff',
       '--mellow-bg-elevated': '#ffffff',
       '--mellow-bg-subtle': '#fafafa',
@@ -362,12 +365,12 @@ export const BUILTIN_THEMES: MellowTheme[] = [
     editorTheme: 'minimal-light',
   },
   {
-    id: 'gothic',
-    name: 'Gothic',
+    id: 'inkwell',
+    name: 'Inkwell',
     kind: 'dark',
     variables: {
       ...DARK_BASE,
-      // Typora Gothic 方向：衬线学术风 + 暗紫红点缀（参数原创）
+      // 衬线学术风 + 暗紫红点缀（参数原创）
       '--mellow-bg': '#17141f',
       '--mellow-bg-elevated': '#1e1a29',
       '--mellow-bg-subtle': '#120f18',
@@ -475,6 +478,33 @@ export function parseUserThemeCss(fileName: string, css: string): MellowTheme {
   };
 }
 
+/**
+ * 已废弃的主题 id → 现名（ADR-0040 裁决 A，2026-11-08）。
+ *
+ * 旧名与 Typora 内置主题**同名而外观不同**（`gothic` 在两边甚至明暗相反），已改为
+ * 原创名。配色与观感不变，只换 id/显示名；已保存的选择经 `migrateThemeSettings`
+ * 迁移，用户按名字选主题不会再撞上预期外的外观。
+ */
+export const LEGACY_THEME_ID_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  newsprint: 'kraft',
+  whitey: 'snow',
+  gothic: 'inkwell',
+});
+
+/** 旧主题 id → 当前 id（非旧 id 原样返回） */
+export function migrateThemeId(id: string): string {
+  return LEGACY_THEME_ID_ALIASES[id] ?? id;
+}
+
+/** 迁移已保存的主题设置（纯函数；不修改入参，返回新对象） */
+export function migrateThemeSettings(settings: ThemeSettings): ThemeSettings {
+  return {
+    mode: settings.mode,
+    lightThemeId: migrateThemeId(settings.lightThemeId),
+    darkThemeId: migrateThemeId(settings.darkThemeId),
+  };
+}
+
 export function themeById(id: string): MellowTheme | undefined {
   return themeMap.get(id);
 }
@@ -482,7 +512,9 @@ export function themeById(id: string): MellowTheme | undefined {
 /** 解析最终生效主题（纯函数；systemPrefersDark 由宿主提供） */
 export function resolveActiveTheme(settings: ThemeSettings, systemPrefersDark: boolean): MellowTheme {
   const preferDark = settings.mode === 'dark' || (settings.mode === 'system' && systemPrefersDark);
-  const id = preferDark ? settings.darkThemeId : settings.lightThemeId;
+  // 防御性映射：即便调用方未先跑 migrateThemeSettings（如旧版本残留的 localStorage、
+  // 原生菜单的旧 command id），也能解析到用户当初选择的主题而不是静默回退默认主题。
+  const id = migrateThemeId(preferDark ? settings.darkThemeId : settings.lightThemeId);
   const theme = themeMap.get(id);
   if (theme !== undefined) return theme;
   return themeById(preferDark ? DEFAULT_THEME_SETTINGS.darkThemeId : DEFAULT_THEME_SETTINGS.lightThemeId) as MellowTheme;

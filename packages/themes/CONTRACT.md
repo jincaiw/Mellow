@@ -12,9 +12,10 @@
 
 ## 2. 公开接口与类型
 
-- 入口 `src/index.ts`（**11** 个导出）：`MellowTheme`、`ThemeKind`、`ThemeSettings`、
+- 入口 `src/index.ts`（**14** 个导出）：`MellowTheme`、`ThemeKind`、`ThemeSettings`、
   `DEFAULT_THEME_SETTINGS`、`BUILTIN_THEMES`、`registerUserThemes`、`allThemes`、`userThemes`、
-  `parseUserThemeCss`、`themeById`、`resolveActiveTheme`
+  `parseUserThemeCss`、`themeById`、`resolveActiveTheme`、`LEGACY_THEME_ID_ALIASES`、
+  `migrateThemeId`、`migrateThemeSettings`
 - 规模：基表 **68** 个非 md token + 主题的 md token 段。
 
 ## 3. 不变量（每条必须有执行者）
@@ -26,6 +27,7 @@
 | **基表里引擎从不消费的 md token 必须登记** | 同上 R3（`MD_TOKENS_UNUSED`，现 1 项：`--mellow-md-fg`） |
 | **基表里每个非 md token 必须至少在某处被消费，否则登记** | 同上 R4（`HOST_TOKENS_UNUSED`，现 3 项，见审计 §4.99） |
 | 主题 id 唯一、`resolveActiveTheme` 对未知 id 有确定回落 | `test/index.test.ts` |
+| **旧主题 id 一次性迁移**（ADR-0040：`newsprint`/`whitey`/`gothic` → `kraft`/`snow`/`inkwell`），已保存选择与观感不变 | `test/index.test.ts` + `tests/e2e/theme-verify.mjs` |
 | **核心包零平台 API** | `tests/parity/verify-adapter-contract.mjs` |
 
 ## 4. 错误语义
@@ -47,7 +49,8 @@
 
 ## 7. Typora parity reference
 
-- 内置主题对应 Typora 官方主题（github / night / pixyll / whitey / gothic / newsprint / paper）；
+- 主题**视觉方向**参照 Typora 官方主题（github / night / pixyll / whitey / gothic / newsprint / paper），
+  但内置主题自 ADR-0040 起**不再与 Typora 同名**（`kraft` / `snow` / `inkwell` 为原创名，配色参数原创）；
   排版真值取自 Typora 主题 CSS（github：16px / line-height 1.6 / max-width 860px）。
 - 主题**列表与命名**的对照见 `docs/plans/typora-parity-master-plan.md`。
 

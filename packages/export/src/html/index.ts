@@ -21,7 +21,7 @@ import { themeCss } from './styles';
 import { DEFAULT_HTML_OPTIONS, type HtmlExportEnv, type HtmlExportMode, type HtmlExportOptions } from './types';
 import type { HtmlRenderContext } from './markdown';
 
-function normalizeOptions(options: HtmlExportOptions): Required<Pick<HtmlExportOptions, 'lang' | 'theme' | 'tocMaxLevel' | 'includeOutline' | 'rawHtml' | 'math' | 'mermaid' | 'toc' | 'footnote' | 'embedImages' | 'preserveLineBreaks'>> & HtmlExportOptions {
+function normalizeOptions(options: HtmlExportOptions): Required<Pick<HtmlExportOptions, 'lang' | 'theme' | 'tocMaxLevel' | 'includeOutline' | 'rawHtml' | 'math' | 'mermaid' | 'toc' | 'footnote' | 'embedImages' | 'preserveLineBreaks' | 'codeLineNumbers' | 'firstLineIndent'>> & HtmlExportOptions {
   const base = { ...DEFAULT_HTML_OPTIONS, ...options };
   return {
     ...base,
@@ -39,6 +39,15 @@ function normalizeOptions(options: HtmlExportOptions): Required<Pick<HtmlExportO
     embedImages: base.mode === 'self-contained' ? true : base.mode === 'without-style' ? false : base.embedImages ?? true,
     // V7-W6（G7-FEAT-13）：Typora `preLinebreakOnExport` 默认 false
     preserveLineBreaks: base.preserveLineBreaks ?? false,
+    // Typora `noLineWrapping` 默认 false ⇒ 导出件默认换行代码块长行
+    wrapCode: base.wrapCode ?? true,
+    // Typora `showLineNumbersForFence` 默认 false ⇒ 仅显式开启时代码块带行号
+    codeLineNumbers: base.codeLineNumbers ?? false,
+    // Typora `indentFirstLine` 默认 false ⇒ 仅显式开启时导出件带首行缩进类
+    firstLineIndent: base.firstLineIndent ?? false,
+    // Typora 导出件的正文字号跟随生效字号（`e.fontSize || 根元素 inline style`）：
+    // 非法 / 缺省值一律不输出内联 style（默认输出不变）。
+    fontSize: typeof base.fontSize === 'number' && Number.isFinite(base.fontSize) && base.fontSize > 0 ? base.fontSize : undefined,
   };
 }
 
@@ -63,8 +72,12 @@ function buildDocument(args: {
   body: string;
   css: string;
   scripts: string;
+  /** 段落首行缩进类（Typora `#write.first-line-indent`；无样式导出不带该类） */
+  firstLineIndent?: boolean;
+  /** 正文字号 px（Typora 导出件 `#write` 的 inline font-size；无样式导出不输出） */
+  fontSize?: number;
 }): string {
-  const { lang, title, body, css, scripts } = args;
+  const { lang, title, body, css, scripts, firstLineIndent, fontSize } = args;
   const head: string[] = [
     '<!DOCTYPE html>',
     `<html lang="${escapeHtml(lang)}">`,
@@ -76,7 +89,14 @@ function buildDocument(args: {
   ];
   if (css !== '') head.push(`<style>\n${css}\n</style>`);
   head.push('</head>');
-  const parts = [...head, `<body>\n<div class="mellow-content">\n${body}\n</div>`, scripts, '</body>', '</html>'];
+  // Typora：`File.option.indentFirstLine && (u += " first-line-indent")` —— 类加在 `#write` 上；
+  // Mellow 的正文根节点是 `.mellow-content`，故类同置。无样式模式（没有任何 CSS）不带，
+  // 与 Typora 无样式导出的提前返回分支一致。
+  const contentClass = firstLineIndent === true ? 'mellow-content first-line-indent' : 'mellow-content';
+  // Typora 把字号写成 `#write` 的 inline style（`style='font-size:20px !important'`）；
+  // Mellow 写入正文根节点即可（em 基准随之缩放，与 Typora 语义相同）。
+  const contentAttrs = fontSize === undefined ? `class="${contentClass}"` : `class="${contentClass}" style="font-size: ${fontSize}px"`;
+  const parts = [...head, `<body>\n<div ${contentAttrs}>\n${body}\n</div>`, scripts, '</body>', '</html>'];
   return `${parts.join('\n')}\n`;
 }
 
@@ -98,6 +118,7 @@ export async function exportHtml(markdown: string, options: HtmlExportOptions, e
     imageMap: new Map<string, string>(),
     tocItems: [],
     preserveLineBreaks: opts.preserveLineBreaks,
+    codeLineNumbers: opts.codeLineNumbers,
   };
 
   // 1. 预解析 tokens（headings 收集与最终渲染同源）
@@ -153,7 +174,7 @@ export async function exportHtml(markdown: string, options: HtmlExportOptions, e
   let css = '';
   let scripts = '';
   if (withStyles) {
-    css = themeCss(opts.theme);
+    css = themeCss(opts.theme, { wrapCode: opts.wrapCode, themeVariables: opts.themeVariables });
     if (opts.customCss !== undefined && opts.customCss !== '') css += `\n${opts.customCss}\n`;
     if (opts.math) {
       const katexCss = katexCssWithEmbeddedFonts(env.katexCss);
@@ -169,7 +190,18 @@ export async function exportHtml(markdown: string, options: HtmlExportOptions, e
   }
 
   const title = opts.title ?? fallbackTitle;
-  return buildDocument({ mode, lang: opts.lang, title, body, css, scripts });
+  // 无样式模式不输出样式表，首行缩进类与字号 inline style 也就都不存在
+  // （与 Typora 的无样式分支一致）。
+  return buildDocument({
+    mode,
+    lang: opts.lang,
+    title,
+    body,
+    css,
+    scripts,
+    firstLineIndent: withStyles && opts.firstLineIndent,
+    fontSize: withStyles ? opts.fontSize : undefined,
+  });
 }
 
 /** 便捷：将本地文件读取为 data URL（供 env.resolveImage 使用；text 类返回 data:text/plain;base64） */

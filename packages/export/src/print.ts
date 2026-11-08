@@ -41,6 +41,12 @@ export interface PrintOptions {
   mermaid?: boolean;
   toc?: boolean;
   footnote?: boolean;
+  /** 代码块行号（Typora showLineNumbersForFence，默认 false；与 HTML 导出同一选项） */
+  codeLineNumbers?: boolean;
+  /** 段落首行缩进（Typora indentFirstLine，默认 false；与 HTML 导出同一选项） */
+  firstLineIndent?: boolean;
+  /** 正文字号 px（Typora 导出件的生效字号；与 HTML 导出同一选项） */
+  fontSize?: number;
 }
 
 /** 打印就绪脚本：Mermaid 渲染完成后通知父窗口；无 Mermaid 时 load 后即就绪；2.5s 兜底。 */
@@ -79,6 +85,9 @@ export function buildPrintHtml(markdown: string, options: PrintOptions = {}, env
       mermaid: options.mermaid,
       toc: options.toc,
       footnote: options.footnote,
+      codeLineNumbers: options.codeLineNumbers,
+      firstLineIndent: options.firstLineIndent,
+      fontSize: options.fontSize,
       customCss: printStylesheet(styleOptions),
     },
     env,

@@ -13,7 +13,7 @@
  */
 
 import pdfMake from 'pdfmake/build/pdfmake';
-import { PDF_THEME_COLORS, PDF_TYPOGRAPHY } from './typography';
+import { PDF_THEME_COLORS, PDF_TYPOGRAPHY, type PdfThemeColors } from './typography';
 
 // ── 选项 ────────────────────────────────────────────────────
 
@@ -46,6 +46,18 @@ export interface PdfOptions {
    * 与 HTML 导出同名选项保持**语义一致**（同一设置同时作用于两条管线）。
    */
   preserveLineBreaks?: boolean;
+  /**
+   * 代码块是否显示行号（默认 false）。
+   *
+   * 与 HTML 导出的 `codeLineNumbers` 同义、同源设置（`markdown.codeLineNumbers`），
+   * 对齐 Typora `File.option.showLineNumbersForFence`。PDF 由 pdfmake 绘制，
+   * 没有 CSS gutter ⇒ 用无边框两列表格模拟（行号右对齐 + 代码列）。
+   * 行号是**独立的文本节点**，复制代码时不会混入行号。
+   *
+   * ⚠️ ADR-0037 = A2（Accepted）计划把 PDF 导出切到系统打印管线（批次 A37），
+   * 届时本选项自动改由 HTML/打印渲染器承载；在此之前本实现保证两条渲染路径语义一致。
+   */
+  codeLineNumbers?: boolean;
 }
 
 export const DEFAULT_PDF_OPTIONS: PdfOptions = {
@@ -59,6 +71,7 @@ export const DEFAULT_PDF_OPTIONS: PdfOptions = {
   pageBreakAtH1: true,
   includeOutline: true,
   preserveLineBreaks: false,
+  codeLineNumbers: false,
 };
 
 export interface PdfEnv {
@@ -95,7 +108,7 @@ export type PdfBlock =
   | { type: 'list'; ordered: boolean; items: Array<{ task: boolean; checked: boolean; content: Inline[] }> }
   | { type: 'blockquote'; content: Inline[] }
   | { type: 'code'; language: string; text: string }
-  | { type: 'table'; header: string[]; rows: string[][] }
+  | { type: 'table'; header: string[]; rows: string[][]; align?: Array<'left' | 'center' | 'right' | undefined> }
   | { type: 'hr' }
   | { type: 'image'; alt: string; src: string }
   | { type: 'math'; tex: string; display: boolean }
@@ -238,13 +251,23 @@ export function parseBlocks(markdown: string, options: { preserveLineBreaks?: bo
           .split('|')
           .map((c) => c.trim().replace(/\u0000/g, '|'));
       const header = splitRow(line);
+      // GFM 对齐语法：`:--` 左、`:-:` 中、`--:` 右。此前整行只被当作分隔符丢弃，
+      // PDF 里所有列一律左对齐 —— 与 HTML/打印路径（mellow-align-* class）不一致。
+      const align = splitRow(lines[i + 1].text).map((c): 'left' | 'center' | 'right' | undefined => {
+        const left = c.startsWith(':');
+        const right = c.endsWith(':');
+        if (left && right) return 'center';
+        if (right) return 'right';
+        if (left) return 'left';
+        return undefined;
+      });
       const rows: string[][] = [];
       i += 2;
       while (i < lines.length && TABLE_ROW_RE.test(lines[i].text)) {
         rows.push(splitRow(lines[i].text));
         i += 1;
       }
-      blocks.push({ type: 'table', header, rows });
+      blocks.push({ type: 'table', header, rows, align });
       continue;
     }
 
@@ -368,6 +391,39 @@ function escapePdfText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/[{}]/g, '');
 }
 
+/**
+ * PDF 代码块行号（Typora `showLineNumbersForFence`）。
+ *
+ * pdfmake 没有 CSS gutter ⇒ 用无边框两列表格模拟：左列行号（右对齐）、右列代码。
+ * 行号是**独立文本节点**（不是拼进代码字符串），复制代码时不会带上行号 ——
+ * 与 HTML 导出（`user-select:none` 的独立 span）语义一致。
+ * 尾随换行不算一行；块内空行保留行号（空行用单个空格占位，避免行高塌陷）。
+ */
+function buildNumberedCodeBlock(text: string, colors: PdfThemeColors): Record<string, unknown> {
+  const lines = text.split('\n');
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  if (lines.length === 0) return { text: '', style: 'code', background: colors.codeBg };
+  return {
+    table: {
+      widths: ['auto', '*'],
+      dontBreakRows: true,
+      body: lines.map((line, index) => [
+        { text: String(index + 1), style: 'codeNum', alignment: 'right', fillColor: colors.codeBg },
+        { text: line === '' ? ' ' : line, style: 'code', fillColor: colors.codeBg },
+      ]),
+    },
+    layout: {
+      hLineWidth: () => 0,
+      vLineWidth: () => 0,
+      paddingLeft: () => 0,
+      paddingRight: (index: number) => (index === 0 ? 6 : 0),
+      paddingTop: () => 1,
+      paddingBottom: () => 1,
+    },
+    margin: [0, 4, 0, 4],
+  };
+}
+
 export async function buildPdfDocument(markdown: string, options: PdfOptions, env: PdfEnv): Promise<PdfDocDefinition> {
   const blocks = parseBlocks(markdown, { preserveLineBreaks: options.preserveLineBreaks });
   const colors = THEME_COLORS[options.theme];
@@ -382,11 +438,31 @@ export async function buildPdfDocument(markdown: string, options: PdfOptions, en
     return { text: tex, italics: true, color: colors.fg, style: 'code' };
   };
 
+  // PDF 书签（Outline）：Typora 的 PDF 导出器固定写 `View.PageMode = pmUseOutlines`
+  // （appsrc/main.js 的 TPDFPageMode），即导出的 PDF 自带标题书签面板。pdfmake 用
+  // 节点上的 `outline` / `id` / `outlineParentId` 表达同一结构；按标题层级维护父链，
+  // 跳级（h1 → h3）时回退到最近的更浅祖先。
+  const outlineStack: { level: number; id: string }[] = [];
+  let headingSeq = 0;
+
   for (const block of blocks) {
     switch (block.type) {
       case 'heading': {
-        const el: any = { text: inlineToPdf(block.content), style: `h${Math.min(block.level, 6)}` };
+        const level = Math.min(block.level, 6);
+        const el: any = { text: inlineToPdf(block.content), style: `h${level}` };
         if (options.pageBreakAtH1 && block.level === 1) el._h1 = true;
+        while (outlineStack.length > 0 && outlineStack[outlineStack.length - 1].level >= level) {
+          outlineStack.pop();
+        }
+        const id = `heading-${(headingSeq += 1)}`;
+        el.outline = true;
+        el.id = id;
+        // pdfmake 的标题取 `outlineText || text`；heading 的 text 是 inline 数组，
+        // 直接沿用会被 String(...) 成 `[object Object]` ⇒ 必须显式给纯文本。
+        el.outlineText = block.content.map((token) => token.text).join('');
+        const parent = outlineStack[outlineStack.length - 1];
+        if (parent !== undefined) el.outlineParentId = parent.id;
+        outlineStack.push({ level, id });
         content.push(el);
         break;
       }
@@ -403,12 +479,20 @@ export async function buildPdfDocument(markdown: string, options: PdfOptions, en
         content.push({ text: inlineToPdf(block.content), style: 'quote' });
         break;
       case 'code':
-        content.push({ text: block.text, style: 'code', background: colors.codeBg });
+        content.push(
+          options.codeLineNumbers === true
+            ? buildNumberedCodeBlock(block.text, colors)
+            : { text: block.text, style: 'code', background: colors.codeBg },
+        );
         break;
       case 'table': {
+        const cell = (text: string, col: number, bold = false): Record<string, unknown> => {
+          const alignment = block.align?.[col];
+          return alignment ? { text, bold, alignment } : { text, bold };
+        };
         const body = [
-          block.header.map((c) => ({ text: c, bold: true })),
-          ...block.rows.map((row) => row.map((c) => ({ text: c }))),
+          block.header.map((c, col) => cell(c, col, true)),
+          ...block.rows.map((row) => row.map((c, col) => cell(c, col))),
         ];
         content.push({ table: { widths: Array(block.header.length).fill('*'), body } });
         break;
@@ -476,6 +560,8 @@ export async function buildPdfDocument(markdown: string, options: PdfOptions, en
       h6: { fontSize: PDF_TYPOGRAPHY.headings[6], bold: true, color: colors.fg },
       body: { fontSize: PDF_TYPOGRAPHY.body },
       code: { fontSize: PDF_TYPOGRAPHY.code, color: colors.fg, background: colors.codeBg },
+      // 代码块行号：与代码同字号、同色（pdfmake 无 muted token）；右对齐由单元格 alignment 控制
+      codeNum: { fontSize: PDF_TYPOGRAPHY.code, color: colors.fg },
       quote: { fontSize: PDF_TYPOGRAPHY.body, italics: true, color: colors.fg, background: colors.codeBg, margin: [8, 4, 0, 4] },
       footnote: { fontSize: PDF_TYPOGRAPHY.footnote, color: colors.fg },
       toc: { fontSize: PDF_TYPOGRAPHY.body + 1, bold: true },

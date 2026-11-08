@@ -9,6 +9,9 @@
  *   2. 开关开启：普通段落首行 = 2em，段落第二行不缩进
  *   3. 列表 / 引用 / 代码块不叠加首行缩进（其结构自己的 indent decoration 保留）
  *   4. live toggle 回关：关闭 → 开启 → 关闭，DOM style 随 compartment 双向变化
+ *   5. Reader（只读视图）与编辑器 / 导出件同源：开启时 `.mellow-reader` 带
+ *      `first-line-indent` 类且段落计算样式为 2em；关闭后类与缩进一并撤销
+ *      （审计 §4.381；本项要求 Playwright，本机未安装时整脚本无法运行）
  *
  * 运行：NODE_PATH=<playwright 目录>/node_modules node tests/e2e/first-line-indent-verify.mjs
  */
@@ -133,6 +136,30 @@ async function main() {
       check('菜单命令开启：写回 Settings Store（mellow.editor.firstLineIndent = 1）', afterOn === '1', JSON.stringify(afterOn));
       check('菜单命令开启：编辑器首行缩进即时生效', onFirst?.style?.includes('text-indent: 2em'), JSON.stringify(onFirst?.style));
 
+      // ── Reader 同源（G7-EDIT-15 / 审计 §4.381）────────────────────────
+      // Reader 是同一设置的第四个消费方：拼类在 ReaderView，真值仍是
+      // Settings Store；此处验证「命令开启 → Reader 段落 2em」与「关闭 → 撤销」。
+      const openReader = async () => {
+        await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('reader.open'));
+        await page.locator('.mellow-reader-shell').waitFor({ state: 'visible', timeout: 5000 });
+      };
+      const closeReader = async () => {
+        await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('reader.openInEditor'));
+        await page.locator('.mellow-reader-shell').waitFor({ state: 'detached', timeout: 5000 });
+      };
+      const inspectReader = () => page.evaluate(() => {
+        const article = document.querySelector('.mellow-reader');
+        const paragraph = article?.querySelector('p') ?? null;
+        return {
+          hasClass: article?.classList.contains('first-line-indent') ?? false,
+          textIndent: paragraph === null ? null : getComputedStyle(paragraph).textIndent,
+        };
+      });
+      await openReader();
+      const readerOn = await inspectReader();
+      check('Reader 同源：开启时带 first-line-indent 类且段落首行 2em', readerOn.hasClass && readerOn.textIndent === '32px', JSON.stringify(readerOn));
+      await closeReader();
+
       await page.evaluate(() => window.__MELLOW_COMMANDS__.dispatch('edit.firstLineIndent.toggle'));
       await sleep(300);
       const afterOff = await page.evaluate(() => localStorage.getItem('mellow.editor.firstLineIndent'));
@@ -140,6 +167,10 @@ async function main() {
       const offFirst = offLines.find((line) => line.text === 'para one');
       check('菜单命令再点一次：写回 Settings Store（= 0）', afterOff === '0', JSON.stringify(afterOff));
       check('菜单命令再点一次：编辑器首行缩进撤销', offFirst?.style === null, JSON.stringify(offFirst?.style));
+      await openReader();
+      const readerOff = await inspectReader();
+      check('Reader 同源：关闭后类与首行缩进一并撤销', readerOff.hasClass === false && readerOff.textIndent === '0px', JSON.stringify(readerOff));
+      await closeReader();
     }
   } finally {
     await browser.close();

@@ -163,6 +163,44 @@ describe('PDF export — document definition', () => {
     expect(noBg.background).toBeUndefined();
   });
 
+  test('表格列对齐：GFM 分隔行决定 PDF 单元格 alignment', async () => {
+    const doc = await buildPdfDocument(
+      '| L | C | R |\n| :-- | :-: | --: |\n| a | b | c |',
+      DEFAULT_PDF_OPTIONS,
+      env,
+    );
+    const tableEl = doc.content.find((el) => (el as { table?: unknown }).table !== undefined) as
+      | { table?: { body?: Array<Array<{ text?: string; alignment?: string }>> } }
+      | undefined;
+    const body = tableEl?.table?.body ?? [];
+    expect(body[0]?.map((c) => c.alignment)).toEqual(['left', 'center', 'right']);
+    expect(body[1]?.map((c) => c.alignment)).toEqual(['left', 'center', 'right']);
+  });
+
+  test('代码块行号：默认关闭时仍是单个文本节点；开启后为无边框两列表格', async () => {
+    const md = ['```js', 'const a = 1;', '', 'const b = 2;', '```'].join('\n');
+    const off = await buildPdfDocument(md, DEFAULT_PDF_OPTIONS, env);
+    expect(off.content.some((el) => (el as { text?: string }).text === 'const a = 1;\n\nconst b = 2;')).toBe(true);
+
+    const on = await buildPdfDocument(md, { ...DEFAULT_PDF_OPTIONS, codeLineNumbers: true }, env);
+    const tableEl = on.content.find((el) => (el as { table?: unknown }).table !== undefined) as
+      | { table: { dontBreakRows?: boolean; body: Array<Array<{ text: string; style?: string; alignment?: string; fillColor?: string }>> } }
+      | undefined;
+    expect(tableEl).toBeDefined();
+    expect(tableEl?.table.dontBreakRows).toBe(true);
+    expect(tableEl?.table.body.map((row) => row[0]?.text)).toEqual(['1', '2', '3']);
+    // 行号是独立单元格（复制代码不会带上行号）；空行用单空格占位
+    expect(tableEl?.table.body.map((row) => row[1]?.text)).toEqual(['const a = 1;', ' ', 'const b = 2;']);
+    expect(tableEl?.table.body[0]?.[1]?.style).toBe('code');
+    expect(tableEl?.table.body[0]?.[0]?.alignment).toBe('right');
+    expect((on.styles as Record<string, unknown>).codeNum).toBeDefined();
+  });
+
+  test('空代码块开启行号时不生成空表格', async () => {
+    const on = await buildPdfDocument('```js\n```', { ...DEFAULT_PDF_OPTIONS, codeLineNumbers: true }, env);
+    expect(on.content.some((el) => (el as { table?: unknown }).table !== undefined)).toBe(false);
+  });
+
   test('header/footer/page numbers wired', async () => {
     const doc = await buildPdfDocument('# H', { ...DEFAULT_PDF_OPTIONS, header: true, footer: true, pageNumbers: true, title: 'Doc Title' }, env);
     expect(doc.header).toBeDefined();
@@ -183,6 +221,26 @@ describe('PDF export — document definition', () => {
 });
 
 describe('PDF export — buffer generation (subset fonts, CJK, 100 pages)', () => {
+  /**
+   * PDF 书签（Outline）—— Typora 的 PDF 导出器固定写 `View.PageMode = pmUseOutlines`
+   * （appsrc/main.js 的 TPDFPageMode），导出件在阅读器里带标题书签面板。
+   * 之前只生成了**正文内的目录列表**（`includeOutline` + `[toc]`），PDF 书签缺失。
+   */
+  test('PDF 书签：标题写入 /Outlines，层级按标题级别嵌套', async () => {
+    const md = '# 一级\n\n## 二级\n\n### 三级\n\n# 第二个一级';
+    const raw = Buffer.from(await createPdfBuffer(md, DEFAULT_PDF_OPTIONS, env)).toString('latin1');
+    expect(raw).toContain('/Outlines');
+    expect(raw).toContain('/UseOutlines');
+    // 4 个标题 = 4 条书签；书签标题必须来自标题文本而非 `[object Object]`
+    expect((raw.match(/\/Title/g) ?? []).length).toBe(4);
+    expect(raw).not.toContain('[object Object]');
+  });
+
+  test('PDF 无标题时不写空书签（不产生 /Outlines 对象）', async () => {
+    const raw = Buffer.from(await createPdfBuffer('只有正文，没有标题。', DEFAULT_PDF_OPTIONS, env)).toString('latin1');
+    expect(raw).not.toContain('/Outlines');
+  });
+
   test('generates a valid small PDF with CJK (subset fonts embedded)', async () => {
     const buffer = await createPdfBuffer('# 中文标题\n\n这是中文段落测试。\n\nEnglish paragraph.', DEFAULT_PDF_OPTIONS, env);
     const head = String.fromCharCode(...buffer.slice(0, 5));

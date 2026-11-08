@@ -14,10 +14,11 @@
 
 ## 公开接口
 
-`src/index.ts` 导出 **11** 个符号：
+`src/index.ts` 导出 **14** 个符号：
 
 `MellowTheme`、`ThemeKind`、`ThemeSettings`、`DEFAULT_THEME_SETTINGS`、`BUILTIN_THEMES`、
-`registerUserThemes`、`allThemes`、`userThemes`、`parseUserThemeCss`、`themeById`、`resolveActiveTheme`
+`registerUserThemes`、`allThemes`、`userThemes`、`parseUserThemeCss`、`themeById`、`resolveActiveTheme`、
+`LEGACY_THEME_ID_ALIASES`、`migrateThemeId`、`migrateThemeSettings`
 
 ## 依赖关系（实测）
 
