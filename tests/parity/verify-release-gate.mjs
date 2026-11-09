@@ -3156,7 +3156,11 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
       edges: ['from', 'reason', 'to'],
     },
     'export-collaborators.json': {
-      entries: ['callSite', 'env', 'evidence', 'field', 'ref', 'refId', 'status'],
+      // A37（2026-11-09）：`injector` 随 provided-via-injector 状态引入（注入器函数名，
+      // 判据核对它出现在调用点实参窗口 + 字段存在于 exportAssets.ts）；
+      // `refId` 删除 —— missing 状态（需指向台账）已不再使用，`ref`（指向 ADR/登记处）
+      // 对 missing / pipeline-retired-to-tests 都够用。
+      entries: ['callSite', 'env', 'evidence', 'field', 'injector', 'ref', 'status'],
     },
     'export-feature-parity.json': {
       entries: ['evidence', 'html', 'pdf', 'preview', 'ref', 'settingId', 'syntax'],

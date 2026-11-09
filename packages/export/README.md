@@ -25,8 +25,9 @@
 
 ## 测试
 
-`test/` 下 **8** 个测试文件：`html.test.ts` / `sanitize.test.ts` / `corpus.test.ts` /
-`image.test.ts` / `print.test.ts` / `print-style.test.ts` / `preserve-line-breaks.test.ts` / `index.test.ts`
+`test/` 下 **9** 个测试文件：`html.test.ts` / `sanitize.test.ts` / `corpus.test.ts` /
+`image.test.ts` / `print.test.ts` / `print-style.test.ts` / `preserve-line-breaks.test.ts` /
+`webview-assets.test.ts` / `index.test.ts`
 
 ## 边界与约束
 

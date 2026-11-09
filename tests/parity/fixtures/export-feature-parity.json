@@ -60,8 +60,8 @@
       "syntax": "$x$ / $$x$$",
       "preview": "implemented",
       "html": "implemented",
-      "pdf": "collaborator-missing",
-      "evidence": "预览：`index.ts:309`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：`runExportHtml` 调用点补传 `math: readBoolSetting('markdown.math', true)`，且 `packages/export/test/html.test.ts` 有 off-case 断言（`$E=mc^2$` 保留字面）⇒ 开关关得掉；默认输出不变。PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`，是**读代码**得出的，**错了**）—— 实跑 `buildPdfDocument(..., { fonts })`：块级 `$$x^2$$` 输出 `{text:\"x^2\",italics:true,style:\"code\"}`（源码文本），**行内** `$x^2$` 在 PDF 的 `parseInline` 里**根本没被 token 化** ⇒ 字面。根因是 `PdfEnv.renderMath` **调用点未提供**（见 `export-collaborators.json` + 台账 `P0-EXPORT-001`）。",
+      "pdf": "implemented",
+      "evidence": "预览：`index.ts:309`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：`runExportHtml` 调用点补传 `math: readBoolSetting('markdown.math', true)`，且 `packages/export/test/html.test.ts` 有 off-case 断言（`$E=mc^2$` 保留字面）⇒ 开关关得掉；默认输出不变。PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`，是**读代码**得出的，**错了**）—— 实跑 `buildPdfDocument(..., { fonts })`：块级 `$$x^2$$` 输出 `{text:\"x^2\",italics:true,style:\"code\"}`（源码文本），**行内** `$x^2$` 在 PDF 的 `parseInline` 里**根本没被 token 化** ⇒ 字面。根因是 `PdfEnv.renderMath` **调用点未提供**（见 `export-collaborators.json` + 台账 `P0-EXPORT-001`）。；PDF：✅ A37（2026-11-09，ADR-0037 = A2）：PDF 导出改走 buildPrintHtml（HTML 打印管线，KaTeX/Mermaid 实渲染，经 webviewExportEnv 注入资产），pdfmake 管线退役为测试基线 —— 审计 §4.386",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {
@@ -69,8 +69,8 @@
       "syntax": "```mermaid 围栏",
       "preview": "implemented",
       "html": "implemented",
-      "pdf": "collaborator-missing",
-      "evidence": "预览：`index.ts:310`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：`runExportHtml` 调用点补传 `mermaid: readBoolSetting('markdown.mermaid', false)`（ADR-0034 翻转后 schema 默认 false ⇒ 默认不再渲染 mermaid），off-case 断言：无 `<pre class=\"mermaid\">`。PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`）—— 实跑 `buildPdfDocument(..., { fonts })` 输出 `{text:\"graph TD;A-->B\",style:\"code\"}`（源码文本）⇒ `PdfEnv.renderMermaid` **调用点未提供**。",
+      "pdf": "implemented",
+      "evidence": "预览：`index.ts:310`；HTML 导出：✅ **批次 A36 接线**（2026-11-04，ADR-0036 A1「开关关不掉」修复）：`runExportHtml` 调用点补传 `mermaid: readBoolSetting('markdown.mermaid', false)`（ADR-0034 翻转后 schema 默认 false ⇒ 默认不再渲染 mermaid），off-case 断言：无 `<pre class=\"mermaid\">`。PDF：⚠️ **2026-10-10 实跑更正**（原写 `always-on`）—— 实跑 `buildPdfDocument(..., { fonts })` 输出 `{text:\"graph TD;A-->B\",style:\"code\"}`（源码文本）⇒ `PdfEnv.renderMermaid` **调用点未提供**。；PDF：✅ A37（2026-11-09，ADR-0037 = A2）：PDF 导出改走 buildPrintHtml（HTML 打印管线，KaTeX/Mermaid 实渲染，经 webviewExportEnv 注入资产），pdfmake 管线退役为测试基线 —— 审计 §4.386",
       "ref": "docs/adr/ADR-0036-export-path-syntax-feature-parity.md"
     },
     {

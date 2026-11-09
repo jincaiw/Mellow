@@ -102,6 +102,59 @@ function assertPortFree(port) {
 }
 
 /**
+ * 结束 dev server 的**整个进程树**（2026-11-09，审计 §4.384）。
+ *
+ * 事故：v1.5.35 的 tag 轮 Runtime Qualification（run 42538759470）在
+ * 「Visual golden (§9.3)」步骤打印 `Visual golden: 6 configs match baseline` 之后
+ * **不再推进**，Windows / Linux 两个 job 各自挂到 45 分钟上限被 cancel；
+ * 循环里的 `VISUAL_GOLDEN visual-golden: OK` 从未出现。
+ *
+ * 根因：本文件在 2026-11-08 把子进程 stderr 从 `'ignore'` 改成 `'pipe'`（为了启动失败
+ * 时能**指名**原因），但 `stop()` 只对**直接子进程**（`npm exec` 壳）发信号。真正的
+ * `node …/vite.js` 与 `esbuild --service` 是它的**子孙**：壳死后它们仍然存活，并且
+ * **继承了 stderr 管道的写端**。读端在探针进程里 ⇒ 子孙不关写端，管道就永不 EOF
+ * ⇒ Node 事件循环永远非空 ⇒ 脚本**打印完成功行却不退出**。
+ * （最小复现：父进程被杀、孙进程 `stdio: 'inherit'` 存活 → 探针 10 s 仍活；
+ *  加 `stderr.destroy()` 后立即退出。）
+ *
+ * 修法：① 按平台杀掉整棵进程树（Windows `taskkill /T`，POSIX 沿 ppid 链找子孙）；
+ * ② 无论树是否杀干净，`stop()` 都销毁 stderr 读端 —— 这一条直接消灭挂死机制，
+ * 也防止未来某个平台的壳再次吞掉信号时重演。
+ */
+function listDescendants(pid) {
+  const out = spawnSync('ps', ['-e', '-o', 'pid=,ppid='], { encoding: 'utf8' });
+  if (out.status !== 0 || typeof out.stdout !== 'string') return [];
+  const children = new Map();
+  for (const line of out.stdout.split('\n')) {
+    const [childPid, parentPid] = line.trim().split(/\s+/).map(Number);
+    if (!Number.isInteger(childPid) || !Number.isInteger(parentPid)) continue;
+    if (!children.has(parentPid)) children.set(parentPid, []);
+    children.get(parentPid).push(childPid);
+  }
+  const result = [];
+  const stack = [...(children.get(pid) ?? [])];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    result.push(current);
+    stack.push(...(children.get(current) ?? []));
+  }
+  return result;
+}
+
+function killTree(child) {
+  if (child.pid === undefined) return;
+  if (isWindows) {
+    // /T = 连同子孙；/F = 强制（node / esbuild 不响应温和信号）
+    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
+  for (const pid of listDescendants(child.pid)) {
+    try { process.kill(pid, 'SIGTERM'); } catch { /* 已退出 */ }
+  }
+  try { child.kill('SIGTERM'); } catch { /* 已退出 */ }
+}
+
+/**
  * 启动 vite dev server。
  *
  * @param {{ cwd: string, port: number }} options
@@ -143,7 +196,11 @@ export function startViteDevServer({ cwd, port }) {
     /** vite 最近写出的 stderr（用于未就绪错误里指名原因） */
     stderrTail: () => stderrLines.join(' | '),
     stop: () => {
-      try { child.kill(); } catch { /* 已退出 */ }
+      killTree(child);
+      // ② **必须**销毁 stderr 读端（见 killTree 上方事故说明）。
+      //    只要还有某个子孙活着并持有这个管道的写端，本进程的事件循环就不会排空 —
+      //    脚本已经打印成功行，却永远不退出，CI 里表现为「步骤挂到 job 超时上限」。
+      try { child.stderr?.destroy(); } catch { /* 已销毁 */ }
     },
   };
 }

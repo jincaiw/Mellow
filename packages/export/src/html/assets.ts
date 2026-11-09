@@ -7,7 +7,29 @@
  * - Mermaid：读取 mermaid 包内的 mermaid.min.js（自包含 IIFE，无外部 import），
  *   整体内联进导出 HTML，浏览器打开时本地执行渲染；
  * - 读取失败一律降级（返回 null），由调用方回退为源码展示，绝不抛错中断导出。
+ *
+ * ⚠️ 运行环境双态（2026-11-09，审计 §4.385）：本模块同时被两种环境加载 ——
+ *   · node（单测 / jest）：`fs` / `__dirname` / `require.resolve` 可用；
+ *   · webview（Tauri 打包产物）：vite 把 `fs` 替换为**空桩模块**，`__dirname` 与
+ *     `require` 是**裸标识符** —— 直接引用会抛 ReferenceError。实测：真机
+ *     「导出 HTML…」在 math 默认开时一直失败成一句通用 toast（$x^2$ 文档必炸），
+ *     而本机单测全绿（node 有 __dirname）—— 典型「零件绿、整车坏」。
+ *   ⇒ 资产定位**入口处**先探测 node 可用性（typeof 探测不抛错），不可用即返回
+ *   null 走降级；宿主（App.tsx）在 webview 里经 env 协作者
+ *   （`katexCss` / `mermaidBundle`）注入浏览器侧资产 —— env 本就是为这准备的
+ *   可选协作者通道（HtmlExportEnv），此处不再发明新机制。
  */
+
+/** node 内建可用性（浏览器/webview 为 false；typeof 探测本身不会抛 ReferenceError） */
+function hasNodeRuntime(): boolean {
+  return (
+    typeof process !== 'undefined'
+    && process !== null
+    && typeof process.versions === 'object'
+    && process.versions !== null
+    && typeof (process.versions as Record<string, string | undefined>).node === 'string'
+  );
+}
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -24,8 +46,10 @@ function findUp(pkg: string, subpath: string): string | null {
   }
 }
 
-/** 定位包内文件：require.resolve 优先，失败时向上查找 node_modules */
+/** 定位包内文件：require.resolve 优先，失败时向上查找 node_modules。
+ *  ⚠️ 仅在 node 运行时可用；webview（vite 空桩 fs + 裸 __dirname/require）返回 null。 */
 function resolvePackageFile(pkg: string, subpath: string): string | null {
+  if (!hasNodeRuntime()) return null; // 浏览器/webview：无 node 资产定位能力（§4.385）
   const candidates: string[] = [];
   try {
     candidates.push(require.resolve(`${pkg}/${subpath}`));
@@ -57,7 +81,7 @@ export function katexCssWithEmbeddedFonts(override?: string): string | null {
   if (override !== undefined && override !== '') return override;
   if (cachedKatexCss !== null) return cachedKatexCss;
   const cssPath = resolvePackageFile('katex', 'dist/katex.min.css');
-  if (cssPath === null) return null;
+  if (cssPath === null) return null; // webview：返回 null，等宿主经 env.katexCss 注入（§4.385）
   try {
     const dir = path.dirname(cssPath);
     let css = fs.readFileSync(cssPath, 'utf8');

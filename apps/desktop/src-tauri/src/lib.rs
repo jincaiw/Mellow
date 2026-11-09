@@ -7,6 +7,7 @@ pub mod menu;
 pub mod open_with;
 pub mod pandoc;
 pub mod print;
+pub mod print_view;
 pub mod recovery;
 pub mod search;
 pub mod spellcheck;
@@ -276,11 +277,13 @@ mod tests {
 pub fn run() {
     // 便携模式数据重定向必须在 WebView2 初始化前完成（master-plan R1-1）
     let _ = PORTABLE.set(setup_portable_mode());
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // A37 / ADR-0037 = A2（2026-11-09）：PDF 导出复用 HTML 打印管线 ——
+        // printview:// 协议（单槽 HTML + 打印视图窗口 + 系统打印对话框，见 print_view.rs）。
         .invoke_handler(tauri::generate_handler![
             pending_open_path,
             is_portable,
@@ -331,6 +334,9 @@ pub fn run() {
             watcher::watch_dir,
             watcher::unwatch_dir,
             print::print_window,
+            print_view::stage_print_view,
+            print_view::open_print_view,
+            print_view::close_print_view,
             window::new_window,
             window::page_setup,
             window::allow_close_window,
@@ -444,7 +450,11 @@ pub fn run() {
                 }
             }
             Ok(())
-        })
+        });
+    // A37 / ADR-0037 = A2（2026-11-09）：printview:// 协议注册（含 PrintViewSlot
+    // manage）套在整条 Builder 链外层 —— 主窗口在 .setup 里 build，此处注册
+    // 先于一切 webview 创建。
+    print_view::register_protocol(builder)
         .build(tauri::generate_context!())
         .expect("error while building Mellow")
         .run(|app: &tauri::AppHandle, event| {

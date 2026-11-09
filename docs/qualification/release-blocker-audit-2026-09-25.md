@@ -25416,6 +25416,249 @@ theme_css, base_user_css, theme_user_css
   - 未提交、未推送；发布门禁四项（`P0-EDITOR-005` / `P0-EXPORT-001` / `P0-PERF-001` /
     `P0-QA-001`）状态不变（均为本机不可闭环的外部项）。
 
+## 4.384 v1.5.35 tag 轮 Runtime Qualification 的「Visual golden」打印成功后不退出，挂到 45 分钟 job 上限被 cancel（2026-11-09）
+
+### 一、起因
+
+`v1.5.35` 发布后，按惯例核对 tag 轮 Runtime Qualification（run 42538759470，headSha
+`af4ace4`）。结论是 **cancelled**：Windows / Linux 两个 job 分别存活 45 分 08 秒 /
+45 分 17 秒，正好等于 workflow 的 `timeout-minutes: 45`。但 job 里**所有功能步骤都是
+success**（构建、Source Fidelity、launch + type + save、Xvfb + fcitx5 IME 矩阵、
+证据上传），没有任何失败。起初看起来像「可选步骤太慢」，逐行读日志后定性为
+**进程不退出**：
+
+```
+00:22:01Z ##[group] Run … for script in visual-golden sidebar-golden scenes-golden
+00:22:19Z Visual golden: 6 configs match baseline (±1px)
+00:22:19Z   ✅ win-900x600 … ✅ dark-1440x900      ← visual-golden.mjs 的最后一行
+00:55:44Z ##[error]The operation was canceled.
+```
+
+`VISUAL_GOLDEN visual-golden: OK`（循环里 `node` 返回后才 echo 的下一句）**从未出现**；
+`sidebar-golden` / `scenes-golden` 也一行输出都没有。两个平台同形态 ⇒ 不是某个脚本
+里慢，而是 **`node tests/visual/visual-golden.mjs` 打印完成功行后没有退出**。
+
+### 二、根因
+
+`tests/visual/dev-server.mjs` 的 `stop()` 只对**直接子进程**发信号：
+
+```js
+stop: () => { try { child.kill(); } catch { /* 已退出 */ } },
+```
+
+而 2026-11-08（commit `0ba37b4`）为了让「vite 启动失败」能**指名原因**，把子进程
+stderr 从 `'ignore'` 改成了 `'pipe'`（本文件 `stdio: ['ignore','ignore','pipe']`）。
+进程树是 `node 探针 → npm exec（壳）→ node vite.js → esbuild --service`：
+
+- 壳 `npm exec` 被 kill 后，真正的 `vite` / `esbuild` **仍然是它的子孙且继续存活**；
+- 它们**继承了 stderr 管道的写端**；
+- 读端在探针进程里 ⇒ 只要还有写端没关，`child.stderr` 就永远不 EOF；
+- Node 的事件循环因此**永远非空** ⇒ 脚本 `main()` 已返回、成功行已打印，进程仍不退出。
+
+`'ignore'` 时代子孙不持有任何句柄，所以 v1.5.34 及以前的同类步骤 26 秒就跑完了
+（参照 2026-10-11 成功 run 38159055506：`17:36:10 → 17:36:36`）。这是**本轮改动引入的
+回归**，不是「可选步骤天生太慢」。
+
+### 三、最小复现（本机，macOS）
+
+```js
+// parent.mjs：派生一个 inherit 管道的孙进程
+spawn(process.execPath, ['grandchild.mjs'], { stdio: 'inherit' });
+// 探针：stdio: ['ignore','ignore','pipe'] + child.stderr.on('data')
+child.kill();                      // 壳死，孙进程活
+// ⇒ 10 s 后探针进程仍在（事件循环被管道钉住）
+child.stderr.destroy();            // ⇒ 立即退出
+```
+
+同机对照：`stdio: 'ignore'` 时探针 0 s 退出。
+
+### 四、修法
+
+`tests/visual/dev-server.mjs`：
+
+1. **新增 `listDescendants(pid)` + `killTree(child)`**
+   - Windows：`taskkill /PID <pid> /T /F`（`/T` 连子孙 —— `shell: isWindows` 下的
+     直接子进程是 `cmd.exe`，只杀它等于没杀 vite）；
+   - POSIX：`ps -e -o pid=,ppid=` 建父子表，沿 ppid 链找出全部后代逐个 `SIGTERM`，
+     最后再杀直接子进程（不依赖 `detached: true`，不改现有进程组语义）。
+2. **`stop()` 在树杀之后无条件 `child.stderr?.destroy()`** —— 即使某平台还有漏网
+   子孙，管道读端也已被释放，事件循环一定能排空。这是**直接**消灭挂死机制的一层，
+   树杀只是防端口残留的第二层。
+3. `tests/parity/verify-visual-golden.mjs` 新增回归护栏，并配 canary：
+   - `stop:` 块内必须调用 `killTree(child)`；
+   - 必须有 `child.stderr?.destroy()`；
+   - 必须有 `taskkill` 与 `spawnSync('ps', ['-e','-o','pid=,ppid='])` 两条平台分支；
+   - 注入验证：抽掉销毁语句 → 护栏报错并指名 §4.384；还原 → 通过。
+
+### 五、验证与边界
+
+- 端到端（本机，`NODE_PATH=/tmp/pw/node_modules`）：
+  `visual-golden` **8.7 s / exit 0**、`sidebar-golden` **5.2 s / exit 0**、
+  `scenes-golden` **5.7 s / exit 0**，17 个视觉基线键全部命中；`stop()` 后进程树
+  `(none)`，无 vite/esbuild 残留。
+- 护栏：`node tests/parity/verify-visual-golden.mjs` → **EXIT=0**；移除销毁语句 →
+  报「缺少 child.stderr?.destroy()（审计 §4.384）」。
+- 边界：
+  - `killTree` 依赖 `ps`（macOS / Linux / Git Bash 自带；Windows 走 `taskkill`，
+    不依赖 `ps`），无新增 npm 依赖；
+  - **不修改 workflow**：本次是步骤自身的进程生命周期缺陷，不是 `timeout-minutes`
+    或矩阵配置问题；把上限从 45 分钟调高只会让坏进程多活一会儿；
+  - 不改变任何视觉基线、不改四个探针的采样逻辑，只改它们共用的启动器 `stop()`；
+  - 发布门禁四项状态不变；本节记录的是**验证工具**缺陷，不计入 PASS-E。
+
+## 4.385 真机「导出 HTML…」在 math 默认开时必失败：webview 里包内 node 资产定位是裸 `__dirname`（2026-11-09）
+
+### 一、起因
+
+A37（ADR-0037 = A2：PDF 导出复用 HTML 打印管线）施工前的依赖检查：打印管线与
+HTML 导出共用 `HtmlExportEnv` 资产装配，先在浏览器环境实跑一遍「导出 HTML…」
+的完整链路，**必现 ReferenceError**：
+
+```
+ReferenceError: __dirname is not defined
+```
+
+而 `pnpm test`（jest，node 环境）同一路径**全绿** —— 「零件绿、整车坏」。
+
+### 二、根因
+
+`packages/export/src/html/assets.ts` 的 `resolvePackageFile` 用 node 形态定位
+KaTeX CSS / Mermaid bundle：`__dirname` + `findUp` + `require.resolve`。在
+Tauri webview（vite 打包产物）里：
+
+- `fs` 被 vite **替换成空桩模块**（bundle 里是 `(void 0)(...)` 调用）；
+- 但 `__dirname` / `require` 作为**裸标识符**原样留在产物里 ⇒ 运行时
+  ReferenceError；
+- `markdown.math` 默认 **ON** ⇒ 真机「导出 HTML…」带公式文档**必失败**。
+
+jest 里 `process.versions.node` 存在、`__dirname` 存在 ⇒ 单测从未踩到这条路径。
+
+### 三、修法
+
+1. `assets.ts` 新增 `hasNodeRuntime()`（typeof 探针：`process.versions.node`）
+   ⇒ 无 node 运行时时 `resolvePackageFile` 直接返回 `null`（**降级不炸**，
+   `exportHtml` 的 `env.X ? … : 回退` 分支本来就为协作者缺失而设）。
+2. 宿主侧新增 `apps/desktop/src/exportAssets.ts`：KaTeX CSS 运行时
+   `fetch('katex/dist/katex.min.css?url')`（vite `?url` 产物里的字体 URL 已被
+   重写为应用内绝对路径——dist 产物实测；`?raw` 会保留 `url(fonts/…)` 相对
+   引用，打印视图里解析不到，故不用）；Mermaid bundle 用
+   `mermaid/dist/mermaid.min.js?raw`（自包含 IIFE）。两者经
+   `webviewExportEnv()` 组装成 `HtmlExportEnv` 协作者，HTML 导出与 A37 打印
+   管线共用。
+3. 回归测试 `packages/export/test/webview-assets.test.ts`：jest 里
+   `delete process.versions.node` + `new Function(...)` 隔离全局后断言
+   `katexCssWithEmbeddedFonts() / readMermaidBundle()` 返回 null、
+   `exportHtml(math: true)` 仍产出完整 HTML。**变异验证**：临时移除
+   `hasNodeRuntime` 守卫 → 3/4 红（守卫是承重的），还原 → 全绿。
+
+### 四、验证
+
+- `packages/export` jest：**162/162**（含 4 项新回归）；
+- `apps/desktop` `tsc --noEmit`：**EXIT=0**；
+- 浏览器端到端（vite dev + Playwright，探针不入仓）：`webviewExportEnv` +
+  `exportHtml(math+mermaid)` **5/5 ✅**（不抛错 / KaTeX CSS 注入 / mermaid
+  bundle 注入 / 公式 DOM / 字体 URL 形态正确）。
+
+### 五、边界
+
+- KaTeX CSS 取不到时**省略** `katexCss` ⇒ 导出降级为无 CSS（公式 DOM 仍在，
+  KaTeX 布局退化）；Mermaid bundle 是构建期内联，**不会**缺失。如实声明，
+  优于整份导出失败。
+- `tests/parity/fixtures/export-collaborators.json` 同步登记（A37 一并更新，
+  见 §4.386）。
+
+## 4.386 A37 落地：PDF 导出切换到 HTML 打印管线（printview:// 打印视图 + 系统打印对话框），pdfmake 管线退役为测试基线（2026-11-09）
+
+### 一、依据
+
+ADR-0037（裁决 = **A2**）：PDF 导出复用 HTML 打印管线，一次解决 pdfmake 管线
+实测的 10 类语法缺口（数学 / Mermaid / 嵌套列表 / 有序起始号 / 任务 checkbox /
+嵌套引用 / 硬换行 / 链接 / 自动链接 / 代码语言——print.test.ts 全量覆盖）。
+台账 `P0-EXPORT-001` 维持 **IMPL**（ADR 验收：分页与 PDF 大纲 macOS 实测通过后
+方可回 AUTO；本机禁跑打印探针——NSPrintOperation 会把作业假脱机到真实
+EPSON 打印机，见 §4.354）。
+
+### 二、架构（每个设计点都从 tauri 2.11.5 / wry 0.55.1 源码核实）
+
+流程：`export.pdf` → `buildPrintHtml`（packages/export，@page 分页 + KaTeX +
+Mermaid + 图片全内联）→ `stage_print_view`（单槽）→ `open_print_view`
+（打印视图窗口，`printview://localhost/view.html`）→ 协议**直接把暂存 HTML
+作为响应体返回**（内嵌桥脚本）→ 桥脚本等就绪信号（`mellow-mermaid-ready` /
+load / 2.9s / 6s 双兜底）→ `print_window`（既有命令）→ 系统打印对话框，用户
+选「存储为 PDF」→ resolve 后关窗。
+
+- **协议直吐 HTML**（不用壳页 + fetch + document.write）：
+  `UriSchemeContext::app_handle()`（tauri app.rs:2474）让协议闭包直接读槽；
+  document.write 会换掉监听器（脆）。协议校验 `ctx.webview_label()` 以
+  `print-view-` 开头 + 只服务 `/view.html`，其余 404。
+- **不落临时文件**：打印 HTML 含用户文档内容，协议内存通道不过文件系统
+  （fs 审计面 + macOS /tmp 被 Spotlight/Time Machine 索引）。
+- **不自动关窗于打印前**：wry 三平台 `print()` 均**立即返回**——macOS
+  `runOperationModalForWindow`（`canSpawnSeparateThread=true`，面板独立线程
+  模态，wkwebview/mod.rs:858-891）、Windows `window.print()`（eval，
+  webview2/mod.rs:1712）、Linux `run_dialog`（webkitgtk/mod.rs:679）——
+  Rust 拿不到完成回调。桥脚本在 invoke **resolve 后**关窗（macOS 模态返回 /
+  Win|Linux window.print() 阻塞返回 ⇒ resolve = 面板已结束）。
+- **IPC 可达性**（打印视图是 External URL 的自定义协议页，无 index.html 引导）：
+  tauri 初始化脚本注入**所有** webview（manager/webview.rs:182）；IPC 响应带
+  `Access-Control-Allow-Origin: *`（ipc/protocol.rs:51）⇒ 跨协议 fetch 可通；
+  自定义协议 origin 被 `is_local_url` 判 Local（webview/mod.rs:1727 一带）；
+  Mellow `build.rs` 为裸 `tauri_build::build()`（无 `app_manifest`）⇒
+  `has_app_manifest=false` ⇒ 自定义命令对 Local origin **不做 ACL 检查**
+  （webview/mod.rs:1823）⇒ **无需改 capabilities**（print-view-* 窗口不在
+  能力清单里也能 invoke 自定义命令）。
+- **前端落点**：`handleExportPdf` 不再先弹 `pick_save_path`——落点由系统打印
+  对话框决定（Typora 同语义：PDF 走打印面板的「存储为 PDF」）；特性开关与
+  HTML 导出同源（ADR-0036 A1）；`PrintOptions` 补 `preserveLineBreaks` 透传
+  （V7-W6 G7-FEAT-13 两管线语义一致）。
+
+### 三、同步的护栏与登记
+
+- `export-collaborators.json`：pdf 调用点标记改为 `buildPrintHtml(`；新状态
+  `provided-via-injector`（`webviewExportEnv()` 展开注入，判据核注入器名在
+  实参窗口 + 字段在 exportAssets.ts）；`pipeline-retired-to-tests`
+  （`PdfEnv` 三协作者：pdfmake 管线退役为测试基线，实现与 §4.252 字段普查
+  护栏仍锚它，**不删代码**——规则 15）。
+- `verify-settings-contract.mjs`：实参窗口判据支持两种新状态（各配 canary，
+  注入验证：改注入器名 → 红；缺 injector 声明 → 红）；**首行缩进 canary 修
+  复**——A37 后 `firstLineIndent: readBoolSetting(...)` 在 App.tsx 有两处
+  （HTML 导出 + 打印），原 canary 用单处 `replace` 残留原文 ⇒ 恒红；改
+  `replaceAll` 后恢复「漂移注入被检出」语义。
+- `verify-tauri-command-contract.mjs`：`close_print_view` 登记进
+  `R_NOT_FRONTEND_INVOKED`（调用方是 Rust 内嵌桥脚本，F 集合原理上抓不到）；
+  新增 ④b print-view 专项（桥脚本字面量 `close_print_view` / `print_window`
+  + `register_uri_scheme_protocol` + lib.rs `register_protocol(builder)`）。
+- `verify-release-gate.mjs`：`export-collaborators.json` 条目键契约 +`injector`
+  -`refId`（missing 状态已不再使用）。
+- 台账 `P0-EXPORT-001`：blockedBy 更新为 `a2-implemented-macos-pending`
+  （**维持 IMPL**，分页 / 大纲 macOS 实测待验）。
+- i18n：`export.pdf.view`（zh/en）——提示去系统打印对话框选「存储为 PDF」。
+
+### 四、验证
+
+- Rust：`cargo check` **通过**（2 个既有 dead_code 警告与本次无关）；
+  `cargo test --lib` **95/95**（含 print_view 3 项新测试：桥脚本注入位置 /
+  无 body 兜底 / label 前缀一致性）。
+- `apps/desktop` `tsc --noEmit`：**EXIT=0**。
+- 护栏：`verify-settings-contract` / `verify-tauri-command-contract` /
+  `verify-parity-ledger` / `verify-release-gate` / `verify-package-conventions`
+  全部 **EXIT=0**（export README 测试文件数 8→9 同步）。
+- **本机不做**原生打印实测（EPSON 假脱机风险）⇒ 分页 / PDF 大纲 /
+  三平台系统打印对话框 UX 归入 P0-EXPORT-001 的 macOS 实测待验项
+  （需 CI / 隔离打印队列设备）。
+
+### 五、边界与遗留
+
+- `lastExportedRef` / `maybeRevealExported` 不再作用于 PDF（落点由系统对话框
+  决定，Mellow 拿不到「存储为 PDF」的目标路径）⇒ ⌃E「覆盖上次导出」不含
+  本次 PDF；Typora 同语义（其 PDF 路径也走打印面板）。
+- 桥脚本 `window.print()` 兜底：IPC 不可达时仍能出系统打印路径（非 Tauri
+  环境下如 dev 浏览器窗口）。
+- pdfmake 管线（`createPdfBuffer` / `buildPdfDocument`）保留：单测基线 +
+  §4.252 字段普查护栏 + ADR-0037 的 A1 标题书签（§4.371）都锚它；
+  `export-collaborators.json` 的 `pipeline-retired-to-tests` 判据禁止它被
+  重新悄悄接回应用（退役状态改回 provided 会红）。
+
 ## 五、本次审计做的改动（非策略性）
 
 

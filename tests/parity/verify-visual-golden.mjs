@@ -411,6 +411,39 @@ if (existsSync(resolve(root, devServerPath))) {
   }
 }
 
+// ── stop() 必须①杀整个进程树 ②销毁 stderr 读端（2026-11-09，审计 §4.384）─────
+// 事故：v1.5.35 tag 轮 Runtime Qualification（run 42538759470）的
+// 「Visual golden (§9.3)」步骤打印 `Visual golden: 6 configs match baseline` 之后
+// **不再推进**；Windows / Linux 两个 job 各自挂到 45 分钟上限被 cancel，
+// 循环里的 `VISUAL_GOLDEN visual-golden: OK` 从未出现。
+// 根因：2026-11-08 为「启动失败能指名原因」把 vite 的 stderr 从 `'ignore'` 改成
+// `'pipe'`，而 `stop()` 只杀直接子进程（`npm exec` 壳）。真正的 `vite` / `esbuild`
+// 是子孙：壳死后它们仍存活并**继承管道写端** ⇒ 读端永不 EOF ⇒ 探针事件循环
+// 永不排空 ⇒ 脚本打印完成功行却不退出。
+// 故此处锁「修法」而不只锁「有 pipe」（后者在 `'ignore'` 时也成立）：
+//   ① 有销毁语句；② 有跨平台树杀（Windows taskkill /T；POSIX 沿 ppid 找子孙）。
+if (existsSync(resolve(root, devServerPath))) {
+  const devServer = stripComments(read(devServerPath));
+  for (const [label, pattern] of [
+    ['stop() 内调用 killTree(child)', /stop:\s*\(\)\s*=>\s*\{[\s\S]*?killTree\(child\)/],
+    ['child.stderr?.destroy()（释放管道读端）', /child\.stderr\?\.destroy\(\)/],
+    ['Windows taskkill /T（杀 shell 的子孙）', /taskkill/],
+    ['POSIX 沿 ppid 找子孙（杀 npx 的子进程）', /spawnSync\('ps', \['-e', '-o', 'pid=,ppid='\]/],
+  ]) {
+    if (!pattern.test(devServer)) {
+      fail(`${devServerPath} 的 stop() 缺少 ${label} —— 存活的 vite/esbuild 子孙会持有 stderr 管道写端，`
+        + '探针打印成功后永不退出，CI 步骤挂到 job 超时上限（审计 §4.384）');
+    }
+  }
+  // canary：抽掉销毁语句后，检测必须从「通过」变为「失败」
+  const noDestroy = devServer.replace(/try \{ child\.stderr\?\.destroy\(\); \} catch \{[^}]*\}/, '');
+  if (noDestroy === devServer) {
+    fail('dev-server stop() canary 未武装：stderr.destroy 注入点未命中');
+  } else if (/child\.stderr\?\.destroy\(\)/.test(noDestroy)) {
+    fail('dev-server stop() canary 失效：销毁语句缺失未检出');
+  }
+}
+
 // ── 「实测 vs 期望」硬断言必须先于基线写入（2026-09-22）──────────────────
 // 只在**比对**路径断言是不够的：首次采集（基线缺失）会把「字号/行高/写作宽度错」
 // 「侧栏没渲染」「退役选择器复活」这类真实缺陷直接烘进基准，此后比对永远绿 ——

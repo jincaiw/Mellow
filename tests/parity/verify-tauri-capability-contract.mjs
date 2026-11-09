@@ -225,7 +225,21 @@ for (const [perm, reason] of CAPABILITY_GAP_EXEMPT) {
 // 判据：**凡 Rust 侧创建的窗口 label，必须被某个 capability 的 `windows` 模式覆盖**；
 // 有意「无权限」的窗口必须进 `UNPRIVILEGED_WINDOWS`（带理由）—— 这样将来新增窗口时，
 // 「它该不该有权限」必须被**显式决定**，而不是静默掉进「无权限」的坑。
-const UNPRIVILEGED_WINDOWS = new Map([]);
+//
+// ⚠️ A37（2026-11-09，审计 §4.386）：`print-view-*` 有意**不进** capability——
+// 该窗口只承载 printview:// 打印 HTML，桥脚本（Rust 内嵌字符串，运行在该窗口里）
+// 只 invoke **自定义命令**（print_window / close_print_view，经 generate_handler
+// 注册）。Mellow 的 build.rs 为裸 `tauri_build::build()`（无 app_manifest）⇒
+// `has_app_manifest=false` ⇒ tauri 对 Local origin 的自定义命令**不做 ACL 检查**
+//（tauri webview/mod.rs:1823 的三元条件 `plugin_command.is_some() ||
+// has_app_acl_manifest || !is_local`）；printview:// 自定义协议 origin 被
+// `is_local_url` 判为 Local（webview/mod.rs:1727）。桥脚本**不调 core/plugin
+// 命令**（window.close() 兜底走浏览器原生 close，非 Tauri API）⇒ 无需任何
+// capability 条目。若将来桥脚本要用 plugin 命令（如 dialog），此登记即失效——
+// 届时必须把 print-view-* 加进 capability 的 windows。
+const UNPRIVILEGED_WINDOWS = new Map([
+  ['print-view-*', 'A37/ADR-0037（2026-11-09，审计 §4.386）：打印视图窗口只经 Rust 内嵌桥脚本 invoke 自定义命令（print_window / close_print_view）；无 app_manifest ⇒ Local origin 的自定义命令不做 ACL 检查（见上方注释的 tauri 源码依据）；桥脚本不调任何 core/plugin 命令 ⇒ 有意零 capability'],
+]);
 
 // Rust 源码遍历（窗口创建点在这里）
 const RUST_SRC = resolve(root, 'apps/desktop/src-tauri/src');

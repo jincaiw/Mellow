@@ -376,7 +376,13 @@ if (F.size < MIN_INVOKED) fail(`只解析出 ${F.size} 个前端 invoke 命令�
 // 而**单靠 F 的下限（≥45）抓不到**这种「少了一类形态」的漂移。
 // 2026-10-06 实测 R∖F = ∅ ⇒ 下表**刻意为空**；将来若真有「注册但前端不调用」的命令，
 // 必须在此登记**逐字写明**是「有意为之」还是「待裁决」，不得静默通过。
-const R_NOT_FRONTEND_INVOKED = new Map([]);
+// A37（2026-11-09）：`close_print_view` 的唯一调用方是打印视图窗口里 Rust 内嵌的
+// 桥脚本（apps/desktop/src-tauri/src/print_view.rs 的 print_view_bridge_script()，
+// JS 字符串字面量 `'close_print_view'` 在 Rust 源里）——**不是**主前端 bundle 的
+// 字面量调用，F 集合（扫 App.tsx 等 TS 源）抓不到它，属有意。
+const R_NOT_FRONTEND_INVOKED = new Map([
+  ['close_print_view', 'A37/ADR-0037（2026-11-09）：调用方是 print_view.rs 内嵌桥脚本（Rust 字符串字面量，运行在 printview:// 打印视图窗口里），不在主前端 bundle ⇒ F 集合原理上抓不到。护栏另行核对该字面量存在于 print_view.rs（见 ⑤ 段后的 print-view 专项）'],
+]);
 for (const name of [...R].filter((x) => !F.has(x)).sort()) {
   if (!R_NOT_FRONTEND_INVOKED.has(name)) {
     fail(`命令已注册但前端**没有任何字面量调用**：${name}`
@@ -392,6 +398,27 @@ for (const [name, reason] of R_NOT_FRONTEND_INVOKED) {
   }
   if (typeof reason !== 'string' || reason.trim() === '') {
     fail(`R_NOT_FRONTEND_INVOKED 的 ${name} 缺理由`);
+  }
+}
+
+// ── ④b A37 print-view 专项（2026-11-09）：打印视图的桥脚本住在 Rust 字符串里 ──
+// 【为什么】`close_print_view` / `print_window` 在打印视图窗口（printview:// 协议页）
+//   的调用方是 print_view.rs 内嵌的 JS 字符串 ⇒ ④ 的 F 集合（TS 源）原理上抓不到。
+//   死注册风险与普通命令相同 ⇒ 这里核**字面量存在于 print_view.rs**（桥脚本漂移
+//   ——比如改命令名忘了改桥 —— 会让此判据红）。
+{
+  const printViewRs = read('apps/desktop/src-tauri/src/print_view.rs');
+  for (const cmd of ['close_print_view', 'print_window']) {
+    if (!new RegExp(`'${cmd}'`).test(printViewRs)) {
+      fail(`print_view.rs 的桥脚本缺少 \`${cmd}\` 调用字面量 —— 打印视图生命周期断裂`);
+    }
+  }
+  if (!/register_uri_scheme_protocol\(PRINT_VIEW_SCHEME/.test(printViewRs)) {
+    fail('print_view.rs 未注册 printview:// 协议（register_protocol 断裂）');
+  }
+  const libRs = read('apps/desktop/src-tauri/src/lib.rs');
+  if (!/print_view::register_protocol\(builder\)/.test(libRs)) {
+    fail('lib.rs 未把 print_view::register_protocol 套进 Builder 链 —— 协议注册断裂');
   }
 }
 

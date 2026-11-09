@@ -79,6 +79,8 @@ import type { DocumentTab, ExternalChangeDetail, FileListItem, FileTreeNode, Fil
 import { createDesktopFileService, isTauri } from './host/fileServices';
 import { createDesktopExtensionHost } from './extensions/extensionHost';
 import { helloCommandManifest, setupHelloCommand } from './extensions/examples/helloCommand';
+// §4.385 / A37：webview 侧导出资产（KaTeX CSS + Mermaid bundle）注入 HtmlExportEnv
+import { webviewExportEnv } from './exportAssets';
 import { ExtensionRegistry, buildExtensionContext } from '../../../packages/app-core/src';
 import { createDesktopRecoveryStorage } from './host/recoveryStorage';
 import { createDesktopWatcher } from './host/watcherAdapter';
@@ -1439,43 +1441,51 @@ export default function App() {
   const handleExportPdf = useCallback(async () => {
     const tab = docStateRef.current.doc;
     if (tab === null || hostRef.current === null) return;
+    if (!isTauri()) return; // 打印视图窗口是 Tauri 原生能力（printview:// 协议）
     try {
-      const [{ createPdfBuffer, loadNotoFonts, DEFAULT_PDF_OPTIONS }, savePath] = await Promise.all([
-        import('../../../packages/export/src/index'),
-        invoke<string | null>('pick_save_path', {
-          defaultName: `${(tab.title ?? 'untitled').replace(/\.md$/i, '')}.pdf`,
-          filters: ['pdf'],
-          defaultDir: saveDialogDir(tab.path),
-        }),
-      ]);
-      if (savePath === null) return; // 用户取消
-      const fonts = await loadNotoFonts();
       const content = hostRef.current.getText();
-      // 2026-10-10（审计 §4.249）：本调用此前**只传 `fonts`** ⇒ `PdfEnv` 的三个可选协作者全部缺失，
-      // 其中 `resolveImage` 缺失会让 PDF 里**所有图片退化成 `![alt](src)` 源码文本**
-      // （`packages/export/src/index.ts` 的 `case 'image'`）。现补 `resolveImage`；
-      // ⚠️ 必须 `rasterOnly`（pdfmake 只支持 PNG/JPEG，SVG/WebP/GIF 会抛错 ⇒ 整份导出失败，已实测）。
-      // `renderMath` / `renderMermaid` 仍缺（需渲染器，属实现工作）⇒ 登记在
-      // `tests/parity/fixtures/export-collaborators.json` + 台账 `P0-EXPORT-001`。
       const docPath = filePathRef.current;
       const docDir = docPath === null ? null : docPath.replace(/[\/][^\/]*$/, '');
       const exportRootDir = docDir === null ? null : parseRootUrl(content, docDir);
-      // V7-W6（G7-FEAT-13）：Typora「导出时保留单换行符」（preLinebreakOnExport，默认关）——
-      // 与 HTML 导出同源同一设置，两条管线语义一致（见 export 包 types.ts / PdfOptions 说明）。
-      const buffer = await createPdfBuffer(content, {
-        ...DEFAULT_PDF_OPTIONS,
-        preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
-        // 代码块行号与编辑器 / HTML 导出同源（Typora 的 showLineNumbersForFence 是全局项）
+      // A37（ADR-0037 = A2，2026-11-09）：PDF 导出改为复用 HTML 打印管线
+      //（buildPrintHtml：@page 分页 + KaTeX + Mermaid + 图片内联，一次解决
+      // pdfmake 管线的 10 类语法缺口，见 packages/export/test/print.test.ts）。
+      // 流程：buildPrintHtml → stage_print_view（单槽）→ open_print_view（打印视图
+      // 窗口）→ 桥脚本就绪后 print_window（系统打印对话框，用户选「存储为 PDF」）。
+      // 落点由系统对话框决定（Typora 同语义：PDF 走打印面板），不再先弹 pick_save_path。
+      const { buildPrintHtml } = await import('../../../packages/export/src/print');
+      const html = await buildPrintHtml(content, {
+        title: tab.title ?? undefined,
+        // 与 HTML 导出同一批特性开关（ADR-0036 A1：设置里关掉的，导出件同样不渲染）
+        rawHtml: readBoolSetting('markdown.html', true),
+        math: readBoolSetting('markdown.math', true),
+        mermaid: readBoolSetting('markdown.mermaid', false),
+        toc: readBoolSetting('markdown.toc', true),
+        footnote: readBoolSetting('markdown.footnote', true),
         codeLineNumbers: readBoolSetting('markdown.codeLineNumbers', false),
-      }, { fonts, resolveImage: makeLocalImageResolver(docDir, exportRootDir, true) });
-      await invoke('write_binary', { path: savePath, data: Array.from(buffer) });
-      lastExportedRef.current = { docPath: tab.path ?? '', output: savePath, format: 'pdf' };
-      setToast({ message: t('export.pdf.done') });
-      void maybeRevealExported(savePath); // D-AT
+        // V7-W6（G7-FEAT-13）：保留单换行符（preLinebreakOnExport，默认关）
+        preserveLineBreaks: readBoolSetting('export.preserveLineBreaks', false),
+        // 首行缩进与编辑器同源（Typora indentFirstLine 同时作用于编辑区与导出件）
+        firstLineIndent: readBoolSetting('editor.firstLineIndent', false),
+        // 正文字号与编辑器/Reader 同源（Typora 导出件继承生效字号）
+        fontSize: readNumberSetting('editor.fontSize', undefined),
+        // 主题跟随当前亮/暗（printStylesheet 同源常量）
+        theme: themeSettings.mode === 'dark' ? ('dark' as const) : ('light' as const),
+      }, {
+        // 图片内联（打印视图自包含，离线渲染）——与 HTML 导出同解析器（非 rasterOnly：
+        // 浏览器打印支持 SVG/WebP/GIF，无 pdfmake 的格式限制）。
+        resolveImage: makeLocalImageResolver(docDir, exportRootDir),
+        // §4.385（2026-11-09）：webview 里包内 node 资产定位不可用 ⇒ KaTeX CSS /
+        // Mermaid bundle 由宿主经 env 协作者注入（同 HTML 导出）。
+        ...(await webviewExportEnv()),
+      });
+      await invoke('stage_print_view', { html });
+      await invoke<string>('open_print_view');
+      setToast({ message: t('export.pdf.view') });
     } catch (err) {
       setToast({ message: `${t('export.pdf.failed')}: ${err instanceof Error ? err.message : String(err)}` });
     }
-  }, [t, maybeRevealExported]);
+  }, [t, themeSettings.mode]);
 
   /** 某个路径所在目录（`undefined` = 不可用：未命名/未保存文档、或路径里没有分隔符）。
    *  ⚠️ 不直接用 `fileTreeDirname()` 的结果 —— 它对**裸文件名**会返回 `'/'`（`idx <= 0 ? '/' : …`），
@@ -1658,6 +1668,12 @@ export default function App() {
       }, {
         // 仅在 exportHtml 需要内联图片时调用；without-style 不会触发（embedImages=false）。
         resolveImage: makeLocalImageResolver(docDir, exportRootDir),
+        // §4.385（2026-11-09）：webview 里包内 node 资产定位不可用（fs 空桩 + 裸
+        // __dirname/require）⇒ KaTeX CSS / Mermaid bundle 由宿主经 env 协作者注入。
+        // 此前真机「导出 HTML…」在 math 默认开时 ReferenceError 失败（本机 jest 全绿
+        // 掩盖：node 有 __dirname）。KaTeX CSS fetch `?url` 产物（字体已被 vite 重写为
+        // 应用内绝对 URL）；mermaid bundle 为构建期 `?raw` 内容。
+        ...(await webviewExportEnv()),
       });
       await invoke('write_text', { path: savePath, content: html });
       lastExportedRef.current = { docPath: tab.path ?? '', output: savePath, format: mode === 'with-theme' ? 'html' : 'html' };

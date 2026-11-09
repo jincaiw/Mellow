@@ -855,7 +855,10 @@ if (cssLayerAnchor === undefined) {
   if (!/firstLineIndent: readBoolSetting\('editor\.firstLineIndent', false\)/.test(appSource)) {
     fail('App.tsx 导出入口未把 editor.firstLineIndent 传入 HTML 导出选项');
   }
-  const firstLineExportDrift = appSource.replace(
+  // ⚠️ A37（2026-11-09）起该字面量在 App.tsx 有**两处**（HTML 导出 + 打印管线
+  //   buildPrintHtml 调用点）⇒ canary 必须替换**全部**出现再验证「无残留」——
+  //   单处替换会让未替换的那处残留原文，canary 恒红（实测踩到）。
+  const firstLineExportDrift = appSource.replaceAll(
     "firstLineIndent: readBoolSetting('editor.firstLineIndent', false)",
     'firstLineIndent: false',
   );
@@ -3030,6 +3033,37 @@ if (cssLayerAnchor === undefined) {
         out.push(`登记为 provided，但字段 \`${row.field}\` **不在**调用点 \`${row.callSite}\` 的实参窗口里`);
       }
     }
+    // A37/§4.385（2026-11-09）：`provided-via-injector` —— 调用点经
+    // `...(await <injector>())` 展开注入，字段名不直接出现在实参里。
+    // 判据核对**注入器函数名**出现在调用点实参窗口里；字段 → 注入器 的
+    // 绑定由 fixture 的 `injector` 声明 + 注入器源文件里的**字段名**双锁：
+    // 注入器返回类型改掉（字段消失）时，exportAssets.ts 的实参窗口判据会红。
+    if (row.status === 'provided-via-injector') {
+      if (typeof row.injector !== 'string' || row.injector === '') {
+        out.push('provided-via-injector 却没有声明 `injector` 函数名');
+      } else {
+        if (win === null) out.push(`调用点标记 \`${row.callSite}\` 在 App.tsx 里找不到`);
+        else if (!new RegExp(`\\b${row.injector}\\s*\\(`).test(win)) {
+          out.push(`登记为 provided-via-injector，但注入器 \`${row.injector}()\` **不在**调用点 \`${row.callSite}\` 的实参窗口里`);
+        }
+        // 注入器源文件必须实际提供该字段（返回类型/实参里出现字段名）——
+        // 否则「经注入器提供」是空话。
+        const injectorSrc = codeText('apps/desktop/src/exportAssets.ts');
+        if (!new RegExp(`\\b${row.field}\\b`).test(injectorSrc)) {
+          out.push(`注入器 exportAssets.ts 里找不到字段 \`${row.field}\` —— injector 声明与实现漂移`);
+        }
+      }
+    }
+    // A37（2026-11-09）：`pipeline-retired-to-tests` —— pdfmake 管线退役为
+    // 测试基线（应用 PDF 已改走 buildPrintHtml）。该状态**不得**再出现在
+    // 有应用调用点的 env 上（HtmlExportEnv 有调用点 ⇒ 不允许），且必须
+    // 带存在的 `ref`（指向裁决 ADR）。
+    if (row.status === 'pipeline-retired-to-tests') {
+      if (row.env !== 'PdfEnv') {
+        out.push('pipeline-retired-to-tests 只适用于已无应用调用点的 PdfEnv —— 其他 env 仍有调用点，不得退役登记');
+      }
+      if (typeof row.ref !== 'string' || !existsSync(resolve(root, row.ref))) out.push('pipeline-retired-to-tests 却没有可解析的 `ref`（裁决 ADR）');
+    }
     return out;
   };
   for (const row of rows) {
@@ -3072,9 +3106,27 @@ if (cssLayerAnchor === undefined) {
   if (rowProblems({ ...okRow, status: 'bogus' }, okWin).length === 0) {
     fail('导出协作者登记 canary 失效：**词表外**的 status 未被检出');
   }
+  // A37 canary：provided-via-injector（注入器名在窗口 + 字段在注入器源文件 = 绿；
+  // 注入器名不在窗口 = 红；缺 injector 声明 = 红）。⚠️ `codeText` 读的是真实
+  // exportAssets.ts（`mermaidBundle` 在里面）——canary 的正例借真实现，负例用
+  // 不存在的注入器名。
+  {
+    const viaRow = { env: 'HtmlExportEnv', field: 'mermaidBundle', callSite: 'pdf', status: 'provided-via-injector', injector: 'webviewExportEnv' };
+    const viaWin = 'buildPrintHtml(content, opts, { resolveImage: x, ...(await webviewExportEnv()) })';
+    if (rowProblems(viaRow, viaWin).length !== 0) {
+      fail('导出协作者登记 canary 失效：注入器在窗口里且字段在注入器源文件里的 provided-via-injector 条目被误判');
+    }
+    if (rowProblems({ ...viaRow, injector: 'noSuchInjector' }, viaWin).length === 0) {
+      fail('导出协作者登记 canary 失效：**注入器不在调用点实参窗口里**未被检出');
+    }
+    if (rowProblems({ ...viaRow, injector: undefined }, viaWin).length === 0) {
+      fail('导出协作者登记 canary 失效：**provided-via-injector 却缺 injector 声明**未被检出');
+    }
+  }
   const missing = rows.filter((r) => r.status === 'missing').length;
   console.log(`Settings contract: 导出 env 可选协作者 ${total} 个已登记（provided `
-    + `${rows.filter((r) => r.status === 'provided').length} / defaulted `
+    + `${rows.filter((r) => r.status === 'provided').length} / via-injector `
+    + `${rows.filter((r) => r.status === 'provided-via-injector').length} / defaulted `
     + `${rows.filter((r) => r.status === 'defaulted').length} / **missing ${missing}**，载体见各条 ref）`);
 }
 

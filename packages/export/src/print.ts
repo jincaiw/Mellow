@@ -47,6 +47,8 @@ export interface PrintOptions {
   firstLineIndent?: boolean;
   /** 正文字号 px（Typora 导出件的生效字号；与 HTML 导出同一选项） */
   fontSize?: number;
+  /** 保留单换行符（Typora preLinebreakOnExport，默认 false；A37 起与 HTML 导出同源同一设置） */
+  preserveLineBreaks?: boolean;
 }
 
 /** 打印就绪脚本：Mermaid 渲染完成后通知父窗口；无 Mermaid 时 load 后即就绪；2.5s 兜底。 */
@@ -88,6 +90,7 @@ export function buildPrintHtml(markdown: string, options: PrintOptions = {}, env
       codeLineNumbers: options.codeLineNumbers,
       firstLineIndent: options.firstLineIndent,
       fontSize: options.fontSize,
+      preserveLineBreaks: options.preserveLineBreaks,
       customCss: printStylesheet(styleOptions),
     },
     env,
