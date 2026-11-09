@@ -70,18 +70,18 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 | 打开 Markdown（dialog + fs read） | ✅（Rust 命令 + 类型适配） | ✅（CI 启动/打开 gate） | 🔶（实机 journey 待回填） | ✅（CI 冒烟） |
 | 编辑（CoreEditor **200** + 全仓 jest，2026-10-10 实跑见文末包规模） | ✅ | ✅（同构建） | 🔶 | ✅（同构建） |
 | 保存（atomic write + source fidelity corpus） | ✅（Windows byte-identical gate） | ✅（CI gate） | 🔶 | 🔶（corpus 待 CI 扩展） |
-| Live Markdown（marker reveal / nodes） | ✅（editor-engine 1318，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
+| Live Markdown（marker reveal / nodes） | ✅（editor-engine 1441，含 P4.10 联合矩阵 8 例） | — | 🔶（实机 Typora 对照待 P4.12） | — |
 | File links（渲染/点击打开/broken indicator，spec engine §12） | ✅（md-link 15 例 + settings/adapter 护栏锚点；2026-09-03 用户裁决解冻实现） | — | 🔶（broken 视觉一致 Typora 对照待真机） | — |
 | Windows JumpList（系统最近文档，PRD §134 P1） | ✅（jumplist.rs + windows-sys 交叉 check EXIT=0 + Windows CI 编译 12m2s） | 🔶（任务栏 Recent 展示/点击打开待真机） | — | — |
 | Table 编辑（one-undo/minimal diff/100×30） | ✅（table-undo-diff 16 + table-large 7） | — | 🔶 | — |
 | 中文输入（composition guard + IME 冻结） | ✅（逻辑层全绿） | ✅（Xvfb+fcitx5 矩阵 gate，Linux 列；Windows IME 矩阵 CI 仅诊断级） | 🔶（20 分钟实机写作待 P4.11） | ✅（CI IME matrix） |
 | IME corruption = 0 | ✅（自动化层） | 🔶（SendKeys 保存读回为诊断，不入证据） | ⛔（实机待执行） | 🔶（CI 矩阵内断言） |
 | Clipboard P0（smart paste priority/IME guard） | ✅（smart-paste 17） | ⛔（cross-app 7 目标待执行） | ⛔ | ⛔ |
-| PDF / HTML Export | ✅（export 104，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
+| PDF / HTML Export | ✅（export 158，含 PRD §142 corpus 4 例；italics 与转义管道真 bug 已修） | — | 🔶（三平台视觉一致待真机） | — |
 | 10MB 可编辑 / P95 | ✅（large-file 自动化护栏） | ✅（CI 10MB 冒烟 gate） | ⛔（benchmark 待 P4.12） | 🔶 |
-| Settings / Theme / Export 契约 | ✅（settings 17 + verify-settings-contract） | — | — | — |
+| Settings / Theme / Export 契约 | ✅（settings 25 + verify-settings-contract） | — | — | — |
 | Extension permission / Safe Mode | ✅（permissions 14 + app-core extensions） | — | — | — |
-| File Safety（rename/trash/undo/recovery/conflict） | ✅（app-core 297 含 FileOpHistory 12） | — | 🔶（disk-full/network corpus 真机项） | 🔶 |
+| File Safety（rename/trash/undo/recovery/conflict） | ✅（app-core 303 含 FileOpHistory 12） | — | 🔶（disk-full/network corpus 真机项） | 🔶 |
 | Reader / Palette / Slash / User CSS / AI 默认关闭 | ✅（P6.3 契约护栏） | — | 🔶（manual golden journey） | 🔶 |
 | 三平台打包矩阵（dmg/nsis/msi/appimage/deb/rpm） | ✅（tauri.conf + adapter-contract 护栏） | ⛔（安装/卸载/更新矩阵待执行） | ⛔（签名公证 DMG 待执行） | ⛔ |
 | UX Score 100 分 / 30 计时任务 | ✅（工具链就绪：ux-score-gate-template.md + ux-gate-recorder.mjs self-test） | ⛔（记录为 0） | ⛔（记录为 0） | ⛔（记录为 0） |
@@ -123,7 +123,7 @@ Tauri 2（macOS WKWebView / Windows WebView2 / Linux WebKitGTK）
 ## 自动化检查（本仓库可执行）
 
 ```sh
-# 1. 全仓测试（12 包 jest 1920 例 + parity 契约护栏 + qualification self-test）
+# 1. 全仓测试（12 包 jest 2129 例 + parity 契约护栏 + qualification self-test）
 pnpm test
 
 # 2. 构建 editor-core dist（bundle 构建模块）
@@ -137,7 +137,7 @@ cd apps/desktop && npm run build
 cd src-tauri && cargo check
 ```
 
-各包规模（jest，**2026-10-11 按包定向实跑，合计 1920 例全绿**）：editor-engine **1318** / app-core **297** / export **104** / host-api **47** / commands **33** / document-model **26** / editor-core **19**（另有 vendored CoreEditor **200**，2026-10-10 实跑）/ desktop-ui **17** / settings **17** / i18n **15** / extension-api **14** / themes **13**。
+各包规模（jest，**2026-11-09 按包定向实跑，合计 2129 例全绿**）：editor-engine **1441** / app-core **303** / export **158** / host-api **50** / commands **36** / document-model **26** / editor-core **21**（另有 vendored CoreEditor **200**，2026-10-10 实跑）/ desktop-ui **23** / settings **25** / i18n **15** / extension-api **14** / themes **17**。
 
 > **数字刷新纪律**：数字按当日**按包定向**调用 `node_modules/.bin/jest` 的实跑结果刷新；
 > 全仓 `pnpm -r run test` 在本机会被 corepack 交互提示阻塞（要下载 pnpm 11.7.0），故不以此为度量口径。
@@ -160,7 +160,7 @@ cd src-tauri && cargo check
 >   （**不进 CI**：需逐包跑 jest）⇒ **只能靠人记得跑** —— 实测 2026-10-11 跑出 `export` 声明 100
 >   而实跑 **104**（见审计 §4.287）」。**该判断在 2026-10-12 之前成立**；现由 CI 覆盖。
 >
-> **刷新记录**：2026-10-01（首次）· **2026-10-08**（本轮：上一版 `editor-engine 1277` → **1318** · `app-core 258` → **297** · `export 89` → **100**；其余 9 包与上次一致；合计 `1824` → **1915**）· **2026-10-11**（本轮：`export 100` → **104**；其余 11 包与上次一致；合计 `1915` → **1919** —— 由本机工具 `audit-pkg-test-counts.mjs` 实跑对账发现，见审计 §4.287）· **2026-10-11（同日第二次）**（`themes 12` → **13**；其余 11 包与上次一致；合计 `1919` → **1920** —— 同样由该本机工具实跑对账发现；⚠️ 它**上一轮已被标记为「已刷新、复跑 EXIT=0」**，而**没有人再跑它** ⇒ 一天内又漂了一次，见审计 §4.318）。
+> **刷新记录**：2026-10-01（首次）· **2026-10-08**（本轮：上一版 `editor-engine 1277` → **1318** · `app-core 258` → **297** · `export 89` → **100**；其余 9 包与上次一致；合计 `1824` → **1915**）· **2026-10-11**（本轮：`export 100` → **104**；其余 11 包与上次一致；合计 `1915` → **1919** —— 由本机工具 `audit-pkg-test-counts.mjs` 实跑对账发现，见审计 §4.287）· **2026-10-11（同日第二次）**（`themes 12` → **13**；其余 11 包与上次一致；合计 `1919` → **1920** —— 同样由该本机工具实跑对账发现；⚠️ 它**上一轮已被标记为「已刷新、复跑 EXIT=0」**，而**没有人再跑它** ⇒ 一天内又漂了一次，见审计 §4.318）· **2026-11-09**（本轮：`editor-engine 1318` → **1441** · `app-core 297` → **303** · `export 104` → **158** · `host-api 47` → **50** · `commands 33` → **36** · `editor-core 19` → **21** · `desktop-ui 17` → **23** · `settings 17` → **25** · `themes 13` → **17**；其余 3 包与上次一致；合计 `1920` → **2129** —— 由 CI 的 `audit-pkg-test-counts.mjs` 实跑对账发现，`v1.5.35` 发版轮）。
 
 > **注**：`extension-api` 自身无本地 jest 二进制，按其 package.json 的 `test` 脚本用
 > `../settings/node_modules/.bin/jest --rootDir .` 执行。全仓 `pnpm -r run test` 曾挂起
