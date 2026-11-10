@@ -540,7 +540,7 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
 
 // ── ⑬ CI 也必须**串行并取消被取代的运行**（2026-10-07，审计 §4.125）──────────────
 // 立此条的原因（实测）：一次 push 产生**两个** CI run（同一 SHA、同为 `push` 事件 —— GitHub 侧重复投递）；
-// 而 `ci.yml` **没有 `concurrency`** ⇒ 被取代的提交仍会跑完整个 CI（8 个 job）：
+// 而 `ci.yml` **没有 `concurrency`** ⇒ 被取代的提交仍会跑完整个 CI（9 个 job）：
 // 既白烧 runner 分钟数，又制造「同一 SHA 两个 run、其中一个是旧的」这种混淆。
 // ⚠️ **与 `release.yml` 方向相反**：那边 `cancel-in-progress: false`（release 是**对外**的，
 //    取消会留下半成品）；这里 `true`。**两条判据不要互相抄期望值** —— canary 专门锁这一点。
@@ -555,7 +555,7 @@ if (/notShipped|deadCode/.test(verifySoftened)) {
   };
   const conc = concurrencyOf(ciYml);
   if (conc === null) {
-    fail('ci.yml 缺少 `concurrency:` —— 被取代的推送会跑完整个 CI（8 个 job），白烧 runner 分钟数；'
+    fail('ci.yml 缺少 `concurrency:` —— 被取代的推送会跑完整个 CI（9 个 job），白烧 runner 分钟数；'
       + '重复投递时也会各跑一遍（实测：一次 push 产生两个 run）');
   } else {
     if (conc.group !== 'ci-${{ github.ref }}') {

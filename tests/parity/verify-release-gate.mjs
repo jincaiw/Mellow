@@ -2692,7 +2692,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
 // ── ⑮ 每个 CI job 必须有**超时边界** `timeout-minutes`（2026-10-10，审计 §4.276）──────────────
 // 【为什么】GitHub 的默认 job 超时是 **360 min** ⇒ 一个**卡住**的 job 要 **6 小时**才被发现。
 //   而本仓三个 workflow 里**只有一个**做了这件事：`runtime-qualification.yml` 三个 job 都有
-//   `timeout-minutes: 45`，而 `ci.yml`（8 个 job）与 `release.yml`（5 个 job）**一个都没有**
+//   `timeout-minutes: 45`，而 `ci.yml`（9 个 job）与 `release.yml`（5 个 job）**一个都没有**
 //   ⇒ 同类配置在 3 个文件里只做了 1 个（本仓「只锁了一半」的又一形态）。
 //   ⚠️ `release.yml` 尤其要紧：它的 `concurrency.cancel-in-progress: false`（对外，取消会留半成品）
 //     ⇒ 卡住的 job **不会**被下一次推送取消，会把发布管线堵满 6 小时。
@@ -2746,7 +2746,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
     }
   }
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；加 workflow / job 时须一并上调）
-  const JOB_BASELINE = 16; // [覆盖型] 基线 16
+  const JOB_BASELINE = 17; // [覆盖型] 基线 17（2026-11-10：ci.yml 增 rust-check-windows，16→17）
   coverEq('三个 workflow 里的 job 数', jobCount, JOB_BASELINE,
     '谓词或扫描面漂移会让本判据**空转**');
   // canary：四向（与判定**共用** jobsOf）
@@ -3053,7 +3053,7 @@ const passECount = (ledger.items ?? []).filter((i) => i.status === 'PASS-E').len
 
   // 防空转：**覆盖型**（下限 = 立此判据时的基线；action 增删时须一并复核）
   const REG_BASELINE = 8; // [覆盖型] 基线 8
-  const USES_BASELINE = 61; // [覆盖型] 基线 61
+  const USES_BASELINE = 64; // [覆盖型] 基线 64（2026-11-10：rust-check-windows +3 uses，61→64）
   const usesTotal = [...found.values()].reduce((s, n) => s + n, 0);
   coverEq('⑱ 登记表条目数', entries.length, REG_BASELINE,
     '条目被删会让本判据**空转**');
@@ -5601,7 +5601,7 @@ const CODE_BASELINE = 400; // [健康度型] 立此判据时实测 575
       + '（**静默**），而发版手册**逐字**要求 `--locked`。请补 `--locked`');
   }
   // 防空转：[覆盖型]（cargo 命令增删时须一并复核）
-  const CARGO_CMD_BASELINE = 6; // [覆盖型] 基线 6
+  const CARGO_CMD_BASELINE = 7; // [覆盖型] 基线 7（2026-11-10：rust-check-windows +1 cargo test，6→7）
   coverEq('㊵ CI 里的 cargo 命令数', cargoLines40, CARGO_CMD_BASELINE,
     '命令被删会让「CI 必须用 --locked」重新变成**无人守**');
   // canary：两向（与判定**共用** cargoRunOf）
