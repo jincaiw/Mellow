@@ -186,10 +186,24 @@ fn external_editor_in_place_edit_never_overwrites() {
     drop(f);
 
     let meta = fs::metadata(&target).unwrap();
+    // ⚠️ 2026-11-10（rust-check-windows 首跑，CI run 42811091525）：
+    //   「原地写保留 inode」是 **Unix 专属**不变量（identity_key = dev:ino）。
+    //   Windows 无 inode，`fs::identity_key` 用 `len:mtime` 作身份键 ⇒ 原地写把
+    //   8 字节改成 16 字节后**键必然变化**（这正是 atomic_save 检出 Conflict 的
+    //   输入之一，见 fs.rs「current_key != expected.identity_key」）。
+    //   ⇒ 按平台分叉，两边都不断言放宽：**Unix 验键不变、Windows 验键必变**。
+    //   后续的 Conflict / 外部内容不丢断言（PRD §141 硬指标）两平台都保留。
+    #[cfg(unix)]
     assert_eq!(
         identity_key(&meta),
         before.identity_key,
         "in-place edit preserves inode"
+    );
+    #[cfg(not(unix))]
+    assert_ne!(
+        identity_key(&meta),
+        before.identity_key,
+        "in-place edit must change len:mtime identity key (Windows)"
     );
     assert_ne!(
         mtime_ms(&meta),
@@ -349,6 +363,18 @@ fn atomic_save_preserves_owner_permissions() {
 
 /// disk full：用 RLIMIT_FSIZE 让子进程临时写入中途失败（EFBIG，与 ENOSPC 同路径）。
 /// 断言：原文件绝不损坏，残留 temp 由下一次保存清理。
+/// ⚠️ 2026-11-10（rust-check-windows 首跑，CI run 42811091525）：本测试用
+///   `/bin/sh` + `trap '' XFSZ` + `ulimit -f` 造 EFBIG —— **纯 Unix 机制**，
+///   Windows 上 `/bin/sh` 不存在 ⇒ `Command::status().unwrap()` 直接 panic
+///   （不是断言失败，是机制根本不在）。故标 `#[cfg(unix)]`，与同文件已有 4 处
+///   unix-only 测试（permissions / symlink 等）一致。
+///   **Windows 侧「写入失败 ⇒ 原文件不动 + temp 清理」并未失去覆盖**：
+///   `fs::tests` 的 `external_change_conflict_never_overwrites` /
+///   `rename_failure_original_intact_temp_cleaned`（target 为目录 ⇒ rename 失败）/
+///   `crash_residue_temp_is_cleaned_on_next_save` 与本机件
+///   `source_fidelity_open_no_edit_save_byte_identical` 在 Windows CI 均实证 ok；
+///   runtime-qualification 的 Windows Source Fidelity gate 也定向跑后者。
+#[cfg(unix)]
 #[test]
 fn disk_full_write_fails_original_intact() {
     if is_child("diskfull") {

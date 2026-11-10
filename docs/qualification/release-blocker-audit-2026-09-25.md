@@ -25764,7 +25764,9 @@ ScreenCaptureKit 显示器级捕获 + 真机对照）、`P0-QA-001`（人工 UX 
 - CI：run **42806066663** = **failure**（8 绿 / 1 红）——其余 8 个 job 全绿，
   唯独新加的 `rust-check-windows` 报 `82 passed; 3 failed`。这是**预期价值**：
   Windows 全量 lib 单测此前从未在 CI 跑过，首跑即抓出 3 个把 Unix 语义
-  硬编码进单测的隐藏缺陷（详见 §4.389）。修复批次见 §4.389，复跑结论待录。
+  硬编码进单测的隐藏缺陷（详见 §4.389）。修复批次见 §4.389；复跑
+  （run 42811091525）**lib 82/0 全绿但 integration suite 又暴露 2 例**，
+  见 §4.390 —— 这正是「全量」比「定向子集」多出来的守护面。
 
 ## 4.389 rust-check-windows 首跑暴露 3 个「Unix 语义硬编码进单测」缺陷（2026-11-10）
 
@@ -25806,9 +25808,9 @@ CI run **42806066663** 首跑 `cargo test --locked`：`82 passed; 3 failed`。
 
 - 本机 macOS `cargo test --locked --lib`：**95 passed / 0 failed**
   （unix 分支三测试仍在、全部执行；证明未误删 unix 覆盖）；
-- ⚠️ Windows 侧 82→? 需等 CI 复跑（本机无 `x86_64-pc-windows-msvc` 链接器，
-  交叉 `cargo check` 不能替代真跑）；`scheduled_restart` 等断言在 Windows
-  由 `#[cfg]` 编译期剔除，不复现；
+- CI 复跑 **42811091525**：`rust-check-windows` 的 **lib 单测 82 passed /
+  0 failed**（3 例按 cfg 剔除，修复生效），但同一次 `cargo test` 还跑
+  integration suite `file_safety_corpus.rs` ⇒ 又红 2 例（详见 §4.390）；
 - 产品代码（`restore_app` / `schedule_windows_restore` / `atomic_save`）
   **一行未改** ⇒ 不影响 Undo/Redo、IME、文件保真等 P0 面。
 
@@ -25819,6 +25821,76 @@ CI run **42806066663** 首跑 `cargo test --locked`：`82 passed; 3 failed`。
 测试本身也会撒谎：它声称「恢复后旧文件回来」「只读目录写必失败」，
 但那只在**写测试的人所在平台**成立。把测试放进从没跑过的平台，
 撒谎的断言会自己报出来。
+
+## 4.390 同一首跑的第二层：file_safety_corpus 2 例 Unix 机制/语义（2026-11-10）
+
+### 一、现象
+
+CI run **42811091525**（cc86f46 修复后复跑）：`rust-check-windows` 的
+**lib 单测 82 passed / 0 failed**（§4.389 的 3 例已修），但 `cargo test`
+继续执行 integration suite `tests/file_safety_corpus.rs` ⇒
+
+```
+test disk_full_write_fails_original_intact ... FAILED
+test external_editor_in_place_edit_never_overwrites ... FAILED
+test result: FAILED. 10 passed; 2 failed
+```
+
+⚠️ 这正是「全量 lib 单测」与 runtime-qualification 的 Windows
+`cargo test --test file_safety_corpus source_fidelity_...`（**只跑一个定向
+用例**）的差别：该套件其余用例在 Windows 从没跑过。
+
+### 二、两处根因（逐条对日志 + 源码）
+
+1. `external_editor_in_place_edit_never_overwrites`（file_safety_corpus.rs:189）
+   断言 `identity_key(&meta) == before.identity_key`，注释写
+   「in-place edit preserves **inode**」。`fs::identity_key` 在
+   `#[cfg(unix)]` 是 `dev:ino`（原地写不变），在 `#[cfg(not(unix))]`
+   是 `len:mtime`（无 inode 时的替代身份键）⇒ 原地写把 8 字节改成
+   16 字节后**键必然变化**。这不是产品缺陷：`atomic_save` 的 conflict
+   判定恰是 `current_key != expected.identity_key || current_mtime != ...`，
+   键变化正是 Windows 检出外部编辑的输入；PRD §141 的硬指标
+   （`SaveError::Conflict` + 外部内容不丢）两平台都成立。
+2. `disk_full_write_fails_original_intact`（file_safety_corpus.rs:386）
+   用 `/bin/sh` + `trap '' XFSZ` + `ulimit -f 8` 在子进程造 EFBIG ——
+   **纯 Unix 机制**，Windows 无 `/bin/sh` ⇒ `Command::status().unwrap()`
+   直接 panic（是机制不在，不是断言失败）。同文件已有 4 处
+   `#[cfg(unix)]` 测试（permissions / symlink 等），这两处是漏标。
+
+### 三、处置（只改测试，产品代码零改动）
+
+- `external_editor_in_place_edit_never_overwrites`：**按平台分叉且两边都
+  不放宽** —— `#[cfg(unix)] assert_eq!`（键不变）/
+  `#[cfg(not(unix))] assert_ne!`（键必变，正是 conflict 的输入）；
+  `mtime` 变化、`SaveError::Conflict`、`read_bytes == b"edited by vscode"`
+  三条断言两平台全保留。
+- `disk_full_write_fails_original_intact`：标 `#[cfg(unix)]`，与同文件
+  既有 4 处 unix-only 测试一致。Windows 侧「写入失败 ⇒ 原文件不动 +
+  temp 清理」由 `fs::tests` 的 `external_change_conflict_never_overwrites` /
+  `rename_failure_original_intact_temp_cleaned` /
+  `crash_residue_temp_is_cleaned_on_next_save` 与
+  `source_fidelity_open_no_edit_save_byte_identical` 覆盖（首跑实证 ok；
+  runtime-qualification 的 Windows Source Fidelity gate 定向跑后者）。
+
+### 四、验证
+
+- 本机 macOS `cargo test --locked`（**全量**）：lib **95/0**、
+  `file_safety_corpus` **16/0**（含新分叉的 `external_editor_in_place...`
+  与 `disk_full_write...` 两例均 ok）、其余 **4/0**；
+- `npm run parity` 全链 **EXIT=0**；
+- ⚠️ Windows 侧 `#[cfg(not(unix))] assert_ne!` 分支本机无法执行
+  （无 `x86_64-pc-windows-msvc` 链接器），由 CI 复跑确认；
+  源码层已闭合：`identity_key = format!("{}:{}", meta.len(), mtime_ms(meta))`，
+  len 8→16 必变。
+- 产品代码 `fs::identity_key` / `atomic_save` **一行未改** ⇒ 文件保真 /
+  Undo / IME 面不受影响。
+
+### 五、结论
+
+`rust-check-windows` 的价值在两轮里连续兑现：首轮抓 lib 3 例、
+复轮抓 integration 2 例，全部是「**测试把作者所在平台的语义当成
+跨平台不变量**」。这类缺陷定向子集永远看不见。5 例全部只改测试
+（按平台分叉 / 标注 Unix 专属机制），**产品代码零改动**。
 
 ## 五、本次审计做的改动（非策略性）
 
