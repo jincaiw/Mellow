@@ -25902,6 +25902,86 @@ test result: FAILED. 10 passed; 2 failed
 「全量常态验证」；**该项仍为 IMPL**（真机三平台证据 pending），
 发布门禁 **NO-GO 4 项不变**。
 
+## 4.391 v1.5.36 的 Runtime Qualification 判红：Windows / Linux sidebar 基线仍是筛选区展开前的旧几何（2026-11-10）
+
+### 一、现象
+
+v1.5.36 的 tag 触发 `runtime-qualification.yml`（run 42824727574），结论
+**failure**：Windows 与 Linux 两个 job 各报一条
+
+```
+❌ search.firstMatch.y: golden 266 vs actual 231（Windows）
+❌ search.firstMatch.y: golden 266 vs actual 232（Linux）
+```
+
+macOS job success；Linux 的 fcitx5 IME 矩阵 **8/8 场景通过**（含 Undo 断言）；
+两个平台的 `visual-golden`（6 配置）与 `scenes-golden`（7 场景）均
+match baseline ±1px。该 workflow 与 `release.yml` 无 `needs` 依赖，
+**不阻断 v1.5.36 发布**；发布本身（run 42824727544）5/5 job success、
+15 个制品、`draft=false` / `prerelease=false`。
+
+### 二、根因
+
+不是产品回归，是**基线陈旧**：`0ba37b4`（2026-11-08，审计 §4.360）把
+Search include/exclude 改为「默认收起」以对齐 PRD §17，首条匹配因此上移
+约 35px；同轮只重建了 **macOS 主基线**
+`tests/visual/golden/sidebar-golden.json`（`firstMatch.y` 230→196，
+并补 `advancedOpen` / `advancedFieldsVisible` 两个契约字段）。
+`sidebar-golden.linux.json` / `sidebar-golden.windows.json` 自 2026-10-01
+起仍是筛选区**展开**时的旧值 266，且缺那两个字段 —— 审计 §4.360 当时
+明确写「该平台实测环境不可用，**不做跨平台猜测式改数**，留待对应平台
+实机重采集（基线文件按平台分离本就是为此设计）」。本次 tag run 恰好在
+**各自平台的正式证据环境**（ADR-0022 / master-plan §D-W）里给出了实测值。
+
+判据没有放水：`sidebar-golden.mjs` 的「实测 vs 期望」硬断言含
+`advancedOpen === false && advancedFieldsVisible === false`（PRD §17），
+CI 日志没有 `✗`（否则会打印完整 samples 并 exit 1），说明 231 / 232
+是**收起态下真实几何**，不是渲染没就绪或回归。
+
+### 三、处置（只改两份基线，产品代码零改动）
+
+按审计「先读实际截图确认布局正确」的要求，下载 run 42824727574 的
+`windows-visual-golden`（artifact 13769062252）与 `linux-visual-golden`
+（artifact 13769677509）并读 `actual/sidebar-search.png`：两平台均为
+搜索框置顶、「文件筛选」details 收起（▶，无 include/exclude 输入框）、
+1 组 2 命中、首条匹配在上移后的位置 —— 与 macOS 基线形态一致。
+
+据此把两份平台基线的 `search` 段刷新为**各自 CI 实测值**：
+
+| 文件 | `firstMatch.y` | 新增字段 |
+|---|---|---|
+| `sidebar-golden.windows.json` | 266 → **231** | `advancedOpen: false` / `advancedFieldsVisible: false` |
+| `sidebar-golden.linux.json` | 266 → **232** | 同上 |
+
+其余视图（`files-tree` / `files-tree-filter` / `outline`）与 macOS 主基线
+**一字未动**：它们在两平台 CI 里本就 match baseline，改它们才属于
+「跨平台猜测式改数」。仅补齐两个契约字段使三平台基线形状一致 ——
+`walk()` 以 golden 的 key 遍历，字段加入后会参与后续比对；两平台实际
+样本均含这两个 `false`（见上）。
+
+### 四、验证
+
+- `npm run parity` 全链 **EXIT=0**（含 `verify-visual-golden.mjs` 的三平台
+  基线齐备 / 容差语义 / 硬断言先于写入，以及 `verify-sidebar-contract.mjs`
+  的 aside 270 / 1 组 2 匹配契约）；
+- `node tests/parity/verify-release-gate.mjs` **EXIT=0**，
+  Release verdict 如实仍为 **NO-GO：4 项未闭环 / PASS-E = 0/51**；
+- 本机 macOS `sidebar-golden.mjs` 不重跑（本机无 Windows / Linux 桌面环境；
+  ADR-0022 规定两平台以 CI runner 为正式证据环境）。**两平台基线是否
+  真的转绿，以基线入库后下一次 `runtime-qualification.yml` 实跑为准**，
+  本节不预先声称已闭环。
+
+### 五、边界
+
+- 本轮**不改台账任何状态**、不新增 P0 闭环、不把 RQ 判红写成「已修复」：
+  修复的是陈旧基线，不是新增 parity 能力；
+- 基线数值来自 **run 42824727574 的同平台 CI 实测**，不是从 macOS 196
+  推算（231 / 232 与 196 的差值正是两平台 chrome 高度差）；
+- 发布门禁 4 项未闭环（`P0-EDITOR-005` / `P0-EXPORT-001` /
+  `P0-PERF-001` / `P0-QA-001`）**全部不变**：本轮不产生真机体验 /
+  隔离打印设备 / 人工 UX Gate 证据；
+- 未跑原生打印探针，未触碰用户真实文件。
+
 ## 五、本次审计做的改动（非策略性）
 
 

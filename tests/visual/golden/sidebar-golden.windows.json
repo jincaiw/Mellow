@@ -60,9 +60,11 @@
     },
     "groupCount": 1,
     "matchCount": 2,
+    "advancedOpen": false,
+    "advancedFieldsVisible": false,
     "firstMatch": {
       "x": 0,
-      "y": 266,
+      "y": 231,
       "w": 269,
       "h": 29.3
     }
