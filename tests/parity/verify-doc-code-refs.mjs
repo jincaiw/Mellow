@@ -3771,8 +3771,10 @@ const boldCount = (src) => boldUnits(src).reduce((s, u) => s + boldUnpaired(u.te
   //      · 2026-11-08 审计 §4.366 新增
   //        `tests/qualification/evidence/2026-11-08-contentpaint-display-capture.md` ⇒ **180**（+1，已逐份核对）；
   //      · 2026-11-09 发版 v1.5.35 新增 `.github/release-notes-v1.5.35.md` ⇒ **181**
-  //        （与 v1.5.34 的 notes 同形态：不在豁免名单 ⇒ 参与加粗配对核对）。
-  const BOLD_BASELINE = 181;
+  //        （与 v1.5.34 的 notes 同形态：不在豁免名单 ⇒ 参与加粗配对核对）；
+  //      · 2026-11-10 发版 v1.5.36 新增 `.github/release-notes-v1.5.36.md` ⇒ **182**
+  //        （同形态：不在豁免名单 ⇒ 参与加粗配对核对；已逐份核对）。
+  const BOLD_BASELINE = 182;
   if (boldFiles.length !== BOLD_BASELINE) {
     fail(`加粗配对的扫描面为 ${boldFiles.length} 份 .md，与基线 ${BOLD_BASELINE} 不符`
       + ' —— 扫描面变化必须显式复核（改窄会让本判据**空转**）');
