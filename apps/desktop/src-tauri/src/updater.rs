@@ -341,6 +341,22 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    // ⚠️ 2026-11-10（rust-check-windows 首次全量实跑，CI run 42806066663）：
+    //   下面两个测试验证的是 **macOS / Linux 的「进程内替换」**语义
+    //   （`restore_app` 的 `#[cfg(not(windows))]` 分支：remove + rename，
+    //   返回 `scheduled_restart: false`，target 内容立即变回旧版本）。
+    //   Windows 分支是 **detached helper 调度**（`schedule_windows_restore` spawn
+    //   `cmd /c timeout 3 & move & start`），返回 `scheduled_restart: true` 且
+    //   **不会立即替换 target** ⇒ 原断言 `!scheduled_restart` 与「读回 old-binary」
+    //   在 Windows 必双双失败；而且单测每次都会 spawn 一个 detached cmd
+    //   （CI 日志末尾两条 "The filename, directory name, or volume label syntax
+    //   is incorrect." 就是它尝试 `start ""` 假 .app 路径留下的）。
+    //   ⇒ 标 `#[cfg(not(windows))]`：Windows 恢复调度路径属**真机/集成层**证据
+    //   （runtime-qualification 的 Windows 安装/更新矩阵），单测不 spawn helper。
+    //   Windows 侧仍由 `marker_roundtrip_and_launch_count` /
+    //   `restore_missing_backup_errors` / `commit_cleans_backup_and_marker`
+    //   三条跨平台测试覆盖 marker / 错误 / 清理契约。
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn copy_and_restore_app_dir() {
         let dir = test_dir("restore");
@@ -382,6 +398,7 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn restore_single_file_app() {
         let dir = test_dir("file-app");

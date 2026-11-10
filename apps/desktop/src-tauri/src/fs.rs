@@ -1154,6 +1154,15 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    // ⚠️ 2026-11-10（rust-check-windows 首次全量实跑，CI run 42806066663）：
+    //   「目录 chmod 0o555 ⇒ 在其内创建 temp 失败」是 **Unix 权限位**语义；Windows 的
+    //   目录 readonly 位不阻止创建文件（ACL 语义不同），本机 `set_permissions` 也
+    //   没设 readonly ⇒ `atomic_save` 成功、`assert!(result.is_err())` 必红。
+    //   故本测试标 `#[cfg(unix)]`；**Windows 的 atomic_save 失败路径并未失去覆盖**：
+    //   `external_change_conflict_never_overwrites` / `deleted_target_conflict` /
+    //   `rename_failure_original_intact_temp_cleaned`（target 为目录 ⇒ rename 失败）/
+    //   `crash_residue_temp_is_cleaned_on_next_save` 四条跨平台测试仍在 Windows 跑。
+    #[cfg(unix)]
     #[test]
     fn read_only_dir_fails_original_intact() {
         let dir = test_dir();

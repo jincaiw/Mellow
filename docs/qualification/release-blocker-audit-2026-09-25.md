@@ -25659,6 +25659,167 @@ load / 2.9s / 6s 双兜底）→ `print_window`（既有命令）→ 系统打�
   `export-collaborators.json` 的 `pipeline-retired-to-tests` 判据禁止它被
   重新悄悄接回应用（退役状态改回 provided 会红）。
 
+## 4.387 c903fd5 推绿后首轮 CI 红：A37 新增 4 例只刷了「文件数」、漏刷「用例数」真值源（2026-11-10）
+
+### 一、现象与根因
+
+CI run **42759434070**（c903fd5，A37 + §4.384/§4.385 合批）8 个 job 里
+6 绿、1 红、1 被跳：`editor-core vendored (yarn) + wrapper (pnpm)` 的
+`Package test counts (README snapshot ↔ real run)` 步骤报
+
+```
+✗ export   实跑 162 · 声明 158   ← 应改为 162
+✗ 合计     实跑 2133 · 声明 2129 ← 应改为 2133
+```
+
+→ 该 job 红 ⇒ 依赖其 `Upload dist` 产物的 `Desktop frontend build` 被 skip。
+
+根因（**一处遗漏、四类副本**）：c903fd5 新增
+`packages/export/test/webview-assets.test.ts`（§4.385 webview 资产崩溃回归 4 例），
+提交时只把 `packages/export/README.md` 的**测试文件数** 8 → 9 刷对，
+漏了**用例数**的单一真值源 `tests/qualification/README.md` 的「各包规模」行
+（export 158 → 162、合计 2129 → 2133），以及被 `verify-release-gate.mjs`
+锁「文件内自洽」的两处内联复述：PDF/HTML Export 表格行的 `export 158`、
+全仓测试命令注释的 `jest 2129 例`。
+
+这正是 §4.331 把 `audit-pkg-test-counts.mjs` 接进 CI 的理由第三次生效：
+「快照 ↔ 实跑」的对账**不靠人记得跑**；本仓同时把「文件数」和「用例数」
+两份快照放在不同文件，改测试只刷其中一份就会红。⚠️ 与 §4.318 的
+「一天内漂两次」同型，但这次是**同一个提交内部**的两份快照不同步。
+
+### 二、处置（97a9bda）
+
+四处一次性同步：表格行 `export 158` → `162`（并注明 +4 例来源）、
+命令注释 `2129` → `2133`、真值源行 `export **162**` + `合计 **2133 例**`
++ 日期 2026-11-10、刷新记录追加本轮条目（含「漏刷文件数/用例数之分」的
+成因与 CI run 号）。**不改** `verify-release-gate.mjs` 的任何断言——它从真值源
+行解析，副本同步后自洽判据自然转绿。
+
+### 三、验证
+
+- `node tests/parity/tools/audit-pkg-test-counts.mjs`（全量）：**EXIT=0**，
+  12 包 + vendored CoreEditor 逐项一致，合计实跑 2133 = 声明 2133；
+- `node tests/parity/verify-release-gate.mjs`：**EXIT=0**（文件内自洽判据）；
+- 推送后 CI run **42767823507**（97a9bda）：**success，8/8 job 全绿**，
+  含上轮红的 `editor-core vendored` 审计步与被 skip 的 `Desktop frontend build`。
+
+### 四、边界
+
+本轮只补文档真值源，不涉及产品代码、ADR、台账状态码；NO-GO 4 项不变。
+
+## 4.388 补齐 Windows 全量 Rust 单测的 CI 证据通道（rust-check-windows，2026-11-10）
+
+### 一、依据：与 rust-check-macos 同一母题
+
+2026-10-01 立 `rust-check-macos` 的判据是「**不变量只存在于「本地才会跑」的
+测试里 = 没守护**」（当时 `#[cfg(target_os = "macos")]` 的 NSSpellChecker
+单测在 CI 从不执行，代价是 `suggest_returns_guesses_for_misspelling` 长期
+是 `let _ = suggest(...)` 恒真空壳）。
+
+同一形状在 Windows 侧一直存在：ci.yml 的 `rust-check` 跑 ubuntu、
+`rust-check-macos` 跑 macos；`windows-parity-guard` 明确「不构建 Rust」，
+只跑纯 Node parity 链；`runtime-qualification.yml` 的 windows job 只跑
+**定向** `cargo test --features custom-protocol --test file_safety_corpus
+source_fidelity_open_no_edit_save_byte_identical`（Source Fidelity 单项门禁）。
+⇒ `#[cfg(target_os = "windows")]` 的系统核心分支（jumplist.rs 的
+SHAddToRecentDocs、spellcheck 的 Windows 降级契约 `available=false`、
+windows-only 文件/更新器路径）**全量 lib 单测在 Windows 没有任何机器在守**。
+
+### 二、实施（1b62722）
+
+`ci.yml` 末尾新增 `rust-check-windows`，镜像 `rust-check-macos`：
+`windows-latest` / `timeout-minutes: 30` / `dtolnay/rust-toolchain@stable` /
+`Swatinem/rust-cache@v2`（workspaces: `apps/desktop/src-tauri`）/
+`cargo test --locked`。**无需装系统依赖**：windows-latest 预装 WebView2 +
+MSVC 工具链（不同于 ubuntu 需 apt `libwebkit2gtk-4.1-dev` 等）。
+不带 `--features custom-protocol`：该 feature 只决定 release 二进制是否内嵌
+`frontendDist`，`cargo test` 编译 lib + 单测不需要它（§4.386 附注的构建陷阱
+是 `cargo build --release` **不带**时会请求 devUrl 白屏，与本 job 无关）。
+
+护栏覆盖型基线随集合增长同步上调（**增长也是集合变了，须复核**）：
+`JOB_BASELINE 16 → 17`、`USES_BASELINE 61 → 64`（+3 uses）、
+`CARGO_CMD_BASELINE 6 → 7`（+1 `cargo test`、仍带 `--locked`）；
+`verify-build-pipeline.mjs` 与 `verify-release-gate.mjs` 两处
+「ci.yml（8 个 job）」散文同步为 9。新 job 的 3 个 action 全是已登记项
+（checkout@v5 / dtolnay@stable / rust-cache@v2），无新 secret。
+
+### 三、收益与边界
+
+台账 `P0-EDITOR-005` 的 `requiredEvidence` 含 `windows-ci`：拼写检查的
+Windows 降级契约 `spellcheck_supported_on(false) = false` 由本 job
+**每次 push 常态机器验证**，从「仅定向子集」升级为「全量 lib 单测」。
+
+⚠️ **不得据此声称 P0-EDITOR-005 闭环**：该项 `blockedBy =
+runtime-verification-pending`，回 AUTO 仍需真机三平台体验证据；
+本 job 只补**一条 CI 证据通道**。同理不触碰 `P0-EXPORT-001`
+（闸门是 macOS 打印实测，本机禁探针）、`P0-PERF-001`（三平台/CI 证据需
+ScreenCaptureKit 显示器级捕获 + 真机对照）、`P0-QA-001`（人工 UX Gate
+会话，用户自安排）——发布门禁 **NO-GO 4 项不变**。
+
+### 四、验证（含首次实跑暴露的问题）
+
+- 本地：`npm run parity` 全链 **EXIT=0**；`verify-release-gate` **EXIT=0**
+  （17 job 均有超时边界、cargo 7 条全带 `--locked`、secrets 11/11 双向一致、
+  action 登记路径 0 处解析失败）；`verify-build-pipeline` **EXIT=0**；
+- CI：run **42806066663** = **failure**（8 绿 / 1 红）——其余 8 个 job 全绿，
+  唯独新加的 `rust-check-windows` 报 `82 passed; 3 failed`。这是**预期价值**：
+  Windows 全量 lib 单测此前从未在 CI 跑过，首跑即抓出 3 个把 Unix 语义
+  硬编码进单测的隐藏缺陷（详见 §4.389）。修复批次见 §4.389，复跑结论待录。
+
+## 4.389 rust-check-windows 首跑暴露 3 个「Unix 语义硬编码进单测」缺陷（2026-11-10）
+
+### 一、根因（一句话）
+
+三处单元测试把平台相关的文件系统 / 更新恢复语义当成跨平台不变量来断言，
+而 Windows 全量 lib 单测从未在任何 CI 执行 ⇒ 假设一直无人证伪。
+CI run **42806066663** 首跑 `cargo test --locked`：`82 passed; 3 failed`。
+
+### 二、三处失败（逐条对日志）
+
+| 测试 | 失败断言 | 根因 |
+|---|---|---|
+| `fs::tests::read_only_dir_fails_original_intact` | `assert!(result.is_err())`（fs.rs:1175） | 「目录 `chmod 0o555` ⇒ 在其内创建 temp 失败」是 **Unix 权限位**语义；Windows 目录 readonly 位不阻止创建文件，且该测试在非 unix 分支根本没设 readonly ⇒ `atomic_save` 成功 |
+| `updater::tests::copy_and_restore_app_dir` | `assert!(!outcome.scheduled_restart)`（updater.rs:366） | 该测试验证 macOS/Linux 的**进程内替换**（remove + rename、`scheduled_restart:false`、target 立即变旧）；Windows 分支是 **detached helper 调度**（`schedule_windows_restore` spawn `cmd /c timeout 3 & move & start`），返回 `scheduled_restart:true` 且不立即替换 |
+| `updater::tests::restore_single_file_app` | `assert_eq!(fs::read(app), b"OLD")` 得 `NEW`（updater.rs:394） | 同上：Windows 只调度、不当场换回旧文件 |
+
+⚠️ 附带实证：日志末尾两条
+`The filename, directory name, or volume label syntax is incorrect.`
+正是这两个 updater 测试 spawn 的 detached `cmd` 尝试 `start "" <假 .app 路径>`
+留下的 —— **单测触发真实系统 helper** 本身就该避免（hosted runner 上会残留进程）。
+
+### 三、处置（只改测试，产品代码零改动）
+
+- `fs.rs`：`read_only_dir_fails_original_intact` 标 `#[cfg(unix)]`。
+  **不是**降低覆盖：Windows 侧 `atomic_save` 失败路径仍有 4 条跨平台测试
+  （`external_change_conflict_never_overwrites` / `deleted_target_conflict` /
+  `rename_failure_original_intact_temp_cleaned`（target 为目录 ⇒ rename 失败）/
+  `crash_residue_temp_is_cleaned_on_next_save`），CI 首跑均 ok。
+- `updater.rs`：`copy_and_restore_app_dir` / `restore_single_file_app` 标
+  `#[cfg(not(target_os = "windows"))]`。Windows 侧仍由
+  `marker_roundtrip_and_launch_count` / `restore_missing_backup_errors` /
+  `commit_cleans_backup_and_marker` 三条覆盖 marker / 错误 / 清理契约
+  （首跑均 ok）。Windows 的 detached 调度路径属**真机/集成层**证据
+  （runtime-qualification 的 Windows 安装/更新矩阵），单测不 spawn helper。
+- 三处均补注释记下平台语义差异与 CI run 号，避免后人把 cfg 当「偷懒跳过」。
+
+### 四、验证
+
+- 本机 macOS `cargo test --locked --lib`：**95 passed / 0 failed**
+  （unix 分支三测试仍在、全部执行；证明未误删 unix 覆盖）；
+- ⚠️ Windows 侧 82→? 需等 CI 复跑（本机无 `x86_64-pc-windows-msvc` 链接器，
+  交叉 `cargo check` 不能替代真跑）；`scheduled_restart` 等断言在 Windows
+  由 `#[cfg]` 编译期剔除，不复现；
+- 产品代码（`restore_app` / `schedule_windows_restore` / `atomic_save`）
+  **一行未改** ⇒ 不影响 Undo/Redo、IME、文件保真等 P0 面。
+
+### 五、方法论
+
+这正是立 `rust-check-macos`（2026-10-01）与本节 `rust-check-windows` 的同一判据：
+**「不变量只存在于『本地才会跑』的测试里 = 没守护」** 的镜像形态 ——
+测试本身也会撒谎：它声称「恢复后旧文件回来」「只读目录写必失败」，
+但那只在**写测试的人所在平台**成立。把测试放进从没跑过的平台，
+撒谎的断言会自己报出来。
+
 ## 五、本次审计做的改动（非策略性）
 
 
