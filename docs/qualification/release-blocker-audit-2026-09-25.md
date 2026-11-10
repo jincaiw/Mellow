@@ -25767,6 +25767,9 @@ ScreenCaptureKit 显示器级捕获 + 真机对照）、`P0-QA-001`（人工 UX 
   硬编码进单测的隐藏缺陷（详见 §4.389）。修复批次见 §4.389；复跑
   （run 42811091525）**lib 82/0 全绿但 integration suite 又暴露 2 例**，
   见 §4.390 —— 这正是「全量」比「定向子集」多出来的守护面。
+- **最终 CI：run 42812667106（e782161）= success，9/9 job 全绿** ——
+  `rust-check-windows` 首次在 Windows 跑通全量 `cargo test --locked`
+  （lib + `file_safety_corpus` integration）。至此本 job 成为常态门禁。
 
 ## 4.389 rust-check-windows 首跑暴露 3 个「Unix 语义硬编码进单测」缺陷（2026-11-10）
 
@@ -25878,8 +25881,10 @@ test result: FAILED. 10 passed; 2 failed
   `file_safety_corpus` **16/0**（含新分叉的 `external_editor_in_place...`
   与 `disk_full_write...` 两例均 ok）、其余 **4/0**；
 - `npm run parity` 全链 **EXIT=0**；
-- ⚠️ Windows 侧 `#[cfg(not(unix))] assert_ne!` 分支本机无法执行
-  （无 `x86_64-pc-windows-msvc` 链接器），由 CI 复跑确认；
+- Windows 侧 `#[cfg(not(unix))] assert_ne!` 分支由 **CI run 42812667106
+  实证通过**（`rust-check-windows` job `completed/success`，
+  即 `cargo test --locked` 在 Windows exit 0）；本机无
+  `x86_64-pc-windows-msvc` 链接器，交叉 `cargo check` 不能替代真跑。
   源码层已闭合：`identity_key = format!("{}:{}", meta.len(), mtime_ms(meta))`，
   len 8→16 必变。
 - 产品代码 `fs::identity_key` / `atomic_save` **一行未改** ⇒ 文件保真 /
@@ -25891,6 +25896,11 @@ test result: FAILED. 10 passed; 2 failed
 复轮抓 integration 2 例，全部是「**测试把作者所在平台的语义当成
 跨平台不变量**」。这类缺陷定向子集永远看不见。5 例全部只改测试
 （按平台分叉 / 标注 Unix 专属机制），**产品代码零改动**。
+最终 **CI run 42812667106 = success（9/9 job）**：`rust-check-windows`
+成为常态门禁，Windows 侧全量 Rust 单测（lib + integration）每次 push 都跑。
+台账 `P0-EDITOR-005` 的 `windows-ci` 证据通道由「仅定向子集」补齐为
+「全量常态验证」；**该项仍为 IMPL**（真机三平台证据 pending），
+发布门禁 **NO-GO 4 项不变**。
 
 ## 五、本次审计做的改动（非策略性）
 
