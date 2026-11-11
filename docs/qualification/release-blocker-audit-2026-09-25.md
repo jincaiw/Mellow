@@ -25971,6 +25971,19 @@ CI 日志没有 `✗`（否则会打印完整 samples 并 exit 1），说明 231
   真的转绿，以基线入库后下一次 `runtime-qualification.yml` 实跑为准**，
   本节不预先声称已闭环。
 
+> ⚠️ **2026-11-11 更正（同节后续实跑，原文保留）**：上一条「以下一次实跑为准」
+> 的待验状态**已由实测收口** —— 基线入库提交 `853802b` 推送后，用
+> `gh workflow run runtime-qualification.yml --ref main -f target=all`
+> 触发 **run 42925292555 = success（3/3 job）**：Windows / Linux 两个 job 的
+> 三个视觉脚本（visual-golden / sidebar-golden / scenes-golden）**全部 OK**，
+> 不再有 `search.firstMatch.y` 判红；Linux fcitx5 IME 矩阵 **8/8 场景通过**
+> （每例带 `undo ok`），Windows 的 SendKeys 保存读回与 10 MB 大文件启动冒烟
+> 均通过。同批 main CI **run 42925272402 = success（9/9 job）**。
+> ⚠️ **边界不变**：这只证明「两平台视觉基线重新与各自 CI 实测一致」，
+> 台账 `P0-LAYOUT-002` 仍为 `AUTO`（它本就只受 ux-gate 全局策略约束），
+> 发布门禁仍 **NO-GO：4 项未闭环 / PASS-E = 0/51** —— 本节**不是**新增
+> P0 闭环，也不声称「与 Typora 完全一致」已达成。
+
 ### 五、边界
 
 - 本轮**不改台账任何状态**、不新增 P0 闭环、不把 RQ 判红写成「已修复」：
